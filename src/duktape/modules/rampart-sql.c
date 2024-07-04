@@ -100,9 +100,11 @@ SFI
 {
     int reader;         // pipe to read from, in parent or child
     int writer;         // pipe to write to, in parent or child
-    pid_t childpid;     // process id of the child if in parent (return from fork())
+    pid_t childpid;     // process id of the child if in parent (return from fork)
     FMINFO *mapinfo;    // the shared mmap for reading and writing in both parent and child
     char *errmap;       // the shared mmap for errors
+    int mapfd;          // file descriptor of mapinfo->map mmem
+    int errfd;          // file descriptor of error map mmem
     void *aux;          // if data is larger than mapsize, we need to copy it in chunks into here
     void *auxpos;
     size_t auxsz;
@@ -120,12 +122,6 @@ extern int RP_TX_isforked;
 // lock handle list while operating from multiple threads
 #define HLOCK RP_PTLOCK(&tx_handle_lock);
 #define HUNLOCK RP_PTUNLOCK(&tx_handle_lock);
-
-// lock around texis' setprop() and fork()
-// NO forking while in the middle of freeing and setting texis globals
-#define SETLOCK if(!RP_TX_isforked) RP_PTLOCK(&tx_set_lock);
-#define SETUNLOCK if(!RP_TX_isforked) RP_PTUNLOCK(&tx_set_lock);
-
 
 #define DB_HANDLE struct db_handle_s_list
 DB_HANDLE
@@ -145,12 +141,12 @@ DB_HANDLE
 // if not in use, it is on the thread local db_handle_available_head list.
 #define DB_FLAG_IN_USE 2
 
-#define DB_HANDLE_SET(h,flag)   do { (h)->flags |=  (flag);  } while (0) 
-#define DB_HANDLE_CLEAR(h,flag) do { (h)->flags &= ~(flag); } while (0) 
-#define DB_HANDLE_IS(h,flag) ( (h)->flags & flag ) 
+#define DB_HANDLE_SET(h,flag)   do { (h)->flags |=  (flag);  } while (0)
+#define DB_HANDLE_CLEAR(h,flag) do { (h)->flags &= ~(flag); } while (0)
+#define DB_HANDLE_IS(h,flag) ( (h)->flags & flag )
 
 
-__thread DB_HANDLE 
+__thread DB_HANDLE
     *db_handle_available_head=NULL,
     *db_handle_available_tail=NULL;
 
@@ -205,7 +201,7 @@ static void add_handle(DB_HANDLE *h)
 static void remove_handle(DB_HANDLE *h)
 {
     DB_HANDLE *n=h->next, *p=h->prev;
-    
+
     if(p) p->next = n;  //if h=available_tail, n==NULL
     if(n) n->prev = p;  //if h==head, p==NULL
 
@@ -219,7 +215,7 @@ static void remove_handle(DB_HANDLE *h)
 
     //if it was in the available list, decrement nhandles
     if(!DB_HANDLE_IS(h, DB_FLAG_IN_USE))
-        nhandles--;    
+        nhandles--;
 
     h->prev = h->next = NULL;
 }
@@ -320,12 +316,8 @@ static DB_HANDLE * free_handle(DB_HANDLE *h)
 
 static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf);
 
-//#define TXLOCK if(!RP_TX_isforked) {printf("lock from %d\n", thisfork);pthread_mutex_lock(&lock);}
-//#define TXLOCK if(!RP_TX_isforked) pthread_mutex_lock(&lock);
-//#define TXUNLOCK if(!RP_TX_isforked) pthread_mutex_unlock(&lock);
-
-#define TXLOCK
-#define TXUNLOCK
+#define TXLOCK /* currently unused */
+#define TXUNLOCK /* currently unused */
 
 
 int db_is_init = 0;
@@ -449,7 +441,7 @@ void die_nicely(int sig)
             texis_cancel(h->tx);
 
         next=h->next;
-        
+
         if(!next)
             break;
     }
@@ -465,6 +457,14 @@ pid_t parent_pid = 0;
     duk_rp_log_error(ctx);\
     RP_THROW(ctx, "%s error: %s",pref, finfo->errmap);\
 }while(0)
+
+#define throw_tx_error_close(ctx,pref,h) do{\
+    duk_rp_log_error(ctx);\
+    duk_push_string(ctx, finfo->errmap);\
+    h_close(h);\
+    RP_THROW(ctx, "%s error: %s",pref, duk_get_string(ctx,-1));\
+}while(0)
+
 
 #define clearmsgbuf() do {                \
     fseek(mmsgfh, 0, SEEK_SET);           \
@@ -502,6 +502,8 @@ void duk_rp_log_error_msg(duk_context *ctx, char *msg)
 
 void duk_rp_log_error(duk_context *ctx)
 {
+    if(RP_TX_isforked)
+        return;
     finfo->errmap[msgbufsz-1]='\0';  //just a precaution
     duk_rp_log_error_msg(ctx, finfo->errmap);
 }
@@ -590,40 +592,66 @@ static void clean_thread(void *arg)
         free(finfo);
         finfo=NULL;
     }
-    
+
     kill(*kpid,SIGTERM);
     //printf("killed child %d\n",(int)*kpid);
 }
 
-// this is only done in single threaded fork
-static void free_all_handles_noClose()
-{
-    DB_HANDLE *h=db_handle_head, *n;
-    while(h)
-    {
-        n=h->next;
-        free(h->db);
-        free(h);
-        h=n;
+int rp_memfd_create(size_t size) {
+    char shm_name[NAME_MAX];
+    int fd;
+    static int id=0;
+
+    // Generate a unique shared memory object name
+    snprintf(shm_name, NAME_MAX, "/rpmem-%d-%d", getpid(), id);
+    id++;
+
+    // Create the shared memory object
+    fd = shm_open(shm_name, O_RDWR | O_CREAT | O_EXCL, 0600);
+    if (fd == -1) {
+        perror("shm_open");
+        return -1;
     }
 
-    h=db_handle_available_head;
-    while(h)
-    {
-        n=h->next;
-        free(h->db);
-        free(h);
-        h=n;
+    // Unlink the shared memory object to make it anonymous
+    if (shm_unlink(shm_name) == -1) {
+        perror("shm_unlink");
+        close(fd);
+        return -1;
     }
 
-    db_handle_head = db_handle_available_head = NULL;
+    if (ftruncate(fd, size) == -1) {
+        perror("ftruncate");
+        close(fd);
+        return -1;
+    }
+
+    // Clear the FD_CLOEXEC flag
+    int flags_fd = fcntl(fd, F_GETFD);
+    if (flags_fd == -1) {
+        perror("fcntl F_GETFD");
+        close(fd);
+        return -1;
+    }
+
+    flags_fd &= ~FD_CLOEXEC;
+    if (fcntl(fd, F_SETFD, flags_fd) == -1) {
+        perror("fcntl F_SETFD");
+        close(fd);
+        return -1;
+    }
+
+    return fd;
 }
 
-
 static void do_child_loop(SFI *finfo);
+static int fork_setmem();
+static int fork_seterr();
 
 #define Create 1
 #define NoCreate 0
+
+static char *scr_txt = "var S=require('rampart-sql.so');S.__helper(%d,%d,%d);\n";
 
 static SFI *check_fork(DB_HANDLE *h, int create)
 {
@@ -637,7 +665,7 @@ static SFI *check_fork(DB_HANDLE *h, int create)
         }
         else
         {
-            // FIXME: this is a memory leak in child process because other 
+            // FIXME: this is a memory leak in child process because other
             // thread local 'finfo' allocs are lost when threads disappear upon fork
             // It's not growing, so probably harmless.
             REMALLOC(finfo, sizeof(SFI));
@@ -654,17 +682,32 @@ static SFI *check_fork(DB_HANDLE *h, int create)
             finfo->auxpos=NULL;
             REMALLOC(finfo->mapinfo, sizeof(FMINFO));
 
-            finfo->mapinfo->mem = mmap(NULL, FORKMAPSIZE, PROT_READ|PROT_WRITE, MAP_ANON|MAP_SHARED, -1, 0);
+            finfo->mapfd=rp_memfd_create(FORKMAPSIZE);
+            if(finfo->mapfd == -1)
+            {
+                fprintf(stderr, "mmap failed (%d): %s\n",__LINE__, strerror(errno));
+                exit(1);
+            }
+
+            finfo->mapinfo->mem = mmap(NULL, FORKMAPSIZE, PROT_READ|PROT_WRITE, MAP_SHARED, finfo->mapfd, 0);
             if(finfo->mapinfo->mem == MAP_FAILED)
             {
-                fprintf(stderr, "mmap failed: %s\n",strerror(errno));
+                fprintf(stderr, "mmap failed (%d): %s\n",__LINE__, strerror(errno));
                 exit(1);
             }
             finfo->mapinfo->pos = finfo->mapinfo->mem;
-            finfo->errmap = mmap(NULL, msgbufsz, PROT_READ|PROT_WRITE, MAP_ANON|MAP_SHARED, -1, 0);;
+
+            finfo->errfd=rp_memfd_create(msgbufsz);
+            if(finfo->errfd == -1)
+            {
+                fprintf(stderr, "mmap failed (%d): %s\n",__LINE__, strerror(errno));
+                exit(1);
+            }
+
+            finfo->errmap = mmap(NULL, msgbufsz, PROT_READ|PROT_WRITE, MAP_SHARED, finfo->errfd, 0);
             if(finfo->errmap == MAP_FAILED)
             {
-                fprintf(stderr, "errmsg mmap failed: %s\n",strerror(errno));
+                fprintf(stderr, "mmap failed (%d): %s\n",__LINE__, strerror(errno));
                 exit(1);
             }
         }
@@ -709,9 +752,8 @@ static SFI *check_fork(DB_HANDLE *h, int create)
 
 
         /***** fork ******/
-        SETLOCK
         finfo->childpid = fork();
-        SETUNLOCK
+
         if (finfo->childpid < 0)
         {
             fprintf(stderr, "fork failed");
@@ -721,34 +763,14 @@ static SFI *check_fork(DB_HANDLE *h, int create)
 
         if(finfo->childpid == 0)
         { /* child is forked once then talks over pipes. */
-            struct sigaction sa = { {0} };
-
-            RP_TX_isforked=1; /* mutex locking not necessary in fork */
-            memset(&sa, 0, sizeof(struct sigaction));
-            sa.sa_flags = 0;
-            sa.sa_handler =  die_nicely;
-            sigemptyset(&sa.sa_mask);
-            sigaction(SIGUSR2, &sa, NULL);
-
-            setproctitle("rampart sql_helper");
+            char script[1024];
 
             close(child2par[0]);
             close(par2child[1]);
-            finfo->writer = child2par[1];
-            finfo->reader = par2child[0];
-            thisfork=h->forknum;
-            mmsgfh = fmemopen(finfo->errmap, msgbufsz, "w+");
-            fcntl(finfo->reader, F_SETFL, 0);
 
-            libevent_global_shutdown();
-
-            signal(SIGINT, SIG_DFL);
-            signal(SIGTERM, SIG_DFL);
-
-            // free up handles from parent, but don't close *tx.
-            free_all_handles_noClose();
-
-            do_child_loop(finfo); // loop and never come back;
+            sprintf(script, scr_txt, par2child[0], child2par[1], h->forknum);
+            execl(rampart_exec, rampart_exec, "-c", script, NULL);
+            exit(0);
         }
         else
         {
@@ -767,6 +789,18 @@ static SFI *check_fork(DB_HANDLE *h, int create)
             REMALLOC(pidarg, sizeof(pid_t));
             *pidarg = finfo->childpid;
             set_thread_fin_cb(rpthread[h->forknum], clean_thread, pidarg);
+
+            if(!fork_setmem())
+            {
+                free(finfo);
+                return NULL;
+            }
+
+            if(!fork_seterr())
+            {
+                free(finfo);
+                return NULL;
+            }
         }
     }
 
@@ -776,7 +810,7 @@ static SFI *check_fork(DB_HANDLE *h, int create)
 static void free_thread_handles()
 {
     DB_HANDLE *h=db_handle_head, *n;
-    uint16_t forknum = get_thread_num();    
+    uint16_t forknum = get_thread_num();
 
     // remove and free any in in-use list
     HLOCK
@@ -784,7 +818,7 @@ static void free_thread_handles()
     {
         n=h->next;
         if(forknum == h->forknum)
-            h_close(h);    
+            h_close(h);
         h=n;
     }
     HUNLOCK
@@ -797,7 +831,7 @@ static void free_thread_handles()
         h_close(h);
         h=n;
     }
-    
+
 }
 
 static void free_all_handles(void *unused)
@@ -881,7 +915,7 @@ static int fork_create(const char *db)
 static int child_create()
 {
     int ret=0;
-    
+
     ret=createdb(finfo->mapinfo->mem);
 
     if(forkwrite(&ret, sizeof(int)) == -1)
@@ -1395,6 +1429,7 @@ static int child_prep()
     }
 
     ret = texis_prepare(tx, sql);
+
     if(forkwrite(&ret, sizeof(int)) == -1)
         return 0;
 
@@ -1434,6 +1469,73 @@ static int child_open()
 
     if(forkwrite(&tx, sizeof(TEXIS *)) == -1)
         return 0;
+
+    return 1;
+}
+
+static int fork_setmem()
+{
+    if(finfo->childpid)
+    {
+        if(forkwrite("M", sizeof(char)) == -1)
+            return 0;
+
+        if(forkwrite(&(finfo->mapfd), sizeof(int)) == -1)
+            return 0;
+
+    }
+    else
+        return 0;
+
+    return 1;
+}
+
+static int child_setmem()
+{
+    if(forkread(&(finfo->mapfd), sizeof(int)) ==-1)
+        return 0;
+    finfo->mapinfo->mem = mmap(NULL, FORKMAPSIZE, PROT_READ|PROT_WRITE, MAP_SHARED, finfo->mapfd, 0);
+    if(finfo->mapinfo->mem == MAP_FAILED)
+    {
+        fprintf(stderr, "mmap failed: %s\n",strerror(errno));
+        return 0;
+    }
+    finfo->mapinfo->pos = finfo->mapinfo->mem;
+
+    return 1;
+}
+
+
+static int fork_seterr()
+{
+    if(finfo->childpid)
+    {
+        if(forkwrite("E", sizeof(char)) == -1)
+            return 0;
+
+        if(forkwrite(&(finfo->errfd), sizeof(int)) == -1)
+            return 0;
+
+    }
+    else
+        return 0;
+
+    return 1;
+}
+
+static int child_seterr()
+{
+    if(forkread(&(finfo->errfd), sizeof(int)) ==-1)
+        return 0;
+
+    finfo->errmap = mmap(NULL, msgbufsz, PROT_READ|PROT_WRITE, MAP_SHARED, finfo->errfd, 0);
+    if(finfo->errmap == MAP_FAILED)
+    {
+        fprintf(stderr, "errmsg mmap failed: %s\n",strerror(errno));
+        exit(1);
+    }
+
+    mmsgfh = fmemopen(finfo->errmap, msgbufsz, "w+");
 
     return 1;
 }
@@ -1795,7 +1897,7 @@ static void do_child_loop(SFI *finfo)
     while(1)
     {
         char command='\0';
-        int ret = kill(parent_pid,0);
+        int ret;// = kill(parent_pid,0);
 
         //if( ret )
         //    exit(0);
@@ -1854,6 +1956,12 @@ static void do_child_loop(SFI *finfo)
                 break;
             case 'C':
                 ret = child_create();
+                break;
+            case 'M':
+                ret = child_setmem();
+                break;
+            case 'E':
+                ret = child_seterr();
                 break;
         }
         // do something with ret?
@@ -1936,7 +2044,7 @@ static int h_close(DB_HANDLE *h)
         ret=fork_close(h);
     else
         h->tx = TEXIS_CLOSE(h->tx);
-    
+
     h=free_handle(h);
 
     return ret;
@@ -2834,15 +2942,13 @@ duk_ret_t duk_rp_sql_import(duk_context *ctx, int isfile)
         if (!h_prep(h, sql))
         {
             closecsv;
-            h_close(h);
-            throw_tx_error(ctx, "sql prep");
+            throw_tx_error_close(ctx, "sql prep", h);
         }
 
         if (!h_exec(h))
         {
             closecsv;
-            h_close(h);
-            throw_tx_error(ctx, "sql exec");
+            throw_tx_error_close(ctx, "sql exec", h);
         }
 
         while((fl = h_fetch(h, -1)))
@@ -2988,8 +3094,8 @@ duk_ret_t duk_rp_sql_import(duk_context *ctx, int isfile)
 
             if (!h_prep(h, sql))
             {
-                fn_cleanup(1);
-                throw_tx_error(ctx, "sql prep");
+                fn_cleanup(0);
+                throw_tx_error_close(ctx, "sql prep", h);
             }
 
             if(dcsv.hasHeader) start=1;
@@ -3063,8 +3169,8 @@ duk_ret_t duk_rp_sql_import(duk_context *ctx, int isfile)
                     {
                         if(ctr) free(ctr);
                         ctr=NULL;
-                        fn_cleanup(1);
-                        throw_tx_error(ctx, "sql add parameters");
+                        fn_cleanup(0);
+                        throw_tx_error_close(ctx, "sql add parameters", h);
                     }
                     if(ctr) free(ctr);
                     ctr=NULL;
@@ -3079,21 +3185,21 @@ duk_ret_t duk_rp_sql_import(duk_context *ctx, int isfile)
                     {
                         if( !h_param(h, col+1, v, &plen, in, out))
                         {
-                            fn_cleanup(1);
-                            throw_tx_error(ctx, "sql add parameters");
+                            fn_cleanup(0);
+                            throw_tx_error_close(ctx, "sql add parameters", h);
                         }
                     }
                 }
 
                 if (!h_exec(h))
                 {
-                    fn_cleanup(1);
-                    throw_tx_error(ctx, "sql exec");
+                    fn_cleanup(0);
+                    throw_tx_error_close(ctx, "sql exec",h);
                 }
                 if (!h_flush(h))
                 {
-                    fn_cleanup(1);
-                    throw_tx_error(ctx, "sql flush");
+                    fn_cleanup(0);
+                    throw_tx_error_close(ctx, "sql flush", h);
                 }
 
                 h_resetparams(h);
@@ -3398,10 +3504,7 @@ duk_ret_t duk_rp_sql_exec(duk_context *ctx)
 
     /* PREP */
     if (!h_prep(h, (char *)q->sql))
-    {
-        h_close(h);
-        throw_tx_error(ctx, "sql prep");
-    }
+        throw_tx_error_close(ctx, "sql prep", h);
 
 
     /* PARAMS
@@ -3423,8 +3526,7 @@ duk_ret_t duk_rp_sql_exec(duk_context *ctx)
         {
             free(namedSqlParams);
             free(freeme);
-            h_close(h);
-            throw_tx_error(ctx, "sql add parameters");
+            throw_tx_error_close(ctx, "sql add parameters",h);
         }
         free(namedSqlParams);
         free(freeme);
@@ -3437,10 +3539,7 @@ duk_ret_t duk_rp_sql_exec(duk_context *ctx)
     else if (q->arr_idx != -1)
     {
         if (!duk_rp_add_parameters(ctx, h, q->arr_idx))
-        {
-            h_close(h);
-            throw_tx_error(ctx, "sql add parameters");
-        }
+            throw_tx_error_close(ctx, "sql add parameters", h);
     }
     else
     {
@@ -3449,10 +3548,8 @@ duk_ret_t duk_rp_sql_exec(duk_context *ctx)
 
     /* EXEC */
     if (!h_exec(h))
-    {
-        h_close(h);
-        throw_tx_error(ctx, "sql exec");
-    }
+        throw_tx_error_close(ctx, "sql exec", h);
+
     /* skip rows using texisapi */
     if (q->skip)
         h_skip(h, q->skip);
@@ -3468,7 +3565,7 @@ duk_ret_t duk_rp_sql_exec(duk_context *ctx)
     /*  No callback, return all rows in array of objects */
     (void)duk_rp_fetch(ctx, h, q);
 
-end:
+    end:
     h_end_transaction(h);
     duk_rp_log_error(ctx); /* log any non fatal errors to this.errMsg */
     return 1; /* returning outer array */
@@ -3641,10 +3738,8 @@ void h_reset_tx_default(duk_context *ctx, DB_HANDLE *h, duk_idx_t this_idx)
             RP_THROW(ctx, "%s", errbuf);
         }
         else if (ret ==-2)
-        {
-            h_close(h);
-            throw_tx_error(ctx, errbuf);
-        }
+            throw_tx_error_close(ctx, errbuf, h);
+
     }
     if(last_handle_no != handle_no)
     {
@@ -3904,19 +3999,18 @@ static int sql_defaults(duk_context *ctx, TEXIS *tx, char *errbuf)
     }
 
     props = prop_defaults[i];
-    SETLOCK
+
     while (props[0])
     {
         if(setprop(ddic, props[0], props[1] )==-1)
         {
             sprintf(errbuf, "sql reset");
-            SETUNLOCK
             return -2;
         }
         i++;
         props = prop_defaults[i];
     }
-    SETUNLOCK
+
     if(!defnoise)
     {
         globalcp->noise=(byte**)copylist(noiseList, nnoiseList);
@@ -3964,7 +4058,7 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
             ddic = lpstmt->dbc->ddic;
     else
     {
-        sprintf(errbuf,"sql open");
+        sprintf(errbuf,"sql open: %s", finfo->errmap);
         goto return_neg_two;
     }
 
@@ -3978,20 +4072,18 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
         int i=0, len = duk_get_length(ctx, -1);
         const char *val;
 
-        SETLOCK
         for (i=0;i<len;i++)
         {
             duk_get_prop_index(ctx, -1, (duk_uarridx_t)i);
             val = duk_get_string(ctx, -1);
+            clearmsgbuf();
             if(setprop(ddic, "addindextmp", (char*)val )==-1)
             {
-                sprintf(errbuf, "sql set");
-                SETUNLOCK
+                sprintf(errbuf, "sql.set: %s", finfo->errmap);
                 goto return_neg_two;
             }
             duk_pop(ctx);
         }
-        SETUNLOCK
     }
     duk_pop(ctx);//list or undef
 
@@ -4001,26 +4093,24 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
         const char *val;
 
         /* delete first entry for an empty list */
-        SETLOCK
+        clearmsgbuf();
         if(setprop(ddic, "delexp", "0" )==-1)
         {
-            SETUNLOCK
-            sprintf(errbuf, "sql set");
+            sprintf(errbuf, "sql.set: %s", finfo->errmap);
             goto return_neg_two;
         }
         for (i=0;i<len;i++)
         {
             duk_get_prop_index(ctx, -1, (duk_uarridx_t)i);
             val = duk_get_string(ctx, -1);
+            clearmsgbuf();
             if(setprop(ddic, "addexp", (char*)val )==-1)
             {
-                sprintf(errbuf, "sql set");
-                SETUNLOCK
+                sprintf(errbuf, "sql.set: %s", finfo->errmap);
                 goto return_neg_two;
             }
             duk_pop(ctx);
         }
-        SETUNLOCK
     }
     duk_pop_2(ctx);// list and this
 
@@ -4181,7 +4271,7 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
                 snprintf(errbuf, msgbufsz, "sql.set: %s must be an array of strings", rlsts[setlisttype] );
                 goto return_neg_one;
             }
-            SETLOCK
+
             switch(setlisttype)
             {
                 case 0: free_list((char**)globalcp->noise);
@@ -4204,7 +4294,6 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
                         defprefix=0;
                         break;
             }
-            SETUNLOCK
             goto propnext;
         }
 
@@ -4290,14 +4379,13 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
                     }
                     aval=duk_get_string(ctx, -1);
                 }
-                SETLOCK
+
+                clearmsgbuf();
                 if(setprop(ddic, (char*)prop, (char*)aval )==-1)
                 {
-                    sprintf(errbuf, "sql set");
-                    SETUNLOCK
+                    sprintf(errbuf, "sql.set: %s", finfo->errmap);
                     goto return_neg_two;
                 }
-                SETUNLOCK
                 duk_pop_2(ctx);
             }
             duk_pop(ctx);
@@ -4332,14 +4420,12 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
                 val="defaults";
             }
            */
-            SETLOCK
+            clearmsgbuf();
             if(setprop(ddic, (char*)prop, (char*)val )==-1)
             {
-                sprintf(errbuf, "sql set");
-                SETUNLOCK
+                sprintf(errbuf, "sql.set: %s", finfo->errmap);
                 goto return_neg_two;
             }
-            SETUNLOCK
         }
 
         /* save the altered list for reapplication after reset */
@@ -4380,7 +4466,6 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
     duk_rp_log_error(ctx); /* log any non fatal errors to this.errMsg */
 
     //tx=texis_close(tx);
-
     if(added_ret_obj)
     {
         duk_pull(ctx, 0);
@@ -4552,10 +4637,10 @@ duk_ret_t duk_texis_set(duk_context *ctx)
         h_close(h);
         RP_THROW(ctx, "%s", errbuf);
     }
-    
+
     else if (ret ==-2)
     {
-        h_close(h);
+         h_close(h);
         throw_tx_error(ctx, errbuf);
     }
 
@@ -4596,7 +4681,7 @@ static void addtbl(duk_context *ctx, char *func, const char *db, char *tbl)
 duk_ret_t duk_rp_sql_addtable(duk_context *ctx)
 {
     const char *db, *tbl = REQUIRE_STRING(ctx, 0, "argument must be a string (/path/to/importTable.tbl)");
-    
+
     duk_push_this(ctx);
 
     if (!duk_get_prop_string(ctx, -1, "db"))
@@ -4647,31 +4732,31 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx)
     {
         if(duk_get_prop_string(ctx, 0, "path"))
         {
-            db = REQUIRE_STRING(ctx, -1, "new Sql.init(params) - params.path must be a string"); 
+            db = REQUIRE_STRING(ctx, -1, "new Sql.init(params) - params.path must be a string");
         }
         duk_pop(ctx);
 
         if(duk_get_prop_string(ctx, 0, "force"))
         {
-            force = (int)REQUIRE_BOOL(ctx, -1, "new Sql.init(params) - params.force must be a boolean"); 
+            force = (int)REQUIRE_BOOL(ctx, -1, "new Sql.init(params) - params.force must be a boolean");
         }
         duk_pop(ctx);
 
         if(duk_get_prop_string(ctx, 0, "addtables"))
         {
-            addtables = (int)REQUIRE_BOOL(ctx, -1, "new Sql.init(params) - params.addtables must be a boolean"); 
+            addtables = (int)REQUIRE_BOOL(ctx, -1, "new Sql.init(params) - params.addtables must be a boolean");
         }
         duk_pop(ctx);
 
         if(duk_get_prop_string(ctx, 0, "addTables"))
         {
-            addtables = (int)REQUIRE_BOOL(ctx, -1, "new Sql.init(params) - params.addTables must be a boolean"); 
+            addtables = (int)REQUIRE_BOOL(ctx, -1, "new Sql.init(params) - params.addTables must be a boolean");
         }
         duk_pop(ctx);
 
         if(duk_get_prop_string(ctx, 0, "create"))
         {
-            create = (int)REQUIRE_BOOL(ctx, -1, "new Sql.init(params) - params. must be a boolean"); 
+            create = (int)REQUIRE_BOOL(ctx, -1, "new Sql.init(params) - params. must be a boolean");
         }
         duk_pop(ctx);
 
@@ -4721,7 +4806,7 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx)
             {
                 char **s;
                 struct dirent *entry=NULL;
-                
+
                 errno = 0;
 
                 while ((entry = readdir(dir)) != NULL)
@@ -4747,7 +4832,7 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx)
                     errno=0;
                     RP_THROW(ctx, "sql.init(): cannot create '%s' - %s", db, strerror(er));
                 }
-                
+
                 if(strlen(db)+20 > PATH_MAX)
                 {
                     RP_THROW(ctx, "sql.init(): cannot create '%s', path too long", db);
@@ -4759,7 +4844,7 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx)
 
                     strcpy(tmppath, db);
                     strcat(tmppath, "/.t");
-                    
+
                     if(!h_create(tmppath))
                     {
                         duk_rp_log_error(ctx);
@@ -4783,7 +4868,7 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx)
                     }
                     strcpy(tmppath, db);
                     strcat(tmppath, "/.t");
-                    
+
                     if(addtables)
                     {
 
@@ -4793,7 +4878,7 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx)
                         {
                             char *e = entry->d_name, **s;
                             int len=strlen(e), issys=0;
-                        
+
                             s=default_db_files;
 
                             while(*s)
@@ -4809,7 +4894,7 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx)
                             if(!issys && e[len-4]=='.' && e[len-3]=='t' && e[len-2]=='b' && e[len-1]=='l')
                             {
                                 char p[PATH_MAX];
-                                
+
                                 strcpy(p,db);
                                 strcat(p,"/");
                                 strcat(p,e);
@@ -4817,7 +4902,7 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx)
                                 addtbl(ctx, "sql.init()", db, p);
                             }
                         }
-                        
+
                     }
 
                     if (rmdir(tmppath) != 0)
@@ -4973,6 +5058,41 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx)
 
     return 0;
 }
+
+static duk_ret_t fork_helper(duk_context *ctx)
+{
+    SFI finfo_d = {0};
+
+    finfo=&finfo_d;
+    REMALLOC(finfo->mapinfo, sizeof(FMINFO));
+
+    setproctitle("rampart sql_helper");
+
+    finfo->reader = REQUIRE_UINT(ctx,0, "Error, this function is meant to be run upon forking only");
+    finfo->writer = REQUIRE_UINT(ctx,1, "Error, this function is meant to be run upon forking only");
+    /* to help with debugging, get parent's thread num */
+    thisfork = REQUIRE_UINT(ctx,2, "Error, this function is meant to be run upon forking only");
+
+    struct sigaction sa = { {0} };
+
+    RP_TX_isforked=1; // mutex locking not necessary in fork
+    memset(&sa, 0, sizeof(struct sigaction));
+    sa.sa_flags = 0;
+    sa.sa_handler =  die_nicely;
+    sigemptyset(&sa.sa_mask);
+    sigaction(SIGUSR2, &sa, NULL);
+
+    setproctitle("rampart sql_helper");
+
+    signal(SIGINT, SIG_DFL);
+    signal(SIGTERM, SIG_DFL);
+
+    do_child_loop(finfo); // loop and never come back;
+    // mmap happens in loop
+
+    return 0;
+}
+
 
 /* **************************************************
    Initialize Sql module
@@ -5143,6 +5263,11 @@ duk_ret_t duk_open_module(duk_context *ctx)
 
     duk_push_c_function(ctx, searchtext, 3);
     duk_put_prop_string(ctx, -2, "searchText");
+
+    /* used when forking/execing */
+    duk_push_string(ctx, "__helper");
+    duk_push_c_function(ctx, fork_helper, 3);
+    duk_def_prop(ctx, -3, DUK_DEFPROP_CLEAR_WEC|DUK_DEFPROP_HAVE_VALUE);
 
     add_exit_func(free_all_handles, NULL);
 
