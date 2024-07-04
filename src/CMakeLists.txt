@@ -219,16 +219,27 @@ add_dependencies(rampart-lmdb liblmdb)
 add_library(rampart-sql SHARED
  duktape/modules/rampart-sql.c
 )
-target_link_libraries(rampart-sql
+
+if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
+    target_link_libraries(rampart-sql
 	${PROJECT_BINARY_DIR}/texis/texisapi/libtexisapi.a
-#	${PROJECT_BINARY_DIR}/texis/mmapi/libmmapi3.a
 	z
 	${PROJECT_BINARY_DIR}/texis/thirdparty/re2/libre2.a
 	pthread
 	m
 	${PROJECT_BINARY_DIR}/texis/jansson-2.12/src/jansson-2.12-build/lib/libjansson.a
-)
-
+    )
+else()
+    target_link_libraries(rampart-sql
+	${PROJECT_BINARY_DIR}/texis/texisapi/libtexisapi.a
+	z
+	${PROJECT_BINARY_DIR}/texis/thirdparty/re2/libre2.a
+	pthread
+	m
+	rt
+	${PROJECT_BINARY_DIR}/texis/jansson-2.12/src/jansson-2.12-build/lib/libjansson.a
+    )
+endif()
 add_custom_command(
 	OUTPUT ${CMAKE_BINARY_DIR}/src/texislockd
 	COMMAND cp "${PROJECT_BINARY_DIR}/texis/apps/texislockd" ${CMAKE_BINARY_DIR}/src
