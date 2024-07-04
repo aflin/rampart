@@ -419,15 +419,14 @@ set(PYTHON_PATCH "2")
 set(PYTHON_DIR_NAME "Python-3.${PYTHON_MINOR}.${PYTHON_PATCH}")
 set(PYTHON_BIN_DIR "${PROJECT_BINARY_DIR}/extern/${PYTHON_DIR_NAME}")
 
-#execute_process(
 add_custom_command(
-    OUTPUT ${PROJECT_SOURCE_DIR}/extern/${PYTHON_BIN_DIR}
+    OUTPUT ${PYTHON_BIN_DIR}
     COMMAND mkdir -p ${PROJECT_BINARY_DIR}/extern
     COMMAND cp -a ${PROJECT_SOURCE_DIR}/extern/${PYTHON_DIR_NAME} ${PROJECT_BINARY_DIR}/extern
 )
 
 add_custom_target(cp_python
-	DEPENDS ${PROJECT_SOURCE_DIR}/extern/${PYTHON_BIN_DIR}
+	DEPENDS ${PYTHON_BIN_DIR}
 )
 
 
@@ -454,7 +453,7 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
 endif()
 
 message("Configuration for python build:")
-message("    RAMPART_SSL_DIR=${PROJECT_BINARY_DIR}/extern/openssl PKG_CONFIG_PATH=\"${PYPKG}\" LDFLAGS=\"${PYLDFLAGS}\" CFLAGS=\"${PYFLAGS}\" TCLTK_LIBS=\"-ltk -ltcl\" ./configure --enable-optimizations --prefix=\"${PROJECT_BINARY_DIR}/extern/${PYTHON_DIR_NAME}/build\"")
+#message("    RAMPART_SSL_DIR=${PROJECT_BINARY_DIR}/extern/openssl PKG_CONFIG_PATH=\"${PYPKG}\" LDFLAGS=\"${PYLDFLAGS}\" CFLAGS=\"${PYFLAGS}\" TCLTK_LIBS=\"-ltk -ltcl\" ./configure --enable-optimizations --prefix=\"${PROJECT_BINARY_DIR}/extern/${PYTHON_DIR_NAME}/build\"")
 
 add_custom_command(
 	OUTPUT ${PYTHON_BIN_DIR}/Makefile
