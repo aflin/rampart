@@ -35,7 +35,7 @@
 #define TCP_KEEPIDLE TCP_KEEPALIVE
 #endif
 
-
+char *rp_net_def_bundle=NULL;
 
 /*
 static int push_ip_canon(duk_context *ctx, const char *addr, int domain)
@@ -2016,7 +2016,7 @@ static int make_sock_conn(void *arg, int after)
     {
         int insecure=0;
         const char *ca_path      = NET_CA_PATH,
-                   *ca_file      = NET_CA_PATH "/" NET_CA_FILE;
+                   *ca_file      = rp_net_def_bundle;
 
         if(strlen(ca_path)==0)
             ca_path = NULL;
@@ -3503,13 +3503,45 @@ static duk_ret_t net_finalizer(duk_context *ctx)
     return 0;
 }
 
+static duk_ret_t setbundle(duk_context *ctx)
+{
+    const char *bundle = REQUIRE_STRING(ctx, 0, "net.setCaCert - argument must be a string");
+
+    if(access(bundle, R_OK) != 0)
+        RP_THROW(ctx, "net.setCaCert - Setting '%s': %s\n", bundle, strerror(errno));
+
+    // store it where it won't be freed
+    duk_push_this(ctx);
+    duk_push_string(ctx, "default_ca_file");
+    rp_net_def_bundle = (char *) duk_push_string(ctx, bundle);
+    duk_def_prop(ctx, -3, DUK_DEFPROP_HAVE_VALUE |DUK_DEFPROP_CLEAR_WEC|DUK_DEFPROP_FORCE);
+
+    return 0;
+}
+
+
 /* INIT MODULE */
 duk_ret_t duk_open_module(duk_context *ctx)
 {
 
+    // if the default is there
+    if(access(NET_CA_FILE, R_OK) == 0)
+        //set it to default
+        rp_net_def_bundle = NET_CA_FILE;
+    else 
+        //set it to the one we found in rampart-utils.c
+        rp_net_def_bundle = rp_ca_bundle; 
+
     /* return object */
     duk_push_object(ctx);
 
+    duk_push_string(ctx, "default_ca_file");
+    duk_push_string(ctx, rp_net_def_bundle);
+    duk_def_prop(ctx, -3, DUK_DEFPROP_HAVE_VALUE |DUK_DEFPROP_CLEAR_WEC);
+
+    /* net.setCaCert */
+    duk_push_c_function(ctx, setbundle, 1);
+    duk_put_prop_string(ctx, -2, "setCaCert");
     /*
     //SocketAddress -- currently unused
     duk_push_c_function(ctx, duk_rp_net_socket_address, 1);
@@ -3677,9 +3709,6 @@ duk_ret_t duk_open_module(duk_context *ctx)
     //reverse_async
     duk_push_c_function(ctx, duk_rp_net_reverse_async, 2);
     duk_put_prop_string(ctx, -2, "reverse_async");
-
-    duk_push_string(ctx, NET_CA_PATH "/" NET_CA_FILE);
-    duk_put_prop_string(ctx, -2, "default_ca_file");
 
     duk_push_c_function(ctx, net_finalizer, 1);
     duk_set_finalizer(ctx, -2);
