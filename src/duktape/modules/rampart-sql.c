@@ -4825,6 +4825,7 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx)
                 }
 
                 closedir(dir);
+                dir=NULL;
 
                 if(errno) //we read the dir
                 {
@@ -4914,6 +4915,7 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx)
             }
             else if(dir) // there's a dir and we don't have force or addtables.
             {
+                closedir(dir);
                 RP_THROW(ctx, "sql.init(): cannot create '%s', directory exists and is not empty", db);
             }
             else if (!h_create(db)) //if !dir, try regular create
@@ -4921,6 +4923,9 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx)
                 duk_rp_log_error(ctx);
                 RP_THROW(ctx, "sql.init(): cannot open or create database at '%s':\n%s", db, finfo->errmap);
             }
+            
+            if(dir)
+                closedir(dir);
         }
         else
         {
