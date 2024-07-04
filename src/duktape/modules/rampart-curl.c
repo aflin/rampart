@@ -19,7 +19,7 @@
 #include "curl_config.h"
 #include "rampart.h"
 
-static char *ca_bundle=NULL;
+static char *rp_curl_def_bundle=NULL;
 
 typedef uint8_t byte;
 
@@ -2004,8 +2004,8 @@ void duk_curl_setopts(duk_context *ctx, CURL *curl, int idx, CURLREQ *req)
     duk_pop(ctx);
 
     /* if we have an alternate loc for cacert */
-    if(ca_bundle && !got_cert_opt)
-        curl_easy_setopt(curl, CURLOPT_CAINFO, ca_bundle);
+    if(rp_curl_def_bundle && !got_cert_opt)
+        curl_easy_setopt(curl, CURLOPT_CAINFO, rp_curl_def_bundle);
 
 }
 
@@ -2199,8 +2199,8 @@ CURLREQ *new_request(char *url, CURLREQ *cloner, duk_context *ctx, duk_idx_t opt
 
         if (options_idx > -1)
             duk_curl_setopts(ctx, req->curl, options_idx, req);
-        else if(ca_bundle) //set the alternate cacert path here if duk_curl_setopts is not called
-            curl_easy_setopt(req->curl, CURLOPT_CAINFO, ca_bundle);
+        else if(rp_curl_def_bundle) //set the alternate cacert path here if duk_curl_setopts is not called
+            curl_easy_setopt(req->curl, CURLOPT_CAINFO, rp_curl_def_bundle);
 
         /* set the url, which may have been altered in duk_curl_setopts to include a query string */
         curl_easy_setopt(req->curl, CURLOPT_URL, req->url);
@@ -2888,6 +2888,22 @@ static duk_ret_t duk_curl_submit(duk_context *ctx)
     return duk_curl_submit_sync_async(ctx, 0);
 }
 
+static duk_ret_t setbundle(duk_context *ctx)
+{
+    const char *bundle = REQUIRE_STRING(ctx, 0, "curl.setCaCert - argument must be a string");
+
+    if(access(bundle, R_OK) != 0)
+        RP_THROW(ctx, "curl.setCaCert - Setting '%s': %s\n", bundle, strerror(errno));
+
+    // store it where it won't be freed
+    duk_push_this(ctx);
+    duk_push_string(ctx, "default_ca_file");
+    rp_curl_def_bundle = (char *) duk_push_string(ctx, bundle);
+    duk_def_prop(ctx, -3, DUK_DEFPROP_HAVE_VALUE |DUK_DEFPROP_CLEAR_WEC|DUK_DEFPROP_FORCE);
+
+    return 0;
+}
+
 /* **************************************************
    Initialize Curl into global object.
    ************************************************** */
@@ -2901,56 +2917,31 @@ static const duk_function_list_entry curl_funcs[] = {
     {"encode", duk_curl_encode, 1},
     {"decode", duk_curl_decode, 1},
     {"cleanup", duk_curl_global_cleanup, 0},
-    {NULL, NULL, 0}};
+    {"setCaCert", setbundle, 1},
+    {NULL, NULL, 0}
+};
 
 static const duk_number_list_entry curl_consts[] = {
     {NULL, 0.0}};
 
-
-static char *ca_bundle_locs[]={
-    "/etc/ssl/certs/ca-certificates.crt",
-    "/etc/pki/tls/certs/ca-bundle.crt",
-    "/usr/share/ssl/certs/ca-bundle.crt",
-    "/usr/local/share/certs/ca-root-nss.crt",
-    "/etc/ssl/cert.pem",
-    NULL
-};
-
-
-static void find_bundle()
-{
-    char **cur=ca_bundle_locs;
-
-    // if the default is there, all is good
-    if(access(CURL_CA_BUNDLE, R_OK)== 0)
-        return;
-
-    //else if we find one somewhere else, set char *ca_bundle to it
-    while(cur)
-    {
-        if (access(*cur, R_OK) == 0)
-        {
-            ca_bundle=*cur;
-            return;
-        }
-        cur++;
-    }
-}
-
 duk_ret_t duk_open_module(duk_context *ctx)
 {
-
-    find_bundle();
-
     duk_push_object(ctx);
 
+    // if the default is not there
+    if(access(CURL_CA_BUNDLE, R_OK) != 0)
+    {
+        //set it to the one we found in rampart-utils.c
+        rp_curl_def_bundle = rp_ca_bundle; 
+    }
+
     duk_push_string(ctx, "default_ca_file");
-    if(ca_bundle)
-        duk_push_string(ctx, ca_bundle);
+    if(rp_curl_def_bundle)
+        duk_push_string(ctx, rp_curl_def_bundle);
     else
         duk_push_string(ctx, CURL_CA_BUNDLE);
-
     duk_def_prop(ctx, -3, DUK_DEFPROP_HAVE_VALUE |DUK_DEFPROP_CLEAR_WEC);
+
     duk_put_function_list(ctx, -1, curl_funcs);
     duk_put_number_list(ctx, -1, curl_consts);
 
