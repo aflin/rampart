@@ -1244,9 +1244,9 @@ static void *repl_thr(void *arg)
                 lastline=line;
             }
             else if(err)
-                printf("%sERR: %s%s\n", red, tickify_err(err), reset);
+                printf("%sERROR: %s%s\n", red, tickify_err(err), reset);
             else
-                printf("%sERR: %s%s\n", red, errmsg, reset);
+                printf("%s%s%s\n", red, errmsg, reset);
         }
         else
         {
