@@ -212,7 +212,7 @@ static int load_so_module(duk_context *ctx, const char *file, duk_idx_t module_i
         duk_push_c_function(ctx, init, 0);
         if (duk_pcall(ctx, 0) == DUK_EXEC_ERROR)
         {
-            RP_THROW(ctx, "Error loading module '%s'", file);
+            RP_THROW(ctx, "Error loading module '%s' - %s", file, duk_to_string(ctx, -1));
             return 0;
         }
         duk_put_prop_string(ctx, module_idx, "exports");
