@@ -1516,7 +1516,7 @@ void duk_process_init(duk_context *ctx)
     {   /* add process.argv */
         int i=0;
         char *s;
-        RPPATH rp;
+        RPPATH rp={0};
         char *module_name[]={
             "rampart-server.so",
             "rampart-sql.so",
