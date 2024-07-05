@@ -85,9 +85,7 @@ target_link_libraries(rampart LINK_PUBLIC
 	${LIBEVENT_TARGET_DIR}/lib/libevent_core.a
 	${LIBEVENT_TARGET_DIR}/lib/libevent_pthreads.a
 	${LIBEVENT_TARGET_DIR}/lib/libevent_extra.a
-	-Wl,-noall_load
 	m dl pthread
-    event_core event_pthreads event_extra
 )
 
 else()
@@ -99,7 +97,6 @@ target_link_libraries(rampart LINK_PUBLIC
 	${LIBEVENT_TARGET_DIR}/lib/libevent_extra.a
 	-Wl,--no-whole-archive
 	m dl pthread util
-    event_core event_pthreads event_extra
 )
 
 endif()
