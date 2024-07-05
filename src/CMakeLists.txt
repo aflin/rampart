@@ -269,7 +269,6 @@ target_link_libraries(rampart-crypto PRIVATE
 	-Wl,-all_load
 	${OPENSSL_TARGET_DIR}/ssl/libssl.a
 	${OPENSSL_TARGET_DIR}/crypto/libcrypto.a
-	-Wl,-noall_load
 )
 
 else()
