@@ -188,7 +188,7 @@ int debugl=rpydebug;
 #define forkwrite(b,c) ({\
     int r=0,ir=0;\
     dprintf(5,"%s writing %d bytes\n", is_child?"child":"parent", (int)c);\
-    while( (r += (ir=write(finfo->writer, b+r, c-r))) < c ) if(ir<1)break;\
+    while( (r += (ir=write(finfo->writer, (b)+r, (c)-r))) < (c) ) if(ir<1)break;\
     if(ir<1) {\
         fprintf(stderr, "rampart-python helper: write failed: '%s' at %d, fd:%d\n",strerror(errno),__LINE__,finfo->writer);\
         if(is_child) {fprintf(stderr, "child proc exiting\n");exit(0);}\
@@ -198,7 +198,7 @@ int debugl=rpydebug;
 
 #define forkread(b,c) ({\
     int r=0,ir=0;\
-    while( (r += (ir=read(finfo->reader, b+r, c-r))) < c ) if(ir<1)break;\
+    while( (r += (ir=read(finfo->reader, (b)+r, (c)-r))) < (c) ) if(ir<1)break;\
     if(ir==-1) {\
         fprintf(stderr, "rampart-python helper: read failed: '%s' at %d\n",strerror(errno),__LINE__);\
         if(is_child) {fprintf(stderr, "child proc exiting\n");exit(0);}\
@@ -319,7 +319,7 @@ static char *get_exception(char *buf)
         }
 
         else
-            sprintf(buf, err_msg);
+            sprintf(buf, "%s", err_msg);
     }
     else
         *buf='\0';
