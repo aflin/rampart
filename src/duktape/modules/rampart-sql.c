@@ -526,24 +526,27 @@ static const char *get_exp(duk_context *ctx, duk_idx_t idx)
     return ret;
 }
 
-/* if in a child process, bail on error.  A new child will be forked
-   and hopefully everything will get back on track                    */
 #define forkwrite(b,c) ({\
-    int r=0;\
-    r=write(finfo->writer, (b),(c));\
-    if(r==-1) {\
-        fprintf(stderr, "fork write failed: '%s' at %d, fd:%d\n",strerror(errno),__LINE__,finfo->writer);\
-        if(thisfork) {fprintf(stderr, "child proc exiting\n");exit(1);}\
+    int r=0,ir=0;\
+    dprintf(5,"%s writing %d bytes\n", thisfork?"child":"parent", (int)c);\
+    while( (r += (ir=write(finfo->writer, (b)+r, (c)-r))) < (c) ) if(ir<1)break;\
+    if(ir<1) {\
+        fprintf(stderr, "rampart-sql helper: write failed: '%s' at %d, fd:%d\n",strerror(errno),__LINE__,finfo->writer);\
+        if(thisfork) {fprintf(stderr, "child proc exiting\n");exit(0);}\
     };\
     r;\
 })
 
 #define forkread(b,c) ({\
-    int r=0;\
-    r= read(finfo->reader,(b),(c));\
-    if(r==-1) {\
-        fprintf(stderr, "fork read failed: '%s' at %d\n",strerror(errno),__LINE__);\
-        if(thisfork) {fprintf(stderr, "child proc exiting\n");exit(1);}\
+    int r=0,ir=0;\
+    while( (r += (ir=read(finfo->reader, (b)+r, (c)-r))) < (c) ) if(ir<1)break;\
+    if(ir==-1) {\
+        fprintf(stderr, "rampart-sql helper: read failed: '%s' at %d\n",strerror(errno),__LINE__);\
+        if(thisfork) {fprintf(stderr, "child proc exiting\n");exit(0);}\
+    };\
+    if(r!=(int)c) {\
+        fprintf(stderr, "rampart-sql helper: read failed: '%s' at %d\n",strerror(errno),__LINE__);\
+        if(thisfork) {fprintf(stderr, "child proc exiting\n");exit(0);}\
     };\
     r;\
 })
@@ -5088,6 +5091,9 @@ static duk_ret_t fork_helper(duk_context *ctx)
     sigaction(SIGUSR2, &sa, NULL);
 
     setproctitle("rampart sql_helper");
+
+    if(!rp_watch_pid(getppid(), "rampart sql_helper"))
+        fprintf(stderr, "Start watcher for sql helper failed\n");
 
     signal(SIGINT, SIG_DFL);
     signal(SIGTERM, SIG_DFL);

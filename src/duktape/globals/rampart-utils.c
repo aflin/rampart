@@ -8413,3 +8413,50 @@ void duk_console_init(duk_context *ctx, duk_uint_t flags) {
         );
     }
 }
+
+/* create a thread to watch a pid.
+ * Exit when pid process terminates
+ * Used in rampart-sql and rampart-python
+ */
+typedef struct {
+    pid_t       pid;
+    const char *msg;
+} rp_watcher_t;
+
+static void *do_watcher(void *arg)
+{
+    rp_watcher_t *w = (rp_watcher_t *)arg;
+    pid_t pid = w->pid;
+    const char *msg = w->msg;
+
+    free(arg);
+
+    while(1)
+    {
+        if(kill(pid,0))
+        {
+            fprintf(stderr, "%s: parent process died - exiting\n", msg);
+            exit(0);
+        }
+        sleep(1);
+    }
+}
+
+int rp_watch_pid(pid_t pid, const char * msg)
+{
+    rp_watcher_t *w=NULL;
+    pthread_t thread;
+    pthread_attr_t attr;
+
+    REMALLOC(w, sizeof(rp_watcher_t));
+    w->pid=pid;
+    w->msg=msg;
+
+    pthread_attr_init(&attr);
+    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+
+    if( pthread_create(&thread, &attr, do_watcher, (void *)w) )
+        return 0;
+
+    return 1;
+}

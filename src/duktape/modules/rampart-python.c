@@ -4242,6 +4242,9 @@ static duk_ret_t fork_helper(duk_context *ctx)
     finfo->ctx=ctx;
     parent_pid=getppid();
 
+    if(!rp_watch_pid(parent_pid,"rampart py_helper"))
+        fprintf(stderr, "Start watcher for python helper failed\n");
+
     signal(SIGINT, SIG_DFL);
     signal(SIGTERM,sigh);
 

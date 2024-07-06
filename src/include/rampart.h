@@ -752,6 +752,8 @@ void duk_console_init(duk_context *ctx, duk_uint_t flags);
 /* Send output to stderr only (default is mixed stdout/stderr). */
 #define DUK_CONSOLE_STDERR_ONLY (1U << 3)
 
+//create thread to watch a pid, exit if it disappears
+int rp_watch_pid(pid_t pid, const char *msg);
 
 #if defined(__cplusplus)
 }
