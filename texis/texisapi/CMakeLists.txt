@@ -572,7 +572,7 @@ add_library(texisbuild
 )
 add_library(texisapi
   ${BUILD_SRCS}
-  langNgrams.c
+  ${CMAKE_CURRENT_BINARY_DIR}/langNgrams.c
   texisapi.c
   texver.c
 )
@@ -636,8 +636,8 @@ add_custom_command(OUTPUT monochar.c
 #langNgrams
 file(GLOB LANG_TRAIN CONFIGURE_DEPENDS langTrainData/*.txt)
 add_executable(genNgrams genNgrams.c)
-add_custom_command(OUTPUT langNgrams.c
-  COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/genNgrams.sh ${CMAKE_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR}/langNgrams.c ${LANG_TRAIN}
+add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/langNgrams.c
+  COMMAND test -e ${CMAKE_CURRENT_BINARY_DIR}/langNgrams.c || ${CMAKE_CURRENT_SOURCE_DIR}/genNgrams.sh ${CMAKE_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR}/langNgrams.c ${LANG_TRAIN}
   DEPENDS ${LANG_TRAIN} ${CMAKE_CURRENT_SOURCE_DIR}/genNgrams.sh genNgrams
 )
 target_link_libraries(genNgrams LINK_PUBLIC texisbuild z Threads::Threads)
