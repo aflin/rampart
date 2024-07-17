@@ -3,7 +3,7 @@ rampart.globalize(rampart.utils);
 load.Sql;
 load.crypto;
 
-var sql=new Sql.init(process.scriptPath+"/testdb",true);//create if doesn't exist
+var sql=Sql.connect(process.scriptPath+"/testdb",true);//create if doesn't exist
 
 /* check for quicktest, make if necessary */
 var res=sql.exec("select * from SYSTABLES where NAME='quicktest'");
@@ -172,7 +172,7 @@ testFeature ("searchText", function() {
 });
 
 
-var sql1 = new Sql.init(process.scriptPath+"/wdb", true);
+var sql1 = Sql.connect(process.scriptPath+"/wdb", true);
 
 testFeature ("sql.importCsvFile", function() {
     var wiki = fopen("./wiki.csv", "w+");
@@ -202,7 +202,7 @@ testFeature ("sql.importCsvFile", function() {
 });
 
 function nestedcopy() {
-    var sql2 = new Sql.init(process.scriptPath+"/wdb2", true);
+    var sql2 = Sql.connect(process.scriptPath+"/wdb2", true);
 
     if(sql2.one("select * from SYSTABLES where NAME='wtext'"))
         sql2.one("drop table wtext");
@@ -246,7 +246,7 @@ testFeature ("Create with addTables", function(){
     mkdir(process.scriptPath+"/testdb2")
     copyFile(process.scriptPath+"/testdb/quicktest.tbl", process.scriptPath+"/testdb2/quicktest.tbl", true);
 
-    var sql2=new Sql.init({
+    var sql2=new Sql.connection({
         path:      process.scriptPath+"/testdb2",
         addTables: true
     });
@@ -257,12 +257,12 @@ testFeature ("Create with addTables", function(){
 
 testFeature ("Create with addTables in existing db", function(){
     shell("rm -rf " +  process.scriptPath + "/testdb3");
-    var sql3 = new Sql.init(process.scriptPath+"/testdb3", true);
+    var sql3 = new Sql.connection(process.scriptPath+"/testdb3", true);
     sql3.close();
 
     copyFile(process.scriptPath+"/testdb/quicktest.tbl", process.scriptPath+"/testdb3/quicktest.tbl", true);
 
-    var sql3=new Sql.init({
+    var sql3=Sql.connect({
         path:      process.scriptPath+"/testdb3",
         addTables: true
     });

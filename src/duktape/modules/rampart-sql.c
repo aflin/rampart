@@ -17,6 +17,7 @@
 #include <errno.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 #include "dbquery.h"
 #include "texint.h"
 #include "texisapi.h"
@@ -26,8 +27,7 @@
 #include "../globals/csv_parser.h"
 #include "event.h"
 
-pthread_mutex_t tx_handle_lock;
-pthread_mutex_t tx_set_lock;
+static pthread_mutex_t tx_handle_lock;
 
 static int defnoise=1, defsuffix=1, defsuffixeq=1, defprefix=1;
 
@@ -58,7 +58,7 @@ QUERY_STRUCT
 };
 
 
-duk_ret_t duk_rp_sql_close(duk_context *ctx);
+static duk_ret_t rp_sql_close(duk_context *ctx);
 
 extern int TXunneededRexEscapeWarning;
 int texis_resetparams(TEXIS *tx);
@@ -432,7 +432,7 @@ int tx_rp_cancelled = 0;
     r;                                                 \
 })
 
-void die_nicely(int sig)
+static void die_nicely(int sig)
 {
     DB_HANDLE *h = db_handle_head, *next;
     while(1)
@@ -454,12 +454,12 @@ pid_t parent_pid = 0;
 #define msgbufsz 4096
 
 #define throw_tx_error(ctx,pref) do{\
-    duk_rp_log_error(ctx);\
+    rp_log_error(ctx);\
     RP_THROW(ctx, "%s error: %s",pref, finfo->errmap);\
 }while(0)
 
 #define throw_tx_error_close(ctx,pref,h) do{\
-    duk_rp_log_error(ctx);\
+    rp_log_error(ctx);\
     duk_push_string(ctx, finfo->errmap);\
     h_close(h);\
     RP_THROW(ctx, "%s error: %s",pref, duk_get_string(ctx,-1));\
@@ -476,7 +476,7 @@ pid_t parent_pid = 0;
 /* **************************************************
      store an error string in this.errMsg
    **************************************************   */
-void duk_rp_log_error_msg(duk_context *ctx, char *msg)
+static void rp_log_error_msg(duk_context *ctx, char *msg)
 {
     duk_push_this(ctx);
     if(duk_has_prop_string(ctx,-1,"errMsg") )
@@ -500,12 +500,12 @@ void duk_rp_log_error_msg(duk_context *ctx, char *msg)
     duk_pop(ctx);
 }
 
-void duk_rp_log_error(duk_context *ctx)
+static void rp_log_error(duk_context *ctx)
 {
     if(RP_TX_isforked)
         return;
     finfo->errmap[msgbufsz-1]='\0';  //just a precaution
-    duk_rp_log_error_msg(ctx, finfo->errmap);
+    rp_log_error_msg(ctx, finfo->errmap);
 }
 
 /* get the expression from a /pattern/ or a "string" */
@@ -600,7 +600,7 @@ static void clean_thread(void *arg)
     //printf("killed child %d\n",(int)*kpid);
 }
 
-int rp_memfd_create(size_t size) {
+static int rp_memfd_create(size_t size) {
     char shm_name[NAME_MAX];
     int fd;
     static int id=0;
@@ -2071,7 +2071,7 @@ static FLDLST *h_fetch(DB_HANDLE *h,  int stringsFrom)
 /* **************************************************
    Sql.prototype.close
    ************************************************** */
-duk_ret_t duk_rp_sql_close(duk_context *ctx)
+static duk_ret_t rp_sql_close(duk_context *ctx)
 {
     // Since handles are cached, hard to know what to do here
     // We will just close the first unused handle with same db
@@ -2100,7 +2100,7 @@ duk_ret_t duk_rp_sql_close(duk_context *ctx)
 /* **************************************************
     initialize query struct
    ************************************************** */
-void duk_rp_init_qstruct(QUERY_STRUCT *q)
+static void rp_init_qstruct(QUERY_STRUCT *q)
 {
     q->sql = (char *)NULL;
     q->arr_idx = -1;
@@ -2130,14 +2130,14 @@ void duk_rp_init_qstruct(QUERY_STRUCT *q)
    ************************************************** */
 /* TODO: leave stack as you found it */
 
-QUERY_STRUCT duk_rp_get_query(duk_context *ctx)
+static QUERY_STRUCT rp_get_query(duk_context *ctx)
 {
     duk_idx_t i = 0;
     int gotsettings=0, maxset=0, selectmax=-432100000;
     QUERY_STRUCT q_st;
     QUERY_STRUCT *q = &q_st;
 
-    duk_rp_init_qstruct(q);
+    rp_init_qstruct(q);
 
     for (i = 0; i < 6; i++)
     {
@@ -2394,7 +2394,7 @@ QUERY_STRUCT duk_rp_get_query(duk_context *ctx)
 } while(0)
 
 
-int duk_rp_add_named_parameters(
+static int rp_add_named_parameters(
     duk_context *ctx,
     DB_HANDLE *h,
     duk_idx_t obj_loc,
@@ -2438,7 +2438,7 @@ int duk_rp_add_named_parameters(
      arrayi is the place on the stack where the array lives.
    ************************************************** */
 
-int duk_rp_add_parameters(duk_context *ctx, DB_HANDLE *h, duk_idx_t arr_loc)
+static int rp_add_parameters(duk_context *ctx, DB_HANDLE *h, duk_idx_t arr_loc)
 {
     int rc=0;
     duk_uarridx_t arr_i = 0;
@@ -2485,7 +2485,7 @@ int duk_rp_add_parameters(duk_context *ctx, DB_HANDLE *h, duk_idx_t arr_loc)
 /* **************************************************
   push a single field from a row of the sql results
    ************************************************** */
-void duk_rp_pushfield(duk_context *ctx, FLDLST *fl, int i)
+static void rp_pushfield(duk_context *ctx, FLDLST *fl, int i)
 {
     char type = fl->type[i] & 0x3f;
 
@@ -2636,7 +2636,7 @@ void duk_rp_pushfield(duk_context *ctx, FLDLST *fl, int i)
    fetch rows and push results to array
    return number of rows
    ************************************************** */
-int duk_rp_fetch(duk_context *ctx, DB_HANDLE *h, QUERY_STRUCT *q)
+static int rp_fetch(duk_context *ctx, DB_HANDLE *h, QUERY_STRUCT *q)
 {
     int i       = 0,
         rettype = q->rettype;
@@ -2701,7 +2701,7 @@ int duk_rp_fetch(duk_context *ctx, DB_HANDLE *h, QUERY_STRUCT *q)
             duk_push_array(ctx);
             for (i = 0; i < fl->n; i++)
             {
-                duk_rp_pushfield(ctx, fl, i);
+                rp_pushfield(ctx, fl, i);
                 duk_put_prop_index(ctx, -2, i);
             }
             duk_put_prop_index(ctx, -2, rown++);
@@ -2729,7 +2729,7 @@ int duk_rp_fetch(duk_context *ctx, DB_HANDLE *h, QUERY_STRUCT *q)
             duk_push_object(ctx);
             for (i = 0; i < fl->n; i++)
             {
-                duk_rp_pushfield(ctx, fl, i);
+                rp_pushfield(ctx, fl, i);
                 //duk_dup_top(ctx);
                 //printf("%s -> %s\n",fl->name[i],duk_to_string(ctx,-1));
                 //duk_pop(ctx);
@@ -2760,7 +2760,7 @@ int duk_rp_fetch(duk_context *ctx, DB_HANDLE *h, QUERY_STRUCT *q)
    results.
    Return number of rows
    ************************************************** */
-int duk_rp_fetchWCallback(duk_context *ctx, DB_HANDLE *h, QUERY_STRUCT *q)
+static int rp_fetchWCallback(duk_context *ctx, DB_HANDLE *h, QUERY_STRUCT *q)
 {
     int i       = 0,
         rettype = q->rettype;
@@ -2817,7 +2817,7 @@ int duk_rp_fetchWCallback(duk_context *ctx, DB_HANDLE *h, QUERY_STRUCT *q)
                 duk_push_object(ctx);
                 for (i = 0; i < fl->n; i++)
                 {
-                    duk_rp_pushfield(ctx, fl, i);
+                    rp_pushfield(ctx, fl, i);
                     duk_put_prop_string(ctx, -2, (const char *)fl->name[i]);
                 }
                 duk_push_int(ctx, q->skip + rown++ );
@@ -2831,7 +2831,7 @@ int duk_rp_fetchWCallback(duk_context *ctx, DB_HANDLE *h, QUERY_STRUCT *q)
                 duk_push_array(ctx);
                 for (i = 0; i < fl->n; i++)
                 {
-                    duk_rp_pushfield(ctx, fl, i);
+                    rp_pushfield(ctx, fl, i);
                     duk_put_prop_index(ctx, -2, i);
                 }
 
@@ -2863,14 +2863,14 @@ int duk_rp_fetchWCallback(duk_context *ctx, DB_HANDLE *h, QUERY_STRUCT *q)
     return (rown);
 }
 
-void h_reset_tx_default(duk_context *ctx, DB_HANDLE *h, duk_idx_t this_idx);
+static void h_reset_tx_default(duk_context *ctx, DB_HANDLE *h, duk_idx_t this_idx);
 
 #undef pushcounts
 
 /* **************************************************
    Sql.prototype.import
    ************************************************** */
-duk_ret_t duk_rp_sql_import(duk_context *ctx, int isfile)
+static duk_ret_t rp_sql_import(duk_context *ctx, int isfile)
 {
     /* currently only csv
        but eventually add option for others
@@ -3224,18 +3224,18 @@ duk_ret_t duk_rp_sql_import(duk_context *ctx, int isfile)
 
     duk_push_int(ctx, dcsv.csv->rows - start);
     fn_cleanup(0);
-    duk_rp_log_error(ctx); /* log any non fatal errors to this.errMsg */
+    rp_log_error(ctx); /* log any non fatal errors to this.errMsg */
     return 1;
 }
 
-duk_ret_t duk_rp_sql_import_csv_file(duk_context *ctx)
+static duk_ret_t rp_sql_import_csv_file(duk_context *ctx)
 {
-    return duk_rp_sql_import(ctx, 1);
+    return rp_sql_import(ctx, 1);
 }
 
-duk_ret_t duk_rp_sql_import_csv_str(duk_context *ctx)
+static duk_ret_t rp_sql_import_csv_str(duk_context *ctx)
 {
-    return duk_rp_sql_import(ctx, 0);
+    return rp_sql_import(ctx, 0);
 }
 
 /*
@@ -3433,7 +3433,7 @@ void check_parse(char *sql,char *new_sql,char **names,int n_names)
 /* **************************************************
    Sql.prototype.exec
    ************************************************** */
-duk_ret_t duk_rp_sql_exec(duk_context *ctx)
+static duk_ret_t rp_sql_exec(duk_context *ctx)
 {
     TEXIS *tx;
     QUERY_STRUCT *q, q_st;
@@ -3446,6 +3446,8 @@ duk_ret_t duk_rp_sql_exec(duk_context *ctx)
     sa.sa_handler = die_nicely;
     sigemptyset(&sa.sa_mask);
     sigaction(SIGUSR2, &sa, NULL);
+
+    clearmsgbuf();
 
     int nParams=0;
     char *newSql=NULL, **namedSqlParams=NULL, *freeme=NULL;
@@ -3465,7 +3467,7 @@ duk_ret_t duk_rp_sql_exec(duk_context *ctx)
     db = duk_get_string(ctx, -1);
     duk_pop(ctx); //db
 
-    q_st = duk_rp_get_query(ctx);
+    q_st = rp_get_query(ctx);
     q = &q_st;
 
     /* call parameters error, message is already pushed */
@@ -3525,7 +3527,7 @@ duk_ret_t duk_rp_sql_exec(duk_context *ctx)
             h_close(h);
             RP_THROW(ctx, "sql.exec - parameters specified in sql statement, but no corresponding object or array\n");
         }
-        if (!duk_rp_add_named_parameters(ctx, h, idx, namedSqlParams, nParams))
+        if (!rp_add_named_parameters(ctx, h, idx, namedSqlParams, nParams))
         {
             free(namedSqlParams);
             free(freeme);
@@ -3541,7 +3543,7 @@ duk_ret_t duk_rp_sql_exec(duk_context *ctx)
      */
     else if (q->arr_idx != -1)
     {
-        if (!duk_rp_add_parameters(ctx, h, q->arr_idx))
+        if (!rp_add_parameters(ctx, h, q->arr_idx))
             throw_tx_error_close(ctx, "sql add parameters", h);
     }
     else
@@ -3560,24 +3562,24 @@ duk_ret_t duk_rp_sql_exec(duk_context *ctx)
     /* callback - return one row per callback */
     if (q->callback > -1)
     {
-        int rows = duk_rp_fetchWCallback(ctx, h, q);
+        int rows = rp_fetchWCallback(ctx, h, q);
         duk_push_int(ctx, rows);
         goto end; /* done with exec() */
     }
 
     /*  No callback, return all rows in array of objects */
-    (void)duk_rp_fetch(ctx, h, q);
+    (void)rp_fetch(ctx, h, q);
 
     end:
     h_end_transaction(h);
-    duk_rp_log_error(ctx); /* log any non fatal errors to this.errMsg */
+    rp_log_error(ctx); /* log any non fatal errors to this.errMsg */
     return 1; /* returning outer array */
 }
 
 /* **************************************************
    Sql.prototype.eval
    ************************************************** */
-duk_ret_t duk_rp_sql_eval(duk_context *ctx)
+static duk_ret_t rp_sql_eval(duk_context *ctx)
 {
     char *stmt = (char *)NULL;
     duk_idx_t str_idx = -1;
@@ -3605,20 +3607,20 @@ duk_ret_t duk_rp_sql_eval(duk_context *ctx)
 
     if (str_idx == -1)
     {
-        duk_rp_log_error_msg(ctx, "Error: Eval: No string to evaluate");
+        rp_log_error_msg(ctx, "Error: Eval: No string to evaluate");
         duk_push_int(ctx, -1);
         return (1);
     }
 
     duk_push_sprintf(ctx, "select %s;", stmt);
     duk_replace(ctx, str_idx);
-    duk_rp_sql_exec(ctx);
+    rp_sql_exec(ctx);
     duk_get_prop_string(ctx, -1, "rows");
     duk_get_prop_index(ctx, -1, 0);
     return (1);
 }
 
-duk_ret_t duk_rp_sql_one(duk_context *ctx)
+static duk_ret_t rp_sql_one(duk_context *ctx)
 {
     duk_idx_t str_idx = -1, i = 0, obj_idx = -1;
 
@@ -3632,7 +3634,7 @@ duk_ret_t duk_rp_sql_one(duk_context *ctx)
 
     if (str_idx == -1)
     {
-        duk_rp_log_error_msg(ctx, "sql.one: No string (sql statement) provided");
+        rp_log_error_msg(ctx, "sql.one: No string (sql statement) provided");
         duk_push_int(ctx, -1);
         return (1);
     }
@@ -3646,7 +3648,7 @@ duk_ret_t duk_rp_sql_one(duk_context *ctx)
     if( obj_idx != -1)
         duk_pull(ctx, obj_idx);
 
-    duk_rp_sql_exec(ctx);
+    rp_sql_exec(ctx);
     duk_get_prop_string(ctx, -1, "rows");
     duk_get_prop_index(ctx, -1, 0);
     //if(duk_is_undefined(ctx, -1))
@@ -3690,7 +3692,7 @@ static void free_list(char **nl)
     if this_idx < 0 - then reset is forced, but don't apply any saved settings
 */
 
-void h_reset_tx_default(duk_context *ctx, DB_HANDLE *h, duk_idx_t this_idx)
+static void h_reset_tx_default(duk_context *ctx, DB_HANDLE *h, duk_idx_t this_idx)
 {
     int handle_no=-1, last_handle_no=-1;
 
@@ -3753,7 +3755,7 @@ void h_reset_tx_default(duk_context *ctx, DB_HANDLE *h, duk_idx_t this_idx)
 }
 
 
-duk_ret_t duk_texis_reset(duk_context *ctx)
+static duk_ret_t rp_texis_reset(duk_context *ctx)
 {
     const char *db;
     DB_HANDLE *h = NULL;
@@ -4051,7 +4053,7 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
 
     if(!tx)
     {
-        duk_rp_log_error(ctx);
+        rp_log_error(ctx);
         snprintf(errbuf, msgbufsz, "Texis setprop failed\n%s", finfo->errmap);
         goto return_neg_two;
     }
@@ -4466,7 +4468,7 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
     }
     duk_pop(ctx);//enum
 
-    duk_rp_log_error(ctx); /* log any non fatal errors to this.errMsg */
+    rp_log_error(ctx); /* log any non fatal errors to this.errMsg */
 
     //tx=texis_close(tx);
     if(added_ret_obj)
@@ -4520,7 +4522,7 @@ static void clean_settings(duk_context *ctx)
     duk_pop(ctx);//the settings list object
 }
 
-duk_ret_t duk_texis_set(duk_context *ctx)
+static duk_ret_t rp_texis_set(duk_context *ctx)
 {
     const char *db;
     DB_HANDLE *h = NULL;
@@ -4681,7 +4683,7 @@ static void addtbl(duk_context *ctx, char *func, const char *db, char *tbl)
     }
 }
 
-duk_ret_t duk_rp_sql_addtable(duk_context *ctx)
+static duk_ret_t rp_sql_addtable(duk_context *ctx)
 {
     const char *db, *tbl = REQUIRE_STRING(ctx, 0, "argument must be a string (/path/to/importTable.tbl)");
 
@@ -4704,7 +4706,7 @@ duk_ret_t duk_rp_sql_addtable(duk_context *ctx)
    var sql=new Sql("/database/path",true); //create db if not exists
 
    ************************************************** */
-duk_ret_t duk_rp_sql_constructor(duk_context *ctx)
+static duk_ret_t rp_sql_constructor(duk_context *ctx)
 {
     int sql_handle_no = 0;
     const char *db = NULL;
@@ -4715,10 +4717,10 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx)
         "SYSSTATS.tbl",  "SYSTABLES.tbl",  "SYSTRIG.tbl",  "SYSUSERS.tbl", NULL
     };
 
-    /* allow call to Sql() with "new Sql()" only */
+    /* allow call to Sql() with "new Sql.connect()" only */
     if (!duk_is_constructor_call(ctx))
     {
-        RP_THROW(ctx, "Sql.init():  Must be called with 'new Sql.init()");
+        RP_THROW(ctx, "Sql.connection():  Must be called with 'new Sql.connection()");
     }
 
     if(duk_is_string(ctx, 0))
@@ -4729,37 +4731,37 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx)
     if(duk_is_boolean(ctx, 1))
         create = (int) duk_get_boolean(ctx, 1);
     else if (!duk_is_undefined(ctx, 1))
-        RP_THROW(ctx, "new Sql.init(path,create) - create must be a boolean");
+        RP_THROW(ctx, "new Sql.connection(path,create) - create must be a boolean");
 
     if(duk_is_object(ctx, 0))
     {
         if(duk_get_prop_string(ctx, 0, "path"))
         {
-            db = REQUIRE_STRING(ctx, -1, "new Sql.init(params) - params.path must be a string");
+            db = REQUIRE_STRING(ctx, -1, "new Sql.connection(params) - params.path must be a string");
         }
         duk_pop(ctx);
 
         if(duk_get_prop_string(ctx, 0, "force"))
         {
-            force = (int)REQUIRE_BOOL(ctx, -1, "new Sql.init(params) - params.force must be a boolean");
+            force = (int)REQUIRE_BOOL(ctx, -1, "new Sql.connection(params) - params.force must be a boolean");
         }
         duk_pop(ctx);
 
         if(duk_get_prop_string(ctx, 0, "addtables"))
         {
-            addtables = (int)REQUIRE_BOOL(ctx, -1, "new Sql.init(params) - params.addtables must be a boolean");
+            addtables = (int)REQUIRE_BOOL(ctx, -1, "new Sql.connection(params) - params.addtables must be a boolean");
         }
         duk_pop(ctx);
 
         if(duk_get_prop_string(ctx, 0, "addTables"))
         {
-            addtables = (int)REQUIRE_BOOL(ctx, -1, "new Sql.init(params) - params.addTables must be a boolean");
+            addtables = (int)REQUIRE_BOOL(ctx, -1, "new Sql.connection(params) - params.addTables must be a boolean");
         }
         duk_pop(ctx);
 
         if(duk_get_prop_string(ctx, 0, "create"))
         {
-            create = (int)REQUIRE_BOOL(ctx, -1, "new Sql.init(params) - params. must be a boolean");
+            create = (int)REQUIRE_BOOL(ctx, -1, "new Sql.connection(params) - params. must be a boolean");
         }
         duk_pop(ctx);
 
@@ -4769,7 +4771,7 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx)
 
 
     if(!db || !strlen(db))
-        RP_THROW(ctx,"new Sql.init() - empty or missing database name");
+        RP_THROW(ctx,"new Sql.connection() - empty or missing database name");
 
     clearmsgbuf();
 
@@ -4800,7 +4802,7 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx)
                     dir = opendir(db); //let's have a look inside this dir below
                 }
                 else if (errno!=ENOENT) //some other error than EEXIST, ENOTEMPTY or ENOENT
-                    RP_THROW(ctx, "sql.init(): cannot create database at '%s' - %s", db, strerror(errno));
+                    RP_THROW(ctx, "sql.connection(): cannot create database at '%s' - %s", db, strerror(errno));
                 //else the dir doesn't exist, which is just fine.
             }
 
@@ -4820,7 +4822,7 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx)
                         if(entry->d_name[0] != '.' && strcmp(*s, entry->d_name)==0)
                         {
                             closedir(dir);
-                            RP_THROW(ctx, "sql.init(): cannot create '%s', directory exists and has at least one SYS* file (%s)", db, *s);
+                            RP_THROW(ctx, "sql.connection(): cannot create '%s', directory exists and has at least one SYS* file (%s)", db, *s);
                             break;
                         }
                         s++;
@@ -4834,12 +4836,12 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx)
                 {
                     int er=errno;
                     errno=0;
-                    RP_THROW(ctx, "sql.init(): cannot create '%s' - %s", db, strerror(er));
+                    RP_THROW(ctx, "sql.connection(): cannot create '%s' - %s", db, strerror(er));
                 }
 
                 if(strlen(db)+20 > PATH_MAX)
                 {
-                    RP_THROW(ctx, "sql.init(): cannot create '%s', path too long", db);
+                    RP_THROW(ctx, "sql.connection(): cannot create '%s', path too long", db);
                 }
                 else
                 {
@@ -4851,8 +4853,8 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx)
 
                     if(!h_create(tmppath))
                     {
-                        duk_rp_log_error(ctx);
-                        RP_THROW(ctx, "sql.init(): cannot create database at '%s':\n%s", db, finfo->errmap);
+                        rp_log_error(ctx);
+                        RP_THROW(ctx, "sql.connection(): cannot create database at '%s':\n%s", db, finfo->errmap);
                     }
 
                     s=default_db_files;
@@ -4866,7 +4868,7 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx)
                         strcat(topath, *s);
                         if (rename(tmppath, topath))
                         {
-                            RP_THROW(ctx, "sql.init(): cannot create database at '%s': error moving files - %s", db, strerror(errno));
+                            RP_THROW(ctx, "sql.connection(): cannot create database at '%s': error moving files - %s", db, strerror(errno));
                         }
                         s++;
                     }
@@ -4903,7 +4905,7 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx)
                                 strcat(p,"/");
                                 strcat(p,e);
                                 //printf("adding %s to %s\n", p, db);
-                                addtbl(ctx, "sql.init()", db, p);
+                                addtbl(ctx, "sql.connection()", db, p);
                             }
                         }
 
@@ -4911,7 +4913,7 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx)
 
                     if (rmdir(tmppath) != 0)
                     {
-                        RP_THROW(ctx, "sql.init(): cannot create database at '%s': error removing directory - %s", db, strerror(errno));
+                        RP_THROW(ctx, "sql.connection(): cannot create database at '%s': error removing directory - %s", db, strerror(errno));
                     }
                 }
 
@@ -4919,28 +4921,28 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx)
             else if(dir) // there's a dir and we don't have force or addtables.
             {
                 closedir(dir);
-                RP_THROW(ctx, "sql.init(): cannot create '%s', directory exists and is not empty", db);
+                RP_THROW(ctx, "sql.connection(): cannot create '%s', directory exists and is not empty", db);
             }
             else if (!h_create(db)) //if !dir, try regular create
             {
-                duk_rp_log_error(ctx);
-                RP_THROW(ctx, "sql.init(): cannot open or create database at '%s':\n%s", db, finfo->errmap);
+                rp_log_error(ctx);
+                RP_THROW(ctx, "sql.connection(): cannot open or create database at '%s':\n%s", db, finfo->errmap);
             }
-            
+
             if(dir)
                 closedir(dir);
         }
         else
         {
-            duk_rp_log_error(ctx);
-            RP_THROW(ctx, "sql.init(): cannot open database at '%s'\n%s", db, finfo->errmap);
+            rp_log_error(ctx);
+            RP_THROW(ctx, "sql.connection(): cannot open database at '%s'\n%s", db, finfo->errmap);
         }
         h = h_open( (char*)db);
         addtables=0;
     }
 
 
-    duk_rp_log_error(ctx); /* log any non fatal errors to this.errMsg */
+    rp_log_error(ctx); /* log any non fatal errors to this.errMsg */
     h_end_transaction(h);
 
     /* save the name of the database in 'this' */
@@ -5052,7 +5054,7 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx)
                     strcat(p,"/");
                     strcat(p,e);
 
-                    addtbl(ctx, "sql.init()", db, p);
+                    addtbl(ctx, "sql.connection()", db, p);
                 }
             }
 
@@ -5066,6 +5068,36 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx)
 
     return 0;
 }
+
+#define CALLONE 0
+#define CALLEXEC 1
+#define NOARGS DUK_INVALID_INDEX
+static inline void call_sql(duk_context *ctx, char *sql, int type, duk_idx_t param_idx)
+{
+    int nargs=1;
+    if(param_idx != NOARGS)
+    {
+        nargs=2;
+        param_idx=duk_normalize_index(ctx, param_idx);
+    }
+
+    if(type==CALLEXEC)
+        duk_push_c_function(ctx, rp_sql_exec, nargs);
+    else
+        duk_push_c_function(ctx, rp_sql_one, nargs);
+
+    duk_push_this(ctx); //has db name
+
+    duk_push_string(ctx, sql);
+
+    if(param_idx != NOARGS)
+        duk_pull(ctx, param_idx);
+printf("Call method nargs=%d\n", nargs);
+safeprintstack(ctx);
+    duk_call_method(ctx, nargs);
+}
+
+
 
 static duk_ret_t fork_helper(duk_context *ctx)
 {
@@ -5104,12 +5136,23 @@ static duk_ret_t fork_helper(duk_context *ctx)
     return 0;
 }
 
+static duk_ret_t rp_sql_connect(duk_context *ctx)
+{
+    duk_push_this(ctx);
+    if(!duk_get_prop_string(ctx, -1, "connection"))
+        RP_THROW(ctx, "Sql.connect: no this binding");
+    duk_insert(ctx, 0);
+    duk_pop(ctx); //this
+    // [ connection_constructor(), arg0, arg1 ]
+    duk_new(ctx, 2);
+    return 1;
+}
 
 /* **************************************************
    Initialize Sql module
    ************************************************** */
 char install_dir[PATH_MAX+21];
-duk_ret_t duk_rp_exec(duk_context *ctx);
+duk_ret_t rp_exec(duk_context *ctx);
 
 duk_ret_t duk_open_module(duk_context *ctx)
 {
@@ -5123,7 +5166,6 @@ duk_ret_t duk_open_module(duk_context *ctx)
         char *TexisArgv[2];
 
         RP_PTINIT(&tx_handle_lock);
-        RP_PTINIT(&tx_set_lock);
 
         TexisArgv[0]=rampart_exec;
 
@@ -5148,49 +5190,55 @@ duk_ret_t duk_open_module(duk_context *ctx)
 
     duk_push_object(ctx); // the return object
 
-    duk_push_c_function(ctx, duk_rp_sql_constructor, 3 /*nargs*/);
+    duk_push_c_function(ctx, rp_sql_constructor, 2 /*nargs*/);
 
-    /* Push proto object that will be Sql.init.prototype. */
+    /* Push proto object that will be Sql.connection.prototype. */
     duk_push_object(ctx); /* -> stack: [ {}, Sql protoObj ] */
 
-    /* Set Sql.init.prototype.exec. */
-    duk_push_c_function(ctx, duk_rp_sql_exec, 6 /*nargs*/);   /* [ {}, Sql protoObj fn_exe ] */
+    /* Set Sql.connection.prototype.exec. */
+    duk_push_c_function(ctx, rp_sql_exec, 6 /*nargs*/);   /* [ {}, Sql protoObj fn_exe ] */
     duk_put_prop_string(ctx, -2, "exec");                    /* [ {}, Sql protoObj-->{exe:fn_exe} ] */
 
-    /* set Sql.init.prototype.eval */
-    duk_push_c_function(ctx, duk_rp_sql_eval, 4 /*nargs*/);  /*[ {}, Sql protoObj-->{exe:fn_exe} fn_eval ]*/
+    /* set Sql.connection.prototype.eval */
+    duk_push_c_function(ctx, rp_sql_eval, 4 /*nargs*/);  /*[ {}, Sql protoObj-->{exe:fn_exe} fn_eval ]*/
     duk_put_prop_string(ctx, -2, "eval");                    /*[ {}, Sql protoObj-->{exe:fn_exe,eval:fn_eval} ]*/
 
-    /* set Sql.init.prototype.eval */
-    duk_push_c_function(ctx, duk_rp_sql_one, 2 /*nargs*/);  /*[ {}, Sql protoObj-->{exe:fn_exe} fn_eval ]*/
+    /* set Sql.connection.prototype.eval */
+    duk_push_c_function(ctx, rp_sql_one, 2 /*nargs*/);  /*[ {}, Sql protoObj-->{exe:fn_exe} fn_eval ]*/
     duk_put_prop_string(ctx, -2, "one");                    /*[ {}, Sql protoObj-->{exe:fn_exe,eval:fn_eval} ]*/
 
-    /* set Sql.init.prototype.close */
-    duk_push_c_function(ctx, duk_rp_sql_close, 0 /*nargs*/); /* [ {}, Sql protoObj-->{exe:fn_exe,...} fn_close ] */
+    /* set Sql.connection.prototype.close */
+    duk_push_c_function(ctx, rp_sql_close, 0 /*nargs*/); /* [ {}, Sql protoObj-->{exe:fn_exe,...} fn_close ] */
     duk_put_prop_string(ctx, -2, "close");                   /* [ {}, Sql protoObj-->{exe:fn_exe,query:fn_exe,close:fn_close} ] */
 
-    /* set Sql.init.prototype.set */
-    duk_push_c_function(ctx, duk_texis_set, 1 /*nargs*/);   /* [ {}, Sql protoObj-->{exe:fn_exe,...} fn_set ] */
+    /* set Sql.connection.prototype.set */
+    duk_push_c_function(ctx, rp_texis_set, 1 /*nargs*/);   /* [ {}, Sql protoObj-->{exe:fn_exe,...} fn_set ] */
     duk_put_prop_string(ctx, -2, "set");                    /* [ {}, Sql protoObj-->{exe:fn_exe,query:fn_exe,close:fn_close,set:fn_set} ] */
 
-    /* set Sql.init.prototype.reset */
-    duk_push_c_function(ctx, duk_texis_reset, 0);
+    /* set Sql.connection.prototype.reset */
+    duk_push_c_function(ctx, rp_texis_reset, 0);
     duk_put_prop_string(ctx, -2, "reset");
 
-    /* set Sql.init.prototype.importCsvFile */
-    duk_push_c_function(ctx, duk_rp_sql_import_csv_file, 4 /*nargs*/);
+    /* set Sql.connection.prototype.importCsvFile */
+    duk_push_c_function(ctx, rp_sql_import_csv_file, 4 /*nargs*/);
     duk_put_prop_string(ctx, -2, "importCsvFile");
 
-    /* set Sql.init.prototype.importCsv */
-    duk_push_c_function(ctx, duk_rp_sql_import_csv_str, 4 /*nargs*/);
+    /* set Sql.connection.prototype.importCsv */
+    duk_push_c_function(ctx, rp_sql_import_csv_str, 4 /*nargs*/);
     duk_put_prop_string(ctx, -2, "importCsv");
 
-    duk_push_c_function(ctx, duk_rp_sql_addtable, 1);
+    duk_push_c_function(ctx, rp_sql_addtable, 1);
     duk_put_prop_string(ctx, -2, "addTable");
 
-    /* Set Sql.init.prototype = protoObj */
-    duk_put_prop_string(ctx, -2, "prototype"); /* -> stack: [ {}, Sql-->[prototype-->{exe=fn_exe,...}] ] */
-    duk_put_prop_string(ctx, -2, "init");      /* [ {init()} ] */
+    /* Set Sql.connection.prototype = protoObj */
+    duk_put_prop_string(ctx, -2, "prototype"); /* -> stack: [ {}, constructor-->[prototype-->{exe=fn_exe,...}] ] */
+    duk_dup(ctx, -1);
+    duk_put_prop_string(ctx, -3, "connection");/* [ {connection()} ] */
+    duk_put_prop_string(ctx, -2, "init");      /* depricated: [ {init()} ] */
+
+    /* shortcut for new sql.connection() */
+    duk_push_c_function(ctx, rp_sql_connect, 2);
+    duk_put_prop_string(ctx, -2, "connect");
 
     duk_push_c_function(ctx, RPfunc_stringformat, DUK_VARARGS);
     duk_put_prop_string(ctx, -2, "stringFormat");
