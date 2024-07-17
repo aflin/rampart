@@ -12,6 +12,8 @@
 #define NPMAXTOKS 80
 #define LEXBUFSZ  132
 
+/* Licensed MIT, to allow inclusion in rampart.utils - PBR */
+
 /* PBR OCT 29 93 added kb,mb,gb to tables */
 
 #ifdef _WIN32 /* MAW 05-05-92 - can't debug w/static globals in dll */
@@ -370,11 +372,29 @@ ntlst(s)
 byte *s;	      /* MAW 05-21-92 - byte not char for nct[] index */
 {
  static int n= -1;
- static int locale_serial = -1;
  int i,j,k,maxi,max;
  byte *a,*b,c;
 
 /* init the thing ****/
+
+// fix for test and allow usage in rampart.utils - ajf 2024-07-13
+#if TEST | RP_USING_DUKTAPE
+ if(n== -1)                                   /* init not done */
+    {
+     for(n=0;n<DYNABYTE;n++)			  /* init the cmp table */
+	 {
+           if(isspace((byte)n)) _nct[n]=(byte)' ';
+	  else
+            if(isupper((byte)n)) _nct[n]=(byte)tolower((byte)n);
+	  else _nct[n]=(byte)n;
+	 }
+     for(n=0;tfa[n].type!=UNK;n++);
+     qsort((char *)tfa,n,sizeof(TTF),ttfcmp);
+    }
+
+#else
+ static int locale_serial = -1;
+
  if(n== -1 ||                                   /* init not done */
     locale_serial < TXgetlocaleserial())        /* locale changed on us */
     {
@@ -389,6 +409,8 @@ byte *s;	      /* MAW 05-21-92 - byte not char for nct[] index */
      qsort((char *)tfa,n,sizeof(TTF),ttfcmp);
      locale_serial = TXgetlocaleserial();
     }
+
+#endif
 
   if (TXnpmInitBytePowers)
     {
