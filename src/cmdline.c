@@ -1253,7 +1253,7 @@ static void *repl_thr(void *arg)
             if(duk_is_object(ctx, -1) && !duk_is_function(ctx, -1)) {
                 duk_push_string(ctx, "rampart.utils.sprintf");
                 duk_eval(ctx);
-                duk_push_string(ctx, "%!3J");
+                duk_push_string(ctx, "%3J");
                 duk_pull(ctx, -3);
                 duk_call(ctx, 2);
             }
