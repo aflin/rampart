@@ -58,10 +58,12 @@ add_executable(rampart
 	duktape/register.c
 	duktape/core/duktape.c
 	duktape/core/module.c
+    ${PROJECT_SOURCE_DIR}/texis/texisapi/npmp.c
 	duktape/globals/rampart-utils.c
 	duktape/globals/rampart-event.c
 	duktape/globals/rampart-import.c
 	duktape/globals/rampart-thread.c
+	duktape/globals/rp_tz.c
 	duktape/globals/csv_parser.c
 	duktape/globals/hash_random/cityhash.c
 	duktape/globals/hash_random/fast_random.c

@@ -27,6 +27,8 @@
 #include <sys/mman.h>
 #include <sys/ipc.h>
 #include <sys/sem.h>
+#include <time.h>
+#include "rp_tz.h"
 
 //getTotalMem setMaxMem
 #ifdef __APPLE__
@@ -41,6 +43,7 @@
 #include "rampart.h"
 #include "../linenoise.h"
 #include "../core/module.h"
+
 char modules_dir[PATH_MAX];
 /*
     defined in main program here
@@ -80,6 +83,64 @@ int execvpe(const char *program, char **argv, char **envp)
 //also requires -lutil
 
 #endif
+
+/* getType(): alternate to typeof, with only one answer
+  Init cap to distinguish from typeof */
+#define RP_TYPE_STRING 0
+#define RP_TYPE_ARRAY 1
+#define RP_TYPE_NAN 2
+#define RP_TYPE_NUMBER 3
+#define RP_TYPE_FUNCTION 4
+#define RP_TYPE_BOOLEAN 5
+#define RP_TYPE_BUFFER 6
+#define RP_TYPE_NULL 7
+#define RP_TYPE_UNDEFINED 8
+#define RP_TYPE_SYMBOL 9
+#define RP_TYPE_DATE 10
+#define RP_TYPE_OBJECT 11
+#define RP_TYPE_UNKNOWN 12
+#define RP_NTYPES 13
+
+static char *rp_types[RP_NTYPES] = {
+    "String", "Array", "Nan", "Number",
+    "Function", "Boolean", "Buffer", "Null",
+    "Undefined", "Symbol", "Date", "Object",
+    "Unknown"
+};
+
+static int gettype(duk_context *ctx, duk_idx_t idx)
+{
+    /* Symbol.iterator is also a string. */
+    if (duk_is_symbol(ctx, idx))
+        return RP_TYPE_SYMBOL;
+    else if (duk_is_string(ctx, idx))
+        return RP_TYPE_STRING;
+    else if (duk_is_array(ctx, idx))
+        return RP_TYPE_ARRAY;
+    else if (duk_is_nan(ctx, idx))
+        return RP_TYPE_NAN;
+    else if (duk_is_number(ctx, idx))
+        return RP_TYPE_NUMBER;
+    else if (duk_is_function(ctx, idx))
+        return RP_TYPE_FUNCTION;
+    else if (duk_is_boolean(ctx, idx))
+        return RP_TYPE_BOOLEAN;
+    else if (duk_is_buffer_data(ctx, idx))
+        return RP_TYPE_BUFFER;
+    else if (duk_is_null(ctx, idx))
+        return RP_TYPE_NULL;
+    else if (duk_is_undefined(ctx, idx))
+        return RP_TYPE_UNDEFINED;
+    else if (duk_is_object(ctx, idx))
+    {
+        if(duk_has_prop_string(ctx, idx, "getMilliseconds") && duk_has_prop_string(ctx, idx, "getUTCDay") )
+            return RP_TYPE_DATE;
+        else /* function, array and date are also objects, so do this last */
+           return RP_TYPE_OBJECT;
+    }
+
+    return RP_TYPE_UNKNOWN;
+}
 
 
 /* utility function for rampart object:
@@ -1075,8 +1136,16 @@ static char *rp_json_object(duk_context *ctx, duk_idx_t idx, char *r, char *path
     }
 
     store_ref(ctx, idx, path);
-
-    if(duk_is_function(ctx,idx))
+    if(gettype(ctx, idx) == RP_TYPE_DATE)
+    {
+        duk_dup(ctx, idx);
+        duk_to_string(ctx, -1);
+        r= strcatdup(r, "\"");
+        r = strcatdup(r, (char*)duk_get_string(ctx, -1));
+        r= strcatdup(r, "\"");
+        duk_pop(ctx);
+    }
+    else if(duk_is_function(ctx,idx))
     {
         r= strcatdup(r, "{\"_");
         if(duk_is_c_function(ctx,idx))
@@ -1085,7 +1154,6 @@ static char *rp_json_object(duk_context *ctx, duk_idx_t idx, char *r, char *path
             r= strcatdup(r, "bound_ecmascript_");
         else if(duk_is_ecmascript_function(ctx,idx))
             r= strcatdup(r, "ecmascript_");
-
         r= strcatdup(r, "func\": true");
 
         if(duk_get_prop_string(ctx, idx, "name"))
@@ -5169,6 +5237,67 @@ static void find_bundle()
     }
 }
 
+char *ttod(char *s, char *e, double *px, double *py, char *op);
+
+static duk_ret_t str_to_num(duk_context *ctx)
+{
+    const char *str = REQUIRE_STRING(ctx, 0, "Sql.stringToNumber: first argument must be a string (number to convert)");
+    duk_bool_t retObj=0;
+    double max=0, min=0;
+    char op[2], *ret;
+
+    if(!duk_is_undefined(ctx, 1))
+        retObj = REQUIRE_BOOL(ctx, 1, "Sql.stringToNumber: second argument must be a Boolean (return object)");
+
+    ret = ttod((char*)str, (char*)(str+strlen(str)), &min, &max, op);
+    op[1]='\0';
+
+    if(ret == str)
+        duk_push_false(ctx);
+    else if (retObj)
+    {
+        double min2;
+        char *ret2 = NULL;
+
+        duk_push_object(ctx);
+        duk_push_number(ctx, min);
+        duk_put_prop_string(ctx, -2, "value");
+
+        if(*op!='=' && strlen(ret))
+            ret2=ttod(ret, ret+strlen(ret), &min2, &max, op);
+
+
+        if(ret2 && ret2 != ret)
+        {
+
+            if(min2 > min)
+                max=min2;
+            else
+            {
+                max=min;
+                min=min2;
+            }
+
+            duk_push_number(ctx, min);
+            duk_put_prop_string(ctx, -2, "min");
+            duk_push_number(ctx, max);
+            duk_put_prop_string(ctx, -2, "max");
+            duk_push_string(ctx, ret2);
+            duk_put_prop_string(ctx, -2, "rem");
+        }
+        else
+        {
+            duk_push_string(ctx, op);
+            duk_put_prop_string(ctx, -2, "op");
+            duk_push_string(ctx, ret);
+            duk_put_prop_string(ctx, -2, "rem");
+        }
+    }
+    else
+        duk_push_number(ctx, min);
+
+    return 1;
+}
 
 void duk_rampart_init(duk_context *ctx)
 {
@@ -5313,6 +5442,8 @@ void duk_rampart_init(duk_context *ctx)
     duk_put_prop_string(ctx, -2, "chown");
     duk_push_c_function(ctx, duk_rp_nsleep, 1);
     duk_put_prop_string(ctx, -2, "sleep");
+    duk_push_c_function(ctx, str_to_num, 2);
+    duk_put_prop_string(ctx, -2, "stringToNumber");
 
     /* all above are rampart.utils.xyz() functions*/
     duk_put_prop_string(ctx, -2, "utils");
@@ -6167,38 +6298,10 @@ duk_ret_t duk_rp_abprintf(duk_context *ctx)
     return 1;
 }
 
+
 duk_ret_t duk_rp_getType(duk_context *ctx)
 {
-    if (duk_is_string(ctx, 0))
-        duk_push_string(ctx, "String");
-    else if (duk_is_array(ctx, 0))
-        duk_push_string(ctx, "Array");
-    else if (duk_is_nan(ctx, 0))
-        duk_push_string(ctx, "Nan");
-    else if (duk_is_number(ctx, 0))
-        duk_push_string(ctx, "Number");
-    else if (duk_is_function(ctx, 0))
-        duk_push_string(ctx, "Function");
-    else if (duk_is_boolean(ctx, 0))
-        duk_push_string(ctx, "Boolean");
-    else if (duk_is_buffer_data(ctx, 0))
-        duk_push_string(ctx, "Buffer");
-    else if (duk_is_null(ctx, 0))
-        duk_push_string(ctx, "Null");
-    else if (duk_is_undefined(ctx, 0))
-        duk_push_string(ctx, "Undefined");
-    else if (duk_is_symbol(ctx, 0))
-        duk_push_string(ctx, "Symbol");
-    else if (duk_is_object(ctx, 0))
-    {
-        if(duk_has_prop_string(ctx, 0, "getMilliseconds") && duk_has_prop_string(ctx, 0, "getUTCDay") )
-            duk_push_string(ctx, "Date");
-        else
-            duk_push_string(ctx, "Object");
-    }
-    else
-        duk_push_string(ctx, "Unknown");
-
+    duk_push_string(ctx, rp_types[gettype(ctx, 0)]);
     return 1;
 }
 
@@ -7801,6 +7904,218 @@ static char *dfmts[N_DATE_FORMATS] = {
     "%c"
 };
 
+/* extended formats */
+#define EN_DATE_FORMATS 6
+#define EN_DATE_FORMATS_W_OFFSET 2
+static char *edfmts[EN_DATE_FORMATS] = {
+    "%Y-%m-%d %H:%M:%S %z",
+    "%A %B %d %H:%M:%S %Y %z",
+    "%Y-%m-%d %H:%M:%S",
+    "%A %B %d %H:%M:%S %Y",
+    "%Y-%m-%dT%H:%M:%S ",    //javascript style from console.log(new Date()). space is for erased '.123Z' below
+    "%c"
+};
+
+__thread rp_timezones *rp_timezone_info=NULL;
+
+static const char * push_tzone(duk_context *ctx, rp_tz_zone *mzone)
+{
+    char *name;
+    rp_tz_zone_entry *zone =  rp_tz_get_entry(mzone, &name);
+    duk_uarridx_t tidx;
+    duk_idx_t abbr_idx,
+              zidx = duk_push_object(ctx); //zone entry
+
+    if(strcmp(name, zone->timezone_name))
+    {
+        duk_push_string(ctx, zone->timezone_name);
+        duk_put_prop_string(ctx, zidx, "linkedFrom");
+    }
+
+    duk_push_string(ctx, name);
+    duk_put_prop_string(ctx, zidx, "name");
+
+    abbr_idx=duk_push_array(ctx);
+    duk_dup(ctx, -1);
+    //list this first in a printout
+    duk_put_prop_string(ctx, zidx, "abbreviations");
+
+    for (tidx=0; tidx < zone->typecnt; tidx++) {
+        duk_push_object(ctx);
+        duk_push_string(ctx, &zone->abbrs[zone->ttinfo[tidx].abbrind]);
+        duk_put_prop_string(ctx, -2, "Abbreviation");
+
+        duk_push_int(ctx, zone->ttinfo[tidx].gmtoff);
+        duk_put_prop_string(ctx, -2, "UTCOffset");
+
+        duk_push_boolean(ctx, zone->ttinfo[tidx].isdst);
+        duk_put_prop_string(ctx, -2, "isDST");
+
+        duk_put_prop_index(ctx, abbr_idx, tidx);
+    }
+
+    duk_push_array(ctx);
+    for (tidx=0; tidx < zone->timecnt; tidx++) {
+        double d = (double) zone->transitions[tidx];
+        duk_push_object(ctx);
+
+        duk_get_global_string(ctx, "Date");
+        duk_push_number(ctx, 1000 * d);
+        duk_new(ctx, 1);
+        duk_put_prop_string(ctx, -2, "transitionDate");
+
+        duk_get_prop_index(ctx, abbr_idx, (duk_uarridx_t)zone->types[tidx]);
+        duk_put_prop_string(ctx, -2, "transition");
+
+        duk_put_prop_index(ctx, -2, tidx);
+    }
+    duk_put_prop_string(ctx, zidx, "transitions");
+    duk_remove(ctx, abbr_idx);
+
+    return (const char *) name;
+}
+
+static const char * push_abbr(duk_context *ctx, rp_tz_abbr *abbr_s)
+{
+    int j=0;
+
+    duk_push_object(ctx);
+
+    duk_push_boolean(ctx, abbr_s->ambiguous);
+    duk_put_prop_string(ctx, -2, "ambiguous");
+
+    duk_push_array(ctx);
+    for(j=0;j<abbr_s->nentries;j++)
+    {
+        int offset  = abbr_s->gmtoffs[j],
+            offhour = offset/3600,
+            offmin  = offset - offhour * 3600;
+
+        if(offmin<0) offmin *= -1;
+
+        duk_push_object(ctx);
+
+        duk_push_int(ctx, offset);
+        duk_put_prop_string(ctx, -2, "offset");
+
+        duk_push_sprintf(ctx, "%+02d:%02d", offhour, offmin);
+        duk_put_prop_string(ctx, -2, "offsetString");
+
+        duk_push_string(ctx, abbr_s->tz_zones[j]->timezone_name);
+        duk_put_prop_string(ctx, -2, "zoneName");
+
+        duk_push_int(ctx, (int) abbr_s->tz_indexes[j]);
+        duk_put_prop_string(ctx, -2, "zoneAbbrIndex");
+
+        duk_put_prop_index(ctx, -2, (duk_uarridx_t)j);
+    }
+    duk_put_prop_string(ctx, -2, "entries");
+
+    return abbr_s->abbr;
+}
+
+static duk_ret_t find_zone(duk_context *ctx)
+{
+    rp_timezones *tz;
+    rp_tz_zone *zone;
+    const char *name = REQUIRE_STRING(ctx, 0, "timezone.findZone - argument must be a String(zone name)");
+
+    duk_push_this(ctx);
+    if(!duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("rp_tz_info")))
+        RP_THROW(ctx, "Internal error getting timezone information");
+    tz=duk_get_pointer(ctx, -1);
+    duk_pop_2(ctx);
+
+    zone = rp_tz_find_zone(tz, (char*)name);
+    if(!zone)
+        return 0;
+
+    (void) push_tzone(ctx, zone);
+    return 1;
+}
+
+static duk_ret_t find_abbr(duk_context *ctx)
+{
+    rp_timezones *tz;
+    rp_tz_abbr *abbr_s;
+    const char *name = REQUIRE_STRING(ctx, 0, "timezone.findAbbr - argument must be a String(zone name)");
+
+    duk_push_this(ctx);
+    if(!duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("rp_tz_info")))
+        RP_THROW(ctx, "Internal error getting timezone information");
+    tz=duk_get_pointer(ctx, -1);
+    duk_pop_2(ctx);
+
+    abbr_s = rp_tz_find_abbr(tz, (char*)name);
+    if(!abbr_s)
+        return 0;
+
+    (void) push_abbr(ctx, abbr_s);
+    return 1;
+}
+
+
+static duk_ret_t dump_tz(duk_context *ctx)
+{
+    rp_tz_zone *mzone;
+    duk_uarridx_t aidx=0;
+    rp_timezones *tz;
+    rp_tz_abbr *abbr_s;
+    const char *name;
+
+    duk_push_this(ctx);
+    if(!duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("rp_tz_info")))
+        RP_THROW(ctx, "Internal error getting timezone information");
+    tz=duk_get_pointer(ctx, -1);
+    duk_pop_2(ctx);
+
+    duk_push_object(ctx); //ret
+    duk_push_object(ctx); //zones
+
+    rp_tz_foreach_zone(tz, mzone)
+    {
+        name=push_tzone(ctx, mzone);
+        duk_put_prop_string(ctx, 1, name); //into zones
+
+        aidx++;
+    }
+    duk_put_prop_string(ctx, 0, "zones");
+
+    duk_push_object(ctx);
+    rp_tz_foreach_abbr(tz, abbr_s)
+    {
+        name = push_abbr(ctx, abbr_s);
+        duk_put_prop_string(ctx, -2, name); //into abbreviations
+    }
+    duk_put_prop_string(ctx, 0, "abbreviations");
+
+    duk_pull(ctx, 0);
+    return 1;
+}
+
+
+static duk_ret_t load_tz_info(duk_context *ctx)
+{
+    const char *path=NULL;
+
+    if(!duk_is_undefined(ctx, 0))
+        path=REQUIRE_STRING(ctx, 0, "Timezones - first argument must be a String(path) or Undefined (for /usr/share/zoneinfo)");
+
+    rp_timezone_info=rp_tz_load_timezones((char*)path);
+
+    duk_push_object(ctx); //ret
+    duk_push_pointer(ctx, rp_timezone_info);
+    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("rp_tz_info"));
+
+    duk_push_c_function(ctx, dump_tz,0);
+    duk_put_prop_string(ctx, -2, "dump");
+    duk_push_c_function(ctx, find_abbr,1);
+    duk_put_prop_string(ctx, -2, "findAbbr");
+    duk_push_c_function(ctx, find_zone,1);
+    duk_put_prop_string(ctx, -2, "findZone");
+    return 1;
+}
+
 static struct tm * to_local(struct tm *t)
 {
     time_t g;
@@ -7815,7 +8130,7 @@ static struct tm * to_local(struct tm *t)
 
 /* scan a string for a date, optionally with format in ifmt if not NULL
    return -1 on error, 0 for success */
-static int scandate(struct tm *dt_p, const char *dstr, const char *ifmt)
+static int scandate(struct tm *dt_p, const char *dstr, const char *ifmt, int extended)
 {
     int i=0;
     char *p, *datestr=strdup(dstr);
@@ -7904,6 +8219,7 @@ static int scandate(struct tm *dt_p, const char *dstr, const char *ifmt)
     return 0;
 }
 
+
 /* scan a string date, optionally using a supplied format and an optional tz offset in seconds */
 duk_ret_t duk_rp_scandate(duk_context *ctx)
 {
@@ -7937,7 +8253,7 @@ duk_ret_t duk_rp_scandate(duk_context *ctx)
     if(fmt_idx!=-1)
         ifmt = duk_get_string(ctx, fmt_idx);
 
-    if(scandate(dt_p, datestr, ifmt))
+    if(scandate(dt_p, datestr, ifmt, 0))
     {
         duk_push_null(ctx);
         return 1;
@@ -7975,7 +8291,7 @@ duk_ret_t duk_rp_datefmt(duk_context *ctx)
         else if (!duk_is_undefined(ctx, 2))
             RP_THROW(ctx, "dateFmt(): Optional third argument must be a String (date scan format)");
 
-        if(scandate(dt_p, datestr, ifmt))
+        if(scandate(dt_p, datestr, ifmt, 0))
         {
             duk_push_null(ctx);
             return 1;
@@ -8150,6 +8466,9 @@ void duk_printf_init(duk_context *ctx)
 
     duk_push_c_function(ctx, duk_rp_scandate, 3);
     duk_put_prop_string(ctx, -2, "scanDate");
+
+    duk_push_c_function(ctx, load_tz_info, 1);
+    duk_put_prop_string(ctx, -2, "timezone");
 
     duk_push_object(ctx);
     duk_push_string(ctx,"accessLog");
