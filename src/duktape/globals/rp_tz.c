@@ -1,4 +1,4 @@
-/* 
+/*
     rp_tz.c
     copyright (c) 2024 Aaron Flin
     LICENSE: MIT
@@ -66,7 +66,6 @@ static inline int32_t read_int32_from_chars(const unsigned char *chars) {
     return (chars[0] << 24) | (chars[1] << 16) | (chars[2] << 8) | chars[3];
 }
 
-#define TIMEZONE_PATH "/usr/share/zoneinfo"
 
 static int32_t read_int32(FILE *file) {
     unsigned char buf[4];
@@ -88,7 +87,7 @@ static rp_tz_zone * extract_timezone_info(char *path, int base_path_len) {
     }
 
     rp_tz_zone_entry *zone=NULL;
-    
+
     TZ_CALLOC(zone,sizeof(rp_tz_zone_entry));
 
     zone->timezone_name=strdup(path+base_path_len);
@@ -228,12 +227,11 @@ static void make_abbreviations(rp_timezones *tz)
     qsort(tz->abbreviations, tz->nabbreviations, sizeof(rp_tz_abbr*), cmp_abbr);
 }
 
-static rp_timezones * _proc_links(rp_timezones *tz, const char *path)
+static rp_timezones * _proc_links(rp_timezones *tz, const char *path, int base_path_len)
 {
     struct dirent *entry;
     DIR *dp = opendir(path);
     char fullpath[PATH_MAX];
-    static int file_start = strlen(TIMEZONE_PATH)+1;
 
     if (dp == NULL) {
         return tz;
@@ -247,7 +245,7 @@ static rp_timezones * _proc_links(rp_timezones *tz, const char *path)
         {
             if (strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0)
             {
-                tz=_proc_links(tz, fullpath);
+                tz=_proc_links(tz, fullpath, base_path_len);
             }
         }
         else if (entry->d_type == DT_LNK)
@@ -273,13 +271,13 @@ static rp_timezones * _proc_links(rp_timezones *tz, const char *path)
 
                 TZ_REMALLOC(link, sizeof(rp_tz_zone_link));
                 rp_tz_zone_setlink(link);
-                link->timezone_name=strdup(fullpath+file_start);
+                link->timezone_name=strdup(fullpath+base_path_len);
                 link->entry=(rp_tz_zone_entry*)entry;
 
                 TZ_REMALLOC(tz->zones, (tz->nzones+1) * sizeof(rp_tz_zone *));
                 tz->zones[tz->nzones]=(rp_tz_zone*)link;
                 tz->nzones++;
-            }    
+            }
         }
     }
     closedir(dp);
@@ -332,15 +330,15 @@ rp_timezones *rp_tz_load_timezones(char *path)
     rp_timezones *ret = NULL;
 
     if(!path)
-        path=TIMEZONE_PATH;
+        path=RP_TIMEZONE_PATH;
 
     TZ_CALLOC(ret, sizeof(rp_timezones));
 
     ret = _extract_all(ret, path, strlen(path)+1);
-    ret = _proc_links(ret, path);
+    ret = _proc_links(ret, path, strlen(path)+1);
     make_abbreviations(ret);
     qsort(ret->zones, ret->nzones, sizeof(rp_tz_zone*), cmp_tz);
-    return ret;    
+    return ret;
 }
 
 static void free_abbr(rp_tz_abbr *a)
@@ -386,8 +384,42 @@ rp_tz_abbr *rp_tz_find_abbr(rp_timezones *tz, char *abbr)
 
     search.abbr=abbr;
     res=bsearch(&searchp, tz->abbreviations, tz->nabbreviations, sizeof(rp_tz_abbr*), cmp_abbr);
+
     if(!res)
         return NULL;
+    return *res;
+}
+
+#define MAX_ABBR_LEN 5
+#define MIN_ABBR_LEN 3
+
+rp_tz_abbr *rp_tz_find_abbr_match(rp_timezones *tz, char *abbr, char **matched)
+{
+    rp_tz_abbr search, **res=NULL, *searchp=&search;
+    char *s = strndup(abbr, MAX_ABBR_LEN);
+    int i=strlen(s);
+
+    search.abbr=s;
+    for (; i>=MIN_ABBR_LEN && !res; i--)
+    {
+        s[i]='\0';
+        //printf("searching for '%s'\n", search.abbr);
+        res=bsearch(&searchp, tz->abbreviations, tz->nabbreviations, sizeof(rp_tz_abbr*), cmp_abbr);
+    }
+
+    if(!res)
+    {
+        free(s);
+        if(matched)
+            *matched=NULL;
+        return NULL;
+    }
+
+    if(matched)
+        *matched=s;
+    else
+        free(s);
+
     return *res;
 }
 

@@ -12,6 +12,8 @@
 #define TZ_MAX_TYPES 256
 #define TZ_MAX_CHARS 50
 
+#define RP_TIMEZONE_PATH "/usr/share/zoneinfo"
+
 //warn on file load error.  There will be files in /usr/share/zoneinfo that aren't zone files
 //so there will always be warnings if this line is uncommented
 //#define WARN
@@ -196,5 +198,10 @@ rp_tz_zone_entry *rp_tz_find_zone_entry(rp_timezones *tz, char *tzname);
    returns NULL if not found                              */
 rp_tz_abbr *rp_tz_find_abbr(rp_timezones *tz, char *abbr);
 
+/* find an abbreviation record matched from the beginning portion
+   of "abbr".  i.e. "PSTxzy"
+   if **matched is not NULL, it will be set to a malloc'd string containing the matched abbreviation
+*/
+rp_tz_abbr *rp_tz_find_abbr_match(rp_timezones *tz, char *abbr, char **matched);
 
 #endif

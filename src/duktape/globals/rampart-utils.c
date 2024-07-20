@@ -28,6 +28,8 @@
 #include <sys/ipc.h>
 #include <sys/sem.h>
 #include <time.h>
+#include <langinfo.h>
+#include <locale.h>
 #include "rp_tz.h"
 
 //getTotalMem setMaxMem
@@ -440,7 +442,7 @@ rp_stack *parse_stack_string_lines(rp_stack *stack, const char *s)
     }
     end:
     return stack;
-}     
+}
 
 // parse error.stack into an object
 // that is useful for compacting the output.
@@ -479,7 +481,7 @@ static rp_stack *parse_stack_string(const char *s, const char *msg)
         else
             msglen=strlen(msg);
 
-        // add space for the initial "Error: " that is not in e.message        
+        // add space for the initial "Error: " that is not in e.message
         p2=p;
         while(*p2!=' ' && *p2) p2++,msglen++;
         while(*p2==' ') p2++,msglen++;
@@ -492,7 +494,7 @@ static rp_stack *parse_stack_string(const char *s, const char *msg)
     tstack=parse_stack_string_lines(stack,s);
     if(!tstack)
         return free_rp_stack(stack);
-    
+
     return tstack;
 }
 
@@ -1138,8 +1140,8 @@ static char *rp_json_object(duk_context *ctx, duk_idx_t idx, char *r, char *path
     store_ref(ctx, idx, path);
     if(gettype(ctx, idx) == RP_TYPE_DATE)
     {
-        duk_dup(ctx, idx);
-        duk_to_string(ctx, -1);
+        duk_push_string(ctx, "toISOString");
+        duk_call_prop(ctx, idx, 0);
         r= strcatdup(r, "\"");
         r = strcatdup(r, (char*)duk_get_string(ctx, -1));
         r= strcatdup(r, "\"");
@@ -7893,30 +7895,11 @@ static duk_ret_t rp_newpipe(duk_context *ctx)
     return 1;
 }
 
-#define N_DATE_FORMATS 6
-#define N_DATE_FORMATS_W_OFFSET 2
-static char *dfmts[N_DATE_FORMATS] = {
-    "%Y-%m-%d %H:%M:%S %z",
-    "%A %B %d %H:%M:%S %Y %z",
-    "%Y-%m-%d %H:%M:%S",
-    "%A %B %d %H:%M:%S %Y",
-    "%Y-%m-%dT%H:%M:%S ",    //javascript style from console.log(new Date()). space is for erased '.123Z' below
-    "%c"
-};
+/* **************************\
+|*     TIMEZONE             *|
+\****************************/
 
-/* extended formats */
-#define EN_DATE_FORMATS 6
-#define EN_DATE_FORMATS_W_OFFSET 2
-static char *edfmts[EN_DATE_FORMATS] = {
-    "%Y-%m-%d %H:%M:%S %z",
-    "%A %B %d %H:%M:%S %Y %z",
-    "%Y-%m-%d %H:%M:%S",
-    "%A %B %d %H:%M:%S %Y",
-    "%Y-%m-%dT%H:%M:%S ",    //javascript style from console.log(new Date()). space is for erased '.123Z' below
-    "%c"
-};
-
-__thread rp_timezones *rp_timezone_info=NULL;
+rp_timezones *rp_system_tz=NULL;
 
 static const char * push_tzone(duk_context *ctx, rp_tz_zone *mzone)
 {
@@ -8096,26 +8079,196 @@ static duk_ret_t dump_tz(duk_context *ctx)
 
 static duk_ret_t load_tz_info(duk_context *ctx)
 {
-    const char *path=NULL;
+    const char *path=NULL, *stash_key=RP_TIMEZONE_PATH;
+    rp_timezones *tz=NULL;
+    int use_default=0;
 
     if(!duk_is_undefined(ctx, 0))
-        path=REQUIRE_STRING(ctx, 0, "Timezones - first argument must be a String(path) or Undefined (for /usr/share/zoneinfo)");
+        stash_key = path = REQUIRE_STRING(ctx, 0, "Timezones - first argument must be a String(path) or Undefined (for /usr/share/zoneinfo)");
+    else
+    {
+        use_default=1;
+    }
 
-    rp_timezone_info=rp_tz_load_timezones((char*)path);
+    duk_push_global_stash(ctx);
+    if(!duk_get_prop_string(ctx, -1, "tzdata"))
+    {
+        duk_pop(ctx);
+        duk_push_object(ctx);
+        tz=rp_tz_load_timezones((char*)path);
+        duk_push_pointer(ctx, tz);
+        duk_put_prop_string(ctx, -2, stash_key);
+        duk_put_prop_string(ctx, -2, "tzdata");
+    }
+    else
+    {
+        if(duk_get_prop_string(ctx, -1, stash_key))
+        {
+            tz=duk_get_pointer(ctx, -1);
+            duk_pop(ctx);
+        }
+        else
+        {
+            duk_pop(ctx); //undef
+
+            if(use_default)
+            {
+                if(rp_system_tz)
+                    tz=rp_system_tz;
+                else
+                    tz=rp_system_tz=rp_tz_load_timezones((char*)path);
+            }
+            else
+                tz=rp_tz_load_timezones((char*)path);
+
+            duk_push_pointer(ctx, tz);
+            duk_put_prop_string(ctx, -2, stash_key);
+        }
+    }
 
     duk_push_object(ctx); //ret
-    duk_push_pointer(ctx, rp_timezone_info);
+    duk_push_pointer(ctx, tz);
     duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("rp_tz_info"));
 
     duk_push_c_function(ctx, dump_tz,0);
     duk_put_prop_string(ctx, -2, "dump");
+
     duk_push_c_function(ctx, find_abbr,1);
     duk_put_prop_string(ctx, -2, "findAbbr");
+
     duk_push_c_function(ctx, find_zone,1);
     duk_put_prop_string(ctx, -2, "findZone");
+
     return 1;
 }
 
+/* for list sorted by diff from current tz of abbr->tz */
+typedef struct {
+    int32_t    diff;
+    int32_t     ambiguous;
+    char       *name;
+    rp_tz_type *type;
+}rp_abbr_match;
+
+static int cmp_abbr_match(const void *a, const void *b)
+{
+    return (*(rp_abbr_match **)a)->diff - (*(rp_abbr_match **)b)->diff;
+}
+
+
+static rp_abbr_match **get_abbr_list(char *abbr_s, struct tm *dt_p, int *ambig, int *nrecs_p, char **match)
+{
+    time_t gmt=timegm(dt_p);
+    int32_t local,
+            lastdiff=-1,
+            gm = (int32_t) gmt,
+            systemlocaloffset = (int32_t)timegm(localtime(&gmt)) - gm;
+    rp_tz_abbr *abbr;
+    int i=0, nrec=0;
+    rp_abbr_match **ret=NULL, *rec=NULL;
+    char *name;
+
+    if(!rp_system_tz)
+        rp_system_tz = rp_tz_load_timezones(NULL);
+
+    abbr = rp_tz_find_abbr_match(rp_system_tz, abbr_s, match);
+    *ambig=0;
+
+    if(!abbr)
+    {
+        if(nrecs_p)
+            *nrecs_p=0;
+        return NULL;
+    }
+
+    /*
+    if(!abbr->ambiguous)
+    {
+        CALLOC(ret, sizeof(rp_abbr_match *) );
+        CALLOC(rec, sizeof(rp_abbr_match) );
+        rp_tz_zone_entry *zone = rp_tz_get_entry(abbr->tz_zones[0], &name);
+        rec->diff=-1; //no need to sort
+        rec->name = name;
+        rec->type = &(zone->ttinfo[ abbr->tz_indexes[0] ]);
+
+        ret[0]=rec;
+        if(nrecs_p)
+            *nrecs_p=1;
+        return ret;
+    }
+    */
+    //printf("%d entries\n", abbr->nentries);
+    for(i=0;i<abbr->nentries;i++)
+    {
+        rp_tz_zone_entry *e = rp_tz_get_entry(abbr->tz_zones[i], &name);
+        unsigned char idx = abbr->tz_indexes[i];
+        int ntrans=e->timecnt, transidx=0;
+        int32_t *trans = e->transitions, tzdiff;
+
+        local = gm - e->ttinfo[ e->types[idx] ].gmtoff; //get local time for this entry
+
+        for(transidx=0; transidx<ntrans; transidx++)
+        {
+            // find the appropriate abbr for the given timedate
+            if(
+               trans[transidx] <= local  // date is after the transition
+               &&
+               (
+                   transidx == ntrans-1 //it is the last transition
+                   ||
+                   trans[transidx+1] > local // date is before the next transition
+               )
+            )
+            {
+                break;
+            }
+        }
+
+        // time not found
+        if(transidx==ntrans)
+        {
+            //printf("not found\n");
+            continue;
+        }
+
+        if( e->types[transidx] != idx)
+        {
+            // index doesnt match. Probably mixed up, e.g. PST and PDT
+            // or its the wrong zone file
+            // or the time range found from the transition in this zone file has a different abbreviation
+            //printf("error, %s idx %d doesn't match\n", e->timezone_name, idx);
+            continue;
+        }
+
+        REMALLOC(ret, (nrec + 1) * sizeof(rp_abbr_match *) );
+        CALLOC(rec, sizeof(rp_abbr_match) );
+        ret[nrec] = rec;
+        nrec++;
+
+        rec->type = &(e->ttinfo[ idx ]);
+        rec->name = name;
+
+        //printf("off = %d - %d = %d\n", rec->type->gmtoff, systemlocaloffset, rec->type->gmtoff - systemlocaloffset);
+        tzdiff = rec->type->gmtoff - systemlocaloffset;
+        if(tzdiff<0) tzdiff*=-1;
+        rec->diff = tzdiff;
+
+        // only set ambig if a valid tz offset differs, unlike abbr->ambiguous
+        if(lastdiff!=-1 && lastdiff != tzdiff)
+            *ambig=1;
+
+        lastdiff= tzdiff;
+    }
+
+    qsort(ret, nrec, sizeof(rp_abbr_match *), cmp_abbr_match);
+
+    if(nrecs_p)
+        *nrecs_p=nrec;
+
+    return ret;
+}
+
+/*
 static struct tm * to_local(struct tm *t)
 {
     time_t g;
@@ -8127,39 +8280,153 @@ static struct tm * to_local(struct tm *t)
     t=localtime_r(&g,t);
     return t;
 }
+*/
+
+#define N_DATE_FORMATS 6
+#define N_DATE_FORMATS_W_OFFSET 2
+static char *dfmts[N_DATE_FORMATS] = {
+    "%Y-%m-%d %H:%M:%S %z",
+    "%A %B %d %H:%M:%S %Y %z",
+    "%Y-%m-%d %H:%M:%S",
+    "%A %B %d %H:%M:%S %Y",
+    "%Y-%m-%dT%H:%M:%S ",    //javascript style from console.log(new Date()). space is for erased '.123Z' below
+    "%c"
+};
+
+/* extended formats */
+#define EN_DATE_FORMATS 71
+static char *edfmts[EN_DATE_FORMATS] = {
+    // standard
+    "%Y-%m-%d %H:%M:%S %z",             //  0: 1999-12-31 23:59:59 -0800
+    "%A %B %d %H:%M:%S %Y %z",          //  1: Fri Dec 31 23:59:59 1999 -0800
+    "%Y-%m-%d %H:%M:%S",                //  2: 1999-12-31 23:59:59
+    "%A %B %d %H:%M:%S %Y",             //  3: Fri Dec 31 23:59:59 1999
+    "%Y-%m-%d %I:%M:%S %p %z",          //  4: 1999-12-31 11:59:59 pm -0800
+    "%A %B %d %I:%M:%S %p %Y %z",       //  5: Fri Dec 31 11:59:59 pm 1999 -0800
+    "%Y-%m-%d %I:%M:%S %p",             //  6: 1999-12-31 11:59:59 pm
+    "%A %B %d %I:%M:%S %p %Y",          //  7: Fri Dec 31 11:59:59 pm 1999
+    "%Y-%m-%dT%H:%M:%S ",               //  8: javascript style from console.log(new Date()). space is for erased '.123Z' below
+    // standard without seconds
+    "%Y-%m-%d %H:%M %z",                //  9: 1999-12-31 23:59 -0800
+    "%A %B %d %H:%M %Y %z",             // 10: Fri Dec 31 23:59 1999 -0800
+    "%Y-%m-%d %H:%M",                   // 11: 1999-12-31 23:59
+    "%A %B %d %H:%M %Y",                // 12: Fri Dec 31 23:59 1999
+    "%Y-%m-%d %I:%M %p %z",             // 13: 1999-12-31 11:59 pm -0800
+    "%A %B %d %I:%M %p %Y %z",          // 14: Fri Dec 31 11:59 pm 1999 -0800
+    "%Y-%m-%d %I:%M %p",                // 15: 1999-12-31 11:59 pm
+    "%A %B %d %I:%M %p %Y",             // 16: Fri Dec 31 11:59 pm 1999
+    // locale dependent:
+    "%x %r %z",                         // 17: date varies, time: 11:59:59 pm -0800
+    "%x %r",                            // 18: date varies, time: 11:59:59 pm
+    "%c",                               // 18: varies
+    "%x %X %z",                         // 20: varies
+    "%x %X",                            // 21: varies
+    // others
+    "%b %e %I:%M:%S %p %Y %z",          // 22: Dec 31 11:59:59 pm 1999 -0800
+    "%b %e %I:%M:%S %p %Y",             // 23: Dec 31 11:59:59 pm 1999
+    "%b %e %I:%M %p %Y %z",             // 24: Dec 31 11:59 pm 1999 -0800
+    "%b %e %I:%M %p %Y",                // 25: Dec 31 11:59 pm 1999
+    "%b %e %H:%M:%S %Y %z",             // 26: Dec 31 23:59:59 1999 -0800
+    "%b %e %H:%M:%S %Y",                // 27: Dec 31 23:59:59 1999
+    "%b %e %H:%M %Y %z",                // 28: Dec 31 23:59 1999 -0800
+    "%b %e %H:%M %Y",                   // 29: Dec 31 23:59 1999
+    "%e %b %I:%M:%S %p %Y %z",          // 30: 31 Dec 11:59:59 pm 1999 -0800
+    "%e %b %I:%M:%S %p %Y",             // 31: 31 Dec 11:59:59 pm 1999
+    "%e %b %I:%M %p %Y %z",             // 32: 31 Dec 11:59 pm 1999 -0800
+    "%e %b %I:%M %p %Y",                // 33: 31 Dec 11:59 pm 1999
+    "%e %b %H:%M:%S %Y %z",             // 34: 31 Dec 23:59:59 1999 -0800
+    "%e %b %H:%M:%S %Y",                // 35: 31 Dec 23:59:59 1999
+    "%e %b %H:%M %Y %z",                // 36: 31 Dec 23:59 1999 -0800
+    "%e %b %H:%M %Y",                   // 37: 31 Dec 23:59 1999
+    "%m/%d/%y %I:%M:%S %p %z",          // 38: 12/31/99 11:59:59 pm -0800
+    "%m/%d/%y %I:%M:%S %p",             // 39: 12/31/99 11:59:59 pm
+    "%m/%d/%y %I:%M %p %z",             // 40: 12/31/99 11:59 pm -0800
+    "%m/%d/%y %I:%M %p",                // 41: 12/31/99 11:59 pm
+    "%m/%d/%y %H:%M:%S %z",             // 42: 12/31/99 23:59:59 -0800
+    "%m/%d/%y %H:%M:%S",                // 43: 12/31/99 23:59:59
+    "%m/%d/%y %H:%M %z",                // 44: 12/31/99 23:59 -0800
+    "%m/%d/%y %H:%M",                   // 45: 12/31/99 23:59
+    "%m/%d/%Y %I:%M:%S %p %z",          // 46: 12/31/1999 11:59:59 pm -0800
+    "%m/%d/%Y %I:%M:%S %p",             // 47: 12/31/1999 11:59:59 pm
+    "%m/%d/%Y %I:%M %p %z",             // 48: 12/31/1999 11:59 pm -0800
+    "%m/%d/%Y %I:%M %p",                // 49: 12/31/1999 11:59 pm
+    "%m/%d/%Y %H:%M:%S %z",             // 50: 12/31/1999 23:59:59 -0800
+    "%m/%d/%Y %H:%M:%S",                // 51: 12/31/1999 23:59:59
+    "%m/%d/%Y %H:%M %z",                // 52: 12/31/1999 23:59 -0800
+    "%m/%d/%Y %H:%M",                   // 53: 12/31/1999 23:59
+    // date only
+    "%m/%d/%y %z",                      // 54: 12/31/99 -0800
+    "%m/%d/%y%n",                       // 55: 12/31/99
+    "%m/%d/%Y %z",                      // 56: 12/31/1999 -0800
+    "%m/%d/%Y",                         // 57: 12/31/1999
+    "%Y-%m-%d %z",                      // 58: 1999-12-31 -0800
+    "%Y-%m-%d",                         // 59: 1999-12-31
+    "%x",                               // 60: varies
+    // time only
+    // gt 60:
+    "%I:%M:%S %p %z",                   // 61: 11:59:59 pm -0800
+    "%I:%M:%S %p",                      // 62: 11:59:59 pm
+    "%I:%M %p %z",                      // 63: 11:59 pm -0800
+    "%I:%M %p",                         // 64: 11:59 pm
+    "%X",                               // 65: varies
+    "%X %z",                            // 66: varies and -0800
+    "%H:%M:%S %z",                      // 67: 23:59:59 -0800
+    "%H:%M:%S",                         // 68: 23:59:59
+    "%H:%M %z",                         // 69: 23:59 -0800
+    "%H:%M",                            // 70: 23:59
+};
+//all indexes greater than "time only" line above
+#define EN_DATE_FMT_RELATIVE 60
 
 /* scan a string for a date, optionally with format in ifmt if not NULL
-   return -1 on error, 0 for success */
-static int scandate(struct tm *dt_p, const char *dstr, const char *ifmt, int extended)
+
+   dt_p      - pointer to struct tm to fill
+   dstr      - the string to parse
+   ifmt      - the format to use, rather than predefined, or NULL to use predefined.
+   extended  - use extended formats above
+   end_index - if not NULL - match dates that don't terminate in '\0' and set to offset in string
+
+   return -1 on error, otherwise index of matched format string */
+static int scandate(struct tm *dt_p, const char *dstr, const char *ifmt, int extended, int *end_index)
 {
-    int i=0;
-    char *p, *datestr=strdup(dstr);
+    int i=0, nfmts;
+    char *p, datestr[256];
+    struct tm now, *now_p;
+    time_t nowtime;
 
-    // the default day is 1, everything else is 0;
-    dt_p->tm_mday=1;
-
+    strncpy(datestr, dstr, 250);
+    strcat(datestr, " end");
+    //printf("newdate = '%s'\n",datestr);
+    time(&nowtime);
+    now_p = gmtime_r(&nowtime, &now);
+    now_p->tm_sec=0;
     // erase milliseconds if present
-    if( (p=strrchr(datestr, '.'))
+    if( (p=strchr(datestr, '.'))
         && isdigit(*(p+1)) && isdigit(*(p+2)) && isdigit(*(p+3))
     )
     {
-        *p=' ';
-        *(p+1)=' ';
-        *(p+2)=' ';
-        *(p+3)=' ';
-        if( *(p+4) == 'Z' )
-            *(p+4)=' ';
+        //also make sure we are preceeded by "\d:\d\d"
+        if(p-4 > datestr && isdigit(*(p-1)) && isdigit(*(p-2)) && *(p-3)==':' && isdigit(*(p-4)))
+        {
+            *p=' ';
+            *(p+1)=' ';
+            *(p+2)=' ';
+            *(p+3)=' ';
+            if( *(p+4) == 'Z' )
+                *(p+4)=' ';
+        }
     }
 
     /* if a format is provided, use it */
     if(ifmt)
     {
         p = strptime(datestr, ifmt, dt_p);
-        if(!p || *p!='\0')
+        if(!p || (end_index==NULL && *p!='\0'))
         {
-            free(datestr);
             return -1;
         }
+        if(end_index)
+            *end_index = p-datestr;
 
         /* if year not specified in custom format */
         if (
@@ -8167,12 +8434,7 @@ static int scandate(struct tm *dt_p, const char *dstr, const char *ifmt, int ext
          && !strstr(ifmt,"%C") && !strstr(ifmt,"%Y") && !strstr(ifmt,"%y")
         )
         {
-                struct tm t={0},*tmpt=&t;
-
-                time_t now;
-                time(&now);
-                tmpt=localtime_r(&now,tmpt);
-                dt_p->tm_year = tmpt->tm_year;
+                dt_p->tm_year = now_p->tm_year;
 
                 /* if no year and no day and no month*/
                 if( !strstr(ifmt,"%d") && !strstr(ifmt,"%e") && !strstr(ifmt,"%D")
@@ -8182,43 +8444,374 @@ static int scandate(struct tm *dt_p, const char *dstr, const char *ifmt, int ext
                  && !strstr(ifmt,"%m")
                 )
                 {
-                    dt_p->tm_mday = tmpt->tm_mday;
-                    dt_p->tm_mon  = tmpt->tm_mon;
-                    dt_p->tm_wday = tmpt->tm_wday;
-                    dt_p->tm_yday = tmpt->tm_yday;
+                    dt_p->tm_mday = now_p->tm_mday;
+                    dt_p->tm_mon  = now_p->tm_mon;
+                    dt_p->tm_wday = now_p->tm_wday;
+                    dt_p->tm_yday = now_p->tm_yday;
                 }
         }
 
-        if(strstr(ifmt,"%z"))
-            dt_p = to_local(dt_p);
-
-        free(datestr);
         return 0;
     }
     else /* use default formats defined above */
     {
-        for(i=0;i<N_DATE_FORMATS;i++)
+        if(extended)
         {
-            p = strptime(datestr, dfmts[i], dt_p);
-            if(p && *p=='\0')
-                break;
+            nfmts = EN_DATE_FORMATS;
+            for(i=0;i<nfmts;i++)
+            {
+                if(i>EN_DATE_FMT_RELATIVE)
+                    memcpy(dt_p, now_p, sizeof(struct tm));
+                else
+                    memset(dt_p, 0, sizeof(struct tm));
+
+                //printf("'%s'\n", edfmts[i]);
+                p = strptime(datestr, edfmts[i], dt_p);
+                if(p && (end_index || *p=='\0') )
+                {
+                    if(end_index)
+                        *end_index = p-datestr;
+                    break;
+                }
+            }
+            // check for '-' and '/', since if mixed up
+            // year moves position
+            //
+            //printf("tmyear=%d\n", dt_p->tm_year);
+            if(i==nfmts || ( strchr(edfmts[i],'Y') && dt_p->tm_year==0) )
+            {
+                /* 6-12-1999 to 6/12/1999 */
+                if(datestr[2]=='-' || datestr[1]=='-')
+                {
+                    int j=0;
+                    // max len of portion with '-' == strlen("06-09-") == 6
+                    for(j=0; j<6 && datestr[j]; j++)
+                        if(datestr[j]=='-')
+                            datestr[j]='/';
+                }
+                /* 1999/6/12 to 1999/6/12 */
+                else if (datestr[4] == '/')
+                {
+                    int j=0;
+                    // max len of portion with '/' == strlen("1999/06/") == 8
+                    for(j=0; j<8 && datestr[j]; j++)
+                        if(datestr[j]=='/')
+                            datestr[j]='-';
+                }
+                else
+                {
+                    return -1;
+                }
+                for(i=0;i<nfmts;i++)
+                {
+                    if(!strchr(edfmts[i],'/') && !strchr(edfmts[i],'-'))
+                        continue;
+                    if(i>EN_DATE_FMT_RELATIVE)
+                        memcpy(dt_p, now_p, sizeof(struct tm));
+                    else
+                        memset(dt_p, 0, sizeof(struct tm));
+
+                    //printf("ALT %s, '%s'\n", datestr, edfmts[i]);
+                    p = strptime(datestr, edfmts[i], dt_p);
+
+                    if(p && (end_index || *p=='\0') )
+                    {
+                        if(end_index)
+                            *end_index = p-datestr;
+                        break;
+                    }
+                }
+            }
+        }
+        else
+        {
+            nfmts = N_DATE_FORMATS;
+            for(i=0;i<nfmts;i++)
+            {
+                p = strptime(datestr, dfmts[i], dt_p);
+                if(p && (end_index || *p=='\0') )
+                {
+                    if(end_index)
+                        *end_index = p-datestr;
+                    break;
+                }
+            }
         }
 
-        if(i==N_DATE_FORMATS)
+        if(i==nfmts)
         {
-            free(datestr);
             return -1;
         }
 
     }
-    /* the first few formats include offsets, so we need to conver to local time */
-    if (i < N_DATE_FORMATS_W_OFFSET)
-        dt_p = to_local(dt_p);
 
-    free(datestr);
-    return 0;
+    return i;
 }
 
+/* auto scan a string date, with many possible formats*/
+static duk_ret_t auto_scandate(duk_context *ctx)
+{
+    struct tm dt = {0}, dt_alt={0}, *dt_p=&dt;
+    const char *datestr = REQUIRE_STRING(ctx, 0, "autoScanDate(): first argument must be a String (date/time)");
+    double msecs=0;
+    time_t res, off=0, tzoff=0; // off is how much to adjust, tzoff is the timezone offset
+    int eix=0, *end_index=&eix, fidx=0, add_to_fmt=0;
+    char *p=NULL, *matched;
+
+    if((fidx=scandate(dt_p, datestr, NULL, 1, end_index))==-1)
+    {
+        duk_push_null(ctx);
+        return 1;
+    }
+
+    duk_push_object(ctx);
+
+    matched = edfmts[fidx];
+
+    //printf("match last char = %c\n", matched[strlen(matched)-1]);
+
+    // look for colon in -08:00, which strptime didn't find */
+    if( matched[strlen(matched)-1] != 'z')
+    {
+        char * datestr_alt = strdup(datestr);
+        int fidx_alt;
+
+        p=datestr_alt + eix;
+        while(isspace(*p)) p++;
+        if(
+            (*p=='-' || *p=='+') &&
+            isdigit(p[1]) && isdigit(p[2])
+            && p[3]==':' && isdigit(p[4]) && isdigit(p[5])
+        )
+        {
+            int end_index_alt;
+            // '-08:00" to ' -0800'
+            p[3]=p[2];
+            p[2]=p[1];
+            p[1]=*p;
+            *p=' ';
+            dt_p=&dt_alt;
+            if((fidx_alt=scandate(dt_p, datestr_alt, NULL, 1, &end_index_alt))==-1)
+            {
+                //return to prev if fail
+                dt_p=&dt;
+            }
+            else
+            {
+                //success
+                //printf("success with '%s'\n", datestr_alt);
+                *end_index=end_index_alt;
+                fidx=fidx_alt;
+            }
+        }
+
+        free(datestr_alt);
+    }
+
+    //p=(char*)datestr + eix;printf("eidx=%d, strlen=%d, endchar='%c'(%d)\n", eix, (int)strlen(datestr), *p, *p);
+
+    // WHAT TO DO IF WE GOT A %z
+    if(dt_p->tm_gmtoff || matched[strlen(matched)-1]=='z') //both should be true
+    {
+        time_t toff=0;
+        off = (time_t)dt_p->tm_gmtoff;
+        char *fmt = strdup(matched);
+        struct tm dttmp={0};
+
+        // need to check year matches with and without %z, cuz dates before 1900 fail with %z
+        fmt[strlen(matched)-3]='\0';
+        p = strptime(datestr, fmt, &dttmp);
+        if(!p)//will never happen
+        {
+            free(fmt);
+            duk_push_null(ctx);
+            return 1;
+        }
+
+        //printf("%d vs %d\n", dttmp.tm_year, dt_p->tm_year);
+        if(dttmp.tm_year < 0 && dt_p->tm_year>-1)
+        {
+            memcpy(dt_p, &dttmp, sizeof(struct tm));
+        }
+
+        // off is local timezone.  Need to extract input timezone:
+        p=(char*)datestr + eix -1;
+        while(p> datestr && (isdigit(*p)||*p=='+'||*p=='-'||*p==':') )p--;
+        p++;
+
+        //printf("offset from %%z = %f, but '%s'\n", (double)off/3600.0, p);
+
+        do {
+            int mult = 0;
+            if(*p=='-')
+                mult=-1;
+            else if (*p=='+')
+                mult=1;
+
+            if(!mult)
+                break;
+
+            p++;
+            if(!isdigit(*p))
+                break;
+            toff *= (int)(*p - 48) *10;
+
+            p++;
+            if(!isdigit(*p))
+                break;
+            toff += (int)(*p - 48);
+
+            toff *= 60;
+
+            p++;
+            if(*p==':')
+                p++;
+
+            if(!isdigit(*p))
+                break;
+            toff += (int)(*p - 48) *10;
+
+            p++;
+            if(!isdigit(*p))
+                break;
+            toff += (int)(*p - 48);
+
+            tzoff=toff * 60 * mult;
+            //printf("new tzoff = %d\n", tzoff);
+        } while(0);
+
+    }
+    else if (dt_p->tm_year > 0) //there are no transitions for 1900, earliest is 1901 (at least on macos)
+    // WHAT TO DO IF NO %z - check as if %Z is in the format string using rp_timezones
+    {
+        char *ab=NULL;
+
+        p=(char*)datestr + eix;
+
+        if (matched[strlen(matched)-1]!='z' && *p!='\0') // didn't get a -0800 and there's more after match
+        {
+            char *endp;
+
+            while(isspace(*p))p++;
+
+            endp=p;
+            while(!isspace(*endp) && *endp) endp++;
+
+            ab=strdup(p);
+        }
+
+        //printf("here ABBR='%s'\n", ab);
+
+        if(ab)
+        {
+            int nrecs, i=0, ambig;
+            char *matched=NULL;
+
+            //printf("ABBR='%s'\n", ab);
+            rp_abbr_match **matches = get_abbr_list(ab,  dt_p, &ambig, &nrecs, &matched);
+            if(nrecs)
+            {
+                double gmt = (double)timegm(dt_p);
+                duk_push_boolean(ctx, ambig);
+                duk_put_prop_string(ctx, -2, "ambiguous");
+                duk_push_object(ctx);
+                for(;i<nrecs;i++)
+                {
+                    rp_abbr_match *match = matches[i];
+                    if(!i)
+                        tzoff=off=match->type->gmtoff;
+
+                    //printf("found %s, off=%d, diff=%d\n", match->name, match->type->gmtoff, match->diff);
+
+                    duk_get_global_string(ctx, "Date");
+                    duk_push_number(ctx, 1000.0 * (gmt - (double)match->type->gmtoff));
+                    duk_new(ctx, 1);
+                    duk_put_prop_string(ctx, -2, match->name);
+                }
+                duk_put_prop_string(ctx, -2, "dates");
+                add_to_fmt = strlen(matched)+1;
+            }
+            else if (matched) // we got a valid abbreviation, but no tz matches
+            {
+                // it is still ambiguous, only worse.
+                duk_push_boolean(ctx, 1);
+                duk_put_prop_string(ctx, -2, "ambiguous");
+                duk_push_object(ctx);
+                duk_put_prop_string(ctx, -2, "dates");
+                add_to_fmt = strlen(matched)+1;
+            }
+            if(matched)
+                free(matched);
+            free(ab);
+        }
+    }
+/*
+if(dt_p->tm_year<0)
+{
+    saveyear=dt_p->tm_year;
+    dt_p->tm_year=0;
+}
+*/
+/*
+    res = timegm(dt_p);
+    if(res == -1) //returns -1 if error, but how do we know its not epoch-1 (i.e. "1969-12-31T23:59:59.000Z")?
+    {
+        time_t res2;
+        dt_p->tm_sec -= 1;
+        res2 = timegm(dt_p);
+        if(res == res2) //still an error
+        {
+            duk_push_null(ctx);
+            return 1;
+        }
+        //else its -2 ("1969-12-31T23:59:58.000Z")
+    }
+*/
+
+    duk_get_global_string(ctx, "Date");
+
+    if(dt_p->tm_year<0)
+    {
+        /* what a hot mess: strptime won't do timezone offsets ("-0800") correctly for dates
+           before 1900 and neither will duktape */
+        duk_get_global_string(ctx, "Date");
+        duk_push_sprintf(ctx, "%04d-%02d-%02d %02d:%02d:%02d%",
+            1900 + dt_p->tm_year, 1+dt_p->tm_mon, dt_p->tm_mday,
+            dt_p->tm_hour, dt_p->tm_min, dt_p->tm_sec
+        );
+        duk_new(ctx, 1);
+        duk_push_string(ctx, "getTime");
+        duk_call_prop(ctx, -2, 0);
+        // -tzoff cuz was not parsed in scandate(), and off cuz (??) its now in gmt?*/
+        res = -tzoff + off + (time_t) ( duk_get_number(ctx, -1)/1000.0);
+        duk_pop_2(ctx); //date_obj and number
+    }
+    else /* whew, year > 1899 */
+    {
+        res = timegm(dt_p);
+    }
+    msecs = (double)(res - off) * 1000.0;
+    duk_push_number(ctx, msecs);
+    duk_new(ctx, 1);
+    duk_put_prop_string(ctx, -2, "date");
+
+    duk_push_number(ctx, tzoff);
+    duk_put_prop_string(ctx, -2, "offset");
+
+    duk_push_int(ctx, eix+add_to_fmt);
+    duk_put_prop_string(ctx, -2, "endIndex");
+
+    duk_push_string(ctx, matched);
+    if(add_to_fmt) // if we simulated %Z above in rp_timezones
+    {
+        duk_push_string(ctx, " %Z");
+        duk_concat(ctx, 2);
+    }
+    duk_put_prop_string(ctx, -2, "matchedFormat");
+
+
+    return 1;
+}
 
 /* scan a string date, optionally using a supplied format and an optional tz offset in seconds */
 duk_ret_t duk_rp_scandate(duk_context *ctx)
@@ -8253,7 +8846,7 @@ duk_ret_t duk_rp_scandate(duk_context *ctx)
     if(fmt_idx!=-1)
         ifmt = duk_get_string(ctx, fmt_idx);
 
-    if(scandate(dt_p, datestr, ifmt, 0))
+    if(scandate(dt_p, datestr, ifmt, 0, NULL)==-1)
     {
         duk_push_null(ctx);
         return 1;
@@ -8291,7 +8884,7 @@ duk_ret_t duk_rp_datefmt(duk_context *ctx)
         else if (!duk_is_undefined(ctx, 2))
             RP_THROW(ctx, "dateFmt(): Optional third argument must be a String (date scan format)");
 
-        if(scandate(dt_p, datestr, ifmt, 0))
+        if(scandate(dt_p, datestr, ifmt, 0, NULL)==-1)
         {
             duk_push_null(ctx);
             return 1;
@@ -8467,6 +9060,9 @@ void duk_printf_init(duk_context *ctx)
     duk_push_c_function(ctx, duk_rp_scandate, 3);
     duk_put_prop_string(ctx, -2, "scanDate");
 
+    duk_push_c_function(ctx, auto_scandate, 2);
+    duk_put_prop_string(ctx, -2, "autoScanDate");
+
     duk_push_c_function(ctx, load_tz_info, 1);
     duk_put_prop_string(ctx, -2, "timezone");
 
@@ -8528,6 +9124,77 @@ void duk_printf_init(duk_context *ctx)
     RP_PTINIT(&pflock_err);
     RP_PTINIT(&loglock);
     RP_PTINIT(&errlock);
+
+    /* initialize locale from env */
+#define rp_initloc(x) do{\
+    loc = getenv(#x);\
+    if(loc)\
+        setlocale(x, loc);\
+}while(0)
+
+    char *loc = getenv("LC_ALL");
+    if(loc)
+        setlocale(LC_ALL, loc);
+    else
+    {
+        rp_initloc(LC_COLLATE);
+        rp_initloc(LC_CTYPE);
+        rp_initloc(LC_MESSAGES);
+        rp_initloc(LC_MONETARY);
+        rp_initloc(LC_NUMERIC);
+        rp_initloc(LC_TIME);
+    }
+
+    /* initialize locale date formats *
+    char *dtf = nl_langinfo(D_T_FMT);
+
+    strcpy(dfmt, nl_langinfo(D_FMT));
+    if(dfmt[7]=='y')
+    {
+        strcpy(dfmtY, dfmt);
+        dfmtY[7]='Y';
+        sprintf(dtfmtY, "%s %s", dfmtY, nl_langinfo(T_FMT));
+        sprintf(dtfmtYa, "%s %%I:%%M:%%S %%p", dfmtY);
+        sprintf(dtfmtYz, "%s %s %%z", dfmtY, nl_langinfo(T_FMT));
+        sprintf(dtfmtYaz, "%s %%I:%%M:%%S %%p %%z", dfmtY);
+        strcpy(dmfmt, dfmt);
+        dmfmt[5]='\0'; // "%m/%d" or "%d/%m"
+    }
+    else if(dfmt[7]=='Y')
+    {
+        strcpy(dfmtY, dfmt);
+        dfmtY[7]='y';
+        sprintf(dtfmtY, "%s %s", dfmtY, nl_langinfo(T_FMT));
+        sprintf(dtfmtYa, "%s %%I:%%M:%%S %%p", dfmtY);
+        sprintf(dtfmtYz, "%s %s %%z", dfmtY, nl_langinfo(T_FMT));
+        sprintf(dtfmtYaz, "%s %%I:%%M:%%S %%p %%z", dfmtY);
+        strcpy(dmfmt, dfmt);
+        dmfmt[5]='\0'; // "%m/%d" or "%d/%m"
+    }
+    else //this shoudn't happen
+    {
+        *dfmtY  ='\0';
+        *dtfmtY ='\0';
+        *dtfmtYa ='\0';
+        *dtfmtYz ='\0';
+        *dtfmtYaz ='\0';
+        *dmfmt  ='\0';
+    }
+    //strcpy(dtfmt, dtf);
+    strcpy(tfmt, nl_langinfo(T_FMT));
+    sprintf(dtfmt3, "%s %s", dfmt, tfmt);
+    sprintf(dtfmt3a, "%s %%I:%%M:%%S %%p", dfmt);
+    sprintf(dtfmt3az, "%s %%I:%%M:%%S %%p %%z", dfmt);
+
+    if(dtf[0]=='%' && dtf[1]=='a' && dtf[2]==' ')
+        strcpy(dtfmt2, &dtf[3]);
+    else
+        *dtfmt3='\0';
+
+    strcpy(cfmtz, dtf);
+    strcat(cfmtz, " %z");
+
+    */
 
 }
 
