@@ -7,6 +7,8 @@
 #ifndef RP_TZ_H
 #define RP_TZ_H
 
+#include <stdint.h>
+
 #define TZ_MAGIC "TZif"
 #define TZ_MAX_TIMES 2000
 #define TZ_MAX_TYPES 256
