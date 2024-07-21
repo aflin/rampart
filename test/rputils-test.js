@@ -261,7 +261,7 @@ testFeature("fork and pipe", function(){
         });
         return ret;
     }
-    
+
 });
 
 var wai=trim(shell("whoami").stdout);
@@ -274,7 +274,7 @@ if (wai=="root")
             group:101,
             user: 100
         });
-        
+
         var stat1=stat("myfile");
         rmFile("myfile");
         return stat1.uid == 100 && stat1.gid == 101;
@@ -282,6 +282,202 @@ if (wai=="root")
 
 } else
     testFeature("chown", "skipping");
+
+var asdfmts=[
+    "%Y-%m-%d %I:%M:%S %p %z",          //  0: 1999-12-31 11:59:59 pm -0800
+    "%A %B %d %I:%M:%S %p %Y %z",       //  1: Fri Dec 31 11:59:59 pm 1999 -0800
+    "%Y-%m-%d %I:%M:%S %p",             //  2: 1999-12-31 11:59:59 pm
+    "%A %B %d %I:%M:%S %p %Y",          //  3: Fri Dec 31 11:59:59 pm 1999
+    "%Y-%m-%d %H:%M:%S %z",             //  4: 1999-12-31 23:59:59 -0800
+    "%A %B %d %H:%M:%S %Y %z",          //  5: Fri Dec 31 23:59:59 1999 -0800
+    "%Y-%m-%d %H:%M:%S",                //  6: 1999-12-31 23:59:59
+    "%A %B %d %H:%M:%S %Y",             //  7: Fri Dec 31 23:59:59 1999
+    "%Y-%m-%dT%H:%M:%S ",               //  8: javascript style from console.log(new Date()). space is for erased '.123Z' below
+    // standard without seconds
+    "%Y-%m-%d %I:%M %p %z",             //  9: 1999-12-31 11:59 pm -0800
+    "%A %B %d %I:%M %p %Y %z",          // 10: Fri Dec 31 11:59 pm 1999 -0800
+    "%Y-%m-%d %I:%M %p",                // 11: 1999-12-31 11:59 pm
+    "%A %B %d %I:%M %p %Y",             // 12: Fri Dec 31 11:59 pm 1999
+    "%Y-%m-%d %H:%M %z",                // 13: 1999-12-31 23:59 -0800
+    "%A %B %d %H:%M %Y %z",             // 14: Fri Dec 31 23:59 1999 -0800
+    "%Y-%m-%d %H:%M",                   // 15: 1999-12-31 23:59
+    "%A %B %d %H:%M %Y",                // 16: Fri Dec 31 23:59 1999
+    // locale dependent:
+    "%x %r %z",                         // 17: date varies, time: 11:59:59 pm -0800
+    "%x %r",                            // 18: date varies, time: 11:59:59 pm
+    "%c",                               // 18: varies
+    "%x %X %z",                         // 20: varies
+    "%x %X",                            // 21: varies
+    // others
+    "%b %e %I:%M:%S %p %Y %z",          // 22: Dec 31 11:59:59 pm 1999 -0800
+    "%b %e %I:%M:%S %p %Y",             // 23: Dec 31 11:59:59 pm 1999
+    "%b %e %I:%M %p %Y %z",             // 24: Dec 31 11:59 pm 1999 -0800
+    "%b %e %I:%M %p %Y",                // 25: Dec 31 11:59 pm 1999
+    "%b %e %H:%M:%S %Y %z",             // 26: Dec 31 23:59:59 1999 -0800
+    "%b %e %H:%M:%S %Y",                // 27: Dec 31 23:59:59 1999
+    "%b %e %H:%M %Y %z",                // 28: Dec 31 23:59 1999 -0800
+    "%b %e %H:%M %Y",                   // 29: Dec 31 23:59 1999
+    "%e %b %I:%M:%S %p %Y %z",          // 30: 31 Dec 11:59:59 pm 1999 -0800
+    "%e %b %I:%M:%S %p %Y",             // 31: 31 Dec 11:59:59 pm 1999
+    "%e %b %I:%M %p %Y %z",             // 32: 31 Dec 11:59 pm 1999 -0800
+    "%e %b %I:%M %p %Y",                // 33: 31 Dec 11:59 pm 1999
+    "%e %b %H:%M:%S %Y %z",             // 34: 31 Dec 23:59:59 1999 -0800
+    "%e %b %H:%M:%S %Y",                // 35: 31 Dec 23:59:59 1999
+    "%e %b %H:%M %Y %z",                // 36: 31 Dec 23:59 1999 -0800
+    "%e %b %H:%M %Y",                   // 37: 31 Dec 23:59 1999
+    "%m/%d/%y %I:%M:%S %p %z",          // 38: 12/31/99 11:59:59 pm -0800
+    "%m/%d/%y %I:%M:%S %p",             // 39: 12/31/99 11:59:59 pm
+    "%m/%d/%y %I:%M %p %z",             // 40: 12/31/99 11:59 pm -0800
+    "%m/%d/%y %I:%M %p",                // 41: 12/31/99 11:59 pm
+    "%m/%d/%y %H:%M:%S %z",             // 42: 12/31/99 23:59:59 -0800
+    "%m/%d/%y %H:%M:%S",                // 43: 12/31/99 23:59:59
+    "%m/%d/%y %H:%M %z",                // 44: 12/31/99 23:59 -0800
+    "%m/%d/%y %H:%M",                   // 45: 12/31/99 23:59
+    "%m/%d/%Y %I:%M:%S %p %z",          // 46: 12/31/1999 11:59:59 pm -0800
+    "%m/%d/%Y %I:%M:%S %p",             // 47: 12/31/1999 11:59:59 pm
+    "%m/%d/%Y %I:%M %p %z",             // 48: 12/31/1999 11:59 pm -0800
+    "%m/%d/%Y %I:%M %p",                // 49: 12/31/1999 11:59 pm
+    "%m/%d/%Y %H:%M:%S %z",             // 50: 12/31/1999 23:59:59 -0800
+    "%m/%d/%Y %H:%M:%S",                // 51: 12/31/1999 23:59:59
+    "%m/%d/%Y %H:%M %z",                // 52: 12/31/1999 23:59 -0800
+    "%m/%d/%Y %H:%M",                   // 53: 12/31/1999 23:59
+    // date only
+    "%m/%d/%y %z",                      // 54: 12/31/99 -0800
+    "%m/%d/%y",                         // 55: 12/31/99
+    "%m/%d/%Y %z",                      // 56: 12/31/1999 -0800
+    "%m/%d/%Y",                         // 57: 12/31/1999
+    "%Y-%m-%d %z",                      // 58: 1999-12-31 -0800
+    "%Y-%m-%d",                         // 59: 1999-12-31
+    "%x"                                // 60: varies
+]
+
+var dateonly=53; //res after this will be at midnight, because format has no %H
+
+//var nowgmt = new Date("2024-01-01T08:30:00.000Z");
+//var nowgmt = new Date("2024-07-01T08:30:00.000Z");
+var nowgmt = new Date();
+var m = dateFmt("%Y-%m-%dT00:00:00.000Z",nowgmt);
+var midnight = new Date(m);
+
+
+var midnightlocal = new Date(nowgmt);
+midnightlocal.setHours(0);
+midnightlocal.setMinutes(0);
+midnightlocal.setSeconds(0);
+midnightlocal.setMilliseconds(0);
+
+printf("midnight=%s\n", midnight);
+printf("midnightlocal=%s\n", midnightlocal);
+
+for (var i=0; i<asdfmts.length; i++)
+{
+    var cfmt = asdfmts[i];
+    var res=false, diff=0;
+
+    var df = dateFmt(cfmt, nowgmt);
+    var asd=autoScanDate(df);
+    var cmpdate;
+
+    if(i>dateonly) // local midnight and gmt midnight are different gmt times.
+    {
+        if ( cfmt.indexOf('z')==-1 )
+            cmpdate=midnight
+        else
+            cmpdate=midnightlocal;
+    }
+    else // always the same gmt time
+    {
+            cmpdate=nowgmt;
+    }
+
+    diff=asd.date.getTime() - cmpdate.getTime();
+
+    // some formats don't have seconds.  So no diff should be greater than 60000 ms
+    if(diff<0) diff*=-1;
+
+    if(diff < 60000)
+        res=true
+    else
+        res=false;
+
+    testFeature('AutoScanDate "' + cfmt +'"', function(){
+        if(res)
+            return true;
+        else
+        {
+            printf("failed %s vs %s\n", asd.date, cmpdate);
+            printf("input = '%s'\n", df);
+            return false;
+        }
+    });
+
+}
+
+
+nowgmt=new Date( (""+nowgmt).replace(/^20/, "18") )
+midnight=new Date( (""+midnight).replace(/^20/, "18") );
+
+midnightlocal = new Date(nowgmt);
+midnightlocal.setHours(0);
+midnightlocal.setMinutes(0);
+midnightlocal.setSeconds(0);
+midnightlocal.setMilliseconds(0);
+
+// duktape bug(??): erroneously sets dst for dates before 1901, or maybe not eroneous cuz node does the same.
+// either way, /usr/share/zonenfo has no data before 1901 and if we have '1824/06/01 -0800', we expect the equiv gmt to be 8 hours ahead.
+// And apparently (according to wikipedia) "Port Arthur, Ontario, Canada, was the first city in the world to enact DST, on 1 July 1908"
+// - https://en.wikipedia.org/w/index.php?title=Daylight_saving_time&oldid=1234547798#History
+if( midnightlocal.getTimezoneOffset() != new Date("2024-01-01T12:00:00.000Z").getTimezoneOffset() )
+    midnightlocal.setHours(1);
+
+for (var i=0; i<asdfmts.length; i++)
+{
+    var cfmt = asdfmts[i];
+    var res=false, diff=0;
+    var df = dateFmt(cfmt, nowgmt);
+
+
+    var asd=autoScanDate(df);
+
+    // will naturally fail if %y is used
+    if(cfmt.indexOf('y')!=-1 || cfmt.indexOf('x')!=-1)
+        continue;
+
+    if(i>dateonly) // local midnight and gmt midnight are different gmt times.
+    {
+        if ( cfmt.indexOf('z')==-1 )
+            cmpdate=midnight;
+        else
+            //continue;// despite giving it MM/DD/1824 -0800, duktape is insisting that this is 7 hours from GMT
+            cmpdate=midnightlocal;
+    }
+    else // always the same gmt time
+    {
+            cmpdate=nowgmt;
+    }
+
+    diff=asd.date.getTime() - cmpdate.getTime();
+
+    // some formats don't have seconds.  So no diff should be greater than 60000 ms
+    if(diff<0) diff*=-1;
+
+    if(diff < 60000)
+        res=true
+    else
+        res=false;
+
+    testFeature('AutoScanDate 1800s "' + cfmt +'"', function(){
+        if(res)
+            return true;
+        else
+        {
+            printf("failed %s vs %s\n", asd.date, cmpdate);
+            printf("input = '%s'\n", df);
+            return false;
+        }
+    });
+
+}
 
 
 //lastline
