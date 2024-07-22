@@ -2725,9 +2725,6 @@ duk_ret_t duk_rp_stat_lstat(duk_context *ctx, int islstat)
     else
         err=stat(path, &path_stat);
 
-    pw = getpwuid(path_stat.st_uid);
-    gr = getgrgid(path_stat.st_gid);
-
     if (err)
     {
         if(safestat)
@@ -2737,6 +2734,9 @@ duk_ret_t duk_rp_stat_lstat(duk_context *ctx, int islstat)
         }
         RP_THROW(ctx, "stat(): error getting status '%s': %s", path, strerror(errno));
     }
+
+    pw = getpwuid(path_stat.st_uid);
+    gr = getgrgid(path_stat.st_gid);
 
     // lstat
     if(islstat)
@@ -5305,6 +5305,9 @@ static duk_ret_t str_to_num(duk_context *ctx)
     return 1;
 }
 
+// a test for "%m/%d/%y%n" failing to match space (linux)
+static int strptime_fmt_n_does_not_match=0;
+
 void duk_rampart_init(duk_context *ctx)
 {
     struct tm tst={0}, *tst_p=&tst;
@@ -5314,6 +5317,12 @@ void duk_rampart_init(duk_context *ctx)
     memset(tst_p,0,sizeof(struct tm));
     tst_p = localtime_r(&tst_t, tst_p);
     system_standard_time_offset=tst_p->tm_gmtoff;
+
+    memset(tst_p,0,sizeof(struct tm));
+    strptime("01/01/2024 ", "%m/%d/%y%n", tst_p);
+    if(tst_p->tm_year==120)
+        strptime_fmt_n_does_not_match=1;
+
     find_bundle();
 
     if (!duk_get_global_string(ctx, "rampart"))
@@ -8373,6 +8382,8 @@ static char *edfmts[EN_DATE_FORMATS] = {
     "%m/%d/%Y %H:%M",                   // 53: 12/31/1999 23:59
     // date only
     "%m/%d/%y %z",                      // 54: 12/31/99 -0800
+    // %n is not matching space on linux - so this matches 01/01/2024 with year 2020
+    // if this is the case, int strptime_fmt_n_does_not_match will be set to 1
     "%m/%d/%y%n",                       // 55: 12/31/99
     "%m/%d/%Y %z",                      // 56: 12/31/1999 -0800
     "%m/%d/%Y",                         // 57: 12/31/1999
@@ -8392,8 +8403,10 @@ static char *edfmts[EN_DATE_FORMATS] = {
     "%H:%M %z",                         // 69: 23:59 -0800
     "%H:%M",                            // 70: 23:59
 };
+#define EN_FORMAT_W_N 55
 //all indexes greater than "time only" line above
 #define EN_DATE_FMT_RELATIVE 60
+
 
 /* scan a string for a date, optionally with format in ifmt if not NULL
 
@@ -8492,12 +8505,18 @@ static int scandate(struct tm *dt_p, const char *dstr, const char *ifmt, int ext
                     dt_p->tm_min = 120;
                 }
 
-                //printf("%d, '%s'\n", i, edfmts[i]);
+                //printf("%d, '%s' for '%s'\n", i, edfmts[i], datestr);
                 p = strptime(datestr, edfmts[i], dt_p);
                 if(p && (end_index || *p=='\0') )
                 {
+                    if(strptime_fmt_n_does_not_match && i==EN_FORMAT_W_N)
+                    {
+                        if(isdigit(*p) && isdigit(p[1]) )
+                            continue;
+                    }
                     if(end_index)
                         *end_index = p-datestr;
+
                     //if hour was not set, then we don't get an offset, scan again with hour set to 00
                     //printf("offset was %d\n", dt_p->tm_gmtoff);
                     if(dt_p->tm_hour==-2)
@@ -8610,7 +8629,7 @@ static duk_ret_t auto_scandate(duk_context *ctx)
     //printf("match last char = %c\n", matched[strlen(matched)-1]);
 
     // look for colon in -08:00, which strptime didn't find */
-    if( matched[strlen(matched)-1] != 'z')
+    if( matched[strlen(matched)-1] != 'z' && *(datestr + eix -1)!='\0' )
     {
         char * datestr_alt = strdup(datestr);
         int fidx_alt;
@@ -8665,6 +8684,7 @@ static duk_ret_t auto_scandate(duk_context *ctx)
             duk_push_null(ctx);
             return 1;
         }
+        free(fmt);
 
         //printf("%d vs %d\n", dttmp.tm_year, dt_p->tm_year);
         if(dttmp.tm_year < 0 && dt_p->tm_year>-1)
@@ -8725,8 +8745,7 @@ static duk_ret_t auto_scandate(duk_context *ctx)
         char *ab=NULL;
 
         p=(char*)datestr + eix;
-
-        if (matched[strlen(matched)-1]!='z' && *p!='\0') // didn't get a -0800 and there's more after match
+        if (matched[strlen(matched)-1]!='z' && *(p-1)!='\0') // didn't get a -0800 and there's more after match
         {
             char *endp;
 
@@ -8830,11 +8849,11 @@ static duk_ret_t auto_scandate(duk_context *ctx)
             dt_p->tm_hour, dt_p->tm_min, dt_p->tm_sec, dt_p->tm_gmtoff, dt_p->tm_isdst
         );
         */
-
-        duk_push_sprintf(ctx, "%04d-%02d-%02d %02d:%02d:%02d%",
+        duk_push_sprintf(ctx, "%04d-%02d-%02d %02d:%02d:%02d",
             1900 + dt_p->tm_year, 1+dt_p->tm_mon, dt_p->tm_mday,
             dt_p->tm_hour, dt_p->tm_min, dt_p->tm_sec
         );
+
         duk_new(ctx, 1);
         duk_push_string(ctx, "getTime");
         duk_call_prop(ctx, -2, 0);
