@@ -366,8 +366,8 @@ midnightlocal.setMinutes(0);
 midnightlocal.setSeconds(0);
 midnightlocal.setMilliseconds(0);
 
-printf("midnight=%s\n", midnight);
-printf("midnightlocal=%s\n", midnightlocal);
+//printf("midnight=%s\n", midnight);
+//printf("midnightlocal=%s\n", midnightlocal);
 
 for (var i=0; i<asdfmts.length; i++)
 {
@@ -400,7 +400,7 @@ for (var i=0; i<asdfmts.length; i++)
     else
         res=false;
 
-    testFeature('AutoScanDate "' + cfmt +'"', function(){
+    testFeature('autoScanDate "' + cfmt +'"', function(){
         if(res)
             return true;
         else
@@ -466,18 +466,46 @@ for (var i=0; i<asdfmts.length; i++)
     else
         res=false;
 
-    testFeature('AutoScanDate 1800s "' + cfmt +'"', function(){
+    testFeature('autoScanDate 1800s "' + cfmt +'"', function(){
         if(res)
             return true;
         else
         {
-            printf("failed %s vs %s\n", asd.date, cmpdate);
+            printf("failed got %s, want %s\n", asd.date, cmpdate);
             printf("input = '%s'\n", df);
             return false;
         }
     });
 
 }
+
+
+testFeature("autoScanDate Abbr", function(){
+    var d = autoScanDate('01/25/2003 PST');
+    if(d && !d.errMsg && d.offset == -28800)
+        return true;
+});
+
+testFeature("autoScanDate invalid Abbr", function(){
+    var d = autoScanDate('01/25/2003 PDT');
+    if(d && d.errMsg && d.offset == 0)
+        return true;
+});
+
+
+
+testFeature("dateFmt localtime", function(){
+    var d=autoScanDate("01/01/2000");
+    var tz=dateFmt('%z', d.date, -7);
+    var hour = dateFmt('%H', d.date, -7);
+    return (tz=="-0700" && hour == "17");
+});
+
+testFeature("dateFmt from string", function(){
+    var tz=dateFmt('%z', "01/01/2000", -7);
+    var hour = dateFmt('%H', "01/01/2000", -7);
+    return (tz=="-0700" && hour == "17");
+});
 
 
 //lastline

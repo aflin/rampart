@@ -62,6 +62,10 @@ int duk_rp_server_logging=0;
 int rp_print_simplified_errors=0;
 int rp_print_error_lines=0;
 
+//static int z_format_broken=0; // set if strftime %z is not correct (macos)
+
+static time_t system_standard_time_offset=0;
+
 #ifdef __APPLE__
 
 //forkpty
@@ -5303,6 +5307,13 @@ static duk_ret_t str_to_num(duk_context *ctx)
 
 void duk_rampart_init(duk_context *ctx)
 {
+    struct tm tst={0}, *tst_p=&tst;
+    time_t tst_t;
+    strptime("2000-01-01 00:00:00", "%Y-%m-%d %H:%M:%S", tst_p);
+    tst_t=timegm(tst_p);
+    memset(tst_p,0,sizeof(struct tm));
+    tst_p = localtime_r(&tst_t, tst_p);
+    system_standard_time_offset=tst_p->tm_gmtoff;
     find_bundle();
 
     if (!duk_get_global_string(ctx, "rampart"))
@@ -8155,6 +8166,12 @@ static int cmp_abbr_match(const void *a, const void *b)
     return (*(rp_abbr_match **)a)->diff - (*(rp_abbr_match **)b)->diff;
 }
 
+/*
+   Get a list of matching timezones given a date and an abbreviation
+   Search for the abbreviation.  If the date is valid for the found transition
+   with that abbreviation, add it to the list.
+   The return list is sorted by distance from the system timezone
+*/
 
 static rp_abbr_match **get_abbr_list(char *abbr_s, struct tm *dt_p, int *ambig, int *nrecs_p, char **match)
 {
@@ -8748,17 +8765,27 @@ static duk_ret_t auto_scandate(duk_context *ctx)
                     duk_push_number(ctx, 1000.0 * (gmt - (double)match->type->gmtoff));
                     duk_new(ctx, 1);
                     duk_put_prop_string(ctx, -2, match->name);
+                    free(match);
                 }
+                free(matches);
                 duk_put_prop_string(ctx, -2, "dates");
                 add_to_fmt = strlen(matched)+1;
             }
             else if (matched) // we got a valid abbreviation, but no tz matches
             {
                 // it is still ambiguous, only worse.
+                double gmt = (double)timegm(dt_p);
+
                 duk_push_boolean(ctx, 1);
                 duk_put_prop_string(ctx, -2, "ambiguous");
                 duk_push_object(ctx);
+                duk_get_global_string(ctx, "Date");
+                duk_push_number(ctx, 1000.0 * gmt);
+                duk_new(ctx, 1);
+                duk_put_prop_string(ctx, -2, "Universal");
                 duk_put_prop_string(ctx, -2, "dates");
+                duk_push_sprintf(ctx, "Timezone Abbreviation '%s' is not valid for given date", matched);
+                duk_put_prop_string(ctx, -2, "errMsg");
                 add_to_fmt = strlen(matched)+1;
             }
             if(matched)
@@ -8766,28 +8793,28 @@ static duk_ret_t auto_scandate(duk_context *ctx)
             free(ab);
         }
     }
-/*
-if(dt_p->tm_year<0)
-{
-    saveyear=dt_p->tm_year;
-    dt_p->tm_year=0;
-}
-*/
-/*
-    res = timegm(dt_p);
-    if(res == -1) //returns -1 if error, but how do we know its not epoch-1 (i.e. "1969-12-31T23:59:59.000Z")?
+    /*
+    if(dt_p->tm_year<0)
     {
-        time_t res2;
-        dt_p->tm_sec -= 1;
-        res2 = timegm(dt_p);
-        if(res == res2) //still an error
-        {
-            duk_push_null(ctx);
-            return 1;
-        }
-        //else its -2 ("1969-12-31T23:59:58.000Z")
+        saveyear=dt_p->tm_year;
+        dt_p->tm_year=0;
     }
-*/
+    */
+    /*
+        res = timegm(dt_p);
+        if(res == -1) //returns -1 if error, but how do we know its not epoch-1 (i.e. "1969-12-31T23:59:59.000Z")?
+        {
+            time_t res2;
+            dt_p->tm_sec -= 1;
+            res2 = timegm(dt_p);
+            if(res == res2) //still an error
+            {
+                duk_push_null(ctx);
+                return 1;
+            }
+            //else its -2 ("1969-12-31T23:59:58.000Z")
+        }
+    */
 
     duk_get_global_string(ctx, "Date");
 
@@ -8911,31 +8938,33 @@ duk_ret_t duk_rp_datefmt(duk_context *ctx)
 {
     struct tm dt = {0}, *dt_p=&dt;
     const char *fmt = REQUIRE_STRING(ctx, 0, "dateFmt(): first argument must be a String (the format string)");
-    char out[1024];
+    char out[1024], *tfmt=NULL;
     time_t t;
-    int dogmt=1;
-    double off=0;
+    int dogmt=1, zcount=0;
+    double off=DBL_MAX;
 
     if(duk_is_string(ctx,1))
     {
-        const char *datestr = duk_get_string(ctx,1),
-                   *ifmt    = NULL;
+        const char *str=duk_get_string(ctx,1);
 
-        if(duk_is_string(ctx,2))
-            ifmt = duk_get_string(ctx,2);
-        else if (!duk_is_undefined(ctx, 2))
-            RP_THROW(ctx, "dateFmt(): When second argument is a String (dateString), third argument must be a String (date scan format)");
-
-        if(!duk_is_undefined(ctx, 3))
+        if(strcmp(str, "now")==0)
+            duk_push_undefined(ctx);
+        else
         {
-            dogmt= ! REQUIRE_BOOL(ctx, 3, "dateFmt() - fourth argument (if present) must be a Boolean (fmtLocal)");
+            duk_push_c_function(ctx, auto_scandate, 1);
+            duk_dup(ctx, 1);
+            duk_call(ctx, 1);
+
+            if(duk_is_null(ctx, -1))
+                return 1;
+
+            if(duk_get_prop_string(ctx, -1, "errMsg"))
+                RP_THROW(ctx, "dateFmt() - %s", duk_get_string(ctx, -1));
+            duk_pop(ctx);
+
+            duk_get_prop_string(ctx, -1, "date");
         }
 
-        if(scandate(dt_p, datestr, ifmt, 0, NULL)==-1)
-        {
-            duk_push_null(ctx);
-            return 1;
-        }
         duk_replace(ctx, 1);
     }
 
@@ -8957,17 +8986,26 @@ duk_ret_t duk_rp_datefmt(duk_context *ctx)
         if(duk_is_number(ctx, 2))
             off = duk_get_number(ctx, 2);
         else
-            dogmt= ! REQUIRE_BOOL(ctx, 2, "date - third argument (if present) must be a Boolean (fmtGmt)");
+            dogmt= ! REQUIRE_BOOL(ctx, 2, "date - third argument (if present) must be a Boolean (fmtGmt) or a Number (offset)");
     }
 
-    if(strstr(fmt, "%z"))
+    tfmt=(char *)fmt;
+    while( (tfmt=strstr(tfmt, "%z")))
+    {
         dogmt=0;
+        zcount++;
+        tfmt+=2;
+        if(! *tfmt)
+            break;
+    }
 
-    if(off !=0.0)
+    tfmt=NULL;
+
+    if(off !=DBL_MAX)
     {
         t+=(time_t) ( off * 3600);
         dt_p = gmtime_r(&t,dt_p);
-        /* somehow this doesn't change the output of %z */
+        /* somehow this doesn't change the output of %z on macos, we'll do it manually below */
         dt_p->tm_gmtoff = (time_t) ( off * 3600 );
     }
     else if(dogmt==1)
@@ -8975,7 +9013,7 @@ duk_ret_t duk_rp_datefmt(duk_context *ctx)
     else
         dt_p = localtime_r(&t,dt_p);
 
-    /* example of the problem:
+    /* example of the problem (which is now fixed):
         var d = new Date("1849-07-20T23:43:16.422Z");
         rampart.utils.printf("%s\n", rampart.utils.dateFmt('%c', d));
 
@@ -8983,38 +9021,46 @@ duk_ret_t duk_rp_datefmt(duk_context *ctx)
         // the printout with %z is -0800
     */
 
-    if( dt_p->tm_gmtoff % 3600 ) // if not mult of hour
+    if( dt_p->tm_gmtoff % 900 && off == DBL_MAX) // if not mult of quarter hour, no user offset provided
     {
-        /*
+
+        /* this only happens when third param is "true",
+           just use system_standard_time_offset          */
+
+        t+=system_standard_time_offset;
+        dt_p = gmtime_r(&t,dt_p);
+        dt_p->tm_gmtoff = system_standard_time_offset;
+
+        /*  WAAAY to convoluted and sometimes wrong.
         printf("BEFORE: %04d-%02d-%02d %02d:%02d:%02d  %+ld %d\n",
             1900 + dt_p->tm_year, 1+dt_p->tm_mon, dt_p->tm_mday,
             dt_p->tm_hour, dt_p->tm_min, dt_p->tm_sec, dt_p->tm_gmtoff, dt_p->tm_isdst
         );
-        */
-        time_t hour = dt_p->tm_gmtoff/3600;
-        time_t diff = dt_p->tm_gmtoff - hour * 3600;
-        //printf("hour is %ld, diff is %ld\n", hour, diff);
-        if(diff < -1799)
+
+        time_t qhour = dt_p->tm_gmtoff/900;
+        time_t diff = dt_p->tm_gmtoff - qhour * 900;
+        //printf("qhour is %ld, diff is %ld\n", qhour, diff);
+        if(diff < -449)
         {
-            hour--;
-            diff+=3600;
+            qhour--;
+            diff+=900;
         }
-        else if (diff > 1799)
+        else if (diff > 449)
         {
-            hour++;
-            diff-=3600;
+            qhour++;
+            diff-=900;
         }
 
-        //printf("hour is %ld, diff is %ld\n", hour, diff);
+        printf("dogmt=%d, zcount=%d, qhour is %ld, diff is %ld\n", dogmt, zcount, qhour, diff);
         t-=diff;
         memset(dt_p, 0, sizeof(struct tm));
-        if(dogmt)
+        if(dogmt || !zcount)
             dt_p = gmtime_r(&t,dt_p);
         else
             dt_p = localtime_r(&t,dt_p);
 
-        dt_p->tm_gmtoff = hour * 3600;
-        /*
+        dt_p->tm_gmtoff = qhour * 900;
+
         printf("AFTER: %04d-%02d-%02d %02d:%02d:%02d  %+ld %d\n",
             1900 + dt_p->tm_year, 1+dt_p->tm_mon, dt_p->tm_mday,
             dt_p->tm_hour, dt_p->tm_min, dt_p->tm_sec, dt_p->tm_gmtoff, dt_p->tm_isdst
@@ -9022,13 +9068,66 @@ duk_ret_t duk_rp_datefmt(duk_context *ctx)
         */
     }
 
+    /* do %z manually for all systems for consistency */
+
+    if(zcount)
+    {
+        char *p = (char *)fmt, *t;
+        int hh=(int)(dt_p->tm_gmtoff/3600);
+        int ss= dt_p->tm_gmtoff - hh * 3600;
+        int haveper=0, ahh=hh;
+
+        if(ss<0) ss*=-1;
+
+        REMALLOC(tfmt, 1 + strlen(fmt) + zcount * 3); // 3 = strlen("-0800") - strlen('%z')
+        t=tfmt;
+
+        while(*p)
+        {
+            if(haveper && *p=='z')
+            {
+                t--;
+                if(hh<0)
+                {
+                    *t='-';
+                    ahh=hh*-1;
+                }
+                else
+                {
+                    *t='+';
+                    ahh=hh;
+                }
+                t++;
+                t+= sprintf(t,"%02d%02d", ahh, ss/60);
+                haveper=0;
+                p++;
+                continue;
+            }
+            if(*p=='%')
+                haveper=1;
+            else
+                haveper=0;
+
+            *(t++) = *(p++);
+        }
+        fmt = (const char *)tfmt;
+    }
     //printf("tz=%f\n", (double)( dt_p->tm_gmtoff/3600) );
+
+
 
     if(strftime(out, sizeof(out), fmt, dt_p))
         duk_push_string(ctx, out);
     else
-        RP_THROW(ctx, "dateFmt() - Output string too large");
+    {
+        if(tfmt)
+            free(tfmt);
 
+        RP_THROW(ctx, "dateFmt() - Output string too large");
+    }
+
+    if(tfmt)
+        free(tfmt);
     return 1;
 }
 
