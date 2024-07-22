@@ -430,7 +430,13 @@ midnightlocal.setMilliseconds(0);
 if( midnightlocal.getTimezoneOffset() != new Date("2024-01-01T12:00:00.000Z").getTimezoneOffset() )
     midnightlocal.setHours(1);
 
-for (var i=0; i<asdfmts.length; i++)
+var len = 0;
+if(rampart.versionBits == 64)
+    len = asdfmts.length;
+else
+   testFeature('autoScanDate 1800s - 32bit platform', "skipping"); 
+
+for (var i=0; i<len; i++)
 {
     var cfmt = asdfmts[i];
     var res=false, diff=0;
