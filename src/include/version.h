@@ -4,9 +4,9 @@
 
 #define RAMPART_VERSION_H
 #define RAMPART_VERSION_MAJOR 0
-#define RAMPART_VERSION_MINOR 2
-#define RAMPART_VERSION_PATCH 2
-#define RAMPART_VERSION_PRERELEASE ""
+#define RAMPART_VERSION_MINOR 5
+#define RAMPART_VERSION_PATCH 0
+#define RAMPART_VERSION_PRERELEASE "-pre1"
 
 void duk_rp_push_rampart_version(duk_context *ctx);
 
