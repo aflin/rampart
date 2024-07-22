@@ -25,6 +25,9 @@ void duk_rp_push_rampart_version(duk_context *ctx)
     duk_eval_string(ctx, "rampart.utils.scanDate(\"" RAMPART_VERSION_TIMESTAMP "\",\"%Y-%m-%dT%H:%M:%SZ\");");
     duk_put_prop_string(ctx, -2, "versionDate");
 
+    duk_push_int(ctx, sizeof(void *) * 8);
+    duk_put_prop_string(ctx, -2, "versionBits");
+
     duk_put_global_string(ctx, "rampart");
 
 }
