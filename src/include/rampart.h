@@ -609,7 +609,14 @@ RPPATH rp_get_home_path(char *file, char *subdir);
 
 /* babelize in cmdline.c */
 extern char *main_babel_opt;
-const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mtime, int exclude_strict, char *opt);
+// no options
+#define babel_setting_none 0
+// remove use strict
+#define babel_setting_nostrict 1
+// dont exit, return malloced error string or NULL, remove use strict
+#define babel_setting_eval 2
+
+const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mtime, int setting, char *opt);
 
 /* end states for tickify */
 #define ST_NONE 0

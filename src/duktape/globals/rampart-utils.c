@@ -4332,7 +4332,7 @@ static duk_ret_t include_js(duk_context *ctx)
 
     buffer[rp.stat.st_size]='\0';
 
-    if (! (bfn=duk_rp_babelize(ctx, rp.path, buffer, rp.stat.st_mtime, 1, NULL)) )
+    if (! (bfn=duk_rp_babelize(ctx, rp.path, buffer, rp.stat.st_mtime, babel_setting_nostrict, NULL)) )
     {
         /* No babel, normal compile */
         int err, lineno;

@@ -92,7 +92,7 @@ static int load_js_module(duk_context *ctx, const char *file, duk_idx_t module_i
     duk_push_string(ctx, "(function (module, exports) { ");
 
     /* check for babel and push src to stack */
-    if (! (bfn=duk_rp_babelize(ctx, (char *)file, buffer, sb.st_mtime, 0, NULL)) )
+    if (! (bfn=duk_rp_babelize(ctx, (char *)file, buffer, sb.st_mtime, babel_setting_none, NULL)) )
     {
         /* No babel, normal compile */
         int err, lineno;

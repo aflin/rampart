@@ -1196,7 +1196,15 @@ static void *repl_thr(void *arg)
             }
             if(babelscript)
                 free(babelscript);
+            if(lastline)
+                free(lastline);
             duk_rp_exit(ctx, 0);
+        }
+
+        if(*line=='\0')
+        {
+            free(line);
+            continue;
         }
 
         oldline = line;
@@ -1204,52 +1212,95 @@ static void *repl_thr(void *arg)
         if(duk_rp_globalbabel)
         {
             REPL_LOCK;
-            char *unneeded;
+            char *error=NULL, *tryscript=NULL;
             const char *res=NULL, *bline=NULL;
+
+            if(lastline){
+
+                if(*line=='\0')
+                {
+                    lastline=strcatdup(lastline, "\n");
+                    free(line);
+                    continue;
+                }
+                lastline = strcatdup(lastline, line);
+                free(line);
+                line=lastline;
+            }
+            lastline=NULL;
             //redo entire script, but extract only last line
-            babelscript=strcatdup(babelscript, line);
-            babelscript=strcatdup(babelscript, "\n");
-            unneeded=(char *)duk_rp_babelize(ctx, "eval_code", babelscript, 0, 1, main_babel_opt);
-            free(unneeded);
-            res=duk_get_string(ctx, -1);
-            bline=res + strlen(res);
-            while(bline > res && *bline != '\n') bline--;
-            if(*bline =='\n') bline++;
-            line=strdup(bline);
-            duk_pop(ctx);
+            if(babelscript)
+                tryscript = strdup(babelscript);
+            tryscript=strcatdup(tryscript, line);
+            tryscript=strcatdup(tryscript, "\n");
+            error=(char *)duk_rp_babelize(ctx, "eval_code", tryscript, 0, babel_setting_eval, main_babel_opt);
+            if(error)
+            {
+                char *end=NULL;
+
+                if(strstr(error, "SyntaxError: Unexpected token") ) //command likely spans multiple lines
+                {
+                    lastline=line;
+                    free(error);
+                    free(tryscript);
+                    REPL_UNLOCK;
+                    continue;
+                }
+                end = strstr(error,"(");
+                if(end)
+                    printf("%s%.*s%s\n", red, (int)(end-error), error, reset);
+                else
+                    printf("%s%s%s\n", red, error, reset);
+                free(error);
+                free(line);
+                free(tryscript);
+                REPL_UNLOCK;
+                continue;
+            }
+            else
+            {
+                res=duk_get_string(ctx, -1);
+                bline=res + strlen(res);
+                while(bline > res && *bline != '\n') bline--;
+                if(*bline =='\n') bline++;
+                free(line);
+                line=strdup(bline);
+                duk_pop(ctx);
+                if(babelscript)
+                    free(babelscript);
+                babelscript=tryscript;
+            }
             REPL_UNLOCK;
         }
         else
             line = tickify(line, strlen(line), &err, &ln);
-        if (!line)
-            line=oldline;
-        else
-            free(oldline);
 
-        if(lastline){
-
-            if(*line=='\0')
-            {
-                lastline=strcatdup(lastline, "\n");
-                free(line);
-                continue;
-            }
-            lastline = strjoin(lastline, line, '\n');
-            free(line);
-            line=lastline;
-
-            oldline=line;
-            line = tickify(line, strlen(line), &err, &ln);
+        if(!duk_rp_globalbabel)
+        {
             if (!line)
                 line=oldline;
             else
                 free(oldline);
-        }
 
-        if(*line=='\0')
-        {
-            free(line);
-            continue;
+            if(lastline){
+
+                if(*line=='\0')
+                {
+                    lastline=strcatdup(lastline, "\n");
+                    free(line);
+                    continue;
+                }
+                lastline = strjoin(lastline, line, '\n');
+                free(line);
+                line=lastline;
+
+                oldline=line;
+                line = tickify(line, strlen(line), &err, &ln);
+                if (!line)
+                    line=oldline;
+                else
+                    free(oldline);
+            }
         }
 
         REPL_LOCK;
@@ -1423,8 +1474,9 @@ static char *checkbabel(char *src)
 
 char *main_babel_opt=NULL;
 
+
 /* babelized source is left on top of stack*/
-const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mtime, int exclude_strict, char *opt)
+const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mtime, int setting, char *opt)
 {
     char *s, *babelcode=NULL;
     struct stat babstat;
@@ -1531,6 +1583,8 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
     if (duk_pcompile(ctx, 0) == DUK_EXEC_ERROR)
     {
         const char *errmsg = rp_push_error(ctx, -1, NULL, rp_print_error_lines);
+        if(setting==babel_setting_eval)
+            return strdup(errmsg);
         fprintf(stderr, "%s\n", errmsg);
         duk_rp_exit(ctx, 1);
     }
@@ -1615,7 +1669,7 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
                     {
                         fprintf(stderr,"error fread(): error reading file '%s'\n", babelsrc);
                     }
-                    if(exclude_strict)
+                    if(setting)
                     {
                         int k=0;
                         while(k<13)
@@ -1637,6 +1691,8 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
     if (duk_pcompile(ctx, DUK_COMPILE_FUNCTION) == DUK_EXEC_ERROR)
     {
         const char *errmsg = rp_push_error(ctx, -1, NULL, rp_print_error_lines);
+        if(setting==babel_setting_eval)
+            return strdup(errmsg);
         fprintf(stderr, "%s\n", errmsg);
         duk_rp_exit(ctx, 1);
     }
@@ -1645,6 +1701,8 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
     if (duk_pcall(ctx, 1) == DUK_EXEC_ERROR)
     {
         const char *errmsg = rp_push_error(ctx, -1, NULL, rp_print_error_lines);
+        if(setting==babel_setting_eval)
+            return strdup(errmsg);
         fprintf(stderr, "%s\n", errmsg);
         duk_rp_exit(ctx, 1);
     }
@@ -1673,14 +1731,18 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
         }
     }
 
-    if(exclude_strict)
+    if(setting)
     {
         duk_push_string(ctx, babelcode+13);
         duk_replace(ctx, -2);
     }
 
+    if(setting==babel_setting_eval)
+        return NULL;
+
     end:
     //free(opt);
+
     return (const char*) (strlen(babelsrc)) ? strdup(babelsrc): strdup(fn);
 }
 
@@ -3519,7 +3581,7 @@ int main(int argc, char *argv[])
             RPTHR_SET(mainthr, RPTHR_FLAG_BASE);
 
             /* push babelized source to stack if available */
-            if (! (babel_source_filename=duk_rp_babelize(ctx, fn, file_src, entry_file_stat.st_mtime, 0, NULL)) )
+            if (! (babel_source_filename=duk_rp_babelize(ctx, fn, file_src, entry_file_stat.st_mtime, babel_setting_none, NULL)) )
             {
                 /* No babel, normal compile */
                 int err, lineno;

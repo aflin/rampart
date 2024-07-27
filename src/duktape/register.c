@@ -255,7 +255,7 @@ static duk_ret_t rp_eval_js(duk_context *ctx)
     duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("buildin_eval"));
 
     // main_babel_opt is non null if this script was previously babelized.
-    if ( !main_babel_opt || ! (bfn=duk_rp_babelize(ctx, "eval_code", source, tsnow.tv_sec, 1, main_babel_opt)) )
+    if ( !main_babel_opt || ! (bfn=duk_rp_babelize(ctx, "eval_code", source, tsnow.tv_sec, babel_setting_nostrict, main_babel_opt)) )
     {
         int err=0, lineno=0;
         char *tickified = tickify(source, strlen(source), &err, &lineno);
