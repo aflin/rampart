@@ -28,6 +28,7 @@
 #include "whereami.h"
 
 int globalize=0;
+int duk_rp_globalbabel=0;
 
 //clock_gettime for macos < sierra
 #ifdef NEEDS_CLOCK_GETTIME
@@ -1133,7 +1134,7 @@ static void *repl_thr(void *arg)
     char *line=NULL, *lastline=NULL;
     char *prefix=RP_REPL_PREFIX;
     char histfn[PATH_MAX];
-    char *hfn=NULL;
+    char *hfn=NULL, *babelscript=NULL;
     char *home = getenv("HOME");
     int err;
     duk_context *ctx = (duk_context *) arg;
@@ -1193,11 +1194,29 @@ static void *repl_thr(void *arg)
                 }
                 continue;
             }
+            if(babelscript)
+                free(babelscript);
             duk_rp_exit(ctx, 0);
         }
 
         oldline = line;
         linenoiseHistoryAdd(oldline);
+        if(duk_rp_globalbabel)
+        {
+            REPL_LOCK;
+            const char *res=NULL, *bline=NULL;
+            //redo entire script, but extract only last line
+            babelscript=strcatdup(babelscript, line);
+            babelscript=strcatdup(babelscript, "\n");
+            (void)duk_rp_babelize(ctx, "eval_code", babelscript, 0, 1, main_babel_opt);
+            res=duk_get_string(ctx, -1);
+            bline=res + strlen(res);
+            while(bline > res && *bline != '\n') bline--;
+            if(*bline =='\n') bline++;
+            line=strdup(bline);
+            duk_pop(ctx);
+            REPL_UNLOCK;
+        }
         line = tickify(line, strlen(line), &err, &ln);
         if (!line)
             line=oldline;
@@ -1307,8 +1326,6 @@ static int repl(duk_context *ctx)
 
     return 0;
 }
-
-int duk_rp_globalbabel=0;
 
 static char *checkbabel(char *src)
 {
