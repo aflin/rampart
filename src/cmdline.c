@@ -1204,11 +1204,13 @@ static void *repl_thr(void *arg)
         if(duk_rp_globalbabel)
         {
             REPL_LOCK;
+            char *unneeded;
             const char *res=NULL, *bline=NULL;
             //redo entire script, but extract only last line
             babelscript=strcatdup(babelscript, line);
             babelscript=strcatdup(babelscript, "\n");
-            (void)duk_rp_babelize(ctx, "eval_code", babelscript, 0, 1, main_babel_opt);
+            unneeded=(char *)duk_rp_babelize(ctx, "eval_code", babelscript, 0, 1, main_babel_opt);
+            free(unneeded);
             res=duk_get_string(ctx, -1);
             bline=res + strlen(res);
             while(bline > res && *bline != '\n') bline--;
@@ -1217,7 +1219,8 @@ static void *repl_thr(void *arg)
             duk_pop(ctx);
             REPL_UNLOCK;
         }
-        line = tickify(line, strlen(line), &err, &ln);
+        else
+            line = tickify(line, strlen(line), &err, &ln);
         if (!line)
             line=oldline;
         else
