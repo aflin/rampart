@@ -3025,6 +3025,7 @@ static void print_help(char *argv0)
     %s [options] file_name [--] [args]\n\n\
     Options:\n\
         -g, --globalize                    - globalize rampart.utils\n\
+        -b, --use_babel                    - run all scripts through babel to support ECMAScript 2015+\n\
         -c, --command_string \"script\"      - load script from argument string\n\
         -v, --version                      - print version\n\
         -C, --color                        - use colors in interactive mode (repl)\n\
@@ -3036,6 +3037,7 @@ static void print_help(char *argv0)
         --                                 - do not process any arguments following (but pass to script)\n\
         -h, --help                         - this help message\n\n\
     \"file_name\" or \"script\" may be '-' for stdin\n\n\
+    note: any options specified that do not match the above, or options after '--' are passed to the script\n\n\
     Documentation can be found at https://rampart.dev/docs/\n",
                 argv0);
     exit(0);
@@ -3169,8 +3171,16 @@ int main(int argc, char *argv[])
                 server=1;
             else if(!strcmp(opt,"--quickserver"))
                 server=2;
-            else if(!strcmp(opt,"--globalize-utils"))
+            else if(!strcmp(opt,"--globalize"))
                 globalize=1;
+            else if(!strcmp(opt,"--use-babel"))
+            {
+                if(!duk_rp_globalbabel)
+                {
+                    duk_rp_globalbabel=1;
+                    main_babel_opt=strdup("{ presets: ['env'],retainLines:true }");
+                }
+            }
             else if(!strcmp(opt,"--color"))
                 rp_color=1;
             else if(!strcmp(opt,"--quiet"))
@@ -3209,6 +3219,13 @@ int main(int argc, char *argv[])
                         break;
                     case 'g':
                         globalize=1;
+                        break;
+                    case 'b':
+                        if(!duk_rp_globalbabel)
+                        {
+                            duk_rp_globalbabel=1;
+                            main_babel_opt=strdup("{ presets: ['env'],retainLines:true }");
+                        }
                         break;
                     case 'v':
                         print_version();
@@ -3421,16 +3438,16 @@ int main(int argc, char *argv[])
             }
             else
             {
-                if (stat(argv[0], &entry_file_stat))
+                if (stat(argv[scriptarg], &entry_file_stat))
                 {
-                    duk_push_error_object(ctx, DUK_ERR_ERROR, "Could not find entry file '%s': %s", argv[0], strerror(errno));
+                    duk_push_error_object(ctx, DUK_ERR_ERROR, "Could not find entry file '%s': %s", argv[scriptarg], strerror(errno));
                     fprintf(stderr,"%s\n", duk_safe_to_stacktrace(ctx, -1));
                     duk_rp_exit(ctx, 1);
                 }
-                entry_file = fopen(argv[0], "r");
+                entry_file = fopen(argv[scriptarg], "r");
                 if (entry_file == NULL)
                 {
-                    duk_push_error_object(ctx, DUK_ERR_ERROR, "Could not open entry file '%s': %s", argv[0], strerror(errno));
+                    duk_push_error_object(ctx, DUK_ERR_ERROR, "Could not open entry file '%s': %s", argv[scriptarg], strerror(errno));
                     fprintf(stderr,"%s\n", duk_safe_to_stacktrace(ctx, -1));
                     duk_rp_exit(ctx, 1);
                 }
@@ -3444,12 +3461,12 @@ int main(int argc, char *argv[])
 
                 if (fread(file_src, 1, entry_file_stat.st_size, entry_file) != entry_file_stat.st_size)
                 {
-                    duk_push_error_object(ctx, DUK_ERR_ERROR, "Could not read entry file '%s': %s", argv[0], strerror(errno));
+                    duk_push_error_object(ctx, DUK_ERR_ERROR, "Could not read entry file '%s': %s", argv[scriptarg], strerror(errno));
                     fprintf(stderr,"%s\n", duk_safe_to_stacktrace(ctx, -1));
                     free(free_file_src);
                     duk_rp_exit(ctx, 1);
                 }
-                fn=argv[0];
+                fn=argv[scriptarg];
                 fclose(entry_file);
             }
             have_src:
