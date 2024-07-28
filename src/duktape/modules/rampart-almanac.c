@@ -64,7 +64,7 @@ duk_ret_t get_sun(duk_context *ctx)
     double lon, lat;
     struct tm tm_s={0}, *tm=&tm_s;
     rp_sun_times sr_s={0}, *sr=&sr_s;
-    duk_idx_t date_idx;
+    duk_idx_t date_idx=0;
 
     int type = rp_gettype(ctx, 0);
     if(type==RP_TYPE_DATE)
@@ -156,7 +156,7 @@ duk_ret_t get_moon(duk_context *ctx)
     double lon, lat;
     struct tm tm_s={0}, *tm=&tm_s;
     rp_moon_times mr_s={0}, *mr=&mr_s;
-    duk_idx_t date_idx;
+    duk_idx_t date_idx=0;
 
     int type = rp_gettype(ctx, 0);
     if(type==RP_TYPE_DATE)
@@ -242,7 +242,7 @@ duk_ret_t get_planets(duk_context *ctx){
     rp_body_times times_s={0}, *times=&times_s;
     struct tm tm_s={0}, *tm=&tm_s;
     double lat=0, lon=0;
-    duk_idx_t date_idx;
+    duk_idx_t date_idx=0;
 
     int type = rp_gettype(ctx, 0);
     if(type==RP_TYPE_DATE)

@@ -209,6 +209,36 @@ extern int rp_print_error_lines;
         printf("\n}\n");                              \
     } while (0)
 
+//when stack contains cyclic objects
+#define safeprettyprintstack(ctx)                           \
+    do {                                              \
+        duk_idx_t i=0, top=duk_get_top(ctx);          \
+        char *s;                                      \
+        printf("ctx: top=%d, stack(%p)={\n", (int)top, ctx);   \
+        while (i<top) {                               \
+            if(i) printf(",\n");                      \
+            s=str_rp_to_json_safe(ctx, i, NULL);      \
+            duk_get_global_string((ctx), "JSON");     \
+            duk_push_string(ctx, "parse");            \
+            duk_push_string(ctx, s);                  \
+            duk_call_prop(ctx, -3, 1);                \
+            duk_push_string((ctx), "stringify");      \
+            duk_pull(ctx, -2);                        \
+            duk_push_null((ctx));                     \
+            duk_push_int((ctx), 4);                   \
+            duk_call_prop((ctx), -5, 3);              \
+            free(s);                                  \
+            s=(char*)duk_to_string(ctx, -1);          \
+            if(strchr(s,'{'))                         \
+                printf("   %d:\n%s", (int)i, s);       \
+            else                                      \
+                printf("   %d: %s", (int)i, s);      \
+            duk_pop_2(ctx);                           \
+            i++;                                      \
+        }                                             \
+        printf("\n}\n");                              \
+    } while (0)
+
 #define printenum(ctx, idx)                                                                                          \
     do                                                                                                               \
     {                                                                                                                \
@@ -584,13 +614,6 @@ duk_ret_t rp_auto_scandate(duk_context *ctx);
 #define RP_TYPE_OBJECT 11
 #define RP_TYPE_UNKNOWN 12
 #define RP_NTYPES 13
-
-static char *rp_types[RP_NTYPES] = {
-    "String", "Array", "Nan", "Number",
-    "Function", "Boolean", "Buffer", "Null",
-    "Undefined", "Symbol", "Date", "Object",
-    "Unknown"
-};
 
 int rp_gettype(duk_context *ctx, duk_idx_t idx);
 

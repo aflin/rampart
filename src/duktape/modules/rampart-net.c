@@ -369,7 +369,6 @@ static int do_callback(duk_context *ctx, const char *ev_s, duk_idx_t nargs)
     duk_idx_t exit_top = duk_get_top(ctx) -1 -nargs; //before 'this'
     int nerrorcb=-1; // number of error callbacks, or -1 if not an error event
     //[ ..., this, [args, args] ]
-
     if(!strcmp("error",ev_s))
     {
         const char *errstr = "unspecified error";
@@ -385,7 +384,7 @@ static int do_callback(duk_context *ctx, const char *ev_s, duk_idx_t nargs)
         duk_replace(ctx, -2);
     }
 
-//    printf("%s top=%d, exittop=%d\n", ev_s, duk_get_top(ctx), exit_top);
+    //printf("%s top=%d, exittop=%d, looking for events in %d\n", ev_s, duk_get_top(ctx), exit_top, (int)(-1 - nargs));
     duk_get_prop_string(ctx, -1 - nargs, "_events");
 
     //[ ..., this, [args, args], eventobj ]
@@ -440,6 +439,7 @@ static int do_callback(duk_context *ctx, const char *ev_s, duk_idx_t nargs)
                 duk_pop(ctx); //discard retval
         }// while
     }
+    //else if(strcmp(ev_s,"lookup")==0){ printf("event %s not found\n", ev_s); safeprettyprintstack(ctx); }
     // else  [ ..., this, [args, args], eventobj, undefined ]
     if(nerrorcb == 0)
     {
@@ -943,7 +943,7 @@ static void async_dns_callback(int errcode, struct evutil_addrinfo *addr, void *
     RPSOCK *sinfo = (RPSOCK *) arg;
     duk_context *ctx = sinfo->ctx;
     DNS_CB_ARGS *dnsargs = (DNS_CB_ARGS *) sinfo->aux;
-
+    duk_idx_t top=duk_get_top(ctx);
 
     if(errcode)
     {
@@ -956,7 +956,6 @@ static void async_dns_callback(int errcode, struct evutil_addrinfo *addr, void *
         duk_push_string(ctx, evutil_gai_strerror(errcode) );
         do_callback(ctx, "error", 1);
         socket_cleanup(ctx, sinfo, WITH_CALLBACKS);
-        return;
     }
     else
     {
@@ -969,6 +968,7 @@ static void async_dns_callback(int errcode, struct evutil_addrinfo *addr, void *
             DUK_INVALID_INDEX, DUK_INVALID_INDEX, 0);
 
     }
+    duk_set_top(ctx,top);
 }
 
 static void async_resolve(RPSOCK *sinfo, const char *hn)
@@ -1637,8 +1637,8 @@ static void sock_eventcb(struct bufferevent * bev, short events, void * arg)
     if (events & BEV_EVENT_CONNECTED)
     {
         int fd = bufferevent_getfd(bev);
-        struct sockaddr addr;
-        socklen_t sz = sizeof(struct sockaddr);
+        struct sockaddr_storage addr;
+        socklen_t sz = sizeof(struct sockaddr_storage);
         char addrstr[INET6_ADDRSTRLEN];
         int localport, insecure=0;
 
@@ -1719,7 +1719,7 @@ static void sock_eventcb(struct bufferevent * bev, short events, void * arg)
 
         errno=0;
         /* set local host/port */
-        if(getsockname(fd, &addr, &sz ))
+        if(getsockname(fd, (struct sockaddr *)&addr, &sz ))
         {
             //do error - this really shouldn't happen since libevent says we are connected
             //duk_dup(ctx, -1);
@@ -1741,17 +1741,17 @@ static void sock_eventcb(struct bufferevent * bev, short events, void * arg)
             duk_push_string(ctx, "open");
             duk_put_prop_string(ctx, -2, "readyState");
 
-            if( addr.sa_family == AF_INET ) {
+            if( addr.ss_family == AF_INET ) {
                 struct sockaddr_in *sa = ( struct sockaddr_in *) &addr;
 
-                inet_ntop (addr.sa_family, (void * ) &( ((struct sockaddr_in *)&addr)->sin_addr), addrstr, INET6_ADDRSTRLEN);
+                inet_ntop (addr.ss_family, (void * ) &( ((struct sockaddr_in *)&addr)->sin_addr), addrstr, INET6_ADDRSTRLEN);
                 localport = (int) ntohs(sa->sin_port);
             }
             else
             {
                 struct sockaddr_in6 *sa = ( struct sockaddr_in6 *) &addr;
 
-                inet_ntop (addr.sa_family, (void*) &(((struct sockaddr_in6*)&addr)->sin6_addr), addrstr, INET6_ADDRSTRLEN);
+                inet_ntop (addr.ss_family, (void*) &(((struct sockaddr_in6*)&addr)->sin6_addr), addrstr, INET6_ADDRSTRLEN);
                 localport = (int) ntohs(sa->sin6_port);
             }
 
