@@ -90,31 +90,7 @@ int execvpe(const char *program, char **argv, char **envp)
 
 #endif
 
-/* getType(): alternate to typeof, with only one answer
-  Init cap to distinguish from typeof */
-#define RP_TYPE_STRING 0
-#define RP_TYPE_ARRAY 1
-#define RP_TYPE_NAN 2
-#define RP_TYPE_NUMBER 3
-#define RP_TYPE_FUNCTION 4
-#define RP_TYPE_BOOLEAN 5
-#define RP_TYPE_BUFFER 6
-#define RP_TYPE_NULL 7
-#define RP_TYPE_UNDEFINED 8
-#define RP_TYPE_SYMBOL 9
-#define RP_TYPE_DATE 10
-#define RP_TYPE_OBJECT 11
-#define RP_TYPE_UNKNOWN 12
-#define RP_NTYPES 13
-
-static char *rp_types[RP_NTYPES] = {
-    "String", "Array", "Nan", "Number",
-    "Function", "Boolean", "Buffer", "Null",
-    "Undefined", "Symbol", "Date", "Object",
-    "Unknown"
-};
-
-static int gettype(duk_context *ctx, duk_idx_t idx)
+int rp_gettype(duk_context *ctx, duk_idx_t idx)
 {
     /* Symbol.iterator is also a string. */
     if (duk_is_symbol(ctx, idx))
@@ -1142,7 +1118,7 @@ static char *rp_json_object(duk_context *ctx, duk_idx_t idx, char *r, char *path
     }
 
     store_ref(ctx, idx, path);
-    if(gettype(ctx, idx) == RP_TYPE_DATE)
+    if(rp_gettype(ctx, idx) == RP_TYPE_DATE)
     {
         duk_push_string(ctx, "toISOString");
         duk_call_prop(ctx, idx, 0);
@@ -5913,16 +5889,16 @@ static char getch(duk_context *ctx) {
         return (buf);
 }
 
-static duk_ret_t duk_rp_fgets_getchar(duk_context *ctx, int gettype)
+static duk_ret_t duk_rp_fgets_getchar(duk_context *ctx, int gtype)
 {
     FILE *f = NULL;
     char *buf=NULL;
     size_t r=0, readlen=1;
     const char *filename="";
     int ch, type=RTYPE_STDIN;
-    char *fn = (gettype)?"getchar":"fgets";
+    char *fn = (gtype)?"getchar":"fgets";
 
-    if(!gettype)
+    if(!gtype)
     {
         type=0;
         f=getreadfile(ctx, 0, fn, filename, type);//type is reset
@@ -5946,7 +5922,7 @@ static duk_ret_t duk_rp_fgets_getchar(duk_context *ctx, int gettype)
 
     REMALLOC(buf, readlen+1);
 
-    if(gettype)
+    if(gtype)
     {
         do
         {
@@ -6323,7 +6299,7 @@ duk_ret_t duk_rp_abprintf(duk_context *ctx)
 
 duk_ret_t duk_rp_getType(duk_context *ctx)
 {
-    duk_push_string(ctx, rp_types[gettype(ctx, 0)]);
+    duk_push_string(ctx, rp_types[rp_gettype(ctx, 0)]);
     return 1;
 }
 
@@ -8605,7 +8581,7 @@ static int scandate(struct tm *dt_p, const char *dstr, const char *ifmt, int ext
 }
 
 /* auto scan a string date, with many possible formats*/
-static duk_ret_t auto_scandate(duk_context *ctx)
+duk_ret_t rp_auto_scandate(duk_context *ctx)
 {
     struct tm dt = {0}, dt_alt={0}, *dt_p=&dt;
     const char *datestr = REQUIRE_STRING(ctx, 0, "autoScanDate(): first argument must be a String (date/time)");
@@ -8970,7 +8946,7 @@ duk_ret_t duk_rp_datefmt(duk_context *ctx)
             duk_push_undefined(ctx);
         else
         {
-            duk_push_c_function(ctx, auto_scandate, 1);
+            duk_push_c_function(ctx, rp_auto_scandate, 1);
             duk_dup(ctx, 1);
             duk_call(ctx, 1);
 
@@ -9295,7 +9271,7 @@ void duk_printf_init(duk_context *ctx)
     duk_push_c_function(ctx, duk_rp_scandate, 3);
     duk_put_prop_string(ctx, -2, "scanDate");
 
-    duk_push_c_function(ctx, auto_scandate, 2);
+    duk_push_c_function(ctx, rp_auto_scandate, 2);
     duk_put_prop_string(ctx, -2, "autoScanDate");
 
     duk_push_c_function(ctx, load_tz_info, 1);

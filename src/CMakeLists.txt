@@ -156,6 +156,13 @@ set_target_properties(rampart-robots PROPERTIES LINKER_LANGUAGE CXX )
 add_dependencies(rampart-robots robots robots-static robots-main)
 
 
+###ALMANAC###
+add_library(rampart-almanac SHARED
+	duktape/modules/rampart-almanac.c
+    duktape/modules/almanac.c
+    duktape/modules/astronomy.c
+)
+
 ###CMARK###
 add_library(rampart-cmark SHARED
 	duktape/modules/rampart-cmark.c
@@ -168,7 +175,6 @@ target_include_directories(rampart-cmark PRIVATE
 	${PROJECT_BINARY_DIR}/extern/cmark/src/
 )
 add_dependencies(rampart-cmark cmark_static)
-
 
 ###HTML###
 add_library(rampart-html SHARED
@@ -254,7 +260,7 @@ add_dependencies(rampart-sql texis texislockd)
 # libre2 needs to be linked by c++
 set_target_properties(rampart-sql PROPERTIES LINKER_LANGUAGE CXX )
 
-###RAMIS###
+###REDIS###
 add_library(rampart-redis SHARED
 	duktape/modules/rampart-redis.c
 	redis/resp_client.c
@@ -553,7 +559,8 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
         rampart-curl rampart-server rampart-sql
         rampart-redis rampart-crypto rampart-html
         rampart-cmark rampart-robots rampart-lmdb
-        rampart-net rampart-python #example_name
+        rampart-net rampart-python rampart-almanac
+        #example_name
           PROPERTIES
           LINK_FLAGS   "-undefined dynamic_lookup -Wl,-rpath,./"
           SUFFIX       ".so"
@@ -564,7 +571,8 @@ else()
         rampart-curl rampart-server rampart-sql
         rampart-redis rampart-crypto rampart-html
         rampart-cmark rampart-robots rampart-lmdb
-        rampart-net rampart-python #example_name
+        rampart-net rampart-python rampart-almanac
+        #example_name
           PROPERTIES
           LINK_FLAGS "-Wl,-rpath,./"
           SUFFIX       ".so"
@@ -598,12 +606,20 @@ install(TARGETS
 	rampart-robots
 	rampart-lmdb
 	rampart-python
+    rampart-almanac
 	DESTINATION "${CMAKE_INSTALL_PREFIX}/modules/"
 )
 
 install(CODE "execute_process( \
     COMMAND ${CMAKE_COMMAND} -E copy \
     \"${PROJECT_SOURCE_DIR}/js_modules/rampart-url.js\" \
+    \"${CMAKE_INSTALL_PREFIX}/modules/\"   \
+    )"
+)
+
+install(CODE "execute_process( \
+    COMMAND ${CMAKE_COMMAND} -E copy \
+    \"${PROJECT_SOURCE_DIR}/js_modules/rampart-date-holidays.js\" \
     \"${CMAKE_INSTALL_PREFIX}/modules/\"   \
     )"
 )
@@ -834,4 +850,5 @@ install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules
 install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-robots.so\")")
 install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-server.so\")")
 install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-sql.so\")")
+install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-almanac.so\")")
 install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/bin/rampart\")")

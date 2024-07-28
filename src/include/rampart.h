@@ -566,6 +566,33 @@ duk_ret_t duk_rp_values_from_object(duk_context *ctx, duk_idx_t idx);
 duk_ret_t duk_rp_read_file(duk_context *ctx);// rampart.utils.readFile()
 FILE *duk_rp_push_fopen_buffer(duk_context *ctx, size_t chunk);
 duk_ret_t duk_rp_push_current_module(duk_context *ctx);
+duk_ret_t rp_auto_scandate(duk_context *ctx);
+
+/* getType(): alternate to typeof, with only one answer
+  Init cap to distinguish from typeof */
+#define RP_TYPE_STRING 0
+#define RP_TYPE_ARRAY 1
+#define RP_TYPE_NAN 2
+#define RP_TYPE_NUMBER 3
+#define RP_TYPE_FUNCTION 4
+#define RP_TYPE_BOOLEAN 5
+#define RP_TYPE_BUFFER 6
+#define RP_TYPE_NULL 7
+#define RP_TYPE_UNDEFINED 8
+#define RP_TYPE_SYMBOL 9
+#define RP_TYPE_DATE 10
+#define RP_TYPE_OBJECT 11
+#define RP_TYPE_UNKNOWN 12
+#define RP_NTYPES 13
+
+static char *rp_types[RP_NTYPES] = {
+    "String", "Array", "Nan", "Number",
+    "Function", "Boolean", "Buffer", "Null",
+    "Undefined", "Symbol", "Date", "Object",
+    "Unknown"
+};
+
+int rp_gettype(duk_context *ctx, duk_idx_t idx);
 
 //returns a safe json-like string.  prints cyclic references as paths in object.
 //needs free
