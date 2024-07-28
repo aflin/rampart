@@ -90,6 +90,13 @@ int execvpe(const char *program, char **argv, char **envp)
 
 #endif
 
+static char *rp_types[RP_NTYPES] = {
+    "String", "Array", "Nan", "Number",
+    "Function", "Boolean", "Buffer", "Null",
+    "Undefined", "Symbol", "Date", "Object",
+    "Unknown"
+};
+
 int rp_gettype(duk_context *ctx, duk_idx_t idx)
 {
     /* Symbol.iterator is also a string. */
@@ -1214,13 +1221,22 @@ static char * rp_to_json_safe(duk_context *ctx, duk_idx_t idx, char *r, char *pa
     if(duk_is_null(ctx,idx))
         return strcatdup(r,"null");
     else if(duk_is_undefined(ctx,idx))
-        return strcatdup(r,"undefined");
+        return strcatdup(r,"null");
+    else if(duk_is_pointer(ctx, -1))
+        return strcatdup(r,"{\"_c_pointer\":true}");
     else if(!duk_is_object(ctx, idx))
     {
-        char *ret;
+        char *ret, *s;
 
         duk_dup(ctx, idx);
-        ret = strcatdup(r, (char*)duk_json_encode(ctx, -1));
+        s=(char*) duk_json_encode(ctx, -1);
+
+        if(!s || !strlen(s))
+        {
+            duk_pop(ctx);
+            return strcatdup(r,"null");
+        }
+        ret = strcatdup(r, s);
         duk_pop(ctx);
         return ret;
     }
