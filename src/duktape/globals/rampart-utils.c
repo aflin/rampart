@@ -5612,17 +5612,17 @@ char *to_utf8(const char *in_str)
 
 #include "printf.c"
 
-/* TODO: make locking per file.  Add locking to fwrite */
+/* TODO: make locking per file.  Add locking to fwrite. or maybe ditch locking? */
 
 duk_ret_t duk_rp_printf(duk_context *ctx)
 {
-    char buffer[1];
     int ret;
 
     if (pthread_mutex_lock(&pflock) != 0)
         RP_THROW(ctx, "printf(): error - could not obtain lock\n");
 
-    ret = rp_printf(_out_char, buffer, (size_t)-1, ctx,0,&pflock);
+    ret = rp_printf(_fout_char, (void*)stdout, (size_t)-1, ctx, 0, &pflock);
+    fflush(stdout);
     pthread_mutex_unlock(&pflock);
     duk_push_int(ctx, ret);
     return 1;
@@ -6086,6 +6086,38 @@ duk_ret_t duk_rp_fwrite(duk_context *ctx)
     return(1);
 }
 
+static void restore_fh(duk_context *ctx, duk_idx_t this_idx)
+{
+    if(duk_get_prop_string(ctx, this_idx, DUK_HIDDEN_SYMBOL("saveno")))
+    {
+        int saveno = duk_get_int(ctx,-1);
+        FILE *savefh;
+
+        duk_pop(ctx);
+
+        duk_push_int(ctx, -1);
+        duk_put_prop_string(ctx, this_idx, DUK_HIDDEN_SYMBOL("saveno"));
+
+        duk_get_prop_string(ctx, this_idx, DUK_HIDDEN_SYMBOL("savefh"));
+        savefh=duk_get_pointer(ctx,-1);
+        if(savefh)
+        {
+            switch(saveno)
+            {
+                case 0:
+                    stdin=savefh;
+                    break;
+                case 1:
+                    stdout=savefh;
+                    break;
+                case 2:
+                    stderr=savefh;
+                    break;
+            }
+        }
+    }
+}
+
 duk_ret_t duk_rp_fclose(duk_context *ctx)
 {
     if (!duk_is_object(ctx, 0))
@@ -6118,7 +6150,6 @@ duk_ret_t duk_rp_fclose(duk_context *ctx)
         }
         else
         {
-
             duk_pop(ctx);
             f = getfh(ctx,0,"fclose()");
             if(f)
@@ -6127,6 +6158,9 @@ duk_ret_t duk_rp_fclose(duk_context *ctx)
                 duk_push_pointer(ctx,NULL);
                 duk_put_prop_string(ctx,0,DUK_HIDDEN_SYMBOL("filehandle") );
             }
+
+            //restore redirected stdin|stdout|stderr
+            restore_fh(ctx, 0);
         }
     }
     return 0;
@@ -6180,7 +6214,7 @@ duk_ret_t duk_rp_fprintf(duk_context *ctx)
 
     if(duk_is_object(ctx,0))
     {
-        f = getfh_nonull_lock(ctx,0,"fwrite",lock_p);
+        f = getfh_nonull_lock(ctx,0,"fprintf",lock_p);
         closefh=0;
         //no locking for fopenBuffer
         if(duk_has_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("cookie")))
@@ -6377,10 +6411,30 @@ static duk_ret_t f_func(duk_context *ctx)
 
 duk_ret_t duk_rp_fopen(duk_context *ctx)
 {
-    FILE *f;
+    FILE *f, *stdsave=NULL;
     const char *fn=REQUIRE_STRING(ctx,0, "fopen(): filename (String) required as first parameter");
     const char *mode=REQUIRE_STRING(ctx, 1, "fopen(): mode (String) required as second parameter");
-    int mlen=strlen(mode);
+    int mlen=strlen(mode), redir_stream=-1;
+
+    if(duk_is_object(ctx, 2))
+    {
+        if(duk_get_prop_string(ctx, 2, "stream"))
+        {
+            const char *s=REQUIRE_STRING(ctx,-1, "fopen() - third argument, if defined, must be one of rampart.utils.[stdin|stdout|stderr]");
+            if (!strcmp(s,"stdout"))
+                redir_stream=1;
+            else if (!strcmp(s,"stderr"))
+                redir_stream=2;
+            else if (!strcmp(s,"stdin"))
+                redir_stream=0;
+            else
+                RP_THROW(ctx, "fopen() - third argument, if defined, must be one of rampart.utils.[stdin|stdout|stderr]");
+        }
+        else
+            RP_THROW(ctx, "fopen() - third argument, if defined, must be one of rampart.utils.[stdin|stdout|stderr]");
+    }
+    else if (!duk_is_undefined(ctx, 2))
+        RP_THROW(ctx, "fopen() - third argument, if defined, must be one of rampart.utils.[stdin|stdout|stderr]");
 
     if (
         mlen > 2 ||
@@ -6392,9 +6446,48 @@ duk_ret_t duk_rp_fopen(duk_context *ctx)
     f=fopen(fn,mode);
     if(f==NULL) goto err;
 
+    switch(redir_stream)
+    {
+        case 0:
+            if(mode[1]=='+' || mode[0]!='r')
+            {
+                fclose(f);
+                RP_THROW(ctx, "fopen() - cannot assign writing filehandle to stdin");
+            }
+            stdsave=stdin;
+            stdin=f;
+            break;
+        case 1:
+            if(mode[1]=='+' || mode[0]=='r')
+            {
+                fclose(f);
+                RP_THROW(ctx, "fopen() - cannot assign reading filehandle to stdout");
+            }
+            stdsave=stdout;
+            stdout=f;
+            break;
+        case 2:
+            if(mode[1]=='+' || mode[0]=='r')
+            {
+                fclose(f);
+                RP_THROW(ctx, "fopen() - cannot assign reading filehandle to stdout");
+            }
+            stdsave=stderr;
+            stderr=f;
+            break;
+    }
+
     duk_push_object(ctx);
     duk_push_pointer(ctx,(void *)f);
     duk_put_prop_string(ctx,-2,DUK_HIDDEN_SYMBOL("filehandle") );
+
+    if(stdsave)
+    {
+        duk_push_int(ctx, redir_stream);
+        duk_put_prop_string(ctx,-2,DUK_HIDDEN_SYMBOL("saveno") );
+        duk_push_pointer(ctx,(void*)stdsave);
+        duk_put_prop_string(ctx,-2,DUK_HIDDEN_SYMBOL("savefh") );
+    }
 
     duk_push_c_function(ctx, duk_rp_fclose, 2);
     duk_set_finalizer(ctx, -2);
@@ -6425,9 +6518,7 @@ typedef struct {
     size_t pos; // Current position in the buffer
     size_t chunk;
     size_t used;
-    duk_context *ctx;
-    void *bufptr;
-    void *thisptr;
+    pthread_mutex_t lock;
 } buffer_t;
 
 #ifdef __APPLE__
@@ -6489,11 +6580,14 @@ FILE *fopencookie(void *cookie, const char *mode, cookie_io_functions_t io_funcs
     jar->cookie=cookie;
     jar->io_funcs = io_funcs;
 
-    return funopen(jar,
-        io_funcs.read ? read_adapter : NULL,
+    return funopen
+    (
+        jar,
+        io_funcs.read  ? read_adapter  : NULL,
         io_funcs.write ? write_adapter : NULL,
-        io_funcs.seek ? seek_adapter : NULL,
-        io_funcs.close ? close_adapter : NULL);
+        io_funcs.seek  ? seek_adapter  : NULL,
+        io_funcs.close ? close_adapter : NULL
+    );
 }
 
 #endif
@@ -6501,22 +6595,20 @@ FILE *fopencookie(void *cookie, const char *mode, cookie_io_functions_t io_funcs
 static ssize_t buffer_write(void *cookie, const char *buf, size_t size) {
     buffer_t *buffer = (buffer_t *)cookie;
     size_t needed_size;
-    duk_context *ctx = buffer->ctx;
 
-    if((get_current_thread())->ctx != ctx)
+    RP_PTLOCK(&buffer->lock);
+
+    if(!buffer->file)
     {
-        funlockfile(buffer->file);
-        RP_THROW((get_current_thread())->ctx, "fopenBuffer write - cannot write to a buffer created in another thread");
+        RP_PTUNLOCK(&buffer->lock);
+        return -1;
     }
 
     needed_size = ( ((buffer->pos + size) / buffer->chunk) + 1) * buffer->chunk;
 
     // Ensure the buffer is large enough to hold the new data
     if (needed_size > buffer->size) {
-        duk_push_heapptr(ctx, buffer->bufptr);
-        buffer->data = duk_resize_buffer(ctx, -1, needed_size);
-        //printf("resized to %d\n", (int)needed_size);
-        duk_pop(ctx);
+        REMALLOC(buffer->data, needed_size);
         buffer->size = needed_size;
     }
 
@@ -6528,18 +6620,21 @@ static ssize_t buffer_write(void *cookie, const char *buf, size_t size) {
     if( (buffer->pos + 1) > buffer->used)
         buffer->used = buffer->pos + 1;
 
+    RP_PTUNLOCK(&buffer->lock);
+
     return size;
 }
 
 static ssize_t buffer_read(void *cookie, char *buf, size_t size) {
     buffer_t *buffer = (buffer_t *)cookie;
     size_t readable;
-    duk_context *ctx = buffer->ctx;
 
-    if((get_current_thread())->ctx != ctx)
+    RP_PTLOCK(&buffer->lock);
+
+    if(!buffer->file)
     {
-        funlockfile(buffer->file);
-        RP_THROW((get_current_thread())->ctx, "fopenBuffer read - cannot read from a buffer created in another thread");
+        RP_PTUNLOCK(&buffer->lock);
+        return -1;
     }
 
     readable = buffer->size - buffer->pos;
@@ -6549,6 +6644,8 @@ static ssize_t buffer_read(void *cookie, char *buf, size_t size) {
     memcpy(buf, buffer->data + buffer->pos, to_read);
     buffer->pos += to_read;
 
+    RP_PTUNLOCK(&buffer->lock);
+
     return to_read;
 }
 
@@ -6556,12 +6653,13 @@ static int buffer_seek(void *cookie, off64_t *offset, int whence)
 {
     buffer_t *buffer = (buffer_t *)cookie;
     off64_t new_pos;
-    duk_context *ctx = buffer->ctx;
 
-    if((get_current_thread())->ctx != ctx)
+    RP_PTLOCK(&buffer->lock);
+
+    if(!buffer->file)
     {
-        funlockfile(buffer->file);
-        RP_THROW((get_current_thread())->ctx, "fopenBuffer seek - cannot seek in a buffer created in another thread");
+        RP_PTUNLOCK(&buffer->lock);
+        return -1;
     }
 
     switch (whence)
@@ -6576,76 +6674,79 @@ static int buffer_seek(void *cookie, off64_t *offset, int whence)
             new_pos = buffer->size + *offset;
             break;
         default:
+            RP_PTUNLOCK(&buffer->lock);
             return -1; // Invalid whence
     }
 
     if (new_pos < 0 )
     {
+        RP_PTUNLOCK(&buffer->lock);
         return -1; // Out of bounds
     }
 
     if (new_pos >= (off64_t)buffer->size)
     {
-        duk_context *ctx = buffer->ctx;
-
-        if((get_current_thread())->ctx != ctx)
-            RP_THROW((get_current_thread())->ctx, "fopenBuffer.fseek - cannot resize a buffer created in another thread");
-
-        duk_push_heapptr(ctx, buffer->bufptr);
-        buffer->data = duk_resize_buffer(ctx, -1, new_pos+1);
-        //printf("resized to %d\n", (int)new_pos+1);
-        duk_pop(ctx);
+        REMALLOC(buffer->data, new_pos+1);
         buffer->size = new_pos+1;
     }
 
     buffer->pos = new_pos;
 
     *offset = new_pos;
+    RP_PTUNLOCK(&buffer->lock);
     return 0;
 }
 
 static int buffer_fclose(void *cookie)
 {
     buffer_t *buffer = (buffer_t *)cookie;
-    duk_context *ctx = buffer->ctx;
 
+    RP_PTLOCK(&buffer->lock);
+    buffer->file=NULL;
+    RP_PTUNLOCK(&buffer->lock);
+    //free(buffer);
 
-    if((get_current_thread())->ctx != ctx)
-    {
-        funlockfile(buffer->file);
-        RP_THROW((get_current_thread())->ctx, "fopenBuffer - cannot close a buffer created in another thread");
-    }
-
-    if(buffer->thisptr) // pointer is NULL if using duk_rp_push_fopen_buffer
-    {
-        duk_push_heapptr(ctx, buffer->thisptr);
-
-        duk_push_pointer(ctx, NULL);
-        duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("filehandle") );
-
-        duk_push_pointer(ctx, NULL);
-        duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("cookie") );
-
-        duk_pop(ctx);//this/thisptr
-    }
-
-    duk_push_heapptr(ctx, buffer->bufptr);
-    //printf("resized to %d\n", (int)buffer->used);
-    (void)duk_resize_buffer(ctx, -1, buffer->used);
-
-    free(buffer);
-
-    duk_pop(ctx); //js buffer
     return 0;
 }
 
-static duk_ret_t get_buffer(duk_context *ctx)
+static duk_ret_t get_buffer_string(duk_context *ctx, int want_string)
 {
-    duk_push_this(ctx);
+    buffer_t *buffer=NULL;
+    void * tobuf;
 
-    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("buffer"));
+    duk_push_this(ctx);
+    if(duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("cookie")))
+        buffer=duk_get_pointer(ctx, -1);
+    duk_pop(ctx);
+
+    if(buffer)
+    {
+        RP_PTLOCK(&buffer->lock);
+        if(want_string)
+        {
+            duk_push_lstring(ctx, buffer->data, (duk_size_t)buffer->used);
+        }
+        else
+        {
+            tobuf=duk_push_fixed_buffer(ctx,  buffer->used);
+            memcpy(tobuf, buffer->data, buffer->used);
+        }
+        RP_PTUNLOCK(&buffer->lock);
+    }
+    else
+        return 0;
 
     return 1;
+}
+
+static duk_ret_t fbuf_get_buffer(duk_context *ctx)
+{
+    return get_buffer_string(ctx,0);
+}
+
+static duk_ret_t fbuf_get_string(duk_context *ctx)
+{
+    return get_buffer_string(ctx,1);
 }
 
 static FILE *open_memstream_buffer(buffer_t *buffer)
@@ -6681,18 +6782,18 @@ static duk_ret_t fopen_buffer_finalizer(duk_context *ctx)
         duk_push_pointer(ctx, NULL);
         duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("cookie") );
 
-
-        duk_push_heapptr(ctx, buffer->bufptr);
-        //printf("resized to %d\n", (int)buffer->used);
-        (void)duk_resize_buffer(ctx, -1, buffer->used);
+        if(buffer->data)
+            free(buffer->data);
 
         free(buffer);
     }
 
     duk_del_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("buffer") );
+
     return 0;
 }
 
+/* unused at the moment
 // function to push a buffer and associate a filehandle
 FILE *duk_rp_push_fopen_buffer(duk_context *ctx, size_t chunk)
 {
@@ -6711,15 +6812,52 @@ FILE *duk_rp_push_fopen_buffer(duk_context *ctx, size_t chunk)
     buffer->file=open_memstream_buffer(buffer);
     return buffer->file;
 }
+*/
 
 duk_ret_t duk_rp_fopen_buffer(duk_context *ctx)
 {
-
+    FILE *stdsave=NULL;
     size_t chunk = 4096;
     buffer_t *buffer=NULL;
+    duk_idx_t ch_idx=-1, re_idx=-1;
+    int redir_stream=-1;
 
-    if(!duk_is_undefined(ctx,0))
-        chunk = (size_t)REQUIRE_UINT(ctx, 0, "fopenBuffer: argument must be a positive int (chunk size)");
+    if(duk_is_number(ctx,0))
+    {
+        ch_idx=0;
+        if(duk_is_object(ctx, 1))
+            re_idx=1;
+    }
+    if(duk_is_object(ctx,0))
+    {
+        re_idx=0;
+        if(duk_is_number(ctx, 1))
+            ch_idx=1;
+    }
+
+    if( ch_idx!=0 && re_idx!=0 && !duk_is_undefined(ctx, 0))
+        RP_THROW(ctx, "fopenBuffer(): first argument must be a number (chunk size), or rampart.utils.[stdout|stderr]");
+    if( ch_idx!=1 && re_idx!=1 && !duk_is_undefined(ctx, 1))
+        RP_THROW(ctx, "fopenBuffer(): second argument must be a number (chunk size), or rampart.utils.[stdout|stderr]");
+
+    if(ch_idx != -1)
+        chunk = (size_t)REQUIRE_UINT(ctx, ch_idx, "fopenBuffer(): argument must be a positive int (chunk size)");
+
+    if(re_idx != -1)
+    {
+        if(duk_get_prop_string(ctx, re_idx, "stream"))
+        {
+            const char *s=REQUIRE_STRING(ctx,-1, "fopenBuffer() - argument, if defined, must be one of rampart.utils.[stdout|stderr]");
+            if (!strcmp(s,"stdout"))
+                redir_stream=1;
+            else if (!strcmp(s,"stderr"))
+                redir_stream=2;
+            else
+                RP_THROW(ctx, "fopenBuffer() - argument, if defined, must be one of rampart.utils.[stdout|stderr]");
+        }
+        else
+            RP_THROW(ctx, "fopenBuffer() - argument, if defined, must be one of rampart.utils.[stdout|stderr]");
+    }
 
     REMALLOC(buffer, sizeof(buffer_t));
 
@@ -6728,20 +6866,38 @@ duk_ret_t duk_rp_fopen_buffer(duk_context *ctx)
     duk_push_pointer(ctx, buffer);
     duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("cookie"));
 
-    buffer->data = duk_push_dynamic_buffer(ctx, chunk);
-    buffer->bufptr=duk_get_heapptr(ctx, -1);
-    buffer->thisptr=duk_get_heapptr(ctx, -2);
+    buffer->data = NULL;
+    REMALLOC(buffer->data, chunk);
     buffer->size = chunk;
     buffer->chunk = chunk;
     buffer->pos  = 0;
     buffer->used = 0;
-    buffer->ctx  = ctx;
     buffer->file = open_memstream_buffer(buffer);
-
-    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("buffer"));
+    RP_PTINIT(&buffer->lock);
 
     duk_push_pointer(ctx, buffer->file);
     duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("filehandle"));
+
+    switch(redir_stream)
+    {
+        case 1:
+            stdsave=stdout;
+            stdout=buffer->file;
+            break;
+        case 2:
+            stdsave=stderr;
+            stderr=buffer->file;
+            break;
+    }
+
+    if(stdsave)
+    {
+        duk_push_int(ctx, redir_stream);
+        duk_put_prop_string(ctx,-2,DUK_HIDDEN_SYMBOL("saveno") );
+        duk_push_pointer(ctx,(void*)stdsave);
+        duk_put_prop_string(ctx,-2,DUK_HIDDEN_SYMBOL("savefh") );
+    }
+
 
     pushffunc("fprintf",    func_fprintf,   DUK_VARARGS );
     pushffunc("fseek",      func_fseek,     2           );
@@ -6753,11 +6909,12 @@ duk_ret_t duk_rp_fopen_buffer(duk_context *ctx)
     pushffunc("readLine",   func_readline,  0           );
     pushffunc("fgets",      func_fgets,     1           );
     pushffunc("fclose",     func_fclose,    0           );
-    duk_push_c_function(ctx, get_buffer, 0);
+    duk_push_c_function(ctx, fbuf_get_buffer, 0);
     duk_put_prop_string(ctx, -2, "getBuffer");
+    duk_push_c_function(ctx, fbuf_get_string, 0);
+    duk_put_prop_string(ctx, -2, "getString");
     duk_push_c_function(ctx, fopen_buffer_finalizer, 1);
     duk_set_finalizer(ctx, -2);
-
 
     return 1;
 }
@@ -7298,11 +7455,15 @@ typedef struct {
     pthread_mutex_t *lock;
 } pipeinfo;
 
-static duk_ret_t rp_fork(duk_context *ctx)
+static duk_ret_t rp_fork_daemon(duk_context *ctx, int do_daemon)
 {
-    pid_t pid;
+    pid_t pid, pid2;
     duk_idx_t i, top=duk_get_top(ctx);
     pipeinfo *p;
+    char *fname=do_daemon?"daemon":"fork";
+    int child2par[2]={0};
+
+
 
     if(get_thread_count()>1) //shopping for sheets?
         RP_THROW(ctx, "Cannot fork with active threads");
@@ -7310,22 +7471,47 @@ static duk_ret_t rp_fork(duk_context *ctx)
     for(i=0;i<top;i++)
     {
         if(!duk_get_prop_string(ctx, i, DUK_HIDDEN_SYMBOL("pipeinfo")))
-            RP_THROW(ctx, "fork() - argument(s) must be currently open pipe/pipes created with rampart.utils.pipe()");
+            RP_THROW(ctx, "%s() - argument(s) must be currently open pipe/pipes created with rampart.utils.pipe()", fname);
         p=duk_get_pointer(ctx,-1);
         if(!p)
-            RP_THROW(ctx, "fork() - argument(s) must be currently open pipe/pipes created with rampart.utils.pipe()");
+            RP_THROW(ctx, "%s() - argument(s) must be currently open pipe/pipes created with rampart.utils.pipe()", fname);
         duk_pop(ctx);
         if(p->child != -1)
-            RP_THROW(ctx, "fork() cannot use pipe provided in argument %d.  Already in use with child (pid:%d)", (int)i+1, (int)p->child);
+            RP_THROW(ctx, "%s() cannot use pipe provided in argument %d.  Already in use with child (pid:%d)", fname, (int)i+1, (int)p->child);
     }
+
+    if (do_daemon)
+    {
+        if(pipe(child2par) == -1)
+        RP_THROW(ctx, "%s() - error creating pipe while forking: %s", fname, strerror(errno));
+    }
+
     pid=fork();
 
     if(pid<0)
-        RP_THROW(ctx, "error forking: %s", strerror(errno));
+        RP_THROW(ctx, "%s() - error forking: %s", fname, strerror(errno));
 
-    if(pid == 0)
+    if(pid == 0) //child
     {
-        //child
+        if(do_daemon)
+        {
+            close(child2par[0]);
+            if (setsid()==-1)
+            {
+                pid2=-1;
+                write(child2par[1], &pid2, sizeof(pid_t));
+                exit(0);
+            }
+            pid2=fork();
+            if(pid2) // -1 or pid - fork error or child(parent of grandchild)
+            {
+                write(child2par[1], &pid2, sizeof(pid_t));
+                exit(0);  //child exits, grandchild lives on below
+            }
+            //else grandchild
+            close(child2par[1]);
+        }
+        //child (or grandchild if do_daemon)
         event_reinit(get_current_thread()->base);
         for(i=0;i<top;i++)
         {
@@ -7343,6 +7529,24 @@ static duk_ret_t rp_fork(duk_context *ctx)
     else
     {
         //parent
+        if(do_daemon) //get pid of grandchild
+        {
+            int nread=0;
+            close(child2par[1]);
+
+            nread = read(child2par[0], &pid, sizeof(pid_t));
+            if(-1 == nread )
+            {
+                close(child2par[0]);
+                RP_THROW(ctx, "daemon() - fork failed");
+            }
+
+            close(child2par[0]);
+
+            if(pid<0)
+                RP_THROW(ctx, "daemon() - fork failed");
+
+        }
         for(i=0;i<top;i++)
         {
             duk_get_prop_string(ctx, i, DUK_HIDDEN_SYMBOL("pipeinfo"));
@@ -7361,6 +7565,17 @@ static duk_ret_t rp_fork(duk_context *ctx)
 
     return 1;
 }
+
+static duk_ret_t rp_fork(duk_context *ctx)
+{
+    return rp_fork_daemon(ctx,0);
+}
+
+static duk_ret_t rp_daemon(duk_context *ctx)
+{
+    return rp_fork_daemon(ctx,1);
+}
+
 
 #define PLOCK_LOCK RP_PTLOCK(p->lock);
 #define PLOCK_UNLOCK RP_PTUNLOCK(p->lock);
@@ -7756,7 +7971,7 @@ static duk_ret_t rp_pipe_read(duk_context *ctx)
     if(have_func) //set up for user callback function call
         duk_dup(ctx, 0);
 
-    // eval & pcall is the only way to catch cbor decode errors
+    // eval & pcall is the only (easy?) way to catch cbor decode errors
     duk_push_string(ctx, "CBOR.decode");
     duk_eval(ctx);
 
@@ -9228,7 +9443,7 @@ void duk_printf_init(duk_context *ctx)
     duk_push_c_function(ctx, duk_rp_abprintf, DUK_VARARGS);
     duk_put_prop_string(ctx, -2, "abprintf");
 
-    duk_push_c_function(ctx, duk_rp_fopen, 2);
+    duk_push_c_function(ctx, duk_rp_fopen, 3);
     duk_put_prop_string(ctx, -2, "fopen");
 
     duk_push_c_function(ctx, duk_rp_fopen_buffer, 2);
@@ -9240,12 +9455,18 @@ void duk_printf_init(duk_context *ctx)
     duk_push_c_function(ctx, rp_fork, DUK_VARARGS);
     duk_put_prop_string(ctx, -2, "fork");
 
+    duk_push_c_function(ctx, rp_daemon, DUK_VARARGS);
+    duk_put_prop_string(ctx, -2, "daemon");
+
     duk_push_c_function(ctx, rp_newpipe, 0);
     duk_put_prop_string(ctx, -2, "newPipe");
+
 #ifdef RP_UTILS_ENABLE_MMAP
+    // this never worked properly, and when it did work, wasn't faster than just using pipe
     duk_push_c_function(ctx,  rp_new_memmap, 2);
     duk_put_prop_string(ctx, -2, "newMmap");
 #endif
+
     duk_push_c_function(ctx, duk_rp_fclose, 1);
     duk_put_prop_string(ctx, -2, "fclose");
 
