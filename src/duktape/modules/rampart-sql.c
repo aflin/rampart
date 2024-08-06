@@ -128,6 +128,8 @@ DB_HANDLE
 {
     TEXIS *tx;                  // a texis handle, NULL if forking
     char *db;                   // the db path.
+    char *user;                 // db user
+    char *pass;                 // db pass
     DB_HANDLE *next;            // linked list
     DB_HANDLE *prev;            // doublylinked list
     uint16_t forknum;           // convenience. Same as the threadnum from rampart-threads. So forknum == threadnum
@@ -160,7 +162,7 @@ DB_HANDLE *db_handle_head=NULL;
 
 static int h_close(DB_HANDLE *h);
 
-static DB_HANDLE *new_handle(const char *db)
+static DB_HANDLE *new_handle(const char *db, const char *user, const char *pass)
 {
     RPTHR *thr = get_current_thread();
     DB_HANDLE *h = NULL;
@@ -176,6 +178,8 @@ static DB_HANDLE *new_handle(const char *db)
     h->tx=NULL;
     h->forknum = (uint16_t)get_thread_num();
     h->next = h->prev = NULL;
+    h->user=strdup(user);
+    h->pass=strdup(pass);
 
     return h;
 }
@@ -281,12 +285,12 @@ static void mark_handle_in_use(DB_HANDLE *h)
 #define DBH_MARK_IN_USE    1
 
 // find unused handle already open with given db
-static DB_HANDLE *find_available_handle(const char *db, int in_use)
+static DB_HANDLE *find_available_handle(const char *db, const char *user, const char *pass, int in_use)
 {
     DB_HANDLE *h=db_handle_available_head;
 
     //while not at end of list, and no match
-    while(h && strcmp(h->db, db)!=0 )
+    while(h && ( strcmp(h->db, db)!=0 || strcmp(h->user, user)!=0 || strcmp(h->pass, pass)!=0) )
         h=h->next;
 
     if(h && in_use)
@@ -299,7 +303,12 @@ static DB_HANDLE *find_available_handle(const char *db, int in_use)
 static DB_HANDLE * free_handle(DB_HANDLE *h)
 {
     remove_handle(h);
-    free(h->db);
+    if(h->db)
+        free(h->db);
+    if(h->user)
+        free(h->user);
+    if(h->pass)
+        free(h->pass);
     free(h);
     return NULL;
 }
@@ -849,23 +858,23 @@ static void free_all_handles(void *unused)
     }
 }
 
-static int fork_open(DB_HANDLE *h);
+static int fork_open(DB_HANDLE *h, const char *user, const char *pass);
 
 /* find first unused handle, create as necessary */
-static DB_HANDLE *h_open(const char *db)
+static DB_HANDLE *h_open(const char *db, const char *user, const char *pass)
 {
     DB_HANDLE *h = NULL;
 
-    h=find_available_handle(db, DBH_MARK_IN_USE);
+    h=find_available_handle(db, user, pass, DBH_MARK_IN_USE);
 
     if(!h)
     {
-        h=new_handle(db);
+        h=new_handle(db, user, pass);
         add_handle(h); //handle added to main list
         if( DB_HANDLE_IS(h, DB_FLAG_FORK) )
         {
             //  if pipe error
-            if( !fork_open(h) )
+            if( !fork_open(h,user,pass) )
             {
                 HLOCK
                 h=free_handle(h); //h==NULL
@@ -874,7 +883,7 @@ static DB_HANDLE *h_open(const char *db)
         }
         else
         {
-            h->tx=texis_open((char *)(db), "PUBLIC", "");
+            h->tx=texis_open((char *)(db), (char*)user, (char*)pass);
             // if not using forked child, make sure we have a place to log errors in this proc
             if(!finfo)
             {
@@ -1441,14 +1450,14 @@ static int child_prep()
 
 // return 0 on pipe/fork error
 // h->tx set otherwise.
-static int fork_open(DB_HANDLE *h)
+static int fork_open(DB_HANDLE *h, const char *user, const char *pass)
 {
     check_fork(h, Create);
 
     if(finfo->childpid)
     {
         /* write db string to map */
-        sprintf(finfo->mapinfo->mem, "%s", h->db);
+        sprintf(finfo->mapinfo->mem, "%s%c%s%c%s", h->db, 0, user, 0, pass);
 
         /* write o for open and the string db is in memmap */
         if(forkwrite("o", sizeof(char)) == -1)
@@ -1465,10 +1474,12 @@ static int fork_open(DB_HANDLE *h)
 
 static int child_open()
 {
-    char *db = finfo->mapinfo->mem;
+    char *db = finfo->mapinfo->mem, *user, *pass;
     TEXIS *tx=NULL;
 
-    tx = texis_open((char *)(db), "PUBLIC", "");
+    user = db + strlen(db) + 1;
+    pass = user + strlen(user) + 1;
+    tx = texis_open((char *)(db), user, pass);
 
     if(forkwrite(&tx, sizeof(TEXIS *)) == -1)
         return 0;
@@ -2076,7 +2087,10 @@ static duk_ret_t rp_sql_close(duk_context *ctx)
     // Since handles are cached, hard to know what to do here
     // We will just close the first unused handle with same db
     // in order to free up some resources
-    const char *db=NULL;
+    const char *user="PUBLIC",
+               *pass="",
+               *db=NULL;
+
     DB_HANDLE *h=NULL;
 
     duk_push_this(ctx);
@@ -2086,8 +2100,16 @@ static duk_ret_t rp_sql_close(duk_context *ctx)
         RP_THROW(ctx, "no database has been opened");
     }
 
+    if(duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("user")))
+        user=duk_get_string(ctx, -1);
+    duk_pop(ctx);
+
+    if(duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("pass")))
+        pass=duk_get_string(ctx, -1);
+    duk_pop(ctx);
+
     db = duk_get_string(ctx, -1);
-    h=find_available_handle(db, 0);
+    h=find_available_handle(db, user, pass, 0);
     h_close(h);
 
     return 0;
@@ -2877,7 +2899,9 @@ static duk_ret_t rp_sql_import(duk_context *ctx, int isfile)
        by checking options object for
        "type":"filetype" - with default "csv"
     */
-    const char *func_name = isfile?"sql.importCsvFile":"sql.importCsv";
+    const char *user="PUBLIC",
+               *pass="",
+               *func_name = isfile?"sql.importCsvFile":"sql.importCsv";
     DCSV dcsv=duk_rp_parse_csv(ctx, isfile, 1, func_name);
     int ncols=dcsv.csv->cols, i=0;
     int tbcols=0, start=0;
@@ -2915,6 +2939,14 @@ static duk_ret_t rp_sql_import(duk_context *ctx, int isfile)
     duk_push_this(ctx);
     this_idx = duk_get_top_index(ctx);
 
+    if(duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("user")))
+        user=duk_get_string(ctx, -1);
+    duk_pop(ctx);
+
+    if(duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("pass")))
+        pass=duk_get_string(ctx, -1);
+    duk_pop(ctx);
+
     /* clear the sql.errMsg string */
     duk_del_prop_string(ctx,-1,"errMsg");
 
@@ -2927,7 +2959,7 @@ static duk_ret_t rp_sql_import(duk_context *ctx, int isfile)
 
     duk_pop(ctx);
 
-    h = h_open(db);
+    h = h_open(db,user,pass);
     if(!h)
         throw_tx_error(ctx, "sql open");
 
@@ -3430,15 +3462,50 @@ void check_parse(char *sql,char *new_sql,char **names,int n_names)
 }
 */
 
+#define throw_tx_or_log_error(ctx,pref,msg) do{\
+    rp_log_error(ctx);\
+    if(!isquery) RP_THROW(ctx, "%s error: %s",pref, msg);\
+    else if(q && q->callback > -1) duk_push_number(ctx, -1);\
+    else {\
+        duk_push_object(ctx);\
+        duk_push_sprintf(ctx, "%s: %s", pref, msg);\
+        duk_put_prop_string(ctx, -2, "error");\
+    }\
+    goto end_query;\
+}while(0)
+
+// close resets finfo->errmap
+#define throw_tx_or_log_error_close(ctx,pref,msg,h) do{\
+    char tbuf[msgbufsz];\
+    strncpy(tbuf, msg, msgbufsz);\
+    h_close(h);\
+    h=NULL;\
+    throw_tx_or_log_error(ctx,pref,tbuf);\
+}while(0)
+
+#define throw_or_log_error(msg) do{\
+    if(!isquery) RP_THROW(ctx, "%s",msg);\
+    else if(q && q->callback > -1){\
+        rp_log_error_msg(ctx, msg);\
+        duk_push_number(ctx, -1);\
+    } else {\
+        duk_push_object(ctx);\
+        duk_push_sprintf(ctx, "%s", msg);\
+        duk_put_prop_string(ctx, -2, "error");\
+    }\
+    goto end_query;\
+}while(0)
+
+
 /* **************************************************
    Sql.prototype.exec
    ************************************************** */
-static duk_ret_t rp_sql_exec(duk_context *ctx)
+static duk_ret_t rp_sql_exec_query(duk_context *ctx, int isquery)
 {
     TEXIS *tx;
-    QUERY_STRUCT *q, q_st;
+    QUERY_STRUCT *q=NULL, q_st;
     DB_HANDLE *h = NULL;
-    const char *db;
+    const char *db, *user="PUBLIC", *pass="";
     duk_idx_t this_idx;
     struct sigaction sa = { {0} };
 
@@ -3458,11 +3525,19 @@ static duk_ret_t rp_sql_exec(duk_context *ctx)
     duk_push_this(ctx);
     this_idx = duk_get_top_index(ctx);
 
+    if(duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("user")))
+        user=duk_get_string(ctx, -1);
+    duk_pop(ctx);
+
+    if(duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("pass")))
+        pass=duk_get_string(ctx, -1);
+    duk_pop(ctx);
+
     /* clear the sql.errMsg string */
     duk_del_prop_string(ctx,-1,"errMsg");
 
     if (!duk_get_prop_string(ctx, -1, "db"))
-        RP_THROW(ctx, "no database has been opened");
+        throw_or_log_error("no database has been opened");
 
     db = duk_get_string(ctx, -1);
     duk_pop(ctx); //db
@@ -3494,9 +3569,9 @@ static duk_ret_t rp_sql_exec(duk_context *ctx)
     }
 
     /* OPEN */
-    h = h_open(db);
+    h = h_open(db,user,pass);
     if(!h)
-        throw_tx_error(ctx, "sql open");
+        throw_tx_or_log_error(ctx, "sql open", finfo->errmap);
 
     h_reset_tx_default(ctx, h, this_idx);
 
@@ -3505,12 +3580,11 @@ static duk_ret_t rp_sql_exec(duk_context *ctx)
 
     tx = h->tx;
     if (!tx)
-        throw_tx_error(ctx, "open sql");
+        throw_tx_or_log_error(ctx, "open sql", finfo->errmap);
 
     /* PREP */
     if (!h_prep(h, (char *)q->sql))
-        throw_tx_error_close(ctx, "sql prep", h);
-
+        throw_tx_or_log_error_close(ctx, "sql prep", finfo->errmap, h);
 
     /* PARAMS
        sql parameters are the parameters corresponding to "?key" in a sql statement
@@ -3525,13 +3599,14 @@ static duk_ret_t rp_sql_exec(duk_context *ctx)
         else
         {
             h_close(h);
-            RP_THROW(ctx, "sql.exec - parameters specified in sql statement, but no corresponding object or array\n");
+            h=NULL;
+            throw_or_log_error("sql.exec - parameters specified in sql statement, but no corresponding object or array");
         }
         if (!rp_add_named_parameters(ctx, h, idx, namedSqlParams, nParams))
         {
             free(namedSqlParams);
             free(freeme);
-            throw_tx_error_close(ctx, "sql add parameters",h);
+            throw_tx_or_log_error_close(ctx, "sql add parameters", finfo->errmap, h);
         }
         free(namedSqlParams);
         free(freeme);
@@ -3544,7 +3619,7 @@ static duk_ret_t rp_sql_exec(duk_context *ctx)
     else if (q->arr_idx != -1)
     {
         if (!rp_add_parameters(ctx, h, q->arr_idx))
-            throw_tx_error_close(ctx, "sql add parameters", h);
+            throw_tx_or_log_error_close(ctx, "sql add parameters", finfo->errmap, h);
     }
     else
     {
@@ -3553,7 +3628,7 @@ static duk_ret_t rp_sql_exec(duk_context *ctx)
 
     /* EXEC */
     if (!h_exec(h))
-        throw_tx_error_close(ctx, "sql exec", h);
+        throw_tx_or_log_error_close(ctx, "sql exec", finfo->errmap, h);
 
     /* skip rows using texisapi */
     if (q->skip)
@@ -3574,6 +3649,21 @@ static duk_ret_t rp_sql_exec(duk_context *ctx)
     h_end_transaction(h);
     rp_log_error(ctx); /* log any non fatal errors to this.errMsg */
     return 1; /* returning outer array */
+
+    end_query:
+    if(h) h_end_transaction(h);
+    return 1; /* returning outer array or error*/
+
+}
+
+static duk_ret_t rp_sql_exec(duk_context *ctx)
+{
+  return rp_sql_exec_query(ctx, 0);
+}
+
+static duk_ret_t rp_sql_query(duk_context *ctx)
+{
+  return rp_sql_exec_query(ctx, 1);
 }
 
 /* **************************************************
@@ -3757,10 +3847,18 @@ static void h_reset_tx_default(duk_context *ctx, DB_HANDLE *h, duk_idx_t this_id
 
 static duk_ret_t rp_texis_reset(duk_context *ctx)
 {
-    const char *db;
+    const char *db, *user="PUBLIC", *pass="";
     DB_HANDLE *h = NULL;
 
     duk_push_this(ctx); //idx == 0
+
+    if(duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("user")))
+        user=duk_get_string(ctx, -1);
+    duk_pop(ctx);
+
+    if(duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("pass")))
+        pass=duk_get_string(ctx, -1);
+    duk_pop(ctx);
 
     //remove saved settings
     duk_del_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("sql_settings"));
@@ -3773,7 +3871,7 @@ static duk_ret_t rp_texis_reset(duk_context *ctx)
     db = duk_get_string(ctx, -1);
     duk_pop_2(ctx);
 
-    h = h_open(db);
+    h = h_open(db,user,pass);
 
     if(!h)
     {
@@ -4524,13 +4622,22 @@ static void clean_settings(duk_context *ctx)
 
 static duk_ret_t rp_texis_set(duk_context *ctx)
 {
-    const char *db;
+    const char *db, *user="PUBLIC", *pass="";
     DB_HANDLE *h = NULL;
     int ret = 0, handle_no=0;
     char errbuf[msgbufsz];
     char propa[64], *prop=&propa[0];
 
     duk_push_this(ctx); //idx == 1
+
+    if(duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("user")))
+        user=duk_get_string(ctx, -1);
+    duk_pop(ctx);
+
+    if(duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("pass")))
+        pass=duk_get_string(ctx, -1);
+    duk_pop(ctx);
+
     // this should always be true
     if( !duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("handle_no")) )
         RP_THROW(ctx, "internal error getting handle id");
@@ -4543,7 +4650,7 @@ static duk_ret_t rp_texis_set(duk_context *ctx)
     db = duk_get_string(ctx, -1);
     duk_pop(ctx);
 
-    h = h_open(db);
+    h = h_open(db,user,pass);
 
     if(!h)
     {
@@ -4709,7 +4816,7 @@ static duk_ret_t rp_sql_addtable(duk_context *ctx)
 static duk_ret_t rp_sql_constructor(duk_context *ctx)
 {
     int sql_handle_no = 0;
-    const char *db = NULL;
+    const char *db = NULL, *user="PUBLIC", *pass="";
     DB_HANDLE *h;
     int force=0, addtables=0, create=0;
     char *default_db_files[]={
@@ -4738,6 +4845,18 @@ static duk_ret_t rp_sql_constructor(duk_context *ctx)
         if(duk_get_prop_string(ctx, 0, "path"))
         {
             db = REQUIRE_STRING(ctx, -1, "new Sql.connection(params) - params.path must be a string");
+        }
+        duk_pop(ctx);
+
+        if(duk_get_prop_string(ctx, 0, "user"))
+        {
+            user = REQUIRE_STRING(ctx, -1, "new Sql.connection(params) - params.path must be a string");
+        }
+        duk_pop(ctx);
+
+        if(duk_get_prop_string(ctx, 0, "pass"))
+        {
+            pass = REQUIRE_STRING(ctx, -1, "new Sql.connection(params) - params.path must be a string");
         }
         duk_pop(ctx);
 
@@ -4776,7 +4895,7 @@ static duk_ret_t rp_sql_constructor(duk_context *ctx)
     clearmsgbuf();
 
     /* check for db first */
-    h = h_open( (char*)db);
+    h = h_open(db, user, pass);
     /* if h, then just open that.  Ignore all other options except addtables */
 
     if (!h)// otherwise check options
@@ -4937,7 +5056,7 @@ static duk_ret_t rp_sql_constructor(duk_context *ctx)
             rp_log_error(ctx);
             RP_THROW(ctx, "sql.connection(): cannot open database at '%s'\n%s", db, finfo->errmap);
         }
-        h = h_open( (char*)db);
+        h = h_open(db, user, pass);
         addtables=0;
     }
 
@@ -4951,6 +5070,11 @@ static duk_ret_t rp_sql_constructor(duk_context *ctx)
     duk_put_prop_string(ctx, -2, "db");
     duk_push_number(ctx, RESMAX_DEFAULT);
     duk_put_prop_string(ctx, -2, "selectMaxRows");
+    duk_push_string(ctx, user);
+    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("user"));
+    duk_push_string(ctx, pass);
+    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("pass"));
+
 
     /* make a unique id for this sql handle in this ctx/thread.
      * Used to restore global texis settings previously set via
@@ -5068,7 +5192,7 @@ static duk_ret_t rp_sql_constructor(duk_context *ctx)
 
     return 0;
 }
-
+/*
 #define CALLONE 0
 #define CALLEXEC 1
 #define NOARGS DUK_INVALID_INDEX
@@ -5096,7 +5220,7 @@ printf("Call method nargs=%d\n", nargs);
 safeprintstack(ctx);
     duk_call_method(ctx, nargs);
 }
-
+*/
 
 
 static duk_ret_t fork_helper(duk_context *ctx)
@@ -5147,6 +5271,128 @@ static duk_ret_t rp_sql_connect(duk_context *ctx)
     duk_new(ctx, 2);
     return 1;
 }
+
+//the sql.scheduleUpdate function
+static const char *schupd = "function(index, date, frequency, thresh, tmpind) {\n\
+    var sql=this;\n\
+    var res=sql.one('select * from SYSINDEX where NAME=?', [index]);\n\
+    var interval=-1;\n\
+    var tbname;\n\
+    var params={};\n\
+\n\
+    function thr(m){\n\
+        throw new Error('sql.scheduleUpdate() - ' + m);\n\
+    }\n\
+\n\
+    function freq_to_sec(f){\n\
+        var t = rampart.utils.getType(f);\n\
+        var mult=1, inter=0, parts, per, perint;\n\
+\n\
+        if(t=='Number')\n\
+            return f;\n\
+        else if (t!='String')\n\
+            thr('third argument must be a String or Number (frequency)');\n\
+\n\
+        parts = f.split(/\\s+/);\n\
+\n\
+        if(parts[0]=='every' || parts[0]=='each')\n\
+            parts.shift();\n\
+\n\
+        if(parts.length>1)\n\
+        {\n\
+            mult=parseInt(parts[0]);\n\
+            if(isNaN(mult))\n\
+                return -1;\n\
+            per=parts[1].toLowerCase();\n\
+        }\n\
+        else\n\
+            per=f.toLowerCase();\n\
+\n\
+        if (per.indexOf('minute') != -1)\n\
+            perint=60;\n\
+        else if (per.indexOf('hour') != -1)\n\
+            perint=3600;\n\
+        else if (per.indexOf('day') != -1)\n\
+            perint=86400;\n\
+        else if (per.indexOf('daily') != -1)\n\
+            perint=86400;\n\
+        else if (per.indexOf('week') != -1)\n\
+            perint=604800;\n\
+        else\n\
+            return -1;\n\
+        \n\
+        return mult * perint;\n\
+    }\n\
+\n\
+    if(rampart.utils.getType(index) != 'String') thr('first arguement must be a string (index name)');\n\
+    res=sql.one('select * from SYSINDEX where NAME=?', [index]);\n\
+    if(!res)\n\
+        thr(\"no such index '\" + index + \"'\");\n\
+\n\
+    tbname=res.TBNAME;\n\
+\n\
+    if(res.TYPE != 'F' && res.TYPE != 'M')\n\
+        thr(\"index '\" + index + \"' is not a text index\");\n\
+\n\
+    if(rampart.utils.getType(date) == 'Date') {\n\
+        date = Math.floor(date.getTime()/1000);\n\
+    } else {\n\
+\n\
+        if(rampart.utils.getType(date)=='String' && date.toLowerCase() == 'now')\n\
+            date=0;\n\
+        else if(rampart.utils.getType(date)=='String' && date.toLowerCase() == 'never')\n\
+            date=-1;\n\
+        else if(rampart.utils.getType(date)!='Number') {\n\
+            var d = rampart.utils.autoScanDate(date);\n\
+            if(!d)\n\
+                thr(\"could not parse date ('\"+date+\"')\");\n\
+            date=Math.floor(d.date.getTime()/1000);\n\
+        }\n\
+    }\n\
+\n\
+    interval = freq_to_sec(frequency)\n\
+    if(interval < 60)\n\
+        thr(sprintf(\"'%s' is an invalid frequency\", frequency));\n\
+\n\
+    if(thresh === undefined)\n\
+        thresh=1000;\n\
+    else if(rampart.utils.getType(thresh) != 'Number')\n\
+        thr('fourth argument, if defined, must be a Number (nRows)');\n\
+\n\
+    if(thresh <1)\n\
+        thr('fourth argument, if defined, must be a Number greater than 0 (nRows)');\n\
+\n\
+    if(tmpind !== undefined && rampart.utils.getType(tmpind)!='String')\n\
+        thr('fifth argument, if defined, must be a string (indexTmpPath)');\n\
+    if(tmpind){\n\
+        var st;\n\
+        if(!(st=rampart.utils.stat(tmpind)))\n\
+            thr('cannot use temp directory \"' + tmpind +'\" - does not exist or insufficient permissions');\n\
+        if(!st.isDirectory)\n\
+            thr('cannot use \"' + tmpind +'\" - not a directory');\n\
+        try { rampart.utils.touch(tmpind+'/._rp_index_test');}\n\
+        catch(e){ thr('cannot use temp directory \"' + tmpind +'\" - insufficient permissions'); }\n\
+        rampart.utils.rmFile(tmpind+'/._rp_index_test');\n\
+        if(tmpind.charAt(0) != '/') tmpind=rampart.utils.realPath(tmpind);/* don't get realpath if absolute (might have soft links in path) */\
+        params.indexTemp=tmpind;\n\
+    }\n\
+\n\
+    var TSQL = require('rampart-sql');\n\
+    var asql = TSQL.connect({path:sql.db, user:'_SYSTEM'});\n\
+\n\
+    res = asql.one(\"select * from SYSTABLES where NAME='SYSUPDATE';\");\n\
+\n\
+    if(!res){\n\
+        asql.exec(\"create table SYSUPDATE (ID counter, NAME varchar(16), TBNAME varchar(16), PREVIOUS int, NEXT int, INTV int, THRESH int, STATUS int, PROGRESS double, PARAMS varchar(16));\");\n\
+        asql.exec(\"GRANT SELECT on SYSUPDATE to PUBLIC\");\n\
+    }\n\
+    asql.exec(\"delete from SYSUPDATE where NAME=?\", [index]);\n\
+\n\
+    if(date > -1)\n\
+        asql.exec(\"insert into SYSUPDATE values(counter,?,?,-1,?,?,?,0,0.0,?);\", [index, tbname, date, interval, thresh, params]);\n\
+}\n";
+
+
 
 /* **************************************************
    Initialize Sql module
@@ -5199,6 +5445,10 @@ duk_ret_t duk_open_module(duk_context *ctx)
     duk_push_c_function(ctx, rp_sql_exec, 6 /*nargs*/);   /* [ {}, Sql protoObj fn_exe ] */
     duk_put_prop_string(ctx, -2, "exec");                    /* [ {}, Sql protoObj-->{exe:fn_exe} ] */
 
+    /* Set Sql.connection.prototype.query. */
+    duk_push_c_function(ctx, rp_sql_query, 6 /*nargs*/);  /* [ {}, Sql protoObj fn_exe ] */
+    duk_put_prop_string(ctx, -2, "query");                   /* [ {}, Sql protoObj-->{exe:fn_exe} ] */
+
     /* set Sql.connection.prototype.eval */
     duk_push_c_function(ctx, rp_sql_eval, 4 /*nargs*/);  /*[ {}, Sql protoObj-->{exe:fn_exe} fn_eval ]*/
     duk_put_prop_string(ctx, -2, "eval");                    /*[ {}, Sql protoObj-->{exe:fn_exe,eval:fn_eval} ]*/
@@ -5229,6 +5479,11 @@ duk_ret_t duk_open_module(duk_context *ctx)
 
     duk_push_c_function(ctx, rp_sql_addtable, 1);
     duk_put_prop_string(ctx, -2, "addTable");
+
+    /* set Sql.connection.prototype.scheduleUpdate */
+    duk_push_string(ctx, "rampart-sql.c:scheduleUpdate()");
+    duk_compile_string_filename(ctx, DUK_COMPILE_FUNCTION, schupd);
+    duk_put_prop_string(ctx, -2, "scheduleUpdate");
 
     /* Set Sql.connection.prototype = protoObj */
     duk_put_prop_string(ctx, -2, "prototype"); /* -> stack: [ {}, constructor-->[prototype-->{exe=fn_exe,...}] ] */
