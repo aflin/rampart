@@ -67,6 +67,16 @@ testFeature("fopen/fseek/fprint/fread/fwrite/rewind",function(){
     return res1=="123defghi456789";
 });
 
+testFeature("fopen - stdout redirect",function(){
+    var fh = fopen("test.txt","w", stdout);
+
+    printf("abcdef");
+    fh.fclose();
+
+    var res1=readFile("test.txt" ,true);
+
+    return res1=="abcdef";
+});
 
 var str=readFile(process.script,-220,-20,true);
 
@@ -248,6 +258,48 @@ testFeature("fork and pipe", function(){
                 if(err)
                     console.log("pipe2 error:",err);
                 testFeature("fork and pipe event", false);
+            }
+        });
+
+        var ret=false;
+
+        pipe.read(function(val,err){
+            if(val == "my message")
+                ret = true;
+            if(err)
+                console.log(err);
+        });
+        return ret;
+    }
+
+});
+
+testFeature("daemon and pipe", function(){
+    var pipe = newPipe();
+    var pipe2 = newPipe();
+    var pid = daemon(pipe,pipe2);
+
+    if(pid==-1) {
+        console.log("fork failed");
+        return false;
+    }
+
+    if(pid==0){
+        //child
+        var sz1=pipe.write("my message");
+        var sz2=pipe2.write(process.getpid());
+        process.exit();
+    } else {
+        pipe2.onRead(function(val,err){
+            if(pid==val)
+            {
+                testFeature("daemon and pipe event", true);
+                pipe2.close();
+            }
+            else {
+                if(err)
+                    console.log("pipe2 error:",err);
+                testFeature("daemon and pipe event", false);
             }
         });
 
