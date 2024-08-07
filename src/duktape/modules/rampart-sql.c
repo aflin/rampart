@@ -4805,6 +4805,197 @@ static duk_ret_t rp_sql_addtable(duk_context *ctx)
     return 0;
 }
 
+// the updater daemon script.  Checks that it is needed, then forks
+// to monitor text indexes.
+
+static char *updater_js = "function(npsql) {\n\
+\n\
+    var Sql=require('rampart-sql');\n\
+    sql = Sql.connect({path: npsql.db, user: '_SYSTEM', noUpdater:true });\n\
+\n\
+    function writemsg(msg)\n\
+    {\n\
+        var d=new Date();\n\
+        rampart.utils.fprintf(sql.db+'/update.log', true, '%s - %s\\n', rampart.utils.dateFmt('%Y-%m-%d %H:%M:%S',d), msg);\n\
+    }\n\
+\n\
+    function thrmsg(msg) {\n\
+        writemsg(msg);\n\
+        process.exit(1);\n\
+    }\n\
+\n\
+    function gettimes() {\n\
+        var now = Math.floor( (new Date).getTime() / 1000 );\n\
+\n\
+        var ret=[];\n\
+        var res = sql.query('select * from SYSUPDATE;',{maxRows:-1}, function(row, i){\n\
+            var params;\n\
+            try {\n\
+                params=JSON.parse(row.PARAMS);\n\
+            } catch(e) {\n\
+                params={};\n\
+            }\n\
+\n\
+            if(row.NEXT == 0) { //if start immediately\n\
+                ret.push({ next: now+row.INTV, id:row.ID, when: 0, what: row.NAME, thresh: row.THRESH, where: params.indexTemp});\n\
+            } else {\n\
+                var when = row.NEXT + 59;\n\
+                var next\n\
+                while( when < now)\n\
+                    when += row.INTV;\n\
+                next = row.INTV + when - 59;\n\
+                when -= now;\n\
+                ret.push({ next: next, id: row.ID, when: when, what: row.NAME, thresh: row.THRESH, where: params.indexTemp});\n\
+            }\n\
+        });\n\
+        if(res==-1)\n\
+            thrmsg(res.error);\n\
+        if(ret.length > 1)\n\
+            ret.sort(function(a,b){ return a.when - b.when});\n\
+        return {sched:ret, now:now};\n\
+    }\n\
+\n\
+\n\
+    function monitor(obj){\n\
+        var f=obj.fh, id=obj.id, stage=0, laststage=0, per=0, lastper=0;\n\
+\n\
+        while(true) {\n\
+            var s = f.getString();\n\
+            if(s.indexOf('Final merge') != -1)\n\
+                stage=3;\n\
+            else if(s.indexOf('Indexing') != -1)\n\
+                stage=2;\n\
+            else if(s.indexOf('Creating') != -1)\n\
+                stage=1;\n\
+            if(stage){\n\
+                var h = Sql.rex('\\\\#+\\\\F[^\\\\#]*>>=', s);\n\
+                if(h.length)\n\
+                    per=h[0].length/79;\n\
+                else per=0;\n\
+\n\
+                if( stage != laststage || per != lastper) {\n\
+                    var res = sql.query('update SYSUPDATE set STATUS=?, PROGRESS=? where ID=?;', [stage, per, id]);\n\
+                    laststage=stage;\n\
+                    lastper=per;\n\
+                }\n\
+\n\
+                if(per==1.0 && stage==3)\n\
+                    return;\n\
+\n\
+            }\n\
+            var done = rampart.thread.get('done',1000);\n\
+            if(done) {\n\
+                sql.query('update SYSUPDATE set PROGRESS=1.0 where ID=?;', [id]);\n\
+                rampart.thread.del('done');\n\
+                return;\n\
+            }\n\
+        }\n\
+    }\n\
+\n\
+    function updateindex(sl,start)\n\
+    {\n\
+        var fh = fopenBuffer(stdout);\n\
+        var thr = new rampart.thread();\n\
+        var id=sl.id, index=sl.what, thresh=sl.thresh, tmpdir=sl.where;\n\
+\n\
+        thr.exec(monitor, {fh:fh, id:id});\n\
+\n\
+        try {\n\
+            if(getType(tmpdir) == 'String')\n\
+            {\n\
+                sql.set({addIndexTemp : tmpdir });\n\
+            }\n\
+            sql.exec('set indexmeter=1');\n\
+            var statement = sprintf('ALTER INDEX %s OPTIMIZE HAVING COUNT(NewRows) > %d;', index, thresh);\n\
+            var res = sql.query(statement);\n\
+\n\
+            if(getType(tmpdir) == 'String')\n\
+                sql.set({delIndexTemp : tmpdir });\n\
+                //sql.exec(\"set delindextmp='\" + tmpdir + \"';\");\n\
+\n\
+        } catch(e) {\n\
+            fh.fclose();\n\
+            rampart.thread.put('done',true);\n\
+            thr.close();\n\
+            return ''+e;\n\
+        }\n\
+\n\
+        fh.fclose();\n\
+        rampart.thread.put('done',true);\n\
+        thr.close();\n\
+\n\
+        if(sql.errMsg.length)\n\
+        {\n\
+            return sql.errMsg;\n\
+        }\n\
+        var now = Math.floor( (new Date).getTime() / 1000 );\n\
+        var res=sql.query('update SYSUPDATE set NEXT=?, PREVIOUS=?, STATUS=0 where ID=?', [sl.next, now, id]);  \n\
+        if(res.error)\n\
+            return res.error;\n\
+        var msg = sprintf('%s update started:%s, completed:%s', index, dateFmt('%c %z', start), dateFmt('%c %z', now) ); \n\
+        writemsg(msg);\n\
+        return false; /* no error */\n\
+    }\n\
+\n\
+    function do_update(sl,now){\n\
+        var err = updateindex(sl,now);\n\
+        if(err)\n\
+            writemsg('update error: '+err);\n\
+    }\n\
+\n\
+    function runloop(){\n\
+        var i, res, schline, pid = process.getpid();\n\
+\n\
+        rampart.globalize(rampart.utils);\n\
+        var dbp='';\n\
+        try{dbp=' ' + realPath(sql.db);}catch(e){}\n\
+        process.setProcTitle('rampart indexUpdater'+dbp);\n\
+        fprintf( sql.db + '/updater.pid', '%s', pid);\n\
+        writemsg('updater started with pid ' + pid);\n\
+\n\
+        while (true) {\n\
+            i=0;\n\
+            res = gettimes();\n\
+            schline=res.sched[i];\n\
+            while(schline) {\n\
+                if(schline.when < 60) do_update(schline, res.now);\n\
+                else break;\n\
+                i++;\n\
+                schline=res.sched[i];\n\
+            }\n\
+            sleep(60);\n\
+        }\n\
+    }\n\
+\n\
+    var res, epid;\n\
+    res=sql.one(\"select * from SYSTABLES where NAME='SYSUPDATE'\");\n\
+    if(!res)\n\
+        return false;\n\
+ \n\
+    try{ epid=parseInt(rampart.utils.readFile(sql.db + '/updater.pid',true)); }\n\
+    catch(e) { epid=-1; }\n\
+\n\
+    if(epid>0 && rampart.utils.kill(epid, 0)){\n\
+        return false;\n\
+    }\n\
+\n\
+    var fpid = rampart.utils.daemon();\n\
+\n\
+    if(fpid == -1) { //parent - fork fail\n\
+        writemsg('failed to fork new index updater process');\n\
+        return false;\n\
+    }\n\
+\n\
+    if(fpid) { //parent\n\
+        return true;\n\
+    } else { //child\n\
+        global.sql=sql;\n\
+        runloop();\n\
+    }\n\
+}\n\
+\n\
+";
+
 
 /* **************************************************
    Sql("/database/path") constructor:
@@ -4818,7 +5009,7 @@ static duk_ret_t rp_sql_constructor(duk_context *ctx)
     int sql_handle_no = 0;
     const char *db = NULL, *user="PUBLIC", *pass="";
     DB_HANDLE *h;
-    int force=0, addtables=0, create=0;
+    int force=0, addtables=0, create=0, no_updater=0;
     char *default_db_files[]={
         "SYSCOLUMNS.tbl",  "SYSINDEX.tbl",  "SYSMETAINDEX.tbl",  "SYSPERMS.tbl",
         "SYSSTATS.tbl",  "SYSTABLES.tbl",  "SYSTRIG.tbl",  "SYSUSERS.tbl", NULL
@@ -4863,6 +5054,12 @@ static duk_ret_t rp_sql_constructor(duk_context *ctx)
         if(duk_get_prop_string(ctx, 0, "force"))
         {
             force = (int)REQUIRE_BOOL(ctx, -1, "new Sql.connection(params) - params.force must be a boolean");
+        }
+        duk_pop(ctx);
+
+        if(duk_get_prop_string(ctx, 0, "noUpdater"))
+        {
+            no_updater = (int)REQUIRE_BOOL(ctx, -1, "new Sql.connection(params) - params.noUpdater must be a boolean");
         }
         duk_pop(ctx);
 
@@ -5190,6 +5387,14 @@ static duk_ret_t rp_sql_constructor(duk_context *ctx)
         duk_pop(ctx); //array of WHATs from SYSTABLES
     }
 
+    if(!no_updater)
+    {
+        // if there are entries in SYSUPDATE, run the update monitor as a daemon
+        duk_push_string(ctx, "rampart-sql.c:indexUpdater()");
+        duk_compile_string_filename(ctx, DUK_COMPILE_FUNCTION, updater_js);
+        duk_push_this(ctx);
+        duk_call(ctx, 1);
+    }        
     return 0;
 }
 /*
@@ -5273,7 +5478,8 @@ static duk_ret_t rp_sql_connect(duk_context *ctx)
 }
 
 //the sql.scheduleUpdate function
-static const char *schupd = "function(index, date, frequency, thresh, tmpind) {\n\
+static const char *schupd = "function(index, date, frequency, thresh /* not working, tmpind */) {\n\
+    var tmpind;\n\
     var sql=this;\n\
     var res=sql.one('select * from SYSINDEX where NAME=?', [index]);\n\
     var interval=-1;\n\
@@ -5340,7 +5546,8 @@ static const char *schupd = "function(index, date, frequency, thresh, tmpind) {\
 \n\
         if(rampart.utils.getType(date)=='String' && date.toLowerCase() == 'now')\n\
             date=0;\n\
-        else if(rampart.utils.getType(date)=='String' && date.toLowerCase() == 'never')\n\
+        else if(rampart.utils.getType(date)=='String' && \n\
+            ( date.toLowerCase() == 'never') || date.toLowerCase() == 'delete')\n\
             date=-1;\n\
         else if(rampart.utils.getType(date)!='Number') {\n\
             var d = rampart.utils.autoScanDate(date);\n\
@@ -5350,31 +5557,33 @@ static const char *schupd = "function(index, date, frequency, thresh, tmpind) {\
         }\n\
     }\n\
 \n\
-    interval = freq_to_sec(frequency)\n\
-    if(interval < 60)\n\
-        thr(sprintf(\"'%s' is an invalid frequency\", frequency));\n\
+    if(date > -1) {\n\
+        interval = freq_to_sec(frequency)\n\
+        if(interval < 60)\n\
+            thr(sprintf(\"'%s' is an invalid frequency\", frequency));\n\
 \n\
-    if(thresh === undefined)\n\
-        thresh=1000;\n\
-    else if(rampart.utils.getType(thresh) != 'Number')\n\
-        thr('fourth argument, if defined, must be a Number (nRows)');\n\
+        if(thresh === undefined)\n\
+            thresh=1000;\n\
+        else if(rampart.utils.getType(thresh) != 'Number')\n\
+            thr('fourth argument, if defined, must be a Number (nRows)');\n\
 \n\
-    if(thresh <1)\n\
-        thr('fourth argument, if defined, must be a Number greater than 0 (nRows)');\n\
+        if(thresh <1)\n\
+            thr('fourth argument, if defined, must be a Number greater than 0 (nRows)');\n\
 \n\
-    if(tmpind !== undefined && rampart.utils.getType(tmpind)!='String')\n\
-        thr('fifth argument, if defined, must be a string (indexTmpPath)');\n\
-    if(tmpind){\n\
-        var st;\n\
-        if(!(st=rampart.utils.stat(tmpind)))\n\
-            thr('cannot use temp directory \"' + tmpind +'\" - does not exist or insufficient permissions');\n\
-        if(!st.isDirectory)\n\
-            thr('cannot use \"' + tmpind +'\" - not a directory');\n\
-        try { rampart.utils.touch(tmpind+'/._rp_index_test');}\n\
-        catch(e){ thr('cannot use temp directory \"' + tmpind +'\" - insufficient permissions'); }\n\
-        rampart.utils.rmFile(tmpind+'/._rp_index_test');\n\
-        if(tmpind.charAt(0) != '/') tmpind=rampart.utils.realPath(tmpind);/* don't get realpath if absolute (might have soft links in path) */\
-        params.indexTemp=tmpind;\n\
+        if(tmpind !== undefined && rampart.utils.getType(tmpind)!='String')\n\
+            thr('fifth argument, if defined, must be a string (indexTmpPath)');\n\
+        if(tmpind){\n\
+            var st;\n\
+            if(!(st=rampart.utils.stat(tmpind)))\n\
+                thr('cannot use temp directory \"' + tmpind +'\" - does not exist or insufficient permissions');\n\
+            if(!st.isDirectory)\n\
+                thr('cannot use \"' + tmpind +'\" - not a directory');\n\
+            try { rampart.utils.touch(tmpind+'/._rp_index_test');}\n\
+            catch(e){ thr('cannot use temp directory \"' + tmpind +'\" - insufficient permissions'); }\n\
+            rampart.utils.rmFile(tmpind+'/._rp_index_test');\n\
+            if(tmpind.charAt(0) != '/') tmpind=rampart.utils.realPath(tmpind);/* don't get realpath if absolute (might have soft links in path) */\
+            params.indexTemp=tmpind;\n\
+        }\n\
     }\n\
 \n\
     var TSQL = require('rampart-sql');\n\
