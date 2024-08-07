@@ -3477,7 +3477,7 @@ void check_parse(char *sql,char *new_sql,char **names,int n_names)
 // close resets finfo->errmap
 #define throw_tx_or_log_error_close(ctx,pref,msg,h) do{\
     char tbuf[msgbufsz];\
-    strncpy(tbuf, msg, msgbufsz);\
+    strncpy(tbuf, msg, msgbufsz-1);\
     h_close(h);\
     h=NULL;\
     throw_tx_or_log_error(ctx,pref,tbuf);\
@@ -3979,6 +3979,7 @@ static char *prop_defaults[][2] = {
    /*{"indexSpace", ""},
    {"indexBlock", ""}, */
    {"meter", "on"},
+   {"indexmeter", "off"},
 /*   {"addExp", ""},
    {"delExp", ""},
    {"addIndexTmp", ""}
@@ -4956,6 +4957,10 @@ static char *updater_js = "function(npsql) {\n\
         while (true) {\n\
             i=0;\n\
             res = gettimes();\n\
+            if(res.sched.length==0) {\n\
+                writemsg('SYSINDEX is emtpy - exiting');\n\
+                process.exit(0);\n\
+            }\n\
             schline=res.sched[i];\n\
             while(schline) {\n\
                 if(schline.when < 60) do_update(schline, res.now);\n\
@@ -4971,7 +4976,10 @@ static char *updater_js = "function(npsql) {\n\
     res=sql.one(\"select * from SYSTABLES where NAME='SYSUPDATE'\");\n\
     if(!res)\n\
         return false;\n\
- \n\
+    res=sql.one('select * from SYSUPDATE');\n\
+    if(!res)\n\
+        return false;\n\
+\n\
     try{ epid=parseInt(rampart.utils.readFile(sql.db + '/updater.pid',true)); }\n\
     catch(e) { epid=-1; }\n\
 \n\
@@ -5479,6 +5487,7 @@ static duk_ret_t rp_sql_connect(duk_context *ctx)
 
 //the sql.scheduleUpdate function
 static const char *schupd = "function(index, date, frequency, thresh /* not working, tmpind */) {\n\
+    var TSQL = require('rampart-sql');\n\
     var tmpind;\n\
     var sql=this;\n\
     var res=sql.one('select * from SYSINDEX where NAME=?', [index]);\n\
@@ -5493,41 +5502,40 @@ static const char *schupd = "function(index, date, frequency, thresh /* not work
     function freq_to_sec(f){\n\
         var t = rampart.utils.getType(f);\n\
         var mult=1, inter=0, parts, per, perint;\n\
-\n\
         if(t=='Number')\n\
             return f;\n\
         else if (t!='String')\n\
             thr('third argument must be a String or Number (frequency)');\n\
 \n\
-        parts = f.split(/\\s+/);\n\
-\n\
-        if(parts[0]=='every' || parts[0]=='each')\n\
-            parts.shift();\n\
-\n\
-        if(parts.length>1)\n\
-        {\n\
-            mult=parseInt(parts[0]);\n\
-            if(isNaN(mult))\n\
-                return -1;\n\
-            per=parts[1].toLowerCase();\n\
+        switch ( f.toLowerCase() ){\n\
+            case \"daily\":\n\
+                return 86400;\n\
+            case \"hourly\":\n\
+                return 3600;\n\
+            case \"weekly\":\n\
+                return 604800;\n\
         }\n\
-        else\n\
-            per=f.toLowerCase();\n\
 \n\
-        if (per.indexOf('minute') != -1)\n\
+        f=TSQL.sandr( ['every','each','first','second','third','fourth','fifth','sixth','seventh','eighth','nineth','tenth','eleventh','twelfth','teenth','ieth'],\n\
+                    ['','','one','two','three','four','five','six','seven','eight','nine','ten','eleven','twelve','teen','y'],\n\
+                    f);\n\
+\n\
+        var res = rampart.utils.stringToNumber(f,true);\n\
+        if(res.min || res.max) return -1;\n\
+\n\
+        if(!res || !res.rem) {res={rem:f,value:1};}\n\
+        if (res.rem.indexOf('minute') != -1)\n\
             perint=60;\n\
-        else if (per.indexOf('hour') != -1)\n\
+        else if (res.rem.indexOf('hour') != -1)\n\
             perint=3600;\n\
-        else if (per.indexOf('day') != -1)\n\
+        else if (res.rem.indexOf('day') != -1)\n\
             perint=86400;\n\
-        else if (per.indexOf('daily') != -1)\n\
-            perint=86400;\n\
-        else if (per.indexOf('week') != -1)\n\
+        else if (res.rem.indexOf('week') != -1)\n\
             perint=604800;\n\
         else\n\
             return -1;\n\
         \n\
-        return mult * perint;\n\
+        return res.value * perint;\n\
     }\n\
 \n\
     if(rampart.utils.getType(index) != 'String') thr('first arguement must be a string (index name)');\n\
@@ -5543,11 +5551,10 @@ static const char *schupd = "function(index, date, frequency, thresh /* not work
     if(rampart.utils.getType(date) == 'Date') {\n\
         date = Math.floor(date.getTime()/1000);\n\
     } else {\n\
-\n\
         if(rampart.utils.getType(date)=='String' && date.toLowerCase() == 'now')\n\
             date=0;\n\
         else if(rampart.utils.getType(date)=='String' && \n\
-            ( date.toLowerCase() == 'never') || date.toLowerCase() == 'delete')\n\
+            ( date.toLowerCase() == 'never' || date.toLowerCase() == 'delete') )\n\
             date=-1;\n\
         else if(rampart.utils.getType(date)!='Number') {\n\
             var d = rampart.utils.autoScanDate(date);\n\
@@ -5586,8 +5593,7 @@ static const char *schupd = "function(index, date, frequency, thresh /* not work
         }\n\
     }\n\
 \n\
-    var TSQL = require('rampart-sql');\n\
-    var asql = TSQL.connect({path:sql.db, user:'_SYSTEM'});\n\
+    var asql = TSQL.connect({path:sql.db, user:'_SYSTEM', noUpdater:true});\n\
 \n\
     res = asql.one(\"select * from SYSTABLES where NAME='SYSUPDATE';\");\n\
 \n\
@@ -5599,6 +5605,8 @@ static const char *schupd = "function(index, date, frequency, thresh /* not work
 \n\
     if(date > -1)\n\
         asql.exec(\"insert into SYSUPDATE values(counter,?,?,-1,?,?,?,0,0.0,?);\", [index, tbname, date, interval, thresh, params]);\n\
+    //connect again to launch updater;\n\
+    asql = TSQL.connect(sql.db);\n\
 }\n";
 
 
