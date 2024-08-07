@@ -5251,7 +5251,7 @@ static duk_ret_t str_to_num(duk_context *ctx)
     op[1]='\0';
 
     if(ret == str)
-        duk_push_false(ctx);
+        duk_push_nan(ctx);
     else if (retObj)
     {
         double min2;
