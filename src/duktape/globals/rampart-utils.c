@@ -7307,7 +7307,7 @@ duk_ret_t duk_rp_forkpty_on(duk_context *ctx)
 duk_ret_t duk_rp_forkpty_resize(duk_context *ctx)
 {
     int fd;
-    struct winsize ws;
+    struct winsize ws={0};
 
     ws.ws_col=(unsigned short) REQUIRE_UINT(ctx, 0, "forkpty.resize: First parameter must be a positive integer (width)");
     ws.ws_row=(unsigned short) REQUIRE_UINT(ctx, 1, "forkpty.resize: Second parameter must be a positive integer (height)");

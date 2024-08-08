@@ -1766,26 +1766,15 @@ static void dirlist(evhtp_request_t *req, char *fn)
     http_callback(req, (void *) &newdhs);
 }
 
-#define CTXFREER struct ctx_free_buffer_data_str
-
-CTXFREER
-{
-    duk_context *ctx;
-    int threadno;
-};
-
 /* free the data after evbuffer is done with it, but check that it hasn't
    been freed already */
 static void refcb(const void *data, size_t datalen, void *val)
 {
-    CTXFREER *fp = val;
-    duk_context *ctx = fp->ctx;
-    int threadno = (int)fp->threadno;
+    duk_context *ctx = (duk_context *)val;
 
     // check if the entire stack was already freed and replaced in redo_ctx
-    if (ctx == server_thread[threadno]->ctx)
+    if (ctx == server_thread[thread_local_server_thread_num]->ctx)
         duk_free(ctx, (void *)data);
-    free(fp);
 }
 
 static int rp_evbuffer_add_file(struct evbuffer *outbuf, int fd, ev_off_t offset, ev_off_t length)
@@ -2287,14 +2276,9 @@ static void attachbuf(DHS *dhs, duk_idx_t idx)
     else
     /* no it isn't, steal and free later */
     {
-        CTXFREER *freeme = NULL;
-
-        REMALLOC(freeme, sizeof(CTXFREER));
         duk_to_dynamic_buffer(ctx, idx, &sz);
         s = duk_steal_buffer(ctx, idx, &sz);
-        freeme->ctx = ctx;
-        freeme->threadno = (int)dhs->threadno;
-        evbuffer_add_reference(dhs->req->buffer_out, s, (size_t)sz, refcb, freeme);
+        evbuffer_add_reference(dhs->req->buffer_out, s, (size_t)sz, refcb, ctx);
     }
 }
 
@@ -5459,7 +5443,6 @@ duk_ret_t duk_server_start(duk_context *ctx)
     */
     // keep a separate array distinct from **rpthread just for the server.
     REMALLOC(server_thread, totnthreads*sizeof(RPTHR*));
-    
     for (i = 0; i < totnthreads; i++)
     {
         if(i)
