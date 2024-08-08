@@ -278,7 +278,7 @@ static void frefcb(const void *data, size_t datalen, void *val)
 {
     if(val)
         free((void *)val);
-    else
+    else if(data)
         free((void *)data);
 }
 
