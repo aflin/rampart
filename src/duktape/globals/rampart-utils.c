@@ -3566,10 +3566,48 @@ duk_ret_t duk_rp_shell(duk_context *ctx)
 duk_ret_t duk_rp_kill(duk_context *ctx)
 {
     pid_t pid = REQUIRE_INT(ctx, 0, "rampart.utils.kill - first argument (pid) must be an integer");
-    int ret, x=0, signal = SIGTERM,kerrno=0;
+    int ret, x=0, signal = SIGTERM, kerrno=0, dothrow=0;
 
     if(duk_is_number(ctx,1))
         signal=REQUIRE_UINT(ctx, 1, "rampart.utils.kill - second argument (signal) must be a positive integer");
+    else if(duk_is_string(ctx,1))
+    {
+        const char *signame=duk_get_string(ctx,1);
+        if(strcmp("SIGHUP", signame)==0) signal=SIGHUP;
+        else if(strcmp("SIGINT", signame)==0) signal=SIGINT;
+        else if(strcmp("SIGQUIT", signame)==0) signal=SIGQUIT;
+        else if(strcmp("SIGILL", signame)==0) signal=SIGILL;
+        else if(strcmp("SIGTRAP", signame)==0) signal=SIGTRAP;
+        else if(strcmp("SIGABRT", signame)==0) signal=SIGABRT;
+        else if(strcmp("SIGFPE", signame)==0) signal=SIGFPE;
+        else if(strcmp("SIGKILL", signame)==0) signal=SIGKILL;
+        else if(strcmp("SIGBUS", signame)==0) signal=SIGBUS;
+        else if(strcmp("SIGSEGV", signame)==0) signal=SIGSEGV;
+        else if(strcmp("SIGSYS", signame)==0) signal=SIGSYS;
+        else if(strcmp("SIGPIPE", signame)==0) signal=SIGPIPE;
+        else if(strcmp("SIGALRM", signame)==0) signal=SIGALRM;
+        else if(strcmp("SIGTERM", signame)==0) signal=SIGTERM;
+        else if(strcmp("SIGURG", signame)==0) signal=SIGURG;
+        else if(strcmp("SIGSTOP", signame)==0) signal=SIGSTOP;
+        else if(strcmp("SIGTSTP", signame)==0) signal=SIGTSTP;
+        else if(strcmp("SIGCONT", signame)==0) signal=SIGCONT;
+        else if(strcmp("SIGCHLD", signame)==0) signal=SIGCHLD;
+        else if(strcmp("SIGTTIN", signame)==0) signal=SIGTTIN;
+        else if(strcmp("SIGTTOU", signame)==0) signal=SIGTTOU;
+        else if(strcmp("SIGIO", signame)==0) signal=SIGIO;
+        else if(strcmp("SIGXCPU", signame)==0) signal=SIGXCPU;
+        else if(strcmp("SIGXFSZ", signame)==0) signal=SIGXFSZ;
+        else if(strcmp("SIGVTALRM", signame)==0) signal=SIGVTALRM;
+        else if(strcmp("SIGPROF", signame)==0) signal=SIGPROF;
+        else if(strcmp("SIGWINCH", signame)==0) signal=SIGWINCH;
+        else if(strcmp("SIGUSR1", signame)==0) signal=SIGUSR1;
+        else if(strcmp("SIGUSR2", signame)==0) signal=SIGUSR2;
+        else
+            RP_THROW(ctx, "'%s' is not a supported signal\n", signame);
+    }
+
+    if(!duk_is_undefined(ctx, 2))
+        dothrow=REQUIRE_BOOL(ctx, 2, "rampart.utils.kill - third argument, if present, must be a Boolean (throwOnError)");
 
     errno=0;
     ret= kill(pid, signal);
@@ -3587,7 +3625,11 @@ duk_ret_t duk_rp_kill(duk_context *ctx)
         }
 
     if (ret || kerrno)
+    {
+        if(dothrow)
+            RP_THROW(ctx, "Failed to send signal %d to process %d - %s", signal, (int)pid, strerror(errno));
         duk_push_false(ctx);
+    }
     else
         duk_push_true(ctx);
 
@@ -5414,7 +5456,7 @@ void duk_rampart_init(duk_context *ctx)
     duk_put_prop_string(ctx, -2, "exec");
     duk_push_c_function(ctx, duk_rp_shell, 2);
     duk_put_prop_string(ctx, -2, "shell");
-    duk_push_c_function(ctx, duk_rp_kill, 2);
+    duk_push_c_function(ctx, duk_rp_kill, 3);
     duk_put_prop_string(ctx, -2, "kill");
     duk_push_c_function(ctx, duk_rp_mkdir, 2);
     duk_put_prop_string(ctx, -2, "mkdir");
