@@ -1,0 +1,61 @@
+#!/usr/bin/env rampart
+
+var wserv = require("rampart-webserver");
+var wd = process.scriptPath;
+
+rampart.include(process.scriptPath+'/web_server_conf.js');
+
+var res, printf=rampart.utils.printf, argv=process.argv, kill=rampart.utils.kill;
+
+// fill in the missing pieces and do some checks
+conf = wserv.parseOptions(conf);
+
+if(argv[2] == '--stop' || argv[2]=='stop') {
+
+    res=wserv.stop(conf);
+    if(res.error)
+        printf("Server is not running or pid file is invalid\n");
+    else if (res.message)
+        printf("%s\n", res.message);
+    process.exit(0);
+
+} else if(argv[2] == '--status' || argv[2]=='status') {
+
+    res=wserv.status(conf);
+
+    if( res.serverPid && kill(res.serverPid,0) )
+        printf("server is running. pid: %s\n", res.serverPid);
+    else
+        printf("server is not running\n");
+
+    if( res.redirPid && kill(res.redirPid,0) )
+        printf("redirect server is running. pid: %s\n", res.redirPid);
+    else
+        printf("redirect server is not running\n");
+
+    if( res.monitorPid && kill(res.monitorPid,0) )
+        printf("monitor process is running. pid: %s\n", res.monitorPid);
+    else
+        printf("monitor process is not running\n");
+
+} else if (argv[2] == '--dump' || argv[2]=='dump') {
+    res=wserv.dumpConfig(conf);
+    printf("%3J\n", res);
+    process.exit(0);
+} else if (argv[2] == '--start' || argv[2]=='start') {
+    res=wserv.start(conf);
+
+    if(res.message)
+        console.log(res.message);
+
+    if(res.error) {
+        console.log(res.error);
+        process.exit(1);
+    }
+} else {
+    printf("usage:\n  %s [start|stop|status|dump]\n",argv[1]);
+    printf("      start  -- start the http(s) server\n");
+    printf("      stop   -- stop the http(s) server\n");
+    printf("      status -- show status of server processes\n");
+    printf("      dump   -- dump the config object used for server.start()\n");
+}

@@ -4711,12 +4711,6 @@ static inline void logging(duk_context *ctx, duk_idx_t ob_idx)
     }
     duk_pop(ctx);
 
-    if (duk_rp_GPS_icase(ctx, ob_idx, "log") && duk_get_boolean_default(ctx,-1,0) )
-    {
-        duk_rp_server_logging=1;
-    }
-    duk_pop(ctx);
-
     if(duk_rp_server_logging)
     {
         int sig_reload=0;
@@ -5049,6 +5043,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
         if(max) //zero is default
             maxread=(size_t)max;
     }
+    duk_pop(ctx);
 
     if (duk_rp_GPS_icase(ctx, ob_idx, "maxWrite"))
     {
@@ -5058,6 +5053,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
         if(max) //zero is default
         maxwrite=(size_t)max;
     }
+    duk_pop(ctx);
 
     /* check if we are forking before doing any setup*/
     /* daemon */
@@ -5072,6 +5068,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
         proc_mimes(ctx);
     }
     duk_pop(ctx);
+
     if (daemon)
     {
         int child2par[2]={0};
@@ -5178,26 +5175,8 @@ duk_ret_t duk_server_start(duk_context *ctx)
     /* options from server({options},...) */
     if (ob_idx != -1)
     {
-        //const char *s;
-
-        /* logging */
         if(!daemon)
-        {
             logging(ctx, ob_idx);
-            //stderr=error_fh;
-            //stdout=access_fh;
-
-            /* port */
-            if (duk_rp_GPS_icase(ctx, ob_idx, "port"))
-            {
-                int signed_port = duk_rp_get_int_default(ctx, -1, -1);
-                if (signed_port < 1)
-                    RP_THROW(ctx, "server.start: parameter \"port\" invalid");
-                port=(uint16_t) signed_port;
-            }
-            duk_pop(ctx);
-
-        }
 
         /* unprivileged user if we are root */
 #ifdef __linux__

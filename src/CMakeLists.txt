@@ -626,6 +626,13 @@ install(CODE "execute_process( \
 
 install(CODE "execute_process( \
     COMMAND ${CMAKE_COMMAND} -E copy \
+    \"${PROJECT_SOURCE_DIR}/js_modules/rampart-webserver.js\" \
+    \"${CMAKE_INSTALL_PREFIX}/modules/\"   \
+    )"
+)
+
+install(CODE "execute_process( \
+    COMMAND ${CMAKE_COMMAND} -E copy \
     \"${PROJECT_SOURCE_DIR}/test/babel.js\" \
     \"${PROJECT_SOURCE_DIR}/test/babel-polyfill.js\" \
     \"${CMAKE_INSTALL_PREFIX}/modules/\"   \
