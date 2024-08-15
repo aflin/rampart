@@ -121,7 +121,7 @@ var conf = {
     /* appendProcTitle Bool.  Whether to append ip:port to process name as seen in ps */
     //appendProcTitle: false,
 
-    serverRoot:        wd
+    serverRoot:       wd,
 }
 
 var res, printf=rampart.utils.printf, argv=process.argv, kill=rampart.utils.kill;
@@ -131,6 +131,7 @@ conf = wserv.parseOptions(conf);
 
 if(argv[2] == '--stop' || argv[2]=='stop') {
 
+    /* STOP */
     res=wserv.stop(conf);
     if(res.error)
         printf("Server is not running or pid file is invalid\n");
@@ -140,6 +141,7 @@ if(argv[2] == '--stop' || argv[2]=='stop') {
 
 } else if(argv[2] == '--restart' || argv[2]=='restart') {
 
+    /* RESTART */
     res=wserv.stop(conf);
     if(res.error)
         printf("Server is not running or pid file is invalid\n");
@@ -158,6 +160,7 @@ if(argv[2] == '--stop' || argv[2]=='stop') {
 
 } else if(argv[2] == '--status' || argv[2]=='status') {
 
+    /* STATUS */
     res=wserv.status(conf);
 
     if( res.serverPid && kill(res.serverPid,0) )
@@ -176,10 +179,15 @@ if(argv[2] == '--stop' || argv[2]=='stop') {
         printf("monitor process is not running\n");
 
 } else if (argv[2] == '--dump' || argv[2]=='dump') {
+
+    /* DUMP */
     res=wserv.dumpConfig(conf);
     printf("%3J\n", res);
     process.exit(0);
+
 } else if (argv[2] == '--start' || argv[2]=='start' || !argv[2]) {
+
+    /* START */
     res=wserv.start(conf);
 
     if(res.message)
@@ -189,10 +197,13 @@ if(argv[2] == '--stop' || argv[2]=='stop') {
         console.log(res.error);
         process.exit(1);
     }
+    // if (res.isMonitor) -- we are the monitor and should on nothing else but finish the script
+    //                       so event loop can start and monitor can run its setTimeouts
+
 } else { 
     if (argv[2] != '--help' && argv[2] != 'help')
 	printf("unknown command '%s'\n\n", argv[2]);
-    printf("usage:\n  %s [start|stop|status|dump]\n",argv[1]);
+    printf("usage:\n  %s %s [start|stop|restart|status|dump]\n",argv[0], argv[1]);
     printf("      start   -- start the http(s) server\n");
     printf("      stop    -- stop the http(s) server\n");
     printf("      restart -- stop and restart the http(s) server\n");

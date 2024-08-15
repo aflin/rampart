@@ -871,30 +871,34 @@ function start(serverConf, dump) {
     if(dump)
         return serverConf;
 
-    var status = checkMonitor();
+    // start redir server if so configured
+    var retr=start_redir();
 
-    // error starting monitor (bad config or bad fork)
-    if (getType(status)=='Object') {
-        return status;
-    }
+    if(retr.error)
+        return retr;
 
-    if(status===true){
-        var retr=start_redir();
-        if(retr.error)
-            return retr;
-        var ret=start_server();
-        if(ret.error) {
-            if(retr.pid)
-                kill(retr.pid);
-            return ret;
-        }
+    // start the main server
+    var ret=start_server();
+
+    if(ret.error) {
         if(retr.pid)
-            ret.redirPid=retr.pid;
+            kill(retr.pid);
         return ret;
     }
-    //else do nothing (in monitor daemon which enters event loop after return and end of main script)
 
-    return {};
+    // add redir pid if redir server launched
+    if(retr.pid)
+        ret.redirPid=retr.pid;
+
+    var status = checkMonitor();
+
+    // status is true, we are the parent, or we never forked
+    if(status)
+        return ret;
+
+    // status is false, we are the forked monitor
+    return {isMonitor:true};
+
 }
 
 function dumpConfig(serverConf) {
