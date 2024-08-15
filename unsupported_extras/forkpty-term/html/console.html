@@ -1,12 +1,15 @@
 <!DOCTYPE html>
-<html style="height:100%">
+<html style="height:100%; overflow:hidden">
     <head>
       <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.min.css" />
       <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
       <script src=" https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js "></script>
       <style>
-          body,#terminal {height:calc( 100% - 15px ); width:calc( 100% - 15px );}
+          body, #terminal {height:100%; width:100%; margin:0; padding:0}
+          body {width: 100%;}
           .xterm-viewport { overflow-x: hidden; }
+          /* to change select highlighting colors */
+          /* .xterm-decoration-top { background-color: white !important; color:black !important;} */
       </style>
     </head>
     <body>
@@ -22,35 +25,69 @@
         if(/^https/.test(window.location.origin))
             ws = 'wss://'
         
-        const socket = new WebSocket(ws + window.location.host + "/wsapps/console.js");
+        var wsurl = ws + window.location.host + "/wsapps/console.js";
 
+        var theme={};
+        /*  
+        theme = {
+            background: "#BBEEDD",
+            foreground: "black",
+            brightGreen: "#6dce0f"
+        }
+        */
+        
+        const isMac = ['Macintosh', 'MacIntel', 'MacPPC', 'Mac68K'].includes(navigator.platform);
+
+        // to have select copy to clipboard without ctrl-c on non-linux
+        const copyOnSelect = false;
+        //const copyOnSelect = isMac;
+
+        // fix alt arrow keys on some platforms
+        const fixAltArrows = false;
+
+
+        function openSocket() {
+            try {
+                var s = new WebSocket(wsurl);
+            } catch(e) {
+                return {error: e}
+            }
+            document.socksend = function(s) {
+                socket.send(s);
+            }
+            return {socket:s};
+        }
+
+        //set up the terminal
+        var term = new window.Terminal({
+            theme: theme,
+            fontFamily: "monospace, monospace",
+            cursorBlink: true,
+            lineHeight: 1,
+//            scrollback: 9999
+        });
+
+        document.termfocus = function(){
+            term.focus();
+        }
+
+        const fitAddon = new FitAddon.FitAddon();
+        term.loadAddon(fitAddon);
+
+        term.open(pane);
+    
         // send commands as binary to distinguish from data
         function sendcomm(cmd, opt) {
             var o = {};
             if(!opt) opt=true;
             o[cmd]=opt;
-            //var buff = Buffer.from(JSON.stringify({cmd:opt}, "utf-8"));
+
             const buff = new TextEncoder().encode( JSON.stringify(o) );
             setTimeout(function () {
                 socket.send(buff.buffer);
-                //console.log("sent", o);
             }, 50);
-            //socket.send( JSON.stringify({cmd:opt}) );
         }
 
-        var term = new window.Terminal({
-            //theme: theme,
-            fontFamily: "monospace, monospace",
-            cursorBlink: true,
-            lineHeight: 1
-        });
-        const fitAddon = new FitAddon.FitAddon();
-        term.loadAddon(fitAddon);
-
-        //term.resize(120,50);
-
-        term.open(pane);
-        
         // workaround for scrollbar resize bugs https://github.com/xtermjs/xterm.js/issues/3584
         screen = document.getElementsByClassName("xterm-screen")[0]
         viewport = document.getElementsByClassName("xterm-viewport")[0]
@@ -68,31 +105,122 @@
 
             fitAddon.fit();
             viewport.style.height = (screen.clientHeight + 10) + 'px';
-            viewport.style.width = (screen.clientWidth + 10) + 'px';
+            viewport.style.width = (screen.clientWidth -2) + 'px';
 
+            // tell server about the new size
             sendcomm("resize", {cols: term.cols, rows:term.rows});
         }
-        window.addEventListener('resize', onSize, false);
-        setTimeout(onSize,100);
 
-        socket.onmessage = (event) => {
-            /*Server sends binary ws, which shows up as a blob.
-              It has to do that because some term data is not utf8, and 
-              websocket text (!binary) must be utf8 or browser craps out.
-              Term doesn't take a blob, only text.
-              Converting blob to text requires a callback.    */
-            event.data.text().then( (d) => {
-                term.write(d);
-            });
-            //term.write(event.data);
+        var socket;
+        var res = openSocket();
+        if(res.error) {
+            term.write("Could not connect: " + res.error);
+        } else {
+            socket = res.socket;
         }
 
-        socket.onopen = function() {
-            term.onData(e => {
-                // a check to make sure socket is still open
-                // and error handling can go here
-                socket.send(e);
-            });
+        //workaround for alt-arrows
+        var lastkey;
+        term.onKey(function(e) { 
+            lastkey=e;
+        });
+        var dofixAltArrows;
+        if(fixAltArrows) {
+            dofixAltArrows = function (e) {
+                //undo this, which messes up alt-arrows
+                //https://github.com/xtermjs/xterm.js/blob/53bc9f8442994d75ad522a117a0c2ffd78e50781/src/common/input/Keyboard.ts#L139
+                if(lastkey && lastkey.domEvent.altKey){
+                    //console.log(e,lastkey.domEvent);
+                    if(isMac) {
+                        if(e == 'f')
+                            e="[1;3C";
+                        else if( e == 'b')
+                            e="[1;3D";
+                    } else
+                    switch (e) {
+                        case "[1;5A":
+                            e="[1;3A";break;
+                        case "[1;5B":
+                            e="[1;3B";break;
+                        case "[1;5C":
+                            e="[1;3C";break;
+                        case "[1;5D":
+                            e="[1;3D";break;
+                    }
+                }
+                return e;
+            }
+        } else {
+            dofixAltArrows = function (e) {
+                return e;
+            }
         }
+
+        // the main sequence, just pass chars back and forth.
+
+        var termCallbackSet=false;
+        var lostMessage=false;
+        function wsOnOpen(event) {
+            socket.onmessage = (event) => {
+                /*Server sends binary ws, which shows up as a blob.
+                  It has to do that because some term data is not utf8, and 
+                  websocket text (!binary) must be utf8 or browser craps out.
+                  Term doesn't take a blob, only text.
+                  Converting blob to text requires a callback.  So stupid.    */
+                event.data.text().then( (d) => {
+                    term.write(d);
+                });
+            }
+
+            if(!termCallbackSet) {
+                window.addEventListener('resize', onSize, false);
+                onSize(); //resize to current on first connect
+                term.onData(e => {
+                    if(checksocket()) {
+                        if(lostMessage) {
+                            socket.send(dofixAltArrows(lostMessage));
+                            lostMessage=false;
+                        }
+                        socket.send(dofixAltArrows(e));
+                    } else {
+                        term.write("-----connection broken-----\n");
+                        lostMessage=e; //save for reconnect
+                    }
+                });
+                termCallbackSet=true;
+            }
+        }
+
+        function checksocket(){
+            if(socket.readyState != WebSocket.OPEN) {
+                var res = openSocket();
+                if(res.error) {
+                    term.write("Could not connect: " + res.error);
+                    return false;
+                }
+                socket = res.socket;
+                socket.onopen = wsOnOpen;
+                return false;
+            }
+            return true;
+        }
+
+        if(socket)
+            socket.onopen = wsOnOpen;
+
+        if(copyOnSelect) {
+            addEventListener("mouseup", (event) => {
+                var txt = term.getSelection();
+                //console.log(event);
+                //console.log('"' + term.getSelection() + '"');
+                if(txt.length){
+                    navigator.clipboard.writeText(txt);
+                }/* else if (event.altKey) {
+                    navigator.clipboard.readText().then(text=>{
+                        socket.send(text);
+                    });
+                }*/
+            });
+        }        
     </script>
 </html>
