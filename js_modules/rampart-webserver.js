@@ -900,7 +900,7 @@ function start(serverConf, dump) {
 function dumpConfig(serverConf) {
     var conf = start(serverConf, true);
     var ret={};
-    var props = ["bind","scriptTimeout","connectTimeout","log","accessLog","errorLog","daemon","useThreads","threads","maxRead","maxWrite","secure","sslKeyFile","sslCertFile","sslMinVersion","notFoundFunc","developerMode","directoryFunc","user","cacheControl","compressFiles","compressScripts","compressLevel","compressMinSize","mimeMap","map"];
+    var props = ["bind","scriptTimeout","connectTimeout","log","accessLog","errorLog","daemon","useThreads","threads","maxRead","maxWrite","secure","sslKeyFile","sslCertFile","sslMinVersion","notFoundFunc","developerMode","directoryFunc","user","cacheControl","compressFiles","compressScripts","compressLevel","compressMinSize","mimeMap","map","appendProcTitle"];
     for (var i=0; i<props.length; i++)
         ret[props[i]]=conf[props[i]];
     return ret;
