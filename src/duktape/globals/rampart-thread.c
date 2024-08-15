@@ -778,11 +778,11 @@ static int copy_any(duk_context *ctx, duk_context *tctx, duk_idx_t idx, int obji
 
         /* recurse and copy JS properties attached to this duktape (but really c) function */
         if( idx == duk_get_top_index(ctx) )
-            objid = rpthr_copy_obj(ctx, tctx, objid);
+            objid = rpthr_copy_obj(ctx, tctx, objid, 0);
         else
         {
             duk_dup(ctx, idx);
-            objid = rpthr_copy_obj(ctx, tctx, objid);
+            objid = rpthr_copy_obj(ctx, tctx, objid, 0);
             duk_pop(ctx);
         }
 
@@ -822,11 +822,11 @@ static int copy_any(duk_context *ctx, duk_context *tctx, duk_idx_t idx, int obji
 
         /* recurse and copy JS properties attached to this c function */
         if( idx == duk_get_top_index(ctx) )
-            objid = rpthr_copy_obj(ctx, tctx, objid);
+            objid = rpthr_copy_obj(ctx, tctx, objid, 0);
         else
         {
             duk_dup(ctx, idx);
-            objid = rpthr_copy_obj(ctx, tctx, objid);
+            objid = rpthr_copy_obj(ctx, tctx, objid, 0);
             duk_pop(ctx);
         }
     }
@@ -912,7 +912,7 @@ static int copy_any(duk_context *ctx, duk_context *tctx, duk_idx_t idx, int obji
 
                 duk_push_object(tctx);
                 duk_dup(ctx, idx); //put a ref of obj at idx on top of stack for rpthr_copy_obj
-                objid = rpthr_copy_obj(ctx, tctx, objid);
+                objid = rpthr_copy_obj(ctx, tctx, objid, 0);
                 // tctx -> [ ..., arrRefPtr, array, copied_object ]
                 duk_pop(ctx); //remove ref of obj at idx
                 duk_pull(tctx, -2);
@@ -934,11 +934,11 @@ static int copy_any(duk_context *ctx, duk_context *tctx, duk_idx_t idx, int obji
             duk_push_object(tctx);
 
             if( idx == duk_get_top_index(ctx) )
-                objid = rpthr_copy_obj(ctx, tctx, objid);
+                objid = rpthr_copy_obj(ctx, tctx, objid, 0);
             else
             {
                 duk_dup(ctx, idx);
-                objid = rpthr_copy_obj(ctx, tctx, objid);
+                objid = rpthr_copy_obj(ctx, tctx, objid, 0);
                 duk_pop(ctx);
             }
         }
@@ -957,7 +957,7 @@ void rpthr_copy(duk_context *ctx, duk_context *tctx, duk_idx_t idx)
 }
 
 /* ctx object and tctx object should be at top of respective stacks */
-int rpthr_copy_obj(duk_context *ctx, duk_context *tctx, int objid)
+int rpthr_copy_obj(duk_context *ctx, duk_context *tctx, int objid, int skiprefcnt)
 {
     const char *s;
     int is_global=0;
@@ -1050,6 +1050,7 @@ int rpthr_copy_obj(duk_context *ctx, duk_context *tctx, int objid)
     /*  get keys,vals inside ctx object on top of the stack
         and copy to the tctx object on top of the stack     */
 
+
     duk_enum(ctx, -1, DUK_ENUM_INCLUDE_HIDDEN|DUK_ENUM_INCLUDE_SYMBOLS|DUK_ENUM_SORT_ARRAY_INDICES);
     while (duk_next(ctx, -1, 1))
     {
@@ -1060,6 +1061,17 @@ int rpthr_copy_obj(duk_context *ctx, duk_context *tctx, int objid)
             duk_pop_2(ctx);
             continue;
         }
+
+        // if the object has a hidden refcnt *int, increment it
+        // this is currently not used, but leaving in for possible future use
+        /*
+        if(!skiprefcnt && !strcmp(s, "\xffrefcnt_ptr") )
+        {
+            int *refcnt_ptr;
+            refcnt_ptr=duk_get_pointer(ctx, -1);
+            (*refcnt_ptr)++;
+        }
+        */
 
         cprintf("copying %s\n",s);
 
@@ -1101,7 +1113,7 @@ void rpthr_copy_global(duk_context *ctx, duk_context *tctx)
     duk_push_global_object(ctx);
     duk_push_global_object(tctx);
     /* rpthr_copy_obj expects objects on top of both stacks */
-    rpthr_copy_obj(ctx, tctx, 0);
+    rpthr_copy_obj(ctx, tctx, 0, 0);
     /* remove hidden symbols and stash-cache used for reference tracking */
 
     rpthr_clean_obj(ctx, tctx);
@@ -1181,7 +1193,8 @@ void put_to_clipboard(duk_context *ctx, duk_idx_t val_idx, char *key)
     //cpctx: [ cpctx_global_stash, holder_object ]
 
     //copy object with key "val" to new cpctx object
-    rpthr_copy_obj(ctx, cpctx, 0);
+    // do not increment refcnt on way in.
+    rpthr_copy_obj(ctx, cpctx, 0, 1);
     rpthr_clean_obj(ctx, cpctx);
     //cpctx: [ cpctx_global_stash, holder_object_filled ]
 
@@ -1245,7 +1258,7 @@ static duk_ret_t _thread_get_del(duk_context *ctx, char *key, int del)
 
     //copy object with key "val" to ctx object
     duk_push_object(ctx);
-    rpthr_copy_obj(cpctx, ctx, 0);
+    rpthr_copy_obj(cpctx, ctx, 0, 0);
     rpthr_clean_obj(cpctx, ctx);
 
     if(del)
@@ -1463,7 +1476,8 @@ static RPTHR* get_first_unused()
 }
 
 // get number of threads that are active
-int get_thread_count()
+// if **alist is not NULL, make a list of active thread numbers (needs free)
+int get_thread_count(int **alist)
 {
     int i=0, ret=0;
 
@@ -1471,6 +1485,25 @@ int get_thread_count()
     {
         if( RPTHR_TEST(rpthread[i], RPTHR_FLAG_IN_USE) )
             ret++;
+    }
+
+    if(alist)
+    {
+        int *list = NULL, li=0;
+
+        if(!ret) //won't happen, should always have the main thread
+        {
+            *alist=NULL;
+            return ret;
+        }
+
+        REMALLOC(list, sizeof(int) * ret);
+        for (i=0;i<nrpthreads;i++)
+        {
+            if( RPTHR_TEST(rpthread[i], RPTHR_FLAG_IN_USE) )
+                list[li++]=i;
+        }
+        alist=&list;
     }
 
     return ret;

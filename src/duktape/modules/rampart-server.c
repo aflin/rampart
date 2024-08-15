@@ -2770,7 +2770,7 @@ static void copy_cb_func(DHS *dhs, int nt)
         void *buf = duk_push_fixed_buffer(tctx, bc_len);
         memcpy(buf, (const void *)bc_ptr, bc_len);
         duk_load_function(tctx);
-        rpthr_copy_obj(ctx, tctx, 0);
+        rpthr_copy_obj(ctx, tctx, 0, 0);
         rpthr_clean_obj(ctx, tctx);
         duk_put_prop_index(tctx, 0, (duk_uarridx_t)dhs->func_idx); //put it in same position in array as main_ctx
     }
@@ -2781,7 +2781,7 @@ static void copy_cb_func(DHS *dhs, int nt)
         void *buf = duk_push_fixed_buffer(tctx, bc_len);
         memcpy(buf, (const void *)bc_ptr, bc_len);
         duk_load_function(tctx);
-        rpthr_copy_obj(ctx, tctx, 0);
+        rpthr_copy_obj(ctx, tctx, 0, 0);
         rpthr_clean_obj(ctx, tctx);
         duk_put_prop_index(tctx, 0, (duk_uarridx_t)dhs->func_idx); //put it in same position in array as main_ctx
     }

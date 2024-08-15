@@ -478,7 +478,7 @@ struct evdns_base *rp_make_dns_base(
   duk_context *ctx, struct event_base *base);// create dns base for new server
 
 /* copy vars between stacks functions */
-int  rpthr_copy_obj    (duk_context *ctx, duk_context *tctx, int objid);
+int  rpthr_copy_obj    (duk_context *ctx, duk_context *tctx, int objid, int skiprefcnt);
 // objects are marked to avoid recursion while copying.  They need to be cleaned of marks.
 void rpthr_clean_obj   (duk_context *ctx, duk_context *tctx);
 // copy all global vars from one ctx to another tctx
@@ -493,8 +493,10 @@ int get_thread_num();
 // convenient for getting the current duktape stack regardless of where you are:
 // i.e. duk_context *ctx = get_current_thread()->ctx;
 RPTHR *get_current_thread();
+
 // get number of threads that are active
-int get_thread_count();
+// if alist is not NULL, fill it with an array of ints (active thread numbers)
+int get_thread_count(int **alist);
 
 /* cleanup after fork for rampart-server */
 void rp_post_fork_clean_threads();
