@@ -31,7 +31,8 @@ module.exports = function (req)
         } 
   
         req.wsOnDisconnect(function(){
-            req.con.close();
+            if(req.con.close) //if not already closed
+                req.con.close();
         });
       
         // what to do when we have data waiting to go.
