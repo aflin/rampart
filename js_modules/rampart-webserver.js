@@ -33,6 +33,7 @@ var defaultServerConf = function(wd){
         scriptTimeout:  20,
         connectTimeout: 20,
         quickserver:    false,
+        appendProcTitle:false,
         serverRoot:     wd
     }
 }
@@ -71,6 +72,7 @@ var defaultQuickServerConf = function(wd){
         scriptTimeout:  20,
         connectTimeout: 20,
         quickserver:    true,
+        appendProcTitle:false,
         serverRoot:     wd
     }
 }
@@ -264,7 +266,10 @@ function firstChecks(serverConf)
     return serverConf;
 }
 
-
+/* 
+   argv - array for command line opts
+        - object for script invocation
+*/
 function parseOptions (argv){
     var arg, fullServer=1, printdefaults=0;
 
@@ -600,7 +605,8 @@ function start(serverConf, dump) {
             daemon: true,
             threads: 2,
             directoryFunc: false,
-            map: { '/':  doredir }
+            map: { '/':  doredir },
+            appendProcTitle: serverConf.appendProcTitle
         });
 
         sleep(0.5); //give proc time to exit if error

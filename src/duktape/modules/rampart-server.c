@@ -5002,7 +5002,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
     int nthr=0, mapsort=1;
     evhtp_t *htp = NULL;
     evhtp_ssl_cfg_t *ssl_config = NULL;
-    int i=0, confThreads = -1, daemon=0;
+    int i=0, confThreads = -1, daemon=0, settitle=0;
     struct stat f_stat;
     duk_uarridx_t fpos =0;
     pid_t dpid=0;
@@ -5062,6 +5062,15 @@ duk_ret_t duk_server_start(duk_context *ctx)
         daemon = REQUIRE_BOOL(ctx, -1, "server.start: parameter \"daemon\" requires a boolean (true|false)");
     }
     duk_pop(ctx);
+
+    if(daemon)
+    {
+        if (duk_rp_GPS_icase(ctx, ob_idx, "appendProcTitle"))
+        {
+            settitle = REQUIRE_BOOL(ctx, -1, "server.start: parameter \"appendProcTitle\" requires a boolean (true|false)");
+        }
+        duk_pop(ctx);
+    }
 
     if (duk_rp_GPS_icase(ctx, ob_idx, "mimeMap"))
     {
@@ -5144,7 +5153,10 @@ duk_ret_t duk_server_start(duk_context *ctx)
             }
             duk_pop(ctx);
 
-            setproctitle("rampart server:%d", port);
+            if(settitle)
+                setproctitle("rampart %s %s:%d", RP_script, ipany, port);
+            else
+                setproctitle("%s %s", rampart_argv[0], RP_script); //full path of script
         }
         else
         {
