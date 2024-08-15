@@ -6634,10 +6634,98 @@ FILE *fopencookie(void *cookie, const char *mode, cookie_io_functions_t io_funcs
 
 #endif
 
+typedef struct blist_s {
+    void           *buffer;
+    struct blist_s *next;
+    struct blist_s *prev;
+} blist_t;
+
+blist_t *blist_head=NULL;
+
+pthread_mutex_t blist_lock;
+
+static inline void blist_add(void *buffer)
+{
+    blist_t *entry=NULL;
+
+    CALLOC(entry, sizeof(blist_t));
+    entry->buffer=buffer;
+
+    RP_PTLOCK(&blist_lock);
+    if(blist_head)
+    {
+        blist_head->prev=entry;
+        entry->next=blist_head;
+    }
+    blist_head=entry;
+    RP_PTUNLOCK(&blist_lock);
+}
+
+static inline void blist_del(void *buffer)
+{
+    blist_t *entry=blist_head;
+
+    if(!entry)
+        return;
+
+    RP_PTLOCK(&blist_lock);
+    do {
+        if(entry->buffer == buffer)
+        {
+            if(entry->prev)
+                entry->prev->next = entry->next;
+            if(entry->next)
+                entry->next->prev = entry->prev;
+            if(entry == blist_head)
+                blist_head=entry->next;
+            free(entry);
+            break;
+        }
+        entry=entry->next;
+    } while (entry);
+    RP_PTUNLOCK(&blist_lock);
+}
+
+static inline int blist_check_exists(void *buffer, int throwerr)
+{
+    blist_t *entry=blist_head;
+
+    if(!entry)
+    {
+        if(throwerr)
+            goto dothrow;
+        return 0;
+    }
+
+    RP_PTLOCK(&blist_lock);
+
+    do {
+        if(entry->buffer == buffer)
+        {
+            RP_PTUNLOCK(&blist_lock);
+            return 1;
+        }
+        entry=entry->next;
+    } while (entry);
+
+    RP_PTUNLOCK(&blist_lock);
+
+    if(!throwerr)
+        return 0;
+
+    dothrow:
+
+    duk_context *ctx = get_current_thread()->ctx;
+    RP_THROW(ctx, "fopenBuffer: cannot operate, buffer was destroyed");
+    return 0;
+}
+
 static ssize_t buffer_write(void *cookie, const char *buf, size_t size) {
     buffer_t *buffer = (buffer_t *)cookie;
     size_t needed_size;
 
+    blist_check_exists(buffer,1);
+    
     RP_PTLOCK(&buffer->lock);
 
     if(!buffer->file)
@@ -6671,6 +6759,7 @@ static ssize_t buffer_read(void *cookie, char *buf, size_t size) {
     buffer_t *buffer = (buffer_t *)cookie;
     size_t readable;
 
+    blist_check_exists(buffer,1);
     RP_PTLOCK(&buffer->lock);
 
     if(!buffer->file)
@@ -6696,6 +6785,7 @@ static int buffer_seek(void *cookie, off64_t *offset, int whence)
     buffer_t *buffer = (buffer_t *)cookie;
     off64_t new_pos;
 
+    blist_check_exists(buffer,1);
     RP_PTLOCK(&buffer->lock);
 
     if(!buffer->file)
@@ -6743,6 +6833,7 @@ static int buffer_fclose(void *cookie)
 {
     buffer_t *buffer = (buffer_t *)cookie;
 
+    blist_check_exists(buffer,1);
     RP_PTLOCK(&buffer->lock);
     buffer->file=NULL;
     RP_PTUNLOCK(&buffer->lock);
@@ -6763,20 +6854,22 @@ static duk_ret_t get_buffer_string(duk_context *ctx, int want_string)
 
     if(buffer)
     {
+        blist_check_exists(buffer,1);
+
         RP_PTLOCK(&buffer->lock);
         if(want_string)
         {
-            duk_push_lstring(ctx, buffer->data, (duk_size_t)buffer->used);
+            duk_push_lstring(ctx, buffer->data, (duk_size_t)buffer->used-1);
         }
         else
         {
-            tobuf=duk_push_fixed_buffer(ctx,  buffer->used);
-            memcpy(tobuf, buffer->data, buffer->used);
+            tobuf=duk_push_fixed_buffer(ctx,  buffer->used-1);
+            memcpy(tobuf, buffer->data, buffer->used-1);
         }
         RP_PTUNLOCK(&buffer->lock);
     }
     else
-        return 0;
+        RP_THROW(ctx, "fopenBuffer: cannot get data, buffer was destroyed");
 
     return 1;
 }
@@ -6804,33 +6897,50 @@ static FILE *open_memstream_buffer(buffer_t *buffer)
     return fopencookie(buffer, "w+", io_funcs);
 }
 
-// finalizer for return object from JS fopenBuffer
-static duk_ret_t fopen_buffer_finalizer(duk_context *ctx)
+// no finalizer for fopenBuffer
+// must manually destroy
+static duk_ret_t fopen_buffer_destroy(duk_context *ctx)
 {
     buffer_t *buffer;
 
-    if((get_current_thread())->ctx != ctx)
-        return 0;
+    duk_push_this(ctx);
 
-    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("cookie") );
+    duk_get_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("cookie") );
     buffer = (buffer_t *)duk_get_pointer(ctx,-1);
     duk_pop(ctx);
 
-    if(buffer)
+    if(!buffer)
+        return 0;
+
+    //check if handle was closed
+    FILE *fh=NULL;
+    if(duk_get_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("filehandle") ))
+        fh=duk_get_pointer(ctx, -1);
+    duk_pop(ctx);
+    if(fh)
     {
-        duk_push_pointer(ctx, NULL);
-        duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("filehandle") );
-
-        duk_push_pointer(ctx, NULL);
-        duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("cookie") );
-
-        if(buffer->data)
-            free(buffer->data);
-
-        free(buffer);
+        duk_push_string(ctx, "fclose");
+        duk_call_prop(ctx, 0, 0);
+        duk_pop(ctx);
     }
 
-    duk_del_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("buffer") );
+    if(!blist_check_exists(buffer,0))
+        return 0;
+
+    blist_del(buffer);
+
+    duk_push_pointer(ctx, NULL);
+    duk_put_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("filehandle") );
+
+    duk_push_pointer(ctx, NULL);
+    duk_put_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("cookie") );
+
+    if(buffer->data)
+        free(buffer->data);
+
+    free(buffer);
+
+    duk_del_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("buffer") );
 
     return 0;
 }
@@ -6955,8 +7065,11 @@ duk_ret_t duk_rp_fopen_buffer(duk_context *ctx)
     duk_put_prop_string(ctx, -2, "getBuffer");
     duk_push_c_function(ctx, fbuf_get_string, 0);
     duk_put_prop_string(ctx, -2, "getString");
-    duk_push_c_function(ctx, fopen_buffer_finalizer, 1);
-    duk_set_finalizer(ctx, -2);
+    duk_push_c_function(ctx, fopen_buffer_destroy, 0);
+    duk_put_prop_string(ctx, -2, "destroy");
+
+    // add an entry so that we know object is valid
+    blist_add(buffer);
 
     return 1;
 }
@@ -7507,7 +7620,7 @@ static duk_ret_t rp_fork_daemon(duk_context *ctx, int do_daemon)
 
 
 
-    if(get_thread_count()>1) //shopping for sheets?
+    if(get_thread_count(NULL)>1) //shopping for sheets?
         RP_THROW(ctx, "Cannot fork with active threads");
 
     for(i=0;i<top;i++)
@@ -9614,6 +9727,7 @@ void duk_printf_init(duk_context *ctx)
     RP_PTINIT(&pflock_err);
     RP_PTINIT(&loglock);
     RP_PTINIT(&errlock);
+    RP_PTINIT(&blist_lock);
 
     /* initialize locale from env */
 #define rp_initloc(x) do{\
