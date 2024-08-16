@@ -6715,9 +6715,11 @@ static inline int blist_check_exists(void *buffer, int throwerr)
 
     dothrow:
 
-    duk_context *ctx = get_current_thread()->ctx;
-    RP_THROW(ctx, "fopenBuffer: cannot operate, buffer was destroyed");
-    return 0;
+    {
+        duk_context *ctx = get_current_thread()->ctx;
+        RP_THROW(ctx, "fopenBuffer: cannot operate, buffer was destroyed");
+        return 0;
+    }
 }
 
 static ssize_t buffer_write(void *cookie, const char *buf, size_t size) {
