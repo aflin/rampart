@@ -8638,12 +8638,13 @@ static rp_abbr_match **get_abbr_list(char *abbr_s, struct tm *dt_p, int *ambig, 
 
         //printf("off = %d - %d = %d\n", rec->type->gmtoff, systemlocaloffset, rec->type->gmtoff - systemlocaloffset);
         tzdiff = rec->type->gmtoff - systemlocaloffset;
-        if(tzdiff<0) tzdiff*=-1;
-        rec->diff = tzdiff;
-
         // only set ambig if a valid tz offset differs, unlike abbr->ambiguous
         if(lastdiff!=-1 && lastdiff != tzdiff)
             *ambig=1;
+
+        if(tzdiff<0) tzdiff*=-1;
+        rec->diff = tzdiff;
+
 
         lastdiff= tzdiff;
     }
