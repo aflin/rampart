@@ -7253,14 +7253,14 @@ duk_ret_t duk_rp_forkpty_read(duk_context *ctx)
 
     if (!duk_is_undefined(ctx,0))
     {
-        int imax = REQUIRE_INT(ctx, 1, "forkpty_read(): argument max_bytes must be a Number (positive integer)");
+        int imax = REQUIRE_INT(ctx, 0, "forkpty_read(): argument max_bytes must be a Number (positive integer)");
         if(imax>0)
             max=(size_t)imax;
     }
 
     if (!duk_is_undefined(ctx,1))
     {
-        int isz=REQUIRE_INT(ctx, 2, "forkpty_read(): argument chunk_size must be a Number (positive integer)");
+        int isz=REQUIRE_INT(ctx, 1, "forkpty_read(): argument chunk_size must be a Number (positive integer)");
         if(isz > 0)
             sz=(size_t)isz;
     }
