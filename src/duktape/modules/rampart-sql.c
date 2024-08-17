@@ -554,8 +554,9 @@ static const char *get_exp(duk_context *ctx, duk_idx_t idx)
         if(thisfork) {fprintf(stderr, "child proc exiting\n");exit(0);}\
     };\
     if(r!=(int)c) {\
-        fprintf(stderr, "rampart-sql helper: read failed: '%s' at %d\n",strerror(errno),__LINE__);\
-        if(thisfork) {fprintf(stderr, "child proc exiting\n");exit(0);}\
+        if(errno) \
+            fprintf(stderr, "rampart-sql helper: read failed: '%s' at %d\n",strerror(errno),__LINE__);\
+        if(thisfork) {if(errno) fprintf(stderr, "child proc exiting\n");exit(0);}\
     };\
     r;\
 })
@@ -594,8 +595,42 @@ static void clean_thread(void *arg)
 
     if(finfo)
     {
+        if(finfo->reader != -1)
+        {
+            close(finfo->reader);
+            finfo->reader=-1;
+        }
+        if(finfo->writer != -1)
+        {
+            close(finfo->writer);
+            finfo->writer=-1;
+        }
+        if(finfo->mapfd != -1)
+        {
+            close(finfo->mapfd);
+            finfo->mapfd=-1;
+        }
+        if(finfo->errfd != -1)
+        {
+            close(finfo->errfd);
+            finfo->errfd=-1;
+        }
         if(finfo->mapinfo)
+        {
+            if(finfo->mapinfo->mem)
+            {
+                if(munmap(finfo->mapinfo->mem, FORKMAPSIZE) != 0)
+                    fprintf(stderr, "error unmapping mapinfo->mem at %s:%d - %s\n", __FILE__,__LINE__,strerror(errno));
+            }
             free(finfo->mapinfo);
+        }
+
+        if(finfo->errmap)
+        {
+            if(munmap(finfo->errmap, msgbufsz) != 0)
+                fprintf(stderr, "error unmapping errmap at %s:%d - %s\n", __FILE__,__LINE__,strerror(errno));
+        }
+
         if(finfo->aux)
             free(finfo->aux);
         if(finfo->fl)
@@ -609,13 +644,13 @@ static void clean_thread(void *arg)
     //printf("killed child %d\n",(int)*kpid);
 }
 
-static int rp_memfd_create(size_t size) {
+static int rp_memfd_create(size_t size, int type) {
     char shm_name[NAME_MAX];
     int fd;
-    static int id=0;
+    int id=get_thread_num();
 
     // Generate a unique shared memory object name
-    snprintf(shm_name, NAME_MAX, "/rpmem-%d-%d", getpid(), id);
+    snprintf(shm_name, NAME_MAX, "/rpmem-%d-%d-%d", getpid(), id, type);
     id++;
 
     // Create the shared memory object
@@ -663,6 +698,9 @@ static int fork_seterr();
 #define Create 1
 #define NoCreate 0
 
+#define MEMMAP 0
+#define ERRMAP 1
+
 static char *scr_txt = "var S=require('rampart-sql.so');S.__helper(%d,%d,%d);\n";
 
 static SFI *check_fork(DB_HANDLE *h, int create)
@@ -677,9 +715,6 @@ static SFI *check_fork(DB_HANDLE *h, int create)
         }
         else
         {
-            // FIXME: this is a memory leak in child process because other
-            // thread local 'finfo' allocs are lost when threads disappear upon fork
-            // It's not growing, so probably harmless.
             REMALLOC(finfo, sizeof(SFI));
             finfo->reader=-1;
             finfo->writer=-1;
@@ -694,7 +729,7 @@ static SFI *check_fork(DB_HANDLE *h, int create)
             finfo->auxpos=NULL;
             REMALLOC(finfo->mapinfo, sizeof(FMINFO));
 
-            finfo->mapfd=rp_memfd_create(FORKMAPSIZE);
+            finfo->mapfd=rp_memfd_create(FORKMAPSIZE, MEMMAP);
             if(finfo->mapfd == -1)
             {
                 fprintf(stderr, "mmap failed (%d): %s\n",__LINE__, strerror(errno));
@@ -709,7 +744,7 @@ static SFI *check_fork(DB_HANDLE *h, int create)
             }
             finfo->mapinfo->pos = finfo->mapinfo->mem;
 
-            finfo->errfd=rp_memfd_create(msgbufsz);
+            finfo->errfd=rp_memfd_create(msgbufsz, ERRMAP);
             if(finfo->errfd == -1)
             {
                 fprintf(stderr, "mmap failed (%d): %s\n",__LINE__, strerror(errno));
@@ -4916,12 +4951,14 @@ static char *updater_js = "function(npsql) {\n\
 \n\
         } catch(e) {\n\
             fh.fclose();\n\
+            fh.destroy();\n\
             rampart.thread.put('done',true);\n\
             thr.close();\n\
             return ''+e;\n\
         }\n\
 \n\
         fh.fclose();\n\
+        fh.destroy();\n\
         rampart.thread.put('done',true);\n\
         thr.close();\n\
 \n\
