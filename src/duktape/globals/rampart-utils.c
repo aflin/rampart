@@ -6857,16 +6857,24 @@ static duk_ret_t get_buffer_string(duk_context *ctx, int want_string)
     if(buffer)
     {
         blist_check_exists(buffer,1);
-
         RP_PTLOCK(&buffer->lock);
         if(want_string)
         {
-            duk_push_lstring(ctx, buffer->data, (duk_size_t)buffer->used-1);
+            // if 0, no writes. if 1 \0 written - either way, return empty string.
+            if(!buffer->used)
+                duk_push_string(ctx, "");
+            else
+                duk_push_lstring(ctx, buffer->data, (duk_size_t)buffer->used-1);
         }
         else
         {
-            tobuf=duk_push_fixed_buffer(ctx,  buffer->used-1);
-            memcpy(tobuf, buffer->data, buffer->used-1);
+            if(!buffer->used)
+                duk_push_fixed_buffer(ctx, 0);
+            else
+            {
+                tobuf=duk_push_fixed_buffer(ctx, buffer->used-1);
+                memcpy(tobuf, buffer->data, buffer->used-1);
+            }
         }
         RP_PTUNLOCK(&buffer->lock);
     }
