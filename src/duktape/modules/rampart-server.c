@@ -344,6 +344,8 @@ void sa_to_string(void *sa, char *buf, size_t bufsz)
     RP_PTUNLOCK(&errlock);\
 } while(0)
 
+// for when behind a proxy like nginx, use this header for ip address
+static const char *ip_in_header=NULL;
 
 static void writelog(evhtp_request_t *req, int code)
 {
@@ -351,13 +353,20 @@ static void writelog(evhtp_request_t *req, int code)
     void *sa = (void *)conn->saddr;
     time_t now = time(NULL);
     struct tm ti_s, *timeinfo;
-    char address[INET6_ADDRSTRLEN], date[32],
+    char *addr=NULL, address[INET6_ADDRSTRLEN], date[32],
         *q="", *qm="", *proto="";
     const char *length, *ua, *ref;
     int method = evhtp_request_get_method(req);
     evhtp_path_t *path = req->uri->path;
 
-    sa_to_string(sa, address, sizeof(address));
+    if( ip_in_header )
+        addr=(char *) evhtp_kv_find(req->headers_in, (char *)ip_in_header);
+
+    if(!addr)
+    {
+        sa_to_string(sa, address, sizeof(address));
+        addr=address;
+    }
 
     timeinfo = localtime_r(&now,&ti_s);
     strftime(date,32,"%d/%b/%Y:%H:%M:%S %z",timeinfo);
@@ -385,10 +394,11 @@ static void writelog(evhtp_request_t *req, int code)
     if( !(ua=evhtp_kv_find(req->headers_in,"User-Agent")) )
         ua="-";
 
+
     RP_PTLOCK(&loglock);
 
     fprintf(access_fh,"%s - - [%s] \"%s %s%s%s %s\" %d %s \"%s\" \"%s\"\n",
-        address,date,method_strmap[method],
+        addr,date,method_strmap[method],
         path->full, qm, q, proto,
         code, length, ref, ua
     );
@@ -5032,6 +5042,13 @@ duk_ret_t duk_server_start(duk_context *ctx)
             ob_idx = 1;
     else
         RP_THROW(ctx, "server.start - error - argument must be an object (options)");
+
+    /* get ip address for logging from a header (if set by proxy like nginx) */
+    if (duk_rp_GPS_icase(ctx, ob_idx, "logIpFromHeader"))
+    {
+        ip_in_header = REQUIRE_STRING(ctx, -1, "server.start: parameter logIpFromHeader must be a string");
+    }
+    duk_pop(ctx);
 
     /* get max read and write */
 
