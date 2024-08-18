@@ -559,7 +559,7 @@ char **argv, **argvstrip;
 		fo = dbgetfo();
 		sqlhelp = 1;
 		if (showprompt)
-			version(1);
+			version(0);
 
 		if (timeoutVal >= 0.0)
 			timeoutVal = TXsetalarm(TXtsqlTimeoutHandler, NULL, timeoutVal,

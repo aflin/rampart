@@ -14,7 +14,8 @@ if ! [[ "$commitsecs" =~ ^[0-9]+$ ]]; then
 	exit 1;
 fi
 branch=`(cd $srcdir && git rev-parse --abbrev-ref HEAD)`
-dirty=`[[ -z $(cd $srcdir && git status -s) ]] || echo '-dirty'`
+#dirty=`[[ -z $(cd $srcdir && git status -s) ]] || echo '-dirty'`
+dirty="";
 if [[ $branch = master ]]; then
 	/bin/true ;
 else
