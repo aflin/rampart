@@ -5327,6 +5327,11 @@ static duk_ret_t str_to_num(duk_context *ctx)
         }
         else
         {
+            // work around if remaining and using less than, greater than
+            // it improperly returns '=' -- should fix in npm
+            if(strlen(ret) && *op=='=')
+                (void)ttod((char*)str, ret, &min, &max, op);
+
             duk_push_string(ctx, op);
             duk_put_prop_string(ctx, -2, "op");
             duk_push_string(ctx, ret);
