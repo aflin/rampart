@@ -32,7 +32,6 @@ static pthread_mutex_t tx_handle_lock;
 static int defnoise=1, defsuffix=1, defsuffixeq=1, defprefix=1;
 
 #define RESMAX_DEFAULT 10 /* default number of sql rows returned for select statements if max is not set */
-//#define PUTMSG_STDERR                  /* print texis error messages to stderr */
 
 #define QUERY_STRUCT struct rp_query_struct
 
@@ -477,8 +476,12 @@ pid_t parent_pid = 0;
 
 #define clearmsgbuf() do {                \
     fseek(mmsgfh, 0, SEEK_SET);           \
-    fwrite("\0", 1, 1, mmsgfh);           \
-    fseek(mmsgfh, 0, SEEK_SET);           \
+    if(finfo && finfo->errmap)            \
+        finfo->errmap[0]='\0';            \
+    else {                                \
+        fwrite("\0", 1, 1, mmsgfh);       \
+        fseek(mmsgfh, 0, SEEK_SET);       \
+    }                                     \
 } while(0)
 
 
@@ -488,32 +491,23 @@ pid_t parent_pid = 0;
 static void rp_log_error_msg(duk_context *ctx, char *msg)
 {
     duk_push_this(ctx);
-    if(duk_has_prop_string(ctx,-1,"errMsg") )
-    {
-        duk_get_prop_string(ctx,-1,"errMsg");
-        duk_push_string(ctx, msg);
-        duk_concat(ctx,2);
-    }
-    else
-        duk_push_string(ctx, msg);
-
-#ifdef PUTMSG_STDERR
-    if (msg && strlen(msg))
-    {
-//        pthread_mutex_lock(&printlock);
-        fprintf(stderr, "%s\n", msg);
-//        pthread_mutex_unlock(&printlock);
-    }
-#endif
+    duk_push_string(ctx, msg);
     duk_put_prop_string(ctx, -2, "errMsg");
     duk_pop(ctx);
 }
 
 static void rp_log_error(duk_context *ctx)
 {
+    int pos=ftell(mmsgfh);
+
+    if(pos>msgbufsz-1)
+        pos=msgbufsz-1;
+
+    finfo->errmap[pos]='\0';
+
     if(RP_TX_isforked)
         return;
-    finfo->errmap[msgbufsz-1]='\0';  //just a precaution
+
     rp_log_error_msg(ctx, finfo->errmap);
 }
 
@@ -641,7 +635,6 @@ static void clean_thread(void *arg)
     }
 
     kill(*kpid,SIGTERM);
-    //printf("killed child %d\n",(int)*kpid);
 }
 
 static int rp_memfd_create(size_t size, int type) {
@@ -649,9 +642,8 @@ static int rp_memfd_create(size_t size, int type) {
     int fd;
     int id=get_thread_num();
 
-    // Generate a unique shared memory object name
+    // Generate a unique shared memory object name rpmem-pid-thrno-type
     snprintf(shm_name, NAME_MAX, "/rpmem-%d-%d-%d", getpid(), id, type);
-    id++;
 
     // Create the shared memory object
     fd = shm_open(shm_name, O_RDWR | O_CREAT | O_EXCL, 0600);
@@ -850,7 +842,6 @@ static SFI *check_fork(DB_HANDLE *h, int create)
             }
         }
     }
-
     return finfo;
 }
 
@@ -5597,6 +5588,9 @@ static const char *schupd = "function(index, date, frequency, thresh /* not work
             var d = rampart.utils.autoScanDate(date);\n\
             if(!d)\n\
                 thr(\"could not parse date ('\"+date+\"')\");\n\
+            if(d.offset==0){ //assume localtime if no timezone provided\n\
+                d = autoScanDate(date + ' ' + dateFmt('%z'));\n\
+            }\n\
             date=Math.floor(d.date.getTime()/1000);\n\
         }\n\
     }\n\
