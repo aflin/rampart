@@ -1721,6 +1721,14 @@ static void send404(evhtp_request_t *req)
     sendresp(req, EVHTP_RES_NOTFOUND, 0);
 }
 
+static void send400(evhtp_request_t *req)
+{
+    evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Type", "text/html", 0, 0));
+    char msg[] = "<html><head><title>400 Bad Request</title></head><body><h1>Bad Request</h1><p>The Requested URL is invalid.</p></body></html>";
+    evbuffer_add(req->buffer_out, msg, strlen(msg));
+    sendresp(req, 400, 0);
+}
+
 static void send500(evhtp_request_t *req, char *msg)
 {
     if(developer_mode)
@@ -2116,119 +2124,188 @@ body, td, th, span { font-family: Geneva,Arial,Helvetica; }\n\
     sendresp(req, EVHTP_RES_FOUND, 0);
 }
 
+#define TOKSTACK_SIZE 1024
+//1 on success, -1 on error, 0 on no change
+static int safepath(char *path, char **resolved) {
+
+    *resolved=NULL;
+
+    if(strlen(path)>PATH_MAX-1)
+        return -1;
+    else
+    {
+        char resolved_path[PATH_MAX] = "";
+        char *token;
+        char *stack[TOKSTACK_SIZE];
+        int top = -1, reqtop=0;
+        char *saveptr;
+
+        token = strtok_r(path, "/", &saveptr);
+        while (token != NULL) {
+            if (strcmp(token, "..") == 0) {
+                if (top >= 0) {
+                    top--;
+                }
+                reqtop--;
+                //if at any point we end up at ../, that's a no-no
+                if(reqtop < 0)
+                    return -1;
+
+            } else if (strcmp(token, ".") != 0) {
+                if (top < TOKSTACK_SIZE - 1) {
+                    stack[++top] = token;
+                    reqtop++;
+                } else {
+                    return -1;
+                }
+            }
+            token = strtok_r(NULL, "/", &saveptr);
+        }
+
+        for (int i = 0; i <= top; i++) {
+            strcat(resolved_path, "/");
+            strcat(resolved_path, stack[i]);
+        }
+
+        // Handle the case where the path is empty
+        if (strlen(resolved_path) == 0) {
+            strcpy(resolved_path, "/");
+        }
+
+        if(!strcmp(path,resolved_path))
+            return 0;
+        *resolved = strdup(resolved_path);
+        return 1;
+    }
+} 
+
 static void fileserver(evhtp_request_t *req, void *arg)
 {
     DHMAP *map = (DHMAP *)arg;
     evhtp_path_t *path = req->uri->path;
-    struct stat sb;
-    /* take 2 off of key for the slash and * and add 1 for '\0' and one more for a potential '/' */
-    char *s, fn[strlen(map->val) + strlen(path->full) + 4 - strlen(map->key)];
-    mode_t mode;
-    int i = 0, len = (int) strlen(path->full);
+    char *rpath=NULL;
+    int pres = safepath(path->full, &rpath);
+
+    if(pres == -1)
+    {
+        send400(req);
+        return;
+    }
+
+    if(pres)
+    {
+        free(path->full);
+        path->full=rpath;
+    }
+
+    {
+        struct stat sb;
+        /* take 2 off of key for the slash and * and add 1 for '\0' and one more for a potential '/' */
+        char *s, fn[strlen(map->val) + strlen(path->full) + 4 - strlen(map->key)];
+        mode_t mode;
+        int i = 0, len = (int) strlen(path->full);
 
 #ifdef __linux__
-    if(allow_user_switch && unprivu)
-    {
-        syscall(SYS_setresgid,0,0,-1);
-        syscall(SYS_setresuid,0,0,-1);
-
-        if (syscall(SYS_setresgid, unprivg, unprivg, -1) == -1)
+        if(allow_user_switch && unprivu)
         {
-            send404(req);
-            fprintf(stderr, "fileserver: error setting group, setgid() failed\n");
-            return;
-        }
+            syscall(SYS_setresgid,0,0,-1);
+            syscall(SYS_setresuid,0,0,-1);
 
-        if (syscall(SYS_setresuid, unprivu, unprivu, -1) == -1)
-        {
-            send404(req);
-            fprintf(stderr, "fileserver: error setting user, setuid() failed\n");
-            return;
+            if (syscall(SYS_setresgid, unprivg, unprivg, -1) == -1)
+            {
+                send404(req);
+                fprintf(stderr, "fileserver: error setting group, setgid() failed\n");
+                return;
+            }
+
+            if (syscall(SYS_setresuid, unprivu, unprivu, -1) == -1)
+            {
+                send404(req);
+                fprintf(stderr, "fileserver: error setting user, setuid() failed\n");
+                return;
+            }
         }
-    }
 #endif
 
-//    don't do that!  It will be stomped on.
-//    dhs->req = req;
+        strcpy(fn, map->val);
+        s=duk_rp_url_decode( path->full, &len );
 
-    strcpy(fn, map->val);
-    s=duk_rp_url_decode( path->full, &len );
-
-    /* redirect /mappeddir to /mappeddir/ */
-    if ( !strcmp (s, map->key))
-    {
-        free(s);
-        strcpy(fn, path->full);
-        strcat(fn, "/");
-        sendredir(req, fn);
-        return;
-    }
-    /* don't look for /mappeddirEXTRAJUNK
-       the next char after /reqdir must be a '/'
-     */
-    if( *(s + strlen(map->key)) != '/')
-    {
-        free(s);
-        send404(req);
-        return;
-    }
-    strcpy(&fn[strlen(map->val)], s + strlen(map->key) +1);
-
-    free(s);
-    if (stat(fn, &sb) == -1)
-    {
-        //need to send to rp_sendfile to remove any cached gz files
-        if (compressibles)
-            rp_sendfile(req, fn, 0, NULL);
-        else
-            send404(req);
-
-        return;
-    }
-    mode = sb.st_mode & S_IFMT;
-
-    if (mode == S_IFREG)
-    {
-        int i=0;
-
-        for (;i<map->nheaders; i++)
+        /* redirect /mappeddir to /mappeddir/ */
+        if ( !strcmp (s, map->key))
         {
-            evhtp_headers_add_header(req->headers_out, evhtp_header_new(map->hkeys[i], map->hvals[i], 0, 0));
-        }
-
-        rp_sendfile(req, fn, 0, &sb);
-    }
-    else if (mode == S_IFDIR)
-    {
-        /* add 11 for 'index.html\0' */
-        char fnindex[strlen(fn) + 11];
-        /* redirect if directory doesn't end in '/' */
-        i = strlen(fn) - 1;
-        if (fn[i] != '/')
-        {
-            fn[++i] = '/';
-            fn[++i] = '\0';
-            sendredir(req, &fn[strlen(map->val) - 1]);
+            free(s);
+            strcpy(fn, path->full);
+            strcat(fn, "/");
+            sendredir(req, fn);
             return;
         }
-        strcpy(fnindex, fn);
-        strcat(fnindex, "index.html");
-        if (stat(fnindex, &sb) == -1)
+        /* don't look for /mappeddirEXTRAJUNK
+           the next char after /reqdir must be a '/'
+         */
+        if( *(s + strlen(map->key)) != '/')
         {
-            /* TODO: add dir listing and
-               setting to forbid dir listing */
-            /* try index.htm */
-            fnindex[strlen(fnindex) - 1] = '\0';
+            free(s);
+            send404(req);
+            return;
+        }
+        strcpy(&fn[strlen(map->val)], s + strlen(map->key) +1);
+
+        free(s);
+        if (stat(fn, &sb) == -1)
+        {
+            //need to send to rp_sendfile to remove any cached gz files
+            if (compressibles)
+                rp_sendfile(req, fn, 0, NULL);
+            else
+                send404(req);
+
+            return;
+        }
+        mode = sb.st_mode & S_IFMT;
+
+        if (mode == S_IFREG)
+        {
+            int i=0;
+
+            for (;i<map->nheaders; i++)
+            {
+                evhtp_headers_add_header(req->headers_out, evhtp_header_new(map->hkeys[i], map->hvals[i], 0, 0));
+            }
+
+            rp_sendfile(req, fn, 0, &sb);
+        }
+        else if (mode == S_IFDIR)
+        {
+            /* add 11 for 'index.html\0' */
+            char fnindex[strlen(fn) + 11];
+            /* redirect if directory doesn't end in '/' */
+            i = strlen(fn) - 1;
+            if (fn[i] != '/')
+            {
+                fn[++i] = '/';
+                fn[++i] = '\0';
+                sendredir(req, &fn[strlen(map->val) - 1]);
+                return;
+            }
+            strcpy(fnindex, fn);
+            strcat(fnindex, "index.html");
             if (stat(fnindex, &sb) == -1)
-                dirlist(req, fn);
+            {
+                /* TODO: add dir listing and
+                   setting to forbid dir listing */
+                /* try index.htm */
+                fnindex[strlen(fnindex) - 1] = '\0';
+                if (stat(fnindex, &sb) == -1)
+                    dirlist(req, fn);
+                else
+                    rp_sendfile(req, fnindex, 0, &sb);
+            }
             else
                 rp_sendfile(req, fnindex, 0, &sb);
         }
         else
-            rp_sendfile(req, fnindex, 0, &sb);
+            send404(req);
     }
-    else
-        send404(req);
 }
 
 /* attach a file to the end of req->buffer_out */
