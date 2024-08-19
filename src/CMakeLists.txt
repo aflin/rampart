@@ -10,13 +10,6 @@ else()
 	message("setting install = ${CMAKE_INSTALL_PREFIX}")
 endif()
 
-
-file(GLOB JSMOD_FILES "${PROJECT_SOURCE_DIR}/src/duktape/js_modules/*.js")
-
-foreach(JSMOD_FILE ${JSMOD_FILES})
-file(COPY ${JSMOD_FILE} DESTINATION ${CMAKE_BINARY_DIR}/src)
-endforeach()
-
 set(LIBEVENT_TARGET_DIR ${CMAKE_BINARY_DIR}/extern/libevent)
 set(OPENSSL_TARGET_DIR ${CMAKE_BINARY_DIR}/extern/openssl)
 set(ONIGURUMA_TARGET_DIR ${CMAKE_BINARY_DIR}/extern/oniguruma)
@@ -610,33 +603,10 @@ install(TARGETS
 	DESTINATION "${CMAKE_INSTALL_PREFIX}/modules/"
 )
 
-install(CODE "execute_process( \
-    COMMAND ${CMAKE_COMMAND} -E copy \
-    \"${PROJECT_SOURCE_DIR}/js_modules/rampart-url.js\" \
-    \"${CMAKE_INSTALL_PREFIX}/modules/\"   \
-    )"
-)
-
-install(CODE "execute_process( \
-    COMMAND ${CMAKE_COMMAND} -E copy \
-    \"${PROJECT_SOURCE_DIR}/js_modules/rampart-date-holidays.js\" \
-    \"${CMAKE_INSTALL_PREFIX}/modules/\"   \
-    )"
-)
-
-install(CODE "execute_process( \
-    COMMAND ${CMAKE_COMMAND} -E copy \
-    \"${PROJECT_SOURCE_DIR}/js_modules/rampart-webserver.js\" \
-    \"${CMAKE_INSTALL_PREFIX}/modules/\"   \
-    )"
-)
-
-install(CODE "execute_process( \
-    COMMAND ${CMAKE_COMMAND} -E copy \
-    \"${PROJECT_SOURCE_DIR}/test/babel.js\" \
-    \"${PROJECT_SOURCE_DIR}/test/babel-polyfill.js\" \
-    \"${CMAKE_INSTALL_PREFIX}/modules/\"   \
-    )"
+install(
+    DIRECTORY ${PROJECT_SOURCE_DIR}/js_modules/
+    DESTINATION ${CMAKE_INSTALL_PREFIX}/modules/
+    FILES_MATCHING PATTERN "*.js"
 )
 
 install(CODE "execute_process( \
@@ -654,7 +624,10 @@ install(CODE "execute_process( \
 )
 
 # unsupported dir
-install(DIRECTORY ${PROJECT_SOURCE_DIR}/unsupported_extras/ DESTINATION "${CMAKE_INSTALL_PREFIX}/unsupported_extras")
+install(
+    DIRECTORY ${PROJECT_SOURCE_DIR}/unsupported_extras/ 
+    DESTINATION "${CMAKE_INSTALL_PREFIX}/unsupported_extras"
+)
 
 # include files
 install(DIRECTORY DESTINATION "${CMAKE_INSTALL_PREFIX}/include")
@@ -690,16 +663,7 @@ install(CODE "execute_process ( \
  )"
 )
 
-#js modules
-#install(CODE "execute_process( \
-#   COMMAND ${CMAKE_COMMAND} -E copy \
-#    NOT READY FOR PRIME TIME
-#    \"${PROJECT_SOURCE_DIR}/jsmodules/rampart-letsencrypt.js\" \
-#    \"${CMAKE_INSTALL_PREFIX}/modules\"   \
-#    )"
-#)
-
-#Licenses
+#Rampart License
 install(CODE "execute_process( \
    COMMAND ${CMAKE_COMMAND} -E copy \
     \"${PROJECT_SOURCE_DIR}/LICENSE\" \
@@ -795,15 +759,12 @@ install(CODE "execute_process( \
     )"
 )
 
-
 install(CODE "execute_process( \
     COMMAND bash -c \"ln -s \
 	../modules/python/bin/python3 \
 	${CMAKE_INSTALL_PREFIX}/bin/python3r \"\
     )"
 )
-
-
 
 install(CODE "execute_process( \
     COMMAND bash -c \"ln -s \
