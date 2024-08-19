@@ -4835,7 +4835,15 @@ static duk_ret_t rp_sql_addtable(duk_context *ctx)
 // the updater daemon script.  Checks that it is needed, then forks
 // to monitor text indexes.
 
-static char *updater_js = "function(npsql) {\n\
+static char *updater_js = 
+"function(npsql) { \n"
+    "var su;\n"
+    "try {su=require('rampart-sqlUpdate.js');}catch(e){}\n"
+    "if(su){su.launchUpdater(npsql);return true;}\n"
+    "else return false;\n"
+"}";
+
+static char *built_in_updater_js = "function(npsql) {\n\
 \n\
     var Sql=require('rampart-sql');\n\
     sql = Sql.connect({path: npsql.db, user: '_SYSTEM', noUpdater:true });\n\
@@ -5031,7 +5039,6 @@ static char *updater_js = "function(npsql) {\n\
 }\n\
 \n\
 ";
-
 
 /* **************************************************
    Sql("/database/path") constructor:
@@ -5430,6 +5437,14 @@ static duk_ret_t rp_sql_constructor(duk_context *ctx)
         duk_compile_string_filename(ctx, DUK_COMPILE_FUNCTION, updater_js);
         duk_push_this(ctx);
         duk_call(ctx, 1);
+        if(!duk_get_boolean(ctx, -1))
+        {
+            duk_pop(ctx);
+            duk_push_string(ctx, "rampart-sql.c:indexUpdater()");
+            duk_compile_string_filename(ctx, DUK_COMPILE_FUNCTION, built_in_updater_js);
+            duk_push_this(ctx);
+            duk_call(ctx, 1);
+        }
     }        
     return 0;
 }
@@ -5514,7 +5529,13 @@ static duk_ret_t rp_sql_connect(duk_context *ctx)
 }
 
 //the sql.scheduleUpdate function
-static const char *schupd = "function(index, date, frequency, thresh /* not working, tmpind */) {\n\
+static const char *schupd = 
+"var su;\n"
+"try { su=require('rampart-sqlUpdate.js'); } catch(e){}\n"
+"if(su) su.scheduleUpdate\n";
+
+
+static const char *built_in_schupd = "function(index, date, frequency, thresh /* not working, tmpind */) {\n\
     var TSQL = require('rampart-sql');\n\
     var tmpind;\n\
     var sql=this;\n\
@@ -5641,7 +5662,6 @@ static const char *schupd = "function(index, date, frequency, thresh /* not work
 }\n";
 
 
-
 /* **************************************************
    Initialize Sql module
    ************************************************** */
@@ -5729,8 +5749,13 @@ duk_ret_t duk_open_module(duk_context *ctx)
     duk_put_prop_string(ctx, -2, "addTable");
 
     /* set Sql.connection.prototype.scheduleUpdate */
-    duk_push_string(ctx, "rampart-sql.c:scheduleUpdate()");
-    duk_compile_string_filename(ctx, DUK_COMPILE_FUNCTION, schupd);
+    duk_eval_string(ctx, schupd);
+    if(duk_is_undefined(ctx, -1))
+    {
+        duk_pop(ctx);
+        duk_push_string(ctx, "scheduleUpdate");
+        duk_compile_string_filename(ctx, DUK_COMPILE_FUNCTION, built_in_schupd);
+    }
     duk_put_prop_string(ctx, -2, "scheduleUpdate");
 
     /* Set Sql.connection.prototype = protoObj */
