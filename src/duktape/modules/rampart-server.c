@@ -1479,6 +1479,7 @@ static int push_req_vars(DHS *dhs)
         host="localhost";
 
     putval("file", path->file);
+
     putval("path", path->full);
     putval("base", path->path);
     /* Getting scheme from request:
@@ -2174,7 +2175,7 @@ static int safepath(char *path_in) {
             strcpy(path_out, "/");
         }
 
-        if( lastchar=='/' )
+        if( lastchar=='/' && strlen(path_out)>1)
             strcat(path_out, "/");
 
         strcpy(path_in, path_out);
