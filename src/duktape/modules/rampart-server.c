@@ -2125,22 +2125,24 @@ body, td, th, span { font-family: Geneva,Arial,Helvetica; }\n\
 }
 
 #define TOKSTACK_SIZE 1024
-//1 on success, -1 on error, 0 on no change
-static int safepath(char *path, char **resolved) {
+//0 on success, -1 on error
+static int safepath(char *path_in) {
+    size_t plen=strlen(path_in);
 
-    *resolved=NULL;
-
-    if(strlen(path)>PATH_MAX-1)
+    // 0 shouln't happen, blocked in evhtp.c
+    if(plen==0 || plen>PATH_MAX)
         return -1;
     else
     {
-        char resolved_path[PATH_MAX] = "";
-        char *token;
+        char path_out[plen+1],
+             lastchar=path_in[plen-1],
+             *token, *saveptr;
         char *stack[TOKSTACK_SIZE];
         int top = -1, reqtop=0;
-        char *saveptr;
 
-        token = strtok_r(path, "/", &saveptr);
+        path_out[0]='\0';
+
+        token = strtok_r(path_in, "/", &saveptr);
         while (token != NULL) {
             if (strcmp(token, "..") == 0) {
                 if (top >= 0) {
@@ -2163,19 +2165,20 @@ static int safepath(char *path, char **resolved) {
         }
 
         for (int i = 0; i <= top; i++) {
-            strcat(resolved_path, "/");
-            strcat(resolved_path, stack[i]);
+            strcat(path_out, "/");
+            strcat(path_out, stack[i]);
         }
 
         // Handle the case where the path is empty
-        if (strlen(resolved_path) == 0) {
-            strcpy(resolved_path, "/");
+        if (strlen(path_out) == 0) {
+            strcpy(path_out, "/");
         }
 
-        if(!strcmp(path,resolved_path))
-            return 0;
-        *resolved = strdup(resolved_path);
-        return 1;
+        if( lastchar=='/' )
+            strcat(path_out, "/");
+
+        strcpy(path_in, path_out);
+        return 0;
     }
 } 
 
@@ -2183,21 +2186,13 @@ static void fileserver(evhtp_request_t *req, void *arg)
 {
     DHMAP *map = (DHMAP *)arg;
     evhtp_path_t *path = req->uri->path;
-    char *rpath=NULL;
-    int pres = safepath(path->full, &rpath);
 
-    if(pres == -1)
+    if(safepath(path->full) == -1)
     {
         send400(req);
         return;
     }
-
-    if(pres)
-    {
-        free(path->full);
-        path->full=rpath;
-    }
-
+    else
     {
         struct stat sb;
         /* take 2 off of key for the slash and * and add 1 for '\0' and one more for a potential '/' */
@@ -2280,6 +2275,7 @@ static void fileserver(evhtp_request_t *req, void *arg)
             char fnindex[strlen(fn) + 11];
             /* redirect if directory doesn't end in '/' */
             i = strlen(fn) - 1;
+
             if (fn[i] != '/')
             {
                 fn[++i] = '/';
