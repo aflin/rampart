@@ -427,7 +427,7 @@ rp_body_times *rp_body_gettimes(struct tm *tm, astro_body_t body, double lat, do
 
     (void) get_az(body, &atm, observer, &times->cur_az, &times->cur_alt, &times->cur_ra, &times->cur_dec);
 
-    printastro(atm);
+    //printastro(atm);
 
     ares  = Astronomy_SearchRiseSet(body,  observer, DIRECTION_RISE, atm, 300.0);
     t  = rp_astro_to_time(&ares.time);

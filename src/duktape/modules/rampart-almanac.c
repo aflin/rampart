@@ -277,7 +277,7 @@ duk_ret_t get_planets(duk_context *ctx){
     tm=date_to_tm(ctx, date_idx, tm);
 
     duk_push_object(ctx);
-    printf("BODY           RA      DEC       AZ      ALT\n");
+    //printf("BODY           RA      DEC       AZ      ALT\n");
     for (i=0; i < num_bodies; ++i)
     {
         duk_push_object(ctx);
