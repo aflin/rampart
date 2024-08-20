@@ -589,6 +589,8 @@ static void clean_thread(void *arg)
 
     if(finfo)
     {
+        forkwrite("X", sizeof(char));
+
         if(finfo->reader != -1)
         {
             close(finfo->reader);
@@ -2003,6 +2005,8 @@ static void do_child_loop(SFI *finfo)
             case 'E':
                 ret = child_seterr();
                 break;
+            case 'X':
+                exit(0);
         }
         // do something with ret?
     }
