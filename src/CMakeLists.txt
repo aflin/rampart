@@ -146,6 +146,16 @@ target_include_directories(rampart-robots PRIVATE
 )
 
 set_target_properties(rampart-robots PROPERTIES LINKER_LANGUAGE CXX )
+
+# nope -std=c99 still set
+#set_source_files_properties(duktape/modules/robot-wrapper.cc PROPERTIES LANGUAGE CXX)
+
+# can't find another way.  I must be missing something
+get_target_property(_compile_flags rampart-robots COMPILE_OPTIONS)
+list(REMOVE_ITEM _compile_flags "-std=c99")
+#message("${_compile_flags}")
+set_target_properties(rampart-robots PROPERTIES COMPILE_OPTIONS "${_compile_flags}")
+
 add_dependencies(rampart-robots robots robots-static robots-main)
 
 
@@ -418,7 +428,7 @@ target_include_directories(rampart-curl PRIVATE
 	${PROJECT_BINARY_DIR}/extern/curl/lib/
 )
 
-add_dependencies(rampart-curl libcurl)
+add_dependencies(rampart-curl libcurl rampart-crypto)
 
 ###PYTHON###
 
