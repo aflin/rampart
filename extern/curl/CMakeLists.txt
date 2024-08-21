@@ -47,8 +47,8 @@ include(CheckCCompilerFlag)
 
 project(CURL C)
 
-include_directories(/usr/local/include)
-link_directories(/usr/local/lib)
+#include_directories(/usr/local/include)
+#link_directories(/usr/local/lib)
 #link_libraries(idn2 ldap z)
 find_library(IDN2 libidn2.a)
 link_libraries(${IDN2} ldap z)
