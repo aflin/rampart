@@ -103,7 +103,7 @@ function testFeature(name,test)
 testFeature("send set and get", function() {
     var ret1 = rcl.set("key1", "val1");
     var ret2 = rcl.set("key2", "val2");
-    if (!ret1.length || !ret2.length 
+    if (!ret1 || !ret2 
             || ret1 != "OK" || ret2 != "OK" )
     {
         console.log(ret1,ret2);
@@ -533,7 +533,24 @@ testFeature("Misc Command - time/touch/object/type/unlink", function(){
 });
 
 
-/* todo - test async somehow
+var ret1 = rcl.set("key3", "val3");
+if (!ret1 || ret1 != "OK") {
+    console.log(ret1,rcl.errMsg);
+    testFeature("send set and get async", false);
+} else {
+    rcl.get({async:true}, "key3",function(res,err){
+        testFeature("send set and get async", (res == 'val3' && !err) )
+    });
+}
+
+rcl.set("key4", function(res,err){
+    if(err && err.match(/wrong number/))
+        testFeature("set async callback error", true);
+    else
+        testFeature("set async callback error", false);
+});
+
+/* todo - test async stream and xread_auto_async somehow
 
 console.log(
 rcl.format("XINFO STREAM x1")
@@ -582,25 +599,4 @@ rcl.xread_block_async(0, "STREAMS", "x1", "x2", "$", "$", function(x)
 
 rcl.flushall();
 cleanup();
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 

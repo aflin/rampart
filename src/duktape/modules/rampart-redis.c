@@ -460,18 +460,20 @@ static int push_response_object_nested(duk_context *ctx, RESPROTO *response, int
       duk_put_prop_index(ctx, -2, duk_get_length(ctx, -2) );
     }
     else
-      RP_THROW(ctx, "rampart-redis %s - Unexpected format of response from redis server", fname);
+      RP_THROW(ctx, "rampart-redis %s - unexpected format of response from redis server", fname);
     ii++;    
   }
   return ridx;
 } 
 
-static int rd_push_response(duk_context *ctx, RESPROTO *response, const char *fname, int type)
+static int rd_push_response(duk_context *ctx, RESPROTO *response, const char *fname, int type, RESPCLIENT *rcp)
 {
   int retbuf = type & RETBUFFLAG;
   int ret=0;
-
+  //duk_idx_t retidx;
   type &= 255;
+
+  //retidx = duk_push_object(ctx);//the return object
 
   if (response)
   {
@@ -482,15 +484,18 @@ static int rd_push_response(duk_context *ctx, RESPROTO *response, const char *fn
       {
         duk_push_this(ctx);
         duk_push_string(ctx, (const char *)item->loc);
+        //duk_dup(ctx, -1);
+        //duk_put_prop_string(ctx, retidx, "error");
         duk_put_prop_string(ctx, -2, "errMsg");
-        duk_pop(ctx);
-        return 0;
+        duk_pop(ctx); //this
+        duk_push_null(ctx);
+        goto end;
       }
       else if(item->respType == RESPISARRAY) //empty list reply
       {
-        //duk_push_null(ctx);
         duk_push_array(ctx); //return empty array
-        return 1;
+        //duk_put_prop_string(ctx, retidx, "res");
+        goto end;
       }
       if(type!=5)
         type=0;//only one item, return it as is regardless of type
@@ -517,8 +522,6 @@ static int rd_push_response(duk_context *ctx, RESPROTO *response, const char *fn
         ret = push_response_object(ctx, response, 1, fname, retbuf);
         break;
       case 4:
-        //rd_push_response_object_nested(ctx, &item, 0, response->nItems, fname, retbuf);
-//        duk_push_object(ctx);
         ret = push_response_object_nested(ctx, response, 0, fname, retbuf, NULL);
         break;
       case 5:
@@ -530,7 +533,9 @@ static int rd_push_response(duk_context *ctx, RESPROTO *response, const char *fn
             duk_push_false(ctx);
         }
         else
-          ret = -1;
+        {
+            goto unexpected;
+        }
         break;
       case 6:
         duk_push_object(ctx);
@@ -539,6 +544,8 @@ static int rd_push_response(duk_context *ctx, RESPROTO *response, const char *fn
         ret = push_response_object(ctx, response, 3, fname, retbuf);
         if(ret>-1)
           duk_put_prop_string(ctx, -2, "values");
+        else
+            goto unexpected;
         break;
       case 7:
         duk_push_object(ctx);
@@ -549,6 +556,8 @@ static int rd_push_response(duk_context *ctx, RESPROTO *response, const char *fn
         ret = push_response_array(ctx, response, fname, retbuf);
         if(ret>-1)
           duk_put_prop_string(ctx, -2, "values");
+        else
+            goto unexpected;
         response->nItems+=2;
         response->items-=2; //restore for free
         break;
@@ -570,8 +579,7 @@ static int rd_push_response(duk_context *ctx, RESPROTO *response, const char *fn
         int nmem, i=0,ridx=2;
         if(response->items->respType != RESPISARRAY)
         {
-          ret = -1;
-          break;
+            goto unexpected;
         }
 
         nmem=(int)response->items->nItems;
@@ -585,8 +593,7 @@ static int rd_push_response(duk_context *ctx, RESPROTO *response, const char *fn
           ridx=push_response_object_nested(ctx, response, ridx, fname, retbuf, NULL);
           if(ridx < 0)
           {
-            ret = -1;
-            break;
+              goto unexpected;
           }
           duk_put_prop_string(ctx, -2, "data");
           duk_put_prop_index(ctx, -2, duk_get_length(ctx,-2));
@@ -602,20 +609,36 @@ static int rd_push_response(duk_context *ctx, RESPROTO *response, const char *fn
         ret = push_response_kv_wscores(ctx, response, fname, retbuf, 1);
         break;
     }      
+    //duk_put_prop_string(ctx, retidx, "res");
   }
   else
-     return 0;
-    //RP_THROW(ctx, "rampart-redis - error getting response from redis server (disconnected?)");
-
-  if(ret < 0)
   {
-    duk_push_this(ctx);
-    duk_push_string(ctx, "Unexpected format of response from redis server");
-    duk_put_prop_string(ctx, -2, "errMsg");
-    duk_pop(ctx);
-    return 0;
+      char *connerr = rcp->rppFrom->errorMsg;
+      duk_push_this(ctx);
+      duk_push_sprintf(ctx, "%s: redis server connection error:%s", fname, connerr?connerr:"Unknown Error");
+      //duk_dup(ctx, -1);
+      //duk_put_prop_string(ctx, retidx, "error");
+      duk_put_prop_string(ctx, -2, "errMsg");
+      duk_pop(ctx);//this
+      duk_push_null(ctx);
+      goto end;
   }
 
+  if(ret < 0)
+      goto unexpected;
+
+  end:
+  //duk_pull(ctx, retidx);
+  return 1;
+
+  unexpected:
+  duk_push_this(ctx);
+  duk_push_string(ctx, "unexpected format of response from server");
+  //duk_dup(ctx, -1);
+  //duk_put_prop_string(ctx, retidx, "error");
+  duk_put_prop_string(ctx, -2, "errMsg");
+  duk_pop(ctx);//this
+  duk_push_null(ctx);
   return 1;
 }
 
@@ -632,26 +655,49 @@ if(ret!=DUK_EXEC_SUCCESS) {\
     duk_pop(ctx);\
 }
 
-#define docallback do{          \
-  int ret;                      \
-  if(format_err) {              \
-    duk_push_undefined(ctx);    \
-    duk_push_string(ctx, "Unexpected format of response from redis server");\
+#define docallback_err(errmsg) do{ \
+  int ret;                         \
+  duk_dup(ctx, cb_idx);            \
+  duk_dup(ctx, this_idx);          \
+  duk_push_undefined(ctx);         \
+  duk_push_string(ctx, errmsg);    \
+  duk_dup(ctx, -1);                \
+  duk_put_prop_string(ctx, this_idx, "errMsg");\
+  ret=duk_pcall_method(ctx, 2);    \
+  HANDLE_PCALL_ERR                 \
+  duk_pop(ctx);                    \
+  goto cb_end;                     \
+}while(0)
+
+#define docallback do{            \
+  int ret;                        \
+  duk_dup(ctx, cb_idx);           \
+  duk_dup(ctx, this_idx);         \
+  if(format_err) {                \
+    duk_push_undefined(ctx);      \
+    duk_push_string(ctx, "unexpected format of response from redis server");\
+    duk_dup(ctx, -1);\
     duk_put_prop_string(ctx, this_idx, "errMsg");\
+  } else {\
+      duk_pull(ctx, -3);            \
+      duk_push_undefined(ctx); \
   }\
-  duk_dup(ctx, cb_idx);         \
-  duk_dup(ctx, this_idx);       \
-  duk_pull(ctx, -3);            \
-  ret=duk_pcall_method(ctx, 1);                 \
+  ret=duk_pcall_method(ctx, 2);                 \
   HANDLE_PCALL_ERR \
-  if(!duk_get_boolean_default(ctx, -1, 1)) \
+  if(!duk_get_boolean_default(ctx, -1, 1)){ \
+    evcont=0; /* mark to del event */\
+    duk_pop(ctx);\
     goto cb_end;\
+  }\
   duk_pop(ctx);/*return value*/\
   total++;  \
   /* if we closed in the callback, response, items, rcp etc will be freed and invalid */\
   /* and removed from respclient in 'this' */\
-  if( !duk_get_prop_string(ctx, this_idx, DUK_HIDDEN_SYMBOL("respclient")) )\
-    RP_THROW(ctx, "internal error checking connection");\
+  if( !duk_get_prop_string(ctx, this_idx, DUK_HIDDEN_SYMBOL("respclient")) ) {/*this shouldn't happen*/\
+    if(isasync) fprintf(stderr, "redis: internal error checking connection information\n");\
+    else RP_THROW(ctx, "redis: internal error checking connection information");\
+    goto cb_end;\
+  }\
   if(format_err || !duk_has_prop_string(ctx, -1, (isasync?"async_client_p":"client_p")) ){\
     duk_pop(ctx);\
     goto cb_end;\
@@ -659,10 +705,11 @@ if(ret!=DUK_EXEC_SUCCESS) {\
   duk_pop(ctx);\
 }while(0)
 
-static void push_response_cb_scores(duk_context *ctx, RESPROTO *response, duk_idx_t cb_idx, duk_idx_t this_idx, const char *fname, int flag, int ridx)
+static int push_response_cb_scores(duk_context *ctx, RESPROTO *response, duk_idx_t cb_idx, duk_idx_t this_idx, const char *fname, int flag, int ridx)
 {
   int total=0, format_err=0, ii=0;
   int isasync = flag & ASYNCFLAG, retbuf = flag & RETBUFFLAG;
+  int evcont=1;
 
   if(response->items->respType != RESPISARRAY)
   {
@@ -690,11 +737,13 @@ static void push_response_cb_scores(duk_context *ctx, RESPROTO *response, duk_id
 
   cb_end:
   duk_push_int(ctx, total);
+
+  return evcont;
 }
 
-static void push_response_cb_kv_scores(duk_context *ctx, RESPROTO *response, duk_idx_t cb_idx, duk_idx_t this_idx, const char *fname, int flag, int ridx)
+static int push_response_cb_kv_scores(duk_context *ctx, RESPROTO *response, duk_idx_t cb_idx, duk_idx_t this_idx, const char *fname, int flag, int ridx)
 {
-  int total=0, format_err=0, ii=0;
+  int total=0, format_err=0, ii=0, evcont=1;
   int isasync = flag & ASYNCFLAG, retbuf = flag & RETBUFFLAG;
 
   if(response->items->respType != RESPISARRAY)
@@ -727,11 +776,12 @@ static void push_response_cb_kv_scores(duk_context *ctx, RESPROTO *response, duk
 
   cb_end:
   duk_push_int(ctx, total);
+  return evcont;
 }
 
-static void push_arrays(duk_context *ctx, RESPROTO *response, duk_idx_t cb_idx, duk_idx_t this_idx, const char *fname, int flag, int ridx)
+static int push_arrays(duk_context *ctx, RESPROTO *response, duk_idx_t cb_idx, duk_idx_t this_idx, const char *fname, int flag, int ridx)
 {
-  int total=0, format_err=0;
+  int total=0, format_err=0, evcont=1;
   int isasync = flag & ASYNCFLAG, retbuf = flag & RETBUFFLAG;
 
   if(response->items->respType != RESPISARRAY)
@@ -745,24 +795,26 @@ static void push_arrays(duk_context *ctx, RESPROTO *response, duk_idx_t cb_idx, 
 
   cb_end:
   duk_push_int(ctx, total);
+
+  return evcont;
 }
 
 
 /* expecting [val, val, val, ...] */
-static void push_response_cb_single(duk_context *ctx, RESPROTO *response, duk_idx_t cb_idx, duk_idx_t this_idx, const char *fname, int flag)
+static int push_response_cb_single(duk_context *ctx, RESPROTO *response, duk_idx_t cb_idx, duk_idx_t this_idx, const char *fname, int flag)
 {
-  push_arrays(ctx, response, cb_idx, this_idx, fname, flag, 1);
+  return push_arrays(ctx, response, cb_idx, this_idx, fname, flag, 1);
 }
 
 /* expect [ [val, val], [val, val], ...] */
-static void push_response_cb_array(duk_context *ctx, RESPROTO *response, duk_idx_t cb_idx, duk_idx_t this_idx, const char *fname, int flag)
+static int push_response_cb_array(duk_context *ctx, RESPROTO *response, duk_idx_t cb_idx, duk_idx_t this_idx, const char *fname, int flag)
 {
-  push_arrays(ctx, response, cb_idx, this_idx, fname, flag, 0);
+  return push_arrays(ctx, response, cb_idx, this_idx, fname, flag, 0);
 }
 
-static void push_response_cb_single_bool(duk_context *ctx, RESPROTO *response, duk_idx_t cb_idx, duk_idx_t this_idx, const char *fname, int flag)
+static int push_response_cb_single_bool(duk_context *ctx, RESPROTO *response, duk_idx_t cb_idx, duk_idx_t this_idx, const char *fname, int flag)
 {
-  int total=0, format_err=0;
+  int total=0, format_err=0, evcont=1;
   int isasync = flag & ASYNCFLAG;
   int ridx=1;
 
@@ -786,12 +838,14 @@ static void push_response_cb_single_bool(duk_context *ctx, RESPROTO *response, d
 
   cb_end:
   duk_push_int(ctx, total);
+
+  return evcont;
 }
 
 /* expecting [key,val,key,val,...] -> {key:val, key:val,...}  */
-static void push_response_cb_keyval(duk_context *ctx, RESPROTO *response, duk_idx_t cb_idx, duk_idx_t this_idx, const char *fname, int flag, int ridx)
+static int push_response_cb_keyval(duk_context *ctx, RESPROTO *response, duk_idx_t cb_idx, duk_idx_t this_idx, const char *fname, int flag, int ridx)
 {
-  int total=0, format_err=0, ii=0;
+  int total=0, format_err=0, ii=0, evcont=1;
   int isasync = flag & ASYNCFLAG, retbuf = flag & RETBUFFLAG;
 
   if(response->items->respType != RESPISARRAY)
@@ -814,12 +868,14 @@ static void push_response_cb_keyval(duk_context *ctx, RESPROTO *response, duk_id
 
   cb_end:
   duk_push_int(ctx, total);
+
+  return evcont;
 }
 
 /* expecting [key,val,key,val,...] -> {key:val, key:val,...}  */
-static void push_response_cb_keyval_labeled(duk_context *ctx, RESPROTO *response, duk_idx_t cb_idx, duk_idx_t this_idx, const char *fname, int flag, int ridx)
+static int push_response_cb_keyval_labeled(duk_context *ctx, RESPROTO *response, duk_idx_t cb_idx, duk_idx_t this_idx, const char *fname, int flag, int ridx)
 {
-  int total=0, format_err=0, ii=0;
+  int total=0, format_err=0, ii=0, evcont=1;
   int isasync = flag & ASYNCFLAG, retbuf = flag & RETBUFFLAG;
 
   if(response->items->respType != RESPISARRAY)
@@ -846,13 +902,15 @@ static void push_response_cb_keyval_labeled(duk_context *ctx, RESPROTO *response
 
   cb_end:
   duk_push_int(ctx, total);
+
+  return evcont;
 }
 
 /* [ [key,val], [key,val], ... ]*/
-static void push_response_object_cb_nested(duk_context *ctx, RESPROTO *response,  duk_idx_t cb_idx, duk_idx_t this_idx, const char *fname, int flag, int ridx)
+static int push_response_cb_object_nested(duk_context *ctx, RESPROTO *response,  duk_idx_t cb_idx, duk_idx_t this_idx, const char *fname, int flag, int ridx)
 {
   int total=0, format_err=0, isasync = flag & ASYNCFLAG, retbuf = flag & RETBUFFLAG;
-  int ii=0, narry;
+  int ii=0, narry, evcont=1;
   RESPITEM *item = &response->items[ridx];
 
   if(item->respType != RESPISARRAY)
@@ -877,15 +935,17 @@ static void push_response_object_cb_nested(duk_context *ctx, RESPROTO *response,
   }
   cb_end:
   duk_push_int(ctx, total);
+
+  return evcont;
 } 
 
-static void rd_push_response_cb(duk_context *ctx, RESPCLIENT *rcp, RESPROTO *response, duk_idx_t cb_idx, duk_idx_t this_idx, const char *fname, int flag)
+static int rd_push_response_cb(duk_context *ctx, RESPCLIENT *rcp, RESPROTO *response, duk_idx_t cb_idx, duk_idx_t this_idx, const char *fname, int flag)
 {
   int type = flag & 255;
   int retbuf = flag & RETBUFFLAG;
   int isasync = flag & ASYNCFLAG;
   int xreadauto = flag & XREADAUTOFLAG;
-  int goterr=0;
+  int goterr=0, evcont=1;
 
   /* reset error message */
   duk_push_string(ctx, "");
@@ -904,7 +964,7 @@ static void rd_push_response_cb(duk_context *ctx, RESPCLIENT *rcp, RESPROTO *res
       else if(item->respType == RESPISARRAY) //empty list reply
       {
         duk_push_int(ctx,0);
-        return;
+        return evcont;
       }
       if(type != 5)
         type=0;//only one item, return it as is regardless of type
@@ -919,16 +979,19 @@ static void rd_push_response_cb(duk_context *ctx, RESPCLIENT *rcp, RESPROTO *res
   if(goterr)
   {
     int ret;
-
+    duk_dup(ctx, -1);
     duk_put_prop_string(ctx, this_idx, "errMsg");
+
     duk_dup(ctx, cb_idx);
     duk_dup(ctx, this_idx);
-    ret=duk_pcall_method(ctx, 0);
+    duk_push_undefined(ctx);
+    duk_pull(ctx, -4); //errMsg
+    ret=duk_pcall_method(ctx, 2);
 
     HANDLE_PCALL_ERR
 
     duk_push_int(ctx, 0);
-    return;
+    return evcont;
   }
 
   switch(type)
@@ -949,17 +1012,17 @@ static void rd_push_response_cb(duk_context *ctx, RESPCLIENT *rcp, RESPROTO *res
       break;
     }
     case 1:
-      push_response_cb_single(ctx, response, cb_idx, this_idx, fname, flag);
+      evcont = push_response_cb_single(ctx, response, cb_idx, this_idx, fname, flag);
       break;
     case 2:
-      push_response_cb_array(ctx, response, cb_idx, this_idx, fname, flag);
+      evcont = push_response_cb_array(ctx, response, cb_idx, this_idx, fname, flag);
       break;
     case 3:
-      push_response_cb_keyval(ctx, response, cb_idx, this_idx, fname, flag, 1);
+      evcont = push_response_cb_keyval(ctx, response, cb_idx, this_idx, fname, flag, 1);
       break;
     case 4:
-      //push_response_cb_keyval_pairs(ctx, response, cb_idx, this_idx, fname, flag);
-      push_response_object_cb_nested(ctx, response,  cb_idx, this_idx, fname, flag, 0);
+      //evcont = push_response_cb_keyval_pairs(ctx, response, cb_idx, this_idx, fname, flag);
+      evcont = push_response_cb_object_nested(ctx, response,  cb_idx, this_idx, fname, flag, 0);
       break;
     case 5:
     {
@@ -979,7 +1042,7 @@ static void rd_push_response_cb(duk_context *ctx, RESPCLIENT *rcp, RESPROTO *res
       break;
     }
     case 6:
-      push_response_cb_keyval(ctx, response, cb_idx, this_idx, fname, flag, 3);
+      evcont = push_response_cb_keyval(ctx, response, cb_idx, this_idx, fname, flag, 3);
       array_push_single(ctx, response, 1, fname, 0); //return cursor
       break;
     case 7:
@@ -987,13 +1050,13 @@ static void rd_push_response_cb(duk_context *ctx, RESPCLIENT *rcp, RESPROTO *res
       array_push_single(ctx, response, 1, fname, 0); //return cursor
       break;
     case 8:
-      push_response_cb_single_bool(ctx, response, cb_idx, this_idx, fname, flag);
+      evcont = push_response_cb_single_bool(ctx, response, cb_idx, this_idx, fname, flag);
       break;
     case 9:
-      push_response_cb_scores(ctx, response, cb_idx, this_idx, fname, flag, 1);
+      evcont = push_response_cb_scores(ctx, response, cb_idx, this_idx, fname, flag, 1);
       break;
     case 10:
-      push_response_cb_scores(ctx, response, cb_idx, this_idx, fname, flag, 3);
+      evcont = push_response_cb_scores(ctx, response, cb_idx, this_idx, fname, flag, 3);
       array_push_single(ctx, response, 1, fname, 0);
       break;
     case 11:
@@ -1017,6 +1080,8 @@ static void rd_push_response_cb(duk_context *ctx, RESPCLIENT *rcp, RESPROTO *res
         char *fmt=NULL;
 
         duk_get_prop_string(ctx, this_idx, "xreadArgs");
+        /* shouldn't be throwing here, checked in duk_rp_cc_docmd, which should cover it 
+           so this should always be an object                                                */
         REQUIRE_OBJECT(ctx, -1, "xread_auto_async: xreadArgs must be an Object");
 
         xo_idx=duk_get_top_index(ctx);
@@ -1046,20 +1111,19 @@ static void rd_push_response_cb(duk_context *ctx, RESPCLIENT *rcp, RESPROTO *res
           duk_put_prop(ctx, xo_idx);
 
           docallback;
-
         }
         // get the array of arguments and the object holding the stream ids and last ids
         duk_pull(ctx, xo_idx);
         //get the current rcp pointer for this async connection
         if( !duk_get_prop_string(ctx, this_idx, DUK_HIDDEN_SYMBOL("respclient")) )
-          RP_THROW(ctx,"async: internal error getting redis handle object");
+          docallback_err("async: internal error getting redis handle object");
         if(duk_get_prop_string(ctx, -1, "async_client_p")) 
         {
           subrcp=duk_get_pointer(ctx,-1);
           duk_pop_2(ctx);
         } 
         else
-          RP_THROW(ctx,"async: internal error getting redis handle");
+          docallback_err("async: internal error getting redis handle");
 
         //leave only the top one on the stack (xreadargs_array)
         while(duk_get_top(ctx)>1) duk_remove(ctx,0);
@@ -1098,7 +1162,7 @@ static void rd_push_response_cb(duk_context *ctx, RESPCLIENT *rcp, RESPROTO *res
         /* refresh the current xread command exactly as given in the last
            round, except with updated ids for subsequent messages         */
         if(!rc_send_async(ctx, subrcp))
-          RP_THROW(ctx, "error sending command to redis server");
+          docallback_err("xread_auto_async: error sending update read command to redis server");
 
         /* stack will be cleared in rp_rdev_doevent */ 
 
@@ -1121,14 +1185,14 @@ static void rd_push_response_cb(duk_context *ctx, RESPCLIENT *rcp, RESPROTO *res
       duk_push_int(ctx, total);
     }//case 11
     case 12:
-      push_response_cb_keyval_labeled(ctx, response, cb_idx, this_idx, fname, flag, 1);
+      evcont = push_response_cb_keyval_labeled(ctx, response, cb_idx, this_idx, fname, flag, 1);
       break;
     case 13:
-      push_response_cb_kv_scores(ctx, response, cb_idx, this_idx, fname, flag, 1);
+      evcont = push_response_cb_kv_scores(ctx, response, cb_idx, this_idx, fname, flag, 1);
       break;
   }
   cb_end:
-  return;
+  return evcont; //for subscribe and xread_auto_async, whether to continue the listen event
 }
 
 /*************** FUNCTION FOR init ****************************** */
@@ -1217,7 +1281,7 @@ static duk_ret_t _close_async_(duk_context *ctx)
   return 0;
 }
 
-static duk_ret_t duk_rp_rd_close_async(duk_context *ctx)
+static duk_ret_t rd_close_async(duk_context *ctx)
 {
   duk_push_this(ctx);
   return _close_async_(ctx);
@@ -1252,6 +1316,7 @@ static void rp_rdev_doevent(evutil_socket_t fd, short events, void* arg)
   RDEVARGS *args = (RDEVARGS *)arg;
   duk_context *ctx = args->ctx;
   RESPROTO *response;
+  int ret;
 
   //start with empty stack
   while (duk_get_top(ctx) > 0) duk_pop(ctx);
@@ -1267,11 +1332,11 @@ static void rp_rdev_doevent(evutil_socket_t fd, short events, void* arg)
   // get response from redis
   response = getRespReply(args->rcp);
   //parse response, run callback
-  rd_push_response_cb(ctx, args->rcp, response, duk_normalize_index(ctx, -1), duk_normalize_index(ctx, -2), args->fname, args->flag);
+  ret=rd_push_response_cb(ctx, args->rcp, response, duk_normalize_index(ctx, -1), duk_normalize_index(ctx, -2), args->fname, args->flag);
   // [ ..., this, callback, callback_return_val ]
 
-  // if not subscribe or xread_auto_async, its a one time event.
-  if(strcmp("subscribe", args->fname) && strcmp("xread_auto_async", args->fname) )
+  // if not subscribe or xread_auto_async, its a one time event. Else if returned false, unregister
+  if(!ret || (strcmp("subscribe", args->fname) && strcmp("xread_auto_async", args->fname)) )
   {
     duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("rd_event"));
     duk_push_pointer(ctx, (void*)args->rcp);
@@ -1279,9 +1344,7 @@ static void rp_rdev_doevent(evutil_socket_t fd, short events, void* arg)
     _close_async_(ctx);
   }
   //end with empty stack
-  while (duk_get_top(ctx) > 0) 
-    duk_pop(ctx);
-  // [ ]
+  duk_set_top(ctx, 0);
 }
 
 
@@ -1383,6 +1446,10 @@ static duk_ret_t duk_rp_cc_docmd(duk_context *ctx)
   if(strcmp(fname, "format") != 0 && strcmp(fname, "format_async") != 0)
   {
     char *fmt=NULL;
+    int xread_auto_async_err=0;
+
+    if(strcmp(fname,"xread_auto_async")==0)
+        xread_auto_async_err=1; //its an error if we don't get an object below
 
     i=0;
     /* get count of elements for the format, including array members and object keys and vals */
@@ -1511,6 +1578,7 @@ static duk_ret_t duk_rp_cc_docmd(duk_context *ctx)
           }
           duk_remove(ctx, enum_idx);
           duk_remove(ctx, oldi);//object
+          xread_auto_async_err=0;
         }
         else if(strcmp(fname,"zadd")==0)
         {
@@ -1550,7 +1618,7 @@ static duk_ret_t duk_rp_cc_docmd(duk_context *ctx)
         i--;
         top=duk_get_top(ctx);
       }
-/*
+      /*
       else if (duk_is_boolean(ctx, i))
       {
         if(duk_get_boolean(ctx, i))
@@ -1559,7 +1627,7 @@ static duk_ret_t duk_rp_cc_docmd(duk_context *ctx)
         top=duk_get_top(ctx);
         i--;
       }
-*/
+      */
       else
       {
         duk_safe_to_string(ctx,i);
@@ -1567,6 +1635,9 @@ static duk_ret_t duk_rp_cc_docmd(duk_context *ctx)
       }
       i++;
     }
+
+    if(xread_auto_async_err)
+        RP_THROW(ctx,"xread_auto_async: argument must be an object");
 
     duk_push_string(ctx,fmt);
     free(fmt);
@@ -1609,7 +1680,32 @@ static duk_ret_t duk_rp_cc_docmd(duk_context *ctx)
 
     /* we will use a separate connection to redis so that the main
        connection can still be used without any extra hassle       */
-    getsubresp;
+    int port; const char *ip;
+
+    duk_push_this(ctx);
+    if( !duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("respclient")) )
+      RP_THROW(ctx,"async: internal error getting ip and port");
+
+    if(duk_get_prop_string(ctx, -1, "async_client_p")) {
+      subrcp=duk_get_pointer(ctx,-1);
+      duk_pop_3(ctx);
+    } 
+    else 
+    {
+        duk_pop(ctx);
+        duk_get_prop_string(ctx, -1, "ip");
+        ip=duk_get_string(ctx, -1);
+        duk_pop(ctx);
+        duk_get_prop_string(ctx, -1, "port");
+        port=duk_get_int(ctx, -1);
+        duk_pop(ctx);
+        subrcp= connectRespServer((char *)ip, port);
+        if(!subrcp) RP_THROW(ctx,"redis_async: could not connect to resp server");
+        subrcp->timeout=-1;/* always blocking for async */
+        duk_push_pointer(ctx, (void *) subrcp);
+        duk_put_prop_string(ctx, -2, "async_client_p");
+        duk_pop_2(ctx);
+    }
 
     /* send the command */
     if(rc_send_async(ctx, subrcp))
@@ -1680,16 +1776,7 @@ static duk_ret_t duk_rp_cc_docmd(duk_context *ctx)
     }
     else
     {
-      if(!response) 
-      {
-        //connection or other error
-        duk_push_this(ctx);
-        duk_push_sprintf(ctx, "%s: redis server connection error:\n%s", fname, (rcp->rppFrom->errorMsg?rcp->rppFrom->errorMsg:"Unknown Error") );
-        duk_put_prop_string(ctx, -2, "errMsg");
-        return 0;//return undefined
-      }
-      if(!rd_push_response(ctx, response, fname, commandtype|retbuf))
-        return 0; //return undefined if redis sent errMsg
+      return(rd_push_response(ctx, response, fname, commandtype|retbuf, rcp));
     }
   }
   return 1;
@@ -1799,7 +1886,7 @@ static duk_ret_t duk_rp_proxyobj_get(duk_context *ctx)
   duk_push_sprintf(ctx, "HGET %s %s", hname, key);
 
   response = rc_send(ctx, rcp);
-  ret = rd_push_response(ctx, response, "proxyObj", 1);
+  ret = rd_push_response(ctx, response, "proxyObj", 1, rcp);
   if(!ret)
   {
     duk_push_this(ctx);
@@ -1864,7 +1951,7 @@ static duk_ret_t duk_rp_proxyobj_set(duk_context *ctx)
   duk_pull(ctx, 0);
   duk_get_prop_string(ctx, -1, "byteLength");
   response = rc_send(ctx, rcp);
-  ret = rd_push_response(ctx, response, "proxyObj", 1);
+  ret = rd_push_response(ctx, response, "proxyObj", 1, rcp);
   if(!ret)
   {
     duk_push_this(ctx);
@@ -1908,7 +1995,7 @@ static duk_ret_t duk_rp_proxyobj_del(duk_context *ctx)
 
   duk_push_sprintf(ctx, "HDEL %s %s", hname, key);
   response = rc_send(ctx, rcp);
-  ret = rd_push_response(ctx, response, "proxyObj", 1);
+  ret = rd_push_response(ctx, response, "proxyObj", 1, rcp);
   if(!ret)
   {
     duk_push_this(ctx);
@@ -1960,7 +2047,7 @@ static duk_ret_t duk_rp_proxyobj_destroy(duk_context *ctx)
 
   duk_push_sprintf(ctx, "DEL %s", hname);
   response = rc_send(ctx, rcp);
-  ret = rd_push_response(ctx, response, "proxyObj", 1);
+  ret = rd_push_response(ctx, response, "proxyObj", 1, rcp);
   if(!ret)
   {
     free(hname);
@@ -2004,7 +2091,7 @@ static duk_ret_t duk_rp_proxyobj_ownkeys(duk_context *ctx)
   
   duk_push_sprintf(ctx, "HKEYS %s", hname);
   response = rc_send(ctx, rcp);
-  ret = rd_push_response(ctx, response, "proxyObj", 1);
+  ret = rd_push_response(ctx, response, "proxyObj", 1, rcp);
   if(!ret)
   {
     duk_push_this(ctx);
@@ -2318,7 +2405,7 @@ duk_ret_t duk_open_module(duk_context *ctx)
 
   duk_push_c_function(ctx, duk_rp_rd_close, 0);
   duk_put_prop_string(ctx, -2, "close");
-  duk_push_c_function(ctx, duk_rp_rd_close_async, 0);
+  duk_push_c_function(ctx, rd_close_async, 0);
   duk_put_prop_string(ctx, -2, "close_async");
 
   duk_put_prop_string(ctx, -2, "prototype"); /* -> stack: [ ret-->[prototype-->[exe=fn_exe,...]] ] */
