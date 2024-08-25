@@ -499,7 +499,6 @@ static void rp_log_copy_to_errMsg(duk_context *ctx, char *msg)
 static int rp_log_error(duk_context *ctx)
 {
     int pos=ftell(mmsgfh);
-
     if(pos>msgbufsz-1)
         pos=msgbufsz-1;
 
@@ -3518,11 +3517,9 @@ void check_parse(char *sql,char *new_sql,char **names,int n_names)
 
 // close resets finfo->errmap
 #define throw_tx_or_log_error_close(ctx,pref,msg,h) do{\
-    char tbuf[msgbufsz];\
-    strncpy(tbuf, msg, msgbufsz-1);\
     h_close(h);\
     h=NULL;\
-    throw_tx_or_log_error(ctx,pref,tbuf);\
+    throw_tx_or_log_error(ctx,pref,finfo->errmap);\
 }while(0)
 
 #define throw_or_log_error_old(msg) do{\
@@ -3782,9 +3779,7 @@ static duk_ret_t rp_sql_one(duk_context *ctx)
 
     if (str_idx == -1)
     {
-        rp_log_copy_to_errMsg(ctx, "sql.one: No string (sql statement) provided");
-        duk_push_int(ctx, -1);
-        return (1);
+        RP_THROW(ctx, "sql.one: No sql statement provided");
     }
 
     duk_push_object(ctx);
