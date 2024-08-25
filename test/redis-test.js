@@ -596,7 +596,7 @@ rcl.xread_block_async(0, "STREAMS", "x1", "x2", "$", "$", function(x)
 
 */
 
-
-rcl.flushall();
-cleanup();
-
+setTimeout(function(){
+    rcl.flushall();
+    cleanup();
+},10);
