@@ -488,7 +488,7 @@ pid_t parent_pid = 0;
 /* **************************************************
      store an error string in this.errMsg
    **************************************************   */
-static void rp_log_error_msg(duk_context *ctx, char *msg)
+static void rp_log_copy_to_errMsg(duk_context *ctx, char *msg)
 {
     duk_push_this(ctx);
     duk_push_string(ctx, msg);
@@ -496,19 +496,22 @@ static void rp_log_error_msg(duk_context *ctx, char *msg)
     duk_pop(ctx);
 }
 
-static void rp_log_error(duk_context *ctx)
+static int rp_log_error(duk_context *ctx)
 {
     int pos=ftell(mmsgfh);
 
     if(pos>msgbufsz-1)
         pos=msgbufsz-1;
 
+    if(pos && finfo->errmap[pos-1]=='\n')
+        pos--;
     finfo->errmap[pos]='\0';
-
     if(RP_TX_isforked)
-        return;
+        return 0;
 
-    rp_log_error_msg(ctx, finfo->errmap);
+    rp_log_copy_to_errMsg(ctx, finfo->errmap);
+
+    return pos;
 }
 
 /* get the expression from a /pattern/ or a "string" */
@@ -3492,7 +3495,7 @@ void check_parse(char *sql,char *new_sql,char **names,int n_names)
 }
 */
 
-#define throw_tx_or_log_error(ctx,pref,msg) do{\
+#define throw_tx_or_log_error_old(ctx,pref,msg) do{\
     rp_log_error(ctx);\
     if(!isquery) RP_THROW(ctx, "%s error: %s",pref, msg);\
     else if(q && q->callback > -1) duk_push_number(ctx, -1);\
@@ -3501,6 +3504,15 @@ void check_parse(char *sql,char *new_sql,char **names,int n_names)
         duk_push_sprintf(ctx, "%s: %s", pref, msg);\
         duk_put_prop_string(ctx, -2, "error");\
     }\
+    goto end_query;\
+}while(0)
+
+#define throw_tx_or_log_error(ctx,pref,msg) do{\
+    rp_log_error(ctx);\
+    if(!isquery) \
+        RP_THROW(ctx, "%s error: %s",pref, msg);\
+    else\
+        duk_push_null(ctx);\
     goto end_query;\
 }while(0)
 
@@ -3513,16 +3525,25 @@ void check_parse(char *sql,char *new_sql,char **names,int n_names)
     throw_tx_or_log_error(ctx,pref,tbuf);\
 }while(0)
 
-#define throw_or_log_error(msg) do{\
+#define throw_or_log_error_old(msg) do{\
     if(!isquery) RP_THROW(ctx, "%s",msg);\
     else if(q && q->callback > -1){\
-        rp_log_error_msg(ctx, msg);\
+        rp_log_copy_to_errMsg(ctx, msg);\
         duk_push_number(ctx, -1);\
     } else {\
         duk_push_object(ctx);\
         duk_push_sprintf(ctx, "%s", msg);\
         duk_put_prop_string(ctx, -2, "error");\
     }\
+    goto end_query;\
+}while(0)
+
+#define throw_or_log_error(msg) do{\
+    rp_log_copy_to_errMsg(ctx, msg);\
+    if(!isquery)\
+        RP_THROW(ctx, "%s",msg);\
+    else\
+        duk_push_null(ctx);\
     goto end_query;\
 }while(0)
 
@@ -3677,7 +3698,14 @@ static duk_ret_t rp_sql_exec_query(duk_context *ctx, int isquery)
 
     end:
     h_end_transaction(h);
-    rp_log_error(ctx); /* log any non fatal errors to this.errMsg */
+
+    if(rp_log_error(ctx))
+    {
+        if(isquery)
+            duk_push_null(ctx);
+        else
+            RP_THROW(ctx, "sql exec: %s", finfo->errmap);
+    }
     return 1; /* returning outer array */
 
     end_query:
@@ -3727,7 +3755,7 @@ static duk_ret_t rp_sql_eval(duk_context *ctx)
 
     if (str_idx == -1)
     {
-        rp_log_error_msg(ctx, "Error: Eval: No string to evaluate");
+        rp_log_copy_to_errMsg(ctx, "Error: Eval: No string to evaluate");
         duk_push_int(ctx, -1);
         return (1);
     }
@@ -3754,7 +3782,7 @@ static duk_ret_t rp_sql_one(duk_context *ctx)
 
     if (str_idx == -1)
     {
-        rp_log_error_msg(ctx, "sql.one: No string (sql statement) provided");
+        rp_log_copy_to_errMsg(ctx, "sql.one: No string (sql statement) provided");
         duk_push_int(ctx, -1);
         return (1);
     }

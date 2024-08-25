@@ -60,8 +60,9 @@ testFeature("sha256 and hexify/dehexify", function(){
 });
 */
 
-sql.exec("drop table urls;");
-sql.exec("drop table urls2;");
+
+sql.query("drop table urls;");
+sql.query("drop table urls2;");
 
 testFeature ("create a sql table", function(){
   sql.exec("create table urls ( Md5 byte(16), Url varchar(16) );");
@@ -85,7 +86,7 @@ testFeature("insert of urls and binary md5 hash", function(){
 
 
 testFeature("making unique index on non-unique data", function(){
-  var ret=sql.exec("create unique index urls_Md5_ux on urls(Md5);");
+  var ret=sql.query("create unique index urls_Md5_ux on urls(Md5);");
   return Sql.rex(/non-unique=/,sql.errMsg).length != 0;
 });
 
@@ -120,7 +121,7 @@ testFeature("checking hashes in copied table", function(){
 });
 
 testFeature("insert dup into table with unique index", function(){
-  var res=sql.exec("insert into urls values (?,?);",[md5(urls[0],true),urls[0]]);
+  var res=sql.query("insert into urls values (?,?);",[md5(urls[0],true),urls[0]]);
   if ( Sql.rex(/duplicate=/,sql.errMsg).length )
     return true;
 
