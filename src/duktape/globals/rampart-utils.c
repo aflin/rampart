@@ -3359,7 +3359,10 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
         while(!waitpid(pid, &exit_status, WNOHANG))
         {
             if(!kill(pid,0))
+            {
+                waitpid(pid, &exit_status, WNOHANG);
                 break;
+            }
             usleep(1000);
         }
 
