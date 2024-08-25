@@ -1328,6 +1328,255 @@ duk_ret_t del_from_clipboard(duk_context *ctx, char *key)
     _ret;\
 })
 
+#define KEYLIST struct onget_keylist_s
+KEYLIST {
+    char          *key;
+    KEYLIST       *next;
+    KEYLIST       *prev;
+};
+
+#define GETEV struct onget_ev_s
+GETEV {
+    struct event *e;
+    KEYLIST *keys;
+};
+
+__thread GETEV *getev=NULL;
+
+static void onget_event(evutil_socket_t fd, short events, void* arg)
+{
+    RPTHR *thr=get_current_thread();
+    duk_context *ctx = thr->ctx;
+    char *waitkey=NULL;
+    KEYLIST *entry = getev->keys;
+    duk_idx_t cb_idx=-1;
+    duk_size_t len;
+
+    CBLOCKLOCK;
+
+    thrread(&len, sizeof(duk_size_t));
+
+    REMALLOC(waitkey, len);
+
+    thrread(waitkey, len);
+
+    CBLOCKUNLOCK;
+
+    while(entry)
+    {
+        char *matchkey = entry->key;
+        duk_size_t mlen = strlen(matchkey);
+
+        if(mlen>0 && matchkey[mlen-1]=='*')
+            mlen-=1;
+        else if(len>mlen)
+            mlen=len;
+
+        if(!mlen || strncmp(matchkey, waitkey, mlen)==0)
+        {
+            if(cb_idx==-1)
+            {
+                duk_push_global_stash(ctx);
+                if(!duk_get_prop_string(ctx, -1, "waitfor_cbs"))
+                {
+                    fprintf(stderr, "internal error getting onGet callback");
+                    duk_set_top(ctx, 0);
+                    free(waitkey);
+                    return;
+                }
+                duk_remove(ctx, -2);//stash
+                cb_idx=duk_get_top_index(ctx);
+            }
+            duk_push_sprintf(ctx, "%p", entry);
+            if(duk_get_prop(ctx, cb_idx))
+            {
+                // when callback is called, entry might get removed and freed
+                // and wpev might get nulled and freed
+                KEYLIST *prev=entry->prev;
+
+                //this
+                duk_push_sprintf(ctx, "this_%p", entry);
+                duk_get_prop(ctx, cb_idx);
+
+                //key
+                duk_push_string(ctx, waitkey);
+
+                // val
+                if(!_thread_get_del(ctx, waitkey, GET_NODEL))
+                    duk_push_undefined(ctx);
+
+                // match (different from key if glob or empty)
+                duk_push_string(ctx, entry->key);
+
+                if(duk_pcall_method(ctx, 3))
+                {
+                    const char *errmsg = rp_push_error(ctx, -1, "onGet - error in callback:", rp_print_error_lines);
+                    fprintf(stderr, "%s\n", errmsg);
+                }
+                duk_pop(ctx);//TODO: check for false
+                //check if list altered
+                if(!getev) //if no entries at all
+                {
+                    free(waitkey);
+                    return;
+                }
+                if(!prev && getev->keys != entry)//if we were the first, and now the first changed
+                {
+                    entry=getev->keys;
+                    continue;
+                }
+                else if (prev && prev->next != entry) //if in list, but we were removed
+                {
+                    entry=prev->next;
+                    continue;
+                }
+            }
+        }
+        entry=entry->next;
+    }
+    duk_set_top(ctx, 0);
+    // might be nulled in the callback with stopwait_async
+    if(getev)
+        event_add(getev->e,NULL);
+    free(waitkey);
+}
+
+static duk_ret_t onget_remove(duk_context *ctx)
+{
+    if(!getev)
+    {
+        duk_push_false(ctx);
+        return 1;
+    }
+
+    KEYLIST *entry=getev->keys, *rementry;
+
+    duk_push_this(ctx);
+    if(! duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("entry")))
+    {
+        duk_push_false(ctx);
+        return 1;
+    }
+    rementry = duk_get_pointer(ctx, -1);
+    duk_pop(ctx);
+
+    while(entry)
+    {
+        if(entry == rementry)
+        {
+            if(entry == getev->keys)
+            {
+                getev->keys=entry->next;
+                if(getev->keys)
+                    getev->keys->prev=NULL;
+            }
+            else
+            {
+                entry->prev->next = entry->next;
+                if(entry->next)
+                    entry->next->prev = entry->prev;
+            }
+            duk_del_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("entry"));
+            break;
+        }
+        entry=entry->next;
+    }
+
+    if(!entry)
+    {
+        duk_push_false(ctx);
+        return 1;
+    }
+
+    if(!getev->keys)
+    {
+        RPTHR *thr=get_current_thread();
+        closepipes;
+        event_del(getev->e);
+        event_free(getev->e);
+        free(getev);
+        getev=NULL;
+    }
+
+    duk_push_global_stash(ctx);
+    duk_get_prop_string(ctx, -1, "waitfor_cbs");
+    duk_push_sprintf(ctx, "%p", entry);
+    duk_del_prop(ctx, -2);
+
+    duk_push_sprintf(ctx, "this_%p", entry);
+    duk_del_prop(ctx, -2);
+
+    free(entry->key);
+    free(entry);
+
+    duk_push_true(ctx);
+    return 1;
+}
+
+static duk_ret_t rp_onget(duk_context *ctx)
+{
+    RPTHR *thr=get_current_thread();
+    const char *key=REQUIRE_STRING(ctx, 0, "thread.onGet: first argument must be a String (key)");
+    REQUIRE_FUNCTION(ctx, 1, "thread.onGet: second argument must be a function (callback)");
+
+    KEYLIST *entry=NULL;
+
+    duk_idx_t retidx = duk_push_object(ctx);
+
+    duk_push_global_stash(ctx);
+
+    if(!getev)
+    {
+        CALLOC(entry, sizeof(KEYLIST));
+        entry->key=strdup(key);
+        duk_push_object(ctx);
+        duk_dup(ctx, -1);
+        duk_put_prop_string(ctx, -3, "waitfor_cbs");
+
+        duk_push_sprintf(ctx, "%p", entry);
+        duk_dup(ctx, 1);
+        duk_put_prop(ctx, -3);
+
+        duk_push_sprintf(ctx, "this_%p", entry);
+        duk_dup(ctx, retidx);
+        duk_put_prop(ctx, -3);
+
+        openpipes(thr, LATE_LOCK);
+
+        CALLOC(getev,sizeof(GETEV));
+        getev->e = event_new(thr->base, thr->reader, EV_READ, onget_event, getev);
+        getev->keys=entry;
+        event_add(getev->e,NULL);
+    }
+    else
+    {
+        duk_get_prop_string(ctx, -1, "waitfor_cbs");
+
+        CALLOC(entry, sizeof(KEYLIST));
+        entry->key=strdup(key);
+
+        duk_push_sprintf(ctx, "%p", entry);
+        duk_dup(ctx, 1);
+        duk_put_prop(ctx, -3);
+
+        duk_push_sprintf(ctx, "this_%p", entry);
+        duk_dup(ctx, retidx);
+        duk_put_prop(ctx, -3);
+
+        entry->next=getev->keys;
+        getev->keys->prev=entry;
+        getev->keys=entry;
+    }
+
+    duk_push_pointer(ctx, entry);
+    duk_put_prop_string(ctx, retidx, DUK_HIDDEN_SYMBOL("entry"));
+    duk_push_c_function(ctx, onget_remove, 0);
+    duk_put_prop_string(ctx, retidx, "remove");
+
+    duk_pull(ctx, retidx);
+    return 1;
+}
+
 static duk_ret_t _thread_waitfor(duk_context *ctx, const char *key, const char *funcname, int del, int locked)
 {
     char *waitkey=NULL;
@@ -2475,6 +2724,9 @@ void duk_thread_init(duk_context *ctx)
 
     duk_push_c_function(ctx, rp_thread_waitfor, 2);
     duk_put_prop_string(ctx, -2, "waitfor");
+
+    duk_push_c_function(ctx, rp_onget, 2);
+    duk_put_prop_string(ctx, -2, "onGet");
 
     duk_push_c_function(ctx, rp_thread_getwait, 2);
     duk_put_prop_string(ctx, -2, "getwait");
