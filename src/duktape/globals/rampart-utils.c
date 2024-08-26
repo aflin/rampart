@@ -8908,6 +8908,8 @@ static int scandate(struct tm *dt_p, const char *dstr, const char *ifmt, int ext
                             dt_p->tm_gmtoff=systemlocaloffset;
                         //printf("offset is now %d\n", dt_p->tm_gmtoff);
                     }
+                    if(dt_p->tm_min == 120) //reset - mac
+                        dt_p->tm_min = 0;
                     break;
                 }
             }

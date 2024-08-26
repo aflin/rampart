@@ -494,8 +494,13 @@ for (var i=0; i<len; i++)
     var res=false, diff=0;
     var df = dateFmt(cfmt, nowgmt);
 
-
     var asd=autoScanDate(df);
+
+    if(!asd)
+    {
+        testFeature('autoScanDate 1800s', "unsupported by OS");
+        break;
+    }
 
     // will naturally fail if %y is used
     if(cfmt.indexOf('y')!=-1 || cfmt.indexOf('x')!=-1)
