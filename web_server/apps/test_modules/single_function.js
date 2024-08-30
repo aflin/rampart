@@ -7,7 +7,7 @@ rampart.globalize(rampart.utils);
    script is loaded or changed.
 */
 
-var Sql=require("rampart-sql");
+//var Sql=require("rampart-sql");
 
 
 var htop = 
@@ -34,11 +34,13 @@ function page(req) {
 /* 
 since we have 
   map: {
-    "single.html":          {module:"/modules/single_function.js"},
+    "/apps":            {modulePath: process.scriptPath + "/apps" },
   }
 
+and since this script is at: process.scriptPath + "/apps/test_moudules/single_function.js"
+
 the function assigned to module.exports below maps to
-  http://localhost:8088/single.html
+  http://example.com/apps/test_modules/single_function.html
 */
 
 module.exports=page;

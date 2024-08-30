@@ -9,7 +9,7 @@ rampart.globalize(rampart.utils);
    script is loaded or changed.
 */
 
-var Sql=require("rampart-sql");
+//var Sql=require("rampart-sql");
 
 
 function showreq_callback(req){

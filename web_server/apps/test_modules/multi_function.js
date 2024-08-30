@@ -7,8 +7,8 @@ rampart.globalize(rampart.utils);
    script is loaded or changed.
 */
 
-var Sql=require("rampart-sql");
-
+//var Sql=require("rampart-sql");
+//var curl=require("rampart-curl");
 
 var htop = 
 `<html>
@@ -51,17 +51,19 @@ function thirdpage(req) {
 
 
 /* 
-since we have 
+since we have:
   map: {
-    "/multi/":            {module: "/modules/multi_function.js"},
+    "/apps":            {modulePath: process.scriptPath + "/apps" },
   }
 
+and since this script is at: process.scriptPath + "/apps/test_moudules/multi_function.js"
+
 the functions below map to:
-  http://localhost:8088/multi/
-  http://localhost:8088/multi/index.html
-  http://localhost:8088/multi/page1.html
-  http://localhost:8088/multi/page2.html
-  http://localhost:8088/multi/virtdir/page3.html
+  http://example.com/test_modules/multi_function/
+  http://example.com/test_modules/multi_function/index.html
+  http://example.com/test_modules/multi_function/page1.html
+  http://example.com/test_modules/multi_function/page2.html
+  http://example.com/test_modules/multi_function/virtdir/page3.html
 */
 
 module.exports={
