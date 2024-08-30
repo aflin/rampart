@@ -655,6 +655,7 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
     int preserveUfmt = 0;
     char **free_ptr=NULL;
     int nfree=0;
+    duk_idx_t topidx = duk_get_top_index(ctx);
     const char	*format = PF_REQUIRE_BUF_OR_STRING(ctx, fidx++, &len),
                 *format_end=format+len;
     if (!buffer)
@@ -676,6 +677,9 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
         {
             // yes, evaluate it
             format++;
+            // throw error if no var for % format
+            if(fidx>topidx)
+                RP_THROW(ctx, "printf(): expecting argument for conversion specifier (variable required at position %d)", (int)fidx);
         }
         // evaluate flags
         flags = 0U;
