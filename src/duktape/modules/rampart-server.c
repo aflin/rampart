@@ -4155,6 +4155,14 @@ static int getmod(DHS *dhs)
     {
         const char *errmsg = rp_push_error(ctx, -1, "error loading module:", rp_print_error_lines);
 
+        // if we got a subdir, but no file within, return 404
+        if(strstr( strerror(errno), "directory"))
+        {
+            duk_pop(ctx);
+            send404(dhs->req);
+            return -1;
+        }
+
         printerr("%s\n", errmsg);
         duk_pop(ctx);
 
