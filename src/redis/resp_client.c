@@ -19,6 +19,11 @@
 #include <math.h>
 #include <string.h>
 #include <errno.h>
+
+#if defined(__FreeBSD__)
+#include <netinet/in.h>
+#endif
+
 #ifdef RP_USING_DUKTAPE
 #include "rampart.h"
 #endif

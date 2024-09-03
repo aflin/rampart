@@ -48,6 +48,11 @@ int clock_gettime(clockid_t type, struct timespec *rettime)
 }
 #endif
 
+//freebsd
+#ifndef ENODATA
+#define ENODATA 8088
+#endif
+
 int RP_TX_isforked=0;  //set to one in fork so we know not to lock sql db;
 int totnthreads=0;
 char *RP_script_path=NULL;
@@ -3128,6 +3133,7 @@ int main(int argc, char *argv[])
             duk_pop(ctx);
             REMALLOC(thread_dnsbase, (nthread_dnsbase + 1) * sizeof(struct evdns_base *) );
             thread_dnsbase[nthread_dnsbase++]=dnsbase;
+            mainthr->dnsbase=dnsbase;
             /* end dns */
 
             /* run things that need to be run before the loop starts */
@@ -3266,6 +3272,7 @@ int main(int argc, char *argv[])
             duk_pop(ctx);
             REMALLOC(thread_dnsbase, (nthread_dnsbase + 1) * sizeof(struct evdns_base *) );
             thread_dnsbase[nthread_dnsbase++]=dnsbase;
+            mainthr->dnsbase=dnsbase;
             /* end dns */
 
             /* run the script */

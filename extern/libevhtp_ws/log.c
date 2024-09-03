@@ -8,6 +8,10 @@
 #include <arpa/inet.h>
 #include <sys/queue.h>
 
+#if defined(__FreeBSD__)
+#include <netinet/in.h>
+#endif
+
 #include "evhtp/evhtp.h"
 #include "evhtp/log.h"
 

@@ -22,10 +22,17 @@
 #include <sys/mman.h>
 #include <sys/param.h>
 #include <grp.h>
+
 #ifdef __APPLE__
 #include <uuid/uuid.h>
 #include <sys/sysctl.h>
 #endif
+
+#if defined(__FreeBSD__)
+#include <sys/socket.h>
+#include <netinet/in.h>
+#endif
+
 #include <pwd.h>
 
 #include "evhtp/evhtp.h"

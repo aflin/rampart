@@ -27,6 +27,10 @@
 #include "openssl/err.h"
 #include "openssl/rand.h"
 
+#if defined(__FreeBSD__)
+#include <netinet/in.h>
+#endif
+
 //macos
 #if !defined(SOL_TCP) && defined(IPPROTO_TCP)
 #define SOL_TCP IPPROTO_TCP
@@ -206,7 +210,6 @@ static RPSOCK * new_sockinfo(duk_context *ctx)
 
     duk_push_this(ctx);
     thisptr = duk_get_heapptr(ctx, -1);
-
     REMALLOC(args, sizeof(RPSOCK));
     args->ctx=ctx;
     args->thisptr=thisptr;
@@ -949,7 +952,7 @@ static void async_dns_callback(int errcode, struct evutil_addrinfo *addr, void *
     {
         duk_push_heapptr(ctx, sinfo->thisptr); //this
         free(dnsargs->host);
-        if(dnsargs->freebase)
+        if(dnsargs->freebase && sinfo && sinfo->dnsbase)
             evdns_base_free(sinfo->dnsbase, 0);
         sinfo->aux=NULL;
         free(dnsargs);
@@ -1171,7 +1174,7 @@ static void async_reverse(RPSOCK *sinfo, struct addrinfo *res)
     {
         sinfo->dnsbase = evdns_base_new(sinfo->base,
             EVDNS_BASE_DISABLE_WHEN_INACTIVE|EVDNS_BASE_INITIALIZE_NAMESERVERS );
-        sinfo->aux=sinfo->aux;
+        //sinfo->aux=sinfo->aux;  // <-- HUH? Why would I write such a thing.  Mushrooms?  LSD?
     }
 
     if(res->ai_family == AF_INET)

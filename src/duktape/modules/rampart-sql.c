@@ -498,19 +498,25 @@ static void rp_log_copy_to_errMsg(duk_context *ctx, char *msg)
 
 static int rp_log_error(duk_context *ctx)
 {
-    int pos=ftell(mmsgfh);
-    if(pos>msgbufsz-1)
-        pos=msgbufsz-1;
-
-    if(pos && finfo->errmap[pos-1]=='\n')
-        pos--;
-    finfo->errmap[pos]='\0';
     if(RP_TX_isforked)
-        return 0;
+    {
+        int pos=ftell(mmsgfh);
+        if(pos>msgbufsz-1)
+            pos=msgbufsz-1;
 
+        if(pos && finfo->errmap[pos-1]=='\n')
+            pos--;
+        finfo->errmap[pos]='\0';
+            return 0;
+    }
+    else
+    {
+        int pos = strlen(finfo->errmap);
+        if(pos && finfo->errmap[pos-1]=='\n')
+            finfo->errmap[pos-1]='\0';
+    }
     rp_log_copy_to_errMsg(ctx, finfo->errmap);
-
-    return pos;
+    return (int)finfo->errmap[0];  // 0 if strlen == 0
 }
 
 /* get the expression from a /pattern/ or a "string" */
@@ -533,7 +539,6 @@ static const char *get_exp(duk_context *ctx, duk_idx_t idx)
 
 #define forkwrite(b,c) ({\
     int r=0,ir=0;\
-    dprintf(5,"%s writing %d bytes\n", thisfork?"child":"parent", (int)c);\
     while( (r += (ir=write(finfo->writer, (b)+r, (c)-r))) < (c) ) if(ir<1)break;\
     if(ir<1) {\
         fprintf(stderr, "rampart-sql helper: write failed: '%s' at %d, fd:%d\n",strerror(errno),__LINE__,finfo->writer);\
@@ -546,12 +551,12 @@ static const char *get_exp(duk_context *ctx, duk_idx_t idx)
     int r=0,ir=0;\
     while( (r += (ir=read(finfo->reader, (b)+r, (c)-r))) < (c) ) if(ir<1)break;\
     if(ir==-1) {\
-        fprintf(stderr, "rampart-sql helper: read failed: '%s' at %d\n",strerror(errno),__LINE__);\
+        fprintf(stderr, "rampart-sql helper: read failed from %d: '%s' at %d\n",finfo->reader,strerror(errno),__LINE__);\
         if(thisfork) {fprintf(stderr, "child proc exiting\n");exit(0);}\
     };\
     if(r!=(int)c) {\
         if(errno) \
-            fprintf(stderr, "rampart-sql helper: read failed: '%s' at %d\n",strerror(errno),__LINE__);\
+            fprintf(stderr, "rampart-sql helper: r=%d, read failed from %d: '%s' at %d\n",r,finfo->reader, strerror(errno),__LINE__);\
         if(thisfork) {if(errno) fprintf(stderr, "child proc exiting\n");exit(0);}\
     };\
     r;\
@@ -1469,7 +1474,7 @@ static int child_prep()
         forkwrite(&ret, sizeof(int));
         return 0;
     }
-
+    //printf("%d: texis_prepare(%p, \"%s\")\n", (int)getpid(),tx, sql);
     ret = texis_prepare(tx, sql);
 
     if(forkwrite(&ret, sizeof(int)) == -1)
@@ -1509,7 +1514,9 @@ static int child_open()
 
     user = db + strlen(db) + 1;
     pass = user + strlen(user) + 1;
+
     tx = texis_open((char *)(db), user, pass);
+
 
     if(forkwrite(&tx, sizeof(TEXIS *)) == -1)
         return 0;
@@ -3517,9 +3524,15 @@ void check_parse(char *sql,char *new_sql,char **names,int n_names)
 
 // close resets finfo->errmap
 #define throw_tx_or_log_error_close(ctx,pref,msg,h) do{\
+    rp_log_error(ctx);\
+    if(!isquery) \
+        duk_push_error_object(ctx, DUK_ERR_ERROR, "%s error: %s",pref, msg);\
+    else\
+        duk_push_null(ctx);\
     h_close(h);\
     h=NULL;\
-    throw_tx_or_log_error(ctx,pref,finfo->errmap);\
+    if(!isquery) duk_throw(ctx);\
+    goto end_query;\
 }while(0)
 
 #define throw_or_log_error_old(msg) do{\

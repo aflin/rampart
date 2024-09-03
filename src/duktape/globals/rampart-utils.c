@@ -82,6 +82,21 @@ int execvpe(const char *program, char **argv, char **envp)
     return rc;
 }
 
+#elif defined(__FreeBSD__)
+
+#include <sys/ioctl.h>
+#include <libutil.h>
+// execvpe polyfill
+int execvpe(const char *program, char **argv, char **envp)
+{
+    char **saved = environ;
+    int rc;
+    environ = envp;
+    rc = execvp(program, argv);
+    environ = saved;
+    return rc;
+}
+
 #else // linux
 
 //forkpty
@@ -2738,7 +2753,7 @@ duk_ret_t duk_rp_stat_lstat(duk_context *ctx, int islstat)
 
         if(getcwd(buf, PATH_MAX))
         {
-#ifdef __APPLE__
+#if defined (__APPLE__) || defined(__FreeBSD__)
              dirfd= open(buf, 0);
 #else
              dirfd= open(buf, O_NOATIME|O_PATH);

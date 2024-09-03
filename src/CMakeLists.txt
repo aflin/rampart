@@ -10,6 +10,23 @@ else()
 	message("setting install = ${CMAKE_INSTALL_PREFIX}")
 endif()
 
+execute_process (
+	COMMAND bash -c "which gmake"
+	OUTPUT_VARIABLE MAKE
+)
+
+if (MAKE STREQUAL "")
+execute_process (
+        COMMAND bash -c "which make"
+        OUTPUT_VARIABLE MAKE
+)
+message("gmake NOT FOUND, using ${MAKE}")
+else()
+message("make = ${MAKE}")
+endif()
+
+
+
 set(LIBEVENT_TARGET_DIR ${CMAKE_BINARY_DIR}/extern/libevent)
 set(OPENSSL_TARGET_DIR ${CMAKE_BINARY_DIR}/extern/openssl)
 set(ONIGURUMA_TARGET_DIR ${CMAKE_BINARY_DIR}/extern/oniguruma)
@@ -204,7 +221,7 @@ target_link_libraries(rampart-lmdb
 
 add_custom_command(
 	OUTPUT ${PROJECT_BINARY_DIR}/extern/lmdb/liblmdb.a
-	COMMAND make XCFLAGS=-fPIC
+	COMMAND ${MAKE} XCFLAGS=-fPIC
 	WORKING_DIRECTORY ${PROJECT_BINARY_DIR}/extern/lmdb/
 )
 
@@ -238,6 +255,17 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
 	m
 	${PROJECT_BINARY_DIR}/texis/jansson-2.12/src/jansson-2.12-build/lib/libjansson.a
     )
+elseif(CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
+    target_link_libraries(rampart-sql
+	${PROJECT_BINARY_DIR}/texis/texisapi/libtexisapi.a
+	z
+	${PROJECT_BINARY_DIR}/texis/thirdparty/re2/libre2.a
+	pthread
+	m
+	kvm
+	${PROJECT_BINARY_DIR}/texis/jansson-2.12/src/jansson-2.12-build/lib/libjansson.a
+    )
+
 else()
     target_link_libraries(rampart-sql
 	${PROJECT_BINARY_DIR}/texis/texisapi/libtexisapi.a
@@ -327,12 +355,12 @@ target_include_directories(rampart-server PRIVATE
 
 #add_custom_command(
 #	OUTPUT ${PROJECT_BINARY_DIR}/extern/libdeflate/libdeflate.a
-#	COMMAND make
+#	COMMAND ${MAKE}
 #	COMMAND mkdir -p ${PROJECT_BINARY_DIR}/extern/libdeflate
 #	COMMAND find './' -type f  -perm 0755 -regex '.*[^\.b][^sa][^ht]' -exec mv {} "${PROJECT_BINARY_DIR}/extern/libdeflate" "\;"
 #	COMMAND mv libdeflate.a ${PROJECT_BINARY_DIR}/extern/libdeflate/
 #	COMMAND cp libdeflate.h ${PROJECT_BINARY_DIR}/extern/libdeflate/
-#	COMMAND make clean
+#	COMMAND ${MAKE} clean
 #	WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/extern/libdeflate/
 #)
 
@@ -349,7 +377,7 @@ add_custom_target(cp_libdeflate
 
 add_custom_command(
 	OUTPUT ${PROJECT_BINARY_DIR}/extern/libdeflate/libdeflate.a
-	COMMAND make CFLAGS=${CMAKE_C_FLAGS} CPPFLAGS=${CMAKE_CXX_FLAGS} LDFLAGS=${CMAKE_C_FLAGS}
+	COMMAND ${MAKE} CFLAGS=${CMAKE_C_FLAGS} CPPFLAGS=${CMAKE_CXX_FLAGS} LDFLAGS=${CMAKE_C_FLAGS}
 	WORKING_DIRECTORY ${PROJECT_BINARY_DIR}/extern/libdeflate/
 )
 
@@ -449,8 +477,8 @@ add_custom_target(cp_python
 )
 
 
-set(PYFLAGS "-fPIC ${CMAKE_C_FLAGS}")
-set(PYLDFLAGS "")
+set(PYFLAGS "-I/usr/local/include -fPIC ${CMAKE_C_FLAGS}")
+set(PYLDFLAGS "-L /usr/local/lib")
 set(PYPKG "")
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
@@ -477,7 +505,7 @@ message("Configuration for python build:")
 add_custom_command(
 	OUTPUT ${PYTHON_BIN_DIR}/Makefile
 	DEPENDS rampart-crypto
-	COMMAND bash -c "if [ ! -e ${PYTHON_BIN_DIR}/Makefile ]; then RAMPART_SSL_DIR=${PROJECT_BINARY_DIR}/extern/openssl PKG_CONFIG_PATH=\"${PYPKG}\" LDFLAGS=\"${PYLDFLAGS}\" CFLAGS=\"${PYFLAGS}\" TCLTK_LIBS=\"-ltk -ltcl\" ./configure --enable-optimizations --prefix=\"${PROJECT_BINARY_DIR}/extern/${PYTHON_DIR_NAME}/build\";fi"
+	COMMAND bash -c "if [ ! -e ${PYTHON_BIN_DIR}/Makefile ]; then RAMPART_SSL_DIR=${PROJECT_BINARY_DIR}/extern/openssl PKG_CONFIG_PATH=\"${PYPKG}\" LDFLAGS=\"${PYLDFLAGS}\" CPPFLAGS=\"${PYFLAGS}\" TCLTK_LIBS=\"-ltk -ltcl\" ./configure --enable-optimizations --prefix=\"${PROJECT_BINARY_DIR}/extern/${PYTHON_DIR_NAME}/build\";fi"
 	WORKING_DIRECTORY ${PYTHON_BIN_DIR}
     VERBATIM
 )
@@ -506,9 +534,8 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
 	#TODO: find the real cutoff version for requiring libintl.  And maybe why earlier versions of python
 	#      need it in the first place
 	if (MACOS_VERSION VERSION_LESS "10.12")
-		# the idea here is to make a yosemite x86 compiled binary work with apple arm
-		# homebrew does not build universal libraries, so we need to include the x86 version of libintl here.
-		# libiconv is provided by apple and is universal on apple arm.
+		## NO LONGER DOING UNIVERSAL MAC BUILDS, cuz with python, its
+		## too difficult
 		execute_process(COMMAND brew --prefix gettext OUTPUT_VARIABLE GTXT_PREF OUTPUT_STRIP_TRAILING_WHITESPACE)
 
 		if("${GTXT_PREF}" STREQUAL "")
@@ -527,6 +554,20 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
 			pthread dl util m
 		)
 	endif()
+elseif(CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
+	if(EXISTS "/usr/local/lib/libintl.so")
+		set(GTXT "/usr/local/lib/libintl.so")
+	else()
+                message( FATAL_ERROR "gettext library not found. Try 'pkg install gettext'")
+        endif()
+
+        target_link_libraries(rampart-python PRIVATE
+                ${PYTHON_BIN_DIR}/libpython3.${PYTHON_MINOR}.a
+                pthread dl util m
+                /usr/local/lib/libintl.so
+		"-Wl,-z,notext"
+        )
+
 else()
         target_link_libraries(rampart-python PRIVATE
                 ${PYTHON_BIN_DIR}/libpython3.${PYTHON_MINOR}.a

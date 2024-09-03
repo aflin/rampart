@@ -51,7 +51,12 @@ project(CURL C)
 #link_directories(/usr/local/lib)
 #link_libraries(idn2 ldap z)
 find_library(IDN2 libidn2.a)
+
+if(CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
+link_libraries(${IDN2} z)
+else()
 link_libraries(${IDN2} ldap z)
+endif()
 message(WARNING "the curl cmake build system is poorly maintained. Be aware")
 
 file(STRINGS ${CURL_SOURCE_DIR}/include/curl/curlver.h CURL_VERSION_H_CONTENTS REGEX "#define LIBCURL_VERSION( |_NUM )")

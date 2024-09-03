@@ -218,6 +218,7 @@ configure_file(txcoreconfig.h.in ${CMAKE_BINARY_DIR}/txcoreconfig.h)
 include_directories(${CMAKE_BINARY_DIR})
 
 add_executable(sizes sizes.c ${CMAKE_BINARY_DIR}/txcoreconfig.h)
+target_link_libraries(sizes m)
 target_compile_definitions(sizes PRIVATE EPI_SHARED_EXT="${CMAKE_SHARED_LIBRARY_SUFFIX}")
 
 add_custom_command(
@@ -640,14 +641,23 @@ add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/langNgrams.c
   COMMAND test -e ${CMAKE_CURRENT_BINARY_DIR}/langNgrams.c || ${CMAKE_CURRENT_SOURCE_DIR}/genNgrams.sh ${CMAKE_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR}/langNgrams.c ${LANG_TRAIN}
   DEPENDS ${LANG_TRAIN} ${CMAKE_CURRENT_SOURCE_DIR}/genNgrams.sh genNgrams
 )
+if(CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
+target_link_libraries(genNgrams LINK_PUBLIC texisbuild z kvm Threads::Threads)
+else()
 target_link_libraries(genNgrams LINK_PUBLIC texisbuild z Threads::Threads)
+endif()
 #
 # Anyone else in this project linking to texisapi needs to include generated files
 # and link with jansson and zlib
 #
 target_include_directories(texisbuild PUBLIC ${CMAKE_CURRENT_BINARY_DIR})
 target_link_options(texisbuild PUBLIC -L${JANSSON_RELEASE_DIR})
+if(CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
+target_link_libraries(texisbuild LINK_PUBLIC m z kvm Threads::Threads ${JANSSON_LIBS})
+else()
 target_link_libraries(texisbuild LINK_PUBLIC m z Threads::Threads ${JANSSON_LIBS})
+endif()
+
 #
 # Anyone else in this project linking to texisapi needs to include generated files
 # and link with jansson and zlib

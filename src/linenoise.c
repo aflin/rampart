@@ -863,6 +863,10 @@ static int linenoiseEdit(int stdin_fd, int stdout_fd, char *buf, size_t buflen, 
             return (int)l.len;
         case CTRL_C:     /* ctrl-c */
             /* AJF 2023-07-08 -- added printf and ENODATA if line is empty and ctrl-c pressed */ 
+//freebsd
+#ifndef ENODATA
+#define ENODATA 8088
+#endif
             printf("^C");
             if(l.len)
                 errno = EAGAIN;

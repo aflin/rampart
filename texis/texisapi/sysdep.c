@@ -2335,7 +2335,8 @@ ldone:
       TxPageSz = (size_t)phys;
       memsz = cmpmemsz(phys, pgsz);
     }
-#elif defined(__bsdi__) || defined(__FreeBSD__) || defined(__MACH__)
+//#elif defined(__bsdi__) || defined(__FreeBSD__) || defined(__MACH__)
+#elif defined(CTL_HW) && (defined(HW_MEMSIZE) || defined(HW_PHYSMEM64))
   int           mib[2];                /* BSD[I]/FreeBSD/OSX ----- */
   long          physmem;
   size_t        len;
@@ -2343,7 +2344,11 @@ ldone:
   if (TxMemSz != (size_t)(-1)) return(TxMemSz);
 
   mib[0] = CTL_HW;
-  mib[1] = HW_MEMSIZE;
+#if defined(HW_MEMSIZE)
+  mib[1] = HW_MEMSIZE;            /* OSX. --------------------- */
+#elif defined(HW_PHYSMEM64)
+  mib[1] = HW_PHYSMEM64;          /* NetBSD, OpenBSD. --------- */
+#endif
   len = sizeof(physmem);
   if (sysctl(mib, sizeof(mib)/sizeof(mib[0]), &physmem, &len, NULL, 0) != -1)
     memsz = (physmem >> 20);
@@ -4938,8 +4943,10 @@ size_t  mem[2];
       kvm_close(kd);
       goto err;
     }
-  mem[0] = (size_t)ki[0].kp_eproc.e_vm.vm_map.size;
-  mem[1] = (size_t)ki[0].kp_eproc.e_vm.vm_rssize*TXpagesize();
+//  mem[0] = (size_t)ki[0].kp_eproc.e_vm.vm_map.size;
+    mem[0] = (size_t)ki[0].ki_size;
+//  mem[1] = (size_t)ki[0].kp_eproc.e_vm.vm_rssize*TXpagesize();
+    mem[1] = (size_t)ki[0].ki_rssize*TXpagesize();
   kvm_close(kd);
   return(1);
 #elif defined(HAVE_TASK_INFO)                         /* OS/X ------------------- */

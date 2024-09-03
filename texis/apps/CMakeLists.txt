@@ -20,6 +20,10 @@ if(HAVE_RE2)
 target_link_libraries(re2 PUBLIC Threads::Threads)
 endif(HAVE_RE2)
 #
+if(CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
+  target_link_libraries(texisbuild PUBLIC kvm)
+  target_link_libraries(texisapi PUBLIC kvm)	
+endif()
 
 add_executable(rex ${CMAKE_SOURCE_DIR}/texisapi/rex.c)
 target_compile_definitions(rex PRIVATE TEST=1)

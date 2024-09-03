@@ -38,17 +38,17 @@ duk_context *cpctx=NULL; //copy/paste ctx for thread_put and thread_get
 
 #ifdef RPTHRDEBUG
 
-#define dprintf(...) do{\
+#define rp_debug_printf(...) do{\
     printf("(%d) at %d (thread %d): ", (int)getpid(),__LINE__, get_thread_num());\
     printf(__VA_ARGS__);\
     fflush(stdout);\
 }while(0)
-#define xxdprintf(...) /*nada*/
+#define xxrp_debug_printf(...) /*nada*/
 
 #else
 
-#define dprintf(...) /*nada*/
-#define xxdprintf(...) do{\
+#define rp_debug_printf(...) /*nada*/
+#define xxrp_debug_printf(...) do{\
     printf("(%d) at %d (thread %d): ", (int)getpid(),__LINE__, get_thread_num());\
     printf(__VA_ARGS__);\
     fflush(stdout);\
@@ -78,7 +78,7 @@ pthread_mutex_t thr_list_lock;
 pthread_mutex_t *rp_fork_lock=NULL;
 #define FORKLOCK    do{\
     while( (rp_fork_lock) && pthread_mutex_trylock(rp_fork_lock))\
-    { dprintf("TRYING to get forklock\n");    usleep(1000000);}\
+    { rp_debug_printf("TRYING to get forklock\n");    usleep(1000000);}\
 }while(0)
 
 #define FORKUNLOCK  if(rp_fork_lock) RP_PTUNLOCK(rp_fork_lock)
@@ -243,7 +243,8 @@ int rp_lock(RPTHR_LOCK *thrlock)
     ret = pthread_mutex_lock(thrlock->lock);
     if(ret)
     {
-        LISTUNLOCK;
+        //LISTUNLOCK;
+        FORKUNLOCK;
         return ret;
     }
 
@@ -268,7 +269,9 @@ static int _rp_trylock(RPTHR_LOCK *thrlock, int skip_forklock)
     ret = pthread_mutex_trylock(thrlock->lock);
     if(ret)
     {
-        LISTUNLOCK;
+        //LISTUNLOCK;
+        if(!skip_forklock)
+            FORKUNLOCK;
         return ret;
     }
     LOCKLOCK;
@@ -712,7 +715,7 @@ typedef duk_ret_t (*duk_func)(duk_context *);
 
 //#define cprintf(...)  printf(__VA_ARGS__);
 #define cprintf(...) /* nada */
-//#define cprintf xxdprintf
+//#define cprintf xxrp_debug_printf
 
 // wants [ ..., object_idx, ..., empty_array ]
 
@@ -1806,7 +1809,7 @@ static void remove_from_parent(RPTHR *thr)
     if(!pthr)
         return;
     // several children could be attempting to do this at once
-    dprintf("thread %d has %d children, removing %p\n", (int)pthr->index, pthr->nchildren, thr);
+    rp_debug_printf("thread %d has %d children, removing %p\n", (int)pthr->index, pthr->nchildren, thr);
     for(i=0; i<pthr->nchildren; i++)
     {
         if(lasti > -1)
@@ -1820,14 +1823,14 @@ static void remove_from_parent(RPTHR *thr)
     }
 
     pthr->nchildren--;
-    dprintf("now have %d children\n", pthr->nchildren);
+    rp_debug_printf("now have %d children\n", pthr->nchildren);
 }
 
 void rp_close_thread(RPTHR *thr)
 {
     int i=0;
 
-    dprintf("CLOSE THREAD, thread=%d, base=%p\n", (int)thr->index, thr->base);
+    rp_debug_printf("CLOSE THREAD, thread=%d, base=%p\n", (int)thr->index, thr->base);
     if(! RPTHR_TEST(thr, RPTHR_FLAG_IN_USE))
         return;
 
@@ -1857,7 +1860,7 @@ void rp_close_thread(RPTHR *thr)
     free(thr->children);
     thr->children=NULL;
     thr->nchildren=0;
-    dprintf("STILL CLOSE THREAD\n");
+    rp_debug_printf("STILL CLOSE THREAD\n");
     if(thr->fin_cb && thr->ncb)
     {
 
@@ -1874,7 +1877,7 @@ void rp_close_thread(RPTHR *thr)
         thr->fin_cb_arg=NULL;
         thr->ncb=0;
     }
-    dprintf("CLOSE THREAD -- remove from parent\n");
+    rp_debug_printf("CLOSE THREAD -- remove from parent\n");
     remove_from_parent(thr);
 }
 
@@ -1977,7 +1980,7 @@ RPTHR *rp_new_thread(uint16_t flags, duk_context *ctx)
     ret->flags=flags;
 
     RPTHR_SET(ret, RPTHR_FLAG_IN_USE);
-    dprintf("CREATED THR %d\n", thread_no);
+    rp_debug_printf("CREATED THR %d\n", thread_no);
 
     if(ctx)
         ret->htctx=ctx;
@@ -2009,7 +2012,7 @@ RPTHR *rp_new_thread(uint16_t flags, duk_context *ctx)
         REMALLOC(pthr->children, sizeof(RPTHR*) * pthr->nchildren);
 
         pthr->children[pindex]=ret;
-        dprintf("Added child %d to %d\n", ret->index, pthr->index);
+        rp_debug_printf("Added child %d to %d\n", ret->index, pthr->index);
     }
 
     if(!ret->ctx) {
@@ -2095,12 +2098,12 @@ static void do_parent_callback(evutil_socket_t fd, short events, void* arg)
 
     if(!duk_is_function(ctx, -2))
     {
-        dprintf("failed to get function indexed at %s\n", objkey);
+        rp_debug_printf("failed to get function indexed at %s\n", objkey);
         safeprintstack(ctx);
         RP_THROW(ctx,"CALLBACK FUNCTION INDEX LOOKUP ERROR");
     }
 
-    dprintf("running parent javascript callback\n");
+    rp_debug_printf("running parent javascript callback\n");
 
     if(duk_is_object(ctx, -1))
     {
@@ -2121,7 +2124,7 @@ static void do_parent_callback(evutil_socket_t fd, short events, void* arg)
     RP_EMPTY_STACK(ctx);
 }
 
-#define ev_add(a,b) do{ dprintf("thread.c:%d #%d- adding %p\n",__LINE__, get_thread_num(),(a)); event_add(a,b);}while(0)
+#define ev_add(a,b) do{ rp_debug_printf("thread.c:%d #%d- adding %p\n",__LINE__, get_thread_num(),(a)); event_add(a,b);}while(0)
 
 // execute in thread, from event loop
 static void thread_doevent(evutil_socket_t fd, short events, void* arg)
@@ -2148,7 +2151,7 @@ static void thread_doevent(evutil_socket_t fd, short events, void* arg)
 
     //printf("exec in %s\n", duk_to_string(ctx, -1));
 
-    dprintf("running thread javascript callback, base =%p\n", thr->base);
+    rp_debug_printf("running thread javascript callback, base =%p\n", thr->base);
 
     RPTHR_SET(thr, RPTHR_FLAG_ACTIVE);
     if(duk_pcall(ctx,1) != 0)
@@ -2173,7 +2176,7 @@ static void thread_doevent(evutil_socket_t fd, short events, void* arg)
     //error or results is at idx: -1
 
     //if no parent callback, discard js return value
-    dprintf("checking if we have a callback - %s\n", (info->index == -1? "no": "yes"));
+    rp_debug_printf("checking if we have a callback - %s\n", (info->index == -1? "no": "yes"));
     if(info->index == -1)
         goto end;
 
@@ -2203,7 +2206,7 @@ static void thread_doevent(evutil_socket_t fd, short events, void* arg)
         put_to_clipboard(ctx, -1, key);
     }
 
-    dprintf("inserting event for parent callback for thread %d\n",info->parent_thr->index);
+    rp_debug_printf("inserting event for parent callback for thread %d\n",info->parent_thr->index);
     info->e=event_new(info->parent_thr->base, -1, 0, do_parent_callback, info);
     ev_add(info->e, &immediate);
 
@@ -2231,7 +2234,7 @@ static void finalize_event(evutil_socket_t fd, short events, void* arg)
 
     if( !RPTHR_TEST(thr, RPTHR_FLAG_IN_USE) )
     {
-        dprintf("ALREADY finalized in finalize_event\n");
+        rp_debug_printf("ALREADY finalized in finalize_event\n");
         event_free(*e);
         free(arg);
         return;
@@ -2265,12 +2268,12 @@ static void finalize_event(evutil_socket_t fd, short events, void* arg)
     {
         // check if any child threads left in use
         if(thr->nchildren != 0) {
-            dprintf("still have %d children\n", thr->nchildren);
+            rp_debug_printf("still have %d children\n", thr->nchildren);
             goto goagain;
         }
         event_free(*e);
         free(arg);
-        dprintf("CLOSING thr %d\n", (int)thr->index);
+        rp_debug_printf("CLOSING thr %d\n", (int)thr->index);
         THRLOCK;
         rp_close_thread(thr);
         THRUNLOCK;
@@ -2303,7 +2306,7 @@ int rp_thread_close_children()
                 e=NULL;
                 REMALLOC(e, sizeof(struct event *));
                 *e=event_new(thr->base, -1, 0, finalize_event, e);
-                dprintf("MANUALLY ADDING event finalizer for thread %d, thr=%p, ev=%p, flags=%x\n",thr->index, thr, *e, thr->flags);
+                rp_debug_printf("MANUALLY ADDING event finalizer for thread %d, thr=%p, ev=%p, flags=%x\n",thr->index, thr, *e, thr->flags);
                 ev_add(*e, &immediate);
                 ret=1;
                 //if(!RPTHR_TEST(thr,RPTHR_FLAG_FINAL)) { printf("epic fail thr=%p,  %x\n", thr, thr->flags);exit(1); }
@@ -2341,7 +2344,7 @@ static duk_ret_t finalize_thr(duk_context *ctx)
         ! RPTHR_TEST(thr, RPTHR_FLAG_IN_USE)
     )
     {
-        dprintf("ALREADY finalized in finalizer_thr\n");
+        rp_debug_printf("ALREADY finalized in finalizer_thr\n");
         return 0;
     }
 
@@ -2353,7 +2356,7 @@ static duk_ret_t finalize_thr(duk_context *ctx)
         duk_set_finalizer(ctx, 0);
         REMALLOC(e, sizeof(struct event *));
         *e=event_new(thr->base, -1, 0, finalize_event, e);
-        dprintf("adding closer to base %p\n", thr->base);
+        rp_debug_printf("adding closer to base %p\n", thr->base);
         ev_add(*e, &immediate);
     }
     return 0;
@@ -2469,7 +2472,7 @@ static duk_ret_t loop_insert(duk_context *ctx)
 
     if(thr->parent != curthr) //this might otherwise be fine, but messes up our thread/loop dependencies.
     {
-        dprintf("failed exec, cannot run a thread created outside the current one\n");
+        rp_debug_printf("failed exec, cannot run a thread created outside the current one\n");
         RP_THROW(ctx, "thr.exec: Cannot run a thread created outside the current one.");
     }
     // FIXME: mem leak when forked from a different thread and this one disappears.
@@ -2579,7 +2582,7 @@ static duk_ret_t loop_insert(duk_context *ctx)
     //insert into thread's event loop
     info->e = event_new(thr->base, -1, 0, thread_doevent, info);
     //printf("adding from %s\n", duk_to_string(ctx, tmpidx));
-    dprintf("adding info event(%p) to base(%p)\n",info->e, thr->base);
+    rp_debug_printf("adding info event(%p) to base(%p)\n",info->e, thr->base);
     ev_add(info->e, &timeout);
 
     return 0;
@@ -2642,7 +2645,7 @@ static duk_ret_t new_js_thread(duk_context *ctx)
     thr->base = event_base_new();
     thr->dnsbase=rp_make_dns_base(thr->ctx, thr->base);
     RPTHR_SET(thr, RPTHR_FLAG_BASE);
-    dprintf("BASE NEW\n");
+    rp_debug_printf("BASE NEW\n");
 
     if(keepopen)
         RPTHR_SET(thr, RPTHR_FLAG_KEEP_OPEN);
