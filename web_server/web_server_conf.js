@@ -30,6 +30,10 @@ var conf = {
     /* redir           Bool.   Launch http->https redirect server and set to port 80   */
     //redir:           false,
 
+    /* redirTemp       Bool. If true, and if redir is true or redirPort is set, send a 
+                             302 Moved Temporarily instead of a 301 Moved Permanently   */
+    //redirTemp        false,
+
     /* htmlRoot        String. Root directory from which to serve files   */
     //htmlRoot:        wd + '/html',
 
@@ -68,7 +72,7 @@ var conf = {
     //user:            'nobody',
 
     /* threads         Number. Limit the number of threads used by the server.
-                              Default (-1) is the number of cores on the system   */
+                               Default (-1) is the number of cores on the system   */
     //threads:         -1,
 
     /* secure          Bool.   Whether to use https.  If true sslKeyFile and sslCertFile must be set   */
@@ -197,16 +201,17 @@ if(argv[2] == '--stop' || argv[2]=='stop') {
         console.log(res.error);
         process.exit(1);
     }
-    // if (res.isMonitor) -- we are the monitor and should on nothing else but finish the script
+    // if (res.isMonitor) -- we are the monitor and should do nothing else but finish the script
     //                       so event loop can start and monitor can run its setTimeouts
-
+    // else               -- we just exit.
 } else { 
-    if (argv[2] != '--help' && argv[2] != 'help')
+    if (argv[2] != '-h' && argv[2] != '--help' && argv[2] != 'help')
 	printf("unknown command '%s'\n\n", argv[2]);
-    printf("usage:\n  %s %s [start|stop|restart|status|dump]\n",argv[0], argv[1]);
+    printf("usage:\n  %s %s [start|stop|restart|status|dump|help]\n",argv[0], argv[1]);
     printf("      start   -- start the http(s) server\n");
     printf("      stop    -- stop the http(s) server\n");
     printf("      restart -- stop and restart the http(s) server\n");
     printf("      status  -- show status of server processes\n");
     printf("      dump    -- dump the config object used for server.start()\n");
+    printf("      help    -- show this message\n");
 }

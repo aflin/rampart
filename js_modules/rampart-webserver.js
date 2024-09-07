@@ -8,6 +8,7 @@ var defaultServerConf = function(wd){
         port:           -1,
         redirPort:      -1,
         redir:          false,
+        redirTemp:      false,
         htmlRoot:       wd + '/html',
         appsRoot:       wd + '/apps',
         wsappsRoot:     wd + '/wsapps',
@@ -47,6 +48,8 @@ var defaultQuickServerConf = function(wd){
         ipv6Port:       8088,
         port:           -1,
         redirPort:      -1,
+        redir:          false,
+        redirTemp:      false,
         htmlRoot:       wd + '/',
         appsRoot:       '',
         wsappsRoot:     '',
@@ -86,6 +89,7 @@ var optlist = {
 '--port':           'Number. Set both ipv4 and ipv6 port',
 '--redirPort':      'Number. Launch http->https redirect server and set port',
 '--redir':          'Bool.   Launch http->https redirect server and set to port 80',
+'--redirTemp':      'Bool.   When redirecting, send 302 instead of default 301 for redirect',
 '--htmlRoot':       'String. Root directory from which to serve files',
 '--appsRoot':       'String. Root directory from which to serve apps',
 '--wsappsRoot':     'String. Root directory from which to serve wsapps',
@@ -103,7 +107,9 @@ var optlist = {
 '--sslCertFile':    'String. If https, the ssl/tls cert file location',
 '--secure':         'Bool.   Whether to use https.  If true sslKeyFile and sslCertFile must be set',
 '--developerMode':  'Bool.   Whether script errors result in 500 and return a stack trace.  Otherwise 404',
-'--letsencrypt':    'String. If using letsencrypt, the \'domain.tld\' name for automatic setup of https\n                     (assumes --secure true and looks for \'/etc/letsencrypt/live/domain.tld/\' directory)',
+'--letsencrypt':    'String. If using letsencrypt, the \'domain.tld\' name for automatic setup of https\n'+
+'                     (assumes --secure true and looks for \'/etc/letsencrypt/live/domain.tld/\' directory)\n' +
+'                     (if redir is set, also map ./letsencrypt-wd/.well-known/ --> http://mydom.com/.well-known/)',
 '--rootScripts':    'Bool.   Whether to treat *.js files in htmlRoot as apps (not secure)',
 '--directoryFunc':  'Bool.   Whether to provide a directory listing if no index.html is found',
 '--daemon':         'Bool.   whether to detach from terminal',
@@ -122,7 +128,7 @@ var exit=process.exit, utils=rampart.utils, fprintf=utils.fprintf,
     stat=utils.stat, getType=utils.getType, trim=utils.trim, 
     exec=utils.exec, sleep=utils.sleep, stderr=utils.stderr, 
     dateFmt=utils.dateFmt, shell=utils.shell, realPath=utils.realPath,
-    autoScanDate=utils.autoScanDate;
+    autoScanDate=utils.autoScanDate, mkdir=utils.mkdir;
 
 var wd;
 var iam = trim(exec('whoami').stdout);
@@ -559,16 +565,16 @@ function start(serverConf, dump) {
         return ret;
     }
 
+    global.redircode = serverConf.redirTemp? 302: 301;
+    global.redirHtmlFmt = '<html><body><h1>' + redircode + ' Moved</h1>'+
+                       '<p>Document moved <a href="\%s\">here</a></p></body></html>';
+
     function doredir(req)
     {
         var url = 'https://' + req.path.host.replace(/:\d+/,'') + req.path.path;
         return {
-            html:rampart.utils.sprintf(
-                '<html><body><h1>302 Moved Permanently</h1>'+
-                '<p>Document moved <a href="\%s\">here</a></p></body></html>',
-                url
-            ),
-            status:301,
+            html:rampart.utils.sprintf(redirHtmlFmt, url),
+            status: redircode,
             headers: { 'location': url}
         }
     }
@@ -592,6 +598,31 @@ function start(serverConf, dump) {
                 redirbind.push(serverConf.ipv6Addr + ':' + serverConf.redirPort);
         }
 
+        var redirmap = { '/':  doredir };
+        if (getType(serverConf.letsencrypt)=='String' && serverConf.letsencrypt.length) {
+            var le_wd = serverConf.serverRoot + '/letsencrypt_wd/.well-known';
+            var st = stat(le_wd);
+            if(!st) {
+                try {
+                    mkdir(le_wd);
+                } catch(e) {
+                    console.log("Error making directory for letsencrypt challenge updates:", e.message);
+                }
+                if(iam == 'root') {
+                    try {
+                        utils.chown({user:serverConf.user, path:serverConf.serverRoot + '/letsencrypt_wd'});
+                        utils.chown({user:serverConf.user, path:le_wd});
+                    } catch(e) {
+                        fprintf(stderr,'warn: could chown dir %s to user "%s" - %s\n', le_wd, serverConf.user, e.message);
+                    }
+                }
+
+            } else if (!st.isDirectory) {
+                console.log("Error: "+ serverConf.serverRoot + '/letsencrypt_wd is not a directory');
+            }
+            redirmap["/.well-known/"]=  serverConf.serverRoot + "/letsencrypt_wd/.well-known/";
+        }
+
         var rpid=server.start(
         {
             bind: redirbind,
@@ -605,7 +636,7 @@ function start(serverConf, dump) {
             daemon: true,
             threads: 2,
             directoryFunc: false,
-            map: { '/':  doredir },
+            map: redirmap,
             appendProcTitle: serverConf.appendProcTitle
         });
 
