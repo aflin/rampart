@@ -1,4 +1,41 @@
-v0.2.3
+v0.5.0 (First Beta release)
+    - rampart          Array.includes() -NaN check.
+                       Use babel command line opt.
+                       Babel in REPL
+                       console.js example program fixup
+                       Freebsd initial support.
+    - rampart-redis    Error message provided in callbacks.
+    - rampart-server   Added rampart-webserver.js for easy config and
+                       command line use.
+                       Secured access to html tree only.
+                       appendProcTitle option, default false
+    - rampart-almanac  Initial Version
+    - rampart-lmdb     Upgraded core lib to LMDB 0.9.33
+    - rampart.utils    Added fork and pipe functions.
+                       errorConfig for simplified error messages and error
+                       line printing.
+                       timezone().
+                       autoScanDate().
+                       daemon() - like fork
+                       fopen and fopenBuffer, stdin/out/err redirect.
+                       stringToNumber()
+                       signal names for kill()
+                       printf et al, catch and throw proper error for too
+                       few params.
+    - rampart-sql      connection() instead of init(). connect() shortcut.
+                       query() does not throw.  exec() always throws.
+                       Child processes are now fork/exec model.
+                       Self Destruct added to child if parent dies.
+                       Experimental index update scheduler.
+    - rapart.python    Self Destruct added to child if parent dies.
+    - rampart.thread   getId() and  getCurrentId().
+                       keepOpen option for new rampart.thread().
+                       setCaCert().
+    - rampart.net      Use same method as rampart-curl to find cert.
+    - rampart.curl     If cert not found in standard location, search and
+                       use from other locations automatically.
+                       setCaCert().
+v0.2.3 (unpublished)
     - rampart-thread   Multiple bug fixes for locks and thread race
                        conditions
     - rampart-sql      Added addTables and init({addtables:true});
@@ -7,14 +44,20 @@ v0.2.3
                        Added .destroy() method.  Call duk_gc after x number
                        of documents created (duktape is slow to call
                        finalizer).
-                       Added glob space and quote processing to, e.g. 
+                       Added glob space and quote processing to, e.g.
                            findAttr('title="my \\"awesome\\" title about*");
+                       Added tracking of doc to know if sub-element objects
+                       are valid.
     - rampart          Added Array.prototype.includes().
                        Fixed exec() waitpid rare fail.
                        Fixed repl continue line ... ctrl-c no longer exits.
     - rampart-server   Added simplified api for creating server modules in c.
-                       Fixed module compiling error causing crash, now reporting 
+                       Fixed module compiling error causing crash, now reporting
                        as 500 Server Error.
+    - rampart.thread   Some locking fixes for clipboard.
+                       rampart.thread.onGet() - async listen for clipboard
+                       changes.
+    - rampart-url      Node compat and '+' query fixes.
 
 v0.2.2
     - rampart-gm       Initial unsupported graphicsmagick module.
@@ -52,7 +95,7 @@ v0.2.1
                        stat() - added "readable", "writable", "executable"
                                 "owner", "group" properties to return object.
                        lstat() - "readable", "writable" refer to the link.
-                       queryToObject() - added processing of Object-like params 
+                       queryToObject() - added processing of Object-like params
                        (e.g. ?myvar[mykey]=myval&myvar[mykey2]=myval2).
                        touch() now takes dates and numbers(seconds).
                        exec() now takes options {args: [array,of,args], cd: "/working/dir"}
