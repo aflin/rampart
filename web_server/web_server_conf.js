@@ -89,7 +89,7 @@ var conf = {
 
     /* letsencrypt     String. If using letsencrypt, the 'domain.tld' name for automatic setup of https
                                (sets secure true and looks for '/etc/letsencrypt/live/domain.tld/' directory)   */
-    //letsencrypt:     '',
+    //letsencrypt:     "",
 
     /* rootScripts     Bool.   Whether to treat *.js files in htmlRoot as apps (not secure)   */
     //rootScripts:     false,
@@ -130,9 +130,26 @@ var conf = {
 
 var res, printf=rampart.utils.printf, argv=process.argv, kill=rampart.utils.kill;
 
+
+if (argv[2] == '--letssetup' || argv[2]=='letssetup') {
+    conf.letsencrypt="setup"; //flag we are doing letsencrypt, but don't start https
+    argv[2]="start";
+}
+
+
 // fill in the missing pieces and do some checks
 conf = wserv.parseOptions(conf);
 
+
+function check_conf_err() {
+    if(conf.error)
+    {
+        printf("%s\n", conf.error);
+        process.exit(1);
+    }
+}
+
+//try to stop even if conf errors returned from parseOptions
 if(argv[2] == '--stop' || argv[2]=='stop') {
 
     /* STOP */
@@ -146,6 +163,7 @@ if(argv[2] == '--stop' || argv[2]=='stop') {
 } else if(argv[2] == '--restart' || argv[2]=='restart') {
 
     /* RESTART */
+    check_conf_err();
     res=wserv.stop(conf);
     if(res.error)
         printf("Server is not running or pid file is invalid\n");
@@ -185,6 +203,7 @@ if(argv[2] == '--stop' || argv[2]=='stop') {
 } else if (argv[2] == '--dump' || argv[2]=='dump') {
 
     /* DUMP */
+    check_conf_err();
     res=wserv.dumpConfig(conf);
     printf("%3J\n", res);
     process.exit(0);
@@ -192,6 +211,7 @@ if(argv[2] == '--stop' || argv[2]=='stop') {
 } else if (argv[2] == '--start' || argv[2]=='start' || !argv[2]) {
 
     /* START */
+    check_conf_err();
     res=wserv.start(conf);
 
     if(res.message)
@@ -205,13 +225,17 @@ if(argv[2] == '--stop' || argv[2]=='stop') {
     //                       so event loop can start and monitor can run its setTimeouts
     // else               -- we just exit.
 } else { 
+
+    /* HELP */
     if (argv[2] != '-h' && argv[2] != '--help' && argv[2] != 'help')
 	printf("unknown command '%s'\n\n", argv[2]);
-    printf("usage:\n  %s %s [start|stop|restart|status|dump|help]\n",argv[0], argv[1]);
-    printf("      start   -- start the http(s) server\n");
-    printf("      stop    -- stop the http(s) server\n");
-    printf("      restart -- stop and restart the http(s) server\n");
-    printf("      status  -- show status of server processes\n");
-    printf("      dump    -- dump the config object used for server.start()\n");
-    printf("      help    -- show this message\n");
+    printf("usage:\n  %s %s [start|stop|restart|letssetup|status|dump|help]\n",argv[0], argv[1]);
+    printf("      start     -- start the http(s) server\n");
+    printf("      stop      -- stop the http(s) server\n");
+    printf("      restart   -- stop and restart the http(s) server\n");
+    printf("      letssetup -- start http only to allow letsencrypt verification\n");
+    printf("      status    -- show status of server processes\n");
+    printf("      dump      -- dump the config object used for server.start()\n");
+    printf("      help      -- show this message\n");
+
 }

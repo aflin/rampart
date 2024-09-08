@@ -109,7 +109,9 @@ var optlist = {
 '--developerMode':  'Bool.   Whether script errors result in 500 and return a stack trace.  Otherwise 404',
 '--letsencrypt':    'String. If using letsencrypt, the \'domain.tld\' name for automatic setup of https\n'+
 '                     (assumes --secure true and looks for \'/etc/letsencrypt/live/domain.tld/\' directory)\n' +
-'                     (if redir is set, also map ./letsencrypt-wd/.well-known/ --> http://mydom.com/.well-known/)',
+'                     (if redir is set, also map ./letsencrypt-wd/.well-known/ --> http://mydom.com/.well-known/)\n' +
+'                     (if set to "setup", don\'t start https server, but do map ".well-known/" for http)\n' +
+'                     (sets port:443 unless set otherwise)',
 '--rootScripts':    'Bool.   Whether to treat *.js files in htmlRoot as apps (not secure)',
 '--directoryFunc':  'Bool.   Whether to provide a directory listing if no index.html is found',
 '--daemon':         'Bool.   whether to detach from terminal',
@@ -222,13 +224,24 @@ function firstChecks(serverConf)
 
     if (getType(serverConf.letsencrypt)=='String' && serverConf.letsencrypt.length)
     {
-        serverConf.sslKeyFile='/etc/letsencrypt/live/'+serverConf.letsencrypt+'/privkey.pem';
-        serverConf.sslCertFile='/etc/letsencrypt/live/'+serverConf.letsencrypt+'/fullchain.pem';
-        if(!stat(serverConf.sslKeyFile))
-            return serr(sprintf("could not find file '%s'", serverConf.sslKeyFile)); 
-        if(!stat(serverConf.sslCertFile))
-            return serr(sprintf("could not find file '%s'", serverConf.sslCertFile)); 
-        serverConf.secure=true;
+        if( serverConf.letsencrypt != "setup")
+        {
+            serverConf.sslKeyFile='/etc/letsencrypt/live/'+serverConf.letsencrypt+'/privkey.pem';
+            serverConf.sslCertFile='/etc/letsencrypt/live/'+serverConf.letsencrypt+'/fullchain.pem';
+            if(!stat(serverConf.sslKeyFile))
+                return serr(sprintf("could not find file '%s'", serverConf.sslKeyFile)); 
+            if(!stat(serverConf.sslCertFile))
+                return serr(sprintf("could not find file '%s'", serverConf.sslCertFile)); 
+            serverConf.secure=true;
+
+            // if no explicit port set, and letsencrypt set, assume 443
+            if(serverConf.port < 1 && serverConf.ipPort==8088 && serverConf.ipv6Port==8088)
+            serverConf.port=serverConf.ipPort=serverConf.ipv6Port=443;
+        }
+        else if (serverConf.redirPort == -1)
+        {
+            return serr( "redir or redirPort must be set when letsencrypt==\"setup\"" );
+        }
     }
 
     var bind = [];
@@ -466,11 +479,19 @@ function start(serverConf, dump) {
 
     if(serverConf.shutdown || serverConf.stop) {
         var res = killPid('server');
+        var msg = 'Main Server has been stopped';
         if(!res.success)
-            return {error:'Server is not running or pid file is invalid'}
+            msg = 'Main Server is not running or pid file is invalid';
+
         res=killPid('monitor');
+        if(res.success)
+            msg += '\nMonitor process has been stopped';
+
         res=killPid('redir-server');
-        return {message:'server stopped'};
+        if(res.success)
+            msg += '\nRedirect server has been stopped';
+
+        return {message:msg};
     }
 
 
@@ -479,6 +500,8 @@ function start(serverConf, dump) {
             return serr('Error: script must be started as root to bind to IPv4 port ' + serverConf.ipPort);
         if(serverConf.ipv6Port < 1024)
             return serr('Error: script must be started as root to bind to IPv6 port ' + serverConf.ipv6Port);
+        if(serverConf.redirPort < 1024)
+            return serr('Error: script must be started as root to bind to redirect server port ' + serverConf.redirPort);
     }
 
     var serverpid;
@@ -540,6 +563,8 @@ function start(serverConf, dump) {
     serverConf.map=map;
 
     function start_server(restart){
+        if(serverConf.letsencrypt=="setup")
+            return {};
 
         //set global serverConf for app/*.js and wsapp/*.js scripts
         global.serverConf=serverConf;
@@ -579,7 +604,11 @@ function start(serverConf, dump) {
         }
     }
 
-    if( (!serverConf.daemon || !serverConf.secure) && serverConf.fullServer==1 && serverConf.redirPort!=-1){
+    if( (!serverConf.daemon || !serverConf.secure) && 
+        serverConf.fullServer==1 && 
+        serverConf.redirPort!=-1 &&
+        serverConf.letsencrypt!="setup")
+    {
         return serr('options --redir[Port] requires --daemon and --secure');
     }
 
