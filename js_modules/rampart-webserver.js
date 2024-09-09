@@ -35,6 +35,7 @@ var defaultServerConf = function(wd){
         connectTimeout: 20,
         quickserver:    false,
         appendProcTitle:false,
+        startFunc:      false,
         serverRoot:     wd
     }
 }
@@ -76,6 +77,7 @@ var defaultQuickServerConf = function(wd){
         connectTimeout: 20,
         quickserver:    true,
         appendProcTitle:false,
+        startFunc:      false,
         serverRoot:     wd
     }
 }

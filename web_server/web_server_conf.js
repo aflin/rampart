@@ -125,6 +125,15 @@ var conf = {
     /* appendProcTitle Bool.  Whether to append ip:port to process name as seen in ps */
     //appendProcTitle: false,
 
+    /* startFunc       Bool/Obj/Func.  A function to run at the beginning of each JavaScript function
+                       e.g. - {module: wd + '/apps/start.js'} or function(req) { .. do something .. }
+                            - undefined, null or false to disable
+                       The function, like all server callback function takes req, which if altered
+                       will be reflected in the call of the normal callback for the requested page.
+                       Returning false will skip the normal callback and send a 404
+                       Returning an object (ie {html:myhtml}) will skip the normal callback and send that content  */
+    //startFunc:       false,
+
     serverRoot:       wd,
 }
 
