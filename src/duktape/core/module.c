@@ -231,9 +231,12 @@ static RPPATH resolve_id(duk_context *ctx, const char *request_id)
 {
     char *id = NULL;
     int module_loader_idx;
-    RPPATH rppath;
+    RPPATH rppath={0};
     size_t extlen=0;
     const char *modpath=NULL;
+
+    if(!request_id)	
+        return rppath;
 
     if(duk_rp_push_current_module(ctx))
     {
@@ -316,7 +319,7 @@ static duk_ret_t _duk_resolve(duk_context *ctx, const char *name)
     errno=0;
 
     //no need to keep checking babel src over and over
-    if(strcmp(fn,"@babel")==0)
+    if(fn && strcmp(fn,"@babel")==0)
     {
         if(duk_get_prop_string(ctx, module_id_map_idx, "@babel"))
             return 1;
@@ -329,7 +332,7 @@ static duk_ret_t _duk_resolve(duk_context *ctx, const char *name)
     if(!strlen(rppath.path))
     {
         if(!name)
-            RP_THROW(ctx, "Could not resolve module id %s: %s\n", duk_get_string(ctx, 0), strerror(errno));
+            RP_THROW(ctx, "Could not resolve module id %s: %s\n", duk_get_string(ctx, 0), errno? strerror(errno):"");
         else
             return 0;
     }
