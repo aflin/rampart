@@ -1986,7 +1986,8 @@ static void rp_sendfile(evhtp_request_t *req, char *fn, int haveCT, struct stat 
         // make a new request object
         duk_push_object(ctx);
         int has_content = push_req_vars(dhs_wrapfunc);
-
+        duk_idx_t req_idx = duk_get_top_index(ctx);
+        duk_dup(ctx, -1);
         int wrapret = run_wrapfunc(dhs_wrapfunc, -1, has_content, WRAP_TYPE_FILE);
 
         if( wrapret == WRAP_RET_HAVECONT )
@@ -2003,6 +2004,10 @@ static void rp_sendfile(evhtp_request_t *req, char *fn, int haveCT, struct stat 
             RP_EMPTY_STACK(ctx);
             return;
         }
+        // use req.fsPath, which might have been reset in wrapFunc.
+        duk_get_prop_string(ctx, req_idx, "fsPath");
+        fn = (char *) duk_get_string(ctx, -1);
+        filestat=NULL;
         RP_EMPTY_STACK(ctx);
     }
 
@@ -2040,6 +2045,7 @@ static void rp_sendfile(evhtp_request_t *req, char *fn, int haveCT, struct stat 
         send404(req);
         return;
     }
+
     // the path name cannot have /.gzipcache/ in it.
     if(strstr(fn, "/.gzipcache/"))
     {
