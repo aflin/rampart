@@ -151,12 +151,16 @@ DHS
     size_t bufsz;           // size of aux buffer.
     size_t bufpos;          // end position of data in aux buffer.
     uint8_t freeme :1,      // whether this is a temporary struct that needs to be freed after use.
-            skip_start: 1;  // for 404, 500 etc, don't run the start script
+            skip_wrap: 1;  // for 404, 500 etc, don't run the start script
 };
 
-DHS *dhs404 = NULL;
-DHS *dhs_dirlist = NULL;
-DHS *dhs_startfunc = NULL;
+static DHS *dhs404 = NULL;
+static DHS *dhs_dirlist = NULL;
+static DHS *dhs_wrapfunc_template = NULL;
+static DHS **dhs_wrapfuncs = NULL;
+static int wrap_run_on_start=0;
+static int wrap_run_on_end=0;
+static int wrap_run_on_file=0;
 
 static DHS *new_dhs(duk_context *ctx, int idx)
 {
@@ -178,15 +182,18 @@ static DHS *new_dhs(duk_context *ctx, int idx)
     dhs->bufsz = 0;
     dhs->bufpos = 0;
     dhs->freeme = 0;
-    dhs->skip_start = 0;
+    dhs->skip_wrap = 0;
     return (dhs);
 }
 
+/* malloc, clone and steal aux buffer */
 static DHS *clone_dhs(DHS *indhs)
 {
     DHS *dhs = NULL;
 
     REMALLOC(dhs, sizeof(DHS));
+    memcpy (dhs, indhs, sizeof(DHS));
+    /*
     dhs->func_idx =       indhs->func_idx;
     dhs->module=          indhs->module;
     dhs->module_name=     indhs->module_name;
@@ -195,7 +202,6 @@ static DHS *clone_dhs(DHS *indhs)
     dhs->aux =            indhs->aux;
     dhs->reqpath=         indhs->reqpath;
     dhs->pathlen=         indhs->pathlen;
-    /* afaik there is no TIME_T_MAX */
     dhs->timeout.tv_sec = indhs->timeout.tv_sec;
     dhs->timeout.tv_usec= indhs->timeout.tv_usec;
     dhs->auxbuf =         indhs->auxbuf;
@@ -203,6 +209,7 @@ static DHS *clone_dhs(DHS *indhs)
 
     dhs->bufsz =          indhs->bufsz;
     dhs->bufpos =         indhs->bufpos;
+    */
     dhs->freeme =         1;
 
     indhs->auxbuf=NULL;
@@ -1460,7 +1467,7 @@ static int push_req_vars(DHS *dhs)
     /* or the error message set to 404 if developer_mode == 0 */
     if(dhs->aux)
     {
-        if(!strncmp(dhs->aux,"500",3))
+        if( strlen(dhs->aux) > 2 && !strncmp(dhs->aux,"500",3))
         {
             putval("errMsg", (const char *) (dhs->aux)+3);
         }
@@ -1717,12 +1724,11 @@ char msg500[] = "<html><head><title>500 Internal Server Error</title></head><bod
 
 static void http_callback(evhtp_request_t *req, void *arg);
 
-
 static void send404(evhtp_request_t *req)
 {
     if (dhs404)
     {
-        dhs404->skip_start=1;
+        dhs404->skip_wrap=1;
         http_callback(req, (void *) dhs404);
         return;
     }
@@ -1762,7 +1768,7 @@ static void send500(evhtp_request_t *req, char *msg)
         strcpy(s, "500");
         strcat(s, msg);
         newdhs.aux=s;
-        newdhs.skip_start=1;
+        newdhs.skip_wrap=1;
         http_callback(req, &newdhs);
         free(s);
         dhs404->aux=NULL;
@@ -1845,6 +1851,75 @@ static int rp_evbuffer_add_file(struct evbuffer *outbuf, int fd, ev_off_t offset
     return 0;
 }
 
+/* wrap function */
+static int getfunction(DHS *dhs);
+static void clean_reqobj(duk_context *ctx, int has_content, int keepreq);
+static evhtp_res obj_to_buffer(DHS *dhs);
+static int getmod(DHS *dhs);
+
+#define WRAP_TYPE_START 0
+#define WRAP_TYPE_END   1
+#define WRAP_TYPE_FILE  2
+
+static const char *wrap_type_str[] = {
+    "start",
+    "end",
+    "file"
+};
+
+#define WRAP_RET_CONTINUE 0
+#define WRAP_RET_SENTCONT 1
+#define WRAP_RET_HAVECONT 2
+// run wrap func, return one of above.
+static int run_wrapfunc(DHS *dhs_wrapfunc, duk_idx_t req_idx, int has_content, int wrap_type)
+{
+    duk_context *ctx = dhs_wrapfunc->ctx;
+    evhtp_request_t *req = dhs_wrapfunc->req;
+    int eno, ret = WRAP_RET_CONTINUE;
+
+    req_idx = duk_normalize_index(ctx, req_idx);
+    if(!getfunction(dhs_wrapfunc))
+        fprintf(stderr, "internal error finding startfunc at %s %d\n", __FILE__,__LINE__);
+    else
+    {
+        duk_dup(ctx, req_idx); //duplicate req
+        duk_push_string(ctx, wrap_type_str[wrap_type]);
+        duk_put_prop_string(ctx, -2, "wrapType");
+
+        /* execute function "mywrapfunc(req);" */
+        if ((eno = duk_pcall(ctx, 1)))
+        {   //error in mywrapfunc()
+            evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Type", "text/html", 0, 0));
+
+            const char *errmsg = rp_push_error(ctx, -1, "error in wrapFunc:", 0);
+            printerr("%s\n", errmsg);
+
+            send500(req, (char*)duk_safe_to_string(ctx, -1));
+            clean_reqobj(ctx, has_content, req->cb_has_websock);
+        }
+        else
+        {
+            //return value on top of stack
+            if (duk_is_boolean(ctx,-1) && !duk_get_boolean(ctx,-1))
+            {
+                //if false, send 404;
+                duk_del_prop_string(ctx, req_idx, "wrapType");
+                send404(req);
+                return WRAP_RET_SENTCONT;
+            }
+            else if (duk_is_object(ctx,-1))
+            {
+                ret = WRAP_RET_HAVECONT;
+                // this version adds new obj to top of stack
+            }
+            // else return WRAP_RET_CONTINUE for true, undefined or whatever else
+        }
+        duk_del_prop_string(ctx, req_idx, "wrapType");
+    }
+    return ret;
+}
+
+
 static int compress_level = 1;
 static char *_compressibles[] =
 {
@@ -1866,7 +1941,7 @@ static char *cachedir = ".gzipcache/";
       haveCT - non-zero if content-type is already set
       filestat - if already called stat, include here, otherwise set to NULL
 */
-static void rp_sendfile(evhtp_request_t *req, char *fn, int haveCT, struct stat *filestat)
+static void rp_sendfile(evhtp_request_t *req, char *fn, int haveCT, struct stat *filestat, int is_fileserver)
 {
     int fd = -1;
     ev_off_t beg = 0, len = -1;
@@ -1878,7 +1953,60 @@ static void rp_sendfile(evhtp_request_t *req, char *fn, int haveCT, struct stat 
     char *ext=NULL;
     char gzipfile[ strlen(fn) + strlen(cachedir) + 4 ];
     char *p, slen[64];
+    DHS *dhs_wrapfunc=NULL;
 
+    if(is_fileserver && wrap_run_on_file && dhs_wrapfuncs)
+    {
+        duk_context *ctx = get_current_thread()->ctx;
+        dhs_wrapfunc = dhs_wrapfuncs[thread_local_server_thread_num];
+        dhs_wrapfunc->ctx = ctx;
+        dhs_wrapfunc->req = req;
+        dhs_wrapfunc->aux = fn;
+
+        RP_EMPTY_STACK(ctx);
+        duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("thread_funcstash")); //this should be at index 0;
+
+        if(dhs_wrapfunc->module==MODULE_FILE)
+        {
+            int gmres=0;
+            gmres=getmod(dhs_wrapfunc);
+
+            if(gmres==-1) //script error
+            {
+                RP_EMPTY_STACK(ctx);
+                return;
+            }
+            else if (gmres == 0)
+            {
+                RP_EMPTY_STACK(ctx);
+                goto cont_file;
+            }
+        }
+
+        // make a new request object
+        duk_push_object(ctx);
+        int has_content = push_req_vars(dhs_wrapfunc);
+
+        int wrapret = run_wrapfunc(dhs_wrapfunc, -1, has_content, WRAP_TYPE_FILE);
+
+        if( wrapret == WRAP_RET_HAVECONT )
+        {
+            //we have alternate content to send on top of stack; do so below skipping normal callback
+            evhtp_res res = obj_to_buffer(dhs_wrapfunc);
+            sendresp(req, res, 0);
+            RP_EMPTY_STACK(ctx);
+            return;
+        }
+        else if (wrapret == WRAP_RET_SENTCONT )
+        {
+            //we already sent a 500, 404 or whatever, skip everything else
+            RP_EMPTY_STACK(ctx);
+            return;
+        }
+        RP_EMPTY_STACK(ctx);
+    }
+
+    cont_file:
     if (compressibles)
     {
         /* turn /my/path/to/file.html into /my/path/to/.gzipcache/file.html.gz */
@@ -2194,10 +2322,22 @@ static int safepath(char *path_in) {
     }
 } 
 
+static evthr_t *get_request_thr(evhtp_request_t *request)
+{
+    evhtp_connection_t *htpconn;
+
+    htpconn = evhtp_request_get_connection(request);
+
+    return htpconn->thread;
+}
+
 static void fileserver(evhtp_request_t *req, void *arg)
 {
     DHMAP *map = (DHMAP *)arg;
     evhtp_path_t *path = req->uri->path;
+    evthr_t *thread = get_request_thr(req);
+
+    thread_local_server_thread_num = *((int *)evthr_get_aux(thread));
 
     if(safepath(path->full) == -1)
     {
@@ -2258,11 +2398,12 @@ static void fileserver(evhtp_request_t *req, void *arg)
         strcpy(&fn[strlen(map->val)], s + strlen(map->key) +1);
 
         free(s);
+
         if (stat(fn, &sb) == -1)
         {
             //need to send to rp_sendfile to remove any cached gz files
             if (compressibles)
-                rp_sendfile(req, fn, 0, NULL);
+                rp_sendfile(req, fn, 0, NULL, 1);
             else
                 send404(req);
 
@@ -2279,7 +2420,7 @@ static void fileserver(evhtp_request_t *req, void *arg)
                 evhtp_headers_add_header(req->headers_out, evhtp_header_new(map->hkeys[i], map->hvals[i], 0, 0));
             }
 
-            rp_sendfile(req, fn, 0, &sb);
+            rp_sendfile(req, fn, 0, &sb, 1);
         }
         else if (mode == S_IFDIR)
         {
@@ -2299,17 +2440,15 @@ static void fileserver(evhtp_request_t *req, void *arg)
             strcat(fnindex, "index.html");
             if (stat(fnindex, &sb) == -1)
             {
-                /* TODO: add dir listing and
-                   setting to forbid dir listing */
                 /* try index.htm */
                 fnindex[strlen(fnindex) - 1] = '\0';
                 if (stat(fnindex, &sb) == -1)
                     dirlist(req, fn);
                 else
-                    rp_sendfile(req, fnindex, 0, &sb);
+                    rp_sendfile(req, fnindex, 0, &sb, 1);
             }
             else
-                rp_sendfile(req, fnindex, 0, &sb);
+                rp_sendfile(req, fnindex, 0, &sb, 1);
         }
         else
             send404(req);
@@ -2662,7 +2801,7 @@ static evhtp_res obj_to_buffer(DHS *dhs)
                 }
                 else
                 {
-                    rp_sendfile(dhs->req, (char *)d+1, 1, NULL);
+                    rp_sendfile(dhs->req, (char *)d+1, 1, NULL, 0);
                     return (0);
                 }
             }
@@ -2919,15 +3058,6 @@ static void copy_mod_func(duk_context *ctx, duk_context *tctx, duk_idx_t idx)
 }
 
 
-static evthr_t *get_request_thr(evhtp_request_t *request)
-{
-    evhtp_connection_t *htpconn;
-
-    htpconn = evhtp_request_get_connection(request);
-
-    return htpconn->thread;
-}
-
 /* struct to pass to http_dothread
    containing all relevant vars */
 #define DHR struct duk_http_req_s
@@ -2939,6 +3069,7 @@ DHR
     pthread_cond_t cond;
     int have_timeout;
     int thread_num;  //to transfer thread_local_thread_num to sub_pthread (which is still the same rpthread)
+    int server_thread_num; // same for thread_local_server_thread_num
 #ifdef RP_TIMEO_DEBUG
     pthread_t par;
 #endif
@@ -2983,8 +3114,8 @@ static int getfunction(DHS *dhs){
     //printf("in getfunction() duk_get_prop_index(ctx, 0, %d)\n", (int) dhs->func_idx);
     //safeprettyprintstack(ctx);
     if( !duk_is_function(ctx, -1) ) {
-    //printf("duk_get_prop_string(ctx, -1, '%s') -- at stack:\n", dhs->module_name);
-    //prettyprintstack(ctx);
+        //printf("duk_get_prop_string(ctx, -1, '%s') -- at stack:\n", dhs->module_name);
+        //prettyprintstack(ctx);
         duk_get_prop_string(ctx, -1, dhs->module_name);
         duk_remove(ctx, -2); /* the module object */
         if(!duk_is_function(ctx, -1)) {
@@ -3254,7 +3385,7 @@ static duk_ret_t send_chunk_chunkend(duk_context *ctx, int end) {
                     attachfile(dhs->req, (char *)d+1);
                 }
                 else
-                    rp_sendfile(dhs->req, (char *)d+1, 1, NULL);
+                    rp_sendfile(dhs->req, (char *)d+1, 1, NULL, 0);
 
                 evhtp_send_reply_chunk(req, dhs->req->buffer_out);
                 dhs->freeme=1;
@@ -3326,7 +3457,7 @@ int setdhs(void *arg, int is_post)
     /* chunkp with dhs->ctx and dhs->req  may be invalid, if freed
        in chunk_finalize so we need to get our ctx from the source   */
     ctx = server_thread[thread_local_server_thread_num]->ctx;
-//printf("got ctx from tno = %d\n", thread_local_server_thread_num);
+    //printf("got ctx from tno = %d\n", thread_local_server_thread_num);
     /* check that chunkp is valid.  If temp reference to
        saved js req is gone, then it was freed in chunk_finalize   */
     duk_push_global_object(ctx);
@@ -3624,6 +3755,8 @@ static duk_ret_t defer_reply(duk_context *ctx)
     return 0;
 }
 
+
+
 static void *http_dothread(void *arg)
 {
     DHR *dhr = (DHR *)arg;
@@ -3632,15 +3765,28 @@ static void *http_dothread(void *arg)
     duk_context *ctx=dhs->ctx;
     evhtp_res res = 200;
     int eno, has_content=-1;
+    duk_idx_t req_idx, func_idx, reply_idx=-1;
+    DHS *dhs_wrapfunc=NULL;
 
-    // in a different pthread, but same rpthread
+    // in a different pthread, but same rpthread and thread_local_thread_num is thread local
     set_thread_num(dhr->thread_num);
+
+    // same for server thread number
+    thread_local_server_thread_num = dhr->server_thread_num;
 
 #ifdef RP_TIMEO_DEBUG
     pthread_t x = dhr->par;
 #endif
     if (dhr->have_timeout)
         pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
+
+    /* get the wrapfunc for this thread, if exists */
+    if(dhs_wrapfuncs)
+    {
+        dhs_wrapfunc = dhs_wrapfuncs[dhr->server_thread_num];
+        dhs_wrapfunc->ctx = ctx;
+        dhs_wrapfunc->req=req;
+    }
 
     /* copy function ref to top of stack */
     if(!getfunction(dhs))
@@ -3655,6 +3801,8 @@ static void *http_dothread(void *arg)
             RP_PTUNLOCK(&(dhr->lock));
         return NULL;
     };
+
+    func_idx=duk_get_top_index(ctx);
 
     /* populate object with details from client */
     if(req->cb_has_websock)
@@ -3699,71 +3847,33 @@ static void *http_dothread(void *arg)
     }
 
     //put a copy out of the way for a moment
-    duk_dup(ctx,-1);
+    req_idx=duk_get_top_index(ctx);
+    duk_dup(ctx,req_idx);
     duk_put_global_string(ctx, DUK_HIDDEN_SYMBOL("reqobj"));
 
-    // run startfunc if exists and we are not a 404
-
-    if(dhs_startfunc && !dhs->skip_start)
+    // run startfunc if exists and we are not in the middle of a 404
+    if(dhs_wrapfunc && wrap_run_on_start && !dhs->skip_wrap)
     {
-        if(!getfunction(dhs_startfunc))
-            fprintf(stderr, "internal error finding startfunc at %s %d\n", __FILE__,__LINE__);
-        else
+        int wrapret = run_wrapfunc(dhs_wrapfunc, req_idx, has_content, WRAP_TYPE_START);
+        if( wrapret != WRAP_RET_CONTINUE && dhr->have_timeout)
         {
-            duk_dup(ctx, -2); //duplicate req
-            /* execute function "myfunc({object});" */
-            if ((eno = duk_pcall(ctx, 1)))
-            {
-                if (dhr->have_timeout)
-                {
-                    RP_PTLOCK(&(dhr->lock));
-                    pthread_cond_signal(&(dhr->cond));
-                }
-
-                evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Type", "text/html", 0, 0));
-
-                const char *errmsg = rp_push_error(ctx, -1, "error in startFunc:", 0);
-                printerr("%s\n", errmsg);
-                if (!req->cb_has_websock)
-                    send500(req, (char*)duk_safe_to_string(ctx, -1));
-
-                if (dhr->have_timeout)
-                    RP_PTUNLOCK(&(dhr->lock));
-
-                clean_reqobj(ctx, has_content, req->cb_has_websock);
-                return NULL;
-            }
-
-            //return value on top of stack
-            if (duk_is_boolean(ctx,-1) && !duk_get_boolean(ctx,-1))
-            {
-                //if false, send 404;
-                if (dhr->have_timeout)
-                {
-                    RP_PTLOCK(&(dhr->lock));
-                    pthread_cond_signal(&(dhr->cond));
-                    RP_PTUNLOCK(&(dhr->lock));
-                }
-                send404(req);
-                return NULL;
-            }
-            else if (duk_is_object(ctx,-1))
-            {
-                //if object, use it to construct page and skip the call below
-                if (dhr->have_timeout)
-                {
-                    RP_PTLOCK(&(dhr->lock));
-                    pthread_cond_signal(&(dhr->cond));
-                    RP_PTUNLOCK(&(dhr->lock));
-                }
-                goto send_top;
-            }
-            else
-                duk_pop(ctx); // not true or an object, just proceed.
+            RP_PTLOCK(&(dhr->lock));
+            pthread_cond_signal(&(dhr->cond));
+            RP_PTUNLOCK(&(dhr->lock));
         }
+        if( wrapret == WRAP_RET_HAVECONT )
+        {
+            //we have alternate content to send on top of stack; do so below skipping normal callback
+            goto wrap_end;
+        }
+        else if (wrapret == WRAP_RET_SENTCONT )
+            //we already sent a 500, 404 or whatever, skip everything else
+            return NULL;
     }
 
     /* execute function "myfunc({object});" */
+    duk_dup(ctx,func_idx);
+    duk_dup(ctx, req_idx);
     if ((eno = duk_pcall(ctx, 1)))
     {
         if (dhr->have_timeout)
@@ -3787,10 +3897,13 @@ static void *http_dothread(void *arg)
         clean_reqobj(ctx, has_content, req->cb_has_websock);
         return NULL;
     }
+
+    reply_idx = duk_get_top_index(ctx);
+
     if (dhr->have_timeout)
     {
-        debugf("0x%x, LOCKING in thread_cb\n", (int)x);
-        fflush(stdout);
+        //debugf("0x%x, LOCKING in thread_cb\n", (int)x);
+        //fflush(stdout);
         RP_PTLOCK(&(dhr->lock));
         pthread_cond_signal(&(dhr->cond));
     }
@@ -3800,6 +3913,8 @@ static void *http_dothread(void *arg)
     {
         return NULL;
     }
+
+    wrap_end:
 
     if(!req->cb_has_websock)
     {
@@ -3816,7 +3931,33 @@ static void *http_dothread(void *arg)
             duk_pull(ctx, -2);
             duk_put_prop_string(ctx, -2, "text");
         }
+
+        if(dhs_wrapfunc && wrap_run_on_end && !dhs->skip_wrap)
+        {
+            int wrapret;
+
+            duk_dup(ctx, -1);
+            // put it on req as "reply"
+            duk_put_prop_string(ctx, req_idx, "reply");
+
+            wrapret = run_wrapfunc(dhs_wrapfunc, req_idx, -1, WRAP_TYPE_END);
+
+            if ( wrapret == WRAP_RET_SENTCONT )
+            {
+                //duk_del_prop_string(ctx, req_idx, "reply");
+                //we already sent a 500, 404 or whatever, skip everything else
+                if (dhr->have_timeout)
+                    RP_PTUNLOCK(&(dhr->lock));
+                return NULL;
+            }
+            duk_del_prop_string(ctx, req_idx, "reply");
+            if ( wrapret == WRAP_RET_HAVECONT)
+                goto send_top;
+        }
     }
+
+
+    duk_dup(ctx, reply_idx);
 
     send_top:
 
@@ -3828,7 +3969,7 @@ static void *http_dothread(void *arg)
 
             if(duk_is_function(ctx, -1))
             {
-                duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("reqobj"));
+                duk_dup(ctx,req_idx);
                 duk_rp_insert_timeout(ctx, 0, "server_defer", NULL, NULL, -2, -1, 0);
                 duk_pop_2(ctx);
                 got_func=1;
@@ -3850,7 +3991,7 @@ static void *http_dothread(void *arg)
 
                 duk_pop_2(ctx); //boolean 'defer':true & return val from js callback
 
-                duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("reqobj"));
+                duk_dup(ctx,req_idx);
                 //deferp->this_heap_ptr = duk_get_heapptr(ctx, -1);
                 duk_push_c_function(ctx, defer_reply, 1);
                 duk_put_prop_string(ctx, -2, "reply");
@@ -3932,14 +4073,13 @@ static void *http_dothread(void *arg)
             evhtp_send_reply_chunk(req, dhs->req->buffer_out);
         }
     }
-    else
-    if (res)
+    else if (res)
         sendresp(req, res, 0);
 
-    duk_set_top(ctx, 0); // reset stack
 
     debugf("0x%x, UNLOCKING in thread_cb\n", (int)x);
 //    fflush(stdout);
+
     if (dhr->have_timeout)
         RP_PTUNLOCK(&(dhr->lock));
 
@@ -3952,11 +4092,12 @@ static void *http_dothread(void *arg)
         // we need the global "reqobj" gone. but we need to save the reference to it in a unique spot
         // until rp_chunk_callback, otherwise the finalizer will be called.  We can remove post transaction.
         sprintf(reqobj_tempname,"\xFFreq_%p", chunkp); //use the chunkp pointer as an index for the JS req
-        duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("reqobj"));
+        duk_dup(ctx, req_idx);
         duk_put_prop_string(ctx, -2, reqobj_tempname);
-        duk_del_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("reqobj"));
         duk_pop(ctx);
     }
+
+    duk_set_top(ctx, 0); // reset stack
 
     return NULL;
 }
@@ -4042,10 +4183,13 @@ http_thread_callback(evhtp_request_t *req, void *arg, int thrno)
     // will enter different pthread, but same rpthread
     // so save rpthread id info and reapply in new pthread
     dhr->thread_num=get_thread_num();
+    // same for server thread number
+    dhr->server_thread_num = thread_local_server_thread_num;
 
 #ifdef RP_TIMEO_DEBUG
     dhr->par = x;
 #endif
+
     /* if no timeout, not necessary to thread out the callback */
     if (req->websock || dhs->timeout.tv_sec == RP_TIME_T_FOREVER)
     {
@@ -4199,7 +4343,6 @@ static int getmod(DHS *dhs)
             //printf("%d >= %d?",(int)lmtime,(int)sb.st_mtime);
             if(lmtime>=sb.st_mtime)
             {
-                //printf("  Yes\n");
                 duk_pop_2(ctx); //the module from duk_get_prop_string(ctx, -1, modname) and duk_get_prop_index(ctx, 0, (duk_uarridx_t) idx);
                 return 1; // it is there and up to date
             }
@@ -4302,7 +4445,7 @@ static int getmod_path(DHS *dhs)
     duk_get_prop_index(ctx, 0, (duk_uarridx_t)idx);
     duk_get_prop_string(dhs->ctx,-1,"modulePath");
     modpath=duk_get_string(dhs->ctx,-1);
-//printf("modpath=%s, path=%s\n", modpath, path->full);
+    //printf("modpath=%s, path=%s\n", modpath, path->full);
     mplen=strlen(modpath);
     duk_pop(ctx);
     if(stat(modpath, &pathstat)== -1)
@@ -4318,16 +4461,16 @@ static int getmod_path(DHS *dhs)
         char subpath[ strlen( (path->full) + dhs->pathlen -1 ) + 1 ];
 
         strcpy(modname,modpath);
-//printf("1 modname=%s\n", modname);
+        //printf("1 modname=%s\n", modname);
 
         if( *(modname+strlen(modname)-1)=='/' )
             *(modname+strlen(modname)-1)='\0';
-//printf("pathlen=%d modpath=%s modname=%s\n",dhs->pathlen,modpath,modname);
+        //printf("pathlen=%d modpath=%s modname=%s\n",dhs->pathlen,modpath,modname);
 
 
         strcpy(subpath, (path->full) + dhs->pathlen -1);
 
-//printf("1 subpath=%s\n", (path->full) + dhs->pathlen -1);
+        //printf("1 subpath=%s\n", (path->full) + dhs->pathlen -1);
 
         if(subpath[strlen(subpath)-1] == '/')
             subpath[strlen(subpath)-1] = '\0';
@@ -4339,16 +4482,16 @@ static int getmod_path(DHS *dhs)
             s=strrchr(s,'.');
             if(s) *s='\0';
         }
-//printf("2 subpath=%s\n", (path->full) + dhs->pathlen -1);
+        //printf("2 subpath=%s\n", (path->full) + dhs->pathlen -1);
         strcat(modname, subpath);
 
-//printf("3 modname=%s\n", modname);
+        //printf("3 modname=%s\n", modname);
 
         strcpy(tm, modname);
 
         /* search in object, will be found was found before in
            the mod search below                               */
-//printf("looking for %s\n",tm);
+        //printf("looking for %s\n",tm);
         if(!duk_get_prop_string(ctx, -1, tm))
         {
             duk_pop(ctx);
@@ -4366,7 +4509,7 @@ static int getmod_path(DHS *dhs)
                     break;
                 }
 
-//printf("looking for %s\n",tm);
+                //printf("looking for %s\n",tm);
                 if(duk_get_prop_string(ctx, -1, tm))
                 {
                     duk_pop(ctx);
@@ -4378,12 +4521,12 @@ static int getmod_path(DHS *dhs)
         else
         {
             duk_pop(ctx);
-//printf("found it on first try\n");
+            //printf("found it on first try\n");
         }
 
         if(*tm)
         {
-//printf("short path! found %s\n", tm);
+            //printf("short path! found %s\n", tm);
             duk_pop(ctx);
             dhs->module_name=strdup(tm);
             ret=getmod(dhs);
@@ -4397,7 +4540,7 @@ static int getmod_path(DHS *dhs)
         strcpy(tm, modname);
 
         //search in object,
-//printf("getmod: looking for %s\n",tm);
+        //printf("getmod: looking for %s\n",tm);
         dhs->module_name=tm;
         ret = getmod(dhs);
 
@@ -4417,7 +4560,7 @@ static int getmod_path(DHS *dhs)
                     break;
                 }
 
-//printf("getmod: looking for %s\n",tm);
+                //printf("getmod: looking for %s\n",tm);
                 ret = getmod(dhs);
                 if(ret)
                 {
@@ -4425,16 +4568,18 @@ static int getmod_path(DHS *dhs)
                 }
             }
         }
+        /*
         else
         {
-//printf("found it on first try\n");
+            //printf("found it on first try\n");
         }
+        */
 
         if(*tm)
         {
-//printf("long path! found %s\n", tm);
+            //printf("long path! found %s\n", tm);
             dhs->module_name=strdup(tm);
-        //    ret=getmod(dhs);
+            //ret=getmod(dhs);
             dhs->pathlen += strlen(tm) - mplen + 1;
             return ret;
         }
@@ -4492,7 +4637,7 @@ static void http_callback(evhtp_request_t *req, void *arg)
     newdhs.bufpos = 0;
     newdhs.auxbuf= NULL;
     newdhs.freeme=0;
-    newdhs.skip_start=dhs->skip_start;
+    newdhs.skip_wrap=dhs->skip_wrap;
     dhs = &newdhs;
 
 
@@ -4521,7 +4666,7 @@ static void http_callback(evhtp_request_t *req, void *arg)
     RP_EMPTY_STACK(ctx);
 
     duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("thread_funcstash")); //this should be at index 0;
-//printf("dhs req path = %s, module=%d\n",dhs->reqpath, dhs->module);
+    //printf("dhs req path = %s, module=%d\n",dhs->reqpath, dhs->module);
     if(dhs->module==MODULE_FILE)
     {
         int res=0;
@@ -4567,34 +4712,28 @@ static void http_callback(evhtp_request_t *req, void *arg)
         }
     }
 
-    if(dhs_startfunc)
-        dhs_startfunc->ctx=ctx;
-
-    if(dhs_startfunc && dhs_startfunc->module==MODULE_FILE)
+    DHS *dhs_wrapfunc = NULL;
+    if(!dhs->skip_wrap && dhs_wrapfuncs && dhs_wrapfuncs[thrno])
     {
-        int res=0;
+        dhs_wrapfunc = dhs_wrapfuncs[thrno];
 
-        duk_get_prop_index(ctx, 0, (duk_uarridx_t)dhs_startfunc->func_idx);
-        duk_get_prop_string(ctx,-1,"module");
-        dhs_startfunc->module_name=strdup(duk_get_string(ctx,-1));
-        duk_pop_2(ctx);
-
-        res=getmod(dhs_startfunc);
-
-        if(res==-1)
+        if(dhs_wrapfunc->module==MODULE_FILE)
         {
-            free(dhs_startfunc->module_name);
-            dhs_startfunc->module_name=NULL;
-            goto http_req_end;
+            int res=0;
+            dhs_wrapfunc->ctx = ctx;
+            dhs_wrapfunc->req = req;
+            res=getmod(dhs_wrapfunc);
+
+            if(res==-1) //script error
+            {
+                if (dhs->module==MODULE_PATH)
+                    free(dhs->module_name);
+                goto http_req_end;
+            }
+            /* do nothing if wrapFunc is missing, error to stderr later in http_dothread
+            else if (res == 0) ...
+            */
         }
-        /* do nothing if startFunc is missing, error to stderr later in http_dothread
-        else if (res == 0)
-        {
-            send404(dhs->req);
-            free(dhs->module_name);
-            goto http_req_end;
-        }
-        */
     }
 
     if(duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("fdhs")))
@@ -4755,11 +4894,10 @@ void initThread(evhtp_t *htp, evthr_t *evthr, void *arg)
     *thrno = gl_threadno++;
     add_exit_func(simplefree, thrno);
     evthr_set_aux(evthr, thrno);
-
     thr=server_thread[*thrno];
     thr->base=base;
     thr->self=pthread_self();
-    set_thread_num(thr->index);
+    set_thread_num(thr->index); // remember, not the same as thrno!!!
 
     /* for http requests, subject to timeout */
     ctx=thr->ctx;
@@ -4788,6 +4926,15 @@ void initThread(evhtp_t *htp, evthr_t *evthr, void *arg)
        need to make a dnsbase and store the pointer to be freed upon exit.
     */
     thr->dnsbase = rp_make_dns_base(ctx, base);
+
+    // copy dhs_wrapfunc_template to the thread local dhs_wrapfunc
+    if(dhs_wrapfunc_template)
+    {
+        if(!dhs_wrapfuncs)
+            REMALLOC(dhs_wrapfuncs, sizeof (DHS *) * totnthreads);
+
+        dhs_wrapfuncs[*thrno]=clone_dhs(dhs_wrapfunc_template);
+    }
 
     SETUPUNLOCK;
 }
@@ -4862,7 +5009,7 @@ static void get_secure(duk_context *ctx, duk_idx_t ob_idx, evhtp_ssl_cfg_t *ssl_
 
 static void connection_error_callback(evhtp_connection_t *conn, evhtp_error_flags type, void *arg)
 {
-    printf("unhandled connection error of type: 0x%02x", type);
+    fprintf(stderr, "unhandled connection error of type: 0x%02x", type);
 }
 
 evhtp_res pre_accept_callback(evhtp_connection_t *conn, void *arg)
@@ -5719,10 +5866,10 @@ duk_ret_t duk_server_start(duk_context *ctx)
                 RP_THROW(ctx, "server.start: Option for notFoundFunc must be a function or an object to load a module (e.g. {module:'mymodule'}");
 
         }
+        // NO POP
 
-
-        /* startFunc */
-        if (duk_rp_GPS_icase(ctx, ob_idx, "startFunc"))
+        /* wrapFunc */
+        if (duk_rp_GPS_icase(ctx, ob_idx, "wrapFunc"))
         {
             if ( duk_is_object(ctx,-1) )
             {   /* map to function or module */
@@ -5735,30 +5882,32 @@ duk_ret_t duk_server_start(duk_context *ctx)
                     duk_get_prop_string(ctx, -1, "name");
                     fname = duk_get_string(ctx, -1);
                     duk_pop(ctx);
-                    fprintf(access_fh, "mapping start func to function   %-20s ->    function %s()\n", "", fname);
+                    fprintf(access_fh, "mapping wrap func to function    %-20s ->    function %s()\n", "", fname);
                 }
                 else if (duk_get_prop_string(ctx,-1, "module") )
                 {
-                    fname = duk_get_string(ctx, -1);
+                    fname = REQUIRE_STRING(ctx, -1, "wrapFunc: property 'module' must be a string");
                     duk_pop(ctx);
-                    fprintf(access_fh, "mapping start func to function   %-20s ->    module:%s\n", "", fname);
+                    fprintf(access_fh, "mapping wrap func to function    %-20s ->    module:%s\n", "", fname);
                     mod=MODULE_FILE;
                 }
                 else
-                    RP_THROW(ctx, "server.start: Option for startFunc must be a function or an object to load a module (e.g. {module:'mymodule'}");
+                    RP_THROW(ctx, "server.start: Option for wrapFunc must be a function or an object to load a module (e.g. {module:'mymodule'}");
 
                 /* copy function into array at pos 0 in stack and into index fpos in array */
                 duk_put_prop_index(ctx, 0, fpos);
 
-                dhs_startfunc = new_dhs(ctx, fpos);
-                dhs_startfunc->module=mod;
+                dhs_wrapfunc_template = new_dhs(ctx, fpos);
+                dhs_wrapfunc_template->module=mod;
 
-                dhs_startfunc->timeout.tv_sec = dhs->timeout.tv_sec;
-                dhs_startfunc->timeout.tv_usec = dhs->timeout.tv_usec;
+                dhs_wrapfunc_template->timeout.tv_sec = dhs->timeout.tv_sec;
+                dhs_wrapfunc_template->timeout.tv_usec = dhs->timeout.tv_usec;
+
                 /* copy function to all the heaps/ctxs */
 
                 if(mod)
                 {
+                    dhs_wrapfunc_template->module_name=(char*)fname; //this should always be a valid bit of memory reffed on duktape main thread stack
                     for (i=0;i<totnthreads;i++)
                     {
                         copy_mod_func(ctx, server_thread[i]->ctx, fpos);
@@ -5766,17 +5915,27 @@ duk_ret_t duk_server_start(duk_context *ctx)
                     }
                 }
                 else
-                    copy_cb_func(dhs_startfunc, totnthreads);
+                    copy_cb_func(dhs_wrapfunc_template, totnthreads);
                 fpos++;
             }
             else if(! (duk_is_boolean(ctx,-1) && !duk_get_boolean(ctx, -1)) && !duk_is_null(ctx, -1) )
-                RP_THROW(ctx, "server.start: Option for startFunc must be false, or a function or an object to load a module (e.g. {module:'mymodule'}");
+                RP_THROW(ctx, "server.start: Option for wrapFunc must be false, a Function or an Object to load a module (e.g. {module:'mymodule'}");
+            wrap_run_on_start=1;
         }
+        // NO POP
 
+        if (duk_rp_GPS_icase(ctx, ob_idx, "wrapRunOnStart"))
+            wrap_run_on_start=REQUIRE_BOOL(ctx, -1, "server.start: Option for wrapRunOnStart must be a Boolean");
+        duk_pop(ctx);
 
+        if (duk_rp_GPS_icase(ctx, ob_idx, "wrapRunOnEnd"))
+            wrap_run_on_end=REQUIRE_BOOL(ctx, -1, "server.start: Option for wrapRunOnEnd must be a Boolean");
+        duk_pop(ctx);
 
+        if (duk_rp_GPS_icase(ctx, ob_idx, "wrapRunOnFile"))
+            wrap_run_on_file=REQUIRE_BOOL(ctx, -1, "server.start: Option for wrapRunOnFile must be a Boolean");
+        duk_pop(ctx);
 
-//        duk_pop(ctx);
         /* directory listing page/function */
         if (duk_rp_GPS_icase(ctx, ob_idx, "directoryFunc"))
         {

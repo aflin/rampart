@@ -1,7 +1,12 @@
 #!/usr/bin/env rampart
 
 var wserv = require("rampart-webserver");
+//set working directory to the location of this script
 var wd = process.scriptPath;
+
+/* ****************************************************** *
+ *  UNCOMMENT AND CHANGE DEFAULTS BELOW TO CONFIG SERVER  *
+ * ****************************************************** */
 
 var conf = {
     //the defaults for full server
@@ -68,7 +73,8 @@ var conf = {
                        String. One of "hourly", "daily" or "weekly"        */
     //rotateInterval:  86400,
 
-    /* user            String. If started as root, switch to this user   */
+    /* user            String. If started as root, switch to this user
+                               It is necessary to start as root if using ports < 1024   */
     //user:            'nobody',
 
     /* threads         Number. Limit the number of threads used by the server.
@@ -84,12 +90,15 @@ var conf = {
     /* sslCertFile     String. If https, the ssl/tls cert file location   */
     //sslCertFile:     '',
 
-    /* developerMode   Bool.   Whether script errors result in 500 and return a stack trace.  Otherwise 404   */
+    /* developerMode   Bool.   Whether JavaScript errors result in 500 and return a stack trace.
+                               Otherwise errors return 404 Not Found                             */
     //developerMode:   true,
 
     /* letsencrypt     String. If using letsencrypt, the 'domain.tld' name for automatic setup of https
-                               (sets secure true and looks for '/etc/letsencrypt/live/domain.tld/' directory)   */
-    //letsencrypt:     "",
+                               ( sets secure true and looks for '/etc/letsencrypt/live/domain.tld/' directory
+                                 to set sslKeyFile and sslCertFile ).
+                               ( also sets "port" to 443 ).                                                      */
+    //letsencrypt:     "",     //empty string - don't configure using letsencrypt
 
     /* rootScripts     Bool.   Whether to treat *.js files in htmlRoot as apps (not secure)   */
     //rootScripts:     false,
@@ -125,17 +134,45 @@ var conf = {
     /* appendProcTitle Bool.  Whether to append ip:port to process name as seen in ps */
     //appendProcTitle: false,
 
-    /* startFunc       Bool/Obj/Func.  A function to run at the beginning of each JavaScript function
-                       e.g. - {module: wd + '/apps/start.js'} or function(req) { .. do something .. }
-                            - undefined, null or false to disable
+    /* wrapFunc        Bool/Obj/Func.  A function to run at the beginning/end of each JavaScript function or on file load
+                       e.g. -
+       wrapFunc:       {module: wd+'/apps/wrapfunc.js'}, //where wrapfunc.js is "modules.exports=function(req) {...}"
+       or
+       wrapFunc:       myglobalwrapfunc,
+       or
+       wrapFunc:       function(req) { ... }
+       or
+       wrapFunc:       undefined|false|null  // wrap function disabled
+
                        The function, like all server callback function takes req, which if altered
                        will be reflected in the call of the normal callback for the requested page.
-                       Returning false will skip the normal callback and send a 404
-                       Returning an object (ie {html:myhtml}) will skip the normal callback and send that content  */
-    //startFunc:       false,
+                       Returning false will skip the normal callback and send a 404 Not Found page.
+                       Returning an object (ie {html:myhtml}) will skip the normal callback and send that content.
+
+                       Additionally `req.wrapType` will be set to "start"|"end"|"file" depending on when it is called
+
+                       For "end", `req.reply` will be set to the return value of the normal server callback function
+                       and req.reply can be modified before it is sent.
+
+                       For "file" `req.fsPath` will be set to the file being retrieved.                                  */
+
+    //wrapFunc:        false,
+
+    /* wrapRunOnStart  Whether to run the wrap function before running scripts */
+    //wrapRunOnStart:  true,
+
+    /* wrapRunOnEnd    Whether to run the wrap function after running scripts */
+    //wrapRunOnEnd:    false,
+
+    /* wrapRunOnFile   Whether to run the wrap function before serving a file (-i.e. files from the /html/ directory)  */
+    //wrapRunOnFile:   false,
 
     serverRoot:       wd,
 }
+
+/* ***************************************************************** *
+ *  functions to process command line options and start/stop server  *
+ * ***************************************************************** */
 
 var res, printf=rampart.utils.printf, argv=process.argv, kill=rampart.utils.kill;
 
@@ -217,7 +254,7 @@ if(argv[2] == '--stop' || argv[2]=='stop') {
     printf("%3J\n", res);
     process.exit(0);
 
-} else if (argv[2] == '--start' || argv[2]=='start' || !argv[2]) {
+} else if (argv[2] == '--start' || argv[2]=='start' || !argv[2]) { //if no arg, run start
 
     /* START */
     check_conf_err();
@@ -233,6 +270,7 @@ if(argv[2] == '--stop' || argv[2]=='stop') {
     // if (res.isMonitor) -- we are the monitor and should do nothing else but finish the script
     //                       so event loop can start and monitor can run its setTimeouts
     // else               -- we just exit.
+
 } else { 
 
     /* HELP */
