@@ -1273,7 +1273,7 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
         /* handle JSON */
 
 #define pushjsonsafe do{\
-    char *j=str_rp_to_json_safe(ctx, fidx, NULL);\
+    char *j=str_rp_to_json_safe(ctx, fidx, NULL,0);\
     duk_push_string(ctx, j);\
     if(width){\
         duk_json_decode(ctx, -1);\

@@ -201,7 +201,7 @@ extern int rp_print_error_lines;
         printf("ctx: top=%d, stack(%p)={\n", (int)top, ctx);   \
         while (i<top) {                               \
             if(i) printf(",\n");                      \
-            s=str_rp_to_json_safe(ctx, i, NULL);      \
+            s=str_rp_to_json_safe(ctx, i, NULL,1);    \
             printf("   %d: %s", (int)i, s);           \
             free(s);                                  \
             i++;                                      \
@@ -217,7 +217,7 @@ extern int rp_print_error_lines;
         printf("ctx: top=%d, stack(%p)={\n", (int)top, ctx);   \
         while (i<top) {                               \
             if(i) printf(",\n");                      \
-            s=str_rp_to_json_safe(ctx, i, NULL);      \
+            s=str_rp_to_json_safe(ctx, i, NULL,1);    \
             duk_get_global_string((ctx), "JSON");     \
             duk_push_string(ctx, "parse");            \
             duk_push_string(ctx, s);                  \
@@ -258,7 +258,7 @@ extern int rp_print_error_lines;
 #define printat(ctx, idx)                                                 \
     do                                                                    \
     {                                                                     \
-        char *s=str_rp_to_json_safe(ctx, idx, NULL);                      \
+        char *s=str_rp_to_json_safe(ctx, idx, NULL, 1);                   \
         printf("at %d: %s\n", (int)(idx), s);                             \
         free(s);                                                          \
     } while (0)
@@ -622,7 +622,7 @@ int rp_gettype(duk_context *ctx, duk_idx_t idx);
 
 //returns a safe json-like string.  prints cyclic references as paths in object.
 //needs free
-char *str_rp_to_json_safe(duk_context *ctx, duk_idx_t idx, char *r);
+char *str_rp_to_json_safe(duk_context *ctx, duk_idx_t idx, char *r, int dohidden);
 
 // standard error printing after pcall()
 // * msg is a message to preppend, or NULL

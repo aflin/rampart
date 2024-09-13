@@ -1055,7 +1055,7 @@ char *strjoin(char *s, char *adds, char c)
 }
 /* *************safe json ************ */
 
-static char * rp_to_json_safe(duk_context *ctx, duk_idx_t idx, char *r, char *path);
+static char * rp_to_json_safe(duk_context *ctx, duk_idx_t idx, char *r, char *path, int dohidden);
 
 #define RP_SJ_MAX_PATH 4096
 
@@ -1093,7 +1093,7 @@ static const char *get_ref(duk_context *ctx, duk_idx_t idx)
     return ret;
 }
 
-static char *rp_json_array(duk_context *ctx, duk_idx_t idx, char *r, char *path)
+static char *rp_json_array(duk_context *ctx, duk_idx_t idx, char *r, char *path, int dohidden)
 {
     duk_uarridx_t i=0, l=duk_get_length(ctx, idx);
     size_t plen = strlen(path), pleft= RP_SJ_MAX_PATH - (plen +1);
@@ -1115,7 +1115,7 @@ static char *rp_json_array(duk_context *ctx, duk_idx_t idx, char *r, char *path)
         snprintf(&path[plen], pleft, "[%d]", (int)i );
 
         duk_get_prop_index(ctx, idx, i);
-        r= rp_to_json_safe(ctx, -1, r, path);
+        r= rp_to_json_safe(ctx, -1, r, path, dohidden);
         duk_pop(ctx);
         i++;
     }
@@ -1125,7 +1125,7 @@ static char *rp_json_array(duk_context *ctx, duk_idx_t idx, char *r, char *path)
     return strcatdup(r, "]");
 }
 
-static char *rp_json_object(duk_context *ctx, duk_idx_t idx, char *r, char *path)
+static char *rp_json_object(duk_context *ctx, duk_idx_t idx, char *r, char *path, int dohidden)
 {
     size_t plen = strlen(path), pleft= RP_SJ_MAX_PATH - (plen +1);
     size_t keylen=512;
@@ -1191,7 +1191,15 @@ static char *rp_json_object(duk_context *ctx, duk_idx_t idx, char *r, char *path
         {
             k=duk_get_string(ctx, -2);
             if(*k=='\xff')
-                snprintf(key, keylen, ", \"DUK_HIDDEN_SYMBOL(%s)\": \"", k+1 );
+            {
+                if(dohidden)
+                    snprintf(key, keylen, ", \"DUK_HIDDEN_SYMBOL(%s)\": \"", k+1 );
+                else
+                {
+                    duk_pop_2(ctx);
+                    continue;
+                }
+            }
             else
                 snprintf(key, keylen, ", \"%s\": \"", k );
             r= strcatdup(r, key);
@@ -1218,7 +1226,7 @@ static char *rp_json_object(duk_context *ctx, duk_idx_t idx, char *r, char *path
 
             snprintf(&path[plen], pleft, ".%s", k );
 
-            r= rp_to_json_safe(ctx, -1, r, path);
+            r= rp_to_json_safe(ctx, -1, r, path, dohidden);
             duk_pop_2(ctx);
         }
         duk_pop(ctx); //enum
@@ -1229,7 +1237,7 @@ static char *rp_json_object(duk_context *ctx, duk_idx_t idx, char *r, char *path
     return r;
 }
 
-static char * rp_to_json_safe(duk_context *ctx, duk_idx_t idx, char *r, char *path)
+static char * rp_to_json_safe(duk_context *ctx, duk_idx_t idx, char *r, char *path, int dohidden)
 {
     idx = duk_normalize_index(ctx, idx);
 
@@ -1257,13 +1265,13 @@ static char * rp_to_json_safe(duk_context *ctx, duk_idx_t idx, char *r, char *pa
     }
 
     if(duk_is_array(ctx, idx))
-        return rp_json_array(ctx, idx, r, path);
+        return rp_json_array(ctx, idx, r, path, dohidden);
 
-    return rp_json_object(ctx, idx, r, path);
+    return rp_json_object(ctx, idx, r, path, dohidden);
 
 }
 
-char *str_rp_to_json_safe(duk_context *ctx, duk_idx_t idx, char *r)
+char *str_rp_to_json_safe(duk_context *ctx, duk_idx_t idx, char *r, int dohidden)
 {
     char path[RP_SJ_MAX_PATH];
     char *ret;
@@ -1275,7 +1283,7 @@ char *str_rp_to_json_safe(duk_context *ctx, duk_idx_t idx, char *r)
     duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("jsonrefmap"));
     duk_pop(ctx);
 
-    ret = rp_to_json_safe(ctx, idx, r, path);
+    ret = rp_to_json_safe(ctx, idx, r, path, dohidden);
 
     duk_push_global_object(ctx);
     duk_del_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("jsonrefmap"));
@@ -1286,7 +1294,7 @@ char *str_rp_to_json_safe(duk_context *ctx, duk_idx_t idx, char *r)
 
 duk_ret_t duk_rp_to_json_safe(duk_context *ctx)
 {
-    char *r = str_rp_to_json_safe(ctx, 0, NULL);
+    char *r = str_rp_to_json_safe(ctx, 0, NULL, 0);
     duk_push_string(ctx, r);
     free(r);
     return 1;
