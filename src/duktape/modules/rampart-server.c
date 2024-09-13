@@ -1903,6 +1903,7 @@ static int run_wrapfunc(DHS *dhs_wrapfunc, duk_idx_t req_idx, int has_content, i
             if (duk_is_boolean(ctx,-1) && !duk_get_boolean(ctx,-1))
             {
                 //if false, send 404;
+                duk_pop(ctx);
                 duk_del_prop_string(ctx, req_idx, "wrapType");
                 send404(req);
                 return WRAP_RET_SENTCONT;
@@ -1912,6 +1913,8 @@ static int run_wrapfunc(DHS *dhs_wrapfunc, duk_idx_t req_idx, int has_content, i
                 ret = WRAP_RET_HAVECONT;
                 // this version adds new obj to top of stack
             }
+            else
+                duk_pop(ctx);
             // else return WRAP_RET_CONTINUE for true, undefined or whatever else
         }
         duk_del_prop_string(ctx, req_idx, "wrapType");
