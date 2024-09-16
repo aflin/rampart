@@ -6067,8 +6067,8 @@ duk_ret_t duk_server_start(duk_context *ctx)
             else if(! (duk_is_boolean(ctx,-1) && !duk_get_boolean(ctx, -1)) && !duk_is_null(ctx, -1) )
                 RP_THROW(ctx, "server.start: Option for beginFunc must be false, a Function or an Object to load a module (e.g. {module:'mymodule'}");
 
-            if (duk_rp_GPS_icase(ctx, ob_idx, "beginFuncOnFiles"))
-                begin_run_on_file=REQUIRE_BOOL(ctx, -1, "server.start: Option for wrapRunOnFile must be a Boolean");
+            if (duk_rp_GPS_icase(ctx, ob_idx, "beginFuncOnFile"))
+                begin_run_on_file=REQUIRE_BOOL(ctx, -1, "server.start: Option for beginFuncOnFile must be a Boolean");
             duk_pop(ctx);
         }
         // NO POP
