@@ -3531,7 +3531,7 @@ void check_parse(char *sql,char *new_sql,char **names,int n_names)
         duk_push_null(ctx);\
     h_close(h);\
     h=NULL;\
-    if(!isquery) duk_throw(ctx);\
+    if(!isquery) (void) duk_throw(ctx);\
     goto end_query;\
 }while(0)
 
