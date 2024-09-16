@@ -65,7 +65,7 @@ function showreq_callback(req){
         return sandr(search_and_replace,json);
     }
     /* pretty print our request object, along with rampart and process objects */
-    var str=sprintf('%4J', {req:req,rampart:rampart,process:process});
+    var str=sprintf('%4J', {req:req,serverConf:serverConf,rampart:rampart,process:process});
 
     var css=
         `pre { padding: 5px; margin: 5px; }
@@ -88,7 +88,7 @@ function showreq_callback(req){
    </head>   
    <body>
       <div>
-      	Object sent to this function (req) and other info (rampart,process):
+      	Object sent to this function (req) and other info (serverConf, rampart, process):
       </div>   
       <pre>${%s:sandrHighlight(str)}</pre>
    </body>

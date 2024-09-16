@@ -58,7 +58,6 @@ pthread_mutex_t pflock;
 pthread_mutex_t pflock_err;
 FILE *access_fh;
 FILE *error_fh;
-int duk_rp_server_logging=0;
 int rp_print_simplified_errors=0;
 int rp_print_error_lines=0;
 

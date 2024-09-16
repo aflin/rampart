@@ -1,14 +1,13 @@
 #!/usr/bin/env rampart
 
-var wserv = require("rampart-webserver");
 //set working directory to the location of this script
-var wd = process.scriptPath;
+var working_directory = process.scriptPath;
 
 /* ****************************************************** *
  *  UNCOMMENT AND CHANGE DEFAULTS BELOW TO CONFIG SERVER  *
  * ****************************************************** */
 
-var conf = {
+var serverConf = {
     //the defaults for full server
 
     /* ipAddr          String. The ipv4 address to bind   */
@@ -40,25 +39,25 @@ var conf = {
     //redirTemp        false,
 
     /* htmlRoot        String. Root directory from which to serve files   */
-    //htmlRoot:        wd + '/html',
+    //htmlRoot:        working_directory + '/html',
 
     /* appsRoot        String. Root directory from which to serve apps   */
-    //appsRoot:        wd + '/apps',
+    //appsRoot:        working_directory + '/apps',
 
     /* wsappsRoot      String. Root directory from which to serve websocket apps   */
-    //wsappsRoot:      wd + '/wsapps',
+    //wsappsRoot:      working_directory + '/wsapps',
 
     /* dataRoot        String. Setting for user scripts   */
-    //dataRoot:        wd + '/data',
+    //dataRoot:        working_directory + '/data',
 
     /* logRoot         String. Log directory   */
-    //logRoot:         wd + '/logs',
+    //logRoot:         working_directory + '/logs',
 
     /* accessLog       String. Log file name or null for stdout  */
-    //accessLog:       wd + '/logs/access.log',
+    //accessLog:       working_directory + '/logs/access.log',
 
     /* errorLog        String. error log file name or null for stderr*/
-    //errorLog:        wd + '/logs/error.log',
+    //errorLog:        working_directory + '/logs/error.log',
 
     /* log             Bool.   Whether to log requests and errors   */
     //log:             true,
@@ -125,164 +124,103 @@ var conf = {
     /* serverRoot      String.  base path for logs, htmlRoot, appsRoot and wsappsRoot.
     //serverRoot:      rampart.utils.realPath('.'),
 
-    /* map             Object  Add to server path mappings. i.e. {'/mypath/myapp.html': myfunc}   */
-    //map:             undefined,
+    /* map             Object.  Define filesystem and script mappings   */
+    /*map:             {
+                           "/":                working_directory + '/html',
+                           "/apps/":           {modulePath: working_directory + '/apps'},
+                           "ws://wsapps/":     {modulePath: working_directory + '/wsapps'}
+                       }
+                       // note: if you change these, serverConf.htmlRoot defaults et al will not be used or correct.
+    */
 
-    /* mapOverride     Object  Ignore htmlRoot, appRoot and wsappsRoot and use this object for all mappings   */
-    //mapOverride:     undefined,
+    /* appendMap       Object.  Append the default map above with more mappings
+                       e.g - {"/images": working_directory + '/images'}
+                       or  - {"myfunc.html" : function(req) { ...} }
+                       or  - {
+                                 "/images": working_directory + '/images',
+                                 myfunc.html: {module: working_directory + '/myfuncmod.js'}
+                             }                                                                 */
+    //appendMap:       undefined,
 
     /* appendProcTitle Bool.  Whether to append ip:port to process name as seen in ps */
     //appendProcTitle: false,
 
-    /* wrapFunc        Bool/Obj/Func.  A function to run at the beginning/end of each JavaScript function or on file load
+    /* beginFunc       Bool/Obj/Function.  A function to run at the beginning of each JavaScript function or on file load
                        e.g. -
-       wrapFunc:       {module: wd+'/apps/wrapfunc.js'}, //where wrapfunc.js is "modules.exports=function(req) {...}"
+       beginFunc:      {module: working_directory+'/apps/beginfunc.js'}, //where beginfunc.js is "modules.exports=function(req) {...}"
        or
-       wrapFunc:       myglobalwrapfunc,
+       beginFunc:      myglobalbeginfunc,
        or
-       wrapFunc:       function(req) { ... }
+       beginFunc:      function(req) { ... }
        or
-       wrapFunc:       undefined|false|null  // wrap function disabled
+       beginFunc:      undefined|false|null  // begin function disabled
 
-                       The function, like all server callback function takes req, which if altered
-                       will be reflected in the call of the normal callback for the requested page.
-                       Returning false will skip the normal callback and send a 404 Not Found page.
-                       Returning an object (ie {html:myhtml}) will skip the normal callback and send that content.
+                       The function, like all server callback function takes
+                       req, which if altered will be reflected in the call
+                       of the normal callback for the requested page. 
+                       Returning false will skip the normal callback and
+                       send a 404 Not Found page.  Returning an object (ie
+                       {html:myhtml}) will skip the normal callback and send
+                       that content.
 
-                       Additionally `req.wrapType` will be set to "start"|"end"|"file" depending on when it is called
+                       For "file" `req.fsPath` will be set to the file being
+                       retrieved.  If `req.fsPath` is set to a new path and
+                       the function returns true, the updated file will be
+                       sent instead.  */
+    //beginFunc:       false,
 
-                       For "end", `req.reply` will be set to the return value of the normal server callback function
-                       and req.reply can be modified before it is sent.
+    /* beginFuncOnFile Whether to run the begin function before 
+                       serving a file (-i.e. files from the /html/ directory)  */
+    //beginFuncOnFile: false,
 
-                       For "file" `req.fsPath` will be set to the file being retrieved.                                  */
+    /* endFunc         Bool/Obj/Function.  A function to run after each JavaScript function
 
-    //wrapFunc:        false,
+                       Value (i.e. {module: mymod}) is the same as beginFunc above.
 
-    /* wrapRunOnStart  Whether to run the wrap function before running scripts */
-    //wrapRunOnStart:  true,
+                       It will also receive the `req` object.  In addition,
+                       `req.reply` will be set to the return value of the
+                       normal server callback function and req.reply can be
+                       modified before it is sent.
 
-    /* wrapRunOnEnd    Whether to run the wrap function after running scripts */
-    //wrapRunOnEnd:    false,
+                       End function is never run on file requests.                     */
+    //endfunc:         false,
 
-    /* wrapRunOnFile   Whether to run the wrap function before serving a file (-i.e. files from the /html/ directory)  */
-    //wrapRunOnFile:   false,
+    /* logFunc         Function - a function to replace normal logging, if log:true set above
+                       See two examples below.                                                 */
+    //logFunc:         false,
 
-    serverRoot:       wd,
+    serverRoot:        working_directory,
 }
 
-/* ***************************************************************** *
- *  functions to process command line options and start/stop server  *
- * ***************************************************************** */
+/*  Example logging functions :
+    logdata: an object of various individual logging datum
+    logline: the line which would have been written but for logFunc being set
 
-var res, printf=rampart.utils.printf, argv=process.argv, kill=rampart.utils.kill;
-
-
-if (argv[2] == '--letssetup' || argv[2]=='letssetup') {
-    conf.letsencrypt="setup"; //flag we are doing letsencrypt, but don't start https
-    argv[2]="start";
-}
-
-
-// fill in the missing pieces and do some checks
-conf = wserv.parseOptions(conf);
-
-
-function check_conf_err() {
-    if(conf.error)
-    {
-        printf("%s\n", conf.error);
-        process.exit(1);
-    }
-}
-
-//try to stop even if conf errors returned from parseOptions
-if(argv[2] == '--stop' || argv[2]=='stop') {
-
-    /* STOP */
-    res=wserv.stop(conf);
-    if(res.error)
-        printf("Server is not running or pid file is invalid\n");
-    else if (res.message)
-        printf("%s\n", res.message);
-    process.exit(0);
-
-} else if(argv[2] == '--restart' || argv[2]=='restart') {
-
-    /* RESTART */
-    check_conf_err();
-    res=wserv.stop(conf);
-    if(res.error)
-        printf("Server is not running or pid file is invalid\n");
-    else if (res.message)
-        printf("%s\n", res.message);
-
-    res=wserv.start(conf);
-
-    if(res.message)
-        console.log(res.message);
-
-    if(res.error) {
-        console.log(res.error);
-        process.exit(1);
-    }
-
-} else if(argv[2] == '--status' || argv[2]=='status') {
-
-    /* STATUS */
-    res=wserv.status(conf);
-
-    if( res.serverPid && kill(res.serverPid,0) )
-        printf("server is running. pid: %s\n", res.serverPid);
+// example logging func - log output abbreviated if not 200
+function myloggingfunc (logdata, logline) {
+rampart.utils.printf('%3J\n', logdata);
+    if(logdata.code != 200)
+        rampart.utils.fprintf(rampart.utils.accessLog,
+            '%s %s "%s %s%s%s %d"\n',
+            logdata.addr, logdata.dateStr, logdata.method,
+            logdata.path, logdata.query?"?":"", logdata.query,
+            logdata.code );
     else
-        printf("server is not running\n");
-
-    if( res.redirPid && kill(res.redirPid,0) )
-        printf("redirect server is running. pid: %s\n", res.redirPid);
-    else
-        printf("redirect server is not running\n");
-
-    if( res.monitorPid && kill(res.monitorPid,0) )
-        printf("monitor process is running. pid: %s\n", res.monitorPid);
-    else
-        printf("monitor process is not running\n");
-
-} else if (argv[2] == '--dump' || argv[2]=='dump') {
-
-    /* DUMP */
-    check_conf_err();
-    res=wserv.dumpConfig(conf);
-    printf("%3J\n", res);
-    process.exit(0);
-
-} else if (argv[2] == '--start' || argv[2]=='start' || !argv[2]) { //if no arg, run start
-
-    /* START */
-    check_conf_err();
-    res=wserv.start(conf);
-
-    if(res.message)
-        console.log(res.message);
-
-    if(res.error) {
-        console.log(res.error);
-        process.exit(1);
-    }
-    // if (res.isMonitor) -- we are the monitor and should do nothing else but finish the script
-    //                       so event loop can start and monitor can run its setTimeouts
-    // else               -- we just exit.
-
-} else { 
-
-    /* HELP */
-    if (argv[2] != '-h' && argv[2] != '--help' && argv[2] != 'help')
-	printf("unknown command '%s'\n\n", argv[2]);
-    printf("usage:\n  %s %s [start|stop|restart|letssetup|status|dump|help]\n",argv[0], argv[1]);
-    printf("      start     -- start the http(s) server\n");
-    printf("      stop      -- stop the http(s) server\n");
-    printf("      restart   -- stop and restart the http(s) server\n");
-    printf("      letssetup -- start http only to allow letsencrypt verification\n");
-    printf("      status    -- show status of server processes\n");
-    printf("      dump      -- dump the config object used for server.start()\n");
-    printf("      help      -- show this message\n");
-
+        rampart.utils.fprintf(rampart.utils.accessLog,
+            "%s\n", logline); 
 }
+
+// example logging func - skip logging for connections from localhost
+function myloggingfunc_alt (logdata, logline) {
+    if(logdata.addr=="127.0.0.1" || logdata.addr=="::1")
+        return;
+    rampart.utils.fprintf(rampart.utils.accessLog,
+        "%s\n", logline);
+}
+*/
+
+
+/* **************************************************** *
+ *  process command line options and start/stop server  *
+ * **************************************************** */
+require("rampart-webserver").web_server_conf(serverConf);

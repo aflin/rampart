@@ -35,7 +35,9 @@ var defaultServerConf = function(wd){
         connectTimeout: 20,
         quickserver:    false,
         appendProcTitle:false,
-        startFunc:      false,
+        beginFunc:      false,
+        beginFuncOnFile:false,
+        endFunc:        false,
         serverRoot:     wd
     }
 }
@@ -77,7 +79,9 @@ var defaultQuickServerConf = function(wd){
         connectTimeout: 20,
         quickserver:    true,
         appendProcTitle:false,
-        startFunc:      false,
+        beginFunc:      false,
+        beginFuncOnFile:false,
+        endFunc:        false,
         serverRoot:     wd
     }
 }
@@ -502,7 +506,7 @@ function start(serverConf, dump) {
             return serr('Error: script must be started as root to bind to IPv4 port ' + serverConf.ipPort);
         if(serverConf.ipv6Port < 1024)
             return serr('Error: script must be started as root to bind to IPv6 port ' + serverConf.ipv6Port);
-        if(serverConf.redirPort < 1024)
+        if(serverConf.redirPort < 1024 && serverConf.redirPort > 0)
             return serr('Error: script must be started as root to bind to redirect server port ' + serverConf.redirPort);
     }
 
@@ -537,15 +541,13 @@ function start(serverConf, dump) {
         serverConf.mimeMap={ 'mp3': 'audio/mp3' };
 
     var map;
-    if(serverConf.mapOverride && getType(serverConf.mapOverride)=='Object')
-        map=serverConf.mapOverride;
+    if(serverConf.map && getType(serverConf.map)=='Object')
+        map=serverConf.map;
     else {
         map={};
 
-        if(serverConf.map && getType(serverConf.map)=='Object')
-            Object.assign(map, serverConf.map);
-
-        map['/']=serverConf.htmlRoot;
+        if(serverConf.htmlRoot && serverConf.htmlRoot.length)
+            map['/']=serverConf.htmlRoot;
 
         if(serverConf.appsRoot && serverConf.appsRoot.length)
             map['/apps/'] = {modulePath: serverConf.appsRoot};
@@ -554,7 +556,10 @@ function start(serverConf, dump) {
             map['ws://wsapps/'] = {modulePath: serverConf.wsappsRoot};
     }
 
-    if(serverConf.rootScripts) {
+    if(serverConf.appendMap && getType(serverConf.appendMap)=='Object')
+        Object.assign(map, serverConf.appendMap);
+
+    if(serverConf.rootScripts && serverConf.htmlRoot && serverConf.htmlRoot.length) {
         var scripts = utils.readDir(serverConf.htmlRoot).filter(function(f){return /\.js$/.test(f);});
         scripts.forEach (function(sn) {
             var p = '/' + sn.replace(/\.js$/,'') + '/';
@@ -1001,6 +1006,121 @@ function cmdLine(nslice) {
     printmsg(ret);
 }
 
+function web_server_conf(conf) {
+    var res, printf=rampart.utils.printf, argv=process.argv, kill=rampart.utils.kill;
+
+
+    if (argv[2] == '--letssetup' || argv[2]=='letssetup') {
+        conf.letsencrypt="setup"; //flag we are doing letsencrypt, but don't start https
+        argv[2]="start";
+    }
+
+
+    // fill in the missing pieces and do some checks
+    conf = parseOptions(conf);
+
+
+    function check_conf_err() {
+        if(conf.error)
+        {
+            printf("%s\n", conf.error);
+            process.exit(1);
+        }
+    }
+
+    //try to stop even if conf errors returned from parseOptions
+    if(argv[2] == '--stop' || argv[2]=='stop') {
+
+        /* STOP */
+        res=stop(conf);
+        if(res.error)
+            printf("Server is not running or pid file is invalid\n");
+        else if (res.message)
+            printf("%s\n", res.message);
+        process.exit(0);
+
+    } else if(argv[2] == '--restart' || argv[2]=='restart') {
+
+        /* RESTART */
+        check_conf_err();
+        res=stop(conf);
+        if(res.error)
+            printf("Server is not running or pid file is invalid\n");
+        else if (res.message)
+            printf("%s\n", res.message);
+
+        res=start(conf);
+
+        if(res.message)
+            console.log(res.message);
+
+        if(res.error) {
+            console.log(res.error);
+            process.exit(1);
+        }
+
+    } else if(argv[2] == '--status' || argv[2]=='status') {
+
+        /* STATUS */
+        res=status(conf);
+
+        if( res.serverPid && kill(res.serverPid,0) )
+            printf("server is running. pid: %s\n", res.serverPid);
+        else
+            printf("server is not running\n");
+
+        if( res.redirPid && kill(res.redirPid,0) )
+            printf("redirect server is running. pid: %s\n", res.redirPid);
+        else
+            printf("redirect server is not running\n");
+
+        if( res.monitorPid && kill(res.monitorPid,0) )
+            printf("monitor process is running. pid: %s\n", res.monitorPid);
+        else
+            printf("monitor process is not running\n");
+
+    } else if (argv[2] == '--dump' || argv[2]=='dump') {
+
+        /* DUMP */
+        check_conf_err();
+        res=dumpConfig(conf);
+        printf("%3J\n", res);
+        process.exit(0);
+
+    } else if (argv[2] == '--start' || argv[2]=='start' || !argv[2]) { //if no arg, run start
+
+        /* START */
+        check_conf_err();
+        res=start(conf);
+
+        if(res.message)
+            console.log(res.message);
+
+        if(res.error) {
+            console.log(res.error);
+            process.exit(1);
+        }
+        // if (res.isMonitor) -- we are the monitor and should do nothing else but finish the script
+        //                       so event loop can start and monitor can run its setTimeouts
+        // else               -- we just exit.
+
+    } else { 
+
+        /* HELP */
+        if (argv[2] != '-h' && argv[2] != '--help' && argv[2] != 'help')
+        printf("unknown command '%s'\n\n", argv[2]);
+        printf("usage:\n  %s %s [start|stop|restart|letssetup|status|dump|help]\n",argv[0], argv[1]);
+        printf("      start     -- start the http(s) server\n");
+        printf("      stop      -- stop the http(s) server\n");
+        printf("      restart   -- stop and restart the http(s) server\n");
+        printf("      letssetup -- start http only to allow letsencrypt verification\n");
+        printf("      status    -- show status of server processes\n");
+        printf("      dump      -- dump the config object used for server.start()\n");
+        printf("      help      -- show this message\n");
+
+    }
+}
+
 if(module && module.exports){
 
     module.exports= {
@@ -1009,7 +1129,8 @@ if(module && module.exports){
         stop:  stop,
         status:status,
         dumpConfig: dumpConfig,
-        cmdLine: cmdLine
+        cmdLine: cmdLine,
+        web_server_conf: web_server_conf
     }
 
 } else {

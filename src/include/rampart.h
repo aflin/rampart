@@ -689,7 +689,6 @@ extern pthread_mutex_t loglock;
 extern pthread_mutex_t errlock;
 extern FILE *access_fh;
 extern FILE *error_fh;
-extern int duk_rp_server_logging;
 
 /* ****** functions to be run upon exit or before loop ****** */
 typedef void (*rp_vfunc)(void* arg);
