@@ -25,18 +25,8 @@ var serverConf = {
     /* ipv6Port        Number. Set ipv6 port   */
     //ipv6Port:        8088,
 
-    /* port            Number. Set both ipv4 and ipv6 port   */
+    /* port            Number. Set both ipv4 and ipv6 port if > -1   */
     //port:            -1,
-
-    /* redirPort       Number. Launch http->https redirect server and set port   */
-    //redirPort:       -1,
-
-    /* redir           Bool.   Launch http->https redirect server and set to port 80   */
-    //redir:           false,
-
-    /* redirTemp       Bool. If true, and if redir is true or redirPort is set, send a 
-                             302 Moved Temporarily instead of a 301 Moved Permanently   */
-    //redirTemp        false,
 
     /* htmlRoot        String. Root directory from which to serve files   */
     //htmlRoot:        working_directory + '/html',
@@ -52,6 +42,16 @@ var serverConf = {
 
     /* logRoot         String. Log directory   */
     //logRoot:         working_directory + '/logs',
+
+    /* redirPort       Number. Launch http->https redirect server and set port if < -1  */
+    //redirPort:       -1,
+
+    /* redir           Bool.   Launch http->https redirect server and set to port 80   */
+    //redir:           false,
+
+    /* redirTemp       Bool. If true, and if redir is true or redirPort is set, send a
+                             302 Moved Temporarily instead of a 301 Moved Permanently   */
+    //redirTemp        false,
 
     /* accessLog       String. Log file name or null for stdout  */
     //accessLog:       working_directory + '/logs/access.log',
@@ -99,19 +99,24 @@ var serverConf = {
                                ( also sets "port" to 443 ).                                                      */
     //letsencrypt:     "",     //empty string - don't configure using letsencrypt
 
-    /* rootScripts     Bool.   Whether to treat *.js files in htmlRoot as apps (not secure)   */
+    /* rootScripts     Bool.   Whether to treat *.js files in htmlRoot as apps
+                               (not secure; don;t use on a public facing server)      */
     //rootScripts:     false,
 
     /* directoryFunc   Bool.   Whether to provide a directory listing if no index.html is found   */
     //directoryFunc:   false,
 
-    /* daemon          Bool.   whether to detach from terminal   */
+    /* daemon          Bool.   whether to detach from terminal and run as a daemon  */
     //daemon:          true,
 
-    /* monitor':       Bool.   whether to launch monitor process to auto restart server if killed or crashes   */
+    /* monitor':       Bool.   whether to launch monitor process to auto restart server if
+                               killed or unrecoverable error */
     //monitor:         false,
 
-    /* scriptTimeout   Number. Max time to wait for a script module to return a reply in seconds (default 20)   */
+    /* scriptTimeout   Number. Max time to wait for a script module to return a reply in
+                       seconds (default 20). Script callbacks normally should be crafted
+                       to return in a reasonable period of time.  Timeout and reconstruction
+                       of environment is expensive, so this should be a last resort fallback.   */
     //scriptTimeout:   20,
 
     /* connectTimeout  Number. Max time to wait for client send request in seconds (default 20)   */
@@ -122,15 +127,16 @@ var serverConf = {
     //quickserver:     false,
 
     /* serverRoot      String.  base path for logs, htmlRoot, appsRoot and wsappsRoot.
-    //serverRoot:      rampart.utils.realPath('.'),
+    //serverRoot:      rampart.utils.realPath('.'),  Note: here ere serverRoot is defined below
 
-    /* map             Object.  Define filesystem and script mappings   */
+    /* map             Object.  Define filesystem and script mappings, set from htmlRoot,
+                       appsRoot and wsappsRoot above.                                         */
     /*map:             {
                            "/":                working_directory + '/html',
                            "/apps/":           {modulePath: working_directory + '/apps'},
                            "ws://wsapps/":     {modulePath: working_directory + '/wsapps'}
                        }
-                       // note: if you change these, serverConf.htmlRoot defaults et al will not be used or correct.
+                       // note: if this is changed, serverConf.htmlRoot defaults et al will not be used or correct.
     */
 
     /* appendMap       Object.  Append the default map above with more mappings
@@ -157,7 +163,7 @@ var serverConf = {
 
                        The function, like all server callback function takes
                        req, which if altered will be reflected in the call
-                       of the normal callback for the requested page. 
+                       of the normal callback for the requested page.
                        Returning false will skip the normal callback and
                        send a 404 Not Found page.  Returning an object (ie
                        {html:myhtml}) will skip the normal callback and send
@@ -166,11 +172,14 @@ var serverConf = {
                        For "file" `req.fsPath` will be set to the file being
                        retrieved.  If `req.fsPath` is set to a new path and
                        the function returns true, the updated file will be
-                       sent instead.  */
+                       sent instead.
+
+                       For websocket connections, it is run only befor the
+                       first connect (when req.count == 0)                    */
     //beginFunc:       false,
 
-    /* beginFuncOnFile Whether to run the begin function before 
-                       serving a file (-i.e. files from the /html/ directory)  */
+    /* beginFuncOnFile Whether to run the begin function before serving a
+                       file (-i.e. files from the web_server/html/ directory)  */
     //beginFuncOnFile: false,
 
     /* endFunc         Bool/Obj/Function.  A function to run after each JavaScript function
@@ -181,6 +190,12 @@ var serverConf = {
                        `req.reply` will be set to the return value of the
                        normal server callback function and req.reply can be
                        modified before it is sent.
+
+                       For websocket connections, it is run after websockets
+                       disconnects and after the req.wsOnDisconnect
+                       callback, if any.  `req.reply` is an empty object,
+                       modifying it has no effect and return value from
+                       endFunc has not effect.
 
                        End function is never run on file requests.                     */
     //endfunc:         false,

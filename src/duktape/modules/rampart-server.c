@@ -1171,6 +1171,8 @@ DISCB {
     uint32_t ws_id;
 };
 
+static int getfunction(DHS *dhs);
+static int run_begin_end_func(DHS *dhs_func, duk_idx_t req_idx, int has_content, int wrap_type);
 evhtp_hook ws_dis_cb(evhtp_connection_t * conn, short events, void * arg)
 {
     DISCB *info = (DISCB*)arg;
@@ -1207,6 +1209,45 @@ evhtp_hook ws_dis_cb(evhtp_connection_t * conn, short events, void * arg)
     }
     duk_pop_2(ctx); //global stash and undefined/{wsdis}
 
+    if(dhs_endfuncs)
+    {
+        DHS *dhs_endfunc = dhs_endfuncs[thread_local_server_thread_num];
+        duk_idx_t top = duk_get_top(ctx);
+
+        dhs_endfunc->ctx = ctx;
+
+        if(duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("wsreq")))
+        {
+            duk_push_number(ctx, ws_id);
+            if(duk_get_prop(ctx, -2))
+            {
+                duk_push_object(ctx);
+                duk_put_prop_string(ctx, -2, "reply");
+
+                // this has been removed, put it back for getfunction
+                duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("thread_funcstash")); //this should be at index 0;
+                duk_insert(ctx, 0);
+
+                if(!getfunction(dhs_endfunc))
+                    fprintf(stderr, "internal error finding endFunc at %s %d\n",  __FILE__,__LINE__);
+                else
+                {
+                    duk_pull(ctx, -2);
+                    /* execute function "myfunc(req);" */
+                    if (duk_pcall(ctx, 1))
+                    {   //error in myfunc()
+                        char msg[32];
+                        sprintf(msg, "error in endFunc:\n");
+                        const char *errmsg = rp_push_error(ctx, -1, msg, 0);
+                        printerr("%s\n", errmsg);
+                    }
+                }
+                //in websockets end - ignore return value
+            }
+        }
+        duk_set_top(ctx, top);
+    }
+
     /* null out req */
     if(!duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("wsreq")))
     {
@@ -1215,7 +1256,6 @@ evhtp_hook ws_dis_cb(evhtp_connection_t * conn, short events, void * arg)
     }
 
     duk_push_number(ctx, ws_id);
-
     if(duk_get_prop(ctx, -2))
     {
         /* other references might exist, so replace evhtp req with null */
@@ -1227,7 +1267,7 @@ evhtp_hook ws_dis_cb(evhtp_connection_t * conn, short events, void * arg)
     /* get rid of this reference */
     duk_push_number(ctx, ws_id);
     duk_del_prop(ctx, -2);
-    duk_pop(ctx);
+    RP_EMPTY_STACK(ctx);
 
     return 0;
 }
@@ -1948,7 +1988,6 @@ static int run_begin_end_func(DHS *dhs_func, duk_idx_t req_idx, int has_content,
     else
     {
         duk_dup(ctx, req_idx); //duplicate req
-
         /* execute function "myfunc(req);" */
         if ((eno = duk_pcall(ctx, 1)))
         {   //error in myfunc()
@@ -3920,6 +3959,22 @@ static void *http_dothread(void *arg)
             duk_put_global_string(ctx, DUK_HIDDEN_SYMBOL("wsreq"));
         else
             duk_pop(ctx);
+
+        if(duk_get_prop_string(ctx, -1, "count"))
+        {
+            int count = duk_get_int_default(ctx, -1, -1);
+            if(!count)
+            {
+                /* do beginfunc on first ws connect (i.e. count==0) */
+                if(dhs_beginfuncs)
+                {
+                    dhs_beginfunc = dhs_beginfuncs[dhr->server_thread_num];
+                    dhs_beginfunc->ctx = ctx;
+                    dhs_beginfunc->req=req;
+                }
+            }
+        }
+        duk_pop(ctx);
         //[ ..., function, {req} ]
     }
     else
