@@ -1353,7 +1353,7 @@ static void onget_event(evutil_socket_t fd, short events, void* arg)
     char *waitkey=NULL;
     KEYLIST *entry = getev->keys;
     duk_idx_t cb_idx=-1;
-    duk_size_t len;
+    duk_size_t len=0;
 
     CBLOCKLOCK;
 
