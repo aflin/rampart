@@ -3171,16 +3171,21 @@ static void copy_mod_func(duk_context *ctx, duk_context *tctx, duk_idx_t idx)
 
 /* struct to pass to http_dothread
    containing all relevant vars */
-#define DHR struct duk_http_req_s
+#define DHR struct duk_rp_http_thread_req_s
 DHR
 {
-    evhtp_request_t *req;
-    DHS *dhs;
-    pthread_mutex_t lock;
-    pthread_cond_t cond;
-    int have_timeout;
-    int thread_num;  //to transfer thread_local_thread_num to sub_pthread (which is still the same rpthread)
-    int server_thread_num; // same for thread_local_server_thread_num
+//    volatile evhtp_request_t  *req;               // current libevhtp_ws request
+    volatile DHS              *dhs;               // current rampart http request
+    pthread_mutex_t   startlock;         // lock for condition var for continuing thread loop
+    pthread_cond_t    startcond;         // condition var for continuing thread loop
+    pthread_mutex_t   lock;              // lock for condition var
+    pthread_cond_t    cond;              // condition var for timeout
+    int               thread_num;        // to transfer thread_local_thread_num to sub_pthread (which is still the same rpthread)
+    int               server_thread_num; // same for thread_local_server_thread_num
+    pthread_t         script_runner;     // our script running subthread
+    int               have_timeout :1,   // whether scriptTimeout was set
+                      have_subthread :1; // whether subthread is running.
+
 #ifdef RP_TIMEO_DEBUG
     pthread_t par;
 #endif
@@ -3866,30 +3871,23 @@ static duk_ret_t defer_reply(duk_context *ctx)
     return 0;
 }
 
-
+__thread DHR *local_dhr=NULL; 
 
 static void *http_dothread(void *arg)
 {
     DHR *dhr = (DHR *)arg;
-    evhtp_request_t *req = dhr->req;
-    DHS *dhs = dhr->dhs;
+    DHS *dhs = (DHS*)dhr->dhs;
+    evhtp_request_t *req = dhs->req;
     duk_context *ctx=dhs->ctx;
     evhtp_res res = 200;
     int eno, has_content=-1;
     duk_idx_t req_idx, func_idx, reply_idx=-1;
     DHS *dhs_beginfunc=NULL, *dhs_endfunc=NULL;
 
-    // in a different pthread, but same rpthread and thread_local_thread_num is thread local
-    set_thread_num(dhr->thread_num);
-
-    // same for server thread number
-    thread_local_server_thread_num = dhr->server_thread_num;
 
 #ifdef RP_TIMEO_DEBUG
     pthread_t x = dhr->par;
 #endif
-    if (dhr->have_timeout)
-        pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
 
     if(!dhs->skip_wrap && !req->cb_has_websock)
     {
@@ -3993,20 +3991,22 @@ static void *http_dothread(void *arg)
     if(dhs_beginfunc)
     {
         int wrapret = run_begin_end_func(dhs_beginfunc, req_idx, has_content, WRAP_TYPE_BEGIN);
-        if( wrapret != WRAP_RET_CONTINUE && dhr->have_timeout)
-        {
-            RP_PTLOCK(&(dhr->lock));
-            pthread_cond_signal(&(dhr->cond));
-            RP_PTUNLOCK(&(dhr->lock));
-        }
         if( wrapret == WRAP_RET_HAVECONT )
         {
             //we have alternate content to send on top of stack; do so below skipping normal callback
             goto wrap_end;
         }
         else if (wrapret == WRAP_RET_SENTCONT )
+        {
+            if(dhr->have_timeout)
+            {
+                RP_PTLOCK(&(dhr->lock));
+                pthread_cond_signal(&(dhr->cond));
+                RP_PTUNLOCK(&(dhr->lock));
+            }
             //we already sent a 500, 404 or whatever, skip everything else
             return NULL;
+        }
     }
 
     /* execute function "myfunc({object});" */
@@ -4038,13 +4038,6 @@ static void *http_dothread(void *arg)
 
     reply_idx = duk_get_top_index(ctx);
 
-    if (dhr->have_timeout)
-    {
-        //debugf("0x%x, LOCKING in thread_cb\n", (int)x);
-        //fflush(stdout);
-        RP_PTLOCK(&(dhr->lock));
-        pthread_cond_signal(&(dhr->cond));
-    }
     /* stack now has return value from duk function call */
 
     if(!dhs->req) // wsEnd may have killed the connection
@@ -4053,6 +4046,14 @@ static void *http_dothread(void *arg)
     }
 
     wrap_end:
+
+    if (dhr->have_timeout)
+    {
+        //debugf("0x%x, LOCKING in thread_cb\n", (int)x);
+        //fflush(stdout);
+        RP_PTLOCK(&(dhr->lock));
+        pthread_cond_signal(&(dhr->cond));
+    }
 
     if(!req->cb_has_websock)
     {
@@ -4158,7 +4159,7 @@ static void *http_dothread(void *arg)
 
     CHUNKPTR *chunkp = NULL;
 
-    if(dhs->req->flags & EVHTP_REQ_FLAG_CHUNKED)
+    if(req->flags & EVHTP_REQ_FLAG_CHUNKED)
     {
 
         REMALLOC(chunkp, sizeof(CHUNKPTR));
@@ -4217,12 +4218,10 @@ static void *http_dothread(void *arg)
     debugf("0x%x, UNLOCKING in thread_cb\n", (int)x);
 //    fflush(stdout);
 
-    if (dhr->have_timeout)
-        RP_PTUNLOCK(&(dhr->lock));
 
     clean_reqobj(ctx, has_content, req->cb_has_websock);
 
-    if(dhs->req->flags & EVHTP_REQ_FLAG_CHUNKED)
+    if(req->flags & EVHTP_REQ_FLAG_CHUNKED)
     {
         char reqobj_tempname[24];
         duk_push_global_object(ctx);
@@ -4236,8 +4235,47 @@ static void *http_dothread(void *arg)
 
     duk_set_top(ctx, 0); // reset stack
 
+    if (dhr->have_timeout)
+        RP_PTUNLOCK(&(dhr->lock));
     return NULL;
 }
+
+static void *http_dothread_in_thread(void *arg)
+{
+    DHR *dhr = arg;
+    dhr->have_subthread=1;
+
+    // in a different pthread, but same rpthread and thread_local_thread_num is thread local
+    set_thread_num(dhr->thread_num);
+
+    // same for server thread number
+    thread_local_server_thread_num = dhr->server_thread_num;
+
+    pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
+
+    // first time needs to send a ready signal.
+    // wait for signal from parent thread.
+    RP_PTLOCK(&(dhr->startlock));
+
+    RP_PTLOCK(&(dhr->lock));
+    pthread_cond_signal(&(dhr->cond));
+    RP_PTUNLOCK(&(dhr->lock));
+
+    pthread_cond_wait(&(dhr->startcond),&(dhr->startlock));
+    RP_PTUNLOCK(&(dhr->startlock));
+    http_dothread(arg);
+
+    while(1)
+    {
+        // wait for signal from parent thread
+        RP_PTLOCK(&(dhr->startlock));
+        pthread_cond_wait(&(dhr->startcond),&(dhr->startlock));
+        RP_PTUNLOCK(&(dhr->startlock));
+        http_dothread(arg);
+    }
+    return NULL;
+}
+
 
 extern struct slisthead tohead;
 
@@ -4296,16 +4334,35 @@ static duk_context *redo_ctx(int thrno)
 }
 
 static void
-http_thread_callback(evhtp_request_t *req, void *arg, int thrno)
+http_thread_callback(evhtp_request_t *req, DHS *dhs, int thrno)
 {
-    DHS *dhs = arg;
-    DHR dhr_s, *dhr = &dhr_s;
-    pthread_t script_runner;
     pthread_attr_t attr;
     struct timespec ts;
     struct timeval now;
     int ret = 0;
 	uint64_t nsec=0;
+	DHR *dhr;
+
+	if(!local_dhr)
+	{
+	    CALLOC(local_dhr, sizeof(DHR));
+
+        // will enter different pthread, but same rpthread
+        // so save rpthread id info and reapply in new pthread
+        local_dhr->thread_num=get_thread_num();
+        // same for server thread number
+        local_dhr->server_thread_num = thread_local_server_thread_num;
+
+        RP_PTINIT(&(local_dhr->lock));
+        RP_PTINIT_COND(&(local_dhr->cond));
+        RP_PTINIT(&(local_dhr->startlock));
+        RP_PTINIT_COND(&(local_dhr->startcond));
+    }
+
+    dhr = local_dhr;
+    dhr->dhs = dhs;
+    //dhr->req = req;
+
 
 #ifdef RP_TIMEO_DEBUG
     pthread_t x = pthread_self();
@@ -4313,15 +4370,6 @@ http_thread_callback(evhtp_request_t *req, void *arg, int thrno)
     fflush(stdout);
 #endif
 
-    gettimeofday(&now, NULL);
-
-    dhr->dhs = dhs;
-    dhr->req = req;
-    // will enter different pthread, but same rpthread
-    // so save rpthread id info and reapply in new pthread
-    dhr->thread_num=get_thread_num();
-    // same for server thread number
-    dhr->server_thread_num = thread_local_server_thread_num;
 
 #ifdef RP_TIMEO_DEBUG
     dhr->par = x;
@@ -4335,9 +4383,11 @@ http_thread_callback(evhtp_request_t *req, void *arg, int thrno)
         (void)http_dothread(dhr);
         return;
     }
-
     debugf("0x%x: with timeout set\n", (int)x);
     dhr->have_timeout = 1;
+
+    gettimeofday(&now, NULL);
+
     ts.tv_sec = now.tv_sec + dhs->timeout.tv_sec;
     nsec = (dhs->timeout.tv_usec + now.tv_usec) * 1000;
 	if(nsec > 1000000000)
@@ -4349,24 +4399,37 @@ http_thread_callback(evhtp_request_t *req, void *arg, int thrno)
 
     debugf("now= %d.%06d, timeout=%d.%6d\n",(int)now.tv_sec, (int)now.tv_usec, (int)ts.tv_sec, (int)(ts.tv_nsec/1000));
 
-    //TODO: this is unnecessary.  Create one for each thread and init once
-    RP_PTINIT(&(dhr->lock));
-    RP_PTINIT_COND(&(dhr->cond));
 
-    /* is this necessary? https://computing.llnl.gov/tutorials/pthreads/#Joining */
-    pthread_attr_init(&attr);
-    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
+    if(!dhr->have_subthread)
+    {
+        /* is this necessary? https://computing.llnl.gov/tutorials/pthreads/#Joining */
+        pthread_attr_init(&attr);
+        pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
 
-    debugf("0x%x, LOCKING in http_callback\n", (int)x);
-    RP_PTLOCK(&(dhr->lock));
+        debugf("0x%x, LOCKING in http_callback\n", (int)x);
+        RP_PTLOCK(&(dhr->lock));
 
-    pthread_create(&script_runner, &attr, http_dothread, dhr);
-    debugf("0x%x, cond wait, UNLOCKING\n", (int)x);
-    fflush(stdout);
+        pthread_create(&dhr->script_runner, &attr, http_dothread_in_thread, dhr);
+        debugf("0x%x, cond wait, UNLOCKING\n", (int)x);
+        //fflush(stdout);
+
+        // when thread starts, we need to wait until its ready
+        // we'll use the other cond for that.
+        pthread_cond_wait(&(dhr->cond),&(dhr->lock));
+    }
+    else
+    {
+        RP_PTLOCK(&(dhr->lock));
+        RP_PTLOCK(&(dhr->startlock));
+    }
+
+    // send signal to resume loop in http_dothread_in_thread
+    pthread_cond_signal(&(dhr->startcond));
+    RP_PTUNLOCK(&(dhr->startlock));
 
     /* unlock dhr->lock and wait for pthread_cond_signal in http_dothread */
     ret = pthread_cond_timedwait(&(dhr->cond), &(dhr->lock), &ts);
-    /* reacquire lock after timeout or condition signalled */
+    /* reacquired lock after timeout or condition signalled */
     RP_PTUNLOCK(&(dhr->lock));
     debugf("0x%x, cond wait satisfied, ret=%d (==%d(ETIMEOUT)), LOCKED\n", (int)x, (int)ret, (int)ETIMEDOUT);
     fflush(stdout);
@@ -4375,7 +4438,8 @@ http_thread_callback(evhtp_request_t *req, void *arg, int thrno)
     {
         debugf("%d, cancelling\n", (int)x);
         fflush(stdout);
-        pthread_cancel(script_runner);
+        pthread_cancel(dhr->script_runner);
+        dhr->have_subthread=0;
         debugf("%d, cancelled\n", (int)x);
         fflush(stdout);
 
@@ -4413,12 +4477,11 @@ http_thread_callback(evhtp_request_t *req, void *arg, int thrno)
         }
         send500(req, "Timeout in Script");
     }
+
 #ifdef RP_TIMEO_DEBUG
     gettimeofday(&now, NULL);
     printf("at end: now= %d.%06d, timeout=%d.%6d\n",(int)now.tv_sec, (int)now.tv_usec, (int)ts.tv_sec, (int)(ts.tv_nsec/1000));
 #endif
-    pthread_join(script_runner, NULL);
-    pthread_cond_destroy(&(dhr->cond));
 
     debugf("exiting http_thread_callback\n");
 }
@@ -4909,14 +4972,15 @@ static void http_callback(evhtp_request_t *req, void *arg)
 
     //dhs is gone at end of this function
     //so we mark it as such
-    duk_push_pointer(ctx, (void*) NULL);
-    duk_put_global_string(ctx, DUK_HIDDEN_SYMBOL("dhs"));
+    // also note that if redo_ctx, dhs->ctx and thr->ctx has changed and ctx is invalid
+    duk_push_pointer(dhs->ctx, (void*) NULL);
+    duk_put_global_string(dhs->ctx, DUK_HIDDEN_SYMBOL("dhs"));
 
     http_req_end:
 
     // we should only have thread_funcstash on top, but remove everything anyway
     //while (duk_get_top(ctx) > 0) duk_pop(ctx);
-    RP_EMPTY_STACK(ctx);
+    RP_EMPTY_STACK(dhs->ctx);
     thr->ctx = thr->htctx;  //switch back as necessary
 
     return;
