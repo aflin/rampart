@@ -90,6 +90,9 @@ add_executable(rampart
 set_target_properties(rampart PROPERTIES
   ENABLE_EXPORTS 1
 )
+
+add_dependencies(rampart texis)
+
 if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
 
 target_link_libraries(rampart LINK_PUBLIC
