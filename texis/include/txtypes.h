@@ -397,8 +397,13 @@ typedef volatile TXATOMINT_WIDE_NV      TXATOMINT_WIDE;
 #  define TXATOMINT_MAX 0x7fffffffL
 #  define TXATOMUINT_MAX 0xffffffffL
 /* Return w/o volatile; no compiler warning: */
-TXATOMINT_NV TXatomicAdd ARGS((TXATOMINT *valPtr, TXATOMINT n));
-TXATOMINT_NV TXatomicSub ARGS((TXATOMINT *valPtr, TXATOMINT n));
+//TXATOMINT_NV TXatomicAdd ARGS((TXATOMINT *valPtr, TXATOMINT n));
+//TXATOMINT_NV TXatomicSub ARGS((TXATOMINT *valPtr, TXATOMINT n));
+// TODO: find reason ARGS doesn't work on Macos 15
+
+TXATOMINT_NV TXatomicAdd (TXATOMINT *valPtr, TXATOMINT n);
+TXATOMINT_NV TXatomicSub (TXATOMINT *valPtr, TXATOMINT n);
+
 TXATOMINT_NV TXatomicCompareAndSwap(TXATOMINT *valPtr, TXATOMINT oldVal,
                                     TXATOMINT newVal);
 TXATOMINT_WIDE_NV TXatomicCompareAndSwapWide(TXATOMINT_WIDE *valPtr,
