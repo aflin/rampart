@@ -470,6 +470,20 @@ function status(serverConf){
     return ret;    
 }
 
+function macos_check(serverConf){
+    if(!serverConf.daemon)
+        return;
+    var r = shell("uname -s");
+    if(r.stdout == "Darwin\n")
+    {
+        printf("Warn: macos will throttle the server if started in the background.\n"+
+               "      If you need full performace, set `daemon:false,` and launch with, e.g.\n"+
+               "          nohup rampart web_server_conf.js start &\n\n");
+    }
+}
+
+
+
 function start(serverConf, dump) {
     var server=require('rampart-server'); 
 
@@ -509,6 +523,8 @@ function start(serverConf, dump) {
         if(serverConf.redirPort < 1024 && serverConf.redirPort > 0)
             return serr('Error: script must be started as root to bind to redirect server port ' + serverConf.redirPort);
     }
+
+    macos_check(serverConf);
 
     var serverpid;
 
