@@ -162,7 +162,7 @@ testFeature("500 requests (10 puts, 100 gets each)", function() {
     var url="http://localhost:8086/ltest";
     var i=0;
     var urls=[]
-    var res, ret = true;
+    var err, res, ret = true;
     while(i<50)
     {
         urls.push(url);
@@ -175,8 +175,13 @@ testFeature("500 requests (10 puts, 100 gets each)", function() {
         res=curl.fetch(urls, function(res){
             ret = ret && (res.text=="success");
             if(!ret)
-                throw(res);
+            {
+                err=res.errMsg;
+                return false;
+            }
         });
+        if(err)
+            throw(new Error(err));
         i++;
     }
     return ret;
