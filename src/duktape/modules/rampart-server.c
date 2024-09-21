@@ -22,6 +22,7 @@
 #include <sys/mman.h>
 #include <sys/param.h>
 #include <grp.h>
+#include <poll.h>
 
 #ifdef __APPLE__
 #include <uuid/uuid.h>
@@ -140,7 +141,7 @@ DHS
 {
     duk_context       *ctx;          // duk context for this thread (updated in thread), both normal and websockets
     evhtp_request_t   *req;          // the evhtp request struct for the current request (updated in thread, upon each request)
-    struct timeval     timeout;      // timeout for the duk script
+    int                timeout;      // timeout for the duk script
     uint16_t           threadno;     // our current thread number
     uint16_t           pathlen;      // length of the url path if module==MODULE_PATH
     char              *module_name;  // name of the module
@@ -183,8 +184,7 @@ static DHS *new_dhs(duk_context *ctx, int idx)
     dhs->reqpath=NULL;
     dhs->pathlen=0;
     /* afaik there is no TIME_T_MAX */
-    dhs->timeout.tv_sec = RP_TIME_T_FOREVER;
-    dhs->timeout.tv_usec = 0;
+    dhs->timeout = RP_TIME_T_FOREVER;
     dhs->auxbuf = NULL;
     dhs->bufsz = 0;
     dhs->bufpos = 0;
@@ -209,8 +209,7 @@ static DHS *clone_dhs(DHS *indhs)
     dhs->aux =            indhs->aux;
     dhs->reqpath=         indhs->reqpath;
     dhs->pathlen=         indhs->pathlen;
-    dhs->timeout.tv_sec = indhs->timeout.tv_sec;
-    dhs->timeout.tv_usec= indhs->timeout.tv_usec;
+    dhs->timeout =        indhs->timeout;
     dhs->auxbuf =         indhs->auxbuf;
 
 
@@ -3175,11 +3174,11 @@ static void copy_mod_func(duk_context *ctx, duk_context *tctx, duk_idx_t idx)
 DHR
 {
 //    volatile evhtp_request_t  *req;               // current libevhtp_ws request
-    volatile DHS              *dhs;               // current rampart http request
-    pthread_mutex_t   startlock;         // lock for condition var for continuing thread loop
-    pthread_cond_t    startcond;         // condition var for continuing thread loop
-    pthread_mutex_t   lock;              // lock for condition var
-    pthread_cond_t    cond;              // condition var for timeout
+    volatile DHS      *dhs;               // current rampart http request
+    int               reader;
+    int               writer;
+    int               subreader;
+    int               subwriter;
     int               thread_num;        // to transfer thread_local_thread_num to sub_pthread (which is still the same rpthread)
     int               server_thread_num; // same for thread_local_server_thread_num
     pthread_t         script_runner;     // our script running subthread
@@ -3911,15 +3910,8 @@ static void *http_dothread(void *arg)
     /* copy function ref to top of stack */
     if(!getfunction(dhs))
     {
-        if (dhr->have_timeout)
-        {
-            RP_PTLOCK(&(dhr->lock));
-            pthread_cond_signal(&(dhr->cond));
-        }
         send404(req);
-        if (dhr->have_timeout)
-            RP_PTUNLOCK(&(dhr->lock));
-        return NULL;
+        goto end_func;
     };
 
     func_idx=duk_get_top_index(ctx);
@@ -3998,14 +3990,8 @@ static void *http_dothread(void *arg)
         }
         else if (wrapret == WRAP_RET_SENTCONT )
         {
-            if(dhr->have_timeout)
-            {
-                RP_PTLOCK(&(dhr->lock));
-                pthread_cond_signal(&(dhr->cond));
-                RP_PTUNLOCK(&(dhr->lock));
-            }
             //we already sent a 500, 404 or whatever, skip everything else
-            return NULL;
+            goto end_func;
         }
     }
 
@@ -4014,12 +4000,6 @@ static void *http_dothread(void *arg)
     duk_dup(ctx, req_idx);
     if ((eno = duk_pcall(ctx, 1)))
     {
-        if (dhr->have_timeout)
-        {
-            RP_PTLOCK(&(dhr->lock));
-            pthread_cond_signal(&(dhr->cond));
-        }
-
         evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Type", "text/html", 0, 0));
 
         const char *errmsg = rp_push_error(ctx, -1, "error in callback:", 0);
@@ -4029,11 +4009,8 @@ static void *http_dothread(void *arg)
         //send500 calls http_callback, which now empties the stack
         //duk_pop(ctx);
 
-        if (dhr->have_timeout)
-            RP_PTUNLOCK(&(dhr->lock));
-
         clean_reqobj(ctx, has_content, req->cb_has_websock);
-        return NULL;
+        goto end_func;
     }
 
     reply_idx = duk_get_top_index(ctx);
@@ -4046,14 +4023,6 @@ static void *http_dothread(void *arg)
     }
 
     wrap_end:
-
-    if (dhr->have_timeout)
-    {
-        //debugf("0x%x, LOCKING in thread_cb\n", (int)x);
-        //fflush(stdout);
-        RP_PTLOCK(&(dhr->lock));
-        pthread_cond_signal(&(dhr->cond));
-    }
 
     if(!req->cb_has_websock)
     {
@@ -4086,9 +4055,7 @@ static void *http_dothread(void *arg)
         {
             //duk_del_prop_string(ctx, req_idx, "reply");
             //we already sent a 500, 404 or whatever, skip everything else
-            if (dhr->have_timeout)
-                RP_PTUNLOCK(&(dhr->lock));
-            return NULL;
+            goto end_func;
         }
         duk_del_prop_string(ctx, req_idx, "reply");
         if ( wrapret == WRAP_RET_HAVECONT)
@@ -4146,9 +4113,7 @@ static void *http_dothread(void *arg)
                 /* when we disconnect */
                 evhtp_connection_set_hook(newdhs->req->conn, evhtp_hook_on_request_fini, defer_finalize, deferp);
 
-                if (dhr->have_timeout)
-                    RP_PTUNLOCK(&(dhr->lock));
-                return NULL;
+                goto end_func;
             }
             duk_del_prop_string(ctx, -2, "defer");
         }
@@ -4235,15 +4200,39 @@ static void *http_dothread(void *arg)
 
     duk_set_top(ctx, 0); // reset stack
 
-    if (dhr->have_timeout)
-        RP_PTUNLOCK(&(dhr->lock));
+    end_func:
     return NULL;
 }
+
+#define t_write(b,c) ({\
+    int r=0;\
+    r=write(dhr->writer, (b), (c));\
+    r;\
+})
+
+#define t_read(b,c) ({\
+    int r=0;\
+    r=read(dhr->reader, (b), (c));\
+    r;\
+})
+
+#define subt_write(b,c) ({\
+    int r=0;\
+    r=write(dhr->subwriter, (b), (c));\
+    r;\
+})
+
+#define subt_read(b,c) ({\
+    int r=0;\
+    r=read(dhr->subreader, (b), (c));\
+    r;\
+})
 
 static void *http_dothread_in_thread(void *arg)
 {
     DHR *dhr = arg;
     dhr->have_subthread=1;
+    char sig;
 
     // in a different pthread, but same rpthread and thread_local_thread_num is thread local
     set_thread_num(dhr->thread_num);
@@ -4253,25 +4242,13 @@ static void *http_dothread_in_thread(void *arg)
 
     pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
 
-    // first time needs to send a ready signal.
-    // wait for signal from parent thread.
-    RP_PTLOCK(&(dhr->startlock));
-
-    RP_PTLOCK(&(dhr->lock));
-    pthread_cond_signal(&(dhr->cond));
-    RP_PTUNLOCK(&(dhr->lock));
-
-    pthread_cond_wait(&(dhr->startcond),&(dhr->startlock));
-    RP_PTUNLOCK(&(dhr->startlock));
-    http_dothread(arg);
-
     while(1)
     {
-        // wait for signal from parent thread
-        RP_PTLOCK(&(dhr->startlock));
-        pthread_cond_wait(&(dhr->startcond),&(dhr->startlock));
-        RP_PTUNLOCK(&(dhr->startlock));
+        subt_read(&sig, sizeof(char));
+        if(sig != 's')
+            continue;
         http_dothread(arg);
+        subt_write("e", sizeof(char));
     }
     return NULL;
 }
@@ -4337,14 +4314,11 @@ static void
 http_thread_callback(evhtp_request_t *req, DHS *dhs, int thrno)
 {
     pthread_attr_t attr;
-    struct timespec ts;
-    struct timeval now;
-    int ret = 0;
-	uint64_t nsec=0;
 	DHR *dhr;
 
 	if(!local_dhr)
 	{
+	    int p[2], p2[2];
 	    CALLOC(local_dhr, sizeof(DHR));
 
         // will enter different pthread, but same rpthread
@@ -4353,15 +4327,31 @@ http_thread_callback(evhtp_request_t *req, DHS *dhs, int thrno)
         // same for server thread number
         local_dhr->server_thread_num = thread_local_server_thread_num;
 
-        RP_PTINIT(&(local_dhr->lock));
-        RP_PTINIT_COND(&(local_dhr->cond));
-        RP_PTINIT(&(local_dhr->startlock));
-        RP_PTINIT_COND(&(local_dhr->startcond));
+        if (pipe(p) == -1)
+        {
+            fprintf(stderr, "thread pipe creation failed\n");
+            exit(1);
+        } 
+        else
+        {
+            local_dhr->reader=p[0];
+            local_dhr->subwriter=p[1];
+        }
+
+        if (pipe(p2) == -1)
+        {
+            fprintf(stderr, "thread pipe creation failed\n");
+            exit(1);
+        } 
+        else
+        {
+            local_dhr->subreader=p2[0];
+            local_dhr->writer=p2[1];
+        }
     }
 
     dhr = local_dhr;
     dhr->dhs = dhs;
-    //dhr->req = req;
 
 
 #ifdef RP_TIMEO_DEBUG
@@ -4376,29 +4366,17 @@ http_thread_callback(evhtp_request_t *req, DHS *dhs, int thrno)
 #endif
 
     /* if no timeout, not necessary to thread out the callback */
-    if (req->websock || dhs->timeout.tv_sec == RP_TIME_T_FOREVER)
+    if (req->websock || dhs->timeout == RP_TIME_T_FOREVER)
     {
         debugf("no timeout set");
         dhr->have_timeout = 0;
         (void)http_dothread(dhr);
         return;
     }
+
+    // do request with timeout
     debugf("0x%x: with timeout set\n", (int)x);
     dhr->have_timeout = 1;
-
-    gettimeofday(&now, NULL);
-
-    ts.tv_sec = now.tv_sec + dhs->timeout.tv_sec;
-    nsec = (dhs->timeout.tv_usec + now.tv_usec) * 1000;
-	if(nsec > 1000000000)
-	{
-		ts.tv_sec += nsec/1000000000;
-		nsec=nsec % 1000000000;
-	}
-	ts.tv_nsec=nsec;
-
-    debugf("now= %d.%06d, timeout=%d.%6d\n",(int)now.tv_sec, (int)now.tv_usec, (int)ts.tv_sec, (int)(ts.tv_nsec/1000));
-
 
     if(!dhr->have_subthread)
     {
@@ -4406,35 +4384,27 @@ http_thread_callback(evhtp_request_t *req, DHS *dhs, int thrno)
         pthread_attr_init(&attr);
         pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
 
-        debugf("0x%x, LOCKING in http_callback\n", (int)x);
-        RP_PTLOCK(&(dhr->lock));
-
         pthread_create(&dhr->script_runner, &attr, http_dothread_in_thread, dhr);
         debugf("0x%x, cond wait, UNLOCKING\n", (int)x);
-        //fflush(stdout);
-
-        // when thread starts, we need to wait until its ready
-        // we'll use the other cond for that.
-        pthread_cond_wait(&(dhr->cond),&(dhr->lock));
-    }
-    else
-    {
-        RP_PTLOCK(&(dhr->lock));
-        RP_PTLOCK(&(dhr->startlock));
     }
 
     // send signal to resume loop in http_dothread_in_thread
-    pthread_cond_signal(&(dhr->startcond));
-    RP_PTUNLOCK(&(dhr->startlock));
+    t_write("s", sizeof(char));
 
-    /* unlock dhr->lock and wait for pthread_cond_signal in http_dothread */
-    ret = pthread_cond_timedwait(&(dhr->cond), &(dhr->lock), &ts);
-    /* reacquired lock after timeout or condition signalled */
-    RP_PTUNLOCK(&(dhr->lock));
-    debugf("0x%x, cond wait satisfied, ret=%d (==%d(ETIMEOUT)), LOCKED\n", (int)x, (int)ret, (int)ETIMEDOUT);
-    fflush(stdout);
+    int pret;
+    struct pollfd ufds[1];
 
-    if (ret == ETIMEDOUT)
+    ufds[0].fd = dhr->reader;
+    ufds[0].events = POLLIN;
+
+    if((pret = poll(ufds, 1, dhs->timeout)) == -1)
+    {
+        fprintf(stderr, "pipe error in http_thread_callback\n");
+        exit(1);
+    }
+
+    //timeout
+    if (pret == 0)
     {
         debugf("%d, cancelling\n", (int)x);
         fflush(stdout);
@@ -4477,7 +4447,13 @@ http_thread_callback(evhtp_request_t *req, DHS *dhs, int thrno)
         }
         send500(req, "Timeout in Script");
     }
-
+    else
+    {
+        char sig;
+        t_read(&sig, sizeof(char));
+        if(sig != 'e')
+            fprintf(stderr, "bad signal from subthread in http_thread_callback\n");
+    }
 #ifdef RP_TIMEO_DEBUG
     gettimeofday(&now, NULL);
     printf("at end: now= %d.%06d, timeout=%d.%6d\n",(int)now.tv_sec, (int)now.tv_usec, (int)ts.tv_sec, (int)(ts.tv_nsec/1000));
@@ -5930,9 +5906,8 @@ duk_ret_t duk_server_start(duk_context *ctx)
             double to = REQUIRE_NUMBER(ctx, -1, "server.start: parameter \"scriptTimeout\" requires a number (float)");
             if(to>0.0)
             {
-                dhs->timeout.tv_sec = (time_t)to;
-                dhs->timeout.tv_usec = (suseconds_t)1000000.0 * (to - (double)dhs->timeout.tv_sec);
-                fprintf(access_fh, "set script timeout to %d sec and %d microseconds\n", (int)dhs->timeout.tv_sec, (int)dhs->timeout.tv_usec);
+                dhs->timeout = (int)(to*1000.0);
+                fprintf(access_fh, "set script timeout to %d millisecs\n", dhs->timeout);
             }
         }
         duk_pop(ctx);
@@ -6056,8 +6031,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
                 dhs404 = new_dhs(ctx, fpos);
                 dhs404->module=mod;
 
-                dhs404->timeout.tv_sec = dhs->timeout.tv_sec;
-                dhs404->timeout.tv_usec = dhs->timeout.tv_usec;
+                dhs404->timeout = dhs->timeout;
                 /* copy function to all the heaps/ctxs */
 
                 if(mod)
@@ -6110,8 +6084,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
                 dhs_beginfunc_template = new_dhs(ctx, fpos);
                 dhs_beginfunc_template->module=mod;
 
-                dhs_beginfunc_template->timeout.tv_sec = dhs->timeout.tv_sec;
-                dhs_beginfunc_template->timeout.tv_usec = dhs->timeout.tv_usec;
+                dhs_beginfunc_template->timeout = dhs->timeout;
 
                 /* copy function to all the heaps/ctxs */
 
@@ -6170,8 +6143,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
                 dhs_endfunc_template = new_dhs(ctx, fpos);
                 dhs_endfunc_template->module=mod;
 
-                dhs_endfunc_template->timeout.tv_sec = dhs->timeout.tv_sec;
-                dhs_endfunc_template->timeout.tv_usec = dhs->timeout.tv_usec;
+                dhs_endfunc_template->timeout = dhs->timeout;
 
                 /* copy function to all the heaps/ctxs */
 
@@ -6238,8 +6210,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
 
                 dhs_dirlist = new_dhs(ctx, fpos);
                 dhs_dirlist->module=mod;
-                dhs_dirlist->timeout.tv_sec = dhs->timeout.tv_sec;
-                dhs_dirlist->timeout.tv_usec = dhs->timeout.tv_usec;
+                dhs_dirlist->timeout = dhs->timeout;
                 /* copy function to all the heaps/ctxs */
                 if(mod)
                 {
@@ -6464,8 +6435,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
                         add_exit_func(simplefree, cb_dhs);
                         cb_dhs->module=mod;
                         cb_dhs->pathlen=pathlen;
-                        cb_dhs->timeout.tv_sec = dhs->timeout.tv_sec;
-                        cb_dhs->timeout.tv_usec = dhs->timeout.tv_usec;
+                        cb_dhs->timeout = dhs->timeout;
                         /* copy function to all the heaps/ctxs */
                         if(mod)
                         {

@@ -560,7 +560,7 @@ do                                                               \
 #define SET_THREAD_UNSAFE(ctx) /* nada */
 
 // used for no timeout in server
-#define RP_TIME_T_FOREVER 2147483647
+#define RP_TIME_T_FOREVER -1
 
 // When in threads and copying vars between, i.e. rampart.thread.put()
 // a devoted "clipboard" duktape stack is used
