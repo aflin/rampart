@@ -1,5 +1,24 @@
 #!/usr/bin/env rampart
 
+/* 
+the server can be started by running:
+  rampart web_server_config.js
+         or
+  rampart web_server_config.js start
+
+Help:
+  ./web_server_conf.js help
+  usage:
+    rampart web_server_conf.js [start|stop|restart|letssetup|status|dump|help]
+        start     -- start the http(s) server
+        stop      -- stop the http(s) server
+        restart   -- stop and restart the http(s) server
+        letssetup -- start http only to allow letsencrypt verification
+        status    -- show status of server processes
+        dump      -- dump the config object used for server.start()
+        help      -- show this message
+*/
+
 //set working directory to the location of this script
 var working_directory = process.scriptPath;
 
@@ -100,7 +119,7 @@ var serverConf = {
     //letsencrypt:     "",     //empty string - don't configure using letsencrypt
 
     /* rootScripts     Bool.   Whether to treat *.js files in htmlRoot as apps
-                               (not secure; don;t use on a public facing server)      */
+                               (not secure; don't use on a public facing server)      */
     //rootScripts:     false,
 
     /* directoryFunc   Bool.   Whether to provide a directory listing if no index.html is found   */
@@ -123,7 +142,8 @@ var serverConf = {
     //connectTimeout:  20,
 
     /* quickserver     Bool.   whether to load the alternate quickserver setting which serves 
-                               files from serverRoot only and no apps or wsapps unless explicit    */
+                               files from serverRoot only and no apps or wsapps unless 
+                               explicity set                                                    */
     //quickserver:     false,
 
     /* serverRoot      String.  base path for logs, htmlRoot, appsRoot and wsappsRoot.
@@ -151,7 +171,8 @@ var serverConf = {
     /* appendProcTitle Bool.  Whether to append ip:port to process name as seen in ps */
     //appendProcTitle: false,
 
-    /* beginFunc       Bool/Obj/Function.  A function to run at the beginning of each JavaScript function or on file load
+    /* beginFunc       Bool/Obj/Function.  A function to run at the beginning of each JavaScript
+                       function or on file load
                        e.g. -
        beginFunc:      {module: working_directory+'/apps/beginfunc.js'}, //where beginfunc.js is "modules.exports=function(req) {...}"
        or
@@ -201,7 +222,9 @@ var serverConf = {
     //endfunc:         false,
 
     /* logFunc         Function - a function to replace normal logging, if log:true set above
-                       See two examples below.                                                 */
+                       See two examples below.
+                       -e.g.
+                       logFunc: myloggingfunc,                                                 */
     //logFunc:         false,
 
     serverRoot:        working_directory,
@@ -213,7 +236,6 @@ var serverConf = {
 
 // example logging func - log output abbreviated if not 200
 function myloggingfunc (logdata, logline) {
-rampart.utils.printf('%3J\n', logdata);
     if(logdata.code != 200)
         rampart.utils.fprintf(rampart.utils.accessLog,
             '%s %s "%s %s%s%s %d"\n',
