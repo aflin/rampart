@@ -55,6 +55,7 @@ RP_MTYPES *allmimes=rp_mimetypes;
 int n_allmimes =nRpMtypes;
 struct timeval ctimeout;
 int rp_server_logging=0;
+size_t default_range_bytes=1<<23;
 
 extern int RP_TX_isforked;
 extern char *RP_script_path;
@@ -2217,8 +2218,14 @@ static void rp_sendfile(evhtp_request_t *req, char *fn, int haveCT, struct stat 
             {
                 endval = (ev_off_t)strtoll(eptr, NULL, 10);
                 if (endval && endval > beg)
-                    len = endval - beg;
+                    len = (endval - beg) +1;
             }
+            else if (filesize - beg > default_range_bytes)
+            {   // don't send whole file, just a small chunk.
+                len = default_range_bytes;
+                endval = -1 + beg + len;
+            }
+
             rescode = 206;
             /* Content-Range: bytes 12812288-70692914/70692915 */
             snprintf(reprange, 128, "bytes %" PRIu64 "-%" PRIu64 "/%" PRIu64,
@@ -2226,7 +2233,7 @@ static void rp_sendfile(evhtp_request_t *req, char *fn, int haveCT, struct stat 
                      (uint64_t)((len == -1) ? (filesize - 1) : endval),
                      (uint64_t)filesize );
             evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Range", reprange, 0, 1));
-            len = filesize - beg;
+            //len = filesize - beg;
             //don't compress, just return
             snprintf(slen, 64, "%" PRIu64, (uint64_t)len);
             evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Length", slen, 0, 1));
@@ -5999,6 +6006,17 @@ duk_ret_t duk_server_start(duk_context *ctx)
 
     if (ob_idx != -1)
     {
+        /* default number of bytes for an open ended range request */
+        if (duk_rp_GPS_icase(ctx, ob_idx, "defaultRangeMBytes"))
+        {
+            double drmb = REQUIRE_NUMBER(ctx, -1, "server.start: Option 'defaultRangeMBytes' must be a number >0.01 and <=1000 (megabytes)");
+            if(drmb < 0.01 || drmb > 1000.0)
+                RP_THROW(ctx,  "server.start: Option 'defaultRangeMBytes' must be a number >0.01 and <=1000 (megabytes)");
+
+            default_range_bytes = (size_t)( drmb * 1048576.0);
+        }
+        duk_pop(ctx);
+
         /* custom 404 page/function */
         if (duk_rp_GPS_icase(ctx, ob_idx, "notFoundFunc"))
         {
