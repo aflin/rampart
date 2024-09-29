@@ -2228,10 +2228,20 @@ static void rp_sendfile(evhtp_request_t *req, char *fn, int haveCT, struct stat 
             }
 
             rescode = 206;
+
+            if(len==-1)
+                endval=filesize-1;
+
+            if(endval > filesize-1 || beg > filesize -1)
+            {
+                send404(req);
+                return;
+            }
+
             /* Content-Range: bytes 12812288-70692914/70692915 */
             snprintf(reprange, 128, "bytes %" PRIu64 "-%" PRIu64 "/%" PRIu64,
                      (uint64_t)beg,
-                     (uint64_t)((len == -1) ? (filesize - 1) : endval),
+                     (uint64_t)endval,
                      (uint64_t)filesize );
             evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Range", reprange, 0, 1));
             //don't compress, just return
