@@ -152,10 +152,11 @@ DHS
     size_t             bufsz;        // size of aux buffer.
     size_t             bufpos;       // end position of data in aux buffer.
     duk_idx_t          func_idx;     // location of the callback (set at server start, or for modules, upon require()) //4 bytes
-    int32_t module    :4,            // is 0 for normal fuction, 1 for js module, 3 for module path.
-            freeme    :1,            // whether this is a temporary struct that needs to be freed after use.
-            skip_wrap :1,            // flag for 404, 500 etc, don't run the start script
-            unused    :26;
+    int16_t  module   :8,            // is 0 for normal fuction, 1 for js module, 3 for module path. only 2 bits needed
+             unused   :8;
+    uint16_t freeme   :1,            // whether this is a temporary struct that needs to be freed after use.
+             skip_wrap:1,            // flag for 404, 500 etc, don't run the start script
+             uunused  :14;
 };
 
 
@@ -3190,8 +3191,8 @@ DHR
     int               thread_num;        // to transfer thread_local_thread_num to sub_pthread (which is still the same rpthread)
     int               server_thread_num; // same for thread_local_server_thread_num
     pthread_t         script_runner;     // our script running subthread
-    int               have_timeout :1,   // whether scriptTimeout was set
-                      have_subthread :1; // whether subthread is running.
+    uint8_t           have_timeout;      // whether scriptTimeout was set
+    uint8_t           have_subthread;    // whether subthread is running.
 
 #ifdef RP_TIMEO_DEBUG
     pthread_t par;
