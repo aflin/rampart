@@ -2233,10 +2233,11 @@ static void rp_sendfile(evhtp_request_t *req, char *fn, int haveCT, struct stat 
                      (uint64_t)((len == -1) ? (filesize - 1) : endval),
                      (uint64_t)filesize );
             evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Range", reprange, 0, 1));
-            //len = filesize - beg;
             //don't compress, just return
             snprintf(slen, 64, "%" PRIu64, (uint64_t)len);
             evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Length", slen, 0, 1));
+            if(len==-1)
+                len = filesize - beg;
             rp_evbuffer_add_file(req->buffer_out, fd, beg, len);
             sendresp(req, rescode, 0);
             return;
