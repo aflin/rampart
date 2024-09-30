@@ -136,7 +136,7 @@ var exit=process.exit, utils=rampart.utils, fprintf=utils.fprintf,
     stat=utils.stat, getType=utils.getType, trim=utils.trim, 
     exec=utils.exec, sleep=utils.sleep, stderr=utils.stderr, 
     dateFmt=utils.dateFmt, shell=utils.shell, realPath=utils.realPath,
-    autoScanDate=utils.autoScanDate, mkdir=utils.mkdir;
+    autoScanDate=utils.autoScanDate, mkdir=utils.mkdir, readFile=utils.readFile;
 
 var wd;
 var iam = trim(exec('whoami').stdout);
@@ -165,7 +165,7 @@ function getPid(name,nolog) {
     var pidfile = wd + '/' + name + '.pid';
     var ret=false;
     try {
-        ret = parseInt(utils.readFile(pidfile,{returnString:true}));
+        ret = parseInt(readFile(pidfile,{returnString:true}));
     } catch(e) {}
     if(typeof ret != 'number' || Number.isNaN(ret) ) {
         if(validpids[pidfile] && !nolog)
@@ -183,7 +183,7 @@ function killPid(name, sig) {
     ret.pid;
     if(!sig) sig='SIGTERM';
     try {
-        ret.pid = parseInt(utils.readFile(ret.pidfile,{returnString:true}));
+        ret.pid = parseInt(readFile(ret.pidfile,{returnString:true}));
     } catch(e) {
         ret.error='could not read from ' + ret.pidfile;
         ret.success=false;
@@ -228,7 +228,11 @@ function firstChecks(serverConf)
     if(getType(serverConf.errorLog) == 'String'  && serverConf.errorLog.length==0)
         serverConf.errorLog=null;
 
-    if (getType(serverConf.letsencrypt)=='String' && serverConf.letsencrypt.length)
+         //__don't__ skip letsencrypt check if manually launching redir-server or monitor
+         //we need the port set if it changes to 443
+    if ( //!serverConf.launchRedir && !serverConf.launchMonitor
+         //&&
+        getType(serverConf.letsencrypt)=='String' && serverConf.letsencrypt.length)
     {
         if( serverConf.letsencrypt != "setup")
         {
@@ -288,6 +292,16 @@ function firstChecks(serverConf)
         }
     }
 
+    if(iam == 'root') {
+        var st = stat(wd);
+        if(!st)
+            return serr(`could not stat server root "${wd}"`);
+        if((st.mode & 7) != 7) { //if not world read/write/exec
+            if(st.owner != unprivUser)
+                return serr(`${wd} should be owned by '${unprivUser}' instead of '${st.owner}'`);
+        } 
+    }
+
     return serverConf;
 }
 
@@ -308,6 +322,8 @@ function parseOptions (argv){
         var def;
         if(!argv.serverRoot)
             argv.serverRoot=realPath('.');
+        else
+            wd = argv.serverRoot;
 
         if(argv.quickserver)
             def=Object.assign({}, defaultQuickServerConf(argv.serverRoot));
@@ -470,32 +486,66 @@ function status(serverConf){
     return ret;    
 }
 
-function macos_check(serverConf){
-    if(!serverConf.daemon)
-        return;
+var nohup;
+
+function checkMacos() {
     var r = shell("uname -s");
     if(r.stdout == "Darwin\n")
     {
-        printf("Warn: macos will throttle the server if started in the background.\n"+
-               "      If you need full performace, set `daemon:false,` and launch with, e.g.\n"+
-               "          nohup rampart web_server_conf.js start &\n\n");
+        nohup = shell("which nohup").stdout.trim();
+        return true;
     }
+    return false;
 }
 
+function nohupLaunch(ltype) {
+    var argv=process.argv;
+    var jmsg;
 
+    if(!nohup.length)
+        return serr('Error: could not find nohup command');
+
+    var cmd = `${nohup} ${argv[0]} ${argv[1]} manualLaunch ${ltype} &> /tmp/rampart-${ltype}.txt`;
+    var outfile = `/tmp/rampart-${ltype}.txt`;
+
+    var ret = shell(cmd, {background:true});        
+console.log(cmd);
+    sleep(0.5);
+    msg = readFile(outfile, true);
+    pid = getPid(ltype);
+    if(!pid)
+        return serr(msg);
+    if(!kill(pid, 0)) {
+        return serr(`Failed to start ${ltype}\n${msg}`);
+    }
+
+    try {
+        jmsg=JSON.parse(msg);
+        return jmsg;
+    } catch(e){}
+
+    return smsg(msg);
+}
 
 function start(serverConf, dump) {
     var server=require('rampart-server'); 
-
-    if(!serverConf)
-        serverConf=defaultServerConf(utils.realPath('.'));
-
-    if(!unprivUser)
-        unprivUser=serverConf.user;
+    var isMac=checkMacos();
 
     wd = serverConf.serverRoot;
     if(!wd)
         serverConf.serverRoot=wd=utils.realPath('.');
+
+    if(!serverConf)
+        serverConf=defaultServerConf(utils.realPath('.'));
+
+    if(!serverConf.manualLaunch) {
+        serverConf.launchServer = serverConf.letsencrypt!="setup";
+        serverConf.launchMonitor = (serverConf.log && serverConf.rotateLogs) || serverConf.monitor;
+        serverConf.launchRedir = serverConf.redirPort > 0 ;
+    }
+
+    if(!unprivUser)
+        unprivUser=serverConf.user;
 
     if(serverConf.shutdown || serverConf.stop) {
         var res = killPid('server');
@@ -514,6 +564,13 @@ function start(serverConf, dump) {
         return {message:msg};
     }
 
+    if(isMac && serverConf.daemon && serverConf.cmdline)
+        console.log(`Warn: macos will throttle the server if started in the background.
+        If you need full performace, set "--daemon false", e.g.
+          nohup rampart --server --daemon false &
+        Or use:
+          rampart web_server/web_server_conf.js 
+        which will launch with nohup for you.`);
 
     if(iam != 'root') {
         if(serverConf.ipPort < 1024)
@@ -521,10 +578,8 @@ function start(serverConf, dump) {
         if(serverConf.ipv6Port < 1024)
             return serr('Error: script must be started as root to bind to IPv6 port ' + serverConf.ipv6Port);
         if(serverConf.redirPort < 1024 && serverConf.redirPort > 0)
-            return serr('Error: script must be started as root to bind to redirect server port ' + serverConf.redirPort);
+            return serr('Error: script must be started as root to bind the redirect server to port ' + serverConf.redirPort);
     }
-
-    macos_check(serverConf);
 
     var serverpid;
 
@@ -585,9 +640,14 @@ function start(serverConf, dump) {
 
     serverConf.map=map;
 
+    /************ START THE SERVER ***************/
     function start_server(restart){
-        if(serverConf.letsencrypt=="setup")
+
+        if(!serverConf.launchServer)
             return {};
+
+        if(isMac && serverConf.daemon && !serverConf.cmdline)
+            return nohupLaunch('server');
 
         //set global serverConf for app/*.js and wsapp/*.js scripts
         global.serverConf=serverConf;
@@ -598,21 +658,26 @@ function start(serverConf, dump) {
             if(!kill(serverpid, 0)) {
                 return serr(sprintf('Failed to start webserver'));
             }
-            var wpres = writePid('server', serverpid);
-            if(wpres.error) {
-                kill(serverpid);
-                var p = getPid('monitor');
-                if(p) kill(p);
-                p = getPid('redir-server');
-                if(p) kill(p);
-                return wpres;
-            }
         }
+
+        var wpres = writePid('server', serverpid);
+
+        if( (serverConf.daemon||serverConf.manualLaunch) && wpres.error) {
+            if(!serverConf.manualLaunch) //don't kill self, exit after error message
+                kill(serverpid);
+            var p = getPid('monitor');
+            if(p) kill(p);
+            p = getPid('redir-server');
+            if(p) kill(p);
+            return wpres;
+        }
+
         var ret = smsg(sprintf('Server has been started.'));
         ret.pid=serverpid;
         return ret;
     }
 
+    /* REDIRECT VARS AND CALLBACK */
     global.redircode = serverConf.redirTemp? 302: 301;
     global.redirHtmlFmt = '<html><body><h1>' + redircode + ' Moved</h1>'+
                        '<p>Document moved <a href="\%s\">here</a></p></body></html>';
@@ -627,7 +692,8 @@ function start(serverConf, dump) {
         }
     }
 
-    if( (!serverConf.daemon || !serverConf.secure) && 
+    if( !serverConf.manualLaunch && //skip this check if manually launching
+        (!serverConf.daemon || !serverConf.secure) && 
         serverConf.fullServer==1 && 
         serverConf.redirPort!=-1 &&
         serverConf.letsencrypt!="setup")
@@ -635,11 +701,15 @@ function start(serverConf, dump) {
         return serr('options --redir[Port] requires --daemon and --secure');
     }
 
+    /************ START THE REDIRECT SERVER ***************/
     function start_redir(restart) {
         var redirbind=[];
 
-        if(serverConf.redirPort==-1 || serverConf.redirPort===undefined)
+        if(!serverConf.launchRedir)
             return{};
+
+        if(isMac && serverConf.daemon && !serverConf.cmdline)
+            return nohupLaunch('redir-server');
 
         if(serverConf.bindAll) {
             redirbind = ['0.0.0.0:'+serverConf.redirPort, '[::]:'+serverConf.redirPort];
@@ -685,14 +755,15 @@ function start(serverConf, dump) {
             log: true,
             accessLog: "/dev/null",
             errorLog: "/dev/null",
-            daemon: true,
+            daemon: serverConf.launchRedir?false:true,
             threads: 2,
             directoryFunc: false,
             map: redirmap,
             appendProcTitle: serverConf.appendProcTitle
         });
 
-        sleep(0.5); //give proc time to exit if error
+        if(!serverConf.launchRedir)
+            sleep(0.5); //give proc time to exit if error
 
         if(!kill(rpid, 0)) {
             return serr('Failed to start redirect webserver');
@@ -700,6 +771,8 @@ function start(serverConf, dump) {
 
         var wpres = writePid('redir-server', rpid);
         if(wpres.error) {
+            if(serverConf.launchRedir)
+                return wpres;
             kill(rpid);
             var p = getPid('monitor');
             if(p) kill(p);
@@ -713,15 +786,19 @@ function start(serverConf, dump) {
         return ret;
     }
 
+    /************ START THE MONITOR PROCESS ***************/
     function checkMonitor()
     {
-        if( !(serverConf.log && serverConf.rotateLogs) && !serverConf.monitor )
+        if(!serverConf.launchMonitor)
             return true; // no monitor requested, continue and run server
+
+        if(isMac && serverConf.daemon && !serverConf.cmdline)
+            return nohupLaunch('monitor');
 
         if(serverConf.fullServer!=1)
             return serr('options --rotateLogs or --monitor not available with --quickserver');
 
-        if(!serverConf.daemon)
+        if(!serverConf.manualLaunch && !serverConf.daemon)
             return serr('options --rotateLogs and --monitor require --daemon');
 
         var gzip = trim ( exec('which','gzip').stdout );
@@ -745,7 +822,7 @@ function start(serverConf, dump) {
         process.setProcTitle('rampart serverMonitor ' + wd);
         sleep(1);
 
-
+        /**************** LOG ROTATION **********************/
         if(serverConf.log && serverConf.rotateLogs) {
             var tdelay, mdelay, startTime, now;
             if (typeof serverConf.rotateInterval != 'number')
@@ -874,8 +951,15 @@ function start(serverConf, dump) {
             }
         }
 
+        /**************** PROCESS MONITOR **********************/
         if(serverConf.monitor)
         {
+            //reset these here so if killed, will relaunch proper server
+            if(serverConf.manualLaunch) {
+                serverConf.launchServer = serverConf.letsencrypt!="setup";
+                serverConf.launchRedir = serverConf.redirPort > 0 ;
+                serverConf.daemon=true;
+            }
             var iv2 = setMetronome(function(){
                 serverpid=getPid('server');
                 if(!serverpid)
@@ -927,7 +1011,7 @@ function start(serverConf, dump) {
                 var res = curl.fetch({insecure:true, "max-time": 10}, thisurl);
                 if(res.status==0) {
                     fprintf(serverConf.errorLog, true, '%s - monitor: failed to fetch %s - %s\n', 
-                        dateFmt('%Y-%m-%d-%H-%M-%S'), thisurl, res.errMsg);
+                        dateFmt('%Y-%m-%d %H:%M:%S %z'), thisurl, res.errMsg);
                     serverpid=getPid('server');
                     if(serverpid)
                         kill(serverpid,9);  //don't be nice
@@ -938,7 +1022,7 @@ function start(serverConf, dump) {
                     res = curl.fetch({"max-time": 10}, thisredirurl);
                     if(res.status==0) {
                         fprintf(serverConf.errorLog, true, '%s - monitor: failed to fetch %s - %s\n', 
-                            dateFmt('%Y-%m-%d-%H-%M-%S'), thisredirurl, res.errMsg);
+                            dateFmt('%Y-%m-%d %H:%M:%S %z'), thisredirurl, res.errMsg);
                         var rserverpid=getPid('redir-server');
                         if(rserverpid)
                             kill(rserverpid,9);  //don't be nice
@@ -1018,6 +1102,7 @@ function cmdLine(nslice) {
 
     var conf=parseOptions(args);
     printmsg(conf,true);
+    conf.cmdline=true;
     var ret=start(conf);
     printmsg(ret);
 }
@@ -1031,10 +1116,31 @@ function web_server_conf(conf) {
         argv[2]="start";
     }
 
+    // special case of daemon:true and macos
+    // we are using nohup to launch procs
+    if (argv[2]=='manualLaunch') {
+        conf.manualLaunch=true;
+        conf.daemon=false;
+        switch(argv[3]) {
+            case 'server':
+                conf.launchServer=true;
+                break;
+            case 'redir-server':
+                conf.launchRedir=true;
+                break;
+            case 'monitor':
+                conf.launchMonitor=true;
+                break;
+            default:
+                printf("manualLaunch is intended for internal use only\n");
+                process.exit(1);
+        }
+
+        argv[2]="start";
+    }
 
     // fill in the missing pieces and do some checks
     conf = parseOptions(conf);
-
 
     function check_conf_err() {
         if(conf.error)
@@ -1106,7 +1212,9 @@ function web_server_conf(conf) {
     } else if (argv[2] == '--start' || argv[2]=='start' || !argv[2]) { //if no arg, run start
 
         /* START */
+        conf.start=true;
         check_conf_err();
+
         res=start(conf);
 
         if(res.message)
