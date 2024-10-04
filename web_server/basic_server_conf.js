@@ -132,18 +132,18 @@ var serverConf = {
                            first connect (when req.count == 0)                    */
     //beginFunc:           false,
 
-    /* beginFuncOnFil    e Whether to run the begin function before serving a
+    /* beginFuncOnFile     Whether to run the begin function before serving a
                            file (-i.e. files from the web_server/html/ directory)  */
-    //beginFuncOnFile    : false,
+    //beginFuncOnFile:     false,
 
     /* endFunc             Bool/Obj/Function.  A function to run after each JavaScript function
 
                            Value (i.e. {module: mymod}) is the same as beginFunc above.
 
-                           It will also receive the `req` object.  In addition,
-                           `req.reply` will be set to the return value of the
+                           Like beginFunc, it will also receive the `req` object.  In 
+                           addition, `req.reply` will be set to the return value of the
                            normal server callback function and req.reply can be
-                           modified before it is sent.
+                           modified before it is sent to the client.
 
                            For websocket connections, it is run after websockets
                            disconnects and after the req.wsOnDisconnect
