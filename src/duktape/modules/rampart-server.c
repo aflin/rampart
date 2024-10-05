@@ -1960,7 +1960,6 @@ static int rp_evbuffer_add_file(struct evbuffer *outbuf, int fd, ev_off_t offset
 }
 
 /* wrap function */
-static int getfunction(DHS *dhs);
 static void clean_reqobj(duk_context *ctx, int has_content, int keepreq);
 static evhtp_res obj_to_buffer(DHS *dhs);
 static int getmod(DHS *dhs);
@@ -4560,9 +4559,8 @@ static int getmod(DHS *dhs)
     else if(ret == -1)
     {
         const char *errmsg = rp_push_error(ctx, -1, "error loading module:", rp_print_error_lines);
-
         // if we got a subdir, but no file within, return 404
-        if(strstr( strerror(errno), "directory"))
+        if( errno == EISDIR)
         {
             duk_pop(ctx);
             send404(dhs->req);
