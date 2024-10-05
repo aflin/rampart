@@ -4752,6 +4752,17 @@ static duk_ret_t rp_texis_set(duk_context *ctx)
 
         sql_normalize_prop(prop, dprop);
 
+        //check for "useequiv", set "alequiv" to true.
+        if(strcmp("useequiv", prop)==0 &&
+            (
+                ( duk_is_boolean(ctx, -1) && duk_get_boolean(ctx, -1) ) ||
+                ( duk_is_number(ctx, -1) && duk_get_number(ctx, -1) != 0 ) ||
+                ( duk_is_string(ctx, -1) && strcmp(duk_get_string(ctx,-1), "1")==0) )
+            )
+        {
+            duk_push_true(ctx);
+            duk_put_prop_string(ctx, 2, "alequiv");
+        }
         // put val into old settings, overwriting old if exists
         duk_put_prop_string(ctx, 2, prop);    // [ settings_obj, this , old_settings, enum_obj, key ]
         duk_pop(ctx);                         // [ settings_obj, this , old_settings, enum_obj ]
