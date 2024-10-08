@@ -1932,8 +1932,9 @@ static void pushqelem(duk_context *ctx, char *s, size_t l)
         duk_size_t arrayi;
 
         keyl=eq-s;
-        key = duk_rp_url_decode(s,&keyl);
         vall=l-(keyl+1);
+
+        key = duk_rp_url_decode(s,&keyl); //keyl may be shorter after
         val=duk_rp_url_decode(eq+1,&vall);
 
 
@@ -2066,7 +2067,6 @@ void duk_rp_querystring2object(duk_context *ctx, char *q)
         if(!*e || *e=='&')
         {
             size_t l=e-s;
-
             pushqelem(ctx,s,l);
             if(!*e)
                 break;
