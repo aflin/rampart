@@ -71,7 +71,7 @@ var serverConf = {
 
     /* developerMode       Bool.   Whether JavaScript errors result in 500 and return a stack trace.
                                    Otherwise errors return 404 Not Found                             */
-    //developerMode:       true,
+    developerMode:       true,
 
     /* directoryFunc       Bool/Func.   Whether to provide a directory listing if no index.html is found   */
     //directoryFunc:       false,
@@ -173,6 +173,20 @@ serverConf.map={
    "/apps/":           {modulePath: serverConf.appsRoot},
    "ws://wsapps/":     {modulePath: serverConf.wsappsRoot}
 };
+
+/* set bind from options above */
+var bind = [];
+
+if(serverConf.ipAddr && serverConf.ipPort)
+    bind.push(`${serverConf.ipAddr}:${serverConf.ipPort}`);
+
+if(serverConf.ipv6Addr && serverConf.ipv6Port)
+    bind.push(`${serverConf.ipv6Addr}:${serverConf.ipv6Port}`);
+
+if(!bind.length)
+    throw(new Error("No ip addr/port specified"));
+
+serverConf.bind=bind;
 
 
 /*  Example logging functions :
