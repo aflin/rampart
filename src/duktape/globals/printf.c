@@ -678,7 +678,7 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
             // yes, evaluate it
             format++;
             // throw error if no var for % format
-            if(fidx>topidx)
+            if(*format!='%' && fidx>topidx)
                 RP_THROW(ctx, "printf(): expecting argument for conversion specifier (variable required at position %d)", (int)fidx);
         }
         // evaluate flags
