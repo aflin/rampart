@@ -51,12 +51,18 @@ if (RP_SANITIZE)
     link_libraries("-fsanitize=address")
 endif (RP_SANITIZE)
 
+execute_process(
+    COMMAND bash -c "if [ -e /usr/local/rampart-build ]; then cat /usr/local/rampart-build ; else uname -a; fi"
+    OUTPUT_VARIABLE BUILD_PLATFORM
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+)
 #https://stackoverflow.com/questions/24292898/compile-date-and-time-using-cmake
 make_directory(${CMAKE_BINARY_DIR}/include)
 FILE (WRITE ${CMAKE_BINARY_DIR}/include/timestamp.cmake "STRING(TIMESTAMP TIMEZ UTC)\n")
 FILE (APPEND ${CMAKE_BINARY_DIR}/include/timestamp.cmake "FILE(WRITE ${CMAKE_BINARY_DIR}/include/rampart_timestamp.h \"#ifndef TIMESTAMP_H\\n\")\n")
 FILE (APPEND ${CMAKE_BINARY_DIR}/include/timestamp.cmake "FILE(APPEND ${CMAKE_BINARY_DIR}/include/rampart_timestamp.h \"#define TIMESTAMP_H\\n\\n\")\n")
 FILE (APPEND ${CMAKE_BINARY_DIR}/include/timestamp.cmake "FILE(APPEND ${CMAKE_BINARY_DIR}/include/rampart_timestamp.h \"#define RAMPART_VERSION_TIMESTAMP \\\"\${TIMEZ}\\\"\\n\\n\")\n")
+FILE (APPEND ${CMAKE_BINARY_DIR}/include/timestamp.cmake "FILE(APPEND ${CMAKE_BINARY_DIR}/include/rampart_timestamp.h \"#define RAMPART_BUILD_PLATFORM \\\"${BUILD_PLATFORM}\\\"\\n\\n\")\n")
 FILE (APPEND ${CMAKE_BINARY_DIR}/include/timestamp.cmake "FILE(APPEND ${CMAKE_BINARY_DIR}/include/rampart_timestamp.h \"#endif // TIMESTAMP_H\\n\")\n")
 ADD_CUSTOM_TARGET (
     timestamp
@@ -92,7 +98,7 @@ set_target_properties(rampart PROPERTIES
   ENABLE_EXPORTS 1
 )
 
-add_dependencies(rampart texisapi)
+add_dependencies(rampart texisapi timestamp)
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
 
