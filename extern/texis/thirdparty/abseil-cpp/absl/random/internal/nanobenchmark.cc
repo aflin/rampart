@@ -101,7 +101,7 @@ std::string BrandString() {
   char brand_string[49];
   uint32_t abcd[4];
 
-  // Check if brand string is supported (it is on all reasonable Intel/AMD)
+  // Check if brand std::string is supported (it is on all reasonable Intel/AMD)
   Cpuid(0x80000000U, 0, abcd);
   if (abcd[0] < 0x80000004U) {
     return std::string();
@@ -361,7 +361,7 @@ void CountingSort(T* values, size_t num_values) {
   // Write that many copies of each unique value to the array.
   T* ABSL_RANDOM_INTERNAL_RESTRICT p = values;
   for (const auto& value_count : unique) {
-    std::fill_n(p, value_count.second, value_count.first);
+    std::fill(p, p + value_count.second, value_count.first);
     p += value_count.second;
   }
   ABSL_RAW_CHECK(p == values + num_values, "Did not produce enough output");

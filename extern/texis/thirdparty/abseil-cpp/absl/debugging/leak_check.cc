@@ -11,39 +11,33 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-// Wrappers around lsan_interface functions.
-//
-// These are always-available run-time functions manipulating the LeakSanitizer,
-// even when the lsan_interface (and LeakSanitizer) is not available. When
-// LeakSanitizer is not linked in, these functions become no-op stubs.
 
+// Wrappers around lsan_interface functions.
+// When lsan is not linked in, these functions are not available,
+// therefore Abseil code which depends on these functions is conditioned on the
+// definition of LEAK_SANITIZER.
 #include "absl/debugging/leak_check.h"
 
-#include "absl/base/attributes.h"
-#include "absl/base/config.h"
+#ifndef LEAK_SANITIZER
 
-#if defined(ABSL_HAVE_LEAK_SANITIZER)
+namespace absl {
+ABSL_NAMESPACE_BEGIN
+bool HaveLeakSanitizer() { return false; }
+void DoIgnoreLeak(const void*) { }
+void RegisterLivePointers(const void*, size_t) { }
+void UnRegisterLivePointers(const void*, size_t) { }
+LeakCheckDisabler::LeakCheckDisabler() { }
+LeakCheckDisabler::~LeakCheckDisabler() { }
+ABSL_NAMESPACE_END
+}  // namespace absl
+
+#else
 
 #include <sanitizer/lsan_interface.h>
-
-#if ABSL_HAVE_ATTRIBUTE_WEAK
-extern "C" ABSL_ATTRIBUTE_WEAK int __lsan_is_turned_off();
-#endif
 
 namespace absl {
 ABSL_NAMESPACE_BEGIN
 bool HaveLeakSanitizer() { return true; }
-
-#if ABSL_HAVE_ATTRIBUTE_WEAK
-bool LeakCheckerIsActive() {
-  return !(&__lsan_is_turned_off && __lsan_is_turned_off());
-}
-#else
-bool LeakCheckerIsActive() { return true; }
-#endif
-
-bool FindAndReportLeaks() { return __lsan_do_recoverable_leak_check() != 0; }
 void DoIgnoreLeak(const void* ptr) { __lsan_ignore_object(ptr); }
 void RegisterLivePointers(const void* ptr, size_t size) {
   __lsan_register_root_region(ptr, size);
@@ -56,18 +50,4 @@ LeakCheckDisabler::~LeakCheckDisabler() { __lsan_enable(); }
 ABSL_NAMESPACE_END
 }  // namespace absl
 
-#else  // defined(ABSL_HAVE_LEAK_SANITIZER)
-
-namespace absl {
-ABSL_NAMESPACE_BEGIN
-bool HaveLeakSanitizer() { return false; }
-bool LeakCheckerIsActive() { return false; }
-void DoIgnoreLeak(const void*) { }
-void RegisterLivePointers(const void*, size_t) { }
-void UnRegisterLivePointers(const void*, size_t) { }
-LeakCheckDisabler::LeakCheckDisabler() = default;
-LeakCheckDisabler::~LeakCheckDisabler() = default;
-ABSL_NAMESPACE_END
-}  // namespace absl
-
-#endif  // defined(ABSL_HAVE_LEAK_SANITIZER)
+#endif  // LEAK_SANITIZER

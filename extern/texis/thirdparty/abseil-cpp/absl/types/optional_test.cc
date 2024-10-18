@@ -23,40 +23,9 @@
 
 #include "gtest/gtest.h"
 #include "absl/base/config.h"
-#include "absl/log/log.h"
+#include "absl/base/internal/raw_logging.h"
 #include "absl/meta/type_traits.h"
 #include "absl/strings/string_view.h"
-
-#if defined(__cplusplus) && __cplusplus >= 202002L
-// In C++20, volatile-qualified return types are deprecated.
-#define ABSL_VOLATILE_RETURN_TYPES_DEPRECATED 1
-#endif
-
-// The following types help test an internal compiler error in GCC5 though
-// GCC10. The case OptionalTest.InternalCompilerErrorInGcc5ToGcc10 crashes the
-// compiler without a workaround. This test case should remain at the beginning
-// of the file as the internal compiler error is sensitive to other constructs
-// in this file.
-template <class T, class...>
-using GccIceHelper1 = T;
-template <typename T>
-struct GccIceHelper2 {};
-template <typename T>
-class GccIce {
-  template <typename U,
-            typename SecondTemplateArgHasToExistForSomeReason = void,
-            typename DependentType = void,
-            typename = std::is_assignable<GccIceHelper1<T, DependentType>&, U>>
-  GccIce& operator=(GccIceHelper2<U> const&) {}
-};
-
-TEST(OptionalTest, InternalCompilerErrorInGcc5ToGcc10) {
-  GccIce<int> instantiate_ice_with_same_type_as_optional;
-  static_cast<void>(instantiate_ice_with_same_type_as_optional);
-  absl::optional<int> val1;
-  absl::optional<int> val2;
-  val1 = val2;
-}
 
 struct Hashable {};
 
@@ -97,9 +66,9 @@ struct StructorListener {
 // 4522: multiple assignment operators specified
 // We wrote multiple of them to test that the correct overloads are selected.
 #ifdef _MSC_VER
-#pragma warning(push)
-#pragma warning(disable : 4521)
-#pragma warning(disable : 4522)
+#pragma warning( push )
+#pragma warning( disable : 4521)
+#pragma warning( disable : 4522)
 #endif
 struct Listenable {
   static StructorListener* listener;
@@ -133,10 +102,19 @@ struct Listenable {
   ~Listenable() { ++listener->destruct; }
 };
 #ifdef _MSC_VER
-#pragma warning(pop)
+#pragma warning( pop )
 #endif
 
 StructorListener* Listenable::listener = nullptr;
+
+// ABSL_HAVE_NO_CONSTEXPR_INITIALIZER_LIST is defined to 1 when the standard
+// library implementation doesn't marked initializer_list's default constructor
+// constexpr. The C++11 standard doesn't specify constexpr on it, but C++14
+// added it. However, libstdc++ 4.7 marked it constexpr.
+#if defined(_LIBCPP_VERSION) && \
+    (_LIBCPP_STD_VER <= 11 || defined(_LIBCPP_HAS_NO_CXX14_CONSTEXPR))
+#define ABSL_HAVE_NO_CONSTEXPR_INITIALIZER_LIST 1
+#endif
 
 struct ConstexprType {
   enum CtorTypes {
@@ -147,8 +125,10 @@ struct ConstexprType {
   };
   constexpr ConstexprType() : x(kCtorDefault) {}
   constexpr explicit ConstexprType(int i) : x(kCtorInt) {}
+#ifndef ABSL_HAVE_NO_CONSTEXPR_INITIALIZER_LIST
   constexpr ConstexprType(std::initializer_list<int> il)
       : x(kCtorInitializerList) {}
+#endif
   constexpr ConstexprType(const char*)  // NOLINT(runtime/explicit)
       : x(kCtorConstChar) {}
   int x;
@@ -225,7 +205,6 @@ TEST(optionalTest, CopyConstructor) {
     EXPECT_TRUE(opt42_copy);
     EXPECT_EQ(42, *opt42_copy);
   }
-#if !defined(ABSL_VOLATILE_RETURN_TYPES_DEPRECATED)
   {
     absl::optional<volatile int> empty, opt42 = 42;
     absl::optional<volatile int> empty_copy(empty);
@@ -234,7 +213,6 @@ TEST(optionalTest, CopyConstructor) {
     EXPECT_TRUE(opt42_copy);
     EXPECT_EQ(42, *opt42_copy);
   }
-#endif
   // test copyablility
   EXPECT_TRUE(std::is_copy_constructible<absl::optional<int>>::value);
   EXPECT_TRUE(std::is_copy_constructible<absl::optional<Copyable>>::value);
@@ -246,11 +224,18 @@ TEST(optionalTest, CopyConstructor) {
 
   EXPECT_FALSE(
       absl::is_trivially_copy_constructible<absl::optional<Copyable>>::value);
+#if defined(ABSL_USES_STD_OPTIONAL) && defined(__GLIBCXX__)
+  // libstdc++ std::optional implementation (as of 7.2) has a bug: when T is
+  // trivially copyable, optional<T> is not trivially copyable (due to one of
+  // its base class is unconditionally nontrivial).
+#define ABSL_GLIBCXX_OPTIONAL_TRIVIALITY_BUG 1
+#endif
+#ifndef ABSL_GLIBCXX_OPTIONAL_TRIVIALITY_BUG
   EXPECT_TRUE(
       absl::is_trivially_copy_constructible<absl::optional<int>>::value);
   EXPECT_TRUE(
       absl::is_trivially_copy_constructible<absl::optional<const int>>::value);
-#if !defined(_MSC_VER) && !defined(ABSL_VOLATILE_RETURN_TYPES_DEPRECATED)
+#ifndef _MSC_VER
   // See defect report "Trivial copy/move constructor for class with volatile
   // member" at
   // http://www.open-std.org/jtc1/sc22/wg21/docs/cwg_defects.html#2094
@@ -259,7 +244,8 @@ TEST(optionalTest, CopyConstructor) {
   // Also a cv-qualified scalar type should be trivially copyable.
   EXPECT_TRUE(absl::is_trivially_copy_constructible<
               absl::optional<volatile int>>::value);
-#endif  // !defined(_MSC_VER) && !defined(ABSL_VOLATILE_RETURN_TYPES_DEPRECATED)
+#endif  // _MSC_VER
+#endif  // ABSL_GLIBCXX_OPTIONAL_TRIVIALITY_BUG
 
   // constexpr copy constructor for trivially copyable types
   {
@@ -289,10 +275,17 @@ TEST(optionalTest, CopyConstructor) {
     EXPECT_TRUE(absl::is_trivially_copy_constructible<
                 absl::optional<const TrivialCopyable>>::value);
 #endif
-#if !defined(ABSL_VOLATILE_RETURN_TYPES_DEPRECATED)
+    // When testing with VS 2017 15.3, there seems to be a bug in MSVC
+    // std::optional when T is volatile-qualified. So skipping this test.
+    // Bug report:
+    // https://connect.microsoft.com/VisualStudio/feedback/details/3142534
+#if defined(ABSL_USES_STD_OPTIONAL) && defined(_MSC_VER) && _MSC_VER >= 1911
+#define ABSL_MSVC_OPTIONAL_VOLATILE_COPY_BUG 1
+#endif
+#ifndef ABSL_MSVC_OPTIONAL_VOLATILE_COPY_BUG
     EXPECT_FALSE(std::is_copy_constructible<
                  absl::optional<volatile TrivialCopyable>>::value);
-#endif  // !defined(ABSL_VOLATILE_RETURN_TYPES_DEPRECATED)
+#endif
   }
 }
 
@@ -312,9 +305,11 @@ TEST(optionalTest, MoveConstructor) {
   EXPECT_FALSE(std::is_move_constructible<absl::optional<NonMovable>>::value);
   // test noexcept
   EXPECT_TRUE(std::is_nothrow_move_constructible<absl::optional<int>>::value);
+#ifndef ABSL_USES_STD_OPTIONAL
   EXPECT_EQ(
       absl::default_allocator_is_nothrow::value,
       std::is_nothrow_move_constructible<absl::optional<MoveableThrow>>::value);
+#endif
   EXPECT_TRUE(std::is_nothrow_move_constructible<
               absl::optional<MoveableNoThrow>>::value);
 }
@@ -341,9 +336,11 @@ TEST(optionalTest, InPlaceConstructor) {
   constexpr absl::optional<ConstexprType> opt1{absl::in_place_t(), 1};
   static_assert(opt1, "");
   static_assert((*opt1).x == ConstexprType::kCtorInt, "");
+#ifndef ABSL_HAVE_NO_CONSTEXPR_INITIALIZER_LIST
   constexpr absl::optional<ConstexprType> opt2{absl::in_place_t(), {1, 2}};
   static_assert(opt2, "");
   static_assert((*opt2).x == ConstexprType::kCtorInitializerList, "");
+#endif
 
   EXPECT_FALSE((std::is_constructible<absl::optional<ConvertsFromInPlaceT>,
                                       absl::in_place_t>::value));
@@ -641,7 +638,8 @@ TEST(optionalTest, CopyAssignment) {
   EXPECT_TRUE(absl::is_copy_assignable<NonTrivial>::value);
   EXPECT_FALSE(absl::is_trivially_copy_assignable<NonTrivial>::value);
 
-#if !defined(ABSL_VOLATILE_RETURN_TYPES_DEPRECATED)
+  // std::optional doesn't support volatile nontrivial types.
+#ifndef ABSL_USES_STD_OPTIONAL
   {
     StructorListener listener;
     Listenable::listener = &listener;
@@ -660,7 +658,7 @@ TEST(optionalTest, CopyAssignment) {
     EXPECT_EQ(1, listener.destruct);
     EXPECT_EQ(1, listener.volatile_copy_assign);
   }
-#endif  // !defined(ABSL_VOLATILE_RETURN_TYPES_DEPRECATED)
+#endif  // ABSL_USES_STD_OPTIONAL
 }
 
 TEST(optionalTest, MoveAssignment) {
@@ -683,7 +681,8 @@ TEST(optionalTest, MoveAssignment) {
     EXPECT_EQ(1, listener.destruct);
     EXPECT_EQ(1, listener.move_assign);
   }
-#if !defined(ABSL_VOLATILE_RETURN_TYPES_DEPRECATED)
+  // std::optional doesn't support volatile nontrivial types.
+#ifndef ABSL_USES_STD_OPTIONAL
   {
     StructorListener listener;
     Listenable::listener = &listener;
@@ -703,7 +702,7 @@ TEST(optionalTest, MoveAssignment) {
     EXPECT_EQ(1, listener.destruct);
     EXPECT_EQ(1, listener.volatile_move_assign);
   }
-#endif  // !defined(ABSL_VOLATILE_RETURN_TYPES_DEPRECATED)
+#endif  // ABSL_USES_STD_OPTIONAL
   EXPECT_FALSE(absl::is_move_assignable<absl::optional<const int>>::value);
   EXPECT_TRUE(absl::is_move_assignable<absl::optional<Copyable>>::value);
   EXPECT_TRUE(absl::is_move_assignable<absl::optional<MoveableThrow>>::value);
@@ -975,12 +974,44 @@ TEST(optionalTest, PointerStuff) {
   EXPECT_EQ("foo", *opt);
   const auto& opt_const = opt;
   EXPECT_EQ("foo", *opt_const);
-  EXPECT_EQ(opt->size(), 3u);
-  EXPECT_EQ(opt_const->size(), 3u);
+  EXPECT_EQ(opt->size(), 3);
+  EXPECT_EQ(opt_const->size(), 3);
 
   constexpr absl::optional<ConstexprType> opt1(1);
   static_assert((*opt1).x == ConstexprType::kCtorInt, "");
 }
+
+// gcc has a bug pre 4.9.1 where it doesn't do correct overload resolution
+// when overloads are const-qualified and *this is an raluve.
+// Skip that test to make the build green again when using the old compiler.
+// https://gcc.gnu.org/bugzilla/show_bug.cgi?id=59296 is fixed in 4.9.1.
+#if defined(__GNUC__) && !defined(__clang__)
+#define GCC_VERSION (__GNUC__ * 10000 \
+                     + __GNUC_MINOR__ * 100 \
+                     + __GNUC_PATCHLEVEL__)
+#if GCC_VERSION < 40901
+#define ABSL_SKIP_OVERLOAD_TEST_DUE_TO_GCC_BUG
+#endif
+#endif
+
+// MSVC has a bug with "cv-qualifiers in class construction", fixed in 2017. See
+// https://docs.microsoft.com/en-us/cpp/cpp-conformance-improvements-2017#bug-fixes
+// The compiler some incorrectly ingores the cv-qualifier when generating a
+// class object via a constructor call. For example:
+//
+// class optional {
+//   constexpr T&& value() &&;
+//   constexpr const T&& value() const &&;
+// }
+//
+// using COI = const absl::optional<int>;
+// static_assert(2 == COI(2).value(), "");  // const &&
+//
+// This should invoke the "const &&" overload but since it ignores the const
+// qualifier it finds the "&&" overload the best candidate.
+#if defined(_MSC_VER) && _MSC_VER < 1910
+#define ABSL_SKIP_OVERLOAD_TEST_DUE_TO_MSVC_BUG
+#endif
 
 TEST(optionalTest, Value) {
   using O = absl::optional<std::string>;
@@ -994,15 +1025,19 @@ TEST(optionalTest, Value) {
   EXPECT_EQ("lvalue_c", lvalue_c.value());
   EXPECT_EQ("xvalue", O(absl::in_place, "xvalue").value());
   EXPECT_EQ("xvalue_c", OC(absl::in_place, "xvalue_c").value());
+#ifndef ABSL_SKIP_OVERLOAD_TEST_DUE_TO_GCC_BUG
   EXPECT_EQ("cxvalue", CO(absl::in_place, "cxvalue").value());
+#endif
   EXPECT_EQ("&", TypeQuals(lvalue.value()));
   EXPECT_EQ("c&", TypeQuals(clvalue.value()));
   EXPECT_EQ("c&", TypeQuals(lvalue_c.value()));
   EXPECT_EQ("&&", TypeQuals(O(absl::in_place, "xvalue").value()));
+#if !defined(ABSL_SKIP_OVERLOAD_TEST_DUE_TO_MSVC_BUG) && \
+    !defined(ABSL_SKIP_OVERLOAD_TEST_DUE_TO_GCC_BUG)
   EXPECT_EQ("c&&", TypeQuals(CO(absl::in_place, "cxvalue").value()));
+#endif
   EXPECT_EQ("c&&", TypeQuals(OC(absl::in_place, "xvalue_c").value()));
 
-#if !defined(ABSL_VOLATILE_RETURN_TYPES_DEPRECATED)
   // test on volatile type
   using OV = absl::optional<volatile int>;
   OV lvalue_v(absl::in_place, 42);
@@ -1010,20 +1045,20 @@ TEST(optionalTest, Value) {
   EXPECT_EQ(42, OV(42).value());
   EXPECT_TRUE((std::is_same<volatile int&, decltype(lvalue_v.value())>::value));
   EXPECT_TRUE((std::is_same<volatile int&&, decltype(OV(42).value())>::value));
-#endif  // !defined(ABSL_VOLATILE_RETURN_TYPES_DEPRECATED)
 
   // test exception throw on value()
   absl::optional<int> empty;
 #ifdef ABSL_HAVE_EXCEPTIONS
   EXPECT_THROW((void)empty.value(), absl::bad_optional_access);
 #else
-  EXPECT_DEATH_IF_SUPPORTED((void)empty.value(), "Bad optional access");
+  EXPECT_DEATH((void)empty.value(), "Bad optional access");
 #endif
 
   // test constexpr value()
   constexpr absl::optional<int> o1(1);
   static_assert(1 == o1.value(), "");  // const &
-#ifndef _MSC_VER
+#if !defined(ABSL_SKIP_OVERLOAD_TEST_DUE_TO_MSVC_BUG) && \
+    !defined(ABSL_SKIP_OVERLOAD_TEST_DUE_TO_GCC_BUG)
   using COI = const absl::optional<int>;
   static_assert(2 == COI(2).value(), "");  // const &&
 #endif
@@ -1041,14 +1076,18 @@ TEST(optionalTest, DerefOperator) {
   EXPECT_EQ("lvalue_c", *lvalue_c);
   EXPECT_EQ("xvalue", *O(absl::in_place, "xvalue"));
   EXPECT_EQ("xvalue_c", *OC(absl::in_place, "xvalue_c"));
+#ifndef ABSL_SKIP_OVERLOAD_TEST_DUE_TO_GCC_BUG
   EXPECT_EQ("cxvalue", *CO(absl::in_place, "cxvalue"));
+#endif
   EXPECT_EQ("&", TypeQuals(*lvalue));
   EXPECT_EQ("c&", TypeQuals(*clvalue));
   EXPECT_EQ("&&", TypeQuals(*O(absl::in_place, "xvalue")));
+#if !defined(ABSL_SKIP_OVERLOAD_TEST_DUE_TO_MSVC_BUG) && \
+    !defined(ABSL_SKIP_OVERLOAD_TEST_DUE_TO_GCC_BUG)
   EXPECT_EQ("c&&", TypeQuals(*CO(absl::in_place, "cxvalue")));
+#endif
   EXPECT_EQ("c&&", TypeQuals(*OC(absl::in_place, "xvalue_c")));
 
-#if !defined(ABSL_VOLATILE_RETURN_TYPES_DEPRECATED)
   // test on volatile type
   using OV = absl::optional<volatile int>;
   OV lvalue_v(absl::in_place, 42);
@@ -1056,11 +1095,11 @@ TEST(optionalTest, DerefOperator) {
   EXPECT_EQ(42, *OV(42));
   EXPECT_TRUE((std::is_same<volatile int&, decltype(*lvalue_v)>::value));
   EXPECT_TRUE((std::is_same<volatile int&&, decltype(*OV(42))>::value));
-#endif  // !defined(ABSL_VOLATILE_RETURN_TYPES_DEPRECATED)
 
   constexpr absl::optional<int> opt1(1);
   static_assert(*opt1 == 1, "");
-#if !defined(_MSC_VER) && !defined(ABSL_SKIP_OVERLOAD_TEST_DUE_TO_GCC_BUG)
+#if !defined(ABSL_SKIP_OVERLOAD_TEST_DUE_TO_MSVC_BUG) && \
+    !defined(ABSL_SKIP_OVERLOAD_TEST_DUE_TO_GCC_BUG)
   using COI = const absl::optional<int>;
   static_assert(*COI(2) == 2, "");
 #endif
@@ -1076,9 +1115,11 @@ TEST(optionalTest, ValueOr) {
   constexpr absl::optional<double> copt_empty, copt_set = {1.2};
   static_assert(42.0 == copt_empty.value_or(42), "");
   static_assert(1.2 == copt_set.value_or(42), "");
+#ifndef ABSL_SKIP_OVERLOAD_TEST_DUE_TO_MSVC_BUG
   using COD = const absl::optional<double>;
   static_assert(42.0 == COD().value_or(42), "");
   static_assert(1.2 == COD(1.2).value_or(42), "");
+#endif
 }
 
 // make_optional cannot be constexpr until C++17
@@ -1156,6 +1197,7 @@ void optionalTest_Comparisons_EXPECT_GREATER(T x, U y) {
   EXPECT_FALSE(x <= y);
   EXPECT_TRUE(x >= y);
 }
+
 
 template <typename T, typename U, typename V>
 void TestComparisons() {
@@ -1248,6 +1290,7 @@ TEST(optionalTest, Comparisons) {
   absl::optional<std::string> e2;
   EXPECT_TRUE(e1 == e2);
 }
+
 
 TEST(optionalTest, SwapRegression) {
   StructorListener listener;
@@ -1464,7 +1507,7 @@ TEST(optionalTest, Hash) {
   for (int i = 0; i < 100; ++i) {
     hashcodes.insert(hash(i));
   }
-  EXPECT_GT(hashcodes.size(), 90u);
+  EXPECT_GT(hashcodes.size(), 90);
 
   static_assert(is_hash_enabled_for<absl::optional<int>>::value, "");
   static_assert(is_hash_enabled_for<absl::optional<Hashable>>::value, "");
@@ -1499,7 +1542,8 @@ TEST(optionalTest, Hash) {
 struct MoveMeNoThrow {
   MoveMeNoThrow() : x(0) {}
   [[noreturn]] MoveMeNoThrow(const MoveMeNoThrow& other) : x(other.x) {
-    LOG(FATAL) << "Should not be called.";
+    ABSL_RAW_LOG(FATAL, "Should not be called.");
+    abort();
   }
   MoveMeNoThrow(MoveMeNoThrow&& other) noexcept : x(other.x) {}
   int x;
@@ -1516,10 +1560,12 @@ TEST(optionalTest, NoExcept) {
   static_assert(
       std::is_nothrow_move_constructible<absl::optional<MoveMeNoThrow>>::value,
       "");
+#ifndef ABSL_USES_STD_OPTIONAL
   static_assert(absl::default_allocator_is_nothrow::value ==
                     std::is_nothrow_move_constructible<
                         absl::optional<MoveMeThrow>>::value,
                 "");
+#endif
   std::vector<absl::optional<MoveMeNoThrow>> v;
   for (int i = 0; i < 10; ++i) v.emplace_back();
 }

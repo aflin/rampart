@@ -43,7 +43,6 @@
 #include <vector>
 
 #include "absl/base/attributes.h"
-#include "absl/base/nullability.h"
 #include "absl/strings/string_view.h"
 
 namespace absl {
@@ -114,7 +113,7 @@ std::string StrReplaceAll(absl::string_view s,
 int StrReplaceAll(
     std::initializer_list<std::pair<absl::string_view, absl::string_view>>
         replacements,
-    absl::Nonnull<std::string*> target);
+    std::string* target);
 
 // Overload of `StrReplaceAll()` to replace patterns within a given output
 // string *in place* with replacements provided within a container of key/value
@@ -129,8 +128,7 @@ int StrReplaceAll(
 //  EXPECT_EQ(count, 2);
 //  EXPECT_EQ("if (ptr &lt; &amp;foo)", s);
 template <typename StrToStrMapping>
-int StrReplaceAll(const StrToStrMapping& replacements,
-                  absl::Nonnull<std::string*> target);
+int StrReplaceAll(const StrToStrMapping& replacements, std::string* target);
 
 // Implementation details only, past this point.
 namespace strings_internal {
@@ -187,8 +185,8 @@ std::vector<ViableSubstitution> FindSubstitutions(
 }
 
 int ApplySubstitutions(absl::string_view s,
-                       absl::Nonnull<std::vector<ViableSubstitution>*> subs_ptr,
-                       absl::Nonnull<std::string*> result_ptr);
+                       std::vector<ViableSubstitution>* subs_ptr,
+                       std::string* result_ptr);
 
 }  // namespace strings_internal
 
@@ -203,8 +201,7 @@ std::string StrReplaceAll(absl::string_view s,
 }
 
 template <typename StrToStrMapping>
-int StrReplaceAll(const StrToStrMapping& replacements,
-                  absl::Nonnull<std::string*> target) {
+int StrReplaceAll(const StrToStrMapping& replacements, std::string* target) {
   auto subs = strings_internal::FindSubstitutions(*target, replacements);
   if (subs.empty()) return 0;
 

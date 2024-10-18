@@ -10,12 +10,12 @@
 // Fetch strings using a Java-like Next()/HasNext() interface.
 
 #include <stdint.h>
-
 #include <random>
 #include <string>
 #include <vector>
 
-#include "absl/strings/string_view.h"
+#include "util/util.h"
+#include "re2/stringpiece.h"
 
 namespace re2 {
 
@@ -24,7 +24,7 @@ class StringGenerator {
   StringGenerator(int maxlen, const std::vector<std::string>& alphabet);
   ~StringGenerator() {}
 
-  absl::string_view Next();
+  const StringPiece& Next();
   bool HasNext() { return hasnext_; }
 
   // Resets generator to start sequence over.
@@ -45,11 +45,11 @@ class StringGenerator {
   std::vector<std::string> alphabet_;  // Alphabet, one string per letter.
 
   // Iteration state.
-  absl::string_view sp_;     // Last string_view returned by Next().
-  std::string s_;            // String data in last string_view returned by Next().
+  StringPiece sp_;           // Last StringPiece returned by Next().
+  std::string s_;            // String data in last StringPiece returned by Next().
   bool hasnext_;             // Whether Next() can be called again.
   std::vector<int> digits_;  // Alphabet indices for next string.
-  bool generate_null_;       // Whether to generate a NULL string_view next.
+  bool generate_null_;       // Whether to generate a NULL StringPiece next.
   bool random_;              // Whether generated strings are random.
   int nrandom_;              // Number of random strings left to generate.
   std::minstd_rand0 rng_;    // Random number generator.

@@ -27,18 +27,12 @@
 #include "absl/base/attributes.h"
 #include "absl/base/config.h"
 #include "absl/base/internal/exception_testing.h"
-#include "absl/base/options.h"
 #include "absl/container/fixed_array.h"
 #include "absl/container/inlined_vector.h"
 #include "absl/hash/hash_testing.h"
-#include "absl/meta/type_traits.h"
 #include "absl/strings/str_cat.h"
 
 namespace {
-
-static_assert(!absl::type_traits_internal::IsOwner<absl::Span<int>>::value &&
-                  absl::type_traits_internal::IsView<absl::Span<int>>::value,
-              "Span is a view, not an owner");
 
 MATCHER_P(DataIs, data,
           absl::StrCat("data() ", negation ? "isn't " : "is ",
@@ -196,7 +190,7 @@ TEST(IntSpan, SpanOfDerived) {
 }
 
 void TestInitializerList(absl::Span<const int> s, const std::vector<int>& v) {
-  EXPECT_TRUE(std::equal(s.begin(), s.end(), v.begin(), v.end()));
+  EXPECT_TRUE(absl::equal(s.begin(), s.end(), v.begin(), v.end()));
 }
 
 TEST(ConstIntSpan, InitializerListConversion) {
@@ -238,11 +232,6 @@ TEST(IntSpan, ElementAccess) {
 
   EXPECT_EQ(s.front(), s[0]);
   EXPECT_EQ(s.back(), s[9]);
-
-#if !defined(NDEBUG) || ABSL_OPTION_HARDENED
-  EXPECT_DEATH_IF_SUPPORTED(s[-1], "");
-  EXPECT_DEATH_IF_SUPPORTED(s[10], "");
-#endif
 }
 
 TEST(IntSpan, AtThrows) {
@@ -279,13 +268,6 @@ TEST(IntSpan, RemovePrefixAndSuffix) {
   EXPECT_EQ(s.size(), 0);
 
   EXPECT_EQ(v, MakeRamp(20, 1));
-
-#if !defined(NDEBUG) || ABSL_OPTION_HARDENED
-  absl::Span<int> prefix_death(v);
-  EXPECT_DEATH_IF_SUPPORTED(prefix_death.remove_prefix(21), "");
-  absl::Span<int> suffix_death(v);
-  EXPECT_DEATH_IF_SUPPORTED(suffix_death.remove_suffix(21), "");
-#endif
 }
 
 TEST(IntSpan, Subspan) {
@@ -666,8 +648,6 @@ TEST(IntSpan, ExposesContainerTypesAndConsts) {
   CheckType<absl::Span<int>::const_reverse_iterator>(slice.crend());
   testing::StaticAssertTypeEq<int, absl::Span<int>::value_type>();
   testing::StaticAssertTypeEq<int, absl::Span<const int>::value_type>();
-  testing::StaticAssertTypeEq<int, absl::Span<int>::element_type>();
-  testing::StaticAssertTypeEq<const int, absl::Span<const int>::element_type>();
   testing::StaticAssertTypeEq<int*, absl::Span<int>::pointer>();
   testing::StaticAssertTypeEq<const int*, absl::Span<const int>::pointer>();
   testing::StaticAssertTypeEq<int&, absl::Span<int>::reference>();

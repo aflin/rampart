@@ -47,13 +47,12 @@
 // this abstraction, make sure that you should not instead be rewriting your
 // code to be more specific.
 //
-// Abseil has also released an `absl::variant` type (a C++11 compatible version
-// of the C++17 `std::variant`), which is generally preferred for use over
-// `absl::any`.
+// Abseil expects to release an `absl::variant` type shortly (a C++11 compatible
+// version of the C++17 `std::variant), which is generally preferred for use
+// over `absl::any`.
 #ifndef ABSL_TYPES_ANY_H_
 #define ABSL_TYPES_ANY_H_
 
-#include "absl/base/attributes.h"
 #include "absl/base/config.h"
 #include "absl/utility/utility.h"
 
@@ -81,12 +80,40 @@ ABSL_NAMESPACE_END
 #include <typeinfo>
 #include <utility>
 
-#include "absl/base/internal/fast_type_id.h"
+#include "absl/base/macros.h"
 #include "absl/meta/type_traits.h"
 #include "absl/types/bad_any_cast.h"
 
+// NOTE: This macro is an implementation detail that is undefined at the bottom
+// of the file. It is not intended for expansion directly from user code.
+#ifdef ABSL_ANY_DETAIL_HAS_RTTI
+#error ABSL_ANY_DETAIL_HAS_RTTI cannot be directly set
+#elif !defined(__GNUC__) || defined(__GXX_RTTI)
+#define ABSL_ANY_DETAIL_HAS_RTTI 1
+#endif  // !defined(__GNUC__) || defined(__GXX_RTTI)
+
 namespace absl {
 ABSL_NAMESPACE_BEGIN
+
+namespace any_internal {
+
+template <typename Type>
+struct TypeTag {
+  constexpr static char dummy_var = 0;
+};
+
+template <typename Type>
+constexpr char TypeTag<Type>::dummy_var;
+
+// FastTypeId<Type>() evaluates at compile/link-time to a unique pointer for the
+// passed in type. These are meant to be good match for keys into maps or
+// straight up comparisons.
+template<typename Type>
+constexpr inline const void* FastTypeId() {
+  return &TypeTag<Type>::dummy_var;
+}
+
+}  // namespace any_internal
 
 class any;
 
@@ -289,7 +316,7 @@ class any {
       typename T, typename... Args, typename VT = absl::decay_t<T>,
       absl::enable_if_t<std::is_copy_constructible<VT>::value &&
                         std::is_constructible<VT, Args...>::value>* = nullptr>
-  VT& emplace(Args&&... args) ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  VT& emplace(Args&&... args) {
     reset();  // NOTE: reset() is required here even in the world of exceptions.
     Obj<VT>* const object_ptr =
         new Obj<VT>(in_place, std::forward<Args>(args)...);
@@ -313,8 +340,7 @@ class any {
       absl::enable_if_t<std::is_copy_constructible<VT>::value &&
                         std::is_constructible<VT, std::initializer_list<U>&,
                                               Args...>::value>* = nullptr>
-  VT& emplace(std::initializer_list<U> ilist,
-              Args&&... args) ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  VT& emplace(std::initializer_list<U> ilist, Args&&... args) {
     reset();  // NOTE: reset() is required here even in the world of exceptions.
     Obj<VT>* const object_ptr =
         new Obj<VT>(in_place, ilist, std::forward<Args>(args)...);
@@ -341,7 +367,7 @@ class any {
   // returns `false`.
   bool has_value() const noexcept { return obj_ != nullptr; }
 
-#ifdef ABSL_INTERNAL_HAS_RTTI
+#if ABSL_ANY_DETAIL_HAS_RTTI
   // Returns: typeid(T) if *this has a contained object of type T, otherwise
   // typeid(void).
   const std::type_info& type() const noexcept {
@@ -351,7 +377,7 @@ class any {
 
     return typeid(void);
   }
-#endif  // ABSL_INTERNAL_HAS_RTTI
+#endif  // ABSL_ANY_DETAIL_HAS_RTTI
 
  private:
   // Tagged type-erased abstraction for holding a cloneable object.
@@ -360,9 +386,9 @@ class any {
     virtual ~ObjInterface() = default;
     virtual std::unique_ptr<ObjInterface> Clone() const = 0;
     virtual const void* ObjTypeId() const noexcept = 0;
-#ifdef ABSL_INTERNAL_HAS_RTTI
+#if ABSL_ANY_DETAIL_HAS_RTTI
     virtual const std::type_info& Type() const noexcept = 0;
-#endif  // ABSL_INTERNAL_HAS_RTTI
+#endif  // ABSL_ANY_DETAIL_HAS_RTTI
   };
 
   // Hold a value of some queryable type, with an ability to Clone it.
@@ -379,9 +405,9 @@ class any {
 
     const void* ObjTypeId() const noexcept final { return IdForType<T>(); }
 
-#ifdef ABSL_INTERNAL_HAS_RTTI
+#if ABSL_ANY_DETAIL_HAS_RTTI
     const std::type_info& Type() const noexcept final { return typeid(T); }
-#endif  // ABSL_INTERNAL_HAS_RTTI
+#endif  // ABSL_ANY_DETAIL_HAS_RTTI
 
     T value;
   };
@@ -397,11 +423,11 @@ class any {
     using NormalizedType =
         typename std::remove_cv<typename std::remove_reference<T>::type>::type;
 
-    return base_internal::FastTypeId<NormalizedType>();
+    return any_internal::FastTypeId<NormalizedType>();
   }
 
   const void* GetObjTypeId() const {
-    return obj_ ? obj_->ObjTypeId() : base_internal::FastTypeId<void>();
+    return obj_ ? obj_->ObjTypeId() : any_internal::FastTypeId<void>();
   }
 
   // `absl::any` nonmember functions //
@@ -513,6 +539,8 @@ T* any_cast(any* operand) noexcept {
 
 ABSL_NAMESPACE_END
 }  // namespace absl
+
+#undef ABSL_ANY_DETAIL_HAS_RTTI
 
 #endif  // ABSL_USES_STD_ANY
 

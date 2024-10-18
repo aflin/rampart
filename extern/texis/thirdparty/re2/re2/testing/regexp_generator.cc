@@ -20,26 +20,20 @@
 // Then RunPostfix turns each sequence into a regular expression
 // and passes the regexp to HandleRegexp.
 
-#include "re2/testing/regexp_generator.h"
-
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
-
 #include <memory>
-#include <random>
 #include <stack>
 #include <string>
 #include <vector>
 
-#include "absl/base/macros.h"
-#include "absl/log/absl_check.h"
-#include "absl/log/absl_log.h"
-#include "absl/strings/escaping.h"
-#include "absl/strings/str_format.h"
-#include "absl/strings/string_view.h"
+#include "util/test.h"
+#include "util/logging.h"
+#include "util/strutil.h"
 #include "util/utf.h"
+#include "re2/testing/regexp_generator.h"
 
 namespace re2 {
 
@@ -53,7 +47,7 @@ const std::vector<std::string>& RegexpGenerator::EgrepOps() {
     "%s?",
     "%s\\C*",
   };
-  static std::vector<std::string> v(ops, ops + ABSL_ARRAYSIZE(ops));
+  static std::vector<std::string> v(ops, ops + arraysize(ops));
   return v;
 }
 
@@ -200,26 +194,24 @@ void RegexpGenerator::RunPostfix(const std::vector<std::string>& post) {
   for (size_t i = 0; i < post.size(); i++) {
     switch (CountArgs(post[i])) {
       default:
-        ABSL_LOG(FATAL) << "Bad operator: " << post[i];
+        LOG(FATAL) << "Bad operator: " << post[i];
       case 0:
         regexps.push(post[i]);
         break;
       case 1: {
-        auto fmt = absl::ParsedFormat<'s'>::New(post[i]);
-        ABSL_CHECK(fmt != nullptr);
         std::string a = regexps.top();
         regexps.pop();
-        regexps.push("(?:" + absl::StrFormat(*fmt, a) + ")");
+        regexps.push("(?:" + StringPrintf(post[i].c_str(), a.c_str()) + ")");
         break;
       }
       case 2: {
-        auto fmt = absl::ParsedFormat<'s', 's'>::New(post[i]);
-        ABSL_CHECK(fmt != nullptr);
         std::string b = regexps.top();
         regexps.pop();
         std::string a = regexps.top();
         regexps.pop();
-        regexps.push("(?:" + absl::StrFormat(*fmt, a, b) + ")");
+        regexps.push("(?:" +
+                     StringPrintf(post[i].c_str(), a.c_str(), b.c_str()) +
+                     ")");
         break;
       }
     }
@@ -227,16 +219,16 @@ void RegexpGenerator::RunPostfix(const std::vector<std::string>& post) {
 
   if (regexps.size() != 1) {
     // Internal error - should never happen.
-    absl::PrintF("Bad regexp program:\n");
+    printf("Bad regexp program:\n");
     for (size_t i = 0; i < post.size(); i++) {
-      absl::PrintF("  %s\n", absl::CEscape(post[i]));
+      printf("  %s\n", CEscape(post[i]).c_str());
     }
-    absl::PrintF("Stack after running program:\n");
+    printf("Stack after running program:\n");
     while (!regexps.empty()) {
-      absl::PrintF("  %s\n", absl::CEscape(regexps.top()));
+      printf("  %s\n", CEscape(regexps.top()).c_str());
       regexps.pop();
     }
-    ABSL_LOG(FATAL) << "Bad regexp program.";
+    LOG(FATAL) << "Bad regexp program.";
   }
 
   HandleRegexp(regexps.top());
@@ -246,7 +238,7 @@ void RegexpGenerator::RunPostfix(const std::vector<std::string>& post) {
 }
 
 // Split s into an vector of strings, one for each UTF-8 character.
-std::vector<std::string> Explode(absl::string_view s) {
+std::vector<std::string> Explode(const StringPiece& s) {
   std::vector<std::string> v;
 
   for (const char *q = s.data(); q < s.data() + s.size(); ) {
@@ -261,7 +253,7 @@ std::vector<std::string> Explode(absl::string_view s) {
 
 // Split string everywhere a substring is found, returning
 // vector of pieces.
-std::vector<std::string> Split(absl::string_view sep, absl::string_view s) {
+std::vector<std::string> Split(const StringPiece& sep, const StringPiece& s) {
   std::vector<std::string> v;
 
   if (sep.empty())
@@ -269,7 +261,7 @@ std::vector<std::string> Split(absl::string_view sep, absl::string_view s) {
 
   const char *p = s.data();
   for (const char *q = s.data(); q + sep.size() <= s.data() + s.size(); q++) {
-    if (absl::string_view(q, sep.size()) == sep) {
+    if (StringPiece(q, sep.size()) == sep) {
       v.push_back(std::string(p, q - p));
       p = q + sep.size();
       q = p - 1;  // -1 for ++ in loop

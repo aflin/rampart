@@ -24,8 +24,6 @@
 
 namespace {
 
-using ::absl::random_internal::ExplicitSeedSeq;
-
 template <typename Sseq>
 bool ConformsToInterface() {
   // Check that the SeedSequence can be default-constructed.
@@ -66,14 +64,14 @@ TEST(SeedSequences, CheckInterfaces) {
   EXPECT_TRUE(ConformsToInterface<std::seed_seq>());
 
   // Abseil classes
-  EXPECT_TRUE(ConformsToInterface<ExplicitSeedSeq>());
+  EXPECT_TRUE(ConformsToInterface<absl::random_internal::ExplicitSeedSeq>());
 }
 
 TEST(ExplicitSeedSeq, DefaultConstructorGeneratesZeros) {
   const size_t kNumBlocks = 128;
 
   uint32_t outputs[kNumBlocks];
-  ExplicitSeedSeq seq;
+  absl::random_internal::ExplicitSeedSeq seq;
   seq.generate(outputs, &outputs[kNumBlocks]);
 
   for (uint32_t& seed : outputs) {
@@ -89,7 +87,8 @@ TEST(ExplicitSeeqSeq, SeedMaterialIsForwardedIdentically) {
   for (uint32_t& seed : seed_material) {
     seed = urandom();
   }
-  ExplicitSeedSeq seq(seed_material, &seed_material[kNumBlocks]);
+  absl::random_internal::ExplicitSeedSeq seq(seed_material,
+                                             &seed_material[kNumBlocks]);
 
   // Check that output is same as seed-material provided to constructor.
   {
@@ -134,14 +133,17 @@ TEST(ExplicitSeedSeq, CopyAndMoveConstructors) {
   for (uint32_t& entry : entropy) {
     entry = urandom();
   }
-  ExplicitSeedSeq seq_from_entropy(std::begin(entropy), std::end(entropy));
+  absl::random_internal::ExplicitSeedSeq seq_from_entropy(std::begin(entropy),
+                                                          std::end(entropy));
   // Copy constructor.
   {
-    ExplicitSeedSeq seq_copy(seq_from_entropy);
+    absl::random_internal::ExplicitSeedSeq seq_copy(seq_from_entropy);
     EXPECT_EQ(seq_copy.size(), seq_from_entropy.size());
 
-    std::vector<uint32_t> seeds_1(1000, 0);
-    std::vector<uint32_t> seeds_2(1000, 1);
+    std::vector<uint32_t> seeds_1;
+    seeds_1.resize(1000, 0);
+    std::vector<uint32_t> seeds_2;
+    seeds_2.resize(1000, 1);
 
     seq_from_entropy.generate(seeds_1.begin(), seeds_1.end());
     seq_copy.generate(seeds_2.begin(), seeds_2.end());
@@ -153,10 +155,13 @@ TEST(ExplicitSeedSeq, CopyAndMoveConstructors) {
     for (uint32_t& entry : entropy) {
       entry = urandom();
     }
-    ExplicitSeedSeq another_seq(std::begin(entropy), std::end(entropy));
+    absl::random_internal::ExplicitSeedSeq another_seq(std::begin(entropy),
+                                                       std::end(entropy));
 
-    std::vector<uint32_t> seeds_1(1000, 0);
-    std::vector<uint32_t> seeds_2(1000, 0);
+    std::vector<uint32_t> seeds_1;
+    seeds_1.resize(1000, 0);
+    std::vector<uint32_t> seeds_2;
+    seeds_2.resize(1000, 0);
 
     seq_from_entropy.generate(seeds_1.begin(), seeds_1.end());
     another_seq.generate(seeds_2.begin(), seeds_2.end());
@@ -165,15 +170,7 @@ TEST(ExplicitSeedSeq, CopyAndMoveConstructors) {
     EXPECT_THAT(seeds_1, Not(Pointwise(Eq(), seeds_2)));
 
     // Apply the assignment-operator.
-    // GCC 12 has a false-positive -Wstringop-overflow warning here.
-#if ABSL_INTERNAL_HAVE_MIN_GNUC_VERSION(12, 0)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wstringop-overflow"
-#endif
     another_seq = seq_from_entropy;
-#if ABSL_INTERNAL_HAVE_MIN_GNUC_VERSION(12, 0)
-#pragma GCC diagnostic pop
-#endif
 
     // Re-generate seeds.
     seq_from_entropy.generate(seeds_1.begin(), seeds_1.end());
@@ -185,13 +182,15 @@ TEST(ExplicitSeedSeq, CopyAndMoveConstructors) {
   // Move constructor.
   {
     // Get seeds from seed-sequence constructed from entropy.
-    std::vector<uint32_t> seeds_1(1000, 0);
+    std::vector<uint32_t> seeds_1;
+    seeds_1.resize(1000, 0);
     seq_from_entropy.generate(seeds_1.begin(), seeds_1.end());
 
     // Apply move-constructor move the sequence to another instance.
     absl::random_internal::ExplicitSeedSeq moved_seq(
         std::move(seq_from_entropy));
-    std::vector<uint32_t> seeds_2(1000, 1);
+    std::vector<uint32_t> seeds_2;
+    seeds_2.resize(1000, 1);
     moved_seq.generate(seeds_2.begin(), seeds_2.end());
     // Verify that seeds produced by moved-instance are the same as original.
     EXPECT_THAT(seeds_1, Pointwise(Eq(), seeds_2));
@@ -201,37 +200,5 @@ TEST(ExplicitSeedSeq, CopyAndMoveConstructors) {
     EXPECT_EQ(seq_from_entropy.size(), 0);
     seq_from_entropy.generate(seeds_1.begin(), seeds_1.end());
     EXPECT_THAT(seeds_1, Each(Eq(0)));
-  }
-}
-
-TEST(ExplicitSeedSeq, StdURBGGoldenTests) {
-  // Verify that for std::- URBG instances the results are stable across
-  // platforms (these should have deterministic output).
-  {
-    ExplicitSeedSeq seed_sequence{12, 34, 56};
-    std::minstd_rand rng(seed_sequence);
-
-    std::minstd_rand::result_type values[4] = {rng(), rng(), rng(), rng()};
-    EXPECT_THAT(values,
-                testing::ElementsAre(579252, 43785881, 464353103, 1501811174));
-  }
-
-  {
-    ExplicitSeedSeq seed_sequence{12, 34, 56};
-    std::mt19937 rng(seed_sequence);
-
-    std::mt19937::result_type values[4] = {rng(), rng(), rng(), rng()};
-    EXPECT_THAT(values, testing::ElementsAre(138416803, 151130212, 33817739,
-                                             138416803));
-  }
-
-  {
-    ExplicitSeedSeq seed_sequence{12, 34, 56};
-    std::mt19937_64 rng(seed_sequence);
-
-    std::mt19937_64::result_type values[4] = {rng(), rng(), rng(), rng()};
-    EXPECT_THAT(values,
-                testing::ElementsAre(19738651785169348, 1464811352364190456,
-                                     18054685302720800, 19738651785169348));
   }
 }

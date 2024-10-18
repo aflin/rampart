@@ -4,16 +4,12 @@
 
 // Test prog.cc, compile.cc
 
-#include <stddef.h>
-
 #include <string>
 
-#include "absl/base/macros.h"
-#include "absl/log/absl_log.h"
-#include "absl/strings/string_view.h"
-#include "gtest/gtest.h"
-#include "re2/prog.h"
+#include "util/test.h"
+#include "util/logging.h"
 #include "re2/regexp.h"
+#include "re2/prog.h"
 
 namespace re2 {
 
@@ -113,35 +109,21 @@ static Test tests[] = {
   { "[[-`]",
     "3. byte [5b-60] 0 -> 4\n"
     "4. match! 0\n" },
-  // Issue 310
-  { "(?:|a)*",
-    "3+ nop -> 7\n"
-    "4. nop -> 9\n"
-    "5+ nop -> 7\n"
-    "6. nop -> 9\n"
-    "7+ nop -> 5\n"
-    "8. byte [61-61] 0 -> 5\n"
-    "9. match! 0\n" },
-  { "(?:|a)+",
-    "3+ nop -> 5\n"
-    "4. byte [61-61] 0 -> 5\n"
-    "5+ nop -> 3\n"
-    "6. match! 0\n" },
 };
 
 TEST(TestRegexpCompileToProg, Simple) {
   int failed = 0;
-  for (size_t i = 0; i < ABSL_ARRAYSIZE(tests); i++) {
+  for (size_t i = 0; i < arraysize(tests); i++) {
     const re2::Test& t = tests[i];
     Regexp* re = Regexp::Parse(t.regexp, Regexp::PerlX|Regexp::Latin1, NULL);
     if (re == NULL) {
-      ABSL_LOG(ERROR) << "Cannot parse: " << t.regexp;
+      LOG(ERROR) << "Cannot parse: " << t.regexp;
       failed++;
       continue;
     }
     Prog* prog = re->CompileToProg(0);
     if (prog == NULL) {
-      ABSL_LOG(ERROR) << "Cannot compile: " << t.regexp;
+      LOG(ERROR) << "Cannot compile: " << t.regexp;
       re->Decref();
       failed++;
       continue;
@@ -149,9 +131,9 @@ TEST(TestRegexpCompileToProg, Simple) {
     ASSERT_TRUE(re->CompileToProg(1) == NULL);
     std::string s = prog->Dump();
     if (s != t.code) {
-      ABSL_LOG(ERROR) << "Incorrect compiled code for: " << t.regexp;
-      ABSL_LOG(ERROR) << "Want:\n" << t.code;
-      ABSL_LOG(ERROR) << "Got:\n" << s;
+      LOG(ERROR) << "Incorrect compiled code for: " << t.regexp;
+      LOG(ERROR) << "Want:\n" << t.code;
+      LOG(ERROR) << "Got:\n" << s;
       failed++;
     }
     delete prog;
@@ -160,7 +142,7 @@ TEST(TestRegexpCompileToProg, Simple) {
   EXPECT_EQ(failed, 0);
 }
 
-static void DumpByteMap(absl::string_view pattern, Regexp::ParseFlags flags,
+static void DumpByteMap(StringPiece pattern, Regexp::ParseFlags flags,
                         std::string* bytemap) {
   Regexp* re = Regexp::Parse(pattern, flags, NULL);
   EXPECT_TRUE(re != NULL);
@@ -261,7 +243,7 @@ TEST(TestCompile, InsufficientMemory) {
   re->Decref();
 }
 
-static void Dump(absl::string_view pattern, Regexp::ParseFlags flags,
+static void Dump(StringPiece pattern, Regexp::ParseFlags flags,
                  std::string* forward, std::string* reverse) {
   Regexp* re = Regexp::Parse(pattern, flags, NULL);
   EXPECT_TRUE(re != NULL);
@@ -356,37 +338,27 @@ TEST(TestCompile, Bug35237384) {
             forward);
 
   Dump("(a*|b*)*{3,}", Regexp::Latin1|Regexp::NeverCapture, &forward, NULL);
-  EXPECT_EQ("3+ nop -> 28\n"
-            "4. nop -> 30\n"
-            "5+ byte [61-61] 1 -> 5\n"
-            "6. nop -> 32\n"
-            "7+ byte [61-61] 1 -> 7\n"
-            "8. nop -> 26\n"
-            "9+ byte [61-61] 1 -> 9\n"
-            "10. nop -> 20\n"
-            "11+ byte [62-62] 1 -> 11\n"
-            "12. nop -> 20\n"
-            "13+ byte [62-62] 1 -> 13\n"
-            "14. nop -> 26\n"
-            "15+ byte [62-62] 1 -> 15\n"
-            "16. nop -> 32\n"
-            "17+ nop -> 9\n"
-            "18. nop -> 11\n"
-            "19. match! 0\n"
-            "20+ nop -> 17\n"
-            "21. nop -> 19\n"
-            "22+ nop -> 7\n"
-            "23. nop -> 13\n"
-            "24+ nop -> 17\n"
-            "25. nop -> 19\n"
-            "26+ nop -> 22\n"
-            "27. nop -> 24\n"
-            "28+ nop -> 5\n"
-            "29. nop -> 15\n"
-            "30+ nop -> 22\n"
-            "31. nop -> 24\n"
-            "32+ nop -> 28\n"
-            "33. nop -> 30\n",
+  EXPECT_EQ("3+ nop -> 6\n"
+            "4+ nop -> 8\n"
+            "5. nop -> 21\n"
+            "6+ byte [61-61] 1 -> 6\n"
+            "7. nop -> 3\n"
+            "8+ byte [62-62] 1 -> 8\n"
+            "9. nop -> 3\n"
+            "10+ byte [61-61] 1 -> 10\n"
+            "11. nop -> 21\n"
+            "12+ byte [62-62] 1 -> 12\n"
+            "13. nop -> 21\n"
+            "14+ byte [61-61] 1 -> 14\n"
+            "15. nop -> 18\n"
+            "16+ byte [62-62] 1 -> 16\n"
+            "17. nop -> 18\n"
+            "18+ nop -> 14\n"
+            "19+ nop -> 16\n"
+            "20. match! 0\n"
+            "21+ nop -> 10\n"
+            "22+ nop -> 12\n"
+            "23. nop -> 18\n",
       forward);
 
   Dump("((|S.+)+|(|S.+)+|){2}", Regexp::Latin1|Regexp::NeverCapture, &forward, NULL);

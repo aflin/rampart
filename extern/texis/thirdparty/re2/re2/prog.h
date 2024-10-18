@@ -10,16 +10,14 @@
 // expression symbolically.
 
 #include <stdint.h>
-
 #include <functional>
+#include <mutex>
 #include <string>
-#include <type_traits>
 #include <vector>
+#include <type_traits>
 
-#include "absl/base/call_once.h"
-#include "absl/log/absl_check.h"
-#include "absl/log/absl_log.h"
-#include "absl/strings/string_view.h"
+#include "util/util.h"
+#include "util/logging.h"
 #include "re2/pod_array.h"
 #include "re2/re2.h"
 #include "re2/sparse_array.h"
@@ -81,44 +79,20 @@ class Prog {
 
     // Getters
     int id(Prog* p) { return static_cast<int>(this - p->inst_.data()); }
-    InstOp opcode() { return static_cast<InstOp>(out_opcode_ & 7); }
-    int last() { return (out_opcode_ >> 3) & 1; }
-    int out() { return out_opcode_ >> 4; }
-    int out1() {
-      ABSL_DCHECK(opcode() == kInstAlt || opcode() == kInstAltMatch);
-      return out1_;
-    }
-    int cap() {
-      ABSL_DCHECK_EQ(opcode(), kInstCapture);
-      return cap_;
-    }
-    int lo() {
-      ABSL_DCHECK_EQ(opcode(), kInstByteRange);
-      return lo_;
-    }
-    int hi() {
-      ABSL_DCHECK_EQ(opcode(), kInstByteRange);
-      return hi_;
-    }
-    int foldcase() {
-      ABSL_DCHECK_EQ(opcode(), kInstByteRange);
-      return hint_foldcase_ & 1;
-    }
-    int hint() {
-      ABSL_DCHECK_EQ(opcode(), kInstByteRange);
-      return hint_foldcase_ >> 1;
-    }
-    int match_id() {
-      ABSL_DCHECK_EQ(opcode(), kInstMatch);
-      return match_id_;
-    }
-    EmptyOp empty() {
-      ABSL_DCHECK_EQ(opcode(), kInstEmptyWidth);
-      return empty_;
-    }
+    InstOp opcode() { return static_cast<InstOp>(out_opcode_&7); }
+    int last()      { return (out_opcode_>>3)&1; }
+    int out()       { return out_opcode_>>4; }
+    int out1()      { DCHECK(opcode() == kInstAlt || opcode() == kInstAltMatch); return out1_; }
+    int cap()       { DCHECK_EQ(opcode(), kInstCapture); return cap_; }
+    int lo()        { DCHECK_EQ(opcode(), kInstByteRange); return lo_; }
+    int hi()        { DCHECK_EQ(opcode(), kInstByteRange); return hi_; }
+    int foldcase()  { DCHECK_EQ(opcode(), kInstByteRange); return hint_foldcase_&1; }
+    int hint()      { DCHECK_EQ(opcode(), kInstByteRange); return hint_foldcase_>>1; }
+    int match_id()  { DCHECK_EQ(opcode(), kInstMatch); return match_id_; }
+    EmptyOp empty() { DCHECK_EQ(opcode(), kInstEmptyWidth); return empty_; }
 
     bool greedy(Prog* p) {
-      ABSL_DCHECK_EQ(opcode(), kInstAltMatch);
+      DCHECK_EQ(opcode(), kInstAltMatch);
       return p->inst(out())->opcode() == kInstByteRange ||
              (p->inst(out())->opcode() == kInstNop &&
               p->inst(p->inst(out())->out())->opcode() == kInstByteRange);
@@ -126,7 +100,7 @@ class Prog {
 
     // Does this inst (an kInstByteRange) match c?
     inline bool Matches(int c) {
-      ABSL_DCHECK_EQ(opcode(), kInstByteRange);
+      DCHECK_EQ(opcode(), kInstByteRange);
       if (foldcase() && 'A' <= c && c <= 'Z')
         c += 'a' - 'A';
       return lo_ <= c && c <= hi_;
@@ -233,7 +207,6 @@ class Prog {
   int list_count() { return list_count_; }
   int inst_count(InstOp op) { return inst_count_[op]; }
   uint16_t* list_heads() { return list_heads_.data(); }
-  size_t bit_state_text_max_size() { return bit_state_text_max_size_; }
   int64_t dfa_mem() { return dfa_mem_; }
   void set_dfa_mem(int64_t dfa_mem) { dfa_mem_ = dfa_mem; }
   bool anchor_start() { return anchor_start_; }
@@ -247,22 +220,10 @@ class Prog {
   // Accelerates to the first likely occurrence of the prefix.
   // Returns a pointer to the first byte or NULL if not found.
   const void* PrefixAccel(const void* data, size_t size) {
-    ABSL_DCHECK(can_prefix_accel());
-    if (prefix_foldcase_) {
-      return PrefixAccel_ShiftDFA(data, size);
-    } else if (prefix_size_ != 1) {
-      return PrefixAccel_FrontAndBack(data, size);
-    } else {
-      return memchr(data, prefix_front_, size);
-    }
+    DCHECK_GE(prefix_size_, 1);
+    return prefix_size_ == 1 ? memchr(data, prefix_front_, size)
+                             : PrefixAccel_FrontAndBack(data, size);
   }
-
-  // Configures prefix accel using the analysis performed during compilation.
-  void ConfigurePrefixAccel(const std::string& prefix, bool prefix_foldcase);
-
-  // An implementation of prefix accel that uses prefix_dfa_ to perform
-  // case-insensitive search.
-  const void* PrefixAccel_ShiftDFA(const void* data, size_t size);
 
   // An implementation of prefix accel that looks for prefix_front_ and
   // prefix_back_ to return fewer false positives than memchr(3) alone.
@@ -275,7 +236,7 @@ class Prog {
 
   // Returns the set of kEmpty flags that are in effect at
   // position p within context.
-  static uint32_t EmptyFlags(absl::string_view context, const char* p);
+  static uint32_t EmptyFlags(const StringPiece& context, const char* p);
 
   // Returns whether byte c is a word character: ASCII only.
   // Used by the implementation of \b and \B.
@@ -300,15 +261,15 @@ class Prog {
   // If a particular submatch is not matched during the regexp match,
   // it is set to NULL.
   //
-  // Matching text == absl::string_view() is treated as any other empty
+  // Matching text == StringPiece(NULL, 0) is treated as any other empty
   // string, but note that on return, it will not be possible to distinguish
   // submatches that matched that empty string from submatches that didn't
   // match anything.  Either way, match[i] == NULL.
 
   // Search using NFA: can find submatches but kind of slow.
-  bool SearchNFA(absl::string_view text, absl::string_view context,
-                 Anchor anchor, MatchKind kind, absl::string_view* match,
-                 int nmatch);
+  bool SearchNFA(const StringPiece& text, const StringPiece& context,
+                 Anchor anchor, MatchKind kind,
+                 StringPiece* match, int nmatch);
 
   // Search using DFA: much faster than NFA but only finds
   // end of match and can use a lot more memory.
@@ -316,8 +277,8 @@ class Prog {
   // If the DFA runs out of memory, sets *failed to true and returns false.
   // If matches != NULL and kind == kManyMatch and there is a match,
   // SearchDFA fills matches with the match IDs of the final matching state.
-  bool SearchDFA(absl::string_view text, absl::string_view context,
-                 Anchor anchor, MatchKind kind, absl::string_view* match0,
+  bool SearchDFA(const StringPiece& text, const StringPiece& context,
+                 Anchor anchor, MatchKind kind, StringPiece* match0,
                  bool* failed, SparseSet* matches);
 
   // The callback issued after building each DFA state with BuildEntireDFA().
@@ -337,6 +298,10 @@ class Prog {
   // FOR TESTING OR EXPERIMENTAL PURPOSES ONLY.
   int BuildEntireDFA(MatchKind kind, const DFAStateCallback& cb);
 
+  // Controls whether the DFA should bail out early if the NFA would be faster.
+  // FOR TESTING ONLY.
+  static void TEST_dfa_should_bail_when_slow(bool b);
+
   // Compute bytemap.
   void ComputeByteMap();
 
@@ -347,16 +312,16 @@ class Prog {
   // but much faster than NFA (competitive with PCRE)
   // for those expressions.
   bool IsOnePass();
-  bool SearchOnePass(absl::string_view text, absl::string_view context,
-                     Anchor anchor, MatchKind kind, absl::string_view* match,
-                     int nmatch);
+  bool SearchOnePass(const StringPiece& text, const StringPiece& context,
+                     Anchor anchor, MatchKind kind,
+                     StringPiece* match, int nmatch);
 
   // Bit-state backtracking.  Fast on small cases but uses memory
   // proportional to the product of the list count and the text size.
   bool CanBitState() { return list_heads_.data() != NULL; }
-  bool SearchBitState(absl::string_view text, absl::string_view context,
-                      Anchor anchor, MatchKind kind, absl::string_view* match,
-                      int nmatch);
+  bool SearchBitState(const StringPiece& text, const StringPiece& context,
+                      Anchor anchor, MatchKind kind,
+                      StringPiece* match, int nmatch);
 
   static const int kMaxOnePassCapture = 5;  // $0 through $4
 
@@ -366,9 +331,10 @@ class Prog {
   // It is also recursive, so can't use in production (will overflow stacks).
   // The name "Unsafe" here is supposed to be a flag that
   // you should not be using this function.
-  bool UnsafeSearchBacktrack(absl::string_view text, absl::string_view context,
+  bool UnsafeSearchBacktrack(const StringPiece& text,
+                             const StringPiece& context,
                              Anchor anchor, MatchKind kind,
-                             absl::string_view* match, int nmatch);
+                             StringPiece* match, int nmatch);
 
   // Computes range for any strings matching regexp. The min and max can in
   // some cases be arbitrarily precise, so the caller gets to specify the
@@ -386,6 +352,7 @@ class Prog {
   // Returns true on success, false on error.
   bool PossibleMatchRange(std::string* min, std::string* max, int maxlen);
 
+  // EXPERIMENTAL! SUBJECT TO CHANGE!
   // Outputs the program fanout into the given sparse array.
   void Fanout(SparseArray<int>* fanout);
 
@@ -423,10 +390,6 @@ class Prog {
   // Computes hints for ByteRange instructions in [begin, end).
   void ComputeHints(std::vector<Inst>* flat, int begin, int end);
 
-  // Controls whether the DFA should bail out early if the NFA would be faster.
-  // FOR TESTING ONLY.
-  static void TESTING_ONLY_set_dfa_should_bail_when_slow(bool b);
-
  private:
   friend class Compiler;
 
@@ -443,22 +406,14 @@ class Prog {
   int start_unanchored_;    // unanchored entry point for program
   int size_;                // number of instructions
   int bytemap_range_;       // bytemap_[x] < bytemap_range_
-
-  bool prefix_foldcase_;    // whether prefix is case-insensitive
   size_t prefix_size_;      // size of prefix (0 if no prefix)
-  union {
-    uint64_t* prefix_dfa_;  // "Shift DFA" for prefix
-    struct {
-      int prefix_front_;    // first byte of prefix
-      int prefix_back_;     // last byte of prefix
-    };
-  };
+  int prefix_front_;        // first byte of prefix (-1 if no prefix)
+  int prefix_back_;         // last byte of prefix (-1 if no prefix)
 
-  int list_count_;                  // count of lists (see above)
-  int inst_count_[kNumInst];        // count of instructions by opcode
-  PODArray<uint16_t> list_heads_;   // sparse array enumerating list heads
-                                    // not populated if size_ is overly large
-  size_t bit_state_text_max_size_;  // upper bound (inclusive) on text.size()
+  int list_count_;                 // count of lists (see above)
+  int inst_count_[kNumInst];       // count of instructions by opcode
+  PODArray<uint16_t> list_heads_;  // sparse array enumerating list heads
+                                   // not populated if size_ is overly large
 
   PODArray<Inst> inst_;              // pointer to instruction array
   PODArray<uint8_t> onepass_nodes_;  // data for OnePass nodes
@@ -469,23 +424,12 @@ class Prog {
 
   uint8_t bytemap_[256];    // map from input bytes to byte classes
 
-  absl::once_flag dfa_first_once_;
-  absl::once_flag dfa_longest_once_;
+  std::once_flag dfa_first_once_;
+  std::once_flag dfa_longest_once_;
 
   Prog(const Prog&) = delete;
   Prog& operator=(const Prog&) = delete;
 };
-
-// std::string_view in MSVC has iterators that aren't just pointers and
-// that don't allow comparisons between different objects - not even if
-// those objects are views into the same string! Thus, we provide these
-// conversion functions for convenience.
-static inline const char* BeginPtr(absl::string_view s) {
-  return s.data();
-}
-static inline const char* EndPtr(absl::string_view s) {
-  return s.data() + s.size();
-}
 
 }  // namespace re2
 

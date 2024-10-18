@@ -1,32 +1,10 @@
-// Copyright 2020 The Abseil Authors.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      https://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
 #include "absl/strings/internal/str_format/parser.h"
 
 #include <string.h>
-#include <algorithm>
-#include <initializer_list>
-#include <string>
-#include <utility>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "absl/base/config.h"
 #include "absl/base/macros.h"
-#include "absl/strings/internal/str_format/constexpr_parser.h"
-#include "absl/strings/internal/str_format/extension.h"
-#include "absl/strings/string_view.h"
 
 namespace absl {
 ABSL_NAMESPACE_BEGIN
@@ -63,23 +41,23 @@ TEST(LengthModTest, Names) {
 
 TEST(ConversionCharTest, Names) {
   struct Expectation {
-    FormatConversionChar id;
+    ConversionChar id;
     char name;
   };
   // clang-format off
   const Expectation kExpect[] = {
-#define X(c) {FormatConversionCharInternal::c, #c[0]}
-    X(c), X(s),                                      // text
+#define X(c) {ConversionChar::c, #c[0]}
+    X(c), X(C), X(s), X(S),                          // text
     X(d), X(i), X(o), X(u), X(x), X(X),              // int
     X(f), X(F), X(e), X(E), X(g), X(G), X(a), X(A),  // float
     X(n), X(p),                                      // misc
 #undef X
-    {FormatConversionCharInternal::kNone, '\0'},
+    {ConversionChar::none, '\0'},
   };
   // clang-format on
   for (auto e : kExpect) {
     SCOPED_TRACE(e.name);
-    FormatConversionChar v = e.id;
+    ConversionChar v = e.id;
     EXPECT_EQ(e.name, FormatConversionCharToChar(v));
   }
 }
@@ -118,14 +96,10 @@ TEST_F(ConsumeUnboundConversionTest, ConsumeSpecification) {
     {__LINE__, "ba",   "",     "ba"},  // 'b' is invalid
     {__LINE__, "l",    "",     "l" },  // just length mod isn't okay
     {__LINE__, "d",    "d",    ""  },  // basic
-    {__LINE__, "v",    "v",    ""  },  // basic
     {__LINE__, "d ",   "d",    " " },  // leave suffix
     {__LINE__, "dd",   "d",    "d" },  // don't be greedy
     {__LINE__, "d9",   "d",    "9" },  // leave non-space suffix
     {__LINE__, "dzz",  "d",    "zz"},  // length mod as suffix
-    {__LINE__, "3v",   "",     "3v"},  // 'v' cannot have modifiers
-    {__LINE__, "hv",   "",     "hv"},  // 'v' cannot have modifiers
-    {__LINE__, "1$v",   "1$v",     ""},  // 'v' can have use posix syntax
     {__LINE__, "1$*2$d", "1$*2$d", ""  },  // arg indexing and * allowed.
     {__LINE__, "0-14.3hhd", "0-14.3hhd", ""},  // precision, width
     {__LINE__, " 0-+#14.3hhd", " 0-+#14.3hhd", ""},  // flags
@@ -282,22 +256,15 @@ TEST_F(ConsumeUnboundConversionTest, Flags) {
       for (int k = 0; k < kNumFlags; ++k)
         if ((i >> k) & 1) fmt += kAllFlags[k];
       // flag order shouldn't matter
-      if (rev == 1) {
-        std::reverse(fmt.begin(), fmt.end());
-      }
+      if (rev == 1) { std::reverse(fmt.begin(), fmt.end()); }
       fmt += 'd';
       SCOPED_TRACE(fmt);
       EXPECT_TRUE(Run(fmt.c_str()));
-      EXPECT_EQ(fmt.find('-') == std::string::npos,
-                !FlagsContains(o.flags, Flags::kLeft));
-      EXPECT_EQ(fmt.find('+') == std::string::npos,
-                !FlagsContains(o.flags, Flags::kShowPos));
-      EXPECT_EQ(fmt.find(' ') == std::string::npos,
-                !FlagsContains(o.flags, Flags::kSignCol));
-      EXPECT_EQ(fmt.find('#') == std::string::npos,
-                !FlagsContains(o.flags, Flags::kAlt));
-      EXPECT_EQ(fmt.find('0') == std::string::npos,
-                !FlagsContains(o.flags, Flags::kZero));
+      EXPECT_EQ(fmt.find('-') == std::string::npos, !o.flags.left);
+      EXPECT_EQ(fmt.find('+') == std::string::npos, !o.flags.show_pos);
+      EXPECT_EQ(fmt.find(' ') == std::string::npos, !o.flags.sign_col);
+      EXPECT_EQ(fmt.find('#') == std::string::npos, !o.flags.alt);
+      EXPECT_EQ(fmt.find('0') == std::string::npos, !o.flags.zero);
     }
   }
 }
@@ -307,14 +274,14 @@ TEST_F(ConsumeUnboundConversionTest, BasicFlag) {
   for (const char* fmt : {"d", "llx", "G", "1$X"}) {
     SCOPED_TRACE(fmt);
     EXPECT_TRUE(Run(fmt));
-    EXPECT_EQ(o.flags, Flags::kBasic);
+    EXPECT_TRUE(o.flags.basic);
   }
 
   // Flag is off
-  for (const char* fmt : {"3d", ".llx", "-G", "1$#X", "lc"}) {
+  for (const char* fmt : {"3d", ".llx", "-G", "1$#X"}) {
     SCOPED_TRACE(fmt);
     EXPECT_TRUE(Run(fmt));
-    EXPECT_NE(o.flags, Flags::kBasic);
+    EXPECT_FALSE(o.flags.basic);
   }
 }
 
@@ -382,8 +349,7 @@ TEST_F(ParsedFormatTest, ValueSemantics) {
   ParsedFormatBase p2 = p1;  // copy construct (empty)
   EXPECT_EQ(SummarizeParsedFormat(p1), SummarizeParsedFormat(p2));
 
-  p1 = ParsedFormatBase("hello%s", true,
-                        {FormatConversionCharSetInternal::s});  // move assign
+  p1 = ParsedFormatBase("hello%s", true, {Conv::s});  // move assign
   EXPECT_EQ("[hello]{s:1$s}", SummarizeParsedFormat(p1));
 
   ParsedFormatBase p3 = p1;  // copy construct (nonempty)
@@ -401,7 +367,7 @@ TEST_F(ParsedFormatTest, ValueSemantics) {
 
 struct ExpectParse {
   const char* in;
-  std::initializer_list<FormatConversionCharSet> conv_set;
+  std::initializer_list<Conv> conv_set;
   const char* out;
 };
 
@@ -411,9 +377,9 @@ TEST_F(ParsedFormatTest, Parsing) {
   const ExpectParse kExpect[] = {
       {"", {}, ""},
       {"ab", {}, "[ab]"},
-      {"a%d", {FormatConversionCharSetInternal::d}, "[a]{d:1$d}"},
-      {"a%+d", {FormatConversionCharSetInternal::d}, "[a]{+d:1$d}"},
-      {"a% d", {FormatConversionCharSetInternal::d}, "[a]{ d:1$d}"},
+      {"a%d", {Conv::d}, "[a]{d:1$d}"},
+      {"a%+d", {Conv::d}, "[a]{+d:1$d}"},
+      {"a% d", {Conv::d}, "[a]{ d:1$d}"},
       {"a%b %d", {}, "[a]!"},  // stop after error
   };
   for (const auto& e : kExpect) {
@@ -425,13 +391,13 @@ TEST_F(ParsedFormatTest, Parsing) {
 
 TEST_F(ParsedFormatTest, ParsingFlagOrder) {
   const ExpectParse kExpect[] = {
-      {"a%+ 0d", {FormatConversionCharSetInternal::d}, "[a]{+ 0d:1$d}"},
-      {"a%+0 d", {FormatConversionCharSetInternal::d}, "[a]{+0 d:1$d}"},
-      {"a%0+ d", {FormatConversionCharSetInternal::d}, "[a]{0+ d:1$d}"},
-      {"a% +0d", {FormatConversionCharSetInternal::d}, "[a]{ +0d:1$d}"},
-      {"a%0 +d", {FormatConversionCharSetInternal::d}, "[a]{0 +d:1$d}"},
-      {"a% 0+d", {FormatConversionCharSetInternal::d}, "[a]{ 0+d:1$d}"},
-      {"a%+   0+d", {FormatConversionCharSetInternal::d}, "[a]{+   0+d:1$d}"},
+      {"a%+ 0d", {Conv::d}, "[a]{+ 0d:1$d}"},
+      {"a%+0 d", {Conv::d}, "[a]{+0 d:1$d}"},
+      {"a%0+ d", {Conv::d}, "[a]{0+ d:1$d}"},
+      {"a% +0d", {Conv::d}, "[a]{ +0d:1$d}"},
+      {"a%0 +d", {Conv::d}, "[a]{0 +d:1$d}"},
+      {"a% 0+d", {Conv::d}, "[a]{ 0+d:1$d}"},
+      {"a%+   0+d", {Conv::d}, "[a]{+   0+d:1$d}"},
   };
   for (const auto& e : kExpect) {
     SCOPED_TRACE(e.in);

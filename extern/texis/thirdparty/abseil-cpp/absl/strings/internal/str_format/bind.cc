@@ -1,37 +1,9 @@
-// Copyright 2020 The Abseil Authors.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      https://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
 #include "absl/strings/internal/str_format/bind.h"
 
-#include <algorithm>
-#include <cassert>
 #include <cerrno>
-#include <cstddef>
-#include <cstdio>
-#include <ios>
 #include <limits>
-#include <ostream>
 #include <sstream>
 #include <string>
-#include "absl/base/config.h"
-#include "absl/base/optimization.h"
-#include "absl/strings/internal/str_format/arg.h"
-#include "absl/strings/internal/str_format/constexpr_parser.h"
-#include "absl/strings/internal/str_format/extension.h"
-#include "absl/strings/internal/str_format/output.h"
-#include "absl/strings/string_view.h"
-#include "absl/types/span.h"
 
 namespace absl {
 ABSL_NAMESPACE_BEGIN
@@ -46,8 +18,7 @@ inline bool BindFromPosition(int position, int* value,
     return false;
   }
   // -1 because positions are 1-based
-  return FormatArgImplFriend::ToInt(pack[static_cast<size_t>(position) - 1],
-                                    value);
+  return FormatArgImplFriend::ToInt(pack[position - 1], value);
 }
 
 class ArgContext {
@@ -71,9 +42,9 @@ inline bool ArgContext::Bind(const UnboundConversion* unbound,
   const FormatArgImpl* arg = nullptr;
   int arg_position = unbound->arg_position;
   if (static_cast<size_t>(arg_position - 1) >= pack_.size()) return false;
-  arg = &pack_[static_cast<size_t>(arg_position - 1)];  // 1-based
+  arg = &pack_[arg_position - 1];  // 1-based
 
-  if (unbound->flags != Flags::kBasic) {
+  if (!unbound->flags.basic) {
     int width = unbound->width.value();
     bool force_left = false;
     if (unbound->width.is_from_arg()) {
@@ -99,13 +70,12 @@ inline bool ArgContext::Bind(const UnboundConversion* unbound,
     FormatConversionSpecImplFriend::SetPrecision(precision, bound);
 
     if (force_left) {
-      FormatConversionSpecImplFriend::SetFlags(unbound->flags | Flags::kLeft,
-                                               bound);
+      Flags flags = unbound->flags;
+      flags.left = true;
+      FormatConversionSpecImplFriend::SetFlags(flags, bound);
     } else {
       FormatConversionSpecImplFriend::SetFlags(unbound->flags, bound);
     }
-
-    FormatConversionSpecImplFriend::SetLengthMod(unbound->length_mod, bound);
   } else {
     FormatConversionSpecImplFriend::SetFlags(unbound->flags, bound);
     FormatConversionSpecImplFriend::SetWidth(-1, bound);
@@ -177,7 +147,7 @@ class SummarizingConverter {
        << FormatConversionSpecImplFriend::FlagsToString(bound);
     if (bound.width() >= 0) ss << bound.width();
     if (bound.precision() >= 0) ss << "." << bound.precision();
-    ss << bound.conversion_char() << "}";
+    ss << bound.conv() << "}";
     Append(ss.str());
     return true;
   }
@@ -231,7 +201,7 @@ std::string& AppendPack(std::string* out, const UntypedFormatSpecImpl format,
   return *out;
 }
 
-std::string FormatPack(UntypedFormatSpecImpl format,
+std::string FormatPack(const UntypedFormatSpecImpl format,
                        absl::Span<const FormatArgImpl> args) {
   std::string out;
   if (ABSL_PREDICT_FALSE(!FormatUntyped(&out, format, args))) {
@@ -251,7 +221,7 @@ int FprintF(std::FILE* output, const UntypedFormatSpecImpl format,
     errno = sink.error();
     return -1;
   }
-  if (sink.count() > static_cast<size_t>(std::numeric_limits<int>::max())) {
+  if (sink.count() > std::numeric_limits<int>::max()) {
     errno = EFBIG;
     return -1;
   }

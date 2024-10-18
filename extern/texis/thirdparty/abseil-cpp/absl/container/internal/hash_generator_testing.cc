@@ -16,8 +16,6 @@
 
 #include <deque>
 
-#include "absl/base/no_destructor.h"
-
 namespace absl {
 ABSL_NAMESPACE_BEGIN
 namespace container_internal {
@@ -43,11 +41,9 @@ class RandomDeviceSeedSeq {
 }  // namespace
 
 std::mt19937_64* GetSharedRng() {
-  static absl::NoDestructor<std::mt19937_64> rng([] {
-    RandomDeviceSeedSeq seed_seq;
-    return std::mt19937_64(seed_seq);
-  }());
-  return rng.get();
+  RandomDeviceSeedSeq seed_seq;
+  static auto* rng = new std::mt19937_64(seed_seq);
+  return rng;
 }
 
 std::string Generator<std::string>::operator()() const {
@@ -61,7 +57,7 @@ std::string Generator<std::string>::operator()() const {
 }
 
 absl::string_view Generator<absl::string_view>::operator()() const {
-  static absl::NoDestructor<std::deque<std::string>> arena;
+  static auto* arena = new std::deque<std::string>();
   // NOLINTNEXTLINE(runtime/int)
   std::uniform_int_distribution<short> chars(0x20, 0x7E);
   arena->emplace_back();

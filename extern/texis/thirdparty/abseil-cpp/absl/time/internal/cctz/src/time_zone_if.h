@@ -33,9 +33,8 @@ namespace cctz {
 // Subclasses implement the functions for civil-time conversions in the zone.
 class TimeZoneIf {
  public:
-  // Factory functions for TimeZoneIf implementations.
-  static std::unique_ptr<TimeZoneIf> UTC();  // never fails
-  static std::unique_ptr<TimeZoneIf> Make(const std::string& name);
+  // A factory function for TimeZoneIf implementations.
+  static std::unique_ptr<TimeZoneIf> Load(const std::string& name);
 
   virtual ~TimeZoneIf();
 
@@ -52,15 +51,12 @@ class TimeZoneIf {
   virtual std::string Description() const = 0;
 
  protected:
-  TimeZoneIf() = default;
-  TimeZoneIf(const TimeZoneIf&) = delete;
-  TimeZoneIf& operator=(const TimeZoneIf&) = delete;
+  TimeZoneIf() {}
 };
 
 // Convert between time_point<seconds> and a count of seconds since the
 // Unix epoch.  We assume that the std::chrono::system_clock and the
-// Unix clock are second aligned, and that the results are representable.
-// (That is, that they share an epoch, which is required since C++20.)
+// Unix clock are second aligned, but not that they share an epoch.
 inline std::int_fast64_t ToUnixSeconds(const time_point<seconds>& tp) {
   return (tp - std::chrono::time_point_cast<seconds>(
                    std::chrono::system_clock::from_time_t(0)))

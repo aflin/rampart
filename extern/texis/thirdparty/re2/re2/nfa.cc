@@ -26,16 +26,14 @@
 
 #include <stdio.h>
 #include <string.h>
-
 #include <algorithm>
 #include <deque>
 #include <string>
 #include <utility>
+#include <vector>
 
-#include "absl/log/absl_check.h"
-#include "absl/log/absl_log.h"
-#include "absl/strings/str_format.h"
-#include "absl/strings/string_view.h"
+#include "util/logging.h"
+#include "util/strutil.h"
 #include "re2/pod_array.h"
 #include "re2/prog.h"
 #include "re2/regexp.h"
@@ -62,8 +60,9 @@ class NFA {
   // Submatch[0] is the entire match.  When there is a choice in
   // which text matches each subexpression, the submatch boundaries
   // are chosen to match what a backtracking implementation would choose.
-  bool Search(absl::string_view text, absl::string_view context, bool anchored,
-              bool longest, absl::string_view* submatch, int nsubmatch);
+  bool Search(const StringPiece& text, const StringPiece& context,
+              bool anchored, bool longest,
+              StringPiece* submatch, int nsubmatch);
 
  private:
   struct Thread {
@@ -93,7 +92,7 @@ class NFA {
   // Enqueues only the ByteRange instructions that match byte c.
   // context is used (with p) for evaluating empty-width specials.
   // p is the current input position, and t0 is the current thread.
-  void AddToThreadq(Threadq* q, int id0, int c, absl::string_view context,
+  void AddToThreadq(Threadq* q, int id0, int c, const StringPiece& context,
                     const char* p, Thread* t0);
 
   // Run runq on byte c, appending new states to nextq.
@@ -103,7 +102,7 @@ class NFA {
   // p-1 will be used when processing Match instructions.
   // Frees all the threads on runq.
   // If there is a shortcut to the end, returns that shortcut.
-  int Step(Threadq* runq, Threadq* nextq, int c, absl::string_view context,
+  int Step(Threadq* runq, Threadq* nextq, int c, const StringPiece& context,
            const char* p);
 
   // Returns text version of capture information, for debugging.
@@ -174,17 +173,17 @@ NFA::Thread* NFA::AllocThread() {
 }
 
 NFA::Thread* NFA::Incref(Thread* t) {
-  ABSL_DCHECK(t != NULL);
+  DCHECK(t != NULL);
   t->ref++;
   return t;
 }
 
 void NFA::Decref(Thread* t) {
-  ABSL_DCHECK(t != NULL);
+  DCHECK(t != NULL);
   t->ref--;
   if (t->ref > 0)
     return;
-  ABSL_DCHECK_EQ(t->ref, 0);
+  DCHECK_EQ(t->ref, 0);
   t->next = freelist_;
   freelist_ = t;
 }
@@ -193,7 +192,7 @@ void NFA::Decref(Thread* t) {
 // Enqueues only the ByteRange instructions that match byte c.
 // context is used (with p) for evaluating empty-width specials.
 // p is the current input position, and t0 is the current thread.
-void NFA::AddToThreadq(Threadq* q, int id0, int c, absl::string_view context,
+void NFA::AddToThreadq(Threadq* q, int id0, int c, const StringPiece& context,
                        const char* p, Thread* t0) {
   if (id0 == 0)
     return;
@@ -210,7 +209,7 @@ void NFA::AddToThreadq(Threadq* q, int id0, int c, absl::string_view context,
 
   stk[nstk++] = {id0, NULL};
   while (nstk > 0) {
-    ABSL_DCHECK_LE(nstk, stack_.size());
+    DCHECK_LE(nstk, stack_.size());
     AddState a = stk[--nstk];
 
   Loop:
@@ -226,7 +225,7 @@ void NFA::AddToThreadq(Threadq* q, int id0, int c, absl::string_view context,
       continue;
     if (q->has_index(id)) {
       if (ExtraDebug)
-        absl::FPrintF(stderr, "  [%d%s]\n", id, FormatCapture(t0->capture));
+        fprintf(stderr, "  [%d%s]\n", id, FormatCapture(t0->capture).c_str());
       continue;
     }
 
@@ -240,7 +239,7 @@ void NFA::AddToThreadq(Threadq* q, int id0, int c, absl::string_view context,
     Prog::Inst* ip = prog_->inst(id);
     switch (ip->opcode()) {
     default:
-      ABSL_LOG(DFATAL) << "unhandled " << ip->opcode() << " in AddToThreadq";
+      LOG(DFATAL) << "unhandled " << ip->opcode() << " in AddToThreadq";
       break;
 
     case kInstFail:
@@ -251,7 +250,7 @@ void NFA::AddToThreadq(Threadq* q, int id0, int c, absl::string_view context,
       t = Incref(t0);
       *tp = t;
 
-      ABSL_DCHECK(!ip->last());
+      DCHECK(!ip->last());
       a = {id+1, NULL};
       goto Loop;
 
@@ -289,7 +288,7 @@ void NFA::AddToThreadq(Threadq* q, int id0, int c, absl::string_view context,
       t = Incref(t0);
       *tp = t;
       if (ExtraDebug)
-        absl::FPrintF(stderr, " + %d%s\n", id, FormatCapture(t0->capture));
+        fprintf(stderr, " + %d%s\n", id, FormatCapture(t0->capture).c_str());
 
       if (ip->hint() == 0)
         break;
@@ -301,7 +300,7 @@ void NFA::AddToThreadq(Threadq* q, int id0, int c, absl::string_view context,
       t = Incref(t0);
       *tp = t;
       if (ExtraDebug)
-        absl::FPrintF(stderr, " ! %d%s\n", id, FormatCapture(t0->capture));
+        fprintf(stderr, " ! %d%s\n", id, FormatCapture(t0->capture).c_str());
 
     Next:
       if (ip->last())
@@ -329,7 +328,7 @@ void NFA::AddToThreadq(Threadq* q, int id0, int c, absl::string_view context,
 // p-1 will be used when processing Match instructions.
 // Frees all the threads on runq.
 // If there is a shortcut to the end, returns that shortcut.
-int NFA::Step(Threadq* runq, Threadq* nextq, int c, absl::string_view context,
+int NFA::Step(Threadq* runq, Threadq* nextq, int c, const StringPiece& context,
               const char* p) {
   nextq->clear();
 
@@ -352,7 +351,7 @@ int NFA::Step(Threadq* runq, Threadq* nextq, int c, absl::string_view context,
     switch (ip->opcode()) {
       default:
         // Should only see the values handled below.
-        ABSL_LOG(DFATAL) << "Unhandled " << ip->opcode() << " in step";
+        LOG(DFATAL) << "Unhandled " << ip->opcode() << " in step";
         break;
 
       case kInstByteRange:
@@ -436,34 +435,35 @@ std::string NFA::FormatCapture(const char** capture) {
     if (capture[i] == NULL)
       s += "(?,?)";
     else if (capture[i+1] == NULL)
-      s += absl::StrFormat("(%d,?)",
-                           capture[i] - btext_);
+      s += StringPrintf("(%td,?)",
+                        capture[i] - btext_);
     else
-      s += absl::StrFormat("(%d,%d)",
-                           capture[i] - btext_,
-                           capture[i+1] - btext_);
+      s += StringPrintf("(%td,%td)",
+                        capture[i] - btext_,
+                        capture[i+1] - btext_);
   }
   return s;
 }
 
-bool NFA::Search(absl::string_view text, absl::string_view context,
-                 bool anchored, bool longest, absl::string_view* submatch,
-                 int nsubmatch) {
+bool NFA::Search(const StringPiece& text, const StringPiece& const_context,
+            bool anchored, bool longest,
+            StringPiece* submatch, int nsubmatch) {
   if (start_ == 0)
     return false;
 
+  StringPiece context = const_context;
   if (context.data() == NULL)
     context = text;
 
   // Sanity check: make sure that text lies within context.
-  if (BeginPtr(text) < BeginPtr(context) || EndPtr(text) > EndPtr(context)) {
-    ABSL_LOG(DFATAL) << "context does not contain text";
+  if (text.begin() < context.begin() || text.end() > context.end()) {
+    LOG(DFATAL) << "context does not contain text";
     return false;
   }
 
-  if (prog_->anchor_start() && BeginPtr(context) != BeginPtr(text))
+  if (prog_->anchor_start() && context.begin() != text.begin())
     return false;
-  if (prog_->anchor_end() && EndPtr(context) != EndPtr(text))
+  if (prog_->anchor_end() && context.end() != text.end())
     return false;
   anchored |= prog_->anchor_start();
   if (prog_->anchor_end()) {
@@ -472,7 +472,7 @@ bool NFA::Search(absl::string_view text, absl::string_view context,
   }
 
   if (nsubmatch < 0) {
-    ABSL_LOG(DFATAL) << "Bad args: nsubmatch=" << nsubmatch;
+    LOG(DFATAL) << "Bad args: nsubmatch=" << nsubmatch;
     return false;
   }
 
@@ -497,8 +497,8 @@ bool NFA::Search(absl::string_view text, absl::string_view context,
   etext_ = text.data() + text.size();
 
   if (ExtraDebug)
-    absl::FPrintF(stderr, "NFA::Search %s (context: %s) anchored=%d longest=%d\n",
-                  text, context, anchored, longest);
+    fprintf(stderr, "NFA::Search %s (context: %s) anchored=%d longest=%d\n",
+            std::string(text).c_str(), std::string(context).c_str(), anchored, longest);
 
   // Set up search.
   Threadq* runq = &q0_;
@@ -517,19 +517,19 @@ bool NFA::Search(absl::string_view text, absl::string_view context,
       else if (p < etext_)
         c = p[0] & 0xFF;
 
-      absl::FPrintF(stderr, "%c:", c);
+      fprintf(stderr, "%c:", c);
       for (Threadq::iterator i = runq->begin(); i != runq->end(); ++i) {
         Thread* t = i->value();
         if (t == NULL)
           continue;
-        absl::FPrintF(stderr, " %d%s", i->index(), FormatCapture(t->capture));
+        fprintf(stderr, " %d%s", i->index(), FormatCapture(t->capture).c_str());
       }
-      absl::FPrintF(stderr, "\n");
+      fprintf(stderr, "\n");
     }
 
     // This is a no-op the first time around the loop because runq is empty.
     int id = Step(runq, nextq, p < etext_ ? p[0] & 0xFF : -1, context, p);
-    ABSL_DCHECK_EQ(runq->size(), 0);
+    DCHECK_EQ(runq->size(), 0);
     using std::swap;
     swap(nextq, runq);
     nextq->clear();
@@ -540,8 +540,7 @@ bool NFA::Search(absl::string_view text, absl::string_view context,
         Prog::Inst* ip = prog_->inst(id);
         switch (ip->opcode()) {
           default:
-            ABSL_LOG(DFATAL) << "Unexpected opcode in short circuit: "
-                             << ip->opcode();
+            LOG(DFATAL) << "Unexpected opcode in short circuit: " << ip->opcode();
             break;
 
           case kInstCapture:
@@ -593,7 +592,7 @@ bool NFA::Search(absl::string_view text, absl::string_view context,
     // If all the threads have died, stop early.
     if (runq->size() == 0) {
       if (ExtraDebug)
-        absl::FPrintF(stderr, "dead\n");
+        fprintf(stderr, "dead\n");
       break;
     }
 
@@ -601,8 +600,8 @@ bool NFA::Search(absl::string_view text, absl::string_view context,
     // by simply not continuing the loop.
     // This complements the special case in NFA::Step().
     if (p == NULL) {
-      (void) Step(runq, nextq, -1, context, p);
-      ABSL_DCHECK_EQ(runq->size(), 0);
+      (void)Step(runq, nextq, p < etext_ ? p[0] & 0xFF : -1, context, p);
+      DCHECK_EQ(runq->size(), 0);
       using std::swap;
       swap(nextq, runq);
       nextq->clear();
@@ -617,26 +616,27 @@ bool NFA::Search(absl::string_view text, absl::string_view context,
 
   if (matched_) {
     for (int i = 0; i < nsubmatch; i++)
-      submatch[i] = absl::string_view(
-          match_[2 * i],
-          static_cast<size_t>(match_[2 * i + 1] - match_[2 * i]));
+      submatch[i] =
+          StringPiece(match_[2 * i],
+                      static_cast<size_t>(match_[2 * i + 1] - match_[2 * i]));
     if (ExtraDebug)
-      absl::FPrintF(stderr, "match (%d,%d)\n",
-                    match_[0] - btext_,
-                    match_[1] - btext_);
+      fprintf(stderr, "match (%td,%td)\n",
+              match_[0] - btext_,
+              match_[1] - btext_);
     return true;
   }
   return false;
 }
 
-bool Prog::SearchNFA(absl::string_view text, absl::string_view context,
-                     Anchor anchor, MatchKind kind, absl::string_view* match,
-                     int nmatch) {
+bool
+Prog::SearchNFA(const StringPiece& text, const StringPiece& context,
+                Anchor anchor, MatchKind kind,
+                StringPiece* match, int nmatch) {
   if (ExtraDebug)
     Dump();
 
   NFA nfa(this);
-  absl::string_view sp;
+  StringPiece sp;
   if (kind == kFullMatch) {
     anchor = kAnchored;
     if (nmatch == 0) {
@@ -646,7 +646,7 @@ bool Prog::SearchNFA(absl::string_view text, absl::string_view context,
   }
   if (!nfa.Search(text, context, anchor == kAnchored, kind != kFirstMatch, match, nmatch))
     return false;
-  if (kind == kFullMatch && EndPtr(match[0]) != EndPtr(text))
+  if (kind == kFullMatch && match[0].end() != text.end())
     return false;
   return true;
 }
@@ -658,7 +658,7 @@ bool Prog::SearchNFA(absl::string_view text, absl::string_view context,
 // fanout holds the results and is also the work queue for the outer iteration.
 // reachable holds the reached nodes for the inner iteration.
 void Prog::Fanout(SparseArray<int>* fanout) {
-  ABSL_DCHECK_EQ(fanout->max_size(), size());
+  DCHECK_EQ(fanout->max_size(), size());
   SparseSet reachable(size());
   fanout->clear();
   fanout->set_new(start(), 0);
@@ -671,8 +671,7 @@ void Prog::Fanout(SparseArray<int>* fanout) {
       Prog::Inst* ip = inst(id);
       switch (ip->opcode()) {
         default:
-          ABSL_LOG(DFATAL) << "unhandled " << ip->opcode()
-                           << " in Prog::Fanout()";
+          LOG(DFATAL) << "unhandled " << ip->opcode() << " in Prog::Fanout()";
           break;
 
         case kInstByteRange:
@@ -686,7 +685,7 @@ void Prog::Fanout(SparseArray<int>* fanout) {
           break;
 
         case kInstAltMatch:
-          ABSL_DCHECK(!ip->last());
+          DCHECK(!ip->last());
           reachable.insert(id+1);
           break;
 

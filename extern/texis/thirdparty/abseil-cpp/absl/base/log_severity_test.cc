@@ -35,8 +35,7 @@ using ::testing::IsTrue;
 using ::testing::TestWithParam;
 using ::testing::Values;
 
-template <typename T>
-std::string StreamHelper(T value) {
+std::string StreamHelper(absl::LogSeverity value) {
   std::ostringstream stream;
   stream << value;
   return stream.str();
@@ -53,9 +52,9 @@ TEST(StreamTest, Works) {
               Eq("absl::LogSeverity(4)"));
 }
 
-static_assert(absl::flags_internal::FlagUseValueAndInitBitStorage<
-                  absl::LogSeverity>::value,
-              "Flags of type absl::LogSeverity ought to be lock-free.");
+static_assert(
+    absl::flags_internal::IsAtomicFlagTypeTrait<absl::LogSeverity>::value,
+    "Flags of type absl::LogSeverity ought to be lock-free.");
 
 using ParseFlagFromOutOfRangeIntegerTest = TestWithParam<int64_t>;
 INSTANTIATE_TEST_SUITE_P(
@@ -146,12 +145,7 @@ INSTANTIATE_TEST_SUITE_P(
            std::make_tuple("fatal", absl::LogSeverity::kFatal),
            std::make_tuple("kFatal", absl::LogSeverity::kFatal),
            std::make_tuple("FaTaL", absl::LogSeverity::kFatal),
-           std::make_tuple("KfAtAl", absl::LogSeverity::kFatal),
-           std::make_tuple("DFATAL", absl::kLogDebugFatal),
-           std::make_tuple("dfatal", absl::kLogDebugFatal),
-           std::make_tuple("kLogDebugFatal", absl::kLogDebugFatal),
-           std::make_tuple("dFaTaL", absl::kLogDebugFatal),
-           std::make_tuple("kLoGdEbUgFaTaL", absl::kLogDebugFatal)));
+           std::make_tuple("KfAtAl", absl::LogSeverity::kFatal)));
 TEST_P(ParseFlagFromEnumeratorTest, YieldsExpectedValue) {
   const absl::string_view to_parse = std::get<0>(GetParam());
   const absl::LogSeverity expected = std::get<1>(GetParam());
@@ -163,8 +157,7 @@ TEST_P(ParseFlagFromEnumeratorTest, YieldsExpectedValue) {
 
 using ParseFlagFromGarbageTest = TestWithParam<absl::string_view>;
 INSTANTIATE_TEST_SUITE_P(Instantiation, ParseFlagFromGarbageTest,
-                         Values("", "\0", " ", "garbage", "kkinfo", "I",
-                                "kDFATAL", "LogDebugFatal", "lOgDeBuGfAtAl"));
+                         Values("", "\0", " ", "garbage", "kkinfo", "I"));
 TEST_P(ParseFlagFromGarbageTest, ReturnsError) {
   const absl::string_view to_parse = GetParam();
   absl::LogSeverity value;
@@ -208,44 +201,4 @@ TEST_P(UnparseFlagToOtherIntegerTest, ReturnsExpectedValueAndRoundTrips) {
               IsTrue());
   EXPECT_THAT(reparsed_value, Eq(to_unparse));
 }
-
-TEST(LogThresholdTest, LogSeverityAtLeastTest) {
-  EXPECT_LT(absl::LogSeverity::kError, absl::LogSeverityAtLeast::kFatal);
-  EXPECT_GT(absl::LogSeverityAtLeast::kError, absl::LogSeverity::kInfo);
-
-  EXPECT_LE(absl::LogSeverityAtLeast::kInfo, absl::LogSeverity::kError);
-  EXPECT_GE(absl::LogSeverity::kError, absl::LogSeverityAtLeast::kInfo);
-}
-
-TEST(LogThresholdTest, LogSeverityAtMostTest) {
-  EXPECT_GT(absl::LogSeverity::kError, absl::LogSeverityAtMost::kWarning);
-  EXPECT_LT(absl::LogSeverityAtMost::kError, absl::LogSeverity::kFatal);
-
-  EXPECT_GE(absl::LogSeverityAtMost::kFatal, absl::LogSeverity::kError);
-  EXPECT_LE(absl::LogSeverity::kWarning, absl::LogSeverityAtMost::kError);
-}
-
-TEST(LogThresholdTest, Extremes) {
-  EXPECT_LT(absl::LogSeverity::kFatal, absl::LogSeverityAtLeast::kInfinity);
-  EXPECT_GT(absl::LogSeverity::kInfo,
-            absl::LogSeverityAtMost::kNegativeInfinity);
-}
-
-TEST(LogThresholdTest, Output) {
-  EXPECT_THAT(StreamHelper(absl::LogSeverityAtLeast::kInfo), Eq(">=INFO"));
-  EXPECT_THAT(StreamHelper(absl::LogSeverityAtLeast::kWarning),
-              Eq(">=WARNING"));
-  EXPECT_THAT(StreamHelper(absl::LogSeverityAtLeast::kError), Eq(">=ERROR"));
-  EXPECT_THAT(StreamHelper(absl::LogSeverityAtLeast::kFatal), Eq(">=FATAL"));
-  EXPECT_THAT(StreamHelper(absl::LogSeverityAtLeast::kInfinity),
-              Eq("INFINITY"));
-
-  EXPECT_THAT(StreamHelper(absl::LogSeverityAtMost::kInfo), Eq("<=INFO"));
-  EXPECT_THAT(StreamHelper(absl::LogSeverityAtMost::kWarning), Eq("<=WARNING"));
-  EXPECT_THAT(StreamHelper(absl::LogSeverityAtMost::kError), Eq("<=ERROR"));
-  EXPECT_THAT(StreamHelper(absl::LogSeverityAtMost::kFatal), Eq("<=FATAL"));
-  EXPECT_THAT(StreamHelper(absl::LogSeverityAtMost::kNegativeInfinity),
-              Eq("NEGATIVE_INFINITY"));
-}
-
 }  // namespace

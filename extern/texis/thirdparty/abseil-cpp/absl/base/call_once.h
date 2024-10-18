@@ -37,7 +37,6 @@
 #include "absl/base/internal/scheduling_mode.h"
 #include "absl/base/internal/spinlock_wait.h"
 #include "absl/base/macros.h"
-#include "absl/base/nullability.h"
 #include "absl/base/optimization.h"
 #include "absl/base/port.h"
 
@@ -47,8 +46,7 @@ ABSL_NAMESPACE_BEGIN
 class once_flag;
 
 namespace base_internal {
-absl::Nonnull<std::atomic<uint32_t>*> ControlWord(
-    absl::Nonnull<absl::once_flag*> flag);
+std::atomic<uint32_t>* ControlWord(absl::once_flag* flag);
 }  // namespace base_internal
 
 // call_once()
@@ -91,8 +89,7 @@ class once_flag {
   once_flag& operator=(const once_flag&) = delete;
 
  private:
-  friend absl::Nonnull<std::atomic<uint32_t>*> base_internal::ControlWord(
-      absl::Nonnull<once_flag*> flag);
+  friend std::atomic<uint32_t>* base_internal::ControlWord(once_flag* flag);
   std::atomic<uint32_t> control_;
 };
 
@@ -106,8 +103,7 @@ namespace base_internal {
 // Like call_once, but uses KERNEL_ONLY scheduling. Intended to be used to
 // initialize entities used by the scheduler implementation.
 template <typename Callable, typename... Args>
-void LowLevelCallOnce(absl::Nonnull<absl::once_flag*> flag, Callable&& fn,
-                      Args&&... args);
+void LowLevelCallOnce(absl::once_flag* flag, Callable&& fn, Args&&... args);
 
 // Disables scheduling while on stack when scheduling mode is non-cooperative.
 // No effect for cooperative scheduling modes.
@@ -127,7 +123,7 @@ class SchedulingHelper {
 
  private:
   base_internal::SchedulingMode mode_;
-  bool guard_result_ = false;
+  bool guard_result_;
 };
 
 // Bit patterns for call_once state machine values.  Internal implementation
@@ -147,10 +143,10 @@ enum {
 };
 
 template <typename Callable, typename... Args>
-ABSL_ATTRIBUTE_NOINLINE void CallOnceImpl(
-    absl::Nonnull<std::atomic<uint32_t>*> control,
-    base_internal::SchedulingMode scheduling_mode, Callable&& fn,
-    Args&&... args) {
+ABSL_ATTRIBUTE_NOINLINE
+void CallOnceImpl(std::atomic<uint32_t>* control,
+                  base_internal::SchedulingMode scheduling_mode, Callable&& fn,
+                  Args&&... args) {
 #ifndef NDEBUG
   {
     uint32_t old_control = control->load(std::memory_order_relaxed);
@@ -179,24 +175,29 @@ ABSL_ATTRIBUTE_NOINLINE void CallOnceImpl(
                                        std::memory_order_relaxed) ||
       base_internal::SpinLockWait(control, ABSL_ARRAYSIZE(trans), trans,
                                   scheduling_mode) == kOnceInit) {
-    base_internal::invoke(std::forward<Callable>(fn),
+    base_internal::Invoke(std::forward<Callable>(fn),
                           std::forward<Args>(args)...);
-    old_control =
-        control->exchange(base_internal::kOnceDone, std::memory_order_release);
+    // The call to SpinLockWake below is an optimization, because the waiter
+    // in SpinLockWait is waiting with a short timeout. The atomic load/store
+    // sequence is slightly faster than an atomic exchange:
+    //   old_control = control->exchange(base_internal::kOnceDone,
+    //                                   std::memory_order_release);
+    // We opt for a slightly faster case when there are no waiters, in spite
+    // of longer tail latency when there are waiters.
+    old_control = control->load(std::memory_order_relaxed);
+    control->store(base_internal::kOnceDone, std::memory_order_release);
     if (old_control == base_internal::kOnceWaiter) {
       base_internal::SpinLockWake(control, true);
     }
   }  // else *control is already kOnceDone
 }
 
-inline absl::Nonnull<std::atomic<uint32_t>*> ControlWord(
-    absl::Nonnull<once_flag*> flag) {
+inline std::atomic<uint32_t>* ControlWord(once_flag* flag) {
   return &flag->control_;
 }
 
 template <typename Callable, typename... Args>
-void LowLevelCallOnce(absl::Nonnull<absl::once_flag*> flag, Callable&& fn,
-                      Args&&... args) {
+void LowLevelCallOnce(absl::once_flag* flag, Callable&& fn, Args&&... args) {
   std::atomic<uint32_t>* once = base_internal::ControlWord(flag);
   uint32_t s = once->load(std::memory_order_acquire);
   if (ABSL_PREDICT_FALSE(s != base_internal::kOnceDone)) {

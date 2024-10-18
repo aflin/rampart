@@ -5,14 +5,13 @@
 // Exhaustive testing of regular expression matching.
 
 #include <stddef.h>
-
+#include <memory>
 #include <string>
 #include <vector>
 
-#include "gtest/gtest.h"
-#include "re2/testing/exhaustive_tester.h"
-#include "re2/testing/regexp_generator.h"
+#include "util/test.h"
 #include "util/utf.h"
+#include "re2/testing/exhaustive_tester.h"
 
 namespace re2 {
 
@@ -98,3 +97,4 @@ TEST(InterestingUTF8, AB) {
 }
 
 }  // namespace re2
+

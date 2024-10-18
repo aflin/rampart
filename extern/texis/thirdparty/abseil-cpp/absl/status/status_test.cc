@@ -14,18 +14,9 @@
 
 #include "absl/status/status.h"
 
-#include <errno.h>
-
-#include <array>
-#include <cstddef>
-#include <sstream>
-#include <utility>
-
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "absl/strings/cord.h"
 #include "absl/strings/str_cat.h"
-#include "absl/strings/str_format.h"
 
 namespace {
 
@@ -45,9 +36,7 @@ TEST(StatusCode, InsertionOperator) {
 // its creator, and its classifier.
 struct ErrorTest {
   absl::StatusCode code;
-  using Creator = absl::Status (*)(
-      absl::string_view
-  );
+  using Creator = absl::Status (*)(absl::string_view);
   using Classifier = bool (*)(const absl::Status&);
   Creator creator;
   Classifier classifier;
@@ -89,9 +78,7 @@ TEST(Status, CreateAndClassify) {
     // expected error code and message.
     std::string message =
         absl::StrCat("error code ", test.code, " test message");
-    absl::Status status = test.creator(
-        message
-    );
+    absl::Status status = test.creator(message);
     EXPECT_EQ(test.code, status.code());
     EXPECT_EQ(message, status.message());
 
@@ -136,29 +123,6 @@ TEST(Status, ConstructorWithCodeMessage) {
     EXPECT_FALSE(status.ok());
     EXPECT_EQ(absl::StatusCode::kInternal, status.code());
     EXPECT_EQ("message", status.message());
-  }
-}
-
-TEST(Status, StatusMessageCStringTest) {
-  {
-    absl::Status status = absl::OkStatus();
-    EXPECT_EQ(status.message(), "");
-    EXPECT_STREQ(absl::StatusMessageAsCStr(status), "");
-    EXPECT_EQ(status.message(), absl::StatusMessageAsCStr(status));
-    EXPECT_NE(absl::StatusMessageAsCStr(status), nullptr);
-  }
-  {
-    absl::Status status;
-    EXPECT_EQ(status.message(), "");
-    EXPECT_NE(absl::StatusMessageAsCStr(status), nullptr);
-    EXPECT_STREQ(absl::StatusMessageAsCStr(status), "");
-  }
-  {
-    absl::Status status(absl::StatusCode::kInternal, "message");
-    EXPECT_FALSE(status.ok());
-    EXPECT_EQ(absl::StatusCode::kInternal, status.code());
-    EXPECT_EQ("message", status.message());
-    EXPECT_STREQ("message", absl::StatusMessageAsCStr(status));
   }
 }
 
@@ -240,25 +204,6 @@ TEST(Status, TestComparePayloads) {
   EXPECT_EQ(bad_status1, bad_status2);
 }
 
-TEST(Status, TestComparePayloadsAfterErase) {
-  absl::Status payload_status(absl::StatusCode::kInternal, "");
-  payload_status.SetPayload(kUrl1, absl::Cord(kPayload1));
-  payload_status.SetPayload(kUrl2, absl::Cord(kPayload2));
-
-  absl::Status empty_status(absl::StatusCode::kInternal, "");
-
-  // Different payloads, not equal
-  EXPECT_NE(payload_status, empty_status);
-  EXPECT_TRUE(payload_status.ErasePayload(kUrl1));
-
-  // Still Different payloads, still not equal.
-  EXPECT_NE(payload_status, empty_status);
-  EXPECT_TRUE(payload_status.ErasePayload(kUrl2));
-
-  // Both empty payloads, should be equal
-  EXPECT_EQ(payload_status, empty_status);
-}
-
 PayloadsVec AllVisitedPayloads(const absl::Status& s) {
   PayloadsVec result;
 
@@ -306,105 +251,14 @@ TEST(Status, TestForEachPayload) {
 }
 
 TEST(Status, ToString) {
-  absl::Status status(absl::StatusCode::kInternal, "fail");
-  EXPECT_EQ("INTERNAL: fail", status.ToString());
-  status.SetPayload("foo", absl::Cord("bar"));
-  EXPECT_EQ("INTERNAL: fail [foo='bar']", status.ToString());
-  status.SetPayload("bar", absl::Cord("\377"));
-  EXPECT_THAT(status.ToString(),
+  absl::Status s(absl::StatusCode::kInternal, "fail");
+  EXPECT_EQ("INTERNAL: fail", s.ToString());
+  s.SetPayload("foo", absl::Cord("bar"));
+  EXPECT_EQ("INTERNAL: fail [foo='bar']", s.ToString());
+  s.SetPayload("bar", absl::Cord("\377"));
+  EXPECT_THAT(s.ToString(),
               AllOf(HasSubstr("INTERNAL: fail"), HasSubstr("[foo='bar']"),
                     HasSubstr("[bar='\\xff']")));
-}
-
-TEST(Status, ToStringMode) {
-  absl::Status status(absl::StatusCode::kInternal, "fail");
-  status.SetPayload("foo", absl::Cord("bar"));
-  status.SetPayload("bar", absl::Cord("\377"));
-
-  EXPECT_EQ("INTERNAL: fail",
-            status.ToString(absl::StatusToStringMode::kWithNoExtraData));
-
-  EXPECT_THAT(status.ToString(absl::StatusToStringMode::kWithPayload),
-              AllOf(HasSubstr("INTERNAL: fail"), HasSubstr("[foo='bar']"),
-                    HasSubstr("[bar='\\xff']")));
-
-  EXPECT_THAT(status.ToString(absl::StatusToStringMode::kWithEverything),
-              AllOf(HasSubstr("INTERNAL: fail"), HasSubstr("[foo='bar']"),
-                    HasSubstr("[bar='\\xff']")));
-
-  EXPECT_THAT(status.ToString(~absl::StatusToStringMode::kWithPayload),
-              AllOf(HasSubstr("INTERNAL: fail"), Not(HasSubstr("[foo='bar']")),
-                    Not(HasSubstr("[bar='\\xff']"))));
-}
-
-TEST(Status, OstreamOperator) {
-  absl::Status status(absl::StatusCode::kInternal, "fail");
-  { std::stringstream stream;
-    stream << status;
-    EXPECT_EQ("INTERNAL: fail", stream.str());
-  }
-  status.SetPayload("foo", absl::Cord("bar"));
-  { std::stringstream stream;
-    stream << status;
-    EXPECT_EQ("INTERNAL: fail [foo='bar']", stream.str());
-  }
-  status.SetPayload("bar", absl::Cord("\377"));
-  { std::stringstream stream;
-    stream << status;
-    EXPECT_THAT(stream.str(),
-                AllOf(HasSubstr("INTERNAL: fail"), HasSubstr("[foo='bar']"),
-                      HasSubstr("[bar='\\xff']")));
-  }
-}
-
-TEST(Status, AbslStringify) {
-  absl::Status status(absl::StatusCode::kInternal, "fail");
-  EXPECT_EQ("INTERNAL: fail", absl::StrCat(status));
-  EXPECT_EQ("INTERNAL: fail", absl::StrFormat("%v", status));
-  status.SetPayload("foo", absl::Cord("bar"));
-  EXPECT_EQ("INTERNAL: fail [foo='bar']", absl::StrCat(status));
-  status.SetPayload("bar", absl::Cord("\377"));
-  EXPECT_THAT(absl::StrCat(status),
-              AllOf(HasSubstr("INTERNAL: fail"), HasSubstr("[foo='bar']"),
-                    HasSubstr("[bar='\\xff']")));
-}
-
-TEST(Status, OstreamEqStringify) {
-  absl::Status status(absl::StatusCode::kUnknown, "fail");
-  status.SetPayload("foo", absl::Cord("bar"));
-  std::stringstream stream;
-  stream << status;
-  EXPECT_EQ(stream.str(), absl::StrCat(status));
-}
-
-absl::Status EraseAndReturn(const absl::Status& base) {
-  absl::Status copy = base;
-  EXPECT_TRUE(copy.ErasePayload(kUrl1));
-  return copy;
-}
-
-TEST(Status, CopyOnWriteForErasePayload) {
-  {
-    absl::Status base(absl::StatusCode::kInvalidArgument, "fail");
-    base.SetPayload(kUrl1, absl::Cord(kPayload1));
-    EXPECT_TRUE(base.GetPayload(kUrl1).has_value());
-    absl::Status copy = EraseAndReturn(base);
-    EXPECT_TRUE(base.GetPayload(kUrl1).has_value());
-    EXPECT_FALSE(copy.GetPayload(kUrl1).has_value());
-  }
-  {
-    absl::Status base(absl::StatusCode::kInvalidArgument, "fail");
-    base.SetPayload(kUrl1, absl::Cord(kPayload1));
-    absl::Status copy = base;
-
-    EXPECT_TRUE(base.GetPayload(kUrl1).has_value());
-    EXPECT_TRUE(copy.GetPayload(kUrl1).has_value());
-
-    EXPECT_TRUE(base.ErasePayload(kUrl1));
-
-    EXPECT_FALSE(base.GetPayload(kUrl1).has_value());
-    EXPECT_TRUE(copy.GetPayload(kUrl1).has_value());
-  }
 }
 
 TEST(Status, CopyConstructor) {
@@ -446,14 +300,6 @@ TEST(Status, CopyAssignment) {
   }
 }
 
-TEST(Status, CopyAssignmentIsNotRef) {
-  const absl::Status status_orig(absl::StatusCode::kInvalidArgument, "message");
-  absl::Status status_copy = status_orig;
-  EXPECT_EQ(status_orig, status_copy);
-  status_copy.SetPayload(kUrl1, absl::Cord(kPayload1));
-  EXPECT_NE(status_orig, status_copy);
-}
-
 TEST(Status, MoveConstructor) {
   {
     absl::Status status;
@@ -492,12 +338,6 @@ TEST(Status, MoveAssignment) {
     status.SetPayload(kUrl1, absl::Cord(kPayload1));
     absl::Status copy(status);
     assignee = std::move(status);
-    EXPECT_EQ(assignee, copy);
-  }
-  {
-    absl::Status status(absl::StatusCode::kInvalidArgument, "message");
-    absl::Status copy(status);
-    assignee = static_cast<absl::Status&&>(status);
     EXPECT_EQ(assignee, copy);
   }
 }
@@ -556,24 +396,6 @@ TEST(Status, Swap) {
   test_swap(with_payload, ok);
   test_swap(no_payload, with_payload);
   test_swap(with_payload, no_payload);
-}
-
-TEST(StatusErrno, ErrnoToStatusCode) {
-  EXPECT_EQ(absl::ErrnoToStatusCode(0), absl::StatusCode::kOk);
-
-  // Spot-check a few errno values.
-  EXPECT_EQ(absl::ErrnoToStatusCode(EINVAL),
-            absl::StatusCode::kInvalidArgument);
-  EXPECT_EQ(absl::ErrnoToStatusCode(ENOENT), absl::StatusCode::kNotFound);
-
-  // We'll pick a very large number so it hopefully doesn't collide to errno.
-  EXPECT_EQ(absl::ErrnoToStatusCode(19980927), absl::StatusCode::kUnknown);
-}
-
-TEST(StatusErrno, ErrnoToStatus) {
-  absl::Status status = absl::ErrnoToStatus(ENOENT, "Cannot open 'path'");
-  EXPECT_EQ(status.code(), absl::StatusCode::kNotFound);
-  EXPECT_EQ(status.message(), "Cannot open 'path': No such file or directory");
 }
 
 }  // namespace

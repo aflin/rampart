@@ -22,7 +22,6 @@
 #include <memory>
 #include <type_traits>
 #include <utility>
-#include <vector>
 
 #include "absl/container/inlined_vector.h"
 #include "absl/meta/type_traits.h"
@@ -66,19 +65,15 @@ class SaltedSeedSeq {
 
   template <typename RandomAccessIterator>
   void generate(RandomAccessIterator begin, RandomAccessIterator end) {
-    using U = typename std::iterator_traits<RandomAccessIterator>::value_type;
-
     // The common case is that generate is called with ContiguousIterators
     // to uint arrays. Such contiguous memory regions may be optimized,
     // which we detect here.
-    using TagType = absl::conditional_t<
-        (std::is_same<U, uint32_t>::value &&
-         (std::is_pointer<RandomAccessIterator>::value ||
-          std::is_same<RandomAccessIterator,
-                       typename std::vector<U>::iterator>::value)),
+    using tag = absl::conditional_t<
+        (std::is_pointer<RandomAccessIterator>::value &&
+         std::is_same<absl::decay_t<decltype(*begin)>, uint32_t>::value),
         ContiguousAndUint32Tag, DefaultTag>;
     if (begin != end) {
-      generate_impl(TagType{}, begin, end, std::distance(begin, end));
+      generate_impl(begin, end, tag{});
     }
   }
 
@@ -94,15 +89,8 @@ class SaltedSeedSeq {
   struct DefaultTag {};
 
   // Generate which requires the iterators are contiguous pointers to uint32_t.
-  // Fills the initial seed buffer the underlying SSeq::generate() call,
-  // then mixes in the salt material.
-  template <typename Contiguous>
-  void generate_impl(ContiguousAndUint32Tag, Contiguous begin, Contiguous end,
-                     size_t n) {
-    seq_->generate(begin, end);
-    const uint32_t salt = absl::random_internal::GetSaltMaterial().value_or(0);
-    auto span = absl::Span<uint32_t>(&*begin, n);
-    MixIntoSeedMaterial(absl::MakeConstSpan(&salt, 1), span);
+  void generate_impl(uint32_t* begin, uint32_t* end, ContiguousAndUint32Tag) {
+    generate_contiguous(absl::MakeSpan(begin, end));
   }
 
   // The uncommon case for generate is that it is called with iterators over
@@ -110,13 +98,27 @@ class SaltedSeedSeq {
   // case we allocate a temporary 32-bit buffer and then copy-assign back
   // to the initial inputs.
   template <typename RandomAccessIterator>
-  void generate_impl(DefaultTag, RandomAccessIterator begin,
-                     RandomAccessIterator, size_t n) {
-    // Allocates a seed buffer of `n` elements, generates the seed, then
-    // copies the result into the `out` iterator.
+  void generate_impl(RandomAccessIterator begin, RandomAccessIterator end,
+                     DefaultTag) {
+    return generate_and_copy(std::distance(begin, end), begin);
+  }
+
+  // Fills the initial seed buffer the underlying SSeq::generate() call,
+  // mixing in the salt material.
+  void generate_contiguous(absl::Span<uint32_t> buffer) {
+    seq_->generate(buffer.begin(), buffer.end());
+    const uint32_t salt = absl::random_internal::GetSaltMaterial().value_or(0);
+    MixIntoSeedMaterial(absl::MakeConstSpan(&salt, 1), buffer);
+  }
+
+  // Allocates a seed buffer of `n` elements, generates the seed, then
+  // copies the result into the `out` iterator.
+  template <typename Iterator>
+  void generate_and_copy(size_t n, Iterator out) {
+    // Allocate a temporary buffer, generate, and then copy.
     absl::InlinedVector<uint32_t, 8> data(n, 0);
-    generate_impl(ContiguousAndUint32Tag{}, data.begin(), data.end(), n);
-    std::copy(data.begin(), data.end(), begin);
+    generate_contiguous(absl::MakeSpan(data.data(), data.size()));
+    std::copy(data.begin(), data.end(), out);
   }
 
   // Because [rand.req.seedseq] is not required to be copy-constructible,

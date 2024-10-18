@@ -10,10 +10,10 @@ from __future__ import print_function
 
 import os
 import re
-import urllib.request
+from six.moves import urllib
 
 # Directory or URL where Unicode tables reside.
-_UNICODE_DIR = "https://www.unicode.org/Public/15.1.0/ucd"
+_UNICODE_DIR = "https://www.unicode.org/Public/13.0.0/ucd"
 
 # Largest valid Unicode code value.
 _RUNE_MAX = 0x10FFFF
@@ -73,6 +73,25 @@ def _URange(s):
     if lo < hi:
       return range(lo, hi + 1)
   raise InputError("invalid Unicode range %s" % (s,))
+
+
+def _UStr(v):
+  """Converts Unicode code point to hex string.
+
+    0x263a => '0x263A'.
+
+  Args:
+    v: code point to convert
+
+  Returns:
+    Unicode string
+
+  Raises:
+    InputError: the argument is not a valid Unicode value.
+  """
+  if v < 0 or v > _RUNE_MAX:
+    raise InputError("invalid Unicode value %s" % (v,))
+  return "0x%04X" % (v,)
 
 
 def _ParseContinue(s):

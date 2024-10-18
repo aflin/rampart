@@ -24,7 +24,6 @@ absl_cc_library(
     absl::bad_any_cast
     absl::config
     absl::core_headers
-    absl::fast_type_id
     absl::type_traits
     absl::utility
   PUBLIC
@@ -43,7 +42,6 @@ absl_cc_library(
   PUBLIC
 )
 
-# Internal-only target, do not depend on directly.
 absl_cc_library(
   NAME
     bad_any_cast_impl
@@ -68,9 +66,9 @@ absl_cc_test(
     absl::any
     absl::config
     absl::exception_testing
-    absl::log
+    absl::raw_logging_internal
     absl::test_instance_tracker
-    GTest::gmock_main
+    gmock_main
 )
 
 absl_cc_test(
@@ -86,7 +84,7 @@ absl_cc_test(
     absl::exception_testing
     absl::raw_logging_internal
     absl::test_instance_tracker
-    GTest::gmock_main
+    gmock_main
 )
 
 absl_cc_test(
@@ -100,7 +98,7 @@ absl_cc_test(
     absl::any
     absl::config
     absl::exception_safety_testing
-    GTest::gmock_main
+    gmock_main
 )
 
 absl_cc_library(
@@ -115,7 +113,6 @@ absl_cc_library(
   DEPS
     absl::algorithm
     absl::core_headers
-    absl::nullability
     absl::throw_delegate
     absl::type_traits
   PUBLIC
@@ -138,8 +135,7 @@ absl_cc_test(
     absl::inlined_vector
     absl::hash_testing
     absl::strings
-    absl::type_traits
-    GTest::gmock_main
+    gmock_main
 )
 
 absl_cc_test(
@@ -159,7 +155,7 @@ absl_cc_test(
     absl::inlined_vector
     absl::hash_testing
     absl::strings
-    GTest::gmock_main
+    gmock_main
 )
 
 absl_cc_library(
@@ -177,7 +173,6 @@ absl_cc_library(
     absl::config
     absl::core_headers
     absl::memory
-    absl::nullability
     absl::type_traits
     absl::utility
   PUBLIC
@@ -223,10 +218,10 @@ absl_cc_test(
   DEPS
     absl::optional
     absl::config
-    absl::log
+    absl::raw_logging_internal
     absl::strings
     absl::type_traits
-    GTest::gmock_main
+    gmock_main
 )
 
 absl_cc_test(
@@ -240,7 +235,53 @@ absl_cc_test(
     absl::optional
     absl::config
     absl::exception_safety_testing
-    GTest::gmock_main
+    gmock_main
+)
+
+absl_cc_library(
+  NAME
+    conformance_testing
+  HDRS
+    "internal/conformance_aliases.h"
+    "internal/conformance_archetype.h"
+    "internal/conformance_profile.h"
+  COPTS
+    ${ABSL_DEFAULT_COPTS}
+  DEPS
+    absl::debugging
+    absl::type_traits
+    absl::strings
+    absl::utility
+    gmock_main
+  PUBLIC
+)
+
+absl_cc_test(
+  NAME
+    conformance_testing_test
+  SRCS
+    "internal/conformance_testing_test.cc"
+  COPTS
+    ${ABSL_TEST_COPTS}
+    ${ABSL_EXCEPTIONS_FLAG}
+  LINKOPTS
+    ${ABSL_EXCEPTIONS_FLAG_LINKOPTS}
+  DEPS
+    absl::conformance_testing
+    absl::type_traits
+    gmock_main
+)
+
+absl_cc_test(
+  NAME
+    conformance_testing_test_no_exceptions
+  SRCS
+    "internal/conformance_testing_test.cc"
+  COPTS
+    ${ABSL_TEST_COPTS}
+  DEPS
+    absl::conformance_testing
+    gmock_main
 )
 
 absl_cc_library(
@@ -276,7 +317,7 @@ absl_cc_test(
     absl::memory
     absl::type_traits
     absl::strings
-    GTest::gmock_main
+    gmock_main
 )
 
 absl_cc_library(
@@ -287,7 +328,6 @@ absl_cc_library(
   COPTS
     ${ABSL_DEFAULT_COPTS}
   DEPS
-    absl::config
     absl::core_headers
     absl::type_traits
   PUBLIC
@@ -303,9 +343,12 @@ absl_cc_test(
   DEPS
     absl::base
     absl::compare
-    GTest::gmock_main
+    gmock_main
 )
 
+# TODO(cohenjon,zhangxy) Figure out why this test is failing on gcc 4.8
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 4.9)
+else()
 absl_cc_test(
   NAME
     variant_exception_safety_test
@@ -318,5 +361,6 @@ absl_cc_test(
     absl::config
     absl::exception_safety_testing
     absl::memory
-    GTest::gmock_main
+    gmock_main
 )
+endif()

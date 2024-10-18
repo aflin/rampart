@@ -6,18 +6,11 @@
 //
 //      https://www.apache.org/licenses/LICENSE-2.0
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
 #include "absl/strings/internal/str_format/arg.h"
 
-#include <limits>
+#include <ostream>
 #include <string>
 #include "gtest/gtest.h"
-#include "absl/base/config.h"
 #include "absl/strings/str_format.h"
 
 namespace absl {
@@ -30,16 +23,7 @@ class FormatArgImplTest : public ::testing::Test {
   enum Color { kRed, kGreen, kBlue };
 
   static const char *hi() { return "hi"; }
-
-  struct X {};
-
-  X x_;
 };
-
-inline FormatConvertResult<FormatConversionCharSet{}> AbslFormatConvert(
-    const FormatArgImplTest::X &, const FormatConversionSpec &, FormatSink *) {
-  return {false};
-}
 
 TEST_F(FormatArgImplTest, ToInt) {
   int out = 0;
@@ -75,7 +59,6 @@ TEST_F(FormatArgImplTest, ToInt) {
       FormatArgImpl(static_cast<int *>(nullptr)), &out));
   EXPECT_FALSE(FormatArgImplFriend::ToInt(FormatArgImpl(hi()), &out));
   EXPECT_FALSE(FormatArgImplFriend::ToInt(FormatArgImpl("hi"), &out));
-  EXPECT_FALSE(FormatArgImplFriend::ToInt(FormatArgImpl(x_), &out));
   EXPECT_TRUE(FormatArgImplFriend::ToInt(FormatArgImpl(kBlue), &out));
   EXPECT_EQ(2, out);
 }
@@ -92,21 +75,6 @@ TEST_F(FormatArgImplTest, CharArraysDecayToCharPtr) {
             FormatArgImplFriend::GetVTablePtrForTest(FormatArgImpl("ABC")));
   EXPECT_EQ(FormatArgImplFriend::GetVTablePtrForTest(FormatArgImpl(a)),
             FormatArgImplFriend::GetVTablePtrForTest(FormatArgImpl(kMyArray)));
-}
-
-extern const wchar_t kMyWCharTArray[];
-
-TEST_F(FormatArgImplTest, WCharTArraysDecayToWCharTPtr) {
-  const wchar_t* a = L"";
-  EXPECT_EQ(FormatArgImplFriend::GetVTablePtrForTest(FormatArgImpl(a)),
-            FormatArgImplFriend::GetVTablePtrForTest(FormatArgImpl(L"")));
-  EXPECT_EQ(FormatArgImplFriend::GetVTablePtrForTest(FormatArgImpl(a)),
-            FormatArgImplFriend::GetVTablePtrForTest(FormatArgImpl(L"A")));
-  EXPECT_EQ(FormatArgImplFriend::GetVTablePtrForTest(FormatArgImpl(a)),
-            FormatArgImplFriend::GetVTablePtrForTest(FormatArgImpl(L"ABC")));
-  EXPECT_EQ(
-      FormatArgImplFriend::GetVTablePtrForTest(FormatArgImpl(a)),
-      FormatArgImplFriend::GetVTablePtrForTest(FormatArgImpl(kMyWCharTArray)));
 }
 
 TEST_F(FormatArgImplTest, OtherPtrDecayToVoidPtr) {
@@ -127,9 +95,8 @@ TEST_F(FormatArgImplTest, OtherPtrDecayToVoidPtr) {
 TEST_F(FormatArgImplTest, WorksWithCharArraysOfUnknownSize) {
   std::string s;
   FormatSinkImpl sink(&s);
-  FormatConversionSpecImpl conv;
-  FormatConversionSpecImplFriend::SetConversionChar(
-      FormatConversionCharInternal::s, &conv);
+  ConversionSpec conv;
+  FormatConversionSpecImplFriend::SetConversionChar(ConversionChar::s, &conv);
   FormatConversionSpecImplFriend::SetFlags(Flags(), &conv);
   FormatConversionSpecImplFriend::SetWidth(-1, &conv);
   FormatConversionSpecImplFriend::SetPrecision(-1, &conv);
@@ -139,22 +106,6 @@ TEST_F(FormatArgImplTest, WorksWithCharArraysOfUnknownSize) {
   EXPECT_EQ("ABCDE", s);
 }
 const char kMyArray[] = "ABCDE";
-
-TEST_F(FormatArgImplTest, WorksWithWCharTArraysOfUnknownSize) {
-  std::string s;
-  FormatSinkImpl sink(&s);
-  FormatConversionSpecImpl conv;
-  FormatConversionSpecImplFriend::SetConversionChar(
-      FormatConversionCharInternal::s, &conv);
-  FormatConversionSpecImplFriend::SetFlags(Flags(), &conv);
-  FormatConversionSpecImplFriend::SetWidth(-1, &conv);
-  FormatConversionSpecImplFriend::SetPrecision(-1, &conv);
-  EXPECT_TRUE(
-      FormatArgImplFriend::Convert(FormatArgImpl(kMyWCharTArray), conv, &sink));
-  sink.Flush();
-  EXPECT_EQ("ABCDE", s);
-}
-const wchar_t kMyWCharTArray[] = L"ABCDE";
 
 }  // namespace
 }  // namespace str_format_internal

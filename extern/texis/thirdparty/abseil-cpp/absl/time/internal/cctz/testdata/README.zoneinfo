@@ -21,8 +21,7 @@ New versions can be generated using the following shell script.
                 REDO=posix_only \
                 LOCALTIME=Factory \
                 TZDATA_TEXT= \
-                PACKRATDATA=backzone PACKRATLIST=zone.tab \
-                ZONETABLES=zone1970.tab\ zonenow.tab
+                ZONETABLES=zone1970.tab
     tar --create --dereference --hard-dereference --file tzfile.tar \
         --directory=tz tzfile.h
     tar --create --dereference --hard-dereference --file zoneinfo.tar \

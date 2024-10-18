@@ -16,25 +16,25 @@
 // and recognizes the Perl escape sequences \d, \s, \w, \D, \S, and \W.
 // See regexp.h for rationale.
 
+#include <ctype.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
-
 #include <algorithm>
+#include <map>
 #include <string>
 #include <vector>
 
-#include "absl/base/attributes.h"
-#include "absl/base/macros.h"
-#include "absl/log/absl_log.h"
-#include "absl/strings/ascii.h"
-#include "absl/strings/string_view.h"
+#include "util/util.h"
+#include "util/logging.h"
+#include "util/strutil.h"
+#include "util/utf.h"
 #include "re2/pod_array.h"
 #include "re2/regexp.h"
+#include "re2/stringpiece.h"
 #include "re2/unicode_casefold.h"
 #include "re2/unicode_groups.h"
 #include "re2/walker-inl.h"
-#include "util/utf.h"
 
 #if defined(RE2_USE_ICU)
 #include "unicode/uniset.h"
@@ -44,12 +44,12 @@
 
 namespace re2 {
 
-// Controls the maximum repeat count permitted by the parser.
-static int maximum_repeat_count = 1000;
-
-void Regexp::FUZZING_ONLY_set_maximum_repeat_count(int i) {
-  maximum_repeat_count = i;
-}
+// Reduce the maximum repeat count by an order of magnitude when fuzzing.
+#ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
+static const int kMaxRepeat = 100;
+#else
+static const int kMaxRepeat = 1000;
+#endif
 
 // Regular expression parse state.
 // The list of parsed regexps so far is maintained as a vector of
@@ -70,7 +70,7 @@ void Regexp::FUZZING_ONLY_set_maximum_repeat_count(int i) {
 
 class Regexp::ParseState {
  public:
-  ParseState(ParseFlags flags, absl::string_view whole_regexp,
+  ParseState(ParseFlags flags, const StringPiece& whole_regexp,
              RegexpStatus* status);
   ~ParseState();
 
@@ -107,18 +107,18 @@ class Regexp::ParseState {
   // Pushes a repeat operator regexp onto the stack.
   // A valid argument for the operator must already be on the stack.
   // s is the name of the operator, for use in error messages.
-  bool PushRepeatOp(RegexpOp op, absl::string_view s, bool nongreedy);
+  bool PushRepeatOp(RegexpOp op, const StringPiece& s, bool nongreedy);
 
   // Pushes a repetition regexp onto the stack.
   // A valid argument for the operator must already be on the stack.
-  bool PushRepetition(int min, int max, absl::string_view s, bool nongreedy);
+  bool PushRepetition(int min, int max, const StringPiece& s, bool nongreedy);
 
   // Checks whether a particular regexp op is a marker.
   bool IsMarker(RegexpOp op);
 
   // Processes a left parenthesis in the input.
   // Pushes a marker onto the stack.
-  bool DoLeftParen(absl::string_view name);
+  bool DoLeftParen(const StringPiece& name);
   bool DoLeftParenNoCapture();
 
   // Processes a vertical bar in the input.
@@ -142,23 +142,24 @@ class Regexp::ParseState {
 
   // Parse a character class into *out_re.
   // Removes parsed text from s.
-  bool ParseCharClass(absl::string_view* s, Regexp** out_re,
+  bool ParseCharClass(StringPiece* s, Regexp** out_re,
                       RegexpStatus* status);
 
   // Parse a character class character into *rp.
   // Removes parsed text from s.
-  bool ParseCCCharacter(absl::string_view* s, Rune* rp,
-                        absl::string_view whole_class,
+  bool ParseCCCharacter(StringPiece* s, Rune *rp,
+                        const StringPiece& whole_class,
                         RegexpStatus* status);
 
   // Parse a character class range into rr.
   // Removes parsed text from s.
-  bool ParseCCRange(absl::string_view* s, RuneRange* rr,
-                    absl::string_view whole_class,
+  bool ParseCCRange(StringPiece* s, RuneRange* rr,
+                    const StringPiece& whole_class,
                     RegexpStatus* status);
 
   // Parse a Perl flag set or non-capturing group from s.
-  bool ParsePerlFlags(absl::string_view* s);
+  bool ParsePerlFlags(StringPiece* s);
+
 
   // Finishes the current concatenation,
   // collapsing it into a single regexp on the stack.
@@ -176,7 +177,7 @@ class Regexp::ParseState {
 
 private:
   ParseFlags flags_;
-  absl::string_view whole_regexp_;
+  StringPiece whole_regexp_;
   RegexpStatus* status_;
   Regexp* stacktop_;
   int ncap_;  // number of capturing parens seen
@@ -191,7 +192,7 @@ const RegexpOp kLeftParen = static_cast<RegexpOp>(kMaxRegexpOp+1);
 const RegexpOp kVerticalBar = static_cast<RegexpOp>(kMaxRegexpOp+2);
 
 Regexp::ParseState::ParseState(ParseFlags flags,
-                               absl::string_view whole_regexp,
+                               const StringPiece& whole_regexp,
                                RegexpStatus* status)
   : flags_(flags), whole_regexp_(whole_regexp),
     status_(status), stacktop_(NULL), ncap_(0) {
@@ -268,7 +269,7 @@ bool Regexp::ParseState::PushRegexp(Regexp* re) {
 // Searches the case folding tables and returns the CaseFold* that contains r.
 // If there isn't one, returns the CaseFold* with smallest f->lo bigger than r.
 // If there isn't one, returns NULL.
-const CaseFold* LookupCaseFold(const CaseFold* f, int n, Rune r) {
+const CaseFold* LookupCaseFold(const CaseFold *f, int n, Rune r) {
   const CaseFold* ef = f + n;
 
   // Binary search for entry containing r.
@@ -296,7 +297,7 @@ const CaseFold* LookupCaseFold(const CaseFold* f, int n, Rune r) {
 }
 
 // Returns the result of applying the fold f to the rune r.
-Rune ApplyFold(const CaseFold* f, Rune r) {
+Rune ApplyFold(const CaseFold *f, Rune r) {
   switch (f->delta) {
     default:
       return r + f->delta;
@@ -304,7 +305,7 @@ Rune ApplyFold(const CaseFold* f, Rune r) {
     case EvenOddSkip:  // even <-> odd but only applies to every other
       if ((r - f->lo) % 2)
         return r;
-      ABSL_FALLTHROUGH_INTENDED;
+      FALLTHROUGH_INTENDED;
     case EvenOdd:  // even <-> odd
       if (r%2 == 0)
         return r + 1;
@@ -313,7 +314,7 @@ Rune ApplyFold(const CaseFold* f, Rune r) {
     case OddEvenSkip:  // odd <-> even but only applies to every other
       if ((r - f->lo) % 2)
         return r;
-      ABSL_FALLTHROUGH_INTENDED;
+      FALLTHROUGH_INTENDED;
     case OddEven:  // odd <-> even
       if (r%2 == 1)
         return r + 1;
@@ -339,20 +340,6 @@ Rune CycleFoldRune(Rune r) {
 }
 
 // Add lo-hi to the class, along with their fold-equivalent characters.
-static void AddFoldedRangeLatin1(CharClassBuilder* cc, Rune lo, Rune hi) {
-  while (lo <= hi) {
-    cc->AddRange(lo, lo);
-    if ('A' <= lo && lo <= 'Z') {
-      cc->AddRange(lo - 'A' + 'a', lo - 'A' + 'a');
-    }
-    if ('a' <= lo && lo <= 'z') {
-      cc->AddRange(lo - 'a' + 'A', lo - 'a' + 'A');
-    }
-    lo++;
-  }
-}
-
-// Add lo-hi to the class, along with their fold-equivalent characters.
 // If lo-hi is already in the class, assume that the fold-equivalent
 // chars are there too, so there's no work to do.
 static void AddFoldedRange(CharClassBuilder* cc, Rune lo, Rune hi, int depth) {
@@ -361,7 +348,7 @@ static void AddFoldedRange(CharClassBuilder* cc, Rune lo, Rune hi, int depth) {
   // current Unicode tables.  make_unicode_casefold.py checks that
   // the cycles are not too long, and we double-check here using depth.
   if (depth > 10) {
-    ABSL_LOG(DFATAL) << "AddFoldedRange recurses too much.";
+    LOG(DFATAL) << "AddFoldedRange recurses too much.";
     return;
   }
 
@@ -409,26 +396,17 @@ static void AddFoldedRange(CharClassBuilder* cc, Rune lo, Rune hi, int depth) {
 // Pushes the literal rune r onto the stack.
 bool Regexp::ParseState::PushLiteral(Rune r) {
   // Do case folding if needed.
-  if (flags_ & FoldCase) {
-    if (flags_ & Latin1 && (('A' <= r && r <= 'Z') ||
-                            ('a' <= r && r <= 'z'))) {
-      Regexp* re = new Regexp(kRegexpCharClass, flags_ & ~FoldCase);
-      re->ccb_ = new CharClassBuilder;
-      AddFoldedRangeLatin1(re->ccb_, r, r);
-      return PushRegexp(re);
-    }
-    if (!(flags_ & Latin1) && CycleFoldRune(r) != r) {
-      Regexp* re = new Regexp(kRegexpCharClass, flags_ & ~FoldCase);
-      re->ccb_ = new CharClassBuilder;
-      Rune r1 = r;
-      do {
-        if (!(flags_ & NeverNL) || r != '\n') {
-          re->ccb_->AddRange(r, r);
-        }
-        r = CycleFoldRune(r);
-      } while (r != r1);
-      return PushRegexp(re);
-    }
+  if ((flags_ & FoldCase) && CycleFoldRune(r) != r) {
+    Regexp* re = new Regexp(kRegexpCharClass, flags_ & ~FoldCase);
+    re->ccb_ = new CharClassBuilder;
+    Rune r1 = r;
+    do {
+      if (!(flags_ & NeverNL) || r != '\n') {
+        re->ccb_->AddRange(r, r);
+      }
+      r = CycleFoldRune(r);
+    } while (r != r1);
+    return PushRegexp(re);
   }
 
   // Exclude newline if applicable.
@@ -494,7 +472,7 @@ bool Regexp::ParseState::PushSimpleOp(RegexpOp op) {
 // Pushes a repeat operator regexp onto the stack.
 // A valid argument for the operator must already be on the stack.
 // The char c is the name of the operator, for use in error messages.
-bool Regexp::ParseState::PushRepeatOp(RegexpOp op, absl::string_view s,
+bool Regexp::ParseState::PushRepeatOp(RegexpOp op, const StringPiece& s,
                                       bool nongreedy) {
   if (stacktop_ == NULL || IsMarker(stacktop_->op())) {
     status_->set_code(kRegexpRepeatArgument);
@@ -580,18 +558,17 @@ int RepetitionWalker::PostVisit(Regexp* re, int parent_arg, int pre_arg,
 int RepetitionWalker::ShortVisit(Regexp* re, int parent_arg) {
   // Should never be called: we use Walk(), not WalkExponential().
 #ifndef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
-  ABSL_LOG(DFATAL) << "RepetitionWalker::ShortVisit called";
+  LOG(DFATAL) << "RepetitionWalker::ShortVisit called";
 #endif
   return 0;
 }
 
 // Pushes a repetition regexp onto the stack.
 // A valid argument for the operator must already be on the stack.
-bool Regexp::ParseState::PushRepetition(int min, int max, absl::string_view s,
+bool Regexp::ParseState::PushRepetition(int min, int max,
+                                        const StringPiece& s,
                                         bool nongreedy) {
-  if ((max != -1 && max < min) ||
-      min > maximum_repeat_count ||
-      max > maximum_repeat_count) {
+  if ((max != -1 && max < min) || min > kMaxRepeat || max > kMaxRepeat) {
     status_->set_code(kRegexpRepeatSize);
     status_->set_error_arg(s);
     return false;
@@ -614,7 +591,7 @@ bool Regexp::ParseState::PushRepetition(int min, int max, absl::string_view s,
   stacktop_ = re;
   if (min >= 2 || max >= 2) {
     RepetitionWalker w;
-    if (w.Walk(stacktop_, maximum_repeat_count) == 0) {
+    if (w.Walk(stacktop_, kMaxRepeat) == 0) {
       status_->set_code(kRegexpRepeatSize);
       status_->set_error_arg(s);
       return false;
@@ -630,7 +607,7 @@ bool Regexp::ParseState::IsMarker(RegexpOp op) {
 
 // Processes a left parenthesis in the input.
 // Pushes a marker onto the stack.
-bool Regexp::ParseState::DoLeftParen(absl::string_view name) {
+bool Regexp::ParseState::DoLeftParen(const StringPiece& name) {
   Regexp* re = new Regexp(kLeftParen, flags_);
   re->cap_ = ++ncap_;
   if (name.data() != NULL)
@@ -795,13 +772,12 @@ Regexp* Regexp::RemoveLeadingRegexp(Regexp* re) {
 // Returns the leading string that re starts with.
 // The returned Rune* points into a piece of re,
 // so it must not be used after the caller calls re->Decref().
-Rune* Regexp::LeadingString(Regexp* re, int* nrune,
-                            Regexp::ParseFlags* flags) {
+Rune* Regexp::LeadingString(Regexp* re, int *nrune,
+                            Regexp::ParseFlags *flags) {
   while (re->op() == kRegexpConcat && re->nsub() > 0)
     re = re->sub()[0];
 
-  *flags = static_cast<Regexp::ParseFlags>(re->parse_flags_ &
-                                           (Regexp::FoldCase | Regexp::Latin1));
+  *flags = static_cast<Regexp::ParseFlags>(re->parse_flags_ & Regexp::FoldCase);
 
   if (re->op() == kRegexpLiteral) {
     *nrune = 1;
@@ -828,7 +804,7 @@ void Regexp::RemoveLeadingString(Regexp* re, int n) {
   Regexp* stk[4];
   size_t d = 0;
   while (re->op() == kRegexpConcat) {
-    if (d < ABSL_ARRAYSIZE(stk))
+    if (d < arraysize(stk))
       stk[d++] = re;
     re = re->sub()[0];
   }
@@ -868,7 +844,7 @@ void Regexp::RemoveLeadingString(Regexp* re, int n) {
         case 0:
         case 1:
           // Impossible.
-          ABSL_LOG(DFATAL) << "Concat of " << re->nsub();
+          LOG(DFATAL) << "Concat of " << re->nsub();
           re->submany_ = NULL;
           re->op_ = kRegexpEmptyMatch;
           break;
@@ -998,7 +974,7 @@ int Regexp::FactorAlternation(Regexp** sub, int nsub, ParseFlags flags) {
             i += iter->nsub;
             break;
           default:
-            ABSL_LOG(DFATAL) << "unknown round: " << round;
+            LOG(DFATAL) << "unknown round: " << round;
             break;
         }
         // If we are done, copy until the end of sub.
@@ -1037,7 +1013,7 @@ int Regexp::FactorAlternation(Regexp** sub, int nsub, ParseFlags flags) {
           continue;
         }
       default:
-        ABSL_LOG(DFATAL) << "unknown round: " << round;
+        LOG(DFATAL) << "unknown round: " << round;
         break;
     }
 
@@ -1200,26 +1176,16 @@ void FactorAlternationImpl::Round3(Regexp** sub, int nsub,
         if (re->op() == kRegexpCharClass) {
           CharClass* cc = re->cc();
           for (CharClass::iterator it = cc->begin(); it != cc->end(); ++it)
-            ccb.AddRangeFlags(it->lo, it->hi, re->parse_flags());
+            ccb.AddRange(it->lo, it->hi);
         } else if (re->op() == kRegexpLiteral) {
-          if (re->parse_flags() & Regexp::FoldCase) {
-            // AddFoldedRange() can terminate prematurely if the character class
-            // already contains the rune. For example, if it contains 'a' and we
-            // want to add folded 'a', it sees 'a' and stops without adding 'A'.
-            // To avoid that, we use an empty character class and then merge it.
-            CharClassBuilder tmp;
-            tmp.AddRangeFlags(re->rune(), re->rune(), re->parse_flags());
-            ccb.AddCharClass(&tmp);
-          } else {
-            ccb.AddRangeFlags(re->rune(), re->rune(), re->parse_flags());
-          }
+          ccb.AddRangeFlags(re->rune(), re->rune(), re->parse_flags());
         } else {
-          ABSL_LOG(DFATAL) << "RE2: unexpected op: " << re->op() << " "
-                           << re->ToString();
+          LOG(DFATAL) << "RE2: unexpected op: " << re->op() << " "
+                      << re->ToString();
         }
         re->Decref();
       }
-      Regexp* re = Regexp::NewCharClass(ccb.GetCharClass(), flags & ~Regexp::FoldCase);
+      Regexp* re = Regexp::NewCharClass(ccb.GetCharClass(), flags);
       splices->emplace_back(re, sub + start, i - start);
     }
 
@@ -1357,15 +1323,15 @@ bool Regexp::ParseState::MaybeConcatString(int r, ParseFlags flags) {
 
 // Parses a decimal integer, storing it in *np.
 // Sets *s to span the remainder of the string.
-static bool ParseInteger(absl::string_view* s, int* np) {
-  if (s->empty() || !absl::ascii_isdigit((*s)[0] & 0xFF))
+static bool ParseInteger(StringPiece* s, int* np) {
+  if (s->empty() || !isdigit((*s)[0] & 0xFF))
     return false;
   // Disallow leading zeros.
-  if (s->size() >= 2 && (*s)[0] == '0' && absl::ascii_isdigit((*s)[1] & 0xFF))
+  if (s->size() >= 2 && (*s)[0] == '0' && isdigit((*s)[1] & 0xFF))
     return false;
   int n = 0;
   int c;
-  while (!s->empty() && absl::ascii_isdigit(c = (*s)[0] & 0xFF)) {
+  while (!s->empty() && isdigit(c = (*s)[0] & 0xFF)) {
     // Avoid overflow.
     if (n >= 100000000)
       return false;
@@ -1383,10 +1349,10 @@ static bool ParseInteger(absl::string_view* s, int* np) {
 // sets *hi to -1 to signify this.
 // {,2} is NOT a valid suffix.
 // The Maybe in the name signifies that the regexp parse
-// doesn't fail even if ParseRepetition does, so the string_view
+// doesn't fail even if ParseRepetition does, so the StringPiece
 // s must NOT be edited unless MaybeParseRepetition returns true.
-static bool MaybeParseRepetition(absl::string_view* sp, int* lo, int* hi) {
-  absl::string_view s = *sp;
+static bool MaybeParseRepetition(StringPiece* sp, int* lo, int* hi) {
+  StringPiece s = *sp;
   if (s.empty() || s[0] != '{')
     return false;
   s.remove_prefix(1);  // '{'
@@ -1417,13 +1383,12 @@ static bool MaybeParseRepetition(absl::string_view* sp, int* lo, int* hi) {
   return true;
 }
 
-// Removes the next Rune from the string_view and stores it in *r.
+// Removes the next Rune from the StringPiece and stores it in *r.
 // Returns number of bytes removed from sp.
 // Behaves as though there is a terminating NUL at the end of sp.
 // Argument order is backwards from usual Google style
 // but consistent with chartorune.
-static int StringViewToRune(Rune* r, absl::string_view* sp,
-                            RegexpStatus* status) {
+static int StringPieceToRune(Rune *r, StringPiece *sp, RegexpStatus* status) {
   // fullrune() takes int, not size_t. However, it just looks
   // at the leading byte and treats any length >= 4 the same.
   if (fullrune(sp->data(), static_cast<int>(std::min(size_t{4}, sp->size())))) {
@@ -1442,20 +1407,18 @@ static int StringViewToRune(Rune* r, absl::string_view* sp,
     }
   }
 
-  if (status != NULL) {
-    status->set_code(kRegexpBadUTF8);
-    status->set_error_arg(absl::string_view());
-  }
+  status->set_code(kRegexpBadUTF8);
+  status->set_error_arg(StringPiece());
   return -1;
 }
 
-// Returns whether name is valid UTF-8.
-// If not, sets status to kRegexpBadUTF8.
-static bool IsValidUTF8(absl::string_view s, RegexpStatus* status) {
-  absl::string_view t = s;
+// Return whether name is valid UTF-8.
+// If not, set status to kRegexpBadUTF8.
+static bool IsValidUTF8(const StringPiece& s, RegexpStatus* status) {
+  StringPiece t = s;
   Rune r;
   while (!t.empty()) {
-    if (StringViewToRune(&r, &t, status) < 0)
+    if (StringPieceToRune(&r, &t, status) < 0)
       return false;
   }
   return true;
@@ -1476,35 +1439,35 @@ static int UnHex(int c) {
     return c - 'A' + 10;
   if ('a' <= c && c <= 'f')
     return c - 'a' + 10;
-  ABSL_LOG(DFATAL) << "Bad hex digit " << c;
+  LOG(DFATAL) << "Bad hex digit " << c;
   return 0;
 }
 
 // Parse an escape sequence (e.g., \n, \{).
 // Sets *s to span the remainder of the string.
 // Sets *rp to the named character.
-static bool ParseEscape(absl::string_view* s, Rune* rp,
+static bool ParseEscape(StringPiece* s, Rune* rp,
                         RegexpStatus* status, int rune_max) {
   const char* begin = s->data();
   if (s->empty() || (*s)[0] != '\\') {
     // Should not happen - caller always checks.
     status->set_code(kRegexpInternalError);
-    status->set_error_arg(absl::string_view());
+    status->set_error_arg(StringPiece());
     return false;
   }
   if (s->size() == 1) {
     status->set_code(kRegexpTrailingBackslash);
-    status->set_error_arg(absl::string_view());
+    status->set_error_arg(StringPiece());
     return false;
   }
   Rune c, c1;
   s->remove_prefix(1);  // backslash
-  if (StringViewToRune(&c, s, status) < 0)
+  if (StringPieceToRune(&c, s, status) < 0)
     return false;
   int code;
   switch (c) {
     default:
-      if (c < Runeself && !absl::ascii_isalnum(c)) {
+      if (c < Runeself && !isalpha(c) && !isdigit(c)) {
         // Escaped non-word characters are always themselves.
         // PCRE is not quite so rigorous: it accepts things like
         // \q, but we don't.  We once rejected \_, but too many
@@ -1525,7 +1488,7 @@ static bool ParseEscape(absl::string_view* s, Rune* rp,
       // Single non-zero octal digit is a backreference; not supported.
       if (s->empty() || (*s)[0] < '0' || (*s)[0] > '7')
         goto BadEscape;
-      ABSL_FALLTHROUGH_INTENDED;
+      FALLTHROUGH_INTENDED;
     case '0':
       // consume up to three octal digits; already have one.
       code = c - '0';
@@ -1549,7 +1512,7 @@ static bool ParseEscape(absl::string_view* s, Rune* rp,
     case 'x':
       if (s->empty())
         goto BadEscape;
-      if (StringViewToRune(&c, s, status) < 0)
+      if (StringPieceToRune(&c, s, status) < 0)
         return false;
       if (c == '{') {
         // Any number of digits in braces.
@@ -1558,7 +1521,7 @@ static bool ParseEscape(absl::string_view* s, Rune* rp,
         // Perl accepts any text at all; it ignores all text
         // after the first non-hex digit.  We require only hex digits,
         // and at least one.
-        if (StringViewToRune(&c, s, status) < 0)
+        if (StringPieceToRune(&c, s, status) < 0)
           return false;
         int nhex = 0;
         code = 0;
@@ -1569,7 +1532,7 @@ static bool ParseEscape(absl::string_view* s, Rune* rp,
             goto BadEscape;
           if (s->empty())
             goto BadEscape;
-          if (StringViewToRune(&c, s, status) < 0)
+          if (StringPieceToRune(&c, s, status) < 0)
             return false;
         }
         if (c != '}' || nhex == 0)
@@ -1580,7 +1543,7 @@ static bool ParseEscape(absl::string_view* s, Rune* rp,
       // Easy case: two hex digits.
       if (s->empty())
         goto BadEscape;
-      if (StringViewToRune(&c1, s, status) < 0)
+      if (StringPieceToRune(&c1, s, status) < 0)
         return false;
       if (!IsHex(c) || !IsHex(c1))
         goto BadEscape;
@@ -1622,11 +1585,13 @@ static bool ParseEscape(absl::string_view* s, Rune* rp,
     //   return true;
   }
 
+  LOG(DFATAL) << "Not reached in ParseEscape.";
+
 BadEscape:
   // Unrecognized escape sequence.
   status->set_code(kRegexpBadEscape);
   status->set_error_arg(
-      absl::string_view(begin, static_cast<size_t>(s->data() - begin)));
+      StringPiece(begin, static_cast<size_t>(s->data() - begin)));
   return false;
 }
 
@@ -1647,33 +1612,28 @@ void CharClassBuilder::AddRangeFlags(
   }
 
   // If folding case, add fold-equivalent characters too.
-  if (parse_flags & Regexp::FoldCase) {
-    if (parse_flags & Regexp::Latin1) {
-      AddFoldedRangeLatin1(this, lo, hi);
-    } else {
-      AddFoldedRange(this, lo, hi, 0);
-    }
-  } else {
+  if (parse_flags & Regexp::FoldCase)
+    AddFoldedRange(this, lo, hi, 0);
+  else
     AddRange(lo, hi);
-  }
 }
 
 // Look for a group with the given name.
-static const UGroup* LookupGroup(absl::string_view name,
-                                 const UGroup* groups, int ngroups) {
+static const UGroup* LookupGroup(const StringPiece& name,
+                                 const UGroup *groups, int ngroups) {
   // Simple name lookup.
   for (int i = 0; i < ngroups; i++)
-    if (absl::string_view(groups[i].name) == name)
+    if (StringPiece(groups[i].name) == name)
       return &groups[i];
   return NULL;
 }
 
 // Look for a POSIX group with the given name (e.g., "[:^alpha:]")
-static const UGroup* LookupPosixGroup(absl::string_view name) {
+static const UGroup* LookupPosixGroup(const StringPiece& name) {
   return LookupGroup(name, posix_groups, num_posix_groups);
 }
 
-static const UGroup* LookupPerlGroup(absl::string_view name) {
+static const UGroup* LookupPerlGroup(const StringPiece& name) {
   return LookupGroup(name, perl_groups, num_perl_groups);
 }
 
@@ -1684,16 +1644,16 @@ static URange32 any32[] = { { 65536, Runemax } };
 static UGroup anygroup = { "Any", +1, any16, 1, any32, 1 };
 
 // Look for a Unicode group with the given name (e.g., "Han")
-static const UGroup* LookupUnicodeGroup(absl::string_view name) {
+static const UGroup* LookupUnicodeGroup(const StringPiece& name) {
   // Special case: "Any" means any.
-  if (name == absl::string_view("Any"))
+  if (name == StringPiece("Any"))
     return &anygroup;
   return LookupGroup(name, unicode_groups, num_unicode_groups);
 }
 #endif
 
 // Add a UGroup or its negation to the character class.
-static void AddUGroup(CharClassBuilder* cc, const UGroup* g, int sign,
+static void AddUGroup(CharClassBuilder *cc, const UGroup *g, int sign,
                       Regexp::ParseFlags parse_flags) {
   if (sign == +1) {
     for (int i = 0; i < g->nr16; i++) {
@@ -1743,17 +1703,16 @@ static void AddUGroup(CharClassBuilder* cc, const UGroup* g, int sign,
 // not the Perl empty-string classes (\b \B \A \Z \z).
 // On success, sets *s to span the remainder of the string
 // and returns the corresponding UGroup.
-// The string_view must *NOT* be edited unless the call succeeds.
-const UGroup* MaybeParsePerlCCEscape(absl::string_view* s,
-                                     Regexp::ParseFlags parse_flags) {
+// The StringPiece must *NOT* be edited unless the call succeeds.
+const UGroup* MaybeParsePerlCCEscape(StringPiece* s, Regexp::ParseFlags parse_flags) {
   if (!(parse_flags & Regexp::PerlClasses))
     return NULL;
   if (s->size() < 2 || (*s)[0] != '\\')
     return NULL;
-  // Could use StringViewToRune, but there aren't
+  // Could use StringPieceToRune, but there aren't
   // any non-ASCII Perl group names.
-  absl::string_view name(s->data(), 2);
-  const UGroup* g = LookupPerlGroup(name);
+  StringPiece name(s->data(), 2);
+  const UGroup *g = LookupPerlGroup(name);
   if (g == NULL)
     return NULL;
   s->remove_prefix(name.size());
@@ -1768,9 +1727,9 @@ enum ParseStatus {
 
 // Maybe parses a Unicode character group like \p{Han} or \P{Han}
 // (the latter is a negated group).
-ParseStatus ParseUnicodeGroup(absl::string_view* s,
-                              Regexp::ParseFlags parse_flags,
-                              CharClassBuilder* cc, RegexpStatus* status) {
+ParseStatus ParseUnicodeGroup(StringPiece* s, Regexp::ParseFlags parse_flags,
+                              CharClassBuilder *cc,
+                              RegexpStatus* status) {
   // Decide whether to parse.
   if (!(parse_flags & Regexp::UnicodeGroups))
     return kParseNothing;
@@ -1784,34 +1743,34 @@ ParseStatus ParseUnicodeGroup(absl::string_view* s,
   int sign = +1;  // -1 = negated char class
   if (c == 'P')
     sign = -sign;
-  absl::string_view seq = *s;  // \p{Han} or \pL
-  absl::string_view name;  // Han or L
+  StringPiece seq = *s;  // \p{Han} or \pL
+  StringPiece name;  // Han or L
   s->remove_prefix(2);  // '\\', 'p'
 
-  if (!StringViewToRune(&c, s, status))
+  if (!StringPieceToRune(&c, s, status))
     return kParseError;
   if (c != '{') {
     // Name is the bit of string we just skipped over for c.
     const char* p = seq.data() + 2;
-    name = absl::string_view(p, static_cast<size_t>(s->data() - p));
+    name = StringPiece(p, static_cast<size_t>(s->data() - p));
   } else {
     // Name is in braces. Look for closing }
     size_t end = s->find('}', 0);
-    if (end == absl::string_view::npos) {
+    if (end == StringPiece::npos) {
       if (!IsValidUTF8(seq, status))
         return kParseError;
       status->set_code(kRegexpBadCharRange);
       status->set_error_arg(seq);
       return kParseError;
     }
-    name = absl::string_view(s->data(), end);  // without '}'
+    name = StringPiece(s->data(), end);  // without '}'
     s->remove_prefix(end + 1);  // with '}'
     if (!IsValidUTF8(name, status))
       return kParseError;
   }
 
   // Chop seq where s now begins.
-  seq = absl::string_view(seq.data(), static_cast<size_t>(s->data() - seq.data()));
+  seq = StringPiece(seq.data(), static_cast<size_t>(s->data() - seq.data()));
 
   if (!name.empty() && name[0] == '^') {
     sign = -sign;
@@ -1820,7 +1779,7 @@ ParseStatus ParseUnicodeGroup(absl::string_view* s,
 
 #if !defined(RE2_USE_ICU)
   // Look up the group in the RE2 Unicode data.
-  const UGroup* g = LookupUnicodeGroup(name);
+  const UGroup *g = LookupUnicodeGroup(name);
   if (g == NULL) {
     status->set_code(kRegexpBadCharRange);
     status->set_error_arg(seq);
@@ -1858,9 +1817,9 @@ ParseStatus ParseUnicodeGroup(absl::string_view* s,
 // Parses a character class name like [:alnum:].
 // Sets *s to span the remainder of the string.
 // Adds the ranges corresponding to the class to ranges.
-static ParseStatus ParseCCName(absl::string_view* s,
-                               Regexp::ParseFlags parse_flags,
-                               CharClassBuilder* cc, RegexpStatus* status) {
+static ParseStatus ParseCCName(StringPiece* s, Regexp::ParseFlags parse_flags,
+                               CharClassBuilder *cc,
+                               RegexpStatus* status) {
   // Check begins with [:
   const char* p = s->data();
   const char* ep = s->data() + s->size();
@@ -1878,9 +1837,9 @@ static ParseStatus ParseCCName(absl::string_view* s,
 
   // Got it.  Check that it's valid.
   q += 2;
-  absl::string_view name(p, static_cast<size_t>(q - p));
+  StringPiece name(p, static_cast<size_t>(q - p));
 
-  const UGroup* g = LookupPosixGroup(name);
+  const UGroup *g = LookupPosixGroup(name);
   if (g == NULL) {
     status->set_code(kRegexpBadCharRange);
     status->set_error_arg(name);
@@ -1896,8 +1855,8 @@ static ParseStatus ParseCCName(absl::string_view* s,
 // There are fewer special characters here than in the rest of the regexp.
 // Sets *s to span the remainder of the string.
 // Sets *rp to the character.
-bool Regexp::ParseState::ParseCCCharacter(absl::string_view* s, Rune* rp,
-                                          absl::string_view whole_class,
+bool Regexp::ParseState::ParseCCCharacter(StringPiece* s, Rune *rp,
+                                          const StringPiece& whole_class,
                                           RegexpStatus* status) {
   if (s->empty()) {
     status->set_code(kRegexpMissingBracket);
@@ -1911,7 +1870,7 @@ bool Regexp::ParseState::ParseCCCharacter(absl::string_view* s, Rune* rp,
     return ParseEscape(s, rp, status, rune_max_);
 
   // Otherwise take the next rune.
-  return StringViewToRune(rp, s, status) >= 0;
+  return StringPieceToRune(rp, s, status) >= 0;
 }
 
 // Parses a character class character, or, if the character
@@ -1919,10 +1878,10 @@ bool Regexp::ParseState::ParseCCCharacter(absl::string_view* s, Rune* rp,
 // For single characters, rr->lo == rr->hi.
 // Sets *s to span the remainder of the string.
 // Sets *rp to the character.
-bool Regexp::ParseState::ParseCCRange(absl::string_view* s, RuneRange* rr,
-                                      absl::string_view whole_class,
+bool Regexp::ParseState::ParseCCRange(StringPiece* s, RuneRange* rr,
+                                      const StringPiece& whole_class,
                                       RegexpStatus* status) {
-  absl::string_view os = *s;
+  StringPiece os = *s;
   if (!ParseCCCharacter(s, &rr->lo, whole_class, status))
     return false;
   // [a-] means (a|-), so check for final ].
@@ -1932,8 +1891,8 @@ bool Regexp::ParseState::ParseCCRange(absl::string_view* s, RuneRange* rr,
       return false;
     if (rr->hi < rr->lo) {
       status->set_code(kRegexpBadCharRange);
-      status->set_error_arg(absl::string_view(
-          os.data(), static_cast<size_t>(s->data() - os.data())));
+      status->set_error_arg(
+          StringPiece(os.data(), static_cast<size_t>(s->data() - os.data())));
       return false;
     }
   } else {
@@ -1945,13 +1904,14 @@ bool Regexp::ParseState::ParseCCRange(absl::string_view* s, RuneRange* rr,
 // Parses a possibly-negated character class expression like [^abx-z[:digit:]].
 // Sets *s to span the remainder of the string.
 // Sets *out_re to the regexp for the class.
-bool Regexp::ParseState::ParseCharClass(absl::string_view* s, Regexp** out_re,
+bool Regexp::ParseState::ParseCharClass(StringPiece* s,
+                                        Regexp** out_re,
                                         RegexpStatus* status) {
-  absl::string_view whole_class = *s;
+  StringPiece whole_class = *s;
   if (s->empty() || (*s)[0] != '[') {
     // Caller checked this.
     status->set_code(kRegexpInternalError);
-    status->set_error_arg(absl::string_view());
+    status->set_error_arg(StringPiece());
     return false;
   }
   bool negated = false;
@@ -1973,16 +1933,16 @@ bool Regexp::ParseState::ParseCharClass(absl::string_view* s, Regexp** out_re,
     // Except that Perl allows - anywhere.
     if ((*s)[0] == '-' && !first && !(flags_&PerlX) &&
         (s->size() == 1 || (*s)[1] != ']')) {
-      absl::string_view t = *s;
+      StringPiece t = *s;
       t.remove_prefix(1);  // '-'
       Rune r;
-      int n = StringViewToRune(&r, &t, status);
+      int n = StringPieceToRune(&r, &t, status);
       if (n < 0) {
         re->Decref();
         return false;
       }
       status->set_code(kRegexpBadCharRange);
-      status->set_error_arg(absl::string_view(s->data(), 1+n));
+      status->set_error_arg(StringPiece(s->data(), 1+n));
       re->Decref();
       return false;
     }
@@ -2017,7 +1977,7 @@ bool Regexp::ParseState::ParseCharClass(absl::string_view* s, Regexp** out_re,
     }
 
     // Look for Perl character class symbols (extension).
-    const UGroup* g = MaybeParsePerlCCEscape(s, flags_);
+    const UGroup *g = MaybeParsePerlCCEscape(s, flags_);
     if (g != NULL) {
       AddUGroup(re->ccb_, g, g->sign, flags_);
       continue;
@@ -2051,34 +2011,19 @@ bool Regexp::ParseState::ParseCharClass(absl::string_view* s, Regexp** out_re,
   return true;
 }
 
-// Returns whether name is a valid capture name.
-static bool IsValidCaptureName(absl::string_view name) {
+// Is this a valid capture name?  [A-Za-z0-9_]+
+// PCRE limits names to 32 bytes.
+// Python rejects names starting with digits.
+// We don't enforce either of those.
+static bool IsValidCaptureName(const StringPiece& name) {
   if (name.empty())
     return false;
-
-  // Historically, we effectively used [0-9A-Za-z_]+ to validate; that
-  // followed Python 2 except for not restricting the first character.
-  // As of Python 3, Unicode characters beyond ASCII are also allowed;
-  // accordingly, we permit the Lu, Ll, Lt, Lm, Lo, Nl, Mn, Mc, Nd and
-  // Pc categories, but again without restricting the first character.
-  // Also, Unicode normalization (e.g. NFKC) isn't performed: Python 3
-  // performs it for identifiers, but seemingly not for capture names;
-  // if they start doing that for capture names, we won't follow suit.
-  static const CharClass* const cc = []() {
-    CharClassBuilder ccb;
-    for (absl::string_view group :
-         {"Lu", "Ll", "Lt", "Lm", "Lo", "Nl", "Mn", "Mc", "Nd", "Pc"})
-      AddUGroup(&ccb, LookupGroup(group, unicode_groups, num_unicode_groups),
-                +1, Regexp::NoParseFlags);
-    return ccb.GetCharClass();
-  }();
-
-  absl::string_view t = name;
-  Rune r;
-  while (!t.empty()) {
-    if (StringViewToRune(&r, &t, NULL) < 0)
-      return false;
-    if (cc->Contains(r))
+  for (size_t i = 0; i < name.size(); i++) {
+    int c = name[i];
+    if (('0' <= c && c <= '9') ||
+        ('a' <= c && c <= 'z') ||
+        ('A' <= c && c <= 'Z') ||
+        c == '_')
       continue;
     return false;
   }
@@ -2090,26 +2035,17 @@ static bool IsValidCaptureName(absl::string_view name) {
 // The caller must check that s begins with "(?".
 // Returns true on success.  If the Perl flag is not
 // well-formed or not supported, sets status_ and returns false.
-bool Regexp::ParseState::ParsePerlFlags(absl::string_view* s) {
-  absl::string_view t = *s;
+bool Regexp::ParseState::ParsePerlFlags(StringPiece* s) {
+  StringPiece t = *s;
 
   // Caller is supposed to check this.
   if (!(flags_ & PerlX) || t.size() < 2 || t[0] != '(' || t[1] != '?') {
+    LOG(DFATAL) << "Bad call to ParseState::ParsePerlFlags";
     status_->set_code(kRegexpInternalError);
-    ABSL_LOG(DFATAL) << "Bad call to ParseState::ParsePerlFlags";
     return false;
   }
 
-  // Check for look-around assertions. This is NOT because we support them! ;)
-  // As per https://github.com/google/re2/issues/468, we really want to report
-  // kRegexpBadPerlOp (not kRegexpBadNamedCapture) for look-behind assertions.
-  // Additionally, it would be nice to report not "(?<", but "(?<=" or "(?<!".
-  if ((t.size() > 3 && (t[2] == '=' || t[2] == '!')) ||
-      (t.size() > 4 && t[2] == '<' && (t[3] == '=' || t[3] == '!'))) {
-    status_->set_code(kRegexpBadPerlOp);
-    status_->set_error_arg(absl::string_view(t.data(), t[2] == '<' ? 4 : 3));
-    return false;
-  }
+  t.remove_prefix(2);  // "(?"
 
   // Check for named captures, first introduced in Python's regexp library.
   // As usual, there are three slightly different syntaxes:
@@ -2124,23 +2060,22 @@ bool Regexp::ParseState::ParsePerlFlags(absl::string_view* s) {
   // support all three as well.  EcmaScript 4 uses only the Python form.
   //
   // In both the open source world (via Code Search) and the
-  // Google source tree, (?P<name>expr) and (?<name>expr) are the
-  // dominant forms of named captures and both are supported.
-  if ((t.size() > 4 && t[2] == 'P' && t[3] == '<') ||
-      (t.size() > 3 && t[2] == '<')) {
+  // Google source tree, (?P<expr>name) is the dominant form,
+  // so that's the one we implement.  One is enough.
+  if (t.size() > 2 && t[0] == 'P' && t[1] == '<') {
     // Pull out name.
-    size_t begin = t[2] == 'P' ? 4 : 3;
-    size_t end = t.find('>', begin);
-    if (end == absl::string_view::npos) {
-      if (!IsValidUTF8(t, status_))
+    size_t end = t.find('>', 2);
+    if (end == StringPiece::npos) {
+      if (!IsValidUTF8(*s, status_))
         return false;
       status_->set_code(kRegexpBadNamedCapture);
-      status_->set_error_arg(t);
+      status_->set_error_arg(*s);
       return false;
     }
 
-    absl::string_view capture(t.data(), end+1);
-    absl::string_view name(t.data()+begin, end-begin);
+    // t is "P<name>...", t[end] == '>'
+    StringPiece capture(t.data()-2, end+3);  // "(?P<name>"
+    StringPiece name(t.data()+2, end-2);     // "name"
     if (!IsValidUTF8(name, status_))
       return false;
     if (!IsValidCaptureName(name)) {
@@ -2154,11 +2089,10 @@ bool Regexp::ParseState::ParsePerlFlags(absl::string_view* s) {
       return false;
     }
 
-    s->remove_prefix(capture.size());
+    s->remove_prefix(
+        static_cast<size_t>(capture.data() + capture.size() - s->data()));
     return true;
   }
-
-  t.remove_prefix(2);  // "(?"
 
   bool negated = false;
   bool sawflags = false;
@@ -2167,7 +2101,7 @@ bool Regexp::ParseState::ParsePerlFlags(absl::string_view* s) {
   for (bool done = false; !done; ) {
     if (t.empty())
       goto BadPerlOp;
-    if (StringViewToRune(&c, &t, status_) < 0)
+    if (StringPieceToRune(&c, &t, status_) < 0)
       return false;
     switch (c) {
       default:
@@ -2240,7 +2174,7 @@ bool Regexp::ParseState::ParsePerlFlags(absl::string_view* s) {
 BadPerlOp:
   status_->set_code(kRegexpBadPerlOp);
   status_->set_error_arg(
-      absl::string_view(s->data(), static_cast<size_t>(t.data() - s->data())));
+      StringPiece(s->data(), static_cast<size_t>(t.data() - s->data())));
   return false;
 }
 
@@ -2248,7 +2182,7 @@ BadPerlOp:
 // into UTF8 encoding in string.
 // Can't use EncodingUtils::EncodeLatin1AsUTF8 because it is
 // deprecated and because it rejects code points 0x80-0x9F.
-void ConvertLatin1ToUTF8(absl::string_view latin1, std::string* utf) {
+void ConvertLatin1ToUTF8(const StringPiece& latin1, std::string* utf) {
   char buf[UTFmax];
 
   utf->clear();
@@ -2263,7 +2197,7 @@ void ConvertLatin1ToUTF8(absl::string_view latin1, std::string* utf) {
 // returning the corresponding Regexp tree.
 // The caller must Decref the return value when done with it.
 // Returns NULL on error.
-Regexp* Regexp::Parse(absl::string_view s, ParseFlags global_flags,
+Regexp* Regexp::Parse(const StringPiece& s, ParseFlags global_flags,
                       RegexpStatus* status) {
   // Make status non-NULL (easier on everyone else).
   RegexpStatus xstatus;
@@ -2271,7 +2205,7 @@ Regexp* Regexp::Parse(absl::string_view s, ParseFlags global_flags,
     status = &xstatus;
 
   ParseState ps(global_flags, s, status);
-  absl::string_view t = s;
+  StringPiece t = s;
 
   // Convert regexp to UTF-8 (easier on the rest of the parser).
   if (global_flags & Latin1) {
@@ -2285,7 +2219,7 @@ Regexp* Regexp::Parse(absl::string_view s, ParseFlags global_flags,
     // Special parse loop for literal string.
     while (!t.empty()) {
       Rune r;
-      if (StringViewToRune(&r, &t, status) < 0)
+      if (StringPieceToRune(&r, &t, status) < 0)
         return NULL;
       if (!ps.PushLiteral(r))
         return NULL;
@@ -2293,13 +2227,13 @@ Regexp* Regexp::Parse(absl::string_view s, ParseFlags global_flags,
     return ps.DoFinish();
   }
 
-  absl::string_view lastunary = absl::string_view();
+  StringPiece lastunary = StringPiece();
   while (!t.empty()) {
-    absl::string_view isunary = absl::string_view();
+    StringPiece isunary = StringPiece();
     switch (t[0]) {
       default: {
         Rune r;
-        if (StringViewToRune(&r, &t, status) < 0)
+        if (StringPieceToRune(&r, &t, status) < 0)
           return NULL;
         if (!ps.PushLiteral(r))
           return NULL;
@@ -2318,7 +2252,7 @@ Regexp* Regexp::Parse(absl::string_view s, ParseFlags global_flags,
           if (!ps.DoLeftParenNoCapture())
             return NULL;
         } else {
-          if (!ps.DoLeftParen(absl::string_view()))
+          if (!ps.DoLeftParen(StringPiece()))
             return NULL;
         }
         t.remove_prefix(1);  // '('
@@ -2374,7 +2308,7 @@ Regexp* Regexp::Parse(absl::string_view s, ParseFlags global_flags,
         op = kRegexpQuest;
         goto Rep;
       Rep:
-        absl::string_view opstr = t;
+        StringPiece opstr = t;
         bool nongreedy = false;
         t.remove_prefix(1);  // '*' or '+' or '?'
         if (ps.flags() & PerlX) {
@@ -2387,14 +2321,14 @@ Regexp* Regexp::Parse(absl::string_view s, ParseFlags global_flags,
             //   a** is a syntax error, not a double-star.
             // (and a++ means something else entirely, which we don't support!)
             status->set_code(kRegexpRepeatOp);
-            status->set_error_arg(absl::string_view(
+            status->set_error_arg(StringPiece(
                 lastunary.data(),
                 static_cast<size_t>(t.data() - lastunary.data())));
             return NULL;
           }
         }
-        opstr = absl::string_view(opstr.data(),
-                                  static_cast<size_t>(t.data() - opstr.data()));
+        opstr = StringPiece(opstr.data(),
+                            static_cast<size_t>(t.data() - opstr.data()));
         if (!ps.PushRepeatOp(op, opstr, nongreedy))
           return NULL;
         isunary = opstr;
@@ -2403,7 +2337,7 @@ Regexp* Regexp::Parse(absl::string_view s, ParseFlags global_flags,
 
       case '{': {  // Counted repetition.
         int lo, hi;
-        absl::string_view opstr = t;
+        StringPiece opstr = t;
         if (!MaybeParseRepetition(&t, &lo, &hi)) {
           // Treat like a literal.
           if (!ps.PushLiteral('{'))
@@ -2420,14 +2354,14 @@ Regexp* Regexp::Parse(absl::string_view s, ParseFlags global_flags,
           if (!lastunary.empty()) {
             // Not allowed to stack repetition operators.
             status->set_code(kRegexpRepeatOp);
-            status->set_error_arg(absl::string_view(
+            status->set_error_arg(StringPiece(
                 lastunary.data(),
                 static_cast<size_t>(t.data() - lastunary.data())));
             return NULL;
           }
         }
-        opstr = absl::string_view(opstr.data(),
-                                  static_cast<size_t>(t.data() - opstr.data()));
+        opstr = StringPiece(opstr.data(),
+                            static_cast<size_t>(t.data() - opstr.data()));
         if (!ps.PushRepetition(lo, hi, opstr, nongreedy))
           return NULL;
         isunary = opstr;
@@ -2477,7 +2411,7 @@ Regexp* Regexp::Parse(absl::string_view s, ParseFlags global_flags,
                 break;
               }
               Rune r;
-              if (StringViewToRune(&r, &t, status) < 0)
+              if (StringPieceToRune(&r, &t, status) < 0)
                 return NULL;
               if (!ps.PushLiteral(r))
                 return NULL;
@@ -2503,7 +2437,7 @@ Regexp* Regexp::Parse(absl::string_view s, ParseFlags global_flags,
           }
         }
 
-        const UGroup* g = MaybeParsePerlCCEscape(&t, ps.flags());
+        const UGroup *g = MaybeParsePerlCCEscape(&t, ps.flags());
         if (g != NULL) {
           Regexp* re = new Regexp(kRegexpCharClass, ps.flags() & ~FoldCase);
           re->ccb_ = new CharClassBuilder;
