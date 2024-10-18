@@ -157,7 +157,7 @@ target_link_libraries(rampart-robots
     ${PROJECT_BINARY_DIR}/extern/texis/thirdparty/abseil-cpp/absl/strings/libabsl_strings.a
     ${PROJECT_BINARY_DIR}/extern/texis/thirdparty/abseil-cpp/absl/base/libabsl_base.a
     ${PROJECT_BINARY_DIR}/extern/texis/thirdparty/abseil-cpp/absl/base/libabsl_spinlock_wait.a
-    ${PROJECT_BINARY_DIR}/extern/texis/thirdparty/abseil-cpp/absl/strings/libabsl_string_view.a
+#    ${PROJECT_BINARY_DIR}/extern/texis/thirdparty/abseil-cpp/absl/strings/libabsl_string_view.a
     pthread
     ${PROJECT_BINARY_DIR}/extern/texis/thirdparty/abseil-cpp/absl/strings/libabsl_strings_internal.a
     ${PROJECT_BINARY_DIR}/extern/texis/thirdparty/abseil-cpp/absl/numeric/libabsl_int128.a
