@@ -1,7 +1,7 @@
 set(CMAKE_BUILD_TYPE Debug)
 
 # for robotstxt on macos
-set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_C_STANDARD 99)
 
 if(${CMAKE_INSTALL_PREFIX})
@@ -69,7 +69,7 @@ add_executable(rampart
 	duktape/register.c
 	duktape/core/duktape.c
 	duktape/core/module.c
-    ${PROJECT_SOURCE_DIR}/texis/texisapi/npmp.c
+    ${PROJECT_SOURCE_DIR}/extern/texis/texisapi/npmp.c
 	duktape/globals/rampart-utils.c
 	duktape/globals/rampart-event.c
 	duktape/globals/rampart-import.c
@@ -92,7 +92,7 @@ set_target_properties(rampart PROPERTIES
   ENABLE_EXPORTS 1
 )
 
-add_dependencies(rampart texis)
+add_dependencies(rampart texisapi)
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
 
@@ -121,12 +121,12 @@ add_dependencies(rampart timestamp)
 
 include_directories(
 	${PROJECT_SOURCE_DIR}/src/include
-	${PROJECT_BINARY_DIR}/texis/texisapi
-	${PROJECT_BINARY_DIR}/texis
-	${PROJECT_SOURCE_DIR}/texis/include
+	${PROJECT_BINARY_DIR}/extern/texis/texisapi
+	${PROJECT_BINARY_DIR}/extern/texis
+	${PROJECT_SOURCE_DIR}/extern/texis/include
 	${LIBEVENT_TARGET_DIR}/include
 	${PROJECT_SOURCE_DIR}/extern/libevent/include
-	${PROJECT_BINARY_DIR}/texis/contrib/jansson-2.12/include/
+	${PROJECT_BINARY_DIR}/extern/texis/contrib/jansson-2.12/include/
 	${PROJECT_BINARY_DIR}/include/
 	${PROJECT_SOURCE_DIR}/src/duktape/globals/hash_random/
 )
@@ -148,22 +148,23 @@ add_library(rampart-robots SHARED
 target_link_libraries(rampart-robots
 
     ${PROJECT_BINARY_DIR}/extern/robotstxt/librobots.a
-    ${PROJECT_BINARY_DIR}/extern/robotstxt/libs/abseil-cpp-build/absl/strings/libabsl_strings.a
-    ${PROJECT_BINARY_DIR}/extern/robotstxt/libs/abseil-cpp-build/absl/base/libabsl_base.a
-    ${PROJECT_BINARY_DIR}/extern/robotstxt/libs/abseil-cpp-build/absl/base/libabsl_spinlock_wait.a
+    ${PROJECT_BINARY_DIR}/extern/texis/thirdparty/abseil-cpp/absl/strings/libabsl_strings.a
+    ${PROJECT_BINARY_DIR}/extern/texis/thirdparty/abseil-cpp/absl/base/libabsl_base.a
+    ${PROJECT_BINARY_DIR}/extern/texis/thirdparty/abseil-cpp/absl/base/libabsl_spinlock_wait.a
+    ${PROJECT_BINARY_DIR}/extern/texis/thirdparty/abseil-cpp/absl/strings/libabsl_string_view.a
     pthread
-    ${PROJECT_BINARY_DIR}/extern/robotstxt/libs/abseil-cpp-build/absl/strings/libabsl_strings_internal.a
-    ${PROJECT_BINARY_DIR}/extern/robotstxt/libs/abseil-cpp-build/absl/numeric/libabsl_int128.a
-    ${PROJECT_BINARY_DIR}/extern/robotstxt/libs/abseil-cpp-build/absl/base/libabsl_throw_delegate.a
-    ${PROJECT_BINARY_DIR}/extern/robotstxt/libs/abseil-cpp-build/absl/base/libabsl_raw_logging_internal.a
-    ${PROJECT_BINARY_DIR}/extern/robotstxt/libs/abseil-cpp-build/absl/base/libabsl_log_severity.a
+    ${PROJECT_BINARY_DIR}/extern/texis/thirdparty/abseil-cpp/absl/strings/libabsl_strings_internal.a
+    ${PROJECT_BINARY_DIR}/extern/texis/thirdparty/abseil-cpp/absl/numeric/libabsl_int128.a
+    ${PROJECT_BINARY_DIR}/extern/texis/thirdparty/abseil-cpp/absl/base/libabsl_throw_delegate.a
+    ${PROJECT_BINARY_DIR}/extern/texis/thirdparty/abseil-cpp/absl/base/libabsl_raw_logging_internal.a
+    ${PROJECT_BINARY_DIR}/extern/texis/thirdparty/abseil-cpp/absl/base/libabsl_log_severity.a
 )
 
 target_include_directories(rampart-robots PRIVATE
      ${PROJECT_SOURCE_DIR}/extern/robotstxt/
      ${PROJECT_SOURCE_DIR}/src/duktape/core
      ${PROJECT_SOURCE_DIR}/src
-     ${PROJECT_SOURCE_DIR}/extern/robotstxt/extern/abseil-cpp-src/
+     ${PROJECT_SOURCE_DIR}/extern/texis/thirdparty/abseil-cpp/
 )
 
 set_target_properties(rampart-robots PROPERTIES LINKER_LANGUAGE CXX )
@@ -241,46 +242,55 @@ add_library(rampart-sql SHARED
 )
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
+
     target_link_libraries(rampart-sql
-	${PROJECT_BINARY_DIR}/texis/texisapi/libtexisapi.a
-	z
-	${PROJECT_BINARY_DIR}/texis/thirdparty/re2/libre2.a
-	pthread
-	m
-	${PROJECT_BINARY_DIR}/texis/jansson-2.12/src/jansson-2.12-build/lib/libjansson.a
+        ${PROJECT_BINARY_DIR}/extern/texis/texisapi/libtexisapi.a
+        z
+        re2
+        pthread
+        m
+        ${PROJECT_BINARY_DIR}/extern/texis/jansson-2.12/src/jansson-2.12-build/lib/libjansson.a
     )
+
 elseif(CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
+
     target_link_libraries(rampart-sql
-	${PROJECT_BINARY_DIR}/texis/texisapi/libtexisapi.a
-	z
-	${PROJECT_BINARY_DIR}/texis/thirdparty/re2/libre2.a
-	pthread
-	m
-	kvm
-	${PROJECT_BINARY_DIR}/texis/jansson-2.12/src/jansson-2.12-build/lib/libjansson.a
+        ${PROJECT_BINARY_DIR}/extern/texis/texisapi/libtexisapi.a
+        z
+        re2
+        pthread
+        m
+        kvm
+        ${PROJECT_BINARY_DIR}/extern/texis/jansson-2.12/src/jansson-2.12-build/lib/libjansson.a
     )
 
 else()
-    target_link_libraries(rampart-sql
-	${PROJECT_BINARY_DIR}/texis/texisapi/libtexisapi.a
-	z
-	${PROJECT_BINARY_DIR}/texis/thirdparty/re2/libre2.a
-	pthread
-	m
-	rt
-	${PROJECT_BINARY_DIR}/texis/jansson-2.12/src/jansson-2.12-build/lib/libjansson.a
+
+    target_link_libraries(rampart-sql LINK_PUBLIC
+        ${PROJECT_BINARY_DIR}/extern/texis/texisapi/libtexisapi.a
+        z
+        re2
+        pthread
+        m
+        rt
+        ${PROJECT_BINARY_DIR}/extern/texis/jansson-2.12/src/jansson-2.12-build/lib/libjansson.a
     )
+
 endif()
+
 add_custom_command(
 	OUTPUT ${CMAKE_BINARY_DIR}/src/texislockd
-	COMMAND cp "${PROJECT_BINARY_DIR}/texis/apps/texislockd" ${CMAKE_BINARY_DIR}/src
+    COMMENT "Copying texislockd"
+	COMMAND cp "${PROJECT_BINARY_DIR}/extern/texis/apps/texislockd" ${CMAKE_BINARY_DIR}/src
 )
 
-add_custom_target(texislockd
-	DEPENDS ${CMAKE_BINARY_DIR}/src/texislockd
+add_custom_target(texislockd-cp 
+    DEPENDS ${CMAKE_BINARY_DIR}/src/texislockd
 )
-add_dependencies(texislockd texis)
-add_dependencies(rampart-sql texis texislockd)
+add_dependencies(rampart texislockd-cp)
+add_dependencies(texislockd-cp rampart-sql)
+
+add_dependencies(rampart-sql texisapi)
 
 
 # libre2 needs to be linked by c++
@@ -720,12 +730,12 @@ install(CODE "execute_process( \
 #tsql etc
 install(CODE "execute_process( \
    COMMAND ${CMAKE_COMMAND} -E copy \
-    \"${PROJECT_BINARY_DIR}/texis/apps/tsql\" \
-    \"${PROJECT_BINARY_DIR}/texis/apps/metamorph\" \
-    \"${PROJECT_BINARY_DIR}/texis/apps/rex\" \
-    \"${PROJECT_BINARY_DIR}/texis/apps/addtable\" \
-    \"${PROJECT_BINARY_DIR}/texis/apps/kdbfchk\" \
-    \"${PROJECT_BINARY_DIR}/texis/apps/texislockd\" \
+    \"${PROJECT_BINARY_DIR}/extern/texis/apps/tsql\" \
+    \"${PROJECT_BINARY_DIR}/extern/texis/apps/metamorph\" \
+    \"${PROJECT_BINARY_DIR}/extern/texis/apps/rex\" \
+    \"${PROJECT_BINARY_DIR}/extern/texis/apps/addtable\" \
+    \"${PROJECT_BINARY_DIR}/extern/texis/apps/kdbfchk\" \
+    \"${PROJECT_BINARY_DIR}/extern/texis/apps/texislockd\" \
     \"${CMAKE_INSTALL_PREFIX}/bin\"   \
     )"
 )

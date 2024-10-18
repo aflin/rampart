@@ -1,5 +1,7 @@
 set(EXTERN_DIR ${CMAKE_SOURCE_DIR}/extern)
 
+add_subdirectory(${EXTERN_DIR}/texis)
+
 add_subdirectory(${EXTERN_DIR}/openssl)
 
 add_subdirectory(${EXTERN_DIR}/oniguruma)

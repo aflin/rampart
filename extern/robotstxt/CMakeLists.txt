@@ -1,7 +1,7 @@
 PROJECT(robots)
 CMAKE_MINIMUM_REQUIRED(VERSION 3.0)
 
-SET(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD 14)
 SET(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 SET(VERSION "0.0.0")
@@ -84,9 +84,11 @@ IF(MSVC)
     ADD_DEFINITIONS(/DNOMINMAX /DWIN32_LEAN_AND_MEAN=1 /D_CRT_SECURE_NO_WARNINGS)
 ENDIF(MSVC)
 
-ADD_SUBDIRECTORY(${CMAKE_CURRENT_SOURCE_DIR}/extern/abseil-cpp-src
-                 ${CMAKE_CURRENT_BINARY_DIR}/libs/abseil-cpp-build
-                 EXCLUDE_FROM_ALL)
+#ADD_SUBDIRECTORY(${CMAKE_CURRENT_SOURCE_DIR}/extern/abseil-cpp-src
+#                 ${CMAKE_CURRENT_BINARY_DIR}/libs/abseil-cpp-build
+#                 EXCLUDE_FROM_ALL)
+
+include_directories(${PROJECT_BINARY_DIR}/extern/texis/thirdparty/abseil-cpp)
 
 IF(ROBOTS_BUILD_TESTS)
     INCLUDE(CTest)
