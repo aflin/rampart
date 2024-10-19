@@ -3041,7 +3041,7 @@ int main(int argc, char *argv[])
         {
             RP_script_path=realpath(p, NULL);
         }
-        RP_script=strdup("built_in_server");
+        RP_script=strdup("built_in_upgrade_script");
     }
     else if (scriptarg>-1)
     {
