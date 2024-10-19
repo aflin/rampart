@@ -24,6 +24,8 @@ for i in `ls test/*-test.js`; do
 done
 
 # also run the rampart-url.js, which has its own tests
+echo
+echo bin/rampart modules/rampart-url.js
 
 bin/rampart modules/rampart-url.js
 if [ "$?" != "0" ]; then

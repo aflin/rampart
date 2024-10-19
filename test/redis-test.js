@@ -10,8 +10,11 @@ function start_redis(port){
     var ret = shell("which redis-server");
 
     if (ret.exitStatus != 0) {
-        fprintf(stderr, "Could not find redis-server!! SKIPPING REDIS TESTS\n");
-        process.exit(0);
+	ret = shell("which redis6-server");
+        if (ret.exitStatus != 0) {
+            fprintf(stderr, "Could not find redis-server!! SKIPPING REDIS TESTS\n");
+            process.exit(0);
+        }
     }
 
     var rdexec = trim(ret.stdout);
