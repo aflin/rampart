@@ -59,7 +59,7 @@
 // for `__GNUC__` (GCC or Clang) and the above macros.
 #ifndef ABSL_BASE_ATTRIBUTES_H_
 #define ABSL_BASE_ATTRIBUTES_H_
-
+#include <limits>
 // ABSL_HAVE_ATTRIBUTE
 //
 // A function-like feature checking macro that is a wrapper around
