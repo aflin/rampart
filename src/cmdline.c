@@ -105,7 +105,46 @@ char *tickify_err(int err)
 #define RPCOL_WHT   "\x1B[37m"
 #define RPCOL_RESET "\x1B[0m"
 
+
 char *serverscript = "var webserv = require('rampart-webserver');webserv.cmdLine(1);\n";
+
+char *upgradescript = "rampart.globalize(rampart.utils);\n"
+"function dofetch(url, name) {\n"
+"    var curl=require('rampart-curl');\n"
+"    var res = curl.fetch(url);\n"
+"    if(res.status != 200)\n"
+"    {\n"
+"        var err;\n"
+"        if(res.errMsg && res.errMsg.length)\n"
+"            err=res.errMsg;\n"
+"        else if (res.status)\n"
+"            err='server returned ' + res.statusText;\n"
+"        else {\n"
+"            if(res.body)\n"
+"                delete res.body;\n"
+"            err=sprintf('Unknown error: curl res = %3J', res);\n"
+"        }\n"
+"        printf('Failed to download %s: %s\\n',name, err);\n"
+"        process.exit(1);\n"
+"    }\n"
+"    return res;\n"
+"}\n"
+"function do_up(){\n"
+"    var crypto = require('rampart-crypto');\n"
+"    var res = dofetch('https://rampart.dev/downloads/upgrade/upgrade.js', 'upgrade script');\n"
+"    var pres = dofetch('https://raw.githubusercontent.com/rampart-dev/rampart_upgrade_key/refs/heads/main/rsa_public.pem', 'public key');\n"
+"    var sres = dofetch('https://rampart.dev/downloads/upgrade/upgrade.sig', 'script signature');\n"
+"    if( crypto.rsa_verify(res.text, pres.text, sres.text))\n"
+"        eval(res.text);\n"
+"    else\n"
+"        printf('Failed to verify update script\\'s authenticity\\n')\n"
+"}\n"
+"try {\n"
+"    do_up();\n"
+"} catch(e) {\n"
+"    printf('upgrade failed: %s\\n', e.message)\n"
+"}\n";
+
 
 #define RP_REPL_GREETING   "%s"         \
     "         |>>            |>>\n"     \
@@ -2773,7 +2812,7 @@ int main(int argc, char *argv[])
 {
     struct rlimit rlp;
     int isstdin=0, len, dirlen, argi,
-        scriptarg=-1, command_string=0, server=0;
+        scriptarg=-1, command_string=0, server=0, upgrade_check=0;
     char *ptr, *cmdline_src=NULL;
     struct stat entry_file_stat;
     duk_context *ctx;
@@ -2893,6 +2932,8 @@ int main(int argc, char *argv[])
                 printf("%s", serverscript);
                 exit(0);
             }
+            else if(!strcmp(opt,"--upgrade"))
+                upgrade_check=1;
             else if(!strcmp(opt,"--server"))
                 server=1;
             else if(!strcmp(opt,"--quickserver"))
@@ -2986,6 +3027,16 @@ int main(int argc, char *argv[])
     {
         char *p = argv[argc-1];
         cmdline_src=serverscript;
+        if(*p !='-')
+        {
+            RP_script_path=realpath(p, NULL);
+        }
+        RP_script=strdup("built_in_server");
+    }
+    else if (upgrade_check)
+    {
+        char *p = argv[argc-1];
+        cmdline_src=upgradescript;
         if(*p !='-')
         {
             RP_script_path=realpath(p, NULL);
