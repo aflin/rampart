@@ -3970,7 +3970,7 @@ static void sql_normalize_prop(char *prop, const char *dprop)
         strcpy(prop, "addexp");
     else if (!strcmp("delexpressions", prop) || !strcmp("deleteexpressions", prop))
         strcpy(prop, "delexp");
-    else if (!strcmp("keepequivs", prop) || !strcmp("useequivs", prop))
+    else if (!strcmp("keepequivs", prop) || !strcmp("useequivs", prop) || !strcmp("keepeqvs", prop))
         strcpy(prop, "useequiv");
     else if (!strcmp("equivsfile", prop))
         strcpy(prop, "eqprefix");
@@ -4591,6 +4591,7 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
             }
            */
             clearmsgbuf();
+printf("setting %s to %s\n", prop, val);
             if(setprop(ddic, (char*)prop, (char*)val )==-1)
             {
                 sprintf(errbuf, "sql.set: %s", finfo->errmap);
@@ -4761,7 +4762,7 @@ static duk_ret_t rp_texis_set(duk_context *ctx)
             )
         {
             duk_push_true(ctx);
-            duk_put_prop_string(ctx, 2, "alequiv");
+            duk_put_prop_string(ctx, 2, "alequivs");
         }
         // put val into old settings, overwriting old if exists
         duk_put_prop_string(ctx, 2, prop);    // [ settings_obj, this , old_settings, enum_obj, key ]
