@@ -1398,6 +1398,44 @@ zerr:
 /**********************************************************************/
 
 #ifdef RMNOISEEQVS
+
+typedef int (TX_eq_isnoise)ARGS((char **lst,char *wrd,void *isnarg));
+
+/* check for noise words within a multiword phrase */
+static int check_noise_phrase(TX_eq_isnoise *isnoise, char **lst, char *phrase, void *isnarg)
+{
+    /*
+       With "love" -> "fall for", we cannot just remove 'for' and carry same meaning
+       so we will remove entire phrase if any noise words are present.
+       If you want to have "love" match "fall for", you should either remove
+       "for" from the noise list or set keepnoise=1 and do linear scan.
+    */
+
+    char *wrd=phrase, *s=phrase;
+
+    while(*s)
+    {
+        while(*s && !isspace(*s))
+            s++;
+
+        if(isspace(*s))
+        {
+            *s='\0';
+
+            if((*isnoise)(lst, wrd, isnarg))
+                return 1;
+            *s=' ';
+            while(*s && isspace(*s))
+                s++;
+            wrd=s;
+        }
+        else if(*s=='\0')
+            return (*isnoise)(lst, wrd, isnarg);
+    }
+
+    return 0;
+}
+
 static void rmnoise ARGS((EQV *eq,EQVLST *eql));
 /**********************************************************************/
 static void
@@ -1418,7 +1456,7 @@ int (*isnoise)ARGS((char **lst,char *wrd,void *isnarg));
    isnarg=eq->isnarg;
    isnoise=eq->isnoise;
    for(s=d=0;*w[s]!='\0';s++){
-      if((*isnoise)(lst,w[s],isnarg)){
+      if(check_noise_phrase(isnoise, lst, w[s], isnarg)){
          free(w[s]);
          free(c[s]);
       }else{
