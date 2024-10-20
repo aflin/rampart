@@ -699,27 +699,28 @@ target_link_libraries(texisapi PUBLIC m z ${JANSSON_LIBS})
 #
 # Install Rules
 #
-if(${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION} VERSION_LESS 3.14)
-install(TARGETS texisapi
-ARCHIVE DESTINATION lib
-)
-else(${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION} VERSION_LESS 3.14)
-  install(TARGETS texisapi
-  ARCHIVE
-  )
-endif(${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION} VERSION_LESS 3.14)
 
-set(TEXISAPI_H_FILES
-  ${TEXIS_BINARY_DIR}/sizes.h
-  ${TEXIS_SOURCE_DIR}/include/txsql.h
-  ${TEXISAPI_SOURCE_DIR}/texisapi_struct.h
-  ${TEXIS_SOURCE_DIR}/include/texis_countinfo.h
-  ${TEXISAPI_SOURCE_DIR}/texisapi_funcs.h
-)
-add_custom_command(OUTPUT ${TEXIS_BINARY_DIR}/texisapi.h
-  COMMAND cat ${TEXISAPI_H_FILES} > ${TEXIS_BINARY_DIR}/texisapi.h
-  DEPENDS ${TEXISAPI_H_FILES}
-)
-target_sources(genFldFuncsSorted PRIVATE ${TEXIS_BINARY_DIR}/texisapi.h)
+#if(${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION} VERSION_LESS 3.14)
+#install(TARGETS texisapi
+#ARCHIVE DESTINATION lib
+#)
+#else(${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION} VERSION_LESS 3.14)
+#  install(TARGETS texisapi
+#  ARCHIVE
+#  )
+#endif(${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION} VERSION_LESS 3.14)
 
-install(FILES ${TEXISAPI_BINARY_DIR}/ftinternalsyms.h;${TEXIS_BINARY_DIR}/texisapi.h DESTINATION include/texis)
+#set(TEXISAPI_H_FILES
+#  ${TEXIS_BINARY_DIR}/sizes.h
+#  ${TEXIS_SOURCE_DIR}/include/txsql.h
+#  ${TEXISAPI_SOURCE_DIR}/texisapi_struct.h
+#  ${TEXIS_SOURCE_DIR}/include/texis_countinfo.h
+#  ${TEXISAPI_SOURCE_DIR}/texisapi_funcs.h
+#)
+#add_custom_command(OUTPUT ${TEXIS_BINARY_DIR}/texisapi.h
+#  COMMAND cat ${TEXISAPI_H_FILES} > ${TEXIS_BINARY_DIR}/texisapi.h
+#  DEPENDS ${TEXISAPI_H_FILES}
+#)
+#target_sources(genFldFuncsSorted PRIVATE ${TEXIS_BINARY_DIR}/texisapi.h)
+
+#install(FILES ${TEXISAPI_BINARY_DIR}/ftinternalsyms.h;${TEXIS_BINARY_DIR}/texisapi.h DESTINATION include/texis)

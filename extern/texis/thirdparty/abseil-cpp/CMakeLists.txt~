@@ -94,25 +94,25 @@ if(${ABSL_RUN_TESTS})
 endif()
 
 ## check targets
-if(BUILD_TESTING)
-
-  if(${ABSL_USE_GOOGLETEST_HEAD})
-    include(CMake/Googletest/DownloadGTest.cmake)
-    set(absl_gtest_src_dir ${CMAKE_BINARY_DIR}/googletest-src)
-    set(absl_gtest_build_dir ${CMAKE_BINARY_DIR}/googletest-build)
-  endif()
-
-  check_target(gtest)
-  check_target(gtest_main)
-  check_target(gmock)
-
-  list(APPEND ABSL_TEST_COMMON_LIBRARIES
-    gtest_main
-    gtest
-    gmock
-    ${CMAKE_THREAD_LIBS_INIT}
-  )
-endif()
+#if(BUILD_TESTING)
+#
+#  if(${ABSL_USE_GOOGLETEST_HEAD})
+#    include(CMake/Googletest/DownloadGTest.cmake)
+#    set(absl_gtest_src_dir ${CMAKE_BINARY_DIR}/googletest-src)
+#    set(absl_gtest_build_dir ${CMAKE_BINARY_DIR}/googletest-build)
+#  endif()
+#
+#  check_target(gtest)
+#  check_target(gtest_main)
+#  check_target(gmock)
+#
+#  list(APPEND ABSL_TEST_COMMON_LIBRARIES
+#    gtest_main
+#    gtest
+#    gmock
+#    ${CMAKE_THREAD_LIBS_INIT}
+#  )
+#endif()
 
 add_subdirectory(absl)
 
