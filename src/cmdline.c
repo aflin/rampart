@@ -2799,6 +2799,7 @@ static void print_help(char *argv0)
         --quickserver                      - run rampart-server with alternate configuration\n\
         --[quick]server --help             - show help for built-in server\n\
         --spew-server-script               - print the internal server script to stdout and exit\n\
+        --upgrade                          - attempt to upgrade to latest version of rampart\n\
         --                                 - do not process any arguments following (but pass to script)\n\
         -h, --help                         - this help message\n\n\
     \"file_name\" or \"script\" may be '-' for stdin\n\n\
