@@ -3709,6 +3709,7 @@ static duk_ret_t rp_sql_exec_query(duk_context *ctx, int isquery)
     end:
     h_end_transaction(h);
 
+    /* this is not working out.  Just keep it logged and keep going if we got this far
     if(rp_log_error(ctx))
     {
         if(isquery)
@@ -3716,6 +3717,10 @@ static duk_ret_t rp_sql_exec_query(duk_context *ctx, int isquery)
         else
             RP_THROW(ctx, "sql exec: %s", finfo->errmap);
     }
+    */
+    // just log error
+    rp_log_error(ctx);
+
     return 1; /* returning outer array */
 
     end_query:
@@ -4591,7 +4596,6 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
             }
            */
             clearmsgbuf();
-printf("setting %s to %s\n", prop, val);
             if(setprop(ddic, (char*)prop, (char*)val )==-1)
             {
                 sprintf(errbuf, "sql.set: %s", finfo->errmap);
