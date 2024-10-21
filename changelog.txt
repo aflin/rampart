@@ -1,40 +1,45 @@
 v0.5.0 (First Beta release)
-    - rampart          Array.includes() -NaN check.
-                       Use babel command line opt.
-                       Babel in REPL
-                       console.js example program fixup
-                       Freebsd initial support.
-    - rampart-redis    Error message provided in callbacks.
-    - rampart-server   Added rampart-webserver.js for easy config and
-                       command line use.
-                       Secured access to html tree only.
-                       appendProcTitle option, default false
-    - rampart-almanac  Initial Version
-    - rampart-lmdb     Upgraded core lib to LMDB 0.9.33
-    - rampart.utils    Added fork and pipe functions.
-                       errorConfig for simplified error messages and error
-                       line printing.
-                       timezone().
-                       autoScanDate().
-                       daemon() - like fork
-                       fopen and fopenBuffer, stdin/out/err redirect.
-                       stringToNumber()
-                       signal names for kill()
-                       printf et al, catch and throw proper error for too
-                       few params.
-    - rampart-sql      connection() instead of init(). connect() shortcut.
-                       query() does not throw.  exec() always throws.
-                       Child processes are now fork/exec model.
-                       Self Destruct added to child if parent dies.
-                       Experimental index update scheduler.
-    - rapart.python    Self Destruct added to child if parent dies.
-    - rampart.thread   getId() and  getCurrentId().
-                       keepOpen option for new rampart.thread().
-                       setCaCert().
-    - rampart.net      Use same method as rampart-curl to find cert.
-    - rampart.curl     If cert not found in standard location, search and
-                       use from other locations automatically.
-                       setCaCert().
+    - rampart              Array.includes() -NaN check.
+                           Use babel command line opt.
+                           Babel in REPL
+                           console.js example program fixup
+                           Freebsd initial support.
+                           Hooks for future updates via "rampart --upgrade"
+    - rampart-redis        Error message provided in callbacks.
+    - rampart-server       Added rampart-webserver.js for easy config and
+                           command line use.
+                           Secured access to html tree only.
+                           appendProcTitle option, default false
+                           Added log, begin and end functions (wrap functions)
+    - rampart-almanac      Initial Version
+    - rampart-lmdb         Upgraded core lib to LMDB 0.9.33
+    - rampart.utils        Added fork and pipe functions.
+                           errorConfig for simplified error messages and error
+                           line printing.
+                           timezone().
+                           autoScanDate().
+                           daemon() - like fork
+                           fopen and fopenBuffer, stdin/out/err redirect.
+                           stringToNumber()
+                           signal names for kill()
+                           printf et al, catch and throw proper error for too
+                           few params.
+    - rampart-sql          connection() instead of init(). connect() shortcut.
+                           query() does not throw.  exec() always throws.
+                           Child processes are now fork/exec model.
+                           Self Destruct added to child if parent dies.
+                           Experimental index update scheduler.
+                           Upgrade re2 library.
+    - rapart.python        Self Destruct added to child if parent dies.
+    - rampart.thread       getId() and  getCurrentId().
+                           keepOpen option for new rampart.thread().
+                           setCaCert().
+    - rampart.net          Use same method as rampart-curl to find cert.
+    - rampart.curl         If cert not found in standard location, search and
+                           use from other locations automatically.
+                           setCaCert().
+    - rampart-webserver    Initial version of helper script.
+
 v0.2.3 (unpublished)
     - rampart-thread   Multiple bug fixes for locks and thread race
                        conditions
