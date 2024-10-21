@@ -1398,10 +1398,11 @@ zerr:
 /**********************************************************************/
 
 #ifdef RMNOISEEQVS
-
+/**********************************************************************
+ * check_noise_phrase() -ajf 08-21-2024                                 *
+ * check for noise words within a multiword phrase                    *
+ **********************************************************************/
 typedef int (TX_eq_isnoise)ARGS((char **lst,char *wrd,void *isnarg));
-
-/* check for noise words within a multiword phrase */
 static int check_noise_phrase(TX_eq_isnoise *isnoise, char **lst, char *phrase, void *isnarg)
 {
     /*
@@ -1434,7 +1435,7 @@ static int check_noise_phrase(TX_eq_isnoise *isnoise, char **lst, char *phrase, 
     }
 
     return 0;
-}
+}                                         /* end check_noise_phrase() */
 
 static void rmnoise ARGS((EQV *eq,EQVLST *eql));
 /**********************************************************************/
@@ -1456,7 +1457,7 @@ int (*isnoise)ARGS((char **lst,char *wrd,void *isnarg));
    isnarg=eq->isnarg;
    isnoise=eq->isnoise;
    for(s=d=0;*w[s]!='\0';s++){
-      if(check_noise_phrase(isnoise, lst, w[s], isnarg)){
+      if(check_noise_phrase(isnoise, lst, w[s], isnarg)){ //-ajf 08-21-2024
          free(w[s]);
          free(c[s]);
       }else{
