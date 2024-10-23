@@ -755,7 +755,7 @@ function start(serverConf, dump) {
             log: true,
             accessLog: "/dev/null",
             errorLog: "/dev/null",
-            daemon: serverConf.launchRedir?false:true,
+            daemon: true,
             threads: 2,
             directoryFunc: false,
             map: redirmap,
