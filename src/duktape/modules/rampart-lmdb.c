@@ -77,7 +77,6 @@ static LMDB_ENV *redo_env(duk_context *ctx, LMDB_ENV *lenv) {
     }
 
     lenv->pid = getpid();
-
     mdb_env_set_mapsize(lenv->env, lenv->mapsize);
     mdb_env_set_maxdbs(lenv->env, lenv->maxdbs);
 
@@ -138,7 +137,7 @@ static LMDB_ENV * get_env(duk_context *ctx)
     lenv = (LMDB_ENV *)duk_get_pointer(ctx, -1);
     duk_pop(ctx);
 
-    if(!lenv)
+    if(!lenv || !lenv->env)
     {
         mdb_unlock;
         RP_THROW(ctx, "lmdb: database was previously closed");
@@ -2260,7 +2259,17 @@ duk_ret_t duk_rp_lmdb_constructor(duk_context *ctx)
         // we've got a live one.
         duk_push_pointer(ctx, (void *) lenv);
         duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("lenv"));
-        lenv = get_env(ctx); //reopen if forked or closed
+        // reopen if null/closed
+        if(!lenv->env)
+        {
+            lenv->pid       = getpid();
+            lenv->openflags = openflags;
+            lenv->rp_flags =  rp_flags;
+            lenv->mapsize   = mapsize;
+            lenv->maxdbs    = maxdbs;
+            lenv->convtype  = convtype;
+            lenv = redo_env(ctx, lenv);
+        }
     }
     else
     {

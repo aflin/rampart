@@ -34,6 +34,7 @@ function testFeature(name,test)
         printf(">>>>> FAILED <<<<<\n");
         if(error) console.log(error);
         kill(pid,15);
+        shell(`rm -rf ${process.scriptPath}/lmdb-test-db`);
         process.exit(1);
     }
     if(error) console.log(error);
@@ -48,7 +49,7 @@ testFeature("Open test database env", function() {
     lmdb= new Lmdb.init(
         process.scriptPath+"/lmdb-test-db",
         true, /* true means create the database if it doesn't exist */
-        {noMetaSync:true, noSync:true, mapSize: 160}
+        {noMetaSync:true, noSync:true, mapSize: 16}
     );
     return true;
 });
@@ -57,7 +58,6 @@ testFeature("Open database", function() {
     dbi = lmdb.openDb(null,true); //open default db
     return true;
 });
-
 
 
 var user = trim(exec("whoami").stdout);
@@ -208,3 +208,41 @@ testFeature("syncing data to disk", function() {
     return true;
 });
 
+testFeature("reopen db, growOnPut", function() {
+    lmdb.close();
+    lmdb= new Lmdb.init(
+        process.scriptPath+"/lmdb-test-db",
+        {mapSize:1}
+    );
+
+    var putfail = false;
+    try {
+        var data = "testdata testdata testdata testdata testdata testdata testdata testdata testdata testdata testdata testdata testdata testdata testdata";
+        data = data + data +data +data +data +data +data +data +data +data +data + data
+                + data + data +data +data +data +data +data +data +data +data +data + data;
+        var x=1;
+        //this should throw error MDB_MAP_FULL
+        while(true) {
+            key = sprintf("testkey %d", x++);
+            lmdb.put(null, key, data);
+            if(x>10000) return false;
+        }
+    } catch(e) {
+        putfail=true;
+    }
+
+    var putsuccess=true;
+    lmdb.close();
+    lmdb= new Lmdb.init(
+        process.scriptPath+"/lmdb-test-db",
+        {mapSize:1, growOnPut: true}
+    );
+    try {
+        lmdb.put(null, "testkey", "testdata");
+    } catch(e) {
+        putsuccess=false;
+    }
+    return putsuccess && putfail;
+});
+
+shell(`rm -rf ${process.scriptPath}/lmdb-test-db`);
