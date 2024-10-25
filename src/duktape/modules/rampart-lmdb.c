@@ -16,11 +16,14 @@
 #include "rampart.h"
 #include "../../extern/lmdb/lmdb.h"
 
+#define GROW_ON_PUT 1
+
 #define LMDB_ENV struct lmdb_env_s
 LMDB_ENV {
     char                        *dbpath;
     pid_t                       pid;
     unsigned int                openflags;
+    unsigned int                rp_flags;  //currently only for growOnPut
     size_t                      mapsize;
     int                         convtype;
     int                         maxdbs;
@@ -75,7 +78,7 @@ static LMDB_ENV *redo_env(duk_context *ctx, LMDB_ENV *lenv) {
 
     lenv->pid = getpid();
 
-    mdb_env_set_mapsize(lenv->env, lenv->mapsize * 1048576);
+    mdb_env_set_mapsize(lenv->env, lenv->mapsize);
     mdb_env_set_maxdbs(lenv->env, lenv->maxdbs);
 
     if((rc=mdb_env_open(lenv->env, lenv->dbpath, lenv->openflags|MDB_NOTLS, 0644)))
@@ -405,7 +408,7 @@ duk_ret_t duk_rp_lmdb_put(duk_context *ctx)
     MDB_val key, val;
     const char *s=NULL;
     duk_size_t sz;
-
+    duk_idx_t top;
 
     duk_push_this(ctx);
 
@@ -415,6 +418,10 @@ duk_ret_t duk_rp_lmdb_put(duk_context *ctx)
     convtype=lenv->convtype;
 
     duk_pop(ctx);//this
+
+    top=duk_get_top(ctx);
+
+    redo_txn:
 
     check_txn_write_open(ctx, lenv, "lmdb.put");
 
@@ -480,6 +487,14 @@ duk_ret_t duk_rp_lmdb_put(duk_context *ctx)
         {
             mdb_txn_abort(txn);
             write_unlock;
+            if(rc == MDB_MAP_FULL && lenv->rp_flags & GROW_ON_PUT)
+            {
+                lenv->mapsize = (lenv->mapsize *15)/10;
+                duk_push_this(ctx);
+                lenv=redo_env(ctx, lenv);
+                duk_set_top(ctx,top);
+                goto redo_txn;
+            }
             RP_THROW(ctx, "lmdb.put failed to commit - %s", mdb_strerror(rc));
         }
 
@@ -555,6 +570,15 @@ duk_ret_t duk_rp_lmdb_put(duk_context *ctx)
 	{
             mdb_txn_abort(txn);
             write_unlock;
+            // I think this might not happen until commit, but here for good measure
+            if(rc == MDB_MAP_FULL && lenv->rp_flags & GROW_ON_PUT)
+            {
+                lenv->mapsize = (lenv->mapsize *15)/10;
+                duk_push_this(ctx);
+                lenv=redo_env(ctx, lenv);
+                duk_set_top(ctx,top);
+                goto redo_txn;
+            }
 	    RP_THROW(ctx, "lmdb - put failed - %s", mdb_strerror(rc));
 	}
 	duk_pop_2(ctx);
@@ -566,6 +590,14 @@ duk_ret_t duk_rp_lmdb_put(duk_context *ctx)
     {
         mdb_txn_abort(txn);
         write_unlock;
+        if(rc == MDB_MAP_FULL && lenv->rp_flags & GROW_ON_PUT)
+        {
+            lenv->mapsize = (lenv->mapsize *15)/10;
+            duk_push_this(ctx);
+            lenv=redo_env(ctx, lenv);
+            duk_set_top(ctx,top);
+            goto redo_txn;
+        }
         RP_THROW(ctx, "lmdb.put - put failed to commit %s\n",  mdb_strerror(rc));
     }
     write_unlock;
@@ -2053,8 +2085,8 @@ duk_ret_t duk_rp_lmdb_new_txn(duk_context *ctx)
 duk_ret_t duk_rp_lmdb_constructor(duk_context *ctx)
 {
     const char *dbpath=NULL;
-    size_t mapsize=16;
-    unsigned int openflags=0;
+    size_t mapsize=16 * 1048576;
+    unsigned int openflags=0, rp_flags=0;
     int convtype=RP_LMDB_BUFFER;
     int maxdbs=256, create=0;
     char rdbpath[PATH_MAX];
@@ -2163,11 +2195,22 @@ duk_ret_t duk_rp_lmdb_constructor(duk_context *ctx)
         check_set_flag("noReadAhead", MDB_NORDAHEAD);
         check_set_flag("writeMap", MDB_WRITEMAP);
 
-        if(duk_get_prop_string(ctx, obj_idx, "mapSize"))
+        if(duk_get_prop_string(ctx, obj_idx, "growOnPut"))
         {
-            mapsize = (size_t) REQUIRE_INT(ctx, -1, "lmdb.init - option mapSize must be an integer (map/db size in Mb)\n");
+            if( REQUIRE_BOOL(ctx, -1, "lmdb.init - option growOnPut must be a Boolean"))
+                rp_flags |= GROW_ON_PUT;
         }
         duk_pop(ctx);
+
+        if(duk_get_prop_string(ctx, obj_idx, "mapSize"))
+        {
+            double ms = REQUIRE_NUMBER(ctx, -1, "lmdb.init - option mapSize must be a positive number >= 1.0 (map/db size in Mb)");
+            if(ms < 1.0)
+                RP_THROW(ctx, "lmdb.init - option mapSize must be a positive number >= 1.0 (map/db size in Mb)");
+            mapsize = (size_t)(1048576.0 * ms);
+        }
+        duk_pop(ctx);
+
         if(duk_get_prop_string(ctx, obj_idx, "conversion"))
         {
             const char *conv = REQUIRE_STRING(ctx, -1, "lmdb.init - option conversion must be a string('JSON'|'CBOR'|'String'|'Buffer')");
@@ -2182,6 +2225,7 @@ duk_ret_t duk_rp_lmdb_constructor(duk_context *ctx)
             else
                 RP_THROW(ctx, "lmdb.init - option conversion must be one of 'JSON', 'CBOR', 'String' or 'Buffer'");
         }
+
         if (duk_get_prop_string(ctx, obj_idx, "maxDbs"))
         {
             maxdbs=REQUIRE_UINT(ctx, -1, "lmdb.init - option maxDbs must be a positive number (Max number of named databases)");
@@ -2224,6 +2268,7 @@ duk_ret_t duk_rp_lmdb_constructor(duk_context *ctx)
         lenv->dbpath    = strdup(dbpath);
         lenv->pid       = getpid();
         lenv->openflags = openflags;
+        lenv->rp_flags =  rp_flags;
         lenv->mapsize   = mapsize;
         lenv->maxdbs    = maxdbs;
         lenv->convtype  = convtype;

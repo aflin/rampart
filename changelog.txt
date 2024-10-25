@@ -12,7 +12,9 @@ v0.5.0 (First Beta release)
                            appendProcTitle option, default false
                            Added log, begin and end functions (wrap functions)
     - rampart-almanac      Initial Version
-    - rampart-lmdb         Upgraded core lib to LMDB 0.9.33
+    - rampart-lmdb         Upgraded core lib to LMDB 0.9.70
+                           Added growOnPut option
+                           Fixed double free on MAP_FULL abort and env_close
     - rampart.utils        Added fork and pipe functions.
                            errorConfig for simplified error messages and error
                            line printing.
