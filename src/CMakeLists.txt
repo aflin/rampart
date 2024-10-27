@@ -312,6 +312,7 @@ add_library(rampart-redis SHARED
 ##CRYPTO##
 add_library(rampart-crypto SHARED
   duktape/modules/rampart-crypto.c
+  duktape/modules/rampart-crypto-passwd.c
 )
 if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
 

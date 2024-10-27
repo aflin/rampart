@@ -814,6 +814,15 @@ void duk_console_init(duk_context *ctx, duk_uint_t flags);
 //create thread to watch a pid, exit if it disappears
 int rp_watch_pid(pid_t pid, const char *msg);
 
+//modes for rampart-crypto-passwd
+#define crypto_passwd_unset 0  //unused
+#define crypto_passwd_crypt 1
+#define crypto_passwd_md5 2
+#define crypto_passwd_apr1 3
+#define crypto_passwd_aixmd5 4
+#define crypto_passwd_sha256 5
+#define crypto_passwd_sha512 6
+
 #if defined(__cplusplus)
 }
 #endif /* end 'extern "C"' wrapper */

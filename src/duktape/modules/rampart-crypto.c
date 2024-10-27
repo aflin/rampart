@@ -32,6 +32,80 @@
         ERR_error_string_n(ERR_get_error(), err_buf, OPENSSL_ERR_STRING_MAX_SIZE); \
         (void)duk_error(ctx, DUK_ERR_ERROR, "OpenSSL Error (%d): %s", __LINE__,err_buf);        \
     }
+
+char *rp_crypto_do_passwd(int passed_salt, char **salt_p, char **salt_malloc_p,
+                     char *passwd, BIO *out,
+                     size_t pw_maxlen, int mode);
+
+static duk_ret_t do_passwd(duk_context *ctx)
+{
+    const char *passwd = REQUIRE_STRING(ctx, 0, "crypto.passwd - first argument must be a string (password)");
+    const char *salt = NULL;
+    const char *type = "sha512";
+    char *salt_malloc=NULL;
+    BIO *out=NULL;
+    size_t pw_maxlen=255;
+    int passed_salt=0;
+    int mode = crypto_passwd_sha512;
+    char *hash=NULL, *s;
+
+    if(!duk_is_undefined(ctx,1) && !duk_is_null(ctx,1))
+    {
+        salt = REQUIRE_STRING(ctx, 1, "crypto.passwd - second argument, if defined and not null, must be a string (salt)");
+        passed_salt=1;
+    }
+
+    if(!duk_is_undefined(ctx,2))
+    {
+        type = REQUIRE_STRING(ctx, 2, "crypto.passwd - third argument, if defined, must be a string (hash mode)");
+
+        if(!strcmp(type,"sha512"))
+            mode=crypto_passwd_sha512;
+        else if(!strcmp(type,"sha256"))
+            mode=crypto_passwd_sha256;
+        else if(!strcmp(type,"md5"))
+            mode=crypto_passwd_md5;
+        else if(!strcmp(type,"apr1"))
+            mode=crypto_passwd_apr1;
+        else if(!strcmp(type,"aixmd5"))
+            mode=crypto_passwd_aixmd5;
+        else if(!strcmp(type,"crypt"))
+            mode=crypto_passwd_crypt;
+        else
+            RP_THROW(ctx, "crypto.passwd - mode '%s' is not known", type);
+    }
+
+    hash = rp_crypto_do_passwd(passed_salt, (char**)&salt, &salt_malloc, (char*) passwd, out, pw_maxlen, mode);
+
+    if(!hash)
+        RP_THROW(ctx, "passwd hash creation failed");
+
+    duk_push_object(ctx);
+
+    duk_push_string(ctx, hash);
+    duk_put_prop_string(ctx, -2, "line");
+    if(passed_salt)
+        duk_push_string(ctx,salt);
+    else
+    {
+        duk_push_string(ctx, salt_malloc);
+        free(salt_malloc);
+    } 
+    duk_put_prop_string(ctx, -2, "salt");
+    s = strrchr(hash,'$');
+    if(!s) //passwd_crypt
+        s=hash+2;
+    else
+        s++;
+    duk_push_string(ctx, s);
+    duk_put_prop_string(ctx, -2, "hash");
+    duk_push_string(ctx, type);
+    duk_put_prop_string(ctx, -2, "mode");
+
+    free(hash);
+    return 1;
+}
+
 /* make sure when we use RAND_ functions, we've seeded at least once */
 static int seeded=0;
 static void checkseed(duk_context *ctx)
@@ -3512,6 +3586,7 @@ const duk_function_list_entry crypto_funcs[] = {
     {"rsa_import_priv_key", duk_rsa_import_priv_key, 3},
     {"cert_info", duk_cert_info,1},
     {"passToKeyIv", duk_rp_pass_to_keyiv, 1},
+    {"passwd", do_passwd, 3},
     {NULL, NULL, 0}
 };
 
