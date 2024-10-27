@@ -46,6 +46,7 @@ static duk_ret_t do_passwd(duk_context *ctx)
     BIO *out=NULL;
     size_t pw_maxlen=255;
     int passed_salt=0;
+    int saltlen;
     int mode = crypto_passwd_sha512;
     char *hash=NULL, *s;
 
@@ -75,6 +76,18 @@ static duk_ret_t do_passwd(duk_context *ctx)
             RP_THROW(ctx, "crypto.passwd - mode '%s' is not known", type);
     }
 
+        if (mode == crypto_passwd_crypt)
+        {
+            saltlen = 2;
+            if(passed_salt && strlen(salt) < 2)
+                RP_THROW(ctx, "crypto.passwd - Salt for mode 'crypt' must be 2 characters");
+        }
+        else if (mode == crypto_passwd_md5 || mode == crypto_passwd_apr1 || mode == crypto_passwd_aixmd5)
+            saltlen = 8;
+        else if (mode == crypto_passwd_sha256 || mode == crypto_passwd_sha512)
+            saltlen = 16;
+
+
     hash = rp_crypto_do_passwd(passed_salt, (char**)&salt, &salt_malloc, (char*) passwd, out, pw_maxlen, mode);
 
     if(!hash)
@@ -85,7 +98,12 @@ static duk_ret_t do_passwd(duk_context *ctx)
     duk_push_string(ctx, hash);
     duk_put_prop_string(ctx, -2, "line");
     if(passed_salt)
-        duk_push_string(ctx,salt);
+    {
+        int l = strlen(salt);
+        if(l > saltlen)
+            l=saltlen;
+        duk_push_lstring(ctx,salt,(duk_size_t)l);
+    }
     else
     {
         duk_push_string(ctx, salt_malloc);
