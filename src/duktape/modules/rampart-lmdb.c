@@ -60,6 +60,8 @@ RPTHR_LOCK *rp_lmdblock;
 #define RP_LMDB_JSON   2
 #define RP_LMDB_CBOR   3
 
+static MDB_dbi open_dbi(duk_context *ctx, LMDB_ENV *lenv, const char *name, unsigned int flag, int *rc_p);
+
 /* 'this' must be on top of the stack */
 static LMDB_ENV *redo_env(duk_context *ctx, LMDB_ENV *lenv) {
     int rc;
@@ -189,7 +191,8 @@ static inline void check_txn_write_open(duk_context *ctx, LMDB_ENV *lenv, const 
     }
 }
 /* get a database handle at the given idx.  If it is a string, open the named db */
-static int get_dbi_idx(duk_context *ctx, MDB_txn *txn, MDB_dbi *dbi, int flags, duk_idx_t dbi_idx, const char *fname)
+static int get_dbi_idx(duk_context *ctx, MDB_txn *txn, MDB_dbi *dbi, int flags,
+    duk_idx_t dbi_idx, const char *fname, const char **dbname)
 {
     const char *db;
 
@@ -200,13 +203,16 @@ static int get_dbi_idx(duk_context *ctx, MDB_txn *txn, MDB_dbi *dbi, int flags, 
         pid = (pid_t) duk_get_int(ctx, -1);
         duk_pop(ctx);
 
+        duk_get_prop_string(ctx, dbi_idx, DUK_HIDDEN_SYMBOL("db"));
+        db = duk_get_string(ctx, -1);
+        if(dbname)
+            *dbname=db;
+
         /* we forked, need to get new handle */
         if(pid != getpid())
         {
             int rc;
 
-            duk_get_prop_string(ctx, dbi_idx, DUK_HIDDEN_SYMBOL("db"));
-            db = duk_get_string(ctx, -1);
             duk_pop(ctx);
             if(!strcmp(db,"lmdb default"))
                 db=NULL;
@@ -229,6 +235,7 @@ static int get_dbi_idx(duk_context *ctx, MDB_txn *txn, MDB_dbi *dbi, int flags, 
             duk_put_prop_string(ctx, dbi_idx, DUK_HIDDEN_SYMBOL("dbi"));
             return rc;
         }
+
         duk_get_prop_string(ctx, dbi_idx, DUK_HIDDEN_SYMBOL("dbi"));
         *dbi = (MDB_dbi) duk_get_int(ctx,-1);
         duk_pop(ctx);
@@ -236,10 +243,17 @@ static int get_dbi_idx(duk_context *ctx, MDB_txn *txn, MDB_dbi *dbi, int flags, 
     }
 
     if(duk_is_null(ctx, dbi_idx))
-        db=NULL;
+        db="default";
     else
-        db = REQUIRE_STRING(ctx, dbi_idx, "%s: parameter %d must be a null, string or dbi object", fname, (int)dbi_idx +1);
-    if(db && !strlen(db))
+        db = REQUIRE_STRING(ctx, dbi_idx, "%s: parameter %d must be a null (for 'default'), string or dbi object", fname, (int)dbi_idx +1);
+
+    if(*db=='\0')
+        db="default";
+
+    if(dbname)
+        *dbname=db;
+
+    if(!strcmp(db, "lmdb default"))
         db=NULL;
 
     return mdb_dbi_open(txn, db, flags, dbi);
@@ -263,23 +277,13 @@ duk_ret_t duk_rp_lmdb_sync(duk_context *ctx)
     return 0;
 }
 
-#define GETDBNAME \
-const char *db="lmdb main";\
-if(duk_is_string(ctx, 0))\
-    db = duk_get_string(ctx, 0);\
-else if(duk_is_object(ctx,0)){\
-    duk_get_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("db"));\
-    db = duk_get_string(ctx, -1);\
-}
-
-
 duk_ret_t duk_rp_lmdb_drop(duk_context *ctx)
 {
     int rc;
     LMDB_ENV *lenv;
     MDB_txn *txn;
     MDB_dbi dbi;
-
+    const char *dbname;
 
     duk_push_this(ctx);
     /* 'this' must be on top of stack */
@@ -296,15 +300,14 @@ duk_ret_t duk_rp_lmdb_drop(duk_context *ctx)
         RP_THROW(ctx, "lmdb.drop - error beginning transaction - %s", mdb_strerror(rc));
     }
 
-    rc = get_dbi_idx(ctx, txn, &dbi, MDB_CREATE, 0, "lmdb.drop");
+    rc = get_dbi_idx(ctx, txn, &dbi, MDB_CREATE, 0, "lmdb.drop", &dbname);
     if(rc)
     {
-        GETDBNAME
         mdb_txn_abort(txn);
         write_unlock;
-        RP_THROW(ctx, "lmdb.drop - error opening %s - %s", db, mdb_strerror(rc));
+        RP_THROW(ctx, "lmdb.drop - error opening %s - %s", dbname, mdb_strerror(rc));
     }
-    if(dbi != 1) // the "MAIN_DBI"
+    if(dbi != 1) // skip if lmdb default
     {
         /* occassionally getting MDB_PROBLEM return rc from mdb_txn_commit
            when doing mdb_drop(txn, dbi, 1);
@@ -315,18 +318,16 @@ duk_ret_t duk_rp_lmdb_drop(duk_context *ctx)
         rc = mdb_drop(txn, dbi, 0);
         if(rc)
         {
-            GETDBNAME
             // ?? mdb_dbi_close(lenv->env,dbi);
             mdb_txn_abort(txn);
             write_unlock;
-            RP_THROW(ctx, "lmdb.drop - error dropping %s - %s", db, mdb_strerror(rc));
+            RP_THROW(ctx, "lmdb.drop - error dropping %s - %s", dbname, mdb_strerror(rc));
         }
         rc = mdb_txn_commit(txn);
         if (rc)
         {
-            GETDBNAME
             write_unlock;
-            RP_THROW(ctx, "lmdb.drop - error dropping db %s: (%d) %s\n", db, rc, mdb_strerror(rc));
+            RP_THROW(ctx, "lmdb.drop - error dropping db %s: (%d) %s\n", dbname, rc, mdb_strerror(rc));
         }
 
         rc = mdb_txn_begin(lenv->env, NULL, 0, &txn);
@@ -339,61 +340,25 @@ duk_ret_t duk_rp_lmdb_drop(duk_context *ctx)
         rc = mdb_drop(txn, dbi, 1);
         if(rc)
         {
-            GETDBNAME
             // ?? mdb_dbi_close(lenv->env,dbi);
             mdb_txn_abort(txn);
             write_unlock;
-            RP_THROW(ctx, "lmdb.drop - error dropping %s - %s", db, mdb_strerror(rc));
+            RP_THROW(ctx, "lmdb.drop - error dropping %s - %s", dbname, mdb_strerror(rc));
         }
         rc = mdb_txn_commit(txn);
         mdb_dbi_close(lenv->env,dbi);
-    }
-    else
-    /* just delete the data, but not the named db metadata */
-    {
-        MDB_cursor *cursor;
-        MDB_val key={0}, val={0};
 
-        rc = mdb_cursor_open(txn, dbi, &cursor);
-
-        if(rc)
+        if (rc)
         {
-            mdb_txn_abort(txn);
             write_unlock;
-            RP_THROW(ctx, "lmdb.drop - error opening database cursor - %s", mdb_strerror(rc));
+            RP_THROW(ctx, "lmdb.drop - error dropping db %s: (%d) %s\n", dbname, rc, mdb_strerror(rc));
         }
-
-        while(1)
-        {
-            int rc2;
-            rc = mdb_cursor_get(cursor, &key, &val, MDB_NEXT);
-
-            if(rc)
-                break;
-
-            /* names of dbs end in '\0' */
-            if( val.mv_size == 48 && ((char *)key.mv_data)[key.mv_size-1] == '\0' )
-                continue;
-
-            rc2 = mdb_cursor_del(cursor, 0);
-            if(rc2)// && rc2!=MDB_INCOMPATIBLE) /* a dbname will come back with this*/
-            {
-                mdb_cursor_close(cursor);
-                mdb_txn_abort(txn);
-                write_unlock;
-                RP_THROW(ctx, "lmdb.drop - error deleting data in the default database - %s", mdb_strerror(rc2));
-            }
-        }
-        mdb_cursor_close(cursor);
-        rc = mdb_txn_commit(txn);
     }
 
-    if (rc)
-    {
-        GETDBNAME
-        write_unlock;
-        RP_THROW(ctx, "lmdb.drop - error dropping db %s: (%d) %s\n", db, rc, mdb_strerror(rc));
-    }
+    if(strcmp(dbname, "default")==0) // if "default"
+        // recreate it.
+        open_dbi(ctx, lenv, "default", MDB_CREATE, NULL);
+
     write_unlock;
     return 0;
 }
@@ -405,7 +370,7 @@ duk_ret_t duk_rp_lmdb_put(duk_context *ctx)
     MDB_txn *txn;
     MDB_dbi dbi;
     MDB_val key, val;
-    const char *s=NULL;
+    const char *s=NULL, *dbname;
     duk_size_t sz;
     duk_idx_t top;
 
@@ -463,14 +428,13 @@ duk_ret_t duk_rp_lmdb_put(duk_context *ctx)
             RP_THROW(ctx, "lmdb.put - error beginning transaction - %s", mdb_strerror(rc));
         }
 
-        rc = get_dbi_idx(ctx, txn, &dbi, MDB_CREATE, 0, "lmdb.put");
+        rc = get_dbi_idx(ctx, txn, &dbi, MDB_CREATE, 0, "lmdb.put", &dbname);
 
         if(rc)
         {
-            GETDBNAME
             mdb_txn_abort(txn);
             write_unlock;
-            RP_THROW(ctx, "lmdb.put - error opening %s - %s", db, mdb_strerror(rc));
+            RP_THROW(ctx, "lmdb.put - error opening %s - %s", dbname, mdb_strerror(rc));
         }
         rc = mdb_put(txn, dbi, &key, &val, 0);
 
@@ -510,14 +474,13 @@ duk_ret_t duk_rp_lmdb_put(duk_context *ctx)
         RP_THROW(ctx, "lmdb.put - error beginning transaction - %s", mdb_strerror(rc));
     }
 
-    rc = get_dbi_idx(ctx, txn, &dbi, MDB_CREATE, 0, "lmdb.put");
+    rc = get_dbi_idx(ctx, txn, &dbi, MDB_CREATE, 0, "lmdb.put", &dbname);
 
     if(rc)
     {
-        GETDBNAME
         mdb_txn_abort(txn);
         write_unlock;
-        RP_THROW(ctx, "lmdb.put - error opening %s - %s", db, mdb_strerror(rc));
+        RP_THROW(ctx, "lmdb.put - error opening %s - %s", dbname, mdb_strerror(rc));
     }
 
 
@@ -626,6 +589,7 @@ duk_ret_t duk_rp_lmdb_list_dbs(duk_context *ctx)
         RP_THROW(ctx, "%s - error beginning transaction - %s", fname, mdb_strerror(rc));
     }
 
+    //database names are in the lmdb default db. Data should be 48 bytes
     rc = mdb_dbi_open(txn, NULL, 0, &dbi);
 
     if(rc)
@@ -649,7 +613,7 @@ duk_ret_t duk_rp_lmdb_list_dbs(duk_context *ctx)
         if(rc)
             break;
 
-        if( val.mv_size == 48 && ((char *)key.mv_data)[key.mv_size-1] == '\0' )
+        if( val.mv_size == 48)
         {
             duk_push_string(ctx, (char *)key.mv_data);
             duk_put_prop_index(ctx, -2, i++);
@@ -676,7 +640,7 @@ duk_ret_t duk_rp_lmdb_get_count(duk_context *ctx)
     MDB_txn *txn;
     MDB_dbi dbi;
     MDB_stat stat;
-    const char *fname = "lmdb.getCount";
+    const char *fname = "lmdb.getCount", *dbname;
 
     duk_push_this(ctx);
 
@@ -690,16 +654,16 @@ duk_ret_t duk_rp_lmdb_get_count(duk_context *ctx)
         RP_THROW(ctx, "%s - error beginning transaction - %s", fname, mdb_strerror(rc));
     }
 
-    rc = get_dbi_idx(ctx, txn, &dbi, 0, 0, fname);
+    rc = get_dbi_idx(ctx, txn, &dbi, 0, 0, fname, &dbname);
     if(rc == MDB_NOTFOUND)
     {
         mdb_txn_abort(txn);
-        RP_THROW(ctx, "%s - error opening database - database does not exist", fname);
+        RP_THROW(ctx, "%s - error opening database '%s' - database does not exist", fname, dbname);
     }
     else if(rc)
     {
         mdb_txn_abort(txn);
-        RP_THROW(ctx, "%s - error opening database - %s", fname, mdb_strerror(rc));
+        RP_THROW(ctx, "%s - error opening database '%s' - %s", fname, dbname, mdb_strerror(rc));
     }
 
     rc = mdb_stat(txn, dbi, &stat);
@@ -707,7 +671,7 @@ duk_ret_t duk_rp_lmdb_get_count(duk_context *ctx)
     if(rc)
     {
         mdb_txn_abort(txn);
-        RP_THROW(ctx, "%s - error getting database item count - %s", fname, mdb_strerror(rc));
+        RP_THROW(ctx, "%s - error getting database '%s' item count - %s", fname, dbname, mdb_strerror(rc));
     }
 
     mdb_txn_commit(txn);
@@ -766,7 +730,7 @@ static duk_ret_t get_del(duk_context *ctx, int del, int retvals)
     int items=0, glob=0;
     const char *s=NULL;
     const char *endstr=NULL;
-    const char *fname = "lmdb.get";
+    const char *fname = "lmdb.get", *dbname;
 
 #define errexit do {\
     mdb_cursor_close(cursor);\
@@ -814,7 +778,6 @@ static duk_ret_t get_del(duk_context *ctx, int del, int retvals)
     key.mv_data=(void*)s;
     key.mv_size=strlen(s);
 
-
     if(del)
     {
         write_lock;
@@ -831,35 +794,33 @@ static duk_ret_t get_del(duk_context *ctx, int del, int retvals)
     }
 
     if(del)
-        rc = get_dbi_idx(ctx, txn, &dbi, MDB_CREATE, 0, fname);
+        rc = get_dbi_idx(ctx, txn, &dbi, MDB_CREATE, 0, fname, &dbname);
     else
     {
-        rc = get_dbi_idx(ctx, txn, &dbi, 0, 0, fname);
+        rc = get_dbi_idx(ctx, txn, &dbi, 0, 0, fname, &dbname);
         if(rc == MDB_NOTFOUND)
         {
             mdb_txn_abort(txn);
             if(del)
                 write_unlock;
-            RP_THROW(ctx, "%s - error opening database - database does not exist", fname);
+            RP_THROW(ctx, "%s - error opening database - database '%s' does not exist", fname, dbname);
         }
     }
     if(rc)
     {
-        GETDBNAME
         mdb_txn_abort(txn);
         if(del)
             write_unlock;
-        RP_THROW(ctx, "%s - error opening %s - %s", db, fname, mdb_strerror(rc));
+        RP_THROW(ctx, "%s - error opening database '%s' - %s", fname, dbname, mdb_strerror(rc));
     }
 
     rc = mdb_cursor_open(txn, dbi, &cursor);
     if(rc)
     {
-        GETDBNAME
         mdb_txn_abort(txn);
         if(del)
             write_unlock;
-        RP_THROW(ctx, "%s - error opening cursor%s - %s", db, fname, mdb_strerror(rc));
+        RP_THROW(ctx, "%s - error opening cursor for database '%s' - %s", fname, dbname, mdb_strerror(rc));
     }
 
     /* handle glob case */
@@ -963,7 +924,11 @@ static duk_ret_t get_del(duk_context *ctx, int del, int retvals)
 
     /* non glob cases - start by retrieving the key as given */
 
-    rc = mdb_cursor_get(cursor, &key, &data, MDB_SET);
+    if(key.mv_size)
+        rc = mdb_cursor_get(cursor, &key, &data, MDB_SET);
+    else
+        rc = mdb_cursor_get(cursor, &key, &data, MDB_FIRST);
+
     if(rc == MDB_NOTFOUND)
     {
         mdb_cursor_close(cursor);
@@ -1858,6 +1823,15 @@ static MDB_dbi open_dbi(duk_context *ctx, LMDB_ENV *lenv, const char *name, unsi
     int rc;
     MDB_dbi dbi;
 
+    // the default db in rampart is "default"
+    // the lmdb default/null db is reserved for db names, since that is where
+    // they are stored and there is no easy way to distinguish a key=dbname
+    // vs key=datat
+    if(!name || *name=='\0')
+        name="default";
+    else if(!strcmp(name,"lmdb default"))
+        name=NULL;
+
     if(flag == MDB_CREATE)
     {
         check_txn_write_open(ctx, lenv, "lmdb.openDb");
@@ -1907,12 +1881,12 @@ duk_ret_t duk_rp_lmdb_open_db(duk_context *ctx)
     lenv = get_env(ctx);
 
     if(duk_is_undefined(ctx,0) || duk_is_null(ctx,0))
-        db = NULL;
+        db = "default";
     else
         db = REQUIRE_STRING(ctx, 0, "lmdb.open_db - parameter must be a string (database name)");
 
     if( db && !strlen(db))
-        db=NULL;
+        db="default";
 
     if(duk_get_boolean_default(ctx, 1, 0))
         flag = MDB_CREATE;
@@ -1922,8 +1896,7 @@ duk_ret_t duk_rp_lmdb_open_db(duk_context *ctx)
     duk_push_object(ctx);
     duk_push_uint(ctx, dbi);
     duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("dbi"));
-    if(db==NULL)
-        db = "lmdb default";
+
     duk_push_string(ctx, db);
     duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("db"));
 
@@ -1987,10 +1960,7 @@ duk_ret_t duk_rp_lmdb_new_txn(duk_context *ctx)
         /* we forked, need to get new handle */
         else
         {
-            if(!strcmp(db,"lmdb default"))
-                dbi = open_dbi(ctx, lenv, NULL, 0, NULL); //we assume it exists.
-            else
-                dbi = open_dbi(ctx, lenv, db, 0, NULL); //we assume it exists.
+            dbi = open_dbi(ctx, lenv, db, 0, NULL); //we assume it exists.
 
             duk_push_int(ctx, (int)getpid());
             duk_put_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("pid"));
@@ -2001,24 +1971,20 @@ duk_ret_t duk_rp_lmdb_new_txn(duk_context *ctx)
     }
     else if (duk_is_undefined(ctx, 0) || duk_is_null(ctx, 0) )
     {
-        db="lmdb default";
-        dbi = open_dbi(ctx, lenv, NULL, 0, &rc);
+        db="default";
+        dbi = open_dbi(ctx, lenv, db, 0, &rc);
     }
     else
     {
         db = REQUIRE_STRING(ctx, 0, "lmdb.transaction - first parameter must be a string or dbi object (the database from the current database environment to use)");
 
         if(*db =='\0')
-        {
-            db="lmdb default";
-            dbi = open_dbi(ctx, lenv, NULL, 0, &rc);
-        }
-        else
-        {
-            dbi = open_dbi(ctx, lenv, db, 0, &rc);
-            if(rc == MDB_NOTFOUND)
-                dbi = open_dbi(ctx, lenv, db, MDB_CREATE, NULL);
-        }
+            db="default";
+
+        dbi = open_dbi(ctx, lenv, db, 0, &rc);
+        if(rc == MDB_NOTFOUND)
+            dbi = open_dbi(ctx, lenv, db, MDB_CREATE, NULL);
+
     }
     rw = REQUIRE_BOOL(ctx, 1, "lmdb.transaction - second parameter must be a boolean (false for readonly; true for readwrite)");
 
@@ -2233,17 +2199,6 @@ duk_ret_t duk_rp_lmdb_constructor(duk_context *ctx)
         }
     }
 
-    // check if this db has been opened before
-    /*    lock_main_ctx;
-    if(duk_get_global_string(main_ctx, DUK_HIDDEN_SYMBOL("lmdbenvs")))
-    {
-        duk_get_prop_string(main_ctx, -1, dbpath);
-        lenv = duk_get_pointer(main_ctx, -1);
-        duk_pop(main_ctx);
-    }
-    duk_pop(main_ctx);
-    unlock_main_ctx;
-    */
     //  Check if this db has been opened before.
     //  The hidden symbol should have been copied from main_ctx
     if(duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("lmdbenvs")))
@@ -2343,6 +2298,9 @@ duk_ret_t duk_rp_lmdb_constructor(duk_context *ctx)
     duk_put_prop_string(ctx, -2, "prototype");
     duk_put_prop_string(ctx, -2, "transaction");
     /* end new txn */
+
+    //create the "default" db if not exist
+    open_dbi(ctx, lenv, "default", MDB_CREATE, NULL);
 
     return 0;
 }
