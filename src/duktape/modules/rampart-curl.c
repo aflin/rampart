@@ -28,6 +28,8 @@ RETTXT
 {
     char *text;
     size_t size;
+    int isheader;
+    void *req;
 };
 
 #define READTXT struct curl_readStr
@@ -35,6 +37,8 @@ READTXT
 {
     char *text;
     size_t size;
+    int isheader;
+    void *req;
     size_t read;
 };
 
@@ -111,6 +115,7 @@ CURLREQ
     CSOS *sopts;
     char *url;                            /* url we will possibly append and will always need to free later */
     void *thisptr;
+    void *chunkfuncptr;  //not null if we have a chunk callback
     char *errbuf;
 };
 
@@ -700,6 +705,7 @@ int copt_post(CSOS_ARGS)
             postdata++;
             len--;
         }
+        postdata = sopts->postdata = strdup(postdata);
     }
 
     else if (duk_is_buffer_data(ctx, -1))
@@ -1821,6 +1827,7 @@ static int duk_curl_push_res(duk_context *ctx, CURLREQ *req)
         duk_push_string(ctx, (req->header).text);
     duk_put_prop_string(ctx, -2, "rawHeader");
 
+    //TODO: is it worth it to get cached headers if doing chunkCallback?  Probably.
     /* headers parsed into object */
     duk_push_object(ctx);
     duk_curl_parse_headers(ctx, (req->header).text);
@@ -1880,22 +1887,69 @@ static int duk_curl_push_res(duk_context *ctx, CURLREQ *req)
     return (d);
 }
 
-
+//TODO: really should have two separate functions for header and body writes.
 static size_t
 WriteCallback(void *contents, size_t size, size_t nmemb, void *userp)
 {
     size_t realsize = size * nmemb;
     RETTXT *mem = (RETTXT *)userp;
+    CURLREQ *req = (CURLREQ *)mem->req;
 
     /* overwrite old headers if we get more due to redirect */
     if (!strncmp(contents, "HTTP/", 5))
         mem->size = 0;
 
     REMALLOC(mem->text, (mem->size + realsize + 1));
-
     memcpy(&(mem->text[mem->size]), contents, realsize);
     mem->size += realsize;
     mem->text[mem->size] = '\0';
+
+    if(!mem->isheader && req->chunkfuncptr)
+    {
+        RPTHR *thr=get_current_thread();
+        duk_context *ctx = thr->ctx;
+
+        duk_push_heapptr(ctx, req->chunkfuncptr);
+        duk_push_heapptr(ctx, req->thisptr);
+        //duk_get_prop_string(ctx, -1, "chunkCallback");
+        //duk_pull(ctx, -2);
+
+        duk_push_object(ctx);
+        duk_push_fixed_buffer(ctx, (duk_size_t) realsize);
+        char *buf = duk_get_buffer(ctx, -1, NULL);
+        memcpy(buf, contents, realsize);
+        duk_put_prop_string(ctx,-2,"body");
+
+        if(duk_get_prop_string(ctx,-2, "headers"))
+            duk_put_prop_string(ctx, -2, "headers");
+        else {
+            duk_pop(ctx);
+            /* headers parsed into object */
+            duk_push_object(ctx);
+            duk_curl_parse_headers(ctx, (req->header).text);
+            duk_dup(ctx, -1);
+            duk_put_prop_string(ctx, -4, "headers");
+            duk_put_prop_string(ctx, -2, "headers");
+        }
+
+        // [ ..., callback, this, results ]
+        /* call the callback */
+        if ( duk_pcall_method(ctx, 1) != 0) {
+            const char *errmsg = rp_push_error(ctx, -1, "error in curl chunk callback:", rp_print_error_lines);
+            fprintf(stderr, "%s\n", errmsg);
+        }
+        else
+        {
+            if(!duk_get_boolean_default(ctx, -1, 1))
+            {
+                //duk_push_heapptr(ctx, req->thisptr);
+                //duk_del_prop_string(ctx, -1, "chunkCallback");
+                //duk_pop(ctx);
+                req->chunkfuncptr=NULL;
+            }
+        }
+        duk_pop(ctx); //result
+    }
 
     return realsize;
 }
@@ -1934,7 +1988,7 @@ void duk_curl_setopts(duk_context *ctx, CURL *curl, int idx, CURLREQ *req)
         *d='\0';
 
         // these are handled elsewhere
-        if( !strcmp(op,"url")  || !strcmp(op,"callback") )
+        if( !strcmp(op,"url")  || !strcmp(op,"callback") || !strcmp(sop,"chunkCallback"))
         {
             duk_pop_2(ctx);
             continue;
@@ -2045,7 +2099,7 @@ static void clean_req(CURLREQ *req)
     free(req);
 }
 
-CURLREQ *new_request(char *url, CURLREQ *cloner, duk_context *ctx, duk_idx_t options_idx, CURLM *cm, duk_idx_t func_idx, int add_addurl);
+CURLREQ *new_request(char *url, CURLREQ *cloner, duk_context *ctx, duk_idx_t options_idx, CURLM *cm, duk_idx_t func_idx, duk_idx_t chunkfunc_idx, int add_addurl);
 
 duk_ret_t addurl(duk_context *ctx)
 {
@@ -2062,13 +2116,13 @@ duk_ret_t addurl(duk_context *ctx)
 
     if(duk_is_function(ctx, 1))
     {
-        preq = new_request(u, req, ctx, 0, req->multi, 1, 1);
+        preq = new_request(u, req, ctx, 0, req->multi, 1, -1, 1);
     }
     else
     {
         /* clone the original request with a new url */
         duk_get_prop_string(ctx, 2, "callback");
-        preq = new_request(u, req, ctx, 0, req->multi, duk_normalize_index(ctx, -1), 1); 
+        preq = new_request(u, req, ctx, 0, req->multi, duk_normalize_index(ctx, -1), -1, 1); 
     }
 
     if (!preq)
@@ -2081,7 +2135,7 @@ duk_ret_t addurl(duk_context *ctx)
     return 1;
 }
 
-CURLREQ *new_curlreq(duk_context *ctx, char *url, CSOS *sopts, CURLM *cm, duk_idx_t func_idx, int add_addurl)
+CURLREQ *new_curlreq(duk_context *ctx, char *url, CSOS *sopts, CURLM *cm, duk_idx_t func_idx, duk_idx_t chunkfunc_idx, int add_addurl)
 {
     CURLREQ *ret = NULL;
 
@@ -2092,6 +2146,7 @@ CURLREQ *new_curlreq(duk_context *ctx, char *url, CSOS *sopts, CURLM *cm, duk_id
     ret->url = url;
     ret->multi = cm;
     ret->thisptr=NULL;
+    ret->chunkfuncptr=NULL;
 
     if(cm)
     {
@@ -2101,11 +2156,20 @@ CURLREQ *new_curlreq(duk_context *ctx, char *url, CSOS *sopts, CURLM *cm, duk_id
         duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("req"));
         duk_dup(ctx, func_idx);
         duk_put_prop_string(ctx, -2, "callback");
+
+        if(chunkfunc_idx>-1)
+        {
+            duk_dup(ctx, chunkfunc_idx);
+            ret->chunkfuncptr=duk_get_heapptr(ctx, -1);
+            duk_put_prop_string(ctx, -2, "chunkCallback");
+        }
+
         if(add_addurl)
         {
             duk_push_c_function(ctx, addurl, 2);
             duk_put_prop_string(ctx, -2, "addurl");
         }
+
         ret->thisptr = duk_get_heapptr(ctx, -1);
         //stash it to prevent gc
         duk_push_sprintf(ctx, "curlthis_%p", ret->thisptr);
@@ -2140,24 +2204,35 @@ CURLREQ *new_curlreq(duk_context *ctx, char *url, CSOS *sopts, CURLM *cm, duk_id
     ret->sopts=sopts;
 
     (ret->body).size = 0;
-    (ret->body).text=NULL;
+    (ret->body).text = (char *)NULL;
+    (ret->body).isheader=0;
+    (ret->body).req=ret;
 
     (ret->header).size = 0;
     (ret->header).text = (char *)NULL;
+    (ret->header).isheader=1;
+    (ret->header).req=ret;
 
     REMALLOC(ret->errbuf, CURL_ERROR_SIZE);
     *(ret->errbuf) = '\0';
     return (ret);
 }
 
-CURLREQ *new_request(char *url, CURLREQ *cloner, duk_context *ctx, duk_idx_t options_idx, CURLM *cm, duk_idx_t func_idx, int add_addurl)
+CURLREQ *new_request(char *url, CURLREQ *cloner, duk_context *ctx, duk_idx_t options_idx, CURLM *cm, duk_idx_t func_idx, duk_idx_t chunkfunc_idx, int add_addurl)
 {
     CURLREQ *req;
     CSOS *sopts;
 
     if (cloner != (CURLREQ *)NULL)
     {
-        req = new_curlreq(ctx, url, cloner->sopts, cm, func_idx, add_addurl);
+        duk_idx_t cf_idx=-1;
+
+        if(cloner->chunkfuncptr)
+        {
+            cf_idx=duk_push_heapptr(ctx, cloner->chunkfuncptr);
+        }
+
+        req = new_curlreq(ctx, url, cloner->sopts, cm, func_idx, cf_idx, add_addurl);
         sopts = req->sopts;
         req->curl = curl_easy_duphandle(cloner->curl);
         curl_easy_setopt(req->curl, CURLOPT_ERRORBUFFER, req->errbuf);
@@ -2165,12 +2240,15 @@ CURLREQ *new_request(char *url, CURLREQ *cloner, duk_context *ctx, duk_idx_t opt
         curl_easy_setopt(req->curl, CURLOPT_HEADERDATA, (void *)&(req->header));
         curl_easy_setopt(req->curl, CURLOPT_URL, req->url);
 
+        if(cf_idx > -1)
+            duk_remove(ctx, cf_idx);
+
         *sopts->refcount = *sopts->refcount +1;
         return (req);
     }
     else
     {
-        req = new_curlreq(ctx, url, NULL, cm, func_idx, add_addurl);
+        req = new_curlreq(ctx, url, NULL, cm, func_idx, chunkfunc_idx, add_addurl);
         sopts= req->sopts;
         *sopts->refcount = 1;
     }
@@ -2182,11 +2260,11 @@ CURLREQ *new_request(char *url, CURLREQ *cloner, duk_context *ctx, duk_idx_t opt
         /* send all body data to this function  */
         curl_easy_setopt(req->curl, CURLOPT_WRITEFUNCTION, WriteCallback);
         /* we pass our RETTXT struct to the callback function */
-        curl_easy_setopt(req->curl, CURLOPT_WRITEDATA, (void *)&(req->body));
+        curl_easy_setopt(req->curl, CURLOPT_WRITEDATA, (void*)&(req->body));
 
         /* send all header data to this function  */
         curl_easy_setopt(req->curl, CURLOPT_HEADERFUNCTION, WriteCallback);
-        /* we pass our RETTXT struct to the callback function */
+        /* we pass our READTXT struct to the callback function */
         curl_easy_setopt(req->curl, CURLOPT_HEADERDATA, (void *)&(req->header));
 
         curl_easy_setopt(req->curl, CURLOPT_USERAGENT, "libcurl-rampart/0.1");
@@ -2455,14 +2533,14 @@ static void push_finally_async(duk_context *ctx, CURLM *cm)
 static duk_ret_t duk_curl_fetch_sync_async(duk_context *ctx, int async)
 {
     duk_uarridx_t i=0;
-    duk_idx_t options_idx = -1, func_idx = -1, array_idx = -1, url_idx=-1;
+    duk_idx_t options_idx = -1, func_idx = -1, array_idx = -1, url_idx=-1, chunkfunc_idx=-1;
     char *url = (char *)NULL;
     CURLREQ *req=NULL;
     CURLcode res;
 
     /* clear any previous errors */
     duk_push_this(ctx);
-    duk_del_prop_string(ctx, -1, "errors");
+    duk_del_prop_string(ctx, -1, "errMsg");
     duk_pop(ctx);
 
     duk_curl_check_global(ctx);
@@ -2510,6 +2588,13 @@ static duk_ret_t duk_curl_fetch_sync_async(duk_context *ctx, int async)
         }
         else
             duk_pop(ctx);// undefined
+        if(duk_get_prop_string(ctx, options_idx, "chunkCallback"))
+        {
+            if(func_idx == -1)
+                RP_THROW(ctx, "fetch: chunkCallback cannot be used without a normal Callback function");
+            REQUIRE_FUNCTION(ctx, -1, "curl.fetch - 'chunkCallback' option must be a Function");
+            chunkfunc_idx = duk_normalize_index(ctx, -1);
+        }
     }
 
     if(async && func_idx==-1)
@@ -2571,11 +2656,11 @@ static duk_ret_t duk_curl_fetch_sync_async(duk_context *ctx, int async)
 
             if (!i)
             {
-                preq = req = new_request(u, NULL, ctx, options_idx, cm, func_idx, 1);
+                preq = req = new_request(u, NULL, ctx, options_idx, cm, func_idx, chunkfunc_idx, 1);
             }
             else
                 /* clone the original request with a new url */
-                preq = new_request(u, req, ctx, options_idx, cm, func_idx, 1);
+                preq = new_request(u, req, ctx, options_idx, cm, func_idx, chunkfunc_idx, 1);
 
             if (!preq)
                 RP_THROW(ctx, "Failed to get new curl handle while getting %s", u);
@@ -2617,7 +2702,7 @@ static duk_ret_t duk_curl_fetch_sync_async(duk_context *ctx, int async)
 
     /* single request */
 
-    req = new_request(strdup(url), NULL, ctx, options_idx, NULL, 0, 0);
+    req = new_request(strdup(url), NULL, ctx, options_idx, NULL, 0, -1, 0);
     if (req)
     {
         /* Perform the request, res will get the return code */
@@ -2681,15 +2766,15 @@ static duk_ret_t duk_curl_fetch_async(duk_context *ctx)
 static duk_ret_t duk_curl_submit_sync_async(duk_context *ctx, int async)
 {
     duk_uarridx_t i=0;
-    int nreq=0; 
+    //int nreq=0; 
     duk_idx_t func_idx = -1, opts_idx=-1;
-    char *url = (char *)NULL;
-    CURLREQ *req=NULL;
-    CURLcode res;
+    //char *url = (char *)NULL;
+    //CURLREQ *req=NULL;
+    //CURLcode res;
 
     /* clear any previous errors */
     duk_push_this(ctx);
-    duk_del_prop_string(ctx, -1, "errors");
+    duk_del_prop_string(ctx, -1, "errMsg");
     duk_pop(ctx);
 
     duk_curl_check_global(ctx);
@@ -2708,9 +2793,9 @@ static duk_ret_t duk_curl_submit_sync_async(duk_context *ctx, int async)
         opts_idx=1;
     }
     else
-        RP_THROW(ctx, "curl - submit requires an object of options and a function");
+        RP_THROW(ctx, "curl - submit requires an object of request options and a function");
 
-    if (duk_is_array(ctx, opts_idx))
+    /* if (duk_is_array(ctx, opts_idx))
     {
         nreq = duk_get_length(ctx, opts_idx);
         if(nreq == 1)
@@ -2719,24 +2804,26 @@ static duk_ret_t duk_curl_submit_sync_async(duk_context *ctx, int async)
             opts_idx=duk_get_top_index(ctx);
         }
     }
-    else if (duk_is_object(ctx, opts_idx) && !duk_is_function(ctx, opts_idx))
+    else */ 
+    if (duk_is_object(ctx, opts_idx) && !duk_is_function(ctx, opts_idx) && !duk_is_array(ctx, opts_idx))
     {
-        if(async)
-        {
+        //if(async)
+        //{
             // do as parallel req but with one
             duk_push_array(ctx);
             duk_pull(ctx, opts_idx);
             duk_put_prop_index(ctx, -2, 0);
-        }
-        nreq=1;
+            duk_insert(ctx, opts_idx);
+        //}
+       // nreq=1;
     }
-    else
-        RP_THROW(ctx, "curl - submit requires an object of options and a function");
+    else if( !duk_is_array(ctx, opts_idx) )
+        RP_THROW(ctx, "curl - submit requires an object of request options and a function");
 
     /* parallel requests */
-    if (nreq > 1 || async)
+    //if (nreq > 1 || async)
     /* array of urls, do parallel search */
-    {
+    //{
         CURLM *cm = curl_multi_init();
         int still_alive = 1;
 
@@ -2762,33 +2849,38 @@ static duk_ret_t duk_curl_submit_sync_async(duk_context *ctx, int async)
         {
             char *u=NULL;
             CURLREQ *preq;
-            duk_idx_t opts_obj_idx=-1, new_func_idx;
+            duk_idx_t opts_obj_idx=-1, new_func_idx, chunkfunc_idx=-1;
 
             duk_get_prop_index(ctx, opts_idx, (duk_uarridx_t)i);
-            if(!duk_is_object(ctx, 1) || duk_is_array(ctx, -1) || duk_is_function(ctx, -1) )
-                RP_THROW(ctx, "curl - submit requires an object (or array of objects) of options");
+            if(!duk_is_object(ctx, -1) || duk_is_array(ctx, -1) || duk_is_function(ctx, -1) )
+                RP_THROW(ctx, "curl - submit requires an object (or array of objects) of requests with options");
 
             opts_obj_idx=duk_get_top_index(ctx);
 
             if(duk_get_prop_string(ctx, opts_obj_idx, "url"))
-            {
                 u = strdup(duk_to_string(ctx, -1));
-            }
             else
                 RP_THROW(ctx, "curl - submit requires an object with the key/property 'url' set");
             duk_pop(ctx);
+
+            if(duk_get_prop_string(ctx, opts_obj_idx, "chunkCallback"))
+            {
+                REQUIRE_FUNCTION(ctx, -1, "curl.submit - 'chunkCallback' option must be a Function");
+                chunkfunc_idx = duk_normalize_index(ctx, -1);
+            }
+            else duk_pop(ctx);
 
             if(duk_get_prop_string(ctx, opts_obj_idx, "callback"))
             {
                 REQUIRE_FUNCTION(ctx, -1, "curl.submit - 'callback' option must be a Function");
                 new_func_idx = duk_normalize_index(ctx, -1);
-                preq = new_request(u, NULL, ctx, opts_obj_idx, cm, new_func_idx, 0);
+                preq = new_request(u, NULL, ctx, opts_obj_idx, cm, new_func_idx, chunkfunc_idx, 0);
                 duk_remove(ctx, new_func_idx);
             }
             else
             {
                 duk_pop(ctx);// undefined
-                preq = new_request(u, NULL, ctx, opts_obj_idx, cm, func_idx, 0);
+                preq = new_request(u, NULL, ctx, opts_obj_idx, cm, func_idx, chunkfunc_idx, 0);
             }
 
             if (!preq)
@@ -2820,10 +2912,11 @@ static duk_ret_t duk_curl_submit_sync_async(duk_context *ctx, int async)
         curl_multi_cleanup(cm);
         duk_push_boolean(ctx, 1);
         return (1);
-    }
+    //}
     /* end parallel requests */
 
-    /* single request */
+#ifdef NEVER
+    /* single request DEAD CODE */
 
     if(duk_get_prop_string(ctx, opts_idx, "url"))
     {
@@ -2833,7 +2926,7 @@ static duk_ret_t duk_curl_submit_sync_async(duk_context *ctx, int async)
         RP_THROW(ctx, "curl - submit requires an object with the key/property 'url' set");
     duk_pop(ctx);
 
-    req = new_request(url, NULL, ctx, opts_idx, NULL, 0, 0);
+    req = new_request(url, NULL, ctx, opts_idx, NULL, 0, -1, 0);
 
     if (req)
     {
@@ -2877,6 +2970,7 @@ static duk_ret_t duk_curl_submit_sync_async(duk_context *ctx, int async)
     duk_call_method(ctx, 1);
 
     return 0;
+#endif //NEVER
 }
 static duk_ret_t duk_curl_submit_async(duk_context *ctx)
 {
