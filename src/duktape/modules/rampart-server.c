@@ -1832,8 +1832,23 @@ char msg500[] = "<html><head><title>500 Internal Server Error</title></head><bod
 
 static void http_callback(evhtp_request_t *req, void *arg);
 
+#define WS_NF_URL_LIMIT 200
 static void send404(evhtp_request_t *req)
 {
+    if(req->websock)
+    {
+        char msg[256], *p=req->uri->path->full;
+        if(strlen(p) > WS_NF_URL_LIMIT)
+            snprintf(msg, WS_NF_URL_LIMIT + 55, "websocket end point '%.*s...' not found", WS_NF_URL_LIMIT, p);
+        else
+            snprintf(msg, WS_NF_URL_LIMIT + 55, "websocket end point '%s' not found", p);
+        evbuffer_add(req->buffer_out, msg, strlen(msg));
+        evhtp_ws_add_header(req->buffer_out, OP_TEXT);
+        evhtp_send_reply_body(req, req->buffer_out);
+        evhtp_ws_disconnect(req, EVHTP_DISCONNECT_DEFER);    
+        writelog(req, 404);
+        return;
+    }
     if (dhs404)
     {
         dhs404->skip_wrap=1;
@@ -5228,8 +5243,25 @@ static void connection_error_callback(evhtp_connection_t *conn, evhtp_error_flag
     fprintf(stderr, "unhandled connection error of type: 0x%02x", type);
 }
 
+/*  This didn't work out.  And makes little difference since devtools won't show a http 404 if ws requested
+    Instead - if ws not found, finish connection and handle in send404(req) above.
+evhtp_res post_header_cb(evhtp_request_t * req, evhtp_headers_t * hdr, void * arg)
+{
+    // for websocket paths, we need to check path before connection is upgraded
+    printf("cb_has_websock = %d websock=%d\n", (int)req->cb_has_websock, (int)req->websock);
+
+    if(req->cb_has_websock)
+    {
+        return EVHTP_RES_NOTFOUND;
+    }
+
+    return EVHTP_RES_OK;
+}
+*/
+
 evhtp_res pre_accept_callback(evhtp_connection_t *conn, void *arg)
 {
+    //evhtp_connection_set_hook(conn, evhtp_hook_on_headers, post_header_cb, NULL);
     evhtp_connection_set_hook(conn, evhtp_hook_on_conn_error, (void *)&connection_error_callback, NULL);
     //evhtp_connection_set_hook(conn, evhtp_hook_on_error,      (void*) &connection_error_callback,  NULL);
     //evhtp_connection_set_hook(conn, evhtp_hook_on_error,      (void*) &request_error_callback,     NULL);
