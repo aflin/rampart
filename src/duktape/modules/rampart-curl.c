@@ -94,6 +94,7 @@ TIMERINFO
 {
     CURLM *cm;
     struct event ev;
+    duk_context *ctx;
 };
 
 #define SOCKINFO struct multi_sock_info
@@ -117,6 +118,7 @@ CURLREQ
     void *thisptr;
     void *chunkfuncptr;  //not null if we have a chunk callback
     char *errbuf;
+    duk_context *ctx;  // if async in websockets, get_current_thread() will return wrong ctx
 };
 
 /* push a blank return object on top of stack with
@@ -1906,8 +1908,7 @@ WriteCallback(void *contents, size_t size, size_t nmemb, void *userp)
 
     if(!mem->isheader && req->chunkfuncptr)
     {
-        RPTHR *thr=get_current_thread();
-        duk_context *ctx = thr->ctx;
+        duk_context *ctx = req->ctx;
 
         duk_push_heapptr(ctx, req->chunkfuncptr);
         duk_push_heapptr(ctx, req->thisptr);
@@ -2085,7 +2086,7 @@ static void clean_req(CURLREQ *req)
     // delete the callback, if any, from the stash
     if(req->thisptr)
     {
-        duk_context *ctx = get_current_thread()->ctx;
+        duk_context *ctx = req->ctx;
         duk_push_global_stash(ctx);
         duk_push_sprintf(ctx, "curlthis_%p", req->thisptr);        
         duk_del_prop(ctx, -2);
@@ -2147,6 +2148,7 @@ CURLREQ *new_curlreq(duk_context *ctx, char *url, CSOS *sopts, CURLM *cm, duk_id
     ret->multi = cm;
     ret->thisptr=NULL;
     ret->chunkfuncptr=NULL;
+    ret->ctx=ctx;
 
     if(cm)
     {
@@ -2325,8 +2327,6 @@ static int check_multi_info(CURLM *cm)
     CURLMsg *msg;
     CURLcode res;
     int msgs_left=0;
-    RPTHR *thr=get_current_thread();
-    duk_context *ctx = thr->ctx;
     int gotinfo=0;
 
     debugf("MULTINFO: start\n");
@@ -2334,10 +2334,11 @@ static int check_multi_info(CURLM *cm)
         gotinfo=1;
         if (msg->msg == CURLMSG_DONE)
         {
+            duk_context *ctx;
             debugf("MULTINFO msg= DONE\n");
 
             curl_easy_getinfo(msg->easy_handle, CURLINFO_PRIVATE, &preq);
-            
+            ctx = preq->ctx;
             res = msg->data.result;
 
             duk_push_heapptr(ctx, preq->thisptr);
@@ -2421,7 +2422,7 @@ static void mevent_cb(int fd, short kind, void *socketp)
 
         //check for a finally callback
         {
-            duk_context *ctx = get_current_thread()->ctx;
+            duk_context *ctx = tinfo->ctx;
             duk_push_global_stash(ctx);
             duk_push_sprintf(ctx, "curl_finally_%p", tinfo->cm);
             duk_dup(ctx, -1);
@@ -2635,6 +2636,7 @@ static duk_ret_t duk_curl_fetch_sync_async(duk_context *ctx, int async)
             REMALLOC(tinfo, sizeof(TIMERINFO));
 
             tinfo->cm=cm;
+            tinfo->ctx=ctx;
             evtimer_assign(&(tinfo->ev), thr->base, timer_cb, tinfo);
 
             curl_multi_setopt(cm, CURLMOPT_SOCKETFUNCTION, handle_socket);
@@ -2835,6 +2837,7 @@ static duk_ret_t duk_curl_submit_sync_async(duk_context *ctx, int async)
             REMALLOC(tinfo, sizeof(TIMERINFO));
 
             tinfo->cm=cm;
+            tinfo->ctx=ctx;
             evtimer_assign(&(tinfo->ev), thr->base, timer_cb, tinfo);
 
             curl_multi_setopt(cm, CURLMOPT_SOCKETFUNCTION, handle_socket);
