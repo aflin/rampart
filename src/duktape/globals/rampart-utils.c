@@ -108,6 +108,7 @@ static char *rp_types[RP_NTYPES] = {
     "String", "Array", "Nan", "Number",
     "Function", "Boolean", "Buffer", "Null",
     "Undefined", "Symbol", "Date", "Object",
+    "Filehandle",
     "Unknown"
 };
 
@@ -138,6 +139,8 @@ int rp_gettype(duk_context *ctx, duk_idx_t idx)
     {
         if(duk_has_prop_string(ctx, idx, "getMilliseconds") && duk_has_prop_string(ctx, idx, "getUTCDay") )
             return RP_TYPE_DATE;
+        else if(duk_has_prop_string(ctx, idx, DUK_HIDDEN_SYMBOL("rp_is_fh")))
+            return RP_TYPE_FILEHANDLE;
         else /* function, array and date are also objects, so do this last */
            return RP_TYPE_OBJECT;
     }
@@ -6480,6 +6483,11 @@ static duk_ret_t f_func(duk_context *ctx)
     duk_put_prop_string(ctx,-2,(fname));\
 } while(0)
 
+#define mark_as_fh() do{\
+    duk_push_true(ctx);\
+    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("rp_is_fh"));\
+} while(0)
+
 
 duk_ret_t duk_rp_fopen(duk_context *ctx)
 {
@@ -6550,6 +6558,7 @@ duk_ret_t duk_rp_fopen(duk_context *ctx)
     }
 
     duk_push_object(ctx);
+    mark_as_fh();
     duk_push_pointer(ctx,(void *)f);
     duk_put_prop_string(ctx,-2,DUK_HIDDEN_SYMBOL("filehandle") );
 
@@ -9715,6 +9724,7 @@ void duk_printf_init(duk_context *ctx)
     duk_push_object(ctx);
     duk_push_string(ctx,"accessLog");
     duk_put_prop_string(ctx,-2,"stream");
+    mark_as_fh();
     pushffunc("fprintf",    func_fprintf,   DUK_VARARGS );
     pushffunc("fflush",     func_fflush,    0           );
     pushffunc("fwrite",     func_fwrite,    3           );
@@ -9723,6 +9733,7 @@ void duk_printf_init(duk_context *ctx)
     duk_push_object(ctx);
     duk_push_string(ctx,"errorLog");
     duk_put_prop_string(ctx,-2,"stream");
+    mark_as_fh();
     pushffunc("fprintf",    func_fprintf,   DUK_VARARGS );
     pushffunc("fflush",     func_fflush,    0           );
     pushffunc("fwrite",     func_fwrite,    3           );
@@ -9731,6 +9742,7 @@ void duk_printf_init(duk_context *ctx)
     duk_push_object(ctx);
     duk_push_string(ctx,"stdout");
     duk_put_prop_string(ctx,-2,"stream");
+    mark_as_fh();
     pushffunc("fprintf",    func_fprintf,   DUK_VARARGS );
     pushffunc("fflush",     func_fflush,    0           );
     pushffunc("fwrite",     func_fwrite,    3           );
@@ -9739,6 +9751,7 @@ void duk_printf_init(duk_context *ctx)
     duk_push_object(ctx);
     duk_push_string(ctx,"stderr");
     duk_put_prop_string(ctx,-2,"stream");
+    mark_as_fh();
     pushffunc("fprintf",    func_fprintf,   DUK_VARARGS );
     pushffunc("fflush",     func_fflush,    0           );
     pushffunc("fwrite",     func_fwrite,    3           );
@@ -9747,6 +9760,7 @@ void duk_printf_init(duk_context *ctx)
     duk_push_object(ctx);
     duk_push_string(ctx,"stdin");
     duk_put_prop_string(ctx,-2,"stream");
+    mark_as_fh();
     pushffunc("fread",      func_fread,     3           );
     pushffunc("readLine",   func_readline,  0           );
     pushffunc("fgets",      func_fgets,     1           );

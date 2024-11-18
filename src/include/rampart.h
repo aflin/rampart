@@ -615,8 +615,9 @@ duk_ret_t rp_auto_scandate(duk_context *ctx);
 #define RP_TYPE_SYMBOL 9
 #define RP_TYPE_DATE 10
 #define RP_TYPE_OBJECT 11
-#define RP_TYPE_UNKNOWN 12
-#define RP_NTYPES 13
+#define RP_TYPE_FILEHANDLE 12
+#define RP_TYPE_UNKNOWN 13
+#define RP_NTYPES 14
 
 int rp_gettype(duk_context *ctx, duk_idx_t idx);
 
