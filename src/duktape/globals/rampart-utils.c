@@ -3383,14 +3383,11 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
         // no idea why
         while(!waitpid(pid, &exit_status, WNOHANG))
         {
-            if(!kill(pid,0))
-            {
-                waitpid(pid, &exit_status, WNOHANG);
+            if(WIFEXITED(exit_status))
                 break;
-            }
             usleep(1000);
         }
-
+        exit_status = WEXITSTATUS(exit_status);
         // cancel timeout thread in case it is still running
         if (timeout > 0)
         {
