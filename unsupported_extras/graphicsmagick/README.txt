@@ -1,10 +1,15 @@
 Compiling:
 
 > sudo apt install libgraphicsmagick1-dev
-# or
+# or macos
 > brew install graphicsmagick
+# or freebsd
+> pkg install GraphicsMagick
 
 > make
+# or freebsd
+> gmake
+
 > cp rampart-gm.so /usr/local/rampart/modules/ 
 # or wherever your modules live, like ~/.rampart/modules
 

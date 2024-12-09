@@ -8,6 +8,9 @@ CFLAGS=-Wall -g -O2 $(GFLAGS) -std=c99 -I/usr/local/rampart/include
 ifeq ($(OSNAME), Linux)
 	CFLAGS += -fPIC -shared -Wl,-soname,rampart-gm.so
 endif
+ifeq ($(OSNAME), FreeBSD)
+	CFLAGS += -fPIC -shared -Wl,-soname,rampart-gm.so
+endif
 ifeq ($(OSNAME), Darwin)
 	CFLAGS += -dynamiclib -Wl,-headerpad_max_install_names -undefined dynamic_lookup -install_name rampart-gm.so
 endif
