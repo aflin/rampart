@@ -9614,7 +9614,114 @@ static duk_ret_t print_simplified_err(duk_context *ctx)
     return 0;
 }
 
+static void _deepcopy(duk_context *ctx, duk_idx_t targidx, duk_idx_t srcidx, int appendarr)
+{
+    duk_idx_t i;
 
+    //printf("srcidx=%d\n",(int)srcidx);
+    //prettyprintstack(ctx);
+    duk_enum(ctx, srcidx, DUK_ENUM_OWN_PROPERTIES_ONLY|DUK_ENUM_NO_PROXY_BEHAVIOR|DUK_ENUM_INCLUDE_HIDDEN|DUK_ENUM_INCLUDE_SYMBOLS|DUK_ENUM_SORT_ARRAY_INDICES);
+
+    while( duk_next(ctx, -1, 1))
+    {
+        // [ ..., enum(-3), key(-2), value(-1) ]
+        int type =rp_gettype(ctx, -1);
+        if(type == RP_TYPE_ARRAY)
+        {
+            if(appendarr)
+            {
+                duk_dup(ctx, -2); //the key
+                if(duk_get_prop(ctx, targidx)) //check if key in target
+                {
+                    if(rp_gettype(ctx,-1)!=RP_TYPE_ARRAY)
+                    {
+                        //if not an array, overwrite
+                        duk_pop(ctx);
+                        duk_push_array(ctx);
+                    }
+                    // else we are appending the array
+                }
+                else
+                {
+                    //no key, use empty array
+                    duk_pop(ctx);//undefined
+                    duk_push_array(ctx);
+                }
+            }
+            else
+                duk_push_array(ctx);
+            // [ ..., enum(-4), key(-3), value(-2), emptyArr(-1) ]
+            i=duk_get_top_index(ctx);
+            //printf("CopyArray\n");
+            //prettyprintstack(ctx);
+            _deepcopy(ctx, i, i-1, appendarr);
+
+            // [ ..., key(-3), array(-2), copiedArr(-1) ]
+            duk_remove(ctx, -2);
+            // [ ..., key(-2), copiedArr(-1) ]
+        }
+        else if ( type == RP_TYPE_OBJECT)
+        {
+            duk_dup(ctx, -2); //the key
+            if(!duk_get_prop(ctx, targidx)) //check if key in target
+            {
+                duk_pop(ctx);//undefined;
+                duk_push_object(ctx); //use empty object
+            }
+            else
+            {
+                //overwrite value if value is not an object
+                if(rp_gettype(ctx, -1) != RP_TYPE_OBJECT)
+                {
+                    duk_pop(ctx);//non object;
+                    duk_push_object(ctx); //use empty object
+                }
+            }
+            //new target is at -1;
+            i=duk_get_top_index(ctx);
+            _deepcopy(ctx, i, i-1, appendarr);
+            // [ ..., key(-3), object(-2), copiedObj(-1) ]
+            duk_remove(ctx, -2);
+            // [ ..., key(-2), copiedObj(-1) ]
+        }
+        //printf("target=%d\n",(int)targidx);
+        //prettyprintstack(ctx);
+        // else, [ ..., enum(-3), key(-2), value(-1) ] already in place
+        if(appendarr && rp_gettype(ctx, targidx) == RP_TYPE_ARRAY)
+        {
+           duk_put_prop_index(ctx, targidx, duk_get_length(ctx,targidx));
+           duk_pop(ctx);//unused index
+        }
+        else
+            duk_put_prop(ctx, targidx);
+        //printf("after:\n");
+        //prettyprintstack(ctx);
+        // [ ..., enum(-1) ]
+    }
+
+    duk_remove(ctx, -1); //enum
+}
+
+static duk_ret_t deepCopy(duk_context *ctx) {
+    duk_idx_t top=duk_get_top(ctx), i=0;
+    int appendarr=0;
+    if(duk_get_boolean_default(ctx, 0, 0))  //if true, append arrays
+    {
+        appendarr=1;
+        duk_remove(ctx, 0);
+        top--;
+    }
+
+    for(;i<top;i++)
+        if(rp_gettype(ctx, i) != RP_TYPE_OBJECT)
+            RP_THROW(ctx, "deepCopy: arguments must be plain Objects");
+
+    for(i=1;i<top;i++)
+        _deepcopy(ctx, 0, i, appendarr);
+
+    duk_pull(ctx, 0);
+    return 1;
+}
 
 void duk_printf_init(duk_context *ctx)
 {
@@ -9628,6 +9735,9 @@ void duk_printf_init(duk_context *ctx)
         duk_pop(ctx);
         duk_push_object(ctx);
     }
+
+    duk_push_c_function(ctx, deepCopy, DUK_VARARGS);
+    duk_put_prop_string(ctx, -2, "deepCopy");
 
     duk_push_c_function(ctx, duk_rp_to_json_safe, 1);
     duk_put_prop_string(ctx, -2, "toJsonSafe");
