@@ -8469,7 +8469,7 @@ static duk_ret_t find_abbr(duk_context *ctx)
 static duk_ret_t dump_tz(duk_context *ctx)
 {
     rp_tz_zone *mzone;
-    duk_uarridx_t aidx=0;
+    //duk_uarridx_t aidx=0;
     rp_timezones *tz;
     rp_tz_abbr *abbr_s;
     const char *name;
@@ -8488,7 +8488,7 @@ static duk_ret_t dump_tz(duk_context *ctx)
         name=push_tzone(ctx, mzone);
         duk_put_prop_string(ctx, 1, name); //into zones
 
-        aidx++;
+        //aidx++;
     }
     duk_put_prop_string(ctx, 0, "zones");
 
