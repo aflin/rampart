@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="en">
+ <head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="rampart javascript development">
+  <meta name="author" content="Doc Cube">
+  <meta name="theme-color" content="#FFF">
+  <!--FFF does some magic to make iphone top bar look correct-->
+  <title>
+   Hello World! This is RAMPART from Moat Crossing Systems LLC
+  </title>
+  <link rel="preconnect" href="https://fonts.gstatic.com">
+  <link href="https://fonts.googleapis.com/css?family=Julius+Sans+One|Varela+Round" rel=
+  "stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel=
+  "stylesheet" integrity="sha384-1BmE4kWBq78iYhFldvKuhfTAU6auU8tT94WrHftjDbrCEXSU1oBoqyl2QvZ6jIW3"
+  crossorigin="anonymous">
+  <style>
+  <!-- CSS is inline becuase our modifications to Bootstrap are minimal -->
+  placeholder {color:green; border:1px solid red;margin-top:0;padding-top:0;!important}
+
+  label {padding:0.25em 0.25em!important};
+
+  li {
+  margin-bottom:0.5em;
+  }
+
+  .bd-placeholder-img {
+        font-size: 1.125rem;
+        text-anchor: middle;
+        -webkit-user-select: none;
+        -moz-user-select: none;
+        user-select: none;
+  }
+
+  @media (min-width: 768px) {
+        .bd-placeholder-img-lg {
+                font-size: 3.5rem;
+        }
+  }
+
+  /* Show it is fixed to the top */
+  body {
+        /* min-height: 75rem;*/
+        padding-top: 4.5rem;
+        Font-Family: 'Varela Round', Sans-Serif;
+  }
+
+  .tinybutt {
+        padding:2px;
+        font-size:0.75rem;
+  }
+
+  .terminal {
+        margin-bottom:0.5em;
+   margin-left:0.5em;
+   margin-right:0.5em;
+  }
+
+  .terminal .prompt {
+        color:rgb(5, 157, 5);
+  }
+
+  .courier {
+        font-family: 'Courier New', monospace;
+   font-weight: bold;
+  }
+
+  pre {  
+        font-family: 'Courier New', monospace;
+   font-weight: bold;
+  }
+
+  i {
+        font-size:95%;
+        color:gray;
+  }
+
+  </style>
+  <style>
+  svg { font-size:16px; font-family:Courier; font-color:green; fill:green; } 
+  </style>
+ </head>
+ <body style="bottom: 0px; position: absolute; top: 0px; width: 100%;">
+  <nav class="navbar navbar-expand-md navbar-dark fixed-top bg-dark">
+   <div class="container-fluid">
+    <a class="navbar-brand" href="https://rampart.dev/"><img src="https://rampart.dev/images/rampart_transparent_white.gif"></a>
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target=
+    "#navbarCollapse" aria-controls="navbarCollapse" aria-expanded="false" aria-label=
+    "Toggle navigation"><span class="navbar-toggler-icon"></span></button>
+    <div class="collapse navbar-collapse" id="navbarCollapse">
+     <ul class="navbar-nav me-auto mb-2 mb-md-0">
+      <li class="nav-item">
+       <a class="nav-link active" href="https://rampart.dev/index.html">Home</a>
+      </li>
+      <li class="nav-item">
+       <a class="nav-link active" href="https://rampart.dev/download.html">Download</a>
+      </li>
+      <li class="nav-item">
+       <a class="nav-link active" href="https://rampart.dev/docs/">Documentation</a>
+      </li>
+      <li class="nav-item">
+       <a class="nav-link active" href="https://rampart.dev/demos.html">Demos</a>
+      </li>
+      <li class="nav-item">
+       <a class="nav-link active" href="https://rampart.dev/apps/site/contact.html">Help!</a>
+      </li>
+     </ul>
+     <form class="d-flex" action="https://rampart.dev/docs/">
+      <input name="q" class="form-control me-2" type="search" placeholder="Search Docs" aria-label=
+      "Search"> <button class="btn btn-outline-success" type="submit">Search</button>
+     </form>
+    </div>
+   </div>
+  </nav>
+  <main class="bg-light container-fluid" style="max-width:55rem;padding-top:20px;">
+   <div class="row container-fluid bg-light mx-auto h-100">
+    <div class="row rounded">
+     <h1>
+      Squish the Stack
+     </h1>
+     <p class="lead">
+      Rampart is a javascript based complete stack development environment which is extremely
+      resource stingy. This entire site is running on a Raspberry Pi Zero (version 1). Rampart is
+      also fast and portable; it will run on nearly any *nix OS and benchmarks nearly as fast as
+      Nginx on static content. It's also free to use, modify, and redistribute in most use cases.
+     </p>
+    </div>
+    <div class=
+    "row bg-dark p-3 rounded text-white overflow-hidden d-flex justify-content-center m-0 p-0">
+     <p>
+      We're not kidding about it being resource stingy. Here's the Rampart HTTP server running on
+      my machine as I'm coding this web page on an Intel Mac with almost all of its modules loaded:
+     </p>
+     <div class="d-flex justify-content-center">
+      <img src="https://rampart.dev/images/ram_usage.jpg" style="width: 100%; height: 100%; max-width:587px;">
+     </div>
+    </div>
+    <div class="row py-2 g-4 rounded">
+     <div class="col-md-4 col-sm-6 d-flex align-items-start">
+      <div>
+       <h3>
+        Full Text Search with SQL
+       </h3>
+       <p>
+        We've licensed the same fulltext and relational database engine that powered eBay's auction
+        search and <a href="https://www.thunderstone.com/about-us/our-customers/">100's of other
+        large sites</a> across the internet. The SQL engine is especially good at serving database
+        driven content. It is also realtime so that new or changed documents are instantly
+        searchable. We've included a CSV parser so you can migrate data into it as well.
+       </p><a href="https://rampart.dev/docs/rampart-sql.html" class="btn btn-primary tinybutt">more info...</a>
+      </div>
+     </div>
+     <div class="col-md-4 col-sm-6 d-flex align-items-start">
+      <div>
+       <h3>
+        HTTP, HTTPS, and Websockets
+       </h3>
+       <p>
+        Rampart's HTTP/HTTPS server is based on a modded libevhtp_ws and libevent2. Benchmarks
+        showed that libevhtp outperformed Nginx (which we really respect), so that's why we chose
+        it. We haven't benchmarked it against Node yet but it's reasonable to assume we'll keep
+        pace while consuming a lot less of the host's resources
+       </p><a href="https://rampart.dev/docs/rampart-server.html#the-rampart-server-http-module" class=
+       "btn btn-primary tinybutt">more info...</a>
+      </div>
+     </div>
+     <div class="col-md-4 col-sm-6 d-flex align-items-start">
+      <div>
+       <h3>
+        CURL Module
+       </h3>
+       <p>
+        Rampart provides a robust interface to the Curl library, giving you the ability to fetch
+        URLs, post forms, or send email and attachments easily. It includes all the functionality
+        you've come to expect with the Curl command line utility, but from within Rampart
+        JavaScript. The combination of this module and the HTML Parser provide a fairly robust data
+        scraping tool set.
+       </p><a href="https://rampart.dev/docs/rampart-curl.html" class="btn btn-primary tinybutt">more info...</a>
+      </div>
+     </div>
+     <div class="col-md-4 col-sm-6 d-flex align-items-start">
+      <div>
+       <h3>
+        Threading
+       </h3>
+       <p>
+        Rampart threads let you run functions not only asynchronously but in also in a
+        multi-threaded environment. Running a function in a thread is as easy as running one in a
+        <span class="courier">setTimeout()</span>. Each thread is run in its own isolated
+        JavaScript interpreter and variables are easily shared at any time via a clipboard. Running
+        an asynchronous callback in a thread when a variable is copied to the clipboard <a href=
+        "https://rampart.dev/docs/rampart-thread.html#rampart-thread-onget">is also possible</a>.
+       </p><a href="https://rampart.dev/docs/rampart-thread.html" class="btn btn-primary tinybutt">more info...</a>
+      </div>
+     </div>
+     <div class="col-md-4 col-sm-6 d-flex align-items-start">
+      <div>
+       <h3>
+        REDIS Client
+       </h3>
+       <p>
+        We've included direct REDIS integration for all the obvious reasons one might want to use
+        it. We also crafted a <a href="https://rampart.dev/docs/rampart-redis.html#xread-auto-async">custom XREAD
+        command</a> to work like PUB/SUB so you can, in combination with WebSockets, create chats,
+        channels and DMs that don't require the extra step of saving, retrieving and sorting
+        messages from a message queue.
+       </p><a href="https://rampart.dev/docs/rampart-redis.html" class="btn btn-primary tinybutt">more info...</a>
+      </div>
+     </div>
+     <div class="col-md-4 col-sm-6 d-flex align-items-start">
+      <div>
+       <h3>
+        Lightning Memory-mapped Database
+       </h3>
+       <p>
+        LMDB is a fast, truly ACID compliant RAM based key-value store. It's read biased and serves
+        binary or text data really well. We've added automatic conversion to/from CBOR and JSON to
+        make it that much easier. It's not as fast as Redis when in full ACID mode, but then again
+        it'll never lose data when Redis might. LMDB startup is relatively instant, even on large
+        databases, and it's persistent to disk in case of unexpected interruption.
+       </p><!-- p>
+  <i>"LMDB is an extraordinarily fast, memory-efficient database developed for the 
+  OpenLDAP Project. With memory-mapped files, it has the read performance of a pure
+  in-memory databasewhile retaining the persistence of standard disk-based databases." -- Symas.com</i></p -->
+       <p></p><a href="https://rampart.dev/docs/rampart-lmdb.html" class="btn btn-primary tinybutt">more info...</a>
+      </div>
+     </div>
+     <div class="col-md-4 col-sm-6 d-flex align-items-start">
+      <div>
+       <h3>
+        Markdown Engine
+       </h3>
+       <p>
+        The markdown engine uses the Cmark library to implement the <a href=
+        "https://commonmark.org">CommonMark syntax</a>. This allows you to efficiently convert to
+        HTML on the server side and have symmetry with the CommonMark client-side javascript
+        module. This is handy for things like blog entries, documentation, and CMS page markup.
+        <i>Note: We intend to eventually build and use our own CMS using it.</i>
+       </p><a href="https://rampart.dev/docs/rampart-cmark.html" class="btn btn-primary tinybutt">more info...</a>
+      </div>
+     </div>
+     <div class="col-md-4 col-sm-6 d-flex align-items-start">
+      <div>
+       <h3>
+        ROBOTS.TXT
+       </h3>
+       <p>
+        Rampart gives you the power to crawl and scrape in a very flexible manner. However, with
+        great web crawlers come great responsibilities. The ROBOTS.TXT module uses Google's
+        robots.txt code so you can avoid abusing sites that do not wish to have portions of their
+        content crawled.
+       </p><a href="https://rampart.dev/docs/rampart-robots.html" class="btn btn-primary tinybutt">more info...</a>
+      </div>
+     </div>
+     <div class="col-md-4 col-sm-6 d-flex align-items-start">
+      <div>
+       <h3>
+        HTML Parser
+       </h3>
+       <p>
+        Using a modded version of <a href="https://www.html-tidy.org">HTMLTidy</a> Rampart provides
+        the ability to manipulate and traverse HTML in a manner somewhat akin to JQuery, but on the
+        server side. This module can also clean up and format messy or compacted HTML after it's
+        been CURL'ed from somewhere. <i>Note: I used this module several times to locate errant
+        imbalaced &lt;div&gt;s when writing this site.</i>
+       </p><a href="https://rampart.dev/docs/rampart-html.html" class="btn btn-primary tinybutt">more info...</a>
+      </div>
+     </div>
+     <div class="col-md-4 col-sm-6 d-flex align-items-start">
+      <div>
+       <h3>
+        Cryptography
+       </h3>
+       <p>
+        The OpenSSL library module provides the ability to safely encrypt and decrypt stuff
+        generate crypto-hashes, generate RSA key pairs, and more. It also provides cryptographic
+        quality random and Gaussian random number generation. Sorry, it doesn't generate
+        crypto-currency though. <i>Note: for speedy non-crypographic hashing see the <a href=
+        "https://rampart.dev/docs/rampart-utils.html#hash">non-cryptographic hashes</a>.</i>
+       </p><a href="https://rampart.dev/docs/rampart-crypto.html" class="btn btn-primary tinybutt">more info...</a>
+      </div>
+     </div>
+     <div class="col-md-4 col-sm-6 d-flex align-items-start">
+      <div>
+       <h3>
+        Networking
+       </h3>
+       <p>
+        The rampart-net module provides access to low level, asynchronous TCP/IP calls for creating
+        client and server applications, as well as name resolution. The functions are somewhat
+        similar to node's net functions, which makes learning easier if you are familiar.
+       </p><a href="https://rampart.dev/docs/rampart-net.html" class="btn btn-primary tinybutt">more info...</a>
+      </div>
+     </div>
+     <div class="col-md-4 col-sm-6 d-flex align-items-start">
+      <div>
+       <h3>
+        Python
+       </h3>
+       <p>
+        Yes we embedded the c-python interpreter into a Rampart module. It allows you to load
+        python modules, run python scripts and manipulate python variables in JavaScript without a
+        writing a line of python. Why? Python has a gazillion modules and support for many, many
+        databases. If you need functionality that Rampart doesn't (yet) provide, this can get your
+        there. See <a href="https://rampart.dev/docs/rampart-python.html#example-use-importing-data">this example</a>
+        for a quick rundown of what is possible.
+       </p><a href="https://rampart.dev/docs/rampart-python.html" class="btn btn-primary tinybutt">more info...</a>
+      </div>
+     </div>
+     <div class="col-md-4 col-sm-6 d-flex align-items-start">
+      <div>
+       <h3>
+        OS Utilities
+       </h3>
+       <p>
+        All the common commands and functions required to manipulate files and talk to the OS are
+        in here <i>(hopefully)</i>: <span class="courier">printf(), sprintf(), fopen(), fread(),
+        fwrite(), hexify(), dehexify(), trim(), stat(), exec(), shell(), kill(), mkdir(), rmdir(),
+        sleep()</span>... and a lot more.
+       </p><a href="https://rampart.dev/docs/rampart-utils.html" class="btn btn-primary tinybutt">more info...</a>
+      </div>
+     </div>
+     <div class="col-md-4 col-sm-6 d-flex align-items-start">
+      <div>
+       <h3>
+        Fast HyperLogLog, non-crypto Hash, & Random
+       </h3>
+       <p>
+        We implemented our own super-fast <a href=
+        "https://en.wikipedia.org/wiki/HyperLogLog">HyperLogLog</a> algorithm for on-line counting
+        of distinct things. e.g. unique IP addresses. It's substantially faster and more accurate
+        than Redis's. Our HLL uses Google's City Hash algorithm internally, but we also expose City
+        Hash and its cousin Murmur Hash, as well as a fast pseudo random number generator based on
+        <a href="https://en.wikipedia.org/wiki/Xorshift">XorShift64</a>.
+       </p><a href="https://rampart.dev/docs/rampart-utils.html#rand-hash-and-hyperloglog" class=
+       "btn btn-primary tinybutt">more info...</a>
+      </div>
+     </div>
+     <div class="col-md-4 col-sm-6 d-flex align-items-start">
+      <div>
+       <h3>
+        More to come
+       </h3>
+       <p>
+        We've been working on assembling Rampart for a beta release since the start of Covid. Some
+        stuff hasn't made it into it yet, but we are continuing to add features and by no means are
+        we nearly done adding things. There are also <a href="https://rampart.dev/docs/tutorialtoc.html">tutorials</a>
+        and <a href="https://rampart.dev/docs/rampart-extras.html">unsupported extras</a> which can give you an idea
+        of the direction we are heading.
+       </p>
+      </div>
+     </div>
+    </div>
+    <div class="row g-3">
+     <h2 class="pb-2 border-top">
+      Why did we do this?
+     </h2>
+     <p>
+      While NodeJS is extremely popular and NPM provides a ton of add-ons quickly, on the whole
+      it's pretty fat. By the time you configure MariaDB and Apache Lucene you've eaten a day (or
+      more) and a considerable amount of resources on the host machine. Additionally, it's not that
+      much fun.
+     </p>
+     <p>
+      In creating Rampart we sought to create a "full stack" that was simple and fast to download,
+      configure, and start creating whatever application you had in mind in a time frame measured
+      in minutes rather than days. User machines, phones, and IOT devices need to serve their
+      primary role without impediment. Rampart's job is to support that role and not get in the
+      way. OTOH if you dedicate a machine or cluster to a Rampart task you'll get a lot more done
+      with a lot less investment.
+     </p>
+     <p>
+      We chose the DukTape javascript engine over the V8 engine because while V8 is very fast, it's
+      also kind of a RAM and CPU pig. Our philosophy was to do everything difficult or complex in C
+      and let javascript be the fun-glue. That way it really didn't matter what engine was chosen.
+      Almost every module is coded in C as is the DukTape interpreter. This makes everything
+      extremely portable with a minimum amount of fuss. We include the Babel transpiler to drag
+      DukTape into ECMAScript 2015+ land. Rampart checks at runtime if you've changed anything and
+      then transpiles automatically behind the scenes.
+     </p>
+    </div>
+    <p></p>
+    <div class="row g-3">
+     <h2 class="pb-2 border-top">
+      Who are we?
+     </h2>
+     <p>
+      Moat Crossing Systems LLC, the makers of Rampart, is a couple of guys who between them have
+      developed software and applications that have served many billions of pages of database
+      backed content on the internet. We had some summer help from a couple of Columbia students
+      who helped up keep tabs on the "current-think" and coded some of the OS Utility functions. It
+      all started in January of 2020 with a phone conversation where we were bitching about how
+      un-fun web development had become, and how resource heavy everything seemed to be. A comment
+      was made that if we could full-text index Wikipedia and serve it up on a Raspberry Pi Zero,
+      then we'd have something unique that people might want. <a href=
+      "https://rampart.dev/apps/site/run_demo.html?demo=wikipedia">So that's what we did</a>.
+     </p>
+     <p>
+      We hope you will give this thing a try. Contact us <a href="https://rampart.dev/apps/site/contact.html">here</a>
+      or at <svg height="28" width="228" xmlns="http://www.w3.org/2000/svg" style=
+      "position: relative; top:6px">
+      <text x="0" y="12">
+       s
+      </text>
+      <text x="84" y="12">
+       @
+      </text>
+      <text x="96" y="12">
+       r
+      </text>
+      <text x="72" y="12">
+       t
+      </text>
+      <text x="36" y="12">
+       p
+      </text>
+      <text x="12" y="12">
+       u
+      </text>
+      <text x="144" y="12">
+       a
+      </text>
+      <text x="132" y="12">
+       p
+      </text>
+      <text x="168" y="12">
+       t
+      </text>
+      <text x="120" y="12">
+       m
+      </text>
+      <text x="60" y="12">
+       r
+      </text>
+      <text x="216" y="12">
+       v
+      </text>
+      <text x="204" y="12">
+       e
+      </text>
+      <text x="48" y="12">
+       o
+      </text>
+      <text x="108" y="12">
+       a
+      </text>
+      <text x="180" y="12">
+       .
+      </text>
+      <text x="192" y="12">
+       d
+      </text>
+      <text x="24" y="12">
+       p
+      </text>
+      <text x="156" y="12">
+       r
+      </text></svg> if you have questions or need help with something. Maybe later on we'll get
+      more sophisticated with our support infrastructure, but for now one of us will try to get
+      back to you as soon as possible.
+     </p>
+    </div>
+    <div class="row g-3">
+     <h2 class="pb-2 border-top">
+      <a id="the_bush">The Raspberry Bush</a>
+     </h2>
+     <div class=
+     "row bg-dark p-3 rounded text-white overflow-hidden d-flex justify-content-center m-0 p-0">
+      <p>
+       Here's a photo of our fancy server farm before it was installed in a rack at the ISP.
+       There's four Pi Zeros and two Pi 4s. The four Zeros are mirror copies of one another just in
+       case *stuff* happens. The two Pi 4's allow us to do development and builds a bit faster than
+       the Zeros allow us. The "bush" is proxied by an NginX server running on a fairly large old
+       Xeon machine. This made certificate managment and other things somewhat easier on us.
+      </p>
+      <div class="d-flex justify-content-center">
+       <img src="https://rampart.dev/images/server_farm_sm.jpg" style=
+       "width: 100%; height: 100%; max-width:587px;padding-bottom:1em;">
+      </div>
+      <p>
+       Please note that we have no particular bias towards producing software principally for the
+       Raspberry Pi. The whole purpose for its usage here is to demostrate how much Rampart can do
+       with minimimal resources. That way you can extrapolate how fast and efficient it will be on
+       larger Intel, AMD, and ARM platforms.
+      </p>
+     </div>
+    </div>
+    <div class="row g-3">
+     <div class="d-flex justify-content-center m-0">
+      <pre class="lg-font m-0">
+         |&gt;&gt;            |&gt;&gt;
+       __|__          __|__
+      \  |  /         \   /
+       | ^ |          | ^ |  
+     __| o |__________| o |__   
+    [__|_|__|(rp)|  | |______]
+____[|||||||||||||__|||||||||]____
+</pre>
+     </div>
+     <div class="lg-font-big d-flex justify-content-center m-0 courier">
+      RAMPART
+     </div>
+    </div>
+    <footer class="py-1">
+     <div class="d-flex justify-content-between py-1 my-1 border-top">
+      <p class="my-0">
+       © 2024 Moat Crossing Systems. All rights reserved.
+      </p>
+      <p></p>
+      <p>
+       <a target="_blank" href="https://rampart.dev/apps/editor/?file=/apps/site.js" class="btn btn-outline-success"
+       style="line-height:10px;opacity:0.65">View JS Source</a>
+      </p>
+      <p></p>
+     </div>
+    </footer>
+   </div>
+  </main>
+  <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script> 
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"
+  integrity="sha384-ka7Sk0Gln4gmtz2MlQnikT1wXgYsOg+OMhuP+IlRH9sENBO0LRn5q+8nbTov4+1p" crossorigin=
+  "anonymous"></script>
+ </body>
+</html>
