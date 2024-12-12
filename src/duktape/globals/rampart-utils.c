@@ -9617,16 +9617,42 @@ static duk_ret_t print_simplified_err(duk_context *ctx)
 static void _deepcopy(duk_context *ctx, duk_idx_t targidx, duk_idx_t srcidx, int appendarr)
 {
     duk_idx_t i;
+    void *p;
+    int isdupobj=0;
 
-    //printf("srcidx=%d\n",(int)srcidx);
-    //prettyprintstack(ctx);
+    //store target with src pointer for cyclic tracking
+    p=duk_get_heapptr(ctx, srcidx);
+    duk_push_sprintf(ctx, "d%p", p);
+    duk_dup(ctx, targidx);
+    duk_put_prop(ctx, 0);
+
     duk_enum(ctx, srcidx, DUK_ENUM_OWN_PROPERTIES_ONLY|DUK_ENUM_NO_PROXY_BEHAVIOR|DUK_ENUM_INCLUDE_HIDDEN|DUK_ENUM_INCLUDE_SYMBOLS|DUK_ENUM_SORT_ARRAY_INDICES);
-
-    while( duk_next(ctx, -1, 1))
+    while(duk_next(ctx, -1, 1))
     {
         // [ ..., enum(-3), key(-2), value(-1) ]
+        //printf("checking key %s\n", duk_get_string(ctx, -2));
+        isdupobj=0;
+
         int type =rp_gettype(ctx, -1);
-        if(type == RP_TYPE_ARRAY)
+
+        // check for cyclic object references
+        if(type == RP_TYPE_ARRAY || type == RP_TYPE_OBJECT) {
+            p=duk_get_heapptr(ctx, -1);
+            duk_push_sprintf(ctx, "d%p", p);
+            if(duk_get_prop(ctx,0))
+                isdupobj=1;
+            else
+                duk_pop(ctx);
+        }
+
+        if(isdupobj)
+        {
+            // [ ..., enum(-4), key(-3), value(-2), refvalue(-1) ]            
+            //replace object value with the one already copied below
+            duk_replace(ctx, -2);
+            // [ ..., enum(-3), key(-2), refvalue(-1) ]            
+        }
+        else if(type == RP_TYPE_ARRAY)
         {
             if(appendarr)
             {
@@ -9684,9 +9710,9 @@ static void _deepcopy(duk_context *ctx, duk_idx_t targidx, duk_idx_t srcidx, int
             duk_remove(ctx, -2);
             // [ ..., key(-2), copiedObj(-1) ]
         }
-        //printf("target=%d\n",(int)targidx);
-        //prettyprintstack(ctx);
+
         // else, [ ..., enum(-3), key(-2), value(-1) ] already in place
+
         if(appendarr && rp_gettype(ctx, targidx) == RP_TYPE_ARRAY)
         {
            duk_put_prop_index(ctx, targidx, duk_get_length(ctx,targidx));
@@ -9703,8 +9729,9 @@ static void _deepcopy(duk_context *ctx, duk_idx_t targidx, duk_idx_t srcidx, int
 }
 
 static duk_ret_t deepCopy(duk_context *ctx) {
-    duk_idx_t top=duk_get_top(ctx), i=0;
+    duk_idx_t top, i;
     int appendarr=0;
+
     if(duk_get_boolean_default(ctx, 0, 0))  //if true, append arrays
     {
         appendarr=1;
@@ -9712,14 +9739,20 @@ static duk_ret_t deepCopy(duk_context *ctx) {
         top--;
     }
 
-    for(;i<top;i++)
+    // for cyclic/self referencing object detection
+    duk_push_object(ctx);
+    duk_insert(ctx, 0);
+
+    top=duk_get_top(ctx);
+
+    for(i=1;i<top;i++)
         if(rp_gettype(ctx, i) != RP_TYPE_OBJECT)
             RP_THROW(ctx, "deepCopy: arguments must be plain Objects");
 
-    for(i=1;i<top;i++)
-        _deepcopy(ctx, 0, i, appendarr);
+    for(i=2;i<top;i++)
+        _deepcopy(ctx, 1, i, appendarr);
 
-    duk_pull(ctx, 0);
+    duk_pull(ctx, 1);
     return 1;
 }
 
