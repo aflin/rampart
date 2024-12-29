@@ -244,7 +244,7 @@ static int enableRawMode(int fd) {
      * no start/stop output control. */
     raw.c_iflag &= ~(BRKINT | ICRNL | INPCK | ISTRIP | IXON);
     /* output modes - disable post processing */
-    raw.c_oflag &= ~(OPOST);
+    //raw.c_oflag &= ~(OPOST); // -ajf 2024/12/29 -- see https://github.com/antirez/linenoise/issues/128
     /* control modes - set 8 bit chars */
     raw.c_cflag |= (CS8);
     /* local modes - choing off, canonical off, no extended functions,
