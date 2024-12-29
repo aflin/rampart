@@ -1,3 +1,33 @@
+v0.5.1
+    - rampart
+                           Linenoise multi-thread fix in REPL.
+    - unsupported extras
+                           Added text converter rampart-converter.js module.
+                           Compile fix for rampart-gm.so.
+    - rampart-net
+                           Added option for specifying DNS server for
+                           async resolve/reverse functions.
+    - rampart-utils
+                           Added deepCopy().
+                           getType returns "Filehandle" for filehandle
+                           objects opened with rampart.utils.fopen().
+    - rampart-curl
+                           Added chunkCallback for fetch and submit.
+                           Fixed bug to get proper duk_context in async
+                           functions when running from server/websockets.
+    - rampart-crypto
+                           Added crypto.passwd for checking password hashes
+                           as found in /etc/passwd or /ect/shadow
+    - rampart-lmdb
+                           Restructure of db in environment.  LMDB default/null
+                           database is now only for metadata.  A database
+                           named "default" is the default for rampart.
+    - rampart-server
+                           Error message for not found websocket url
+                           is sent via websocket message along with
+                           disconnect.
+                           Added mime type for *.epub.
+
 v0.5.0 (First Beta release)
     - rampart              Array.includes() -NaN check.
                            Use babel command line opt.
