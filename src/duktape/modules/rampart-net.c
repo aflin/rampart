@@ -974,7 +974,7 @@ static void async_dns_callback(int errcode, struct evutil_addrinfo *addr, void *
     duk_set_top(ctx,top);
 }
 
-static void async_resolve(RPSOCK *sinfo, const char *hn)
+static void async_resolve(duk_context *ctx, RPSOCK *sinfo, const char *hn, const char *server)
 {
     struct evutil_addrinfo hints;
     DNS_CB_ARGS *dnsargs = NULL;
@@ -996,6 +996,17 @@ static void async_resolve(RPSOCK *sinfo, const char *hn)
     dnsargs->addr = NULL;
     sinfo->aux = (void *)dnsargs;
 
+    if(server) {
+        sinfo->dnsbase = evdns_base_new(sinfo->base,
+            EVDNS_BASE_DISABLE_WHEN_INACTIVE);
+        if(evdns_base_nameserver_ip_add(sinfo->dnsbase, server) != 0)
+        {
+            free(dnsargs->host);
+            free(dnsargs);
+            RP_THROW(ctx, "resolve: failed to configure nameserver");
+        }
+        dnsargs->freebase=1;
+    } else
     // not using thread dnsbase
     if(!sinfo->dnsbase)
     {
@@ -1029,7 +1040,8 @@ static int resolver_callback(void *arg, int unused)
 static duk_ret_t duk_rp_net_resolver_resolve(duk_context *ctx)
 {
     RPSOCK *args = NULL;
-    const char *host = REQUIRE_STRING(ctx, 0, "net.resolve: first argument must be a string");
+    const char *server=NULL, *host = REQUIRE_STRING(ctx, 0, "net.resolve: first argument must be a string");
+    duk_idx_t func_idx=1;
 
     duk_push_this(ctx);
 
@@ -1037,12 +1049,17 @@ static duk_ret_t duk_rp_net_resolver_resolve(duk_context *ctx)
 
     args->post_dns_cb = resolver_callback; // for cleanup
 
-    if(duk_is_function(ctx, 1))
-    {
-        duk_rp_net_on(ctx, "resolve_async", "lookup", 1, 2); // run callback as "lookup" event
+    if(duk_is_string(ctx, 1)) {
+        func_idx=2;
+        server = duk_get_string(ctx, 1);
     }
 
-    async_resolve(args, host);
+    if(duk_is_function(ctx, func_idx))
+    {
+        duk_rp_net_on(ctx, "resolve_async", "lookup", func_idx, 3); // run callback as "lookup" event
+    }
+
+    async_resolve(ctx, args, host, server);
 
     return 1; // this on top
 }
@@ -1064,8 +1081,8 @@ static duk_ret_t duk_rp_net_resolve_async(duk_context *ctx)
     if(!duk_is_string(ctx, 0))
         RP_THROW(ctx, "resolve_async: first argument must be a String (hostname)");
 
-    if(!duk_is_function(ctx, 1))
-        RP_THROW(ctx, "resolve_async: second argument must be a function");
+    if(!duk_is_function(ctx, 1) && !duk_is_string(ctx, 1))
+        RP_THROW(ctx, "resolve_async: second argument must be a String (Server) or Function (callback)");
 
     duk_push_this(ctx);
     duk_get_prop_string(ctx, -1, "Resolver");
@@ -1073,8 +1090,9 @@ static duk_ret_t duk_rp_net_resolve_async(duk_context *ctx)
     duk_new(ctx, 0); // var r = new resolver();
     duk_push_string(ctx, "resolve"); // r.resolve
     duk_dup(ctx,0); // host
-    duk_dup(ctx,1); // function
-    duk_call_prop(ctx, -4, 2); // r.resolve(host, function(){})
+    duk_dup(ctx,1); // function or server
+    duk_dup(ctx,2); // function or undefined
+    duk_call_prop(ctx, -5, 3); // r.resolve(host, server, function(){})
     return 1;
 }
 
@@ -1130,12 +1148,9 @@ static int push_reverse(duk_context *ctx, const char *hn)
 duk_ret_t duk_rp_net_reverse(duk_context *ctx)
 {
     push_reverse(ctx,
-        REQUIRE_STRING(ctx, 0, "resolve: argument must be a String") );
+        REQUIRE_STRING(ctx, 0, "reverse: argument must be a String") );
     return 1;
 }
-
-/* ***** reverse async ***** */
-
 
 static void async_dns_rev_callback(int errcode, char type, int count, int ttl, void *addresses, void *arg)
 {
@@ -1167,14 +1182,28 @@ static void async_dns_rev_callback(int errcode, char type, int count, int ttl, v
     socket_cleanup(ctx, sinfo, WITH_CALLBACKS);
 }
 
-static void async_reverse(RPSOCK *sinfo, struct addrinfo *res)
+static void async_reverse(RPSOCK *sinfo, duk_context *ctx, struct addrinfo *res, const char *server)
 {
+
+    if(server)
+    {
+        sinfo->dnsbase = evdns_base_new(sinfo->base,
+            EVDNS_BASE_DISABLE_WHEN_INACTIVE);
+        if(evdns_base_nameserver_ip_add(sinfo->dnsbase, server) != 0)
+        {
+            RP_THROW(ctx, "reverse: failed to configure nameserver");
+        }
+        //just a flag here
+        sinfo->aux=(void*)1;
+    } 
+    else
     // not using thread dnsbase
     if(!sinfo->dnsbase)
     {
         sinfo->dnsbase = evdns_base_new(sinfo->base,
             EVDNS_BASE_DISABLE_WHEN_INACTIVE|EVDNS_BASE_INITIALIZE_NAMESERVERS );
-        //sinfo->aux=sinfo->aux;  // <-- HUH? Why would I write such a thing.  Mushrooms?  LSD?
+        //just a flag here
+        sinfo->aux=(void*)1;
     }
 
     if(res->ai_family == AF_INET)
@@ -1189,8 +1218,9 @@ static void async_reverse(RPSOCK *sinfo, struct addrinfo *res)
 static duk_ret_t duk_rp_net_resolver_reverse(duk_context *ctx)
 {
     RPSOCK *args = NULL;
-    const char *host = REQUIRE_STRING(ctx, 0, "net.reverse: first argument must be a string");
-
+    const char *server=NULL,
+               *host = REQUIRE_STRING(ctx, 0, "net.reverse: first argument must be a string");
+    duk_idx_t func_idx=1;
     struct addrinfo hints, *res;
     int ecode;
 
@@ -1219,11 +1249,17 @@ static duk_ret_t duk_rp_net_resolver_reverse(duk_context *ctx)
 
     args = new_sockinfo(ctx);
 
-    if(duk_is_function(ctx, 1))
+    if(duk_is_string(ctx, 1))
     {
-        duk_rp_net_on(ctx, "resolve_async", "lookup", 1, 2); // run callback as "lookup" event
+        server=duk_get_string(ctx, 1);
+        func_idx=2;
     }
-    async_reverse(args, res);
+
+    if(duk_is_function(ctx, func_idx))
+    {
+        duk_rp_net_on(ctx, "resolve_async", "lookup", func_idx, 3); // run callback as "lookup" event
+    }
+    async_reverse(args, ctx, res, server);
 
     return 1; // this on top
 }
@@ -1233,8 +1269,8 @@ static duk_ret_t duk_rp_net_reverse_async(duk_context *ctx)
     if(!duk_is_string(ctx, 0))
         RP_THROW(ctx, "resolve_async: first argument must be a String (hostname)");
 
-    if(!duk_is_function(ctx, 1))
-        RP_THROW(ctx, "resolve_async: second argument must be a function");
+    if(!duk_is_function(ctx, 1) && !duk_is_string(ctx, 1))
+        RP_THROW(ctx, "resolve_async: second argument must be a String (server) or Function (callback)");
 
     duk_push_this(ctx);
     duk_get_prop_string(ctx, -1, "Resolver");
@@ -1242,8 +1278,9 @@ static duk_ret_t duk_rp_net_reverse_async(duk_context *ctx)
     duk_new(ctx, 0); // var r = new Resolver();
     duk_push_string(ctx, "reverse"); // r.reverse()
     duk_dup(ctx,0); // host
-    duk_dup(ctx,1); // function
-    duk_call_prop(ctx, -4, 2); // r.resolve(host, function(){})
+    duk_dup(ctx,1); // function or server
+    duk_dup(ctx,2); // function or undefined
+    duk_call_prop(ctx, -5, 3); // r.resolve(host, server, function(){})
     return 1;
 }
 
@@ -2463,7 +2500,7 @@ static duk_ret_t duk_rp_net_socket_connect(duk_context *ctx)
         duk_put_prop_string(ctx, tidx, "_hostPort");
 
         args->post_dns_cb = make_sock_conn;
-        async_resolve(args, host);
+        async_resolve(ctx, args, host, NULL);
     }
     else
     {
@@ -3685,11 +3722,11 @@ duk_ret_t duk_open_module(duk_context *ctx)
     duk_push_object(ctx); // prototype
 
         //resolver.resolve
-        duk_push_c_function(ctx, duk_rp_net_resolver_resolve, 2);
+        duk_push_c_function(ctx, duk_rp_net_resolver_resolve, 3);
         duk_put_prop_string(ctx, -2, "resolve");
 
         //resolver.reverse
-        duk_push_c_function(ctx, duk_rp_net_resolver_reverse, 2);
+        duk_push_c_function(ctx, duk_rp_net_resolver_reverse, 3);
         duk_put_prop_string(ctx, -2, "reverse");
 
         // resolver.on()
@@ -3706,11 +3743,11 @@ duk_ret_t duk_open_module(duk_context *ctx)
     duk_put_prop_string(ctx, -2, "Resolver");
 
     //resolve_async
-    duk_push_c_function(ctx, duk_rp_net_resolve_async, 2);
+    duk_push_c_function(ctx, duk_rp_net_resolve_async, 3);
     duk_put_prop_string(ctx, -2, "resolve_async");
 
     //reverse_async
-    duk_push_c_function(ctx, duk_rp_net_reverse_async, 2);
+    duk_push_c_function(ctx, duk_rp_net_reverse_async, 3);
     duk_put_prop_string(ctx, -2, "reverse_async");
 
     duk_push_c_function(ctx, net_finalizer, 1);
