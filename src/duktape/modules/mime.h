@@ -149,6 +149,7 @@ RP_MTYPES rp_mimetypes[] = {
     {"env", "application/x-envoy"},
     {"eot", "application/vnd.ms-fontobject"},
     {"eps", "application/postscript"},
+    {"epub", "application/epub+zip"},
     {"es", "application/x-esrehber"},
     {"etx", "text/x-setext"},
     //  {"evy", "application/envoy"},
