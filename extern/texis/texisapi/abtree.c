@@ -612,7 +612,8 @@ void *key;
 		if(keysize > ((t->pagesize - sizeof(BPAGE))/4))
 		{
 			putmsg(MERR + MAE, Fn,
-			      "Cannot insert %wu-byte value `%s' into B-tree %s: Value too large",
+                  //-AJF 20241231 - use %llu instead of %wu
+			      "Cannot insert %llu-byte value `%s' into B-tree %s: Value too large",
 			       (EPI_HUGEUINT)keysize, btkey2str(tmp, sizeof(tmp), key, keysize), getdbffn(t->dbf));
 			goto err;
 		}
@@ -2854,7 +2855,8 @@ char    *argv[];
     }
   qsort(items, NITEMS, sizeof(items[0]), (flags & BT_FIXED) ? fcmp : vcmp);
   psize = (flags & BT_FIXED) ? 2 : 64;
-  if ((t = openbtree(file, psize, 10, flags)) == BTREEPN) goto err;
+  // -AJF 20241231 - correct number of arguments for openbtree
+  if ((t = openbtree(file, psize, 10, flags, O_RDWR | O_CREAT)) == BTREEPN) goto err;
   if (!dump && ioctlbtree(t, BTREE_IOCTL_LINEAR, NULL) < 0)
     goto err;
   if (dump)
