@@ -2559,6 +2559,40 @@ static void rp_pushfield(duk_context *ctx, FLDLST *fl, int i)
     switch (type)
     {
     case FTN_CHAR:
+    {
+        char *v=fl->data[i];
+        if(v[0]=='\xff' && v[1] > '\xf9' )
+        {
+            switch(v[1])
+            {
+                case '\xff':
+                    duk_push_string(ctx, v+2);
+                    break;
+                case '\xfe':
+                    duk_push_number(ctx, ((double*)v)[1]);
+                    break;
+                case '\xfd':
+                    duk_push_true(ctx);
+                    break;
+                case '\xfc':
+                    duk_push_false(ctx);
+                    break;
+                case '\xfb':
+                    duk_push_null(ctx);
+                    break;
+                case '\xfa':
+                    duk_push_string(ctx, v+2);
+                    duk_json_decode(ctx, -1);
+                    break;
+                default:
+                    duk_push_string(ctx,v);
+                    break;
+            }
+
+            break;
+        }
+        //else fallthrough
+    }
     case FTN_INDIRECT:
     {
         duk_size_t  sz = (duk_size_t) strlen(fl->data[i]);
@@ -5724,8 +5758,12 @@ static const char *built_in_schupd = "function(index, date, frequency, thresh /*
 char install_dir[PATH_MAX+21];
 duk_ret_t rp_exec(duk_context *ctx);
 
+extern int TX_is_rampart;
+
 duk_ret_t duk_open_module(duk_context *ctx)
 {
+
+    TX_is_rampart=1;
     /* Set up locks:
      * this will be run once per new duk_context/thread in server.c
      * but needs to be done only once for all threads

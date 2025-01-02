@@ -32,6 +32,10 @@ extern "C" {
 #include "eqv.h"
 #include "mdpar.h"
 #include "mmsg.h"
+
+// -AJF 20250101 - flag to identify as running from rampart
+extern int TX_is_rampart;
+
 #ifdef _WIN32
 #  ifdef DWORD
       extern DWORD FAR epi_wmemamt(DWORD newamt);

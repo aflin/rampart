@@ -1441,52 +1441,147 @@ TXmkComputedJson(FLD *f)
    {
       char *res;
       json_t *jres;
+      double *dres=NULL;
+      size_t ressz=0;
+
       if((jres = TXjsonPath(j, getfld(f->fldlist[1], NULL), NULL))) {
+
+         //-AJF 20250101 - need to distinguish between varchar and json data in rampart
+         // Hack by adding \xff\xf- to beginning of string to mark json type.  Decoded in rampart-sql.c
+
          switch(json_typeof(jres)) {
             case JSON_STRING:
-               res = strdup(json_string_value(jres));
+               if(TX_is_rampart)
+               {
+#ifdef __GNUC__
+                   if(asprintf(&res, "\xff\xff%s", json_string_value(jres)) == -1) res = NULL;
+#else
+                   printed = snprintf(tmpbuf, TMPBUFSZ, "\xff\xff%s",json_string_value(jres) );
+                   if(printed < (TMPBUFSZ-1))
+                      res = strdup(tmpbuf);
+                   else
+                      res = NULL;
+#endif
+               }
+               else
+                   res = strdup(json_string_value(jres));
+               ressz=strlen(res)+1;
                break;
             case JSON_INTEGER:
-#ifdef __GNUC__
-               if(asprintf(&res, "%" JSON_INTEGER_FORMAT, json_integer_value(jres)) == -1) res = NULL;
-#else
-               printed = snprintf(tmpbuf, TMPBUFSZ, "%" JSON_INTEGER_FORMAT, json_integer_value(jres));
-               if(printed < (TMPBUFSZ-1))
-                  res = strdup(tmpbuf);
+               if(TX_is_rampart)
+               {
+                   ressz = 2*sizeof(double)+1;
+                   dres = (double *)TXcalloc(TXPMBUFPN, __FUNCTION__, 1, ressz);
+                   res=(char*)dres;
+                   dres[1]=(double) json_integer_value(jres);
+                   res[0]='\xff';
+                   res[1]='\xfe';
+               }
                else
-                  res = NULL;
+               {
+#ifdef __GNUC__
+                   if(asprintf(&res, "%" JSON_INTEGER_FORMAT, json_integer_value(jres)) == -1) res = NULL;
+#else
+                   printed = snprintf(tmpbuf, TMPBUFSZ, "%" JSON_INTEGER_FORMAT, json_integer_value(jres));
+                   if(printed < (TMPBUFSZ-1))
+                      res = strdup(tmpbuf);
+                   else
+                      res = NULL;
 #endif
+               }
                break;
             case JSON_REAL:
-#ifdef __GNUC__
-               if(asprintf(&res, "%f", json_real_value(jres)) == -1) res = NULL;
-#else
-               printed = snprintf(tmpbuf, TMPBUFSZ, "%f", json_real_value(jres));
-               if(printed < (TMPBUFSZ-1))
-                  res = strdup(tmpbuf);
+               if(TX_is_rampart)
+               {
+                   ressz = 2*sizeof(double)+1;
+                   dres = (double *)TXcalloc(TXPMBUFPN, __FUNCTION__, 1, ressz);
+                   res=(char*)dres;
+                   dres[1]=json_real_value(jres);
+                   res[0]='\xff';
+                   res[1]='\xfe';
+               }
                else
-                  res = NULL;
+               {
+#ifdef __GNUC__
+                   if(asprintf(&res, "%f", json_real_value(jres)) == -1) res = NULL;
+#else
+                   printed = snprintf(tmpbuf, TMPBUFSZ, "%f", json_real_value(jres));
+                   if(printed < (TMPBUFSZ-1))
+                      res = strdup(tmpbuf);
+                   else
+                      res = NULL;
 #endif
+               }
                break;
             case JSON_TRUE:
-               res = strdup("true");
+               if(TX_is_rampart)
+               {
+                   res = strdup("\xff\xfd");
+                   ressz=3;
+               }
+               else
+               {
+                   res = strdup("true");
+                   ressz=5;
+               }
                break;
             case JSON_FALSE:
-               res = strdup("false");
+               if(TX_is_rampart)
+               {
+                   res = strdup("\xff\xfc");
+                   ressz=3;
+               }
+               else
+               {
+                   res = strdup("false");
+                   ressz=6;
+               }
                break;
             case JSON_OBJECT:
             case JSON_ARRAY:
               res = json_dumps(jres, TXjsonFlags);
+              if(TX_is_rampart)
+              {
+                  char *res2;
+#ifdef __GNUC__
+                   if(asprintf(&res2, "\xff\xfa%s", res) == -1) res = NULL;
+#else
+                   printed = snprintf(tmpbuf, TMPBUFSZ, "\xff\xfa%s", res);
+                   if(printed < (TMPBUFSZ-1))
+                   {
+                      res2 = strdup(tmpbuf);
+                   }
+                   else
+                      res2 = NULL;
+#endif
+                  ressz = strlen(res) +3;
+                  free(res);
+                  res=res2;
+              }
               break;
             case JSON_NULL:
-              res = strdup("null");
+               if(TX_is_rampart)
+               {
+                   res = strdup("\xff\xfb");
+                   ressz=3;
+               }
+               else
+               {
+                   res = strdup("null");
+                   ressz=5;
+               }
               break;
             default:
                res = strdup("WTF: Fix mkComputedJson");
 
          }
+
          if(res)
-            setfldandsize(f, res, strlen(res)+1, FLD_KEEP_KIND);
+         {
+            if(!TX_is_rampart)
+                ressz=strlen(res)+1;
+            setfldandsize(f, res, ressz, FLD_KEEP_KIND);
+         }
          else
             setfldandsize(f, res, 0, FLD_KEEP_KIND);
       }

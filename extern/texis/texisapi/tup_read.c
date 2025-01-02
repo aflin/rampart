@@ -472,9 +472,17 @@ TXCOUNTINFO	*countInfo;	/* (in/out, opt.) row count stats */
 		{
 			if(t->index.indexdataonly)
 			{
-				t->recid = btloc;
-				buftofld(tempbuf, t->index.indexdbtbl->tbl, i);
-				tup_copy3(t, t->index.indexdbtbl, fo);
+			    // -AJF 20250101 - if json, we need table data so
+			    // we can add rampart hack coding to varchar in TXmkComputedJson()
+			    FLD **vf = t->tbl->vfield;
+			    if(vf && vf[0] && vf[0]->kind==TX_FLD_COMPUTED_JSON)
+			        t->recid = TXmygettblrow(t, &btloc);
+                else
+                {
+                    t->recid = btloc;
+                    buftofld(tempbuf, t->index.indexdbtbl->tbl, i);
+                    tup_copy3(t, t->index.indexdbtbl, fo);
+                }
 			}
 			else
 			{

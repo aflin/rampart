@@ -30,7 +30,7 @@ set(LIBEVENT_INCLUDE_DIRS
 set(LIBEVENT_LIBRARY_DIRS "${PROJECT_BINARY_DIR}/extern/libevent/lib")
 
 add_definitions(-D_XOPEN_SOURCE -D_GNU_SOURCE -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -D_FILE_OFFSET_BITS=64)
-add_compile_options(-fPIC)
+add_compile_options(-fPIC -g)
 
 #
 # include CPack to make install packages

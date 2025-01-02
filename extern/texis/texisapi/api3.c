@@ -25,6 +25,9 @@
    }
 #endif
 
+// -AJF 20250101 - flag to identify as running from rampart
+int TX_is_rampart=0;
+
 static int nulleqedit ARGS((APICP *acp));
 static int nulleqedit2 ARGS((APICP *acp,EQVLST ***eql));
 
