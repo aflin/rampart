@@ -1,5 +1,5 @@
-/* Copyright (C) 2024  Aaron Flin - All Rights Reserved
- * Copyright (C) 2024  P. Barton Richards - All Rights Reserved
+/* Copyright (C) 2025  Aaron Flin - All Rights Reserved
+ * Copyright (C) 2025  P. Barton Richards - All Rights Reserved
  * You may use, distribute or alter this code under the
  * terms of the MIT license
  * see https://opensource.org/licenses/MIT

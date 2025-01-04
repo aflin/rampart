@@ -1,7 +1,7 @@
 /*
     almanac.c
 
-    Copyright (c) 2024 Aaron Flin
+    Copyright (c) 2025 Aaron Flin
     MIT LICENSED
     https://opensource.org/license/mit
 
