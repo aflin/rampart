@@ -9736,7 +9736,6 @@ static duk_ret_t deepCopy(duk_context *ctx) {
     {
         appendarr=1;
         duk_remove(ctx, 0);
-        top--;
     }
 
     // for cyclic/self referencing object detection
