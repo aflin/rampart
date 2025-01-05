@@ -38,9 +38,11 @@ var convert = new converter({
 
 To convert a document:
 
-var txt = convertFile('/path/to/my/file.ext', options);
+var converter = require("rampart-converter.js");
+var convert = new converter();
+var txt = convert.convertFile('/path/to/my/file.ext', options);
     or
-var txt = convert(myFileBufferOrString, options);
+var txt = convert.convert(myFileBufferOrString, options);
 
 where "options' overrides the defaultOptions above and 
 is either of:
