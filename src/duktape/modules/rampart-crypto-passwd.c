@@ -7,7 +7,7 @@
  * https://www.openssl.org/source/license.html
 
  This is a modified version of openssl/apps/passwd.c
- adapted for rampart-crypt
+ adapted for rampart-crypto
 
  */
 
@@ -469,7 +469,7 @@ static char *shacrypt(const char *passwd, const char *magic, const char *salt)
 }
 
 char * rp_crypto_do_passwd(int passed_salt, char **salt_p, char **salt_malloc_p,
-                     char *passwd, BIO *out,
+                     char *passwd,
                      size_t pw_maxlen, int mode)
 {
     char *hash = NULL;

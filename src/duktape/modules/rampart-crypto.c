@@ -34,8 +34,159 @@
     }
 
 char *rp_crypto_do_passwd(int passed_salt, char **salt_p, char **salt_malloc_p,
-                     char *passwd, BIO *out,
+                     char *passwd,
                      size_t pw_maxlen, int mode);
+
+/*
+rampart> crypto.passwd('hello','mysalt','sha512')
+{
+   "line": "$6$mysalt$HjkH9tPwoOZC7.Tbbf.865I0VP2JrcvX25YLWcUkIkNvMWhU/minCmQlwt98agkOaRtd2xgXkljSlU1AN7Lr/0",
+   "salt": "mysalt",
+   "hash": "HjkH9tPwoOZC7.Tbbf.865I0VP2JrcvX25YLWcUkIkNvMWhU/minCmQlwt98agkOaRtd2xgXkljSlU1AN7Lr/0",
+   "mode": "sha512"
+}
+rampart> crypto.passwd('hello','mysalt','sha256')
+{
+   "line": "$5$mysalt$njl.kLzQo5JAjJgLM8UhuINnLhZQslCv5IeR4hpzccC",
+   "salt": "mysalt",
+   "hash": "njl.kLzQo5JAjJgLM8UhuINnLhZQslCv5IeR4hpzccC",
+   "mode": "sha256"
+}
+rampart> crypto.passwd('hello','mysalt','md5')
+{
+   "line": "$1$mysalt$wjVpLe2hQU6gA4ia4fa5J0",
+   "salt": "mysalt",
+   "hash": "wjVpLe2hQU6gA4ia4fa5J0",
+   "mode": "md5"
+}
+rampart> crypto.passwd('hello','mysalt','apr1')
+{
+   "line": "$apr1$mysalt$VoNgA1quatjo89.CbYC7r/",
+   "salt": "mysalt",
+   "hash": "VoNgA1quatjo89.CbYC7r/",
+   "mode": "apr1"
+}
+rampart> crypto.passwd('hello','mysalt','aixmd5')
+{
+   "line": "mysalt$w/XTjiQKfx7/FjLQe3Mc1/",
+   "salt": "mysalt",
+   "hash": "w/XTjiQKfx7/FjLQe3Mc1/",
+   "mode": "aixmd5"
+}
+rampart> crypto.passwd('hello','mysalt','crypt')
+{
+   "line": "myou.60xjITpM",
+   "salt": "my",
+   "hash": "ou.60xjITpM",
+   "mode": "crypt"
+}
+*/
+#define RP_PW_TYPE_SHA512    0
+#define RP_PW_TYPE_SHA256    1
+#define RP_PW_TYPE_MD5       2
+#define RP_PW_TYPE_APR1      3
+#define RP_PW_TYPE_AIXMD5    4
+#define RP_PW_TYPE_CRYPT     5
+
+static int passwd_parse_line(const char *line, const char **salt, duk_size_t *salt_sz, const char **hash)
+{
+    const char *s=NULL;
+
+    if(!line || !salt || ! salt_sz || !hash)
+        return -1;
+
+    if(*line == '$')
+    {
+        //sha512, sha256, md5 and apr1
+        char t=line[1];
+        if(t=='6'||t=='5'||t=='1'|| !strncmp(line,"$apr1$",6))
+        {
+            line=strchr(&line[2],'$');
+            if(!line)
+                return -1;
+            line++;
+
+            *salt=line;
+
+            if( !(s=strchr(line,'$')) )
+                return -1;
+            *salt_sz = (duk_size_t)(s-line);
+
+            *hash=s+1;
+
+            switch(t) {
+                case '6': return RP_PW_TYPE_SHA512;
+                case '5': return RP_PW_TYPE_SHA256;
+                case '1': return RP_PW_TYPE_MD5;
+                case 'a': return RP_PW_TYPE_APR1;
+                default:  return -1;
+            }
+        }
+    }
+    else if ( (s=strchr(line,'$')) )
+    {
+        //aixmd5
+        if (strchr(s+1,'$'))
+            return -1;
+        *salt=line;
+        *salt_sz = (duk_size_t)(s-line);
+        *hash=s+1;
+        return RP_PW_TYPE_AIXMD5;
+    }
+    else
+    {
+        //plain crypt
+        *salt=line;
+        *salt_sz=2;
+        *hash=line+2;
+        return RP_PW_TYPE_CRYPT;
+    }
+    return -1;
+} 
+
+static duk_ret_t passwd_components(duk_context *ctx)
+{
+    const char *sa=NULL, *ha=NULL, *mode=NULL,
+               *line = REQUIRE_STRING(ctx, 0, "passwdComponents - parameter must be a String (encoded salt/password line)");
+    duk_size_t sz=0, saltlen=0;
+
+    int ret = passwd_parse_line(line, &sa, &sz, &ha);
+
+    switch(ret) {
+        case RP_PW_TYPE_SHA512 :
+            mode="sha512"; saltlen=16;break;
+        case RP_PW_TYPE_SHA256 :
+            mode="sha256"; saltlen=16;break;
+        case RP_PW_TYPE_MD5    :
+            mode="md5";    saltlen=8; break;
+        case RP_PW_TYPE_APR1   :
+            mode="apr1";   saltlen=8; break;
+        case RP_PW_TYPE_AIXMD5 :
+            mode="aixmd5";saltlen=8; break;
+        case RP_PW_TYPE_CRYPT  :
+            mode="crypt";  saltlen=2; break;
+        default:
+            RP_THROW(ctx, "passwdComponents - error parsing line");
+    }
+
+    duk_push_object(ctx);
+
+    duk_push_string(ctx, line);
+    duk_put_prop_string(ctx, -2, "line");
+
+    if(sz > saltlen)
+        sz=saltlen;
+    duk_push_lstring(ctx, sa, sz); 
+    duk_put_prop_string(ctx, -2, "salt");
+
+    duk_push_string(ctx, ha);
+    duk_put_prop_string(ctx, -2, "hash");
+
+    duk_push_string(ctx, mode);
+    duk_put_prop_string(ctx, -2, "mode");
+
+    return 1;
+}
 
 static duk_ret_t do_passwd(duk_context *ctx)
 {
@@ -43,7 +194,6 @@ static duk_ret_t do_passwd(duk_context *ctx)
     const char *salt = NULL;
     const char *type = "sha512";
     char *salt_malloc=NULL;
-    BIO *out=NULL;
     size_t pw_maxlen=255;
     int passed_salt=0;
     int saltlen;
@@ -76,19 +226,19 @@ static duk_ret_t do_passwd(duk_context *ctx)
             RP_THROW(ctx, "crypto.passwd - mode '%s' is not known", type);
     }
 
-        if (mode == crypto_passwd_crypt)
-        {
-            saltlen = 2;
-            if(passed_salt && strlen(salt) < 2)
-                RP_THROW(ctx, "crypto.passwd - Salt for mode 'crypt' must be 2 characters");
-        }
-        else if (mode == crypto_passwd_md5 || mode == crypto_passwd_apr1 || mode == crypto_passwd_aixmd5)
-            saltlen = 8;
-        else if (mode == crypto_passwd_sha256 || mode == crypto_passwd_sha512)
-            saltlen = 16;
+    if (mode == crypto_passwd_crypt)
+    {
+        saltlen = 2;
+        if(passed_salt && strlen(salt) < 2)
+            RP_THROW(ctx, "crypto.passwd - Salt for mode 'crypt' must be 2 characters");
+    }
+    else if (mode == crypto_passwd_md5 || mode == crypto_passwd_apr1 || mode == crypto_passwd_aixmd5)
+        saltlen = 8;
+    else if (mode == crypto_passwd_sha256 || mode == crypto_passwd_sha512)
+        saltlen = 16;
 
 
-    hash = rp_crypto_do_passwd(passed_salt, (char**)&salt, &salt_malloc, (char*) passwd, out, pw_maxlen, mode);
+    hash = rp_crypto_do_passwd(passed_salt, (char**)&salt, &salt_malloc, (char*) passwd, pw_maxlen, mode);
 
     if(!hash)
         RP_THROW(ctx, "passwd hash creation failed");
@@ -123,6 +273,59 @@ static duk_ret_t do_passwd(duk_context *ctx)
     free(hash);
     return 1;
 }
+
+
+static duk_ret_t check_passwd(duk_context *ctx)
+{
+    const char *sa=NULL, *ha=NULL,
+               *line = REQUIRE_STRING(ctx, 0, "passwdCheck - first parameter must be a String (encoded salt/password line)"),
+               *passwd = REQUIRE_STRING(ctx, 1, "passwdCheck - first parameter must be a String (password)");
+    char *s=NULL, *freesa=NULL, *hash=NULL;
+    duk_size_t sz=0, saltlen=0;
+    int mode = crypto_passwd_sha512;
+
+    int ret = passwd_parse_line(line, &sa, &sz, &ha);
+
+    switch(ret) {
+        case RP_PW_TYPE_SHA512 :
+            mode=crypto_passwd_sha512; saltlen=16;break;
+        case RP_PW_TYPE_SHA256 :
+            mode=crypto_passwd_sha256; saltlen=16;break;
+        case RP_PW_TYPE_MD5    :
+            mode=crypto_passwd_md5;    saltlen=8; break;
+        case RP_PW_TYPE_APR1   :
+            mode=crypto_passwd_apr1;   saltlen=8; break;
+        case RP_PW_TYPE_AIXMD5 :
+            mode=crypto_passwd_aixmd5; saltlen=8; break;
+        case RP_PW_TYPE_CRYPT  :
+            mode=crypto_passwd_crypt;  saltlen=2; break;
+        default:
+            RP_THROW(ctx, "passwdCheck - error parsing line");
+    }
+
+    if(sz>saltlen)
+        sz=saltlen;
+    freesa = strndup(sa,sz);
+
+    hash = rp_crypto_do_passwd(1, &freesa, NULL, (char*) passwd, 255, mode);
+
+    s = strrchr(hash,'$');
+    if(!s) //passwd_crypt
+        s=hash+2;
+    else
+        s++;
+
+    if(freesa)
+        free(freesa);
+
+    if(!strcmp(s,ha))
+        duk_push_true(ctx);
+    else
+        duk_push_false(ctx);
+
+    return 1;
+}
+
 
 /* make sure when we use RAND_ functions, we've seeded at least once */
 static int seeded=0;
@@ -3605,6 +3808,8 @@ const duk_function_list_entry crypto_funcs[] = {
     {"cert_info", duk_cert_info,1},
     {"passToKeyIv", duk_rp_pass_to_keyiv, 1},
     {"passwd", do_passwd, 3},
+    {"passwdCheck", check_passwd, 2},
+    {"passwdComponents", passwd_components, 1},
     {NULL, NULL, 0}
 };
 
