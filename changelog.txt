@@ -1,3 +1,6 @@
+v0.5.2
+    -rampart-utils
+                           deepCopy - added copy buffer option
 v0.5.1
     - rampart
                            Linenoise multi-thread fix in REPL.

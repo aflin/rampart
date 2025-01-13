@@ -9614,7 +9614,10 @@ static duk_ret_t print_simplified_err(duk_context *ctx)
     return 0;
 }
 
-static void _deepcopy(duk_context *ctx, duk_idx_t targidx, duk_idx_t srcidx, int appendarr)
+#define DEEPCOPY_APPENDARRAY 1
+#define DEEPCOPY_COPYBUFFER  2
+
+static void _deepcopy(duk_context *ctx, duk_idx_t targidx, duk_idx_t srcidx, int flags)
 {
     duk_idx_t i;
     void *p;
@@ -9654,7 +9657,7 @@ static void _deepcopy(duk_context *ctx, duk_idx_t targidx, duk_idx_t srcidx, int
         }
         else if(type == RP_TYPE_ARRAY)
         {
-            if(appendarr)
+            if(flags & DEEPCOPY_APPENDARRAY)
             {
                 duk_dup(ctx, -2); //the key
                 if(duk_get_prop(ctx, targidx)) //check if key in target
@@ -9680,7 +9683,7 @@ static void _deepcopy(duk_context *ctx, duk_idx_t targidx, duk_idx_t srcidx, int
             i=duk_get_top_index(ctx);
             //printf("CopyArray\n");
             //prettyprintstack(ctx);
-            _deepcopy(ctx, i, i-1, appendarr);
+            _deepcopy(ctx, i, i-1, flags);
 
             // [ ..., key(-3), array(-2), copiedArr(-1) ]
             duk_remove(ctx, -2);
@@ -9705,15 +9708,59 @@ static void _deepcopy(duk_context *ctx, duk_idx_t targidx, duk_idx_t srcidx, int
             }
             //new target is at -1;
             i=duk_get_top_index(ctx);
-            _deepcopy(ctx, i, i-1, appendarr);
+            _deepcopy(ctx, i, i-1, flags);
             // [ ..., key(-3), object(-2), copiedObj(-1) ]
             duk_remove(ctx, -2);
             // [ ..., key(-2), copiedObj(-1) ]
         }
+        else if ( (flags & DEEPCOPY_COPYBUFFER) && type==RP_TYPE_BUFFER)
+        {
+            duk_size_t sz;
+            void *u8a, *constructor=NULL, *p2, *p = duk_get_buffer_data(ctx, -1, &sz);
 
+            // less complicated to do this each time, rather than setting a global or thread local
+            // and having to figure out from which thread and from which ctx/htctx/wsctx it originated.
+            duk_get_global_string(ctx, "Uint8Array");
+            u8a = duk_get_heapptr(ctx, -1);
+            duk_pop(ctx);
+
+            //if not a Uint8Array, create a new buffer using 'var ret=new oldbuffer.constructor(oldbuffer.length)'
+            if(duk_get_prop_string(ctx, -1, "constructor"))
+            {
+                if(rp_gettype(ctx, -1) == RP_TYPE_FUNCTION)
+                {
+                    constructor = duk_get_heapptr(ctx, -1);
+                    if(constructor != u8a)
+                    {
+                        duk_get_prop_string(ctx, -2, "length");
+                        duk_new(ctx, 1);
+                        p2=duk_get_buffer_data(ctx, -1, &sz);
+                    }
+                    else
+                        constructor=NULL;
+                }
+            }
+
+            if (!constructor)
+            {
+                // its some type of plain buffer (Uint8Array)
+                duk_pop(ctx); // from get_prop(constructor) - undef or u8a constructor or something that wasn't a function
+
+                if(duk_is_dynamic_buffer(ctx, -1))
+                    p2=duk_push_dynamic_buffer(ctx, sz);
+                else
+                    p2=duk_push_fixed_buffer(ctx, sz);
+            }
+
+            memcpy(p2, p, (size_t)sz);  //copy data
+
+            //  [ ..., enum(-4), key(-3), oldBuffer(-2), newBuffer(-1) ]
+            duk_replace(ctx, -2);  //replace old object with copied object
+            //  [ ..., enum(-3), key(-2), newBuffer(-1) ]
+        }
         // else, [ ..., enum(-3), key(-2), value(-1) ] already in place
 
-        if(appendarr && rp_gettype(ctx, targidx) == RP_TYPE_ARRAY)
+        if( (flags &DEEPCOPY_APPENDARRAY) && rp_gettype(ctx, targidx) == RP_TYPE_ARRAY)
         {
            duk_put_prop_index(ctx, targidx, duk_get_length(ctx,targidx));
            duk_pop(ctx);//unused index
@@ -9730,11 +9777,19 @@ static void _deepcopy(duk_context *ctx, duk_idx_t targidx, duk_idx_t srcidx, int
 
 static duk_ret_t deepCopy(duk_context *ctx) {
     duk_idx_t top, i;
-    int appendarr=0;
+    int flags=DEEPCOPY_COPYBUFFER;
 
-    if(duk_get_boolean_default(ctx, 0, 0))  //if true, append arrays
+    if(duk_is_boolean(ctx, 0))
     {
-        appendarr=1;
+        if(duk_get_boolean(ctx,0))
+            flags |= DEEPCOPY_APPENDARRAY;
+        duk_remove(ctx, 0);
+    }
+
+    if(duk_is_boolean(ctx, 0))
+    {
+        if(!duk_get_boolean(ctx,0))
+            flags &= ~(DEEPCOPY_COPYBUFFER);
         duk_remove(ctx, 0);
     }
 
@@ -9749,7 +9804,7 @@ static duk_ret_t deepCopy(duk_context *ctx) {
             RP_THROW(ctx, "deepCopy: arguments must be plain Objects");
 
     for(i=2;i<top;i++)
-        _deepcopy(ctx, 1, i, appendarr);
+        _deepcopy(ctx, 1, i, flags);
 
     duk_pull(ctx, 1);
     return 1;
