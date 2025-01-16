@@ -3172,8 +3172,10 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
     duk_pop(ctx);
 */
 
-    if(duk_get_prop_string(ctx, -1, "appendEnv") && duk_get_boolean_default(ctx,-1,0) )
-        append=1;
+    if(duk_get_prop_string(ctx, -1, "appendEnv"))
+    {
+        append=REQUIRE_BOOL(ctx, -1, "exec: appendEnv must be a Boolean");
+    }
     duk_pop(ctx);
 
     if(duk_get_prop_string(ctx, -1, "env"))
