@@ -84,11 +84,26 @@ static int load_js_module(duk_context *ctx, const char *file, duk_idx_t module_i
         MOD_THROW(ctx, DUK_ERR_ERROR, "Could not open %s: %s\n", file, strerror(errno));
 
     char *buffer = malloc(sb.st_size + 1);
+    char *freebuffer=buffer;
+
     size_t len = fread(buffer, 1, sb.st_size, f);
     if (sb.st_size != len)
         MOD_THROW(ctx, DUK_ERR_ERROR, "Error loading file %s: %s\n", file, strerror(errno));
 
+    //skip any #! line in case this module doubles as a script
     buffer[sb.st_size]='\0';
+    if(buffer[0]=='#' && buffer[1]=='!')
+    {
+        size_t i=0;
+        while(i<len && *buffer!='\n')
+        {
+            i++;
+            buffer++;
+        }
+        if(*buffer=='\n')
+            buffer++;
+    }
+
     duk_push_string(ctx, "(function (module, exports) { ");
 
     /* check for babel and push src to stack */
@@ -102,8 +117,8 @@ static int load_js_module(duk_context *ctx, const char *file, duk_idx_t module_i
         if ( !(isbabel && isbabel == file + strlen(file) - 9) )
         {
             char *tickified = tickify(buffer, sb.st_size, &err, &lineno);
-            free(buffer);
-            buffer = tickified;
+            free(freebuffer);
+            freebuffer = buffer = tickified;
             if (err)
             {
                 MOD_THROW(ctx, DUK_ERR_SYNTAX_ERROR, "%s (line %d)\n    at %s:%d", tickify_err(err), lineno, file, lineno);
@@ -114,7 +129,7 @@ static int load_js_module(duk_context *ctx, const char *file, duk_idx_t module_i
     }
     // else is babel, babelized source is on top of stack.
     fclose(f);
-    free(buffer);
+    free(freebuffer);
 
     duk_push_string(ctx, "\n})");
     duk_concat(ctx, 3);
