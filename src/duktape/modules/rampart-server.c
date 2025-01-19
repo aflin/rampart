@@ -146,7 +146,7 @@ DHS
     uint16_t           threadno;     // our current thread number
     uint16_t           pathlen;      // length of the url path if module==MODULE_PATH
     char              *module_name;  // name of the module
-    char              *reqpath;      // same as dhs->dhs->req->uri->path->full
+    char              *reqpath;      // same as dhs->req->uri->path->full
     void              *aux;          // generic pointer - currently used for dirlist()
     void              *auxbuf;       // aux buffer for req.printf and req.put.
     size_t             bufsz;        // size of aux buffer.
@@ -1241,7 +1241,7 @@ evhtp_hook ws_dis_cb(evhtp_connection_t * conn, short events, void * arg)
                         sprintf(msg, "error in endFunc:\n");
                         const char *errmsg = rp_push_error(ctx, -1, msg, 0);
                         printerr("%s\n", errmsg);
-                    }
+                    };
                 }
                 //in websockets end - ignore return value
             }
@@ -1256,6 +1256,7 @@ evhtp_hook ws_dis_cb(evhtp_connection_t * conn, short events, void * arg)
         return 0;
     }
 
+    // get saved request object
     duk_push_number(ctx, ws_id);
     if(duk_get_prop(ctx, -2))
     {
@@ -1263,7 +1264,6 @@ evhtp_hook ws_dis_cb(evhtp_connection_t * conn, short events, void * arg)
         duk_push_pointer(ctx,(void*)NULL);
         duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("evreq"));
     }
-    duk_pop(ctx);
 
     /* get rid of this reference */
     duk_push_number(ctx, ws_id);
@@ -1334,7 +1334,7 @@ duk_ret_t duk_server_ws_end(duk_context *ctx)
     duk_push_this(ctx);
     if (duk_is_undefined(ctx, -1))
         RP_THROW(ctx, "server req.wsEnd- reference to req is no longer valid");
-    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("req"));
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("evreq"));
     req = (evhtp_request_t *)duk_get_pointer(ctx, -1);
     duk_pop_2(ctx);
 
@@ -1345,13 +1345,20 @@ duk_ret_t duk_server_ws_end(duk_context *ctx)
 
     duk_push_this(ctx);
     duk_push_pointer(ctx, (void*)NULL);
-    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("req"));
+    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("evreq"));
     return 0;
 }
 
 duk_ret_t duk_server_ws_send(duk_context *ctx)
 {
-    DHS *dhs = get_dhs(ctx);
+    DHS newdhs={0}, *dhs = (DHS*)&newdhs;
+
+    dhs->ctx=ctx;
+
+    duk_push_this(ctx);
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("evreq"));
+    dhs->req=duk_get_pointer(ctx, -1);
+    duk_pop_2(ctx);
 
     if(!dhs->req)
     {
@@ -1360,7 +1367,7 @@ duk_ret_t duk_server_ws_send(duk_context *ctx)
     }
     sendws(dhs);
 
-    dhs = free_dhs(dhs);
+    //dhs = free_dhs(dhs);
     duk_push_true(ctx);
     return 1;
 }
@@ -1548,8 +1555,8 @@ static int push_req_vars(DHS *dhs)
 
     if(dhs->req->cb_has_websock)
     {
-        duk_push_pointer(ctx, (void*) (dhs->req));
-        duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("req"));
+        //duk_push_pointer(ctx, (void*) (dhs->req));
+        //duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("req"));
         duk_push_c_function(ctx, duk_server_ws_send,1);
         duk_put_prop_string(ctx, -2, "wsSend");
         duk_push_c_function(ctx, duk_server_ws_end,1);
@@ -2747,8 +2754,11 @@ static void sendws(DHS *dhs)
         evbuffer_drain(req->buffer_out, evbuffer_get_length(req->buffer_out));
         return;
     }
-//    outbuf = evbuffer_pullup(req->buffer_out, -1);
-//printf("%x %x %x %x outbuf len=%d\n", outbuf[0], outbuf[1], outbuf[2], outbuf[3], (int)outlen);
+    
+    //unsigned char *    outbuf = evbuffer_pullup(req->buffer_out, -1);
+    //size_t 	outlen = evbuffer_get_length(req->buffer_out); 
+    //printf("%x %x %x %x outbuf = %*.s\n", outbuf[0], outbuf[1], outbuf[2], outbuf[3], (int)outlen-16, outbuf+16);
+    //printf("buf='%.*s'\n", outlen, outbuf);
 
     evhtp_send_reply_body(req, req->buffer_out);
 }

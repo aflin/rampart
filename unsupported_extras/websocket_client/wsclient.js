@@ -33,28 +33,41 @@
     // headers     - extra headers to send or override the standard ones
     //               when negotiating websockets over http
     // url         - the url (beginning with "ws://' or 'wss://')
-    // showheaders - Boolean - print request headers to stdout upon connecting (default false)  
+    // showheaders - Boolean - print request headers to stdout upon
+                     connecting (default false)
 
     var wsocket = wsclient({
-        callbacks: {"message": msgIn},
+        callbacks: {"message": msgIn, "wsConnect", onConnect},
         headers: headers,
         url: wurl,
         showheaders: showheaders
     });
 
-    / * wsocket is a net.socket (see https://rampart.dev/docs/rampart-net.html#socket-functions )
-       with the additional functions 'wsocket.wsClose()' and  'wsocket.wsSend()'. The former sends
-       a close request to the server. The latter formats
-       the message and sends it to the connected server in a websocket frame.
+    / * wsocket is a net.socket
+        (see https://rampart.dev/docs/rampart-net.html#socket-functions )
+        with the additional functions 'wsocket.wsClose()' and
+        'wsocket.wsSend()'.  The former sends a close request to the server.
+        The latter formats the message and sends it to the connected server
+        in a websocket frame.
 
        USAGE:       wsocket.wsSend(mystringOrBuffer[, isBinary])
            Where:
                  - mystringOrBuffer is a string or buffer object and
-                 - isBinary is a boolean, whether to flag message as binary (default is false)
+                 - isBinary is a boolean, whether to flag message as binary
+                   (default is false)
 
-        Also messages are received by registering a "message" event function (e.g.
-        'wsocket.on("message", msgIn)') or by suppying it to
-        the exported init function (see above).
+        Extra Events:
+
+            Messages are received by registering a "message" event function
+            (e.g.  'wsocket.on("message", msgIn)') or by suppying it to the
+            exported init function (see above).
+
+            Though "connect" events will be triggered (as wsocket is a
+            net.socket), callbacks for this event should not be registered,
+            as it triggered before the websocket connection is negotiated.
+            Instead one can use 'wsocket.on("wsConnect",mycallback)' to
+            register callback after the websocket connection is set up.
+
      * /
 
      TODO:
@@ -129,7 +142,7 @@ function parseheaders(h,socket) {
     var hs = top[0].split('\n');
 
     if(hs[0])
-        ret.Status=hs[0].trim();    
+        ret.Status=hs[0].trim();
 
     for (var i=1;i<hs.length;i++) {
         line = hs[i];
@@ -178,7 +191,7 @@ function sendResp(socket, msg, opcode) {
     else if(opcode===true)
         opcode=2;
     else if(getType(opcode) != 'Number')
-        throw("wsocket.wsSend: Opcode must be a Boolean or a number (0,1,2,8,9,10)");
+        throw new Error("wsocket.wsSend: Opcode must be a Boolean or a number (0,1,2,8,9,10)");
 
     if(mtype!='Buffer' && mtype != 'String')
         msg=sprintf('%J',msg);
@@ -229,14 +242,15 @@ function sendResp(socket, msg, opcode) {
     }
 
     var pos, byten, outbuf = abprintf(buf,hsize,'%s',msg);
-    
+
     for (var i=0; i<len; i++) {
         pos = hsize + i;
         byten = i % 4;
         outbuf[pos] = outbuf[pos] ^ r[byten];
     }
+    //printf("write(%s): '%s' ", len, msg);
     socket.write(outbuf);
-    //console.log(socket.bytesWritten);
+    //printf("written=%s\n", socket.bytesWritten);
 }
 
 function procmessage(socket, payload) {
@@ -283,7 +297,7 @@ function proc_partial(socket, data) {
     var partialdata;
 
     socket._wspartial = bprintf('%s%s', socket._wspartial, data);
-    
+
     // we have enough to finish frame
     if (socket._wspartial.length >= socket._wslen)
     {
@@ -310,12 +324,22 @@ function proc_partial(socket, data) {
 
 // the socket.on('data') callback; handle incoming tcp packets
 function proc_data(data) {
-    var socket = this, verified;
+    var socket = this;
+    var verified;
 
     //printf("got %d of data: %s\r\n", data.length, data);
     /* Just connected and finished http upgrade handshake; store server headers */
     if(!socket.headers) {
-        socket.headers = parseheaders(sprintf("%s",data), socket);
+        var sdata = sprintf("%s",data);
+        var endpos = sdata.indexOf('\r\n\r\n');
+
+        if(endpos==-1) {
+            socket.trigger("error", "End of http headers not found");
+            socket.destroy();
+            return;
+        }
+        data=new Buffer(data).slice(endpos+4);
+        socket.headers = parseheaders(sdata, socket);
 
         if(!socket.headers.Status)
         {
@@ -344,13 +368,15 @@ function proc_data(data) {
         verified = checkSec(socket.headers, socket._expectedhash);
 
         if(!verified)
-            socket.trigger("error", "sec-websocket-key does not match hash computed from sec-websocket-accept"); 
+            socket.trigger("error", "sec-websocket-key does not match hash computed from sec-websocket-accept");
 
         //printf('%s\nheaders: %3J\nverified=%J\n', expectedhash,socket.headers,verified);
-        return;
+        socket.trigger('wsConnect');
+        if(data.length==0)
+            return;
     } //end server headers
 
-    /* 
+    /*
     This function gets a tcp packet, which might hold a full, partial or multiple websocket frames.
     Three possibilities:
         1) tcp packet is the same size as the websocket frame
@@ -373,9 +399,9 @@ function proc_data(data) {
     var moredata = false;
 
     do {
-        var start=2, len = 0, 
-            lenbyte=data[1] & 127, 
-            opcode= data[0] & 15, 
+        var start=2, len = 0,
+            lenbyte=data[1] & 127,
+            opcode= data[0] & 15,
             fin = data[0] & 128;
 
         moredata=false;
@@ -393,7 +419,7 @@ function proc_data(data) {
             {
                 error(socket,"size of incoming data is too large");
             }
-            len = 
+            len =
                 data[3] * 2**48 +
                 data[4] * 2**40 +
                 data[5] * 2**32 +
@@ -403,7 +429,7 @@ function proc_data(data) {
                 data[9];
             start=10;
         }
-        
+
         var payload=data.subarray(start,len+start);
 
         if (opcode == 8) {
@@ -412,8 +438,8 @@ function proc_data(data) {
             data[0] += 1;
             data[1] |= 128;
 
-            sendResp(socket, data.subarray(2,len+2), 10); 
-            
+            sendResp(socket, data.subarray(2,len+2), 10);
+
             if(start+len < data.length) {  //there's another frame or partial frame in this packet
                 data = data.subarray(start+len);
                 moredata=true;
@@ -455,7 +481,7 @@ function initconn(socket, wurl, opts) {
     if(!opts.timeout) opts.timeout=60000;
 
     if (getType(opts.headers)!='Object')
-        throw("headers must be an object");
+        throw new Error("headers must be an object");
     //printf("%3J\n",components)
     opts.headers.Host=components.host  + (components.port?':'+components.port:"");
 
@@ -469,7 +495,7 @@ function initconn(socket, wurl, opts) {
         req+=`${key}: ${val}\r\n`;
     }
     req+='\r\n';
-    
+
     if(opts.showheaders) console.log(req);
 
     socket.on("connect", function(){
@@ -504,20 +530,21 @@ function init(opts) {
             var cb = opts.callbacks;
             for (var k in cb) {
                 if (getType(cb[k]) != 'Function')
-                    throw("wsclient: option 'callbacks' must be an object with functions as values");
+                    throw new Error("wsclient: option 'callbacks' must be an object with functions as values");
                 socket.on(k,cb[k]);
             }
         } else if (opts.callbacks)
-            throw("wsclient: option 'callbacks' must be an Object with functions as values");
+            throw new Error("wsclient: option 'callbacks' must be an Object with functions as values");
 
         if(opts.headers && getType(opts.headers) == 'Object')
             headers=opts.headers;
         else if (opts.headers)
-            throw("wsclient: option 'headers' must be an Object (key/value for headers to send)");
+            throw new Error("wsclient: option 'headers' must be an Object (key/value for headers to send)");
+
         if(opts.url) url = opts.url;
     }
     else if(!url) url=opts
-    
+
     if (!url) {
         socket.initws = initcon;
         return socket;
@@ -533,8 +560,7 @@ function init(opts) {
 }
 
 
-
-if(global.module && global.module.exports)
+if(module && module.exports)
     module.exports = init;  //we are the module loaded with require("wsclient.js");
 else
 {
@@ -544,10 +570,10 @@ else
     function usage(msg,exitc) {
         if(!exitc) exitc=0;
         if(msg) printf("%s\n", msg);
-        printf("%s [ -h header] [-s] url:\n"+
+        printf("%s [ -H header] [-s] url:\n"+
                "    url    where scheme is ws:// or wss://\n"+
                "    -H     header is a header to be added ('headername=headerval'). May be used more than once.\n"+
-               "    -s     show raw http request to server on connect\n", 
+               "    -s     show raw http request to server on connect\n",
                process.argv[1]
         );
         process.exit(exitc);
@@ -572,7 +598,7 @@ else
                 case 'H':
                     i++;
                     if (i>=args.length)
-                        usage("-h option must be followed by a header ('headername=headerval')", 1);
+                        usage("-H option must be followed by a header ('headername=headerval')", 1);
                     procheader(args[i]);
                     break;
                 case 's':
@@ -583,15 +609,17 @@ else
             }
         }
         else
+        {
             wurl=arg;
             if( ! /^wss?:\/\//.test(wurl) )
-                usage(arg+ " is not a websocket url (must start with ws:// or wss://)",1); 
+                usage(arg+ " is not a websocket url (must start with ws:// or wss://)",1);
+        }
     }
     var binarydata;
 
     global.lines=repl(" > "); //copied to thread
     var thr = new rampart.thread();
-    
+
     thr.exec(function(){
     });
 
@@ -642,7 +670,7 @@ else
                                 printf("Could not save '%s': %J\n", fname, errline[0]);
                             }
                         }
-                        
+
                     } else {
                         printf("no binary data has been received\n");
                     }
@@ -669,10 +697,13 @@ else
                     wsocket.wsSend(line);
                     break;
             }
-            thr.exec( readstdin, writeout );
+            //avoid infinite recursion in writeout
+            setTimeout(function(){
+                thr.exec( readstdin, writeout );
+            },0);
         }
         thr.exec( readstdin, writeout );
-        
+
     }).on('error',function(e){
         global.lines.close();
         console.log(e);

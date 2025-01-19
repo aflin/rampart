@@ -45,7 +45,8 @@
 
 /* for making an id for websockets -ajf */
 pthread_mutex_t wsctlock;
-uint32_t wsct=0;
+uint64_t wsct=0;
+#define wsctmax 9007199254740991
 
 /* for max size read/write in libevent -ajf */
 size_t evhtp_max_single_read = 65536;
@@ -1907,6 +1908,8 @@ htp__request_parse_headers_(htparser * p)
                     exit(1);
                 }
                 req->ws_id= wsct++;
+                if (wsct > wsctmax)
+                    wsct=0;
                 pthread_mutex_unlock(&wsctlock);
 
                 evhtp_send_reply_start(req, EVHTP_RES_SWITCH_PROTO);
