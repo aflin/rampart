@@ -9812,8 +9812,52 @@ static duk_ret_t deepCopy(duk_context *ctx) {
     return 1;
 }
 
+static void libevent_message_callback (int severity, const char *msg)
+{
+    const char *s;
+    RPTHR * thr = get_current_thread();
+    duk_context *ctx = thr->ctx;
+    duk_idx_t top = duk_get_top(ctx);
+
+    switch (severity) {
+        case _EVENT_LOG_DEBUG: s = "debug"; break;
+        case _EVENT_LOG_MSG:   s = "msg";   break;
+        case _EVENT_LOG_WARN:  s = "warn";  break;
+        case _EVENT_LOG_ERR:   s = "error"; break;
+        default:               s = "?";     break; /* never reached */
+    }
+
+    if(duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("libevent_msg_callback")))
+    {
+        duk_push_string(ctx, s);
+        duk_push_string(ctx, msg);
+        if(duk_pcall(ctx, 2))
+        {
+            const char *errmsg = rp_push_error(ctx, -1, "eventCallback:", 0);
+            fprintf(stderr, "%s\n", errmsg);
+        }
+    }
+    else
+        fprintf(stderr, "libevent: [%s] %s\n", s, msg);
+
+    duk_set_top(ctx,top);
+
+    return;
+}
+
+static duk_ret_t register_libevent_msg_callback(duk_context *ctx)
+{
+    REQUIRE_FUNCTION(ctx, 0, "eventCallback: argument must be a function (callback for event messages)");
+
+    duk_put_global_string(ctx, DUK_HIDDEN_SYMBOL("libevent_msg_callback"));
+    return 0;
+}
+
 void duk_printf_init(duk_context *ctx)
 {
+    //libevent callback for warn/error/etc messages
+    event_set_log_callback(libevent_message_callback);
+
     if (!duk_get_global_string(ctx, "rampart"))
     {
         duk_pop(ctx);
@@ -9966,6 +10010,9 @@ void duk_printf_init(duk_context *ctx)
 
     duk_push_c_function(ctx, print_simplified_err, 2);
     duk_put_prop_string(ctx, -2, "errorConfig");
+
+    duk_push_c_function(ctx,register_libevent_msg_callback, 1);
+    duk_put_prop_string(ctx, -2, "eventCallback");
 
     duk_put_prop_string(ctx, -2,"utils");
     duk_put_global_string(ctx,"rampart");

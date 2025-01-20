@@ -1,6 +1,11 @@
 v0.5.2
-    -rampart-utils
-                           deepCopy - added copy buffer option
+    - rampart-server       Several websocket fixes.
+    - unsupported extras
+                           wsclient.js: Several websocket fixes.
+    - rampart-utils
+                           deepCopy: added copy buffer option.
+                           eventCallback(function(level,msg){}): added to
+                           catch libevent warnings/errors.
 v0.5.1
     - rampart
                            Linenoise multi-thread fix in REPL.
