@@ -54,7 +54,8 @@ CSOS
     long proxyssloptions;                 /* ditto */
     char *postdata;                       /* postdata we will will need to free later, if used */
     curl_mime *mime;                      /* from postform. Needs to be freed after curl_easy_perform() */
-    struct curl_slist *slists[MAXSLISTS]; /* keep track of slists to free later. currently there are only 9 options with slist */
+    struct curl_slist *slists[MAXSLISTS]; /* keep track of slists to free later. currently there are only 9 options with slist
+                                             the position/index of http headers for req is set/get with SET_HEADERLIST, GET_HEADERLIST */
 
 //    int headerlist;                       /* the index of the slists[] above that contains headers.  Headers set at the end so we can continually add during options */
 //    int ret_text;			              /* whether to return results as .text (string) as well as .body (buffer)*/
@@ -716,8 +717,21 @@ int copt_post(CSOS_ARGS)
     /* it's an object, convert to querystring */
     else if (duk_is_object(ctx, -1) && !duk_is_array(ctx, -1) && !duk_is_function(ctx, -1))
     {
+        if(subopt)//json
+            /* save this to be freed after transaction is finished */
+            postdata = sopts->postdata = strdup(duk_json_encode(ctx, -1));
+        else
+        {
+            /* save this to be freed after transaction is finished */
+            postdata = sopts->postdata = duk_rp_object2querystring(ctx, -1, GET_ARRAYTYPE(sopts));
+            duk_pop(ctx);
+        }
+        len = (duk_size_t) strlen(postdata);
+    }
+    else if(subopt && duk_is_array(ctx, -1) ) //json array
+    {
         /* save this to be freed after transaction is finished */
-        postdata = sopts->postdata = duk_rp_object2querystring(ctx, -1, GET_ARRAYTYPE(sopts));
+        postdata = sopts->postdata = strdup(duk_json_encode(ctx, -1));
         duk_pop(ctx);
         len = (duk_size_t) strlen(postdata);
     }
@@ -726,6 +740,10 @@ int copt_post(CSOS_ARGS)
 
     curl_easy_setopt(handle, CURLOPT_POSTFIELDSIZE_LARGE, (curl_off_t)len);
     curl_easy_setopt(handle, CURLOPT_POSTFIELDS, postdata);
+
+    if(subopt) //json
+        addheader(sopts, "Content-Type: application/json");
+
     return (0);
 }
 
@@ -1009,6 +1027,23 @@ int copt_array_slist(CSOS_ARGS)
             duk_pop(ctx);
             i++;
         }
+    }
+    //object to headers
+    else if ( subopt == 1 && duk_is_object(ctx, -1) && !duk_is_function(ctx, -1) )
+    {
+        char h[256];
+        const char *k,*v;
+        duk_enum(ctx, -1, 0);
+
+        while(duk_next(ctx, -1, 1))
+        {
+            k=duk_get_string(ctx, -2);
+            v=duk_to_string(ctx, -1);
+            snprintf(h,255,"%s: %s",k,v);
+            list = curl_slist_append(list, h);
+            duk_pop_2(ctx);//k,v
+        }
+        duk_pop(ctx);//enum
     }
     else
         list = curl_slist_append(list, duk_to_string(ctx, -1));
@@ -1467,6 +1502,7 @@ CURL_OPTS curl_options[] = {
     {"post303", CURLOPT_POSTREDIR, 2, &copt_postr},
     //{"postbin", 0, /* not used */ 0, &copt_postbin},
     {"postform", 0, /* not used */ 0, &copt_postform},
+    {"postjson", 0, /* not used */ 1, &copt_post},
     {"postredir", CURLOPT_POSTREDIR, 3, &copt_postr},
     {"preproxy", CURLOPT_PRE_PROXY, 0, &copt_string},
     //{"proto", CURLOPT_PROTOCOLS, 0, &copt_proto}, no need to limit protocols in scripting that I can see.
@@ -1994,6 +2030,10 @@ void duk_curl_setopts(duk_context *ctx, CURL *curl, int idx, CURLREQ *req)
             duk_pop_2(ctx);
             continue;
         }
+
+        // allow postJSON or postJson
+        if( !strcmp(op,"post-j-s-o-n") ||  !strcmp(op,"post-json") )
+            strcpy(op,"postjson");
 
         if( !strcmp(op,"no-copy-buffer" ) )
         {

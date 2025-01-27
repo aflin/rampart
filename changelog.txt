@@ -6,6 +6,10 @@ v0.5.2
                            deepCopy: added copy buffer option.
                            eventCallback(function(level,msg){}): added to
                            catch libevent warnings/errors.
+    - rampart-curl
+                           Fix for headers:{}
+                           new - postJSON
+
 v0.5.1
     - rampart
                            Linenoise multi-thread fix in REPL.
