@@ -718,8 +718,28 @@ int copt_post(CSOS_ARGS)
     else if (duk_is_object(ctx, -1) && !duk_is_array(ctx, -1) && !duk_is_function(ctx, -1))
     {
         if(subopt)//json
+        {
             /* save this to be freed after transaction is finished */
-            postdata = sopts->postdata = strdup(duk_json_encode(ctx, -1));
+            //postdata = sopts->postdata = strdup(duk_json_encode(ctx, -1));
+            duk_get_global_string(ctx, "JSON");
+            duk_push_string(ctx, "stringify");
+            duk_dup(ctx, -3);
+            duk_push_null(ctx);
+            duk_push_int(ctx, 0);
+            if(duk_pcall_prop(ctx, -5, 3))
+            {
+                //cyclic error
+                duk_pop_2(ctx); //JSON, err
+                /* save this to be freed after transaction is finished */
+                postdata = sopts->postdata = str_rp_to_json_safe(ctx, -1, NULL,0);
+            }
+            else
+            {
+                /* save this to be freed after transaction is finished */
+                postdata = sopts->postdata = strdup(duk_get_string(ctx, -1));
+                duk_pop_2(ctx); //JSON, encoded json from pcall above
+            }
+        }
         else
         {
             /* save this to be freed after transaction is finished */
