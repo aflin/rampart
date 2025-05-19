@@ -1,5 +1,9 @@
 v0.5.2
-    - rampart-server       Several websocket fixes.
+    - rampart
+                           Handle quarantine when installing on macos via
+                           new install.sh script.
+    - rampart-server
+                           Several websocket fixes.
     - unsupported extras
                            wsclient.js: Several websocket fixes.
     - rampart-utils

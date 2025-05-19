@@ -674,7 +674,14 @@ install(
 
 install(CODE "execute_process( \
     COMMAND ${CMAKE_COMMAND} -E copy \
-    \"${PROJECT_SOURCE_DIR}/src/install.js\" \
+    \"${PROJECT_SOURCE_DIR}/src/install.sh\" \
+    \"${CMAKE_INSTALL_PREFIX}/\"   \
+    )"
+)
+
+install(CODE "execute_process( \
+    COMMAND ${CMAKE_COMMAND} -E copy \
+    \"${PROJECT_SOURCE_DIR}/src/install-helper.js\" \
     \"${CMAKE_INSTALL_PREFIX}/\"   \
     )"
 )
