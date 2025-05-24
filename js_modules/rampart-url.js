@@ -227,8 +227,9 @@ function components(url, pathOnly) {
 
         //AUTHORITY less the port and HOST
         //FIXME? not catching host ending in '-', which is illegal
-        mtmp = tmp.match(/^[a-zA-Z0-9\-\.]*/);
-        if(mtmp && mtmp.length) {
+        mtmp = tmp.match(/^[a-zA-Z0-9\-\.\_]*/); // added '_' 2025-05-24
+
+        if(mtmp && mtmp.length && mtmp[0].length) { // added mtmp[0].length 2025-05-24
             ret.host = mtmp[0].toLowerCase();
         } else {
             //ipv6 address
@@ -270,7 +271,6 @@ function components(url, pathOnly) {
     }
 
     var fchar = tmp.charAt(0);
-
     if(fchar != '/' && fchar != '' && fchar != '?')
         return;
 
