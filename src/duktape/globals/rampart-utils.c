@@ -5979,14 +5979,30 @@ static char getch(duk_context *ctx) {
         return (buf);
 }
 
+static void disable_echo() {
+    struct termios tty;
+    tcgetattr(STDIN_FILENO, &tty);
+    tty.c_lflag &= ~ECHO;
+    tcsetattr(STDIN_FILENO, TCSANOW, &tty);
+}
+
+static void enable_echo() {
+    struct termios tty;
+    tcgetattr(STDIN_FILENO, &tty);
+    tty.c_lflag |= ECHO;
+    tcsetattr(STDIN_FILENO, TCSANOW, &tty);
+}
+
 static duk_ret_t duk_rp_fgets_getchar(duk_context *ctx, int gtype)
 {
     FILE *f = NULL;
     char *buf=NULL;
     size_t r=0, readlen=1;
     const char *filename="";
-    int ch, type=RTYPE_STDIN;
+    int ch, type=RTYPE_STDIN, noecho=0;
     char *fn = (gtype)?"getchar":"fgets";
+    duk_idx_t objidx=-1;
+
 
     if(!gtype)
     {
@@ -5995,18 +6011,39 @@ static duk_ret_t duk_rp_fgets_getchar(duk_context *ctx, int gtype)
         duk_remove(ctx,0);
     }
 
+    // check for object with {"echo":false}
+    if(duk_is_object(ctx,0))
+        objidx=0;
+    else if(duk_is_object(ctx,1))
+        objidx=1;
+    if(objidx!=-1)
+    {
+        if(duk_get_prop_string(ctx, objidx, "echo"))
+            noecho=!REQUIRE_BOOL(ctx, -1, "%s: Option 'echo' must be a Boolean", fn);
+        duk_pop(ctx);
+        if(noecho)
+            disable_echo();
+        duk_remove(ctx, objidx);        
+    }
+
     if (!duk_is_undefined(ctx,0))
     {
         readlen = REQUIRE_INT(ctx, 0, "%s: argument bytes must be a Number (positive integer)", fn);
         if(readlen<1)
+        {
+            if(noecho) enable_echo();
             RP_THROW(ctx, "%s: argument bytes must be a Number (positive integer)", fn);
+        }
     }
 
 
     if(type!=RTYPE_STDIN && type != RTYPE_FOPEN_BUFFER)
     {
         if (flock(fileno(f), LOCK_SH) == -1)
+        {
+            if(noecho) enable_echo();
             RP_THROW(ctx, "error %s: could not get read lock", fn);
+        }
     }
 
 
@@ -6024,7 +6061,7 @@ static duk_ret_t duk_rp_fgets_getchar(duk_context *ctx, int gtype)
             buf[r]=(char)ch;
             r++;
         } while (r<readlen);
-
+        if(noecho) enable_echo();
         buf[r]='\0';
     }
     else
@@ -6032,6 +6069,7 @@ static duk_ret_t duk_rp_fgets_getchar(duk_context *ctx, int gtype)
         if(!fgets(buf, readlen+1, f))
         {
           free(buf);
+          if(noecho) enable_echo();
           if(feof(f))
           {
               duk_push_null(ctx);
@@ -6046,6 +6084,7 @@ static duk_ret_t duk_rp_fgets_getchar(duk_context *ctx, int gtype)
         if (flock(fileno(f), LOCK_UN) == -1)
         {
             free(buf);
+            if(noecho) enable_echo();
             RP_THROW(ctx, "error %s: could not release read lock", fn);
         }
     }
@@ -6055,6 +6094,7 @@ static duk_ret_t duk_rp_fgets_getchar(duk_context *ctx, int gtype)
 
     duk_push_string(ctx, buf);
     free(buf);
+    if(noecho) enable_echo();
 
     return (1);
 }
@@ -9932,7 +9972,7 @@ void duk_printf_init(duk_context *ctx)
     duk_push_c_function(ctx, duk_rp_fread, 4);
     duk_put_prop_string(ctx, -2, "fread");
 
-    duk_push_c_function(ctx, duk_rp_fgets, 2);
+    duk_push_c_function(ctx, duk_rp_fgets, 3);
     duk_put_prop_string(ctx, -2, "fgets");
 
     duk_push_c_function(ctx, duk_rp_getchar, 2);
