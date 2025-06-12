@@ -13,6 +13,9 @@ v0.5.2
     - rampart-curl
                            Fix for headers:{}
                            new - postJSON
+    - rampart-sql
+                           Fixed buffer read overrun when selecting a
+                           JSON string type field.
 
 v0.5.1
     - rampart

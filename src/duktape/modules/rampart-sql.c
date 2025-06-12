@@ -2566,7 +2566,7 @@ static void rp_pushfield(duk_context *ctx, FLDLST *fl, int i)
             switch(v[1])
             {
                 case '\xff':
-                    duk_push_string(ctx, v+2);
+                    duk_push_lstring(ctx, v+2, (duk_size_t)fl->ndata[i] -2);
                     break;
                 case '\xfe':
                     duk_push_number(ctx, ((double*)v)[1]);
