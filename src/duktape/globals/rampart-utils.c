@@ -7693,6 +7693,7 @@ duk_ret_t duk_rp_forkpty(duk_context *ctx)
 void close_all_fds(int first, int *except, int nexcept)
 {
     int skip=0, i=0;
+    long max_fd;
 #ifdef __linux__  // Linux: use /proc/self/fd
     DIR *dir = opendir("/proc/self/fd");
     if (dir)
@@ -7721,7 +7722,7 @@ void close_all_fds(int first, int *except, int nexcept)
 
 #ifdef __APPLE__  // macOS or FreeBSD: no /proc, fall back to brute-force
     // macOS & FreeBSD don't always support /proc/self/fd
-    long max_fd = sysconf(_SC_OPEN_MAX);
+    max_fd = sysconf(_SC_OPEN_MAX);
     if (max_fd == -1) max_fd = 1024;  // fallback
     for (int fd = first; fd < max_fd; ++fd) {
         skip=0;
@@ -7764,7 +7765,7 @@ void close_all_fds(int first, int *except, int nexcept)
 #endif
 
     // Fallback for unknown UNIX-like systems
-    long max_fd = sysconf(_SC_OPEN_MAX);
+    max_fd = sysconf(_SC_OPEN_MAX);
     if (max_fd == -1) max_fd = 1024;
     for (int fd = 3; fd < max_fd; ++fd) {
         skip=0;
