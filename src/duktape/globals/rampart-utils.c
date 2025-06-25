@@ -7689,6 +7689,100 @@ duk_ret_t duk_rp_forkpty(duk_context *ctx)
     }
 }
 
+
+void close_all_fds(int first, int *except, int nexcept)
+{
+    int skip=0, i=0;
+#ifdef __linux__  // Linux: use /proc/self/fd
+    DIR *dir = opendir("/proc/self/fd");
+    if (dir)
+    {
+        struct dirent *entry;
+        while ((entry = readdir(dir)) != NULL)
+        {
+            int fd = atoi(entry->d_name);
+            skip=0;
+            for (i=0;i<nexcept;i++)
+            {
+                if(except[i]==fd)
+                {
+                    skip=1;
+                    break;
+                }
+            }
+            if (fd >= first && !skip) {
+                close(fd);
+            }
+        }
+        closedir(dir);
+        return;
+    }
+#endif
+
+#ifdef __APPLE__  // macOS or FreeBSD: no /proc, fall back to brute-force
+    // macOS & FreeBSD don't always support /proc/self/fd
+    long max_fd = sysconf(_SC_OPEN_MAX);
+    if (max_fd == -1) max_fd = 1024;  // fallback
+    for (int fd = first; fd < max_fd; ++fd) {
+        skip=0;
+        for (i=0;i<nexcept;i++)
+        {
+            if(except[i]==fd)
+            {
+                skip=1;
+                break;
+            }
+        }
+        if (!skip)
+            close(fd);
+    }
+    return;
+#endif
+
+#ifdef __FreeBSD__  // Optional: use /dev/fd on FreeBSD if available
+    DIR *dir = opendir("/dev/fd");
+    if (dir) {
+        struct dirent *entry;
+        while ((entry = readdir(dir)) != NULL) {
+            int fd = atoi(entry->d_name);
+            skip=0;
+            for (i=0;i<nexcept;i++)
+            {
+                if(except[i]==fd)
+                {
+                    skip=1;
+                    break;
+                }
+            }
+            if (fd >= first && !skip) {
+                close(fd);
+            }
+        }
+        closedir(dir);
+        return;
+    }
+#endif
+
+    // Fallback for unknown UNIX-like systems
+    long max_fd = sysconf(_SC_OPEN_MAX);
+    if (max_fd == -1) max_fd = 1024;
+    for (int fd = 3; fd < max_fd; ++fd) {
+        skip=0;
+        for (i=0;i<nexcept;i++)
+        {
+            if(except[i]==fd)
+            {
+                skip=1;
+                break;
+            }
+        }
+        if (!skip)
+            close(fd);
+    }
+}
+
+
+
 typedef struct {
     int              partochild[2];
     int              childtopar[2];
@@ -7746,13 +7840,28 @@ static duk_ret_t rp_fork_daemon(duk_context *ctx, int do_daemon)
                 exit(0);
             }
             pid2=fork();
-            if(pid2) // -1 or pid - fork error or child(parent of grandchild)
+            if(pid2) // -1 or pid - fork error or child(intermediary/parent of grandchild)
             {
                 write(child2par[1], &pid2, sizeof(pid_t));
+                close_all_fds(0,NULL,0);
                 exit(0);  //child exits, grandchild lives on below
             }
+
             //else grandchild
-            close(child2par[1]);
+            int *except=NULL, j=0;
+            if(top) {
+                REMALLOC(except, 2 * top * sizeof(int));
+                for(i=0;i<top;i++)
+                {
+                    duk_get_prop_string(ctx, i, DUK_HIDDEN_SYMBOL("pipeinfo"));
+                    p=duk_get_pointer(ctx,-1);
+                    duk_pop(ctx);
+                    except[j++]=p->partochild[0];
+                    except[j++]=p->childtopar[1];
+                }
+            }
+            close_all_fds(0,except, j);
+
         }
         //child (or grandchild if do_daemon)
         event_reinit(get_current_thread()->base);
@@ -7785,6 +7894,8 @@ static duk_ret_t rp_fork_daemon(duk_context *ctx, int do_daemon)
             }
 
             close(child2par[0]);
+
+            waitpid(pid, NULL, 0);
 
             if(pid<0)
                 RP_THROW(ctx, "daemon() - fork failed");
