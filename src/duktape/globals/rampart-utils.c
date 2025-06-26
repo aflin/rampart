@@ -7862,7 +7862,11 @@ static duk_ret_t rp_fork_daemon(duk_context *ctx, int do_daemon)
                 }
             }
             close_all_fds(0,except, j);
-
+            if(except != NULL)
+            {
+                free(except);
+                except=NULL;
+            }
         }
         //child (or grandchild if do_daemon)
         event_reinit(get_current_thread()->base);
