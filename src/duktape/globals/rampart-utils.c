@@ -3282,17 +3282,20 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
         }
         else
         {
+            close(stdout_pipe[0]);
+            close(stderr_pipe[0]);
+            close(stdin_pipe[1]);
             // make pipe equivalent to stdout and stderr
             dup2(stdout_pipe[1], STDOUT_FILENO);
             dup2(stderr_pipe[1], STDERR_FILENO);
             // close unused pipes
-            close(stdout_pipe[0]);
-            close(stderr_pipe[0]);
-            close(stdin_pipe[1]);
+            close(stdout_pipe[1]);
+            close(stderr_pipe[1]);
         }
         // stdin for child, or grandchild if double fork
         dup2(stdin_pipe[0], STDIN_FILENO);
         rp_pipe_close(stdin_pipe,1);
+        close(stdin_pipe[0]);
 
         if(cd)
         {
@@ -3390,6 +3393,7 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
             usleep(1000);
         }
         exit_status = WEXITSTATUS(exit_status);
+
         // cancel timeout thread in case it is still running
         if (timeout > 0)
         {
@@ -7689,101 +7693,6 @@ duk_ret_t duk_rp_forkpty(duk_context *ctx)
     }
 }
 
-
-void close_all_fds(int first, int *except, int nexcept)
-{
-    int skip=0, i=0;
-    long max_fd;
-#ifdef __linux__  // Linux: use /proc/self/fd
-    DIR *dir = opendir("/proc/self/fd");
-    if (dir)
-    {
-        struct dirent *entry;
-        while ((entry = readdir(dir)) != NULL)
-        {
-            int fd = atoi(entry->d_name);
-            skip=0;
-            for (i=0;i<nexcept;i++)
-            {
-                if(except[i]==fd)
-                {
-                    skip=1;
-                    break;
-                }
-            }
-            if (fd >= first && !skip) {
-                close(fd);
-            }
-        }
-        closedir(dir);
-        return;
-    }
-#endif
-
-#ifdef __APPLE__  // macOS or FreeBSD: no /proc, fall back to brute-force
-    // macOS & FreeBSD don't always support /proc/self/fd
-    max_fd = sysconf(_SC_OPEN_MAX);
-    if (max_fd == -1) max_fd = 1024;  // fallback
-    for (int fd = first; fd < max_fd; ++fd) {
-        skip=0;
-        for (i=0;i<nexcept;i++)
-        {
-            if(except[i]==fd)
-            {
-                skip=1;
-                break;
-            }
-        }
-        if (!skip)
-            close(fd);
-    }
-    return;
-#endif
-
-#ifdef __FreeBSD__  // Optional: use /dev/fd on FreeBSD if available
-    DIR *dir = opendir("/dev/fd");
-    if (dir) {
-        struct dirent *entry;
-        while ((entry = readdir(dir)) != NULL) {
-            int fd = atoi(entry->d_name);
-            skip=0;
-            for (i=0;i<nexcept;i++)
-            {
-                if(except[i]==fd)
-                {
-                    skip=1;
-                    break;
-                }
-            }
-            if (fd >= first && !skip) {
-                close(fd);
-            }
-        }
-        closedir(dir);
-        return;
-    }
-#endif
-
-    // Fallback for unknown UNIX-like systems
-    max_fd = sysconf(_SC_OPEN_MAX);
-    if (max_fd == -1) max_fd = 1024;
-    for (int fd = 3; fd < max_fd; ++fd) {
-        skip=0;
-        for (i=0;i<nexcept;i++)
-        {
-            if(except[i]==fd)
-            {
-                skip=1;
-                break;
-            }
-        }
-        if (!skip)
-            close(fd);
-    }
-}
-
-
-
 typedef struct {
     int              partochild[2];
     int              childtopar[2];
@@ -7844,11 +7753,11 @@ static duk_ret_t rp_fork_daemon(duk_context *ctx, int do_daemon)
             if(pid2) // -1 or pid - fork error or child(intermediary/parent of grandchild)
             {
                 write(child2par[1], &pid2, sizeof(pid_t));
-                close_all_fds(0,NULL,0);
                 exit(0);  //child exits, grandchild lives on below
             }
 
             //else grandchild
+/*
             int *except=NULL, j=0;
             if(top) {
                 REMALLOC(except, 2 * top * sizeof(int));
@@ -7867,6 +7776,11 @@ static duk_ret_t rp_fork_daemon(duk_context *ctx, int do_daemon)
                 free(except);
                 except=NULL;
             }
+*/
+            close(0);
+            close(1);
+            close(2);
+
         }
         //child (or grandchild if do_daemon)
         event_reinit(get_current_thread()->base);
