@@ -7757,31 +7757,11 @@ static duk_ret_t rp_fork_daemon(duk_context *ctx, int do_daemon)
             }
 
             //else grandchild
-/*
-            int *except=NULL, j=0;
-            if(top) {
-                REMALLOC(except, 2 * top * sizeof(int));
-                for(i=0;i<top;i++)
-                {
-                    duk_get_prop_string(ctx, i, DUK_HIDDEN_SYMBOL("pipeinfo"));
-                    p=duk_get_pointer(ctx,-1);
-                    duk_pop(ctx);
-                    except[j++]=p->partochild[0];
-                    except[j++]=p->childtopar[1];
-                }
-            }
-            close_all_fds(0,except, j);
-            if(except != NULL)
-            {
-                free(except);
-                except=NULL;
-            }
-*/
             close(0);
             close(1);
             close(2);
-
         }
+
         //child (or grandchild if do_daemon)
         event_reinit(get_current_thread()->base);
         for(i=0;i<top;i++)
