@@ -2843,11 +2843,9 @@ static evhtp_res obj_to_buffer(DHS *dhs)
             }
 
             duk_pop(ctx); /* pop enum and headers obj */
-            duk_del_prop_string(ctx, -2, "headers");
         }
         else
         {
-            duk_del_prop_string(ctx, -2, "headers");
             printerr("server.start: callback -- \"headers\" parameter in return value must be set to an object (headers:{...})\n");
         }
     }
@@ -2858,7 +2856,6 @@ static evhtp_res obj_to_buffer(DHS *dhs)
         res = (evhtp_res)duk_rp_get_int_default(ctx, -1,200);
         if (res < 100)
             res = 200;
-        duk_del_prop_string(ctx, -2, "status");
     }
     duk_pop(ctx);
 
@@ -2888,7 +2885,6 @@ static evhtp_res obj_to_buffer(DHS *dhs)
                 docompress=0;
             }
         }
-        duk_del_prop_string(ctx, -2, "compress");
     }
     duk_pop(ctx);
 
@@ -2903,7 +2899,6 @@ static evhtp_res obj_to_buffer(DHS *dhs)
         {
             printerr("server.start: callback -- \"chunk\" must be a Boolean\n");
         }
-        duk_del_prop_string(ctx, -2, "chunk");
         docompress=0; //todo: support compression and chunking together.
     }
     duk_pop(ctx);
@@ -2920,14 +2915,24 @@ static evhtp_res obj_to_buffer(DHS *dhs)
              printerr("server.start: callback -- \"chunkDelay\" must be a positive Number\n");
              delay=0.0;
         }
-        duk_del_prop_string(ctx, -2, "chunkDelay");
     }
     duk_pop(ctx);
 
     duk_enum(ctx, -1, 0);
     while (duk_next(ctx, -1, 1))
     {
-        m.ext = (char *)duk_to_string(ctx, -2);
+        const char *key = duk_to_string(ctx, -2);
+
+        if( !strcmp(
+            key, "headers") || !strcmp(key, "chunk") ||
+            !strcmp(key, "chunkDelay") ||!strcmp(key, "status") ||
+            !strcmp(key, "compress")
+        ){
+            duk_pop_2(ctx);
+            continue;
+        }
+
+        m.ext = (char *) key;
 
         if (gotdata)
             goto opterr;
