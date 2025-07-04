@@ -2416,7 +2416,11 @@ static QUERY_STRUCT rp_get_query(duk_context *ctx)
         case DUK_TYPE_OBJECT:\
         {\
             char *e;\
-            char *s = v = (char *)duk_json_encode(ctx, -1);\
+            char *r = str_rp_to_json_safe(ctx, -1, NULL, 0);\
+            duk_push_string(ctx, r);\
+            duk_replace(ctx,-2);\
+            free(r);\
+            char *s = v = (char*)duk_get_string(ctx, -1);\
             plen = strlen(v);\
             e = s + plen - 1;\
             /* a date (and presumably other single values returned from an object which returns a string)\
