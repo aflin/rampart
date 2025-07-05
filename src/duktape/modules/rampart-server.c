@@ -3931,6 +3931,24 @@ static void *http_dothread(void *arg)
     duk_idx_t req_idx, func_idx, reply_idx=-1;
     DHS *dhs_beginfunc=NULL, *dhs_endfunc=NULL;
 
+//need to do this again as this is a separate thread and it is reused
+#ifdef __linux__
+    if(allow_user_switch && unprivu)
+    {
+        syscall(SYS_setresgid,0,0,-1);
+        syscall(SYS_setresuid,0,0,-1);
+        if (syscall(SYS_setresgid, unprivg, unprivg, -1) == -1)
+        {
+            RP_THROW(ctx, "http_callback: error setting group, setgid() failed");
+        }
+
+        if (syscall(SYS_setresuid, unprivu, unprivu, -1) == -1)
+        {
+            RP_THROW(ctx, "http_callback: error setting user, setuid() failed");
+        }
+    }
+#endif
+
 
 #ifdef RP_TIMEO_DEBUG
     pthread_t x = dhr->par;
