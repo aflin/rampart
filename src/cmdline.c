@@ -106,8 +106,9 @@ char *tickify_err(int err)
 #define RPCOL_RESET "\x1B[0m"
 
 
-char *serverscript = "var webserv = require('rampart-webserver');webserv.cmdLine(1);\n";
+char *serverscript = "//server script now resides in the rampart-webserver.js module\nvar webserv = require('rampart-webserver');webserv.cmdLine(1);\n";
 
+/* remove for now.  revisit when out of beta.
 char *upgradescript = "rampart.globalize(rampart.utils);\n"
 "function dofetch(url, name) {\n"
 "    var curl=require('rampart-curl');\n"
@@ -144,7 +145,7 @@ char *upgradescript = "rampart.globalize(rampart.utils);\n"
 "} catch(e) {\n"
 "    printf('upgrade failed: %s\\n', e.message)\n"
 "}\n";
-
+*/
 
 #define RP_REPL_GREETING   "%s"         \
     "         |>>            |>>\n"     \
@@ -2786,6 +2787,7 @@ static void print_version()
 
 static void print_help(char *argv0)
 {
+/*
     printf("Usage:\n\
     %s [options] file_name [--] [args]\n\n\
     Options:\n\
@@ -2806,6 +2808,26 @@ static void print_help(char *argv0)
     note: any options specified that do not match the above, or options after '--' are passed to the script\n\n\
     Documentation can be found at https://rampart.dev/docs/\n",
                 argv0);
+*/
+    printf("Usage:\n\
+    %s [options] file_name [--] [args]\n\n\
+    Options:\n\
+        -g, --globalize                    - globalize rampart.utils\n\
+        -b, --use_babel                    - run all scripts through babel to support ECMAScript 2015+\n\
+        -c, --command_string \"script\"      - load script from argument string\n\
+        -v, --version                      - print version\n\
+        -C, --color                        - use colors in interactive mode (repl)\n\
+        -q, --quiet                        - omit rampart logo in interactive mode (repl)\n\
+        --server                           - run rampart-server with default configuration\n\
+        --quickserver                      - run rampart-server with alternate configuration\n\
+        --[quick]server --help             - show help for built-in server\n\
+        --spew-server-script               - print the internal server script to stdout and exit\n\
+        --                                 - do not process any arguments following (but pass to script)\n\
+        -h, --help                         - this help message\n\n\
+    \"file_name\" or \"script\" may be '-' for stdin\n\n\
+    note: any options specified that do not match the above, or options after '--' are passed to the script\n\n\
+    Documentation can be found at https://rampart.dev/docs/\n",
+                argv0);
     exit(0);
 }
 
@@ -2813,7 +2835,7 @@ int main(int argc, char *argv[])
 {
     struct rlimit rlp;
     int isstdin=0, len, dirlen, argi,
-        scriptarg=-1, command_string=0, server=0, upgrade_check=0;
+        scriptarg=-1, command_string=0, server=0;//, upgrade_check=0;
     char *ptr, *cmdline_src=NULL;
     struct stat entry_file_stat;
     duk_context *ctx;
@@ -2933,8 +2955,10 @@ int main(int argc, char *argv[])
                 printf("%s", serverscript);
                 exit(0);
             }
+/*
             else if(!strcmp(opt,"--upgrade"))
                 upgrade_check=1;
+*/
             else if(!strcmp(opt,"--server"))
                 server=1;
             else if(!strcmp(opt,"--quickserver"))
@@ -3034,6 +3058,7 @@ int main(int argc, char *argv[])
         }
         RP_script=strdup("built_in_server");
     }
+/*
     else if (upgrade_check)
     {
         char *p = argv[argc-1];
@@ -3044,6 +3069,7 @@ int main(int argc, char *argv[])
         }
         RP_script=strdup("built_in_upgrade_script");
     }
+*/
     else if (scriptarg>-1)
     {
         char p[PATH_MAX], *s;
