@@ -2241,13 +2241,14 @@ static int proc_backtick(char *bt_start, char *end, char **ob, char **o, size_t 
                 }
                 else
                 {
-                    /* remove the '+ ""' */
-                    if( *(out-1) == '"')
+                    /* remove the '+ ""', BUT not if it is escaped */
+                    if( *(out-1) == '"' && *(out-2) != '\\')
                     {
+                        /*
                         if (outbeg < out - 3 && *(out-2) == '\\' && *(out-3) == '"')
                             scopy('"');
                         else
-                        {
+                        { */
                             int nls=0;
                             //back up
                             out-=2;
@@ -2259,7 +2260,7 @@ static int proc_backtick(char *bt_start, char *end, char **ob, char **o, size_t 
                             //cur char is '+' or ',' and will be overwritten
                             while(nls--)
                                 scopy('\n');
-                        }
+                        //}
                     }
                     else
                         scopy('"');
