@@ -67,6 +67,11 @@ rp_time_t rp_tm_to_time(struct tm *d)
     return rp_jd_to_time(rp_tm_to_jd(d));
 }
 
+static inline int days_in_month(int month, int year)
+{
+    return (month == 2) ? 28 + (( !(year % 4) && (year % 100) ) || !(year % 400)) : 31 - (month - 1) % 7 % 2;
+}
+
 struct tm * rp_jd_to_tm(rp_jd_t jd, struct tm *ret)
 {
     int jdi, a,alpha,b,c,d,e;
@@ -109,10 +114,10 @@ struct tm * rp_jd_to_tm(rp_jd_t jd, struct tm *ret)
         ret->tm_mday = (int)q;
 
         q = (q - (double)ret->tm_mday) * 86400.0;
-        ret->tm_hour = (int)((q / 3600.0) + 0.0);
+        ret->tm_hour = (int)(q / 3600.0);
 
         q -= (double)ret->tm_hour * 3600.0;
-        ret->tm_min = (int)((q / 60.0) + 0.5);
+        ret->tm_min = (int)(q / 60.0);
 
         // added 0.5 -ajf
         ret->tm_sec = (int)(0.5 + (q - (((double)ret->tm_min * 60.0))));
@@ -123,6 +128,31 @@ struct tm * rp_jd_to_tm(rp_jd_t jd, struct tm *ret)
 
         ret->tm_yday = (int)(rp_cal_to_jd(ret->tm_year+1900, month, ret->tm_mday,0,0,0) - rp_cal_to_jd(ret->tm_year+1900, 1, 1,0,0,0));
     }
+
+    if (ret->tm_sec >= 60) {
+        ret->tm_sec -= 60;
+        ret->tm_min += 1;
+    }
+    if (ret->tm_min >= 60) {
+        ret->tm_min -= 60;
+        ret->tm_hour += 1;
+    }
+    if (ret->tm_hour >= 24) {
+        ret->tm_hour -= 24;
+        ret->tm_mday += 1;
+    }
+
+    // Normalize day, month, year
+    while (ret->tm_mday > days_in_month(ret->tm_mon+1, ret->tm_year)) {
+        ret->tm_mday -= days_in_month(ret->tm_mon+1, ret->tm_year);
+        ret->tm_wday = (ret->tm_wday) +1 % 7;
+        ret->tm_mon++;
+        if (ret->tm_mon > 11) {
+            ret->tm_mon = 0;
+            ret->tm_year++;
+        }
+    }
+
     return ret;
 }
 
@@ -715,11 +745,6 @@ static int set_wday(struct tm *tm)
     int d=tm->tm_mday, m=tm->tm_mon+1, y=tm->tm_year + 1900;
     tm->tm_wday = (d += m < 3 ? y-- : y - 2, 23*m/9 + d + 4 + y/4- y/100 + y/400)%7;
     return tm->tm_wday;
-}
-
-static inline int days_in_month(int month, int year)
-{
-    return (month == 2) ? 28 + (( !(year % 4) && (year % 100) ) || !(year % 400)) : 31 - (month - 1) % 7 % 2;
 }
 
 // nweeks must not be 0.  If looking for a monday, -1 is for last monday, 1 is for first monday.
