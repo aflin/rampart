@@ -112,10 +112,10 @@ struct tm * rp_jd_to_tm(rp_jd_t jd, struct tm *ret)
         ret->tm_hour = (int)((q / 3600.0) + 0.0);
 
         q -= (double)ret->tm_hour * 3600.0;
-        ret->tm_min = (int)((q / 60.0) + 0.0);
+        ret->tm_min = (int)((q / 60.0) + 0.5);
 
         // added 0.5 -ajf
-        ret->tm_sec = (int)(0.5 + (q - (0.5 + ((double)ret->tm_min * 60.0))));
+        ret->tm_sec = (int)(0.5 + (q - (((double)ret->tm_min * 60.0))));
 
         ret->tm_wday = ((int)jd + 1) % 7;
 
@@ -1200,7 +1200,15 @@ int main_julian(int argc, char *argv[], char *prog)
         exit(0);
     }
 
-    p = strptime(argv[1], "%m/%d/%Y %H:%M:%S", dp);
+    if (argc > 2)
+    {
+        char *in = malloc(strlen(argv[1]) + strlen(argv[2]) + 2);
+        sprintf(in, "%s %s", argv[1], argv[2]);
+        p = strptime(in, "%m/%d/%Y %H:%M:%S", dp);
+        free(in);
+    }
+    else
+        p = strptime(argv[1], "%m/%d/%Y %H:%M:%S", dp);
     if (p)
         goto gotdate;
 
@@ -1407,7 +1415,7 @@ int main(int argc, char **argv) {
 
     if(argc<2)
     {
-        printf("usage %s [sun|moon|planets|seasons|easter|tojulian|fromjulian|holidays] ...\n");
+        printf("usage %s [sun|moon|planets|seasons|easter|tojulian|fromjulian|holidays] ...\n", prog);
         return 1;
     }
     comm=argv[1];
