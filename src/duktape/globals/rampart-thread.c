@@ -963,7 +963,7 @@ void rpthr_copy(duk_context *ctx, duk_context *tctx, duk_idx_t idx)
 int rpthr_copy_obj(duk_context *ctx, duk_context *tctx, int objid, int skiprefcnt)
 {
     const char *s;
-    int is_global=0;
+    int is_global=0, has_ref=0;
 
     /* for debugging *
     const char *lastvar="global";
@@ -989,6 +989,7 @@ int rpthr_copy_obj(duk_context *ctx, duk_context *tctx, int objid, int skiprefcn
     { // [ [par obj], [ref_objid] ]
         /* get previously seen object (as previously copied to tctx, and return its reference */
         int ref_objid = duk_get_int(ctx, -1);
+        has_ref=1;
         cprintf("looking for cached object #%d\n", ref_objid);
         duk_pop(ctx); // [ [par obj] ]
         cprintf("Circular/Duplicate Reference to %s Detected\n", duk_get_string(ctx, -2));
@@ -1053,6 +1054,7 @@ int rpthr_copy_obj(duk_context *ctx, duk_context *tctx, int objid, int skiprefcn
     /*  get keys,vals inside ctx object on top of the stack
         and copy to the tctx object on top of the stack     */
 
+    int do_finalizer=0;
 
     duk_enum(ctx, -1, DUK_ENUM_INCLUDE_HIDDEN|DUK_ENUM_INCLUDE_SYMBOLS|DUK_ENUM_SORT_ARRAY_INDICES);
     while (duk_next(ctx, -1, 1))
@@ -1063,6 +1065,16 @@ int rpthr_copy_obj(duk_context *ctx, duk_context *tctx, int objid, int skiprefcn
         {
             duk_pop_2(ctx);
             continue;
+        }
+
+        /* If this property exists, run specified function */
+        if(!has_ref && !strcmp(s, "\xffobjOnCopyCallback") )
+        {
+            duk_dup(ctx, -1); // the callback
+            duk_dup(ctx, -5);  // the object
+            duk_call(ctx, 1); // call callback(object)
+            duk_pop(ctx);     //discard return, and proceed as usual
+            do_finalizer=1;
         }
 
         // if the object has a hidden refcnt *int, increment it
@@ -1092,6 +1104,20 @@ int rpthr_copy_obj(duk_context *ctx, duk_context *tctx, int objid, int skiprefcn
 
     /* remove enum from stack */
     duk_pop(ctx);
+
+    // there are many functions that aren't ready for this yet and will
+    // barf if the finalizer is called several times.  For now, only use with
+    // objects that have a objOnCopyCallback callback.
+    if(do_finalizer) {
+        /* add finalizers back in */
+        duk_get_finalizer(ctx, -1);
+        if(!duk_is_undefined(ctx, -1))
+        {
+            objid=copy_any(ctx, tctx, -1, objid, 0);
+            duk_set_finalizer(tctx, -2);
+        }
+        duk_pop(ctx);
+    }
 
     // flag object as copied, in case needed by some function in the future (currently used in redis module)
     duk_push_true(tctx);
