@@ -2286,7 +2286,8 @@ static int proc_backtick(char *bt_start, char *end, char **ob, char **o, size_t 
                 }
                 break;
             case '"':
-                scopy('\\');
+                if(!lastwasbs)
+                    scopy('\\');
                 scopy('"');
                 break;
             default:
