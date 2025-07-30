@@ -30,6 +30,8 @@
 #include <time.h>
 #include <langinfo.h>
 #include <locale.h>
+#include <wchar.h>
+#include <wctype.h>
 #include "rp_tz.h"
 
 //getTotalMem setMaxMem
@@ -45,6 +47,7 @@
 #include "rampart.h"
 #include "../linenoise.h"
 #include "../core/module.h"
+#include "../../extern/utf8proc/utf8proc.h"
 
 char modules_dir[PATH_MAX];
 /*
@@ -64,6 +67,9 @@ int rp_print_error_lines=0;
 //static int z_format_broken=0; // set if strftime %z is not correct (macos)
 
 static time_t system_standard_time_offset=0;
+
+// our local after it was set in initialization way below
+static char locale_as_set[256];
 
 #ifdef __APPLE__
 
@@ -1724,7 +1730,10 @@ static char to_hex(char code)
 /* IMPORTANT: be sure to free() the returned string after use */
 char *duk_rp_url_encode(char *str, int len)
 {
-    char *pstr = str, *buf = malloc(strlen(str) * 3 + 1), *pbuf = buf;
+    char *pstr = str, *buf = NULL, *pbuf = NULL;
+    
+    REMALLOC(buf, strlen(str) * 3 + 1);
+    pbuf = buf;
 
     if (len < 0)
         len = strlen(str);
@@ -1748,8 +1757,11 @@ char *duk_rp_url_encode(char *str, int len)
 /* IMPORTANT: be sure to free() the returned string after use */
 char *duk_rp_url_decode(char *str, int *len)
 {
-    char *pstr = str, *buf = malloc(strlen(str) + 1), *pbuf = buf;
     int i=*len;
+    char *pstr = str, *buf = NULL, *pbuf = NULL;
+    
+    REMALLOC(buf, strlen(str) * 3 + 1);
+    pbuf = buf;
 
     if (i < 0)
         i = strlen(str);
@@ -6408,11 +6420,9 @@ duk_ret_t duk_rp_fprintf(duk_context *ctx)
 
 duk_ret_t duk_rp_sprintf(duk_context *ctx)
 {
-    char *buffer;
+    char *buffer=NULL;
     int size = rp_printf(_out_null, NULL, (size_t)-1, ctx, 0, NULL);
-    buffer = malloc((size_t)size + 1);
-    if (!buffer)
-        RP_THROW(ctx, "malloc error in sprintf");
+    REMALLOC(buffer, (size_t)size + 1);
 
     (void)rp_printf(_out_buffer, buffer, (size_t)-1, ctx, 0, NULL);
     duk_push_lstring(ctx, buffer,(duk_size_t)size);
@@ -8781,7 +8791,7 @@ static char *dfmts[N_DATE_FORMATS] = {
 };
 
 /* extended formats */
-#define EN_DATE_FORMATS 71
+#define EN_DATE_FORMATS 79
 static char *edfmts[EN_DATE_FORMATS] = {
     // standard
     "%Y-%m-%d %I:%M:%S %p %z",          //  0: 1999-12-31 11:59:59 pm -0800
@@ -8793,80 +8803,88 @@ static char *edfmts[EN_DATE_FORMATS] = {
     "%Y-%m-%d %H:%M:%S",                //  6: 1999-12-31 23:59:59
     "%A %B %d %H:%M:%S %Y",             //  7: Fri Dec 31 23:59:59 1999
     "%Y-%m-%dT%H:%M:%S ",               //  8: javascript style from console.log(new Date()). space is for erased '.123Z' below
+    "%A %d %B %Y %I:%M:%S %p %z",       //  9: Thu 24 Jul 2025 12:21:25 AM -0800
+    "%A %d %B %Y %I:%M:%S %p",          // 10: Thu 24 Jul 2025 12:21:25 AM
+    "%A %d %B %Y %H:%M:%S %z",          // 11: Thu 24 Jul 2025 00:21:25 -0800
+    "%A %d %B %Y %H:%M:%S",             // 12: Thu 24 Jul 2025 00:21:25
     // standard without seconds
-    "%Y-%m-%d %I:%M %p %z",             //  9: 1999-12-31 11:59 pm -0800
-    "%A %B %d %I:%M %p %Y %z",          // 10: Fri Dec 31 11:59 pm 1999 -0800
-    "%Y-%m-%d %I:%M %p",                // 11: 1999-12-31 11:59 pm
-    "%A %B %d %I:%M %p %Y",             // 12: Fri Dec 31 11:59 pm 1999
-    "%Y-%m-%d %H:%M %z",                // 13: 1999-12-31 23:59 -0800
-    "%A %B %d %H:%M %Y %z",             // 14: Fri Dec 31 23:59 1999 -0800
-    "%Y-%m-%d %H:%M",                   // 15: 1999-12-31 23:59
-    "%A %B %d %H:%M %Y",                // 16: Fri Dec 31 23:59 1999
+    "%Y-%m-%d %I:%M %p %z",             // 13: 1999-12-31 11:59 pm -0800
+    "%A %B %d %I:%M %p %Y %z",          // 14: Fri Dec 31 11:59 pm 1999 -0800
+    "%Y-%m-%d %I:%M %p",                // 15: 1999-12-31 11:59 pm
+    "%A %B %d %I:%M %p %Y",             // 16: Fri Dec 31 11:59 pm 1999
+    "%Y-%m-%d %H:%M %z",                // 17: 1999-12-31 23:59 -0800
+    "%A %B %d %H:%M %Y %z",             // 18: Fri Dec 31 23:59 1999 -0800
+    "%Y-%m-%d %H:%M",                   // 19: 1999-12-31 23:59
+    "%A %B %d %H:%M %Y",                // 20: Fri Dec 31 23:59 1999
+    "%A %d %B %Y %I:%M %p %z",          // 21: Thu 24 Jul 2025 12:21 AM -0800
+    "%A %d %B %Y %I:%M %p",             // 22: Thu 24 Jul 2025 12:21 AM
+    "%A %d %B %Y %H:%M %z",             // 23: Thu 24 Jul 2025 00:21 -0800
+    "%A %d %B %Y %H:%M",                // 24: Thu 24 Jul 2025 00:21
     // locale dependent:
-    "%x %r %z",                         // 17: date varies, time: 11:59:59 pm -0800
-    "%x %r",                            // 18: date varies, time: 11:59:59 pm
-    "%c",                               // 18: varies
-    "%x %X %z",                         // 20: varies
-    "%x %X",                            // 21: varies
+    "%x %r %z",                         // 25: date varies, time: 11:59:59 pm -0800
+    "%x %r",                            // 26: date varies, time: 11:59:59 pm
+    "%c",                               // 27: varies
+    "%x %X %z",                         // 28: varies
+    "%x %X",                            // 29: varies
     // others
-    "%b %e %I:%M:%S %p %Y %z",          // 22: Dec 31 11:59:59 pm 1999 -0800
-    "%b %e %I:%M:%S %p %Y",             // 23: Dec 31 11:59:59 pm 1999
-    "%b %e %I:%M %p %Y %z",             // 24: Dec 31 11:59 pm 1999 -0800
-    "%b %e %I:%M %p %Y",                // 25: Dec 31 11:59 pm 1999
-    "%b %e %H:%M:%S %Y %z",             // 26: Dec 31 23:59:59 1999 -0800
-    "%b %e %H:%M:%S %Y",                // 27: Dec 31 23:59:59 1999
-    "%b %e %H:%M %Y %z",                // 28: Dec 31 23:59 1999 -0800
-    "%b %e %H:%M %Y",                   // 29: Dec 31 23:59 1999
-    "%e %b %I:%M:%S %p %Y %z",          // 30: 31 Dec 11:59:59 pm 1999 -0800
-    "%e %b %I:%M:%S %p %Y",             // 31: 31 Dec 11:59:59 pm 1999
-    "%e %b %I:%M %p %Y %z",             // 32: 31 Dec 11:59 pm 1999 -0800
-    "%e %b %I:%M %p %Y",                // 33: 31 Dec 11:59 pm 1999
-    "%e %b %H:%M:%S %Y %z",             // 34: 31 Dec 23:59:59 1999 -0800
-    "%e %b %H:%M:%S %Y",                // 35: 31 Dec 23:59:59 1999
-    "%e %b %H:%M %Y %z",                // 36: 31 Dec 23:59 1999 -0800
-    "%e %b %H:%M %Y",                   // 37: 31 Dec 23:59 1999
-    "%m/%d/%y %I:%M:%S %p %z",          // 38: 12/31/99 11:59:59 pm -0800
-    "%m/%d/%y %I:%M:%S %p",             // 39: 12/31/99 11:59:59 pm
-    "%m/%d/%y %I:%M %p %z",             // 40: 12/31/99 11:59 pm -0800
-    "%m/%d/%y %I:%M %p",                // 41: 12/31/99 11:59 pm
-    "%m/%d/%y %H:%M:%S %z",             // 42: 12/31/99 23:59:59 -0800
-    "%m/%d/%y %H:%M:%S",                // 43: 12/31/99 23:59:59
-    "%m/%d/%y %H:%M %z",                // 44: 12/31/99 23:59 -0800
-    "%m/%d/%y %H:%M",                   // 45: 12/31/99 23:59
-    "%m/%d/%Y %I:%M:%S %p %z",          // 46: 12/31/1999 11:59:59 pm -0800
-    "%m/%d/%Y %I:%M:%S %p",             // 47: 12/31/1999 11:59:59 pm
-    "%m/%d/%Y %I:%M %p %z",             // 48: 12/31/1999 11:59 pm -0800
-    "%m/%d/%Y %I:%M %p",                // 49: 12/31/1999 11:59 pm
-    "%m/%d/%Y %H:%M:%S %z",             // 50: 12/31/1999 23:59:59 -0800
-    "%m/%d/%Y %H:%M:%S",                // 51: 12/31/1999 23:59:59
-    "%m/%d/%Y %H:%M %z",                // 52: 12/31/1999 23:59 -0800
-    "%m/%d/%Y %H:%M",                   // 53: 12/31/1999 23:59
+    "%b %e %I:%M:%S %p %Y %z",          // 30: Dec 31 11:59:59 pm 1999 -0800
+    "%b %e %I:%M:%S %p %Y",             // 31: Dec 31 11:59:59 pm 1999
+    "%b %e %I:%M %p %Y %z",             // 32: Dec 31 11:59 pm 1999 -0800
+    "%b %e %I:%M %p %Y",                // 33: Dec 31 11:59 pm 1999
+    "%b %e %H:%M:%S %Y %z",             // 34: Dec 31 23:59:59 1999 -0800
+    "%b %e %H:%M:%S %Y",                // 35: Dec 31 23:59:59 1999
+    "%b %e %H:%M %Y %z",                // 36: Dec 31 23:59 1999 -0800
+    "%b %e %H:%M %Y",                   // 37: Dec 31 23:59 1999
+    "%e %b %I:%M:%S %p %Y %z",          // 38: 31 Dec 11:59:59 pm 1999 -0800
+    "%e %b %I:%M:%S %p %Y",             // 39: 31 Dec 11:59:59 pm 1999
+    "%e %b %I:%M %p %Y %z",             // 40: 31 Dec 11:59 pm 1999 -0800
+    "%e %b %I:%M %p %Y",                // 41: 31 Dec 11:59 pm 1999
+    "%e %b %H:%M:%S %Y %z",             // 42: 31 Dec 23:59:59 1999 -0800
+    "%e %b %H:%M:%S %Y",                // 43: 31 Dec 23:59:59 1999
+    "%e %b %H:%M %Y %z",                // 44: 31 Dec 23:59 1999 -0800
+    "%e %b %H:%M %Y",                   // 45: 31 Dec 23:59 1999
+    "%m/%d/%y %I:%M:%S %p %z",          // 46: 12/31/99 11:59:59 pm -0800
+    "%m/%d/%y %I:%M:%S %p",             // 47: 12/31/99 11:59:59 pm
+    "%m/%d/%y %I:%M %p %z",             // 48: 12/31/99 11:59 pm -0800
+    "%m/%d/%y %I:%M %p",                // 49: 12/31/99 11:59 pm
+    "%m/%d/%y %H:%M:%S %z",             // 50: 12/31/99 23:59:59 -0800
+    "%m/%d/%y %H:%M:%S",                // 51: 12/31/99 23:59:59
+    "%m/%d/%y %H:%M %z",                // 52: 12/31/99 23:59 -0800
+    "%m/%d/%y %H:%M",                   // 53: 12/31/99 23:59
+    "%m/%d/%Y %I:%M:%S %p %z",          // 54: 12/31/1999 11:59:59 pm -0800
+    "%m/%d/%Y %I:%M:%S %p",             // 55: 12/31/1999 11:59:59 pm
+    "%m/%d/%Y %I:%M %p %z",             // 56: 12/31/1999 11:59 pm -0800
+    "%m/%d/%Y %I:%M %p",                // 57: 12/31/1999 11:59 pm
+    "%m/%d/%Y %H:%M:%S %z",             // 58: 12/31/1999 23:59:59 -0800
+    "%m/%d/%Y %H:%M:%S",                // 59: 12/31/1999 23:59:59
+    "%m/%d/%Y %H:%M %z",                // 60: 12/31/1999 23:59 -0800
+    "%m/%d/%Y %H:%M",                   // 61: 12/31/1999 23:59
     // date only
-    "%m/%d/%y %z",                      // 54: 12/31/99 -0800
+    "%m/%d/%y %z",                      // 62: 12/31/99 -0800
     // %n is not matching space on linux - so this matches 01/01/2024 with year 2020
     // if this is the case, int strptime_fmt_n_does_not_match will be set to 1
-    "%m/%d/%y%n",                       // 55: 12/31/99
-    "%m/%d/%Y %z",                      // 56: 12/31/1999 -0800
-    "%m/%d/%Y",                         // 57: 12/31/1999
-    "%Y-%m-%d %z",                      // 58: 1999-12-31 -0800
-    "%Y-%m-%d",                         // 59: 1999-12-31
-    "%x",                               // 60: varies
+    "%m/%d/%y%n",                       // 63: 12/31/99
+    "%m/%d/%Y %z",                      // 64: 12/31/1999 -0800
+    "%m/%d/%Y",                         // 65: 12/31/1999
+    "%Y-%m-%d %z",                      // 66: 1999-12-31 -0800
+    "%Y-%m-%d",                         // 67: 1999-12-31
+    "%x",                               // 68: varies
     // time only
-    // gt 60:
-    "%I:%M:%S %p %z",                   // 61: 11:59:59 pm -0800
-    "%I:%M:%S %p",                      // 62: 11:59:59 pm
-    "%I:%M %p %z",                      // 63: 11:59 pm -0800
-    "%I:%M %p",                         // 64: 11:59 pm
-    "%X",                               // 65: varies
-    "%X %z",                            // 66: varies and -0800
-    "%H:%M:%S %z",                      // 67: 23:59:59 -0800
-    "%H:%M:%S",                         // 68: 23:59:59
-    "%H:%M %z",                         // 69: 23:59 -0800
-    "%H:%M",                            // 70: 23:59
+    // gt 68:
+    "%I:%M:%S %p %z",                   // 69: 11:59:59 pm -0800
+    "%I:%M:%S %p",                      // 70: 11:59:59 pm
+    "%I:%M %p %z",                      // 71: 11:59 pm -0800
+    "%I:%M %p",                         // 72: 11:59 pm
+    "%X",                               // 73: varies
+    "%X %z",                            // 74: varies and -0800
+    "%H:%M:%S %z",                      // 75: 23:59:59 -0800
+    "%H:%M:%S",                         // 76: 23:59:59
+    "%H:%M %z",                         // 77: 23:59 -0800
+    "%H:%M",                            // 78: 23:59
 };
-#define EN_FORMAT_W_N 55
+#define EN_FORMAT_W_N 63
 //all indexes greater than "time only" line above
-#define EN_DATE_FMT_RELATIVE 60
+#define EN_DATE_FMT_RELATIVE 68
 
 
 /* scan a string for a date, optionally with format in ifmt if not NULL
@@ -9077,9 +9095,14 @@ duk_ret_t rp_auto_scandate(duk_context *ctx)
     int eix=0, *end_index=&eix, fidx=0, add_to_fmt=0;
     char *p=NULL, *matched;
 
+    // the behavior of scandate is variable depending on location.
+    // we need it to be consistent for autoscandate.
+    setlocale(LC_ALL, "C");
+
     if((fidx=scandate(dt_p, datestr, NULL, 1, end_index))==-1)
     {
         duk_push_null(ctx);
+        setlocale(LC_ALL, locale_as_set);
         return 1;
     }
 
@@ -9145,6 +9168,7 @@ duk_ret_t rp_auto_scandate(duk_context *ctx)
         {
             free(fmt);
             duk_push_null(ctx);
+            setlocale(LC_ALL, locale_as_set);
             return 1;
         }
         free(fmt);
@@ -9356,6 +9380,7 @@ duk_ret_t rp_auto_scandate(duk_context *ctx)
     }
     duk_put_prop_string(ctx, -2, "matchedFormat");
 
+    setlocale(LC_ALL,locale_as_set);
     return 1;
 }
 
@@ -9903,6 +9928,704 @@ static duk_ret_t register_libevent_msg_callback(duk_context *ctx)
     return 0;
 }
 
+/* Start wordReplace functions */
+#define MAX_LINE_LEN 1024
+
+typedef struct {
+    char *key;         // lowercase word used as hash key
+    char *substitute;  // replacement word
+} WordEntry;
+
+typedef struct {
+    WordEntry **list;
+    size_t      len;
+    size_t      refs;
+} WordMap;
+
+static void trim_beg(char *str)
+{
+    while (isspace((unsigned char)*str)) memmove(str, str + 1, strlen(str));
+}
+#define WPARSEERR_NONE 0
+#define WPARSEERR_DQ 1
+#define WPARSEERR_SQ 2
+#define WPARSEERR_SP 3
+#define WPARSEERR_CL 4
+static char *wparseerr[] = {
+    "",
+    "unmatched double quote",
+    "unmatched single quote",
+    "search word cannot contain white space",
+    "missing colon"
+};
+
+static int trim(char *str, int check_whitespace) {
+    trim_beg(str);
+    size_t len = strlen(str);
+    if(*str == '"')
+    {
+        char *p=str;
+        memmove(str, str + 1, strlen(str));
+        len=0;
+        while(*p && *p!='"')
+            len++,p++;
+        if(!*p)
+            return WPARSEERR_DQ;
+        *p='\0';
+        return WPARSEERR_NONE;
+    }
+    else if(*str == '\'')
+    {
+        char *p=str;;
+        memmove(str, str + 1, strlen(str));
+        len=0;
+        while(*p && *p!='\'')
+            len++,p++;
+        if(!*p)
+            return WPARSEERR_SQ;
+        *p='\0';
+        return WPARSEERR_NONE;
+    }
+
+    while (len > 0 && isspace((unsigned char)str[len - 1]))
+        str[--len] = '\0';
+
+    if(check_whitespace)
+    {
+        while(*str)
+        {
+            if(isspace(*str))
+                return WPARSEERR_SP;
+            str++;
+        }
+    }
+
+    return WPARSEERR_NONE;
+}
+
+WordMap *new_WordMap() 
+{
+    WordMap *map=NULL;
+    REMALLOC(map, sizeof(WordMap));
+    map->list=NULL;
+    map->len=0;
+    map->refs=1;
+    return map;
+}
+
+char *utf8proc_str_tolower(const char *input) {
+    if (!input) return NULL;
+
+    utf8proc_uint8_t *lowered = NULL;
+
+    utf8proc_ssize_t result = utf8proc_map(
+        (const utf8proc_uint8_t *)input,
+        -1, // NUL-terminated input
+        &lowered,
+        UTF8PROC_CASEFOLD | UTF8PROC_COMPOSE | UTF8PROC_NULLTERM
+    );
+
+    if (result < 0) {
+        // Error occurred, result is negative error code
+        return NULL;
+    }
+
+    return (char *)lowered; // malloc'd UTF-8 string; caller must free
+}
+
+// Add a mapping
+static void add_entry(WordMap *map, const char *original, const char *substitute, int casecmp)
+{
+    char *key = strdup(original);
+    if (!key) exit(EXIT_FAILURE);
+
+    if(casecmp)
+    {
+        char *p = utf8proc_str_tolower(key);
+        if(p){
+            free(key);
+            key=p;
+        } 
+    }
+
+    WordEntry *entry = NULL;
+    REMALLOC(entry, sizeof(WordEntry));
+    if (!entry) exit(EXIT_FAILURE);
+
+    entry->key = key;
+    entry->substitute = strdup(substitute);
+    if (!entry->substitute)
+    {
+        free(entry->key);
+        free(entry);
+        exit(EXIT_FAILURE);
+    }
+    map->len++;
+    REMALLOC(map->list, sizeof(WordEntry*) * map->len);
+    map->list[map->len-1] = entry;
+}
+
+static int compare_entries(void const *a, void const *b)
+{
+  char *as = (char *)(*(WordEntry **)a)->key;
+  char *bs = (char *)(*(WordEntry **)b)->key;
+  return strcmp(as, bs);
+}
+
+static void sort_WordMap(WordMap *map)
+{
+    qsort(map->list, map->len, sizeof(WordEntry*), compare_entries);
+}
+
+static char * find_entry(WordMap *map, const char *key)
+{
+    WordEntry entry, *entry_p=&entry, **res;
+    entry.key=(char*)key;
+    res = bsearch(&entry_p, map->list, map->len, sizeof(WordEntry*), compare_entries);
+    if(res)
+        return (*res)->substitute;
+    return NULL;
+}
+
+// Load mappings from a string with lines like "word: replacement"
+static int load_mappings_from_string(WordMap *map, const char *input, int casecmp, int *lineno)
+{
+    char line[MAX_LINE_LEN];
+    const char *ptr = input;
+    int ret=0;
+    
+    *lineno=0;
+    
+    while (*ptr)
+    {
+        size_t len = 0, i=0;
+        while (*ptr && *ptr != '\n' && len < MAX_LINE_LEN - 1)
+            line[len++] = *ptr++;
+        if (*ptr == '\n') ptr++;
+        line[len] = '\0';
+
+        (*lineno)++;
+        //blank lines and comments
+        if (len == 0 || *line == '#') 
+            continue;
+        for (i=0;i<len;i++)
+        {
+            if(!isspace(line[i]))
+                break;
+        }
+        if(i==len) //all spaces
+            continue;;
+
+        char *colon = strchr(line, ':');
+        if (!colon) 
+            return WPARSEERR_CL;
+
+        *colon = '\0';
+        char *key = line;
+        char *val = colon + 1;
+
+        if( (ret=trim(key,1)) )
+            return ret;
+        if( (ret=trim(val,0)) )
+            return ret;
+        
+        //printf("adding %s -> %s\n", key, val);
+        if (strlen(key) > 0 && strlen(val) > 0) {
+            add_entry(map, key, val, casecmp);
+        }
+    }
+    sort_WordMap(map);
+    return 0;
+}
+
+// Free the hash map
+static WordMap *free_map(WordMap *map) {
+    WordEntry *cur;
+    int i=0;
+    if(!map)
+        return NULL;
+    for(;i<map->len;i++)
+    {
+        cur=map->list[i];
+        free(cur->key);
+        free(cur->substitute);
+        free(cur);
+    }
+    free(map->list);
+    free(map);
+    return NULL;
+}
+
+static int load_mappings_from_object(duk_context *ctx, WordMap *map, duk_idx_t obj_idx, int casecmp)
+{
+    //load from filehandle
+    if( duk_has_prop_string(ctx,0,DUK_HIDDEN_SYMBOL("filehandle")) )
+    {
+        // in order for duk_rp_fread to have a proper stack, we must call indirectly
+        duk_push_c_function(ctx, duk_rp_fread, 4);
+        duk_dup(ctx, 0);
+        duk_push_true(ctx);
+        duk_push_undefined(ctx);
+        duk_push_undefined(ctx);
+        duk_call(ctx, 4);
+        const char *s = duk_get_string(ctx, -1);
+        int lineno;
+        int err=load_mappings_from_string(map, s, casecmp, &lineno);
+        if(err)
+        {
+            free_map(map);
+            RP_THROW(ctx, "rampart.utils.wordReplace(): %s on line %d", wparseerr[err], lineno);
+        }
+        duk_pop(ctx);// the file
+        return 0;
+    }
+
+    char *key, *val, *p;
+    duk_enum(ctx, obj_idx, 0);
+    while(duk_next(ctx, -1, 1))
+    {
+        key=strdup(duk_get_string(ctx,-2));
+        p=key;
+        while(*p)
+        {
+            if(isspace(*p))
+            {
+                free_map(map);
+                RP_THROW(ctx, "rampart.utils.wordReplace(): %s in key '%s'", wparseerr[WPARSEERR_SP], key);
+            }
+                
+            p++;
+        }
+        val=strdup(duk_safe_to_string(ctx, -1));
+        add_entry(map, key, val, casecmp);
+        duk_pop_2(ctx);
+    }
+    duk_pop(ctx);//enum
+    sort_WordMap(map);
+    return 0;
+}
+
+#define REPLACE_SPLIT_ON_PUNCT         1<<0
+#define REPLACE_INCLUDE_LEADING_PUNCT  1<<1
+#define REPLACE_INCLUDE_TRAILING_PUNCT 1<<2
+#define REPLACE_RESPECT_CASE           1<<3
+#define REPLACE_IGNORE_HYPHEN          1<<4
+
+
+int is_utf8_alnum(const char *s, size_t *len) {
+    
+    if (!*s || !len)
+    {
+        *len=1;
+        return 0;
+    }
+
+    utf8proc_int32_t codepoint;
+    ssize_t charlen = utf8proc_iterate((const utf8proc_uint8_t *)s, -1, &codepoint);
+
+    if (charlen <= 0) {
+        *len = 1; // fail-safe: move 1 byte to avoid infinite loop
+        return 0;
+    }
+
+    *len = (size_t)charlen;
+
+    utf8proc_category_t cat = utf8proc_category(codepoint);
+
+    switch (cat) {
+        case UTF8PROC_CATEGORY_LU: // Uppercase letter
+        case UTF8PROC_CATEGORY_LL: // Lowercase letter
+        case UTF8PROC_CATEGORY_LT: // Titlecase letter
+        case UTF8PROC_CATEGORY_LM: // Modifier letter
+        case UTF8PROC_CATEGORY_LO: // Other letter
+        case UTF8PROC_CATEGORY_ND: // Decimal digit
+        case UTF8PROC_CATEGORY_NL: // Letter number
+        case UTF8PROC_CATEGORY_NO: // Other number
+            return 1;
+        default:
+            return 0;
+    }
+}
+
+// Append buffer safely with auto-expanding realloc
+int append_to_output(char **output, size_t *out_len, size_t *out_cap, const char *text, size_t len) {
+    if (*out_len + len + 1 >= *out_cap) {
+        *out_cap = (*out_len + len + 1) * 2;
+        char *new_buf = realloc(*output, *out_cap);
+        if (!new_buf) return 0;
+        *output = new_buf;
+    }
+    memcpy(*output + *out_len, text, len);
+    *out_len += len;
+    (*output)[*out_len] = '\0';
+    return 1;
+}
+
+int is_utf8_space(const char *s, size_t *len_out) {
+    if (!s) return 0;
+
+    utf8proc_int32_t codepoint;
+    ssize_t len = utf8proc_iterate((const utf8proc_uint8_t *)s, -1, &codepoint);
+
+    if (len <= 0) {
+        if(len_out)
+            *len_out = 1;
+        return 0;
+    }
+
+    if(len_out)
+        *len_out = (size_t)len;
+
+    utf8proc_category_t cat = utf8proc_category(codepoint);
+    return (cat == UTF8PROC_CATEGORY_ZS || codepoint == 0x0009 || codepoint == 0x000A ||
+            codepoint == 0x000B || codepoint == 0x000C || codepoint == 0x000D);
+}
+
+static char* replace_words(const char *input, WordMap *map, int flags) {
+    size_t in_len = strlen(input);
+    size_t out_cap = in_len * 2;
+    char *output = NULL;
+
+    REMALLOC(output, out_cap);
+    output[0] = '\0';
+
+    size_t out_len = 0;
+    size_t i = 0;
+    while (i < in_len)
+    {
+        size_t readlen = 0;
+        // 1. Skip and copy whitespace (or punctuation if not splitting on it)
+        if ( is_utf8_space(&input[i], &readlen) )
+        {
+            if (!append_to_output(&output, &out_len, &out_cap, &input[i], readlen))
+                return NULL;
+
+            i+=readlen;
+            continue;
+        }
+
+        // Optionally treat punctuation as separators
+        if (
+              (flags & REPLACE_SPLIT_ON_PUNCT) &&
+              !is_utf8_alnum(&input[i], &readlen)
+           )
+        {
+            if (!append_to_output(&output, &out_len, &out_cap, &input[i], readlen))
+                return NULL;
+            if( 
+               !(flags & REPLACE_IGNORE_HYPHEN) || 
+               input[i] != '-'
+            )
+            {
+                i += readlen;
+                continue;
+            }
+        }
+        // Leading punctuation
+        while (
+                !(flags & REPLACE_INCLUDE_LEADING_PUNCT) &&
+                i<in_len &&
+                !is_utf8_alnum(&input[i], &readlen)
+              )
+        {
+            if (!append_to_output(&output, &out_len, &out_cap, &input[i], readlen))
+                return NULL;
+            i += readlen;
+            continue;
+        }
+
+        // Word core
+        size_t word_start = i;
+        while (i < in_len && !is_utf8_space(&input[i], NULL))
+        {
+            size_t temp_len = 0;
+            if (
+                !is_utf8_alnum(&input[i], &temp_len) &&
+                flags & REPLACE_SPLIT_ON_PUNCT
+            ) {
+                //printf("splitting on '%c'\n", input[i]);
+                break;
+            }
+            i+=temp_len;
+        }
+        size_t word_len = i - word_start;
+
+        // Trailing punctuation: Yippee!!!! -> Yippee
+        // scan from beginning of word in order to get utf-8
+        size_t trailing_start = i, trailing_len=0;
+        if( !(flags & REPLACE_INCLUDE_TRAILING_PUNCT) ){
+            size_t marker = 0, j=word_start;
+            
+            while(j<i)
+            {
+                if( !is_utf8_alnum(&input[j], &readlen) )
+                {
+                    if(!marker) // the beginning of a new run of punct
+                        marker=j;
+                    j+=readlen;
+                }
+                else
+                {
+                    marker=0; // non-punctuation
+                    j+=readlen;
+                }
+            }
+            // if it ends in punct, marker will be non-zero and the position
+            // of the last run of punct.
+            if( marker )
+            {
+                word_len = marker - word_start;
+                trailing_start = marker;
+                trailing_len = i - marker;
+            }
+        }
+
+        // Isolate and lowercase word for lookup
+        char *lookup = strndup(&input[word_start], word_len);
+        if (!lookup) 
+        {
+            free(output);
+            return NULL;
+        }
+        if ( !(flags & REPLACE_RESPECT_CASE) )
+        {
+            char *p=utf8proc_str_tolower(lookup);
+            if(p) {
+                free(lookup);
+                lookup=p;
+            }
+        }
+        //printf("lookup='%s'\n",lookup);
+        char *entry = find_entry(map, lookup);
+        //printf("lookup='%s'  entry='%s'\n", lookup, entry);
+        free(lookup);
+
+        // 3. Append output: [replacement or word][trailing]
+        if (entry) 
+        {
+            if (!append_to_output(&output, &out_len, &out_cap, entry, strlen(entry)) )
+                return NULL;
+        } 
+        else 
+        {
+            if (!append_to_output(&output, &out_len, &out_cap, &input[word_start], word_len))
+                return NULL;
+        }
+
+        if (trailing_len && !append_to_output(&output, &out_len, &out_cap, &input[trailing_start], trailing_len))
+            return NULL;
+    }
+
+    return output;
+}
+
+duk_ret_t word_replace_finalizer(duk_context *ctx)
+{
+    WordMap *map;
+
+    if(! duk_get_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("wordmap")) )
+        RP_THROW(ctx, "rampart.utils.wordReplace: No word map found"); //won't happen
+
+    map = (WordMap *)duk_get_pointer(ctx, -1);
+
+    map->refs--;
+    if(!map->refs)
+        free_map(map);
+
+    return 0;
+}
+
+duk_ret_t word_thread_copy_callback(duk_context *ctx)
+{
+    WordMap *map;
+
+    if(!duk_get_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("wordmap")))
+        RP_THROW(ctx, "error in copy of wordReplace instance to new thread");
+    map=duk_get_pointer(ctx, -1);
+
+    if(!map)
+        RP_THROW(ctx, "error in copy of wordReplace instance to new thread");
+
+    (map->refs)++;
+
+    return 0;
+}
+
+
+duk_ret_t word_replace_main(duk_context *ctx)
+{
+    WordMap *map;
+    int flags=0;
+    const char *rs = REQUIRE_STRING(ctx, 0, "rampart.utils.wordReplace: String required as argument");
+
+    duk_push_this(ctx);
+
+    if(! duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("wordmap")) )
+        RP_THROW(ctx, "rampart.utils.wordReplace: No word map found"); //won't happen
+    map = (WordMap *)duk_get_pointer(ctx, -1);
+    duk_pop(ctx);
+
+    if(duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("flags")))
+    {
+        flags=duk_get_int_default(ctx, -1, 0);
+    }
+    duk_pop(ctx);
+
+    if(duk_is_boolean(ctx, 1))
+    {
+        if(duk_get_boolean(ctx,1))
+            flags |= REPLACE_RESPECT_CASE;
+        else
+            flags &= ~REPLACE_RESPECT_CASE;
+    }
+    else if (!duk_is_undefined(ctx, 1))
+    {
+        REQUIRE_OBJECT(ctx, 1, "rampart.utils.wordReplace():  second argument must be a Boolean (respectCase) or an Object");
+        duk_enum(ctx, 1, 0);
+        while(duk_next(ctx, -1, 1))
+        {
+            const char *key = duk_get_string(ctx, -2);
+            int val=REQUIRE_BOOL(ctx, -1, "rampart.utils.wordReplace(list, {\"%s\":...}): values for all options must be a Boolean", key);
+            int setflag=0;
+            if( !strcasecmp(key,"respectcase") ) {
+                setflag = REPLACE_RESPECT_CASE;
+            } else if( !strcasecmp(key,"includetrailingpunct") ) {
+                setflag = REPLACE_INCLUDE_TRAILING_PUNCT;
+            } else if( !strcasecmp(key,"includeleadingpunct") ) {
+                setflag = REPLACE_INCLUDE_LEADING_PUNCT;
+            } else if( !strcasecmp(key,"splitonpunct") ) {
+                setflag = REPLACE_SPLIT_ON_PUNCT;
+            } else if( !strcasecmp(key,"ignorehyphen") ) {
+                setflag = REPLACE_IGNORE_HYPHEN;
+            } else {
+                RP_THROW(ctx, "rampart.utils.wordReplace(list, {\"%s\":...}): option unknown", key);
+            }
+            duk_pop_2(ctx); // key, val from duk_next
+
+            if(val)
+                flags |= setflag;
+            else
+                flags &= ~setflag;
+        }
+        duk_pop(ctx); // enum
+    }
+
+    char *output = replace_words(rs, map, flags);
+    if(output)
+    {
+        duk_push_string(ctx, output);
+        free(output);
+    }
+    else //some kind of error
+        duk_dup(ctx, 0);
+    
+    return 1;
+}
+
+duk_ret_t word_replace_new(duk_context *ctx)
+{
+    WordMap *map=NULL;
+    int err, flags=0;
+
+    if (!duk_is_constructor_call(ctx))
+        RP_THROW(ctx, "rampart.utils.wordReplace():  Must be called with 'new rampart.utils.wordReplace(list[, options])");
+
+    int type = rp_gettype(ctx, 0);
+    
+    if(type != RP_TYPE_STRING && type != RP_TYPE_OBJECT && type != RP_TYPE_FILEHANDLE)
+        RP_THROW(ctx, "rampart.utils.wordReplace():  Must be called with 'new rampart.utils.wordReplace(list[, options])");
+
+    if(duk_is_boolean(ctx, 1) && duk_get_boolean(ctx, 1))
+        flags |= REPLACE_RESPECT_CASE;
+    else if (!duk_is_undefined(ctx, 1))
+    {
+        REQUIRE_OBJECT(ctx, 1, "rampart.utils.wordReplace():  second argument must be a Boolean (respectCase) or an Object");
+        duk_enum(ctx, 1, 0);
+        while(duk_next(ctx, -1, 1))
+        {
+            const char *key = duk_get_string(ctx, -2);
+            int val=REQUIRE_BOOL(ctx, -1, "rampart.utils.wordReplace(list, {\"%s\":...}): values for all options must be a Boolean", key);
+            int setflag=0;
+            if( !strcasecmp(key,"respectcase") ) {
+                setflag = REPLACE_RESPECT_CASE;
+            } else if( !strcasecmp(key,"includetrailingpunct") ) {
+                setflag = REPLACE_INCLUDE_TRAILING_PUNCT;
+            } else if( !strcasecmp(key,"includeleadingpunct") ) {
+                setflag = REPLACE_INCLUDE_LEADING_PUNCT;
+            } else if( !strcasecmp(key,"splitonpunct") ) {
+                setflag = REPLACE_SPLIT_ON_PUNCT;
+            } else if( !strcasecmp(key,"ignorehyphen") ) {
+                setflag = REPLACE_IGNORE_HYPHEN;
+            } else {
+                RP_THROW(ctx, "rampart.utils.wordReplace(list, {\"%s\":...}): option unknown", key);
+            }
+            duk_pop_2(ctx); // key, val from duk_next
+
+            if(val)
+                flags |= setflag;
+        }
+        duk_pop(ctx); // enum
+    }
+
+    int case_ignore = !( flags & REPLACE_RESPECT_CASE); 
+
+    duk_push_object(ctx);
+    map = new_WordMap();
+    if(type==RP_TYPE_STRING)
+    {
+        const char *s = duk_get_string(ctx, 0);
+        int lineno;
+        err=load_mappings_from_string(map, s, case_ignore, &lineno);
+        if(err)
+        {
+            free_map(map);
+            RP_THROW(ctx, "rampart.utils.wordReplace(): %s on line %d\n", wparseerr[err], lineno);
+        }
+    }
+    else
+    {
+        load_mappings_from_object(ctx, map, 0, case_ignore);
+    }
+
+    duk_push_pointer(ctx, map);
+    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("wordmap"));        
+
+    duk_push_c_function(ctx, word_replace_main, 2);
+    duk_put_prop_string(ctx, -2, "exec");
+
+    duk_push_c_function(ctx, word_replace_main, 2);
+    duk_put_prop_string(ctx, -2, "replace");
+
+    duk_push_c_function(ctx, word_thread_copy_callback, 1);
+    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("objOnCopyCallback"));
+
+    duk_push_int(ctx, flags);
+    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("flags"));
+
+    duk_push_c_function(ctx, word_replace_finalizer,1);
+    duk_set_finalizer(ctx, -2); 
+
+    return 1;
+}
+
+/* End wordReplace functions */
+
+static int locale_supports_utf8() {
+    const char *loc = setlocale(LC_CTYPE, NULL);
+    if (loc && strstr(loc, "UTF-8")) return 1;
+
+    const char *cs = nl_langinfo(CODESET);
+    if (cs && strstr(cs, "UTF-8")) return 1;
+
+    // Try encoding a known wide character as UTF-8
+    mbstate_t state = {0};
+    wchar_t wc = L'é';
+    char mb[MB_CUR_MAX];
+    size_t len = wcrtomb(mb, wc, &state);
+    return (len == 2 && (unsigned char)mb[0] == 0xC3 && (unsigned char)mb[1] == 0xA9);
+}
+
+/* printf funcs, string funcs, file funcs and other misc - a bit of a misnomer now */
 void duk_printf_init(duk_context *ctx)
 {
     //libevent callback for warn/error/etc messages
@@ -9918,6 +10641,9 @@ void duk_printf_init(duk_context *ctx)
         duk_pop(ctx);
         duk_push_object(ctx);
     }
+
+    duk_push_c_function(ctx, word_replace_new, 2 /*nargs*/);
+    duk_put_prop_string(ctx, -2, "wordReplace");
 
     duk_push_c_function(ctx, deepCopy, DUK_VARARGS);
     duk_put_prop_string(ctx, -2, "deepCopy");
@@ -10079,25 +10805,57 @@ void duk_printf_init(duk_context *ctx)
     RP_PTINIT(&errlock);
     RP_PTINIT(&blist_lock);
 
+    
+    /* init all first */
+    if (setlocale(LC_ALL, "") == NULL)
+            setlocale(LC_ALL, "en_US.UTF-8");
+
     /* initialize locale from env */
+    char *loc;
 #define rp_initloc(x) do{\
     loc = getenv(#x);\
     if(loc)\
         setlocale(x, loc);\
+    else\
+        setlocale(x, "");\
 }while(0)
 
-    char *loc = getenv("LC_ALL");
-    if(loc)
-        setlocale(LC_ALL, loc);
-    else
-    {
-        rp_initloc(LC_COLLATE);
-        rp_initloc(LC_CTYPE);
-        rp_initloc(LC_MESSAGES);
-        rp_initloc(LC_MONETARY);
-        rp_initloc(LC_NUMERIC);
-        rp_initloc(LC_TIME);
-    }
+    rp_initloc(LC_COLLATE);
+    rp_initloc(LC_CTYPE);
+    rp_initloc(LC_MESSAGES);
+    rp_initloc(LC_MONETARY);
+    rp_initloc(LC_NUMERIC);
+    rp_initloc(LC_TIME);
+
+    int haveutf8=0;
+
+    do {
+        if (setlocale(LC_CTYPE, "") && locale_supports_utf8()) {
+            haveutf8=1;
+            break;
+        }
+
+        // some fallback UTF-8 locales
+        const char *utf8_locales[] = {
+            "en_US.UTF-8", "C.UTF-8", "POSIX.UTF-8", "en_GB.UTF-8", NULL
+        };
+
+        for (int i = 0; utf8_locales[i]; i++) {
+            const char *loc=utf8_locales[i];
+            if(!loc)
+                break;
+            if (setlocale(LC_CTYPE, loc) && locale_supports_utf8()) {
+                haveutf8=1;
+                break;
+            }
+        }
+    } while(0);
+
+    if(!haveutf8)
+        fprintf(stderr, "warning - could not set a utf-8 locale.  Some functions may fail.\n");
+
+    loc = setlocale(LC_ALL, NULL);
+    strcpy(locale_as_set, loc);
 
     /* initialize locale date formats *
     char *dtf = nl_langinfo(D_T_FMT);

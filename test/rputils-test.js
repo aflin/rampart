@@ -78,9 +78,100 @@ testFeature("fopen - stdout redirect",function(){
     return res1=="abcdef";
 });
 
+testFeature("wordReplace - basic use", function(){
+    var slst =
+`Jack: Jill
+oakland: "Cleveland Oh"
+`;
+
+    var ret=true;
+
+    var replacer = new wordReplace(slst);
+    var res=replacer.replace("Jack was jacked up at the jack-in-the-box in Oakland.");
+
+    ret = ret && res=="Jill was jacked up at the jack-in-the-box in Cleveland Oh.";
+    //console.log(res);
+
+    res=replacer.replace("Jack was jacked up at the jack-in-the-box in Oakland.",
+        {splitOnPunct: true});
+    //console.log(res);
+
+    ret = ret && res=='Jill was jacked up at the Jill-in-the-box in Cleveland Oh.';
+
+    replacer = new wordReplace(slst, {respectCase: true});
+
+    res=replacer.replace("Jack was jacked up at the jack-in-the-box in Oakland.",
+        {splitOnPunct: true});
+    //console.log(res);
+
+    ret = ret && res=='Jill was jacked up at the jack-in-the-box in Oakland.';
+
+    return ret;
+});
+
+testFeature("wordReplace - punct opts", function(){
+    var slst =
+`horay: yippee
+yippee: kewlness
+why: who
+`;
+
+    var ret=true;
+
+    var replacer = new wordReplace(slst);
+    var res=replacer.replace('¿why say Horay!!! when you could say Yippee!!!?');
+
+    ret = ret && res=='¿who say yippee!!! when you could say kewlness!!!?'
+    //console.log(ret, res);
+
+    res=replacer.replace('¿why say Horay!!! when you could say Yippee!!!?',
+        {includeLeadingPunct: true});
+
+    ret = ret && res=='¿why say yippee!!! when you could say kewlness!!!?';
+    //console.log(ret, res);
+
+    res=replacer.replace('¿why say "Horay!!!" when you could say Yippee!!!?',
+        {includeTrailingPunct: true});
+
+    ret = ret && res=='¿who say "Horay!!!" when you could say Yippee!!!?';
+    //console.log(ret, res);
+
+
+    return ret;
+});
+
+testFeature("wordReplace - utf-8", function(){
+    var slst =
+`
+#jack to Alexander
+Τζιλ : Αθηνά
+
+# the spaces on the next line are part of the test
+
+#jill to Athena
+Τζακ : Άλεξ
+
+#hill to mountain
+λόφο: βουνό
+`;
+
+    // with Em Quad, nbsp & Em Space
+    var gstr=`Ο${%C:0xE28081}Τζακ${%C:0xC2A0}και η Τζιλ${%C:0xE28083}ανέβηκαν το λόφο`
+
+    var ret=true;
+
+    var replacer = new wordReplace(slst);
+    var res=replacer.replace(gstr);
+    ret = ret && res=='Ο Άλεξ και η Αθηνά ανέβηκαν το βουνό'
+
+    return ret;
+});
+
 var str=readFile(process.script,-220,-20,true);
 
 testFeature("readFile/string",
+    // utf char count can be different from byte count.
+    // thus bottom of this file should be all ascii.
     str.length==200
 );
 
@@ -345,65 +436,73 @@ var asdfmts=[
     "%Y-%m-%d %H:%M:%S",                //  6: 1999-12-31 23:59:59
     "%A %B %d %H:%M:%S %Y",             //  7: Fri Dec 31 23:59:59 1999
     "%Y-%m-%dT%H:%M:%S ",               //  8: javascript style from console.log(new Date()). space is for erased '.123Z' below
+    "%A %d %B %Y %I:%M:%S %p %z",       //  9: Thu 24 Jul 2025 12:21:25 AM -0800
+    "%A %d %B %Y %I:%M:%S %p",          // 10: Thu 24 Jul 2025 12:21:25 AM
+    "%A %d %B %Y %H:%M:%S %z",          // 11: Thu 24 Jul 2025 00:21:25 -0800
+    "%A %d %B %Y %H:%M:%S",             // 12: Thu 24 Jul 2025 00:21:25
     // standard without seconds
-    "%Y-%m-%d %I:%M %p %z",             //  9: 1999-12-31 11:59 pm -0800
-    "%A %B %d %I:%M %p %Y %z",          // 10: Fri Dec 31 11:59 pm 1999 -0800
-    "%Y-%m-%d %I:%M %p",                // 11: 1999-12-31 11:59 pm
-    "%A %B %d %I:%M %p %Y",             // 12: Fri Dec 31 11:59 pm 1999
-    "%Y-%m-%d %H:%M %z",                // 13: 1999-12-31 23:59 -0800
-    "%A %B %d %H:%M %Y %z",             // 14: Fri Dec 31 23:59 1999 -0800
-    "%Y-%m-%d %H:%M",                   // 15: 1999-12-31 23:59
-    "%A %B %d %H:%M %Y",                // 16: Fri Dec 31 23:59 1999
+    "%Y-%m-%d %I:%M %p %z",             // 13: 1999-12-31 11:59 pm -0800
+    "%A %B %d %I:%M %p %Y %z",          // 14: Fri Dec 31 11:59 pm 1999 -0800
+    "%Y-%m-%d %I:%M %p",                // 15: 1999-12-31 11:59 pm
+    "%A %B %d %I:%M %p %Y",             // 16: Fri Dec 31 11:59 pm 1999
+    "%Y-%m-%d %H:%M %z",                // 17: 1999-12-31 23:59 -0800
+    "%A %B %d %H:%M %Y %z",             // 18: Fri Dec 31 23:59 1999 -0800
+    "%Y-%m-%d %H:%M",                   // 19: 1999-12-31 23:59
+    "%A %B %d %H:%M %Y",                // 20: Fri Dec 31 23:59 1999
+    "%A %d %B %Y %I:%M %p %z",          // 21: Thu 24 Jul 2025 12:21 AM -0800
+    "%A %d %B %Y %I:%M %p",             // 22: Thu 24 Jul 2025 12:21 AM
+    "%A %d %B %Y %H:%M %z",             // 23: Thu 24 Jul 2025 00:21 -0800
+    "%A %d %B %Y %H:%M",                // 24: Thu 24 Jul 2025 00:21
     // locale dependent:
-    "%x %r %z",                         // 17: date varies, time: 11:59:59 pm -0800
-    "%x %r",                            // 18: date varies, time: 11:59:59 pm
-    "%c",                               // 18: varies
-    "%x %X %z",                         // 20: varies
-    "%x %X",                            // 21: varies
+    "%x %r %z",                         // 25: date varies, time: 11:59:59 pm -0800
+    "%x %r",                            // 26: date varies, time: 11:59:59 pm
+    "%c",                               // 27: varies
+    "%x %X %z",                         // 28: varies
+    "%x %X",                            // 29: varies
     // others
-    "%b %e %I:%M:%S %p %Y %z",          // 22: Dec 31 11:59:59 pm 1999 -0800
-    "%b %e %I:%M:%S %p %Y",             // 23: Dec 31 11:59:59 pm 1999
-    "%b %e %I:%M %p %Y %z",             // 24: Dec 31 11:59 pm 1999 -0800
-    "%b %e %I:%M %p %Y",                // 25: Dec 31 11:59 pm 1999
-    "%b %e %H:%M:%S %Y %z",             // 26: Dec 31 23:59:59 1999 -0800
-    "%b %e %H:%M:%S %Y",                // 27: Dec 31 23:59:59 1999
-    "%b %e %H:%M %Y %z",                // 28: Dec 31 23:59 1999 -0800
-    "%b %e %H:%M %Y",                   // 29: Dec 31 23:59 1999
-    "%e %b %I:%M:%S %p %Y %z",          // 30: 31 Dec 11:59:59 pm 1999 -0800
-    "%e %b %I:%M:%S %p %Y",             // 31: 31 Dec 11:59:59 pm 1999
-    "%e %b %I:%M %p %Y %z",             // 32: 31 Dec 11:59 pm 1999 -0800
-    "%e %b %I:%M %p %Y",                // 33: 31 Dec 11:59 pm 1999
-    "%e %b %H:%M:%S %Y %z",             // 34: 31 Dec 23:59:59 1999 -0800
-    "%e %b %H:%M:%S %Y",                // 35: 31 Dec 23:59:59 1999
-    "%e %b %H:%M %Y %z",                // 36: 31 Dec 23:59 1999 -0800
-    "%e %b %H:%M %Y",                   // 37: 31 Dec 23:59 1999
-    "%m/%d/%y %I:%M:%S %p %z",          // 38: 12/31/99 11:59:59 pm -0800
-    "%m/%d/%y %I:%M:%S %p",             // 39: 12/31/99 11:59:59 pm
-    "%m/%d/%y %I:%M %p %z",             // 40: 12/31/99 11:59 pm -0800
-    "%m/%d/%y %I:%M %p",                // 41: 12/31/99 11:59 pm
-    "%m/%d/%y %H:%M:%S %z",             // 42: 12/31/99 23:59:59 -0800
-    "%m/%d/%y %H:%M:%S",                // 43: 12/31/99 23:59:59
-    "%m/%d/%y %H:%M %z",                // 44: 12/31/99 23:59 -0800
-    "%m/%d/%y %H:%M",                   // 45: 12/31/99 23:59
-    "%m/%d/%Y %I:%M:%S %p %z",          // 46: 12/31/1999 11:59:59 pm -0800
-    "%m/%d/%Y %I:%M:%S %p",             // 47: 12/31/1999 11:59:59 pm
-    "%m/%d/%Y %I:%M %p %z",             // 48: 12/31/1999 11:59 pm -0800
-    "%m/%d/%Y %I:%M %p",                // 49: 12/31/1999 11:59 pm
-    "%m/%d/%Y %H:%M:%S %z",             // 50: 12/31/1999 23:59:59 -0800
-    "%m/%d/%Y %H:%M:%S",                // 51: 12/31/1999 23:59:59
-    "%m/%d/%Y %H:%M %z",                // 52: 12/31/1999 23:59 -0800
-    "%m/%d/%Y %H:%M",                   // 53: 12/31/1999 23:59
+    "%b %e %I:%M:%S %p %Y %z",          // 30: Dec 31 11:59:59 pm 1999 -0800
+    "%b %e %I:%M:%S %p %Y",             // 31: Dec 31 11:59:59 pm 1999
+    "%b %e %I:%M %p %Y %z",             // 32: Dec 31 11:59 pm 1999 -0800
+    "%b %e %I:%M %p %Y",                // 33: Dec 31 11:59 pm 1999
+    "%b %e %H:%M:%S %Y %z",             // 34: Dec 31 23:59:59 1999 -0800
+    "%b %e %H:%M:%S %Y",                // 35: Dec 31 23:59:59 1999
+    "%b %e %H:%M %Y %z",                // 36: Dec 31 23:59 1999 -0800
+    "%b %e %H:%M %Y",                   // 37: Dec 31 23:59 1999
+    "%e %b %I:%M:%S %p %Y %z",          // 38: 31 Dec 11:59:59 pm 1999 -0800
+    "%e %b %I:%M:%S %p %Y",             // 39: 31 Dec 11:59:59 pm 1999
+    "%e %b %I:%M %p %Y %z",             // 40: 31 Dec 11:59 pm 1999 -0800
+    "%e %b %I:%M %p %Y",                // 41: 31 Dec 11:59 pm 1999
+    "%e %b %H:%M:%S %Y %z",             // 42: 31 Dec 23:59:59 1999 -0800
+    "%e %b %H:%M:%S %Y",                // 43: 31 Dec 23:59:59 1999
+    "%e %b %H:%M %Y %z",                // 44: 31 Dec 23:59 1999 -0800
+    "%e %b %H:%M %Y",                   // 45: 31 Dec 23:59 1999
+    "%m/%d/%y %I:%M:%S %p %z",          // 46: 12/31/99 11:59:59 pm -0800
+    "%m/%d/%y %I:%M:%S %p",             // 47: 12/31/99 11:59:59 pm
+    "%m/%d/%y %I:%M %p %z",             // 48: 12/31/99 11:59 pm -0800
+    "%m/%d/%y %I:%M %p",                // 49: 12/31/99 11:59 pm
+    "%m/%d/%y %H:%M:%S %z",             // 50: 12/31/99 23:59:59 -0800
+    "%m/%d/%y %H:%M:%S",                // 51: 12/31/99 23:59:59
+    "%m/%d/%y %H:%M %z",                // 52: 12/31/99 23:59 -0800
+    "%m/%d/%y %H:%M",                   // 53: 12/31/99 23:59
+    "%m/%d/%Y %I:%M:%S %p %z",          // 54: 12/31/1999 11:59:59 pm -0800
+    "%m/%d/%Y %I:%M:%S %p",             // 55: 12/31/1999 11:59:59 pm
+    "%m/%d/%Y %I:%M %p %z",             // 56: 12/31/1999 11:59 pm -0800
+    "%m/%d/%Y %I:%M %p",                // 57: 12/31/1999 11:59 pm
+    "%m/%d/%Y %H:%M:%S %z",             // 58: 12/31/1999 23:59:59 -0800
+    "%m/%d/%Y %H:%M:%S",                // 59: 12/31/1999 23:59:59
+    "%m/%d/%Y %H:%M %z",                // 60: 12/31/1999 23:59 -0800
+    "%m/%d/%Y %H:%M",                   // 61: 12/31/1999 23:59
     // date only
-    "%m/%d/%y %z",                      // 54: 12/31/99 -0800
-    "%m/%d/%y",                         // 55: 12/31/99
-    "%m/%d/%Y %z",                      // 56: 12/31/1999 -0800
-    "%m/%d/%Y",                         // 57: 12/31/1999
-    "%Y-%m-%d %z",                      // 58: 1999-12-31 -0800
-    "%Y-%m-%d",                         // 59: 1999-12-31
-    "%x"                                // 60: varies
+    "%m/%d/%y %z",                      // 62: 12/31/99 -0800
+    "%m/%d/%y",                         // 63: 12/31/99
+    "%m/%d/%Y %z",                      // 64: 12/31/1999 -0800
+    "%m/%d/%Y",                         // 65: 12/31/1999
+    "%Y-%m-%d %z",                      // 66: 1999-12-31 -0800
+    "%Y-%m-%d",                         // 67: 1999-12-31
+    "%x",                               // 68: varies
 ]
 
-var dateonly=53; //res after this will be at midnight, because format has no %H
+var dateonly=61; //res after this will be at midnight, because format has no %H
 
 //var nowgmt = new Date("2024-01-01T08:30:00.000Z");
 //var nowgmt = new Date("2024-07-01T08:30:00.000Z");
@@ -427,6 +526,7 @@ for (var i=0; i<asdfmts.length; i++)
     var res=false, diff=0;
 
     var df = dateFmt(cfmt, nowgmt);
+    //printf("doing %s %s\n", df, cfmt);
     var asd=autoScanDate(df);
     var cmpdate;
 
@@ -457,8 +557,8 @@ for (var i=0; i<asdfmts.length; i++)
             return true;
         else
         {
-            printf("failed %s vs %s\n", asd.date, cmpdate);
-            printf("input = '%s'\n", df);
+            printf("failed %s (asd) vs %s(cmpdate)\n", asd.date, cmpdate);
+            printf("input = '%s', diff=%d\n%3J\n", df, diff, asd);
             return false;
         }
     });
@@ -486,7 +586,7 @@ var len = 0;
 if(rampart.versionBits == 64)
     len = asdfmts.length;
 else
-   testFeature('autoScanDate 1800s - 32bit platform', "skipping"); 
+   testFeature('autoScanDate 1800s - 32bit platform', "skipping");
 
 for (var i=0; i<len; i++)
 {

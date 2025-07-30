@@ -72,6 +72,7 @@ ADD_CUSTOM_TARGET (
 
 
 add_executable(rampart
+    ${PROJECT_SOURCE_DIR}/extern/utf8proc/utf8proc.c
 	duktape/register.c
 	duktape/core/duktape.c
 	duktape/core/module.c
