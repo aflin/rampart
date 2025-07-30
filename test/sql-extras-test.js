@@ -65,7 +65,7 @@ testFeature("stringFormat - query markup", function(){
 
 
 testFeature("stringFormat - date" , function(){
-  var res=stringFormat('%aT','%c',111111111);
+  var res=stringFormat('%aT','%a %b %d %H:%M:%S %Y',111111111);
   return "Tue Jul 10 00:11:51 1973" == res;
 });
 
