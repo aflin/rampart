@@ -2219,7 +2219,7 @@ static QUERY_STRUCT rp_get_query(duk_context *ctx)
             }
             case DUK_TYPE_STRING:
             {
-                int l;
+                //int l;
                 if (q->sql != (char *)NULL)
                 {
                     RP_THROW(ctx, "Only one string may be passed as a parameter and must be a sql statement.\n");
@@ -2230,6 +2230,7 @@ static QUERY_STRUCT rp_get_query(duk_context *ctx)
                 }
                 q->sql = duk_get_string(ctx, i);
                 q->str_idx=i;
+                /*  Done in parse_sql_params now -- ajf 2025-07-27
                 l = strlen(q->sql) - 1;
                 while (*(q->sql + l) == ' ' && l > 0)
                     l--;
@@ -2241,6 +2242,7 @@ static QUERY_STRUCT rp_get_query(duk_context *ctx)
                     duk_replace(ctx, i);
                     q->sql = (char *)duk_get_string(ctx, i);
                 }
+                */
                 /* it hasn't been set yet. we don't want to overwrite returnRows or returnType */
                 if(q->rettype == -1)
                 {
@@ -2382,6 +2384,22 @@ static QUERY_STRUCT rp_get_query(duk_context *ctx)
         //q->err = QS_ERROR_PARAM;
         RP_THROW(ctx, "sql - No sql statement present.\n");
     }
+
+    // we are only doing objects now -ajf 2025-07-27
+    if(q->arr_idx >-1 && q->obj_idx==-1)
+    {
+        duk_idx_t idx=q->arr_idx;
+        duk_uarridx_t i=0, len=duk_get_length(ctx, idx);
+
+        duk_push_object(ctx);
+        for (; i<len; i++) {
+            duk_get_prop_index(ctx, idx, i);
+            duk_put_prop_index(ctx, -2, i);
+        }
+        duk_replace(ctx, idx);
+        q->arr_idx=-1;
+        q->obj_idx=idx;
+    }
     return (q_st);
 }
 
@@ -2458,7 +2476,6 @@ static QUERY_STRUCT rp_get_query(duk_context *ctx)
     }\
 } while(0)
 
-
 static int rp_add_named_parameters(
     duk_context *ctx,
     DB_HANDLE *h,
@@ -2479,6 +2496,11 @@ static int rp_add_named_parameters(
         int in, out;
 
         duk_get_prop_string(ctx, obj_loc, key);
+
+        duk_dup(ctx, -1);
+        //printf("pushing param '%s'\n", duk_safe_to_string(ctx, -1));
+        duk_pop(ctx);
+
         if(!duk_is_undefined(ctx, -1))
         {
             push_sql_param;
@@ -2486,48 +2508,23 @@ static int rp_add_named_parameters(
             /* texis_params is indexed starting at 1 */
             rc = h_param(h, i+1, v, &plen, in, out);
             if (!rc)
+            {
+                duk_pop(ctx);
                 return 0;
+            }
+        }
+        else
+        {
+            if(*key=='\xff' && isdigit(*(key+1))  )
+                snprintf(finfo->errmap, msgbufsz-1, "internal error processing likep parameter");
+            else
+                snprintf(finfo->errmap, msgbufsz-1, "parameter '%s' not found in Object.", key);
+
+            duk_pop(ctx);
+            return 0;
         }
         duk_pop(ctx);
 
-    }
-    return 1;
-}
-
-/* **************************************************
-   Push parameters to the database for parameter
-   substitution (?) is sql.
-   i.e. "select * from tbname where col1 = ? and col2 = ?"
-     an array of two values should be passed and will be
-     processed here.
-     arrayi is the place on the stack where the array lives.
-   ************************************************** */
-
-static int rp_add_parameters(duk_context *ctx, DB_HANDLE *h, duk_idx_t arr_loc)
-{
-    int rc=0;
-    duk_uarridx_t arr_i = 0;
-
-    /* Array is at arr_loc. Iterate over members.
-       arr_i is the index of the array member we are examining */
-    while (duk_has_prop_index(ctx, arr_loc, arr_i))
-    {
-        void *v;   /* value to be passed to db */
-        long plen; /* lenght of value */
-        double d;  /* for numbers */
-        int64_t lval;
-        int in, out;
-
-        /* push array member to top of stack */
-        duk_get_prop_index(ctx, arr_loc, arr_i);
-
-        /* check the datatype of the array member */
-        push_sql_param;
-        arr_i++;
-        rc = h_param(h, (int)arr_i, v, &plen, in, out);
-        duk_pop(ctx);
-        if (!rc)
-            return 0;
     }
     return 1;
 }
@@ -3355,20 +3352,25 @@ static duk_ret_t rp_sql_import_csv_str(duk_context *ctx)
 */
 static char * skip_until_c(char *s,int c,int *pN)
 {
-   *pN=0;                        // init the character counter to 0
+   int n=0;
    while(*s)
    {
       if(*s=='\\' && *(s+1)==c)  // deal with escapement
       {
          ++s;
-         ++*pN;
+         ++n;
       }
       else
       if(*s==c)
-       return(s);
+      {
+          if(pN)*pN=n;
+          return(s);
+      }
       ++s;
-      ++*pN;
+      ++n;
    }
+  if(pN)
+     *pN=n;
   return(s);
 }
 
@@ -3376,19 +3378,62 @@ static char * skip_until_c(char *s,int c,int *pN)
 static int count_sql_parameters(char *s)
 {
    int n_params=0;
-   int unused;
    while(*s)
    {
       switch(*s)
       {
          case '"' :
-         case '\'': s=skip_until_c(s+1,*s,&unused);break;
+         case '\'':
+         {
+             s=skip_until_c(s+1,*s,NULL);
+             break;
+         }
          case '\\': ++s; break;
          case '?' : ++n_params;break;
       }
-     ++s;
+      if(!*s) break;
+      ++s;
    }
    return (n_params);
+}
+
+static char ** freenames(char **names, int len)
+{
+    if(!names)
+        return names;
+    int i=0;
+    for (;i<len;i++)
+    {
+        if(names[i])
+            free(names[i]);
+    }
+    free(names);
+    return NULL;
+}
+
+// like strndup, but allocates extra_space more bytes
+static char * strndupx (char *s, ssize_t len, size_t extra_space)
+{
+    if(!s)
+        return NULL;
+
+    char *ret=NULL;
+
+    if(len<0)
+    {
+        size_t olen = strlen(s) + extra_space + 1;
+        CALLOC(ret, olen);
+        strcpy(ret, s);
+    }
+    else if (!len)
+        return strdup(s);
+    else
+    {
+        size_t olen = len + extra_space + 1;
+        CALLOC(ret, olen);
+        strncpy(ret, s, len);
+    }
+    return ret;
 }
 
 /*
@@ -3408,53 +3453,292 @@ static int count_sql_parameters(char *s)
 
    Both names[] and free_me must be freed by the caller BUT ONLY IF return is >0
 
+   LIKEP additions: -ajf 2024-07-27
+       - likeppos must be freed if not NULL.
+       - free_me removed, names[] must be freed with freenames.
+       - processing of sql is done even if no '?' params found.
+       - semi-colon added if not in string
 */
-static int parse_sql_parameters(char *old_sql,char **new_sql,char **names[],char **free_me)
+static int parse_sql_parameters(
+    char *old_sql,
+    char **new_sql,
+    char **names[],
+    int **likeppos,
+    duk_context *ctx,
+    duk_idx_t *obj_idx
+)
 {
     int    n_params=count_sql_parameters(old_sql);
-    char * my_copy  =NULL;
     char * sql      =NULL;
     char **my_names =NULL;
     char * out_p    =NULL;
     char * s        =NULL;
+    char idx_s[32];
 
     int    name_index=0;
-    int    quote_len;
-    int    inlen = strlen(old_sql)+1;
-    int    qm_index=0;
-    /* width in chars of largest number + '\0' if all ? are treated as ?0, ?1, etc */
-    int    numwidth;
+    int    quote_len=0;
+    int    qm_index=0, likep_index=0;;
+    int nlikep=0;
+    int gotsemi=0;
 
-    if(!n_params)                  // nothing to do
-       return(0);
-
-    if(n_params < 10)
-        numwidth = 2;
-    else if (n_params < 100)
-        numwidth = 3;
-    else
-        numwidth = (int)(floor(log10((double)n_params))) + 2;
-
-    /* copy the string, and make room at the end for printing extra numbers */
-    REMALLOC(my_copy, inlen + n_params * numwidth +1);
-    strcpy(my_copy, old_sql);      // extract the names in place and mangle the sql copy
-
-    *free_me =my_copy;             // tell the caller what to free when they're done
-    s        =my_copy;             // we're going to trash our copy with nulls
+    char *parsechars="?'\"\\;";
 
     //REMALLOC(sql, strlen(old_sql)+1); // the new_sql cant be bigger than the old
     REMALLOC(sql, strlen(old_sql)*2);   // now it can, because of extra
     *new_sql=sql;                 // give the caller the new SQL
     out_p=sql;                    // init the sql output pointer
 
-    REMALLOC(my_names, n_params*sizeof(char *));
+    if(n_params)
+        CALLOC(my_names, n_params*sizeof(char *));
 
-    *names=my_names;
 
+    if(likeppos)
+        *likeppos=NULL;
+
+    s=old_sql;
     while(*s)
     {
        switch(*s)
        {
+
+          case ';' :
+             gotsemi=1;
+             break;
+          // find the like?
+          case ',' :
+          case '(' :
+          case ' ' :
+             {
+                // we are looking for likep, liker, like3, like, abstract or stingformat
+                // to replace the ? parameter or quoted string if useSuffixPreset == true
+                int   vlen=5;
+                char *likev=NULL;
+                int   mfunc=0;
+#define RP_IS_ABST   1
+#define RP_IS_STRFMT 2
+                int nparan=1;
+
+                //copy the char and advance over spaces
+                *out_p++=*s++;
+                while(isspace(*s))
+                {
+                    *out_p++=*s++;
+                }
+
+                if(!*s)
+                    goto noquery;
+                else if (strchr(parsechars, *s)) //got a '"\?;
+                    continue;  //continue with the parse
+                else if(!strncasecmp("likep", s, 5))
+                    likev="likep ?";
+                else if(!strncasecmp("liker", s, 5))
+                    likev="liker ?";
+                else if(!strncasecmp("like3", s, 5))
+                    likev="like3 ?";
+                else if(!strncasecmp("like", s, 4))
+                {
+                    likev="like ?";
+                    vlen=4;
+                }
+                else if(!strncasecmp("abstract", s, 8))
+                {
+                    mfunc=RP_IS_ABST;
+                    vlen=8;
+                }
+                else if(!strncasecmp("stringformat", s, 12))
+                {
+                    mfunc=RP_IS_STRFMT;
+                    vlen=12;
+                }
+
+                if(likev || mfunc)
+                {
+                    char *p = s+vlen;
+                    //printf("START = '%s'\n", p);
+                    while(isspace(*p))
+                        p++;
+
+                    if(mfunc){
+                        // abstract( or stringformat(
+                        if (*p!='(')
+                            goto noquery;
+                        p++;
+                        //nparan=1;
+                    }
+
+                    if(mfunc==RP_IS_ABST) // abstract(text, max, style, query)
+                    {
+                        //go to first non whitespace char after third comma(not in quotes), if exists
+                        int breakpoint=0;
+#define RP_ABST_BREAKAFTER 2
+                        while(*p)
+                        {
+                            switch(*p) {
+                                case '\'' :
+                                case '"'  :
+                                    p=skip_until_c(p+1, *p, NULL);
+                                    break;
+                                case ','  :
+                                    if(nparan==1) //only count commas separating own parameters
+                                        breakpoint++;
+                                    break;
+                                case '('  :
+                                    nparan++;
+                                    break;
+                                case ')'  :
+                                    nparan--;
+                                    if(nparan<1)
+                                        breakpoint=100000;
+                                    break;
+                            }
+                            if(breakpoint>RP_ABST_BREAKAFTER)
+                                break;
+                            p++;
+                        }
+                        if( *p == ',')
+                        {
+                            p++;
+                            while(isspace(*p))
+                                p++;
+                                //printf("ABSTRACT at '%s'\n", p);
+                            // check for ' or ? below
+                        }
+                        else
+                            goto noquery;
+                    }
+                    else if(mfunc==RP_IS_STRFMT) // stringformat('%something %mxxx', something, ?query, text)
+                    {
+                        char qc;
+                        int paramno=0, mparam=0, breakpoint=0;
+                        while(isspace(*p))
+                            p++;
+
+                        if(*p == '\'' || *p == '"')
+                            qc=*p;
+                        else
+                            goto noquery; //its something we can't handle
+
+                        // find %m position
+                        p++;
+                        while (*p && *p != qc)
+                        {
+                            if(*p=='%') {
+                                paramno++;
+                                p++;
+                                while(*p =='.' || isdigit(*p)) // %10.12mbH is legal
+                                    p++;
+                                if(*p=='m')
+                                    mparam=paramno;
+                            }
+                            p++;
+                        }
+                        if(*p != qc)
+                            goto noquery;
+                        p++;
+                        // find param after the mparamth ,
+                        while(*p)
+                        {
+                            switch(*p) {
+                                case '\'' :
+                                case '"'  :
+                                    p=skip_until_c(p+1, *p, NULL);
+                                    break;
+                                case ','  :
+                                    if(nparan==1)
+                                        breakpoint++;
+                                    break;
+                                case '('  :
+                                    nparan++;
+                                    break;
+                                case ')'  :
+                                    nparan--;
+                                    if(nparan<1)
+                                        breakpoint=100000;
+                                    break;
+                            }
+                            if(breakpoint>=mparam)
+                                break;
+                            p++;
+                        }
+
+                        if( *p == ',')
+                        {
+                            p++;
+                            while(isspace(*p))
+                                p++;
+                            // check for ' or ? below
+                        }
+                        else
+                            goto noquery;
+                    }
+
+                    //printf("checking for ' or ? at >>%.20s<<\n",p);
+
+                    if (*p =='\'' || *p == '"')
+                    {
+                        // copy the likep phrase to obj at obj_idx
+                        // replace with '?' in query
+                        // make room for another parameter name and create name as "\xff"+likep_index
+                        char endq=*p;
+
+                        n_params++;
+                        REMALLOC(my_names, n_params*sizeof(char *));
+                        my_names[n_params-1]=NULL;
+                        *names=my_names;
+
+                        sprintf(idx_s, "\xff%d", likep_index);
+                        my_names[name_index++] = strndupx(idx_s, -1, 1);
+
+                        if(mfunc)
+                        {
+                            size_t clen = p-s;
+                            strncpy(out_p, s, clen);
+                            out_p+=clen;
+                            strcpy(out_p, " ?");
+                            out_p+=2;
+                        }
+                        else
+                        {
+                            strcpy(out_p, likev);
+                            out_p+=vlen+2; //room for ?
+                        }
+
+                        // copy the "query terms" in likep 'query terms' to duktape stack
+                        p++;
+                        s=p;
+                        while(*s && *s != endq)
+                            s++;
+
+                        if(!*s)
+                            goto error_return;
+
+                        if(*obj_idx == -1) // we don't have a q->obj_idx object, so make one
+                            *obj_idx = duk_push_object(ctx);
+
+                        // the name for duk_put_prop()
+                        duk_push_sprintf(ctx, "\xff%d", likep_index++);
+                        // the value
+                        duk_push_lstring(ctx, p, (duk_size_t)(s-p));
+                        duk_put_prop(ctx, *obj_idx);
+                        s++; // '\''
+
+                        REMALLOC(*likeppos, sizeof(int) * (nlikep +2));  //last will be -1;
+                        (*likeppos)[nlikep++]=name_index-1;                       //the corresponding index in my_names
+                        (*likeppos)[nlikep]=-1;                          //terminate list
+                        continue;
+                    }
+                    else if (*p == '?')
+                    {
+                        REMALLOC(*likeppos, sizeof(int) * (nlikep +2));  //last will be -1;
+                        (*likeppos)[nlikep++]=name_index;                //the corresponding index in my_names
+                        (*likeppos)[nlikep]=-1;                          //terminate list
+                        //printf("Post add like s='%s'\n", s);
+                        continue;
+                    }
+                }
+                //printf("AT END s='%s'\n", s);
+                break;
+             }
           case '"' :
           case '\'':
              {
@@ -3467,12 +3751,13 @@ static int parse_sql_parameters(char *old_sql,char **new_sql,char **names[],char
           case '\\': break;
           case '?' :
              {
+                //printf("DOING ? at '%s'\n", s);
                 ++s;
 
                 if(!(isalnum(*s) || *s=='_' || *s=='"' || *s=='\'')) // check for legal 1st char
                 {
-                    my_names[name_index++] = my_copy + inlen;
-                    inlen += sprintf( my_copy + inlen, "%d", qm_index++) + 1;
+                    sprintf(idx_s, "%d", qm_index++);
+                    my_names[name_index++] = strndupx(idx_s, -1, 1);
                     *out_p='?';
                     ++out_p;
                     break;
@@ -3481,11 +3766,13 @@ static int parse_sql_parameters(char *old_sql,char **new_sql,char **names[],char
                 if(*s=='"' || *s=='\'')          // handle ?"my var"
                 {
                    int quote_type=*s;
-                   my_names[name_index++]=++s;
+                   char *p=++s;
+
                    s=skip_until_c(s,quote_type,&quote_len);
                    if(!*s)           // we hit a null without an ending "
                       goto error_return;
-                   *s='\0';          // terminate this variable name
+
+                   my_names[name_index++] = strndupx(p, (ssize_t)(s-p), 1);
                    *out_p='?';
                    ++out_p;
                    ++s;
@@ -3493,38 +3780,65 @@ static int parse_sql_parameters(char *old_sql,char **new_sql,char **names[],char
                 }
                 else
                 {
-                   my_names[name_index++]=s++;
+                   char *p=s;
+
                    while(*s && (isalnum(*s) || *s=='_'))
                       ++s;
+                   my_names[name_index++] = strndupx(p, (ssize_t)(s-p), 1);
                    *out_p='?';
                    ++out_p;
-                    *out_p++=*s;
+                   *out_p++=*s;
+
                    if(!*s)           //  terminated at the end of the sql we're done
-                      return(n_params);
+                      goto end_return;
                    else
                    {
                       *out_p=*s;
-                      *s='\0';
                    }
                    ++s;
                  continue;
                 }
-             } break;
+             }
+             break;
        }
-
-      *out_p++=*s;
-      ++s;
+       noquery:
+       *out_p++=*s;
+       if(!*s)
+          break;
+       ++s;
     }
+
+   end_return:
+
+   // terminate string
    *out_p='\0';
+
+   //set names
+   *names=my_names; // NULL if not doing names
+
+   // terminate sql if necessary
+   if(!gotsemi)
+       strcat(sql,";");
+
    return(n_params);
 
    error_return:
+   // free everything and set passed in *pointer to NULL
    if(my_names)
-     free(my_names);
-   if(my_copy)
-     free(my_copy);
+   {
+     *names=freenames(my_names, n_params);
+     *names=NULL;
+   }
    if(sql)
+   {
      free(sql);
+     *new_sql=NULL;
+   }
+   if(*likeppos)
+   {
+       free(*likeppos);
+       *likeppos=NULL;
+   }
    return(-1);
 }
 
@@ -3595,6 +3909,30 @@ void check_parse(char *sql,char *new_sql,char **names,int n_names)
     goto end_query;\
 }while(0)
 
+// from rampart.utils - put this in rampart.h
+duk_ret_t word_replace_new(duk_context *ctx);
+
+#include "english_short_nouns.h"
+
+/* load short noun equivs into rampart.utils.replace
+   and stash it for future use                         */
+static duk_idx_t load_list(duk_context *ctx)
+{
+    duk_push_global_stash(ctx);
+    if(!duk_get_prop_string(ctx, -1, "shortnouns"))
+    {
+        duk_pop(ctx);
+        duk_push_c_function(ctx, word_replace_new, 2);
+        duk_push_string(ctx, english_short_nouns);
+        duk_push_undefined(ctx);
+        duk_new(ctx, 2);
+        duk_dup(ctx, -1);
+        duk_put_prop_string(ctx, -3, "shortnouns");
+    }
+    duk_remove(ctx, -2); //stash
+    return duk_normalize_index(ctx, -1);
+}
+
 
 /* **************************************************
    Sql.prototype.exec
@@ -3607,6 +3945,7 @@ static duk_ret_t rp_sql_exec_query(duk_context *ctx, int isquery)
     const char *db, *user="PUBLIC", *pass="";
     duk_idx_t this_idx;
     struct sigaction sa = { {0} };
+    int do_suffix=0;
 
     sa.sa_flags = 0; //SA_NODEFER;
     sa.sa_handler = die_nicely;
@@ -3616,7 +3955,7 @@ static duk_ret_t rp_sql_exec_query(duk_context *ctx, int isquery)
     clearmsgbuf();
 
     int nParams=0;
-    char *newSql=NULL, **namedSqlParams=NULL, *freeme=NULL;
+    char *newSql=NULL, **namedSqlParams=NULL;
     //  signal(SIGUSR2, die_nicely);
 
     SET_THREAD_UNSAFE(ctx);
@@ -3624,18 +3963,27 @@ static duk_ret_t rp_sql_exec_query(duk_context *ctx, int isquery)
     duk_push_this(ctx);
     this_idx = duk_get_top_index(ctx);
 
-    if(duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("user")))
+    if(duk_get_prop_string(ctx, this_idx, DUK_HIDDEN_SYMBOL("sql_settings")))
+    {
+        if(duk_get_prop_string(ctx, -1, "usesuffixpreset")) {
+            do_suffix=duk_get_boolean_default(ctx, -1, 0);
+        }
+        duk_pop(ctx);
+    }
+    duk_pop(ctx);
+
+    if(duk_get_prop_string(ctx, this_idx, DUK_HIDDEN_SYMBOL("user")))
         user=duk_get_string(ctx, -1);
     duk_pop(ctx);
 
-    if(duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("pass")))
+    if(duk_get_prop_string(ctx, this_idx, DUK_HIDDEN_SYMBOL("pass")))
         pass=duk_get_string(ctx, -1);
     duk_pop(ctx);
 
     /* clear the sql.errMsg string */
     duk_del_prop_string(ctx,-1,"errMsg");
 
-    if (!duk_get_prop_string(ctx, -1, "db"))
+    if (!duk_get_prop_string(ctx, this_idx, "db"))
         throw_or_log_error("no database has been opened");
 
     db = duk_get_string(ctx, -1);
@@ -3650,28 +3998,86 @@ static duk_ret_t rp_sql_exec_query(duk_context *ctx, int isquery)
         goto end;
     }
 
-    nParams = parse_sql_parameters((char*)q->sql, &newSql, &namedSqlParams, &freeme);
+    int *likeppos = NULL;
+    nParams = parse_sql_parameters((char*)q->sql, &newSql, &namedSqlParams, &likeppos, ctx, &(q->obj_idx));
 
-    //check_parse((char*)q->sql, newSql, namedSqlParams, nParams);
-    //return 0;
-    if (nParams > 0)
+    /*
+    printf("newSql='%s' likeppos=%p\n", newSql, likeppos);
+    if(likeppos)
+    {
+        int i=0, *lpp = likeppos;
+        while( lpp[i] > -1 )
+        {
+            printf("likep found in pos %d: '%s'\n", lpp[i], namedSqlParams[lpp[i]]);
+            i++;
+        }
+    } */
+
+    if (nParams > -1) // even if zero, we will get a newSql - ajf 2025-07-27
     {
         duk_push_string(ctx, newSql);
         duk_replace(ctx, q->str_idx);
         q->sql = duk_get_string(ctx, q->str_idx);
         free(newSql);
     }
-    else
+
+    /* fix parameters or query */
+    if(do_suffix && likeppos) {
+        int i=0, *lpp = likeppos;
+
+        duk_idx_t listf_idx = load_list(ctx); // load the list and push wordReplace at listf_idx
+
+        // replace each likep parameter with wordReplace(parameter)
+        while( lpp[i] > -1 )
+        {
+            char *param = namedSqlParams[lpp[i]];
+
+            duk_push_string(ctx,"exec");
+            duk_get_prop_string(ctx, q->obj_idx, param);
+
+            // bail if not a string
+            if(!duk_is_string(ctx, -1))
+            {
+                duk_pop_2(ctx);
+                i++;
+                continue;
+            }
+
+            //don't alter object beyond adding hidden properties
+            memmove(param+1, param, strlen(param));  //make room for appending \xff
+            *param='\xff'; //same name, but hidden
+
+            // check if we've done this already
+            if(duk_has_prop_string(ctx, q->obj_idx, param))
+            {
+                //printf("repeat of %s\n", param);
+                duk_pop_2(ctx);
+                i++;
+                continue;
+            }
+
+            duk_call_prop(ctx, listf_idx, 1);
+
+            //printf("substituted param %s -> likep = '%s'\n", param, duk_get_string(ctx,-1));
+
+            duk_put_prop_string(ctx, q->obj_idx, param);
+            i++;
+        }
+    }
+
+    if(likeppos)
     {
-        namedSqlParams=NULL;
-        freeme=NULL;
+        free(likeppos);
+        likeppos=NULL;
     }
 
     /* OPEN */
     h = h_open(db,user,pass);
     if(!h)
+    {
+        namedSqlParams=freenames(namedSqlParams, nParams);
         throw_tx_or_log_error(ctx, "sql open", finfo->errmap);
-
+    }
     h_reset_tx_default(ctx, h, this_idx);
 
 //  messes up the count for arg_idx, so just leave it
@@ -3679,47 +4085,51 @@ static duk_ret_t rp_sql_exec_query(duk_context *ctx, int isquery)
 
     tx = h->tx;
     if (!tx)
+    {
+        namedSqlParams=freenames(namedSqlParams, nParams);
         throw_tx_or_log_error(ctx, "open sql", finfo->errmap);
-
+    }
     /* PREP */
     if (!h_prep(h, (char *)q->sql))
+    {
+        namedSqlParams=freenames(namedSqlParams, nParams);
         throw_tx_or_log_error_close(ctx, "sql prep", finfo->errmap, h);
+    }
 
     /* PARAMS
        sql parameters are the parameters corresponding to "?key" in a sql statement
        and are provide by passing an object in JS call parameters */
     if( namedSqlParams)
     {
-        duk_idx_t idx=-1;
-        if(q->obj_idx != -1)
-            idx=q->obj_idx;
-        else if (q->arr_idx != -1)
-            idx = q->arr_idx;
-        else
+        if(q->obj_idx == -1)
         {
             h_close(h);
             h=NULL;
+            namedSqlParams=freenames(namedSqlParams, nParams);
             throw_or_log_error("sql.exec - parameters specified in sql statement, but no corresponding object or array");
         }
-        if (!rp_add_named_parameters(ctx, h, idx, namedSqlParams, nParams))
+
+        if (!rp_add_named_parameters(ctx, h, q->obj_idx, namedSqlParams, nParams))
         {
-            free(namedSqlParams);
-            free(freeme);
+            namedSqlParams=freenames(namedSqlParams, nParams);
             throw_tx_or_log_error_close(ctx, "sql add parameters", finfo->errmap, h);
         }
-        free(namedSqlParams);
-        free(freeme);
+
+        namedSqlParams=freenames(namedSqlParams, nParams);
     }
+
+
     /* sql parameters are the parameters corresponding to "?" in a sql statement
      and are provide by passing array in JS call parameters
      TODO: check that this is indeed dead code given that parse_sql_parameters now
            turns "?, ?" into "?0, ?1"
-     */
+     *
     else if (q->arr_idx != -1)
     {
         if (!rp_add_parameters(ctx, h, q->arr_idx))
             throw_tx_or_log_error_close(ctx, "sql add parameters", finfo->errmap, h);
     }
+    */
     else
     {
         h_resetparams(h);
@@ -4150,8 +4560,8 @@ char *noiseList[] = {
     "when","where","whether","which","while","who","whoever","whom","whose","why",
     "will","with","within","without","won't","would","wouldn't","yet","you","your", ""
 };
+//todo revisit "ul" and capitulating -> capitalism
 int nsuffixList=91;
-
 char *suffixList[] = {
     "'","anced","ancer","ances","atery","enced","encer","ences","ibler","ment",
     "ness","tion","able","less","sion","ance","ious","ible","ence","ship",
@@ -4327,8 +4737,16 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
     }
     duk_pop_2(ctx);// list and this
 
+    duk_idx_t setobj_idx=duk_normalize_index(ctx, -1);
+    int do_suffix=0;
+
+    if(duk_get_prop_string(ctx, setobj_idx, "usesuffixpreset")) {
+        do_suffix=duk_get_boolean_default(ctx, -1, 0);
+    }
+    duk_pop(ctx);
+
     // apply all settings in object
-    duk_enum(ctx, -1, 0);
+    duk_enum(ctx, setobj_idx, 0);
     while (duk_next(ctx, -1, 1))
     {
         /*
@@ -4605,6 +5023,9 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
         }
         else
         {
+            if(!strcasecmp(prop, "usesuffixpreset"))
+                goto propnext;
+
             if(duk_is_number(ctx, -1))
                 duk_to_string(ctx, -1);
             if(duk_is_boolean(ctx, -1))
@@ -4633,6 +5054,7 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
                 val="defaults";
             }
            */
+
             clearmsgbuf();
             if(setprop(ddic, (char*)prop, (char*)val )==-1)
             {
@@ -4675,6 +5097,21 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
         duk_pop_2(ctx);
     }
     duk_pop(ctx);//enum
+
+    // shortcut setting, overriding anything set above
+    if(do_suffix)
+    {
+        if(setprop(ddic, "useequiv", "1" )==-1)
+        {
+            sprintf(errbuf, "sql.set: %s", finfo->errmap);
+            goto return_neg_two;
+        }
+        if(setprop(ddic, "minwordlen", "5" )==-1)
+        {
+            sprintf(errbuf, "sql.set: %s", finfo->errmap);
+            goto return_neg_two;
+        }
+    }
 
     rp_log_error(ctx); /* log any non fatal errors to this.errMsg */
 
@@ -4929,7 +5366,7 @@ static duk_ret_t rp_sql_addtable(duk_context *ctx)
 // the updater daemon script.  Checks that it is needed, then forks
 // to monitor text indexes.
 
-static char *updater_js = 
+static char *updater_js =
 "function(npsql) { \n"
     "var su;\n"
     "try {su=require('rampart-sqlUpdate.js');}catch(e){}\n"
@@ -5335,7 +5772,7 @@ static duk_ret_t rp_sql_constructor(duk_context *ctx)
         duk_compile_string_filename(ctx, DUK_COMPILE_FUNCTION, updater_js);
         duk_push_this(ctx);
         duk_call(ctx, 1);
-    }        
+    }
     return 0;
 }
 /*
@@ -5399,6 +5836,7 @@ static duk_ret_t fork_helper(duk_context *ctx)
 
     signal(SIGINT, SIG_DFL);
     signal(SIGTERM, SIG_DFL);
+    TXunneededRexEscapeWarning = 0; //silence rex escape warnings
 
     do_child_loop(finfo); // loop and never come back;
     // mmap happens in loop
@@ -5419,7 +5857,7 @@ static duk_ret_t rp_sql_connect(duk_context *ctx)
 }
 
 //the sql.scheduleUpdate function
-static const char *schupd = 
+static const char *schupd =
 "var su;\n"
 "try { su=require('rampart-sqlUpdate.js'); } catch(e){}\n"
 "if(su) su.scheduleUpdate\n";
