@@ -110,7 +110,7 @@ extern int rp_print_error_lines;
 
 #define REQUIRE_PLAIN_OBJECT(ctx,idx,...) ({\
     duk_idx_t __rp_i=(idx);\
-    if(!duk_is_object((ctx),__rp_i) && !duk_is_array((ctx),__rp_i) && !duk_is_function((ctx),__rp_i) ) {\
+    if(!duk_is_object((ctx),__rp_i) || duk_is_array((ctx),__rp_i) || duk_is_function((ctx),__rp_i) ) {\
         RP_THROW((ctx), __VA_ARGS__ );\
     }\
 })
