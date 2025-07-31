@@ -2497,9 +2497,9 @@ static int rp_add_named_parameters(
 
         duk_get_prop_string(ctx, obj_loc, key);
 
-        duk_dup(ctx, -1);
+        //duk_dup(ctx, -1);
         //printf("pushing param '%s'\n", duk_safe_to_string(ctx, -1));
-        duk_pop(ctx);
+        //duk_pop(ctx);
 
         if(!duk_is_undefined(ctx, -1))
         {
@@ -3412,6 +3412,7 @@ static char ** freenames(char **names, int len)
 }
 
 // like strndup, but allocates extra_space more bytes
+// if len < 0, acts like strdup but allocates extra_space more bytes
 static char * strndupx (char *s, ssize_t len, size_t extra_space)
 {
     if(!s)
@@ -3419,19 +3420,23 @@ static char * strndupx (char *s, ssize_t len, size_t extra_space)
 
     char *ret=NULL;
 
-    if(len<0)
+    if(len<0) //get len from *s
     {
-        size_t olen = strlen(s) + extra_space + 1;
-        CALLOC(ret, olen);
-        strcpy(ret, s);
+        if(extra_space > 0)
+        {
+            size_t olen = strlen(s) + extra_space + 1;
+            CALLOC(ret, olen);
+            strcpy(ret, s);
+        }
+        else
+            return strdup(s);
     }
-    else if (!len)
-        return strdup(s);
     else
     {
         size_t olen = len + extra_space + 1;
         CALLOC(ret, olen);
-        strncpy(ret, s, len);
+        if(len)
+            strncpy(ret, s, len);
     }
     return ret;
 }
@@ -3509,7 +3514,7 @@ static int parse_sql_parameters(
           case '(' :
           case ' ' :
              {
-                // we are looking for likep, liker, like3, like, abstract or stingformat
+                // we are looking for likep, liker, like3, like, abstract or stingformat('%m..',...),
                 // to replace the ? parameter or quoted string if useSuffixPreset == true
                 int   vlen=5;
                 char *likev=NULL;
@@ -3517,7 +3522,7 @@ static int parse_sql_parameters(
 #define RP_IS_ABST   1
 #define RP_IS_STRFMT 2
                 int nparan=1;
-
+                int nq=0;
                 //copy the char and advance over spaces
                 *out_p++=*s++;
                 while(isspace(*s))
@@ -3527,7 +3532,7 @@ static int parse_sql_parameters(
 
                 if(!*s)
                     goto noquery;
-                else if (strchr(parsechars, *s)) //got a '"\?;
+                else if (strchr(parsechars, *s)) //got one of '"\?;
                     continue;  //continue with the parse
                 else if(!strncasecmp("likep", s, 5))
                     likev="likep ?";
@@ -3589,6 +3594,9 @@ static int parse_sql_parameters(
                                     nparan--;
                                     if(nparan<1)
                                         breakpoint=100000;
+                                    break;
+                                case '?'  :
+                                    nq++;
                                     break;
                             }
                             if(breakpoint>RP_ABST_BREAKAFTER)
@@ -3654,6 +3662,9 @@ static int parse_sql_parameters(
                                     nparan--;
                                     if(nparan<1)
                                         breakpoint=100000;
+                                    break;
+                                case '?'  :
+                                    nq++;
                                     break;
                             }
                             if(breakpoint>=mparam)
@@ -3730,7 +3741,7 @@ static int parse_sql_parameters(
                     else if (*p == '?')
                     {
                         REMALLOC(*likeppos, sizeof(int) * (nlikep +2));  //last will be -1;
-                        (*likeppos)[nlikep++]=name_index;                //the corresponding index in my_names
+                        (*likeppos)[nlikep++]=name_index+nq;             //the corresponding index in my_names
                         (*likeppos)[nlikep]=-1;                          //terminate list
                         //printf("Post add like s='%s'\n", s);
                         continue;
