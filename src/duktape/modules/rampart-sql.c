@@ -2476,6 +2476,7 @@ static QUERY_STRUCT rp_get_query(duk_context *ctx)
     }\
 } while(0)
 
+#define LIKEP_MOD_CHAR '_'
 static int rp_add_named_parameters(
     duk_context *ctx,
     DB_HANDLE *h,
@@ -2515,7 +2516,12 @@ static int rp_add_named_parameters(
         }
         else
         {
-            if(*key=='\xff' && isdigit(*(key+1))  )
+            if(*key==LIKEP_MOD_CHAR &&
+                 (
+                    isdigit(*(key+1)) ||
+                    ( *(key+1)==LIKEP_MOD_CHAR && isdigit(*(key+2)) )
+                 )
+              )
                 snprintf(finfo->errmap, msgbufsz-1, "internal error processing likep parameter");
             else
                 snprintf(finfo->errmap, msgbufsz-1, "parameter '%s' not found in Object.", key);
@@ -3470,7 +3476,8 @@ static int parse_sql_parameters(
     char **names[],
     int **likeppos,
     duk_context *ctx,
-    duk_idx_t *obj_idx
+    duk_idx_t *obj_idx,
+    int likepproc
 )
 {
     int    n_params=count_sql_parameters(old_sql);
@@ -3513,6 +3520,9 @@ static int parse_sql_parameters(
           case ',' :
           case '(' :
           case ' ' :
+             //skip all this if not doing useSuffixPreset, or whatever future thing triggers this
+             if(!likepproc)
+                 break;
              {
                 // we are looking for likep, liker, like3, like, abstract or stingformat('%m..',...),
                 // to replace the ? parameter or quoted string if useSuffixPreset == true
@@ -3640,7 +3650,7 @@ static int parse_sql_parameters(
                             }
                             p++;
                         }
-                        if(*p != qc)
+                        if(*p != qc || !mparam)
                             goto noquery;
                         p++;
                         // find param after the mparamth ,
@@ -3689,7 +3699,7 @@ static int parse_sql_parameters(
                     {
                         // copy the likep phrase to obj at obj_idx
                         // replace with '?' in query
-                        // make room for another parameter name and create name as "\xff"+likep_index
+                        // make room for another parameter name and create name as LIKEP_MOD_CHAR+likep_index
                         char endq=*p;
 
                         n_params++;
@@ -3697,7 +3707,7 @@ static int parse_sql_parameters(
                         my_names[n_params-1]=NULL;
                         *names=my_names;
 
-                        sprintf(idx_s, "\xff%d", likep_index);
+                        sprintf(idx_s, "%c%d", LIKEP_MOD_CHAR, likep_index);
                         my_names[name_index++] = strndupx(idx_s, -1, 1);
 
                         if(mfunc)
@@ -3727,14 +3737,14 @@ static int parse_sql_parameters(
                             *obj_idx = duk_push_object(ctx);
 
                         // the name for duk_put_prop()
-                        duk_push_sprintf(ctx, "\xff%d", likep_index++);
+                        duk_push_sprintf(ctx, "%c%d", LIKEP_MOD_CHAR, likep_index++);
                         // the value
                         duk_push_lstring(ctx, p, (duk_size_t)(s-p));
                         duk_put_prop(ctx, *obj_idx);
                         s++; // '\''
 
                         REMALLOC(*likeppos, sizeof(int) * (nlikep +2));  //last will be -1;
-                        (*likeppos)[nlikep++]=name_index-1;                       //the corresponding index in my_names
+                        (*likeppos)[nlikep++]=name_index-1;              //the corresponding index in my_names
                         (*likeppos)[nlikep]=-1;                          //terminate list
                         continue;
                     }
@@ -4010,7 +4020,7 @@ static duk_ret_t rp_sql_exec_query(duk_context *ctx, int isquery)
     }
 
     int *likeppos = NULL;
-    nParams = parse_sql_parameters((char*)q->sql, &newSql, &namedSqlParams, &likeppos, ctx, &(q->obj_idx));
+    nParams = parse_sql_parameters((char*)q->sql, &newSql, &namedSqlParams, &likeppos, ctx, &(q->obj_idx), do_suffix);
 
     /*
     printf("newSql='%s' likeppos=%p\n", newSql, likeppos);
@@ -4055,8 +4065,8 @@ static duk_ret_t rp_sql_exec_query(duk_context *ctx, int isquery)
             }
 
             //don't alter object beyond adding hidden properties
-            memmove(param+1, param, strlen(param));  //make room for appending \xff
-            *param='\xff'; //same name, but hidden
+            memmove(param+1, param, strlen(param));  //make room for appending LIKEP_MOD_CHAR
+            *param=LIKEP_MOD_CHAR; //same name, but altered
 
             // check if we've done this already
             if(duk_has_prop_string(ctx, q->obj_idx, param))
