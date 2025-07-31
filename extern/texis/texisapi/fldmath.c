@@ -1291,12 +1291,35 @@ TXPMBUF	*pmbuf;	/* where to send putmsgs (default NULL for putmsg()) */
 	if (TXfldmathverb >= 3)
 		TXfldresultmsg("Function call ", fname, firstArgAndReturn, rc,
 			       1);
-	if (numStackArgs > 0)
-	{		/* swap first and last args so result is on stack */
-		fo->fs->f[fo->fs->numUsed - 1] = *firstArgAndReturn;
-		TXfsSetMineTop(fo->fs, 1);
-		firstArgAndReturn = TXfree(firstArgAndReturn);
-	}
+
+    if (numStackArgs > 0)
+    {        /* swap first and last args so result is on stack */
+        int last = fo->fs->numUsed - 1;
+
+        /* first check if we are replacing something that needs freeing -ajf 07/30/2025 */
+        FLD *fldlast = &fo->fs->f[last];
+        int i=0, freefld=0, freeshadow=0;
+        for (;i<numStackArgs;i++)
+        {
+            if(f[i]==fldlast)
+            {
+                freefld    = freeFld[i];
+                freeshadow = freeFldShadow[i];
+                break;
+            }
+        }
+        if(fldlast)
+        {
+            if (freefld)
+                fldlast= closefld(fldlast);
+            else if (freeshadow)
+                TXfreefldshadow(fldlast);
+        }
+
+        fo->fs->f[last] = *firstArgAndReturn;
+        TXfsSetMineTop(fo->fs, 1);
+        firstArgAndReturn = TXfree(firstArgAndReturn);
+    }
 	for (i = 0; i < ff->maxargs; i++)
 	{
 		if (freeFld[i] && f[i])
