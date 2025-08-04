@@ -5159,21 +5159,10 @@ void initThread(evhtp_t *htp, evthr_t *evthr, void *arg)
 
     duk_put_global_string(ctx, DUK_HIDDEN_SYMBOL("thread_funcstash"));
 
-    //a special reset for sql module so that new thread/fork will have settings reapplied
-    //in rampart-sql.c:reset_tx_default
-    duk_push_int(ctx, -2);
-    duk_put_global_string(ctx, DUK_HIDDEN_SYMBOL("sql_last_handle_no"));
-
     /* for websocket requests, no timeout */
     ctx=thr->wsctx;
 
     duk_put_global_string(ctx, DUK_HIDDEN_SYMBOL("thread_funcstash"));
-
-    //a special reset for sql module so that new thread/fork will have settings reapplied
-    //in rampart-sql.c:reset_tx_default
-    duk_push_int(ctx, -2);
-    duk_put_global_string(ctx, DUK_HIDDEN_SYMBOL("sql_last_handle_no"));
-
 
     /* for rampart-net - evdns_base must be inserted before loop starts
        or it holds exit -- though in rampart-server it is not so important

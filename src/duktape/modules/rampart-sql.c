@@ -113,6 +113,9 @@ SFI
 // info for thread/fork pairing as a thread local
 __thread SFI *finfo = NULL;
 
+// address from duk_get_heapptr of the last sql to have its settings applied
+__thread void *last_sql_set = NULL;
+
 // some string functions don't fork.  We need an error map for them
 char *errmap0;
 
@@ -3473,11 +3476,14 @@ static char * strndupx (char *s, ssize_t len, size_t extra_space)
 static int parse_sql_parameters(
     char *old_sql,
     char **new_sql,
-    char **names[],
+    char **names[]
+#ifdef LIKEP_PARAM_SUBSTITUTIONS
+    ,
     int **likeppos,
     duk_context *ctx,
     duk_idx_t *obj_idx,
     int likepproc
+#endif
 )
 {
     int    n_params=count_sql_parameters(old_sql);
@@ -3489,12 +3495,13 @@ static int parse_sql_parameters(
 
     int    name_index=0;
     int    quote_len=0;
-    int    qm_index=0, likep_index=0;;
-    int nlikep=0;
+    int    qm_index=0;
     int gotsemi=0;
 
+#ifdef LIKEP_PARAM_SUBSTITUTIONS
+    int nlikep=0, likep_index=0;
     char *parsechars="?'\"\\;";
-
+#endif
     //REMALLOC(sql, strlen(old_sql)+1); // the new_sql cant be bigger than the old
     REMALLOC(sql, strlen(old_sql)*2);   // now it can, because of extra
     *new_sql=sql;                 // give the caller the new SQL
@@ -3503,10 +3510,10 @@ static int parse_sql_parameters(
     if(n_params)
         CALLOC(my_names, n_params*sizeof(char *));
 
-
+#ifdef LIKEP_PARAM_SUBSTITUTIONS
     if(likeppos)
         *likeppos=NULL;
-
+#endif
     s=old_sql;
     while(*s)
     {
@@ -3516,6 +3523,7 @@ static int parse_sql_parameters(
           case ';' :
              gotsemi=1;
              break;
+#ifdef LIKEP_PARAM_SUBSTITUTIONS
           // find the like?
           case ',' :
           case '(' :
@@ -3760,6 +3768,7 @@ static int parse_sql_parameters(
                 //printf("AT END s='%s'\n", s);
                 break;
              }
+#endif
           case '"' :
           case '\'':
              {
@@ -3822,7 +3831,9 @@ static int parse_sql_parameters(
              }
              break;
        }
+#ifdef LIKEP_PARAM_SUBSTITUTIONS
        noquery:
+#endif
        *out_p++=*s;
        if(!*s)
           break;
@@ -3855,11 +3866,13 @@ static int parse_sql_parameters(
      free(sql);
      *new_sql=NULL;
    }
+#ifdef LIKEP_PARAM_SUBSTITUTIONS
    if(*likeppos)
    {
        free(*likeppos);
        *likeppos=NULL;
    }
+#endif
    return(-1);
 }
 
@@ -3933,6 +3946,8 @@ void check_parse(char *sql,char *new_sql,char **names,int n_names)
 // from rampart.utils - put this in rampart.h
 duk_ret_t word_replace_new(duk_context *ctx);
 
+#ifdef LIKEP_PARAM_SUBSTITUTIONS
+
 #include "english_short_nouns.h"
 
 /* load short noun equivs into rampart.utils.replace
@@ -3953,7 +3968,7 @@ static duk_idx_t load_list(duk_context *ctx)
     duk_remove(ctx, -2); //stash
     return duk_normalize_index(ctx, -1);
 }
-
+#endif // LIKEP_PARAM_SUBSTITUTIONS
 
 /* **************************************************
    Sql.prototype.exec
@@ -3966,8 +3981,6 @@ static duk_ret_t rp_sql_exec_query(duk_context *ctx, int isquery)
     const char *db, *user="PUBLIC", *pass="";
     duk_idx_t this_idx;
     struct sigaction sa = { {0} };
-    int do_suffix=0;
-
     sa.sa_flags = 0; //SA_NODEFER;
     sa.sa_handler = die_nicely;
     sigemptyset(&sa.sa_mask);
@@ -3984,6 +3997,8 @@ static duk_ret_t rp_sql_exec_query(duk_context *ctx, int isquery)
     duk_push_this(ctx);
     this_idx = duk_get_top_index(ctx);
 
+#ifdef LIKEP_PARAM_SUBSTITUTIONS
+    int do_suffix=0;
     if(duk_get_prop_string(ctx, this_idx, DUK_HIDDEN_SYMBOL("sql_settings")))
     {
         if(duk_get_prop_string(ctx, -1, "usesuffixpreset")) {
@@ -3992,6 +4007,7 @@ static duk_ret_t rp_sql_exec_query(duk_context *ctx, int isquery)
         duk_pop(ctx);
     }
     duk_pop(ctx);
+#endif
 
     if(duk_get_prop_string(ctx, this_idx, DUK_HIDDEN_SYMBOL("user")))
         user=duk_get_string(ctx, -1);
@@ -4018,10 +4034,9 @@ static duk_ret_t rp_sql_exec_query(duk_context *ctx, int isquery)
     {
         goto end;
     }
-
+#ifdef LIKEP_PARAM_SUBSTITUTIONS
     int *likeppos = NULL;
     nParams = parse_sql_parameters((char*)q->sql, &newSql, &namedSqlParams, &likeppos, ctx, &(q->obj_idx), do_suffix);
-
     /*
     printf("newSql='%s' likeppos=%p\n", newSql, likeppos);
     if(likeppos)
@@ -4033,6 +4048,9 @@ static duk_ret_t rp_sql_exec_query(duk_context *ctx, int isquery)
             i++;
         }
     } */
+#else
+    nParams = parse_sql_parameters((char*)q->sql, &newSql, &namedSqlParams);
+#endif
 
     if (nParams > -1) // even if zero, we will get a newSql - ajf 2025-07-27
     {
@@ -4041,7 +4059,7 @@ static duk_ret_t rp_sql_exec_query(duk_context *ctx, int isquery)
         q->sql = duk_get_string(ctx, q->str_idx);
         free(newSql);
     }
-
+#ifdef LIKEP_PARAM_SUBSTITUTIONS
     /* fix parameters or query */
     if(do_suffix && likeppos) {
         int i=0, *lpp = likeppos;
@@ -4091,7 +4109,7 @@ static duk_ret_t rp_sql_exec_query(duk_context *ctx, int isquery)
         free(likeppos);
         likeppos=NULL;
     }
-
+#endif // LIKEP_PARAM_SUBSTITUTIONS
     /* OPEN */
     h = h_open(db,user,pass);
     if(!h)
@@ -4314,74 +4332,44 @@ static void free_list(char **nl)
 
 
 /*
-    reset defaults if they've been changed by another javascript sql handle
-
-    if this_idx > -1 - then we use 'this' to grab previously set settings
-    and apply them after the reset.
-
-    if this_idx < 0 - then reset is forced, but don't apply any saved settings
+    Get the heapptr of last sql object used to do sql.set in this thread
+    if different from current, reapply settings
 */
 
 static void h_reset_tx_default(duk_context *ctx, DB_HANDLE *h, duk_idx_t this_idx)
 {
-    int handle_no=-1, last_handle_no=-1;
+    void *cur = duk_get_heapptr(ctx, this_idx);
 
-    if(this_idx > -1)
-    {
-        if( ! duk_get_prop_string(ctx, this_idx, DUK_HIDDEN_SYMBOL("handle_no")) )
-            RP_THROW(ctx, "internal error getting handle id");
-        handle_no = duk_get_int(ctx, -1);
-        duk_pop(ctx);
-        // see rampart-server.c:initThread - last_handle is set to -2 upon thread ctx creation
-        // to force a reset of all settings that may have been set in main_ctx, but not applied to this thread/fork
-        if(duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("sql_last_handle_no")))
-            last_handle_no = duk_get_int(ctx, -1);
-        duk_pop(ctx);
-    }
+    // if this was the last one to reapply settings, we don't need to do it again
+    if(cur == last_sql_set)
+        return; 
 
-    //if hard reset, or  we've set a setting before and it was made by a different sql handel
-    //printf("handle=%d, last=%d\n",handle_no, last_handle_no);
-    if( this_idx < 0 || (last_handle_no != -1       &&  last_handle_no != handle_no) )
-    {
-        char errbuf[msgbufsz];
-        int ret;
-        if (this_idx > -1) //we reapply old setting
-        {
-            if (!duk_get_prop_string(ctx, this_idx, DUK_HIDDEN_SYMBOL("sql_settings")) )
-            {
-                //we have no old settings
-                duk_pop(ctx);//undefined
-                duk_push_object(ctx); //empty object, reset anyway
-            }
+     // reset settings if any
+     {
+         char errbuf[msgbufsz];
+         int ret;
 
-        }
-        else // just reset, don't apply settings
-        {
-            duk_push_object(ctx);
-        }
+         if (!duk_get_prop_string(ctx, this_idx, DUK_HIDDEN_SYMBOL("sql_settings")) )
+         {
+             //we have no old settings
+             duk_pop(ctx);//undefined
+             duk_push_object(ctx); //empty object, reset anyway
+         }
 
-        //if empty object, all settings will be reset to default
+         ret = h_set(ctx, h, errbuf);
 
-        // set the reset and settings if any
-        ret = h_set(ctx, h, errbuf);
+         duk_pop(ctx);
 
-        duk_pop(ctx);// no longer need settings object on stack
-
-        if(ret == -1)
-        {
-            h_close(h);
-            RP_THROW(ctx, "%s", errbuf);
-        }
-        else if (ret ==-2)
-            throw_tx_error_close(ctx, errbuf, h);
-
-    }
-    if(last_handle_no != handle_no)
-    {
-        //set this javascript sql handle as the last to have applied settings
-        duk_push_int(ctx, handle_no);
-        duk_put_global_string(ctx, DUK_HIDDEN_SYMBOL("sql_last_handle_no"));
-    }
+         if(ret == -1)
+         {
+             h_close(h);
+             RP_THROW(ctx, "%s", errbuf);
+         }
+         else if (ret ==-2)
+             throw_tx_error_close(ctx, errbuf, h);
+        else
+             last_sql_set=cur;
+     }
 }
 
 
@@ -4702,7 +4690,7 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
             ddic = lpstmt->dbc->ddic;
     else
     {
-        sprintf(errbuf,"sql open: %s", finfo->errmap);
+        sprintf(errbuf,"sql.set open: %s", finfo->errmap);
         goto return_neg_two;
     }
 
@@ -4759,12 +4747,15 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
     duk_pop_2(ctx);// list and this
 
     duk_idx_t setobj_idx=duk_normalize_index(ctx, -1);
-    int do_suffix=0;
 
+#ifdef LIKEP_PARAM_SUBSTITUTIONS
+    int do_suffix=0;
     if(duk_get_prop_string(ctx, setobj_idx, "usesuffixpreset")) {
         do_suffix=duk_get_boolean_default(ctx, -1, 0);
     }
     duk_pop(ctx);
+#endif
+
 
     // apply all settings in object
     duk_enum(ctx, setobj_idx, 0);
@@ -4786,6 +4777,59 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
         */
         const char *prop=duk_get_string(ctx, -2);
         int retlisttype=-1, setlisttype=-1;
+
+        /* useDerivations, set eqprefix and related */
+        if( strcmp(prop,"usederivations")==0 )
+        {
+            RPPATH rp={{0}};
+            char eqfile[16], eqpath[16];
+            const char *dlang=NULL;
+            if(duk_is_boolean(ctx, -1) && duk_get_boolean(ctx, -1) )
+                dlang="en";
+            else if (!duk_is_string(ctx, -1))
+            {
+                snprintf(errbuf, msgbufsz, "sql.set: useDerivations must be a Boolean or a String (lang code)");
+                goto return_neg_one;
+            }
+            else
+                dlang = duk_get_string(ctx, -1);
+
+            if (strlen(dlang) > 2)
+            {
+                snprintf(errbuf, msgbufsz, "sql.set: useDerivations String must be 2 characters (lang code)");
+                goto return_neg_one;
+            }
+            snprintf(eqfile, 16, "%s-deriv", dlang);
+            snprintf(eqpath, 16, "derivations/%s", dlang);
+            rp=rp_find_path(eqfile, eqpath);
+            if(strlen(rp.path))
+            {
+                //printf("setting equiv file: '%s'\n", rp.path);
+                if(setprop(ddic, "eqprefix", rp.path )==-1)
+                {
+                    sprintf(errbuf, "sql.set: %s", finfo->errmap);
+                    goto return_neg_two;
+                }
+
+                if(setprop(ddic, "alequivs", "1" )==-1)
+                {
+                    sprintf(errbuf, "sql.set: %s", finfo->errmap);
+                    goto return_neg_two;
+                }
+                if(setprop(ddic, "keepeqvs", "1" )==-1)
+                {
+                    sprintf(errbuf, "sql.set: %s", finfo->errmap);
+                    goto return_neg_two;
+                }
+
+            }
+            else
+            {
+                sprintf(errbuf, "sql.set: couldn't find %s in %s", eqfile, eqpath);
+                goto return_neg_two;
+            }
+            goto propnext;
+        }
 
         if (!strcmp ("lstnoise", prop))
             retlisttype=0;
@@ -5044,9 +5088,10 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
         }
         else
         {
+#ifdef LIKEP_PARAM_SUBSTITUTIONS
             if(!strcasecmp(prop, "usesuffixpreset"))
                 goto propnext;
-
+#endif
             if(duk_is_number(ctx, -1))
                 duk_to_string(ctx, -1);
             if(duk_is_boolean(ctx, -1))
@@ -5077,6 +5122,7 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
            */
 
             clearmsgbuf();
+            //printf("setprop(%s, %s)\n", prop, val);
             if(setprop(ddic, (char*)prop, (char*)val )==-1)
             {
                 sprintf(errbuf, "sql.set: %s", finfo->errmap);
@@ -5119,6 +5165,7 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
     }
     duk_pop(ctx);//enum
 
+#ifdef LIKEP_PARAM_SUBSTITUTIONS
     // shortcut setting, overriding anything set above
     if(do_suffix)
     {
@@ -5133,6 +5180,7 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
             goto return_neg_two;
         }
     }
+#endif
 
     rp_log_error(ctx); /* log any non fatal errors to this.errMsg */
 
@@ -5192,7 +5240,7 @@ static duk_ret_t rp_texis_set(duk_context *ctx)
 {
     const char *db, *user="PUBLIC", *pass="";
     DB_HANDLE *h = NULL;
-    int ret = 0, handle_no=0;
+    int ret = 0;
     char errbuf[msgbufsz];
     char propa[64], *prop=&propa[0];
 
@@ -5204,12 +5252,6 @@ static duk_ret_t rp_texis_set(duk_context *ctx)
 
     if(duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("pass")))
         pass=duk_get_string(ctx, -1);
-    duk_pop(ctx);
-
-    // this should always be true
-    if( !duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("handle_no")) )
-        RP_THROW(ctx, "internal error getting handle id");
-    handle_no=duk_get_int(ctx, -1);
     duk_pop(ctx);
 
     if (!duk_get_prop_string(ctx, -1, "db"))
@@ -5337,10 +5379,6 @@ static duk_ret_t rp_texis_set(duk_context *ctx)
 
     h_end_transaction(h);
 
-    //store which sql object last made a settings change
-    duk_push_int(ctx, handle_no);
-    duk_put_global_string(ctx, DUK_HIDDEN_SYMBOL("sql_last_handle_no"));
-
     clean_settings(ctx);
     return (duk_ret_t) ret;
 }
@@ -5405,7 +5443,6 @@ static char *updater_js =
    ************************************************** */
 static duk_ret_t rp_sql_constructor(duk_context *ctx)
 {
-    int sql_handle_no = 0;
     const char *db = NULL, *user="PUBLIC", *pass="";
     DB_HANDLE *h;
     int force=0, addtables=0, create=0, no_updater=0;
@@ -5670,27 +5707,6 @@ static duk_ret_t rp_sql_constructor(duk_context *ctx)
     duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("user"));
     duk_push_string(ctx, pass);
     duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("pass"));
-
-
-    /* make a unique id for this sql handle in this ctx/thread.
-     * Used to restore global texis settings previously set via
-     * sql.set() so they act as if they are tied to the sql handle */
-    if (duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("sql_handle_counter") ) )
-    {
-        sql_handle_no=duk_get_int(ctx, -1);
-    }
-    duk_pop(ctx);
-
-    sql_handle_no++;
-
-    // attach number to this
-    duk_push_int(ctx, sql_handle_no);
-    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("handle_no") );
-
-    //update last number
-    duk_push_int(ctx, sql_handle_no);
-    duk_put_global_string(ctx, DUK_HIDDEN_SYMBOL("sql_handle_counter"));
-    //end unique id for sql handle
 
     //currently unused, probably can be removed:
     SET_THREAD_UNSAFE(ctx);
