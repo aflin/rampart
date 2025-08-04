@@ -751,6 +751,7 @@ install(CODE "execute_process( \
     \"${PROJECT_BINARY_DIR}/extern/texis/apps/addtable\" \
     \"${PROJECT_BINARY_DIR}/extern/texis/apps/kdbfchk\" \
     \"${PROJECT_BINARY_DIR}/extern/texis/apps/texislockd\" \
+    \"${PROJECT_BINARY_DIR}/extern/texis/apps/backref\" \
     \"${CMAKE_INSTALL_PREFIX}/bin\"   \
     )"
 )
@@ -870,6 +871,15 @@ install(CODE "execute_process( \
     COMMAND ${CMAKE_COMMAND} -E copy_directory \
     \"${PROJECT_SOURCE_DIR}/licenses\" \
     \"${CMAKE_INSTALL_PREFIX}/licenses\"   \
+    )"
+)
+
+# derivations
+install(DIRECTORY DESTINATION "${CMAKE_INSTALL_PREFIX}/derivations")
+install(CODE "execute_process( \
+    COMMAND ${CMAKE_COMMAND} -E copy_directory \
+    \"${PROJECT_SOURCE_DIR}/derivations\" \
+    \"${CMAKE_INSTALL_PREFIX}/derivations\"   \
     )"
 )
 
