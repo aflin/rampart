@@ -2967,8 +2967,10 @@ static int rp_fetchWCallback(duk_context *ctx, DB_HANDLE *h, QUERY_STRUCT *q)
 
     return (rown);
 }
+#define IF_CHANGED  0
+#define FORCE_RESET 1
 
-static void h_reset_tx_default(duk_context *ctx, DB_HANDLE *h, duk_idx_t this_idx);
+static void h_reset_tx_default(duk_context *ctx, DB_HANDLE *h, duk_idx_t this_idx, int force);
 
 #undef pushcounts
 
@@ -3046,7 +3048,7 @@ static duk_ret_t rp_sql_import(duk_context *ctx, int isfile)
     if(!h)
         throw_tx_error(ctx, "sql open");
 
-    h_reset_tx_default(ctx, h, this_idx);
+    h_reset_tx_default(ctx, h, this_idx, IF_CHANGED);
     duk_pop(ctx);//this
 
     tx = h->tx;
@@ -4117,7 +4119,7 @@ static duk_ret_t rp_sql_exec_query(duk_context *ctx, int isquery)
         namedSqlParams=freenames(namedSqlParams, nParams);
         throw_tx_or_log_error(ctx, "sql open", finfo->errmap);
     }
-    h_reset_tx_default(ctx, h, this_idx);
+    h_reset_tx_default(ctx, h, this_idx, IF_CHANGED);
 
 //  messes up the count for arg_idx, so just leave it
 //    duk_remove(ctx, this_idx); //no longer needed
@@ -4336,12 +4338,12 @@ static void free_list(char **nl)
     if different from current, reapply settings
 */
 
-static void h_reset_tx_default(duk_context *ctx, DB_HANDLE *h, duk_idx_t this_idx)
+static void h_reset_tx_default(duk_context *ctx, DB_HANDLE *h, duk_idx_t this_idx, int force)
 {
     void *cur = duk_get_heapptr(ctx, this_idx);
 
     // if this was the last one to reapply settings, we don't need to do it again
-    if(cur == last_sql_set)
+    if(!force && cur == last_sql_set)
         return; 
 
      // reset settings if any
@@ -4397,7 +4399,7 @@ static duk_ret_t rp_texis_reset(duk_context *ctx)
         RP_THROW(ctx, "no database is open");
 
     db = duk_get_string(ctx, -1);
-    duk_pop_2(ctx);
+    duk_pop(ctx);
 
     h = h_open(db,user,pass);
 
@@ -4405,7 +4407,9 @@ static duk_ret_t rp_texis_reset(duk_context *ctx)
     {
         throw_tx_error(ctx, "sql open");
     }
-    h_reset_tx_default(ctx, h, -1);
+
+    h_reset_tx_default(ctx, h, -1, FORCE_RESET);
+
     h_end_transaction(h);
     return 0;
 }
@@ -5267,7 +5271,7 @@ static duk_ret_t rp_texis_set(duk_context *ctx)
         throw_tx_error(ctx, "sql open");
     }
 
-    h_reset_tx_default(ctx, h, -1);
+    h_reset_tx_default(ctx, h, -1, FORCE_RESET);
 
     clearmsgbuf();
 
