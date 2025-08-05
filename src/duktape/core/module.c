@@ -100,8 +100,8 @@ static int load_js_module(duk_context *ctx, const char *file, duk_idx_t module_i
             i++;
             buffer++;
         }
-        if(*buffer=='\n')
-            buffer++;
+        //if(*buffer=='\n')
+        //    buffer++;  -- don't mess up line numbering -ajf 8/5/2025
     }
 
     duk_push_string(ctx, "(function (module, exports) { ");
