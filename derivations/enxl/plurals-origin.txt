@@ -1,0 +1,1 @@
+Plurals is derived from list at https://github.com/djstrong/nouns-with-plurals

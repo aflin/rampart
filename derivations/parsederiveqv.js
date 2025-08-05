@@ -4,7 +4,7 @@ var out={};
 
 var skipPrefixes=true;
 
-var lc = process.argv[2].match(/\/(..)\/[^\/]+$/);
+var lc = process.argv[2].match(/\/([^\/]+)\/[^\/]+$/);
 if(lc.length<2) {
     fprintf(stderr, "Could not get lang code from path '%s'\n", process.argv[2]);
     process.exit(1);
@@ -15,6 +15,7 @@ lc=lc[1];
 var ncol=3;
 switch(lc) {
     case 'en':
+    case 'enxl':
     case 'es':
         ncol=4;
         break;
@@ -31,7 +32,8 @@ function parse(){
         fprintf(stderr,"reading %s\n", file);
         while( (l=r.next()) ) {
             x++;
-            fprintf(stderr, "doing line %d of %d  \r", x, nlines);
+            if(! (x%100) )
+                fprintf(stderr, "doing line %d of %d  \r", x, nlines);
             var words=l.split('\t');
             if(words.length < ncol ) {
                 fprintf(stderr, 'bad line "%s" on line %d', l.trim(), x);

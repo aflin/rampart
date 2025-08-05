@@ -4786,7 +4786,7 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
         if( strcmp(prop,"usederivations")==0 )
         {
             RPPATH rp={{0}};
-            char eqfile[16], eqpath[16];
+            char eqfile[PATH_MAX], eqpath[PATH_MAX];
             const char *dlang=NULL;
             if(duk_is_boolean(ctx, -1) && duk_get_boolean(ctx, -1) )
                 dlang="en";
@@ -4798,13 +4798,15 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
             else
                 dlang = duk_get_string(ctx, -1);
 
+            /* unnecessary and sometimes wrong
             if (strlen(dlang) > 2)
             {
                 snprintf(errbuf, msgbufsz, "sql.set: useDerivations String must be 2 characters (lang code)");
                 goto return_neg_one;
             }
-            snprintf(eqfile, 16, "%s-deriv", dlang);
-            snprintf(eqpath, 16, "derivations/%s", dlang);
+            */
+            snprintf(eqfile, PATH_MAX, "%s-deriv", dlang);
+            snprintf(eqpath, PATH_MAX, "derivations/%s", dlang);
             rp=rp_find_path(eqfile, eqpath);
             if(strlen(rp.path))
             {

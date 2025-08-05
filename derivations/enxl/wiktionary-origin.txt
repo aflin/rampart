@@ -1,0 +1,4 @@
+Obtained from JSONL file at https://kaikki.org/dictionary/rawdata.html
+
+The Wiktionary license text can be found at:
+https://en.wiktionary.org/wiki/Wiktionary:Copyrights .
