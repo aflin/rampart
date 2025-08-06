@@ -3800,7 +3800,6 @@ static evhtp_res chunk_finalize(struct evhtp_connection *conn, void * arg)
 
 static duk_ret_t rp_post_req(duk_context *ctx)
 {
-//printf("in finalizer for req\n");
     evhtp_request_t *req=NULL;
 
     if(duk_get_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("evreq")) )
@@ -4259,7 +4258,8 @@ static void *http_dothread(void *arg)
         // we need the global "reqobj" gone. but we need to save the reference to it in a unique spot
         // until rp_chunk_callback, otherwise the finalizer will be called.  We can remove post transaction.
         sprintf(reqobj_tempname,"\xFFreq_%p", chunkp); //use the chunkp pointer as an index for the JS req
-        duk_dup(ctx, req_idx);
+        //duk_dup(ctx, req_idx); -- uh, it ain't there nomo
+        duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("reqobj"));
         duk_put_prop_string(ctx, -2, reqobj_tempname);
         duk_pop(ctx);
     }
@@ -6379,7 +6379,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
                         char mod=MODULE_NONE;
                         int cbtype=0;
                         evhtp_callback_t  *req_callback;
-                        size_t mlen=strlen(path) + 2;
+                        size_t mlen=strlen(path) + 3;
 
                         REMALLOC(s, mlen);
 
@@ -6486,6 +6486,10 @@ duk_ret_t duk_server_start(duk_context *ctx)
                                     //printf("should be '%s' at %d\n",np,fpos);
                                     //prettyprintstack(ctx);
                                 }
+
+                                //path should also end in '/'
+                                if( s[strlen(s)-1] != '/' )
+                                    strcat(s,"/");
 
                                 fprintf(access_fh, "mapping %s path to mod folder %-20s ->    module path:%s\n", pathtypes[cbtype], s, fname);
                                 mod=MODULE_PATH;
