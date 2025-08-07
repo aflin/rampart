@@ -3705,7 +3705,6 @@ static evhtp_res rp_chunk_callback(evhtp_connection_t * conn, void * arg)
     }
 
     chunkp->count++;
-
     duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("chunk_cb"));
     duk_insert(ctx, 0);
 
@@ -3745,9 +3744,8 @@ static evhtp_res rp_chunk_callback(evhtp_connection_t * conn, void * arg)
     // put count into the req object
     duk_push_number(ctx, (double) chunkp->count);
     duk_put_prop_string(ctx, -2, "chunkIndex");
-
     duk_rp_set_to(ctx, 0, "server callback return value - chunking function", setdhs, chunkp);
-    while(duk_get_top(ctx) > 0) duk_pop(ctx);
+    duk_set_top(ctx, 0);
     return EVHTP_RES_OK;
 }
 

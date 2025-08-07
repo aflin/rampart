@@ -29,6 +29,7 @@ RETTXT
     char *text;
     size_t size;
     int isheader;
+    ssize_t total;
     void *req;
 };
 
@@ -62,9 +63,9 @@ CSOS
 //    int arraytype;		                  /* when doing object2query, type of array to use */
 
     int *refcount;                        /* when cloning, keep count for later frees */
-    READTXT readdata;
+    READTXT readdata;                     // for mail
     uint8_t nslists;                      /* number of lists actually used */
-    uint8_t flags;                        /* 
+    uint8_t flags;                        /*
                                              bit 0-1   - array type 0-3
                                              bit 2     - return text
                                              bit 3     - no_copy_buffer
@@ -81,7 +82,7 @@ CSOS
     if(val < 0) (opts)->flags |= 240;\
     else (opts)->flags = ((opts)->flags & 15 ) | (val)<<4;\
 }while (0)
-    
+
 #define GET_HEADERLIST(opts) ({\
     int ret = (int) ( (opts)->flags>>4 );\
     if(ret > 9) ret=-1;\
@@ -106,21 +107,45 @@ SOCKINFO
     TIMERINFO *tinfo;
 };
 
+#define CHUNKDATA struct rp_chunk_data
+
+CHUNKDATA
+{
+    char *chunkbuf;
+    char *chunkpos;
+    char *chunkdatabegin;
+    size_t chunksize;
+    size_t chunkmsize;
+    size_t curtotal;
+    size_t lastcurtotal;
+};
+
+
 #define CURLREQ struct curl_req
 
 CURLREQ
 {
-    CURL *curl;
-    CURLM *multi;
-    RETTXT body;
-    RETTXT header;
-    CSOS *sopts;
-    char *url;                            /* url we will possibly append and will always need to free later */
-    void *thisptr;
-    void *chunkfuncptr;  //not null if we have a chunk callback
-    char *errbuf;
-    duk_context *ctx;  // if async in websockets, get_current_thread() will return wrong ctx
+    CURL        *curl;          // the curl request
+    CURLM       *multi;         // the multi request, if doing multi
+    CSOS        *sopts;         // see above  - curl options
+    char        *url;           // url we will possibly append and will always need to free later
+    void        *thisptr;       // duktape heap pointer to 'this'
+    void        *chunkfuncptr;  // duktape heap pointer to chunk callback
+    CHUNKDATA   *chunkdata;     // see above - struct for chunking and overlapping data
+    void        *progfuncptr;   // duktape heap pointer to progress callback
+    char        *errbuf;        // buffer to store errors
+    duk_context *ctx;           // if async in websockets, get_current_thread() will return wrong ctx, so keep it here
+    RETTXT       body;          // see above  - body text
+    RETTXT       header;        // see above  - headers text
+    int          flags;         // flags below
 };
+
+#define CURLREQ_F_PROGRESS_ONLY  0
+#define CURLREQ_F_GOTHEADERS     1
+#define CURLREQ_F_GOTCHUNKED     2
+#define SET_BIT(val, bit)     ((val) |=  (1 << (bit)))
+#define CLEAR_BIT(val, bit)   ((val) &= ~(1 << (bit)))
+#define CHECK_BIT(val, bit)   (((val) >> (bit)) & 1)
 
 /* push a blank return object on top of stack with
   ok: false
@@ -1781,7 +1806,7 @@ void duk_curl_parse_headers(duk_context *ctx, char *header)
     }
 }
 
-//the problem with this is that body will disappear when ret object does 
+//the problem with this is that body will disappear when ret object does
 static duk_ret_t extbuf_finalizer(duk_context *ctx) {
     char *buf;
 
@@ -1823,7 +1848,9 @@ static int duk_curl_push_res(duk_context *ctx, CURLREQ *req)
 
     /* the doc */
 
-    if(GET_NOCOPY(req->sopts))
+    if( CHECK_BIT(req->flags, CURLREQ_F_PROGRESS_ONLY) )
+        duk_push_fixed_buffer(ctx,0);
+    else if(GET_NOCOPY(req->sopts))
     {
         duk_push_external_buffer(ctx);
         duk_config_buffer(ctx, -1, req->body.text, req->body.size);
@@ -1885,11 +1912,14 @@ static int duk_curl_push_res(duk_context *ctx, CURLREQ *req)
         duk_push_string(ctx, (req->header).text);
     duk_put_prop_string(ctx, -2, "rawHeader");
 
-    //TODO: is it worth it to get cached headers if doing chunkCallback?  Probably.
-    /* headers parsed into object */
+    /* headers parsed into object  -- now in writeCallback
     duk_push_object(ctx);
     duk_curl_parse_headers(ctx, (req->header).text);
-    duk_put_prop_string(ctx, -2, "headers");
+    */
+    duk_push_heapptr(ctx, req->thisptr);
+    if(duk_get_prop_string(ctx, -1, "headers"))
+        duk_put_prop_string(ctx, -3, "headers");
+    duk_pop(ctx);// thisptr
 
     /* http version used */
     curl_easy_getinfo(req->curl, CURLINFO_HTTP_VERSION, &d);
@@ -1945,6 +1975,8 @@ static int duk_curl_push_res(duk_context *ctx, CURLREQ *req)
     return (d);
 }
 
+#define MAX_CHUNK_BUFFER_SIZE 16777216
+
 //TODO: really should have two separate functions for header and body writes.
 static size_t
 WriteCallback(void *contents, size_t size, size_t nmemb, void *userp)
@@ -1952,62 +1984,356 @@ WriteCallback(void *contents, size_t size, size_t nmemb, void *userp)
     size_t realsize = size * nmemb;
     RETTXT *mem = (RETTXT *)userp;
     CURLREQ *req = (CURLREQ *)mem->req;
+    duk_context *ctx = req->ctx;
 
     /* overwrite old headers if we get more due to redirect */
     if (!strncmp(contents, "HTTP/", 5))
         mem->size = 0;
 
-    REMALLOC(mem->text, (mem->size + realsize + 1));
-    memcpy(&(mem->text[mem->size]), contents, realsize);
-    mem->size += realsize;
-    mem->text[mem->size] = '\0';
+    // check for headers first, right before we start on the body
+    if(!CHECK_BIT(req->flags, CURLREQ_F_GOTHEADERS) && !mem->isheader)
+    {
+        mem->total=-1;
+        duk_push_heapptr(ctx, req->thisptr);
+        duk_push_object(ctx);
+        duk_curl_parse_headers(ctx, (req->header).text);
+
+        // check transfer encoding for chunking
+        if(duk_get_prop_string(ctx, -1, "Transfer-Encoding"))
+        {
+            const char *s=duk_get_string(ctx, -1);
+            while(isspace(*s)) s++;
+            if(strncasecmp(s, "chunked", 7)==0)
+                SET_BIT(req->flags, CURLREQ_F_GOTCHUNKED);
+            else {
+                while(1)
+                {
+                    while(*s && *s!=',') s++;
+
+                    if(!*s)
+                        break;
+                    s++;
+                    while(isspace(*s)) s++;
+                    if(strncasecmp(s, "chunked", 7)==0)
+                    {
+                        SET_BIT(req->flags, CURLREQ_F_GOTCHUNKED);
+                        break;
+                    }
+                }
+            }
+        }
+        duk_pop(ctx); // transfer encoding string, or undefined
+
+        if(req->progfuncptr)
+        {
+            // check for length
+            if(duk_get_prop_string(ctx, -1, "Content-Length"))
+            {
+                const char *s=duk_get_string(ctx, -1);
+                char *end;
+
+                errno=0;
+
+                long long val = strtoll(s, &end, 10);
+                if (errno || s == end || *end != '\0' || val < 0 || val > SSIZE_MAX)
+                    mem->total = -1;
+                else
+                    mem->total=(ssize_t)val;
+            }
+            duk_pop(ctx); // content-length string, or undefined
+        }
+
+        duk_put_prop_string(ctx, -2, "headers");
+        duk_pop(ctx); //thisptr
+        SET_BIT(req->flags, CURLREQ_F_GOTHEADERS);
+    }
+
+    // if both not doing skipFinalRes and not doing a chunk callback (see CURLOPT_HTTP_TRANSFER_DECODING in new_request())
+    // or if in header
+    // or if server is not sending chunked encoding
+    // grow and fill buffer
+    if(
+        (
+          !CHECK_BIT(req->flags,CURLREQ_F_PROGRESS_ONLY)
+            &&
+          !req->chunkfuncptr
+        )
+          ||
+        mem->isheader
+          ||
+        !CHECK_BIT(req->flags, CURLREQ_F_GOTCHUNKED)
+    ){
+        REMALLOC(mem->text, (mem->size + realsize + 1));
+        memcpy(&(mem->text[mem->size]), contents, realsize);
+        mem->size += realsize;
+        mem->text[mem->size] = '\0';
+    }
+    else if(CHECK_BIT(req->flags,CURLREQ_F_PROGRESS_ONLY))
+        mem->size += realsize; //keep track, but don't use for buffer;
 
     if(!mem->isheader && req->chunkfuncptr)
     {
-        duk_context *ctx = req->ctx;
+        if( !CHECK_BIT(req->flags, CURLREQ_F_GOTCHUNKED) )
+        {
+            // NO CHUNK ENCODING, just give what we have when we have it
+            duk_push_heapptr(ctx, req->chunkfuncptr);
+            duk_push_heapptr(ctx, req->thisptr);
 
-        duk_push_heapptr(ctx, req->chunkfuncptr);
-        duk_push_heapptr(ctx, req->thisptr);
-        //duk_get_prop_string(ctx, -1, "chunkCallback");
-        //duk_pull(ctx, -2);
-
-        duk_push_object(ctx);
-        duk_push_fixed_buffer(ctx, (duk_size_t) realsize);
-        char *buf = duk_get_buffer(ctx, -1, NULL);
-        memcpy(buf, contents, realsize);
-        duk_put_prop_string(ctx,-2,"body");
-
-        if(duk_get_prop_string(ctx,-2, "headers"))
-            duk_put_prop_string(ctx, -2, "headers");
-        else {
-            duk_pop(ctx);
-            /* headers parsed into object */
             duk_push_object(ctx);
-            duk_curl_parse_headers(ctx, (req->header).text);
-            duk_dup(ctx, -1);
-            duk_put_prop_string(ctx, -4, "headers");
-            duk_put_prop_string(ctx, -2, "headers");
-        }
+            duk_push_fixed_buffer(ctx, (duk_size_t) realsize);
+            char *buf = duk_get_buffer(ctx, -1, NULL);
+            memcpy(buf, contents, realsize);
+            duk_put_prop_string(ctx,-2,"body");
 
-        // [ ..., callback, this, results ]
+            if(duk_get_prop_string(ctx,-2, "headers"))
+                duk_put_prop_string(ctx, -2, "headers");
+            else
+                duk_pop(ctx);
+
+            // [ ..., callback, this, results ]
+
+            duk_push_int(ctx, (int) mem->size);
+            // [ ..., callback, this, results, total_so_far ]
+            /* call the callback */
+            if ( duk_pcall_method(ctx, 2) != 0) {
+                const char *errmsg = rp_push_error(ctx, -1, "rampart-curl: error in curl chunk callback:", rp_print_error_lines);
+                fprintf(stderr, "%s\n", errmsg);
+            }
+            else
+            {
+                // if function returns false, don't do it on next round
+                if(!duk_get_boolean_default(ctx, -1, 1))
+                    req->chunkfuncptr=NULL;
+            }
+            duk_pop(ctx); //result
+        }
+        else
+        {
+            //CHUNK ENCODING, use chunkdata buffer to store full chunk, then call callback with it
+            CHUNKDATA *cdat=NULL;
+            if(!req->chunkdata)
+            {
+                CALLOC(req->chunkdata, sizeof(CHUNKDATA));
+            }
+            cdat = req->chunkdata;
+
+            //start with a 16k buffer, which is probably the max we will see from realsize
+            if(!cdat->chunkbuf)
+            {
+                REMALLOC(cdat->chunkbuf, 16384);
+                cdat->chunkmsize = 16384;
+                cdat->chunkpos = cdat->chunkbuf;
+            }
+            char *p;
+            size_t i=0;
+
+            size_t sz=0;
+            // space we need for what we already have and what we are adding
+            size_t required = ( cdat->chunkpos - cdat->chunkbuf) + realsize;
+
+            if( required > cdat->chunkmsize )
+            {
+                size_t pos = cdat->chunkpos - cdat->chunkbuf;
+                size_t bpos = cdat->chunkdatabegin - cdat->chunkbuf;
+                cdat->chunkmsize = required;
+                // if there's a parse error, don't continue to grow.
+                if(required > MAX_CHUNK_BUFFER_SIZE)
+                {
+                    fprintf(stderr, "rampart-curl: MAX_CHUNK_BUFFER_SIZE (%d) exceeded. Chunks are too large or bad data\n", MAX_CHUNK_BUFFER_SIZE);
+                    goto chunk_cleanup;
+                }
+                REMALLOC(cdat->chunkbuf, cdat->chunkmsize);
+                cdat->chunkpos = cdat->chunkbuf + pos;
+                cdat->chunkdatabegin = cdat->chunkbuf + bpos;
+            }
+
+            //copy contents into data at chunkpos
+            memcpy(cdat->chunkpos, contents, realsize);
+            cdat->chunkpos+=realsize;
+
+            do {
+                p=cdat->chunkbuf;
+                // if we haven't already, scan for size
+                if(!cdat->chunksize) {
+                    while(i<64) //largest header?
+                    {
+                        if(*(p++)=='\r' && *p== '\n')
+                        {
+                            *p='\0';
+                            cdat->chunkdatabegin=p+1;
+                            int matched = sscanf(cdat->chunkbuf, "%zx", &sz);
+                            if(matched != 1 && !sz) //error getting size, or we are done
+                                goto chunk_cleanup;
+                            cdat->chunksize=sz;
+                            break;
+                        }
+                        i++;
+                    }
+                }
+                if(
+                    cdat->chunksize &&
+                    (size_t)(cdat->chunkpos - cdat->chunkdatabegin) >= cdat->chunksize
+                ){
+                    //we have a complete chunk
+
+                    duk_idx_t top = duk_get_top(ctx);
+                    duk_push_heapptr(ctx, req->chunkfuncptr);
+                    duk_push_heapptr(ctx, req->thisptr);
+                    //duk_get_prop_string(ctx, -1, "chunkCallback");
+                    //duk_pull(ctx, -2);
+
+                    duk_push_object(ctx); // the res object for callback
+                    if(duk_get_prop_string(ctx,-2, "headers"))
+                    {
+                        if(!CHECK_BIT(req->flags, CURLREQ_F_GOTCHUNKED) )
+                        {
+                            duk_dup(ctx, -1);
+                            duk_put_prop_string(ctx, -3, "headers");
+                        }
+                        else
+                            duk_put_prop_string(ctx, -2, "headers");
+                    }
+                    else
+                    {
+                        duk_pop(ctx);
+                        /* headers parsed into object */
+                        duk_push_object(ctx);
+                        duk_curl_parse_headers(ctx, (req->header).text);
+
+                        duk_dup(ctx, -1);
+                        duk_put_prop_string(ctx, -4, "headers");
+                        if(!CHECK_BIT(req->flags, CURLREQ_F_GOTCHUNKED) )
+                        {
+                            duk_dup(ctx, -1);
+                            duk_put_prop_string(ctx, -3, "headers");
+                        }
+                        else
+                            duk_put_prop_string(ctx, -2, "headers");
+                    }
+
+                    // check if 'Transfer-Encoding: chunked' header is there
+                    if(!CHECK_BIT(req->flags, CURLREQ_F_GOTCHUNKED) )
+                    {
+                        if(!duk_get_prop_string(ctx, -1, "Transfer-Encoding"))
+                        {
+                            duk_set_top(ctx,top);
+                            req->chunkfuncptr=NULL;
+                            //printf("Bailing on chunked\n");
+                            goto chunk_cleanup;
+                        }
+                        const char *s=duk_get_string(ctx, -1);
+                        //printf("Transfer-Encoding: %s\n", s);
+                        if( strstr(s,"chunked")==NULL )
+                        {
+                            duk_set_top(ctx,top);
+                            req->chunkfuncptr=NULL;
+                            //printf("Bailing on chunked\n");
+                            goto chunk_cleanup;
+                        }
+                        SET_BIT(req->flags, CURLREQ_F_GOTCHUNKED);
+                        duk_pop_2(ctx); // extra headers obj, trans-enc;
+                    }
+
+                    // if not skipFinalRes, copy data to return buffer
+                    if(!CHECK_BIT(req->flags,CURLREQ_F_PROGRESS_ONLY))
+                    {
+                        REMALLOC(mem->text, (mem->size + cdat->chunksize + 1));
+                        memcpy(&(mem->text[mem->size]), cdat->chunkdatabegin, cdat->chunksize);
+                        mem->size += cdat->chunksize;
+                        mem->text[mem->size] = '\0';
+                    }
+
+                    duk_push_fixed_buffer(ctx, (duk_size_t) cdat->chunksize);
+                    char *buf = duk_get_buffer(ctx, -1, NULL);
+                    memcpy(buf, cdat->chunkdatabegin, cdat->chunksize);
+                    duk_put_prop_string(ctx,-2,"body");
+                    // [ ..., callback, this, results ]
+                    cdat->curtotal+=cdat->chunksize;
+                    duk_push_int(ctx, (int) cdat->curtotal);
+                    // [ ..., callback, this, results, curtotal ]
+
+                    /* call the callback */
+                    if ( duk_pcall_method(ctx, 2) != 0) {
+                        const char *errmsg = rp_push_error(ctx, -1, "rampart-curl: error in chunk callback:", rp_print_error_lines);
+                        fprintf(stderr, "%s\n", errmsg);
+                    }
+                    else
+                    {
+                        if(!duk_get_boolean_default(ctx, -1, 1))
+                            goto chunk_cleanup;
+                    }
+                    duk_pop(ctx); //result
+
+                    // reconfigure our chunkdata for next round
+                    p = cdat->chunkdatabegin + cdat->chunksize + 2;//end of chunk and \r\n
+                    //sanity check
+                    if( *(p-2) != '\r' || *(p-1) != '\n')
+                    {
+                        fprintf(stderr,"rampart-curl: error while receiving chunked data - malformed response\n");
+                        goto chunk_cleanup;
+                    }
+                    sz = cdat->chunkpos - p;
+
+                    if(sz)
+                        memmove(cdat->chunkbuf, p, sz);
+                    cdat->chunkpos = cdat->chunkbuf + sz;
+                    cdat->chunkdatabegin=NULL;
+                    cdat->chunksize=0;
+                }
+                else
+                    break; //get more data on next callback
+            } while(sz);
+       }
+    }
+
+    if(!mem->isheader && req->progfuncptr)
+    {
+        int curtotal;
+
+        if(req->chunkdata)
+        {
+            if(req->chunkdata->curtotal == req->chunkdata->lastcurtotal)
+                return realsize;
+            curtotal = (int)req->chunkdata->curtotal;
+            req->chunkdata->lastcurtotal = req->chunkdata->curtotal;
+        } else
+            curtotal=(int)mem->size;
+
+        duk_push_heapptr(ctx, req->progfuncptr);
+        duk_push_heapptr(ctx, req->thisptr);
+
+        duk_push_int(ctx, curtotal);
+
+        duk_push_int(ctx, (int) mem->total);
+        // [ ..., callback, this, cursize, total ]
+
         /* call the callback */
-        if ( duk_pcall_method(ctx, 1) != 0) {
-            const char *errmsg = rp_push_error(ctx, -1, "error in curl chunk callback:", rp_print_error_lines);
+        if ( duk_pcall_method(ctx, 2) != 0) {
+            const char *errmsg = rp_push_error(ctx, -1, "rampart-curl: error in curl progress callback:", rp_print_error_lines);
+            req->progfuncptr=NULL;
             fprintf(stderr, "%s\n", errmsg);
         }
         else
         {
+            // if function returns false, don't do it on next round
             if(!duk_get_boolean_default(ctx, -1, 1))
-            {
-                //duk_push_heapptr(ctx, req->thisptr);
-                //duk_del_prop_string(ctx, -1, "chunkCallback");
-                //duk_pop(ctx);
-                req->chunkfuncptr=NULL;
-            }
+                req->progfuncptr=NULL;
         }
         duk_pop(ctx); //result
     }
 
+    return realsize;
+
+    chunk_cleanup:
+
+    req->chunkfuncptr=NULL;
+    if(req->chunkdata)
+    {
+        if(req->chunkdata->chunkbuf)
+            free(req->chunkdata->chunkbuf);
+        free(req->chunkdata);
+    }
+    req->chunkdata=NULL;
     return realsize;
 }
 
@@ -2045,7 +2371,8 @@ void duk_curl_setopts(duk_context *ctx, CURL *curl, int idx, CURLREQ *req)
         *d='\0';
 
         // these are handled elsewhere
-        if( !strcmp(op,"url")  || !strcmp(op,"callback") || !strcmp(sop,"chunkCallback"))
+        if( !strcmp(op,"url")  || !strcmp(op,"callback") || !strcmp(sop,"chunkCallback") ||
+            !strcmp(sop,"progressCallback") || !strcmp(sop,"skipFinalRes") )
         {
             duk_pop_2(ctx);
             continue;
@@ -2087,7 +2414,7 @@ void duk_curl_setopts(duk_context *ctx, CURL *curl, int idx, CURLREQ *req)
                 SET_ARRAYTYPE(sopts,ARRAYJSON);
             else if (!strcmp("repeat", arraytype))
                 SET_ARRAYTYPE(sopts,ARRAYREPEAT);
-            else 
+            else
                 RP_THROW(ctx, "curl - option '%s' requires a value of 'repeat', 'bracket', 'comma' or 'json'. Value '%s' is unknown.", sop, arraytype);
 
             duk_pop_2(ctx);
@@ -2148,9 +2475,17 @@ static void clean_req(CURLREQ *req)
     {
         duk_context *ctx = req->ctx;
         duk_push_global_stash(ctx);
-        duk_push_sprintf(ctx, "curlthis_%p", req->thisptr);        
+        duk_push_sprintf(ctx, "curlthis_%p", req->thisptr);
         duk_del_prop(ctx, -2);
         duk_pop(ctx);
+    }
+
+    // in case we didn't get last chunk
+    if(req->chunkdata)
+    {
+        if(req->chunkdata->chunkbuf)
+            free(req->chunkdata->chunkbuf);
+        free(req->chunkdata);
     }
 
     curl_easy_cleanup(req->curl);
@@ -2160,12 +2495,12 @@ static void clean_req(CURLREQ *req)
     free(req);
 }
 
-CURLREQ *new_request(char *url, CURLREQ *cloner, duk_context *ctx, duk_idx_t options_idx, CURLM *cm, duk_idx_t func_idx, duk_idx_t chunkfunc_idx, int add_addurl);
+CURLREQ *new_request(char *url, CURLREQ *cloner, duk_context *ctx, duk_idx_t options_idx, CURLM *cm, duk_idx_t func_idx, duk_idx_t chunkfunc_idx, duk_idx_t progfunc_idx, int add_addurl);
 
 duk_ret_t addurl(duk_context *ctx)
 {
     CURLREQ *req=NULL, *preq=NULL;
-    // 0 - string, 1 - new callback, 2 -this 
+    // 0 - string, 1 - new callback, 2 -this
     const char *url = REQUIRE_STRING(ctx, 0, "Addurl - argument must be a String");
     char *u = strdup(url);
 
@@ -2177,13 +2512,13 @@ duk_ret_t addurl(duk_context *ctx)
 
     if(duk_is_function(ctx, 1))
     {
-        preq = new_request(u, req, ctx, 0, req->multi, 1, -1, 1);
+        preq = new_request(u, req, ctx, 0, req->multi, 1, -1, -1, 1);
     }
     else
     {
         /* clone the original request with a new url */
         duk_get_prop_string(ctx, 2, "callback");
-        preq = new_request(u, req, ctx, 0, req->multi, duk_normalize_index(ctx, -1), -1, 1); 
+        preq = new_request(u, req, ctx, 0, req->multi, duk_normalize_index(ctx, -1), -1, -1, 1);
     }
 
     if (!preq)
@@ -2196,18 +2531,14 @@ duk_ret_t addurl(duk_context *ctx)
     return 1;
 }
 
-CURLREQ *new_curlreq(duk_context *ctx, char *url, CSOS *sopts, CURLM *cm, duk_idx_t func_idx, duk_idx_t chunkfunc_idx, int add_addurl)
+CURLREQ *new_curlreq(duk_context *ctx, char *url, CSOS *sopts, CURLM *cm, duk_idx_t func_idx, duk_idx_t chunkfunc_idx, duk_idx_t progfunc_idx, int add_addurl)
 {
     CURLREQ *ret = NULL;
 
-    REMALLOC(ret, sizeof(CURLREQ));
+    CALLOC(ret, sizeof(CURLREQ));
 
-    ret->curl = (CURL *)NULL;
-    ret->errbuf = (char *)NULL;
     ret->url = url;
     ret->multi = cm;
-    ret->thisptr=NULL;
-    ret->chunkfuncptr=NULL;
     ret->ctx=ctx;
 
     if(cm)
@@ -2224,6 +2555,13 @@ CURLREQ *new_curlreq(duk_context *ctx, char *url, CSOS *sopts, CURLM *cm, duk_id
             duk_dup(ctx, chunkfunc_idx);
             ret->chunkfuncptr=duk_get_heapptr(ctx, -1);
             duk_put_prop_string(ctx, -2, "chunkCallback");
+        }
+
+        if(progfunc_idx>-1)
+        {
+            duk_dup(ctx, progfunc_idx);
+            ret->progfuncptr=duk_get_heapptr(ctx, -1);
+            duk_put_prop_string(ctx, -2, "progressCallback");
         }
 
         if(add_addurl)
@@ -2280,28 +2618,33 @@ CURLREQ *new_curlreq(duk_context *ctx, char *url, CSOS *sopts, CURLM *cm, duk_id
     return (ret);
 }
 
-CURLREQ *new_request(char *url, CURLREQ *cloner, duk_context *ctx, duk_idx_t options_idx, CURLM *cm, duk_idx_t func_idx, duk_idx_t chunkfunc_idx, int add_addurl)
+CURLREQ *new_request(char *url, CURLREQ *cloner, duk_context *ctx, duk_idx_t options_idx, CURLM *cm, duk_idx_t func_idx, duk_idx_t chunkfunc_idx, duk_idx_t progfunc_idx, int add_addurl)
 {
     CURLREQ *req;
     CSOS *sopts;
 
     if (cloner != (CURLREQ *)NULL)
     {
-        duk_idx_t cf_idx=-1;
+        duk_idx_t cf_idx=-1, pr_idx=-1;
 
         if(cloner->chunkfuncptr)
         {
             cf_idx=duk_push_heapptr(ctx, cloner->chunkfuncptr);
         }
 
-        req = new_curlreq(ctx, url, cloner->sopts, cm, func_idx, cf_idx, add_addurl);
+        if(cloner->progfuncptr)
+        {
+            pr_idx=duk_push_heapptr(ctx, cloner->progfuncptr);
+        }
+
+        req = new_curlreq(ctx, url, cloner->sopts, cm, func_idx, cf_idx, pr_idx, add_addurl);
         sopts = req->sopts;
         req->curl = curl_easy_duphandle(cloner->curl);
+        req->flags = cloner->flags;
         curl_easy_setopt(req->curl, CURLOPT_ERRORBUFFER, req->errbuf);
         curl_easy_setopt(req->curl, CURLOPT_WRITEDATA, (void *)&(req->body));
         curl_easy_setopt(req->curl, CURLOPT_HEADERDATA, (void *)&(req->header));
         curl_easy_setopt(req->curl, CURLOPT_URL, req->url);
-
         if(cf_idx > -1)
             duk_remove(ctx, cf_idx);
 
@@ -2310,7 +2653,8 @@ CURLREQ *new_request(char *url, CURLREQ *cloner, duk_context *ctx, duk_idx_t opt
     }
     else
     {
-        req = new_curlreq(ctx, url, NULL, cm, func_idx, chunkfunc_idx, add_addurl);
+        req = new_curlreq(ctx, url, NULL, cm, func_idx, chunkfunc_idx, progfunc_idx, add_addurl);
+        curl_easy_setopt(req->curl, CURLOPT_BUFFERSIZE, 1310720L);
         sopts= req->sopts;
         *sopts->refcount = 1;
     }
@@ -2319,6 +2663,16 @@ CURLREQ *new_request(char *url, CURLREQ *cloner, duk_context *ctx, duk_idx_t opt
 
     if (req->curl)
     {
+        /* turn off curl's questionable processing of chunk if we have the callback */
+        if(chunkfunc_idx!=-1)
+            curl_easy_setopt(req->curl, CURLOPT_HTTP_TRANSFER_DECODING, 0L); // Manual chunk handling
+        else
+            curl_easy_setopt(req->curl, CURLOPT_HTTP_TRANSFER_DECODING, 1L);
+
+        curl_easy_setopt(req->curl, CURLOPT_HTTP_CONTENT_DECODING, 1L);  // Automatic decode
+        curl_easy_setopt(req->curl, CURLOPT_ACCEPT_ENCODING, "");             // Defaults for this build
+
+        curl_easy_setopt(req->curl, CURLOPT_BUFFERSIZE, 100*1024);
         /* send all body data to this function  */
         curl_easy_setopt(req->curl, CURLOPT_WRITEFUNCTION, WriteCallback);
         /* we pass our RETTXT struct to the callback function */
@@ -2448,7 +2802,7 @@ static void timer_cb(int fd, short kind, void *userp)
     (void)kind;
 
     debugf("TIMER: start\n");
-     
+
     ret = curl_multi_socket_action(tinfo->cm, CURL_SOCKET_TIMEOUT, 0, &still_running);
     if(ret)
         fprintf(stderr, "error: %s\n", curl_multi_strerror(ret));
@@ -2466,7 +2820,7 @@ static void mevent_cb(int fd, short kind, void *socketp)
     CURLMcode ret;
     int action =
         ((kind & EV_READ) ? CURL_CSELECT_IN : 0) |
-        ((kind & EV_WRITE) ? CURL_CSELECT_OUT : 0); 
+        ((kind & EV_WRITE) ? CURL_CSELECT_OUT : 0);
     debugf("CALLBACK action: sinfo=%p read=%d write=%d\n", sinfo, !!EV_READ, !!EV_WRITE );
     ret = curl_multi_socket_action(tinfo->cm, fd, action, &running_handles);
     if(ret)
@@ -2551,14 +2905,14 @@ static int handle_socket(CURL *easy, curl_socket_t sock, int action, void *userp
         curl_multi_assign(cm, sock, sinfo);
 
         kind =  ((action & CURL_POLL_IN ) ? EV_READ  : 0) |
-                ((action & CURL_POLL_OUT) ? EV_WRITE : 0) | 
+                ((action & CURL_POLL_OUT) ? EV_WRITE : 0) |
                 EV_PERSIST;
 
         event_assign(&(sinfo->ev), thr->base, sock, kind, mevent_cb, sinfo);
 
         debugf("HANDLE adding persist ev sinfo=%p\n", sinfo);
         event_add(&(sinfo->ev), NULL);
-    } 
+    }
     debugf("HANDLE end\n");
     return 0;
 }
@@ -2589,15 +2943,16 @@ static void push_finally_async(duk_context *ctx, CURLM *cm)
     duk_push_pointer(ctx, cm);
     duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("cm")); //put pointer in function
     duk_put_prop_string(ctx, -2, "finally"); //put finally_async func in object
-} 
+}
 
 static duk_ret_t duk_curl_fetch_sync_async(duk_context *ctx, int async)
 {
     duk_uarridx_t i=0;
-    duk_idx_t options_idx = -1, func_idx = -1, array_idx = -1, url_idx=-1, chunkfunc_idx=-1;
+    duk_idx_t options_idx = -1, func_idx = -1, array_idx = -1, url_idx=-1, chunkfunc_idx=-1, progfunc_idx=-1;
     char *url = (char *)NULL;
     CURLREQ *req=NULL;
     CURLcode res;
+    int skipdata=0;
 
     /* clear any previous errors */
     duk_push_this(ctx);
@@ -2656,6 +3011,20 @@ static duk_ret_t duk_curl_fetch_sync_async(duk_context *ctx, int async)
             REQUIRE_FUNCTION(ctx, -1, "curl.fetch - 'chunkCallback' option must be a Function");
             chunkfunc_idx = duk_normalize_index(ctx, -1);
         }
+        if(duk_get_prop_string(ctx, options_idx, "progressCallback"))
+        {
+            if(func_idx == -1)
+                RP_THROW(ctx, "fetch: progressCallback cannot be used without a normal Callback function");
+            REQUIRE_FUNCTION(ctx, -1, "curl.fetch - 'progressCallback' option must be a Function");
+            progfunc_idx = duk_normalize_index(ctx, -1);
+        }
+        if(chunkfunc_idx!=-1 || progfunc_idx!=-1) {
+            if(duk_get_prop_string(ctx, options_idx, "skipFinalRes"))
+            {
+                skipdata=REQUIRE_BOOL(ctx, -1, "fetch: skipFinalRes must be a Boolean");
+            }
+            duk_pop(ctx);
+        }
     }
 
     if(async && func_idx==-1)
@@ -2663,7 +3032,7 @@ static duk_ret_t duk_curl_fetch_sync_async(duk_context *ctx, int async)
 
     /* parallel requests */
 
-    /* if we have a single url in a string, and a callback, perform as if multi 
+    /* if we have a single url in a string, and a callback, perform as if multi
        by sticking string into an array */
     /* *** also do same if async *** */
     if( url_idx > -1 && ( func_idx >1 || async) )
@@ -2674,7 +3043,7 @@ static duk_ret_t duk_curl_fetch_sync_async(duk_context *ctx, int async)
         duk_put_prop_index(ctx, -2, 0);
         duk_replace(ctx, url_idx);
         array_idx = url_idx;
-        url_idx = -1; 
+        url_idx = -1;
     }
 
     if (array_idx > -1)
@@ -2692,7 +3061,7 @@ static duk_ret_t duk_curl_fetch_sync_async(duk_context *ctx, int async)
         {
             TIMERINFO *tinfo = NULL;
             RPTHR *thr = get_current_thread();
-            
+
             REMALLOC(tinfo, sizeof(TIMERINFO));
 
             tinfo->cm=cm;
@@ -2718,11 +3087,13 @@ static duk_ret_t duk_curl_fetch_sync_async(duk_context *ctx, int async)
 
             if (!i)
             {
-                preq = req = new_request(u, NULL, ctx, options_idx, cm, func_idx, chunkfunc_idx, 1);
+                preq = req = new_request(u, NULL, ctx, options_idx, cm, func_idx, chunkfunc_idx, progfunc_idx, 1);
+                if(skipdata)
+                    SET_BIT(preq->flags, CURLREQ_F_PROGRESS_ONLY);
             }
             else
                 /* clone the original request with a new url */
-                preq = new_request(u, req, ctx, options_idx, cm, func_idx, chunkfunc_idx, 1);
+                preq = new_request(u, req, ctx, options_idx, cm, func_idx, chunkfunc_idx, progfunc_idx, 1);
 
             if (!preq)
                 RP_THROW(ctx, "Failed to get new curl handle while getting %s", u);
@@ -2739,19 +3110,18 @@ static duk_ret_t duk_curl_fetch_sync_async(duk_context *ctx, int async)
             return 1;
         }
 
+        CURLMcode mc;
+        int numfds;
         do
         {
             curl_multi_perform(cm, &still_alive);
-            int gotdata = check_multi_info(cm);
-
-            /* if no data was retrieved, wait .05 secs */
-            if(!gotdata) usleep(50000);
-
-            /* check once more in case this.addurl() added one or more 
-               after the last one finished */
-            if(!still_alive)
-                curl_multi_perform(cm, &still_alive);
-
+            mc = curl_multi_wait(cm, NULL, 0, 1000, &numfds);
+            if (mc != CURLM_OK)
+            {
+                curl_multi_cleanup(cm);
+                RP_THROW(ctx, "curl failed with code %d\n", mc);
+            }
+            (void)check_multi_info(cm);
         } while (still_alive); /* do */
 
         curl_multi_cleanup(cm);
@@ -2763,10 +3133,13 @@ static duk_ret_t duk_curl_fetch_sync_async(duk_context *ctx, int async)
         RP_THROW(ctx, "curl fetch - no url provided");
 
     /* single request */
-
-    req = new_request(strdup(url), NULL, ctx, options_idx, NULL, 0, -1, 0);
+    req = new_request(strdup(url), NULL, ctx, options_idx, NULL, 0, -1, -1, 0);
     if (req)
     {
+        if(skipdata)
+        {
+            SET_BIT(req->flags, CURLREQ_F_PROGRESS_ONLY);
+        }
         /* Perform the request, res will get the return code */
         res = curl_easy_perform(req->curl);
         /* Check for errors */
@@ -2828,7 +3201,7 @@ static duk_ret_t duk_curl_fetch_async(duk_context *ctx)
 static duk_ret_t duk_curl_submit_sync_async(duk_context *ctx, int async)
 {
     duk_uarridx_t i=0;
-    //int nreq=0; 
+    //int nreq=0;
     duk_idx_t func_idx = -1, opts_idx=-1;
     //char *url = (char *)NULL;
     //CURLREQ *req=NULL;
@@ -2866,7 +3239,7 @@ static duk_ret_t duk_curl_submit_sync_async(duk_context *ctx, int async)
             opts_idx=duk_get_top_index(ctx);
         }
     }
-    else */ 
+    else */
     if (duk_is_object(ctx, opts_idx) && !duk_is_function(ctx, opts_idx) && !duk_is_array(ctx, opts_idx))
     {
         //if(async)
@@ -2893,7 +3266,7 @@ static duk_ret_t duk_curl_submit_sync_async(duk_context *ctx, int async)
         {
             TIMERINFO *tinfo = NULL;
             RPTHR *thr = get_current_thread();
-            
+
             REMALLOC(tinfo, sizeof(TIMERINFO));
 
             tinfo->cm=cm;
@@ -2912,7 +3285,7 @@ static duk_ret_t duk_curl_submit_sync_async(duk_context *ctx, int async)
         {
             char *u=NULL;
             CURLREQ *preq;
-            duk_idx_t opts_obj_idx=-1, new_func_idx, chunkfunc_idx=-1;
+            duk_idx_t opts_obj_idx=-1, new_func_idx, chunkfunc_idx=-1, progfunc_idx=-1;
 
             duk_get_prop_index(ctx, opts_idx, (duk_uarridx_t)i);
             if(!duk_is_object(ctx, -1) || duk_is_array(ctx, -1) || duk_is_function(ctx, -1) )
@@ -2933,17 +3306,24 @@ static duk_ret_t duk_curl_submit_sync_async(duk_context *ctx, int async)
             }
             else duk_pop(ctx);
 
+            if(duk_get_prop_string(ctx, opts_obj_idx, "progressCallback"))
+            {
+                REQUIRE_FUNCTION(ctx, -1, "curl.submit - 'progressCallback' option must be a Function");
+                progfunc_idx = duk_normalize_index(ctx, -1);
+            }
+            else duk_pop(ctx);
+
             if(duk_get_prop_string(ctx, opts_obj_idx, "callback"))
             {
                 REQUIRE_FUNCTION(ctx, -1, "curl.submit - 'callback' option must be a Function");
                 new_func_idx = duk_normalize_index(ctx, -1);
-                preq = new_request(u, NULL, ctx, opts_obj_idx, cm, new_func_idx, chunkfunc_idx, 0);
+                preq = new_request(u, NULL, ctx, opts_obj_idx, cm, new_func_idx, chunkfunc_idx, progfunc_idx, 0);
                 duk_remove(ctx, new_func_idx);
             }
             else
             {
                 duk_pop(ctx);// undefined
-                preq = new_request(u, NULL, ctx, opts_obj_idx, cm, func_idx, chunkfunc_idx, 0);
+                preq = new_request(u, NULL, ctx, opts_obj_idx, cm, func_idx, chunkfunc_idx, progfunc_idx, 0);
             }
 
             if (!preq)
@@ -2989,7 +3369,7 @@ static duk_ret_t duk_curl_submit_sync_async(duk_context *ctx, int async)
         RP_THROW(ctx, "curl - submit requires an object with the key/property 'url' set");
     duk_pop(ctx);
 
-    req = new_request(url, NULL, ctx, opts_idx, NULL, 0, -1, 0);
+    req = new_request(url, NULL, ctx, opts_idx, NULL, 0, -1, -1, 0);
 
     if (req)
     {
@@ -3089,7 +3469,7 @@ duk_ret_t duk_open_module(duk_context *ctx)
     if(access(CURL_CA_BUNDLE, R_OK) != 0)
     {
         //set it to the one we found in rampart-utils.c
-        rp_curl_def_bundle = rp_ca_bundle; 
+        rp_curl_def_bundle = rp_ca_bundle;
     }
 
     duk_push_string(ctx, "default_ca_file");
