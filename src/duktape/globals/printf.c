@@ -31,7 +31,7 @@
 ///////////////////////////////////////////////////////////////////////////////
 // FROM: https://github.com/mpaland/printf - with gratitude!
 // MODIFIED BY Aaron Flin for use in duktape
-// and with 'B', 'J', 's', 'S', 'U' and 'P' new/altered % format codes
+// and with 'B', 'J', 's', 'S', 'U' 'C' and 'P' new/altered % format codes
 //
 // Modifications Copyright (C) 2025  Aaron Flin
 
@@ -105,6 +105,8 @@
 #define FLAGS_BANG (1U << 12U)
 #define FLAGS_SQUOTE (1U << 13U)
 #define FLAGS_FFORMAT (1U << 14U)
+#define FLAGS_COLOR (1U << 15U)
+#define FLAGS_COLOR_FORCE (1U << 16U)
 
 #include <float.h>
 // wrapper (used as buffer) for output function type
@@ -179,8 +181,15 @@ static unsigned int _atoi(const char **str)
     }
     return i;
 }
+// output the specified null term string, without the trailing '\0' 
+static size_t outs(out_fct_type out, char *buffer, size_t idx, size_t maxlen, const char *s)
+{
+    while(*s)
+        out(*(s++), buffer, idx++, maxlen);
+    return idx;
+}
 // output the specified string in reverse, taking care of any zero-padding
-static size_t _out_rev(out_fct_type out, char *buffer, size_t idx, size_t maxlen, const char *buf, size_t len, unsigned int width, unsigned int flags)
+static size_t _out_rev(out_fct_type out, char *buffer, size_t idx, size_t maxlen, const char *buf, size_t len, unsigned int width, uint32_t flags)
 {
     const size_t start_idx = idx;
     // pad spaces up to given width
@@ -208,7 +217,7 @@ static size_t _out_rev(out_fct_type out, char *buffer, size_t idx, size_t maxlen
     return idx;
 }
 // internal itoa format
-static size_t _ntoa_format(out_fct_type out, char *buffer, size_t idx, size_t maxlen, char *buf, size_t len, bool negative, unsigned int base, unsigned int prec, unsigned int width, unsigned int flags)
+static size_t _ntoa_format(out_fct_type out, char *buffer, size_t idx, size_t maxlen, char *buf, size_t len, bool negative, unsigned int base, unsigned int prec, unsigned int width, uint32_t flags)
 {
     // pad leading zeros
     if (!(flags & FLAGS_LEFT))
@@ -272,7 +281,7 @@ static size_t _ntoa_format(out_fct_type out, char *buffer, size_t idx, size_t ma
     return _out_rev(out, buffer, idx, maxlen, buf, len, width, flags);
 }
 // internal itoa for 'long' type
-static size_t _ntoa_long(out_fct_type out, char *buffer, size_t idx, size_t maxlen, unsigned long value, bool negative, unsigned long base, unsigned int prec, unsigned int width, unsigned int flags)
+static size_t _ntoa_long(out_fct_type out, char *buffer, size_t idx, size_t maxlen, unsigned long value, bool negative, unsigned long base, unsigned int prec, unsigned int width, uint32_t flags)
 {
     char buf[PRINTF_NTOA_BUFFER_SIZE];
     size_t len = 0U;
@@ -294,7 +303,7 @@ static size_t _ntoa_long(out_fct_type out, char *buffer, size_t idx, size_t maxl
     return _ntoa_format(out, buffer, idx, maxlen, buf, len, negative, (unsigned int)base, prec, width, flags);
 }
 // internal itoa for 'long long' type
-static size_t _ntoa_long_long(out_fct_type out, char *buffer, size_t idx, size_t maxlen, unsigned long long value, bool negative, unsigned long long base, unsigned int prec, unsigned int width, unsigned int flags)
+static size_t _ntoa_long_long(out_fct_type out, char *buffer, size_t idx, size_t maxlen, unsigned long long value, bool negative, unsigned long long base, unsigned int prec, unsigned int width, uint32_t flags)
 {
     char buf[PRINTF_NTOA_BUFFER_SIZE];
     size_t len = 0U;
@@ -570,7 +579,7 @@ static size_t _etoa(out_fct_type out, char *buffer, size_t idx, size_t maxlen, d
 
 /* we are gonna cheat and just used sprintf for this */
 #define FLOAT_MAX_BUF 512
-static size_t _ftoa(out_fct_type out, char *buffer, size_t idx, size_t maxlen, double value, unsigned int prec, unsigned int width, unsigned int flags)
+static size_t _ftoa(out_fct_type out, char *buffer, size_t idx, size_t maxlen, double value, unsigned int prec, unsigned int width, uint32_t flags)
 {
     char buf[FLOAT_MAX_BUF];
     char fmt[16];
@@ -645,16 +654,177 @@ static size_t _ftoa(out_fct_type out, char *buffer, size_t idx, size_t maxlen, d
 
     return idx;
 }
+#define pushjsonsafe do{\
+    char *j=str_rp_to_json_safe(ctx, fidx, NULL,0);\
+    duk_push_string(ctx, j);\
+    if(width){\
+        duk_json_decode(ctx, -1);\
+        /* JSON.stringify(obj,null,width) */\
+        duk_get_global_string(ctx, "JSON");\
+        duk_push_string(ctx, "stringify");\
+        duk_pull(ctx, -3);\
+        duk_push_null(ctx);\
+        duk_push_int(ctx, width);\
+        duk_call_prop(ctx, -5, 3);\
+        duk_replace(ctx, fidx);\
+        duk_pop(ctx); /* JSON */\
+    }else duk_replace(ctx, fidx);\
+    free(j);\
+}while(0)
 
+static void anytostring(duk_context *ctx, duk_idx_t fidx, unsigned int width, uint32_t flags)
+{
+    // if its already a string, do nothing;
+    if (!duk_is_string(ctx, fidx))
+    {
+        fidx = duk_normalize_index(ctx, fidx);
+
+        if(duk_is_error(ctx, fidx))
+        {
+            duk_safe_to_stacktrace(ctx, fidx);
+        }
+        else if (duk_is_undefined(ctx, fidx))
+        {
+            duk_push_string(ctx,"undefined");
+            duk_replace(ctx,fidx);
+        }
+        else /*if ( !duk_is_function(ctx, fidx) )*/
+        {
+            if(flags & FLAGS_BANG)
+                pushjsonsafe;
+            else if(duk_is_function(ctx, fidx))
+            {
+                duk_push_string(ctx,"{_func:true}");
+                duk_replace(ctx,fidx);
+            }
+            else
+            {
+                /* JSON.stringify(obj,null,width) */
+                duk_get_global_string(ctx, "JSON");
+                duk_push_string(ctx, "stringify");
+                duk_dup(ctx, fidx);
+                duk_push_null(ctx);
+                duk_push_int(ctx, width);
+                if(duk_pcall_prop(ctx, -5, 3))
+                {
+                    //cyclic error
+                    duk_pop_2(ctx); //JSON, err
+                    pushjsonsafe;
+                }
+                else
+                {
+                    duk_replace(ctx, fidx);
+                    duk_pop(ctx); /* JSON */
+                }
+            }
+        }
+    }
+}
+
+#define CCODES struct color_codes
+
+CCODES {
+    char start[16];
+    char end[8];
+};
+
+CCODES colorize_codes(const char *attrs) {
+    char *saveptr = NULL;
+    CCODES out={{0}};
+    char *p=out.start;
+    char *token, *buf = strdup(attrs);
+
+    static const char *colors[] = {
+        "black", "red", "green", "yellow",
+        "blue", "magenta", "cyan", "white"
+    };
+    static const char *fg_codes[] = {
+        "30", "31", "32", "33", "34", "35", "36", "37"
+    };
+    static const char *bg_codes[] = {
+        "40", "41", "42", "43", "44", "45", "46", "47"
+    };
+
+    const char *fg = NULL, *bg = NULL;
+    int blink = 0;
+
+    token = strtok_r(buf, ",", &saveptr);
+    while (token)\
+    {
+        while (*token == ' ') ++token;
+
+        int i;
+        for (i = 0; i < 8; ++i) {
+            if (!fg && strcmp(token, colors[i]) == 0) {
+                fg = fg_codes[i];
+                break;
+            }
+            if (!bg && strcmp(token, colors[i]) == 0) {
+                bg = bg_codes[i];
+                break;
+            }
+        }
+
+        if (!strcmp(token, "flashing") || !strcmp(token, "blink"))
+            blink = 1;
+
+        token = strtok_r(NULL, ",", &saveptr);
+    }
+
+    if(!fg && !bg && !blink)
+        return out;
+
+    strcpy(p, "\033[");
+    p += 2;
+
+    if (fg)
+    {
+        *(p++)=fg[0];
+        *(p++)=fg[1];
+    }
+
+    if (bg)
+    {
+        if (fg) 
+            *(p++) = ';';
+        *(p++)=bg[0];
+        *(p++)=bg[1];
+    }
+    if (blink)
+    {
+        if (fg || bg)
+        *(p++)=';';
+        *(p++)='5';
+    }
+    *(p++)='m';
+    *p='\0';
+
+    free(buf);
+
+    strcpy(out.end, "\033[0m");
+    return out;
+}
 
 int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *ctx, duk_idx_t fidx, pthread_mutex_t *lock_p)
 {
-    unsigned int flags, width, precision, n;
+    uint32_t flags;
+    unsigned int width, precision, n;
     size_t idx = 0U;
     duk_size_t len=0;
     int preserveUfmt = 0;
     char **free_ptr=NULL;
     int nfree=0;
+    int isterm=0;
+    CCODES ccodes = {{0}};
+    const char *colstr=NULL;
+
+    // we don't use _out_char in rampart.utils
+    if(out == _fout_char && ((FILE*)buffer==stdout || (FILE*)buffer==stderr))
+    {
+        const char *term = getenv("TERM");
+        isterm = isatty(STDOUT_FILENO) && term && strcmp(term, "dumb") != 0;
+    }
+    
     duk_idx_t topidx = duk_get_top_index(ctx);
     const char	*format = PF_REQUIRE_BUF_OR_STRING(ctx, fidx++, &len),
                 *format_end=format+len;
@@ -722,11 +892,22 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
                 format++;
                 n = 1U;
                 break;
+            case 'a':
+                flags |= FLAGS_COLOR;
+                format++;
+                n = 1U;
+                break;
+            case 'A':
+                flags |= FLAGS_COLOR_FORCE;
+                format++;
+                n = 1U;
+                break;
             default:
                 n = 0U;
                 break;
             }
         } while (n);
+
         // evaluate width field
         width = 0U;
         if (_is_digit(*format))
@@ -796,6 +977,22 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
         default:
             break;
         }
+
+        // colors
+        {
+            if( flags & FLAGS_COLOR || flags & FLAGS_COLOR_FORCE)
+            {
+                colstr=REQUIRE_STRING(ctx, fidx, "the '%c' modifer requires a String", (flags & FLAGS_COLOR_FORCE)?'A':'a');
+                fidx++;
+            }
+            if( (flags & FLAGS_COLOR && isterm) || flags & FLAGS_COLOR_FORCE)
+            {
+                ccodes=colorize_codes(colstr);
+                if( *(ccodes.start) )
+                    idx=outs(out, buffer, idx, maxlen, ccodes.start);
+            }
+        }
+
         // evaluate specifier
         switch (*format)
         {
@@ -942,7 +1139,49 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
             format++;
             break;
         }
-        /* -AJF: added C, B, U, P and J for multi-char, base64, urlencode, prettyprint and JSON.stringify */
+        /* -AJF: added M, C, B, U, P and J for multi-char, base64, urlencode, prettyprint and JSON.stringify */
+        case 'M':
+        {
+            REQUIRE_ARRAY(ctx, fidx, "Array required in format string argument %d", fidx);
+            duk_uarridx_t i=0,len=duk_get_length(ctx, fidx);
+            const char *line=NULL;
+            // ! forces 
+            if (!isterm && !(flags & FLAGS_BANG))
+            {
+                for (i = 0; i < len; i++) {
+                    duk_get_prop_index(ctx, fidx, i);
+                    anytostring(ctx, -1, 0, 0); //no width, no flags
+                    line=duk_get_string(ctx, -1);
+                    if(line && strlen(line))
+                        idx=outs(out, buffer, idx, maxlen, line);
+                    out('\n', buffer, idx++, maxlen);
+                    duk_pop(ctx);
+                }
+            }
+            else
+            {
+                char b[8];
+                idx=outs(out, buffer, idx, maxlen, "\033[s");  // Save cursor
+                sprintf(b, "\033[%dA", (int)len);              // Move up
+                idx=outs(out, buffer, idx, maxlen, b);
+                for (i = 0; i < len; ++i) {
+                    duk_get_prop_index(ctx, fidx, i);
+                    anytostring(ctx, -1, 0, 0); //no width, no flags
+                    line=duk_get_string(ctx, -1);
+                    if (line && strlen(line)) {
+                        out('\r', buffer, idx++, maxlen);
+                        idx=outs(out, buffer, idx, maxlen, line);
+                        idx=outs(out, buffer, idx, maxlen, "\033[K");   // Clear to end
+                    }
+                    out('\n', buffer, idx++, maxlen);
+                }
+                idx=outs(out, buffer, idx, maxlen, "\033[u");
+                fflush((FILE*)buffer);
+            }
+            format++;
+            fidx++;
+            break;
+        }
         case 'C':
         {
             unsigned int l = 1U;
@@ -1271,69 +1510,9 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
         break;
 
         /* handle JSON */
-
-#define pushjsonsafe do{\
-    char *j=str_rp_to_json_safe(ctx, fidx, NULL,0);\
-    duk_push_string(ctx, j);\
-    if(width){\
-        duk_json_decode(ctx, -1);\
-        /* JSON.stringify(obj,null,width) */\
-        duk_get_global_string(ctx, "JSON");\
-        duk_push_string(ctx, "stringify");\
-        duk_pull(ctx, -3);\
-        duk_push_null(ctx);\
-        duk_push_int(ctx, width);\
-        duk_call_prop(ctx, -5, 3);\
-        duk_replace(ctx, fidx);\
-        duk_pop(ctx); /* JSON */\
-    }else duk_replace(ctx, fidx);\
-    free(j);\
-}while(0)
-
         case 'J':
             json:
-            if (!duk_is_string(ctx, fidx))
-            {
-                if(duk_is_error(ctx, fidx))
-                {
-                    duk_safe_to_stacktrace(ctx, fidx);
-                }
-                else if (duk_is_undefined(ctx, fidx))
-                {
-                    duk_push_string(ctx,"undefined");
-                    duk_replace(ctx,fidx);
-                }
-                else /*if ( !duk_is_function(ctx, fidx) )*/
-                {
-                    if(flags & FLAGS_BANG)
-                        pushjsonsafe;
-                    else if(duk_is_function(ctx, fidx))
-                    {
-                        duk_push_string(ctx,"{_func:true}");
-                        duk_replace(ctx,fidx);
-                    }
-                    else
-                    {
-                        /* JSON.stringify(obj,null,width) */
-                        duk_get_global_string(ctx, "JSON");
-                        duk_push_string(ctx, "stringify");
-                        duk_dup(ctx, fidx);
-                        duk_push_null(ctx);
-                        duk_push_int(ctx, width);
-                        if(duk_pcall_prop(ctx, -5, 3))
-                        {
-                            //cyclic error
-                            duk_pop_2(ctx); //JSON, err
-                            pushjsonsafe;
-                        }
-                        else
-                        {
-                            duk_replace(ctx, fidx);
-                            duk_pop(ctx); /* JSON */
-                        }
-                    }
-                }
-            }
+            anytostring(ctx, fidx, width, flags);
             //no ++
             //no break
 
@@ -1383,23 +1562,29 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
         /* html esc/unesc */
         case 'H':
         {
-            const char *p = PF_REQUIRE_STRING(ctx, fidx++);
-            unsigned int l = _strnlen_s(p, precision ? precision : (size_t)-1);
-            // pre padding
-            if (flags & FLAGS_PRECISION)
-            {
-                l = (l < precision ? l : precision);
-            }
-            if (!(flags & FLAGS_LEFT))
-            {
-                while (l++ < width)
-                {
-                    out(' ', buffer, idx++, maxlen);
-                }
-            }
+            unsigned int l = 0;
+            char *cptr=NULL;
+
             // string output
             if (flags & FLAGS_BANG)
             {
+                const char *p = PF_REQUIRE_STRING(ctx, fidx++);
+                l = _strnlen_s(p, precision ? precision : (size_t)-1);
+
+                // pre padding
+                if (flags & FLAGS_PRECISION)
+                {
+                    l = (l < precision ? l : precision);
+                }
+                if (!(flags & FLAGS_LEFT))
+                {
+                    while (l++ < width)
+                    {
+                        out(' ', buffer, idx++, maxlen);
+                    }
+                }
+
+
                 char *u_p, *free_p;
                 if(!p) p="null";
                 u_p = free_p = strdup(p);
@@ -1413,6 +1598,69 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
             }
             else
             {
+                const char *p = NULL;
+                if( (flags & FLAGS_COLOR || flags & FLAGS_COLOR_FORCE) && colstr)
+                {
+                    char *token=NULL, *saveptr=NULL, *cptr2=NULL;
+                    int i=0;
+
+                    cptr=strdup(colstr);
+                    idx=outs(out, buffer, idx, maxlen, "<span");
+
+                    token = strtok_r(cptr, ",", &saveptr);
+                    while (token)\
+                    {
+                        if(i>3)
+                            break;
+
+                        while (*token == ' ') ++token;
+                        cptr2=token+strlen(token)-1;
+
+                        while(cptr2>token && isspace(*cptr2))
+                            *(cptr2--)='\0';
+                        i++;
+                        switch (i)
+                        {
+                            case 1:
+                                idx=outs(out, buffer, idx, maxlen, " style=\"color:");
+                                idx=outs(out, buffer, idx, maxlen, token);
+                                out(';', buffer, idx++, maxlen);
+                                break;
+                            case 2:
+                                idx=outs(out, buffer, idx, maxlen, "background-color:");
+                                idx=outs(out, buffer, idx, maxlen, token);
+                                out(';', buffer, idx++, maxlen);
+                                break;
+                            case 3:
+                                idx=outs(out, buffer, idx, maxlen, "\" class=\"rp-colors ");
+                                idx=outs(out, buffer, idx, maxlen, token);
+                                break;
+                            default:
+                                break;
+                        }
+                        token = strtok_r(NULL, ",", &saveptr);
+                    }
+                    if(i)
+                        out('"', buffer, idx++, maxlen);
+                    out('>', buffer, idx++, maxlen);
+                }
+
+                p = PF_REQUIRE_STRING(ctx, fidx++);
+                l = _strnlen_s(p, precision ? precision : (size_t)-1);
+
+                // pre padding
+                if (flags & FLAGS_PRECISION)
+                {
+                    l = (l < precision ? l : precision);
+                }
+                if (!(flags & FLAGS_LEFT))
+                {
+                    while (l++ < width)
+                    {
+                        out(' ', buffer, idx++, maxlen);
+                    }
+                }
+
                 while ((*p != 0) && (!(flags & FLAGS_PRECISION) || precision--))
                 {
                     switch(*p)
@@ -1473,7 +1721,11 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
                     out(' ', buffer, idx++, maxlen);
                 }
             }
-
+            if(cptr)
+            {
+                idx=outs(out, buffer, idx, maxlen, "</span>");
+                free(cptr);
+            }
             format++;
             break;
         }
@@ -1550,7 +1802,8 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
                     out(' ', buffer, idx++, maxlen);
                 }
             }
-            free(freeme);
+            if(freeme)
+                free(freeme);
             format++;
             break;
         }
@@ -1559,10 +1812,15 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
             format++;
             break;
         default:
-            out(*format, buffer, idx++, maxlen);
-            format++;
-            break;
+            RP_THROW(ctx, "invalid format specifier character '%c' in format", *format);
         }
+        // end color
+        if( (flags & FLAGS_COLOR && isterm) || flags & FLAGS_COLOR_FORCE)
+        {
+            if( *(ccodes.end) )
+                idx=outs(out, buffer, idx, maxlen, ccodes.end);
+        }
+
     }
     FREE_PTRS;
     // termination
