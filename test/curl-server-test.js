@@ -7,6 +7,9 @@ var server=require("rampart-server");
 /* load curl module */
 var curl=require("rampart-curl");
 
+/* load crypto module */
+var crypto=require("rampart-crypto")
+
 
 /* sql module can be loaded here (better) or in callback functions (minor check overhead).
      If used to create database, the overhead is not minor, and should be done here rather
@@ -120,6 +123,27 @@ function globalfunc(req) {
 
     return {text: 'fail'};
 }
+function sendchunk(req){
+    var chunk = readFile(req.file, req.chunkIndex * req.chunkSize, req.chunkSize);
+
+    if(req.stat.size > (req.chunkIndex+1) * req.chunkSize)
+        req.chunkSend(chunk);
+    else
+        req.chunkEnd(chunk);
+}
+
+var ctestfile = process.scriptPath + "/wiki_00";
+
+function chunktest(req) {
+
+    req.chunkSize = 32768; //this size is larger than curls write buffer, so it tests our ability to reassemble the chunk
+    req.file=ctestfile;
+    req.stat= stat(req.file);
+    return {
+        "txt": sendchunk,
+        chunk:  true,
+    };
+}
 
 pid=server.start(
 {
@@ -168,7 +192,8 @@ pid=server.start(
         "/timeout":         function(){
                                 for (var i=0;i<1000000000;i++);
                                 return("done");
-                            }
+                            },
+        "/chunk.txt":       chunktest
     }
 });
 
@@ -230,6 +255,46 @@ testFeature("server script timeout", function (){
     var res=curl.fetch({insecure:true},"https://localhost:8087/timeout");
     return res.status == 500;
 });
+
+testFeature("server/curl chunking", function(){
+    var lastprogsz, res1, res2;
+    var coutput = process.scriptPath + '/coutput'
+    var f = fopen(coutput, 'w+');
+    var shortsizes=0;
+    curl.fetch('https://localhost:8087/chunk.txt',
+    {
+        insecure:true,
+
+        progressCallback: function(sz,total) {
+            lastprogsz=sz;
+        },
+
+    //    skipFinalRes: true,
+
+        chunkCallback: function(res, curtotal){
+            res2=res.body;
+            fprintf(f , '%s', res.body);
+            // this should only happen on the last chunk
+            if(res.body.length != 32768)
+                shortsizes++;
+        },
+
+        callback: function(res) {
+            res1=res.body
+        }
+    });
+
+    f.fclose();
+
+    var hash1 = crypto.sha256(readFile(ctestfile));
+    var hash2 = crypto.sha256(res1);
+    var hash3 = crypto.sha256(readFile(coutput));
+
+    rmFile(coutput);
+
+    return ( hash1 == hash2 && hash2==hash3 && lastprogsz == res1.length && shortsizes==1);
+});
+
 
 var thr = new rampart.thread();
 
