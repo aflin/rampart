@@ -145,6 +145,8 @@ CURLREQ
 #define CURLREQ_F_GOTHEADERS     1
 #define CURLREQ_F_GOTCHUNKED     2
 #define CURLREQ_F_ISASYNC        3
+#define CURLREQ_F_SKIPPROG       4
+#define CURLREQ_F_SKIPCHUNK      5
 #define SET_BIT(val, bit)     ((val) |=  (1 << (bit)))
 #define CLEAR_BIT(val, bit)   ((val) &= ~(1 << (bit)))
 #define CHECK_BIT(val, bit)   (((val) >> (bit)) & 1)
@@ -1821,7 +1823,8 @@ static duk_ret_t extbuf_finalizer(duk_context *ctx) {
     return 0;
 }
 
-static int duk_curl_push_res(duk_context *ctx, CURLREQ *req)
+// expects object at duk_idx -1
+static int duk_curl_add_req_details(duk_context *ctx, CURLREQ *req)
 {
     HTTP_CODE code;
     HTTP_CODE *cres, *code_p = &code;
@@ -1829,9 +1832,6 @@ static int duk_curl_push_res(duk_context *ctx, CURLREQ *req)
     char *s;
     long d;
     struct curl_slist *cookies = NULL;
-    double total;
-
-    duk_push_object(ctx);
 
     /* status text and status code */
     curl_easy_getinfo(req->curl, CURLINFO_RESPONSE_CODE, &d);
@@ -1846,37 +1846,6 @@ static int duk_curl_push_res(duk_context *ctx, CURLREQ *req)
     duk_put_prop_string(ctx, -2, "statusText");
     duk_push_int(ctx, (int)d);
     duk_put_prop_string(ctx, -2, "status");
-
-
-    /* the doc */
-
-    if( CHECK_BIT(req->flags, CURLREQ_F_PROGRESS_ONLY) )
-        duk_push_fixed_buffer(ctx,0);
-    else if(GET_NOCOPY(req->sopts))
-    {
-        duk_push_external_buffer(ctx);
-        duk_config_buffer(ctx, -1, req->body.text, req->body.size);
-        duk_push_c_function(ctx, extbuf_finalizer, 1);
-        duk_set_finalizer(ctx, -3);
-        duk_dup(ctx, -1);  //a hidden copy for finalizer in case, e.g., delete res.body
-        duk_put_prop_string(ctx, -3, DUK_HIDDEN_SYMBOL("finalizer_body") );
-    } else {
-        duk_push_fixed_buffer(ctx, req->body.size);
-        char *buf = duk_get_buffer(ctx, -1, NULL);
-        memcpy(buf, req->body.text, req->body.size);
-        free(req->body.text);
-        req->body.text=NULL;
-    }
-
-
-    if(GET_RET_TEXT(req->sopts))
-    {
-        duk_dup(ctx, -1);
-        duk_buffer_to_string(ctx, -1);
-        duk_put_prop_string(ctx, -3, "text");
-    }
-    duk_put_prop_string(ctx, -2, "body");
-
 
     /* the actual url, in case of redirects */
     curl_easy_getinfo(req->curl, CURLINFO_EFFECTIVE_URL, &s);
@@ -1914,17 +1883,6 @@ static int duk_curl_push_res(duk_context *ctx, CURLREQ *req)
         duk_push_string(ctx, (req->header).text);
     duk_put_prop_string(ctx, -2, "rawHeader");
 
-    /* headers parsed into object  -- now in writeCallback
-    duk_push_object(ctx);
-    duk_curl_parse_headers(ctx, (req->header).text);
-    */
-    duk_push_heapptr(ctx, req->thisptr);
-    if(duk_get_prop_string(ctx, -1, "headers"))
-        duk_put_prop_string(ctx, -3, "headers");
-    else
-        duk_pop(ctx);//undefined
-    duk_pop(ctx);// thisptr
-
     /* http version used */
     curl_easy_getinfo(req->curl, CURLINFO_HTTP_VERSION, &d);
     switch (d)
@@ -1954,11 +1912,6 @@ static int duk_curl_push_res(duk_context *ctx, CURLREQ *req)
     }
     duk_put_prop_string(ctx, -2, "httpVersion");
 
-    /* total time for request */
-    curl_easy_getinfo(req->curl, CURLINFO_TOTAL_TIME, &total);
-    duk_push_number(ctx, (duk_double_t)total);
-    duk_put_prop_string(ctx, -2, "totalTime");
-
     /* only works when cookie jar is set? */
     res = curl_easy_getinfo(req->curl, CURLINFO_COOKIELIST, &cookies);
     if (!res && cookies)
@@ -1975,6 +1928,65 @@ static int duk_curl_push_res(duk_context *ctx, CURLREQ *req)
         duk_put_prop_string(ctx, -2, "cookies");
         curl_slist_free_all(cookies);
     }
+    /* return the http code */
+    return (d);
+
+}
+
+// object with body, text, headers and totalTime
+// rest is added in duk_curl_add_req_details, called from here
+static int duk_curl_push_res(duk_context *ctx, CURLREQ *req)
+{
+    long d;
+    double total;
+
+    duk_push_object(ctx);
+
+    /* the doc */
+
+    if( CHECK_BIT(req->flags, CURLREQ_F_PROGRESS_ONLY) )
+        duk_push_fixed_buffer(ctx,0);
+    else if(GET_NOCOPY(req->sopts))
+    {
+        duk_push_external_buffer(ctx);
+        duk_config_buffer(ctx, -1, req->body.text, req->body.size);
+        duk_push_c_function(ctx, extbuf_finalizer, 1);
+        duk_set_finalizer(ctx, -3);
+        duk_dup(ctx, -1);  //a hidden copy for finalizer in case, e.g., delete res.body
+        duk_put_prop_string(ctx, -3, DUK_HIDDEN_SYMBOL("finalizer_body") );
+    } else {
+        duk_push_fixed_buffer(ctx, req->body.size);
+        char *buf = duk_get_buffer(ctx, -1, NULL);
+        memcpy(buf, req->body.text, req->body.size);
+        free(req->body.text);
+        req->body.text=NULL;
+    }
+
+    if(GET_RET_TEXT(req->sopts))
+    {
+        duk_dup(ctx, -1);
+        duk_buffer_to_string(ctx, -1);
+        duk_put_prop_string(ctx, -3, "text");
+    }
+    duk_put_prop_string(ctx, -2, "body");
+
+    /* all the other details */
+    d = duk_curl_add_req_details(ctx, req);
+
+    duk_push_heapptr(ctx, req->thisptr);
+    if(!duk_get_prop_string(ctx, -1, "headers"))
+    {
+        duk_pop(ctx); // undefined
+        duk_push_object(ctx); // empty headers object
+    }
+    duk_put_prop_string(ctx, -3, "headers");
+    duk_pop(ctx);// thisptr
+
+    /* total time for request */
+    curl_easy_getinfo(req->curl, CURLINFO_TOTAL_TIME, &total);
+    duk_push_number(ctx, (duk_double_t)total);
+    duk_put_prop_string(ctx, -2, "totalTime");
+
     /* return the http code */
     return (d);
 }
@@ -1995,13 +2007,22 @@ WriteCallback(void *contents, size_t size, size_t nmemb, void *userp)
     if (mem->isheader && !strncmp(contents, "HTTP/", 5))
         mem->size = 0;
 
-    // check for headers first, right before we start on the body
+    /*
+        Our headers are done.  mem is now for body text. We haven't parsed headers yet.
+        Parse headers and put them in thisptr.
+        Assemble the rest of results and put them in thisptr.
+    */
     if(!CHECK_BIT(req->flags, CURLREQ_F_GOTHEADERS) && !mem->isheader)
     {
         mem->total=-1;
         duk_push_heapptr(ctx, req->thisptr);
-        duk_push_object(ctx);
-        duk_curl_parse_headers(ctx, (req->header).text);
+        duk_push_object(ctx); // results
+        duk_push_object(ctx); // headers
+        duk_curl_parse_headers(ctx, (req->header).text); // fill headers object with parsed headers
+
+        // put headers alone in thisptr cuz we will reuse when assembling the final res
+        duk_dup(ctx, -1);
+        duk_put_prop_string(ctx, -3, "headers");
 
         // check transfer encoding for chunking
         if(duk_get_prop_string(ctx, -1, "Transfer-Encoding"))
@@ -2048,15 +2069,24 @@ WriteCallback(void *contents, size_t size, size_t nmemb, void *userp)
             duk_pop(ctx); // content-length string, or undefined
         }
 
-        duk_put_prop_string(ctx, -2, "headers");
+        duk_put_prop_string(ctx, -2, "headers"); // res={ headers: {...} }
+        duk_curl_add_req_details(ctx, req); // add details
+        duk_put_prop_string(ctx, -2, "results"); // this = { results: res }
+
         duk_pop(ctx); //thisptr
         SET_BIT(req->flags, CURLREQ_F_GOTHEADERS);
     }
 
-    // if both not doing skipFinalRes and not doing a chunk callback (see CURLOPT_HTTP_TRANSFER_DECODING in new_request())
-    // or if in header
-    // or if server is not sending chunked encoding
-    // grow and fill buffer
+
+    /*
+         If both not doing skipFinalRes and not doing a chunk callback (see CURLOPT_HTTP_TRANSFER_DECODING in new_request())
+           or if in header
+           or if server is not sending chunked encoding
+         Then grow and fill buffer.
+
+         Otherwise if we have chunk encoding that we need to handle manually below
+         (because server has encoding:chunked set, and we have a chunkCallback)
+    */
     if(
         (
           !CHECK_BIT(req->flags,CURLREQ_F_PROGRESS_ONLY)
@@ -2076,41 +2106,63 @@ WriteCallback(void *contents, size_t size, size_t nmemb, void *userp)
     else if(CHECK_BIT(req->flags,CURLREQ_F_PROGRESS_ONLY))
         mem->size += realsize; //keep track, but don't use for buffer;
 
+
+    /* Handle chunkCallback.  Two scenarios:
+        1) Server is not chunking via transfer-encoding: chunked. 
+           Call chunkCallback as we get chunks from curl.
+        2) Server IS chunking.
+           Buffer complete chunks and then call chunkCallback. 
+    */
     if(!mem->isheader && req->chunkfuncptr)
     {
         if( !CHECK_BIT(req->flags, CURLREQ_F_GOTCHUNKED) )
         {
-            // NO CHUNK ENCODING, just give what we have when we have it
-            duk_push_heapptr(ctx, req->chunkfuncptr);
-            duk_push_heapptr(ctx, req->thisptr);
-
-            duk_push_object(ctx);
-            duk_push_fixed_buffer(ctx, (duk_size_t) realsize);
-            char *buf = duk_get_buffer(ctx, -1, NULL);
-            memcpy(buf, contents, realsize);
-            duk_put_prop_string(ctx,-2,"body");
-
-            if(duk_get_prop_string(ctx,-2, "headers"))
-                duk_put_prop_string(ctx, -2, "headers");
-            else
-                duk_pop(ctx);
-
-            // [ ..., callback, this, results ]
-
-            duk_push_int(ctx, (int) mem->size);
-            // [ ..., callback, this, results, total_so_far ]
-            /* call the callback */
-            if ( duk_pcall_method(ctx, 2) != 0) {
-                const char *errmsg = rp_push_error(ctx, -1, "rampart-curl: error in curl chunk callback:", rp_print_error_lines);
-                fprintf(stderr, "%s\n", errmsg);
-            }
-            else
+            if( !CHECK_BIT(req->flags, CURLREQ_F_SKIPCHUNK) )
             {
-                // if function returns false, don't do it on next round
-                if(!duk_get_boolean_default(ctx, -1, 1))
-                    req->chunkfuncptr=NULL;
+                double total;
+
+                // NO CHUNK ENCODING, just give what we have when we have it
+                duk_push_heapptr(ctx, req->chunkfuncptr);
+                duk_push_heapptr(ctx, req->thisptr);
+
+                if(!duk_get_prop_string(ctx,-1, "results"))
+                {
+                    duk_pop(ctx); // undefined
+                    duk_push_object(ctx);
+                }
+
+                /* body */
+                duk_push_fixed_buffer(ctx, (duk_size_t) realsize);
+                char *buf = duk_get_buffer(ctx, -1, NULL);
+                memcpy(buf, contents, realsize);
+                duk_put_prop_string(ctx,-2,"body");
+
+                /* skipping text, even if asked for */
+
+                /* progress */
+                duk_push_int(ctx, (int) mem->size);
+                duk_put_prop_string(ctx, -2, "progress");
+                    
+                /* totalTime */
+                curl_easy_getinfo(req->curl, CURLINFO_TOTAL_TIME, &total);
+                duk_push_number(ctx, (duk_double_t)total);
+                duk_put_prop_string(ctx, -2, "totalTime");
+
+                // [ ..., callback, this, results ]
+
+                /* call the callback */
+                if ( duk_pcall_method(ctx, 1) != 0) {
+                    const char *errmsg = rp_push_error(ctx, -1, "rampart-curl: error in curl chunk callback:", rp_print_error_lines);
+                    fprintf(stderr, "%s\n", errmsg);
+                }
+                else
+                {
+                    // if function returns false, don't do it on next round
+                    if(!duk_get_boolean_default(ctx, -1, 1))
+                        SET_BIT(req->flags, CURLREQ_F_SKIPCHUNK);
+                }
+                duk_pop(ctx); //result
             }
-            duk_pop(ctx); //result
         }
         else
         {
@@ -2138,8 +2190,9 @@ WriteCallback(void *contents, size_t size, size_t nmemb, void *userp)
 
             if( required > cdat->chunkmsize )
             {
-                size_t pos = cdat->chunkpos - cdat->chunkbuf;
-                size_t bpos = cdat->chunkdatabegin - cdat->chunkbuf;
+                size_t pos = cdat->chunkpos - cdat->chunkbuf;        // 'chunkpos' position from beginning of buf
+                size_t bpos = cdat->chunkdatabegin - cdat->chunkbuf; // 'begindata' position from beginning of buf
+
                 cdat->chunkmsize = required;
                 // if there's a parse error, don't continue to grow.
                 if(required > MAX_CHUNK_BUFFER_SIZE)
@@ -2149,6 +2202,7 @@ WriteCallback(void *contents, size_t size, size_t nmemb, void *userp)
                     goto chunk_cleanup;
                 }
                 REMALLOC(cdat->chunkbuf, cdat->chunkmsize);
+                // reset the positions
                 cdat->chunkpos = cdat->chunkbuf + pos;
                 cdat->chunkdatabegin = cdat->chunkbuf + bpos;
             }
@@ -2188,27 +2242,18 @@ WriteCallback(void *contents, size_t size, size_t nmemb, void *userp)
                     (size_t)(cdat->chunkpos - cdat->chunkdatabegin) >= cdat->chunksize+2
                 ){
                     //we have a complete chunk
+                    double total;
 
-                    duk_push_heapptr(ctx, req->chunkfuncptr);
-                    duk_push_heapptr(ctx, req->thisptr);
-                    //duk_get_prop_string(ctx, -1, "chunkCallback");
-                    //duk_pull(ctx, -2);
-
-                    duk_push_object(ctx); // the res object for callback
-                    if(duk_get_prop_string(ctx,-2, "headers"))
+                    if(!CHECK_BIT(req->flags, CURLREQ_F_SKIPCHUNK))
                     {
-                        duk_put_prop_string(ctx, -2, "headers");
-                    }
-                    else
-                    {
-                        duk_pop(ctx);
-                        /* headers parsed into object */
-                        duk_push_object(ctx);
-                        duk_curl_parse_headers(ctx, (req->header).text);
+                        duk_push_heapptr(ctx, req->chunkfuncptr);
+                        duk_push_heapptr(ctx, req->thisptr);
 
-                        duk_dup(ctx, -1);
-                        duk_put_prop_string(ctx, -4, "headers");
-                        duk_put_prop_string(ctx, -2, "headers");
+                        if(!duk_get_prop_string(ctx,-1, "results"))
+                        {
+                            duk_pop(ctx); // undefined
+                            duk_push_object(ctx);
+                        }
                     }
 
                     // if not skipFinalRes, copy data to return buffer
@@ -2220,29 +2265,40 @@ WriteCallback(void *contents, size_t size, size_t nmemb, void *userp)
                         mem->text[mem->size] = '\0';
                     }
 
-                    // prepare body 
-                    duk_push_fixed_buffer(ctx, (duk_size_t) cdat->chunksize);
-                    char *buf = duk_get_buffer(ctx, -1, NULL);
-                    memcpy(buf, cdat->chunkdatabegin, cdat->chunksize);
-                    duk_put_prop_string(ctx,-2,"body");
-                    // [ ..., callback, this, results ]
-                    cdat->curtotal+=cdat->chunksize;
-                    duk_push_int(ctx, (int) cdat->curtotal);
-                    // [ ..., callback, this, results, curtotal ]
-
-                    /* call the callback */
-                    if ( duk_pcall_method(ctx, 2) != 0) {
-                        const char *errmsg = rp_push_error(ctx, -1, "rampart-curl: error in chunk callback:", rp_print_error_lines);
-                        fprintf(stderr, "%s\n", errmsg);
-                    }
-                    /* no manual abort.  this would prevent the mem->text from being filled
-                    else
+                    if(!CHECK_BIT(req->flags, CURLREQ_F_SKIPCHUNK))
                     {
-                        if(!duk_get_boolean_default(ctx, -1, 1))
-                            goto chunk_cleanup;
+                        /* body */
+                        duk_push_fixed_buffer(ctx, (duk_size_t) cdat->chunksize);
+                        char *buf = duk_get_buffer(ctx, -1, NULL);
+                        memcpy(buf, cdat->chunkdatabegin, cdat->chunksize);
+                        duk_put_prop_string(ctx,-2,"body");
+
+                        cdat->curtotal+=cdat->chunksize;
+                        duk_push_int(ctx, (int) cdat->curtotal);
+                        duk_put_prop_string(ctx,-2,"progress");
+
+                        /* totalTime */
+                        curl_easy_getinfo(req->curl, CURLINFO_TOTAL_TIME, &total);
+                        duk_push_number(ctx, (duk_double_t)total);
+                        duk_put_prop_string(ctx, -2, "totalTime");
+
+                        // [ ..., callback, this, results]
+
+                        /* call the callback */
+                        if ( duk_pcall_method(ctx, 1) != 0)
+                        {
+                            const char *errmsg = rp_push_error(ctx, -1, "rampart-curl: error in chunk callback:", rp_print_error_lines);
+                            fprintf(stderr, "%s\n", errmsg);
+                        }
+                        else
+                        {
+                            // if function returns false, don't do it on next round
+                            if(!duk_get_boolean_default(ctx, -1, 1))
+                                SET_BIT(req->flags, CURLREQ_F_SKIPCHUNK);
+                        }
+
+                        duk_pop(ctx); //result
                     }
-                    */
-                    duk_pop(ctx); //result
 
                     // reconfigure our chunkdata for next round
                     p = cdat->chunkdatabegin + cdat->chunksize + 2;//end of chunk and \r\n
@@ -2267,9 +2323,14 @@ WriteCallback(void *contents, size_t size, size_t nmemb, void *userp)
         }
     }
 
-    if(!mem->isheader && req->progfuncptr)
+    /* 
+        There is a progressCallback.
+        assemble results same as in chunkCallback, but do not include body
+    */
+    if(!mem->isheader && req->progfuncptr && !CHECK_BIT(req->flags, CURLREQ_F_SKIPPROG))
     {
         int curtotal;
+        double total;
 
         if(req->chunkdata)
         {
@@ -2283,13 +2344,30 @@ WriteCallback(void *contents, size_t size, size_t nmemb, void *userp)
         duk_push_heapptr(ctx, req->progfuncptr);
         duk_push_heapptr(ctx, req->thisptr);
 
+        if(!duk_get_prop_string(ctx,-1, "results"))
+        {
+            duk_pop(ctx); // undefined
+            duk_push_object(ctx);
+        }
+
         duk_push_int(ctx, curtotal);
+        duk_put_prop_string(ctx, -2, "progress");
 
         duk_push_int(ctx, (int) mem->total);
-        // [ ..., callback, this, cursize, total ]
+        duk_put_prop_string(ctx, -2, "expectedTotal");
+
+        /* totalTime */
+        curl_easy_getinfo(req->curl, CURLINFO_TOTAL_TIME, &total);
+        duk_push_number(ctx, (duk_double_t)total);
+        duk_put_prop_string(ctx, -2, "totalTime");
+
+        /* don't include body, if it is present from chunk above */
+        duk_del_prop_string(ctx, -1, "body");
+
+        // [ ..., callback, this, results ]
 
         /* call the callback */
-        if ( duk_pcall_method(ctx, 2) != 0) {
+        if ( duk_pcall_method(ctx, 1) != 0) {
             const char *errmsg = rp_push_error(ctx, -1, "rampart-curl: error in curl progress callback:", rp_print_error_lines);
             req->progfuncptr=NULL;
             fprintf(stderr, "%s\n", errmsg);
@@ -2298,13 +2376,17 @@ WriteCallback(void *contents, size_t size, size_t nmemb, void *userp)
         {
             // if function returns false, don't do it on next round
             if(!duk_get_boolean_default(ctx, -1, 1))
-                req->progfuncptr=NULL;
+                SET_BIT(req->flags, CURLREQ_F_SKIPPROG);
         }
         duk_pop(ctx); //result
     }
 
     return realsize;
 
+    /* 
+        Last chunk, or error. 
+        If we miss last chunk, this will be cleaned up in clean_req below
+    */
     chunk_cleanup:
 
     req->chunkfuncptr=NULL;
@@ -2321,7 +2403,7 @@ WriteCallback(void *contents, size_t size, size_t nmemb, void *userp)
         REMALLOC(req->c_errbuf, strlen(s)+1);
         sprintf(req->c_errbuf, "%s", s);
         duk_pop(ctx);
-        return -1;
+        return -1; //trigger error curl code at end of easy round
     }
 
     return realsize;

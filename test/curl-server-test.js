@@ -265,13 +265,13 @@ testFeature("server/curl chunking", function(){
     {
         insecure:true,
 
-        progressCallback: function(sz,total) {
-            lastprogsz=sz;
+        progressCallback: function(res) {
+            lastprogsz=res.progress;
         },
 
     //    skipFinalRes: true,
 
-        chunkCallback: function(res, curtotal){
+        chunkCallback: function(res){
             res2=res.body;
             fprintf(f , '%s', res.body);
             // this should only happen on the last chunk
