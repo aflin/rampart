@@ -804,6 +804,7 @@ install(CODE "execute_process( \
     )"
 )
 
+install(DIRECTORY DESTINATION "${PYTHON_BIN_DIR}/build/lib")
 install(CODE "execute_process( \
     COMMAND bash -c \"cp -a \
 	${PYTHON_BIN_DIR}/build/bin \
@@ -876,12 +877,7 @@ install(CODE "execute_process( \
 
 # derivations
 install(DIRECTORY DESTINATION "${CMAKE_INSTALL_PREFIX}/derivations")
-install(CODE "execute_process( \
-    COMMAND ${CMAKE_COMMAND} -E copy_directory \
-    \"${PROJECT_SOURCE_DIR}/derivations\" \
-    \"${CMAKE_INSTALL_PREFIX}/derivations\"   \
-    )"
-)
+install(CODE "execute_process( COMMAND bash -c \"cp -a ${PROJECT_SOURCE_DIR}/derivations/* ${CMAKE_INSTALL_PREFIX}/derivations/\")" )
 
 install(CODE "execute_process ( \
     COMMAND bash -c \"chown -R nobody ${CMAKE_INSTALL_PREFIX}/web_server\"
