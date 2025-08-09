@@ -2694,7 +2694,7 @@ char * tickify(char *src, size_t sz, int *err, int *ln)
                         {
                             infuncp=1;
                         }
-                        else
+                        else if(s>src)
                         {
                             s--;
                             if( isspace(*s) )
