@@ -612,7 +612,26 @@ static int term_colors_and_truecolor(int *colors, int *truecolor) {
 
     if (!term || !*term) return -1;
 
-    /* 1) Try terminfo via `infocmp -1 $TERM` */
+    /* 1) TRY TERM/COLORTERM ENV first, because infocmp lies*/
+    if (cterm && (strstr(cterm, "truecolor") || strstr(cterm, "24bit"))) {
+        *truecolor = 1;
+        *colors = 16777216;
+        return 0;
+    }
+    if (strstr(term, "-direct")) {
+        *truecolor = 1;
+        *colors = 16777216;
+        return 0;
+    }
+    if (strstr(term, "256color")) { *colors = 256; return 0; }
+    if (strstr(term, "88color"))  { *colors = 88;  return 0; }
+
+    /* Some terms imply 16 colors */
+    if (strstr(term, "screen") || strstr(term, "xterm") || strstr(term, "vt100") || strstr(term, "ansi")) {
+        *colors = 16; /* conservative */
+        return 0;
+    }
+    /* 2) Try terminfo via `infocmp -1 $TERM` */
     {
         char cmd[128];
         FILE *fp;
@@ -655,25 +674,6 @@ static int term_colors_and_truecolor(int *colors, int *truecolor) {
         if (parsed_colors || parsed_true) return 0;
     }
 
-    /* 2) Fallback heuristics from TERM/COLORTERM (no ncurses) */
-    if (cterm && (strstr(cterm, "truecolor") || strstr(cterm, "24bit"))) {
-        *truecolor = 1;
-        *colors = 16777216;
-        return 0;
-    }
-    if (strstr(term, "-direct")) {
-        *truecolor = 1;
-        *colors = 16777216;
-        return 0;
-    }
-    if (strstr(term, "256color")) { *colors = 256; return 0; }
-    if (strstr(term, "88color"))  { *colors = 88;  return 0; }
-
-    /* Some terms imply 16 colors */
-    if (strstr(term, "screen") || strstr(term, "xterm") || strstr(term, "vt100") || strstr(term, "ansi")) {
-        *colors = 16; /* conservative */
-        return 0;
-    }
 
     /* Last resort */
     *colors = 8;
@@ -693,6 +693,8 @@ static void detect_terminal_capabilities(void) {
     supports_ansi = 1;
 
     term_colors_and_truecolor(&color_count, &supports_truecolor);
+    //printf("truecolor=%d, colors=%d\n", supports_truecolor, color_count);
+
 }
 
 
@@ -887,59 +889,61 @@ static int make_term_codes(CCODES *c)
             if (written) *(p++) = ';';
             p += sprintf(p, "48;2;%d;%d;%d", br, bg, bb);
         }
-        return 0;
     }
 
-    if(c->fg.color_index > COLOR_NOT_PARSED) //-2
+    else
     {
-        int idx=0;
-        if(c->fg.color_index == COLOR_PARSE_RGB) //-1
+        if(c->fg.color_index > COLOR_NOT_PARSED) //-2
         {
-            idx = colornames_closest_index(c->fg.rgb, &(c->fg.distance), 0, n_ansi_color_entries);
+            int idx=0;
+            if(c->fg.color_index == COLOR_PARSE_RGB) //-1
+            {
+                idx = colornames_closest_index(c->fg.rgb, &(c->fg.distance), 0, n_ansi_color_entries);
+            }
+            else if (c->fg.color_index < n_ansi_color_entries)
+            {
+                idx = c->fg.color_index;
+                e=&colornames[idx];
+                c->fg.distance = e->distance;
+            }
+            else if(c->fg.color_index < n_color_entries)
+            {
+                idx = colornames[c->fg.color_index].closest_index;      //pre calculated closest ansi256 to css colors
+                e=&colornames[idx];
+                c->fg.distance = e->distance;
+            }
+            if(color_count >= 256 || (c->flags & CCODE_FLAG_FORCE_TERM_256))
+                p += sprintf(p, "38;5;%d", idx);
+            else
+                p += sprintf(p, "%d", 30 + idx % 8 + (idx >= 8 ? 60 : 0));
+
+            written=1;
         }
-        else if (c->fg.color_index < n_ansi_color_entries)
+        if(c->bg.color_index != COLOR_NOT_PARSED)
         {
-            idx = c->fg.color_index;
-            e=&colornames[idx];
-            c->fg.distance = e->distance;
+            int idx=0;
+            if (written) *(p++) = ';';
+            if(c->bg.color_index == COLOR_PARSE_RGB) //-1
+            {
+                idx = colornames_closest_index(c->bg.rgb, &(c->bg.distance), 0, n_ansi_color_entries);
+            }
+            else if (c->bg.color_index < n_ansi_color_entries)
+            {
+                idx = c->bg.color_index;
+                e=&colornames[idx];
+                c->bg.distance = e->distance;
+            }
+            else if(c->bg.color_index < n_color_entries)
+            {
+                idx = colornames[c->bg.color_index].closest_index;      //pre calculated closest ansi256 to css colors
+                e=&colornames[idx];
+                c->bg.distance = e->distance;
+            }
+            if (color_count >= 256 || (c->flags & CCODE_FLAG_FORCE_TERM_256))
+                p += sprintf(p, "48;5;%d", idx);
+            else
+                p += sprintf(p, "%d", 40 + idx % 8 + (idx >= 8 ? 60 : 0));
         }
-        else if(c->fg.color_index < n_color_entries)
-        {
-            idx = colornames[c->fg.color_index].closest_index;      //pre calculated closest ansi256 to css colors
-            e=&colornames[idx];
-            c->fg.distance = e->distance;
-        }
-        if(color_count >= 256 || (c->flags & CCODE_FLAG_FORCE_TERM_256))
-            p += sprintf(p, "38;5;%d", idx);
-        else
-            p += sprintf(p, "%d", 30 + idx % 8 + (idx >= 8 ? 60 : 0));
-            
-        written=1;
-    }
-    if(c->bg.color_index != COLOR_NOT_PARSED)
-    {
-        int idx=0;
-        if (written) *(p++) = ';';
-        if(c->bg.color_index == COLOR_PARSE_RGB) //-1
-        {
-            idx = colornames_closest_index(c->bg.rgb, &(c->bg.distance), 0, n_ansi_color_entries);
-        }
-        else if (c->bg.color_index < n_ansi_color_entries)
-        {
-            idx = c->bg.color_index;
-            e=&colornames[idx];
-            c->bg.distance = e->distance;
-        }
-        else if(c->bg.color_index < n_color_entries)
-        {
-            idx = colornames[c->bg.color_index].closest_index;      //pre calculated closest ansi256 to css colors
-            e=&colornames[idx];
-            c->bg.distance = e->distance;
-        }
-        if (color_count >= 256 || (c->flags & CCODE_FLAG_FORCE_TERM_256))
-            p += sprintf(p, "48;5;%d", idx);
-        else
-            p += sprintf(p, "%d", 40 + idx % 8 + (idx >= 8 ? 60 : 0));
     }
 
     if (c->flags & CCODE_FLAG_FLASHING) {
