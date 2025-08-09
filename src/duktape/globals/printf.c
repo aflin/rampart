@@ -108,6 +108,8 @@
 #define FLAGS_FFORMAT (1U << 14U)
 #define FLAGS_COLOR (1U << 15U)
 #define FLAGS_COLOR_FORCE (1U << 16U)
+#define FLAGS_COLOR_FORCE_TRUECOLOR (1U << 17U)
+#define FLAGS_COLOR_FORCE_16 (1U << 18U)
 
 #include <float.h>
 // wrapper (used as buffer) for output function type
@@ -817,6 +819,18 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
                 n = 1U;
                 break;
             case 'A':
+                flags |= FLAGS_COLOR_FORCE; //force 256 by default
+                format++;
+                n = 1U;
+                break;
+            case '@':
+                flags |= FLAGS_COLOR_FORCE_TRUECOLOR;
+                flags |= FLAGS_COLOR_FORCE;
+                format++;
+                n = 1U;
+                break;
+            case '^':
+                flags |= FLAGS_COLOR_FORCE_16;
                 flags |= FLAGS_COLOR_FORCE;
                 format++;
                 n = 1U;
@@ -907,8 +921,15 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
                 ccodes=new_color_codes();
                 ccodes->flags = CCODE_FLAG_HAVE_NAME | CCODE_FLAG_WANT_TERM | CCODE_FLAG_WANT_BKGND;
 
-                if(flags & FLAGS_COLOR_FORCE)
+                if(flags & FLAGS_COLOR_FORCE_TRUECOLOR)
+                    ccodes->flags = ccodes->flags | CCODE_FLAG_FORCE_TERM | CCODE_FLAG_FORCE_TERM_TRUECOLOR;
+
+                else if(flags & FLAGS_COLOR_FORCE_16)
+                    ccodes->flags = ccodes->flags | CCODE_FLAG_FORCE_TERM | CCODE_FLAG_FORCE_TERM_16;
+
+                else if(flags & FLAGS_COLOR_FORCE)
                     ccodes->flags = ccodes->flags | CCODE_FLAG_FORCE_TERM | CCODE_FLAG_FORCE_TERM_256;
+
 
                 ccodes->lookup_names=colstr;
 

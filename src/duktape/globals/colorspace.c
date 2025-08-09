@@ -870,7 +870,16 @@ static int make_term_codes(CCODES *c)
 
     
 
-    if(supports_ansi<1 && !(c->flags & CCODE_FLAG_FORCE_TERM))
+    if(supports_ansi<1 && // skip this if we don't support ansi (i.e pipe) and
+        !(                //not forced with one of the CCODE_FLAG_FORCE_TERM_* flags
+            c->flags & CCODE_FLAG_FORCE_TERM &&
+            (
+                CCODE_FLAG_FORCE_TERM_TRUECOLOR ||
+                CCODE_FLAG_FORCE_TERM_256 ||
+                CCODE_FLAG_FORCE_TERM_16
+            )
+        )
+    )
         return 0;
 
     strcpy(c->term_end, "\033[0m");
@@ -878,7 +887,10 @@ static int make_term_codes(CCODES *c)
     strcpy(p, "\033[");
     p+=2;
 
-    if(supports_truecolor || (c->flags & CCODE_FLAG_FORCE_TERM_TRUECOLOR)) {
+    if( 
+        (supports_truecolor || (c->flags & CCODE_FLAG_FORCE_TERM_TRUECOLOR)) &&
+        !(c->flags & CCODE_FLAG_FORCE_TERM_256) && !(c->flags & CCODE_FLAG_FORCE_TERM_16)
+    ){
         if(c->fg.color_index != COLOR_NOT_PARSED)
         {
             p += sprintf(p, "38;2;%d;%d;%d", r, g, b);
@@ -912,7 +924,7 @@ static int make_term_codes(CCODES *c)
                 e=&colornames[idx];
                 c->fg.distance = e->distance;
             }
-            if(color_count >= 256 || (c->flags & CCODE_FLAG_FORCE_TERM_256))
+            if( (color_count >= 256 || c->flags & CCODE_FLAG_FORCE_TERM_256) && !(c->flags & CCODE_FLAG_FORCE_TERM_16) )
                 p += sprintf(p, "38;5;%d", idx);
             else
                 p += sprintf(p, "%d", 30 + idx % 8 + (idx >= 8 ? 60 : 0));
@@ -939,7 +951,7 @@ static int make_term_codes(CCODES *c)
                 e=&colornames[idx];
                 c->bg.distance = e->distance;
             }
-            if (color_count >= 256 || (c->flags & CCODE_FLAG_FORCE_TERM_256))
+            if( (color_count >= 256 || c->flags & CCODE_FLAG_FORCE_TERM_256) && !(c->flags & CCODE_FLAG_FORCE_TERM_16) )
                 p += sprintf(p, "48;5;%d", idx);
             else
                 p += sprintf(p, "%d", 40 + idx % 8 + (idx >= 8 ? 60 : 0));

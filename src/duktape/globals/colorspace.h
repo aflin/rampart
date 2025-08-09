@@ -126,8 +126,10 @@ CCODES *free_color_codes(CCODES *c);
 #define CCODE_FLAG_WANT_BKGND             (1<<6)   // we want to do to the bg what we are doing to the fg
 #define CCODE_FLAG_FORCE_TERM             (1<<7)   // force output of term control characters even if not autodetected
 #define CCODE_FLAG_FORCE_TERM_TRUECOLOR   (1<<8)   // if forcing, force truecolor
-#define CCODE_FLAG_FORCE_TERM_256         (1<<9)   // if forcing, and not forcing truecolor, force 256 color
+#define CCODE_FLAG_FORCE_TERM_256         (1<<9)   // if forcing, force 256 color
 //#define CCODE_FLAG_FLASHING               (1<<10)  // used internally to keep track of flashing
+#define CCODE_FLAG_FORCE_TERM_16          (1<<11)   // if forcing, force 16 color  
+// you need CCODE_FLAG_FORCE_TERM AND one of CCODE_FLAG_FORCE_TERM_* to force
 
 #define n_color_entries 396
 
