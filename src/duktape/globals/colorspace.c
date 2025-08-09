@@ -1013,10 +1013,8 @@ static int parse_name(CCODES *c)
         token = strtok_r(NULL, "|", &p);
     }
 
-    if (!fg_tok && !bg_tok && !c->blink_or_class) {
-        free(buf);
-        return 0;
-    }
+    if (!fg_tok && !bg_tok && !c->blink_or_class)
+        goto error_end;
 
     // trim end
     if(c->blink_or_class)
@@ -1034,7 +1032,7 @@ static int parse_name(CCODES *c)
         int idx = parse_color_token(fg_tok, r, g, b);
 
         if(idx == COLOR_PARSE_ERROR)
-            return 1;
+            goto error_end;
 
         c->fg.color_index = idx;
     }
@@ -1043,12 +1041,16 @@ static int parse_name(CCODES *c)
         int idx = parse_color_token(bg_tok, br, bg, bb);
 
         if(idx == COLOR_PARSE_ERROR)
-            return 1;
+            goto error_end;
 
         c->bg.color_index = idx;
     }
-
+    free(buf);
     return 0;
+
+    error_end:
+    free(buf);
+    return 1;
 }
 
 static int nearest_ansi_color(CCODES *c)
