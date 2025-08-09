@@ -43,6 +43,7 @@
 #include <errno.h>
 #include <ctype.h>
 #include "printf.h"
+#include "colorspace.h"
 #include "entities.h"
 #include "entities.c"
 // 'ntoa' conversion buffer size, this must be big enough to hold one converted
@@ -721,89 +722,6 @@ static void anytostring(duk_context *ctx, duk_idx_t fidx, unsigned int width, ui
     }
 }
 
-#define CCODES struct color_codes
-
-CCODES {
-    char start[16];
-    char end[8];
-};
-
-CCODES colorize_codes(const char *attrs) {
-    char *saveptr = NULL;
-    CCODES out={{0}};
-    char *p=out.start;
-    char *token, *buf = strdup(attrs);
-
-    static const char *colors[] = {
-        "black", "red", "green", "yellow",
-        "blue", "magenta", "cyan", "white"
-    };
-    static const char *fg_codes[] = {
-        "30", "31", "32", "33", "34", "35", "36", "37"
-    };
-    static const char *bg_codes[] = {
-        "40", "41", "42", "43", "44", "45", "46", "47"
-    };
-
-    const char *fg = NULL, *bg = NULL;
-    int blink = 0;
-
-    token = strtok_r(buf, ",", &saveptr);
-    while (token)\
-    {
-        while (*token == ' ') ++token;
-
-        int i;
-        for (i = 0; i < 8; ++i) {
-            if (!fg && strcmp(token, colors[i]) == 0) {
-                fg = fg_codes[i];
-                break;
-            }
-            if (!bg && strcmp(token, colors[i]) == 0) {
-                bg = bg_codes[i];
-                break;
-            }
-        }
-
-        if (!strcmp(token, "flashing") || !strcmp(token, "blink"))
-            blink = 1;
-
-        token = strtok_r(NULL, ",", &saveptr);
-    }
-
-    if(!fg && !bg && !blink)
-        return out;
-
-    strcpy(p, "\033[");
-    p += 2;
-
-    if (fg)
-    {
-        *(p++)=fg[0];
-        *(p++)=fg[1];
-    }
-
-    if (bg)
-    {
-        if (fg) 
-            *(p++) = ';';
-        *(p++)=bg[0];
-        *(p++)=bg[1];
-    }
-    if (blink)
-    {
-        if (fg || bg)
-        *(p++)=';';
-        *(p++)='5';
-    }
-    *(p++)='m';
-    *p='\0';
-
-    free(buf);
-
-    strcpy(out.end, "\033[0m");
-    return out;
-}
 
 int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *ctx, duk_idx_t fidx, pthread_mutex_t *lock_p)
 {
@@ -815,14 +733,15 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
     char **free_ptr=NULL;
     int nfree=0;
     int isterm=0;
-    CCODES ccodes = {{0}};
+    CCODES *ccodes = NULL;
     const char *colstr=NULL;
 
     // we don't use _out_char in rampart.utils
+    // this is only for %M
     if(out == _fout_char && ((FILE*)buffer==stdout || (FILE*)buffer==stderr))
     {
         const char *term = getenv("TERM");
-        isterm = isatty(STDOUT_FILENO) && term && strcmp(term, "dumb") != 0;
+        isterm = (term && isatty(STDOUT_FILENO) && strcmp(term, "dumb"));
     }
     
     duk_idx_t topidx = duk_get_top_index(ctx);
@@ -980,16 +899,24 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
 
         // colors
         {
-            if( flags & FLAGS_COLOR || flags & FLAGS_COLOR_FORCE)
+            if( (flags & FLAGS_COLOR && isterm) || flags & FLAGS_COLOR_FORCE )
             {
                 colstr=REQUIRE_STRING(ctx, fidx, "the '%c' modifer requires a String", (flags & FLAGS_COLOR_FORCE)?'A':'a');
                 fidx++;
-            }
-            if( (flags & FLAGS_COLOR && isterm) || flags & FLAGS_COLOR_FORCE)
-            {
-                ccodes=colorize_codes(colstr);
-                if( *(ccodes.start) )
-                    idx=outs(out, buffer, idx, maxlen, ccodes.start);
+
+                ccodes=new_color_codes();
+                ccodes->flags = CCODE_FLAG_HAVE_NAME | CCODE_FLAG_WANT_TERM | CCODE_FLAG_WANT_BKGND;
+
+                if(flags & FLAGS_COLOR_FORCE)
+                    ccodes->flags = ccodes->flags | CCODE_FLAG_FORCE_TERM | CCODE_FLAG_FORCE_TERM_256;
+
+                ccodes->lookup_names=colstr;
+
+                if(rp_color_convert(ccodes))
+                    PF_THROW(ctx, "printf: error parsing color string");
+
+                if( *(ccodes->term_start) )
+                    idx=outs(out, buffer, idx, maxlen, ccodes->term_start);
             }
         }
 
@@ -1599,52 +1526,14 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
             else
             {
                 const char *p = NULL;
-                if( (flags & FLAGS_COLOR || flags & FLAGS_COLOR_FORCE) && colstr)
+                if( ((flags & FLAGS_COLOR && isterm) || flags & FLAGS_COLOR_FORCE) && ccodes)
                 {
-                    char *token=NULL, *saveptr=NULL, *cptr2=NULL;
-                    int i=0;
-
-                    cptr=strdup(colstr);
-                    idx=outs(out, buffer, idx, maxlen, "<span");
-
-                    token = strtok_r(cptr, ",", &saveptr);
-                    while (token)\
-                    {
-                        if(i>3)
-                            break;
-
-                        while (*token == ' ') ++token;
-                        cptr2=token+strlen(token)-1;
-
-                        while(cptr2>token && isspace(*cptr2))
-                            *(cptr2--)='\0';
-                        i++;
-                        switch (i)
-                        {
-                            case 1:
-                                idx=outs(out, buffer, idx, maxlen, " style=\"color:");
-                                idx=outs(out, buffer, idx, maxlen, token);
-                                out(';', buffer, idx++, maxlen);
-                                break;
-                            case 2:
-                                idx=outs(out, buffer, idx, maxlen, "background-color:");
-                                idx=outs(out, buffer, idx, maxlen, token);
-                                out(';', buffer, idx++, maxlen);
-                                break;
-                            case 3:
-                                idx=outs(out, buffer, idx, maxlen, "\" class=\"rp-colors ");
-                                idx=outs(out, buffer, idx, maxlen, token);
-                                break;
-                            default:
-                                break;
-                        }
-                        token = strtok_r(NULL, ",", &saveptr);
-                    }
-                    if(i)
-                        out('"', buffer, idx++, maxlen);
-                    out('>', buffer, idx++, maxlen);
+                    ccodes->flags = CCODE_FLAG_WANT_HTMLTEXT;
+                    if(flags & FLAGS_PLUS)
+                        ccodes->flags |= CCODE_FLAG_WANT_CSSCOLOR;
+                    rp_color_convert(ccodes);
+                    idx=outs(out, buffer, idx, maxlen, ccodes->html_start);
                 }
-
                 p = PF_REQUIRE_STRING(ctx, fidx++);
                 l = _strnlen_s(p, precision ? precision : (size_t)-1);
 
@@ -1817,8 +1706,8 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
         // end color
         if( (flags & FLAGS_COLOR && isterm) || flags & FLAGS_COLOR_FORCE)
         {
-            if( *(ccodes.end) )
-                idx=outs(out, buffer, idx, maxlen, ccodes.end);
+            if( *(ccodes->term_end) )
+                idx=outs(out, buffer, idx, maxlen, ccodes->term_end);
         }
 
     }
@@ -1826,6 +1715,9 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
     // termination
     //out((char)0, buffer, idx < maxlen ? idx : maxlen - 1U, maxlen);
     // return written chars without terminating \0
+
+    if(ccodes)
+        ccodes=free_color_codes(ccodes);
     return (int)idx;
 }
 ///////////////////////////////////////////////////////////////////////////////

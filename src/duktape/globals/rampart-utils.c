@@ -5699,6 +5699,12 @@ char *to_utf8(const char *in_str)
     r;\
 })
 
+#define PF_THROW(ctx,...) do {\
+    duk_push_error_object(ctx, DUK_ERR_ERROR, __VA_ARGS__);\
+    if(lock_p) RP_PTUNLOCK(lock_p);\
+    (void) duk_throw(ctx);\
+} while(0)
+
 
 #include "printf.c"
 

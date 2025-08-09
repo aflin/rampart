@@ -78,6 +78,7 @@ add_executable(rampart
 	duktape/core/module.c
     ${PROJECT_SOURCE_DIR}/extern/texis/texisapi/npmp.c
 	duktape/globals/rampart-utils.c
+	duktape/globals/colorspace.c
 	duktape/globals/rampart-event.c
 	duktape/globals/rampart-import.c
 	duktape/globals/rampart-thread.c
