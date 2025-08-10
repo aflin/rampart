@@ -874,9 +874,9 @@ static int make_term_codes(CCODES *c)
         !(                //not forced with one of the CCODE_FLAG_FORCE_TERM_* flags
             c->flags & CCODE_FLAG_FORCE_TERM &&
             (
-                CCODE_FLAG_FORCE_TERM_TRUECOLOR ||
-                CCODE_FLAG_FORCE_TERM_256 ||
-                CCODE_FLAG_FORCE_TERM_16
+                c->flags & CCODE_FLAG_FORCE_TERM_TRUECOLOR ||
+                c->flags & CCODE_FLAG_FORCE_TERM_256 ||
+                c->flags & CCODE_FLAG_FORCE_TERM_16
             )
         )
     )

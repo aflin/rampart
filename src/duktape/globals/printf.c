@@ -939,6 +939,8 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
                 if( *(ccodes->term_start) )
                     idx=outs(out, buffer, idx, maxlen, ccodes->term_start);
             }
+            else if( flags & FLAGS_COLOR)
+                fidx++;
         }
 
         // evaluate specifier
