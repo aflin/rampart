@@ -5628,11 +5628,11 @@ char *to_utf8(const char *in_str)
     free(free_ptr);\
 } while (0)
 
-#define PF_REQUIRE_STRING(ctx,idx) ({\
+#define PF_REQUIRE_STRING(ctx,idx, ...) ({\
     duk_idx_t i=(idx);\
     if(!duk_is_string((ctx),i)) {\
         if(lock_p) RP_PTUNLOCK(lock_p);\
-        RP_THROW(ctx, "string required in format string argument %d",i);\
+        RP_THROW(ctx, __VA_ARGS__);\
     }\
     const char *r=duk_get_string((ctx),i);\
     r=TO_UTF8(r);\
@@ -5643,7 +5643,7 @@ char *to_utf8(const char *in_str)
     duk_idx_t i=(idx);\
     if(!duk_is_string((ctx),i)) {\
         if(lock_p) RP_PTUNLOCK(lock_p);\
-        RP_THROW(ctx, "string required in format string argument %d",i);\
+        RP_THROW(ctx, "string required at format string argument %d",i);\
     }\
     const char *s=duk_get_lstring((ctx),i,(len));\
     const char *r=TO_UTF8(s);\
@@ -5662,7 +5662,7 @@ char *to_utf8(const char *in_str)
         r=TO_UTF8(s);\
     } else {\
         if(lock_p) RP_PTUNLOCK(lock_p);\
-        RP_THROW(ctx, "string or buffer required in format string argument %d",i);\
+        RP_THROW(ctx, "string or buffer required at format string argument %d",i);\
     }\
     if(r != s) *(len) = strlen(r);\
     r;\
@@ -5672,7 +5672,7 @@ char *to_utf8(const char *in_str)
     duk_idx_t i=(idx);\
     if(!duk_is_number((ctx),i)) {\
         if(lock_p) RP_PTUNLOCK(lock_p);\
-        RP_THROW(ctx, "number required in format string argument %d",i);\
+        RP_THROW(ctx, "number required at format string argument %d",i);\
     }\
     int r=duk_get_int((ctx),i);\
     r;\
@@ -5683,7 +5683,7 @@ char *to_utf8(const char *in_str)
     duk_idx_t i=(idx);\
     if(!duk_is_number((ctx),i)) {\
         if(lock_p) RP_PTUNLOCK(lock_p);\
-        RP_THROW(ctx, "number required in format string argument %d",i);\
+        RP_THROW(ctx, "number required at format string argument %d",i);\
     }\
     double r=duk_get_number((ctx),i);\
     r;\
@@ -5693,7 +5693,7 @@ char *to_utf8(const char *in_str)
     duk_idx_t i=(idx);\
     if(!duk_is_buffer_data((ctx),i)) {\
         if(lock_p) RP_PTUNLOCK(lock_p);\
-        RP_THROW(ctx, "buffer required in format string argument %d",i);\
+        RP_THROW(ctx, "buffer required at format string argument %d",i);\
     }\
     void *r=duk_get_buffer_data((ctx),i,(sz));\
     r;\
@@ -6423,7 +6423,7 @@ duk_ret_t duk_rp_fprintf(duk_context *ctx)
     RP_THROW(ctx, "error opening file '%s': %s", fn, strerror(errno));
     return 0;
 }
-
+/*
 duk_ret_t duk_rp_sprintf(duk_context *ctx)
 {
     char *buffer=NULL;
@@ -6435,6 +6435,21 @@ duk_ret_t duk_rp_sprintf(duk_context *ctx)
     free(buffer);
     return 1;
 }
+*/
+
+duk_ret_t duk_rp_sprintf(duk_context *ctx)
+{
+    grow_buffer growbuf;
+    void *gb=&growbuf;
+
+    growbuf.buf=NULL;
+
+    (void)rp_printf(_out_buffer_grow, gb, (size_t)-1, ctx, 0, NULL);
+
+    duk_push_lstring(ctx, growbuf.buf,(duk_size_t)growbuf.size);
+    free(growbuf.buf);
+    return 1;
+}
 
 duk_ret_t duk_rp_bprintf(duk_context *ctx)
 {
@@ -6444,7 +6459,6 @@ duk_ret_t duk_rp_bprintf(duk_context *ctx)
     (void)rp_printf(_out_buffer, buffer, (size_t)-1, ctx, 0, NULL);
     return 1;
 }
-
 
 duk_ret_t duk_rp_abprintf(duk_context *ctx)
 {
@@ -10211,11 +10225,11 @@ static int load_mappings_from_object(duk_context *ctx, WordMap *map, duk_idx_t o
     return 0;
 }
 
-#define REPLACE_SPLIT_ON_PUNCT         1<<0
-#define REPLACE_INCLUDE_LEADING_PUNCT  1<<1
-#define REPLACE_INCLUDE_TRAILING_PUNCT 1<<2
-#define REPLACE_RESPECT_CASE           1<<3
-#define REPLACE_IGNORE_HYPHEN          1<<4
+#define REPLACE_SPLIT_ON_PUNCT         (1<<0)
+#define REPLACE_INCLUDE_LEADING_PUNCT  (1<<1)
+#define REPLACE_INCLUDE_TRAILING_PUNCT (1<<2)
+#define REPLACE_RESPECT_CASE           (1<<3)
+#define REPLACE_IGNORE_HYPHEN          (1<<4)
 
 
 int is_utf8_alnum(const char *s, size_t *len) {
@@ -10287,7 +10301,7 @@ int is_utf8_space(const char *s, size_t *len_out) {
             codepoint == 0x000B || codepoint == 0x000C || codepoint == 0x000D);
 }
 
-static char* replace_words(const char *input, WordMap *map, int flags) {
+static char* replace_words(const char *input, WordMap *map, unsigned int flags) {
     size_t in_len = strlen(input);
     size_t out_cap = in_len * 2;
     char *output = NULL;
@@ -10461,7 +10475,7 @@ duk_ret_t word_thread_copy_callback(duk_context *ctx)
 duk_ret_t word_replace_main(duk_context *ctx)
 {
     WordMap *map;
-    int flags=0;
+    unsigned int flags=0;
     const char *rs = REQUIRE_STRING(ctx, 0, "rampart.utils.wordReplace: String required as argument");
 
     duk_push_this(ctx);
@@ -10491,7 +10505,7 @@ duk_ret_t word_replace_main(duk_context *ctx)
         while(duk_next(ctx, -1, 1))
         {
             const char *key = duk_get_string(ctx, -2);
-            int val=REQUIRE_BOOL(ctx, -1, "rampart.utils.wordReplace(list, {\"%s\":...}): values for all options must be a Boolean", key);
+            unsigned int val=REQUIRE_BOOL(ctx, -1, "rampart.utils.wordReplace(list, {\"%s\":...}): values for all options must be a Boolean", key);
             int setflag=0;
             if( !strcasecmp(key,"respectcase") ) {
                 setflag = REPLACE_RESPECT_CASE;

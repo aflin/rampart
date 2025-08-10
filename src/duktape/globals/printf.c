@@ -118,6 +118,39 @@ typedef struct
     void (*fct)(char character, void *arg);
     void *arg;
 } out_fct_wrap_type;
+
+typedef struct
+{
+    char *buf;
+    size_t mSize;
+    size_t size;
+} grow_buffer;
+
+// internal buffer output growable
+static inline void _out_buffer_grow(char character, void *buffer, size_t idx, size_t maxlen)
+{
+    grow_buffer *b=(grow_buffer *) buffer;
+
+    if( !(b->buf) )
+    {
+        b->mSize=64;
+        REMALLOC(b->buf, 64);
+    }
+
+
+    if (idx < maxlen)
+    {
+        if(idx >= b->mSize)
+        {
+            b->mSize *= 2;
+            REMALLOC(b->buf, b->mSize);
+        }
+
+        ((char *)b->buf)[idx] = character;
+        b->size = idx+1;
+    }
+}
+
 // internal buffer output
 static inline void _out_buffer(char character, void *buffer, size_t idx, size_t maxlen)
 {
@@ -735,8 +768,6 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
     char **free_ptr=NULL;
     int nfree=0;
     int isterm=0;
-    CCODES *ccodes = NULL;
-    const char *colstr=NULL;
 
     // we don't use _out_char in rampart.utils
     // this is only for %M
@@ -756,6 +787,10 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
     }
     while (format<format_end)
     {
+        CCODES *ccodes = NULL;
+        const char *colstr=NULL;
+        char colorflag;
+
         // format specifier?  %[flags][width][.precision][length]
         if (*format != '%')
         {
@@ -815,23 +850,25 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
                 break;
             case 'a':
                 flags |= FLAGS_COLOR;
+                colorflag='a';
                 format++;
                 n = 1U;
                 break;
             case 'A':
-                flags |= FLAGS_COLOR_FORCE; //force 256 by default
+                flags |= FLAGS_COLOR_FORCE | FLAGS_COLOR; //force 256 by default
+                colorflag='A';
                 format++;
                 n = 1U;
                 break;
             case '@':
-                flags |= FLAGS_COLOR_FORCE_TRUECOLOR;
-                flags |= FLAGS_COLOR_FORCE;
+                flags |= FLAGS_COLOR_FORCE_TRUECOLOR | FLAGS_COLOR | FLAGS_COLOR_FORCE;
+                colorflag='@';
                 format++;
                 n = 1U;
                 break;
             case '^':
-                flags |= FLAGS_COLOR_FORCE_16;
-                flags |= FLAGS_COLOR_FORCE;
+                flags |= FLAGS_COLOR_FORCE_16 | FLAGS_COLOR | FLAGS_COLOR_FORCE;
+                colorflag='^';
                 format++;
                 n = 1U;
                 break;
@@ -911,11 +948,12 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
             break;
         }
 
-        // colors
+        // colors on term
         {
             if( (flags & FLAGS_COLOR && isterm) || flags & FLAGS_COLOR_FORCE )
             {
-                colstr=REQUIRE_STRING(ctx, fidx, "the '%c' modifer requires a String", (flags & FLAGS_COLOR_FORCE)?'A':'a');
+                colstr=PF_REQUIRE_STRING(ctx, fidx,
+                    "the '%c' modifer requires a String at format string argument %d", colorflag, fidx);
                 fidx++;
 
                 ccodes=new_color_codes();
@@ -940,7 +978,12 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
                     idx=outs(out, buffer, idx, maxlen, ccodes->term_start);
             }
             else if( flags & FLAGS_COLOR)
+            {
+                // later for html, but if not 'H' we still need to do fidx++
+                colstr=PF_REQUIRE_STRING(ctx, fidx,
+                    "the '%c' modifer requires a String at format string argument %d", colorflag, fidx);
                 fidx++;
+            }
         }
 
         // evaluate specifier
@@ -1362,7 +1405,7 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
             if(duk_is_buffer(ctx, fidx))
                 p = duk_buffer_to_string(ctx, fidx);
             else
-                p = PF_REQUIRE_STRING(ctx, fidx);
+                p = PF_REQUIRE_STRING(ctx, fidx, "String required at format string argument %d", fidx);
 
             fidx++;
 
@@ -1513,12 +1556,11 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
         case 'H':
         {
             unsigned int l = 0;
-            char *cptr=NULL;
 
             // string output
             if (flags & FLAGS_BANG)
             {
-                const char *p = PF_REQUIRE_STRING(ctx, fidx++);
+                const char *p = PF_REQUIRE_STRING(ctx, fidx++, "String required at format string argument %d", fidx);
                 l = _strnlen_s(p, precision ? precision : (size_t)-1);
 
                 // pre padding
@@ -1549,15 +1591,38 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
             else
             {
                 const char *p = NULL;
-                if( ((flags & FLAGS_COLOR && isterm) || flags & FLAGS_COLOR_FORCE) && ccodes)
+                if( flags & FLAGS_COLOR )
                 {
-                    ccodes->flags = CCODE_FLAG_WANT_HTMLTEXT;
-                    if(flags & FLAGS_PLUS)
-                        ccodes->flags |= CCODE_FLAG_WANT_CSSCOLOR;
-                    rp_color_convert(ccodes);
+                    if(!ccodes)
+                    {
+                        if(!colstr)
+                        {
+                            colstr=PF_REQUIRE_STRING(ctx, fidx,
+                                "the '%c' modifer requires a String at format string argument %d", colorflag, fidx);
+                            fidx++;
+                        }
+                        ccodes=new_color_codes();
+
+                        ccodes->flags = CCODE_FLAG_HAVE_NAME | CCODE_FLAG_WANT_BKGND | CCODE_FLAG_WANT_HTMLTEXT;
+                        if(flags & FLAGS_PLUS)
+                            ccodes->flags |= CCODE_FLAG_WANT_CSSCOLOR;
+                        ccodes->lookup_names=colstr;
+
+                        if(rp_color_convert(ccodes))
+                            PF_THROW(ctx, "printf: error parsing color string");
+                    }
+                    else
+                    { // we've already calculated the colors above for term
+                      // so now just fill in the html
+                        ccodes->flags = CCODE_FLAG_WANT_HTMLTEXT;
+                        if(flags & FLAGS_PLUS)
+                            ccodes->flags |= CCODE_FLAG_WANT_CSSCOLOR;
+                        rp_color_convert(ccodes);
+                    }
                     idx=outs(out, buffer, idx, maxlen, ccodes->html_start);
                 }
-                p = PF_REQUIRE_STRING(ctx, fidx++);
+
+                p = PF_REQUIRE_STRING(ctx, fidx++, "String required at format string argument %d", fidx);
                 l = _strnlen_s(p, precision ? precision : (size_t)-1);
 
                 // pre padding
@@ -1633,11 +1698,10 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
                     out(' ', buffer, idx++, maxlen);
                 }
             }
-            if(cptr)
-            {
-                idx=outs(out, buffer, idx, maxlen, "</span>");
-                free(cptr);
-            }
+
+            if(ccodes)
+                idx=outs(out, buffer, idx, maxlen, ccodes->html_end);
+
             format++;
             break;
         }
@@ -1732,15 +1796,14 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
             if( *(ccodes->term_end) )
                 idx=outs(out, buffer, idx, maxlen, ccodes->term_end);
         }
-
+        if(ccodes)
+            ccodes=free_color_codes(ccodes);
     }
     FREE_PTRS;
     // termination
     //out((char)0, buffer, idx < maxlen ? idx : maxlen - 1U, maxlen);
     // return written chars without terminating \0
 
-    if(ccodes)
-        ccodes=free_color_codes(ccodes);
     return (int)idx;
 }
 ///////////////////////////////////////////////////////////////////////////////
