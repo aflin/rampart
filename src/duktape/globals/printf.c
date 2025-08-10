@@ -789,7 +789,7 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
     {
         CCODES *ccodes = NULL;
         const char *colstr=NULL;
-        char colorflag;
+        char colorflag='a';
 
         // format specifier?  %[flags][width][.precision][length]
         if (*format != '%')
