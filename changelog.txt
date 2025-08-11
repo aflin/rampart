@@ -1,4 +1,19 @@
-v0.5.2
+v0.6.1
+    - rampart-sql
+                           Added derivations using equivs.
+    - rampart
+                           Added ansi and css colors to printf.
+                           Added multi-line updating printf format '%M'.
+                           Added derivation download script and included en-deriv.
+    - rampart-curl
+                           Made chunk options properly handle 'chunked'
+                           blocks larger than libcurl's buffer.
+                           Added progress callback.
+
+    - rampart-almanac
+                           Fix for Julian dates.
+
+v0.6.0
     - rampart
                            Handle quarantine when installing on macos via
                            new install.sh script.
