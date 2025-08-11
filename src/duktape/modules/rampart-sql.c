@@ -5029,9 +5029,9 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
         (
             duk_is_array(ctx, -1) &&
             (
-                !strcmp(prop,"addexp") |
-                !strcmp(prop,"delexp") |
-                !strcmp(prop,"delindextmp") |
+                !strcmp(prop,"addexp") ||
+                !strcmp(prop,"delexp") ||
+                !strcmp(prop,"delindextmp") ||
                 !strcmp(prop,"addindextmp")
             )
         )
