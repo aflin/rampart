@@ -817,15 +817,26 @@ static int parse_rgb_triplet(const char *s, int *r, int *g, int *b) {
 /* Parse a color token: name, 0-255 index, or rgb(r,g,b) */
 // if rgb, return -1;
 // if error return COLOR_PARSE_ERROR
-static int parse_color_token(const char *token, uint8_t *r, uint8_t *g, uint8_t *b) {
+static int parse_color_token(char *token, uint8_t *r, uint8_t *g, uint8_t *b) {
     int i=0;
+    char *p=token+strlen(token)-1;
+
+    // trim end
+    while(p<=token && isspace(*p)){
+        *p='\0';
+        p--;
+    }
+
+
     *r=-1;
     *b=-1;
     *g=-1;
 
+
+
     // look for name
     for (i = 0; i < n_color_entries; i++) {
-        if (strncasecmp(token, colornames[i].name, strlen(colornames[i].name)) == 0)
+        if (strcasecmp(token, colornames[i].name) == 0)
         {
             *r=colornames[i].r;
             *g=colornames[i].g;
@@ -980,8 +991,7 @@ static int parse_name(CCODES *c)
     int i=0;
     char *p = NULL;
     char *buf;
-    const char *fg_tok = NULL;
-    const char *bg_tok = NULL;
+    char *fg_tok = NULL, *bg_tok = NULL;
 
     buf = strdup(c->lookup_names);
     if (!buf) {
@@ -1116,8 +1126,13 @@ static int nearest_css_color(CCODES *c)
     // if ansi color
     else if (idx >= 0 && idx < n_ansi_color_entries)
     {
-        c->fg.color_index = colornames[c->fg.color_index].closest_index;
-        c->fg.distance = colornames[c->fg.color_index].distance;
+        if(colornames[idx].same_name_idx>-1)
+            c->fg.color_index = colornames[idx].same_name_idx;
+        else
+        {
+            c->fg.color_index = colornames[c->fg.color_index].closest_index;
+            c->fg.distance = colornames[c->fg.color_index].distance;
+        }
     }
     // else not parsed or error or already a web color
 
@@ -1129,8 +1144,13 @@ static int nearest_css_color(CCODES *c)
     // if ansi color
     else if (idx >= 0 && idx <n_ansi_color_entries)
     {
-        c->bg.color_index = colornames[c->bg.color_index].closest_index;
-        c->bg.distance = colornames[c->bg.color_index].distance;
+        if(colornames[idx].same_name_idx>-1)
+            c->bg.color_index = colornames[idx].same_name_idx;
+        else
+        {
+            c->bg.color_index = colornames[c->bg.color_index].closest_index;
+            c->bg.distance = colornames[c->bg.color_index].distance;
+        }
     }
     // else not parsed or error or already a web color
     return 0;
@@ -1140,10 +1160,24 @@ static void put_css_colname(char *buf, CCOLOR *cc)
 {
 	// if it was an rgb or ansi color and was converted to closest css color,
 	// then we assume that's what you want in the span style
-	if(cc->color_index >= css_color_start && cc->color_index < n_color_entries)
-		strcpy(buf, colornames[cc->color_index].name);
+
+	uint16_t idx = cc->color_index;
+
+	if(idx >= n_color_entries)
+	    *buf='\0';
+
+	else if(idx >= css_color_start && idx < n_color_entries)
+		strcpy(buf, colornames[idx].name);
+
 	else
-		sprintf(buf, "rgb(%d,%d,%d)", cc->rgb[0], cc->rgb[1], cc->rgb[2]);
+    {
+        uint16_t idx = cc->color_index;
+        // these are duplicate css/term names. we want the css value
+        if(colornames[idx].same_name_idx>-1)
+            strcpy(buf, colornames[ colornames[idx].same_name_idx ].name);
+        else
+    		sprintf(buf, "rgb(%d,%d,%d)", cc->rgb[0], cc->rgb[1], cc->rgb[2]);
+    }
 }
 
 static int put_html_text(CCODES *c)
@@ -1172,7 +1206,7 @@ static int put_html_text(CCODES *c)
 			c->blink_or_class ? " ":"", c->blink_or_class ? c->blink_or_class :"",
 			fgcolor);
 	else
-		sprintf(outb, "<span class=\"rp-color%s%s\" style=\"color:%s;background-color:%s\">",
+		sprintf(outb, "<span class=\"rp-color%s%s\" style=\"color:%s; background-color:%s;\">",
 			c->blink_or_class ? " ":"", c->blink_or_class ? c->blink_or_class :"",
 			fgcolor, bgcolor);
 

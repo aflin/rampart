@@ -979,7 +979,7 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
             }
             else if( flags & FLAGS_COLOR)
             {
-                // later for html, but if not 'H' we still need to do fidx++
+                // later for html, but if not %H we still need to do fidx++
                 colstr=PF_REQUIRE_STRING(ctx, fidx,
                     "the '%c' modifer requires a String at format string argument %d", colorflag, fidx);
                 fidx++;
