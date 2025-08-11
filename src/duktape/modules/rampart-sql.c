@@ -4788,8 +4788,31 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
             RPPATH rp={{0}};
             char eqfile[PATH_MAX], eqpath[PATH_MAX];
             const char *dlang=NULL;
+
+            // if false, turn it off
+            if(duk_is_boolean(ctx, -1) && !duk_get_boolean(ctx, -1) )
+            {
+                if(setprop(ddic, "eqprefix", "builtin" )==-1)
+                {
+                    sprintf(errbuf, "sql.set: %s", finfo->errmap);
+                    goto return_neg_two;
+                }
+                if(setprop(ddic, "alequivs", "0" )==-1)
+                {
+                    sprintf(errbuf, "sql.set: %s", finfo->errmap);
+                    goto return_neg_two;
+                }
+                if(setprop(ddic, "keepeqvs", "0" )==-1)
+                {
+                    sprintf(errbuf, "sql.set: %s", finfo->errmap);
+                    goto return_neg_two;
+                }
+                goto propnext;                
+            }
+            //if true
             if(duk_is_boolean(ctx, -1) && duk_get_boolean(ctx, -1) )
                 dlang="en";
+            //if a string
             else if (!duk_is_string(ctx, -1))
             {
                 snprintf(errbuf, msgbufsz, "sql.set: useDerivations must be a Boolean or a String (lang code)");
