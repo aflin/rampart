@@ -1876,13 +1876,13 @@ static int duk_curl_add_req_details(duk_context *ctx, CURLREQ *req)
     duk_push_int(ctx, d);
     duk_put_prop_string(ctx, -2, "serverPort");
 
-    /* headers, unparsed */
+    /* headers, unparsed - stored in this, handled below
     if ((req->header).text == (char *)NULL)
         duk_push_string(ctx, "");
     else
         duk_push_string(ctx, (req->header).text);
     duk_put_prop_string(ctx, -2, "rawHeader");
-
+    */
     /* http version used */
     curl_easy_getinfo(req->curl, CURLINFO_HTTP_VERSION, &d);
     switch (d)
@@ -1980,6 +1980,12 @@ static int duk_curl_push_res(duk_context *ctx, CURLREQ *req)
         duk_push_object(ctx); // empty headers object
     }
     duk_put_prop_string(ctx, -3, "headers");
+    if(!duk_get_prop_string(ctx, -1, "rawHeader"))
+    {
+        duk_pop(ctx); // undefined
+        duk_push_string(ctx,""); // empty raw header
+    }
+    duk_put_prop_string(ctx, -3, "rawHeader");
     duk_pop(ctx);// thisptr
 
     /* total time for request */
@@ -2016,13 +2022,17 @@ WriteCallback(void *contents, size_t size, size_t nmemb, void *userp)
     {
         mem->total=-1;
         duk_push_heapptr(ctx, req->thisptr);
+
+        duk_push_string(ctx, (req->header).text);
+        duk_put_prop_string(ctx, -2, "rawHeader");
+
         duk_push_object(ctx); // results
         duk_push_object(ctx); // headers
         duk_curl_parse_headers(ctx, (req->header).text); // fill headers object with parsed headers
 
         // put headers alone in thisptr cuz we will reuse when assembling the final res
         duk_dup(ctx, -1);
-        duk_put_prop_string(ctx, -3, "headers");
+        duk_put_prop_string(ctx, -4, "headers");
 
         // check transfer encoding for chunking
         if(duk_get_prop_string(ctx, -1, "Transfer-Encoding"))
@@ -2160,6 +2170,12 @@ WriteCallback(void *contents, size_t size, size_t nmemb, void *userp)
                     // if function returns false, don't do it on next round
                     if(!duk_get_boolean_default(ctx, -1, 1))
                         SET_BIT(req->flags, CURLREQ_F_SKIPCHUNK);
+                    else if (duk_is_object(ctx, -1) && duk_has_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("cancel")))
+                    {
+                        duk_push_sprintf(ctx, "rampart-curl: transaction canceled");
+                        chunkerr=1;
+                        goto chunk_cleanup;
+                    }
                 }
                 duk_pop(ctx); //result
             }
@@ -2191,7 +2207,7 @@ WriteCallback(void *contents, size_t size, size_t nmemb, void *userp)
             if( required > cdat->chunkmsize )
             {
                 size_t pos = cdat->chunkpos - cdat->chunkbuf;        // 'chunkpos' position from beginning of buf
-                size_t bpos = cdat->chunkdatabegin - cdat->chunkbuf; // 'begindata' position from beginning of buf
+                size_t bpos = cdat->chunkdatabegin - cdat->chunkbuf; // 'begindata' position from beginning of buf -- THIS MAY GENERATE A WARNING FOR THE VERY THING WE ARE PREVENTING!!!
 
                 cdat->chunkmsize = required;
                 // if there's a parse error, don't continue to grow.
@@ -2295,6 +2311,12 @@ WriteCallback(void *contents, size_t size, size_t nmemb, void *userp)
                             // if function returns false, don't do it on next round
                             if(!duk_get_boolean_default(ctx, -1, 1))
                                 SET_BIT(req->flags, CURLREQ_F_SKIPCHUNK);
+                            else if (duk_is_object(ctx, -1) && duk_has_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("cancel")))
+                            {
+                                duk_push_sprintf(ctx, "rampart-curl: transaction canceled");
+                                chunkerr=1;
+                                goto chunk_cleanup;
+                            }
                         }
 
                         duk_pop(ctx); //result
@@ -2377,6 +2399,12 @@ WriteCallback(void *contents, size_t size, size_t nmemb, void *userp)
             // if function returns false, don't do it on next round
             if(!duk_get_boolean_default(ctx, -1, 1))
                 SET_BIT(req->flags, CURLREQ_F_SKIPPROG);
+            else if (duk_is_object(ctx, -1) && duk_has_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("cancel")))
+            {
+                duk_push_sprintf(ctx, "rampart-curl: transaction canceled");
+                chunkerr=1;
+                goto chunk_cleanup;
+            }
         }
         duk_pop(ctx); //result
     }
@@ -3568,6 +3596,11 @@ duk_ret_t duk_open_module(duk_context *ctx)
 
     duk_put_function_list(ctx, -1, curl_funcs);
     duk_put_number_list(ctx, -1, curl_consts);
+
+    duk_push_object(ctx);
+    duk_push_true(ctx);
+    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("cancel"));
+    duk_put_prop_string(ctx, -2, "cancel");
 
     return 1;
 }
