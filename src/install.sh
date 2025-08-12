@@ -2,7 +2,7 @@
 
 # This file will be placed in the install directory and can be run from there.
 
-SSOURCE==$(readlink -- "${BASH_SOURCE[0]}")
+SSOURCE=$(readlink -f "${BASH_SOURCE[0]}")
 SDIR=$(dirname "${SSOURCE}")
 
 # check quarantine flag on macos and remove if present
