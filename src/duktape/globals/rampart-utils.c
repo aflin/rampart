@@ -6396,9 +6396,6 @@ duk_ret_t duk_rp_fprintf(duk_context *ctx)
     errno=0;
     ret = rp_printf(_fout_char, (void*)f, (size_t)-1, ctx, 1, lock_p);
     fflush(f);
-    if(errno)
-        RP_THROW(ctx, "fprintf(): error - %s", strerror(errno));
-
     if(!nolock)
     {
         if(!lock_p)
@@ -6412,6 +6409,9 @@ duk_ret_t duk_rp_fprintf(duk_context *ctx)
               RP_THROW(ctx, "fprintf(): error - could not release lock");
         }
     }
+
+    if(errno)
+        RP_THROW(ctx, "fprintf(): error - %s", strerror(errno));
 
     if(closefh)
         fclose(f);
