@@ -775,6 +775,7 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
     {
         const char *term = getenv("TERM");
         isterm = (term && isatty(STDOUT_FILENO) && strcmp(term, "dumb"));
+        errno=0; //isatty sets this, and that can mess stuff up later.
     }
     
     duk_idx_t topidx = duk_get_top_index(ctx);

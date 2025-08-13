@@ -687,9 +687,10 @@ static void detect_terminal_capabilities(void) {
         supports_ansi = 0;
         color_count   = 0;
         supports_truecolor = 0;
+        errno=0; //isatty sets this, and that can mess stuff up later.
         return;
     }
-
+    errno=0; // Just to be safe
     supports_ansi = 1;
 
     term_colors_and_truecolor(&color_count, &supports_truecolor);
