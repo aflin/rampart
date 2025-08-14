@@ -1731,7 +1731,7 @@ static char to_hex(char code)
 char *duk_rp_url_encode(char *str, int len)
 {
     char *pstr = str, *buf = NULL, *pbuf = NULL;
-    
+
     REMALLOC(buf, strlen(str) * 3 + 1);
     pbuf = buf;
 
@@ -1759,7 +1759,7 @@ char *duk_rp_url_decode(char *str, int *len)
 {
     int i=*len;
     char *pstr = str, *buf = NULL, *pbuf = NULL;
-    
+
     REMALLOC(buf, strlen(str) * 3 + 1);
     pbuf = buf;
 
@@ -2640,12 +2640,91 @@ static duk_ret_t readline_next(duk_context *ctx)
     f;\
 })
 
+static duk_ret_t readline_var_next(duk_context *ctx)
+{
+    const char *cp, *start;
+    size_t len=0, pos=0, linelen=0;
+
+    duk_push_this(ctx);
+
+    duk_get_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("datapointer"));
+    cp = duk_get_pointer(ctx, -1);
+
+    duk_get_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("datasize"));
+    len = (size_t)duk_get_int(ctx, -1);
+
+    duk_get_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("datapos"));
+    pos = (size_t)duk_get_int(ctx, -1);
+
+    cp+=pos;
+    start=cp;
+    if(pos>=len) {
+        duk_push_null(ctx);
+        return 1;
+    }
+
+    while(pos<len &&  *cp!='\n')
+        cp++;
+
+    cp++;
+
+    linelen=cp-start;
+    pos+=linelen;
+
+    duk_push_int(ctx, (int)pos);
+    duk_put_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("datapos"));
+
+    duk_push_lstring(ctx, start, (duk_size_t)linelen);
+    return 1;
+}
+
+duk_ret_t readline_var(duk_context *ctx)
+{
+    duk_size_t bsize=0;
+    const char *in = REQUIRE_STR_OR_BUF(ctx, 0, &bsize, "");
+
+    duk_push_object(ctx);
+    duk_push_c_function(ctx,readline_var_next,0);
+    duk_put_prop_string(ctx, -2, "next");
+    duk_push_pointer(ctx, (void*)in);
+    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("datapointer"));
+    duk_push_int(ctx, (int)bsize);
+    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("datasize"));
+    duk_push_int(ctx, 0);
+    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("datapos"));
+
+    return 1;
+}
+
+
 duk_ret_t duk_rp_readline(duk_context *ctx)
 {
     const char *filename="";
     FILE *f;
     int type=1;
 
+    if(duk_is_object(ctx, 0))
+    {
+        if(duk_get_prop_string(ctx, 0, "file"))
+        {
+            //just remove the object and let the value of property "file" fall to pos 0
+            duk_replace(ctx,0);
+            goto readfile;
+        }
+        duk_pop(ctx);
+        if(duk_get_prop_string(ctx, 0, "data"))
+        {
+            if(duk_is_buffer(ctx, -1) || duk_is_string(ctx, -1) )
+            {
+                duk_replace(ctx,0);
+                return readline_var(ctx);
+            } else RP_THROW(ctx, "readline({data:arg}) - arg must be a Buffer or String");
+            duk_pop(ctx);
+        }
+
+    }
+
+    readfile:
     f=getreadfile(ctx, 0, "readLine", filename, type);
 
     duk_push_object(ctx);
@@ -6045,7 +6124,7 @@ static duk_ret_t duk_rp_fgets_getchar(duk_context *ctx, int gtype)
         duk_pop(ctx);
         if(noecho)
             disable_echo();
-        duk_remove(ctx, objidx);        
+        duk_remove(ctx, objidx);
     }
 
     if (!duk_is_undefined(ctx,0))
@@ -6839,7 +6918,7 @@ static ssize_t buffer_write(void *cookie, const char *buf, size_t size) {
     size_t needed_size;
 
     blist_check_exists(buffer,1);
-    
+
     RP_PTLOCK(&buffer->lock);
 
     if(!buffer->file)
@@ -9747,10 +9826,10 @@ static void _deepcopy(duk_context *ctx, duk_idx_t targidx, duk_idx_t srcidx, int
 
         if(isdupobj)
         {
-            // [ ..., enum(-4), key(-3), value(-2), refvalue(-1) ]            
+            // [ ..., enum(-4), key(-3), value(-2), refvalue(-1) ]
             //replace object value with the one already copied below
             duk_replace(ctx, -2);
-            // [ ..., enum(-3), key(-2), refvalue(-1) ]            
+            // [ ..., enum(-3), key(-2), refvalue(-1) ]
         }
         else if(type == RP_TYPE_ARRAY)
         {
@@ -10023,7 +10102,7 @@ static int trim(char *str, int check_whitespace) {
     return WPARSEERR_NONE;
 }
 
-WordMap *new_WordMap() 
+WordMap *new_WordMap()
 {
     WordMap *map=NULL;
     REMALLOC(map, sizeof(WordMap));
@@ -10065,7 +10144,7 @@ static void add_entry(WordMap *map, const char *original, const char *substitute
         if(p){
             free(key);
             key=p;
-        } 
+        }
     }
 
     WordEntry *entry = NULL;
@@ -10113,9 +10192,9 @@ static int load_mappings_from_string(WordMap *map, const char *input, int casecm
     char line[MAX_LINE_LEN];
     const char *ptr = input;
     int ret=0;
-    
+
     *lineno=0;
-    
+
     while (*ptr)
     {
         size_t len = 0, i=0;
@@ -10126,7 +10205,7 @@ static int load_mappings_from_string(WordMap *map, const char *input, int casecm
 
         (*lineno)++;
         //blank lines and comments
-        if (len == 0 || *line == '#') 
+        if (len == 0 || *line == '#')
             continue;
         for (i=0;i<len;i++)
         {
@@ -10137,7 +10216,7 @@ static int load_mappings_from_string(WordMap *map, const char *input, int casecm
             continue;;
 
         char *colon = strchr(line, ':');
-        if (!colon) 
+        if (!colon)
             return WPARSEERR_CL;
 
         *colon = '\0';
@@ -10148,7 +10227,7 @@ static int load_mappings_from_string(WordMap *map, const char *input, int casecm
             return ret;
         if( (ret=trim(val,0)) )
             return ret;
-        
+
         //printf("adding %s -> %s\n", key, val);
         if (strlen(key) > 0 && strlen(val) > 0) {
             add_entry(map, key, val, casecmp);
@@ -10213,7 +10292,7 @@ static int load_mappings_from_object(duk_context *ctx, WordMap *map, duk_idx_t o
                 free_map(map);
                 RP_THROW(ctx, "rampart.utils.wordReplace(): %s in key '%s'", wparseerr[WPARSEERR_SP], key);
             }
-                
+
             p++;
         }
         val=strdup(duk_safe_to_string(ctx, -1));
@@ -10233,7 +10312,7 @@ static int load_mappings_from_object(duk_context *ctx, WordMap *map, duk_idx_t o
 
 
 int is_utf8_alnum(const char *s, size_t *len) {
-    
+
     if (!*s || !len)
     {
         *len=1;
@@ -10332,8 +10411,8 @@ static char* replace_words(const char *input, WordMap *map, unsigned int flags) 
         {
             if (!append_to_output(&output, &out_len, &out_cap, &input[i], readlen))
                 return NULL;
-            if( 
-               !(flags & REPLACE_IGNORE_HYPHEN) || 
+            if(
+               !(flags & REPLACE_IGNORE_HYPHEN) ||
                input[i] != '-'
             )
             {
@@ -10375,7 +10454,7 @@ static char* replace_words(const char *input, WordMap *map, unsigned int flags) 
         size_t trailing_start = i, trailing_len=0;
         if( !(flags & REPLACE_INCLUDE_TRAILING_PUNCT) ){
             size_t marker = 0, j=word_start;
-            
+
             while(j<i)
             {
                 if( !is_utf8_alnum(&input[j], &readlen) )
@@ -10402,7 +10481,7 @@ static char* replace_words(const char *input, WordMap *map, unsigned int flags) 
 
         // Isolate and lowercase word for lookup
         char *lookup = strndup(&input[word_start], word_len);
-        if (!lookup) 
+        if (!lookup)
         {
             free(output);
             return NULL;
@@ -10421,12 +10500,12 @@ static char* replace_words(const char *input, WordMap *map, unsigned int flags) 
         free(lookup);
 
         // 3. Append output: [replacement or word][trailing]
-        if (entry) 
+        if (entry)
         {
             if (!append_to_output(&output, &out_len, &out_cap, entry, strlen(entry)) )
                 return NULL;
-        } 
-        else 
+        }
+        else
         {
             if (!append_to_output(&output, &out_len, &out_cap, &input[word_start], word_len))
                 return NULL;
@@ -10538,7 +10617,7 @@ duk_ret_t word_replace_main(duk_context *ctx)
     }
     else //some kind of error
         duk_dup(ctx, 0);
-    
+
     return 1;
 }
 
@@ -10551,7 +10630,7 @@ duk_ret_t word_replace_new(duk_context *ctx)
         RP_THROW(ctx, "rampart.utils.wordReplace():  Must be called with 'new rampart.utils.wordReplace(list[, options])");
 
     int type = rp_gettype(ctx, 0);
-    
+
     if(type != RP_TYPE_STRING && type != RP_TYPE_OBJECT && type != RP_TYPE_FILEHANDLE)
         RP_THROW(ctx, "rampart.utils.wordReplace():  Must be called with 'new rampart.utils.wordReplace(list[, options])");
 
@@ -10587,7 +10666,7 @@ duk_ret_t word_replace_new(duk_context *ctx)
         duk_pop(ctx); // enum
     }
 
-    int case_ignore = !( flags & REPLACE_RESPECT_CASE); 
+    int case_ignore = !( flags & REPLACE_RESPECT_CASE);
 
     duk_push_object(ctx);
     map = new_WordMap();
@@ -10608,7 +10687,7 @@ duk_ret_t word_replace_new(duk_context *ctx)
     }
 
     duk_push_pointer(ctx, map);
-    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("wordmap"));        
+    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("wordmap"));
 
     duk_push_c_function(ctx, word_replace_main, 2);
     duk_put_prop_string(ctx, -2, "exec");
@@ -10623,7 +10702,7 @@ duk_ret_t word_replace_new(duk_context *ctx)
     duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("flags"));
 
     duk_push_c_function(ctx, word_replace_finalizer,1);
-    duk_set_finalizer(ctx, -2); 
+    duk_set_finalizer(ctx, -2);
 
     return 1;
 }
@@ -10825,7 +10904,7 @@ void duk_printf_init(duk_context *ctx)
     RP_PTINIT(&errlock);
     RP_PTINIT(&blist_lock);
 
-    
+
     /* init all first */
     if (setlocale(LC_ALL, "") == NULL)
             setlocale(LC_ALL, "en_US.UTF-8");
