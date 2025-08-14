@@ -49,6 +49,8 @@ function llmQuery(query, callback, finalCallback, ep) {
         finalCallback=undefined;
     }
 
+    self.cancel=false;
+
     if(!this.model)
         err("model not set (use llm.model='mymodel' to set)");
     if(/*typeof query != 'string' || */ typeof callback != 'function')
@@ -96,6 +98,13 @@ function llmQuery(query, callback, finalCallback, ep) {
         {
             postJSON: postObj,
             chunkCallback: function(r) {
+
+                if(self.cancel===true)
+                {
+                    self.cancel=false;
+                    return curl.cancel;
+                }
+
                 try {
                     var parsed = JSON.parse(r.body);
                 } catch(e) {
@@ -140,7 +149,12 @@ function llmQuery(query, callback, finalCallback, ep) {
                     self.tokens.push(token);
                 }
 
-                callback(parsed);
+                var ret=callback(parsed);
+                if(ret===false)
+                {
+                    self.cancel=false;
+                    return curl.cancel;
+                }
             }
         },
         // run the final callback when we have all the data
