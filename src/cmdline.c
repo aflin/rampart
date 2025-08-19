@@ -26,6 +26,7 @@
 #include "linenoise.h"
 #include "sys/queue.h"
 #include "whereami.h"
+#include "transpiler.h"
 
 int globalize=0;
 int duk_rp_globalbabel=0;
@@ -3309,14 +3310,20 @@ int main(int argc, char *argv[])
             if (! (babel_source_filename=duk_rp_babelize(ctx, fn, file_src, entry_file_stat.st_mtime, babel_setting_none, NULL)) )
             {
                 /* No babel, normal compile */
-                int err, lineno;
+                //int err, lineno;
                 /* process basic template literals (backticks) */
-                char *tickified = tickify(file_src, src_sz, &err, &lineno);
-                free(free_file_src);
-                file_src = free_file_src = tickified;
-                if (err)
+                //char *tickified = tickify(file_src, src_sz, &err, &lineno);
+                RP_ParseRes res = transpile(file_src, src_sz, 0); 
+                if(res.transpiled)
                 {
-                    fprintf(stderr, "SyntaxError: %s (line %d)\n", tickify_err(err), lineno);
+                    free(free_file_src);
+                    //file_src = free_file_src = tickified;
+                    file_src = free_file_src = res.transpiled;
+                }
+                if (res.err && !res.transpiled)
+                {
+                    //fprintf(stderr, "SyntaxError: %s (line %d)\n", tickify_err(err), lineno);
+                    fprintf(stderr, "SyntaxError: parse error (line %d)\n", res.line_num);
                     /* file_src is NULL*/
                     return(1);
                 }

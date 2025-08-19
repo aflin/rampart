@@ -73,6 +73,10 @@ ADD_CUSTOM_TARGET (
 
 add_executable(rampart
     ${PROJECT_SOURCE_DIR}/extern/utf8proc/utf8proc.c
+    ${PROJECT_SOURCE_DIR}/extern/tree-sitter/transpiler.c
+    ${PROJECT_SOURCE_DIR}/extern/tree-sitter/tree-sitter-javascript/src/parser.c
+    ${PROJECT_SOURCE_DIR}/extern/tree-sitter/tree-sitter-javascript/src/scanner.c
+    ${PROJECT_SOURCE_DIR}/extern/tree-sitter/lib/src/lib.c
 	duktape/register.c
 	duktape/core/duktape.c
 	duktape/core/module.c
@@ -137,6 +141,8 @@ include_directories(
 	${PROJECT_BINARY_DIR}/extern/texis/contrib/jansson-2.12/include/
 	${PROJECT_BINARY_DIR}/include/
 	${PROJECT_SOURCE_DIR}/src/duktape/globals/hash_random/
+    ${PROJECT_SOURCE_DIR}/extern/tree-sitter/lib/include/
+    ${PROJECT_SOURCE_DIR}/extern/tree-sitter/
 )
 
 ########### ADD MODULES HERE ###############
