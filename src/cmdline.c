@@ -3259,13 +3259,9 @@ int main(int argc, char *argv[])
                     fprintf(stderr,"%s\n", duk_safe_to_stacktrace(ctx, -1));
                     duk_rp_exit(ctx, 1);
                 }
-                src_sz=entry_file_stat.st_size + 1;
-                file_src = malloc(src_sz);
-                if(!file_src)
-                {
-                    fprintf(stderr,"Error allocating memory for source file\n");
-                    duk_rp_exit(ctx, 1);
-                }
+                src_sz=entry_file_stat.st_size;
+                file_src = NULL;
+                CALLOC(file_src, src_sz +1 );
 
                 if (fread(file_src, 1, entry_file_stat.st_size, entry_file) != entry_file_stat.st_size)
                 {
@@ -3274,18 +3270,19 @@ int main(int argc, char *argv[])
                     free(free_file_src);
                     duk_rp_exit(ctx, 1);
                 }
+
                 fn=argv[scriptarg];
                 fclose(entry_file);
             }
+
             have_src:
-            if(!cmdline_src)
-                file_src[src_sz-1]='\0';
-            else
-                src_sz=strlen(cmdline_src);
+            if(cmdline_src)
+                src_sz=strlen(file_src);
+
             free_file_src=file_src;
 
             /* skip over #!/path/to/rampart */
-            if(*file_src=='#')
+            if(*file_src=='#' && *(file_src+1)=='!')
             {
                 s=strchr(file_src,'\n');
 
@@ -3299,9 +3296,7 @@ int main(int argc, char *argv[])
                 }
                 file_src=s;
             }
-
             /* ********** set up event loop *************** */
-
             /* set up main event base */
             mainthr->base = event_base_new();
             RPTHR_SET(mainthr, RPTHR_FLAG_BASE);
@@ -3319,7 +3314,7 @@ int main(int argc, char *argv[])
                 if (res.err && res.transpiled)
                 {
                     char *p = file_src + res.pos;
-                    char *s=p, *e=p, *fe=file_src+src_sz;
+                    char *s=p, *e=p, *fe=file_src+strlen(file_src);
                     char *ple=NULL, *pls=NULL;
 
                     fprintf(stderr, "Transpiler Parse Error (line %d)\n", res.line_num);
@@ -3343,8 +3338,8 @@ int main(int argc, char *argv[])
                     while(s<p) {fputc(' ', stderr);s++;}
                     fputc('^', stderr);
                     fputc('\n', stderr);
-                    free(free_file_src);
-                    return(1);
+                    //free(free_file_src);
+                    //return(1);
                 }
 
                 char *dbug = getenv("RPDEBUG");

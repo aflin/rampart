@@ -2418,7 +2418,7 @@ RP_ParseRes transpiler_rewrite(
         const char *nt = ts_node_type(n);
         size_t ns = ts_node_start_byte(n), ne = ts_node_end_byte(n);
 
-        // Other errors
+        // errors
         if ( !ret.err && (nt && strcmp(nt, "ERROR") == 0) ) {
             ret.err=1;
             ret.pos = ts_node_start_byte(n);
@@ -2518,10 +2518,6 @@ RP_ParseRes transpile(const char *src, size_t src_len, int printTree)
     //pass a -1 or a 0 to get length, but use TRANSPILE_CALC_SIZE (0)
     if(!src_len || (ssize_t)src_len == -1)
         src_len=strlen(src);
-
-    // if we mistakenly gave len to include ending '\0'
-    if( *(src+src_len) == '\0')
-        src_len--;
 
     tree = ts_parser_parse_string(parser, NULL, src, (uint32_t)src_len);
     root = ts_tree_root_node(tree);
