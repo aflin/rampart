@@ -3313,20 +3313,52 @@ int main(int argc, char *argv[])
                 //int err, lineno;
                 /* process basic template literals (backticks) */
                 //char *tickified = tickify(file_src, src_sz, &err, &lineno);
-                RP_ParseRes res = transpile(file_src, src_sz, 0); 
+
+                RP_ParseRes res = transpile(file_src, TRANSPILE_CALC_SIZE, 0); 
+
+                if (res.err && res.transpiled)
+                {
+                    char *p = file_src + res.pos;
+                    char *s=p, *e=p, *fe=file_src+src_sz;
+                    char *ple=NULL, *pls=NULL;
+
+                    fprintf(stderr, "Transpiler Parse Error (line %d)\n", res.line_num);
+                    while(s>=file_src && *s !='\n') s--;
+                    if(*s=='\n')
+                    {
+                        const char *bline="";
+                        ple=s;
+                        pls=ple;
+                        pls--;
+                        while(pls>=file_src && *pls =='\n')pls--, ple--;
+                        if(ple != s)
+                            bline="\n...";
+                        while(pls>=file_src && *pls !='\n') pls--;
+                        pls++;
+                        fprintf(stderr, "%.*s%s\n", (int)(ple-pls), pls,bline);
+                    }
+                    s++;
+                    while(e <= fe && *e != '\n') e++;
+                    fprintf(stderr, "%.*s\n", (int)(e-s), s);
+                    while(s<p) {fputc(' ', stderr);s++;}
+                    fputc('^', stderr);
+                    fputc('\n', stderr);
+                    free(free_file_src);
+                    return(1);
+                }
+
+                char *dbug = getenv("RPDEBUG");
                 if(res.transpiled)
                 {
                     free(free_file_src);
                     //file_src = free_file_src = tickified;
                     file_src = free_file_src = res.transpiled;
+
+                    if( dbug && !strcmp (dbug, "transpiler") )
+                        fprintf(stderr, "BEGIN SCRIPT\n%s\nEND SCRIPT\n",file_src);
                 }
-                if (res.err && !res.transpiled)
-                {
-                    //fprintf(stderr, "SyntaxError: %s (line %d)\n", tickify_err(err), lineno);
-                    fprintf(stderr, "SyntaxError: parse error (line %d)\n", res.line_num);
-                    /* file_src is NULL*/
-                    return(1);
-                }
+                else if( dbug && !strcmp (dbug, "transpiler") )
+                    fprintf(stderr, "No Transpile\n");
 
                 duk_push_string(ctx, file_src);
                 /* push filename */

@@ -6,9 +6,11 @@
 
 typedef struct {
     char *transpiled;
+    size_t pos;
     int err;
     int altered;
     int line_num;
+    int col_num;
 } RP_ParseRes;
 
 
@@ -37,6 +39,8 @@ typedef struct {
 
     Returns a malloc'ed.
 */
+
+#define TRANSPILE_CALC_SIZE 0
 
 RP_ParseRes transpile(const char *src, size_t src_len, int printTree);
 

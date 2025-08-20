@@ -76,9 +76,10 @@ void add_edit_take_ownership(EditList *e, size_t start, size_t end, char *replac
 
 // stolen from babel.  Babel, like this prog is MIT licensed - see https://github.com/babel/babel/blob/main/LICENSE
 const char *spread_polyfill =
-    "rampart.__spreadO = function (target) {function ownKeys(object, enumerableOnly) {var keys = Object.keys(object);if (Object.getOwnPropertySymbols) {var symbols = Object.getOwnPropertySymbols(object);if (enumerableOnly) symbols = symbols.filter(function (sym) {return Object.getOwnPropertyDescriptor(object, sym).enumerable;});keys.push.apply(keys, symbols);}return keys;}function _defineProperty(obj, key, value) {if (key in obj) {Object.defineProperty(obj, key, { value: value, enumerable: true, configurable: true, writable: true });} else {obj[key] = value;}return obj;}for (var i = 1; i < arguments.length; i++){var source = arguments[i] != null ? arguments[i] : {};if (i % 2){ownKeys(Object(source), true).forEach(function (key) {_defineProperty(target, key, source[key]);});} else if (Object.getOwnPropertyDescriptors)  {Object.defineProperties(target, Object.getOwnPropertyDescriptors(source));} else {ownKeys(Object(source)).forEach(function (key) {Object.defineProperty(target, key, Object.getOwnPropertyDescriptor(source, key));});}}return target;};rampart.__spreadA = function(target, arr) {if(arr instanceof Array)return target.concat(arr);function _nonIterableSpread() {throw new TypeError(\"Invalid attempt to spread non-iterable instance. In order to be iterable, non-array objects must have a [Symbol.iterator]() method.\");}function _unsupportedIterableToArray(o, minLen) {if (!o)return;if (typeof o === \"string\") return _arrayLikeToArray(o, minLen);var n = Object.prototype.toString.call(o).slice(8, -1);if (n === \"Object\" && o.constructor);n = o.constructor.name;if (n === \"Map\" || n === \"Set\")return Array.from(o);if(n === \"Arguments\" || /^(?:Ui|I)nt(?:8|16|32)(?:Clamped)?Array$/.test(n))return target.concat(_arrayLikeToArray(o, minLen));}function _iterableToArray(iter) {if (typeof Symbol !== \"undefined\" && Symbol.iterator in Object(iter))return target.concat(Array.from(iter));}function _arrayLikeToArray(arr, len) {if (len == null || len > arr.length) len = arr.length;for (var i = 0, arr2 = new Array(len);i < len;i++){arr2[i] = arr[i];}return target.concat(arr2);}function _arrayWithoutHoles(arr){if (Array.isArray(arr)) return target.concat(_arrayLikeToArray(arr));}return _arrayWithoutHoles(arr) || _iterableToArray(arr) || _unsupportedIterableToArray(arr) || _nonIterableSpread();};Array.prototype._addchain = function(items) {var self=this;items.forEach(function(item) {self.push(item);});return this;};Array.prototype._concat=Array.prototype.concat;Object.prototype._addchain = function (key, value) {if( typeof key == 'object' )Object.assign(this, key);else this[key] = value;return this;};Object.prototype._concat=Object.prototype._addchain;";
+    //"if(!global._TrN_Sp){global._TrN_Sp={};};_TrN_Sp.__spreadO = function (target) {function ownKeys(object, enumerableOnly) {var keys = Object.keys(object);if (Object.getOwnPropertySymbols) {var symbols = Object.getOwnPropertySymbols(object);if (enumerableOnly) symbols = symbols.filter(function (sym) {return Object.getOwnPropertyDescriptor(object, sym).enumerable;});keys.push.apply(keys, symbols);}return keys;}function _defineProperty(obj, key, value) {if (key in obj) {Object.defineProperty(obj, key, { value: value, enumerable: true, configurable: true, writable: true });} else {obj[key] = value;}return obj;}for (var i = 1; i < arguments.length; i++){var source = arguments[i] != null ? arguments[i] : {};if (i % 2){ownKeys(Object(source), true).forEach(function (key) {_defineProperty(target, key, source[key]);});} else if (Object.getOwnPropertyDescriptors)  {Object.defineProperties(target, Object.getOwnPropertyDescriptors(source));} else {ownKeys(Object(source)).forEach(function (key) {Object.defineProperty(target, key, Object.getOwnPropertyDescriptor(source, key));});}}return target;};_TrN_Sp.__spreadA = function(target, arr) {if(arr instanceof Array)return target.concat(arr);function _nonIterableSpread() {throw new TypeError(\"Invalid attempt to spread non-iterable instance. In order to be iterable, non-array objects must have a [Symbol.iterator]() method.\");}function _unsupportedIterableToArray(o, minLen) {if (!o)return;if (typeof o === \"string\") return _arrayLikeToArray(o, minLen);var n = Object.prototype.toString.call(o).slice(8, -1);if (n === \"Object\" && o.constructor);n = o.constructor.name;if (n === \"Map\" || n === \"Set\")return Array.from(o);if(n === \"Arguments\" || /^(?:Ui|I)nt(?:8|16|32)(?:Clamped)?Array$/.test(n))return target.concat(_arrayLikeToArray(o, minLen));}function _iterableToArray(iter) {if (typeof Symbol !== \"undefined\" && Symbol.iterator in Object(iter))return target.concat(Array.from(iter));}function _arrayLikeToArray(arr, len) {if (len == null || len > arr.length) len = arr.length;for (var i = 0, arr2 = new Array(len);i < len;i++){arr2[i] = arr[i];}return target.concat(arr2);}function _arrayWithoutHoles(arr){if (Array.isArray(arr)) return target.concat(_arrayLikeToArray(arr));}return _arrayWithoutHoles(arr) || _iterableToArray(arr) || _unsupportedIterableToArray(arr) || _nonIterableSpread();};Array.prototype._addchain = function(items) {var self=this;items.forEach(function(item) {self.push(item);});return this;};Array.prototype._concat=Array.prototype.concat;Object.prototype._addchain = function (key, value) {if( typeof key == 'object' )Object.assign(this, key);else this[key] = value;return this;};Object.prototype._concat=Object.prototype._addchain;";
+    "if(!global._TrN_Sp){global._TrN_Sp={};};_TrN_Sp.__spreadO = function(target) {function ownKeys(object, enumerableOnly){var keys = Object.keys(object);if (Object.getOwnPropertySymbols){var symbols = Object.getOwnPropertySymbols(object);if (enumerableOnly)symbols = symbols.filter(function(sym) {return Object.getOwnPropertyDescriptor(object, sym).enumerable;});keys.push.apply(keys, symbols);}return keys;}function _defineProperty(obj, key, value){if (key in obj){Object.defineProperty(obj, key, {value : value, enumerable : true, configurable : true, writable : true});}else{obj[key] = value;}return obj;}for (var i = 1; i < arguments.length; i++){var source = arguments[i] != null ? arguments[i] : {};if (i % 2){ownKeys(Object(source), true).forEach(function(key) {_defineProperty(target, key, source[key]);});}else if (Object.getOwnPropertyDescriptors){Object.defineProperties(target, Object.getOwnPropertyDescriptors(source));}else{ownKeys(Object(source)).forEach(function(key) {Object.defineProperty(target, key, Object.getOwnPropertyDescriptor(source, key));});}}return target;};_TrN_Sp.__spreadA = function(target, arr) {if (arr instanceof Array)return target.concat(arr);function _nonIterableSpread(){throw new TypeError(\"Invalid attempt to spread non-iterable instance. In order to be iterable, non-array objects must have a [Symbol.iterator]() method.\");}function _unsupportedIterableToArray(o, minLen){if (!o)return;if (typeof o === \"string\")return _arrayLikeToArray(o, minLen);var n = Object.prototype.toString.call(o).slice(8, -1);if (n === \"Object\" && o.constructor);n = o.constructor.name;if (n === \"Map\" || n === \"Set\")return Array.from(o);if (n === \"Arguments\" || /^(?:Ui|I)nt(?:8|16|32)(?:Clamped)?Array$/.test(n))return target.concat(_arrayLikeToArray(o, minLen));}function _iterableToArray(iter){if (typeof Symbol !== \"undefined\" && Symbol.iterator in Object(iter))return target.concat(Array.from(iter));}function _arrayLikeToArray(arr, len){if (len == null || len > arr.length)len = arr.length;for (var i = 0, arr2 = new Array(len); i < len; i++){arr2[i] = arr[i];}return target.concat(arr2);}function _arrayWithoutHoles(arr){if (Array.isArray(arr))return target.concat(_arrayLikeToArray(arr));}return _arrayWithoutHoles(arr) || _iterableToArray(arr) || _unsupportedIterableToArray(arr) || _nonIterableSpread();};_TrN_Sp._arrayConcat = function(items){var self = this;items.forEach(function(item) {self.push(item);});return this;};_TrN_Sp._newArray = function() {Object.defineProperty(Array.prototype, '_addchain', {value: _TrN_Sp._arrayConcat,writable: true,configurable: true,enumerable: false});Object.defineProperty(Array.prototype, '_concat', {value: Array.prototype._addchain,writable: true,configurable: true,enumerable: false});return [];};_TrN_Sp._objectAddchain = function(key, value) {if (typeof key == 'object'){Object.assign(this, key)}else{this[key] = value;}return this;};_TrN_Sp._newObject = function() {Object.defineProperty(Object.prototype, '_addchain', {value: _TrN_Sp._objectAddchain,writable: true,configurable: true,enumerable: false});Object.defineProperty(Object.prototype, '_concat', {value: _TrN_Sp._objectAddchain,writable: true,configurable: true,enumerable: false});return {};};";
 const char *import_polyfill =
-    "function _typeof(obj) {\"@babel/helpers - typeof\";if (typeof Symbol === \"function\" && typeof Symbol.iterator === \"symbol\") {_typeof = function _typeof(obj) {return typeof obj;};} else {_typeof = function _typeof(obj) {return obj && typeof Symbol === \"function\" && obj.constructor === Symbol && obj !== Symbol.prototype ? \"symbol\" : typeof obj;};}return _typeof(obj);}function _getRequireWildcardCache() {if (typeof WeakMap !== \"function\") return null;var cache = new WeakMap();_getRequireWildcardCache = function _getRequireWildcardCache() {return cache;};return cache;}function _interopRequireWildcard(obj) {if (obj && obj.__esModule) {return obj;}if (obj === null || _typeof(obj) !== \"object\" && typeof obj !== \"function\") {return { \"default\": obj };}var cache = _getRequireWildcardCache();if (cache && cache.has(obj)) {return cache.get(obj);}var newObj = {};var hasPropertyDescriptor = Object.defineProperty && Object.getOwnPropertyDescriptor;for (var key in obj) {if (Object.prototype.hasOwnProperty.call(obj, key)) {var desc = hasPropertyDescriptor ? Object.getOwnPropertyDescriptor(obj, key) : null;if (desc && (desc.get || desc.set)) {Object.defineProperty(newObj, key, desc);} else {newObj[key] = obj[key];}}}newObj[\"default\"] = obj;if (cache) {cache.set(obj, newObj);}return newObj;};";
+    "if(!global._TrN_Sp){global._TrN_Sp={};};_TrN_Sp._typeof=function(obj) {\"@babel/helpers - typeof\";if (typeof Symbol === \"function\" && typeof Symbol.iterator === \"symbol\") {_TrN_Sp._typeof = function(obj) {return typeof obj;};} else {_TrN_Sp._typeof = function(obj) {return obj && typeof Symbol === \"function\" && obj.constructor === Symbol && obj !== Symbol.prototype ? \"symbol\" : typeof obj;};}return _TrN_Sp._typeof(obj);};_TrN_Sp._getRequireWildcardCache=function() {if (typeof WeakMap !== \"function\") return null;var cache = new WeakMap();_TrN_Sp._getRequireWildcardCache=function(){return cache;};return cache;};_TrN_Sp._interopRequireWildcard=function(obj) {if (obj && obj.__esModule) {return obj;}if (obj === null || _TrN_Sp._typeof(obj) !== \"object\" && typeof obj !== \"function\") {return { \"default\": obj };}var cache = _TrN_Sp._getRequireWildcardCache();if (cache && cache.has(obj)) {return cache.get(obj);}var newObj = {};var hasPropertyDescriptor = Object.defineProperty && Object.getOwnPropertyDescriptor;for (var key in obj) {if (Object.prototype.hasOwnProperty.call(obj, key)) {var desc = hasPropertyDescriptor ? Object.getOwnPropertyDescriptor(obj, key) : null;if (desc && (desc.get || desc.set)) {Object.defineProperty(newObj, key, desc);} else {newObj[key] = obj[key];}}}newObj[\"default\"] = obj;if (cache) {cache.set(obj, newObj);}return newObj;};";
 
 char *apply_edits(const char *src, size_t src_len, EditList *e, uint8_t polysneeded)
 {
@@ -260,6 +261,7 @@ static inline bool is_ws(char c)
 // Provided by tree-sitter-javascript (parser.c)
 extern const TSLanguage *tree_sitter_javascript(void);
 
+/*
 // Returns the field name for `node` relative to its parent, or NULL if none.
 // The returned pointer is owned by the language and remains valid for the
 // lifetime of the language; do not free it.
@@ -290,7 +292,8 @@ static const char *ts_node_field_name(TSNode node)
     ts_tree_cursor_delete(&cursor);
     return result;
 }
-// Optional AST outline (use with --print-ast)
+// Optional AST outline (use with --printTree)
+
 static void print_outline(const char *src, TSNode node, int depth, FILE *f)
 {
     const char *type = ts_node_type(node);
@@ -308,6 +311,53 @@ static void print_outline(const char *src, TSNode node, int depth, FILE *f)
     for (uint32_t i = 0; i < n; i++)
     {
         print_outline(src, ts_node_child(node, i), depth + 1, f);
+    }
+}
+*/
+static void print_outline(const char *src, TSNode root, int depth, FILE *f)
+{
+    (void)src; // not needed here, keep to match your signature
+
+    TSTreeCursor cur = ts_tree_cursor_new(root);
+    int d = depth;
+
+    for (;;) {
+        TSNode node = ts_tree_cursor_current_node(&cur);
+
+        const char *type       = ts_node_type(node);
+        const char *field_name = ts_tree_cursor_current_field_name(&cur); // field in parent
+        uint32_t start         = ts_node_start_byte(node);
+        uint32_t end           = ts_node_end_byte(node);
+        int bare               = !ts_node_is_named(node);
+
+        for (int i = 0; i < d; i++) fputs("  ", f);
+        fprintf(f, "%s%s%s%s%s%s [%u,%u]\n",
+                bare ? "\"" : "",
+                type,
+                bare ? (field_name ? "\" " : "\"") : "",
+                field_name ? "(" : "",
+                field_name ? field_name : "",
+                field_name ? ")" : "",
+                start, end);
+
+        // Preorder traversal using the cursor:
+        if (ts_tree_cursor_goto_first_child(&cur)) {
+            d++;
+            continue;
+        }
+        // No children; walk up until we can take a next sibling
+        for (;;) {
+            if (ts_tree_cursor_goto_next_sibling(&cur)) {
+                // same depth
+                break;
+            }
+            if (!ts_tree_cursor_goto_parent(&cur)) {
+                // back at the root; we're done
+                ts_tree_cursor_delete(&cur);
+                return;
+            }
+            d--;
+        }
     }
 }
 
@@ -419,44 +469,6 @@ static inline char *appendf(char *buf, size_t *len, const char *fmt, ...)
     if (len)
         *len = r;
     return tmp;
-}
-
-/* return s+adds  s must be a malloced string or ->NULL*/
-static char *strcatdup(char *s, char *adds)
-{
-    int freeadds = 0, sl, al;
-    if ((adds == (char *)NULL) || (*adds == '\0'))
-    {
-        if (s == (char *)NULL)
-            s = strdup("");
-        return (s);
-    }
-
-    if (s == (char *)NULL)
-        sl = 0;
-    else
-        sl = strlen(s);
-
-    /* if its the same string or a substring */
-    if (adds >= s && adds < (s + sl))
-    {
-        adds = strdup(adds);
-        freeadds = 1;
-    }
-
-    if (s != (char *)NULL)
-    {
-        al = strlen(adds);
-        REMALLOC(s, al + sl + 1);
-        strcpy(s + sl, adds);
-    }
-    else
-        s = strdup(adds);
-
-    if (freeadds)
-        free(adds);
-
-    return (s);
 }
 
 // ============== range bookkeeping for one-pass ==============
@@ -671,7 +683,7 @@ static char *js_quote_literal(const char *src, size_t start, size_t end, int *nn
         switch (c)
         {
         case '\\':
-            out[j++] = '\\';
+            //out[j++] = '\\';
             out[j++] = '\\';
             break;
         case '"':
@@ -1210,8 +1222,8 @@ static char *make_raw_rep(const char *orig, size_t l)
         case '\\':
             newsz++;
             break;
-        case '\n': // "+"\n"
-            newsz += 6;
+        case '\n': // literal "\n"
+            newsz += 2;
             break;
         }
         newsz++;
@@ -1236,10 +1248,10 @@ static char *make_raw_rep(const char *orig, size_t l)
             *(out++) = *(s++);
             break;
         case '\n': // +"\n"
-            *(out++) = '"';
-            *(out++) = '\n';
-            *(out++) = '+';
-            *(out++) = '"';
+//            *(out++) = '"';
+//            *(out++) = '\n';
+//            *(out++) = '+';
+//            *(out++) = '"';
             *(out++) = '\\';
             *(out++) = 'n';
             s++;
@@ -1323,7 +1335,7 @@ static int do_namespace_import(EditList *edits, const char *src, TSNode snode, T
            id_end = ts_node_end_byte(id), id_start = ts_node_start_byte(id);
 
     // var math = _interopRequireWildcard(require("math"));
-    out = appendf(NULL, NULL, "var %.*s=_interopRequireWildcard(require(\"%.*s\"));", (id_end - id_start),
+    out = appendf(NULL, NULL, "var %.*s=_TrN_Sp._interopRequireWildcard(require(\"%.*s\"));", (id_end - id_start),
                   src + id_start, (mod_name_end - mod_name_start), src + mod_name_start);
 
     add_edit_take_ownership(edits, start, end, out);
@@ -1891,16 +1903,23 @@ static void rewrite_array_spread(EditList *edits, const char *src, TSNode arr, i
     uint32_t cnt2, cnt1 = ts_node_child_count(arr);
     uint32_t i, j;
     char *out = NULL;
-    size_t needed = 3; // for "[]" and '\0'
 // ._addchain(rampart.__spreadO({},))
 #define spreadsize 34
 // ._concat({})
 #define addcsize 12
 #define isplain 0
 #define isspread 1
+#define newobj "_TrN_Sp._newObject()"
+#define newobjsz 20
+#define newarr "_TrN_Sp._newArray()"
+#define newarrsz 19
+
+    size_t needed = 1 + newobjsz; // for "_TrN_Sp._newObject()" and '\0'
 
     int nshort = 0;
     int nspread = 0;
+
+
     for (i = 0; i < cnt1; i++)
     {
         TSNode kid = ts_node_child(arr, i);
@@ -1967,14 +1986,14 @@ static void rewrite_array_spread(EditList *edits, const char *src, TSNode arr, i
     }
 
     /* process ...var */
-    const char *fpref = "._addchain(rampart.__spreadA([],";
+    const char *fpref = "._addchain(_TrN_Sp.__spreadA([],";
     char open = '[', close = ']';
     int spos = 0;
 
     out = calloc(1, needed);
     if (isObject)
     {
-        fpref = "._addchain(rampart.__spreadO({},";
+        fpref = "._addchain(_TrN_Sp.__spreadO({},";
         open = '{';
         close = '}';
     }
@@ -1987,11 +2006,14 @@ static void rewrite_array_spread(EditList *edits, const char *src, TSNode arr, i
 #define addstr(s, l)                                                                                                   \
     do                                                                                                                 \
     {                                                                                                                  \
-        strncpy((out + spos), (s), l);                                                                                 \
+        memcpy((out + spos), (s), l);                                                                                  \
         spos += l;                                                                                                     \
     } while (0)
-    addchar(open);
-    addchar(close);
+
+    if(isObject)
+        addstr(newobj,newobjsz);
+    else
+        addstr(newarr,newarrsz); 
 
     int lasttype = -1;
 
@@ -2048,6 +2070,10 @@ static void rewrite_array_spread(EditList *edits, const char *src, TSNode arr, i
 #undef isspread
 #undef addchar
 #undef addstr
+#undef newobj
+#undef newobjsz
+#undef newarr
+#undef newarrsz
     // printf("strlen=%d, alloc'ed=%d + 1\n", strlen(out), (int)needed-1);
     add_edit_take_ownership(edits, ts_node_start_byte(arr), ts_node_end_byte(arr), out);
     *polysneeded |= SPREAD_PF;
@@ -2301,27 +2327,87 @@ static int rewrite_regex_u_to_es5(EditList *edits, const char *src, TSNode regex
     return 1;
 }
 
-static inline int _tp_point_to_line(TSPoint pt) {
-    return (int)pt.row + 1; // Tree-sitter rows are 0-based
+static void tp_linecol_from_src_offset_utf8(const char *src,
+                                            size_t src_len,
+                                            uint32_t byte_off,
+                                            int *out_line,
+                                            int *out_col)
+{
+    if (!src) { if (out_line) *out_line = 1; if (out_col) *out_col = 1; return; }
+
+    if (src_len == 0) {
+        src_len = strlen(src); // safe if NUL-terminated; otherwise pass length explicitly
+    }
+
+    if (byte_off > src_len) {
+        byte_off = (uint32_t)src_len; // clamp
+    }
+
+    // Count lines up to byte_off, tracking start index of current line.
+    uint32_t line = 1;            // 1-based
+    size_t   line_start = 0;      // byte index of current line start
+
+    for (size_t i = 0; i < byte_off; ) {
+        unsigned char c = (unsigned char)src[i];
+
+        if (c == '\n') {
+            line++;
+            line_start = i + 1;
+            i++;
+            continue;
+        }
+        if (c == '\r') {
+            // Treat CRLF as one newline; lone CR as newline too.
+            if (i + 1 < byte_off && (unsigned char)src[i + 1] == '\n') {
+                i += 2;
+            } else {
+                i += 1;
+            }
+            line++;
+            line_start = i;
+            continue;
+        }
+        // Not a newline; advance by one byte
+        i++;
+    }
+
+    // Column in UTF-8 code points from line_start to byte_off (exclusive).
+    // Count only leading bytes of code points (bytes where (b & 0xC0) != 0x80).
+    int col = 1; // 1-based
+    for (size_t i = line_start; i < byte_off; i++) {
+        unsigned char b = (unsigned char)src[i];
+        if ((b & 0xC0) != 0x80) {
+            col++;
+        }
+    }
+    col -= 1; // we started at 1 then increment before first char; normalize
+
+    if (out_line) *out_line = (int)line;
+    if (out_col)  *out_col  = (int)col;
 }
 
 RP_ParseRes transpiler_rewrite(
     EditList *edits,
     const char *src,
+    size_t src_len,
     TSNode root,
     uint8_t *polysneeded)
 {
     RP_ParseRes ret;
     ret.err=0;
     ret.line_num=0;
+    ret.col_num=0;
     ret.altered=0;
-    
-    // If parse tree already has an error, report first error line and return.
-    if (ts_node_has_error(root)) {
-        ret.err=1;
-        ret.line_num = _tp_point_to_line(ts_node_start_point(root));
-    }
+    ret.pos=0;
 
+    // it will never find the position of the error (actually it will be at end of file, which is not helpful).
+    //  Just return err=2
+/*
+    if (ts_node_has_error(root)) {
+        ret.err = 2;
+        return ret;
+    }
+*/
     RangeList claimed;
     rl_init(&claimed);
     TSTreeCursor cur = ts_tree_cursor_new(root);
@@ -2332,10 +2418,11 @@ RP_ParseRes transpiler_rewrite(
         const char *nt = ts_node_type(n);
         size_t ns = ts_node_start_byte(n), ne = ts_node_end_byte(n);
 
-        // Missing nodes are syntactic errors
-        if (ts_node_is_missing(n) || (nt && strcmp(nt, "ERROR") == 0)) {
+        // Other errors
+        if ( !ret.err && (nt && strcmp(nt, "ERROR") == 0) ) {
             ret.err=1;
-            ret.line_num = _tp_point_to_line(ts_node_start_point(n));
+            ret.pos = ts_node_start_byte(n);
+            tp_linecol_from_src_offset_utf8(src, src_len, ret.pos, &ret.line_num, &ret.col_num);
         }
 
         if (!rl_overlaps(&claimed, ns, ne))
@@ -2402,8 +2489,6 @@ RP_ParseRes transpiler_rewrite(
             {
                 rewrite_array_spread(edits, src, n, 1, polysneeded);
             }
-            if(handled)
-                ret.altered=1;
         }
 
         if (ts_tree_cursor_goto_first_child(&cur))
@@ -2425,10 +2510,22 @@ RP_ParseRes transpile(const char *src, size_t src_len, int printTree)
 {
     TSParser *parser = ts_parser_new();
     ts_parser_set_language(parser, tree_sitter_javascript());
-    TSTree *tree = ts_parser_parse_string(parser, NULL, src, (uint32_t)src_len);
-    TSNode root = ts_tree_root_node(tree);
+    TSTree *tree;
+    TSNode root;
     uint8_t polysneeded = 0;
     FILE *f = stdout;
+    
+    //pass a -1 or a 0 to get length, but use TRANSPILE_CALC_SIZE (0)
+    if(!src_len || (ssize_t)src_len == -1)
+        src_len=strlen(src);
+
+    // if we mistakenly gave len to include ending '\0'
+    if( *(src+src_len) == '\0')
+        src_len--;
+
+    tree = ts_parser_parse_string(parser, NULL, src, (uint32_t)src_len);
+    root = ts_tree_root_node(tree);
+
 
     if (printTree == 2)
         f = stderr;
@@ -2446,13 +2543,16 @@ RP_ParseRes transpile(const char *src, size_t src_len, int printTree)
     init_edits(&edits);
 
     // Single traversal with handler dispatch
-    RP_ParseRes res = transpiler_rewrite(&edits, src, root, &polysneeded);
+    RP_ParseRes res = transpiler_rewrite(&edits, src, src_len, root, &polysneeded);
 
-    if(res.altered)
+    if(edits.len)
+    {
         res.transpiled = apply_edits(src, src_len, &edits, polysneeded);
+        res.altered=1;
+    }
     else
         res.transpiled = NULL;
-        
+
     free_edits(&edits);
     ts_tree_delete(tree);
     ts_parser_delete(parser);
@@ -2518,9 +2618,26 @@ int main(int argc, char **argv)
     if(res.transpiled)
         fwrite(res.transpiled, 1, strlen(res.transpiled), stdout);
 
-    if(res.err)
-        printf("Error on line %d\n", res.err);
+    if(res.err) {
+        if (res.err && res.transpiled)
+        {
+            char *p = src + res.pos;
+            char *s=p, *e=p, *fe=src+src_len;
 
+            fprintf(stderr, "Transpiler Parse Error (line %d)\n", res.line_num);
+            while(s>=src && *s !='\n') s--;
+            s++;
+            while(e <= fe && *e != '\n') e++;
+            fprintf(stderr, "%.*s\n", (int)(e-s), s);
+            while(s<p) {fputc(' ', stderr);s++;}
+            fputc('^', stderr);
+            fputc('\n', stderr);
+            free(res.transpiled);
+            free(src);
+
+            return(1);
+        }
+    }
     // Cleanup
     if(res.transpiled)
         free(res.transpiled);
