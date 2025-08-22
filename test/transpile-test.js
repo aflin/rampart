@@ -2,9 +2,9 @@
 
 rampart.globalize(rampart.utils);
 
-import * as math2 from "math2";
+import * as math from "math";
 
-import { sum, pi } from "math2";
+import { sum, pi } from "math";
 
 // Default + named (multi-line; spacing/comments) + alias usage
 import defPayload, {
