@@ -821,8 +821,9 @@ static void *repl_thr(void *arg)
     char histfn[PATH_MAX];
     char *hfn=NULL, *babelscript=NULL;
     char *home = getenv("HOME");
-    int err;
+    //int err;
     duk_context *ctx = (duk_context *) arg;
+    RP_ParseRes res;
 
     if(rp_color)
     {
@@ -851,7 +852,7 @@ static void *repl_thr(void *arg)
 
     while (1)
     {
-        int ln, cont=0;
+        int cont=0;
         char *oldline=NULL;
 
         if(lastline)
@@ -958,13 +959,23 @@ static void *repl_thr(void *arg)
             REPL_UNLOCK;
         }
         else
-            line = tickify(line, strlen(line), &err, &ln);
-
+            //line = tickify(line, strlen(line), &err, &ln);
+        {
+            res = transpile(line, TRANSPILE_CALC_SIZE, 0); 
+            if(res.transpiled)
+            {
+                line=res.transpiled;
+                res.transpiled=NULL;
+            }
+            else
+                line=strdup(oldline);//mimic what tickify used to do
+            freeParseRes(&res);
+        }
         if(!duk_rp_globalbabel)
         {
             if (!line)
                 line=oldline;
-            else
+            else if(line != oldline)
                 free(oldline);
 
             if(lastline){
@@ -980,12 +991,37 @@ static void *repl_thr(void *arg)
                 line=lastline;
 
                 oldline=line;
-                line = tickify(line, strlen(line), &err, &ln);
+                //line = tickify(line, strlen(line), &err, &ln);
+                res = transpile(line, TRANSPILE_CALC_SIZE, 0); 
+                if(res.transpiled)
+                {
+                    line=res.transpiled;
+                    res.transpiled=NULL;
+                }
+                else
+                    line=strdup(oldline);
+                freeParseRes(&res);
+
                 if (!line)
                     line=oldline;
                 else
                     free(oldline);
             }
+        }
+
+        // if pos of error is at beginning of line or at a '`' , its likely a multiliner 
+        if(
+            res.err && 
+                (
+                    res.pos==0          ||
+                    line[res.pos]=='\'' ||
+                    line[res.pos]=='"'  ||
+                    line[res.pos]=='`'
+                )
+        )
+        {
+            lastline=line;
+            continue;
         }
 
         REPL_LOCK;
@@ -997,12 +1033,12 @@ static void *repl_thr(void *arg)
        if (duk_peval(ctx) != 0)
         {
             const char *errmsg=duk_safe_to_string(ctx, -1);
-            if(strstr(errmsg, "end of input") || (err && err < 5) ) //command likely spans multiple lines
+            if(strstr(errmsg, "end of input") /* || (err && err < 5) */ ) //command likely spans multiple lines
             {
                 lastline=line;
             }
-            else if(err)
-                printf("%sERROR: %s%s\n", red, tickify_err(err), reset);
+            //else if(err)
+            //    printf("%sERROR: %s%s\n", red, tickify_err(err), reset);
             else
                 printf("%s%s%s\n", red, errmsg, reset);
         }
@@ -3313,33 +3349,7 @@ int main(int argc, char *argv[])
 
                 if (res.err && res.transpiled)
                 {
-                    char *p = file_src + res.pos;
-                    char *s=p, *e=p, *fe=file_src+strlen(file_src);
-                    char *ple=NULL, *pls=NULL;
-
-                    fprintf(stderr, "Transpiler Parse Error (line %d)\n", res.line_num);
-                    while(s>=file_src && *s !='\n') s--;
-                    if(*s=='\n')
-                    {
-                        const char *bline="";
-                        ple=s;
-                        pls=ple;
-                        pls--;
-                        while(pls>=file_src && *pls =='\n')pls--, ple--;
-                        if(ple != s)
-                            bline="\n...";
-                        while(pls>=file_src && *pls !='\n') pls--;
-                        pls++;
-                        fprintf(stderr, "%.*s%s\n", (int)(ple-pls), pls,bline);
-                    }
-                    s++;
-                    while(e <= fe && *e != '\n') e++;
-                    fprintf(stderr, "%.*s\n", (int)(e-s), s);
-                    while(s<p) {fputc(' ', stderr);s++;}
-                    fputc('^', stderr);
-                    fputc('\n', stderr);
-                    //free(free_file_src);
-                    //return(1);
+                    fprintf(stderr, "%s\n", res.errmsg);
                 }
 
                 char *dbug = getenv("RPDEBUG");

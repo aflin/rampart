@@ -1,3 +1,10 @@
+/* Copyright (C) 2025 Aaron Flin - All Rights Reserved
+ * You may use, distribute or alter this code under the
+ * terms of the MIT license
+ * see https://opensource.org/licenses/MIT
+ */
+
+#include "transpiler.h"
 #include <ctype.h>
 #include <stdarg.h>
 #include <stdbool.h>
@@ -5,7 +12,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "transpiler.h"
 
 #ifndef REMALLOC
 #define REMALLOC(s, t)                                                                                                 \
@@ -76,14 +82,17 @@ void add_edit_take_ownership(EditList *e, size_t start, size_t end, char *replac
 
 // stolen from babel.  Babel, like this prog is MIT licensed - see https://github.com/babel/babel/blob/main/LICENSE
 const char *spread_polyfill =
-    //"if(!global._TrN_Sp){global._TrN_Sp={};};_TrN_Sp.__spreadO = function (target) {function ownKeys(object, enumerableOnly) {var keys = Object.keys(object);if (Object.getOwnPropertySymbols) {var symbols = Object.getOwnPropertySymbols(object);if (enumerableOnly) symbols = symbols.filter(function (sym) {return Object.getOwnPropertyDescriptor(object, sym).enumerable;});keys.push.apply(keys, symbols);}return keys;}function _defineProperty(obj, key, value) {if (key in obj) {Object.defineProperty(obj, key, { value: value, enumerable: true, configurable: true, writable: true });} else {obj[key] = value;}return obj;}for (var i = 1; i < arguments.length; i++){var source = arguments[i] != null ? arguments[i] : {};if (i % 2){ownKeys(Object(source), true).forEach(function (key) {_defineProperty(target, key, source[key]);});} else if (Object.getOwnPropertyDescriptors)  {Object.defineProperties(target, Object.getOwnPropertyDescriptors(source));} else {ownKeys(Object(source)).forEach(function (key) {Object.defineProperty(target, key, Object.getOwnPropertyDescriptor(source, key));});}}return target;};_TrN_Sp.__spreadA = function(target, arr) {if(arr instanceof Array)return target.concat(arr);function _nonIterableSpread() {throw new TypeError(\"Invalid attempt to spread non-iterable instance. In order to be iterable, non-array objects must have a [Symbol.iterator]() method.\");}function _unsupportedIterableToArray(o, minLen) {if (!o)return;if (typeof o === \"string\") return _arrayLikeToArray(o, minLen);var n = Object.prototype.toString.call(o).slice(8, -1);if (n === \"Object\" && o.constructor);n = o.constructor.name;if (n === \"Map\" || n === \"Set\")return Array.from(o);if(n === \"Arguments\" || /^(?:Ui|I)nt(?:8|16|32)(?:Clamped)?Array$/.test(n))return target.concat(_arrayLikeToArray(o, minLen));}function _iterableToArray(iter) {if (typeof Symbol !== \"undefined\" && Symbol.iterator in Object(iter))return target.concat(Array.from(iter));}function _arrayLikeToArray(arr, len) {if (len == null || len > arr.length) len = arr.length;for (var i = 0, arr2 = new Array(len);i < len;i++){arr2[i] = arr[i];}return target.concat(arr2);}function _arrayWithoutHoles(arr){if (Array.isArray(arr)) return target.concat(_arrayLikeToArray(arr));}return _arrayWithoutHoles(arr) || _iterableToArray(arr) || _unsupportedIterableToArray(arr) || _nonIterableSpread();};Array.prototype._addchain = function(items) {var self=this;items.forEach(function(item) {self.push(item);});return this;};Array.prototype._concat=Array.prototype.concat;Object.prototype._addchain = function (key, value) {if( typeof key == 'object' )Object.assign(this, key);else this[key] = value;return this;};Object.prototype._concat=Object.prototype._addchain;";
     "if(!global._TrN_Sp){global._TrN_Sp={};};_TrN_Sp.__spreadO = function(target) {function ownKeys(object, enumerableOnly){var keys = Object.keys(object);if (Object.getOwnPropertySymbols){var symbols = Object.getOwnPropertySymbols(object);if (enumerableOnly)symbols = symbols.filter(function(sym) {return Object.getOwnPropertyDescriptor(object, sym).enumerable;});keys.push.apply(keys, symbols);}return keys;}function _defineProperty(obj, key, value){if (key in obj){Object.defineProperty(obj, key, {value : value, enumerable : true, configurable : true, writable : true});}else{obj[key] = value;}return obj;}for (var i = 1; i < arguments.length; i++){var source = arguments[i] != null ? arguments[i] : {};if (i % 2){ownKeys(Object(source), true).forEach(function(key) {_defineProperty(target, key, source[key]);});}else if (Object.getOwnPropertyDescriptors){Object.defineProperties(target, Object.getOwnPropertyDescriptors(source));}else{ownKeys(Object(source)).forEach(function(key) {Object.defineProperty(target, key, Object.getOwnPropertyDescriptor(source, key));});}}return target;};_TrN_Sp.__spreadA = function(target, arr) {if (arr instanceof Array)return target.concat(arr);function _nonIterableSpread(){throw new TypeError(\"Invalid attempt to spread non-iterable instance. In order to be iterable, non-array objects must have a [Symbol.iterator]() method.\");}function _unsupportedIterableToArray(o, minLen){if (!o)return;if (typeof o === \"string\")return _arrayLikeToArray(o, minLen);var n = Object.prototype.toString.call(o).slice(8, -1);if (n === \"Object\" && o.constructor);n = o.constructor.name;if (n === \"Map\" || n === \"Set\")return Array.from(o);if (n === \"Arguments\" || /^(?:Ui|I)nt(?:8|16|32)(?:Clamped)?Array$/.test(n))return target.concat(_arrayLikeToArray(o, minLen));}function _iterableToArray(iter){if (typeof Symbol !== \"undefined\" && Symbol.iterator in Object(iter))return target.concat(Array.from(iter));}function _arrayLikeToArray(arr, len){if (len == null || len > arr.length)len = arr.length;for (var i = 0, arr2 = new Array(len); i < len; i++){arr2[i] = arr[i];}return target.concat(arr2);}function _arrayWithoutHoles(arr){if (Array.isArray(arr))return target.concat(_arrayLikeToArray(arr));}return _arrayWithoutHoles(arr) || _iterableToArray(arr) || _unsupportedIterableToArray(arr) || _nonIterableSpread();};_TrN_Sp._arrayConcat = function(items){var self = this;items.forEach(function(item) {self.push(item);});return this;};_TrN_Sp._newArray = function() {Object.defineProperty(Array.prototype, '_addchain', {value: _TrN_Sp._arrayConcat,writable: true,configurable: true,enumerable: false});Object.defineProperty(Array.prototype, '_concat', {value: Array.prototype._addchain,writable: true,configurable: true,enumerable: false});return [];};_TrN_Sp._objectAddchain = function(key, value) {if (typeof key == 'object'){Object.assign(this, key)}else{this[key] = value;}return this;};_TrN_Sp._newObject = function() {Object.defineProperty(Object.prototype, '_addchain', {value: _TrN_Sp._objectAddchain,writable: true,configurable: true,enumerable: false});Object.defineProperty(Object.prototype, '_concat', {value: _TrN_Sp._objectAddchain,writable: true,configurable: true,enumerable: false});return {};};";
 const char *import_polyfill =
-    "if(!global._TrN_Sp){global._TrN_Sp={};};_TrN_Sp._typeof=function(obj) {\"@babel/helpers - typeof\";if (typeof Symbol === \"function\" && typeof Symbol.iterator === \"symbol\") {_TrN_Sp._typeof = function(obj) {return typeof obj;};} else {_TrN_Sp._typeof = function(obj) {return obj && typeof Symbol === \"function\" && obj.constructor === Symbol && obj !== Symbol.prototype ? \"symbol\" : typeof obj;};}return _TrN_Sp._typeof(obj);};_TrN_Sp._getRequireWildcardCache=function() {if (typeof WeakMap !== \"function\") return null;var cache = new WeakMap();_TrN_Sp._getRequireWildcardCache=function(){return cache;};return cache;};_TrN_Sp._interopRequireWildcard=function(obj) {if (obj && obj.__esModule) {return obj;}if (obj === null || _TrN_Sp._typeof(obj) !== \"object\" && typeof obj !== \"function\") {return { \"default\": obj };}var cache = _TrN_Sp._getRequireWildcardCache();if (cache && cache.has(obj)) {return cache.get(obj);}var newObj = {};var hasPropertyDescriptor = Object.defineProperty && Object.getOwnPropertyDescriptor;for (var key in obj) {if (Object.prototype.hasOwnProperty.call(obj, key)) {var desc = hasPropertyDescriptor ? Object.getOwnPropertyDescriptor(obj, key) : null;if (desc && (desc.get || desc.set)) {Object.defineProperty(newObj, key, desc);} else {newObj[key] = obj[key];}}}newObj[\"default\"] = obj;if (cache) {cache.set(obj, newObj);}return newObj;};";
+    "if(!global._TrN_Sp){global._TrN_Sp={};};_TrN_Sp._typeof=function(obj) {\"@babel/helpers - typeof\";if (typeof Symbol === \"function\" && typeof Symbol.iterator === \"symbol\") {_TrN_Sp._typeof = function(obj) {return typeof obj;};} else {_TrN_Sp._typeof = function(obj) {return obj && typeof Symbol === \"function\" && obj.constructor === Symbol && obj !== Symbol.prototype ? \"symbol\" : typeof obj;};}return _TrN_Sp._typeof(obj);};_TrN_Sp._getRequireWildcardCache=function() {if (typeof WeakMap !== \"function\") return null;var cache = new WeakMap();_TrN_Sp._getRequireWildcardCache=function(){return cache;};return cache;};_TrN_Sp._interopRequireWildcard=function(obj) {if (obj && obj.__esModule) {return obj;}if (obj === null || _TrN_Sp._typeof(obj) !== \"object\" && typeof obj !== \"function\") {return { \"default\": obj };}var cache = _TrN_Sp._getRequireWildcardCache();if (cache && cache.has(obj)) {return cache.get(obj);}var newObj = {};var hasPropertyDescriptor = Object.defineProperty && Object.getOwnPropertyDescriptor;for (var key in obj) {if (Object.prototype.hasOwnProperty.call(obj, key)) {var desc = hasPropertyDescriptor ? Object.getOwnPropertyDescriptor(obj, key) : null;if (desc && (desc.get || desc.set)) {Object.defineProperty(newObj, key, desc);} else {newObj[key] = obj[key];}}}newObj[\"default\"] = obj;if (cache) {cache.set(obj, newObj);}return newObj;};_TrN_Sp._interopDefault=function(m){if(typeof m =='object' && m.__esModule){return m.default}return m;};";
+const char *class_polyfill = 
+    "if (!global._TrN_Sp) { global._TrN_Sp = {};};_TrN_Sp.typeof =function(obj) {'@babel/helpers - typeof';if (typeof Symbol === 'function' && typeof Symbol.iterator === 'symbol') {_typeof = function _typeof(obj) {return typeof obj;};} else {_typeof = function _typeof(obj) {return obj && typeof Symbol === 'function' &&obj.constructor === Symbol && obj !== Symbol.prototype ?'symbol' :typeof obj;};}return _typeof(obj);}; _TrN_Sp.inherits =function(subClass, superClass) {if (typeof superClass !== 'function' && superClass !== null) {throw new TypeError('Super expression must either be null or a function');}subClass.prototype = Object.create(superClass && superClass.prototype,{constructor: {value: subClass, writable: true, configurable: true}});if (superClass) _TrN_Sp.setPrototypeOf(subClass, superClass);}; _TrN_Sp.setPrototypeOf =function(o, p) {_setPrototypeOf = Object.setPrototypeOf || function _setPrototypeOf(o, p) {o.__proto__ = p;return o;};return _setPrototypeOf(o, p);}; _TrN_Sp.createSuper =function(Derived) {var hasNativeReflectConstruct = _TrN_Sp.isNativeReflectConstruct();return function _createSuperInternal() {var Super = _TrN_Sp.getPrototypeOf(Derived), result;result = Super.apply(this, arguments);return _TrN_Sp.possibleConstructorReturn(this, result);};}; _TrN_Sp.possibleConstructorReturn =function(self, call) {if (call && (_typeof(call) === 'object' || typeof call === 'function')) {return call;}return _TrN_Sp.assertThisInitialized(self);}; _TrN_Sp.assertThisInitialized =function(self) {if (self === void 0) {throw new ReferenceError('this hasn\\'t been initialised - super() hasn\\'t been called');}return self;}; _TrN_Sp.isNativeReflectConstruct =function() {if (typeof Reflect === 'undefined' || !Reflect.construct) return false;if (Reflect.construct.sham) return false;if (typeof Proxy === 'function') return true;try {Date.prototype.toString.call(Reflect.construct(Date, [], function() {}));return true;} catch (e) {return false;}}; _TrN_Sp.getPrototypeOf =function(o) {_getPrototypeOf = Object.setPrototypeOf ?Object.getPrototypeOf :function _getPrototypeOf(o) {return o.__proto__ || Object.getPrototypeOf(o);};return _getPrototypeOf(o);}; _TrN_Sp.classCallCheck =function(instance, Constructor) {if (!(instance instanceof Constructor)) {throw new TypeError('Cannot call a class as a function');}}; _TrN_Sp.defineProperties =function(target, props) {for (var i = 0; i < props.length; i++) {var descriptor = props[i];descriptor.enumerable = descriptor.enumerable || false;descriptor.configurable = true;if ('value' in descriptor) descriptor.writable = true;Object.defineProperty(target, descriptor.key, descriptor);}}; _TrN_Sp.createClass =function(Constructor, protoProps,staticProps) {if (protoProps) _TrN_Sp.defineProperties(Constructor.prototype, protoProps);if (staticProps) _TrN_Sp.defineProperties(Constructor, staticProps);return Constructor;};";
 
 char *apply_edits(const char *src, size_t src_len, EditList *e, uint8_t polysneeded)
 {
     size_t out_cap, out_len;
+    char *out = NULL, *ret = NULL;
+    size_t out_offset = 0;
 
     // Sort by start desc so offsets stay valid while splicing
     qsort(e->items, e->len, sizeof(Edit), cmp_desc);
@@ -105,6 +114,43 @@ char *apply_edits(const char *src, size_t src_len, EditList *e, uint8_t polysnee
     out_cap = src_len + 1;
     out_len = src_len;
 
+    // find space needed
+    for (size_t i = 0; i < e->len; i++)
+    {
+        Edit *ed = &e->items[i];
+        size_t before = ed->start - out_offset;
+        size_t after = ed->end - out_offset;
+
+        // Byte lengths
+        size_t rep_len = strlen(ed->text);
+        long removed = (long)(after - before);
+
+        // --- Count lines in replacement and in the removed section ---
+        size_t repl_lines = 0;
+        for (size_t k = 0; k < rep_len; k++)
+        {
+            repl_lines += (ed->text[k] == '\n');
+        }
+
+        size_t removed_lines = 0;
+        for (size_t k = before; k < after; k++)
+        {
+            removed_lines += (src[k] == '\n');
+        }
+
+        // If the removed region has more lines than the replacement, pad with '\n'
+        size_t pad_nls = (removed_lines > repl_lines) ? (removed_lines - repl_lines) : 0;
+        size_t rep_padded_len = rep_len + pad_nls;
+
+        long diff = (long)rep_padded_len - removed;
+
+        if (diff != 0)
+            out_len = (size_t)((long)out_len + diff + pad_nls);
+
+        if (out_len > out_cap)
+            out_cap = out_len;
+    }
+    /*
     for (size_t i = 0; i < e->len; i++)
     {
         Edit *ed = &e->items[i];
@@ -121,16 +167,16 @@ char *apply_edits(const char *src, size_t src_len, EditList *e, uint8_t polysnee
                 out_cap = out_len;
         }
     }
-
+    */
     out_cap++;
     // printf("src_len=%d, outcap=%d\n", (int)src_len, (int)out_cap);
-    char *out = NULL, *ret = NULL;
-    size_t out_offset = 0;
 
     // check for needed polyfills
     if (polysneeded)
     {
-        size_t spread_sz = 0, import_sz = 0;
+        size_t spread_sz = 0,
+               import_sz = 0,
+               class_sz  = 0;
 
         if (polysneeded & SPREAD_PF)
         {
@@ -142,6 +188,12 @@ char *apply_edits(const char *src, size_t src_len, EditList *e, uint8_t polysnee
         {
             import_sz += strlen(import_polyfill);
             out_cap += import_sz;
+        }
+
+        if (polysneeded & CLASS_PF)
+        {
+            class_sz += strlen(class_polyfill);
+            out_cap += class_sz;
         }
 
         REMALLOC(out, out_cap);
@@ -176,6 +228,12 @@ char *apply_edits(const char *src, size_t src_len, EditList *e, uint8_t polysnee
         {
             memcpy(out, import_polyfill, import_sz);
             out += import_sz;
+        }
+
+        if (polysneeded & CLASS_PF)
+        {
+            memcpy(out, class_polyfill, class_sz);
+            out += class_sz;
         }
     }
     else
@@ -215,7 +273,7 @@ char *apply_edits(const char *src, size_t src_len, EditList *e, uint8_t polysnee
 
     end size is 100, but we need 120.  See above.
     */
-
+    /*
     // Splice in place using memmove (still safe due to descending order)
     for (size_t i = 0; i < e->len; i++)
     {
@@ -235,6 +293,59 @@ char *apply_edits(const char *src, size_t src_len, EditList *e, uint8_t polysnee
             out_len = (size_t)((long)out_len + diff);
         }
         memcpy(out + before, ed->text, rep_len);
+        out[out_len] = '\0';
+    }
+    */
+
+    // this version should retain line numbering, unless the replacement somehow has more lines (shouldn't happen)
+    for (size_t i = 0; i < e->len; i++)
+    {
+        Edit *ed = &e->items[i];
+        size_t before = ed->start - out_offset;
+        size_t after = ed->end - out_offset;
+
+        // Byte lengths
+        size_t rep_len = strlen(ed->text);
+        long removed = (long)(after - before);
+
+        // --- Count lines in replacement and in the removed section ---
+        size_t repl_lines = 0;
+        for (size_t k = 0; k < rep_len; k++)
+        {
+            repl_lines += (ed->text[k] == '\n');
+        }
+
+        size_t removed_lines = 0;
+        for (size_t k = before; k < after; k++)
+        {
+            removed_lines += (out[k] == '\n');
+        }
+
+        // If the removed region has more lines than the replacement, pad with '\n'
+        size_t pad_nls = (removed_lines > repl_lines) ? (removed_lines - repl_lines) : 0;
+        size_t rep_padded_len = rep_len + pad_nls;
+
+        long diff = (long)rep_padded_len - removed;
+        size_t edlen = out_len - after;
+
+        // Make room or close gap based on the *padded* replacement length
+        if (diff != 0)
+        {
+            // printf("moving to %lu (before+rep_padded_len) from %lu (after), size=%lu (out_len-after)\n",
+            //        before + rep_padded_len, after, edlen);
+            memmove(out + before + rep_padded_len, out + after, edlen);
+            out_len = (size_t)((long)out_len + diff);
+        }
+
+        // Write replacement bytes
+        memcpy(out + before, ed->text, rep_len);
+
+        // Write any newline padding to preserve original line positions
+        if (pad_nls)
+        {
+            memset(out + before + rep_len, '\n', pad_nls);
+        }
+
         out[out_len] = '\0';
     }
 
@@ -314,44 +425,47 @@ static void print_outline(const char *src, TSNode node, int depth, FILE *f)
     }
 }
 */
-static void print_outline(const char *src, TSNode root, int depth, FILE *f)
+static void print_outline(const char *src, TSNode root, int depth, FILE *f, int with_text)
 {
-    (void)src; // not needed here, keep to match your signature
-
     TSTreeCursor cur = ts_tree_cursor_new(root);
     int d = depth;
 
-    for (;;) {
+    for (;;)
+    {
         TSNode node = ts_tree_cursor_current_node(&cur);
 
-        const char *type       = ts_node_type(node);
+        const char *type = ts_node_type(node);
         const char *field_name = ts_tree_cursor_current_field_name(&cur); // field in parent
-        uint32_t start         = ts_node_start_byte(node);
-        uint32_t end           = ts_node_end_byte(node);
-        int bare               = !ts_node_is_named(node);
+        uint32_t start = ts_node_start_byte(node);
+        uint32_t end = ts_node_end_byte(node);
+        int bare = !ts_node_is_named(node);
 
-        for (int i = 0; i < d; i++) fputs("  ", f);
-        fprintf(f, "%s%s%s%s%s%s [%u,%u]\n",
-                bare ? "\"" : "",
-                type,
-                bare ? (field_name ? "\" " : "\"") : "",
-                field_name ? "(" : "",
-                field_name ? field_name : "",
-                field_name ? ")" : "",
-                start, end);
+        for (int i = 0; i < d; i++)
+            fputs("  ", f);
+        fprintf(f, "%s%s%s%s%s%s [%u,%u]", bare ? "\"" : "", type, bare ? (field_name ? "\" " : "\"") : "",
+                field_name ? "(" : "", field_name ? field_name : "", field_name ? ")" : "", start, end);
+
+        if(with_text)
+            fprintf(f, "\x1B[31m \"%.*s\"\x1B[0m\n", end-start, src+start);
+        else
+            fputc('\n',f);
 
         // Preorder traversal using the cursor:
-        if (ts_tree_cursor_goto_first_child(&cur)) {
+        if (ts_tree_cursor_goto_first_child(&cur))
+        {
             d++;
             continue;
         }
         // No children; walk up until we can take a next sibling
-        for (;;) {
-            if (ts_tree_cursor_goto_next_sibling(&cur)) {
+        for (;;)
+        {
+            if (ts_tree_cursor_goto_next_sibling(&cur))
+            {
                 // same depth
                 break;
             }
-            if (!ts_tree_cursor_goto_parent(&cur)) {
+            if (!ts_tree_cursor_goto_parent(&cur))
+            {
                 // back at the root; we're done
                 ts_tree_cursor_delete(&cur);
                 return;
@@ -362,6 +476,94 @@ static void print_outline(const char *src, TSNode root, int depth, FILE *f)
 }
 
 // ===================== Helper functions =====================
+/* traverse tree from start, find either find_type and/or find_name.  
+   For "or" search, either can be NULL but both NULL will just increase the
+   entropy of the universe and return an empty node.
+
+   For "and" search, both find_type and find_type should be populated
+
+   If not found, return
+   null node; */
+static TSNode search_for_node(TSNode start, const char *find_type, const char *find_name, int and_search)
+{
+    TSTreeCursor cur = ts_tree_cursor_new(start);
+    int d=0;
+    TSNode ret={{0}};
+
+    for (;;)
+    {
+        TSNode node = ts_tree_cursor_current_node(&cur);
+
+        const char *type = ts_node_type(node);
+        const char *field_name = ts_tree_cursor_current_field_name(&cur); // field in parent
+
+        //uint32_t start = ts_node_start_byte(node);
+        //uint32_t end = ts_node_end_byte(node);
+        //int bare = !ts_node_is_named(node);
+        //fprintf(stdout, "%s%s%s%s%s%s [%u,%u]\n", bare ? "\"" : "", type, bare ? (field_name ? "\" " : "\"") : "",
+        //        field_name ? "(" : "", field_name ? field_name : "", field_name ? ")" : "", start, end);
+
+        if(d)
+        {
+            if(and_search)
+            {
+                if( field_name && 
+                    find_name  && 
+                    find_type  && 
+                    strcmp(type,find_type)==0 &&
+                    strcmp(field_name, find_name)==0
+                )
+                    return node;
+            }
+            else
+            {
+                if( find_type && strcmp(type,find_type)==0)
+                    return node;
+                if( field_name && find_name && strcmp(field_name, find_name)==0)
+                    return node;
+            }
+        }
+        
+        // Preorder traversal using the cursor:
+        if (ts_tree_cursor_goto_first_child(&cur))
+        {
+            d++;
+            continue;
+        }
+
+        // No children; walk up until we can take a next sibling
+        for (;;)
+        {
+            if (ts_tree_cursor_goto_next_sibling(&cur))
+            {
+                // same depth
+                break;
+            }
+            if (!ts_tree_cursor_goto_parent(&cur))
+            {
+                // back at the start; we're done (or went too far)
+                ts_tree_cursor_delete(&cur);
+                return ret;
+            }
+            d--;
+            //if (!d)
+            //    break;
+        }
+    }
+    return ret;
+}
+
+/* currently unused
+static TSNode search_for_node_field_name(TSNode start, const char *find_name)
+{
+    return search_for_node(start, NULL, find_name, 0);
+}
+*/
+
+static TSNode search_for_node_type(TSNode start, const char *type)
+{
+    return search_for_node(start, type, NULL, 0);
+}
 
 static TSNode find_child_type(TSNode node, const char *type, uint32_t *start)
 {
@@ -511,55 +713,82 @@ static void rl_add(RangeList *rl, size_t s, size_t e)
     rl->a[rl->len++] = (Range){s, e};
 }
 
-
 // === Added: default parameter lowering helpers & passes ===
 
-static int params_has_assignment_pattern(TSNode params) {
-    if (ts_node_is_null(params)) return 0;
+static int params_has_assignment_pattern(TSNode params)
+{
+    if (ts_node_is_null(params))
+        return 0;
     uint32_t c = ts_node_named_child_count(params);
-    for (uint32_t i = 0; i < c; i++) {
+    for (uint32_t i = 0; i < c; i++)
+    {
         TSNode p = ts_node_named_child(params, i);
-        if (strcmp(ts_node_type(p), "assignment_pattern") == 0) return 1;
+        if (strcmp(ts_node_type(p), "assignment_pattern") == 0)
+            return 1;
     }
     return 0;
 }
 
 // Build injected "var ..." initializers from params in order using arguments[i].
 // Supports identifiers and assignment_pattern with identifier on the left.
-static char *build_param_default_inits(const char *src, TSNode params) {
+static char *build_param_default_inits(const char *src, TSNode params)
+{
     uint32_t c = ts_node_named_child_count(params);
     size_t cap = 256, len = 0;
-    char *buf = NULL; REMALLOC(buf, cap); if (buf) buf[0] = '\0';
-    #define APPEND_FMT(...) do { \
-        char tmp[1024]; \
-        int n = snprintf(tmp, sizeof(tmp), __VA_ARGS__); \
-        if (n > 0) { \
-            if (len + (size_t)n + 1 > cap) { cap = (len + n + 1) * 2; REMALLOC(buf, cap); } \
-            memcpy(buf + len, tmp, (size_t)n); \
-            len += (size_t)n; buf[len] = 0; \
-        } \
+    char *buf = NULL;
+    REMALLOC(buf, cap);
+    if (buf)
+        buf[0] = '\0';
+#define APPEND_FMT(...)                                                                                                \
+    do                                                                                                                 \
+    {                                                                                                                  \
+        char tmp[1024];                                                                                                \
+        int n = snprintf(tmp, sizeof(tmp), __VA_ARGS__);                                                               \
+        if (n > 0)                                                                                                     \
+        {                                                                                                              \
+            if (len + (size_t)n + 1 > cap)                                                                             \
+            {                                                                                                          \
+                cap = (len + n + 1) * 2;                                                                               \
+                REMALLOC(buf, cap);                                                                                    \
+            }                                                                                                          \
+            memcpy(buf + len, tmp, (size_t)n);                                                                         \
+            len += (size_t)n;                                                                                          \
+            buf[len] = 0;                                                                                              \
+        }                                                                                                              \
     } while (0)
 
-    for (uint32_t i = 0, pi = 0; i < c; i++, pi++) {
+    for (uint32_t i = 0, pi = 0; i < c; i++, pi++)
+    {
         TSNode p = ts_node_named_child(params, i);
         const char *pt = ts_node_type(p);
-        if (strcmp(pt, "identifier") == 0) {
+        if (strcmp(pt, "identifier") == 0)
+        {
             size_t ns = ts_node_start_byte(p), ne = ts_node_end_byte(p);
-            APPEND_FMT("var %.*s = arguments.length > %u ? arguments[%u] : undefined;", (int)(ne-ns), src+ns, pi, pi);
-        } else if (strcmp(pt, "assignment_pattern") == 0) {
-            TSNode left  = ts_node_child_by_field_name(p, "left", 4);
+            APPEND_FMT("var %.*s = arguments.length > %u ? arguments[%u] : undefined;", (int)(ne - ns), src + ns, pi,
+                       pi);
+        }
+        else if (strcmp(pt, "assignment_pattern") == 0)
+        {
+            TSNode left = ts_node_child_by_field_name(p, "left", 4);
             TSNode right = ts_node_child_by_field_name(p, "right", 5);
-            if (!ts_node_is_null(left) && !ts_node_is_null(right) && strcmp(ts_node_type(left), "identifier") == 0) {
-                size_t ls = ts_node_start_byte(left),  le = ts_node_end_byte(left);
+            if (!ts_node_is_null(left) && !ts_node_is_null(right) && strcmp(ts_node_type(left), "identifier") == 0)
+            {
+                size_t ls = ts_node_start_byte(left), le = ts_node_end_byte(left);
                 size_t rs = ts_node_start_byte(right), re = ts_node_end_byte(right);
                 APPEND_FMT("var %.*s = arguments.length > %u && arguments[%u] !== undefined ? arguments[%u] : %.*s;",
-                           (int)(le-ls), src+ls, pi, pi, pi, (int)(re-rs), src+rs);
-            } else {
-                // unsupported here
-                free(buf); return NULL;
+                           (int)(le - ls), src + ls, pi, pi, pi, (int)(re - rs), src + rs);
             }
-        } else {
-            free(buf); return NULL;
+            else
+            {
+                // unsupported here
+                free(buf);
+                return NULL;
+            }
+        }
+        else
+        {
+            free(buf);
+            return NULL;
         }
     }
     return buf;
@@ -570,26 +799,27 @@ static char *build_param_default_inits(const char *src, TSNode params) {
 static int rewrite_function_like_default_params(EditList *edits, const char *src, TSNode node, RangeList *claimed)
 {
     const char *nt = ts_node_type(node);
-    if (strcmp(nt, "function_declaration") != 0 &&
-        strcmp(nt, "function")               != 0 &&
-        strcmp(nt, "function_expression")     != 0 &&
-        strcmp(nt, "generator_function_declaration") != 0 &&
-        strcmp(nt, "generator_function")           != 0 &&
-        strcmp(nt, "generator_function_expression") != 0 &&
-        strcmp(nt, "method_definition")            != 0)
+    if (strcmp(nt, "function_declaration") != 0 && strcmp(nt, "function") != 0 &&
+        strcmp(nt, "function_expression") != 0 && strcmp(nt, "generator_function_declaration") != 0 &&
+        strcmp(nt, "generator_function") != 0 && strcmp(nt, "generator_function_expression") != 0 &&
+        strcmp(nt, "method_definition") != 0)
         return 0;
 
     TSNode params = ts_node_child_by_field_name(node, "parameters", 10);
-    TSNode body   = ts_node_child_by_field_name(node, "body", 4);
-    if (ts_node_is_null(params) || ts_node_is_null(body)) return 0;
-    if (!params_has_assignment_pattern(params)) return 0;
+    TSNode body = ts_node_child_by_field_name(node, "body", 4);
+    if (ts_node_is_null(params) || ts_node_is_null(body))
+        return 0;
+    if (!params_has_assignment_pattern(params))
+        return 0;
 
     size_t ps = ts_node_start_byte(params), pe = ts_node_end_byte(params);
-    size_t bs = ts_node_start_byte(body),   be = ts_node_end_byte(body);
-    if (rl_overlaps(claimed, ps, pe) || rl_overlaps(claimed, bs, be)) return 0;
+    size_t bs = ts_node_start_byte(body), be = ts_node_end_byte(body);
+    if (rl_overlaps(claimed, ps, pe) || rl_overlaps(claimed, bs, be))
+        return 0;
 
     char *decls = build_param_default_inits(src, params);
-    if (!decls) return 0;
+    if (!decls)
+        return 0;
 
     // Insert after the opening '{'
     size_t insert_at = bs + 1;
@@ -609,43 +839,58 @@ static int rewrite_function_like_default_params(EditList *edits, const char *src
 //   var f = function() { var a = arguments[0]…; … }
 static int rewrite_var_function_expression_defaults(EditList *edits, const char *src, TSNode node, RangeList *claimed)
 {
-    if (strcmp(ts_node_type(node), "variable_declaration") != 0) return 0;
-    if (ts_node_named_child_count(node) != 1) return 0;
+    if (strcmp(ts_node_type(node), "variable_declaration") != 0)
+        return 0;
+    if (ts_node_named_child_count(node) != 1)
+        return 0;
 
     TSNode decl = ts_node_named_child(node, 0);
-    if (strcmp(ts_node_type(decl), "variable_declarator") != 0) return 0;
+    if (strcmp(ts_node_type(decl), "variable_declarator") != 0)
+        return 0;
 
-    TSNode val  = ts_node_child_by_field_name(decl, "value", 5);
-    if (ts_node_is_null(val)) return 0;
+    TSNode val = ts_node_child_by_field_name(decl, "value", 5);
+    if (ts_node_is_null(val))
+        return 0;
 
     const char *vt = ts_node_type(val);
     if (strcmp(vt, "function") != 0 && strcmp(vt, "generator_function") != 0 &&
-        strcmp(vt, "function_expression") != 0 && strcmp(vt, "generator_function_expression") != 0) return 0;
+        strcmp(vt, "function_expression") != 0 && strcmp(vt, "generator_function_expression") != 0)
+        return 0;
 
     TSNode params = ts_node_child_by_field_name(val, "parameters", 10);
-    TSNode body   = ts_node_child_by_field_name(val, "body", 4);
-    if (ts_node_is_null(params) || ts_node_is_null(body)) return 0;
-    if (!params_has_assignment_pattern(params)) return 0;
+    TSNode body = ts_node_child_by_field_name(val, "body", 4);
+    if (ts_node_is_null(params) || ts_node_is_null(body))
+        return 0;
+    if (!params_has_assignment_pattern(params))
+        return 0;
 
     // Build initializers
     char *decls = build_param_default_inits(src, params);
-    if (!decls) return 0;
+    if (!decls)
+        return 0;
 
     // Replace params with "()"
     size_t ps = ts_node_start_byte(params), pe = ts_node_end_byte(params);
-    if (rl_overlaps(claimed, ps, pe)) { free(decls); return 0; }
+    if (rl_overlaps(claimed, ps, pe))
+    {
+        free(decls);
+        return 0;
+    }
     add_edit(edits, ps, pe, "()");
     rl_add(claimed, ps, pe);
 
     // Insert declarations at start of body
     size_t bs = ts_node_start_byte(body), be = ts_node_end_byte(body);
-    if (rl_overlaps(claimed, bs, be)) { free(decls); return 0; }
+    if (rl_overlaps(claimed, bs, be))
+    {
+        free(decls);
+        return 0;
+    }
     add_edit_take_ownership(edits, bs + 1, bs + 1, decls);
     rl_add(claimed, bs, be);
 
     return 1;
 }
-
 
 // === End added helpers/passes ===
 // ============== generic helpers ==============
@@ -683,7 +928,7 @@ static char *js_quote_literal(const char *src, size_t start, size_t end, int *nn
         switch (c)
         {
         case '\\':
-            //out[j++] = '\\';
+            // out[j++] = '\\';
             out[j++] = '\\';
             break;
         case '"':
@@ -1038,7 +1283,945 @@ APPLY:;
     return out;
 }
 
-// ============== handler prototypes ==============
+/* =======================  helpers (namespaced esm_)  ======================= */
+
+/* tiny string builder */
+typedef struct
+{
+    char *buf;
+    size_t len, cap;
+} esm_sb;
+static void esm_sb_init(esm_sb *b)
+{
+    b->buf = NULL;
+    b->len = 0;
+    b->cap = 0;
+}
+static void esm_sb_free(esm_sb *b)
+{
+    free(b->buf);
+    b->buf = NULL;
+    b->len = 0;
+    b->cap = 0;
+}
+static void esm_sb_grow(esm_sb *b, size_t need)
+{
+    size_t req = b->len + need + 1;
+    if (req <= b->cap)
+        return;
+    size_t cap = b->cap ? b->cap * 2 : 1024;
+    while (cap < req)
+        cap <<= 1;
+    b->buf = (char *)realloc(b->buf, cap);
+    b->cap = cap;
+}
+static void esm_sb_putn(esm_sb *b, const char *s, size_t n)
+{
+    esm_sb_grow(b, n);
+    memcpy(b->buf + b->len, s, n);
+    b->len += n;
+    b->buf[b->len] = '\0';
+}
+static void esm_sb_puts(esm_sb *b, const char *s)
+{
+    esm_sb_putn(b, s, strlen(s));
+}
+
+static char *esm_dup_range(const char *s, size_t a, size_t b)
+{
+    if (b < a)
+    {
+        b = a;
+    }
+    size_t n = b - a;
+    char *r = (char *)malloc(n + 1);
+    if (!r)
+    {
+        return NULL;
+    }
+    memcpy(r, s + a, n);
+    r[n] = '\0';
+    return r;
+}
+
+/* count commas for array index calculation */
+static size_t esm_count_commas_between(const char *src, size_t a, size_t b)
+{
+    size_t c = 0;
+    for (size_t i = a; i < b; i++)
+    {
+        if (src[i] == ',')
+            c++;
+    }
+    return c;
+}
+
+/* append exports for a CSV of identifiers */
+static void esm_append_exports_for_csv(esm_sb *out, const char *csv)
+{
+    const char *p = csv;
+    while (p && *p)
+    {
+        const char *q = strchr(p, ',');
+        const char *e = q ? q : (p + strlen(p));
+        while (p < e && (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r'))
+            p++;
+        while (e > p && (e[-1] == ' ' || e[-1] == '\t' || e[-1] == '\n' || e[-1] == '\r'))
+            e--;
+        if (e > p)
+        {
+            esm_sb_puts(out, " exports.");
+            esm_sb_putn(out, p, (size_t)(e - p));
+            esm_sb_puts(out, " = ");
+            esm_sb_putn(out, p, (size_t)(e - p));
+            esm_sb_puts(out, ";");
+        }
+        p = q ? (q + 1) : NULL;
+    }
+}
+
+/* collect bound identifiers from binding patterns (object/array/default/rest) */
+static void esm_collect_pattern_names(TSNode node, const char *src, esm_sb *csv)
+{
+    const char *t = ts_node_type(node);
+
+    if (strcmp(t, "identifier") == 0 || strcmp(t, "shorthand_property_identifier_pattern") == 0)
+    {
+        if (csv->len)
+        {
+            esm_sb_puts(csv, ",");
+        }
+        size_t s = ts_node_start_byte(node), e = ts_node_end_byte(node);
+        esm_sb_putn(csv, src + s, e - s);
+        return;
+    }
+    if (strcmp(t, "rest_pattern") == 0)
+    {
+        uint32_t n = ts_node_named_child_count(node);
+        for (uint32_t i = 0; i < n; i++)
+        {
+            esm_collect_pattern_names(ts_node_named_child(node, i), src, csv);
+        }
+        return;
+    }
+    if (strcmp(t, "assignment_pattern") == 0 || strcmp(t, "object_assignment_pattern") == 0)
+    {
+        TSNode left = ts_node_child_by_field_name(node, "left", 4);
+        if (ts_node_is_null(left) && ts_node_named_child_count(node) > 0)
+        {
+            left = ts_node_named_child(node, 0);
+        }
+        if (!ts_node_is_null(left))
+        {
+            esm_collect_pattern_names(left, src, csv);
+        }
+        return;
+    }
+    if (strcmp(t, "object_pattern") == 0)
+    {
+        uint32_t n = ts_node_named_child_count(node);
+        for (uint32_t i = 0; i < n; i++)
+        {
+            TSNode ch = ts_node_named_child(node, i);
+            const char *ct = ts_node_type(ch);
+            if (strcmp(ct, "pair_pattern") == 0 || strcmp(ct, "pair") == 0)
+            {
+                TSNode val = ts_node_child_by_field_name(ch, "value", 5);
+                if (ts_node_is_null(val) && ts_node_named_child_count(ch) > 1)
+                {
+                    val = ts_node_named_child(ch, ts_node_named_child_count(ch) - 1);
+                }
+                if (!ts_node_is_null(val))
+                {
+                    esm_collect_pattern_names(val, src, csv);
+                }
+            }
+            else
+            {
+                esm_collect_pattern_names(ch, src, csv);
+            }
+        }
+        return;
+    }
+    if (strcmp(t, "array_pattern") == 0)
+    {
+        uint32_t n = ts_node_named_child_count(node);
+        for (uint32_t i = 0; i < n; i++)
+        {
+            esm_collect_pattern_names(ts_node_named_child(node, i), src, csv);
+        }
+        return;
+    }
+
+    uint32_t n = ts_node_named_child_count(node);
+    for (uint32_t i = 0; i < n; i++)
+    {
+        esm_collect_pattern_names(ts_node_named_child(node, i), src, csv);
+    }
+}
+
+/* for object rest: append excluded top-level key names to a CSV of quoted strings */
+static void esm_append_excluded_key_node(esm_sb *excluded_csv, TSNode prop, const char *src)
+{
+    const char *pt = ts_node_type(prop);
+
+    if (strcmp(pt, "pair_pattern") == 0 || strcmp(pt, "pair") == 0)
+    {
+        TSNode key = ts_node_child_by_field_name(prop, "key", 3);
+        if (!ts_node_is_null(key))
+        {
+            if (excluded_csv->len)
+            {
+                esm_sb_puts(excluded_csv, ",");
+            }
+            size_t ks = ts_node_start_byte(key), ke = ts_node_end_byte(key);
+            esm_sb_puts(excluded_csv, "\"");
+            esm_sb_putn(excluded_csv, src + ks, ke - ks);
+            esm_sb_puts(excluded_csv, "\"");
+        }
+        return;
+    }
+    if (strcmp(pt, "shorthand_property_identifier_pattern") == 0)
+    {
+        if (excluded_csv->len)
+        {
+            esm_sb_puts(excluded_csv, ",");
+        }
+        size_t ks = ts_node_start_byte(prop), ke = ts_node_end_byte(prop);
+        esm_sb_puts(excluded_csv, "\"");
+        esm_sb_putn(excluded_csv, src + ks, ke - ks);
+        esm_sb_puts(excluded_csv, "\"");
+        return;
+    }
+    if (strcmp(pt, "object_assignment_pattern") == 0)
+    {
+        TSNode left = ts_node_child_by_field_name(prop, "left", 4);
+        if (!ts_node_is_null(left))
+        {
+            if (excluded_csv->len)
+            {
+                esm_sb_puts(excluded_csv, ",");
+            }
+            size_t ks = ts_node_start_byte(left), ke = ts_node_end_byte(left);
+            esm_sb_puts(excluded_csv, "\"");
+            esm_sb_putn(excluded_csv, src + ks, ke - ks);
+            esm_sb_puts(excluded_csv, "\"");
+        }
+        return;
+    }
+}
+
+/* ============================  export rewriter  ============================ */
+static int rewrite_export_node(EditList *edits, const char *src, TSNode snode, RangeList *claimed)
+{
+    size_t ns = ts_node_start_byte(snode), ne = ts_node_end_byte(snode);
+    if (rl_overlaps(claimed, ns, ne))
+        return 0;
+    int is_default_export = !ts_node_is_null(ts_node_child_by_field_name(snode, "default", 7));
+    /* export default */
+    {
+        TSNode val =
+            ts_node_child_by_field_name(snode, "value", 5); /* e.g., identifier, call, object, function expr, etc. */
+        TSNode decl =
+            ts_node_child_by_field_name(snode, "declaration", 11); /* named function_declaration / class_declaration */
+
+        /* Case A: export default function f() {}  OR  export default class C {}  (named decl) */
+        if (!ts_node_is_null(decl))
+        {
+            const char *dt = ts_node_type(decl);
+            if (strcmp(dt, "function_declaration") == 0 || strcmp(dt, "class_declaration") == 0)
+            {
+
+                size_t stmt_s = ts_node_start_byte(snode); /* start of 'export' */
+                size_t decl_s = ts_node_start_byte(decl);  /* start of 'function' */
+                size_t decl_e = ts_node_end_byte(decl);    /* end of function decl */
+
+                /* Append after the declaration */
+                TSNode id = ts_node_child_by_field_name(decl, "name", 4);
+                if (!ts_node_is_null(id))
+                {
+                    size_t is = ts_node_start_byte(id), ie = ts_node_end_byte(id);
+                    esm_sb post;
+                    esm_sb_init(&post);
+                    if (is_default_export)
+                    {
+                        /* default: function f(...){} ; module.exports = f; */
+                        esm_sb_puts(&post, "; module.exports = ");
+                        esm_sb_putn(&post, src + is, ie - is);
+                        esm_sb_puts(&post, ";");
+                    }
+                    else
+                    {
+                        /* named: function f(...){} ; exports.f = f; */
+                        esm_sb_puts(&post, "; exports.");
+                        esm_sb_putn(&post, src + is, ie - is);
+                        esm_sb_puts(&post, " = ");
+                        esm_sb_putn(&post, src + is, ie - is);
+                        esm_sb_puts(&post, ";");
+                    }
+                    add_edit(edits, decl_e, decl_e, post.buf); /* insert AFTER function */
+                    rl_add(claimed, decl_e, decl_e);
+                    esm_sb_free(&post);
+
+                    /* Remove only the 'export default' prefix */
+                    add_edit(edits, stmt_s, decl_s, "");
+                    rl_add(claimed, stmt_s, decl_s);
+                    return 1;
+                }
+                /* anonymous fn/class as default falls through to Case C */
+            }
+        }
+
+        /* Case B: export default <Identifier>;  =>  module.exports = <Identifier>; */
+        if (!ts_node_is_null(val) && strcmp(ts_node_type(val), "identifier") == 0)
+        {
+            size_t vs = ts_node_start_byte(val), ve = ts_node_end_byte(val);
+            esm_sb out;
+            esm_sb_init(&out);
+            esm_sb_puts(&out, "exports.__esModule=true;exports.default = ");
+            esm_sb_putn(&out, src + vs, ve - vs);
+            esm_sb_puts(&out, ";");
+            add_edit(edits, ns, ne, out.buf); /* replace whole export statement */
+            rl_add(claimed, ns, ne);
+            esm_sb_free(&out);
+            return 1;
+        }
+
+        /* Case C: export default <any non-identifier expression or anonymous fn/class>;
+           => var __default__ = <expr>; module.exports = __default__; */
+        if (!ts_node_is_null(val))
+        {
+            size_t vs = ts_node_start_byte(val), ve = ts_node_end_byte(val);
+            char *body = esm_dup_range(src, vs, ve);
+            esm_sb out;
+            esm_sb_init(&out);
+            esm_sb_puts(&out, "var __default__ = ");
+            esm_sb_puts(&out, body);
+            esm_sb_puts(&out, "; exports.default = __default__;");
+            add_edit(edits, ns, ne, out.buf); /* replace whole export statement */
+            rl_add(claimed, ns, ne);
+            esm_sb_free(&out);
+            free(body);
+            return 1;
+        }
+    }
+
+    /* export declaration */
+    TSNode decl = ts_node_child_by_field_name(snode, "declaration", 11);
+    if (!ts_node_is_null(decl))
+    {
+        const char *dt = ts_node_type(decl);
+
+        /* export function f(...) { ... }
+           Write: exports.f = f; function f(...) { ... } */
+        if (strcmp(dt, "function_declaration") == 0)
+        {
+            size_t stmt_s = ts_node_start_byte(snode); // start of `export ...`
+            size_t decl_s = ts_node_start_byte(decl);  // start of `function`
+
+            // Insert "exports.f = f; " BEFORE the function
+            TSNode id = ts_node_child_by_field_name(decl, "name", 4);
+            if (!ts_node_is_null(id))
+            {
+                size_t is = ts_node_start_byte(id), ie = ts_node_end_byte(id);
+                esm_sb pre;
+                esm_sb_init(&pre);
+                esm_sb_puts(&pre, "exports.");
+                esm_sb_putn(&pre, src + is, ie - is);
+                esm_sb_puts(&pre, " = ");
+                esm_sb_putn(&pre, src + is, ie - is);
+                esm_sb_puts(&pre, "; ");
+                add_edit(edits, decl_s, decl_s, pre.buf); // insertion
+                rl_add(claimed, decl_s, decl_s);
+                esm_sb_free(&pre);
+            }
+
+            // Remove just the 'export' token and following space(s)
+            add_edit(edits, stmt_s, decl_s, "");
+            rl_add(claimed, stmt_s, decl_s);
+
+            return 1;
+        }
+
+        /* export class C { ... }
+           Write: exports.C = C; class C { ... }   */
+        if (strcmp(dt, "class_declaration") == 0)
+        {
+            size_t stmt_s = ts_node_start_byte(snode); // start of `export ...`
+            size_t decl_s = ts_node_start_byte(decl);  // start of `class`
+
+            // Insert "exports.C = C; " BEFORE the class
+            TSNode id = ts_node_child_by_field_name(decl, "name", 4);
+            if (!ts_node_is_null(id))
+            {
+                size_t is = ts_node_start_byte(id), ie = ts_node_end_byte(id);
+                esm_sb pre;
+                esm_sb_init(&pre);
+                esm_sb_puts(&pre, "exports.");
+                esm_sb_putn(&pre, src + is, ie - is);
+                esm_sb_puts(&pre, " = ");
+                esm_sb_putn(&pre, src + is, ie - is);
+                esm_sb_puts(&pre, "; ");
+                add_edit(edits, decl_s, decl_s, pre.buf); // insertion
+                rl_add(claimed, decl_s, decl_s);
+                esm_sb_free(&pre);
+            }
+
+            // Remove just the 'export' token and following space(s)
+            add_edit(edits, stmt_s, decl_s, "");
+            rl_add(claimed, stmt_s, decl_s);
+
+            return 1;
+        }
+
+        /* export const|let … (lexical_declaration) — handles object/array patterns */
+        if (strcmp(dt, "lexical_declaration") == 0)
+        {
+            uint32_t ndecls = ts_node_named_child_count(decl);
+            if (ndecls == 1)
+            {
+                TSNode d = ts_node_named_child(decl, 0);
+                if (strcmp(ts_node_type(d), "variable_declarator") == 0)
+                {
+                    TSNode nameNode = ts_node_child_by_field_name(d, "name", 4);
+                    TSNode initNode = ts_node_child_by_field_name(d, "value", 5);
+                    if (!ts_node_is_null(nameNode) && !ts_node_is_null(initNode))
+                    {
+                        const char *nameType = ts_node_type(nameNode);
+
+                        /* ---------- object pattern ---------- */
+                        if (strcmp(nameType, "object_pattern") == 0)
+                        {
+                            size_t vs = ts_node_start_byte(initNode), ve = ts_node_end_byte(initNode);
+                            char *val = esm_dup_range(src, vs, ve);
+
+                            esm_sb out;
+                            esm_sb_init(&out);
+                            esm_sb names_csv;
+                            esm_sb_init(&names_csv);
+                            esm_sb excl;
+                            esm_sb_init(&excl);
+
+                            esm_sb_puts(&out, "var __tmpD0 = ");
+                            esm_sb_puts(&out, val);
+                            esm_sb_puts(&out, ";");
+
+                            uint32_t nprops = ts_node_named_child_count(nameNode);
+                            for (uint32_t i = 0; i < nprops; i++)
+                            {
+                                TSNode prop = ts_node_named_child(nameNode, i);
+                                const char *pt = ts_node_type(prop);
+                                if (strcmp(pt, "rest_pattern") == 0)
+                                    continue;
+
+                                esm_append_excluded_key_node(&excl, prop, src);
+
+                                if (strcmp(pt, "pair_pattern") == 0 || strcmp(pt, "pair") == 0)
+                                {
+                                    TSNode key = ts_node_child_by_field_name(prop, "key", 3);
+                                    TSNode valpat = ts_node_child_by_field_name(prop, "value", 5);
+                                    if (ts_node_is_null(key) || ts_node_is_null(valpat))
+                                        continue;
+                                    const char *vt = ts_node_type(valpat);
+
+                                    if (strcmp(vt, "identifier") == 0)
+                                    {
+                                        size_t ks = ts_node_start_byte(key), ke = ts_node_end_byte(key);
+                                        size_t is = ts_node_start_byte(valpat), ie = ts_node_end_byte(valpat);
+                                        esm_sb_puts(&out, " var ");
+                                        esm_sb_putn(&out, src + is, ie - is);
+                                        esm_sb_puts(&out, " = __tmpD0.");
+                                        esm_sb_putn(&out, src + ks, ke - ks);
+                                        esm_sb_puts(&out, ";");
+                                        if (names_csv.len)
+                                        {
+                                            esm_sb_puts(&names_csv, ",");
+                                        }
+                                        esm_sb_putn(&names_csv, src + is, ie - is);
+                                    }
+                                    else if (strcmp(vt, "object_pattern") == 0)
+                                    {
+                                        esm_sb inner;
+                                        esm_sb_init(&inner);
+                                        esm_collect_pattern_names(valpat, src, &inner);
+                                        size_t ks = ts_node_start_byte(key), ke = ts_node_end_byte(key);
+                                        char *keytxt = esm_dup_range(src, ks, ke);
+                                        const char *p = inner.buf;
+                                        while (p && *p)
+                                        {
+                                            const char *q = strchr(p, ',');
+                                            const char *e = q ? q : (p + strlen(p));
+                                            while (p < e && (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r'))
+                                                p++;
+                                            while (e > p &&
+                                                   (e[-1] == ' ' || e[-1] == '\t' || e[-1] == '\n' || e[-1] == '\r'))
+                                                e--;
+                                            if (e > p)
+                                            {
+                                                esm_sb_puts(&out, " var ");
+                                                esm_sb_putn(&out, p, (size_t)(e - p));
+                                                esm_sb_puts(&out, " = __tmpD0.");
+                                                esm_sb_puts(&out, keytxt);
+                                                esm_sb_puts(&out, ".");
+                                                esm_sb_putn(&out, p, (size_t)(e - p));
+                                                esm_sb_puts(&out, ";");
+                                                if (names_csv.len)
+                                                {
+                                                    esm_sb_puts(&names_csv, ",");
+                                                }
+                                                esm_sb_putn(&names_csv, p, (size_t)(e - p));
+                                            }
+                                            p = q ? (q + 1) : NULL;
+                                        }
+                                        esm_sb_free(&inner);
+                                        free(keytxt);
+                                    }
+                                    else if (strcmp(vt, "assignment_pattern") == 0 ||
+                                             strcmp(vt, "object_assignment_pattern") == 0)
+                                    {
+                                        TSNode left = ts_node_child_by_field_name(valpat, "left", 4);
+                                        TSNode right = ts_node_child_by_field_name(valpat, "right", 5);
+                                        if (ts_node_is_null(left) || ts_node_is_null(right))
+                                            continue;
+                                        size_t ks = ts_node_start_byte(key), ke = ts_node_end_byte(key);
+                                        size_t ls = ts_node_start_byte(left), le = ts_node_end_byte(left);
+                                        size_t rs = ts_node_start_byte(right), re = ts_node_end_byte(right);
+                                        esm_sb_puts(&out, " var ");
+                                        esm_sb_putn(&out, src + ls, le - ls);
+                                        esm_sb_puts(&out, " = (__tmpD0.");
+                                        esm_sb_putn(&out, src + ks, ke - ks);
+                                        esm_sb_puts(&out, " === undefined ? ");
+                                        esm_sb_putn(&out, src + rs, re - rs);
+                                        esm_sb_puts(&out, " : __tmpD0.");
+                                        esm_sb_putn(&out, src + ks, ke - ks);
+                                        esm_sb_puts(&out, ");");
+                                        if (names_csv.len)
+                                        {
+                                            esm_sb_puts(&names_csv, ",");
+                                        }
+                                        esm_sb_putn(&names_csv, src + ls, le - ls);
+                                    }
+                                    continue;
+                                }
+
+                                if (strcmp(pt, "shorthand_property_identifier_pattern") == 0)
+                                {
+                                    size_t is = ts_node_start_byte(prop), ie = ts_node_end_byte(prop);
+                                    esm_sb_puts(&out, " var ");
+                                    esm_sb_putn(&out, src + is, ie - is);
+                                    esm_sb_puts(&out, " = __tmpD0.");
+                                    esm_sb_putn(&out, src + is, ie - is);
+                                    esm_sb_puts(&out, ";");
+                                    if (names_csv.len)
+                                    {
+                                        esm_sb_puts(&names_csv, ",");
+                                    }
+                                    esm_sb_putn(&names_csv, src + is, ie - is);
+                                    continue;
+                                }
+
+                                if (strcmp(pt, "object_assignment_pattern") == 0)
+                                {
+                                    TSNode left = ts_node_child_by_field_name(prop, "left", 4);
+                                    TSNode right = ts_node_child_by_field_name(prop, "right", 5);
+                                    if (!ts_node_is_null(left) && !ts_node_is_null(right))
+                                    {
+                                        size_t is = ts_node_start_byte(left), ie = ts_node_end_byte(left);
+                                        size_t rs = ts_node_start_byte(right), re = ts_node_end_byte(right);
+                                        esm_sb_puts(&out, " var ");
+                                        esm_sb_putn(&out, src + is, ie - is);
+                                        esm_sb_puts(&out, " = (__tmpD0.");
+                                        esm_sb_putn(&out, src + is, ie - is);
+                                        esm_sb_puts(&out, " === undefined ? ");
+                                        esm_sb_putn(&out, src + rs, re - rs);
+                                        esm_sb_puts(&out, " : __tmpD0.");
+                                        esm_sb_putn(&out, src + is, ie - is);
+                                        esm_sb_puts(&out, ");");
+                                        if (names_csv.len)
+                                        {
+                                            esm_sb_puts(&names_csv, ",");
+                                        }
+                                        esm_sb_putn(&names_csv, src + is, ie - is);
+                                    }
+                                    continue;
+                                }
+                            }
+
+                            /* ...rest */
+                            for (uint32_t i = 0; i < nprops; i++)
+                            {
+                                TSNode prop = ts_node_named_child(nameNode, i);
+                                if (strcmp(ts_node_type(prop), "rest_pattern") != 0)
+                                    continue;
+                                uint32_t c = ts_node_named_child_count(prop);
+                                for (uint32_t j = 0; j < c; j++)
+                                {
+                                    TSNode id = ts_node_named_child(prop, j);
+                                    if (strcmp(ts_node_type(id), "identifier") != 0)
+                                        continue;
+                                    size_t is = ts_node_start_byte(id), ie = ts_node_end_byte(id);
+                                    esm_sb_puts(&out, " var ");
+                                    esm_sb_putn(&out, src + is, ie - is);
+                                    esm_sb_puts(
+                                        &out,
+                                        " = (function(o,e){var t={},k; for(k in o){ if(Object.prototype.hasOwnProperty.call(o,k) && ");
+                                    if (excl.len)
+                                    {
+                                        esm_sb_puts(&out, "e.indexOf(k)<0");
+                                    }
+                                    else
+                                    {
+                                        esm_sb_puts(&out, "true");
+                                    }
+                                    esm_sb_puts(&out, ") t[k]=o[k]; } return t; })(__tmpD0, [");
+                                    esm_sb_puts(&out, excl.buf);
+                                    esm_sb_puts(&out, "]);");
+                                    if (names_csv.len)
+                                    {
+                                        esm_sb_puts(&names_csv, ",");
+                                    }
+                                    esm_sb_putn(&names_csv, src + is, ie - is);
+                                }
+                            }
+
+                            esm_append_exports_for_csv(&out, names_csv.buf);
+                            add_edit(edits, ns, ne, out.buf);
+                            rl_add(claimed, ns, ne);
+                            esm_sb_free(&out);
+                            esm_sb_free(&names_csv);
+                            esm_sb_free(&excl);
+                            free(val);
+                            return 1;
+                        }
+
+                        /* ---------- array pattern ---------- */
+                        if (strcmp(nameType, "array_pattern") == 0)
+                        {
+                            size_t vs = ts_node_start_byte(initNode), ve = ts_node_end_byte(initNode);
+                            char *val = esm_dup_range(src, vs, ve);
+
+                            esm_sb out;
+                            esm_sb_init(&out);
+                            esm_sb names_csv;
+                            esm_sb_init(&names_csv);
+
+                            esm_sb_puts(&out, "var __tmpA0 = ");
+                            esm_sb_puts(&out, val);
+                            esm_sb_puts(&out, ";");
+
+                            size_t pat_start = ts_node_start_byte(nameNode);
+                            size_t after_bracket = pat_start + 1;
+
+                            uint32_t nelems = ts_node_named_child_count(nameNode);
+                            for (uint32_t j = 0; j < nelems; j++)
+                            {
+                                TSNode el = ts_node_named_child(nameNode, j);
+                                const char *et = ts_node_type(el);
+
+                                size_t es = ts_node_start_byte(el);
+                                size_t idx = esm_count_commas_between(src, after_bracket, es);
+
+                                if (strcmp(et, "identifier") == 0)
+                                {
+                                    size_t is = ts_node_start_byte(el), ie = ts_node_end_byte(el);
+                                    esm_sb_puts(&out, " var ");
+                                    esm_sb_putn(&out, src + is, ie - is);
+                                    esm_sb_puts(&out, " = __tmpA0[");
+                                    char buf[32];
+                                    snprintf(buf, sizeof(buf), "%zu", idx);
+                                    esm_sb_puts(&out, buf);
+                                    esm_sb_puts(&out, "];");
+                                    if (names_csv.len)
+                                    {
+                                        esm_sb_puts(&names_csv, ",");
+                                    }
+                                    esm_sb_putn(&names_csv, src + is, ie - is);
+                                    continue;
+                                }
+
+                                if (strcmp(et, "assignment_pattern") == 0)
+                                {
+                                    TSNode left = ts_node_child_by_field_name(el, "left", 4);
+                                    TSNode right = ts_node_child_by_field_name(el, "right", 5);
+                                    if (ts_node_is_null(left) || ts_node_is_null(right))
+                                        continue;
+                                    size_t ls = ts_node_start_byte(left), le = ts_node_end_byte(left);
+                                    size_t rs = ts_node_start_byte(right), re = ts_node_end_byte(right);
+                                    esm_sb_puts(&out, " var ");
+                                    esm_sb_putn(&out, src + ls, le - ls);
+                                    esm_sb_puts(&out, " = (__tmpA0[");
+                                    char buf[32];
+                                    snprintf(buf, sizeof(buf), "%zu", idx);
+                                    esm_sb_puts(&out, buf);
+                                    esm_sb_puts(&out, "] === undefined ? ");
+                                    esm_sb_putn(&out, src + rs, re - rs);
+                                    esm_sb_puts(&out, " : __tmpA0[");
+                                    esm_sb_puts(&out, buf);
+                                    esm_sb_puts(&out, "]);");
+                                    if (names_csv.len)
+                                    {
+                                        esm_sb_puts(&names_csv, ",");
+                                    }
+                                    esm_sb_putn(&names_csv, src + ls, le - ls);
+                                    continue;
+                                }
+
+                                if (strcmp(et, "rest_pattern") == 0)
+                                {
+                                    uint32_t cn = ts_node_named_child_count(el);
+                                    for (uint32_t k = 0; k < cn; k++)
+                                    {
+                                        TSNode id = ts_node_named_child(el, k);
+                                        if (strcmp(ts_node_type(id), "identifier") != 0)
+                                            continue;
+                                        size_t is = ts_node_start_byte(id), ie = ts_node_end_byte(id);
+                                        esm_sb_puts(&out, " var ");
+                                        esm_sb_putn(&out, src + is, ie - is);
+                                        esm_sb_puts(&out, " = Array.prototype.slice.call(__tmpA0, ");
+                                        char buf[32];
+                                        snprintf(buf, sizeof(buf), "%zu", idx);
+                                        esm_sb_puts(&out, buf);
+                                        esm_sb_puts(&out, ");");
+                                        if (names_csv.len)
+                                        {
+                                            esm_sb_puts(&names_csv, ",");
+                                        }
+                                        esm_sb_putn(&names_csv, src + is, ie - is);
+                                    }
+                                    continue;
+                                }
+
+                                if (strcmp(et, "object_pattern") == 0)
+                                {
+                                    esm_sb inner;
+                                    esm_sb_init(&inner);
+                                    esm_collect_pattern_names(el, src, &inner);
+                                    const char *p = inner.buf;
+                                    while (p && *p)
+                                    {
+                                        const char *q = strchr(p, ',');
+                                        const char *e = q ? q : (p + strlen(p));
+                                        while (p < e && (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r'))
+                                            p++;
+                                        while (e > p &&
+                                               (e[-1] == ' ' || e[-1] == '\t' || e[-1] == '\n' || e[-1] == '\r'))
+                                            e--;
+                                        if (e > p)
+                                        {
+                                            esm_sb_puts(&out, " var ");
+                                            esm_sb_putn(&out, p, (size_t)(e - p));
+                                            esm_sb_puts(&out, " = __tmpA0[");
+                                            char buf[32];
+                                            snprintf(buf, sizeof(buf), "%zu", idx);
+                                            esm_sb_puts(&out, buf);
+                                            esm_sb_puts(&out, "].");
+                                            esm_sb_putn(&out, p, (size_t)(e - p));
+                                            esm_sb_puts(&out, ";");
+                                            if (names_csv.len)
+                                            {
+                                                esm_sb_puts(&names_csv, ",");
+                                            }
+                                            esm_sb_putn(&names_csv, p, (size_t)(e - p));
+                                        }
+                                        p = q ? (q + 1) : NULL;
+                                    }
+                                    esm_sb_free(&inner);
+                                    continue;
+                                }
+                            }
+
+                            esm_append_exports_for_csv(&out, names_csv.buf);
+                            add_edit(edits, ns, ne, out.buf);
+                            rl_add(claimed, ns, ne);
+                            esm_sb_free(&out);
+                            esm_sb_free(&names_csv);
+                            free(val);
+                            return 1;
+                        }
+                    }
+                }
+            }
+
+            /* fallback: keep lexical declaration text + export collected names */
+            size_t ds = ts_node_start_byte(decl), de = ts_node_end_byte(decl);
+            char *decl_txt = esm_dup_range(src, ds, de);
+            esm_sb names;
+            esm_sb_init(&names);
+            for (uint32_t i = 0; i < ndecls; i++)
+            {
+                TSNode vd = ts_node_named_child(decl, i);
+                if (strcmp(ts_node_type(vd), "variable_declarator") != 0)
+                    continue;
+                TSNode nm = ts_node_child_by_field_name(vd, "name", 4);
+                if (ts_node_is_null(nm))
+                    continue;
+                esm_collect_pattern_names(nm, src, &names);
+            }
+            esm_sb out;
+            esm_sb_init(&out);
+            esm_sb_puts(&out, decl_txt);
+            esm_append_exports_for_csv(&out, names.buf);
+            add_edit(edits, ns, ne, out.buf);
+            rl_add(claimed, ns, ne);
+            esm_sb_free(&out);
+            esm_sb_free(&names);
+            free(decl_txt);
+            return 1;
+        }
+
+        /* export variable_declaration (just in case) */
+        if (strcmp(dt, "variable_declaration") == 0)
+        {
+            size_t ds = ts_node_start_byte(decl), de = ts_node_end_byte(decl);
+            char *decl_txt = esm_dup_range(src, ds, de);
+            esm_sb names;
+            esm_sb_init(&names);
+            uint32_t n = ts_node_named_child_count(decl);
+            for (uint32_t i = 0; i < n; i++)
+            {
+                TSNode d = ts_node_named_child(decl, i);
+                if (strcmp(ts_node_type(d), "variable_declarator") != 0)
+                    continue;
+                TSNode nm = ts_node_child_by_field_name(d, "name", 4);
+                if (ts_node_is_null(nm))
+                    continue;
+                esm_collect_pattern_names(nm, src, &names);
+            }
+            esm_sb out;
+            esm_sb_init(&out);
+            esm_sb_puts(&out, decl_txt);
+            esm_append_exports_for_csv(&out, names.buf);
+            add_edit(edits, ns, ne, out.buf);
+            rl_add(claimed, ns, ne);
+            esm_sb_free(&out);
+            esm_sb_free(&names);
+            free(decl_txt);
+            return 1;
+        }
+    }
+
+    /* export { a, b as c } [from "mod"]  OR  local re-exports */
+    TSNode specs = ts_node_child_by_field_name(snode, "specifiers", 10);
+    /* Some grammars expose `export_clause` instead of the `specifiers` field */
+    if (ts_node_is_null(specs))
+    {
+        uint32_t n = ts_node_named_child_count(snode);
+        for (uint32_t i = 0; i < n; i++)
+        {
+            TSNode ch = ts_node_named_child(snode, i);
+            if (strcmp(ts_node_type(ch), "export_clause") == 0)
+            {
+                specs = ch;
+                break;
+            }
+        }
+    }
+    if (!ts_node_is_null(specs))
+    {
+        TSNode srcnode = ts_node_child_by_field_name(snode, "source", 6);
+        char *mod = NULL;
+        if (!ts_node_is_null(srcnode))
+        {
+            size_t ms = ts_node_start_byte(srcnode), me = ts_node_end_byte(srcnode);
+            mod = esm_dup_range(src, ms, me);
+        }
+
+        esm_sb out;
+        esm_sb_init(&out);
+        char tmp[24];
+        tmp[0] = '\0';
+
+        if (mod)
+        {
+            snprintf(tmp, sizeof(tmp), "__tmpExp0");
+            esm_sb_puts(&out, "var ");
+            esm_sb_puts(&out, tmp);
+            esm_sb_puts(&out, " = require(");
+            esm_sb_puts(&out, mod);
+            esm_sb_puts(&out, "); ");
+        }
+
+        uint32_t k = ts_node_named_child_count(specs);
+        for (uint32_t i = 0; i < k; i++)
+        {
+            TSNode s = ts_node_named_child(specs, i);
+            if (strcmp(ts_node_type(s), "export_specifier") != 0)
+                continue;
+
+            TSNode local = ts_node_child_by_field_name(s, "name", 4);
+            TSNode alias = ts_node_child_by_field_name(s, "alias", 5);
+            if (ts_node_is_null(local))
+                continue;
+
+            size_t ls = ts_node_start_byte(local), le = ts_node_end_byte(local);
+
+            esm_sb_puts(&out, "exports.");
+            if (!ts_node_is_null(alias))
+            {
+                size_t as = ts_node_start_byte(alias), ae = ts_node_end_byte(alias);
+                esm_sb_putn(&out, src + as, ae - as); /* alias */
+            }
+            else
+            {
+                esm_sb_putn(&out, src + ls, le - ls); /* same-name export */
+            }
+            esm_sb_puts(&out, " = ");
+            if (mod)
+            {
+                esm_sb_puts(&out, tmp);
+                esm_sb_puts(&out, ".");
+            }
+            esm_sb_putn(&out, src + ls, le - ls); /* local or tmp.prop */
+            esm_sb_puts(&out, ";");
+        }
+
+        add_edit(edits, ns, ne, out.buf);
+        rl_add(claimed, ns, ne);
+        esm_sb_free(&out);
+        free(mod);
+        return 1;
+    }
+
+    /* export * from "mod" */
+    {
+        TSNode star = ts_node_child_by_field_name(snode, "wildcard", 8);
+        TSNode srcnode = ts_node_child_by_field_name(snode, "source", 6);
+        if (!ts_node_is_null(star) && !ts_node_is_null(srcnode))
+        {
+            size_t ms = ts_node_start_byte(srcnode), me = ts_node_end_byte(srcnode);
+            char *mod = esm_dup_range(src, ms, me);
+            esm_sb out;
+            esm_sb_init(&out);
+            esm_sb_puts(&out, "var __tmpExp = require(");
+            esm_sb_puts(&out, mod);
+            esm_sb_puts(&out,
+                        "); for (var k in __tmpExp) { if (k === \"default\") continue; exports[k] = __tmpExp[k]; }");
+            add_edit(edits, ns, ne, out.buf);
+            rl_add(claimed, ns, ne);
+            esm_sb_free(&out);
+            free(mod);
+            return 1;
+        }
+    }
+
+    /* fallback: drop export, keep inner statement */
+    {
+        uint32_t n = ts_node_named_child_count(snode);
+        if (n > 0)
+        {
+            TSNode inner = ts_node_named_child(snode, n - 1);
+            size_t s = ts_node_start_byte(inner), e = ts_node_end_byte(inner);
+            char *txt = esm_dup_range(src, s, e);
+            add_edit(edits, ns, ne, txt);
+            rl_add(claimed, ns, ne);
+            free(txt);
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
 static int rewrite_template_node(EditList *edits, const char *src, TSNode tpl_node, RangeList *claimed);
 static int rewrite_arrow_function_node(EditList *edits, const char *src, TSNode arrow_node, RangeList *claimed);
 static void rewrite_lexical_declaration(EditList *edits, const char *src, TSNode lexical_decl);
@@ -1248,10 +2431,10 @@ static char *make_raw_rep(const char *orig, size_t l)
             *(out++) = *(s++);
             break;
         case '\n': // +"\n"
-//            *(out++) = '"';
-//            *(out++) = '\n';
-//            *(out++) = '+';
-//            *(out++) = '"';
+                   //            *(out++) = '"';
+                   //            *(out++) = '\n';
+                   //            *(out++) = '+';
+                   //            *(out++) = '"';
             *(out++) = '\\';
             *(out++) = 'n';
             s++;
@@ -1289,6 +2472,7 @@ static int rewrite_raw_node(EditList *edits, const char *src, TSNode snode, Rang
 }
 
 // Import
+/*
 static int do_named_imports(EditList *edits, const char *src, TSNode snode, TSNode named_imports, TSNode string_frag,
                             size_t start, size_t end)
 {
@@ -1321,6 +2505,61 @@ static int do_named_imports(EditList *edits, const char *src, TSNode snode, TSNo
     tmpn++;
     return 1;
 }
+*/
+static int do_named_imports(EditList *edits, const char *src, TSNode snode, TSNode named_imports, TSNode string_frag,
+                            size_t start, size_t end)
+{
+    static uint32_t tmpn = 0;
+    uint32_t pos = 0;
+    char *out = NULL;
+    char buf[32];
+
+    TSNode spec = find_child_type(named_imports, "import_specifier", &pos);
+    if (ts_node_is_null(spec))
+        return 0;
+
+    size_t mod_s = ts_node_start_byte(string_frag), mod_e = ts_node_end_byte(string_frag);
+
+    /* temp module binding */
+    sprintf(buf, "__tmpModImp%u", tmpn);
+    out = appendf(NULL, NULL, "var %s=require(\"%.*s\");", buf, (int)(mod_e - mod_s), src + mod_s);
+
+    /* each specifier: var <aliasOrName> = tmp.<name>; */
+    while (!ts_node_is_null(spec))
+    {
+        TSNode local = ts_node_child_by_field_name(spec, "name", 4);
+        TSNode alias = ts_node_child_by_field_name(spec, "alias", 5);
+
+        if (ts_node_is_null(local))
+        {
+            /* fallback: use raw slice */
+            size_t s = ts_node_start_byte(spec), e = ts_node_end_byte(spec);
+            out = appendf(out, NULL, "var %.*s=%s.%.*s;", (int)(e - s), src + s, buf, (int)(e - s), src + s);
+        }
+        else
+        {
+            size_t ls = ts_node_start_byte(local), le = ts_node_end_byte(local);
+            if (!ts_node_is_null(alias))
+            {
+                size_t as = ts_node_start_byte(alias), ae = ts_node_end_byte(alias);
+                out = appendf(out, NULL, "var %.*s=%s.%.*s;", (int)(ae - as), src + as, /* alias binding on LHS */
+                              buf, (int)(le - ls), src + ls);                           /* local name on RHS from tmp */
+            }
+            else
+            {
+                out = appendf(out, NULL, "var %.*s=%s.%.*s;", (int)(le - ls), src + ls, /* same name */
+                              buf, (int)(le - ls), src + ls);
+            }
+        }
+
+        pos++;
+        spec = find_child_type(named_imports, "import_specifier", &pos);
+    }
+
+    add_edit_take_ownership(edits, start, end, out);
+    tmpn++;
+    return 1;
+}
 
 static int do_namespace_import(EditList *edits, const char *src, TSNode snode, TSNode namespace_import,
                                TSNode string_frag, size_t start, size_t end, uint8_t *polysneeded)
@@ -1343,6 +2582,111 @@ static int do_namespace_import(EditList *edits, const char *src, TSNode snode, T
     return 1;
 }
 
+static int do_default_import(EditList *edits, const char *src, TSNode snode, TSNode default_ident, TSNode string_frag,
+                             size_t start, size_t end)
+{
+    char *out = NULL;
+    size_t mod_s = ts_node_start_byte(string_frag), mod_e = ts_node_end_byte(string_frag);
+    size_t id_s = ts_node_start_byte(default_ident), id_e = ts_node_end_byte(default_ident);
+
+    /* With our export lowering, default import is the entire module.exports */
+    out = appendf(NULL, NULL, "var %.*s=_TrN_Sp._interopDefault(require(\"%.*s\"));", (int)(id_e - id_s), src + id_s,
+                  (int)(mod_e - mod_s), src + mod_s);
+
+    add_edit_take_ownership(edits, start, end, out);
+    return 1;
+}
+/*
+static int do_default_and_named_imports(EditList *edits, const char *src, TSNode snode,
+                                        TSNode default_ident, TSNode named_imports, TSNode string_frag,
+                                        size_t start, size_t end)
+{
+    static uint32_t tmpn = 0;
+    char tbuf[32];
+    sprintf(tbuf, "__tmpModImp%u", tmpn);
+
+    size_t mod_s = ts_node_start_byte(string_frag), mod_e = ts_node_end_byte(string_frag);
+    size_t id_s  = ts_node_start_byte(default_ident), id_e  = ts_node_end_byte(default_ident);
+
+    // require once
+    char *out = appendf(NULL, NULL, "var %s=require(\"%.*s\");", tbuf,
+                        (int)(mod_e - mod_s), src + mod_s);
+
+    // bind default: var def = __tmp;  (no .default — our export default maps to module.exports)
+    out = appendf(out, NULL, "var %.*s=%s;", (int)(id_e - id_s), src + id_s, tbuf);
+
+    // bind each named: var name = __tmp.name;
+    uint32_t pos = 0;
+    TSNode spec = find_child_type(named_imports, "import_specifier", &pos);
+    while (!ts_node_is_null(spec)) {
+        // NOTE: this assumes simple specifiers without "as". Matches your current do_named_imports behavior.
+        size_t s = ts_node_start_byte(spec), e = ts_node_end_byte(spec);
+        out = appendf(out, NULL, "var %.*s=%s.%.*s;", (int)(e - s), src + s, tbuf, (int)(e - s), src + s);
+        pos++;
+        spec = find_child_type(named_imports, "import_specifier", &pos);
+    }
+
+    add_edit_take_ownership(edits, start, end, out);
+    tmpn++;
+    return 1;
+}
+*/
+
+static int do_default_and_named_imports(EditList *edits, const char *src, TSNode snode, TSNode default_ident,
+                                        TSNode named_imports, TSNode string_frag, size_t start, size_t end)
+{
+    static uint32_t tmpn = 0;
+    char tbuf[32];
+    sprintf(tbuf, "__tmpModImpdn%u", tmpn);
+
+    size_t mod_s = ts_node_start_byte(string_frag), mod_e = ts_node_end_byte(string_frag);
+    size_t id_s = ts_node_start_byte(default_ident), id_e = ts_node_end_byte(default_ident);
+
+    /* require once */
+    char *out = appendf(NULL, NULL, "var %s=require(\"%.*s\");", tbuf, (int)(mod_e - mod_s), src + mod_s);
+
+    /* bind default: var def = __tmp;  (we lower default export to module.exports) */
+    out = appendf(out, NULL, "var %.*s=%s.default;", (int)(id_e - id_s), src + id_s, tbuf);
+
+    /* named specifiers with aliases */
+    uint32_t pos = 0;
+    TSNode spec = find_child_type(named_imports, "import_specifier", &pos);
+    while (!ts_node_is_null(spec))
+    {
+        TSNode local = ts_node_child_by_field_name(spec, "name", 4);
+        TSNode alias = ts_node_child_by_field_name(spec, "alias", 5);
+
+        if (ts_node_is_null(local))
+        {
+            /* fallback: raw slice */
+            size_t s = ts_node_start_byte(spec), e = ts_node_end_byte(spec);
+            out = appendf(out, NULL, "var %.*s=%s.%.*s;", (int)(e - s), src + s, tbuf, (int)(e - s), src + s);
+        }
+        else
+        {
+            size_t ls = ts_node_start_byte(local), le = ts_node_end_byte(local);
+            if (!ts_node_is_null(alias))
+            {
+                size_t as = ts_node_start_byte(alias), ae = ts_node_end_byte(alias);
+                out = appendf(out, NULL, "var %.*s=%s.%.*s;", (int)(ae - as), src + as, /* alias */
+                              tbuf, (int)(le - ls), src + ls);                          /* local */
+            }
+            else
+            {
+                out = appendf(out, NULL, "var %.*s=%s.%.*s;", (int)(le - ls), src + ls, /* same name */
+                              tbuf, (int)(le - ls), src + ls);
+            }
+        }
+
+        pos++;
+        spec = find_child_type(named_imports, "import_specifier", &pos);
+    }
+
+    add_edit_take_ownership(edits, start, end, out);
+    tmpn++;
+    return 1;
+}
+
 static int rewrite_import_node(EditList *edits, const char *src, TSNode snode, RangeList *claimed, uint8_t *polysneeded)
 {
     size_t ns = ts_node_start_byte(snode), ne = ts_node_end_byte(snode);
@@ -1359,16 +2703,29 @@ static int rewrite_import_node(EditList *edits, const char *src, TSNode snode, R
     if (ts_node_is_null(string_frag))
         return 0;
     // look for template string here:
-
     TSNode child = find_child_type(snode, "import_clause", NULL);
     if (!ts_node_is_null(child))
     {
-        TSNode named = find_child_type(child, "named_imports", NULL);
+        TSNode defid = find_child_type(child, "identifier", NULL);       /* default import */
+        TSNode named = find_child_type(child, "named_imports", NULL);    /* { ... } */
+        TSNode nsimp = find_child_type(child, "namespace_import", NULL); /* * as ns */
+
+        if (!ts_node_is_null(defid) && !ts_node_is_null(named))
+        {
+            return do_default_and_named_imports(edits, src, snode, defid, named, string_frag, ns, ne);
+        }
+        if (!ts_node_is_null(defid))
+        {
+            return do_default_import(edits, src, snode, defid, string_frag, ns, ne);
+        }
         if (!ts_node_is_null(named))
+        {
             return do_named_imports(edits, src, snode, named, string_frag, ns, ne);
-        named = find_child_type(child, "namespace_import", NULL);
-        if (!ts_node_is_null(named))
-            return do_namespace_import(edits, src, snode, named, string_frag, ns, ne, polysneeded);
+        }
+        if (!ts_node_is_null(nsimp))
+        {
+            return do_namespace_import(edits, src, snode, nsimp, string_frag, ns, ne, polysneeded);
+        }
     }
 
     size_t sstart = ts_node_start_byte(string_frag), send = ts_node_end_byte(string_frag), slen = send - sstart;
@@ -1377,7 +2734,7 @@ static int rewrite_import_node(EditList *edits, const char *src, TSNode snode, R
     char *out = NULL;
     REMALLOC(out, 13 + slen);
     snprintf(out, slen + 13, "require(\"%.*s\");", (int)slen, src + sstart);
-
+    // check for newlines between ns and ne.  add an edit to insert however many, cuz this rewrites on one line
     add_edit_take_ownership(edits, ns, ne, out);
     return 1;
 }
@@ -1460,7 +2817,7 @@ static int rewrite_template_node(EditList *edits, const char *src, TSNode tpl_no
     while (li < nl || ei < neP)
     {
         // if it begins with expression
-        if( nl && neP && !li && !ei && exprs[0].start < lits[0].start)
+        if (nl && neP && !li && !ei && exprs[0].start < lits[0].start)
         {
             Piece E = exprs[ei++];
             if (np == capP)
@@ -1629,7 +2986,7 @@ static int rewrite_arrow_function_node(EditList *edits, const char *src, TSNode 
     if (rl_overlaps(claimed, ns, ne))
         return 0;
 
-    TSNode params = ts_node_child_by_field_name(arrow_node, "parameters", 9);
+    TSNode params = ts_node_child_by_field_name(arrow_node, "parameters", 10);
     TSNode body = ts_node_child_by_field_name(arrow_node, "body", 4);
     uint32_t n = ts_node_child_count(arrow_node);
     int arrow_idx = -1;
@@ -1817,37 +3174,61 @@ static int rewrite_arrow_function_node(EditList *edits, const char *src, TSNode 
         }
     }
 
-    
     // Inject default initializers for arrows if any assignment_pattern exists
     {
         int has_defaults = params_has_assignment_pattern(params);
-        if (has_defaults && rep) {
+        if (has_defaults && rep)
+        {
             char *default_inits = build_param_default_inits(src, params);
-            if (default_inits) {
+            if (default_inits)
+            {
                 const char *fun_kw = "function ";
                 char *p = strstr(rep, fun_kw);
-                if (p) {
+                if (p)
+                {
                     char *po = strchr(p + strlen(fun_kw), '(');
-                    if (po) {
+                    if (po)
+                    {
                         // find closing paren
-                        int dp = 0; char *pc = po;
-                        while (*pc) { if (*pc=='(') dp++; else if (*pc==')'){ dp--; if (dp==0) break; } pc++; }
-                        if (*pc == ')') {
+                        int dp = 0;
+                        char *pc = po;
+                        while (*pc)
+                        {
+                            if (*pc == '(')
+                                dp++;
+                            else if (*pc == ')')
+                            {
+                                dp--;
+                                if (dp == 0)
+                                    break;
+                            }
+                            pc++;
+                        }
+                        if (*pc == ')')
+                        {
                             char *brace = strchr(rep, '{');
-                            if (brace) {
+                            if (brace)
+                            {
                                 size_t head_len = (size_t)(po - rep);
                                 size_t pre_block = (size_t)(brace - rep + 1);
                                 size_t deflen = strlen(default_inits);
                                 size_t new_len = head_len + 3 + (strlen(rep) - (po - rep)) + deflen;
-                                char *nr = NULL; REMALLOC(nr, new_len + 1);
+                                char *nr = NULL;
+                                REMALLOC(nr, new_len + 1);
                                 size_t k = 0;
-                                memcpy(nr + k, rep, head_len); k += head_len;
-                                memcpy(nr + k, "() ", 3); k += 3;
-                                memcpy(nr + k, pc + 1, pre_block - (pc + 1 - rep)); k += pre_block - (pc + 1 - rep);
-                                memcpy(nr + k, default_inits, deflen); k += deflen;
-                                memcpy(nr + k, rep + pre_block, strlen(rep) - pre_block); k += strlen(rep) - pre_block;
+                                memcpy(nr + k, rep, head_len);
+                                k += head_len;
+                                memcpy(nr + k, "() ", 3);
+                                k += 3;
+                                memcpy(nr + k, pc + 1, pre_block - (pc + 1 - rep));
+                                k += pre_block - (pc + 1 - rep);
+                                memcpy(nr + k, default_inits, deflen);
+                                k += deflen;
+                                memcpy(nr + k, rep + pre_block, strlen(rep) - pre_block);
+                                k += strlen(rep) - pre_block;
                                 nr[k] = 0;
-                                free(rep); rep = nr;
+                                free(rep);
+                                rep = nr;
                             }
                         }
                     }
@@ -1856,7 +3237,7 @@ static int rewrite_arrow_function_node(EditList *edits, const char *src, TSNode 
             }
         }
     }
-if (bind_this)
+    if (bind_this)
     {
         size_t cap_bind = strlen(rep) + 20;
         char *wrapped = NULL;
@@ -1918,7 +3299,6 @@ static void rewrite_array_spread(EditList *edits, const char *src, TSNode arr, i
 
     int nshort = 0;
     int nspread = 0;
-
 
     for (i = 0; i < cnt1; i++)
     {
@@ -2010,10 +3390,10 @@ static void rewrite_array_spread(EditList *edits, const char *src, TSNode arr, i
         spos += l;                                                                                                     \
     } while (0)
 
-    if(isObject)
-        addstr(newobj,newobjsz);
+    if (isObject)
+        addstr(newobj, newobjsz);
     else
-        addstr(newarr,newarrsz); 
+        addstr(newarr, newarrsz);
 
     int lasttype = -1;
 
@@ -2082,26 +3462,90 @@ static void rewrite_array_spread(EditList *edits, const char *src, TSNode arr, i
 // ============== unified dispatcher/pass ==============
 
 // ===== ES5 Unicode regex transformer (reintroduced) =====
-typedef struct { char *s; size_t len; size_t cap; } SBuf;
-static void sb_init(SBuf *b){ b->cap=256; b->len=0; b->s=(char*)malloc(b->cap); b->s[0]='\0'; }
-static void sb_grow(SBuf *b, size_t need){ if (b->len + need + 1 > b->cap){ while (b->len + need + 1 > b->cap) b->cap = (b->cap<4096? b->cap*2 : b->cap + need + 1024); b->s=(char*)realloc(b->s,b->cap);} }
-static void sb_putc(SBuf *b, char c){ sb_grow(b,1); b->s[b->len++]=c; b->s[b->len]='\0'; }
-static void sb_puts(SBuf *b, const char *s){ size_t n=strlen(s); sb_grow(b,n); memcpy(b->s+b->len,s,n); b->len+=n; b->s[b->len]='\0'; }
-static void sb_putsn(SBuf *b, const char *s, size_t n){ sb_grow(b,n); memcpy(b->s+b->len,s,n); b->len+=n; b->s[b->len]='\0'; }
-static void sb_put_u4(SBuf *b, unsigned u){ char tmp[7]; snprintf(tmp,sizeof(tmp),"\\u%04X",u&0xFFFFu); sb_puts(b,tmp); }
+typedef struct
+{
+    char *s;
+    size_t len;
+    size_t cap;
+} SBuf;
+static void sb_init(SBuf *b)
+{
+    b->cap = 256;
+    b->len = 0;
+    b->s = (char *)malloc(b->cap);
+    b->s[0] = '\0';
+}
+static void sb_grow(SBuf *b, size_t need)
+{
+    if (b->len + need + 1 > b->cap)
+    {
+        while (b->len + need + 1 > b->cap)
+            b->cap = (b->cap < 4096 ? b->cap * 2 : b->cap + need + 1024);
+        b->s = (char *)realloc(b->s, b->cap);
+    }
+}
+static void sb_putc(SBuf *b, char c)
+{
+    sb_grow(b, 1);
+    b->s[b->len++] = c;
+    b->s[b->len] = '\0';
+}
+static void sb_puts(SBuf *b, const char *s)
+{
+    size_t n = strlen(s);
+    sb_grow(b, n);
+    memcpy(b->s + b->len, s, n);
+    b->len += n;
+    b->s[b->len] = '\0';
+}
+static void sb_putsn(SBuf *b, const char *s, size_t n)
+{
+    sb_grow(b, n);
+    memcpy(b->s + b->len, s, n);
+    b->len += n;
+    b->s[b->len] = '\0';
+}
+static void sb_put_u4(SBuf *b, unsigned u)
+{
+    char tmp[7];
+    snprintf(tmp, sizeof(tmp), "\\u%04X", u & 0xFFFFu);
+    sb_puts(b, tmp);
+}
+static void sb_free(SBuf *b) {
+    if (!b) return;
+    if (b->s) free(b->s);
+    b->s = NULL;
+    b->len = 0;
+    b->cap = 0;
+}
+static int hexv(int c)
+{
+    if (c >= '0' && c <= '9')
+        return c - '0';
+    if (c >= 'a' && c <= 'f')
+        return 10 + c - 'a';
+    if (c >= 'A' && c <= 'F')
+        return 10 + c - 'A';
+    return -1;
+}
+static void cp_to_surrogates_ul(unsigned long cp, unsigned *hi, unsigned *lo)
+{
+    unsigned long v = cp - 0x10000UL;
+    *hi = 0xD800u + (unsigned)((v >> 10) & 0x3FFu);
+    *lo = 0xDC00u + (unsigned)(v & 0x3FFu);
+}
 
-static int hexv(int c){ if(c>='0'&&c<='9')return c-'0'; if(c>='a'&&c<='f')return 10+c-'a'; if(c>='A'&&c<='F')return 10+c-'A'; return -1; }
-static void cp_to_surrogates_ul(unsigned long cp, unsigned *hi, unsigned *lo){ unsigned long v=cp-0x10000UL; *hi=0xD800u + (unsigned)((v>>10)&0x3FFu); *lo=0xDC00u + (unsigned)(v&0x3FFu); }
+static const char *BIG_DOT =
+    "(?:[\\0-\\t\\x0B\\f\\x0E-\\u2027\\u202A-\\uD7FF\\uE000-\\uFFFF]|[\\uD800-\\uDBFF][\\uDC00-\\uDFFF]|[\\uD800-\\uDBFF](?![\\uDC00-\\uDFFF])|(?:[^\\uD800-\\uDBFF]|^)[\\uDC00-\\uDFFF])";
 
-static const char *BIG_DOT = "(?:[\\0-\\t\\x0B\\f\\x0E-\\u2027\\u202A-\\uD7FF\\uE000-\\uFFFF]|[\\uD800-\\uDBFF][\\uDC00-\\uDFFF]|[\\uD800-\\uDBFF](?![\\uDC00-\\uDFFF])|(?:[^\\uD800-\\uDBFF]|^)[\\uDC00-\\uDFFF])";
-
-
-static void append_astral_range(SBuf *out, unsigned long a, unsigned long z){
+static void append_astral_range(SBuf *out, unsigned long a, unsigned long z)
+{
     unsigned ha, la, hz, lz;
     cp_to_surrogates_ul(a, &ha, &la);
     cp_to_surrogates_ul(z, &hz, &lz);
 
-    if (ha == hz) {
+    if (ha == hz)
+    {
         sb_puts(out, "(?:");
         sb_put_u4(out, ha);
         sb_putc(out, '[');
@@ -2124,7 +3568,8 @@ static void append_astral_range(SBuf *out, unsigned long a, unsigned long z){
     sb_putc(out, ')');
 
     /* middle blocks: [ha+1 - hz-1][DC00-DFFF] */
-    if (ha + 1 <= hz - 1) {
+    if (ha + 1 <= hz - 1)
+    {
         sb_putc(out, '|');
         sb_puts(out, "(?:");
         sb_putc(out, '[');
@@ -2152,15 +3597,23 @@ static void append_astral_range(SBuf *out, unsigned long a, unsigned long z){
     sb_putc(out, ')');
 }
 
-
-static char *rewrite_class_es5(const char *s, size_t len, size_t *i){
+static char *rewrite_class_es5(const char *s, size_t len, size_t *i)
+{
     size_t p = *i;
-    if (p>=len || s[p] != '[') return NULL;
+    if (p >= len || s[p] != '[')
+        return NULL;
     p++;
-    int neg = 0; if (p<len && s[p]=='^'){ neg=1; p++; }
+    int neg = 0;
+    if (p < len && s[p] == '^')
+    {
+        neg = 1;
+        p++;
+    }
 
-    SBuf bmp; sb_init(&bmp);
-    SBuf astral; sb_init(&astral);
+    SBuf bmp;
+    sb_init(&bmp);
+    SBuf astral;
+    sb_init(&astral);
 
     int esc = 0;
     int first = 1;
@@ -2170,80 +3623,216 @@ static char *rewrite_class_es5(const char *s, size_t len, size_t *i){
     unsigned long pend_cp = 0;
     int pend_is_cp = 0;
 
-    #define EMIT_PENDING() do{         if (pending){             if (pend_is_cp){                 if (pend_cp <= 0xFFFFUL){ sb_put_u4(&bmp, (unsigned)pend_cp); }                 else { if (astral.len) sb_putc(&astral,'|'); append_astral_range(&astral, pend_cp, pend_cp); }             }             pending = 0; pend_is_cp = 0; pend_cp = 0;         }     } while(0)
+#define EMIT_PENDING()                                                                                                 \
+    do                                                                                                                 \
+    {                                                                                                                  \
+        if (pending)                                                                                                   \
+        {                                                                                                              \
+            if (pend_is_cp)                                                                                            \
+            {                                                                                                          \
+                if (pend_cp <= 0xFFFFUL)                                                                               \
+                {                                                                                                      \
+                    sb_put_u4(&bmp, (unsigned)pend_cp);                                                                \
+                }                                                                                                      \
+                else                                                                                                   \
+                {                                                                                                      \
+                    if (astral.len)                                                                                    \
+                        sb_putc(&astral, '|');                                                                         \
+                    append_astral_range(&astral, pend_cp, pend_cp);                                                    \
+                }                                                                                                      \
+            }                                                                                                          \
+            pending = 0;                                                                                               \
+            pend_is_cp = 0;                                                                                            \
+            pend_cp = 0;                                                                                               \
+        }                                                                                                              \
+    } while (0)
 
-    while (p < len){
+    while (p < len)
+    {
         char c = s[p];
-        if (!esc) {
-            if (c == '\\'){ esc = 1; p++; continue; }
-            if (c == ']' && !first){ if (have_dash){ sb_putc(&bmp, '-'); have_dash = 0; } p++; break; }
-            if (c == '-' && !first && !have_dash){ have_dash = 1; p++; continue; }
+        if (!esc)
+        {
+            if (c == '\\')
+            {
+                esc = 1;
+                p++;
+                continue;
+            }
+            if (c == ']' && !first)
+            {
+                if (have_dash)
+                {
+                    sb_putc(&bmp, '-');
+                    have_dash = 0;
+                }
+                p++;
+                break;
+            }
+            if (c == '-' && !first && !have_dash)
+            {
+                have_dash = 1;
+                p++;
+                continue;
+            }
 
             first = 0;
-            if (have_dash && pending && pend_is_cp){
-                unsigned long a = pend_cp, b = (unsigned char)c; if (a>b){ unsigned long t=a;a=b;b=t; }
-                if (a<=0xFFFFUL && b<=0xFFFFUL){
-                    sb_put_u4(&bmp, (unsigned)a); sb_putc(&bmp,'-'); sb_put_u4(&bmp, (unsigned)b);
-                } else {
-                    if (a<0x10000UL) a=0x10000UL;
-                    if (astral.len) sb_putc(&astral,'|');
+            if (have_dash && pending && pend_is_cp)
+            {
+                unsigned long a = pend_cp, b = (unsigned char)c;
+                if (a > b)
+                {
+                    unsigned long t = a;
+                    a = b;
+                    b = t;
+                }
+                if (a <= 0xFFFFUL && b <= 0xFFFFUL)
+                {
+                    sb_put_u4(&bmp, (unsigned)a);
+                    sb_putc(&bmp, '-');
+                    sb_put_u4(&bmp, (unsigned)b);
+                }
+                else
+                {
+                    if (a < 0x10000UL)
+                        a = 0x10000UL;
+                    if (astral.len)
+                        sb_putc(&astral, '|');
                     append_astral_range(&astral, a, b);
                 }
-                pending = 0; pend_is_cp = 0; pend_cp = 0; have_dash = 0;
-                p++; continue;
+                pending = 0;
+                pend_is_cp = 0;
+                pend_cp = 0;
+                have_dash = 0;
+                p++;
+                continue;
             }
             EMIT_PENDING();
-            pending = 1; pend_is_cp = 1; pend_cp = (unsigned char)c;
-            p++; continue;
-        } else {
+            pending = 1;
+            pend_is_cp = 1;
+            pend_cp = (unsigned char)c;
+            p++;
+            continue;
+        }
+        else
+        {
             first = 0;
             size_t savep = p;
             unsigned long cp = 0;
             int r = 0;
-            if (p < len && s[p]=='u'){
+            if (p < len && s[p] == 'u')
+            {
                 size_t q = p;
-                if (q+1 < len && s[q+1]=='{'){
-                    q+=2; unsigned long v=0; int hv;
-                    while (q<len && s[q] != '}'){ hv=hexv((unsigned char)s[q++]); if (hv<0){ v=0; q=0; break; } v=(v<<4)+hv; if (v>0x10FFFFUL){ v=0; q=0; break; } }
-                    if (q && q<len && s[q]=='}'){ r=1; cp=v; p = q+1; }
-                } else if (q+4 < len){
-                    int v1=hexv((unsigned char)s[q+1]), v2=hexv((unsigned char)s[q+2]), v3=hexv((unsigned char)s[q+3]), v4=hexv((unsigned char)s[q+4]);
-                    if (v1>=0&&v2>=0&&v3>=0&&v4>=0){ r=1; cp=(unsigned)((v1<<12)|(v2<<8)|(v3<<4)|v4); p = q+5; }
+                if (q + 1 < len && s[q + 1] == '{')
+                {
+                    q += 2;
+                    unsigned long v = 0;
+                    int hv;
+                    while (q < len && s[q] != '}')
+                    {
+                        hv = hexv((unsigned char)s[q++]);
+                        if (hv < 0)
+                        {
+                            v = 0;
+                            q = 0;
+                            break;
+                        }
+                        v = (v << 4) + hv;
+                        if (v > 0x10FFFFUL)
+                        {
+                            v = 0;
+                            q = 0;
+                            break;
+                        }
+                    }
+                    if (q && q < len && s[q] == '}')
+                    {
+                        r = 1;
+                        cp = v;
+                        p = q + 1;
+                    }
                 }
-            } else if (p < len && s[p]=='x'){
-                if (p+2 < len){
-                    int v1=hexv((unsigned char)s[p+1]), v2=hexv((unsigned char)s[p+2]);
-                    if (v1>=0 && v2>=0){ r=1; cp=(unsigned)(v1<<4|v2); p += 3; }
+                else if (q + 4 < len)
+                {
+                    int v1 = hexv((unsigned char)s[q + 1]), v2 = hexv((unsigned char)s[q + 2]),
+                        v3 = hexv((unsigned char)s[q + 3]), v4 = hexv((unsigned char)s[q + 4]);
+                    if (v1 >= 0 && v2 >= 0 && v3 >= 0 && v4 >= 0)
+                    {
+                        r = 1;
+                        cp = (unsigned)((v1 << 12) | (v2 << 8) | (v3 << 4) | v4);
+                        p = q + 5;
+                    }
                 }
             }
-            if (r==1){
-                if (!have_dash){
+            else if (p < len && s[p] == 'x')
+            {
+                if (p + 2 < len)
+                {
+                    int v1 = hexv((unsigned char)s[p + 1]), v2 = hexv((unsigned char)s[p + 2]);
+                    if (v1 >= 0 && v2 >= 0)
+                    {
+                        r = 1;
+                        cp = (unsigned)(v1 << 4 | v2);
+                        p += 3;
+                    }
+                }
+            }
+            if (r == 1)
+            {
+                if (!have_dash)
+                {
                     EMIT_PENDING();
-                    pending = 1; pend_is_cp = 1; pend_cp = cp;
-                } else {
-                    if (!pending || !pend_is_cp){
+                    pending = 1;
+                    pend_is_cp = 1;
+                    pend_cp = cp;
+                }
+                else
+                {
+                    if (!pending || !pend_is_cp)
+                    {
                         have_dash = 0;
                         sb_putc(&bmp, '-');
                         EMIT_PENDING();
-                        pending = 1; pend_is_cp = 1; pend_cp = cp;
-                    } else {
-                        unsigned long a = pend_cp, b = cp; if (a>b){ unsigned long t=a;a=b;b=t; }
-                        if (a<=0xFFFFUL && b<=0xFFFFUL){
-                            sb_put_u4(&bmp, (unsigned)a); sb_putc(&bmp,'-'); sb_put_u4(&bmp, (unsigned)b);
-                        } else {
-                            if (a<0x10000UL) a=0x10000UL;
-                            if (astral.len) sb_putc(&astral,'|');
+                        pending = 1;
+                        pend_is_cp = 1;
+                        pend_cp = cp;
+                    }
+                    else
+                    {
+                        unsigned long a = pend_cp, b = cp;
+                        if (a > b)
+                        {
+                            unsigned long t = a;
+                            a = b;
+                            b = t;
+                        }
+                        if (a <= 0xFFFFUL && b <= 0xFFFFUL)
+                        {
+                            sb_put_u4(&bmp, (unsigned)a);
+                            sb_putc(&bmp, '-');
+                            sb_put_u4(&bmp, (unsigned)b);
+                        }
+                        else
+                        {
+                            if (a < 0x10000UL)
+                                a = 0x10000UL;
+                            if (astral.len)
+                                sb_putc(&astral, '|');
                             append_astral_range(&astral, a, b);
                         }
-                        pending = 0; pend_is_cp = 0; pend_cp = 0;
+                        pending = 0;
+                        pend_is_cp = 0;
+                        pend_cp = 0;
                         have_dash = 0;
                     }
                 }
                 esc = 0;
                 continue;
-            } else {
+            }
+            else
+            {
                 EMIT_PENDING();
-                sb_putc(&bmp, '\\'); sb_putc(&bmp, s[savep]);
+                sb_putc(&bmp, '\\');
+                sb_putc(&bmp, s[savep]);
                 p = savep + 1;
                 esc = 0;
                 continue;
@@ -2252,115 +3841,712 @@ static char *rewrite_class_es5(const char *s, size_t len, size_t *i){
     }
 
     EMIT_PENDING();
-    if (have_dash){ sb_putc(&bmp, '-'); have_dash = 0; }
-
-    SBuf out; sb_init(&out);
-    if (!neg){
-        if (astral.len == 0){
-            sb_putc(&out,'['); sb_putsn(&out, bmp.s, bmp.len); sb_putc(&out,']');
-        } else {
-            sb_puts(&out,"(?:");
-            if (bmp.len){ sb_putc(&out,'['); sb_putsn(&out,bmp.s,bmp.len); sb_putc(&out,']'); sb_putc(&out,'|'); }
-            sb_putsn(&out, astral.s, astral.len);
-            sb_putc(&out,')');
-        }
-    } else {
-        sb_puts(&out,"(?:");
-        sb_puts(&out,"[^\\uD800-\\uDFFF"); if (bmp.len) sb_putsn(&out,bmp.s,bmp.len); sb_putc(&out,']'); sb_putc(&out,'|');
-        if (astral.len){ sb_puts(&out,"(?!"); sb_putsn(&out,astral.s,astral.len); sb_putc(&out,')'); }
-        sb_puts(&out,"(?:[\\uD800-\\uDBFF][\\uDC00-\\uDFFF])");
-        sb_putc(&out,')');
+    if (have_dash)
+    {
+        sb_putc(&bmp, '-');
+        have_dash = 0;
     }
-    free(bmp.s); free(astral.s);
+
+    SBuf out;
+    sb_init(&out);
+    if (!neg)
+    {
+        if (astral.len == 0)
+        {
+            sb_putc(&out, '[');
+            sb_putsn(&out, bmp.s, bmp.len);
+            sb_putc(&out, ']');
+        }
+        else
+        {
+            sb_puts(&out, "(?:");
+            if (bmp.len)
+            {
+                sb_putc(&out, '[');
+                sb_putsn(&out, bmp.s, bmp.len);
+                sb_putc(&out, ']');
+                sb_putc(&out, '|');
+            }
+            sb_putsn(&out, astral.s, astral.len);
+            sb_putc(&out, ')');
+        }
+    }
+    else
+    {
+        sb_puts(&out, "(?:");
+        sb_puts(&out, "[^\\uD800-\\uDFFF");
+        if (bmp.len)
+            sb_putsn(&out, bmp.s, bmp.len);
+        sb_putc(&out, ']');
+        sb_putc(&out, '|');
+        if (astral.len)
+        {
+            sb_puts(&out, "(?!");
+            sb_putsn(&out, astral.s, astral.len);
+            sb_putc(&out, ')');
+        }
+        sb_puts(&out, "(?:[\\uD800-\\uDBFF][\\uDC00-\\uDFFF])");
+        sb_putc(&out, ')');
+    }
+    free(bmp.s);
+    free(astral.s);
     *i = p;
     return out.s;
 }
-static char *regex_u_to_es5_pattern(const char *in, size_t len){
-    SBuf out; sb_init(&out);
-    int esc=0;
-    for (size_t i=0;i<len;){
-        char c=in[i];
-        if (!esc){
-            if (c=='\\'){ esc=1; sb_putc(&out,'\\'); i++; continue; }
-            if (c=='['){ char *cls=rewrite_class_es5(in,len,&i); if(!cls){ free(out.s); return NULL;} sb_puts(&out,cls); free(cls); continue; }
-            if (c=='.'){ sb_puts(&out, BIG_DOT); i++; continue; }
-            sb_putc(&out,c); i++; continue;
-        } else {
-            size_t j=i+1;
-            if (in[i]=='u' && j<len && in[j]=='{'){
-                out.len--; out.s[out.len]='\0';
-                unsigned long cp=0; int hv; j++;
-                while (j<len && in[j] != '}'){ hv=hexv((unsigned char)in[j++]); if (hv<0){ free(out.s); return NULL; } cp=(cp<<4)+hv; if (cp>0x10FFFFUL){ free(out.s); return NULL; } }
-                if (j>=len || in[j] != '}'){ free(out.s); return NULL; }
+
+static char *regex_u_to_es5_pattern(const char *in, size_t len)
+{
+    SBuf out;
+    sb_init(&out);
+    int esc = 0;
+    for (size_t i = 0; i < len;)
+    {
+        char c = in[i];
+        if (!esc)
+        {
+            if (c == '\\')
+            {
+                esc = 1;
+                sb_putc(&out, '\\');
+                i++;
+                continue;
+            }
+            if (c == '[')
+            {
+                char *cls = rewrite_class_es5(in, len, &i);
+                if (!cls)
+                {
+                    free(out.s);
+                    return NULL;
+                }
+                sb_puts(&out, cls);
+                free(cls);
+                continue;
+            }
+            if (c == '.')
+            {
+                sb_puts(&out, BIG_DOT);
+                i++;
+                continue;
+            }
+            sb_putc(&out, c);
+            i++;
+            continue;
+        }
+        else
+        {
+            size_t j = i + 1;
+            if (in[i] == 'u' && j < len && in[j] == '{')
+            {
+                out.len--;
+                out.s[out.len] = '\0';
+                unsigned long cp = 0;
+                int hv;
                 j++;
-                if (cp<=0xFFFFUL){ sb_put_u4(&out,(unsigned)cp); }
-                else { unsigned hi,lo; cp_to_surrogates_ul(cp,&hi,&lo); sb_put_u4(&out,hi); sb_put_u4(&out,lo); }
-                i=j; esc=0; continue;
-            } else {
-                sb_putc(&out,in[i]); i++; esc=0; continue;
+                while (j < len && in[j] != '}')
+                {
+                    hv = hexv((unsigned char)in[j++]);
+                    if (hv < 0)
+                    {
+                        free(out.s);
+                        return NULL;
+                    }
+                    cp = (cp << 4) + hv;
+                    if (cp > 0x10FFFFUL)
+                    {
+                        free(out.s);
+                        return NULL;
+                    }
+                }
+                if (j >= len || in[j] != '}')
+                {
+                    free(out.s);
+                    return NULL;
+                }
+                j++;
+                if (cp <= 0xFFFFUL)
+                {
+                    sb_put_u4(&out, (unsigned)cp);
+                }
+                else
+                {
+                    unsigned hi, lo;
+                    cp_to_surrogates_ul(cp, &hi, &lo);
+                    sb_put_u4(&out, hi);
+                    sb_put_u4(&out, lo);
+                }
+                i = j;
+                esc = 0;
+                continue;
+            }
+            else
+            {
+                sb_putc(&out, in[i]);
+                i++;
+                esc = 0;
+                continue;
             }
         }
     }
     return out.s;
 }
 
-static int rewrite_regex_u_to_es5(EditList *edits, const char *src, TSNode regex_node, RangeList *claimed){
-    if (strcmp(ts_node_type(regex_node), "regex") != 0) return 0;
-    size_t rs=ts_node_start_byte(regex_node), re=ts_node_end_byte(regex_node);
-    if (rl_overlaps(claimed, rs, re)) return 0;
-    TSNode pattern = find_child_type(regex_node, "regex_pattern", NULL);
-    TSNode flags   = find_child_type(regex_node, "regex_flags", NULL);
-    if (ts_node_is_null(pattern) || ts_node_is_null(flags)) return 0;
-    size_t ps=ts_node_start_byte(pattern), pe=ts_node_end_byte(pattern);
-    size_t fs=ts_node_start_byte(flags), fe=ts_node_end_byte(flags);
-    int has_u=0; for (size_t i=fs;i<fe;i++) if (src[i]=='u'){ has_u=1; break; }
-    if (!has_u) return 0;
-    char *newpat = regex_u_to_es5_pattern(src+ps, pe-ps);
-    if (!newpat) return 0;
-    size_t nflen=0; char *newflags=NULL;
-    if (fe>fs){ newflags=(char*)malloc((fe-fs)+1); for(size_t i=fs;i<fe;i++) if (src[i] != 'u') newflags[nflen++]=src[i]; newflags[nflen]='\0'; }
-    size_t outlen = 1 + strlen(newpat) + 1 + nflen;
-    char *rep = (char*)malloc(outlen+1); size_t k=0;
-    rep[k++]='/'; memcpy(rep+k,newpat,strlen(newpat)); k+=strlen(newpat); rep[k++]='/'; if(nflen){ memcpy(rep+k,newflags,nflen); k+=nflen; } rep[k]='\0';
-    free(newpat); if (newflags) free(newflags);
-    add_edit_take_ownership(edits, rs, re, rep); rl_add(claimed, rs, re);
+/* === ES6 class -> ES5 function/prototype rewrite (minimal) ===
+   Handles:
+     class C { constructor(...) { ... } m(...) { ... } static s(...) { ... } }
+     class C extends B { ... }  with super(...) in constructor
+   Limitations:
+     - No private fields, no decorators, no computed property names, no getters/setters, no async/generator methods.
+     - `super.foo(...)` inside methods is not handled (only bare `super(...)` in constructor).
+*/
+
+/* Helper: emit ES5 constructor + proto + methods into SBuf out.
+   mode: 0=declaration (function C... + stmts), 1=expression (IIFE that returns C)
+   cname is provided (never NULL). sups/supe valid iff has_super.
+   Handles: instance/static methods; simple getters/setters; computed names using bracket; rewrites super.method(...) in
+   method bodies.
+*/
+/* Emits:
+   // no extends
+   var Name = function() {
+     function Name(params) { _TrN_Sp.classCallCheck(this, Name); * body * }
+     _TrN_Sp.createClass(Name, [ {key:'m', value:function m(){...}}, ... ]);
+     return Name;
+   }();
+
+   // with extends Super
+   var Name = function(_Super) {
+     _TrN_Sp.inherits(Name, _Super);
+     var _super = _TrN_Sp.createSuper(Name);
+     function Name(params) {
+       var _this;
+       _TrN_Sp.classCallCheck(this, Name);
+       _this = _super.call(this, *super args as written*);
+       * remainder of body, with this. field inits left as-is *
+       return _this;
+     }
+     _TrN_Sp.createClass(Name, [ ...proto... ], [ ...static... ]);
+     return Name;
+   }(Super);
+*/
+static void es5_emit_class_core(SBuf *out,
+    const char *src,
+    const char *cname, size_t cname_len,
+    int has_super, size_t sups, size_t supe,
+    TSNode body)
+{
+    /* ——— gather constructor and methods ——— */
+    int ctor_found = 0;
+    TSNode ctor_params = {{0}};
+    TSNode ctor_body   = {{0}};
+    uint32_t n = ts_node_child_count(body);
+
+    // Buckets for methods
+    SBuf proto_arr; sb_init(&proto_arr);   // will hold " {key:'x',value:function x(){...}},..."
+    SBuf static_arr; sb_init(&static_arr); // same for statics
+
+    for (uint32_t i = 0; i < n; i++) {
+        TSNode mth = ts_node_child(body, i);
+        if (!ts_node_is_named(mth)) continue;
+        if (strcmp(ts_node_type(mth), "method_definition") != 0) continue;
+
+        // constructor?
+        TSNode nname = ts_node_child_by_field_name(mth, "name", 4);
+        const char *nt = ts_node_is_null(nname) ? "" : ts_node_type(nname);
+        int is_ctor = (!ts_node_is_null(nname) && strcmp(nt, "property_identifier") == 0) &&
+                      (strncmp(src + ts_node_start_byte(nname), "constructor", 11) == 0);
+
+        TSNode params = ts_node_child_by_field_name(mth, "parameters", 10);
+        TSNode mb     = ts_node_child_by_field_name(mth, "body", 4);
+        int is_static = 0;
+        // detect "static" modifier (tree-sitter exposes a named child "static" token)
+        for (uint32_t j = 0, cn = ts_node_child_count(mth); j < cn; j++) {
+            TSNode ch = ts_node_child(mth, j);
+            if (ts_node_is_named(ch)) continue;
+            size_t ss = ts_node_start_byte(ch), se = ts_node_end_byte(ch);
+            if (se > ss && strncmp(src + ss, "static", 6) == 0) { is_static = 1; break; }
+        }
+
+        if (is_ctor) {
+            ctor_found = 1;
+            ctor_params = params;
+            ctor_body   = mb;
+            continue;
+        }
+
+        // Only simple identifiers for key (matches your example)
+        if (ts_node_is_null(nname) || strcmp(ts_node_type(nname), "property_identifier") != 0)
+            continue;
+
+        size_t ks = ts_node_start_byte(nname), ke = ts_node_end_byte(nname);
+        size_t ps = ts_node_is_null(params) ? 0 : ts_node_start_byte(params);
+        size_t pe = ts_node_is_null(params) ? 0 : ts_node_end_byte(params);
+        size_t bs = ts_node_is_null(mb)     ? 0 : ts_node_start_byte(mb);
+        size_t be = ts_node_is_null(mb)     ? 0 : ts_node_end_byte(mb);
+
+        SBuf *bucket = is_static ? &static_arr : &proto_arr;
+        // comma if needed
+        if (bucket->len) sb_puts(bucket, ",");
+        // {key:'name',value:function name(){...}}
+        sb_puts(bucket, "{key:'");
+        sb_putsn(bucket, src + ks, ke - ks);
+        sb_puts(bucket, "',value:function ");
+        sb_putsn(bucket, src + ks, ke - ks);
+        if (ps && pe) sb_putsn(bucket, src + ps, pe - ps);
+        else sb_puts(bucket, "()");
+        sb_puts(bucket, " ");
+        if (bs && be) sb_putsn(bucket, src + bs, be - bs);
+        else sb_puts(bucket, "{}");
+        sb_puts(bucket, "}");
+    }
+
+    /* ——— open wrapper ——— */
+    if (!has_super) {
+        sb_puts(out, "var ");
+        sb_putsn(out, cname, cname_len);
+        sb_puts(out, " = (function() {");
+    } else {
+        sb_puts(out, "var ");
+        sb_putsn(out, cname, cname_len);
+        sb_puts(out, " = (function(_Super) {_TrN_Sp.inherits(");
+        sb_putsn(out, cname, cname_len);
+        sb_puts(out, ", _Super);var _super = _TrN_Sp.createSuper(");
+        sb_putsn(out, cname, cname_len);
+        sb_puts(out, ");");
+    }
+
+    /* ——— constructor ——— */
+    sb_puts(out, "  function ");
+    sb_putsn(out, cname, cname_len);
+
+    if (ctor_found && !ts_node_is_null(ctor_params)) {
+        size_t ps = ts_node_start_byte(ctor_params), pe = ts_node_end_byte(ctor_params);
+        sb_putsn(out, src + ps, pe - ps);
+    } else {
+        sb_puts(out, "()"); // synthesize if missing
+    }
+    sb_puts(out, " {");
+
+    if (has_super) {
+        // In the simple/most common case, `super(args)` is the first statement.
+        // Textually grab constructor body and rewrite a single leading "super(" call.
+        if (ctor_found && !ts_node_is_null(ctor_body)) {
+            size_t bs = ts_node_start_byte(ctor_body), be = ts_node_end_byte(ctor_body);
+            /* ts 'body' includes the surrounding braces; slice to just the contents */
+            const char *b = src + bs + 1;
+            size_t blen = (be > bs + 1) ? (be - bs - 2) : 0;  /* drop leading '{' and trailing '}' */
+            // naive rewrite: look for "super(" at top-level of body text once
+            const char *open = strstr(b, "super(");
+            if (open) {
+                /* Find '(' right after 'super' and its matching ')' */
+                const char *lp = strchr(open, '(');
+                if (!lp) goto NO_SUPER_REWRITE;
+
+                size_t args_s = (size_t)(lp + 1 - b); /* first char inside '(' */
+                int depth = 1;
+                size_t i = args_s;
+                size_t call_rp = blen; /* fallback */
+                for (; i < blen; i++) {
+                    char c = b[i];
+                    if (c == '(') depth++;
+                    else if (c == ')') { depth--; if (depth == 0) { call_rp = i; break; } }
+                }
+                if (depth != 0) goto NO_SUPER_REWRITE;
+
+                /* Emit prelude */
+                sb_puts(out, "var _this;_TrN_Sp.classCallCheck(this, ");
+                sb_putsn(out, cname, cname_len);
+                sb_puts(out, ");");
+
+                /* _this = _super.call(this, <args>); */
+                sb_puts(out, "_this = _super.call(this, ");
+                if (call_rp > args_s) sb_putsn(out, b + args_s, call_rp - args_s);
+                sb_puts(out, ");");
+
+                /* Copy remainder of ctor body after the super(...) statement’s semicolon */
+                size_t after = call_rp + 1;               /* position after ')' */
+                if (after < blen && b[after] == ';') after++; /* swallow trailing ';' if any */
+                if (after < blen) sb_putsn(out, b + after, blen - after);
+
+                /* Ensure the constructor returns _this */
+                sb_puts(out, "return _this;");
+            } else {
+            NO_SUPER_REWRITE:
+                sb_puts(out, "_TrN_Sp.classCallCheck(this, ");
+                sb_putsn(out, cname, cname_len);
+                sb_puts(out, ");");
+                if (blen) sb_putsn(out, b, blen);
+            }
+
+        } else {
+            sb_puts(out, "var _this;_TrN_Sp.classCallCheck(this, ");
+            sb_putsn(out, cname, cname_len);
+            sb_puts(out, ");return _this;");
+        }
+    } else {
+        // no extends
+        sb_puts(out, "_TrN_Sp.classCallCheck(this, ");
+        sb_putsn(out, cname, cname_len);
+        sb_puts(out, ");");
+        if (ctor_found && !ts_node_is_null(ctor_body)) {
+            size_t bs = ts_node_start_byte(ctor_body), be = ts_node_end_byte(ctor_body);
+            sb_putsn(out, src + bs, be - bs);
+        }
+    }
+    sb_puts(out, "};");
+
+    /* ——— _TrN_Sp.createClass(Name, [proto], [static]) ——— */
+    sb_puts(out, "_TrN_Sp.createClass(");
+    sb_putsn(out, cname, cname_len);
+    sb_puts(out, ",[");
+    sb_puts(out, proto_arr.s);
+    sb_puts(out, "],[" );
+    sb_puts(out, static_arr.s);
+    sb_puts(out, "]);");
+
+    /* ——— return + close wrapper ——— */
+    sb_puts(out, "return ");
+    sb_putsn(out, cname, cname_len);
+    sb_puts(out, ";");
+
+    if (!has_super) {
+        sb_puts(out, "})();");
+    } else {
+        sb_puts(out, "})(");
+        sb_putsn(out, src + sups, supe - sups);
+        sb_puts(out, ");");
+    }
+
+    sb_free(&proto_arr);
+    sb_free(&static_arr);
+}
+
+static int rewrite_class_to_es5(EditList *edits, const char *src, TSNode class_node, RangeList *claimed)
+{
+    const char *ctype = ts_node_type(class_node);
+    int has_super=0;
+
+    if (strcmp(ctype, "class_declaration") != 0)
+        return 0;
+    size_t cs = ts_node_start_byte(class_node), ce = ts_node_end_byte(class_node);
+    if (rl_overlaps(claimed, cs, ce))
+        return 0;
+
+    TSNode id = ts_node_child_by_field_name(class_node, "name", 4);
+    if (ts_node_is_null(id))
+        return 0;
+
+
+    size_t ids = ts_node_start_byte(id), ide = ts_node_end_byte(id);
+    const char *nameptr = src + ids;
+    size_t namelen = ide - ids;
+
+
+    TSNode body = ts_node_child_by_field_name(class_node, "body", 4);
+    if (ts_node_is_null(body))
+        return 0;
+
+    /*
+    TSNode supercls = search_for_node_type(body, "super");
+    if(!ts_node_is_null(supercls))
+    {
+        has_super = 1;
+    }
+
+    size_t sups = 0, supe = 0;
+    if (has_super)
+    {
+        sups = ts_node_start_byte(supercls);
+        supe = ts_node_end_byte(supercls);
+    }
+    */
+
+    size_t sups = 0, supe = 0;
+    TSNode heritage = (TSNode){0};
+    /* find the `class_heritage` child node on this class */
+    for (uint32_t i = 0, n = ts_node_child_count(class_node); i < n; i++) {
+        TSNode ch = ts_node_child(class_node, i);
+        if (!ts_node_is_named(ch)) continue;
+        if (strcmp(ts_node_type(ch), "class_heritage") == 0) {
+            heritage = ch;
+            break;
+        }
+    }
+
+    if (!ts_node_is_null(heritage)) {
+        /* inside class_heritage, the first NAMED child after the `extends` token
+           is the superclass expression (identifier, member_expression, etc.) */
+        TSNode sup_expr = (TSNode){0};
+        for (uint32_t j = 0, m = ts_node_child_count(heritage); j < m; j++) {
+            TSNode hch = ts_node_child(heritage, j);
+            if (!ts_node_is_named(hch)) continue;   /* skip the literal 'extends' token */
+            sup_expr = hch;
+            break;
+        }
+        if (!ts_node_is_null(sup_expr)) {
+            has_super = 1;
+            sups = ts_node_start_byte(sup_expr);
+            supe = ts_node_end_byte(sup_expr);
+        }
+    }
+
+
+
+    SBuf out;
+    sb_init(&out);
+    es5_emit_class_core(&out, src, nameptr, namelen, has_super, sups, supe, body);
+    char *rep = out.s;
+    add_edit_take_ownership(edits, cs, ce, rep);
+    rl_add(claimed, cs, ce);
     return 1;
 }
 
-static void tp_linecol_from_src_offset_utf8(const char *src,
-                                            size_t src_len,
-                                            uint32_t byte_off,
-                                            int *out_line,
+/* class expression -> ES5: replace node with IIFE returning constructor.
+   Handles named and anonymous expressions. *
+static int rewrite_class_expression_to_es5(EditList *edits, const char *src, TSNode class_node, RangeList *claimed,
+                                           uint8_t *polysneeded)
+{
+    if (strcmp(ts_node_type(class_node), "class") != 0)
+        return 0;
+    size_t cs = ts_node_start_byte(class_node), ce = ts_node_end_byte(class_node);
+    if (rl_overlaps(claimed, cs, ce))
+        return 0;
+
+    TSNode id = ts_node_child_by_field_name(class_node, "name", 4);
+    char tmpname[64];
+    const char *nameptr = NULL;
+    size_t namelen = 0;
+    if (ts_node_is_null(id))
+    {
+        // anonymous: synthesize a name using offset to avoid collisions
+        snprintf(tmpname, sizeof(tmpname), "__TrC%u", (unsigned)cs);
+        nameptr = tmpname;
+        namelen = strlen(tmpname);
+    }
+    else
+    {
+        size_t ids = ts_node_start_byte(id), ide = ts_node_end_byte(id);
+        nameptr = src + ids;
+        namelen = ide - ids;
+    }
+
+    TSNode supercls = ts_node_child_by_field_name(class_node, "superclass", 10);
+    int has_super = !ts_node_is_null(supercls);
+    size_t sups = 0, supe = 0;
+    if (has_super)
+    {
+        sups = ts_node_start_byte(supercls);
+        supe = ts_node_end_byte(supercls);
+    }
+    TSNode body = ts_node_child_by_field_name(class_node, "body", 4);
+    if (ts_node_is_null(body))
+        return 0;
+
+    SBuf out;
+    sb_init(&out);
+    sb_puts(&out, "(function(){");
+    es5_emit_class_core(&out, src, nameptr, namelen, has_super, sups, supe, body);
+    sb_puts(&out, "return ");
+    sb_putsn(&out, nameptr, namelen);
+    sb_puts(&out, ";})()");
+    char *rep = out.s;
+    add_edit_take_ownership(edits, cs, ce, rep);
+    rl_add(claimed, cs, ce);
+    return 1;
+}
+*/
+
+static int rewrite_class_expression_to_es5(EditList *edits, const char *src, TSNode class_node, RangeList *claimed,
+                                           uint8_t *polysneeded)
+{
+    if (strcmp(ts_node_type(class_node), "class") != 0)
+        return 0;
+
+    size_t cs = ts_node_start_byte(class_node), ce = ts_node_end_byte(class_node);
+    if (rl_overlaps(claimed, cs, ce)) return 0;
+
+    TSNode id = ts_node_child_by_field_name(class_node, "name", 4);
+    char tmpname[64]; const char *nameptr = NULL;
+    size_t namelen = 0;
+    if (ts_node_is_null(id)) {
+        snprintf(tmpname, sizeof(tmpname), "__TrC%u", (unsigned)cs);
+        nameptr = tmpname; namelen = strlen(tmpname);
+    }
+    else 
+    {
+        size_t ids = ts_node_start_byte(id), ide = ts_node_end_byte(id);
+        nameptr = src + ids;
+        namelen = ide - ids;
+    }
+
+    int has_super = 0;
+    size_t sups = 0, supe = 0;
+
+    TSNode heritage = (TSNode){0};
+    /* find the `class_heritage` child node on this class */
+    for (uint32_t i = 0, n = ts_node_child_count(class_node); i < n; i++) {
+        TSNode ch = ts_node_child(class_node, i);
+        if (!ts_node_is_named(ch)) continue;
+        if (strcmp(ts_node_type(ch), "class_heritage") == 0) {
+            heritage = ch;
+            break;
+        }
+    }
+
+    if (!ts_node_is_null(heritage)) {
+        /* inside class_heritage, the first NAMED child after the `extends` token
+           is the superclass expression (identifier, member_expression, etc.) */
+        TSNode sup_expr = (TSNode){0};
+        for (uint32_t j = 0, m = ts_node_child_count(heritage); j < m; j++) {
+            TSNode hch = ts_node_child(heritage, j);
+            if (!ts_node_is_named(hch)) continue;   /* skip the literal 'extends' token */
+            sup_expr = hch;
+            break;
+        }
+        if (!ts_node_is_null(sup_expr)) {
+            has_super = 1;
+            sups = ts_node_start_byte(sup_expr);
+            supe = ts_node_end_byte(sup_expr);
+        }
+    }
+    /*
+    TSNode supercls = ts_node_child_by_field_name(class_node, "superclass", 10);
+    if (!ts_node_is_null(supercls)) {
+        has_super = 1;
+        sups = ts_node_start_byte(supercls);
+        supe = ts_node_end_byte(supercls);
+    }
+    */
+    TSNode body = ts_node_child_by_field_name(class_node, "body", 4);
+    if (ts_node_is_null(body))
+        return 0;
+
+    SBuf out; sb_init(&out);
+    // emit the same var Name = function(){...}(); but as an expression we only need the IIFE value.
+    // So we generate the same code and then reference the Name immediately.
+    es5_emit_class_core(&out, src, nameptr, namelen, has_super, sups, supe, body);
+
+    // Replace with just the identifier, because the class expression should yield the constructor.
+    // The var/IIFE we just emitted must be inserted *before* and we return the name here.
+    // Simpler approach: replace the class expression node with (function(){...return Name;}())
+    // However, to keep parity with your target, we reuse the emitted var but wrap as expression:
+    // For safety in expressions, emit directly as an IIFE returning the constructor:
+    //   (function(){ ...; return Name; }())
+    // If you prefer the "var" form only for declarations, keep the simple IIFE here:
+    // We'll do that:
+    SBuf expr; sb_init(&expr);
+    sb_puts(&expr, "(function(){");
+    sb_puts(&expr, out.s);  // defines var Name = function(){...}();
+    sb_puts(&expr, "return "); sb_putsn(&expr, nameptr, namelen); sb_puts(&expr, ";}())");
+
+    add_edit_take_ownership(edits, cs, ce, expr.s);
+    sb_free(&out); // expr now owns the final buffer
+    rl_add(claimed, cs, ce);
+    return 1;
+}
+
+static int rewrite_regex_u_to_es5(EditList *edits, const char *src, TSNode regex_node, RangeList *claimed)
+{
+    if (strcmp(ts_node_type(regex_node), "regex") != 0)
+        return 0;
+    size_t rs = ts_node_start_byte(regex_node), re = ts_node_end_byte(regex_node);
+    if (rl_overlaps(claimed, rs, re))
+        return 0;
+    TSNode pattern = find_child_type(regex_node, "regex_pattern", NULL);
+    TSNode flags = find_child_type(regex_node, "regex_flags", NULL);
+    if (ts_node_is_null(pattern) || ts_node_is_null(flags))
+        return 0;
+    size_t ps = ts_node_start_byte(pattern), pe = ts_node_end_byte(pattern);
+    size_t fs = ts_node_start_byte(flags), fe = ts_node_end_byte(flags);
+    int has_u = 0;
+    for (size_t i = fs; i < fe; i++)
+        if (src[i] == 'u')
+        {
+            has_u = 1;
+            break;
+        }
+    if (!has_u)
+        return 0;
+    char *newpat = regex_u_to_es5_pattern(src + ps, pe - ps);
+    if (!newpat)
+        return 0;
+    size_t nflen = 0;
+    char *newflags = NULL;
+    if (fe > fs)
+    {
+        newflags = (char *)malloc((fe - fs) + 1);
+        for (size_t i = fs; i < fe; i++)
+            if (src[i] != 'u')
+                newflags[nflen++] = src[i];
+        newflags[nflen] = '\0';
+    }
+    size_t outlen = 1 + strlen(newpat) + 1 + nflen;
+    char *rep = (char *)malloc(outlen + 1);
+    size_t k = 0;
+    rep[k++] = '/';
+    memcpy(rep + k, newpat, strlen(newpat));
+    k += strlen(newpat);
+    rep[k++] = '/';
+    if (nflen)
+    {
+        memcpy(rep + k, newflags, nflen);
+        k += nflen;
+    }
+    rep[k] = '\0';
+    free(newpat);
+    if (newflags)
+        free(newflags);
+    add_edit_take_ownership(edits, rs, re, rep);
+    rl_add(claimed, rs, re);
+    return 1;
+}
+
+static void tp_linecol_from_src_offset_utf8(const char *src, size_t src_len, uint32_t byte_off, int *out_line,
                                             int *out_col)
 {
-    if (!src) { if (out_line) *out_line = 1; if (out_col) *out_col = 1; return; }
+    if (!src)
+    {
+        if (out_line)
+            *out_line = 1;
+        if (out_col)
+            *out_col = 1;
+        return;
+    }
 
-    if (src_len == 0) {
+    if (src_len == 0)
+    {
         src_len = strlen(src); // safe if NUL-terminated; otherwise pass length explicitly
     }
 
-    if (byte_off > src_len) {
+    if (byte_off > src_len)
+    {
         byte_off = (uint32_t)src_len; // clamp
     }
 
     // Count lines up to byte_off, tracking start index of current line.
-    uint32_t line = 1;            // 1-based
-    size_t   line_start = 0;      // byte index of current line start
+    uint32_t line = 1;     // 1-based
+    size_t line_start = 0; // byte index of current line start
 
-    for (size_t i = 0; i < byte_off; ) {
+    for (size_t i = 0; i < byte_off;)
+    {
         unsigned char c = (unsigned char)src[i];
 
-        if (c == '\n') {
+        if (c == '\n')
+        {
             line++;
             line_start = i + 1;
             i++;
             continue;
         }
-        if (c == '\r') {
+        if (c == '\r')
+        {
             // Treat CRLF as one newline; lone CR as newline too.
-            if (i + 1 < byte_off && (unsigned char)src[i + 1] == '\n') {
+            if (i + 1 < byte_off && (unsigned char)src[i + 1] == '\n')
+            {
                 i += 2;
-            } else {
+            }
+            else
+            {
                 i += 1;
             }
             line++;
@@ -2374,40 +4560,39 @@ static void tp_linecol_from_src_offset_utf8(const char *src,
     // Column in UTF-8 code points from line_start to byte_off (exclusive).
     // Count only leading bytes of code points (bytes where (b & 0xC0) != 0x80).
     int col = 1; // 1-based
-    for (size_t i = line_start; i < byte_off; i++) {
+    for (size_t i = line_start; i < byte_off; i++)
+    {
         unsigned char b = (unsigned char)src[i];
-        if ((b & 0xC0) != 0x80) {
+        if ((b & 0xC0) != 0x80)
+        {
             col++;
         }
     }
     col -= 1; // we started at 1 then increment before first char; normalize
 
-    if (out_line) *out_line = (int)line;
-    if (out_col)  *out_col  = (int)col;
+    if (out_line)
+        *out_line = (int)line;
+    if (out_col)
+        *out_col = (int)col;
 }
 
-RP_ParseRes transpiler_rewrite(
-    EditList *edits,
-    const char *src,
-    size_t src_len,
-    TSNode root,
-    uint8_t *polysneeded)
+RP_ParseRes transpiler_rewrite_pass1(EditList *edits, const char *src, size_t src_len, TSNode root, uint8_t *polysneeded)
 {
     RP_ParseRes ret;
-    ret.err=0;
-    ret.line_num=0;
-    ret.col_num=0;
-    ret.altered=0;
-    ret.pos=0;
+    ret.err = 0;
+    ret.line_num = 0;
+    ret.col_num = 0;
+    ret.altered = 0;
+    ret.pos = 0;
 
     // it will never find the position of the error (actually it will be at end of file, which is not helpful).
     //  Just return err=2
-/*
-    if (ts_node_has_error(root)) {
-        ret.err = 2;
-        return ret;
-    }
-*/
+    /*
+        if (ts_node_has_error(root)) {
+            ret.err = 2;
+            return ret;
+        }
+    */
     RangeList claimed;
     rl_init(&claimed);
     TSTreeCursor cur = ts_tree_cursor_new(root);
@@ -2419,8 +4604,9 @@ RP_ParseRes transpiler_rewrite(
         size_t ns = ts_node_start_byte(n), ne = ts_node_end_byte(n);
 
         // errors
-        if ( !ret.err && (nt && strcmp(nt, "ERROR") == 0) ) {
-            ret.err=1;
+        if (!ret.err && (nt && strcmp(nt, "ERROR") == 0))
+        {
+            ret.err = 1;
             ret.pos = ts_node_start_byte(n);
             tp_linecol_from_src_offset_utf8(src, src_len, ret.pos, &ret.line_num, &ret.col_num);
         }
@@ -2429,14 +4615,11 @@ RP_ParseRes transpiler_rewrite(
         {
             int handled = 0;
 
-            if (strcmp(nt, "regex") == 0) {
+            if (strcmp(nt, "regex") == 0)
+            {
                 handled = rewrite_regex_u_to_es5(edits, src, n, &claimed);
             }
 
-            if (!handled && (strcmp(nt, "import_statement") == 0))
-            {
-                handled = rewrite_import_node(edits, src, n, &claimed, polysneeded);
-            }
             if (!handled && (strcmp(nt, "template_string") == 0 || strcmp(nt, "template_literal") == 0))
             {
                 handled = rewrite_template_node(edits, src, n, &claimed);
@@ -2445,6 +4628,99 @@ RP_ParseRes transpiler_rewrite(
             {
                 handled = rewrite_raw_node(edits, src, n, &claimed);
             }
+
+            /* class transpile produces functions, and then in pass2, handle them */
+            if (!handled && strcmp(nt, "class_declaration") == 0)
+            {
+                handled = rewrite_class_to_es5(edits, src, n, &claimed);
+                if(handled)
+                    *polysneeded |= CLASS_PF;
+            }
+
+            if (!handled && strcmp(nt, "class") == 0)
+            {
+                handled = rewrite_class_expression_to_es5(edits, src, n, &claimed, polysneeded);
+            }
+
+        }
+
+        if (ts_tree_cursor_goto_first_child(&cur))
+            continue;
+        while (!ts_tree_cursor_goto_next_sibling(&cur))
+        {
+            if (!ts_tree_cursor_goto_parent(&cur))
+            {
+                ts_tree_cursor_delete(&cur);
+                free(claimed.a);
+                return ret;
+            }
+        }
+    }
+    return ret;
+}
+
+RP_ParseRes transpiler_rewrite_pass2(EditList *edits, const char *src, size_t src_len, TSNode root,
+                                     uint8_t *polysneeded)
+{
+    RP_ParseRes ret;
+    ret.err = 0;
+    ret.line_num = 0;
+    ret.col_num = 0;
+    ret.altered = 0;
+    ret.pos = 0;
+
+    // it will never find the position of the error (actually it will be at end of file, which is not helpful).
+    //  Just return err=2
+    /*
+        if (ts_node_has_error(root)) {
+            ret.err = 2;
+            return ret;
+        }
+    */
+    RangeList claimed;
+    rl_init(&claimed);
+    TSTreeCursor cur = ts_tree_cursor_new(root);
+
+    for (;;)
+    {
+        TSNode n = ts_tree_cursor_current_node(&cur);
+        const char *nt = ts_node_type(n);
+        size_t ns = ts_node_start_byte(n), ne = ts_node_end_byte(n);
+
+        // errors
+        if (!ret.err && (nt && strcmp(nt, "ERROR") == 0))
+        {
+            ret.err = 1;
+            ret.pos = ts_node_start_byte(n);
+            tp_linecol_from_src_offset_utf8(src, src_len, ret.pos, &ret.line_num, &ret.col_num);
+        }
+
+        if (!rl_overlaps(&claimed, ns, ne))
+        {
+            int handled = 0;
+
+            /* templates can get lost in classes, so try again here. 
+               If that fails, do we need three passes?               */
+            if (!handled && (strcmp(nt, "template_string") == 0 || strcmp(nt, "template_literal") == 0))
+            {
+                handled = rewrite_template_node(edits, src, n, &claimed);
+            }
+            if (!handled && (strcmp(nt, "string") == 0 || strcmp(nt, "template_literal") == 0))
+            {
+                handled = rewrite_raw_node(edits, src, n, &claimed);
+            }
+
+            if (!handled && (strcmp(nt, "import_statement") == 0))
+            {
+                handled = rewrite_import_node(edits, src, n, &claimed, polysneeded);
+            }
+            if (!handled && (strcmp(nt, "export_statement") == 0))
+            {
+                handled = rewrite_export_node(edits, src, n, &claimed);
+                if (handled)
+                    *polysneeded |= IMPORT_PF;
+            }
+
             if (!handled && strcmp(nt, "arrow_function") == 0)
             {
                 handled = rewrite_arrow_function_node(edits, src, n, &claimed);
@@ -2454,23 +4730,27 @@ RP_ParseRes transpiler_rewrite(
                 handled = rewrite_var_function_expression_defaults(edits, src, n, &claimed);
             }
             if (!handled &&
-                (strcmp(nt, "function_declaration") == 0 || strcmp(nt, "function") == 0 || strcmp(nt, "function_expression") == 0 ||
-                 strcmp(nt, "generator_function_declaration") == 0 || strcmp(nt, "generator_function") == 0 || strcmp(nt, "generator_function_expression") == 0))
+                (strcmp(nt, "function_declaration") == 0 || strcmp(nt, "function") == 0 ||
+                 strcmp(nt, "function_expression") == 0 || strcmp(nt, "generator_function_declaration") == 0 ||
+                 strcmp(nt, "generator_function") == 0 || strcmp(nt, "generator_function_expression") == 0))
             {
                 handled = rewrite_function_like_default_params(edits, src, n, &claimed);
-            if (!handled)
-                handled = rewrite_function_rest(edits, src, n, &claimed);
+                if (!handled)
+                    handled = rewrite_function_rest(edits, src, n, &claimed);
             }
-            
+
             if (!handled && strcmp(nt, "expression_statement") == 0)
             {
                 TSNode expr = ts_node_named_child(n, 0);
-                if (!ts_node_is_null(expr)) {
+                if (!ts_node_is_null(expr))
+                {
                     const char *et = ts_node_type(expr);
                     if (strcmp(et, "function_expression") == 0 || strcmp(et, "function") == 0 ||
-                        strcmp(et, "generator_function_expression") == 0 || strcmp(et, "generator_function") == 0) {
+                        strcmp(et, "generator_function_expression") == 0 || strcmp(et, "generator_function") == 0)
+                    {
                         TSNode ep = ts_node_child_by_field_name(expr, "parameters", 10);
-                        if (!ts_node_is_null(ep) && params_has_assignment_pattern(ep)) {
+                        if (!ts_node_is_null(ep) && params_has_assignment_pattern(ep))
+                        {
                             handled = rewrite_function_like_default_params(edits, src, expr, &claimed);
                         }
                     }
@@ -2514,14 +4794,15 @@ RP_ParseRes transpile(const char *src, size_t src_len, int printTree)
     TSNode root;
     uint8_t polysneeded = 0;
     FILE *f = stdout;
-    
-    //pass a -1 or a 0 to get length, but use TRANSPILE_CALC_SIZE (0)
-    if(!src_len || (ssize_t)src_len == -1)
-        src_len=strlen(src);
+    EditList edits;
+    RP_ParseRes res, res2;
+
+    // pass a -1 or a 0 to get length, but use TRANSPILE_CALC_SIZE (0)
+    if (!src_len || (ssize_t)src_len == -1)
+        src_len = strlen(src);
 
     tree = ts_parser_parse_string(parser, NULL, src, (uint32_t)src_len);
     root = ts_tree_root_node(tree);
-
 
     if (printTree == 2)
         f = stderr;
@@ -2531,20 +4812,48 @@ RP_ParseRes transpile(const char *src, size_t src_len, int printTree)
         fputs(
             "=== Outline ===\n  node_type(node_field_name) [start, end]\n     or if field_name is NULL\n  node_type [start, end]\n",
             f);
-        print_outline(src, root, 0, f);
+        print_outline(src, root, 0, f, 0);
         fputs("---------------------------------------------\n", f);
     }
 
-    EditList edits;
     init_edits(&edits);
 
-    // Single traversal with handler dispatch
-    RP_ParseRes res = transpiler_rewrite(&edits, src, src_len, root, &polysneeded);
+    // pass 1
+    res = transpiler_rewrite_pass1(&edits, src, src_len, root, &polysneeded);
+    res.errmsg = NULL;
 
-    if(edits.len)
+    if (edits.len)
     {
-        res.transpiled = apply_edits(src, src_len, &edits, polysneeded);
-        res.altered=1;
+        res.transpiled = apply_edits(src, src_len, &edits, 0);
+        res.altered = 1;
+
+        if (res.err)
+        {
+            const char *p = src + res.pos, *s = p, *e = p, *fe = src + src_len, *ple = NULL, *pls = NULL;
+
+            while (s >= src && *s != '\n')
+                s--;
+            if (*s == '\n')
+            {
+                const char *bline = "";
+                ple = s;
+                pls = ple;
+                pls--;
+                while (pls >= src && *pls == '\n')
+                    pls--, ple--;
+                if (ple != s)
+                    bline = "\n...";
+                while (pls >= src && *pls != '\n')
+                    pls--;
+                pls++;
+                res.errmsg = appendf(NULL, NULL, "%.*s%s\n", (int)(ple - pls), pls, bline);
+            }
+            s++;
+            while (e <= fe && *e != '\n')
+                e++;
+            res.errmsg = appendf(res.errmsg, NULL, "%.*s\n", (int)(e - s), s);
+            res.errmsg = appendf(res.errmsg, NULL, "%*s", 1 + (p - s), "^");
+        }
     }
     else
         res.transpiled = NULL;
@@ -2553,7 +4862,87 @@ RP_ParseRes transpile(const char *src, size_t src_len, int printTree)
     ts_tree_delete(tree);
     ts_parser_delete(parser);
 
-    return res;
+    // pass 2
+    if (res.err)
+    {
+        return res;
+    }
+
+    if (res.transpiled)
+    {
+        src = res.transpiled;
+        src_len = strlen(src);
+        res2.altered = 1;
+    }
+
+    parser = ts_parser_new();
+    ts_parser_set_language(parser, tree_sitter_javascript());
+
+    init_edits(&edits);
+
+    tree = ts_parser_parse_string(parser, NULL, src, (uint32_t)src_len);
+    root = ts_tree_root_node(tree);
+
+    res2 = transpiler_rewrite_pass2(&edits, src, src_len, root, &polysneeded);
+    res2.errmsg = NULL;
+
+    if (edits.len)
+    {
+        res2.transpiled = apply_edits(src, src_len, &edits, polysneeded);
+        res2.altered = 1;
+
+        if (res2.err)
+        {
+            const char *p = src + res2.pos, *s = p, *e = p, *fe = src + src_len, *ple = NULL, *pls = NULL;
+
+            while (s >= src && *s != '\n')
+                s--;
+            if (*s == '\n')
+            {
+                const char *bline = "";
+                ple = s;
+                pls = ple;
+                pls--;
+                while (pls >= src && *pls == '\n')
+                    pls--, ple--;
+                if (ple != s)
+                    bline = "\n...";
+                while (pls >= src && *pls != '\n')
+                    pls--;
+                pls++;
+                res2.errmsg = appendf(NULL, NULL, "%.*s%s\n", (int)(ple - pls), pls, bline);
+            }
+            s++;
+            while (e <= fe && *e != '\n')
+                e++;
+            res2.errmsg = appendf(res2.errmsg, NULL, "%.*s\n", (int)(e - s), s);
+            res2.errmsg = appendf(res2.errmsg, NULL, "%*s", 1 + (p - s), "^");
+        }
+        else
+            free(res.transpiled);
+    }
+    else
+        res2.transpiled = res.transpiled;
+
+    free_edits(&edits);
+    ts_tree_delete(tree);
+    ts_parser_delete(parser);
+
+    return res2;
+}
+
+void freeParseRes(RP_ParseRes *res)
+{
+    if (res->transpiled)
+    {
+        free(res->transpiled);
+        res->transpiled = NULL;
+    }
+    if (res->errmsg)
+    {
+        free(res->errmsg);
+        res->errmsg = NULL;
+    }
 }
 
 #ifdef TEST
@@ -2611,31 +5000,38 @@ int main(int argc, char **argv)
     char *src = read_entire_file(argv[1], &src_len);
 
     RP_ParseRes res = transpile(src, src_len, printTree);
-    if(res.transpiled)
+    if (res.transpiled)
         fwrite(res.transpiled, 1, strlen(res.transpiled), stdout);
 
-    if(res.err) {
+    if (res.err)
+    {
         if (res.err && res.transpiled)
         {
             char *p = src + res.pos;
-            char *s=p, *e=p, *fe=src+src_len;
+            char *s = p, *e = p, *fe = src + src_len;
 
             fprintf(stderr, "Transpiler Parse Error (line %d)\n", res.line_num);
-            while(s>=src && *s !='\n') s--;
+            while (s >= src && *s != '\n')
+                s--;
             s++;
-            while(e <= fe && *e != '\n') e++;
-            fprintf(stderr, "%.*s\n", (int)(e-s), s);
-            while(s<p) {fputc(' ', stderr);s++;}
+            while (e <= fe && *e != '\n')
+                e++;
+            fprintf(stderr, "%.*s\n", (int)(e - s), s);
+            while (s < p)
+            {
+                fputc(' ', stderr);
+                s++;
+            }
             fputc('^', stderr);
             fputc('\n', stderr);
             free(res.transpiled);
             free(src);
 
-            return(1);
+            return (1);
         }
     }
     // Cleanup
-    if(res.transpiled)
+    if (res.transpiled)
         free(res.transpiled);
     free(src);
     return 0;

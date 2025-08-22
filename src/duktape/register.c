@@ -9,6 +9,15 @@
 #include "globals/printf.h"
 #include "rampart.h"
 #include "../include/version.h"
+#include "transpiler.h"
+
+void duk_rp_set_enum_false(duk_context *ctx, duk_idx_t objidx, const char *propname)
+{
+    objidx=duk_normalize_index(ctx, objidx);
+    duk_push_string(ctx, propname);
+    duk_def_prop(ctx, objidx, DUK_DEFPROP_CLEAR_ENUMERABLE);
+}
+
 
 /* allow JSON.parse to accept buffers */
 duk_ret_t duk_rp_json_parse(duk_context *ctx)
@@ -31,6 +40,8 @@ void fix_json_parse(duk_context *ctx)
 
     duk_push_c_function(ctx, duk_rp_json_parse, 2);
     duk_put_prop_string(ctx, -2, "parse");
+
+    duk_rp_set_enum_false(ctx, -1, "_parse_orig");
     duk_pop(ctx);
 }
 
@@ -89,6 +100,8 @@ static void add_object_values(duk_context *ctx)
     duk_get_global_string(ctx, "Object");    
     duk_push_c_function(ctx, duk_rp_object_values, 1);
     duk_put_prop_string(ctx, -2, "values");
+    duk_rp_set_enum_false(ctx, -1, "values");
+
     duk_pop(ctx);
 }
 
@@ -156,12 +169,72 @@ static duk_ret_t duk_rp_array_includes(duk_context *ctx)
     return 1;
 }
 
-static void add_array_includes(duk_context *ctx)
+duk_ret_t duk_rp_array_find(duk_context *ctx)
+{
+    REQUIRE_FUNCTION(ctx, 0, "Array.find - argument must be a Function");
+    duk_bool_t res;
+    duk_uarridx_t i=0, len;
+
+    duk_push_this(ctx);
+    len = duk_get_length(ctx, -1);
+
+    for(i=0;i<len;i++)
+    {
+        duk_dup(ctx,0);
+        duk_get_prop_index(ctx, 1, i);
+        duk_call(ctx, 1);
+        res=duk_to_boolean(ctx, -1);
+        if(res)
+        {
+            duk_get_prop_index(ctx, 1, i);
+            return 1;
+        }        
+    }
+    return 0;
+}
+
+duk_ret_t duk_rp_array_find_index(duk_context *ctx)
+{
+    REQUIRE_FUNCTION(ctx, 0, "Array.find - argument must be a Function");
+    duk_bool_t res;
+    duk_uarridx_t i=0, len;
+
+    duk_push_this(ctx);
+    len = duk_get_length(ctx, -1);
+
+    for(i=0;i<len;i++)
+    {
+        duk_dup(ctx,0);
+        duk_get_prop_index(ctx, 1, i);
+        duk_call(ctx, 1);
+        res=duk_to_boolean(ctx, -1);
+        if(res)
+        {
+            duk_push_number(ctx, (int)i);
+            return 1;
+        }        
+    }
+    duk_push_number(ctx, -1);
+    return 1;
+}
+
+static void add_array_funcs(duk_context *ctx)
 {
     duk_get_global_string(ctx, "Array");
     duk_get_prop_string(ctx, -1, "prototype");
+
+    duk_push_c_function(ctx, duk_rp_array_find, 1);
+    duk_put_prop_string(ctx, -2, "find");
+    duk_rp_set_enum_false(ctx, -1, "find");
+
+    duk_push_c_function(ctx, duk_rp_array_find_index, 1);
+    duk_put_prop_string(ctx, -2, "findIndex");
+    duk_rp_set_enum_false(ctx, -1, "findIndex");
+
     duk_push_c_function(ctx, duk_rp_array_includes, 2);
     duk_put_prop_string(ctx, -2, "includes");
+    duk_rp_set_enum_false(ctx, -1, "includes");
+
     duk_pop_2(ctx);
 }
 
@@ -229,6 +302,10 @@ static void add_buffer_func(duk_context *ctx)
     duk_put_prop_string(ctx, -2, "alloc");
     duk_push_c_function(ctx, duk_rp_buffer_from, 1);
     duk_put_prop_string(ctx, -2, "from");
+
+    duk_rp_set_enum_false(ctx, -1, "alloc");
+    duk_rp_set_enum_false(ctx, -1, "from");
+
     /* TODO: add all node methods */
     duk_pop(ctx);
 }
@@ -257,6 +334,7 @@ static duk_ret_t rp_eval_js(duk_context *ctx)
     // main_babel_opt is non null if this script was previously babelized.
     if ( !main_babel_opt || ! (bfn=duk_rp_babelize(ctx, "eval_code", source, tsnow.tv_sec, babel_setting_nostrict, main_babel_opt)) )
     {
+        /*
         int err=0, lineno=0;
         char *tickified = tickify(source, strlen(source), &err, &lineno);
         if (err)
@@ -266,6 +344,19 @@ static duk_ret_t rp_eval_js(duk_context *ctx)
 
         duk_push_string(ctx, tickified);
         free(tickified);
+        */
+        RP_ParseRes res = transpile(source, TRANSPILE_CALC_SIZE, 0); 
+        if (res.err)
+        {
+            RP_THROW(ctx, "Syntax error: parse error in eval");
+        }
+        if(res.transpiled)
+        {
+            duk_push_string(ctx, res.transpiled);
+            free(res.transpiled);
+        }
+        else /* code unaltered */
+            duk_push_string(ctx, source);
     }
     if(bfn)
         free((char*)bfn);
@@ -324,7 +415,7 @@ void duk_init_context(duk_context *ctx)
     fix_json_parse(ctx);
     fix_eval(ctx);
     add_object_values(ctx);
-    add_array_includes(ctx);
+    add_array_funcs(ctx);
     add_buffer_func(ctx);
 
 }

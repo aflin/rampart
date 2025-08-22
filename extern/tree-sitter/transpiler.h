@@ -6,6 +6,7 @@
 
 typedef struct {
     char *transpiled;
+    char *errmsg;
     size_t pos;
     int err;
     int altered;
@@ -43,8 +44,9 @@ typedef struct {
 #define TRANSPILE_CALC_SIZE 0
 
 RP_ParseRes transpile(const char *src, size_t src_len, int printTree);
+void freeParseRes(RP_ParseRes *res);
 
 #define SPREAD_PF (1<<0)
 #define IMPORT_PF (1<<1)
-
+#define CLASS_PF  (1<<2)
 #endif

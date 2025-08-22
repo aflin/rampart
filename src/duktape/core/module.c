@@ -14,6 +14,7 @@
 #include "duktape.h"
 #include "module.h"
 #include "rampart.h"
+#include "transpiler.h"
 
 duk_ret_t duk_rp_push_current_module(duk_context *ctx)
 {
@@ -92,6 +93,7 @@ static int load_js_module(duk_context *ctx, const char *file, duk_idx_t module_i
 
     //skip any #! line in case this module doubles as a script
     buffer[sb.st_size]='\0';
+
     if(buffer[0]=='#' && buffer[1]=='!')
     {
         size_t i=0;
@@ -110,12 +112,13 @@ static int load_js_module(duk_context *ctx, const char *file, duk_idx_t module_i
     if (! (bfn=duk_rp_babelize(ctx, (char *)file, buffer, sb.st_mtime, babel_setting_none, NULL)) )
     {
         /* No babel, normal compile */
-        int err, lineno;
+        //int err, lineno;
         char *isbabel = strstr(file, "/babel.js");
         /* don't tickify actual babel.js source */
 
         if ( !(isbabel && isbabel == file + strlen(file) - 9) )
         {
+            /*
             char *tickified = tickify(buffer, sb.st_size, &err, &lineno);
             free(freebuffer);
             freebuffer = buffer = tickified;
@@ -123,9 +126,33 @@ static int load_js_module(duk_context *ctx, const char *file, duk_idx_t module_i
             {
                 MOD_THROW(ctx, DUK_ERR_SYNTAX_ERROR, "%s (line %d)\n    at %s:%d", tickify_err(err), lineno, file, lineno);
             }
-        }
+            */
+            RP_ParseRes res = transpile(buffer, TRANSPILE_CALC_SIZE, 0); 
 
-        duk_push_string(ctx, buffer);
+            char *dbug = getenv("RPDEBUG");
+            if(res.transpiled)
+            {
+                if( dbug && !strcasecmp (dbug, "moduleTranspiler") )
+                    fprintf(stderr, "BEGIN MODULE %s\n%s\nEND MODULE %s\n", file, res.transpiled, file);
+            }
+
+            if (res.err && res.transpiled)
+            {
+                duk_push_string(ctx, res.errmsg);
+                const char *out = duk_get_string(ctx, -1);
+                MOD_THROW(ctx, DUK_ERR_SYNTAX_ERROR, "\n%s\n    at %s:%d", out, file, res.line_num);
+            }
+
+            if(res.transpiled)
+            {
+                duk_push_string(ctx, res.transpiled);
+                free(res.transpiled);
+            }
+            else /* no changed in transpile */
+                duk_push_string(ctx, buffer);
+        }
+        else /* its .../babel.js */
+            duk_push_string(ctx, buffer);
     }
     // else is babel, babelized source is on top of stack.
     fclose(f);
