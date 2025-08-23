@@ -49,4 +49,6 @@ void freeParseRes(RP_ParseRes *res);
 #define SPREAD_PF (1<<0)
 #define IMPORT_PF (1<<1)
 #define CLASS_PF  (1<<2)
+#define FOROF_PF  (1<<3)
+
 #endif

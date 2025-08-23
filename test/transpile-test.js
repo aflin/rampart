@@ -106,6 +106,7 @@ function testFeature(name,test)
             test=test();
         } catch(e) {
             error=e;
+console.log(e);
             test=false;
         }
     }
@@ -177,6 +178,15 @@ testFeature("rest parameters 2",
     f2(1, 2, "hello", true, 7) === 9
 );
 
+testFeature("for of loops", function(){
+    var x=[1,2,3,4];
+    var res=""
+    for (var a of x) {
+        res+=a;
+    }
+    return res=="1234";
+});
+
 
 var str = "foo";
 var c = [ ...str ];
@@ -200,7 +210,15 @@ testFeature("advanced spread and shorthand", function(){
     var y2 = [ x, ...z, a  ];
     var y3 = [ ...a, x, ...z  ];
 
-    /* node produces this
+    /*
+    console.log(y);
+    console.log(o3);
+    console.log(o4);
+    console.log(y1);
+    console.log(y2);
+    console.log(y3);
+
+     *** node produces this ***
     { a: 1, b: 2, x: 5, z: 'zee' }
     { x: 5, z: 'zee' }
     { c: 3, d: 4, x: 5, a: 1, b: 2 }
@@ -208,6 +226,7 @@ testFeature("advanced spread and shorthand", function(){
     [ 5, 'z', 'e', 'e', [ 1, 2 ] ]
     [ 1, 2, 5, 'z', 'e', 'e' ]
     */
+
     return (
         y.a==1 && y.b==2 && y.x==5 & y.z=="zee"&
         o3.x==5 && o3.z=="zee" &&
@@ -490,6 +509,54 @@ testFeature("multiple classes coexist without collisions", function () {
   return a.getV() === 3 && b.getV() === 6 && !(a instanceof B) && !(b instanceof A);
 });
 
+
+testFeature("For-of with destructuring: let fresh bindings", function () {
+  const pairs = [[1,2],[3,4],[5,6]];
+  const fns = [];
+  for (let [a, b] of pairs) {
+    fns.push(() => a + b);
+  }
+  const got = fns.map(f => f());
+  const expect = [3, 7, 11];
+  return JSON.stringify(got) === JSON.stringify(expect);
+});
+
+
+testFeature("Switch case scoping: let redeclare", function () {
+  function run(which) {
+    switch (which) {
+      case 1: { let x = 10; return x; }
+      case 2: { let x = 20; return x; }
+    }
+  }
+  return run(1) === 10 && run(2) === 20;
+});
+
+testFeature("Top-level let does not attach to global", function () {
+  let unique = "sentinel_" + Math.random().toString(36).slice(2);
+  // Avoid name capture by using eval to ensure 'let t' is top-level in this eval’d script context.
+  (0, eval)(`let t = "${unique}";`);
+  // If the transpiler wraps the entire file in an IIFE, t also won't be on globalThis.
+  const onGlobal = (typeof global !== "undefined") && Object.prototype.hasOwnProperty.call(global, "t");
+  return onGlobal === false;
+});
+
+testFeature("Non-block single statement - let captures", function () {
+  const fns = [];
+  for (let i = 0; i < 3; i++)
+    fns.push(() => i);
+  const got = fns.map(f => f());
+  return JSON.stringify(got) === JSON.stringify([0,1,2]);
+});
+
+testFeature("Block scope with inner function - let scoped", function () {
+  let outerSeenUndefined = false;
+  (function () {
+    { let z = 7; (void z); }
+    try { /* outer read */ void z; } catch (e) { outerSeenUndefined = e instanceof ReferenceError; }
+  }());
+  return outerSeenUndefined;
+});
 
 /*
 testFeature("method properties with generator",function(){

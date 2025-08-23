@@ -3,6 +3,9 @@
  * terms of the MIT license
  * see https://opensource.org/licenses/MIT
  */
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
 
 #include "transpiler.h"
 #include <ctype.h>
@@ -39,6 +42,65 @@
     } while (0)
 #endif
 
+// ============== range bookkeeping for one-pass ==============
+typedef struct
+{
+    size_t s, e;
+} Range;
+typedef struct
+{
+    Range *a;
+    size_t len, cap;
+} RangeList;
+
+static void rl_init(RangeList *rl)
+{
+    rl->a = NULL;
+    rl->len = 0;
+    rl->cap = 0;
+}
+
+/*
+static int rl_overlaps(const RangeList *rl, size_t s, size_t e)
+{
+    for (size_t i = 0; i < rl->len; i++)
+    {
+        size_t S = rl->a[i].s, E = rl->a[i].e;
+        if (!(e <= S || E <= s))
+            return 1;
+    }
+    return 0;
+}
+*/
+#define rl_overlaps(rl, _s, _e, origin)                                                                                \
+    ({                                                                                                                 \
+        int r = 0;                                                                                                     \
+        for (size_t i = 0; i < (rl)->len; i++)                                                                         \
+        {                                                                                                              \
+            size_t S = (rl)->a[i].s, E = (rl)->a[i].e;                                                                 \
+            if (!((_e) <= S || E <= (_s)))                                                                             \
+            {                                                                                                          \
+                r = 1;                                                                                                 \
+                break;                                                                                                 \
+            }                                                                                                          \
+        }                                                                                                              \
+        /*printf("%s at %s\n",r?"OVERLAP":"no overlap",origin);*/                                                      \
+        r;                                                                                                             \
+    })
+
+static void rl_add(RangeList *rl, size_t s, size_t e)
+{
+    if (rl->len == rl->cap)
+    {
+        size_t nc = rl->cap ? rl->cap * 2 : 8;
+
+        REMALLOC(rl->a, nc * sizeof(Range));
+
+        rl->cap = nc;
+    }
+    rl->a[rl->len++] = (Range){s, e};
+}
+
 static int cmp_desc(const void *a, const void *b)
 {
     const Edit *ea = (const Edit *)a;
@@ -68,16 +130,20 @@ static void push(EditList *e, Edit it)
     e->items[e->len++] = it;
 }
 
-void add_edit(EditList *e, size_t start, size_t end, const char *replacement)
+void add_edit(EditList *e, size_t start, size_t end, const char *replacement, RangeList *claimed)
 {
     Edit it = {start, end, strdup(replacement), 1};
     push(e, it);
+    if (claimed)
+        rl_add(claimed, start, end);
 }
 
-void add_edit_take_ownership(EditList *e, size_t start, size_t end, char *replacement)
+void add_edit_take_ownership(EditList *e, size_t start, size_t end, char *replacement, RangeList *claimed)
 {
     Edit it = {start, end, replacement, 1};
     push(e, it);
+    if (claimed)
+        rl_add(claimed, start, end);
 }
 
 // stolen from babel.  Babel, like this prog is MIT licensed - see https://github.com/babel/babel/blob/main/LICENSE
@@ -85,8 +151,10 @@ const char *spread_polyfill =
     "if(!global._TrN_Sp){global._TrN_Sp={};};_TrN_Sp.__spreadO = function(target) {function ownKeys(object, enumerableOnly){var keys = Object.keys(object);if (Object.getOwnPropertySymbols){var symbols = Object.getOwnPropertySymbols(object);if (enumerableOnly)symbols = symbols.filter(function(sym) {return Object.getOwnPropertyDescriptor(object, sym).enumerable;});keys.push.apply(keys, symbols);}return keys;}function _defineProperty(obj, key, value){if (key in obj){Object.defineProperty(obj, key, {value : value, enumerable : true, configurable : true, writable : true});}else{obj[key] = value;}return obj;}for (var i = 1; i < arguments.length; i++){var source = arguments[i] != null ? arguments[i] : {};if (i % 2){ownKeys(Object(source), true).forEach(function(key) {_defineProperty(target, key, source[key]);});}else if (Object.getOwnPropertyDescriptors){Object.defineProperties(target, Object.getOwnPropertyDescriptors(source));}else{ownKeys(Object(source)).forEach(function(key) {Object.defineProperty(target, key, Object.getOwnPropertyDescriptor(source, key));});}}return target;};_TrN_Sp.__spreadA = function(target, arr) {if (arr instanceof Array)return target.concat(arr);function _nonIterableSpread(){throw new TypeError(\"Invalid attempt to spread non-iterable instance. In order to be iterable, non-array objects must have a [Symbol.iterator]() method.\");}function _unsupportedIterableToArray(o, minLen){if (!o)return;if (typeof o === \"string\")return _arrayLikeToArray(o, minLen);var n = Object.prototype.toString.call(o).slice(8, -1);if (n === \"Object\" && o.constructor);n = o.constructor.name;if (n === \"Map\" || n === \"Set\")return Array.from(o);if (n === \"Arguments\" || /^(?:Ui|I)nt(?:8|16|32)(?:Clamped)?Array$/.test(n))return target.concat(_arrayLikeToArray(o, minLen));}function _iterableToArray(iter){if (typeof Symbol !== \"undefined\" && Symbol.iterator in Object(iter))return target.concat(Array.from(iter));}function _arrayLikeToArray(arr, len){if (len == null || len > arr.length)len = arr.length;for (var i = 0, arr2 = new Array(len); i < len; i++){arr2[i] = arr[i];}return target.concat(arr2);}function _arrayWithoutHoles(arr){if (Array.isArray(arr))return target.concat(_arrayLikeToArray(arr));}return _arrayWithoutHoles(arr) || _iterableToArray(arr) || _unsupportedIterableToArray(arr) || _nonIterableSpread();};_TrN_Sp._arrayConcat = function(items){var self = this;items.forEach(function(item) {self.push(item);});return this;};_TrN_Sp._newArray = function() {Object.defineProperty(Array.prototype, '_addchain', {value: _TrN_Sp._arrayConcat,writable: true,configurable: true,enumerable: false});Object.defineProperty(Array.prototype, '_concat', {value: Array.prototype._addchain,writable: true,configurable: true,enumerable: false});return [];};_TrN_Sp._objectAddchain = function(key, value) {if (typeof key == 'object'){Object.assign(this, key)}else{this[key] = value;}return this;};_TrN_Sp._newObject = function() {Object.defineProperty(Object.prototype, '_addchain', {value: _TrN_Sp._objectAddchain,writable: true,configurable: true,enumerable: false});Object.defineProperty(Object.prototype, '_concat', {value: _TrN_Sp._objectAddchain,writable: true,configurable: true,enumerable: false});return {};};";
 const char *import_polyfill =
     "if(!global._TrN_Sp){global._TrN_Sp={};};_TrN_Sp._typeof=function(obj) {\"@babel/helpers - typeof\";if (typeof Symbol === \"function\" && typeof Symbol.iterator === \"symbol\") {_TrN_Sp._typeof = function(obj) {return typeof obj;};} else {_TrN_Sp._typeof = function(obj) {return obj && typeof Symbol === \"function\" && obj.constructor === Symbol && obj !== Symbol.prototype ? \"symbol\" : typeof obj;};}return _TrN_Sp._typeof(obj);};_TrN_Sp._getRequireWildcardCache=function() {if (typeof WeakMap !== \"function\") return null;var cache = new WeakMap();_TrN_Sp._getRequireWildcardCache=function(){return cache;};return cache;};_TrN_Sp._interopRequireWildcard=function(obj) {if (obj && obj.__esModule) {return obj;}if (obj === null || _TrN_Sp._typeof(obj) !== \"object\" && typeof obj !== \"function\") {return { \"default\": obj };}var cache = _TrN_Sp._getRequireWildcardCache();if (cache && cache.has(obj)) {return cache.get(obj);}var newObj = {};var hasPropertyDescriptor = Object.defineProperty && Object.getOwnPropertyDescriptor;for (var key in obj) {if (Object.prototype.hasOwnProperty.call(obj, key)) {var desc = hasPropertyDescriptor ? Object.getOwnPropertyDescriptor(obj, key) : null;if (desc && (desc.get || desc.set)) {Object.defineProperty(newObj, key, desc);} else {newObj[key] = obj[key];}}}newObj[\"default\"] = obj;if (cache) {cache.set(obj, newObj);}return newObj;};_TrN_Sp._interopDefault=function(m){if(typeof m =='object' && m.__esModule){return m.default}return m;};";
-const char *class_polyfill = 
+const char *class_polyfill =
     "if (!global._TrN_Sp) { global._TrN_Sp = {};};_TrN_Sp.typeof =function(obj) {'@babel/helpers - typeof';if (typeof Symbol === 'function' && typeof Symbol.iterator === 'symbol') {_typeof = function _typeof(obj) {return typeof obj;};} else {_typeof = function _typeof(obj) {return obj && typeof Symbol === 'function' &&obj.constructor === Symbol && obj !== Symbol.prototype ?'symbol' :typeof obj;};}return _typeof(obj);}; _TrN_Sp.inherits =function(subClass, superClass) {if (typeof superClass !== 'function' && superClass !== null) {throw new TypeError('Super expression must either be null or a function');}subClass.prototype = Object.create(superClass && superClass.prototype,{constructor: {value: subClass, writable: true, configurable: true}});if (superClass) _TrN_Sp.setPrototypeOf(subClass, superClass);}; _TrN_Sp.setPrototypeOf =function(o, p) {_setPrototypeOf = Object.setPrototypeOf || function _setPrototypeOf(o, p) {o.__proto__ = p;return o;};return _setPrototypeOf(o, p);}; _TrN_Sp.createSuper =function(Derived) {var hasNativeReflectConstruct = _TrN_Sp.isNativeReflectConstruct();return function _createSuperInternal() {var Super = _TrN_Sp.getPrototypeOf(Derived), result;result = Super.apply(this, arguments);return _TrN_Sp.possibleConstructorReturn(this, result);};}; _TrN_Sp.possibleConstructorReturn =function(self, call) {if (call && (_typeof(call) === 'object' || typeof call === 'function')) {return call;}return _TrN_Sp.assertThisInitialized(self);}; _TrN_Sp.assertThisInitialized =function(self) {if (self === void 0) {throw new ReferenceError('this hasn\\'t been initialised - super() hasn\\'t been called');}return self;}; _TrN_Sp.isNativeReflectConstruct =function() {if (typeof Reflect === 'undefined' || !Reflect.construct) return false;if (Reflect.construct.sham) return false;if (typeof Proxy === 'function') return true;try {Date.prototype.toString.call(Reflect.construct(Date, [], function() {}));return true;} catch (e) {return false;}}; _TrN_Sp.getPrototypeOf =function(o) {_getPrototypeOf = Object.setPrototypeOf ?Object.getPrototypeOf :function _getPrototypeOf(o) {return o.__proto__ || Object.getPrototypeOf(o);};return _getPrototypeOf(o);}; _TrN_Sp.classCallCheck =function(instance, Constructor) {if (!(instance instanceof Constructor)) {throw new TypeError('Cannot call a class as a function');}}; _TrN_Sp.defineProperties =function(target, props) {for (var i = 0; i < props.length; i++) {var descriptor = props[i];descriptor.enumerable = descriptor.enumerable || false;descriptor.configurable = true;if ('value' in descriptor) descriptor.writable = true;Object.defineProperty(target, descriptor.key, descriptor);}}; _TrN_Sp.createClass =function(Constructor, protoProps,staticProps) {if (protoProps) _TrN_Sp.defineProperties(Constructor.prototype, protoProps);if (staticProps) _TrN_Sp.defineProperties(Constructor, staticProps);return Constructor;};";
+const char *for_of_polyfill =
+    "if(!global._TrN_Sp){global._TrN_Sp={};};_TrN_Sp.slicedToArray=function (arr, i) {return _TrN_Sp.arrayWithHoles(arr) || _TrN_Sp.iterableToArrayLimit(arr, i) || _TrN_Sp.unsupportedIterableToArray(arr, i) || _TrN_Sp.nonIterableRest();};_TrN_Sp.nonIterableRest=function(){throw new TypeError(\"Invalid attempt to destructure non-iterable instance.\\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method.\");};_TrN_Sp.unsupportedIterableToArray=function(o, minLen) {if (!o) return;if (typeof o === \"string\") return _TrN_Sp.arrayLikeToArray(o, minLen);var n = Object.prototype.toString.call(o).slice(8, -1);if (n === \"Object\" && o.constructor) n = o.constructor.name;if (n === \"Map\" || n === \"Set\") return Array.from(o);if (n === \"Arguments\" || /^(?:Ui|I)nt(?:8|16|32)(?:Clamped)?Array$/.test(n)) return _TrN_Sp.arrayLikeToArray(o, minLen);};_TrN_Sp.arrayLikeToArray=function(arr, len) {if (len == null || len > arr.length) len = arr.length;for (var i = 0, arr2 = new Array(len); i < len; i++) {arr2[i] = arr[i];}return arr2;};_TrN_Sp.iterableToArrayLimit=function(arr, i){if (typeof Symbol === \"undefined\" || !(Symbol.iterator in Object(arr))) return;var _arr = [];var _n = true;var _d = false;var _e = undefined;try {for (var _i = arr[Symbol.iterator](), _s; !(_n = (_s = _i.next()).done); _n = true) {_arr.push(_s.value);if (i && _arr.length === i) break;}} catch (err) {_d = true;_e = err;} finally {try {if (!_n && _i[\"return\"] != null) _i[\"return\"]();} finally {if (_d) throw _e;}}return _arr;};_TrN_Sp.arrayWithHoles=function(arr) {if (Array.isArray(arr)) return arr;};";
 
 char *apply_edits(const char *src, size_t src_len, EditList *e, uint8_t polysneeded)
 {
@@ -98,18 +166,6 @@ char *apply_edits(const char *src, size_t src_len, EditList *e, uint8_t polysnee
     qsort(e->items, e->len, sizeof(Edit), cmp_desc);
 
     // Estimate final size
-
-    /* will never work.  if you insert 50, then clip 10, you still need 50 extra for the insert before the remove,
-       but this would give you only 40.
-    long delta = 0;
-    for (size_t i=0;i<e->len;i++) {
-        long removed = (long)(e->items[i].end - e->items[i].start);
-        long added   = (long)strlen(e->items[i].text);
-        delta += (added - removed);
-    }
-    size_t out_cap = src_len + (delta > 0 ? (size_t)delta : 0) + 1000;
-
-    */
 
     out_cap = src_len + 1;
     out_len = src_len;
@@ -150,33 +206,14 @@ char *apply_edits(const char *src, size_t src_len, EditList *e, uint8_t polysnee
         if (out_len > out_cap)
             out_cap = out_len;
     }
-    /*
-    for (size_t i = 0; i < e->len; i++)
-    {
-        Edit *ed = &e->items[i];
-        size_t before = ed->start;
-        size_t after = ed->end;
-        size_t rep_len = strlen(ed->text);
-        long removed = (long)(after - before);
-        long diff = (long)rep_len - removed;
-        // Find the largest end of buffer we will write to.
-        if (diff != 0)
-        {
-            out_len = (size_t)((long)out_len + diff);
-            if (out_len > out_cap)
-                out_cap = out_len;
-        }
-    }
-    */
+
     out_cap++;
     // printf("src_len=%d, outcap=%d\n", (int)src_len, (int)out_cap);
 
     // check for needed polyfills
     if (polysneeded)
     {
-        size_t spread_sz = 0,
-               import_sz = 0,
-               class_sz  = 0;
+        size_t spread_sz = 0, import_sz = 0, class_sz = 0, for_of_sz = 0;
 
         if (polysneeded & SPREAD_PF)
         {
@@ -194,6 +231,12 @@ char *apply_edits(const char *src, size_t src_len, EditList *e, uint8_t polysnee
         {
             class_sz += strlen(class_polyfill);
             out_cap += class_sz;
+        }
+
+        if (polysneeded & FOROF_PF)
+        {
+            for_of_sz += strlen(for_of_polyfill);
+            out_cap += for_of_sz;
         }
 
         REMALLOC(out, out_cap);
@@ -235,6 +278,11 @@ char *apply_edits(const char *src, size_t src_len, EditList *e, uint8_t polysnee
             memcpy(out, class_polyfill, class_sz);
             out += class_sz;
         }
+        if (polysneeded & FOROF_PF)
+        {
+            memcpy(out, for_of_polyfill, for_of_sz);
+            out += for_of_sz;
+        }
     }
     else
     {
@@ -273,29 +321,6 @@ char *apply_edits(const char *src, size_t src_len, EditList *e, uint8_t polysnee
 
     end size is 100, but we need 120.  See above.
     */
-    /*
-    // Splice in place using memmove (still safe due to descending order)
-    for (size_t i = 0; i < e->len; i++)
-    {
-        Edit *ed = &e->items[i];
-        size_t before = ed->start - out_offset;
-        size_t after = ed->end - out_offset;
-        size_t rep_len = strlen(ed->text);
-        long removed = (long)(after - before);
-        long diff = (long)rep_len - removed;
-        size_t edlen = out_len - after;
-        // Make room or close gap
-        if (diff != 0)
-        {
-            // printf("moving to %lu(before+rep_len) from %lu (after), size=%lu (out_len-after), end=%lu, outlen=%lu\n",
-            // before + rep_len, after, edlen, before + rep_len+edlen, out_len);
-            memmove(out + before + rep_len, out + after, edlen);
-            out_len = (size_t)((long)out_len + diff);
-        }
-        memcpy(out + before, ed->text, rep_len);
-        out[out_len] = '\0';
-    }
-    */
 
     // this version should retain line numbering, unless the replacement somehow has more lines (shouldn't happen)
     for (size_t i = 0; i < e->len; i++)
@@ -331,14 +356,16 @@ char *apply_edits(const char *src, size_t src_len, EditList *e, uint8_t polysnee
         // Make room or close gap based on the *padded* replacement length
         if (diff != 0)
         {
-            // printf("moving to %lu (before+rep_padded_len) from %lu (after), size=%lu (out_len-after)\n",
-            //        before + rep_padded_len, after, edlen);
+            // printf("start:%lu, moving to %lu (before+rep_padded_len) from %lu (after), size=%lu (out_len-after)\n",
+            //         before, before + rep_padded_len, after, edlen);
+            // printf("'%s'\n", out);
             memmove(out + before + rep_padded_len, out + after, edlen);
             out_len = (size_t)((long)out_len + diff);
         }
 
         // Write replacement bytes
         memcpy(out + before, ed->text, rep_len);
+        // printf("replaced:\n'%s'\n", out);
 
         // Write any newline padding to preserve original line positions
         if (pad_nls)
@@ -445,10 +472,10 @@ static void print_outline(const char *src, TSNode root, int depth, FILE *f, int 
         fprintf(f, "%s%s%s%s%s%s [%u,%u]", bare ? "\"" : "", type, bare ? (field_name ? "\" " : "\"") : "",
                 field_name ? "(" : "", field_name ? field_name : "", field_name ? ")" : "", start, end);
 
-        if(with_text)
-            fprintf(f, "\x1B[31m \"%.*s\"\x1B[0m\n", end-start, src+start);
+        if (with_text)
+            fprintf(f, "\x1B[31m \"%.*s\"\x1B[0m\n", end - start, src + start);
         else
-            fputc('\n',f);
+            fputc('\n', f);
 
         // Preorder traversal using the cursor:
         if (ts_tree_cursor_goto_first_child(&cur))
@@ -476,95 +503,6 @@ static void print_outline(const char *src, TSNode root, int depth, FILE *f, int 
 }
 
 // ===================== Helper functions =====================
-/* traverse tree from start, find either find_type and/or find_name.  
-   For "or" search, either can be NULL but both NULL will just increase the
-   entropy of the universe and return an empty node.
-
-   For "and" search, both find_type and find_type should be populated
-
-   If not found, return
-   null node; */
-static TSNode search_for_node(TSNode start, const char *find_type, const char *find_name, int and_search)
-{
-    TSTreeCursor cur = ts_tree_cursor_new(start);
-    int d=0;
-    TSNode ret={{0}};
-
-    for (;;)
-    {
-        TSNode node = ts_tree_cursor_current_node(&cur);
-
-        const char *type = ts_node_type(node);
-        const char *field_name = ts_tree_cursor_current_field_name(&cur); // field in parent
-
-        //uint32_t start = ts_node_start_byte(node);
-        //uint32_t end = ts_node_end_byte(node);
-        //int bare = !ts_node_is_named(node);
-        //fprintf(stdout, "%s%s%s%s%s%s [%u,%u]\n", bare ? "\"" : "", type, bare ? (field_name ? "\" " : "\"") : "",
-        //        field_name ? "(" : "", field_name ? field_name : "", field_name ? ")" : "", start, end);
-
-        if(d)
-        {
-            if(and_search)
-            {
-                if( field_name && 
-                    find_name  && 
-                    find_type  && 
-                    strcmp(type,find_type)==0 &&
-                    strcmp(field_name, find_name)==0
-                )
-                    return node;
-            }
-            else
-            {
-                if( find_type && strcmp(type,find_type)==0)
-                    return node;
-                if( field_name && find_name && strcmp(field_name, find_name)==0)
-                    return node;
-            }
-        }
-        
-        // Preorder traversal using the cursor:
-        if (ts_tree_cursor_goto_first_child(&cur))
-        {
-            d++;
-            continue;
-        }
-
-        // No children; walk up until we can take a next sibling
-        for (;;)
-        {
-            if (ts_tree_cursor_goto_next_sibling(&cur))
-            {
-                // same depth
-                break;
-            }
-            if (!ts_tree_cursor_goto_parent(&cur))
-            {
-                // back at the start; we're done (or went too far)
-                ts_tree_cursor_delete(&cur);
-                return ret;
-            }
-            d--;
-            //if (!d)
-            //    break;
-        }
-    }
-    return ret;
-}
-
-/* currently unused
-static TSNode search_for_node_field_name(TSNode start, const char *find_name)
-{
-    return search_for_node(start, NULL, find_name, 0);
-}
-*/
-
-static TSNode search_for_node_type(TSNode start, const char *type)
-{
-    return search_for_node(start, type, NULL, 0);
-}
-
 static TSNode find_child_type(TSNode node, const char *type, uint32_t *start)
 {
     uint32_t n = ts_node_child_count(node);
@@ -673,46 +611,6 @@ static inline char *appendf(char *buf, size_t *len, const char *fmt, ...)
     return tmp;
 }
 
-// ============== range bookkeeping for one-pass ==============
-typedef struct
-{
-    size_t s, e;
-} Range;
-typedef struct
-{
-    Range *a;
-    size_t len, cap;
-} RangeList;
-
-static void rl_init(RangeList *rl)
-{
-    rl->a = NULL;
-    rl->len = 0;
-    rl->cap = 0;
-}
-static int rl_overlaps(const RangeList *rl, size_t s, size_t e)
-{
-    for (size_t i = 0; i < rl->len; i++)
-    {
-        size_t S = rl->a[i].s, E = rl->a[i].e;
-        if (!(e <= S || E <= s))
-            return 1;
-    }
-    return 0;
-}
-static void rl_add(RangeList *rl, size_t s, size_t e)
-{
-    if (rl->len == rl->cap)
-    {
-        size_t nc = rl->cap ? rl->cap * 2 : 8;
-
-        REMALLOC(rl->a, nc * sizeof(Range));
-
-        rl->cap = nc;
-    }
-    rl->a[rl->len++] = (Range){s, e};
-}
-
 // === Added: default parameter lowering helpers & passes ===
 
 static int params_has_assignment_pattern(TSNode params)
@@ -796,15 +694,9 @@ static char *build_param_default_inits(const char *src, TSNode params)
 
 // Lower defaults for function-like nodes (decls, expressions, generators, methods).
 // Only fires when params contain at least one assignment_pattern.
-static int rewrite_function_like_default_params(EditList *edits, const char *src, TSNode node, RangeList *claimed)
+static int rewrite_function_like_default_params(EditList *edits, const char *src, TSNode node, RangeList *claimed,
+                                                int overlaps)
 {
-    const char *nt = ts_node_type(node);
-    if (strcmp(nt, "function_declaration") != 0 && strcmp(nt, "function") != 0 &&
-        strcmp(nt, "function_expression") != 0 && strcmp(nt, "generator_function_declaration") != 0 &&
-        strcmp(nt, "generator_function") != 0 && strcmp(nt, "generator_function_expression") != 0 &&
-        strcmp(nt, "method_definition") != 0)
-        return 0;
-
     TSNode params = ts_node_child_by_field_name(node, "parameters", 10);
     TSNode body = ts_node_child_by_field_name(node, "body", 4);
     if (ts_node_is_null(params) || ts_node_is_null(body))
@@ -813,22 +705,24 @@ static int rewrite_function_like_default_params(EditList *edits, const char *src
         return 0;
 
     size_t ps = ts_node_start_byte(params), pe = ts_node_end_byte(params);
-    size_t bs = ts_node_start_byte(body), be = ts_node_end_byte(body);
-    if (rl_overlaps(claimed, ps, pe) || rl_overlaps(claimed, bs, be))
-        return 0;
+    size_t bs = ts_node_start_byte(body);
+    // if (rl_overlaps(claimed, ps, pe, "rewrite_function_like_default_params") || rl_overlaps(claimed, bs,
+    // be,"rewrite_function_like_default_params"))
+    //     return 0;
 
     char *decls = build_param_default_inits(src, params);
     if (!decls)
         return 0;
 
+    if (overlaps)
+        return 1;
+
     // Insert after the opening '{'
     size_t insert_at = bs + 1;
-    add_edit_take_ownership(edits, insert_at, insert_at, decls);
-    rl_add(claimed, bs, be);
+    add_edit_take_ownership(edits, insert_at, insert_at, decls, claimed);
 
     // Replace params list with "()"
-    add_edit(edits, ps, pe, "()");
-    rl_add(claimed, ps, pe);
+    add_edit(edits, ps, pe, "()", claimed);
 
     return 1;
 }
@@ -837,7 +731,8 @@ static int rewrite_function_like_default_params(EditList *edits, const char *src
 
 // Preserve `var f = function (…) { … }` but lower defaults:
 //   var f = function() { var a = arguments[0]…; … }
-static int rewrite_var_function_expression_defaults(EditList *edits, const char *src, TSNode node, RangeList *claimed)
+static int rewrite_var_function_expression_defaults(EditList *edits, const char *src, TSNode node, RangeList *claimed,
+                                                    int overlaps)
 {
     if (strcmp(ts_node_type(node), "variable_declaration") != 0)
         return 0;
@@ -869,25 +764,16 @@ static int rewrite_var_function_expression_defaults(EditList *edits, const char 
     if (!decls)
         return 0;
 
+    if (overlaps)
+        return 1;
+
     // Replace params with "()"
     size_t ps = ts_node_start_byte(params), pe = ts_node_end_byte(params);
-    if (rl_overlaps(claimed, ps, pe))
-    {
-        free(decls);
-        return 0;
-    }
-    add_edit(edits, ps, pe, "()");
-    rl_add(claimed, ps, pe);
+    add_edit(edits, ps, pe, "()", claimed);
 
     // Insert declarations at start of body
-    size_t bs = ts_node_start_byte(body), be = ts_node_end_byte(body);
-    if (rl_overlaps(claimed, bs, be))
-    {
-        free(decls);
-        return 0;
-    }
-    add_edit_take_ownership(edits, bs + 1, bs + 1, decls);
-    rl_add(claimed, bs, be);
+    size_t bs = ts_node_start_byte(body);
+    add_edit_take_ownership(edits, bs + 1, bs + 1, decls, claimed);
 
     return 1;
 }
@@ -1238,7 +1124,7 @@ static int collect_flat_destructure_bindings(TSNode pattern, const char *src, co
     return 0;
 }
 
-static char *rewrite_concise_body_with_bindings(const char *src, TSNode expr, const Bindings *b)
+static char *rewrite_concise_body_with_bindings(const char *src, TSNode expr, const Bindings *b, RangeList *claimed)
 {
     size_t es = ts_node_start_byte(expr), ee = ts_node_end_byte(expr);
     EditList tmp;
@@ -1255,7 +1141,7 @@ static char *rewrite_concise_body_with_bindings(const char *src, TSNode expr, co
                 size_t blen = strlen(b->a[i].name);
                 if (nlen == blen && strncmp(src + ns, b->a[i].name, nlen) == 0)
                 {
-                    add_edit(&tmp, ns - es, ne - es, b->a[i].repl);
+                    add_edit(&tmp, ns - es, ne - es, b->a[i].repl, claimed);
                     break;
                 }
             }
@@ -1512,11 +1398,9 @@ static void esm_append_excluded_key_node(esm_sb *excluded_csv, TSNode prop, cons
 }
 
 /* ============================  export rewriter  ============================ */
-static int rewrite_export_node(EditList *edits, const char *src, TSNode snode, RangeList *claimed)
+static int rewrite_export_node(EditList *edits, const char *src, TSNode snode, RangeList *claimed, int overlaps)
 {
     size_t ns = ts_node_start_byte(snode), ne = ts_node_end_byte(snode);
-    if (rl_overlaps(claimed, ns, ne))
-        return 0;
     int is_default_export = !ts_node_is_null(ts_node_child_by_field_name(snode, "default", 7));
     /* export default */
     {
@@ -1540,6 +1424,8 @@ static int rewrite_export_node(EditList *edits, const char *src, TSNode snode, R
                 TSNode id = ts_node_child_by_field_name(decl, "name", 4);
                 if (!ts_node_is_null(id))
                 {
+                    if (overlaps)
+                        return 1;
                     size_t is = ts_node_start_byte(id), ie = ts_node_end_byte(id);
                     esm_sb post;
                     esm_sb_init(&post);
@@ -1559,13 +1445,11 @@ static int rewrite_export_node(EditList *edits, const char *src, TSNode snode, R
                         esm_sb_putn(&post, src + is, ie - is);
                         esm_sb_puts(&post, ";");
                     }
-                    add_edit(edits, decl_e, decl_e, post.buf); /* insert AFTER function */
-                    rl_add(claimed, decl_e, decl_e);
+                    add_edit(edits, decl_e, decl_e, post.buf, claimed); /* insert AFTER function */
                     esm_sb_free(&post);
 
                     /* Remove only the 'export default' prefix */
-                    add_edit(edits, stmt_s, decl_s, "");
-                    rl_add(claimed, stmt_s, decl_s);
+                    add_edit(edits, stmt_s, decl_s, "", claimed);
                     return 1;
                 }
                 /* anonymous fn/class as default falls through to Case C */
@@ -1575,14 +1459,15 @@ static int rewrite_export_node(EditList *edits, const char *src, TSNode snode, R
         /* Case B: export default <Identifier>;  =>  module.exports = <Identifier>; */
         if (!ts_node_is_null(val) && strcmp(ts_node_type(val), "identifier") == 0)
         {
+            if (overlaps)
+                return 1;
             size_t vs = ts_node_start_byte(val), ve = ts_node_end_byte(val);
             esm_sb out;
             esm_sb_init(&out);
             esm_sb_puts(&out, "exports.__esModule=true;exports.default = ");
             esm_sb_putn(&out, src + vs, ve - vs);
             esm_sb_puts(&out, ";");
-            add_edit(edits, ns, ne, out.buf); /* replace whole export statement */
-            rl_add(claimed, ns, ne);
+            add_edit(edits, ns, ne, out.buf, claimed); /* replace whole export statement */
             esm_sb_free(&out);
             return 1;
         }
@@ -1591,6 +1476,8 @@ static int rewrite_export_node(EditList *edits, const char *src, TSNode snode, R
            => var __default__ = <expr>; module.exports = __default__; */
         if (!ts_node_is_null(val))
         {
+            if (overlaps)
+                return 1;
             size_t vs = ts_node_start_byte(val), ve = ts_node_end_byte(val);
             char *body = esm_dup_range(src, vs, ve);
             esm_sb out;
@@ -1598,8 +1485,7 @@ static int rewrite_export_node(EditList *edits, const char *src, TSNode snode, R
             esm_sb_puts(&out, "var __default__ = ");
             esm_sb_puts(&out, body);
             esm_sb_puts(&out, "; exports.default = __default__;");
-            add_edit(edits, ns, ne, out.buf); /* replace whole export statement */
-            rl_add(claimed, ns, ne);
+            add_edit(edits, ns, ne, out.buf, claimed); /* replace whole export statement */
             esm_sb_free(&out);
             free(body);
             return 1;
@@ -1616,6 +1502,8 @@ static int rewrite_export_node(EditList *edits, const char *src, TSNode snode, R
            Write: exports.f = f; function f(...) { ... } */
         if (strcmp(dt, "function_declaration") == 0)
         {
+            if (overlaps)
+                return 1;
             size_t stmt_s = ts_node_start_byte(snode); // start of `export ...`
             size_t decl_s = ts_node_start_byte(decl);  // start of `function`
 
@@ -1631,14 +1519,12 @@ static int rewrite_export_node(EditList *edits, const char *src, TSNode snode, R
                 esm_sb_puts(&pre, " = ");
                 esm_sb_putn(&pre, src + is, ie - is);
                 esm_sb_puts(&pre, "; ");
-                add_edit(edits, decl_s, decl_s, pre.buf); // insertion
-                rl_add(claimed, decl_s, decl_s);
+                add_edit(edits, decl_s, decl_s, pre.buf, claimed); // insertion
                 esm_sb_free(&pre);
             }
 
             // Remove just the 'export' token and following space(s)
-            add_edit(edits, stmt_s, decl_s, "");
-            rl_add(claimed, stmt_s, decl_s);
+            add_edit(edits, stmt_s, decl_s, "", claimed);
 
             return 1;
         }
@@ -1647,6 +1533,8 @@ static int rewrite_export_node(EditList *edits, const char *src, TSNode snode, R
            Write: exports.C = C; class C { ... }   */
         if (strcmp(dt, "class_declaration") == 0)
         {
+            if (overlaps)
+                return 1;
             size_t stmt_s = ts_node_start_byte(snode); // start of `export ...`
             size_t decl_s = ts_node_start_byte(decl);  // start of `class`
 
@@ -1662,14 +1550,12 @@ static int rewrite_export_node(EditList *edits, const char *src, TSNode snode, R
                 esm_sb_puts(&pre, " = ");
                 esm_sb_putn(&pre, src + is, ie - is);
                 esm_sb_puts(&pre, "; ");
-                add_edit(edits, decl_s, decl_s, pre.buf); // insertion
-                rl_add(claimed, decl_s, decl_s);
+                add_edit(edits, decl_s, decl_s, pre.buf, claimed); // insertion
                 esm_sb_free(&pre);
             }
 
             // Remove just the 'export' token and following space(s)
-            add_edit(edits, stmt_s, decl_s, "");
-            rl_add(claimed, stmt_s, decl_s);
+            add_edit(edits, stmt_s, decl_s, "", claimed);
 
             return 1;
         }
@@ -1677,6 +1563,8 @@ static int rewrite_export_node(EditList *edits, const char *src, TSNode snode, R
         /* export const|let … (lexical_declaration) — handles object/array patterns */
         if (strcmp(dt, "lexical_declaration") == 0)
         {
+            if (overlaps)
+                return 1;
             uint32_t ndecls = ts_node_named_child_count(decl);
             if (ndecls == 1)
             {
@@ -1692,6 +1580,8 @@ static int rewrite_export_node(EditList *edits, const char *src, TSNode snode, R
                         /* ---------- object pattern ---------- */
                         if (strcmp(nameType, "object_pattern") == 0)
                         {
+                            if (overlaps)
+                                return 1;
                             size_t vs = ts_node_start_byte(initNode), ve = ts_node_end_byte(initNode);
                             char *val = esm_dup_range(src, vs, ve);
 
@@ -1885,8 +1775,7 @@ static int rewrite_export_node(EditList *edits, const char *src, TSNode snode, R
                             }
 
                             esm_append_exports_for_csv(&out, names_csv.buf);
-                            add_edit(edits, ns, ne, out.buf);
-                            rl_add(claimed, ns, ne);
+                            add_edit(edits, ns, ne, out.buf, claimed);
                             esm_sb_free(&out);
                             esm_sb_free(&names_csv);
                             esm_sb_free(&excl);
@@ -1897,6 +1786,8 @@ static int rewrite_export_node(EditList *edits, const char *src, TSNode snode, R
                         /* ---------- array pattern ---------- */
                         if (strcmp(nameType, "array_pattern") == 0)
                         {
+                            if (overlaps)
+                                return 1;
                             size_t vs = ts_node_start_byte(initNode), ve = ts_node_end_byte(initNode);
                             char *val = esm_dup_range(src, vs, ve);
 
@@ -2031,8 +1922,7 @@ static int rewrite_export_node(EditList *edits, const char *src, TSNode snode, R
                             }
 
                             esm_append_exports_for_csv(&out, names_csv.buf);
-                            add_edit(edits, ns, ne, out.buf);
-                            rl_add(claimed, ns, ne);
+                            add_edit(edits, ns, ne, out.buf, claimed);
                             esm_sb_free(&out);
                             esm_sb_free(&names_csv);
                             free(val);
@@ -2061,8 +1951,7 @@ static int rewrite_export_node(EditList *edits, const char *src, TSNode snode, R
             esm_sb_init(&out);
             esm_sb_puts(&out, decl_txt);
             esm_append_exports_for_csv(&out, names.buf);
-            add_edit(edits, ns, ne, out.buf);
-            rl_add(claimed, ns, ne);
+            add_edit(edits, ns, ne, out.buf, claimed);
             esm_sb_free(&out);
             esm_sb_free(&names);
             free(decl_txt);
@@ -2072,6 +1961,8 @@ static int rewrite_export_node(EditList *edits, const char *src, TSNode snode, R
         /* export variable_declaration (just in case) */
         if (strcmp(dt, "variable_declaration") == 0)
         {
+            if (overlaps)
+                return 1;
             size_t ds = ts_node_start_byte(decl), de = ts_node_end_byte(decl);
             char *decl_txt = esm_dup_range(src, ds, de);
             esm_sb names;
@@ -2091,8 +1982,7 @@ static int rewrite_export_node(EditList *edits, const char *src, TSNode snode, R
             esm_sb_init(&out);
             esm_sb_puts(&out, decl_txt);
             esm_append_exports_for_csv(&out, names.buf);
-            add_edit(edits, ns, ne, out.buf);
-            rl_add(claimed, ns, ne);
+            add_edit(edits, ns, ne, out.buf, claimed);
             esm_sb_free(&out);
             esm_sb_free(&names);
             free(decl_txt);
@@ -2118,6 +2008,8 @@ static int rewrite_export_node(EditList *edits, const char *src, TSNode snode, R
     }
     if (!ts_node_is_null(specs))
     {
+        if (overlaps)
+            return 1;
         TSNode srcnode = ts_node_child_by_field_name(snode, "source", 6);
         char *mod = NULL;
         if (!ts_node_is_null(srcnode))
@@ -2175,8 +2067,7 @@ static int rewrite_export_node(EditList *edits, const char *src, TSNode snode, R
             esm_sb_puts(&out, ";");
         }
 
-        add_edit(edits, ns, ne, out.buf);
-        rl_add(claimed, ns, ne);
+        add_edit(edits, ns, ne, out.buf, claimed);
         esm_sb_free(&out);
         free(mod);
         return 1;
@@ -2188,6 +2079,8 @@ static int rewrite_export_node(EditList *edits, const char *src, TSNode snode, R
         TSNode srcnode = ts_node_child_by_field_name(snode, "source", 6);
         if (!ts_node_is_null(star) && !ts_node_is_null(srcnode))
         {
+            if (overlaps)
+                return 1;
             size_t ms = ts_node_start_byte(srcnode), me = ts_node_end_byte(srcnode);
             char *mod = esm_dup_range(src, ms, me);
             esm_sb out;
@@ -2196,8 +2089,7 @@ static int rewrite_export_node(EditList *edits, const char *src, TSNode snode, R
             esm_sb_puts(&out, mod);
             esm_sb_puts(&out,
                         "); for (var k in __tmpExp) { if (k === \"default\") continue; exports[k] = __tmpExp[k]; }");
-            add_edit(edits, ns, ne, out.buf);
-            rl_add(claimed, ns, ne);
+            add_edit(edits, ns, ne, out.buf, claimed);
             esm_sb_free(&out);
             free(mod);
             return 1;
@@ -2209,22 +2101,18 @@ static int rewrite_export_node(EditList *edits, const char *src, TSNode snode, R
         uint32_t n = ts_node_named_child_count(snode);
         if (n > 0)
         {
+            if (overlaps)
+                return 1;
             TSNode inner = ts_node_named_child(snode, n - 1);
             size_t s = ts_node_start_byte(inner), e = ts_node_end_byte(inner);
             char *txt = esm_dup_range(src, s, e);
-            add_edit(edits, ns, ne, txt);
-            rl_add(claimed, ns, ne);
-            free(txt);
+            add_edit_take_ownership(edits, ns, ne, txt, claimed);
             return 1;
         }
     }
 
     return 0;
 }
-
-static int rewrite_template_node(EditList *edits, const char *src, TSNode tpl_node, RangeList *claimed);
-static int rewrite_arrow_function_node(EditList *edits, const char *src, TSNode arrow_node, RangeList *claimed);
-static void rewrite_lexical_declaration(EditList *edits, const char *src, TSNode lexical_decl);
 
 // Detect whether a subtree contains a `this` that belongs to the current lexical scope of an arrow function.
 // We DO NOT descend into non-arrow function bodies or class bodies (they introduce a new `this`).
@@ -2261,16 +2149,8 @@ static int contains_lexical_this(TSNode node)
 
 // Rewrite JS rest parameters:  function f(x,y,...a){ ... }
 // -> function f(x,y){ var a = Object.values(arguments).slice(2); ... }
-static int rewrite_function_rest(EditList *edits, const char *src, TSNode func_node, RangeList *claimed)
+static int rewrite_function_rest(EditList *edits, const char *src, TSNode func_node, RangeList *claimed, int overlaps)
 {
-    const char *nt = ts_node_type(func_node);
-    // Cover decl/expr and generator forms
-    if (strcmp(nt, "function_declaration") != 0 && strcmp(nt, "function") != 0 &&
-        strcmp(nt, "generator_function_declaration") != 0 && strcmp(nt, "generator_function") != 0)
-    {
-        return 0;
-    }
-
     TSNode params = ts_node_child_by_field_name(func_node, "parameters", 10);
     TSNode body = ts_node_child_by_field_name(func_node, "body", 4);
     if (ts_node_is_null(params) || ts_node_is_null(body))
@@ -2317,6 +2197,10 @@ static int rewrite_function_rest(EditList *edits, const char *src, TSNode func_n
 
     if (ts_node_is_null(rest_pat))
         return 0;
+
+    if (overlaps)
+        return 1;
+
     size_t name_s = ts_node_start_byte(rest_pat);
     size_t name_e = ts_node_end_byte(rest_pat);
 
@@ -2349,7 +2233,8 @@ static int rewrite_function_rest(EditList *edits, const char *src, TSNode func_n
             rest_e = j + 1;
         }
     }
-    add_edit(edits, del_s, rest_e, "");
+
+    add_edit(edits, del_s, rest_e, "", claimed);
 
     // Insert the shim at the start of the body block (after '{' and any whitespace)
     size_t body_s = ts_node_start_byte(body);
@@ -2385,9 +2270,9 @@ static int rewrite_function_rest(EditList *edits, const char *src, TSNode func_n
     k += strlen(p3);
     repl[k] = '\0';
 
-    add_edit_take_ownership(edits, insert_at, insert_at, repl);
-    rl_add(claimed, params_s, params_e);
-    rl_add(claimed, body_s, body_e);
+    add_edit_take_ownership(edits, insert_at, insert_at, repl, claimed);
+    // rl_add(claimed, params_s, params_e);
+    // rl_add(claimed, body_s, body_e);
     return 1;
 }
 
@@ -2449,16 +2334,16 @@ static char *make_raw_rep(const char *orig, size_t l)
     return ret;
 }
 
-static int rewrite_raw_node(EditList *edits, const char *src, TSNode snode, RangeList *claimed)
+static int rewrite_raw_node(EditList *edits, const char *src, TSNode snode, RangeList *claimed, int overlaps)
 {
-    size_t ns = ts_node_start_byte(snode), ne = ts_node_end_byte(snode);
-    if (rl_overlaps(claimed, ns, ne))
-        return 0;
 
     TSNode raw = find_child_type(snode, "string_fragment_raw", NULL);
 
     if (ts_node_is_null(raw))
         return 0;
+
+    if (overlaps)
+        return 1;
 
     size_t start = ts_node_start_byte(raw), end = ts_node_end_byte(raw);
 
@@ -2467,47 +2352,12 @@ static int rewrite_raw_node(EditList *edits, const char *src, TSNode snode, Rang
     start = ts_node_start_byte(snode);
     end = ts_node_end_byte(snode);
 
-    add_edit_take_ownership(edits, start, end, out);
+    add_edit_take_ownership(edits, start, end, out, claimed);
     return 1;
 }
 
-// Import
-/*
 static int do_named_imports(EditList *edits, const char *src, TSNode snode, TSNode named_imports, TSNode string_frag,
-                            size_t start, size_t end)
-{
-    static uint32_t tmpn = 0;
-    uint32_t pos = 0;
-    char *out = NULL;
-    char buf[32];
-    TSNode n = find_child_type(named_imports, "import_specifier", &pos);
-
-    if (ts_node_is_null(n))
-        return 0;
-
-    size_t mod_name_end = ts_node_end_byte(string_frag), mod_name_start = ts_node_start_byte(string_frag);
-
-    sprintf(buf, "__tmpModImp%u", tmpn);
-
-    out = appendf(NULL, NULL, "var %s=require(\"%.*s\");", buf, (mod_name_end - mod_name_start), src + mod_name_start);
-
-    while (!ts_node_is_null(n))
-    {
-        size_t s = ts_node_start_byte(n);
-        size_t e = ts_node_end_byte(n);
-        out = appendf(out, NULL, "var %.*s=%s.%.*s;", e - s, src + s, buf, e - s, src + s);
-        pos++;
-        n = find_child_type(named_imports, "import_specifier", &pos);
-    }
-
-    add_edit_take_ownership(edits, start, end, out);
-
-    tmpn++;
-    return 1;
-}
-*/
-static int do_named_imports(EditList *edits, const char *src, TSNode snode, TSNode named_imports, TSNode string_frag,
-                            size_t start, size_t end)
+                            size_t start, size_t end, RangeList *claimed)
 {
     static uint32_t tmpn = 0;
     uint32_t pos = 0;
@@ -2556,13 +2406,13 @@ static int do_named_imports(EditList *edits, const char *src, TSNode snode, TSNo
         spec = find_child_type(named_imports, "import_specifier", &pos);
     }
 
-    add_edit_take_ownership(edits, start, end, out);
+    add_edit_take_ownership(edits, start, end, out, claimed);
     tmpn++;
     return 1;
 }
 
 static int do_namespace_import(EditList *edits, const char *src, TSNode snode, TSNode namespace_import,
-                               TSNode string_frag, size_t start, size_t end, uint8_t *polysneeded)
+                               TSNode string_frag, size_t start, size_t end, uint8_t *polysneeded, RangeList *claimed)
 {
     char *out = NULL;
     TSNode id = find_child_type(namespace_import, "identifier", NULL);
@@ -2577,13 +2427,13 @@ static int do_namespace_import(EditList *edits, const char *src, TSNode snode, T
     out = appendf(NULL, NULL, "var %.*s=_TrN_Sp._interopRequireWildcard(require(\"%.*s\"));", (id_end - id_start),
                   src + id_start, (mod_name_end - mod_name_start), src + mod_name_start);
 
-    add_edit_take_ownership(edits, start, end, out);
+    add_edit_take_ownership(edits, start, end, out, claimed);
     *polysneeded |= IMPORT_PF;
     return 1;
 }
 
 static int do_default_import(EditList *edits, const char *src, TSNode snode, TSNode default_ident, TSNode string_frag,
-                             size_t start, size_t end)
+                             size_t start, size_t end, RangeList *claimed)
 {
     char *out = NULL;
     size_t mod_s = ts_node_start_byte(string_frag), mod_e = ts_node_end_byte(string_frag);
@@ -2593,47 +2443,13 @@ static int do_default_import(EditList *edits, const char *src, TSNode snode, TSN
     out = appendf(NULL, NULL, "var %.*s=_TrN_Sp._interopDefault(require(\"%.*s\"));", (int)(id_e - id_s), src + id_s,
                   (int)(mod_e - mod_s), src + mod_s);
 
-    add_edit_take_ownership(edits, start, end, out);
+    add_edit_take_ownership(edits, start, end, out, claimed);
     return 1;
 }
-/*
-static int do_default_and_named_imports(EditList *edits, const char *src, TSNode snode,
-                                        TSNode default_ident, TSNode named_imports, TSNode string_frag,
-                                        size_t start, size_t end)
-{
-    static uint32_t tmpn = 0;
-    char tbuf[32];
-    sprintf(tbuf, "__tmpModImp%u", tmpn);
-
-    size_t mod_s = ts_node_start_byte(string_frag), mod_e = ts_node_end_byte(string_frag);
-    size_t id_s  = ts_node_start_byte(default_ident), id_e  = ts_node_end_byte(default_ident);
-
-    // require once
-    char *out = appendf(NULL, NULL, "var %s=require(\"%.*s\");", tbuf,
-                        (int)(mod_e - mod_s), src + mod_s);
-
-    // bind default: var def = __tmp;  (no .default — our export default maps to module.exports)
-    out = appendf(out, NULL, "var %.*s=%s;", (int)(id_e - id_s), src + id_s, tbuf);
-
-    // bind each named: var name = __tmp.name;
-    uint32_t pos = 0;
-    TSNode spec = find_child_type(named_imports, "import_specifier", &pos);
-    while (!ts_node_is_null(spec)) {
-        // NOTE: this assumes simple specifiers without "as". Matches your current do_named_imports behavior.
-        size_t s = ts_node_start_byte(spec), e = ts_node_end_byte(spec);
-        out = appendf(out, NULL, "var %.*s=%s.%.*s;", (int)(e - s), src + s, tbuf, (int)(e - s), src + s);
-        pos++;
-        spec = find_child_type(named_imports, "import_specifier", &pos);
-    }
-
-    add_edit_take_ownership(edits, start, end, out);
-    tmpn++;
-    return 1;
-}
-*/
 
 static int do_default_and_named_imports(EditList *edits, const char *src, TSNode snode, TSNode default_ident,
-                                        TSNode named_imports, TSNode string_frag, size_t start, size_t end)
+                                        TSNode named_imports, TSNode string_frag, size_t start, size_t end,
+                                        RangeList *claimed)
 {
     static uint32_t tmpn = 0;
     char tbuf[32];
@@ -2682,16 +2498,15 @@ static int do_default_and_named_imports(EditList *edits, const char *src, TSNode
         spec = find_child_type(named_imports, "import_specifier", &pos);
     }
 
-    add_edit_take_ownership(edits, start, end, out);
+    add_edit_take_ownership(edits, start, end, out, claimed);
     tmpn++;
     return 1;
 }
 
-static int rewrite_import_node(EditList *edits, const char *src, TSNode snode, RangeList *claimed, uint8_t *polysneeded)
+static int rewrite_import_node(EditList *edits, const char *src, TSNode snode, RangeList *claimed, uint8_t *polysneeded,
+                               int overlaps)
 {
     size_t ns = ts_node_start_byte(snode), ne = ts_node_end_byte(snode);
-    if (rl_overlaps(claimed, ns, ne))
-        return 0;
 
     TSNode string = find_child_type(snode, "string", NULL);
     if (ts_node_is_null(string))
@@ -2702,6 +2517,10 @@ static int rewrite_import_node(EditList *edits, const char *src, TSNode snode, R
         string_frag = find_child_type(string, "string_fragment_raw", NULL);
     if (ts_node_is_null(string_frag))
         return 0;
+
+    if (overlaps)
+        return 1;
+
     // look for template string here:
     TSNode child = find_child_type(snode, "import_clause", NULL);
     if (!ts_node_is_null(child))
@@ -2712,19 +2531,19 @@ static int rewrite_import_node(EditList *edits, const char *src, TSNode snode, R
 
         if (!ts_node_is_null(defid) && !ts_node_is_null(named))
         {
-            return do_default_and_named_imports(edits, src, snode, defid, named, string_frag, ns, ne);
+            return do_default_and_named_imports(edits, src, snode, defid, named, string_frag, ns, ne, claimed);
         }
         if (!ts_node_is_null(defid))
         {
-            return do_default_import(edits, src, snode, defid, string_frag, ns, ne);
+            return do_default_import(edits, src, snode, defid, string_frag, ns, ne, claimed);
         }
         if (!ts_node_is_null(named))
         {
-            return do_named_imports(edits, src, snode, named, string_frag, ns, ne);
+            return do_named_imports(edits, src, snode, named, string_frag, ns, ne, claimed);
         }
         if (!ts_node_is_null(nsimp))
         {
-            return do_namespace_import(edits, src, snode, nsimp, string_frag, ns, ne, polysneeded);
+            return do_namespace_import(edits, src, snode, nsimp, string_frag, ns, ne, polysneeded, claimed);
         }
     }
 
@@ -2735,16 +2554,17 @@ static int rewrite_import_node(EditList *edits, const char *src, TSNode snode, R
     REMALLOC(out, 13 + slen);
     snprintf(out, slen + 13, "require(\"%.*s\");", (int)slen, src + sstart);
     // check for newlines between ns and ne.  add an edit to insert however many, cuz this rewrites on one line
-    add_edit_take_ownership(edits, ns, ne, out);
+    add_edit_take_ownership(edits, ns, ne, out, claimed);
     return 1;
 }
 
 // Templates (tagged + untagged)
-static int rewrite_template_node(EditList *edits, const char *src, TSNode tpl_node, RangeList *claimed)
+static int rewrite_template_node(EditList *edits, const char *src, TSNode tpl_node, RangeList *claimed, int overlaps)
 {
+    if (overlaps)
+        return 1;
+
     size_t ns = ts_node_start_byte(tpl_node), ne = ts_node_end_byte(tpl_node);
-    if (rl_overlaps(claimed, ns, ne))
-        return 0;
 
     TSNode tag = prev_named_sibling(tpl_node);
     int is_tagged = (!ts_node_is_null(tag) && ts_node_end_byte(tag) == ns);
@@ -2803,7 +2623,7 @@ static int rewrite_template_node(EditList *edits, const char *src, TSNode tpl_no
         adds(")");
         out[j] = '\0';
 
-        add_edit_take_ownership(edits, ts, ne, out);
+        add_edit_take_ownership(edits, ts, ne, out, claimed);
         rl_add(claimed, ts, ne);
         free(lits);
         free(exprs);
@@ -2971,7 +2791,7 @@ static int rewrite_template_node(EditList *edits, const char *src, TSNode tpl_no
     out[j] = '\0';
 #undef adds
     // printf("strlen=%d, cap=%d\n", strlen(out), (int)cap);
-    add_edit_take_ownership(edits, ns, ne, out);
+    add_edit_take_ownership(edits, ns, ne, out, claimed);
     rl_add(claimed, ns, ne);
     free(lits);
     free(exprs);
@@ -2980,11 +2800,10 @@ static int rewrite_template_node(EditList *edits, const char *src, TSNode tpl_no
 }
 
 // Arrow functions (concise + block, with flat destructuring lowering)
-static int rewrite_arrow_function_node(EditList *edits, const char *src, TSNode arrow_node, RangeList *claimed)
+static int rewrite_arrow_function_node(EditList *edits, const char *src, TSNode arrow_node, RangeList *claimed,
+                                       int overlaps)
 {
     size_t ns = ts_node_start_byte(arrow_node), ne = ts_node_end_byte(arrow_node);
-    if (rl_overlaps(claimed, ns, ne))
-        return 0;
 
     TSNode params = ts_node_child_by_field_name(arrow_node, "parameters", 10);
     TSNode body = ts_node_child_by_field_name(arrow_node, "body", 4);
@@ -3025,6 +2844,9 @@ static int rewrite_arrow_function_node(EditList *edits, const char *src, TSNode 
     }
     if (ts_node_is_null(params) || ts_node_is_null(body))
         return 0;
+
+    if (overlaps)
+        return 1;
 
     size_t ps = ts_node_start_byte(params), pe = ts_node_end_byte(params);
     size_t bs = ts_node_start_byte(body), be = ts_node_end_byte(body);
@@ -3087,7 +2909,7 @@ static int rewrite_arrow_function_node(EditList *edits, const char *src, TSNode 
     char *rep = NULL;
     if (did && !is_block)
     {
-        char *rew = rewrite_concise_body_with_bindings(src, body, &binds);
+        char *rew = rewrite_concise_body_with_bindings(src, body, &binds, claimed);
         size_t cap = 64 + strlen(temp) + strlen(rew) + 1;
 
         REMALLOC(rep, cap);
@@ -3253,32 +3075,12 @@ static int rewrite_arrow_function_node(EditList *edits, const char *src, TSNode 
         free(rep);
         rep = wrapped;
     }
-    add_edit_take_ownership(edits, ns, ne, rep);
-    rl_add(claimed, ns, ne);
+    add_edit_take_ownership(edits, ns, ne, rep, claimed);
     binds_free(&binds);
     return 1;
 }
-
-// let/const -> var (token edit)
-static void rewrite_lexical_declaration(EditList *edits, const char *src, TSNode lexical_decl)
-{
-    (void)src;
-    uint32_t c = ts_node_child_count(lexical_decl);
-    for (uint32_t i = 0; i < c; i++)
-    {
-        TSNode kid = ts_node_child(lexical_decl, i);
-        if (ts_node_is_named(kid))
-            break;
-        const char *kw = ts_node_type(kid);
-        if (strcmp(kw, "let") == 0 || strcmp(kw, "const") == 0)
-        {
-            add_edit(edits, ts_node_start_byte(kid), ts_node_end_byte(kid), "var");
-            break;
-        }
-    }
-}
-
-static void rewrite_array_spread(EditList *edits, const char *src, TSNode arr, int isObject, uint8_t *polysneeded)
+static int rewrite_array_spread(EditList *edits, const char *src, TSNode arr, int isObject, RangeList *claimed,
+                                uint8_t *polysneeded, int overlaps)
 {
     (void)src;
     uint32_t cnt2, cnt1 = ts_node_child_count(arr);
@@ -3334,36 +3136,34 @@ static void rewrite_array_spread(EditList *edits, const char *src, TSNode arr, i
     if (!nspread)
     {
         if (!nshort)
-            return;
-
-        // handle shorthand if there are no ...vars
-        int firstdone = 0;
-        out = calloc(1, needed);
-        *out = '{';
+            return 0;
 
         for (i = 0; i < cnt1; i++)
         {
             TSNode kid = ts_node_child(arr, i);
             if (ts_node_is_named(kid))
             {
-                size_t beg = ts_node_start_byte(kid), end = ts_node_end_byte(kid);
-
-                if (firstdone)
-                    strcat(out, ",");
-
-                strncat(out, src + beg, end - beg);
                 if (strcmp(ts_node_type(kid), "shorthand_property_identifier") == 0)
                 {
-                    strcat(out, ":");
-                    strncat(out, src + beg, end - beg);
+                    if (overlaps)
+                        return 1;
+                    size_t beg = ts_node_start_byte(kid), end = ts_node_end_byte(kid);
+                    size_t kidsz = end - beg, repsz = 2 * (end - beg) + 2;
+                    char rep[repsz];
+
+                    memcpy(rep, src + beg, kidsz);
+                    *(rep + kidsz) = ':';
+                    memcpy(rep + kidsz + 1, src + beg, kidsz);
+                    rep[repsz - 1] = '\0';
+                    add_edit(edits, beg, end, rep, claimed);
                 }
-                firstdone = 1;
             }
         }
-        strcat(out, "}");
-        add_edit_take_ownership(edits, ts_node_start_byte(arr), ts_node_end_byte(arr), out);
-        return;
+        return 1;
     }
+
+    if (overlaps)
+        return 1;
 
     /* process ...var */
     const char *fpref = "._addchain(_TrN_Sp.__spreadA([],";
@@ -3383,6 +3183,7 @@ static void rewrite_array_spread(EditList *edits, const char *src, TSNode arr, i
     {                                                                                                                  \
         *(out + spos++) = (c);                                                                                         \
     } while (0)
+
 #define addstr(s, l)                                                                                                   \
     do                                                                                                                 \
     {                                                                                                                  \
@@ -3455,11 +3256,12 @@ static void rewrite_array_spread(EditList *edits, const char *src, TSNode arr, i
 #undef newarr
 #undef newarrsz
     // printf("strlen=%d, alloc'ed=%d + 1\n", strlen(out), (int)needed-1);
-    add_edit_take_ownership(edits, ts_node_start_byte(arr), ts_node_end_byte(arr), out);
+    // printf("edit is '%s' at %u\n", out, ts_node_start_byte(arr) );
+    uint32_t ns = ts_node_start_byte(arr), ne = ts_node_end_byte(arr);
+    add_edit_take_ownership(edits, ns, ne, out, claimed);
     *polysneeded |= SPREAD_PF;
+    return 1;
 }
-
-// ============== unified dispatcher/pass ==============
 
 // ===== ES5 Unicode regex transformer (reintroduced) =====
 typedef struct
@@ -3511,13 +3313,451 @@ static void sb_put_u4(SBuf *b, unsigned u)
     snprintf(tmp, sizeof(tmp), "\\u%04X", u & 0xFFFFu);
     sb_puts(b, tmp);
 }
-static void sb_free(SBuf *b) {
-    if (!b) return;
-    if (b->s) free(b->s);
+static void sb_free(SBuf *b)
+{
+    if (!b)
+        return;
+    if (b->s)
+        free(b->s);
     b->s = NULL;
     b->len = 0;
     b->cap = 0;
 }
+
+// let/const -> var (token edit)
+static void collect_ids_from_pattern(const char *src, TSNode name_node, SBuf *params, SBuf *args)
+{
+    // Simple fixed-size stack; grow if needed
+    TSNode stack[256];
+    int top = 0;
+    stack[top++] = name_node;
+    int first = (params->len == 0);
+
+    while (top > 0)
+    {
+        TSNode cur = stack[--top];
+        const char *t = ts_node_type(cur);
+        if (strcmp(t, "identifier") == 0 || strcmp(t, "shorthand_property_identifier_pattern") == 0)
+        {
+            size_t ns = ts_node_start_byte(cur);
+            size_t ne = ts_node_end_byte(cur);
+            if (!first)
+            {
+                sb_puts(params, ",");
+                sb_puts(args, ",");
+            }
+            sb_putsn(params, src + ns, ne - ns);
+            sb_putsn(args, src + ns, ne - ns);
+            first = 0;
+            continue;
+        }
+        uint32_t cc = ts_node_child_count(cur);
+        for (uint32_t j = 0; j < cc; j++)
+        {
+            TSNode ch = ts_node_child(cur, j);
+            if (!ts_node_is_null(ch))
+            {
+                if (top < 256)
+                    stack[top++] = ch;
+            }
+        }
+    }
+}
+
+static int span_has_flow_ctrl_tokens(const char *src, size_t s, size_t e)
+{
+    size_t len = (e > s) ? (e - s) : 0;
+    if (len == 0)
+        return 0;
+    const char *p = src + s;
+    if (memmem(p, len, "break", 5))
+        return 1;
+    if (memmem(p, len, "continue", 8))
+        return 1;
+    if (memmem(p, len, "return", 6))
+        return 1;
+    return 0;
+}
+
+static int rewrite_lexical_declaration(EditList *edits, const char *src, TSNode lexical_decl, RangeList *claimed,
+                                       int overlaps)
+{
+    int ret = 0;
+    uint32_t c = ts_node_child_count(lexical_decl);
+    int have_let = 0;
+
+    // --- 1) Replace 'let'/'const' keyword with 'var'
+    for (uint32_t i = 0; i < c; i++)
+    {
+        TSNode kid = ts_node_child(lexical_decl, i);
+        if (ts_node_is_named(kid))
+            break;
+        const char *kw = ts_node_type(kid);
+        if (strcmp(kw, "let") == 0)
+        {
+            if (overlaps)
+                return 1;
+            add_edit(edits, ts_node_start_byte(kid), ts_node_end_byte(kid), "var", NULL);
+            have_let = 1;
+            break;
+        }
+
+        if (strcmp(kw, "const") == 0)
+        {
+            if (overlaps)
+                return 1;
+
+            add_edit(edits, ts_node_start_byte(kid), ts_node_end_byte(kid), "var  ", NULL);
+            ret = 1;
+            break;
+        }
+    }
+
+    if (!have_let)
+        return ret;
+
+    // 2) Handle special contexts
+    TSNode parent = ts_node_parent(lexical_decl);
+    if (!ts_node_is_null(parent))
+    {
+        const char *ptype = ts_node_type(parent);
+        int in_for = (strcmp(ptype, "for_statement") == 0) || (strcmp(ptype, "for_in_statement") == 0) ||
+                     (strcmp(ptype, "for_of_statement") == 0);
+
+        if (in_for)
+        {
+            // Only when this decl is the initializer
+            TSNode init = ts_node_child_by_field_name(parent, "initializer", 11);
+            if (!ts_node_is_null(init) && ts_node_start_byte(init) == ts_node_start_byte(lexical_decl))
+            {
+                // Collect identifiers from all declarators (destructuring supported)
+                SBuf params;
+                sb_init(&params);
+                SBuf args;
+                sb_init(&args);
+                uint32_t nchild = ts_node_child_count(lexical_decl);
+                for (uint32_t k = 0; k < nchild; k++)
+                {
+                    TSNode dec = ts_node_child(lexical_decl, k);
+                    if (strcmp(ts_node_type(dec), "variable_declarator") == 0)
+                    {
+                        TSNode name = ts_node_child_by_field_name(dec, "name", 4);
+                        if (!ts_node_is_null(name))
+                            collect_ids_from_pattern(src, name, &params, &args);
+                    }
+                }
+
+                if (params.len > 0)
+                {
+                    TSNode body = ts_node_child_by_field_name(parent, "body", 4);
+                    if (!ts_node_is_null(body))
+                    {
+                        size_t bs = ts_node_start_byte(body);
+                        size_t be = ts_node_end_byte(body);
+                        int is_block = (strcmp(ts_node_type(body), "statement_block") == 0);
+
+                        SBuf pref;
+                        sb_init(&pref);
+                        SBuf suff;
+                        sb_init(&suff);
+                        sb_puts(&pref, "(function(");
+                        sb_putsn(&pref, params.s ? params.s : "", params.len);
+                        sb_puts(&pref, "){ ");
+                        sb_puts(&suff, " })( ");
+                        sb_putsn(&suff, args.s ? args.s : "", args.len);
+                        sb_puts(&suff, " );");
+
+                        if (is_block)
+                        {
+                            add_edit(edits, bs + 1, bs + 1, pref.s, claimed);
+                            add_edit(edits, be - 1, be - 1, suff.s, claimed);
+                        }
+                        else
+                        {
+                            add_edit(edits, bs, bs, pref.s, claimed);
+                            add_edit(edits, be, be, suff.s, claimed);
+                        }
+                        sb_free(&pref);
+                        sb_free(&suff);
+                    }
+                }
+
+                sb_free(&params);
+                sb_free(&args);
+            }
+        }
+        else
+        {
+            // Not in a for-header. Consider block-wrapping for plain blocks to preserve let scope.
+            // Find nearest enclosing statement_block stopping at structural boundaries.
+            TSNode anc = parent;
+            TSNode block = (TSNode){0};
+            while (!ts_node_is_null(anc))
+            {
+                const char *t = ts_node_type(anc);
+                if (strcmp(t, "statement_block") == 0)
+                {
+                    block = anc;
+                    break;
+                }
+                if (strcmp(t, "function") == 0 || strcmp(t, "function_declaration") == 0 ||
+                    strcmp(t, "method_definition") == 0 || strcmp(t, "arrow_function") == 0 ||
+                    strcmp(t, "class_body") == 0 || strcmp(t, "program") == 0 || strcmp(t, "switch_statement") == 0 ||
+                    strcmp(t, "for_statement") == 0 || strcmp(t, "for_in_statement") == 0 ||
+                    strcmp(t, "for_of_statement") == 0 || strcmp(t, "while_statement") == 0 ||
+                    strcmp(t, "do_statement") == 0)
+                {
+                    break;
+                }
+                anc = ts_node_parent(anc);
+            }
+            if (!ts_node_is_null(block))
+            {
+                size_t bs = ts_node_start_byte(block);
+                size_t be = ts_node_end_byte(block);
+                if (!span_has_flow_ctrl_tokens(src, bs, be))
+                {
+                    SBuf pref;
+                    sb_init(&pref);
+                    SBuf suff;
+                    sb_init(&suff);
+                    sb_puts(&pref, "(function(){ ");
+                    sb_puts(&suff, " }());");
+                    add_edit(edits, bs + 1, bs + 1, pref.s, claimed);
+                    add_edit(edits, be - 1, be - 1, suff.s, claimed);
+                    sb_free(&pref);
+                    sb_free(&suff);
+                }
+            }
+
+            // Top-level program: wrap the whole file if this decl is top-level and not already wrapped.
+            if (strcmp(ptype, "program") == 0)
+            {
+                TSNode prog = parent;
+                size_t ps = ts_node_start_byte(prog);
+                size_t pe = ts_node_end_byte(prog);
+                // Heuristic: only if file doesn't already start with "(function(" or "(function(){"
+                int already = 0;
+                size_t head = (pe - ps) > 32 ? 32 : (pe - ps);
+                if (head > 0)
+                {
+                    if (memcmp(src + ps, "(function(", 10) == 0)
+                        already = 1;
+                    else if (memmem(src + ps, head, "(function(){", 12))
+                        already = 1;
+                }
+                if (!already)
+                {
+                    add_edit(edits, ps, ps, "(function(){\n", claimed);
+                    add_edit(edits, pe, pe, "\n}());", claimed);
+                }
+            }
+        }
+    }
+
+    return 1;
+}
+
+static int rewrite_for_of_destructuring(EditList *edits, const char *src, TSNode forof, RangeList *claimed,
+                                        uint8_t *polysneeded, int overlaps)
+{
+    // Handle `for (let <pattern> of <right>) <body>`
+    TSNode left = ts_node_child_by_field_name(forof, "left", 4);
+    TSNode right = ts_node_child_by_field_name(forof, "right", 5);
+    TSNode body = ts_node_child_by_field_name(forof, "body", 4);
+    if (ts_node_is_null(left) || ts_node_is_null(right) || ts_node_is_null(body))
+        return 0;
+
+    const char *lt = ts_node_type(left);
+    TSNode pattern = {{0}};
+    TSNode kind = ts_node_child_by_field_name(forof, "kind", 4); // 'let' token when left is a pattern
+
+    if (strcmp(lt, "lexical_declaration") == 0)
+    {
+        // Expect one declarator with a destructuring name
+        if (ts_node_named_child_count(left) != 1)
+            return 0;
+        TSNode decl = ts_node_named_child(left, 0);
+        if (strcmp(ts_node_type(decl), "variable_declarator") != 0)
+            return 0;
+        TSNode name = ts_node_child_by_field_name(decl, "name", 4);
+        if (ts_node_is_null(name))
+            return 0;
+        const char *nt = ts_node_type(name);
+        if (!(strcmp(nt, "array_pattern") == 0 || strcmp(nt, "object_pattern") == 0 ||
+              strcmp(nt, "assignment_pattern") == 0))
+            return 0;
+        pattern = name;
+    }
+    else
+    {
+        // Tree-sitter shape: left itself is the pattern; there should be a 'kind' token "let"/"const"
+        if (ts_node_is_null(kind))
+            return 0;
+        const char *nt = ts_node_type(left);
+        if (!(strcmp(nt, "array_pattern") == 0 || strcmp(nt, "object_pattern") == 0 ||
+              strcmp(nt, "assignment_pattern") == 0))
+            return 0;
+        pattern = left;
+    }
+
+    // Only implement array_pattern for now (object supported elsewhere in transpiler)
+    const char *pt = ts_node_type(pattern);
+    if (strcmp(pt, "array_pattern") != 0)
+        return 0;
+
+    if (overlaps)
+        return 1;
+
+    *polysneeded |= FOROF_PF;
+
+    // Gather identifiers and their indices, and compute N for slicedToArray.
+    typedef struct
+    {
+        char *name;
+        int index;
+    } ArrBind;
+    ArrBind *arr = NULL;
+    size_t alen = 0, acap = 0;
+    int idx = 0;
+    int last_was_value = 0; // have we just consumed a value element?
+    uint32_t c = ts_node_child_count(pattern);
+    for (uint32_t i = 0; i < c; i++)
+    {
+        TSNode ch = ts_node_child(pattern, i);
+        if (!ts_node_is_named(ch))
+        {
+            const char *tok = ts_node_type(ch);
+            if (strcmp(tok, ",") == 0)
+            {
+                if (!last_was_value)
+                {
+                    // elision advances index
+                    idx++;
+                }
+                // after a comma, we are not "just consumed value"
+                last_was_value = 0;
+            }
+            else if (strcmp(tok, "[") == 0)
+            {
+                last_was_value = 0;
+            }
+            continue;
+        }
+
+        const char *ct = ts_node_type(ch);
+        if (strcmp(ct, "identifier") == 0)
+        {
+            size_t ns = ts_node_start_byte(ch), ne = ts_node_end_byte(ch);
+            char *nm = strndup(src + ns, ne - ns);
+            if (alen == acap)
+            {
+                acap = acap ? acap * 2 : 4;
+                REMALLOC(arr, acap * sizeof(ArrBind));
+            }
+            arr[alen++] = (ArrBind){nm, idx};
+            idx++; // position after this element
+            last_was_value = 1;
+        }
+        else if (strcmp(ct, "assignment_pattern") == 0)
+        {
+            TSNode left_id = ts_node_child_by_field_name(ch, "left", 4);
+            if (ts_node_is_null(left_id) || strcmp(ts_node_type(left_id), "identifier") != 0)
+            { /* unsupported */
+            }
+            else
+            {
+                size_t ns = ts_node_start_byte(left_id), ne = ts_node_end_byte(left_id);
+                char *nm = strndup(src + ns, ne - ns);
+                if (alen == acap)
+                {
+                    acap = acap ? acap * 2 : 4;
+                    REMALLOC(arr, acap * sizeof(ArrBind));
+                }
+                arr[alen++] = (ArrBind){nm, idx};
+            }
+            idx++;
+            last_was_value = 1;
+        }
+        else if (strcmp(ct, "rest_pattern") == 0)
+        {
+            // ignore for now
+            last_was_value = 1;
+        }
+        else
+        {
+            // nested pattern not supported in this pass
+            // clean up
+            for (size_t k = 0; k < alen; k++)
+                free(arr[k].name);
+            free(arr);
+            return 0;
+        }
+    }
+    int N = idx; // number of slots up to last specified element (including elisions)
+
+    // Build replacement code
+    size_t fs = ts_node_start_byte(forof), fe = ts_node_end_byte(forof);
+    size_t rs = ts_node_start_byte(right), re = ts_node_end_byte(right);
+    size_t bs = ts_node_start_byte(body), be = ts_node_end_byte(body);
+
+    int is_block = (strcmp(ts_node_type(body), "statement_block") == 0);
+
+    SBuf out;
+    sb_init(&out);
+
+    // _loop declaration
+    sb_puts(&out, "var _loop = function _loop() { var _pairs$_i = _TrN_Sp.slicedToArray(_pairs[_i], ");
+    char numbuf[32];
+    snprintf(numbuf, sizeof(numbuf), "%d", N);
+    sb_puts(&out, numbuf);
+    sb_puts(&out, "), ");
+
+    // bindings: a = _pairs$_i[0], b = _pairs$_i[1];
+    for (size_t k = 0; k < alen; k++)
+    {
+        if (k)
+            sb_puts(&out, ",");
+        sb_puts(&out, arr[k].name);
+        sb_puts(&out, " = _pairs$_i[");
+        char ibuf[32];
+        snprintf(ibuf, sizeof(ibuf), "%d", arr[k].index);
+        sb_puts(&out, ibuf);
+        sb_puts(&out, "]");
+    }
+    sb_puts(&out, "; ");
+
+    // body content
+    if (is_block)
+    {
+        // insert inner of block
+        sb_putsn(&out, src + bs + 1, (be - 1) - (bs + 1));
+        sb_puts(&out, " }; ");
+    }
+    else
+    {
+        sb_putsn(&out, src + bs, be - bs);
+        sb_puts(&out, "; }; ");
+    }
+
+    // for loop header using array length
+    sb_puts(&out, "for (var _i = 0, _pairs = ");
+    sb_putsn(&out, src + rs, re - rs);
+    sb_puts(&out, "; _i < _pairs.length; _i++) { _loop(); }");
+
+    // Replace entire for-of statement
+    add_edit_take_ownership(edits, fs, fe, out.s, claimed);
+
+    // cleanup
+    for (size_t k = 0; k < alen; k++)
+        free(arr[k].name);
+    free(arr);
+
+    return 1;
+}
+
+// ============== unified dispatcher/pass ==============
+
 static int hexv(int c)
 {
     if (c >= '0' && c <= '9')
@@ -4029,26 +4269,28 @@ static char *regex_u_to_es5_pattern(const char *in, size_t len)
      return Name;
    }(Super);
 */
-static void es5_emit_class_core(SBuf *out,
-    const char *src,
-    const char *cname, size_t cname_len,
-    int has_super, size_t sups, size_t supe,
-    TSNode body)
+static void es5_emit_class_core(SBuf *out, const char *src, const char *cname, size_t cname_len, int has_super,
+                                size_t sups, size_t supe, TSNode body)
 {
     /* ——— gather constructor and methods ——— */
     int ctor_found = 0;
     TSNode ctor_params = {{0}};
-    TSNode ctor_body   = {{0}};
+    TSNode ctor_body = {{0}};
     uint32_t n = ts_node_child_count(body);
 
     // Buckets for methods
-    SBuf proto_arr; sb_init(&proto_arr);   // will hold " {key:'x',value:function x(){...}},..."
-    SBuf static_arr; sb_init(&static_arr); // same for statics
+    SBuf proto_arr;
+    sb_init(&proto_arr); // will hold " {key:'x',value:function x(){...}},..."
+    SBuf static_arr;
+    sb_init(&static_arr); // same for statics
 
-    for (uint32_t i = 0; i < n; i++) {
+    for (uint32_t i = 0; i < n; i++)
+    {
         TSNode mth = ts_node_child(body, i);
-        if (!ts_node_is_named(mth)) continue;
-        if (strcmp(ts_node_type(mth), "method_definition") != 0) continue;
+        if (!ts_node_is_named(mth))
+            continue;
+        if (strcmp(ts_node_type(mth), "method_definition") != 0)
+            continue;
 
         // constructor?
         TSNode nname = ts_node_child_by_field_name(mth, "name", 4);
@@ -4057,20 +4299,27 @@ static void es5_emit_class_core(SBuf *out,
                       (strncmp(src + ts_node_start_byte(nname), "constructor", 11) == 0);
 
         TSNode params = ts_node_child_by_field_name(mth, "parameters", 10);
-        TSNode mb     = ts_node_child_by_field_name(mth, "body", 4);
+        TSNode mb = ts_node_child_by_field_name(mth, "body", 4);
         int is_static = 0;
         // detect "static" modifier (tree-sitter exposes a named child "static" token)
-        for (uint32_t j = 0, cn = ts_node_child_count(mth); j < cn; j++) {
+        for (uint32_t j = 0, cn = ts_node_child_count(mth); j < cn; j++)
+        {
             TSNode ch = ts_node_child(mth, j);
-            if (ts_node_is_named(ch)) continue;
+            if (ts_node_is_named(ch))
+                continue;
             size_t ss = ts_node_start_byte(ch), se = ts_node_end_byte(ch);
-            if (se > ss && strncmp(src + ss, "static", 6) == 0) { is_static = 1; break; }
+            if (se > ss && strncmp(src + ss, "static", 6) == 0)
+            {
+                is_static = 1;
+                break;
+            }
         }
 
-        if (is_ctor) {
+        if (is_ctor)
+        {
             ctor_found = 1;
             ctor_params = params;
-            ctor_body   = mb;
+            ctor_body = mb;
             continue;
         }
 
@@ -4081,31 +4330,39 @@ static void es5_emit_class_core(SBuf *out,
         size_t ks = ts_node_start_byte(nname), ke = ts_node_end_byte(nname);
         size_t ps = ts_node_is_null(params) ? 0 : ts_node_start_byte(params);
         size_t pe = ts_node_is_null(params) ? 0 : ts_node_end_byte(params);
-        size_t bs = ts_node_is_null(mb)     ? 0 : ts_node_start_byte(mb);
-        size_t be = ts_node_is_null(mb)     ? 0 : ts_node_end_byte(mb);
+        size_t bs = ts_node_is_null(mb) ? 0 : ts_node_start_byte(mb);
+        size_t be = ts_node_is_null(mb) ? 0 : ts_node_end_byte(mb);
 
         SBuf *bucket = is_static ? &static_arr : &proto_arr;
         // comma if needed
-        if (bucket->len) sb_puts(bucket, ",");
+        if (bucket->len)
+            sb_puts(bucket, ",");
         // {key:'name',value:function name(){...}}
         sb_puts(bucket, "{key:'");
         sb_putsn(bucket, src + ks, ke - ks);
         sb_puts(bucket, "',value:function ");
         sb_putsn(bucket, src + ks, ke - ks);
-        if (ps && pe) sb_putsn(bucket, src + ps, pe - ps);
-        else sb_puts(bucket, "()");
+        if (ps && pe)
+            sb_putsn(bucket, src + ps, pe - ps);
+        else
+            sb_puts(bucket, "()");
         sb_puts(bucket, " ");
-        if (bs && be) sb_putsn(bucket, src + bs, be - bs);
-        else sb_puts(bucket, "{}");
+        if (bs && be)
+            sb_putsn(bucket, src + bs, be - bs);
+        else
+            sb_puts(bucket, "{}");
         sb_puts(bucket, "}");
     }
 
     /* ——— open wrapper ——— */
-    if (!has_super) {
+    if (!has_super)
+    {
         sb_puts(out, "var ");
         sb_putsn(out, cname, cname_len);
         sb_puts(out, " = (function() {");
-    } else {
+    }
+    else
+    {
         sb_puts(out, "var ");
         sb_putsn(out, cname, cname_len);
         sb_puts(out, " = (function(_Super) {_TrN_Sp.inherits(");
@@ -4119,39 +4376,57 @@ static void es5_emit_class_core(SBuf *out,
     sb_puts(out, "  function ");
     sb_putsn(out, cname, cname_len);
 
-    if (ctor_found && !ts_node_is_null(ctor_params)) {
+    if (ctor_found && !ts_node_is_null(ctor_params))
+    {
         size_t ps = ts_node_start_byte(ctor_params), pe = ts_node_end_byte(ctor_params);
         sb_putsn(out, src + ps, pe - ps);
-    } else {
+    }
+    else
+    {
         sb_puts(out, "()"); // synthesize if missing
     }
     sb_puts(out, " {");
 
-    if (has_super) {
+    if (has_super)
+    {
         // In the simple/most common case, `super(args)` is the first statement.
         // Textually grab constructor body and rewrite a single leading "super(" call.
-        if (ctor_found && !ts_node_is_null(ctor_body)) {
+        if (ctor_found && !ts_node_is_null(ctor_body))
+        {
             size_t bs = ts_node_start_byte(ctor_body), be = ts_node_end_byte(ctor_body);
             /* ts 'body' includes the surrounding braces; slice to just the contents */
             const char *b = src + bs + 1;
-            size_t blen = (be > bs + 1) ? (be - bs - 2) : 0;  /* drop leading '{' and trailing '}' */
+            size_t blen = (be > bs + 1) ? (be - bs - 2) : 0; /* drop leading '{' and trailing '}' */
             // naive rewrite: look for "super(" at top-level of body text once
             const char *open = strstr(b, "super(");
-            if (open) {
+            if (open)
+            {
                 /* Find '(' right after 'super' and its matching ')' */
                 const char *lp = strchr(open, '(');
-                if (!lp) goto NO_SUPER_REWRITE;
+                if (!lp)
+                    goto NO_SUPER_REWRITE;
 
                 size_t args_s = (size_t)(lp + 1 - b); /* first char inside '(' */
                 int depth = 1;
                 size_t i = args_s;
                 size_t call_rp = blen; /* fallback */
-                for (; i < blen; i++) {
+                for (; i < blen; i++)
+                {
                     char c = b[i];
-                    if (c == '(') depth++;
-                    else if (c == ')') { depth--; if (depth == 0) { call_rp = i; break; } }
+                    if (c == '(')
+                        depth++;
+                    else if (c == ')')
+                    {
+                        depth--;
+                        if (depth == 0)
+                        {
+                            call_rp = i;
+                            break;
+                        }
+                    }
                 }
-                if (depth != 0) goto NO_SUPER_REWRITE;
+                if (depth != 0)
+                    goto NO_SUPER_REWRITE;
 
                 /* Emit prelude */
                 sb_puts(out, "var _this;_TrN_Sp.classCallCheck(this, ");
@@ -4160,35 +4435,45 @@ static void es5_emit_class_core(SBuf *out,
 
                 /* _this = _super.call(this, <args>); */
                 sb_puts(out, "_this = _super.call(this, ");
-                if (call_rp > args_s) sb_putsn(out, b + args_s, call_rp - args_s);
+                if (call_rp > args_s)
+                    sb_putsn(out, b + args_s, call_rp - args_s);
                 sb_puts(out, ");");
 
                 /* Copy remainder of ctor body after the super(...) statement’s semicolon */
-                size_t after = call_rp + 1;               /* position after ')' */
-                if (after < blen && b[after] == ';') after++; /* swallow trailing ';' if any */
-                if (after < blen) sb_putsn(out, b + after, blen - after);
+                size_t after = call_rp + 1; /* position after ')' */
+                if (after < blen && b[after] == ';')
+                    after++; /* swallow trailing ';' if any */
+                if (after < blen)
+                    sb_putsn(out, b + after, blen - after);
 
                 /* Ensure the constructor returns _this */
                 sb_puts(out, "return _this;");
-            } else {
+            }
+            else
+            {
             NO_SUPER_REWRITE:
                 sb_puts(out, "_TrN_Sp.classCallCheck(this, ");
                 sb_putsn(out, cname, cname_len);
                 sb_puts(out, ");");
-                if (blen) sb_putsn(out, b, blen);
+                if (blen)
+                    sb_putsn(out, b, blen);
             }
-
-        } else {
+        }
+        else
+        {
             sb_puts(out, "var _this;_TrN_Sp.classCallCheck(this, ");
             sb_putsn(out, cname, cname_len);
             sb_puts(out, ");return _this;");
         }
-    } else {
+    }
+    else
+    {
         // no extends
         sb_puts(out, "_TrN_Sp.classCallCheck(this, ");
         sb_putsn(out, cname, cname_len);
         sb_puts(out, ");");
-        if (ctor_found && !ts_node_is_null(ctor_body)) {
+        if (ctor_found && !ts_node_is_null(ctor_body))
+        {
             size_t bs = ts_node_start_byte(ctor_body), be = ts_node_end_byte(ctor_body);
             sb_putsn(out, src + bs, be - bs);
         }
@@ -4200,7 +4485,7 @@ static void es5_emit_class_core(SBuf *out,
     sb_putsn(out, cname, cname_len);
     sb_puts(out, ",[");
     sb_puts(out, proto_arr.s);
-    sb_puts(out, "],[" );
+    sb_puts(out, "],[");
     sb_puts(out, static_arr.s);
     sb_puts(out, "]);");
 
@@ -4209,9 +4494,12 @@ static void es5_emit_class_core(SBuf *out,
     sb_putsn(out, cname, cname_len);
     sb_puts(out, ";");
 
-    if (!has_super) {
+    if (!has_super)
+    {
         sb_puts(out, "})();");
-    } else {
+    }
+    else
+    {
         sb_puts(out, "})(");
         sb_putsn(out, src + sups, supe - sups);
         sb_puts(out, ");");
@@ -4221,96 +4509,81 @@ static void es5_emit_class_core(SBuf *out,
     sb_free(&static_arr);
 }
 
-static int rewrite_class_to_es5(EditList *edits, const char *src, TSNode class_node, RangeList *claimed)
+static int rewrite_class_to_es5(EditList *edits, const char *src, TSNode class_node, RangeList *claimed, int overlaps)
 {
     const char *ctype = ts_node_type(class_node);
-    int has_super=0;
+    int has_super = 0;
 
     if (strcmp(ctype, "class_declaration") != 0)
         return 0;
     size_t cs = ts_node_start_byte(class_node), ce = ts_node_end_byte(class_node);
-    if (rl_overlaps(claimed, cs, ce))
-        return 0;
 
     TSNode id = ts_node_child_by_field_name(class_node, "name", 4);
     if (ts_node_is_null(id))
         return 0;
 
-
     size_t ids = ts_node_start_byte(id), ide = ts_node_end_byte(id);
     const char *nameptr = src + ids;
     size_t namelen = ide - ids;
-
 
     TSNode body = ts_node_child_by_field_name(class_node, "body", 4);
     if (ts_node_is_null(body))
         return 0;
 
-    /*
-    TSNode supercls = search_for_node_type(body, "super");
-    if(!ts_node_is_null(supercls))
-    {
-        has_super = 1;
-    }
-
-    size_t sups = 0, supe = 0;
-    if (has_super)
-    {
-        sups = ts_node_start_byte(supercls);
-        supe = ts_node_end_byte(supercls);
-    }
-    */
+    if (overlaps)
+        return 1;
 
     size_t sups = 0, supe = 0;
     TSNode heritage = (TSNode){0};
     /* find the `class_heritage` child node on this class */
-    for (uint32_t i = 0, n = ts_node_child_count(class_node); i < n; i++) {
+    for (uint32_t i = 0, n = ts_node_child_count(class_node); i < n; i++)
+    {
         TSNode ch = ts_node_child(class_node, i);
-        if (!ts_node_is_named(ch)) continue;
-        if (strcmp(ts_node_type(ch), "class_heritage") == 0) {
+        if (!ts_node_is_named(ch))
+            continue;
+        if (strcmp(ts_node_type(ch), "class_heritage") == 0)
+        {
             heritage = ch;
             break;
         }
     }
 
-    if (!ts_node_is_null(heritage)) {
+    if (!ts_node_is_null(heritage))
+    {
         /* inside class_heritage, the first NAMED child after the `extends` token
            is the superclass expression (identifier, member_expression, etc.) */
         TSNode sup_expr = (TSNode){0};
-        for (uint32_t j = 0, m = ts_node_child_count(heritage); j < m; j++) {
+        for (uint32_t j = 0, m = ts_node_child_count(heritage); j < m; j++)
+        {
             TSNode hch = ts_node_child(heritage, j);
-            if (!ts_node_is_named(hch)) continue;   /* skip the literal 'extends' token */
+            if (!ts_node_is_named(hch))
+                continue; /* skip the literal 'extends' token */
             sup_expr = hch;
             break;
         }
-        if (!ts_node_is_null(sup_expr)) {
+        if (!ts_node_is_null(sup_expr))
+        {
             has_super = 1;
             sups = ts_node_start_byte(sup_expr);
             supe = ts_node_end_byte(sup_expr);
         }
     }
 
-
-
     SBuf out;
     sb_init(&out);
     es5_emit_class_core(&out, src, nameptr, namelen, has_super, sups, supe, body);
     char *rep = out.s;
-    add_edit_take_ownership(edits, cs, ce, rep);
-    rl_add(claimed, cs, ce);
+    add_edit_take_ownership(edits, cs, ce, rep, claimed);
     return 1;
 }
 
-/* class expression -> ES5: replace node with IIFE returning constructor.
-   Handles named and anonymous expressions. *
 static int rewrite_class_expression_to_es5(EditList *edits, const char *src, TSNode class_node, RangeList *claimed,
-                                           uint8_t *polysneeded)
+                                           uint8_t *polysneeded, int overlaps)
 {
     if (strcmp(ts_node_type(class_node), "class") != 0)
         return 0;
+
     size_t cs = ts_node_start_byte(class_node), ce = ts_node_end_byte(class_node);
-    if (rl_overlaps(claimed, cs, ce))
-        return 0;
 
     TSNode id = ts_node_child_by_field_name(class_node, "name", 4);
     char tmpname[64];
@@ -4318,7 +4591,6 @@ static int rewrite_class_expression_to_es5(EditList *edits, const char *src, TSN
     size_t namelen = 0;
     if (ts_node_is_null(id))
     {
-        // anonymous: synthesize a name using offset to avoid collisions
         snprintf(tmpname, sizeof(tmpname), "__TrC%u", (unsigned)cs);
         nameptr = tmpname;
         namelen = strlen(tmpname);
@@ -4330,80 +4602,38 @@ static int rewrite_class_expression_to_es5(EditList *edits, const char *src, TSN
         namelen = ide - ids;
     }
 
-    TSNode supercls = ts_node_child_by_field_name(class_node, "superclass", 10);
-    int has_super = !ts_node_is_null(supercls);
-    size_t sups = 0, supe = 0;
-    if (has_super)
-    {
-        sups = ts_node_start_byte(supercls);
-        supe = ts_node_end_byte(supercls);
-    }
-    TSNode body = ts_node_child_by_field_name(class_node, "body", 4);
-    if (ts_node_is_null(body))
-        return 0;
-
-    SBuf out;
-    sb_init(&out);
-    sb_puts(&out, "(function(){");
-    es5_emit_class_core(&out, src, nameptr, namelen, has_super, sups, supe, body);
-    sb_puts(&out, "return ");
-    sb_putsn(&out, nameptr, namelen);
-    sb_puts(&out, ";})()");
-    char *rep = out.s;
-    add_edit_take_ownership(edits, cs, ce, rep);
-    rl_add(claimed, cs, ce);
-    return 1;
-}
-*/
-
-static int rewrite_class_expression_to_es5(EditList *edits, const char *src, TSNode class_node, RangeList *claimed,
-                                           uint8_t *polysneeded)
-{
-    if (strcmp(ts_node_type(class_node), "class") != 0)
-        return 0;
-
-    size_t cs = ts_node_start_byte(class_node), ce = ts_node_end_byte(class_node);
-    if (rl_overlaps(claimed, cs, ce)) return 0;
-
-    TSNode id = ts_node_child_by_field_name(class_node, "name", 4);
-    char tmpname[64]; const char *nameptr = NULL;
-    size_t namelen = 0;
-    if (ts_node_is_null(id)) {
-        snprintf(tmpname, sizeof(tmpname), "__TrC%u", (unsigned)cs);
-        nameptr = tmpname; namelen = strlen(tmpname);
-    }
-    else 
-    {
-        size_t ids = ts_node_start_byte(id), ide = ts_node_end_byte(id);
-        nameptr = src + ids;
-        namelen = ide - ids;
-    }
-
     int has_super = 0;
     size_t sups = 0, supe = 0;
 
     TSNode heritage = (TSNode){0};
     /* find the `class_heritage` child node on this class */
-    for (uint32_t i = 0, n = ts_node_child_count(class_node); i < n; i++) {
+    for (uint32_t i = 0, n = ts_node_child_count(class_node); i < n; i++)
+    {
         TSNode ch = ts_node_child(class_node, i);
-        if (!ts_node_is_named(ch)) continue;
-        if (strcmp(ts_node_type(ch), "class_heritage") == 0) {
+        if (!ts_node_is_named(ch))
+            continue;
+        if (strcmp(ts_node_type(ch), "class_heritage") == 0)
+        {
             heritage = ch;
             break;
         }
     }
 
-    if (!ts_node_is_null(heritage)) {
+    if (!ts_node_is_null(heritage))
+    {
         /* inside class_heritage, the first NAMED child after the `extends` token
            is the superclass expression (identifier, member_expression, etc.) */
         TSNode sup_expr = (TSNode){0};
-        for (uint32_t j = 0, m = ts_node_child_count(heritage); j < m; j++) {
+        for (uint32_t j = 0, m = ts_node_child_count(heritage); j < m; j++)
+        {
             TSNode hch = ts_node_child(heritage, j);
-            if (!ts_node_is_named(hch)) continue;   /* skip the literal 'extends' token */
+            if (!ts_node_is_named(hch))
+                continue; /* skip the literal 'extends' token */
             sup_expr = hch;
             break;
         }
-        if (!ts_node_is_null(sup_expr)) {
+        if (!ts_node_is_null(sup_expr))
+        {
             has_super = 1;
             sups = ts_node_start_byte(sup_expr);
             supe = ts_node_end_byte(sup_expr);
@@ -4421,7 +4651,11 @@ static int rewrite_class_expression_to_es5(EditList *edits, const char *src, TSN
     if (ts_node_is_null(body))
         return 0;
 
-    SBuf out; sb_init(&out);
+    if (overlaps)
+        return 1;
+
+    SBuf out;
+    sb_init(&out);
     // emit the same var Name = function(){...}(); but as an expression we only need the IIFE value.
     // So we generate the same code and then reference the Name immediately.
     es5_emit_class_core(&out, src, nameptr, namelen, has_super, sups, supe, body);
@@ -4434,24 +4668,25 @@ static int rewrite_class_expression_to_es5(EditList *edits, const char *src, TSN
     //   (function(){ ...; return Name; }())
     // If you prefer the "var" form only for declarations, keep the simple IIFE here:
     // We'll do that:
-    SBuf expr; sb_init(&expr);
+    SBuf expr;
+    sb_init(&expr);
     sb_puts(&expr, "(function(){");
-    sb_puts(&expr, out.s);  // defines var Name = function(){...}();
-    sb_puts(&expr, "return "); sb_putsn(&expr, nameptr, namelen); sb_puts(&expr, ";}())");
+    sb_puts(&expr, out.s); // defines var Name = function(){...}();
+    sb_puts(&expr, "return ");
+    sb_putsn(&expr, nameptr, namelen);
+    sb_puts(&expr, ";}())");
 
-    add_edit_take_ownership(edits, cs, ce, expr.s);
+    add_edit_take_ownership(edits, cs, ce, expr.s, claimed);
     sb_free(&out); // expr now owns the final buffer
-    rl_add(claimed, cs, ce);
+
     return 1;
 }
 
-static int rewrite_regex_u_to_es5(EditList *edits, const char *src, TSNode regex_node, RangeList *claimed)
+static int rewrite_regex_u_to_es5(EditList *edits, const char *src, TSNode regex_node, RangeList *claimed, int overlaps)
 {
     if (strcmp(ts_node_type(regex_node), "regex") != 0)
         return 0;
     size_t rs = ts_node_start_byte(regex_node), re = ts_node_end_byte(regex_node);
-    if (rl_overlaps(claimed, rs, re))
-        return 0;
     TSNode pattern = find_child_type(regex_node, "regex_pattern", NULL);
     TSNode flags = find_child_type(regex_node, "regex_flags", NULL);
     if (ts_node_is_null(pattern) || ts_node_is_null(flags))
@@ -4470,6 +4705,10 @@ static int rewrite_regex_u_to_es5(EditList *edits, const char *src, TSNode regex
     char *newpat = regex_u_to_es5_pattern(src + ps, pe - ps);
     if (!newpat)
         return 0;
+
+    if (overlaps)
+        return 1;
+
     size_t nflen = 0;
     char *newflags = NULL;
     if (fe > fs)
@@ -4496,8 +4735,167 @@ static int rewrite_regex_u_to_es5(EditList *edits, const char *src, TSNode regex
     free(newpat);
     if (newflags)
         free(newflags);
-    add_edit_take_ownership(edits, rs, re, rep);
-    rl_add(claimed, rs, re);
+    add_edit_take_ownership(edits, rs, re, rep, claimed);
+
+    return 1;
+}
+// helper: generate fresh temporary names following _i, _x, _i2, _x2, ...
+static void make_fresh_forof_names(char *ibuf, size_t ibufsz, char *xbuf, size_t xbufsz)
+{
+    static unsigned counter = 0;
+    ++counter;
+    // first pair is "_i" / "_x", then suffix numbers for subsequent pairs
+    if (counter == 1)
+    {
+        snprintf(ibuf, ibufsz, "_i");
+        snprintf(xbuf, xbufsz, "_x");
+    }
+    else
+    {
+        snprintf(ibuf, ibufsz, "_i%u", counter);
+        snprintf(xbuf, xbufsz, "_x%u", counter);
+    }
+}
+
+// Rewrite plain (non-destructuring) for-of loops:
+//   for (var a of X) { body }   =>  for (var _i=0,_x=X; _i<_x.length; _i++) { var a=_x[_i]; body }
+//   for (a of X) { body }       =>  for (var _i=0,_x=X; _i<_x.length; _i++) { a=_x[_i]; body }
+static int rewrite_for_of_simple(EditList *edits, const char *src, TSNode forof, RangeList *claimed,
+                                 uint8_t *polysneeded, int overlaps)
+{
+    (void)polysneeded;
+    (void)overlaps; // currently unused
+
+    if (ts_node_is_null(forof))
+        return 0;
+    if (strcmp(ts_node_type(forof), "for_in_statement") != 0)
+        return 0;
+
+    // Ensure this is actually a "for … of …" (tree-sitter encodes both in the same node type)
+    TSNode op = ts_node_child_by_field_name(forof, "operator", 8);
+    if (ts_node_is_null(op))
+        return 0;
+    size_t ops = ts_node_start_byte(op), ope = ts_node_end_byte(op);
+    if (ope <= ops || strncmp(src + ops, "of", (size_t)(ope - ops)) != 0)
+        return 0;
+
+    TSNode left = ts_node_child_by_field_name(forof, "left", 4);
+    TSNode right = ts_node_child_by_field_name(forof, "right", 5);
+    TSNode body = ts_node_child_by_field_name(forof, "body", 4);
+    if (ts_node_is_null(left) || ts_node_is_null(right) || ts_node_is_null(body))
+        return 0;
+
+    const char *lt = ts_node_type(left);
+
+    // reject cases already handled by destructuring path
+    if (strcmp(lt, "lexical_declaration") == 0)
+    {
+        // let/const with possible pattern — let the destructuring rewriter take it
+        return 0;
+    }
+
+    // Identify the loop target identifier and whether it is a declaration or a bare identifier
+    TSNode name = {{0}};
+    bool is_decl = false;
+
+    if (strcmp(lt, "variable_declaration") == 0)
+    {
+        // Expect exactly one declarator: var a
+        uint32_t n = ts_node_named_child_count(left);
+        if (n != 1)
+            return 0;
+        TSNode decl = ts_node_named_child(left, 0);
+        if (strcmp(ts_node_type(decl), "variable_declarator") != 0)
+            return 0;
+        name = ts_node_child_by_field_name(decl, "name", 4);
+        if (ts_node_is_null(name) || strcmp(ts_node_type(name), "identifier") != 0)
+            return 0;
+        is_decl = true;
+    }
+    else if (strcmp(lt, "identifier") == 0)
+    {
+        // for (a of X)
+        name = left;
+        is_decl = false;
+    }
+    else
+    {
+        // not a simple case
+        return 0;
+    }
+
+    // Extract right-hand expression text
+    size_t rs = ts_node_start_byte(right);
+    size_t re = ts_node_end_byte(right);
+    // Body range and block-ness
+    size_t bs = ts_node_start_byte(body);
+    size_t be = ts_node_end_byte(body);
+    bool is_block = (strcmp(ts_node_type(body), "statement_block") == 0);
+
+    // Identifier text (target)
+    size_t ns = ts_node_start_byte(name);
+    size_t ne = ts_node_end_byte(name);
+
+    // Fresh temps
+    char ibuf[32], xbuf[32];
+    make_fresh_forof_names(ibuf, sizeof ibuf, xbuf, sizeof xbuf);
+
+    // Build replacement
+    SBuf out;
+    sb_init(&out);
+
+    sb_puts(&out, "for (var ");
+    sb_puts(&out, ibuf);
+    sb_puts(&out, " = 0, ");
+    sb_puts(&out, xbuf);
+    sb_puts(&out, " = ");
+    sb_putsn(&out, src + rs, re - rs);
+    sb_puts(&out, "; ");
+    sb_puts(&out, ibuf);
+    sb_puts(&out, " < ");
+    sb_puts(&out, xbuf);
+    sb_puts(&out, ".length; ");
+    sb_puts(&out, ibuf);
+    sb_puts(&out, "++) {");
+
+    if (is_decl)
+    {
+        sb_puts(&out, "var ");
+        sb_putsn(&out, src + ns, ne - ns);
+        sb_puts(&out, " = ");
+        sb_puts(&out, xbuf);
+        sb_puts(&out, "[");
+        sb_puts(&out, ibuf);
+        sb_puts(&out, "]; ");
+    }
+    else
+    {
+        sb_putsn(&out, src + ns, ne - ns);
+        sb_puts(&out, " = ");
+        sb_puts(&out, xbuf);
+        sb_puts(&out, "[");
+        sb_puts(&out, ibuf);
+        sb_puts(&out, "]; ");
+    }
+
+    // splice body
+    if (is_block)
+    {
+        // copy inner of the block (without braces)
+        sb_putsn(&out, src + bs + 1, (be - 1) - (bs + 1));
+    }
+    else
+    {
+        sb_putsn(&out, src + bs, be - bs);
+    }
+    sb_puts(&out, "}");
+
+    // Replace the whole for-of node
+    size_t fs = ts_node_start_byte(forof);
+    size_t fe = ts_node_end_byte(forof);
+    add_edit_take_ownership(edits, fs, fe, out.s, claimed);
+    out.s = NULL;
+    sb_free(&out);
     return 1;
 }
 
@@ -4576,26 +4974,24 @@ static void tp_linecol_from_src_offset_utf8(const char *src, size_t src_len, uin
         *out_col = (int)col;
 }
 
-RP_ParseRes transpiler_rewrite_pass1(EditList *edits, const char *src, size_t src_len, TSNode root, uint8_t *polysneeded)
+RP_ParseRes transpiler_rewrite_pass(EditList *edits, const char *src, size_t src_len, TSNode root, uint8_t *polysneeded,
+                                    int *unresolved)
 {
     RP_ParseRes ret;
+    RangeList claimed;
+    TSTreeCursor cur;
+
     ret.err = 0;
     ret.line_num = 0;
     ret.col_num = 0;
     ret.altered = 0;
     ret.pos = 0;
+    ret.transpiled = NULL;
 
-    // it will never find the position of the error (actually it will be at end of file, which is not helpful).
-    //  Just return err=2
-    /*
-        if (ts_node_has_error(root)) {
-            ret.err = 2;
-            return ret;
-        }
-    */
-    RangeList claimed;
+    *unresolved = 0;
+
     rl_init(&claimed);
-    TSTreeCursor cur = ts_tree_cursor_new(root);
+    cur = ts_tree_cursor_new(root);
 
     for (;;)
     {
@@ -4611,165 +5007,112 @@ RP_ParseRes transpiler_rewrite_pass1(EditList *edits, const char *src, size_t sr
             tp_linecol_from_src_offset_utf8(src, src_len, ret.pos, &ret.line_num, &ret.col_num);
         }
 
-        if (!rl_overlaps(&claimed, ns, ne))
+        int overlaps = rl_overlaps(&claimed, ns, ne, "transpiler_rewrite");
+        int handled = 0;
+
+        /* functions return handled==1 when overlap==1, but do not actually do any edits.
+           read as "would_overlap", and so we need another pass                             */
+
+        if (strcmp(nt, "regex") == 0)
         {
-            int handled = 0;
-
-            if (strcmp(nt, "regex") == 0)
-            {
-                handled = rewrite_regex_u_to_es5(edits, src, n, &claimed);
-            }
-
-            if (!handled && (strcmp(nt, "template_string") == 0 || strcmp(nt, "template_literal") == 0))
-            {
-                handled = rewrite_template_node(edits, src, n, &claimed);
-            }
-            if (!handled && (strcmp(nt, "string") == 0 || strcmp(nt, "template_literal") == 0))
-            {
-                handled = rewrite_raw_node(edits, src, n, &claimed);
-            }
-
-            /* class transpile produces functions, and then in pass2, handle them */
-            if (!handled && strcmp(nt, "class_declaration") == 0)
-            {
-                handled = rewrite_class_to_es5(edits, src, n, &claimed);
-                if(handled)
-                    *polysneeded |= CLASS_PF;
-            }
-
-            if (!handled && strcmp(nt, "class") == 0)
-            {
-                handled = rewrite_class_expression_to_es5(edits, src, n, &claimed, polysneeded);
-            }
-
+            handled = rewrite_regex_u_to_es5(edits, src, n, &claimed, overlaps);
         }
 
-        if (ts_tree_cursor_goto_first_child(&cur))
-            continue;
-        while (!ts_tree_cursor_goto_next_sibling(&cur))
+        if (!handled && (strcmp(nt, "template_string") == 0 || strcmp(nt, "template_literal") == 0))
         {
-            if (!ts_tree_cursor_goto_parent(&cur))
-            {
-                ts_tree_cursor_delete(&cur);
-                free(claimed.a);
-                return ret;
-            }
+            handled = rewrite_template_node(edits, src, n, &claimed, overlaps);
         }
-    }
-    return ret;
-}
-
-RP_ParseRes transpiler_rewrite_pass2(EditList *edits, const char *src, size_t src_len, TSNode root,
-                                     uint8_t *polysneeded)
-{
-    RP_ParseRes ret;
-    ret.err = 0;
-    ret.line_num = 0;
-    ret.col_num = 0;
-    ret.altered = 0;
-    ret.pos = 0;
-
-    // it will never find the position of the error (actually it will be at end of file, which is not helpful).
-    //  Just return err=2
-    /*
-        if (ts_node_has_error(root)) {
-            ret.err = 2;
-            return ret;
-        }
-    */
-    RangeList claimed;
-    rl_init(&claimed);
-    TSTreeCursor cur = ts_tree_cursor_new(root);
-
-    for (;;)
-    {
-        TSNode n = ts_tree_cursor_current_node(&cur);
-        const char *nt = ts_node_type(n);
-        size_t ns = ts_node_start_byte(n), ne = ts_node_end_byte(n);
-
-        // errors
-        if (!ret.err && (nt && strcmp(nt, "ERROR") == 0))
+        if (!handled && (strcmp(nt, "string") == 0 || strcmp(nt, "template_literal") == 0))
         {
-            ret.err = 1;
-            ret.pos = ts_node_start_byte(n);
-            tp_linecol_from_src_offset_utf8(src, src_len, ret.pos, &ret.line_num, &ret.col_num);
+            handled = rewrite_raw_node(edits, src, n, &claimed, overlaps);
         }
 
-        if (!rl_overlaps(&claimed, ns, ne))
+        /* class transpile produces functions, and then in pass2, handle them */
+        if (!handled && strcmp(nt, "class_declaration") == 0)
         {
-            int handled = 0;
+            handled = rewrite_class_to_es5(edits, src, n, &claimed, overlaps);
+            if (handled)
+                *polysneeded |= CLASS_PF;
+        }
 
-            /* templates can get lost in classes, so try again here. 
-               If that fails, do we need three passes?               */
-            if (!handled && (strcmp(nt, "template_string") == 0 || strcmp(nt, "template_literal") == 0))
-            {
-                handled = rewrite_template_node(edits, src, n, &claimed);
-            }
-            if (!handled && (strcmp(nt, "string") == 0 || strcmp(nt, "template_literal") == 0))
-            {
-                handled = rewrite_raw_node(edits, src, n, &claimed);
-            }
+        if (!handled && strcmp(nt, "class") == 0)
+        {
+            handled = rewrite_class_expression_to_es5(edits, src, n, &claimed, polysneeded, overlaps);
+        }
 
-            if (!handled && (strcmp(nt, "import_statement") == 0))
-            {
-                handled = rewrite_import_node(edits, src, n, &claimed, polysneeded);
-            }
-            if (!handled && (strcmp(nt, "export_statement") == 0))
-            {
-                handled = rewrite_export_node(edits, src, n, &claimed);
-                if (handled)
-                    *polysneeded |= IMPORT_PF;
-            }
+        if (!handled && (strcmp(nt, "import_statement") == 0))
+        {
+            handled = rewrite_import_node(edits, src, n, &claimed, polysneeded, overlaps);
+        }
+        if (!handled && (strcmp(nt, "export_statement") == 0))
+        {
+            handled = rewrite_export_node(edits, src, n, &claimed, overlaps);
+            if (handled)
+                *polysneeded |= IMPORT_PF;
+        }
 
-            if (!handled && strcmp(nt, "arrow_function") == 0)
-            {
-                handled = rewrite_arrow_function_node(edits, src, n, &claimed);
-            }
-            if (!handled && strcmp(nt, "variable_declaration") == 0)
-            {
-                handled = rewrite_var_function_expression_defaults(edits, src, n, &claimed);
-            }
-            if (!handled &&
-                (strcmp(nt, "function_declaration") == 0 || strcmp(nt, "function") == 0 ||
-                 strcmp(nt, "function_expression") == 0 || strcmp(nt, "generator_function_declaration") == 0 ||
-                 strcmp(nt, "generator_function") == 0 || strcmp(nt, "generator_function_expression") == 0))
-            {
-                handled = rewrite_function_like_default_params(edits, src, n, &claimed);
-                if (!handled)
-                    handled = rewrite_function_rest(edits, src, n, &claimed);
-            }
+        if (!handled && strcmp(nt, "arrow_function") == 0)
+        {
+            handled = rewrite_arrow_function_node(edits, src, n, &claimed, overlaps);
+        }
+        if (!handled && strcmp(nt, "variable_declaration") == 0)
+        {
+            handled = rewrite_var_function_expression_defaults(edits, src, n, &claimed, overlaps);
+        }
+        if (!handled && (strcmp(nt, "function_declaration") == 0 || strcmp(nt, "function") == 0 ||
+                         strcmp(nt, "function_expression") == 0 || strcmp(nt, "generator_function_declaration") == 0 ||
+                         strcmp(nt, "generator_function") == 0 || strcmp(nt, "generator_function_expression") == 0))
+        {
+            handled = rewrite_function_like_default_params(edits, src, n, &claimed, overlaps);
+            if (!handled)
+                handled = rewrite_function_rest(edits, src, n, &claimed, overlaps);
+        }
 
-            if (!handled && strcmp(nt, "expression_statement") == 0)
+        if (!handled && strcmp(nt, "expression_statement") == 0)
+        {
+            TSNode expr = ts_node_named_child(n, 0);
+            if (!ts_node_is_null(expr))
             {
-                TSNode expr = ts_node_named_child(n, 0);
-                if (!ts_node_is_null(expr))
+                const char *et = ts_node_type(expr);
+                if (strcmp(et, "function_expression") == 0 || strcmp(et, "function") == 0 ||
+                    strcmp(et, "generator_function_expression") == 0 || strcmp(et, "generator_function") == 0)
                 {
-                    const char *et = ts_node_type(expr);
-                    if (strcmp(et, "function_expression") == 0 || strcmp(et, "function") == 0 ||
-                        strcmp(et, "generator_function_expression") == 0 || strcmp(et, "generator_function") == 0)
+                    TSNode ep = ts_node_child_by_field_name(expr, "parameters", 10);
+                    if (!ts_node_is_null(ep) && params_has_assignment_pattern(ep))
                     {
-                        TSNode ep = ts_node_child_by_field_name(expr, "parameters", 10);
-                        if (!ts_node_is_null(ep) && params_has_assignment_pattern(ep))
-                        {
-                            handled = rewrite_function_like_default_params(edits, src, expr, &claimed);
-                        }
+                        handled = rewrite_function_like_default_params(edits, src, expr, &claimed, overlaps);
                     }
                 }
             }
+        }
 
-            if (!handled && strcmp(nt, "lexical_declaration") == 0)
+        if (!handled && strcmp(nt, "for_in_statement") == 0)
+        {
+            // First try destructuring (let/const with patterns)
+            handled = rewrite_for_of_destructuring(edits, src, n, &claimed, polysneeded, overlaps);
+            // Then handle the common simple cases (var a of X, a of X)
+            if (!handled)
             {
-                rewrite_lexical_declaration(edits, src, n);
-            }
-            if (!handled && strcmp(nt, "array") == 0)
-            {
-                rewrite_array_spread(edits, src, n, 0, polysneeded);
-            }
-            if (!handled && strcmp(nt, "object") == 0)
-            {
-                rewrite_array_spread(edits, src, n, 1, polysneeded);
+                handled = rewrite_for_of_simple(edits, src, n, &claimed, polysneeded, overlaps);
             }
         }
+
+        if (!handled && strcmp(nt, "lexical_declaration") == 0)
+        {
+            handled = rewrite_lexical_declaration(edits, src, n, &claimed, overlaps);
+        }
+
+        if (!handled && strcmp(nt, "array") == 0)
+        {
+            handled = rewrite_array_spread(edits, src, n, 0, &claimed, polysneeded, overlaps);
+        }
+        if (!handled && strcmp(nt, "object") == 0)
+        {
+            handled = rewrite_array_spread(edits, src, n, 1, &claimed, polysneeded, overlaps);
+        }
+
+        if (handled && overlaps)
+            *unresolved = 1;
 
         if (ts_tree_cursor_goto_first_child(&cur))
             continue;
@@ -4786,149 +5129,134 @@ RP_ParseRes transpiler_rewrite_pass2(EditList *edits, const char *src, size_t sr
     return ret;
 }
 
+#define MAX_PASSES 10
+
 RP_ParseRes transpile(const char *src, size_t src_len, int printTree)
 {
-    TSParser *parser = ts_parser_new();
-    ts_parser_set_language(parser, tree_sitter_javascript());
+    TSParser *parser;
     TSTree *tree;
     TSNode root;
     uint8_t polysneeded = 0;
     FILE *f = stdout;
     EditList edits;
-    RP_ParseRes res, res2;
+    RP_ParseRes res;
+    int npasses = 0;
+    int unresolved = 1;
+    char *free_src = NULL;
 
-    // pass a -1 or a 0 to get length, but use TRANSPILE_CALC_SIZE (0)
-    if (!src_len || (ssize_t)src_len == -1)
-        src_len = strlen(src);
-
-    tree = ts_parser_parse_string(parser, NULL, src, (uint32_t)src_len);
-    root = ts_tree_root_node(tree);
-
-    if (printTree == 2)
-        f = stderr;
-
-    if (printTree)
+    while (unresolved)
     {
-        fputs(
-            "=== Outline ===\n  node_type(node_field_name) [start, end]\n     or if field_name is NULL\n  node_type [start, end]\n",
-            f);
-        print_outline(src, root, 0, f, 0);
-        fputs("---------------------------------------------\n", f);
-    }
+        parser = ts_parser_new();
+        ts_parser_set_language(parser, tree_sitter_javascript());
 
-    init_edits(&edits);
+        init_edits(&edits);
 
-    // pass 1
-    res = transpiler_rewrite_pass1(&edits, src, src_len, root, &polysneeded);
-    res.errmsg = NULL;
+        if (free_src)
+            src = free_src;
 
-    if (edits.len)
-    {
-        res.transpiled = apply_edits(src, src_len, &edits, 0);
-        res.altered = 1;
+        // pass a -1 or a 0 to get length, but use TRANSPILE_CALC_SIZE (0)
+        if (!src_len || (ssize_t)src_len == -1)
+            src_len = strlen(src);
 
-        if (res.err)
+        tree = ts_parser_parse_string(parser, NULL, src, (uint32_t)src_len);
+        root = ts_tree_root_node(tree);
+
+        if (!npasses)
         {
-            const char *p = src + res.pos, *s = p, *e = p, *fe = src + src_len, *ple = NULL, *pls = NULL;
+            if (printTree == 2)
+                f = stderr;
 
-            while (s >= src && *s != '\n')
-                s--;
-            if (*s == '\n')
+            if (printTree)
             {
-                const char *bline = "";
-                ple = s;
-                pls = ple;
-                pls--;
-                while (pls >= src && *pls == '\n')
-                    pls--, ple--;
-                if (ple != s)
-                    bline = "\n...";
-                while (pls >= src && *pls != '\n')
-                    pls--;
-                pls++;
-                res.errmsg = appendf(NULL, NULL, "%.*s%s\n", (int)(ple - pls), pls, bline);
+                fputs(
+                    "=== Outline ===\n  node_type(node_field_name) [start, end]\n     or if field_name is NULL\n  node_type [start, end]\n",
+                    f);
+                print_outline(src, root, 0, f, 1);
+                fputs("---------------------------------------------\n", f);
             }
-            s++;
-            while (e <= fe && *e != '\n')
-                e++;
-            res.errmsg = appendf(res.errmsg, NULL, "%.*s\n", (int)(e - s), s);
-            res.errmsg = appendf(res.errmsg, NULL, "%*s", 1 + (p - s), "^");
         }
-    }
-    else
-        res.transpiled = NULL;
 
-    free_edits(&edits);
-    ts_tree_delete(tree);
-    ts_parser_delete(parser);
+        npasses++;
 
-    // pass 2
-    if (res.err)
-    {
-        return res;
-    }
-
-    if (res.transpiled)
-    {
-        src = res.transpiled;
-        src_len = strlen(src);
-        res2.altered = 1;
-    }
-
-    parser = ts_parser_new();
-    ts_parser_set_language(parser, tree_sitter_javascript());
-
-    init_edits(&edits);
-
-    tree = ts_parser_parse_string(parser, NULL, src, (uint32_t)src_len);
-    root = ts_tree_root_node(tree);
-
-    res2 = transpiler_rewrite_pass2(&edits, src, src_len, root, &polysneeded);
-    res2.errmsg = NULL;
-
-    if (edits.len)
-    {
-        res2.transpiled = apply_edits(src, src_len, &edits, polysneeded);
-        res2.altered = 1;
-
-        if (res2.err)
+        if (npasses > MAX_PASSES)
         {
-            const char *p = src + res2.pos, *s = p, *e = p, *fe = src + src_len, *ple = NULL, *pls = NULL;
+            fprintf(stderr, "Transpiler: Giving up after %d passes over source\n", MAX_PASSES);
+            exit(1);
+        }
 
-            while (s >= src && *s != '\n')
-                s--;
-            if (*s == '\n')
+        res = transpiler_rewrite_pass(&edits, src, src_len, root, &polysneeded, &unresolved);
+        res.errmsg = NULL;
+
+        if (edits.len)
+        {
+            res.transpiled = apply_edits(src, src_len, &edits, polysneeded);
+            res.altered = 1;
+
+            if (res.err)
             {
-                const char *bline = "";
-                ple = s;
-                pls = ple;
-                pls--;
-                while (pls >= src && *pls == '\n')
-                    pls--, ple--;
-                if (ple != s)
-                    bline = "\n...";
-                while (pls >= src && *pls != '\n')
+                const char *p = src + res.pos, *s = p, *e = p, *fe = src + src_len, *ple = NULL, *pls = NULL;
+
+                while (s >= src && *s != '\n')
+                    s--;
+                if (*s == '\n')
+                {
+                    const char *bline = "";
+                    ple = s;
+                    pls = ple;
                     pls--;
-                pls++;
-                res2.errmsg = appendf(NULL, NULL, "%.*s%s\n", (int)(ple - pls), pls, bline);
+                    while (pls >= src && *pls == '\n')
+                        pls--, ple--;
+                    if (ple != s)
+                        bline = "\n...";
+                    while (pls >= src && *pls != '\n')
+                        pls--;
+                    pls++;
+                    res.errmsg = appendf(NULL, NULL, "%.*s%s\n", (int)(ple - pls), pls, bline);
+                }
+                s++;
+                while (e <= fe && *e != '\n')
+                    e++;
+                res.errmsg = appendf(res.errmsg, NULL, "%.*s\n", (int)(e - s), s);
+                res.errmsg = appendf(res.errmsg, NULL, "%*s", 1 + (p - s), "^");
             }
-            s++;
-            while (e <= fe && *e != '\n')
-                e++;
-            res2.errmsg = appendf(res2.errmsg, NULL, "%.*s\n", (int)(e - s), s);
-            res2.errmsg = appendf(res2.errmsg, NULL, "%*s", 1 + (p - s), "^");
+            else if (unresolved)
+            {
+                if (free_src)
+                    free(free_src);
+
+                free_src = res.transpiled;
+                res.transpiled = NULL;
+
+                free_edits(&edits);
+                ts_tree_delete(tree);
+                ts_parser_delete(parser);
+                src_len = 0; // recalc on next pass
+                continue;
+            }
         }
         else
-            free(res.transpiled);
+        {
+            if (free_src)
+                free(free_src);
+            free_src = NULL;
+
+            free_edits(&edits);
+            ts_tree_delete(tree);
+            ts_parser_delete(parser);
+
+            return res;
+        }
+        if (free_src)
+            free(free_src);
+        free_src = NULL;
+
+        free_edits(&edits);
+        ts_tree_delete(tree);
+        ts_parser_delete(parser);
+        break;
     }
-    else
-        res2.transpiled = res.transpiled;
-
-    free_edits(&edits);
-    ts_tree_delete(tree);
-    ts_parser_delete(parser);
-
-    return res2;
+    // printf("npasses=%d\n",npasses);
+    return res;
 }
 
 void freeParseRes(RP_ParseRes *res)
