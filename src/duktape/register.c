@@ -353,10 +353,12 @@ static duk_ret_t rp_eval_js(duk_context *ctx)
         if(res.transpiled)
         {
             duk_push_string(ctx, res.transpiled);
-            free(res.transpiled);
         }
         else /* code unaltered */
             duk_push_string(ctx, source);
+
+        freeParseRes(&res);
+
     }
     if(bfn)
         free((char*)bfn);
@@ -377,6 +379,73 @@ static void fix_eval(duk_context *ctx)
     duk_push_c_function(ctx, rp_eval_js, 1);
     duk_put_global_string(ctx, "eval");
 }
+
+static duk_ret_t transpile_rewrite_args (duk_context *ctx)
+{
+    duk_idx_t i=0, top=duk_get_top(ctx);
+
+    if(!top)
+        duk_push_string(ctx, "(function(){})");
+    else
+    {
+        if(top==1)
+        {
+            if(!duk_is_string(ctx, 0))
+                RP_SYNTAX_THROW(ctx, "parse error");
+            duk_push_sprintf(ctx, "(function(){%s})", duk_get_string(ctx,0) );
+        }
+        else 
+        {
+
+            duk_push_string(ctx, "(function(");
+
+            for(i=0;i<top; i++) {
+                if(i==top-1)
+                {
+                    if(!duk_is_string(ctx, i))
+                        RP_SYNTAX_THROW(ctx, "parse error");
+                    duk_push_sprintf(ctx, "){%s})", duk_get_string(ctx, i));
+                }
+                else
+                {
+                    if(!duk_is_string(ctx, i))
+                        RP_SYNTAX_THROW(ctx, "expected identifier");
+                    
+                    if(i==0)
+                        duk_dup(ctx, i);
+                    else
+                        duk_push_sprintf(ctx, ", %s", duk_get_string(ctx, i));
+                }
+            }
+            duk_concat(ctx, top+1);
+        }
+        const char *src = duk_get_string(ctx,-1);
+
+        RP_ParseRes res = transpile(src, TRANSPILE_CALC_SIZE, 0); 
+
+        if (!res.err && res.transpiled)
+        {
+            duk_pop(ctx); //src
+            duk_push_string(ctx, res.transpiled);
+        }
+        freeParseRes(&res);            
+    }
+
+    duk_eval(ctx);
+
+    return 1;
+}
+
+
+
+static void new_function_transpile(duk_context *ctx) {
+    duk_push_global_object(ctx);
+    duk_get_prop_string(ctx, -1, "Function");
+    duk_put_prop_string(ctx, -2, "FunctionES5");
+    duk_push_c_function(ctx, transpile_rewrite_args, DUK_VARARGS);
+    duk_put_prop_string(ctx, -2, "Function");
+}
+
 
 void duk_init_context(duk_context *ctx)
 {
@@ -399,6 +468,7 @@ void duk_init_context(duk_context *ctx)
     */
 
     //maybe just do this?
+    // printf("%J, obj) can handle global.global == global
     duk_push_global_object(ctx);
     duk_put_global_string(ctx,"global");
 
@@ -417,5 +487,5 @@ void duk_init_context(duk_context *ctx)
     add_object_values(ctx);
     add_array_funcs(ctx);
     add_buffer_func(ctx);
-
+    new_function_transpile(ctx);
 }
