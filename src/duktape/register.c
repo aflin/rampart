@@ -385,26 +385,26 @@ static duk_ret_t transpile_rewrite_args (duk_context *ctx)
     duk_idx_t i=0, top=duk_get_top(ctx);
 
     if(!top)
-        duk_push_string(ctx, "(function(){})");
+        duk_push_string(ctx, "function anonymous(){}");
     else
     {
         if(top==1)
         {
             if(!duk_is_string(ctx, 0))
                 RP_SYNTAX_THROW(ctx, "parse error");
-            duk_push_sprintf(ctx, "(function(){%s})", duk_get_string(ctx,0) );
+            duk_push_sprintf(ctx, "function anonymous(){%s}", duk_get_string(ctx,0) );
         }
         else 
         {
 
-            duk_push_string(ctx, "(function(");
+            duk_push_string(ctx, "function anonymous(");
 
             for(i=0;i<top; i++) {
                 if(i==top-1)
                 {
                     if(!duk_is_string(ctx, i))
                         RP_SYNTAX_THROW(ctx, "parse error");
-                    duk_push_sprintf(ctx, "){%s})", duk_get_string(ctx, i));
+                    duk_push_sprintf(ctx, "){%s}", duk_get_string(ctx, i));
                 }
                 else
                 {
@@ -431,7 +431,10 @@ static duk_ret_t transpile_rewrite_args (duk_context *ctx)
         freeParseRes(&res);            
     }
 
-    duk_eval(ctx);
+    duk_push_string(ctx, "anonymous");
+    duk_compile(ctx, DUK_COMPILE_FUNCTION);
+
+    //duk_eval(ctx);
 
     return 1;
 }
@@ -441,8 +444,11 @@ static duk_ret_t transpile_rewrite_args (duk_context *ctx)
 static void new_function_transpile(duk_context *ctx) {
     duk_push_global_object(ctx);
     duk_get_prop_string(ctx, -1, "Function");
-    duk_put_prop_string(ctx, -2, "FunctionES5");
+    duk_get_prop_string(ctx, -1, "prototype");
+    duk_put_prop_string(ctx, -3, "FunctionES5");
     duk_push_c_function(ctx, transpile_rewrite_args, DUK_VARARGS);
+    duk_pull(ctx, -2);
+    duk_put_prop_string(ctx, -2, "prototype");
     duk_put_prop_string(ctx, -2, "Function");
 }
 

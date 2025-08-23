@@ -3351,7 +3351,11 @@ int main(int argc, char *argv[])
                 {
                     fprintf(stderr, "%s\n", res.errmsg);
                 }
-
+                if(res.errmsg)
+                {
+                    free(res.errmsg);
+                    res.errmsg=NULL;
+                }
                 char *dbug = getenv("RPDEBUG");
                 if(res.transpiled)
                 {

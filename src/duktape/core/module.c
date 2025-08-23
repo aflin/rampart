@@ -146,10 +146,10 @@ static int load_js_module(duk_context *ctx, const char *file, duk_idx_t module_i
             if(res.transpiled)
             {
                 duk_push_string(ctx, res.transpiled);
-                free(res.transpiled);
             }
             else /* no changed in transpile */
                 duk_push_string(ctx, buffer);
+            freeParseRes(&res);
         }
         else /* its .../babel.js */
             duk_push_string(ctx, buffer);
