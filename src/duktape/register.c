@@ -312,7 +312,7 @@ static void add_buffer_func(duk_context *ctx)
 
 static duk_ret_t rp_eval_js(duk_context *ctx)
 {
-    char *source=NULL;
+    const char *source=NULL;
     const char *bfn=NULL;
 
     if(!duk_is_string(ctx,0))
@@ -323,7 +323,7 @@ static duk_ret_t rp_eval_js(duk_context *ctx)
         return 1;
     }
     
-    source=(char*)duk_get_string(ctx, 0);
+    source=duk_get_string(ctx, 0);
 
     struct timespec tsnow;
     clock_gettime(CLOCK_REALTIME, &tsnow);
@@ -332,7 +332,7 @@ static duk_ret_t rp_eval_js(duk_context *ctx)
     duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("buildin_eval"));
 
     // main_babel_opt is non null if this script was previously babelized.
-    if ( !main_babel_opt || ! (bfn=duk_rp_babelize(ctx, "eval_code", source, tsnow.tv_sec, babel_setting_nostrict, main_babel_opt)) )
+    if ( !main_babel_opt || ! (bfn=duk_rp_babelize(ctx, "eval_code", (char*)source, tsnow.tv_sec, babel_setting_nostrict, main_babel_opt)) )
     {
         /*
         int err=0, lineno=0;
@@ -345,11 +345,17 @@ static duk_ret_t rp_eval_js(duk_context *ctx)
         duk_push_string(ctx, tickified);
         free(tickified);
         */
-        RP_ParseRes res = transpile(source, TRANSPILE_CALC_SIZE, 0); 
+        //int is_tickified=0;
+        char *free_src=strdup(source);
+        RP_ParseRes res = rp_get_transpiled(free_src, NULL);
+        free(free_src);
+
         if (res.err)
         {
+            freeParseRes(&res);
             RP_THROW(ctx, "Syntax error: parse error in eval");
         }
+
         if(res.transpiled)
         {
             duk_push_string(ctx, res.transpiled);
@@ -421,7 +427,10 @@ static duk_ret_t transpile_rewrite_args (duk_context *ctx)
         }
         const char *src = duk_get_string(ctx,-1);
 
-        RP_ParseRes res = transpile(src, TRANSPILE_CALC_SIZE, 0); 
+        //int is_tickified=0;
+        char *free_src=strdup(src);
+        RP_ParseRes res = rp_get_transpiled(free_src, NULL);
+        free(free_src);
 
         if (!res.err && res.transpiled)
         {

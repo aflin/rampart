@@ -127,7 +127,8 @@ static int load_js_module(duk_context *ctx, const char *file, duk_idx_t module_i
                 MOD_THROW(ctx, DUK_ERR_SYNTAX_ERROR, "%s (line %d)\n    at %s:%d", tickify_err(err), lineno, file, lineno);
             }
             */
-            RP_ParseRes res = transpile(buffer, TRANSPILE_CALC_SIZE, 0); 
+            int is_tickified=0;
+            RP_ParseRes res = rp_get_transpiled(buffer, &is_tickified);
 
             char *dbug = getenv("RPDEBUG");
             if(res.transpiled)

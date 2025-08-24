@@ -661,7 +661,7 @@ int rp_mkdir_parent(const char *path, mode_t mode);
 RPPATH rp_get_home_path(char *file, char *subdir);
 
 
-/* babelize in cmdline.c */
+/* ****************** babelize in cmdline.c **************** */
 extern char *main_babel_opt;
 // no options
 #define babel_setting_none 0
@@ -672,6 +672,7 @@ extern char *main_babel_opt;
 
 const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mtime, int setting, char *opt);
 
+/* ****************** tickify in cmdline.c **************** */
 /* end states for tickify */
 #define ST_NONE 0
 #define ST_DQ   1
@@ -685,6 +686,16 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
 
 char *tickify(char *src, size_t sz, int *err, int *ln);
 char *tickify_err(int err);
+
+/* ********* transpiler in transpiler.c and cmdline.c********** */
+#include "transpiler.h"
+extern int duk_rp_globaltranspile;
+
+/* use transpiler if src has "use transpiler" or "use transpilerGlobally"
+   if not, then use the stable simple template processing in tickify
+   and set is_tickified to 1                                               */
+RP_ParseRes rp_get_transpiled(char *src, int *is_tickified);
+
 
 extern pthread_mutex_t loglock;
 extern pthread_mutex_t errlock;

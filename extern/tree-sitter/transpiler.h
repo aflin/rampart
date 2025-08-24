@@ -43,12 +43,14 @@ typedef struct {
 
 #define TRANSPILE_CALC_SIZE 0
 
+/* tracks which polyfills have already been added, if called more than once */
 RP_ParseRes transpile(const char *src, size_t src_len, int printTree);
-void freeParseRes(RP_ParseRes *res);
 
-#define SPREAD_PF (1<<0)
-#define IMPORT_PF (1<<1)
-#define CLASS_PF  (1<<2)
-#define FOROF_PF  (1<<3)
+/* will add polyfills for every call */
+RP_ParseRes transpile_standalone(const char *src, size_t src_len, int printTree);
+
+void freeParseRes(RP_ParseRes *res);
+char *stealParseRes(RP_ParseRes *res);
+
 
 #endif

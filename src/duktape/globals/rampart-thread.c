@@ -1819,6 +1819,17 @@ static duk_context *new_context(RPTHR *thr)
     duk_push_int(tctx, (int)thr->index);
     duk_put_prop_string(tctx, -2, "thread_id");
 
+
+    // check for transpile polyfills
+    duk_eval_string(tctx, 
+        "(function(){"
+            "if(global._TrN_Sp && global._TrN_Sp.load){"
+                "var load=global._TrN_Sp.load;"
+                "global._TrN_Sp={};"
+                "load();"
+            "}"
+        "})();");
+
     RP_EMPTY_STACK(tctx);
 
     return tctx;

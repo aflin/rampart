@@ -31,6 +31,8 @@
 int globalize=0;
 int duk_rp_globalbabel=0;
 
+int duk_rp_globaltranspile=0;
+
 //clock_gettime for macos < sierra
 #ifdef NEEDS_CLOCK_GETTIME
 int clock_gettime(clockid_t type, struct timespec *rettime)
@@ -914,7 +916,7 @@ static void *repl_thr(void *arg)
                 line=lastline;
             }
             lastline=NULL;
-            //redo entire script, but extract only last line
+            //re-transpile entire script, but extract only last line
             if(babelscript)
                 tryscript = strdup(babelscript);
             tryscript=strcatdup(tryscript, line);
@@ -961,7 +963,7 @@ static void *repl_thr(void *arg)
         else
             //line = tickify(line, strlen(line), &err, &ln);
         {
-            res = transpile(line, TRANSPILE_CALC_SIZE, 0); 
+            res = rp_get_transpiled(line, NULL);
             if(res.transpiled)
             {
                 line=res.transpiled;
@@ -992,7 +994,7 @@ static void *repl_thr(void *arg)
 
                 oldline=line;
                 //line = tickify(line, strlen(line), &err, &ln);
-                res = transpile(line, TRANSPILE_CALC_SIZE, 0); 
+                res = rp_get_transpiled(line, NULL);
                 if(res.transpiled)
                 {
                     line=res.transpiled;
@@ -1026,6 +1028,7 @@ static void *repl_thr(void *arg)
 
         REPL_LOCK;
         evhandler_repl(0, 0, (void *)1);
+        //printf("Doing %s\n", line);
         duk_push_string(ctx, line);
         lastline=NULL;
 
@@ -1111,146 +1114,23 @@ static int repl(duk_context *ctx)
 
     return 0;
 }
-
-static char *checkbabel(char *src)
+static char * load_polyfill(duk_context *ctx, int setting)
 {
-    char *s=src, *bline, *ret=NULL;
-
-    /* skip comments at top of file */
-    while(isspace(*s)) s++;
-    while (*s=='/')
-    {
-        s++;
-        if(*s=='/')
-        {
-            while(*s && *s!='\n') s++;
-            if(!*s) break;
-        }
-        else if (*s=='*')
-        {
-            char *e=(char*)memmem(s,strlen(s),"*/",2);
-            if(e)
-                s=e+2;
-            else
-                break;
-        }
-        else
-            break;
-        while(isspace(*s)) s++;
-    }
-    //printf("'%s'\n",s);
-    bline=s;
-    /* check for use "babel:{options}" or use "babel" */
-#define invalidformat do{\
-    fprintf(stderr,"invalid format: \"use babel:{ options }\"\n");\
-    exit(1);\
-}while(0)
-
-    if(!strncmp("\"use ",s,5) )
-    {
-        if(*s=='\n') s++;
-        s+=5;
-        if (!strncmp("babel",s,5))
-        {
-            char *e;
-            s+=5;
-            if(!strncmp("Globally",s,8))
-            {
-                s+=8;
-                duk_rp_globalbabel=1;
-            }
-            while(isspace(*s)) s++;
-            if(*s==':')
-            {
-                s++;
-                while(isspace(*s)) s++;
-                if(*s!='{')
-                    invalidformat;
-                e=s;
-                /* must end with } before a " or \n */
-                while(*e != '"' && *e != '\n') e++;
-                if(*e!='"')
-                    invalidformat;
-
-                e--;
-                while(isspace(*e)) e--;
-
-                if(*e!='}')
-                    invalidformat;
-
-                e++;
-
-                {
-                    char opt[1+e-s];
-
-                    strncpy(opt,s,e-s);
-                    opt[e-s]='\0';
-                    //file_src=(char *)duk_rp_babelize(ctx, argv[0], file_src, opt, entry_file_stat.st_mtime);
-                    ret=strdup(opt);
-                }
-            }
-            else if (*s=='"')
-            {
-                //file_src=(char *)duk_rp_babelize(ctx, argv[0], file_src, NULL, entry_file_stat.st_mtime);
-                ret=strdup ("{ presets: ['env'],retainLines:true }");
-            }
-            /* replace "use babel" line with spaces, to preserve line nums */
-            while (*bline && *bline!='\n') *bline++ = ' ';
-            return(ret);
-        }
-        return NULL;
-    }
-    return NULL;
-}
-
-char *main_babel_opt=NULL;
-
-
-/* babelized source is left on top of stack*/
-const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mtime, int setting, char *opt)
-{
-    char *s, *babelcode=NULL;
-    struct stat babstat;
-    char babelsrc[strlen(fn)+10];
-    FILE *f;
-    size_t read;
     char *pfill="babel-polyfill.js";
     char *pfill_bc=".babel-polyfill.bytecode";
     duk_size_t bsz=0;
     void *buf;
     RPPATH rppath;
-
-    babelsrc[0]='\0';
-
-    if(duk_rp_globalbabel)
-    {
-        char *isbabel = strstr(fn, "/babel.js");
-        /* don't tickify actual babel.js source */
-
-        if ( isbabel && isbabel == fn + strlen(fn) - 9 )
-            return NULL;
-        opt=main_babel_opt;
-    }
-    else if(!opt)
-    {
-        // if not global, we are overwriting main_babel_opt below
-        if(main_babel_opt)
-        {
-            free(main_babel_opt);
-            main_babel_opt=NULL;
-        }
-        opt=checkbabel(src);
-        if(!opt) return NULL;
-    }
-
-    main_babel_opt=opt;
-
+    char *babelcode=NULL;
+    FILE *f;
+    size_t read;
+ 
     /* check if polyfill is already loaded */
     duk_eval_string(ctx,"global._babelPolyfill");
     if(duk_get_boolean_default(ctx,-1,0))
     {
         duk_pop(ctx);
-        goto transpile;
+        return NULL;
     }
     duk_pop(ctx);
 
@@ -1357,8 +1237,256 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
     duk_pop(ctx);
     duk_eval_string(ctx,"global._babelPolyfill=true;");
     duk_pop(ctx);
+    return NULL;
+}
 
-    transpile:
+static char *checkuse(char *src)
+{
+    char *s=src, *uline, *ret=NULL;
+
+    /* skip comments at top of file */
+    while(isspace(*s)) s++;
+    while (*s=='/')
+    {
+        s++;
+        if(*s=='/')
+        {
+            while(*s && *s!='\n') s++;
+            if(!*s) break;
+        }
+        else if (*s=='*')
+        {
+            char *e=(char*)memmem(s,strlen(s),"*/",2);
+            if(e)
+                s=e+2;
+            else
+                break;
+        }
+        else
+            break;
+        while(isspace(*s)) s++;
+    }
+    uline=s;
+
+    if(!strncmp("\"use ",s,5) )
+    {
+        char *p, c;
+
+        s+=5;
+        while(isspace(*s))
+            s++;
+        p=s;
+
+        while(p && !isspace(*p)  && *p!='"')
+            p++;
+        c=*p;
+        if(!c)
+            return NULL;
+        *p='\0';
+        ret=strdup(s);
+        *p=c;
+        /* replace "use xxx" line with spaces, to preserve line nums */
+        while (*uline && *uline!='\n') *uline++ = ' ';
+        return(ret);
+    }
+    return NULL;
+}
+
+RP_ParseRes rp_get_transpiled(char *src, int *is_tickified)
+{
+    RP_ParseRes ret = {0};
+
+    size_t src_sz = strlen(src);
+
+    if(!duk_rp_globaltranspile)
+    {
+        /* check for "use transpiler" */
+        char *use = checkuse(src);
+
+        if(!use)
+            goto do_tickify;
+        if( strcasecmp("transpilerGlobally", use) == 0)
+            duk_rp_globaltranspile=1;
+        else if( strcmp("transpiler", use) != 0)
+        {
+            free(use);
+            goto do_tickify;
+        }
+        if(use)
+            free(use);
+    }
+
+    ret = transpile((const char *)src, src_sz, 0);
+    if(is_tickified)
+        *is_tickified=0;
+    return ret;
+
+    do_tickify:
+
+    if(is_tickified)
+        *is_tickified=1;
+
+    ret.transpiled = tickify(src, src_sz, &(ret.err), &(ret.line_num));
+    if (ret.err)
+    {
+        size_t errsz = 128 + strlen(tickify_err(ret.err));
+
+        REMALLOC(ret.errmsg, errsz);
+
+        snprintf(ret.errmsg, errsz, "SyntaxError: %s (line %d)\n", tickify_err(ret.err), ret.line_num);
+    }
+
+    return ret;
+}
+
+static char *checkbabel(char *src)
+{
+    char *s=src, *bline, *ret=NULL;
+
+    /* skip comments at top of file */
+    while(isspace(*s)) s++;
+    while (*s=='/')
+    {
+        s++;
+        if(*s=='/')
+        {
+            while(*s && *s!='\n') s++;
+            if(!*s) break;
+        }
+        else if (*s=='*')
+        {
+            char *e=(char*)memmem(s,strlen(s),"*/",2);
+            if(e)
+                s=e+2;
+            else
+                break;
+        }
+        else
+            break;
+        while(isspace(*s)) s++;
+    }
+    //printf("'%s'\n",s);
+    bline=s;
+    /* check for use "babel:{options}" or use "babel" */
+#define invalidformat do{\
+    fprintf(stderr,"invalid format: \"use babel:{ options }\"\n");\
+    exit(1);\
+}while(0)
+
+    if(!strncmp("\"use ",s,5) )
+    {
+        if(*s=='\n') s++;
+        s+=5;
+        if (!strncmp("babel",s,5))
+        {
+            char *e;
+            s+=5;
+            if(!strncmp("Globally",s,8))
+            {
+                s+=8;
+                duk_rp_globalbabel=1;
+            }
+            while(isspace(*s)) s++;
+            if(*s==':')
+            {
+                s++;
+                while(isspace(*s)) s++;
+                if(*s!='{')
+                    invalidformat;
+                e=s;
+                /* must end with } before a " or \n */
+                while(*e != '"' && *e != '\n') e++;
+                if(*e!='"')
+                    invalidformat;
+
+                e--;
+                while(isspace(*e)) e--;
+
+                if(*e!='}')
+                    invalidformat;
+
+                e++;
+
+                {
+                    char opt[1+e-s];
+
+                    strncpy(opt,s,e-s);
+                    opt[e-s]='\0';
+                    //file_src=(char *)duk_rp_babelize(ctx, argv[0], file_src, opt, entry_file_stat.st_mtime);
+                    ret=strdup(opt);
+                }
+            }
+            else if (*s=='"')
+            {
+                //file_src=(char *)duk_rp_babelize(ctx, argv[0], file_src, NULL, entry_file_stat.st_mtime);
+                ret=strdup ("{ presets: ['env'],retainLines:true }");
+            }
+            /* replace "use babel" line with spaces, to preserve line nums */
+            while (*bline && *bline!='\n') *bline++ = ' ';
+            return(ret);
+        }
+        return NULL;
+    }
+    return NULL;
+}
+
+char *main_babel_opt=NULL;
+
+
+/* babelized source is left on top of stack*/
+const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mtime, int setting, char *opt)
+{
+    char *s, *babelcode=NULL;
+    struct stat babstat;
+    char babelsrc[strlen(fn)+10];
+    FILE *f;
+    size_t read;
+    duk_size_t bsz=0;
+
+    babelsrc[0]='\0';
+
+    if(duk_rp_globalbabel)
+    {
+        char *isbabel = strstr(fn, "/babel.js");
+        /* don't tickify actual babel.js source */
+
+        if ( isbabel && isbabel == fn + strlen(fn) - 9 )
+            return NULL;
+        opt=main_babel_opt;
+
+        char *use = checkuse(src);
+
+        if(use && strcmp("transpiler", use) != 0)
+        {
+            /* IF we used --use-babel
+               or if we are in a module, where the main script has
+               "use babelGlobally" and the module has "use transpiler"
+               THEN don't babelize the source.                           */
+            free(use);
+            return NULL;
+        }
+
+        if(use)
+            free(use);
+    }
+    else if(!opt)
+    {
+        // if not global, we are overwriting main_babel_opt below
+        if(main_babel_opt)
+        {
+            free(main_babel_opt);
+            main_babel_opt=NULL;
+        }
+        opt=checkbabel(src);
+        if(!opt) return NULL;
+    }
+
+    main_babel_opt=opt;
+
+    char *err = load_polyfill(ctx, setting);
+    if(err) /* for babel_setting_eval */
+        return err;
+
     if(strcmp("stdin",fn) != 0  && strcmp("eval_code",fn) != 0)
     {
         /* file.js => file.babel.js */
@@ -2863,6 +2991,7 @@ static void print_help(char *argv0)
     Options:\n\
         -g, --globalize                    - globalize rampart.utils\n\
         -b, --use_babel                    - run all scripts through babel to support ECMAScript 2015+\n\
+        -t, --use_transpiler               - transpile all scripts to support limited ECMAScript 2015+\n\
         -c, --command_string \"script\"      - load script from argument string\n\
         -v, --version                      - print version\n\
         -C, --color                        - use colors in interactive mode (repl)\n\
@@ -3008,6 +3137,8 @@ int main(int argc, char *argv[])
             else if(!strcmp(opt,"--upgrade"))
                 upgrade_check=1;
 */
+            else if(!strcmp(opt,"--use-transpiler"))
+                duk_rp_globaltranspile=1;
             else if(!strcmp(opt,"--server"))
                 server=1;
             else if(!strcmp(opt,"--quickserver"))
@@ -3078,6 +3209,8 @@ int main(int argc, char *argv[])
                     case 'C':
                         rp_color=1;
                         break;
+                    case 't':
+                        duk_rp_globaltranspile=1;
                     case 'q':
                         rp_quiet=1;
                         break;
@@ -3355,23 +3488,25 @@ int main(int argc, char *argv[])
                 /* process basic template literals (backticks) */
                 //char *tickified = tickify(file_src, src_sz, &err, &lineno);
 
-                RP_ParseRes res = transpile(file_src, TRANSPILE_CALC_SIZE, 0); 
+                int is_tickified=0;
+                RP_ParseRes res = rp_get_transpiled(file_src, &is_tickified);
 
-                if (res.err && res.transpiled)
-                {
-                    fprintf(stderr, "%s\n", res.errmsg);
-                }
                 if(res.errmsg)
                 {
-                    free(res.errmsg);
-                    res.errmsg=NULL;
+                    fprintf(stderr, "%s\n", res.errmsg);
+                    if(is_tickified) {
+                        freeParseRes(&res);
+                        exit(1);
+                    }
+                    /* else don't exit yet, let duktape do a better error message too */
                 }
+
                 char *dbug = getenv("RPDEBUG");
                 if(res.transpiled)
                 {
                     free(free_file_src);
                     //file_src = free_file_src = tickified;
-                    file_src = free_file_src = res.transpiled;
+                    file_src = free_file_src = stealParseRes(&res);
 
                     if( dbug && !strcmp (dbug, "transpiler") )
                         fprintf(stderr, "BEGIN SCRIPT\n%s\nEND SCRIPT\n",file_src);
@@ -3382,6 +3517,7 @@ int main(int argc, char *argv[])
                 duk_push_string(ctx, file_src);
                 /* push filename */
                 duk_push_string(ctx, fn);
+                freeParseRes(&res);
             }
             else
             {
