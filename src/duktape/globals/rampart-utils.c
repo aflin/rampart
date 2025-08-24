@@ -5784,7 +5784,6 @@ char *to_utf8(const char *in_str)
     (void) duk_throw(ctx);\
 } while(0)
 
-
 #include "printf.c"
 
 /* TODO: make locking per file.  Add locking to fwrite. or maybe ditch locking? */

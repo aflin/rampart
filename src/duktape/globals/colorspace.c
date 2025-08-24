@@ -616,6 +616,8 @@ static int term_colors_and_truecolor(int *colors, int *truecolor) {
     if (cterm && (strstr(cterm, "truecolor") || strstr(cterm, "24bit"))) {
         *truecolor = 1;
         *colors = 16777216;
+        // screen is screen-256color, but it doesn't erase the truecolor in "COLORTERM"
+        if (strstr(term, "256color")) { *truecolor = 0;*colors = 256; return 0; }
         return 0;
     }
     if (strstr(term, "-direct")) {

@@ -46,6 +46,8 @@
 #include "colorspace.h"
 #include "entities.h"
 #include "entities.c"
+#include "jcolor.h"
+
 // 'ntoa' conversion buffer size, this must be big enough to hold one converted
 // numeric number including padded zeros (dynamically created on stack)
 // default: 32 byte
@@ -756,6 +758,14 @@ static void anytostring(duk_context *ctx, duk_idx_t fidx, unsigned int width, ui
         }
     }
 }
+#define njpal 4
+static Jcolors jpal[njpal] = {
+    { C_RESET_DEF, C_KEY_DEF,          C_STRING_DEF,     C_NUMBER_DEF,    C_BOOL_DEF,       C_NULL_DEF      },
+    { C_RESET_DEF, C_CYAN,             C_BLUE,           C_YELLOW,        C_MAGENTA,        C_RED           },
+    { C_RESET_DEF, C_BRIGHT_BLUE,      C_BRIGHT_GREEN,   C_BRIGHT_CYAN,   C_BRIGHT_YELLOW,  C_BRIGHT_MAGENTA},
+    { C_RESET_DEF, C_BOLD_BRIGHT_CYAN, C_BRIGHT_BLUE,    C_BRIGHT_YELLOW, C_BRIGHT_MAGENTA, C_BRIGHT_RED    }
+};
+
 
 
 int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *ctx, duk_idx_t fidx, pthread_mutex_t *lock_p)
@@ -791,6 +801,7 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
         CCODES *ccodes = NULL;
         const char *colstr=NULL;
         char colorflag='a';
+        int jpal_idx=0;
 
         // format specifier?  %[flags][width][.precision][length]
         if (*format != '%')
@@ -950,6 +961,7 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
         }
 
         // colors on term
+        if(*format != 'J')
         {
             if( (flags & FLAGS_COLOR && isterm) || flags & FLAGS_COLOR_FORCE )
             {
@@ -1504,11 +1516,56 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
         break;
 
         /* handle JSON */
+
         case 'J':
             json:
-            anytostring(ctx, fidx, width, flags);
+            {
+                if( !ccodes && ( (flags & FLAGS_COLOR && isterm) || flags & FLAGS_COLOR_FORCE) )
+                {
+                    jpal_idx = duk_get_int_default(ctx, fidx, 0);
+                    if(jpal_idx < 0 || jpal_idx >= njpal)
+                        jpal_idx=0;
+
+                    fidx++;
+
+                    switch( rp_gettype(ctx, fidx) ){
+                        case RP_TYPE_ARRAY:
+                        case RP_TYPE_OBJECT:
+                            break;
+                        case RP_TYPE_NUMBER:
+                            idx=outs(out, buffer, idx, maxlen, jpal[jpal_idx].NUMBER); 
+                            jpal_idx=-1;
+                            break;
+                        case RP_TYPE_BOOLEAN:
+                            idx=outs(out, buffer, idx, maxlen, jpal[jpal_idx].BOOL); 
+                            jpal_idx=-1;
+                            break;
+                        case RP_TYPE_NULL:
+                            idx=outs(out, buffer, idx, maxlen, jpal[jpal_idx].NULLC); 
+                            jpal_idx=-1;
+                            break;
+                        default:
+                            idx=outs(out, buffer, idx, maxlen, jpal[jpal_idx].STRING);
+                            jpal_idx=-1;
+                            break;
+                    }
+
+                }
+
+                anytostring(ctx, fidx, width, flags);
+
+                if( jpal_idx != -1 && !ccodes && ( (flags & FLAGS_COLOR && isterm) || flags & FLAGS_COLOR_FORCE) )
+                {
+                    const char *j = duk_get_string(ctx, fidx);
+                    char *jout = print_json_colored (j, width, COLORS, &jpal[jpal_idx]);
+
+                    duk_push_string(ctx, jout);
+                    free(jout);
+                    duk_replace(ctx, fidx);
+                }
+            }
             //no ++
-            //no break
+            /* fall through */
 
         /* NO COERSION for upper case 'S' */
         case 'S':
@@ -1792,10 +1849,14 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
             RP_THROW(ctx, "invalid format specifier character '%c' in format", *format);
         }
         // end color
-        if( (flags & FLAGS_COLOR && isterm) || flags & FLAGS_COLOR_FORCE)
+        if( ccodes && ((flags & FLAGS_COLOR && isterm) || flags & FLAGS_COLOR_FORCE))
         {
             if( *(ccodes->term_end) )
                 idx=outs(out, buffer, idx, maxlen, ccodes->term_end);
+        }
+        else if( jpal_idx == -1)
+        {
+            idx=outs(out, buffer, idx, maxlen, jpal[0].RESET);
         }
         if(ccodes)
             ccodes=free_color_codes(ccodes);
