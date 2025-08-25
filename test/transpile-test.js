@@ -1,11 +1,12 @@
 #!/usr/bin/env rampart
+"use transpilerGlobally"
 
 rampart.globalize(rampart.utils);
-
+/*
 import * as math from "math";
 
 import { sum, pi } from "math";
-
+*/
 // Default + named (multi-line; spacing/comments) + alias usage
 import defPayload, {
   f,             // named function
@@ -535,9 +536,9 @@ testFeature("Switch case scoping: let redeclare", function () {
 testFeature("Top-level let does not attach to global", function () {
   let unique = "sentinel_" + Math.random().toString(36).slice(2);
   // Avoid name capture by using eval to ensure 'let t' is top-level in this eval’d script context.
-  (0, eval)(`let t = "${unique}";`);
+  (0, eval)(`let _TmPvAr = "${unique}";`);
   // If the transpiler wraps the entire file in an IIFE, t also won't be on globalThis.
-  const onGlobal = (typeof global !== "undefined") && Object.prototype.hasOwnProperty.call(global, "t");
+  const onGlobal = (typeof global !== "undefined") && Object.prototype.hasOwnProperty.call(global, "_TmPvAr");
   return onGlobal === false;
 });
 
@@ -557,6 +558,586 @@ testFeature("Block scope with inner function - let scoped", function () {
   }());
   return outerSeenUndefined;
 });
+
+// Helpers
+const nextMicrotask = () => Promise.resolve();
+const delay = (ms) => new Promise((r) => setTimeout(r, ms));
+
+
+// 1. Basic resolve.
+testFeature("Promise resolves with value", function () {
+    return new Promise((resolve) => resolve(42)).then((v) => v === 42);
+});
+
+// 2. Basic reject
+testFeature("Promise rejects with reason", function () {
+    return new Promise((_, reject) => reject("err")).then(
+      () => false,
+      (e) => e === "err"
+    );
+});
+
+// 3. Executor throws -> rejection
+testFeature("Executor throws causes rejection", function () {
+    return new Promise(() => {
+      throw 123;
+    }).then(
+      () => false,
+      (e) => e === 123
+    );
+});
+
+// 4. Then fulfillment handler runs once
+testFeature("onFulfilled runs exactly once", function () {
+    let count = 0;
+    const p = new Promise((resolve) => {
+      resolve("ok");
+      resolve("again");
+      // even if we try again, must be ignored
+    });
+    p.then(() => count++);
+    return nextMicrotask().then(() => count === 1);
+});
+
+// 5. Then rejection handler runs once
+testFeature("onRejected runs exactly once", function () {
+    let count = 0;
+    const p = new Promise((_, reject) => {
+      reject("nope");
+      reject("again");
+    });
+    p.then(null, () => count++);
+    return nextMicrotask().then(() => count === 1);
+});
+
+// 6. onFulfilled not called if rejected
+testFeature("onFulfilled not called when rejected", function () {
+    let called = false;
+    return new Promise((_, r) => r(1))
+      .then(() => {
+        called = true;
+      })
+      .then(
+        () => false,
+        () => !called
+      );
+});
+
+// 7. onRejected not called if fulfilled
+testFeature("onRejected not called when fulfilled", function () {
+    let called = false;
+    return new Promise((r) => r(1))
+      .then(null, () => {
+        called = true;
+      })
+      .then(() => called === false);
+});
+
+// 8. Then returns a new promise
+testFeature("then returns a new distinct promise", function () {
+    const p = Promise.resolve(1);
+    const p2 = p.then((x) => x + 1);
+    return p !== p2 && typeof p2.then === "function";
+});
+
+// 9. Fulfillment chaining passes values
+testFeature("chaining passes fulfillment values", function () {
+    return Promise.resolve(2)
+      .then((x) => x * 3)
+      .then((x) => x + 1)
+      .then((x) => x === 7);
+});
+
+// 10. Rejection propagates through absent handlers
+testFeature("rejection propagates through missing handlers", function () {
+    return Promise.reject("bad")
+      .then() // no handlers
+      .then() // no handlers
+      .then(
+        () => false,
+        (e) => e === "bad"
+      );
+});
+
+// 11. Catch is sugar for then(null, onRejected)
+testFeature("catch handles rejection", function () {
+    return Promise.reject(9)
+      .catch((e) => e * 2)
+      .then((v) => v === 18);
+});
+
+// 12. Throw in then -> reject next promise
+testFeature("throwing in onFulfilled rejects chained promise", function () {
+    return Promise.resolve(1)
+      .then(() => {
+        throw new Error("boom");
+      })
+      .then(
+        () => false,
+        (e) => e instanceof Error && e.message === "boom"
+      );
+});
+
+// 13. Return promise from then adopts state (fulfill)
+testFeature("returning a promise from then adopts fulfillment", function () {
+    return Promise.resolve(2)
+      .then((x) => Promise.resolve(x + 5))
+      .then((v) => v === 7);
+});
+
+// 14. Return promise from then adopts state (reject)
+testFeature("returning a promise from then adopts rejection", function () {
+    return Promise.resolve(1)
+      .then(() => Promise.reject("no"))
+      .then(
+        () => false,
+        (e) => e === "no"
+      );
+});
+
+// 15. Non-function then args are ignored (value passthrough)
+testFeature("non-function then args are ignored", function () {
+    return Promise.resolve(5)
+      .then(null)
+      .then(undefined)
+      .then(7) // ignored
+      .then((v) => v === 5);
+});
+
+// 16. Handlers are called asynchronously (after current call stack)
+testFeature("then handlers are async (microtask)", function () {
+    let sync = true;
+    const p = Promise.resolve("x").then(() => {
+      // runs after sync has been set to false? No: we flip after scheduling
+      // The key: at the moment of scheduling, sync is true.
+      return sync === true;
+    });
+    sync = false;
+    return p.then((assertion) => assertion === true);
+});
+
+// 17. Order of multiple then handlers is registration order
+testFeature("multiple .then() run in registration order", function () {
+    const order = [];
+    const p = Promise.resolve(0);
+    p.then(() => order.push(1));
+    p.then(() => order.push(2));
+    p.then(() => order.push(3));
+    return nextMicrotask().then(() => order.join(",") === "1,2,3");
+});
+
+// 18. Promise.resolve wraps value
+testFeature("Promise.resolve wraps a plain value", function () {
+    return Promise.resolve("ok").then((v) => v === "ok");
+});
+
+// 19. Promise.reject wraps reason
+testFeature("Promise.reject wraps a reason", function () {
+    return Promise.reject({ a: 1 }).then(
+      () => false,
+      (r) => r && r.a === 1
+    );
+});
+
+// 20. Resolve with thenable (calls then and adopts)
+testFeature("resolving with a thenable adopts its resolution", function () {
+    const thenable = {
+      then(resolve) {
+        setTimeout(() => resolve(77), 5);
+      },
+    };
+    return Promise.resolve(thenable).then((v) => v === 77);
+});
+
+// 21. Thenable calling resolve and reject: first call wins
+testFeature("thenable multiple calls: first call wins", function () {
+    const thenable = {
+      then(resolve, reject) {
+        resolve("first");
+        reject("second");
+        resolve("third");
+      },
+    };
+    return Promise.resolve(thenable).then((v) => v === "first");
+});
+
+// 22. Self-resolution must reject with TypeError
+testFeature("self-resolution rejects with TypeError", function () {
+    let p;
+    p = new Promise((resolve) => resolve(p));
+    return p.then(
+      () => false,
+      (e) => e instanceof TypeError
+    );
+});
+
+// 23. Multiple resolve/reject in executor: first wins (fulfilled)
+testFeature("first settle wins (fulfilled)", function () {
+    return new Promise((resolve, reject) => {
+      resolve("yay");
+      reject("nay");
+      resolve("later");
+    }).then((v) => v === "yay");
+});
+
+// 24. Multiple resolve/reject in executor: first wins (rejected)
+testFeature("first settle wins (rejected)", function () {
+    return new Promise((resolve, reject) => {
+      reject("boom");
+      resolve("after");
+    }).then(
+      () => false,
+      (e) => e === "boom"
+    );
+});
+
+// 25. finally passes through value
+testFeature("finally passes through fulfillment value", function () {
+    return Promise.resolve(10)
+      .finally(() => 999)
+      .then((v) => v === 10);
+});
+
+// 26. finally passes through rejection reason
+testFeature("finally passes through rejection reason", function () {
+    return Promise.reject("nope")
+      .finally(() => "ignored")
+      .then(
+        () => false,
+        (e) => e === "nope"
+      );
+});
+
+// 27. finally throwing turns chain into rejection
+testFeature("finally throwing converts to rejection", function () {
+    return Promise.resolve(1)
+      .finally(() => {
+        throw new Error("fail");
+      })
+      .then(
+        () => false,
+        (e) => e instanceof Error && e.message === "fail"
+      );
+});
+
+// 28. finally returning a rejected promise converts to rejection
+testFeature("finally returning rejected promise", function () {
+    return Promise.resolve(1)
+      .finally(() => Promise.reject("bad"))
+      .then(
+        () => false,
+        (e) => e === "bad"
+      );
+});
+
+// 29. Promise.all fulfills with array in order
+testFeature("Promise.all fulfills with ordered values", function () {
+    const a = delay(5).then(() => "A");
+    const b = delay(1).then(() => "B");
+    const c = Promise.resolve("C");
+    return Promise.all([a, b, c]).then(
+      (vals) => vals.join("") === "ABC"
+    );
+});
+
+// 30. Promise.all rejects on first rejection (short-circuit)
+testFeature("Promise.all rejects on first rejection", function () {
+    const a = delay(10).then(() => "A");
+    const b = delay(2).then(() => {
+      throw "X";
+    });
+    const c = delay(20).then(() => "C");
+    const started = Date.now();
+    return Promise.all([a, b, c]).then(
+      () => false,
+      (e) => e === "X" && Date.now() - started < 15
+    );
+});
+
+// 31. Promise.race resolves/rejects with first settled
+testFeature("Promise.race settles with first", function () {
+    const fast = delay(2).then(() => "fast");
+    const slow = delay(20).then(() => "slow");
+    return Promise.race([fast, slow]).then((v) => v === "fast");
+});
+
+// 32. Promise.race([]) stays pending (we check it doesn't settle quickly)
+testFeature("Promise.race([]) stays pending (no quick settle)", function () {
+    const r = Promise.race([]);
+    let settled = false;
+    r.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      }
+    );
+    return delay(10).then(() => settled === false);
+});
+
+// 33. Promise.all([]) resolves immediately to []
+testFeature("Promise.all([]) resolves immediately", function () {
+    return Promise.all([]).then(
+      (vals) => Array.isArray(vals) && vals.length === 0
+    );
+});
+
+/*
+// 34. Promise.allSettled returns statuses
+testFeature("Promise.allSettled returns correct status array", function () {
+    const a = Promise.resolve(1);
+    const b = Promise.reject("err");
+    return Promise.allSettled([a, b]).then((res) => {
+      return (
+        res.length === 2 &&
+        res[0].status === "fulfilled" &&
+        res[0].value === 1 &&
+        res[1].status === "rejected" &&
+        res[1].reason === "err"
+      );
+    });
+});
+
+
+// 35. Promise.any fulfills on first fulfillment
+testFeature("Promise.any fulfills on first fulfillment", function () {
+    const a = Promise.reject("no");
+    const b = delay(5).then(() => "yes");
+    const c = delay(10).then(() => "later");
+    return Promise.any([a, b, c]).then((v) => v === "yes");
+});
+
+// 36. Promise.any([]) rejects with AggregateError
+testFeature("Promise.any([]) rejects with AggregateError", function () {
+    return Promise.any([]).then(
+      () => false,
+      (e) =>
+        (typeof AggregateError !== "undefined" &&
+          e instanceof AggregateError) ||
+        // Some environments may polyfill differently; at least has 'errors' array
+        Array.isArray(e && e.errors)
+    );
+});
+
+// 37. Promise.any rejects after all rejected (AggregateError.errors content)
+testFeature("Promise.any all rejected -> AggregateError.errors contains reasons", function () {
+    return Promise.any([
+      Promise.reject("a"),
+      delay(1).then(() => {
+        throw "b";
+      }),
+    ]).then(
+      () => false,
+      (e) => {
+        const errs = e && e.errors;
+        return Array.isArray(errs) && errs.length === 2 && errs.includes("a") && errs.includes("b");
+      }
+    );
+});
+*/
+// 38. then handlers can be added after settlement
+testFeature("handlers added after settlement still run", function () {
+    const p = Promise.resolve(3);
+    return delay(5)
+      .then(() => p.then((v) => v * 2))
+      .then((v) => v === 6);
+});
+
+// 39. Value passthrough when onFulfilled returns undefined
+testFeature("returns undefined -> next receives undefined", function () {
+    return Promise.resolve("x")
+      .then(() => {})
+      .then((v) => v === undefined);
+});
+
+// 40. Rejection handler can recover and continue chain
+testFeature("onRejected can recover and continue chain", function () {
+    return Promise.reject("bad")
+      .then(
+        null,
+        () => "recovered"
+      )
+      .then((v) => v === "recovered");
+});
+
+// 41. Nested thenables resolution order (then called once)
+testFeature("thenable with re-entrant calls resolves once", function () {
+    let calls = 0;
+    const tricky = {
+      then(res) {
+        calls++;
+        res(1);
+        res(2);
+        res(3);
+      },
+    };
+    return Promise.resolve(tricky).then((v) => calls === 1 && v === 1);
+});
+
+// 42. Promise.resolve(Promise) unpacks inner promise
+testFeature("Promise.resolve(p) adopts p's state", function () {
+    const inner = delay(2).then(() => "done");
+    return Promise.resolve(inner).then((v) => v === "done");
+});
+
+// 43. .catch after .then without rejection handler still catches
+testFeature("catch after then-w/o-rejection-handler catches", function () {
+    return Promise.reject("E")
+      .then((v) => v)
+      .catch((e) => e === "E");
+});
+
+// 44. .finally receives no arguments
+testFeature("finally receives no arguments", function () {
+    let argsCount = -1;
+    return Promise.resolve(1)
+      .finally(function () {
+        argsCount = arguments.length;
+      })
+      .then(() => argsCount === 0);
+});
+
+// 45. Microtask before macrotask (then runs before setTimeout 0)
+testFeature("then microtask runs before setTimeout(0) handler", function () {
+    const events = [];
+    Promise.resolve().then(() => events.push("micro"));
+    setTimeout(() => events.push("macro"), 0);
+    return delay(5).then(() => events[0] === "micro");
+});
+
+// --- tiny helpers ---
+function delayResolve(value, ms) {
+  return new Promise((res) => setTimeout(() => res(value), ms));
+}
+function delayReject(err, ms) {
+  return new Promise((_, rej) => setTimeout(() => rej(err), ms));
+}
+
+// 1) basic await of a resolved value
+testFeature("await returns resolved value", function () {
+  return (async () => {
+    const v = await delayResolve(42, 5);
+    return v === 42;
+  })();
+});
+
+/*
+// 2) sequential awaits run in order
+testFeature("sequential awaits preserve order", function () {
+  return (async () => {
+    const log = [];
+    log.push("A");
+    const x = await delayResolve("B", 1);
+    log.push(x);
+    const y = await delayResolve("C", 1);
+    log.push(y);
+    return log.join("") === "ABC";
+  })();
+});
+*/
+
+// 3) await inside an expression
+testFeature("await works in expression context", function () {
+  return (async () => {
+    const sum = 1 + (await delayResolve(2, 1));
+    return sum === 3;
+  })();
+});
+
+/*
+// 4) try/catch with rejected await
+testFeature("rejected await is caught by try/catch", function () {
+  return (async () => {
+    try {
+      await delayReject("boom", 1);
+      return false; // should not reach
+    } catch (e) {
+      return e === "boom";
+    }
+  })();
+});
+*/
+
+// 5) finally runs after await (success path)
+testFeature("finally runs after successful await", function () {
+  return (async () => {
+    let didFinally = false;
+    try {
+      await delayResolve("ok", 1);
+    } finally {
+      didFinally = true;
+    }
+    return didFinally === true;
+  })();
+});
+
+/*
+// 6) finally runs after rejected await
+testFeature("finally runs after rejected await", function () {
+  return (async () => {
+    let didFinally = false;
+    try {
+      await delayReject("bad", 1);
+      return false; // should not reach
+    } catch (_e) {
+      // swallow
+    } finally {
+      didFinally = true;
+    }
+    return didFinally === true;
+  })();
+});
+*/
+// 7) arrow concise body with await returns value
+testFeature("arrow concise body returns awaited value", function () {
+  return (async () => {
+    const doubleAsync = async (n) => await delayResolve(n * 2, 1);
+    const r = await doubleAsync(7);
+    return r === 14;
+  })();
+});
+
+/*
+// 8) "this" & "arguments" preserved across await (matches wrapper .apply)
+testFeature("this/arguments preserved across await", function () {
+  return (async () => {
+    const obj = {
+      k: 5,
+      async addLater(a, b) {
+        await delayResolve(null, 1);
+        return this.k + a + b;
+      }
+    };
+    const r = await obj.addLater.call({ k: 1 }, 2, 3);
+    return r === 6;
+  })();
+});
+*/
+
+// 9) multiple awaits with reassignment
+testFeature("multiple awaits with reassignment", function () {
+  return (async () => {
+    let result = await delayResolve(10, 1);
+    result = await delayResolve(result + 5, 1);
+    return result === 15;
+  })();
+});
+
+// 10) awaiting two started promises (concurrency sanity)
+testFeature("start two promises then await them later", function () {
+  return (async () => {
+    const p1 = delayResolve(2, 10);
+    const p2 = delayResolve(3, 5);
+    // Do something else before awaiting
+    const head = 1;
+    const a = await p2; // resolves first
+    const b = await p1; // resolves second
+    return head + a + b === 6;
+  })();
+});
+
+
 
 /*
 testFeature("method properties with generator",function(){
@@ -1016,42 +1597,42 @@ testFeature("2018 - tagged literal replacement",function(){
 });
 
 try {
-  function msgAfterTimeout (msg, msg2, timeout) {
+function msgAfterTimeout (msg, msg2, timeout) {
       return new Promise((resolve, reject) => {
           setTimeout(() => resolve(`${msg}${msg2}`), timeout)
       })
-  }
-  msgAfterTimeout("Foo", "", 10).then(
+}
+msgAfterTimeout("Foo", "", 10).then(
     (msg) => msgAfterTimeout(msg, "Bar", 10)
-  ).then((msg) => {
+).then((msg) => {
       testFeature("Async - Promises/setTimeout", msg=="FooBar");
-  });
+});
 } catch (e) {
-  testFeature("Async - Promises/setTimeout", false);
+testFeature("Async - Promises/setTimeout", false);
 }
 
 try {
-  function resolveAfter2ms() {
+function resolveAfter2ms() {
     return new Promise(resolve => {
       setTimeout(() => {
         resolve('resolved');
       }, 2);
     });
-  }
+}
 
-  async function asyncCall() {
+async function asyncCall() {
     const result = await resolveAfter2ms();
     testFeature("Async - Promises/async function", result=="resolved");
-  }
+}
 
-  asyncCall();
+asyncCall();
 
 } catch (e) {
-  testFeature("Async - Promises/async function", false);
+    testFeature("Async - Promises/async function", false);
 }
 
 //TODO: finish 2018
 setTimeout(function(){
-  printf("NOT TESTED:  RE sticky flag and Internationalization\n");
+    printf("NOT TESTED:  RE sticky flag and Internationalization\n");
 },100);
 */

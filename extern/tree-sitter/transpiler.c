@@ -21,12 +21,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define SPREAD_PF   (1<<0)
-#define IMPORT_PF   (1<<1)
-#define CLASS_PF    (1<<2)
-#define FOROF_PF    (1<<3)
-#define PROMISE_PF  (1<<4)
-
 #ifndef REMALLOC
 #define REMALLOC(s, t)                                                                                                 \
     do                                                                                                                 \
@@ -159,20 +153,46 @@ void add_edit_take_ownership(EditList *e, size_t start, size_t end, char *replac
 
 static const char *poly_start = "if(!global._TrN_Sp){global._TrN_Sp={};};_TrN_Sp.load=function(){";
 
-// stolen from babel.  Babel, like this prog is MIT licensed - see https://github.com/babel/babel/blob/main/LICENSE
-static const char *spread_polyfill =
-    "_TrN_Sp.__spreadO = function(target) {function ownKeys(object, enumerableOnly){var keys = Object.keys(object);if (Object.getOwnPropertySymbols){var symbols = Object.getOwnPropertySymbols(object);if (enumerableOnly)symbols = symbols.filter(function(sym) {return Object.getOwnPropertyDescriptor(object, sym).enumerable;});keys.push.apply(keys, symbols);}return keys;}function _defineProperty(obj, key, value){if (key in obj){Object.defineProperty(obj, key, {value : value, enumerable : true, configurable : true, writable : true});}else{obj[key] = value;}return obj;}for (var i = 1; i < arguments.length; i++){var source = arguments[i] != null ? arguments[i] : {};if (i % 2){ownKeys(Object(source), true).forEach(function(key) {_defineProperty(target, key, source[key]);});}else if (Object.getOwnPropertyDescriptors){Object.defineProperties(target, Object.getOwnPropertyDescriptors(source));}else{ownKeys(Object(source)).forEach(function(key) {Object.defineProperty(target, key, Object.getOwnPropertyDescriptor(source, key));});}}return target;};_TrN_Sp.__spreadA = function(target, arr) {if (arr instanceof Array)return target.concat(arr);function _nonIterableSpread(){throw new TypeError(\"Invalid attempt to spread non-iterable instance. In order to be iterable, non-array objects must have a [Symbol.iterator]() method.\");}function _unsupportedIterableToArray(o, minLen){if (!o)return;if (typeof o === \"string\")return _arrayLikeToArray(o, minLen);var n = Object.prototype.toString.call(o).slice(8, -1);if (n === \"Object\" && o.constructor);n = o.constructor.name;if (n === \"Map\" || n === \"Set\")return Array.from(o);if (n === \"Arguments\" || /^(?:Ui|I)nt(?:8|16|32)(?:Clamped)?Array$/.test(n))return target.concat(_arrayLikeToArray(o, minLen));}function _iterableToArray(iter){if (typeof Symbol !== \"undefined\" && Symbol.iterator in Object(iter))return target.concat(Array.from(iter));}function _arrayLikeToArray(arr, len){if (len == null || len > arr.length)len = arr.length;for (var i = 0, arr2 = new Array(len); i < len; i++){arr2[i] = arr[i];}return target.concat(arr2);}function _arrayWithoutHoles(arr){if (Array.isArray(arr))return target.concat(_arrayLikeToArray(arr));}return _arrayWithoutHoles(arr) || _iterableToArray(arr) || _unsupportedIterableToArray(arr) || _nonIterableSpread();};_TrN_Sp._arrayConcat = function(items){var self = this;items.forEach(function(item) {self.push(item);});return this;};_TrN_Sp._newArray = function() {Object.defineProperty(Array.prototype, '_addchain', {value: _TrN_Sp._arrayConcat,writable: true,configurable: true,enumerable: false});Object.defineProperty(Array.prototype, '_concat', {value: Array.prototype._addchain,writable: true,configurable: true,enumerable: false});return [];};_TrN_Sp._objectAddchain = function(key, value) {if (typeof key == 'object'){Object.assign(this, key)}else{this[key] = value;}return this;};_TrN_Sp._newObject = function() {Object.defineProperty(Object.prototype, '_addchain', {value: _TrN_Sp._objectAddchain,writable: true,configurable: true,enumerable: false});Object.defineProperty(Object.prototype, '_concat', {value: _TrN_Sp._objectAddchain,writable: true,configurable: true,enumerable: false});return {};};";
-static const char *import_polyfill =
-    "_TrN_Sp._typeof=function(obj) {\"@babel/helpers - typeof\";if (typeof Symbol === \"function\" && typeof Symbol.iterator === \"symbol\") {_TrN_Sp._typeof = function(obj) {return typeof obj;};} else {_TrN_Sp._typeof = function(obj) {return obj && typeof Symbol === \"function\" && obj.constructor === Symbol && obj !== Symbol.prototype ? \"symbol\" : typeof obj;};}return _TrN_Sp._typeof(obj);};_TrN_Sp._getRequireWildcardCache=function() {if (typeof WeakMap !== \"function\") return null;var cache = new WeakMap();_TrN_Sp._getRequireWildcardCache=function(){return cache;};return cache;};_TrN_Sp._interopRequireWildcard=function(obj) {if (obj && obj.__esModule) {return obj;}if (obj === null || _TrN_Sp._typeof(obj) !== \"object\" && typeof obj !== \"function\") {return { \"default\": obj };}var cache = _TrN_Sp._getRequireWildcardCache();if (cache && cache.has(obj)) {return cache.get(obj);}var newObj = {};var hasPropertyDescriptor = Object.defineProperty && Object.getOwnPropertyDescriptor;for (var key in obj) {if (Object.prototype.hasOwnProperty.call(obj, key)) {var desc = hasPropertyDescriptor ? Object.getOwnPropertyDescriptor(obj, key) : null;if (desc && (desc.get || desc.set)) {Object.defineProperty(newObj, key, desc);} else {newObj[key] = obj[key];}}}newObj[\"default\"] = obj;if (cache) {cache.set(obj, newObj);}return newObj;};_TrN_Sp._interopDefault=function(m){if(typeof m =='object' && m.__esModule){return m.default}return m;};";
-static const char *class_polyfill =
-    "_TrN_Sp.typeof =function(obj) {'@babel/helpers - typeof';if (typeof Symbol === 'function' && typeof Symbol.iterator === 'symbol') {_typeof = function _typeof(obj) {return typeof obj;};} else {_typeof = function _typeof(obj) {return obj && typeof Symbol === 'function' &&obj.constructor === Symbol && obj !== Symbol.prototype ?'symbol' :typeof obj;};}return _typeof(obj);}; _TrN_Sp.inherits =function(subClass, superClass) {if (typeof superClass !== 'function' && superClass !== null) {throw new TypeError('Super expression must either be null or a function');}subClass.prototype = Object.create(superClass && superClass.prototype,{constructor: {value: subClass, writable: true, configurable: true}});if (superClass) _TrN_Sp.setPrototypeOf(subClass, superClass);}; _TrN_Sp.setPrototypeOf =function(o, p) {_setPrototypeOf = Object.setPrototypeOf || function _setPrototypeOf(o, p) {o.__proto__ = p;return o;};return _setPrototypeOf(o, p);}; _TrN_Sp.createSuper =function(Derived) {var hasNativeReflectConstruct = _TrN_Sp.isNativeReflectConstruct();return function _createSuperInternal() {var Super = _TrN_Sp.getPrototypeOf(Derived), result;result = Super.apply(this, arguments);return _TrN_Sp.possibleConstructorReturn(this, result);};}; _TrN_Sp.possibleConstructorReturn =function(self, call) {if (call && (_typeof(call) === 'object' || typeof call === 'function')) {return call;}return _TrN_Sp.assertThisInitialized(self);}; _TrN_Sp.assertThisInitialized =function(self) {if (self === void 0) {throw new ReferenceError('this hasn\\'t been initialised - super() hasn\\'t been called');}return self;}; _TrN_Sp.isNativeReflectConstruct =function() {if (typeof Reflect === 'undefined' || !Reflect.construct) return false;if (Reflect.construct.sham) return false;if (typeof Proxy === 'function') return true;try {Date.prototype.toString.call(Reflect.construct(Date, [], function() {}));return true;} catch (e) {return false;}}; _TrN_Sp.getPrototypeOf =function(o) {_getPrototypeOf = Object.setPrototypeOf ?Object.getPrototypeOf :function _getPrototypeOf(o) {return o.__proto__ || Object.getPrototypeOf(o);};return _getPrototypeOf(o);}; _TrN_Sp.classCallCheck =function(instance, Constructor) {if (!(instance instanceof Constructor)) {throw new TypeError('Cannot call a class as a function');}}; _TrN_Sp.defineProperties =function(target, props) {for (var i = 0; i < props.length; i++) {var descriptor = props[i];descriptor.enumerable = descriptor.enumerable || false;descriptor.configurable = true;if ('value' in descriptor) descriptor.writable = true;Object.defineProperty(target, descriptor.key, descriptor);}}; _TrN_Sp.createClass =function(Constructor, protoProps,staticProps) {if (protoProps) _TrN_Sp.defineProperties(Constructor.prototype, protoProps);if (staticProps) _TrN_Sp.defineProperties(Constructor, staticProps);return Constructor;};";
-static const char *for_of_polyfill =
-    "_TrN_Sp.slicedToArray=function (arr, i) {return _TrN_Sp.arrayWithHoles(arr) || _TrN_Sp.iterableToArrayLimit(arr, i) || _TrN_Sp.unsupportedIterableToArray(arr, i) || _TrN_Sp.nonIterableRest();};_TrN_Sp.nonIterableRest=function(){throw new TypeError(\"Invalid attempt to destructure non-iterable instance.\\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method.\");};_TrN_Sp.unsupportedIterableToArray=function(o, minLen) {if (!o) return;if (typeof o === \"string\") return _TrN_Sp.arrayLikeToArray(o, minLen);var n = Object.prototype.toString.call(o).slice(8, -1);if (n === \"Object\" && o.constructor) n = o.constructor.name;if (n === \"Map\" || n === \"Set\") return Array.from(o);if (n === \"Arguments\" || /^(?:Ui|I)nt(?:8|16|32)(?:Clamped)?Array$/.test(n)) return _TrN_Sp.arrayLikeToArray(o, minLen);};_TrN_Sp.arrayLikeToArray=function(arr, len) {if (len == null || len > arr.length) len = arr.length;for (var i = 0, arr2 = new Array(len); i < len; i++) {arr2[i] = arr[i];}return arr2;};_TrN_Sp.iterableToArrayLimit=function(arr, i){if (typeof Symbol === \"undefined\" || !(Symbol.iterator in Object(arr))) return;var _arr = [];var _n = true;var _d = false;var _e = undefined;try {for (var _i = arr[Symbol.iterator](), _s; !(_n = (_s = _i.next()).done); _n = true) {_arr.push(_s.value);if (i && _arr.length === i) break;}} catch (err) {_d = true;_e = err;} finally {try {if (!_n && _i[\"return\"] != null) _i[\"return\"]();} finally {if (_d) throw _e;}}return _arr;};_TrN_Sp.arrayWithHoles=function(arr) {if (Array.isArray(arr)) return arr;};";
+typedef struct {
+    const char *polyfill;
+    size_t      size;
+    uint32_t    flag;
+} polyfills;
 
-// from https://www.npmjs.com/package/promise-polyfill MIT license included in this dir.
-// the delete global.Promise is for rampart.thread reload.
-const char *promise_polyfill =
-    "delete global.Promise;(function(e,t){\"object\"==typeof exports&&\"undefined\"!=typeof module?t():\"function\"==typeof define&&define.amd?define(t):t()})(0,function(){\"use strict\";function e(e){var t=this.constructor;return this.then(function(n){return t.resolve(e()).then(function(){return n})},function(n){return t.resolve(e()).then(function(){return t.reject(n)})})}function t(e){return new this(function(t,n){function r(e,n){if(n&&(\"object\"==typeof n||\"function\"==typeof n)){var f=n.then;if(\"function\"==typeof f)return void f.call(n,function(t){r(e,t)},function(n){o[e]={status:\"rejected\",reason:n},0==--i&&t(o)})}o[e]={status:\"fulfilled\",value:n},0==--i&&t(o)}if(!e||\"undefined\"==typeof e.length)return n(new TypeError(typeof e+\" \"+e+\" is not iterable(cannot read property Symbol(Symbol.iterator))\"));var o=Array.prototype.slice.call(e);if(0===o.length)return t([]);for(var i=o.length,f=0;o.length>f;f++)r(f,o[f])})}function n(e,t){this.name=\"AggregateError\",this.errors=e,this.message=t||\"\"}function r(e){var t=this;return new t(function(r,o){if(!e||\"undefined\"==typeof e.length)return o(new TypeError(\"Promise.any accepts an array\"));var i=Array.prototype.slice.call(e);if(0===i.length)return o();for(var f=[],u=0;i.length>u;u++)try{t.resolve(i[u]).then(r)[\"catch\"](function(e){f.push(e),f.length===i.length&&o(new n(f,\"All promises were rejected\"))})}catch(c){o(c)}})}function o(e){return!(!e||\"undefined\"==typeof e.length)}function i(){}function f(e){if(!(this instanceof f))throw new TypeError(\"Promises must be constructed via new\");if(\"function\"!=typeof e)throw new TypeError(\"not a function\");this._state=0,this._handled=!1,this._value=undefined,this._deferreds=[],s(e,this)}function u(e,t){for(;3===e._state;)e=e._value;0!==e._state?(e._handled=!0,f._immediateFn(function(){var n=1===e._state?t.onFulfilled:t.onRejected;if(null!==n){var r;try{r=n(e._value)}catch(o){return void a(t.promise,o)}c(t.promise,r)}else(1===e._state?c:a)(t.promise,e._value)})):e._deferreds.push(t)}function c(e,t){try{if(t===e)throw new TypeError(\"A promise cannot be resolved with itself.\");if(t&&(\"object\"==typeof t||\"function\"==typeof t)){var n=t.then;if(t instanceof f)return e._state=3,e._value=t,void l(e);if(\"function\"==typeof n)return void s(function(e,t){return function(){e.apply(t,arguments)}}(n,t),e)}e._state=1,e._value=t,l(e)}catch(r){a(e,r)}}function a(e,t){e._state=2,e._value=t,l(e)}function l(e){2===e._state&&0===e._deferreds.length&&f._immediateFn(function(){e._handled||f._unhandledRejectionFn(e._value)});for(var t=0,n=e._deferreds.length;n>t;t++)u(e,e._deferreds[t]);e._deferreds=null}function s(e,t){var n=!1;try{e(function(e){n||(n=!0,c(t,e))},function(e){n||(n=!0,a(t,e))})}catch(r){if(n)return;n=!0,a(t,r)}}n.prototype=Error.prototype;var d=setTimeout;f.prototype[\"catch\"]=function(e){return this.then(null,e)},f.prototype.then=function(e,t){var n=new this.constructor(i);return u(this,new function(e,t,n){this.onFulfilled=\"function\"==typeof e?e:null,this.onRejected=\"function\"==typeof t?t:null,this.promise=n}(e,t,n)),n},f.prototype[\"finally\"]=e,f.all=function(e){return new f(function(t,n){function r(e,o){try{if(o&&(\"object\"==typeof o||\"function\"==typeof o)){var u=o.then;if(\"function\"==typeof u)return void u.call(o,function(t){r(e,t)},n)}i[e]=o,0==--f&&t(i)}catch(c){n(c)}}if(!o(e))return n(new TypeError(\"Promise.all accepts an array\"));var i=Array.prototype.slice.call(e);if(0===i.length)return t([]);for(var f=i.length,u=0;i.length>u;u++)r(u,i[u])})},f.any=r,f.allSettled=t,f.resolve=function(e){return e&&\"object\"==typeof e&&e.constructor===f?e:new f(function(t){t(e)})},f.reject=function(e){return new f(function(t,n){n(e)})},f.race=function(e){return new f(function(t,n){if(!o(e))return n(new TypeError(\"Promise.race accepts an array\"));for(var r=0,i=e.length;i>r;r++)f.resolve(e[r]).then(t,n)})},f._immediateFn=\"function\"==typeof setImmediate&&function(e){setImmediate(e)}||function(e){d(e,0)},f._unhandledRejectionFn=function(e){void 0!==console&&console&&console.warn(\"Possible Unhandled Promise Rejection:\",e)};var p=function(){if(\"undefined\"!=typeof self)return self;if(\"undefined\"!=typeof window)return window;if(\"undefined\"!=typeof global)return global;throw Error(\"unable to locate global object\")}();\"function\"!=typeof p.Promise?p.Promise=f:(p.Promise.prototype[\"finally\"]||(p.Promise.prototype[\"finally\"]=e),p.Promise.allSettled||(p.Promise.allSettled=t),p.Promise.any||(p.Promise.any=r))});";
+#define SPREAD_PF   (1<<0)
+#define IMPORT_PF   (1<<1)
+#define CLASS_PF    (1<<2)
+#define FOROF_PF    (1<<3)
+#define PROMISE_PF  (1<<4)
+#define ASYNC_PF    (1<<5)
+
+
+polyfills allpolys[] = {
+    // stolen from babel.  Babel, like this prog is MIT licensed - see https://github.com/babel/babel/blob/main/LICENSE
+    {
+        "_TrN_Sp.__spreadO = function(target) {function ownKeys(object, enumerableOnly){var keys = Object.keys(object);if (Object.getOwnPropertySymbols){var symbols = Object.getOwnPropertySymbols(object);if (enumerableOnly)symbols = symbols.filter(function(sym) {return Object.getOwnPropertyDescriptor(object, sym).enumerable;});keys.push.apply(keys, symbols);}return keys;}function _defineProperty(obj, key, value){if (key in obj){Object.defineProperty(obj, key, {value : value, enumerable : true, configurable : true, writable : true});}else{obj[key] = value;}return obj;}for (var i = 1; i < arguments.length; i++){var source = arguments[i] != null ? arguments[i] : {};if (i % 2){ownKeys(Object(source), true).forEach(function(key) {_defineProperty(target, key, source[key]);});}else if (Object.getOwnPropertyDescriptors){Object.defineProperties(target, Object.getOwnPropertyDescriptors(source));}else{ownKeys(Object(source)).forEach(function(key) {Object.defineProperty(target, key, Object.getOwnPropertyDescriptor(source, key));});}}return target;};_TrN_Sp.__spreadA = function(target, arr) {if (arr instanceof Array)return target.concat(arr);function _nonIterableSpread(){throw new TypeError(\"Invalid attempt to spread non-iterable instance. In order to be iterable, non-array objects must have a [Symbol.iterator]() method.\");}function _unsupportedIterableToArray(o, minLen){if (!o)return;if (typeof o === \"string\")return _arrayLikeToArray(o, minLen);var n = Object.prototype.toString.call(o).slice(8, -1);if (n === \"Object\" && o.constructor);n = o.constructor.name;if (n === \"Map\" || n === \"Set\")return Array.from(o);if (n === \"Arguments\" || /^(?:Ui|I)nt(?:8|16|32)(?:Clamped)?Array$/.test(n))return target.concat(_arrayLikeToArray(o, minLen));}function _iterableToArray(iter){if (typeof Symbol !== \"undefined\" && Symbol.iterator in Object(iter))return target.concat(Array.from(iter));}function _arrayLikeToArray(arr, len){if (len == null || len > arr.length)len = arr.length;for (var i = 0, arr2 = new Array(len); i < len; i++){arr2[i] = arr[i];}return target.concat(arr2);}function _arrayWithoutHoles(arr){if (Array.isArray(arr))return target.concat(_arrayLikeToArray(arr));}return _arrayWithoutHoles(arr) || _iterableToArray(arr) || _unsupportedIterableToArray(arr) || _nonIterableSpread();};_TrN_Sp._arrayConcat = function(items){var self = this;items.forEach(function(item) {self.push(item);});return this;};_TrN_Sp._newArray = function() {Object.defineProperty(Array.prototype, '_addchain', {value: _TrN_Sp._arrayConcat,writable: true,configurable: true,enumerable: false});Object.defineProperty(Array.prototype, '_concat', {value: Array.prototype._addchain,writable: true,configurable: true,enumerable: false});return [];};_TrN_Sp._objectAddchain = function(key, value) {if (typeof key == 'object'){Object.assign(this, key)}else{this[key] = value;}return this;};_TrN_Sp._newObject = function() {Object.defineProperty(Object.prototype, '_addchain', {value: _TrN_Sp._objectAddchain,writable: true,configurable: true,enumerable: false});Object.defineProperty(Object.prototype, '_concat', {value: _TrN_Sp._objectAddchain,writable: true,configurable: true,enumerable: false});return {};};",
+        0, (uint32_t)SPREAD_PF },
+    {
+        "_TrN_Sp._typeof=function(obj) {\"@babel/helpers - typeof\";if (typeof Symbol === \"function\" && typeof Symbol.iterator === \"symbol\") {_TrN_Sp._typeof = function(obj) {return typeof obj;};} else {_TrN_Sp._typeof = function(obj) {return obj && typeof Symbol === \"function\" && obj.constructor === Symbol && obj !== Symbol.prototype ? \"symbol\" : typeof obj;};}return _TrN_Sp._typeof(obj);};_TrN_Sp._getRequireWildcardCache=function() {if (typeof WeakMap !== \"function\") return null;var cache = new WeakMap();_TrN_Sp._getRequireWildcardCache=function(){return cache;};return cache;};_TrN_Sp._interopRequireWildcard=function(obj) {if (obj && obj.__esModule) {return obj;}if (obj === null || _TrN_Sp._typeof(obj) !== \"object\" && typeof obj !== \"function\") {return { \"default\": obj };}var cache = _TrN_Sp._getRequireWildcardCache();if (cache && cache.has(obj)) {return cache.get(obj);}var newObj = {};var hasPropertyDescriptor = Object.defineProperty && Object.getOwnPropertyDescriptor;for (var key in obj) {if (Object.prototype.hasOwnProperty.call(obj, key)) {var desc = hasPropertyDescriptor ? Object.getOwnPropertyDescriptor(obj, key) : null;if (desc && (desc.get || desc.set)) {Object.defineProperty(newObj, key, desc);} else {newObj[key] = obj[key];}}}newObj[\"default\"] = obj;if (cache) {cache.set(obj, newObj);}return newObj;};_TrN_Sp._interopDefault=function(m){if(typeof m =='object' && m.__esModule){return m.default}return m;};",
+        0, (uint32_t)IMPORT_PF },
+    {
+        "_TrN_Sp.typeof =function(obj) {'@babel/helpers - typeof';if (typeof Symbol === 'function' && typeof Symbol.iterator === 'symbol') {_typeof = function _typeof(obj) {return typeof obj;};} else {_typeof = function _typeof(obj) {return obj && typeof Symbol === 'function' &&obj.constructor === Symbol && obj !== Symbol.prototype ?'symbol' :typeof obj;};}return _typeof(obj);}; _TrN_Sp.inherits =function(subClass, superClass) {if (typeof superClass !== 'function' && superClass !== null) {throw new TypeError('Super expression must either be null or a function');}subClass.prototype = Object.create(superClass && superClass.prototype,{constructor: {value: subClass, writable: true, configurable: true}});if (superClass) _TrN_Sp.setPrototypeOf(subClass, superClass);}; _TrN_Sp.setPrototypeOf =function(o, p) {_setPrototypeOf = Object.setPrototypeOf || function _setPrototypeOf(o, p) {o.__proto__ = p;return o;};return _setPrototypeOf(o, p);}; _TrN_Sp.createSuper =function(Derived) {var hasNativeReflectConstruct = _TrN_Sp.isNativeReflectConstruct();return function _createSuperInternal() {var Super = _TrN_Sp.getPrototypeOf(Derived), result;result = Super.apply(this, arguments);return _TrN_Sp.possibleConstructorReturn(this, result);};}; _TrN_Sp.possibleConstructorReturn =function(self, call) {if (call && (_typeof(call) === 'object' || typeof call === 'function')) {return call;}return _TrN_Sp.assertThisInitialized(self);}; _TrN_Sp.assertThisInitialized =function(self) {if (self === void 0) {throw new ReferenceError('this hasn\\'t been initialised - super() hasn\\'t been called');}return self;}; _TrN_Sp.isNativeReflectConstruct =function() {if (typeof Reflect === 'undefined' || !Reflect.construct) return false;if (Reflect.construct.sham) return false;if (typeof Proxy === 'function') return true;try {Date.prototype.toString.call(Reflect.construct(Date, [], function() {}));return true;} catch (e) {return false;}}; _TrN_Sp.getPrototypeOf =function(o) {_getPrototypeOf = Object.setPrototypeOf ?Object.getPrototypeOf :function _getPrototypeOf(o) {return o.__proto__ || Object.getPrototypeOf(o);};return _getPrototypeOf(o);}; _TrN_Sp.classCallCheck =function(instance, Constructor) {if (!(instance instanceof Constructor)) {throw new TypeError('Cannot call a class as a function');}}; _TrN_Sp.defineProperties =function(target, props) {for (var i = 0; i < props.length; i++) {var descriptor = props[i];descriptor.enumerable = descriptor.enumerable || false;descriptor.configurable = true;if ('value' in descriptor) descriptor.writable = true;Object.defineProperty(target, descriptor.key, descriptor);}}; _TrN_Sp.createClass =function(Constructor, protoProps,staticProps) {if (protoProps) _TrN_Sp.defineProperties(Constructor.prototype, protoProps);if (staticProps) _TrN_Sp.defineProperties(Constructor, staticProps);return Constructor;};",
+        0, (uint32_t)CLASS_PF  },
+    {
+        "_TrN_Sp.slicedToArray=function (arr, i) {return _TrN_Sp.arrayWithHoles(arr) || _TrN_Sp.iterableToArrayLimit(arr, i) || _TrN_Sp.unsupportedIterableToArray(arr, i) || _TrN_Sp.nonIterableRest();};_TrN_Sp.nonIterableRest=function(){throw new TypeError(\"Invalid attempt to destructure non-iterable instance.\\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method.\");};_TrN_Sp.unsupportedIterableToArray=function(o, minLen) {if (!o) return;if (typeof o === \"string\") return _TrN_Sp.arrayLikeToArray(o, minLen);var n = Object.prototype.toString.call(o).slice(8, -1);if (n === \"Object\" && o.constructor) n = o.constructor.name;if (n === \"Map\" || n === \"Set\") return Array.from(o);if (n === \"Arguments\" || /^(?:Ui|I)nt(?:8|16|32)(?:Clamped)?Array$/.test(n)) return _TrN_Sp.arrayLikeToArray(o, minLen);};_TrN_Sp.arrayLikeToArray=function(arr, len) {if (len == null || len > arr.length) len = arr.length;for (var i = 0, arr2 = new Array(len); i < len; i++) {arr2[i] = arr[i];}return arr2;};_TrN_Sp.iterableToArrayLimit=function(arr, i){if (typeof Symbol === \"undefined\" || !(Symbol.iterator in Object(arr))) return;var _arr = [];var _n = true;var _d = false;var _e = undefined;try {for (var _i = arr[Symbol.iterator](), _s; !(_n = (_s = _i.next()).done); _n = true) {_arr.push(_s.value);if (i && _arr.length === i) break;}} catch (err) {_d = true;_e = err;} finally {try {if (!_n && _i[\"return\"] != null) _i[\"return\"]();} finally {if (_d) throw _e;}}return _arr;};_TrN_Sp.arrayWithHoles=function(arr) {if (Array.isArray(arr)) return arr;};",
+        0, (uint32_t)FOROF_PF  },
+    {
+        "_TrN_Sp.asyncGeneratorStep = function(gen, resolve, reject, _next, _throw, key, arg) {try{var info = gen[key](arg);var value = info.value;}catch (error){reject(error);return;}if (info.done){resolve(value);}else{Promise.resolve(value).then(_next, _throw);}};_TrN_Sp.asyncToGenerator = function(fn) {return function() {var self = this, args = arguments;return new Promise(function(resolve, reject) {var gen = fn.apply(self, args);function _next(value){_TrN_Sp.asyncGeneratorStep(gen, resolve, reject, _next, _throw, \"next\", value);}function _throw(err){_TrN_Sp.asyncGeneratorStep(gen, resolve, reject, _next, _throw, \"throw\", err);}_next(undefined);});};};_TrN_Sp.regeneratorRuntime = (function () {function mark(genFn) { return genFn; }function wrap(innerFn) {var context = {prev: 0,next: 0,sent: void 0,done: false,rval: void 0,stop: function () { this.done = true; return this.rval; }};return {next: function (arg) {var prevNext = context.next;context.sent = arg;var value = innerFn(context);if (context.done || context.next === \"end\") {return { value: context.rval, done: true };}if (context.next === prevNext) {context.done = true;context.rval = value;return { value: context.rval, done: true };}return { value: value, done: false };},throw: function (err) { throw err; }};}return { mark: mark, wrap: wrap };})();",
+        0, (uint32_t)ASYNC_PF  },
+
+    // from https://www.npmjs.com/package/promise-polyfill MIT license included in this dir.
+    // the delete global.Promise is for rampart.thread reload.
+    {
+        "delete global.Promise;(function(e,t){\"object\"==typeof exports&&\"undefined\"!=typeof module?t():\"function\"==typeof define&&define.amd?define(t):t()})(0,function(){\"use strict\";function e(e){var t=this.constructor;return this.then(function(n){return t.resolve(e()).then(function(){return n})},function(n){return t.resolve(e()).then(function(){return t.reject(n)})})}function t(e){return new this(function(t,n){function r(e,n){if(n&&(\"object\"==typeof n||\"function\"==typeof n)){var f=n.then;if(\"function\"==typeof f)return void f.call(n,function(t){r(e,t)},function(n){o[e]={status:\"rejected\",reason:n},0==--i&&t(o)})}o[e]={status:\"fulfilled\",value:n},0==--i&&t(o)}if(!e||\"undefined\"==typeof e.length)return n(new TypeError(typeof e+\" \"+e+\" is not iterable(cannot read property Symbol(Symbol.iterator))\"));var o=Array.prototype.slice.call(e);if(0===o.length)return t([]);for(var i=o.length,f=0;o.length>f;f++)r(f,o[f])})}function n(e,t){this.name=\"AggregateError\",this.errors=e,this.message=t||\"\"}function r(e){var t=this;return new t(function(r,o){if(!e||\"undefined\"==typeof e.length)return o(new TypeError(\"Promise.any accepts an array\"));var i=Array.prototype.slice.call(e);if(0===i.length)return o();for(var f=[],u=0;i.length>u;u++)try{t.resolve(i[u]).then(r)[\"catch\"](function(e){f.push(e),f.length===i.length&&o(new n(f,\"All promises were rejected\"))})}catch(c){o(c)}})}function o(e){return!(!e||\"undefined\"==typeof e.length)}function i(){}function f(e){if(!(this instanceof f))throw new TypeError(\"Promises must be constructed via new\");if(\"function\"!=typeof e)throw new TypeError(\"not a function\");this._state=0,this._handled=!1,this._value=undefined,this._deferreds=[],s(e,this)}function u(e,t){for(;3===e._state;)e=e._value;0!==e._state?(e._handled=!0,f._immediateFn(function(){var n=1===e._state?t.onFulfilled:t.onRejected;if(null!==n){var r;try{r=n(e._value)}catch(o){return void a(t.promise,o)}c(t.promise,r)}else(1===e._state?c:a)(t.promise,e._value)})):e._deferreds.push(t)}function c(e,t){try{if(t===e)throw new TypeError(\"A promise cannot be resolved with itself.\");if(t&&(\"object\"==typeof t||\"function\"==typeof t)){var n=t.then;if(t instanceof f)return e._state=3,e._value=t,void l(e);if(\"function\"==typeof n)return void s(function(e,t){return function(){e.apply(t,arguments)}}(n,t),e)}e._state=1,e._value=t,l(e)}catch(r){a(e,r)}}function a(e,t){e._state=2,e._value=t,l(e)}function l(e){2===e._state&&0===e._deferreds.length&&f._immediateFn(function(){e._handled||f._unhandledRejectionFn(e._value)});for(var t=0,n=e._deferreds.length;n>t;t++)u(e,e._deferreds[t]);e._deferreds=null}function s(e,t){var n=!1;try{e(function(e){n||(n=!0,c(t,e))},function(e){n||(n=!0,a(t,e))})}catch(r){if(n)return;n=!0,a(t,r)}}n.prototype=Error.prototype;var d=setTimeout;f.prototype[\"catch\"]=function(e){return this.then(null,e)},f.prototype.then=function(e,t){var n=new this.constructor(i);return u(this,new function(e,t,n){this.onFulfilled=\"function\"==typeof e?e:null,this.onRejected=\"function\"==typeof t?t:null,this.promise=n}(e,t,n)),n},f.prototype[\"finally\"]=e,f.all=function(e){return new f(function(t,n){function r(e,o){try{if(o&&(\"object\"==typeof o||\"function\"==typeof o)){var u=o.then;if(\"function\"==typeof u)return void u.call(o,function(t){r(e,t)},n)}i[e]=o,0==--f&&t(i)}catch(c){n(c)}}if(!o(e))return n(new TypeError(\"Promise.all accepts an array\"));var i=Array.prototype.slice.call(e);if(0===i.length)return t([]);for(var f=i.length,u=0;i.length>u;u++)r(u,i[u])})},f.any=r,f.allSettled=t,f.resolve=function(e){return e&&\"object\"==typeof e&&e.constructor===f?e:new f(function(t){t(e)})},f.reject=function(e){return new f(function(t,n){n(e)})},f.race=function(e){return new f(function(t,n){if(!o(e))return n(new TypeError(\"Promise.race accepts an array\"));for(var r=0,i=e.length;i>r;r++)f.resolve(e[r]).then(t,n)})},f._immediateFn=\"function\"==typeof setImmediate&&function(e){setImmediate(e)}||function(e){d(e,0)},f._unhandledRejectionFn=function(e){void 0!==console&&console&&console.warn(\"Possible Unhandled Promise Rejection:\",e)};var p=function(){if(\"undefined\"!=typeof self)return self;if(\"undefined\"!=typeof window)return window;if(\"undefined\"!=typeof global)return global;throw Error(\"unable to locate global object\")}();\"function\"!=typeof p.Promise?p.Promise=f:(p.Promise.prototype[\"finally\"]||(p.Promise.prototype[\"finally\"]=e),p.Promise.allSettled||(p.Promise.allSettled=t),p.Promise.any||(p.Promise.any=r))});",
+        0, (uint32_t)PROMISE_PF},
+    { NULL, 0}
+};
+
 
 static const char *poly_end = "};_TrN_Sp.load();";
 
@@ -233,37 +253,18 @@ char *apply_edits(const char *src, size_t src_len, EditList *e, uint32_t polysne
     // check for needed polyfills
     if (polysneeded)
     {
-        size_t spread_sz = 0, import_sz = 0, class_sz = 0, for_of_sz = 0, promise_sz=0, 
+        size_t //spread_sz = 0, import_sz = 0, class_sz = 0, for_of_sz = 0, promise_sz=0, 
             start_sz = strlen(poly_start), end_sz = strlen(poly_end);        
 
-        if (polysneeded & SPREAD_PF)
+        polyfills *polys = &allpolys[0];
+        while(polys->polyfill)
         {
-            spread_sz = strlen(spread_polyfill);
-            out_cap += spread_sz;
-        }
-
-        if (polysneeded & IMPORT_PF)
-        {
-            import_sz += strlen(import_polyfill);
-            out_cap += import_sz;
-        }
-
-        if (polysneeded & CLASS_PF)
-        {
-            class_sz += strlen(class_polyfill);
-            out_cap += class_sz;
-        }
-
-        if (polysneeded & FOROF_PF)
-        {
-            for_of_sz += strlen(for_of_polyfill);
-            out_cap += for_of_sz;
-        }
-
-        if (polysneeded & PROMISE_PF)
-        {
-            promise_sz += strlen(promise_polyfill);
-            out_cap += promise_sz;
+            if(polysneeded & polys->flag)
+            {
+                polys->size=strlen(polys->polyfill);
+                out_cap += polys->size;
+            }
+            polys=polys+1;
         }
 
         out_cap += start_sz + end_sz;
@@ -293,32 +294,15 @@ char *apply_edits(const char *src, size_t src_len, EditList *e, uint32_t polysne
         memcpy(out, poly_start, start_sz);
         out += start_sz;
 
-        if (polysneeded & SPREAD_PF)
+        polys = &allpolys[0];
+        while(polys->polyfill)
         {
-            memcpy(out, spread_polyfill, spread_sz);
-            out += spread_sz;
-        }
-
-        if (polysneeded & IMPORT_PF)
-        {
-            memcpy(out, import_polyfill, import_sz);
-            out += import_sz;
-        }
-
-        if (polysneeded & CLASS_PF)
-        {
-            memcpy(out, class_polyfill, class_sz);
-            out += class_sz;
-        }
-        if (polysneeded & FOROF_PF)
-        {
-            memcpy(out, for_of_polyfill, for_of_sz);
-            out += for_of_sz;
-        }
-        if (polysneeded & PROMISE_PF)
-        {
-            memcpy(out, promise_polyfill, promise_sz);
-            out += promise_sz;
+            if(polysneeded & polys->flag)
+            {
+                memcpy(out, polys->polyfill, polys->size);
+                out += polys->size;
+            }
+            polys=polys+1;
         }
 
         memcpy(out, poly_end, end_sz);
@@ -418,6 +402,9 @@ char *apply_edits(const char *src, size_t src_len, EditList *e, uint32_t polysne
 
     return ret;
 }
+
+
+
 
 void free_edits(EditList *e)
 {
@@ -2543,8 +2530,8 @@ static int do_default_and_named_imports(EditList *edits, const char *src, TSNode
     return 1;
 }
 
-static int rewrite_import_node(EditList *edits, const char *src, TSNode snode, RangeList *claimed, uint32_t *polysneeded,
-                               int overlaps)
+static int rewrite_import_node(EditList *edits, const char *src, TSNode snode, RangeList *claimed,
+                               uint32_t *polysneeded, int overlaps)
 {
     size_t ns = ts_node_start_byte(snode), ne = ts_node_end_byte(snode);
 
@@ -3363,6 +3350,350 @@ static void sb_free(SBuf *b)
     b->len = 0;
     b->cap = 0;
 }
+
+// === Async/Await -> _TrN_Sp.asyncToGenerator + _TrN_Sp.regeneratorRuntime (compact style) ===
+typedef struct
+{
+    TSNode *a;
+    size_t len, cap;
+} _AsyncNodeVec;
+static void _anv_push(_AsyncNodeVec *v, TSNode n)
+{
+    if (v->len == v->cap)
+    {
+        size_t nc = v->cap ? v->cap * 2 : 4;
+        v->a = (TSNode *)realloc(v->a, nc * sizeof(TSNode));
+        v->cap = nc;
+    }
+    v->a[v->len++] = n;
+}
+static void _collect_awaits_shallow(TSNode node, _AsyncNodeVec *out)
+{
+    const char *t = ts_node_type(node);
+    if (strcmp(t, "await_expression") == 0)
+    {
+        _anv_push(out, node);
+        return;
+    }
+    if (strstr(t, "function") || strcmp(t, "arrow_function") == 0 || strstr(t, "class"))
+        return;
+    uint32_t c = ts_node_child_count(node);
+    for (uint32_t i = 0; i < c; i++)
+        _collect_awaits_shallow(ts_node_child(node, i), out);
+}
+static void _sb_put_slice(SBuf *b, const char *src, size_t s, size_t e)
+{
+    if (e > s)
+    {
+        sb_grow(b, e - s);
+        memcpy(b->s + b->len, src + s, e - s);
+        b->len += e - s;
+        b->s[b->len] = 0;
+    }
+}
+static void _sb_put_slice_trim_trailing_ws(SBuf *b, const char *src, size_t s, size_t e)
+{
+    while (e > s && (src[e - 1] == ' ' || src[e - 1] == '\t' || src[e - 1] == '\r' || src[e - 1] == '\n'))
+        e--;
+    _sb_put_slice(b, src, s, e);
+}
+
+// Lower a statement containing 0..N awaits into state-machine steps
+static void _emit_stmt_async_lower(SBuf *dst, const char *src, size_t ss, size_t se, TSNode stmt_node,
+                                   int *p_next_label)
+{
+    _AsyncNodeVec av = {0};
+    _collect_awaits_shallow(stmt_node, &av);
+    if (av.len == 0)
+    {
+        _sb_put_slice(dst, src, ss, se);
+        if (av.a)
+            free(av.a);
+        return;
+    }
+    for (size_t i = 0; i + 1 < av.len; i++)
+        for (size_t j = i + 1; j < av.len; j++)
+            if (ts_node_start_byte(av.a[j]) < ts_node_start_byte(av.a[i]))
+            {
+                TSNode t = av.a[i];
+                av.a[i] = av.a[j];
+                av.a[j] = t;
+            }
+    size_t cursor = ss;
+    SBuf acc;
+    sb_init(&acc);
+    for (size_t k = 0; k < av.len; k++)
+    {
+        TSNode aw = av.a[k];
+        TSNode arg = ts_node_child_by_field_name(aw, "argument", 8);
+        if (ts_node_is_null(arg))
+            arg = ts_node_named_child(aw, 0);
+        *p_next_label += 3;
+        char tmp[24];
+        snprintf(tmp, sizeof(tmp), "%d", *p_next_label);
+        sb_puts(dst, "_context.next = ");
+        sb_puts(dst, tmp);
+        sb_puts(dst, "; return (");
+        _sb_put_slice(dst, src, ts_node_start_byte(arg), ts_node_end_byte(arg));
+        sb_puts(dst, ");");
+        sb_puts(dst, "\n  case ");
+        sb_puts(dst, tmp);
+        sb_puts(dst, ":");
+        size_t aws = ts_node_start_byte(aw), awe = ts_node_end_byte(aw);
+        _sb_put_slice(&acc, src, cursor, aws);
+        sb_puts(&acc, "_context.sent");
+        cursor = awe;
+    }
+    _sb_put_slice(&acc, src, cursor, se);
+    sb_puts(dst, acc.s);
+    if (acc.len == 0 || acc.s[acc.len - 1] != ';')
+        sb_puts(dst, ";");
+    sb_free(&acc);
+}
+
+// Build the body: return _TrN_Sp.regeneratorRuntime.wrap(function
+// _callee$(_context){while(1){switch(_context.prev=_context.next){case 0: ... }} , _callee);
+static char *_build_regenerator_switch_body(const char *src, TSNode body)
+{
+    SBuf out;
+    sb_init(&out);
+    int next_label = 0;
+    sb_puts(
+        &out,
+        "return _TrN_Sp.regeneratorRuntime.wrap(function _callee$(_context){while(1){switch(_context.prev=_context.next){case 0:");
+    const char *bt = ts_node_type(body);
+    if (strcmp(bt, "statement_block") == 0)
+    {
+        uint32_t sc = ts_node_named_child_count(body);
+        for (uint32_t i = 0; i < sc; i++)
+        {
+            TSNode stmt = ts_node_named_child(body, i);
+            size_t ss = ts_node_start_byte(stmt), se = ts_node_end_byte(stmt);
+            // await detection + join-first-line behavior
+            int has_await = 0;
+            for (size_t k = ss; k + 5 < se; k++)
+            {
+                if (src[k] == 'a' && src[k + 1] == 'w' && src[k + 2] == 'a' && src[k + 3] == 'i' && src[k + 4] == 't')
+                {
+                    has_await = 1;
+                    break;
+                }
+            }
+            int next_has_await = 0;
+            if (i + 1 < sc)
+            {
+                TSNode n2 = ts_node_named_child(body, i + 1);
+                size_t s2 = ts_node_start_byte(n2), e2 = ts_node_end_byte(n2);
+                for (size_t k = s2; k + 5 < e2; k++)
+                {
+                    if (src[k] == 'a' && src[k + 1] == 'w' && src[k + 2] == 'a' && src[k + 3] == 'i' &&
+                        src[k + 4] == 't')
+                    {
+                        next_has_await = 1;
+                        break;
+                    }
+                }
+            }
+            static int joined = 0;
+            if (!has_await && next_has_await && i == 0)
+            {
+                sb_puts(&out, "\n  ");
+                _sb_put_slice_trim_trailing_ws(&out, src, ss, se);
+                joined = 1;
+            }
+            else if (has_await)
+            {
+                if (!joined)
+                    sb_puts(&out, "\n  ");
+                _emit_stmt_async_lower(&out, src, ss, se, stmt, &next_label);
+                joined = 1;
+            }
+            else
+            {
+                sb_puts(&out, "\n  ");
+                _sb_put_slice_trim_trailing_ws(&out, src, ss, se);
+                joined = 0;
+            }
+        }
+    }
+    else
+    {
+        TSNode expr = body;
+        size_t ss = ts_node_start_byte(expr), se = ts_node_end_byte(expr);
+        SBuf tmp;
+        sb_init(&tmp);
+        _emit_stmt_async_lower(&tmp, src, ss, se, expr, &next_label);
+        if (strstr(tmp.s, "_context.next") == NULL)
+        {
+            sb_puts(&out, "\n  return ");
+            sb_puts(&out, tmp.s);
+            sb_puts(&out, ";");
+        }
+        else
+        {
+            sb_puts(&out, "\n  ");
+            sb_puts(&out, tmp.s);
+        }
+        sb_free(&tmp);
+    }
+    int end_label = next_label + 3;
+    char etmp[24];
+    snprintf(etmp, sizeof(etmp), "%d", end_label);
+    sb_puts(&out, "case ");
+    sb_puts(&out, etmp);
+    sb_puts(&out, ":case \"end\":return _context.stop();}}}, _callee);");
+    return out.s;
+}
+static void _append_params_sig(SBuf *out, const char *src, TSNode func_like)
+{
+    TSNode params = ts_node_child_by_field_name(func_like, "parameters", 10);
+    if (!ts_node_is_null(params)) {
+        _sb_put_slice(out, src, ts_node_start_byte(params), ts_node_end_byte(params));
+        return;
+    }
+    TSNode param = ts_node_child_by_field_name(func_like, "parameter", 9);
+    if (!ts_node_is_null(param)) {
+        sb_puts(out, "(");
+        _sb_put_slice(out, src, ts_node_start_byte(param), ts_node_end_byte(param));
+        sb_puts(out, ")");
+        return;
+    }
+    sb_puts(out, "()");
+}
+
+// Emitters: declaration and expression
+static char *_emit_async_decl_replacement(const char *src, TSNode node)
+{
+    TSNode name = ts_node_child_by_field_name(node, "name", 4), body = ts_node_child_by_field_name(node, "body", 4);
+    if (ts_node_is_null(body))
+        return NULL;
+    size_t ns = 0, ne = 0;
+    const char *fallback = "_async";
+    if (!ts_node_is_null(name))
+    {
+        ns = ts_node_start_byte(name);
+        ne = ts_node_end_byte(name);
+    }
+    SBuf out;
+    sb_init(&out);
+    sb_puts(&out, "function ");
+    if (!ts_node_is_null(name))
+        _sb_put_slice(&out, src, ns, ne);
+    else
+        sb_puts(&out, fallback);
+    sb_puts(&out, "() { return _");
+    if (!ts_node_is_null(name))
+        _sb_put_slice(&out, src, ns, ne);
+    else
+        sb_puts(&out, fallback);
+    sb_puts(&out, ".apply(this, arguments); };");
+    sb_puts(&out, "function _");
+    if (!ts_node_is_null(name))
+        _sb_put_slice(&out, src, ns, ne);
+    else
+        sb_puts(&out, fallback);
+    sb_puts(&out, "() {_");
+    if (!ts_node_is_null(name))
+        _sb_put_slice(&out, src, ns, ne);
+    else
+        sb_puts(&out, fallback);
+    sb_puts(&out, " = _TrN_Sp.asyncToGenerator(_TrN_Sp.regeneratorRuntime.mark(function _callee");
+    _append_params_sig(&out, src, node);
+    sb_puts(&out, " {");
+    char *wrap = _build_regenerator_switch_body(src, body);
+    if (!wrap)
+    {
+        sb_free(&out);
+        return NULL;
+    }
+    sb_puts(&out, wrap);
+    free(wrap);
+    sb_puts(&out, "}));return _");
+    if (!ts_node_is_null(name))
+        _sb_put_slice(&out, src, ns, ne);
+    else
+        sb_puts(&out, fallback);
+    sb_puts(&out, ".apply(this, arguments);}");
+    return out.s;
+}
+static char *_emit_async_expr_replacement(const char *src, TSNode node)
+{
+    TSNode body = ts_node_child_by_field_name(node, "body", 4);
+    if (ts_node_is_null(body))
+        return NULL;
+    SBuf out;
+    sb_init(&out);
+    sb_puts(&out, "(function(){var _ref = _TrN_Sp.asyncToGenerator(_TrN_Sp.regeneratorRuntime.mark(function _callee");
+_append_params_sig(&out, src, node);
+sb_puts(&out, " {");
+    char *wrap = _build_regenerator_switch_body(src, body);
+    if (!wrap)
+    {
+        sb_free(&out);
+        return NULL;
+    }
+    sb_puts(&out, wrap);
+    free(wrap);
+    sb_puts(&out, "})); return function(){ return _ref.apply(this, arguments); };})()");
+    return out.s;
+}
+static int _is_async_function_like(TSNode node)
+{
+    const char *t = ts_node_type(node);
+    if (!(strcmp(t, "function_declaration") == 0 || strcmp(t, "function_expression") == 0 ||
+          strcmp(t, "function") == 0 || strcmp(t, "arrow_function") == 0))
+        return 0;
+    uint32_t n = ts_node_child_count(node);
+    for (uint32_t i = 0; i < n; i++)
+    {
+        TSNode k = ts_node_child(node, i);
+        if (strcmp(ts_node_type(k), "async") == 0)
+            return 1;
+    }
+    return 0;
+}
+static int rewrite_async_await_to_regenerator(EditList *edits, const char *src, TSNode node, RangeList *claimed,
+                                              int overlaps)
+{
+    if (!_is_async_function_like(node))
+        return 0;
+    size_t ns = ts_node_start_byte(node), ne = ts_node_end_byte(node);
+    const char *t = ts_node_type(node);
+    char *rep = NULL;
+    if (strcmp(t, "function_declaration") == 0)
+        rep = _emit_async_decl_replacement(src, node);
+    else
+        rep = _emit_async_expr_replacement(src, node);
+    if (!rep)
+        return 0;
+
+    if (rl_overlaps(claimed, ns, ne, "rewrite_async_await_to_regenerator"))
+        return 0;
+
+    // preserve line count
+    size_t orig_nl = 0, rep_nl = 0;
+    for (size_t i = ns; i < ne; i++)
+        if (src[i] == '\n')
+            orig_nl++;
+    for (char *p = rep; *p; ++p)
+        if (*p == '\n')
+            rep_nl++;
+    if (rep_nl < orig_nl)
+    {
+        size_t add = orig_nl - rep_nl;
+        size_t L = strlen(rep);
+        char *tmp = (char *)realloc(rep, L + add + 1);
+        if (tmp)
+        {
+            rep = tmp;
+            memset(rep + L, '\n', add);
+            rep[L + add] = 0;
+        }
+    }
+    add_edit_take_ownership(edits, ns, ne, rep, claimed);
+    return 1;
+}
+// === End async/await pass ===
 
 // let/const -> var (token edit)
 static void collect_ids_from_pattern(const char *src, TSNode name_node, SBuf *params, SBuf *args)
@@ -5014,8 +5345,8 @@ static void tp_linecol_from_src_offset_utf8(const char *src, size_t src_len, uin
         *out_col = (int)col;
 }
 
-RP_ParseRes transpiler_rewrite_pass(EditList *edits, const char *src, size_t src_len, TSNode root, uint32_t *polysneeded,
-                                    int *unresolved)
+RP_ParseRes transpiler_rewrite_pass(EditList *edits, const char *src, size_t src_len, TSNode root,
+                                    uint32_t *polysneeded, int *unresolved)
 {
     RP_ParseRes ret;
     RangeList claimed;
@@ -5091,6 +5422,14 @@ RP_ParseRes transpiler_rewrite_pass(EditList *edits, const char *src, size_t src
                 *polysneeded |= IMPORT_PF;
         }
 
+        if (!handled && (strcmp(nt, "function_declaration") == 0 || strcmp(nt, "function") == 0 ||
+                         strcmp(nt, "function_expression") == 0 || strcmp(nt, "arrow_function") == 0))
+        {
+            handled = rewrite_async_await_to_regenerator(edits, src, n, &claimed, overlaps);
+            if (handled)
+                *polysneeded |= ASYNC_PF;
+        }
+
         if (!handled && strcmp(nt, "arrow_function") == 0)
         {
             handled = rewrite_arrow_function_node(edits, src, n, &claimed, overlaps);
@@ -5152,12 +5491,11 @@ RP_ParseRes transpiler_rewrite_pass(EditList *edits, const char *src, size_t src
         }
 
         /* just need the polyfill if we see this */
-        if(strcmp(nt, "identifier") == 0)
+        if (strcmp(nt, "identifier") == 0)
         {
             size_t start = ts_node_start_byte(n), end = ts_node_end_byte(n);
-            if(strncmp("Promise", src+start, end-start) == 0)
+            if (strncmp("Promise", src + start, end - start) == 0)
                 *polysneeded |= PROMISE_PF;
-            
         }
 
         if (handled && overlaps)
@@ -5192,10 +5530,10 @@ static RP_ParseRes transpile_code(const char *src, size_t src_len, int printTree
     int npasses = 0;
     int unresolved = 1;
     char *free_src = NULL;
-    static uint32_t polysdone=0;
+    static uint32_t polysdone = 0;
 
-    if(!track_polys)
-        polysdone=0;
+    if (!track_polys)
+        polysdone = 0;
 
     while (unresolved)
     {
@@ -5240,7 +5578,7 @@ static RP_ParseRes transpile_code(const char *src, size_t src_len, int printTree
         res = transpiler_rewrite_pass(&edits, src, src_len, root, &polysneeded, &unresolved);
         res.errmsg = NULL;
 
-        if (edits.len || polysneeded )
+        if (edits.len || polysneeded)
         {
             uint32_t polysneed_not_added = polysneeded & ~polysdone;
 
@@ -5328,8 +5666,8 @@ RP_ParseRes transpile_standalone(const char *src, size_t src_len, int printTree)
 
 char *stealParseRes(RP_ParseRes *res)
 {
-    char * ret = res->transpiled;
-    res->transpiled=NULL;
+    char *ret = res->transpiled;
+    res->transpiled = NULL;
     return ret;
 }
 
