@@ -1,7 +1,89 @@
 #!/usr/bin/env rampart
 "use transpilerGlobally"
 
-rampart.globalize(rampart.utils);
+if(global && global.rampart) {
+    rampart.globalize(rampart.utils);
+    function testFeature(name,test)
+    {
+        var error=false;
+        if (typeof test =='function'){
+            try {
+                test=test();
+            } catch(e) {
+                error=e;
+    console.log(e);
+                test=false;
+            }
+        }
+        printf("testing transpile - %-48s - ", name);
+        if(test)
+            printf("passed\n")
+        else
+        {
+            printf(">>>>> FAILED <<<<<\n");
+            if(error) console.log(error);
+            process.exit(1);
+        }
+        if(error) console.log(error);
+    }
+} else {
+    /* for testing against node */
+    global.printf=function(fmt, ...args) {
+      var args = Array.prototype.slice.call(arguments, 1);
+      var i = 0;
+
+      var output = fmt.replace(/%(-?)(\d*)s/g, function(match, flag, width) {
+        var arg = (i < args.length) ? args[i++] : "";
+        var str = String(arg);
+        width = parseInt(width, 10) || 0;
+
+        if (width > str.length) {
+          var padding = Array(width - str.length + 1).join(" ");
+          if (flag === "-") {
+            str = str + padding; // left justify
+          } else {
+            str = padding + str; // right justify
+          }
+        }
+        return str;
+      });
+
+      // Print like C printf
+      if (typeof process !== "undefined" && process.stdout && process.stdout.write) {
+        process.stdout.write(output);
+      } else {
+        // fallback (browser)
+        console.log(output);
+      }
+
+      return output.length;
+    }
+
+    var testFeature = function(name,test)
+    {
+        var error=false;
+        if (typeof test =='function'){
+            try {
+                test=test();
+            } catch(e) {
+                error=e;
+    console.log(e);
+                test=false;
+            }
+        }
+        printf("testing node ES2015+ - %-48s - ", name);
+        if(test)
+            printf("passed\n")
+        else
+        {
+            printf(">>>>> FAILED <<<<<\n");
+            if(error) console.log(error);
+            process.exit(1);
+        }
+        if(error) console.log(error);
+    }
+
+}
 /*
 import * as math from "math";
 
@@ -99,29 +181,6 @@ testFeature("Aliased import Bee === bee", function() {
   return Bee === bee;
 });
 
-function testFeature(name,test)
-{
-    var error=false;
-    if (typeof test =='function'){
-        try {
-            test=test();
-        } catch(e) {
-            error=e;
-console.log(e);
-            test=false;
-        }
-    }
-    printf("testing transpile - %-48s - ", name);
-    if(test)
-        printf("passed\n")
-    else
-    {
-        printf(">>>>> FAILED <<<<<\n");
-        if(error) console.log(error);
-        process.exit(1);
-    }
-    if(error) console.log(error);
-}
 
 var evens=[2,4,6,8];
 var odds  = evens.map(v => v + 1);
@@ -301,23 +360,7 @@ testFeature("array find/findIndex",function(){
     return arr.find(x => x > 3) == 4 && arr.findIndex(x => x > 3) == 2;
 });
 
-// Default + named (multi-line; spacing/comments) + alias usage
-import defPayload, {
-  f,             // named function
-  aa, bee,       // re-exported aliases of a, b
-  q, r, e, u,    // from object pattern
-  rest,          // object rest
-  x, y, tail     // array pattern
-} from "./export-module.js";
 
-// Namespace import to ensure star-import path works too
-import * as M from "./export-module.js";
-
-// Separate named import with `as` alias (exercises aliasing in import specifiers)
-import { aa as AA, bee as Bee } from "./export-module.js";
-
-// Another default-only import to ensure multiple default imports from same module work
-import dp from "./export-module.js";
 
 // ---------- Tests ----------
 
