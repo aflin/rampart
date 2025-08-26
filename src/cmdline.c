@@ -2913,7 +2913,7 @@ char * tickify(char *src, size_t sz, int *err, int *ln)
     char *db = getenv("RPDEBUG");
 
     if( db && !strcmp (db, "preparser") )
-        fprintf(stderr, "BEGIN SCRIPT\n%s\nEND SCRIPT\n",outbeg);
+        fprintf(stderr, "%s",outbeg);
     *err=getstate();
     if(*err)
     {
@@ -3493,12 +3493,15 @@ int main(int argc, char *argv[])
 
                 if(res.errmsg)
                 {
-                    fprintf(stderr, "%s\n", res.errmsg);
-                    if(is_tickified) {
+                    // the transpiler.c transpile error messages currently suck.
+                    // the tickify ones are fine.
+                    // for transpiler.c let duktape report the error unless there is nothing for duktape to process
+                    if(is_tickified || !res.transpiled ) {
+                        fprintf(stderr, "%s\n", res.errmsg);
                         freeParseRes(&res);
                         exit(1);
                     }
-                    /* else don't exit yet, let duktape do a better error message too */
+                    /* else don't exit yet, let duktape do a better error message */
                 }
 
                 char *dbug = getenv("RPDEBUG");
@@ -3509,7 +3512,7 @@ int main(int argc, char *argv[])
                     file_src = free_file_src = stealParseRes(&res);
 
                     if( dbug && !strcmp (dbug, "transpiler") )
-                        fprintf(stderr, "BEGIN SCRIPT\n%s\nEND SCRIPT\n",file_src);
+                        fprintf(stderr, "%s",file_src);
                 }
                 else if( dbug && !strcmp (dbug, "transpiler") )
                     fprintf(stderr, "No Transpile\n");

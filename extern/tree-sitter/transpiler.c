@@ -182,13 +182,21 @@ polyfills allpolys[] = {
         "_TrN_Sp.slicedToArray=function (arr, i) {return _TrN_Sp.arrayWithHoles(arr) || _TrN_Sp.iterableToArrayLimit(arr, i) || _TrN_Sp.unsupportedIterableToArray(arr, i) || _TrN_Sp.nonIterableRest();};_TrN_Sp.nonIterableRest=function(){throw new TypeError(\"Invalid attempt to destructure non-iterable instance.\\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method.\");};_TrN_Sp.unsupportedIterableToArray=function(o, minLen) {if (!o) return;if (typeof o === \"string\") return _TrN_Sp.arrayLikeToArray(o, minLen);var n = Object.prototype.toString.call(o).slice(8, -1);if (n === \"Object\" && o.constructor) n = o.constructor.name;if (n === \"Map\" || n === \"Set\") return Array.from(o);if (n === \"Arguments\" || /^(?:Ui|I)nt(?:8|16|32)(?:Clamped)?Array$/.test(n)) return _TrN_Sp.arrayLikeToArray(o, minLen);};_TrN_Sp.arrayLikeToArray=function(arr, len) {if (len == null || len > arr.length) len = arr.length;for (var i = 0, arr2 = new Array(len); i < len; i++) {arr2[i] = arr[i];}return arr2;};_TrN_Sp.iterableToArrayLimit=function(arr, i){if (typeof Symbol === \"undefined\" || !(Symbol.iterator in Object(arr))) return;var _arr = [];var _n = true;var _d = false;var _e = undefined;try {for (var _i = arr[Symbol.iterator](), _s; !(_n = (_s = _i.next()).done); _n = true) {_arr.push(_s.value);if (i && _arr.length === i) break;}} catch (err) {_d = true;_e = err;} finally {try {if (!_n && _i[\"return\"] != null) _i[\"return\"]();} finally {if (_d) throw _e;}}return _arr;};_TrN_Sp.arrayWithHoles=function(arr) {if (Array.isArray(arr)) return arr;};",
         0, (uint32_t)FOROF_PF  },
     {
-        "_TrN_Sp.asyncGeneratorStep = function(gen, resolve, reject, _next, _throw, key, arg) {try{var info = gen[key](arg);var value = info.value;}catch (error){reject(error);return;}if (info.done){resolve(value);}else{Promise.resolve(value).then(_next, _throw);}};_TrN_Sp.asyncToGenerator = function(fn) {return function() {var self = this, args = arguments;return new Promise(function(resolve, reject) {var gen = fn.apply(self, args);function _next(value){_TrN_Sp.asyncGeneratorStep(gen, resolve, reject, _next, _throw, \"next\", value);}function _throw(err){_TrN_Sp.asyncGeneratorStep(gen, resolve, reject, _next, _throw, \"throw\", err);}_next(undefined);});};};_TrN_Sp.regeneratorRuntime = (function () {function mark(genFn) { return genFn; }function wrap(innerFn) {var context = {prev: 0,next: 0,sent: void 0,done: false,rval: void 0,stop: function () { this.done = true; return this.rval; }};return {next: function (arg) {var prevNext = context.next;context.sent = arg;var value = innerFn(context);if (context.done || context.next === \"end\") {return { value: context.rval, done: true };}if (context.next === prevNext) {context.done = true;context.rval = value;return { value: context.rval, done: true };}return { value: value, done: false };},throw: function (err) { throw err; }};}return { mark: mark, wrap: wrap };})();",
+        // Debug controls: pending warnings (ON by default, turn off with _TrN_Sp.warnOnLongPending=false)
+        // do not warn for merely pending promises.
+        // Enable only for debugging "long-pending" promises.
+        "_TrN_Sp._wrapLongPending = function(p, label) {if (!_TrN_Sp.warnOnLongPending) return p;try {var id = setTimeout(function () {if (typeof console !== 'undefined' && console && console.warn) {console.warn('Promise still pending after', _TrN_Sp.pendingWarnMs, 'ms', label ? '(' + label + ')' : '');}}, _TrN_Sp.pendingWarnMs);if (p && typeof p['finally'] === 'function') {p['finally'](function () { clearTimeout(id); });} else if (p && typeof p.then === 'function') {p.then(function(){ clearTimeout(id); }, function(){ clearTimeout(id); });}} catch (_e) {}return p;};_TrN_Sp.asyncGeneratorStep = function(gen, resolve, reject, _next, _throw, key, arg) {try {var info = gen[key](arg);var value = info.value;} catch (error) {reject(error);return;}if (info.done) {resolve(value);} else {Promise.resolve(value).then(_next, _throw);}};_TrN_Sp.asyncToGenerator = function(fn) {return function() {var self = this, args = arguments;var __p = new Promise(function(resolve, reject) {var gen = fn.apply(self, args);function _next(value) {_TrN_Sp.asyncGeneratorStep(gen, resolve, reject, _next, _throw, 'next', value);}function _throw(err) {_TrN_Sp.asyncGeneratorStep(gen, resolve, reject, _next, _throw, 'throw', err);}_next(undefined);});return _TrN_Sp._wrapLongPending(__p, fn && fn.name ? fn.name : 'async');};_TrN_Sp.warnOnLongPending = (_TrN_Sp.warnOnLongPending === undefined ? true: _TrN_Sp.warnOnLongPending);_TrN_Sp.pendingWarnMs = (typeof _TrN_Sp.pendingWarnMs === 'number' && _TrN_Sp.pendingWarnMs >= 0) ? _TrN_Sp.pendingWarnMs : 2000;};_TrN_Sp.regeneratorRuntime = (function() {function mark(genFn) {return genFn;}function wrap(innerFn) {var context = {prev: 0,next: 0,sent: void 0,done: false,rval: void 0,stop: function() {this.done = true;return this.rval;}};return {next: function(arg) {var prevNext = context.next;context.sent = arg;var value = innerFn(context);if (context.done || context.next === 'end') {return {value: context.rval, done: true};}if (context.next === prevNext) {context.done = true;context.rval = value;return {value: context.rval, done: true};}return {value: value, done: false};},throw: function(err) {throw err;}};}return {mark: mark, wrap: wrap};})();",
+        // old overly verbose version:
+        //"_TrN_Sp.asyncGeneratorStep = function(gen, resolve, reject, _next, _throw, key, arg) {try{var info = gen[key](arg);var value = info.value;}catch (error){reject(error);return;}if (info.done){resolve(value);}else{Promise.resolve(value).then(_next, _throw);}};_TrN_Sp.asyncToGenerator = function(fn) {return function() {var self = this, args = arguments;return new Promise(function(resolve, reject) {var gen = fn.apply(self, args);function _next(value){_TrN_Sp.asyncGeneratorStep(gen, resolve, reject, _next, _throw, \"next\", value);}function _throw(err){_TrN_Sp.asyncGeneratorStep(gen, resolve, reject, _next, _throw, \"throw\", err);}_next(undefined);});};};_TrN_Sp.regeneratorRuntime = (function () {function mark(genFn) { return genFn; }function wrap(innerFn) {var context = {prev: 0,next: 0,sent: void 0,done: false,rval: void 0,stop: function () { this.done = true; return this.rval; }};return {next: function (arg) {var prevNext = context.next;context.sent = arg;var value = innerFn(context);if (context.done || context.next === \"end\") {return { value: context.rval, done: true };}if (context.next === prevNext) {context.done = true;context.rval = value;return { value: context.rval, done: true };}return { value: value, done: false };},throw: function (err) { throw err; }};}return { mark: mark, wrap: wrap };})();",
         0, (uint32_t)ASYNC_PF  },
 
     // from https://www.npmjs.com/package/promise-polyfill MIT license included in this dir.
     // the delete global.Promise is for rampart.thread reload.
     {
-        "delete global.Promise;(function(e,t){\"object\"==typeof exports&&\"undefined\"!=typeof module?t():\"function\"==typeof define&&define.amd?define(t):t()})(0,function(){\"use strict\";function e(e){var t=this.constructor;return this.then(function(n){return t.resolve(e()).then(function(){return n})},function(n){return t.resolve(e()).then(function(){return t.reject(n)})})}function t(e){return new this(function(t,n){function r(e,n){if(n&&(\"object\"==typeof n||\"function\"==typeof n)){var f=n.then;if(\"function\"==typeof f)return void f.call(n,function(t){r(e,t)},function(n){o[e]={status:\"rejected\",reason:n},0==--i&&t(o)})}o[e]={status:\"fulfilled\",value:n},0==--i&&t(o)}if(!e||\"undefined\"==typeof e.length)return n(new TypeError(typeof e+\" \"+e+\" is not iterable(cannot read property Symbol(Symbol.iterator))\"));var o=Array.prototype.slice.call(e);if(0===o.length)return t([]);for(var i=o.length,f=0;o.length>f;f++)r(f,o[f])})}function n(e,t){this.name=\"AggregateError\",this.errors=e,this.message=t||\"\"}function r(e){var t=this;return new t(function(r,o){if(!e||\"undefined\"==typeof e.length)return o(new TypeError(\"Promise.any accepts an array\"));var i=Array.prototype.slice.call(e);if(0===i.length)return o();for(var f=[],u=0;i.length>u;u++)try{t.resolve(i[u]).then(r)[\"catch\"](function(e){f.push(e),f.length===i.length&&o(new n(f,\"All promises were rejected\"))})}catch(c){o(c)}})}function o(e){return!(!e||\"undefined\"==typeof e.length)}function i(){}function f(e){if(!(this instanceof f))throw new TypeError(\"Promises must be constructed via new\");if(\"function\"!=typeof e)throw new TypeError(\"not a function\");this._state=0,this._handled=!1,this._value=undefined,this._deferreds=[],s(e,this)}function u(e,t){for(;3===e._state;)e=e._value;0!==e._state?(e._handled=!0,f._immediateFn(function(){var n=1===e._state?t.onFulfilled:t.onRejected;if(null!==n){var r;try{r=n(e._value)}catch(o){return void a(t.promise,o)}c(t.promise,r)}else(1===e._state?c:a)(t.promise,e._value)})):e._deferreds.push(t)}function c(e,t){try{if(t===e)throw new TypeError(\"A promise cannot be resolved with itself.\");if(t&&(\"object\"==typeof t||\"function\"==typeof t)){var n=t.then;if(t instanceof f)return e._state=3,e._value=t,void l(e);if(\"function\"==typeof n)return void s(function(e,t){return function(){e.apply(t,arguments)}}(n,t),e)}e._state=1,e._value=t,l(e)}catch(r){a(e,r)}}function a(e,t){e._state=2,e._value=t,l(e)}function l(e){2===e._state&&0===e._deferreds.length&&f._immediateFn(function(){e._handled||f._unhandledRejectionFn(e._value)});for(var t=0,n=e._deferreds.length;n>t;t++)u(e,e._deferreds[t]);e._deferreds=null}function s(e,t){var n=!1;try{e(function(e){n||(n=!0,c(t,e))},function(e){n||(n=!0,a(t,e))})}catch(r){if(n)return;n=!0,a(t,r)}}n.prototype=Error.prototype;var d=setTimeout;f.prototype[\"catch\"]=function(e){return this.then(null,e)},f.prototype.then=function(e,t){var n=new this.constructor(i);return u(this,new function(e,t,n){this.onFulfilled=\"function\"==typeof e?e:null,this.onRejected=\"function\"==typeof t?t:null,this.promise=n}(e,t,n)),n},f.prototype[\"finally\"]=e,f.all=function(e){return new f(function(t,n){function r(e,o){try{if(o&&(\"object\"==typeof o||\"function\"==typeof o)){var u=o.then;if(\"function\"==typeof u)return void u.call(o,function(t){r(e,t)},n)}i[e]=o,0==--f&&t(i)}catch(c){n(c)}}if(!o(e))return n(new TypeError(\"Promise.all accepts an array\"));var i=Array.prototype.slice.call(e);if(0===i.length)return t([]);for(var f=i.length,u=0;i.length>u;u++)r(u,i[u])})},f.any=r,f.allSettled=t,f.resolve=function(e){return e&&\"object\"==typeof e&&e.constructor===f?e:new f(function(t){t(e)})},f.reject=function(e){return new f(function(t,n){n(e)})},f.race=function(e){return new f(function(t,n){if(!o(e))return n(new TypeError(\"Promise.race accepts an array\"));for(var r=0,i=e.length;i>r;r++)f.resolve(e[r]).then(t,n)})},f._immediateFn=\"function\"==typeof setImmediate&&function(e){setImmediate(e)}||function(e){d(e,0)},f._unhandledRejectionFn=function(e){void 0!==console&&console&&console.warn(\"Possible Unhandled Promise Rejection:\",e)};var p=function(){if(\"undefined\"!=typeof self)return self;if(\"undefined\"!=typeof window)return window;if(\"undefined\"!=typeof global)return global;throw Error(\"unable to locate global object\")}();\"function\"!=typeof p.Promise?p.Promise=f:(p.Promise.prototype[\"finally\"]||(p.Promise.prototype[\"finally\"]=e),p.Promise.allSettled||(p.Promise.allSettled=t),p.Promise.any||(p.Promise.any=r))});",
+        // set _TrN_Sp.warnUnhandledPromise=false to not get those warnings
+        "delete global.Promise;_TrN_Sp.warnUnhandledPromise = (_TrN_Sp.warnUnhandledPromise === undefined ? true: _TrN_Sp.warnUnhandledPromise);(function(e, t) {'object' == typeof exports && 'undefined' != typeof module ? t() :'function' == typeof define && define.amd              ? define(t) :t()})(0, function() {'use strict';function e(e) {var t = this.constructor;return this.then(function(n) {return t.resolve(e()).then(function() {return n})},function(n) {return t.resolve(e()).then(function() {return t.reject(n)})})}function t(e) {return new this(function(t, n) {function r(e, n) {if (n && ('object' == typeof n || 'function' == typeof n)) {var f = n.then;if ('function' == typeof f)return void f.call(n,function(t) {r(e, t)},function(n) {o[e] = {status: 'rejected', reason: n}, 0 == --i && t(o)})}o[e] = {status: 'fulfilled', value: n}, 0 == --i && t(o)}if (!e || 'undefined' == typeof e.length)return n(new TypeError(typeof e + ' ' + e +' is not iterable(cannot read property Symbol(Symbol.iterator))'));var o = Array.prototype.slice.call(e);if (0 === o.length) return t([]);for (var i = o.length, f = 0; o.length > f; f++) r(f, o[f])})}function n(e, t) {this.name = 'AggregateError', this.errors = e, this.message = t || ''}function r(e) {var t = this;return new t(function(r, o) {if (!e || 'undefined' == typeof e.length)return o(new TypeError('Promise.any accepts an array'));var i = Array.prototype.slice.call(e);if (0 === i.length) return o();for (var f = [], u = 0; i.length > u; u++) try {t.resolve(i[u]).then(r)['catch'](function(e) {f.push(e),f.length === i.length && o(new n(f, 'All promises were rejected'))})} catch (c) {o(c)}})}function o(e) {return !(!e || 'undefined' == typeof e.length)}function i() {}function f(e) {if (!(this instanceof f))throw new TypeError('Promises must be constructed via new');if ('function' != typeof e) throw new TypeError('not a function');this._state = 0, this._handled = !1, this._value = undefined,this._deferreds = [], s(e, this)}function u(e, t) {for (; 3 === e._state;) e = e._value;0 !== e._state ? (e._handled = !0, f._immediateFn(function() {var n = 1 === e._state ? t.onFulfilled : t.onRejected;if (null !== n) {var r;try {r = n(e._value)} catch (o) {return void a(t.promise, o)}c(t.promise, r)} else(1 === e._state ? c : a)(t.promise, e._value)})) :e._deferreds.push(t)}function c(e, t) {try {if (t === e)throw new TypeError('A promise cannot be resolved with itself.');if (t && ('object' == typeof t || 'function' == typeof t)) {var n = t.then;if (t instanceof f) return e._state = 3, e._value = t, void l(e);if ('function' == typeof n)return void s(function(e, t) {return function() {e.apply(t, arguments)}}(n, t), e)}e._state = 1, e._value = t, l(e)} catch (r) {a(e, r)}}function a(e, t) {e._state = 2, e._value = t, l(e)}function l(e) {2 === e._state && 0 === e._deferreds.length && f._immediateFn(function() {e._handled || f._unhandledRejectionFn(e._value)});for (var t = 0, n = e._deferreds.length; n > t; t++) u(e, e._deferreds[t]);e._deferreds = null}function s(e, t) {var n = !1;try {e(function(e) {n || (n = !0, c(t, e))},function(e) {n || (n = !0, a(t, e))})} catch (r) {if (n) return;n = !0, a(t, r)}}n.prototype = Error.prototype;var d = setTimeout;f.prototype['catch'] = function(e) {return this.then(null, e)}, f.prototype.then = function(e, t) {var n = new this.constructor(i);return u(this, new function(e, t, n) {this.onFulfilled = 'function' == typeof e ? e : null,this.onRejected = 'function' == typeof t ? t : null, this.promise = n}(e, t, n)), n}, f.prototype['finally'] = e, f.all = function(e) {return new f(function(t, n) {function r(e, o) {try {if (o && ('object' == typeof o || 'function' == typeof o)) {var u = o.then;if ('function' == typeof u)return void u.call(o, function(t) {r(e, t)}, n)}i[e] = o, 0 == --f && t(i)} catch (c) {n(c)}}if (!o(e)) return n(new TypeError('Promise.all accepts an array'));var i = Array.prototype.slice.call(e);if (0 === i.length) return t([]);for (var f = i.length, u = 0; i.length > u; u++) r(u, i[u])})}, f.any = r, f.allSettled = t, f.resolve = function(e) {return e && 'object' == typeof e && e.constructor === f ? e :new f(function(t) {t(e)})}, f.reject = function(e) {return new f(function(t, n) {n(e)})}, f.race = function(e) {return new f(function(t, n) {if (!o(e)) return n(new TypeError('Promise.race accepts an array'));for (var r = 0, i = e.length; i > r; r++) f.resolve(e[r]).then(t, n)})}, f._immediateFn = 'function' == typeof setImmediate && function(e) {setImmediate(e)} || function(e) {d(e, 0)}, f._unhandledRejectionFn = function(e) {void 0 !== console && console && _TrN_Sp.warnUnhandledPromise &&console.warn('Possible Unhandled Promise Rejection:', e)};var p = function() {if ('undefined' != typeof self) return self;if ('undefined' != typeof window) return window;if ('undefined' != typeof global) return global;throw Error('unable to locate global object')}();'function' != typeof p.Promise ?p.Promise = f :(p.Promise.prototype['finally'] || (p.Promise.prototype['finally'] = e),p.Promise.allSettled || (p.Promise.allSettled = t),p.Promise.any || (p.Promise.any = r))});",
+        // oldver
+        //"delete global.Promise;(function(e,t){\"object\"==typeof exports&&\"undefined\"!=typeof module?t():\"function\"==typeof define&&define.amd?define(t):t()})(0,function(){\"use strict\";function e(e){var t=this.constructor;return this.then(function(n){return t.resolve(e()).then(function(){return n})},function(n){return t.resolve(e()).then(function(){return t.reject(n)})})}function t(e){return new this(function(t,n){function r(e,n){if(n&&(\"object\"==typeof n||\"function\"==typeof n)){var f=n.then;if(\"function\"==typeof f)return void f.call(n,function(t){r(e,t)},function(n){o[e]={status:\"rejected\",reason:n},0==--i&&t(o)})}o[e]={status:\"fulfilled\",value:n},0==--i&&t(o)}if(!e||\"undefined\"==typeof e.length)return n(new TypeError(typeof e+\" \"+e+\" is not iterable(cannot read property Symbol(Symbol.iterator))\"));var o=Array.prototype.slice.call(e);if(0===o.length)return t([]);for(var i=o.length,f=0;o.length>f;f++)r(f,o[f])})}function n(e,t){this.name=\"AggregateError\",this.errors=e,this.message=t||\"\"}function r(e){var t=this;return new t(function(r,o){if(!e||\"undefined\"==typeof e.length)return o(new TypeError(\"Promise.any accepts an array\"));var i=Array.prototype.slice.call(e);if(0===i.length)return o();for(var f=[],u=0;i.length>u;u++)try{t.resolve(i[u]).then(r)[\"catch\"](function(e){f.push(e),f.length===i.length&&o(new n(f,\"All promises were rejected\"))})}catch(c){o(c)}})}function o(e){return!(!e||\"undefined\"==typeof e.length)}function i(){}function f(e){if(!(this instanceof f))throw new TypeError(\"Promises must be constructed via new\");if(\"function\"!=typeof e)throw new TypeError(\"not a function\");this._state=0,this._handled=!1,this._value=undefined,this._deferreds=[],s(e,this)}function u(e,t){for(;3===e._state;)e=e._value;0!==e._state?(e._handled=!0,f._immediateFn(function(){var n=1===e._state?t.onFulfilled:t.onRejected;if(null!==n){var r;try{r=n(e._value)}catch(o){return void a(t.promise,o)}c(t.promise,r)}else(1===e._state?c:a)(t.promise,e._value)})):e._deferreds.push(t)}function c(e,t){try{if(t===e)throw new TypeError(\"A promise cannot be resolved with itself.\");if(t&&(\"object\"==typeof t||\"function\"==typeof t)){var n=t.then;if(t instanceof f)return e._state=3,e._value=t,void l(e);if(\"function\"==typeof n)return void s(function(e,t){return function(){e.apply(t,arguments)}}(n,t),e)}e._state=1,e._value=t,l(e)}catch(r){a(e,r)}}function a(e,t){e._state=2,e._value=t,l(e)}function l(e){2===e._state&&0===e._deferreds.length&&f._immediateFn(function(){e._handled||f._unhandledRejectionFn(e._value)});for(var t=0,n=e._deferreds.length;n>t;t++)u(e,e._deferreds[t]);e._deferreds=null}function s(e,t){var n=!1;try{e(function(e){n||(n=!0,c(t,e))},function(e){n||(n=!0,a(t,e))})}catch(r){if(n)return;n=!0,a(t,r)}}n.prototype=Error.prototype;var d=setTimeout;f.prototype[\"catch\"]=function(e){return this.then(null,e)},f.prototype.then=function(e,t){var n=new this.constructor(i);return u(this,new function(e,t,n){this.onFulfilled=\"function\"==typeof e?e:null,this.onRejected=\"function\"==typeof t?t:null,this.promise=n}(e,t,n)),n},f.prototype[\"finally\"]=e,f.all=function(e){return new f(function(t,n){function r(e,o){try{if(o&&(\"object\"==typeof o||\"function\"==typeof o)){var u=o.then;if(\"function\"==typeof u)return void u.call(o,function(t){r(e,t)},n)}i[e]=o,0==--f&&t(i)}catch(c){n(c)}}if(!o(e))return n(new TypeError(\"Promise.all accepts an array\"));var i=Array.prototype.slice.call(e);if(0===i.length)return t([]);for(var f=i.length,u=0;i.length>u;u++)r(u,i[u])})},f.any=r,f.allSettled=t,f.resolve=function(e){return e&&\"object\"==typeof e&&e.constructor===f?e:new f(function(t){t(e)})},f.reject=function(e){return new f(function(t,n){n(e)})},f.race=function(e){return new f(function(t,n){if(!o(e))return n(new TypeError(\"Promise.race accepts an array\"));for(var r=0,i=e.length;i>r;r++)f.resolve(e[r]).then(t,n)})},f._immediateFn=\"function\"==typeof setImmediate&&function(e){setImmediate(e)}||function(e){d(e,0)},f._unhandledRejectionFn=function(e){void 0!==console&&console&&console.warn(\"Possible Unhandled Promise Rejection:\",e)};var p=function(){if(\"undefined\"!=typeof self)return self;if(\"undefined\"!=typeof window)return window;if(\"undefined\"!=typeof global)return global;throw Error(\"unable to locate global object\")}();\"function\"!=typeof p.Promise?p.Promise=f:(p.Promise.prototype[\"finally\"]||(p.Promise.prototype[\"finally\"]=e),p.Promise.allSettled||(p.Promise.allSettled=t),p.Promise.any||(p.Promise.any=r))});",
         0, (uint32_t)PROMISE_PF},
     { NULL, 0}
 };
@@ -3375,7 +3383,7 @@ static void _collect_awaits_shallow(TSNode node, _AsyncNodeVec *out)
         _anv_push(out, node);
         return;
     }
-    if (strstr(t, "function") || strcmp(t, "arrow_function") == 0 || strstr(t, "class"))
+    if (strstr(t, "function") || strcmp(t, "arrow_function") == 0 || strstr(t, "class") || strstr(t, "method") != NULL)
         return;
     uint32_t c = ts_node_child_count(node);
     for (uint32_t i = 0; i < c; i++)
@@ -3390,12 +3398,6 @@ static void _sb_put_slice(SBuf *b, const char *src, size_t s, size_t e)
         b->len += e - s;
         b->s[b->len] = 0;
     }
-}
-static void _sb_put_slice_trim_trailing_ws(SBuf *b, const char *src, size_t s, size_t e)
-{
-    while (e > s && (src[e - 1] == ' ' || src[e - 1] == '\t' || src[e - 1] == '\r' || src[e - 1] == '\n'))
-        e--;
-    _sb_put_slice(b, src, s, e);
 }
 
 // Lower a statement containing 0..N awaits into state-machine steps
@@ -3431,12 +3433,20 @@ static void _emit_stmt_async_lower(SBuf *dst, const char *src, size_t ss, size_t
         *p_next_label += 3;
         char tmp[24];
         snprintf(tmp, sizeof(tmp), "%d", *p_next_label);
+        // make sure there is a semicolon before writing context.next
+        {
+            char *p = dst->s + dst->len-1;
+            while( p > dst->s && isspace(*p))
+                p--;
+            if(*p!=';')
+                sb_putc(dst, ';');
+        }
         sb_puts(dst, "_context.next = ");
         sb_puts(dst, tmp);
         sb_puts(dst, "; return (");
         _sb_put_slice(dst, src, ts_node_start_byte(arg), ts_node_end_byte(arg));
         sb_puts(dst, ");");
-        sb_puts(dst, "\n  case ");
+        sb_puts(dst, " case ");
         sb_puts(dst, tmp);
         sb_puts(dst, ":");
         size_t aws = ts_node_start_byte(aw), awe = ts_node_end_byte(aw);
@@ -3494,26 +3504,17 @@ static char *_build_regenerator_switch_body(const char *src, TSNode body)
                     }
                 }
             }
-            static int joined = 0;
+
+            /* include white space (particularly \n) in the replacement */
+            while(ss>0 && isspace(*(src + ss -1)) )
+                ss--;
+
             if (!has_await && next_has_await && i == 0)
-            {
-                sb_puts(&out, "\n  ");
-                _sb_put_slice_trim_trailing_ws(&out, src, ss, se);
-                joined = 1;
-            }
+                _sb_put_slice(&out, src, ss, se);
             else if (has_await)
-            {
-                if (!joined)
-                    sb_puts(&out, "\n  ");
                 _emit_stmt_async_lower(&out, src, ss, se, stmt, &next_label);
-                joined = 1;
-            }
             else
-            {
-                sb_puts(&out, "\n  ");
-                _sb_put_slice_trim_trailing_ws(&out, src, ss, se);
-                joined = 0;
-            }
+                _sb_put_slice(&out, src, ss, se);
         }
     }
     else
@@ -3525,13 +3526,13 @@ static char *_build_regenerator_switch_body(const char *src, TSNode body)
         _emit_stmt_async_lower(&tmp, src, ss, se, expr, &next_label);
         if (strstr(tmp.s, "_context.next") == NULL)
         {
-            sb_puts(&out, "\n  return ");
+            sb_puts(&out, " return ");
             sb_puts(&out, tmp.s);
             sb_puts(&out, ";");
         }
         else
         {
-            sb_puts(&out, "\n  ");
+            //sb_puts(&out, "\n  ");
             sb_puts(&out, tmp.s);
         }
         sb_free(&tmp);
@@ -3539,6 +3540,14 @@ static char *_build_regenerator_switch_body(const char *src, TSNode body)
     int end_label = next_label + 3;
     char etmp[24];
     snprintf(etmp, sizeof(etmp), "%d", end_label);
+    // make sure there is a semicolon before writing case
+    {
+        char *p = out.s + out.len-1;
+        while( p > out.s && isspace(*p))
+            p--;
+        if(*p!=';')
+            sb_putc(&out, ';');
+    }
     sb_puts(&out, "case ");
     sb_puts(&out, etmp);
     sb_puts(&out, ":case \"end\":return _context.stop();}}}, _callee);");
@@ -3624,8 +3633,8 @@ static char *_emit_async_expr_replacement(const char *src, TSNode node)
     SBuf out;
     sb_init(&out);
     sb_puts(&out, "(function(){var _ref = _TrN_Sp.asyncToGenerator(_TrN_Sp.regeneratorRuntime.mark(function _callee");
-_append_params_sig(&out, src, node);
-sb_puts(&out, " {");
+    _append_params_sig(&out, src, node);
+    sb_puts(&out, " {");
     char *wrap = _build_regenerator_switch_body(src, body);
     if (!wrap)
     {
@@ -3637,11 +3646,56 @@ sb_puts(&out, " {");
     sb_puts(&out, "})); return function(){ return _ref.apply(this, arguments); };})()");
     return out.s;
 }
+
+static char *_emit_async_method_replacement(const char *src, TSNode node)
+{
+    // node is method_definition inside an object literal (or class, but we only handle object here)
+    TSNode body = ts_node_child_by_field_name(node, "body", 4);
+    TSNode nname = ts_node_child_by_field_name(node, "name", 4);
+    if (ts_node_is_null(body) || ts_node_is_null(nname))
+        return NULL;
+    size_t ns = ts_node_start_byte(nname), ne = ts_node_end_byte(nname);
+    SBuf out;
+    sb_init(&out);
+    // property label: <name>:
+    _sb_put_slice(&out, src, ns, ne);
+    sb_puts(&out, ": ");
+    // value: (function(){ var _ref = asyncToGenerator(mark(function <name>(params){...}));
+    //                     return function <name>(params){ return _ref.apply(this, arguments); };})()
+    sb_puts(&out, "(function(){var _ref = _TrN_Sp.asyncToGenerator(_TrN_Sp.regeneratorRuntime.mark(function ");
+    // Try to preserve method name in inner generator function for stack traces
+    // When name is not an identifier (e.g., string literal), fallback to _callee
+    const char *nt = ts_node_type(nname);
+    int named = (strcmp(nt, "property_identifier") == 0 || strcmp(nt, "identifier") == 0);
+    if (named)
+        _sb_put_slice(&out, src, ns, ne);
+    else
+        sb_puts(&out, "_callee");
+    _append_params_sig(&out, src, node);
+    sb_puts(&out, " {");
+    char *wrap = _build_regenerator_switch_body(src, body);
+    if (!wrap)
+    {
+        sb_free(&out);
+        return NULL;
+    }
+    sb_puts(&out, wrap);
+    free(wrap);
+    sb_puts(&out, "})); return function ");
+    if (named)
+        _sb_put_slice(&out, src, ns, ne);
+    else
+        sb_puts(&out, "_callee");
+    _append_params_sig(&out, src, node);
+    sb_puts(&out, " { return _ref.apply(this, arguments); };})()");
+    return out.s;
+}
+
 static int _is_async_function_like(TSNode node)
 {
     const char *t = ts_node_type(node);
     if (!(strcmp(t, "function_declaration") == 0 || strcmp(t, "function_expression") == 0 ||
-          strcmp(t, "function") == 0 || strcmp(t, "arrow_function") == 0))
+          strcmp(t, "function") == 0 || strcmp(t, "arrow_function") == 0 || strcmp(t, "method_definition") == 0))
         return 0;
     uint32_t n = ts_node_child_count(node);
     for (uint32_t i = 0; i < n; i++)
@@ -3662,34 +3716,20 @@ static int rewrite_async_await_to_regenerator(EditList *edits, const char *src, 
     char *rep = NULL;
     if (strcmp(t, "function_declaration") == 0)
         rep = _emit_async_decl_replacement(src, node);
+    else if (strcmp(t, "method_definition") == 0)
+        rep = _emit_async_method_replacement(src, node);
     else
         rep = _emit_async_expr_replacement(src, node);
     if (!rep)
         return 0;
 
-    if (rl_overlaps(claimed, ns, ne, "rewrite_async_await_to_regenerator"))
-        return 0;
-
-    // preserve line count
-    size_t orig_nl = 0, rep_nl = 0;
-    for (size_t i = ns; i < ne; i++)
-        if (src[i] == '\n')
-            orig_nl++;
-    for (char *p = rep; *p; ++p)
-        if (*p == '\n')
-            rep_nl++;
-    if (rep_nl < orig_nl)
+    if (overlaps)
     {
-        size_t add = orig_nl - rep_nl;
-        size_t L = strlen(rep);
-        char *tmp = (char *)realloc(rep, L + add + 1);
-        if (tmp)
-        {
-            rep = tmp;
-            memset(rep + L, '\n', add);
-            rep[L + add] = 0;
-        }
+        if(rep)
+            free(rep);
+        return 1;
     }
+
     add_edit_take_ownership(edits, ns, ne, rep, claimed);
     return 1;
 }
@@ -5423,7 +5463,7 @@ RP_ParseRes transpiler_rewrite_pass(EditList *edits, const char *src, size_t src
         }
 
         if (!handled && (strcmp(nt, "function_declaration") == 0 || strcmp(nt, "function") == 0 ||
-                         strcmp(nt, "function_expression") == 0 || strcmp(nt, "arrow_function") == 0))
+                         strcmp(nt, "function_expression") == 0 || strcmp(nt, "arrow_function") == 0 || strcmp(nt, "method_definition") == 0))
         {
             handled = rewrite_async_await_to_regenerator(edits, src, n, &claimed, overlaps);
             if (handled)
@@ -5777,3 +5817,5 @@ int main(int argc, char **argv)
     return 0;
 }
 #endif
+
+

@@ -26,9 +26,10 @@ if(global && global.rampart) {
         }
         if(error) console.log(error);
     }
+    _TrN_Sp.warnUnhandledPromise=false;
 } else {
     /* for testing against node */
-    global.printf=function(fmt, ...args) {
+    global.printf=function(fmt) {
       var args = Array.prototype.slice.call(arguments, 1);
       var i = 0;
 
@@ -941,7 +942,7 @@ testFeature("Promise.allSettled returns correct status array", function () {
       );
     });
 });
-
+*/
 
 // 35. Promise.any fulfills on first fulfillment
 testFeature("Promise.any fulfills on first fulfillment", function () {
@@ -964,7 +965,7 @@ testFeature("Promise.any([]) rejects with AggregateError", function () {
 });
 
 // 37. Promise.any rejects after all rejected (AggregateError.errors content)
-testFeature("Promise.any all rejected -> AggregateError.errors contains reasons", function () {
+testFeature("Promise - AggregateError.errors contains reasons", function () {
     return Promise.any([
       Promise.reject("a"),
       delay(1).then(() => {
@@ -978,7 +979,7 @@ testFeature("Promise.any all rejected -> AggregateError.errors contains reasons"
       }
     );
 });
-*/
+
 // 38. then handlers can be added after settlement
 testFeature("handlers added after settlement still run", function () {
     const p = Promise.resolve(3);
@@ -1065,20 +1066,21 @@ testFeature("await returns resolved value", function () {
   })();
 });
 
-/*
+
 // 2) sequential awaits run in order
+// lack of ';' at end of each line is a test of transpiler
 testFeature("sequential awaits preserve order", function () {
   return (async () => {
-    const log = [];
-    log.push("A");
-    const x = await delayResolve("B", 1);
-    log.push(x);
-    const y = await delayResolve("C", 1);
-    log.push(y);
-    return log.join("") === "ABC";
+    const log = []
+    log.push("A")
+    const x = await delayResolve("B", 1)
+    log.push(x)
+    const y = await delayResolve("C", 1)
+    log.push(y)
+    return log.join("") === "ABC"
   })();
 });
-*/
+
 
 // 3) await inside an expression
 testFeature("await works in expression context", function () {
@@ -1088,7 +1090,7 @@ testFeature("await works in expression context", function () {
   })();
 });
 
-/*
+
 // 4) try/catch with rejected await
 testFeature("rejected await is caught by try/catch", function () {
   return (async () => {
@@ -1100,7 +1102,7 @@ testFeature("rejected await is caught by try/catch", function () {
     }
   })();
 });
-*/
+
 
 // 5) finally runs after await (success path)
 testFeature("finally runs after successful await", function () {
@@ -1115,7 +1117,7 @@ testFeature("finally runs after successful await", function () {
   })();
 });
 
-/*
+
 // 6) finally runs after rejected await
 testFeature("finally runs after rejected await", function () {
   return (async () => {
@@ -1131,7 +1133,7 @@ testFeature("finally runs after rejected await", function () {
     return didFinally === true;
   })();
 });
-*/
+
 // 7) arrow concise body with await returns value
 testFeature("arrow concise body returns awaited value", function () {
   return (async () => {
@@ -1141,7 +1143,7 @@ testFeature("arrow concise body returns awaited value", function () {
   })();
 });
 
-/*
+
 // 8) "this" & "arguments" preserved across await (matches wrapper .apply)
 testFeature("this/arguments preserved across await", function () {
   return (async () => {
@@ -1156,7 +1158,7 @@ testFeature("this/arguments preserved across await", function () {
     return r === 6;
   })();
 });
-*/
+
 
 // 9) multiple awaits with reassignment
 testFeature("multiple awaits with reassignment", function () {
