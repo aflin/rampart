@@ -132,6 +132,12 @@ endif()
 
 add_dependencies(rampart timestamp)
 
+target_include_directories(rampart PRIVATE
+    ${PROJECT_SOURCE_DIR}/extern/tree-sitter/lib/include/
+    ${PROJECT_SOURCE_DIR}/extern/tree-sitter/lib/src/
+    ${PROJECT_SOURCE_DIR}/extern/tree-sitter/
+)
+
 include_directories(
 	${PROJECT_SOURCE_DIR}/src/include
 	${PROJECT_BINARY_DIR}/extern/texis/texisapi
@@ -142,10 +148,7 @@ include_directories(
 	${PROJECT_BINARY_DIR}/extern/texis/contrib/jansson-2.12/include/
 	${PROJECT_BINARY_DIR}/include/
 	${PROJECT_SOURCE_DIR}/src/duktape/globals/hash_random/
-    ${PROJECT_SOURCE_DIR}/extern/tree-sitter/lib/include/
-    ${PROJECT_SOURCE_DIR}/extern/tree-sitter/
 )
-
 ########### ADD MODULES HERE ###############
 
 ## allow linked rampart-crypto.so to be loaded from rampart-server.so in the same dir

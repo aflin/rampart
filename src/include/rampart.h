@@ -687,16 +687,6 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
 char *tickify(char *src, size_t sz, int *err, int *ln);
 char *tickify_err(int err);
 
-/* ********* transpiler in transpiler.c and cmdline.c********** */
-#include "transpiler.h"
-extern int duk_rp_globaltranspile;
-
-/* use transpiler if src has "use transpiler" or "use transpilerGlobally"
-   if not, then use the stable simple template processing in tickify
-   and set is_tickified to 1                                               */
-RP_ParseRes rp_get_transpiled(char *src, int *is_tickified);
-
-
 extern pthread_mutex_t loglock;
 extern pthread_mutex_t errlock;
 extern FILE *access_fh;

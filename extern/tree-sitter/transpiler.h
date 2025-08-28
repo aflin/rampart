@@ -14,7 +14,6 @@ typedef struct {
     int col_num;
 } RP_ParseRes;
 
-
 typedef struct {
     size_t start;      // byte offset (inclusive)
     size_t end;        // byte offset (exclusive)

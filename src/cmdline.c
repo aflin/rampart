@@ -26,7 +26,7 @@
 #include "linenoise.h"
 #include "sys/queue.h"
 #include "whereami.h"
-#include "transpiler.h"
+#include "rp_transpile.h"
 
 int globalize=0;
 int duk_rp_globalbabel=0;

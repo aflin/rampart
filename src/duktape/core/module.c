@@ -14,7 +14,7 @@
 #include "duktape.h"
 #include "module.h"
 #include "rampart.h"
-#include "transpiler.h"
+#include "rp_transpile.h"
 
 duk_ret_t duk_rp_push_current_module(duk_context *ctx)
 {

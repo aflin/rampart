@@ -9,7 +9,7 @@
 #include "globals/printf.h"
 #include "rampart.h"
 #include "../include/version.h"
-#include "transpiler.h"
+#include "rp_transpile.h"
 
 void duk_rp_set_enum_false(duk_context *ctx, duk_idx_t objidx, const char *propname)
 {
