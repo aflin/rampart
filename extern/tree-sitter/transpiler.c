@@ -12,7 +12,10 @@
 #define _GNU_SOURCE
 #endif
 
+//#define RP_STRING_REPORT_FREES
+
 #include "transpiler.h"
+#include "rp_string.h"
 #include <ctype.h>
 #include <stdarg.h>
 #include <stdbool.h>
@@ -560,91 +563,6 @@ static TSNode find_child_type(TSNode node, const char *type, uint32_t *start)
     return ret;
 }
 
-static inline int vappendf(char **bufp, const char *fmt, va_list ap)
-{
-    if (!bufp || !fmt)
-        return -1;
-
-    const char *old = *bufp;
-    size_t oldlen = 0;
-    if (old)
-    {
-        /* must be a valid NUL-terminated string */
-        oldlen = strlen(old);
-    }
-
-    /* Determine required length for the new formatted chunk */
-    va_list ap_count;
-    va_copy(ap_count, ap);
-    int need = vsnprintf(NULL, 0, fmt, ap_count);
-    va_end(ap_count);
-    if (need < 0)
-    {
-        return -1; /* formatting error */
-    }
-
-    /* Allocate a new buffer safely (do NOT use realloc yet).
-       We only free the old buffer after successful formatting. */
-    size_t newsize = oldlen + (size_t)need + 1; /* +1 for NUL */
-    char *newbuf = NULL;
-    REMALLOC(newbuf, newsize);
-
-    /* Preserve old content (if any) */
-    if (oldlen)
-    {
-        memcpy(newbuf, old, oldlen);
-    }
-    newbuf[oldlen] = '\0';
-
-    /* Format into the tail */
-    va_list ap_write;
-    va_copy(ap_write, ap);
-    int wrote = vsnprintf(newbuf + oldlen, (size_t)need + 1, fmt, ap_write);
-    va_end(ap_write);
-
-    if (wrote < 0)
-    {
-        /* Shouldn't happen in conforming C99 for supported encodings,
-           but handle defensively. */
-        free(newbuf);
-        return -1;
-    }
-
-    /* Success: install the new buffer */
-    if (old)
-        free((void *)old);
-    *bufp = newbuf;
-    return wrote; /* number of chars appended (no NUL) */
-}
-
-/* Varargs front-end *
-static inline int appendf(char **bufp, const char *fmt, ...) {
-    int r;
-    va_list ap;
-    va_start(ap, fmt);
-    r = vappendf(bufp, fmt, ap);
-    va_end(ap);
-    return r;
-}
-*/
-/* Convenience API: returns new pointer (or NULL on error). Original 'buf' remains owned by caller. */
-static inline char *appendf(char *buf, size_t *len, const char *fmt, ...)
-{
-    va_list ap;
-    va_start(ap, fmt);
-    char *tmp = buf;
-    int r = vappendf(&tmp, fmt, ap);
-    va_end(ap);
-    if (r < 0)
-    {
-        if (len)
-            *len = 0;
-        return NULL;
-    }
-    if (len)
-        *len = r;
-    return tmp;
-}
 
 // === Added: default parameter lowering helpers & passes ===
 
@@ -1204,51 +1122,9 @@ APPLY:;
     return out;
 }
 
-/* =======================  helpers (namespaced esm_)  ======================= */
+/* helpers for exports below */
 
-/* tiny string builder */
-typedef struct
-{
-    char *buf;
-    size_t len, cap;
-} esm_sb;
-static void esm_sb_init(esm_sb *b)
-{
-    b->buf = NULL;
-    b->len = 0;
-    b->cap = 0;
-}
-static void esm_sb_free(esm_sb *b)
-{
-    free(b->buf);
-    b->buf = NULL;
-    b->len = 0;
-    b->cap = 0;
-}
-static void esm_sb_grow(esm_sb *b, size_t need)
-{
-    size_t req = b->len + need + 1;
-    if (req <= b->cap)
-        return;
-    size_t cap = b->cap ? b->cap * 2 : 1024;
-    while (cap < req)
-        cap <<= 1;
-    b->buf = (char *)realloc(b->buf, cap);
-    b->cap = cap;
-}
-static void esm_sb_putn(esm_sb *b, const char *s, size_t n)
-{
-    esm_sb_grow(b, n);
-    memcpy(b->buf + b->len, s, n);
-    b->len += n;
-    b->buf[b->len] = '\0';
-}
-static void esm_sb_puts(esm_sb *b, const char *s)
-{
-    esm_sb_putn(b, s, strlen(s));
-}
-
-static char *esm_dup_range(const char *s, size_t a, size_t b)
+static char *dup_range(const char *s, size_t a, size_t b)
 {
     if (b < a)
     {
@@ -1265,20 +1141,8 @@ static char *esm_dup_range(const char *s, size_t a, size_t b)
     return r;
 }
 
-/* count commas for array index calculation */
-static size_t esm_count_commas_between(const char *src, size_t a, size_t b)
-{
-    size_t c = 0;
-    for (size_t i = a; i < b; i++)
-    {
-        if (src[i] == ',')
-            c++;
-    }
-    return c;
-}
-
 /* append exports for a CSV of identifiers */
-static void esm_append_exports_for_csv(esm_sb *out, const char *csv)
+static void append_exports_for_csv(rp_string *out, const char *csv)
 {
     const char *p = csv;
     while (p && *p)
@@ -1291,18 +1155,18 @@ static void esm_append_exports_for_csv(esm_sb *out, const char *csv)
             e--;
         if (e > p)
         {
-            esm_sb_puts(out, " exports.");
-            esm_sb_putn(out, p, (size_t)(e - p));
-            esm_sb_puts(out, " = ");
-            esm_sb_putn(out, p, (size_t)(e - p));
-            esm_sb_puts(out, ";");
+            rp_string_puts(out, " exports.");
+            rp_string_putsn(out, p, (size_t)(e - p));
+            rp_string_puts(out, " = ");
+            rp_string_putsn(out, p, (size_t)(e - p));
+            rp_string_putc(out, ';');
         }
         p = q ? (q + 1) : NULL;
     }
 }
 
 /* collect bound identifiers from binding patterns (object/array/default/rest) */
-static void esm_collect_pattern_names(TSNode node, const char *src, esm_sb *csv)
+static void collect_pattern_names(TSNode node, const char *src, rp_string *csv)
 {
     const char *t = ts_node_type(node);
 
@@ -1310,10 +1174,10 @@ static void esm_collect_pattern_names(TSNode node, const char *src, esm_sb *csv)
     {
         if (csv->len)
         {
-            esm_sb_puts(csv, ",");
+            rp_string_putc(csv, ',');
         }
         size_t s = ts_node_start_byte(node), e = ts_node_end_byte(node);
-        esm_sb_putn(csv, src + s, e - s);
+        rp_string_putsn(csv, src + s, e - s);
         return;
     }
     if (strcmp(t, "rest_pattern") == 0)
@@ -1321,7 +1185,7 @@ static void esm_collect_pattern_names(TSNode node, const char *src, esm_sb *csv)
         uint32_t n = ts_node_named_child_count(node);
         for (uint32_t i = 0; i < n; i++)
         {
-            esm_collect_pattern_names(ts_node_named_child(node, i), src, csv);
+            collect_pattern_names(ts_node_named_child(node, i), src, csv);
         }
         return;
     }
@@ -1334,7 +1198,7 @@ static void esm_collect_pattern_names(TSNode node, const char *src, esm_sb *csv)
         }
         if (!ts_node_is_null(left))
         {
-            esm_collect_pattern_names(left, src, csv);
+            collect_pattern_names(left, src, csv);
         }
         return;
     }
@@ -1354,12 +1218,12 @@ static void esm_collect_pattern_names(TSNode node, const char *src, esm_sb *csv)
                 }
                 if (!ts_node_is_null(val))
                 {
-                    esm_collect_pattern_names(val, src, csv);
+                    collect_pattern_names(val, src, csv);
                 }
             }
             else
             {
-                esm_collect_pattern_names(ch, src, csv);
+                collect_pattern_names(ch, src, csv);
             }
         }
         return;
@@ -1369,7 +1233,7 @@ static void esm_collect_pattern_names(TSNode node, const char *src, esm_sb *csv)
         uint32_t n = ts_node_named_child_count(node);
         for (uint32_t i = 0; i < n; i++)
         {
-            esm_collect_pattern_names(ts_node_named_child(node, i), src, csv);
+            collect_pattern_names(ts_node_named_child(node, i), src, csv);
         }
         return;
     }
@@ -1377,12 +1241,12 @@ static void esm_collect_pattern_names(TSNode node, const char *src, esm_sb *csv)
     uint32_t n = ts_node_named_child_count(node);
     for (uint32_t i = 0; i < n; i++)
     {
-        esm_collect_pattern_names(ts_node_named_child(node, i), src, csv);
+        collect_pattern_names(ts_node_named_child(node, i), src, csv);
     }
 }
 
 /* for object rest: append excluded top-level key names to a CSV of quoted strings */
-static void esm_append_excluded_key_node(esm_sb *excluded_csv, TSNode prop, const char *src)
+static void append_excluded_key_node(rp_string *excluded_csv, TSNode prop, const char *src)
 {
     const char *pt = ts_node_type(prop);
 
@@ -1393,12 +1257,12 @@ static void esm_append_excluded_key_node(esm_sb *excluded_csv, TSNode prop, cons
         {
             if (excluded_csv->len)
             {
-                esm_sb_puts(excluded_csv, ",");
+                rp_string_putc(excluded_csv, ',');
             }
             size_t ks = ts_node_start_byte(key), ke = ts_node_end_byte(key);
-            esm_sb_puts(excluded_csv, "\"");
-            esm_sb_putn(excluded_csv, src + ks, ke - ks);
-            esm_sb_puts(excluded_csv, "\"");
+            rp_string_putc(excluded_csv, '"');
+            rp_string_putsn(excluded_csv, src + ks, ke - ks);
+            rp_string_putc(excluded_csv, '"');
         }
         return;
     }
@@ -1406,12 +1270,12 @@ static void esm_append_excluded_key_node(esm_sb *excluded_csv, TSNode prop, cons
     {
         if (excluded_csv->len)
         {
-            esm_sb_puts(excluded_csv, ",");
+            rp_string_putc(excluded_csv, ',');
         }
         size_t ks = ts_node_start_byte(prop), ke = ts_node_end_byte(prop);
-        esm_sb_puts(excluded_csv, "\"");
-        esm_sb_putn(excluded_csv, src + ks, ke - ks);
-        esm_sb_puts(excluded_csv, "\"");
+        rp_string_putc(excluded_csv, '"');
+        rp_string_putsn(excluded_csv, src + ks, ke - ks);
+        rp_string_putc(excluded_csv, '"');
         return;
     }
     if (strcmp(pt, "object_assignment_pattern") == 0)
@@ -1421,12 +1285,12 @@ static void esm_append_excluded_key_node(esm_sb *excluded_csv, TSNode prop, cons
         {
             if (excluded_csv->len)
             {
-                esm_sb_puts(excluded_csv, ",");
+                rp_string_puts(excluded_csv, ",");
             }
             size_t ks = ts_node_start_byte(left), ke = ts_node_end_byte(left);
-            esm_sb_puts(excluded_csv, "\"");
-            esm_sb_putn(excluded_csv, src + ks, ke - ks);
-            esm_sb_puts(excluded_csv, "\"");
+            rp_string_putc(excluded_csv, '"');
+            rp_string_putsn(excluded_csv, src + ks, ke - ks);
+            rp_string_putc(excluded_csv, '"');
         }
         return;
     }
@@ -1462,26 +1326,25 @@ static int rewrite_export_node(EditList *edits, const char *src, TSNode snode, R
                     if (overlaps)
                         return 1;
                     size_t is = ts_node_start_byte(id), ie = ts_node_end_byte(id);
-                    esm_sb post;
-                    esm_sb_init(&post);
+                    rp_string *post = rp_string_new(32);
                     if (is_default_export)
                     {
                         /* default: function f(...){} ; module.exports = f; */
-                        esm_sb_puts(&post, "; module.exports = ");
-                        esm_sb_putn(&post, src + is, ie - is);
-                        esm_sb_puts(&post, ";");
+                        rp_string_puts(post, "; module.exports = ");
+                        rp_string_putsn(post, src + is, ie - is);
+                        rp_string_puts(post, ";");
                     }
                     else
                     {
                         /* named: function f(...){} ; exports.f = f; */
-                        esm_sb_puts(&post, "; exports.");
-                        esm_sb_putn(&post, src + is, ie - is);
-                        esm_sb_puts(&post, " = ");
-                        esm_sb_putn(&post, src + is, ie - is);
-                        esm_sb_puts(&post, ";");
+                        rp_string_puts(post, "; exports.");
+                        rp_string_putsn(post, src + is, ie - is);
+                        rp_string_puts(post, " = ");
+                        rp_string_putsn(post, src + is, ie - is);
+                        rp_string_puts(post, ";");
                     }
-                    add_edit(edits, decl_e, decl_e, post.buf, claimed); /* insert AFTER function */
-                    esm_sb_free(&post);
+                    add_edit_take_ownership(edits, decl_e, decl_e, rp_string_steal(post), claimed); /* insert AFTER function */
+                    rp_string_free(post);
 
                     /* Remove only the 'export default' prefix */
                     add_edit(edits, stmt_s, decl_s, "", claimed);
@@ -1497,13 +1360,12 @@ static int rewrite_export_node(EditList *edits, const char *src, TSNode snode, R
             if (overlaps)
                 return 1;
             size_t vs = ts_node_start_byte(val), ve = ts_node_end_byte(val);
-            esm_sb out;
-            esm_sb_init(&out);
-            esm_sb_puts(&out, "exports.__esModule=true;exports.default = ");
-            esm_sb_putn(&out, src + vs, ve - vs);
-            esm_sb_puts(&out, ";");
-            add_edit(edits, ns, ne, out.buf, claimed); /* replace whole export statement */
-            esm_sb_free(&out);
+            rp_string *out = rp_string_new(64);
+            rp_string_puts(out, "exports.__esModule=true;exports.default = ");
+            rp_string_putsn(out, src + vs, ve - vs);
+            rp_string_puts(out, ";");
+            add_edit_take_ownership(edits, ns, ne, rp_string_steal(out), claimed); /* replace whole export statement */
+            rp_string_free(out);
             return 1;
         }
 
@@ -1514,14 +1376,13 @@ static int rewrite_export_node(EditList *edits, const char *src, TSNode snode, R
             if (overlaps)
                 return 1;
             size_t vs = ts_node_start_byte(val), ve = ts_node_end_byte(val);
-            char *body = esm_dup_range(src, vs, ve);
-            esm_sb out;
-            esm_sb_init(&out);
-            esm_sb_puts(&out, "var __default__ = ");
-            esm_sb_puts(&out, body);
-            esm_sb_puts(&out, "; exports.default = __default__;");
-            add_edit(edits, ns, ne, out.buf, claimed); /* replace whole export statement */
-            esm_sb_free(&out);
+            char *body = dup_range(src, vs, ve);
+            rp_string *out = rp_string_new(64);
+            rp_string_puts(out, "var __default__ = ");
+            rp_string_puts(out, body);
+            rp_string_puts(out, "; exports.default = __default__;");
+            add_edit_take_ownership(edits, ns, ne, rp_string_steal(out), claimed); /* replace whole export statement */
+            rp_string_free(out);
             free(body);
             return 1;
         }
@@ -1547,15 +1408,14 @@ static int rewrite_export_node(EditList *edits, const char *src, TSNode snode, R
             if (!ts_node_is_null(id))
             {
                 size_t is = ts_node_start_byte(id), ie = ts_node_end_byte(id);
-                esm_sb pre;
-                esm_sb_init(&pre);
-                esm_sb_puts(&pre, "exports.");
-                esm_sb_putn(&pre, src + is, ie - is);
-                esm_sb_puts(&pre, " = ");
-                esm_sb_putn(&pre, src + is, ie - is);
-                esm_sb_puts(&pre, "; ");
-                add_edit(edits, decl_s, decl_s, pre.buf, claimed); // insertion
-                esm_sb_free(&pre);
+                rp_string *pre = rp_string_new(64);
+                rp_string_puts(pre, "exports.");
+                rp_string_putsn(pre, src + is, ie - is);
+                rp_string_puts(pre, " = ");
+                rp_string_putsn(pre, src + is, ie - is);
+                rp_string_puts(pre, "; ");
+                add_edit_take_ownership(edits, decl_s, decl_s, rp_string_steal(pre), claimed); // insertion
+                rp_string_free(pre);
             }
 
             // Remove just the 'export' token and following space(s)
@@ -1578,15 +1438,14 @@ static int rewrite_export_node(EditList *edits, const char *src, TSNode snode, R
             if (!ts_node_is_null(id))
             {
                 size_t is = ts_node_start_byte(id), ie = ts_node_end_byte(id);
-                esm_sb pre;
-                esm_sb_init(&pre);
-                esm_sb_puts(&pre, "exports.");
-                esm_sb_putn(&pre, src + is, ie - is);
-                esm_sb_puts(&pre, " = ");
-                esm_sb_putn(&pre, src + is, ie - is);
-                esm_sb_puts(&pre, "; ");
-                add_edit(edits, decl_s, decl_s, pre.buf, claimed); // insertion
-                esm_sb_free(&pre);
+                rp_string *pre = rp_string_new(64);
+                rp_string_puts(pre, "exports.");
+                rp_string_putsn(pre, src + is, ie - is);
+                rp_string_puts(pre, " = ");
+                rp_string_putsn(pre, src + is, ie - is);
+                rp_string_puts(pre, "; ");
+                add_edit(edits, decl_s, decl_s, rp_string_steal(pre), claimed); // insertion
+                rp_string_free(pre);
             }
 
             // Remove just the 'export' token and following space(s)
@@ -1618,18 +1477,15 @@ static int rewrite_export_node(EditList *edits, const char *src, TSNode snode, R
                             if (overlaps)
                                 return 1;
                             size_t vs = ts_node_start_byte(initNode), ve = ts_node_end_byte(initNode);
-                            char *val = esm_dup_range(src, vs, ve);
+                            char *val = dup_range(src, vs, ve);
 
-                            esm_sb out;
-                            esm_sb_init(&out);
-                            esm_sb names_csv;
-                            esm_sb_init(&names_csv);
-                            esm_sb excl;
-                            esm_sb_init(&excl);
+                            rp_string *out = rp_string_new(512);
+                            rp_string *names_csv = rp_string_new(64);
+                            rp_string *excl = rp_string_new(64);
 
-                            esm_sb_puts(&out, "var __tmpD0 = ");
-                            esm_sb_puts(&out, val);
-                            esm_sb_puts(&out, ";");
+                            rp_string_puts(out, "var __tmpD0 = ");
+                            rp_string_puts(out, val);
+                            rp_string_puts(out, ";");
 
                             uint32_t nprops = ts_node_named_child_count(nameNode);
                             for (uint32_t i = 0; i < nprops; i++)
@@ -1639,7 +1495,7 @@ static int rewrite_export_node(EditList *edits, const char *src, TSNode snode, R
                                 if (strcmp(pt, "rest_pattern") == 0)
                                     continue;
 
-                                esm_append_excluded_key_node(&excl, prop, src);
+                                append_excluded_key_node(excl, prop, src);
 
                                 if (strcmp(pt, "pair_pattern") == 0 || strcmp(pt, "pair") == 0)
                                 {
@@ -1653,25 +1509,24 @@ static int rewrite_export_node(EditList *edits, const char *src, TSNode snode, R
                                     {
                                         size_t ks = ts_node_start_byte(key), ke = ts_node_end_byte(key);
                                         size_t is = ts_node_start_byte(valpat), ie = ts_node_end_byte(valpat);
-                                        esm_sb_puts(&out, " var ");
-                                        esm_sb_putn(&out, src + is, ie - is);
-                                        esm_sb_puts(&out, " = __tmpD0.");
-                                        esm_sb_putn(&out, src + ks, ke - ks);
-                                        esm_sb_puts(&out, ";");
-                                        if (names_csv.len)
+                                        rp_string_puts(out, " var ");
+                                        rp_string_putsn(out, src + is, ie - is);
+                                        rp_string_puts(out, " = __tmpD0.");
+                                        rp_string_putsn(out, src + ks, ke - ks);
+                                        rp_string_puts(out, ";");
+                                        if (names_csv->len)
                                         {
-                                            esm_sb_puts(&names_csv, ",");
+                                            rp_string_putc(names_csv, ',');
                                         }
-                                        esm_sb_putn(&names_csv, src + is, ie - is);
+                                        rp_string_putsn(names_csv, src + is, ie - is);
                                     }
                                     else if (strcmp(vt, "object_pattern") == 0)
                                     {
-                                        esm_sb inner;
-                                        esm_sb_init(&inner);
-                                        esm_collect_pattern_names(valpat, src, &inner);
+                                        rp_string *inner = rp_string_new(64);
+                                        collect_pattern_names(valpat, src, inner);
                                         size_t ks = ts_node_start_byte(key), ke = ts_node_end_byte(key);
-                                        char *keytxt = esm_dup_range(src, ks, ke);
-                                        const char *p = inner.buf;
+                                        char *keytxt = dup_range(src, ks, ke);
+                                        const char *p = inner->str;
                                         while (p && *p)
                                         {
                                             const char *q = strchr(p, ',');
@@ -1683,22 +1538,22 @@ static int rewrite_export_node(EditList *edits, const char *src, TSNode snode, R
                                                 e--;
                                             if (e > p)
                                             {
-                                                esm_sb_puts(&out, " var ");
-                                                esm_sb_putn(&out, p, (size_t)(e - p));
-                                                esm_sb_puts(&out, " = __tmpD0.");
-                                                esm_sb_puts(&out, keytxt);
-                                                esm_sb_puts(&out, ".");
-                                                esm_sb_putn(&out, p, (size_t)(e - p));
-                                                esm_sb_puts(&out, ";");
-                                                if (names_csv.len)
+                                                rp_string_puts(out, " var ");
+                                                rp_string_putsn(out, p, (size_t)(e - p));
+                                                rp_string_puts(out, " = __tmpD0.");
+                                                rp_string_puts(out, keytxt);
+                                                rp_string_puts(out, ".");
+                                                rp_string_putsn(out, p, (size_t)(e - p));
+                                                rp_string_puts(out, ";");
+                                                if (names_csv->len)
                                                 {
-                                                    esm_sb_puts(&names_csv, ",");
+                                                    rp_string_putc(names_csv, ',');
                                                 }
-                                                esm_sb_putn(&names_csv, p, (size_t)(e - p));
+                                                rp_string_putsn(names_csv, p, (size_t)(e - p));
                                             }
                                             p = q ? (q + 1) : NULL;
                                         }
-                                        esm_sb_free(&inner);
+                                        rp_string_free(inner);
                                         free(keytxt);
                                     }
                                     else if (strcmp(vt, "assignment_pattern") == 0 ||
@@ -1711,20 +1566,20 @@ static int rewrite_export_node(EditList *edits, const char *src, TSNode snode, R
                                         size_t ks = ts_node_start_byte(key), ke = ts_node_end_byte(key);
                                         size_t ls = ts_node_start_byte(left), le = ts_node_end_byte(left);
                                         size_t rs = ts_node_start_byte(right), re = ts_node_end_byte(right);
-                                        esm_sb_puts(&out, " var ");
-                                        esm_sb_putn(&out, src + ls, le - ls);
-                                        esm_sb_puts(&out, " = (__tmpD0.");
-                                        esm_sb_putn(&out, src + ks, ke - ks);
-                                        esm_sb_puts(&out, " === undefined ? ");
-                                        esm_sb_putn(&out, src + rs, re - rs);
-                                        esm_sb_puts(&out, " : __tmpD0.");
-                                        esm_sb_putn(&out, src + ks, ke - ks);
-                                        esm_sb_puts(&out, ");");
-                                        if (names_csv.len)
+                                        rp_string_puts(out, " var ");
+                                        rp_string_putsn(out, src + ls, le - ls);
+                                        rp_string_puts(out, " = (__tmpD0.");
+                                        rp_string_putsn(out, src + ks, ke - ks);
+                                        rp_string_puts(out, " === undefined ? ");
+                                        rp_string_putsn(out, src + rs, re - rs);
+                                        rp_string_puts(out, " : __tmpD0.");
+                                        rp_string_putsn(out, src + ks, ke - ks);
+                                        rp_string_puts(out, ");");
+                                        if (names_csv->len)
                                         {
-                                            esm_sb_puts(&names_csv, ",");
+                                            rp_string_putc(names_csv, ',');
                                         }
-                                        esm_sb_putn(&names_csv, src + ls, le - ls);
+                                        rp_string_putsn(names_csv, src + ls, le - ls);
                                     }
                                     continue;
                                 }
@@ -1732,16 +1587,16 @@ static int rewrite_export_node(EditList *edits, const char *src, TSNode snode, R
                                 if (strcmp(pt, "shorthand_property_identifier_pattern") == 0)
                                 {
                                     size_t is = ts_node_start_byte(prop), ie = ts_node_end_byte(prop);
-                                    esm_sb_puts(&out, " var ");
-                                    esm_sb_putn(&out, src + is, ie - is);
-                                    esm_sb_puts(&out, " = __tmpD0.");
-                                    esm_sb_putn(&out, src + is, ie - is);
-                                    esm_sb_puts(&out, ";");
-                                    if (names_csv.len)
+                                    rp_string_puts(out, " var ");
+                                    rp_string_putsn(out, src + is, ie - is);
+                                    rp_string_puts(out, " = __tmpD0.");
+                                    rp_string_putsn(out, src + is, ie - is);
+                                    rp_string_puts(out, ";");
+                                    if (names_csv->len)
                                     {
-                                        esm_sb_puts(&names_csv, ",");
+                                        rp_string_putc(names_csv, ',');
                                     }
-                                    esm_sb_putn(&names_csv, src + is, ie - is);
+                                    rp_string_putsn(names_csv, src + is, ie - is);
                                     continue;
                                 }
 
@@ -1753,20 +1608,20 @@ static int rewrite_export_node(EditList *edits, const char *src, TSNode snode, R
                                     {
                                         size_t is = ts_node_start_byte(left), ie = ts_node_end_byte(left);
                                         size_t rs = ts_node_start_byte(right), re = ts_node_end_byte(right);
-                                        esm_sb_puts(&out, " var ");
-                                        esm_sb_putn(&out, src + is, ie - is);
-                                        esm_sb_puts(&out, " = (__tmpD0.");
-                                        esm_sb_putn(&out, src + is, ie - is);
-                                        esm_sb_puts(&out, " === undefined ? ");
-                                        esm_sb_putn(&out, src + rs, re - rs);
-                                        esm_sb_puts(&out, " : __tmpD0.");
-                                        esm_sb_putn(&out, src + is, ie - is);
-                                        esm_sb_puts(&out, ");");
-                                        if (names_csv.len)
+                                        rp_string_puts(out, " var ");
+                                        rp_string_putsn(out, src + is, ie - is);
+                                        rp_string_puts(out, " = (__tmpD0.");
+                                        rp_string_putsn(out, src + is, ie - is);
+                                        rp_string_puts(out, " === undefined ? ");
+                                        rp_string_putsn(out, src + rs, re - rs);
+                                        rp_string_puts(out, " : __tmpD0.");
+                                        rp_string_putsn(out, src + is, ie - is);
+                                        rp_string_puts(out, ");");
+                                        if (names_csv->len)
                                         {
-                                            esm_sb_puts(&names_csv, ",");
+                                            rp_string_putc(names_csv, ',');
                                         }
-                                        esm_sb_putn(&names_csv, src + is, ie - is);
+                                        rp_string_putsn(names_csv, src + is, ie - is);
                                     }
                                     continue;
                                 }
@@ -1785,35 +1640,35 @@ static int rewrite_export_node(EditList *edits, const char *src, TSNode snode, R
                                     if (strcmp(ts_node_type(id), "identifier") != 0)
                                         continue;
                                     size_t is = ts_node_start_byte(id), ie = ts_node_end_byte(id);
-                                    esm_sb_puts(&out, " var ");
-                                    esm_sb_putn(&out, src + is, ie - is);
-                                    esm_sb_puts(
-                                        &out,
+                                    rp_string_puts(out, " var ");
+                                    rp_string_putsn(out, src + is, ie - is);
+                                    rp_string_puts(
+                                        out,
                                         " = (function(o,e){var t={},k; for(k in o){ if(Object.prototype.hasOwnProperty.call(o,k) && ");
-                                    if (excl.len)
+                                    if (excl->len)
                                     {
-                                        esm_sb_puts(&out, "e.indexOf(k)<0");
+                                        rp_string_puts(out, "e.indexOf(k)<0");
                                     }
                                     else
                                     {
-                                        esm_sb_puts(&out, "true");
+                                        rp_string_puts(out, "true");
                                     }
-                                    esm_sb_puts(&out, ") t[k]=o[k]; } return t; })(__tmpD0, [");
-                                    esm_sb_puts(&out, excl.buf);
-                                    esm_sb_puts(&out, "]);");
-                                    if (names_csv.len)
+                                    rp_string_puts(out, ") t[k]=o[k]; } return t; })(__tmpD0, [");
+                                    rp_string_puts(out, excl->str);
+                                    rp_string_puts(out, "]);");
+                                    if (names_csv->len)
                                     {
-                                        esm_sb_puts(&names_csv, ",");
+                                        rp_string_putc(names_csv, ',');
                                     }
-                                    esm_sb_putn(&names_csv, src + is, ie - is);
+                                    rp_string_putsn(names_csv, src + is, ie - is);
                                 }
                             }
 
-                            esm_append_exports_for_csv(&out, names_csv.buf);
-                            add_edit(edits, ns, ne, out.buf, claimed);
-                            esm_sb_free(&out);
-                            esm_sb_free(&names_csv);
-                            esm_sb_free(&excl);
+                            append_exports_for_csv(out, names_csv->str);
+                            add_edit_take_ownership(edits, ns, ne, rp_string_steal(out), claimed);
+                            rp_string_free(out);
+                            rp_string_free(names_csv);
+                            rp_string_free(excl);
                             free(val);
                             return 1;
                         }
@@ -1824,16 +1679,14 @@ static int rewrite_export_node(EditList *edits, const char *src, TSNode snode, R
                             if (overlaps)
                                 return 1;
                             size_t vs = ts_node_start_byte(initNode), ve = ts_node_end_byte(initNode);
-                            char *val = esm_dup_range(src, vs, ve);
+                            char *val = dup_range(src, vs, ve);
 
-                            esm_sb out;
-                            esm_sb_init(&out);
-                            esm_sb names_csv;
-                            esm_sb_init(&names_csv);
+                            rp_string *out = rp_string_new(256);
+                            rp_string *names_csv = rp_string_new(64);
 
-                            esm_sb_puts(&out, "var __tmpA0 = ");
-                            esm_sb_puts(&out, val);
-                            esm_sb_puts(&out, ";");
+                            rp_string_puts(out, "var __tmpA0 = ");
+                            rp_string_puts(out, val);
+                            rp_string_puts(out, ";");
 
                             size_t pat_start = ts_node_start_byte(nameNode);
                             size_t after_bracket = pat_start + 1;
@@ -1845,23 +1698,28 @@ static int rewrite_export_node(EditList *edits, const char *src, TSNode snode, R
                                 const char *et = ts_node_type(el);
 
                                 size_t es = ts_node_start_byte(el);
-                                size_t idx = esm_count_commas_between(src, after_bracket, es);
+                                size_t idx = 0;
+                                for (size_t i = after_bracket; i < es; i++)
+                                {
+                                    if (src[i] == ',')
+                                        idx++;
+                                }
 
                                 if (strcmp(et, "identifier") == 0)
                                 {
                                     size_t is = ts_node_start_byte(el), ie = ts_node_end_byte(el);
-                                    esm_sb_puts(&out, " var ");
-                                    esm_sb_putn(&out, src + is, ie - is);
-                                    esm_sb_puts(&out, " = __tmpA0[");
+                                    rp_string_puts(out, " var ");
+                                    rp_string_putsn(out, src + is, ie - is);
+                                    rp_string_puts(out, " = __tmpA0[");
                                     char buf[32];
                                     snprintf(buf, sizeof(buf), "%zu", idx);
-                                    esm_sb_puts(&out, buf);
-                                    esm_sb_puts(&out, "];");
-                                    if (names_csv.len)
+                                    rp_string_puts(out, buf);
+                                    rp_string_puts(out, "];");
+                                    if (names_csv->len)
                                     {
-                                        esm_sb_puts(&names_csv, ",");
+                                        rp_string_putc(names_csv, ',');
                                     }
-                                    esm_sb_putn(&names_csv, src + is, ie - is);
+                                    rp_string_putsn(names_csv, src + is, ie - is);
                                     continue;
                                 }
 
@@ -1873,22 +1731,22 @@ static int rewrite_export_node(EditList *edits, const char *src, TSNode snode, R
                                         continue;
                                     size_t ls = ts_node_start_byte(left), le = ts_node_end_byte(left);
                                     size_t rs = ts_node_start_byte(right), re = ts_node_end_byte(right);
-                                    esm_sb_puts(&out, " var ");
-                                    esm_sb_putn(&out, src + ls, le - ls);
-                                    esm_sb_puts(&out, " = (__tmpA0[");
+                                    rp_string_puts(out, " var ");
+                                    rp_string_putsn(out, src + ls, le - ls);
+                                    rp_string_puts(out, " = (__tmpA0[");
                                     char buf[32];
                                     snprintf(buf, sizeof(buf), "%zu", idx);
-                                    esm_sb_puts(&out, buf);
-                                    esm_sb_puts(&out, "] === undefined ? ");
-                                    esm_sb_putn(&out, src + rs, re - rs);
-                                    esm_sb_puts(&out, " : __tmpA0[");
-                                    esm_sb_puts(&out, buf);
-                                    esm_sb_puts(&out, "]);");
-                                    if (names_csv.len)
+                                    rp_string_puts(out, buf);
+                                    rp_string_puts(out, "] === undefined ? ");
+                                    rp_string_putsn(out, src + rs, re - rs);
+                                    rp_string_puts(out, " : __tmpA0[");
+                                    rp_string_puts(out, buf);
+                                    rp_string_puts(out, "]);");
+                                    if (names_csv->len)
                                     {
-                                        esm_sb_puts(&names_csv, ",");
+                                        rp_string_putc(names_csv, ',');
                                     }
-                                    esm_sb_putn(&names_csv, src + ls, le - ls);
+                                    rp_string_putsn(names_csv, src + ls, le - ls);
                                     continue;
                                 }
 
@@ -1901,28 +1759,27 @@ static int rewrite_export_node(EditList *edits, const char *src, TSNode snode, R
                                         if (strcmp(ts_node_type(id), "identifier") != 0)
                                             continue;
                                         size_t is = ts_node_start_byte(id), ie = ts_node_end_byte(id);
-                                        esm_sb_puts(&out, " var ");
-                                        esm_sb_putn(&out, src + is, ie - is);
-                                        esm_sb_puts(&out, " = Array.prototype.slice.call(__tmpA0, ");
+                                        rp_string_puts(out, " var ");
+                                        rp_string_putsn(out, src + is, ie - is);
+                                        rp_string_puts(out, " = Array.prototype.slice.call(__tmpA0, ");
                                         char buf[32];
                                         snprintf(buf, sizeof(buf), "%zu", idx);
-                                        esm_sb_puts(&out, buf);
-                                        esm_sb_puts(&out, ");");
-                                        if (names_csv.len)
+                                        rp_string_puts(out, buf);
+                                        rp_string_puts(out, ");");
+                                        if (names_csv->len)
                                         {
-                                            esm_sb_puts(&names_csv, ",");
+                                            rp_string_putc(names_csv, ',');
                                         }
-                                        esm_sb_putn(&names_csv, src + is, ie - is);
+                                        rp_string_putsn(names_csv, src + is, ie - is);
                                     }
                                     continue;
                                 }
 
                                 if (strcmp(et, "object_pattern") == 0)
                                 {
-                                    esm_sb inner;
-                                    esm_sb_init(&inner);
-                                    esm_collect_pattern_names(el, src, &inner);
-                                    const char *p = inner.buf;
+                                    rp_string *inner = rp_string_new(64);
+                                    collect_pattern_names(el, src, inner);
+                                    const char *p = inner->str;
                                     while (p && *p)
                                     {
                                         const char *q = strchr(p, ',');
@@ -1934,32 +1791,32 @@ static int rewrite_export_node(EditList *edits, const char *src, TSNode snode, R
                                             e--;
                                         if (e > p)
                                         {
-                                            esm_sb_puts(&out, " var ");
-                                            esm_sb_putn(&out, p, (size_t)(e - p));
-                                            esm_sb_puts(&out, " = __tmpA0[");
+                                            rp_string_puts(out, " var ");
+                                            rp_string_putsn(out, p, (size_t)(e - p));
+                                            rp_string_puts(out, " = __tmpA0[");
                                             char buf[32];
                                             snprintf(buf, sizeof(buf), "%zu", idx);
-                                            esm_sb_puts(&out, buf);
-                                            esm_sb_puts(&out, "].");
-                                            esm_sb_putn(&out, p, (size_t)(e - p));
-                                            esm_sb_puts(&out, ";");
-                                            if (names_csv.len)
+                                            rp_string_puts(out, buf);
+                                            rp_string_puts(out, "].");
+                                            rp_string_putsn(out, p, (size_t)(e - p));
+                                            rp_string_puts(out, ";");
+                                            if (names_csv->len)
                                             {
-                                                esm_sb_puts(&names_csv, ",");
+                                                rp_string_putc(names_csv, ',');
                                             }
-                                            esm_sb_putn(&names_csv, p, (size_t)(e - p));
+                                            rp_string_putsn(names_csv, p, (size_t)(e - p));
                                         }
                                         p = q ? (q + 1) : NULL;
                                     }
-                                    esm_sb_free(&inner);
+                                    rp_string_free(inner);
                                     continue;
                                 }
                             }
 
-                            esm_append_exports_for_csv(&out, names_csv.buf);
-                            add_edit(edits, ns, ne, out.buf, claimed);
-                            esm_sb_free(&out);
-                            esm_sb_free(&names_csv);
+                            append_exports_for_csv(out, names_csv->str);
+                            add_edit_take_ownership(edits, ns, ne, rp_string_steal(out), claimed);
+                            rp_string_free(out);
+                            rp_string_free(names_csv);
                             free(val);
                             return 1;
                         }
@@ -1969,9 +1826,8 @@ static int rewrite_export_node(EditList *edits, const char *src, TSNode snode, R
 
             /* fallback: keep lexical declaration text + export collected names */
             size_t ds = ts_node_start_byte(decl), de = ts_node_end_byte(decl);
-            char *decl_txt = esm_dup_range(src, ds, de);
-            esm_sb names;
-            esm_sb_init(&names);
+            char *decl_txt = dup_range(src, ds, de);
+            rp_string *names = rp_string_new(64);
             for (uint32_t i = 0; i < ndecls; i++)
             {
                 TSNode vd = ts_node_named_child(decl, i);
@@ -1980,15 +1836,14 @@ static int rewrite_export_node(EditList *edits, const char *src, TSNode snode, R
                 TSNode nm = ts_node_child_by_field_name(vd, "name", 4);
                 if (ts_node_is_null(nm))
                     continue;
-                esm_collect_pattern_names(nm, src, &names);
+                collect_pattern_names(nm, src, names);
             }
-            esm_sb out;
-            esm_sb_init(&out);
-            esm_sb_puts(&out, decl_txt);
-            esm_append_exports_for_csv(&out, names.buf);
-            add_edit(edits, ns, ne, out.buf, claimed);
-            esm_sb_free(&out);
-            esm_sb_free(&names);
+            rp_string *out = rp_string_new(64);
+            rp_string_puts(out, decl_txt);
+            append_exports_for_csv(out, names->str);
+            add_edit_take_ownership(edits, ns, ne, rp_string_steal(out), claimed);
+            rp_string_free(out);
+            rp_string_free(names);
             free(decl_txt);
             return 1;
         }
@@ -1999,9 +1854,8 @@ static int rewrite_export_node(EditList *edits, const char *src, TSNode snode, R
             if (overlaps)
                 return 1;
             size_t ds = ts_node_start_byte(decl), de = ts_node_end_byte(decl);
-            char *decl_txt = esm_dup_range(src, ds, de);
-            esm_sb names;
-            esm_sb_init(&names);
+            char *decl_txt = dup_range(src, ds, de);
+            rp_string *names = rp_string_new(64);
             uint32_t n = ts_node_named_child_count(decl);
             for (uint32_t i = 0; i < n; i++)
             {
@@ -2011,15 +1865,14 @@ static int rewrite_export_node(EditList *edits, const char *src, TSNode snode, R
                 TSNode nm = ts_node_child_by_field_name(d, "name", 4);
                 if (ts_node_is_null(nm))
                     continue;
-                esm_collect_pattern_names(nm, src, &names);
+                collect_pattern_names(nm, src, names);
             }
-            esm_sb out;
-            esm_sb_init(&out);
-            esm_sb_puts(&out, decl_txt);
-            esm_append_exports_for_csv(&out, names.buf);
-            add_edit(edits, ns, ne, out.buf, claimed);
-            esm_sb_free(&out);
-            esm_sb_free(&names);
+            rp_string *out = rp_string_new(64);
+            rp_string_puts(out, decl_txt);
+            append_exports_for_csv(out, names->str);
+            add_edit_take_ownership(edits, ns, ne, rp_string_steal(out), claimed);
+            rp_string_free(out);
+            rp_string_free(names);
             free(decl_txt);
             return 1;
         }
@@ -2050,22 +1903,21 @@ static int rewrite_export_node(EditList *edits, const char *src, TSNode snode, R
         if (!ts_node_is_null(srcnode))
         {
             size_t ms = ts_node_start_byte(srcnode), me = ts_node_end_byte(srcnode);
-            mod = esm_dup_range(src, ms, me);
+            mod = dup_range(src, ms, me);
         }
 
-        esm_sb out;
-        esm_sb_init(&out);
+        rp_string *out = rp_string_new(64);
         char tmp[24];
         tmp[0] = '\0';
 
         if (mod)
         {
             snprintf(tmp, sizeof(tmp), "__tmpExp0");
-            esm_sb_puts(&out, "var ");
-            esm_sb_puts(&out, tmp);
-            esm_sb_puts(&out, " = require(");
-            esm_sb_puts(&out, mod);
-            esm_sb_puts(&out, "); ");
+            rp_string_puts(out, "var ");
+            rp_string_puts(out, tmp);
+            rp_string_puts(out, " = require(");
+            rp_string_puts(out, mod);
+            rp_string_puts(out, "); ");
         }
 
         uint32_t k = ts_node_named_child_count(specs);
@@ -2082,28 +1934,28 @@ static int rewrite_export_node(EditList *edits, const char *src, TSNode snode, R
 
             size_t ls = ts_node_start_byte(local), le = ts_node_end_byte(local);
 
-            esm_sb_puts(&out, "exports.");
+            rp_string_puts(out, "exports.");
             if (!ts_node_is_null(alias))
             {
                 size_t as = ts_node_start_byte(alias), ae = ts_node_end_byte(alias);
-                esm_sb_putn(&out, src + as, ae - as); /* alias */
+                rp_string_putsn(out, src + as, ae - as); /* alias */
             }
             else
             {
-                esm_sb_putn(&out, src + ls, le - ls); /* same-name export */
+                rp_string_putsn(out, src + ls, le - ls); /* same-name export */
             }
-            esm_sb_puts(&out, " = ");
+            rp_string_puts(out, " = ");
             if (mod)
             {
-                esm_sb_puts(&out, tmp);
-                esm_sb_puts(&out, ".");
+                rp_string_puts(out, tmp);
+                rp_string_puts(out, ".");
             }
-            esm_sb_putn(&out, src + ls, le - ls); /* local or tmp.prop */
-            esm_sb_puts(&out, ";");
+            rp_string_putsn(out, src + ls, le - ls); /* local or tmp.prop */
+            rp_string_puts(out, ";");
         }
 
-        add_edit(edits, ns, ne, out.buf, claimed);
-        esm_sb_free(&out);
+        add_edit_take_ownership(edits, ns, ne, rp_string_steal(out), claimed);
+        rp_string_free(out);
         free(mod);
         return 1;
     }
@@ -2117,15 +1969,14 @@ static int rewrite_export_node(EditList *edits, const char *src, TSNode snode, R
             if (overlaps)
                 return 1;
             size_t ms = ts_node_start_byte(srcnode), me = ts_node_end_byte(srcnode);
-            char *mod = esm_dup_range(src, ms, me);
-            esm_sb out;
-            esm_sb_init(&out);
-            esm_sb_puts(&out, "var __tmpExp = require(");
-            esm_sb_puts(&out, mod);
-            esm_sb_puts(&out,
+            char *mod = dup_range(src, ms, me);
+            rp_string *out = rp_string_new(64);
+            rp_string_puts(out, "var __tmpExp = require(");
+            rp_string_puts(out, mod);
+            rp_string_puts(out,
                         "); for (var k in __tmpExp) { if (k === \"default\") continue; exports[k] = __tmpExp[k]; }");
-            add_edit(edits, ns, ne, out.buf, claimed);
-            esm_sb_free(&out);
+            add_edit_take_ownership(edits, ns, ne, rp_string_steal(out), claimed);
+            rp_string_free(out);
             free(mod);
             return 1;
         }
@@ -2140,7 +1991,7 @@ static int rewrite_export_node(EditList *edits, const char *src, TSNode snode, R
                 return 1;
             TSNode inner = ts_node_named_child(snode, n - 1);
             size_t s = ts_node_start_byte(inner), e = ts_node_end_byte(inner);
-            char *txt = esm_dup_range(src, s, e);
+            char *txt = dup_range(src, s, e);
             add_edit_take_ownership(edits, ns, ne, txt, claimed);
             return 1;
         }
@@ -2396,7 +2247,6 @@ static int do_named_imports(EditList *edits, const char *src, TSNode snode, TSNo
 {
     static uint32_t tmpn = 0;
     uint32_t pos = 0;
-    char *out = NULL;
     char buf[32];
 
     TSNode spec = find_child_type(named_imports, "import_specifier", &pos);
@@ -2407,7 +2257,9 @@ static int do_named_imports(EditList *edits, const char *src, TSNode snode, TSNo
 
     /* temp module binding */
     sprintf(buf, "__tmpModImp%u", tmpn);
-    out = appendf(NULL, NULL, "var %s=require(\"%.*s\");", buf, (int)(mod_e - mod_s), src + mod_s);
+    rp_string *out = rp_string_new(64);
+
+    rp_string_appendf(out, "var %s=require(\"%.*s\");", buf, (int)(mod_e - mod_s), src + mod_s);
 
     /* each specifier: var <aliasOrName> = tmp.<name>; */
     while (!ts_node_is_null(spec))
@@ -2419,7 +2271,7 @@ static int do_named_imports(EditList *edits, const char *src, TSNode snode, TSNo
         {
             /* fallback: use raw slice */
             size_t s = ts_node_start_byte(spec), e = ts_node_end_byte(spec);
-            out = appendf(out, NULL, "var %.*s=%s.%.*s;", (int)(e - s), src + s, buf, (int)(e - s), src + s);
+            rp_string_appendf(out, "var %.*s=%s.%.*s;", (int)(e - s), src + s, buf, (int)(e - s), src + s);
         }
         else
         {
@@ -2427,12 +2279,12 @@ static int do_named_imports(EditList *edits, const char *src, TSNode snode, TSNo
             if (!ts_node_is_null(alias))
             {
                 size_t as = ts_node_start_byte(alias), ae = ts_node_end_byte(alias);
-                out = appendf(out, NULL, "var %.*s=%s.%.*s;", (int)(ae - as), src + as, /* alias binding on LHS */
+                rp_string_appendf(out, "var %.*s=%s.%.*s;", (int)(ae - as), src + as, /* alias binding on LHS */
                               buf, (int)(le - ls), src + ls);                           /* local name on RHS from tmp */
             }
             else
             {
-                out = appendf(out, NULL, "var %.*s=%s.%.*s;", (int)(le - ls), src + ls, /* same name */
+                rp_string_appendf(out, "var %.*s=%s.%.*s;", (int)(le - ls), src + ls, /* same name */
                               buf, (int)(le - ls), src + ls);
             }
         }
@@ -2440,8 +2292,9 @@ static int do_named_imports(EditList *edits, const char *src, TSNode snode, TSNo
         pos++;
         spec = find_child_type(named_imports, "import_specifier", &pos);
     }
+    add_edit_take_ownership(edits, start, end, rp_string_steal(out), claimed);
+    out=rp_string_free(out);
 
-    add_edit_take_ownership(edits, start, end, out, claimed);
     tmpn++;
     return 1;
 }
@@ -2449,7 +2302,7 @@ static int do_named_imports(EditList *edits, const char *src, TSNode snode, TSNo
 static int do_namespace_import(EditList *edits, const char *src, TSNode snode, TSNode namespace_import,
                                TSNode string_frag, size_t start, size_t end, uint32_t *polysneeded, RangeList *claimed)
 {
-    char *out = NULL;
+    rp_string *out;
     TSNode id = find_child_type(namespace_import, "identifier", NULL);
 
     if (ts_node_is_null(id))
@@ -2459,26 +2312,35 @@ static int do_namespace_import(EditList *edits, const char *src, TSNode snode, T
            id_end = ts_node_end_byte(id), id_start = ts_node_start_byte(id);
 
     // var math = _interopRequireWildcard(require("math"));
-    out = appendf(NULL, NULL, "var %.*s=_TrN_Sp._interopRequireWildcard(require(\"%.*s\"));", (id_end - id_start),
+    out=rp_string_new(0);
+    rp_string_appendf(out, "var %.*s=_TrN_Sp._interopRequireWildcard(require(\"%.*s\"));", (id_end - id_start),
                   src + id_start, (mod_name_end - mod_name_start), src + mod_name_start);
 
-    add_edit_take_ownership(edits, start, end, out, claimed);
+    add_edit_take_ownership(edits, start, end, rp_string_steal(out), claimed);
+
+    out = rp_string_free(out);
+
     *polysneeded |= IMPORT_PF;
+
     return 1;
 }
 
 static int do_default_import(EditList *edits, const char *src, TSNode snode, TSNode default_ident, TSNode string_frag,
                              size_t start, size_t end, RangeList *claimed)
 {
-    char *out = NULL;
+    rp_string *out;
     size_t mod_s = ts_node_start_byte(string_frag), mod_e = ts_node_end_byte(string_frag);
     size_t id_s = ts_node_start_byte(default_ident), id_e = ts_node_end_byte(default_ident);
 
     /* With our export lowering, default import is the entire module.exports */
-    out = appendf(NULL, NULL, "var %.*s=_TrN_Sp._interopDefault(require(\"%.*s\"));", (int)(id_e - id_s), src + id_s,
+    out=rp_string_new(0);
+    rp_string_appendf(out, "var %.*s=_TrN_Sp._interopDefault(require(\"%.*s\"));", (int)(id_e - id_s), src + id_s,
                   (int)(mod_e - mod_s), src + mod_s);
 
-    add_edit_take_ownership(edits, start, end, out, claimed);
+    add_edit_take_ownership(edits, start, end, rp_string_steal(out), claimed);
+
+    out = rp_string_free(out);
+
     return 1;
 }
 
@@ -2494,10 +2356,11 @@ static int do_default_and_named_imports(EditList *edits, const char *src, TSNode
     size_t id_s = ts_node_start_byte(default_ident), id_e = ts_node_end_byte(default_ident);
 
     /* require once */
-    char *out = appendf(NULL, NULL, "var %s=require(\"%.*s\");", tbuf, (int)(mod_e - mod_s), src + mod_s);
+    rp_string *out=rp_string_new(512);
+    rp_string_appendf(out, "var %s=require(\"%.*s\");", tbuf, (int)(mod_e - mod_s), src + mod_s);
 
     /* bind default: var def = __tmp;  (we lower default export to module.exports) */
-    out = appendf(out, NULL, "var %.*s=%s.default;", (int)(id_e - id_s), src + id_s, tbuf);
+    rp_string_appendf(out, "var %.*s=%s.default;", (int)(id_e - id_s), src + id_s, tbuf);
 
     /* named specifiers with aliases */
     uint32_t pos = 0;
@@ -2511,7 +2374,7 @@ static int do_default_and_named_imports(EditList *edits, const char *src, TSNode
         {
             /* fallback: raw slice */
             size_t s = ts_node_start_byte(spec), e = ts_node_end_byte(spec);
-            out = appendf(out, NULL, "var %.*s=%s.%.*s;", (int)(e - s), src + s, tbuf, (int)(e - s), src + s);
+            rp_string_appendf(out, "var %.*s=%s.%.*s;", (int)(e - s), src + s, tbuf, (int)(e - s), src + s);
         }
         else
         {
@@ -2519,12 +2382,12 @@ static int do_default_and_named_imports(EditList *edits, const char *src, TSNode
             if (!ts_node_is_null(alias))
             {
                 size_t as = ts_node_start_byte(alias), ae = ts_node_end_byte(alias);
-                out = appendf(out, NULL, "var %.*s=%s.%.*s;", (int)(ae - as), src + as, /* alias */
+                rp_string_appendf(out, "var %.*s=%s.%.*s;", (int)(ae - as), src + as, /* alias */
                               tbuf, (int)(le - ls), src + ls);                          /* local */
             }
             else
             {
-                out = appendf(out, NULL, "var %.*s=%s.%.*s;", (int)(le - ls), src + ls, /* same name */
+                rp_string_appendf(out, "var %.*s=%s.%.*s;", (int)(le - ls), src + ls, /* same name */
                               tbuf, (int)(le - ls), src + ls);
             }
         }
@@ -2533,7 +2396,8 @@ static int do_default_and_named_imports(EditList *edits, const char *src, TSNode
         spec = find_child_type(named_imports, "import_specifier", &pos);
     }
 
-    add_edit_take_ownership(edits, start, end, out, claimed);
+    add_edit_take_ownership(edits, start, end, rp_string_steal(out), claimed);
+    out = rp_string_free(out);
     tmpn++;
     return 1;
 }
@@ -3298,66 +3162,6 @@ static int rewrite_array_spread(EditList *edits, const char *src, TSNode arr, in
     return 1;
 }
 
-// ===== ES5 Unicode regex transformer (reintroduced) =====
-typedef struct
-{
-    char *s;
-    size_t len;
-    size_t cap;
-} SBuf;
-static void sb_init(SBuf *b)
-{
-    b->cap = 256;
-    b->len = 0;
-    b->s = (char *)malloc(b->cap);
-    b->s[0] = '\0';
-}
-static void sb_grow(SBuf *b, size_t need)
-{
-    if (b->len + need + 1 > b->cap)
-    {
-        while (b->len + need + 1 > b->cap)
-            b->cap = (b->cap < 4096 ? b->cap * 2 : b->cap + need + 1024);
-        b->s = (char *)realloc(b->s, b->cap);
-    }
-}
-static void sb_putc(SBuf *b, char c)
-{
-    sb_grow(b, 1);
-    b->s[b->len++] = c;
-    b->s[b->len] = '\0';
-}
-static void sb_puts(SBuf *b, const char *s)
-{
-    size_t n = strlen(s);
-    sb_grow(b, n);
-    memcpy(b->s + b->len, s, n);
-    b->len += n;
-    b->s[b->len] = '\0';
-}
-static void sb_putsn(SBuf *b, const char *s, size_t n)
-{
-    sb_grow(b, n);
-    memcpy(b->s + b->len, s, n);
-    b->len += n;
-    b->s[b->len] = '\0';
-}
-static void sb_put_u4(SBuf *b, unsigned u)
-{
-    char tmp[7];
-    snprintf(tmp, sizeof(tmp), "\\u%04X", u & 0xFFFFu);
-    sb_puts(b, tmp);
-}
-static void sb_free(SBuf *b)
-{
-    if (!b)
-        return;
-    if (b->s)
-        free(b->s);
-    b->s = NULL;
-    b->len = 0;
-    b->cap = 0;
-}
 
 // === Async/Await -> _TrN_Sp.asyncToGenerator + _TrN_Sp.regeneratorRuntime (compact style) ===
 typedef struct
@@ -3389,26 +3193,16 @@ static void _collect_awaits_shallow(TSNode node, _AsyncNodeVec *out)
     for (uint32_t i = 0; i < c; i++)
         _collect_awaits_shallow(ts_node_child(node, i), out);
 }
-static void _sb_put_slice(SBuf *b, const char *src, size_t s, size_t e)
-{
-    if (e > s)
-    {
-        sb_grow(b, e - s);
-        memcpy(b->s + b->len, src + s, e - s);
-        b->len += e - s;
-        b->s[b->len] = 0;
-    }
-}
 
 // Lower a statement containing 0..N awaits into state-machine steps
-static void _emit_stmt_async_lower(SBuf *dst, const char *src, size_t ss, size_t se, TSNode stmt_node,
+static void _emit_stmt_async_lower(rp_string *dst, const char *src, size_t ss, size_t se, TSNode stmt_node,
                                    int *p_next_label)
 {
     _AsyncNodeVec av = {0};
     _collect_awaits_shallow(stmt_node, &av);
     if (av.len == 0)
     {
-        _sb_put_slice(dst, src, ss, se);
+        rp_string_putsn(dst, src+ss, se-ss);
         if (av.a)
             free(av.a);
         return;
@@ -3422,8 +3216,9 @@ static void _emit_stmt_async_lower(SBuf *dst, const char *src, size_t ss, size_t
                 av.a[j] = t;
             }
     size_t cursor = ss;
-    SBuf acc;
-    sb_init(&acc);
+
+    rp_string *acc = rp_string_new(256);
+
     for (size_t k = 0; k < av.len; k++)
     {
         TSNode aw = av.a[k];
@@ -3434,42 +3229,48 @@ static void _emit_stmt_async_lower(SBuf *dst, const char *src, size_t ss, size_t
         char tmp[24];
         snprintf(tmp, sizeof(tmp), "%d", *p_next_label);
         // make sure there is a semicolon before writing context.next
+        if(dst->len)
         {
-            char *p = dst->s + dst->len-1;
-            while( p > dst->s && isspace(*p))
+            char *p = dst->str + dst->len-1;
+            while( p > dst->str && isspace(*p))
                 p--;
             if(*p!=';')
-                sb_putc(dst, ';');
+                rp_string_putc(dst, ';');
         }
-        sb_puts(dst, "_context.next = ");
-        sb_puts(dst, tmp);
-        sb_puts(dst, "; return (");
-        _sb_put_slice(dst, src, ts_node_start_byte(arg), ts_node_end_byte(arg));
-        sb_puts(dst, ");");
-        sb_puts(dst, " case ");
-        sb_puts(dst, tmp);
-        sb_puts(dst, ":");
+        rp_string_puts(dst, "_context.next = ");
+        rp_string_puts(dst, tmp);
+        rp_string_puts(dst, "; return (");
+
+        size_t as = ts_node_start_byte(arg), ae = ts_node_end_byte(arg);
+        rp_string_putsn(dst, src + as, ae-as);
+        rp_string_puts(dst, ");");
+        rp_string_puts(dst, " case ");
+        rp_string_puts(dst, tmp);
+        rp_string_puts(dst, ":");
+
         size_t aws = ts_node_start_byte(aw), awe = ts_node_end_byte(aw);
-        _sb_put_slice(&acc, src, cursor, aws);
-        sb_puts(&acc, "_context.sent");
+        rp_string_putsn(acc, src+cursor, aws-cursor);
+        rp_string_puts(acc, "_context.sent");
         cursor = awe;
     }
-    _sb_put_slice(&acc, src, cursor, se);
-    sb_puts(dst, acc.s);
-    if (acc.len == 0 || acc.s[acc.len - 1] != ';')
-        sb_puts(dst, ";");
-    sb_free(&acc);
+    rp_string_putsn(acc, src+cursor, se-cursor);
+    rp_string_puts(dst, acc->str);
+    if (acc->len == 0 || acc->str[acc->len - 1] != ';')
+        rp_string_puts(dst, ";");
+    acc = rp_string_free(acc);
+    if (av.a)
+        free(av.a);
 }
 
 // Build the body: return _TrN_Sp.regeneratorRuntime.wrap(function
 // _callee$(_context){while(1){switch(_context.prev=_context.next){case 0: ... }} , _callee);
 static char *_build_regenerator_switch_body(const char *src, TSNode body)
 {
-    SBuf out;
-    sb_init(&out);
+    rp_string *out = rp_string_new(384);
+
     int next_label = 0;
-    sb_puts(
-        &out,
+    rp_string_puts(
+        out,
         "return _TrN_Sp.regeneratorRuntime.wrap(function _callee$(_context){while(1){switch(_context.prev=_context.next){case 0:");
     const char *bt = ts_node_type(body);
     if (strcmp(bt, "statement_block") == 0)
@@ -3510,64 +3311,68 @@ static char *_build_regenerator_switch_body(const char *src, TSNode body)
                 ss--;
 
             if (!has_await && next_has_await && i == 0)
-                _sb_put_slice(&out, src, ss, se);
+                rp_string_putsn(out, src+ss, se-ss);
             else if (has_await)
-                _emit_stmt_async_lower(&out, src, ss, se, stmt, &next_label);
+                _emit_stmt_async_lower(out, src, ss, se, stmt, &next_label);
             else
-                _sb_put_slice(&out, src, ss, se);
+                rp_string_putsn(out, src+ss, se-ss);
         }
     }
     else
     {
         TSNode expr = body;
         size_t ss = ts_node_start_byte(expr), se = ts_node_end_byte(expr);
-        SBuf tmp;
-        sb_init(&tmp);
-        _emit_stmt_async_lower(&tmp, src, ss, se, expr, &next_label);
-        if (strstr(tmp.s, "_context.next") == NULL)
+        rp_string *tmp = rp_string_new(64);
+        _emit_stmt_async_lower(tmp, src, ss, se, expr, &next_label);
+        if (strstr(tmp->str, "_context.next") == NULL)
         {
-            sb_puts(&out, " return ");
-            sb_puts(&out, tmp.s);
-            sb_puts(&out, ";");
+            rp_string_puts(out, " return ");
+            rp_string_puts(out, tmp->str);
+            rp_string_puts(out, ";");
         }
         else
         {
-            //sb_puts(&out, "\n  ");
-            sb_puts(&out, tmp.s);
+            //rp_string_puts(out, "\n  ");
+            rp_string_puts(out, tmp->str);
         }
-        sb_free(&tmp);
+        tmp = rp_string_free(tmp);
     }
     int end_label = next_label + 3;
     char etmp[24];
     snprintf(etmp, sizeof(etmp), "%d", end_label);
     // make sure there is a semicolon before writing case
+    if(out->len)
     {
-        char *p = out.s + out.len-1;
-        while( p > out.s && isspace(*p))
+        char *p = out->str + out->len-1;
+        while( p > out->str && isspace(*p))
             p--;
         if(*p!=';')
-            sb_putc(&out, ';');
+            rp_string_putc(out, ';');
     }
-    sb_puts(&out, "case ");
-    sb_puts(&out, etmp);
-    sb_puts(&out, ":case \"end\":return _context.stop();}}}, _callee);");
-    return out.s;
+    rp_string_puts(out, "case ");
+    rp_string_puts(out, etmp);
+    rp_string_puts(out, ":case \"end\":return _context.stop();}}}, _callee);");
+    char *ret = rp_string_steal(out);
+    out=rp_string_free(out);
+    return ret;
 }
-static void _append_params_sig(SBuf *out, const char *src, TSNode func_like)
+static void _append_params_sig(rp_string *out, const char *src, TSNode func_like)
 {
     TSNode params = ts_node_child_by_field_name(func_like, "parameters", 10);
     if (!ts_node_is_null(params)) {
-        _sb_put_slice(out, src, ts_node_start_byte(params), ts_node_end_byte(params));
+        size_t s = ts_node_start_byte(params), e=ts_node_end_byte(params);
+        rp_string_putsn(out, src+s, e-s);
         return;
     }
     TSNode param = ts_node_child_by_field_name(func_like, "parameter", 9);
     if (!ts_node_is_null(param)) {
-        sb_puts(out, "(");
-        _sb_put_slice(out, src, ts_node_start_byte(param), ts_node_end_byte(param));
-        sb_puts(out, ")");
+        size_t s = ts_node_start_byte(params), e=ts_node_end_byte(params);
+        rp_string_puts(out, "(");
+        rp_string_putsn(out, src+s, e-s);
+        rp_string_putc(out, ')');
         return;
     }
-    sb_puts(out, "()");
+    rp_string_puts(out, "()");
 }
 
 // Emitters: declaration and expression
@@ -3583,68 +3388,75 @@ static char *_emit_async_decl_replacement(const char *src, TSNode node)
         ns = ts_node_start_byte(name);
         ne = ts_node_end_byte(name);
     }
-    SBuf out;
-    sb_init(&out);
-    sb_puts(&out, "function ");
+
+    rp_string *out = rp_string_new(64);
+
+    rp_string_puts(out, "function ");
     if (!ts_node_is_null(name))
-        _sb_put_slice(&out, src, ns, ne);
+        rp_string_putsn(out, src+ns, ne-ns);
     else
-        sb_puts(&out, fallback);
-    sb_puts(&out, "() { return _");
+        rp_string_puts(out, fallback);
+    rp_string_puts(out, "() { return _");
     if (!ts_node_is_null(name))
-        _sb_put_slice(&out, src, ns, ne);
+        rp_string_putsn(out, src+ns, ne-ns);
     else
-        sb_puts(&out, fallback);
-    sb_puts(&out, ".apply(this, arguments); };");
-    sb_puts(&out, "function _");
+        rp_string_puts(out, fallback);
+    rp_string_puts(out, ".apply(this, arguments); };");
+    rp_string_puts(out, "function _");
     if (!ts_node_is_null(name))
-        _sb_put_slice(&out, src, ns, ne);
+        rp_string_putsn(out, src+ns, ne-ns);
     else
-        sb_puts(&out, fallback);
-    sb_puts(&out, "() {_");
+        rp_string_puts(out, fallback);
+    rp_string_puts(out, "() {_");
     if (!ts_node_is_null(name))
-        _sb_put_slice(&out, src, ns, ne);
+        rp_string_putsn(out, src+ns, ne-ns);
     else
-        sb_puts(&out, fallback);
-    sb_puts(&out, " = _TrN_Sp.asyncToGenerator(_TrN_Sp.regeneratorRuntime.mark(function _callee");
-    _append_params_sig(&out, src, node);
-    sb_puts(&out, " {");
+        rp_string_puts(out, fallback);
+    rp_string_puts(out, " = _TrN_Sp.asyncToGenerator(_TrN_Sp.regeneratorRuntime.mark(function _callee");
+    _append_params_sig(out, src, node);
+    rp_string_puts(out, " {");
     char *wrap = _build_regenerator_switch_body(src, body);
     if (!wrap)
     {
-        sb_free(&out);
+        out=rp_string_free(out);
         return NULL;
     }
-    sb_puts(&out, wrap);
+    rp_string_puts(out, wrap);
     free(wrap);
-    sb_puts(&out, "}));return _");
+    rp_string_puts(out, "}));return _");
     if (!ts_node_is_null(name))
-        _sb_put_slice(&out, src, ns, ne);
+        rp_string_putsn(out, src+ns, ne-ns);
     else
-        sb_puts(&out, fallback);
-    sb_puts(&out, ".apply(this, arguments);}");
-    return out.s;
+        rp_string_puts(out, fallback);
+    rp_string_puts(out, ".apply(this, arguments);}");
+
+    char *ret = rp_string_steal(out);
+    out = rp_string_free(out);
+    return ret;
 }
 static char *_emit_async_expr_replacement(const char *src, TSNode node)
 {
     TSNode body = ts_node_child_by_field_name(node, "body", 4);
     if (ts_node_is_null(body))
         return NULL;
-    SBuf out;
-    sb_init(&out);
-    sb_puts(&out, "(function(){var _ref = _TrN_Sp.asyncToGenerator(_TrN_Sp.regeneratorRuntime.mark(function _callee");
-    _append_params_sig(&out, src, node);
-    sb_puts(&out, " {");
+
+    rp_string *out = rp_string_new(768);
+    rp_string_puts(out, "(function(){var _ref = _TrN_Sp.asyncToGenerator(_TrN_Sp.regeneratorRuntime.mark(function _callee");
+    _append_params_sig(out, src, node);
+    rp_string_puts(out, " {");
     char *wrap = _build_regenerator_switch_body(src, body);
     if (!wrap)
     {
-        sb_free(&out);
+        out = rp_string_free(out);
         return NULL;
     }
-    sb_puts(&out, wrap);
+    rp_string_puts(out, wrap);
     free(wrap);
-    sb_puts(&out, "})); return function(){ return _ref.apply(this, arguments); };})()");
-    return out.s;
+    rp_string_puts(out, "})); return function(){ return _ref.apply(this, arguments); };})()");
+
+    char *ret = rp_string_steal(out);
+    out = rp_string_free(out);
+    return ret;
 }
 
 static char *_emit_async_method_replacement(const char *src, TSNode node)
@@ -3655,40 +3467,43 @@ static char *_emit_async_method_replacement(const char *src, TSNode node)
     if (ts_node_is_null(body) || ts_node_is_null(nname))
         return NULL;
     size_t ns = ts_node_start_byte(nname), ne = ts_node_end_byte(nname);
-    SBuf out;
-    sb_init(&out);
+    rp_string *out = rp_string_new(512);
+
     // property label: <name>:
-    _sb_put_slice(&out, src, ns, ne);
-    sb_puts(&out, ": ");
+    rp_string_putsn(out, src+ns, ne-ns);
+    rp_string_puts(out, ": ");
     // value: (function(){ var _ref = asyncToGenerator(mark(function <name>(params){...}));
     //                     return function <name>(params){ return _ref.apply(this, arguments); };})()
-    sb_puts(&out, "(function(){var _ref = _TrN_Sp.asyncToGenerator(_TrN_Sp.regeneratorRuntime.mark(function ");
+    rp_string_puts(out, "(function(){var _ref = _TrN_Sp.asyncToGenerator(_TrN_Sp.regeneratorRuntime.mark(function ");
     // Try to preserve method name in inner generator function for stack traces
     // When name is not an identifier (e.g., string literal), fallback to _callee
     const char *nt = ts_node_type(nname);
     int named = (strcmp(nt, "property_identifier") == 0 || strcmp(nt, "identifier") == 0);
     if (named)
-        _sb_put_slice(&out, src, ns, ne);
+        rp_string_putsn(out, src+ns, ne-ns);
     else
-        sb_puts(&out, "_callee");
-    _append_params_sig(&out, src, node);
-    sb_puts(&out, " {");
+        rp_string_puts(out, "_callee");
+    _append_params_sig(out, src, node);
+    rp_string_puts(out, " {");
     char *wrap = _build_regenerator_switch_body(src, body);
     if (!wrap)
     {
-        sb_free(&out);
+        out=rp_string_free(out);
         return NULL;
     }
-    sb_puts(&out, wrap);
+    rp_string_puts(out, wrap);
     free(wrap);
-    sb_puts(&out, "})); return function ");
+    rp_string_puts(out, "})); return function ");
     if (named)
-        _sb_put_slice(&out, src, ns, ne);
+        rp_string_putsn(out, src+ns, ne-ns);
     else
-        sb_puts(&out, "_callee");
-    _append_params_sig(&out, src, node);
-    sb_puts(&out, " { return _ref.apply(this, arguments); };})()");
-    return out.s;
+        rp_string_puts(out, "_callee");
+    _append_params_sig(out, src, node);
+    rp_string_puts(out, " { return _ref.apply(this, arguments); };})()");
+
+    char *ret = rp_string_steal(out);
+    out=rp_string_free(out);
+    return ret;
 }
 
 static int _is_async_function_like(TSNode node)
@@ -3736,7 +3551,7 @@ static int rewrite_async_await_to_regenerator(EditList *edits, const char *src, 
 // === End async/await pass ===
 
 // let/const -> var (token edit)
-static void collect_ids_from_pattern(const char *src, TSNode name_node, SBuf *params, SBuf *args)
+static void collect_ids_from_pattern(const char *src, TSNode name_node, rp_string *params, rp_string *args)
 {
     // Simple fixed-size stack; grow if needed
     TSNode stack[256];
@@ -3754,11 +3569,11 @@ static void collect_ids_from_pattern(const char *src, TSNode name_node, SBuf *pa
             size_t ne = ts_node_end_byte(cur);
             if (!first)
             {
-                sb_puts(params, ",");
-                sb_puts(args, ",");
+                rp_string_putc(params, ',');
+                rp_string_putc(args, ',');
             }
-            sb_putsn(params, src + ns, ne - ns);
-            sb_putsn(args, src + ns, ne - ns);
+            rp_string_putsn(params, src + ns, ne - ns);
+            rp_string_putsn(args, src + ns, ne - ns);
             first = 0;
             continue;
         }
@@ -3842,10 +3657,9 @@ static int rewrite_lexical_declaration(EditList *edits, const char *src, TSNode 
             if (!ts_node_is_null(init) && ts_node_start_byte(init) == ts_node_start_byte(lexical_decl))
             {
                 // Collect identifiers from all declarators (destructuring supported)
-                SBuf params;
-                sb_init(&params);
-                SBuf args;
-                sb_init(&args);
+                rp_string *params = rp_string_new(64);
+                rp_string *args = rp_string_new(64);
+
                 uint32_t nchild = ts_node_child_count(lexical_decl);
                 for (uint32_t k = 0; k < nchild; k++)
                 {
@@ -3854,11 +3668,11 @@ static int rewrite_lexical_declaration(EditList *edits, const char *src, TSNode 
                     {
                         TSNode name = ts_node_child_by_field_name(dec, "name", 4);
                         if (!ts_node_is_null(name))
-                            collect_ids_from_pattern(src, name, &params, &args);
+                            collect_ids_from_pattern(src, name, params, args);
                     }
                 }
 
-                if (params.len > 0)
+                if (params->len > 0)
                 {
                     TSNode body = ts_node_child_by_field_name(parent, "body", 4);
                     if (!ts_node_is_null(body))
@@ -3867,34 +3681,32 @@ static int rewrite_lexical_declaration(EditList *edits, const char *src, TSNode 
                         size_t be = ts_node_end_byte(body);
                         int is_block = (strcmp(ts_node_type(body), "statement_block") == 0);
 
-                        SBuf pref;
-                        sb_init(&pref);
-                        SBuf suff;
-                        sb_init(&suff);
-                        sb_puts(&pref, "(function(");
-                        sb_putsn(&pref, params.s ? params.s : "", params.len);
-                        sb_puts(&pref, "){ ");
-                        sb_puts(&suff, " })( ");
-                        sb_putsn(&suff, args.s ? args.s : "", args.len);
-                        sb_puts(&suff, " );");
+                        rp_string *pref = rp_string_new(64);
+                        rp_string *suff = rp_string_new(64);
+                        rp_string_puts(pref, "(function(");
+                        rp_string_putsn(pref, params->str ? params->str : "", params->len);
+                        rp_string_puts(pref, "){ ");
+                        rp_string_puts(suff, " })( ");
+                        rp_string_putsn(suff, args->str ? args->str : "", args->len);
+                        rp_string_puts(suff, " );");
 
                         if (is_block)
                         {
-                            add_edit(edits, bs + 1, bs + 1, pref.s, claimed);
-                            add_edit(edits, be - 1, be - 1, suff.s, claimed);
+                            add_edit_take_ownership(edits, bs + 1, bs + 1, rp_string_steal(pref), claimed);
+                            add_edit_take_ownership(edits, be - 1, be - 1, rp_string_steal(suff), claimed);
                         }
                         else
                         {
-                            add_edit(edits, bs, bs, pref.s, claimed);
-                            add_edit(edits, be, be, suff.s, claimed);
+                            add_edit_take_ownership(edits, bs, bs, rp_string_steal(pref), claimed);
+                            add_edit_take_ownership(edits, be, be, rp_string_steal(suff), claimed);
                         }
-                        sb_free(&pref);
-                        sb_free(&suff);
+                        pref=rp_string_free(pref);
+                        suff=rp_string_free(suff);
                     }
                 }
 
-                sb_free(&params);
-                sb_free(&args);
+                params = rp_string_free(params);
+                args = rp_string_free(args);
             }
         }
         else
@@ -3928,16 +3740,8 @@ static int rewrite_lexical_declaration(EditList *edits, const char *src, TSNode 
                 size_t be = ts_node_end_byte(block);
                 if (!span_has_flow_ctrl_tokens(src, bs, be))
                 {
-                    SBuf pref;
-                    sb_init(&pref);
-                    SBuf suff;
-                    sb_init(&suff);
-                    sb_puts(&pref, "(function(){ ");
-                    sb_puts(&suff, " }());");
-                    add_edit(edits, bs + 1, bs + 1, pref.s, claimed);
-                    add_edit(edits, be - 1, be - 1, suff.s, claimed);
-                    sb_free(&pref);
-                    sb_free(&suff);
+                    add_edit(edits, bs + 1, bs + 1, "(function(){ ", claimed);
+                    add_edit(edits, be - 1, be - 1, " }());", claimed);
                 }
             }
 
@@ -4114,50 +3918,49 @@ static int rewrite_for_of_destructuring(EditList *edits, const char *src, TSNode
 
     int is_block = (strcmp(ts_node_type(body), "statement_block") == 0);
 
-    SBuf out;
-    sb_init(&out);
+    rp_string *out = rp_string_new(256);
 
     // _loop declaration
-    sb_puts(&out, "var _loop = function _loop() { var _pairs$_i = _TrN_Sp.slicedToArray(_pairs[_i], ");
-    char numbuf[32];
-    snprintf(numbuf, sizeof(numbuf), "%d", N);
-    sb_puts(&out, numbuf);
-    sb_puts(&out, "), ");
+    rp_string_puts(out, "var _loop = function _loop() { var _pairs$_i = _TrN_Sp.slicedToArray(_pairs[_i], ");
+    rp_string_appendf(out, "%d", N);
+    rp_string_puts(out, "), ");
 
     // bindings: a = _pairs$_i[0], b = _pairs$_i[1];
     for (size_t k = 0; k < alen; k++)
     {
         if (k)
-            sb_puts(&out, ",");
-        sb_puts(&out, arr[k].name);
-        sb_puts(&out, " = _pairs$_i[");
+            rp_string_puts(out, ",");
+        rp_string_puts(out, arr[k].name);
+        rp_string_puts(out, " = _pairs$_i[");
         char ibuf[32];
         snprintf(ibuf, sizeof(ibuf), "%d", arr[k].index);
-        sb_puts(&out, ibuf);
-        sb_puts(&out, "]");
+        rp_string_puts(out, ibuf);
+        rp_string_puts(out, "]");
     }
-    sb_puts(&out, "; ");
+    rp_string_puts(out, "; ");
 
     // body content
     if (is_block)
     {
         // insert inner of block
-        sb_putsn(&out, src + bs + 1, (be - 1) - (bs + 1));
-        sb_puts(&out, " }; ");
+        rp_string_putsn(out, src + bs + 1, (be - 1) - (bs + 1));
+        rp_string_puts(out, " }; ");
     }
     else
     {
-        sb_putsn(&out, src + bs, be - bs);
-        sb_puts(&out, "; }; ");
+        rp_string_putsn(out, src + bs, be - bs);
+        rp_string_puts(out, "; }; ");
     }
 
     // for loop header using array length
-    sb_puts(&out, "for (var _i = 0, _pairs = ");
-    sb_putsn(&out, src + rs, re - rs);
-    sb_puts(&out, "; _i < _pairs.length; _i++) { _loop(); }");
+    rp_string_puts(out, "for (var _i = 0, _pairs = ");
+    rp_string_putsn(out, src + rs, re - rs);
+    rp_string_puts(out, "; _i < _pairs.length; _i++) { _loop(); }");
 
     // Replace entire for-of statement
-    add_edit_take_ownership(edits, fs, fe, out.s, claimed);
+    add_edit_take_ownership(edits, fs, fe, rp_string_steal(out), claimed);
+
+    out = rp_string_free(out);
 
     // cleanup
     for (size_t k = 0; k < alen; k++)
@@ -4186,10 +3989,15 @@ static void cp_to_surrogates_ul(unsigned long cp, unsigned *hi, unsigned *lo)
     *lo = 0xDC00u + (unsigned)(v & 0x3FFu);
 }
 
+static inline void _rp_string_put_u4(rp_string *out, unsigned x)
+{
+    rp_string_appendf(out, "\\u%04X", x & 0xFFFFu);
+}
+
 static const char *BIG_DOT =
     "(?:[\\0-\\t\\x0B\\f\\x0E-\\u2027\\u202A-\\uD7FF\\uE000-\\uFFFF]|[\\uD800-\\uDBFF][\\uDC00-\\uDFFF]|[\\uD800-\\uDBFF](?![\\uDC00-\\uDFFF])|(?:[^\\uD800-\\uDBFF]|^)[\\uDC00-\\uDFFF])";
 
-static void append_astral_range(SBuf *out, unsigned long a, unsigned long z)
+static void append_astral_range(rp_string *out, unsigned long a, unsigned long z)
 {
     unsigned ha, la, hz, lz;
     cp_to_surrogates_ul(a, &ha, &la);
@@ -4197,55 +4005,55 @@ static void append_astral_range(SBuf *out, unsigned long a, unsigned long z)
 
     if (ha == hz)
     {
-        sb_puts(out, "(?:");
-        sb_put_u4(out, ha);
-        sb_putc(out, '[');
-        sb_put_u4(out, la);
-        sb_putc(out, '-');
-        sb_put_u4(out, lz);
-        sb_putc(out, ']');
-        sb_putc(out, ')');
+        rp_string_puts(out, "(?:");
+        _rp_string_put_u4(out, ha);
+        rp_string_putc(out, '[');
+        _rp_string_put_u4(out, la);
+        rp_string_putc(out, '-');
+        _rp_string_put_u4(out, lz);
+        rp_string_putc(out, ']');
+        rp_string_putc(out, ')');
         return;
     }
 
     /* first block: ha [la-DFFF] */
-    sb_puts(out, "(?:");
-    sb_put_u4(out, ha);
-    sb_putc(out, '[');
-    sb_put_u4(out, la);
-    sb_putc(out, '-');
-    sb_put_u4(out, 0xDFFFu);
-    sb_putc(out, ']');
-    sb_putc(out, ')');
+    rp_string_puts(out, "(?:");
+    _rp_string_put_u4(out, ha);
+    rp_string_putc(out, '[');
+    _rp_string_put_u4(out, la);
+    rp_string_putc(out, '-');
+    _rp_string_put_u4(out, 0xDFFFu);
+    rp_string_putc(out, ']');
+    rp_string_putc(out, ')');
 
     /* middle blocks: [ha+1 - hz-1][DC00-DFFF] */
     if (ha + 1 <= hz - 1)
     {
-        sb_putc(out, '|');
-        sb_puts(out, "(?:");
-        sb_putc(out, '[');
-        sb_put_u4(out, ha + 1);
-        sb_putc(out, '-');
-        sb_put_u4(out, hz - 1);
-        sb_putc(out, ']');
-        sb_putc(out, '[');
-        sb_put_u4(out, 0xDC00u);
-        sb_putc(out, '-');
-        sb_put_u4(out, 0xDFFFu);
-        sb_putc(out, ']');
-        sb_putc(out, ')');
+        rp_string_putc(out, '|');
+        rp_string_puts(out, "(?:");
+        rp_string_putc(out, '[');
+        _rp_string_put_u4(out, ha + 1);
+        rp_string_putc(out, '-');
+        _rp_string_put_u4(out, hz - 1);
+        rp_string_putc(out, ']');
+        rp_string_putc(out, '[');
+        _rp_string_put_u4(out, 0xDC00u);
+        rp_string_putc(out, '-');
+        _rp_string_put_u4(out, 0xDFFFu);
+        rp_string_putc(out, ']');
+        rp_string_putc(out, ')');
     }
 
     /* last block: hz [DC00-lz] */
-    sb_putc(out, '|');
-    sb_puts(out, "(?:");
-    sb_put_u4(out, hz);
-    sb_putc(out, '[');
-    sb_put_u4(out, 0xDC00u);
-    sb_putc(out, '-');
-    sb_put_u4(out, lz);
-    sb_putc(out, ']');
-    sb_putc(out, ')');
+    rp_string_putc(out, '|');
+    rp_string_puts(out, "(?:");
+    _rp_string_put_u4(out, hz);
+    rp_string_putc(out, '[');
+    _rp_string_put_u4(out, 0xDC00u);
+    rp_string_putc(out, '-');
+    _rp_string_put_u4(out, lz);
+    rp_string_putc(out, ']');
+    rp_string_putc(out, ')');
 }
 
 static char *rewrite_class_es5(const char *s, size_t len, size_t *i)
@@ -4261,10 +4069,8 @@ static char *rewrite_class_es5(const char *s, size_t len, size_t *i)
         p++;
     }
 
-    SBuf bmp;
-    sb_init(&bmp);
-    SBuf astral;
-    sb_init(&astral);
+    rp_string *bmp = rp_string_new(64);
+    rp_string *astral= rp_string_new(64);
 
     int esc = 0;
     int first = 1;
@@ -4283,13 +4089,13 @@ static char *rewrite_class_es5(const char *s, size_t len, size_t *i)
             {                                                                                                          \
                 if (pend_cp <= 0xFFFFUL)                                                                               \
                 {                                                                                                      \
-                    sb_put_u4(&bmp, (unsigned)pend_cp);                                                                \
+                    _rp_string_put_u4(bmp, pend_cp);                                                                   \
                 }                                                                                                      \
                 else                                                                                                   \
                 {                                                                                                      \
-                    if (astral.len)                                                                                    \
-                        sb_putc(&astral, '|');                                                                         \
-                    append_astral_range(&astral, pend_cp, pend_cp);                                                    \
+                    if (astral->len)                                                                                   \
+                        rp_string_putc(astral, '|');                                                                   \
+                    append_astral_range(astral, pend_cp, pend_cp);                                                     \
                 }                                                                                                      \
             }                                                                                                          \
             pending = 0;                                                                                               \
@@ -4313,7 +4119,7 @@ static char *rewrite_class_es5(const char *s, size_t len, size_t *i)
             {
                 if (have_dash)
                 {
-                    sb_putc(&bmp, '-');
+                    rp_string_putc(bmp, '-');
                     have_dash = 0;
                 }
                 p++;
@@ -4338,17 +4144,17 @@ static char *rewrite_class_es5(const char *s, size_t len, size_t *i)
                 }
                 if (a <= 0xFFFFUL && b <= 0xFFFFUL)
                 {
-                    sb_put_u4(&bmp, (unsigned)a);
-                    sb_putc(&bmp, '-');
-                    sb_put_u4(&bmp, (unsigned)b);
+                    _rp_string_put_u4(bmp, a);
+                    rp_string_putc(bmp, '-');
+                    _rp_string_put_u4(bmp, b);
                 }
                 else
                 {
                     if (a < 0x10000UL)
                         a = 0x10000UL;
-                    if (astral.len)
-                        sb_putc(&astral, '|');
-                    append_astral_range(&astral, a, b);
+                    if (astral->len)
+                        rp_string_putc(astral, '|');
+                    append_astral_range(astral, a, b);
                 }
                 pending = 0;
                 pend_is_cp = 0;
@@ -4441,7 +4247,7 @@ static char *rewrite_class_es5(const char *s, size_t len, size_t *i)
                     if (!pending || !pend_is_cp)
                     {
                         have_dash = 0;
-                        sb_putc(&bmp, '-');
+                        rp_string_putc(bmp, '-');
                         EMIT_PENDING();
                         pending = 1;
                         pend_is_cp = 1;
@@ -4458,17 +4264,17 @@ static char *rewrite_class_es5(const char *s, size_t len, size_t *i)
                         }
                         if (a <= 0xFFFFUL && b <= 0xFFFFUL)
                         {
-                            sb_put_u4(&bmp, (unsigned)a);
-                            sb_putc(&bmp, '-');
-                            sb_put_u4(&bmp, (unsigned)b);
+                            _rp_string_put_u4(bmp, a);
+                            rp_string_putc(bmp, '-');
+                            _rp_string_put_u4(bmp, b);
                         }
                         else
                         {
                             if (a < 0x10000UL)
                                 a = 0x10000UL;
-                            if (astral.len)
-                                sb_putc(&astral, '|');
-                            append_astral_range(&astral, a, b);
+                            if (astral->len)
+                                rp_string_putc(astral, '|');
+                            append_astral_range(astral, a, b);
                         }
                         pending = 0;
                         pend_is_cp = 0;
@@ -4482,8 +4288,8 @@ static char *rewrite_class_es5(const char *s, size_t len, size_t *i)
             else
             {
                 EMIT_PENDING();
-                sb_putc(&bmp, '\\');
-                sb_putc(&bmp, s[savep]);
+                rp_string_putc(bmp, '\\');
+                rp_string_putc(bmp, s[savep]);
                 p = savep + 1;
                 esc = 0;
                 continue;
@@ -4494,61 +4300,63 @@ static char *rewrite_class_es5(const char *s, size_t len, size_t *i)
     EMIT_PENDING();
     if (have_dash)
     {
-        sb_putc(&bmp, '-');
+        rp_string_putc(bmp, '-');
         have_dash = 0;
     }
 
-    SBuf out;
-    sb_init(&out);
+    rp_string *out = rp_string_new(64);;
     if (!neg)
     {
-        if (astral.len == 0)
+        if (astral->len == 0)
         {
-            sb_putc(&out, '[');
-            sb_putsn(&out, bmp.s, bmp.len);
-            sb_putc(&out, ']');
+            rp_string_putc(out, '[');
+            rp_string_putsn(out, bmp->str, bmp->len);
+            rp_string_putc(out, ']');
         }
         else
         {
-            sb_puts(&out, "(?:");
-            if (bmp.len)
+            rp_string_puts(out, "(?:");
+            if (bmp->len)
             {
-                sb_putc(&out, '[');
-                sb_putsn(&out, bmp.s, bmp.len);
-                sb_putc(&out, ']');
-                sb_putc(&out, '|');
+                rp_string_putc(out, '[');
+                rp_string_putsn(out, bmp->str, bmp->len);
+                rp_string_putc(out, ']');
+                rp_string_putc(out, '|');
             }
-            sb_putsn(&out, astral.s, astral.len);
-            sb_putc(&out, ')');
+            rp_string_putsn(out, astral->str, astral->len);
+            rp_string_putc(out, ')');
         }
     }
     else
     {
-        sb_puts(&out, "(?:");
-        sb_puts(&out, "[^\\uD800-\\uDFFF");
-        if (bmp.len)
-            sb_putsn(&out, bmp.s, bmp.len);
-        sb_putc(&out, ']');
-        sb_putc(&out, '|');
-        if (astral.len)
+        rp_string_puts(out, "(?:");
+        rp_string_puts(out, "[^\\uD800-\\uDFFF");
+        if (bmp->len)
+            rp_string_putsn(out, bmp->str, bmp->len);
+        rp_string_putc(out, ']');
+        rp_string_putc(out, '|');
+        if (astral->len)
         {
-            sb_puts(&out, "(?!");
-            sb_putsn(&out, astral.s, astral.len);
-            sb_putc(&out, ')');
+            rp_string_puts(out, "(?!");
+            rp_string_putsn(out, astral->str, astral->len);
+            rp_string_putc(out, ')');
         }
-        sb_puts(&out, "(?:[\\uD800-\\uDBFF][\\uDC00-\\uDFFF])");
-        sb_putc(&out, ')');
+        rp_string_puts(out, "(?:[\\uD800-\\uDBFF][\\uDC00-\\uDFFF])");
+        rp_string_putc(out, ')');
     }
-    free(bmp.s);
-    free(astral.s);
+    bmp = rp_string_free(bmp);
+    astral = rp_string_free(astral);
     *i = p;
-    return out.s;
+
+    char *ret = rp_string_steal(out);
+    out = rp_string_free(out);
+    return ret;
 }
 
+// ===== ES5 Unicode regex transformer  =====
 static char *regex_u_to_es5_pattern(const char *in, size_t len)
 {
-    SBuf out;
-    sb_init(&out);
+    rp_string *out = rp_string_new(256);
     int esc = 0;
     for (size_t i = 0; i < len;)
     {
@@ -4558,7 +4366,7 @@ static char *regex_u_to_es5_pattern(const char *in, size_t len)
             if (c == '\\')
             {
                 esc = 1;
-                sb_putc(&out, '\\');
+                rp_string_putc(out, '\\');
                 i++;
                 continue;
             }
@@ -4567,20 +4375,20 @@ static char *regex_u_to_es5_pattern(const char *in, size_t len)
                 char *cls = rewrite_class_es5(in, len, &i);
                 if (!cls)
                 {
-                    free(out.s);
+                    out = rp_string_free(out);
                     return NULL;
                 }
-                sb_puts(&out, cls);
+                rp_string_puts(out, cls);
                 free(cls);
                 continue;
             }
             if (c == '.')
             {
-                sb_puts(&out, BIG_DOT);
+                rp_string_puts(out, BIG_DOT);
                 i++;
                 continue;
             }
-            sb_putc(&out, c);
+            rp_string_putc(out, c);
             i++;
             continue;
         }
@@ -4589,8 +4397,8 @@ static char *regex_u_to_es5_pattern(const char *in, size_t len)
             size_t j = i + 1;
             if (in[i] == 'u' && j < len && in[j] == '{')
             {
-                out.len--;
-                out.s[out.len] = '\0';
+                out->len--;
+                out->str[out->len] = '\0';
                 unsigned long cp = 0;
                 int hv;
                 j++;
@@ -4599,32 +4407,32 @@ static char *regex_u_to_es5_pattern(const char *in, size_t len)
                     hv = hexv((unsigned char)in[j++]);
                     if (hv < 0)
                     {
-                        free(out.s);
+                        out = rp_string_free(out);;
                         return NULL;
                     }
                     cp = (cp << 4) + hv;
                     if (cp > 0x10FFFFUL)
                     {
-                        free(out.s);
+                        out = rp_string_free(out);
                         return NULL;
                     }
                 }
                 if (j >= len || in[j] != '}')
                 {
-                    free(out.s);
+                    out = rp_string_free(out);
                     return NULL;
                 }
                 j++;
                 if (cp <= 0xFFFFUL)
                 {
-                    sb_put_u4(&out, (unsigned)cp);
+                    _rp_string_put_u4(out, (unsigned)cp);
                 }
                 else
                 {
                     unsigned hi, lo;
                     cp_to_surrogates_ul(cp, &hi, &lo);
-                    sb_put_u4(&out, hi);
-                    sb_put_u4(&out, lo);
+                    _rp_string_put_u4(out, hi);
+                    _rp_string_put_u4(out, lo);
                 }
                 i = j;
                 esc = 0;
@@ -4632,14 +4440,16 @@ static char *regex_u_to_es5_pattern(const char *in, size_t len)
             }
             else
             {
-                sb_putc(&out, in[i]);
+                rp_string_putc(out, in[i]);
                 i++;
                 esc = 0;
                 continue;
             }
         }
     }
-    return out.s;
+    char *ret = rp_string_steal(out);
+    out = rp_string_free(out);
+    return ret;
 }
 
 /* === ES6 class -> ES5 function/prototype rewrite (minimal) ===
@@ -4651,8 +4461,7 @@ static char *regex_u_to_es5_pattern(const char *in, size_t len)
      - `super.foo(...)` inside methods is not handled (only bare `super(...)` in constructor).
 */
 
-/* Helper: emit ES5 constructor + proto + methods into SBuf out.
-   mode: 0=declaration (function C... + stmts), 1=expression (IIFE that returns C)
+/* mode: 0=declaration (function C... + stmts), 1=expression (IIFE that returns C)
    cname is provided (never NULL). sups/supe valid iff has_super.
    Handles: instance/static methods; simple getters/setters; computed names using bracket; rewrites super.method(...) in
    method bodies.
@@ -4680,7 +4489,7 @@ static char *regex_u_to_es5_pattern(const char *in, size_t len)
      return Name;
    }(Super);
 */
-static void es5_emit_class_core(SBuf *out, const char *src, const char *cname, size_t cname_len, int has_super,
+static void es5_emit_class_core(rp_string *out, const char *src, const char *cname, size_t cname_len, int has_super,
                                 size_t sups, size_t supe, TSNode body)
 {
     /* ——— gather constructor and methods ——— */
@@ -4690,10 +4499,8 @@ static void es5_emit_class_core(SBuf *out, const char *src, const char *cname, s
     uint32_t n = ts_node_child_count(body);
 
     // Buckets for methods
-    SBuf proto_arr;
-    sb_init(&proto_arr); // will hold " {key:'x',value:function x(){...}},..."
-    SBuf static_arr;
-    sb_init(&static_arr); // same for statics
+    rp_string *proto_arr = rp_string_new(128);
+    rp_string *static_arr = rp_string_new(64);
 
     for (uint32_t i = 0; i < n; i++)
     {
@@ -4744,59 +4551,59 @@ static void es5_emit_class_core(SBuf *out, const char *src, const char *cname, s
         size_t bs = ts_node_is_null(mb) ? 0 : ts_node_start_byte(mb);
         size_t be = ts_node_is_null(mb) ? 0 : ts_node_end_byte(mb);
 
-        SBuf *bucket = is_static ? &static_arr : &proto_arr;
+        rp_string *bucket = is_static ? static_arr : proto_arr;
         // comma if needed
         if (bucket->len)
-            sb_puts(bucket, ",");
+            rp_string_puts(bucket, ",");
         // {key:'name',value:function name(){...}}
-        sb_puts(bucket, "{key:'");
-        sb_putsn(bucket, src + ks, ke - ks);
-        sb_puts(bucket, "',value:function ");
-        sb_putsn(bucket, src + ks, ke - ks);
+        rp_string_puts(bucket, "{key:'");
+        rp_string_putsn(bucket, src + ks, ke - ks);
+        rp_string_puts(bucket, "',value:function ");
+        rp_string_putsn(bucket, src + ks, ke - ks);
         if (ps && pe)
-            sb_putsn(bucket, src + ps, pe - ps);
+            rp_string_putsn(bucket, src + ps, pe - ps);
         else
-            sb_puts(bucket, "()");
-        sb_puts(bucket, " ");
+            rp_string_puts(bucket, "()");
+        rp_string_puts(bucket, " ");
         if (bs && be)
-            sb_putsn(bucket, src + bs, be - bs);
+            rp_string_putsn(bucket, src + bs, be - bs);
         else
-            sb_puts(bucket, "{}");
-        sb_puts(bucket, "}");
+            rp_string_puts(bucket, "{}");
+        rp_string_puts(bucket, "}");
     }
 
     /* ——— open wrapper ——— */
     if (!has_super)
     {
-        sb_puts(out, "var ");
-        sb_putsn(out, cname, cname_len);
-        sb_puts(out, " = (function() {");
+        rp_string_puts(out, "var ");
+        rp_string_putsn(out, cname, cname_len);
+        rp_string_puts(out, " = (function() {");
     }
     else
     {
-        sb_puts(out, "var ");
-        sb_putsn(out, cname, cname_len);
-        sb_puts(out, " = (function(_Super) {_TrN_Sp.inherits(");
-        sb_putsn(out, cname, cname_len);
-        sb_puts(out, ", _Super);var _super = _TrN_Sp.createSuper(");
-        sb_putsn(out, cname, cname_len);
-        sb_puts(out, ");");
+        rp_string_puts(out, "var ");
+        rp_string_putsn(out, cname, cname_len);
+        rp_string_puts(out, " = (function(_Super) {_TrN_Sp.inherits(");
+        rp_string_putsn(out, cname, cname_len);
+        rp_string_puts(out, ", _Super);var _super = _TrN_Sp.createSuper(");
+        rp_string_putsn(out, cname, cname_len);
+        rp_string_puts(out, ");");
     }
 
     /* ——— constructor ——— */
-    sb_puts(out, "  function ");
-    sb_putsn(out, cname, cname_len);
+    rp_string_puts(out, "  function ");
+    rp_string_putsn(out, cname, cname_len);
 
     if (ctor_found && !ts_node_is_null(ctor_params))
     {
         size_t ps = ts_node_start_byte(ctor_params), pe = ts_node_end_byte(ctor_params);
-        sb_putsn(out, src + ps, pe - ps);
+        rp_string_putsn(out, src + ps, pe - ps);
     }
     else
     {
-        sb_puts(out, "()"); // synthesize if missing
+        rp_string_puts(out, "()"); // synthesize if missing
     }
-    sb_puts(out, " {");
+    rp_string_puts(out, " {");
 
     if (has_super)
     {
@@ -4840,84 +4647,84 @@ static void es5_emit_class_core(SBuf *out, const char *src, const char *cname, s
                     goto NO_SUPER_REWRITE;
 
                 /* Emit prelude */
-                sb_puts(out, "var _this;_TrN_Sp.classCallCheck(this, ");
-                sb_putsn(out, cname, cname_len);
-                sb_puts(out, ");");
+                rp_string_puts(out, "var _this;_TrN_Sp.classCallCheck(this, ");
+                rp_string_putsn(out, cname, cname_len);
+                rp_string_puts(out, ");");
 
                 /* _this = _super.call(this, <args>); */
-                sb_puts(out, "_this = _super.call(this, ");
+                rp_string_puts(out, "_this = _super.call(this, ");
                 if (call_rp > args_s)
-                    sb_putsn(out, b + args_s, call_rp - args_s);
-                sb_puts(out, ");");
+                    rp_string_putsn(out, b + args_s, call_rp - args_s);
+                rp_string_puts(out, ");");
 
                 /* Copy remainder of ctor body after the super(...) statement’s semicolon */
                 size_t after = call_rp + 1; /* position after ')' */
                 if (after < blen && b[after] == ';')
                     after++; /* swallow trailing ';' if any */
                 if (after < blen)
-                    sb_putsn(out, b + after, blen - after);
+                    rp_string_putsn(out, b + after, blen - after);
 
                 /* Ensure the constructor returns _this */
-                sb_puts(out, "return _this;");
+                rp_string_puts(out, "return _this;");
             }
             else
             {
             NO_SUPER_REWRITE:
-                sb_puts(out, "_TrN_Sp.classCallCheck(this, ");
-                sb_putsn(out, cname, cname_len);
-                sb_puts(out, ");");
+                rp_string_puts(out, "_TrN_Sp.classCallCheck(this, ");
+                rp_string_putsn(out, cname, cname_len);
+                rp_string_puts(out, ");");
                 if (blen)
-                    sb_putsn(out, b, blen);
+                    rp_string_putsn(out, b, blen);
             }
         }
         else
         {
-            sb_puts(out, "var _this;_TrN_Sp.classCallCheck(this, ");
-            sb_putsn(out, cname, cname_len);
-            sb_puts(out, ");return _this;");
+            rp_string_puts(out, "var _this;_TrN_Sp.classCallCheck(this, ");
+            rp_string_putsn(out, cname, cname_len);
+            rp_string_puts(out, ");return _this;");
         }
     }
     else
     {
         // no extends
-        sb_puts(out, "_TrN_Sp.classCallCheck(this, ");
-        sb_putsn(out, cname, cname_len);
-        sb_puts(out, ");");
+        rp_string_puts(out, "_TrN_Sp.classCallCheck(this, ");
+        rp_string_putsn(out, cname, cname_len);
+        rp_string_puts(out, ");");
         if (ctor_found && !ts_node_is_null(ctor_body))
         {
             size_t bs = ts_node_start_byte(ctor_body), be = ts_node_end_byte(ctor_body);
-            sb_putsn(out, src + bs, be - bs);
+            rp_string_putsn(out, src + bs, be - bs);
         }
     }
-    sb_puts(out, "};");
+    rp_string_puts(out, "};");
 
     /* ——— _TrN_Sp.createClass(Name, [proto], [static]) ——— */
-    sb_puts(out, "_TrN_Sp.createClass(");
-    sb_putsn(out, cname, cname_len);
-    sb_puts(out, ",[");
-    sb_puts(out, proto_arr.s);
-    sb_puts(out, "],[");
-    sb_puts(out, static_arr.s);
-    sb_puts(out, "]);");
+    rp_string_puts(out, "_TrN_Sp.createClass(");
+    rp_string_putsn(out, cname, cname_len);
+    rp_string_puts(out, ",[");
+    rp_string_puts(out, proto_arr->str);
+    rp_string_puts(out, "],[");
+    rp_string_puts(out, static_arr->str);
+    rp_string_puts(out, "]);");
 
     /* ——— return + close wrapper ——— */
-    sb_puts(out, "return ");
-    sb_putsn(out, cname, cname_len);
-    sb_puts(out, ";");
+    rp_string_puts(out, "return ");
+    rp_string_putsn(out, cname, cname_len);
+    rp_string_puts(out, ";");
 
     if (!has_super)
     {
-        sb_puts(out, "})();");
+        rp_string_puts(out, "})();");
     }
     else
     {
-        sb_puts(out, "})(");
-        sb_putsn(out, src + sups, supe - sups);
-        sb_puts(out, ");");
+        rp_string_puts(out, "})(");
+        rp_string_putsn(out, src + sups, supe - sups);
+        rp_string_puts(out, ");");
     }
 
-    sb_free(&proto_arr);
-    sb_free(&static_arr);
+    proto_arr = rp_string_free(proto_arr);
+    static_arr = rp_string_free(static_arr);
 }
 
 static int rewrite_class_to_es5(EditList *edits, const char *src, TSNode class_node, RangeList *claimed, int overlaps)
@@ -4980,11 +4787,10 @@ static int rewrite_class_to_es5(EditList *edits, const char *src, TSNode class_n
         }
     }
 
-    SBuf out;
-    sb_init(&out);
-    es5_emit_class_core(&out, src, nameptr, namelen, has_super, sups, supe, body);
-    char *rep = out.s;
-    add_edit_take_ownership(edits, cs, ce, rep, claimed);
+    rp_string *out = rp_string_new(256);
+    es5_emit_class_core(out, src, nameptr, namelen, has_super, sups, supe, body);
+    add_edit_take_ownership(edits, cs, ce, rp_string_steal(out), claimed);
+    out=rp_string_free(out);
     return 1;
 }
 
@@ -5065,11 +4871,11 @@ static int rewrite_class_expression_to_es5(EditList *edits, const char *src, TSN
     if (overlaps)
         return 1;
 
-    SBuf out;
-    sb_init(&out);
+    rp_string *expr = rp_string_new(256);
+    rp_string_puts(expr, "(function(){");
     // emit the same var Name = function(){...}(); but as an expression we only need the IIFE value.
     // So we generate the same code and then reference the Name immediately.
-    es5_emit_class_core(&out, src, nameptr, namelen, has_super, sups, supe, body);
+    es5_emit_class_core(expr, src, nameptr, namelen, has_super, sups, supe, body);
 
     // Replace with just the identifier, because the class expression should yield the constructor.
     // The var/IIFE we just emitted must be inserted *before* and we return the name here.
@@ -5079,16 +4885,13 @@ static int rewrite_class_expression_to_es5(EditList *edits, const char *src, TSN
     //   (function(){ ...; return Name; }())
     // If you prefer the "var" form only for declarations, keep the simple IIFE here:
     // We'll do that:
-    SBuf expr;
-    sb_init(&expr);
-    sb_puts(&expr, "(function(){");
-    sb_puts(&expr, out.s); // defines var Name = function(){...}();
-    sb_puts(&expr, "return ");
-    sb_putsn(&expr, nameptr, namelen);
-    sb_puts(&expr, ";}())");
 
-    add_edit_take_ownership(edits, cs, ce, expr.s, claimed);
-    sb_free(&out); // expr now owns the final buffer
+    rp_string_puts(expr, "return ");
+    rp_string_putsn(expr, nameptr, namelen);
+    rp_string_puts(expr, ";}())");
+
+    add_edit_take_ownership(edits, cs, ce, rp_string_steal(expr), claimed);
+    expr = rp_string_free(expr); // expr now owns the final buffer
 
     return 1;
 }
@@ -5252,61 +5055,59 @@ static int rewrite_for_of_simple(EditList *edits, const char *src, TSNode forof,
     make_fresh_forof_names(ibuf, sizeof ibuf, xbuf, sizeof xbuf);
 
     // Build replacement
-    SBuf out;
-    sb_init(&out);
+    rp_string *out = rp_string_new(64);
 
-    sb_puts(&out, "for (var ");
-    sb_puts(&out, ibuf);
-    sb_puts(&out, " = 0, ");
-    sb_puts(&out, xbuf);
-    sb_puts(&out, " = ");
-    sb_putsn(&out, src + rs, re - rs);
-    sb_puts(&out, "; ");
-    sb_puts(&out, ibuf);
-    sb_puts(&out, " < ");
-    sb_puts(&out, xbuf);
-    sb_puts(&out, ".length; ");
-    sb_puts(&out, ibuf);
-    sb_puts(&out, "++) {");
+    rp_string_puts(out, "for (var ");
+    rp_string_puts(out, ibuf);
+    rp_string_puts(out, " = 0, ");
+    rp_string_puts(out, xbuf);
+    rp_string_puts(out, " = ");
+    rp_string_putsn(out, src + rs, re - rs);
+    rp_string_puts(out, "; ");
+    rp_string_puts(out, ibuf);
+    rp_string_puts(out, " < ");
+    rp_string_puts(out, xbuf);
+    rp_string_puts(out, ".length; ");
+    rp_string_puts(out, ibuf);
+    rp_string_puts(out, "++) {");
 
     if (is_decl)
     {
-        sb_puts(&out, "var ");
-        sb_putsn(&out, src + ns, ne - ns);
-        sb_puts(&out, " = ");
-        sb_puts(&out, xbuf);
-        sb_puts(&out, "[");
-        sb_puts(&out, ibuf);
-        sb_puts(&out, "]; ");
+        rp_string_puts(out, "var ");
+        rp_string_putsn(out, src + ns, ne - ns);
+        rp_string_puts(out, " = ");
+        rp_string_puts(out, xbuf);
+        rp_string_puts(out, "[");
+        rp_string_puts(out, ibuf);
+        rp_string_puts(out, "]; ");
     }
     else
     {
-        sb_putsn(&out, src + ns, ne - ns);
-        sb_puts(&out, " = ");
-        sb_puts(&out, xbuf);
-        sb_puts(&out, "[");
-        sb_puts(&out, ibuf);
-        sb_puts(&out, "]; ");
+        rp_string_putsn(out, src + ns, ne - ns);
+        rp_string_puts(out, " = ");
+        rp_string_puts(out, xbuf);
+        rp_string_puts(out, "[");
+        rp_string_puts(out, ibuf);
+        rp_string_puts(out, "]; ");
     }
 
     // splice body
     if (is_block)
     {
         // copy inner of the block (without braces)
-        sb_putsn(&out, src + bs + 1, (be - 1) - (bs + 1));
+        rp_string_putsn(out, src + bs + 1, (be - 1) - (bs + 1));
     }
     else
     {
-        sb_putsn(&out, src + bs, be - bs);
+        rp_string_putsn(out, src + bs, be - bs);
     }
-    sb_puts(&out, "}");
+    rp_string_puts(out, "}");
 
     // Replace the whole for-of node
     size_t fs = ts_node_start_byte(forof);
     size_t fe = ts_node_end_byte(forof);
-    add_edit_take_ownership(edits, fs, fe, out.s, claimed);
-    out.s = NULL;
-    sb_free(&out);
+    add_edit_take_ownership(edits, fs, fe, rp_string_steal(out), claimed);
+    out = rp_string_free(out);
     return 1;
 }
 
@@ -5630,7 +5431,7 @@ static RP_ParseRes transpile_code(const char *src, size_t src_len, int printTree
             if (res.err)
             {
                 const char *p = src + res.pos, *s = p, *e = p, *fe = src + src_len, *ple = NULL, *pls = NULL;
-
+                rp_string *out = rp_string_new(64);
                 while (s >= src && *s != '\n')
                     s--;
                 if (*s == '\n')
@@ -5646,13 +5447,15 @@ static RP_ParseRes transpile_code(const char *src, size_t src_len, int printTree
                     while (pls >= src && *pls != '\n')
                         pls--;
                     pls++;
-                    res.errmsg = appendf(NULL, NULL, "%.*s%s\n", (int)(ple - pls), pls, bline);
+                    rp_string_appendf(out, "%.*s%s\n", (int)(ple - pls), pls, bline);
                 }
                 s++;
                 while (e <= fe && *e != '\n')
                     e++;
-                res.errmsg = appendf(res.errmsg, NULL, "%.*s\n", (int)(e - s), s);
-                res.errmsg = appendf(res.errmsg, NULL, "%*s", 1 + (p - s), "^");
+                rp_string_appendf(out, "%.*s\n", (int)(e - s), s);
+                rp_string_appendf(out, "%*s", 1 + (p - s), "^");
+                res.errmsg = rp_string_steal(out);
+                out = rp_string_free(out);
             }
             else if (unresolved)
             {
