@@ -1775,7 +1775,7 @@ void duk_curl_parse_headers(duk_context *ctx, char *header)
 
                 key = start;
                 end++;
-                while (*end != '\0' && isspace(*end))
+                while (*end == ' ')
                     end++;
                 start = end;
                 inval = 1;
