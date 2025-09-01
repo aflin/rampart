@@ -1,0 +1,225 @@
+:root{
+  --sidebar-w: 280px;
+  --brand: #10a37f;
+  --muted: #e5e7eb;
+}
+
+/* Lock page scroll to the app viewport */
+html, body {
+    height: 100%;
+    margin: 0;
+    background-color: #f9f9f9;
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, Inter, Arial, sans-serif;
+    overflow: hidden;
+    font-size: 14px;
+}
+
+/* App fills viewport and uses a 2-column layout */
+#app { display: flex;
+    height: 100vh;
+    width: 100vw;
+}
+
+/* Sidebar stays visible; only its list scrolls */
+aside#sidebar {
+    flex: 0 0 var(--sidebar-w);
+    width: var(--sidebar-w);
+    background: #0b0c0f;
+    color: #e5e7eb;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border-right: 1px solid rgba(255,255,255,0.08);
+}
+
+#msg {
+  color:gainsboro;
+}
+
+.ctitle {
+  max-height: 40px;
+  overflow: hidden;
+  line-clamp: auto;
+}
+
+.sidebar-header{
+  padding: 16px 16px 8px 16px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+
+.sidebar-header h1{
+    font-size: 16px;
+    margin: 0 0 8px 0;
+    color: #fff;
+}
+
+.sidebar-actions{ display:flex; gap:8px; }
+.sidebar-actions button{
+    height: 34px;
+    padding: 0 10px;
+    border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.12);
+    background: rgba(255,255,255,0.04);
+    color:#fff;
+    cursor:pointer;
+}
+.sidebar-actions button.primary{ background: var(--brand); border-color: var(--brand); }
+#convlist{
+  list-style:none; margin:0; padding:8px; overflow-y:auto; flex:1 1 auto; min-height:0;
+}
+#convlist li{
+    border:1px solid rgba(255,255,255,0.08);
+    border-radius: 10px;
+    padding:10px;
+    margin:8px;
+    cursor:pointer;
+    background: rgba(255,255,255,0.02);
+}
+#convlist li.active{ border-color: #9ce6d4; background: rgba(16,163,127,0.18); color:#fff; }
+#convlist .subtitle{ display:block; font-size:12px; opacity:0.7; margin-top:4px; }
+.footer{ padding:10px; font-size:12px; opacity:0.7; border-top: 1px solid rgba(255,255,255,0.08); }
+
+/* Main area: column with sticky footer (.composer) and only chat scrolling */
+main#wrapper {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    background: #fff;
+    max-width: 1024px;
+    margin-left: auto;
+    margin-right: auto;
+}
+.topbar {
+    flex: 0 0 auto;
+    border-bottom: 1px solid var(--muted);
+    background:#fff;
+}
+
+.headtxt { font-size: 1.2rem; padding: 10px 16px; }
+#status{ margin-left: 16px; color:#6b7280; }
+
+/* Chat container = [chatdiv (scrolls) + composer (fixed at bottom) ] */
+#container{
+    flex:1 1 auto;
+    min-height:0;
+    display:flex;
+    flex-direction:column;
+    width:100%;
+    overflow:hidden;
+}
+
+#chatdiv{
+    flex:1 1 auto;
+    min-height:0;
+    overflow-y:auto;
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+    padding:24px 20px;
+}
+
+#chatdiv p {
+    background-color: #f9f9f9;
+    padding: 8px 12px;
+    border-radius: 12px;
+    display: inline-block;
+    margin: 0;
+}
+
+#chatdiv h1,h2,h3,h4,h5,h6 {
+    margin-bottom: 0;
+}
+
+.composer{ flex:0 0 auto;
+    width:100%;
+    border-top:1px solid var(--muted);
+    background:#fff;
+    padding:12px 0;
+}
+
+.input-row{ display:flex;
+    gap:8px;
+    align-items:flex-end;
+    margin: 0 12px 12px 12px;
+}
+
+#chatin{
+  box-sizing:border-box;
+    flex:1 1 auto;
+    min-height:40px;
+    max-height:240px;
+    padding:10px 12px;
+    border:1px solid var(--muted);
+    border-radius:10px;
+    resize:none;
+}
+
+#chatin:focus { border-color: var(--brand);
+    outline:none;
+    box-shadow: 0 0 0 3px rgba(16,163,127,0.2);
+}
+
+.userdata {
+    align-self: flex-end;
+    display:inline-block;
+    max-width:80%;
+    background: #e6f7f1;
+    color:#0b0c0f;
+    padding:8px 12px;
+    border-radius:12px;
+    word-wrap: break-word;
+    text-align:left;
+    white-space: pre;
+}
+.userdata .n { font-weight: 600;
+    margin-right: 6px;
+    color: #6b7280;
+}
+
+/* Prism code block chrome */
+code[class*="language-"], pre[class*="language-"] { text-shadow:none; }
+pre code {
+  display:block;
+    background:#1e1e1e !important;
+    color:#d4d4d4;
+    font-family:"Fira Code","Consolas","Monaco",monospace;
+    font-size:14px;
+    line-height:1.5;
+    padding:1em;
+    border-radius:8px;
+    overflow-x:auto;
+    white-space:pre;
+    tab-size:4;
+}
+
+.code-block{position:relative;}
+.copy-code{ right:10px;
+    position:absolute;
+    top:22px;
+    height:20px;
+    padding:0 5px;
+}
+.inline-code {
+    background-color: gainsboro;
+}
+
+/* Buttons */
+button{ height:40px;
+    padding:0 14px;
+    border-radius:10px;
+    border:1px solid var(--muted);
+    background:#fff;
+    cursor:pointer;
+}
+
+button.primary{ background: var(--brand);
+    color:#fff;
+    border-color: var(--brand);
+}
+
+button.primary:hover { background: #0f8f71; }
+button.ghost{ background: transparent; }
+#cancel { background: #fbf1f1; }
+#reset { background: #f3feff; }

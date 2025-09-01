@@ -1,0 +1,53 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Code Chat Demo</title>
+
+<link rel="stylesheet" href="/css/llmchat.css" />
+<script src="/js/llmchat-client.js"></script>
+<script>
+var llmSettings = {
+  endpoint: "/wsapps/llmchat.js",
+  model: "qwenCoder"
+}
+</script>
+</head>
+
+<body>
+  <div id="app">
+    <aside id="sidebar">
+      <div class="sidebar-header">
+        <h1>Conversations</h1>
+        <div class="sidebar-actions">
+          <button id="newconv" class="primary">New</button>
+          <button id="deleteconv" title="Delete current">Delete</button>
+        </div>
+      </div>
+      <ul id="convlist"></ul>
+      <div class="footer">Stored locally in your browser.</div>
+    </aside>
+
+    <main id="wrapper">
+
+      <header class="topbar">
+        <div class="headtxt">Coding Chat Demo <span id="msg"></span></div>
+        <span id="status"></span>
+      </header>
+
+      <div id="container">
+        <div id="chatdiv"></div>
+        <div class="composer">
+          <div class="input-row">
+            <textarea id="chatin" rows="1" type="text" placeholder="Send a message…"></textarea>
+            <button id="submit" class="primary">Send</button>
+            <button id="cancel" class="ghost">Cancel</button>
+            <button id="reset" class="ghost">Start New Session</button>
+          </div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+</body>
+</html>
