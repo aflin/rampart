@@ -5,7 +5,6 @@ var llm=require("rampart-llm.js");
 
 // have llm get us an appropriate short title for this conversation
 function makeTitle(req) {
-printf("in makeTitle()\n");
     if(req.titled)
         return;
 
@@ -131,6 +130,7 @@ function chat(req) {
                 }
                 /* erase the history of this conversation */
                 req.prompt=false;
+                req.titled=false;
                 return;
 
             } else if (cmdobj.context && cmdobj.q) {
@@ -144,7 +144,6 @@ function chat(req) {
                 else
                     req.titled=true;
                 /* no return, continue below */
-
             }
         } catch(e) {}
 

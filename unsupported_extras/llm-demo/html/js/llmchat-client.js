@@ -681,7 +681,6 @@ document.addEventListener("DOMContentLoaded", function() {
     }
 
     var socket;
-    var name;
     var reconnected = false;
     const cd = document.getElementById("chatdiv");
 
@@ -706,8 +705,7 @@ document.addEventListener("DOMContentLoaded", function() {
         saveAllConversations(conversations);
     }
     let assistantBuffer = '';  // collects streaming assistant text until end
-    let sendContextNext =
-        false;  // on first send after switch/load, include {q, context}
+    let sendContextNext = false;  // on first send after switch/load, include {q, context}
     if (currentConv.messages && currentConv.messages.length) {
         sendContextNext = true;
     }
@@ -746,7 +744,7 @@ document.addEventListener("DOMContentLoaded", function() {
         conv.messages.forEach(m => {
             if (m.role === 'user') {
                 renderer.writeRaw(
-                    '<span class="userdata"><span class="n">Me:</span> ' +
+                    '<span class="userdata">' +
                     (m.content || '') + '</span><br>');
             } else if (m.role === 'assistant') {
                 renderer.write(String(m.content || ''));
@@ -841,12 +839,15 @@ document.addEventListener("DOMContentLoaded", function() {
             return;
         }
 
-        var data = {msg: text, from: name};
+        var data = {msg: text};
 
         // Decide payload: continuing a saved conversation? send {q, context}
         var shouldSendContext = !!(
-            sendContextNext && currentConv &&
-            Array.isArray(currentConv.messages) && currentConv.messages.length);
+            sendContextNext &&
+            currentConv &&
+            Array.isArray(currentConv.messages) && 
+            currentConv.messages.length
+        );
         var payload = shouldSendContext ?
             JSON.stringify({q: text, context: currentConv.messages}) :
             text;
@@ -867,6 +868,7 @@ document.addEventListener("DOMContentLoaded", function() {
             if (!isOpen(socket) && !reconnected) {
                 socket = new WebSocket(endpoint);
                 socket.addEventListener('open', function(e) {
+                    payload = JSON.stringify({q: text, context: currentConv.messages})
                     socket.send(payload);
                     if (shouldSendContext) {
                         sendContextNext = false;
@@ -936,6 +938,9 @@ document.addEventListener("DOMContentLoaded", function() {
 
     // new conversation
     document.getElementById("newconv").addEventListener("click", () => {
+        if (isOpen(socket)) {
+            socket.send('{"cmd":"reset"}');
+        }
         newConversation();
     });
 
@@ -952,7 +957,6 @@ document.addEventListener("DOMContentLoaded", function() {
         loadConversation(currentConv.id);
     });
 
-    name = 'Me';
     renderSidebar();
     // load current (first) conversation view
     loadConversation(currentConv.id);

@@ -171,7 +171,7 @@ main#wrapper {
     border-radius:12px;
     word-wrap: break-word;
     text-align:left;
-    white-space: pre;
+    white-space: break-spaces;
 }
 .userdata .n { font-weight: 600;
     margin-right: 6px;

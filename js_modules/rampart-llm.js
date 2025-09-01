@@ -68,13 +68,13 @@ function ollamaQuery(query, callback, finalCallback, ep) {
     }
     else if(getType(query) == 'Array') {
         postObj.messages=query;
-    } 
+    }
 
     function chunkcb(content) {
         if(callback)
             return callback(content);
         if(content.error)
-            fprintf(stderr, 'error and no callback in rampart-llm.js: "%J"\n', content) 
+            fprintf(stderr, 'error and no callback in rampart-llm.js: "%J"\n', content)
     }
 
     if(this.params)
@@ -106,7 +106,7 @@ function ollamaQuery(query, callback, finalCallback, ep) {
                 if(parsed.response===undefined && !(parsed.message && parsed.message.content!==undefined))
                 {
                     var parsed = {
-                        error:"no response or message.content", 
+                        error:"no response or message.content",
                         data:rampart.utils.bufferToString(r.body),
                         serverResponse: r,
                         token: ""
@@ -114,7 +114,7 @@ function ollamaQuery(query, callback, finalCallback, ep) {
                     chunkcb(parsed);
                     return false;
                 }
-                var token = parsed.response ? parsed.response :parsed.message.content 
+                var token = parsed.response ? parsed.response :parsed.message.content
 
                  if( finalCallback && token.length )
                      self.tokens.push(token);
@@ -126,7 +126,7 @@ function ollamaQuery(query, callback, finalCallback, ep) {
                 else if (token && token.indexOf("</think>") != -1) {
                     self.thinking=false;
                     return;
-                }    
+                }
                 parsed.thinking=self.thinking;
 
                 if(self.thinking)
@@ -136,7 +136,7 @@ function ollamaQuery(query, callback, finalCallback, ep) {
 
                 parsed.serverResponse=r;
                 parsed.token = token;
-                
+
                 var ret=chunkcb(parsed);
                 if(ret===false)
                 {
@@ -175,7 +175,7 @@ function ollama(opts) {
         err("option 'port' must be a number");
 
     this.urlbase = `http://${this.server}:${this.port}`;
-    
+
     if( !checkIsRunning(this.urlbase + '/') ) {
         err(`ollama server at ${this.urlbase} doesn't appear to be running`);
     }
@@ -206,7 +206,8 @@ function llamaCppQuery(query, callback, finalCallback, ep) {
     self.cancel=false;
 
     if(!this.model)
-        err("model not set (use llamaCpp.model='mymodel' to set)");
+        this.model="mymod"; // llama.cpp only holds one model and doesn't care.
+
     if( callback && typeof callback != 'function')
         err("llamaCpp.query - invalid parameters: call must be llamaCpp.query(queryString, [callbackFunction||null] [,finalCallback])");
 
@@ -234,7 +235,7 @@ function llamaCppQuery(query, callback, finalCallback, ep) {
     }
     else if(getType(query) == 'Array') {
         postObj.messages=query;
-    } 
+    }
 
 
     if(this.params)
@@ -244,7 +245,7 @@ function llamaCppQuery(query, callback, finalCallback, ep) {
         if(callback)
             return callback(content);
         if(content.error)
-            fprintf(stderr, 'error and no callback in rampart-llm.js: "%J"\n', content) 
+            fprintf(stderr, 'error and no callback in rampart-llm.js: "%J"\n', content)
     }
 
     postObj.stream=true;
@@ -343,7 +344,7 @@ function llamaCppQuery(query, callback, finalCallback, ep) {
                 else if (token && token.indexOf("</think>") != -1) {
                     self.thinking=false;
                     return;
-                }    
+                }
 
                 parsed.thinking=self.thinking;
 
@@ -354,7 +355,7 @@ function llamaCppQuery(query, callback, finalCallback, ep) {
 
                 parsed.serverResponse=r;
                 parsed.token = token;
-                
+
                 var ret=chunkcb(parsed);
                 if(ret===false)
                 {
@@ -392,7 +393,7 @@ function llamaCpp(opts) {
         err("option 'port' must be a number");
 
     this.urlbase = `http://${this.server}:${this.port}`;
-    
+
     if( !checkIsRunning(this.urlbase + '/') ) {
         err(`llama.cpp server at ${this.urlbase} doesn't appear to be running`);
     }
