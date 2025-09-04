@@ -1,17 +1,22 @@
 v0.6.1
     - rampart-sql
-                           Added derivations using equivs.
-    - rampart
-                           Added ansi and css colors to printf.
-                           Added multi-line updating printf format '%M'.
-                           Added derivation download script and included en-deriv.
+                            Added derivations using equivs.
+    - rampart               
+                            Added ansi and css colors to printf.
+                            Added multi-line updating printf format '%M'.
+                            Added derivation download script and included en-deriv.
+                            Added tree-sitter transpiler.
+                            Added colorized JSON for repl and printf.
     - rampart-curl
-                           Made chunk options properly handle 'chunked'
-                           blocks larger than libcurl's buffer.
-                           Added progress callback.
+                            Made chunk options properly handle 'chunked'
+                            blocks larger than libcurl's buffer.
+                            Added progress callback.
 
     - rampart-almanac
-                           Fix for Julian dates.
+                            Fix for Julian dates.
+
+    - rampart-llm
+                            Initial version.
 
 v0.6.0
     - rampart
