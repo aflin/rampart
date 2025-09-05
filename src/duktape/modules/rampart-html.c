@@ -1249,7 +1249,7 @@ TidyBuffer *dumpText(TidyDoc doc, TidyNode start, TidyBuffer *buf, int listno, i
 
 #define tag_indent(x) do {\
     int i=(x);\
-    while(i--)tidyBufAppend(buf, "\t", 1);\
+    while(i--)tidyBufAppend(buf, "   ", 3);\
 } while(0)
 
 #define isBlockNotCell(id) ( isBlockTag((id)) && id!=TidyTag_TD && id!=TidyTag_TH )
@@ -1257,7 +1257,7 @@ TidyBuffer *dumpText(TidyDoc doc, TidyNode start, TidyBuffer *buf, int listno, i
                 if (isBlockNotCell(id) && buf->size>0 && buf->bp[buf->size -1] != '\n')
                     tidyBufAppend(buf, "\n", 1);
                 else if( (id == TidyTag_TD || id == TidyTag_TH) && (lastid == TidyTag_TD || lastid == TidyTag_TH) )
-                    tidyBufAppend(buf, "\t", 1);
+                    tidyBufAppend(buf, "   ", 3);
 
                 if( isSectionTag(id) && buf->size>1 && buf->bp[buf->size -2] != '\n')
                     tidyBufAppend(buf, "\n", 1);
@@ -1300,12 +1300,12 @@ TidyBuffer *dumpText(TidyDoc doc, TidyNode start, TidyBuffer *buf, int listno, i
                     else if (id==TidyTag_DT && testOpt(optEnumLsts) )
                     {
                         tag_indent(listind-1);
-                        tidyBufAppend(buf, "\t", 1);
+                        tidyBufAppend(buf, "   ", 3);
                     }
                     else if (id==TidyTag_DD && testOpt(optEnumLsts) )
                     {
                         tag_indent(listind);
-                        tidyBufAppend(buf, "\t", 1);
+                        tidyBufAppend(buf, "   ", 3);
                     }
                     /* get meta name=keywords|description */
                     else if (id==TidyTag_META)
