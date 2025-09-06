@@ -1215,7 +1215,7 @@ static duk_ret_t obj_to_html(duk_context *ctx)
     return _obj_to_html(ctx, 0);
 }
 
-TidyBuffer *dumpText(TidyDoc doc, TidyNode start, TidyBuffer *buf, int listno, int listind, int tag_end_nl, int opts)
+TidyBuffer *dumpText(TidyDoc doc, TidyNode start, TidyBuffer *buf, int listno, int listind, int tag_end_nl, int opts, int *inpre)
 {
     TidyNode child;
     TidyNodeType type;
@@ -1236,7 +1236,7 @@ TidyBuffer *dumpText(TidyDoc doc, TidyNode start, TidyBuffer *buf, int listno, i
                 tidyBufAppend(
                     buf,
                     tbuf.bp,
-                    tbuf.size- (tbuf.bp[tbuf.size-1]=='\n' ? 1 : 0)
+                    tbuf.size - (tbuf.bp[tbuf.size-1]=='\n' ? !*inpre : 0)
                 );
                 tidyBufFree (&tbuf);
                 tag_end_nl=0;
@@ -1382,8 +1382,13 @@ TidyBuffer *dumpText(TidyDoc doc, TidyNode start, TidyBuffer *buf, int listno, i
                         }
                     }
 
+                    if(id == TidyTag_PRE)
+                    {
+                        *inpre=1;
+                    }
+
                     // recurse for child nodes
-                    buf=dumpText(doc, child, buf, listno, listind+indent, tag_end_nl, opts);
+                    buf=dumpText(doc, child, buf, listno, listind+indent, tag_end_nl, opts, inpre);
 
                     /* seperate A tags from surrounding text, add brackets if optALinks */
                     if(id == TidyTag_A && buf->size>0 && buf->bp[buf->size -1] != '\n' && buf->bp[buf->size -1] != ' ')
@@ -1488,6 +1493,12 @@ TidyBuffer *dumpText(TidyDoc doc, TidyNode start, TidyBuffer *buf, int listno, i
                     break;
                 }
             }
+            case TidyNode_End:
+                if(id == TidyTag_PRE)
+                {
+                    *inpre=0;
+                }
+                break;
             default:
                 break;
         }
@@ -1674,7 +1685,7 @@ duk_ret_t duk_rp_html_totext(duk_context *ctx)
     TidyDoc doc;
     TidyBuffer buf, *ret;
     int i=0, opts=0; //optAltText|optMetaDesc|optMetaKeyw|optEnumLsts;
-    int makearray=1;
+    int makearray=1, inpre=0;
     duk_idx_t this_idx;
 
     ret=&buf;
@@ -1745,7 +1756,7 @@ duk_ret_t duk_rp_html_totext(duk_context *ctx)
         if(tidyNodeGetType(start) == TidyNode_DocType)
             continue;
 
-        ret=dumpText(doc, start, ret, 0, 0, 0, opts);
+        ret=dumpText(doc, start, ret, 0, 0, 0, opts, &inpre);
 
         if(makearray)
         {
