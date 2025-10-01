@@ -203,6 +203,15 @@ static int load_js_module(duk_context *ctx, const char *file, duk_idx_t module_i
     return 1;
 }
 
+void **rp_opened_mods=NULL;
+size_t rp_n_opened_mods=0;
+
+#define addhandle_to_close(mod) do{                                     \
+    REMALLOC(rp_opened_mods, (1 + rp_n_opened_mods) * sizeof(void *));  \
+    rp_opened_mods[rp_n_opened_mods]=mod;                               \
+    rp_n_opened_mods++;                                                 \
+}while(0)
+
 static int load_so_module(duk_context *ctx, const char *file, duk_idx_t module_idx, int is_server)
 {
     pthread_mutex_lock(&modlock);
@@ -234,6 +243,7 @@ static int load_so_module(duk_context *ctx, const char *file, duk_idx_t module_i
                 void *lib2 = dlopen(rp.path, RTLD_NOW);
                 if (lib2)
                 {
+                    addhandle_to_close(lib2);
                     lib = dlopen(file, RTLD_NOW);
                     if (lib)
                         goto libload_success;
@@ -248,6 +258,9 @@ static int load_so_module(duk_context *ctx, const char *file, duk_idx_t module_i
         libload_success:
         pthread_mutex_unlock(&modlock);
     }
+
+    addhandle_to_close(lib);
+
     duk_c_function init = (duk_c_function)dlsym(lib, "duk_open_module");
     pthread_mutex_unlock(&modlock);
     if (init != NULL)

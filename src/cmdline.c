@@ -19,6 +19,7 @@
 #include <sys/resource.h>
 #include <sys/stat.h>
 #include <errno.h>
+#include <dlfcn.h>
 
 #include "event.h"
 #include "event2/thread.h"
@@ -731,6 +732,11 @@ static void free_dns(void)
 }
 
 
+//these are for unloading modules
+extern void **rp_opened_mods;
+extern size_t rp_n_opened_mods;
+
+
 void duk_rp_exit(duk_context *ctx, int ec)
 {
     int i=0,len=0;
@@ -759,7 +765,7 @@ void duk_rp_exit(duk_context *ctx, int ec)
     free(RP_script_path);
     free(RP_script);
 
-    //for lmdb. TODO: make this a generic array of function pointers if/when others need it.
+    // run added exit functions
     if(exit_funcs)
     {
         EXIT_FUNC *ef;
@@ -771,6 +777,14 @@ void duk_rp_exit(duk_context *ctx, int ec)
             free(ef);
         }
         free(exit_funcs);
+    }
+
+    // close opened modules AFTER exit_funcs
+    for (i=0; i<rp_n_opened_mods;i++)
+    {
+        void *h = rp_opened_mods[i];
+        if(h)
+            (void)dlclose(h);
     }
 
     exit(ec);
