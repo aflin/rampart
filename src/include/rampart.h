@@ -485,6 +485,13 @@ void rpthr_clean_obj   (duk_context *ctx, duk_context *tctx);
 void rpthr_copy_global (duk_context *ctx, duk_context *tctx);
 duk_ret_t duk_rp_bytefunc(duk_context *ctx);
 
+
+/* **************************************************
+   like duk_put_prop_string but makes it read only
+   ************************************************** */
+void duk_rp_put_prop_string_ro(duk_context *ctx, duk_idx_t idx, const char *s);
+
+
 /* getting, setting thread local thread number */
 void set_thread_num(int thrno);  //don't use this outside of rampart-thread.c
 int get_thread_num();

@@ -703,6 +703,18 @@ static duk_ret_t rp_error_throw(duk_context *ctx)
     return 1;
 }
 
+/* **************************************************
+   like duk_put_prop_string but makes it read only
+   ************************************************** */
+
+void duk_rp_put_prop_string_ro(duk_context *ctx, duk_idx_t idx, const char *s)
+{
+    idx = duk_normalize_index(ctx, idx);
+    duk_push_string(ctx, s);
+    duk_pull(ctx, -2);
+    duk_def_prop(ctx, idx,
+                 DUK_DEFPROP_HAVE_VALUE | DUK_DEFPROP_SET_ENUMERABLE | DUK_DEFPROP_CLEAR_WRITABLE | DUK_DEFPROP_FORCE);
+}
 
 /* **************************************************
    like duk_get_int_default but if string, converts

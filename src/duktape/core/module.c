@@ -437,7 +437,7 @@ static duk_ret_t _duk_resolve(duk_context *ctx, const char *name)
 
     // module.id
     duk_push_string(ctx, id);
-    duk_put_prop_string(ctx, module_idx, "id");
+    duk_rp_put_prop_string_ro(ctx, module_idx, "id");
 
     // module.path
     p = strrchr(id,'/');
@@ -446,7 +446,7 @@ static duk_ret_t _duk_resolve(duk_context *ctx, const char *name)
     else
         duk_push_string(ctx, "");        
 
-    duk_put_prop_string(ctx, module_idx, "path");
+    duk_rp_put_prop_string_ro(ctx, module_idx, "path");
 
     // module.exports
     duk_push_object(ctx);
@@ -496,23 +496,28 @@ int duk_rp_resolve(duk_context *ctx, const char *name)
 
 void duk_module_init(duk_context *ctx)
 {
-    // put require as global so code with require can eval
-    duk_push_global_object(ctx);
-    duk_push_string(ctx, "require");
-    duk_push_c_function(ctx, duk_require, 1);
-    duk_def_prop(ctx, -3, DUK_DEFPROP_HAVE_VALUE | DUK_DEFPROP_HAVE_WRITABLE | DUK_DEFPROP_HAVE_ENUMERABLE | DUK_DEFPROP_ENUMERABLE);
-
-    // module.resolve
-    duk_push_string(ctx, "module");
-    duk_push_object(ctx);
-    duk_push_c_function(ctx, duk_resolve, 2);
-    duk_put_prop_string(ctx, -2, "resolve");
-    duk_def_prop(ctx, -3, DUK_DEFPROP_HAVE_VALUE | DUK_DEFPROP_HAVE_WRITABLE | DUK_DEFPROP_HAVE_ENUMERABLE | DUK_DEFPROP_ENUMERABLE);
-
     // put module_id_map in global stash
-    duk_push_global_stash(ctx);
-    duk_push_object(ctx);
-    duk_put_prop_string(ctx, -2, "module_id_map");
+    duk_push_global_stash(ctx);                      // [... stash]
+    duk_push_object(ctx);                            // [... stash obj]
+    duk_dup(ctx, -1); // a copy for require.cache    // [... stash obj dup]
+    duk_put_prop_string(ctx, -3, "module_id_map");   // [... stash obj]
+    duk_remove(ctx, -2);  //global stash             // [... obj]
 
-    duk_pop_2(ctx);
+    // put require as global so code with require can eval
+    duk_push_global_object(ctx);                     // [... obj global]
+    duk_push_string(ctx, "require");                 // [... obj global "require"]
+    duk_push_c_function(ctx, duk_require, 1);        // [... obj global "require" duk_require]
+    duk_pull(ctx, -4);                               // [... global "require" duk_require obj]
+    duk_put_prop_string(ctx, -2, "cache");           // [... global "require" duk_require]
+    duk_def_prop(ctx, -3, DUK_DEFPROP_HAVE_VALUE | DUK_DEFPROP_HAVE_WRITABLE | DUK_DEFPROP_HAVE_ENUMERABLE | DUK_DEFPROP_ENUMERABLE);
+                                                     // [... global]
+    // module.resolve
+    duk_push_string(ctx, "module");                  // [... global, "module"]
+    duk_push_object(ctx);                            // [... global, "module" obj]
+    duk_push_c_function(ctx, duk_resolve, 2);        // [... global, "module" obj, duk_resolve]
+    duk_put_prop_string(ctx, -2, "resolve");         // [... global, "module" obj]
+    duk_def_prop(ctx, -3, DUK_DEFPROP_HAVE_VALUE | DUK_DEFPROP_HAVE_WRITABLE | DUK_DEFPROP_HAVE_ENUMERABLE | DUK_DEFPROP_ENUMERABLE);
+                                                     // [... global]
+
+    duk_pop(ctx);                                    // [...]
 }
