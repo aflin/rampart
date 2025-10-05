@@ -52,7 +52,7 @@
 // numeric number including padded zeros (dynamically created on stack)
 // default: 32 byte
 #ifndef PRINTF_NTOA_BUFFER_SIZE
-#define PRINTF_NTOA_BUFFER_SIZE 32U
+#define PRINTF_NTOA_BUFFER_SIZE 64U
 #endif
 // 'ftoa' conversion buffer size, this must be big enough to hold one converted
 // float number including padded zeros (dynamically created on stack)
@@ -112,6 +112,7 @@
 #define FLAGS_COLOR_FORCE (1U << 16U)
 #define FLAGS_COLOR_FORCE_TRUECOLOR (1U << 17U)
 #define FLAGS_COLOR_FORCE_16 (1U << 18U)
+#define FLAGS_COMMA (1U << 19U)
 
 #include <float.h>
 // wrapper (used as buffer) for output function type
@@ -336,8 +337,11 @@ static size_t _ntoa_long(out_fct_type out, char *buffer, size_t idx, size_t maxl
             const char digit = (char)(value % base);
             buf[len++] = digit < 10 ? '0' + digit : (flags & FLAGS_UPPERCASE ? 'A' : 'a') + digit - 10;
             value /= base;
+            if(base == 10 && flags & FLAGS_COMMA && ! ((len+1) % 4) && value>0)
+                buf[len++] = ',';
         } while (value && (len < PRINTF_NTOA_BUFFER_SIZE));
     }
+
     return _ntoa_format(out, buffer, idx, maxlen, buf, len, negative, (unsigned int)base, prec, width, flags);
 }
 // internal itoa for 'long long' type
@@ -358,6 +362,8 @@ static size_t _ntoa_long_long(out_fct_type out, char *buffer, size_t idx, size_t
             const char digit = (char)(value % base);
             buf[len++] = digit < 10 ? '0' + digit : (flags & FLAGS_UPPERCASE ? 'A' : 'a') + digit - 10;
             value /= base;
+            if(base==10 && flags & FLAGS_COMMA && ! ((len+1) % 4) && value>0)
+                buf[len++] = ',';
         } while (value && (len < PRINTF_NTOA_BUFFER_SIZE));
     }
     return _ntoa_format(out, buffer, idx, maxlen, buf, len, negative, (unsigned int)base, prec, width, flags);
@@ -686,6 +692,44 @@ static size_t _ftoa(out_fct_type out, char *buffer, size_t idx, size_t maxlen, d
             i++;
         }
     }
+    if(flags & FLAGS_COMMA)
+    {
+        size_t end=len;
+        while (end > 0)
+        {
+            if(buf[end]=='.')
+            {
+                end--;
+                break;
+            }
+            end--;
+        }
+        if(!end) end=len;
+        else end++;
+        int nshifts=0;
+        for (i=end-3; i>0; i-=3)
+        {
+            if( isdigit(buf[i-1]) )
+            {
+                memmove(buf+i+1, buf+i, len-i);
+                *(buf+i)=',';
+                len++;
+                nshifts++;
+            }
+        }
+        char *s = buf;
+        if(end == len)  // one less for the '.'
+            nshifts--;
+        if(flags & FLAGS_SPACE) //one less if ' ' flag
+            s++;
+        while(*s == ' ' && nshifts)
+        {
+            memmove(s, s+1, len);
+            len--;
+            nshifts--;
+        }
+    }
+
     i=0;
     while (i<len)
         out(buf[i++], buffer, idx++, maxlen);
@@ -880,6 +924,12 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
                 break;
             case '^':
                 flags |= FLAGS_COLOR_FORCE_16 | FLAGS_COLOR | FLAGS_COLOR_FORCE;
+                colorflag='^';
+                format++;
+                n = 1U;
+                break;
+            case ',':
+                flags |= FLAGS_COMMA;
                 colorflag='^';
                 format++;
                 n = 1U;
