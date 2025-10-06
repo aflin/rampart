@@ -27,6 +27,8 @@
 #include "../globals/csv_parser.h"
 #include "event.h"
 
+#include "sql-userfunc.h"
+
 static pthread_mutex_t tx_handle_lock;
 
 static int defnoise=1, defsuffix=1, defsuffixeq=1, defprefix=1;
@@ -2406,6 +2408,82 @@ static QUERY_STRUCT rp_get_query(duk_context *ctx)
     return (q_st);
 }
 
+void *check_array_params(duk_context *ctx, long *olen, int *in, int *out)
+{
+    void *ret=NULL;
+
+    *olen=0;
+
+    if(!duk_is_array(ctx, -1))
+        return ret;
+
+    duk_uarridx_t i=1, len=duk_get_length(ctx, -1);
+
+    duk_get_prop_index(ctx, -1, 0);
+    int type, firsttype = rp_gettype(ctx, -1);
+    duk_pop(ctx);
+
+    for(;i<len;i++)
+    {
+        duk_get_prop_index(ctx, -1, i);
+        type = rp_gettype(ctx, -1);
+        duk_pop(ctx);
+        if(type != firsttype)
+            return ret;
+    }
+    int dofloat=0;
+    if(firsttype == RP_TYPE_NUMBER)
+    {
+        for(i=0;i<len;i++)
+        {
+            double d, floord;
+            duk_get_prop_index(ctx, -1, i);
+            d = duk_get_number(ctx, -1);
+            duk_pop(ctx);
+            floord = floor(d);
+            if( (d - floord) > 0.0 || (d - floord) < 0.0 ||
+                floord < (double)INT64_MIN || floord > (double)INT64_MAX
+            )
+            {
+                dofloat=1;
+                break;
+            }
+        }
+        if(dofloat)
+        {
+            double *dret=NULL;
+            REMALLOC(dret, sizeof(double) * (size_t) len);
+            for(i=0;i<len;i++)
+            {
+                duk_get_prop_index(ctx, -1, i);
+                dret[i] = duk_get_number(ctx, -1);
+                duk_pop(ctx);
+            }
+            ret=(void*)dret;
+            *in = SQL_C_DOUBLE;
+            *out = SQL_DOUBLE;
+            *olen = (long)len * (long)sizeof(double);
+        }
+        else
+        {
+            int64_t *iret=NULL;
+            REMALLOC(iret, sizeof(int64_t) * (size_t) len);
+            for(i=0;i<len;i++)
+            {
+                duk_get_prop_index(ctx, -1, i);
+                iret[i] = (int64_t)duk_get_number(ctx, -1);
+                duk_pop(ctx);
+            }
+            ret=(void*)iret;
+            *in = SQL_C_SBIGINT;
+            *out = SQL_BIGINT;
+            *olen = (long)len * (long)sizeof(double);
+        }
+    }
+
+    return ret;
+}
+
 #define push_sql_param do{\
     switch (duk_get_type(ctx, -1))\
     {\
@@ -2436,6 +2514,8 @@ static QUERY_STRUCT rp_get_query(duk_context *ctx)
            this works (or will work) for several datatypes (varchar,int(x),strlst,json varchar) */\
         case DUK_TYPE_OBJECT:\
         {\
+            vfree=v=check_array_params(ctx, &plen, &in, &out);\
+            if(v) break;\
             char *e;\
             char *r = str_rp_to_json_safe(ctx, -1, NULL, 0);\
             duk_push_string(ctx, r);\
@@ -2507,10 +2587,13 @@ static int rp_add_named_parameters(
 
         if(!duk_is_undefined(ctx, -1))
         {
+            void *vfree=NULL;
             push_sql_param;
 
             /* texis_params is indexed starting at 1 */
             rc = h_param(h, i+1, v, &plen, in, out);
+            if(vfree)
+                free(vfree);
             if (!rc)
             {
                 duk_pop(ctx);
@@ -2519,6 +2602,7 @@ static int rp_add_named_parameters(
         }
         else
         {
+            /* TODO: get rid of this and the rest of the LIKEP_PARAM_SUBSTITUTIONS stuff.
             if(*key==LIKEP_MOD_CHAR &&
                  (
                     isdigit(*(key+1)) ||
@@ -2527,6 +2611,7 @@ static int rp_add_named_parameters(
               )
                 snprintf(finfo->errmap, msgbufsz-1, "internal error processing likep parameter");
             else
+            */
                 snprintf(finfo->errmap, msgbufsz-1, "parameter '%s' not found in Object.", key);
 
             duk_pop(ctx);
@@ -4480,6 +4565,7 @@ static char *prop_defaults[][2] = {
    {"wildOneWord", "1"},
    {"wildSufMatch", "1"},
    {"alLinearDict", "0"},
+   {"alLinear", "0"},
    {"indexMinSublen", "2"},
    {"dropWordMode", "0"},
    {"metamorphStrlstMode", "equivlist"},
@@ -5910,6 +5996,137 @@ static duk_ret_t fork_helper(duk_context *ctx)
     return 0;
 }
 
+static inline uint16_t f32_to_f16_scalar(float x) {
+    uint32_t f;
+    memcpy(&f, &x, sizeof(f));
+    uint32_t s = (f >> 31) & 1u;
+    int32_t  e = (int32_t)((f >> 23) & 0xFFu) - 127 + 15;
+    uint32_t m =  f & 0x7FFFFFu;
+    uint16_t h;
+
+    if (e <= 0) {
+        if (e < -10) {
+            h = (uint16_t)(s << 15);  /* underflow -> zero */
+        } else {
+            m |= 0x800000u;
+            uint32_t shift = (uint32_t)(14 - e);
+            uint32_t mant  = m >> (shift + 13);
+            if ((m >> (shift + 12)) & 1u) mant += 1u; /* round nearest-even */
+            h = (uint16_t)((s << 15) | mant);
+        }
+    } else if (e >= 31) {
+        h = (uint16_t)((s << 15) | (0x1Fu << 10));   /* overflow -> Inf */
+    } else {
+        uint16_t mant = (uint16_t)(m >> 13);
+        if (m & 0x00001000u) mant += 1u;             /* round */
+        h = (uint16_t)((s << 15) | ((uint16_t)e << 10) | mant);
+    }
+    return h;
+}
+
+static int is_delim(char c){
+    /* ASCII whitespace or simple punctuation */
+    return (unsigned char)c <= 32 ||
+           c==',' || c=='.' || c=='!' || c=='?' || c==';' || c==':' ||
+           c=='(' || c==')' || c=='[' || c==']' || c=='{' || c=='}' ||
+           c=='\"'|| c=='\'';
+}
+
+
+static uint64_t fnv1a64(const unsigned char* data, size_t n){
+    uint64_t h = 1469598103934665603ULL;
+    for (size_t i=0;i<n;++i){ h ^= (uint64_t)data[i]; h *= 1099511628211ULL; }
+    return h;
+}
+
+static uint64_t hash_str(const char* s){
+    return fnv1a64((const unsigned char*)s, strlen(s));
+}
+
+static void l2_normalize(float* x, int d){
+    double s = 0.0;
+
+    for (int i=0;i<d;++i)
+        s += (double)(x[i]*x[i]);
+
+    if (s <= 0)
+        return;
+
+    double n = sqrt(s);
+
+    for (int i=0;i<d;++i)
+        x[i] = (float)(x[i]/n);
+}
+
+static duk_ret_t text_to_vec(duk_context *ctx)
+{
+    const char *text = REQUIRE_STRING(ctx, 0, "textToVec - argument must be a String");
+    int dim=768;
+    float v[dim];
+    uint16_t *out = (uint16_t *)duk_push_fixed_buffer(ctx, (duk_size_t)(dim*2));
+    int i=0;
+
+    for (;i<dim;i++)
+        v[i]=0.0;
+
+    /* bias term */
+    v[0] += 1.0f;
+
+    const char* p = text;
+    char tok[256];
+    int tok_len = 0;
+    int ntok = 0;
+
+    while (1){
+        char c = *p;
+        if (c == 0 || is_delim(c)){
+            if (tok_len > 0){
+                tok[tok_len] = 0;
+                /* lowercase ASCII */
+                for (i=0;i<tok_len;++i)
+                    tok[i] = (char)tolower((unsigned char)tok[i]);
+                uint64_t h = hash_str(tok);
+                int idx = (int)(h % (uint64_t)dim);
+                v[idx] += 1.0f;
+                ++ntok;
+                tok_len = 0;
+            }
+            if (c == 0) break;
+        } else {
+            if (tok_len < (int)sizeof(tok)-1) tok[tok_len++] = c;
+        }
+        ++p;
+    }
+
+
+    if (ntok > 0){
+        float lf = (float)(1.0 + 0.1 * logf((float)ntok + 1.0f));
+        for (int i=0;i<dim;++i) {
+            v[i] *= lf;
+        }
+    }
+    static int n=0;
+    n++;
+    l2_normalize(v, dim);
+
+    //printf("{\n");
+
+    for (i=0; i< dim; i++)
+    {
+        out[i]=f32_to_f16_scalar(v[i]);
+        /*
+        if(i)
+            printf(", %d", out[i]);
+        else
+            printf("%d", out[i]);
+        */
+    }
+    //printf("};\n");
+
+    return 1;
+}
+
+
 static duk_ret_t rp_sql_connect(duk_context *ctx)
 {
     duk_push_this(ctx);
@@ -6120,7 +6337,12 @@ duk_ret_t duk_open_module(duk_context *ctx)
     duk_push_c_function(ctx, fork_helper, 3);
     duk_def_prop(ctx, -3, DUK_DEFPROP_CLEAR_WEC|DUK_DEFPROP_HAVE_VALUE);
 
-    add_exit_func(free_all_handles, NULL);
+    duk_push_string(ctx, "vec");
+    duk_push_object(ctx);
+    duk_push_c_function(ctx, text_to_vec, 1);
+    duk_put_prop_string(ctx, -2, "textToVec");
+    duk_def_prop(ctx, -3, DUK_DEFPROP_CLEAR_WEC|DUK_DEFPROP_HAVE_VALUE);
 
+    add_exit_func(free_all_handles, NULL);
     return 1;
 }

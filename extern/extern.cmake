@@ -1,6 +1,12 @@
 set(EXTERN_DIR ${CMAKE_SOURCE_DIR}/extern)
 
+
 add_subdirectory(${EXTERN_DIR}/texis)
+
+target_compile_definitions(
+    texisapi PRIVATE
+    RAMPART_INCLUDE_TEXIS_USERFUNC="${CMAKE_SOURCE_DIR}/src/duktape/modules/sql-userfunc.c"
+)
 
 add_subdirectory(${EXTERN_DIR}/openssl)
 
