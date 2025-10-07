@@ -930,7 +930,6 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
                 break;
             case ',':
                 flags |= FLAGS_COMMA;
-                colorflag='^';
                 format++;
                 n = 1U;
                 break;
