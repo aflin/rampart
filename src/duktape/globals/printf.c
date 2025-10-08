@@ -861,7 +861,7 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
             format++;
             // throw error if no var for % format
             if(*format!='%' && fidx>topidx)
-                RP_THROW(ctx, "printf(): expecting argument for conversion specifier (variable required at position %d)", (int)fidx);
+                PF_THROW(ctx, "printf(): expecting argument for conversion specifier (variable required at position %d)", (int)fidx);
         }
         // evaluate flags
         flags = 0U;
@@ -1166,12 +1166,12 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
             {
                 int n=(int)duk_get_number(ctx, fidx);
                 if(n<0 || n>255)
-                     RP_THROW(ctx, "string (single char) or number (0-255) required in format string argument %d", fidx);
+                     PF_THROW(ctx, "string (single char) or number (0-255) required in format string argument %d", fidx);
                 c=(unsigned char)n;
                 fidx++;
             }
             else
-                RP_THROW(ctx, "string (single char) or number (0-255) required in format string argument %d", fidx);
+                PF_THROW(ctx, "string (single char) or number (0-255) required in format string argument %d", fidx);
 
             // pre padding
             if (!(flags & FLAGS_LEFT))
@@ -1246,12 +1246,12 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
             {
                 uint64_t n=(uint64_t)duk_get_number(ctx, fidx);
                 if(n>4294967295)
-                     RP_THROW(ctx, "number (0-4294967295) required in format string argument %d", fidx);
+                     PF_THROW(ctx, "number (0-4294967295) required in format string argument %d", fidx);
                 c=(uint32_t)n;
                 fidx++;
             }
             else
-                RP_THROW(ctx, "number (0-4294967295) required in format string argument %d", fidx);
+                PF_THROW(ctx, "number (0-4294967295) required in format string argument %d", fidx);
 
             // pre padding
             if (!(flags & FLAGS_LEFT))
@@ -1895,7 +1895,7 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
             format++;
             break;
         default:
-            RP_THROW(ctx, "invalid format specifier character '%c' in format", *format);
+            PF_THROW(ctx, "invalid format specifier character '%c' in format", *format);
         }
         // end color
         if( ccodes && ((flags & FLAGS_COLOR && isterm) || flags & FLAGS_COLOR_FORCE))
