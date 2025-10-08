@@ -76,6 +76,26 @@ extern int rp_print_error_lines;
     r;\
 })
 
+#define REQUIRE_INT64(ctx,idx,...) ({\
+    duk_idx_t __rp_i=(idx);\
+    if(!duk_is_number((ctx),__rp_i)) {\
+        RP_THROW((ctx), __VA_ARGS__ );\
+    }\
+    int64_t r=(int64_t) duk_get_number((ctx),__rp_i);\
+    r;\
+})
+
+#define REQUIRE_UINT64(ctx,idx,...) ({\
+    duk_idx_t __rp_i=(idx);\
+    if(!duk_is_number((ctx),__rp_i)) {\
+        RP_THROW((ctx), __VA_ARGS__ );\
+    }\
+    double rd=duk_get_number((ctx),__rp_i);\
+    if(rd<0.0) RP_THROW((ctx), __VA_ARGS__ );\
+    uint64_t r = (uint64_t)rd;\
+    r;\
+})
+
 #define REQUIRE_BOOL(ctx,idx,...) ({\
     duk_idx_t __rp_i=(idx);\
     if(!duk_is_boolean((ctx),__rp_i)) {\

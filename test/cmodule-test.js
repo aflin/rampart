@@ -11,7 +11,7 @@ function testFeature(name,test,error)
             test=false;
         }
     }
-    printf("testing %-60s - ", name);
+    printf("testing %-50s - ", name);
     if(test)
         printf("passed\n")
     else
@@ -36,7 +36,7 @@ var func =  ```
 #include <stdint.h>
 
 {
-    int64_t N = (int64_t)REQUIRE_NUMBER(ctx, 0, "First arg must be a number");
+    int64_t N = REQUIRE_UINT64(ctx, 0, "First arg must be a positive integer");
     int64_t root = (int64_t)floor(sqrt((double)N));
     int64_t *pr = NULL; int pc = 0;
     small_primes(root, &pr, &pc);
@@ -276,7 +276,7 @@ var e=performance.now();
 var jstime = e-s;
 var jstimestr = rampart.utils.sprintf("js (%.1fms)", jstime);
 
-testFeature("cmodule results of countPrimes, jsRes ==  cRes", function(){
+testFeature("cmodule - results of countPrimes, jsRes ==  cRes", function(){
     return jscount == ccount;
 });
 
