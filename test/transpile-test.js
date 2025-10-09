@@ -110,6 +110,29 @@ import dp from "./export-module.js";
 
 // ---------- Tests ----------
 
+testFeature("String.raw", function()
+{
+  var w="world"
+
+  var x = String.raw`
+\`Hello\`
+\\\${w} \ \\ \\\
+`;
+
+  var y = String.raw`
+\`Hello\`
+\\\\${w} \ \\ \\\
+`;
+
+  var x2 = "\n\\`Hello\\`\n\\\\\\${w} \\ \\\\ \\\\\\\n";
+
+  var y2 = "\n\\`Hello\\`\n\\\\\\\\world \\ \\\\ \\\\\\\n";
+
+
+  return (x==x2 && y==y2);
+
+});
+
 // Sanity: default export (identifier case)
 testFeature("Default export object tag", function() {
   return defPayload && defPayload.tag === "OK";
@@ -1181,7 +1204,6 @@ testFeature("start two promises then await them later", function () {
     return head + a + b === 6;
   })();
 });
-
 
 
 /*
