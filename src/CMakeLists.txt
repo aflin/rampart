@@ -890,10 +890,12 @@ install(CODE "execute_process( \
 install(DIRECTORY DESTINATION "${CMAKE_INSTALL_PREFIX}/derivations")
 install(CODE "execute_process( COMMAND bash -c \"cp -a ${PROJECT_SOURCE_DIR}/derivations/* ${CMAKE_INSTALL_PREFIX}/derivations/\")" )
 
-install(CODE "execute_process ( \
-    COMMAND bash -c \"chown -R nobody ${CMAKE_INSTALL_PREFIX}/web_server\"
- )"
-)
+if (CMAKE_UID EQUAL 0)
+    install(CODE "execute_process ( \
+        COMMAND bash -c \"chown -R nobody ${CMAKE_INSTALL_PREFIX}/web_server\"
+      )"
+    )
+endif()
 
 install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-cmark.so\")")
 install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-curl.so\")")
