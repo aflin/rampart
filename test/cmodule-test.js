@@ -11,7 +11,7 @@ function testFeature(name,test,error)
             test=false;
         }
     }
-    printf("testing %-50s - ", name);
+    printf("testing %-60s - ", name);
     if(test)
         printf("passed\n")
     else
