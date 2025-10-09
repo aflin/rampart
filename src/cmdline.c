@@ -1067,7 +1067,7 @@ static void *repl_thr(void *arg)
                 duk_push_string(ctx, "rampart.utils.sprintf");
                 duk_eval(ctx);
                 if(rp_color) {
-                    duk_push_string(ctx, "%A3J");
+                    duk_push_string(ctx, "%!A3J");
                     duk_push_null(ctx);
                     duk_pull(ctx, -4);
                     duk_call(ctx, 3);
@@ -1075,7 +1075,7 @@ static void *repl_thr(void *arg)
                 }
                 else
                 {
-                    duk_push_string(ctx, "%3J");
+                    duk_push_string(ctx, "%!3J");
                     duk_pull(ctx, -3);
                     duk_call(ctx, 2);
                 }
