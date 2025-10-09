@@ -85,6 +85,8 @@ char *tickify_err(int err)
     switch (err) {
         case ST_BT:
             msg="unterminated or illegal template literal"; break;
+        case ST_SR:
+            msg="unterminated or illegal use of String.raw"; break;
         case ST_SQ:
         case ST_TB:
         case ST_DQ:
@@ -2108,7 +2110,7 @@ static int proc_triple(char **inp, char **ob, char **o, size_t *osize, int *line
     char *in = *inp;
     char *out=*o;
     char *outbeg = *ob;
-    int ret=1, mute=0, type=0;
+    int ret=1, mute=0, type=0, nlines=0;
 
     scopy('"');
 
@@ -2121,9 +2123,19 @@ static int proc_triple(char **inp, char **ob, char **o, size_t *osize, int *line
                 {
                     in+=3;
                     scopy('"');
+                    while(nlines)
+                    {
+                        scopy('\n');
+                        nlines--;
+                    }
                     goto end_db;
                 }
                 scopy(*in);
+                if(*(in+1) == '`')
+                {
+                    scopy('`');
+                    adv;
+                }
                 break;
 
             case '"':
@@ -2133,7 +2145,8 @@ static int proc_triple(char **inp, char **ob, char **o, size_t *osize, int *line
                 break;
 
             case '\n':
-                lineno++;
+                (*lineno)++;
+                nlines++;
                 scopy ('\\');
                 scopy ('n');
                 break;
@@ -2161,8 +2174,8 @@ static int proc_triple(char **inp, char **ob, char **o, size_t *osize, int *line
     type==0 - template literal
     type==1 - tag function first pass
     type==2 - tag function second pass
+    type==3 - String.raw
 */
-
 
 static int proc_backtick(char *bt_start, char *end, char **ob, char **o, size_t *osize, int *lineno, int type)
 {
@@ -2185,10 +2198,19 @@ static int proc_backtick(char *bt_start, char *end, char **ob, char **o, size_t 
         {
             case '\\':
                 scopy('\\');
+                if(type==3)
+                {
+                    scopy('\\');
+                }
                 lastwasbs = !lastwasbs;
                 break;
             case '$':
-                if(in+1<end && *(in+1)=='{' && *(in-1) != '\\')
+                if(
+                    in-1>bt_start &&   //we can look 2 back 
+                    in+1<end      &&   //we can look 1 forward - not really necessary, I think
+                    *(in+1)=='{'  &&   // we have '${'
+                    !lastwasbs
+                  )
                 {
                     char *s, c, *startquote=NULL, *endquote=NULL;
                     in++;
@@ -2399,22 +2421,27 @@ static int proc_backtick(char *bt_start, char *end, char **ob, char **o, size_t 
                 }
                 else
                     scopy(*in);
+                lastwasbs=0;
                 break;
             case '\n':
                 stringcopy("\\n\"+\n\"");
+                lastwasbs=0;
                 break;
             case '\r':
                 scopy('\\');
                 scopy('r');
+                lastwasbs=0;
                 break;
             case '\t':
                 scopy('\\');
                 scopy('t');
+                lastwasbs=0;
                 break;
             case '`':
                 if(lastwasbs)
                 {
-                    out--;
+                    if(type!=3)
+                        out--;
                     scopy('`');
                     lastwasbs=0;
                 }
@@ -2478,10 +2505,10 @@ static int proc_backtick(char *bt_start, char *end, char **ob, char **o, size_t 
                 if(!lastwasbs)
                     scopy('\\');
                 scopy('"');
+                lastwasbs=0;
                 break;
             default:
-                if(lastwasbs)
-                    lastwasbs=0;
+                lastwasbs=0;
                 scopy(*in);
         }
         adv;
@@ -2722,7 +2749,7 @@ char * tickify(char *src, size_t sz, int *err, int *ln)
 
                     s--;
                     while(s>=src && isspace(*s))s--;
-                    while(s>=src && isalpha(*s))s--;
+                    while( s>=src && ( isalpha(*s) || *s == '.' ) )s--;
                     s++;
                     if(
                         // reserved words which don't require a (), {} or [] next
@@ -2736,6 +2763,23 @@ char * tickify(char *src, size_t sz, int *err, int *ln)
                     )
                     {
                         r=proc_backtick(in, end, &outbeg, &out, &osz, &line, startexp);
+                    }
+                    else if(!strncmp(s,"String.raw",10))
+                    {
+                        out--;
+                        while( out>=outbeg && isspace(*out))out--;
+                        while( out>=outbeg && ( isalpha(*out) || *out == '.' ) )out--;
+                        out++;
+                        //r=proc_sr(in, end, &outbeg, &out, &osz, &line);
+                        r=proc_backtick(in, end, &outbeg, &out, &osz, &line, 3);
+                        if(!r)
+                        {
+                            *err=ST_SR;
+                            *ln=qline;
+printf("outbeg=%s\n",outbeg);
+                            free(outbeg);
+                            return NULL;
+                        }
                     }
                     else
                         r=proc_backtick(in, end, &outbeg, &out, &osz, &line, !startexp);

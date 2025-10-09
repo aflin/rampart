@@ -5,6 +5,7 @@
 
    To build the test
    cc -g -DTEST -o transpiler -Ilib/include/ transpiler.c \
+       -I../../src/include \
        tree-sitter-javascript/src/parser.c tree-sitter-javascript/src/scanner.c \
        lib/src/lib.c
  */
@@ -400,7 +401,7 @@ char *apply_edits(const char *src, size_t src_len, EditList *e, uint32_t polysne
 
         // Write replacement bytes
         memcpy(out + before, ed->text, rep_len);
-        // printf("replaced:\n'%s'\n", out);
+        //printf("replaced:\n'%s'\n", out);
 
         // Write any newline padding to preserve original line positions
         if (pad_nls)
@@ -5186,6 +5187,96 @@ static void tp_linecol_from_src_offset_utf8(const char *src, size_t src_len, uin
         *out_col = (int)col;
 }
 
+
+// Core doubling rule used for this pass:
+//
+// Turn '\' -> '\\' except:
+//   - if the next char is '$' or '`' (leave the '\' alone),
+//   - OR if the next char is '\' *and* the following char is '$' or '`'
+//     (i.e., this '\' is the first of a pair that precedes $ or `; leave it alone).
+//
+// Everything else is preserved unchanged.
+static char *double_backslashes_except_dollar_or_tick(const char *body, size_t len) {
+    // generous capacity: worst case every '\' doubles
+    size_t cap = len * 2 + 3;
+    char *out = (char *)malloc(cap);
+    size_t o = 0;
+
+    out[o++] = '`';
+
+    for (size_t i = 0; i < len; i++) {
+        const char *s = &body[i];
+
+        int nbs=0;
+        while(*s == '\\' && i<len)
+        {
+            out[o++] = '\\';
+            out[o++] = '\\';
+            s++;
+            i++;
+            nbs++;
+        }
+        if( ( *s=='`' || *s=='$' ) && (nbs % 2) )
+            out[o++] = '\\';
+
+        out[o++] = *s;
+    }
+    out[o++] = '`';
+
+    out[o] = '\0';
+    return out;
+}
+
+int rewrite_string_raw(EditList *edits, const char *src, TSNode call_expr, RangeList *claimed, int overlaps) {
+    if (ts_node_is_null(call_expr) || strcmp(ts_node_type(call_expr), "call_expression") != 0) {
+        return 0;
+    }
+    size_t cs = ts_node_start_byte(call_expr), ce = ts_node_end_byte(call_expr);
+
+    // Ensure callee is exactly "String.raw"
+    TSNode func = ts_node_child_by_field_name(call_expr, "function", 8);
+    if (ts_node_is_null(func) || strcmp(ts_node_type(func), "member_expression") != 0) {
+        return 0;
+    }
+    TSNode obj = ts_node_child_by_field_name(func, "object", 6);
+    TSNode prop = ts_node_child_by_field_name(func, "property", 8);
+    if (ts_node_is_null(obj) || ts_node_is_null(prop)) return 0;
+
+    size_t obj_a = ts_node_start_byte(obj), obj_b = ts_node_end_byte(obj);
+    size_t prop_a = ts_node_start_byte(prop), prop_b = ts_node_end_byte(prop);
+    if ((obj_b - obj_a) != 6 || strncmp(src + obj_a, "String", 6) != 0) return 0;
+    if ((prop_b - prop_a) != 3 || strncmp(src + prop_a, "raw", 3) != 0) return 0;
+
+    // Argument must be a template_string (may contain substitutions; that's OK for this pass)
+    TSNode args = ts_node_child_by_field_name(call_expr, "arguments", 9);
+    if (ts_node_is_null(args) || strcmp(ts_node_type(args), "template_string") != 0) {
+        return 0;
+    }
+
+    if(overlaps)
+        return 1;
+
+    // Backtick-delimited source span
+    size_t t_a = ts_node_start_byte(args);
+    size_t t_b = ts_node_end_byte(args);
+    if (t_b <= t_a + 2) {
+        add_edit(edits, cs, ce, "\"\"", claimed);
+        return 1;
+    }
+
+    // Body between backticks
+    size_t body_a = t_a + 1;
+    size_t body_b = t_b - 1;
+
+    size_t body_len = body_b - body_a;
+
+    // Apply the specific doubling rule
+    char *rewritten = double_backslashes_except_dollar_or_tick(src+body_a, body_len);
+    add_edit_take_ownership(edits, cs, ce, rewritten, claimed);
+
+    return 1;
+}
+
 RP_ParseRes transpiler_rewrite_pass(EditList *edits, const char *src, size_t src_len, TSNode root,
                                     uint32_t *polysneeded, int *unresolved)
 {
@@ -5234,6 +5325,12 @@ RP_ParseRes transpiler_rewrite_pass(EditList *edits, const char *src, size_t src
         {
             handled = rewrite_template_node(edits, src, n, &claimed, overlaps);
         }
+
+        if (!handled && (strcmp(nt, "call_expression") == 0))
+        {
+            handled = rewrite_string_raw(edits, src, n, &claimed, overlaps);
+        }
+
         if (!handled && (strcmp(nt, "string") == 0 || strcmp(nt, "template_literal") == 0))
         {
             handled = rewrite_raw_node(edits, src, n, &claimed, overlaps);
@@ -5424,6 +5521,7 @@ static RP_ParseRes transpile_code(const char *src, size_t src_len, int printTree
             uint32_t polysneed_not_added = polysneeded & ~polysdone;
 
             res.transpiled = apply_edits(src, src_len, &edits, polysneed_not_added);
+
             polysdone |= polysneeded;
 
             res.altered = 1;
@@ -5572,7 +5670,7 @@ int main(int argc, char **argv)
 {
     if (argc < 2)
     {
-        fprintf(stderr, "Usage: %s <path-to-js> [--print-ast]\n       Use '-' to read from stdin.\n", argv[0]);
+        fprintf(stderr, "Usage: %s <path-to-js> [--printTree]\n       Use '-' to read from stdin.\n", argv[0]);
         return 2;
     }
     int printTree = (argc >= 3 && strcmp(argv[2], "--print-tree") == 0) ? 2 : 0;

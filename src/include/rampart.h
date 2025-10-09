@@ -707,6 +707,7 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
 #define ST_BT   3
 #define ST_TB   4
 #define ST_BS   5
+#define ST_SR   6  //for string raw
 
 #define ST_PM   20
 #define ST_PN   21
