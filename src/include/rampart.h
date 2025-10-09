@@ -13,6 +13,7 @@
 #include <pthread.h>
 #include "duktape.h"
 #include "sys/queue.h"
+#include "rp_string.h"
 
 #if defined(__cplusplus)
 extern "C"

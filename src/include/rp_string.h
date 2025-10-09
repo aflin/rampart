@@ -136,6 +136,10 @@ RP_STRING_API int  rp_string_appendf_str (char **bufp, const char *fmt, ...);
 } /* extern "C" */
 #endif
 
+
+#ifdef RP_STRING_IMPLEMENTATION
+
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -626,5 +630,5 @@ int rp_string_appendf_str(char **bufp, const char *fmt, ...) {
     va_end(ap);
     return r;
 }
-
+#endif /*  RP_STRING_IMPLEMENTATION */
 #endif /* RP_STRING_H */

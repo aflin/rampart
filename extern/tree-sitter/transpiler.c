@@ -16,7 +16,9 @@
 //#define RP_STRING_REPORT_FREES
 
 #include "transpiler.h"
+#define RP_STRING_IMPLEMENTATION // include the functions
 #include "rp_string.h"
+#undef RP_STRING_IMPLEMENTATION
 #include <ctype.h>
 #include <stdarg.h>
 #include <stdbool.h>

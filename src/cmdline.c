@@ -20,6 +20,7 @@
 #include <sys/stat.h>
 #include <errno.h>
 #include <dlfcn.h>
+#include <sys/ioctl.h>
 
 #include "event.h"
 #include "event2/thread.h"
@@ -101,7 +102,8 @@ char *tickify_err(int err)
     return msg;
 }
 
-
+// Standard colors
+#define RPCOL_BLK   "\x1B[30m"
 #define RPCOL_RED   "\x1B[31m"
 #define RPCOL_GRN   "\x1B[32m"
 #define RPCOL_YEL   "\x1B[33m"
@@ -109,8 +111,19 @@ char *tickify_err(int err)
 #define RPCOL_MAG   "\x1B[35m"
 #define RPCOL_CYN   "\x1B[36m"
 #define RPCOL_WHT   "\x1B[37m"
-#define RPCOL_RESET "\x1B[0m"
 
+// Bright (high-intensity) colors
+#define RPCOL_BBLK  "\x1B[90m"
+#define RPCOL_BRED  "\x1B[91m"
+#define RPCOL_BGRN  "\x1B[92m"
+#define RPCOL_BYEL  "\x1B[93m"
+#define RPCOL_BBLU  "\x1B[94m"
+#define RPCOL_BMAG  "\x1B[95m"
+#define RPCOL_BCYN  "\x1B[96m"
+#define RPCOL_BWHT  "\x1B[97m"
+
+// Reset
+#define RPCOL_RESET "\x1B[0m"
 
 char *serverscript = "//server script now resides in the rampart-webserver.js module\nvar webserv = require('rampart-webserver');webserv.cmdLine(1);\n";
 
@@ -167,170 +180,30 @@ char *upgradescript = "rampart.globalize(rampart.utils);\n"
 #define RP_REPL_PREFIX_CONT "... "
 
 char *words[]={
-    "Array",
-    "Array.isArray",
-    "CBOR",
-    "CBOR.encode",
-    "CBOR.decode",
-    "Date",
-    "Date.now",
-    "Date.parse",
-    "Date.UTC",
-    "Duktape",
-    "Duktape.verion",
-    "Duktape.env",
-    "Duktape.fin",
-    "Duktape.enc",
-    "Duktape.dec",
-    "Duktape.info",
-    "Duktape.act",
-    "Duktape.gc",
-    "Duktape.compact",
-    "Duktape.errThrow",
-    "Duktape.Pointer",
-    "Duktape.Thread",
-    "Math",
-    "Math.E",
-    "Math.LN2",
-    "Math.LOG2E",
-    "Math.LOG10E",
-    "Math.PI",
-    "Math.SQRT1_2",
-    "Math.SQRT2",
-    "Math.abs",
-    "Math.acos",
-    "Math.acosh",
-    "Math.asin",
-    "Math.asinh",
-    "Math.atan",
-    "Math.atanh",
-    "Math.atan2",
-    "Math.cbrt",
-    "Math.ceil",
-    "Math.clz32",
-    "Math.cos",
-    "Math.cosh",
-    "Math.exp",
-    "Math.floor",
-    "Math.fround",
-    "Math.hypot",
-    "Math.imul",
-    "Math.log",
-    "Math.log1p",
-    "Math.log10",
-    "Math.log2",
-    "Math.max",
-    "Math.min",
-    "Math.pow",
-    "Math.random",
-    "Math.round",
-    "Math.sign",
-    "Math.sin",
-    "Math.sinh",
-    "Math.sqrt",
-    "Math.tan",
-    "Math.tanh",
-    "Math.trunc",
-    "NaN",
-    "Number",
-    "Object",
-    "Object.keys",
-    "Object.create",
-    "Object.getOwnPropertyNames",
-    "String",
-    "TextDecoder",
-    "TextDecoder.decode",
-    "TextEncoder",
-    "TextEncoder.encode",
-    "abstract",
     "arguments",
-    "boolean",
     "break",
-    "byte",
     "case",
     "catch",
     "catch (e) {",
     "console",
     "console.log",
+    "const",
     "continue",
     "delete",
     "do",
     "else",
-    "eval",
     "false",
     "for",
     "function",
-    "hasOwnProperty",
     "if",
     "in",
     "instanceof",
-    "isNaN",
     "isPrototypeOf",
-    "length",
     "new",
     "null",
-    "performance",
-    "performance.now",
-    "process",
-    "process.exit",
-    "process.env",
-    "process.argv",
-    "process.scriptPath",
-    "prototype",
-    "rampart",
-    "rampart.utils",
-    "rampart.utils.printf",
-    "rampart.utils.sprintf",
-    "rampart.utils.bprintf",
-    "rampart.utils.fopen",
-    "rampart.utils.fclose",
-    "rampart.utils.fprintf",
-    "rampart.utils.fseek",
-    "rampart.utils.rewind",
-    "rampart.utils.ftell",
-    "rampart.utils.fflush",
-    "rampart.utils.fread",
-    "rampart.utils.fwrite",
-    "rampart.utils.hexify",
-    "rampart.utils.dehexify",
-    "rampart.utils.stringToBuffer",
-    "rampart.utils.bufferToString",
-    "rampart.utils.objectToQuery",
-    "rampart.utils.queryToObject",
-    "rampart.utils.readFile",
-    "rampart.utils.stat",
-    "rampart.utils.lstat",
-    "rampart.utils.exec",
-    "rampart.utils.shell",
-    "rampart.utils.kill",
-    "rampart.utils.mkdir",
-    "rampart.utils.rmdir",
-    "rampart.utils.readdir",
-    "rampart.utils.copyFile",
-    "rampart.utils.rmFile",
-    "rampart.utils.link",
-    "rampart.utils.symlink",
-    "rampart.utils.chmod",
-    "rampart.utils.touch",
-    "rampart.utils.rename",
-    "rampart.utils.sleep",
-    "rampart.utils.getpid",
-    "rampart.utils.getppid",
-    "rampart.utils.getType",
-    "rampart.utils.stdout",
-    "rampart.utils.stderr",
-    "rampart.utils.stdin",
-    "rampart.utils.load",
-    "rampart.utils.use",
-    "rampart.globalize",
-    "rampart.import",
-    "rampart.import.csvFile",
-    "rampart.import.csv",
-    "rampart.thread()",
-    "rampart.thread",
-    "require",
     "return",
     "switch",
+    "then",
     "this",
     "throw",
     "true",
@@ -338,312 +211,224 @@ char *words[]={
     "try {",
     "typeof",
     "undefined",
-    "valueOf",
-    "var",
-    "while"
-};
-
-char *gwords[]={
-    "abstract",
-    "arguments",
-    "Array",
-    "Array.isArray",
-    "boolean",
-    "bprintf",
-    "break",
-    "bufferToString",
-    "byte",
-    "case",
-    "catch",
-    "catch (e) {",
-    "CBOR",
-    "CBOR.decode",
-    "CBOR.encode",
-    "chmod",
-    "console",
-    "console.log",
-    "continue",
-    "copyFile",
-    "Date",
-    "Date.now",
-    "Date.parse",
-    "Date.UTC",
-    "dehexify",
-    "delete",
-    "do",
-    "Duktape",
-    "Duktape.act",
-    "Duktape.compact",
-    "Duktape.dec",
-    "Duktape.enc",
-    "Duktape.env",
-    "Duktape.errThrow",
-    "Duktape.fin",
-    "Duktape.gc",
-    "Duktape.info",
-    "Duktape.Pointer",
-    "Duktape.Thread",
-    "Duktape.verion",
-    "else",
-    "eval",
-    "exec",
-    "false",
-    "fclose",
-    "fflush",
-    "fopen",
-    "for",
-    "fprintf",
-    "fread",
-    "fseek",
-    "ftell",
-    "function",
-    "fwrite",
-    "getpid",
-    "getppid",
-    "getType",
-    "hasOwnProperty",
-    "hexify",
-    "if",
-    "in",
-    "instanceof",
-    "isNaN",
-    "isPrototypeOf",
-    "kill",
-    "length",
-    "link",
-    "load",
-    "lstat",
-    "Math",
-    "Math.abs",
-    "Math.acos",
-    "Math.acosh",
-    "Math.asin",
-    "Math.asinh",
-    "Math.atan",
-    "Math.atan2",
-    "Math.atanh",
-    "Math.cbrt",
-    "Math.ceil",
-    "Math.clz32",
-    "Math.cos",
-    "Math.cosh",
-    "Math.E",
-    "Math.exp",
-    "Math.floor",
-    "Math.fround",
-    "Math.hypot",
-    "Math.imul",
-    "Math.LN2",
-    "Math.log",
-    "Math.log10",
-    "Math.LOG10E",
-    "Math.log1p",
-    "Math.log2",
-    "Math.LOG2E",
-    "Math.max",
-    "Math.min",
-    "Math.PI",
-    "Math.pow",
-    "Math.random",
-    "Math.round",
-    "Math.sign",
-    "Math.sin",
-    "Math.sinh",
-    "Math.sqrt",
-    "Math.SQRT1_2",
-    "Math.SQRT2",
-    "Math.tan",
-    "Math.tanh",
-    "Math.trunc",
-    "mkdir",
-    "NaN",
-    "new",
-    "null",
-    "Number",
-    "Object",
-    "Object.create",
-    "Object.getOwnPropertyNames",
-    "Object.keys",
-    "objectToQuery",
-    "performance",
-    "performance.now",
-    "printf",
-    "process",
-    "process.argv",
-    "process.env",
-    "process.exit",
-    "process.scriptPath",
-    "prototype",
-    "queryToObject",
-    "rampart",
-    "rampart.utils",
-    "rampart.utils.printf",
-    "rampart.utils.sprintf",
-    "rampart.utils.bprintf",
-    "rampart.utils.fopen",
-    "rampart.utils.fclose",
-    "rampart.utils.fprintf",
-    "rampart.utils.fseek",
-    "rampart.utils.rewind",
-    "rampart.utils.ftell",
-    "rampart.utils.fflush",
-    "rampart.utils.fread",
-    "rampart.utils.fwrite",
-    "rampart.utils.hexify",
-    "rampart.utils.dehexify",
-    "rampart.utils.stringToBuffer",
-    "rampart.utils.bufferToString",
-    "rampart.utils.objectToQuery",
-    "rampart.utils.queryToObject",
-    "rampart.utils.readFile",
-    "rampart.utils.stat",
-    "rampart.utils.lstat",
-    "rampart.utils.exec",
-    "rampart.utils.shell",
-    "rampart.utils.kill",
-    "rampart.utils.mkdir",
-    "rampart.utils.rmdir",
-    "rampart.utils.readdir",
-    "rampart.utils.copyFile",
-    "rampart.utils.rmFile",
-    "rampart.utils.link",
-    "rampart.utils.symlink",
-    "rampart.utils.chmod",
-    "rampart.utils.touch",
-    "rampart.utils.rename",
-    "rampart.utils.sleep",
-    "rampart.utils.getpid",
-    "rampart.utils.getppid",
-    "rampart.utils.getType",
-    "rampart.utils.stdout",
-    "rampart.utils.stderr",
-    "rampart.utils.stdin",
-    "rampart.utils.load",
-    "rampart.utils.use",
-    "rampart.globalize",
-    "rampart.import",
-    "rampart.import.csv",
-    "rampart.import.csvFile",
-    "rampart.thread",
-    "rampart.thread()",
-    "rampart.utils",
-    "readdir",
-    "readFile",
-    "rename",
-    "require",
-    "return",
-    "rewind",
-    "rmdir",
-    "rmFile",
-    "shell",
-    "sleep",
-    "sprintf",
-    "stat",
-    "stderr",
-    "stdin",
-    "stdout",
-    "String",
-    "stringToBuffer",
-    "switch",
-    "symlink",
-    "TextDecoder",
-    "TextDecoder.decode",
-    "TextEncoder",
-    "TextEncoder.encode",
-    "this",
-    "throw",
-    "touch",
-    "true",
-    "try {",
-    "try",
-    "typeof",
-    "undefined",
-    "use",
     "valueOf",
     "var",
     "while"
 };
 
 int nwords = sizeof(words)/sizeof(char*);
-int ngwords = sizeof(gwords)/sizeof(char*);
+static char *strrpbrk(const char *str, const char *accept) {
+    if (!str || !accept)
+        return NULL;
 
-void completion(const char *inbuf, linenoiseCompletions *lc) {
-    int i=0, indots=0, outdots=0;
-    char *buf=NULL;
-    char *s, c;
-    char *endchar = " (;{=<>/*-+|&!^?:[";
+    const char *p = str + strlen(str);
+    while (p != str) {
+        --p;
+        if (strchr(accept, *p))
+            return (char *)p;
+    }
+    return NULL;
+}
+
+static void completion(const char *inbuf, linenoiseCompletions *lc) {
+    int i=0;
     char **suggwords=words;
     int nsuggwords=nwords;
+    RPTHR *thr = get_current_thread();
+    duk_context *ctx = thr->ctx;
+    char *dotpos=NULL;
+    int width=-1, curpos=0;
+    struct winsize wsz;
+    char *endchar = " (;{=<>/*-+|&!^?:[";
+    const char *startpoint = inbuf;
+    const char *s = strrpbrk(inbuf, endchar);
+    int startlen = 0;
 
-    if(globalize)
+    if(s)
     {
-        suggwords=gwords;
-        nsuggwords=ngwords;
-    }
-
-    /* get last occurence of one of ' ', '(', etc */
-    /* and yes I know if this was meant to be efficient,
-       I'd start at the end of the string and search backwards for
-       each char in endchar.  Doesn't matter here in interactive setting.
-    */
-    while((c=endchar[i]))
-    {
-        s=strrchr(inbuf, c);
-        if(s>buf)
-            buf=s;
-        i++;
-    }
-    if(!buf)
-        buf=(char*)inbuf;
-    else
-        buf++;
-
-    s=(char *)buf;
-
-    while(s)
-    {
-        s=strchr(s,'.');
-        if(s)
-        {
-            indots++;
+        s++;
+        while( isspace(*s) )
             s++;
-        }
+        startlen = s - startpoint;
+        inbuf=s;
     }
+    int baselen = strlen(inbuf);
 
-    for (i=0;i<nsuggwords;i++)
+    // Query terminal size
+    if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &wsz) != -1)
+        width = wsz.ws_col -3;
+
+    if(baselen)
     {
-        char *sugg=suggwords[i];
-        outdots=0;
-        if(!strncmp(sugg, buf, strlen(buf))){
-            s=sugg;
-            while(s)
+        dotpos=strrchr(inbuf, '.');
+        int postlen=0;
+        if(dotpos)
+        {
+            baselen = (int)(dotpos-inbuf);
+            dotpos++;
+            postlen = strlen(dotpos);
+        }
+        duk_push_sprintf(ctx, "%.*s;", baselen, inbuf);
+        if(duk_peval(ctx) == 0)
+        {
+            if(duk_is_string(ctx, -1))
             {
-                s=strchr(s,'.');
-                if(s)
+                duk_push_string(ctx, "String.prototype");
+                duk_eval(ctx);
+                duk_remove(ctx, -2);
+            }
+            else if(duk_is_number(ctx, -1))
+            {
+                duk_push_string(ctx, "Number.prototype");
+                duk_eval(ctx);
+                duk_remove(ctx, -2);
+            }
+            if(duk_is_object(ctx, -1) || duk_is_buffer_data(ctx, -1))
+            {
+                int gotone=0, longest=0, nsugg=0;
+                duk_enum(ctx, -1, DUK_ENUM_INCLUDE_NONENUMERABLE);
+                while(duk_next(ctx, -1, 1))
                 {
-                    outdots++;
-                    s++;
+                    duk_size_t slen;
+                    const char *sym = duk_get_lstring(ctx, -2, &slen);
+                    int isfunc = duk_is_function(ctx, -1);
+                    duk_pop_2(ctx);
+                    if(isdigit(*sym))
+                        continue;
+                    if(dotpos && strncmp(dotpos, sym, postlen)!=0)
+                        continue;
+
+                    rp_string *sugg = rp_string_new(32);
+                    if(startlen)
+                        rp_string_putsn(sugg, startpoint, startlen);
+
+                    rp_string_putsn(sugg, inbuf, baselen);
+                    rp_string_putc(sugg, '.');
+                    rp_string_puts(sugg,sym);
+                    if(isfunc)
+                        rp_string_putc(sugg, '(');
+
+                    linenoiseAddCompletion(lc, sugg->str);
+                    sugg=rp_string_free(sugg);
+
+                    if((int)slen > longest)
+                        longest = (int)slen;
+                    nsugg++;
+                }
+                duk_pop(ctx); //enum
+
+                if(nsugg > 1)
+                {
+                    duk_enum(ctx, -1, DUK_ENUM_INCLUDE_NONENUMERABLE);
+                    while(duk_next(ctx, -1, 1))
+                    {
+                        duk_size_t slen;
+                        const char *sym = duk_get_lstring(ctx, -2, &slen);
+                        int isfunc = duk_is_function(ctx, -1);
+                        duk_pop_2(ctx);
+                        if(isdigit(*sym))
+                            continue;
+                        if(dotpos && strncmp(dotpos, sym, postlen)!=0)
+                            continue;
+                        if(gotone==0)
+                        {
+                            printf("\n   ");
+                            gotone=1;
+                        }
+                        if(curpos + longest + 3 + isfunc *2> width)
+                        {
+                            printf("\n   ");
+                            curpos=0;
+                        }
+                        if(isfunc)
+                            printf("%s%s()%*s%s", RPCOL_BBLK, sym, (int)(3+longest - slen -2), " ", RPCOL_RESET);
+                        else
+                            printf("%s%s%*s%s", RPCOL_BBLK, sym, (int)(3+longest - slen), " ", RPCOL_RESET);
+                        curpos += longest + 3 + isfunc *2;
+                    }
+                    if(gotone)
+                        putchar('\n');
+                    duk_pop(ctx); //enum
                 }
             }
-            if (outdots == indots)
-            {
-                if(buf != inbuf)
-                {
-                    int l = strlen(inbuf) - strlen(buf);
-                    char *newsugg = NULL;
-                    REMALLOC(newsugg, strlen(inbuf) + strlen(sugg) + 1);
-                    strcpy(newsugg, inbuf);
-                    *(newsugg+l)='\0';
-                    strcat(newsugg, sugg);
-                    linenoiseAddCompletion(lc, newsugg);
-                    free(newsugg);
-                }
-                else
-                    linenoiseAddCompletion(lc, sugg);
-            }
+            duk_pop(ctx); //eval ret
+            return;
         }
     }
-    return;
+    // if no dot, look for global symbols
+    if(!dotpos)
+    {
+        int inlen = strlen(inbuf), gotone=0, longest=0;
+
+        duk_push_global_object(ctx);
+
+        int nsugg=0;
+        duk_enum(ctx, -1, DUK_ENUM_INCLUDE_NONENUMERABLE);
+        while(duk_next(ctx, -1, 1))
+        {
+            duk_size_t slen;
+            const char *sym = duk_get_lstring(ctx, -2, &slen);
+            int isfunc = duk_is_function(ctx, -1);
+            duk_pop_2(ctx);
+            if(inlen && strncmp(inbuf, sym, inlen) != 0)
+                continue;
+            rp_string *sugg = rp_string_new(32);
+            rp_string_putsn(sugg, startpoint, startlen);
+            rp_string_puts(sugg, sym);
+            if(isfunc)
+                rp_string_putc(sugg, '(');
+
+            linenoiseAddCompletion(lc, sugg->str);
+            rp_string_free(sugg);
+
+            if((int)slen > longest)
+                longest = (int)slen;
+            nsugg++;
+        }
+        duk_pop(ctx);  // enum
+
+        if(nsugg > 1)
+        {
+            longest +=4;
+            duk_enum(ctx, -1, DUK_ENUM_INCLUDE_NONENUMERABLE);
+            while(duk_next(ctx, -1, 1))
+            {
+                duk_size_t slen;
+                const char *sym = duk_get_lstring(ctx, -2, &slen);
+                int isfunc = duk_is_function(ctx, -1);
+                duk_pop_2(ctx);
+                if(inlen && strncmp(inbuf, sym, inlen) != 0)
+                    continue;
+                if(gotone==0)
+                {
+                    printf("\n   ");
+                    gotone=1;
+                }
+                if(curpos + longest + 3 + isfunc *2> width)
+                {
+                    printf("\n   ");
+                    curpos=0;
+                }
+                if(isfunc)
+                    printf("%s%s()%*s%s", RPCOL_BBLK, sym, (int)(3+longest - slen -2), " ", RPCOL_RESET);
+                else
+                    printf("%s%s%*s%s", RPCOL_BBLK, sym, (int)(3+longest - slen), " ", RPCOL_RESET);
+                curpos += longest + 3 + isfunc *2;
+            }
+            if(gotone)
+                putchar('\n');
+            duk_pop(ctx); //enum
+        }
+        duk_pop(ctx);  //global object
+
+        for (i=0;i<nsuggwords;i++)
+        {
+            char *sym = suggwords[i];
+            if(inlen && strncmp(inbuf, sym, inlen) != 0)
+                continue;
+            linenoiseAddCompletion(lc, sym);
+        }
+    }
 }
 
 #define EXIT_FUNC struct rp_exit_funcs_s
@@ -1027,9 +812,9 @@ static void *repl_thr(void *arg)
             }
         }
 
-        // if pos of error is at beginning of line or at a '`' , its likely a multiliner 
+        // if pos of error is at beginning of line or at a '`' , its likely a multiliner
         if(
-            res.err && 
+            res.err &&
                 (
                     res.pos==0          ||
                     line[res.pos]=='\'' ||
@@ -1071,7 +856,7 @@ static void *repl_thr(void *arg)
                     duk_push_null(ctx);
                     duk_pull(ctx, -4);
                     duk_call(ctx, 3);
-                    
+
                 }
                 else
                 {
@@ -1140,7 +925,7 @@ static char * load_polyfill(duk_context *ctx, int setting)
     char *babelcode=NULL;
     FILE *f;
     size_t read;
- 
+
     /* check if polyfill is already loaded */
     duk_eval_string(ctx,"global._babelPolyfill");
     if(duk_get_boolean_default(ctx,-1,0))
@@ -2206,7 +1991,7 @@ static int proc_backtick(char *bt_start, char *end, char **ob, char **o, size_t 
                 break;
             case '$':
                 if(
-                    in-1>bt_start &&   //we can look 2 back 
+                    in-1>bt_start &&   //we can look 2 back
                     in+1<end      &&   //we can look 1 forward - not really necessary, I think
                     *(in+1)=='{'  &&   // we have '${'
                     !lastwasbs
