@@ -3554,7 +3554,7 @@ duk_ret_t _html_node_pp(duk_context *ctx, TidyDoc tdoc, Node *node)
 
     if(duk_is_number(ctx,0))
     {
-        (void)REQUIRE_UINT(ctx, 0, "html.prettyPrint - first argument must be an object of options or a positive int (indent)");
+        (void)REQUIRE_POSINT(ctx, 0, "html.prettyPrint - first argument must be an object of options or a positive int (indent)");
         int ret=tidyOptParseValue(tdoc, "indent", "1");
         if(!ret)
             RP_THROW(ctx, "html.prettyPrint - error setting 'indent' to '1' - %s",tidy_errbuf->bp);
@@ -3566,7 +3566,7 @@ duk_ret_t _html_node_pp(duk_context *ctx, TidyDoc tdoc, Node *node)
 
         if(duk_is_number(ctx, 1))
         {
-            (void)REQUIRE_UINT(ctx, 1, "html.prettyPrint - second argument must be a positive int (wrap)");
+            (void)REQUIRE_POSINT(ctx, 1, "html.prettyPrint - second argument must be a positive int (wrap)");
             ret = tidyOptParseValue(tdoc, "wrap", duk_to_string(ctx, 1));
             if(!ret)
                 RP_THROW(ctx, "html.prettyPrint - error setting 'indent-spaces' to '%s' - %s", duk_to_string(ctx, 0),tidy_errbuf->bp);

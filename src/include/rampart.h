@@ -71,6 +71,17 @@ extern int rp_print_error_lines;
     if(!duk_is_number((ctx),__rp_i)) {\
         RP_THROW((ctx), __VA_ARGS__ );\
     }\
+    double rd=duk_get_number((ctx),__rp_i);\
+    if(rd<0.0) RP_THROW((ctx), __VA_ARGS__ );\
+    unsigned int r = (unsigned int)rd;\
+    r;\
+})
+
+#define REQUIRE_POSINT(ctx,idx,...) ({\
+    duk_idx_t __rp_i=(idx);\
+    if(!duk_is_number((ctx),__rp_i)) {\
+        RP_THROW((ctx), __VA_ARGS__ );\
+    }\
     int r=duk_get_int((ctx),__rp_i);\
     if(r<0) RP_THROW((ctx), __VA_ARGS__ );\
     r;\

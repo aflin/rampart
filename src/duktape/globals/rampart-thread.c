@@ -1617,7 +1617,7 @@ static duk_ret_t _thread_waitfor(duk_context *ctx, const char *key, const char *
     int pret;
 
     if(!duk_is_undefined(ctx, 1))
-        to=REQUIRE_UINT(ctx, 1, "thread.%s: second argument, if provided, must be a positive number (milliseconds)", funcname);
+        to=REQUIRE_POSINT(ctx, 1, "thread.%s: second argument, if provided, must be a positive number (milliseconds)", funcname);
 
     if(!openpipes(thr, locked))
         return 0;

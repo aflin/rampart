@@ -2193,7 +2193,7 @@ duk_ret_t duk_rp_lmdb_constructor(duk_context *ctx)
 
         if (duk_get_prop_string(ctx, obj_idx, "maxDbs"))
         {
-            maxdbs=REQUIRE_UINT(ctx, -1, "lmdb.init - option maxDbs must be a positive number (Max number of named databases)");
+            maxdbs=REQUIRE_POSINT(ctx, -1, "lmdb.init - option maxDbs must be a positive number (Max number of named databases)");
             maxdbs++; //apparently this included the default unnamed db, despite the docs.
             duk_pop(ctx);
         }

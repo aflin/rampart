@@ -5967,10 +5967,10 @@ static duk_ret_t fork_helper(duk_context *ctx)
 
     setproctitle("rampart sql_helper");
 
-    finfo->reader = REQUIRE_UINT(ctx,0, "Error, this function is meant to be run upon forking only");
-    finfo->writer = REQUIRE_UINT(ctx,1, "Error, this function is meant to be run upon forking only");
+    finfo->reader = REQUIRE_POSINT(ctx,0, "Error, this function is meant to be run upon forking only");
+    finfo->writer = REQUIRE_POSINT(ctx,1, "Error, this function is meant to be run upon forking only");
     /* to help with debugging, get parent's thread num */
-    thisfork = REQUIRE_UINT(ctx,2, "Error, this function is meant to be run upon forking only");
+    thisfork = REQUIRE_POSINT(ctx,2, "Error, this function is meant to be run upon forking only");
 
     struct sigaction sa = { {0} };
 
@@ -6105,8 +6105,6 @@ static duk_ret_t text_to_vec(duk_context *ctx)
             v[i] *= lf;
         }
     }
-    static int n=0;
-    n++;
     l2_normalize(v, dim);
 
     //printf("{\n");

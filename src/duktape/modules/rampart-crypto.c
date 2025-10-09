@@ -957,7 +957,7 @@ DUK_SHA_FUNC(sm3,"sm3")
  */
 static duk_ret_t duk_rand(duk_context *ctx)
 {
-    duk_size_t len = REQUIRE_UINT(ctx, -1, "crypto.rand requires a positive integer");
+    duk_size_t len = REQUIRE_POSINT(ctx, -1, "crypto.rand requires a positive integer");
     void *buffer = duk_push_fixed_buffer(ctx, len);
     /* RAND_bytes may return 0 or -1 on error */
     checkseed(ctx);
@@ -1060,7 +1060,7 @@ static duk_ret_t duk_seed_rand(duk_context *ctx)
             RP_THROW(ctx, "crypto.seed - argument must be an object");
 
         if(duk_get_prop_string(ctx, 0, "bytes"))
-            bytes = REQUIRE_UINT(ctx, -1, "crypto.seed - \"bytes\" requires a positive integer (number of bytes)");
+            bytes = REQUIRE_POSINT(ctx, -1, "crypto.seed - \"bytes\" requires a positive integer (number of bytes)");
         duk_pop(ctx);
 
         if(duk_get_prop_string(ctx, 0, "file"))

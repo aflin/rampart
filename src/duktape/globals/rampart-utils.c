@@ -2751,7 +2751,7 @@ duk_ret_t duk_rp_readline(duk_context *ctx)
     {
         int to=-1;
         if(!duk_is_undefined(ctx, 1))
-            to=REQUIRE_UINT(ctx, 1, "readline: second argument must be a positive integer (timeout for fifo read)");
+            to=REQUIRE_POSINT(ctx, 1, "readline: second argument must be a positive integer (timeout for fifo read)");
 
         duk_push_int(ctx, to);
         duk_put_prop_string(ctx, -2, "_timeout");
@@ -3703,7 +3703,7 @@ duk_ret_t duk_rp_kill(duk_context *ctx)
     int ret, x=0, signal = SIGTERM, kerrno=0, dothrow=0;
 
     if(duk_is_number(ctx,1))
-        signal=REQUIRE_UINT(ctx, 1, "rampart.utils.kill - second argument (signal) must be a positive integer");
+        signal=REQUIRE_POSINT(ctx, 1, "rampart.utils.kill - second argument (signal) must be a positive integer");
     else if(duk_is_string(ctx,1))
     {
         const char *signame=duk_get_string(ctx,1);
@@ -6017,7 +6017,7 @@ static duk_ret_t rp_repl(duk_context *ctx) {
     {
         if(duk_get_prop_string(ctx, 0, "history"))
         {
-            history=REQUIRE_UINT(ctx, -1, "repl: option 'history' must be a positive Number");
+            history=REQUIRE_POSINT(ctx, -1, "repl: option 'history' must be a positive Number");
         }
         duk_pop(ctx);
 
@@ -7205,7 +7205,7 @@ duk_ret_t duk_rp_fopen_buffer(duk_context *ctx)
         RP_THROW(ctx, "fopenBuffer(): second argument must be a number (chunk size), or rampart.utils.[stdout|stderr]");
 
     if(ch_idx != -1)
-        chunk = (size_t)REQUIRE_UINT(ctx, ch_idx, "fopenBuffer(): argument must be a positive int (chunk size)");
+        chunk = (size_t)REQUIRE_POSINT(ctx, ch_idx, "fopenBuffer(): argument must be a positive int (chunk size)");
 
     if(re_idx != -1)
     {
@@ -7676,8 +7676,8 @@ duk_ret_t duk_rp_forkpty_resize(duk_context *ctx)
     int fd;
     struct winsize ws={0};
 
-    ws.ws_col=(unsigned short) REQUIRE_UINT(ctx, 0, "forkpty.resize: First parameter must be a positive integer (width)");
-    ws.ws_row=(unsigned short) REQUIRE_UINT(ctx, 1, "forkpty.resize: Second parameter must be a positive integer (height)");
+    ws.ws_col=(unsigned short) REQUIRE_POSINT(ctx, 0, "forkpty.resize: First parameter must be a positive integer (width)");
+    ws.ws_row=(unsigned short) REQUIRE_POSINT(ctx, 1, "forkpty.resize: Second parameter must be a positive integer (height)");
 
     duk_push_this(ctx);
     if(!duk_get_prop_string(ctx,-1,DUK_HIDDEN_SYMBOL("fildes")) )

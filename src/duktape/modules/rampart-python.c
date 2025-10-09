@@ -4227,10 +4227,10 @@ static duk_ret_t fork_helper(duk_context *ctx)
 
     setproctitle("rampart py_helper");
 
-    finfo->reader = REQUIRE_UINT(ctx,0, "Error, this function is meant to be run upon forking only");
-    finfo->writer = REQUIRE_UINT(ctx,1, "Error, this function is meant to be run upon forking only");
+    finfo->reader = REQUIRE_POSINT(ctx,0, "Error, this function is meant to be run upon forking only");
+    finfo->writer = REQUIRE_POSINT(ctx,1, "Error, this function is meant to be run upon forking only");
     /* to help with debugging, get parent's thread num */
-    is_child = REQUIRE_UINT(ctx,2, "Error, this function is meant to be run upon forking only");
+    is_child = REQUIRE_POSINT(ctx,2, "Error, this function is meant to be run upon forking only");
 
     // it _should_ always be > 0
     if(!is_child)
