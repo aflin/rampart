@@ -610,7 +610,7 @@ static void evhandler_repl(int sig, short events, void *flag)
 
 
 char * tickify(char *src, size_t sz, int *err, int *ln);
-int rp_color=0;
+int rp_color=1;
 int rp_quiet=0;
 pthread_mutex_t repl_lock;
 #define REPL_LOCK    do {RP_PTLOCK(&repl_lock); /*printf("Locked\n"); */ } while(0)
@@ -2815,7 +2815,7 @@ static void print_help(char *argv0)
         -b, --use_babel                    - run all scripts through babel to support ECMAScript 2015+\n\
         -c, --command_string \"script\"      - load script from argument string\n\
         -v, --version                      - print version\n\
-        -C, --color                        - use colors in interactive mode (repl)\n\
+        -C, --color                        - don't use colors in interactive mode (repl)\n\
         -q, --quiet                        - omit rampart logo in interactive mode (repl)\n\
         --server                           - run rampart-server with default configuration\n\
         --quickserver                      - run rampart-server with alternate configuration\n\
@@ -2837,7 +2837,7 @@ static void print_help(char *argv0)
         -t, --use_transpiler               - transpile all scripts to support limited ECMAScript 2015+\n\
         -c, --command_string \"script\"      - load script from argument string\n\
         -v, --version                      - print version\n\
-        -C, --color                        - use colors in interactive mode (repl)\n\
+        -C, --color                        - do not use colors in interactive mode (repl)\n\
         -q, --quiet                        - omit rampart logo in interactive mode (repl)\n\
         --server                           - run rampart-server with default configuration\n\
         --quickserver                      - run rampart-server with alternate configuration\n\
@@ -3050,7 +3050,7 @@ int main(int argc, char *argv[])
                             print_help(argv0);
                         break;
                     case 'C':
-                        rp_color=1;
+                        rp_color=0;
                         break;
                     case 't':
                         duk_rp_globaltranspile=1;
