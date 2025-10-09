@@ -15,7 +15,7 @@ project(Rampart VERSION 0.5.0 LANGUAGES C CXX)
 #set(CMAKE_BUILD_TYPE Debug)
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
-
+add_compile_options(-Wno-deprecated-non-prototype)
 
 if (MACOS_UNIVERSAL)
 
