@@ -372,6 +372,16 @@ static int completeLine(struct linenoiseState *ls) {
     } else {
         size_t stop = 0, i = 0;
 
+        // ajf - 2025-10-09 - if there is only one, just use it:
+        if(lc.len==1)
+        {
+            char cret = lc.cvec[0][strlen(lc.cvec[0])-1];
+            nwritten = snprintf(ls->buf,ls->buflen,"%.*s", (int)strlen(lc.cvec[0])-1, lc.cvec[0]);
+            ls->len = ls->pos = nwritten;
+            freeCompletions(&lc);
+            return cret; /* Return last read character */
+        }
+
         while(!stop) {
             /* Show completion or original buffer */
             if (i < lc.len) {
@@ -384,7 +394,10 @@ static int completeLine(struct linenoiseState *ls) {
                 ls->pos = saved.pos;
                 ls->buf = saved.buf;
             } else {
-                refreshLine(ls);
+                // ajf - 2025-10-09 - we are inserting the original first in the queue
+                i=0;
+                continue;
+                //refreshLine(ls);
             }
 
             nread = read(ls->ifd,&c,1);
@@ -454,6 +467,45 @@ void linenoiseAddCompletion(linenoiseCompletions *lc, const char *str) {
     }
     lc->cvec = cvec;
     lc->cvec[lc->len++] = copy;
+}
+
+// -ajf 2025-10-09
+void linenoiseAddCompletionUnshift(linenoiseCompletions *lc, const char *str)
+{
+    size_t len = strlen(str);
+    char *copy, **cvec;
+
+    copy = malloc(len+1);
+    if (copy == NULL) return;
+    memcpy(copy,str,len+1);
+    cvec = realloc(lc->cvec,sizeof(char*)*(lc->len+1));
+    if (cvec == NULL) {
+        free(copy);
+        return;
+    }
+    memmove(&cvec[1], &cvec[0], sizeof(char*) * lc->len);
+    lc->cvec = cvec;
+    lc->cvec[0] = copy;
+    lc->len++;
+}
+
+// -ajf 2025-10-09
+void linenoiseReplaceCompletion(linenoiseCompletions *lc, const char *str, size_t pos)
+{
+    size_t len = strlen(str);
+    char *copy;
+
+    if(pos >= lc->len)
+        pos = lc->len-1;
+
+    copy = malloc(len+1);
+    if (copy == NULL) return;
+
+    memcpy(copy,str,len+1);
+
+    free(lc->cvec[pos]);
+    lc->cvec[pos] = copy;
+
 }
 
 /* =========================== Line editing ================================= */

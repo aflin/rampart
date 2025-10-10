@@ -55,6 +55,8 @@ void linenoiseSetCompletionCallback(linenoiseCompletionCallback *);
 void linenoiseSetHintsCallback(linenoiseHintsCallback *);
 void linenoiseSetFreeHintsCallback(linenoiseFreeHintsCallback *);
 void linenoiseAddCompletion(linenoiseCompletions *, const char *);
+void linenoiseAddCompletionUnshift(linenoiseCompletions *lc, const char *str);
+void linenoiseReplaceCompletion(linenoiseCompletions *lc, const char *str, size_t pos);
 
 char *linenoise(const char *prompt);
 void linenoiseFree(void *ptr);

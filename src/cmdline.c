@@ -21,6 +21,7 @@
 #include <errno.h>
 #include <dlfcn.h>
 #include <sys/ioctl.h>
+#include <dirent.h>
 
 #include "event.h"
 #include "event2/thread.h"
@@ -240,25 +241,146 @@ static void completion(const char *inbuf, linenoiseCompletions *lc) {
     int width=-1, curpos=0;
     struct winsize wsz;
     char *endchar = " (;{=<>/*-+|&!^?:[";
-    const char *startpoint = inbuf;
+    const char *startpos = inbuf;
     const char *s = strrpbrk(inbuf, endchar);
     int startlen = 0;
+    int insq=0;
+    int indq=0;
 
     if(s)
     {
         s++;
         while( isspace(*s) )
             s++;
-        startlen = s - startpoint;
+        startlen = s - startpos;
         inbuf=s;
     }
     int baselen = strlen(inbuf);
+
+    s=startpos;
+    while(*s)
+    {
+        switch(*s){
+            case '\'':
+                if(!indq) insq=!insq;
+                break;
+            case '"':
+                if(!insq) indq=!indq;
+                break;
+        }
+        s++;
+    }
 
     // Query terminal size
     if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &wsz) != -1)
         width = wsz.ws_col -3;
 
-    if(baselen)
+    // filename/path completion
+    if(insq || indq)
+    {
+        char qc = insq ? '\'' : '"';
+        inbuf = strrchr(startpos, qc);
+        inbuf++;
+        if(*inbuf == '/' || 
+          ( *inbuf == '.' && *(inbuf + 1) == '/' ) ||
+          ( *inbuf == '.' && *(inbuf + 1) == '.' && *(inbuf + 2) == '/' ) 
+        )
+        {
+            char *s2=strrchr(inbuf, '/');
+            size_t pathlen = (size_t)(s2-inbuf)+1;
+            char *path = strndup(inbuf, pathlen);
+            DIR *dir = opendir(path);
+            if(dir)
+            {
+                struct dirent *entry=NULL, *firstentry=NULL;
+                int longest = 0;
+                int postlen = strlen(s2)-1;
+                int nsugg=0;
+
+                while ((entry = readdir(dir)) != NULL)
+                {
+                    if( !strcmp(".", entry->d_name) || !strcmp("..", entry->d_name))
+                        continue;
+                    if( postlen && strncmp(inbuf+pathlen, entry->d_name, postlen)!=0 )
+                        continue;
+
+                    rp_string *sugg = rp_string_new(32);
+                    rp_string_putsn(sugg, startpos, startlen);
+                    rp_string_puts(sugg, entry->d_name);
+                    linenoiseAddCompletion(lc, sugg->str);
+                    if(sugg->len > longest)
+                        longest = sugg->len;
+                    rp_string_free(sugg);
+                    if(!nsugg)
+                        firstentry = entry;
+                    nsugg++;
+                }
+
+                if(nsugg > 1)
+                {
+                    int gotone=0;
+
+                    longest +=4;
+
+                    linenoiseAddCompletionUnshift(lc, startpos);
+                    rewinddir(dir);
+                    while ((entry = readdir(dir)) != NULL)
+                    {
+                        int slen = strlen(entry->d_name);
+                        if( !strcmp(".", entry->d_name) || !strcmp("..", entry->d_name))
+                            continue;
+                        if( postlen && strncmp(inbuf+pathlen, entry->d_name, postlen)!=0 )
+                            continue;
+
+                        if(gotone==0)
+                        {
+                            printf("\n   ");
+                            gotone=1;
+                        }
+                        if(curpos + longest + 3 > width)
+                        {
+                            printf("\n   ");
+                            curpos=0;
+                        }
+                        printf("%s%s%*s%s", RPCOL_BBLK, entry->d_name, (int)(3+longest - slen), " ", RPCOL_RESET);
+                        curpos += longest + 3;
+                    }
+                    if(gotone)
+                        putchar('\n');
+                }
+
+                // check if it is a directory
+                else if(nsugg == 1)
+                {
+                    struct stat st;
+                    char *p=NULL;
+                    REMALLOC(p, pathlen + sizeof(firstentry->d_name)+2);
+                    strcpy(p,path);
+                    strcat(p, firstentry->d_name);
+                    stat(p, &st);
+                    if(S_ISDIR(st.st_mode))
+                    {
+                        rp_string *sugg = rp_string_new(32);
+                        rp_string_putsn(sugg, startpos, startlen);
+                        rp_string_puts(sugg, firstentry->d_name);
+                        rp_string_putc(sugg, '/');
+                        linenoiseReplaceCompletion(lc, sugg->str,0);
+                        rp_string_free(sugg);
+                    }
+                    free(p);
+                }
+                else
+                    linenoiseAddCompletion(lc, startpos);
+
+                closedir(dir);
+            }
+            free(path);
+            return;
+        }
+    }
+
+    // object/method completion
+    if(baselen && !(insq || indq))
     {
         dotpos=strrchr(inbuf, '.');
         int postlen=0;
@@ -287,6 +409,7 @@ static void completion(const char *inbuf, linenoiseCompletions *lc) {
             {
                 int gotone=0, longest=0, nsugg=0;
                 duk_enum(ctx, -1, DUK_ENUM_INCLUDE_NONENUMERABLE);
+                rp_string *sugg = NULL, *firstsugg=NULL;
                 while(duk_next(ctx, -1, 1))
                 {
                     duk_size_t slen;
@@ -298,9 +421,9 @@ static void completion(const char *inbuf, linenoiseCompletions *lc) {
                     if(dotpos && strncmp(dotpos, sym, postlen)!=0)
                         continue;
 
-                    rp_string *sugg = rp_string_new(32);
+                    sugg = rp_string_new(32);
                     if(startlen)
-                        rp_string_putsn(sugg, startpoint, startlen);
+                        rp_string_putsn(sugg, startpos, startlen);
 
                     rp_string_putsn(sugg, inbuf, baselen);
                     rp_string_putc(sugg, '.');
@@ -309,16 +432,25 @@ static void completion(const char *inbuf, linenoiseCompletions *lc) {
                         rp_string_putc(sugg, '(');
 
                     linenoiseAddCompletion(lc, sugg->str);
-                    sugg=rp_string_free(sugg);
+                    if(!nsugg)
+                        firstsugg=sugg;
+                    else
+                        sugg=rp_string_free(sugg);
 
                     if((int)slen > longest)
                         longest = (int)slen;
                     nsugg++;
                 }
                 duk_pop(ctx); //enum
-
-                if(nsugg > 1)
+                if(nsugg == 1)
                 {
+                    rp_string_putc(firstsugg, '.');
+                    linenoiseReplaceCompletion(lc, sugg->str, 0);
+                    firstsugg = rp_string_free(firstsugg);
+                }
+                else if(nsugg > 1)
+                {
+                    linenoiseAddCompletionUnshift(lc, startpos);
                     duk_enum(ctx, -1, DUK_ENUM_INCLUDE_NONENUMERABLE);
                     while(duk_next(ctx, -1, 1))
                     {
@@ -350,13 +482,15 @@ static void completion(const char *inbuf, linenoiseCompletions *lc) {
                         putchar('\n');
                     duk_pop(ctx); //enum
                 }
+                if(firstsugg)
+                    rp_string_free(firstsugg);
             }
             duk_pop(ctx); //eval ret
             return;
         }
     }
     // if no dot, look for global symbols
-    if(!dotpos)
+    if(!dotpos && !(insq || indq) )
     {
         int inlen = strlen(inbuf), gotone=0, longest=0;
 
@@ -373,7 +507,7 @@ static void completion(const char *inbuf, linenoiseCompletions *lc) {
             if(inlen && strncmp(inbuf, sym, inlen) != 0)
                 continue;
             rp_string *sugg = rp_string_new(32);
-            rp_string_putsn(sugg, startpoint, startlen);
+            rp_string_putsn(sugg, startpos, startlen);
             rp_string_puts(sugg, sym);
             if(isfunc)
                 rp_string_putc(sugg, '(');
@@ -429,6 +563,7 @@ static void completion(const char *inbuf, linenoiseCompletions *lc) {
             linenoiseAddCompletion(lc, sym);
         }
     }
+
 }
 
 #define EXIT_FUNC struct rp_exit_funcs_s
