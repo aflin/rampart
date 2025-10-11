@@ -115,6 +115,7 @@
 #include <sys/types.h>
 #include <sys/ioctl.h>
 #include <unistd.h>
+#include <poll.h>
 #include "linenoise.h"
 
 #define LINENOISE_DEFAULT_HISTORY_MAX_LEN 100
@@ -132,6 +133,8 @@ static int atexit_registered = 0; /* Register atexit just 1 time. */
 static int history_max_len = LINENOISE_DEFAULT_HISTORY_MAX_LEN;
 static int history_len = 0;
 static char **history = NULL;
+static int in_ml_paste=0; // -- ajf - 2025-10-10 - whether in the middle of a multi-lined paste
+
 
 /* The linenoiseState structure represents the state during line editing.
  * We pass this state to functions implementing specific editing
@@ -601,6 +604,7 @@ static void refreshSingleLine(struct linenoiseState *l) {
     /* Erase to right */
     snprintf(seq,64,"\x1b[0K");
     abAppend(&ab,seq,strlen(seq));
+
     /* Move cursor to original position. */
     snprintf(seq,64,"\r\x1b[%dC", (int)(pos+plen));
     abAppend(&ab,seq,strlen(seq));
@@ -700,10 +704,97 @@ static void refreshMultiLine(struct linenoiseState *l) {
     abFree(&ab);
 }
 
+// -- ajf - 2025-10-10 position helper for multiline paste
+typedef struct rowcol {
+    int rows;
+    int lastline;
+    int pos;
+    int eol;
+} rowcol;
+
+static rowcol getrowcol(struct linenoiseState *l)
+{
+    int i=l->pos;
+    rowcol rc={0};
+
+    while (i>=0)
+    {
+        if(l->buf[i]=='\n')
+        {
+            if(!rc.rows)
+                rc.lastline=i+1; // start one after the first \n before the current pos
+            rc.rows++; // total number of lines
+        }
+        i--;
+    }
+
+    // where is the end of the current line?
+    rc.pos = l->pos - rc.lastline;
+    rc.eol=l->len;
+    i=rc.lastline;
+    while(l->buf[i])
+    {
+        if(l->buf[i]=='\n')
+        {
+            rc.eol=i;
+            break;
+        }
+        i++;
+    }
+
+    return rc;
+}
+
+// -- ajf - 2025-10-10 - handle refresh if multiline paste
+static void refreshInline(struct linenoiseState *l)
+{
+    char buf[32];
+    rowcol rc=getrowcol(l);
+
+    //char *hasnl = memchr(&l->buf[rc.lastline], '\n', rc.eol - rc.lastline);
+
+    if(rc.rows == l->maxrows)
+    {
+        (void)write(l->ofd, "\r\033[K", 4);
+
+        if(!rc.rows)
+            (void)write(l->ofd, l->prompt, strlen(l->prompt));
+
+        (void)write(l->ofd, &l->buf[rc.lastline], rc.eol - rc.lastline);
+
+        snprintf(buf, 32, "\033[%dG", rc.pos+1 + (int)(rc.rows?0:strlen(l->prompt)) );
+        (void)write(l->ofd, buf, strlen(buf));
+        return;
+    }
+
+    if(rc.rows < l->maxrows)
+        (void)write(l->ofd, "\033[A", 3);
+
+    if(rc.rows > l->maxrows)
+        (void)write(l->ofd, "\033[B", 3);
+
+
+    (void)write(l->ofd, "\r\033[K", 4);
+
+    if(!rc.rows)
+        (void)write(l->ofd, l->prompt, strlen(l->prompt));
+
+    (void)write(l->ofd, &l->buf[rc.lastline], rc.eol - rc.lastline);
+
+    snprintf(buf, 32, "\033[%dG", rc.pos+1 + (int)(rc.rows?0:strlen(l->prompt)) );
+    (void)write(l->ofd, buf, strlen(buf));
+
+    l->maxrows = rc.rows;
+}
+
 /* Calls the two low level functions refreshSingleLine() or
  * refreshMultiLine() according to the selected mode. */
 static void refreshLine(struct linenoiseState *l) {
-    if (mlmode)
+
+    // -- ajf - 2025-10-10 - this is for after the paste is done, but before enter
+    if(in_ml_paste)
+        refreshInline(l);
+    else if (mlmode)
         refreshMultiLine(l);
     else
         refreshSingleLine(l);
@@ -719,6 +810,7 @@ int linenoiseEditInsert(struct linenoiseState *l, char c) {
             l->pos++;
             l->len++;
             l->buf[l->len] = '\0';
+
             if ((!mlmode && l->plen+l->len < l->cols && !hintsCallback)) {
                 /* Avoid a full update of the line in the
                  * trivial case. */
@@ -793,6 +885,14 @@ void linenoiseEditHistoryNext(struct linenoiseState *l, int dir) {
         strncpy(l->buf,history[history_len - 1 - l->history_index],l->buflen);
         l->buf[l->buflen-1] = '\0';
         l->len = l->pos = strlen(l->buf);
+
+        // -ajf 2025-10-10 - if we get a multi-line in the history, edit as multi-line
+        char *s = strchr(l->buf, '\n');
+        if(s)
+        {
+            (void) write(l->ofd, l->buf, l->pos);
+            in_ml_paste=1;
+        }
         refreshLine(l);
     }
 }
@@ -854,7 +954,6 @@ void linenoise_refresh() {
 static int linenoiseEdit(int stdin_fd, int stdout_fd, char *buf, size_t buflen, const char *prompt)
 {
     struct linenoiseState l;
-
     /* Populate the linenoise state that we pass to functions implementing
      * specific editing functionalities. */
     l.ifd = stdin_fd;
@@ -891,7 +990,8 @@ static int linenoiseEdit(int stdin_fd, int stdout_fd, char *buf, size_t buflen, 
         /* Only autocomplete when the callback is set. It returns < 0 when
          * there was an error reading from fd. Otherwise it will return the
          * character that should be handled next. */
-        if (c == 9 && completionCallback != NULL) {
+        // -- ajf - 2025-10-10 don't try completion if in a multiline paste
+        if (!in_ml_paste && c == 9 && completionCallback != NULL) {
             c = completeLine(&l);
             /* Return on errors */
             if (c < 0) return l.len;
@@ -900,7 +1000,97 @@ static int linenoiseEdit(int stdin_fd, int stdout_fd, char *buf, size_t buflen, 
         }
 
         switch(c) {
+        // -- ajf - 2025-10-10 rewrite to handle multiline paste
         case ENTER:    /* enter */
+        {
+            /* Look ahead briefly: if another byte arrives within 10ms, we assume paste */
+            struct pollfd p = { .fd = l.ifd, .events = POLLIN, .revents = 0 };
+            int ready = poll(&p, 1, 10);
+
+            if (ready == 1 && (p.revents & POLLIN)) {
+                /* Paste detected: insert '\n' and the next char, don't submit */
+                unsigned char nextc;
+                ssize_t nread = read(l.ifd, &nextc, 1);
+                if (nread == 1)
+                {
+                    unsigned char buf[32768];
+
+                    in_ml_paste=1;
+                    buf[0]='\n';
+                    buf[1]=nextc;
+                    size_t len = 2;
+
+                    /* Paste-drain: read all remaining bytes arriving within ~10 ms gaps */
+
+                    for (;;) {
+                        struct pollfd p = { .fd = l.ifd, .events = POLLIN, .revents = 0 };
+                        int r = poll(&p, 1, 10);                 /* wait <= 10 ms for next chunk */
+                        if (r <= 0 || !(p.revents & POLLIN))    /* nothing new -> done */
+                            break;
+
+                        ssize_t n = read(l.ifd, buf + len, sizeof(buf) - len);
+                        if (n <= 0) break;
+                        len += (size_t)n;
+                        if (len == sizeof(buf)) break;          /* cap safety */
+                    }
+
+                    /* Normalize CRLF → LF */
+                    size_t w = 0;
+                    for (size_t i = 0; i < len; )
+                    {
+                        if (buf[i] == '\r')
+                        {
+                            if (i + 1 < len && buf[i + 1] == '\n')
+                            {
+                                buf[w++] = '\n';
+                                i += 2;
+                            }
+                            else
+                            {
+                                buf[w++] = '\n';
+                                i++;
+                            }
+                        } else buf[w++] = buf[i++];
+                    }
+                    len = w;
+
+                    /* --- Insert into current buffer --- */
+                    if (len > 0)
+                    {
+                        if ((int)(l.len + len + 1) >= l.buflen) {
+                            int newlen = l.len + (int)len + 1;
+                            char *newbuf = realloc(l.buf, newlen);
+                            if (!newbuf) {
+                                /* not gonna happen, but if allocation failed — fall back to truncating */
+                                len = (size_t)(l.buflen - l.len - 1);
+                            } else {
+                                l.buf = newbuf;
+                                l.buflen = newlen;
+                            }
+                        }
+
+                        memmove(l.buf + l.pos + len,
+                                l.buf + l.pos,
+                                (size_t)(l.len - l.pos));
+                        memcpy(l.buf + l.pos, buf, len);
+                        l.pos += (int)len;
+                        l.len += (int)len;
+                        l.buf[l.len] = '\0';
+
+                        if(write(l.ofd, buf, len)==-1)
+                            return -1;
+
+                        refreshLine(&l);
+                    }
+                    // in_ml_paste is set until we get a real ENTER
+                    break;
+                }
+                /* If read failed for some reason, fall through to submit */
+            }
+
+            // poll reports no data waiting
+            in_ml_paste=0;
+
             history_len--;
             free(history[history_len]);
             if (mlmode) linenoiseEditMoveEnd(&l);
@@ -912,14 +1102,19 @@ static int linenoiseEdit(int stdin_fd, int stdout_fd, char *buf, size_t buflen, 
                 refreshLine(&l);
                 hintsCallback = hc;
             }
+
             return (int)l.len;
+        }
         case CTRL_C:     /* ctrl-c */
             /* AJF 2023-07-08 -- added printf and ENODATA if line is empty and ctrl-c pressed */ 
 //freebsd
 #ifndef ENODATA
 #define ENODATA 8088
 #endif
-            printf("^C");
+            //printf("^C");
+            // -ajf 2025-10-10 - changed to write
+            if(write(l.ofd, "^C", 2)==-1)
+                return -1;
             if(l.len)
                 errno = EAGAIN;
             else
