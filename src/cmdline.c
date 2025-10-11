@@ -2696,7 +2696,6 @@ char * tickify(char *src, size_t sz, int *err, int *ln)
                         {
                             *err=ST_SR;
                             *ln=qline;
-printf("outbeg=%s\n",outbeg);
                             free(outbeg);
                             return NULL;
                         }
