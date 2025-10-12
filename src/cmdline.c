@@ -181,6 +181,11 @@ char *upgradescript = "rampart.globalize(rampart.utils);\n"
 #define RP_REPL_PREFIX_CONT "... "
 
 char *words[]={
+    ".exit",
+    ".gutils",
+    ".help",
+    ".transpile",
+    ".babel",
     "arguments",
     "break",
     "case",
@@ -382,7 +387,7 @@ static void completion(const char *inbuf, linenoiseCompletions *lc) {
     // object/method completion
     if(baselen && !(insq || indq))
     {
-        dotpos=strrchr(inbuf, '.');
+        dotpos=strrchr(inbuf+1, '.');
         int postlen=0;
         if(dotpos)
         {
@@ -743,6 +748,23 @@ static void evhandler_repl(int sig, short events, void *flag)
     }
 }
 
+char * cmdline_help = 
+RPCOL_BBLK
+".help            - print this message\n"
+".exit            - exit the REPL\n"
+".gutils          - run rampart.globalize(rampart.utils);\n"
+".transpile       - run commands through the transpiler\n"
+".babel           - run commands through the babel\n"
+"up/down arrows   - scroll through history\n"
+"ctrl-a           - move to beginning of line\n"
+"ctrl-c           - quit (if line is empty)\n"
+"ctrl-c           - reset line (if line is not empty)\n"
+"ctrl-d           - quit (if line is empty)\n"
+"ctrl-d           - delete to right (if line is not empty)\n"
+"ctrl-t           - swap current character with previous\n"
+"ctrl-w           - delete previous word\n"
+"ctrl-x           - toggle multi-line editing mode\n"
+RPCOL_RESET;
 
 char * tickify(char *src, size_t sz, int *err, int *ln);
 int rp_color=1;
@@ -828,6 +850,40 @@ static void *repl_thr(void *arg)
         if(*line=='\0')
         {
             free(line);
+            continue;
+        }
+        if(strncmp(line,".help", 5)==0)
+        {
+            free(line);
+            printf("%s\n", cmdline_help);
+            continue;
+        }
+        else if(strcmp(line,".exit")==0)
+        {
+            free(line);
+            if(babelscript)
+                free(babelscript);
+            if(lastline)
+                free(lastline);
+            duk_rp_exit(ctx, 0);
+        }
+        else if(strcmp(line,".gutils")==0)
+        {
+            free(line);
+            line=strdup("rampart.globalize(rampart.utils);");
+        }
+        else if(strcmp(line,".transpile")==0)
+        {
+            free(line);
+            duk_rp_globaltranspile=1;
+            continue;
+        }
+        else if(strcmp(line,".babel")==0)
+        {
+            free(line);
+            if(!duk_rp_globalbabel)
+                main_babel_opt=strdup("{ presets: ['env'],retainLines:true }");
+            duk_rp_globalbabel=1;
             continue;
         }
 
