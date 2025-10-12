@@ -836,18 +836,6 @@ static void get_term_positions(struct linenoiseState *l, int *total_rows, int *t
     }
 }
 
-static inline void writeprompt_old(struct linenoiseState *l)
-{
-    if(in_ml_paste_or_edit==1)
-        write(l->ofd, "\033[35m", 5); 
-
-    (void)write(l->ofd, l->prompt, strlen(l->prompt));
-
-    if(in_ml_paste_or_edit==1)
-        write(l->ofd, "\033[0m", 4); 
-
-}
-
 static inline void writeprompt(struct linenoiseState *l)
 {
     if(force_ml_edit)
