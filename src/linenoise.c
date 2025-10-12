@@ -133,8 +133,15 @@ static int atexit_registered = 0; /* Register atexit just 1 time. */
 static int history_max_len = LINENOISE_DEFAULT_HISTORY_MAX_LEN;
 static int history_len = 0;
 static char **history = NULL;
-static int in_ml_paste_or_edit=0; // -- ajf - 2025-10-10 - whether in the middle of a multi-lined paste/edit
+static int in_ml_paste_or_edit = 0;    // -- ajf - 2025-10-10 - whether in the middle of a multi-lined paste/edit
 
+static int force_ml_edit = 0;          // -- ajf - 2025-10-11 - whether to force multi-line mode
+#define FORCE_OFF          0
+#define FORCE_ON           1
+#define FORCE_REFRESH      2
+
+#define FORCE_IS_REFRESH(f) ( (f) & 2 )
+#define FORCE_CLEAR_REFRESH(f) do{ (f) &= 1; } while(0)
 
 /* The linenoiseState structure represents the state during line editing.
  * We pass this state to functions implementing specific editing
@@ -174,6 +181,7 @@ enum KEY_ACTION{
 	CTRL_T = 20,        /* Ctrl-t */
 	CTRL_U = 21,        /* Ctrl+u */
 	CTRL_W = 23,        /* Ctrl+w */
+	CTRL_X = 24,        /* Ctrl+x  --ajf 2025-10-11 */
 	ESC = 27,           /* Escape */
 	BACKSPACE =  127    /* Backspace */
 };
@@ -764,10 +772,92 @@ static rowcol getrowcol(struct linenoiseState *l)
 
     rc.curcol = l->pos - rc.curline;
 
-    if(rc.rows > l->maxrows)
-        l->maxrows=rc.rows;
-
     return rc;
+}
+
+// Helper to parse response from ESC [ row ; col R
+static int read_cpr(struct linenoiseState *l, int *row, int *col) {
+    char buf[64];
+    size_t len = 0;
+
+    while (len < sizeof(buf) - 1) {
+        ssize_t n = read(l->ifd, buf + len, 1);
+        if (n <= 0) break;
+        if (buf[len] == 'R') { len++; break; }
+        len += (size_t)n;
+    }
+    buf[len] = '\0';
+
+    // Expected format: ESC [ rows ; cols R
+    char *esc = memchr(buf, '\x1b', len);
+    if (!esc || esc[1] != '[') return -1;
+
+    int r = 0, c = 0;
+    char *p = esc + 2;
+    while (*p && isdigit((unsigned char)*p)) { r = r * 10 + (*p++ - '0'); }
+    if (*p++ != ';') return -1;
+    while (*p && isdigit((unsigned char)*p)) { c = c * 10 + (*p++ - '0'); }
+    if (*p != 'R') return -1;
+
+    if (row) *row = r;
+    if (col) *col = c;
+    return 0;
+}
+
+static void get_term_positions(struct linenoiseState *l, int *total_rows, int *total_cols,
+                               int *cur_row, int *cur_col)
+{
+    int r = 0, c = 0;
+
+    // Query current position
+    write(l->ofd, "\x1b[6n", 4);
+    if (read_cpr(l, &r, &c) == 0) {
+        if (cur_row) *cur_row = r;
+        if (cur_col) *cur_col = c;
+    }
+
+    if (total_rows || total_cols) {
+        int tr = 0, tc = 0;
+
+        // Move to bottom-right, ask again
+        write(l->ofd, "\x1b[9999;9999H", 12);
+        write(l->ofd, "\x1b[6n", 4);
+        if (read_cpr(l, &tr, &tc) == 0) {
+            if (total_rows) *total_rows = tr;
+            if (total_cols) *total_cols = tc;
+        }
+
+        // Restore original cursor position
+        if (r && c) {
+            char restore[32];
+            int n = snprintf(restore, sizeof(restore), "\x1b[%d;%dH", r, c);
+            write(l->ofd, restore, n);
+        }
+    }
+}
+
+static inline void writeprompt_old(struct linenoiseState *l)
+{
+    if(in_ml_paste_or_edit==1)
+        write(l->ofd, "\033[35m", 5); 
+
+    (void)write(l->ofd, l->prompt, strlen(l->prompt));
+
+    if(in_ml_paste_or_edit==1)
+        write(l->ofd, "\033[0m", 4); 
+
+}
+
+static inline void writeprompt(struct linenoiseState *l)
+{
+    if(force_ml_edit)
+        write(l->ofd, "\033[35m", 5); 
+
+    (void)write(l->ofd, l->prompt, strlen(l->prompt));
+
+    if(force_ml_edit)
+        write(l->ofd, "\033[0m", 4); 
+
 }
 
 // redraw from beginning
@@ -775,7 +865,11 @@ static void ml_redraw(struct linenoiseState *l, rowcol *rcp)
 {
     char buf[32];
 
-    // move up to prompt line
+    int abs_currow=0;
+    int haverows = 0;  //number of lines to bottom of screen from prompt
+    int newmax = rcp->rows > (int)l->maxrows ? rcp->rows: (int)l->maxrows;
+
+    // move up to old prompt line row
     if(l->maxrows >0)
     {
         // go to bottom, and up max rows
@@ -783,7 +877,28 @@ static void ml_redraw(struct linenoiseState *l, rowcol *rcp)
         (void)write(l->ofd, buf, strlen(buf));
     }
 
-    // save pos
+    get_term_positions(l, &haverows, NULL, &abs_currow, NULL);
+
+    haverows -= abs_currow;    //relative to bottom
+
+    // go to bottom line of screen
+    (void)write(l->ofd, "\033[999B", 6);
+
+    // add newlines to bottom so content scrolls up
+    while(haverows < newmax)
+    {
+        (void)write(l->ofd, "\n", 1);
+        haverows++;
+    }
+
+    // move up to new prompt line row
+    if(newmax >0)
+    {
+        // go to bottom, and up max rows
+        sprintf(buf, "\033[999B\033[%dA", newmax);
+        (void)write(l->ofd, buf, strlen(buf));
+    }
+    // save pos at prompt line
     (void)write(l->ofd, "\0337", 2);
 
     // move to col 0
@@ -793,13 +908,14 @@ static void ml_redraw(struct linenoiseState *l, rowcol *rcp)
     (void)write(l->ofd, "\033[0J", 4);
 
     // Write prompt
-    (void)write(l->ofd, l->prompt, strlen(l->prompt));
+    writeprompt(l);
 
     // Rewrite entire string
     (void)write(l->ofd, l->buf, l->len);
 
     // move back to prompt line
     (void)write(l->ofd, "\0338", 2);
+
     // set row position
     if(rcp->currow)
     {
@@ -829,14 +945,17 @@ static void refreshInline(struct linenoiseState *l)
     write(l->ofd, "\0338", 2);
     //*/
 
-    if(l->oldrows>-1 && rcp->rows != l->oldrows)
+    if( (l->oldrows>-1 && rcp->rows != l->oldrows) ||  FORCE_IS_REFRESH(force_ml_edit) /* first round */)
+    {
+        FORCE_CLEAR_REFRESH(force_ml_edit);
         ml_redraw(l, &rc);
+    }
     else if(rcp->currow == l->oldcurrow)
     {
         (void)write(l->ofd, "\r\033[K", 4);
 
         if(!rcp->currow)
-            (void)write(l->ofd, l->prompt, strlen(l->prompt));
+            writeprompt(l);
 
         (void)write(l->ofd, &l->buf[rcp->curline], rcp->eol - rcp->curline);
 
@@ -861,7 +980,7 @@ static void refreshInline(struct linenoiseState *l)
         (void)write(l->ofd, "\r\033[K", 4);
 
         if(!rcp->currow)
-            (void)write(l->ofd, l->prompt, strlen(l->prompt));
+            writeprompt(l);
 
         (void)write(l->ofd, &l->buf[rcp->curline], rcp->eol - rcp->curline);
 
@@ -871,6 +990,10 @@ static void refreshInline(struct linenoiseState *l)
 
     l->oldcurrow = rcp->currow;
     l->oldrows = rcp->rows;
+    if(rcp->rows > l->maxrows)
+        l->maxrows=rcp->rows;
+
+
 }
 
 /* Calls the two low level functions refreshSingleLine() or
@@ -878,7 +1001,7 @@ static void refreshInline(struct linenoiseState *l)
 static void refreshLine(struct linenoiseState *l) {
 
     // -- ajf - 2025-10-10 - this is for after the paste is done or if editing a multiline, but before enter
-    if(in_ml_paste_or_edit)
+    if(in_ml_paste_or_edit || force_ml_edit)
         refreshInline(l);
     else if (mlmode)
         refreshMultiLine(l);
@@ -976,23 +1099,15 @@ void linenoiseEditHistoryNext(struct linenoiseState *l, int dir) {
         char *s = strchr(l->buf, '\n');
         if(s)
         {
-            // make room
-            rowcol rc = getrowcol(l);
             if(!in_ml_paste_or_edit)
             {
-                int r = rc.rows;
-                while(r)
-                {
-                    write(l->ofd, "\n", 1);
-                    r--;
-                }
-                l->maxrows = rc.rows;
                 l->oldrows=0; //trigger a redraw
+                in_ml_paste_or_edit=1;
             }
-            in_ml_paste_or_edit=1;
         }
+        /* once in this mode, don't leave or prompt position will not be static
         else
-            in_ml_paste_or_edit=0;
+            in_ml_paste_or_edit=0;   */
         refreshLine(l);
     }
 }
@@ -1088,7 +1203,7 @@ static int linenoiseEdit(int stdin_fd, int stdout_fd, char *buf, size_t buflen, 
 
         nread = read(l.ifd,&c,1);
         if (nread <= 0) return l.len;
-
+        
         /* Only autocomplete when the callback is set. It returns < 0 when
          * there was an error reading from fd. Otherwise it will return the
          * character that should be handled next. */
@@ -1105,91 +1220,100 @@ static int linenoiseEdit(int stdin_fd, int stdout_fd, char *buf, size_t buflen, 
         // -- ajf - 2025-10-10 rewrite to handle multiline paste/edit
         case ENTER:    /* enter */
         {
-            /* Look ahead briefly: if another byte arrives within 5ms, we assume paste */
-            struct pollfd p = { .fd = l.ifd, .events = POLLIN, .revents = 0 };
-            int ready = poll(&p, 1, 5);
+            if(!force_ml_edit)
+            {
+                /* Look ahead briefly: if another byte arrives within 5ms, we assume paste */
+                struct pollfd p = { .fd = l.ifd, .events = POLLIN, .revents = 0 };
+                int ready = poll(&p, 1, 5);
 
-            if (ready == 1 && (p.revents & POLLIN)) {
-                /* Paste detected: insert '\n' and the next char, don't submit */
-                unsigned char nextc;
-                ssize_t nread = read(l.ifd, &nextc, 1);
-                if (nread == 1)
-                {
-                    unsigned char buf[32768];
-
-                    in_ml_paste_or_edit=1;
-                    buf[0]='\n';
-                    buf[1]=nextc;
-                    size_t len = 2;
-
-                    /* Paste-drain: read all remaining bytes arriving within ~5ms gaps */
-
-                    for (;;) {
-                        struct pollfd p = { .fd = l.ifd, .events = POLLIN, .revents = 0 };
-                        int r = poll(&p, 1, 5);                 /* wait <= 5ms for next chunk */
-                        if (r <= 0 || !(p.revents & POLLIN))    /* nothing new -> done */
-                            break;
-
-                        ssize_t n = read(l.ifd, buf + len, sizeof(buf) - len);
-                        if (n <= 0) break;
-                        len += (size_t)n;
-                        if (len == sizeof(buf)) break;          /* cap safety */
-                    }
-
-                    /* Normalize CRLF → LF */
-                    size_t w = 0;
-                    for (size_t i = 0; i < len; )
+                if (ready == 1 && (p.revents & POLLIN)) {
+                    /* Paste detected: insert '\n' and the next char, don't submit */
+                    unsigned char nextc;
+                    ssize_t nread = read(l.ifd, &nextc, 1);
+                    if (nread == 1)
                     {
-                        if (buf[i] == '\r')
-                        {
-                            if (i + 1 < len && buf[i + 1] == '\n')
-                            {
-                                buf[w++] = '\n';
-                                i += 2;
-                            }
-                            else
-                            {
-                                buf[w++] = '\n';
-                                i++;
-                            }
-                        } else buf[w++] = buf[i++];
-                    }
-                    len = w;
+                        unsigned char buf[32768];
 
-                    /* --- Insert into current buffer --- */
-                    if (len > 0)
-                    {
-                        if ((int)(l.len + len + 1) >= l.buflen) {
-                            int newlen = l.len + (int)len + 1;
-                            char *newbuf = realloc(l.buf, newlen);
-                            if (!newbuf) {
-                                /* not gonna happen, but if allocation failed — fall back to truncating */
-                                len = (size_t)(l.buflen - l.len - 1);
-                            } else {
-                                l.buf = newbuf;
-                                l.buflen = newlen;
-                            }
+                        in_ml_paste_or_edit=1;
+                        buf[0]='\n';
+                        buf[1]=nextc;
+                        size_t len = 2;
+
+                        /* Paste-drain: read all remaining bytes arriving within ~5ms gaps */
+
+                        for (;;) {
+                            struct pollfd p = { .fd = l.ifd, .events = POLLIN, .revents = 0 };
+                            int r = poll(&p, 1, 5);                 /* wait <= 5ms for next chunk */
+                            if (r <= 0 || !(p.revents & POLLIN))    /* nothing new -> done */
+                                break;
+
+                            ssize_t n = read(l.ifd, buf + len, sizeof(buf) - len);
+                            if (n <= 0) break;
+                            len += (size_t)n;
+                            if (len == sizeof(buf)) break;          /* cap safety */
                         }
 
-                        memmove(l.buf + l.pos + len,
-                                l.buf + l.pos,
-                                (size_t)(l.len - l.pos));
-                        memcpy(l.buf + l.pos, buf, len);
-                        l.pos += (int)len;
-                        l.len += (int)len;
-                        l.buf[l.len] = '\0';
+                        /* Normalize CRLF → LF */
+                        size_t w = 0;
+                        for (size_t i = 0; i < len; )
+                        {
+                            if (buf[i] == '\r')
+                            {
+                                if (i + 1 < len && buf[i + 1] == '\n')
+                                {
+                                    buf[w++] = '\n';
+                                    i += 2;
+                                }
+                                else
+                                {
+                                    buf[w++] = '\n';
+                                    i++;
+                                }
+                            } else buf[w++] = buf[i++];
+                        }
+                        len = w;
 
-                        if(write(l.ofd, buf, len)==-1)
-                            return -1;
+                        /* --- Insert into current buffer --- */
+                        if (len > 0)
+                        {
+                            if ((int)(l.len + len + 1) >= l.buflen) {
+                                int newlen = l.len + (int)len + 1;
+                                char *newbuf = realloc(l.buf, newlen);
+                                if (!newbuf) {
+                                    /* not gonna happen, but if allocation failed — fall back to truncating */
+                                    len = (size_t)(l.buflen - l.len - 1);
+                                } else {
+                                    l.buf = newbuf;
+                                    l.buflen = newlen;
+                                }
+                            }
 
-                        refreshLine(&l);
+                            memmove(l.buf + l.pos + len,
+                                    l.buf + l.pos,
+                                    (size_t)(l.len - l.pos));
+                            memcpy(l.buf + l.pos, buf, len);
+                            l.pos += (int)len;
+                            l.len += (int)len;
+                            l.buf[l.len] = '\0';
+
+                            if(write(l.ofd, buf, len)==-1)
+                                return -1;
+
+                            refreshLine(&l);
+                        }
+                        // in_ml_paste_or_edit is set until we get a real ENTER
+                        break;
                     }
-                    // in_ml_paste_or_edit is set until we get a real ENTER
-                    break;
+                    /* If read failed for some reason, fall through to submit */
                 }
-                /* If read failed for some reason, fall through to submit */
             }
-
+            // --ajf 2025-10-11 allow newlines if not positioned at the end, or if forced
+            if(force_ml_edit || (in_ml_paste_or_edit && l.len != l.pos))
+            {
+                if (linenoiseEditInsert(&l,'\n')) return -1;
+                break;
+                    
+            }
             // poll reports no data waiting
             in_ml_paste_or_edit=0;
 
@@ -1214,6 +1338,7 @@ static int linenoiseEdit(int stdin_fd, int stdout_fd, char *buf, size_t buflen, 
 #define ENODATA 8088
 #endif
             in_ml_paste_or_edit=0;
+            force_ml_edit = 0;
             // -ajf 2025-10-10 - changed to write
             (void)write(l.ofd, "^C", 2);
             if(l.len)
@@ -1253,12 +1378,27 @@ static int linenoiseEdit(int stdin_fd, int stdout_fd, char *buf, size_t buflen, 
         case CTRL_P:    /* ctrl-p */
             linenoiseEditHistoryNext(&l, LINENOISE_HISTORY_PREV);
             break;
-        case CTRL_N:    /* ctrl-n */
-            if(in_ml_paste_or_edit)
+        // -ajf 2025-10-11
+        case CTRL_X:
+        {
+            //toggle
+            if(force_ml_edit)
             {
-                if (linenoiseEditInsert(&l,'\n')) return -1;
-                break;
+                force_ml_edit = FORCE_OFF|FORCE_REFRESH;
+                // keep refresh using multiline version
+                int old = in_ml_paste_or_edit;
+                in_ml_paste_or_edit=1;
+                refreshLine(&l);
+                in_ml_paste_or_edit=old;
             }
+            else
+            {
+                force_ml_edit=FORCE_ON|FORCE_REFRESH; //signal a full refresh
+                refreshLine(&l);
+            }
+            break;
+        }
+        case CTRL_N:    /* ctrl-n */
             linenoiseEditHistoryNext(&l, LINENOISE_HISTORY_NEXT);
             break;
         case ESC:    /* escape sequence */
