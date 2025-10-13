@@ -103,6 +103,8 @@ char *tickify_err(int err)
     return msg;
 }
 
+int rp_color=1;
+
 // Standard colors
 #define RPCOL_BLK   "\x1B[30m"
 #define RPCOL_RED   "\x1B[31m"
@@ -251,6 +253,8 @@ static void completion(const char *inbuf, linenoiseCompletions *lc) {
     int startlen = 0;
     int insq=0;
     int indq=0;
+    char *bbk = rp_color ? RPCOL_BBLK  : "";
+    char *rst = rp_color ? RPCOL_RESET : "";
 
     if(s)
     {
@@ -286,9 +290,9 @@ static void completion(const char *inbuf, linenoiseCompletions *lc) {
         char qc = insq ? '\'' : '"';
         inbuf = strrchr(startpos, qc);
         inbuf++;
-        if(*inbuf == '/' || 
+        if(*inbuf == '/' ||
           ( *inbuf == '.' && *(inbuf + 1) == '/' ) ||
-          ( *inbuf == '.' && *(inbuf + 1) == '.' && *(inbuf + 2) == '/' ) 
+          ( *inbuf == '.' && *(inbuf + 1) == '.' && *(inbuf + 2) == '/' )
         )
         {
             char *s2=strrchr(inbuf, '/');
@@ -347,7 +351,7 @@ static void completion(const char *inbuf, linenoiseCompletions *lc) {
                             printf("\n   ");
                             curpos=0;
                         }
-                        printf("%s%s%*s%s", RPCOL_BBLK, entry->d_name, (int)(3+longest - slen), " ", RPCOL_RESET);
+                        printf("%s%s%*s%s", bbk, entry->d_name, (int)(3+longest - slen), " ", rst);
                         curpos += longest + 3;
                     }
                     if(gotone)
@@ -478,9 +482,9 @@ static void completion(const char *inbuf, linenoiseCompletions *lc) {
                             curpos=0;
                         }
                         if(isfunc)
-                            printf("%s%s()%*s%s", RPCOL_BBLK, sym, (int)(3+longest - slen -2), " ", RPCOL_RESET);
+                            printf("%s%s()%*s%s", bbk, sym, (int)(3+longest - slen -2), " ", rst);
                         else
-                            printf("%s%s%*s%s", RPCOL_BBLK, sym, (int)(3+longest - slen), " ", RPCOL_RESET);
+                            printf("%s%s%*s%s", bbk, sym, (int)(3+longest - slen), " ", rst);
                         curpos += longest + 3 + isfunc *2;
                     }
                     if(gotone)
@@ -494,6 +498,7 @@ static void completion(const char *inbuf, linenoiseCompletions *lc) {
             return;
         }
     }
+
     // if no dot, look for global symbols
     if(!dotpos && !(insq || indq) )
     {
@@ -501,7 +506,7 @@ static void completion(const char *inbuf, linenoiseCompletions *lc) {
 
         duk_push_global_object(ctx);
 
-        int nsugg=0;
+        int nsugg=0, didglobal=0;
         duk_enum(ctx, -1, DUK_ENUM_INCLUDE_NONENUMERABLE);
         while(duk_next(ctx, -1, 1))
         {
@@ -526,8 +531,11 @@ static void completion(const char *inbuf, linenoiseCompletions *lc) {
         }
         duk_pop(ctx);  // enum
 
+        didglobal = nsugg;
+
         if(nsugg > 1)
         {
+            linenoiseAddCompletionUnshift(lc, startpos);
             longest +=4;
             duk_enum(ctx, -1, DUK_ENUM_INCLUDE_NONENUMERABLE);
             while(duk_next(ctx, -1, 1))
@@ -549,9 +557,9 @@ static void completion(const char *inbuf, linenoiseCompletions *lc) {
                     curpos=0;
                 }
                 if(isfunc)
-                    printf("%s%s()%*s%s", RPCOL_BBLK, sym, (int)(3+longest - slen -2), " ", RPCOL_RESET);
+                    printf("%s%s()%*s%s", bbk, sym, (int)(3+longest - slen -2), " ", rst);
                 else
-                    printf("%s%s%*s%s", RPCOL_BBLK, sym, (int)(3+longest - slen), " ", RPCOL_RESET);
+                    printf("%s%s%*s%s", bbk, sym, (int)(3+longest - slen), " ", rst);
                 curpos += longest + 3 + isfunc *2;
             }
             if(gotone)
@@ -560,13 +568,54 @@ static void completion(const char *inbuf, linenoiseCompletions *lc) {
         }
         duk_pop(ctx);  //global object
 
+        longest=0;gotone=0;nsugg=0;
         for (i=0;i<nsuggwords;i++)
         {
             char *sym = suggwords[i];
+            size_t slen = strlen(sym);
             if(inlen && strncmp(inbuf, sym, inlen) != 0)
                 continue;
-            linenoiseAddCompletion(lc, sym);
+            rp_string *sugg = rp_string_new(32);
+            rp_string_putsn(sugg, startpos, startlen);
+            rp_string_puts(sugg, sym);
+
+            linenoiseAddCompletion(lc, sugg->str);
+            rp_string_free(sugg);
+
+            if((int)slen > longest)
+                longest = (int)slen;
+            nsugg++;
         }
+
+        curpos=0;
+        if(nsugg > 1)
+        {
+            for (i=0;i<nsuggwords;i++)
+            {
+                if(!didglobal)
+                    linenoiseAddCompletionUnshift(lc, startpos);
+                char *sym = suggwords[i];
+                size_t slen = strlen(sym);
+                if(inlen && strncmp(inbuf, sym, inlen) != 0)
+                    continue;
+                if(gotone==0)
+                {
+                    printf("\n   ");
+                    gotone=1;
+                }
+                if(curpos + longest + 3 > width)
+                {
+                    printf("\n   ");
+                    curpos=0;
+                }
+                printf("%s%s%*s%s", bbk, sym, (int)(3+longest - slen), " ", rst);
+                curpos += longest + 3;
+            }
+            printf("\n");
+        }
+
+        if(lc->len==1)
+            linenoiseAddCompletion(lc, startpos);
     }
 
 }
@@ -748,35 +797,159 @@ static void evhandler_repl(int sig, short events, void *flag)
     }
 }
 
-char * cmdline_help = 
-RPCOL_BBLK
+char * cmdline_help =
 ".help            - print this message\n"
 ".exit            - exit the REPL\n"
 ".gutils          - run rampart.globalize(rampart.utils);\n"
 ".transpile       - run commands through the transpiler\n"
 ".babel           - run commands through the babel\n"
+".save fn.js      - save current session to file\n"
+".empty           - empty the current save buffer\n"
+".list            - pipe the contents of save buffer to less/more\n"
 "up/down arrows   - scroll through history\n"
+"<tab> (first)    - display completions\n"
+"<tab> (subseq)   - scroll through completions\n"
 "ctrl-a           - move to beginning of line\n"
 "ctrl-c           - quit (if line is empty)\n"
 "ctrl-c           - reset line (if line is not empty)\n"
 "ctrl-d           - quit (if line is empty)\n"
 "ctrl-d           - delete to right (if line is not empty)\n"
+"ctrl-d           - submit line (if in multi-line mode)\n"
+"ctrl-e           - move to the end of line\n"
+"ctrl-k           - delete from current to the end of line\n"
+"ctrl-l           - clear screen\n"
 "ctrl-t           - swap current character with previous\n"
+"ctrl-u           - delete current line\n"
 "ctrl-w           - delete previous word\n"
 "ctrl-x           - toggle multi-line editing mode\n"
-RPCOL_RESET;
+"ctrl-z           - suspend and drop to shell\n"
+;
 
 char * tickify(char *src, size_t sz, int *err, int *ln);
-int rp_color=1;
 int rp_quiet=0;
 pthread_mutex_t repl_lock;
 #define REPL_LOCK    do {RP_PTLOCK(&repl_lock); /*printf("Locked\n"); */ } while(0)
 #define REPL_UNLOCK  do {RP_PTUNLOCK(&repl_lock); /* printf("Unlocked\n"); */} while (0)
 
+static char **savecmds=NULL;
+static int savelen=0;
+static int savecap=0;
+static int lastwasnl=0;
+// takes ownership
+static char *addToSave(char *txt)
+{
+    char *freeme=NULL;
+
+    if( (!txt || *txt=='\0') && lastwasnl )
+    {
+        if(txt)
+            free(txt);
+        return NULL;
+    }
+
+    if(!txt)
+        freeme=txt=strdup("");
+
+    // only include one blank line
+    if(*txt == '\0')
+        lastwasnl=1;
+    else
+        lastwasnl=0;
+
+    if(savelen == savecap)
+    {
+        savecap +=2;
+        REMALLOC(savecmds, savecap * sizeof(char*) );
+    }
+
+    savecmds[savelen]=txt;
+    savelen++;
+
+    if(freeme)
+        free(freeme);
+
+    return NULL;
+}
+
+static void freesave(void)
+{
+    for (int j = 0; j < savelen; j++)
+        free(savecmds[j]);
+
+    free(savecmds);
+    savecmds=NULL;
+}
+
+
+static int dosave(char *fn, char *pre, char *post)
+{
+    int j;
+    mode_t old_umask = umask(S_IWGRP | S_IWOTH);
+    FILE *fp;
+
+    fp = fopen(fn,"w");
+    umask(old_umask);
+    if (fp == NULL) return -1;
+
+    chmod(fn,S_IRUSR|S_IWUSR|S_IRGRP|S_IROTH);
+
+    if(pre)
+        fprintf(fp,"%s\n", pre);
+
+    for (j = 0; j < savelen; j++)
+        fprintf(fp,"%s\n",savecmds[j]);
+
+    if(post)
+        fprintf(fp,"%s\n", post);
+    fclose(fp);
+    return 0;
+
+}
+
+void list_sess()
+{
+    const char *pager = NULL;
+    FILE *fp = stdout;
+    int close_fp=1;
+    int use_col=0;
+
+    /* pick pager */
+    if (access("/usr/bin/less", X_OK) == 0 || access("/bin/less", X_OK) == 0)
+    {
+        use_col=rp_color;
+        if(use_col)
+            pager = "less -r --use-color -DNg -N";
+        else
+            pager = "less -r -N";
+    }
+    else if (access("/usr/bin/more", X_OK) == 0 || access("/bin/more", X_OK) == 0)
+        pager = "more";
+    else
+        pager = NULL;
+
+    if (!pager)
+        close_fp=0;
+
+    /* open a pipe to the pager */
+    fp = popen(pager, "w");
+    if (!fp)
+        fp=stdout;
+
+    for (int j = 0; j < savelen; j++)
+    {
+        fprintf(fp,"%s\n",savecmds[j]);
+    }
+    /* close pager, wait for it to exit */
+    if(close_fp)
+        pclose(fp);
+}
+
+
 static void *repl_thr(void *arg)
 {
     char *red="", *reset="", *blue="";
-    char *line=NULL, *lastline=NULL;
+    char *line=NULL,     *lastline=NULL;
+    char *saveline=NULL, *lastsaveline=NULL; // mirror above, but do not add transpiled
     char *prefix=RP_REPL_PREFIX;
     char histfn[PATH_MAX];
     char *hfn=NULL, *babelscript=NULL;
@@ -840,22 +1013,31 @@ static void *repl_thr(void *arg)
                 }
                 continue;
             }
+            if(hfn)
+                linenoiseHistorySave(hfn);
             if(babelscript)
                 free(babelscript);
             if(lastline)
                 free(lastline);
+            if(lastsaveline)
+                free(lastsaveline);
+            freesave();
             duk_rp_exit(ctx, 0);
         }
 
         if(*line=='\0')
         {
-            free(line);
+            addToSave(line);
             continue;
         }
+
         if(strncmp(line,".help", 5)==0)
         {
             free(line);
-            printf("%s\n", cmdline_help);
+            if(rp_color)
+                printf("%s%s%s", RPCOL_BBLK, cmdline_help, RPCOL_RESET);
+            else
+                printf("%s\n", cmdline_help);
             continue;
         }
         else if(strcmp(line,".exit")==0)
@@ -865,7 +1047,18 @@ static void *repl_thr(void *arg)
                 free(babelscript);
             if(lastline)
                 free(lastline);
+            if(lastsaveline)
+                free(lastsaveline);
+            if(hfn)
+                linenoiseHistorySave(hfn);
             duk_rp_exit(ctx, 0);
+        }
+        else if(strcmp(line,".empty")==0)
+        {
+            free(line);
+            freesave();
+            printf("%s  save buffer is empty%s\n", blue, reset);
+            continue;
         }
         else if(strcmp(line,".gutils")==0)
         {
@@ -874,40 +1067,122 @@ static void *repl_thr(void *arg)
         }
         else if(strcmp(line,".transpile")==0)
         {
+            linenoiseHistoryAdd(line);
             free(line);
+            duk_rp_globalbabel=0;
             duk_rp_globaltranspile=1;
+            if(main_babel_opt)
+            {
+                free(main_babel_opt);
+                main_babel_opt=NULL;
+            }
             continue;
         }
         else if(strcmp(line,".babel")==0)
         {
+            linenoiseHistoryAdd(line);
             free(line);
             if(!duk_rp_globalbabel)
                 main_babel_opt=strdup("{ presets: ['env'],retainLines:true }");
             duk_rp_globalbabel=1;
+            duk_rp_globaltranspile=0;
+            continue;
+        }
+        else if(strcmp(line,".list")==0)
+        {
+            linenoiseHistoryAdd(line);
+            free(line);
+            list_sess();
+            continue;
+        }
+        else if(strncmp(line,".save", 5)==0)
+        {
+            linenoiseHistoryAdd(line);
+            char *fn=NULL, *s = line + 5;
+            int bad=1;
+            do {
+                while(isspace(*s))
+                    s++;
+                if(!*s)
+                    break;
+
+                fn=s;
+                if(*s == '"')
+                {
+                    s++;
+                    while(*s && *s!='"')
+                        s++;
+                    if(*s!='"')
+                    {
+                        printf("%s  Unterminated quote:%s\n", blue, reset);
+                        break;
+                    }
+                }
+                else
+                {
+                    while(*s && !isspace(*s))
+                        s++;
+                }
+                if(s==fn)
+                    break;
+                *s='\0';
+                s=fn;
+                if(strlen(fn)>PATH_MAX)
+                    printf("%s  Filename too long:%s\n", blue, reset);
+                bad=0;
+            } while(0);
+            if(bad)
+            {
+                printf("%s  usage: .save filename or .save \"file name\"%s\n", blue, reset);
+                free(line);
+                continue;
+            }
+            char pre[1024];
+            *pre='\0';
+            if( duk_rp_globalbabel)
+                strcat(pre,"\"use babel\"\n");
+            else if ( duk_rp_globaltranspile )
+                strcat(pre,"\"use transpile\"\n");
+            if(globalize)
+                strcat(pre,"rampart.globalize(rampart.utils);\n");
+            errno=0;
+
+            if(dosave(fn, pre, NULL))
+                printf("%s  error saving file: %s%s\n", blue, strerror(errno), reset);
+            else
+                printf("%s  current session saved to: %s%s\n", blue, fn, reset);
+
+            free(line);
             continue;
         }
 
         oldline = line;
+        saveline = strdup(line);
+
         linenoiseHistoryAdd(oldline);
+
+        // babelize:
         if(duk_rp_globalbabel)
         {
             REPL_LOCK;
             char *error=NULL, *tryscript=NULL;
-            const char *res=NULL, *bline=NULL;
+            const char *bres=NULL, *bline=NULL;
 
             if(lastline){
-
-                if(*line=='\0')
-                {
-                    lastline=strcatdup(lastline, "\n");
-                    free(line);
-                    continue;
-                }
-                lastline = strcatdup(lastline, line);
+                char *s = strcatdup(lastline, line);
                 free(line);
-                line=lastline;
+                line=s;
+                lastline=NULL;
             }
-            lastline=NULL;
+
+            if(lastsaveline)
+            {
+                char *s = strcatdup(lastsaveline, saveline);
+                free(saveline);
+                saveline=s;
+                lastsaveline=NULL;
+            }
+
             //re-transpile entire script, but extract only last line
             if(babelscript)
                 tryscript = strdup(babelscript);
@@ -921,6 +1196,7 @@ static void *repl_thr(void *arg)
                 if(strstr(error, "SyntaxError: Unexpected token") ) //command likely spans multiple lines
                 {
                     lastline=line;
+                    lastsaveline=saveline;
                     free(error);
                     free(tryscript);
                     REPL_UNLOCK;
@@ -934,14 +1210,16 @@ static void *repl_thr(void *arg)
                 free(error);
                 free(line);
                 free(tryscript);
+                free(saveline);
+                saveline=NULL;
                 REPL_UNLOCK;
                 continue;
             }
             else
             {
-                res=duk_get_string(ctx, -1);
-                bline=res + strlen(res);
-                while(bline > res && *bline != '\n') bline--;
+                bres=duk_get_string(ctx, -1);
+                bline=bres + strlen(bres);
+                while(bline > bres && *bline != '\n') bline--;
                 if(*bline =='\n') bline++;
                 free(line);
                 line=strdup(bline);
@@ -962,30 +1240,29 @@ static void *repl_thr(void *arg)
                 res.transpiled=NULL;
             }
             else
+            {
                 line=strdup(oldline);//mimic what tickify used to do
+            }
             freeParseRes(&res);
-        }
-        if(!duk_rp_globalbabel)
-        {
+
             if (!line)
                 line=oldline;
             else if(line != oldline)
                 free(oldline);
 
-            if(lastline){
+            if(lastsaveline)
+            {
+                char *s = strjoin(lastsaveline, saveline, '\n');
+                free(saveline);
+                saveline=s;
+            }
 
-                if(*line=='\0')
-                {
-                    lastline=strcatdup(lastline, "\n");
-                    free(line);
-                    continue;
-                }
-                lastline = strjoin(lastline, line, '\n');
+            if(lastline){
+                char *s= strjoin(lastline, line, '\n');
                 free(line);
-                line=lastline;
+                line=s;
 
                 oldline=line;
-                //line = tickify(line, strlen(line), &err, &ln);
                 res = rp_get_transpiled(line, NULL);
                 if(res.transpiled)
                 {
@@ -1001,28 +1278,30 @@ static void *repl_thr(void *arg)
                 else
                     free(oldline);
             }
+            // if pos of error is at beginning of line or at a '`' , its likely a multiliner
+            if(
+                res.err &&
+                    (
+                        res.pos==0          ||
+                        line[res.pos]=='\'' ||
+                        line[res.pos]=='"'  ||
+                        line[res.pos]=='`'
+                    )
+            )
+            {
+                lastline=line;
+                lastsaveline=saveline;
+                continue;
+            }
         }
 
-        // if pos of error is at beginning of line or at a '`' , its likely a multiliner
-        if(
-            res.err &&
-                (
-                    res.pos==0          ||
-                    line[res.pos]=='\'' ||
-                    line[res.pos]=='"'  ||
-                    line[res.pos]=='`'
-                )
-        )
-        {
-            lastline=line;
-            continue;
-        }
 
         REPL_LOCK;
         evhandler_repl(0, 0, (void *)1);
         //printf("Doing %s\n", line);
         duk_push_string(ctx, line);
         lastline=NULL;
+        lastsaveline=NULL;
 
         // evaluate input
        if (duk_peval(ctx) != 0)
@@ -1031,15 +1310,17 @@ static void *repl_thr(void *arg)
             if(strstr(errmsg, "end of input") /* || (err && err < 5) */ ) //command likely spans multiple lines
             {
                 lastline=line;
+                lastsaveline=saveline;
             }
-            //else if(err)
-            //    printf("%sERROR: %s%s\n", red, tickify_err(err), reset);
             else
                 printf("%s%s%s\n", red, errmsg, reset);
         }
         else
         {
-            if(duk_is_object(ctx, -1) && !duk_is_function(ctx, -1)) {
+            // success, save the line
+            saveline=addToSave(saveline); // saveline==NULL
+            if(duk_is_object(ctx, -1) && !duk_is_function(ctx, -1))
+            {
                 duk_push_string(ctx, "rampart.utils.sprintf");
                 duk_eval(ctx);
                 if(rp_color) {
@@ -1067,9 +1348,12 @@ static void *repl_thr(void *arg)
         if(hfn)
             linenoiseHistorySave(hfn);
 
+        // this is the worst and most confusing way to do this.  Kinda just evolved into a mess.
+        // TODO: rewrite the loop to clearly allocate, free and set freed vars to NULL
         if(!lastline)
             free(line);
-
+        if(!lastsaveline && saveline)
+            free(saveline);
     }
     return NULL;
 }
@@ -1092,7 +1376,10 @@ static int repl(duk_context *ctx)
     event_assign(&ev_sig, mainthr->base, -1,  0, evhandler_repl, NULL);
     event_add(&ev_sig, &to);
 
-    /* start event loop, but don't block repl thread */
+    /* start event loop, but don't block repl thread
+     * this is how we handle async events in the repl.
+     * it only locks during the execution of js,
+       not while in the prompt or processing the prompt  */
     while(1)
     {
         REPL_LOCK;
@@ -1106,6 +1393,7 @@ static int repl(duk_context *ctx)
 
     return 0;
 }
+
 static char * load_polyfill(duk_context *ctx, int setting)
 {
     char *pfill="babel-polyfill.js";

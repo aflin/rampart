@@ -103,6 +103,18 @@
  *
  */
 
+/*
+   Lotsa crazy extras, added with "-ajf date" for the most part.
+   Additions copyright 2025 Aaron Flin aaron at flin dot org
+   and under same license.
+
+   * ctrl-x: enter multiline edit mode.
+   * ctrl-z: suspend and drop to shell
+   * multiline paste using timing
+   * changes to completion that make sense for rampart
+*/
+
+#include <signal.h> //-ajf 2025-10-11
 #include <termios.h>
 #include <unistd.h>
 #include <stdlib.h>
@@ -135,7 +147,7 @@ static int history_len = 0;
 static char **history = NULL;
 static int in_ml_paste_or_edit = 0;    // -- ajf - 2025-10-10 - whether in the middle of a multi-lined paste/edit
 
-static int force_ml_edit = 0;          // -- ajf - 2025-10-11 - whether to force multi-line mode
+static int force_ml_edit = 0;          // -- ajf - 2025-10-11 - whether to force multi-line mode - NOT REMOTELY RELATED TO mlmode above.
 #define FORCE_OFF          0
 #define FORCE_ON           1
 #define FORCE_REFRESH      2
@@ -182,6 +194,7 @@ enum KEY_ACTION{
 	CTRL_U = 21,        /* Ctrl+u */
 	CTRL_W = 23,        /* Ctrl+w */
 	CTRL_X = 24,        /* Ctrl+x  --ajf 2025-10-11 */
+	CTRL_Z = 26,        /* Ctrl+z  --ajf 2025-10-11 */
 	ESC = 27,           /* Escape */
 	BACKSPACE =  127    /* Backspace */
 };
@@ -407,7 +420,7 @@ static int completeLine(struct linenoiseState *ls) {
                 ls->pos = saved.pos;
                 ls->buf = saved.buf;
             } else {
-                // ajf - 2025-10-09 - we are inserting the original first in the queue
+                // ajf - 2025-10-09 - we are inserting the original first in the queue elsewhere
                 i=0;
                 continue;
                 //refreshLine(ls);
@@ -723,6 +736,29 @@ typedef struct rowcol {
     int eol;          // end position of curline
 } rowcol;
 
+// get position in buffer based on row and col
+static int getpos(struct linenoiseState *l, int row, int col)
+{
+    int currow=0, curcol=0, i=0;
+    for(; i<l->len; i++)
+    {
+        if(currow==row && curcol==col)
+            return i;
+        if(l->buf[i]=='\n')
+        {
+            if(currow==row)
+                return i;
+            curcol=0;
+            currow++;
+        }
+        else
+            curcol++;
+    }
+    if (currow == row)
+        return i;
+    return -1;
+}
+
 // counting from the top left
 static rowcol getrowcol(struct linenoiseState *l)
 {
@@ -761,7 +797,7 @@ static rowcol getrowcol(struct linenoiseState *l)
         }
     }
 
-    // either no '\n' in l->buf (lastn==0), 
+    // either no '\n' in l->buf (lastn==0),
     // or no '\n' past l->pos (lastn == curline-1)
     if(rc.eol==-1)
     {
@@ -773,6 +809,15 @@ static rowcol getrowcol(struct linenoiseState *l)
     rc.curcol = l->pos - rc.curline;
 
     return rc;
+}
+
+static void moverow(struct linenoiseState *l, int isup)
+{
+    rowcol rc = getrowcol(l);
+    int newrow = rc.currow + (isup? -1: 1);
+    int pos = getpos(l, newrow, rc.curcol);
+    if(pos>=0)
+        l->pos=pos;
 }
 
 // Helper to parse response from ESC [ row ; col R
@@ -839,12 +884,12 @@ static void get_term_positions(struct linenoiseState *l, int *total_rows, int *t
 static inline void writeprompt(struct linenoiseState *l)
 {
     if(force_ml_edit)
-        write(l->ofd, "\033[35m", 5); 
+        write(l->ofd, "\033[35m", 5);
 
     (void)write(l->ofd, l->prompt, strlen(l->prompt));
 
     if(force_ml_edit)
-        write(l->ofd, "\033[0m", 4); 
+        write(l->ofd, "\033[0m", 4);
 
 }
 
@@ -1146,6 +1191,44 @@ void linenoise_refresh() {
         refreshLine(linenoise_lnstate);
 }
 
+/* suspend on ctrl-z - ajf 2025-10-11 */
+static struct termios saved_tio;
+static int have_saved = 0;
+
+static void on_sigcont(int sig) {
+    (void)sig;
+    if (have_saved) {
+        struct termios raw = saved_tio;
+        raw.c_lflag &= ~(ICANON | ECHO);
+        tcsetattr(STDIN_FILENO, TCSANOW, &raw);
+    }
+    // optionally: redraw UI here
+}
+
+static void suspend_self(void) {
+    tcdrain(STDOUT_FILENO);
+
+    // ensure default action for SIGTSTP and it isn't blocked
+    struct sigaction sa = {0};
+    sa.sa_handler = SIG_DFL;
+    sigemptyset(&sa.sa_mask);
+    sigaction(SIGTSTP, &sa, NULL);
+
+    sigset_t m;
+    sigemptyset(&m);
+    sigaddset(&m, SIGTSTP);
+    sigprocmask(SIG_UNBLOCK, &m, NULL);
+
+    raise(SIGTSTP);   // stops here
+
+    struct sigaction sc = {0};
+    sc.sa_handler = on_sigcont;
+    sigemptyset(&sc.sa_mask);
+    sigaction(SIGCONT, &sc, NULL);
+
+    on_sigcont(SIGCONT);
+}
+
 /* This function is the core of the line editing capability of linenoise.
  * It expects 'fd' to be already in "raw mode" so that every key pressed
  * will be returned ASAP to read().
@@ -1191,7 +1274,7 @@ static int linenoiseEdit(int stdin_fd, int stdout_fd, char *buf, size_t buflen, 
 
         nread = read(l.ifd,&c,1);
         if (nread <= 0) return l.len;
-        
+
         /* Only autocomplete when the callback is set. It returns < 0 when
          * there was an error reading from fd. Otherwise it will return the
          * character that should be handled next. */
@@ -1300,7 +1383,7 @@ static int linenoiseEdit(int stdin_fd, int stdout_fd, char *buf, size_t buflen, 
             {
                 if (linenoiseEditInsert(&l,'\n')) return -1;
                 break;
-                    
+
             }
             // poll reports no data waiting
             in_ml_paste_or_edit=0;
@@ -1340,7 +1423,25 @@ static int linenoiseEdit(int stdin_fd, int stdout_fd, char *buf, size_t buflen, 
             break;
         case CTRL_D:     /* ctrl-d, remove char at right of cursor, or if the
                             line is empty, act as end-of-file. */
-            if (l.len > 0) {
+            if(in_ml_paste_or_edit|force_ml_edit) {
+                history_len--;
+                free(history[history_len]);
+                if (mlmode) linenoiseEditMoveEnd(&l);
+                force_ml_edit = FORCE_OFF|FORCE_REFRESH;
+                if (hintsCallback) {
+                    /* Force a refresh without hints to leave the previous
+                     * line as the user typed it after a newline. */
+                    linenoiseHintsCallback *hc = hintsCallback;
+                    hintsCallback = NULL;
+                    refreshLine(&l);
+                    hintsCallback = hc;
+                }
+                in_ml_paste_or_edit=0;
+                force_ml_edit=0;
+
+                return (int)l.len;
+
+            } else if (l.len > 0) {
                 linenoiseEditDelete(&l);
             } else {
                 history_len--;
@@ -1386,6 +1487,14 @@ static int linenoiseEdit(int stdin_fd, int stdout_fd, char *buf, size_t buflen, 
             }
             break;
         }
+        // -ajf 2025-10-11
+        case CTRL_Z:
+            suspend_self();   // returns after `fg`
+            l.oldrows = -1;
+            enableRawMode(l.ofd);
+            force_ml_edit |= FORCE_REFRESH; // do a full refresh of line
+            refreshLine(&l);
+            break;
         case CTRL_N:    /* ctrl-n */
             linenoiseEditHistoryNext(&l, LINENOISE_HISTORY_NEXT);
             break;
@@ -1411,9 +1520,22 @@ static int linenoiseEdit(int stdin_fd, int stdout_fd, char *buf, size_t buflen, 
                 } else {
                     switch(seq[1]) {
                     case 'A': /* Up */
+                        if( force_ml_edit || (in_ml_paste_or_edit && l.len != l.pos) )
+                        {
+                            moverow(&l, 1);
+                            refreshLine(&l);
+                            break;
+                        }
                         linenoiseEditHistoryNext(&l, LINENOISE_HISTORY_PREV);
                         break;
                     case 'B': /* Down */
+                        if( force_ml_edit || (in_ml_paste_or_edit && l.len != l.pos) )
+//                        if((in_ml_paste_or_edit || force_ml_edit) && l.len != l.pos)
+                        {
+                            moverow(&l, 0);
+                            refreshLine(&l);
+                            break;
+                        }
                         linenoiseEditHistoryNext(&l, LINENOISE_HISTORY_NEXT);
                         break;
                     case 'C': /* Right */
@@ -1692,7 +1814,7 @@ static void strchr_rep(char *p, char s, char r)
             *p=r;
         p++;
     }
-} 
+}
 
 #define PLACEHOLDER_CHAR 0x01
 
