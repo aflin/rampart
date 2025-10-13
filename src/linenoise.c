@@ -112,6 +112,7 @@
    * ctrl-z: suspend and drop to shell
    * multiline paste using timing
    * changes to completion that make sense for rampart
+   * linenoiseState l.buf is now allocated and grows as necessary
 */
 
 #include <signal.h> //-ajf 2025-10-11
@@ -131,7 +132,9 @@
 #include "linenoise.h"
 
 #define LINENOISE_DEFAULT_HISTORY_MAX_LEN 100
+#define LINENOISE_ADD_OVERHEAD 256  // -ajf - wiggle room for additional edited text
 #define LINENOISE_MAX_LINE 4096
+#define LINENOISE_INITIAL_LINE 256  // -ajf - initial size of allocated buf
 static char *unsupported_term[] = {"dumb","cons25","emacs",NULL};
 static linenoiseCompletionCallback *completionCallback = NULL;
 static linenoiseHintsCallback *hintsCallback = NULL;
@@ -1046,6 +1049,17 @@ static void refreshLine(struct linenoiseState *l) {
  *
  * On error writing to the terminal -1 is returned, otherwise 0. */
 int linenoiseEditInsert(struct linenoiseState *l, char c) {
+    if(l->len >= l->buflen) //-ajf
+    {
+        size_t len = l->buflen + LINENOISE_ADD_OVERHEAD;
+        char *nb=realloc(l->buf, len);
+        if(!nb)
+            return 0;
+
+        l->buflen=len-1;
+        l->buf=nb;
+        l->buf[l->buflen]='\0';
+    }
     if (l->len < l->buflen) {
         if (l->len == l->pos) {
             l->buf[l->pos] = c;
@@ -1124,7 +1138,20 @@ void linenoiseEditHistoryNext(struct linenoiseState *l, int dir) {
             l->history_index = history_len-1;
             return;
         }
-        strncpy(l->buf,history[history_len - 1 - l->history_index],l->buflen);
+        char *h = history[history_len - 1 - l->history_index];
+        size_t hlen = strlen(h);
+        if(hlen>= l->buflen) // -ajf
+        {
+            size_t llen= hlen + LINENOISE_ADD_OVERHEAD;
+            char *nb = realloc(l->buf, llen);
+            if(nb)
+            {
+                l->buf=nb;
+                l->buflen = llen-1;
+                l->buf[l->buflen]='\0';
+            }
+        }
+        strncpy(l->buf, h, l->buflen);
         l->buf[l->buflen-1] = '\0';
         l->len = l->pos = strlen(l->buf);
 
@@ -1237,14 +1264,13 @@ static void suspend_self(void) {
  * when ctrl+d is typed.
  *
  * The function returns the length of the current buffer. */
-static int linenoiseEdit(int stdin_fd, int stdout_fd, char *buf, size_t buflen, const char *prompt)
+static char * linenoiseEdit(int stdin_fd, int stdout_fd, size_t buflen, const char *prompt)
 {
     struct linenoiseState l;
     /* Populate the linenoise state that we pass to functions implementing
      * specific editing functionalities. */
     l.ifd = stdin_fd;
     l.ofd = stdout_fd;
-    l.buf = buf;
     l.buflen = buflen;
     l.prompt = prompt;
     l.plen = strlen(prompt);
@@ -1255,6 +1281,9 @@ static int linenoiseEdit(int stdin_fd, int stdout_fd, char *buf, size_t buflen, 
     l.oldrows = -1;
     l.oldcurrow = 0;
     l.history_index = 0;
+    l.buf = malloc(buflen);
+    if(!l.buf)
+        return NULL;
 
     /* Buffer starts empty. */
     l.buf[0] = '\0';
@@ -1266,14 +1295,14 @@ static int linenoiseEdit(int stdin_fd, int stdout_fd, char *buf, size_t buflen, 
      * initially is just an empty string. */
     linenoiseHistoryAdd("");
 
-    if (write(l.ofd,prompt,l.plen) == -1) return -1;
+    if (write(l.ofd,prompt,l.plen) == -1) goto end_fail;
     while(1) {
         char c;
         int nread;
         char seq[3];
 
         nread = read(l.ifd,&c,1);
-        if (nread <= 0) return l.len;
+        if (nread <= 0) return l.buf;
 
         /* Only autocomplete when the callback is set. It returns < 0 when
          * there was an error reading from fd. Otherwise it will return the
@@ -1282,7 +1311,7 @@ static int linenoiseEdit(int stdin_fd, int stdout_fd, char *buf, size_t buflen, 
         if (!in_ml_paste_or_edit && c == 9 && completionCallback != NULL) {
             c = completeLine(&l);
             /* Return on errors */
-            if (c < 0) return l.len;
+            if (c < 0) return l.buf;
             /* Read next character when 0 */
             if (c == 0) continue;
         }
@@ -1303,7 +1332,8 @@ static int linenoiseEdit(int stdin_fd, int stdout_fd, char *buf, size_t buflen, 
                     ssize_t nread = read(l.ifd, &nextc, 1);
                     if (nread == 1)
                     {
-                        unsigned char buf[32768];
+                        // if filled, loop will resume and write more
+                        unsigned char buf[16384];
 
                         in_ml_paste_or_edit=1;
                         buf[0]='\n';
@@ -1335,7 +1365,7 @@ static int linenoiseEdit(int stdin_fd, int stdout_fd, char *buf, size_t buflen, 
                                     buf[w++] = '\n';
                                     i += 2;
                                 }
-                                else
+                                else // dangerous if on a boundry.  might get two \n
                                 {
                                     buf[w++] = '\n';
                                     i++;
@@ -1347,8 +1377,8 @@ static int linenoiseEdit(int stdin_fd, int stdout_fd, char *buf, size_t buflen, 
                         /* --- Insert into current buffer --- */
                         if (len > 0)
                         {
-                            if ((int)(l.len + len + 1) >= l.buflen) {
-                                int newlen = l.len + (int)len + 1;
+                            if ((int)(l.len + len + 1) >= l.buflen + LINENOISE_ADD_OVERHEAD) {
+                                int newlen = l.len + (int)len + 1 + LINENOISE_ADD_OVERHEAD;
                                 char *newbuf = realloc(l.buf, newlen);
                                 if (!newbuf) {
                                     /* not gonna happen, but if allocation failed — fall back to truncating */
@@ -1368,7 +1398,7 @@ static int linenoiseEdit(int stdin_fd, int stdout_fd, char *buf, size_t buflen, 
                             l.buf[l.len] = '\0';
 
                             if(write(l.ofd, buf, len)==-1)
-                                return -1;
+                                goto end_fail;
 
                             refreshLine(&l);
                         }
@@ -1381,7 +1411,7 @@ static int linenoiseEdit(int stdin_fd, int stdout_fd, char *buf, size_t buflen, 
             // --ajf 2025-10-11 allow newlines if not positioned at the end, or if forced
             if(force_ml_edit || (in_ml_paste_or_edit && l.len != l.pos))
             {
-                if (linenoiseEditInsert(&l,'\n')) return -1;
+                if (linenoiseEditInsert(&l,'\n')) goto end_fail;
                 break;
 
             }
@@ -1400,7 +1430,7 @@ static int linenoiseEdit(int stdin_fd, int stdout_fd, char *buf, size_t buflen, 
                 hintsCallback = hc;
             }
 
-            return (int)l.len;
+            return l.buf;
         }
         case CTRL_C:     /* ctrl-c */
             /* AJF 2023-07-08 -- added printf and ENODATA if line is empty and ctrl-c pressed */
@@ -1416,7 +1446,7 @@ static int linenoiseEdit(int stdin_fd, int stdout_fd, char *buf, size_t buflen, 
                 errno = EAGAIN;
             else
                 errno = ENODATA;
-            return -1;
+            goto end_fail;
         case BACKSPACE:   /* backspace */
         case 8:     /* ctrl-h */
             linenoiseEditBackspace(&l);
@@ -1439,21 +1469,21 @@ static int linenoiseEdit(int stdin_fd, int stdout_fd, char *buf, size_t buflen, 
                 in_ml_paste_or_edit=0;
                 force_ml_edit=0;
 
-                return (int)l.len;
+                return l.buf;
 
             } else if (l.len > 0) {
                 linenoiseEditDelete(&l);
             } else {
                 history_len--;
                 free(history[history_len]);
-                return -1;
+                goto end_fail;
             }
             break;
         case CTRL_T:    /* ctrl-t, swaps current character with previous. */
             if (l.pos > 0 && l.pos < l.len) {
-                int aux = buf[l.pos-1];
-                buf[l.pos-1] = buf[l.pos];
-                buf[l.pos] = aux;
+                int aux = l.buf[l.pos-1];
+                l.buf[l.pos-1] = l.buf[l.pos];
+                l.buf[l.pos] = aux;
                 if (l.pos != l.len-1) l.pos++;
                 refreshLine(&l);
             }
@@ -1567,15 +1597,15 @@ static int linenoiseEdit(int stdin_fd, int stdout_fd, char *buf, size_t buflen, 
             }
             break;
         default:
-            if (linenoiseEditInsert(&l,c)) return -1;
+            if (linenoiseEditInsert(&l,c)) goto end_fail;
             break;
         case CTRL_U: /* Ctrl+u, delete the whole line. */
-            buf[0] = '\0';
+            l.buf[0] = '\0';
             l.pos = l.len = 0;
             refreshLine(&l);
             break;
         case CTRL_K: /* Ctrl+k, delete from current to end of line. */
-            buf[l.pos] = '\0';
+            l.buf[l.pos] = '\0';
             l.len = l.pos;
             refreshLine(&l);
             break;
@@ -1594,7 +1624,14 @@ static int linenoiseEdit(int stdin_fd, int stdout_fd, char *buf, size_t buflen, 
             break;
         }
     }
-    return l.len;
+
+    return l.buf;
+
+    end_fail:
+
+    if(l.buf)
+        free(l.buf);
+    return NULL;
 }
 
 /* This special mode is used by linenoise in order to print scan codes
@@ -1627,20 +1664,20 @@ void linenoisePrintKeyCodes(void) {
 
 /* This function calls the line editing function linenoiseEdit() using
  * the STDIN file descriptor set in raw mode. */
-static int linenoiseRaw(char *buf, size_t buflen, const char *prompt) {
-    int count;
+static char * linenoiseRaw(size_t buflen, const char *prompt) {
+    char * ret = NULL; // -ajf
 
     if (buflen == 0) {
         errno = EINVAL;
-        return -1;
+        return NULL;
     }
 
-    if (enableRawMode(STDIN_FILENO) == -1) return -1;
-    count = linenoiseEdit(STDIN_FILENO, STDOUT_FILENO, buf, buflen, prompt);
+    if (enableRawMode(STDIN_FILENO) == -1) return NULL;
+    ret = linenoiseEdit(STDIN_FILENO, STDOUT_FILENO, buflen, prompt);
     linenoise_lnstate=NULL; //-ajf
     disableRawMode(STDIN_FILENO);
     printf("\n");
-    return count;
+    return ret;
 }
 
 /* This function is called when linenoise() is called with the standard
@@ -1685,14 +1722,13 @@ static char *linenoiseNoTTY(void) {
  * editing function or uses dummy fgets() so that you will be able to type
  * something even in the most desperate of the conditions. */
 char *linenoise(const char *prompt) {
-    char buf[LINENOISE_MAX_LINE];
-    int count;
 
     if (!isatty(STDIN_FILENO)) {
         /* Not a tty: read from file / pipe. In this mode we don't want any
          * limit to the line size, so we call a function to handle that. */
         return linenoiseNoTTY();
     } else if (isUnsupportedTerm()) {
+        char buf[LINENOISE_MAX_LINE];
         size_t len;
 
         printf("%s",prompt);
@@ -1705,9 +1741,13 @@ char *linenoise(const char *prompt) {
         }
         return strdup(buf);
     } else {
+        // - ajf - now returns malloc'd buffer or NULL
+        return linenoiseRaw(LINENOISE_INITIAL_LINE, prompt);
+        /*
         count = linenoiseRaw(buf,LINENOISE_MAX_LINE,prompt);
         if (count == -1) return NULL;
         return strdup(buf);
+        */
     }
 }
 
@@ -1745,8 +1785,12 @@ static void linenoiseAtExit(void) {
  * entry and make room for the new one, so it is not exactly suitable for huge
  * histories, but will work well for a few hundred of entries.
  *
- * Using a circular buffer is smarter, but a bit more complex to handle. */
-int linenoiseHistoryAdd(const char *line) {
+ * Using a circular buffer is smarter, but a bit more complex to handle. 
+
+   MODIFIED to take ownership of an already malloc'd string.
+   The API call linenoiseHistoryAdd() is now below   -ajf            */
+
+static int lhAdd_to(char *line, int take_ownership) {
     char *linecopy;
 
     if (history_max_len == 0) return 0;
@@ -1759,11 +1803,20 @@ int linenoiseHistoryAdd(const char *line) {
     }
 
     /* Don't add duplicated lines. */
-    if (history_len && !strcmp(history[history_len-1], line)) return 0;
+    if (history_len && !strcmp(history[history_len-1], line))
+    {
+        if(take_ownership)
+            free(line);
+        return 0;
+    }
 
     /* Add an heap allocated copy of the line in the history.
      * If we reached the max length, remove the older line. */
-    linecopy = strdup(line);
+    if(take_ownership) //--ajf
+        linecopy = line;
+    else
+        linecopy = strdup(line);
+
     if (!linecopy) return 0;
     if (history_len == history_max_len) {
         free(history[0]);
@@ -1773,6 +1826,12 @@ int linenoiseHistoryAdd(const char *line) {
     history[history_len] = linecopy;
     history_len++;
     return 1;
+}
+
+// -ajf - the public function does strdup
+int linenoiseHistoryAdd(const char *line)
+{
+    return lhAdd_to((char *)line, 0);
 }
 
 /* Set the maximum length for the history. This function can be called even
@@ -1846,19 +1905,25 @@ int linenoiseHistorySave(const char *filename) {
  * on error -1 is returned. */
 int linenoiseHistoryLoad(const char *filename) {
     FILE *fp = fopen(filename,"r");
-    char buf[LINENOISE_MAX_LINE];
+    char *buf=NULL;
+    size_t buflen=0;
+    ssize_t nread;
 
     if (fp == NULL) return -1;
 
-    while (fgets(buf,LINENOISE_MAX_LINE,fp) != NULL) {
+    while ((nread = getline(&buf, &buflen, fp)) != -1) { // --ajf
         char *p;
 
         p = strchr(buf,'\r');
         if (!p) p = strchr(buf,'\n');
         if (p) *p = '\0';
-        strchr_rep(buf, PLACEHOLDER_CHAR, '\n');
-        linenoiseHistoryAdd(buf);
+        strchr_rep(buf, PLACEHOLDER_CHAR, '\n');  // -ajf
+        lhAdd_to(buf,1);
+        buf=NULL;
+        buflen=0;
     }
+    if(buf)
+        free(buf);
     fclose(fp);
     return 0;
 }
