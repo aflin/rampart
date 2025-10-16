@@ -718,6 +718,7 @@ install(CODE "execute_process( \
     \"${PROJECT_SOURCE_DIR}/src/include/duktape.h\" \
     \"${PROJECT_SOURCE_DIR}/src/include/duk_config.h\" \
     \"${PROJECT_SOURCE_DIR}/src/include/rampart.h\" \
+    \"${PROJECT_SOURCE_DIR}/src/include/rp_string.h\" \
     \"${PROJECT_SOURCE_DIR}/src/include/rp_server.h\" \
     \"${CMAKE_INSTALL_PREFIX}/include\"   \
     )"
