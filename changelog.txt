@@ -1,4 +1,4 @@
-v0.6.1
+v0.7
     - rampart-sql
                             Added derivations using equivs.
     - rampart               
@@ -7,6 +7,16 @@ v0.6.1
                             Added derivation download script and included en-deriv.
                             Added tree-sitter transpiler.
                             Added colorized JSON for repl and printf.
+                            Added require.cache
+                            Added partial post-ES5 support via "use transpile"
+                            REPL:
+                                    - Color on by default.
+                                    - Rewrite of linenoise to handle true multiline input.
+                                    - Dynamic symbol lookup for completion.
+
+    - rampart-utils
+                            printf functions take ',' flag for number
+                            formats for "1000" -> "1,000". 
     - rampart-curl
                             Made chunk options properly handle 'chunked'
                             blocks larger than libcurl's buffer.
@@ -16,6 +26,16 @@ v0.6.1
                             Fix for Julian dates.
 
     - rampart-llm
+                            Initial version.
+
+    - rampart-html          toText:
+                                    - No tabs.
+                                    - Preserve formatting in <pre> 
+
+    - rampart-sql           
+                            vrank16 server function for vector cosine distance calcs.
+
+    - rampart-cmodule
                             Initial version.
 
 v0.6.0
