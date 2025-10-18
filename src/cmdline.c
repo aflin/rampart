@@ -970,7 +970,6 @@ static void *repl_thr(void *arg)
         printf(RP_REPL_GREETING, blue, reset);
     }
 
-    linenoiseSetMultiLine(1);
     linenoiseSetCompletionCallback(completion);
     linenoiseHistorySetMaxLen(1024);
     if(home){
