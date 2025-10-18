@@ -817,7 +817,7 @@ char * cmdline_help =
 "ctrl-d           - submit line (if in multi-line mode)\n"
 "ctrl-e           - move to the end of line\n"
 "ctrl-k           - delete from current to the end of line\n"
-"ctrl-l           - clear screen\n"
+"ctrl-l           - clear and refresh screen\n"
 "ctrl-t           - swap current character with previous\n"
 "ctrl-u           - delete current line\n"
 "ctrl-w           - delete previous word\n"
