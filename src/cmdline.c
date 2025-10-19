@@ -822,7 +822,7 @@ char * cmdline_help =
 "ctrl-u           - delete current line\n"
 "ctrl-w           - delete previous word\n"
 "ctrl-x           - toggle multi-line editing mode\n"
-"ctrl-z           - suspend and drop to shell\n"
+"ctrl-z           - suspend and drop to shell"
 ;
 
 char * tickify(char *src, size_t sz, int *err, int *ln);
@@ -1034,7 +1034,7 @@ static void *repl_thr(void *arg)
         {
             free(line);
             if(rp_color)
-                printf("%s%s%s", RPCOL_BBLK, cmdline_help, RPCOL_RESET);
+                printf("%s%s%s\n", RPCOL_BBLK, cmdline_help, RPCOL_RESET);
             else
                 printf("%s\n", cmdline_help);
             continue;
