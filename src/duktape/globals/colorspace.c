@@ -1164,19 +1164,20 @@ static void put_css_colname(char *buf, CCOLOR *cc)
 	// if it was an rgb or ansi color and was converted to closest css color,
 	// then we assume that's what you want in the span style
 
-	uint16_t idx = cc->color_index;
+	*buf='\0';
+
+	int idx = cc->color_index;
 
 	if(idx >= n_color_entries)
-	    *buf='\0';
+	    return;
 
 	else if(idx >= css_color_start && idx < n_color_entries)
 		strcpy(buf, colornames[idx].name);
 
-	else
+    else
     {
-        uint16_t idx = cc->color_index;
         // these are duplicate css/term names. we want the css value
-        if(colornames[idx].same_name_idx>-1)
+        if(idx>-1 &&colornames[idx].same_name_idx>-1)
             strcpy(buf, colornames[ colornames[idx].same_name_idx ].name);
         else
     		sprintf(buf, "rgb(%d,%d,%d)", cc->rgb[0], cc->rgb[1], cc->rgb[2]);
