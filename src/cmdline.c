@@ -1324,7 +1324,7 @@ static void *repl_thr(void *arg)
                 duk_eval(ctx);
                 if(rp_color) {
                     duk_push_string(ctx, "%!A3J");
-                    duk_push_null(ctx);
+                    duk_push_number(ctx, 0);
                     duk_pull(ctx, -4);
                     duk_call(ctx, 3);
 
