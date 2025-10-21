@@ -1571,11 +1571,18 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
             {
                 if( !ccodes && ( (flags & FLAGS_COLOR && isterm) || flags & FLAGS_COLOR_FORCE) )
                 {
-                    jpal_idx = duk_get_int_default(ctx, fidx, 0);
-                    if(jpal_idx < 0 || jpal_idx >= njpal)
-                        jpal_idx=0;
+                    jpal_idx=0;
+                    if(duk_is_number(ctx, fidx))
+                    { //if pallate number is omitted, assume 0
+                        jpal_idx = duk_get_int_default(ctx, fidx, 0);
+                        if(jpal_idx < 0 || jpal_idx >= njpal)
+                            jpal_idx=0;
 
-                    fidx++;
+                        fidx++;
+                    }
+
+                    if(fidx > duk_get_top_index(ctx))
+                        PF_THROW(ctx, "printf: - expecting argument for conversion specifier (variable required at position %d)", fidx);
 
                     switch( rp_gettype(ctx, fidx) ){
                         case RP_TYPE_ARRAY:
