@@ -2469,8 +2469,6 @@ static int proc_backtick(char *bt_start, char *end, char **ob, char **o, size_t 
                 break;
             case '$':
                 if(
-                    in-1>bt_start &&   //we can look 2 back
-                    in+1<end      &&   //we can look 1 forward - not really necessary, I think
                     *(in+1)=='{'  &&   // we have '${'
                     !lastwasbs
                   )
