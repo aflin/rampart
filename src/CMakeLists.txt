@@ -87,6 +87,9 @@ add_executable(rampart
 	duktape/globals/rampart-event.c
 	duktape/globals/rampart-import.c
 	duktape/globals/rampart-thread.c
+    ${PROJECT_SOURCE_DIR}/extern/SimSIMD/c/lib.c
+	duktape/globals/rampart-vector.c
+	duktape/globals/vector-distance.c
 	duktape/globals/rp_tz.c
 	duktape/globals/csv_parser.c
 	duktape/globals/hash_random/cityhash.c
@@ -100,9 +103,30 @@ add_executable(rampart
 	cmdline.c
 )
 
-
 set_target_properties(rampart PROPERTIES
   ENABLE_EXPORTS 1
+)
+
+# I'm guessing given simsimd's nature, many of these warnings are unavoidable.  Let's silence them:
+set(_SIMSIMD_WARN "-Wno-unused-function -Wno-unknown-pragmas -Wno-unused-variable -Wno-unused-but-set-variable")
+
+set_source_files_properties(
+  ${PROJECT_SOURCE_DIR}/extern/SimSIMD/c/lib.c
+  PROPERTIES
+    COMPILE_FLAGS "-O3 ${_SIMSIMD_WARN}"
+    COMPILE_DEFINITIONS "SIMSIMD_DYNAMIC_DISPATCH=1"
+)
+
+set_source_files_properties(
+  duktape/globals/vector-distance.c
+  PROPERTIES
+    COMPILE_FLAGS "-O3 ${_SIMSIMD_WARN}"
+)
+
+set_source_files_properties(
+  duktape/globals/rampart-vector.c
+  PROPERTIES
+    COMPILE_FLAGS "-O3 ${_SIMSIMD_WARN}"
 )
 
 add_dependencies(rampart texisapi timestamp)
@@ -136,6 +160,7 @@ target_include_directories(rampart PRIVATE
     ${PROJECT_SOURCE_DIR}/extern/tree-sitter/lib/include/
     ${PROJECT_SOURCE_DIR}/extern/tree-sitter/lib/src/
     ${PROJECT_SOURCE_DIR}/extern/tree-sitter/
+    ${PROJECT_SOURCE_DIR}/extern/SimSIMD/include
 )
 
 include_directories(

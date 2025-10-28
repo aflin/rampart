@@ -865,6 +865,44 @@ int rp_watch_pid(pid_t pid, const char *msg);
 #define crypto_passwd_sha256 5
 #define crypto_passwd_sha512 6
 
+/* vector conversions */
+// no checks on *dst size.  You must provide a buffer of the proper size.
+// e.g. for f16_to_f32, dst must be malloc(n*sizeof(float))
+// Float <-> Float
+void f16_to_f32(const uint16_t* src, float* dst, size_t n);
+void f32_to_f16(const float* src, uint16_t* dst, size_t n);
+void f64_to_f32(const double* src, float* dst, size_t n);
+void f32_to_f64(const float* src, double* dst, size_t n);
+void f64_to_f16(const double* src, uint16_t* dst, size_t n);
+void f16_to_f64(const uint16_t* src, double* dst, size_t n);
+void bf16_to_f32(const uint16_t* src, float* dst, size_t n);
+void f32_to_bf16(const float* src, uint16_t* dst, size_t n);
+void f64_to_bf16(const double* src, uint16_t* dst, size_t n);
+void bf16_to_f64(const uint16_t* src, double* dst, size_t n);
+
+// Float <-> U8 (quantization)
+void f32_to_u8(const float* src, uint8_t* dst, size_t n, float scale, int zp);
+void u8_to_f32(const uint8_t* src, float* dst, size_t n, float scale, int zp);
+void f64_to_u8(const double* src, uint8_t* dst, size_t n, double scale, int zp);
+void u8_to_f64(const uint8_t* src, double* dst, size_t n, double scale, int zp);
+void f16_to_u8(const uint16_t* src, uint8_t* dst, size_t n, float scale, int zp);
+void u8_to_f16(const uint8_t* src, uint16_t* dst, size_t n, float scale, int zp);
+
+// Float <-> I8 (quantization)
+void f32_to_i8(const float* src, int8_t* dst, size_t n, float scale, int zp);
+void i8_to_f32(const int8_t* src, float* dst, size_t n, float scale, int zp);
+void f64_to_i8(const double* src, int8_t* dst, size_t n, double scale, int zp);
+void i8_to_f64(const int8_t* src, double* dst, size_t n, double scale, int zp);
+void f16_to_i8(const uint16_t* src, int8_t* dst, size_t n, float scale, int zp);
+void i8_to_f16(const int8_t* src, uint16_t* dst, size_t n, float scale, int zp);
+
+// Bit pack / unpack (double <-> b8)
+void f64_to_b8_threshold(const double* src, uint8_t* dst_bits, size_t n, double thresh);
+void b8_to_u8_bytes(const uint8_t* src_bits, uint8_t* dst_bytes, size_t n);
+
+// calculate distance using simsimd
+double rp_vector_distance(void *a, void *b, size_t bytesize, const char *metric, const char *datatype, const char **err);
+
 #if defined(__cplusplus)
 }
 #endif /* end 'extern "C"' wrapper */

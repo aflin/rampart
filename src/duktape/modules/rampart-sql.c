@@ -27,8 +27,6 @@
 #include "../globals/csv_parser.h"
 #include "event.h"
 
-#include "sql-userfunc.h"
-
 static pthread_mutex_t tx_handle_lock;
 
 static int defnoise=1, defsuffix=1, defsuffixeq=1, defprefix=1;
@@ -5996,135 +5994,6 @@ static duk_ret_t fork_helper(duk_context *ctx)
     return 0;
 }
 
-static inline uint16_t f32_to_f16_scalar(float x) {
-    uint32_t f;
-    memcpy(&f, &x, sizeof(f));
-    uint32_t s = (f >> 31) & 1u;
-    int32_t  e = (int32_t)((f >> 23) & 0xFFu) - 127 + 15;
-    uint32_t m =  f & 0x7FFFFFu;
-    uint16_t h;
-
-    if (e <= 0) {
-        if (e < -10) {
-            h = (uint16_t)(s << 15);  /* underflow -> zero */
-        } else {
-            m |= 0x800000u;
-            uint32_t shift = (uint32_t)(14 - e);
-            uint32_t mant  = m >> (shift + 13);
-            if ((m >> (shift + 12)) & 1u) mant += 1u; /* round nearest-even */
-            h = (uint16_t)((s << 15) | mant);
-        }
-    } else if (e >= 31) {
-        h = (uint16_t)((s << 15) | (0x1Fu << 10));   /* overflow -> Inf */
-    } else {
-        uint16_t mant = (uint16_t)(m >> 13);
-        if (m & 0x00001000u) mant += 1u;             /* round */
-        h = (uint16_t)((s << 15) | ((uint16_t)e << 10) | mant);
-    }
-    return h;
-}
-
-static int is_delim(char c){
-    /* ASCII whitespace or simple punctuation */
-    return (unsigned char)c <= 32 ||
-           c==',' || c=='.' || c=='!' || c=='?' || c==';' || c==':' ||
-           c=='(' || c==')' || c=='[' || c==']' || c=='{' || c=='}' ||
-           c=='\"'|| c=='\'';
-}
-
-
-static uint64_t fnv1a64(const unsigned char* data, size_t n){
-    uint64_t h = 1469598103934665603ULL;
-    for (size_t i=0;i<n;++i){ h ^= (uint64_t)data[i]; h *= 1099511628211ULL; }
-    return h;
-}
-
-static uint64_t hash_str(const char* s){
-    return fnv1a64((const unsigned char*)s, strlen(s));
-}
-
-static void l2_normalize(float* x, int d){
-    double s = 0.0;
-
-    for (int i=0;i<d;++i)
-        s += (double)(x[i]*x[i]);
-
-    if (s <= 0)
-        return;
-
-    double n = sqrt(s);
-
-    for (int i=0;i<d;++i)
-        x[i] = (float)(x[i]/n);
-}
-
-static duk_ret_t text_to_vec(duk_context *ctx)
-{
-    const char *text = REQUIRE_STRING(ctx, 0, "textToVec - argument must be a String");
-    int dim=768;
-    float v[dim];
-    uint16_t *out = (uint16_t *)duk_push_fixed_buffer(ctx, (duk_size_t)(dim*2));
-    int i=0;
-
-    for (;i<dim;i++)
-        v[i]=0.0;
-
-    /* bias term */
-    v[0] += 1.0f;
-
-    const char* p = text;
-    char tok[256];
-    int tok_len = 0;
-    int ntok = 0;
-
-    while (1){
-        char c = *p;
-        if (c == 0 || is_delim(c)){
-            if (tok_len > 0){
-                tok[tok_len] = 0;
-                /* lowercase ASCII */
-                for (i=0;i<tok_len;++i)
-                    tok[i] = (char)tolower((unsigned char)tok[i]);
-                uint64_t h = hash_str(tok);
-                int idx = (int)(h % (uint64_t)dim);
-                v[idx] += 1.0f;
-                ++ntok;
-                tok_len = 0;
-            }
-            if (c == 0) break;
-        } else {
-            if (tok_len < (int)sizeof(tok)-1) tok[tok_len++] = c;
-        }
-        ++p;
-    }
-
-
-    if (ntok > 0){
-        float lf = (float)(1.0 + 0.1 * logf((float)ntok + 1.0f));
-        for (int i=0;i<dim;++i) {
-            v[i] *= lf;
-        }
-    }
-    l2_normalize(v, dim);
-
-    //printf("{\n");
-
-    for (i=0; i< dim; i++)
-    {
-        out[i]=f32_to_f16_scalar(v[i]);
-        /*
-        if(i)
-            printf(", %d", out[i]);
-        else
-            printf("%d", out[i]);
-        */
-    }
-    //printf("};\n");
-
-    return 1;
-}
-
-
 static duk_ret_t rp_sql_connect(duk_context *ctx)
 {
     duk_push_this(ctx);
@@ -6333,12 +6202,6 @@ duk_ret_t duk_open_module(duk_context *ctx)
     /* used when forking/execing */
     duk_push_string(ctx, "__helper");
     duk_push_c_function(ctx, fork_helper, 3);
-    duk_def_prop(ctx, -3, DUK_DEFPROP_CLEAR_WEC|DUK_DEFPROP_HAVE_VALUE);
-
-    duk_push_string(ctx, "vec");
-    duk_push_object(ctx);
-    duk_push_c_function(ctx, text_to_vec, 1);
-    duk_put_prop_string(ctx, -2, "textToVec");
     duk_def_prop(ctx, -3, DUK_DEFPROP_CLEAR_WEC|DUK_DEFPROP_HAVE_VALUE);
 
     add_exit_func(free_all_handles, NULL);

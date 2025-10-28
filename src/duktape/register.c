@@ -496,6 +496,7 @@ void duk_init_context(duk_context *ctx)
     duk_process_init(ctx);                    /* register process.* vars */
     duk_event_init(ctx);                      /* register functions in rampart-event.c */
     duk_thread_init(ctx);                     /* register functions in rampart-thread.c */
+    duk_vector_init(ctx);                     /* register functions in rampart-vector.c */
     duk_rp_push_rampart_version(ctx);         /* rampart version info */
     fix_json_parse(ctx);
     fix_eval(ctx);
