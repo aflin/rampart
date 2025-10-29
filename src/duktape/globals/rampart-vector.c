@@ -21,13 +21,6 @@
 extern simsimd_capability_t rp_runtime_caps;
 extern int rp_runtime_caps_is_init;
 
-#ifdef RP_USE_SIMD
-
-// code goes here
-
-#else // RP_USE_SIMD
-
-
 // ---------------------- Scalar helper: f16<->f32 -----------------
 static inline float half_to_float(uint16_t h)
 {
@@ -468,8 +461,6 @@ static void l2_normalize_d(double *x, int d)
 }
 // end l2 normalization
 
-#endif // RP_USE_SIMD
-
 #define RP_F64 0
 #define RP_F32 1
 #define RP_F16 2
@@ -526,7 +517,6 @@ static duk_ret_t rp_f64_to_u8(duk_context *ctx)
     f64_to_u8(in, out, dim, scale, zp);
     return 1;
 }
-
 
 static duk_ret_t rp_u8_to_f64(duk_context *ctx)
 {
@@ -1524,30 +1514,6 @@ static void veccap(duk_context *ctx)
     duk_push_boolean(ctx, (rp_runtime_caps & simsimd_cap_turin_k) != 0);
     duk_put_prop_string(ctx, -2, "turin");
     duk_put_prop_string(ctx, -2, "runtimeCapabilities");
-
-    duk_push_object(ctx);
-
-#ifdef RP_IS_INTEL
-    duk_push_true(ctx);
-    duk_put_prop_string(ctx, -2, "x86");
-
-    duk_push_boolean(ctx, cpu_has_avx512());
-    duk_put_prop_string(ctx, -2, "avx512");
-
-    duk_push_boolean(ctx, cpu_has_avx2());
-    duk_put_prop_string(ctx, -2, "avx2");
-
-    duk_push_boolean(ctx, cpu_has_avx());
-    duk_put_prop_string(ctx, -2, "avx");
-
-    duk_push_boolean(ctx, cpu_has_sse2());
-    duk_put_prop_string(ctx, -2, "sse2");
-
-    duk_push_boolean(ctx, cpu_has_f16c());
-    duk_put_prop_string(ctx, -2, "f16c");
-#endif
-
-    duk_put_prop_string(ctx, -2, "compiledCapabilities");
 }
 
 // init the js functions
