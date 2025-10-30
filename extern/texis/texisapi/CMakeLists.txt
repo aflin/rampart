@@ -593,17 +593,44 @@ IF(PARSERS_FOUND)
   )
 
   set(SIMSIMD_WARN "-Wno-unused-function -Wno-unknown-pragmas -Wno-unused-variable -Wno-unused-but-set-variable")
-  set(SIMSIMD_FLAGS "-DSIMSIMD_DYNAMIC_DISPATCH=1")
+
   if(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64|AMD64|i686)")
-      # Check GCC version (or try to compile with AVX-512 BF16)
-      if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
-          if(CMAKE_C_COMPILER_VERSION VERSION_LESS "11.0")
-              message(WARNING "Old GCC detected (${CMAKE_C_COMPILER_VERSION}), disabling newer AVX-512 targets")
+      message(STATUS "Detected x86/x86_64 architecture, checking compiler capabilities...")
+      
+      # For GCC < 4.9, disable all advanced SIMD
+      if(CMAKE_C_COMPILER_ID STREQUAL "GNU" AND CMAKE_C_COMPILER_VERSION VERSION_LESS "4.9")
+          message(WARNING "GCC ${CMAKE_C_COMPILER_VERSION} too old, disabling all SIMD targets")
+          set(SIMSIMD_DISABLE_TARGETS 
+              "-DSIMSIMD_TARGET_HASWELL=0 -DSIMSIMD_TARGET_SKYLAKE=0 -DSIMSIMD_TARGET_ICE=0 -DSIMSIMD_TARGET_GENOA=0 -DSIMSIMD_TARGET_SAPPHIRE=0 -DSIMSIMD_TARGET_TURIN=0")
+          set(SIMSIMD_FLAGS "${SIMSIMD_FLAGS} ${SIMSIMD_DISABLE_TARGETS}")
+      else()
+          # Test if compiler supports AVX2
+          set(CMAKE_REQUIRED_FLAGS "-mavx2")
+          check_c_source_compiles("
+              #include <immintrin.h>
+              int main() {
+                  __m256 a = _mm256_setzero_ps();
+                  return 0;
+              }
+          " HAVE_AVX2)
+          
+          if(NOT HAVE_AVX2)
+              message(WARNING "AVX2 not supported, disabling all SIMD targets")
               set(SIMSIMD_DISABLE_TARGETS 
-                  "-DSIMSIMD_TARGET_TURIN=0 -DSIMSIMD_TARGET_SAPPHIRE=0 -DSIMSIMD_TARGET_GENOA=0 -DSIMSIMD_TARGET_ICE=0 -DSIMSIMD_TARGET_SKYLAKE=0")
+                  "-DSIMSIMD_TARGET_HASWELL=0 -DSIMSIMD_TARGET_SKYLAKE=0 -DSIMSIMD_TARGET_ICE=0 -DSIMSIMD_TARGET_GENOA=0 -DSIMSIMD_TARGET_SAPPHIRE=0 -DSIMSIMD_TARGET_TURIN=0")
               set(SIMSIMD_FLAGS "${SIMSIMD_FLAGS} ${SIMSIMD_DISABLE_TARGETS}")
+          else()
+              # GCC 11+ has AVX-512 BF16 support
+              if(CMAKE_C_COMPILER_VERSION VERSION_LESS "11.0")
+                  message(WARNING "GCC < 11, disabling newer AVX-512 targets")
+                  set(SIMSIMD_DISABLE_TARGETS 
+                      "-DSIMSIMD_TARGET_TURIN=0 -DSIMSIMD_TARGET_SAPPHIRE=0 -DSIMSIMD_TARGET_GENOA=0 -DSIMSIMD_TARGET_ICE=0 -DSIMSIMD_TARGET_SKYLAKE=0")
+                  set(SIMSIMD_FLAGS "${SIMSIMD_FLAGS} ${SIMSIMD_DISABLE_TARGETS}")
+              endif()
           endif()
       endif()
+      
+      message(STATUS "SimSIMD compile flags: ${SIMSIMD_FLAGS}")
   endif()
 
   set_source_files_properties(
