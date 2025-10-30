@@ -15,22 +15,27 @@ project(Rampart VERSION 0.5.0 LANGUAGES C CXX)
 #set(CMAKE_BUILD_TYPE Debug)
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
-add_compile_options(-Wno-deprecated-non-prototype)
 
-if (MACOS_UNIVERSAL)
+    # -Wno-deprecated-non-prototype added in AppleClang 13+
+    if(CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL "13.0")
+        add_compile_options(-Wno-deprecated-non-prototype)
+    endif()
 
-	message("Making MacOs Universal Binary Build")
-	SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -arch x86_64 -mmacosx-version-min=10.13 -arch arm64")
-	SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -arch x86_64 -mmacosx-version-min=10.13 -arch arm64")
+    #no longer supported - libraries used and python aren't universal
+    if (MACOS_UNIVERSAL)
 
-else(MACOS_UNIVERSAL)
+        message("Making MacOs Universal Binary Build")
+        SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -arch x86_64 -mmacosx-version-min=10.13 -arch arm64")
+        SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -arch x86_64 -mmacosx-version-min=10.13 -arch arm64")
 
-if( CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL "arm64" )
-	SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mmacosx-version-min=11.0 -arch arm64")
-	SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mmacosx-version-min=11.0 -arch arm64")
-endif( CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL "arm64" )
+    else(MACOS_UNIVERSAL)
 
-endif (MACOS_UNIVERSAL)
+        if( CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL "arm64" )
+            SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mmacosx-version-min=11.0 -arch arm64")
+            SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mmacosx-version-min=11.0 -arch arm64")
+        endif( CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL "arm64" )
+
+    endif (MACOS_UNIVERSAL)
 
 endif(CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
 
