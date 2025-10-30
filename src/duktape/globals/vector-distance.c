@@ -166,61 +166,22 @@ static int compute_distance(simsimd_metric_kind_t mk,
     simsimd_kernel_punned_t punned = simsimd_metric_punned(mk, dt, rp_runtime_caps);
     if (!punned) return 4; // no kernel available for this combo on this platform
 
-    // Dispatch by dtype with a correctly-typed function pointer.
+    typedef void (*fn_t)(void const *, void const *, simsimd_size_t, void *);
+
+    // Dispatch by dtype with a generic-typed function pointer.
     switch (dt) {
-        case simsimd_datatype_f32_k: {
-            typedef void (*fn_t)(const float*, const float*, size_t, simsimd_distance_t*);
+        case simsimd_datatype_f32_k:
+        case simsimd_datatype_f64_k:
+        case simsimd_datatype_f16_k:
+        case simsimd_datatype_bf16_k:
+        case simsimd_datatype_i8_k:
+        case simsimd_datatype_u8_k:
+        case simsimd_datatype_b8_k:
+        case simsimd_datatype_f32c_k:
+        case simsimd_datatype_f64c_k:
+        {
             fn_t fn = (fn_t)punned;
-            fn((const float*)a, (const float*)b, dim, out);
-            return 0;
-        }
-        case simsimd_datatype_f64_k: {
-            typedef void (*fn_t)(const double*, const double*, size_t, simsimd_distance_t*);
-            fn_t fn = (fn_t)punned;
-            fn((const double*)a, (const double*)b, dim, out);
-            return 0;
-        }
-        case simsimd_datatype_f16_k: {
-            typedef void (*fn_t)(const simsimd_f16_t*, const simsimd_f16_t*, size_t, simsimd_distance_t*);
-            fn_t fn = (fn_t)punned;
-            fn((const simsimd_f16_t*)a, (const simsimd_f16_t*)b, dim, out);
-            return 0;
-        }
-        case simsimd_datatype_bf16_k: {
-            typedef void (*fn_t)(const simsimd_bf16_t*, const simsimd_bf16_t*, size_t, simsimd_distance_t*);
-            fn_t fn = (fn_t)punned;
-            fn((const simsimd_bf16_t*)a, (const simsimd_bf16_t*)b, dim, out);
-            return 0;
-        }
-        case simsimd_datatype_i8_k: {
-            typedef void (*fn_t)(const int8_t*, const int8_t*, size_t, simsimd_distance_t*);
-            fn_t fn = (fn_t)punned;
-            fn((const int8_t*)a, (const int8_t*)b, dim, out);
-            return 0;
-        }
-        case simsimd_datatype_u8_k: {
-            typedef void (*fn_t)(const uint8_t*, const uint8_t*, size_t, simsimd_distance_t*);
-            fn_t fn = (fn_t)punned;
-            fn((const uint8_t*)a, (const uint8_t*)b, dim, out);
-            return 0;
-        }
-        case simsimd_datatype_b8_k: {
-            // For binary data, SimSIMD typically uses byte arrays; confirm your build’s contract.
-            typedef void (*fn_t)(const uint8_t*, const uint8_t*, size_t, simsimd_distance_t*);
-            fn_t fn = (fn_t)punned;
-            fn((const uint8_t*)a, (const uint8_t*)b, dim, out);
-            return 0;
-        }
-        case simsimd_datatype_f32c_k: {
-            typedef void (*fn_t)(const simsimd_f32c_t*, const simsimd_f32c_t*, size_t, simsimd_distance_t*);
-            fn_t fn = (fn_t)punned;
-            fn((const simsimd_f32c_t*)a, (const simsimd_f32c_t*)b, dim, out);
-            return 0;
-        }
-        case simsimd_datatype_f64c_k: {
-            typedef void (*fn_t)(const simsimd_f64c_t*, const simsimd_f64c_t*, size_t, simsimd_distance_t*);
-            fn_t fn = (fn_t)punned;
-            fn((const simsimd_f64c_t*)a, (const simsimd_f64c_t*)b, dim, out);
+            fn(a, b, dim, out);
             return 0;
         }
         default:
