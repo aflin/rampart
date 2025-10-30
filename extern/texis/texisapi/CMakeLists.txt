@@ -591,50 +591,31 @@ IF(PARSERS_FOUND)
     ${TEXISAPI_SOURCE_DIR}/texisapi.c
     ${TEXISAPI_BINARY_DIR}/texver.c
   )
-  set(_SIMSIMD_WARN "-Wno-unused-function -Wno-unknown-pragmas -Wno-unused-variable -Wno-unused-but-set-variable")
 
-  # Arch-specific SIMD flags
-  set(_SIMSIMD_ARCH "")
-  if(APPLE)
-
-    if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")            # macOS M1/M2/M3
-      # Neon + FP16 on Apple Silicon
-      set(_SIMSIMD_ARCH "-mcpu=apple-m1")
-      # Alternative (more explicit): -march=armv8.5-a+fp16+simd
-    else()                                                         # macOS Intel (Yosemite+)
-      # Build AVX2 and AVX-512 variants (binary can still run on non-AVX512 Macs; dispatch avoids illegal exec)
-      set(_SIMSIMD_ARCH "-mavx2 -mfma -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512cd")
-    endif()
-
-  elseif(UNIX)  # Linux
-
-    if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|amd64")             # Linux Intel/AMD 64-bit
-      set(_SIMSIMD_ARCH "-march=x86-64 -mavx2 -mfma -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512cd")
-    elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "i[3-6]86")             # Linux Intel/AMD 32-bit
-      # AVX-512 doesn’t apply to 32-bit; enable up to AVX2
-      set(_SIMSIMD_ARCH "-msse4.2 -mavx2 -mfma")
-    elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")              # Linux ARM 64-bit
-      # Neon + FP16; BF16 is v8.6+ (add +bf16 if you know you target that)
-      set(_SIMSIMD_ARCH "-march=armv8-a+fp16+simd")
-      # For Armv8.6+ targets you may prefer: -march=armv8.6-a+bf16+fp16+simd
-    elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "armv7|armv6|^arm$")    # Linux ARM 32-bit
-      # Neon + FP16 on hard-float ABI; adjust FPU if your toolchain/SoC differs
-      set(_SIMSIMD_ARCH "-march=armv7-a -mfpu=neon-fp16 -mfloat-abi=hard")
-    endif()
-
+  set(SIMSIMD_WARN "-Wno-unused-function -Wno-unknown-pragmas -Wno-unused-variable -Wno-unused-but-set-variable")
+  set(SIMSIMD_FLAGS "-DSIMSIMD_DYNAMIC_DISPATCH=1")
+  if(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64|AMD64|i686)")
+      # Check GCC version (or try to compile with AVX-512 BF16)
+      if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
+          if(CMAKE_C_COMPILER_VERSION VERSION_LESS "11.0")
+              message(WARNING "Old GCC detected (${CMAKE_C_COMPILER_VERSION}), disabling newer AVX-512 targets")
+              set(SIMSIMD_DISABLE_TARGETS 
+                  "-DSIMSIMD_TARGET_TURIN=0 -DSIMSIMD_TARGET_SAPPHIRE=0 -DSIMSIMD_TARGET_GENOA=0 -DSIMSIMD_TARGET_ICE=0 -DSIMSIMD_TARGET_SKYLAKE=0")
+              set(SIMSIMD_FLAGS "${SIMSIMD_FLAGS} ${SIMSIMD_DISABLE_TARGETS}")
+          endif()
+      endif()
   endif()
 
   set_source_files_properties(
-    ${PROJECT_SOURCE_DIR}/extern/SimSIMD/c/lib.c
+    ${CMAKE_SOURCE_DIR}/extern/SimSIMD/c/lib.c
     PROPERTIES
-      COMPILE_FLAGS "-O3 ${_SIMSIMD_WARN} ${_SIMSIMD_ARCH}"
-      COMPILE_DEFINITIONS "SIMSIMD_DYNAMIC_DISPATCH=1"
+      COMPILE_FLAGS "-O3 ${SIMSIMD_WARN} ${SIMSIMD_FLAGS}"
   )
 
   set_source_files_properties(
-     ${PROJECT_SOURCE_DIR}/src/duktape/globals/vector-distance.c
+    ${CMAKE_SOURCE_DIR}/src/duktape/globals/vector-distance.c
     PROPERTIES
-      COMPILE_FLAGS "-O3 ${_SIMSIMD_WARN}"
+      COMPILE_FLAGS "-O3 ${SIMSIMD_WARN}"
   )
 
 ELSE(PARSERS_FOUND)
