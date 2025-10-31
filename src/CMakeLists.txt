@@ -112,11 +112,15 @@ set_target_properties(rampart PROPERTIES
 set(SIMSIMD_WARN "-Wno-unused-function -Wno-unknown-pragmas -Wno-unused-variable -Wno-unused-but-set-variable")
 set(SIMSIMD_FLAGS "-DSIMSIMD_DYNAMIC_DISPATCH=1")
 set(SIMSIMD_ARCH_FLAGS "")
-if(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64|AMD64|i686|i386)")
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "(i686|i386)")
+        set(SIMSIMD_DISABLE_TARGETS 
+            "-DSIMSIMD_TARGET_HASWELL=0 -DSIMSIMD_TARGET_SKYLAKE=0 -DSIMSIMD_TARGET_ICE=0 -DSIMSIMD_TARGET_GENOA=0 -DSIMSIMD_TARGET_SAPPHIRE=0 -DSIMSIMD_TARGET_TURIN=0")
+        set(SIMSIMD_FLAGS "${SIMSIMD_FLAGS} ${SIMSIMD_DISABLE_TARGETS}")
+elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64|AMD64)")
     message(WARNING "Detected x86/x86_64 architecture, checking compiler capabilities...")
     
     # Test if compiler supports AVX2 with both single and double precision
-    set(CMAKE_REQUIRED_FLAGS "-mavx2")
+    set(CMAKE_REQUIRED_FLAGS "-mavx2 -mfma -mf16c")
     CHECK_C_SOURCE_COMPILES("
         #include <immintrin.h>
         int main() {
