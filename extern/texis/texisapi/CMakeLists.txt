@@ -600,17 +600,16 @@ IF(PARSERS_FOUND)
   set(SIMSIMD_FLAGS "-DSIMSIMD_DYNAMIC_DISPATCH=1")
   set(SIMSIMD_ARCH_FLAGS "")
   set(SIMSIMD_DISABLE_TARGETS "")
-
   if(CMAKE_C_COMPILER_ID STREQUAL "GNU" AND CMAKE_C_COMPILER_VERSION VERSION_LESS "4.9")
       message(STATUS "GCC ${CMAKE_C_COMPILER_VERSION} too old, disabling all SIMD targets")
       set(SIMSIMD_DISABLE_TARGETS
         "-DSIMSIMD_TARGET_HASWELL=0 -DSIMSIMD_TARGET_SKYLAKE=0 -DSIMSIMD_TARGET_ICE=0 -DSIMSIMD_TARGET_GENOA=0 -DSIMSIMD_TARGET_SAPPHIRE=0 -DSIMSIMD_TARGET_TURIN=0")
       set(SIMSIMD_FLAGS "${SIMSIMD_FLAGS} ${SIMSIMD_DISABLE_TARGETS}")
   elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "(i686|i386)")
-      message(STATUS "32 bit system, disabling all SIMD targets")
-      set(SIMSIMD_DISABLE_TARGETS
-        "-DSIMSIMD_TARGET_HASWELL=0 -DSIMSIMD_TARGET_SKYLAKE=0 -DSIMSIMD_TARGET_ICE=0 -DSIMSIMD_TARGET_GENOA=0 -DSIMSIMD_TARGET_SAPPHIRE=0 -DSIMSIMD_TARGET_TURIN=0")
-      set(SIMSIMD_FLAGS "${SIMSIMD_FLAGS} ${SIMSIMD_DISABLE_TARGETS}")
+    message(STATUS "32 bit system, disabling all SIMD targets")
+    set(SIMSIMD_DISABLE_TARGETS
+      "-DSIMSIMD_TARGET_HASWELL=0 -DSIMSIMD_TARGET_SKYLAKE=0 -DSIMSIMD_TARGET_ICE=0 -DSIMSIMD_TARGET_GENOA=0 -DSIMSIMD_TARGET_SAPPHIRE=0 -DSIMSIMD_TARGET_TURIN=0")
+    set(SIMSIMD_FLAGS "${SIMSIMD_FLAGS} ${SIMSIMD_DISABLE_TARGETS}")
   elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64|AMD64|i686|i386)")
       message(WARNING "Testing x86_64 instruction set support...")
 
@@ -656,6 +655,7 @@ IF(PARSERS_FOUND)
               message(WARNING "Skylake (AVX512) - disabling Skylake/Ice/Genoa/Sapphire/Turin")
               set(SIMSIMD_DISABLE_TARGETS "${SIMSIMD_DISABLE_TARGETS} -DSIMSIMD_TARGET_SKYLAKE=0 -DSIMSIMD_TARGET_ICE=0 -DSIMSIMD_TARGET_GENOA=0 -DSIMSIMD_TARGET_SAPPHIRE=0 -DSIMSIMD_TARGET_TURIN=0")
           else()
+              set(SIMSIMD_ARCH_FLAGS "${SIMSIMD_ARCH_FLAGS} -mavx512f -mavx512dq -mavx512bw -mavx512vl")
               message("-- ${GREEN}Skylake (AVX512)${RESET}")
           endif()
       endif()
@@ -676,13 +676,15 @@ IF(PARSERS_FOUND)
               message(WARNING "Ice Lake - disabling Ice/Genoa/Sapphire/Turin")
               set(SIMSIMD_DISABLE_TARGETS "${SIMSIMD_DISABLE_TARGETS} -DSIMSIMD_TARGET_ICE=0 -DSIMSIMD_TARGET_GENOA=0 -DSIMSIMD_TARGET_SAPPHIRE=0 -DSIMSIMD_TARGET_TURIN=0")
           else()
+              set(SIMSIMD_ARCH_FLAGS "${SIMSIMD_ARCH_FLAGS} -mavx512vnni -mavx512vbmi2 -mavx512bitalg")
               message("-- ${GREEN}Ice Lake${RESET}")
           endif()
       endif()
 
       if(HAVE_HASWELL AND HAVE_SKYLAKE AND HAVE_ICE)
           # Test Sapphire Rapids (VP2INTERSECT)
-          set(CMAKE_REQUIRED_FLAGS "-mavx512vp2intersect")
+          set(CMAKE_REQUIRED_FLAGS "-mavx2 -mfma -mf16c -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vnni -mavx512vbmi2 -mavx512bitalg -mavx512vp2intersect -mavx512fp16")
+
           check_c_source_compiles("
               #include <immintrin.h>
               int main() {
@@ -703,6 +705,7 @@ IF(PARSERS_FOUND)
               message(WARNING "Sapphire Rapids - disabling Sapphire")
               set(SIMSIMD_DISABLE_TARGETS "${SIMSIMD_DISABLE_TARGETS} -DSIMSIMD_TARGET_SAPPHIRE=0")
           else()
+              set(SIMSIMD_ARCH_FLAGS "${SIMSIMD_ARCH_FLAGS} -mavx512vp2intersect -mavx512fp16")
               message("-- ${GREEN}Sapphire Rapids${RESET}")
           endif()
 
@@ -721,10 +724,12 @@ IF(PARSERS_FOUND)
               message(WARNING "BF16 - disabling Turin/Genoa")
               set(SIMSIMD_DISABLE_TARGETS "${SIMSIMD_DISABLE_TARGETS} -DSIMSIMD_TARGET_TURIN=0 -DSIMSIMD_TARGET_GENOA=0")
           else()
+              set(SIMSIMD_ARCH_FLAGS "${SIMSIMD_ARCH_FLAGS} -mavx512bf16")
               message("-- ${GREEN}BF16 (Turin/Genoa)${RESET}")
           endif()
       endif()
   endif()
+
 
   set(SIMSIMD_FLAGS "${SIMSIMD_FLAGS} ${SIMSIMD_DISABLE_TARGETS}")
   message("-- ${GREEN}Final flags: ${SIMSIMD_FLAGS}${RESET}")
