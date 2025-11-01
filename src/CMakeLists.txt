@@ -159,7 +159,7 @@ elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64|AMD64|i686|i386)")
         set(SIMSIMD_DISABLE_TARGETS "-DSIMSIMD_TARGET_HASWELL=0 -DSIMSIMD_TARGET_SKYLAKE=0 -DSIMSIMD_TARGET_ICE=0 -DSIMSIMD_TARGET_GENOA=0 -DSIMSIMD_TARGET_SAPPHIRE=0 -DSIMSIMD_TARGET_TURIN=0")
     endif()
 
-    if(HAVE_HASWELL)
+    if(HAVE_HASWELL AND NOT CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
         # Test Skylake (AVX512F, AVX512DQ, AVX512BW, AVX512VL)
         set(CMAKE_REQUIRED_FLAGS "-mavx512f -mavx512dq -mavx512bw -mavx512vl")
         check_c_source_compiles("
@@ -178,6 +178,8 @@ elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64|AMD64|i686|i386)")
             set(SIMSIMD_ARCH_FLAGS "${SIMSIMD_ARCH_FLAGS} -mavx512f -mavx512dq -mavx512bw -mavx512vl")
             message("-- ${GREEN}Skylake (AVX512)${RESET}")
         endif()
+    else()
+        set(SIMSIMD_DISABLE_TARGETS "-DSIMSIMD_TARGET_SKYLAKE=0 -DSIMSIMD_TARGET_ICE=0 -DSIMSIMD_TARGET_GENOA=0 -DSIMSIMD_TARGET_SAPPHIRE=0 -DSIMSIMD_TARGET_TURIN=0")
     endif()
 
     if(HAVE_HASWELL AND HAVE_SKYLAKE)
@@ -729,7 +731,7 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
 
     #TODO: find the real cutoff version for requiring libintl.  And maybe why earlier versions of python
     #      need it in the first place
-    if (MACOS_VERSION VERSION_LESS "10.12")
+    if (CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64|AMD64)")
         ## NO LONGER DOING UNIVERSAL MAC BUILDS, cuz with python, its
         ## too difficult
         execute_process(COMMAND brew --prefix gettext OUTPUT_VARIABLE GTXT_PREF OUTPUT_STRIP_TRAILING_WHITESPACE)

@@ -25,14 +25,17 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
     if (MACOS_UNIVERSAL)
 
         message("Making MacOs Universal Binary Build")
-        SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -arch x86_64 -mmacosx-version-min=10.13 -arch arm64")
-        SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -arch x86_64 -mmacosx-version-min=10.13 -arch arm64")
+        SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -arch x86_64 -mmacosx-version-min=11.0 -arch arm64")
+        SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -arch x86_64 -mmacosx-version-min=11.0 -arch arm64")
 
     else(MACOS_UNIVERSAL)
 
         if( CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL "arm64" )
             SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mmacosx-version-min=11.0 -arch arm64")
             SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mmacosx-version-min=11.0 -arch arm64")
+	else()
+            SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -arch x86_64 -mmacosx-version-min=11.0")
+            SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -arch x86_64 -mmacosx-version-min=11.0")
         endif( CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL "arm64" )
 
     endif (MACOS_UNIVERSAL)
