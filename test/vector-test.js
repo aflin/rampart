@@ -556,7 +556,184 @@ function dotests(main) {
         };
         return score < 1.001 && score > 0.999 && score2 > -1.2 && score2 < -0.8;
     });
+    // NOTE: 'euclidean' in the C layer maps to L2 *squared* (aka l2sq).
+    // ------------------------------------------------------------
+    // Euclidean (L2 squared) distance tests
+    // ------------------------------------------------------------
 
+    testFeature(pref + "distance euclidean(L2^2) num", function(){
+        var tvec = [], antivec = [];
+        for (var i=0;i<64;i++){
+            var r = rampart.utils.rand(-5000.0, 5000.0);
+            tvec.push(r);
+            antivec.push(-r);
+        }
+
+        var d_same = vec.distance(tvec, tvec, 'euclidean', 'numbers');
+        var expected = 0.0;
+        for (var i=0;i<tvec.length;i++){
+            var diff = tvec[i] - antivec[i];
+            expected += diff * diff;
+        }
+        var d_opposite = vec.distance(tvec, antivec, 'euclidean', 'numbers');
+        var relErr = Math.abs(d_opposite - expected) / Math.max(1, expected);
+
+        return {
+            result : (Math.abs(d_same) < 1e-9 && relErr < 1e-6),
+            text   : sprintf("(relErr=%.2e)", relErr)
+        };
+    });
+
+    testFeature(pref + "distance euclidean(L2^2) f64", function(){
+        var tvec = [], antivec = [];
+        for (var i=0;i<64;i++){
+            var r = rampart.utils.rand(-5000.0, 5000.0);
+            tvec.push(r);
+            antivec.push(-r);
+        }
+        var tvec64 = vec.numbersToF64(tvec);
+        var antivec64 = vec.numbersToF64(antivec);
+
+        var d_same = vec.distance(tvec64, tvec64, 'euclidean', 'f64');
+        var expected = 0.0;
+        for (var i=0;i<tvec.length;i++){
+            var diff = tvec[i] - antivec[i];
+            expected += diff * diff;
+        }
+        var d_opposite = vec.distance(tvec64, antivec64, 'euclidean', 'f64');
+        var relErr = Math.abs(d_opposite - expected) / Math.max(1, expected);
+
+        return {
+            result : (Math.abs(d_same) < 1e-9 && relErr < 1e-6),
+            text   : sprintf("(relErr=%.2e)", relErr)
+        };
+    });
+
+    testFeature(pref + "distance euclidean(L2^2) f32", function(){
+        var tvec = [], antivec = [];
+        for (var i=0;i<64;i++){
+            var r = rampart.utils.rand(-5000.0, 5000.0);
+            tvec.push(r);
+            antivec.push(-r);
+        }
+        var tvec32 = vec.numbersToF32(tvec);
+        var antivec32 = vec.numbersToF32(antivec);
+
+        var d_same = vec.distance(tvec32, tvec32, 'euclidean', 'f32');
+        var expected = 0.0;
+        for (var i=0;i<tvec.length;i++){
+            var diff = tvec[i] - antivec[i];
+            expected += diff * diff;
+        }
+        var d_opposite = vec.distance(tvec32, antivec32, 'euclidean', 'f32');
+        var relErr = Math.abs(d_opposite - expected) / Math.max(1, expected);
+
+        return {
+            result : (Math.abs(d_same) < 1e-6 && relErr < 1e-5),
+            text   : sprintf("(relErr=%.2e)", relErr)
+        };
+    });
+
+    testFeature(pref + "distance euclidean(L2^2) f16", function(){
+        var tvec = [], antivec = [];
+        for (var i=0;i<64;i++){
+            var r = rampart.utils.rand(-500.0, 500.0);
+            tvec.push(r);
+            antivec.push(-r);
+        }
+        var tvec16 = vec.numbersToF16(tvec);
+        var antivec16 = vec.numbersToF16(antivec);
+
+        var d_same = vec.distance(tvec16, tvec16, 'euclidean', 'f16');
+        var expected = 0.0;
+        for (var i=0;i<tvec.length;i++){
+            var diff = tvec[i] - antivec[i];
+            expected += diff * diff;
+        }
+        var d_opposite = vec.distance(tvec16, antivec16, 'euclidean', 'f16');
+        var relErr = Math.abs(d_opposite - expected) / Math.max(1, expected);
+
+        return {
+            result : (Math.abs(d_same) < 1e-3 && relErr < 1e-2),
+            text   : sprintf("(relErr=%.2e)", relErr)
+        };
+    });
+
+    testFeature(pref + "distance euclidean(L2^2) u8", function(){
+        var tvec = [], antivec = [];
+        for (var i=0; i<1024; i++) {
+            // Only positive numbers, 0–1 range
+            var r = rampart.utils.rand(0.0, 1.0);
+            tvec.push(r);
+            antivec.push(1.0 - r);  // roughly the opposite side of the unit range
+        }
+
+        // Convert to uint8 vectors
+        var tvec8 = vec.numbersToU8(tvec);
+        var antivec8 = vec.numbersToU8(antivec);
+
+        // identical vector → should yield 0
+        var d_same = vec.distance(tvec8, tvec8, 'euclidean', 'u8');
+
+        // manual expected (float space)
+        var expected = 0.0;
+        for (var i=0;i<tvec.length;i++){
+            var diff = tvec[i] - antivec[i];
+            expected += diff * diff;
+        }
+
+        // get native u8 distance
+        var d_opposite = vec.distance(tvec8, antivec8, 'euclidean', 'u8');
+
+        // scale difference: 0–255 quantization
+        var scale = 255.0;
+        var expected_scaled = expected * (scale * scale);
+
+        // relative error
+        var relErr = Math.abs(d_opposite - expected_scaled) / Math.max(1, expected_scaled);
+
+        return {
+            result : (Math.abs(d_same) < 1.0 && relErr < 0.05),
+            text   : sprintf("(relErr=%.2e)", relErr)
+        };
+    });
+
+    testFeature(pref + "distance euclidean(L2^2) i8", function(){
+        var tvec = [], antivec = [];
+        for (var i=0; i<1024; i++) {
+            var r = rampart.utils.rand(-1.0, 1.0);
+            tvec.push(r);
+            antivec.push(-r);
+        }
+
+        // Convert to int8 vectors (quantized)
+        var tvec8 = vec.numbersToI8(tvec);
+        var antivec8 = vec.numbersToI8(antivec);
+
+        // identical vector → should yield 0
+        var d_same = vec.distance(tvec8, tvec8, 'euclidean', 'i8');
+
+        // manual expected distance (float space)
+        var expected = 0.0;
+        for (var i=0;i<tvec.length;i++){
+            var diff = tvec[i] - antivec[i];
+            expected += diff * diff;
+        }
+
+        // compute distance in int8 space
+        var d_opposite = vec.distance(tvec8, antivec8, 'euclidean', 'i8');
+
+        // adjust scaling: int8 range ±127.5
+        var scale = 127.5;
+        var expected_scaled = expected * (scale * scale);
+
+        var relErr = Math.abs(d_opposite - expected_scaled) / Math.max(1, expected_scaled);
+
+        return {
+            result : (Math.abs(d_same) < 1.0 && relErr < 0.05),
+            text   : sprintf("(relErr=%.2e)", relErr)
+        };
+    });
 }
 
 dotests(true);
