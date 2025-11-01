@@ -509,7 +509,7 @@ function nohupLaunch(ltype) {
     var outfile = `/tmp/rampart-${ltype}.txt`;
 
     var ret = shell(cmd, {background:true});        
-console.log(cmd);
+
     sleep(0.5);
     msg = readFile(outfile, true);
     pid = getPid(ltype);
