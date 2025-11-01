@@ -527,8 +527,10 @@ function dotests(main) {
 
         var score = 1 - vec.distance(tvec16, tvec16, 'cosine', 'u8');
         var score2 = 1 - vec.distance(tvec16, antivec16, 'cosine', 'u8');
+        //printf("scores: %f %f\n", score, score2);
+
         return {
-            result : (score < 1.001 && score > 0.999 && score2 > 0.0 && score2 < 0.1),
+            result : (score < 1.001 && score > 0.999 && score2 >= 0.0 && score2 < 0.1),
             text : sprintf("( 90deg err=%.3f)", score2)
         };
     });

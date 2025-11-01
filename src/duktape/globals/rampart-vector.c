@@ -471,7 +471,7 @@ static duk_ret_t rp_f64_to_u8(duk_context *ctx)
 {
     duk_size_t sz, dim = 0;
     double scale=-1.0;
-    int zp=-1;
+    int zp=0;
     double *in = REQUIRE_BUFFER_DATA(ctx, 0, &sz, "vector.f64ToU8 - argument must be a Buffer");
     dim = sz / sizeof(double);
 
@@ -505,15 +505,6 @@ static duk_ret_t rp_f64_to_u8(duk_context *ctx)
             scale = (max-min)/255.0;
     }
 
-    if(zp < 0)
-    {
-        double d = (0.0 - min)/255.0;
-        zp = (int)(d + 0.5);
-        if(zp < 0)
-            zp=0;
-        else if(zp > 255)
-            zp=255;
-    }
     f64_to_u8(in, out, dim, scale, zp);
     return 1;
 }
@@ -548,7 +539,7 @@ static duk_ret_t rp_f32_to_u8(duk_context *ctx)
 {
     duk_size_t sz, dim = 0;
     float scale=-1.0;
-    int zp=-1;
+    int zp=0;
     float *in = REQUIRE_BUFFER_DATA(ctx, 0, &sz, "vector.f32ToU8 - argument must be a Buffer");
     dim = sz / sizeof(float);
 
@@ -582,15 +573,6 @@ static duk_ret_t rp_f32_to_u8(duk_context *ctx)
             scale = (max-min)/255.0;
     }
 
-    if(zp < 0)
-    {
-        float d = (0.0 - min)/255.0;
-        zp = (int)(d + 0.5);
-        if(zp < 0)
-            zp=0;
-        else if(zp > 255)
-            zp=255;
-    }
     f32_to_u8(in, out, dim, scale, zp);
     return 1;
 }
@@ -643,7 +625,7 @@ static duk_ret_t rp_f16_to_u8(duk_context *ctx)
 {
     duk_size_t sz, dim = 0;
     float scale=-1.0;
-    int zp=-1;
+    int zp=0;
     uint16_t *in = REQUIRE_BUFFER_DATA(ctx, 0, &sz, "vector.f16ToU8 - argument must be a Buffer");
     dim = sz / sizeof(uint16_t);
 
@@ -681,16 +663,6 @@ static duk_ret_t rp_f16_to_u8(duk_context *ctx)
         }
         if(scale < 0.0)
             scale = (max-min)/255.0;
-    }
-
-    if(zp < 0)
-    {
-        float d = (0.0 - min)/255.0;
-        zp = (int)(d + 0.5);
-        if(zp < 0)
-            zp=0;
-        else if(zp > 255)
-            zp=255;
     }
 
     f32_to_u8(in32, out, dim, scale, zp);
@@ -731,7 +703,7 @@ static duk_ret_t rp_f64_to_i8(duk_context *ctx)
 {
     duk_size_t sz, dim = 0;
     double scale=-1.0;
-    int zp=-2000;
+    int zp=0;
     double *in = REQUIRE_BUFFER_DATA(ctx, 0, &sz, "vector.f64ToI8 - argument must be a Buffer");
     dim = sz / sizeof(double);
 
@@ -762,17 +734,7 @@ static duk_ret_t rp_f64_to_i8(duk_context *ctx)
                 min=d;
         }
         if(scale < 0.0)
-            scale = (max-min)/255.0;
-    }
-
-    if(zp < -128)
-    {
-        double d = (-128.0 - min)/255.0;
-        zp = (int)(d + 0.5);
-        if(zp < -128)
-            zp=-128;
-        else if(zp > 127)
-            zp=127;
+            scale = (max-min)/254.0;
     }
 
     f64_to_i8(in, out, dim, scale, zp);
@@ -782,7 +744,7 @@ static duk_ret_t rp_f64_to_i8(duk_context *ctx)
 static duk_ret_t rp_i8_to_f64(duk_context *ctx)
 {
     duk_size_t dim = 0;
-    double scale=1.0/127.5;
+    double scale=1.0/127.0;
     int zp=0;
     int8_t *in = REQUIRE_BUFFER_DATA(ctx, 0, &dim, "vector.i8ToF64 - argument must be a Buffer");
 
@@ -809,7 +771,7 @@ static duk_ret_t rp_f32_to_i8(duk_context *ctx)
 {
     duk_size_t sz, dim = 0;
     float scale=-1.0;
-    int zp=-2000;
+    int zp=0;
     float *in = REQUIRE_BUFFER_DATA(ctx, 0, &sz, "vector.f32ToI8 - argument must be a Buffer");
     dim = sz / sizeof(float);
 
@@ -840,28 +802,18 @@ static duk_ret_t rp_f32_to_i8(duk_context *ctx)
                 min=d;
         }
         if(scale < 0.0)
-            scale = (max-min)/255.0;
+            scale = (max-min)/254.0;
     }
 
-    if(zp < -128)
-    {
-        float d = (-128.0 - min)/255.0;
-        zp = (int)(d + 0.5);
-        if(zp < -128)
-            zp=-128;
-        else if(zp > 127)
-            zp=127;
-    }
-    //printf("zp = %d (-128 - %.3f/255.0), scale = %.3f (%f - %f)/255\n", zp, min, scale, max, min);
     f32_to_i8(in, out, dim, scale, zp);
-    //for (size_t i=0;i<dim;i++) printf("%f -> %d\n", in[i], (int) out[i]);
+
     return 1;
 }
 
 static duk_ret_t rp_i8_to_f32(duk_context *ctx)
 {
     duk_size_t dim = 0;
-    float scale=1.0/127.5;
+    float scale=1.0/127.0;
     int zp=0;
     int8_t *in = REQUIRE_BUFFER_DATA(ctx, 0, &dim, "vector.i8ToF32 - argument must be a Buffer");
 
@@ -903,7 +855,7 @@ static duk_ret_t rp_f16_to_i8(duk_context *ctx)
 {
     duk_size_t sz, dim = 0;
     float scale=-1.0;
-    int zp=-2000;
+    int zp=0;
     uint16_t *in = REQUIRE_BUFFER_DATA(ctx, 0, &sz, "vector.f16ToI8 - argument must be a Buffer");
     dim = sz / sizeof(uint16_t);
 
@@ -939,17 +891,7 @@ static duk_ret_t rp_f16_to_i8(duk_context *ctx)
                 min=d;
         }
         if(scale < 0.0)
-            scale = (max-min)/255.0;
-    }
-
-    if(zp < -128)
-    {
-        float d = (-128.0 - min)/255.0;
-        zp = (int)(d + 0.5);
-        if(zp < -128)
-            zp=-128;
-        else if(zp > 127)
-            zp=127;
+            scale = (max-min)/254.0;
     }
 
     f32_to_i8(in32, out, dim, scale, zp);
@@ -961,7 +903,7 @@ static duk_ret_t rp_f16_to_i8(duk_context *ctx)
 static duk_ret_t rp_i8_to_f16(duk_context *ctx)
 {
     duk_size_t dim = 0;
-    float scale=1.0/127.5;
+    float scale=1.0/127.0;
     int zp=0;
     int8_t *in = REQUIRE_BUFFER_DATA(ctx, 0, &dim, "vector.i8ToF16 - argument must be a Buffer");
 
