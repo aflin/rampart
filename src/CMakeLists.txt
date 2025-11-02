@@ -727,44 +727,34 @@ add_library(rampart-python SHARED
 )
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
-    execute_process(COMMAND sw_vers -productVersion OUTPUT_VARIABLE MACOS_VERSION OUTPUT_STRIP_TRAILING_WHITESPACE)
 
-    #TODO: find the real cutoff version for requiring libintl.  And maybe why earlier versions of python
-    #      need it in the first place
-    if (CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64|AMD64)")
-        ## NO LONGER DOING UNIVERSAL MAC BUILDS, cuz with python, its
-        ## too difficult
-        execute_process(COMMAND brew --prefix gettext OUTPUT_VARIABLE GTXT_PREF OUTPUT_STRIP_TRAILING_WHITESPACE)
+    execute_process(COMMAND brew --prefix gettext OUTPUT_VARIABLE GTXT_PREF OUTPUT_STRIP_TRAILING_WHITESPACE)
 
-        if("${GTXT_PREF}" STREQUAL "")
-            message( FATAL_ERROR "gettext library not found. Try 'brew install gettext'")
-        endif()
-
-        target_link_libraries(rampart-python PRIVATE
-            ${GTXT_PREF}/lib/libintl.a
-            ${PYTHON_BIN_DIR}/libpython3.${PYTHON_MINOR}.a
-            pthread dl util m iconv
-            "-framework CoreFoundation"
-        )
-    else()
-        target_link_libraries(rampart-python PRIVATE
-            ${PYTHON_BIN_DIR}/libpython3.${PYTHON_MINOR}.a
-            pthread dl util m
-        )
+    if("${GTXT_PREF}" STREQUAL "")
+        message( FATAL_ERROR "gettext library not found. Try 'brew install gettext'")
     endif()
+
+    target_link_libraries(rampart-python PRIVATE
+        ${GTXT_PREF}/lib/libintl.a
+        ${PYTHON_BIN_DIR}/libpython3.${PYTHON_MINOR}.a
+        pthread dl util m iconv
+        "-framework CoreFoundation"
+    )
+
 elseif(CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
+
     if(EXISTS "/usr/local/lib/libintl.so")
         set(GTXT "/usr/local/lib/libintl.so")
     else()
-                message( FATAL_ERROR "gettext library not found. Try 'pkg install gettext'")
-        endif()
+        message( FATAL_ERROR "gettext library not found. Try 'pkg install gettext'")
+    endif()
 
-        target_link_libraries(rampart-python PRIVATE
-                ${PYTHON_BIN_DIR}/libpython3.${PYTHON_MINOR}.a
-                pthread dl util m
-                /usr/local/lib/libintl.so
+    target_link_libraries(rampart-python PRIVATE
+        ${PYTHON_BIN_DIR}/libpython3.${PYTHON_MINOR}.a
+        pthread dl util m
+        /usr/local/lib/libintl.so
         "-Wl,-z,notext"
-        )
+    )
 
 else()
         target_link_libraries(rampart-python PRIVATE
