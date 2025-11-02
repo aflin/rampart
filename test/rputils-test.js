@@ -548,7 +548,9 @@ for (var i=0; i<asdfmts.length; i++)
     if(diff<0) diff*=-1;
 
     if(diff < 60000)
-        res=true
+        res=true;
+    else if(diff - 3600000 < 60000) //fall dt->st or spring st->dt
+        res=true;
     else
         res=false;
 
