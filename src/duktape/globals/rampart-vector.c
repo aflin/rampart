@@ -745,7 +745,7 @@ static duk_ret_t rp_f64_to_i8(duk_context *ctx)
     if(!duk_is_undefined(ctx, 2))
     {
         zp = REQUIRE_INT(ctx, 2, "vector.f64ToI8 - third argument, if present must be a Int -128 - 127 (zero point)");
-        if(zp < 0 || zp > 127)
+        if(zp < -128 || zp > 127)
             RP_THROW(ctx, "vector.f64ToI8 - third argument, if present must be a Int -128 - 127 (zero point)");
     }
 
