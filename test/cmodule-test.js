@@ -118,7 +118,7 @@ static void small_primes(int64_t limit, int64_t **pr, int *cnt) {
 }
 ```;
 
-var extraFlags="-O3";
+var extraFlags="-O3 -std=c99";
 
 var libs = "-lm"
 
