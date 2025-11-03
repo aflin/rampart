@@ -119,27 +119,27 @@ static inline float bf16_to_f32_scalar(uint16_t h)
     return v.f;
 }
 
-void bf16_to_f32(const uint16_t *src, float *dst, size_t n)
+void rpvec_bf16_to_f32(const uint16_t *src, float *dst, size_t n)
 {
     size_t i = 0;
     for (; i < n; ++i)
         dst[i] = bf16_to_f32_scalar(src[i]);
 }
 
-void f32_to_bf16(const float *src, uint16_t *dst, size_t n)
+void rpvec_f32_to_bf16(const float *src, uint16_t *dst, size_t n)
 {
     for (size_t i = 0; i < n; ++i)
         dst[i] = f32_to_bf16_scalar(src[i]);
 }
 
 // -------------------- bf16 <-> f64 conversions -------------------
-void bf16_to_f64(const uint16_t *src, double *dst, size_t n)
+void rpvec_bf16_to_f64(const uint16_t *src, double *dst, size_t n)
 {
     for (size_t i = 0; i < n; ++i)
         dst[i] = (double)bf16_to_f32_scalar(src[i]);
 }
 
-void f64_to_bf16(const double *src, uint16_t *dst, size_t n)
+void rpvec_f64_to_bf16(const double *src, uint16_t *dst, size_t n)
 {
     size_t i = 0;
     for (; i < n; ++i)
@@ -148,47 +148,47 @@ void f64_to_bf16(const double *src, uint16_t *dst, size_t n)
 
 
 // -------------------- f16 <-> f32 conversions -------------------
-void f16_to_f32(const uint16_t *src, float *dst, size_t n)
+void rpvec_f16_to_f32(const uint16_t *src, float *dst, size_t n)
 {
     for (size_t i = 0; i < n; ++i)
         dst[i] = half_to_float(src[i]);
 }
 
-void f32_to_f16(const float *src, uint16_t *dst, size_t n)
+void rpvec_f32_to_f16(const float *src, uint16_t *dst, size_t n)
 {
     for (size_t i = 0; i < n; ++i)
         dst[i] = float_to_half(src[i]);
 }
 
 // -------------------- f64 <-> f32 conversions -------------------
-void f64_to_f32(const double *src, float *dst, size_t n)
+void rpvec_f64_to_f32(const double *src, float *dst, size_t n)
 {
     for (size_t i = 0; i < n; ++i)
         dst[i] = (float)src[i];
 }
 
-void f32_to_f64(const float *src, double *dst, size_t n)
+void rpvec_f32_to_f64(const float *src, double *dst, size_t n)
 {
     for (size_t i = 0; i < n; ++i)
         dst[i] = (double)src[i];
 }
 
 // -------------------- f64 <-> f16 conversions -------------------
-void f64_to_f16(const double *src, uint16_t *dst, size_t n)
+void rpvec_f64_to_f16(const double *src, uint16_t *dst, size_t n)
 {
     for (size_t i = 0; i < n; ++i)
         dst[i] = float_to_half((float)src[i]);
 }
 
 
-void f16_to_f64(const uint16_t *src, double *dst, size_t n)
+void rpvec_f16_to_f64(const uint16_t *src, double *dst, size_t n)
 {
     for (size_t i = 0; i < n; ++i)
         dst[i] = (double)half_to_float(src[i]);
 }
 
 // ---------------- Quantize/Dequant: f32 <-> i8/u8 ---------------
-void f32_to_i8(const float *src, int8_t *dst, size_t n, float scale, int zp)
+void rpvec_f32_to_i8(const float *src, int8_t *dst, size_t n, float scale, int zp)
 {
     const float inv = 1.0f / scale;
     for (size_t i = 0; i < n; ++i)
@@ -202,13 +202,13 @@ void f32_to_i8(const float *src, int8_t *dst, size_t n, float scale, int zp)
     }
 }
 
-void i8_to_f32(const int8_t *src, float *dst, size_t n, float scale, int zp)
+void rpvec_i8_to_f32(const int8_t *src, float *dst, size_t n, float scale, int zp)
 {
     for (size_t i = 0; i < n; ++i)
         dst[i] = ((float)src[i] - (float)zp) * scale;
 }
 
-void f32_to_u8(const float *src, uint8_t *dst, size_t n, float scale, int zp)
+void rpvec_f32_to_u8(const float *src, uint8_t *dst, size_t n, float scale, int zp)
 {
     const float inv = 1.0f / scale;
     for (size_t i = 0; i < n; ++i)
@@ -222,14 +222,14 @@ void f32_to_u8(const float *src, uint8_t *dst, size_t n, float scale, int zp)
     }
 }
 
-void u8_to_f32(const uint8_t *src, float *dst, size_t n, float scale, int zp)
+void rpvec_u8_to_f32(const uint8_t *src, float *dst, size_t n, float scale, int zp)
 {
     for (size_t i = 0; i < n; ++i)
         dst[i] = ((float)src[i] - (float)zp) * scale;
 }
 
 // ---------------- Quantize/Dequant: f64 <-> i8/u8 ---------------
-void f64_to_i8(const double *src, int8_t *dst, size_t n, double scale, int zp)
+void rpvec_f64_to_i8(const double *src, int8_t *dst, size_t n, double scale, int zp)
 {
     const double inv = 1.0 / scale;
     for (size_t i = 0; i < n; ++i)
@@ -243,13 +243,13 @@ void f64_to_i8(const double *src, int8_t *dst, size_t n, double scale, int zp)
     }
 }
 
-void i8_to_f64(const int8_t *src, double *dst, size_t n, double scale, int zp)
+void rpvec_i8_to_f64(const int8_t *src, double *dst, size_t n, double scale, int zp)
 {
     for (size_t i = 0; i < n; ++i)
         dst[i] = ((double)src[i] - (double)zp) * scale;
 }
 
-void f64_to_u8(const double *src, uint8_t *dst, size_t n, double scale, int zp)
+void rpvec_f64_to_u8(const double *src, uint8_t *dst, size_t n, double scale, int zp)
 {
     const double inv = 1.0 / scale;
     for (size_t i = 0; i < n; ++i)
@@ -263,7 +263,7 @@ void f64_to_u8(const double *src, uint8_t *dst, size_t n, double scale, int zp)
     }
 }
 
-void u8_to_f64(const uint8_t *src, double *dst, size_t n, double scale, int zp)
+void rpvec_u8_to_f64(const uint8_t *src, double *dst, size_t n, double scale, int zp)
 {
     for (size_t i = 0; i < n; ++i)
         dst[i] = ((double)src[i] - (double)zp) * scale;
@@ -271,7 +271,7 @@ void u8_to_f64(const uint8_t *src, double *dst, size_t n, double scale, int zp)
 
 // ---------------- Quantize/Dequant: f16 <-> i8/u8 ---------------
 /* unused currently
-void f16_to_i8(const uint16_t *src, int8_t *dst, size_t n, float scale, int zp)
+void rpvec_f16_to_i8(const uint16_t *src, int8_t *dst, size_t n, float scale, int zp)
 {
     float buf[256];
     size_t i = 0;
@@ -285,48 +285,48 @@ void f16_to_i8(const uint16_t *src, int8_t *dst, size_t n, float scale, int zp)
 }
 */
 
-void i8_to_f16(const int8_t *src, uint16_t *dst, size_t n, float scale, int zp)
+void rpvec_i8_to_f16(const int8_t *src, uint16_t *dst, size_t n, float scale, int zp)
 {
     float buf[256];
     size_t i = 0;
     while (i < n)
     {
         size_t blk = (n - i) < 256 ? (n - i) : 256;
-        i8_to_f32(src + i, buf, blk, scale, zp);
-        f32_to_f16(buf, dst + i, blk);
+        rpvec_i8_to_f32(src + i, buf, blk, scale, zp);
+        rpvec_f32_to_f16(buf, dst + i, blk);
         i += blk;
     }
 }
 /* unused currently
-void f16_to_u8(const uint16_t *src, uint8_t *dst, size_t n, float scale, int zp)
+void rpvec_f16_to_u8(const uint16_t *src, uint8_t *dst, size_t n, float scale, int zp)
 {
     float buf[256];
     size_t i = 0;
     while (i < n)
     {
         size_t blk = (n - i) < 256 ? (n - i) : 256;
-        f16_to_f32(src + i, buf, blk);
-        f32_to_u8(buf, dst + i, blk, scale, zp);
+        rpvec_f16_to_f32(src + i, buf, blk);
+        rpvec_f32_to_u8(buf, dst + i, blk, scale, zp);
         i += blk;
     }
 }
 */
 
-void u8_to_f16(const uint8_t *src, uint16_t *dst, size_t n, float scale, int zp)
+void rpvec_u8_to_f16(const uint8_t *src, uint16_t *dst, size_t n, float scale, int zp)
 {
     float buf[256];
     size_t i = 0;
     while (i < n)
     {
         size_t blk = (n - i) < 256 ? (n - i) : 256;
-        u8_to_f32(src + i, buf, blk, scale, zp);
-        f32_to_f16(buf, dst + i, blk);
+        rpvec_u8_to_f32(src + i, buf, blk, scale, zp);
+        rpvec_f32_to_f16(buf, dst + i, blk);
         i += blk;
     }
 }
 
 // -------------------------- b8 pack/unpack ----------------------
-void f64_to_b8_threshold(const double *src, uint8_t *dst_bits, size_t n, double thresh)
+void rpvec_f64_to_b8_threshold(const double *src, uint8_t *dst_bits, size_t n, double thresh)
 {
     size_t i = 0, byte = 0;
     while (i + 8 <= n)
@@ -348,7 +348,7 @@ void f64_to_b8_threshold(const double *src, uint8_t *dst_bits, size_t n, double 
     }
 }
 
-void b8_to_u8_bytes(const uint8_t *src_bits, uint8_t *dst_bytes, size_t n)
+void rpvec_b8_to_u8_bytes(const uint8_t *src_bits, uint8_t *dst_bytes, size_t n)
 {
     size_t i = 0, byte = 0;
     while (i + 8 <= n)
@@ -374,7 +374,7 @@ void b8_to_u8_bytes(const uint8_t *src_bits, uint8_t *dst_bytes, size_t n)
 }
 
 // i4 conversions
-void i8_to_i4(const int8_t *in, uint8_t *out, size_t dim) {
+void rpvec_i8_to_i4(const int8_t *in, uint8_t *out, size_t dim) {
     if (!in || !out) return;
 
     size_t i = 0, o = 0;
@@ -398,7 +398,7 @@ void i8_to_i4(const int8_t *in, uint8_t *out, size_t dim) {
 //   in:  uint8_t in[(dim+1)/2]  where dim = number of 4-bit values
 //   out: int8_t  out[dim]       values in [-8, 7]
 //
-void i4_to_i8(const uint8_t *in, int8_t *out, size_t dim) {
+void rpvec_i4_to_i8(const uint8_t *in, int8_t *out, size_t dim) {
     if (!in || !out) return;
 
     size_t k = 0, o = 0;
@@ -505,7 +505,8 @@ static duk_ret_t rp_f64_to_u8(duk_context *ctx)
             scale = (max-min)/255.0;
     }
 
-    f64_to_u8(in, out, dim, scale, zp);
+    rpvec_f64_to_u8(in, out, dim, scale, zp);
+
     return 1;
 }
 
@@ -531,7 +532,7 @@ static duk_ret_t rp_u8_to_f64(duk_context *ctx)
     }
 
     double *out = (double *)duk_push_fixed_buffer(ctx, dim*sizeof(double)); 
-    u8_to_f64(in, out, dim, scale, zp);
+    rpvec_u8_to_f64(in, out, dim, scale, zp);
     return 1;
 }
 
@@ -573,7 +574,8 @@ static duk_ret_t rp_f32_to_u8(duk_context *ctx)
             scale = (max-min)/255.0;
     }
 
-    f32_to_u8(in, out, dim, scale, zp);
+    rpvec_f32_to_u8(in, out, dim, scale, zp);
+
     return 1;
 }
 
@@ -599,7 +601,7 @@ static duk_ret_t rp_u8_to_f32(duk_context *ctx)
     }
 
     float *out = (float *)duk_push_fixed_buffer(ctx, dim*sizeof(float)); 
-    u8_to_f32(in, out, dim, scale, zp);
+    rpvec_u8_to_f32(in, out, dim, scale, zp);
     return 1;
 }
 
@@ -648,7 +650,7 @@ static duk_ret_t rp_f16_to_u8(duk_context *ctx)
 
     // up convert to floats, so we can do min/max
     REMALLOC(in32, dim*sizeof(float));
-    f16_to_f32(in, in32, dim);
+    rpvec_f16_to_f32(in, in32, dim);
 
     float min=FLT_MAX, max=-FLT_MAX;
     if(scale < 0.0 || zp < 0)
@@ -665,7 +667,7 @@ static duk_ret_t rp_f16_to_u8(duk_context *ctx)
             scale = (max-min)/255.0;
     }
 
-    f32_to_u8(in32, out, dim, scale, zp);
+    rpvec_f32_to_u8(in32, out, dim, scale, zp);
 
     free(in32);
     return 1;
@@ -693,7 +695,7 @@ static duk_ret_t rp_u8_to_f16(duk_context *ctx)
     }
 
     uint16_t *out = (uint16_t *)duk_push_fixed_buffer(ctx, dim*sizeof(uint16_t)); 
-    u8_to_f16(in, out, dim, scale, zp);
+    rpvec_u8_to_f16(in, out, dim, scale, zp);
     return 1;
 }
 // end u8 js conversions
@@ -737,7 +739,7 @@ static duk_ret_t rp_f64_to_i8(duk_context *ctx)
             scale = (max-min)/254.0;
     }
 
-    f64_to_i8(in, out, dim, scale, zp);
+    rpvec_f64_to_i8(in, out, dim, scale, zp);
     return 1;
 }
 
@@ -763,7 +765,7 @@ static duk_ret_t rp_i8_to_f64(duk_context *ctx)
     }
 
     double *out = (double *)duk_push_fixed_buffer(ctx, dim*sizeof(double)); 
-    i8_to_f64(in, out, dim, scale, zp);
+    rpvec_i8_to_f64(in, out, dim, scale, zp);
     return 1;
 }
 
@@ -805,7 +807,7 @@ static duk_ret_t rp_f32_to_i8(duk_context *ctx)
             scale = (max-min)/254.0;
     }
 
-    f32_to_i8(in, out, dim, scale, zp);
+    rpvec_f32_to_i8(in, out, dim, scale, zp);
 
     return 1;
 }
@@ -832,7 +834,7 @@ static duk_ret_t rp_i8_to_f32(duk_context *ctx)
     }
 
     float *out = (float *)duk_push_fixed_buffer(ctx, dim*sizeof(float)); 
-    i8_to_f32(in, out, dim, scale, zp);
+    rpvec_i8_to_f32(in, out, dim, scale, zp);
     return 1;
 }
 static duk_ret_t rp_num_to_i8(duk_context *ctx)
@@ -877,7 +879,7 @@ static duk_ret_t rp_f16_to_i8(duk_context *ctx)
     float *in32 = NULL;
 
     REMALLOC(in32, dim*sizeof(float));
-    f16_to_f32(in, in32, dim);
+    rpvec_f16_to_f32(in, in32, dim);
 
     float min=FLT_MAX, max=-FLT_MAX;
     if(scale < 0.0 || zp < -128)
@@ -894,7 +896,7 @@ static duk_ret_t rp_f16_to_i8(duk_context *ctx)
             scale = (max-min)/254.0;
     }
 
-    f32_to_i8(in32, out, dim, scale, zp);
+    rpvec_f32_to_i8(in32, out, dim, scale, zp);
 
     free(in32);
     return 1;
@@ -922,7 +924,7 @@ static duk_ret_t rp_i8_to_f16(duk_context *ctx)
     }
 
     uint16_t *out = (uint16_t *)duk_push_fixed_buffer(ctx, dim*sizeof(uint16_t)); 
-    i8_to_f16(in, out, dim, scale, zp);
+    rpvec_i8_to_f16(in, out, dim, scale, zp);
     return 1;
 }
 // end i8 js conversions
@@ -940,7 +942,7 @@ static duk_ret_t rp_i8_to_i4(duk_context *ctx)
     sz4 = dim/2;
     out = duk_push_fixed_buffer(ctx, sz4);
 
-    i8_to_i4(in, out, dim);
+    rpvec_i8_to_i4(in, out, dim);
     return 1;
 }
 
@@ -952,7 +954,7 @@ static duk_ret_t rp_i4_to_i8(duk_context *ctx)
     dim = sz4 * 2;
 
     out = duk_push_fixed_buffer(ctx, sz4);
-    i4_to_i8(in, out, dim);
+    rpvec_i4_to_i8(in, out, dim);
     return 1;
 }
 
@@ -967,7 +969,7 @@ static duk_ret_t rp_f16_to_f32(duk_context *ctx)
 
     float *out = duk_push_fixed_buffer(ctx, dim * sizeof(float));
 
-    f16_to_f32(in, out, dim);
+    rpvec_f16_to_f32(in, out, dim);
 
     return 1;
 }
@@ -980,7 +982,7 @@ static duk_ret_t rp_f32_to_f16(duk_context *ctx)
 
     uint16_t *out = duk_push_fixed_buffer(ctx, dim * sizeof(uint16_t));
 
-    f32_to_f16(in, out, dim);
+    rpvec_f32_to_f16(in, out, dim);
 
     return 1;
 }
@@ -993,7 +995,7 @@ static duk_ret_t rp_bf16_to_f32(duk_context *ctx)
 
     float *out = duk_push_fixed_buffer(ctx, dim * sizeof(float));
 
-    bf16_to_f32(in, out, dim);
+    rpvec_bf16_to_f32(in, out, dim);
 
     return 1;
 }
@@ -1006,7 +1008,7 @@ static duk_ret_t rp_f32_to_bf16(duk_context *ctx)
 
     uint16_t *out = duk_push_fixed_buffer(ctx, dim * sizeof(uint16_t));
 
-    f32_to_bf16(in, out, dim);
+    rpvec_f32_to_bf16(in, out, dim);
 
     return 1;
 }
@@ -1019,7 +1021,7 @@ static duk_ret_t rp_f64_to_f32(duk_context *ctx)
 
     float *out = duk_push_fixed_buffer(ctx, dim * sizeof(float));
 
-    f64_to_f32(in, out, dim);
+    rpvec_f64_to_f32(in, out, dim);
 
     return 1;
 }
@@ -1032,7 +1034,7 @@ static duk_ret_t rp_f32_to_f64(duk_context *ctx)
 
     double *out = duk_push_fixed_buffer(ctx, dim * sizeof(double));
 
-    f32_to_f64(in, out, dim);
+    rpvec_f32_to_f64(in, out, dim);
 
     return 1;
 }
@@ -1045,7 +1047,7 @@ static duk_ret_t rp_f64_to_f16(duk_context *ctx)
 
     uint16_t *out = duk_push_fixed_buffer(ctx, dim * sizeof(uint16_t));
 
-    f64_to_f16(in, out, dim);
+    rpvec_f64_to_f16(in, out, dim);
 
     return 1;
 }
@@ -1058,7 +1060,7 @@ static duk_ret_t rp_f16_to_f64(duk_context *ctx)
 
     double *out = duk_push_fixed_buffer(ctx, dim * sizeof(double));
 
-    f16_to_f64(in, out, dim);
+    rpvec_f16_to_f64(in, out, dim);
 
     return 1;
 }
@@ -1071,7 +1073,7 @@ static duk_ret_t rp_f64_to_bf16(duk_context *ctx)
 
     uint16_t *out = duk_push_fixed_buffer(ctx, dim * sizeof(uint16_t));
 
-    f64_to_bf16(in, out, dim);
+    rpvec_f64_to_bf16(in, out, dim);
 
     return 1;
 }
@@ -1084,7 +1086,7 @@ static duk_ret_t rp_bf16_to_f64(duk_context *ctx)
 
     double *out = duk_push_fixed_buffer(ctx, dim * sizeof(double));
 
-    bf16_to_f64(in, out, dim);
+    rpvec_bf16_to_f64(in, out, dim);
 
     return 1;
 }
@@ -1119,7 +1121,7 @@ static duk_ret_t numbers_to(duk_context *ctx, duk_idx_t arridx, int type)
             duk_pop(ctx);
         }
 
-        f64_to_bf16(out64, outbf16, len);
+        rpvec_f64_to_bf16(out64, outbf16, len);
 
         free(out64);
         return 1;
@@ -1137,7 +1139,7 @@ static duk_ret_t numbers_to(duk_context *ctx, duk_idx_t arridx, int type)
     if (type == RP_F16)
     {
         uint16_t *out16 = duk_push_fixed_buffer(ctx, len * sizeof(uint16_t));
-        f32_to_f16(out, out16, len);
+        rpvec_f32_to_f16(out, out16, len);
     }
 
     return 1;
@@ -1199,7 +1201,7 @@ static duk_ret_t f_to_num(duk_context *ctx, void *buf, size_t sz, int type)
         dim = sz / sizeof(uint16_t);
 
         REMALLOC(f64, dim * sizeof(double));
-        bf16_to_f64(bf16, f64, dim);
+        rpvec_bf16_to_f64(bf16, f64, dim);
 
         duk_push_array(ctx);
         for (; i < dim; i++)
@@ -1218,7 +1220,7 @@ static duk_ret_t f_to_num(duk_context *ctx, void *buf, size_t sz, int type)
         dim = sz / sizeof(uint16_t);
         REMALLOC(freebuf, dim * sizeof(float));
         f32 = freebuf;
-        f16_to_f32((uint16_t *)buf, f32, dim);
+        rpvec_f16_to_f32((uint16_t *)buf, f32, dim);
     }
     else
     {
@@ -1371,9 +1373,9 @@ static void do_l2_norm(duk_context *ctx, duk_idx_t idx, int type)
         dim = len / 2;
         REMALLOC(tmp_f32, dim * sizeof(float));
 
-        f16_to_f32(f16, tmp_f32, dim);
+        rpvec_f16_to_f32(f16, tmp_f32, dim);
         l2_normalize(tmp_f32, dim);
-        f32_to_f16(tmp_f32, f16, dim);
+        rpvec_f32_to_f16(tmp_f32, f16, dim);
 
         free(tmp_f32);
         return;
