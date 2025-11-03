@@ -260,7 +260,7 @@ int vdist(FLD *f1, FLD *f2, FLD *f3, FLD *f4)
 {
     /* read args as varbyte */
     size_t len0 = 0, len1 = 0;
-    const char *metric="cos", *dtype="f16";
+    const char *metric="dot", *dtype="f16";
 
     if(!f1)
     {
