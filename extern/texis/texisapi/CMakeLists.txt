@@ -600,6 +600,7 @@ IF(PARSERS_FOUND)
   set(SIMSIMD_FLAGS "-DSIMSIMD_DYNAMIC_DISPATCH=1")
   set(SIMSIMD_ARCH_FLAGS "")
   set(SIMSIMD_DISABLE_TARGETS "")
+
   if(CMAKE_C_COMPILER_ID STREQUAL "GNU" AND CMAKE_C_COMPILER_VERSION VERSION_LESS "4.9")
       message(STATUS "GCC ${CMAKE_C_COMPILER_VERSION} too old, disabling all SIMD targets")
       set(SIMSIMD_DISABLE_TARGETS
@@ -641,12 +642,21 @@ IF(PARSERS_FOUND)
 
       if(HAVE_HASWELL AND NOT CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
           # Test Skylake (AVX512F, AVX512DQ, AVX512BW, AVX512VL)
-          set(CMAKE_REQUIRED_FLAGS "-mavx512f -mavx512dq -mavx512bw -mavx512vl")
+          set(CMAKE_REQUIRED_FLAGS "-mavx2 -mfma -mf16c -mavx512f -mavx512dq -mavx512bw -mavx512vl")
           check_c_source_compiles("
               #include <immintrin.h>
               int main() {
                   __m512 a = _mm512_setzero_ps();
                   __m512 b = _mm512_fmadd_ps(a, a, a);
+
+                  // Test _mm512_loadu_epi8 which is used in SIMSIMD binary.h
+                  unsigned char data[64] = {0};
+                  __m512i vec = _mm512_loadu_epi8(data);
+
+                  // Test other common operations
+                  __m512i ivec = _mm512_setzero_si512();
+                  __mmask64 mask = _mm512_cmpneq_epi8_mask(vec, ivec);
+
                   return 0;
               }
           " HAVE_SKYLAKE)
@@ -664,7 +674,7 @@ IF(PARSERS_FOUND)
 
       if(HAVE_HASWELL AND HAVE_SKYLAKE)
           # Test Ice Lake (AVX512VNNI, AVX512VBMI2, AVX512BITALG)
-          set(CMAKE_REQUIRED_FLAGS "-mavx512vnni -mavx512vbmi2 -mavx512bitalg")
+          set(CMAKE_REQUIRED_FLAGS "-mavx2 -mfma -mf16c -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vnni -mavx512vbmi2 -mavx512bitalg -mavx512vp2in")
           check_c_source_compiles("
               #include <immintrin.h>
               int main() {
@@ -686,7 +696,8 @@ IF(PARSERS_FOUND)
       if(HAVE_HASWELL AND HAVE_SKYLAKE AND HAVE_ICE)
           # Test Sapphire Rapids (VP2INTERSECT)
           set(CMAKE_REQUIRED_FLAGS "-mavx2 -mfma -mf16c -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vnni -mavx512vbmi2 -mavx512bitalg -mavx512vp2intersect -mavx512fp16")
-
+          set(CMAKE_REQUIRED_FLAGS
+               "-mavx2 -mfma -mf16c -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vnni -mavx512vbmi2 -mavx512bitalg -mavx512vp2intersect -mavx512fp16")
           check_c_source_compiles("
               #include <immintrin.h>
               int main() {
@@ -732,7 +743,6 @@ IF(PARSERS_FOUND)
       endif()
   endif()
 
-
   set(SIMSIMD_FLAGS "${SIMSIMD_FLAGS} ${SIMSIMD_DISABLE_TARGETS}")
   message("-- ${GREEN}Final flags: ${SIMSIMD_FLAGS}${RESET}")
   message("-- ${GREEN}Arch flags: ${SIMSIMD_ARCH_FLAGS}${RESET}")
@@ -742,6 +752,7 @@ IF(PARSERS_FOUND)
     PROPERTIES
       COMPILE_FLAGS "-O3 ${SIMSIMD_WARN} ${SIMSIMD_FLAGS} ${SIMSIMD_ARCH_FLAGS}"
   )
+
   set_source_files_properties(
     ${CMAKE_SOURCE_DIR}/src/duktape/globals/vector-distance.c
     PROPERTIES
