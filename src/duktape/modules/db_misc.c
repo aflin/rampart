@@ -5,6 +5,13 @@
  * see /LICENSE-rsal.txt for details
  */
 
+#define clearmsgbuf0() do {       \
+    fseek(mmsgfh, 0, SEEK_SET);   \
+    *errmap0='\0';                \
+} while(0)
+
+
+
 typedef struct  RPSFD_tag                       /* stringformat data */
 {
   TXPMBUF       *pmbuf;                         /* (opt.) putmsg buffer */
@@ -660,7 +667,7 @@ RPfunc_stringformat(duk_context *ctx)
   if (duk_get_top(ctx)==0)
     RP_THROW(ctx,"stringFormat(): arguments required");
 
-  clearmsgbuf();
+  clearmsgbuf0();
   memset(&info, 0, sizeof(RPSFD));
   memset(&dupData,0,argn*sizeof(void *));
 
@@ -745,6 +752,7 @@ RPsqlFuncs_abstract(duk_context *ctx)
     duk_idx_t idx=0;
     char *ab;
 
+    clearmsgbuf0();
     if (globalcp == APICPPN) globalcp = TXopenapicp();
 
     if(duk_is_string(ctx, idx))
