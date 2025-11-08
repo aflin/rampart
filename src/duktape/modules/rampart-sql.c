@@ -494,7 +494,22 @@ pid_t parent_pid = 0;
 static void rp_log_copy_to_errMsg(duk_context *ctx, char *msg)
 {
     duk_push_this(ctx);
-    duk_push_string(ctx, msg);
+    if(duk_get_prop_string(ctx, -1, "errMsg"))
+    {
+        const char *s = duk_get_string(ctx, -1);
+        if(s && *s)
+        {
+            duk_push_sprintf(ctx, "%s\n%s", s,msg);
+        }
+        else
+            duk_push_string(ctx, msg);
+        duk_remove(ctx, -2);
+    }
+    else
+    {
+        duk_pop(ctx);
+        duk_push_string(ctx, msg);
+    }
     duk_put_prop_string(ctx, -2, "errMsg");
     duk_pop(ctx);
 }
@@ -518,8 +533,15 @@ static int rp_log_error(duk_context *ctx)
         if(pos && finfo->errmap[pos-1]=='\n')
             finfo->errmap[pos-1]='\0';
     }
+
+    int ret = (int) !!(finfo->errmap[0]); //simple !!strlen()
+
     rp_log_copy_to_errMsg(ctx, finfo->errmap);
-    return (int)finfo->errmap[0];  // 0 if strlen == 0
+    finfo->errmap[0]='\0';
+    if(RPTHR_TEST(get_current_thread(), RPTHR_FLAG_THR_SAFE))
+        rewind(mmsgfh);
+
+    return ret;
 }
 
 /* get the expression from a /pattern/ or a "string" */
@@ -4223,7 +4245,7 @@ static duk_ret_t rp_sql_exec_query(duk_context *ctx, int isquery)
     /* PARAMS
        sql parameters are the parameters corresponding to "?key" in a sql statement
        and are provide by passing an object in JS call parameters */
-    if( namedSqlParams)
+    if(namedSqlParams)
     {
         if(q->obj_idx == -1)
         {
@@ -4259,9 +4281,13 @@ static duk_ret_t rp_sql_exec_query(duk_context *ctx, int isquery)
         h_resetparams(h);
     }
 
+    rp_log_error(ctx);
+
     /* EXEC */
     if (!h_exec(h))
         throw_tx_or_log_error_close(ctx, "sql exec", finfo->errmap, h);
+
+    rp_log_error(ctx);
 
     /* skip rows using texisapi */
     if (q->skip)
@@ -4279,23 +4305,13 @@ static duk_ret_t rp_sql_exec_query(duk_context *ctx, int isquery)
     (void)rp_fetch(ctx, h, q);
 
     end:
-    h_end_transaction(h);
-
-    /* this is not working out.  Just keep it logged and keep going if we got this far
-    if(rp_log_error(ctx))
-    {
-        if(isquery)
-            duk_push_null(ctx);
-        else
-            RP_THROW(ctx, "sql exec: %s", finfo->errmap);
-    }
-    */
-    // just log error
     rp_log_error(ctx);
+    h_end_transaction(h);
 
     return 1; /* returning outer array */
 
     end_query:
+    rp_log_error(ctx);
     if(h) h_end_transaction(h);
     return 1; /* returning outer array or error*/
 
