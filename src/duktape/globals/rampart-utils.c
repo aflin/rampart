@@ -114,7 +114,7 @@ static char *rp_types[RP_NTYPES] = {
     "String", "Array", "Nan", "Number",
     "Function", "Boolean", "Buffer", "Null",
     "Undefined", "Symbol", "Date", "Object",
-    "Filehandle",
+    "Filehandle", "Vector",
     "Unknown"
 };
 
@@ -147,6 +147,8 @@ int rp_gettype(duk_context *ctx, duk_idx_t idx)
             return RP_TYPE_DATE;
         else if(duk_has_prop_string(ctx, idx, DUK_HIDDEN_SYMBOL("rp_is_fh")))
             return RP_TYPE_FILEHANDLE;
+        else if(duk_has_prop_string(ctx, idx, DUK_HIDDEN_SYMBOL("rpvec")))
+            return RP_TYPE_VECTOR;
         else /* function, array and date are also objects, so do this last */
            return RP_TYPE_OBJECT;
     }

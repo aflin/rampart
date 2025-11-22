@@ -75,7 +75,17 @@ I(RECID,        "recid",     sizeof(ft_recid),     0,          0)               
 I(INTERNAL,     "internal",  FT_INTERNAL_ALLOC_SZ, 0,          0)                                  /* 26 */ \
 I(INT64,        "int64",     sizeof(ft_int64),     0,          TXFTNF_INTEGRAL|TXFTNF_SIGNED)      /* 27 */ \
 I(UINT64,       "uint64",    sizeof(ft_uint64),    0,          TXFTNF_INTEGRAL)                    /* 28 */ \
-TX_FTN_SYMBOL_BLOBZ
+TX_FTN_SYMBOL_BLOBZ                                                                                /* 29 */ \
+/* vector types here - ajf 2025-11-17 */                                                                    \
+I(VEC_F64,      "vecF64",    sizeof(ft_double),    0,          0)                                  /* 30 */ \
+I(VEC_F32,      "vecF32",    sizeof(ft_float),     0,          0)                                  /* 31 */ \
+I(VEC_F16,      "vecF16",    sizeof(uint16_t),     0,          0)                                  /* 32 */ \
+I(VEC_BF16,     "vecBf16",   sizeof(uint16_t),     0,          0)                                  /* 33 */ \
+I(VEC_I8,       "vecI8",     sizeof(ft_byte),      0,          0)                                  /* 34 */ \
+I(VEC_U8,       "vecU8",     sizeof(ft_byte),      0,          0)                                  /* 35 */
+
+#define FTN_VEC_START 30
+#define FTN_VEC_END 35
 
 typedef enum FTN_tag
 {

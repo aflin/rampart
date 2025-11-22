@@ -48,6 +48,15 @@ typedef struct tagSQLGUID
   byte  Data4[8];
 }
 SQLGUID;
+
+// --ajf 2025-11-19
+#define SQL_VEC_F64             (-42)
+#define SQL_VEC_F32             (-43)
+#define SQL_VEC_F16             (-44)
+#define SQL_VEC_BF16            (-45)
+#define SQL_VEC_I8              (-46)
+#define SQL_VEC_U8              (-47)
+
 #  define SQLGUIDPN     ((SQLGUID *)NULL)
 #endif  /* ODBCVER >= 0x0350 */
 #define SQL_TYPE_DRIVER_START	(-80)

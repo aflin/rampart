@@ -21,400 +21,7 @@
 extern simsimd_capability_t rp_runtime_caps;
 extern int rp_runtime_caps_is_init;
 
-// ---------------------- Scalar helper: f16<->f32 -----------------
-static inline float half_to_float(uint16_t h)
-{
-    uint32_t sign = (uint32_t)(h & 0x8000u) << 16;
-    uint32_t exp = (h >> 10) & 0x1Fu;
-    uint32_t frac = h & 0x03FFu;
-    uint32_t f;
-    if (exp == 0)
-    {
-        if (frac == 0)
-        {
-            f = sign;
-            float out;
-            memcpy(&out, &f, 4);
-            return out;
-        }
-        else
-        {
-            // subnormal
-            float val = ldexpf((float)frac / 1024.0f, -14);
-            if (sign)
-                val = -val;
-            return val;
-        }
-    }
-    else if (exp == 31)
-    {
-        f = sign | 0x7F800000u | (frac << 13);
-        float out;
-        memcpy(&out, &f, 4);
-        return out;
-    }
-    else
-    {
-        f = sign | ((exp + 112) << 23) | (frac << 13);
-        float out;
-        memcpy(&out, &f, 4);
-        return out;
-    }
-}
-
-static inline uint16_t float_to_half(float x)
-{
-    uint32_t f;
-    memcpy(&f, &x, 4);
-    uint32_t sign = (f >> 16) & 0x8000u;
-    uint32_t exp = (f >> 23) & 0xFFu;
-    uint32_t frac = f & 0x7FFFFFu;
-    uint16_t h;
-    if (exp == 255)
-    {
-        h = (uint16_t)(sign | 0x7C00u | (frac ? 0x200u : 0));
-    }
-    else if (exp <= 112)
-    {
-        if (exp < 103)
-            h = (uint16_t)sign; // underflow to zero
-        else
-        {
-            uint32_t mant = (0x800000u | frac) >> (125 - exp + 13);
-            h = (uint16_t)(sign | mant);
-        }
-    }
-    else if (exp >= 143)
-    {
-        h = (uint16_t)(sign | 0x7C00u);
-    }
-    else
-    {
-        h = (uint16_t)(sign | ((exp - 112) << 10) | (frac >> 13));
-    }
-    return h;
-}
-
-// -------------------- bf16 <-> f32 conversions -------------------
-// bf16 is stored as the HIGH 16 bits of an IEEE754 float32; low 16 are zero on expand.
-
-static inline uint16_t f32_to_bf16_scalar(float x)
-{
-    // Round-to-nearest-even on the truncated 16 bits.
-    // Equivalent to hardware converts like VCVTNEPS2BF16 when available.
-    union {
-        float f;
-        uint32_t u;
-    } v = {x};
-    uint32_t t = v.u + 0x00007FFFu + ((v.u >> 16) & 1u);
-    return (uint16_t)(t >> 16);
-}
-
-static inline float bf16_to_f32_scalar(uint16_t h)
-{
-    union {
-        uint32_t u;
-        float f;
-    } v = {(uint32_t)h << 16};
-    return v.f;
-}
-
-void rpvec_bf16_to_f32(const uint16_t *src, float *dst, size_t n)
-{
-    size_t i = 0;
-    for (; i < n; ++i)
-        dst[i] = bf16_to_f32_scalar(src[i]);
-}
-
-void rpvec_f32_to_bf16(const float *src, uint16_t *dst, size_t n)
-{
-    for (size_t i = 0; i < n; ++i)
-        dst[i] = f32_to_bf16_scalar(src[i]);
-}
-
-// -------------------- bf16 <-> f64 conversions -------------------
-void rpvec_bf16_to_f64(const uint16_t *src, double *dst, size_t n)
-{
-    for (size_t i = 0; i < n; ++i)
-        dst[i] = (double)bf16_to_f32_scalar(src[i]);
-}
-
-void rpvec_f64_to_bf16(const double *src, uint16_t *dst, size_t n)
-{
-    size_t i = 0;
-    for (; i < n; ++i)
-        dst[i] = f32_to_bf16_scalar((float)src[i]);
-}
-
-
-// -------------------- f16 <-> f32 conversions -------------------
-void rpvec_f16_to_f32(const uint16_t *src, float *dst, size_t n)
-{
-    for (size_t i = 0; i < n; ++i)
-        dst[i] = half_to_float(src[i]);
-}
-
-void rpvec_f32_to_f16(const float *src, uint16_t *dst, size_t n)
-{
-    for (size_t i = 0; i < n; ++i)
-        dst[i] = float_to_half(src[i]);
-}
-
-// -------------------- f64 <-> f32 conversions -------------------
-void rpvec_f64_to_f32(const double *src, float *dst, size_t n)
-{
-    for (size_t i = 0; i < n; ++i)
-        dst[i] = (float)src[i];
-}
-
-void rpvec_f32_to_f64(const float *src, double *dst, size_t n)
-{
-    for (size_t i = 0; i < n; ++i)
-        dst[i] = (double)src[i];
-}
-
-// -------------------- f64 <-> f16 conversions -------------------
-void rpvec_f64_to_f16(const double *src, uint16_t *dst, size_t n)
-{
-    for (size_t i = 0; i < n; ++i)
-        dst[i] = float_to_half((float)src[i]);
-}
-
-
-void rpvec_f16_to_f64(const uint16_t *src, double *dst, size_t n)
-{
-    for (size_t i = 0; i < n; ++i)
-        dst[i] = (double)half_to_float(src[i]);
-}
-
-// ---------------- Quantize/Dequant: f32 <-> i8/u8 ---------------
-void rpvec_f32_to_i8(const float *src, int8_t *dst, size_t n, float scale, int zp)
-{
-    const float inv = 1.0f / scale;
-    for (size_t i = 0; i < n; ++i)
-    {
-        int q = (int)lrintf(src[i] * inv + (float)zp);
-        if (q < -128)
-            q = -128;
-        else if (q > 127)
-            q = 127;
-        dst[i] = (int8_t)q;
-    }
-}
-
-void rpvec_i8_to_f32(const int8_t *src, float *dst, size_t n, float scale, int zp)
-{
-    for (size_t i = 0; i < n; ++i)
-        dst[i] = ((float)src[i] - (float)zp) * scale;
-}
-
-void rpvec_f32_to_u8(const float *src, uint8_t *dst, size_t n, float scale, int zp)
-{
-    const float inv = 1.0f / scale;
-    for (size_t i = 0; i < n; ++i)
-    {
-        int q = (int)lrintf(src[i] * inv + (float)zp);
-        if (q < 0)
-            q = 0;
-        else if (q > 255)
-            q = 255;
-        dst[i] = (uint8_t)q;
-    }
-}
-
-void rpvec_u8_to_f32(const uint8_t *src, float *dst, size_t n, float scale, int zp)
-{
-    for (size_t i = 0; i < n; ++i)
-        dst[i] = ((float)src[i] - (float)zp) * scale;
-}
-
-// ---------------- Quantize/Dequant: f64 <-> i8/u8 ---------------
-void rpvec_f64_to_i8(const double *src, int8_t *dst, size_t n, double scale, int zp)
-{
-    const double inv = 1.0 / scale;
-    for (size_t i = 0; i < n; ++i)
-    {
-        long q = lrint(src[i] * inv + (double)zp);
-        if (q < -128)
-            q = -128;
-        else if (q > 127)
-            q = 127;
-        dst[i] = (int8_t)q;
-    }
-}
-
-void rpvec_i8_to_f64(const int8_t *src, double *dst, size_t n, double scale, int zp)
-{
-    for (size_t i = 0; i < n; ++i)
-        dst[i] = ((double)src[i] - (double)zp) * scale;
-}
-
-void rpvec_f64_to_u8(const double *src, uint8_t *dst, size_t n, double scale, int zp)
-{
-    const double inv = 1.0 / scale;
-    for (size_t i = 0; i < n; ++i)
-    {
-        long q = lrint(src[i] * inv + (double)zp);
-        if (q < 0)
-            q = 0;
-        else if (q > 255)
-            q = 255;
-        dst[i] = (uint8_t)q;
-    }
-}
-
-void rpvec_u8_to_f64(const uint8_t *src, double *dst, size_t n, double scale, int zp)
-{
-    for (size_t i = 0; i < n; ++i)
-        dst[i] = ((double)src[i] - (double)zp) * scale;
-}
-
-// ---------------- Quantize/Dequant: f16 <-> i8/u8 ---------------
-/* unused currently
-void rpvec_f16_to_i8(const uint16_t *src, int8_t *dst, size_t n, float scale, int zp)
-{
-    float buf[256];
-    size_t i = 0;
-    while (i < n)
-    {
-        size_t blk = (n - i) < 256 ? (n - i) : 256;
-        f16_to_f32(src + i, buf, blk);
-        f32_to_i8(buf, dst + i, blk, scale, zp);
-        i += blk;
-    }
-}
-*/
-
-void rpvec_i8_to_f16(const int8_t *src, uint16_t *dst, size_t n, float scale, int zp)
-{
-    float buf[256];
-    size_t i = 0;
-    while (i < n)
-    {
-        size_t blk = (n - i) < 256 ? (n - i) : 256;
-        rpvec_i8_to_f32(src + i, buf, blk, scale, zp);
-        rpvec_f32_to_f16(buf, dst + i, blk);
-        i += blk;
-    }
-}
-/* unused currently
-void rpvec_f16_to_u8(const uint16_t *src, uint8_t *dst, size_t n, float scale, int zp)
-{
-    float buf[256];
-    size_t i = 0;
-    while (i < n)
-    {
-        size_t blk = (n - i) < 256 ? (n - i) : 256;
-        rpvec_f16_to_f32(src + i, buf, blk);
-        rpvec_f32_to_u8(buf, dst + i, blk, scale, zp);
-        i += blk;
-    }
-}
-*/
-
-void rpvec_u8_to_f16(const uint8_t *src, uint16_t *dst, size_t n, float scale, int zp)
-{
-    float buf[256];
-    size_t i = 0;
-    while (i < n)
-    {
-        size_t blk = (n - i) < 256 ? (n - i) : 256;
-        rpvec_u8_to_f32(src + i, buf, blk, scale, zp);
-        rpvec_f32_to_f16(buf, dst + i, blk);
-        i += blk;
-    }
-}
-
-// -------------------------- b8 pack/unpack ----------------------
-void rpvec_f64_to_b8_threshold(const double *src, uint8_t *dst_bits, size_t n, double thresh)
-{
-    size_t i = 0, byte = 0;
-    while (i + 8 <= n)
-    {
-        uint8_t b = 0;
-        for (int k = 0; k < 8; ++k)
-            b |= (src[i + k] > thresh) ? (1u << k) : 0;
-        dst_bits[byte++] = b;
-        i += 8;
-    }
-    if (i < n)
-    {
-        uint8_t b = 0;
-        int bit = 0;
-        for (; i < n; ++i, ++bit)
-            if (src[i] > thresh)
-                b |= (1u << bit);
-        dst_bits[byte++] = b;
-    }
-}
-
-void rpvec_b8_to_u8_bytes(const uint8_t *src_bits, uint8_t *dst_bytes, size_t n)
-{
-    size_t i = 0, byte = 0;
-    while (i + 8 <= n)
-    {
-        uint8_t b = src_bits[byte++];
-        dst_bytes[i + 0] = (b & 0x01) ? 1 : 0;
-        dst_bytes[i + 1] = (b & 0x02) ? 1 : 0;
-        dst_bytes[i + 2] = (b & 0x04) ? 1 : 0;
-        dst_bytes[i + 3] = (b & 0x08) ? 1 : 0;
-        dst_bytes[i + 4] = (b & 0x10) ? 1 : 0;
-        dst_bytes[i + 5] = (b & 0x20) ? 1 : 0;
-        dst_bytes[i + 6] = (b & 0x40) ? 1 : 0;
-        dst_bytes[i + 7] = (b & 0x80) ? 1 : 0;
-        i += 8;
-    }
-    if (i < n)
-    {
-        uint8_t b = src_bits[byte++];
-        int bit = 0;
-        for (; i < n; ++i, ++bit)
-            dst_bytes[i] = (b & (1u << bit)) ? 1 : 0;
-    }
-}
-
-// i4 conversions
-void rpvec_i8_to_i4(const int8_t *in, uint8_t *out, size_t dim) {
-    if (!in || !out) return;
-
-    size_t i = 0, o = 0;
-
-    for (; i + 1 < dim; i += 2, ++o) {
-        int v0 = in[i + 0]; if (v0 > 7) v0 = 7; else if (v0 < -8) v0 = -8;
-        int v1 = in[i + 1]; if (v1 > 7) v1 = 7; else if (v1 < -8) v1 = -8;
-        uint8_t lo = (uint8_t)((v0 < 0) ? (v0 + 16) : v0);
-        uint8_t hi = (uint8_t)((v1 < 0) ? (v1 + 16) : v1);
-        out[o] = (uint8_t)(lo | (hi << 4));
-    }
-    if (i < dim) {
-        int v0 = in[i]; if (v0 > 7) v0 = 7; else if (v0 < -8) v0 = -8;
-        uint8_t lo = (uint8_t)((v0 < 0) ? (v0 + 16) : v0);
-        out[o++] = lo; // high nibble zero
-    }
-}
-
-//
-// i4x2 -> i8  (unpack two signed 4-bit values from each byte)
-//   in:  uint8_t in[(dim+1)/2]  where dim = number of 4-bit values
-//   out: int8_t  out[dim]       values in [-8, 7]
-//
-void rpvec_i4_to_i8(const uint8_t *in, int8_t *out, size_t dim) {
-    if (!in || !out) return;
-
-    size_t k = 0, o = 0;
-    for (; k + 1 < dim; k += 2, ++o) {
-        uint8_t byte = in[o];
-        uint8_t lo =  byte        & 0x0F;
-        uint8_t hi = (byte >> 4)  & 0x0F;
-        out[k + 0] = (int8_t)( (lo > 7) ? (lo - 16) : lo );
-        out[k + 1] = (int8_t)( (hi > 7) ? (hi - 16) : hi );
-    }
-    if (k < dim) {
-        uint8_t byte = in[o];
-        uint8_t lo = byte & 0x0F;
-        out[k] = (int8_t)( (lo > 7) ? (lo - 16) : lo );
-    }
-}
+// vector conversions are now in vector-distance
 
 // end conversions
 
@@ -489,9 +96,9 @@ static duk_ret_t rp_f64_to_u8(duk_context *ctx)
             RP_THROW(ctx, "vector.f64ToU8 - third argument, if present must be a Positive Int 0-255 (zero point)");
     }
 
-    uint8_t *out = (uint8_t *)duk_push_fixed_buffer(ctx, dim); 
+    uint8_t *out = (uint8_t *)duk_push_fixed_buffer(ctx, dim);
     double min=DBL_MAX, max=-DBL_MAX;
-    if(scale < 0.0 || zp < 0)
+    if(scale < 0.0)
     {
         for(size_t i=0; i<dim; i++)
         {
@@ -501,8 +108,7 @@ static duk_ret_t rp_f64_to_u8(duk_context *ctx)
             if(d<min)
                 min=d;
         }
-        if(scale < 0.0)
-            scale = (max-min)/255.0;
+        scale = (max-min)/255.0;
     }
 
     rpvec_f64_to_u8(in, out, dim, scale, zp);
@@ -531,7 +137,7 @@ static duk_ret_t rp_u8_to_f64(duk_context *ctx)
             RP_THROW(ctx, "vector.u8ToF64 - third argument, if present must be a Positive Int 0-255 (zero point)");
     }
 
-    double *out = (double *)duk_push_fixed_buffer(ctx, dim*sizeof(double)); 
+    double *out = (double *)duk_push_fixed_buffer(ctx, dim*sizeof(double));
     rpvec_u8_to_f64(in, out, dim, scale, zp);
     return 1;
 }
@@ -558,9 +164,9 @@ static duk_ret_t rp_f32_to_u8(duk_context *ctx)
             RP_THROW(ctx, "vector.f32ToU8 - third argument, if present must be a Positive Int 0-255 (zero point)");
     }
 
-    uint8_t *out = (uint8_t *)duk_push_fixed_buffer(ctx, dim); 
+    uint8_t *out = (uint8_t *)duk_push_fixed_buffer(ctx, dim);
     float min=FLT_MAX, max=-FLT_MAX;
-    if(scale < 0.0 || zp < 0)
+    if(scale < 0.0)
     {
         for(size_t i=0; i<dim; i++)
         {
@@ -570,8 +176,7 @@ static duk_ret_t rp_f32_to_u8(duk_context *ctx)
             if(d<min)
                 min=d;
         }
-        if(scale < 0.0)
-            scale = (max-min)/255.0;
+        scale = (max-min)/255.0;
     }
 
     rpvec_f32_to_u8(in, out, dim, scale, zp);
@@ -600,7 +205,7 @@ static duk_ret_t rp_u8_to_f32(duk_context *ctx)
             RP_THROW(ctx, "vector.u8ToF32 - third argument, if present must be a Positive Int 0-255 (zero point)");
     }
 
-    float *out = (float *)duk_push_fixed_buffer(ctx, dim*sizeof(float)); 
+    float *out = (float *)duk_push_fixed_buffer(ctx, dim*sizeof(float));
     rpvec_u8_to_f32(in, out, dim, scale, zp);
     return 1;
 }
@@ -645,7 +250,7 @@ static duk_ret_t rp_f16_to_u8(duk_context *ctx)
             RP_THROW(ctx, "vector.f16ToU8 - third argument, if present must be a Positive Int 0-255 (zero point)");
     }
 
-    uint8_t *out = (uint8_t *)duk_push_fixed_buffer(ctx, dim); 
+    uint8_t *out = (uint8_t *)duk_push_fixed_buffer(ctx, dim);
     float *in32 = NULL;
 
     // up convert to floats, so we can do min/max
@@ -653,7 +258,7 @@ static duk_ret_t rp_f16_to_u8(duk_context *ctx)
     rpvec_f16_to_f32(in, in32, dim);
 
     float min=FLT_MAX, max=-FLT_MAX;
-    if(scale < 0.0 || zp < 0)
+    if(scale < 0.0)
     {
         for(size_t i=0; i<dim; i++)
         {
@@ -663,8 +268,7 @@ static duk_ret_t rp_f16_to_u8(duk_context *ctx)
             if(d<min)
                 min=d;
         }
-        if(scale < 0.0)
-            scale = (max-min)/255.0;
+        scale = (max-min)/255.0;
     }
 
     rpvec_f32_to_u8(in32, out, dim, scale, zp);
@@ -694,7 +298,7 @@ static duk_ret_t rp_u8_to_f16(duk_context *ctx)
             RP_THROW(ctx, "vector.u8ToF16 - third argument, if present must be a Positive Int 0-255 (zero point)");
     }
 
-    uint16_t *out = (uint16_t *)duk_push_fixed_buffer(ctx, dim*sizeof(uint16_t)); 
+    uint16_t *out = (uint16_t *)duk_push_fixed_buffer(ctx, dim*sizeof(uint16_t));
     rpvec_u8_to_f16(in, out, dim, scale, zp);
     return 1;
 }
@@ -718,25 +322,23 @@ static duk_ret_t rp_f64_to_i8(duk_context *ctx)
 
     if(!duk_is_undefined(ctx, 2))
     {
-        zp = REQUIRE_INT(ctx, 2, "vector.f64ToI8 - third argument, if present must be a Int -128 - 127 (zero point)");
-        if(zp < -128 || zp > 127)
-            RP_THROW(ctx, "vector.f64ToI8 - third argument, if present must be a Int -128 - 127 (zero point)");
+        zp = REQUIRE_INT(ctx, 2, "vector.f64ToI8 - third argument, if present must be a Int -127 - 127 (zero point)");
+        if(zp < -127 || zp > 127)
+            RP_THROW(ctx, "vector.f64ToI8 - third argument, if present must be a Int -127 - 127 (zero point)");
     }
 
-    int8_t *out = (int8_t *)duk_push_fixed_buffer(ctx, dim); 
-    double min=DBL_MAX, max=-DBL_MAX;
-    if(scale < 0.0 || zp < -128)
+    int8_t *out = (int8_t *)duk_push_fixed_buffer(ctx, dim);
+
+    if(scale < 0.0)
     {
+        double absmax = 0.0;
         for(size_t i=0; i<dim; i++)
         {
-            double d = in[i];
-            if(d>max)
-                max=d;
-            if(d<min)
-                min=d;
+            double abs_val = fabs(in[i]);
+            if (abs_val > absmax)
+                absmax = abs_val;
         }
-        if(scale < 0.0)
-            scale = (max-min)/254.0;
+        scale = absmax / 127.0;
     }
 
     rpvec_f64_to_i8(in, out, dim, scale, zp);
@@ -764,7 +366,7 @@ static duk_ret_t rp_i8_to_f64(duk_context *ctx)
             RP_THROW(ctx, "vector.i8ToF64 - third argument, if present must be a Int -128 - 127 (zero point)");
     }
 
-    double *out = (double *)duk_push_fixed_buffer(ctx, dim*sizeof(double)); 
+    double *out = (double *)duk_push_fixed_buffer(ctx, dim*sizeof(double));
     rpvec_i8_to_f64(in, out, dim, scale, zp);
     return 1;
 }
@@ -786,25 +388,23 @@ static duk_ret_t rp_f32_to_i8(duk_context *ctx)
 
     if(!duk_is_undefined(ctx, 2))
     {
-        zp = REQUIRE_INT(ctx, 2, "vector.f32ToI8 - third argument, if present must be a Int -128 - 127 (zero point)");
-        if(zp < -128 || zp > 127)
-            RP_THROW(ctx, "vector.f32ToI8 - third argument, if present must be a Int -128 - 127 (zero point)");
+        zp = REQUIRE_INT(ctx, 2, "vector.f32ToI8 - third argument, if present must be a Int -127 - 127 (zero point)");
+        if(zp < -127 || zp > 127)
+            RP_THROW(ctx, "vector.f32ToI8 - third argument, if present must be a Int -127 - 127 (zero point)");
     }
 
-    int8_t *out = (int8_t *)duk_push_fixed_buffer(ctx, dim); 
-    float min=FLT_MAX, max=-FLT_MAX;
-    if(scale < 0.0 || zp < -128)
+    int8_t *out = (int8_t *)duk_push_fixed_buffer(ctx, dim);
+
+    if(scale < 0.0)
     {
+        float absmax = 0.0;
         for(size_t i=0; i<dim; i++)
         {
-            float d = in[i];
-            if(d>max)
-                max=d;
-            if(d<min)
-                min=d;
+            float abs_val = fabs(in[i]);
+            if (abs_val > absmax)
+                absmax = abs_val;
         }
-        if(scale < 0.0)
-            scale = (max-min)/254.0;
+        scale = absmax / 127.0;
     }
 
     rpvec_f32_to_i8(in, out, dim, scale, zp);
@@ -833,7 +433,7 @@ static duk_ret_t rp_i8_to_f32(duk_context *ctx)
             RP_THROW(ctx, "vector.i8ToF32 - third argument, if present must be a Int -128 - 127 (zero point)");
     }
 
-    float *out = (float *)duk_push_fixed_buffer(ctx, dim*sizeof(float)); 
+    float *out = (float *)duk_push_fixed_buffer(ctx, dim*sizeof(float));
     rpvec_i8_to_f32(in, out, dim, scale, zp);
     return 1;
 }
@@ -870,30 +470,27 @@ static duk_ret_t rp_f16_to_i8(duk_context *ctx)
 
     if(!duk_is_undefined(ctx, 2))
     {
-        zp = REQUIRE_INT(ctx, 2, "vector.f16ToI8 - third argument, if present must be a Int -128 - 127 (zero point)");
-        if(zp < -128 || zp > 127)
-            RP_THROW(ctx, "vector.f16ToI8 - third argument, if present must be a Int -128 - 127 (zero point)");
+        zp = REQUIRE_INT(ctx, 2, "vector.f16ToI8 - third argument, if present must be a Int -127 - 127 (zero point)");
+        if(zp < -127 || zp > 127)
+            RP_THROW(ctx, "vector.f16ToI8 - third argument, if present must be a Int -127 - 127 (zero point)");
     }
 
-    int8_t *out = (int8_t *)duk_push_fixed_buffer(ctx, dim); 
+    int8_t *out = (int8_t *)duk_push_fixed_buffer(ctx, dim);
     float *in32 = NULL;
 
     REMALLOC(in32, dim*sizeof(float));
     rpvec_f16_to_f32(in, in32, dim);
 
-    float min=FLT_MAX, max=-FLT_MAX;
-    if(scale < 0.0 || zp < -128)
+    if(scale < 0.0)
     {
+        float absmax = 0.0;
         for(size_t i=0; i<dim; i++)
         {
-            float d = in32[i];
-            if(d>max)
-                max=d;
-            if(d<min)
-                min=d;
+            float abs_val = fabs(in32[i]);
+            if (abs_val > absmax)
+                absmax = abs_val;
         }
-        if(scale < 0.0)
-            scale = (max-min)/254.0;
+        scale = absmax / 127.0;
     }
 
     rpvec_f32_to_i8(in32, out, dim, scale, zp);
@@ -923,7 +520,7 @@ static duk_ret_t rp_i8_to_f16(duk_context *ctx)
             RP_THROW(ctx, "vector.i8ToF16 - third argument, if present must be a Int -128 - 127 (zero point)");
     }
 
-    uint16_t *out = (uint16_t *)duk_push_fixed_buffer(ctx, dim*sizeof(uint16_t)); 
+    uint16_t *out = (uint16_t *)duk_push_fixed_buffer(ctx, dim*sizeof(uint16_t));
     rpvec_i8_to_f16(in, out, dim, scale, zp);
     return 1;
 }
@@ -935,7 +532,7 @@ static duk_ret_t rp_i8_to_i4(duk_context *ctx)
     duk_size_t dim=0, sz4=0;
     uint8_t *out;
     int8_t *in = REQUIRE_BUFFER_DATA(ctx, 0, &dim, "vector.i8Toi4 - argument must be a Buffer");
-    
+
     if(dim%2)
         RP_THROW(ctx, "vector.i8Toi4 - i8 vector must have an even number of elements");
 
@@ -1101,7 +698,7 @@ static duk_ret_t numbers_to(duk_context *ctx, duk_idx_t arridx, int type)
         for (; i < len; i++)
         {
             duk_get_prop_index(ctx, arridx, (duk_uarridx_t)i);
-            out64[i] = REQUIRE_NUMBER(ctx, -1, "utils.numbersToF - array[%lu] is not a Number", i);
+            out64[i] = REQUIRE_NUMBER(ctx, -1, "numbersToF64 - array[%lu] is not a Number", i);
             duk_pop(ctx);
         }
         return 1;
@@ -1117,7 +714,7 @@ static duk_ret_t numbers_to(duk_context *ctx, duk_idx_t arridx, int type)
         for (; i < len; i++)
         {
             duk_get_prop_index(ctx, arridx, (duk_uarridx_t)i);
-            out64[i] = REQUIRE_NUMBER(ctx, -1, "utils.numbersToF - array[%lu] is not a Number", i);
+            out64[i] = REQUIRE_NUMBER(ctx, -1, "numbersToBf16 - array[%lu] is not a Number", i);
             duk_pop(ctx);
         }
 
@@ -1132,7 +729,7 @@ static duk_ret_t numbers_to(duk_context *ctx, duk_idx_t arridx, int type)
     for (; i < len; i++)
     {
         duk_get_prop_index(ctx, arridx, (duk_uarridx_t)i);
-        out[i] = (float)REQUIRE_NUMBER(ctx, -1, "utils.numbersToF - array[%lu] is not a Number", i);
+        out[i] = (float)REQUIRE_NUMBER(ctx, -1, "numbersTo - array[%lu] is not a Number", i);
         duk_pop(ctx);
     }
 
@@ -1140,6 +737,7 @@ static duk_ret_t numbers_to(duk_context *ctx, duk_idx_t arridx, int type)
     {
         uint16_t *out16 = duk_push_fixed_buffer(ctx, len * sizeof(uint16_t));
         rpvec_f32_to_f16(out, out16, len);
+        duk_remove(ctx, -2); // the f32 *out
     }
 
     return 1;
@@ -1147,25 +745,25 @@ static duk_ret_t numbers_to(duk_context *ctx, duk_idx_t arridx, int type)
 
 static duk_ret_t num_to_f64(duk_context *ctx)
 {
-    REQUIRE_ARRAY(ctx, 0, "utils.numbersToF64 - argument must be an Array of Numbers");
+    REQUIRE_ARRAY(ctx, 0, "numbersToF64 - argument must be an Array of Numbers");
     return numbers_to(ctx, 0, RP_F64);
 }
 
 static duk_ret_t num_to_f32(duk_context *ctx)
 {
-    REQUIRE_ARRAY(ctx, 0, "utils.numbersToF32 - argument must be an Array of Numbers");
+    REQUIRE_ARRAY(ctx, 0, "numbersToF32 - argument must be an Array of Numbers");
     return numbers_to(ctx, 0, RP_F32);
 }
 
 static duk_ret_t num_to_f16(duk_context *ctx)
 {
-    REQUIRE_ARRAY(ctx, 0, "utils.numbersToF16 - argument must be an Array of Numbers");
+    REQUIRE_ARRAY(ctx, 0, "numbersToF16 - argument must be an Array of Numbers");
     return numbers_to(ctx, 0, RP_F16);
 }
 
 static duk_ret_t num_to_bf16(duk_context *ctx)
 {
-    REQUIRE_ARRAY(ctx, 0, "utils.numbersToBf16 - argument must be an Array of Numbers");
+    REQUIRE_ARRAY(ctx, 0, "numbersToBf16 - argument must be an Array of Numbers");
     return numbers_to(ctx, 0, RP_BF16);
 }
 
@@ -1272,7 +870,7 @@ static duk_ret_t bf16_to_num(duk_context *ctx)
 }
 // end js float conversions
 
-// simsimd distance calcs
+// simsimd distance calcs for raw
 static duk_ret_t vdistance(duk_context *ctx)
 {
     // defaults:
@@ -1283,12 +881,12 @@ static duk_ret_t vdistance(duk_context *ctx)
     void *a, *b;
 
     if (!duk_is_undefined(ctx, 3))
-        datatype = REQUIRE_STRING(ctx, 3, "Fourth argument, if present, must be a datatype (default: 'f16')");
+        datatype = REQUIRE_STRING(ctx, 3, "raw.vector.distance() - Fourth argument, if present, must be a datatype (default: 'f16')");
 
     if (strcasecmp("number", datatype) == 0 || strcasecmp("numbers", datatype) == 0)
     {
-        REQUIRE_ARRAY(ctx, 0, "First argument must be an Array of Numbers (vector)");
-        REQUIRE_ARRAY(ctx, 1, "Second argument must be an Array of Numbers (vector)");
+        REQUIRE_ARRAY(ctx, 0, "raw.vector.distance() - First argument must be an Array of Numbers (vector)");
+        REQUIRE_ARRAY(ctx, 1, "raw.vector.distance() - Second argument must be an Array of Numbers (vector)");
 
         numbers_to(ctx, 0, RP_F64);
         duk_replace(ctx, 0);
@@ -1298,15 +896,15 @@ static duk_ret_t vdistance(duk_context *ctx)
 
         datatype = "f64";
     }
-    a = REQUIRE_BUFFER_DATA(ctx, 0, &asz, "First argument must be a Buffer (vector)");
-    b = REQUIRE_BUFFER_DATA(ctx, 1, &bsz, "Second argument must be a Buffer (vector)");
+    a = REQUIRE_BUFFER_DATA(ctx, 0, &asz, "raw.vector.distance() - First argument must be a Buffer (vector)");
+    b = REQUIRE_BUFFER_DATA(ctx, 1, &bsz, "raw.vector.distance() - Second argument must be a Buffer (vector)");
     double ret;
 
     if (!duk_is_undefined(ctx, 2))
-        metric = REQUIRE_STRING(ctx, 2, "Third argument, if present, must be a metric (default: 'dot')");
+        metric = REQUIRE_STRING(ctx, 2, "raw.vector.distance() - Third argument, if present, must be a metric (default: 'dot')");
 
     if (!asz || asz != bsz)
-        RP_THROW(ctx, "vector.distance - Buffers are 0 Length or sizes dont match");
+        RP_THROW(ctx, "raw.vector.distance() - Buffers are 0 Length or sizes do not match");
 
     // todo - need to check that asz or bsz is evenly divisible by the data size and calc dimensions, but that's rather
     // inconvenient here. so we are duplicating the call.  Fix so only one call.
@@ -1314,7 +912,7 @@ static duk_ret_t vdistance(duk_context *ctx)
     ret = rp_vector_distance(a, b, asz, metric, datatype, &err);
 
     if (err)
-        RP_THROW(ctx, "vector.distance - %s", err);
+        RP_THROW(ctx, "raw.vector.distance() - %s", err);
 
     duk_push_number(ctx, ret);
 
@@ -1333,6 +931,9 @@ static void do_l2_norm(duk_context *ctx, duk_idx_t idx, int type)
     duk_size_t len = 0;
     int dim = 0;
     void *vec;
+
+    idx=duk_normalize_index(ctx, idx);
+
     if (type == L2NORM_NUM)
     {
         REQUIRE_ARRAY(ctx, idx, "vector.l2norm - argument must be an array of Numbers (vector)");
@@ -1460,6 +1061,497 @@ static void veccap(duk_context *ctx)
     duk_put_prop_string(ctx, -2, "runtimeCapabilities");
 }
 
+typedef duk_ret_t (*rp_conversion_func)(duk_context *ctx);
+
+static const rp_conversion_func rp_conversions[7][7] = {
+/*             unk,    f64,              f32,              f16,             bf16,             i8,              u8          */
+/* unk  */   { NULL,   NULL,             NULL,             NULL,            NULL,             NULL,            NULL         },
+/* f64  */   { NULL,   NULL,             rp_f64_to_f32,    rp_f64_to_f16,   rp_f64_to_bf16,   rp_f64_to_i8,    rp_f64_to_u8 },
+/* f32  */   { NULL,   rp_f32_to_f64,    NULL,             rp_f32_to_f16,   rp_f32_to_bf16,   rp_f32_to_i8,    rp_f32_to_u8 },
+/* f16  */   { NULL,   rp_f16_to_f64,    rp_f16_to_f32,    NULL,            NULL,             rp_f16_to_i8,    rp_f16_to_u8 },
+/* bf32 */   { NULL,   rp_bf16_to_f64,   rp_bf16_to_f32,   NULL,            NULL,             NULL,            NULL         },
+/* i8   */   { NULL,   rp_i8_to_f64,     rp_i8_to_f32,     rp_i8_to_f16,    NULL,             NULL,            NULL         },
+/* u8   */   { NULL,   rp_u8_to_f64,     rp_u8_to_f32,     rp_u8_to_f16,    NULL,             NULL,            NULL         }
+};
+
+static const size_t rp_elsz[7] = {1,8,4,2,2,1,1};
+
+static void push_vec_methods(duk_context *ctx, rp_vec_type type);
+static duk_ret_t new_vector(duk_context *ctx);
+
+static duk_ret_t v2_(duk_context *ctx, rp_vec_type totype)
+{
+    rp_vec_type type = rp_vec_unknown;
+    int dim=0;
+
+    duk_push_this(ctx);
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("vectype"));
+    type = duk_get_int(ctx, -1);
+    duk_pop(ctx);
+
+    if(type == totype)
+        return 1; //no conversion, return self
+
+    duk_get_prop_string(ctx, -1, "dim");
+    dim = duk_get_int(ctx, -1);
+    duk_pop(ctx);
+
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("rpvec"));
+    duk_insert(ctx, 0);  //raw vec to idx 0 for conversion funcs
+
+    duk_push_object(ctx); //return vec obj
+
+    rp_conversion_func cfunc = rp_conversions[type][totype];
+    if(cfunc)
+        cfunc(ctx);
+    else
+        RP_THROW(ctx, "vector conversion not supported");
+
+    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("rpvec"));
+
+    duk_push_int(ctx, (int) totype);
+    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("vectype"));
+
+    duk_push_int(ctx, dim);
+    duk_rp_put_prop_string_ro(ctx, -2, "dim");
+
+    switch(totype)
+    {
+        case rp_vec_f64:  duk_push_string(ctx, "f64");  break;
+        case rp_vec_f32:  duk_push_string(ctx, "f32");  break;
+        case rp_vec_f16:  duk_push_string(ctx, "f16");  break;
+        case rp_vec_bf16: duk_push_string(ctx, "bf16"); break;
+        case rp_vec_i8:   duk_push_string(ctx, "i8");   break;
+        default:          duk_push_string(ctx, "u8");   break;
+    }
+    duk_rp_put_prop_string_ro(ctx, -2, "type");
+
+    push_vec_methods(ctx, totype);
+
+    return 1;
+}
+static duk_ret_t v2f64(duk_context *ctx)
+{
+    return v2_(ctx, rp_vec_f64);
+}
+
+static duk_ret_t v2f32(duk_context *ctx)
+{
+    return v2_(ctx, rp_vec_f32);
+}
+
+
+static duk_ret_t v2f16(duk_context *ctx)
+{
+    return v2_(ctx, rp_vec_f16);
+}
+
+
+static duk_ret_t v2bf16(duk_context *ctx)
+{
+    return v2_(ctx, rp_vec_bf16);
+}
+
+static duk_ret_t v2i8(duk_context *ctx)
+{
+    return v2_(ctx, rp_vec_i8);
+}
+
+static duk_ret_t v2u8(duk_context *ctx)
+{
+    return v2_(ctx, rp_vec_u8);
+}
+
+static duk_ret_t v2num(duk_context *ctx)
+{
+    rp_vec_type type = rp_vec_unknown;
+    int dim=0;
+
+    duk_push_this(ctx);
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("vectype"));
+    type = duk_get_int(ctx, -1);
+    duk_pop(ctx);
+
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("rpvec"));
+    duk_insert(ctx, 0); // the raw buffer to idx 0
+
+    switch(type)
+    {
+        case rp_vec_f64:  f64_to_num(ctx);   break;
+        case rp_vec_f32:  f32_to_num(ctx);   break;
+        case rp_vec_f16:  f16_to_num(ctx);   break;
+        case rp_vec_bf16: bf16_to_num(ctx);  break;
+        case rp_vec_i8:   rp_i8_to_num(ctx); break;
+        case rp_vec_u8:   rp_u8_to_num(ctx); break;
+        default:     break; //won't happen, silence warnings
+    }
+    return 1;
+}
+
+static duk_ret_t v2l2(duk_context *ctx)
+{
+    rp_vec_type type = rp_vec_unknown;
+    int dim=0;
+
+    duk_push_this(ctx);
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("vectype"));
+    type = duk_get_int(ctx, -1);
+    duk_pop(ctx);
+
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("rpvec"));
+
+    switch(type)
+    {
+        case rp_vec_f64:  do_l2_norm(ctx, -1, L2NORM_F64); break;
+        case rp_vec_f32:  do_l2_norm(ctx, -1, L2NORM_F32); break;
+        case rp_vec_f16:  do_l2_norm(ctx, -1, L2NORM_F16); break;
+        default:     break; //won't happen, silence warnings
+    }
+    duk_pop(ctx);// buffer, return this
+    return 1;
+}
+
+static duk_ret_t v2vlen(duk_context *ctx)
+{
+    size_t blen;
+    duk_push_this(ctx);
+
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("rpvec"));
+    (void)duk_get_buffer_data(ctx, -1, &blen);
+    duk_push_int(ctx, (int)blen);
+    return 1;
+}
+
+static duk_ret_t v2resz(duk_context *ctx)
+{
+    size_t blen;
+    duk_size_t elsz=1, olddim, newdim = (duk_size_t) REQUIRE_POSINT(ctx, 0, "vector.resize() - argument must be a positive integer (new size dim)");
+    void *v, *newv;
+    rp_vec_type type;
+
+    if(!newdim)
+    {
+        duk_push_fixed_buffer(ctx, 0);
+        return 1;
+    }
+
+    duk_push_this(ctx);
+
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("rpvec"));
+    v = duk_get_buffer_data(ctx, -1, &blen);
+    duk_pop(ctx);
+
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("vectype"));
+    type = duk_get_int(ctx, -1);
+    duk_pop(ctx);
+
+    elsz = rp_elsz[type];
+
+    olddim = blen / elsz;
+
+    //set up call to new_vector through duk_call()
+    duk_push_c_function(ctx, new_vector, 2);
+    duk_get_prop_string(ctx, -2, "type"); // from 'this'
+
+    newv = duk_push_fixed_buffer(ctx, newdim * elsz);
+    blen = (size_t) ( olddim < newdim ? olddim*elsz : newdim*elsz );
+    memcpy(newv, v, blen); // copy lesser of old and new
+
+    duk_new(ctx, 2); // new rampart.vector(type, newv_buffer)
+
+    return 1;
+}
+
+static duk_ret_t v2copy(duk_context *ctx)
+{
+    size_t blen;
+    duk_size_t dim;
+    void *v, *newv;
+    rp_vec_type type;
+
+    duk_push_this(ctx);
+
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("rpvec"));
+    v = duk_get_buffer_data(ctx, -1, &blen);
+    duk_pop(ctx);
+
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("vectype"));
+    type = duk_get_int(ctx, -1);
+    duk_pop(ctx);
+
+    dim = blen / rp_elsz[type];
+
+    newv = duk_push_fixed_buffer(ctx, blen);
+    memcpy(newv, v, blen);
+
+    rp_push_new_vector(ctx, type, dim, -1);
+
+    return 1;
+}
+
+static duk_ret_t v2raw(duk_context *ctx)
+{
+    size_t blen;
+    duk_push_this(ctx);
+
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("rpvec"));
+    return 1;
+}
+
+// simsimd distance calcs
+static duk_ret_t v2dist(duk_context *ctx)
+{
+    // defaults:
+    const char *metric = "dot";
+    const char *datatype = "f16";
+    const char *err = NULL;
+    duk_size_t asz, bsz;
+    rp_vec_type atype = rp_vec_unknown, btype = rp_vec_unknown;
+    void *a, *b;
+
+    /* the comparison vec at idx=0 */
+    if(!duk_is_object(ctx, 0) || !duk_get_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("rpvec")))
+        RP_THROW(ctx, "vector.distance() - First argument must be a comparison vector of the same type/dim");
+
+    b = REQUIRE_BUFFER_DATA(ctx, -1, &bsz, "vector.distance() - First argument must be a comparison vector of the same type/dim");
+    duk_pop(ctx);
+
+    if(!duk_get_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("vectype")))
+        RP_THROW(ctx, "vector.distance() - First argument must be a comparison vector of the same type/dim");
+
+    btype = duk_get_int(ctx, -1);
+    duk_pop(ctx);
+
+
+    /* current vec at this */
+    duk_push_this(ctx);
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("rpvec"));
+    a=duk_get_buffer_data(ctx, -1, &asz);
+    duk_pop(ctx);
+
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("vectype"));
+    atype = duk_get_int(ctx, -1);
+    duk_pop_2(ctx);
+
+    if(atype != btype)
+        RP_THROW(ctx, "vector.distance() - vectors must be the same type, convert one first");
+
+    if (!duk_is_undefined(ctx, 1))
+        metric = REQUIRE_STRING(ctx, 1, "vector.distance() - Second argument, if present, must be a metric (default: 'dot')");
+
+    double ret;
+
+    if (!asz || asz != bsz)
+        RP_THROW(ctx, "vector.distance() - Vectors are 0 Length or sizes do not match");
+
+    switch(btype)
+    {
+        case rp_vec_f64: datatype="f64";   break;
+        case rp_vec_f32: datatype="f32";   break;
+        case rp_vec_bf16: datatype="bf16"; break;
+        case rp_vec_i8: datatype="i8";     break;
+        case rp_vec_u8: datatype="u8";     break;
+        default:     break; //won't happen, silence warnings
+    }
+
+    ret = rp_vector_distance(a, b, asz, metric, datatype, &err);
+
+    if (err)
+        RP_THROW(ctx, "vector.distance() - %s", err);
+
+    duk_push_number(ctx, ret);
+
+    return 1;
+}
+
+
+static void push_vec_methods(duk_context *ctx, rp_vec_type type)
+{
+
+    // every type supported
+    duk_push_c_function(ctx, v2f64, 2);
+    duk_put_prop_string(ctx, -2, "toF64");
+
+    // every type supported
+    duk_push_c_function(ctx, v2f32, 2);
+    duk_put_prop_string(ctx, -2, "toF32");
+
+    /* for every type except bf16 */
+    if( type != rp_vec_bf16)
+    {
+        duk_push_c_function(ctx, v2f16, 2);
+        duk_put_prop_string(ctx, -2, "toF16");
+    }
+
+    /* only f64 or f32 to bf16 */
+    if( type == rp_vec_f64 || type == rp_vec_f32)
+    {
+        duk_push_c_function(ctx, v2bf16, 2);
+        duk_put_prop_string(ctx, -2, "toBf16");
+    }
+
+    /* only f64, f32, f16 to u8 */
+    if( type != rp_vec_u8 && type != rp_vec_bf16)
+    {
+        duk_push_c_function(ctx, v2i8, 2);
+        duk_put_prop_string(ctx, -2, "toI8");
+    }
+
+    /* only f64, f32, f16 to i8 */
+    if( type != rp_vec_i8 && type != rp_vec_bf16)
+    {
+        duk_push_c_function(ctx, v2u8, 2);
+        duk_put_prop_string(ctx, -2, "toU8");
+    }
+
+    // make array of numbers
+    duk_push_c_function(ctx, v2num, 2);
+    duk_put_prop_string(ctx, -2, "toNumbers");
+
+    // normalize for f64, f32 and f16 only
+    if(type == rp_vec_f64 || type == rp_vec_f32 || type == rp_vec_f16)
+    {
+        duk_push_c_function(ctx, v2l2, 0);
+        duk_put_prop_string(ctx, -2, "l2Normalize");
+    }
+
+    // return raw buffer
+    duk_push_c_function(ctx, v2raw, 0);
+    duk_put_prop_string(ctx, -2, "toRaw");
+
+    // length in bytes
+    duk_push_c_function(ctx, v2vlen, 0);
+    duk_put_prop_string(ctx, -2, "byteLength");
+
+    // copy to vector of new length.
+    duk_push_c_function(ctx, v2resz, 1);
+    duk_put_prop_string(ctx, -2, "resize");
+
+    // copy to vector of same length.
+    duk_push_c_function(ctx, v2copy, 1);
+    duk_put_prop_string(ctx, -2, "copy");
+
+    // calc distance (vec, metric)
+    duk_push_c_function(ctx, v2dist, 2);
+    duk_put_prop_string(ctx, -2, "distance");
+
+}
+
+void rp_push_new_vector(duk_context *ctx, rp_vec_type type, size_t dim, duk_idx_t idx)
+{
+    const char *stype = "f16";
+
+    switch(type)
+    {
+        case rp_vec_f64:  stype="f64";  break;
+        case rp_vec_f32:  stype="f32";  break;
+        case rp_vec_bf16: stype="bf16"; break;
+        case rp_vec_i8:   stype="i8";   break;
+        case rp_vec_u8:   stype="u8";   break;
+        default:     break; //won't happen, silence warnings
+    }
+
+    idx = duk_normalize_index(ctx, idx);
+
+    duk_push_object(ctx); // the return object
+
+    duk_pull(ctx, idx); //the buffer
+
+    /* attach buffer to object as hidden prop */
+    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("rpvec"));
+
+    /* save our vector type as hidden prop */
+    duk_push_int(ctx, (int)type);
+    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("vectype"));
+
+    /* user read only string description */
+    duk_push_string(ctx, stype);
+    duk_rp_put_prop_string_ro(ctx, -2, "type");
+
+    /* user read only num dim */
+    duk_push_int(ctx, (int)dim);
+    duk_rp_put_prop_string_ro(ctx, -2, "dim");
+
+    /* add all the methods */
+    push_vec_methods(ctx, type);
+
+}
+
+/* new rampart.vector(type, dim|buffer|array[, scale, zp]]) */
+static duk_ret_t new_vector(duk_context *ctx)
+{
+    if (!duk_is_constructor_call(ctx))
+    {
+        RP_THROW(ctx, "rampart.vector():  Must be called with 'new rampart.vector()");
+    }
+
+    size_t elsz=0, dim=0;
+    rp_vec_type type=rp_vec_unknown;
+    const char *itype = REQUIRE_STRING(ctx, 0, "new rampart.vector() - first argument must be a String (vec type)");
+
+    if( ! strcasecmp(itype, "f64") )
+        type  = rp_vec_f64;
+    else if( ! strcasecmp(itype, "f32") )
+        type  = rp_vec_f32;
+    else if( ! strcasecmp(itype, "f16") )
+        type  = rp_vec_f16;
+    else if( ! strcasecmp(itype, "bf16") )
+        type  = rp_vec_bf16;
+    else if( ! strcasecmp(itype, "i8") )
+        type  = rp_vec_i8;
+    else if( ! strcasecmp(itype, "u8") )
+        type  = rp_vec_u8;
+    else
+        RP_THROW(ctx, "new rampart.vector() - invalid type '%s'", itype);
+
+    elsz = rp_elsz[type];
+
+    /* push the appropriate buffer to stack */
+    if(duk_is_number(ctx, 1))
+    {
+        dim = REQUIRE_INT(ctx, 1, "new rampart.vector() - second argument must be an integer (vec dim)");
+        duk_push_fixed_buffer(ctx, dim*elsz);
+        //buffer is at -1
+    }
+    else if(duk_is_array(ctx, 1))
+    {
+        // use our raw functions, which requre stack [array[, scale, zp]]
+        dim = duk_get_length(ctx, 1);
+        // remove type;
+        duk_remove(ctx, 0); //type
+        switch(type)
+        {
+            case rp_vec_f64:  num_to_f64(ctx);break;
+            case rp_vec_f32:  num_to_f32(ctx);break;
+            case rp_vec_f16:  num_to_f16(ctx);break;
+            case rp_vec_bf16: num_to_bf16(ctx);break;
+            case rp_vec_i8:   rp_num_to_i8(ctx);break;
+            case rp_vec_u8:   rp_num_to_u8(ctx);break;
+            default:     break; //won't happen, silence warnings
+        }
+
+        //buffer is at -1
+    }
+    else if(duk_is_buffer_data(ctx, 1))
+    {
+        duk_size_t sz;
+        (void)REQUIRE_BUFFER_DATA(ctx, 1,  &sz, "new rampart.vector() - second argument, if present, must be a buffer (vector)");
+
+        if(sz % elsz)
+            RP_THROW(ctx,  "new rampart.vector(%s, %lu, buf) - buf length(%lu) is not a multiple of vec type size(%lu)",
+                itype, dim, sz, elsz);
+        dim = sz/elsz;
+        duk_pull(ctx, 1);
+        //buffer is at -1
+    }
+    else
+         RP_THROW(ctx,  "new rampart.vector() - second argument must be a Number (zeroed vector dims) / Buffer (raw vector) / Array of Numbers");
+
+    rp_push_new_vector(ctx, type, dim, -1);
+
+    return 1;
+}
+
 // init the js functions
 void duk_vector_init(duk_context *ctx)
 {
@@ -1472,7 +1564,8 @@ void duk_vector_init(duk_context *ctx)
     if (!duk_get_prop_string(ctx, -1, "vector"))
     {
         duk_pop(ctx);
-        duk_push_object(ctx);
+        // rampart.vector() - typed vectors
+        duk_push_c_function(ctx, new_vector, 4);
     }
 
     if (!isinit)
@@ -1480,6 +1573,8 @@ void duk_vector_init(duk_context *ctx)
         veccap(ctx);
         isinit = 1;
     }
+
+    duk_push_object(ctx); //raw
 
     duk_push_c_function(ctx, rp_u8_to_num, 3);
     duk_put_prop_string(ctx, -2, "u8ToNumbers");
@@ -1597,6 +1692,9 @@ void duk_vector_init(duk_context *ctx)
 
     duk_push_c_function(ctx, vdistance, 4);
     duk_put_prop_string(ctx, -2, "distance");
+
+    //rampart.vector.raw - for buffer conversions
+    duk_put_prop_string(ctx, -2, "raw");
 
     duk_put_prop_string(ctx, -2, "vector");
     duk_put_global_string(ctx, "rampart");

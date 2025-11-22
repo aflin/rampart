@@ -39,6 +39,9 @@ static int defnoise=1, defsuffix=1, defsuffixeq=1, defprefix=1;
 #define QS_ERROR_PARAM 2
 #define QS_SUCCESS 0
 
+#define QFLAG_GETCOUNTS 1 /* whether to include metamorph counts in return */
+#define QFLAG_RAWVEC 2    /* whether to return raw vectors rather than new rampart.vector() */
+
 QUERY_STRUCT
 {
     const char *sql;    /* the sql statement (allocated by duk and on its stack) */
@@ -53,9 +56,8 @@ QUERY_STRUCT
                            1 for array
                            2 for novars                                           */
     char err;
-    char getCounts;     /* whether to include metamorph counts in return */
+    uint8_t flags;         /* right now, just QFLAG_GETCOUNTS and QFLAG_RAWVEC */
 };
-
 
 static duk_ret_t rp_sql_close(duk_context *ctx);
 
@@ -465,13 +467,14 @@ pid_t parent_pid = 0;
 #define msgbufsz 4096
 
 #define throw_tx_error(ctx,pref) do{\
+    duk_push_string(ctx, finfo->errmap);\
     rp_log_error(ctx);\
-    RP_THROW(ctx, "%s error: %s",pref, finfo->errmap);\
+    RP_THROW(ctx, "%s error: %s",pref, duk_get_string(ctx,-1));\
 }while(0)
 
 #define throw_tx_error_close(ctx,pref,h) do{\
-    rp_log_error(ctx);\
     duk_push_string(ctx, finfo->errmap);\
+    rp_log_error(ctx);\
     h_close(h);\
     RP_THROW(ctx, "%s error: %s",pref, duk_get_string(ctx,-1));\
 }while(0)
@@ -2197,7 +2200,7 @@ static void rp_init_qstruct(QUERY_STRUCT *q)
     q->skip = 0;
     q->max = -432100000; //-1 means unlimit, -0.4321 billion means not set.
     q->rettype = -1;
-    q->getCounts = 0;
+    q->flags = 0;
     q->err = QS_SUCCESS;
 }
 
@@ -2309,7 +2312,16 @@ static QUERY_STRUCT rp_get_query(duk_context *ctx)
                     {
                         if (duk_get_prop_string(ctx, i, "includeCounts"))
                         {
-                            q->getCounts = REQUIRE_BOOL(ctx, -1, "sql: includeCounts must be a Boolean");
+                            if (REQUIRE_BOOL(ctx, -1, "sql: includeCounts must be a Boolean"))
+                                q->flags |= QFLAG_GETCOUNTS;
+                            gotsettings=1;
+                        }
+                        duk_pop(ctx);
+
+                        if (duk_get_prop_string(ctx, i, "rawVectors"))
+                        {
+                            if (REQUIRE_BOOL(ctx, -1, "sql: rawVectors must be a Boolean"))
+                                q->flags |= QFLAG_RAWVEC;
                             gotsettings=1;
                         }
                         duk_pop(ctx);
@@ -2504,6 +2516,50 @@ void *check_array_params(duk_context *ctx, long *olen, int *in, int *out)
     return ret;
 }
 
+void *check_for_vector_type(duk_context *ctx, long *olen, int *in, int *out)
+{
+    rp_vec_type type = rp_vec_unknown;
+    int vartype = rp_gettype(ctx, -1);
+    duk_size_t sz;
+    void *v;
+
+    if(vartype != RP_TYPE_VECTOR)
+        return NULL;
+
+    if( !duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("rpvec")))
+    {
+        duk_pop(ctx);
+        return NULL;
+    }
+    v=duk_get_buffer_data(ctx, -1, &sz);
+    duk_pop(ctx);
+    if(!v)
+        return v;
+
+    if( !duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("vectype")))
+    {
+        duk_pop(ctx);
+        return NULL;
+    }
+    type = duk_get_int(ctx, -1);
+    duk_pop(ctx);
+
+
+    switch(type)
+    {
+        case rp_vec_f64:  *in=SQL_VEC_F64;  break;
+        case rp_vec_f32:  *in=SQL_VEC_F32;  break;
+        case rp_vec_f16:  *in=SQL_VEC_F16;  break;
+        case rp_vec_bf16: *in=SQL_VEC_BF16; break;
+        case rp_vec_i8:   *in=SQL_VEC_I8;   break;
+        case rp_vec_u8:   *in=SQL_VEC_U8;   break;
+        default:     	                return NULL;
+    }
+    *out = *in;
+    *olen = (long) sz;
+    return v;
+}
+
 #define push_sql_param do{\
     switch (duk_get_type(ctx, -1))\
     {\
@@ -2536,6 +2592,8 @@ void *check_array_params(duk_context *ctx, long *olen, int *in, int *out)
         {\
             vfree=v=check_array_params(ctx, &plen, &in, &out);\
             if(v) break;\
+            v=check_for_vector_type(ctx, &plen, &in, &out);\
+            if(v) break;\
             char *e;\
             char *r = str_rp_to_json_safe(ctx, -1, NULL, 0);\
             duk_push_string(ctx, r);\
@@ -2562,7 +2620,7 @@ void *check_array_params(duk_context *ctx, long *olen, int *in, int *out)
             duk_size_t sz;\
             v = duk_get_buffer_data(ctx, -1, &sz);\
             plen = (long)sz;\
-            in = SQL_C_BINARY;\
+            in = SQL_BINARY;\
             out = SQL_BINARY;\
             break;\
         }\
@@ -2661,7 +2719,7 @@ static int rp_add_named_parameters(
 /* **************************************************
   push a single field from a row of the sql results
    ************************************************** */
-static void rp_pushfield(duk_context *ctx, FLDLST *fl, int i)
+static void rp_pushfield(duk_context *ctx, FLDLST *fl, int i, int rawvec)
 {
     char type = fl->type[i] & 0x3f;
 
@@ -2827,6 +2885,65 @@ static void rp_pushfield(duk_context *ctx, FLDLST *fl, int i)
 
         break;
     }
+    case FTN_VEC_F64:
+    {
+        double *p;
+        p = (double *) duk_push_fixed_buffer(ctx, fl->ndata[i] *sizeof(double));
+        memcpy(p, fl->data[i], fl->ndata[i]*sizeof(double));
+        if(!rawvec)
+            rp_push_new_vector(ctx, rp_vec_f64, (size_t)fl->ndata[i], -1);
+        break;
+    }
+    case FTN_VEC_F32:
+    {
+        float *p;
+
+        p = (float *) duk_push_fixed_buffer(ctx, fl->ndata[i] *sizeof(float));
+        memcpy(p, fl->data[i], fl->ndata[i]*sizeof(float));
+        if(!rawvec)
+            rp_push_new_vector(ctx, rp_vec_f32, (size_t)fl->ndata[i], -1);
+        break;
+    }
+    case FTN_VEC_F16:
+    {
+        uint16_t *p;
+
+        p = (uint16_t *) duk_push_fixed_buffer(ctx, fl->ndata[i] *sizeof(uint16_t));
+        memcpy(p, fl->data[i], fl->ndata[i]*sizeof(uint16_t));
+        if(!rawvec)
+            rp_push_new_vector(ctx, rp_vec_f16, (size_t)fl->ndata[i], -1);
+        break;
+    }
+    case FTN_VEC_BF16:
+    {
+        uint16_t *p;
+
+        p = (uint16_t *) duk_push_fixed_buffer(ctx, fl->ndata[i] *sizeof(uint16_t));
+        memcpy(p, fl->data[i], fl->ndata[i]*sizeof(uint16_t));
+        if(!rawvec)
+            rp_push_new_vector(ctx, rp_vec_bf16, (size_t)fl->ndata[i], -1);
+        break;
+    }
+    case FTN_VEC_I8:
+    {
+        int8_t *p;
+
+        p = (int8_t *) duk_push_fixed_buffer(ctx, fl->ndata[i] *sizeof(int8_t));
+        memcpy(p, fl->data[i], fl->ndata[i]*sizeof(int8_t));
+        if(!rawvec)
+            rp_push_new_vector(ctx, rp_vec_i8, (size_t)fl->ndata[i], -1);
+        break;
+    }
+    case FTN_VEC_U8:
+    {
+        uint8_t *p;
+
+        p = (uint8_t *) duk_push_fixed_buffer(ctx, fl->ndata[i] *sizeof(uint8_t));
+        memcpy(p, fl->data[i], fl->ndata[i]*sizeof(uint8_t));
+        if(!rawvec)
+            rp_push_new_vector(ctx, rp_vec_u8, (size_t)fl->ndata[i], -1);
+        break;
+    }
     case FTN_BYTE:
     {
         unsigned char *p;
@@ -2849,14 +2966,16 @@ static void rp_pushfield(duk_context *ctx, FLDLST *fl, int i)
 static int rp_fetch(duk_context *ctx, DB_HANDLE *h, QUERY_STRUCT *q)
 {
     int i       = 0,
-        rettype = q->rettype;
+        rettype = q->rettype,
+        rawvec = q->flags & QFLAG_RAWVEC;
     uint64_t rown   = 0,
              resmax = q->max;
     FLDLST *fl;
     TXCOUNTINFO cinfo;
 
-    if(q->getCounts)
+    if(q->flags & QFLAG_GETCOUNTS)
         h_getCountInfo(h, &cinfo);
+
 
     /* create return object */
     duk_push_object(ctx);
@@ -2911,7 +3030,7 @@ static int rp_fetch(duk_context *ctx, DB_HANDLE *h, QUERY_STRUCT *q)
             duk_push_array(ctx);
             for (i = 0; i < fl->n; i++)
             {
-                rp_pushfield(ctx, fl, i);
+                rp_pushfield(ctx, fl, i, rawvec);
                 duk_put_prop_index(ctx, -2, i);
             }
             duk_put_prop_index(ctx, -2, rown++);
@@ -2939,7 +3058,7 @@ static int rp_fetch(duk_context *ctx, DB_HANDLE *h, QUERY_STRUCT *q)
             duk_push_object(ctx);
             for (i = 0; i < fl->n; i++)
             {
-                rp_pushfield(ctx, fl, i);
+                rp_pushfield(ctx, fl, i, rawvec);
                 //duk_dup_top(ctx);
                 //printf("%s -> %s\n",fl->name[i],duk_to_string(ctx,-1));
                 //duk_pop(ctx);
@@ -2953,7 +3072,7 @@ static int rp_fetch(duk_context *ctx, DB_HANDLE *h, QUERY_STRUCT *q)
     duk_put_prop_string(ctx,-3,"results");
     */
     duk_put_prop_string(ctx,-2,"rows");
-    if(q->getCounts)
+    if(q->flags & QFLAG_GETCOUNTS)
     {
         pushcounts;
         duk_put_prop_string(ctx,-2,"countInfo");
@@ -2973,7 +3092,8 @@ static int rp_fetch(duk_context *ctx, DB_HANDLE *h, QUERY_STRUCT *q)
 static int rp_fetchWCallback(duk_context *ctx, DB_HANDLE *h, QUERY_STRUCT *q)
 {
     int i       = 0,
-        rettype = q->rettype;
+        rettype = q->rettype,
+        rawvec = q->flags & QFLAG_RAWVEC;
     uint64_t rown   = 0,
              resmax = q->max;
     duk_idx_t callback_idx = q->callback,
@@ -2982,7 +3102,7 @@ static int rp_fetchWCallback(duk_context *ctx, DB_HANDLE *h, QUERY_STRUCT *q)
     FLDLST *fl;
     TXCOUNTINFO cinfo;
 
-    if(q->getCounts)
+    if(q->flags & QFLAG_GETCOUNTS)
     {
         h_getCountInfo(h, &cinfo);
         pushcounts;             /* countInfo */
@@ -3027,7 +3147,7 @@ static int rp_fetchWCallback(duk_context *ctx, DB_HANDLE *h, QUERY_STRUCT *q)
                 duk_push_object(ctx);
                 for (i = 0; i < fl->n; i++)
                 {
-                    rp_pushfield(ctx, fl, i);
+                    rp_pushfield(ctx, fl, i, rawvec);
                     duk_put_prop_string(ctx, -2, (const char *)fl->name[i]);
                 }
                 duk_push_int(ctx, q->skip + rown++ );
@@ -3041,7 +3161,7 @@ static int rp_fetchWCallback(duk_context *ctx, DB_HANDLE *h, QUERY_STRUCT *q)
                 duk_push_array(ctx);
                 for (i = 0; i < fl->n; i++)
                 {
-                    rp_pushfield(ctx, fl, i);
+                    rp_pushfield(ctx, fl, i, rawvec);
                     duk_put_prop_index(ctx, -2, i);
                 }
 
@@ -3994,34 +4114,22 @@ void check_parse(char *sql,char *new_sql,char **names,int n_names)
 }
 */
 
-#define throw_tx_or_log_error_old(ctx,pref,msg) do{\
-    rp_log_error(ctx);\
-    if(!isquery) RP_THROW(ctx, "%s error: %s",pref, msg);\
-    else if(q && q->callback > -1) duk_push_number(ctx, -1);\
-    else {\
-        duk_push_object(ctx);\
-        duk_push_sprintf(ctx, "%s: %s", pref, msg);\
-        duk_put_prop_string(ctx, -2, "error");\
-    }\
-    goto end_query;\
-}while(0)
-
 #define throw_tx_or_log_error(ctx,pref,msg) do{\
-    rp_log_error(ctx);\
     if(!isquery) \
         RP_THROW(ctx, "%s error: %s",pref, msg);\
     else\
         duk_push_null(ctx);\
+    rp_log_error(ctx);\
     goto end_query;\
 }while(0)
 
 // close resets finfo->errmap
 #define throw_tx_or_log_error_close(ctx,pref,msg,h) do{\
-    rp_log_error(ctx);\
     if(!isquery) \
         duk_push_error_object(ctx, DUK_ERR_ERROR, "%s error: %s",pref, msg);\
     else\
         duk_push_null(ctx);\
+    rp_log_error(ctx);\
     h_close(h);\
     h=NULL;\
     if(!isquery) (void) duk_throw(ctx);\
@@ -4443,7 +4551,7 @@ static void h_reset_tx_default(duk_context *ctx, DB_HANDLE *h, duk_idx_t this_id
 
     // if this was the last one to reapply settings, we don't need to do it again
     if(!force && cur == last_sql_set)
-        return; 
+        return;
 
      // reset settings if any
      {
@@ -4907,7 +5015,7 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
                     sprintf(errbuf, "sql.set: %s", finfo->errmap);
                     goto return_neg_two;
                 }
-                goto propnext;                
+                goto propnext;
             }
             //if true
             if(duk_is_boolean(ctx, -1) && duk_get_boolean(ctx, -1) )
@@ -6035,6 +6143,7 @@ char install_dir[PATH_MAX+21];
 duk_ret_t rp_exec(duk_context *ctx);
 
 extern int TX_is_rampart;
+void rp_add_vector_types();
 
 duk_ret_t duk_open_module(duk_context *ctx)
 {
@@ -6067,7 +6176,6 @@ duk_ret_t duk_open_module(duk_context *ctx)
         errmap0=NULL;
         REMALLOC(errmap0, msgbufsz);
         mmsgfh = fmemopen(errmap0, msgbufsz, "w+");
-
         db_is_init = 1;
     }
     CTXUNLOCK;

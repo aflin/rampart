@@ -655,8 +655,9 @@ duk_ret_t rp_auto_scandate(duk_context *ctx);
 #define RP_TYPE_DATE 10
 #define RP_TYPE_OBJECT 11
 #define RP_TYPE_FILEHANDLE 12
-#define RP_TYPE_UNKNOWN 13
-#define RP_NTYPES 14
+#define RP_TYPE_VECTOR 13
+#define RP_TYPE_UNKNOWN 14
+#define RP_NTYPES 15
 
 int rp_gettype(duk_context *ctx, duk_idx_t idx);
 
@@ -865,6 +866,20 @@ int rp_watch_pid(pid_t pid, const char *msg);
 #define crypto_passwd_sha256 5
 #define crypto_passwd_sha512 6
 
+/* vector types */
+typedef enum {
+    rp_vec_unknown = 0,
+    rp_vec_f64,
+    rp_vec_f32,
+    rp_vec_f16,
+    rp_vec_bf16,
+    rp_vec_i8,
+    rp_vec_u8
+} rp_vec_type;
+
+/* push new native vector type given a buffer (at idx), a type and dim (dim is metadata: sz/elsz) */
+void rp_push_new_vector(duk_context *ctx, rp_vec_type type, size_t dim, duk_idx_t idx);
+
 /* vector conversions */
 // no checks on *dst size.  You must provide a buffer of the proper size.
 // e.g. for f16_to_f32, dst must be malloc(n*sizeof(float))
@@ -899,6 +914,10 @@ void rpvec_i8_to_f16(const int8_t* src, uint16_t* dst, size_t n, float scale, in
 // Bit pack / unpack (double <-> b8)
 void rpvec_f64_to_b8_threshold(const double* src, uint8_t* dst_bits, size_t n, double thresh);
 void rpvec_b8_to_u8_bytes(const uint8_t* src_bits, uint8_t* dst_bytes, size_t n);
+
+// untested and currently unused:
+void rpvec_i8_to_i4(const int8_t *in, uint8_t *out, size_t dim);
+void rpvec_i4_to_i8(const uint8_t *in, int8_t *out, size_t dim);
 
 // calculate distance/score using simsimd
 double rp_vector_distance(void *a, void *b, size_t bytesize, const char *metric, const char *datatype, const char **err);

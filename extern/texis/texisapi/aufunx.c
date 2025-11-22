@@ -3,326 +3,133 @@
 #include <sys/types.h>
 #include "dbquery.h"
 
-#ifdef NEVER
-// the original:
-void
-adduserfuncs(fo)
-FLDOP *fo;
-{
-}
-
-#else
-
 #include "texint.h"   /* must define FLD, FLDFUNC, FLDOP, getfld(), putfld(), foaddfuncs(), etc. */
 #include "fld.h"
 #include <stdint.h>
 #include <stddef.h>
 #include <string.h>
 
-#define F(f)    ((int (*)(void))(f))
+#define FTN_IS_VEC(v) ({\
+    int __vtype=(v);\
+    __vtype=(__vtype>=FTN_VEC_START && __vtype<=FTN_VEC_END);\
+    __vtype;\
+})
 
-/* ----------------------------- Config ---------------------------- */
+#define FTN_IS_VEC_OR_BYTE(v) ({\
+    int __vtype=(v);\
+    __vtype= (__vtype== FTN_BYTE || (__vtype>=FTN_VEC_START && __vtype<=FTN_VEC_END));\
+    __vtype;\
+})
 
-// ---- x86 / AVX family ----
-#if (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
-
-  // Only pull AVX intrinsics if the compiler is actually building with AVX enabled
-  // (e.g., -mavx / -mavx2 on GCC/Clang, or /arch:AVX2 on MSVC).
-  #if defined(__AVX__) || defined(__AVX2__) || defined(__AVX512F)
-
-    // Clang/GCC/MSVC all provide <immintrin.h> for x86 intrinsics
-    #if defined(__has_include)
-      #if __has_include(<immintrin.h>)
-        #include <immintrin.h>
-      #else
-        #error "AVX requested but <immintrin.h> not found."
-      #endif
-    #else
-      #include <immintrin.h>
-    #endif
-
-  #endif // AVX enabled
-
-  // If you only need SSE:
-  // #if defined(__SSE2__)
-  //   #include <emmintrin.h>
-  // #endif
-
-// ---- ARM / NEON (Apple Silicon, Android, etc.) ----
-#elif defined(__ARM_NEON) || defined(__ARM_NEON__)
-
-  #include <arm_neon.h>
-
-#endif
-
-
-
-// ----------------------------- Config -----------------------------
-
-// Choose and pin a user type id (32..63 are typically free for user types).
-// Make sure this ID does not collide with other custom types in your system.
-static int TID_VECTOR16_768 = 42; // <-- set at runtime by dbaddtype(); keep a global copy
-
-// ------------------------ Utility: half<->float -------------------
-// We provide 3 paths: x86 F16C, AArch64 NEON, and a portable scalar fallback.
-
-// Portable scalar fallback: 16-bit half -> float32
-static inline float f16_to_f32_scalar(uint16_t h) {
-    uint32_t sign = (uint32_t)(h >> 15);
-    uint32_t exp  = (uint32_t)((h >> 10) & 0x1F);
-    uint32_t mant = (uint32_t)(h & 0x3FF);
-    uint32_t f;
-
-    if (exp == 0) {
-        if (mant == 0) {
-            f = sign << 31;  // +/- 0
-        } else {
-            // subnormal -> normalize
-            while ((mant & 0x400) == 0) { mant <<= 1; exp--; }
-            mant &= 0x3FF;
-            exp = exp + (127 - 15);
-            f = (sign << 31) | (exp << 23) | (mant << 13);
-        }
-    } else if (exp == 31) {
-        // Inf/NaN
-        f = (sign << 31) | (0xFF << 23) | (mant << 13);
-    } else {
-        // normalized
-        exp = exp + (127 - 15);
-        f = (sign << 31) | (exp << 23) | (mant << 13);
-    }
-    float out;
-    memcpy(&out, &f, sizeof(out));
-    return out;
-}
-
-// Convert 8 halfs -> 8 floats (dst must have room for 8 floats)
-static inline void f16_to_f32_8(const uint16_t *src, float *dst) {
-
-#if defined(__AVX__)
-    // x86 F16C path
-    __m128i h = _mm_loadu_si128((const __m128i*)src); // 8 x 16-bit
-    __m256 f  = _mm256_cvtph_ps(h);                   // to 8 x float
-    _mm256_storeu_ps(dst, f);
-#elif defined(__aarch64__)
-    // AArch64 NEON path
-    float16x8_t hv;
-    memcpy(&hv, src, sizeof(hv));                     // unaligned OK
-    float32x4_t lo = vcvt_f32_f16(vget_low_f16(hv));
-    float32x4_t hi = vcvt_f32_f16(vget_high_f16(hv));
-    vst1q_f32(dst,    lo);
-    vst1q_f32(dst+4,  hi);
-#else
-    // Scalar fallback
-    for (int i = 0; i < 8; ++i) dst[i] = f16_to_f32_scalar(src[i]);
-#endif
-
-}
-
-
-// Horizontal sum of 8 floats
-#if defined(__AVX__) // x86 AVX version takes __m256
-static inline float hsum8_ps(__m256 v) {
-    __m128 vlow  = _mm256_castps256_ps128(v);
-    __m128 vhigh = _mm256_extractf128_ps(v, 1);
-    __m128 vsum  = _mm_add_ps(vlow, vhigh);
-    vsum = _mm_hadd_ps(vsum, vsum);
-    vsum = _mm_hadd_ps(vsum, vsum);
-    return _mm_cvtss_f32(vsum);
-}
-#elif defined(__aarch64__) // arm64 NEON version takes two 128-bit lanes
-static inline float hsum8_ps_neon(float32x4_t lo, float32x4_t hi) {
-    float32x4_t sum = vaddq_f32(lo, hi);
-    return vaddvq_f32(sum); // horizontal add across 4 lanes (ARMv8)
-}
-#endif
-
-/* ----------------------- User Functions -------------------------- */
-/* Texis calls: int func(FLD *f)
- *   f[0] = return slot
- *   f[1]..f[minargs] = arguments
- */
-
-/* vrank16(BYTE vec16, BYTE qvec16) -> DOUBLE in f[0] */
-int vrank16(FLD *f1, FLD *f2)
-{
-    /* read args as varbyte */
-    size_t len0 = 0, len1 = 0;
-    int dim=0, sz=0;
-    if(!f1)
-    {
-      putmsg(MERR + UGE, "vrank16", "Null field in arg 1");
-      return(FOP_EINVAL);
-    }
-    if(!f2)
-    {
-      putmsg(MERR + UGE, "vrank16", "Null field in arg 2");
-      return(FOP_EINVAL);
-    }
-
-    if((f1->type&DDTYPEBITS) != FTN_BYTE)
-    {
-      putmsg(MERR + UGE, "vrank16", "wrong type in field 1");
-      return(FOP_EINVAL);
-    }
-
-    if((f2->type&DDTYPEBITS) != FTN_BYTE)
-    {
-      putmsg(MERR + UGE, "vrank16", "wrong type in field 2");
-      return(FOP_EINVAL);
-    }
-
-    if(f1->size % 16 || f1->size != f2->size)
-    {
-      putmsg(MERR + UGE, "vrank16", "varbyte field must be a multiple of 16");
-      return(FOP_EINVAL);
-    }
-
-    if(f1->size != f2->size)
-    {
-      putmsg(MERR + UGE, "vrank16", "varbyte fields must be the same size");
-      return(FOP_EINVAL);
-    }
-
-    sz = (int)f1->size;
-    dim=sz/2;
-
-    const uint8_t *b0 = (const uint8_t *)getfld(f1, &len0);
-    const uint8_t *b1 = (const uint8_t *)getfld(f2, &len1);
-    int i=0;
-
-    ft_double *sum = malloc(sizeof(ft_double));
-
-    *sum = 0.0;
-
-    if (!b0 || !b1)
-    {
-        /* return 0.0 on bad input */
-        goto end;
-    }
-
-    const uint16_t *h0 = (const uint16_t *)b0;
-    const uint16_t *h1 = (const uint16_t *)b1;
-
-#if defined(__AVX__) // -------- x86: AVX/F16C ----------
-    for (; i + 8 <= dim; i += 8) {
-        float a8[8], b8[8];
-        f16_to_f32_8(h0 + i, a8);
-        f16_to_f32_8(h1 + i, b8);
-
-        __m256 a = _mm256_loadu_ps(a8);
-        __m256 b = _mm256_loadu_ps(b8);
-        __m256 p = _mm256_mul_ps(a, b);
-        *sum += hsum8_ps(p);          // your AVX hsum (__m256 -> float)
-    }
-
-#elif defined(__aarch64__) // ---- arm64: NEON ----------
-    for (; i + 8 <= dim; i += 8) {
-        float a8[8], b8[8];
-        f16_to_f32_8(h0 + i, a8);
-        f16_to_f32_8(h1 + i, b8);
-
-        float32x4_t alo = vld1q_f32(a8);
-        float32x4_t ahi = vld1q_f32(a8 + 4);
-        float32x4_t blo = vld1q_f32(b8);
-        float32x4_t bhi = vld1q_f32(b8 + 4);
-
-        float32x4_t plo = vmulq_f32(alo, blo);
-        float32x4_t phi = vmulq_f32(ahi, bhi);
-
-        // Horizontal sums (ARMv8 has vaddvq_f32)
-        *sum += vaddvq_f32(plo) + vaddvq_f32(phi);
-    }
-
-#else // --------------- portable scalar ----------------
-
-    for (; i < dim; ++i) {
-        float a = f16_to_f32_scalar(h0[i]);
-        float b = f16_to_f32_scalar(h1[i]);
-        *sum += a * b;
-    }
-#endif
-
-    end:
-    setfld(f1, sum, sizeof(ft_double));
-    f1->elsz=sizeof(ft_double);
-    f1->size=sizeof(ft_double);
-    f1->type = FTN_DOUBLE;
-    f1->n=1;
-    return 0;
-}
 
 // calculate distance using simsimd - in vector-distance.c
 double rp_vector_distance(void *a, void *b, size_t bytesize, const char *metric, const char *datatype, const char **err);
 
-/* vdist(BYTE veca, BYTE vecb, CHAR metric, CHAR datatype) -> DOUBLE in f[0] */
-int vdist(FLD *f1, FLD *f2, FLD *f3, FLD *f4)
+/* vecdist(VEC_xx veca, VEC_xx vecb, CHAR metric, CHAR datatype) -> DOUBLE in f[0]
+      or
+   vecdist(BYTE veca, BYTE vecb, CHAR metric, CHAR datatype) -> DOUBLE in f[0]
+      or a combo of BYTE and VEC_XX
+*/
+static int vecdist(FLD *f1, FLD *f2, FLD *f3, FLD *f4) // todo: add scale and zp for i8 and u8 if we ever do conversions
 {
     /* read args as varbyte */
-    size_t len0 = 0, len1 = 0;
+    size_t len0 = 0, len1 = 0, v_elsz=1;
     const char *metric="dot", *dtype="f16";
+    int t1, t2, havetype=0;
 
     if(!f1)
     {
-      putmsg(MERR + UGE, "vdist", "Null field in arg 1");
+      putmsg(MERR + UGE, "vecdist", "Null field in arg 1");
       return(FOP_EINVAL);
     }
     if(!f2)
     {
-      putmsg(MERR + UGE, "vdist", "Null field in arg 2");
+      putmsg(MERR + UGE, "vecdist", "Null field in arg 2");
       return(FOP_EINVAL);
     }
 
-    if((f1->type&DDTYPEBITS) != FTN_BYTE)
+    // compare byte size. must be equal.
+    if(f1->size != f2->size)
     {
-      putmsg(MERR + UGE, "vdist", "wrong type in field 1");
-      return(FOP_EINVAL);
-    }
-
-    if((f2->type&DDTYPEBITS) != FTN_BYTE)
-    {
-      putmsg(MERR + UGE, "vdist", "wrong type in field 2");
-      return(FOP_EINVAL);
+          putmsg(MERR + UGE, "vecdist", "vector fields must be the same size");
+          return(FOP_EINVAL);
     }
 
     if(f3)
     {
         if((f3->type&DDTYPEBITS) != FTN_CHAR)
         {
-          putmsg(MERR + UGE, "vdist", "wrong type in field 3");
-          return(FOP_EINVAL);
+            putmsg(MERR + UGE, "vecdist", "wrong type in field 3");
+            return(FOP_EINVAL);
         }
         metric = getfld(f3, NULL);
     }
 
-    if(f4)
+    t1 = f1->type&DDTYPEBITS;
+    t2 = f1->type&DDTYPEBITS;
+
+    if( ! FTN_IS_VEC_OR_BYTE(t1) && ! FTN_IS_VEC_OR_BYTE(t2) )
     {
-        if((f4->type&DDTYPEBITS) != FTN_CHAR)
+        putmsg(MERR + UGE, "vecdist", "one or both of field 1 and field 2 are not byte or vector types");
+        return(FOP_EINVAL);
+    }
+
+    //both are untyped
+    if (t1==FTN_BYTE && t2==FTN_BYTE)
+    {
+        // we only care about f4 (type) if both are untyped, otherwise ignore it.
+        if(f4)
         {
-          putmsg(MERR + UGE, "vdist", "wrong type in field 4");
-          return(FOP_EINVAL);
+            if((f4->type&DDTYPEBITS) != FTN_CHAR)
+            {
+                putmsg(MERR + UGE, "vecdist", "wrong type in field 4");
+                return(FOP_EINVAL);
+            }
+            dtype = getfld(f4, NULL);
         }
-        dtype = getfld(f4, NULL);
+        //else use default dtype set above
     }
-
-    if(f1->size != f2->size)
+    // if both are typed
+    else if( FTN_IS_VEC(t1) && FTN_IS_VEC(t2))
     {
-      putmsg(MERR + UGE, "vdist", "varbyte fields must be the same size");
-      return(FOP_EINVAL);
+        if(t1 != t2 ) // unlikely event of being the same byte-length but different types.
+        {
+            putmsg(MERR + UGE, "vecdist", "vector types from field 1 and 2 do not match");
+            return(FOP_EINVAL);
+        }
+        // they are the same
+        havetype=t1;
+    }
+    // one is a byte, assume its the same type as the other typed vec
+    else if(t1 == FTN_BYTE)
+        havetype=t2;
+    else if(t2 == FTN_BYTE)
+        havetype=t1;
+
+    switch(havetype)
+    {
+        case 0:                   // both are BYTE, set from f4 or default
+        case FTN_VEC_F16:  break; //default
+        case FTN_VEC_F64:  dtype="f64";  break;
+        case FTN_VEC_F32:  dtype="f32";  break;
+        case FTN_VEC_BF16: dtype="bf16"; break;
+        case FTN_VEC_I8:   dtype="i8";   break;
+        case FTN_VEC_U8:   dtype="u8";   break;
     }
 
+    // get actual buffers and do distance function
     void *a = getfld(f1, &len0);
     void *b = getfld(f2, &len1);
 
     ft_double *dist = malloc(sizeof(ft_double));
     const char *err=NULL;
 
-    *dist = rp_vector_distance(a, b, len0, metric, dtype, &err);
+    *dist = rp_vector_distance(a, b, f1->size, metric, dtype, &err);
 
     if(err)
     {
       free(dist);
-      putmsg(MERR + UGE, "vdist", err);
+      putmsg(MERR + UGE, "vecdist", err);
       return(FOP_EINVAL);
     }
 
@@ -338,17 +145,16 @@ int vdist(FLD *f1, FLD *f2, FLD *f3, FLD *f4)
 
 /* ------------------------ Registration --------------------------- */
 
-#define NUSERFUNC 2
-static FLDFUNC g_vec16_funcs[NUSERFUNC] = {
+#define F(f)    ((int (*)(void))(f))
+#define NUSERFUNC 1
+static FLDFUNC g_vec_funcs[NUSERFUNC] = {
     /* name,        func,         minargs, maxargs, rettype   input type     */
-    { "vrank16",    F(vrank16),    2,       2,     FTN_DOUBLE, 0},
-    { "vdist",      F(vdist),      2,       4,     FTN_DOUBLE, 0}
+    { "vecdist",    F(vecdist),    2,       4,     FTN_DOUBLE, 0}
 };
+#undef F
 
 void adduserfuncs(FLDOP *fo)
 {
-    /* Register our functions; ignore return per your pattern */
-    (void)foaddfuncs(fo, g_vec16_funcs, NUSERFUNC);
+    /* Register our function(s) */
+    (void)foaddfuncs(fo, g_vec_funcs, NUSERFUNC);
 }
-
-#endif

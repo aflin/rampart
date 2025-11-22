@@ -19,6 +19,404 @@
 simsimd_capability_t rp_runtime_caps;
 int rp_runtime_caps_is_init = 0;
 
+// *************************** vector conversions *******************
+
+// ---------------------- Scalar helper: f16<->f32 -----------------
+static inline float half_to_float(uint16_t h)
+{
+    uint32_t sign = (uint32_t)(h & 0x8000u) << 16;
+    uint32_t exp = (h >> 10) & 0x1Fu;
+    uint32_t frac = h & 0x03FFu;
+    uint32_t f;
+    if (exp == 0)
+    {
+        if (frac == 0)
+        {
+            f = sign;
+            float out;
+            memcpy(&out, &f, 4);
+            return out;
+        }
+        else
+        {
+            // subnormal
+            float val = ldexpf((float)frac / 1024.0f, -14);
+            if (sign)
+                val = -val;
+            return val;
+        }
+    }
+    else if (exp == 31)
+    {
+        f = sign | 0x7F800000u | (frac << 13);
+        float out;
+        memcpy(&out, &f, 4);
+        return out;
+    }
+    else
+    {
+        f = sign | ((exp + 112) << 23) | (frac << 13);
+        float out;
+        memcpy(&out, &f, 4);
+        return out;
+    }
+}
+
+static inline uint16_t float_to_half(float x)
+{
+    uint32_t f;
+    memcpy(&f, &x, 4);
+    uint32_t sign = (f >> 16) & 0x8000u;
+    uint32_t exp = (f >> 23) & 0xFFu;
+    uint32_t frac = f & 0x7FFFFFu;
+    uint16_t h;
+    if (exp == 255)
+    {
+        h = (uint16_t)(sign | 0x7C00u | (frac ? 0x200u : 0));
+    }
+    else if (exp <= 112)
+    {
+        if (exp < 103)
+            h = (uint16_t)sign; // underflow to zero
+        else
+        {
+            uint32_t mant = (0x800000u | frac) >> (125 - exp + 13);
+            h = (uint16_t)(sign | mant);
+        }
+    }
+    else if (exp >= 143)
+    {
+        h = (uint16_t)(sign | 0x7C00u);
+    }
+    else
+    {
+        h = (uint16_t)(sign | ((exp - 112) << 10) | (frac >> 13));
+    }
+    return h;
+}
+
+// -------------------- bf16 <-> f32 conversions -------------------
+// bf16 is stored as the HIGH 16 bits of an IEEE754 float32; low 16 are zero on expand.
+
+static inline uint16_t f32_to_bf16_scalar(float x)
+{
+    // Round-to-nearest-even on the truncated 16 bits.
+    // Equivalent to hardware converts like VCVTNEPS2BF16 when available.
+    union {
+        float f;
+        uint32_t u;
+    } v = {x};
+    uint32_t t = v.u + 0x00007FFFu + ((v.u >> 16) & 1u);
+    return (uint16_t)(t >> 16);
+}
+
+static inline float bf16_to_f32_scalar(uint16_t h)
+{
+    union {
+        uint32_t u;
+        float f;
+    } v = {(uint32_t)h << 16};
+    return v.f;
+}
+
+void rpvec_bf16_to_f32(const uint16_t *src, float *dst, size_t n)
+{
+    size_t i = 0;
+    for (; i < n; ++i)
+        dst[i] = bf16_to_f32_scalar(src[i]);
+}
+
+void rpvec_f32_to_bf16(const float *src, uint16_t *dst, size_t n)
+{
+    for (size_t i = 0; i < n; ++i)
+        dst[i] = f32_to_bf16_scalar(src[i]);
+}
+
+// -------------------- bf16 <-> f64 conversions -------------------
+void rpvec_bf16_to_f64(const uint16_t *src, double *dst, size_t n)
+{
+    for (size_t i = 0; i < n; ++i)
+        dst[i] = (double)bf16_to_f32_scalar(src[i]);
+}
+
+void rpvec_f64_to_bf16(const double *src, uint16_t *dst, size_t n)
+{
+    size_t i = 0;
+    for (; i < n; ++i)
+        dst[i] = f32_to_bf16_scalar((float)src[i]);
+}
+
+
+// -------------------- f16 <-> f32 conversions -------------------
+void rpvec_f16_to_f32(const uint16_t *src, float *dst, size_t n)
+{
+    for (size_t i = 0; i < n; ++i)
+        dst[i] = half_to_float(src[i]);
+}
+
+void rpvec_f32_to_f16(const float *src, uint16_t *dst, size_t n)
+{
+    for (size_t i = 0; i < n; ++i)
+        dst[i] = float_to_half(src[i]);
+}
+
+// -------------------- f64 <-> f32 conversions -------------------
+void rpvec_f64_to_f32(const double *src, float *dst, size_t n)
+{
+    for (size_t i = 0; i < n; ++i)
+        dst[i] = (float)src[i];
+}
+
+void rpvec_f32_to_f64(const float *src, double *dst, size_t n)
+{
+    for (size_t i = 0; i < n; ++i)
+        dst[i] = (double)src[i];
+}
+
+// -------------------- f64 <-> f16 conversions -------------------
+void rpvec_f64_to_f16(const double *src, uint16_t *dst, size_t n)
+{
+    for (size_t i = 0; i < n; ++i)
+        dst[i] = float_to_half((float)src[i]);
+}
+
+
+void rpvec_f16_to_f64(const uint16_t *src, double *dst, size_t n)
+{
+    for (size_t i = 0; i < n; ++i)
+        dst[i] = (double)half_to_float(src[i]);
+}
+
+// ---------------- Quantize/Dequant: f32 <-> i8/u8 ---------------
+void rpvec_f32_to_i8(const float *src, int8_t *dst, size_t n, float scale, int zp)
+{
+    const float inv = 1.0f / scale;
+    for (size_t i = 0; i < n; ++i)
+    {
+        int q = (int)lrintf(src[i] * inv + (float)zp);
+        if (q < -128)
+            q = -128;
+        else if (q > 127)
+            q = 127;
+        dst[i] = (int8_t)q;
+    }
+}
+
+void rpvec_i8_to_f32(const int8_t *src, float *dst, size_t n, float scale, int zp)
+{
+    for (size_t i = 0; i < n; ++i)
+        dst[i] = ((float)src[i] - (float)zp) * scale;
+}
+
+void rpvec_f32_to_u8(const float *src, uint8_t *dst, size_t n, float scale, int zp)
+{
+    const float inv = 1.0f / scale;
+    for (size_t i = 0; i < n; ++i)
+    {
+        int q = (int)lrintf(src[i] * inv + (float)zp);
+        if (q < 0)
+            q = 0;
+        else if (q > 255)
+            q = 255;
+        dst[i] = (uint8_t)q;
+    }
+}
+
+void rpvec_u8_to_f32(const uint8_t *src, float *dst, size_t n, float scale, int zp)
+{
+    for (size_t i = 0; i < n; ++i)
+        dst[i] = ((float)src[i] - (float)zp) * scale;
+}
+
+// ---------------- Quantize/Dequant: f64 <-> i8/u8 ---------------
+void rpvec_f64_to_i8(const double *src, int8_t *dst, size_t n, double scale, int zp)
+{
+    const double inv = 1.0 / scale;
+    for (size_t i = 0; i < n; ++i)
+    {
+        long q = lrint(src[i] * inv + (double)zp);
+        if (q < -128)
+            q = -128;
+        else if (q > 127)
+            q = 127;
+        dst[i] = (int8_t)q;
+    }
+}
+
+void rpvec_i8_to_f64(const int8_t *src, double *dst, size_t n, double scale, int zp)
+{
+    for (size_t i = 0; i < n; ++i)
+        dst[i] = ((double)src[i] - (double)zp) * scale;
+}
+
+void rpvec_f64_to_u8(const double *src, uint8_t *dst, size_t n, double scale, int zp)
+{
+    const double inv = 1.0 / scale;
+    for (size_t i = 0; i < n; ++i)
+    {
+        long q = lrint(src[i] * inv + (double)zp);
+        if (q < 0)
+            q = 0;
+        else if (q > 255)
+            q = 255;
+        dst[i] = (uint8_t)q;
+    }
+}
+
+void rpvec_u8_to_f64(const uint8_t *src, double *dst, size_t n, double scale, int zp)
+{
+    for (size_t i = 0; i < n; ++i)
+        dst[i] = ((double)src[i] - (double)zp) * scale;
+}
+
+// ---------------- Quantize/Dequant: f16 <-> i8/u8 ---------------
+/* unused currently
+void rpvec_f16_to_i8(const uint16_t *src, int8_t *dst, size_t n, float scale, int zp)
+{
+    float buf[256];
+    size_t i = 0;
+    while (i < n)
+    {
+        size_t blk = (n - i) < 256 ? (n - i) : 256;
+        f16_to_f32(src + i, buf, blk);
+        f32_to_i8(buf, dst + i, blk, scale, zp);
+        i += blk;
+    }
+}
+*/
+
+void rpvec_i8_to_f16(const int8_t *src, uint16_t *dst, size_t n, float scale, int zp)
+{
+    float buf[256];
+    size_t i = 0;
+    while (i < n)
+    {
+        size_t blk = (n - i) < 256 ? (n - i) : 256;
+        rpvec_i8_to_f32(src + i, buf, blk, scale, zp);
+        rpvec_f32_to_f16(buf, dst + i, blk);
+        i += blk;
+    }
+}
+/* unused currently
+void rpvec_f16_to_u8(const uint16_t *src, uint8_t *dst, size_t n, float scale, int zp)
+{
+    float buf[256];
+    size_t i = 0;
+    while (i < n)
+    {
+        size_t blk = (n - i) < 256 ? (n - i) : 256;
+        rpvec_f16_to_f32(src + i, buf, blk);
+        rpvec_f32_to_u8(buf, dst + i, blk, scale, zp);
+        i += blk;
+    }
+}
+*/
+
+void rpvec_u8_to_f16(const uint8_t *src, uint16_t *dst, size_t n, float scale, int zp)
+{
+    float buf[256];
+    size_t i = 0;
+    while (i < n)
+    {
+        size_t blk = (n - i) < 256 ? (n - i) : 256;
+        rpvec_u8_to_f32(src + i, buf, blk, scale, zp);
+        rpvec_f32_to_f16(buf, dst + i, blk);
+        i += blk;
+    }
+}
+
+// -------------------------- b8 pack/unpack ----------------------
+void rpvec_f64_to_b8_threshold(const double *src, uint8_t *dst_bits, size_t n, double thresh)
+{
+    size_t i = 0, byte = 0;
+    while (i + 8 <= n)
+    {
+        uint8_t b = 0;
+        for (int k = 0; k < 8; ++k)
+            b |= (src[i + k] > thresh) ? (1u << k) : 0;
+        dst_bits[byte++] = b;
+        i += 8;
+    }
+    if (i < n)
+    {
+        uint8_t b = 0;
+        int bit = 0;
+        for (; i < n; ++i, ++bit)
+            if (src[i] > thresh)
+                b |= (1u << bit);
+        dst_bits[byte++] = b;
+    }
+}
+
+void rpvec_b8_to_u8_bytes(const uint8_t *src_bits, uint8_t *dst_bytes, size_t n)
+{
+    size_t i = 0, byte = 0;
+    while (i + 8 <= n)
+    {
+        uint8_t b = src_bits[byte++];
+        dst_bytes[i + 0] = (b & 0x01) ? 1 : 0;
+        dst_bytes[i + 1] = (b & 0x02) ? 1 : 0;
+        dst_bytes[i + 2] = (b & 0x04) ? 1 : 0;
+        dst_bytes[i + 3] = (b & 0x08) ? 1 : 0;
+        dst_bytes[i + 4] = (b & 0x10) ? 1 : 0;
+        dst_bytes[i + 5] = (b & 0x20) ? 1 : 0;
+        dst_bytes[i + 6] = (b & 0x40) ? 1 : 0;
+        dst_bytes[i + 7] = (b & 0x80) ? 1 : 0;
+        i += 8;
+    }
+    if (i < n)
+    {
+        uint8_t b = src_bits[byte++];
+        int bit = 0;
+        for (; i < n; ++i, ++bit)
+            dst_bytes[i] = (b & (1u << bit)) ? 1 : 0;
+    }
+}
+
+// i4 conversions
+void rpvec_i8_to_i4(const int8_t *in, uint8_t *out, size_t dim) {
+    if (!in || !out) return;
+
+    size_t i = 0, o = 0;
+
+    for (; i + 1 < dim; i += 2, ++o) {
+        int v0 = in[i + 0]; if (v0 > 7) v0 = 7; else if (v0 < -8) v0 = -8;
+        int v1 = in[i + 1]; if (v1 > 7) v1 = 7; else if (v1 < -8) v1 = -8;
+        uint8_t lo = (uint8_t)((v0 < 0) ? (v0 + 16) : v0);
+        uint8_t hi = (uint8_t)((v1 < 0) ? (v1 + 16) : v1);
+        out[o] = (uint8_t)(lo | (hi << 4));
+    }
+    if (i < dim) {
+        int v0 = in[i]; if (v0 > 7) v0 = 7; else if (v0 < -8) v0 = -8;
+        uint8_t lo = (uint8_t)((v0 < 0) ? (v0 + 16) : v0);
+        out[o++] = lo; // high nibble zero
+    }
+}
+
+//
+// i4x2 -> i8  (unpack two signed 4-bit values from each byte)
+//   in:  uint8_t in[(dim+1)/2]  where dim = number of 4-bit values
+//   out: int8_t  out[dim]       values in [-8, 7]
+//
+void rpvec_i4_to_i8(const uint8_t *in, int8_t *out, size_t dim) {
+    if (!in || !out) return;
+
+    size_t k = 0, o = 0;
+    for (; k + 1 < dim; k += 2, ++o) {
+        uint8_t byte = in[o];
+        uint8_t lo =  byte        & 0x0F;
+        uint8_t hi = (byte >> 4)  & 0x0F;
+        out[k + 0] = (int8_t)( (lo > 7) ? (lo - 16) : lo );
+        out[k + 1] = (int8_t)( (hi > 7) ? (hi - 16) : hi );
+    }
+    if (k < dim) {
+        uint8_t byte = in[o];
+        uint8_t lo = byte & 0x0F;
+        out[k] = (int8_t)( (lo > 7) ? (lo - 16) : lo );
+    }
+}
+// ********************* end vector conversions **********************
+
 // --- Parse "metric" ---
 static int parse_metric(const char *metric, simsimd_metric_kind_t *out) {
     if (!metric || !out) return 0;

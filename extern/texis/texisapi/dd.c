@@ -164,6 +164,9 @@ char	*type;
 		var=1;
 		type+=3;
 	}
+	// -ajf 2025-11-19: vec always var.
+	if(!strncmp(type,"vec",3))
+		var=1;
 	for (tp = ddtype; tp->name; tp++)
 		if (*tp->name && strcmp(type, tp->name + 3) == 0)
 		{                  /* see I told you these weren't constant! */

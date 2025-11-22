@@ -338,6 +338,14 @@ FLDOP	*fo;            /* (in/out) FLDOP to handle conversions */
 			inFtnType = FTN_DOUBLE;
 			incount=inlen/sizeof(ft_double);
 			break;
+		/* -ajf 2025-11-19: unsure about when/if this happens
+		case SQL_VECF16:
+			printf("setting vecf16\n");
+			inFtnStr = "vecF16";
+			inFtnType = FTN_VEC_F16;
+			incount=inlen/sizeof(uint16_t);
+			break;
+		*/
 		case SQL_C_BINARY:
 		case SQL_VARBINARY:
 		case SQL_LONGVARBINARY:

@@ -423,6 +423,27 @@ SDWORD FAR *pcbValue;   /* (in) >=0: `rgbValue' byte len  <0: SQL_... val */
 				    (isAtExec ? 1 : size/sizeof(ft_uint64)));
 				break;
 #  endif /* EPI_INT64_SQL */
+
+			// -ajf 2025-11-19
+			case SQL_VEC_F64:
+				initfld(f, FTN_VEC_F64|DDVARBIT, 1);
+				break;
+			case SQL_VEC_F32:
+				initfld(f, FTN_VEC_F32|DDVARBIT, 1);
+				break;
+			case SQL_VEC_F16:
+				initfld(f, FTN_VEC_F16|DDVARBIT, 1);
+				break;
+			case SQL_VEC_BF16:
+				initfld(f, FTN_VEC_BF16|DDVARBIT, 1);
+				break;
+			case SQL_VEC_I8:
+				initfld(f, FTN_VEC_I8|DDVARBIT, 1);
+				break;
+			case SQL_VEC_U8:
+				initfld(f, FTN_VEC_U8|DDVARBIT, 1);
+				break;
+
 			case SQL_BINARY :
 			case SQL_VARBINARY :
 			case SQL_LONGVARBINARY :
@@ -496,6 +517,27 @@ SDWORD FAR *pcbValue;   /* (in) >=0: `rgbValue' byte len  <0: SQL_... val */
 			f = createfld("dword",
 				(isAtExec ? 1 : size/sizeof(ft_dword)), 1);
 			break;
+
+		// -ajf 2025-11-19
+		case SQL_VEC_F64:
+			f = createfld("varvecF64", 1, 1);
+			break;
+		case SQL_VEC_F32:
+			f = createfld("varvecF32", 1, 1);
+			break;
+		case SQL_VEC_F16:
+			f = createfld("varvecF16", 1, 1);
+			break;
+		case SQL_VEC_BF16:
+			f = createfld("varvecBf16", 1, 1);
+			break;
+		case SQL_VEC_I8:
+			f = createfld("varvecI8", 1, 1);
+			break;
+		case SQL_VEC_U8:
+			f = createfld("varvecU8", 1, 1);
+			break;
+
 		case SQL_BINARY :
 		case SQL_VARBINARY :
 		case SQL_LONGVARBINARY :
@@ -554,6 +596,14 @@ SDWORD FAR *pcbValue;   /* (in) >=0: `rgbValue' byte len  <0: SQL_... val */
 	 */
 	switch(fSqlType)
 	{
+		// -ajf 2025-11-19
+		case SQL_VEC_F64:
+		case SQL_VEC_F32:
+		case SQL_VEC_F16:
+		case SQL_VEC_BF16:
+		case SQL_VEC_I8:
+		case SQL_VEC_U8:
+
 		case SQL_CHAR :
 		case SQL_VARCHAR :
 		case SQL_LONGVARCHAR :

@@ -2991,9 +2991,12 @@ data_type:
 		} ')'
 		{
 			/* Only allow tested types for now: KNG 20060712 */
+			/* added vec, varvec - ajf 2025-11-19 */
 			if (strcmp($1, "varint") != 0 &&
 			    strcmp($1, "byte") != 0 &&
 			    strcmp($1, "varbyte") != 0 &&
+			    strncmp($1, "vec", 3) != 0 &&
+			    strncmp($1, "varvec", 6) != 0 &&
 			    strcmp($1, "char") != 0 &&
 			    strcmp($1, "varchar") != 0 &&
 			    strcmp($1, "long") != 0 &&
