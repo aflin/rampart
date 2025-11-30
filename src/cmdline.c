@@ -61,6 +61,8 @@ int clock_gettime(clockid_t type, struct timespec *rettime)
 
 int RP_TX_isforked=0;  //set to one in fork so we know not to lock sql db;
 int totnthreads=0;
+int exit_to_repl=0;
+int rp_quiet=0;
 char *RP_script_path=NULL;
 char *RP_script=NULL;
 //duk_context **thread_ctx = NULL;
@@ -711,7 +713,7 @@ static void free_dns(void)
 //these are for unloading modules
 extern void **rp_opened_mods;
 extern size_t rp_n_opened_mods;
-
+static int repl(duk_context *ctx);
 
 void duk_rp_exit(duk_context *ctx, int ec)
 {
@@ -721,6 +723,13 @@ void duk_rp_exit(duk_context *ctx, int ec)
     if(ran_already)
         exit(ec);
     ran_already=1;
+
+    if(exit_to_repl)
+    {
+        rp_quiet=1;
+        run_b4loop_funcs();
+        ec = repl(ctx);
+    }
 
     if(main_babel_opt)
         free(main_babel_opt);
@@ -768,6 +777,9 @@ void duk_rp_exit(duk_context *ctx, int ec)
 
 void run_b4loop_funcs()
 {
+    if(exit_to_repl==2)
+        return;
+
     if(b4loop_funcs)
     {
         EXIT_FUNC *ef;
@@ -780,7 +792,8 @@ void run_b4loop_funcs()
         }
         free(b4loop_funcs);
     }
-
+    if(exit_to_repl)
+        exit_to_repl=2;
 }
 
 static void evhandler_repl(int sig, short events, void *flag)
@@ -826,7 +839,6 @@ char * cmdline_help =
 ;
 
 char * tickify(char *src, size_t sz, int *err, int *ln);
-int rp_quiet=0;
 pthread_mutex_t repl_lock;
 #define REPL_LOCK    do {RP_PTLOCK(&repl_lock); /*printf("Locked\n"); */ } while(0)
 #define REPL_UNLOCK  do {RP_PTUNLOCK(&repl_lock); /* printf("Unlocked\n"); */} while (0)
@@ -3314,6 +3326,7 @@ static void print_help(char *argv0)
         -v, --version                      - print version\n\
         -C, --color                        - do not use colors in interactive mode (repl)\n\
         -q, --quiet                        - omit rampart logo in interactive mode (repl)\n\
+        -e, --exit-to-repl                 - exit to repl at end of script or uncaught error\n\
         --server                           - run rampart-server with default configuration\n\
         --quickserver                      - run rampart-server with alternate configuration\n\
         --[quick]server --help             - show help for built-in server\n\
@@ -3475,6 +3488,8 @@ int main(int argc, char *argv[])
                 rp_color=1;
             else if(!strcmp(opt,"--quiet"))
                 rp_quiet=1;
+            else if(!strcmp(opt,"--exit-to-repl"))
+                exit_to_repl=1;
             else if(!strcmp(opt,"--script"))
             {
                 argi++;
@@ -3531,6 +3546,9 @@ int main(int argc, char *argv[])
                         duk_rp_globaltranspile=1;
                     case 'q':
                         rp_quiet=1;
+                        break;
+                    case 'e':
+                        exit_to_repl=1;
                         break;
                 }
                 o++;
