@@ -5777,6 +5777,15 @@ duk_ret_t duk_server_start(duk_context *ctx)
                 setproctitle("rampart %s %s:%d", RP_script, ipany, port);
             else
                 setproctitle("%s %s", rampart_argv[0], RP_script); //full path of script
+
+            // run post fork function after fork, before threads
+            if (duk_rp_GPS_icase(ctx, ob_idx, "postForkFunc"))
+            {
+                REQUIRE_FUNCTION(ctx, -1, "server.start: postForkFunc must be a function");
+                duk_call(ctx, 0);
+            }
+            duk_pop(ctx);
+
         }
         else
         {
