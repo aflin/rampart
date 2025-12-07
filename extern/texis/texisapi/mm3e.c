@@ -876,6 +876,9 @@ opensels(MM3S **pms)                           /* open the set elements */
          case PMISNPM : pm="Numeric Pattern Matcher";break;
          default      : pm="?";break;                   /* KNG 020131 */
         }
+
+     ms->refcount++; // fix double free when searching for "wtf %" - empty xpm --ajf 2025-12-07
+
      putmsg(MERR,Fn,"%s open error for : %s",
             pm, (ea->lst[0] ? ea->lst[0] : dupSrc));
     }
