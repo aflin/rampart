@@ -244,6 +244,7 @@ zregular:;
    if(n>0 && strchr(allowpunct,lst[n-1][1])==CHARPN)
    {  /* MAW 11-27-95 - check for end punct on last term only if word */
       i=strlen(lst[n-1])-1;
+      // this whole section should be re-examined.  What is the point of removing trailing punct for "wtf?" and not "wtf? foo" --ajf 2025-12-08
       if(ISEPUNC(lst[n-1][i]))
       {
          if(i<2) // remove single trailing punctuation like "wtf ?" --ajf 2025-12-08
