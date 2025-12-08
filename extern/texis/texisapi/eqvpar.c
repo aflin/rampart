@@ -245,7 +245,16 @@ zregular:;
    {  /* MAW 11-27-95 - check for end punct on last term only if word */
       i=strlen(lst[n-1])-1;
       if(ISEPUNC(lst[n-1][i]))
-         lst[n-1][i]='\0';
+      {
+         if(i<2) // remove single trailing punctuation like "wtf ?" --ajf 2025-12-08
+         {
+             free(lst[n-1]);
+             lst[n-1]=lst[n];
+             n--;
+         }
+         else
+             lst[n-1][i]='\0';
+      }
    }
    lst[n]=fixlogic(CHARPN);                 /* make a list terminator */
    if(lst[n]==LITPN) goto zerr;
