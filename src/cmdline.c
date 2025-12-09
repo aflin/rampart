@@ -3284,9 +3284,17 @@ int base_loop_exited=0;
 /* mutex for locking in rampart.thread */
 pthread_mutex_t thr_lock;
 RPTHR_LOCK *rp_thr_lock;
-
-static void print_version()
+#include "rampart_timestamp.h"
+static void print_version(int full)
 {
+    if(full)
+    {
+        printf("version:    %d.%d.%d\n", RAMPART_VERSION_MAJOR, RAMPART_VERSION_MINOR, RAMPART_VERSION_PATCH);
+        printf("build:      %s\n", RAMPART_BUILD_PLATFORM);
+        printf("buildDate:  %s\n", RAMPART_VERSION_TIMESTAMP);
+        exit(0);
+    }
+
     printf("v%d.%d.%d\n", RAMPART_VERSION_MAJOR, RAMPART_VERSION_MINOR, RAMPART_VERSION_PATCH);
     exit(0);
 }
@@ -3458,7 +3466,7 @@ int main(int argc, char *argv[])
                     print_help(argv0);
             }
             else if(!strcmp(opt,"--version"))
-                print_version();
+                print_version(1);
             else if(!strcmp(opt,"--spew-server-script"))
             {
                 printf("%s", serverscript);
@@ -3533,7 +3541,7 @@ int main(int argc, char *argv[])
                         }
                         break;
                     case 'v':
-                        print_version();
+                        print_version(0);
                         break;
                     case '?':
                     case 'h':
