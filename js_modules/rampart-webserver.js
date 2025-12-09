@@ -361,17 +361,17 @@ function parseOptions (argv){
                 optsmsg=sprintf('%s%-20s %s\n',optsmsg,key,optlist[key]);
             return smsg(optsmsg);
         }
-        if (arg == '--help' || arg == '-h')
+        if (arg == '--help' || arg == '-h' || arg == '--?' || arg == '-?')
         {
             return smsg( 
                 sprintf('rampart built-in server help:\n'+
     '\nUsage: rampart --[quick]server [options] [root_dir]\n' +
-    '    --server        - run as a full server\n' +
-    '    --quickserver   - run as a test server\n' +
-    '    --help, -h      - this help message\n' +
-    '    --lsopts        - print details on all options\n' +
-    '    --showdefaults  - print the list of default settings for --server or --quickserver\n' +
-    '    --OPTION [val]  - where OPTION is one of options listed from \'--lsopts\'\n' +
+    '    --server              - run as a full server\n' +
+    '    --quickserver         - run as a test server\n' +
+    '    --help, -h, -?, --?   - this help message\n' +
+    '    --lsopts              - print details on all options\n' +
+    '    --showdefaults        - print the list of default settings for --server or --quickserver\n' +
+    '    --OPTION [val]        - where OPTION is one of options listed from \'--lsopts\'\n' +
     /*'    OPTION=val      - alternative format for '--OPTION val'\n'  + */
     '\nIf root_dir is not specified, the current directory will be used\n'
                 )

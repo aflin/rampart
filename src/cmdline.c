@@ -3332,7 +3332,7 @@ static void print_help(char *argv0)
         --[quick]server --help             - show help for built-in server\n\
         --spew-server-script               - print the internal server script to stdout and exit\n\
         --                                 - do not process any arguments following (but pass to script)\n\
-        -h, --help                         - this help message\n\n\
+        -h, --help, -?, --?                - this help message\n\n\
     \"file_name\" or \"script\" may be '-' for stdin\n\n\
     note: any options specified that do not match the above, or options after '--' are passed to the script\n\n\
     Documentation can be found at https://rampart.dev/docs/\n",
@@ -3452,7 +3452,7 @@ int main(int argc, char *argv[])
                 }
                 scriptarg=argi;
             }
-            else if(!strcmp(opt,"--help"))
+            else if(!strcmp(opt,"--help") || !strcmp(opt,"--?") )
             {
                 if (!server)
                     print_help(argv0);
@@ -3535,6 +3535,7 @@ int main(int argc, char *argv[])
                     case 'v':
                         print_version();
                         break;
+                    case '?':
                     case 'h':
                         if(!server)
                             print_help(argv0);
