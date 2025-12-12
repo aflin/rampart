@@ -542,6 +542,13 @@ function start(serverConf, dump) {
         serverConf.launchServer = serverConf.letsencrypt!="setup";
         serverConf.launchMonitor = (serverConf.log && serverConf.rotateLogs) || serverConf.monitor;
         serverConf.launchRedir = serverConf.redirPort > 0 ;
+    } else {
+        if(!serverConf.shutdown && !serverConf.stop) {
+            if(rampart.utils.getType(serverConf.postForkFunc) == 'Function')
+                serverConf.postForkFunc();
+            else if(serverConf.postForkFunc)
+                throw new Error("server.start - postForkFunc must be a Function");
+        }
     }
 
     if(!unprivUser)
