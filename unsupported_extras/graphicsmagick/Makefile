@@ -13,6 +13,7 @@ ifeq ($(OSNAME), FreeBSD)
 endif
 ifeq ($(OSNAME), Darwin)
 	CFLAGS += -dynamiclib -Wl,-headerpad_max_install_names -undefined dynamic_lookup -install_name rampart-gm.so
+	CFLAGS += -L$(shell brew --prefix libtool)/lib
 endif
 
 all: rampart-gm.so
