@@ -1289,6 +1289,7 @@ EVHTP_EXPORT const char * evhtp_header_find(evhtp_headers_t * headers, const cha
  * @return htp_method enum
  */
 EVHTP_EXPORT htp_method  evhtp_request_get_method(evhtp_request_t * r);
+EVHTP_EXPORT const char *evhtp_request_get_method_raw(evhtp_request_t * r);
 EVHTP_EXPORT evhtp_proto evhtp_request_get_proto(evhtp_request_t * r);
 
 

@@ -3403,6 +3403,16 @@ evhtp_request_get_method(evhtp_request_t * r)
     return htparser_get_method(r->conn->parser);
 }
 
+const char *
+evhtp_request_get_method_raw(evhtp_request_t * r)
+{
+    evhtp_assert(r != NULL);
+    evhtp_assert(r->conn != NULL);
+    evhtp_assert(r->conn->parser != NULL);
+
+    return (const char *) htparser_get_method_raw(r->conn->parser);
+}
+
 void
 evhtp_connection_pause(evhtp_connection_t * c)
 {

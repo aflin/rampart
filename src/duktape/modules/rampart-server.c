@@ -379,7 +379,7 @@ static void writelog(evhtp_request_t *req, int code)
     struct tm ti_s, *timeinfo;
     char *addr=NULL, address[INET6_ADDRSTRLEN], date[32],
         *q="", *qm="", *proto="";
-    const char *length, *ua, *ref;
+    const char *length, *ua, *ref, *method_raw = evhtp_request_get_method_raw(req);
     int method = evhtp_request_get_method(req);
     evhtp_path_t *path = req->uri->path;
 
@@ -442,6 +442,8 @@ static void writelog(evhtp_request_t *req, int code)
         duk_put_prop_string(ctx, -2, "dateStr");
         duk_push_string(ctx, method_strmap[method]);
         duk_put_prop_string(ctx, -2, "method");
+        duk_push_string(ctx, method_raw);
+        duk_put_prop_string(ctx, -2, "methodRaw");
         duk_push_string(ctx, path->full);
         duk_put_prop_string(ctx, -2, "path");
         duk_push_string(ctx, q);
@@ -1530,6 +1532,7 @@ static int push_req_vars(DHS *dhs)
     evhtp_path_t *path = dhs->req->uri->path;
     evhtp_authority_t *auth = dhs->req->uri->authority;
     int method = evhtp_request_get_method(dhs->req);
+    const char * method_raw = evhtp_request_get_method_raw(dhs->req);
     evhtp_connection_t *conn = evhtp_request_get_connection(dhs->req);
     void *sa = (void *)conn->saddr;
     evhtp_uri_t *uri=dhs->req->uri;
@@ -1602,6 +1605,8 @@ static int push_req_vars(DHS *dhs)
     if (method >= 16)
         method = 16;
     putval("method", method_strmap[method]);
+
+    putval("methodRaw", method_raw);
 
     /* path info */
     duk_push_object(ctx);

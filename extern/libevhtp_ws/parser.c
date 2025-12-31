@@ -88,7 +88,7 @@ typedef enum eval_hdr_val eval_hdr_val;
 typedef enum parser_flags parser_flags;
 typedef enum parser_state parser_state;
 
-
+#define HT_MAX_METHOD_RAW 31
 struct htparser {
     htpparse_error error;
     parser_state   state;
@@ -98,6 +98,7 @@ struct htparser {
     htp_type   type;
     htp_scheme scheme;
     htp_method method;
+    char       method_raw[HT_MAX_METHOD_RAW + 1];      /* store whatever we got, even if unknown, up to 31 chars */
 
     unsigned char multipart;
     unsigned char major;
@@ -483,6 +484,12 @@ htparser_get_method(htparser * p)
     return p->method;
 }
 
+char *
+htparser_get_method_raw(htparser * p)
+{
+    return p->method_raw;
+}
+
 const char *
 htparser_get_methodstr_m(htp_method meth)
 {
@@ -575,6 +582,7 @@ htparser_init(htparser * p, htp_type type)
     p->state  = s_start;
     p->error  = htparse_error_none;
     p->method = htp_method_UNKNOWN;
+    p->method_raw[0] = '\0';
     p->type   = type;
 }
 
@@ -768,6 +776,7 @@ htparser_run(htparser * p, htparse_hooks * hooks, const char * data, size_t len)
                 p->flags            = 0;
                 p->error            = htparse_error_none;
                 p->method           = htp_method_UNKNOWN;
+                p->method_raw[0]    = '\0';
                 p->multipart        = 0;
                 p->major            = 0;
                 p->minor            = 0;
@@ -812,6 +821,9 @@ htparser_run(htparser * p, htparse_hooks * hooks, const char * data, size_t len)
                 do {
                     if (ch == ' ')
                     {
+                        int mrl = p->buf_idx > HT_MAX_METHOD_RAW ? HT_MAX_METHOD_RAW : p->buf_idx;
+                        strncpy(p->method_raw, p->buf, mrl);
+                        p->method_raw[mrl]='\0';
                         p->method  = get_method(p->buf, p->buf_idx);
                         res        = hook_method_run(p, hooks, p->buf, p->buf_idx);
 

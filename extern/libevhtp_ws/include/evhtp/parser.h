@@ -103,6 +103,7 @@ EVHTP_EXPORT size_t         htparser_run(htparser *, htparse_hooks *, const char
 EVHTP_EXPORT int            htparser_should_keep_alive(htparser * p);
 EVHTP_EXPORT htp_scheme     htparser_get_scheme(htparser *);
 EVHTP_EXPORT htp_method     htparser_get_method(htparser *);
+EVHTP_EXPORT char         * htparser_get_method_raw(htparser *);
 EVHTP_EXPORT const char   * htparser_get_methodstr(htparser *);
 EVHTP_EXPORT const char   * htparser_get_methodstr_m(htp_method);
 EVHTP_EXPORT void           htparser_set_major(htparser *, unsigned char);
