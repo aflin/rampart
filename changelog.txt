@@ -47,6 +47,7 @@ v0.6.1
 
     - rampart.server
                             postForkFunc option executes function after daemon fork.
+                            methodRaw for raw text of unsupported/unknown http methods.
 
     - unsupported extras
                             llm demo for rampart-llm.
