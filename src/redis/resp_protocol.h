@@ -5,7 +5,7 @@
 //  resp
 //
 //  Created by P. B. Richards on 4/10/20.
-//  Copyright © 2020 P. B. Richards. All rights reserved.
+//  Copyright © 2026 P. B. Richards. All rights reserved.
 //
 
 #ifndef resp_protocol_h

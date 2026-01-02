@@ -7,7 +7,7 @@
 //
 //
 //  Additions for rampart by Aaron Flin
-//  Copyright © 2025.
+//  Copyright © 2026.
 //  MIT licensed
 
 #include <ctype.h>

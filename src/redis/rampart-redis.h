@@ -3,7 +3,7 @@
 //  rampart
 //
 //  Created by P. B. Richards on 4/24/20.
-//  Copyright © 2020 P. B. Richards. All rights reserved.
+//  Copyright © 2026 P. B. Richards. All rights reserved.
 //
 
 #ifndef rampart_redis_h

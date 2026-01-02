@@ -105,7 +105,7 @@
 
 /*
    Lotsa crazy extras, added with "-ajf date" for the most part.
-   Additions copyright 2025 Aaron Flin aaron at flin dot org
+   Additions copyright 2026 Aaron Flin aaron at flin dot org
    and under same license.
 
    * ctrl-x: enter forced multiline edit mode.

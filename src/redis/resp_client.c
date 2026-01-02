@@ -3,7 +3,7 @@
 //  rp_redis_client
 //
 //  Created by Dr Cube on 5/20/20.
-//  Copyright © 2020 P. B. Richards. All rights reserved.
+//  Copyright © 2026 P. B. Richards. All rights reserved.
 //
 
 #include <stdio.h>

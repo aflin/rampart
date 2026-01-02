@@ -1,4 +1,4 @@
-/* Copyright (C) 2025  Aaron Flin - All Rights Reserved
+/* Copyright (C) 2026  Aaron Flin - All Rights Reserved
  * You may use, distribute or alter this code under the
  * terms of the MIT license
  * see https://opensource.org/licenses/MIT

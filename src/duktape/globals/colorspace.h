@@ -3,10 +3,10 @@
 //  imageLab
 //
 //  Created by Dr Cube on 7/8/17.
-//  Copyright © 2017 P. B. Richards.
+//  Copyright © 2026 P. B. Richards.
 //
 //  Additions for rampart by Aaron Flin
-//  Copyright © 2025.
+//  Copyright © 2026.
 //  MIT licensed
 
 

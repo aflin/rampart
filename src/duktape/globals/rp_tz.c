@@ -1,6 +1,6 @@
 /*
     rp_tz.c
-    copyright (c) 2025 Aaron Flin
+    copyright (c) 2026 Aaron Flin
     LICENSE: MIT
 
     to compile as a command line utility:
