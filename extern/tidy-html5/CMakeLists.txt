@@ -17,7 +17,7 @@
 # @date    Consult git log.
 ##############################################################################
 
-cmake_minimum_required (VERSION 2.8.12)
+cmake_minimum_required (VERSION 3.10...4.2)
 
 set(LIB_NAME tidy)
 set(LIBTIDY_DESCRIPTION "${LIB_NAME} - HTML syntax checker")

@@ -19,7 +19,7 @@
 #       start libevent.sln
 #
 
-cmake_minimum_required(VERSION 3.1.2 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.10...4.2 FATAL_ERROR)
 
 set(EVENT__LIBRARY_TYPE "STATIC")
 

@@ -15,7 +15,7 @@
 
 # A simple CMakeLists.txt for testing cmake installation
 
-cmake_minimum_required(VERSION 3.5)
+cmake_minimum_required(VERSION 3.10...4.2)
 project(absl_cmake_testing CXX)
 
 set(CMAKE_CXX_STANDARD 11)

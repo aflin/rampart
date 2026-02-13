@@ -3,7 +3,7 @@
 # license that can be found in the LICENSE file.
 
 # Old enough to support Ubuntu Xenial.
-cmake_minimum_required(VERSION 3.5.1)
+cmake_minimum_required(VERSION 3.10...4.2)
 
 if(POLICY CMP0048)
   cmake_policy(SET CMP0048 NEW)

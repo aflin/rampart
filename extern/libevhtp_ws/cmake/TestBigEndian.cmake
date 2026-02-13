@@ -56,7 +56,14 @@ macro(TEST_BIG_ENDIAN VARIABLE)
     endif()
 
 
-    configure_file("${CMAKE_ROOT}/Modules/TestEndianess.c.in"
+    # CMake 4.x fixed the typo: TestEndianess.c.in -> TestEndianness.c.in
+    if(EXISTS "${CMAKE_ROOT}/Modules/TestEndianness.c.in")
+      set(_test_endian_template "${CMAKE_ROOT}/Modules/TestEndianness.c.in")
+    else()
+      set(_test_endian_template "${CMAKE_ROOT}/Modules/TestEndianess.c.in")
+    endif()
+
+    configure_file("${_test_endian_template}"
                    "${CMAKE_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/CMakeTmp/TestEndianess.c"
                    @ONLY)
 

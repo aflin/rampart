@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 2.8)
+cmake_minimum_required(VERSION 3.10...4.2)
 project(oniguruma_sample C)
 
 add_executable(crnl crnl.c)
