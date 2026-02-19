@@ -15,7 +15,7 @@
 
 #define FDBFHIGHIO 0
 
-#ifdef MSDOS
+#if defined(MSDOS) || defined(__MINGW32__)
 #define FDBFCACHESZ 8192
 #else
 #define FDBFCACHESZ 48000

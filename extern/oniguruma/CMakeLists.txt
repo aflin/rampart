@@ -117,6 +117,16 @@ elseif(CMAKE_COMPILER_IS_GNUCC)
   target_compile_options(onig PRIVATE
 	-Wall
 	)
+  if(WIN32 AND MINGW)
+    target_compile_options(onig PRIVATE
+	-std=gnu11
+	)
+  endif()
+  if(CYGWIN)
+    target_compile_options(onig PRIVATE
+	-std=gnu11
+	)
+  endif()
 endif()
 
 

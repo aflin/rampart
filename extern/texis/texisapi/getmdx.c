@@ -13,6 +13,9 @@
 #include "string.h"
 #include "sizes.h"
 #include "os.h"
+#ifdef __MINGW32__
+#  undef ERROR  /* wingdi.h defines ERROR as 0; conflicts with label */
+#endif
 #include "pm.h"
 #include "mdx.h"
 

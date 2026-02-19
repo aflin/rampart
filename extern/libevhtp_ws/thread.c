@@ -3,11 +3,13 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <limits.h>
-#ifndef WIN32
+#if !defined(WIN32) || defined(__MINGW32__)
 #include <sys/queue.h>
 #endif
 
+#ifndef __MINGW32__
 #include <sys/ioctl.h>
+#endif
 #include <unistd.h>
 #include <pthread.h>
 
@@ -37,8 +39,13 @@ struct evthr_pool {
     evthr_pool_slist_t threads;
 };
 
+#ifdef __MINGW32__
+#define _evthr_read(thr, cmd, sock) \
+    (recv(sock, (char *)cmd, sizeof(evthr_cmd_t), 0) == sizeof(evthr_cmd_t)) ? 1 : 0
+#else
 #define _evthr_read(thr, cmd, sock) \
     (recv(sock, cmd, sizeof(evthr_cmd_t), 0) == sizeof(evthr_cmd_t)) ? 1 : 0
+#endif
 
 static void
 _evthr_read_cmd(evutil_socket_t sock, short which, void * args)
@@ -128,7 +135,11 @@ evthr_defer(evthr_t * thread, evthr_cb cb, void * arg)
         .stop = 0
     };
 
+#ifdef __MINGW32__
+    if (send(thread->wdr, (const char *)&cmd, sizeof(cmd), 0) <= 0) {
+#else
     if (send(thread->wdr, &cmd, sizeof(cmd), 0) <= 0) {
+#endif
         return EVTHR_RES_RETRY;
     }
 
@@ -144,7 +155,11 @@ evthr_stop(evthr_t * thread)
         .stop = 1
     };
 
+#ifdef __MINGW32__
+    if (send(thread->wdr, (const char *)&cmd, sizeof(evthr_cmd_t), 0) < 0) {
+#else
     if (send(thread->wdr, &cmd, sizeof(evthr_cmd_t), 0) < 0) {
+#endif
         return EVTHR_RES_RETRY;
     }
 
@@ -200,7 +215,11 @@ static evthr_t *
 _evthr_new(evthr_init_cb init_cb, evthr_exit_cb exit_cb, void * args)
 {
     evthr_t * thread;
+#ifdef __MINGW32__
+    evutil_socket_t fds[2];
+#else
     int       fds[2];
+#endif
 
     if (evutil_socketpair(AF_UNIX, SOCK_STREAM, 0, fds) == -1) {
         return NULL;

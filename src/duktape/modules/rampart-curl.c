@@ -2836,7 +2836,7 @@ static int start_timeout(CURLM *cm, long timeout_ms, void *userp)
 {
     struct timeval timeout;
     TIMERINFO *tinfo = (TIMERINFO *)userp;
-    debugf("start_timeout: %d\n",(int)timeout_ms);
+    debugf("start_timeout: %d cm=%p\n",(int)timeout_ms, cm);
     timeout.tv_sec = timeout_ms/1000;
     timeout.tv_usec = (timeout_ms%1000)*1000;
 
@@ -2855,7 +2855,7 @@ static int check_multi_info(CURLM *cm)
     int msgs_left=0;
     int gotinfo=0;
 
-    debugf("MULTINFO: start\n");
+    debugf("MULTINFO: start cm=%p\n", cm);
     while((msg = curl_multi_info_read(cm, &msgs_left))) {
         gotinfo=1;
         if (msg->msg == CURLMSG_DONE)
@@ -2916,7 +2916,7 @@ static void timer_cb(int fd, short kind, void *userp)
     (void)fd;
     (void)kind;
 
-    debugf("TIMER: start\n");
+    debugf("TIMER: start cm=%p\n", tinfo->cm);
 
     ret = curl_multi_socket_action(tinfo->cm, CURL_SOCKET_TIMEOUT, 0, &still_running);
     if(ret)
@@ -2924,7 +2924,37 @@ static void timer_cb(int fd, short kind, void *userp)
 
     check_multi_info(tinfo->cm);
 
-    debugf("TIMER: end with %d still running\n", still_running);
+    debugf("TIMER: end cm=%p with %d still running\n", tinfo->cm, still_running);
+
+#ifdef __CYGWIN__
+    /* On Cygwin, the last transfer may complete during a timer callback
+       rather than a socket callback. Handle completion here too. */
+    if(still_running <= 0) {
+        debugf("TIMER: cm=%p ALL DONE - running finally\n", tinfo->cm);
+        curl_multi_cleanup(tinfo->cm);
+
+        //check for a finally callback
+        {
+            duk_context *ctx = tinfo->ctx;
+            duk_push_global_stash(ctx);
+            duk_push_sprintf(ctx, "curl_finally_%p", tinfo->cm);
+            duk_dup(ctx, -1);
+            if(duk_get_prop(ctx, -3) )
+            {
+                duk_pull(ctx, -2);
+                duk_del_prop(ctx, -3);
+                duk_call(ctx, 0);
+                duk_pop_2(ctx);
+            }
+            else
+            {
+                duk_pop_3(ctx);
+            }
+        }
+
+        free(tinfo);
+    }
+#endif
 }
 
 static void mevent_cb(int fd, short kind, void *socketp)
@@ -2936,14 +2966,16 @@ static void mevent_cb(int fd, short kind, void *socketp)
     int action =
         ((kind & EV_READ) ? CURL_CSELECT_IN : 0) |
         ((kind & EV_WRITE) ? CURL_CSELECT_OUT : 0);
-    debugf("CALLBACK action: sinfo=%p read=%d write=%d\n", sinfo, !!EV_READ, !!EV_WRITE );
+    debugf("CALLBACK action: cm=%p sinfo=%p read=%d write=%d\n", tinfo->cm, sinfo, !!EV_READ, !!EV_WRITE );
     ret = curl_multi_socket_action(tinfo->cm, fd, action, &running_handles);
     if(ret)
         fprintf(stderr, "error: %s\n", curl_multi_strerror(ret));
 
     check_multi_info(tinfo->cm);
 
+    debugf("CALLBACK: cm=%p end with %d running handles\n", tinfo->cm, running_handles);
     if(running_handles <= 0) {
+        debugf("CALLBACK: cm=%p ALL DONE - running finally\n", tinfo->cm);
         if(evtimer_pending(&(tinfo->ev), NULL)) {
             evtimer_del(&(tinfo->ev));
         }
@@ -2978,13 +3010,6 @@ static void mevent_cb(int fd, short kind, void *socketp)
         free(tinfo);
     }
 
-#ifdef RP_MULTI_DEBUG
-    printf("CALLBACK: end with %d running handles\n", running_handles);
-    if(event_initialized( &(sinfo->ev) ))
-        printf("CALLBACK: event still alive\n");
-    else
-        printf("CALLBACK: sinfo=%p event dead\n",sinfo);
-#endif
 }
 
 static int handle_socket(CURL *easy, curl_socket_t sock, int action, void *userp, void *socketp)
@@ -2994,12 +3019,12 @@ static int handle_socket(CURL *easy, curl_socket_t sock, int action, void *userp
     CURLM *cm = tinfo->cm;
     int kind=0;
     RPTHR *thr = get_current_thread();
-    debugf("HANDLE sock=%d sinfo=%p, socket remove=%d, in=%d, out=%d\n", (int)sock, sinfo, (action & CURL_POLL_REMOVE), (action & CURL_POLL_IN ), (action & CURL_POLL_OUT));
+    debugf("HANDLE cm=%p sock=%d sinfo=%p, socket remove=%d, in=%d, out=%d\n", cm, (int)sock, sinfo, (action & CURL_POLL_REMOVE), (action & CURL_POLL_IN ), (action & CURL_POLL_OUT));
     if(action == CURL_POLL_REMOVE)
     {
         if(sinfo) {
             event_del( &(sinfo->ev) );
-            debugf("HANDLE freeing sinfo=%p\n",sinfo);
+            debugf("HANDLE cm=%p freeing sinfo=%p\n",cm, sinfo);
             free(sinfo);
         }
     }
@@ -3009,12 +3034,12 @@ static int handle_socket(CURL *easy, curl_socket_t sock, int action, void *userp
         {
             REMALLOC( sinfo, sizeof(SOCKINFO) );
             sinfo->tinfo=tinfo;
-            debugf("HANDLE created sinfo=%p\n", sinfo);
+            debugf("HANDLE cm=%p created sinfo=%p\n", cm, sinfo);
         }
         else
         {
             event_del( &(sinfo->ev) );
-            debugf("HANDLE USING ALREADY MADE EVENT???\n");
+            debugf("HANDLE cm=%p USING ALREADY MADE EVENT???\n", cm);
         }
 
         curl_multi_assign(cm, sock, sinfo);
@@ -3025,10 +3050,10 @@ static int handle_socket(CURL *easy, curl_socket_t sock, int action, void *userp
 
         event_assign(&(sinfo->ev), thr->base, sock, kind, mevent_cb, sinfo);
 
-        debugf("HANDLE adding persist ev sinfo=%p\n", sinfo);
+        debugf("HANDLE cm=%p adding persist ev sinfo=%p\n", cm, sinfo);
         event_add(&(sinfo->ev), NULL);
     }
-    debugf("HANDLE end\n");
+    debugf("HANDLE cm=%p end\n", cm);
     return 0;
 }
 
@@ -3188,6 +3213,11 @@ static duk_ret_t duk_curl_fetch_sync_async(duk_context *ctx, int async)
             curl_multi_setopt(cm, CURLMOPT_TIMERFUNCTION, start_timeout);
             curl_multi_setopt(cm, CURLMOPT_TIMERDATA, tinfo);
 
+#ifdef __CYGWIN__
+            /* Cygwin poll() + SSL is slow with many concurrent connections.
+               Limit concurrency to avoid overwhelming the server. */
+            curl_multi_setopt(cm, CURLMOPT_MAX_TOTAL_CONNECTIONS, (long)4);
+#endif
         }
 
         i = 0;
@@ -3393,6 +3423,11 @@ static duk_ret_t duk_curl_submit_sync_async(duk_context *ctx, int async)
             curl_multi_setopt(cm, CURLMOPT_TIMERFUNCTION, start_timeout);
             curl_multi_setopt(cm, CURLMOPT_TIMERDATA, tinfo);
 
+#ifdef __CYGWIN__
+            /* Cygwin poll() + SSL is slow with many concurrent connections.
+               Limit concurrency to avoid overwhelming the server. */
+            curl_multi_setopt(cm, CURLMOPT_MAX_TOTAL_CONNECTIONS, (long)4);
+#endif
         }
 
         i=0;
@@ -3581,7 +3616,9 @@ duk_ret_t duk_open_module(duk_context *ctx)
     duk_push_object(ctx);
 
     // if the default is not there
+#ifdef CURL_CA_BUNDLE
     if(access(CURL_CA_BUNDLE, R_OK) != 0)
+#endif
     {
         //set it to the one we found in rampart-utils.c
         rp_curl_def_bundle = rp_ca_bundle;
@@ -3590,8 +3627,13 @@ duk_ret_t duk_open_module(duk_context *ctx)
     duk_push_string(ctx, "default_ca_file");
     if(rp_curl_def_bundle)
         duk_push_string(ctx, rp_curl_def_bundle);
+#ifdef CURL_CA_BUNDLE
     else
         duk_push_string(ctx, CURL_CA_BUNDLE);
+#else
+    else
+        duk_push_string(ctx, "");
+#endif
     duk_def_prop(ctx, -3, DUK_DEFPROP_HAVE_VALUE |DUK_DEFPROP_CLEAR_WEC);
 
     duk_put_function_list(ctx, -1, curl_funcs);

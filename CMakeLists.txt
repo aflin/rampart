@@ -12,6 +12,14 @@ cmake_minimum_required(VERSION 3.13)
 
 project(Rampart VERSION 0.5.0 LANGUAGES C CXX)
 
+if(CYGWIN)
+  # GCC 15 defaults to C23 which breaks many third-party libraries and cmake
+  # configure checks (K&R function declarations, 0 as null pointer, etc.).
+  # Force gnu11 for compatibility. Using CMAKE_C_FLAGS ensures this applies
+  # to both cmake try_compile checks and actual compilation.
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu11")
+endif()
+
 #set(CMAKE_BUILD_TYPE Debug)
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")

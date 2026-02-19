@@ -3,7 +3,7 @@
 #include "stdlib.h"
 #include "string.h"
 #include "sys/types.h"
-#ifdef MSDOS
+#if defined(MSDOS) || defined(__MINGW32__)
 #  define LOWIO
 #endif
 #include "os.h"

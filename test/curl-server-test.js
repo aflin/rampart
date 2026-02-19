@@ -296,6 +296,12 @@ testFeature("server/curl chunking", function(){
 });
 
 
+/* On MSYS/Cygwin, SSL handshakes are slower and prior keepalive connections
+   occupy server threads, so async transfers need longer timeouts. */
+var isMsys = /Msys/i.test(rampart.buildPlatform);
+var asyncTimeout1 = isMsys ? 10000 : 2000;
+var asyncTimeout2 = isMsys ? 5000  : 500;
+
 var thr = new rampart.thread();
 
 thr.exec(function() {
@@ -319,8 +325,8 @@ thr.exec(function() {
 
 setTimeout( function(){
     testFeature("fetchAsync & submitAsync in thread w/ finally", function (){
-        var res=rampart.thread.get("res", 2000);
-        var res2=rampart.thread.get("res2", 500);
+        var res=rampart.thread.get("res", asyncTimeout1);
+        var res2=rampart.thread.get("res2", asyncTimeout2);
         return res==10 && res2==10;
     });
 

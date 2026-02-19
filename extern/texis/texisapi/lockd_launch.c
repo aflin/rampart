@@ -1,6 +1,11 @@
 #include "texint.h"
 #include <errno.h>
+#if !defined(__MINGW32__)
 #include <unistd.h>
+#endif
+#ifdef __MINGW32__
+#include "http.h"
+#endif
 
 /******************************************************************/
 

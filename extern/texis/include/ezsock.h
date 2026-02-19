@@ -6,6 +6,12 @@
 #include "txcoreconfig.h"
 #ifndef _WIN32
 #  include <netinet/in.h>
+#else /* _WIN32 */
+#  ifdef __MINGW32__
+#    include <winsock2.h>
+#    include <ws2tcpip.h>
+     typedef ADDRESS_FAMILY sa_family_t;
+#  endif /* __MINGW32__ */
 #endif /* !_WIN32 */
 #ifdef EPI_HAVE_SYS_SOCKET_H
 #  include <sys/socket.h>                       /* SHUT_RDWR etc. */

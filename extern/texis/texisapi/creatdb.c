@@ -571,10 +571,10 @@ TXcreateDbMain(int argcLocal, char *argvLocal[])
 	const char		*dbPath = NULL;
 	char			*sysTablesPath = NULL;
 
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(__MINGW32__)
 __try
 {
-#endif /* _WIN32 */
+#endif /* _WIN32 && !__MINGW32__ */
 	tx_setgenericsigs();
 	TXsetSigProcessName(pmbuf, "creatdb");
 
@@ -716,13 +716,13 @@ finally:
 	encryptedSystemPass = TXfree(encryptedSystemPass);
 	encryptedPublicPass = TXfree(encryptedPublicPass);
 	sysTablesPath = TXfree(sysTablesPath);
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(__MINGW32__)
     }
   __except(TXgenericExceptionHandler(_exception_code(), _exception_info()))
     {
       /* TXgenericExceptionHandler() exits */
     }
-#endif /* _WIN32 */
+#endif /* _WIN32 && !__MINGW32__ */
 	return(ret);
 }
 

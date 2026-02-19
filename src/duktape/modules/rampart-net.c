@@ -31,6 +31,7 @@
 #include <netinet/in.h>
 #endif
 
+
 //macos
 #if !defined(SOL_TCP) && defined(IPPROTO_TCP)
 #define SOL_TCP IPPROTO_TCP
@@ -40,6 +41,27 @@
 #endif
 
 char *rp_net_def_bundle=NULL;
+
+#ifdef __CYGWIN__
+/* rp_cygwin_add_dns_servers is defined in rampart-thread.c and
+   declared in rampart.h. It uses GetNetworkParams from iphlpapi.dll
+   to add Windows DNS servers to an evdns base. */
+
+static struct evdns_base *rp_cygwin_new_dnsbase(struct event_base *base)
+{
+    struct evdns_base *dnsbase = evdns_base_new(base,
+        EVDNS_BASE_DISABLE_WHEN_INACTIVE);
+    if (!dnsbase) return NULL;
+
+    /* Use Windows DNS API to configure nameservers.
+       Don't call evdns_base_resolv_conf_parse - it fails on Cygwin
+       (no /etc/resolv.conf) and can leave the base in a bad state. */
+    if (rp_cygwin_add_dns_servers(dnsbase) != 0)
+        evdns_base_nameserver_ip_add(dnsbase, "1.1.1.1");
+
+    return dnsbase;
+}
+#endif /* __CYGWIN__ */
 
 /*
 static int push_ip_canon(duk_context *ctx, const char *addr, int domain)
@@ -1010,8 +1032,12 @@ static void async_resolve(duk_context *ctx, RPSOCK *sinfo, const char *hn, const
     // not using thread dnsbase
     if(!sinfo->dnsbase)
     {
+#ifdef __CYGWIN__
+        sinfo->dnsbase = rp_cygwin_new_dnsbase(sinfo->base);
+#else
         sinfo->dnsbase = evdns_base_new(sinfo->base,
             EVDNS_BASE_DISABLE_WHEN_INACTIVE|EVDNS_BASE_INITIALIZE_NAMESERVERS );
+#endif
         dnsargs->freebase=1;
     }
     else
@@ -1200,8 +1226,12 @@ static void async_reverse(RPSOCK *sinfo, duk_context *ctx, struct addrinfo *res,
     // not using thread dnsbase
     if(!sinfo->dnsbase)
     {
+#ifdef __CYGWIN__
+        sinfo->dnsbase = rp_cygwin_new_dnsbase(sinfo->base);
+#else
         sinfo->dnsbase = evdns_base_new(sinfo->base,
             EVDNS_BASE_DISABLE_WHEN_INACTIVE|EVDNS_BASE_INITIALIZE_NAMESERVERS );
+#endif
         //just a flag here
         sinfo->aux=(void*)1;
     }

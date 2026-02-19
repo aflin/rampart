@@ -99,6 +99,13 @@ include_directories(
 #Build curl executable
 target_link_libraries(${EXE_NAME} libcurl ${CURL_LIBS})
 
+if(WIN32 AND MINGW)
+  target_compile_options(${EXE_NAME} PRIVATE -std=gnu11)
+endif()
+if(CYGWIN)
+  target_compile_options(${EXE_NAME} PRIVATE -std=gnu11)
+endif()
+
 ################################################################################
 
 #SET_TARGET_PROPERTIES(${EXE_NAME} ARCHIVE_OUTPUT_DIRECTORY "blah blah blah")

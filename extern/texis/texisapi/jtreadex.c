@@ -25,7 +25,7 @@
 #else
 #  include "fcntl.h"
 #endif
-#ifdef MSDOS
+#if defined(MSDOS) || defined(__MINGW32__)
 #  define LOWIO
 #endif
 #include "string.h"

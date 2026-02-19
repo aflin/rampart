@@ -23,7 +23,7 @@
 #endif
 
 
-#ifdef MSDOS                                          /* MAW 02-15-94 */
+#if defined(MSDOS) || defined(__MINGW32__)              /* MAW 02-15-94 */
 static CONST char prefix[] = "turl" ;
 #else
 static CONST char prefix[] = ".turl" ;
@@ -34,7 +34,7 @@ char *
 dbgettemp()
 {
 	if(!idir)
-#ifdef MSDOS
+#if defined(MSDOS) || defined(__MINGW32__)
 		idir = TXstrcat2(TXINSTALLPATH_VAL, "\\texis\\indirect");
 #else
 		idir = TXstrcat2(TXINSTALLPATH_VAL, "/texis/.indirect");
@@ -96,7 +96,7 @@ DDIC *ddic;
 
 	s = ddic->indrctspc;
 	tempfn[sizeof(tempfn) - 1] = 'x';		/* overflow detector*/
-#ifdef MSDOS
+#if defined(MSDOS) || defined(__MINGW32__)
 	if (s[0] != '\0' && s[1] == ':')		/* C:... */
 	{
 		if (s[2] != PATH_SEP && s[2] != '/')	/* C:foo... */
@@ -120,9 +120,9 @@ DDIC *ddic;
 	{
 		if (e + 11 >= tempfn + sizeof(tempfn)) goto toolong;
 		if (e >= tempfn && *e != PATH_SEP
-#ifdef MSDOS
+#if defined(MSDOS) || defined(__MINGW32__)
 			&& *e != '/'
-#endif /* MSDOS */
+#endif /* MSDOS || __MINGW32__ */
 			)
 			*(++e) = PATH_SEP;
 		strcpy(++e, "indirects");
@@ -226,7 +226,7 @@ char *path;
 	}
 
 /* Old style indirects; */
-#ifdef MSDOS
+#if defined(MSDOS) || defined(__MINGW32__)
 	if (strstr(path, "\\turl") != (char *)NULL)
 #else
 	if (strstr(path, "/.turl") != (char *)NULL)

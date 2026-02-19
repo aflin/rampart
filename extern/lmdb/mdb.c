@@ -171,6 +171,11 @@ typedef SSIZE_T	ssize_t;
 #elif defined(__ANDROID__)
 # define MDB_FDATASYNC		fsync
 #endif
+#ifdef __CYGWIN__
+/* Cygwin does not support PTHREAD_PROCESS_SHARED mutexes, so use
+ * POSIX named semaphores for inter-process locking instead. */
+# define MDB_USE_POSIX_SEM	1
+#endif
 
 #ifndef _WIN32
 #include <pthread.h>
@@ -319,8 +324,10 @@ union semun {
  * either.)
  */
 #ifndef MDB_USE_ROBUST
-/* Android currently lacks Robust Mutex support. So does glibc < 2.4. */
+/* Android currently lacks Robust Mutex support. So does glibc < 2.4.
+ * Cygwin/MSYS has EOWNERDEAD but lacks pthread_mutexattr_setrobust. */
 # if defined(MDB_USE_POSIX_MUTEX) && (defined(__ANDROID__) || \
+	defined(__CYGWIN__) || \
 	(defined(__GLIBC__) && GLIBC_VER < 0x020004))
 #  define MDB_USE_ROBUST	0
 # else
@@ -4606,6 +4613,14 @@ mdb_env_map(MDB_env *env, void *addr)
 		if (ftruncate(env->me_fd, env->me_mapsize) < 0)
 			return ErrCode();
 	}
+#ifdef __CYGWIN__
+	/* Cygwin's mmap (built on Windows MapViewOfFile) cannot map beyond
+	 * the file's actual size.  Extend the file to the map size first. */
+	else {
+		if (ftruncate(env->me_fd, env->me_mapsize) < 0)
+			return ErrCode();
+	}
+#endif
 	env->me_map = mmap(addr, env->me_mapsize, prot, mmap_flags,
 		env->me_fd, 0);
 	if (env->me_map == MAP_FAILED) {

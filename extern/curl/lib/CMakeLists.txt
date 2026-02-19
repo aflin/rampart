@@ -107,6 +107,13 @@ endif()
 
 target_link_libraries(${LIB_NAME} ${CURL_LIBS})
 
+if(WIN32 AND MINGW)
+  target_compile_options(${LIB_NAME} PRIVATE -std=gnu11)
+endif()
+if(CYGWIN)
+  target_compile_options(${LIB_NAME} PRIVATE -std=gnu11)
+endif()
+
 if(WIN32)
   add_definitions(-D_USRDLL)
 endif()

@@ -191,6 +191,7 @@ function makeCModule(name, prog, support, flags, libs, rpHeaderLoc) {
 
     // build the compile line
     var isapple = !! rampart.buildPlatform.match(/Darwin/i);
+    var iscygwin = !! rampart.buildPlatform.match(/Msys|Cygwin/i);
 
     var eline, allflags;
     var baresoname = sofile.split('/').pop();
@@ -202,7 +203,14 @@ function makeCModule(name, prog, support, flags, libs, rpHeaderLoc) {
 
     if(flags)
         allflags += ' '+flags;
-    var eline = sprintf('cc -o %s %s %s %s', sofile, allflags, cfile, libs);
+
+    // On Cygwin/MSYS2, the PE linker requires all symbols resolved at
+    // link time.  Link against librampart.dll.a for duktape API symbols.
+    if(iscygwin)
+        libs = '-L' + process.installPath + ' -lrampart' + (libs ? ' ' + libs : '');
+
+    var compiler = rampart.buildCC || 'cc';
+    var eline = sprintf('%s -o %s %s %s %s', compiler, sofile, allflags, cfile, libs);
 
     var barecfile = cfile.split('/').pop();
     var spacelen = 20-barecfile.length;
@@ -246,8 +254,16 @@ function makeCModule(name, prog, support, flags, libs, rpHeaderLoc) {
         throw new Error(sprintf("cmodule - error writing file '%s': %s", e.message)); 
     }
 
-    // compile
-    var res = exec("sh", "-c", eline);
+    // On MSYS2/Cygwin, the default sh may be Git's bash which lacks the
+    // MSYS2 toolchain environment.  Use MSYS2's own bash with -l to get
+    // a proper login shell with the right DLL search paths.
+    var compilerDir = compiler.lastIndexOf('/') > 0 ? compiler.substring(0, compiler.lastIndexOf('/')) : '';
+    var msysBash = compilerDir ? compilerDir + '/bash' : '';
+    var res;
+    if (msysBash && stat(msysBash))
+        res = exec(msysBash, "-l", "-c", "export MSYSTEM=MSYS && " + eline);
+    else
+        res = exec("sh", "-c", eline);
     if(res.exitStatus !== 0)
         throw new Error("cmodule - failed to build:\n" + res.stderr + res.stdout);
 

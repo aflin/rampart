@@ -666,7 +666,7 @@ DDIC *ddic;
 char *fname;
 {
 	if (fname[0] == PATH_SEP ||
-#ifdef MSDOS
+#if defined(MSDOS) || defined(__MINGW32__)
 	    fname[1] == ':' ||
 #endif
 	    fname[0] == '~')

@@ -28,8 +28,26 @@
 #include "event.h"
 #include "rampart.h"
 
+#ifdef __CYGWIN__
+/* Cygwin pipes have text/binary mode issues with pickled binary data.
+   Use socketpair() for the Python helper IPC - sockets are always binary. */
+#include <sys/socket.h>
+#define rp_python_pipe(x) socketpair(AF_UNIX, SOCK_STREAM, 0, (x))
+#else
+#define rp_python_pipe(x) rp_pipe((x))
+#endif
+
 static int python_is_init=0;
 static int is_child=0;
+
+#ifdef __CYGWIN__
+static void _rp_python_gc(void)
+{
+    PyGILState_STATE state = PyGILState_Ensure();
+    PyGC_Collect();
+    PyGILState_Release(state);
+}
+#endif
 
 #define rp_debug_printf2(...) do{\
     fprintf(stderr, "(%d) at %d (thread %d): ", (int)getpid(),__LINE__, get_thread_num());\
@@ -747,7 +765,9 @@ static duk_ret_t rp_duk_python_init(duk_context *ctx)
 
         init_python(rampart_exec, ppath);
         python_is_init=1;
-
+#ifdef __CYGWIN__
+        rp_python_gc_callback = _rp_python_gc;
+#endif
     }
     RPYUNLOCK;
     return 0;
@@ -3373,13 +3393,13 @@ static PFI *check_fork()
         int child2par[2], par2child[2];
 
         /* our creation run.  create pipes and setup for fork */
-        if (rp_pipe(child2par) == -1)
+        if (rp_python_pipe(child2par) == -1)
         {
             fprintf(stderr, "child2par pipe failed\n");
             return NULL;
         }
 
-        if (rp_pipe(par2child) == -1)
+        if (rp_python_pipe(par2child) == -1)
         {
             fprintf(stderr, "par2child pipe failed\n");
             return NULL;
@@ -3415,6 +3435,14 @@ static PFI *check_fork()
 
             close(child2par[0]);
             close(par2child[1]);
+
+#ifdef __CYGWIN__
+            /* Cygwin's locale-aware I/O layer can cause EILSEQ errors
+               when reading binary data on pipes if the locale expects
+               valid multibyte sequences. Force C locale and binary mode. */
+            setenv("CYGWIN", "binmode", 1);
+            setenv("LC_ALL", "C", 1);
+#endif
 
             // what a surprise, you can pass the pipe ints to the exec'd process, and it works.
             sprintf(script, scr_txt, par2child[0], child2par[1], get_thread_num());

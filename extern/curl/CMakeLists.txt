@@ -52,7 +52,7 @@ project(CURL C)
 #link_libraries(idn2 ldap z)
 find_library(IDN2 libidn2.a)
 
-if(CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
+if(CMAKE_SYSTEM_NAME STREQUAL "FreeBSD" OR CYGWIN)
 link_libraries(${IDN2} z)
 else()
 link_libraries(${IDN2} ldap z)
@@ -866,6 +866,9 @@ elseif(CURL_CA_PATH_AUTODETECT OR CURL_CA_BUNDLE_AUTODETECT)
         /usr/share/ssl/certs/ca-bundle.crt
         /usr/local/share/certs/ca-root-nss.crt
         /etc/ssl/cert.pem)
+    if(CYGWIN)
+      list(INSERT SEARCH_CA_BUNDLE_PATHS 3 /usr/ssl/certs/ca-bundle.crt)
+    endif()
 
     foreach(SEARCH_CA_BUNDLE_PATH ${SEARCH_CA_BUNDLE_PATHS})
       if(EXISTS "${SEARCH_CA_BUNDLE_PATH}")

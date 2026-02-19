@@ -16,6 +16,10 @@ extern "C" {
 #include <signal.h>
 #ifdef HAVE_WINDOWS_H
 #define _CRT_SECURE_NO_WARNINGS
+#  ifdef __MINGW32__
+#    include <winsock2.h>
+#    include <ws2tcpip.h>
+#  endif
 #  include <windows.h>
 #endif
 #include "txpmbuf.h"
@@ -592,7 +596,7 @@ extern int strnicmp ARGS((CONST char *d1, CONST char *s2, size_t n));
       extern unsigned int sleep  ARGS((unsigned int));
 #  endif
 #  ifndef AOSVS
-#    ifndef __cplusplus
+#    if !defined(__cplusplus) && !defined(__MINGW32__)
       extern FILE        *popen  ARGS((char *,char *));
       extern int          pclose ARGS((FILE *));
 #    endif
@@ -723,7 +727,11 @@ extern int strnicmp ARGS((CONST char *d1, CONST char *s2, size_t n));
 #  define ushort unsigned short
 #endif
 #if !defined(uint) && !defined(HAVE_UINT)
+#  ifdef __MINGW32__
+   #define uint unsigned int
+#  else
    #define uint unsigned int;
+#  endif
 #endif
 #ifndef ulong
 #  define ulong unsigned long

@@ -4,9 +4,14 @@
 #include <stdint.h>
 #include <errno.h>
 #include <assert.h>
+#ifndef __MINGW32__
 #include <sys/time.h>
 #include <arpa/inet.h>
 #include <sys/queue.h>
+#else
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#endif
 
 #if defined(__FreeBSD__)
 #include <netinet/in.h>
@@ -260,7 +265,14 @@ evhtp_log_request_f(void * format_p, evhtp_request_t * request, FILE * fp)
             case HTP_LOG_OP_TIMESTAMP:
                 event_base_gettimeofday_cached(request->conn->evbase, &tv);
 
+#ifdef __MINGW32__
+                {
+                    time_t t = (time_t)tv.tv_sec;
+                    tm     = localtime(&t);
+                }
+#else
                 tm     = localtime(&tv.tv_sec);
+#endif
                 strftime(tmp, sizeof(tmp), "%d/%b/%Y:%X %z", tm);
                 logstr = tmp;
 

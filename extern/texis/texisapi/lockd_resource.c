@@ -221,7 +221,11 @@ resource_dump_json(lockd_resource *r)
     json_object_set_new(j, "refcnt", v);
     if(r->last_close != 0) {
       struct tm tms;
+#ifdef __MINGW32__
+      if(gmtime_s(&tms, &r->last_close) == 0) {
+#else
       if(gmtime_r(&r->last_close, &tms)) {
+#endif
         strftime(datestr, sizeof(datestr), "%Y%m%dZ%H%M%S", &tms);
         v = json_string(datestr);
         json_object_set_new(j, "last_close", v);

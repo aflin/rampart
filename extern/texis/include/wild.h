@@ -28,7 +28,7 @@ TXwildFlag;
 extern WILD *openwild  ARGS((char *expr));
 extern WILD *openwild2  ARGS((CONST char *expr, CONST char *end,
                      CONST char *fixedEnd, char escChar, TXwildFlag flags));
-#ifdef MSDOS
+#if defined(MSDOS) || defined(__MINGW32__)
 #  ifdef EPI_CASE_INSENSITIVE_PATHS
 #    define TX_WILD_DEFAULT_FLAGS       \
   (TXwildFlag_TrailStar | TXwildFlag_IgnoreCase)

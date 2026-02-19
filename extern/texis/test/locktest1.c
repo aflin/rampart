@@ -6,7 +6,9 @@
 #ifdef EPI_HAVE_UNISTD_H
 #  include <unistd.h>
 #endif
+#if !defined(__MINGW32__)
 #include <sys/wait.h>
+#endif
 #include "texisapi.h"
 
 void

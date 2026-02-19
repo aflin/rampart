@@ -21,6 +21,9 @@ void duk_rp_push_rampart_version(duk_context *ctx)
     duk_push_string(ctx, RAMPART_BUILD_PLATFORM);
     duk_put_prop_string(ctx, -2, "buildPlatform");
 
+    duk_push_string(ctx, RAMPART_BUILD_CC);
+    duk_put_prop_string(ctx, -2, "buildCC");
+
     duk_push_sprintf(ctx, "%d.%d.%d%s_%dbit+%s", RAMPART_VERSION_MAJOR, RAMPART_VERSION_MINOR, RAMPART_VERSION_PATCH, RAMPART_VERSION_PRERELEASE, bits, RAMPART_VERSION_TIMESTAMP);
     duk_put_prop_string(ctx, -2, "versionBuild");
 

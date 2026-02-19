@@ -13,7 +13,7 @@
 #include <string>
 #include <utility>
 #include <vector>
-#if !defined(_MSC_VER) && !defined(__CYGWIN__) && !defined(__MINGW32__)
+#if !defined(_MSC_VER) && !defined(__MINGW32__) && (!defined(__CYGWIN__) || defined(__MSYS__))
 #include <sys/mman.h>
 #include <unistd.h>  /* for sysconf */
 #endif
@@ -912,7 +912,7 @@ TEST(RE2, FloatingPointFullMatchTypes) {
     //
     // This is known to fail on Cygwin and MinGW due to a broken
     // implementation of strtof(3). And apparently MSVC too. Sigh.
-#if !defined(_MSC_VER) && !defined(__CYGWIN__) && !defined(__MINGW32__)
+#if !defined(_MSC_VER) && !defined(__MINGW32__) && (!defined(__CYGWIN__) || defined(__MSYS__))
     ASSERT_TRUE(RE2::FullMatch("0.1", "(.*)", &v));
     ASSERT_EQ(v, 0.1f) << StringPrintf("%.8g != %.8g", v, 0.1f);
     ASSERT_TRUE(RE2::FullMatch("6700000000081920.1", "(.*)", &v));

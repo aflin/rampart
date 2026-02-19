@@ -2,6 +2,9 @@
 #if defined(__MSDOS__) && !defined(MSDOS)
 #  define MSDOS __MSDOS__
 #endif
+#if defined(__MINGW32__) && !defined(MSDOS)
+#  define MSDOS 1
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

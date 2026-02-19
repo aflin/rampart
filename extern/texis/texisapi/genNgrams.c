@@ -23,10 +23,10 @@ usage(const char *progName)
 int
 main(int argc, char *argv[])
 {
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(__MINGW32__)
 __try
 {
-#endif /* _WIN32 */
+#endif /* _WIN32 && !__MINGW32__ */
   TXNGRAMSET    *ngramset = NULL;
   TXEXIT        res;
 
@@ -80,11 +80,11 @@ __try
   else
     usage(argv[0]);
   return(TXEXIT_OK);
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(__MINGW32__)
     }
   __except(TXgenericExceptionHandler(_exception_code(), _exception_info()))
     {
       /* TXgenericExceptionHandler() exits */
     }
-#endif /* _WIN32 */
+#endif /* _WIN32 && !__MINGW32__ */
 }

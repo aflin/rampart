@@ -11,10 +11,16 @@
 
 #ifndef __SQL
 #define __SQL
-#ifndef _WIN32                       /* MAW 02-24-94 - cleanup ms isms */
-#  define CALLBACK
-#  define EXPORT
-#  define FAR
+#if !defined(_WIN32) || (defined(__MINGW32__) && !defined(FAR))
+#  ifndef CALLBACK
+#    define CALLBACK
+#  endif
+#  ifndef EXPORT
+#    define EXPORT
+#  endif
+#  ifndef FAR
+#    define FAR
+#  endif
 #endif                                                       /* MSDOS */
 
 /*

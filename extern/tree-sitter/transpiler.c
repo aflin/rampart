@@ -2706,9 +2706,9 @@ static int rewrite_template_node(EditList *edits, const char *src, TSNode tpl_no
     do                                                                                                                 \
     {                                                                                                                  \
         const char *_s = (S);                                                                                          \
-        size_t _L = strlen(_s);                                                                                        \
-        memcpy(out + j, _s, _L);                                                                                       \
-        j += _L;                                                                                                       \
+        size_t _sL = strlen(_s);                                                                                       \
+        memcpy(out + j, _s, _sL);                                                                                      \
+        j += _sL;                                                                                                      \
     } while (0)
 
         memcpy(out + j, src + ts, te - ts);

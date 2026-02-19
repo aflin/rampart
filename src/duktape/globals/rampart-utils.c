@@ -21,6 +21,7 @@
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <unistd.h>
+#include <sys/ioctl.h>
 #include <termios.h>
 #include <string.h>
 #include <sys/resource.h>
@@ -4053,7 +4054,25 @@ duk_ret_t duk_rp_delete(duk_context *ctx)
     const char *file = duk_require_string(ctx, -1);
 
     if (remove(file) != 0)
+    {
+#ifdef __CYGWIN__
+        /* On Cygwin (Windows), open files can't be deleted while held
+           open by another process (EBUSY).  Try GC + retry in case
+           the handle is held by a JS/Python object in this thread. */
+        if (errno == EBUSY || errno == EACCES)
+        {
+            int retries;
+            for (retries = 0; retries < 3; retries++)
+            {
+                duk_gc(ctx, 0);
+                usleep(10000);
+                if (remove(file) == 0)
+                    return 0;
+            }
+        }
+#endif
         RP_THROW(ctx, "rmFile(): error deleting file: %s", strerror(errno));
+    }
 
     return 0;
 }
@@ -5387,6 +5406,9 @@ static char *ca_bundle_locs[]={
     "/etc/ssl/certs/ca-certificates.crt",
     "/etc/pki/tls/certs/ca-bundle.crt",
     "/usr/share/ssl/certs/ca-bundle.crt",
+#ifdef __CYGWIN__
+    "/usr/ssl/certs/ca-bundle.crt",
+#endif
     "/usr/local/share/certs/ca-root-nss.crt",
     "/etc/ssl/cert.pem",
     NULL
@@ -6766,6 +6788,12 @@ typedef struct {
     size_t used;
     pthread_mutex_t lock;
 } buffer_t;
+
+#ifdef __CYGWIN__
+/* Cygwin's off_t is already 64-bit on x86_64, and cookie_io_functions_t
+   uses off_t, so alias off64_t to off_t for type compatibility. */
+#define off64_t off_t
+#endif
 
 #ifdef __APPLE__
 
@@ -9265,6 +9293,29 @@ duk_ret_t rp_auto_scandate(duk_context *ctx)
     }
 
     //p=(char*)datestr + eix;printf("eidx=%d, strlen=%d, endchar='%c'(%d)\n", eix, (int)strlen(datestr), *p, *p);
+
+    /* Check for numeric timezone offset (+/-HHMM) remaining after match,
+       for platforms where strptime doesn't support %z (e.g. Cygwin) */
+    if(matched[strlen(matched)-1] != 'z')
+    {
+        p=(char*)datestr + eix;
+        while(isspace(*p))p++;
+
+        if(
+            (*p=='-' || *p=='+') &&
+            isdigit(p[1]) && isdigit(p[2]) &&
+            isdigit(p[3]) && isdigit(p[4])
+        )
+        {
+            time_t toff = 0;
+            int mult = (*p == '-') ? -1 : 1;
+            p++;
+            toff = (p[0] - '0') * 10 + (p[1] - '0');
+            toff *= 60;
+            toff += (p[2] - '0') * 10 + (p[3] - '0');
+            tzoff = dateoff = toff * 60 * mult;
+        }
+    }
 
     // WHAT TO DO IF WE GOT A %z
     if(matched[strlen(matched)-1]=='z')

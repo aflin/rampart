@@ -2419,6 +2419,9 @@ static int proc_triple(char **inp, char **ob, char **o, size_t *osize, int *line
                 scopy(*in);
                 break;
 
+            case '\r':
+                break; /* skip CR; LF will handle line ending */
+
             case '\n':
                 (*lineno)++;
                 nlines++;
@@ -3730,7 +3733,15 @@ int main(int argc, char *argv[])
 
             /* for unknown reasons, setting EVDNS_BASE_INITIALIZE_NAMESERVERS
                above results in dnsbase not exiting when event loop is otherwise empty */
+#ifdef __CYGWIN__
+            /* On Cygwin, /etc/resolv.conf doesn't exist and the _WIN32 path
+               in libevent isn't compiled. Skip resolv_conf_parse and use
+               the Windows DNS API to configure nameservers directly. */
+            if (rp_cygwin_add_dns_servers(dnsbase) != 0)
+                evdns_base_nameserver_ip_add(dnsbase, "1.1.1.1");
+#else
             evdns_base_resolv_conf_parse(dnsbase, DNS_OPTIONS_ALL, "/etc/resolv.conf");
+#endif
 
             duk_push_global_stash(ctx);
             duk_push_pointer(ctx, dnsbase);
@@ -3886,7 +3897,15 @@ int main(int argc, char *argv[])
 
             /* for unknown reasons, setting EVDNS_BASE_INITIALIZE_NAMESERVERS
                above results in dnsbase not exiting when event loop is otherwise empty */
+#ifdef __CYGWIN__
+            /* On Cygwin, /etc/resolv.conf doesn't exist and the _WIN32 path
+               in libevent isn't compiled. Skip resolv_conf_parse and use
+               the Windows DNS API to configure nameservers directly. */
+            if (rp_cygwin_add_dns_servers(dnsbase) != 0)
+                evdns_base_nameserver_ip_add(dnsbase, "1.1.1.1");
+#else
             evdns_base_resolv_conf_parse(dnsbase, DNS_OPTIONS_ALL, "/etc/resolv.conf");
+#endif
 
             duk_push_global_stash(ctx);
             duk_push_pointer(ctx, dnsbase);

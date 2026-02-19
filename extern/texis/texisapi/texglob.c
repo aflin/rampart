@@ -174,13 +174,13 @@ int	TXtracedumptable = 0;
 /* [Texis] Write Timeout value; 0 == no retry: */
 double	TXwriteTimeout = 5.0;
 
-#ifdef _MSC_VER
+#if defined(_MSC_VER) || defined(__MINGW32__)
 #  ifdef TX_DEBUG
 int	TXexceptionbehaviour = EXCEPTION_CONTINUE_SEARCH;
 #  else /* TX_DEBUG */
 int	TXexceptionbehaviour = EXCEPTION_EXECUTE_HANDLER;
 #  endif /* TX_DEBUG */
-#endif /* _MSC_VER */
+#endif /* _MSC_VER || __MINGW32__ */
 
 #ifdef _WIN32
 /* TXisTexisMonitorService:  -1 = not yet known  0 = no  1 = yes */
@@ -2109,8 +2109,13 @@ TXApp->NoMonitorStart = 1;
 		hParentStd[STDIN_FILENO] = TXFHANDLE_STDIN;
 		hParentStd[STDOUT_FILENO] = TXFHANDLE_STDOUT;
 		hParentStd[STDERR_FILENO] = TXFHANDLE_STDERR;
+#ifdef __MINGW32__
+		TXpopenSetParentStdioNonInherit(pmbuf, hParentStd,
+		                                (EPI_UINT32 *)dwParentStdOrgHandleInfo);
+#else
 		TXpopenSetParentStdioNonInherit(pmbuf, hParentStd,
 		                                dwParentStdOrgHandleInfo);
+#endif
 	}
 #endif /* _WIN32 */
 
