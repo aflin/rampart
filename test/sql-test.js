@@ -3,6 +3,21 @@ rampart.globalize(rampart.utils);
 load.Sql;
 load.crypto;
 
+var _hasShell = !!stat('/bin/bash');
+
+function rm_rf_dir(path) {
+    if (_hasShell) {
+        shell("rm -rf " + path);
+        return;
+    }
+    if (!stat(path)) return;
+    var files = readdir(path);
+    for (var i = 0; i < files.length; i++) {
+        try { rmFile(path + "/" + files[i]); } catch(e) {}
+    }
+    try { rmdir(path); } catch(e) {}
+}
+
 var sql=Sql.connect(process.scriptPath+"/testdb",true);//create if doesn't exist
 
 /* check for quicktest, make if necessary */
@@ -35,9 +50,9 @@ function testFeature(name,test)
     {
         printf(">>>>> FAILED <<<<<\n");
         if(error) console.log(error);
-        shell("rm -rf " +  process.scriptPath + "/testdb");
-        shell("rm -rf " +  process.scriptPath + "/testdb2");
-        shell("rm -rf " +  process.scriptPath + "/testdb3");
+        rm_rf_dir(process.scriptPath + "/testdb");
+        rm_rf_dir(process.scriptPath + "/testdb2");
+        rm_rf_dir(process.scriptPath + "/testdb3");
         process.exit(1);
     }
     if(error) console.log(error);
@@ -243,7 +258,7 @@ testFeature ("Full Text Search", function(){
 });
 
 testFeature ("Create with addTables", function(){
-    shell("rm -rf " +  process.scriptPath + "/testdb2");
+    rm_rf_dir(process.scriptPath + "/testdb2");
     mkdir(process.scriptPath+"/testdb2")
     copyFile(process.scriptPath+"/testdb/quicktest.tbl", process.scriptPath+"/testdb2/quicktest.tbl", true);
 
@@ -257,7 +272,7 @@ testFeature ("Create with addTables", function(){
 });
 
 testFeature ("Create with addTables in existing db", function(){
-    shell("rm -rf " +  process.scriptPath + "/testdb3");
+    rm_rf_dir(process.scriptPath + "/testdb3");
     var sql3 = new Sql.connection(process.scriptPath+"/testdb3", true);
     sql3.close();
 
@@ -273,6 +288,6 @@ testFeature ("Create with addTables in existing db", function(){
     return res.rowCount;
 });
 
-shell("rm -rf " +  process.scriptPath + "/testdb");
-shell("rm -rf " +  process.scriptPath + "/testdb2");
-shell("rm -rf " +  process.scriptPath + "/testdb3");
+rm_rf_dir(process.scriptPath + "/testdb");
+rm_rf_dir(process.scriptPath + "/testdb2");
+rm_rf_dir(process.scriptPath + "/testdb3");

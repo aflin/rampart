@@ -2,6 +2,7 @@
 
 rampart.globalize(rampart.utils);
 
+var isWindows = /MSYS_NT/.test(rampart.buildPlatform);
 var iam = trim(exec('whoami').stdout);
 
 var singledir_install = {
@@ -318,7 +319,7 @@ function do_install(prefix, map, makelinks){
 
     // rebase python paths
     var rebase_script = realPath(prefix) + map.modules +'/python/rebase-python.sh';
-    var cmdres = exec('bash', '-c', rebase_script);
+    var cmdres = exec('bash', '-c', "'" + rebase_script + "'");
     if(cmdres.stderr.length)
     {
         printf("error executing %s\n:   %s\n", rebase_script, cmdres.stderr);  
@@ -743,6 +744,78 @@ Press any key to continue.`);
 }
 
 
+/* ************ Windows install ******************* */
+
+function do_windows_install() {
+    var default_prefix = '/c/Program Files/mcs/rampart';
+    var home = process.env.HOME;
+    var homeopt = "";
+    var choices = "123";
+
+    if(home) {
+        homeopt = `2) ${home}/rampart\n`;
+        choices = "123";
+    }
+
+    clear();
+    printf(
+`Install rampart to:
+
+1) C:\\Program Files\\mcs\\rampart (recommended)
+${homeopt}3) custom location
+`);
+    var choice = getresp('1');
+
+    if(choices.indexOf(choice) == -1) {
+        clear();
+        return do_windows_install();
+    }
+
+    var prefix;
+
+    if(choice == '1') {
+        prefix = default_prefix;
+    } else if(choice == '2' && home) {
+        prefix = home + '/rampart';
+    } else if(choice == '3') {
+        printf("Enter location (use forward slashes, e.g. /c/tools/rampart):\n");
+        prefix = trim(readLine(stdin).next());
+        if(prefix == '') {
+            clear();
+            return do_windows_install();
+        }
+        if(prefix.lastIndexOf('/') == prefix.length - 1)
+            prefix = prefix.substring(0, prefix.length - 1);
+        printf("Install into '%s'? (y/n)\n", prefix);
+        var resp = getresp('');
+        if(resp != 'y') {
+            clear();
+            return do_windows_install();
+        }
+    }
+
+    var ret = do_install(prefix, singledir_install, false);
+
+    if(ret) {
+        // Convert MSYS path to Windows path for display
+        var winpath = prefix;
+        if(winpath.match(/^\/([a-zA-Z])\//))
+            winpath = winpath.replace(/^\/([a-zA-Z])\//, function(m, drive){ return drive.toUpperCase() + ':\\'; }).replace(/\//g, '\\');
+
+        printf(`
+To use rampart from the Windows command prompt, add it to your PATH:
+
+    setx PATH "%%PATH%%;${winpath}\\bin"
+
+Or add '${winpath}\\bin' to your System PATH via:
+    System Properties > Environment Variables > Path > Edit > New
+
+`);
+    }
+
+    return ret;
+}
+
 /* ************ main ******************* */
 
 
@@ -803,10 +876,14 @@ clear();
 
 check_curl();
 
-var choice = choose_install();
+if(isWindows) {
+    while(!do_windows_install()) {}
+} else {
+    var choice = choose_install();
 
-while(!do_install_choice(choice))
-    choice = choose_install();
+    while(!do_install_choice(choice))
+        choice = choose_install();
+}
 
 if(madeNew.length) {
     printf(

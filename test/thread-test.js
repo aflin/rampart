@@ -1,6 +1,7 @@
 rampart.globalize(rampart.utils);
 
 var thread = rampart.thread;
+var _hasShell = !!stat('/bin/bash');
 
 var nruns=4;
 
@@ -11,6 +12,17 @@ var Lmdb=require('rampart-lmdb');
 var lmdb;
 var curl   = require('rampart-curl');
 var server = require('rampart-server');
+
+function kill_server(pid) {
+    if (!kill(pid, 0)) return;
+    kill(pid, 15);
+    sleep(0.5);
+    if (!kill(pid, 0)) return;
+    kill(pid, 9);
+    sleep(0.5);
+    if (!kill(pid, 0)) return;
+    fprintf(stderr, "WARNING: process %d could not be terminated\n", pid);
+}
 
 function testFeature(name,test,error)
 {
@@ -31,7 +43,7 @@ function testFeature(name,test,error)
         printf(">>>>> FAILED <<<<<\n");
         if(error) printf('%J\n',error);
         var pid = thread.get("server_pid",1000);
-        if(pid) kill(pid);
+        if(pid) kill_server(pid);
         process.exit(1);
     }
     if(error) printf('%J\n',error);
@@ -74,10 +86,12 @@ function global_report_result(res){
         if(total == nruns){
             total++; // only once
             clearInterval(iv);
-            var ps = shell(`ps ax -o ppid,command | grep rampart | grep [s]ql_helper | grep ${process.getpid()}`);
-            if(ps.stdout.length) {
-                error="Not all sql_helpers were terminated:\n"+ps.stdout;
-                ret=false;
+            if(_hasShell) {
+                var ps = shell(`ps ax -o ppid,command | grep rampart | grep [s]ql_helper | grep ${process.getpid()}`);
+                if(ps.stdout.length) {
+                    error="Not all sql_helpers were terminated:\n"+ps.stdout;
+                    ret=false;
+                }
             }
             testFeature("thread - multiple threads with sql forks", ret );
         } else if(total>nruns) {
@@ -372,7 +386,7 @@ thr5.exec(function(){
         })
 
         if(pid) {
-            kill(pid);
+            kill_server(pid);
             pid=false;
         }
     },

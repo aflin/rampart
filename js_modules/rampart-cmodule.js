@@ -207,10 +207,10 @@ function makeCModule(name, prog, support, flags, libs, rpHeaderLoc) {
     // On Cygwin/MSYS2, the PE linker requires all symbols resolved at
     // link time.  Link against librampart.dll.a for duktape API symbols.
     if(iscygwin)
-        libs = '-L' + process.installPath + ' -lrampart' + (libs ? ' ' + libs : '');
+        libs = "-L'" + process.installPathBin + "' -lrampart" + (libs ? ' ' + libs : '');
 
     var compiler = rampart.buildCC || 'cc';
-    var eline = sprintf('%s -o %s %s %s %s', compiler, sofile, allflags, cfile, libs);
+    var eline = sprintf("%s -o '%s' %s '%s' %s", compiler, sofile, allflags, cfile, libs);
 
     var barecfile = cfile.split('/').pop();
     var spacelen = 20-barecfile.length;

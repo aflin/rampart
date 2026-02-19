@@ -13,22 +13,37 @@ if [ `whoami` == 'root' ]; then
     fi
 fi
 
+PASSED=0
+FAILED=0
+
 for i in `ls test/*-test.js`; do
 	echo
 	echo $i
 	bin/rampart $i
 	if [ "$?" != "0" ]; then
 		echo "Test ${i} failed"
-		exit 1;
+		FAILED=$((FAILED+1))
+	else
+		PASSED=$((PASSED+1))
 	fi;
 done
 
 # also run the rampart-url.js, which has its own tests
 echo
-echo bin/rampart modules/rampart-url.js
+echo modules/rampart-url.js
 
 bin/rampart modules/rampart-url.js
 if [ "$?" != "0" ]; then
     echo "Test rampart-url.js failed"
-    exit 1;
+    FAILED=$((FAILED+1))
+else
+    PASSED=$((PASSED+1))
 fi;
+
+echo
+if [ "$FAILED" -gt 0 ]; then
+    echo "$PASSED passed, $FAILED failed."
+    exit 1
+else
+    echo "All $PASSED tests passed."
+fi

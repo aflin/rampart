@@ -13,6 +13,30 @@ var Lmdb = require("rampart-lmdb");
 var pid;  // pid of server, set below
 var lmdb; // the db env handle
 var dbi;  // the db handle
+var _hasShell = !!stat('/bin/bash');
+
+function cleanup_lmdb_dir() {
+    var dbpath = process.scriptPath+"/lmdb-test-db";
+    if (_hasShell) {
+        shell("rm -rf " + dbpath);
+    } else {
+        /* remove lmdb files manually when no shell available */
+        try { rmFile(dbpath+"/data.mdb"); } catch(e) {}
+        try { rmFile(dbpath+"/lock.mdb"); } catch(e) {}
+        try { rmdir(dbpath); } catch(e) {}
+    }
+}
+
+function kill_server(pid) {
+    if (!kill(pid, 0)) return;
+    kill(pid, 15);
+    sleep(0.5);
+    if (!kill(pid, 0)) return;
+    kill(pid, 9);
+    sleep(0.5);
+    if (!kill(pid, 0)) return;
+    fprintf(stderr, "WARNING: process %d could not be terminated\n", pid);
+}
 
 function testFeature(name,test)
 {
@@ -33,8 +57,8 @@ function testFeature(name,test)
     {
         printf(">>>>> FAILED <<<<<\n");
         if(error) console.log(error);
-        kill(pid,15);
-        shell(`rm -rf ${process.scriptPath}/lmdb-test-db`);
+        kill_server(pid);
+        cleanup_lmdb_dir();
         process.exit(1);
     }
     if(error) console.log(error);
@@ -60,7 +84,7 @@ testFeature("Open database", function() {
 });
 
 
-var user = trim(exec("whoami").stdout);
+var user = _hasShell ? trim(exec("whoami").stdout) : "";
 
 if(user == 'root') {
     var ret = shell(`chown -R nobody ${process.scriptPath}/lmdb-test-db`);
@@ -201,7 +225,7 @@ testFeature("check lmdb table", function() {
     return ret && (count > 1000); //very very unlikely it will be less
 });
 
-kill(pid,15);
+kill_server(pid);
 
 testFeature("syncing data to disk", function() {
     lmdb.sync();
@@ -245,4 +269,4 @@ testFeature("reopen db, growOnPut", function() {
     return putsuccess && putfail;
 });
 
-shell(`rm -rf ${process.scriptPath}/lmdb-test-db`);
+cleanup_lmdb_dir();

@@ -1,7 +1,8 @@
 //first line
 rampart.globalize(rampart.utils);
 
-var isWindows = /MSYS_NT|Msys|Cygwin/i.test(rampart.buildPlatform);
+var isWindows = /MSYS_NT/.test(rampart.buildPlatform);
+var _hasShell = !!stat('/bin/bash');
 
 chdir(process.scriptPath);
 
@@ -205,40 +206,52 @@ testFeature("stat",function(){
 
 
 
-testFeature("execRaw/timeout",function(){
-    var ret=execRaw({
-        path:"/bin/sleep",
-        args:["sleep","10"],
-        timeout:200
+if(_hasShell)
+    testFeature("execRaw/timeout",function(){
+        var ret=execRaw({
+            path:"/bin/sleep",
+            args:["sleep","10"],
+            timeout:200
+        });
+        return ret.timedOut;
     });
-    return ret.timedOut;
-});
+else
+    testFeature("execRaw/timeout", "skipping (no shell)");
 
-testFeature("exec/env/stdin",function(){
-    var ret=exec("head", "-n", "1", process.script);
-    var ret2=exec('env',{env:{myvar:"myval"}});
-    var ret3=exec('cat',{stdin:"hello"});
-    var envMatch = isWindows ?
-        trim(ret2.stdout).indexOf("myvar=myval") >= 0 :
-        trim(ret2.stdout) == "myvar=myval";
-    return (
-        trim(ret.stdout) == "//first line" &&
-        envMatch &&
-        ret3.stdout == "hello"
-    );
+if(_hasShell)
+    testFeature("exec/env/stdin",function(){
+        var ret=exec("head", "-n", "1", process.script);
+        var ret2=exec('env',{env:{myvar:"myval"}});
+        var ret3=exec('cat',{stdin:"hello"});
+        var envMatch = isWindows ?
+            trim(ret2.stdout).indexOf("myvar=myval") >= 0 :
+            trim(ret2.stdout) == "myvar=myval";
+        return (
+            trim(ret.stdout) == "//first line" &&
+            envMatch &&
+            ret3.stdout == "hello"
+        );
 
-});
+    });
+else
+    testFeature("exec/env/stdin", "skipping (no shell)");
 
-testFeature("shell",function(){
-    var ret=shell("tail -n 1 "+ process.script, {timeout:2000} );
-    return trim(ret.stdout)=="//lastline";
-});
+if(_hasShell)
+    testFeature("shell",function(){
+        var ret=shell("tail -n 1 '"+ process.script + "'", {timeout:2000} );
+        return trim(ret.stdout)=="//lastline";
+    });
+else
+    testFeature("shell", "skipping (no shell)");
 
 
-testFeature("exec/bkgrnd/kill",function(){
-    var ret=exec("sleep", "30", {background:true});
-    return kill(ret.pid);
-});
+if(_hasShell)
+    testFeature("exec/bkgrnd/kill",function(){
+        var ret=exec("sleep", "30", {background:true});
+        return kill(ret.pid);
+    });
+else
+    testFeature("exec/bkgrnd/kill", "skipping (no shell)");
 
 testFeature("mkdir/rmdir/stat",function(){
     mkdir("t1/t2",0777);
@@ -264,10 +277,17 @@ testFeature("readdir",function(){
 testFeature("copy/delete",function(){
     copyFile(process.script,"test1.js",true);
     var stat1=stat("test1.js");
-    var diff=shell("diff "+ process.script +" test1.js");
+    var match;
+    if(_hasShell) {
+        var diff=shell("diff '"+ process.script +"' test1.js");
+        match = diff.stdout == "";
+    } else {
+        var s1sz=stat(process.script), s2sz=stat("test1.js");
+        match = s1sz && s2sz && s1sz.size == s2sz.size;
+    }
     rmFile("test1.js");
     var stat2=stat("test1.js");
-    return stat1.mode && !stat2 && diff.stdout == "";
+    return stat1.mode && !stat2 && match;
 });
 
 if(isWindows)
@@ -276,7 +296,7 @@ else
     testFeature("symlink/delete/lstat",function(){
         symlink(process.script,"test1.js");
         var islink=lstat("test1.js").isSymbolicLink;
-        var diff=shell("diff "+ process.script +" test1.js");
+        var diff=shell("diff '"+ process.script +"' test1.js");
         rmFile("test1.js");
         var stat2=stat("test1.js");
         return islink && !stat2 && diff.stdout == "";
@@ -289,10 +309,18 @@ testFeature("hard link/delete",function(){
         target:"test1.txt"
     });
     var stat1=stat("test1.txt");
-    var test=shell("if [ test1.txt -ef myfile.txt ]; then echo yes; fi");
+    var linkOk;
+    if(_hasShell) {
+        var test=shell("if [ test1.txt -ef myfile.txt ]; then echo yes; fi");
+        linkOk = test.stdout == "yes\n";
+    } else {
+        // Without shell, verify link by checking inode match
+        var s1=stat("myfile.txt"), s2=stat("test1.txt");
+        linkOk = s1 && s2 && s1.ino == s2.ino;
+    }
     rmFile("test1.txt");
     var stat2=stat("test1.txt");
-    return stat1.mode && !stat2 && test.stdout == "yes\n";
+    return stat1.mode && !stat2 && linkOk;
 });
 
 if(isWindows)
@@ -317,9 +345,10 @@ else
 testFeature("touch/rename",function(){
     touch("myfile");
     var stat1=stat("myfile");
-    rename("myfile","/tmp/myfile"); //copies if different mounted fs
-    var stat2=stat("/tmp/myfile");
-    rmFile("/tmp/myfile");
+    var tmpfile = _hasShell ? "/tmp/myfile" : "myfile_renamed";
+    rename("myfile", tmpfile); //copies if different mounted fs
+    var stat2=stat(tmpfile);
+    rmFile(tmpfile);
     return stat1 && stat2;
 });
 
@@ -419,7 +448,7 @@ testFeature("daemon and pipe", function(){
 
 });
 
-var wai=trim(shell("whoami").stdout);
+var wai = _hasShell ? trim(shell("whoami").stdout) : "";
 if (wai=="root")
 {
     testFeature("chown", function(){

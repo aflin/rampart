@@ -3612,6 +3612,17 @@ int main(int argc, char *argv[])
 
         strcpy(p, argv[scriptarg]);
 
+#ifdef __CYGWIN__
+        /* When invoked from PowerShell/CMD, argv contains Windows-style
+           paths with backslashes.  Normalize to forward slashes so that
+           strrchr(p,'/') below can split the directory from the filename. */
+        {
+            char *bp;
+            for (bp = p; *bp; bp++)
+                if (*bp == '\\') *bp = '/';
+        }
+#endif
+
         //a copy of the complete path/script.js
         RP_script=realpath(p, NULL);
 

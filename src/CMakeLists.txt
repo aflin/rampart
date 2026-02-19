@@ -5,12 +5,8 @@ include(CheckCSourceCompiles)
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_C_STANDARD 99)
 
-if(${CMAKE_INSTALL_PREFIX})
-    message("install = ${CMAKE_INSTALL_PREFIX}")
-else()
-    set (CMAKE_INSTALL_PREFIX "/usr/local/rampart")
-    message("setting install = ${CMAKE_INSTALL_PREFIX}")
-endif()
+# Install prefix is set in top-level CMakeLists.txt
+message("install = ${CMAKE_INSTALL_PREFIX}")
 
 execute_process (
     COMMAND bash -c "which gmake"
@@ -993,6 +989,33 @@ install(CODE "execute_process( \
     )"
 )
 
+if(CYGWIN)
+    install(CODE "execute_process( \
+        COMMAND ${CMAKE_COMMAND} -E copy \
+        \"${PROJECT_SOURCE_DIR}/src/run_tests.ps1\" \
+        \"${CMAKE_INSTALL_PREFIX}/\"   \
+        )"
+    )
+    install(CODE "execute_process( \
+        COMMAND ${CMAKE_COMMAND} -E copy \
+        \"${PROJECT_SOURCE_DIR}/src/run_tests.bat\" \
+        \"${CMAKE_INSTALL_PREFIX}/\"   \
+        )"
+    )
+    install(CODE "execute_process( \
+        COMMAND ${CMAKE_COMMAND} -E copy \
+        \"${PROJECT_SOURCE_DIR}/src/install.bat\" \
+        \"${CMAKE_INSTALL_PREFIX}/\"   \
+        )"
+    )
+    install(CODE "execute_process( \
+        COMMAND ${CMAKE_COMMAND} -E copy \
+        \"${PROJECT_SOURCE_DIR}/src/install.ps1\" \
+        \"${CMAKE_INSTALL_PREFIX}/\"   \
+        )"
+    )
+endif()
+
 # unsupported dir
 install(
     DIRECTORY ${PROJECT_SOURCE_DIR}/unsupported_extras/
@@ -1030,7 +1053,7 @@ foreach(TEST_FILE ${TEST_FILES})
 endforeach()
 
 install(CODE "execute_process ( \
-    COMMAND bash -c \"chmod 777 ${CMAKE_INSTALL_PREFIX}/test\"
+    COMMAND bash -c \"chmod 777 '${CMAKE_INSTALL_PREFIX}/test'\"
  )"
 )
 
@@ -1093,7 +1116,7 @@ install(CODE "execute_process( \
 
 install(CODE "execute_process( \
     COMMAND bash -c \"mkdir -p \
-    ${CMAKE_INSTALL_PREFIX}/modules/python \"\
+    '${CMAKE_INSTALL_PREFIX}/modules/python' \"\
     )"
 )
 
@@ -1107,52 +1130,73 @@ install(CODE "execute_process( \
 install(DIRECTORY DESTINATION "${PYTHON_BIN_DIR}/build/lib")
 install(CODE "execute_process( \
     COMMAND bash -c \"cp -a \
-    ${PYTHON_BIN_DIR}/build/bin \
-    ${PYTHON_BIN_DIR}/build/lib \
-    ${CMAKE_INSTALL_PREFIX}/modules/python/ \"\
+    '${PYTHON_BIN_DIR}/build/bin' \
+    '${PYTHON_BIN_DIR}/build/lib' \
+    '${CMAKE_INSTALL_PREFIX}/modules/python/' \"\
     )"
 )
 
 install(
-    CODE "execute_process( COMMAND bash \"${CMAKE_INSTALL_PREFIX}/modules/python/rebase-python.sh\")"
+    CODE "execute_process( COMMAND bash \"${CMAKE_INSTALL_PREFIX}/modules/python/rebase-python.sh\"  \
+    WORKING_DIRECTORY \"${CMAKE_INSTALL_PREFIX}/modules/python\")"
 )
 
 install(CODE "execute_process( \
     COMMAND bash -c \"rm -rf \
-    ${CMAKE_INSTALL_PREFIX}/modules/python3-lib \
-    ${CMAKE_INSTALL_PREFIX}/bin/python3r \
-    ${CMAKE_INSTALL_PREFIX}/bin/pip3r \"\
+    '${CMAKE_INSTALL_PREFIX}/modules/python3-lib' \
+    '${CMAKE_INSTALL_PREFIX}/bin/python3r' \
+    '${CMAKE_INSTALL_PREFIX}/bin/pip3r' \"\
     )"
 )
 
-install(CODE "execute_process( \
-    COMMAND bash -c \"ln -s \
-    python/lib/python3.${PYTHON_MINOR} \
-    ${CMAKE_INSTALL_PREFIX}/modules/python3-lib \"\
-    )"
-)
+if(CYGWIN)
+    # Use copies instead of symlinks on Cygwin (symlinks may not work on vanilla Windows)
+    install(CODE "execute_process( \
+        COMMAND bash -c \"cp -a \
+        '${CMAKE_INSTALL_PREFIX}/modules/python/lib/python3.${PYTHON_MINOR}' \
+        '${CMAKE_INSTALL_PREFIX}/modules/python3-lib' \"\
+        )"
+    )
+    install(CODE "execute_process( \
+        COMMAND bash -c \"cp \
+        '${CMAKE_INSTALL_PREFIX}/modules/python/bin/python3' \
+        '${CMAKE_INSTALL_PREFIX}/bin/python3r' \"\
+        )"
+    )
+    install(CODE "execute_process( \
+        COMMAND bash -c \"cp \
+        '${CMAKE_INSTALL_PREFIX}/modules/python/bin/pip3' \
+        '${CMAKE_INSTALL_PREFIX}/bin/pip3r' \"\
+        )"
+    )
+else()
+    install(CODE "execute_process( \
+        COMMAND bash -c \"ln -s \
+        python/lib/python3.${PYTHON_MINOR} \
+        '${CMAKE_INSTALL_PREFIX}/modules/python3-lib' \"\
+        )"
+    )
+    install(CODE "execute_process( \
+        COMMAND bash -c \"ln -s \
+        ../modules/python/bin/python3 \
+        '${CMAKE_INSTALL_PREFIX}/bin/python3r' \"\
+        )"
+    )
+    install(CODE "execute_process( \
+        COMMAND bash -c \"ln -s \
+        ../modules/python/bin/pip3 \
+        '${CMAKE_INSTALL_PREFIX}/bin/pip3r' \"\
+        )"
+    )
+endif()
+
 
 install(CODE "execute_process( \
-    COMMAND bash -c \"ln -s \
-    ../modules/python/bin/python3 \
-    ${CMAKE_INSTALL_PREFIX}/bin/python3r \"\
-    )"
-)
-
-install(CODE "execute_process( \
-    COMMAND bash -c \"ln -s \
-    ../modules/python/bin/pip3 \
-    ${CMAKE_INSTALL_PREFIX}/bin/pip3r \"\
-    )"
-)
-
-
-install(CODE "execute_process( \
-    COMMAND bash -c \"chmod 755 ${CMAKE_INSTALL_PREFIX}/modules/python/bin/python3.${PYTHON_MINOR} \"\
+    COMMAND bash -c \"chmod 755 '${CMAKE_INSTALL_PREFIX}/modules/python/bin/python3.${PYTHON_MINOR}' \"\
     )"
 )
 install(CODE "execute_process( \
-    COMMAND bash -c \"chmod 755 ${CMAKE_INSTALL_PREFIX}/modules/python/bin/pip3 \"\
+    COMMAND bash -c \"chmod 755 '${CMAKE_INSTALL_PREFIX}/modules/python/bin/pip3' \"\
     )"
 )
 
@@ -1177,11 +1221,11 @@ install(CODE "execute_process( \
 
 # derivations
 install(DIRECTORY DESTINATION "${CMAKE_INSTALL_PREFIX}/derivations")
-install(CODE "execute_process( COMMAND bash -c \"cp -a ${PROJECT_SOURCE_DIR}/derivations/* ${CMAKE_INSTALL_PREFIX}/derivations/\")" )
+install(CODE "execute_process( COMMAND bash -c \"cp -a '${PROJECT_SOURCE_DIR}/derivations'/* '${CMAKE_INSTALL_PREFIX}/derivations/'\")" )
 
 if (CMAKE_UID EQUAL 0)
     install(CODE "execute_process ( \
-        COMMAND bash -c \"chown -R nobody ${CMAKE_INSTALL_PREFIX}/web_server\"
+        COMMAND bash -c \"chown -R nobody '${CMAKE_INSTALL_PREFIX}/web_server'\"
       )"
     )
 endif()
@@ -1206,3 +1250,39 @@ install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/bin/met
 install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/bin/rex\")")
 install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/bin/texislockd\")")
 install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/python/bin/python3\")")
+
+# Bundle MSYS2 runtime DLLs for standalone Windows operation
+if(CYGWIN)
+    set(MSYS_DLLS
+        msys-2.0.dll
+        msys-gcc_s-seh-1.dll
+        msys-stdc++-6.dll
+        msys-z.dll
+        msys-intl-8.dll
+        msys-iconv-2.dll
+        msys-sqlite3-0.dll
+    )
+    foreach(DLL ${MSYS_DLLS})
+        if(EXISTS "/usr/bin/${DLL}")
+            install(CODE "execute_process(COMMAND ${CMAKE_COMMAND} -E copy \"/usr/bin/${DLL}\" \"${CMAKE_INSTALL_PREFIX}/bin/${DLL}\")")
+        else()
+            message(WARNING "MSYS2 DLL not found: /usr/bin/${DLL}")
+        endif()
+    endforeach()
+
+    # The relocated msys-2.0.dll computes the Cygwin root as two levels
+    # up from its location (<prefix>/bin/msys-2.0.dll -> <prefix>/..).
+    # POSIX semaphores and shared memory require /dev/shm to exist
+    # relative to that root.  Create it so rampart works standalone.
+    cmake_path(GET CMAKE_INSTALL_PREFIX PARENT_PATH _MSYS_ROOT)
+    install(CODE "execute_process(COMMAND ${CMAKE_COMMAND} -E make_directory \"${_MSYS_ROOT}/dev/shm\")")
+
+    # Bundle MSYS2 CA certificate bundle so HTTPS works standalone.
+    # The find_bundle() fallback checks <installdir>/etc/ca-bundle.crt.
+    if(EXISTS "/usr/ssl/certs/ca-bundle.crt")
+        install(CODE "execute_process(COMMAND ${CMAKE_COMMAND} -E make_directory \"${CMAKE_INSTALL_PREFIX}/etc\")")
+        install(CODE "execute_process(COMMAND ${CMAKE_COMMAND} -E copy \"/usr/ssl/certs/ca-bundle.crt\" \"${CMAKE_INSTALL_PREFIX}/etc/ca-bundle.crt\")")
+    else()
+        message(WARNING "MSYS2 CA bundle not found at /usr/ssl/certs/ca-bundle.crt")
+    endif()
+endif()

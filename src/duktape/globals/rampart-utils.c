@@ -5424,7 +5424,7 @@ static void find_bundle()
     //    return;
 
     //else if we find one somewhere else, set char *ca_bundle to it
-    while(cur)
+    while(*cur)
     {
         if (access(*cur, R_OK) == 0)
         {
@@ -5433,6 +5433,18 @@ static void find_bundle()
         }
         cur++;
     }
+
+#ifdef __CYGWIN__
+    /* When the bundled msys-2.0.dll is relocated, the Cygwin root
+       changes and the standard CA bundle paths above won't resolve.
+       Look for a CA bundle installed alongside rampart as a fallback. */
+    {
+        static char local_bundle[PATH_MAX];
+        snprintf(local_bundle, sizeof(local_bundle), "%s/etc/ca-bundle.crt", rampart_dir);
+        if (access(local_bundle, R_OK) == 0)
+            rp_ca_bundle = local_bundle;
+    }
+#endif
 }
 
 char *ttod(char *s, char *e, double *px, double *py, char *op);

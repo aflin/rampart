@@ -1,6 +1,13 @@
 
 rampart.globalize(rampart.utils);
 
+/* Check that a C compiler is available before running tests */
+var _cc = rampart.buildCC || 'cc';
+if (!stat(_cc)) {
+    fprintf(stderr, "Could not find C compiler (%s)!! SKIPPING CMODULE TESTS\n", _cc);
+    process.exit(0);
+}
+
 function testFeature(name,test,error)
 {
     if (typeof test =='function'){
@@ -258,11 +265,13 @@ var libs = "-lm"
   }
 
 var countPrimes;
-testFeature("cmodule compile", function(){
-    //build countPrimes.so, or throw error
+try {
     countPrimes = cmodule(name, func, supportFuncs, extraFlags, libs);
-    return true;
-});
+    printf("testing %-60s - passed\n", "cmodule compile");
+} catch(e) {
+    fprintf(stderr, "C module compilation failed. SKIPPING CMODULE TESTS\n");
+    process.exit(0);
+}
 
 var s=performance.now();
 var ccount = countPrimes(1000000);

@@ -219,12 +219,19 @@ static int load_so_module(duk_context *ctx, const char *file, duk_idx_t module_i
 
     if (lib == NULL)
     {
-        /* rampart-crypto is required by other moduels
+        /* rampart-crypto is required by other modules
            if not found in install path, try manually
            loading it from RAMPART_PATH                 */
         const char *dl_err = dlerror();
-        char *s=strstr(dl_err, "rampart-crypto.so");
-        if(s)
+#ifdef __CYGWIN__
+        /* On Cygwin, dlerror() returns a generic "No such file or directory"
+           without naming the missing dependency, so always try the crypto
+           fallback when any module fails to load. */
+        int try_crypto = 1;
+#else
+        int try_crypto = (strstr(dl_err, "rampart-crypto.so") != NULL);
+#endif
+        if(try_crypto)
         {
             RPPATH rp;
 
@@ -240,7 +247,7 @@ static int load_so_module(duk_context *ctx, const char *file, duk_idx_t module_i
             }
             else
             {
-                void *lib2 = dlopen(rp.path, RTLD_NOW);
+                void *lib2 = dlopen(rp.path, RTLD_GLOBAL|RTLD_NOW);
                 if (lib2)
                 {
                     addhandle_to_close(lib2);
