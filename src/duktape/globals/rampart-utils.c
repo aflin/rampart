@@ -806,6 +806,9 @@ RPPATH rp_find_path_vari(char *file, ...)
     RPPATH ret={{0}};
     char *arg=NULL, path[PATH_MAX];
     struct stat sb;
+#ifdef __CYGWIN__
+    char _cyg_convpath[PATH_MAX];
+#endif
 
     //printf("looking for %s in paths\n", file);
 
@@ -825,6 +828,10 @@ RPPATH rp_find_path_vari(char *file, ...)
             ret.stat=sb;
             if(!realpath(file,ret.path))
                 strcpy(ret.path,file);
+#ifdef __CYGWIN__
+            else if(rp_cygwin_to_posixpath(ret.path, _cyg_convpath, sizeof(_cyg_convpath)))
+                strcpy(ret.path, _cyg_convpath);
+#endif
         }
         //go no further even if not found.
         return ret;
@@ -848,6 +855,10 @@ RPPATH rp_find_path_vari(char *file, ...)
                 ret.stat=sb;
                 if(!realpath(path,ret.path))
                     strcpy(ret.path,file);
+#ifdef __CYGWIN__
+                else if(rp_cygwin_to_posixpath(ret.path, _cyg_convpath, sizeof(_cyg_convpath)))
+                    strcpy(ret.path, _cyg_convpath);
+#endif
                 return ret;
             }
         }
@@ -873,6 +884,10 @@ RPPATH rp_find_path_vari(char *file, ...)
                 ret.stat=sb;
                 if(!realpath(path,ret.path))
                     strcpy(ret.path,file);
+#ifdef __CYGWIN__
+                else if(rp_cygwin_to_posixpath(ret.path, _cyg_convpath, sizeof(_cyg_convpath)))
+                    strcpy(ret.path, _cyg_convpath);
+#endif
                 return ret;
             }
         }
@@ -904,6 +919,10 @@ RPPATH rp_find_path_vari(char *file, ...)
                     ret.stat=sb;
                     if(!realpath(path,ret.path))
                         strcpy(ret.path,file);
+#ifdef __CYGWIN__
+                    else if(rp_cygwin_to_posixpath(ret.path, _cyg_convpath, sizeof(_cyg_convpath)))
+                        strcpy(ret.path, _cyg_convpath);
+#endif
                     return ret;
                 }
             }
@@ -964,6 +983,11 @@ RPPATH rp_get_home_path(char *file, char *subdir)
     size_t plen;
     RPPATH ret={{0}};
     mode_t mode=0755;
+#ifdef __CYGWIN__
+    char _home_convpath[PATH_MAX];
+    if (home && rp_cygwin_to_posixpath(home, _home_convpath, sizeof(_home_convpath)))
+        home = _home_convpath;
+#endif
 
     if( !home || access(home, W_OK)==-1 )
     {
@@ -1457,6 +1481,14 @@ duk_ret_t duk_rp_realpath(duk_context *ctx)
     if(!realpath(path,respath))
         RP_THROW(ctx, "realPath: %s\n", strerror(errno));
 
+#ifdef __CYGWIN__
+    {
+        char convpath[PATH_MAX];
+        if (rp_cygwin_to_posixpath(respath, convpath, sizeof(convpath)))
+            strcpy(respath, convpath);
+    }
+#endif
+
     duk_push_string(ctx, respath);
     return 1;
 }
@@ -1572,6 +1604,13 @@ void duk_process_init(duk_context *ctx)
     char *env;
 
     home_dir=getenv("HOME");
+#ifdef __CYGWIN__
+    {
+        static char _homedir_conv[PATH_MAX];
+        if (home_dir && rp_cygwin_to_posixpath(home_dir, _homedir_conv, sizeof(_homedir_conv)))
+            home_dir = _homedir_conv;
+    }
+#endif
 
     if ( !home_dir || access(home_dir, R_OK)==-1 )
     {
@@ -1649,12 +1688,21 @@ void duk_process_init(duk_context *ctx)
 
         for (i=0;i<rampart_argc;i++)
         {
+#ifdef __CYGWIN__
+            /* argv0 has been converted to /c/... form in main() */
+            duk_push_string(ctx, (i == 0) ? argv0 : rampart_argv[i]);
+#else
             duk_push_string(ctx,rampart_argv[i]);
+#endif
             duk_put_prop_index(ctx,-2,(duk_uarridx_t)i);
         }
         duk_put_prop_string(ctx,-2,"argv");
 
+#ifdef __CYGWIN__
+        duk_push_string(ctx, argv0);
+#else
         duk_push_string(ctx,rampart_argv[0]);
+#endif
         duk_put_prop_string(ctx,-2,"argv0");
 
         duk_push_string(ctx,RP_script_path);
@@ -2904,7 +2952,18 @@ duk_ret_t duk_rp_stat_lstat(duk_context *ctx, int islstat)
         if(S_ISLNK(path_stat.st_mode)) {
             ssize_t len = readlink(path, buf, PATH_MAX);
             if(len > 0) {
+                buf[len] = '\0';
+#ifdef __CYGWIN__
+                {
+                    char convpath[PATH_MAX];
+                    if(rp_cygwin_to_posixpath(buf, convpath, sizeof(convpath)))
+                        duk_push_string(ctx, convpath);
+                    else
+                        duk_push_lstring(ctx, buf, (duk_size_t)len);
+                }
+#else
                 duk_push_lstring(ctx, buf, (duk_size_t)len);
+#endif
                 duk_put_prop_string(ctx, -2, "link");
             }
         }
@@ -3544,6 +3603,18 @@ duk_ret_t duk_rp_getcwd(duk_context *ctx)
 
     if(!cwd)
         RP_THROW(ctx, "getcwd(): error - %s", strerror(errno));
+
+#ifdef __CYGWIN__
+    {
+        char convpath[PATH_MAX];
+        if(rp_cygwin_to_posixpath(cwd, convpath, sizeof(convpath))) {
+            duk_push_string(ctx, convpath);
+            free(cwd);
+            return 1;
+        }
+    }
+#endif
+
     duk_push_string(ctx, cwd);
     free(cwd);
     return 1;

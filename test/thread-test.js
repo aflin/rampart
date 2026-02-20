@@ -2,6 +2,7 @@ rampart.globalize(rampart.utils);
 
 var thread = rampart.thread;
 var _hasShell = !!stat('/bin/bash');
+var isWindows = /MSYS_NT/.test(rampart.buildPlatform);
 
 var nruns=4;
 
@@ -246,6 +247,9 @@ var thr3 = new thread();
 thr3.exec(thr_in_thr_lmdb);
 
 // thr5 will be copied to the js stack of thr4
+// Skip server-from-thread test on Windows - fork from non-main thread
+// does not reliably preserve thread-local storage on standalone Cygwin.
+if(!isWindows) {
 var thr5 = new thread();
 var thr4 = new thread();
 
@@ -392,7 +396,7 @@ thr5.exec(function(){
     },
     {threadDelay: 500}
 );
-
+} // end if(!isWindows)
 
 
 // must make locks first or they will not be copied to threads

@@ -510,6 +510,11 @@ struct evdns_base *rp_make_dns_base(
   duk_context *ctx, struct event_base *base);// create dns base for new server
 #ifdef __CYGWIN__
 int rp_cygwin_add_dns_servers(struct evdns_base *dnsbase);
+/* Convert a Cygwin POSIX path to /c/... form.  On full MSYS2, returns
+   the input path unchanged.  On relocated Cygwin, converts root-relative
+   paths like /rampart-install to /c/Users/.../rampart-install.
+   buf must be at least PATH_MAX bytes.  Returns buf on success, NULL on failure. */
+char *rp_cygwin_to_posixpath(const char *posixpath, char *buf, size_t bufsz);
 /* Callback to trigger Python's cyclic garbage collector.
    Set by rampart-python.c when Python is initialized.
    Called by rampart-thread.c before spawning worker threads
