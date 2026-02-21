@@ -3412,6 +3412,21 @@ char *rp_cygwin_to_posixpath(const char *posixpath, char *buf, size_t bufsz)
         return buf;
     }
 
+    /* Handle /cygdrive/X/... directly — on relocated Cygwin the /cygdrive
+       mount may not exist, so cygwin_conv_path() would fail.  Strip it
+       to /X/... form. */
+    if (strncmp(posixpath, "/cygdrive/", 10) == 0 && isalpha(posixpath[10])
+        && (posixpath[11] == '/' || posixpath[11] == '\0'))
+    {
+        size_t len = strlen(posixpath + 9);
+        if (len + 1 > bufsz)
+            return NULL;
+        buf[0] = '/';
+        buf[1] = tolower((unsigned char)posixpath[10]);
+        strcpy(buf + 2, posixpath + 11);
+        return buf;
+    }
+
     /* Convert POSIX -> Windows to get the full absolute Windows path */
     if (cygwin_conv_path(CCP_POSIX_TO_WIN_A, posixpath, winpath, sizeof(winpath)) != 0)
         return NULL;
