@@ -12,14 +12,6 @@ add_subdirectory(${EXTERN_DIR}/openssl)
 
 add_subdirectory(${EXTERN_DIR}/oniguruma)
 
-if(WIN32 AND MINGW)
-  # GCC 15 defaults to C23 where () means (void), causing curl's cmake
-  # check for ioctlsocket to fail. Force the correct result.
-  set(HAVE_IOCTLSOCKET_FIONBIO 1 CACHE INTERNAL "")
-  set(HAVE_IOCTLSOCKET_CAMEL_FIONBIO 0 CACHE INTERNAL "")
-  # Don't build the curl executable on MinGW, only the library
-  set(BUILD_CURL_EXE OFF CACHE BOOL "" FORCE)
-endif()
 if(CYGWIN)
   # GCC 15 defaults to C23 where 0 is not a null pointer constant,
   # causing curl's cmake recv/send checks to fail. Force POSIX signatures.
