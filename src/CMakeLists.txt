@@ -758,10 +758,19 @@ else()
   set(PYTHON_MAKE_FLAGS "CFLAGS=${CMAKE_C_FLAGS}")
   set(PYTHON_CONFIGURE_OPTS "--enable-optimizations --prefix=\"${PROJECT_BINARY_DIR}/extern/${PYTHON_DIR_NAME}/build\"")
 endif()
+
+if(CYGWIN)
+  # Use MSYS2's bash explicitly — Git for Windows' bash has an incompatible
+  # msys-2.0.dll that prevents configure test programs from executing.
+  set(BASH_CMD /usr/bin/bash)
+else()
+  set(BASH_CMD bash)
+endif()
+
 add_custom_command(
     OUTPUT ${PYTHON_BIN_DIR}/Makefile
     DEPENDS rampart-crypto
-    COMMAND bash -c "if [ ! -e ${PYTHON_BIN_DIR}/Makefile ]; then ${PYTHON_EXTRA_ENV} RAMPART_SSL_DIR=${PROJECT_BINARY_DIR}/extern/openssl PKG_CONFIG_PATH=\"${PYPKG}\" LDFLAGS=\"${PYLDFLAGS}\" CPPFLAGS=\"${PYFLAGS}\" TCLTK_LIBS=\"-ltk -ltcl\" ./configure ${PYTHON_CONFIGURE_OPTS};fi"
+    COMMAND ${BASH_CMD} -c "if [ ! -e ${PYTHON_BIN_DIR}/Makefile ]; then ${PYTHON_EXTRA_ENV} RAMPART_SSL_DIR=${PROJECT_BINARY_DIR}/extern/openssl PKG_CONFIG_PATH=\"${PYPKG}\" LDFLAGS=\"${PYLDFLAGS}\" CPPFLAGS=\"${PYFLAGS}\" TCLTK_LIBS=\"-ltk -ltcl\" ./configure ${PYTHON_CONFIGURE_OPTS};fi"
     WORKING_DIRECTORY ${PYTHON_BIN_DIR}
     VERBATIM
 )
@@ -773,7 +782,7 @@ if(CYGWIN)
 add_custom_command(
     DEPENDS ${PYTHON_BIN_DIR}/Makefile
     OUTPUT ${PYTHON_BIN_DIR}/libpython3.${PYTHON_MINOR}.a
-    COMMAND bash ${PROJECT_SOURCE_DIR}/src/build_python_cygwin.sh ${PYTHON_MINOR} ${CMAKE_MAKE_PROGRAM}
+    COMMAND ${BASH_CMD} ${PROJECT_SOURCE_DIR}/src/build_python_cygwin.sh ${PYTHON_MINOR} ${CMAKE_MAKE_PROGRAM}
     WORKING_DIRECTORY ${PYTHON_BIN_DIR}
 )
 else()

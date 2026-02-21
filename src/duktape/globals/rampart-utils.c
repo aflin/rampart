@@ -3758,7 +3758,18 @@ duk_ret_t duk_rp_shell(duk_context *ctx)
         duk_pop(ctx);
 
     if (getenv("SHELL"))
+    {
         sh=getenv("SHELL");
+#ifdef __CYGWIN__
+        /* On relocated Cygwin, SHELL path may be in /cygdrive/ format.
+           Convert to /c/... form so it resolves correctly. */
+        {
+            static char _shell_conv[PATH_MAX];
+            if (rp_cygwin_to_posixpath(sh, _shell_conv, sizeof(_shell_conv)))
+                sh = _shell_conv;
+        }
+#endif
+    }
     duk_push_string(ctx,sh);
     duk_insert(ctx,0);
     duk_push_string(ctx,"-c");

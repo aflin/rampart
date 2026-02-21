@@ -670,13 +670,13 @@ Installing this distribution is optional.  Rampart is designed to function
 from within any folder, so long as the directory structure herein is
 maintained.
 
-1) Use rampart from this directory (no installation needed)
-2) Continue to installation options
+1) Continue to installation options
+2) Use rampart from this directory (no installation needed)
 
 [1/2] `);
         var resp = getresp('X');
-        if(resp == '1') {
-            check_dev_shm(process.scriptPath);
+        if(resp == '2') {
+            check_dev_shm(process.scriptPath, true);
             printf(`
 Rampart is ready to use from this directory.
 
@@ -691,7 +691,7 @@ Enjoy!
 `, process.scriptPath.replace(/\//g, '\\'));
             process.exit();
         }
-        if(resp != '2') {
+        if(resp != '1') {
             clear();
             return choose_continue();
         }
@@ -835,25 +835,26 @@ Press any key to continue.`);
 
 /* ************ Windows install ******************* */
 
-function check_dev_shm(prefix) {
+function check_dev_shm(prefix, ask) {
     var rp = prefix.replace(/\\/g, '/');
     var lastslash = rp.lastIndexOf('/');
     var parent = lastslash > 0 ? rp.substring(0, lastslash) : '/';
     var devshm = parent + '/dev/shm';
     if(!stat(devshm)) {
-        printf("\nThe directory '%s' is required by the Cygwin runtime but does not exist.\n", devshm);
-        printf("Create it? [Y/n]\n");
-        var resp = getresp('y');
-        if(resp == 'y') {
-            try {
-                mkdir(devshm);
-                printf("Created '%s'\n", devshm);
-            } catch(e) {
-                printf("Could not create '%s': %s\n", devshm, e);
+        if(ask) {
+            printf("\nThe directory '%s' is required by the Cygwin runtime but does not exist.\n", devshm);
+            printf("Create it? [Y/n]\n");
+            var resp = getresp('y');
+            if(resp != 'y') {
                 printf("You will need to create this directory manually before running rampart.\n");
                 process.exit(1);
             }
-        } else {
+        }
+        try {
+            mkdir(devshm);
+            printf("Created '%s'\n", devshm);
+        } catch(e) {
+            printf("Could not create '%s': %s\n", devshm, e);
             printf("You will need to create this directory manually before running rampart.\n");
             process.exit(1);
         }
@@ -880,7 +881,7 @@ function do_windows_install() {
     printf(
 `Install rampart to:
 
-1) C:\\Program Files\\mcs\\rampart (recommended)
+1) /c/Program Files/mcs/rampart (recommended)
 ${homeopt}3) custom location
 `);
     var choice = getresp('1');
@@ -892,8 +893,10 @@ ${homeopt}3) custom location
 
     var prefix;
 
+    var ask_dev_shm = true;
     if(choice == '1') {
         prefix = default_prefix;
+        ask_dev_shm = false;
     } else if(choice == '2' && home) {
         prefix = home + '/rampart';
     } else if(choice == '3') {
@@ -916,22 +919,47 @@ ${homeopt}3) custom location
     var ret = do_install(prefix, singledir_install, false);
 
     if(ret) {
-        check_dev_shm(prefix);
+        check_dev_shm(prefix, ask_dev_shm);
 
         // Convert MSYS path to Windows path for display
         var winpath = prefix;
         if(winpath.match(/^\/([a-zA-Z])\//))
             winpath = winpath.replace(/^\/([a-zA-Z])\//, function(m, drive){ return drive.toUpperCase() + ':\\'; }).replace(/\//g, '\\');
 
-        printf(`
-To use rampart from the Windows command prompt, add it to your PATH:
+        var binpath = winpath + '\\bin';
+        var curpath = process.env.PATH || '';
+        // Check if already in PATH (case-insensitive, check both / and \ forms)
+        var inPath = curpath.toLowerCase().indexOf(binpath.toLowerCase()) > -1
+                  || curpath.toLowerCase().indexOf(prefix.toLowerCase() + '/bin') > -1;
 
-    setx PATH "%%PATH%%;${winpath}\\bin"
+        if(inPath) {
+            printf("\n'%s' is already in your PATH.\n", binpath);
+        } else {
+            printf("\nAdd '%s' to your PATH? [Y/n]\n", binpath);
+            var resp = getresp('y');
+            if(resp == 'y') {
+                // Read just the User PATH via PowerShell (not the full env PATH which includes system paths)
+                var psres = exec('/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe', '-c',
+                    "[Environment]::GetEnvironmentVariable('Path','User')");
+                var userpath = trim(psres.stdout);
+                var newpath = userpath.length ? userpath + ';' + binpath : binpath;
+                var res = exec('/c/Windows/System32/setx.exe', 'PATH', newpath);
+                if(res.exitStatus === 0)
+                    printf("PATH updated. Restart your terminal for changes to take effect.\n");
+                else
+                    printf("Could not update PATH:\n    %s\n", res.stderr);
+            } else {
+                printf(`
+To add it manually later, run:
 
-Or add '${winpath}\\bin' to your System PATH via:
+    setx PATH "%%PATH%%;${binpath}"
+
+Or add '${binpath}' to your System PATH via:
     System Properties > Environment Variables > Path > Edit > New
 
 `);
+            }
+        }
     }
 
     return ret;
