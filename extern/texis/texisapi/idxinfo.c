@@ -4,7 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#if !defined(MSDOS) && !defined(__MINGW32__)
+#if !defined(MSDOS)
 #include <unistd.h>
 #include <pwd.h>
 #endif

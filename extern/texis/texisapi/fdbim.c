@@ -4778,7 +4778,7 @@ WPILE   *org;
       if (!S_ISDIR(maxst.st_mode))              /* chop to dir */
         {
           d = strrchr(buf, PATH_SEP);
-#if defined(MSDOS) || defined(__MINGW32__)
+#if defined(MSDOS)
           if (d == CHARPN) d = strrchr(buf, '/');
 #endif
           if (d == CHARPN) goto def;            /* WTF use cwd? */
@@ -4794,7 +4794,7 @@ WPILE   *org;
 def:
   path = kdbf_getfn(org->wxorg->datdf);         /* WTF avoid drill */
   if ((d = strrchr(path, PATH_SEP)) == CHARPN
-#if defined(MSDOS) || defined(__MINGW32__)
+#if defined(MSDOS)
       && (d = strrchr(path, '/')) == CHARPN
 #endif
       )

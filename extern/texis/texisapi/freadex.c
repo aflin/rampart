@@ -14,14 +14,8 @@
 #include "string.h"
 #include "errno.h"
 
-#if defined(_WIN32) && defined(__MINGW32__)
-#include <windows.h>
-#define FHTYPE HANDLE
-#define FHTYPEPN ((HANDLE)NULL)
-#else
 #define FHTYPE FILE *
 #define FHTYPEPN (FILE *)NULL
-#endif
 #ifdef _WIN32
 #   define LOWIO
 #include <sys/types.h>

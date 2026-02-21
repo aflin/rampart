@@ -1,9 +1,3 @@
-#ifdef __MINGW32__
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#include <windows.h>
-#include <fcntl.h>
-#else
 /* For sockaddr_in */
 #include <netinet/in.h>
 /* For socket functions */
@@ -14,7 +8,6 @@
 /* for setrlimit */
 #include <sys/time.h>
 #include <sys/resource.h>
-#endif /* __MINGW32__ */
 
 #include <event2/event.h>
 #include <event2/buffer.h>
@@ -28,9 +21,7 @@
 #include <errno.h>
 #include <ctype.h>
 #include <sys/types.h>
-#if !defined(__MINGW32__)
 #include <sys/wait.h>
-#endif
 
 #include "jansson.h"
 #include "lockd.h"
@@ -639,7 +630,6 @@ main(int c, char **v)
   int dologging = 0;
   (void)v;
 
-#if !defined(__MINGW32__)
   // increase ulimit -n to max
   struct rlimit rlp;
 
@@ -651,7 +641,6 @@ main(int c, char **v)
   if(c == 1) {
     daemon(0, 0);
   }
-#endif /* !__MINGW32__ */
   setvbuf(stdout, NULL, _IONBF, 0);
   logfile = NULL;
   if(dologging) {

@@ -9,7 +9,7 @@
 #ifdef unix
 #  include <unistd.h>
 #endif
-#if defined(MSDOS) || defined(__MINGW32__)
+#if defined(MSDOS)
 #include "io.h"                                         /* for access() */
 #endif
 #include "sys/types.h"

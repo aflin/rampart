@@ -322,11 +322,7 @@ TXsetfairlock(int n)
   return -1;
 }
 
-#ifdef __MINGW32__
-PID_T
-#else
 int
-#endif
 TXddicGetDbMonitorPid(DDIC *ddic)
 {
   /* TODO: */

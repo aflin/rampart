@@ -98,15 +98,9 @@ CHECK_SYMBOL_EXISTS(getpagesize	unistd.h EPI_HAVE_GETPAGESIZE)
 CHECK_SYMBOL_EXISTS(getpass		unistd.h	HAVE_GETPASS_DECL)
 CHECK_SYMBOL_EXISTS(hstrerror	netdb.h		EPI_HAVE_HSTRERROR)
 CHECK_SYMBOL_EXISTS(task_info	mach/task_info.h HAVE_MACH_TASK_INFO)
-if(WIN32 AND MINGW)
-  set(CMAKE_REQUIRED_LIBRARIES mman)
-endif()
 CHECK_SYMBOL_EXISTS(madvise		sys/mman.h	EPI_HAVE_MADVISE)
 CHECK_SYMBOL_EXISTS(mmap			sys/mman.h	EPI_HAVE_MMAP)
 CHECK_SYMBOL_EXISTS(msync			sys/mman.h	EPI_HAVE_MSYNC)
-if(WIN32 AND MINGW)
-  unset(CMAKE_REQUIRED_LIBRARIES)
-endif()
 CHECK_C_SOURCE_RUNS("#include <stdlib.h>\nint f(const void *a, const void *b, void *c){return ((*(int *)a)-(*(int *)b))*(*(int *)c);}\nint main() {int i[]={1,2};int r=-1;qsort_r(i,2,sizeof(int),f,&r);if((i[0]==2)&&(i[1]==1)){return 0;}return -1;}" QSORT_R_WORKS)
 IF("${QSORT_R_WORKS}" EQUAL 0)
 	set(EPI_HAVE_QSORT_R ON)
@@ -227,18 +221,6 @@ CHECK_STRUCT_HAS_MEMBER("struct tm" tm_gmtoff	time.h	EPI_HAVE_TM_GMTOFF LANGUAGE
 #
 # Windows-specific checks for MinGW
 #
-if(WIN32 AND MINGW)
-	CHECK_SYMBOL_EXISTS(_chsize_s	io.h	EPI_HAVE__CHSIZE_S)
-	CHECK_C_SOURCE_COMPILES("
-		#include <time.h>
-		int main() { long tz = timezone; return 0; }
-	" EPI_HAVE_TIMEZONE_VAR)
-	CHECK_C_SOURCE_COMPILES("
-		#include <time.h>
-		#include <stdlib.h>
-		int main() { long db = _dstbias; return 0; }
-	" EPI_HAVE__DSTBIAS_VAR)
-endif()
 CHECK_STRUCT_HAS_MEMBER("struct ipc_perm" __key "sys/ipc.h;sys/shm.h"   EPI_HAVE_IPC_PERM___KEY LANGUAGE C)
 CHECK_STRUCT_HAS_MEMBER("struct ipc_perm"  _key "sys/ipc.h;sys/shm.h"   EPI_HAVE_IPC_PERM__KEY  LANGUAGE C)
 CHECK_STRUCT_HAS_MEMBER("struct ipc_perm"   key "sys/ipc.h;sys/shm.h"   EPI_HAVE_IPC_PERM_KEY   LANGUAGE C)
@@ -611,10 +593,6 @@ IF(PARSERS_FOUND)
   if(NOT WIN32)
     list(APPEND BUILD_SRCS shell.c)
   endif()
-  if(WIN32 AND MINGW)
-    list(REMOVE_ITEM BUILD_SRCS createLocksViaMonitor.c)
-    list(APPEND BUILD_SRCS mingw_stubs.c)
-  endif()
 
   add_library(texisbuild
     ${BUILD_SRCS}
@@ -916,11 +894,6 @@ target_include_directories(
 )
 target_link_options(texisapi PUBLIC -L${JANSSON_RELEASE_DIR})
 target_link_libraries(texisapi PUBLIC m z ${JANSSON_LIBS})
-if(WIN32 AND MINGW)
-    target_link_libraries(texisbuild LINK_PUBLIC mman ws2_32 dbghelp secur32)
-    target_link_libraries(texisapi PUBLIC mman ws2_32 dbghelp secur32)
-    target_link_libraries(genNgrams LINK_PUBLIC dbghelp secur32)
-endif()
 
 #target_include_directories(PUBLIC, $(TEXISAPI_SOURCE_DIR))
 #

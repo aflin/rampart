@@ -1,14 +1,8 @@
 #include "txcoreconfig.h"
 #include <stdio.h>
 #include <string.h>
-#if defined(MSDOS) || defined(__MINGW32__)
-#  include <stdlib.h>
-#  ifdef __MINGW32__
-#    include <errno.h>
-#  endif
-#else
-#  include <errno.h>
-#endif
+#include <stdlib.h>
+#include <errno.h>
 #include <sys/types.h>
 #include "os.h"
 #include "txtypes.h"
@@ -32,7 +26,7 @@
 #  define EOLSTR "\n"
 #  define samename(a,b) (strcmpi(a,b)==0)
 #else
-#  if defined(MSDOS) || defined(__MINGW32__)
+#  if defined(MSDOS)
 #     define AMODE  "rb+"     /* "ab+" is rather inefficient on MSDOS */
 #     define AMODE2 "wb"
 #     define EOLSTR "\r\n"
@@ -87,7 +81,7 @@ static char Fn[]="fixmmsgfh";
       datamsgok=0;
       if(mmsgfh!=FPNULL && mmsgfh!=stderr) fclose(mmsgfh);
       if((mmsgfh=fopen(mmsgfname,AMODE))==FPNULL
-#if defined(MSDOS) || defined(__MINGW32__)  /* MAW 01-08-91 - try creating it */
+#if defined(MSDOS)  /* MAW 01-08-91 - try creating it */
          && (mmsgfh=fopen(mmsgfname,AMODE2))==FPNULL
 #endif
       ){
@@ -101,7 +95,7 @@ static char Fn[]="fixmmsgfh";
       }else{
          strncpy(mmsgoldname,mmsgfname,MMSGFNAMESZ);
          mmsgoldname[MMSGFNAMESZ-1]='\0';
-#        if defined(MSDOS) || defined(__MINGW32__)
+#        if defined(MSDOS)
             fseek(mmsgfh,0L,SEEK_END);/* really opened rb+, so get to EOF */
 #        endif
       }

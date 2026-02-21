@@ -6428,10 +6428,10 @@ main(int argc, char *argv[])
     exit(0);
 #endif /* EPI_TEST_PRINT_TO_RING_BUFFER */
 
-#  if defined(_WIN32) && !defined(__MINGW32__)
+#  if defined(_WIN32)
     __try
       {
-#  endif /* _WIN32 && !__MINGW32__ */
+#  endif /* _WIN32 */
     tx_setgenericsigs();
     if ((res = TXinitapp(TXPMBUFPN, "htpf", argc, argv, &argcStripped,
                          &argvStripped)) > 0)
@@ -6587,7 +6587,7 @@ done:
       {
         /* TXgenericExceptionHandler() exits */
       }
-#  endif /* _WIN32 && !__MINGW32__ */
+#  endif /* _WIN32 */
   return(Ret);
 }
 #endif	/* TEST || STANDALONE */

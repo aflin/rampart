@@ -11,7 +11,7 @@
 #  include <unistd.h>
 #endif
 #include <ctype.h>
-#if defined(MSDOS) || defined(__MINGW32__)
+#if defined(MSDOS)
 #  include <io.h>
 #endif
 #include "texint.h"

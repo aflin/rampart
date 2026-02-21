@@ -9,9 +9,6 @@ extern "C" {
 #ifndef TX_CONFIG_H
 #  include "txcoreconfig.h"
 #endif /* !TX_CONFIG_H */
-#if defined(__MINGW32__) && !defined(_WINDOWS_)
-#  include <windows.h>
-#endif /* __MINGW32__ && !_WINDOWS_ */
 /* note: `#ifndef SIZES_H' needed for proper cmstrip generation of tispi.h: */
 #ifndef SIZES_H
 #  include "sizes.h"

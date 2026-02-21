@@ -1,13 +1,6 @@
 #ifdef _WIN32
 #  include <ws2tcpip.h>                 /* wtf must be before windows.h */
 #endif /* _WIN32 */
-#ifdef __MINGW32__
-/* MinGW lacks inet_aton(); provide wrapper around inet_pton(): */
-static int inet_aton(const char *s, struct in_addr *a)
-{
-    return (inet_pton(AF_INET, s, a) == 1);
-}
-#endif /* __MINGW32__ */
 #include "txcoreconfig.h"
 #include <time.h>
 #include <sys/types.h>

@@ -251,9 +251,6 @@ TXprocInfo *TXprocInfoByPid(TXPMBUF *pmbuf, TXprocInfoList *list,
                             PID_T pid, byte *heap, size_t heapSz);
 TXprocInfo *TXprocInfoClose(TXprocInfo *procInfo);
 size_t	TXprintPidInfo(char *buf, size_t bufSz, PID_T pid, PID_T *ppid);
-#if defined(__MINGW32__) && defined(_WIN32)
-struct exception_pointers;	/* forward declaration for MinGW */
-#endif
 size_t	TXprintUidAndAncestors(char *buf, size_t bufSz,
 		       TX_SIG_HANDLER_SIGINFO_TYPE *sigInfo, TXtrap flags);
 size_t	TXprintSigCodeAddr(char *buf, size_t bufSz,

@@ -21,11 +21,6 @@ extern "C" {
 #if (defined(EPI_OS_MAJOR) && defined(EPI_OS_MINOR) && ((defined(__SVR4) && defined(sun) && EPI_OS_MAJOR == 2 && EPI_OS_MINOR >= 5) || (defined(sgi) && EPI_OS_MAJOR == 4))) || defined(_WIN32)
                                      /* Solaris 5.5.1, Irix 4.0 */
 /* in net/resinit.c: */
-#  ifdef __MINGW32__
-#    ifndef EPI_INET_ATON_RETURN_TYPE
-#      define EPI_INET_ATON_RETURN_TYPE int
-#    endif
-#  endif
 extern EPI_INET_ATON_RETURN_TYPE inet_aton(const char *s, struct in_addr *a);
 
 #  ifndef EPI_HAVE_GETHOSTNAME_PROTOTYPE

@@ -3,7 +3,7 @@
 #include <stdio.h>
 #include <sys/types.h>
 #include <fcntl.h>
-#if defined(MSDOS) || defined(__MINGW32__)
+#if defined(MSDOS)
 # include <stddef.h>
 # include <io.h>
 #else

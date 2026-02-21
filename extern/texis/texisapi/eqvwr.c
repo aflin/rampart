@@ -8,7 +8,7 @@
 #ifdef EPI_HAVE_UNISTD_H
 #include <unistd.h>
 #endif
-#if defined(MSDOS) || defined(__MINGW32__)
+#if defined(MSDOS)
 #  define LOWIO
 #endif
 #include "os.h"

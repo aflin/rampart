@@ -20,7 +20,7 @@
 #     include <stdefs.h>
 #  endif
 #endif
-#if defined(MSDOS) || defined(__MINGW32__)
+#if defined(MSDOS)
 #  if !defined(AUTHOR_COPY) && !defined(PROTECT_IT)
 #     define PROTECT_IT
 #  endif

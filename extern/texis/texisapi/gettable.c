@@ -112,11 +112,11 @@ int  reset;
 				gotIt:
 					fname = getfld(w, &sz);
 					if (type[0] == TEXIS_VIEW ||
-#if defined(MSDOS) || defined(__MINGW32__)
+#if defined(MSDOS)
 				   /* Legacy looser definition of absolute: */
 					    (*fname == PATH_SEP ||
 					     *fname == '/') ||
-#endif /* MSDOS || __MINGW32__ */
+#endif /* MSDOS */
 					    TX_ISABSPATH(fname))
 						return(TXstrdup(TXPMBUFPN,
 							Fn, fname));
@@ -167,7 +167,7 @@ char *tname;
         size_t sz;
         BTLOC where;
 
-#if defined(MSDOS) || defined(__MINGW32__)
+#if defined(MSDOS)
 	if (!strncmp(tname, "SYS", 3))
 		ddreset(ddic);
 #endif

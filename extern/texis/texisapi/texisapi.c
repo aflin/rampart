@@ -1120,7 +1120,7 @@ settxtimeout(int timeout)
 {
 	static int childpid = 0;
 
-#if !defined(MSDOS) && !defined(__MINGW32__)	/* WTF */
+#if !defined(MSDOS)	/* WTF */
 	pid_t parent;
 
 	parent = getpid();

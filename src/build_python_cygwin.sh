@@ -105,6 +105,18 @@ $MAKE -j4 "libpython3.${PYTHON_MINOR}.a" python
 # Install - use -k to continue past failures (test shared modules will fail)
 $MAKE -k install || true
 
+# ensurepip may fail during 'make install' (shared module issues with -k),
+# so run it explicitly to ensure pip3 is created.
+PREFIX="$(pwd)/build"
+if [ ! -f "${PREFIX}/bin/pip3" ]; then
+    echo "Running ensurepip to create pip3..."
+    # Clear any partially-installed pip from site-packages so ensurepip
+    # doesn't skip with "Requirement already satisfied"
+    rm -rf "${PREFIX}/lib/python3.${PYTHON_MINOR}/site-packages/pip"* \
+           "${PREFIX}/lib/python3.${PYTHON_MINOR}/site-packages/setuptools"* 2>/dev/null
+    ./python.exe -E -m ensurepip --default-pip 2>&1 || true
+fi
+
 # Verify the library was built
 if [ ! -f "libpython3.${PYTHON_MINOR}.a" ]; then
     echo "ERROR: libpython3.${PYTHON_MINOR}.a was not built"

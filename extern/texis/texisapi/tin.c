@@ -3,7 +3,7 @@
 #ifdef EPI_HAVE_UNISTD_H
 #include <unistd.h>
 #endif
-#if defined(MSDOS) || defined(__MINGW32__)
+#if defined(MSDOS)
 #include "io.h"                                           /* access() */
 #endif
 #include <stdlib.h>

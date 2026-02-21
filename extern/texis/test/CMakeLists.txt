@@ -69,9 +69,7 @@ apitest1.c)
 target_link_libraries(apitest1 PUBLIC Threads::Threads)
 target_link_libraries(apitest1 LINK_PUBLIC texisapi z)
 
-if(NOT (WIN32 AND MINGW))
-  add_executable(locktest1
-  locktest1.c)
-  target_link_libraries(locktest1 PUBLIC Threads::Threads)
-  target_link_libraries(locktest1 LINK_PUBLIC texisapi z)
-endif()
+add_executable(locktest1
+locktest1.c)
+target_link_libraries(locktest1 PUBLIC Threads::Threads)
+target_link_libraries(locktest1 LINK_PUBLIC texisapi z)

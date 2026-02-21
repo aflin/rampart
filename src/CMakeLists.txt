@@ -43,11 +43,6 @@ add_definitions(
 
 add_compile_options(-Wall -g -O2)
 
-if(WIN32 AND MINGW)
-    # sys/queue.h compat from libevhtp_ws
-    include_directories(${CMAKE_BINARY_DIR}/extern/libevhtp_ws/compat)
-endif()
-
 if (RP_SANITIZE)
     add_compile_options(-fsanitize=address -fno-omit-frame-pointer)
     link_libraries("-fsanitize=address")

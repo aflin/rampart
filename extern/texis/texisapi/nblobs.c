@@ -144,7 +144,7 @@ char *url;		/* The old url */
 	strcat(fname, table);
 	if (EPI_STAT(fname, &statb) == -1)
 	{
-#if defined(_WIN32) || defined(__MINGW32__)
+#if defined(_WIN32)
 		if (mkdir(fname) == -1)
 #else
 		if (mkdir(fname, 0777) == -1)

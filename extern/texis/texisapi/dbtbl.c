@@ -17,7 +17,7 @@
 #undef EPI_OS_LONG_BITS
 #undef EPI_OS_FLOAT_BITS
 #undef EPI_OS_DOUBLE_BITS
-#if !defined(MSDOS) && !defined(__MINGW32__)
+#if !defined(MSDOS)
 #  include <unistd.h>
 #  include <pwd.h>
 #else

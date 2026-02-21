@@ -10,9 +10,7 @@
 #include <ctype.h>
 #include <float.h>
 #include <sys/types.h>
-#ifndef __MINGW32__
 #include <sys/wait.h>
-#endif
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <unistd.h>

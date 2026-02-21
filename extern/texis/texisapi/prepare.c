@@ -5,7 +5,7 @@
 #ifdef EPI_HAVE_UNISTD_H
 #include <unistd.h>
 #endif
-#if defined(MSDOS) || defined(__MINGW32__)
+#if defined(MSDOS)
 #include <process.h>
 #endif
 #include <sys/types.h>

@@ -26,9 +26,6 @@
 /* this conflicts with winternl.h below: */
 /* #  include <ntsecapi.h>                 /\* for NTSTATUS on x86 *\/ */
 #  include <direct.h>                           /* for chdir() */
-#  ifdef __MINGW32__
-#    include <windows.h>
-#  endif
 #  include <DbgHelp.h>                          /* for SYMBOL_INFO */
 #  define SECURITY_WIN32                        /* for sspi.h */
 #  include <sspi.h>                             /* for secext.h */
@@ -314,11 +311,11 @@ static TXTERMFUNC	*TXterminateEventHandler =
 #ifndef S_ISDIR
 #  define S_ISDIR(m)    ((m) & S_IFDIR)
 #endif
-#if defined(MSDOS) || defined(__MINGW32__)
+#if defined(MSDOS)
 #  define S_ISUID 0
 #  define S_ISGID 0
 #  define S_ISVTX 0
-#endif /* MSDOS || __MINGW32__ */
+#endif /* MSDOS */
 
 #ifndef SHM_LOCKED
 #  define SHM_LOCKED    0               /* not supported in Irix */
@@ -335,7 +332,7 @@ static TXTERMFUNC	*TXterminateEventHandler =
 #  define KEYFIELD      _key
 #elif defined(EPI_HAVE_IPC_PERM_KEY)
 #  define KEYFIELD      key
-#elif !defined(__MINGW32__)
+#else
         error No Key Field
 #endif
 
@@ -2666,7 +2663,7 @@ CONST char      *ext;           /* (in) extension (w/.) (NULL: none) */
 #undef BITS
         }
       /* Pick fallback dir: */
-#if defined(MSDOS) || defined(__MINGW32__)
+#if defined(MSDOS)
       /* Windows options:
        *   o  GetUserProfileDirectory() + Local Settings\Temp
        *      too hard-coded, and user may want temp elsewhere
@@ -2698,7 +2695,7 @@ cont1:
   strcpy(tmp, dir);
   d = tmp + strlen(tmp);
   if (d > tmp && d[-1] != PATH_SEP
-#if defined(MSDOS) || defined(__MINGW32__)
+#if defined(MSDOS)
       && d[-1] != '/'
 #endif
       )
@@ -3817,10 +3814,8 @@ TXgenericExceptionHandler(int sigNum,
   char          infoBuf[8192];
   char          pidBuf[64], versionNumBuf[128];
 
-#if !defined(__MINGW32__)
   __try
     {
-#endif /* !__MINGW32__ */
       infoCur = infoSkipFrom = infoBuf;
       infoEnd = infoBuf + sizeof(infoBuf);
       *infoCur = '\0';
@@ -3928,13 +3923,11 @@ TXgenericExceptionHandler(int sigNum,
     done:
       TX_POPERROR();
       TXexitsignal();
-#if !defined(__MINGW32__)
     }
   __except(EXCEPTION_EXECUTE_HANDLER)
   {
     _exit(TXEXIT_ABEND);
   }
-#endif /* !__MINGW32__ */
   return(ret);
 #  undef INFO_BUF_LEFT
 }
@@ -4391,37 +4384,21 @@ int             allNow;                 /* (in) true: set all times to now */
   else
     {
       if (creationTime &&
-#ifdef __MINGW32__
-          TXtime_t2filetime(*creationTime, (EPI_UINT32 *)&creationFiletime.dwLowDateTime,
-                            (EPI_UINT32 *)&creationFiletime.dwHighDateTime))
-#else
           TXtime_t2filetime(*creationTime, &creationFiletime.dwLowDateTime,
                             &creationFiletime.dwHighDateTime))
-#endif
         cPtr = &creationFiletime;
       else
         cPtr = NULL;
       if (accessTime &&
-#ifdef __MINGW32__
-          TXtime_t2filetime(*accessTime, (EPI_UINT32 *)&accessFiletime.dwLowDateTime,
-                            (EPI_UINT32 *)&accessFiletime.dwHighDateTime))
-#else
           TXtime_t2filetime(*accessTime, &accessFiletime.dwLowDateTime,
                             &accessFiletime.dwHighDateTime))
-#endif
         aPtr = &accessFiletime;
       else
         aPtr = NULL;
       if (modificationTime &&
-#ifdef __MINGW32__
-          TXtime_t2filetime(*modificationTime,
-                            (EPI_UINT32 *)&modificationFiletime.dwLowDateTime,
-                            (EPI_UINT32 *)&modificationFiletime.dwHighDateTime))
-#else
           TXtime_t2filetime(*modificationTime,
                             &modificationFiletime.dwLowDateTime,
                             &modificationFiletime.dwHighDateTime))
-#endif
         mPtr = &modificationFiletime;
       else
         mPtr = NULL;
@@ -6333,19 +6310,19 @@ TXpathcmpGetDiff(const char     **aPath,
 #ifdef EPI_CASE_INSENSITIVE_PATHS               /* fold lower case to upper */
           if (ac >= 'a' && ac <= 'z') ac -= 'a' - 'A';
 #endif /* EPI_CASE_INSENSITIVE_PATHS */
-#if defined(MSDOS) || defined(__MINGW32__)                                    /* canonicalize path sep */
+#if defined(MSDOS)                                                           /* canonicalize path sep */
           if (ac == '/') ac = PATH_SEP;
 #endif /* MSDOS */
           a++;
         }
       /* Treat consecutive "/" as one, and skip unimportant trailing "/": */
       while (ac == PATH_SEP && ((a >= ae || *a == '\0') ? (as > ao
-#if defined(MSDOS) || defined(__MINGW32__)
+#if defined(MSDOS)
                                                           && as[-1] != ':'
 #endif /* MSDOS */
                                                           ) :
                                 (*a == PATH_SEP
-#if defined(MSDOS) || defined(__MINGW32__)
+#if defined(MSDOS)
                                  || *a == '/'
 #endif /* MSDOS */
                                  )));
@@ -6359,19 +6336,19 @@ TXpathcmpGetDiff(const char     **aPath,
 #ifdef EPI_CASE_INSENSITIVE_PATHS               /* fold lower case to upper */
           if (bc >= 'a' && bc <= 'z') bc -= 'a' - 'A';
 #endif /* EPI_CASE_INSENSITIVE_PATHS */
-#if defined(MSDOS) || defined(__MINGW32__)                                    /* canonicalize path sep */
+#if defined(MSDOS)                                                           /* canonicalize path sep */
           if (bc == '/') bc = PATH_SEP;
 #endif /* MSDOS */
           b++;
         }
       /* Treat consecutive "/" as one, and skip unimportant trailing "/": */
       while (bc == PATH_SEP && ((b >= be || *b == '\0') ? (bs > bo
-#if defined(MSDOS) || defined(__MINGW32__)
+#if defined(MSDOS)
                                                           && bs[-1] != ':'
 #endif /* MSDOS */
                                                           ) :
                                 (*b == PATH_SEP
-#if defined(MSDOS) || defined(__MINGW32__)
+#if defined(MSDOS)
                                  || *b == '/'
 #endif /* MSDOS */
                                  )));
@@ -8413,10 +8390,8 @@ tx_alarm_thread(void *arg)
 			" %s=%p", #hn, (hn));			\
 	}}
 
-#if !defined(__MINGW32__)
 	__try
 	{
-#endif /* !__MINGW32__ */
 
 	if (TxTraceAlarm & 0x2)
 		putmsg(MINFO, CHARPN,
@@ -8527,12 +8502,10 @@ done:
 		  "%sAlarm thread ending",
 		tx_alarmstamp(stampbuf, TX_ALARMSTAMP_BUFSZ));
 	/* MS C apparently needs a null statement here */
-#if !defined(__MINGW32__)
 	;} __except(TXgenericExceptionHandler(_exception_code(),
                                               _exception_info()))
 	{
 	}
-#endif /* !__MINGW32__ */
 	return(0);
 #undef ADD_HANDLE
 }
@@ -10446,10 +10419,8 @@ void    *arg;
   CONST char            *exitreason = "unknown reason";
   TRACEPIPE_VARS;
 
-#if !defined(__MINGW32__)
   __try
     {
-#endif /* !__MINGW32__ */
 
   TRACEPIPE_BEFORE_START(TPF_THREAD_RUN)
     txpmbuf_putmsg(pobj->pmbuf, TPF_MSG_BEFORE, __FUNCTION__,
@@ -10630,11 +10601,9 @@ void    *arg;
 
 done:
   /* MS C apparently needs a null statement here */
-#if !defined(__MINGW32__)
   ;} __except(TXgenericExceptionHandler(_exception_code(), _exception_info()))
    {
    }
-#endif /* !__MINGW32__ */
   TRACEPIPE_AFTER_START(TPF_THREAD_RUN)
     txpmbuf_putmsg(pobj->pmbuf, TPF_MSG_AFTER, fn,
                    "%sIoThread=%p exiting: %s",
@@ -10789,13 +10758,8 @@ TXpopenSetParentStdioNonInherit(TXPMBUF *pmbuf,
           continue;
         }
 
-#ifdef __MINGW32__
-      fSuccess = GetHandleInformation(hParentStd[stdIdx],
-                                      (LPDWORD)&dwParentStdOrgHandleInfo[stdIdx]);
-#else
       fSuccess = GetHandleInformation(hParentStd[stdIdx],
                                       &dwParentStdOrgHandleInfo[stdIdx]);
-#endif
       TRACEPIPE_AFTER_START(TPF_OPEN)
         txpmbuf_putmsg(pmbuf, TPF_MSG_AFTER, __FUNCTION__,
                        "GetHandleInformation(%s=%p): %s returned 0x%x =%s%s%s",
@@ -10959,13 +10923,8 @@ TXPIPEARGS              *pa;    /* (returned) args for TXpreadwrite() */
    * insurance (and needed to set `dwParentStdOrgHandleInfo' for
    * restore below, if ... Inheritance is true instead):
    */
-#ifdef __MINGW32__
-  TXpopenSetParentStdioNonInherit(po->pmbuf, hParentStd,
-                                  (EPI_UINT32 *)dwParentStdOrgHandleInfo);
-#else
   TXpopenSetParentStdioNonInherit(po->pmbuf, hParentStd,
                                   dwParentStdOrgHandleInfo);
-#endif
 
   if (po->user != CHARPN)                       /* su to another user */
     {
@@ -11400,11 +11359,7 @@ TXPIPEARGS              *pa;    /* (returned) args for TXpreadwrite() */
       siwStartupInfo.wShowWindow = SW_HIDE;
     }
 
-#ifdef __MINGW32__
-  envstrlst = tx_c2dosenv((CONST char * CONST *)(po->envp != CHARPPN ? po->envp : _environ));
-#else
   envstrlst = tx_c2dosenv(po->envp != CHARPPN ? po->envp : _environ);
-#endif
   if (envstrlst == CHARPN) goto err;
 
   /* We don't specify the first argument to CreateProcess()
@@ -12551,11 +12506,7 @@ int             std;    /* (in) which STDIN_... thread to close */
 {
   int           r, ret = 1;
   TXPIPEOBJ     *pobj;
-#ifdef __MINGW32__
-  CONST char    *desc, *cmd;
-#else
   char          *desc, *cmd;
-#endif
   char          tmp[32];
   TRACEPIPE_VARS;
 

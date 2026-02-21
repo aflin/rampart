@@ -397,11 +397,7 @@ char **argv, **argvstrip;
 				GET_OPTION_ARG();
 				if(strcmp(optionArg, "line") == 0)
 				{
-	#ifdef __MINGW32__
-				setvbuf(stdout, NULL, _IOLBF, 0);
-#else
 				setlinebuf(stdout);
-#endif
 				}
 			}
 			else if (strcmp(option, "--nomonitorstart") == 0)

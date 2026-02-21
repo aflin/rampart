@@ -1305,7 +1305,7 @@ OCF     flags;
   CGISL                 *sl;
   int                   i;
 
-#if defined(MSDOS) || defined(__MINGW32__)
+#if defined(MSDOS)
   _setmode(fileno(stdin), _O_BINARY);           /* for GIFs, etc. */
   _setmode(fileno(stdout), _O_BINARY);
 #endif

@@ -11,7 +11,7 @@
 
 #ifndef __SQL
 #define __SQL
-#if !defined(_WIN32) || (defined(__MINGW32__) && !defined(FAR))
+#if !defined(_WIN32)
 #  ifndef CALLBACK
 #    define CALLBACK
 #  endif

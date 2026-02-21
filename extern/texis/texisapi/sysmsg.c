@@ -1,7 +1,7 @@
 #include "txcoreconfig.h"
 #include <stdio.h>
 #include <string.h>
-#if defined(MSDOS) || defined(__MINGW32__)
+#if defined(MSDOS)
 #  include <stdlib.h>
 #else
 #if !defined(__FreeBSD__) && !defined(__APPLE__) && !defined(__CYGWIN__) && __GNU_LIBRARY__ < 2

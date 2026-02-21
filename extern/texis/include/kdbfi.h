@@ -11,7 +11,7 @@
 
 
 #ifdef KDBF_HIGHIO
-#  if defined(MSDOS) || defined(__MINGW32__)
+#  if defined(MSDOS)
 #    define CIOMODE  "w+b"
 #    define IOMODE   "r+b"
 #    define IMODE    "rb"
@@ -23,7 +23,7 @@
 #    define OMODE    "w"
 #  endif
 #else	/* !KDBF_HIGHIO */
-#  if defined(MSDOS) || defined(__MINGW32__)
+#  if defined(MSDOS)
 #    include <io.h>
 #    define CIOMODE	O_RDWR|O_BINARY|O_CREAT, S_IREAD|S_IWRITE
 #    define IOMODE	O_RDWR|O_BINARY, 0
@@ -190,7 +190,7 @@ typedef union {
  * Header is read such that byte KDBF_PRE_ALIGN is aligned on
  * KDBF_ALIGN_SIZE boundary:
  */
-#if defined(MSDOS) || defined(__MINGW32__)
+#if defined(MSDOS)
 #  define SIZEOF_KDBFN	1	/* for el funko compilers that disagree KNG */
 #else
 #  define SIZEOF_KDBFN	sizeof(KDBFN)

@@ -33,7 +33,7 @@
 #define EBOL ':'
 #else
 				  /* MAW 07-20-92 - add macintosh def */
-#if defined(MSDOS) || defined(unix) || defined(macintosh) || defined(AOSVS) || defined(__MINGW32__)
+#if defined(MSDOS) || defined(unix) || defined(macintosh) || defined(AOSVS)
 #define EESC '\\'
 #define OSET '['
 #define CSET ']'
