@@ -667,6 +667,8 @@ target_link_libraries(rampart-net
 )
 if(CYGWIN)
     target_link_libraries(rampart-net dl)
+else()
+    target_link_libraries(rampart-net resolv)
 endif()
 
 set_property(TARGET rampart-net PROPERTY IMPORTED_LOCATION "./rampart-crypto.so")

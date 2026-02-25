@@ -27,6 +27,13 @@
 #include "openssl/err.h"
 #include "openssl/rand.h"
 
+#ifdef __CYGWIN__
+#include <dlfcn.h>
+#else
+#include <resolv.h>
+#include <arpa/nameser.h>
+#endif
+
 #if defined(__FreeBSD__)
 #include <netinet/in.h>
 #endif
@@ -891,6 +898,36 @@ static void push_addrinfo(duk_context *ctx, struct addrinfo *res, const char *hn
     duk_set_finalizer(ctx, -2);
 }
 
+/* *** DNS record type support *** */
+
+typedef struct {
+    const char *name;
+    int type_val;  /* standard DNS type code (same on all platforms) */
+} dns_type_map_t;
+
+static const dns_type_map_t dns_types[] = {
+    {"A",     1},
+    {"NS",    2},
+    {"CNAME", 5},
+    {"SOA",   6},
+    {"PTR",   12},
+    {"MX",    15},
+    {"TXT",   16},
+    {"AAAA",  28},
+    {"SRV",   33},
+    {NULL,    0}
+};
+
+static int dns_type_from_string(const char *type_str)
+{
+    int i;
+    for (i = 0; dns_types[i].name != NULL; i++) {
+        if (strcasecmp(type_str, dns_types[i].name) == 0)
+            return dns_types[i].type_val;
+    }
+    return -1;
+}
+
 static int push_resolve(duk_context *ctx, const char *hn)
 {
     struct addrinfo hints, *res=NULL;
@@ -917,11 +954,364 @@ static int push_resolve(duk_context *ctx, const char *hn)
     return 1;
 }
 
+/* resolve arbitrary record types */
+#ifndef __CYGWIN__
+
+static int push_resolve_type(duk_context *ctx, const char *hn, int dns_type, const char *type_str)
+{
+    unsigned char answer[4096];
+    int len;
+    ns_msg msg;
+    ns_rr rr;
+    int rrcount, i;
+    duk_idx_t obj_idx, arr_idx;
+    char dname[NS_MAXDNAME];
+    char addrstr[INET6_ADDRSTRLEN];
+
+    len = res_query(hn, ns_c_in, dns_type, answer, sizeof(answer));
+    if (len < 0) {
+        duk_push_object(ctx);
+        duk_push_string(ctx, hstrerror(h_errno));
+        duk_put_prop_string(ctx, -2, "errMsg");
+        return 0;
+    }
+
+    if (ns_initparse(answer, len, &msg) < 0) {
+        duk_push_object(ctx);
+        duk_push_string(ctx, "Failed to parse DNS response");
+        duk_put_prop_string(ctx, -2, "errMsg");
+        return 0;
+    }
+
+    duk_push_object(ctx);
+    obj_idx = duk_get_top_index(ctx);
+    duk_push_string(ctx, hn);
+    duk_put_prop_string(ctx, obj_idx, "host");
+    duk_push_string(ctx, type_str);
+    duk_put_prop_string(ctx, obj_idx, "type");
+    duk_push_array(ctx);
+    arr_idx = duk_get_top_index(ctx);
+
+    rrcount = ns_msg_count(msg, ns_s_an);
+    for (i = 0; i < rrcount; i++) {
+        if (ns_parserr(&msg, ns_s_an, i, &rr) < 0)
+            continue;
+        if (ns_rr_type(rr) != dns_type)
+            continue;
+
+        switch (dns_type) {
+            case 16: /* TXT */ {
+                const unsigned char *rdata = ns_rr_rdata(rr);
+                int rdlen = ns_rr_rdlen(rr);
+                int pos = 0;
+                /* concatenate all character-strings within this TXT RR */
+                duk_push_string(ctx, "");
+                while (pos < rdlen) {
+                    int slen = rdata[pos++];
+                    if (pos + slen > rdlen) break;
+                    duk_push_lstring(ctx, (const char*)&rdata[pos], slen);
+                    duk_concat(ctx, 2);
+                    pos += slen;
+                }
+                duk_put_prop_index(ctx, arr_idx,
+                    (duk_uarridx_t)duk_get_length(ctx, arr_idx));
+                break;
+            }
+            case 15: /* MX */ {
+                const unsigned char *rdata = ns_rr_rdata(rr);
+                uint16_t priority = ns_get16(rdata);
+                if (ns_name_uncompress(ns_msg_base(msg), ns_msg_end(msg),
+                        rdata + 2, dname, sizeof(dname)) < 0)
+                    continue;
+                duk_push_object(ctx);
+                duk_push_int(ctx, priority);
+                duk_put_prop_string(ctx, -2, "priority");
+                duk_push_string(ctx, dname);
+                duk_put_prop_string(ctx, -2, "exchange");
+                duk_put_prop_index(ctx, arr_idx,
+                    (duk_uarridx_t)duk_get_length(ctx, arr_idx));
+                break;
+            }
+            case 5:  /* CNAME */
+            case 2:  /* NS */
+            case 12: /* PTR */ {
+                if (ns_name_uncompress(ns_msg_base(msg), ns_msg_end(msg),
+                        ns_rr_rdata(rr), dname, sizeof(dname)) < 0)
+                    continue;
+                duk_push_string(ctx, dname);
+                duk_put_prop_index(ctx, arr_idx,
+                    (duk_uarridx_t)duk_get_length(ctx, arr_idx));
+                break;
+            }
+            case 6: /* SOA */ {
+                const unsigned char *rdata = ns_rr_rdata(rr);
+                const unsigned char *eom = ns_msg_end(msg);
+                const unsigned char *base = ns_msg_base(msg);
+                char mname[NS_MAXDNAME], rname[NS_MAXDNAME];
+                int n;
+
+                n = ns_name_uncompress(base, eom, rdata, mname, sizeof(mname));
+                if (n < 0) continue;
+                rdata += n;
+                n = ns_name_uncompress(base, eom, rdata, rname, sizeof(rname));
+                if (n < 0) continue;
+                rdata += n;
+                /* 5 x 32-bit integers: serial, refresh, retry, expire, minimum */
+                duk_push_object(ctx);
+                duk_push_string(ctx, mname);
+                duk_put_prop_string(ctx, -2, "mname");
+                duk_push_string(ctx, rname);
+                duk_put_prop_string(ctx, -2, "rname");
+                duk_push_uint(ctx, ns_get32(rdata));
+                duk_put_prop_string(ctx, -2, "serial");
+                duk_push_uint(ctx, ns_get32(rdata + 4));
+                duk_put_prop_string(ctx, -2, "refresh");
+                duk_push_uint(ctx, ns_get32(rdata + 8));
+                duk_put_prop_string(ctx, -2, "retry");
+                duk_push_uint(ctx, ns_get32(rdata + 12));
+                duk_put_prop_string(ctx, -2, "expire");
+                duk_push_uint(ctx, ns_get32(rdata + 16));
+                duk_put_prop_string(ctx, -2, "minimum");
+                duk_put_prop_index(ctx, arr_idx,
+                    (duk_uarridx_t)duk_get_length(ctx, arr_idx));
+                break;
+            }
+            case 33: /* SRV */ {
+                const unsigned char *rdata = ns_rr_rdata(rr);
+                uint16_t priority = ns_get16(rdata);
+                uint16_t weight   = ns_get16(rdata + 2);
+                uint16_t port     = ns_get16(rdata + 4);
+                if (ns_name_uncompress(ns_msg_base(msg), ns_msg_end(msg),
+                        rdata + 6, dname, sizeof(dname)) < 0)
+                    continue;
+                duk_push_object(ctx);
+                duk_push_int(ctx, priority);
+                duk_put_prop_string(ctx, -2, "priority");
+                duk_push_int(ctx, weight);
+                duk_put_prop_string(ctx, -2, "weight");
+                duk_push_int(ctx, port);
+                duk_put_prop_string(ctx, -2, "port");
+                duk_push_string(ctx, dname);
+                duk_put_prop_string(ctx, -2, "target");
+                duk_put_prop_index(ctx, arr_idx,
+                    (duk_uarridx_t)duk_get_length(ctx, arr_idx));
+                break;
+            }
+            case 1: /* A */
+                inet_ntop(AF_INET, ns_rr_rdata(rr), addrstr, sizeof(addrstr));
+                duk_push_string(ctx, addrstr);
+                duk_put_prop_index(ctx, arr_idx,
+                    (duk_uarridx_t)duk_get_length(ctx, arr_idx));
+                break;
+            case 28: /* AAAA */
+                inet_ntop(AF_INET6, ns_rr_rdata(rr), addrstr, sizeof(addrstr));
+                duk_push_string(ctx, addrstr);
+                duk_put_prop_index(ctx, arr_idx,
+                    (duk_uarridx_t)duk_get_length(ctx, arr_idx));
+                break;
+        }
+    }
+
+    duk_put_prop_string(ctx, obj_idx, "records");
+    return 1;
+}
+
+#else /* __CYGWIN__ */
+
+/* Minimal Windows DNS API definitions for DnsQuery_A / DnsRecordListFree.
+   Follows the same pattern as CYGWIN_FIXED_INFO in rampart-thread.c.
+   IMPORTANT: Use 'unsigned int' (4 bytes) for Windows DWORD fields, not
+   'unsigned long' which is 8 bytes on 64-bit Cygwin (LP64 vs Windows LLP64). */
+
+#define CYGWIN_DNS_FREE_RECORD_LIST 1
+
+typedef struct _CYGWIN_DNS_RECORD {
+    struct _CYGWIN_DNS_RECORD *pNext;
+    char  *pName;
+    unsigned short wType;
+    unsigned short wDataLength;
+    unsigned int   Flags;
+    unsigned int   dwTtl;
+    unsigned int   dwReserved;
+    union {
+        struct { unsigned int IpAddress; } A;
+        struct { char *pNameHost; } PTR; /* NS, CNAME, PTR share this layout */
+        struct { char *pNamePrimaryServer; char *pNameAdministrator;
+                 unsigned int dwSerialNo; unsigned int dwRefresh;
+                 unsigned int dwRetry; unsigned int dwExpire;
+                 unsigned int dwDefaultTtl; } SOA;
+        struct { char *pNameExchange; unsigned short wPreference;
+                 unsigned short Pad; } MX;
+        struct { unsigned int dwStringCount; char *pStringArray[1]; } TXT;
+        struct { char *pNameTarget; unsigned short wPriority;
+                 unsigned short wWeight; unsigned short wPort;
+                 unsigned short Pad; } SRV;
+        struct { unsigned char Ip6Address[16]; } AAAA;
+    } Data;
+} CYGWIN_DNS_RECORD;
+
+typedef int (*cygwin_DnsQuery_A_fn)(const char *, unsigned short,
+    unsigned int, void *, CYGWIN_DNS_RECORD **, void *);
+typedef void (*cygwin_DnsRecordListFree_fn)(CYGWIN_DNS_RECORD *, int);
+
+static int push_resolve_type(duk_context *ctx, const char *hn, int dns_type, const char *type_str)
+{
+    void *lib;
+    cygwin_DnsQuery_A_fn queryFn;
+    cygwin_DnsRecordListFree_fn freeFn;
+    CYGWIN_DNS_RECORD *results = NULL, *rec;
+    int status;
+    duk_idx_t obj_idx, arr_idx;
+    char addrstr[INET6_ADDRSTRLEN];
+
+    lib = dlopen("dnsapi.dll", RTLD_LAZY);
+    if (!lib) {
+        duk_push_object(ctx);
+        duk_push_string(ctx, "Failed to load dnsapi.dll");
+        duk_put_prop_string(ctx, -2, "errMsg");
+        return 0;
+    }
+
+    queryFn = (cygwin_DnsQuery_A_fn)dlsym(lib, "DnsQuery_A");
+    freeFn = (cygwin_DnsRecordListFree_fn)dlsym(lib, "DnsRecordListFree");
+    if (!queryFn || !freeFn) {
+        dlclose(lib);
+        duk_push_object(ctx);
+        duk_push_string(ctx, "Failed to resolve DNS API functions");
+        duk_put_prop_string(ctx, -2, "errMsg");
+        return 0;
+    }
+
+    /* DNS_QUERY_STANDARD = 0 */
+    status = queryFn(hn, (unsigned short)dns_type, 0, NULL, &results, NULL);
+    if (status != 0) {
+        if (results) freeFn(results, CYGWIN_DNS_FREE_RECORD_LIST);
+        dlclose(lib);
+        duk_push_object(ctx);
+        duk_push_sprintf(ctx, "DNS query failed (status %d)", status);
+        duk_put_prop_string(ctx, -2, "errMsg");
+        return 0;
+    }
+
+    duk_push_object(ctx);
+    obj_idx = duk_get_top_index(ctx);
+    duk_push_string(ctx, hn);
+    duk_put_prop_string(ctx, obj_idx, "host");
+    duk_push_string(ctx, type_str);
+    duk_put_prop_string(ctx, obj_idx, "type");
+    duk_push_array(ctx);
+    arr_idx = duk_get_top_index(ctx);
+
+    for (rec = results; rec; rec = rec->pNext) {
+        if (rec->wType != dns_type) continue;
+
+        switch (dns_type) {
+            case 16: /* TXT */ {
+                unsigned int j;
+                duk_push_string(ctx, "");
+                for (j = 0; j < rec->Data.TXT.dwStringCount; j++) {
+                    duk_push_string(ctx, rec->Data.TXT.pStringArray[j]);
+                    duk_concat(ctx, 2);
+                }
+                duk_put_prop_index(ctx, arr_idx,
+                    (duk_uarridx_t)duk_get_length(ctx, arr_idx));
+                break;
+            }
+            case 15: /* MX */
+                duk_push_object(ctx);
+                duk_push_int(ctx, rec->Data.MX.wPreference);
+                duk_put_prop_string(ctx, -2, "priority");
+                duk_push_string(ctx, rec->Data.MX.pNameExchange);
+                duk_put_prop_string(ctx, -2, "exchange");
+                duk_put_prop_index(ctx, arr_idx,
+                    (duk_uarridx_t)duk_get_length(ctx, arr_idx));
+                break;
+            case 5:  /* CNAME */
+            case 2:  /* NS */
+            case 12: /* PTR */
+                duk_push_string(ctx, rec->Data.PTR.pNameHost);
+                duk_put_prop_index(ctx, arr_idx,
+                    (duk_uarridx_t)duk_get_length(ctx, arr_idx));
+                break;
+            case 6: /* SOA */
+                duk_push_object(ctx);
+                duk_push_string(ctx, rec->Data.SOA.pNamePrimaryServer);
+                duk_put_prop_string(ctx, -2, "mname");
+                duk_push_string(ctx, rec->Data.SOA.pNameAdministrator);
+                duk_put_prop_string(ctx, -2, "rname");
+                duk_push_uint(ctx, rec->Data.SOA.dwSerialNo);
+                duk_put_prop_string(ctx, -2, "serial");
+                duk_push_uint(ctx, rec->Data.SOA.dwRefresh);
+                duk_put_prop_string(ctx, -2, "refresh");
+                duk_push_uint(ctx, rec->Data.SOA.dwRetry);
+                duk_put_prop_string(ctx, -2, "retry");
+                duk_push_uint(ctx, rec->Data.SOA.dwExpire);
+                duk_put_prop_string(ctx, -2, "expire");
+                duk_push_uint(ctx, rec->Data.SOA.dwDefaultTtl);
+                duk_put_prop_string(ctx, -2, "minimum");
+                duk_put_prop_index(ctx, arr_idx,
+                    (duk_uarridx_t)duk_get_length(ctx, arr_idx));
+                break;
+            case 33: /* SRV */
+                duk_push_object(ctx);
+                duk_push_int(ctx, rec->Data.SRV.wPriority);
+                duk_put_prop_string(ctx, -2, "priority");
+                duk_push_int(ctx, rec->Data.SRV.wWeight);
+                duk_put_prop_string(ctx, -2, "weight");
+                duk_push_int(ctx, rec->Data.SRV.wPort);
+                duk_put_prop_string(ctx, -2, "port");
+                duk_push_string(ctx, rec->Data.SRV.pNameTarget);
+                duk_put_prop_string(ctx, -2, "target");
+                duk_put_prop_index(ctx, arr_idx,
+                    (duk_uarridx_t)duk_get_length(ctx, arr_idx));
+                break;
+            case 1: /* A */
+                inet_ntop(AF_INET, &rec->Data.A.IpAddress, addrstr, sizeof(addrstr));
+                duk_push_string(ctx, addrstr);
+                duk_put_prop_index(ctx, arr_idx,
+                    (duk_uarridx_t)duk_get_length(ctx, arr_idx));
+                break;
+            case 28: /* AAAA */
+                inet_ntop(AF_INET6, rec->Data.AAAA.Ip6Address, addrstr, sizeof(addrstr));
+                duk_push_string(ctx, addrstr);
+                duk_put_prop_index(ctx, arr_idx,
+                    (duk_uarridx_t)duk_get_length(ctx, arr_idx));
+                break;
+        }
+    }
+
+    duk_put_prop_string(ctx, obj_idx, "records");
+
+    freeFn(results, CYGWIN_DNS_FREE_RECORD_LIST);
+    dlclose(lib);
+    return 1;
+}
+
+#endif /* __CYGWIN__ */
+
 
 duk_ret_t duk_rp_net_resolve(duk_context *ctx)
 {
-    push_resolve(ctx,
-        REQUIRE_STRING(ctx, 0, "resolve: argument must be a String") );
+    const char *hn = REQUIRE_STRING(ctx, 0, "resolve: first argument must be a String (hostname)");
+    const char *type_str = NULL;
+    int dns_type;
+
+    if (duk_is_string(ctx, 1))
+        type_str = duk_get_string(ctx, 1);
+
+    /* no type -> use existing getaddrinfo path (returns full address object) */
+    if (!type_str)
+    {
+        push_resolve(ctx, hn);
+        return 1;
+    }
+
+    /* explicit type -> consistent {host, type, records} format */
+    dns_type = dns_type_from_string(type_str);
+    if (dns_type < 0)
+        RP_THROW(ctx, "resolve: unknown record type '%s'", type_str);
+
+    push_resolve_type(ctx, hn, dns_type, type_str);
     return 1;
 }
 
@@ -3740,7 +4130,7 @@ duk_ret_t duk_open_module(duk_context *ctx)
     // [ net ]
 
     // resolve
-    duk_push_c_function(ctx, duk_rp_net_resolve, 1);
+    duk_push_c_function(ctx, duk_rp_net_resolve, 2);
     duk_put_prop_string(ctx, -2, "resolve");
 
     // resolve
