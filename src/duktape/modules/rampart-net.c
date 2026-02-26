@@ -893,7 +893,7 @@ static void push_addrinfo(duk_context *ctx, struct addrinfo *res, const char *hn
 
 static int push_resolve(duk_context *ctx, const char *hn)
 {
-    struct addrinfo hints, *res;
+    struct addrinfo hints, *res=NULL;
     int ecode;
 
     memset (&hints, 0, sizeof (hints));
@@ -1127,7 +1127,7 @@ static duk_ret_t duk_rp_net_resolve_async(duk_context *ctx)
 
 static int push_reverse(duk_context *ctx, const char *hn)
 {
-    struct addrinfo hints, *res;
+    struct addrinfo hints, *res=NULL;
     int ecode;
     char hbuf[NI_MAXHOST];
     struct sockaddr *sa;
@@ -1251,7 +1251,7 @@ static duk_ret_t duk_rp_net_resolver_reverse(duk_context *ctx)
     const char *server=NULL,
                *host = REQUIRE_STRING(ctx, 0, "net.reverse: first argument must be a string");
     duk_idx_t func_idx=1;
-    struct addrinfo hints, *res;
+    struct addrinfo hints, *res=NULL;
     int ecode;
 
     memset (&hints, 0, sizeof (hints));
