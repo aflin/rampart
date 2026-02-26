@@ -19,9 +19,79 @@ void duk_rp_set_enum_false(duk_context *ctx, duk_idx_t objidx, const char *propn
 }
 
 
+/* json parse helpers for cyclic */
+static void json_resolve_path(duk_context *ctx, duk_idx_t root_idx, const char *path) {
+    const char *p = path;
+    const char *start;
+    duk_uarridx_t aidx;
+
+    duk_dup(ctx, root_idx);
+
+    if (*p == '$') p++;
+    while (*p) {
+        if (*p == '.') {
+            p++;
+            start = p;
+            while (*p && *p != '.' && *p != '[') p++;
+            duk_push_lstring(ctx, start, (duk_size_t)(p - start));
+            duk_get_prop(ctx, -2);
+            duk_remove(ctx, -2);
+        } else if (*p == '[') {
+            p++;
+            aidx = (duk_uarridx_t)atoi(p);
+            while (*p && *p != ']') p++;
+            if (*p == ']') p++;
+            duk_get_prop_index(ctx, -1, aidx);
+            duk_remove(ctx, -2);
+        } else {
+            p++;
+        }
+    }
+}
+
+static void json_restore(duk_context *ctx, duk_idx_t obj_idx, duk_idx_t root_idx) {
+    duk_idx_t enum_idx;
+
+    if (!duk_is_object(ctx, obj_idx) || duk_is_function(ctx, obj_idx))
+        return;
+
+    obj_idx = duk_normalize_index(ctx, obj_idx);
+
+    duk_enum(ctx, obj_idx, 0);
+    enum_idx = duk_normalize_index(ctx, -1);
+
+    while (duk_next(ctx, enum_idx, 1)) {
+        /* stack: ... enum key value */
+        if (duk_is_object(ctx, -1) && !duk_is_function(ctx, -1)) {
+            duk_get_prop_string(ctx, -1, "_cyclic_ref");
+            if (duk_is_string(ctx, -1)) {
+                /* stack: ... enum key placeholder ref_string */
+                json_resolve_path(ctx, root_idx, duk_get_string(ctx, -1));
+                /* stack: ... enum key placeholder ref_string target */
+                duk_remove(ctx, -2);  /* remove ref_string */
+                duk_remove(ctx, -2);  /* remove placeholder */
+                /* stack: ... enum key target */
+                duk_put_prop(ctx, obj_idx);
+            } else {
+                duk_pop(ctx);   /* pop undefined (no _cyclic_ref) */
+                json_restore(ctx, -1, root_idx);
+                duk_pop_2(ctx); /* pop key and value */
+            }
+        } else {
+            duk_pop_2(ctx); /* pop key and value */
+        }
+    }
+    duk_pop(ctx); /* pop enum */
+}
+
+
 /* allow JSON.parse to accept buffers */
 duk_ret_t duk_rp_json_parse(duk_context *ctx)
 {
+    // normally its JSON.parse(text, reviver) where reviver must be callable.
+    // here if reviver is true, we restore, e.g. { "_cyclic_ref": "$.a" }
+    int do_restore= duk_get_boolean_default(ctx, 1, 0);
+
     if(duk_is_buffer_data(ctx,0))
         duk_buffer_to_string(ctx,0);
     duk_get_global_string(ctx, "JSON");
@@ -29,6 +99,13 @@ duk_ret_t duk_rp_json_parse(duk_context *ctx)
     duk_insert(ctx, 0);
     duk_pop(ctx);//"JSON"
     duk_call(ctx,2);
+
+    // undo any cyclic references that printf('%!J', ...) might produce
+    if(do_restore)
+    {
+        duk_idx_t idx = duk_normalize_index(ctx, -1);
+        json_restore(ctx, idx, idx);
+    }
     return 1;
 }
 
