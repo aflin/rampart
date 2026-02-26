@@ -1386,6 +1386,11 @@ static int repl(duk_context *ctx)
     struct event ev_sig;
     struct timeval to={0};
 
+    // rampart -e non-existent-file.js will get us here without setup.
+    // so just exit
+    if(!mainthr || !mainthr->base)
+        exit(1);
+
     RP_PTINIT(&repl_lock);
 
     pthread_attr_init(&attr);
