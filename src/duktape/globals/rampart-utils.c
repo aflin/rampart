@@ -21,6 +21,7 @@
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <unistd.h>
+#include <sys/ioctl.h>
 #include <termios.h>
 #include <string.h>
 #include <sys/resource.h>
@@ -805,6 +806,9 @@ RPPATH rp_find_path_vari(char *file, ...)
     RPPATH ret={{0}};
     char *arg=NULL, path[PATH_MAX];
     struct stat sb;
+#ifdef __CYGWIN__
+    char _cyg_convpath[PATH_MAX];
+#endif
 
     //printf("looking for %s in paths\n", file);
 
@@ -824,6 +828,10 @@ RPPATH rp_find_path_vari(char *file, ...)
             ret.stat=sb;
             if(!realpath(file,ret.path))
                 strcpy(ret.path,file);
+#ifdef __CYGWIN__
+            else if(rp_cygwin_to_posixpath(ret.path, _cyg_convpath, sizeof(_cyg_convpath)))
+                strcpy(ret.path, _cyg_convpath);
+#endif
         }
         //go no further even if not found.
         return ret;
@@ -847,6 +855,10 @@ RPPATH rp_find_path_vari(char *file, ...)
                 ret.stat=sb;
                 if(!realpath(path,ret.path))
                     strcpy(ret.path,file);
+#ifdef __CYGWIN__
+                else if(rp_cygwin_to_posixpath(ret.path, _cyg_convpath, sizeof(_cyg_convpath)))
+                    strcpy(ret.path, _cyg_convpath);
+#endif
                 return ret;
             }
         }
@@ -872,6 +884,10 @@ RPPATH rp_find_path_vari(char *file, ...)
                 ret.stat=sb;
                 if(!realpath(path,ret.path))
                     strcpy(ret.path,file);
+#ifdef __CYGWIN__
+                else if(rp_cygwin_to_posixpath(ret.path, _cyg_convpath, sizeof(_cyg_convpath)))
+                    strcpy(ret.path, _cyg_convpath);
+#endif
                 return ret;
             }
         }
@@ -903,6 +919,10 @@ RPPATH rp_find_path_vari(char *file, ...)
                     ret.stat=sb;
                     if(!realpath(path,ret.path))
                         strcpy(ret.path,file);
+#ifdef __CYGWIN__
+                    else if(rp_cygwin_to_posixpath(ret.path, _cyg_convpath, sizeof(_cyg_convpath)))
+                        strcpy(ret.path, _cyg_convpath);
+#endif
                     return ret;
                 }
             }
@@ -963,6 +983,11 @@ RPPATH rp_get_home_path(char *file, char *subdir)
     size_t plen;
     RPPATH ret={{0}};
     mode_t mode=0755;
+#ifdef __CYGWIN__
+    char _home_convpath[PATH_MAX];
+    if (home && rp_cygwin_to_posixpath(home, _home_convpath, sizeof(_home_convpath)))
+        home = _home_convpath;
+#endif
 
     if( !home || access(home, W_OK)==-1 )
     {
@@ -1456,6 +1481,14 @@ duk_ret_t duk_rp_realpath(duk_context *ctx)
     if(!realpath(path,respath))
         RP_THROW(ctx, "realPath: %s\n", strerror(errno));
 
+#ifdef __CYGWIN__
+    {
+        char convpath[PATH_MAX];
+        if (rp_cygwin_to_posixpath(respath, convpath, sizeof(convpath)))
+            strcpy(respath, convpath);
+    }
+#endif
+
     duk_push_string(ctx, respath);
     return 1;
 }
@@ -1571,6 +1604,13 @@ void duk_process_init(duk_context *ctx)
     char *env;
 
     home_dir=getenv("HOME");
+#ifdef __CYGWIN__
+    {
+        static char _homedir_conv[PATH_MAX];
+        if (home_dir && rp_cygwin_to_posixpath(home_dir, _homedir_conv, sizeof(_homedir_conv)))
+            home_dir = _homedir_conv;
+    }
+#endif
 
     if ( !home_dir || access(home_dir, R_OK)==-1 )
     {
@@ -1648,12 +1688,21 @@ void duk_process_init(duk_context *ctx)
 
         for (i=0;i<rampart_argc;i++)
         {
+#ifdef __CYGWIN__
+            /* argv0 has been converted to /c/... form in main() */
+            duk_push_string(ctx, (i == 0) ? argv0 : rampart_argv[i]);
+#else
             duk_push_string(ctx,rampart_argv[i]);
+#endif
             duk_put_prop_index(ctx,-2,(duk_uarridx_t)i);
         }
         duk_put_prop_string(ctx,-2,"argv");
 
+#ifdef __CYGWIN__
+        duk_push_string(ctx, argv0);
+#else
         duk_push_string(ctx,rampart_argv[0]);
+#endif
         duk_put_prop_string(ctx,-2,"argv0");
 
         duk_push_string(ctx,RP_script_path);
@@ -2903,7 +2952,18 @@ duk_ret_t duk_rp_stat_lstat(duk_context *ctx, int islstat)
         if(S_ISLNK(path_stat.st_mode)) {
             ssize_t len = readlink(path, buf, PATH_MAX);
             if(len > 0) {
+                buf[len] = '\0';
+#ifdef __CYGWIN__
+                {
+                    char convpath[PATH_MAX];
+                    if(rp_cygwin_to_posixpath(buf, convpath, sizeof(convpath)))
+                        duk_push_string(ctx, convpath);
+                    else
+                        duk_push_lstring(ctx, buf, (duk_size_t)len);
+                }
+#else
                 duk_push_lstring(ctx, buf, (duk_size_t)len);
+#endif
                 duk_put_prop_string(ctx, -2, "link");
             }
         }
@@ -3543,6 +3603,18 @@ duk_ret_t duk_rp_getcwd(duk_context *ctx)
 
     if(!cwd)
         RP_THROW(ctx, "getcwd(): error - %s", strerror(errno));
+
+#ifdef __CYGWIN__
+    {
+        char convpath[PATH_MAX];
+        if(rp_cygwin_to_posixpath(cwd, convpath, sizeof(convpath))) {
+            duk_push_string(ctx, convpath);
+            free(cwd);
+            return 1;
+        }
+    }
+#endif
+
     duk_push_string(ctx, cwd);
     free(cwd);
     return 1;
@@ -3686,7 +3758,18 @@ duk_ret_t duk_rp_shell(duk_context *ctx)
         duk_pop(ctx);
 
     if (getenv("SHELL"))
+    {
         sh=getenv("SHELL");
+#ifdef __CYGWIN__
+        /* On relocated Cygwin, SHELL path may be in /cygdrive/ format.
+           Convert to /c/... form so it resolves correctly. */
+        {
+            static char _shell_conv[PATH_MAX];
+            if (rp_cygwin_to_posixpath(sh, _shell_conv, sizeof(_shell_conv)))
+                sh = _shell_conv;
+        }
+#endif
+    }
     duk_push_string(ctx,sh);
     duk_insert(ctx,0);
     duk_push_string(ctx,"-c");
@@ -4053,7 +4136,25 @@ duk_ret_t duk_rp_delete(duk_context *ctx)
     const char *file = duk_require_string(ctx, -1);
 
     if (remove(file) != 0)
+    {
+#ifdef __CYGWIN__
+        /* On Cygwin (Windows), open files can't be deleted while held
+           open by another process (EBUSY).  Try GC + retry in case
+           the handle is held by a JS/Python object in this thread. */
+        if (errno == EBUSY || errno == EACCES)
+        {
+            int retries;
+            for (retries = 0; retries < 3; retries++)
+            {
+                duk_gc(ctx, 0);
+                usleep(10000);
+                if (remove(file) == 0)
+                    return 0;
+            }
+        }
+#endif
         RP_THROW(ctx, "rmFile(): error deleting file: %s", strerror(errno));
+    }
 
     return 0;
 }
@@ -5387,6 +5488,9 @@ static char *ca_bundle_locs[]={
     "/etc/ssl/certs/ca-certificates.crt",
     "/etc/pki/tls/certs/ca-bundle.crt",
     "/usr/share/ssl/certs/ca-bundle.crt",
+#ifdef __CYGWIN__
+    "/usr/ssl/certs/ca-bundle.crt",
+#endif
     "/usr/local/share/certs/ca-root-nss.crt",
     "/etc/ssl/cert.pem",
     NULL
@@ -5402,7 +5506,7 @@ static void find_bundle()
     //    return;
 
     //else if we find one somewhere else, set char *ca_bundle to it
-    while(cur)
+    while(*cur)
     {
         if (access(*cur, R_OK) == 0)
         {
@@ -5411,6 +5515,18 @@ static void find_bundle()
         }
         cur++;
     }
+
+#ifdef __CYGWIN__
+    /* When the bundled msys-2.0.dll is relocated, the Cygwin root
+       changes and the standard CA bundle paths above won't resolve.
+       Look for a CA bundle installed alongside rampart as a fallback. */
+    {
+        static char local_bundle[PATH_MAX];
+        snprintf(local_bundle, sizeof(local_bundle), "%s/etc/ca-bundle.crt", rampart_dir);
+        if (access(local_bundle, R_OK) == 0)
+            rp_ca_bundle = local_bundle;
+    }
+#endif
 }
 
 char *ttod(char *s, char *e, double *px, double *py, char *op);
@@ -6766,6 +6882,12 @@ typedef struct {
     size_t used;
     pthread_mutex_t lock;
 } buffer_t;
+
+#ifdef __CYGWIN__
+/* Cygwin's off_t is already 64-bit on x86_64, and cookie_io_functions_t
+   uses off_t, so alias off64_t to off_t for type compatibility. */
+#define off64_t off_t
+#endif
 
 #ifdef __APPLE__
 
@@ -9265,6 +9387,29 @@ duk_ret_t rp_auto_scandate(duk_context *ctx)
     }
 
     //p=(char*)datestr + eix;printf("eidx=%d, strlen=%d, endchar='%c'(%d)\n", eix, (int)strlen(datestr), *p, *p);
+
+    /* Check for numeric timezone offset (+/-HHMM) remaining after match,
+       for platforms where strptime doesn't support %z (e.g. Cygwin) */
+    if(matched[strlen(matched)-1] != 'z')
+    {
+        p=(char*)datestr + eix;
+        while(isspace(*p))p++;
+
+        if(
+            (*p=='-' || *p=='+') &&
+            isdigit(p[1]) && isdigit(p[2]) &&
+            isdigit(p[3]) && isdigit(p[4])
+        )
+        {
+            time_t toff = 0;
+            int mult = (*p == '-') ? -1 : 1;
+            p++;
+            toff = (p[0] - '0') * 10 + (p[1] - '0');
+            toff *= 60;
+            toff += (p[2] - '0') * 10 + (p[3] - '0');
+            tzoff = dateoff = toff * 60 * mult;
+        }
+    }
 
     // WHAT TO DO IF WE GOT A %z
     if(matched[strlen(matched)-1]=='z')

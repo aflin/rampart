@@ -36,7 +36,7 @@
 // Operating System Check
 // -----------------------------------------------------------------------------
 
-#if defined(__CYGWIN__)
+#if defined(__CYGWIN__) && !defined(__MSYS__)
 #error "Cygwin is not supported."
 #endif
 

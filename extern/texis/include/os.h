@@ -592,7 +592,7 @@ extern int strnicmp ARGS((CONST char *d1, CONST char *s2, size_t n));
       extern unsigned int sleep  ARGS((unsigned int));
 #  endif
 #  ifndef AOSVS
-#    ifndef __cplusplus
+#    if !defined(__cplusplus)
       extern FILE        *popen  ARGS((char *,char *));
       extern int          pclose ARGS((FILE *));
 #    endif
@@ -723,7 +723,7 @@ extern int strnicmp ARGS((CONST char *d1, CONST char *s2, size_t n));
 #  define ushort unsigned short
 #endif
 #if !defined(uint) && !defined(HAVE_UINT)
-   #define uint unsigned int;
+   #define uint unsigned int
 #endif
 #ifndef ulong
 #  define ulong unsigned long

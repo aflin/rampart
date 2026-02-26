@@ -189,6 +189,8 @@ evthread_use_pthreads_with_flags(int flags)
 	if (pthread_mutexattr_settype(&attr_recursive, PTHREAD_MUTEX_RECURSIVE))
 		return -1;
 
+#if !defined(__CYGWIN__)
+#ifdef PTHREAD_PRIO_INHERIT
 	if (flags & EVTHREAD_PTHREAD_PRIO_INHERIT) {
 		/* Set up priority inheritance */
 		if (pthread_mutexattr_setprotocol(&attr_default, PTHREAD_PRIO_INHERIT))
@@ -196,6 +198,8 @@ evthread_use_pthreads_with_flags(int flags)
 		if (pthread_mutexattr_setprotocol(&attr_recursive, PTHREAD_PRIO_INHERIT))
 			return -1;
 	}
+#endif
+#endif
 
 	evthread_set_lock_callbacks(&cbs);
 	evthread_set_condition_callbacks(&cond_cbs);

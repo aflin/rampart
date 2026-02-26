@@ -1,10 +1,10 @@
 #include "txcoreconfig.h"
 #include <stdio.h>
 #include <string.h>
-#ifdef MSDOS
+#if defined(MSDOS)
 #  include <stdlib.h>
 #else
-#if !defined(__FreeBSD__) && !defined(__APPLE__) && __GNU_LIBRARY__ < 2
+#if !defined(__FreeBSD__) && !defined(__APPLE__) && !defined(__CYGWIN__) && __GNU_LIBRARY__ < 2
    extern int  sys_nerr;
    extern char *sys_errlist[];
 #endif

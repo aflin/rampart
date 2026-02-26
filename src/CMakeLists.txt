@@ -5,12 +5,8 @@ include(CheckCSourceCompiles)
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_C_STANDARD 99)
 
-if(${CMAKE_INSTALL_PREFIX})
-    message("install = ${CMAKE_INSTALL_PREFIX}")
-else()
-    set (CMAKE_INSTALL_PREFIX "/usr/local/rampart")
-    message("setting install = ${CMAKE_INSTALL_PREFIX}")
-endif()
+# Install prefix is set in top-level CMakeLists.txt
+message("install = ${CMAKE_INSTALL_PREFIX}")
 
 execute_process (
     COMMAND bash -c "which gmake"
@@ -64,6 +60,16 @@ FILE (APPEND ${CMAKE_BINARY_DIR}/include/timestamp.cmake "FILE(WRITE ${CMAKE_BIN
 FILE (APPEND ${CMAKE_BINARY_DIR}/include/timestamp.cmake "FILE(APPEND ${CMAKE_BINARY_DIR}/include/rampart_timestamp.h \"#define TIMESTAMP_H\\n\\n\")\n")
 FILE (APPEND ${CMAKE_BINARY_DIR}/include/timestamp.cmake "FILE(APPEND ${CMAKE_BINARY_DIR}/include/rampart_timestamp.h \"#define RAMPART_VERSION_TIMESTAMP \\\"\${TIMEZ}\\\"\\n\\n\")\n")
 FILE (APPEND ${CMAKE_BINARY_DIR}/include/timestamp.cmake "FILE(APPEND ${CMAKE_BINARY_DIR}/include/rampart_timestamp.h \"#define RAMPART_BUILD_PLATFORM \\\"${BUILD_PLATFORM}\\\"\\n\\n\")\n")
+if(CYGWIN)
+    execute_process(
+        COMMAND cygpath -m "${CMAKE_C_COMPILER}"
+        OUTPUT_VARIABLE BUILD_CC_PATH
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+else()
+    set(BUILD_CC_PATH "${CMAKE_C_COMPILER}")
+endif()
+FILE (APPEND ${CMAKE_BINARY_DIR}/include/timestamp.cmake "FILE(APPEND ${CMAKE_BINARY_DIR}/include/rampart_timestamp.h \"#define RAMPART_BUILD_CC \\\"${BUILD_CC_PATH}\\\"\\n\\n\")\n")
 FILE (APPEND ${CMAKE_BINARY_DIR}/include/timestamp.cmake "FILE(APPEND ${CMAKE_BINARY_DIR}/include/rampart_timestamp.h \"#endif // TIMESTAMP_H\\n\")\n")
 ADD_CUSTOM_TARGET (
     timestamp
@@ -423,9 +429,16 @@ target_link_libraries(rampart-lmdb
     ${PROJECT_BINARY_DIR}/extern/lmdb/liblmdb.a
 )
 
+if(CYGWIN)
+    # Cygwin/MSYS pthreads lack robust mutex support
+    set(LMDB_XCFLAGS "-fPIC -DMDB_USE_ROBUST=0")
+else()
+    set(LMDB_XCFLAGS "-fPIC")
+endif()
+
 add_custom_command(
     OUTPUT ${PROJECT_BINARY_DIR}/extern/lmdb/liblmdb.a
-    COMMAND ${MAKE} XCFLAGS=-fPIC
+    COMMAND ${MAKE} "XCFLAGS=${LMDB_XCFLAGS}"
     WORKING_DIRECTORY ${PROJECT_BINARY_DIR}/extern/lmdb/
 )
 
@@ -497,7 +510,13 @@ add_custom_target(texislockd-cp
     DEPENDS ${CMAKE_BINARY_DIR}/src/texislockd
 )
 add_dependencies(rampart texislockd-cp)
-add_dependencies(texislockd-cp rampart-sql)
+if(CYGWIN)
+  # Avoid circular dependency: rampart -> texislockd-cp -> rampart-sql -> rampart
+  # texislockd-cp only needs texisapi built (to produce the texislockd binary)
+  add_dependencies(texislockd-cp texisapi)
+else()
+  add_dependencies(texislockd-cp rampart-sql)
+endif()
 
 add_dependencies(rampart-sql texisapi)
 
@@ -646,6 +665,9 @@ target_link_libraries(rampart-net
     ${LIBEVENT_TARGET_DIR}/lib/libevent_openssl.a
       rampart-crypto
 )
+if(CYGWIN)
+    target_link_libraries(rampart-net dl)
+endif()
 
 set_property(TARGET rampart-net PROPERTY IMPORTED_LOCATION "./rampart-crypto.so")
 
@@ -716,25 +738,61 @@ endif()
 message("Configuration for python build:")
 #message("    RAMPART_SSL_DIR=${PROJECT_BINARY_DIR}/extern/openssl PKG_CONFIG_PATH=\"${PYPKG}\" LDFLAGS=\"${PYLDFLAGS}\" CFLAGS=\"${PYFLAGS}\" TCLTK_LIBS=\"-ltk -ltcl\" ./configure --enable-optimizations --prefix=\"${PROJECT_BINARY_DIR}/extern/${PYTHON_DIR_NAME}/build\"")
 
+if(CYGWIN)
+  # MSYS platform name (e.g. msys_nt-10.0-17763) contains periods that break
+  # Python's _sysconfigdata module import. Set MACHDEP=msys for a clean name.
+  # Pass -std=gnu11 via CFLAGS to configure so Python uses it throughout (GCC 15 C23 compat).
+  # Disable --enable-optimizations: PGO requires _testembed which fails to link on Cygwin.
+  # Use --disable-shared: Cygwin's DLL model causes __imp_ symbol errors in _testembed and
+  # shared extension modules. Static build embeds all modules into libpython3.11.a.
+  set(PYTHON_EXTRA_ENV "MACHDEP=msys CFLAGS=-std=gnu11")
+  set(PYTHON_MAKE_FLAGS "")
+  set(PYTHON_CONFIGURE_OPTS "--disable-shared --prefix=\"${PROJECT_BINARY_DIR}/extern/${PYTHON_DIR_NAME}/build\"")
+else()
+  set(PYTHON_EXTRA_ENV "")
+  set(PYTHON_MAKE_FLAGS "CFLAGS=${CMAKE_C_FLAGS}")
+  set(PYTHON_CONFIGURE_OPTS "--enable-optimizations --prefix=\"${PROJECT_BINARY_DIR}/extern/${PYTHON_DIR_NAME}/build\"")
+endif()
+
+if(CYGWIN)
+  # Use MSYS2's bash explicitly — Git for Windows' bash has an incompatible
+  # msys-2.0.dll that prevents configure test programs from executing.
+  set(BASH_CMD /usr/bin/bash)
+else()
+  set(BASH_CMD bash)
+endif()
+
 add_custom_command(
     OUTPUT ${PYTHON_BIN_DIR}/Makefile
     DEPENDS rampart-crypto
-    COMMAND bash -c "if [ ! -e ${PYTHON_BIN_DIR}/Makefile ]; then RAMPART_SSL_DIR=${PROJECT_BINARY_DIR}/extern/openssl PKG_CONFIG_PATH=\"${PYPKG}\" LDFLAGS=\"${PYLDFLAGS}\" CPPFLAGS=\"${PYFLAGS}\" TCLTK_LIBS=\"-ltk -ltcl\" ./configure --enable-optimizations --prefix=\"${PROJECT_BINARY_DIR}/extern/${PYTHON_DIR_NAME}/build\";fi"
+    COMMAND ${BASH_CMD} -c "if [ ! -e ${PYTHON_BIN_DIR}/Makefile ]; then ${PYTHON_EXTRA_ENV} RAMPART_SSL_DIR=${PROJECT_BINARY_DIR}/extern/openssl PKG_CONFIG_PATH=\"${PYPKG}\" LDFLAGS=\"${PYLDFLAGS}\" CPPFLAGS=\"${PYFLAGS}\" TCLTK_LIBS=\"-ltk -ltcl\" ./configure ${PYTHON_CONFIGURE_OPTS};fi"
     WORKING_DIRECTORY ${PYTHON_BIN_DIR}
     VERBATIM
 )
 
+if(CYGWIN)
+# On Cygwin, Python's build_all target includes _testembed and shared extension
+# modules that fail to link (no shared libpython). Use a helper script to build
+# only what we need: the static library, the python binary, and install.
 add_custom_command(
     DEPENDS ${PYTHON_BIN_DIR}/Makefile
     OUTPUT ${PYTHON_BIN_DIR}/libpython3.${PYTHON_MINOR}.a
-    COMMAND ${CMAKE_MAKE_PROGRAM} CFLAGS=${CMAKE_C_FLAGS}
-    COMMAND ${CMAKE_MAKE_PROGRAM} CFLAGS=${CMAKE_C_FLAGS} install
+    COMMAND ${BASH_CMD} ${PROJECT_SOURCE_DIR}/src/build_python_cygwin.sh ${PYTHON_MINOR} ${CMAKE_MAKE_PROGRAM}
     WORKING_DIRECTORY ${PYTHON_BIN_DIR}
 )
+else()
+add_custom_command(
+    DEPENDS ${PYTHON_BIN_DIR}/Makefile
+    OUTPUT ${PYTHON_BIN_DIR}/libpython3.${PYTHON_MINOR}.a
+    COMMAND ${CMAKE_MAKE_PROGRAM} ${PYTHON_MAKE_FLAGS}
+    COMMAND ${CMAKE_MAKE_PROGRAM} ${PYTHON_MAKE_FLAGS} install
+    WORKING_DIRECTORY ${PYTHON_BIN_DIR}
+)
+endif()
 
 add_custom_target(libpython
     DEPENDS ${PYTHON_BIN_DIR}/libpython3.${PYTHON_MINOR}.a
-    COMMAND bash -c "rm -f ${PROJECT_BINARY_DIR}/src/python3-lib"
+    COMMAND bash -c "rm -rf ${PROJECT_BINARY_DIR}/src/python3-lib"
     COMMAND bash -c "ln -s ${PYTHON_BIN_DIR}/build/lib/python3.${PYTHON_MINOR} ${PROJECT_BINARY_DIR}/src/python3-lib"
 )
 
@@ -772,6 +830,18 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
         "-Wl,-z,notext"
     )
 
+elseif(CYGWIN)
+        # On Cygwin, Python extension modules are statically linked into
+        # libpython3.x.a (shared modules can't be built without shared libpython).
+        # We must link the supporting libraries that those static modules need.
+        target_link_libraries(rampart-python PRIVATE
+                ${PYTHON_BIN_DIR}/libpython3.${PYTHON_MINOR}.a
+                ${PYTHON_BIN_DIR}/Modules/_decimal/libmpdec/libmpdec.a
+                ${PYTHON_BIN_DIR}/Modules/expat/libexpat.a
+                ${OPENSSL_TARGET_DIR}/ssl/libssl.a
+                ${OPENSSL_TARGET_DIR}/crypto/libcrypto.a
+                pthread dl util m z sqlite3 intl
+        )
 else()
         target_link_libraries(rampart-python PRIVATE
                 ${PYTHON_BIN_DIR}/libpython3.${PYTHON_MINOR}.a
@@ -812,6 +882,43 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
         #example_name
           PROPERTIES
           LINK_FLAGS   "-undefined dynamic_lookup -Wl,-rpath,./"
+          SUFFIX       ".so"
+          PREFIX ""
+  )
+elseif(CYGWIN)
+  # On Cygwin, shared modules must link against the rampart executable's
+  # import library to resolve duktape and other symbols at link time.
+  # cmake doesn't register the import library as a build output for executables,
+  # so we link against the file directly and add explicit dependencies.
+  set(RAMPART_IMPLIB "${CMAKE_CURRENT_BINARY_DIR}/librampart.dll.a")
+  # Targets using plain signature (match existing target_link_libraries form)
+  target_link_libraries(rampart-almanac ${RAMPART_IMPLIB})
+  target_link_libraries(rampart-cmark ${RAMPART_IMPLIB})
+  target_link_libraries(rampart-html ${RAMPART_IMPLIB})
+  target_link_libraries(rampart-lmdb ${RAMPART_IMPLIB})
+  target_link_libraries(rampart-net ${RAMPART_IMPLIB})
+  target_link_libraries(rampart-redis ${RAMPART_IMPLIB})
+  target_link_libraries(rampart-robots ${RAMPART_IMPLIB})
+  target_link_libraries(rampart-server ${RAMPART_IMPLIB})
+  # Targets using keyword signature (match existing target_link_libraries form)
+  target_link_libraries(rampart-crypto PRIVATE ${RAMPART_IMPLIB})
+  target_link_libraries(rampart-curl PRIVATE ${RAMPART_IMPLIB})
+  target_link_libraries(rampart-python PRIVATE ${RAMPART_IMPLIB})
+  target_link_libraries(rampart-sql PRIVATE ${RAMPART_IMPLIB})
+  # Ensure modules are built after rampart (which generates the import library)
+  foreach(_mod rampart-almanac rampart-cmark rampart-html rampart-lmdb
+               rampart-net rampart-redis rampart-robots rampart-server
+               rampart-crypto rampart-curl rampart-python rampart-sql)
+    add_dependencies(${_mod} rampart)
+  endforeach()
+  set_target_properties(
+        rampart-curl rampart-server rampart-sql
+        rampart-redis rampart-crypto rampart-html
+        rampart-cmark rampart-robots rampart-lmdb
+        rampart-net rampart-python rampart-almanac
+        #example_name
+          PROPERTIES
+          LINK_FLAGS "-Wl,-rpath,./"
           SUFFIX       ".so"
           PREFIX ""
   )
@@ -886,6 +993,33 @@ install(CODE "execute_process( \
     )"
 )
 
+if(CYGWIN)
+    install(CODE "execute_process( \
+        COMMAND ${CMAKE_COMMAND} -E copy \
+        \"${PROJECT_SOURCE_DIR}/src/run_tests.ps1\" \
+        \"${CMAKE_INSTALL_PREFIX}/\"   \
+        )"
+    )
+    install(CODE "execute_process( \
+        COMMAND ${CMAKE_COMMAND} -E copy \
+        \"${PROJECT_SOURCE_DIR}/src/run_tests.bat\" \
+        \"${CMAKE_INSTALL_PREFIX}/\"   \
+        )"
+    )
+    install(CODE "execute_process( \
+        COMMAND ${CMAKE_COMMAND} -E copy \
+        \"${PROJECT_SOURCE_DIR}/src/install.bat\" \
+        \"${CMAKE_INSTALL_PREFIX}/\"   \
+        )"
+    )
+    install(CODE "execute_process( \
+        COMMAND ${CMAKE_COMMAND} -E copy \
+        \"${PROJECT_SOURCE_DIR}/src/install.ps1\" \
+        \"${CMAKE_INSTALL_PREFIX}/\"   \
+        )"
+    )
+endif()
+
 # unsupported dir
 install(
     DIRECTORY ${PROJECT_SOURCE_DIR}/unsupported_extras/
@@ -923,7 +1057,7 @@ foreach(TEST_FILE ${TEST_FILES})
 endforeach()
 
 install(CODE "execute_process ( \
-    COMMAND bash -c \"chmod 777 ${CMAKE_INSTALL_PREFIX}/test\"
+    COMMAND bash -c \"chmod 777 '${CMAKE_INSTALL_PREFIX}/test'\"
  )"
 )
 
@@ -986,7 +1120,7 @@ install(CODE "execute_process( \
 
 install(CODE "execute_process( \
     COMMAND bash -c \"mkdir -p \
-    ${CMAKE_INSTALL_PREFIX}/modules/python \"\
+    '${CMAKE_INSTALL_PREFIX}/modules/python' \"\
     )"
 )
 
@@ -1000,52 +1134,73 @@ install(CODE "execute_process( \
 install(DIRECTORY DESTINATION "${PYTHON_BIN_DIR}/build/lib")
 install(CODE "execute_process( \
     COMMAND bash -c \"cp -a \
-    ${PYTHON_BIN_DIR}/build/bin \
-    ${PYTHON_BIN_DIR}/build/lib \
-    ${CMAKE_INSTALL_PREFIX}/modules/python/ \"\
+    '${PYTHON_BIN_DIR}/build/bin' \
+    '${PYTHON_BIN_DIR}/build/lib' \
+    '${CMAKE_INSTALL_PREFIX}/modules/python/' \"\
     )"
 )
 
 install(
-    CODE "execute_process( COMMAND bash \"${CMAKE_INSTALL_PREFIX}/modules/python/rebase-python.sh\")"
+    CODE "execute_process( COMMAND bash \"${CMAKE_INSTALL_PREFIX}/modules/python/rebase-python.sh\"  \
+    WORKING_DIRECTORY \"${CMAKE_INSTALL_PREFIX}/modules/python\")"
 )
 
 install(CODE "execute_process( \
     COMMAND bash -c \"rm -rf \
-    ${CMAKE_INSTALL_PREFIX}/modules/python3-lib \
-    ${CMAKE_INSTALL_PREFIX}/bin/python3r \
-    ${CMAKE_INSTALL_PREFIX}/bin/pip3r \"\
+    '${CMAKE_INSTALL_PREFIX}/modules/python3-lib' \
+    '${CMAKE_INSTALL_PREFIX}/bin/python3r' \
+    '${CMAKE_INSTALL_PREFIX}/bin/pip3r' \"\
     )"
 )
 
-install(CODE "execute_process( \
-    COMMAND bash -c \"ln -s \
-    python/lib/python3.${PYTHON_MINOR} \
-    ${CMAKE_INSTALL_PREFIX}/modules/python3-lib \"\
-    )"
-)
+if(CYGWIN)
+    # Use copies instead of symlinks on Cygwin (symlinks may not work on vanilla Windows)
+    install(CODE "execute_process( \
+        COMMAND bash -c \"cp -a \
+        '${CMAKE_INSTALL_PREFIX}/modules/python/lib/python3.${PYTHON_MINOR}' \
+        '${CMAKE_INSTALL_PREFIX}/modules/python3-lib' \"\
+        )"
+    )
+    install(CODE "execute_process( \
+        COMMAND bash -c \"cp \
+        '${CMAKE_INSTALL_PREFIX}/modules/python/bin/python3' \
+        '${CMAKE_INSTALL_PREFIX}/bin/python3r' \"\
+        )"
+    )
+    install(CODE "execute_process( \
+        COMMAND bash -c \"cp \
+        '${CMAKE_INSTALL_PREFIX}/modules/python/bin/pip3' \
+        '${CMAKE_INSTALL_PREFIX}/bin/pip3r' \"\
+        )"
+    )
+else()
+    install(CODE "execute_process( \
+        COMMAND bash -c \"ln -s \
+        python/lib/python3.${PYTHON_MINOR} \
+        '${CMAKE_INSTALL_PREFIX}/modules/python3-lib' \"\
+        )"
+    )
+    install(CODE "execute_process( \
+        COMMAND bash -c \"ln -s \
+        ../modules/python/bin/python3 \
+        '${CMAKE_INSTALL_PREFIX}/bin/python3r' \"\
+        )"
+    )
+    install(CODE "execute_process( \
+        COMMAND bash -c \"ln -s \
+        ../modules/python/bin/pip3 \
+        '${CMAKE_INSTALL_PREFIX}/bin/pip3r' \"\
+        )"
+    )
+endif()
+
 
 install(CODE "execute_process( \
-    COMMAND bash -c \"ln -s \
-    ../modules/python/bin/python3 \
-    ${CMAKE_INSTALL_PREFIX}/bin/python3r \"\
-    )"
-)
-
-install(CODE "execute_process( \
-    COMMAND bash -c \"ln -s \
-    ../modules/python/bin/pip3 \
-    ${CMAKE_INSTALL_PREFIX}/bin/pip3r \"\
-    )"
-)
-
-
-install(CODE "execute_process( \
-    COMMAND bash -c \"chmod 755 ${CMAKE_INSTALL_PREFIX}/modules/python/bin/python3.${PYTHON_MINOR} \"\
+    COMMAND bash -c \"chmod 755 '${CMAKE_INSTALL_PREFIX}/modules/python/bin/python3.${PYTHON_MINOR}' \"\
     )"
 )
 install(CODE "execute_process( \
-    COMMAND bash -c \"chmod 755 ${CMAKE_INSTALL_PREFIX}/modules/python/bin/pip3 \"\
+    COMMAND bash -c \"chmod 755 '${CMAKE_INSTALL_PREFIX}/modules/python/bin/pip3' \"\
     )"
 )
 
@@ -1070,11 +1225,11 @@ install(CODE "execute_process( \
 
 # derivations
 install(DIRECTORY DESTINATION "${CMAKE_INSTALL_PREFIX}/derivations")
-install(CODE "execute_process( COMMAND bash -c \"cp -a ${PROJECT_SOURCE_DIR}/derivations/* ${CMAKE_INSTALL_PREFIX}/derivations/\")" )
+install(CODE "execute_process( COMMAND bash -c \"cp -a '${PROJECT_SOURCE_DIR}/derivations'/* '${CMAKE_INSTALL_PREFIX}/derivations/'\")" )
 
 if (CMAKE_UID EQUAL 0)
     install(CODE "execute_process ( \
-        COMMAND bash -c \"chown -R nobody ${CMAKE_INSTALL_PREFIX}/web_server\"
+        COMMAND bash -c \"chown -R nobody '${CMAKE_INSTALL_PREFIX}/web_server'\"
       )"
     )
 endif()
@@ -1099,3 +1254,39 @@ install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/bin/met
 install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/bin/rex\")")
 install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/bin/texislockd\")")
 install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/python/bin/python3\")")
+
+# Bundle MSYS2 runtime DLLs for standalone Windows operation
+if(CYGWIN)
+    set(MSYS_DLLS
+        msys-2.0.dll
+        msys-gcc_s-seh-1.dll
+        msys-stdc++-6.dll
+        msys-z.dll
+        msys-intl-8.dll
+        msys-iconv-2.dll
+        msys-sqlite3-0.dll
+    )
+    foreach(DLL ${MSYS_DLLS})
+        if(EXISTS "/usr/bin/${DLL}")
+            install(CODE "execute_process(COMMAND ${CMAKE_COMMAND} -E copy \"/usr/bin/${DLL}\" \"${CMAKE_INSTALL_PREFIX}/bin/${DLL}\")")
+        else()
+            message(WARNING "MSYS2 DLL not found: /usr/bin/${DLL}")
+        endif()
+    endforeach()
+
+    # The relocated msys-2.0.dll computes the Cygwin root as two levels
+    # up from its location (<prefix>/bin/msys-2.0.dll -> <prefix>/..).
+    # POSIX semaphores and shared memory require /dev/shm to exist
+    # relative to that root.  Create it so rampart works standalone.
+    cmake_path(GET CMAKE_INSTALL_PREFIX PARENT_PATH _MSYS_ROOT)
+    install(CODE "execute_process(COMMAND ${CMAKE_COMMAND} -E make_directory \"${_MSYS_ROOT}/dev/shm\")")
+
+    # Bundle MSYS2 CA certificate bundle so HTTPS works standalone.
+    # The find_bundle() fallback checks <installdir>/etc/ca-bundle.crt.
+    if(EXISTS "/usr/ssl/certs/ca-bundle.crt")
+        install(CODE "execute_process(COMMAND ${CMAKE_COMMAND} -E make_directory \"${CMAKE_INSTALL_PREFIX}/etc\")")
+        install(CODE "execute_process(COMMAND ${CMAKE_COMMAND} -E copy \"/usr/ssl/certs/ca-bundle.crt\" \"${CMAKE_INSTALL_PREFIX}/etc/ca-bundle.crt\")")
+    else()
+        message(WARNING "MSYS2 CA bundle not found at /usr/ssl/certs/ca-bundle.crt")
+    endif()
+endif()

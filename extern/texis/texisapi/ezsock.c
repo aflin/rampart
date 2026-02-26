@@ -34,7 +34,7 @@
 #  include <sys/socket.h>
 #  include <sys/ioctl.h>
 #  ifndef linux
-#    if !defined(hpux) && !defined(__bsdi__) && !defined(macintosh) && !defined(__FreeBSD__) && !defined(__MACH__)
+#    if !defined(hpux) && !defined(__bsdi__) && !defined(macintosh) && !defined(__FreeBSD__) && !defined(__MACH__) && !defined(__CYGWIN__)
 #      include <sys/stropts.h>/* wtf */
 #    endif
 #  endif /* !linux */

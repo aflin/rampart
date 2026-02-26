@@ -508,6 +508,19 @@ extern RPTHR *mainthr;                       //the thread of the main process
 RPTHR *rp_new_thread(uint16_t flags, duk_context *ctx);         // create new thread struct in **rpthread, add base and ctx
 struct evdns_base *rp_make_dns_base(
   duk_context *ctx, struct event_base *base);// create dns base for new server
+#ifdef __CYGWIN__
+int rp_cygwin_add_dns_servers(struct evdns_base *dnsbase);
+/* Convert a Cygwin POSIX path to /c/... form.  On full MSYS2, returns
+   the input path unchanged.  On relocated Cygwin, converts root-relative
+   paths like /rampart-install to /c/Users/.../rampart-install.
+   buf must be at least PATH_MAX bytes.  Returns buf on success, NULL on failure. */
+char *rp_cygwin_to_posixpath(const char *posixpath, char *buf, size_t bufsz);
+/* Callback to trigger Python's cyclic garbage collector.
+   Set by rampart-python.c when Python is initialized.
+   Called by rampart-thread.c before spawning worker threads
+   to close any Python-held file handles (e.g. sqlite3 connections). */
+extern void (*rp_python_gc_callback)(void);
+#endif
 
 /* copy vars between stacks functions */
 int  rpthr_copy_obj    (duk_context *ctx, duk_context *tctx, int objid, int skiprefcnt);

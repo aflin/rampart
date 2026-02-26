@@ -7,7 +7,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#ifndef MSDOS
+#if !defined(MSDOS)
 #include <unistd.h>
 #include <pwd.h>
 #endif

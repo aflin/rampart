@@ -520,8 +520,8 @@ extern char * _getpty(int *, int, mode_t, int);
 
 #include "exports.h"
 
-/* only get special linkage if built as shared or platform is Cygwin */
-#if defined(Py_ENABLE_SHARED) || defined(__CYGWIN__)
+/* only get special linkage if built as shared */
+#if defined(Py_ENABLE_SHARED)
 #       if defined(HAVE_DECLSPEC_DLL)
 #               if defined(Py_BUILD_CORE) && !defined(Py_BUILD_CORE_MODULE)
 #                       define PyAPI_FUNC(RTYPE) Py_EXPORTED_SYMBOL RTYPE

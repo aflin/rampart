@@ -88,6 +88,9 @@
 #cmakedefine EPI_HAVE_SIGNED_SSIZE_T
 #cmakedefine EPI_HAVE_SYS_SEM_H
 #cmakedefine EPI_HAVE_TM_GMTOFF
+#cmakedefine EPI_HAVE__CHSIZE_S
+#cmakedefine EPI_HAVE_TIMEZONE_VAR
+#cmakedefine EPI_HAVE__DSTBIAS_VAR
 #cmakedefine HAVE_UINT
 #cmakedefine EPI_HAVE___UINT64
 #cmakedefine EPI_HAVE_UNSIGNED_LONG_LONG

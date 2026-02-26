@@ -2,6 +2,7 @@
 
 rampart.globalize(rampart.utils);
 
+var isWindows = /MSYS_NT/.test(rampart.buildPlatform);
 var iam = trim(exec('whoami').stdout);
 
 var singledir_install = {
@@ -194,6 +195,32 @@ function copy_files(src, dest, backup){
     }
 }
 
+// JS-native recursive copy for Windows where 'cp' may not be in PATH
+function js_copy_entry(src, dest_dir) {
+    var basename = src.substring(src.lastIndexOf('/') + 1);
+    var dest_path = dest_dir + '/' + basename;
+    var srcstat = stat(src);  // follows symlinks
+
+    if(!srcstat) return;  // broken symlink or doesn't exist
+
+    if(srcstat.isDirectory) {
+        if(!stat(dest_path))
+            mkdir(dest_path);
+        var entries = readDir(src, true).filter(function(d){ return d != '.' && d != '..'; });
+        for(var i = 0; i < entries.length; i++) {
+            js_copy_entry(src + '/' + entries[i], dest_path);
+        }
+    } else {
+        try {
+            copyFile(src, dest_path, true);
+        } catch(e) {
+            // Handle 'text file busy' or existing file
+            try { rmFile(dest_path); } catch(e2) {}
+            copyFile(src, dest_path, true);
+        }
+    }
+}
+
 function copy_dir_recursive(src, dest, backup) {
     if(backup && stat(dest))
         rename(dest, dest + rampart.utils.dateFmt("-%Y-%m-%d-%H-%M-%S"));
@@ -211,11 +238,20 @@ function copy_dir_recursive(src, dest, backup) {
         // mostly for /usr/local/bin links if reinstalling in /usr/local
         if(cpstat.isSymbolicLink)
             rmFile(dest_file);
-        var res = exec('cp', '-a', cpsrc, dest);  //dest is a directory
-        if(res.stderr.length)
-        {
-            printf("Error copying files:\n    %s\n", res.stderr);
-            process.exit(1);
+        if(isWindows) {
+            try {
+                js_copy_entry(cpsrc, dest);
+            } catch(e) {
+                printf("Error copying files:\n    %s\n", e);
+                process.exit(1);
+            }
+        } else {
+            var res = exec('cp', '-a', cpsrc, dest);  //dest is a directory
+            if(res.stderr.length)
+            {
+                printf("Error copying files:\n    %s\n", res.stderr);
+                process.exit(1);
+            }
         }
     }
 }
@@ -265,6 +301,9 @@ function do_install(prefix, map, makelinks){
     if(!check_make_dir(prefix))
         return false;
 
+    printf("Installing to '%s', please wait...\n", prefix);
+    stdout.fflush();
+
     for (i=0;i<dirs.length;i++) {
         var dir=dirs[i];
         var src = realPath(dir);
@@ -282,6 +321,8 @@ function do_install(prefix, map, makelinks){
             }
         }
     }
+
+    printf("Done copying files.\n");
 
     if(makelinks)
     {
@@ -318,11 +359,25 @@ function do_install(prefix, map, makelinks){
 
     // rebase python paths
     var rebase_script = realPath(prefix) + map.modules +'/python/rebase-python.sh';
-    var cmdres = exec('bash', '-c', rebase_script);
-    if(cmdres.stderr.length)
-    {
-        printf("error executing %s\n:   %s\n", rebase_script, cmdres.stderr);  
-        process.exit(1);
+    if(stat(rebase_script)) {
+        if(isWindows) {
+            // On Windows/relocated Cygwin, bash may not be in PATH
+            try {
+                var cmdres = exec('bash', '-c', "'" + rebase_script + "'");
+                if(cmdres.stderr.length)
+                    printf("Warning: error rebasing python paths:\n    %s\n", cmdres.stderr);
+            } catch(e) {
+                printf("Note: could not run rebase-python.sh (bash not available).\n");
+                printf("Python module paths may need manual adjustment.\n");
+            }
+        } else {
+            var cmdres = exec('bash', '-c', "'" + rebase_script + "'");
+            if(cmdres.stderr.length)
+            {
+                printf("error executing %s\n:   %s\n", rebase_script, cmdres.stderr);
+                process.exit(1);
+            }
+        }
     }
 
     // make a more movable version of pip3r and python3r
@@ -607,7 +662,41 @@ function get_subdir_files(subdir) {
 }
 
 function choose_continue(){
-    printf(
+    if(isWindows) {
+        printf(
+`Welcome to Rampart
+
+Installing this distribution is optional.  Rampart is designed to function
+from within any folder, so long as the directory structure herein is
+maintained.
+
+1) Continue to installation options
+2) Use rampart from this directory (no installation needed)
+
+[1/2] `);
+        var resp = getresp('X');
+        if(resp == '2') {
+            check_dev_shm(process.scriptPath, true);
+            printf(`
+Rampart is ready to use from this directory.
+
+To add it to your PATH, run:
+
+    setx PATH "%%PATH%%;%s\\bin"
+
+Or add the bin directory to your System PATH via:
+    System Properties > Environment Variables > Path > Edit > New
+
+Enjoy!
+`, process.scriptPath.replace(/\//g, '\\'));
+            process.exit();
+        }
+        if(resp != '1') {
+            clear();
+            return choose_continue();
+        }
+    } else {
+        printf(
 `Welcome to Rampart
 
 Installing this distribution is optional.  It is designed to function from
@@ -626,13 +715,14 @@ Otherwise for automatic installation choices, you may continue.
 Continue? [Y/n]
 `, process.scriptPath);
 
-    var resp = getresp('y');
-    
-    if ( resp != 'y')
-    {
-        printf("Enjoy!\n");
-        process.exit();
-    } 
+        var resp = getresp('y');
+
+        if ( resp != 'y')
+        {
+            printf("Enjoy!\n");
+            process.exit();
+        }
+    }
 }
 
 function check_curl(){
@@ -743,6 +833,138 @@ Press any key to continue.`);
 }
 
 
+/* ************ Windows install ******************* */
+
+function check_dev_shm(prefix, ask) {
+    var rp = prefix.replace(/\\/g, '/');
+    var lastslash = rp.lastIndexOf('/');
+    var parent = lastslash > 0 ? rp.substring(0, lastslash) : '/';
+    var devshm = parent + '/dev/shm';
+    if(!stat(devshm)) {
+        if(ask) {
+            printf("\nThe directory '%s' is required by the Cygwin runtime but does not exist.\n", devshm);
+            printf("Create it? [Y/n]\n");
+            var resp = getresp('y');
+            if(resp != 'y') {
+                printf("You will need to create this directory manually before running rampart.\n");
+                process.exit(1);
+            }
+        }
+        try {
+            mkdir(devshm);
+            printf("Created '%s'\n", devshm);
+        } catch(e) {
+            printf("Could not create '%s': %s\n", devshm, e);
+            printf("You will need to create this directory manually before running rampart.\n");
+            process.exit(1);
+        }
+    }
+}
+
+function do_windows_install() {
+    var default_prefix = '/c/Program Files/mcs/rampart';
+    var home = process.env.HOME || process.env.USERPROFILE;
+    var homeopt = "";
+    var choices = "13";
+
+    if(home) {
+        // Convert backslashes to forward slashes for MSYS paths
+        home = home.replace(/\\/g, '/');
+        // On relocated Cygwin, HOME may be root-relative (e.g. //rampart).
+        // Resolve to /c/... form via realPath.
+        try { home = realPath(home); } catch(e) {}
+        homeopt = `2) ${home}/rampart\n`;
+        choices = "123";
+    }
+
+    clear();
+    printf(
+`Install rampart to:
+
+1) /c/Program Files/mcs/rampart (recommended)
+${homeopt}3) custom location
+`);
+    var choice = getresp('1');
+
+    if(choices.indexOf(choice) == -1) {
+        clear();
+        return do_windows_install();
+    }
+
+    var prefix;
+
+    var ask_dev_shm = true;
+    if(choice == '1') {
+        prefix = default_prefix;
+        ask_dev_shm = false;
+    } else if(choice == '2' && home) {
+        prefix = home + '/rampart';
+    } else if(choice == '3') {
+        printf("Enter location (use forward slashes, e.g. /c/tools/rampart):\n");
+        prefix = trim(readLine(stdin).next());
+        if(prefix == '') {
+            clear();
+            return do_windows_install();
+        }
+        if(prefix.lastIndexOf('/') == prefix.length - 1)
+            prefix = prefix.substring(0, prefix.length - 1);
+        printf("Install into '%s'? (y/n)\n", prefix);
+        var resp = getresp('');
+        if(resp != 'y') {
+            clear();
+            return do_windows_install();
+        }
+    }
+
+    var ret = do_install(prefix, singledir_install, false);
+
+    if(ret) {
+        check_dev_shm(prefix, ask_dev_shm);
+
+        // Convert MSYS path to Windows path for display
+        var winpath = prefix;
+        if(winpath.match(/^\/([a-zA-Z])\//))
+            winpath = winpath.replace(/^\/([a-zA-Z])\//, function(m, drive){ return drive.toUpperCase() + ':\\'; }).replace(/\//g, '\\');
+
+        var binpath = winpath + '\\bin';
+        var curpath = process.env.PATH || '';
+        // Check if already in PATH (case-insensitive, check both / and \ forms)
+        var inPath = curpath.toLowerCase().indexOf(binpath.toLowerCase()) > -1
+                  || curpath.toLowerCase().indexOf(prefix.toLowerCase() + '/bin') > -1;
+
+        if(inPath) {
+            printf("\n'%s' is already in your PATH.\n", binpath);
+        } else {
+            printf("\nAdd '%s' to your PATH? [Y/n]\n", binpath);
+            var resp = getresp('y');
+            if(resp == 'y') {
+                // Read just the User PATH via PowerShell (not the full env PATH which includes system paths)
+                var psres = exec('/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe', '-c',
+                    "[Environment]::GetEnvironmentVariable('Path','User')");
+                var userpath = trim(psres.stdout);
+                var newpath = userpath.length ? userpath + ';' + binpath : binpath;
+                var res = exec('/c/Windows/System32/setx.exe', 'PATH', newpath);
+                if(res.exitStatus === 0)
+                    printf("PATH updated. Restart your terminal for changes to take effect.\n");
+                else
+                    printf("Could not update PATH:\n    %s\n", res.stderr);
+            } else {
+                printf(`
+To add it manually later, run:
+
+    setx PATH "%%PATH%%;${binpath}"
+
+Or add '${binpath}' to your System PATH via:
+    System Properties > Environment Variables > Path > Edit > New
+
+`);
+            }
+        }
+    }
+
+    return ret;
+}
+
 /* ************ main ******************* */
 
 
@@ -803,10 +1025,14 @@ clear();
 
 check_curl();
 
-var choice = choose_install();
+if(isWindows) {
+    while(!do_windows_install()) {}
+} else {
+    var choice = choose_install();
 
-while(!do_install_choice(choice))
-    choice = choose_install();
+    while(!do_install_choice(choice))
+        choice = choose_install();
+}
 
 if(madeNew.length) {
     printf(

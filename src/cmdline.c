@@ -22,6 +22,10 @@
 #include <dlfcn.h>
 #include <sys/ioctl.h>
 #include <dirent.h>
+#ifdef __CYGWIN__
+#include <sys/cygwin.h>
+#include <sys/mount.h>
+#endif
 
 #include "event.h"
 #include "event2/thread.h"
@@ -966,6 +970,11 @@ static void *repl_thr(void *arg)
     char histfn[PATH_MAX];
     char *hfn=NULL, *babelscript=NULL;
     char *home = getenv("HOME");
+#ifdef __CYGWIN__
+    char _home_conv[PATH_MAX];
+    if (home && rp_cygwin_to_posixpath(home, _home_conv, sizeof(_home_conv)))
+        home = _home_conv;
+#endif
     //int err;
     duk_context *ctx = (duk_context *) arg;
     RP_ParseRes res;
@@ -2419,6 +2428,9 @@ static int proc_triple(char **inp, char **ob, char **o, size_t *osize, int *line
                 scopy(*in);
                 break;
 
+            case '\r':
+                break; /* skip CR; LF will handle line ending */
+
             case '\n':
                 (*lineno)++;
                 nlines++;
@@ -3348,6 +3360,101 @@ static void print_help(char *argv0)
     exit(0);
 }
 
+#ifdef __CYGWIN__
+static int _rp_relocated_cygwin = -1; /* -1=unknown, 0=full MSYS2, 1=relocated */
+
+/* Detect whether we are running under a relocated msys-2.0.dll
+   (i.e. NOT inside the full MSYS2 installation).  On full MSYS2,
+   /c/Windows is always accessible via the cygdrive mount table. */
+static int rp_is_relocated_cygwin(void)
+{
+    if (_rp_relocated_cygwin < 0)
+    {
+        struct stat st;
+        _rp_relocated_cygwin = (stat("/c/Windows", &st) != 0) ? 1 : 0;
+    }
+    return _rp_relocated_cygwin;
+}
+
+/* On relocated Cygwin, add a cygdrive mount at "/" so that /c/, /d/
+   etc. resolve to drive letters, just like full MSYS2.  This makes
+   /c/Users/... paths work for all Cygwin syscalls (stat, open, chdir,
+   etc.).  Must be called very early, before any path operations. */
+static void rp_cygwin_init_mounts(void)
+{
+    if (!rp_is_relocated_cygwin())
+        return;
+    mount("none", "/", MOUNT_CYGDRIVE | MOUNT_NOACL | MOUNT_NOPOSIX);
+    /* Refresh detection now that /c/ should work */
+    _rp_relocated_cygwin = -1;
+}
+
+/* Convert a Cygwin POSIX path to /c/... form.  On full MSYS2, returns
+   the input path unchanged (already /c/... style).  On relocated Cygwin
+   (after rp_cygwin_init_mounts), converts root-relative paths like
+   /rampart-install to /c/Users/.../rampart-install.
+   buf must be at least PATH_MAX bytes.  Returns buf on success, NULL
+   on failure.  If the path is already in /driveletter/... form, returns
+   it unchanged. */
+char *rp_cygwin_to_posixpath(const char *posixpath, char *buf, size_t bufsz)
+{
+    char winpath[PATH_MAX];
+
+    /* If already /c/... or /d/... form, no conversion needed */
+    if (posixpath[0] == '/' && isalpha(posixpath[1])
+        && (posixpath[2] == '/' || posixpath[2] == '\0'))
+    {
+        if (buf != posixpath)
+        {
+            strncpy(buf, posixpath, bufsz);
+            buf[bufsz - 1] = '\0';
+        }
+        return buf;
+    }
+
+    /* Handle /cygdrive/X/... directly — on relocated Cygwin the /cygdrive
+       mount may not exist, so cygwin_conv_path() would fail.  Strip it
+       to /X/... form. */
+    if (strncmp(posixpath, "/cygdrive/", 10) == 0 && isalpha(posixpath[10])
+        && (posixpath[11] == '/' || posixpath[11] == '\0'))
+    {
+        size_t len = strlen(posixpath + 9);
+        if (len + 1 > bufsz)
+            return NULL;
+        buf[0] = '/';
+        buf[1] = tolower((unsigned char)posixpath[10]);
+        strcpy(buf + 2, posixpath + 11);
+        return buf;
+    }
+
+    /* Convert POSIX -> Windows to get the full absolute Windows path */
+    if (cygwin_conv_path(CCP_POSIX_TO_WIN_A, posixpath, winpath, sizeof(winpath)) != 0)
+        return NULL;
+
+    /* Must be a drive-letter path like C:\... */
+    if (!winpath[0] || winpath[1] != ':')
+        return NULL;
+
+    /* Build /c/rest... from C:\rest... */
+    size_t restlen = strlen(winpath + 2);
+    if (restlen + 3 > bufsz)
+        return NULL;
+
+    buf[0] = '/';
+    buf[1] = tolower((unsigned char)winpath[0]);
+    /* Copy the rest, converting backslashes to forward slashes */
+    char *dst = buf + 2;
+    char *src = winpath + 2;
+    while (*src)
+    {
+        *dst++ = (*src == '\\') ? '/' : *src;
+        src++;
+    }
+    *dst = '\0';
+    return buf;
+}
+#endif
+
 int main(int argc, char *argv[])
 {
     struct rlimit rlp;
@@ -3356,6 +3463,24 @@ int main(int argc, char *argv[])
     char *ptr, *cmdline_src=NULL;
     struct stat entry_file_stat;
     duk_context *ctx;
+
+#ifdef __CYGWIN__
+    /* Set up cygdrive mounts early so /c/... paths work everywhere.
+       Must be before any path operations. */
+    rp_cygwin_init_mounts();
+    /* Re-chdir to the /c/... form of the current directory so that
+       getcwd() (including from embedded Python) returns /c/... paths. */
+    {
+        char *cwd = getcwd(NULL, 0);
+        if (cwd)
+        {
+            char cwdbuf[PATH_MAX];
+            if (rp_cygwin_to_posixpath(cwd, cwdbuf, sizeof(cwdbuf)))
+                chdir(cwdbuf);
+            free(cwd);
+        }
+    }
+#endif
 
     /* do this first */
     rp_thread_preinit();
@@ -3380,6 +3505,17 @@ int main(int argc, char *argv[])
     len = wai_getExecutablePath(NULL, 0, NULL);
     wai_getExecutablePath(rampart_exec, len, &dirlen);
     rampart_exec[len]='\0';
+
+#ifdef __CYGWIN__
+    /* Convert root-relative paths to /c/... form */
+    {
+        char convpath[PATH_MAX];
+        if (rp_cygwin_to_posixpath(rampart_exec, convpath, sizeof(convpath)))
+            strcpy(rampart_exec, convpath);
+        if (rp_cygwin_to_posixpath(argv0, convpath, sizeof(convpath)))
+            strcpy(argv0, convpath);
+    }
+#endif
 
     strcpy(rampart_dir, rampart_exec);
     ptr=strrchr(rampart_dir, '/');
@@ -3609,6 +3745,17 @@ int main(int argc, char *argv[])
 
         strcpy(p, argv[scriptarg]);
 
+#ifdef __CYGWIN__
+        /* When invoked from PowerShell/CMD, argv contains Windows-style
+           paths with backslashes.  Normalize to forward slashes so that
+           strrchr(p,'/') below can split the directory from the filename. */
+        {
+            char *bp;
+            for (bp = p; *bp; bp++)
+                if (*bp == '\\') *bp = '/';
+        }
+#endif
+
         //a copy of the complete path/script.js
         RP_script=realpath(p, NULL);
 
@@ -3638,6 +3785,23 @@ int main(int argc, char *argv[])
 
     if(!RP_script_path)
         RP_script_path=realpath("./", NULL);
+
+#ifdef __CYGWIN__
+    /* Convert RP_script_path and RP_script to /c/... form */
+    {
+        char convpath[PATH_MAX];
+        if (RP_script_path && rp_cygwin_to_posixpath(RP_script_path, convpath, sizeof(convpath)))
+        {
+            free(RP_script_path);
+            RP_script_path = strdup(convpath);
+        }
+        if (RP_script && rp_cygwin_to_posixpath(RP_script, convpath, sizeof(convpath)))
+        {
+            free(RP_script);
+            RP_script = strdup(convpath);
+        }
+    }
+#endif
 
     {
         char *file_src=NULL, *free_file_src=NULL, *fn=NULL, *s;
@@ -3730,7 +3894,15 @@ int main(int argc, char *argv[])
 
             /* for unknown reasons, setting EVDNS_BASE_INITIALIZE_NAMESERVERS
                above results in dnsbase not exiting when event loop is otherwise empty */
+#ifdef __CYGWIN__
+            /* On Cygwin, /etc/resolv.conf doesn't exist and the _WIN32 path
+               in libevent isn't compiled. Skip resolv_conf_parse and use
+               the Windows DNS API to configure nameservers directly. */
+            if (rp_cygwin_add_dns_servers(dnsbase) != 0)
+                evdns_base_nameserver_ip_add(dnsbase, "1.1.1.1");
+#else
             evdns_base_resolv_conf_parse(dnsbase, DNS_OPTIONS_ALL, "/etc/resolv.conf");
+#endif
 
             duk_push_global_stash(ctx);
             duk_push_pointer(ctx, dnsbase);
@@ -3886,7 +4058,15 @@ int main(int argc, char *argv[])
 
             /* for unknown reasons, setting EVDNS_BASE_INITIALIZE_NAMESERVERS
                above results in dnsbase not exiting when event loop is otherwise empty */
+#ifdef __CYGWIN__
+            /* On Cygwin, /etc/resolv.conf doesn't exist and the _WIN32 path
+               in libevent isn't compiled. Skip resolv_conf_parse and use
+               the Windows DNS API to configure nameservers directly. */
+            if (rp_cygwin_add_dns_servers(dnsbase) != 0)
+                evdns_base_nameserver_ip_add(dnsbase, "1.1.1.1");
+#else
             evdns_base_resolv_conf_parse(dnsbase, DNS_OPTIONS_ALL, "/etc/resolv.conf");
+#endif
 
             duk_push_global_stash(ctx);
             duk_push_pointer(ctx, dnsbase);

@@ -6428,7 +6428,7 @@ main(int argc, char *argv[])
     exit(0);
 #endif /* EPI_TEST_PRINT_TO_RING_BUFFER */
 
-#  ifdef _WIN32
+#  if defined(_WIN32)
     __try
       {
 #  endif /* _WIN32 */

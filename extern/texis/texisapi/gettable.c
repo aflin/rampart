@@ -112,7 +112,7 @@ int  reset;
 				gotIt:
 					fname = getfld(w, &sz);
 					if (type[0] == TEXIS_VIEW ||
-#ifdef MSDOS
+#if defined(MSDOS)
 				   /* Legacy looser definition of absolute: */
 					    (*fname == PATH_SEP ||
 					     *fname == '/') ||
@@ -167,7 +167,7 @@ char *tname;
         size_t sz;
         BTLOC where;
 
-#ifdef MSDOS
+#if defined(MSDOS)
 	if (!strncmp(tname, "SYS", 3))
 		ddreset(ddic);
 #endif

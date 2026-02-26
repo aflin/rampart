@@ -16,6 +16,10 @@
 #include "../../register.h"
 #include "event2/dns.h"
 
+#ifdef __CYGWIN__
+#include <dlfcn.h>
+#endif
+
 //do we really need a hard limit?
 #ifndef RP_MAX_THREADS
 #define RP_MAX_THREADS 4096
@@ -23,6 +27,10 @@
 
 RPTHR **rpthread=NULL;
 uint16_t nrpthreads=0;
+
+#ifdef __CYGWIN__
+void (*rp_python_gc_callback)(void) = NULL;
+#endif
 
 // the glue that holds it all together
 __thread int thread_local_thread_num=0;
@@ -1971,6 +1979,75 @@ void rp_post_fork_clean_threads()
 }
 
 
+#ifdef __CYGWIN__
+/* On Cygwin/MSYS2, /etc/resolv.conf doesn't exist and the Windows DNS
+   code in libevent is not compiled (needs _WIN32).
+   Use dlopen to call GetNetworkParams from iphlpapi.dll to get the
+   system DNS servers, then add them to the evdns base manually. */
+
+typedef struct { char String[4*4]; } CYGWIN_IP_ADDR_STR;
+typedef struct cygwin_ip_addr_string {
+    struct cygwin_ip_addr_string *Next;
+    CYGWIN_IP_ADDR_STR IpAddress;
+    CYGWIN_IP_ADDR_STR IpMask;
+    unsigned long Context;
+} CYGWIN_IP_ADDR_STRING;
+typedef struct {
+    char HostName[128+4];
+    char DomainName[128+4];
+    CYGWIN_IP_ADDR_STRING *CurrentDnsServer;
+    CYGWIN_IP_ADDR_STRING DnsServerList;
+    unsigned int NodeType;
+    char ScopeId[256+4];
+    unsigned int EnableRouting;
+    unsigned int EnableProxy;
+    unsigned int EnableDns;
+} CYGWIN_FIXED_INFO;
+typedef unsigned long (*cygwin_GetNetworkParams_fn)(CYGWIN_FIXED_INFO *, unsigned long *);
+
+int rp_cygwin_add_dns_servers(struct evdns_base *dnsbase)
+{
+    void *lib;
+    cygwin_GetNetworkParams_fn fn;
+    CYGWIN_FIXED_INFO *info = NULL;
+    unsigned long size = sizeof(CYGWIN_FIXED_INFO);
+    unsigned long ret;
+    int added = 0;
+
+    lib = dlopen("iphlpapi.dll", RTLD_LAZY);
+    if (!lib) return -1;
+
+    fn = (cygwin_GetNetworkParams_fn)dlsym(lib, "GetNetworkParams");
+    if (!fn) { dlclose(lib); return -1; }
+
+    info = malloc(size);
+    if (!info) { dlclose(lib); return -1; }
+
+    ret = fn(info, &size);
+    if (ret == 111 /* ERROR_BUFFER_OVERFLOW */) {
+        free(info);
+        info = malloc(size);
+        if (!info) { dlclose(lib); return -1; }
+        ret = fn(info, &size);
+    }
+
+    if (ret == 0 /* ERROR_SUCCESS */) {
+        CYGWIN_IP_ADDR_STRING *ns = &info->DnsServerList;
+        while (ns) {
+            if (ns->IpAddress.String[0]) {
+                if (evdns_base_nameserver_ip_add(dnsbase, ns->IpAddress.String) == 0)
+                    added++;
+            }
+            ns = ns->Next;
+        }
+    }
+
+    free(info);
+    dlclose(lib);
+    return added > 0 ? 0 : -1;
+}
+#endif /* __CYGWIN__ */
+
 struct evdns_base *rp_make_dns_base(duk_context *ctx, struct event_base *base)
 {
     /* each thread can/should (but doesn't have to) have a dnsbase.
@@ -1983,7 +2060,14 @@ struct evdns_base *rp_make_dns_base(duk_context *ctx, struct event_base *base)
     if(!dnsbase)
         RP_THROW(ctx, "rampart (new thread) - error creating dnsbase");
 
+#ifdef __CYGWIN__
+    /* On Cygwin, /etc/resolv.conf doesn't exist and the _WIN32 path
+       in libevent isn't compiled. Use the Windows DNS API directly. */
+    if (rp_cygwin_add_dns_servers(dnsbase) != 0)
+        evdns_base_nameserver_ip_add(dnsbase, "1.1.1.1");
+#else
     evdns_base_resolv_conf_parse(dnsbase, DNS_OPTIONS_ALL, "/etc/resolv.conf");
+#endif
 
     return dnsbase;
 }
@@ -2409,6 +2493,18 @@ static duk_ret_t loop_insert(duk_context *ctx)
     char objkey[16];
     struct timeval timeout;
     duk_idx_t i=1;
+
+#ifdef __CYGWIN__
+    /* On Cygwin (Windows), open files cannot be deleted or renamed.
+       Force Duktape GC so that any unreachable Python proxy objects
+       (e.g. sqlite3 connections) are finalized, then run Python's
+       cyclic garbage collector to break reference cycles and close
+       file handles before the worker thread starts. */
+    duk_gc(ctx, 0);
+    duk_gc(ctx, 0);
+    if (rp_python_gc_callback)
+        rp_python_gc_callback();
+#endif
 
     timeout.tv_sec=0;
     timeout.tv_usec=0;

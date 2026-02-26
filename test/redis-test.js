@@ -5,21 +5,37 @@ chdir(process.scriptPath);
 
 var rcl;
 var rpids=[];
+var _hasShell = !!stat('/bin/bash');
+
+function find_redis_exec() {
+    if (_hasShell) {
+        var ret = shell("which redis-server");
+        if (ret.exitStatus == 0) return trim(ret.stdout);
+        ret = shell("which redis6-server");
+        if (ret.exitStatus == 0) return trim(ret.stdout);
+        return '';
+    }
+    /* No shell available - check known paths */
+    var paths = [
+        '/usr/bin/redis-server',
+        '/usr/local/bin/redis-server',
+        'C:/tools/redis/redis-server.exe',
+        'C:/tools/redis/redis-server'
+    ];
+    for (var i = 0; i < paths.length; i++) {
+        if (stat(paths[i])) return paths[i];
+    }
+    return '';
+}
 
 function start_redis(port){
-    var ret = shell("which redis-server");
-
-    if (ret.exitStatus != 0) {
-	ret = shell("which redis6-server");
-        if (ret.exitStatus != 0) {
-            fprintf(stderr, "Could not find redis-server!! SKIPPING REDIS TESTS\n");
-            process.exit(0);
-        }
+    var rdexec = find_redis_exec();
+    if (!rdexec) {
+        fprintf(stderr, "Could not find redis-server!! SKIPPING REDIS TESTS\n");
+        process.exit(0);
     }
 
-    var rdexec = trim(ret.stdout);
-
-    ret = exec(rdexec, {background: true}, "--port", port, "--dbfilename", `${port}-dump.rdb`);
+    var ret = exec(rdexec, {background: true}, "--port", port, "--dbfilename", `${port}-dump.rdb`);
 
     sleep(0.5);
 
@@ -55,25 +71,21 @@ if(vers < 60201) {
 }
 
 
+function kill_server(pid) {
+    if (!kill(pid, 0)) return;
+    kill(pid, 15);
+    sleep(0.5);
+    if (!kill(pid, 0)) return;
+    kill(pid, 9);
+    sleep(0.5);
+    if (!kill(pid, 0)) return;
+    fprintf(stderr, "WARNING: process %d could not be terminated\n", pid);
+}
+
 function cleanup() {
-    var killed=true;
     rpids.forEach(function(rpid) {
-        if(!kill(rpid, 0))
-          return;
-        kill(rpid, 15);
-        for (var i=0; i<50; i++) {
-            if(!kill(rpid, 0)) {
-                return;
-            }
-            sleep(0.1);
-            kill(rpid, 15);
-        }
-        killed=false;
+        kill_server(rpid);
     });
-    if(!killed) {
-        fprintf(stderr, "Failed to kill redis-server\n");
-        process.exit(1);
-    }
 }
 
 function testFeature(name,test)

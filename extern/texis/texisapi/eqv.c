@@ -20,7 +20,7 @@
 #include "string.h"
 #include "ctype.h"
 #include "errno.h"
-#ifdef MSDOS
+#if defined(MSDOS)
 #  define LOWIO
 #endif
 #include "os.h"

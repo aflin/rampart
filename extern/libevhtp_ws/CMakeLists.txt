@@ -203,9 +203,11 @@ endif()
 
 if(WIN32)
     target_compile_definitions(evhtp_ws PUBLIC WIN32)
-    target_compile_options(evhtp_ws PUBLIC -march=i486)
     find_library(LIB_WS32 ws2_32)
     list(APPEND SYS_LIBS ${LIB_WS32})
+endif()
+if(CYGWIN)
+    target_compile_options(evhtp_ws PRIVATE -std=gnu11)
 endif()
 
 configure_file(

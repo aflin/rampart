@@ -174,7 +174,7 @@ int	TXtracedumptable = 0;
 /* [Texis] Write Timeout value; 0 == no retry: */
 double	TXwriteTimeout = 5.0;
 
-#ifdef _MSC_VER
+#if defined(_MSC_VER)
 #  ifdef TX_DEBUG
 int	TXexceptionbehaviour = EXCEPTION_CONTINUE_SEARCH;
 #  else /* TX_DEBUG */

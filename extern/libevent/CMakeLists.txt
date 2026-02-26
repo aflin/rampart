@@ -340,7 +340,7 @@ if (MINGW OR CYGWIN)
 endif()
 
 # Winsock.
-if(WIN32)
+if(WIN32 AND NOT CYGWIN)
     set(CMAKE_REQUIRED_LIBRARIES  ws2_32 shell32 advapi32)
     set(CMAKE_REQUIRED_DEFINITIONS -FIwinsock2.h -FIws2tcpip.h -D_WIN32_WINNT=0x0600)
 endif()
@@ -386,7 +386,7 @@ list(APPEND FILES_TO_CHECK
     sys/time.h
     sys/param.h
 )
-if (WIN32)
+if (WIN32 AND NOT CYGWIN)
     list(APPEND FILES_TO_CHECK
         io.h
         winsock2.h
@@ -468,7 +468,7 @@ if (NOT EVENT__DISABLE_CLOCK_GETTIME)
     list(APPEND SYMBOLS_TO_CHECK clock_gettime)
 endif()
 
-if (WIN32)
+if (WIN32 AND NOT CYGWIN)
     list(APPEND SYMBOLS_TO_CHECK
         _gmtime64_s
         _gmtime64
@@ -561,7 +561,7 @@ CHECK_TYPE_SIZE("unsigned int" EVENT__SIZEOF_UNSIGNED_INT BUILTIN_TYPES_ONLY)
 CHECK_TYPE_SIZE("long" EVENT__SIZEOF_LONG BUILTIN_TYPES_ONLY)
 CHECK_TYPE_SIZE("long long" EVENT__SIZEOF_LONG_LONG BUILTIN_TYPES_ONLY)
 
-if(WIN32)
+if(WIN32 AND NOT CYGWIN)
     # These aren't available until Windows Vista.
     # But you can still link them. They just won't be found when running the exe.
     set(EVENT__HAVE_INET_NTOP 0)
@@ -639,7 +639,7 @@ else()
 endif()
 
 if (NOT EVENT__DISABLE_THREAD_SUPPORT)
-    if (NOT WIN32)
+    if (NOT WIN32 OR CYGWIN)
         list(APPEND CMAKE_EXTRA_INCLUDE_FILES pthread.h)
     endif()
     CHECK_TYPE_SIZE(pthread_t EVENT__SIZEOF_PTHREAD_T)
@@ -678,14 +678,14 @@ endif()
 if(EVENT__HAVE_NETDB_H)
     list(APPEND CMAKE_EXTRA_INCLUDE_FILES netdb.h)
     CHECK_TYPE_SIZE("struct addrinfo" EVENT__HAVE_STRUCT_ADDRINFO)
-elseif(WIN32)
+elseif(WIN32 AND NOT CYGWIN)
     list(APPEND CMAKE_EXTRA_INCLUDE_FILES ws2tcpip.h)
     CHECK_TYPE_SIZE("struct addrinfo" EVENT__HAVE_STRUCT_ADDRINFO)
 endif()
 
 # Check for sockaddr structure sizes.
 set(SOCKADDR_HEADERS)
-if (WIN32)
+if (WIN32 AND NOT CYGWIN)
     set(CMAKE_REQUIRED_DEFINITIONS "-DWIN32_LEAN_AND_MEAN")
     if (_MSC_VER LESS 1300)
         set(SOCKADDR_HEADERS winsock.h)
@@ -880,7 +880,7 @@ if (NOT EVENT__DISABLE_OPENSSL)
 endif()
 
 if (NOT EVENT__DISABLE_THREAD_SUPPORT)
-    if (WIN32)
+    if (WIN32 AND NOT CYGWIN)
         list(APPEND SRC_CORE evthread_win32.c)
     else()
         find_package(Threads REQUIRED)
@@ -922,7 +922,7 @@ include_directories(BEFORE ${PROJECT_SOURCE_DIR}
     ${PROJECT_SOURCE_DIR}/compat
     ${PROJECT_SOURCE_DIR}/include)
 
-if(WIN32)
+if(WIN32 AND NOT CYGWIN)
     list(APPEND SRC_CORE
         buffer_iocp.c
         bufferevent_async.c
@@ -1004,7 +1004,7 @@ endif()
 add_event_library(event SOURCES ${SRC_CORE} ${SRC_EXTRA})
 
 set(WIN32_GETOPT)
-if (WIN32)
+if (WIN32 AND NOT CYGWIN)
     set(_TMPLIBS)
     if (${EVENT_LIBRARY_STATIC})
         list(APPEND _TMPLIBS event_core_static event_static)
@@ -1053,7 +1053,7 @@ if (NOT EVENT__DISABLE_SAMPLES)
     foreach(SAMPLE ${SAMPLES})
         add_sample_prog(OFF ${SAMPLE} sample/${SAMPLE}.c)
     endforeach()
-    if (NOT WIN32)
+    if (NOT WIN32 OR CYGWIN)
         target_link_libraries(watch-timing m)
     endif()
 
@@ -1164,7 +1164,7 @@ if (0)
                  test/regress_watch.c
                  test/tinytest.c)
 
-            if (WIN32)
+            if (WIN32 AND NOT CYGWIN)
                 list(APPEND SRC_REGRESS test/regress_iocp.c)
                 if (NOT EVENT__DISABLE_THREAD_SUPPORT)
                     list(APPEND SRC_REGRESS test/regress_thread.c)
@@ -1274,7 +1274,7 @@ if (0)
         list(APPEND BACKENDS WEPOLL)
     endif()
 
-    if (WIN32)
+    if (WIN32 AND NOT CYGWIN)
         list(APPEND BACKENDS WIN32)
     endif()
 
@@ -1414,7 +1414,7 @@ if (0)
     # Add a "make verify" target, same as for autoconf.
     # (Important! This will unset all EVENT_NO* environment variables.
     #  If they are set in the shell the tests are running using simply "ctest" or "make test" will fail)
-    if (WIN32)
+    if (WIN32 AND NOT CYGWIN)
         # Windows doesn't have "unset". But you can use "set VAR=" instead.
         file(TO_NATIVE_PATH ${CMAKE_CTEST_COMMAND} WINDOWS_CTEST_COMMAND)
 

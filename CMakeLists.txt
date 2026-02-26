@@ -12,6 +12,26 @@ cmake_minimum_required(VERSION 3.13)
 
 project(Rampart VERSION 0.5.0 LANGUAGES C CXX)
 
+# Set default install prefix (before any add_subdirectory calls)
+if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
+    if(CYGWIN)
+        set(CMAKE_INSTALL_PREFIX "/c/Program Files/mcs/rampart" CACHE PATH "" FORCE)
+    else()
+        set(CMAKE_INSTALL_PREFIX "/usr/local/rampart" CACHE PATH "" FORCE)
+    endif()
+    message("setting install = ${CMAKE_INSTALL_PREFIX}")
+else()
+    message("install = ${CMAKE_INSTALL_PREFIX}")
+endif()
+
+if(CYGWIN)
+  # GCC 15 defaults to C23 which breaks many third-party libraries and cmake
+  # configure checks (K&R function declarations, 0 as null pointer, etc.).
+  # Force gnu11 for compatibility. Using CMAKE_C_FLAGS ensures this applies
+  # to both cmake try_compile checks and actual compilation.
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu11")
+endif()
+
 #set(CMAKE_BUILD_TYPE Debug)
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")

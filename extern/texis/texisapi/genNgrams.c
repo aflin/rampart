@@ -23,7 +23,7 @@ usage(const char *progName)
 int
 main(int argc, char *argv[])
 {
-#ifdef _WIN32
+#if defined(_WIN32)
 __try
 {
 #endif /* _WIN32 */
@@ -80,7 +80,7 @@ __try
   else
     usage(argv[0]);
   return(TXEXIT_OK);
-#ifdef _WIN32
+#if defined(_WIN32)
     }
   __except(TXgenericExceptionHandler(_exception_code(), _exception_info()))
     {

@@ -571,7 +571,7 @@ TXcreateDbMain(int argcLocal, char *argvLocal[])
 	const char		*dbPath = NULL;
 	char			*sysTablesPath = NULL;
 
-#ifdef _WIN32
+#if defined(_WIN32)
 __try
 {
 #endif /* _WIN32 */
@@ -716,7 +716,7 @@ finally:
 	encryptedSystemPass = TXfree(encryptedSystemPass);
 	encryptedPublicPass = TXfree(encryptedPublicPass);
 	sysTablesPath = TXfree(sysTablesPath);
-#ifdef _WIN32
+#if defined(_WIN32)
     }
   __except(TXgenericExceptionHandler(_exception_code(), _exception_info()))
     {

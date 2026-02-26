@@ -13,7 +13,9 @@
 #include <arpa/inet.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#ifdef __linux__
 #include <sys/syscall.h>
+#endif
 #include <unistd.h>
 #include <fcntl.h>
 #include <time.h>

@@ -397,7 +397,7 @@ char **argv, **argvstrip;
 				GET_OPTION_ARG();
 				if(strcmp(optionArg, "line") == 0)
 				{
-					setlinebuf(stdout);
+				setlinebuf(stdout);
 				}
 			}
 			else if (strcmp(option, "--nomonitorstart") == 0)

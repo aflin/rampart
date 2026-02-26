@@ -13,7 +13,9 @@
 #include <strings.h>
 #include <inttypes.h>
 #include <stdbool.h>
+#ifndef __MINGW32__
 #include <sys/param.h> /* MIN/MAX macro */
+#endif
 #ifndef WIN32
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -42,6 +44,30 @@
 #include "regint.h" /* def for oniguruma regex_t (aka 're_pattern_buffer')*/
 #include "oniguruma.h"
 #include "ws/evhtp_ws.h"
+
+#ifdef __MINGW32__
+#ifndef MIN
+#define MIN(a, b) (((a) < (b)) ? (a) : (b))
+#endif
+#ifndef MAX
+#define MAX(a, b) (((a) > (b)) ? (a) : (b))
+#endif
+static char *
+mingw_strcasestr(const char *haystack, const char *needle)
+{
+    size_t nlen = strlen(needle);
+    size_t hlen = strlen(haystack);
+    size_t i;
+    if (nlen > hlen) return NULL;
+    for (i = 0; i <= hlen - nlen; i++) {
+        if (strncasecmp(haystack + i, needle, nlen) == 0)
+            return (char *)(haystack + i);
+    }
+    return NULL;
+}
+#define strcasestr mingw_strcasestr
+static char *strndup(const char *s, size_t n);
+#endif /* __MINGW32__ */
 
 /* for making an id for websockets -ajf */
 pthread_mutex_t wsctlock;
@@ -2905,7 +2931,11 @@ htp__connection_eventcb_(struct bufferevent * bev, short events, void * arg)
 }     /* htp__connection_eventcb_ */
 
 static void
+#ifdef __MINGW32__
+htp__connection_resumecb_(evutil_socket_t fd, short events, void * arg)
+#else
 htp__connection_resumecb_(int fd, short events, void * arg)
+#endif
 {
     evhtp_connection_t * c = arg;
 
@@ -3182,7 +3212,11 @@ htp__run_in_thread_(evthr_t * thr, void * arg, void * shared)
 #endif
 
 static void
+#ifdef __MINGW32__
+htp__accept_cb_(struct evconnlistener * serv, evutil_socket_t fd, struct sockaddr * s, int sl, void * arg)
+#else
 htp__accept_cb_(struct evconnlistener * serv, int fd, struct sockaddr * s, int sl, void * arg)
+#endif
 {
     evhtp_t            * htp = arg;
     evhtp_connection_t * connection;
@@ -4466,7 +4500,11 @@ evhtp_bind_sockaddr(evhtp_t         * htp,
         }
 
         if (sa->sa_family == AF_INET6) {
+#ifdef __MINGW32__
+            if (setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, (const char *)&on, sizeof(on)) == -1) {
+#else
             if (setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, &on, sizeof(on)) == -1) {
+#endif
                 break;
             }
         }

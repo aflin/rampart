@@ -60,6 +60,9 @@ include_directories(thirdparty/abseil-cpp)
 
 add_subdirectory(thirdparty/abseil-cpp)
 
+if(WIN32 OR CYGWIN)
+set(RE2_BUILD_TESTING OFF CACHE BOOL "" FORCE)
+endif()
 add_subdirectory(thirdparty/re2)
 
 

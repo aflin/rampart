@@ -5,7 +5,7 @@
 #ifndef __EVTHR_H__
 #define __EVTHR_H__
 
-#ifndef WIN32
+#if !defined(WIN32) || defined(__MINGW32__)
 #include <sys/queue.h>
 #endif
 

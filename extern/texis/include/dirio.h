@@ -87,7 +87,7 @@
 #endif                                                        /* unix */
 /**********************************************************************/
 /**********************************************************************/
-#ifdef MSDOS
+#if defined(MSDOS)
 /*#  include <dos.h>*/
 #  if !defined(MAX_PATH) && defined(_MAX_PATH)
 #     define MAX_PATH _MAX_PATH

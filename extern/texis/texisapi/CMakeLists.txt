@@ -44,12 +44,19 @@ CHECK_INCLUDE_FILE("sys/shm.h"  HAVE_SYS_SHM_H)
 CHECK_INCLUDE_FILE("sys/un.h"   HAVE_SYS_UN_H)
 CHECK_INCLUDE_FILE("sys/user.h" HAVE_SYS_USER_H)
 CHECK_INCLUDE_FILE("unistd.h" 	EPI_HAVE_UNISTD_H)
+IF(NOT CYGWIN)
 CHECK_INCLUDE_FILE("windows.h"  HAVE_WINDOWS_H)
 
 IF(HAVE_WINDOWS_H)
   set(WINDOWS_INCLUDE_FILE "windows.h")
   set(CMAKE_EXTRA_INCLUDE_FILES ${WINDOWS_INCLUDE_FILE})
 ENDIF(HAVE_WINDOWS_H)
+ELSE()
+  # Force HAVE_WINDOWS_H off for Cygwin/MSYS - the cached value from
+  # a previous configuration may still be set and would be written
+  # into txcoreconfig.h, causing type conflicts with Windows headers.
+  set(HAVE_WINDOWS_H "" CACHE INTERNAL "" FORCE)
+ENDIF(NOT CYGWIN)
 
 
 CHECK_C_SOURCE_COMPILES("main(){int x = alignof(x);}" EPI_HAVE_ALIGNOF)
@@ -128,10 +135,12 @@ CHECK_TYPE_SIZE("ssize_t" SSIZE_T)
 IF(HAVE_SSIZE_T)
 		SET(EPI_HAVE_SIGNED_SSIZE_T HAVE_SSIZE_T)
 ENDIF(HAVE_SSIZE_T)
+IF(NOT CYGWIN)
 CHECK_TYPE_SIZE("__int64" __INT64_T)
 IF(HAVE___INT64_T)
 		SET(EPI_HAVE___INT64 HAVE___INT64_T)
 ENDIF(HAVE___INT64_T)
+ENDIF(NOT CYGWIN)
 #
 # __FLOAT128 Support is currently incomplete and experimental
 # Force a variable to be set to check for and compile
@@ -209,6 +218,9 @@ IF(Threads_FOUND)
 ENDIF(Threads_FOUND)
 #
 CHECK_STRUCT_HAS_MEMBER("struct tm" tm_gmtoff	time.h	EPI_HAVE_TM_GMTOFF LANGUAGE C)
+#
+# Windows-specific checks for MinGW
+#
 CHECK_STRUCT_HAS_MEMBER("struct ipc_perm" __key "sys/ipc.h;sys/shm.h"   EPI_HAVE_IPC_PERM___KEY LANGUAGE C)
 CHECK_STRUCT_HAS_MEMBER("struct ipc_perm"  _key "sys/ipc.h;sys/shm.h"   EPI_HAVE_IPC_PERM__KEY  LANGUAGE C)
 CHECK_STRUCT_HAS_MEMBER("struct ipc_perm"   key "sys/ipc.h;sys/shm.h"   EPI_HAVE_IPC_PERM_KEY   LANGUAGE C)
@@ -302,7 +314,6 @@ IF(PARSERS_FOUND)
     inetutil.c
     json.c
     spectype.c
-    shell.c
     sqlfuncutils.c
     strcmp.c
     strfmt.c
@@ -579,6 +590,10 @@ IF(PARSERS_FOUND)
     )
   endif(LOCK_SERVER)
 
+  if(NOT WIN32)
+    list(APPEND BUILD_SRCS shell.c)
+  endif()
+
   add_library(texisbuild
     ${BUILD_SRCS}
     langNgramsDummy.c
@@ -836,6 +851,7 @@ file(GLOB LANG_TRAIN CONFIGURE_DEPENDS langTrainData/*.txt)
 add_executable(genNgrams genNgrams.c)
 add_custom_command(OUTPUT ${TEXISAPI_BINARY_DIR}/langNgrams.c
   COMMAND test -e ${TEXISAPI_BINARY_DIR}/langNgrams.c || ${TEXISAPI_SOURCE_DIR}/genNgrams.sh ${TEXIS_SOURCE_DIR} ${TEXISAPI_BINARY_DIR}/langNgrams.c ${LANG_TRAIN}
+  WORKING_DIRECTORY ${TEXISAPI_BINARY_DIR}
   DEPENDS ${LANG_TRAIN} ${TEXISAPI_SOURCE_DIR}/genNgrams.sh genNgrams
 )
 

@@ -4,6 +4,17 @@
 #include <stdint.h>
 #include <errno.h>
 #include <assert.h>
+#ifdef __MINGW32__
+static char *
+mingw_strndup(const char *s, size_t n)
+{
+    size_t len = strnlen(s, n);
+    char *p = malloc(len + 1);
+    if (p) { memcpy(p, s, len); p[len] = '\0'; }
+    return p;
+}
+#define strndup mingw_strndup
+#endif
 
 #include "evhtp/config.h"
 #include "evhtp/evhtp.h"

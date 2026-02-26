@@ -7,7 +7,7 @@
 #ifdef EPI_HAVE_UNISTD_H
 #  include <unistd.h>
 #endif
-#ifdef MSDOS
+#if defined(MSDOS)
 #include <io.h>			/* for access() */
 #endif
 #include <sys/types.h>

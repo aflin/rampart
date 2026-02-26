@@ -347,11 +347,6 @@
 #endif
 #endif
 
-/* MinGW.  Also GCC flags (DUK_F_GCC) are enabled now. */
-#if defined(__MINGW32__) || defined(__MINGW64__)
-#define DUK_F_MINGW
-#endif
-
 /* MSVC */
 #if defined(_MSC_VER)
 /* MSVC preprocessor defines: http://msdn.microsoft.com/en-us/library/b0084kay.aspx
@@ -1241,18 +1236,10 @@
 #define DUK_LOCAL          static
 #endif
 
-#if defined(DUK_F_MINGW)
-#if defined(DUK_F_CPP)
-#define DUK_USE_COMPILER_STRING "mingw++"
-#else
-#define DUK_USE_COMPILER_STRING "mingw"
-#endif
-#else
 #if defined(DUK_F_CPP)
 #define DUK_USE_COMPILER_STRING "g++"
 #else
 #define DUK_USE_COMPILER_STRING "gcc"
-#endif
 #endif
 
 #undef DUK_USE_VARIADIC_MACROS
@@ -1829,11 +1816,6 @@ typedef signed long long duk_int64_t;
 typedef unsigned long long duk_uint64_t;
 typedef signed long long duk_int64_t;
 #endif
-#endif
-#if !defined(DUK_F_HAVE_64BIT) && defined(DUK_F_MINGW)
-#define DUK_F_HAVE_64BIT
-typedef unsigned long duk_uint64_t;
-typedef signed long duk_int64_t;
 #endif
 #if !defined(DUK_F_HAVE_64BIT) && defined(DUK_F_MSVC)
 #define DUK_F_HAVE_64BIT
@@ -2438,16 +2420,8 @@ typedef struct duk_hthread duk_context;
  * for these targets.
  */
 #undef DUK_USE_POW_WORKAROUNDS
-#if defined(DUK_F_NETBSD) || defined(DUK_F_MINGW)
+#if defined(DUK_F_NETBSD)
 #define DUK_USE_POW_WORKAROUNDS
-#endif
-
-/* Similar workarounds for atan2() semantics issues.  MinGW issues are
- * documented in test-bug-mingw-math-issues.js.
- */
-#undef DUK_USE_ATAN2_WORKAROUNDS
-#if defined(DUK_F_MINGW)
-#define DUK_USE_ATAN2_WORKAROUNDS
 #endif
 
 /* Rely as little as possible on compiler behavior for NaN comparison,

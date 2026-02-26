@@ -311,7 +311,7 @@ static TXTERMFUNC	*TXterminateEventHandler =
 #ifndef S_ISDIR
 #  define S_ISDIR(m)    ((m) & S_IFDIR)
 #endif
-#ifdef MSDOS
+#if defined(MSDOS)
 #  define S_ISUID 0
 #  define S_ISGID 0
 #  define S_ISVTX 0
@@ -2663,7 +2663,7 @@ CONST char      *ext;           /* (in) extension (w/.) (NULL: none) */
 #undef BITS
         }
       /* Pick fallback dir: */
-#ifdef MSDOS
+#if defined(MSDOS)
       /* Windows options:
        *   o  GetUserProfileDirectory() + Local Settings\Temp
        *      too hard-coded, and user may want temp elsewhere
@@ -2695,7 +2695,7 @@ cont1:
   strcpy(tmp, dir);
   d = tmp + strlen(tmp);
   if (d > tmp && d[-1] != PATH_SEP
-#ifdef MSDOS
+#if defined(MSDOS)
       && d[-1] != '/'
 #endif
       )
@@ -4826,7 +4826,7 @@ TXRESOURCESTATS *pinfo1, *pinfo2;
 int
 TXshowmaxmemusage()
 {
-#if defined(_WIN32) || defined(__APPLE__)
+#if defined(_WIN32) || defined(__APPLE__) || defined(__CYGWIN__)
 #else
 extern int _end;
   htpf("Max dynamic mem = %wd\n", (EPI_HUGEINT)((char *)sbrk(0) - (char *)&_end));
@@ -6310,19 +6310,19 @@ TXpathcmpGetDiff(const char     **aPath,
 #ifdef EPI_CASE_INSENSITIVE_PATHS               /* fold lower case to upper */
           if (ac >= 'a' && ac <= 'z') ac -= 'a' - 'A';
 #endif /* EPI_CASE_INSENSITIVE_PATHS */
-#ifdef MSDOS                                    /* canonicalize path sep */
+#if defined(MSDOS)                                                           /* canonicalize path sep */
           if (ac == '/') ac = PATH_SEP;
 #endif /* MSDOS */
           a++;
         }
       /* Treat consecutive "/" as one, and skip unimportant trailing "/": */
       while (ac == PATH_SEP && ((a >= ae || *a == '\0') ? (as > ao
-#ifdef MSDOS
+#if defined(MSDOS)
                                                           && as[-1] != ':'
 #endif /* MSDOS */
                                                           ) :
                                 (*a == PATH_SEP
-#ifdef MSDOS
+#if defined(MSDOS)
                                  || *a == '/'
 #endif /* MSDOS */
                                  )));
@@ -6336,19 +6336,19 @@ TXpathcmpGetDiff(const char     **aPath,
 #ifdef EPI_CASE_INSENSITIVE_PATHS               /* fold lower case to upper */
           if (bc >= 'a' && bc <= 'z') bc -= 'a' - 'A';
 #endif /* EPI_CASE_INSENSITIVE_PATHS */
-#ifdef MSDOS                                    /* canonicalize path sep */
+#if defined(MSDOS)                                                           /* canonicalize path sep */
           if (bc == '/') bc = PATH_SEP;
 #endif /* MSDOS */
           b++;
         }
       /* Treat consecutive "/" as one, and skip unimportant trailing "/": */
       while (bc == PATH_SEP && ((b >= be || *b == '\0') ? (bs > bo
-#ifdef MSDOS
+#if defined(MSDOS)
                                                           && bs[-1] != ':'
 #endif /* MSDOS */
                                                           ) :
                                 (*b == PATH_SEP
-#ifdef MSDOS
+#if defined(MSDOS)
                                  || *b == '/'
 #endif /* MSDOS */
                                  )));
