@@ -145,7 +145,8 @@ struct tm * rp_jd_to_tm(rp_jd_t jd, struct tm *ret)
     // Normalize day, month, year
     while (ret->tm_mday > days_in_month(ret->tm_mon+1, ret->tm_year)) {
         ret->tm_mday -= days_in_month(ret->tm_mon+1, ret->tm_year);
-        ret->tm_wday = (ret->tm_wday) +1 % 7;
+        // bug fix: added parentheses to fix operator precedence in modulo - 2026-02-27
+        ret->tm_wday = (ret->tm_wday + 1) % 7;
         ret->tm_mon++;
         if (ret->tm_mon > 11) {
             ret->tm_mon = 0;

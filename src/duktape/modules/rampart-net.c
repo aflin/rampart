@@ -503,6 +503,8 @@ duk_ret_t duk_rp_net_x_trigger(duk_context *ctx)
 
     do_callback(ctx, ev, nargs);
 
+    // bug fix: free strdup'd event name before return - 2026-02-27
+    free(ev);
     return 0;
 }
 
@@ -836,6 +838,10 @@ static void push_addrinfo(duk_context *ctx, struct addrinfo *res, const char *hn
             case AF_INET6:
                 saddr = &((struct sockaddr_in6 *) res->ai_addr)->sin6_addr;
                 break;
+            // bug fix: skip unknown ai_family instead of using uninitialized saddr - 2026-02-27
+            default:
+                res = res->ai_next;
+                continue;
         }
         inet_ntop (res->ai_family, saddr, addrstr, INET6_ADDRSTRLEN);
 
@@ -1548,12 +1554,15 @@ static int push_reverse(duk_context *ctx, const char *hn)
         return 0;
     }
 
-    if (getaddrinfo(hbuf, "0", &hints, &res) == 0) {
+    // bug fix: use separate res2 variable to avoid clobbering original res pointer - 2026-02-27
+    struct addrinfo *res2 = NULL;
+    if (getaddrinfo(hbuf, "0", &hints, &res2) == 0) {
         /* malicious PTR record */
+        freeaddrinfo(res2);
         freeaddrinfo(res);
         duk_push_null(ctx);
         return 0;
-    }        
+    }
 
     freeaddrinfo(res);
     duk_push_string(ctx, hbuf);
@@ -3732,8 +3741,12 @@ static duk_ret_t duk_rp_net_server(duk_context *ctx)
                 else
                 {
                     FILE* file = fopen(kfile,"r");
+                    // bug fix: added NULL check after fopen and fclose after use for SSL key validation - 2026-02-27
+                    if(!file)
+                        RP_THROW(ctx, "server.start: Cannot open ssl key '%s' (%s)", kfile, strerror(errno));
                     EVP_PKEY* pkey = PEM_read_PrivateKey(file, NULL, NULL, NULL);
                     unsigned long err = ERR_get_error();
+                    fclose(file);
 
                     if(pkey)
                         EVP_PKEY_free(pkey);
@@ -3759,8 +3772,12 @@ static duk_ret_t duk_rp_net_server(duk_context *ctx)
                 else
                 {
                     FILE* file = fopen(pfile,"r");
+                    // bug fix: added NULL check after fopen and fclose after use for SSL cert validation - 2026-02-27
+                    if(!file)
+                        RP_THROW(ctx, "server.start: Cannot open ssl cert file '%s' (%s)", pfile, strerror(errno));
                     X509* x509 = PEM_read_X509(file, NULL, NULL, NULL);
                     unsigned long err = ERR_get_error();
+                    fclose(file);
 
                     if(x509)
                         X509_free(x509);

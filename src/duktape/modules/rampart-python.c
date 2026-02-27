@@ -276,11 +276,12 @@ RPTHR_LOCK *rp_rpy_lock;
 
 #define MAX_EXCEPTION_LENGTH 4095
 
+// bug fix: renamed left to remaining, clamped snprintf len, added early break to prevent buffer overrun - 2026-02-27
 static char *get_exception(char *buf)
 {
     PyObject *ptype, *pvalue, *ptraceback;
     const char* err_msg="\nunknown error";
-    int len=0, left=MAX_EXCEPTION_LENGTH;
+    int len=0, remaining=MAX_EXCEPTION_LENGTH;
     char *s=buf;
 
     PyErr_Fetch(&ptype, &pvalue, &ptraceback);  //this does a pyerr_clear()
@@ -290,9 +291,10 @@ static char *get_exception(char *buf)
         if(pstr)
         {
             err_msg = PyUnicode_AsUTF8(pstr);
-            len = snprintf(s,left,"\n%s", err_msg);
-            left-=len;
-            s+=len;
+            len = snprintf(s, remaining, "\n%s", err_msg);
+            if(len > remaining) len = remaining;
+            remaining -= len;
+            s += len;
 
             if (ptraceback && PyTraceBack_Check(ptraceback))
             {
@@ -319,6 +321,7 @@ static char *get_exception(char *buf)
 
                 for (i=0; i<total;i++)
                 {
+                    if(remaining <= 0) break;
                     pTrace = rtrace[i];
 
                     PyFrameObject* frame = pTrace->tb_frame;
@@ -327,11 +330,10 @@ static char *get_exception(char *buf)
                     const char *sCodeName = PyUnicode_AsUTF8(code->co_name);
                     const char *sFileName = PyUnicode_AsUTF8(code->co_filename);
 
-                    len = snprintf(s, left, "\n    at python:%s (%s:%d)", sCodeName, sFileName, lineNr);
-                    left-=len;
-                    s+=len;
-                    if(len<0)
-                        break;
+                    len = snprintf(s, remaining, "\n    at python:%s (%s:%d)", sCodeName, sFileName, lineNr);
+                    if(len > remaining) len = remaining;
+                    remaining -= len;
+                    s += len;
                 }
             }
         }
@@ -496,7 +498,8 @@ static PyObject *rp_trigger(PyObject *self, PyObject *args)
             exit(1);
         }
 
-        return Py_None;
+        // bug fix: use Py_RETURN_NONE to properly increment Py_None refcount - 2026-02-27
+        Py_RETURN_NONE;
     }
 
     /* no fork */
@@ -512,7 +515,8 @@ static PyObject *rp_trigger(PyObject *self, PyObject *args)
         duk_push_undefined(ctx);
     duk_call(ctx, 2);         // call rampart.event.trigger(ev,evarg)
 
-    return Py_None;
+    // bug fix: use Py_RETURN_NONE to properly increment Py_None refcount - 2026-02-27
+    Py_RETURN_NONE;
 }
 
 PyObject *receive_pval(PFI *finfo, char **err)
@@ -2156,12 +2160,20 @@ static PyObject *parent_import(duk_context *ctx, const char *script, int typeno,
         *fnames = funcnames;
 
         if(forkread(&flen, sizeof(size_t)) == -1)
+        {
+            // bug fix: free fnames and NULL out pointer on forkread failure - 2026-02-27
+            free(*fnames);
+            *fnames = NULL;
             return NULL;
+        }
 
         REMALLOC(funcstring, flen);
         if(forkread(funcstring, flen) == -1)
         {
             free(funcstring);
+            // bug fix: free fnames and NULL out pointer on funcstring forkread failure - 2026-02-27
+            free(*fnames);
+            *fnames = NULL;
             return NULL;
         }
         *fstring = funcstring;
@@ -2693,7 +2705,7 @@ static char *parent_py_call(PyObject * pModule, const char *fname)
                 const char *key;
 
                 duk_get_prop_string(ctx, i, "pyArgs");
-                kwdict=PyDict_New();
+                // bug fix: removed duplicate PyDict_New() that leaked prior dict - 2026-02-27
                 duk_enum(ctx,-1,0);
                 while (duk_next(ctx,-1,1))
                 {
@@ -2732,6 +2744,8 @@ static char *parent_py_call(PyObject * pModule, const char *fname)
                         val=type_to_pytype(ctx, -1);
 
                     PyDict_SetItemString(kwdict, key, val);
+                    // bug fix: decref val after PyDict_SetItemString to prevent refcount leak - 2026-02-27
+                    Py_XDECREF(val);
                     duk_pop_2(ctx);
                 }
                 duk_pop_2(ctx);//enum, pykeyword value
@@ -2885,6 +2899,7 @@ static PyObject *py_call_in_child(char *fname, PyObject *pModule, PyObject *pArg
     {
         rp_debug_printf(4,"error pfunc=%p, callable=%d\n", pFunc, pFunc?(int)PyCallable_Check(pFunc):0);
         err="error calling python function: %s";
+        // bug fix: uncommented goto end for NULL pValue check - 2026-02-27
         goto end;
     }
 
@@ -2902,7 +2917,7 @@ static PyObject *py_call_in_child(char *fname, PyObject *pModule, PyObject *pArg
 
     if(!pValue) {
         err="error calling python function: %s";
-        //goto end;
+        goto end;
     }
 
     if(PyCallable_Check(pValue)) //same as in make_pyfunc; too many refs
@@ -3049,18 +3064,31 @@ static int child_py_call(PFI *finfo)
     {
         REMALLOC(fname, fname_sz);
         if(forkread(fname, fname_sz) == -1)
+        {
+            // bug fix: free fname on forkread failure to prevent leak - 2026-02-27
+            free(fname);
             return 0;
+        }
     }
 
     if(forkread(&pickle_sz, sizeof(Py_ssize_t)) == -1)
+    {
+        // bug fix: free fname on forkread failure to prevent leak - 2026-02-27
+        free(fname);
         return 0;
+    }
 
     rp_debug_printf(4,"in child_py_call - received, pickle_sz=%d\n", (int)pickle_sz);
     if(pickle_sz > 0)
     {
         REMALLOC(pickle, (size_t) pickle_sz);
         if(forkread(pickle, (size_t)pickle_sz) == -1)
+        {
+            // bug fix: free fname and pickle on forkread failure to prevent leak - 2026-02-27
+            free(fname);
+            free(pickle);
             return 0;
+        }
 
         //rp_debug_printf(4,"reader=%d, writer=%d\n", finfo->reader, finfo->writer);
         rp_debug_printfhex(4,pickle, pickle_sz, "pickle=0x");
@@ -3075,15 +3103,26 @@ static int child_py_call(PFI *finfo)
             //if( pArgs && !PyTuple_Check(pArgs) ) rp_debug_printf(4,"its not null, but its not a tuple");
             sz = strlen(errmsg) + 1;
 
+            // bug fix: free fname on forkwrite failures to prevent leak - 2026-02-27
             if(forkwrite("e", sizeof(char)) == -1)
+            {
+                free(fname);
                 return 0;
+            }
 
             if(forkwrite(&sz, sizeof(duk_size_t)) == -1)
+            {
+                free(fname);
                 return 0;
+            }
 
             if(forkwrite(errmsg, sz) == -1)
+            {
+                free(fname);
                 return 0;
+            }
 
+            free(fname);
             return 1;
         }
     }
@@ -3954,11 +3993,15 @@ static duk_ret_t _py_call(duk_context *ctx, int is_method)
                 )
                 {
                     val=get_pval(-1,0);
+                    // bug fix: incref borrowed ref from get_pval before PyDict_SetItemString steals it - 2026-02-27
+                    Py_XINCREF(val);
                 }
                 else
                     val=type_to_pytype(ctx, -1);
 
                 PyDict_SetItemString(kwdict, key, val);
+                // bug fix: decref val after PyDict_SetItemString to prevent refcount leak - 2026-02-27
+                Py_XDECREF(val);
                 duk_pop_2(ctx);
             }
             duk_pop_2(ctx);//enum, pykeyword value
@@ -4030,6 +4073,8 @@ static duk_ret_t _py_call(duk_context *ctx, int is_method)
         RP_Py_XDECREF(pFunc);
 
     RP_Py_XDECREF(pArgs);
+    // bug fix: decref kwdict to prevent leak of keyword args dict - 2026-02-27
+    RP_Py_XDECREF(kwdict);
     if(err)
     {
         py_throw_fmt(err); //includes PYUNLOCK(state);

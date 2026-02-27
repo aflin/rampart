@@ -309,6 +309,14 @@ static duk_ret_t check_passwd(duk_context *ctx)
 
     hash = rp_crypto_do_passwd(1, &freesa, NULL, (char*) passwd, 255, mode);
 
+    // bug fix: added NULL check after rp_crypto_do_passwd() - 2026-02-27
+    if(!hash)
+    {
+        if(freesa)
+            free(freesa);
+        RP_THROW(ctx, "passwdCheck - password hashing failed");
+    }
+
     s = strrchr(hash,'$');
     if(!s) //passwd_crypt
         s=hash+2;

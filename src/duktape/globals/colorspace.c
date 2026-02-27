@@ -345,8 +345,9 @@ LabToRGB(LAB color)
 PIXEL
 LabToRGBForceGray(LAB color, float amount)
 {
+    // bug fix: changed LABaCenter to LABbCenter for b-channel upper bound - 2026-02-27
     if (color.a > (LABaCenter - amount) && color.a < (LABaCenter + amount) && color.b > (LABbCenter - amount) &&
-        color.b < (LABaCenter + amount)) // forces gray
+        color.b < (LABbCenter + amount)) // forces gray
     {
         PIXEL p;
         p.g = scale255(color.L);
@@ -631,6 +632,14 @@ static int term_colors_and_truecolor(int *colors, int *truecolor)
         char cmd[128];
         FILE *fp;
         int parsed_colors = 0, parsed_true = 0;
+        const char *t;
+
+        // bug fix: added sanitization check for $TERM before popen - 2026-02-27
+        /* Sanitize: valid terminal names are alnum, '-', '.', '_' */
+        for (t = term; *t; t++)
+            if (!isalnum(*t) && *t != '-' && *t != '.' && *t != '_')
+                break;
+        if (*t) goto skip_infocmp;
 
         /* Safe command build */
         size_t n = snprintf(cmd, sizeof(cmd), "infocmp -1 %s 2>/dev/null", term);
@@ -694,6 +703,7 @@ static int term_colors_and_truecolor(int *colors, int *truecolor)
         }
         if (parsed_colors || parsed_true)
             return 0;
+        skip_infocmp: ;
     }
 
     /* Last resort */
@@ -848,7 +858,8 @@ static int parse_color_token(char *token, uint8_t *r, uint8_t *g, uint8_t *b)
     char *p = token + strlen(token) - 1;
 
     // trim end
-    while (p <= token && isspace(*p))
+    // bug fix: changed p <= token to p >= token in trim loop - 2026-02-27
+    while (p >= token && isspace(*p))
     {
         *p = '\0';
         p--;
@@ -1235,14 +1246,15 @@ static int put_html_text(CCODES *c)
     if (bg->color_index >= COLOR_PARSE_RGB)
         put_css_colname(bgcolor, bg);
 
+    // bug fix: changed sprintf to snprintf(outb, sizeof(outb), ...) - 2026-02-27
     if (fg->color_index < COLOR_PARSE_RGB)
-        sprintf(outb, "<span class=\"rp-color%s%s\" style=\"background-color:%s;\">", c->blink_or_class ? " " : "",
+        snprintf(outb, sizeof(outb), "<span class=\"rp-color%s%s\" style=\"background-color:%s;\">", c->blink_or_class ? " " : "",
                 c->blink_or_class ? c->blink_or_class : "", bgcolor);
     else if (bg->color_index < COLOR_PARSE_RGB)
-        sprintf(outb, "<span class=\"rp-color%s%s\" style=\"color:%s;\">", c->blink_or_class ? " " : "",
+        snprintf(outb, sizeof(outb), "<span class=\"rp-color%s%s\" style=\"color:%s;\">", c->blink_or_class ? " " : "",
                 c->blink_or_class ? c->blink_or_class : "", fgcolor);
     else
-        sprintf(outb, "<span class=\"rp-color%s%s\" style=\"color:%s; background-color:%s;\">",
+        snprintf(outb, sizeof(outb), "<span class=\"rp-color%s%s\" style=\"color:%s; background-color:%s;\">",
                 c->blink_or_class ? " " : "", c->blink_or_class ? c->blink_or_class : "", fgcolor, bgcolor);
 
     c->html_start = strdup(outb);

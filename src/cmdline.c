@@ -369,11 +369,12 @@ static void completion(const char *inbuf, linenoiseCompletions *lc) {
                 {
                     struct stat st;
                     char *p=NULL;
-                    REMALLOC(p, pathlen + sizeof(firstentry->d_name)+2);
+                    // bug fix: changed sizeof(firstentry->d_name) to strlen(firstentry->d_name) - 2026-02-27
+                    REMALLOC(p, pathlen + strlen(firstentry->d_name)+2);
                     strcpy(p,path);
                     strcat(p, firstentry->d_name);
-                    stat(p, &st);
-                    if(S_ISDIR(st.st_mode))
+                    // bug fix: added stat() return check and S_ISDIR guard - 2026-02-27
+                    if(!stat(p, &st) && S_ISDIR(st.st_mode))
                     {
                         rp_string *sugg = rp_string_new(32);
                         rp_string_putsn(sugg, startpos, startlen);
@@ -851,11 +852,10 @@ static char **savecmds=NULL;
 static int savelen=0;
 static int savecap=0;
 static int lastwasnl=0;
+// bug fix: removed freeme/free(freeme) to fix use-after-free - 2026-02-27
 // takes ownership
 static char *addToSave(char *txt)
 {
-    char *freeme=NULL;
-
     if( (!txt || *txt=='\0') && lastwasnl )
     {
         if(txt)
@@ -864,7 +864,7 @@ static char *addToSave(char *txt)
     }
 
     if(!txt)
-        freeme=txt=strdup("");
+        txt=strdup("");
 
     // only include one blank line
     if(*txt == '\0')
@@ -880,9 +880,6 @@ static char *addToSave(char *txt)
 
     savecmds[savelen]=txt;
     savelen++;
-
-    if(freeme)
-        free(freeme);
 
     return NULL;
 }
@@ -943,11 +940,13 @@ void list_sess()
     else
         pager = NULL;
 
+    // bug fix: added if(pager) guard before popen() - 2026-02-27
     if (!pager)
         close_fp=0;
 
     /* open a pipe to the pager */
-    fp = popen(pager, "w");
+    if (pager)
+        fp = popen(pager, "w");
     if (!fp)
         fp=stdout;
 
@@ -994,8 +993,8 @@ static void *repl_thr(void *arg)
     linenoiseSetCompletionCallback(completion);
     linenoiseHistorySetMaxLen(1024);
     if(home){
-        strcpy(histfn, home);
-        strcat(histfn, "/.rampart_history");
+        // bug fix: changed strcpy+strcat to snprintf to prevent buffer overflow - 2026-02-27
+        snprintf(histfn, PATH_MAX, "%s/.rampart_history", home);
         hfn = histfn;
         linenoiseHistoryLoad(hfn);
     }
@@ -1455,12 +1454,15 @@ static char * load_polyfill(duk_context *ctx, int setting)
             buf=duk_push_fixed_buffer(ctx,(duk_size_t)rppath.stat.st_size);
 
             read=fread(buf,1,rppath.stat.st_size,f);
+            // bug fix: added fclose(f) on error and success paths in load_polyfill - 2026-02-27
             if(read != rppath.stat.st_size)
             {
                 fprintf(stderr,"error fread(): error reading file '%s'\n",pfill_bc);
+                fclose(f);
             }
             else
             {
+                fclose(f);
                 duk_load_function(ctx);
                 goto callpoly;
             }
@@ -3504,7 +3506,8 @@ int main(int argc, char *argv[])
     access_fh=stdout;
     error_fh=stderr;
 
-    strcpy(argv0, argv[0]);
+    // bug fix: changed strcpy to snprintf to prevent buffer overflow - 2026-02-27
+    snprintf(argv0, PATH_MAX, "%s", argv[0]);
 
     // find our executable and fill in some global vars from it
     len = wai_getExecutablePath(NULL, 0, NULL);
@@ -3694,6 +3697,8 @@ int main(int argc, char *argv[])
                         break;
                     case 't':
                         duk_rp_globaltranspile=1;
+                        // bug fix: added missing break to prevent fall-through to -q case - 2026-02-27
+                        break;
                     case 'q':
                         rp_quiet=1;
                         break;
@@ -3745,7 +3750,9 @@ int main(int argc, char *argv[])
         //script is either first arg or last
         if( stat(argv[scriptarg], &entry_file_stat) != 0 )
         {
-            fprintf(stderr, "error opening '%s': %s\n", argv[scriptarg], strerror(errno));
+            fprintf(stderr, "Error: Could not find entry file '%s': %s\n", argv[scriptarg], strerror(errno));
+            // bug fix: added exit(1) after stat failure error message - 2026-02-27
+            exit(1);
         }
 
         strcpy(p, argv[scriptarg]);

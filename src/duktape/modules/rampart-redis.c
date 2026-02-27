@@ -1183,6 +1183,8 @@ static int rd_push_response_cb(duk_context *ctx, RESPCLIENT *rcp, RESPROTO *resp
         }
       }
       duk_push_int(ctx, total);
+      // bug fix: added missing break in switch case 11 - 2026-02-27
+      break;
     }//case 11
     case 12:
       evcont = push_response_cb_keyval_labeled(ctx, response, cb_idx, this_idx, fname, flag, 1);

@@ -106,11 +106,8 @@ CSV *openCSVstr(duk_context *ctx, duk_idx_t str_idx, int inplace)
     }
     else
     {
-        if( !(csv->buf=malloc((size_t)sz+1)) )
-        {
-            csvErrNo=errno;
-            return(NULL);
-        }
+        // bug fix: replaced malloc with REMALLOC in openCSVstr - 2026-02-27
+        REMALLOC(csv->buf, (size_t)sz+1);
         
         memcpy(csv->buf, data, sz);
     }
@@ -273,10 +270,11 @@ DCSV duk_rp_parse_csv(duk_context *ctx, int isfile, int normalize, const char *f
 } while(0)
 
 
+// bug fix: changed closeCSV(dcsv.csv) to closeCSV(csv) in setbool and option checks - 2026-02-27
 #define setbool(val) do {\
 if (duk_get_prop_string(ctx, obj_idx, (#val) ) ) { \
     if(!duk_is_boolean(ctx, -1)) {\
-        closeCSV(dcsv.csv);\
+        closeCSV(csv);\
         RP_THROW(ctx, "%s(): option %s requires a Boolean", func_name, (#val) );\
     }\
     csv->val = duk_get_boolean(ctx, -1);\
@@ -301,7 +299,7 @@ duk_pop(ctx);\
             const char *s;
             if(!duk_is_string(ctx, -1))
             {
-                closeCSV(dcsv.csv);
+                closeCSV(csv);
                 RP_THROW(ctx, "%s(): option delimiter requires a String (single character delimiter)", func_name);
             }
             s=duk_get_string(ctx, -1);
@@ -313,7 +311,7 @@ duk_pop(ctx);\
         {
             if(!duk_is_string(ctx, -1))
             {
-                closeCSV(dcsv.csv);
+                closeCSV(csv);
                 RP_THROW(ctx, "%s(): option timeFormat requires a String (strptime() style string format)", func_name);
             }
             csv->timeFormat = (char *)duk_get_string(ctx, -1);
@@ -331,7 +329,7 @@ duk_pop(ctx);\
 
     if(parseCSV(csv)<0)      // now actually parse the file
     {
-        closeCSV(dcsv.csv);
+        closeCSV(csv);
         RP_THROW(ctx, "%s(): parse error on line %d: %s\n", func_name, csv->lines, csv->errorMsg);
         //RP_THROW(ctx, "%s(): parse error: %s\n", func_name, csv->errorMsg);
     }
@@ -362,7 +360,13 @@ duk_pop(ctx);\
                 {
                     if (!strcmp( hnames[x], hnames[y]))
                     {
-                        closecsv;
+                        for(col=0; col<csv->cols; col++)
+                            free(hnames[col]);
+                        free(hnames);
+                        // bug fix: replaced closecsv macro with inline cleanup at duplicate header check - 2026-02-27
+                        if (dcsv.inplace)
+                            csv->buf=NULL;
+                        closeCSV(csv);
                         RP_THROW(ctx, "%s(): duplicate header column names (columns %d and %d )", func_name, x+1, y+1);  
                     }
                 }

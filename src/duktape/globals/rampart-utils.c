@@ -220,7 +220,11 @@ duk_ret_t rp_get_line(duk_context *ctx, const char *filename, int line_number, i
             free(line);
             line=NULL;
             if(!nlines)
+            {
+                // bug fix: close file before early return when nlines==0 - 2026-02-27
+                fclose(file);
                 return 1;
+            }
         }
 
         if (current_line == end )
@@ -517,7 +521,8 @@ static rp_stack *parse_stack_string(const char *s, const char *msg)
 //    then just return the duktape version of "stack"
 static void rp_push_formatted_error(duk_context *ctx, duk_idx_t eidx, int nlines)
 {
-    const char *fn=NULL;
+    // bug fix: init fn to "" (not NULL) to prevent NULL deref in .c suffix check below - 2026-02-27
+    const char *fn="";
     char *stack=NULL;
     int ln=-1, i=0;
     rp_stack *ss=NULL;
@@ -580,13 +585,16 @@ static void rp_push_formatted_error(duk_context *ctx, duk_idx_t eidx, int nlines
         }
         else if(nlines != -1)
         { //we had a parse error somewhere, use properties from error object to get file, line
-            int l;
+            // bug fix: use duk_get_lstring with bounds check to prevent NULL deref and out-of-bounds read - 2026-02-27
+            duk_size_t l=0;
             if(duk_get_prop_string(ctx, eidx, "fileName"))
-                fn=duk_get_string(ctx,-1);
+                fn=duk_get_lstring(ctx,-1, &l);
             duk_pop(ctx);
-            l=strlen(fn);
             ln=-1;
-            if(fn[l-2]!='.' || fn[l-1]!='c') //if it's a .c file, don't use, leave ln=-1
+            // if l==0, no filename — leave ln=-1.
+            // if l==1, it's a valid filename that can't be ".c" — set ln.
+            // if l>=2, check for ".c" suffix — only set ln if it's not a .c file.
+            if(l && (l < 2 || fn[l-2]!='.' || fn[l-1]!='c'))
             {
                 if(duk_get_prop_string(ctx, eidx, "lineNumber"))
                     ln = duk_get_int(ctx,-1);

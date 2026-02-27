@@ -222,7 +222,7 @@ respBufRealloc(RESPROTO *rp, byte *oldBuffer, size_t newSize)
 {
   int i;
   byte *newBuffer = rp_redisRealloc(oldBuffer, newSize);
-  if (newBuffer && newBuffer != oldBuffer) // the latter clause is because calloc may return same region
+  if (newBuffer && newBuffer != oldBuffer) // the latter clause is because realloc may return same region
   {
     rp->currPointer = newBuffer + (rp->currPointer - oldBuffer);
     rp->bufEnd = (newBuffer) + (rp->bufEnd - oldBuffer);
@@ -233,7 +233,8 @@ respBufRealloc(RESPROTO *rp, byte *oldBuffer, size_t newSize)
       if (rp->items[i].respType == RESPISSTR || rp->items[i].respType == RESPISBULKSTR || rp->items[i].respType == RESPISPLAINTXT)
         rp->items[i].loc = newBuffer + (rp->items[i].loc - oldBuffer);
   }
-  else
+  // bug fix: guard error message to only trigger on alloc failure, not same-pointer realloc - 2026-02-27
+  else if (!newBuffer)
     rp->errorMsg = "Failed attempt to grow recieve buffer size in respBufRealloc()";
 
   return (newBuffer);
@@ -267,6 +268,8 @@ skipGraph(byte *s)
           ++s;
           break;
         }
+        // bug fix: track priorChar inside quotes so \" is recognized as escaped - 2026-02-27
+        priorChar = *s;
         ++s;
       }
     }
@@ -359,7 +362,8 @@ convertRespPlaintext(RESPROTO *rpp, byte *p, byte *end)
 
       parseRespNumber(rpp, p, &floatingpoint, &integer);
 
-      if (floatingpoint == NAN)
+      // bug fix: use isnan() instead of == NAN which never matches - 2026-02-27
+      if (isnan(floatingpoint))
       {
         thisItem->respType = RESPISINT;
         thisItem->rinteger = integer;
@@ -763,6 +767,7 @@ int respSendReply(RESPROTO *rpp, FILE *fh)
     }
   }
 
-  fflush(stdout);
+  // bug fix: flush the correct file handle instead of stdout - 2026-02-27
+  fflush(fh);
   return (1);
 }

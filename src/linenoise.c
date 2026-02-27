@@ -524,6 +524,11 @@ void linenoiseReplaceCompletion(linenoiseCompletions *lc, const char *str, size_
     size_t len = strlen(str);
     char *copy;
 
+    // bug fix: added early return if lc->len == 0 - 2026-02-27
+    // won't happen
+    if (lc->len == 0)
+        return;
+
     if (pos >= lc->len)
         pos = lc->len - 1;
 
@@ -735,7 +740,8 @@ static char *write_line(
     char *startpos,
     size_t width,
     size_t col,
-    size_t bufshift,
+    // bug fix: changed size_t bufshift to int bufshift - 2026-02-27
+    int bufshift,
     int writenl
 );
 
@@ -991,7 +997,8 @@ static char *write_line(
     char *startpos,
     size_t width,
     size_t col,
-    size_t bufshift,
+    // bug fix: changed size_t bufshift to int bufshift - 2026-02-27
+    int bufshift,
     int writenl
 )
 {
@@ -1046,7 +1053,8 @@ static void write_to_end(struct linenoiseState *l, int full)
     char *b = l->buf;
     // starting position
     size_t curcol = full ? l->promptlen : (size_t)rcp->screenpos_c - 1, screenwidth = (size_t)rcp->screendim_c;
-    size_t bufshift = 0;
+    // bug fix: changed size_t bufshift to int bufshift - 2026-02-27
+    int bufshift = 0;
 
     if (full) // do the whole buf, don't stop at end of screen
     {         // this mess is to account for prompt length when horizontally wrapping
@@ -1854,7 +1862,8 @@ static char *linenoiseEdit(int stdin_fd, int stdout_fd, size_t buflen, const cha
 
     if (write(l.ofd, prompt, l.plen) == -1)
         goto end_fail;
-    if (write(l.ofd, "\033[0J", 5) == -1)
+    // bug fix: changed write(..., 5) to write(..., 4) for correct escape sequence length - 2026-02-27
+    if (write(l.ofd, "\033[0J", 4) == -1)
         goto end_fail;
     while (1)
     {

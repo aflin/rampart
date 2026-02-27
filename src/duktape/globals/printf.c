@@ -1215,9 +1215,10 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
             }
             else
             {
-                char b[8];
+                // bug fix: enlarged buffer from 8 to 16 bytes, changed sprintf to snprintf - 2026-02-27
+                char b[16];
                 idx=outs(out, buffer, idx, maxlen, "\033[s");  // Save cursor
-                sprintf(b, "\033[%dA", (int)len);              // Move up
+                snprintf(b, sizeof(b), "\033[%dA", (int)len);  // Move up
                 idx=outs(out, buffer, idx, maxlen, b);
                 for (i = 0; i < len; ++i) {
                     duk_get_prop_index(ctx, fidx, i);

@@ -89,7 +89,12 @@ static int load_js_module(duk_context *ctx, const char *file, duk_idx_t module_i
 
     size_t len = fread(buffer, 1, sb.st_size, f);
     if (sb.st_size != len)
+    {
+        // bug fix: close file and free buffer before throwing on fread failure - 2026-02-27
+        fclose(f);
+        free(buffer);
         MOD_THROW(ctx, DUK_ERR_ERROR, "Error loading file %s: %s\n", file, strerror(errno));
+    }
 
     //skip any #! line in case this module doubles as a script
     buffer[sb.st_size]='\0';
@@ -139,9 +144,14 @@ static int load_js_module(duk_context *ctx, const char *file, duk_idx_t module_i
 
             if (res.err && res.transpiled)
             {
+                int err_line = res.line_num;
                 duk_push_string(ctx, res.errmsg);
                 const char *out = duk_get_string(ctx, -1);
-                MOD_THROW(ctx, DUK_ERR_SYNTAX_ERROR, "\n%s\n    at %s:%d", out, file, res.line_num);
+                // bug fix: free parse result, close file, and free buffer before throwing on transpile error - 2026-02-27
+                freeParseRes(&res);
+                fclose(f);
+                free(freebuffer);
+                MOD_THROW(ctx, DUK_ERR_SYNTAX_ERROR, "\n%s\n    at %s:%d", out, file, err_line);
             }
 
             if(res.transpiled)
@@ -262,8 +272,8 @@ static int load_so_module(duk_context *ctx, const char *file, duk_idx_t module_i
         pthread_mutex_unlock(&modlock);
         RP_THROW(ctx, "Error loading: %s", dl_err);
 
-        libload_success:
-        pthread_mutex_unlock(&modlock);
+        // bug fix: removed duplicate pthread_mutex_unlock at libload_success label - 2026-02-27
+        libload_success: ;
     }
 
     addhandle_to_close(lib);

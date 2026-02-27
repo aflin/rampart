@@ -62,8 +62,9 @@ static rp_tz_zone *free_tz_zone(rp_tz_zone *zone) {
     return NULL;
 }
 
+// bug fix: cast to uint32_t before shifting to avoid undefined behavior - 2026-02-27
 static inline int32_t read_int32_from_chars(const unsigned char *chars) {
-    return (chars[0] << 24) | (chars[1] << 16) | (chars[2] << 8) | chars[3];
+    return ((uint32_t)chars[0] << 24) | ((uint32_t)chars[1] << 16) | ((uint32_t)chars[2] << 8) | (uint32_t)chars[3];
 }
 
 
@@ -73,7 +74,7 @@ static int32_t read_int32(FILE *file) {
         perror("Error reading file");
         exit(EXIT_FAILURE);
     }
-    return (buf[0] << 24) | (buf[1] << 16) | (buf[2] << 8) | buf[3];
+    return ((uint32_t)buf[0] << 24) | ((uint32_t)buf[1] << 16) | ((uint32_t)buf[2] << 8) | (uint32_t)buf[3];
 }
 
 static rp_tz_zone * extract_timezone_info(char *path, int base_path_len) {
@@ -255,7 +256,9 @@ static rp_timezones * _proc_links(rp_timezones *tz, const char *path, int base_p
             rp_tz_zone *entry=NULL;
             int i=0;
 
-            (void)realpath(fullpath, rpath);
+            // bug fix: added realpath() NULL check with continue - 2026-02-27
+            if(!realpath(fullpath, rpath))
+                continue;
 
             for(;i<tz->nzones;i++)
             {

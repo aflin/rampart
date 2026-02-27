@@ -134,8 +134,9 @@ static char *md5crypt(const char *passwd, const char *magic, const char *salt)
             goto err;
         n >>= 1;
     }
+    // bug fix: changed return NULL to goto err for proper cleanup - 2026-02-27
     if (!EVP_DigestFinal_ex(md, buf, NULL))
-        return NULL;
+        goto err;
 
     for (i = 0; i < 1000; i++) {
         if (!EVP_DigestInit_ex(md2, EVP_md5(), NULL))
@@ -332,8 +333,9 @@ static char *shacrypt(const char *passwd, const char *magic, const char *salt)
             goto err;
         n >>= 1;
     }
+    // bug fix: changed return NULL to goto err for proper cleanup - 2026-02-27
     if (!EVP_DigestFinal_ex(md, buf, NULL))
-        return NULL;
+        goto err;
 
     /* P sequence */
     if (!EVP_DigestInit_ex(md2, sha, NULL))
@@ -343,8 +345,9 @@ static char *shacrypt(const char *passwd, const char *magic, const char *salt)
         if (!EVP_DigestUpdate(md2, passwd, passwd_len))
             goto err;
 
+    // bug fix: changed return NULL to goto err for proper cleanup - 2026-02-27
     if (!EVP_DigestFinal_ex(md2, temp_buf, NULL))
-        return NULL;
+        goto err;
 
     if ((p_bytes = OPENSSL_zalloc(passwd_len)) == NULL)
         goto err;
@@ -360,8 +363,9 @@ static char *shacrypt(const char *passwd, const char *magic, const char *salt)
         if (!EVP_DigestUpdate(md2, ascii_salt, salt_len))
             goto err;
 
+    // bug fix: changed return NULL to goto err for proper cleanup - 2026-02-27
     if (!EVP_DigestFinal_ex(md2, temp_buf, NULL))
-        return NULL;
+        goto err;
 
     if ((s_bytes = OPENSSL_zalloc(salt_len)) == NULL)
         goto err;

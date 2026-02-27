@@ -1787,7 +1787,8 @@ int get_thread_count(int **alist)
             if( RPTHR_TEST(rpthread[i], RPTHR_FLAG_IN_USE) )
                 list[li++]=i;
         }
-        alist=&list;
+        // bug fix: changed alist=&list to *alist = list to correctly return list to caller - 2026-02-27
+        *alist = list;
     }
 
     return ret;

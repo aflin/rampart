@@ -96,6 +96,12 @@ static int closefn(void *handler)
 FILE *fmemopen(void *buf, size_t size, const char *mode)
 {
     fmem_t *mem = (fmem_t *) malloc(sizeof(fmem_t));
+    // bug fix: added NULL check after malloc - 2026-02-27
+    if(mem==NULL)
+    {
+        fprintf(stderr,"fmemopen: could not alloc memory\n");
+        exit(1);
+    }
 
     memset(mem, 0, sizeof(fmem_t));
     if(buf==NULL)

@@ -724,13 +724,19 @@ RPfunc_stringformat(duk_context *ctx)
 
     return 1;
 
+  // bug fix: added closehtbuf/TXfree/RPstringformatResetArgs cleanup to err and noMem labels - 2026-02-27
   err:
     for (i=0;i<info.numArgs;i++)
       closefld(info.args[i]);
+    if(outBuf) outBuf = closehtbuf(outBuf);
+    if(fmtData) fmtData = TXfree(fmtData);
+    RPstringformatResetArgs(&info);
 
     RP_THROW(ctx,"stringFormat() failed");
 
   noMem:
+    if(outBuf) outBuf = closehtbuf(outBuf);
+    if(fmtData) fmtData = TXfree(fmtData);
     RP_THROW(ctx,"out of memeory in stringFormat()");
 
   return 0;
@@ -844,6 +850,8 @@ RPsqlFuncs_abstract(duk_context *ctx)
     duk_push_string(ctx, ab);
     free(query);
     free(ab);
+    // bug fix: added free(markup) when query is NULL - 2026-02-27
+    free(markup);
     return 1;
 }
 

@@ -635,18 +635,30 @@ static void putdoctype( TidyDoc tdoc, TidyNode tnod, TidyBuffer *buf, ctmbstr na
 
     tidyBufAppend(buf, (void*)name, strlen(name) );
 
-    if (fpi && fpi->value && !sys)
+    if (fpi && fpi->value && sys && sys->value)
+    {
+        tidyBufAppend(buf, " PUBLIC ", 8);
+        tidyBufPutByte(buf, fpi->delim);
+        tidyBufAppend(buf, fpi->value, strlen(fpi->value) );
+        tidyBufPutByte(buf, fpi->delim);
+        tidyBufAppend(buf, " ", 1);
+        tidyBufPutByte(buf, sys->delim);
+        tidyBufAppend(buf, sys->value, strlen(sys->value) );
+        tidyBufPutByte(buf, sys->delim);
+    }
+    else if (fpi && fpi->value)
     {
         tidyBufAppend(buf, " PUBLIC ", 8);
         tidyBufPutByte(buf, fpi->delim);
         tidyBufAppend(buf, fpi->value, strlen(fpi->value) );
         tidyBufPutByte(buf, fpi->delim);
     }
+    // bug fix: changed fpi->value to sys->value in SYSTEM doctype output - 2026-02-27
     else if (sys && sys->value)
     {
         tidyBufAppend(buf, " SYSTEM ", 8);
         tidyBufPutByte(buf, sys->delim);
-        tidyBufAppend(buf, fpi->value, strlen(fpi->value) );
+        tidyBufAppend(buf, sys->value, strlen(sys->value) );
         tidyBufPutByte(buf, sys->delim);
     }
 

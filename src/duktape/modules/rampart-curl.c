@@ -54,6 +54,8 @@ CSOS
     long ssloptions;                      /* ditto */
     long proxyssloptions;                 /* ditto */
     char *postdata;                       /* postdata we will will need to free later, if used */
+    // bug fix: store FILE handle from post_from_file so it can be fclose'd in cleanup - 2026-02-27
+    FILE *postfile;                       /* FILE from post_from_file, needs fclose after perform */
     curl_mime *mime;                      /* from postform. Needs to be freed after curl_easy_perform() */
     struct curl_slist *slists[MAXSLISTS]; /* keep track of slists to free later. currently there are only 9 options with slist
                                              the position/index of http headers for req is set/get with SET_HEADERLIST, GET_HEADERLIST */
@@ -586,7 +588,8 @@ int copt_mailmsg(CSOS_ARGS)
                 duk_pop_2(ctx);
                 continue;
             }
-            val=REQUIRE_STRING(ctx, -1, "curl mail-msg: property/header '%s' requires a string\n", key);
+            // bug fix: changed key to ckey in format string to use correct variable - 2026-02-27
+            val=REQUIRE_STRING(ctx, -1, "curl mail-msg: property/header '%s' requires a string\n", ckey);
             if (strchr(val,0xED))
             {
                 /* replace property/string with utf-8 encoded version */
@@ -697,7 +700,8 @@ int post_from_file(duk_context *ctx, CURL *handle, CSOS *sopts, const char *fn)
 
     if (file == NULL)
     {
-        duk_push_sprintf(ctx, "could not open file \"%\".", fn);
+        // bug fix: changed "%" to "%s" to fix missing format specifier - 2026-02-27
+        duk_push_sprintf(ctx, "could not open file \"%s\".", fn);
         (void)duk_throw(ctx);
     }
 
@@ -715,6 +719,8 @@ int post_from_file(duk_context *ctx, CURL *handle, CSOS *sopts, const char *fn)
 
     /* pass in suitable argument to callback */
     curl_easy_setopt(handle, CURLOPT_READDATA, (void *)file);
+    // bug fix: store file handle for fclose in cleanup - 2026-02-27
+    sopts->postfile = file;
     return (0);
 }
 
@@ -2565,6 +2571,9 @@ static void clean_req(CURLREQ *req)
         for (i = 0; i < sopts->nslists; i++)
             curl_slist_free_all(sopts->slists[i]);
         free(sopts->postdata);
+        // bug fix: fclose post file handle during cleanup to prevent leak - 2026-02-27
+        if(sopts->postfile)
+            fclose(sopts->postfile);
         if (sopts->mime != (curl_mime *)NULL)
             curl_mime_free(sopts->mime);
         free(sopts->refcount);
@@ -2766,7 +2775,10 @@ CURLREQ *new_request(char *url, CURLREQ *cloner, duk_context *ctx, duk_idx_t opt
     else
     {
         req = new_curlreq(ctx, url, NULL, cm, func_idx, chunkfunc_idx, progfunc_idx, add_addurl);
-        curl_easy_setopt(req->curl, CURLOPT_BUFFERSIZE, 1310720L);
+        // bug fix: removed premature curl_easy_setopt on NULL handle - 2026-02-27
+        // req->curl is NULL here (set by curl_easy_init() below), and
+        // CURLOPT_BUFFERSIZE is set again to 100*1024 after curl_easy_init().
+        //curl_easy_setopt(req->curl, CURLOPT_BUFFERSIZE, 1310720L);
         sopts= req->sopts;
         *sopts->refcount = 1;
     }

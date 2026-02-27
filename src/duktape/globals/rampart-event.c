@@ -292,7 +292,8 @@ void rp_jsev_doevent(evutil_socket_t fd, short events, void* arg)
     RPTHR *thr = get_current_thread();
     duk_context *ctx = thr->htctx;
     duk_idx_t arg_idx = -1;
-    size_t varname_sz = strlen(earg->key) + 8;
+    // bug fix: changed strlen(key)+8 to strlen(key)+16 for VLA size - 2026-02-27
+    size_t varname_sz = strlen(earg->key) + 16;
     char varname[varname_sz];
 
 #define jsev_exec_func do{\
@@ -455,7 +456,8 @@ void rp_jsev_freevar(evutil_socket_t fd, short events, void* arg)
     }
     else if(*refcount < 1)
     {
-        size_t varname_sz = strlen(earg->key) + 8;
+        // bug fix: changed strlen(key)+8 to strlen(key)+16 for VLA size - 2026-02-27
+        size_t varname_sz = strlen(earg->key) + 16;
         char varname[varname_sz];
 
         sprintf(varname, "\xff%s%d", earg->key, earg->varno);
@@ -609,7 +611,8 @@ duk_ret_t duk_rp_trigger_event(duk_context *ctx)
 
     if(!duk_is_undefined(ctx,1))
     {
-        size_t varname_sz = strlen(evname) + 8;
+        // bug fix: changed strlen(key)+8 to strlen(key)+16 for VLA size - 2026-02-27
+        size_t varname_sz = strlen(evname) + 16;
         char varname[varname_sz];
 
         RP_MLOCK(rp_ev_var_lock);

@@ -261,11 +261,13 @@ duk_ret_t duk_rp_array_find(duk_context *ctx)
         duk_get_prop_index(ctx, 1, i);
         duk_call(ctx, 1);
         res=duk_to_boolean(ctx, -1);
+        // bug fix: added duk_pop(ctx) after duk_to_boolean in array_find - 2026-02-27
+        duk_pop(ctx);
         if(res)
         {
             duk_get_prop_index(ctx, 1, i);
             return 1;
-        }        
+        }
     }
     return 0;
 }
@@ -285,11 +287,13 @@ duk_ret_t duk_rp_array_find_index(duk_context *ctx)
         duk_get_prop_index(ctx, 1, i);
         duk_call(ctx, 1);
         res=duk_to_boolean(ctx, -1);
+        // bug fix: added duk_pop(ctx) after duk_to_boolean in array_find_index - 2026-02-27
+        duk_pop(ctx);
         if(res)
         {
             duk_push_number(ctx, (int)i);
             return 1;
-        }        
+        }
     }
     duk_push_number(ctx, -1);
     return 1;

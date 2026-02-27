@@ -291,7 +291,9 @@ static void setdate_header(evhtp_request_t *req, time_t secs)
         secs=time(NULL);
     if(secs != -1)
     {
-        struct tm *ptm = gmtime(&secs);
+        // bug fix: changed gmtime to gmtime_r for thread safety - 2026-02-27
+        struct tm tm_buf;
+        struct tm *ptm = gmtime_r(&secs, &tm_buf);
         char buf[128];
         /* Thu, 21 May 2020 01:41:20 GMT */
         strftime(buf, 128, "%a, %d %b %Y %T GMT", ptm);
@@ -337,7 +339,11 @@ static int compress_resp(evhtp_request_t *req, int level, void **outbuf)
     libdeflate_free_compressor(compressor);
 
     if (outlen == 0)
+    {
+        // bug fix: added free(outgz) when compression fails - 2026-02-27
+        free(outgz);
         return 0;
+    }
 
     // error check this. -1 return is an error - but then what?  Is the buffer still good?
     evbuffer_drain(buf, inlen);
@@ -2322,7 +2328,8 @@ static void rp_sendfile(evhtp_request_t *req, char *fn, int haveCT, struct stat 
                     //check that it is a dir and is writable
                     makecache=1;
                     //if( cstat.st_mode & S_IFMT != S_IFDIR)
-                    if(!S_ISDIR(cstat.st_mode) || (!( S_IRWXU | cstat.st_mode)) )
+                    // bug fix: changed S_IRWXU | cstat.st_mode to S_IRWXU & cstat.st_mode - 2026-02-27
+                    if(!S_ISDIR(cstat.st_mode) || (!( S_IRWXU & cstat.st_mode)) )
                         makecache=0;
                 }
                 *p='/';
@@ -2353,6 +2360,9 @@ static void rp_sendfile(evhtp_request_t *req, char *fn, int haveCT, struct stat 
                             close(fd);
                             return;
                         }
+                        // bug fix: added else close(cfd) for zero-length cached gzip - 2026-02-27
+                        else
+                            close(cfd);
                     }
 
                 }

@@ -69,7 +69,8 @@ newRespClient()
     rcp->fromBuf = rp_redisMalloc(RESPCLIENTBUFSZ);
     rcp->toBuf = rp_redisMalloc(RESPCLIENTBUFSZ);
 
-    if (!rcp->rppFrom || !rcp->fromBuf | !rcp->toBuf)
+    // bug fix: changed bitwise OR to logical OR for proper short-circuit evaluation - 2026-02-27
+    if (!rcp->rppFrom || !rcp->fromBuf || !rcp->toBuf)
       return (closeRespClient(rcp));
 
     rcp->fromBufSize = RESPCLIENTBUFSZ;
@@ -89,7 +90,8 @@ openRespClientSocket(RESPCLIENT *rcp)
   struct hostent *host;
   // create socket
   rcp->socket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-  if (rcp->socket <= 0)
+  // bug fix: changed <= 0 to < 0 since fd 0 is a valid socket - 2026-02-27
+  if (rcp->socket < 0)
   {
     rcp->rppFrom->errorMsg = "respClient error: cannot create socket";
     return (RP_REDISFAIL);
@@ -101,6 +103,9 @@ openRespClientSocket(RESPCLIENT *rcp)
   host = gethostbyname(rcp->hostname);
   if (!host)
   {
+    // bug fix: close socket and reset fd on gethostbyname failure to prevent fd leak - 2026-02-27
+    close(rcp->socket);
+    rcp->socket = -1;
     rcp->rppFrom->errorMsg = "respClient error: unknown host";
     return (RP_REDISFAIL);
   }
@@ -108,6 +113,9 @@ openRespClientSocket(RESPCLIENT *rcp)
   memcpy(&address.sin_addr, host->h_addr_list[0], host->h_length);
   if (connect(rcp->socket, (struct sockaddr *)&address, sizeof(address)))
   {
+    // bug fix: close socket and reset fd on connect failure to prevent fd leak - 2026-02-27
+    close(rcp->socket);
+    rcp->socket = -1;
     rcp->rppFrom->errorMsg = "respClient error: cannont connect to host";
     return (RP_REDISFAIL);
   }
@@ -172,7 +180,8 @@ waitForRespData(RESPCLIENT *rcp)
   else if (!ret)
   { // In this case we probably did something stupid and need to reopen it to prevent corruption
     rcp->rppFrom->errorMsg = "Timeout reading from server";
-    if (rcp->socket)
+    // bug fix: changed truthiness check to > -1 since fd 0 is valid - 2026-02-27
+    if (rcp->socket > -1)
       close(rcp->socket);
 
     openRespClientSocket(rcp); // attempt reconnect
@@ -330,7 +339,8 @@ lookupPctCode(char *s)
   for (i = 0; *percentCodes[i].str; i++)
     if (!strncmp(s, percentCodes[i].str, percentCodes[i].length))
       return (&percentCodes[i]);
-  return (NULL);
+  // bug fix: return sentinel instead of NULL to prevent NULL pointer dereference - 2026-02-27
+  return (&percentCodes[i]); // return the {unknown, 0, "", ""} sentinel
 }
 
 // RE va_list usage: https://wiki.sei.cmu.edu/confluence/display/c/MSC39-C.+Do+not+call+va_arg%28%29+on+a+va_list+that+has+an+indeterminate+value
@@ -494,6 +504,9 @@ sendRespBufNeeded(RESPCLIENT *rcp, char *fmt, va_list *argp)
         default:
         {
           rcp->rppFrom->errorMsg = "Invalid % code in sendRespCommand()";
+          // bug fix: free fmtCopy and argSizes before return on unknown % code - 2026-02-27
+          rp_redisFree(fmtCopy);
+          free(argSizes);
           return (0);
         }
         }
@@ -607,6 +620,11 @@ sendRespCommand(RESPCLIENT *rcp, char *fmt, ...)
   bufp += strlen(bufp); // not checking for fit here because it has to be long enough
   outBuffer = bufp;
 
+  // bug fix: added commented-out va_end documenting second va_start without prior va_end - 2026-02-27
+  // note: va_end/va_start here is technically required by the C standard, but in the Duktape
+  // build arg is not used after this — all args come from the Duktape stack via duk_rp_getarg.
+  // The va_start here exists so VA_END at the bottom has a valid va_list for va_end.
+  // va_end(arg);
   va_start(arg, fmt);
   for (p = fmtCopy; *p;)
   {
@@ -723,6 +741,9 @@ sendRespCommand(RESPCLIENT *rcp, char *fmt, ...)
         default:
         {
           rcp->rppFrom->errorMsg = "Invalid % code in sendRespCommand()";
+          // bug fix: free fmtCopy and argSizes before return on unknown % code - 2026-02-27
+          rp_redisFree(fmtCopy);
+          rp_redisFree(argSizes);
           return 0;// (NULL);
         }
         }

@@ -445,18 +445,16 @@ int tx_rp_cancelled = 0;
     r;                                                 \
 })
 
+// bug fix: added h = h->next and NULL check to prevent infinite loop in signal handler - 2026-02-27
 static void die_nicely(int sig)
 {
-    DB_HANDLE *h = db_handle_head, *next;
-    while(1)
+    DB_HANDLE *h = db_handle_head;
+    while(h)
     {
         if(h->tx)
             texis_cancel(h->tx);
 
-        next=h->next;
-
-        if(!next)
-            break;
+        h = h->next;
     }
     tx_rp_cancelled = 1;
 }
@@ -1468,7 +1466,8 @@ static int fork_prep(DB_HANDLE *h, char *sql)
 
     /* write sql statement to start of mmap */
 
-    sprintf(finfo->mapinfo->mem,"%s", sql);
+    // bug fix: changed sprintf to snprintf with FORKMAPSIZE to prevent buffer overflow - 2026-02-27
+    snprintf(finfo->mapinfo->mem, FORKMAPSIZE, "%s", sql);
 
     if(forkwrite("p", sizeof(char)) == -1)
         return 0;
@@ -1520,6 +1519,9 @@ static int fork_open(DB_HANDLE *h, const char *user, const char *pass)
     if(finfo->childpid)
     {
         /* write db string to map */
+        // bug fix: added bounds check before sprintf in fork_open - 2026-02-27
+        size_t needed = strlen(h->db) + strlen(user) + strlen(pass) + 3;
+        if(needed > FORKMAPSIZE) return 0;
         sprintf(finfo->mapinfo->mem, "%s%c%s%c%s", h->db, 0, user, 0, pass);
 
         /* write o for open and the string db is in memmap */

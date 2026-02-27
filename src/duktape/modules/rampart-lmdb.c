@@ -550,7 +550,9 @@ duk_ret_t duk_rp_lmdb_put(duk_context *ctx)
 
     if (rc)
     {
-        mdb_txn_abort(txn);
+        // bug fix: removed mdb_txn_abort after failed commit to prevent use-after-free - 2026-02-27
+        // mdb_txn_commit frees txn even on failure, so abort would be use-after-free
+        //mdb_txn_abort(txn);
         write_unlock;
         if(rc == MDB_MAP_FULL && lenv->rp_flags & GROW_ON_PUT)
         {

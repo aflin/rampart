@@ -550,7 +550,8 @@ static duk_ret_t rp_i4_to_i8(duk_context *ctx)
     uint8_t *in = REQUIRE_BUFFER_DATA(ctx, 0, &sz4, "vector.i4Toi8 - argument must be a Buffer");
     dim = sz4 * 2;
 
-    out = duk_push_fixed_buffer(ctx, sz4);
+    // bug fix: use dim instead of sz4 to prevent heap buffer overflow - 2026-02-27
+    out = duk_push_fixed_buffer(ctx, dim);
     rpvec_i4_to_i8(in, out, dim);
     return 1;
 }
