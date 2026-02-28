@@ -3,6 +3,30 @@
 
 if(global && global.rampart) {
     rampart.globalize(rampart.utils);
+    var _asyncQueue = [];
+    var _asyncRunning = false;
+    var _drainAsync = function() {
+        if (_asyncRunning || _asyncQueue.length === 0) return;
+        _asyncRunning = true;
+        var item = _asyncQueue.shift();
+        item.promise.then(function(result) {
+            printf("testing transpile - %-48s - ", item.name);
+            if (result)
+                printf("passed\n");
+            else
+            {
+                printf(">>>>> FAILED <<<<<\n");
+                process.exit(1);
+            }
+            _asyncRunning = false;
+            _drainAsync();
+        }).then(null, function(e) {
+            printf("testing transpile - %-48s - ", item.name);
+            printf(">>>>> FAILED <<<<<\n");
+            console.log(e);
+            process.exit(1);
+        });
+    };
     function testFeature(name,test)
     {
         var error=false;
@@ -14,6 +38,11 @@ if(global && global.rampart) {
     console.log(e);
                 test=false;
             }
+        }
+        if (test && typeof test === 'object' && typeof test.then === 'function') {
+            _asyncQueue.push({name: name, promise: test});
+            _drainAsync();
+            return;
         }
         printf("testing transpile - %-48s - ", name);
         if(test)
@@ -60,6 +89,30 @@ if(global && global.rampart) {
       return output.length;
     }
 
+    var _asyncQueue = [];
+    var _asyncRunning = false;
+    var _drainAsync = function() {
+        if (_asyncRunning || _asyncQueue.length === 0) return;
+        _asyncRunning = true;
+        var item = _asyncQueue.shift();
+        item.promise.then(function(result) {
+            printf("testing node ES2015+ - %-48s - ", item.name);
+            if (result)
+                printf("passed\n");
+            else
+            {
+                printf(">>>>> FAILED <<<<<\n");
+                process.exit(1);
+            }
+            _asyncRunning = false;
+            _drainAsync();
+        }).then(null, function(e) {
+            printf("testing node ES2015+ - %-48s - ", item.name);
+            printf(">>>>> FAILED <<<<<\n");
+            console.log(e);
+            process.exit(1);
+        });
+    };
     var testFeature = function(name,test)
     {
         var error=false;
@@ -71,6 +124,11 @@ if(global && global.rampart) {
     console.log(e);
                 test=false;
             }
+        }
+        if (test && typeof test === 'object' && typeof test.then === 'function') {
+            _asyncQueue.push({name: name, promise: test});
+            _drainAsync();
+            return;
         }
         printf("testing node ES2015+ - %-48s - ", name);
         if(test)
@@ -773,12 +831,11 @@ testFeature("non-function then args are ignored", function () {
 testFeature("then handlers are async (microtask)", function () {
     let sync = true;
     const p = Promise.resolve("x").then(() => {
-      // runs after sync has been set to false? No: we flip after scheduling
-      // The key: at the moment of scheduling, sync is true.
-      return sync === true;
+      // Handler runs asynchronously, so sync should already be false
+      return sync;
     });
     sync = false;
-    return p.then((assertion) => assertion === true);
+    return p.then((syncValueInHandler) => syncValueInHandler === false);
 });
 
 // 17. Order of multiple then handlers is registration order
@@ -828,8 +885,9 @@ testFeature("thenable multiple calls: first call wins", function () {
 
 // 22. Self-resolution must reject with TypeError
 testFeature("self-resolution rejects with TypeError", function () {
-    let p;
-    p = new Promise((resolve) => resolve(p));
+    var _resolve;
+    var p = new Promise((resolve) => { _resolve = resolve; });
+    _resolve(p);
     return p.then(
       () => false,
       (e) => e instanceof TypeError
@@ -1472,6 +1530,7 @@ try {
 } catch (e) {
     testFeature("Async - Promises/async function", false);
 }
+
 /*
 testFeature("generator function/iterator protocol",function(){
     let fibonacci = {

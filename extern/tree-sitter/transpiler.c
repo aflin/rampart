@@ -192,7 +192,7 @@ polyfills allpolys[] = {
         // Debug controls: pending warnings (ON by default, turn off with _TrN_Sp.warnOnLongPending=false)
         // do not warn for merely pending promises.
         // Enable only for debugging "long-pending" promises.
-        "_TrN_Sp._wrapLongPending = function(p, label) {if (!_TrN_Sp.warnOnLongPending) return p;try {var id = setTimeout(function () {if (typeof console !== 'undefined' && console && console.warn) {console.warn('Promise still pending after', _TrN_Sp.pendingWarnMs, 'ms', label ? '(' + label + ')' : '');}}, _TrN_Sp.pendingWarnMs);if (p && typeof p['finally'] === 'function') {p['finally'](function () { clearTimeout(id); });} else if (p && typeof p.then === 'function') {p.then(function(){ clearTimeout(id); }, function(){ clearTimeout(id); });}} catch (_e) {}return p;};_TrN_Sp.asyncGeneratorStep = function(gen, resolve, reject, _next, _throw, key, arg) {try {var info = gen[key](arg);var value = info.value;} catch (error) {reject(error);return;}if (info.done) {resolve(value);} else {Promise.resolve(value).then(_next, _throw);}};_TrN_Sp.asyncToGenerator = function(fn) {return function() {var self = this, args = arguments;var __p = new Promise(function(resolve, reject) {var gen = fn.apply(self, args);function _next(value) {_TrN_Sp.asyncGeneratorStep(gen, resolve, reject, _next, _throw, 'next', value);}function _throw(err) {_TrN_Sp.asyncGeneratorStep(gen, resolve, reject, _next, _throw, 'throw', err);}_next(undefined);});return _TrN_Sp._wrapLongPending(__p, fn && fn.name ? fn.name : 'async');};_TrN_Sp.warnOnLongPending = (_TrN_Sp.warnOnLongPending === undefined ? true: _TrN_Sp.warnOnLongPending);_TrN_Sp.pendingWarnMs = (typeof _TrN_Sp.pendingWarnMs === 'number' && _TrN_Sp.pendingWarnMs >= 0) ? _TrN_Sp.pendingWarnMs : 2000;};_TrN_Sp.regeneratorRuntime = (function() {function mark(genFn) {return genFn;}function wrap(innerFn) {var context = {prev: 0,next: 0,sent: void 0,done: false,rval: void 0,stop: function() {this.done = true;return this.rval;}};return {next: function(arg) {var prevNext = context.next;context.sent = arg;var value = innerFn(context);if (context.done || context.next === 'end') {return {value: context.rval, done: true};}if (context.next === prevNext) {context.done = true;context.rval = value;return {value: context.rval, done: true};}return {value: value, done: false};},throw: function(err) {throw err;}};}return {mark: mark, wrap: wrap};})();",
+        "_TrN_Sp._wrapLongPending = function(p, label) {if (!_TrN_Sp.warnOnLongPending) return p;try {var id = setTimeout(function () {if (typeof console !== 'undefined' && console && console.warn) {console.warn('Promise still pending after', _TrN_Sp.pendingWarnMs, 'ms', label ? '(' + label + ')' : '');}}, _TrN_Sp.pendingWarnMs);if (p && typeof p['finally'] === 'function') {p['finally'](function () { clearTimeout(id); });} else if (p && typeof p.then === 'function') {p.then(function(){ clearTimeout(id); }, function(){ clearTimeout(id); });}} catch (_e) {}return p;};_TrN_Sp.asyncGeneratorStep = function(gen, resolve, reject, _next, _throw, key, arg) {try {var info = gen[key](arg);var value = info.value;} catch (error) {reject(error);return;}if (info.done) {resolve(value);} else {Promise.resolve(value).then(_next, _throw);}};_TrN_Sp.asyncToGenerator = function(fn) {return function() {var self = this, args = arguments;var __p = new Promise(function(resolve, reject) {var gen = fn.apply(self, args);function _next(value) {_TrN_Sp.asyncGeneratorStep(gen, resolve, reject, _next, _throw, 'next', value);}function _throw(err) {_TrN_Sp.asyncGeneratorStep(gen, resolve, reject, _next, _throw, 'throw', err);}_next(undefined);});return _TrN_Sp._wrapLongPending(__p, fn && fn.name ? fn.name : 'async');};_TrN_Sp.warnOnLongPending = (_TrN_Sp.warnOnLongPending === undefined ? true: _TrN_Sp.warnOnLongPending);_TrN_Sp.pendingWarnMs = (typeof _TrN_Sp.pendingWarnMs === 'number' && _TrN_Sp.pendingWarnMs >= 0) ? _TrN_Sp.pendingWarnMs : 2000;};_TrN_Sp.regeneratorRuntime = (function() {function mark(genFn) {return genFn;}function wrap(innerFn, outerFn, outerThis) {var _s=void 0,_t=false,_te;var context = {prev: 0,next: 0,done: false,rval: void 0,stop: function() {this.done = true;return this.rval;}};Object.defineProperty(context,'sent',{get:function(){if(_t){_t=false;var e=_te;_te=void 0;throw e;}return _s;},set:function(v){_s=v;},configurable:true});return {next: function(arg) {var prevNext = context.next;context.sent = arg;var value = innerFn.call(outerThis, context);if (context.done || context.next === 'end') {return {value: context.rval, done: true};}if (context.next === prevNext) {context.done = true;context.rval = value;return {value: context.rval, done: true};}return {value: value, done: false};},throw: function(err) {_t=true;_te=err;return this.next(err);}};}return {mark: mark, wrap: wrap};})();",
         // old overly verbose version:
         //"_TrN_Sp.asyncGeneratorStep = function(gen, resolve, reject, _next, _throw, key, arg) {try{var info = gen[key](arg);var value = info.value;}catch (error){reject(error);return;}if (info.done){resolve(value);}else{Promise.resolve(value).then(_next, _throw);}};_TrN_Sp.asyncToGenerator = function(fn) {return function() {var self = this, args = arguments;return new Promise(function(resolve, reject) {var gen = fn.apply(self, args);function _next(value){_TrN_Sp.asyncGeneratorStep(gen, resolve, reject, _next, _throw, \"next\", value);}function _throw(err){_TrN_Sp.asyncGeneratorStep(gen, resolve, reject, _next, _throw, \"throw\", err);}_next(undefined);});};};_TrN_Sp.regeneratorRuntime = (function () {function mark(genFn) { return genFn; }function wrap(innerFn) {var context = {prev: 0,next: 0,sent: void 0,done: false,rval: void 0,stop: function () { this.done = true; return this.rval; }};return {next: function (arg) {var prevNext = context.next;context.sent = arg;var value = innerFn(context);if (context.done || context.next === \"end\") {return { value: context.rval, done: true };}if (context.next === prevNext) {context.done = true;context.rval = value;return { value: context.rval, done: true };}return { value: value, done: false };},throw: function (err) { throw err; }};}return { mark: mark, wrap: wrap };})();",
         0, (uint32_t)ASYNC_PF  },
@@ -201,7 +201,7 @@ polyfills allpolys[] = {
     // the delete global.Promise is for rampart.thread reload.
     {
         // set _TrN_Sp.warnUnhandledPromise=false to not get those warnings
-        "delete global.Promise;_TrN_Sp.warnUnhandledPromise = (_TrN_Sp.warnUnhandledPromise === undefined ? true: _TrN_Sp.warnUnhandledPromise);(function(e, t) {'object' == typeof exports && 'undefined' != typeof module ? t() :'function' == typeof define && define.amd              ? define(t) :t()})(0, function() {'use strict';function e(e) {var t = this.constructor;return this.then(function(n) {return t.resolve(e()).then(function() {return n})},function(n) {return t.resolve(e()).then(function() {return t.reject(n)})})}function t(e) {return new this(function(t, n) {function r(e, n) {if (n && ('object' == typeof n || 'function' == typeof n)) {var f = n.then;if ('function' == typeof f)return void f.call(n,function(t) {r(e, t)},function(n) {o[e] = {status: 'rejected', reason: n}, 0 == --i && t(o)})}o[e] = {status: 'fulfilled', value: n}, 0 == --i && t(o)}if (!e || 'undefined' == typeof e.length)return n(new TypeError(typeof e + ' ' + e +' is not iterable(cannot read property Symbol(Symbol.iterator))'));var o = Array.prototype.slice.call(e);if (0 === o.length) return t([]);for (var i = o.length, f = 0; o.length > f; f++) r(f, o[f])})}function n(e, t) {this.name = 'AggregateError', this.errors = e, this.message = t || ''}function r(e) {var t = this;return new t(function(r, o) {if (!e || 'undefined' == typeof e.length)return o(new TypeError('Promise.any accepts an array'));var i = Array.prototype.slice.call(e);if (0 === i.length) return o();for (var f = [], u = 0; i.length > u; u++) try {t.resolve(i[u]).then(r)['catch'](function(e) {f.push(e),f.length === i.length && o(new n(f, 'All promises were rejected'))})} catch (c) {o(c)}})}function o(e) {return !(!e || 'undefined' == typeof e.length)}function i() {}function f(e) {if (!(this instanceof f))throw new TypeError('Promises must be constructed via new');if ('function' != typeof e) throw new TypeError('not a function');this._state = 0, this._handled = !1, this._value = undefined,this._deferreds = [], s(e, this)}function u(e, t) {for (; 3 === e._state;) e = e._value;0 !== e._state ? (e._handled = !0, f._immediateFn(function() {var n = 1 === e._state ? t.onFulfilled : t.onRejected;if (null !== n) {var r;try {r = n(e._value)} catch (o) {return void a(t.promise, o)}c(t.promise, r)} else(1 === e._state ? c : a)(t.promise, e._value)})) :e._deferreds.push(t)}function c(e, t) {try {if (t === e)throw new TypeError('A promise cannot be resolved with itself.');if (t && ('object' == typeof t || 'function' == typeof t)) {var n = t.then;if (t instanceof f) return e._state = 3, e._value = t, void l(e);if ('function' == typeof n)return void s(function(e, t) {return function() {e.apply(t, arguments)}}(n, t), e)}e._state = 1, e._value = t, l(e)} catch (r) {a(e, r)}}function a(e, t) {e._state = 2, e._value = t, l(e)}function l(e) {2 === e._state && 0 === e._deferreds.length && f._immediateFn(function() {e._handled || f._unhandledRejectionFn(e._value)});for (var t = 0, n = e._deferreds.length; n > t; t++) u(e, e._deferreds[t]);e._deferreds = null}function s(e, t) {var n = !1;try {e(function(e) {n || (n = !0, c(t, e))},function(e) {n || (n = !0, a(t, e))})} catch (r) {if (n) return;n = !0, a(t, r)}}n.prototype = Error.prototype;var d = setTimeout;f.prototype['catch'] = function(e) {return this.then(null, e)}, f.prototype.then = function(e, t) {var n = new this.constructor(i);return u(this, new function(e, t, n) {this.onFulfilled = 'function' == typeof e ? e : null,this.onRejected = 'function' == typeof t ? t : null, this.promise = n}(e, t, n)), n}, f.prototype['finally'] = e, f.all = function(e) {return new f(function(t, n) {function r(e, o) {try {if (o && ('object' == typeof o || 'function' == typeof o)) {var u = o.then;if ('function' == typeof u)return void u.call(o, function(t) {r(e, t)}, n)}i[e] = o, 0 == --f && t(i)} catch (c) {n(c)}}if (!o(e)) return n(new TypeError('Promise.all accepts an array'));var i = Array.prototype.slice.call(e);if (0 === i.length) return t([]);for (var f = i.length, u = 0; i.length > u; u++) r(u, i[u])})}, f.any = r, f.allSettled = t, f.resolve = function(e) {return e && 'object' == typeof e && e.constructor === f ? e :new f(function(t) {t(e)})}, f.reject = function(e) {return new f(function(t, n) {n(e)})}, f.race = function(e) {return new f(function(t, n) {if (!o(e)) return n(new TypeError('Promise.race accepts an array'));for (var r = 0, i = e.length; i > r; r++) f.resolve(e[r]).then(t, n)})}, f._immediateFn = 'function' == typeof setImmediate && function(e) {setImmediate(e)} || function(e) {d(e, 0)}, f._unhandledRejectionFn = function(e) {void 0 !== console && console && _TrN_Sp.warnUnhandledPromise &&console.warn('Possible Unhandled Promise Rejection:', e)};var p = function() {if ('undefined' != typeof self) return self;if ('undefined' != typeof window) return window;if ('undefined' != typeof global) return global;throw Error('unable to locate global object')}();'function' != typeof p.Promise ?p.Promise = f :(p.Promise.prototype['finally'] || (p.Promise.prototype['finally'] = e),p.Promise.allSettled || (p.Promise.allSettled = t),p.Promise.any || (p.Promise.any = r))});_TrN_Sp._pAS=Promise.allSettled;_TrN_Sp._pAn=Promise.any;_TrN_Sp._pF=Promise.prototype['finally'];_TrN_Sp._pP=function(){if(typeof Promise==='function'){if(!Promise.allSettled&&_TrN_Sp._pAS)Promise.allSettled=_TrN_Sp._pAS;if(!Promise.any&&_TrN_Sp._pAn)Promise.any=_TrN_Sp._pAn;if(Promise.prototype&&!Promise.prototype['finally']&&_TrN_Sp._pF)Promise.prototype['finally']=_TrN_Sp._pF;}};",
+        "delete global.Promise;_TrN_Sp.warnUnhandledPromise = (_TrN_Sp.warnUnhandledPromise === undefined ? true: _TrN_Sp.warnUnhandledPromise);(function(e, t) {'object' == typeof exports && 'undefined' != typeof module ? t() :'function' == typeof define && define.amd              ? define(t) :t()})(0, function() {'use strict';function e(e) {var t = this.constructor;return this.then(function(n) {return t.resolve(e()).then(function() {return n})},function(n) {return t.resolve(e()).then(function() {return t.reject(n)})})}function t(e) {return new this(function(t, n) {function r(e, n) {if (n && ('object' == typeof n || 'function' == typeof n)) {var f = n.then;if ('function' == typeof f)return void f.call(n,function(t) {r(e, t)},function(n) {o[e] = {status: 'rejected', reason: n}, 0 == --i && t(o)})}o[e] = {status: 'fulfilled', value: n}, 0 == --i && t(o)}if (!e || 'undefined' == typeof e.length)return n(new TypeError(typeof e + ' ' + e +' is not iterable(cannot read property Symbol(Symbol.iterator))'));var o = Array.prototype.slice.call(e);if (0 === o.length) return t([]);for (var i = o.length, f = 0; o.length > f; f++) r(f, o[f])})}function n(e, t) {this.name = 'AggregateError', this.errors = e, this.message = t || ''}function r(e) {var t = this;return new t(function(r, o) {if (!e || 'undefined' == typeof e.length)return o(new TypeError('Promise.any accepts an array'));var i = Array.prototype.slice.call(e);if (0 === i.length) return o(new n([],'All promises were rejected'));for (var f = [], u = 0; i.length > u; u++) try {t.resolve(i[u]).then(r)['catch'](function(e) {f.push(e),f.length === i.length && o(new n(f, 'All promises were rejected'))})} catch (c) {o(c)}})}function o(e) {return !(!e || 'undefined' == typeof e.length)}function i() {}function f(e) {if (!(this instanceof f))throw new TypeError('Promises must be constructed via new');if ('function' != typeof e) throw new TypeError('not a function');this._state = 0, this._handled = !1, this._value = undefined,this._deferreds = [], s(e, this)}function u(e, t) {for (; 3 === e._state;) e = e._value;0 !== e._state ? (e._handled = !0, f._immediateFn(function() {var n = 1 === e._state ? t.onFulfilled : t.onRejected;if (null !== n) {var r;try {r = n(e._value)} catch (o) {return void a(t.promise, o)}c(t.promise, r)} else(1 === e._state ? c : a)(t.promise, e._value)})) :e._deferreds.push(t)}function c(e, t) {try {if (t === e)throw new TypeError('A promise cannot be resolved with itself.');if (t && ('object' == typeof t || 'function' == typeof t)) {var n = t.then;if (t instanceof f) return e._state = 3, e._value = t, void l(e);if ('function' == typeof n)return void s(function(e, t) {return function() {e.apply(t, arguments)}}(n, t), e)}e._state = 1, e._value = t, l(e)} catch (r) {a(e, r)}}function a(e, t) {e._state = 2, e._value = t, l(e)}function l(e) {2 === e._state && 0 === e._deferreds.length && f._immediateFn(function() {e._handled || f._unhandledRejectionFn(e._value)});for (var t = 0, n = e._deferreds.length; n > t; t++) u(e, e._deferreds[t]);e._deferreds = null}function s(e, t) {var n = !1;try {e(function(e) {n || (n = !0, c(t, e))},function(e) {n || (n = !0, a(t, e))})} catch (r) {if (n) return;n = !0, a(t, r)}}n.prototype = Error.prototype;var d = setTimeout;f.prototype['catch'] = function(e) {return this.then(null, e)}, f.prototype.then = function(e, t) {var n = new this.constructor(i);return u(this, new function(e, t, n) {this.onFulfilled = 'function' == typeof e ? e : null,this.onRejected = 'function' == typeof t ? t : null, this.promise = n}(e, t, n)), n}, f.prototype['finally'] = e, f.all = function(e) {return new f(function(t, n) {function r(e, o) {try {if (o && ('object' == typeof o || 'function' == typeof o)) {var u = o.then;if ('function' == typeof u)return void u.call(o, function(t) {r(e, t)}, n)}i[e] = o, 0 == --f && t(i)} catch (c) {n(c)}}if (!o(e)) return n(new TypeError('Promise.all accepts an array'));var i = Array.prototype.slice.call(e);if (0 === i.length) return t([]);for (var f = i.length, u = 0; i.length > u; u++) r(u, i[u])})}, f.any = r, f.allSettled = t, f.resolve = function(e) {return e && 'object' == typeof e && e.constructor === f ? e :new f(function(t) {t(e)})}, f.reject = function(e) {return new f(function(t, n) {n(e)})}, f.race = function(e) {return new f(function(t, n) {if (!o(e)) return n(new TypeError('Promise.race accepts an array'));for (var r = 0, i = e.length; i > r; r++) f.resolve(e[r]).then(t, n)})}, f._immediateFn = 'function' == typeof setImmediate && function(e) {setImmediate(e)} || function(e) {d(e, 0)}, f._unhandledRejectionFn = function(e) {void 0 !== console && console && _TrN_Sp.warnUnhandledPromise &&console.warn('Possible Unhandled Promise Rejection:', e)};var p = function() {if ('undefined' != typeof self) return self;if ('undefined' != typeof window) return window;if ('undefined' != typeof global) return global;throw Error('unable to locate global object')}();'function' != typeof p.Promise ?p.Promise = f :(p.Promise.prototype['finally'] || (p.Promise.prototype['finally'] = e),p.Promise.allSettled || (p.Promise.allSettled = t),p.Promise.any || (p.Promise.any = r))});_TrN_Sp._pAS=Promise.allSettled;_TrN_Sp._pAn=Promise.any;_TrN_Sp._pF=Promise.prototype['finally'];_TrN_Sp._pP=function(){if(typeof Promise==='function'){if(!Promise.allSettled&&_TrN_Sp._pAS)Promise.allSettled=_TrN_Sp._pAS;if(!Promise.any&&_TrN_Sp._pAn)Promise.any=_TrN_Sp._pAn;if(Promise.prototype&&!Promise.prototype['finally']&&_TrN_Sp._pF)Promise.prototype['finally']=_TrN_Sp._pF;}};",
         // oldver
         //"delete global.Promise;(function(e,t){\"object\"==typeof exports&&\"undefined\"!=typeof module?t():\"function\"==typeof define&&define.amd?define(t):t()})(0,function(){\"use strict\";function e(e){var t=this.constructor;return this.then(function(n){return t.resolve(e()).then(function(){return n})},function(n){return t.resolve(e()).then(function(){return t.reject(n)})})}function t(e){return new this(function(t,n){function r(e,n){if(n&&(\"object\"==typeof n||\"function\"==typeof n)){var f=n.then;if(\"function\"==typeof f)return void f.call(n,function(t){r(e,t)},function(n){o[e]={status:\"rejected\",reason:n},0==--i&&t(o)})}o[e]={status:\"fulfilled\",value:n},0==--i&&t(o)}if(!e||\"undefined\"==typeof e.length)return n(new TypeError(typeof e+\" \"+e+\" is not iterable(cannot read property Symbol(Symbol.iterator))\"));var o=Array.prototype.slice.call(e);if(0===o.length)return t([]);for(var i=o.length,f=0;o.length>f;f++)r(f,o[f])})}function n(e,t){this.name=\"AggregateError\",this.errors=e,this.message=t||\"\"}function r(e){var t=this;return new t(function(r,o){if(!e||\"undefined\"==typeof e.length)return o(new TypeError(\"Promise.any accepts an array\"));var i=Array.prototype.slice.call(e);if(0===i.length)return o();for(var f=[],u=0;i.length>u;u++)try{t.resolve(i[u]).then(r)[\"catch\"](function(e){f.push(e),f.length===i.length&&o(new n(f,\"All promises were rejected\"))})}catch(c){o(c)}})}function o(e){return!(!e||\"undefined\"==typeof e.length)}function i(){}function f(e){if(!(this instanceof f))throw new TypeError(\"Promises must be constructed via new\");if(\"function\"!=typeof e)throw new TypeError(\"not a function\");this._state=0,this._handled=!1,this._value=undefined,this._deferreds=[],s(e,this)}function u(e,t){for(;3===e._state;)e=e._value;0!==e._state?(e._handled=!0,f._immediateFn(function(){var n=1===e._state?t.onFulfilled:t.onRejected;if(null!==n){var r;try{r=n(e._value)}catch(o){return void a(t.promise,o)}c(t.promise,r)}else(1===e._state?c:a)(t.promise,e._value)})):e._deferreds.push(t)}function c(e,t){try{if(t===e)throw new TypeError(\"A promise cannot be resolved with itself.\");if(t&&(\"object\"==typeof t||\"function\"==typeof t)){var n=t.then;if(t instanceof f)return e._state=3,e._value=t,void l(e);if(\"function\"==typeof n)return void s(function(e,t){return function(){e.apply(t,arguments)}}(n,t),e)}e._state=1,e._value=t,l(e)}catch(r){a(e,r)}}function a(e,t){e._state=2,e._value=t,l(e)}function l(e){2===e._state&&0===e._deferreds.length&&f._immediateFn(function(){e._handled||f._unhandledRejectionFn(e._value)});for(var t=0,n=e._deferreds.length;n>t;t++)u(e,e._deferreds[t]);e._deferreds=null}function s(e,t){var n=!1;try{e(function(e){n||(n=!0,c(t,e))},function(e){n||(n=!0,a(t,e))})}catch(r){if(n)return;n=!0,a(t,r)}}n.prototype=Error.prototype;var d=setTimeout;f.prototype[\"catch\"]=function(e){return this.then(null,e)},f.prototype.then=function(e,t){var n=new this.constructor(i);return u(this,new function(e,t,n){this.onFulfilled=\"function\"==typeof e?e:null,this.onRejected=\"function\"==typeof t?t:null,this.promise=n}(e,t,n)),n},f.prototype[\"finally\"]=e,f.all=function(e){return new f(function(t,n){function r(e,o){try{if(o&&(\"object\"==typeof o||\"function\"==typeof o)){var u=o.then;if(\"function\"==typeof u)return void u.call(o,function(t){r(e,t)},n)}i[e]=o,0==--f&&t(i)}catch(c){n(c)}}if(!o(e))return n(new TypeError(\"Promise.all accepts an array\"));var i=Array.prototype.slice.call(e);if(0===i.length)return t([]);for(var f=i.length,u=0;i.length>u;u++)r(u,i[u])})},f.any=r,f.allSettled=t,f.resolve=function(e){return e&&\"object\"==typeof e&&e.constructor===f?e:new f(function(t){t(e)})},f.reject=function(e){return new f(function(t,n){n(e)})},f.race=function(e){return new f(function(t,n){if(!o(e))return n(new TypeError(\"Promise.race accepts an array\"));for(var r=0,i=e.length;i>r;r++)f.resolve(e[r]).then(t,n)})},f._immediateFn=\"function\"==typeof setImmediate&&function(e){setImmediate(e)}||function(e){d(e,0)},f._unhandledRejectionFn=function(e){void 0!==console&&console&&console.warn(\"Possible Unhandled Promise Rejection:\",e)};var p=function(){if(\"undefined\"!=typeof self)return self;if(\"undefined\"!=typeof window)return window;if(\"undefined\"!=typeof global)return global;throw Error(\"unable to locate global object\")}();\"function\"!=typeof p.Promise?p.Promise=f:(p.Promise.prototype[\"finally\"]||(p.Promise.prototype[\"finally\"]=e),p.Promise.allSettled||(p.Promise.allSettled=t),p.Promise.any||(p.Promise.any=r))});",
         0, (uint32_t)PROMISE_PF},
@@ -3379,6 +3379,101 @@ static int rewrite_array_spread(EditList *edits, const char *src, TSNode arr, in
 }
 
 
+// === Variable hoisting for async/generator state machines ===
+// Collect all var/let/const identifier names declared at any nesting level
+// in the function body, stopping at function/class boundaries.
+// Returns a malloc'd comma-separated string of names, or NULL if none found.
+static void _collect_var_names_recursive(const char *src, TSNode node, rp_string *names, int *first)
+{
+    const char *t = ts_node_type(node);
+
+    // Stop at function/class boundaries — vars inside those are scoped there
+    if (strstr(t, "function") || strcmp(t, "arrow_function") == 0 ||
+        strstr(t, "class") || strstr(t, "method") != NULL)
+        return;
+
+    int is_decl = (strcmp(t, "variable_declaration") == 0 || strcmp(t, "lexical_declaration") == 0);
+    if (is_decl)
+    {
+        uint32_t dc = ts_node_named_child_count(node);
+        for (uint32_t d = 0; d < dc; d++)
+        {
+            TSNode declarator = ts_node_named_child(node, d);
+            if (strcmp(ts_node_type(declarator), "variable_declarator") != 0)
+                continue;
+            TSNode nm = ts_node_child_by_field_name(declarator, "name", 4);
+            if (ts_node_is_null(nm))
+                continue;
+            // Only handle simple identifiers (not destructuring patterns)
+            if (strcmp(ts_node_type(nm), "identifier") != 0)
+                continue;
+            size_t ns = ts_node_start_byte(nm), ne = ts_node_end_byte(nm);
+            if (!*first)
+                rp_string_puts(names, ", ");
+            rp_string_putsn(names, src + ns, ne - ns);
+            *first = 0;
+        }
+        // Don't recurse into the declarators — we already handled them
+        return;
+    }
+
+    uint32_t cc = ts_node_child_count(node);
+    for (uint32_t i = 0; i < cc; i++)
+        _collect_var_names_recursive(src, ts_node_child(node, i), names, first);
+}
+
+static char *_collect_body_var_names(const char *src, TSNode body)
+{
+    if (strcmp(ts_node_type(body), "statement_block") != 0)
+        return NULL;
+
+    rp_string *names = rp_string_new(64);
+    int first = 1;
+
+    uint32_t sc = ts_node_named_child_count(body);
+    for (uint32_t i = 0; i < sc; i++)
+    {
+        TSNode stmt = ts_node_named_child(body, i);
+        _collect_var_names_recursive(src, stmt, names, &first);
+    }
+
+    if (names->len == 0)
+    {
+        names = rp_string_free(names);
+        return NULL;
+    }
+
+    char *ret = rp_string_steal(names);
+    names = rp_string_free(names);
+    return ret;
+}
+
+// Emit a variable_declaration or lexical_declaration as assignments (without the keyword).
+// For declarators with initializers: "name = value;"
+// For declarators without initializers: skipped (the hoisted decl handles it)
+static void _emit_var_decl_as_assignments(rp_string *out, const char *src, TSNode decl)
+{
+    uint32_t dc = ts_node_named_child_count(decl);
+    for (uint32_t d = 0; d < dc; d++)
+    {
+        TSNode declarator = ts_node_named_child(decl, d);
+        if (strcmp(ts_node_type(declarator), "variable_declarator") != 0)
+            continue;
+        TSNode val = ts_node_child_by_field_name(declarator, "value", 5);
+        if (ts_node_is_null(val))
+            continue; // no initializer — skip
+        TSNode nm = ts_node_child_by_field_name(declarator, "name", 4);
+        if (ts_node_is_null(nm))
+            continue;
+        size_t ns = ts_node_start_byte(nm), ne = ts_node_end_byte(nm);
+        size_t vs = ts_node_start_byte(val), ve = ts_node_end_byte(val);
+        rp_string_putsn(out, src + ns, ne - ns);
+        rp_string_puts(out, " = ");
+        rp_string_putsn(out, src + vs, ve - vs);
+        rp_string_puts(out, ";");
+    }
+}
+
 // === Async/Await -> _TrN_Sp.asyncToGenerator + _TrN_Sp.regeneratorRuntime (compact style) ===
 typedef struct
 {
@@ -3485,6 +3580,17 @@ static char *_build_regenerator_switch_body(const char *src, TSNode body)
     rp_string *out = rp_string_new(384);
 
     int next_label = 0;
+
+    // Hoist var/let/const declarations so they persist across _callee$ invocations via closure
+    char *hoisted = _collect_body_var_names(src, body);
+    if (hoisted)
+    {
+        rp_string_puts(out, "var ");
+        rp_string_puts(out, hoisted);
+        rp_string_puts(out, ";");
+        free(hoisted);
+    }
+
     rp_string_puts(
         out,
         "return _TrN_Sp.regeneratorRuntime.wrap(function _callee$(_context){while(1){switch(_context.prev=_context.next){case 0:");
@@ -3496,6 +3602,10 @@ static char *_build_regenerator_switch_body(const char *src, TSNode body)
         {
             TSNode stmt = ts_node_named_child(body, i);
             size_t ss = ts_node_start_byte(stmt), se = ts_node_end_byte(stmt);
+            const char *stmt_type = ts_node_type(stmt);
+            int is_var_decl = (strcmp(stmt_type, "variable_declaration") == 0 ||
+                               strcmp(stmt_type, "lexical_declaration") == 0);
+
             // await detection + join-first-line behavior
             int has_await = 0;
             for (size_t k = ss; k + 5 < se; k++)
@@ -3526,7 +3636,38 @@ static char *_build_regenerator_switch_body(const char *src, TSNode body)
             while(ss>0 && isspace(*(src + ss -1)) )
                 ss--;
 
-            if (!has_await && next_has_await && i == 0)
+            // For var/let/const declarations with await: skip the keyword by
+            // adjusting ss to start at the first declarator
+            if (is_var_decl && has_await)
+            {
+                TSNode first_decl = ts_node_named_child(stmt, 0);
+                if (!ts_node_is_null(first_decl))
+                    ss = ts_node_start_byte(first_decl);
+            }
+
+            if (strcmp(stmt_type, "comment") == 0)
+            {
+                /* Convert // line comments to block comments so they don't
+                   consume following state-machine code on the same line.
+                   Preserve leading whitespace/newlines for line numbering. */
+                size_t orig_ss = ts_node_start_byte(stmt);
+                if (ss < orig_ss)
+                    rp_string_putsn(out, src + ss, orig_ss - ss);
+                if (se - orig_ss >= 2 && src[orig_ss] == '/' && src[orig_ss + 1] == '/')
+                {
+                    rp_string_puts(out, "/*");
+                    rp_string_putsn(out, src + orig_ss + 2, se - orig_ss - 2);
+                    rp_string_puts(out, "*/");
+                }
+                else
+                    rp_string_putsn(out, src + orig_ss, se - orig_ss);
+            }
+            else if (is_var_decl && !has_await)
+            {
+                // Emit as assignments without var/let/const keyword
+                _emit_var_decl_as_assignments(out, src, stmt);
+            }
+            else if (!has_await && next_has_await && i == 0)
                 rp_string_putsn(out, src+ss, se-ss);
             else if (has_await)
                 _emit_stmt_async_lower(out, src, ss, se, stmt, &next_label);
@@ -3536,6 +3677,7 @@ static char *_build_regenerator_switch_body(const char *src, TSNode body)
     }
     else
     {
+        // Concise arrow body: the expression is an implicit return.
         TSNode expr = body;
         size_t ss = ts_node_start_byte(expr), se = ts_node_end_byte(expr);
         rp_string *tmp = rp_string_new(64);
@@ -3548,8 +3690,29 @@ static char *_build_regenerator_switch_body(const char *src, TSNode body)
         }
         else
         {
-            //rp_string_puts(out, "\n  ");
-            rp_string_puts(out, tmp->str);
+            // The await was lowered. The last segment (after the final "case N:")
+            // contains _context.sent which is the value to implicitly return.
+            // Insert "return " before that final segment.
+            char *last_case = tmp->str;
+            char *p;
+            for (p = tmp->str; *p; p++)
+            {
+                if (p[0] == 'c' && p[1] == 'a' && p[2] == 's' && p[3] == 'e' && p[4] == ' ')
+                    last_case = p;
+            }
+            // Find the ':' after "case N"
+            char *colon = strchr(last_case, ':');
+            if (colon)
+            {
+                // Emit everything up to and including the ':'
+                rp_string_putsn(out, tmp->str, (size_t)(colon + 1 - tmp->str));
+                rp_string_puts(out, "return ");
+                rp_string_puts(out, colon + 1);
+            }
+            else
+            {
+                rp_string_puts(out, tmp->str);
+            }
         }
         tmp = rp_string_free(tmp);
     }
@@ -3567,7 +3730,7 @@ static char *_build_regenerator_switch_body(const char *src, TSNode body)
     }
     rp_string_puts(out, "case ");
     rp_string_puts(out, etmp);
-    rp_string_puts(out, ":case \"end\":return _context.stop();}}}, _callee);");
+    rp_string_puts(out, ":case \"end\":return _context.stop();}}}, _callee, this);");
     char *ret = rp_string_steal(out);
     out=rp_string_free(out);
     return ret;
@@ -3859,6 +4022,17 @@ static char *_build_regenerator_switch_body_for_yield(const char *src, TSNode bo
     rp_string *out = rp_string_new(384);
 
     int next_label = 0;
+
+    // Hoist var/let/const declarations so they persist across _callee$ invocations via closure
+    char *hoisted = _collect_body_var_names(src, body);
+    if (hoisted)
+    {
+        rp_string_puts(out, "var ");
+        rp_string_puts(out, hoisted);
+        rp_string_puts(out, ";");
+        free(hoisted);
+    }
+
     rp_string_puts(
         out,
         "return _TrN_Sp.regeneratorRuntime.wrap(function _callee$(_context){while(1){switch(_context.prev=_context.next){case 0:");
@@ -3870,6 +4044,10 @@ static char *_build_regenerator_switch_body_for_yield(const char *src, TSNode bo
         {
             TSNode stmt = ts_node_named_child(body, i);
             size_t ss = ts_node_start_byte(stmt), se = ts_node_end_byte(stmt);
+            const char *stmt_type = ts_node_type(stmt);
+            int is_var_decl = (strcmp(stmt_type, "variable_declaration") == 0 ||
+                               strcmp(stmt_type, "lexical_declaration") == 0);
+
             int has_yield = 0;
             for (size_t k = ss; k + 5 <= se; k++)
             {
@@ -3897,7 +4075,36 @@ static char *_build_regenerator_switch_body_for_yield(const char *src, TSNode bo
             while(ss > 0 && isspace(*(src + ss - 1)))
                 ss--;
 
-            if (!has_yield && next_has_yield && i == 0)
+            // For var/let/const declarations with yield: skip the keyword
+            if (is_var_decl && has_yield)
+            {
+                TSNode first_decl = ts_node_named_child(stmt, 0);
+                if (!ts_node_is_null(first_decl))
+                    ss = ts_node_start_byte(first_decl);
+            }
+
+            if (strcmp(stmt_type, "comment") == 0)
+            {
+                /* Convert // line comments to block comments so they don't
+                   consume following state-machine code on the same line. */
+                size_t orig_ss = ts_node_start_byte(stmt);
+                if (ss < orig_ss)
+                    rp_string_putsn(out, src + ss, orig_ss - ss);
+                if (se - orig_ss >= 2 && src[orig_ss] == '/' && src[orig_ss + 1] == '/')
+                {
+                    rp_string_puts(out, "/*");
+                    rp_string_putsn(out, src + orig_ss + 2, se - orig_ss - 2);
+                    rp_string_puts(out, "*/");
+                }
+                else
+                    rp_string_putsn(out, src + orig_ss, se - orig_ss);
+            }
+            else if (is_var_decl && !has_yield)
+            {
+                // Emit as assignments without var/let/const keyword
+                _emit_var_decl_as_assignments(out, src, stmt);
+            }
+            else if (!has_yield && next_has_yield && i == 0)
                 rp_string_putsn(out, src + ss, se - ss);
             else if (has_yield)
                 _emit_stmt_yield_lower(out, src, ss, se, stmt, &next_label);
@@ -3907,6 +4114,7 @@ static char *_build_regenerator_switch_body_for_yield(const char *src, TSNode bo
     }
     else
     {
+        // Concise arrow body: the expression is an implicit return.
         TSNode expr = body;
         size_t ss = ts_node_start_byte(expr), se = ts_node_end_byte(expr);
         rp_string *tmp = rp_string_new(64);
@@ -3919,7 +4127,27 @@ static char *_build_regenerator_switch_body_for_yield(const char *src, TSNode bo
         }
         else
         {
-            rp_string_puts(out, tmp->str);
+            // The yield was lowered. The last segment (after the final "case N:")
+            // contains _context.sent which is the value to implicitly return.
+            // Insert "return " before that final segment.
+            char *last_case = tmp->str;
+            char *p;
+            for (p = tmp->str; *p; p++)
+            {
+                if (p[0] == 'c' && p[1] == 'a' && p[2] == 's' && p[3] == 'e' && p[4] == ' ')
+                    last_case = p;
+            }
+            char *colon = strchr(last_case, ':');
+            if (colon)
+            {
+                rp_string_putsn(out, tmp->str, (size_t)(colon + 1 - tmp->str));
+                rp_string_puts(out, "return ");
+                rp_string_puts(out, colon + 1);
+            }
+            else
+            {
+                rp_string_puts(out, tmp->str);
+            }
         }
         tmp = rp_string_free(tmp);
     }
@@ -3936,7 +4164,7 @@ static char *_build_regenerator_switch_body_for_yield(const char *src, TSNode bo
     }
     rp_string_puts(out, "case ");
     rp_string_puts(out, etmp);
-    rp_string_puts(out, ":case \"end\":return _context.stop();}}});");
+    rp_string_puts(out, ":case \"end\":return _context.stop();}}}, null, this);");
     char *ret = rp_string_steal(out);
     out=rp_string_free(out);
     return ret;
@@ -6019,7 +6247,7 @@ RP_ParseRes transpiler_rewrite_pass(EditList *edits, const char *src, size_t src
         {
             handled = rewrite_async_await_to_regenerator(edits, src, n, &claimed, overlaps);
             if (handled)
-                *polysneeded |= ASYNC_PF;
+                *polysneeded |= ASYNC_PF | PROMISE_PF;
         }
 
         if (!handled && (strcmp(nt, "generator_function_declaration") == 0 ||
