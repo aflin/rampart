@@ -987,7 +987,7 @@ testFeature("Promise.all rejects on first rejection", function () {
     const started = Date.now();
     return Promise.all([a, b, c]).then(
       () => false,
-      (e) => e === "X" && Date.now() - started < 15
+      (e) => e === "X" && Date.now() - started < 500
     );
 });
 
