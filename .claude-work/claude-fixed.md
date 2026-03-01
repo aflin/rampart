@@ -93,3 +93,4 @@
 | 70 | fmemopen.c:98 | No NULL check after `malloc` — `memset` dereferences NULL | Add NULL check with `exit(1)` |
 | 71 | rampart-curl.c:589 | Format string references NULL `key` instead of `ckey` | Change `key` to `ckey` |
 | 72 | resp_client.c:104,111 | Socket fd leaked on `gethostbyname`/`connect` failure in reconnect path | Close socket and set to -1 before return |
+| 73 | rampart-curl.c:2704-2723 | `sopts->postfile` not initialized to NULL in `new_curlreq` CSOS allocation; `clean_req` then calls `fclose()` on garbage pointer (crash on Linux, silent on macOS where malloc returns zeroed memory) | Add `sopts->postfile = (FILE *)NULL;` after `sopts->postdata` initialization  |

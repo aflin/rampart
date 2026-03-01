@@ -151,3 +151,33 @@ An async test queue (`_asyncQueue` / `_drainAsync`) was added to
 `testFeature()` so Promise-returning tests are drained sequentially
 and failures are reported correctly. All 153 tests pass with both
 Rampart and Node.js.
+
+
+Fix: Promise polyfill `_immediateFn` timer ordering (Linux)
+------------------------------------------------------------
+The Promise polyfill used a separate `setTimeout(fn, 0)` call for each
+`.then()` callback via `_immediateFn`. On Linux, libevent's timer
+min-heap does not guarantee FIFO ordering for equal-timeout events, so
+two `setTimeout(fn, 0)` calls could fire in reverse order. This caused
+tests like "onFulfilled runs exactly once" to fail because the check
+callback ran before the increment callback. On macOS (kqueue backend),
+the ordering happened to be FIFO.
+
+**Fix:** Replaced the per-callback `setTimeout` with a microtask queue
+that batches all pending callbacks into an array and flushes them in
+FIFO order in a single `setTimeout`. This matches the Promise/A+ spec's
+microtask semantics:
+
+```javascript
+f._immediateFn = (function(){
+  var q=[], s=false;
+  function fl(){
+    var c=q; q=[]; s=false;
+    for(var j=0; j<c.length; j++) c[j]();
+  }
+  return function(e){
+    q.push(e);
+    if(!s){ s=true; d(fl,0); }
+  };
+})()
+```

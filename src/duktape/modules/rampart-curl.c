@@ -2713,6 +2713,7 @@ CURLREQ *new_curlreq(duk_context *ctx, char *url, CSOS *sopts, CURLM *cm, duk_id
         sopts->ssloptions = 0L;
         sopts->proxyssloptions = 0L;
         sopts->postdata = (char *)NULL;
+        sopts->postfile = (FILE *)NULL;
         sopts->mime = (curl_mime *)NULL;
         SET_RET_TEXT(sopts);
         SET_ARRAYTYPE(sopts,ARRAYREPEAT);
