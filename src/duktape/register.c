@@ -174,7 +174,7 @@ static duk_ret_t duk_rp_object_values(duk_context *ctx)
 
 static void add_object_values(duk_context *ctx)
 {
-    duk_get_global_string(ctx, "Object");    
+    duk_get_global_string(ctx, "Object");
     duk_push_c_function(ctx, duk_rp_object_values, 1);
     duk_put_prop_string(ctx, -2, "values");
     duk_rp_set_enum_false(ctx, -1, "values");
@@ -299,6 +299,396 @@ duk_ret_t duk_rp_array_find_index(duk_context *ctx)
     return 1;
 }
 
+/* ——— Array.from(iterable, mapFn?) ——— */
+static duk_ret_t duk_rp_array_from(duk_context *ctx)
+{
+    duk_idx_t top = duk_get_top(ctx);
+    int has_map = (top >= 2 && duk_is_function(ctx, 1));
+    duk_uarridx_t i = 0;
+
+    duk_push_array(ctx); /* result array */
+    duk_idx_t arr_idx = duk_normalize_index(ctx, -1);
+
+    if (duk_is_string(ctx, 0))
+    {
+        /* iterate codepoints */
+        const char *s = duk_get_string(ctx, 0);
+        duk_size_t slen = duk_get_length(ctx, 0);
+        for (i = 0; i < (duk_uarridx_t)slen; i++)
+        {
+            duk_get_prop_index(ctx, 0, i); /* string char */
+            if (has_map)
+            {
+                duk_dup(ctx, 1);
+                duk_insert(ctx, -2);
+                duk_push_uint(ctx, i);
+                duk_call(ctx, 2);
+            }
+            duk_put_prop_index(ctx, arr_idx, i);
+        }
+    }
+    else if (duk_is_array(ctx, 0))
+    {
+        duk_size_t len = duk_get_length(ctx, 0);
+        for (i = 0; i < (duk_uarridx_t)len; i++)
+        {
+            duk_get_prop_index(ctx, 0, i);
+            if (has_map)
+            {
+                duk_dup(ctx, 1);
+                duk_insert(ctx, -2);
+                duk_push_uint(ctx, i);
+                duk_call(ctx, 2);
+            }
+            duk_put_prop_index(ctx, arr_idx, i);
+        }
+    }
+    else if (duk_is_object(ctx, 0))
+    {
+        /* check for Symbol.iterator */
+        int has_iter = 0;
+        duk_get_global_string(ctx, "Symbol");
+        if (!duk_is_undefined(ctx, -1))
+        {
+            duk_get_prop_string(ctx, -1, "iterator");
+            if (!duk_is_undefined(ctx, -1))
+            {
+                duk_get_prop(ctx, 0); /* obj[Symbol.iterator] */
+                if (duk_is_function(ctx, -1))
+                {
+                    has_iter = 1;
+                    duk_dup(ctx, 0);
+                    duk_call_method(ctx, 0); /* call iterator() */
+                    duk_idx_t iter_idx = duk_normalize_index(ctx, -1);
+                    for (;;)
+                    {
+                        duk_get_prop_string(ctx, iter_idx, "next");
+                        duk_dup(ctx, iter_idx);
+                        duk_call_method(ctx, 0);
+                        duk_get_prop_string(ctx, -1, "done");
+                        int done = duk_to_boolean(ctx, -1);
+                        duk_pop(ctx);
+                        if (done) { duk_pop(ctx); break; }
+                        duk_get_prop_string(ctx, -1, "value");
+                        duk_remove(ctx, -2); /* remove result obj */
+                        if (has_map)
+                        {
+                            duk_dup(ctx, 1);
+                            duk_insert(ctx, -2);
+                            duk_push_uint(ctx, i);
+                            duk_call(ctx, 2);
+                        }
+                        duk_put_prop_index(ctx, arr_idx, i);
+                        i++;
+                    }
+                    duk_pop(ctx); /* iter */
+                }
+                else
+                    duk_pop(ctx);
+            }
+            else
+                duk_pop(ctx);
+        }
+        duk_pop(ctx); /* Symbol */
+
+        if (!has_iter)
+        {
+            /* array-like: has .length */
+            if (duk_has_prop_string(ctx, 0, "length"))
+            {
+                duk_get_prop_string(ctx, 0, "length");
+                duk_size_t len = (duk_size_t)duk_to_uint(ctx, -1);
+                duk_pop(ctx);
+                for (i = 0; i < (duk_uarridx_t)len; i++)
+                {
+                    duk_get_prop_index(ctx, 0, i);
+                    if (has_map)
+                    {
+                        duk_dup(ctx, 1);
+                        duk_insert(ctx, -2);
+                        duk_push_uint(ctx, i);
+                        duk_call(ctx, 2);
+                    }
+                    duk_put_prop_index(ctx, arr_idx, i);
+                }
+            }
+        }
+    }
+    return 1;
+}
+
+/* ——— Array.of(...args) ——— */
+static duk_ret_t duk_rp_array_of(duk_context *ctx)
+{
+    duk_idx_t nargs = duk_get_top(ctx);
+    duk_push_array(ctx);
+    for (duk_idx_t i = 0; i < nargs; i++)
+    {
+        duk_dup(ctx, i);
+        duk_put_prop_index(ctx, -2, (duk_uarridx_t)i);
+    }
+    return 1;
+}
+
+/* ——— String.prototype.trimStart / trimEnd ——— */
+static duk_ret_t duk_rp_string_trim_start(duk_context *ctx)
+{
+    duk_push_this(ctx);
+    const char *s = duk_to_string(ctx, -1);
+    while (*s == ' ' || *s == '\t' || *s == '\n' || *s == '\r' || *s == '\f' || *s == '\v')
+        s++;
+    duk_push_string(ctx, s);
+    return 1;
+}
+
+static duk_ret_t duk_rp_string_trim_end(duk_context *ctx)
+{
+    duk_push_this(ctx);
+    const char *s = duk_to_string(ctx, -1);
+    size_t len = strlen(s);
+    while (len > 0 && (s[len-1] == ' ' || s[len-1] == '\t' || s[len-1] == '\n' ||
+                       s[len-1] == '\r' || s[len-1] == '\f' || s[len-1] == '\v'))
+        len--;
+    duk_push_lstring(ctx, s, len);
+    return 1;
+}
+
+/* ——— Array.prototype.flat(depth?) ——— */
+static void duk_rp_flat_recursive(duk_context *ctx, duk_idx_t src_idx, duk_idx_t dst_idx,
+                                  duk_uarridx_t *out_i, int depth)
+{
+    duk_size_t len = duk_get_length(ctx, src_idx);
+    for (duk_uarridx_t i = 0; i < (duk_uarridx_t)len; i++)
+    {
+        duk_get_prop_index(ctx, src_idx, i);
+        if (depth > 0 && duk_is_array(ctx, -1))
+        {
+            duk_idx_t sub_idx = duk_normalize_index(ctx, -1);
+            duk_rp_flat_recursive(ctx, sub_idx, dst_idx, out_i, depth - 1);
+            duk_pop(ctx);
+        }
+        else
+        {
+            duk_put_prop_index(ctx, dst_idx, (*out_i)++);
+        }
+    }
+}
+
+static duk_ret_t duk_rp_array_flat(duk_context *ctx)
+{
+    int depth = 1;
+    if (duk_is_number(ctx, 0))
+    {
+        double d = duk_get_number(ctx, 0);
+        if (d == (double)INFINITY || d > 1000000)
+            depth = 1000000;
+        else
+            depth = (int)d;
+    }
+
+    duk_push_this(ctx);
+    duk_idx_t src_idx = duk_normalize_index(ctx, -1);
+
+    duk_push_array(ctx);
+    duk_idx_t dst_idx = duk_normalize_index(ctx, -1);
+
+    duk_uarridx_t out_i = 0;
+    duk_rp_flat_recursive(ctx, src_idx, dst_idx, &out_i, depth);
+
+    return 1;
+}
+
+/* ——— Array.prototype.flatMap(fn) ——— */
+static duk_ret_t duk_rp_array_flat_map(duk_context *ctx)
+{
+    REQUIRE_FUNCTION(ctx, 0, "Array.flatMap - argument must be a Function");
+    duk_push_this(ctx);
+    duk_idx_t this_idx = duk_normalize_index(ctx, -1);
+    duk_size_t len = duk_get_length(ctx, this_idx);
+
+    duk_push_array(ctx);
+    duk_idx_t dst_idx = duk_normalize_index(ctx, -1);
+    duk_uarridx_t out_i = 0;
+
+    for (duk_uarridx_t i = 0; i < (duk_uarridx_t)len; i++)
+    {
+        duk_dup(ctx, 0); /* fn */
+        duk_get_prop_index(ctx, this_idx, i);
+        duk_push_uint(ctx, i);
+        duk_dup(ctx, this_idx);
+        duk_call(ctx, 3);
+
+        if (duk_is_array(ctx, -1))
+        {
+            duk_idx_t sub_idx = duk_normalize_index(ctx, -1);
+            duk_size_t slen = duk_get_length(ctx, sub_idx);
+            for (duk_uarridx_t j = 0; j < (duk_uarridx_t)slen; j++)
+            {
+                duk_get_prop_index(ctx, sub_idx, j);
+                duk_put_prop_index(ctx, dst_idx, out_i++);
+            }
+            duk_pop(ctx);
+        }
+        else
+        {
+            duk_put_prop_index(ctx, dst_idx, out_i++);
+        }
+    }
+
+    return 1;
+}
+
+/* ——— String.prototype.replaceAll(search, replacement) ——— */
+static duk_ret_t duk_rp_string_replace_all(duk_context *ctx)
+{
+    duk_push_this(ctx);
+    const char *haystack = duk_to_string(ctx, -1);
+    const char *needle = duk_require_string(ctx, 0);
+    const char *replacement = duk_require_string(ctx, 1);
+    size_t nlen = strlen(needle);
+    size_t rlen = strlen(replacement);
+
+    if (nlen == 0)
+    {
+        /* empty search: insert replacement between every char */
+        rp_string *out = rp_string_new(strlen(haystack) * 2);
+        const char *p = haystack;
+        while (*p)
+        {
+            rp_string_putsn(out, replacement, rlen);
+            rp_string_putsn(out, p, 1);
+            p++;
+        }
+        rp_string_putsn(out, replacement, rlen);
+        duk_push_string(ctx, out->str);
+        rp_string_free(out);
+        return 1;
+    }
+
+    rp_string *out = rp_string_new(strlen(haystack));
+    const char *p = haystack;
+    while (*p)
+    {
+        if (strncmp(p, needle, nlen) == 0)
+        {
+            rp_string_putsn(out, replacement, rlen);
+            p += nlen;
+        }
+        else
+        {
+            rp_string_putsn(out, p, 1);
+            p++;
+        }
+    }
+    duk_push_string(ctx, out->str);
+    rp_string_free(out);
+    return 1;
+}
+
+/* ——— Array.prototype.at(index) ——— */
+static duk_ret_t duk_rp_array_at(duk_context *ctx)
+{
+    int idx = duk_require_int(ctx, 0);
+    duk_push_this(ctx);
+    int len = (int)duk_get_length(ctx, -1);
+    if (idx < 0) idx += len;
+    if (idx < 0 || idx >= len)
+        return 0; /* undefined */
+    duk_get_prop_index(ctx, -1, (duk_uarridx_t)idx);
+    return 1;
+}
+
+/* ——— Object.hasOwn(obj, prop) ——— */
+static duk_ret_t duk_rp_object_has_own(duk_context *ctx)
+{
+    duk_require_object(ctx, 0);
+    const char *prop = duk_require_string(ctx, 1);
+    duk_push_boolean(ctx, duk_has_prop_string(ctx, 0, prop) &&
+                          !duk_get_prop_string(ctx, 0, "__proto__")); /* quick check */
+
+    /* proper hasOwnProperty check */
+    duk_pop(ctx); /* pop the boolean we just pushed */
+    duk_get_global_string(ctx, "Object");
+    duk_get_prop_string(ctx, -1, "prototype");
+    duk_get_prop_string(ctx, -1, "hasOwnProperty");
+    duk_dup(ctx, 0); /* obj as this */
+    duk_push_string(ctx, prop);
+    duk_call_method(ctx, 1);
+    return 1;
+}
+
+/* ——— Array.prototype.findLast(fn) ——— */
+static duk_ret_t duk_rp_array_find_last(duk_context *ctx)
+{
+    REQUIRE_FUNCTION(ctx, 0, "Array.findLast - argument must be a Function");
+    duk_push_this(ctx);
+    int len = (int)duk_get_length(ctx, -1);
+
+    for (int i = len - 1; i >= 0; i--)
+    {
+        duk_dup(ctx, 0);
+        duk_get_prop_index(ctx, 1, (duk_uarridx_t)i);
+        duk_push_int(ctx, i);
+        duk_dup(ctx, 1); /* this array */
+        duk_call(ctx, 3);
+        if (duk_to_boolean(ctx, -1))
+        {
+            duk_pop(ctx);
+            duk_get_prop_index(ctx, 1, (duk_uarridx_t)i);
+            return 1;
+        }
+        duk_pop(ctx);
+    }
+    return 0;
+}
+
+/* ——— Array.prototype.findLastIndex(fn) ——— */
+static duk_ret_t duk_rp_array_find_last_index(duk_context *ctx)
+{
+    REQUIRE_FUNCTION(ctx, 0, "Array.findLastIndex - argument must be a Function");
+    duk_push_this(ctx);
+    int len = (int)duk_get_length(ctx, -1);
+
+    for (int i = len - 1; i >= 0; i--)
+    {
+        duk_dup(ctx, 0);
+        duk_get_prop_index(ctx, 1, (duk_uarridx_t)i);
+        duk_push_int(ctx, i);
+        duk_dup(ctx, 1);
+        duk_call(ctx, 3);
+        if (duk_to_boolean(ctx, -1))
+        {
+            duk_pop(ctx);
+            duk_push_int(ctx, i);
+            return 1;
+        }
+        duk_pop(ctx);
+    }
+    duk_push_int(ctx, -1);
+    return 1;
+}
+
+/* ——— Object.fromEntries(iterable) ——— */
+static duk_ret_t duk_rp_object_from_entries(duk_context *ctx)
+{
+    duk_push_object(ctx);
+    duk_idx_t obj_idx = duk_normalize_index(ctx, -1);
+
+    if (duk_is_array(ctx, 0))
+    {
+        duk_size_t len = duk_get_length(ctx, 0);
+        for (duk_uarridx_t i = 0; i < (duk_uarridx_t)len; i++)
+        {
+            duk_get_prop_index(ctx, 0, i); /* entry [key, value] */
+            duk_get_prop_index(ctx, -1, 0); /* key */
+            duk_get_prop_index(ctx, -2, 1); /* value */
+            duk_put_prop(ctx, obj_idx); /* obj[key] = value */
+            duk_pop(ctx); /* pop entry */
+        }
+    }
+    return 1;
+}
+
 static void add_array_funcs(duk_context *ctx)
 {
     duk_get_global_string(ctx, "Array");
@@ -316,7 +706,73 @@ static void add_array_funcs(duk_context *ctx)
     duk_put_prop_string(ctx, -2, "includes");
     duk_rp_set_enum_false(ctx, -1, "includes");
 
-    duk_pop_2(ctx);
+    duk_push_c_function(ctx, duk_rp_array_flat, 1);
+    duk_put_prop_string(ctx, -2, "flat");
+    duk_rp_set_enum_false(ctx, -1, "flat");
+
+    duk_push_c_function(ctx, duk_rp_array_flat_map, 1);
+    duk_put_prop_string(ctx, -2, "flatMap");
+    duk_rp_set_enum_false(ctx, -1, "flatMap");
+
+    duk_push_c_function(ctx, duk_rp_array_at, 1);
+    duk_put_prop_string(ctx, -2, "at");
+    duk_rp_set_enum_false(ctx, -1, "at");
+
+    duk_push_c_function(ctx, duk_rp_array_find_last, 1);
+    duk_put_prop_string(ctx, -2, "findLast");
+    duk_rp_set_enum_false(ctx, -1, "findLast");
+
+    duk_push_c_function(ctx, duk_rp_array_find_last_index, 1);
+    duk_put_prop_string(ctx, -2, "findLastIndex");
+    duk_rp_set_enum_false(ctx, -1, "findLastIndex");
+
+    duk_pop(ctx); /* pop prototype */
+
+    /* Static methods on Array */
+    duk_push_c_function(ctx, duk_rp_array_from, 2);
+    duk_put_prop_string(ctx, -2, "from");
+    duk_rp_set_enum_false(ctx, -1, "from");
+
+    duk_push_c_function(ctx, duk_rp_array_of, DUK_VARARGS);
+    duk_put_prop_string(ctx, -2, "of");
+    duk_rp_set_enum_false(ctx, -1, "of");
+
+    duk_pop(ctx); /* pop Array */
+}
+
+static void add_string_funcs(duk_context *ctx)
+{
+    duk_get_global_string(ctx, "String");
+    duk_get_prop_string(ctx, -1, "prototype");
+
+    duk_push_c_function(ctx, duk_rp_string_trim_start, 0);
+    duk_put_prop_string(ctx, -2, "trimStart");
+    duk_rp_set_enum_false(ctx, -1, "trimStart");
+
+    duk_push_c_function(ctx, duk_rp_string_trim_end, 0);
+    duk_put_prop_string(ctx, -2, "trimEnd");
+    duk_rp_set_enum_false(ctx, -1, "trimEnd");
+
+    duk_push_c_function(ctx, duk_rp_string_replace_all, 2);
+    duk_put_prop_string(ctx, -2, "replaceAll");
+    duk_rp_set_enum_false(ctx, -1, "replaceAll");
+
+    duk_pop_2(ctx); /* pop prototype and String */
+}
+
+static void add_extra_object_funcs(duk_context *ctx)
+{
+    duk_get_global_string(ctx, "Object");
+
+    duk_push_c_function(ctx, duk_rp_object_has_own, 2);
+    duk_put_prop_string(ctx, -2, "hasOwn");
+    duk_rp_set_enum_false(ctx, -1, "hasOwn");
+
+    duk_push_c_function(ctx, duk_rp_object_from_entries, 1);
+    duk_put_prop_string(ctx, -2, "fromEntries");
+    duk_rp_set_enum_false(ctx, -1, "fromEntries");
+
+    duk_pop(ctx); /* pop Object */
 }
 
 duk_ret_t duk_rp_buffer_from(duk_context *ctx)
@@ -426,10 +882,9 @@ static duk_ret_t rp_eval_js(duk_context *ctx)
         duk_push_string(ctx, tickified);
         free(tickified);
         */
-        //int is_tickified=0;
-        char *free_src=strdup(source);
-        RP_ParseRes res = rp_get_transpiled(free_src, NULL);
-        free(free_src);
+        /* Use transpile_eval to skip program-level IIFE wrapping,
+           which would hide caller's variables from eval scope */
+        RP_ParseRes res = transpile_eval(source, strlen(source), 0);
 
         if (res.err)
         {
@@ -583,6 +1038,8 @@ void duk_init_context(duk_context *ctx)
     fix_eval(ctx);
     add_object_values(ctx);
     add_array_funcs(ctx);
+    add_string_funcs(ctx);
+    add_extra_object_funcs(ctx);
     add_buffer_func(ctx);
     new_function_transpile(ctx);
 }

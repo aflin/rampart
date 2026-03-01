@@ -48,6 +48,9 @@ RP_ParseRes transpile(const char *src, size_t src_len, int printTree);
 /* will add polyfills for every call */
 RP_ParseRes transpile_standalone(const char *src, size_t src_len, int printTree);
 
+/* like transpile() but skips program-level IIFE wrapping (for eval'd code) */
+RP_ParseRes transpile_eval(const char *src, size_t src_len, int printTree);
+
 void freeParseRes(RP_ParseRes *res);
 char *stealParseRes(RP_ParseRes *res);
 

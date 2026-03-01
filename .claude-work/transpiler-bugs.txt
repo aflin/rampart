@@ -1,0 +1,159 @@
+Rampart Transpiler Bugs — async/await Generator Transform
+==========================================================
+
+Found while testing async/await with rampart-iroh (Feb 2026).
+
+Test file: /usr/local/src/rampart-iroh/test_async.js
+
+
+Bug 1: Local variables are lost across await points
+----------------------------------------------------
+
+When the transpiler converts an async function to a generator-based
+state machine, local variables declared with "var" inside the async
+function lose their values after any "await" expression resumes.
+
+Reproduction:
+
+    "use transpiler"
+
+    async function test() {
+        var x = 42;
+        var obj = {name: "alice"};
+        console.log("before:", x, JSON.stringify(obj));
+
+        await new Promise(function(resolve) {
+            setTimeout(function() { resolve(); }, 100);
+        });
+
+        console.log("after:", x, JSON.stringify(obj));
+    }
+
+    test();
+
+Expected output:
+
+    before: 42 {"name":"alice"}
+    after: 42 {"name":"alice"}
+
+Actual output:
+
+    before: 42 {"name":"alice"}
+    after: undefined undefined
+
+All local variables (primitives, objects, arrays, etc.) become
+undefined after the generator resumes from a yield point. This
+applies to every "var" declared inside the async function body.
+
+The variable that RECEIVES the await result is assigned correctly
+(e.g. "var result = await promise" gives result the resolved value),
+but any other locals declared before the await are lost.
+
+Workaround: Store all state on an object declared in an outer scope.
+
+    var S = {};
+
+    async function test() {
+        S.x = 42;
+        S.obj = {name: "alice"};
+
+        await somePromise;
+
+        console.log(S.x, S.obj);  // works: 42, {name: "alice"}
+    }
+
+
+Bug 2: "obj.prop = await expr()" fails when expr is a function call
+--------------------------------------------------------------------
+
+When the result of an await expression is assigned to an object
+property, and the awaited expression is a function call, the
+assignment receives the wrong value. Instead of the resolved Promise
+value, the property gets a stale or unrelated value.
+
+Reproduction:
+
+    "use transpiler"
+
+    var S = {};
+
+    function getAnswer() {
+        return new Promise(function(resolve) {
+            setTimeout(function() { resolve("correct"); }, 100);
+        });
+    }
+
+    async function test() {
+        S.answer = await getAnswer();
+        console.log(S.answer);
+    }
+
+    test();
+
+Expected output:
+
+    correct
+
+Actual output:
+
+    The property receives the wrong value (observed: the object that
+    getAnswer was called on when used as a method, or undefined).
+
+This does NOT happen when the await and the assignment are split
+into two statements:
+
+    S._ = getAnswer();       // store the Promise
+    S.answer = await S._;    // await the stored Promise
+    console.log(S.answer);   // "correct" — works
+
+The bug appears to be in how the generator transform handles the
+combination of a member-expression assignment target (obj.prop)
+with an await of a call expression. Simple "await variable" works
+fine as an assignment source.
+
+Workaround: Always split "obj.prop = await fn()" into two lines:
+
+    obj._ = fn();
+    obj.prop = await obj._;
+
+
+Bug 3 (minor): ".catch()" causes SyntaxError
+---------------------------------------------
+
+Using ".catch()" on a Promise triggers a Duktape SyntaxError
+("empty expression not allowed") because "catch" is a reserved
+word in ES3/ES5 strict mode. This is a Duktape limitation rather
+than a transpiler bug, but the transpiler could work around it by
+rewriting ".catch(" to '["catch"](' in its output.
+
+Reproduction:
+
+    "use transpiler"
+
+    async function test() { return 42; }
+
+    test().catch(function(e) {
+        console.log(e);
+    });
+
+Actual: SyntaxError: empty expression not allowed
+
+Workaround: Use .then(null, handler) instead of .catch(handler):
+
+    test().then(null, function(e) {
+        console.log(e);
+    });
+
+
+Summary
+-------
+
+Bugs 1 and 2 are in the transpiler's async-to-generator transform.
+The generator state machine does not properly save and restore local
+variable bindings across yield points (Bug 1), and mishandles the
+result routing when an await of a call expression is directly
+assigned to a member expression (Bug 2).
+
+Both bugs can be worked around by using an outer-scope state object
+and splitting await assignments into two statements, as demonstrated
+in the test file /usr/local/src/rampart-iroh/test_async.js.

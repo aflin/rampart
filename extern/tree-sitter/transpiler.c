@@ -172,12 +172,14 @@ typedef struct {
 #define PROMISE_PF  (1<<4)
 #define ASYNC_PF    (1<<5)
 #define BASE_PF     (1<<6)  // ensures _TrN_Sp preamble is emitted even with no specific polyfill
+#define ES2017_PF   (1<<7)  // Object.entries, padStart/padEnd, getOwnPropertyDescriptors
+#define COLLECT_PF  (1<<8)  // Set, Map, WeakSet, WeakMap polyfills
 
 
 polyfills allpolys[] = {
     // stolen from babel.  Babel, like this prog is MIT licensed - see https://github.com/babel/babel/blob/main/LICENSE
     {
-        "_TrN_Sp.__spreadO = function(target) {function ownKeys(object, enumerableOnly){var keys = Object.keys(object);if (Object.getOwnPropertySymbols){var symbols = Object.getOwnPropertySymbols(object);if (enumerableOnly)symbols = symbols.filter(function(sym) {return Object.getOwnPropertyDescriptor(object, sym).enumerable;});keys.push.apply(keys, symbols);}return keys;}function _defineProperty(obj, key, value){if (key in obj){Object.defineProperty(obj, key, {value : value, enumerable : true, configurable : true, writable : true});}else{obj[key] = value;}return obj;}for (var i = 1; i < arguments.length; i++){var source = arguments[i] != null ? arguments[i] : {};if (i % 2){ownKeys(Object(source), true).forEach(function(key) {_defineProperty(target, key, source[key]);});}else if (Object.getOwnPropertyDescriptors){Object.defineProperties(target, Object.getOwnPropertyDescriptors(source));}else{ownKeys(Object(source)).forEach(function(key) {Object.defineProperty(target, key, Object.getOwnPropertyDescriptor(source, key));});}}return target;};_TrN_Sp.__spreadA = function(target, arr) {if (arr instanceof Array)return target.concat(arr);function _nonIterableSpread(){throw new TypeError(\"Invalid attempt to spread non-iterable instance. In order to be iterable, non-array objects must have a [Symbol.iterator]() method.\");}function _unsupportedIterableToArray(o, minLen){if (!o)return;if (typeof o === \"string\")return _arrayLikeToArray(o, minLen);var n = Object.prototype.toString.call(o).slice(8, -1);if (n === \"Object\" && o.constructor);n = o.constructor.name;if (n === \"Map\" || n === \"Set\")return Array.from(o);if (n === \"Arguments\" || /^(?:Ui|I)nt(?:8|16|32)(?:Clamped)?Array$/.test(n))return target.concat(_arrayLikeToArray(o, minLen));}function _iterableToArray(iter){if (typeof Symbol !== \"undefined\" && Symbol.iterator in Object(iter))return target.concat(Array.from(iter));}function _arrayLikeToArray(arr, len){if (len == null || len > arr.length)len = arr.length;for (var i = 0, arr2 = new Array(len); i < len; i++){arr2[i] = arr[i];}return target.concat(arr2);}function _arrayWithoutHoles(arr){if (Array.isArray(arr))return target.concat(_arrayLikeToArray(arr));}return _arrayWithoutHoles(arr) || _iterableToArray(arr) || _unsupportedIterableToArray(arr) || _nonIterableSpread();};_TrN_Sp._arrayConcat = function(items){var self = this;items.forEach(function(item) {self.push(item);});return this;};_TrN_Sp._newArray = function() {Object.defineProperty(Array.prototype, '_addchain', {value: _TrN_Sp._arrayConcat,writable: true,configurable: true,enumerable: false});Object.defineProperty(Array.prototype, '_concat', {value: Array.prototype._addchain,writable: true,configurable: true,enumerable: false});return [];};_TrN_Sp._objectAddchain = function(key, value) {if (typeof key == 'object'){Object.assign(this, key)}else{this[key] = value;}return this;};_TrN_Sp._newObject = function() {Object.defineProperty(Object.prototype, '_addchain', {value: _TrN_Sp._objectAddchain,writable: true,configurable: true,enumerable: false});Object.defineProperty(Object.prototype, '_concat', {value: _TrN_Sp._objectAddchain,writable: true,configurable: true,enumerable: false});return {};};",
+        "_TrN_Sp.__spreadO = function(target) {function ownKeys(object, enumerableOnly){var keys = Object.keys(object);if (Object.getOwnPropertySymbols){var symbols = Object.getOwnPropertySymbols(object);if (enumerableOnly)symbols = symbols.filter(function(sym) {return Object.getOwnPropertyDescriptor(object, sym).enumerable;});keys.push.apply(keys, symbols);}return keys;}function _defineProperty(obj, key, value){if (key in obj){Object.defineProperty(obj, key, {value : value, enumerable : true, configurable : true, writable : true});}else{obj[key] = value;}return obj;}for (var i = 1; i < arguments.length; i++){var source = arguments[i] != null ? arguments[i] : {};if (i % 2){ownKeys(Object(source), true).forEach(function(key) {_defineProperty(target, key, source[key]);});}else if (Object.getOwnPropertyDescriptors){Object.defineProperties(target, Object.getOwnPropertyDescriptors(source));}else{ownKeys(Object(source)).forEach(function(key) {Object.defineProperty(target, key, Object.getOwnPropertyDescriptor(source, key));});}}return target;};_TrN_Sp.__spreadA = function(target, arr) {if (arr instanceof Array)return target.concat(arr);function _nonIterableSpread(){throw new TypeError(\"Invalid attempt to spread non-iterable instance. In order to be iterable, non-array objects must have a [Symbol.iterator]() method.\");}function _unsupportedIterableToArray(o, minLen){if (!o)return;if (typeof o === \"string\")return _arrayLikeToArray(o, minLen);var n = Object.prototype.toString.call(o).slice(8, -1);if (n === \"Object\" && o.constructor);n = o.constructor.name;if (n === \"Map\" || n === \"Set\")return Array.from(o);if (n === \"Arguments\" || /^(?:Ui|I)nt(?:8|16|32)(?:Clamped)?Array$/.test(n))return target.concat(_arrayLikeToArray(o, minLen));}function _iterableToArray(iter){if (typeof Symbol !== \"undefined\" && Symbol.iterator in Object(iter)){var _it=iter[Symbol.iterator](),_a=[],_s;while(!(_s=_it.next()).done)_a.push(_s.value);return target.concat(_a);}}function _arrayLikeToArray(arr, len){if (len == null || len > arr.length)len = arr.length;for (var i = 0, arr2 = new Array(len); i < len; i++){arr2[i] = arr[i];}return target.concat(arr2);}function _arrayWithoutHoles(arr){if (Array.isArray(arr))return target.concat(_arrayLikeToArray(arr));}return _arrayWithoutHoles(arr) || _iterableToArray(arr) || _unsupportedIterableToArray(arr) || _nonIterableSpread();};_TrN_Sp._arrayConcat = function(items){var self = this;items.forEach(function(item) {self.push(item);});return this;};_TrN_Sp._newArray = function() {Object.defineProperty(Array.prototype, '_addchain', {value: _TrN_Sp._arrayConcat,writable: true,configurable: true,enumerable: false});Object.defineProperty(Array.prototype, '_concat', {value: Array.prototype._addchain,writable: true,configurable: true,enumerable: false});return [];};_TrN_Sp._objectAddchain = function(key, value) {if (typeof key == 'object'){Object.assign(this, key)}else{this[key] = value;}return this;};_TrN_Sp._newObject = function() {Object.defineProperty(Object.prototype, '_addchain', {value: _TrN_Sp._objectAddchain,writable: true,configurable: true,enumerable: false});Object.defineProperty(Object.prototype, '_concat', {value: _TrN_Sp._objectAddchain,writable: true,configurable: true,enumerable: false});return {};};",
         0, (uint32_t)SPREAD_PF },
     {
         "_TrN_Sp._typeof=function(obj) {\"@babel/helpers - typeof\";if (typeof Symbol === \"function\" && typeof Symbol.iterator === \"symbol\") {_TrN_Sp._typeof = function(obj) {return typeof obj;};} else {_TrN_Sp._typeof = function(obj) {return obj && typeof Symbol === \"function\" && obj.constructor === Symbol && obj !== Symbol.prototype ? \"symbol\" : typeof obj;};}return _TrN_Sp._typeof(obj);};_TrN_Sp._getRequireWildcardCache=function() {if (typeof WeakMap !== \"function\") return null;var cache = new WeakMap();_TrN_Sp._getRequireWildcardCache=function(){return cache;};return cache;};_TrN_Sp._interopRequireWildcard=function(obj) {if (obj && obj.__esModule) {return obj;}if (obj === null || _TrN_Sp._typeof(obj) !== \"object\" && typeof obj !== \"function\") {return { \"default\": obj };}var cache = _TrN_Sp._getRequireWildcardCache();if (cache && cache.has(obj)) {return cache.get(obj);}var newObj = {};var hasPropertyDescriptor = Object.defineProperty && Object.getOwnPropertyDescriptor;for (var key in obj) {if (Object.prototype.hasOwnProperty.call(obj, key)) {var desc = hasPropertyDescriptor ? Object.getOwnPropertyDescriptor(obj, key) : null;if (desc && (desc.get || desc.set)) {Object.defineProperty(newObj, key, desc);} else {newObj[key] = obj[key];}}}newObj[\"default\"] = obj;if (cache) {cache.set(obj, newObj);}return newObj;};_TrN_Sp._interopDefault=function(m){if(typeof m =='object' && m.__esModule){return m.default}return m;};",
@@ -192,7 +194,7 @@ polyfills allpolys[] = {
         // Debug controls: pending warnings (ON by default, turn off with _TrN_Sp.warnOnLongPending=false)
         // do not warn for merely pending promises.
         // Enable only for debugging "long-pending" promises.
-        "_TrN_Sp._wrapLongPending = function(p, label) {if (!_TrN_Sp.warnOnLongPending) return p;try {var id = setTimeout(function () {if (typeof console !== 'undefined' && console && console.warn) {console.warn('Promise still pending after', _TrN_Sp.pendingWarnMs, 'ms', label ? '(' + label + ')' : '');}}, _TrN_Sp.pendingWarnMs);if (p && typeof p['finally'] === 'function') {p['finally'](function () { clearTimeout(id); });} else if (p && typeof p.then === 'function') {p.then(function(){ clearTimeout(id); }, function(){ clearTimeout(id); });}} catch (_e) {}return p;};_TrN_Sp.asyncGeneratorStep = function(gen, resolve, reject, _next, _throw, key, arg) {try {var info = gen[key](arg);var value = info.value;} catch (error) {reject(error);return;}if (info.done) {resolve(value);} else {Promise.resolve(value).then(_next, _throw);}};_TrN_Sp.asyncToGenerator = function(fn) {return function() {var self = this, args = arguments;var __p = new Promise(function(resolve, reject) {var gen = fn.apply(self, args);function _next(value) {_TrN_Sp.asyncGeneratorStep(gen, resolve, reject, _next, _throw, 'next', value);}function _throw(err) {_TrN_Sp.asyncGeneratorStep(gen, resolve, reject, _next, _throw, 'throw', err);}_next(undefined);});return _TrN_Sp._wrapLongPending(__p, fn && fn.name ? fn.name : 'async');};_TrN_Sp.warnOnLongPending = (_TrN_Sp.warnOnLongPending === undefined ? true: _TrN_Sp.warnOnLongPending);_TrN_Sp.pendingWarnMs = (typeof _TrN_Sp.pendingWarnMs === 'number' && _TrN_Sp.pendingWarnMs >= 0) ? _TrN_Sp.pendingWarnMs : 2000;};_TrN_Sp.regeneratorRuntime = (function() {function mark(genFn) {return genFn;}function wrap(innerFn, outerFn, outerThis) {var _s=void 0,_t=false,_te;var context = {prev: 0,next: 0,done: false,rval: void 0,stop: function() {this.done = true;return this.rval;}};Object.defineProperty(context,'sent',{get:function(){if(_t){_t=false;var e=_te;_te=void 0;throw e;}return _s;},set:function(v){_s=v;},configurable:true});return {next: function(arg) {var prevNext = context.next;context.sent = arg;var value = innerFn.call(outerThis, context);if (context.done || context.next === 'end') {return {value: context.rval, done: true};}if (context.next === prevNext) {context.done = true;context.rval = value;return {value: context.rval, done: true};}return {value: value, done: false};},throw: function(err) {_t=true;_te=err;return this.next(err);}};}return {mark: mark, wrap: wrap};})();",
+        "_TrN_Sp._wrapLongPending = function(p, label) {if (!_TrN_Sp.warnOnLongPending) return p;try {var id = setTimeout(function () {if (typeof console !== 'undefined' && console && console.warn) {console.warn('Promise still pending after', _TrN_Sp.pendingWarnMs, 'ms', label ? '(' + label + ')' : '');}}, _TrN_Sp.pendingWarnMs);if (p && typeof p['finally'] === 'function') {p['finally'](function () { clearTimeout(id); });} else if (p && typeof p.then === 'function') {p.then(function(){ clearTimeout(id); }, function(){ clearTimeout(id); });}} catch (_e) {}return p;};_TrN_Sp.asyncGeneratorStep = function(gen, resolve, reject, _next, _throw, key, arg) {try {var info = gen[key](arg);var value = info.value;} catch (error) {reject(error);return;}if (info.done) {resolve(value);} else {Promise.resolve(value).then(_next, _throw);}};_TrN_Sp.asyncToGenerator = function(fn) {return function() {var self = this, args = arguments;var __p = new Promise(function(resolve, reject) {var gen = fn.apply(self, args);function _next(value) {_TrN_Sp.asyncGeneratorStep(gen, resolve, reject, _next, _throw, 'next', value);}function _throw(err) {_TrN_Sp.asyncGeneratorStep(gen, resolve, reject, _next, _throw, 'throw', err);}_next(undefined);});return _TrN_Sp._wrapLongPending(__p, fn && fn.name ? fn.name : 'async');};_TrN_Sp.warnOnLongPending = (_TrN_Sp.warnOnLongPending === undefined ? true: _TrN_Sp.warnOnLongPending);_TrN_Sp.pendingWarnMs = (typeof _TrN_Sp.pendingWarnMs === 'number' && _TrN_Sp.pendingWarnMs >= 0) ? _TrN_Sp.pendingWarnMs : 2000;};_TrN_Sp.regeneratorRuntime = (function() {function mark(genFn) {return genFn;}function wrap(innerFn, outerFn, outerThis) {var _s=void 0,_t=false,_te;var context = {prev: 0,next: 0,done: false,rval: void 0,stop: function() {this.done = true;return this.rval;}};Object.defineProperty(context,'sent',{get:function(){if(_t){_t=false;var e=_te;_te=void 0;throw e;}return _s;},set:function(v){_s=v;},configurable:true});var _iter={next: function(arg) {context.sent = arg;context._y=false;var value = innerFn.call(outerThis, context);if (context.done || context.next === 'end') {return {value: context.rval, done: true};}if (!context._y) {context.done = true;context.rval = value;return {value: context.rval, done: true};}return {value: value, done: false};},throw: function(err) {_t=true;_te=err;return this.next(err);}};if(typeof Symbol!=='undefined'&&Symbol.iterator)_iter[Symbol.iterator]=function(){return this;};return _iter;}return {mark: mark, wrap: wrap};})();",
         // old overly verbose version:
         //"_TrN_Sp.asyncGeneratorStep = function(gen, resolve, reject, _next, _throw, key, arg) {try{var info = gen[key](arg);var value = info.value;}catch (error){reject(error);return;}if (info.done){resolve(value);}else{Promise.resolve(value).then(_next, _throw);}};_TrN_Sp.asyncToGenerator = function(fn) {return function() {var self = this, args = arguments;return new Promise(function(resolve, reject) {var gen = fn.apply(self, args);function _next(value){_TrN_Sp.asyncGeneratorStep(gen, resolve, reject, _next, _throw, \"next\", value);}function _throw(err){_TrN_Sp.asyncGeneratorStep(gen, resolve, reject, _next, _throw, \"throw\", err);}_next(undefined);});};};_TrN_Sp.regeneratorRuntime = (function () {function mark(genFn) { return genFn; }function wrap(innerFn) {var context = {prev: 0,next: 0,sent: void 0,done: false,rval: void 0,stop: function () { this.done = true; return this.rval; }};return {next: function (arg) {var prevNext = context.next;context.sent = arg;var value = innerFn(context);if (context.done || context.next === \"end\") {return { value: context.rval, done: true };}if (context.next === prevNext) {context.done = true;context.rval = value;return { value: context.rval, done: true };}return { value: value, done: false };},throw: function (err) { throw err; }};}return { mark: mark, wrap: wrap };})();",
         0, (uint32_t)ASYNC_PF  },
@@ -205,6 +207,20 @@ polyfills allpolys[] = {
         // oldver
         //"delete global.Promise;(function(e,t){\"object\"==typeof exports&&\"undefined\"!=typeof module?t():\"function\"==typeof define&&define.amd?define(t):t()})(0,function(){\"use strict\";function e(e){var t=this.constructor;return this.then(function(n){return t.resolve(e()).then(function(){return n})},function(n){return t.resolve(e()).then(function(){return t.reject(n)})})}function t(e){return new this(function(t,n){function r(e,n){if(n&&(\"object\"==typeof n||\"function\"==typeof n)){var f=n.then;if(\"function\"==typeof f)return void f.call(n,function(t){r(e,t)},function(n){o[e]={status:\"rejected\",reason:n},0==--i&&t(o)})}o[e]={status:\"fulfilled\",value:n},0==--i&&t(o)}if(!e||\"undefined\"==typeof e.length)return n(new TypeError(typeof e+\" \"+e+\" is not iterable(cannot read property Symbol(Symbol.iterator))\"));var o=Array.prototype.slice.call(e);if(0===o.length)return t([]);for(var i=o.length,f=0;o.length>f;f++)r(f,o[f])})}function n(e,t){this.name=\"AggregateError\",this.errors=e,this.message=t||\"\"}function r(e){var t=this;return new t(function(r,o){if(!e||\"undefined\"==typeof e.length)return o(new TypeError(\"Promise.any accepts an array\"));var i=Array.prototype.slice.call(e);if(0===i.length)return o();for(var f=[],u=0;i.length>u;u++)try{t.resolve(i[u]).then(r)[\"catch\"](function(e){f.push(e),f.length===i.length&&o(new n(f,\"All promises were rejected\"))})}catch(c){o(c)}})}function o(e){return!(!e||\"undefined\"==typeof e.length)}function i(){}function f(e){if(!(this instanceof f))throw new TypeError(\"Promises must be constructed via new\");if(\"function\"!=typeof e)throw new TypeError(\"not a function\");this._state=0,this._handled=!1,this._value=undefined,this._deferreds=[],s(e,this)}function u(e,t){for(;3===e._state;)e=e._value;0!==e._state?(e._handled=!0,f._immediateFn(function(){var n=1===e._state?t.onFulfilled:t.onRejected;if(null!==n){var r;try{r=n(e._value)}catch(o){return void a(t.promise,o)}c(t.promise,r)}else(1===e._state?c:a)(t.promise,e._value)})):e._deferreds.push(t)}function c(e,t){try{if(t===e)throw new TypeError(\"A promise cannot be resolved with itself.\");if(t&&(\"object\"==typeof t||\"function\"==typeof t)){var n=t.then;if(t instanceof f)return e._state=3,e._value=t,void l(e);if(\"function\"==typeof n)return void s(function(e,t){return function(){e.apply(t,arguments)}}(n,t),e)}e._state=1,e._value=t,l(e)}catch(r){a(e,r)}}function a(e,t){e._state=2,e._value=t,l(e)}function l(e){2===e._state&&0===e._deferreds.length&&f._immediateFn(function(){e._handled||f._unhandledRejectionFn(e._value)});for(var t=0,n=e._deferreds.length;n>t;t++)u(e,e._deferreds[t]);e._deferreds=null}function s(e,t){var n=!1;try{e(function(e){n||(n=!0,c(t,e))},function(e){n||(n=!0,a(t,e))})}catch(r){if(n)return;n=!0,a(t,r)}}n.prototype=Error.prototype;var d=setTimeout;f.prototype[\"catch\"]=function(e){return this.then(null,e)},f.prototype.then=function(e,t){var n=new this.constructor(i);return u(this,new function(e,t,n){this.onFulfilled=\"function\"==typeof e?e:null,this.onRejected=\"function\"==typeof t?t:null,this.promise=n}(e,t,n)),n},f.prototype[\"finally\"]=e,f.all=function(e){return new f(function(t,n){function r(e,o){try{if(o&&(\"object\"==typeof o||\"function\"==typeof o)){var u=o.then;if(\"function\"==typeof u)return void u.call(o,function(t){r(e,t)},n)}i[e]=o,0==--f&&t(i)}catch(c){n(c)}}if(!o(e))return n(new TypeError(\"Promise.all accepts an array\"));var i=Array.prototype.slice.call(e);if(0===i.length)return t([]);for(var f=i.length,u=0;i.length>u;u++)r(u,i[u])})},f.any=r,f.allSettled=t,f.resolve=function(e){return e&&\"object\"==typeof e&&e.constructor===f?e:new f(function(t){t(e)})},f.reject=function(e){return new f(function(t,n){n(e)})},f.race=function(e){return new f(function(t,n){if(!o(e))return n(new TypeError(\"Promise.race accepts an array\"));for(var r=0,i=e.length;i>r;r++)f.resolve(e[r]).then(t,n)})},f._immediateFn=\"function\"==typeof setImmediate&&function(e){setImmediate(e)}||function(e){d(e,0)},f._unhandledRejectionFn=function(e){void 0!==console&&console&&console.warn(\"Possible Unhandled Promise Rejection:\",e)};var p=function(){if(\"undefined\"!=typeof self)return self;if(\"undefined\"!=typeof window)return window;if(\"undefined\"!=typeof global)return global;throw Error(\"unable to locate global object\")}();\"function\"!=typeof p.Promise?p.Promise=f:(p.Promise.prototype[\"finally\"]||(p.Promise.prototype[\"finally\"]=e),p.Promise.allSettled||(p.Promise.allSettled=t),p.Promise.any||(p.Promise.any=r))});",
         0, (uint32_t)PROMISE_PF},
+    {
+        // Set, Map, WeakSet, WeakMap polyfills
+        "if(typeof Set==='undefined'){global.Set=(function(){function Set(iter){this._items=[];this.size=0;if(iter){if(iter instanceof Array){for(var i=0;i<iter.length;i++)this.add(iter[i]);}else if(typeof Symbol!=='undefined'&&iter[Symbol.iterator]){var it=iter[Symbol.iterator](),s;while(!(s=it.next()).done)this.add(s.value);}}}Set.prototype.add=function(v){if(!this.has(v)){this._items.push(v);this.size=this._items.length;}return this;};Set.prototype.has=function(v){for(var i=0;i<this._items.length;i++){if(this._items[i]===v||(this._items[i]!==this._items[i]&&v!==v))return true;}return false;};Set.prototype['delete']=function(v){for(var i=0;i<this._items.length;i++){if(this._items[i]===v||(this._items[i]!==this._items[i]&&v!==v)){this._items.splice(i,1);this.size=this._items.length;return true;}}return false;};Set.prototype.clear=function(){this._items=[];this.size=0;};Set.prototype.forEach=function(cb,thisArg){for(var i=0;i<this._items.length;i++)cb.call(thisArg,this._items[i],this._items[i],this);};Set.prototype.values=function(){var items=this._items,idx=0;var iter={next:function(){if(idx<items.length)return{value:items[idx++],done:false};return{value:undefined,done:true};}};if(typeof Symbol!=='undefined'&&Symbol.iterator)iter[Symbol.iterator]=function(){return this;};return iter;};Set.prototype.keys=Set.prototype.values;Set.prototype.entries=function(){var items=this._items,idx=0;var iter={next:function(){if(idx<items.length){var v=items[idx++];return{value:[v,v],done:false};}return{value:undefined,done:true};}};if(typeof Symbol!=='undefined'&&Symbol.iterator)iter[Symbol.iterator]=function(){return this;};return iter;};if(typeof Symbol!=='undefined'&&Symbol.iterator)Set.prototype[Symbol.iterator]=Set.prototype.values;return Set;})();}"
+        "if(typeof Map==='undefined'){global.Map=(function(){function Map(iter){this._keys=[];this._vals=[];this.size=0;if(iter){if(iter instanceof Array){for(var i=0;i<iter.length;i++)this.set(iter[i][0],iter[i][1]);}else if(typeof Symbol!=='undefined'&&iter[Symbol.iterator]){var it=iter[Symbol.iterator](),s;while(!(s=it.next()).done)this.set(s.value[0],s.value[1]);}}}Map.prototype._idx=function(k){for(var i=0;i<this._keys.length;i++){if(this._keys[i]===k||(this._keys[i]!==this._keys[i]&&k!==k))return i;}return-1;};Map.prototype.set=function(k,v){var i=this._idx(k);if(i<0){this._keys.push(k);this._vals.push(v);}else{this._vals[i]=v;}this.size=this._keys.length;return this;};Map.prototype.get=function(k){var i=this._idx(k);return i<0?undefined:this._vals[i];};Map.prototype.has=function(k){return this._idx(k)>=0;};Map.prototype['delete']=function(k){var i=this._idx(k);if(i<0)return false;this._keys.splice(i,1);this._vals.splice(i,1);this.size=this._keys.length;return true;};Map.prototype.clear=function(){this._keys=[];this._vals=[];this.size=0;};Map.prototype.forEach=function(cb,thisArg){for(var i=0;i<this._keys.length;i++)cb.call(thisArg,this._vals[i],this._keys[i],this);};Map.prototype.keys=function(){var keys=this._keys,idx=0;var iter={next:function(){if(idx<keys.length)return{value:keys[idx++],done:false};return{value:undefined,done:true};}};if(typeof Symbol!=='undefined'&&Symbol.iterator)iter[Symbol.iterator]=function(){return this;};return iter;};Map.prototype.values=function(){var vals=this._vals,idx=0;var iter={next:function(){if(idx<vals.length)return{value:vals[idx++],done:false};return{value:undefined,done:true};}};if(typeof Symbol!=='undefined'&&Symbol.iterator)iter[Symbol.iterator]=function(){return this;};return iter;};Map.prototype.entries=function(){var keys=this._keys,vals=this._vals,idx=0;var iter={next:function(){if(idx<keys.length){var r={value:[keys[idx],vals[idx]],done:false};idx++;return r;}return{value:undefined,done:true};}};if(typeof Symbol!=='undefined'&&Symbol.iterator)iter[Symbol.iterator]=function(){return this;};return iter;};if(typeof Symbol!=='undefined'&&Symbol.iterator)Map.prototype[Symbol.iterator]=Map.prototype.entries;return Map;})();}"
+        "if(typeof WeakSet==='undefined'){global.WeakSet=(function(){var _id=0;function _key(ws){if(!ws._wsid)ws._wsid='__ws'+(_id++);return ws._wsid;}function WeakSet(){this._wsid='__ws'+(_id++);}WeakSet.prototype.add=function(o){if(o===null||typeof o!=='object'&&typeof o!=='function')throw new TypeError('Invalid value used in weak set');Object.defineProperty(o,_key(this),{value:true,configurable:true,enumerable:false});return this;};WeakSet.prototype.has=function(o){if(o===null||typeof o!=='object'&&typeof o!=='function')return false;return!!o[_key(this)];};WeakSet.prototype['delete']=function(o){if(o===null||typeof o!=='object'&&typeof o!=='function')return false;var k=_key(this);if(!o[k])return false;delete o[k];return true;};return WeakSet;})();}"
+        "if(typeof WeakMap==='undefined'){global.WeakMap=(function(){var _id=0;function _key(wm){if(!wm._wmid)wm._wmid='__wm'+(_id++);return wm._wmid;}function WeakMap(){this._wmid='__wm'+(_id++);}WeakMap.prototype.set=function(k,v){if(k===null||typeof k!=='object'&&typeof k!=='function')throw new TypeError('Invalid value used as weak map key');Object.defineProperty(k,_key(this),{value:v,writable:true,configurable:true,enumerable:false});return this;};WeakMap.prototype.get=function(k){if(k===null||typeof k!=='object'&&typeof k!=='function')return undefined;return k[_key(this)];};WeakMap.prototype.has=function(k){if(k===null||typeof k!=='object'&&typeof k!=='function')return false;return _key(this) in k;};WeakMap.prototype['delete']=function(k){if(k===null||typeof k!=='object'&&typeof k!=='function')return false;var key=_key(this);if(!(key in k))return false;delete k[key];return true;};return WeakMap;})();}",
+        0, (uint32_t)COLLECT_PF },
+    {
+        // ES2017: Object.entries, padStart/padEnd, getOwnPropertyDescriptors
+        "if(!Object.entries){Object.entries=function(o){var k=Object.keys(o),r=[],i;for(i=0;i<k.length;i++)r.push([k[i],o[k[i]]]);return r;};}"
+        "if(!String.prototype.padStart){String.prototype.padStart=function(n,c){c=c||' ';var s=String(this);while(s.length<n)s=c+s;return s.slice(-n);};}"
+        "if(!String.prototype.padEnd){String.prototype.padEnd=function(n,c){c=c||' ';var s=String(this);while(s.length<n)s=s+c;return s.slice(0,n);};}"
+        "if(!Object.getOwnPropertyDescriptors){Object.getOwnPropertyDescriptors=function(o){var k=Object.getOwnPropertyNames(o),r={},i;for(i=0;i<k.length;i++)r[k[i]]=Object.getOwnPropertyDescriptor(o,k[i]);if(Object.getOwnPropertySymbols){var s=Object.getOwnPropertySymbols(o);for(i=0;i<s.length;i++)r[s[i]]=Object.getOwnPropertyDescriptor(o,s[i]);}return r;};}",
+        0, (uint32_t)ES2017_PF },
     { NULL, 0}
 };
 
@@ -472,6 +488,92 @@ static const char *ts_node_field_name(TSNode node)
     ts_tree_cursor_delete(&cursor);
     return result;
 }
+/* Check if node is inside a loop (for/while/do) within the same function scope. */
+static int is_inside_loop(TSNode node)
+{
+    TSNode anc = ts_node_parent(node);
+    while (!ts_node_is_null(anc))
+    {
+        const char *t = ts_node_type(anc);
+        if (strcmp(t, "for_statement") == 0 || strcmp(t, "while_statement") == 0 ||
+            strcmp(t, "do_statement") == 0 || strcmp(t, "for_in_statement") == 0)
+            return 1;
+        /* Stop at function boundaries */
+        if (strcmp(t, "function_declaration") == 0 || strcmp(t, "function_expression") == 0 ||
+            strcmp(t, "function") == 0 || strcmp(t, "arrow_function") == 0 ||
+            strcmp(t, "generator_function_declaration") == 0 || strcmp(t, "generator_function") == 0 ||
+            strcmp(t, "generator_function_expression") == 0 || strcmp(t, "method_definition") == 0 ||
+            strcmp(t, "program") == 0)
+            return 0;
+        anc = ts_node_parent(anc);
+    }
+    return 0;
+}
+
+/* Walk the AST and emit warnings for unsupported patterns.
+   This is a read-only scan — no edits, no claimed ranges. */
+/* Scan AST for unsupported patterns and warn on stderr (read-only — no edits).
+   Does not stop transpilation — the script still runs. */
+static void warn_unsupported_patterns(TSNode root)
+{
+    TSTreeCursor cur = ts_tree_cursor_new(root);
+    for (;;)
+    {
+        TSNode n = ts_tree_cursor_current_node(&cur);
+        const char *nt = ts_node_type(n);
+
+        if (strcmp(nt, "await_expression") == 0)
+        {
+            if (is_inside_loop(n))
+            {
+                TSPoint p = ts_node_start_point(n);
+                fprintf(stderr, "Transpiler warning (line %u): 'await' inside a loop is not supported "
+                        "and may not work correctly. Move the await outside the loop or use Promise.all().\n", p.row + 1);
+            }
+            else
+            {
+                TSNode par = ts_node_parent(n);
+                if (!ts_node_is_null(par) && strcmp(ts_node_type(par), "variable_declarator") == 0)
+                {
+                    TSNode decl_name = ts_node_child_by_field_name(par, "name", 4);
+                    if (!ts_node_is_null(decl_name))
+                    {
+                        const char *dnt = ts_node_type(decl_name);
+                        if (strcmp(dnt, "object_pattern") == 0 || strcmp(dnt, "array_pattern") == 0)
+                        {
+                            TSPoint p = ts_node_start_point(n);
+                            fprintf(stderr, "Transpiler warning (line %u): destructuring with 'await' "
+                                    "(e.g. 'const {a, b} = await expr') is not supported. "
+                                    "Use a temp variable: 'const tmp = await expr; const {a, b} = tmp;'\n", p.row + 1);
+                        }
+                    }
+                }
+            }
+        }
+        else if (strcmp(nt, "yield_expression") == 0)
+        {
+            if (is_inside_loop(n))
+            {
+                TSPoint p = ts_node_start_point(n);
+                fprintf(stderr, "Transpiler warning (line %u): 'yield' inside a loop is not supported "
+                        "and may not work correctly. Use a manual iteration pattern instead.\n", p.row + 1);
+            }
+        }
+
+        if (ts_tree_cursor_goto_first_child(&cur))
+            continue;
+        while (!ts_tree_cursor_goto_next_sibling(&cur))
+        {
+            if (!ts_tree_cursor_goto_parent(&cur))
+            {
+                ts_tree_cursor_delete(&cur);
+                return;
+            }
+        }
+    }
+}
+
+/*
 // Optional AST outline (use with --printTree)
 
 static void print_outline(const char *src, TSNode node, int depth, FILE *f)
@@ -1043,9 +1145,34 @@ static int collect_flat_destructure_bindings(TSNode pattern, const char *src, co
                 idx++;
                 last_was_comma_or_open = 0;
             }
+            else if (strcmp(kt, "rest_pattern") == 0)
+            {
+                /* [...rest] → Array.prototype.slice.call(base, idx) */
+                TSNode child = ts_node_named_child(k, 0);
+                if (!ts_node_is_null(child) && strcmp(ts_node_type(child), "identifier") == 0)
+                {
+                    size_t ns = ts_node_start_byte(child), ne = ts_node_end_byte(child);
+                    char *repl = NULL;
+                    REMALLOC(repl, strlen(base) + 64);
+                    sprintf(repl, "Array.prototype.slice.call(%s, %d)", base, idx);
+                    binds_add(out, src + ns, ne - ns, repl);
+                    free(repl);
+                }
+                last_was_comma_or_open = 0;
+            }
+            else if (strcmp(kt, "object_pattern") == 0 || strcmp(kt, "array_pattern") == 0)
+            {
+                /* nested pattern in array element */
+                char buf[64];
+                snprintf(buf, sizeof(buf), "%s[%d]", base, idx);
+                if (!collect_flat_destructure_bindings(k, src, buf, out))
+                    return 0;
+                idx++;
+                last_was_comma_or_open = 0;
+            }
             else
             {
-                return 0; // nested not supported
+                return 0;
             }
         }
         return 1;
@@ -1053,6 +1180,10 @@ static int collect_flat_destructure_bindings(TSNode pattern, const char *src, co
     else if (strcmp(pt, "object_pattern") == 0)
     {
         uint32_t c = ts_node_child_count(pattern);
+        /* Track extracted keys for rest pattern support */
+        rp_string *extracted_keys = rp_string_new(64);
+        int nkeys = 0;
+
         for (uint32_t i = 0; i < c; i++)
         {
             TSNode k = ts_node_child(pattern, i);
@@ -1064,15 +1195,51 @@ static int collect_flat_destructure_bindings(TSNode pattern, const char *src, co
                 TSNode key = ts_node_child_by_field_name(k, "key", 3);
                 TSNode val = ts_node_child_by_field_name(k, "value", 5);
                 if (ts_node_is_null(key) || ts_node_is_null(val))
+                {
+                    rp_string_free(extracted_keys);
                     return 0;
-                if (!(strcmp(ts_node_type(key), "property_identifier") == 0 ||
-                      strcmp(ts_node_type(key), "identifier") == 0))
-                    return 0;
+                }
+                const char *keytype = ts_node_type(key);
                 size_t ks = ts_node_start_byte(key), ke = ts_node_end_byte(key);
                 size_t klen = ke - ks;
                 char *nested_base = NULL;
-                REMALLOC(nested_base, strlen(base) + 1 + klen + 1);
-                sprintf(nested_base, "%s.%.*s", base, (int)klen, src + ks);
+
+                if (strcmp(keytype, "computed_property_name") == 0)
+                {
+                    /* {[expr]: name} — computed key */
+                    /* The expression is inside brackets: [expr] — extract the inner expr */
+                    TSNode inner = ts_node_named_child(key, 0);
+                    if (ts_node_is_null(inner))
+                    {
+                        rp_string_free(extracted_keys);
+                        return 0;
+                    }
+                    size_t is = ts_node_start_byte(inner), ie = ts_node_end_byte(inner);
+                    REMALLOC(nested_base, strlen(base) + 1 + (ie - is) + 2);
+                    sprintf(nested_base, "%s[%.*s]", base, (int)(ie - is), src + is);
+                    /* Track computed key for rest exclusion */
+                    if (nkeys > 0) rp_string_puts(extracted_keys, ", ");
+                    rp_string_putsn(extracted_keys, src + is, ie - is);
+                    nkeys++;
+                }
+                else if (strcmp(keytype, "property_identifier") == 0 ||
+                         strcmp(keytype, "identifier") == 0)
+                {
+                    REMALLOC(nested_base, strlen(base) + 1 + klen + 1);
+                    sprintf(nested_base, "%s.%.*s", base, (int)klen, src + ks);
+                    /* Track key for rest exclusion */
+                    if (nkeys > 0) rp_string_puts(extracted_keys, ", ");
+                    rp_string_puts(extracted_keys, "\"");
+                    rp_string_putsn(extracted_keys, src + ks, klen);
+                    rp_string_puts(extracted_keys, "\"");
+                    nkeys++;
+                }
+                else
+                {
+                    rp_string_free(extracted_keys);
+                    return 0;
+                }
+
                 const char *vt = ts_node_type(val);
                 if (strcmp(vt, "identifier") == 0)
                 {
@@ -1084,12 +1251,74 @@ static int collect_flat_destructure_bindings(TSNode pattern, const char *src, co
                     if (!collect_flat_destructure_bindings(val, src, nested_base, out))
                     {
                         free(nested_base);
+                        rp_string_free(extracted_keys);
+                        return 0;
+                    }
+                }
+                else if (strcmp(vt, "assignment_pattern") == 0)
+                {
+                    /* rename + default: {x: rx = 5} — val is assignment_pattern */
+                    TSNode aleft = ts_node_child_by_field_name(val, "left", 4);
+                    TSNode aright = ts_node_child_by_field_name(val, "right", 5);
+                    if (!ts_node_is_null(aleft) && strcmp(ts_node_type(aleft), "identifier") == 0)
+                    {
+                        size_t als = ts_node_start_byte(aleft), ale = ts_node_end_byte(aleft);
+                        char *dv = NULL;
+                        if (!ts_node_is_null(aright))
+                        {
+                            size_t ds = ts_node_start_byte(aright), de = ts_node_end_byte(aright);
+                            dv = (char *)malloc(de - ds + 1);
+                            memcpy(dv, src + ds, de - ds);
+                            dv[de - ds] = '\0';
+                        }
+                        binds_add_def(out, src + als, ale - als, nested_base, dv);
+                        if (dv) free(dv);
+                    }
+                    else if (!ts_node_is_null(aleft) &&
+                             (strcmp(ts_node_type(aleft), "object_pattern") == 0 ||
+                              strcmp(ts_node_type(aleft), "array_pattern") == 0))
+                    {
+                        /* {a: {b: x} = {}} — nested pattern with intermediate default */
+                        char *dv = NULL;
+                        if (!ts_node_is_null(aright))
+                        {
+                            size_t ds = ts_node_start_byte(aright), de = ts_node_end_byte(aright);
+                            dv = (char *)malloc(de - ds + 1);
+                            memcpy(dv, src + ds, de - ds);
+                            dv[de - ds] = '\0';
+                        }
+                        /* Use temp expression: (base.key !== undefined ? base.key : default) */
+                        char *safe_base = NULL;
+                        if (dv)
+                        {
+                            REMALLOC(safe_base, strlen(nested_base) * 2 + strlen(dv) + 32);
+                            sprintf(safe_base, "(%s !== undefined ? %s : %s)", nested_base, nested_base, dv);
+                            free(dv);
+                        }
+                        else
+                        {
+                            safe_base = strdup(nested_base);
+                        }
+                        if (!collect_flat_destructure_bindings(aleft, src, safe_base, out))
+                        {
+                            free(safe_base);
+                            free(nested_base);
+                            rp_string_free(extracted_keys);
+                            return 0;
+                        }
+                        free(safe_base);
+                    }
+                    else
+                    {
+                        free(nested_base);
+                        rp_string_free(extracted_keys);
                         return 0;
                     }
                 }
                 else
                 {
                     free(nested_base);
+                    rp_string_free(extracted_keys);
                     return 0;
                 }
                 free(nested_base);
@@ -1104,6 +1333,12 @@ static int collect_flat_destructure_bindings(TSNode pattern, const char *src, co
                 sprintf(repl, "%s.%.*s", base, (int)nlen, src + ns);
                 binds_add(out, src + ns, nlen, repl);
                 free(repl);
+                /* Track key for rest exclusion */
+                if (nkeys > 0) rp_string_puts(extracted_keys, ", ");
+                rp_string_puts(extracted_keys, "\"");
+                rp_string_putsn(extracted_keys, src + ns, nlen);
+                rp_string_puts(extracted_keys, "\"");
+                nkeys++;
             }
             else if (strcmp(kt, "object_assignment_pattern") == 0 ||
                      strcmp(kt, "assignment_pattern") == 0)
@@ -1112,12 +1347,18 @@ static int collect_flat_destructure_bindings(TSNode pattern, const char *src, co
                 TSNode left = ts_node_child_by_field_name(k, "left", 4);
                 TSNode right = ts_node_child_by_field_name(k, "right", 5);
                 if (ts_node_is_null(left))
+                {
+                    rp_string_free(extracted_keys);
                     return 0;
+                }
                 const char *lt = ts_node_type(left);
                 if (strcmp(lt, "shorthand_property_identifier_pattern") != 0 &&
                     strcmp(lt, "shorthand_property_identifier") != 0 &&
                     strcmp(lt, "identifier") != 0)
+                {
+                    rp_string_free(extracted_keys);
                     return 0;
+                }
                 size_t ns = ts_node_start_byte(left), ne = ts_node_end_byte(left);
                 size_t nlen = ne - ns;
                 char *repl = NULL;
@@ -1134,10 +1375,39 @@ static int collect_flat_destructure_bindings(TSNode pattern, const char *src, co
                 binds_add_def(out, src + ns, nlen, repl, dv);
                 free(repl);
                 if (dv) free(dv);
+                /* Track key for rest exclusion */
+                if (nkeys > 0) rp_string_puts(extracted_keys, ", ");
+                rp_string_puts(extracted_keys, "\"");
+                rp_string_putsn(extracted_keys, src + ns, nlen);
+                rp_string_puts(extracted_keys, "\"");
+                nkeys++;
+            }
+            else if (strcmp(kt, "rest_pattern") == 0)
+            {
+                /* {...rest} — collect all properties not already extracted */
+                TSNode child = ts_node_named_child(k, 0);
+                if (!ts_node_is_null(child) && strcmp(ts_node_type(child), "identifier") == 0)
+                {
+                    size_t ns = ts_node_start_byte(child), ne = ts_node_end_byte(child);
+                    /* Generate: (function(s,e){var r={};for(var k in s)if(Object.prototype.hasOwnProperty.call(s,k)&&e.indexOf(k)<0)r[k]=s[k];return r;})(base, [keys]) */
+                    rp_string *repl = rp_string_new(128);
+                    rp_string_puts(repl, "(function(s,e){var r={};for(var k in s)if(Object.prototype.hasOwnProperty.call(s,k)&&e.indexOf(k)<0)r[k]=s[k];return r;})(");
+                    rp_string_puts(repl, base);
+                    rp_string_puts(repl, ",[");
+                    if (extracted_keys->str)
+                        rp_string_putsn(repl, extracted_keys->str, extracted_keys->len);
+                    rp_string_puts(repl, "])");
+                    binds_add(out, src + ns, ne - ns, repl->str);
+                    rp_string_free(repl);
+                }
             }
             else
+            {
+                rp_string_free(extracted_keys);
                 return 0;
+            }
         }
+        rp_string_free(extracted_keys);
         return 1;
     }
     return 0;
@@ -1231,6 +1501,13 @@ static int rewrite_destructuring_assignment(EditList *edits, const char *src, TS
     TSNode expr = ts_node_named_child(node, 0);
     if (ts_node_is_null(expr))
         return 0;
+    /* Handle ({a, b} = obj) — parenthesized destructuring assignment */
+    if (strcmp(ts_node_type(expr), "parenthesized_expression") == 0)
+    {
+        TSNode inner = ts_node_named_child(expr, 0);
+        if (!ts_node_is_null(inner) && strcmp(ts_node_type(inner), "assignment_expression") == 0)
+            expr = inner;
+    }
     if (strcmp(ts_node_type(expr), "assignment_expression") != 0)
         return 0;
 
@@ -1309,7 +1586,24 @@ static char *rewrite_concise_body_with_bindings(const char *src, TSNode expr, co
                 size_t blen = strlen(b->a[i].name);
                 if (nlen == blen && strncmp(src + ns, b->a[i].name, nlen) == 0)
                 {
-                    add_edit(&tmp, ns - es, ne - es, b->a[i].repl, claimed);
+                    if (b->a[i].defval)
+                    {
+                        /* Emit (repl !== undefined ? repl : defval) */
+                        rp_string *dout = rp_string_new(64);
+                        rp_string_puts(dout, "(");
+                        rp_string_puts(dout, b->a[i].repl);
+                        rp_string_puts(dout, " !== undefined ? ");
+                        rp_string_puts(dout, b->a[i].repl);
+                        rp_string_puts(dout, " : ");
+                        rp_string_puts(dout, b->a[i].defval);
+                        rp_string_puts(dout, ")");
+                        add_edit_take_ownership(&tmp, ns - es, ne - es, rp_string_steal(dout), claimed);
+                        dout = rp_string_free(dout);
+                    }
+                    else
+                    {
+                        add_edit(&tmp, ns - es, ne - es, b->a[i].repl, claimed);
+                    }
                     break;
                 }
             }
@@ -2377,6 +2671,163 @@ static int rewrite_function_rest(EditList *edits, const char *src, TSNode func_n
     return 1;
 }
 
+/* Rewrite destructuring parameters in regular functions:
+ *   function f({x, y}, a) { ... }
+ *   → function f(_dp0, a) { var x = _dp0.x, y = _dp0.y; ... }
+ * Also handles: function f({x = 1} = {}) { ... }
+ */
+static unsigned _dp_counter = 0;
+static int rewrite_function_destructuring_params(EditList *edits, const char *src, TSNode func_node,
+                                                  RangeList *claimed, int overlaps)
+{
+    TSNode params = ts_node_child_by_field_name(func_node, "parameters", 10);
+    TSNode body = ts_node_child_by_field_name(func_node, "body", 4);
+    if (ts_node_is_null(params) || ts_node_is_null(body))
+        return 0;
+
+    /* Scan for destructuring params */
+    uint32_t np = ts_node_named_child_count(params);
+    int has_destr = 0;
+    for (uint32_t i = 0; i < np; i++)
+    {
+        TSNode p = ts_node_named_child(params, i);
+        const char *pt = ts_node_type(p);
+        if (strcmp(pt, "object_pattern") == 0 || strcmp(pt, "array_pattern") == 0)
+        {
+            has_destr = 1;
+            break;
+        }
+        if (strcmp(pt, "assignment_pattern") == 0)
+        {
+            TSNode left = ts_node_child_by_field_name(p, "left", 4);
+            if (!ts_node_is_null(left))
+            {
+                const char *lt = ts_node_type(left);
+                if (strcmp(lt, "object_pattern") == 0 || strcmp(lt, "array_pattern") == 0)
+                {
+                    has_destr = 1;
+                    break;
+                }
+            }
+        }
+    }
+    if (!has_destr)
+        return 0;
+
+    if (overlaps)
+        return 1;
+
+    size_t ps = ts_node_start_byte(params), pe = ts_node_end_byte(params);
+    size_t bs = ts_node_start_byte(body);
+
+    /* Build new param list and body injections */
+    rp_string *new_params = rp_string_new(64);
+    rp_string *body_inj = rp_string_new(128);
+
+    rp_string_puts(new_params, "(");
+    for (uint32_t i = 0; i < np; i++)
+    {
+        if (i > 0)
+            rp_string_puts(new_params, ", ");
+
+        TSNode p = ts_node_named_child(params, i);
+        const char *pt = ts_node_type(p);
+        size_t pps = ts_node_start_byte(p), ppe = ts_node_end_byte(p);
+
+        TSNode destr_pat = {{0}};
+        char *param_def = NULL;
+
+        if (strcmp(pt, "object_pattern") == 0 || strcmp(pt, "array_pattern") == 0)
+        {
+            destr_pat = p;
+        }
+        else if (strcmp(pt, "assignment_pattern") == 0)
+        {
+            TSNode left = ts_node_child_by_field_name(p, "left", 4);
+            TSNode right = ts_node_child_by_field_name(p, "right", 5);
+            if (!ts_node_is_null(left))
+            {
+                const char *lt = ts_node_type(left);
+                if (strcmp(lt, "object_pattern") == 0 || strcmp(lt, "array_pattern") == 0)
+                {
+                    destr_pat = left;
+                    if (!ts_node_is_null(right))
+                    {
+                        size_t ds = ts_node_start_byte(right), de = ts_node_end_byte(right);
+                        param_def = (char *)malloc(de - ds + 1);
+                        memcpy(param_def, src + ds, de - ds);
+                        param_def[de - ds] = '\0';
+                    }
+                }
+            }
+        }
+
+        if (!ts_node_is_null(destr_pat))
+        {
+            /* Generate temp name and collect bindings */
+            char tmpname[32];
+            snprintf(tmpname, sizeof(tmpname), "_dp%u", _dp_counter++);
+            rp_string_puts(new_params, tmpname);
+
+            /* Inject param default if present */
+            if (param_def)
+            {
+                rp_string_appendf(body_inj, "if (%s === void 0) %s = %s; ", tmpname, tmpname, param_def);
+                free(param_def);
+            }
+
+            /* Collect bindings and emit var declarations */
+            const char *base = (strcmp(ts_node_type(destr_pat), "array_pattern") == 0) ? tmpname : tmpname;
+            Bindings binds;
+            binds_init(&binds);
+            if (collect_flat_destructure_bindings(destr_pat, src, base, &binds) && binds.len > 0)
+            {
+                rp_string_puts(body_inj, "var ");
+                for (size_t bi = 0; bi < binds.len; bi++)
+                {
+                    if (bi > 0)
+                        rp_string_puts(body_inj, ", ");
+                    rp_string_puts(body_inj, binds.a[bi].name);
+                    rp_string_puts(body_inj, " = ");
+                    if (binds.a[bi].defval)
+                    {
+                        rp_string_puts(body_inj, binds.a[bi].repl);
+                        rp_string_puts(body_inj, " !== undefined ? ");
+                        rp_string_puts(body_inj, binds.a[bi].repl);
+                        rp_string_puts(body_inj, " : ");
+                        rp_string_puts(body_inj, binds.a[bi].defval);
+                    }
+                    else
+                    {
+                        rp_string_puts(body_inj, binds.a[bi].repl);
+                    }
+                }
+                rp_string_puts(body_inj, "; ");
+            }
+            binds_free(&binds);
+        }
+        else
+        {
+            /* Non-destructured param: copy as-is */
+            rp_string_putsn(new_params, src + pps, ppe - pps);
+            if (param_def) free(param_def);
+        }
+    }
+    rp_string_puts(new_params, ")");
+
+    /* Apply edits */
+    add_edit_take_ownership(edits, ps, pe, rp_string_steal(new_params), claimed);
+    new_params = rp_string_free(new_params);
+
+    if (body_inj->len)
+        add_edit_take_ownership(edits, bs + 1, bs + 1, rp_string_steal(body_inj), claimed);
+    else
+        body_inj = rp_string_free(body_inj);
+    body_inj = rp_string_free(body_inj);
+
+    return 1;
+}
+
 static char *make_raw_rep(const char *orig, size_t l)
 {
     const char *s = orig;
@@ -2988,6 +3439,7 @@ static int rewrite_arrow_function_node(EditList *edits, const char *src, TSNode 
     Bindings binds;
     binds_init(&binds);
     const char *temp = NULL;
+    char *param_default = NULL;  /* parameter-level default e.g. ({x}={}) => ... */
     if (single)
     {
         const char *pt = ts_node_type(pattern);
@@ -3004,6 +3456,7 @@ static int rewrite_arrow_function_node(EditList *edits, const char *src, TSNode 
         else if (strcmp(pt, "assignment_pattern") == 0)
         {
             TSNode left = ts_node_child_by_field_name(pattern, "left", 4);
+            TSNode right = ts_node_child_by_field_name(pattern, "right", 5);
             if (!ts_node_is_null(left))
             {
                 const char *lt = ts_node_type(left);
@@ -3018,6 +3471,14 @@ static int rewrite_arrow_function_node(EditList *edits, const char *src, TSNode 
                     did = collect_flat_destructure_bindings(left, src, temp, &binds);
                 }
             }
+            /* capture the parameter default (e.g. {} in ({x}={}) => ...) */
+            if (did && !ts_node_is_null(right))
+            {
+                size_t ds = ts_node_start_byte(right), de = ts_node_end_byte(right);
+                param_default = malloc(de - ds + 1);
+                memcpy(param_default, src + ds, de - ds);
+                param_default[de - ds] = '\0';
+            }
         }
     }
 
@@ -3025,11 +3486,14 @@ static int rewrite_arrow_function_node(EditList *edits, const char *src, TSNode 
     if (did && !is_block)
     {
         char *rew = rewrite_concise_body_with_bindings(src, body, &binds, claimed);
-        size_t cap = 64 + strlen(temp) + strlen(rew) + 1;
-
-        REMALLOC(rep, cap);
-        snprintf(rep, cap, "function (%s) { return %s; }", temp, rew);
+        rp_string *rbuf = rp_string_new(64);
+        rp_string_appendf(rbuf, "function (%s) { ", temp);
+        if (param_default)
+            rp_string_appendf(rbuf, "if (%s === void 0) %s = %s; ", temp, temp, param_default);
+        rp_string_appendf(rbuf, "return %s; }", rew);
         free(rew);
+        rep = rp_string_steal(rbuf);
+        rbuf = rp_string_free(rbuf);
     }
     else if (did && is_block)
     {
@@ -3040,51 +3504,50 @@ static int rewrite_arrow_function_node(EditList *edits, const char *src, TSNode 
             brace++;
         if (brace < body_len)
             brace++;
-        size_t decl_cap = 16;
-        char *decl = NULL;
-        int w;
-        size_t k;
 
-        for (size_t i = 0; i < binds.len; i++)
-            decl_cap += strlen(binds.a[i].name) + strlen(binds.a[i].repl) + 4;
-
-        REMALLOC(decl, decl_cap);
-
-        size_t dj = 0;
-        memcpy(decl + dj, "var ", 4);
-        dj += 4;
+        rp_string *decls = rp_string_new(64);
+        rp_string_puts(decls, "var ");
         for (size_t i = 0; i < binds.len; i++)
         {
-            size_t nlen = strlen(binds.a[i].name), rlen = strlen(binds.a[i].repl);
-            memcpy(decl + dj, binds.a[i].name, nlen);
-            dj += nlen;
-            decl[dj++] = '=';
-            memcpy(decl + dj, binds.a[i].repl, rlen);
-            dj += rlen;
-            if (i + 1 < binds.len)
+            rp_string_puts(decls, binds.a[i].name);
+            rp_string_puts(decls, "=");
+            if (binds.a[i].defval)
             {
-                decl[dj++] = ',';
-                decl[dj++] = ' ';
+                rp_string_puts(decls, binds.a[i].repl);
+                rp_string_puts(decls, " !== undefined ? ");
+                rp_string_puts(decls, binds.a[i].repl);
+                rp_string_puts(decls, " : ");
+                rp_string_puts(decls, binds.a[i].defval);
             }
+            else
+            {
+                rp_string_puts(decls, binds.a[i].repl);
+            }
+            if (i + 1 < binds.len)
+                rp_string_puts(decls, ", ");
         }
-        decl[dj++] = ';';
-        decl[dj++] = ' ';
-        decl[dj] = 0;
+        rp_string_puts(decls, "; ");
 
-        size_t cap = 64 + (size_t)strlen(temp) + body_len + strlen(decl) + 1;
+        /* Inject param default if present */
+        rp_string *pdef = NULL;
+        if (param_default)
+        {
+            pdef = rp_string_new(32);
+            rp_string_appendf(pdef, "if (%s === void 0) %s = %s; ", temp, temp, param_default);
+        }
 
-        REMALLOC(rep, cap);
-
-        w = snprintf(rep, cap, "function (%s) ", temp);
-        k = (size_t)w;
-        memcpy(rep + k, bsrc, brace);
-        k += brace;
-        memcpy(rep + k, decl, strlen(decl));
-        k += strlen(decl);
-        memcpy(rep + k, bsrc + brace, body_len - brace);
-        k += (body_len - brace);
-        rep[k] = '\0';
-        free(decl);
+        rp_string *rbuf2 = rp_string_new(128);
+        rp_string_appendf(rbuf2, "function (%s) ", temp);
+        rp_string_putsn(rbuf2, bsrc, brace); /* up to and including '{' */
+        if (pdef)
+            rp_string_puts(rbuf2, pdef->str);
+        rp_string_puts(rbuf2, decls->str);
+        rp_string_putsn(rbuf2, bsrc + brace, body_len - brace);
+        rep = rp_string_steal(rbuf2);
+        rbuf2 = rp_string_free(rbuf2);
+        if (pdef)
+            pdef = rp_string_free(pdef);
+        decls = rp_string_free(decls);
     }
     else
     {
@@ -3192,6 +3655,8 @@ static int rewrite_arrow_function_node(EditList *edits, const char *src, TSNode 
     }
     add_edit_take_ownership(edits, ns, ne, rep, claimed);
     binds_free(&binds);
+    if (param_default)
+        free(param_default);
     return 1;
 }
 static int rewrite_array_spread(EditList *edits, const char *src, TSNode arr, int isObject, RangeList *claimed,
@@ -3223,13 +3688,11 @@ static int rewrite_array_spread(EditList *edits, const char *src, TSNode arr, in
         if (strcmp(ts_node_type(kid), "spread_element") == 0)
         {
             cnt2 = ts_node_child_count(kid);
-            // printf("%d child elem of spread\n", cnt2);
             for (j = 0; j < cnt2; j++)
             {
                 TSNode gkid = ts_node_child(kid, j);
-                // printf("looking at '%.*s'\n", (ts_node_end_byte(gkid) - ts_node_start_byte(gkid)),
-                // src+ts_node_start_byte(gkid));
-                if (strcmp(ts_node_type(gkid), "identifier") == 0)
+                /* Handle any expression after "..." (identifier, call_expression, etc.) */
+                if (ts_node_is_named(gkid) && strcmp(ts_node_type(gkid), "spread_element") != 0)
                 {
                     needed += ((ts_node_end_byte(gkid) - ts_node_start_byte(gkid)) + spreadsize);
                     nspread++;
@@ -3323,7 +3786,8 @@ static int rewrite_array_spread(EditList *edits, const char *src, TSNode arr, in
             for (j = 0; j < cnt2; j++)
             {
                 TSNode gkid = ts_node_child(kid, j);
-                if (strcmp(ts_node_type(gkid), "identifier") == 0)
+                /* Handle any expression after "..." */
+                if (ts_node_is_named(gkid) && strcmp(ts_node_type(gkid), "spread_element") != 0)
                 {
                     size_t start = ts_node_start_byte(gkid), end = ts_node_end_byte(gkid);
                     addstr(fpref, 32);
@@ -3548,7 +4012,7 @@ static void _emit_stmt_async_lower(rp_string *dst, const char *src, size_t ss, s
             if(*p!=';')
                 rp_string_putc(dst, ';');
         }
-        rp_string_puts(dst, "_context.next = ");
+        rp_string_puts(dst, "_context._y=true;_context.next = ");
         rp_string_puts(dst, tmp);
         rp_string_puts(dst, "; return (");
 
@@ -3642,7 +4106,13 @@ static char *_build_regenerator_switch_body(const char *src, TSNode body)
             {
                 TSNode first_decl = ts_node_named_child(stmt, 0);
                 if (!ts_node_is_null(first_decl))
+                {
+                    /* Emit leading newlines before adjusting ss past the keyword */
+                    size_t stmt_s = ts_node_start_byte(stmt);
+                    if (ss < stmt_s)
+                        rp_string_putsn(out, src + ss, stmt_s - ss);
                     ss = ts_node_start_byte(first_decl);
+                }
             }
 
             if (strcmp(stmt_type, "comment") == 0)
@@ -3944,6 +4414,16 @@ static void _collect_yields_shallow(TSNode node, _AsyncNodeVec *out)
         _collect_yields_shallow(ts_node_child(node, i), out);
 }
 
+/* Quick text scan for "yield" keyword in a source range */
+static int _text_has_yield(const char *src, size_t ss, size_t se)
+{
+    for (size_t k = ss; k + 5 <= se; k++)
+        if (src[k] == 'y' && src[k+1] == 'i' && src[k+2] == 'e'
+            && src[k+3] == 'l' && src[k+4] == 'd')
+            return 1;
+    return 0;
+}
+
 // Lower a statement containing 0..N yields into state-machine steps
 static void _emit_stmt_yield_lower(rp_string *dst, const char *src, size_t ss, size_t se, TSNode stmt_node,
                                    int *p_next_label)
@@ -3985,7 +4465,7 @@ static void _emit_stmt_yield_lower(rp_string *dst, const char *src, size_t ss, s
             if(*p!=';')
                 rp_string_putc(dst, ';');
         }
-        rp_string_puts(dst, "_context.next = ");
+        rp_string_puts(dst, "_context._y=true;_context.next = ");
         rp_string_puts(dst, tmp);
         rp_string_puts(dst, "; return (");
 
@@ -4017,6 +4497,198 @@ static void _emit_stmt_yield_lower(rp_string *dst, const char *src, size_t ss, s
         free(av.a);
 }
 
+/* Process children of a statement_block, lowering yields into state-machine
+   cases.  Recursively decomposes while/for loops that contain yields. */
+static void _emit_yield_body(rp_string *out, const char *src, TSNode block, int *p_next_label)
+{
+    uint32_t sc = ts_node_named_child_count(block);
+    for (uint32_t i = 0; i < sc; i++)
+    {
+        TSNode stmt = ts_node_named_child(block, i);
+        size_t ss = ts_node_start_byte(stmt), se = ts_node_end_byte(stmt);
+        const char *stmt_type = ts_node_type(stmt);
+        int is_var_decl = (strcmp(stmt_type, "variable_declaration") == 0 ||
+                           strcmp(stmt_type, "lexical_declaration") == 0);
+        int has_yield = _text_has_yield(src, ss, se);
+
+        /* Back up whitespace for line-number preservation */
+        while (ss > 0 && isspace(*(src + ss - 1)))
+            ss--;
+
+        /* Strip var/let/const keyword for declarations containing yield */
+        if (is_var_decl && has_yield)
+        {
+            TSNode first_decl = ts_node_named_child(stmt, 0);
+            if (!ts_node_is_null(first_decl))
+            {
+                /* Emit leading newlines before adjusting ss past the keyword */
+                size_t stmt_s = ts_node_start_byte(stmt);
+                if (ss < stmt_s)
+                    rp_string_putsn(out, src + ss, stmt_s - ss);
+                ss = ts_node_start_byte(first_decl);
+            }
+        }
+
+        if (strcmp(stmt_type, "comment") == 0)
+        {
+            /* Convert // to block comment */
+            size_t orig_ss = ts_node_start_byte(stmt);
+            if (ss < orig_ss)
+                rp_string_putsn(out, src + ss, orig_ss - ss);
+            if (se - orig_ss >= 2 && src[orig_ss] == '/' && src[orig_ss + 1] == '/')
+            {
+                rp_string_puts(out, "/*");
+                rp_string_putsn(out, src + orig_ss + 2, se - orig_ss - 2);
+                rp_string_puts(out, "*/");
+            }
+            else
+                rp_string_putsn(out, src + orig_ss, se - orig_ss);
+        }
+        else if (is_var_decl && !has_yield)
+        {
+            _emit_var_decl_as_assignments(out, src, stmt);
+        }
+        else if (strcmp(stmt_type, "while_statement") == 0 && has_yield)
+        {
+            /* Decompose: while (cond) { body }
+               -> case COND: if(!cond){_context.next=EXIT;break;}
+                  <body stmts with yields lowered>
+                  _context.next=COND;break;
+                  case EXIT: */
+            TSNode cond = ts_node_child_by_field_name(stmt, "condition", 9);
+            TSNode wbody = ts_node_child_by_field_name(stmt, "body", 4);
+
+            *p_next_label += 3;
+            int cond_label = *p_next_label;
+            char ctmp[24];
+            snprintf(ctmp, sizeof(ctmp), "%d", cond_label);
+
+            /* Process body first so yield labels are allocated */
+            rp_string *wbuf = rp_string_new(256);
+            if (!ts_node_is_null(wbody) && strcmp(ts_node_type(wbody), "statement_block") == 0)
+                _emit_yield_body(wbuf, src, wbody, p_next_label);
+
+            *p_next_label += 3;
+            int exit_label = *p_next_label;
+            char etmp[24];
+            snprintf(etmp, sizeof(etmp), "%d", exit_label);
+
+            /* Condition check */
+            rp_string_puts(out, "case ");
+            rp_string_puts(out, ctmp);
+            rp_string_puts(out, ":");
+            if (!ts_node_is_null(cond))
+            {
+                size_t cs = ts_node_start_byte(cond), ce = ts_node_end_byte(cond);
+                rp_string_puts(out, "if(!");
+                rp_string_putsn(out, src + cs, ce - cs);
+                rp_string_puts(out, "){_context.next=");
+                rp_string_puts(out, etmp);
+                rp_string_puts(out, ";break;}");
+            }
+
+            /* Body */
+            rp_string_puts(out, wbuf->str);
+            wbuf = rp_string_free(wbuf);
+
+            if (out->len && out->str[out->len - 1] != ';')
+                rp_string_putc(out, ';');
+
+            /* Loop back */
+            rp_string_puts(out, "_context.next=");
+            rp_string_puts(out, ctmp);
+            rp_string_puts(out, ";break;");
+
+            /* Exit label */
+            rp_string_puts(out, "case ");
+            rp_string_puts(out, etmp);
+            rp_string_puts(out, ":");
+        }
+        else if (strcmp(stmt_type, "for_statement") == 0 && has_yield)
+        {
+            /* Decompose: for (init; cond; incr) { body }
+               -> init; case COND: if(!(cond)){..break;}
+                  <body> incr; _context.next=COND;break;
+                  case EXIT: */
+            TSNode init = ts_node_child_by_field_name(stmt, "initializer", 11);
+            TSNode cond = ts_node_child_by_field_name(stmt, "condition", 9);
+            TSNode incr = ts_node_child_by_field_name(stmt, "increment", 9);
+            TSNode fbody = ts_node_child_by_field_name(stmt, "body", 4);
+
+            /* Emit initializer (skip empty_statement) */
+            if (!ts_node_is_null(init) && strcmp(ts_node_type(init), "empty_statement") != 0)
+            {
+                size_t is2 = ts_node_start_byte(init), ie2 = ts_node_end_byte(init);
+                rp_string_putsn(out, src + is2, ie2 - is2);
+                if (src[ie2 - 1] != ';')
+                    rp_string_putc(out, ';');
+            }
+
+            *p_next_label += 3;
+            int cond_label = *p_next_label;
+            char ctmp[24];
+            snprintf(ctmp, sizeof(ctmp), "%d", cond_label);
+
+            rp_string *fbuf = rp_string_new(256);
+            if (!ts_node_is_null(fbody) && strcmp(ts_node_type(fbody), "statement_block") == 0)
+                _emit_yield_body(fbuf, src, fbody, p_next_label);
+
+            *p_next_label += 3;
+            int exit_label = *p_next_label;
+            char etmp[24];
+            snprintf(etmp, sizeof(etmp), "%d", exit_label);
+
+            rp_string_puts(out, "case ");
+            rp_string_puts(out, ctmp);
+            rp_string_puts(out, ":");
+
+            /* Condition check (skip if empty/missing — infinite loop) */
+            if (!ts_node_is_null(cond) && strcmp(ts_node_type(cond), "empty_statement") != 0)
+            {
+                size_t cs = ts_node_start_byte(cond), ce = ts_node_end_byte(cond);
+                /* Strip trailing ; from expression_statement */
+                while (ce > cs && (src[ce - 1] == ';' || isspace(src[ce - 1])))
+                    ce--;
+                rp_string_puts(out, "if(!(");
+                rp_string_putsn(out, src + cs, ce - cs);
+                rp_string_puts(out, ")){_context.next=");
+                rp_string_puts(out, etmp);
+                rp_string_puts(out, ";break;}");
+            }
+
+            rp_string_puts(out, fbuf->str);
+            fbuf = rp_string_free(fbuf);
+
+            /* Increment */
+            if (!ts_node_is_null(incr))
+            {
+                size_t is2 = ts_node_start_byte(incr), ie2 = ts_node_end_byte(incr);
+                rp_string_putsn(out, src + is2, ie2 - is2);
+                rp_string_putc(out, ';');
+            }
+
+            if (out->len && out->str[out->len - 1] != ';')
+                rp_string_putc(out, ';');
+
+            rp_string_puts(out, "_context.next=");
+            rp_string_puts(out, ctmp);
+            rp_string_puts(out, ";break;");
+
+            rp_string_puts(out, "case ");
+            rp_string_puts(out, etmp);
+            rp_string_puts(out, ":");
+        }
+        else if (has_yield)
+        {
+            _emit_stmt_yield_lower(out, src, ss, se, stmt, p_next_label);
+        }
+        else
+        {
+            rp_string_putsn(out, src + ss, se - ss);
+        }
+    }
+}
+
 static char *_build_regenerator_switch_body_for_yield(const char *src, TSNode body)
 {
     rp_string *out = rp_string_new(384);
@@ -4039,78 +4711,7 @@ static char *_build_regenerator_switch_body_for_yield(const char *src, TSNode bo
     const char *bt = ts_node_type(body);
     if (strcmp(bt, "statement_block") == 0)
     {
-        uint32_t sc = ts_node_named_child_count(body);
-        for (uint32_t i = 0; i < sc; i++)
-        {
-            TSNode stmt = ts_node_named_child(body, i);
-            size_t ss = ts_node_start_byte(stmt), se = ts_node_end_byte(stmt);
-            const char *stmt_type = ts_node_type(stmt);
-            int is_var_decl = (strcmp(stmt_type, "variable_declaration") == 0 ||
-                               strcmp(stmt_type, "lexical_declaration") == 0);
-
-            int has_yield = 0;
-            for (size_t k = ss; k + 5 <= se; k++)
-            {
-                if (src[k] == 'y' && src[k+1] == 'i' && src[k+2] == 'e' && src[k+3] == 'l' && src[k+4] == 'd')
-                {
-                    has_yield = 1;
-                    break;
-                }
-            }
-            int next_has_yield = 0;
-            if (i + 1 < sc)
-            {
-                TSNode n2 = ts_node_named_child(body, i + 1);
-                size_t s2 = ts_node_start_byte(n2), e2 = ts_node_end_byte(n2);
-                for (size_t k = s2; k + 5 <= e2; k++)
-                {
-                    if (src[k] == 'y' && src[k+1] == 'i' && src[k+2] == 'e' && src[k+3] == 'l' && src[k+4] == 'd')
-                    {
-                        next_has_yield = 1;
-                        break;
-                    }
-                }
-            }
-
-            while(ss > 0 && isspace(*(src + ss - 1)))
-                ss--;
-
-            // For var/let/const declarations with yield: skip the keyword
-            if (is_var_decl && has_yield)
-            {
-                TSNode first_decl = ts_node_named_child(stmt, 0);
-                if (!ts_node_is_null(first_decl))
-                    ss = ts_node_start_byte(first_decl);
-            }
-
-            if (strcmp(stmt_type, "comment") == 0)
-            {
-                /* Convert // line comments to block comments so they don't
-                   consume following state-machine code on the same line. */
-                size_t orig_ss = ts_node_start_byte(stmt);
-                if (ss < orig_ss)
-                    rp_string_putsn(out, src + ss, orig_ss - ss);
-                if (se - orig_ss >= 2 && src[orig_ss] == '/' && src[orig_ss + 1] == '/')
-                {
-                    rp_string_puts(out, "/*");
-                    rp_string_putsn(out, src + orig_ss + 2, se - orig_ss - 2);
-                    rp_string_puts(out, "*/");
-                }
-                else
-                    rp_string_putsn(out, src + orig_ss, se - orig_ss);
-            }
-            else if (is_var_decl && !has_yield)
-            {
-                // Emit as assignments without var/let/const keyword
-                _emit_var_decl_as_assignments(out, src, stmt);
-            }
-            else if (!has_yield && next_has_yield && i == 0)
-                rp_string_putsn(out, src + ss, se - ss);
-            else if (has_yield)
-                _emit_stmt_yield_lower(out, src, ss, se, stmt, &next_label);
-            else
-                rp_string_putsn(out, src + ss, se - ss);
-        }
+        _emit_yield_body(out, src, body, &next_label);
     }
     else
     {
@@ -4394,7 +4995,7 @@ static int span_has_flow_ctrl_tokens(const char *src, size_t s, size_t e)
 }
 
 static int rewrite_lexical_declaration(EditList *edits, const char *src, TSNode lexical_decl, RangeList *claimed,
-                                       int overlaps)
+                                       int overlaps, int no_program_wrap)
 {
     int ret = 0;
     uint32_t c = ts_node_child_count(lexical_decl);
@@ -4422,7 +5023,7 @@ static int rewrite_lexical_declaration(EditList *edits, const char *src, TSNode 
                 return 1;
 
             add_edit(edits, ts_node_start_byte(kid), ts_node_end_byte(kid), "var  ", NULL);
-            ret = 1;
+            have_let = 1;
             break;
         }
     }
@@ -4440,8 +5041,10 @@ static int rewrite_lexical_declaration(EditList *edits, const char *src, TSNode 
 
         if (in_for)
         {
-            // Only when this decl is the initializer
+            // Only when this decl is the initializer (for_statement) or left (for_in_statement/for_of)
             TSNode init = ts_node_child_by_field_name(parent, "initializer", 11);
+            if (ts_node_is_null(init))
+                init = ts_node_child_by_field_name(parent, "left", 4);
             if (!ts_node_is_null(init) && ts_node_start_byte(init) == ts_node_start_byte(lexical_decl))
             {
                 // Collect identifiers from all declarators (destructuring supported)
@@ -4533,28 +5136,9 @@ static int rewrite_lexical_declaration(EditList *edits, const char *src, TSNode 
                 }
             }
 
-            // Top-level program: wrap the whole file if this decl is top-level and not already wrapped.
-            if (strcmp(ptype, "program") == 0)
-            {
-                TSNode prog = parent;
-                size_t ps = ts_node_start_byte(prog);
-                size_t pe = ts_node_end_byte(prog);
-                // Heuristic: only if file doesn't already start with "(function(" or "(function(){"
-                int already = 0;
-                size_t head = (pe - ps) > 32 ? 32 : (pe - ps);
-                if (head > 0)
-                {
-                    if (memcmp(src + ps, "(function(", 10) == 0)
-                        already = 1;
-                    else if (memmem(src + ps, head, "(function(){", 12))
-                        already = 1;
-                }
-                if (!already)
-                {
-                    add_edit(edits, ps, ps, "(function(){\n", claimed);
-                    add_edit(edits, pe, pe, "\n}());", claimed);
-                }
-            }
+            /* Top-level let/const at program level: converting to var is sufficient.
+               IIFE wrapping would break eval() since the C eval replacement
+               always runs as indirect eval (global scope). */
         }
     }
 
@@ -4575,7 +5159,7 @@ static int rewrite_for_of_destructuring(EditList *edits, const char *src, TSNode
     TSNode pattern = {{0}};
     TSNode kind = ts_node_child_by_field_name(forof, "kind", 4); // 'let' token when left is a pattern
 
-    if (strcmp(lt, "lexical_declaration") == 0)
+    if (strcmp(lt, "lexical_declaration") == 0 || strcmp(lt, "variable_declaration") == 0)
     {
         // Expect one declarator with a destructuring name
         if (ts_node_named_child_count(left) != 1)
@@ -4604,10 +5188,72 @@ static int rewrite_for_of_destructuring(EditList *edits, const char *src, TSNode
         pattern = left;
     }
 
-    // Only implement array_pattern for now (object supported elsewhere in transpiler)
     const char *pt = ts_node_type(pattern);
-    if (strcmp(pt, "array_pattern") != 0)
+    if (strcmp(pt, "array_pattern") != 0 && strcmp(pt, "object_pattern") != 0)
         return 0;
+
+    /* Object pattern: use collect_flat_destructure_bindings approach */
+    if (strcmp(pt, "object_pattern") == 0)
+    {
+        if (overlaps)
+            return 1;
+        *polysneeded |= FOROF_PF;
+
+        char tmpvar[32];
+        snprintf(tmpvar, sizeof(tmpvar), "_dof%u", ++_destr_counter);
+
+        Bindings binds;
+        binds_init(&binds);
+        if (!collect_flat_destructure_bindings(pattern, src, tmpvar, &binds))
+        {
+            binds_free(&binds);
+            return 0;
+        }
+
+        size_t fs = ts_node_start_byte(forof), fe = ts_node_end_byte(forof);
+        size_t rs = ts_node_start_byte(right), re = ts_node_end_byte(right);
+        size_t bs = ts_node_start_byte(body), be = ts_node_end_byte(body);
+        int is_block = (strcmp(ts_node_type(body), "statement_block") == 0);
+
+        rp_string *out = rp_string_new(256);
+        /* Emit: var _x = <right>, _it = ...; while (...) { var _dof = ...; var n = _dof.name; body } */
+        rp_string_puts(out, "var _x = ");
+        rp_string_putsn(out, src + rs, re - rs);
+        rp_string_puts(out, ", _it = (typeof Symbol!=='undefined'&&typeof _x[Symbol.iterator]==='function')?_x[Symbol.iterator]():null, _i = 0, _r; while(_it?!(_r=_it.next()).done:_i<_x.length) { var ");
+        rp_string_puts(out, tmpvar);
+        rp_string_puts(out, " = _it?_r.value:_x[_i++]; ");
+
+        for (size_t i = 0; i < binds.len; i++)
+        {
+            rp_string_puts(out, "var ");
+            rp_string_puts(out, binds.a[i].name);
+            rp_string_puts(out, " = ");
+            if (binds.a[i].defval)
+            {
+                rp_string_puts(out, binds.a[i].repl);
+                rp_string_puts(out, " !== undefined ? ");
+                rp_string_puts(out, binds.a[i].repl);
+                rp_string_puts(out, " : ");
+                rp_string_puts(out, binds.a[i].defval);
+            }
+            else
+                rp_string_puts(out, binds.a[i].repl);
+            rp_string_puts(out, "; ");
+        }
+
+        if (is_block)
+            rp_string_putsn(out, src + bs + 1, (be - 1) - (bs + 1));
+        else
+            rp_string_putsn(out, src + bs, be - bs);
+        rp_string_puts(out, " }");
+
+        binds_free(&binds);
+        add_edit_take_ownership(edits, fs, fe, rp_string_steal(out), claimed);
+        out = rp_string_free(out);
+        return 1;
+    }
+
+    /* Array pattern handling below */
 
     if (overlaps)
         return 1;
@@ -5240,13 +5886,112 @@ static char *regex_u_to_es5_pattern(const char *in, size_t len)
     return ret;
 }
 
+/* Copy a body or body fragment, replacing super.X patterns for ES5 compatibility.
+ * Instance methods: super.X(args) → _Super.prototype.X.call(this, args)
+ *                   super.X       → _Super.prototype.X
+ * Static methods:   super.X(args) → _Super.X.call(this, args)
+ *                   super.X       → _Super.X
+ */
+static void copy_body_replace_super(rp_string *bucket, const char *body, size_t len, int is_static)
+{
+    size_t i = 0;
+    size_t last_copy = 0; /* start of uncopied text */
+
+    while (i + 6 <= len)
+    {
+        if (strncmp(body + i, "super.", 6) == 0)
+        {
+            /* Make sure "super" is a standalone keyword, not part of e.g. "_super." */
+            if (i > 0 && (isalnum((unsigned char)body[i - 1]) || body[i - 1] == '_' || body[i - 1] == '$'))
+            {
+                i++;
+                continue;
+            }
+
+            /* read identifier after "super." */
+            size_t id_start = i + 6;
+            size_t j = id_start;
+            while (j < len && (isalnum((unsigned char)body[j]) || body[j] == '_' || body[j] == '$'))
+                j++;
+            size_t id_len = j - id_start;
+
+            if (id_len == 0)
+            {
+                /* no valid identifier after super., skip */
+                i++;
+                continue;
+            }
+
+            /* Copy everything before this "super." */
+            if (i > last_copy)
+                rp_string_putsn(bucket, body + last_copy, i - last_copy);
+
+            /* skip whitespace after identifier to check for '(' */
+            size_t wi = j;
+            while (wi < len && (body[wi] == ' ' || body[wi] == '\t' || body[wi] == '\n' || body[wi] == '\r'))
+                wi++;
+
+            if (wi < len && body[wi] == '(')
+            {
+                /* method call: super.name(...) → _Super[.prototype].name.call(this[, ...]) */
+                if (is_static)
+                    rp_string_puts(bucket, "_Super.");
+                else
+                    rp_string_puts(bucket, "_Super.prototype.");
+                rp_string_putsn(bucket, body + id_start, id_len);
+                rp_string_puts(bucket, ".call(this");
+
+                /* skip past the '(' */
+                i = wi + 1;
+
+                /* check if empty args */
+                size_t ai = i;
+                while (ai < len && (body[ai] == ' ' || body[ai] == '\t' || body[ai] == '\n' || body[ai] == '\r'))
+                    ai++;
+
+                if (ai < len && body[ai] == ')')
+                {
+                    /* no args: super.name() → ...call(this) */
+                    rp_string_puts(bucket, ")");
+                    i = ai + 1;
+                }
+                else
+                {
+                    /* has args: emit ", " then let the rest of args + ')' copy naturally */
+                    rp_string_puts(bucket, ", ");
+                }
+                last_copy = i;
+            }
+            else
+            {
+                /* property access: super.name → _Super[.prototype].name */
+                if (is_static)
+                    rp_string_puts(bucket, "_Super.");
+                else
+                    rp_string_puts(bucket, "_Super.prototype.");
+                rp_string_putsn(bucket, body + id_start, id_len);
+                i = j;
+                last_copy = i;
+            }
+        }
+        else
+        {
+            i++;
+        }
+    }
+
+    /* Copy remaining text */
+    if (last_copy < len)
+        rp_string_putsn(bucket, body + last_copy, len - last_copy);
+}
+
 /* === ES6 class -> ES5 function/prototype rewrite (minimal) ===
    Handles:
      class C { constructor(...) { ... } m(...) { ... } static s(...) { ... } }
      class C extends B { ... }  with super(...) in constructor
+     super.method() and super.prop in methods (rewritten to _Super.prototype.method.call(this))
    Limitations:
-     - No private fields, no decorators, no computed property names, no getters/setters, no async/generator methods.
-     - `super.foo(...)` inside methods is not handled (only bare `super(...)` in constructor).
+     - No private fields, no decorators, no async/generator methods.
 */
 
 /* mode: 0=declaration (function C... + stmts), 1=expression (IIFE that returns C)
@@ -5289,6 +6034,56 @@ static void es5_emit_class_core(rp_string *out, const char *src, const char *cna
     // Buckets for methods
     rp_string *proto_arr = rp_string_new(128);
     rp_string *static_arr = rp_string_new(64);
+
+    // Collect class field definitions (ES2022)
+    rp_string *field_inits = rp_string_new(64);
+    rp_string *static_field_inits = rp_string_new(64);
+    for (uint32_t i = 0; i < n; i++)
+    {
+        TSNode ch = ts_node_child(body, i);
+        if (!ts_node_is_named(ch))
+            continue;
+        if (strcmp(ts_node_type(ch), "field_definition") != 0)
+            continue;
+        TSNode fprop = ts_node_child_by_field_name(ch, "property", 8);
+        if (ts_node_is_null(fprop))
+            continue;
+        /* detect "static" modifier */
+        int is_static_field = 0;
+        for (uint32_t j = 0, cn = ts_node_child_count(ch); j < cn; j++)
+        {
+            TSNode fch = ts_node_child(ch, j);
+            if (ts_node_is_named(fch))
+                continue;
+            size_t ss = ts_node_start_byte(fch), se = ts_node_end_byte(fch);
+            if (se - ss == 6 && strncmp(src + ss, "static", 6) == 0)
+            { is_static_field = 1; break; }
+        }
+        size_t fps = ts_node_start_byte(fprop), fpe = ts_node_end_byte(fprop);
+        TSNode fval = ts_node_child_by_field_name(ch, "value", 5);
+        rp_string *dest = is_static_field ? static_field_inits : field_inits;
+        if (is_static_field)
+        {
+            rp_string_putsn(dest, cname, cname_len);
+            rp_string_puts(dest, ".");
+        }
+        else
+        {
+            rp_string_puts(dest, "this.");
+        }
+        rp_string_putsn(dest, src + fps, fpe - fps);
+        if (!ts_node_is_null(fval))
+        {
+            size_t fvs = ts_node_start_byte(fval), fve = ts_node_end_byte(fval);
+            rp_string_puts(dest, " = ");
+            rp_string_putsn(dest, src + fvs, fve - fvs);
+        }
+        else
+        {
+            rp_string_puts(dest, " = undefined");
+        }
+        rp_string_puts(dest, ";");
+    }
 
     for (uint32_t i = 0; i < n; i++)
     {
@@ -5382,13 +6177,89 @@ static void es5_emit_class_core(rp_string *out, const char *src, const char *cna
             if (!is_getter && !is_setter)
                 rp_string_putsn(bucket, src + ks, ke - ks);
         }
+        /* Check for rest parameter in method params */
+        const char *rest_name = NULL;
+        size_t rest_name_len = 0;
+        uint32_t rest_before_count = 0;
+        size_t rest_remove_s = 0, rest_remove_e = 0;
+        if (ps && pe && !ts_node_is_null(params))
+        {
+            uint32_t np = ts_node_named_child_count(params);
+            for (uint32_t pi = 0; pi < np; pi++)
+            {
+                TSNode pch = ts_node_named_child(params, pi);
+                if (strcmp(ts_node_type(pch), "rest_pattern") == 0)
+                {
+                    rest_before_count = pi;
+                    rest_remove_s = ts_node_start_byte(pch);
+                    rest_remove_e = ts_node_end_byte(pch);
+                    /* walk back over whitespace and comma */
+                    size_t wi = rest_remove_s;
+                    while (wi > ps && is_ws(src[wi - 1]))
+                        wi--;
+                    if (wi > ps && src[wi - 1] == ',')
+                        rest_remove_s = wi - 1;
+                    /* get identifier inside rest_pattern */
+                    uint32_t rnc = ts_node_named_child_count(pch);
+                    for (uint32_t ri = 0; ri < rnc; ri++)
+                    {
+                        TSNode rid = ts_node_named_child(pch, ri);
+                        if (strcmp(ts_node_type(rid), "identifier") == 0)
+                        {
+                            rest_name = src + ts_node_start_byte(rid);
+                            rest_name_len = ts_node_end_byte(rid) - ts_node_start_byte(rid);
+                            break;
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+
+        /* Emit params (minus rest if present) */
         if (ps && pe)
-            rp_string_putsn(bucket, src + ps, pe - ps);
+        {
+            if (rest_name)
+            {
+                /* Copy params but skip the rest portion */
+                rp_string_putsn(bucket, src + ps, rest_remove_s - ps);
+                rp_string_putsn(bucket, src + rest_remove_e, pe - rest_remove_e);
+            }
+            else
+            {
+                rp_string_putsn(bucket, src + ps, pe - ps);
+            }
+        }
         else
             rp_string_puts(bucket, "()");
+
+        /* Emit body (with rest shim and super rewrite as needed) */
         rp_string_puts(bucket, " ");
         if (bs && be)
-            rp_string_putsn(bucket, src + bs, be - bs);
+        {
+            if (rest_name || has_super)
+            {
+                /* Need to modify body: open brace */
+                rp_string_putc(bucket, '{');
+                /* inject rest param shim */
+                if (rest_name)
+                {
+                    rp_string_puts(bucket, "var ");
+                    rp_string_putsn(bucket, rest_name, rest_name_len);
+                    rp_string_appendf(bucket, " = Object.values(arguments).slice(%u); ", rest_before_count);
+                }
+                /* copy body contents (skip outer braces), with super rewrite if needed */
+                if (has_super)
+                    copy_body_replace_super(bucket, src + bs + 1, be - bs - 2, is_static);
+                else
+                    rp_string_putsn(bucket, src + bs + 1, be - bs - 2);
+                rp_string_putc(bucket, '}');
+            }
+            else
+            {
+                rp_string_putsn(bucket, src + bs, be - bs);
+            }
+        }
         else
             rp_string_puts(bucket, "{}");
         rp_string_puts(bucket, "}");
@@ -5416,16 +6287,66 @@ static void es5_emit_class_core(rp_string *out, const char *src, const char *cna
     rp_string_puts(out, "  function ");
     rp_string_putsn(out, cname, cname_len);
 
+    /* Detect rest param in constructor */
+    const char *ctor_rest_name = NULL;
+    size_t ctor_rest_name_len = 0;
+    uint32_t ctor_rest_before = 0;
+
     if (ctor_found && !ts_node_is_null(ctor_params))
     {
         size_t ps = ts_node_start_byte(ctor_params), pe = ts_node_end_byte(ctor_params);
-        rp_string_putsn(out, src + ps, pe - ps);
+        /* scan for rest_pattern */
+        uint32_t np = ts_node_named_child_count(ctor_params);
+        size_t crest_remove_s = 0, crest_remove_e = 0;
+        for (uint32_t pi = 0; pi < np; pi++)
+        {
+            TSNode pch = ts_node_named_child(ctor_params, pi);
+            if (strcmp(ts_node_type(pch), "rest_pattern") == 0)
+            {
+                ctor_rest_before = pi;
+                crest_remove_s = ts_node_start_byte(pch);
+                crest_remove_e = ts_node_end_byte(pch);
+                size_t wi = crest_remove_s;
+                while (wi > ps && is_ws(src[wi - 1]))
+                    wi--;
+                if (wi > ps && src[wi - 1] == ',')
+                    crest_remove_s = wi - 1;
+                uint32_t rnc = ts_node_named_child_count(pch);
+                for (uint32_t ri = 0; ri < rnc; ri++)
+                {
+                    TSNode rid = ts_node_named_child(pch, ri);
+                    if (strcmp(ts_node_type(rid), "identifier") == 0)
+                    {
+                        ctor_rest_name = src + ts_node_start_byte(rid);
+                        ctor_rest_name_len = ts_node_end_byte(rid) - ts_node_start_byte(rid);
+                        break;
+                    }
+                }
+                break;
+            }
+        }
+        if (ctor_rest_name)
+        {
+            rp_string_putsn(out, src + ps, crest_remove_s - ps);
+            rp_string_putsn(out, src + crest_remove_e, pe - crest_remove_e);
+        }
+        else
+        {
+            rp_string_putsn(out, src + ps, pe - ps);
+        }
     }
     else
     {
         rp_string_puts(out, "()"); // synthesize if missing
     }
     rp_string_puts(out, " {");
+    /* inject rest param shim for constructor */
+    if (ctor_rest_name)
+    {
+        rp_string_puts(out, "var ");
+        rp_string_putsn(out, ctor_rest_name, ctor_rest_name_len);
+        rp_string_appendf(out, " = Object.values(arguments).slice(%u); ", ctor_rest_before);
+    }
 
     if (has_super)
     {
@@ -5494,19 +6415,26 @@ static void es5_emit_class_core(rp_string *out, const char *src, const char *cna
                     }
                     else
                     {
-                        rp_string_puts(out, "_this = _super.call(this, ");
-                        if (call_rp > args_s)
-                            rp_string_putsn(out, b + args_s, call_rp - args_s);
+                        if (alen > 0)
+                        {
+                            rp_string_puts(out, "_this = _super.call(this, ");
+                            rp_string_putsn(out, atext, alen);
+                        }
+                        else
+                        {
+                            rp_string_puts(out, "_this = _super.call(this");
+                        }
                         rp_string_puts(out, ");");
                     }
                 }
 
-                /* Copy remainder of ctor body after the super(...) statement’s semicolon */
+                /* Copy remainder of ctor body after the super(...) statement's semicolon,
+                   rewriting any super.method() calls */
                 size_t after = call_rp + 1; /* position after ')' */
                 if (after < blen && b[after] == ';')
-                    after++; /* swallow trailing ';' if any */
+                    after++; /* swallow trailing semicolon if any */
                 if (after < blen)
-                    rp_string_putsn(out, b + after, blen - after);
+                    copy_body_replace_super(out, b + after, blen - after, 0);
 
                 /* Ensure the constructor returns _this */
                 rp_string_puts(out, "return _this;");
@@ -5518,7 +6446,7 @@ static void es5_emit_class_core(rp_string *out, const char *src, const char *cna
                 rp_string_putsn(out, cname, cname_len);
                 rp_string_puts(out, ");");
                 if (blen)
-                    rp_string_putsn(out, b, blen);
+                    copy_body_replace_super(out, b, blen, 0);
             }
         }
         else
@@ -5534,6 +6462,9 @@ static void es5_emit_class_core(rp_string *out, const char *src, const char *cna
         rp_string_puts(out, "_TrN_Sp.classCallCheck(this, ");
         rp_string_putsn(out, cname, cname_len);
         rp_string_puts(out, ");");
+        /* inject class field initializations */
+        if (field_inits->len)
+            rp_string_puts(out, field_inits->str);
         if (ctor_found && !ts_node_is_null(ctor_body))
         {
             size_t bs = ts_node_start_byte(ctor_body), be = ts_node_end_byte(ctor_body);
@@ -5567,8 +6498,14 @@ static void es5_emit_class_core(rp_string *out, const char *src, const char *cna
         rp_string_puts(out, ");");
     }
 
+    /* Emit static field initializations after the IIFE */
+    if (static_field_inits->len)
+        rp_string_puts(out, static_field_inits->str);
+
     proto_arr = rp_string_free(proto_arr);
     static_arr = rp_string_free(static_arr);
+    field_inits = rp_string_free(field_inits);
+    static_field_inits = rp_string_free(static_field_inits);
 }
 
 static int rewrite_class_to_es5(EditList *edits, const char *src, TSNode class_node, RangeList *claimed, int overlaps)
@@ -5855,6 +6792,7 @@ static int rewrite_for_of_simple(EditList *edits, const char *src, TSNode forof,
     // Identify the loop target identifier and whether it is a declaration or a bare identifier
     TSNode name = {{0}};
     bool is_decl = false;
+    bool is_let = false; /* true if original was let/const — needs IIFE wrapping for fresh bindings */
 
     if (strcmp(lt, "variable_declaration") == 0)
     {
@@ -5872,9 +6810,19 @@ static int rewrite_for_of_simple(EditList *edits, const char *src, TSNode forof,
     }
     else if (strcmp(lt, "identifier") == 0)
     {
-        // for (a of X)
+        // for (a of X) or for (let a of X) — check kind field
+        TSNode kind = ts_node_child_by_field_name(forof, "kind", 4);
+        if (!ts_node_is_null(kind))
+        {
+            size_t ks = ts_node_start_byte(kind), ke = ts_node_end_byte(kind);
+            if ((ke - ks == 3 && strncmp(src + ks, "let", 3) == 0) ||
+                (ke - ks == 5 && strncmp(src + ks, "const", 5) == 0))
+            {
+                is_decl = true;
+                is_let = true;
+            }
+        }
         name = left;
-        is_decl = false;
     }
     else
     {
@@ -5924,6 +6872,14 @@ static int rewrite_for_of_simple(EditList *edits, const char *src, TSNode forof,
     rp_string_putsn(out, src + ns, ne - ns);
     rp_string_appendf(out, " = %s?%s.value:%s[%s++]; ", itbuf, rbuf, xbuf, ibuf);
 
+    // For let/const: IIFE-wrap body so closures get fresh per-iteration binding
+    if (is_let)
+    {
+        rp_string_puts(out, "(function(");
+        rp_string_putsn(out, src + ns, ne - ns);
+        rp_string_puts(out, "){ ");
+    }
+
     // splice body
     if (is_block)
     {
@@ -5933,6 +6889,13 @@ static int rewrite_for_of_simple(EditList *edits, const char *src, TSNode forof,
     else
     {
         rp_string_putsn(out, src + bs, be - bs);
+    }
+
+    if (is_let)
+    {
+        rp_string_puts(out, " })(");
+        rp_string_putsn(out, src + ns, ne - ns);
+        rp_string_puts(out, ");");
     }
     rp_string_puts(out, "}");
 
@@ -5944,11 +6907,573 @@ static int rewrite_for_of_simple(EditList *edits, const char *src, TSNode forof,
     return 1;
 }
 
+/* ——— Spread in function call arguments (ES2015) ———
+ *  fn(...args)           → fn.apply(void 0, args)
+ *  fn(a, ...args)        → fn.apply(void 0, [a].concat(args))
+ *  obj.m(...args)        → obj.m.apply(obj, args)
+ *  obj.m(a, ...args)     → obj.m.apply(obj, [a].concat(args))
+ *  new Foo(...args)      → new (Function.prototype.bind.apply(Foo, [null].concat(args)))()
+ *  new Foo(a, ...args)   → new (Function.prototype.bind.apply(Foo, [null, a].concat(args)))()
+ */
+static int rewrite_call_spread(EditList *edits, const char *src, TSNode node,
+                               RangeList *claimed, int overlaps)
+{
+    const char *nt = ts_node_type(node);
+    int is_new = (strcmp(nt, "new_expression") == 0);
+    if (!is_new && strcmp(nt, "call_expression") != 0)
+        return 0;
+
+    TSNode args_node = ts_node_child_by_field_name(node, "arguments", 9);
+    if (ts_node_is_null(args_node))
+        return 0;
+
+    /* Check if any argument is a spread_element */
+    uint32_t nargs = ts_node_named_child_count(args_node);
+    int has_spread = 0;
+    for (uint32_t i = 0; i < nargs; i++)
+    {
+        TSNode arg = ts_node_named_child(args_node, i);
+        if (strcmp(ts_node_type(arg), "spread_element") == 0)
+        {
+            has_spread = 1;
+            break;
+        }
+    }
+    if (!has_spread)
+        return 0;
+
+    if (overlaps)
+        return 1;
+
+    size_t ns = ts_node_start_byte(node), ne = ts_node_end_byte(node);
+
+    /* Get the callee/constructor */
+    TSNode callee = is_new
+        ? ts_node_child_by_field_name(node, "constructor", 11)
+        : ts_node_child_by_field_name(node, "function", 8);
+    if (ts_node_is_null(callee))
+        return 0;
+
+    size_t cs = ts_node_start_byte(callee), ce = ts_node_end_byte(callee);
+
+    /* For call_expression: determine context for .apply() */
+    const char *callee_type = ts_node_type(callee);
+    int is_member = (strcmp(callee_type, "member_expression") == 0);
+
+    /* Build the args array expression */
+    rp_string *argsexpr = rp_string_new(64);
+    int spread_count = 0;
+
+    for (uint32_t i = 0; i < nargs; i++)
+    {
+        TSNode arg = ts_node_named_child(args_node, i);
+        if (strcmp(ts_node_type(arg), "spread_element") == 0)
+            spread_count++;
+    }
+
+    if (nargs == 1 && spread_count == 1)
+    {
+        /* Single spread only: fn(...args) — just use the spread expr directly */
+        TSNode arg = ts_node_named_child(args_node, 0);
+        /* The spread_element has a child that is the actual expression */
+        uint32_t snc = ts_node_named_child_count(arg);
+        if (snc > 0)
+        {
+            TSNode inner = ts_node_named_child(arg, 0);
+            size_t is = ts_node_start_byte(inner), ie = ts_node_end_byte(inner);
+            rp_string_putsn(argsexpr, src + is, ie - is);
+        }
+    }
+    else
+    {
+        /* Mixed args: build [a, b].concat(spread1, [c], spread2, ...) */
+        /* Collect leading non-spread args into an array literal */
+        rp_string *leading = rp_string_new(32);
+        rp_string *concats = rp_string_new(64);
+
+        int in_leading = 1;
+        for (uint32_t i = 0; i < nargs; i++)
+        {
+            TSNode arg = ts_node_named_child(args_node, i);
+            size_t as = ts_node_start_byte(arg), ae = ts_node_end_byte(arg);
+
+            if (strcmp(ts_node_type(arg), "spread_element") == 0)
+            {
+                in_leading = 0;
+                /* extract inner expression */
+                uint32_t snc = ts_node_named_child_count(arg);
+                if (snc > 0)
+                {
+                    TSNode inner = ts_node_named_child(arg, 0);
+                    size_t is2 = ts_node_start_byte(inner), ie2 = ts_node_end_byte(inner);
+                    if (concats->len)
+                        rp_string_puts(concats, ", ");
+                    rp_string_putsn(concats, src + is2, ie2 - is2);
+                }
+            }
+            else
+            {
+                if (in_leading)
+                {
+                    if (leading->len)
+                        rp_string_puts(leading, ", ");
+                    rp_string_putsn(leading, src + as, ae - as);
+                }
+                else
+                {
+                    /* non-spread after a spread: wrap in array */
+                    if (concats->len)
+                        rp_string_puts(concats, ", ");
+                    rp_string_puts(concats, "[");
+                    rp_string_putsn(concats, src + as, ae - as);
+                    rp_string_puts(concats, "]");
+                }
+            }
+        }
+
+        rp_string_puts(argsexpr, "[");
+        if (leading->len)
+            rp_string_puts(argsexpr, leading->str);
+        rp_string_puts(argsexpr, "]");
+        if (concats->len)
+        {
+            rp_string_puts(argsexpr, ".concat(");
+            rp_string_puts(argsexpr, concats->str);
+            rp_string_puts(argsexpr, ")");
+        }
+        leading = rp_string_free(leading);
+        concats = rp_string_free(concats);
+    }
+
+    /* Build the final replacement */
+    rp_string *out = rp_string_new(128);
+
+    if (is_new)
+    {
+        /* new Foo(...args) → new (Function.prototype.bind.apply(Foo, [null].concat(args)))()  */
+        rp_string_puts(out, "new (Function.prototype.bind.apply(");
+        rp_string_putsn(out, src + cs, ce - cs);
+        rp_string_puts(out, ", [null].concat(");
+        rp_string_puts(out, argsexpr->str);
+        rp_string_puts(out, ")))()");
+    }
+    else if (is_member)
+    {
+        /* obj.method(...args) → obj.method.apply(obj, args)
+           Need to extract the object part of the member expression */
+        TSNode obj = ts_node_child_by_field_name(callee, "object", 6);
+        if (!ts_node_is_null(obj))
+        {
+            size_t os = ts_node_start_byte(obj), oe = ts_node_end_byte(obj);
+            rp_string_putsn(out, src + cs, ce - cs);
+            rp_string_puts(out, ".apply(");
+            rp_string_putsn(out, src + os, oe - os);
+            rp_string_puts(out, ", ");
+            rp_string_puts(out, argsexpr->str);
+            rp_string_puts(out, ")");
+        }
+        else
+        {
+            /* fallback: treat as simple call */
+            rp_string_putsn(out, src + cs, ce - cs);
+            rp_string_puts(out, ".apply(void 0, ");
+            rp_string_puts(out, argsexpr->str);
+            rp_string_puts(out, ")");
+        }
+    }
+    else
+    {
+        /* fn(...args) → fn.apply(void 0, args) */
+        rp_string_putsn(out, src + cs, ce - cs);
+        rp_string_puts(out, ".apply(void 0, ");
+        rp_string_puts(out, argsexpr->str);
+        rp_string_puts(out, ")");
+    }
+
+    add_edit_take_ownership(edits, ns, ne, rp_string_steal(out), claimed);
+    out = rp_string_free(out);
+    argsexpr = rp_string_free(argsexpr);
+    return 1;
+}
+
+/* ——— Nullish coalescing (ES2020): a ?? b  →  (a != null ? a : b) ——— */
+static unsigned _nc_counter = 0;
+
+static int rewrite_nullish_coalescing(EditList *edits, const char *src, TSNode node,
+                                      RangeList *claimed, int overlaps)
+{
+    if (strcmp(ts_node_type(node), "binary_expression") != 0)
+        return 0;
+
+    /* find the ?? operator */
+    TSNode op = ts_node_child_by_field_name(node, "operator", 8);
+    if (ts_node_is_null(op))
+        return 0;
+    size_t ops = ts_node_start_byte(op), ope = ts_node_end_byte(op);
+    if (ope - ops != 2 || src[ops] != '?' || src[ops + 1] != '?')
+        return 0;
+
+    if (overlaps)
+        return 1;
+
+    TSNode left = ts_node_child_by_field_name(node, "left", 4);
+    TSNode right = ts_node_child_by_field_name(node, "right", 5);
+    if (ts_node_is_null(left) || ts_node_is_null(right))
+        return 0;
+
+    size_t ls = ts_node_start_byte(left), le = ts_node_end_byte(left);
+    size_t rs = ts_node_start_byte(right), re = ts_node_end_byte(right);
+    size_t es = ts_node_start_byte(node), ee = ts_node_end_byte(node);
+
+    /* check if left is a simple identifier (safe to repeat without side effects) */
+    int is_simple = (strcmp(ts_node_type(left), "identifier") == 0);
+
+    rp_string *out = rp_string_new(64);
+
+    if (is_simple)
+    {
+        /* (left != null ? left : right) */
+        rp_string_puts(out, "(");
+        rp_string_putsn(out, src + ls, le - ls);
+        rp_string_puts(out, " != null ? ");
+        rp_string_putsn(out, src + ls, le - ls);
+        rp_string_puts(out, " : ");
+        rp_string_putsn(out, src + rs, re - rs);
+        rp_string_puts(out, ")");
+    }
+    else
+    {
+        /* (_nc = left, _nc != null ? _nc : right) */
+        char tvar[32];
+        snprintf(tvar, sizeof(tvar), "_nc%u", _nc_counter++);
+        rp_string_appendf(out, "(%s = ", tvar);
+        rp_string_putsn(out, src + ls, le - ls);
+        rp_string_appendf(out, ", %s != null ? %s : ", tvar, tvar);
+        rp_string_putsn(out, src + rs, re - rs);
+        rp_string_puts(out, ")");
+    }
+
+    add_edit_take_ownership(edits, es, ee, rp_string_steal(out), claimed);
+    out = rp_string_free(out);
+    return 1;
+}
+
+/* ——— Optional chaining (ES2020): a?.b → (a == null ? void 0 : a.b) ——— */
+
+/* Check if a node has an optional_chain child */
+static int _has_optional_chain(TSNode node)
+{
+    uint32_t cc = ts_node_child_count(node);
+    for (uint32_t i = 0; i < cc; i++)
+    {
+        TSNode ch = ts_node_child(node, i);
+        if (strcmp(ts_node_type(ch), "optional_chain") == 0)
+            return 1;
+    }
+    return 0;
+}
+
+/* Check if the chain (object/function children, not arguments) contains ?. */
+static int _chain_has_optional_chain(TSNode node)
+{
+    if (_has_optional_chain(node))
+        return 1;
+    /* walk down the chain: object or function child only, NOT arguments */
+    TSNode obj = ts_node_child_by_field_name(node, "object", 6);
+    if (ts_node_is_null(obj))
+        obj = ts_node_child_by_field_name(node, "function", 8);
+    if (!ts_node_is_null(obj))
+        return _chain_has_optional_chain(obj);
+    return 0;
+}
+
+/* Check if parent's chain includes this node and has ?. */
+static int _parent_is_optional_chain(TSNode node)
+{
+    TSNode parent = ts_node_parent(node);
+    if (ts_node_is_null(parent))
+        return 0;
+    const char *pt = ts_node_type(parent);
+    if (strcmp(pt, "member_expression") != 0 &&
+        strcmp(pt, "call_expression") != 0 &&
+        strcmp(pt, "subscript_expression") != 0)
+        return 0;
+    /* check if this node is the parent's chain child (not an argument) */
+    TSNode pobj = ts_node_child_by_field_name(parent, "object", 6);
+    if (ts_node_is_null(pobj))
+        pobj = ts_node_child_by_field_name(parent, "function", 8);
+    if (!ts_node_is_null(pobj) &&
+        ts_node_start_byte(pobj) == ts_node_start_byte(node) &&
+        ts_node_end_byte(pobj) == ts_node_end_byte(node))
+    {
+        if (_chain_has_optional_chain(parent))
+            return 1;
+    }
+    return 0;
+}
+
+static int rewrite_optional_chaining(EditList *edits, const char *src, TSNode node,
+                                     RangeList *claimed, int overlaps)
+{
+    const char *nt = ts_node_type(node);
+
+    /* only handle member_expression, call_expression, subscript_expression with ?. */
+    if (strcmp(nt, "member_expression") != 0 &&
+        strcmp(nt, "call_expression") != 0 &&
+        strcmp(nt, "subscript_expression") != 0)
+        return 0;
+
+    if (!_chain_has_optional_chain(node))
+        return 0;
+
+    /* only handle from the outermost optional chain expression */
+    if (_parent_is_optional_chain(node))
+        return 0;
+
+    if (overlaps)
+        return 1;
+
+    size_t es = ts_node_start_byte(node), ee = ts_node_end_byte(node);
+    size_t elen = ee - es;
+
+    /* Build clean expression (with ?. replaced by . or removed for ?.[/?.() */
+    char *clean = malloc(elen + 1);
+    size_t ci = 0;
+
+    /* Collect positions of ?. in original, and map to clean positions */
+    size_t oc_orig[32], oc_clean[32];
+    int noc = 0;
+
+    for (size_t i = 0; i < elen; i++)
+    {
+        if (i + 1 < elen && src[es + i] == '?' && src[es + i + 1] == '.')
+        {
+            if (noc < 32)
+            {
+                oc_orig[noc] = i;
+                oc_clean[noc] = ci;
+                noc++;
+            }
+            /* check if ?. is followed by [ or ( — skip ?. entirely */
+            if (i + 2 < elen && (src[es + i + 2] == '[' || src[es + i + 2] == '('))
+            {
+                i++; /* skip ?, loop skips . */
+            }
+            else
+            {
+                /* replace ?. with . */
+                clean[ci++] = '.';
+                i++; /* skip ? */
+            }
+        }
+        else
+        {
+            clean[ci++] = src[es + i];
+        }
+    }
+    clean[ci] = '\0';
+
+    if (noc == 0)
+    {
+        free(clean);
+        return 0;
+    }
+
+    /* Build properly nested ternaries:
+       obj?.a?.b?.c  →  (obj == null ? void 0 : (obj.a == null ? void 0 : (obj.a.b == null ? void 0 : obj.a.b.c)))
+
+       For each ?. at clean position cp[i], the base to check is clean[0..cp[i]-1].
+       We nest from left (outermost) to right (innermost).
+
+       If the base before the first ?. is non-trivial (contains parens or brackets),
+       use a temp var to avoid double evaluation:
+       getObj()?.x  →  (_oc0 = getObj(), _oc0 == null ? void 0 : _oc0.x) */
+
+    rp_string *out = rp_string_new(elen * 2);
+
+    /* Check if the base before first ?. needs a temp var */
+    static int oc_counter = 0;
+    size_t base_len = oc_clean[0];
+    int needs_temp = 0;
+    for (size_t j = 0; j < base_len; j++)
+    {
+        char c = clean[j];
+        if (c == '(' || c == ')' || c == '[' || c == ']')
+        {
+            needs_temp = 1;
+            break;
+        }
+    }
+
+    if (needs_temp)
+    {
+        char tmpname[32];
+        snprintf(tmpname, sizeof(tmpname), "_oc%d", oc_counter++);
+
+        /* (_ocN = <base>, nested ternaries using _ocN as base) */
+        rp_string_puts(out, "(");
+        rp_string_puts(out, tmpname);
+        rp_string_puts(out, " = ");
+        rp_string_putsn(out, clean, base_len);
+        rp_string_puts(out, ", ");
+
+        for (int i = 0; i < noc; i++)
+            rp_string_puts(out, "(");
+
+        for (int i = 0; i < noc; i++)
+        {
+            size_t cp = oc_clean[i];
+            rp_string_puts(out, tmpname);
+            if (cp > base_len)
+                rp_string_putsn(out, clean + base_len, cp - base_len);
+            rp_string_puts(out, " == null ? void 0 : ");
+        }
+
+        /* final full expression */
+        rp_string_puts(out, tmpname);
+        if (ci > base_len)
+            rp_string_putsn(out, clean + base_len, ci - base_len);
+
+        for (int i = 0; i < noc; i++)
+            rp_string_puts(out, ")");
+        rp_string_puts(out, ")");
+    }
+    else
+    {
+        for (int i = 0; i < noc; i++)
+            rp_string_puts(out, "(");
+
+        for (int i = 0; i < noc; i++)
+        {
+            size_t cp = oc_clean[i];
+            rp_string_putsn(out, clean, cp);
+            rp_string_puts(out, " == null ? void 0 : ");
+        }
+
+        /* final full expression */
+        rp_string_putsn(out, clean, ci);
+
+        for (int i = 0; i < noc; i++)
+            rp_string_puts(out, ")");
+    }
+
+    add_edit_take_ownership(edits, es, ee, rp_string_steal(out), claimed);
+    out = rp_string_free(out);
+    free(clean);
+    return 1;
+}
+
+/* ——— Logical assignment (ES2021): a ??= b → a = (a != null ? a : b), etc. ——— */
+static int rewrite_logical_assignment(EditList *edits, const char *src, TSNode node,
+                                      RangeList *claimed, int overlaps)
+{
+    if (strcmp(ts_node_type(node), "augmented_assignment_expression") != 0)
+        return 0;
+
+    /* find the operator */
+    size_t node_s = ts_node_start_byte(node), node_e = ts_node_end_byte(node);
+    TSNode left = ts_node_child_by_field_name(node, "left", 4);
+    TSNode right = ts_node_child_by_field_name(node, "right", 5);
+    if (ts_node_is_null(left) || ts_node_is_null(right))
+        return 0;
+
+    /* scan for the operator between left end and right start */
+    size_t le = ts_node_end_byte(left);
+    size_t rs = ts_node_start_byte(right);
+    int op_type = 0; /* 1=??=  2=||=  3=&&= */
+
+    for (size_t i = le; i + 2 < rs; i++)
+    {
+        if (src[i] == '?' && src[i + 1] == '?' && src[i + 2] == '=')
+            { op_type = 1; break; }
+        if (src[i] == '|' && src[i + 1] == '|' && src[i + 2] == '=')
+            { op_type = 2; break; }
+        if (src[i] == '&' && src[i + 1] == '&' && src[i + 2] == '=')
+            { op_type = 3; break; }
+    }
+
+    if (op_type == 0)
+        return 0;
+
+    if (overlaps)
+        return 1;
+
+    size_t ls = ts_node_start_byte(left);
+    size_t re = ts_node_end_byte(right);
+
+    rp_string *out = rp_string_new(64);
+
+    if (op_type == 1)
+    {
+        /* a ??= b  →  a = (a != null ? a : b) */
+        rp_string_putsn(out, src + ls, le - ls);
+        rp_string_puts(out, " = (");
+        rp_string_putsn(out, src + ls, le - ls);
+        rp_string_puts(out, " != null ? ");
+        rp_string_putsn(out, src + ls, le - ls);
+        rp_string_puts(out, " : ");
+        rp_string_putsn(out, src + rs, re - rs);
+        rp_string_puts(out, ")");
+    }
+    else if (op_type == 2)
+    {
+        /* a ||= b  →  a = a || b */
+        rp_string_putsn(out, src + ls, le - ls);
+        rp_string_puts(out, " = ");
+        rp_string_putsn(out, src + ls, le - ls);
+        rp_string_puts(out, " || ");
+        rp_string_putsn(out, src + rs, re - rs);
+    }
+    else
+    {
+        /* a &&= b  →  a = a && b */
+        rp_string_putsn(out, src + ls, le - ls);
+        rp_string_puts(out, " = ");
+        rp_string_putsn(out, src + ls, le - ls);
+        rp_string_puts(out, " && ");
+        rp_string_putsn(out, src + rs, re - rs);
+    }
+
+    add_edit_take_ownership(edits, node_s, node_e, rp_string_steal(out), claimed);
+    out = rp_string_free(out);
+    return 1;
+}
+
 // Rewrite computed method shorthand in object literals:
 //   [expr]() { body }  =>  [expr]: function() { body }
 // Also handles get/set:
 //   get [expr]() { body }  =>  get [expr]() { body }  (these are already valid? No, Duktape fails on them too)
 // For now, only handle the plain method case.
+// Rewrite plain method shorthand in object literals when name is "get" or "set":
+//   get(params) { body }  ->  get: function(params) { body }
+// Duktape misparses "get"/"set" as accessor keywords in this context.
+static int rewrite_plain_method_shorthand(EditList *edits, const char *src, TSNode node,
+                                          RangeList *claimed, int overlaps)
+{
+    if (strcmp(ts_node_type(node), "method_definition") != 0)
+        return 0;
+    TSNode parent = ts_node_parent(node);
+    if (ts_node_is_null(parent) || strcmp(ts_node_type(parent), "object") != 0)
+        return 0;
+    TSNode nname = ts_node_child_by_field_name(node, "name", 4);
+    if (ts_node_is_null(nname))
+        return 0;
+    /* Only handle plain identifiers (computed handled by rewrite_computed_method_shorthand) */
+    if (strcmp(ts_node_type(nname), "property_identifier") != 0)
+        return 0;
+    size_t ns = ts_node_start_byte(nname), ne_name = ts_node_end_byte(nname);
+    size_t namelen = ne_name - ns;
+    /* Only rewrite "get" and "set" -- other shorthand methods work in Duktape */
+    if (!((namelen == 3 && strncmp(src + ns, "get", 3) == 0) ||
+          (namelen == 3 && strncmp(src + ns, "set", 3) == 0)))
+        return 0;
+    if (overlaps)
+        return 1;
+    /* Insert ": function" between name and params */
+    add_edit(edits, ne_name, ne_name, ": function", claimed);
+    return 1;
+}
+
 static int rewrite_computed_method_shorthand(EditList *edits, const char *src, TSNode node, RangeList *claimed,
                                              int overlaps)
 {
@@ -6159,8 +7684,148 @@ int rewrite_string_raw(EditList *edits, const char *src, TSNode call_expr, Range
     return 1;
 }
 
+/* Check whether any ancestor statement_block (up to a function boundary)
+   contains a function_declaration with the given name.  Used to detect
+   shadowing for block-scoped function rewrites. */
+static int _ancestor_has_function_decl(TSNode block, const char *src,
+                                       const char *name, size_t nlen)
+{
+    TSNode anc = ts_node_parent(block);
+    while (!ts_node_is_null(anc))
+    {
+        const char *t = ts_node_type(anc);
+        /* Stop at function / class boundaries */
+        if (strstr(t, "function") || strcmp(t, "arrow_function") == 0 ||
+            strstr(t, "method") != NULL || strstr(t, "class") != NULL)
+            break;
+        if (strcmp(t, "statement_block") == 0)
+        {
+            uint32_t c = ts_node_named_child_count(anc);
+            for (uint32_t j = 0; j < c; j++)
+            {
+                TSNode ch = ts_node_named_child(anc, j);
+                if (strcmp(ts_node_type(ch), "function_declaration") != 0)
+                    continue;
+                TSNode nn = ts_node_child_by_field_name(ch, "name", 4);
+                if (ts_node_is_null(nn))
+                    continue;
+                size_t s = ts_node_start_byte(nn), e = ts_node_end_byte(nn);
+                if (e - s == nlen && memcmp(src + s, name, nlen) == 0)
+                    return 1;
+            }
+        }
+        anc = ts_node_parent(anc);
+    }
+    return 0;
+}
+
+/* Block-scoped function declarations (ES2015):
+   When the same function name is declared in nested blocks, the inner
+   declaration shadows the outer one for the duration of that block.
+   In ES5 both are hoisted to function scope, so the inner one clobbers
+   the outer.  We fix this only when shadowing is detected:
+
+       {                                    {
+         function foo() { return 1; }         function foo() { return 1; }
+         {                            →       {
+           function foo() { return 2; }         var _bsf0=foo;
+         }                                      var foo = function(){ return 2; };
+         foo() // should be 1                   foo=_bsf0;
+       }                                      }
+                                               foo() // 1 ✓
+                                             }                                          */
+static int rewrite_block_scoped_functions(EditList *edits, const char *src, TSNode block,
+                                          RangeList *claimed, int overlaps)
+{
+    /* Parent must NOT be a function-like node (whose body this block is) */
+    TSNode parent = ts_node_parent(block);
+    if (ts_node_is_null(parent))
+        return 0;
+    const char *ptype = ts_node_type(parent);
+    if (strstr(ptype, "function") != NULL || strcmp(ptype, "arrow_function") == 0 ||
+        strstr(ptype, "method") != NULL || strstr(ptype, "class") != NULL)
+        return 0;
+
+    /* Scan for function_declarations that shadow an ancestor declaration */
+    uint32_t count = ts_node_named_child_count(block);
+    int nfuncs = 0;
+    for (uint32_t i = 0; i < count; i++)
+    {
+        TSNode child = ts_node_named_child(block, i);
+        if (strcmp(ts_node_type(child), "function_declaration") != 0)
+            continue;
+        if (_is_async_function_like(child))
+            continue;
+        TSNode nn = ts_node_child_by_field_name(child, "name", 4);
+        if (ts_node_is_null(nn))
+            continue;
+        size_t ns = ts_node_start_byte(nn), ne = ts_node_end_byte(nn);
+        if (_ancestor_has_function_decl(block, src, src + ns, ne - ns))
+            nfuncs++;
+    }
+    if (!nfuncs)
+        return 0;
+    if (overlaps)
+        return 1;
+
+    static int bsf_counter = 0;
+
+    rp_string *saves = rp_string_new(64);
+    rp_string *restores = rp_string_new(64);
+
+    for (uint32_t i = 0; i < count; i++)
+    {
+        TSNode child = ts_node_named_child(block, i);
+        if (strcmp(ts_node_type(child), "function_declaration") != 0)
+            continue;
+        if (_is_async_function_like(child))
+            continue;
+        TSNode name_node = ts_node_child_by_field_name(child, "name", 4);
+        TSNode params_node = ts_node_child_by_field_name(child, "parameters", 10);
+        if (ts_node_is_null(name_node) || ts_node_is_null(params_node))
+            continue;
+
+        size_t name_s = ts_node_start_byte(name_node);
+        size_t name_e = ts_node_end_byte(name_node);
+        size_t nlen = name_e - name_s;
+
+        /* Only transform declarations that shadow an ancestor */
+        if (!_ancestor_has_function_decl(block, src, src + name_s, nlen))
+            continue;
+
+        size_t func_s = ts_node_start_byte(child);
+        size_t params_s = ts_node_start_byte(params_node);
+
+        int id = bsf_counter++;
+
+        /* save: var _bsfN = NAME; */
+        rp_string_appendf(saves, "var _bsf%d=%.*s;", id, (int)nlen, src + name_s);
+
+        /* restore: NAME = _bsfN; */
+        rp_string_appendf(restores, "%.*s=_bsf%d;", (int)nlen, src + name_s, id);
+
+        /* convert "function NAME" → "var NAME = function" */
+        rp_string *repl = rp_string_new(32);
+        rp_string_appendf(repl, "var %.*s = function", (int)nlen, src + name_s);
+        add_edit_take_ownership(edits, func_s, params_s, rp_string_steal(repl), claimed);
+        repl = rp_string_free(repl);
+    }
+
+    /* Insert saves after opening '{' */
+    size_t bs = ts_node_start_byte(block);
+    add_edit_take_ownership(edits, bs + 1, bs + 1, rp_string_steal(saves), claimed);
+    saves = rp_string_free(saves);
+
+    /* Insert restores before closing '}' */
+    size_t be = ts_node_end_byte(block);
+    add_edit_take_ownership(edits, be - 1, be - 1, rp_string_steal(restores), claimed);
+    restores = rp_string_free(restores);
+
+    return 1;
+}
+
 RP_ParseRes transpiler_rewrite_pass(EditList *edits, const char *src, size_t src_len, TSNode root,
-                                    uint32_t *polysneeded, int *unresolved)
+                                    uint32_t *polysneeded, int *unresolved, int no_program_wrap)
 {
     RP_ParseRes ret;
     RangeList claimed;
@@ -6231,6 +7896,12 @@ RP_ParseRes transpiler_rewrite_pass(EditList *edits, const char *src, size_t src
             handled = rewrite_class_expression_to_es5(edits, src, n, &claimed, polysneeded, overlaps);
         }
 
+        /* Block-scoped function declarations (ES2015) */
+        if (!handled && strcmp(nt, "statement_block") == 0)
+        {
+            handled = rewrite_block_scoped_functions(edits, src, n, &claimed, overlaps);
+        }
+
         if (!handled && (strcmp(nt, "import_statement") == 0))
         {
             handled = rewrite_import_node(edits, src, n, &claimed, polysneeded, overlaps);
@@ -6262,6 +7933,10 @@ RP_ParseRes transpiler_rewrite_pass(EditList *edits, const char *src, size_t src
 
         if (!handled && strcmp(nt, "method_definition") == 0)
         {
+            handled = rewrite_plain_method_shorthand(edits, src, n, &claimed, overlaps);
+        }
+        if (!handled && strcmp(nt, "method_definition") == 0)
+        {
             handled = rewrite_computed_method_shorthand(edits, src, n, &claimed, overlaps);
         }
         if (!handled && strcmp(nt, "arrow_function") == 0)
@@ -6283,6 +7958,8 @@ RP_ParseRes transpiler_rewrite_pass(EditList *edits, const char *src, size_t src
             handled = rewrite_function_like_default_params(edits, src, n, &claimed, overlaps);
             if (!handled)
                 handled = rewrite_function_rest(edits, src, n, &claimed, overlaps);
+            if (!handled)
+                handled = rewrite_function_destructuring_params(edits, src, n, &claimed, overlaps);
         }
 
         if (!handled && strcmp(nt, "expression_statement") == 0)
@@ -6320,7 +7997,7 @@ RP_ParseRes transpiler_rewrite_pass(EditList *edits, const char *src, size_t src
 
         if (!handled && strcmp(nt, "lexical_declaration") == 0)
         {
-            handled = rewrite_lexical_declaration(edits, src, n, &claimed, overlaps);
+            handled = rewrite_lexical_declaration(edits, src, n, &claimed, overlaps, no_program_wrap);
         }
 
         if (!handled && strcmp(nt, "array") == 0)
@@ -6332,12 +8009,137 @@ RP_ParseRes transpiler_rewrite_pass(EditList *edits, const char *src, size_t src
             handled = rewrite_array_spread(edits, src, n, 1, &claimed, polysneeded, overlaps);
         }
 
+        /* Spread in function/new call args (ES2015) */
+        if (!handled && (strcmp(nt, "call_expression") == 0 || strcmp(nt, "new_expression") == 0))
+        {
+            handled = rewrite_call_spread(edits, src, n, &claimed, overlaps);
+        }
+
+        /* Nullish coalescing (ES2020): a ?? b  →  (a != null ? a : b) */
+        if (!handled && strcmp(nt, "binary_expression") == 0)
+        {
+            handled = rewrite_nullish_coalescing(edits, src, n, &claimed, overlaps);
+        }
+
+        /* Optional chaining (ES2020): obj?.a  →  (obj == null ? void 0 : obj.a) */
+        if (!handled && (strcmp(nt, "member_expression") == 0 ||
+                         strcmp(nt, "call_expression") == 0 ||
+                         strcmp(nt, "subscript_expression") == 0))
+        {
+            handled = rewrite_optional_chaining(edits, src, n, &claimed, overlaps);
+        }
+
+        /* Logical assignment (ES2021): a ??= b, a ||= b, a &&= b */
+        if (!handled && strcmp(nt, "augmented_assignment_expression") == 0)
+        {
+            handled = rewrite_logical_assignment(edits, src, n, &claimed, overlaps);
+        }
+
+        /* Optional catch binding (ES2019): catch {} -> catch(_unused) {} */
+        if (!handled && strcmp(nt, "catch_clause") == 0)
+        {
+            TSNode param = ts_node_child_by_field_name(n, "parameter", 9);
+            if (ts_node_is_null(param))
+            {
+                TSNode cbody = ts_node_child_by_field_name(n, "body", 4);
+                if (!ts_node_is_null(cbody))
+                {
+                    if (!overlaps)
+                    {
+                        size_t body_s = ts_node_start_byte(cbody);
+                        add_edit(edits, body_s, body_s, "(_unused) ", &claimed);
+                    }
+                    handled = 1;
+                }
+            }
+        }
+
+        /* Numeric separators (ES2021): strip underscores from number literals */
+        if (strcmp(nt, "number") == 0)
+        {
+            int has_sep = 0;
+            for (size_t j = ns; j < ne; j++)
+            {
+                if (src[j] == '_') { has_sep = 1; break; }
+            }
+            if (has_sep && !overlaps)
+            {
+                char *buf = malloc(ne - ns + 1);
+                size_t k = 0;
+                for (size_t j = ns; j < ne; j++)
+                {
+                    if (src[j] != '_')
+                        buf[k++] = src[j];
+                }
+                buf[k] = '\0';
+                add_edit(edits, ns, ne, buf, &claimed);
+                free(buf);
+                handled = 1;
+            }
+            else if (has_sep)
+                handled = 1;
+        }
+
+        /* Strip trailing commas from function params and call arguments (ES2017 -> ES5) */
+        if (strcmp(nt, "formal_parameters") == 0 || strcmp(nt, "arguments") == 0)
+        {
+            uint32_t nc = ts_node_named_child_count(n);
+            if (nc > 0)
+            {
+                TSNode last = ts_node_named_child(n, nc - 1);
+                size_t after = ts_node_end_byte(last);
+                size_t paren = ne - 1; /* position of ')' */
+                for (size_t j = after; j < paren; j++)
+                {
+                    if (src[j] == ',')
+                    {
+                        add_edit(edits, j, j + 1, "", &claimed);
+                        break;
+                    }
+                }
+            }
+        }
+
         /* just need the polyfill if we see this */
         if (strcmp(nt, "identifier") == 0)
         {
             size_t start = ts_node_start_byte(n), end = ts_node_end_byte(n);
-            if (strncmp("Promise", src + start, end - start) == 0)
+            size_t ilen = end - start;
+            if (strncmp("Promise", src + start, ilen) == 0 && ilen == 7)
                 *polysneeded |= PROMISE_PF;
+            /* Set, Map, WeakSet, WeakMap polyfills */
+            if ((ilen == 3 && strncmp(src + start, "Set", 3) == 0) ||
+                (ilen == 3 && strncmp(src + start, "Map", 3) == 0) ||
+                (ilen == 7 && strncmp(src + start, "WeakSet", 7) == 0) ||
+                (ilen == 7 && strncmp(src + start, "WeakMap", 7) == 0))
+                *polysneeded |= COLLECT_PF;
+        }
+
+        /* ES2017 polyfills: Object.entries, padStart/padEnd, getOwnPropertyDescriptors */
+        if (strcmp(nt, "member_expression") == 0)
+        {
+            TSNode prop = ts_node_child_by_field_name(n, "property", 8);
+            if (!ts_node_is_null(prop))
+            {
+                size_t ps = ts_node_start_byte(prop), pe = ts_node_end_byte(prop);
+                size_t plen = pe - ps;
+                if ((plen == 8 && strncmp(src + ps, "padStart", 8) == 0) ||
+                    (plen == 6 && strncmp(src + ps, "padEnd", 6) == 0))
+                {
+                    *polysneeded |= ES2017_PF;
+                }
+                else if ((plen == 7 && strncmp(src + ps, "entries", 7) == 0) ||
+                         (plen == 25 && strncmp(src + ps, "getOwnPropertyDescriptors", 25) == 0))
+                {
+                    TSNode obj = ts_node_child_by_field_name(n, "object", 6);
+                    if (!ts_node_is_null(obj))
+                    {
+                        size_t os = ts_node_start_byte(obj), oe = ts_node_end_byte(obj);
+                        if (oe - os == 6 && strncmp(src + os, "Object", 6) == 0)
+                            *polysneeded |= ES2017_PF;
+                    }
+                }
+            }
         }
 
         if (handled && overlaps)
@@ -6360,7 +8162,7 @@ RP_ParseRes transpiler_rewrite_pass(EditList *edits, const char *src, size_t src
 
 #define MAX_PASSES 10
 
-static RP_ParseRes transpile_code(const char *src, size_t src_len, int printTree, int track_polys)
+static RP_ParseRes transpile_code(const char *src, size_t src_len, int printTree, int track_polys, int no_program_wrap)
 {
     TSParser *parser;
     TSTree *tree;
@@ -6396,6 +8198,9 @@ static RP_ParseRes transpile_code(const char *src, size_t src_len, int printTree
 
         if (!npasses)
         {
+            /* Warn about unsupported patterns on first pass (read-only scan) */
+            warn_unsupported_patterns(root);
+
             if (printTree == 2)
                 f = stderr;
 
@@ -6417,7 +8222,7 @@ static RP_ParseRes transpile_code(const char *src, size_t src_len, int printTree
             exit(1);
         }
 
-        res = transpiler_rewrite_pass(&edits, src, src_len, root, &polysneeded, &unresolved);
+        res = transpiler_rewrite_pass(&edits, src, src_len, root, &polysneeded, &unresolved, no_program_wrap);
         res.errmsg = NULL;
 
         if (edits.len || polysneeded)
@@ -6504,12 +8309,17 @@ static RP_ParseRes transpile_code(const char *src, size_t src_len, int printTree
 
 RP_ParseRes transpile(const char *src, size_t src_len, int printTree)
 {
-    return transpile_code(src, src_len, printTree, 1);
+    return transpile_code(src, src_len, printTree, 1, 0);
 }
 
 RP_ParseRes transpile_standalone(const char *src, size_t src_len, int printTree)
 {
-    return transpile_code(src, src_len, printTree, 0);
+    return transpile_code(src, src_len, printTree, 0, 0);
+}
+
+RP_ParseRes transpile_eval(const char *src, size_t src_len, int printTree)
+{
+    return transpile_code(src, src_len, printTree, 1, 1);
 }
 
 char *stealParseRes(RP_ParseRes *res)
