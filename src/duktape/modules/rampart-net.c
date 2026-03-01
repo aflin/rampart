@@ -27,6 +27,10 @@
 #include "openssl/err.h"
 #include "openssl/rand.h"
 
+#if defined(__FreeBSD__)                                                                                                                        
+#include <netinet/in.h>                                                                                                                         
+#endif 
+
 #ifdef __CYGWIN__
 #include <dlfcn.h>
 #else
@@ -39,12 +43,6 @@
 #ifdef strcasecmp                                                                                                                               
 #undef strcasecmp                                                                                                                               
 #endif
-
-
-#if defined(__FreeBSD__)
-#include <netinet/in.h>
-#endif
-
 
 //macos
 #if !defined(SOL_TCP) && defined(IPPROTO_TCP)

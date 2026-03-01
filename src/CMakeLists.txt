@@ -667,7 +667,7 @@ target_link_libraries(rampart-net
 )
 if(CYGWIN)
     target_link_libraries(rampart-net dl)
-else()
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_link_libraries(rampart-net resolv)
 endif()
 
