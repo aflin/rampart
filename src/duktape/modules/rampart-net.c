@@ -30,9 +30,16 @@
 #ifdef __CYGWIN__
 #include <dlfcn.h>
 #else
-#include <resolv.h>
 #include <arpa/nameser.h>
+#include <resolv.h>
 #endif
+
+// on macos big sur only
+// cuz extern/texis/include/nameser.h:251 or thereabouts
+#ifdef strcasecmp                                                                                                                               
+#undef strcasecmp                                                                                                                               
+#endif
+
 
 #if defined(__FreeBSD__)
 #include <netinet/in.h>
