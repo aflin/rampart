@@ -8,19 +8,17 @@ var iam = trim(exec('whoami').stdout);
 var singledir_install = {
     bin:          "/bin",
     include:      "/include",
-//    examples:     "/examples",
-//    "web_server": "/web_server",
+    derivations:  "/derivations",
     modules:      "/modules",
     licenses:     "/licenses",
 }
 
 var local_install = {
-    bin:          "/bin",                 // /usr/local/bin
-    include:      "/include",             // /usr/local/include
-//    examples:     "/rampart/examples",    // /usr/local/rampart/examples
-//    "web_server": "/rampart/web_server",   // /usr/local/rampart/web_server
-    modules:      "/lib/rampart_modules", // /usr/local/lib/rampart_modules
-    licenses:     "/share/rampart/licenses" // /usr/local/share/rampart/licenses
+    bin:          "/bin",                       // /usr/local/bin
+    include:      "/include",                   // /usr/local/include
+    derivations:  "/share/rampart/derivations",
+    modules:      "/lib/rampart_modules",       // /usr/local/lib/rampart_modules
+    licenses:     "/share/rampart/licenses"     // /usr/local/share/rampart/licenses
 }
 var resp;
 function getresp(def, len) {
@@ -147,6 +145,7 @@ function filehash(file) {
 var madeNew=[];
 var fullInstall = false;
 var installPrefix = "";
+var installMap = null;
 
 function copy_single(src, dest, backup) {
     var exists = false;
@@ -227,7 +226,7 @@ function js_copy_entry(src, dest_dir) {
 
 function copy_dir_recursive(src, dest, backup) {
     if(backup && stat(dest))
-        rename(dest, dest + rampart.utils.dateFmt("-%Y-%m-%d-%H-%M-%S"));
+        dest = dest + "_new" + rampart.utils.dateFmt("-%Y-%m-%d-%H-%M-%S");
 
     if(!stat(dest))
         mkdir(dest);
@@ -286,7 +285,7 @@ function do_make_links(prefix,target_bindir) {
         if(linkstat)
         {
             //link already exists
-            if(linkstat.isSymbolicLink) {
+            if(linkstat.isSymbolicLink || linkstat.isFile) {
                 rmFile(link);                
             } else {
                 printf("Cannot create link '%s', file exists and is not a link or a file\n", link);
@@ -299,10 +298,8 @@ function do_make_links(prefix,target_bindir) {
 }
 
 /* we will overwrite files everywhere except in
-   'examples' and 'web_server'.  If files differ
+   'web_server'.  If files differ
    there, the new file will be filename +'.new'   */
-
-/* UPDATE: we are no longer copying the examples and web_server dirs. */
 
 function do_install(prefix, map, makelinks){
     var dirs = Object.keys(map);
@@ -318,7 +315,7 @@ function do_install(prefix, map, makelinks){
         var dir=dirs[i];
         var src = realPath(dir);
         var dest = realPath(prefix) + map[dir];
-        var backup = (dir == "web_server" || dir == 'examples' ) ? true:false;
+        var backup = (dir == "web_server") ? true:false;
 
         if(src == dest)
             continue;
@@ -446,6 +443,7 @@ python3_exec=\$(\$RAMPART -c "rampart.utils.printf('%s/python/bin/python3', proc
     chmod(python3r_fn, "755");
 
     installPrefix = realPath(prefix);
+    installMap = map;
 
     if(fullInstall) {
         printf("Copying extra directories, please wait...\n");
@@ -486,9 +484,14 @@ function choose_install_type() {
 function copy_full_install_extras(prefix, map) {
     var src = process.scriptPath;
     var destprefix = realPath(prefix);
+    var is_local = (map === local_install);
+    var extras_dest = is_local ? destprefix + '/share/rampart' : destprefix;
     var entries = readDir(src, true).filter(function(d){ return d != '.' && d != '..'; });
     var skip_dirs = Object.keys(map);
     var install_pat = /^install.*\.(js|sh|bat|ps1)$/i;
+
+    if (is_local && !stat(extras_dest))
+        mkdir(extras_dest);
 
     for (var i = 0; i < entries.length; i++) {
         var entry = entries[i];
@@ -500,13 +503,14 @@ function copy_full_install_extras(prefix, map) {
             continue;
 
         var srcpath = src + '/' + entry;
-        var destpath = destprefix + '/' + entry;
+        var destpath = extras_dest + '/' + entry;
         var srcstat = stat(srcpath);
 
         if (!srcstat) continue;
 
         if (srcstat.isDirectory) {
-            copy_dir_recursive(srcpath, destpath, false);
+            var backup = (entry == 'web_server');
+            copy_dir_recursive(srcpath, destpath, backup);
         } else {
             copy_single(srcpath, destpath, false);
         }
@@ -524,9 +528,11 @@ function do_install_choice(choice) {
             return do_install('/opt/rampart',singledir_install,true);
             break;
         case '3':
+            choose_install_type();
             return do_install('/usr/local',local_install, false);
             break;
         case '4':
+            choose_install_type();
             return do_install('/usr',local_install, false);
             break;
         case '5':
@@ -1084,7 +1090,6 @@ ALTERNATIVELY:
 chdir(process.scriptPath);
 
 /* make sure all our needed dirs are in the current dir */
-//var needed_dirs = [ 'modules', 'bin', 'examples', 'test', 'web_server', 'include' ];
 var needed_dirs = Object.keys(local_install);
 
 for (var i=0; i<needed_dirs.length; i++) {
@@ -1129,17 +1134,18 @@ printf("\nInstallation complete");
 
 if(with_err != '')
     printf(" with the following error(s):%s\n", with_err);
-else if(fullInstall)
+else if(fullInstall) {
+    var extrasDir = (installMap === local_install) ? installPrefix + '/share/rampart' : installPrefix;
     printf(`
 
 
-Also installed in ${installPrefix}:
+Also installed in ${extrasDir}:
 
   1)  The "run_tests.sh" script and the "./test" directory.  If you'd like
       to run some tests, or just have a look to see what is possible.
 
-  2)  The "./web_server" directory contains a template configuration you
-      might want to use for serving web pages.
+  2)  The "./web_server" directory contains the rampart standard configuration
+      and tree for serving web pages.
 
   3)  The "./examples" directory has a sample module written in C which
       you can use as a template for making your own module written in C.
@@ -1150,7 +1156,7 @@ Also installed in ${installPrefix}:
 
 Thank you for installing.  Enjoy!
 `);
-else
+} else
     printf(`
 
 
@@ -1159,8 +1165,8 @@ Also of interest in this directory (but not copied):
   1)  The "run_tests.sh" script and the "./test" directory.  If you'd like
       to run some tests, or just have a look to see what is possible.
 
-  2)  The "./web_server" directory contains a template configuration you
-      might want to use for serving web pages.
+  2)  The "./web_server" directory contains the rampart standard configuration
+      and tree for serving web pages.
 
   3)  The "./examples" directory has a sample module written in C which
       you can use as a template for making your own module written in C.

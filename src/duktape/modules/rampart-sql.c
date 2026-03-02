@@ -4996,7 +4996,7 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
         if( strcmp(prop,"usederivations")==0 )
         {
             RPPATH rp={{0}};
-            char eqfile[PATH_MAX], eqpath[PATH_MAX];
+            char eqfile[PATH_MAX], eqpath[PATH_MAX], eqpath2[PATH_MAX];
             const char *dlang=NULL;
 
             // if false, turn it off
@@ -5040,7 +5040,8 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
             */
             snprintf(eqfile, PATH_MAX, "%s-deriv", dlang);
             snprintf(eqpath, PATH_MAX, "derivations/%s", dlang);
-            rp=rp_find_path(eqfile, eqpath);
+            snprintf(eqpath2, PATH_MAX, "share/rampart/derivations/%s", dlang);
+            rp=rp_find_path(eqfile, eqpath, eqpath2);
             if(strlen(rp.path))
             {
                 //printf("setting equiv file: '%s'\n", rp.path);

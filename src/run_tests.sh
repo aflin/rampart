@@ -2,6 +2,19 @@
 
 # This file will be placed in the install directory and can be run from there.
 
+SSOURCE=$(readlink -f "${BASH_SOURCE[0]}")
+SDIR=$(dirname "${SSOURCE}")
+
+if [ -x "${SDIR}/bin/rampart" ]; then
+    RAMPART="${SDIR}/bin/rampart"
+elif command -v rampart >/dev/null 2>&1; then
+    RAMPART=$(command -v rampart)
+else
+    echo "Error: cannot find the rampart executable."
+    echo "Make sure 'bin/rampart' exists relative to this script or 'rampart' is in your PATH."
+    exit 1
+fi
+
 if [ `whoami` == 'root' ]; then
     echo "Some tests may fail if run as root."
     read -p "Continue? " -n 1 -r
@@ -19,7 +32,7 @@ FAILED=0
 for i in `ls test/*-test.js`; do
 	echo
 	echo $i
-	bin/rampart $i
+	$RAMPART $i
 	if [ "$?" != "0" ]; then
 		echo "Test ${i} failed"
 		FAILED=$((FAILED+1))
@@ -29,10 +42,12 @@ for i in `ls test/*-test.js`; do
 done
 
 # also run the rampart-url.js, which has its own tests
+MODPATH=$($RAMPART -c "console.log(process.modulesPath)")
+URLJS="${MODPATH}/rampart-url.js"
 echo
-echo modules/rampart-url.js
+echo $URLJS
 
-bin/rampart modules/rampart-url.js
+$RAMPART $URLJS
 if [ "$?" != "0" ]; then
     echo "Test rampart-url.js failed"
     FAILED=$((FAILED+1))
