@@ -12,17 +12,16 @@ cmake_minimum_required(VERSION 3.13)
 
 project(Rampart VERSION 0.5.0 LANGUAGES C CXX)
 
-# Set default install prefix (before any add_subdirectory calls)
-if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
+# Set install prefix (before any add_subdirectory calls)
+# Override the default /usr/local, but respect a user-supplied -DCMAKE_INSTALL_PREFIX=...
+if(NOT CMAKE_INSTALL_PREFIX OR CMAKE_INSTALL_PREFIX STREQUAL "/usr/local")
     if(CYGWIN)
         set(CMAKE_INSTALL_PREFIX "/c/Program Files/mcs/rampart" CACHE PATH "" FORCE)
     else()
         set(CMAKE_INSTALL_PREFIX "/usr/local/rampart" CACHE PATH "" FORCE)
     endif()
-    message("setting install = ${CMAKE_INSTALL_PREFIX}")
-else()
-    message("install = ${CMAKE_INSTALL_PREFIX}")
 endif()
+message("install = ${CMAKE_INSTALL_PREFIX}")
 
 if(CYGWIN)
   # GCC 15 defaults to C23 which breaks many third-party libraries and cmake

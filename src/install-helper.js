@@ -11,6 +11,7 @@ var singledir_install = {
 //    examples:     "/examples",
 //    "web_server": "/web_server",
     modules:      "/modules",
+    licenses:     "/licenses",
 }
 
 var local_install = {
@@ -18,7 +19,8 @@ var local_install = {
     include:      "/include",             // /usr/local/include
 //    examples:     "/rampart/examples",    // /usr/local/rampart/examples
 //    "web_server": "/rampart/web_server",   // /usr/local/rampart/web_server
-    modules:      "/lib/rampart_modules" // /usr/local/lib/rampart_modules
+    modules:      "/lib/rampart_modules", // /usr/local/lib/rampart_modules
+    licenses:     "/share/rampart/licenses" // /usr/local/share/rampart/licenses
 }
 var resp;
 function getresp(def, len) {
@@ -143,6 +145,8 @@ function filehash(file) {
 }
 
 var madeNew=[];
+var fullInstall = false;
+var installPrefix = "";
 
 function copy_single(src, dest, backup) {
     var exists = false;
@@ -258,7 +262,8 @@ function copy_dir_recursive(src, dest, backup) {
 
 var with_err="";
 
-var link_bin_files = ['rampart', 'tsql', 'rex', 'texislockd', 'addtable', 'kdbfchk', "pip3r", "python3r" ];
+//we are now linking all executables
+//var link_bin_files = ['rampart', 'tsql', 'rex', 'texislockd', 'addtable', 'kdbfchk', "pip3r", "python3r" ];
 
 function do_make_links(prefix,target_bindir) {
     var bindir = prefix + '/bin/';
@@ -267,16 +272,21 @@ function do_make_links(prefix,target_bindir) {
     if(!target_bindir)
         target_bindir="/usr/local/bin/";
 
+    var link_bin_files = readDir(bindir);
 
     for(;i<link_bin_files.length;i++){
         var lfile = bindir + link_bin_files[i]; 
         var link  = target_bindir + link_bin_files[i];
 
+        var st = stat(lfile);
+        if(!st.executable)
+            continue;
+
         var linkstat = lstat(link);
         if(linkstat)
         {
             //link already exists
-            if(linkstat.isSymbolicLink || linkstat.isFile) {
+            if(linkstat.isSymbolicLink) {
                 rmFile(link);                
             } else {
                 printf("Cannot create link '%s', file exists and is not a link or a file\n", link);
@@ -435,15 +445,82 @@ python3_exec=\$(\$RAMPART -c "rampart.utils.printf('%s/python/bin/python3', proc
     chmod(pip3r_fn, "755");
     chmod(python3r_fn, "755");
 
+    installPrefix = realPath(prefix);
+
+    if(fullInstall) {
+        printf("Copying extra directories, please wait...\n");
+        stdout.fflush();
+        copy_full_install_extras(prefix, map);
+        printf("Done.\n");
+    }
+
     return true;
+}
+
+function choose_install_type() {
+    fullInstall = false;
+    clear();
+    printf(
+`Choose installation type:
+
+1) Minimal install
+    - Installs only the core files needed to run rampart
+      (bin, include and modules directories).
+
+2) Full install - also includes:
+    - "examples" - a sample module written in C which you can use as
+      a template for making your own module.
+    - "web_server" - a template configuration for serving web pages
+      with rampart.
+    - "unsupported_extras" - includes a websocket client, an LLM demo
+      and a utility to create template rampart module projects.
+
+[1/2] `);
+    var resp = getresp('1');
+    if(resp == '2')
+        fullInstall = true;
+    else if(resp != '1')
+        return choose_install_type();
+}
+
+function copy_full_install_extras(prefix, map) {
+    var src = process.scriptPath;
+    var destprefix = realPath(prefix);
+    var entries = readDir(src, true).filter(function(d){ return d != '.' && d != '..'; });
+    var skip_dirs = Object.keys(map);
+    var install_pat = /^install.*\.(js|sh|bat|ps1)$/i;
+
+    for (var i = 0; i < entries.length; i++) {
+        var entry = entries[i];
+
+        if (skip_dirs.indexOf(entry) > -1)
+            continue;
+
+        if (install_pat.test(entry))
+            continue;
+
+        var srcpath = src + '/' + entry;
+        var destpath = destprefix + '/' + entry;
+        var srcstat = stat(srcpath);
+
+        if (!srcstat) continue;
+
+        if (srcstat.isDirectory) {
+            copy_dir_recursive(srcpath, destpath, false);
+        } else {
+            copy_single(srcpath, destpath, false);
+        }
+    }
 }
 
 function do_install_choice(choice) {
     switch(choice) {
         case '1':
+            choose_install_type();
             return do_install('/usr/local/rampart',singledir_install, true);
             break;
         case '2':
+            choose_install_type();
             return do_install('/opt/rampart',singledir_install,true);
             break;
         case '3':
@@ -487,8 +564,9 @@ function do_install_choice(choice) {
                     return false;
                 }
             }
+            choose_install_type();
             printf("create links to binaries in '/usr/local/bin'? [Y/n]\n");
-            resp=getresp("y");            
+            resp=getresp("y");
             if (resp == 'y')
                 do_install(loc, singledir_install, true);
             else
@@ -555,8 +633,9 @@ function do_install_choice(choice) {
                     return false;
                 }
             }
+            choose_install_type();
             printf(`create links to binaries in '${process.env.HOME}/bin'? [Y/n]\n`);
-            resp=getresp("y");            
+            resp=getresp("y");
             if (resp == 'y')
                 do_install(loc, singledir_install, process.env.HOME+'/bin/');
             else
@@ -916,6 +995,8 @@ ${homeopt}3) custom location
         }
     }
 
+    choose_install_type();
+
     var ret = do_install(prefix, singledir_install, false);
 
     if(ret) {
@@ -1048,6 +1129,27 @@ printf("\nInstallation complete");
 
 if(with_err != '')
     printf(" with the following error(s):%s\n", with_err);
+else if(fullInstall)
+    printf(`
+
+
+Also installed in ${installPrefix}:
+
+  1)  The "run_tests.sh" script and the "./test" directory.  If you'd like
+      to run some tests, or just have a look to see what is possible.
+
+  2)  The "./web_server" directory contains a template configuration you
+      might want to use for serving web pages.
+
+  3)  The "./examples" directory has a sample module written in C which
+      you can use as a template for making your own module written in C.
+
+  4)  The "./unsupported_extras" directory includes a websocket client and
+      a utility to create template rampart module projects with Makefile,
+      *.c and *-test.js files (c_module_template_maker/make_cmod_template.js).
+
+Thank you for installing.  Enjoy!
+`);
 else
     printf(`
 
@@ -1057,14 +1159,14 @@ Also of interest in this directory (but not copied):
   1)  The "run_tests.sh" script and the "./test" directory.  If you'd like
       to run some tests, or just have a look to see what is possible.
 
-  2)  The "./web_server" directory contains a template configuration you 
+  2)  The "./web_server" directory contains a template configuration you
       might want to use for serving web pages.
 
   3)  The "./examples" directory has a sample module written in C which
       you can use as a template for making your own module written in C.
 
-  4)  The "./unsupported_extras" directory includes a websocket client and 
-      a utility to create template rampart module projects with Makefile, 
+  4)  The "./unsupported_extras" directory includes a websocket client and
+      a utility to create template rampart module projects with Makefile,
       *.c and *-test.js files (c_module_template_maker/make_cmod_template.js).
 
 Thank you for installing.  Enjoy!
