@@ -38,6 +38,7 @@ var defaultServerConf = function(wd){
         beginFunc:      false,
         beginFuncOnFile:false,
         endFunc:        false,
+        irohProxy:      false,
         serverRoot:     wd
     }
 }
@@ -82,6 +83,7 @@ var defaultQuickServerConf = function(wd){
         beginFunc:      false,
         beginFuncOnFile:false,
         endFunc:        false,
+        irohProxy:      false,
         serverRoot:     wd
     }
 }
@@ -103,6 +105,7 @@ var optlist = {
 '--logRoot':        'String. Log directory',
 '--accessLog':      'String. Log file name. "" for stdout',
 '--errorLog':       'String. error log file name. "" for stderr',
+'--irohProxy':      'Bool.   Start the iroh webproxy server for this server',
 '--log':            'Bool.   Whether to log requests and errors',
 '--rotateLogs':     'Bool.   Whether to rotate the logs',
 '--rotateInterval': 'Number. Interval between log rotations in seconds',
@@ -253,6 +256,9 @@ function firstChecks(serverConf)
             return serr( "redir or redirPort must be set when letsencrypt==\"setup\"" );
         }
     }
+
+    if(serverConf.irohProxy && serverConf.secure)
+        return serr("currently the iroh webproxy does not work with https");
 
     var bind = [];
 
@@ -483,6 +489,8 @@ function status(serverConf){
     ret.monitorPid=pret;
     var pret=getPid('redir-server', true);
     ret.redirPid=pret;
+    var iret=getPid('iroh-server', true);
+    ret.irohPid=iret;
     return ret;    
 }
 
@@ -566,7 +574,11 @@ function start(serverConf, dump) {
 
         res=killPid('redir-server');
         if(res.success)
-            msg += '\nRedirect server has been stopped';
+            msg += '\nRedirect Server has been stopped';
+
+        res=killPid('iroh-server');
+        if(res.success)
+            msg += '\nIroh Server has been stopped';
 
         return {message:msg};
     }
@@ -790,6 +802,40 @@ function start(serverConf, dump) {
 
         var ret = smsg('Redirect Server has been started');
         ret.pid=rpid;
+        return ret;
+    }
+
+    /* ****************** START THE IROH SERVER ************************ */
+
+    function start_iroh() {
+        var addr = '127.0.0.1', irohbin;
+
+        if(!serverConf.irohProxy)
+            return {};
+
+        if(serverConf.ipAddr != "0.0.0.0" && ! serverConf.bindAll)
+            addr = serverConf.ipAddr;
+
+        irohbin = rampart.utils.shell('which iroh-webproxy');
+
+        if(irohbin.exitStatus == 0)
+            irohbin=irohbin.stdout.trim();
+        else
+            return serr('Server is configured with irohProxy:true but iroh-webproxy executable not found');
+
+        var cmd = sprintf(
+            '%s server --key-file "%s/iroh-webserver-secret.txt" --target %s:%s --daemon --pidfile %s/iroh-server.pid',
+            irohbin, serverConf.serverRoot, addr, serverConf.ipPort, serverConf.serverRoot
+        );
+        var reti = rampart.utils.shell(cmd);
+        if(reti.exitStatus != 0)
+            return serr(`iroh start failed: ${reti.stderr}`);
+
+        rampart.utils.fprintf(`${serverConf.serverRoot}/iroh-nodeId.txt`,'%s', reti.stdout);
+
+        var ret = smsg(sprintf('Iroh Server has been started.'));
+        ret.pid = rampart.utils.readFile(`${serverConf.serverRoot}/iroh-server.pid`);
+
         return ret;
     }
 
@@ -1051,11 +1097,21 @@ function start(serverConf, dump) {
     if(retr.error)
         return retr;
 
+    // start iroh (order doesn't matter)
+    var reti = start_iroh();
+    if(reti.error) {
+        if(retr.pid)
+            kill(retr.pid);
+        return reti;
+    }
+
     // start the main server
     var ret=start_server();
 
     if(ret.error) {
         if(retr.pid)
+            kill(retr.pid);
+        if(reti.pid)
             kill(retr.pid);
         return ret;
     }
@@ -1207,6 +1263,9 @@ function web_server_conf(conf) {
             printf("monitor process is running. pid: %s\n", res.monitorPid);
         else
             printf("monitor process is not running\n");
+
+        if( res.irohPid && kill(res.irohPid,0) )
+            printf("iroh-webproxy process is running. pid: %s\n", res.irohPid);
 
     } else if (argv[2] == '--dump' || argv[2]=='dump') {
 

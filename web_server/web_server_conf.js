@@ -62,6 +62,9 @@ var serverConf = {
     /* logRoot             String. Log directory   */
     //logRoot:             working_directory + '/logs',
 
+    /* irohProxy           Bool.  Whether to start the irohProxy server to proxy http to iroh-webproxy client */
+    //irohProxy:           false,
+
     /* redirPort           Number. Launch http->https redirect server and set port if < -1  */
     //redirPort:           -1,
 
