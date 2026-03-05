@@ -257,9 +257,6 @@ function firstChecks(serverConf)
         }
     }
 
-    if(serverConf.irohProxy && serverConf.secure)
-        return serr("currently the iroh webproxy does not work with https");
-
     var bind = [];
 
     if(serverConf.bindAll) {
@@ -808,10 +805,13 @@ function start(serverConf, dump) {
     /* ****************** START THE IROH SERVER ************************ */
 
     function start_iroh() {
-        var addr = '127.0.0.1', irohbin;
+        var addr = '127.0.0.1', tls='', irohbin;
 
         if(!serverConf.irohProxy)
             return {};
+
+        if(serverConf.secure)
+            tls = '--tls --insecure';
 
         if(serverConf.ipAddr != "0.0.0.0" && ! serverConf.bindAll)
             addr = serverConf.ipAddr;
@@ -824,9 +824,10 @@ function start(serverConf, dump) {
             return serr('Server is configured with irohProxy:true but iroh-webproxy executable not found');
 
         var cmd = sprintf(
-            '%s server --key-file "%s/iroh-webserver-secret.txt" --target %s:%s --daemon --pidfile %s/iroh-server.pid',
-            irohbin, serverConf.serverRoot, addr, serverConf.ipPort, serverConf.serverRoot
+            '%s server %s --key-file "%s/iroh-webserver-secret.txt" --target %s:%s --daemon --pidfile %s/iroh-server.pid',
+            irohbin, tls, serverConf.serverRoot, addr, serverConf.ipPort, serverConf.serverRoot
         );
+
         var reti = rampart.utils.shell(cmd);
         if(reti.exitStatus != 0)
             return serr(`iroh start failed: ${reti.stderr}`);
