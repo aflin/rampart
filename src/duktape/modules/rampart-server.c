@@ -2081,7 +2081,7 @@ static char *cachedir = ".gzipcache/";
       haveCT - non-zero if content-type is already set
       filestat - if already called stat, include here, otherwise set to NULL
 */
-static void rp_sendfile(evhtp_request_t *req, char *fn, int haveCT, struct stat *filestat, int is_fileserver)
+static void rp_sendfile(evhtp_request_t *req, char *fn, int haveCT, struct stat *filestat, int is_fileserver, int noRangeCap)
 {
     int fd = -1;
     ev_off_t beg = 0, len = -1;
@@ -2267,7 +2267,7 @@ static void rp_sendfile(evhtp_request_t *req, char *fn, int haveCT, struct stat 
                 if (endval && endval > beg)
                     len = (endval - beg) +1;
             }
-            else if (filesize - beg > (ev_off_t)default_range_bytes)
+            else if (!noRangeCap && filesize - beg > (ev_off_t)default_range_bytes)
             {   // don't send whole file, just a small chunk.
                 len = default_range_bytes;
                 endval = -1 + beg + len;
@@ -2584,7 +2584,7 @@ static void fileserver(evhtp_request_t *req, void *arg)
         {
             //need to send to rp_sendfile to remove any cached gz files
             if (compressibles)
-                rp_sendfile(req, fn, 0, NULL, 1);
+                rp_sendfile(req, fn, 0, NULL, 1, 0);
             else
                 send404(req);
 
@@ -2601,7 +2601,7 @@ static void fileserver(evhtp_request_t *req, void *arg)
                 evhtp_headers_add_header(req->headers_out, evhtp_header_new(map->hkeys[i], map->hvals[i], 0, 0));
             }
 
-            rp_sendfile(req, fn, 0, &sb, 1);
+            rp_sendfile(req, fn, 0, &sb, 1, 0);
         }
         else if (mode == S_IFDIR)
         {
@@ -2626,10 +2626,10 @@ static void fileserver(evhtp_request_t *req, void *arg)
                 if (stat(fnindex, &sb) == -1)
                     dirlist(req, fn);
                 else
-                    rp_sendfile(req, fnindex, 0, &sb, 1);
+                    rp_sendfile(req, fnindex, 0, &sb, 1, 0);
             }
             else
-                rp_sendfile(req, fnindex, 0, &sb, 1);
+                rp_sendfile(req, fnindex, 0, &sb, 1, 0);
         }
         else
             send404(req);
@@ -2949,6 +2949,14 @@ static evhtp_res obj_to_buffer(DHS *dhs)
     }
     duk_pop(ctx);
 
+    int noRangeCap = 0;
+    if (duk_get_prop_string(ctx, -1, "noRangeCap"))
+    {
+        if (duk_is_boolean(ctx, -1))
+            noRangeCap = duk_get_boolean(ctx, -1);
+    }
+    duk_pop(ctx);
+
     duk_enum(ctx, -1, 0);
     while (duk_next(ctx, -1, 1))
     {
@@ -2957,7 +2965,7 @@ static evhtp_res obj_to_buffer(DHS *dhs)
         if( !strcmp(
             key, "headers") || !strcmp(key, "chunk") ||
             !strcmp(key, "chunkDelay") ||!strcmp(key, "status") ||
-            !strcmp(key, "compress")
+            !strcmp(key, "compress") || !strcmp(key, "noRangeCap")
         ){
             duk_pop_2(ctx);
             continue;
@@ -2990,7 +2998,7 @@ static evhtp_res obj_to_buffer(DHS *dhs)
                 }
                 else
                 {
-                    rp_sendfile(dhs->req, (char *)d+1, 1, NULL, 0);
+                    rp_sendfile(dhs->req, (char *)d+1, 1, NULL, 0, noRangeCap);
                     return (0);
                 }
             }
@@ -3579,7 +3587,7 @@ static duk_ret_t send_chunk_chunkend(duk_context *ctx, int end) {
                     attachfile(dhs->req, (char *)d+1);
                 }
                 else
-                    rp_sendfile(dhs->req, (char *)d+1, 1, NULL, 0);
+                    rp_sendfile(dhs->req, (char *)d+1, 1, NULL, 0, 0);
 
                 evhtp_send_reply_chunk(req, dhs->req->buffer_out);
                 dhs->freeme=1;
