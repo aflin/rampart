@@ -2246,7 +2246,19 @@ static void rp_sendfile(evhtp_request_t *req, char *fn, int haveCT, struct stat 
         beg = (ev_off_t)strtoll(range + 6, &eptr, 10);
         if (eptr != range + 6)
         {
-            ev_off_t endval;
+            ev_off_t endval = filesize - 1;
+
+            /* reject start position at or past end of file */
+            if (beg < 0 || beg >= filesize)
+            {
+                char crng[128];
+                snprintf(crng, 128, "bytes */%" PRIu64, (uint64_t)filesize);
+                evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Range", crng, 0, 1));
+                evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Type", "text/plain", 0, 0));
+                sendresp(req, 416, 0);
+                close(fd);
+                return;
+            }
 
             eptr++; // skip '-'
             if (*eptr != '\0')
@@ -2255,7 +2267,7 @@ static void rp_sendfile(evhtp_request_t *req, char *fn, int haveCT, struct stat 
                 if (endval && endval > beg)
                     len = (endval - beg) +1;
             }
-            else if (filesize - beg > default_range_bytes)
+            else if (filesize - beg > (ev_off_t)default_range_bytes)
             {   // don't send whole file, just a small chunk.
                 len = default_range_bytes;
                 endval = -1 + beg + len;
@@ -2264,12 +2276,16 @@ static void rp_sendfile(evhtp_request_t *req, char *fn, int haveCT, struct stat 
             rescode = 206;
 
             if(len==-1)
-                endval=filesize-1;
-
-            if(endval > filesize-1 || beg > filesize -1)
             {
-                send404(req);
-                return;
+                endval=filesize-1;
+                len = filesize - beg;
+            }
+
+            /* clamp endval to file boundary */
+            if(endval > filesize-1)
+            {
+                endval = filesize-1;
+                len = endval - beg + 1;
             }
 
             /* Content-Range: bytes 12812288-70692914/70692915 */
@@ -2281,8 +2297,6 @@ static void rp_sendfile(evhtp_request_t *req, char *fn, int haveCT, struct stat 
             //don't compress, just return
             snprintf(slen, 64, "%" PRIu64, (uint64_t)len);
             evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Length", slen, 0, 1));
-            if(len==-1)
-                len = filesize - beg;
             rp_evbuffer_add_file(req->buffer_out, fd, beg, len);
             sendresp(req, rescode, 0);
             return;
