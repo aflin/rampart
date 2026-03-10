@@ -1438,6 +1438,338 @@ duk_ret_t duk_gen_csr(duk_context *ctx)
 }
 
 
+/* generate a self-signed x509 certificate and private key
+   equivalent to: openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout key -out cert -config conf
+   Takes a JS object or subject string ("/C=US/CN=example.com") with optional options object.
+   Returns {key, cert} as PEM strings */
+static duk_ret_t duk_gen_cert(duk_context *ctx)
+{
+    X509 *x509 = NULL;
+    EVP_PKEY *pkey = NULL;
+    RSA *rsa = NULL;
+    BIGNUM *bne = NULL;
+    BIO *bio_key = NULL, *bio_cert = NULL;
+    X509_NAME *subject = NULL;
+    X509V3_CTX v3ctx;
+    X509_EXTENSION *ext = NULL;
+    int ret = 0, bits = 2048, days = 365;
+    const char *txt = NULL, *subj_str = NULL;
+    duk_idx_t obj_idx = -1;
+    void *buf;
+
+#define CERT_CLEANUP() do {             \
+    if(x509) X509_free(x509);          \
+    if(pkey) EVP_PKEY_free(pkey);       \
+    if(bio_key) BIO_free_all(bio_key);  \
+    if(bio_cert) BIO_free_all(bio_cert);\
+} while(0)
+
+#define CERT_ERR(ctx, ...) do { \
+    CERT_CLEANUP();             \
+    RP_THROW(ctx, __VA_ARGS__); \
+} while(0)
+
+#define CERT_SSL_ERR(ctx) do {  \
+    CERT_CLEANUP();             \
+    DUK_OPENSSL_ERROR(ctx);     \
+} while(0)
+
+    if(duk_is_string(ctx, 0))
+    {
+        subj_str = duk_get_string(ctx, 0);
+        if(duk_is_object(ctx, 1))
+            obj_idx = 1;
+    }
+    else if(duk_is_object(ctx, 0))
+        obj_idx = 0;
+    else
+        RP_THROW(ctx, "crypto.gen_cert - first argument must be a String (\"/C=US/CN=name\") or Object");
+
+    /* get options */
+    if(obj_idx > -1 && duk_get_prop_string(ctx, obj_idx, "bits"))
+        bits = REQUIRE_INT(ctx, -1, "crypto.gen_cert - 'bits' must be a Number");
+    if(obj_idx > -1) duk_pop(ctx);
+
+    if(obj_idx > -1 && duk_get_prop_string(ctx, obj_idx, "days"))
+        days = REQUIRE_INT(ctx, -1, "crypto.gen_cert - 'days' must be a Number");
+    if(obj_idx > -1) duk_pop(ctx);
+
+    /* generate RSA key */
+    bne = BN_new();
+    if(!bne || !BN_set_word(bne, RSA_F4))
+    {
+        if(bne) BN_free(bne);
+        DUK_OPENSSL_ERROR(ctx);
+    }
+
+    rsa = RSA_new();
+    if(!rsa)
+    {
+        BN_free(bne);
+        DUK_OPENSSL_ERROR(ctx);
+    }
+
+    if(!RSA_generate_key_ex(rsa, bits, bne, NULL))
+    {
+        RSA_free(rsa);
+        BN_free(bne);
+        DUK_OPENSSL_ERROR(ctx);
+    }
+    BN_free(bne);
+
+    pkey = EVP_PKEY_new();
+    if(!pkey)
+    {
+        RSA_free(rsa);
+        DUK_OPENSSL_ERROR(ctx);
+    }
+    EVP_PKEY_assign_RSA(pkey, rsa);
+    /* rsa now owned by pkey */
+
+    /* create X509 certificate */
+    x509 = X509_new();
+    if(!x509)
+        CERT_ERR(ctx, "crypto.gen_cert - X509_new() failed");
+
+    X509_set_version(x509, 2); /* v3 */
+
+    /* random serial number */
+    {
+        unsigned char serial_bytes[16];
+        BIGNUM *bn = NULL;
+        ASN1_INTEGER *ai = NULL;
+
+        RAND_bytes(serial_bytes, sizeof(serial_bytes));
+        serial_bytes[0] &= 0x7F; /* ensure positive */
+        bn = BN_bin2bn(serial_bytes, sizeof(serial_bytes), NULL);
+        ai = BN_to_ASN1_INTEGER(bn, NULL);
+        X509_set_serialNumber(x509, ai);
+        ASN1_INTEGER_free(ai);
+        BN_free(bn);
+    }
+
+    /* validity period */
+    X509_gmtime_adj(X509_get_notBefore(x509), 0);
+    X509_gmtime_adj(X509_get_notAfter(x509), (long)days * 86400L);
+
+    if(!X509_set_pubkey(x509, pkey))
+        CERT_SSL_ERR(ctx);
+
+    /* set subject name */
+    subject = X509_get_subject_name(x509);
+
+    if(subj_str)
+    {
+        /* parse "/KEY=VALUE/KEY=VALUE/..." format (openssl req -subj style) */
+        char *copy = strdup(subj_str);
+        char *p = copy, *seg, *eq;
+
+        if(*p == '/') p++;
+
+        while(p && *p)
+        {
+            seg = p;
+            p = strchr(p, '/');
+            if(p)
+            {
+                *p = '\0';
+                p++;
+            }
+            eq = strchr(seg, '=');
+            if(eq && seg[0])
+            {
+                *eq = '\0';
+                X509_NAME_add_entry_by_txt(subject, seg, MBSTRING_ASC,
+                    (const unsigned char*)(eq + 1), -1, -1, 0);
+            }
+        }
+        free(copy);
+    }
+    else if(obj_idx > -1)
+    {
+        if(duk_get_prop_string(ctx, obj_idx, "country"))
+        {
+            txt = REQUIRE_STRING(ctx, -1, "crypto.gen_cert - 'country' must be a String");
+            X509_NAME_add_entry_by_txt(subject, "C", MBSTRING_ASC, (const unsigned char*)txt, -1, -1, 0);
+        }
+        duk_pop(ctx);
+
+        if(duk_get_prop_string(ctx, obj_idx, "state"))
+        {
+            txt = REQUIRE_STRING(ctx, -1, "crypto.gen_cert - 'state' must be a String");
+            X509_NAME_add_entry_by_txt(subject, "ST", MBSTRING_ASC, (const unsigned char*)txt, -1, -1, 0);
+        }
+        duk_pop(ctx);
+
+        if(duk_get_prop_string(ctx, obj_idx, "city"))
+        {
+            txt = REQUIRE_STRING(ctx, -1, "crypto.gen_cert - 'city' must be a String");
+            X509_NAME_add_entry_by_txt(subject, "L", MBSTRING_ASC, (const unsigned char*)txt, -1, -1, 0);
+        }
+        duk_pop(ctx);
+
+        if(duk_get_prop_string(ctx, obj_idx, "organization"))
+        {
+            txt = REQUIRE_STRING(ctx, -1, "crypto.gen_cert - 'organization' must be a String");
+            X509_NAME_add_entry_by_txt(subject, "O", MBSTRING_ASC, (const unsigned char*)txt, -1, -1, 0);
+        }
+        duk_pop(ctx);
+
+        if(duk_get_prop_string(ctx, obj_idx, "organizationUnit"))
+        {
+            txt = REQUIRE_STRING(ctx, -1, "crypto.gen_cert - 'organizationUnit' must be a String");
+            X509_NAME_add_entry_by_txt(subject, "OU", MBSTRING_ASC, (const unsigned char*)txt, -1, -1, 0);
+        }
+        duk_pop(ctx);
+
+        if(duk_get_prop_string(ctx, obj_idx, "name"))
+        {
+            txt = REQUIRE_STRING(ctx, -1, "crypto.gen_cert - 'name' must be a String");
+            X509_NAME_add_entry_by_txt(subject, "CN", MBSTRING_ASC, (const unsigned char*)txt, -1, -1, 0);
+        }
+        duk_pop(ctx);
+
+        if(duk_get_prop_string(ctx, obj_idx, "email"))
+        {
+            txt = REQUIRE_STRING(ctx, -1, "crypto.gen_cert - 'email' must be a String");
+            X509_NAME_add_entry_by_txt(subject, "emailAddress", MBSTRING_ASC, (const unsigned char*)txt, -1, -1, 0);
+        }
+        duk_pop(ctx);
+    }
+
+    /* self-signed: issuer = subject */
+    X509_set_issuer_name(x509, subject);
+
+    /* add X509v3 extensions */
+    X509V3_set_ctx_nodb(&v3ctx);
+    X509V3_set_ctx(&v3ctx, x509, x509, NULL, NULL, 0);
+
+    /* basicConstraints - default "CA:FALSE" */
+    {
+        const char *bc = "CA:FALSE";
+        if(obj_idx > -1 && duk_get_prop_string(ctx, obj_idx, "basicConstraints"))
+            bc = REQUIRE_STRING(ctx, -1, "crypto.gen_cert - 'basicConstraints' must be a String");
+        if(obj_idx > -1) duk_pop(ctx);
+        ext = X509V3_EXT_nconf_nid(NULL, &v3ctx, NID_basic_constraints, bc);
+        if(ext)
+        {
+            X509_add_ext(x509, ext, -1);
+            X509_EXTENSION_free(ext);
+        }
+    }
+
+    /* keyUsage - default "digitalSignature, keyEncipherment" */
+    {
+        const char *ku = "digitalSignature, keyEncipherment";
+        if(obj_idx > -1 && duk_get_prop_string(ctx, obj_idx, "keyUsage"))
+            ku = REQUIRE_STRING(ctx, -1, "crypto.gen_cert - 'keyUsage' must be a String");
+        if(obj_idx > -1) duk_pop(ctx);
+        ext = X509V3_EXT_nconf_nid(NULL, &v3ctx, NID_key_usage, ku);
+        if(ext)
+        {
+            X509_add_ext(x509, ext, -1);
+            X509_EXTENSION_free(ext);
+        }
+    }
+
+    /* subjectAltName */
+    if(obj_idx > -1 && duk_get_prop_string(ctx, obj_idx, "subjectAltName"))
+    {
+        const char *san_prefix = "DNS";
+        char *san_str = NULL;
+        size_t san_len = 0;
+
+        /* determine SAN type prefix */
+        if(duk_get_prop_string(ctx, obj_idx, "subjectAltNameType"))
+        {
+            const char *type = REQUIRE_STRING(ctx, -1, "crypto.gen_cert - 'subjectAltNameType' must be a String");
+            if(!strcasecmp("dns", type)) san_prefix = "DNS";
+            else if(!strcasecmp("email", type)) san_prefix = "email";
+            else if(!strcasecmp("ip", type)) san_prefix = "IP";
+            else if(!strcasecmp("uri", type)) san_prefix = "URI";
+            else CERT_ERR(ctx, "crypto.gen_cert - 'subjectAltNameType' must be 'dns', 'email', 'ip', or 'uri'");
+        }
+        duk_pop(ctx);
+
+        if(duk_is_array(ctx, -1))
+        {
+            int i, l = (int)duk_get_length(ctx, -1);
+
+            for(i = 0; i < l; i++)
+            {
+                duk_get_prop_index(ctx, -1, (duk_uarridx_t)i);
+                txt = REQUIRE_STRING(ctx, -1, "crypto.gen_cert - 'subjectAltName' entries must be Strings");
+                san_len += strlen(san_prefix) + 1 + strlen(txt) + 1; /* "DNS:name," */
+                duk_pop(ctx);
+            }
+            san_str = (char *)malloc(san_len + 1);
+            san_str[0] = '\0';
+            for(i = 0; i < l; i++)
+            {
+                if(i > 0) strcat(san_str, ",");
+                strcat(san_str, san_prefix);
+                strcat(san_str, ":");
+                duk_get_prop_index(ctx, -1, (duk_uarridx_t)i);
+                strcat(san_str, duk_get_string(ctx, -1));
+                duk_pop(ctx);
+            }
+        }
+        else
+        {
+            txt = REQUIRE_STRING(ctx, -1, "crypto.gen_cert - 'subjectAltName' must be a String or Array of Strings");
+            san_len = strlen(san_prefix) + 1 + strlen(txt) + 1;
+            san_str = (char *)malloc(san_len);
+            sprintf(san_str, "%s:%s", san_prefix, txt);
+        }
+
+        ext = X509V3_EXT_nconf_nid(NULL, &v3ctx, NID_subject_alt_name, san_str);
+        free(san_str);
+        if(ext)
+        {
+            X509_add_ext(x509, ext, -1);
+            X509_EXTENSION_free(ext);
+        }
+    }
+    if(obj_idx > -1) duk_pop(ctx);
+
+    /* sign the certificate */
+    ret = X509_sign(x509, pkey, EVP_sha256());
+    if(ret <= 0)
+        CERT_SSL_ERR(ctx);
+
+    /* write PEM output */
+    bio_key = BIO_new(BIO_s_mem());
+    bio_cert = BIO_new(BIO_s_mem());
+    if(!bio_key || !bio_cert)
+        CERT_ERR(ctx, "crypto.gen_cert - BIO_new() failed");
+
+    ret = PEM_write_bio_PrivateKey(bio_key, pkey, NULL, NULL, 0, NULL, NULL);
+    if(ret != 1)
+        CERT_SSL_ERR(ctx);
+
+    ret = PEM_write_bio_X509(bio_cert, x509);
+    if(ret != 1)
+        CERT_SSL_ERR(ctx);
+
+    /* return {key, cert} */
+    duk_push_object(ctx);
+
+    ret = BIO_get_mem_data(bio_key, &buf);
+    duk_push_lstring(ctx, (char *)buf, (duk_size_t)ret);
+    duk_put_prop_string(ctx, -2, "key");
+
+    ret = BIO_get_mem_data(bio_cert, &buf);
+    duk_push_lstring(ctx, (char *)buf, (duk_size_t)ret);
+    duk_put_prop_string(ctx, -2, "cert");
+
+    CERT_CLEANUP();
+    return 1;
+
+#undef CERT_CLEANUP
+#undef CERT_ERR
+#undef CERT_SSL_ERR
+}
+
 
 #define DUK_GEN_OPENSSL_ERROR(ctx) do { \
     if(rsa) RSA_free(rsa);              \
@@ -1537,9 +1869,9 @@ duk_ret_t duk_cert_info(duk_context *ctx)
 
 #define putbio(str) {\
     char *p=NULL;\
-    BIO_get_mem_data(btmp, &p);\
-    if(*p) {\
-        duk_push_string(ctx, p);\
+    duk_size_t l = (duk_size_t)BIO_get_mem_data(btmp, &p);\
+    if(l && *p) {\
+        duk_push_lstring(ctx, p, l);\
         duk_put_prop_string(ctx, -2, str);\
     }\
 }\
@@ -3811,6 +4143,7 @@ const duk_function_list_entry crypto_funcs[] = {
     {"rsa_verify", duk_rsa_verify, 3},
     {"rsa_gen_key", duk_rsa_gen_key, 2},
     {"gen_csr", duk_gen_csr, 3},
+    {"gen_cert", duk_gen_cert, 2},
     {"rsa_components", duk_rsa_components, 2},
     {"rsa_import_priv_key", duk_rsa_import_priv_key, 3},
     {"cert_info", duk_cert_info,1},

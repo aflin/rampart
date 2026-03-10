@@ -71,44 +71,26 @@ function testFeature(name,test)
 
 var cert = process.scriptPath+'/sample-cert.pem';
 var key = process.scriptPath+'/sample-key.pem';
-var conf = process.scriptPath+'/sample-cert.conf';
 
 if(
     !(stat(cert) &&
       stat(key) )
 )
 {
-    fprintf(conf, '%s',
-        "[CA_default]\n" +
-        "copy_extensions = copy\n" +
-        "\n" +
-        "[req]\n" +
-        "default_bits = 4096\n" +
-        "prompt = no\n" +
-        "default_md = sha256\n" +
-        "distinguished_name = req_distinguished_name\n" +
-        "x509_extensions = v3_ca\n" +
-        "\n" +
-        "[req_distinguished_name]\n" +
-        "C = US\n" +
-        "ST = Deleware\n" +
-        "L = Wilmington\n" +
-        "O = Sample Co\n" +
-        "OU = Sample Department\n" +
-        "emailAddress = sample@sample.none\n" +
-        "CN = sample.none\n" +
-        "\n" +
-        "[v3_ca]\n" +
-        "basicConstraints = CA:FALSE\n" +
-        "keyUsage = digitalSignature, keyEncipherment\n" +
-        "subjectAltName = @alternate_names\n" +
-        "\n" +
-        "[alternate_names]\n" +
-        "DNS.1 = localhost\n" +
-        "DNS.2 = *.localhost\n"
-    );
-    var ret = shell(`openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout '${key}' -out '${cert}' -config '${conf}'`);
-    //console.log(ret);
+    var r = crypto.gen_cert({
+        country: "US",
+        state: "Deleware",
+        city: "Wilmington",
+        organization: "Sample Co",
+        organizationUnit: "Sample Department",
+        email: "sample@sample.none",
+        name: "sample.none",
+        bits: 2048,
+        days: 365,
+        subjectAltName: ["localhost", "*.localhost"]
+    });
+    fprintf(key, '%s', r.key);
+    fprintf(cert, '%s', r.cert);
 }
 
 if(!stat("smods"))

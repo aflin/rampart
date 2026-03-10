@@ -183,6 +183,77 @@ printf("using openssl 1.1, you can decode the written file with this:\n%s\n",
 */
 
 
+/* gen_cert tests */
+
+testFeature("gen_cert object form", function(){
+    var r = crypto.gen_cert({
+        name: "example.com",
+        country: "US",
+        state: "Delaware",
+        days: 30,
+        subjectAltName: ["example.com", "*.example.com"]
+    });
+    var info = crypto.cert_info(r.cert);
+    return r.key.indexOf("PRIVATE KEY") > -1
+        && r.cert.indexOf("CERTIFICATE") > -1
+        && info.subject.indexOf("example.com") > -1
+        && info.extensions["X509v3 Subject Alternative Name"].indexOf("example.com") > -1;
+});
+
+testFeature("gen_cert string form", function(){
+    var r = crypto.gen_cert("/CN=myhost/O=My Org/C=US");
+    var info = crypto.cert_info(r.cert);
+    return r.key.indexOf("PRIVATE KEY") > -1
+        && info.subject.indexOf("myhost") > -1
+        && info.subject.indexOf("My Org") > -1
+        && info.subject.indexOf("US") > -1;
+});
+
+testFeature("gen_cert string + options", function(){
+    var r = crypto.gen_cert("/CN=localhost/O=Test", {
+        days: 730,
+        subjectAltName: ["localhost", "*.localhost"]
+    });
+    var info = crypto.cert_info(r.cert);
+    return info.subject.indexOf("localhost") > -1
+        && info.extensions["X509v3 Subject Alternative Name"].indexOf("localhost") > -1;
+});
+
+testFeature("gen_cert empty object", function(){
+    var r = crypto.gen_cert({});
+    return r.key.indexOf("PRIVATE KEY") > -1
+        && r.cert.indexOf("CERTIFICATE") > -1;
+});
+
+testFeature("gen_cert self-signed", function(){
+    var r = crypto.gen_cert("/CN=test");
+    var info = crypto.cert_info(r.cert);
+    return info.issuer.indexOf("test") > -1
+        && info.subject.indexOf("test") > -1;
+});
+
+testFeature("cert_info", function(){
+    var r = crypto.gen_cert({
+        name: "myhost.local",
+        country: "DE",
+        organization: "Test GmbH",
+        days: 730,
+        subjectAltName: ["myhost.local", "*.myhost.local"]
+    });
+    var info = crypto.cert_info(r.cert);
+    return info.version === 2
+        && info.subject.indexOf("myhost.local") > -1
+        && info.subject.indexOf("DE") > -1
+        && info.subject.indexOf("Test GmbH") > -1
+        && info.issuer.indexOf("myhost.local") > -1
+        && typeof info.serialNumber === "string"
+        && info.notBefore instanceof Date
+        && info.notAfter instanceof Date
+        && info.extensions["X509v3 Basic Constraints"] === "CA:FALSE"
+        && info.extensions["X509v3 Key Usage"] === "Digital Signature, Key Encipherment"
+        && info.extensions["X509v3 Subject Alternative Name"].indexOf("myhost.local") > -1;
+});
+
 var JSBI= crypto.JSBI;
 
 var intn_data = [
