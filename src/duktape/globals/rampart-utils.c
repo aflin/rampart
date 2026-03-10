@@ -9033,7 +9033,7 @@ static char *dfmts[N_DATE_FORMATS] = {
 };
 
 /* extended formats */
-#define EN_DATE_FORMATS 79
+#define EN_DATE_FORMATS 83
 static char *edfmts[EN_DATE_FORMATS] = {
     // standard
     "%Y-%m-%d %I:%M:%S %p %z",          //  0: 1999-12-31 11:59:59 pm -0800
@@ -9049,6 +9049,11 @@ static char *edfmts[EN_DATE_FORMATS] = {
     "%A %d %B %Y %I:%M:%S %p",          // 10: Thu 24 Jul 2025 12:21:25 AM
     "%A %d %B %Y %H:%M:%S %z",          // 11: Thu 24 Jul 2025 00:21:25 -0800
     "%A %d %B %Y %H:%M:%S",             // 12: Thu 24 Jul 2025 00:21:25
+    // RFC 2822 / HTTP date format (day name with comma)
+    "%A, %d %b %Y %H:%M:%S %z",         // 13: Wed, 04 Mar 2026 22:02:08 +0000
+    "%A, %d %b %Y %H:%M:%S",            // 14: Wed, 04 Mar 2026 22:02:08
+    "%A, %d %b %Y %H:%M %z",            // 15: Wed, 04 Mar 2026 22:02 +0000
+    "%A, %d %b %Y %H:%M",               // 16: Wed, 04 Mar 2026 22:02
     // standard without seconds
     "%Y-%m-%d %I:%M %p %z",             // 13: 1999-12-31 11:59 pm -0800
     "%A %B %d %I:%M %p %Y %z",          // 14: Fri Dec 31 11:59 pm 1999 -0800
@@ -9124,9 +9129,9 @@ static char *edfmts[EN_DATE_FORMATS] = {
     "%H:%M %z",                         // 77: 23:59 -0800
     "%H:%M",                            // 78: 23:59
 };
-#define EN_FORMAT_W_N 63
+#define EN_FORMAT_W_N 67
 //all indexes greater than "time only" line above
-#define EN_DATE_FMT_RELATIVE 68
+#define EN_DATE_FMT_RELATIVE 72
 
 
 /* scan a string for a date, optionally with format in ifmt if not NULL

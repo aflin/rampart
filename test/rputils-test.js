@@ -481,6 +481,11 @@ var asdfmts=[
     "%A %d %B %Y %I:%M:%S %p",          // 10: Thu 24 Jul 2025 12:21:25 AM
     "%A %d %B %Y %H:%M:%S %z",          // 11: Thu 24 Jul 2025 00:21:25 -0800
     "%A %d %B %Y %H:%M:%S",             // 12: Thu 24 Jul 2025 00:21:25
+    // RFC 2822 / HTTP date format (day name with comma)
+    "%A, %d %b %Y %H:%M:%S %z",         // 13: Wed, 04 Mar 2026 22:02:08 +0000
+    "%A, %d %b %Y %H:%M:%S",            // 14: Wed, 04 Mar 2026 22:02:08
+    "%A, %d %b %Y %H:%M %z",            // 15: Wed, 04 Mar 2026 22:02 +0000
+    "%A, %d %b %Y %H:%M",               // 16: Wed, 04 Mar 2026 22:02
     // standard without seconds
     "%Y-%m-%d %I:%M %p %z",             // 13: 1999-12-31 11:59 pm -0800
     "%A %B %d %I:%M %p %Y %z",          // 14: Fri Dec 31 11:59 pm 1999 -0800
@@ -543,7 +548,7 @@ var asdfmts=[
     "%x",                               // 68: varies
 ]
 
-var dateonly=61; //res after this will be at midnight, because format has no %H
+var dateonly=65; //res after this will be at midnight, because format has no %H
 
 //var nowgmt = new Date("2024-01-01T08:30:00.000Z");
 //var nowgmt = new Date("2024-07-01T08:30:00.000Z");
