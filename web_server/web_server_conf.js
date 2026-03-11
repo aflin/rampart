@@ -111,6 +111,10 @@ var serverConf = {
     /* sslCertFile         String. If https, the ssl/tls cert file location   */
     //sslCertFile:         '',
 
+    /* selfSign            Bool.   Whether to generate and use a self signed certificate
+                                   If set, secure must be true and sslKeyFile/sslCertFile/letsencrypt must be unset.
+    //selfSign             false,
+
     /* developerMode       Bool.   Whether JavaScript errors result in 500 and return a stack trace.
                                    Otherwise errors return 404 Not Found                             */
     //developerMode:       true,

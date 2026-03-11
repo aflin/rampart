@@ -39,6 +39,7 @@ var defaultServerConf = function(wd){
         beginFuncOnFile:false,
         endFunc:        false,
         irohProxy:      false,
+        selfSign:       false,
         serverRoot:     wd
     }
 }
@@ -84,6 +85,7 @@ var defaultQuickServerConf = function(wd){
         beginFuncOnFile:false,
         endFunc:        false,
         irohProxy:      false,
+        selfSign:       false,
         serverRoot:     wd
     }
 }
@@ -106,6 +108,7 @@ var optlist = {
 '--accessLog':      'String. Log file name. "" for stdout',
 '--errorLog':       'String. error log file name. "" for stderr',
 '--irohProxy':      'Bool.   Start the iroh webproxy server for this server',
+'--selfSign':       'Bool.   Whether to auto generate a self signed https cert',
 '--log':            'Bool.   Whether to log requests and errors',
 '--rotateLogs':     'Bool.   Whether to rotate the logs',
 '--rotateInterval': 'Number. Interval between log rotations in seconds',
@@ -255,6 +258,43 @@ function firstChecks(serverConf)
         {
             return serr( "redir or redirPort must be set when letsencrypt==\"setup\"" );
         }
+    }
+
+    if(serverConf.selfSign) {
+        if(!serverConf.secure)
+            return serr( "selfSigned requires secure: true" );
+        if(serverConf.letsencrypt)
+            return serr( "selfSigned and letsencrypt cannot both be set true" );
+        if( serverConf.sslKeyFile || serverConf.sslCertFile )
+            return serr( "when selfSigned is true, sslKeyFile and sslCertFile must be unset" );
+
+        var cert = process.scriptPath+'/selfSign-cert.pem';
+        var key = process.scriptPath+'/selfSign-key.pem';
+
+        if(
+            !(stat(cert) &&
+              stat(key) )
+        )
+        {
+            var crypto = require("rampart-crypto");
+            var r = crypto.gen_cert({
+                country: "US",
+                state: "Deleware",
+                city: "Wilmington",
+                organization: "Sample Co",
+                organizationUnit: "Sample Department",
+                email: "sample@sample.none",
+                name: "sample.none",
+                bits: 4096,
+                days: 365,
+                subjectAltName: ["localhost", "*.localhost"]
+            });
+            fprintf(key, '%s', r.key);
+            fprintf(cert, '%s', r.cert);
+        }
+
+        serverConf.sslKeyFile=key;
+        serverConf.sslCertFile=cert;
     }
 
     var bind = [];
