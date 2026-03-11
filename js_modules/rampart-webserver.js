@@ -1157,9 +1157,20 @@ function start(serverConf, dump) {
         return ret;
     }
 
+
     // add redir pid if redir server launched
     if(retr.pid)
         ret.redirPid=retr.pid;
+
+    if(serverConf.letsencrypt=="setup") {
+        printf(
+`Server started in letsencrypt setup mode.
+Now run letsencrypt to generate the certificate.
+Example:
+    certbot certonly --webroot \\
+    --webroot-path %s/letsencrypt_wd \\
+    -d %s\n`, serverConf.serverRoot, serverConf.letsencryptHost);
+    }
 
     var status = checkMonitor();
 
@@ -1216,6 +1227,7 @@ function web_server_conf(conf) {
 
 
     if (argv[2] == '--letssetup' || argv[2]=='letssetup') {
+        conf.letsencryptHost = conf.letsencrypt;
         conf.letsencrypt="setup"; //flag we are doing letsencrypt, but don't start https
         argv[2]="start";
     }
