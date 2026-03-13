@@ -93,16 +93,18 @@ if(
     fprintf(cert, '%s', r.cert);
 }
 
-if(!stat("smods"))
+var smodPath = process.scriptPath + '/smods';
+
+if(!stat(smodPath))
 {
-    mkdir(process.scriptPath + "/smods");
-    fprintf(process.scriptPath + "/smods/testmod.js", '%s',
+    mkdir(smodPath);
+    fprintf(smodPath + "/testmod.js", '%s',
         "module.exports=function(res){return {text:'test'} }\n");
 
     if(iam == 'root')
     {
-        chown({user:"nobody", path: process.scriptPath + "/smods"});
-        chown({user:"nobody", path: process.scriptPath + "/smods/testmod.js"});
+        chown({user:"nobody", path: smodPath});
+        chown({user:"nobody", path: smodPath + "/testmod.js"});
     }
 }
 
@@ -181,7 +183,7 @@ pid=server.start(
         "/":                "./",
         '/global':          globalfunc,
         "/sample":          function(req){return "test";},
-        "/modtest/":	    {modulePath:"./smods/"},
+        "/modtest/":	    {modulePath:smodPath},
         "/timeout":         function(){
                                 for (var i=0;i<1000000000;i++);
                                 return("done");

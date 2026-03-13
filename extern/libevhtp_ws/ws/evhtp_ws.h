@@ -71,6 +71,8 @@ struct evhtp_ws_parser_s {
     evhtp_ws_frame        frame;
     struct event        * pingev;
     uint8_t               pingct;
+    uint8_t               ctrl_len;
+    uint8_t               ctrl_data[125];
 };
 
 //struct evhtp_ws_parser_s;

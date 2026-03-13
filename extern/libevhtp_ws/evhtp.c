@@ -2365,13 +2365,15 @@ static void ws_ping(evhtp_request_t *req)
     evbuffer_free(resp);
 }
 
-/* formulate a pong response */
+/* formulate a pong response - no longer used, pong is now
+   constructed from ctrl_data to avoid corrupting buffer_in
+   during fragmented messages.
 static void ws_pong(evhtp_request_t *req)
 {
-    /* take in buffer and prepend a pong header*/
     if(evhtp_ws_add_header(req->buffer_in, OP_PONG))
         evhtp_send_reply_body(req, req->buffer_in);
 }
+*/
 
 /* do a ping from within the event loop */
 static void ws_ping_cb(evutil_socket_t fd, short events, void* arg)
@@ -2442,6 +2444,16 @@ _ws_msg_data(evhtp_ws_parser * p, const char * d, size_t l) {
     if(p->frame.hdr.opcode != OP_CONT) //don't set it for OP_CONT (0)
         req->ws_opcode = p->frame.hdr.opcode;
 
+    /* control frame data goes to a separate buffer so it doesn't
+       corrupt in-progress fragmented message data in buffer_in */
+    if (p->frame.hdr.opcode >= 0x8) {
+        if (p->ctrl_len + l <= sizeof(p->ctrl_data)) {
+            memcpy(p->ctrl_data + p->ctrl_len, d, l);
+            p->ctrl_len += (uint8_t)l;
+        }
+        return 0;
+    }
+
     evbuffer_add(req->buffer_in, d, l);
 
     return 0;
@@ -2455,7 +2467,8 @@ _ws_msg_fini(evhtp_ws_parser * p) {
     req = evhtp_ws_parser_get_userdata(p);
     evhtp_assert(req != NULL);
 
-    /* process ping and pong here */
+    /* process control frames separately — don't drain buffer_in
+       since it may hold in-progress fragmented message data */
     if(p->frame.hdr.opcode & 0x8)
     {
         if(p->frame.hdr.opcode == OP_PONG)
@@ -2465,13 +2478,35 @@ _ws_msg_fini(evhtp_ws_parser * p) {
         else if(p->frame.hdr.opcode == OP_PING)
         {
             /* specs say pong must have the same payload as the ping */
-            ws_pong(req);
+            struct evbuffer *pong = evbuffer_new();
+            if (pong) {
+                if (p->ctrl_len > 0)
+                    evbuffer_add(pong, p->ctrl_data, p->ctrl_len);
+                if (evhtp_ws_add_header(pong, OP_PONG))
+                    evhtp_send_reply_body(req, pong);
+                evbuffer_free(pong);
+            }
         }
         else if(p->frame.hdr.opcode == OP_CLOSE)
+        {
+            /* RFC 6455 5.5.1: respond with a close frame */
+            struct evbuffer *close_resp = evbuffer_new();
+            if (close_resp) {
+                if (p->status_code) {
+                    uint16_t code_be = htons(p->status_code);
+                    evbuffer_add(close_resp, &code_be, 2);
+                }
+                if (evhtp_ws_add_header(close_resp, OP_CLOSE))
+                    evhtp_send_reply_body(req, close_resp);
+                evbuffer_free(close_resp);
+            }
             req->disconnect=1;
+        }
+        p->ctrl_len = 0;
+        return 0;
     }
     /* send non-control frame data to callback */
-    else if (req->cb) {
+    if (req->cb) {
         (req->cb)(req, req->cbarg);
     }
     evbuffer_drain(req->buffer_in, evbuffer_get_length(req->buffer_in));

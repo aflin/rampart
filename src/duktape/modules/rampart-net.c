@@ -651,6 +651,1098 @@ int rp_get_gs_object(duk_context *ctx, const char *objname, const char *key)
     return ret;
 }
 
+/* ****************** WebSocket Client ****************** */
+
+#define WS_CLIENT_MAGIC 0x57534354
+#define WS_CLIENT struct ws_client_s
+
+WS_CLIENT {
+    uint32_t        magic;           /* WS_CLIENT_MAGIC */
+    char           *expected_accept; /* base64 SHA-1 for validating 101 response */
+    char           *upgrade_req;     /* HTTP upgrade request to send */
+    size_t          upgrade_req_len;
+
+    /* frame parser state machine */
+    int             parse_state;     /* 0=byte0, 1=byte1, 2=extlen, 3=payload */
+    uint8_t         frame_fin;
+    uint8_t         frame_opcode;
+    uint64_t        frame_payload_len;
+    uint64_t        frame_payload_read;
+    uint8_t         ext_len_buf[8];
+    int             ext_len_need;    /* 0, 2, or 8 */
+    int             ext_len_have;
+
+    /* current frame payload accumulator */
+    unsigned char  *frame_buf;
+    size_t          frame_buf_len;
+    size_t          frame_buf_alloc;
+
+    /* message fragmentation across frames */
+    unsigned char  *frag_buf;
+    size_t          frag_len;
+    size_t          frag_alloc;
+    uint8_t         frag_opcode;
+    int             in_fragment;
+
+    /* ping keepalive */
+    struct event   *ping_timer;
+    int             ping_interval;   /* seconds, 0=disabled */
+    int             unanswered_pings;
+
+    /* flags */
+    int             handshake_done;
+    int             close_sent;
+    int             close_received;
+};
+
+static void ws_client_free(WS_CLIENT *ws)
+{
+    if(!ws)
+        return;
+    if(ws->ping_timer)
+    {
+        event_del(ws->ping_timer);
+        event_free(ws->ping_timer);
+        ws->ping_timer = NULL;
+    }
+    if(ws->expected_accept)
+    {
+        free(ws->expected_accept);
+        ws->expected_accept = NULL;
+    }
+    if(ws->upgrade_req)
+    {
+        free(ws->upgrade_req);
+        ws->upgrade_req = NULL;
+    }
+    if(ws->frame_buf)
+    {
+        free(ws->frame_buf);
+        ws->frame_buf = NULL;
+    }
+    if(ws->frag_buf)
+    {
+        free(ws->frag_buf);
+        ws->frag_buf = NULL;
+    }
+    ws->magic = 0;
+    free(ws);
+}
+
+static int ws_send_frame(RPSOCK *sinfo, const unsigned char *payload, size_t len, uint8_t opcode)
+{
+    unsigned char header[14]; /* max header: 2 + 8 + 4 */
+    int hlen = 0;
+    unsigned char mask[4];
+    unsigned char *masked = NULL;
+    size_t i;
+    int ret;
+
+    if(!sinfo->bev)
+        return -1;
+
+    /* byte 0: FIN=1, opcode */
+    header[0] = 0x80 | (opcode & 0x0F);
+    hlen = 1;
+
+    /* byte 1: MASK=1, length */
+    if(len <= 125)
+    {
+        header[1] = 0x80 | (uint8_t)len;
+        hlen = 2;
+    }
+    else if(len <= 0xFFFF)
+    {
+        header[1] = 0x80 | 126;
+        header[2] = (len >> 8) & 0xFF;
+        header[3] = len & 0xFF;
+        hlen = 4;
+    }
+    else
+    {
+        header[1] = 0x80 | 127;
+        header[2] = (uint8_t)((uint64_t)len >> 56) & 0xFF;
+        header[3] = (uint8_t)((uint64_t)len >> 48) & 0xFF;
+        header[4] = (uint8_t)((uint64_t)len >> 40) & 0xFF;
+        header[5] = (uint8_t)((uint64_t)len >> 32) & 0xFF;
+        header[6] = (uint8_t)((uint64_t)len >> 24) & 0xFF;
+        header[7] = (uint8_t)((uint64_t)len >> 16) & 0xFF;
+        header[8] = (uint8_t)((uint64_t)len >> 8)  & 0xFF;
+        header[9] = (uint8_t)(len & 0xFF);
+        hlen = 10;
+    }
+
+    /* masking key */
+    RAND_bytes(mask, 4);
+    memcpy(header + hlen, mask, 4);
+    hlen += 4;
+
+    /* write header */
+    ret = bufferevent_write(sinfo->bev, header, hlen);
+    if(ret != 0)
+        return -1;
+
+    /* mask and write payload */
+    if(len > 0)
+    {
+        REMALLOC(masked, len);
+        for(i = 0; i < len; i++)
+            masked[i] = payload[i] ^ mask[i & 3];
+        ret = bufferevent_write(sinfo->bev, masked, len);
+        free(masked);
+        if(ret != 0)
+            return -1;
+    }
+
+    return 0;
+}
+
+/* forward declarations */
+static void socket_cleanup(duk_context *ctx, RPSOCK *sinfo, int docb);
+static duk_ret_t socket_destroy(duk_context *ctx);
+static void sock_writecb(struct bufferevent *bev, void *arg);
+static void sock_eventcb(struct bufferevent *bev, short events, void *arg);
+static int sock_do_callback(RPSOCK *sinfo, const char *ev_s);
+static void ws_ping_timer_cb(evutil_socket_t fd, short events, void *arg);
+
+static void ws_fire_message(RPSOCK *sinfo, unsigned char *data, size_t len, int is_binary)
+{
+    duk_context *ctx = sinfo->ctx;
+
+    /* [ ..., this ] */
+    duk_push_heapptr(ctx, sinfo->thisptr);
+
+    /* create message object: { message: Buffer, binary: bool } */
+    duk_push_object(ctx);
+
+    duk_push_external_buffer(ctx);
+    duk_config_buffer(ctx, -1, data, len);
+    duk_dup(ctx, -1);
+    duk_insert(ctx, 0); /* save for later invalidation */
+    duk_put_prop_string(ctx, -2, "message");
+
+    duk_push_boolean(ctx, is_binary);
+    duk_put_prop_string(ctx, -2, "binary");
+
+    /* [ saved_buf, ..., this, {message, binary} ] */
+    do_callback(ctx, "message", 1);
+    /* [ saved_buf, ... ] */
+
+    /* zero out external buffer in case JS kept a reference */
+    duk_config_buffer(ctx, 0, NULL, 0);
+    duk_remove(ctx, 0);
+}
+
+static void ws_handle_frame(RPSOCK *sinfo, WS_CLIENT *ws)
+{
+    unsigned char *data = ws->frame_buf;
+    size_t len = ws->frame_buf_len;
+    uint8_t opcode = ws->frame_opcode;
+    int fin = ws->frame_fin;
+
+    switch(opcode)
+    {
+        case 0x0: /* CONTINUATION */
+        {
+            if(!ws->in_fragment)
+                break; /* protocol error, ignore */
+
+            /* append to fragment buffer */
+            if(ws->frag_len + len > ws->frag_alloc)
+            {
+                ws->frag_alloc = ws->frag_len + len + 4096;
+                ws->frag_buf = realloc(ws->frag_buf, ws->frag_alloc);
+                if(!ws->frag_buf)
+                {
+                    fprintf(stderr, "ws: out of memory in fragment reassembly\n");
+                    return;
+                }
+            }
+            memcpy(ws->frag_buf + ws->frag_len, data, len);
+            ws->frag_len += len;
+
+            if(fin)
+            {
+                ws_fire_message(sinfo, ws->frag_buf, ws->frag_len,
+                    ws->frag_opcode == 0x2);
+                /* clear frag state */
+                ws->in_fragment = 0;
+                ws->frag_len = 0;
+            }
+            break;
+        }
+        case 0x1: /* TEXT */
+        case 0x2: /* BINARY */
+        {
+            if(fin)
+            {
+                ws_fire_message(sinfo, data, len, opcode == 0x2);
+            }
+            else
+            {
+                /* start fragmentation */
+                ws->in_fragment = 1;
+                ws->frag_opcode = opcode;
+                ws->frag_len = 0;
+                if(len > ws->frag_alloc)
+                {
+                    ws->frag_alloc = len + 4096;
+                    ws->frag_buf = realloc(ws->frag_buf, ws->frag_alloc);
+                    if(!ws->frag_buf)
+                    {
+                        fprintf(stderr, "ws: out of memory starting fragment\n");
+                        return;
+                    }
+                }
+                memcpy(ws->frag_buf, data, len);
+                ws->frag_len = len;
+            }
+            break;
+        }
+        case 0x8: /* CLOSE */
+        {
+            ws->close_received = 1;
+
+            if(!ws->close_sent)
+            {
+                /* echo close frame back */
+                if(len >= 2)
+                    ws_send_frame(sinfo, data, 2, 0x8); /* echo status code */
+                else
+                    ws_send_frame(sinfo, (const unsigned char *)"\x03\xe8", 2, 0x8); /* 1000 */
+                ws->close_sent = 1;
+            }
+
+            /* cancel ping timer */
+            if(ws->ping_timer)
+            {
+                event_del(ws->ping_timer);
+                event_free(ws->ping_timer);
+                ws->ping_timer = NULL;
+            }
+
+            /* schedule destroy via method call so duk_push_this works */
+            {
+                duk_context *ctx = sinfo->ctx;
+                duk_push_c_function(ctx, socket_destroy, 1);
+                duk_push_heapptr(ctx, sinfo->thisptr);
+                duk_call_method(ctx, 0);
+                duk_pop(ctx); /* return value */
+            }
+            break;
+        }
+        case 0x9: /* PING */
+        {
+            ws_send_frame(sinfo, data, len, 0xA); /* PONG */
+            break;
+        }
+        case 0xA: /* PONG */
+        {
+            ws->unanswered_pings = 0;
+            break;
+        }
+        default:
+            break;
+    }
+}
+
+static void ws_process_data(RPSOCK *sinfo, unsigned char *data, size_t len)
+{
+    WS_CLIENT *ws = (WS_CLIENT *)sinfo->aux;
+    size_t pos = 0;
+
+    if(!ws || ws->magic != WS_CLIENT_MAGIC)
+        return;
+
+    while(pos < len)
+    {
+        switch(ws->parse_state)
+        {
+            case 0: /* BYTE0: fin, rsv, opcode */
+            {
+                uint8_t b = data[pos++];
+                ws->frame_fin = (b >> 7) & 1;
+
+                /* validate RSV bits are 0 */
+                if(b & 0x70)
+                {
+                    fprintf(stderr, "ws: non-zero RSV bits\n");
+                    return;
+                }
+                ws->frame_opcode = b & 0x0F;
+
+                /* validate opcode */
+                if(ws->frame_opcode > 0x2 && ws->frame_opcode < 0x8)
+                {
+                    fprintf(stderr, "ws: reserved opcode 0x%x\n", ws->frame_opcode);
+                    return;
+                }
+                if(ws->frame_opcode > 0xA)
+                {
+                    fprintf(stderr, "ws: reserved opcode 0x%x\n", ws->frame_opcode);
+                    return;
+                }
+
+                ws->parse_state = 1;
+                break;
+            }
+            case 1: /* BYTE1: mask, 7-bit length */
+            {
+                uint8_t b = data[pos++];
+
+                /* server must not mask */
+                if(b & 0x80)
+                {
+                    fprintf(stderr, "ws: server sent masked frame\n");
+                    return;
+                }
+
+                uint8_t plen = b & 0x7F;
+                if(plen == 126)
+                {
+                    ws->ext_len_need = 2;
+                    ws->ext_len_have = 0;
+                    ws->parse_state = 2;
+                }
+                else if(plen == 127)
+                {
+                    ws->ext_len_need = 8;
+                    ws->ext_len_have = 0;
+                    ws->parse_state = 2;
+                }
+                else
+                {
+                    ws->frame_payload_len = plen;
+                    ws->frame_payload_read = 0;
+                    ws->frame_buf_len = 0;
+                    if(plen == 0)
+                    {
+                        ws_handle_frame(sinfo, ws);
+                        ws->parse_state = 0;
+                    }
+                    else
+                        ws->parse_state = 3;
+                }
+                break;
+            }
+            case 2: /* EXTLEN: accumulate extended length bytes */
+            {
+                while(pos < len && ws->ext_len_have < ws->ext_len_need)
+                {
+                    ws->ext_len_buf[ws->ext_len_have++] = data[pos++];
+                }
+                if(ws->ext_len_have == ws->ext_len_need)
+                {
+                    if(ws->ext_len_need == 2)
+                    {
+                        ws->frame_payload_len =
+                            ((uint64_t)ws->ext_len_buf[0] << 8) |
+                            (uint64_t)ws->ext_len_buf[1];
+                    }
+                    else
+                    {
+                        ws->frame_payload_len =
+                            ((uint64_t)ws->ext_len_buf[0] << 56) |
+                            ((uint64_t)ws->ext_len_buf[1] << 48) |
+                            ((uint64_t)ws->ext_len_buf[2] << 40) |
+                            ((uint64_t)ws->ext_len_buf[3] << 32) |
+                            ((uint64_t)ws->ext_len_buf[4] << 24) |
+                            ((uint64_t)ws->ext_len_buf[5] << 16) |
+                            ((uint64_t)ws->ext_len_buf[6] << 8)  |
+                            (uint64_t)ws->ext_len_buf[7];
+
+                        /* MSB must be 0 per RFC 6455 */
+                        if(ws->frame_payload_len & ((uint64_t)1 << 63))
+                        {
+                            fprintf(stderr, "ws: invalid 64-bit length\n");
+                            return;
+                        }
+                    }
+                    ws->frame_payload_read = 0;
+                    ws->frame_buf_len = 0;
+                    if(ws->frame_payload_len == 0)
+                    {
+                        ws_handle_frame(sinfo, ws);
+                        ws->parse_state = 0;
+                    }
+                    else
+                        ws->parse_state = 3;
+                }
+                break;
+            }
+            case 3: /* PAYLOAD: accumulate payload bytes */
+            {
+                uint64_t need = ws->frame_payload_len - ws->frame_payload_read;
+                size_t avail = len - pos;
+                size_t take = (avail < (size_t)need) ? avail : (size_t)need;
+
+                /* grow frame_buf if needed */
+                if(ws->frame_buf_len + take > ws->frame_buf_alloc)
+                {
+                    ws->frame_buf_alloc = ws->frame_buf_len + take + 1024;
+                    ws->frame_buf = realloc(ws->frame_buf, ws->frame_buf_alloc);
+                    if(!ws->frame_buf)
+                    {
+                        fprintf(stderr, "ws: out of memory in frame buffer\n");
+                        return;
+                    }
+                }
+                memcpy(ws->frame_buf + ws->frame_buf_len, data + pos, take);
+                ws->frame_buf_len += take;
+                ws->frame_payload_read += take;
+                pos += take;
+
+                if(ws->frame_payload_read == ws->frame_payload_len)
+                {
+                    ws_handle_frame(sinfo, ws);
+                    /* check if sinfo is still valid after callback */
+                    ws = (WS_CLIENT *)sinfo->aux;
+                    if(!ws || ws->magic != WS_CLIENT_MAGIC)
+                        return;
+                    ws->parse_state = 0;
+                }
+                break;
+            }
+        }
+    }
+}
+
+static void ws_frame_readcb(struct bufferevent *bev, void *arg)
+{
+    RPSOCK *sinfo = (RPSOCK *)arg;
+    struct evbuffer *evbuf = bufferevent_get_input(bev);
+    size_t len = evbuffer_get_length(evbuf);
+    unsigned char *buf;
+
+    if(len == 0)
+        return;
+
+    buf = evbuffer_pullup(evbuf, -1);
+    ws_process_data(sinfo, buf, len);
+    evbuffer_drain(evbuf, len);
+}
+
+static void ws_handshake_readcb(struct bufferevent *bev, void *arg)
+{
+    RPSOCK *sinfo = (RPSOCK *)arg;
+    WS_CLIENT *ws = (WS_CLIENT *)sinfo->aux;
+    duk_context *ctx = sinfo->ctx;
+    struct evbuffer *evbuf = bufferevent_get_input(bev);
+    size_t len = evbuffer_get_length(evbuf);
+    unsigned char *buf;
+    unsigned char *end_of_headers;
+    size_t header_len, remaining;
+    char *header_str = NULL;
+    char *status_line, *p;
+    int status_code;
+
+    if(!ws || ws->magic != WS_CLIENT_MAGIC)
+        return;
+
+    if(len == 0)
+        return;
+
+    buf = evbuffer_pullup(evbuf, -1);
+
+    /* search for end of HTTP headers */
+    end_of_headers = (unsigned char *)memmem(buf, len, "\r\n\r\n", 4);
+    if(!end_of_headers)
+        return; /* headers not complete yet */
+
+    header_len = (end_of_headers - buf) + 4;
+
+    /* copy headers to a null-terminated string */
+    REMALLOC(header_str, header_len + 1);
+    memcpy(header_str, buf, header_len);
+    header_str[header_len] = '\0';
+
+    /* parse status line */
+    status_line = header_str;
+    p = strstr(status_line, " ");
+    if(!p)
+    {
+        free(header_str);
+        duk_push_heapptr(ctx, sinfo->thisptr);
+        duk_push_string(ctx, "wsConnect: invalid HTTP response");
+        do_callback(ctx, "error", 1);
+        socket_cleanup(ctx, sinfo, 1);
+        return;
+    }
+    status_code = atoi(p + 1);
+
+    if(status_code != 101)
+    {
+        free(header_str);
+        duk_push_heapptr(ctx, sinfo->thisptr);
+        duk_push_sprintf(ctx, "wsConnect: server returned status %d (expected 101)", status_code);
+        do_callback(ctx, "error", 1);
+        socket_cleanup(ctx, sinfo, 1);
+        return;
+    }
+
+    /* find Sec-WebSocket-Accept header (case-insensitive) */
+    {
+        char *line = header_str;
+        char *accept_val = NULL;
+
+        while((line = strstr(line, "\r\n")) != NULL)
+        {
+            line += 2;
+            if(*line == '\r' || *line == '\0')
+                break;
+            if(strncasecmp(line, "Sec-WebSocket-Accept:", 21) == 0)
+            {
+                char *val = line + 21;
+                char *eol;
+                while(*val == ' ')
+                    val++;
+                eol = strstr(val, "\r\n");
+                if(eol)
+                {
+                    size_t vlen = eol - val;
+                    REMALLOC(accept_val, vlen + 1);
+                    memcpy(accept_val, val, vlen);
+                    accept_val[vlen] = '\0';
+                }
+                break;
+            }
+        }
+
+        if(!accept_val || strcmp(accept_val, ws->expected_accept) != 0)
+        {
+            if(accept_val) free(accept_val);
+            free(header_str);
+            duk_push_heapptr(ctx, sinfo->thisptr);
+            duk_push_string(ctx, "wsConnect: Sec-WebSocket-Accept mismatch");
+            do_callback(ctx, "error", 1);
+            socket_cleanup(ctx, sinfo, 1);
+            return;
+        }
+        free(accept_val);
+    }
+
+    free(header_str);
+    ws->handshake_done = 1;
+
+    /* switch to frame-based read callback */
+    bufferevent_setcb(bev, ws_frame_readcb, sock_writecb, sock_eventcb, sinfo);
+
+    /* start ping timer if configured */
+    if(ws->ping_interval > 0)
+    {
+        struct timeval tv;
+        tv.tv_sec = ws->ping_interval;
+        tv.tv_usec = 0;
+        ws->ping_timer = event_new(sinfo->base, -1, EV_TIMEOUT | EV_PERSIST,
+            ws_ping_timer_cb, sinfo);
+        event_add(ws->ping_timer, &tv);
+    }
+
+    /* fire "wsConnect" event */
+    sock_do_callback(sinfo, "wsConnect");
+
+    /* pass any remaining data after headers to frame parser */
+    remaining = len - header_len;
+    if(remaining > 0)
+    {
+        ws_process_data(sinfo, buf + header_len, remaining);
+    }
+    evbuffer_drain(evbuf, len);
+}
+
+static void ws_ping_timer_cb(evutil_socket_t fd, short events, void *arg)
+{
+    RPSOCK *sinfo = (RPSOCK *)arg;
+    WS_CLIENT *ws;
+
+    (void)fd;
+    (void)events;
+
+    if(!sinfo || !sinfo->aux)
+        return;
+
+    ws = (WS_CLIENT *)sinfo->aux;
+    if(ws->magic != WS_CLIENT_MAGIC)
+        return;
+
+    if(ws->unanswered_pings >= 3)
+    {
+        /* too many unanswered pings, close connection */
+        duk_context *ctx = sinfo->ctx;
+        duk_push_heapptr(ctx, sinfo->thisptr);
+        duk_push_string(ctx, "wsConnect: ping timeout");
+        do_callback(ctx, "error", 1);
+        socket_cleanup(ctx, sinfo, 1);
+        return;
+    }
+
+    ws_send_frame(sinfo, NULL, 0, 0x9); /* PING with empty payload */
+    ws->unanswered_pings++;
+}
+
+static duk_ret_t duk_rp_ws_send(duk_context *ctx)
+{
+    RPSOCK *sinfo;
+    WS_CLIENT *ws;
+    duk_size_t sz = 0;
+    const void *data;
+    int is_binary = 0;
+    uint8_t opcode;
+
+    duk_push_this(ctx);
+
+    if(!duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("sinfo")))
+    {
+        duk_pop(ctx);
+        duk_push_string(ctx, "wsSend: socket is not open");
+        do_callback(ctx, "error", 1);
+        return 0;
+    }
+    sinfo = (RPSOCK *)duk_get_pointer(ctx, -1);
+    duk_pop(ctx);
+
+    if(!sinfo || !sinfo->aux)
+    {
+        duk_push_string(ctx, "wsSend: websocket not connected");
+        do_callback(ctx, "error", 1);
+        return 0;
+    }
+
+    ws = (WS_CLIENT *)sinfo->aux;
+    if(ws->magic != WS_CLIENT_MAGIC || ws->close_sent)
+    {
+        duk_push_string(ctx, "wsSend: websocket is closed or closing");
+        do_callback(ctx, "error", 1);
+        return 0;
+    }
+
+    data = (const void *)REQUIRE_STR_OR_BUF(ctx, 0, &sz, "wsSend: first argument must be a String or Buffer");
+
+    if(duk_is_boolean(ctx, 1))
+        is_binary = duk_get_boolean(ctx, 1);
+
+    opcode = is_binary ? 0x2 : 0x1;
+    ws_send_frame(sinfo, (const unsigned char *)data, (size_t)sz, opcode);
+
+    duk_push_this(ctx);
+    return 1;
+}
+
+static duk_ret_t duk_rp_ws_close(duk_context *ctx)
+{
+    RPSOCK *sinfo;
+    WS_CLIENT *ws;
+    unsigned char close_payload[2];
+
+    duk_push_this(ctx);
+
+    if(!duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("sinfo")))
+    {
+        duk_pop_2(ctx);
+        return 0;
+    }
+    sinfo = (RPSOCK *)duk_get_pointer(ctx, -1);
+    duk_pop(ctx); /* pointer */
+
+    if(!sinfo || !sinfo->aux)
+    {
+        duk_pop(ctx); /* this */
+        return 0;
+    }
+
+    ws = (WS_CLIENT *)sinfo->aux;
+    if(ws->magic != WS_CLIENT_MAGIC || ws->close_sent)
+    {
+        duk_pop(ctx); /* this */
+        return 0;
+    }
+
+    /* send close frame with status 1000 (normal closure) */
+    close_payload[0] = 0x03; /* 1000 >> 8 */
+    close_payload[1] = 0xE8; /* 1000 & 0xFF */
+    ws_send_frame(sinfo, close_payload, 2, 0x8);
+    ws->close_sent = 1;
+
+    /* cancel ping timer */
+    if(ws->ping_timer)
+    {
+        event_del(ws->ping_timer);
+        event_free(ws->ping_timer);
+        ws->ping_timer = NULL;
+    }
+
+    /* schedule async destroy */
+    duk_pop(ctx); /* this that we pushed */
+    socket_destroy(ctx); /* uses duk_push_this internally */
+
+    return 1;
+}
+
+static int ws_parse_url(const char *url, char *scheme, size_t scheme_sz,
+    char *host, size_t host_sz, int *port, char **path)
+{
+    const char *p = url;
+    const char *host_start, *host_end;
+    const char *port_start;
+    size_t slen;
+
+    /* parse scheme */
+    if(strncmp(p, "ws://", 5) == 0)
+    {
+        snprintf(scheme, scheme_sz, "ws");
+        p += 5;
+        *port = 80;
+    }
+    else if(strncmp(p, "wss://", 6) == 0)
+    {
+        snprintf(scheme, scheme_sz, "wss");
+        p += 6;
+        *port = 443;
+    }
+    else
+        return -1;
+
+    /* parse host */
+    host_start = p;
+    host_end = NULL;
+    port_start = NULL;
+
+    /* find end of host (colon for port, slash for path, or end of string) */
+    while(*p && *p != ':' && *p != '/')
+        p++;
+
+    host_end = p;
+    slen = host_end - host_start;
+    if(slen == 0 || slen >= host_sz)
+        return -1;
+    memcpy(host, host_start, slen);
+    host[slen] = '\0';
+
+    /* parse port if present */
+    if(*p == ':')
+    {
+        p++;
+        port_start = p;
+        *port = 0;
+        while(*p >= '0' && *p <= '9')
+        {
+            *port = *port * 10 + (*p - '0');
+            p++;
+        }
+        if(p == port_start || *port <= 0 || *port > 65535)
+            return -1;
+    }
+
+    /* parse path */
+    if(*p == '/')
+    {
+        *path = strdup(p);
+    }
+    else
+    {
+        *path = strdup("/");
+    }
+
+    return 0;
+}
+
+static duk_ret_t ws_on_connect_cb(duk_context *ctx)
+{
+    WS_CLIENT *ws;
+    RPSOCK *sinfo;
+
+    duk_push_this(ctx);
+
+    /* get ws_client from hidden property */
+    if(!duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("ws_client")))
+    {
+        duk_pop_2(ctx);
+        return 0;
+    }
+    ws = (WS_CLIENT *)duk_get_pointer(ctx, -1);
+    duk_pop(ctx);
+
+    /* get sinfo */
+    if(!duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("sinfo")))
+    {
+        duk_pop_2(ctx);
+        return 0;
+    }
+    sinfo = (RPSOCK *)duk_get_pointer(ctx, -1);
+    duk_pop(ctx);
+
+    if(!sinfo || !ws || ws->magic != WS_CLIENT_MAGIC)
+    {
+        duk_pop(ctx); /* this */
+        return 0;
+    }
+
+    /* store ws in sinfo->aux */
+    sinfo->aux = ws;
+
+    /* write upgrade request */
+    if(ws->upgrade_req && ws->upgrade_req_len > 0)
+    {
+        bufferevent_write(sinfo->bev, ws->upgrade_req, ws->upgrade_req_len);
+        free(ws->upgrade_req);
+        ws->upgrade_req = NULL;
+        ws->upgrade_req_len = 0;
+    }
+
+    /* switch readcb to handshake mode */
+    bufferevent_setcb(sinfo->bev, ws_handshake_readcb, sock_writecb, sock_eventcb, sinfo);
+
+    duk_pop(ctx); /* this */
+    return 0;
+}
+
+static duk_ret_t duk_rp_net_ws_connect(duk_context *ctx)
+{
+    const char *url = NULL;
+    char scheme[8], host[256];
+    char *path = NULL;
+    int port = 0;
+    int ping_interval = 30;
+    double timeout = 0;
+    int insecure = 0;
+    duk_idx_t tidx, sock_idx;
+    WS_CLIENT *ws = NULL;
+    const char *key_b64;
+    const char *accept_b64;
+
+    if(!duk_is_object(ctx, 0))
+        RP_THROW(ctx, "wsConnect: first argument must be an Object (options)");
+
+    /* get url */
+    if(!duk_get_prop_string(ctx, 0, "url"))
+        RP_THROW(ctx, "wsConnect: options.url is required");
+    url = REQUIRE_STRING(ctx, -1, "wsConnect: options.url must be a String");
+    duk_pop(ctx);
+
+    /* get timeout */
+    if(duk_get_prop_string(ctx, 0, "timeout"))
+        timeout = duk_get_number_default(ctx, -1, 0);
+    duk_pop(ctx);
+
+    /* get insecure */
+    if(duk_get_prop_string(ctx, 0, "insecure"))
+        insecure = duk_get_boolean_default(ctx, -1, 0);
+    duk_pop(ctx);
+
+    /* get pingInterval */
+    if(duk_get_prop_string(ctx, 0, "pingInterval"))
+        ping_interval = duk_get_int_default(ctx, -1, 30);
+    duk_pop(ctx);
+
+    /* parse URL */
+    if(ws_parse_url(url, scheme, sizeof(scheme), host, sizeof(host), &port, &path) != 0)
+        RP_THROW(ctx, "wsConnect: invalid URL '%s' (expected ws:// or wss://)", url);
+
+    /* create new net.Socket() using Socket constructor */
+    duk_push_current_function(ctx);
+    duk_get_prop_string(ctx, -1, "Socket");
+    duk_remove(ctx, -2); /* current function */
+    /* [ opts, Socket ] */
+    duk_new(ctx, 0);
+    /* [ opts, new_socket ] */
+    sock_idx = duk_get_top_index(ctx);
+
+    duk_push_this(ctx); /* dummy this for duk_rp_net_on, will use sock_idx */
+    tidx = sock_idx; /* use socket as this */
+
+    /* register user callbacks from opts.callbacks */
+    if(duk_get_prop_string(ctx, 0, "callbacks"))
+    {
+        duk_enum(ctx, -1, 0);
+        while(duk_next(ctx, -1, 1))
+        {
+            /* [ ..., key, value ] */
+            const char *evname = duk_get_string(ctx, -2);
+            if(evname && duk_is_function(ctx, -1))
+            {
+                duk_rp_net_on(ctx, "wsConnect", evname, duk_get_top_index(ctx), tidx);
+            }
+            duk_pop_2(ctx); /* key, value */
+        }
+        duk_pop(ctx); /* enum */
+    }
+    duk_pop(ctx); /* callbacks obj or undefined */
+    duk_pop(ctx); /* dummy this */
+
+    /* generate Sec-WebSocket-Key: 16 random bytes, base64 encoded */
+    {
+        void *randbuf = duk_push_fixed_buffer(ctx, 16);
+        RAND_bytes((unsigned char *)randbuf, 16);
+        duk_base64_encode(ctx, -1);
+        key_b64 = duk_get_string(ctx, -1);
+    }
+    /* key_b64 string is on stack */
+
+    /* compute expected Sec-WebSocket-Accept */
+    {
+        const char *ws_guid = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
+        size_t key_len = strlen(key_b64);
+        size_t guid_len = strlen(ws_guid);
+        char *concat = NULL;
+        unsigned char digest[20];
+        unsigned int digest_len = 20;
+        void *dbuf;
+
+        REMALLOC(concat, key_len + guid_len + 1);
+        memcpy(concat, key_b64, key_len);
+        memcpy(concat + key_len, ws_guid, guid_len);
+        concat[key_len + guid_len] = '\0';
+
+        EVP_Digest(concat, key_len + guid_len, digest, &digest_len, EVP_sha1(), NULL);
+        free(concat);
+
+        dbuf = duk_push_fixed_buffer(ctx, 20);
+        memcpy(dbuf, digest, 20);
+        duk_base64_encode(ctx, -1);
+        accept_b64 = duk_get_string(ctx, -1);
+    }
+    /* [ opts, socket, key_b64, accept_b64 ] */
+
+    /* build HTTP upgrade request */
+    {
+        char *req = NULL;
+        size_t req_len;
+        int use_default_port = (strcmp(scheme, "ws") == 0 && port == 80) ||
+                               (strcmp(scheme, "wss") == 0 && port == 443);
+        char host_header[280];
+        char *user_headers = NULL;
+        size_t user_headers_len = 0;
+
+        if(use_default_port)
+            snprintf(host_header, sizeof(host_header), "%s", host);
+        else
+            snprintf(host_header, sizeof(host_header), "%s:%d", host, port);
+
+        /* collect user-supplied headers */
+        if(duk_get_prop_string(ctx, 0, "headers"))
+        {
+            if(duk_is_object(ctx, -1))
+            {
+                /* accumulate header lines */
+                size_t uh_alloc = 512;
+                REMALLOC(user_headers, uh_alloc);
+                user_headers[0] = '\0';
+                user_headers_len = 0;
+
+                duk_enum(ctx, -1, 0);
+                while(duk_next(ctx, -1, 1))
+                {
+                    const char *hname = duk_to_string(ctx, -2);
+                    const char *hval = duk_to_string(ctx, -1);
+                    size_t line_len = strlen(hname) + 2 + strlen(hval) + 2;
+
+                    if(user_headers_len + line_len + 1 > uh_alloc)
+                    {
+                        uh_alloc = user_headers_len + line_len + 512;
+                        user_headers = realloc(user_headers, uh_alloc);
+                    }
+                    sprintf(user_headers + user_headers_len, "%s: %s\r\n", hname, hval);
+                    user_headers_len += line_len;
+                    duk_pop_2(ctx);
+                }
+                duk_pop(ctx); /* enum */
+            }
+        }
+        duk_pop(ctx); /* headers obj or undefined */
+
+        /* build full request */
+        {
+            size_t alloc_sz = 512 + strlen(path) + strlen(host_header) + strlen(key_b64) +
+                              (user_headers ? user_headers_len : 0);
+            REMALLOC(req, alloc_sz);
+            req_len = snprintf(req, alloc_sz,
+                "GET %s HTTP/1.1\r\n"
+                "Host: %s\r\n"
+                "Upgrade: websocket\r\n"
+                "Connection: Upgrade\r\n"
+                "Sec-WebSocket-Version: 13\r\n"
+                "Sec-WebSocket-Key: %s\r\n"
+                "%s"
+                "\r\n",
+                path, host_header, key_b64,
+                user_headers ? user_headers : "");
+        }
+
+        if(user_headers)
+            free(user_headers);
+
+        /* allocate WS_CLIENT */
+        REMALLOC(ws, sizeof(WS_CLIENT));
+        memset(ws, 0, sizeof(WS_CLIENT));
+        ws->magic = WS_CLIENT_MAGIC;
+        ws->expected_accept = strdup(accept_b64);
+        ws->upgrade_req = req;
+        ws->upgrade_req_len = req_len;
+        ws->ping_interval = ping_interval;
+    }
+
+    /* pop key_b64 and accept_b64 */
+    duk_pop_2(ctx);
+    /* [ opts, socket ] */
+
+    /* store ws_client pointer as hidden property on socket this */
+    duk_push_pointer(ctx, ws);
+    duk_put_prop_string(ctx, sock_idx, DUK_HIDDEN_SYMBOL("ws_client"));
+
+    /* push ws_on_connect_cb and register as "connect" event */
+    duk_push_c_function(ctx, ws_on_connect_cb, 0);
+    duk_rp_net_on(ctx, "wsConnect", "connect", duk_get_top_index(ctx), sock_idx);
+    duk_pop(ctx); /* c function */
+
+    /* call socket.connect({port, host, tls, timeout, insecure}) */
+    duk_push_string(ctx, "connect");
+    duk_push_object(ctx);
+
+    duk_push_int(ctx, port);
+    duk_put_prop_string(ctx, -2, "port");
+
+    duk_push_string(ctx, host);
+    duk_put_prop_string(ctx, -2, "host");
+
+    if(strcmp(scheme, "wss") == 0)
+    {
+        duk_push_true(ctx);
+        duk_put_prop_string(ctx, -2, "tls");
+    }
+
+    if(timeout > 0)
+    {
+        duk_push_number(ctx, timeout);
+        duk_put_prop_string(ctx, -2, "timeout");
+    }
+
+    if(insecure)
+    {
+        duk_push_true(ctx);
+        duk_put_prop_string(ctx, -2, "insecure");
+    }
+
+    /* [ opts, socket, "connect", {opts} ] */
+    duk_call_prop(ctx, sock_idx, 1);
+    duk_pop(ctx); /* return value of connect */
+    /* [ opts, socket ] */
+
+    /* add wsSend and wsClose as properties on socket */
+    duk_push_c_function(ctx, duk_rp_ws_send, 2);
+    duk_put_prop_string(ctx, sock_idx, "wsSend");
+
+    duk_push_c_function(ctx, duk_rp_ws_close, 0);
+    duk_put_prop_string(ctx, sock_idx, "wsClose");
+
+    if(path)
+        free(path);
+
+    /* socket is at sock_idx, return it */
+    return 1;
+}
+
+/* ****************** End WebSocket Client ****************** */
+
 #define WITH_CALLBACKS 1
 #define SKIP_CALLBACKS 0
 
@@ -681,6 +1773,12 @@ static void socket_cleanup(duk_context *ctx, RPSOCK *sinfo, int docb)
 //    duk_del_prop_string(ctx, -1, "remoteFamily");
     duk_del_prop_string(ctx, -1, "readyState");
 
+    /* free websocket client state if present */
+    if(sinfo->aux && ((WS_CLIENT*)sinfo->aux)->magic == WS_CLIENT_MAGIC)
+    {
+        ws_client_free((WS_CLIENT*)sinfo->aux);
+        sinfo->aux = NULL;
+    }
 
     if(sinfo->bev)
     {
@@ -4149,6 +5247,16 @@ duk_ret_t duk_open_module(duk_context *ctx)
     duk_put_prop_string(ctx, -2, "Server"); //save Server as property of function
     // [ net, createServer]
     duk_put_prop_string(ctx, -2, "createServer");
+    // [ net ]
+
+    // net.wsConnect
+    duk_push_c_function(ctx, duk_rp_net_ws_connect, 1);
+    // [ net, wsConnect ]
+    duk_get_prop_string(ctx, -2, "Socket"); // get Socket from net.Socket
+    // [ net, wsConnect, Socket ]
+    duk_put_prop_string(ctx, -2, "Socket"); // save Socket as property of wsConnect function
+    // [ net, wsConnect ]
+    duk_put_prop_string(ctx, -2, "wsConnect");
     // [ net ]
 
     // resolve

@@ -105,7 +105,6 @@ ssize_t
 evhtp_ws_parser_run(evhtp_request_t *req, evhtp_ws_hooks * hooks,
                     const char * data, size_t len) {
     uint8_t      byte;
-    char         c;
     size_t       i=0;
     const char * p_start;
     const char * p_end;
@@ -141,21 +140,33 @@ evhtp_ws_parser_run(evhtp_request_t *req, evhtp_ws_hooks * hooks,
                 p->frame.hdr.fin    = (byte & 0x80)? 1:0;
                 p->frame.hdr.opcode = (byte & 0xF);
 
-                //printf("parser run, opcode=%d ws_cont=%d\n", (int)p->frame.hdr.opcode, (int) req->ws_cont);
+                /* RSV bits must be 0 (no extensions negotiated) */
+                if (byte & 0x70)
+                {
+                    fprintf(stderr,"Warning: websockets - reserved bits set (0x%02x)\n", byte & 0x70);
+                    return -1;
+                }
 
                 //sanity check 1
                 if(
-                    p->frame.hdr.fin != OP_CONT && p->frame.hdr.fin != OP_TEXT &&
-                    p->frame.hdr.fin != OP_BIN  && p->frame.hdr.fin != OP_PING &&
-                    p->frame.hdr.fin != OP_PONG && p->frame.hdr.fin != OP_CLOSE
+                    p->frame.hdr.opcode != OP_CONT && p->frame.hdr.opcode != OP_TEXT &&
+                    p->frame.hdr.opcode != OP_BIN  && p->frame.hdr.opcode != OP_PING &&
+                    p->frame.hdr.opcode != OP_PONG && p->frame.hdr.opcode != OP_CLOSE
                 )
                 {
                     fprintf(stderr,"Warning: websockets - invalid opcode %d\n", p->frame.hdr.opcode);
                     return -1;
                 }
 
-                //sanity check 2
-                if(req->ws_cont && p->frame.hdr.opcode !=OP_CONT)
+                /* control frames must not be fragmented (RFC 6455 5.5) */
+                if (p->frame.hdr.opcode >= 0x8 && !p->frame.hdr.fin)
+                {
+                    fprintf(stderr,"Warning: websockets - fragmented control frame (opcode %d)\n", p->frame.hdr.opcode);
+                    return -1;
+                }
+
+                /* during fragmentation, only CONT and control frames are valid (RFC 6455 5.4) */
+                if(req->ws_cont && p->frame.hdr.opcode != OP_CONT && p->frame.hdr.opcode < 0x8)
                 {
                     fprintf(stderr,"Warning: websockets - expecting a continue frame but got opcode %d\n", p->frame.hdr.opcode);
                     return -1;
@@ -168,7 +179,9 @@ evhtp_ws_parser_run(evhtp_request_t *req, evhtp_ws_hooks * hooks,
                     return -1;
                 }
 
-                req->ws_cont = !p->frame.hdr.fin;
+                /* only update fragmentation state for data frames, not control frames */
+                if (p->frame.hdr.opcode < 0x8)
+                    req->ws_cont = !p->frame.hdr.fin;
 
                 p->state = ws_s_mask_payload_len;
                 i++;
@@ -204,6 +217,11 @@ evhtp_ws_parser_run(evhtp_request_t *req, evhtp_ws_hooks * hooks,
                 {
                     uint16_t d16;
                     uint8_t * d8= (uint8_t *)&d16;
+                    /* control frames must have payload <= 125 bytes (RFC 6455 5.5) */
+                    if (p->frame.hdr.opcode >= 0x8) {
+                        fprintf(stderr,"Warning: websockets - control frame with extended payload length\n");
+                        return -1;
+                    }
                     if (MIN_READ((const char *)(data + len) - &data[i], 2) < 2) {
                         return i;
                     }
@@ -232,7 +250,11 @@ evhtp_ws_parser_run(evhtp_request_t *req, evhtp_ws_hooks * hooks,
                 {
                     uint64_t d64;
                     uint8_t * d8= (uint8_t *)&d64;
-
+                    /* control frames must have payload <= 125 bytes (RFC 6455 5.5) */
+                    if (p->frame.hdr.opcode >= 0x8) {
+                        fprintf(stderr,"Warning: websockets - control frame with extended payload length\n");
+                        return -1;
+                    }
                     if (MIN_READ((const char *)(data + len) - &data[i], 8) < 8) {
                         return i;
                     }
@@ -248,6 +270,11 @@ evhtp_ws_parser_run(evhtp_request_t *req, evhtp_ws_hooks * hooks,
 
                     //p->frame.payload_len = ntoh64(*(uint64_t *)&data[i]);
                     p->frame.payload_len = ntoh64(d64);
+                    /* most significant bit must be 0 (RFC 6455 5.2) */
+                    if (p->frame.payload_len >> 63) {
+                        fprintf(stderr,"Warning: websockets - 64-bit payload length MSB set\n");
+                        return -1;
+                    }
                     p->content_len       = p->frame.payload_len;
                     p->orig_content_len  = p->content_len;
                     //printf("64 - content_len = %d\n",  (int)p->content_len);
@@ -255,7 +282,7 @@ evhtp_ws_parser_run(evhtp_request_t *req, evhtp_ws_hooks * hooks,
                     i += 8;
 
                     if (p->frame.hdr.mask == 1) {
-                        p->state = ws_s_masking_key;;
+                        p->state = ws_s_masking_key;
                         break;
                     }
 
@@ -288,38 +315,41 @@ evhtp_ws_parser_run(evhtp_request_t *req, evhtp_ws_hooks * hooks,
 
                 /* op_close case */
                 if (p->frame.hdr.opcode == OP_CLOSE && p->status_code == 0) {
-                    uint64_t index;
-                    uint32_t mkey;
-                    int      j1;
-                    int      j2;
-                    int      m1;
-                    int      m2;
-                    char     buf[2];
-
-                    if (MIN_READ((const char *)(data + len) - &data[i], 2) < 2) {
-                        return i;
+                    /* RFC 6455 5.5.1: close body must be 0 or >= 2 bytes */
+                    if (p->content_len == 1) {
+                        fprintf(stderr,"Warning: websockets - close frame with 1-byte body\n");
+                        return -1;
                     }
+                    if (p->content_len >= 2) {
+                        uint64_t index;
+                        uint32_t mkey;
+                        int      j1;
+                        int      j2;
+                        int      m1;
+                        int      m2;
+                        char     buf[2];
 
-                    index           = p->content_idx;
-                    mkey            = p->frame.masking_key;
+                        if (MIN_READ((const char *)(data + len) - &data[i], 2) < 2) {
+                            return i;
+                        }
 
-                    /* our mod4 for the current index */
-                    j1              = index % 4;
-                    /* our mod4 for one past the index. */
-                    j2              = (index + 1) % 4;
+                        index           = p->content_idx;
+                        mkey            = p->frame.masking_key;
 
-                    /* the masks we will be using to xor the buffers */
-                    m1              = (mkey & __MASK[j1]) >> __SHIFT[j1];
-                    m2              = (mkey & __MASK[j2]) >> __SHIFT[j2];
+                        j1              = index % 4;
+                        j2              = (index + 1) % 4;
 
-                    buf[0]          = data[i] ^ m1;
-                    buf[1]          = data[i + 1] ^ m2;
+                        m1              = (mkey & __MASK[j1]) >> __SHIFT[j1];
+                        m2              = (mkey & __MASK[j2]) >> __SHIFT[j2];
 
-                    p->status_code  = ntohs(*(uint16_t *)buf);
-                    p->content_len -= 2;
-                    p->content_idx += 2;
-                    i += 2;
+                        buf[0]          = data[i] ^ m1;
+                        buf[1]          = data[i + 1] ^ m2;
 
+                        p->status_code  = ntohs(*(uint16_t *)buf);
+                        p->content_len -= 2;
+                        p->content_idx += 2;
+                        i += 2;
+                    }
                     /* RFC states that there could be a message after the
                      * OP_CLOSE 2 byte header, so just drop down and attempt
                      * to parse it.
@@ -427,6 +457,10 @@ evhtp_ws_gen_handshake(evhtp_kvs_t * hdrs_in, evhtp_kvs_t * hdrs_out) {
     }
 
     out = realloc(out, out_bytes + 1);
+    if (!out) {
+        free(magic_w_ws_key);
+        return -1;
+    }
     out[out_bytes] = '\0';
 
     evhtp_kvs_add_kv(hdrs_out,
