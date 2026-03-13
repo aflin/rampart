@@ -3193,8 +3193,9 @@ htp__run_in_thread_(evthr_t * thr, void * arg, void * shared)
 
     connection->evbase = evthr_get_base(thr);
     connection->thread = thr;
-    if (htp->thr_pool != NULL)
+    if (htp->thr_pool != NULL) {
         thr->openconn++;
+    }
 
     if (htp__connection_accept_(connection->evbase, connection) < 0) {
         evhtp_safe_free(connection, evhtp_connection_free);
@@ -5557,8 +5558,9 @@ evhtp_connection_free(evhtp_connection_t * connection)
     }
 
 #ifndef EVHTP_DISABLE_EVTHR
-    if(connection->thread)
+    if(connection->thread) {
         connection->thread->openconn--;
+    }
 #endif
 
 #ifdef EVHTP_VALGRIND_FORK_SAFE
@@ -5594,6 +5596,10 @@ evhtp_connection_free(evhtp_connection_t * connection)
         }
 
 #endif
+        /* Disable events before freeing to prevent deferred callbacks
+           (from BEV_OPT_DEFER_CALLBACKS) from firing after SSL is freed.
+           This race occurs with migrated connections from the proxy thread. */
+        bufferevent_disable(connection->bev, EV_READ | EV_WRITE);
         evhtp_safe_free(connection->bev, bufferevent_free);
 #endif
     }
@@ -6155,29 +6161,36 @@ evhtp_connection_migrate(evhtp_connection_t * conn,
         return -1;
     }
 
-    /* detach fd so bufferevent_free won't close it */
-    bufferevent_setfd(conn->bev, -1);
-
     /* disable callbacks before freeing to avoid spurious events */
     bufferevent_setcb(conn->bev, NULL, NULL, NULL, NULL);
     bufferevent_disable(conn->bev, EV_READ | EV_WRITE);
 
 #ifndef EVHTP_DISABLE_SSL
     if (conn->ssl != NULL) {
-        /* SSL connection: detach SSL from old bev, create new SSL bev */
-        SSL * ssl = bufferevent_openssl_get_ssl(conn->bev);
+        /* SSL connection: take SSL from old bev, detach fd from SSL's BIO,
+           then free the old bev.  We must NOT call bufferevent_setfd(bev, -1)
+           here because that triggers be_openssl_set_fd() which calls
+           SSL_clear() (since old_state is still BUFFEREVENT_SSL_ACCEPTING),
+           destroying the completed handshake state.
+           Instead, take_ssl NULLs the bev's internal SSL pointer so
+           be_openssl_destruct won't call SSL_free, and SSL_set_fd(-1)
+           detaches the fd from the BIO so bufferevent_free won't close it. */
+        SSL * ssl = bufferevent_openssl_take_ssl(conn->bev);
 
-        /* prevent SSL_free when old bev is freed */
         SSL_set_fd(ssl, -1);
         bufferevent_free(conn->bev);
 
         new_bev = bufferevent_openssl_socket_new(new_base, fd, ssl,
-            BUFFEREVENT_SSL_OPEN, BEV_OPT_CLOSE_ON_FREE);
+            BUFFEREVENT_SSL_OPEN,
+            BEV_OPT_CLOSE_ON_FREE | BEV_OPT_DEFER_CALLBACKS);
     } else
 #endif
     {
+        /* Non-SSL: detach fd so bufferevent_free won't close it */
+        bufferevent_setfd(conn->bev, -1);
         bufferevent_free(conn->bev);
-        new_bev = bufferevent_socket_new(new_base, fd, BEV_OPT_CLOSE_ON_FREE);
+        new_bev = bufferevent_socket_new(new_base, fd,
+            BEV_OPT_CLOSE_ON_FREE | BEV_OPT_DEFER_CALLBACKS);
     }
 
     if (new_bev == NULL) {
@@ -6195,6 +6208,28 @@ evhtp_connection_migrate(evhtp_connection_t * conn,
         htp__connection_readcb_,
         htp__connection_writecb_,
         htp__connection_eventcb_, conn);
+
+    /* re-apply connection timeouts to the new bev */
+    {
+        const struct timeval * c_recv_timeo = NULL;
+        const struct timeval * c_send_timeo = NULL;
+
+        if (conn->recv_timeo.tv_sec || conn->recv_timeo.tv_usec) {
+            c_recv_timeo = &conn->recv_timeo;
+        } else if (conn->htp && (conn->htp->recv_timeo.tv_sec ||
+                   conn->htp->recv_timeo.tv_usec)) {
+            c_recv_timeo = &conn->htp->recv_timeo;
+        }
+
+        if (conn->send_timeo.tv_sec || conn->send_timeo.tv_usec) {
+            c_send_timeo = &conn->send_timeo;
+        } else if (conn->htp && (conn->htp->send_timeo.tv_sec ||
+                   conn->htp->send_timeo.tv_usec)) {
+            c_send_timeo = &conn->htp->send_timeo;
+        }
+
+        bufferevent_set_timeouts(conn->bev, c_recv_timeo, c_send_timeo);
+    }
 
     bufferevent_enable(conn->bev, EV_READ | EV_WRITE);
 

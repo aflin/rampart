@@ -11,6 +11,7 @@
 #include <errno.h>
 #include <ctype.h>
 #include <arpa/inet.h>
+#include <sys/time.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #ifdef __linux__
@@ -2599,7 +2600,7 @@ static void fileserver(evhtp_request_t *req, void *arg)
         evthr_t *js_thr = pick_js_thread();
         if (js_thr)
         {
-            struct proxy_redispatch_s *rd;
+            struct proxy_redispatch_s *rd = NULL;
             REMALLOC(rd, sizeof(struct proxy_redispatch_s));
             rd->req = req;
             rd->cbarg = arg;
@@ -2610,9 +2611,14 @@ static void fileserver(evhtp_request_t *req, void *arg)
                the request sits in the JS thread's defer queue.
                evhtp_connection_migrate() will create a fresh bufferevent
                on the target thread's event_base. */
+            /* Detach bev BEFORE defer to avoid race with JS thread */
             bufferevent_setcb(req->conn->bev, NULL, NULL, NULL, NULL);
             bufferevent_disable(req->conn->bev, EV_READ | EV_WRITE);
-            evthr_defer(js_thr, redispatch_to_js_thread, rd);
+            if (evthr_defer(js_thr, redispatch_to_js_thread, rd) != EVTHR_RES_OK)
+            {
+                free(rd);
+                evhtp_connection_free(req->conn);
+            }
         }
         else
         {
@@ -5168,6 +5174,10 @@ static void proxy_upstream_cb(evhtp_request_t *upstream_req, void *arg)
     if (evbuffer_get_length(upstream_req->buffer_in) > 0)
         evbuffer_add_buffer(client_req->buffer_out, upstream_req->buffer_in);
 
+    /* Close keep-alive after proxy responses so idle connections don't
+       linger for the full connection timeout, tying up openconn slots. */
+    evhtp_request_set_keepalive(client_req, 0);
+
     evhtp_send_reply(client_req, (evhtp_res)status);
     if (rp_server_logging) writelog(client_req, (int)status);
 
@@ -5333,6 +5343,14 @@ static void ws_proxy_cleanup(WS_PROXY_STATE *ws)
        during later connection teardown */
     if (ws->client_req)
         evhtp_request_unset_hook(ws->client_req, evhtp_hook_on_error);
+    /* disable both bevs first to deactivate any pending events (e.g.
+       an SSL write event already in the active queue) before freeing.
+       Without this, bufferevent_finalize_cb_ can free the SSL object
+       while a pending be_openssl_writeeventcb still references it. */
+    if (ws->upstream_bev)
+        bufferevent_disable(ws->upstream_bev, EV_READ | EV_WRITE);
+    if (ws->client_bev)
+        bufferevent_disable(ws->client_bev, EV_READ | EV_WRITE);
     if (ws->upstream_bev)
     {
         bufferevent_free(ws->upstream_bev);
@@ -5342,6 +5360,17 @@ static void ws_proxy_cleanup(WS_PROXY_STATE *ws)
     {
         bufferevent_free(ws->client_bev);
         ws->client_bev = NULL;
+    }
+    /* after the relay phase, the evhtp connection object orphaned by
+       take_ownership still exists — free it to release the openconn
+       count and conn_head TAILQ entry.  client_conn->ssl was NULLed
+       at takeover time so evhtp_connection_free won't touch freed SSL.
+       During handshake (client_bev == NULL), evhtp still owns the
+       connection so we must not free it here. */
+    if (ws->handshake_done && ws->client_conn)
+    {
+        evhtp_connection_free(ws->client_conn);
+        ws->client_conn = NULL;
     }
     free(ws);
 }
@@ -5483,6 +5512,11 @@ static void ws_upstream_handshake_readcb(struct bufferevent *bev, void *arg)
     /* take ownership of client bufferevent from evhtp */
     ws->client_bev = evhtp_connection_take_ownership(ws->client_conn);
 
+    /* the SSL object is now owned by the bev (BEV_OPT_CLOSE_ON_FREE).
+       NULL it in the connection so evhtp_connection_free won't try to
+       SSL_shutdown on a freed SSL later. */
+    ws->client_conn->ssl = NULL;
+
     /* send the raw 101 response to the client (headers + \r\n\r\n) */
     {
         size_t hdr_len = (end_of_headers - data) + 4;  /* include \r\n\r\n */
@@ -5504,9 +5538,10 @@ static void ws_upstream_handshake_readcb(struct bufferevent *bev, void *arg)
     bufferevent_enable(ws->client_bev, EV_READ | EV_WRITE);
     bufferevent_enable(ws->upstream_bev, EV_READ | EV_WRITE);
 
-    /* we no longer need the evhtp request reference */
+    /* we no longer need the evhtp request reference.
+       keep client_conn — ws_proxy_cleanup will call evhtp_connection_free
+       on it to release the leaked connection object + openconn count. */
     ws->client_req = NULL;
-    ws->client_conn = NULL;
 }
 
 /* upstream connection event during handshake */
@@ -5582,9 +5617,10 @@ static void proxy_ws_upgrade(evhtp_request_t *req, PROXY_CONF *conf,
     /* connect to upstream */
     if (dnsbase)
     {
-        if (bufferevent_socket_connect_hostname(ws->upstream_bev,
+        int ret = bufferevent_socket_connect_hostname(ws->upstream_bev,
                 dnsbase, AF_UNSPEC,
-                conf->upstream_host, conf->upstream_port) < 0)
+                conf->upstream_host, conf->upstream_port);
+        if (ret < 0)
         {
             proxy_send_error(req, 502, "Bad Gateway");
             ws_proxy_cleanup(ws);
@@ -5617,9 +5653,8 @@ static void proxy_ws_upgrade(evhtp_request_t *req, PROXY_CONF *conf,
     upstream_uri = proxy_rewrite_path(req, conf);
 
     /* request line: GET /path HTTP/1.1\r\n */
+    /* note: upstream_uri from proxy_rewrite_path() already includes query string */
     evbuffer_add_printf(req_buf, "GET %s", upstream_uri);
-    if (req->uri->query_raw)
-        evbuffer_add_printf(req_buf, "?%s", req->uri->query_raw);
     evbuffer_add(req_buf, " HTTP/1.1\r\n", 11);
     free(upstream_uri);
 
@@ -5644,6 +5679,33 @@ static void proxy_ws_upgrade(evhtp_request_t *req, PROXY_CONF *conf,
             evbuffer_add(req_buf, kv->val, kv->vlen);
             evbuffer_add(req_buf, "\r\n", 2);
         }
+    }
+
+    /* X-Forwarded-For */
+    {
+        evhtp_connection_t *client_conn = evhtp_request_get_connection(req);
+        char client_ip[INET6_ADDRSTRLEN] = {0};
+        const char *existing_xff;
+        char xff_buf[512];
+
+        sa_to_string(client_conn->saddr, client_ip, sizeof(client_ip));
+        existing_xff = evhtp_header_find(req->headers_in, "X-Forwarded-For");
+        if (existing_xff)
+            snprintf(xff_buf, sizeof(xff_buf), "%s, %s", existing_xff, client_ip);
+        else
+            snprintf(xff_buf, sizeof(xff_buf), "%s", client_ip);
+        evbuffer_add_printf(req_buf, "X-Forwarded-For: %s\r\n", xff_buf);
+    }
+
+    /* X-Forwarded-Proto */
+    evbuffer_add_printf(req_buf, "X-Forwarded-Proto: %s\r\n",
+        rp_using_ssl ? "https" : "http");
+
+    /* X-Forwarded-Host */
+    {
+        const char *orig_host = evhtp_header_find(req->headers_in, "Host");
+        if (orig_host)
+            evbuffer_add_printf(req_buf, "X-Forwarded-Host: %s\r\n", orig_host);
     }
 
     /* extra configured headers */
@@ -5697,6 +5759,12 @@ static void redispatch_to_js_thread(evthr_t *thr, void *arg, void *shared)
     else
         http_callback(rd->req, rd->cbarg);
 
+    /* check if response data is stuck in the output buffer */
+    if (rd->req && rd->req->conn && rd->req->conn->bev) {
+        struct evbuffer *outbuf = bufferevent_get_output(rd->req->conn->bev);
+        size_t pending = outbuf ? evbuffer_get_length(outbuf) : 0;
+    }
+
     free(rd);
 }
 
@@ -5749,20 +5817,20 @@ static void http_callback(evhtp_request_t *req, void *arg)
         evthr_t *js_thr = pick_js_thread();
         if (js_thr)
         {
-            struct proxy_redispatch_s *rd;
+            struct proxy_redispatch_s *rd = NULL;
             REMALLOC(rd, sizeof(struct proxy_redispatch_s));
             rd->req = req;
             rd->cbarg = arg;
             rd->from_thr = thread;
             rd->is_fileserver = 0;
-            /* Detach the connection from this thread's event loop so that
-               client disconnect events do not trigger evhtp cleanup while
-               the request sits in the JS thread's defer queue.
-               evhtp_connection_migrate() will create a fresh bufferevent
-               on the target thread's event_base. */
+            /* Detach bev BEFORE defer to avoid race with JS thread */
             bufferevent_setcb(req->conn->bev, NULL, NULL, NULL, NULL);
             bufferevent_disable(req->conn->bev, EV_READ | EV_WRITE);
-            evthr_defer(js_thr, redispatch_to_js_thread, rd);
+            if (evthr_defer(js_thr, redispatch_to_js_thread, rd) != EVTHR_RES_OK)
+            {
+                free(rd);
+                evhtp_connection_free(req->conn);
+            }
         }
         else
         {

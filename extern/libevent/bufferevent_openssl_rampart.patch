@@ -1,0 +1,78 @@
+diff --git a/extern/libevent/bufferevent_openssl.c b/extern/libevent/bufferevent_openssl.c
+index b51b834b..91881af2 100644
+--- a/extern/libevent/bufferevent_openssl.c
++++ b/extern/libevent/bufferevent_openssl.c
+@@ -1145,8 +1145,9 @@ be_openssl_outbuf_cb(struct evbuffer *buf,
+ 			r = bufferevent_add_event_(&bev_ssl->bev.bev.ev_write,
+ 			    &bev_ssl->bev.bev.timeout_write);
+ 
+-		if (bev_ssl->underlying)
++		if (bev_ssl->underlying) {
+ 			consider_writing(bev_ssl);
++		}
+ 	}
+ 	/* XXX Handle r < 0 */
+ 	(void)r;
+@@ -1231,15 +1232,17 @@ be_openssl_destruct(struct bufferevent *bev)
+ 	struct bufferevent_openssl *bev_ssl = upcast(bev);
+ 
+ 	if (bev_ssl->bev.options & BEV_OPT_CLOSE_ON_FREE) {
+-		if (! bev_ssl->underlying) {
+-			evutil_socket_t fd = EVUTIL_INVALID_SOCKET;
+-			BIO *bio = SSL_get_wbio(bev_ssl->ssl);
+-			if (bio)
+-				fd = BIO_get_fd(bio, NULL);
+-			if (fd >= 0)
+-				evutil_closesocket(fd);
++		if (bev_ssl->ssl) {
++			if (! bev_ssl->underlying) {
++				evutil_socket_t fd = EVUTIL_INVALID_SOCKET;
++				BIO *bio = SSL_get_wbio(bev_ssl->ssl);
++				if (bio)
++					fd = BIO_get_fd(bio, NULL);
++				if (fd >= 0)
++					evutil_closesocket(fd);
++			}
++			SSL_free(bev_ssl->ssl);
+ 		}
+-		SSL_free(bev_ssl->ssl);
+ 	}
+ }
+ 
+@@ -1339,6 +1342,18 @@ bufferevent_openssl_get_ssl(struct bufferevent *bufev)
+ 	return bev_ssl->ssl;
+ }
+ 
++SSL *
++bufferevent_openssl_take_ssl(struct bufferevent *bufev)
++{
++	struct bufferevent_openssl *bev_ssl = upcast(bufev);
++	SSL *ssl;
++	if (!bev_ssl)
++		return NULL;
++	ssl = bev_ssl->ssl;
++	bev_ssl->ssl = NULL;
++	return ssl;
++}
++
+ static struct bufferevent *
+ bufferevent_openssl_new_impl(struct event_base *base,
+     struct bufferevent *underlying,
+diff --git a/extern/libevent/include/event2/bufferevent_ssl.h b/extern/libevent/include/event2/bufferevent_ssl.h
+index 63f3a90b..ad93232d 100644
+--- a/extern/libevent/include/event2/bufferevent_ssl.h
++++ b/extern/libevent/include/event2/bufferevent_ssl.h
+@@ -117,6 +117,13 @@ EVENT2_EXPORT_SYMBOL
+ struct ssl_st *
+ bufferevent_openssl_get_ssl(struct bufferevent *bufev);
+ 
++/** Return the underlying openssl SSL * object and detach it from the
++    bufferevent so that be_openssl_destruct will not call SSL_free().
++    The caller takes ownership of the SSL object. */
++EVENT2_EXPORT_SYMBOL
++struct ssl_st *
++bufferevent_openssl_take_ssl(struct bufferevent *bufev);
++
+ /** Tells a bufferevent to begin SSL renegotiation. */
+ EVENT2_EXPORT_SYMBOL
+ int bufferevent_ssl_renegotiate(struct bufferevent *bev);

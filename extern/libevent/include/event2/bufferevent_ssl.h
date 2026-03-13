@@ -117,6 +117,13 @@ EVENT2_EXPORT_SYMBOL
 struct ssl_st *
 bufferevent_openssl_get_ssl(struct bufferevent *bufev);
 
+/** Return the underlying openssl SSL * object and detach it from the
+    bufferevent so that be_openssl_destruct will not call SSL_free().
+    The caller takes ownership of the SSL object. */
+EVENT2_EXPORT_SYMBOL
+struct ssl_st *
+bufferevent_openssl_take_ssl(struct bufferevent *bufev);
+
 /** Tells a bufferevent to begin SSL renegotiation. */
 EVENT2_EXPORT_SYMBOL
 int bufferevent_ssl_renegotiate(struct bufferevent *bev);
