@@ -263,6 +263,7 @@ PROXY_CONF {
     char       **hkeys;             /* extra header keys */
     char       **hvals;             /* extra header values */
     int          timeout_secs;      /* upstream response timeout (0=default 30s) */
+    int          insecure;          /* skip SSL certificate verification */
 };
 
 #define PROXY_STATE struct proxy_state_s
@@ -4980,6 +4981,10 @@ static void proxy_cleanup(PROXY_STATE *ps)
         event_free(ps->timeout_ev);
         ps->timeout_ev = NULL;
     }
+    /* unset client error hook to prevent use-after-free of ps
+       during later connection teardown */
+    if (ps->client_req)
+        evhtp_request_unset_hook(ps->client_req, evhtp_hook_on_error);
     free(ps);
 }
 
@@ -5096,7 +5101,34 @@ static void proxy_timeout_cb(evutil_socket_t fd, short events, void *arg)
         evhtp_connection_free(ps->upstream_conn);
         ps->upstream_conn = NULL;
     }
+    /* unset client error hook before freeing ps */
+    if (ps && ps->client_req)
+        evhtp_request_unset_hook(ps->client_req, evhtp_hook_on_error);
     free(ps);
+}
+
+/* called when client disconnects while upstream proxy request is in flight */
+static void proxy_client_error(evhtp_request_t *req,
+    evhtp_error_flags errtype, void *arg)
+{
+    PROXY_STATE *ps = (PROXY_STATE *)arg;
+    (void)req; (void)errtype;
+
+    if (!ps || ps->finished)
+        return;
+
+    ps->finished = 1;
+    ps->client_req = NULL;
+
+    /* cancel the upstream request — no point waiting for a response
+       nobody will read.  freeing the connection may trigger
+       proxy_upstream_error, which checks ps->finished and skips. */
+    if (ps->upstream_conn)
+    {
+        evhtp_connection_free(ps->upstream_conn);
+        ps->upstream_conn = NULL;
+    }
+    proxy_cleanup(ps);
 }
 
 /* called when upstream response arrives */
@@ -5213,6 +5245,11 @@ static void proxy_callback(evhtp_request_t *req, void *arg)
     evhtp_request_set_hook(upstream_req,
         evhtp_hook_on_error, (evhtp_hook)proxy_upstream_error, ps);
 
+    /* set error hook on client request so we detect client disconnect
+       while the upstream request is in flight */
+    evhtp_request_set_hook(req,
+        evhtp_hook_on_error, (evhtp_hook)proxy_client_error, ps);
+
     /* copy client headers, skipping hop-by-hop */
     evhtp_headers_for_each(req->headers_in, proxy_copy_req_header, upstream_req);
 
@@ -5292,6 +5329,10 @@ static void ws_proxy_cleanup(WS_PROXY_STATE *ws)
         event_free(ws->timeout_ev);
         ws->timeout_ev = NULL;
     }
+    /* unset client error hook to prevent use-after-free of ws
+       during later connection teardown */
+    if (ws->client_req)
+        evhtp_request_unset_hook(ws->client_req, evhtp_hook_on_error);
     if (ws->upstream_bev)
     {
         bufferevent_free(ws->upstream_bev);
@@ -5371,6 +5412,22 @@ static char *strnstr_local(const char *haystack, const char *needle, size_t len)
     return NULL;
 }
 
+/* called when client disconnects during WebSocket handshake phase */
+static void ws_proxy_client_error(evhtp_request_t *req,
+    evhtp_error_flags errtype, void *arg)
+{
+    WS_PROXY_STATE *ws = (WS_PROXY_STATE *)arg;
+    (void)req; (void)errtype;
+
+    if (!ws) return;
+
+    /* mark client as gone so no callbacks try to send a reply */
+    ws->client_req = NULL;
+    ws->client_conn = NULL;
+
+    ws_proxy_cleanup(ws);
+}
+
 /* upstream connected and 101 data arrives here */
 static void ws_upstream_handshake_readcb(struct bufferevent *bev, void *arg)
 {
@@ -5418,6 +5475,10 @@ static void ws_upstream_handshake_readcb(struct bufferevent *bev, void *arg)
     }
 
     ws->handshake_done = 1;
+
+    /* unset client error hook before taking ownership — after takeover,
+       evhtp no longer manages this connection */
+    evhtp_request_unset_hook(ws->client_req, evhtp_hook_on_error);
 
     /* take ownership of client bufferevent from evhtp */
     ws->client_bev = evhtp_connection_take_ownership(ws->client_conn);
@@ -5512,6 +5573,11 @@ static void proxy_ws_upgrade(evhtp_request_t *req, PROXY_CONF *conf,
         ws_upstream_handshake_readcb, NULL,
         ws_upstream_handshake_eventcb, ws);
     bufferevent_enable(ws->upstream_bev, EV_READ | EV_WRITE);
+
+    /* set error hook on client request to detect client disconnect
+       during the handshake phase */
+    evhtp_request_set_hook(req,
+        evhtp_hook_on_error, (evhtp_hook)ws_proxy_client_error, ws);
 
     /* connect to upstream */
     if (dnsbase)
@@ -7512,6 +7578,11 @@ duk_ret_t duk_server_start(duk_context *ctx)
                                     pconf->timeout_secs = (int)duk_get_number_default(ctx, -1, 0);
                                 duk_pop(ctx);
 
+                                /* optional insecure (skip SSL certificate verification) */
+                                if (duk_get_prop_string(ctx, -1, "insecure"))
+                                    pconf->insecure = duk_to_boolean(ctx, -1);
+                                duk_pop(ctx);
+
 #ifndef EVHTP_DISABLE_SSL
                                 /* create SSL context for upstream HTTPS */
                                 if (pconf->use_ssl)
@@ -7519,8 +7590,19 @@ duk_ret_t duk_server_start(duk_context *ctx)
                                     pconf->ssl_ctx = SSL_CTX_new(TLS_client_method());
                                     if (pconf->ssl_ctx)
                                     {
-                                        SSL_CTX_set_default_verify_paths(pconf->ssl_ctx);
-                                        SSL_CTX_set_verify(pconf->ssl_ctx, SSL_VERIFY_PEER, NULL);
+                                        if (pconf->insecure)
+                                        {
+                                            SSL_CTX_set_verify(pconf->ssl_ctx, SSL_VERIFY_NONE, NULL);
+                                        }
+                                        else
+                                        {
+                                            /* use the same CA bundle as rampart-curl and rampart-net */
+                                            if (rp_ca_bundle && *rp_ca_bundle)
+                                                SSL_CTX_load_verify_locations(pconf->ssl_ctx, rp_ca_bundle, NULL);
+                                            else
+                                                SSL_CTX_set_default_verify_paths(pconf->ssl_ctx);
+                                            SSL_CTX_set_verify(pconf->ssl_ctx, SSL_VERIFY_PEER, NULL);
+                                        }
                                     }
                                 }
 #endif
