@@ -1488,8 +1488,24 @@ evhtp_connection_new(struct event_base * evbase, const char * addr, uint16_t por
 EVHTP_EXPORT evhtp_connection_t * evhtp_connection_ssl_new(
     struct event_base * evbase,
     const char * addr, uint16_t port, evhtp_ssl_ctx_t * ctx);
+
+/**
+ * @brief allocate a new SSL client connection with DNS resolution and SNI
+ */
+EVHTP_EXPORT evhtp_connection_t * evhtp_connection_ssl_new_dns(
+    struct event_base * evbase,
+    struct evdns_base * dns_base,
+    const char * addr, uint16_t port, evhtp_ssl_ctx_t * ctx);
 #endif
 
+/**
+ * @brief migrate a connection to a different event_base and thread.
+ *        Extracts the socket fd, frees the old bufferevent, creates a
+ *        new bufferevent on new_base.  Handles both plain and SSL connections.
+ * @return 0 on success, -1 on failure
+ */
+EVHTP_EXPORT int evhtp_connection_migrate(evhtp_connection_t * conn,
+    struct event_base * new_base, evthr_t * new_thread);
 
 /**
  * @brief allocate a new request

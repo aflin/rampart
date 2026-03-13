@@ -6047,6 +6047,163 @@ evhtp_connection_ssl_new(struct event_base * evbase,
 
 #endif
 
+evhtp_connection_t *
+evhtp_connection_ssl_new_dns(struct event_base * evbase,
+                              struct evdns_base * dns_base,
+                              const char        * addr,
+                              uint16_t            port,
+                              evhtp_ssl_ctx_t   * ctx)
+{
+#ifdef EVHTP_DISABLE_SSL
+    return NULL;
+#else
+    evhtp_connection_t * conn;
+    const char         * errstr = NULL;
+
+    if (evbase == NULL || ctx == NULL) {
+        return NULL;
+    }
+
+    if (!(conn = htp__connection_new_(NULL, -1, evhtp_type_client))) {
+        return NULL;
+    }
+
+    conn->evbase = evbase;
+
+    do {
+        if ((conn->ssl = SSL_new(ctx)) == NULL) {
+            errstr = "unable to allocate SSL context";
+            break;
+        }
+
+        /* set SNI hostname for virtual hosting */
+        SSL_set_tlsext_host_name(conn->ssl, addr);
+
+        if ((conn->bev = ssl_sk_new_(evbase, -1, conn->ssl,
+                 BUFFEREVENT_SSL_CONNECTING,
+                 BEV_OPT_CLOSE_ON_FREE)) == NULL) {
+            errstr = "unable to allocate bev context";
+            break;
+        }
+
+        if (bufferevent_enable(conn->bev, EV_READ) == -1) {
+            errstr = "unable to enable reading";
+            break;
+        }
+
+        bufferevent_setcb(conn->bev, NULL, NULL,
+            htp__connection_eventcb_, conn);
+
+        if (dns_base != NULL) {
+            if (bufferevent_socket_connect_hostname(conn->bev, dns_base,
+                    AF_UNSPEC, addr, port) == -1) {
+                errstr = "dns connect failure";
+                break;
+            }
+        } else {
+            struct sockaddr_in  sin4;
+            struct sockaddr_in6 sin6;
+            struct sockaddr   * sin;
+            int                 salen;
+
+            if (inet_pton(AF_INET, addr, &sin4.sin_addr)) {
+                sin4.sin_family = AF_INET;
+                sin4.sin_port   = htons(port);
+                sin = (struct sockaddr *)&sin4;
+                salen           = sizeof(sin4);
+            } else if (inet_pton(AF_INET6, addr, &sin6.sin6_addr)) {
+                sin6.sin6_family = AF_INET6;
+                sin6.sin6_port   = htons(port);
+                sin = (struct sockaddr *)&sin6;
+                salen = sizeof(sin6);
+            } else {
+                errstr = "not a valid IP and no dns_base";
+                break;
+            }
+
+            if (ssl_sk_connect_(conn->bev, sin, salen) == -1) {
+                errstr = "sk_connect_ failure";
+                break;
+            }
+        }
+    } while (0);
+
+    if (errstr != NULL) {
+        log_error("%s", errstr);
+        evhtp_safe_free(conn, evhtp_connection_free);
+        return NULL;
+    }
+
+    return conn;
+#endif
+}         /* evhtp_connection_ssl_new_dns */
+
+int
+evhtp_connection_migrate(evhtp_connection_t * conn,
+                         struct event_base  * new_base,
+                         evthr_t            * new_thread)
+{
+    evutil_socket_t fd;
+    struct bufferevent * new_bev;
+
+    if (conn == NULL || conn->bev == NULL || new_base == NULL) {
+        return -1;
+    }
+
+    fd = bufferevent_getfd(conn->bev);
+    if (fd < 0) {
+        return -1;
+    }
+
+    /* detach fd so bufferevent_free won't close it */
+    bufferevent_setfd(conn->bev, -1);
+
+    /* disable callbacks before freeing to avoid spurious events */
+    bufferevent_setcb(conn->bev, NULL, NULL, NULL, NULL);
+    bufferevent_disable(conn->bev, EV_READ | EV_WRITE);
+
+#ifndef EVHTP_DISABLE_SSL
+    if (conn->ssl != NULL) {
+        /* SSL connection: detach SSL from old bev, create new SSL bev */
+        SSL * ssl = bufferevent_openssl_get_ssl(conn->bev);
+
+        /* prevent SSL_free when old bev is freed */
+        SSL_set_fd(ssl, -1);
+        bufferevent_free(conn->bev);
+
+        new_bev = bufferevent_openssl_socket_new(new_base, fd, ssl,
+            BUFFEREVENT_SSL_OPEN, BEV_OPT_CLOSE_ON_FREE);
+    } else
+#endif
+    {
+        bufferevent_free(conn->bev);
+        new_bev = bufferevent_socket_new(new_base, fd, BEV_OPT_CLOSE_ON_FREE);
+    }
+
+    if (new_bev == NULL) {
+        /* can't recover - close the fd */
+        evutil_closesocket(fd);
+        conn->bev = NULL;
+        return -1;
+    }
+
+    conn->bev    = new_bev;
+    conn->evbase = new_base;
+    conn->thread = new_thread;
+
+    bufferevent_setcb(conn->bev,
+        htp__connection_readcb_,
+        htp__connection_writecb_,
+        htp__connection_eventcb_, conn);
+
+    bufferevent_enable(conn->bev, EV_READ | EV_WRITE);
+
+    bufferevent_set_max_single_write(conn->bev, evhtp_max_single_write);
+    bufferevent_set_max_single_read(conn->bev, evhtp_max_single_read);
+
+    return 0;
+}         /* evhtp_connection_migrate */
+
 
 evhtp_request_t *
 evhtp_request_new(evhtp_callback_cb cb, void * arg)

@@ -380,6 +380,7 @@ RPTHR {
     uint16_t           nchildren;   // number of child threads.
     int                reader;      // reader for thread.waitfor()
     int                writer;      // writer for thread.waitfor()
+    void              *evthr;       // evthr_t* for server threads (used by proxy re-dispatch)
 };
 
 #define RPTHR_FLAG_IN_USE     0x01  // if struct is in use and ctxs are set up

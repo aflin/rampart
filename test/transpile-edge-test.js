@@ -60,7 +60,7 @@ if(global && global.rampart) {
             _drainAsync();
             return;
         }
-        printf("testing edge - %-52s - ", name);
+        printf("testing edge - %-53s - ", name);
         if(test)
             printf("passed\n")
         else

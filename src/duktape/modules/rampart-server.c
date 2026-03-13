@@ -244,6 +244,52 @@ DHMAP
 DHMAP **all_dhmaps=NULL;
 int n_dhmaps=0;
 
+/* ************************************************************
+   REVERSE PROXY SUPPORT
+   ************************************************************ */
+
+#define PROXY_CONF struct proxy_conf_s
+PROXY_CONF {
+    char        *upstream_host;     /* hostname or IP of upstream */
+    uint16_t     upstream_port;     /* port of upstream */
+    char        *upstream_path;     /* path prefix on upstream (e.g. "/api/") */
+    char        *local_path;        /* the mapped local path (e.g. "/api/") */
+    int          local_path_len;    /* strlen of local_path for prefix stripping */
+    int          use_ssl;           /* 1 if upstream is https */
+#ifndef EVHTP_DISABLE_SSL
+    SSL_CTX     *ssl_ctx;           /* OpenSSL context for outbound HTTPS */
+#endif
+    int          nheaders;          /* number of extra headers to inject */
+    char       **hkeys;             /* extra header keys */
+    char       **hvals;             /* extra header values */
+    int          timeout_secs;      /* upstream response timeout (0=default 30s) */
+};
+
+#define PROXY_STATE struct proxy_state_s
+PROXY_STATE {
+    evhtp_request_t    *client_req;     /* inbound request from client */
+    evhtp_connection_t *upstream_conn;  /* outbound connection to upstream */
+    PROXY_CONF         *conf;           /* route configuration */
+    struct event       *timeout_ev;     /* timeout event for upstream response */
+    int                 finished;       /* set once response has been sent */
+};
+
+/* WebSocket proxy relay state */
+#define WS_PROXY_STATE struct ws_proxy_state_s
+WS_PROXY_STATE {
+    struct bufferevent *client_bev;      /* client-side bufferevent (taken from evhtp) */
+    struct bufferevent *upstream_bev;    /* upstream bufferevent (raw TCP) */
+    evhtp_request_t    *client_req;     /* kept only during handshake phase */
+    evhtp_connection_t *client_conn;    /* evhtp connection, freed after takeover */
+    PROXY_CONF         *conf;
+    struct event       *timeout_ev;
+    int                 handshake_done;  /* 1 after 101 received from upstream */
+};
+
+static int n_proxy_confs = 0;
+static int proxy_extra_threads = 0;
+static int js_thread_count = 0;      /* number of threads with Duktape contexts */
+
 static void simplefree(void *arg)
 {
     if(arg)
@@ -2522,13 +2568,57 @@ static evthr_t *get_request_thr(evhtp_request_t *request)
     return htpconn->thread;
 }
 
+/* forward declarations for proxy re-dispatch (defined after proxy functions) */
+static void proxy_send_error(evhtp_request_t *req, int code, const char *reason);
+static evthr_t *pick_js_thread(void);
+static void redispatch_to_js_thread(evthr_t *thr, void *arg, void *shared);
+static void proxy_ws_upgrade(evhtp_request_t *req, PROXY_CONF *conf,
+    struct event_base *base, struct evdns_base *dnsbase);
+
+struct proxy_redispatch_s {
+    evhtp_request_t *req;
+    void            *cbarg;     /* original DHS* or DHMAP* */
+    evthr_t         *from_thr;  /* thread we're departing */
+    int              is_fileserver; /* 1 if this was a fileserver route */
+};
+
 static void fileserver(evhtp_request_t *req, void *arg)
 {
     DHMAP *map = (DHMAP *)arg;
     evhtp_path_t *path = req->uri->path;
     evthr_t *thread = get_request_thr(req);
+    int thrno = *((int *)evthr_get_aux(thread));
 
-    thread_local_server_thread_num = *((int *)evthr_get_aux(thread));
+    thread_local_server_thread_num = thrno;
+
+    /* if this is a proxy-only thread (no Duktape), re-dispatch to a JS thread.
+       fileserver needs Duktape for beginFunc/directoryFunc. */
+    if (server_thread[thrno]->ctx == NULL)
+    {
+        evthr_t *js_thr = pick_js_thread();
+        if (js_thr)
+        {
+            struct proxy_redispatch_s *rd;
+            REMALLOC(rd, sizeof(struct proxy_redispatch_s));
+            rd->req = req;
+            rd->cbarg = arg;
+            rd->from_thr = thread;
+            rd->is_fileserver = 1;
+            /* Detach the connection from this thread's event loop so that
+               client disconnect events do not trigger evhtp cleanup while
+               the request sits in the JS thread's defer queue.
+               evhtp_connection_migrate() will create a fresh bufferevent
+               on the target thread's event_base. */
+            bufferevent_setcb(req->conn->bev, NULL, NULL, NULL, NULL);
+            bufferevent_disable(req->conn->bev, EV_READ | EV_WRITE);
+            evthr_defer(js_thr, redispatch_to_js_thread, rd);
+        }
+        else
+        {
+            proxy_send_error(req, 503, "Service Unavailable");
+        }
+        return;
+    }
 
     if(safepath(path->full) == -1)
     {
@@ -4877,6 +4967,704 @@ static int getmod_path(DHS *dhs)
     return ret;
 }
 
+/* ************************************************************
+   REVERSE PROXY FUNCTIONS
+   ************************************************************ */
+
+static void proxy_cleanup(PROXY_STATE *ps)
+{
+    if (!ps) return;
+    if (ps->timeout_ev)
+    {
+        evtimer_del(ps->timeout_ev);
+        event_free(ps->timeout_ev);
+        ps->timeout_ev = NULL;
+    }
+    free(ps);
+}
+
+static void proxy_send_error(evhtp_request_t *req, int code, const char *reason)
+{
+    evhtp_headers_add_header(req->headers_out,
+        evhtp_header_new("Content-Type", "text/html", 0, 0));
+    evbuffer_add_printf(req->buffer_out,
+        "<html><head><title>%d %s</title></head>"
+        "<body><h1>%d %s</h1></body></html>",
+        code, reason, code, reason);
+    evhtp_send_reply(req, (evhtp_res)code);
+    if (rp_server_logging) writelog(req, code);
+}
+
+/* build the upstream URI from the client request path */
+static char *proxy_rewrite_path(evhtp_request_t *client_req, PROXY_CONF *conf)
+{
+    const char *client_path = client_req->uri->path->full;
+    const char *suffix = client_path + conf->local_path_len;
+    const unsigned char *query_raw = client_req->uri->query_raw;
+    int upstream_path_len = (int)strlen(conf->upstream_path);
+    int suffix_len = (int)strlen(suffix);
+    int query_len = query_raw ? (int)strlen((char*)query_raw) : 0;
+    char *uri;
+
+    /* +2 for possible '?' and '\0' */
+    REMALLOC(uri, upstream_path_len + suffix_len + query_len + 2);
+    strcpy(uri, conf->upstream_path);
+    strcat(uri, suffix);
+
+    if (query_raw && query_len > 0)
+    {
+        strcat(uri, "?");
+        strcat(uri, (char*)query_raw);
+    }
+
+    return uri;
+}
+
+/* iterator: copy request headers, skip hop-by-hop */
+static int proxy_copy_req_header(evhtp_kv_t *kv, void *arg)
+{
+    evhtp_request_t *upstream_req = (evhtp_request_t *)arg;
+
+    if (!strcasecmp(kv->key, "Host") ||
+        !strcasecmp(kv->key, "Connection") ||
+        !strcasecmp(kv->key, "Keep-Alive") ||
+        !strcasecmp(kv->key, "Transfer-Encoding") ||
+        !strcasecmp(kv->key, "TE") ||
+        !strcasecmp(kv->key, "Trailer") ||
+        !strcasecmp(kv->key, "Upgrade") ||
+        !strcasecmp(kv->key, "Proxy-Authorization") ||
+        !strcasecmp(kv->key, "Proxy-Connection"))
+        return 0;
+
+    evhtp_headers_add_header(upstream_req->headers_out,
+        evhtp_header_new(kv->key, kv->val, 1, 1));
+    return 0;
+}
+
+/* iterator: copy response headers, skip hop-by-hop */
+static int proxy_copy_resp_header(evhtp_kv_t *kv, void *arg)
+{
+    evhtp_request_t *client_req = (evhtp_request_t *)arg;
+
+    if (!strcasecmp(kv->key, "Connection") ||
+        !strcasecmp(kv->key, "Transfer-Encoding") ||
+        !strcasecmp(kv->key, "Keep-Alive"))
+        return 0;
+
+    evhtp_headers_add_header(client_req->headers_out,
+        evhtp_header_new(kv->key, kv->val, 1, 1));
+    return 0;
+}
+
+/* called when upstream request has an error (e.g. connection refused) */
+static void proxy_upstream_error(evhtp_request_t *upstream_req,
+    evhtp_error_flags errtype, void *arg)
+{
+    PROXY_STATE *ps = (PROXY_STATE *)arg;
+
+    if (ps && !ps->finished && ps->client_req)
+    {
+        proxy_send_error(ps->client_req, 502, "Bad Gateway");
+        ps->finished = 1;
+        proxy_cleanup(ps);
+    }
+}
+
+/* called when upstream response timeout fires */
+static void proxy_timeout_cb(evutil_socket_t fd, short events, void *arg)
+{
+    PROXY_STATE *ps = (PROXY_STATE *)arg;
+    (void)fd; (void)events;
+
+    if (ps && !ps->finished && ps->client_req)
+    {
+        proxy_send_error(ps->client_req, 504, "Gateway Timeout");
+        ps->finished = 1;
+    }
+    /* cleanup timeout event before freeing upstream_conn, which may trigger
+       the error hook that also references ps */
+    if (ps->timeout_ev)
+    {
+        evtimer_del(ps->timeout_ev);
+        event_free(ps->timeout_ev);
+        ps->timeout_ev = NULL;
+    }
+    if (ps && ps->upstream_conn)
+    {
+        /* freeing the upstream connection may trigger the error hook, which
+           sees ps->finished and skips. ps is still valid here. */
+        evhtp_connection_free(ps->upstream_conn);
+        ps->upstream_conn = NULL;
+    }
+    free(ps);
+}
+
+/* called when upstream response arrives */
+static void proxy_upstream_cb(evhtp_request_t *upstream_req, void *arg)
+{
+    PROXY_STATE *ps = (PROXY_STATE *)arg;
+    evhtp_request_t *client_req;
+    unsigned int status;
+
+    if (!ps || ps->finished)
+    {
+        proxy_cleanup(ps);
+        return;
+    }
+
+    client_req = ps->client_req;
+    if (!client_req)
+    {
+        proxy_cleanup(ps);
+        return;
+    }
+
+    /* cancel timeout */
+    if (ps->timeout_ev)
+    {
+        evtimer_del(ps->timeout_ev);
+        event_free(ps->timeout_ev);
+        ps->timeout_ev = NULL;
+    }
+
+    status = evhtp_request_status(upstream_req);
+
+    /* copy response headers */
+    evhtp_headers_for_each(upstream_req->headers_in, proxy_copy_resp_header, client_req);
+
+    /* copy response body */
+    if (evbuffer_get_length(upstream_req->buffer_in) > 0)
+        evbuffer_add_buffer(client_req->buffer_out, upstream_req->buffer_in);
+
+    evhtp_send_reply(client_req, (evhtp_res)status);
+    if (rp_server_logging) writelog(client_req, (int)status);
+
+    ps->finished = 1;
+    proxy_cleanup(ps);
+    /* unset the error hook so it doesn't fire with freed ps during connection teardown */
+    evhtp_request_unset_hook(upstream_req, evhtp_hook_on_error);
+}
+
+/* main proxy callback: registered with evhtp for proxy routes */
+static void proxy_callback(evhtp_request_t *req, void *arg)
+{
+    PROXY_CONF *conf = (PROXY_CONF *)arg;
+    evthr_t *thread = get_request_thr(req);
+    int thrno = *((int *)evthr_get_aux(thread));
+    RPTHR *thr = server_thread[thrno];
+    struct event_base *base = thr->base;
+    evhtp_connection_t *upstream_conn = NULL;
+    evhtp_request_t *upstream_req = NULL;
+    PROXY_STATE *ps = NULL;
+    char *upstream_uri = NULL;
+    char host_buf[512];
+    char xff_buf[1024];
+    const char *existing_xff;
+    struct timeval tv;
+
+    /* check for WebSocket upgrade - use bidirectional relay instead of HTTP proxy */
+    {
+        const char *conn_val = evhtp_header_find(req->headers_in, "Connection");
+        const char *ug_val = evhtp_header_find(req->headers_in, "Upgrade");
+
+        if (conn_val && ug_val &&
+            strcasestr(conn_val, "upgrade") && strcasestr(ug_val, "websocket"))
+        {
+            proxy_ws_upgrade(req, conf, base, thr->dnsbase);
+            return;
+        }
+    }
+
+    REMALLOC(ps, sizeof(PROXY_STATE));
+    memset(ps, 0, sizeof(PROXY_STATE));
+    ps->client_req = req;
+    ps->conf = conf;
+
+    /* create outbound connection */
+#ifndef EVHTP_DISABLE_SSL
+    if (conf->use_ssl)
+    {
+        upstream_conn = evhtp_connection_ssl_new_dns(
+            base, thr->dnsbase,
+            conf->upstream_host, conf->upstream_port,
+            conf->ssl_ctx);
+    }
+    else
+#endif
+    {
+        upstream_conn = evhtp_connection_new_dns(
+            base, thr->dnsbase,
+            conf->upstream_host, conf->upstream_port);
+    }
+
+    if (!upstream_conn)
+    {
+        proxy_send_error(req, 502, "Bad Gateway");
+        free(ps);
+        return;
+    }
+
+    ps->upstream_conn = upstream_conn;
+
+    /* create upstream request */
+    upstream_req = evhtp_request_new(proxy_upstream_cb, ps);
+
+    /* set request-level error hook (fires on connect failure, etc.) */
+    evhtp_request_set_hook(upstream_req,
+        evhtp_hook_on_error, (evhtp_hook)proxy_upstream_error, ps);
+
+    /* copy client headers, skipping hop-by-hop */
+    evhtp_headers_for_each(req->headers_in, proxy_copy_req_header, upstream_req);
+
+    /* set Host header to upstream */
+    if (conf->upstream_port == 80 || conf->upstream_port == 443)
+        snprintf(host_buf, sizeof(host_buf), "%s", conf->upstream_host);
+    else
+        snprintf(host_buf, sizeof(host_buf), "%s:%d",
+            conf->upstream_host, conf->upstream_port);
+    evhtp_headers_add_header(upstream_req->headers_out,
+        evhtp_header_new("Host", host_buf, 0, 1));
+
+    /* X-Forwarded-For */
+    {
+        evhtp_connection_t *client_conn = evhtp_request_get_connection(req);
+        char client_ip[INET6_ADDRSTRLEN] = {0};
+
+        sa_to_string(client_conn->saddr, client_ip, sizeof(client_ip));
+        existing_xff = evhtp_header_find(req->headers_in, "X-Forwarded-For");
+        if (existing_xff)
+            snprintf(xff_buf, sizeof(xff_buf), "%s, %s", existing_xff, client_ip);
+        else
+            snprintf(xff_buf, sizeof(xff_buf), "%s", client_ip);
+        evhtp_headers_add_header(upstream_req->headers_out,
+            evhtp_header_new("X-Forwarded-For", xff_buf, 0, 1));
+    }
+
+    /* X-Forwarded-Proto */
+    evhtp_headers_add_header(upstream_req->headers_out,
+        evhtp_header_new("X-Forwarded-Proto", rp_using_ssl ? "https" : "http", 0, 0));
+
+    /* X-Forwarded-Host */
+    {
+        const char *orig_host = evhtp_header_find(req->headers_in, "Host");
+        if (orig_host)
+            evhtp_headers_add_header(upstream_req->headers_out,
+                evhtp_header_new("X-Forwarded-Host", orig_host, 0, 1));
+    }
+
+    /* add configured extra headers */
+    {
+        int i;
+        for (i = 0; i < conf->nheaders; i++)
+            evhtp_headers_add_header(upstream_req->headers_out,
+                evhtp_header_new(conf->hkeys[i], conf->hvals[i], 0, 0));
+    }
+
+    /* forward request body */
+    if (evbuffer_get_length(req->buffer_in) > 0)
+        evbuffer_add_buffer(upstream_req->buffer_out, req->buffer_in);
+
+    /* build upstream URI */
+    upstream_uri = proxy_rewrite_path(req, conf);
+
+    /* set timeout */
+    tv.tv_sec = conf->timeout_secs ? conf->timeout_secs : 30;
+    tv.tv_usec = 0;
+    ps->timeout_ev = evtimer_new(base, proxy_timeout_cb, ps);
+    evtimer_add(ps->timeout_ev, &tv);
+
+    /* send request to upstream */
+    evhtp_make_request(upstream_conn, upstream_req, req->method, upstream_uri);
+
+    free(upstream_uri);
+}
+
+/* ************************************************************
+   WEBSOCKET PROXY - bidirectional byte relay after 101 handshake
+   ************************************************************ */
+
+static void ws_proxy_cleanup(WS_PROXY_STATE *ws)
+{
+    if (!ws) return;
+    if (ws->timeout_ev)
+    {
+        evtimer_del(ws->timeout_ev);
+        event_free(ws->timeout_ev);
+        ws->timeout_ev = NULL;
+    }
+    if (ws->upstream_bev)
+    {
+        bufferevent_free(ws->upstream_bev);
+        ws->upstream_bev = NULL;
+    }
+    if (ws->client_bev)
+    {
+        bufferevent_free(ws->client_bev);
+        ws->client_bev = NULL;
+    }
+    free(ws);
+}
+
+/* relay: data arrived on one side, push to the other */
+static void ws_relay_readcb(struct bufferevent *bev, void *arg)
+{
+    WS_PROXY_STATE *ws = (WS_PROXY_STATE *)arg;
+    struct bufferevent *other;
+
+    if (bev == ws->client_bev)
+        other = ws->upstream_bev;
+    else
+        other = ws->client_bev;
+
+    if (other)
+        bufferevent_read_buffer(bev, bufferevent_get_output(other));
+}
+
+/* iterator: append header as raw "Key: Value\r\n" to evbuffer */
+/*
+static int ws_build_header(evhtp_kv_t *kv, void *arg)
+{
+    struct evbuffer *buf = (struct evbuffer *)arg;
+
+    evbuffer_add(buf, kv->key, kv->klen);
+    evbuffer_add(buf, ": ", 2);
+    evbuffer_add(buf, kv->val, kv->vlen);
+    evbuffer_add(buf, "\r\n", 2);
+    return 0;
+}
+*/
+
+/* relay: error or close on either side - tear down both */
+static void ws_relay_eventcb(struct bufferevent *bev, short events, void *arg)
+{
+    WS_PROXY_STATE *ws = (WS_PROXY_STATE *)arg;
+    (void)bev;
+
+    if (events & (BEV_EVENT_EOF | BEV_EVENT_ERROR))
+        ws_proxy_cleanup(ws);
+}
+
+/* called when upstream handshake times out */
+static void ws_proxy_timeout_cb(evutil_socket_t fd, short events, void *arg)
+{
+    WS_PROXY_STATE *ws = (WS_PROXY_STATE *)arg;
+    (void)fd; (void)events;
+
+    if (!ws->handshake_done && ws->client_req)
+        proxy_send_error(ws->client_req, 504, "Gateway Timeout");
+
+    ws_proxy_cleanup(ws);
+}
+
+/* helper: find substring in non-null-terminated buffer */
+static char *strnstr_local(const char *haystack, const char *needle, size_t len)
+{
+    size_t nlen = strlen(needle);
+    size_t i;
+
+    if (nlen > len) return NULL;
+    for (i = 0; i <= len - nlen; i++)
+    {
+        if (memcmp(haystack + i, needle, nlen) == 0)
+            return (char *)(haystack + i);
+    }
+    return NULL;
+}
+
+/* upstream connected and 101 data arrives here */
+static void ws_upstream_handshake_readcb(struct bufferevent *bev, void *arg)
+{
+    WS_PROXY_STATE *ws = (WS_PROXY_STATE *)arg;
+    struct evbuffer *input = bufferevent_get_input(bev);
+    size_t len = evbuffer_get_length(input);
+    char *data;
+    char *end_of_headers;
+
+    if (len == 0) return;
+
+    /* check if we have complete headers (look for \r\n\r\n) */
+    data = (char *)evbuffer_pullup(input, len);
+    if (!data) return;
+
+    end_of_headers = strnstr_local(data, "\r\n\r\n", len);
+    if (!end_of_headers)
+    {
+        /* if we've read too much without finding headers, abort */
+        if (len > 8192)
+        {
+            if (ws->client_req)
+                proxy_send_error(ws->client_req, 502, "Bad Gateway");
+            ws_proxy_cleanup(ws);
+        }
+        return;  /* wait for more data */
+    }
+
+    /* check for "101" in the status line */
+    if (len < 12 || !strstr(data, " 101 "))
+    {
+        /* upstream didn't upgrade - forward the error response as-is */
+        if (ws->client_req)
+            proxy_send_error(ws->client_req, 502, "Bad Gateway");
+        ws_proxy_cleanup(ws);
+        return;
+    }
+
+    /* cancel handshake timeout */
+    if (ws->timeout_ev)
+    {
+        evtimer_del(ws->timeout_ev);
+        event_free(ws->timeout_ev);
+        ws->timeout_ev = NULL;
+    }
+
+    ws->handshake_done = 1;
+
+    /* take ownership of client bufferevent from evhtp */
+    ws->client_bev = evhtp_connection_take_ownership(ws->client_conn);
+
+    /* send the raw 101 response to the client (headers + \r\n\r\n) */
+    {
+        size_t hdr_len = (end_of_headers - data) + 4;  /* include \r\n\r\n */
+        bufferevent_write(ws->client_bev, data, hdr_len);
+        evbuffer_drain(input, hdr_len);
+    }
+
+    /* if there's any remaining data after the 101 headers (early WS frames),
+       forward it to the client */
+    if (evbuffer_get_length(input) > 0)
+        bufferevent_read_buffer(bev, bufferevent_get_output(ws->client_bev));
+
+    /* switch both sides to relay mode */
+    bufferevent_setcb(ws->upstream_bev,
+        ws_relay_readcb, NULL, ws_relay_eventcb, ws);
+    bufferevent_setcb(ws->client_bev,
+        ws_relay_readcb, NULL, ws_relay_eventcb, ws);
+
+    bufferevent_enable(ws->client_bev, EV_READ | EV_WRITE);
+    bufferevent_enable(ws->upstream_bev, EV_READ | EV_WRITE);
+
+    /* we no longer need the evhtp request reference */
+    ws->client_req = NULL;
+    ws->client_conn = NULL;
+}
+
+/* upstream connection event during handshake */
+static void ws_upstream_handshake_eventcb(struct bufferevent *bev, short events, void *arg)
+{
+    WS_PROXY_STATE *ws = (WS_PROXY_STATE *)arg;
+    (void)bev;
+
+    if (events & BEV_EVENT_CONNECTED)
+        return;  /* connection established, wait for readcb */
+
+    if (events & (BEV_EVENT_ERROR | BEV_EVENT_EOF | BEV_EVENT_TIMEOUT))
+    {
+        if (!ws->handshake_done && ws->client_req)
+            proxy_send_error(ws->client_req, 502, "Bad Gateway");
+        ws_proxy_cleanup(ws);
+    }
+}
+
+/* initiate WebSocket proxy: called from proxy_callback when upgrade detected */
+static void proxy_ws_upgrade(evhtp_request_t *req, PROXY_CONF *conf,
+    struct event_base *base, struct evdns_base *dnsbase)
+{
+    WS_PROXY_STATE *ws = NULL;
+    struct evbuffer *req_buf;
+    char *upstream_uri;
+    char host_buf[512];
+    struct timeval tv;
+
+    CALLOC(ws, sizeof(WS_PROXY_STATE));
+    ws->client_req = req;
+    ws->client_conn = req->conn;
+    ws->conf = conf;
+
+    /* create raw TCP connection to upstream */
+#ifndef EVHTP_DISABLE_SSL
+    if (conf->use_ssl)
+    {
+        SSL *ssl = SSL_new(conf->ssl_ctx);
+        if (!ssl)
+        {
+            proxy_send_error(req, 502, "Bad Gateway");
+            free(ws);
+            return;
+        }
+        SSL_set_tlsext_host_name(ssl, conf->upstream_host);
+        ws->upstream_bev = bufferevent_openssl_socket_new(
+            base, -1, ssl, BUFFEREVENT_SSL_CONNECTING, BEV_OPT_CLOSE_ON_FREE);
+    }
+    else
+#endif
+    {
+        ws->upstream_bev = bufferevent_socket_new(base, -1, BEV_OPT_CLOSE_ON_FREE);
+    }
+
+    if (!ws->upstream_bev)
+    {
+        proxy_send_error(req, 502, "Bad Gateway");
+        free(ws);
+        return;
+    }
+
+    bufferevent_setcb(ws->upstream_bev,
+        ws_upstream_handshake_readcb, NULL,
+        ws_upstream_handshake_eventcb, ws);
+    bufferevent_enable(ws->upstream_bev, EV_READ | EV_WRITE);
+
+    /* connect to upstream */
+    if (dnsbase)
+    {
+        if (bufferevent_socket_connect_hostname(ws->upstream_bev,
+                dnsbase, AF_UNSPEC,
+                conf->upstream_host, conf->upstream_port) < 0)
+        {
+            proxy_send_error(req, 502, "Bad Gateway");
+            ws_proxy_cleanup(ws);
+            return;
+        }
+    }
+    else
+    {
+        struct sockaddr_in sin;
+        memset(&sin, 0, sizeof(sin));
+        sin.sin_family = AF_INET;
+        sin.sin_port = htons(conf->upstream_port);
+        if (inet_pton(AF_INET, conf->upstream_host, &sin.sin_addr) <= 0)
+        {
+            proxy_send_error(req, 502, "Bad Gateway");
+            ws_proxy_cleanup(ws);
+            return;
+        }
+        if (bufferevent_socket_connect(ws->upstream_bev,
+                (struct sockaddr *)&sin, sizeof(sin)) < 0)
+        {
+            proxy_send_error(req, 502, "Bad Gateway");
+            ws_proxy_cleanup(ws);
+            return;
+        }
+    }
+
+    /* build the raw HTTP upgrade request */
+    req_buf = evbuffer_new();
+    upstream_uri = proxy_rewrite_path(req, conf);
+
+    /* request line: GET /path HTTP/1.1\r\n */
+    evbuffer_add_printf(req_buf, "GET %s", upstream_uri);
+    if (req->uri->query_raw)
+        evbuffer_add_printf(req_buf, "?%s", req->uri->query_raw);
+    evbuffer_add(req_buf, " HTTP/1.1\r\n", 11);
+    free(upstream_uri);
+
+    /* Host header */
+    if (conf->upstream_port == 80 || conf->upstream_port == 443)
+        snprintf(host_buf, sizeof(host_buf), "%s", conf->upstream_host);
+    else
+        snprintf(host_buf, sizeof(host_buf), "%s:%d",
+            conf->upstream_host, conf->upstream_port);
+    evbuffer_add_printf(req_buf, "Host: %s\r\n", host_buf);
+
+    /* copy all client headers INCLUDING WebSocket ones (Upgrade, Connection,
+       Sec-WebSocket-Key, etc.) but skip Host (already set) */
+    {
+        evhtp_kv_t *kv;
+        TAILQ_FOREACH(kv, req->headers_in, next)
+        {
+            if (!strcasecmp(kv->key, "Host"))
+                continue;
+            evbuffer_add(req_buf, kv->key, kv->klen);
+            evbuffer_add(req_buf, ": ", 2);
+            evbuffer_add(req_buf, kv->val, kv->vlen);
+            evbuffer_add(req_buf, "\r\n", 2);
+        }
+    }
+
+    /* extra configured headers */
+    {
+        int i;
+        for (i = 0; i < conf->nheaders; i++)
+            evbuffer_add_printf(req_buf, "%s: %s\r\n",
+                conf->hkeys[i], conf->hvals[i]);
+    }
+
+    /* end of headers */
+    evbuffer_add(req_buf, "\r\n", 2);
+
+    /* send the raw request to upstream */
+    bufferevent_write_buffer(ws->upstream_bev, req_buf);
+    evbuffer_free(req_buf);
+
+    /* handshake timeout */
+    tv.tv_sec = conf->timeout_secs ? conf->timeout_secs : 30;
+    tv.tv_usec = 0;
+    ws->timeout_ev = evtimer_new(base, ws_proxy_timeout_cb, ws);
+    evtimer_add(ws->timeout_ev, &tv);
+}
+
+/* ---- end WebSocket proxy ---- */
+
+/* ---- re-dispatch: JS request landed on a proxy-only thread ---- */
+
+/* struct proxy_redispatch_s and forward declarations are above fileserver() */
+
+static void redispatch_to_js_thread(evthr_t *thr, void *arg, void *shared)
+{
+    struct proxy_redispatch_s *rd = (struct proxy_redispatch_s *)arg;
+    (void)shared;
+
+    /* migrate the connection's bufferevent to this thread's event_base */
+    if (evhtp_connection_migrate(rd->req->conn, evthr_get_base(thr), thr) != 0)
+    {
+        /* migration failed - send 503 on original thread is not possible,
+           the bev is gone.  Just clean up. */
+        free(rd);
+        return;
+    }
+
+    thr->openconn++;
+    rd->from_thr->openconn--;
+
+    /* invoke the original callback on this JS-capable thread */
+    if (rd->is_fileserver)
+        fileserver(rd->req, rd->cbarg);
+    else
+        http_callback(rd->req, rd->cbarg);
+
+    free(rd);
+}
+
+/* pick the least-loaded JS-capable thread using server_thread[] array */
+static evthr_t *pick_js_thread(void)
+{
+    evthr_t *min_thread = NULL;
+    int min_openconn = -1;
+    int i;
+
+    for (i = 0; i < js_thread_count; i++)
+    {
+        RPTHR *thr = server_thread[i];
+        evthr_t *et;
+
+        if (!thr || !thr->evthr)
+            continue;
+
+        et = (evthr_t *)thr->evthr;
+
+        if (et->openconn == 0)
+            return et;  /* idle thread, use immediately */
+
+        if (min_thread == NULL || et->openconn < min_openconn)
+        {
+            min_thread = et;
+            min_openconn = et->openconn;
+        }
+    }
+    return min_thread;
+}
+
+/* ---- end reverse proxy functions ---- */
+
 static void http_callback(evhtp_request_t *req, void *arg)
 {
     DHS newdhs={0}, *dhs = (DHS*)arg;
@@ -4888,6 +5676,34 @@ static void http_callback(evhtp_request_t *req, void *arg)
     thread_local_server_thread_num = thrno = *((int *)evthr_get_aux(thread));
 
     thr = server_thread[thrno];
+
+    /* if this is a proxy-only thread (no Duktape), re-dispatch to a JS thread */
+    if (thr->ctx == NULL)
+    {
+        evthr_t *js_thr = pick_js_thread();
+        if (js_thr)
+        {
+            struct proxy_redispatch_s *rd;
+            REMALLOC(rd, sizeof(struct proxy_redispatch_s));
+            rd->req = req;
+            rd->cbarg = arg;
+            rd->from_thr = thread;
+            rd->is_fileserver = 0;
+            /* Detach the connection from this thread's event loop so that
+               client disconnect events do not trigger evhtp cleanup while
+               the request sits in the JS thread's defer queue.
+               evhtp_connection_migrate() will create a fresh bufferevent
+               on the target thread's event_base. */
+            bufferevent_setcb(req->conn->bev, NULL, NULL, NULL, NULL);
+            bufferevent_disable(req->conn->bev, EV_READ | EV_WRITE);
+            evthr_defer(js_thr, redispatch_to_js_thread, rd);
+        }
+        else
+        {
+            proxy_send_error(req, 503, "Service Unavailable");
+        }
+        return;
+    }
 
     ctx = thr->ctx;
 
@@ -5206,6 +6022,20 @@ void initThread(evhtp_t *htp, evthr_t *evthr, void *arg)
     thr=server_thread[*thrno];
     thr->base=base;
     thr->self=pthread_self();
+    thr->evthr=evthr;
+
+    /* proxy-only thread: no Duktape context, just needs dnsbase */
+    if (thr->ctx == NULL)
+    {
+        struct evdns_base *dnsbase = evdns_base_new(base,
+            EVDNS_BASE_DISABLE_WHEN_INACTIVE);
+        if (dnsbase)
+            evdns_base_resolv_conf_parse(dnsbase, DNS_OPTIONS_ALL, "/etc/resolv.conf");
+        thr->dnsbase = dnsbase;
+        SETUPUNLOCK;
+        return;
+    }
+
     set_thread_num(thr->index); // remember, not the same as thrno!!!
 
     /* for http requests, subject to timeout */
@@ -6570,7 +7400,156 @@ duk_ret_t duk_server_start(duk_context *ctx)
                                 goto copyfunction;
                             }
                             duk_pop(ctx);
-                            RP_THROW(ctx, "server.start - map '%s' - Object must contain a key named 'module', 'modulePath' or 'path'", path);
+
+                            /* check for proxy configuration */
+                            if (duk_get_prop_string(ctx, -1, "proxy"))
+                            {
+                                const char *proxy_url = REQUIRE_STRING(ctx, -1,
+                                    "server.start: map '%s' - 'proxy' must be a String (URL)", path);
+                                PROXY_CONF *pconf = NULL;
+                                char *purl, *phost, *ppath;
+                                int pssl = 0;
+                                uint16_t pport = 80;
+
+                                /* parse the proxy URL: http(s)://host:port/path */
+                                purl = strdup(proxy_url);
+                                phost = purl;
+
+                                if (!strncmp(phost, "https://", 8))
+                                {
+                                    pssl = 1;
+                                    phost += 8;
+                                    pport = 443;
+                                }
+                                else if (!strncmp(phost, "http://", 7))
+                                {
+                                    phost += 7;
+                                    pport = 80;
+                                }
+                                else
+                                {
+                                    free(purl);
+                                    duk_pop(ctx);
+                                    RP_THROW(ctx, "server.start: map '%s' - proxy URL must start with http:// or https://", path);
+                                }
+
+                                /* find path portion */
+                                ppath = strchr(phost, '/');
+                                if (ppath)
+                                {
+                                    *ppath = '\0';
+                                    ppath++; /* now points past the '/' */
+                                }
+
+                                /* check for port in host */
+                                {
+                                    char *colon = strchr(phost, ':');
+                                    if (colon)
+                                    {
+                                        *colon = '\0';
+                                        pport = (uint16_t)atoi(colon + 1);
+                                    }
+                                }
+
+                                REMALLOC(pconf, sizeof(PROXY_CONF));
+                                memset(pconf, 0, sizeof(PROXY_CONF));
+                                pconf->upstream_host = strdup(phost);
+                                pconf->upstream_port = pport;
+                                pconf->use_ssl = pssl;
+
+                                /* upstream path: rebuild with leading '/' */
+                                if (ppath && *ppath)
+                                {
+                                    REMALLOC(pconf->upstream_path, strlen(ppath) + 2);
+                                    sprintf(pconf->upstream_path, "/%s", ppath);
+                                }
+                                else
+                                    pconf->upstream_path = strdup("/");
+
+                                free(purl);
+                                duk_pop(ctx); /* pop proxy string */
+
+                                /* local path */
+                                if (*path != '/')
+                                {
+                                    REMALLOC(pconf->local_path, strlen(path) + 2);
+                                    sprintf(pconf->local_path, "/%s", path);
+                                }
+                                else
+                                    pconf->local_path = strdup(path);
+                                pconf->local_path_len = (int)strlen(pconf->local_path);
+
+                                /* optional headers */
+                                if (duk_get_prop_string(ctx, -1, "headers"))
+                                {
+                                    if (duk_is_object(ctx, -1) && !duk_is_array(ctx, -1))
+                                    {
+                                        int nhdrs = 0;
+                                        duk_enum(ctx, -1, DUK_ENUM_OWN_PROPERTIES_ONLY);
+                                        while (duk_next(ctx, -1, 1)) { nhdrs++; duk_pop_2(ctx); }
+                                        duk_pop(ctx); /* pop enum */
+
+                                        pconf->nheaders = nhdrs;
+                                        REMALLOC(pconf->hkeys, sizeof(char*) * nhdrs);
+                                        REMALLOC(pconf->hvals, sizeof(char*) * nhdrs);
+
+                                        nhdrs = 0;
+                                        duk_enum(ctx, -1, DUK_ENUM_OWN_PROPERTIES_ONLY);
+                                        while (duk_next(ctx, -1, 1))
+                                        {
+                                            pconf->hkeys[nhdrs] = strdup(duk_get_string(ctx, -2));
+                                            pconf->hvals[nhdrs] = strdup(duk_safe_to_string(ctx, -1));
+                                            nhdrs++;
+                                            duk_pop_2(ctx);
+                                        }
+                                        duk_pop(ctx); /* pop enum */
+                                    }
+                                }
+                                duk_pop(ctx); /* pop headers (or undefined) */
+
+                                /* optional timeout */
+                                if (duk_get_prop_string(ctx, -1, "timeout"))
+                                    pconf->timeout_secs = (int)duk_get_number_default(ctx, -1, 0);
+                                duk_pop(ctx);
+
+#ifndef EVHTP_DISABLE_SSL
+                                /* create SSL context for upstream HTTPS */
+                                if (pconf->use_ssl)
+                                {
+                                    pconf->ssl_ctx = SSL_CTX_new(TLS_client_method());
+                                    if (pconf->ssl_ctx)
+                                    {
+                                        SSL_CTX_set_default_verify_paths(pconf->ssl_ctx);
+                                        SSL_CTX_set_verify(pconf->ssl_ctx, SSL_VERIFY_PEER, NULL);
+                                    }
+                                }
+#endif
+                                fprintf(access_fh, "mapping %s path to proxy     %-20s ->    %s%s:%d%s\n",
+                                    pathtypes[cbtype], s,
+                                    pssl ? "https://" : "http://",
+                                    pconf->upstream_host, pconf->upstream_port,
+                                    pconf->upstream_path);
+
+                                /* register with evhtp using proxy_callback */
+                                if (cbtype == 2)
+                                    evhtp_set_regex_cb(htp, s, proxy_callback, pconf);
+                                else if (cbtype == 1)
+                                    evhtp_set_glob_cb(htp, s, proxy_callback, pconf);
+                                else if (cbtype == 3)
+                                    evhtp_set_cb(htp, s, proxy_callback, pconf);
+                                else
+                                    evhtp_set_exact_cb(htp, s, proxy_callback, pconf);
+
+                                n_proxy_confs++;
+                                add_exit_func(simplefree, pconf);
+
+                                free(s);
+                                duk_pop_2(ctx);  /* pop map value object and key string */
+                                continue; /* next map entry - skip copyfunction */
+                            }
+                            duk_pop(ctx);
+
+                            RP_THROW(ctx, "server.start - map '%s' - Object must contain a key named 'module', 'modulePath', 'proxy' or 'path'", path);
                         }
 
                         duk_push_error_object(ctx, DUK_ERR_ERROR, "server.start: parameter \"map\" -- Option for path %s must be a function or an object to load a module (e.g. {module:'mymodule'}",s);
@@ -6794,6 +7773,33 @@ duk_ret_t duk_server_start(duk_context *ctx)
         duk_pop(ctx);
     }
     duk_pop(ctx);
+
+    /* if proxy routes were configured, add extra proxy-only thread(s) */
+    js_thread_count = totnthreads;
+    if (n_proxy_confs > 0)
+    {
+        proxy_extra_threads = 1;  /* one extra thread is sufficient */
+        totnthreads += proxy_extra_threads;
+        nthr = totnthreads;
+
+        REMALLOC(server_thread, totnthreads * sizeof(RPTHR*));
+
+        for (i = js_thread_count; i < totnthreads; i++)
+        {
+            RPTHR *pthr;
+            CALLOC(pthr, sizeof(RPTHR));
+            pthr->ctx = NULL;
+            pthr->wsctx = NULL;
+            pthr->htctx = NULL;
+            pthr->base = NULL;
+            pthr->dnsbase = NULL;
+            pthr->index = 0;  /* not in rpthread[] */
+            server_thread[i] = pthr;
+        }
+
+        fprintf(access_fh, "HTTP server - adding %d proxy thread(s), total %d threads\n",
+            proxy_extra_threads, totnthreads);
+    }
 
     if (rp_using_ssl)
     {
