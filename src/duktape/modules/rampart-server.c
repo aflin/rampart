@@ -5015,7 +5015,7 @@ static char *proxy_rewrite_path(evhtp_request_t *client_req, PROXY_CONF *conf)
     int upstream_path_len = (int)strlen(conf->upstream_path);
     int suffix_len = (int)strlen(suffix);
     int query_len = query_raw ? (int)strlen((char*)query_raw) : 0;
-    char *uri;
+    char *uri=NULL;
 
     /* +2 for possible '?' and '\0' */
     REMALLOC(uri, upstream_path_len + suffix_len + query_len + 2);
