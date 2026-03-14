@@ -47,6 +47,8 @@ function testFeature(name, test) {
         nfailed++;
         printf(">>>>> FAILED <<<<<\n");
         if (error) console.log(error);
+        do_cleanup();
+        process.exit(1);
     }
     if (error) console.log(error);
 }
@@ -97,13 +99,14 @@ server_pid = server.start({
     bind: "127.0.0.1:8110",
     daemon: true,
     log: true,
+    user: 'nobody',
     accessLog: process.scriptPath + '/ws-client-test-alog',
     errorLog:  process.scriptPath + '/ws-client-test-elog',
     useThreads: true,
     map: ws_map
 });
 
-sleep(0.3);
+sleep(0.5);
 testFeature("server is running", kill(server_pid, 0));
 
 /* *** Generate self-signed certificate for SSL server *** */
@@ -133,6 +136,7 @@ ssl_server_pid = server.start({
     daemon: true,
     log: true,
     secure: true,
+    user: "nobody",
     sslKeyFile: key,
     sslCertFile: cert,
     accessLog: process.scriptPath + '/ws-client-test-ssl-alog',
@@ -183,7 +187,7 @@ function run_echo_test(url_base, rp, insecure, callback) {
         }
     });
 
-    ws.setTimeout(5000);
+    ws.setTimeout(1000);
     ws.on("timeout", function() {
         results[rp + "_connect"] = got_connect;
         results[rp + "_welcome"] = got_welcome;
@@ -206,7 +210,7 @@ function run_binary_test(url_base, rp, insecure, callback) {
 
     var ws = net.wsConnect({
         url: url_base + "/wsecho",
-        timeout: 5000,
+        timeout: 1000,
         pingInterval: 0,
         insecure: insecure,
         callbacks: {
@@ -552,6 +556,8 @@ function run_timeout_test(url_base, rp, insecure, callback) {
         ws.destroy();
     });
 }
+
+printf("Websocket tests running...\r");
 
 /* *** Run all 8 tests sequentially for a given URL base *** */
 function run_test_suite(url_base, rp, insecure, callback) {

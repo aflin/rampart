@@ -45,6 +45,8 @@ function testFeature(name, test)
         nfailed++;
         printf(">>>>> FAILED <<<<<\n");
         if (error) console.log(error);
+        do_cleanup();
+        process.exit(1);
     }
     if (error) console.log(error);
 }
@@ -54,6 +56,7 @@ upstream_pid = server.start({
     bind: "127.0.0.1:8100",
     daemon: true,
     log: true,
+    user: 'nobody',
     accessLog: process.scriptPath + '/ws-proxy-test-upstream-alog',
     errorLog:  process.scriptPath + '/ws-proxy-test-upstream-elog',
     useThreads: true,
@@ -76,7 +79,7 @@ upstream_pid = server.start({
     }
 });
 
-sleep(0.2);
+sleep(0.5);
 testFeature("upstream server is running", kill(upstream_pid, 0));
 
 /* *** Start proxy server on port 8101 *** */
@@ -84,6 +87,7 @@ proxy_pid = server.start({
     bind: "127.0.0.1:8101",
     daemon: true,
     log: true,
+    user: 'nobody',
     accessLog: process.scriptPath + '/ws-proxy-test-proxy-alog',
     errorLog:  process.scriptPath + '/ws-proxy-test-proxy-elog',
     useThreads: true,
@@ -93,7 +97,7 @@ proxy_pid = server.start({
     }
 });
 
-sleep(0.2);
+sleep(0.5);
 testFeature("proxy server is running", kill(proxy_pid, 0));
 
 /* Test HTTP still works through proxy */

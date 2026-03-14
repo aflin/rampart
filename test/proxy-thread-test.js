@@ -46,6 +46,8 @@ function testFeature(name, test)
         nfailed++;
         printf(">>>>> FAILED <<<<<\n");
         if (error) console.log(error);
+        cleanup();
+        process.exit(1);
     }
     if (error) console.log(error);
 }
