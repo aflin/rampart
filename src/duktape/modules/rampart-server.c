@@ -5287,16 +5287,27 @@ static void proxy_callback(evhtp_request_t *req, void *arg)
             evhtp_header_new("X-Forwarded-For", xff_buf, 0, 1));
     }
 
-    /* X-Forwarded-Proto */
-    evhtp_headers_add_header(upstream_req->headers_out,
-        evhtp_header_new("X-Forwarded-Proto", rp_using_ssl ? "https" : "http", 0, 0));
-
-    /* X-Forwarded-Host */
+    /* X-Forwarded-Proto — preserve existing (e.g. from upstream reverse proxy) */
     {
-        const char *orig_host = evhtp_header_find(req->headers_in, "Host");
-        if (orig_host)
+        const char *existing_proto = evhtp_header_find(req->headers_in, "X-Forwarded-Proto");
+        evhtp_headers_add_header(upstream_req->headers_out,
+            evhtp_header_new("X-Forwarded-Proto",
+                existing_proto ? existing_proto : (rp_using_ssl ? "https" : "http"), 0,
+                existing_proto ? 1 : 0));
+    }
+
+    /* X-Forwarded-Host — preserve existing (e.g. from upstream reverse proxy) */
+    {
+        const char *existing_fhost = evhtp_header_find(req->headers_in, "X-Forwarded-Host");
+        if (existing_fhost) {
             evhtp_headers_add_header(upstream_req->headers_out,
-                evhtp_header_new("X-Forwarded-Host", orig_host, 0, 1));
+                evhtp_header_new("X-Forwarded-Host", existing_fhost, 0, 1));
+        } else {
+            const char *orig_host = evhtp_header_find(req->headers_in, "Host");
+            if (orig_host)
+                evhtp_headers_add_header(upstream_req->headers_out,
+                    evhtp_header_new("X-Forwarded-Host", orig_host, 0, 1));
+        }
     }
 
     /* add configured extra headers */
@@ -5697,9 +5708,12 @@ static void proxy_ws_upgrade(evhtp_request_t *req, PROXY_CONF *conf,
         evbuffer_add_printf(req_buf, "X-Forwarded-For: %s\r\n", xff_buf);
     }
 
-    /* X-Forwarded-Proto */
-    evbuffer_add_printf(req_buf, "X-Forwarded-Proto: %s\r\n",
-        rp_using_ssl ? "https" : "http");
+    /* X-Forwarded-Proto — preserve existing (e.g. from upstream reverse proxy) */
+    {
+        const char *existing_proto = evhtp_header_find(req->headers_in, "X-Forwarded-Proto");
+        evbuffer_add_printf(req_buf, "X-Forwarded-Proto: %s\r\n",
+            existing_proto ? existing_proto : (rp_using_ssl ? "https" : "http"));
+    }
 
     /* X-Forwarded-Host */
     {
