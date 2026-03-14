@@ -5759,12 +5759,6 @@ static void redispatch_to_js_thread(evthr_t *thr, void *arg, void *shared)
     else
         http_callback(rd->req, rd->cbarg);
 
-    /* check if response data is stuck in the output buffer */
-    if (rd->req && rd->req->conn && rd->req->conn->bev) {
-        struct evbuffer *outbuf = bufferevent_get_output(rd->req->conn->bev);
-        size_t pending = outbuf ? evbuffer_get_length(outbuf) : 0;
-    }
-
     free(rd);
 }
 
