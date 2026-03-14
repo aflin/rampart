@@ -47,11 +47,12 @@ function testFeature(name, test)
     if (error) console.log(error);
 }
 
-/* *** Start upstream server on port 8098 *** */
+/* *** Start upstream server on port 8060 *** */
 upstream_pid = server.start({
-    bind: "127.0.0.1:8098",
+    bind: "127.0.0.1:8060",
     daemon: true,
     log: true,
+    user: 'nobody',
     accessLog: process.scriptPath + '/proxy-test-upstream-alog',
     errorLog:  process.scriptPath + '/proxy-test-upstream-elog',
     useThreads: true,
@@ -102,19 +103,20 @@ upstream_pid = server.start({
     }
 });
 
-sleep(0.2);
+sleep(.5);
 testFeature("upstream server is running", kill(upstream_pid, 0));
 
 /* verify upstream directly */
 testFeature("upstream direct request", function() {
-    var res = curl.fetch("http://127.0.0.1:8098/hello");
+    var res = curl.fetch("http://127.0.0.1:8060/hello");
     return res.status == 200 && res.text == "hello from upstream";
 });
 
-/* *** Start proxy server on port 8099 *** */
+/* *** Start proxy server on port 8061 *** */
 proxy_pid = server.start({
-    bind: "127.0.0.1:8099",
+    bind: "127.0.0.1:8061",
     daemon: true,
+    user: 'nobody',
     log: true,
     accessLog: process.scriptPath + '/proxy-test-proxy-alog',
     errorLog:  process.scriptPath + '/proxy-test-proxy-elog',
@@ -122,16 +124,16 @@ proxy_pid = server.start({
 
     map: {
         /* proxy all /api/* to upstream */
-        "/api/":        { proxy: "http://127.0.0.1:8098/" },
+        "/api/":        { proxy: "http://127.0.0.1:8060/" },
 
         /* proxy with custom headers */
         "/custom/":     {
-                            proxy: "http://127.0.0.1:8098/",
+                            proxy: "http://127.0.0.1:8060/",
                             headers: { "X-Custom-Header": "injected-value" }
                         },
 
         /* proxy with path rewrite: /backend/* -> upstream /api/* */
-        /*"/backend/":    { proxy: "http://127.0.0.1:8098/api/" },*/
+        /*"/backend/":    { proxy: "http://127.0.0.1:8060/api/" },*/
 
         /* a normal JS handler alongside proxy routes */
         "/local":       function(req) {
@@ -140,12 +142,12 @@ proxy_pid = server.start({
     }
 });
 
-sleep(0.2);
+sleep(0.5);
 testFeature("proxy server is running", kill(proxy_pid, 0));
 
 /* Test basic proxy GET */
 testFeature("proxy GET request", function() {
-    var res = curl.fetch("http://127.0.0.1:8099/api/hello");
+    var res = curl.fetch("http://127.0.0.1:8061/api/hello");
     if (res.status == 200 && res.text == "hello from upstream")
         return true;
     printf("\nstatus=%d text='%s'\n", res.status, res.text);
@@ -154,7 +156,7 @@ testFeature("proxy GET request", function() {
 
 /* Test proxy preserves query string */
 testFeature("proxy preserves query string", function() {
-    var res = curl.fetch("http://127.0.0.1:8099/api/echo?foo=bar&baz=qux");
+    var res = curl.fetch("http://127.0.0.1:8061/api/echo?foo=bar&baz=qux");
     if (res.status != 200) {
         printf("\nstatus=%d text='%s'\n", res.status, res.text);
         return false;
@@ -165,7 +167,7 @@ testFeature("proxy preserves query string", function() {
 
 /* Test proxy forwards X-Forwarded-For */
 testFeature("proxy sets X-Forwarded-For", function() {
-    var res = curl.fetch("http://127.0.0.1:8099/api/headers");
+    var res = curl.fetch("http://127.0.0.1:8061/api/headers");
     if (res.status != 200) return false;
     var j = JSON.parse(res.text);
     return j.xff.length > 0;  /* should contain client IP */
@@ -173,14 +175,14 @@ testFeature("proxy sets X-Forwarded-For", function() {
 
 /* Test proxy sets X-Forwarded-Proto */
 testFeature("proxy sets X-Forwarded-Proto", function() {
-    var res = curl.fetch("http://127.0.0.1:8099/api/headers");
+    var res = curl.fetch("http://127.0.0.1:8061/api/headers");
     var j = JSON.parse(res.text);
     return j.xfp == "http";
 });
 
 /* Test proxy sets X-Forwarded-Host */
 testFeature("proxy sets X-Forwarded-Host", function() {
-    var res = curl.fetch("http://127.0.0.1:8099/api/headers");
+    var res = curl.fetch("http://127.0.0.1:8061/api/headers");
     var j = JSON.parse(res.text);
     /* should contain the proxy's Host header */
     return j.xfh.length > 0;
@@ -188,7 +190,7 @@ testFeature("proxy sets X-Forwarded-Host", function() {
 
 /* Test proxy with custom headers */
 testFeature("proxy injects custom headers", function() {
-    var res = curl.fetch("http://127.0.0.1:8099/custom/headers");
+    var res = curl.fetch("http://127.0.0.1:8061/custom/headers");
     if (res.status != 200) {
         printf("\nstatus=%d text='%s'\n", res.status, res.text);
         return false;
@@ -201,7 +203,7 @@ testFeature("proxy injects custom headers", function() {
 testFeature("proxy POST with body", function() {
     var res = curl.fetch(
         { post: '{"key":"value"}', header: "Content-Type: application/json" },
-        "http://127.0.0.1:8099/api/post"
+        "http://127.0.0.1:8061/api/post"
     );
     if (res.status != 200) {
         printf("\nstatus=%d text='%s' errMsg='%s'\n", res.status, res.text, res.errMsg || "");
@@ -213,7 +215,7 @@ testFeature("proxy POST with body", function() {
 
 /* Test proxy with large response */
 testFeature("proxy large response", function() {
-    var res = curl.fetch("http://127.0.0.1:8099/api/big");
+    var res = curl.fetch("http://127.0.0.1:8061/api/big");
     if (res.status != 200) {
         printf("\nstatus=%d\n", res.status);
         return false;
@@ -226,18 +228,18 @@ testFeature("proxy large response", function() {
 
 /* Test proxy upstream error status codes */
 testFeature("proxy upstream 404 status", function() {
-    var res = curl.fetch("http://127.0.0.1:8099/api/status?code=404");
+    var res = curl.fetch("http://127.0.0.1:8061/api/status?code=404");
     return res.status == 404;
 });
 
 testFeature("proxy upstream 500 status", function() {
-    var res = curl.fetch("http://127.0.0.1:8099/api/status?code=500");
+    var res = curl.fetch("http://127.0.0.1:8061/api/status?code=500");
     return res.status == 500;
 });
 
 /* Test that local JS routes still work alongside proxy */
 testFeature("local route alongside proxy", function() {
-    var res = curl.fetch("http://127.0.0.1:8099/local");
+    var res = curl.fetch("http://127.0.0.1:8061/local");
     return res.status == 200 && res.text == "local response";
 });
 
@@ -248,7 +250,7 @@ testFeature("proxy to dead upstream returns 502", function() {
     upstream_pid = 0;
     sleep(0.3);
 
-    var res = curl.fetch("http://127.0.0.1:8099/api/hello");
+    var res = curl.fetch("http://127.0.0.1:8061/api/hello");
     return res.status == 502;
 });
 

@@ -55,6 +55,7 @@ upstream_pid = server.start({
     bind: "127.0.0.1:8102",
     daemon: true,
     log: true,
+    user: 'nobody',
     accessLog: process.scriptPath + '/proxy-thread-test-upstream-alog',
     errorLog:  process.scriptPath + '/proxy-thread-test-upstream-elog',
     useThreads: true,
@@ -66,7 +67,7 @@ upstream_pid = server.start({
     }
 });
 
-sleep(0.2);
+sleep(0.5);
 testFeature("upstream server is running", kill(upstream_pid, 0));
 
 /* *** Proxy server on port 8103 with only 1 JS thread *** */
@@ -74,6 +75,7 @@ proxy_pid = server.start({
     bind: "127.0.0.1:8103",
     daemon: true,
     log: true,
+    user: 'nobody',
     accessLog: process.scriptPath + '/proxy-thread-test-proxy-alog',
     errorLog:  process.scriptPath + '/proxy-thread-test-proxy-elog',
     threads: 1,
@@ -90,7 +92,7 @@ proxy_pid = server.start({
     }
 });
 
-sleep(0.2);
+sleep(0.5);
 testFeature("proxy server is running", kill(proxy_pid, 0));
 
 /* Sanity: both routes work when idle */
