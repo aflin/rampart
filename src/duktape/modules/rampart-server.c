@@ -4728,7 +4728,7 @@ static int getmod(DHS *dhs)
             lmtime = (time_t)duk_get_number(ctx,-1);
             duk_pop(ctx); //mtime
             //printf("%d >= %d?",(int)lmtime,(int)sb.st_mtime);
-            if(lmtime>=sb.st_mtime)
+            if(lmtime>=sb.st_mtime && duk_rp_check_module_deps(ctx, filename))
             {
                 duk_pop_2(ctx); //the module from duk_get_prop_string(ctx, -1, modname) and duk_get_prop_index(ctx, 0, (duk_uarridx_t) idx);
                 return 1; // it is there and up to date

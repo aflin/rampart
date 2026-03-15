@@ -300,6 +300,150 @@ struct module_loader module_loaders[] = {
     {"",    &load_js_module}
 };
 
+/* ===== Module dependency tracking =====
+   Tracks which files a module depends on (via require()) so that
+   when a submodule changes on disk, the parent is also reloaded.
+*/
+
+/* Check if all dependencies in a module's "deps" object are still current.
+   Returns 1 if all deps are up to date (or no deps), 0 if any dep is stale. */
+static int check_deps_current(duk_context *ctx, duk_idx_t module_obj_idx)
+{
+    struct stat sb;
+
+    module_obj_idx = duk_normalize_index(ctx, module_obj_idx);
+
+    if (!duk_get_prop_string(ctx, module_obj_idx, "deps")) {
+        duk_pop(ctx);
+        return 1;  /* no deps property */
+    }
+
+    if (!duk_is_object(ctx, -1)) {
+        duk_pop(ctx);
+        return 1;
+    }
+
+    duk_enum(ctx, -1, 0);
+    while (duk_next(ctx, -1, 1))
+    {
+        const char *dep_path = duk_get_string(ctx, -2);
+        time_t dep_mtime = (time_t)duk_get_number(ctx, -1);
+        duk_pop_2(ctx);  /* key, value */
+
+        if (!dep_path)
+            continue;
+
+        if (stat(dep_path, &sb) == -1) {
+            /* dep file gone, treat as stale */
+            duk_pop_2(ctx);  /* enum, deps */
+            return 0;
+        }
+
+        if (sb.st_mtime > dep_mtime) {
+            /* dep has been modified */
+            duk_pop_2(ctx);  /* enum, deps */
+            return 0;
+        }
+    }
+    duk_pop_2(ctx);  /* enum, deps */
+    return 1;
+}
+
+/* Push an empty deps object onto the dep_stack in global stash */
+static void dep_stack_push(duk_context *ctx)
+{
+    duk_push_global_stash(ctx);
+    duk_get_prop_string(ctx, -1, "dep_stack");
+    duk_push_object(ctx);
+    duk_put_prop_index(ctx, -2, (duk_uarridx_t)duk_get_length(ctx, -2));
+    duk_pop_2(ctx);  /* dep_stack, stash */
+}
+
+/* Pop the top deps object from dep_stack and store as "deps" on
+   the module at module_idx. */
+static void dep_stack_pop(duk_context *ctx, duk_idx_t module_idx)
+{
+    duk_uarridx_t len;
+
+    module_idx = duk_normalize_index(ctx, module_idx);
+
+    duk_push_global_stash(ctx);
+    duk_get_prop_string(ctx, -1, "dep_stack");
+    len = (duk_uarridx_t)duk_get_length(ctx, -1);
+    if (len > 0) {
+        duk_get_prop_index(ctx, -1, len - 1);
+        duk_put_prop_string(ctx, module_idx, "deps");
+        /* shrink array */
+        duk_push_uint(ctx, len - 1);
+        duk_put_prop_string(ctx, -2, "length");
+    }
+    duk_pop_2(ctx);  /* dep_stack, stash */
+}
+
+/* Register a resolved module as a dependency of the current parent
+   on the dep_stack. Also merges the module's own deps (transitive). */
+static void dep_stack_register(duk_context *ctx, const char *id,
+                               time_t mtime, duk_idx_t module_obj_idx)
+{
+    duk_uarridx_t len;
+    duk_idx_t parent_deps_idx;
+
+    module_obj_idx = duk_normalize_index(ctx, module_obj_idx);
+
+    duk_push_global_stash(ctx);
+    duk_get_prop_string(ctx, -1, "dep_stack");
+    len = (duk_uarridx_t)duk_get_length(ctx, -1);
+    if (len == 0) {
+        duk_pop_2(ctx);  /* dep_stack, stash */
+        return;
+    }
+
+    duk_get_prop_index(ctx, -1, len - 1);  /* parent's deps object */
+    parent_deps_idx = duk_normalize_index(ctx, -1);
+
+    /* Add this module: parent_deps[id] = mtime */
+    duk_push_number(ctx, (double)mtime);
+    duk_put_prop_string(ctx, parent_deps_idx, id);
+
+    /* Merge this module's deps into parent (transitive propagation) */
+    if (duk_get_prop_string(ctx, module_obj_idx, "deps"))
+    {
+        duk_enum(ctx, -1, 0);
+        while (duk_next(ctx, -1, 1))
+        {
+            /* stack: ... parent_deps module_deps enum key value */
+            duk_put_prop(ctx, parent_deps_idx);  /* parent_deps[key] = value; pops key+value */
+        }
+        duk_pop(ctx); /* enum */
+    }
+    duk_pop(ctx); /* module_deps or undefined */
+
+    duk_pop_3(ctx);  /* parent_deps, dep_stack, stash */
+}
+
+/* Exported: check if a module's dependencies are all current.
+   Looks up the module by id in module_id_map and checks its deps.
+   Returns 1 if current, 0 if stale. */
+int duk_rp_check_module_deps(duk_context *ctx, const char *module_id)
+{
+    int ret = 1;
+
+    duk_push_global_stash(ctx);
+    if (!duk_get_prop_string(ctx, -1, "module_id_map")) {
+        duk_pop_2(ctx);
+        return 1;
+    }
+
+    if (!duk_get_prop_string(ctx, -1, module_id)) {
+        duk_pop_3(ctx);  /* undefined, module_id_map, stash */
+        return 1;
+    }
+
+    ret = check_deps_current(ctx, -1);
+    duk_pop_3(ctx);  /* module, module_id_map, stash */
+    return ret;
+}
+
 static RPPATH resolve_id(duk_context *ctx, const char *request_id)
 {
     char *id = NULL;
@@ -440,8 +584,12 @@ static duk_ret_t _duk_resolve(duk_context *ctx, const char *name)
             {
                 if (rppath.stat.st_mtime > old_mtime)
                     duk_del_prop_string(ctx, -1, id); //its newer, reload
-                else
-                    return 1; // current version is up to date
+                else if (check_deps_current(ctx, -1))
+                {
+                    dep_stack_register(ctx, id, old_mtime, -1);
+                    return 1; // module and all deps up to date
+                }
+                // else a dependency changed, fall through to reload
             }
         }
     }
@@ -481,11 +629,15 @@ static duk_ret_t _duk_resolve(duk_context *ctx, const char *name)
     }
 
     // call appropriate module loader
+    dep_stack_push(ctx);
     if(! (module_loaders[module_loader_idx].loader)(ctx, id, module_idx, (name)?1:0 ) )
     {
+        dep_stack_pop(ctx, module_idx);
         duk_del_prop_string(ctx, module_id_map_idx, id);
         return -1;
     }
+    dep_stack_pop(ctx, module_idx);
+    dep_stack_register(ctx, id, rppath.stat.st_mtime, module_idx);
     // return module
     duk_pull(ctx, module_idx);
     return 1;
@@ -518,6 +670,8 @@ void duk_module_init(duk_context *ctx)
     duk_push_object(ctx);                            // [... stash obj]
     duk_dup(ctx, -1); // a copy for require.cache    // [... stash obj dup]
     duk_put_prop_string(ctx, -3, "module_id_map");   // [... stash obj]
+    duk_push_array(ctx);                             // [... stash obj arr]
+    duk_put_prop_string(ctx, -3, "dep_stack");       // [... stash obj]
     duk_remove(ctx, -2);  //global stash             // [... obj]
 
     // put require as global so code with require can eval

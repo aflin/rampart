@@ -18,6 +18,7 @@ extern "C"
     extern duk_ret_t duk_resolve(duk_context *ctx);
     extern int duk_rp_resolve(duk_context *ctx, const char *name);
     extern duk_ret_t duk_require(duk_context *ctx);
+    extern int duk_rp_check_module_deps(duk_context *ctx, const char *module_id);
 #if defined(__cplusplus)
 }
 #endif /* end 'extern "C"' wrapper */
