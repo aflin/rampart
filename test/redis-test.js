@@ -3,6 +3,9 @@ rampart.globalize(rampart.utils);
 
 chdir(process.scriptPath);
 
+var tmpdir = process.scriptPath + '/tmp-test';
+if (!stat(tmpdir)) mkdir(tmpdir);
+
 var rcl;
 var rpids=[];
 var _hasShell = !!stat('/bin/bash');
@@ -35,7 +38,7 @@ function start_redis(port){
         process.exit(0);
     }
 
-    var ret = exec(rdexec, {background: true}, "--port", port, "--dbfilename", `${port}-dump.rdb`);
+    var ret = exec(rdexec, {background: true}, "--port", port, "--dbfilename", `${port}-dump.rdb`, "--dir", tmpdir);
 
     sleep(0.5);
 
@@ -86,6 +89,17 @@ function cleanup() {
     rpids.forEach(function(rpid) {
         kill_server(rpid);
     });
+    // remove redis dump files from tmpdir
+    try {
+        var files = readdir(tmpdir);
+        if (files) {
+            files.forEach(function(f) {
+                if (f.match(/-dump\.rdb$/))
+                    rmFile(tmpdir + '/' + f);
+            });
+        }
+    } catch(e) {}
+    try { rmdir(tmpdir); } catch(e) {}
 }
 
 function testFeature(name,test)

@@ -10,6 +10,9 @@ var server = require("rampart-server");
 var net    = require("rampart-net");
 var crypto = require("rampart-crypto");
 
+var tmpdir = process.scriptPath + '/tmp-test';
+if (!stat(tmpdir)) mkdir(tmpdir);
+
 var server_pid = 0;
 var ssl_server_pid = 0;
 var nfailed = 0;
@@ -28,6 +31,13 @@ function kill_server(pid) {
 function do_cleanup() {
     if (server_pid) kill_server(server_pid);
     if (ssl_server_pid) kill_server(ssl_server_pid);
+    rmFile(tmpdir + '/ws-client-test-alog');
+    rmFile(tmpdir + '/ws-client-test-elog');
+    rmFile(tmpdir + '/ws-client-test-ssl-alog');
+    rmFile(tmpdir + '/ws-client-test-ssl-elog');
+    rmFile(tmpdir + '/sample-cert.pem');
+    rmFile(tmpdir + '/sample-key.pem');
+    rmdir(tmpdir);
 }
 
 function testFeature(name, test) {
@@ -100,8 +110,8 @@ server_pid = server.start({
     daemon: true,
     log: true,
     user: 'nobody',
-    accessLog: process.scriptPath + '/ws-client-test-alog',
-    errorLog:  process.scriptPath + '/ws-client-test-elog',
+    accessLog: tmpdir + '/ws-client-test-alog',
+    errorLog:  tmpdir + '/ws-client-test-elog',
     useThreads: true,
     map: ws_map
 });
@@ -110,8 +120,8 @@ sleep(0.5);
 testFeature("server is running", kill(server_pid, 0));
 
 /* *** Generate self-signed certificate for SSL server *** */
-var cert = process.scriptPath + '/sample-cert.pem';
-var key  = process.scriptPath + '/sample-key.pem';
+var cert = tmpdir + '/sample-cert.pem';
+var key  = tmpdir + '/sample-key.pem';
 
 if (!(stat(cert) && stat(key))) {
     var r = crypto.gen_cert({
@@ -139,8 +149,8 @@ ssl_server_pid = server.start({
     user: "nobody",
     sslKeyFile: key,
     sslCertFile: cert,
-    accessLog: process.scriptPath + '/ws-client-test-ssl-alog',
-    errorLog:  process.scriptPath + '/ws-client-test-ssl-elog',
+    accessLog: tmpdir + '/ws-client-test-ssl-alog',
+    errorLog:  tmpdir + '/ws-client-test-ssl-elog',
     useThreads: true,
     map: ws_map
 });

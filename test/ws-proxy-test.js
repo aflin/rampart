@@ -5,6 +5,9 @@ var server = require("rampart-server");
 var net = require("rampart-net");
 var curl = require("rampart-curl");
 
+var tmpdir = process.scriptPath + '/tmp-test';
+if (!stat(tmpdir)) mkdir(tmpdir);
+
 var upstream_pid = 0;
 var proxy_pid = 0;
 
@@ -22,6 +25,10 @@ function kill_server(pid) {
 function do_cleanup() {
     if (proxy_pid) kill_server(proxy_pid);
     if (upstream_pid) kill_server(upstream_pid);
+    rmFile(tmpdir + '/ws-proxy-test-upstream-alog');
+    rmFile(tmpdir + '/ws-proxy-test-upstream-elog');
+    rmFile(tmpdir + '/ws-proxy-test-proxy-alog');
+    rmFile(tmpdir + '/ws-proxy-test-proxy-elog');
 }
 
 var nfailed = 0;
@@ -57,8 +64,8 @@ upstream_pid = server.start({
     daemon: true,
     log: true,
     user: 'nobody',
-    accessLog: process.scriptPath + '/ws-proxy-test-upstream-alog',
-    errorLog:  process.scriptPath + '/ws-proxy-test-upstream-elog',
+    accessLog: tmpdir + '/ws-proxy-test-upstream-alog',
+    errorLog:  tmpdir + '/ws-proxy-test-upstream-elog',
     useThreads: true,
 
     map: {
@@ -88,8 +95,8 @@ proxy_pid = server.start({
     daemon: true,
     log: true,
     user: 'nobody',
-    accessLog: process.scriptPath + '/ws-proxy-test-proxy-alog',
-    errorLog:  process.scriptPath + '/ws-proxy-test-proxy-elog',
+    accessLog: tmpdir + '/ws-proxy-test-proxy-alog',
+    errorLog:  tmpdir + '/ws-proxy-test-proxy-elog',
     useThreads: true,
 
     map: {

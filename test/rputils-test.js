@@ -6,6 +6,9 @@ var _hasShell = !!stat('/bin/bash');
 
 chdir(process.scriptPath);
 
+var tmpdir = process.scriptPath + '/tmp-test';
+if (!stat(tmpdir)) mkdir(tmpdir);
+
 function testFeature(name,test)
 {
     var error=false;
@@ -45,7 +48,7 @@ fprintf(stderr,"passed\n");
 
 testFeature("fopen/fseek/fprint/fread/fwrite/rewind",function(){
 
-    var fh=fopen("test.txt","w+");
+    var fh=fopen(tmpdir + "/test.txt","w+");
 
     fh.fprintf("abcdef");
 
@@ -66,17 +69,18 @@ testFeature("fopen/fseek/fprint/fread/fwrite/rewind",function(){
     fh.rewind();
 //    var res1=bufferToString(fread(fh,1000));
     var res1=fh.fread(1000,true);
-    rmFile("test.txt");
+    rmFile(tmpdir + "/test.txt");
     return res1=="123defghi456789";
 });
 
 testFeature("fopen - stdout redirect",function(){
-    var fh = fopen("test.txt","w", stdout);
+    var fh = fopen(tmpdir + "/test.txt","w", stdout);
 
     printf("abcdef");
     fh.fclose();
 
-    var res1=readFile("test.txt" ,true);
+    var res1=readFile(tmpdir + "/test.txt" ,true);
+    rmFile(tmpdir + "/test.txt");
 
     return res1=="abcdef";
 });
@@ -275,18 +279,18 @@ testFeature("readdir",function(){
 });
 
 testFeature("copy/delete",function(){
-    copyFile(process.script,"test1.js",true);
-    var stat1=stat("test1.js");
+    copyFile(process.script,tmpdir + "/test1.js",true);
+    var stat1=stat(tmpdir + "/test1.js");
     var match;
     if(_hasShell) {
-        var diff=shell("diff '"+ process.script +"' test1.js");
+        var diff=shell("diff '"+ process.script +"' '" + tmpdir + "/test1.js'");
         match = diff.stdout == "";
     } else {
-        var s1sz=stat(process.script), s2sz=stat("test1.js");
+        var s1sz=stat(process.script), s2sz=stat(tmpdir + "/test1.js");
         match = s1sz && s2sz && s1sz.size == s2sz.size;
     }
-    rmFile("test1.js");
-    var stat2=stat("test1.js");
+    rmFile(tmpdir + "/test1.js");
+    var stat2=stat(tmpdir + "/test1.js");
     return stat1.mode && !stat2 && match;
 });
 
@@ -294,32 +298,32 @@ if(isWindows)
     testFeature("symlink/delete/lstat", "skipping (Windows)");
 else
     testFeature("symlink/delete/lstat",function(){
-        symlink(process.script,"test1.js");
-        var islink=lstat("test1.js").isSymbolicLink;
-        var diff=shell("diff '"+ process.script +"' test1.js");
-        rmFile("test1.js");
-        var stat2=stat("test1.js");
+        symlink(process.script,tmpdir + "/test1.js");
+        var islink=lstat(tmpdir + "/test1.js").isSymbolicLink;
+        var diff=shell("diff '"+ process.script +"' '" + tmpdir + "/test1.js'");
+        rmFile(tmpdir + "/test1.js");
+        var stat2=stat(tmpdir + "/test1.js");
         return islink && !stat2 && diff.stdout == "";
     });
 
 testFeature("hard link/delete",function(){
-    fprintf("myfile.txt","a message to nobody");
+    fprintf(tmpdir + "/myfile.txt","a message to nobody");
     link({
-        src:"myfile.txt",
-        target:"test1.txt"
+        src:tmpdir + "/myfile.txt",
+        target:tmpdir + "/test1.txt"
     });
-    var stat1=stat("test1.txt");
+    var stat1=stat(tmpdir + "/test1.txt");
     var linkOk;
     if(_hasShell) {
-        var test=shell("if [ test1.txt -ef myfile.txt ]; then echo yes; fi");
+        var test=shell("if [ '" + tmpdir + "/test1.txt' -ef '" + tmpdir + "/myfile.txt' ]; then echo yes; fi");
         linkOk = test.stdout == "yes\n";
     } else {
         // Without shell, verify link by checking inode match
-        var s1=stat("myfile.txt"), s2=stat("test1.txt");
+        var s1=stat(tmpdir + "/myfile.txt"), s2=stat(tmpdir + "/test1.txt");
         linkOk = s1 && s2 && s1.ino == s2.ino;
     }
-    rmFile("test1.txt");
-    var stat2=stat("test1.txt");
+    rmFile(tmpdir + "/test1.txt");
+    var stat2=stat(tmpdir + "/test1.txt");
     return stat1.mode && !stat2 && linkOk;
 });
 
@@ -327,26 +331,26 @@ if(isWindows)
     testFeature("copy over hard/sym link throw", "skipping (Windows)");
 else
     testFeature("copy over hard/sym link throw",function(){
-        link("myfile.txt", "hardlink");
-        symlink("hardlink", "symlink");
+        link(tmpdir + "/myfile.txt", tmpdir + "/hardlink");
+        symlink(tmpdir + "/hardlink", tmpdir + "/symlink");
         var ret=false;
         try{
-            copyFile("myfile.txt", "symlink");
+            copyFile(tmpdir + "/myfile.txt", tmpdir + "/symlink");
         } catch(e) {
             //console.log(e);
             ret=true;
         }
-        rmFile("hardlink");
-        rmFile("symlink");
-        rmFile("myfile.txt");
+        rmFile(tmpdir + "/hardlink");
+        rmFile(tmpdir + "/symlink");
+        rmFile(tmpdir + "/myfile.txt");
         return ret;
     });
 
 testFeature("touch/rename",function(){
-    touch("myfile");
-    var stat1=stat("myfile");
-    var tmpfile = _hasShell ? "/tmp/myfile" : "myfile_renamed";
-    rename("myfile", tmpfile); //copies if different mounted fs
+    touch(tmpdir + "/myfile");
+    var stat1=stat(tmpdir + "/myfile");
+    var tmpfile = _hasShell ? "/tmp/myfile" : tmpdir + "/myfile_renamed";
+    rename(tmpdir + "/myfile", tmpfile); //copies if different mounted fs
     var stat2=stat(tmpfile);
     rmFile(tmpfile);
     return stat1 && stat2;
@@ -354,12 +358,12 @@ testFeature("touch/rename",function(){
 
 testFeature("reference touch",function(){
     touch({
-        path:"myfile",
+        path:tmpdir + "/myfile",
         reference:process.script
     });
-    var stat1=stat("myfile");
+    var stat1=stat(tmpdir + "/myfile");
     var stat2=stat(process.script);
-    rmFile("myfile");
+    rmFile(tmpdir + "/myfile");
 
     return stat1.atime.getSeconds() == stat2.atime.getSeconds() && stat1.mtime.getSeconds() == stat2.mtime.getSeconds();
 });
@@ -452,15 +456,15 @@ var wai = _hasShell ? trim(shell("whoami").stdout) : "";
 if (wai=="root")
 {
     testFeature("chown", function(){
-        touch("myfile");
+        touch(tmpdir + "/myfile");
         chown({
-            path:"myfile",
+            path:tmpdir + "/myfile",
             group:101,
             user: 100
         });
 
-        var stat1=stat("myfile");
-        rmFile("myfile");
+        var stat1=stat(tmpdir + "/myfile");
+        rmFile(tmpdir + "/myfile");
         return stat1.uid == 100 && stat1.gid == 101;
     });
 
@@ -729,5 +733,6 @@ testFeature("dateFmt from string", function(){
     return (tz=="-0700" && hour == "17");
 });
 
+try { rmdir(tmpdir); } catch(e) {} /* remove if empty */
 
 //lastline

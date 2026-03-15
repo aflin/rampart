@@ -1,6 +1,11 @@
 
 rampart.globalize(rampart.utils);
 
+function cleanup() {
+    try { rmFile(process.scriptPath + "/countPrimes.c"); } catch(e) {}
+    try { rmFile(process.scriptPath + "/countPrimes.so"); } catch(e) {}
+}
+
 /* Check that a C compiler is available before running tests */
 var _cc = rampart.buildCC || 'cc';
 if (!stat(_cc)) {
@@ -25,6 +30,7 @@ function testFeature(name,test,error)
     {
         printf(">>>>> FAILED <<<<<\n");
         if(error) printf('%J\n',error);
+        cleanup();
         process.exit(1);
     }
     if(error) console.log(error);
@@ -269,7 +275,8 @@ try {
     countPrimes = cmodule(name, func, supportFuncs, extraFlags, libs);
     printf("testing %-60s - passed\n", "cmodule compile");
 } catch(e) {
-    fprintf(stderr, "C module compilation failed. SKIPPING CMODULE TESTS\n");
+    fprintf(stderr, "C module compilation failed: %s\nSKIPPING CMODULE TESTS\n", e.message || e);
+    cleanup();
     process.exit(0);
 }
 
@@ -292,3 +299,5 @@ testFeature("cmodule - results of countPrimes, jsRes ==  cRes", function(){
 testFeature(rampart.utils.sprintf("cmodule timing %s < %s", ctimestr, jstimestr), function(){
     return ctime < jstime;
 });
+
+cleanup();

@@ -1,5 +1,8 @@
 rampart.globalize(rampart.utils);
 
+var tmpdir = process.scriptPath + '/tmp-test';
+if (!stat(tmpdir)) mkdir(tmpdir);
+
 var ttype = "vector";
 var rawvec = rampart.vector.raw;
 
@@ -1382,7 +1385,7 @@ function dorawtests(main) {
     });
 }
 load.Sql;
-var sql=Sql.connect("./vdb", true);
+var sql=Sql.connect(tmpdir + "/vdb", true);
 
 function dosqltests(main) {
     var pref="";
@@ -1549,6 +1552,8 @@ ttype = "vecSql";
 dosqltests(true);
 
 
+shell("rm -rf " + tmpdir + "/vdb");
+try { rmdir(tmpdir); } catch(e) {}
 process.exit(0);
 // pretty much unnecessary:
 
@@ -1563,3 +1568,6 @@ thr.exec(function(){
     dorawtests();
 
 });
+
+shell("rm -rf " + tmpdir + "/vdb");
+try { rmdir(tmpdir); } catch(e) {}

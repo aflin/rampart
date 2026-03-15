@@ -1,9 +1,20 @@
 rampart.globalize(rampart.utils);
 var python = require('rampart-python');
 var Sql = require('rampart-sql');
-var sql = new Sql.init("./pytest-sql", true);
 var crypto = require('rampart-crypto');
-var dbfile="./test.db";
+
+var tmpdir = process.scriptPath + '/tmp-test';
+if (!stat(tmpdir)) mkdir(tmpdir);
+
+var sql = new Sql.init(tmpdir + "/pytest-sql", true);
+var dbfile = tmpdir + "/test.db";
+
+function py_cleanup() {
+    try { rmFile(dbfile); } catch(e) {}
+    try { rmFile(tmpdir + "/tmp.py"); } catch(e) {}
+    shell("rm -rf " + tmpdir + "/pytest-sql");
+    try { rmdir(tmpdir); } catch(e) {}
+}
 
 try{
     sql.exec("drop table test1;");
@@ -28,6 +39,7 @@ function testFeature(name,test,error)
     {
         printf(">>>>> FAILED <<<<<\n");
         if(error) printf('%J\n',error);
+        py_cleanup();
         process.exit(1);
     }
     if(error) printf('%J\n',error);
@@ -120,9 +132,9 @@ x=5.5
     });
 
     testFeature(`python - ${inthr}importFile - funcs and eval - valueOf()`, function(){
-        fprintf("./tmp.py", "%s", iscript);
+        fprintf(tmpdir + "/tmp.py", "%s", iscript);
 
-        var r=python.importFile("./tmp.py");
+        var r=python.importFile(tmpdir + "/tmp.py");
 
         r=python.importString("y=6.6");
 
@@ -284,8 +296,8 @@ thr2.exec( function(){
         sleep(0.1);
     }
     //the two texis table files should be identical
-    var t1sum = crypto.sha1(readFile("./pytest-sql/test1.tbl"));    
-    var t2sum = crypto.sha1(readFile("./pytest-sql/test2.tbl"));    
+    var t1sum = crypto.sha1(readFile(tmpdir + "/pytest-sql/test1.tbl"));
+    var t2sum = crypto.sha1(readFile(tmpdir + "/pytest-sql/test2.tbl"));    
 
     testFeature("python - copy from sqlite to texis tables in two threads", t1sum==t2sum);
 });
@@ -320,5 +332,7 @@ def trigger():
 
     var mymod = python.importString(pyscript);
     mymod.trigger();
+
+    py_cleanup();
 });
 

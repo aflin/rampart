@@ -15,8 +15,11 @@ var lmdb; // the db env handle
 var dbi;  // the db handle
 var _hasShell = !!stat('/bin/bash');
 
-function cleanup_lmdb_dir() {
-    var dbpath = process.scriptPath+"/lmdb-test-db";
+var tmpdir = process.scriptPath + '/tmp-test';
+if (!stat(tmpdir)) mkdir(tmpdir);
+
+function cleanup() {
+    var dbpath = tmpdir+"/lmdb-test-db";
     if (_hasShell) {
         shell("rm -rf " + dbpath);
     } else {
@@ -25,6 +28,8 @@ function cleanup_lmdb_dir() {
         try { rmFile(dbpath+"/lock.mdb"); } catch(e) {}
         try { rmdir(dbpath); } catch(e) {}
     }
+    try { rmFile(tmpdir+"/server-lmdb-test-alog"); } catch(e) {}
+    try { rmFile(tmpdir+"/server-lmdb-test-elog"); } catch(e) {}
 }
 
 function kill_server(pid) {
@@ -58,7 +63,7 @@ function testFeature(name,test)
         printf(">>>>> FAILED <<<<<\n");
         if(error) console.log(error);
         kill_server(pid);
-        cleanup_lmdb_dir();
+        cleanup();
         process.exit(1);
     }
     if(error) console.log(error);
@@ -71,7 +76,7 @@ testFeature("Open test database env", function() {
        behaves correctly after forking as well as in multi-threaded use.
     */
     lmdb= new Lmdb.init(
-        process.scriptPath+"/lmdb-test-db",
+        tmpdir+"/lmdb-test-db",
         true, /* true means create the database if it doesn't exist */
         {noMetaSync:true, noSync:true, mapSize: 16}
     );
@@ -87,7 +92,7 @@ testFeature("Open database", function() {
 var user = _hasShell ? trim(exec("whoami").stdout) : "";
 
 if(user == 'root') {
-    var ret = shell(`chown -R nobody ${process.scriptPath}/lmdb-test-db`);
+    var ret = shell(`chown -R nobody ${tmpdir}/lmdb-test-db`);
     if(ret.exitStatus)
     {
         printf("chmod error: %s %s\n", ret.stderr, ret.stdout);
@@ -155,8 +160,8 @@ var pid=server.start(
     useThreads: true, /* make server multi-threaded. */
     daemon: true,
     log: true,
-    accessLog: process.scriptPath+"/access.log",    //access log location, instead of stdout. Must be set if daemon==true
-    errorLog: process.scriptPath+"/error.log",     //error log location, instead of stderr. Must be set if daemon==true
+    accessLog: tmpdir+"/server-lmdb-test-alog",    //access log location, instead of stdout. Must be set if daemon==true
+    errorLog: tmpdir+"/server-lmdb-test-elog",     //error log location, instead of stderr. Must be set if daemon==true
     map:
     {
         "/ltest":  ltest
@@ -235,7 +240,7 @@ testFeature("syncing data to disk", function() {
 testFeature("reopen db, growOnPut", function() {
     lmdb.close();
     lmdb= new Lmdb.init(
-        process.scriptPath+"/lmdb-test-db",
+        tmpdir+"/lmdb-test-db",
         {mapSize:1}
     );
 
@@ -258,7 +263,7 @@ testFeature("reopen db, growOnPut", function() {
     var putsuccess=true;
     lmdb.close();
     lmdb= new Lmdb.init(
-        process.scriptPath+"/lmdb-test-db",
+        tmpdir+"/lmdb-test-db",
         {mapSize:1, growOnPut: true}
     );
     try {
@@ -269,4 +274,4 @@ testFeature("reopen db, growOnPut", function() {
     return putsuccess && putfail;
 });
 
-cleanup_lmdb_dir();
+cleanup();

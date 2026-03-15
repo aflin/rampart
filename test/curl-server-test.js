@@ -17,9 +17,12 @@ var crypto=require("rampart-crypto")
 */
 var Sql=require("rampart-sql");
 
-var sql= new Sql.init(process.scriptPath+"/testdb",true); /* true means create the database if it doesn't exist */
-
 var iam = trim(exec('whoami').stdout);
+
+var tmpdir = process.scriptPath + '/tmp-test';
+if (!stat(tmpdir)) mkdir(tmpdir);
+
+var sql= new Sql.init(tmpdir+"/testdb",true); /* true means create the database if it doesn't exist */
 
 var pid=0;
 /* ******************************************************
@@ -45,6 +48,18 @@ function kill_server(pid) {
     fprintf(stderr, "WARNING: process %d could not be terminated\n", pid);
 }
 
+function cleanup() {
+    kill_server(pid);
+    /* remove generated files */
+    if(stat(tmpdir + '/curl-server-test-alog')) rmFile(tmpdir + '/curl-server-test-alog');
+    if(stat(tmpdir + '/curl-server-test-elog')) rmFile(tmpdir + '/curl-server-test-elog');
+    if(stat(tmpdir + '/coutput')) rmFile(tmpdir + '/coutput');
+    if(stat(tmpdir + '/sample-cert.pem')) rmFile(tmpdir + '/sample-cert.pem');
+    if(stat(tmpdir + '/sample-key.pem')) rmFile(tmpdir + '/sample-key.pem');
+    if(stat(smodPath)) shell("rm -rf " + smodPath);
+    if(stat(tmpdir)) shell("rm -rf " + tmpdir);
+}
+
 function testFeature(name,test)
 {
     var error=false;
@@ -63,14 +78,14 @@ function testFeature(name,test)
     {
         printf(">>>>> FAILED <<<<<\n");
         if(error) console.log(error);
-        kill_server(pid);
+        cleanup();
         process.exit(1);
     }
     if(error) console.log(error);
 }
 
-var cert = process.scriptPath+'/sample-cert.pem';
-var key = process.scriptPath+'/sample-key.pem';
+var cert = tmpdir+'/sample-cert.pem';
+var key = tmpdir+'/sample-key.pem';
 
 if(
     !(stat(cert) &&
@@ -93,7 +108,7 @@ if(
     fprintf(cert, '%s', r.cert);
 }
 
-var smodPath = process.scriptPath + '/smods';
+var smodPath = tmpdir + '/smods';
 
 if(!stat(smodPath))
 {
@@ -152,8 +167,8 @@ pid=server.start(
     useThreads: true, /* make server multi-threaded. */
     daemon: true,
     log: true,
-    accessLog: './alog',
-    errorLog:  './elog',
+    accessLog: tmpdir + '/curl-server-test-alog',
+    errorLog:  tmpdir + '/curl-server-test-elog',
     secure:true,
     sslKeyFile:  key,
     sslCertFile: cert,
@@ -253,7 +268,7 @@ testFeature("server script timeout", function (){
 
 testFeature("server/curl chunking", function(){
     var lastprogsz, res1, res2;
-    var coutput = process.scriptPath + '/coutput'
+    var coutput = tmpdir + '/coutput'
     var f = fopen(coutput, 'w+');
     var shortsizes=0;
     curl.fetch('https://localhost:8087/chunk.txt',
@@ -325,5 +340,5 @@ setTimeout( function(){
         return res==10 && res2==10;
     });
 
-    kill_server(pid);
+    cleanup();
 }, 2);

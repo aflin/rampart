@@ -3,6 +3,17 @@ rampart.globalize(rampart.utils);
 
 var crypto = require("rampart-crypto");
 
+var tmpdir = process.scriptPath + '/tmp-test';
+if (!stat(tmpdir)) mkdir(tmpdir);
+
+var sampleCert = tmpdir + '/sample-cert.pem';
+var sampleKey  = tmpdir + '/sample-key.pem';
+
+function cleanup() {
+    rmFile(sampleCert);
+    rmFile(sampleKey);
+}
+
 testmodes();
 
 function testFeature(name,test)
@@ -24,6 +35,7 @@ function testFeature(name,test)
     {
         rampart.utils.printf(">>>>> FAILED <<<<<\n");
         if(error) console.log(error);
+        cleanup();
         process.exit(1);
     }
     if(error) console.log(error);
@@ -193,6 +205,8 @@ testFeature("gen_cert object form", function(){
         days: 30,
         subjectAltName: ["example.com", "*.example.com"]
     });
+    fprintf(sampleCert, '%s', r.cert);
+    fprintf(sampleKey, '%s', r.key);
     var info = crypto.cert_info(r.cert);
     return r.key.indexOf("PRIVATE KEY") > -1
         && r.cert.indexOf("CERTIFICATE") > -1
@@ -823,6 +837,8 @@ for (var i = 0; i<TESTS.length; i++){
 
 }
 
+
+cleanup();
 
 function testmodes()
 {

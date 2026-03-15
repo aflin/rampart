@@ -9,6 +9,11 @@ import { sum, pi } from "math";
 
 rampart.globalize(rampart.utils);
 
+function cleanup() {
+    try { rmFile(process.scriptPath + "/babel-test.babel.js"); } catch(e) {}
+    try { rmFile(process.scriptPath + "/math.babel.js"); } catch(e) {}
+}
+
 function testFeature(name,test)
 {
     var error=false;
@@ -27,6 +32,7 @@ function testFeature(name,test)
     {
         printf(">>>>> FAILED <<<<<\n");
         if(error) console.log(error);
+        cleanup();
         process.exit(1);
     }
     if(error) console.log(error);
@@ -665,4 +671,5 @@ try {
 //TODO: finish 2018
 setTimeout(function(){
   printf("NOT TESTED:  RE sticky flag and Internationalization\n");
+  cleanup();
 },100);

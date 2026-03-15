@@ -3,6 +3,10 @@ rampart.globalize(rampart.utils);
 load.Sql;
 load.crypto;
 
+var tmpdir = process.scriptPath + '/tmp-test';
+
+if (!stat(tmpdir)) mkdir(tmpdir);
+
 var _hasShell = !!stat('/bin/bash');
 
 function rm_rf_dir(path) {
@@ -18,7 +22,7 @@ function rm_rf_dir(path) {
     try { rmdir(path); } catch(e) {}
 }
 
-var sql=Sql.connect(process.scriptPath+"/testdb",true);//create if doesn't exist
+var sql=Sql.connect(tmpdir+"/testdb",true);//create if doesn't exist
 
 /* check for quicktest, make if necessary */
 var res=sql.exec("select * from SYSTABLES where NAME='quicktest'");
@@ -50,9 +54,7 @@ function testFeature(name,test)
     {
         printf(">>>>> FAILED <<<<<\n");
         if(error) console.log(error);
-        rm_rf_dir(process.scriptPath + "/testdb");
-        rm_rf_dir(process.scriptPath + "/testdb2");
-        rm_rf_dir(process.scriptPath + "/testdb3");
+        rm_rf_dir(tmpdir);
         process.exit(1);
     }
     if(error) console.log(error);
@@ -166,13 +168,13 @@ Now we are engaged in a great civil war, testing whether that nation, or any nat
 But, in a larger sense, we can not dedicate -- we can not consecrate -- we can not hallow -- this ground. The brave men, living and dead, who struggled here, have consecrated it, far above our poor power to add or detract. The world will little note, nor long remember what we say here, but it can never forget what they did here. It is for us the living, rather, to be dedicated here to the unfinished work which they who fought here have thus far so nobly advanced. It is rather for us to be here dedicated to the great task remaining before us -- that from these honored dead we take increased devotion to that cause for which they gave the last full measure of devotion -- that we here highly resolve that these dead shall not have died in vain -- that this nation, under God, shall have a new birth of freedom -- and that government of the people, by the people, for the people, shall not perish from the earth.
 `;
 
-fprintf(process.scriptPath+"/gettysburg.txt", '%s', getty);
+fprintf(tmpdir+"/gettysburg.txt", '%s', getty);
 
 
 testFeature ("searchFile", function() {
     var res = Sql.searchFile(
        "live",
-       process.scriptPath+"/gettysburg.txt",
+       tmpdir+"/gettysburg.txt",
        { minwordlen:3 }
     );
     return res.length==3 && res[0].offset;
@@ -188,10 +190,10 @@ testFeature ("searchText", function() {
 });
 
 
-var sql1 = Sql.connect(process.scriptPath+"/wdb", true);
+var sql1 = Sql.connect(tmpdir+"/wdb", true);
 
 testFeature ("sql.importCsvFile", function() {
-    var wiki = fopen("./wiki.csv", "w+");
+    var wiki = fopen(tmpdir+"/wiki.csv", "w+");
 
     fprintf(wiki, "Title, Text\n");
 
@@ -213,12 +215,12 @@ testFeature ("sql.importCsvFile", function() {
 
     sql1.one("create table wtext (Title varchar(16), Text varchar(4096))");
 
-    var ret=sql1.importCsvFile("./wiki.csv", {tableName:"wtext",hasHeaderRow: true});
+    var ret=sql1.importCsvFile(tmpdir+"/wiki.csv", {tableName:"wtext",hasHeaderRow: true});
     return ret==16;
 });
 
 function nestedcopy() {
-    var sql2 = Sql.connect(process.scriptPath+"/wdb2", true);
+    var sql2 = Sql.connect(tmpdir+"/wdb2", true);
 
     if(sql2.one("select * from SYSTABLES where NAME='wtext'"))
         sql2.one("drop table wtext");
@@ -258,12 +260,12 @@ testFeature ("Full Text Search", function(){
 });
 
 testFeature ("Create with addTables", function(){
-    rm_rf_dir(process.scriptPath + "/testdb2");
-    mkdir(process.scriptPath+"/testdb2")
-    copyFile(process.scriptPath+"/testdb/quicktest.tbl", process.scriptPath+"/testdb2/quicktest.tbl", true);
+    rm_rf_dir(tmpdir + "/testdb2");
+    mkdir(tmpdir+"/testdb2")
+    copyFile(tmpdir+"/testdb/quicktest.tbl", tmpdir+"/testdb2/quicktest.tbl", true);
 
     var sql2=new Sql.connection({
-        path:      process.scriptPath+"/testdb2",
+        path:      tmpdir+"/testdb2",
         addTables: true
     });
     var res=sql2.exec("select * from quicktest");
@@ -272,14 +274,14 @@ testFeature ("Create with addTables", function(){
 });
 
 testFeature ("Create with addTables in existing db", function(){
-    rm_rf_dir(process.scriptPath + "/testdb3");
-    var sql3 = new Sql.connection(process.scriptPath+"/testdb3", true);
+    rm_rf_dir(tmpdir + "/testdb3");
+    var sql3 = new Sql.connection(tmpdir+"/testdb3", true);
     sql3.close();
 
-    copyFile(process.scriptPath+"/testdb/quicktest.tbl", process.scriptPath+"/testdb3/quicktest.tbl", true);
+    copyFile(tmpdir+"/testdb/quicktest.tbl", tmpdir+"/testdb3/quicktest.tbl", true);
 
     var sql3=Sql.connect({
-        path:      process.scriptPath+"/testdb3",
+        path:      tmpdir+"/testdb3",
         addTables: true
     });
 
@@ -288,6 +290,4 @@ testFeature ("Create with addTables in existing db", function(){
     return res.rowCount;
 });
 
-rm_rf_dir(process.scriptPath + "/testdb");
-rm_rf_dir(process.scriptPath + "/testdb2");
-rm_rf_dir(process.scriptPath + "/testdb3");
+rm_rf_dir(tmpdir);

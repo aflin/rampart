@@ -122,6 +122,10 @@ function findRampartHeader(hint){
     for (var i=0; i<candidates.length; i++){
         if(rampart.utils.stat(candidates[i])){
             ret = candidates[i];
+            // resolve relative paths to absolute so the #include works
+            // regardless of where the .c file is written
+            if(ret.charAt(0) !== '/')
+                ret = rampart.utils.getcwd() + '/' + ret;
             break;
         }
     }

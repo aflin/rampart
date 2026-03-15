@@ -6,6 +6,9 @@ rampart.globalize(rampart.utils);
 var server = require("rampart-server");
 var curl = require("rampart-curl");
 
+var tmpdir = process.scriptPath + '/tmp-test';
+if (!stat(tmpdir)) mkdir(tmpdir);
+
 var upstream_pid = 0;
 var proxy_pid = 0;
 
@@ -23,6 +26,10 @@ function kill_server(pid) {
 function cleanup() {
     if (proxy_pid) kill_server(proxy_pid);
     if (upstream_pid) kill_server(upstream_pid);
+    rmFile(tmpdir + '/proxy-thread-test-upstream-alog');
+    rmFile(tmpdir + '/proxy-thread-test-upstream-elog');
+    rmFile(tmpdir + '/proxy-thread-test-proxy-alog');
+    rmFile(tmpdir + '/proxy-thread-test-proxy-elog');
 }
 
 var nfailed = 0;
@@ -58,8 +65,8 @@ upstream_pid = server.start({
     daemon: true,
     log: true,
     user: 'nobody',
-    accessLog: process.scriptPath + '/proxy-thread-test-upstream-alog',
-    errorLog:  process.scriptPath + '/proxy-thread-test-upstream-elog',
+    accessLog: tmpdir + '/proxy-thread-test-upstream-alog',
+    errorLog:  tmpdir + '/proxy-thread-test-upstream-elog',
     useThreads: true,
 
     map: {
@@ -78,8 +85,8 @@ proxy_pid = server.start({
     daemon: true,
     log: true,
     user: 'nobody',
-    accessLog: process.scriptPath + '/proxy-thread-test-proxy-alog',
-    errorLog:  process.scriptPath + '/proxy-thread-test-proxy-elog',
+    accessLog: tmpdir + '/proxy-thread-test-proxy-alog',
+    errorLog:  tmpdir + '/proxy-thread-test-proxy-elog',
     threads: 1,
 
     map: {

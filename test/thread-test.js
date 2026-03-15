@@ -4,10 +4,13 @@ var thread = rampart.thread;
 var _hasShell = !!stat('/bin/bash');
 var isWindows = /MSYS_NT/.test(rampart.buildPlatform);
 
+var tmpdir = process.scriptPath + '/tmp-test';
+if (!stat(tmpdir)) mkdir(tmpdir);
+
 var nruns=4;
 
 var Sql=require('rampart-sql');
-var sql=new Sql.init(process.scriptPath+'/testdb',true);
+var sql=new Sql.init(tmpdir+'/testdb',true);
 
 var Lmdb=require('rampart-lmdb');
 var lmdb;
@@ -23,6 +26,20 @@ function kill_server(pid) {
     sleep(0.5);
     if (!kill(pid, 0)) return;
     fprintf(stderr, "WARNING: process %d could not be terminated\n", pid);
+}
+
+function cleanup() {
+    var dbpath = tmpdir+"/lmdb-test-db";
+    if (_hasShell) {
+        shell("rm -rf " + dbpath);
+        shell("rm -rf " + tmpdir+"/testdb");
+    } else {
+        try { rmFile(dbpath+"/data.mdb"); } catch(e) {}
+        try { rmFile(dbpath+"/lock.mdb"); } catch(e) {}
+        try { rmdir(dbpath); } catch(e) {}
+    }
+    try { rmFile(tmpdir+"/thread-test-alog"); } catch(e) {}
+    try { rmFile(tmpdir+"/thread-test-elog"); } catch(e) {}
 }
 
 function testFeature(name,test,error)
@@ -45,6 +62,7 @@ function testFeature(name,test,error)
         if(error) printf('%J\n',error);
         var pid = thread.get("server_pid",1000);
         if(pid) kill_server(pid);
+        cleanup();
         process.exit(1);
     }
     if(error) printf('%J\n',error);
@@ -52,7 +70,7 @@ function testFeature(name,test,error)
 
 testFeature("thread - Open test lmdb database env in main thread", function() {
     lmdb= new Lmdb.init(
-        process.scriptPath+"/lmdb-test-db",
+        tmpdir+"/lmdb-test-db",
         true, /* true means create the database if it doesn't exist */
         {noMetaSync:true, noSync:true, mapSize: 160}
     );
@@ -337,8 +355,8 @@ thr4.exec(function(){
         //threads: 1,
         daemon: true,
         log: true,
-        accessLog: './alog',
-        errorLog:  './elog',
+        accessLog: tmpdir + '/thread-test-alog',
+        errorLog:  tmpdir + '/thread-test-elog',
         /* sslMinVersion (ssl3|tls1|tls1.1|tls1.2). "tls1.2" is default*/
         // sslMinVersion: "tls1.2",
 
@@ -470,5 +488,6 @@ var iv=setInterval(function(){
     if(thread.get("DONE") && thread.get("LMDBDONE")) {
         testFeature("thread - wait for exit while events pending", true);
         clearInterval(iv);
+        cleanup();
     }
 },100);
