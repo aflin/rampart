@@ -1,3 +1,41 @@
+v0.6.2
+    - rampart
+                            Installer fixes.
+                            Transpiler improvements.
+                            cmake 4 compatibility.
+                            Initial and experimental windows port
+                            using msys2.
+                            JSON.parse(cyclic_json,true) - parse and
+                            reconstruct output of printf("%!J",json) if
+                            cyclic.
+
+    - rampart-utils
+                            autoScanDate properly accept ',' in RFC 2822
+                            style formats.
+
+    - rampart-webserver
+                            Print instructions after letssetup.
+                            selfSign option.
+                            iroh_webproxy start option.
+
+    - rampart-server
+                            Proxy for http(s) and ws(s).
+                            noAcceptRanges - for range requests
+                            noRangeCap     - for range requests
+
+    - rampart-net
+                            net.wsConnect websocket client.
+                            resolve TXT and other records.
+
+
+    - rampart-iroh
+                            Initial version. Separate repo, included in
+                            binary distribution along with iroh_webproxy.
+
+    - rampart-graphicsmagick
+                            Was rampart-gm.  Include in main build.
+                            rampart-gm.js prints out friendly message if 
+                            libraries are missing.
 v0.6.1
     - rampart
                             Added ansi and css colors to printf.
@@ -18,7 +56,7 @@ v0.6.1
                             vecdist server function for vector cosine distance calcs.
                             Included optional vector types (though raw varbyte probably best).
 
-    - rampart.vectors      Initial commit.
+    - rampart.vectors       Initial commit.
 
     - rampart-utils
                             printf functions take ',' flag for number
