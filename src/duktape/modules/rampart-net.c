@@ -40,8 +40,11 @@
 
 // on macos big sur only
 // cuz extern/texis/include/nameser.h:251 or thereabouts
-#ifdef strcasecmp                                                                                                                               
-#undef strcasecmp                                                                                                                               
+#ifdef strcasecmp
+#undef strcasecmp
+#endif
+#ifdef strncasecmp
+#undef strncasecmp
 #endif
 
 //macos

@@ -869,19 +869,10 @@ execute_process(
 )
 
 if(GM_CONFIG_RESULT EQUAL 0 AND NOT "${GM_CONFIG}" STREQUAL "")
+    # Get all flags in one call, just like the original Makefile
     execute_process(
-        COMMAND bash -c "GraphicsMagickWand-config --cppflags"
-        OUTPUT_VARIABLE GM_CPPFLAGS
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-    )
-    execute_process(
-        COMMAND bash -c "GraphicsMagickWand-config --ldflags"
-        OUTPUT_VARIABLE GM_LDFLAGS
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-    )
-    execute_process(
-        COMMAND bash -c "GraphicsMagickWand-config --libs"
-        OUTPUT_VARIABLE GM_LIBS
+        COMMAND bash -c "GraphicsMagickWand-config --cppflags --ldflags --libs"
+        OUTPUT_VARIABLE GM_ALL_FLAGS
         OUTPUT_STRIP_TRAILING_WHITESPACE
     )
 
@@ -889,13 +880,23 @@ if(GM_CONFIG_RESULT EQUAL 0 AND NOT "${GM_CONFIG}" STREQUAL "")
         duktape/modules/rampart-graphicsmagick.c
     )
 
-    # Split flags into lists for cmake
-    separate_arguments(GM_CPPFLAGS_LIST UNIX_COMMAND "${GM_CPPFLAGS}")
-    separate_arguments(GM_LDFLAGS_LIST UNIX_COMMAND "${GM_LDFLAGS}")
-    separate_arguments(GM_LIBS_LIST UNIX_COMMAND "${GM_LIBS}")
+    separate_arguments(GM_ALL_FLAGS_LIST UNIX_COMMAND "${GM_ALL_FLAGS}")
 
-    target_compile_options(rampart-graphicsmagick PRIVATE ${GM_CPPFLAGS_LIST})
-    target_link_libraries(rampart-graphicsmagick ${GM_LDFLAGS_LIST} ${GM_LIBS_LIST})
+    # On macOS, add libtool path for ltdl
+    if(APPLE)
+        execute_process(
+            COMMAND bash -c "brew --prefix libtool 2>/dev/null"
+            OUTPUT_VARIABLE LIBTOOL_PREFIX
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+            RESULT_VARIABLE LIBTOOL_RESULT
+        )
+        if(LIBTOOL_RESULT EQUAL 0 AND NOT "${LIBTOOL_PREFIX}" STREQUAL "")
+            list(APPEND GM_ALL_FLAGS_LIST "-L${LIBTOOL_PREFIX}/lib")
+        endif()
+    endif()
+
+    target_compile_options(rampart-graphicsmagick PRIVATE ${GM_ALL_FLAGS_LIST})
+    target_link_libraries(rampart-graphicsmagick ${GM_ALL_FLAGS_LIST})
     target_include_directories(rampart-graphicsmagick PRIVATE
         ${PROJECT_SOURCE_DIR}/src/include
     )
@@ -907,7 +908,7 @@ else()
     message("")
     message("  ************************************************************")
     message("  *  WARNING: GraphicsMagick libraries not found.            *")
-    message("  *  rampart-graphicsmagick module will NOT be built.                    *")
+    message("  *  rampart-graphicsmagick module will NOT be built.        *")
     message("  *                                                          *")
     message("  *  To install:                                             *")
     message("  *    Debian/Ubuntu: sudo apt install libgraphicsmagick1-dev*")
