@@ -5,7 +5,21 @@
 SSOURCE=$(readlink -f "${BASH_SOURCE[0]}")
 SDIR=$(dirname "${SSOURCE}")
 
-if [ -x "${SDIR}/bin/rampart" ]; then
+if [ -e ${SDIR}/babel-test.js ]; then
+   TESTDIR="${SDIR}"
+elif [ -e ${SDIR}/test ] ; then
+   TESTDIR="${SDIR}/test"
+elif [ -e "${SDIR}/../test" ]; then
+   TESTDIR="${SDIR}/../test"
+else
+   echo "Error: cannot find the test directory"
+fi
+
+if [ -x "${SDIR}/rampart" ]; then
+    RAMPART="${SDIR}/rampart"
+elif [ -x "${SDIR}/../build/src/rampart" ]; then
+    RAMPART="${SDIR}/../build/src/rampart"
+elif [ -x "${SDIR}/bin/rampart" ]; then
     RAMPART="${SDIR}/bin/rampart"
 elif command -v rampart >/dev/null 2>&1; then
     RAMPART=$(command -v rampart)
@@ -29,9 +43,9 @@ fi
 PASSED=0
 FAILED=0
 
-for i in `ls test/*-test.js`; do
+for i in `ls ${TESTDIR}/*-test.js`; do
 	echo
-	echo $i
+	echo $RAMPART $i
 	$RAMPART $i
 	if [ "$?" != "0" ]; then
 		echo "Test ${i} failed"
@@ -45,15 +59,17 @@ done
 MODPATH=$($RAMPART -c "console.log(process.modulesPath)")
 URLJS="${MODPATH}/rampart-url.js"
 echo
-echo $URLJS
-
+echo $RAMPART $URLJS
 $RAMPART $URLJS
+
 if [ "$?" != "0" ]; then
     echo "Test rampart-url.js failed"
     FAILED=$((FAILED+1))
 else
     PASSED=$((PASSED+1))
 fi;
+
+rm -rf ${TESTDIR}/tmp-test
 
 echo
 if [ "$FAILED" -gt 0 ]; then

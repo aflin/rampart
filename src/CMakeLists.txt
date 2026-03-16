@@ -1060,6 +1060,7 @@ file(GLOB TEST_FILES
     "${CMAKE_SOURCE_DIR}/test/*.js"
     "${CMAKE_SOURCE_DIR}/test/wiki_00"
     "${CMAKE_SOURCE_DIR}/js_modules/*.js"
+    "${CMAKE_SOURCE_DIR}/src/run_tests.sh"
 )
 foreach(TEST_FILE ${TEST_FILES})
 file(COPY ${TEST_FILE} DESTINATION ${CMAKE_BINARY_DIR}/src)
