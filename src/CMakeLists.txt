@@ -859,6 +859,64 @@ add_dependencies(libpython cp_python)
 add_dependencies(rampart-python openssl)
 
 
+##############  GRAPHICSMAGICK MODULE (optional)  ##############
+
+execute_process(
+    COMMAND bash -c "which GraphicsMagickWand-config"
+    OUTPUT_VARIABLE GM_CONFIG
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    RESULT_VARIABLE GM_CONFIG_RESULT
+)
+
+if(GM_CONFIG_RESULT EQUAL 0 AND NOT "${GM_CONFIG}" STREQUAL "")
+    execute_process(
+        COMMAND bash -c "GraphicsMagickWand-config --cppflags"
+        OUTPUT_VARIABLE GM_CPPFLAGS
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+    execute_process(
+        COMMAND bash -c "GraphicsMagickWand-config --ldflags"
+        OUTPUT_VARIABLE GM_LDFLAGS
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+    execute_process(
+        COMMAND bash -c "GraphicsMagickWand-config --libs"
+        OUTPUT_VARIABLE GM_LIBS
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+
+    add_library(rampart-graphicsmagick SHARED
+        duktape/modules/rampart-graphicsmagick.c
+    )
+
+    # Split flags into lists for cmake
+    separate_arguments(GM_CPPFLAGS_LIST UNIX_COMMAND "${GM_CPPFLAGS}")
+    separate_arguments(GM_LDFLAGS_LIST UNIX_COMMAND "${GM_LDFLAGS}")
+    separate_arguments(GM_LIBS_LIST UNIX_COMMAND "${GM_LIBS}")
+
+    target_compile_options(rampart-graphicsmagick PRIVATE ${GM_CPPFLAGS_LIST})
+    target_link_libraries(rampart-graphicsmagick ${GM_LDFLAGS_LIST} ${GM_LIBS_LIST})
+    target_include_directories(rampart-graphicsmagick PRIVATE
+        ${PROJECT_SOURCE_DIR}/src/include
+    )
+
+    set(HAVE_GRAPHICSMAGICK TRUE)
+    message("-- GraphicsMagick found: ${GM_CONFIG}")
+else()
+    set(HAVE_GRAPHICSMAGICK FALSE)
+    message("")
+    message("  ************************************************************")
+    message("  *  WARNING: GraphicsMagick libraries not found.            *")
+    message("  *  rampart-graphicsmagick module will NOT be built.                    *")
+    message("  *                                                          *")
+    message("  *  To install:                                             *")
+    message("  *    Debian/Ubuntu: sudo apt install libgraphicsmagick1-dev*")
+    message("  *    macOS:        brew install graphicsmagick             *")
+    message("  *    FreeBSD:      pkg install GraphicsMagick              *")
+    message("  ************************************************************")
+    message("")
+endif()
+
 ###### EXAMPLE USER MODULE######
 #add_library(example_name SHARED
 # example.c
@@ -938,6 +996,30 @@ else()
   )
 endif()
 
+if(HAVE_GRAPHICSMAGICK)
+  if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
+    set_target_properties(rampart-graphicsmagick PROPERTIES
+        LINK_FLAGS "-undefined dynamic_lookup -Wl,-rpath,./"
+        SUFFIX ".so"
+        PREFIX ""
+    )
+  elseif(CYGWIN)
+    target_link_libraries(rampart-graphicsmagick ${RAMPART_IMPLIB})
+    add_dependencies(rampart-graphicsmagick rampart)
+    set_target_properties(rampart-graphicsmagick PROPERTIES
+        LINK_FLAGS "-Wl,-rpath,./"
+        SUFFIX ".so"
+        PREFIX ""
+    )
+  else()
+    set_target_properties(rampart-graphicsmagick PROPERTIES
+        LINK_FLAGS "-Wl,-rpath,./"
+        SUFFIX ".so"
+        PREFIX ""
+    )
+  endif()
+endif()
+
 ## tests and js_mods into build/src dir as well (temporary)
 file(GLOB TEST_FILES
     "${CMAKE_SOURCE_DIR}/test/*.js"
@@ -967,6 +1049,10 @@ install(TARGETS
     rampart-almanac
     DESTINATION "${CMAKE_INSTALL_PREFIX}/modules/"
 )
+
+if(HAVE_GRAPHICSMAGICK)
+    install(TARGETS rampart-graphicsmagick DESTINATION "${CMAKE_INSTALL_PREFIX}/modules/")
+endif()
 
 install(
     DIRECTORY ${PROJECT_SOURCE_DIR}/js_modules/
@@ -1248,6 +1334,7 @@ install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules
 install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-server.so\")")
 install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-sql.so\")")
 install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-almanac.so\")")
+install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-graphicsmagick.so\")")
 install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/bin/rampart\")")
 install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/bin/tsql\")")
 install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/bin/addtable\")")

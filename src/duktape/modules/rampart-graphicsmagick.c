@@ -113,7 +113,7 @@
 #define _GNU_SOURCE
 //#define _POSIX_C_SOURCE 200809L
 #include <ctype.h>
-#include "/usr/local/rampart/include/rampart.h"
+#include "rampart.h"
 #include <wand/magick_wand.h>
 
 
