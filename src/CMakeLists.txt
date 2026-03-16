@@ -861,17 +861,40 @@ add_dependencies(rampart-python openssl)
 
 ##############  GRAPHICSMAGICK MODULE (optional)  ##############
 
-execute_process(
-    COMMAND bash -c "which GraphicsMagickWand-config"
-    OUTPUT_VARIABLE GM_CONFIG
-    OUTPUT_STRIP_TRAILING_WHITESPACE
-    RESULT_VARIABLE GM_CONFIG_RESULT
-)
+# Try brew --prefix first (needed on x86_64 macOS where bin may not be in PATH)
+set(GM_CONFIG "")
+if(APPLE)
+    execute_process(
+        COMMAND bash -c "brew --prefix graphicsmagick 2>/dev/null"
+        OUTPUT_VARIABLE GM_BREW_PREFIX
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        RESULT_VARIABLE GM_BREW_RESULT
+    )
+    if(GM_BREW_RESULT EQUAL 0 AND NOT "${GM_BREW_PREFIX}" STREQUAL "")
+        set(GM_CONFIG "${GM_BREW_PREFIX}/bin/GraphicsMagickWand-config")
+        if(NOT EXISTS "${GM_CONFIG}")
+            set(GM_CONFIG "")
+        endif()
+    endif()
+endif()
 
-if(GM_CONFIG_RESULT EQUAL 0 AND NOT "${GM_CONFIG}" STREQUAL "")
+# Fall back to PATH lookup
+if("${GM_CONFIG}" STREQUAL "")
+    execute_process(
+        COMMAND bash -c "which GraphicsMagickWand-config"
+        OUTPUT_VARIABLE GM_CONFIG
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        RESULT_VARIABLE GM_CONFIG_RESULT
+    )
+    if(NOT GM_CONFIG_RESULT EQUAL 0)
+        set(GM_CONFIG "")
+    endif()
+endif()
+
+if(NOT "${GM_CONFIG}" STREQUAL "")
     # Get all flags in one call, just like the original Makefile
     execute_process(
-        COMMAND bash -c "GraphicsMagickWand-config --cppflags --ldflags --libs"
+        COMMAND bash -c "${GM_CONFIG} --cppflags --ldflags --libs"
         OUTPUT_VARIABLE GM_ALL_FLAGS
         OUTPUT_STRIP_TRAILING_WHITESPACE
     )
