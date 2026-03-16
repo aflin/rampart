@@ -623,7 +623,13 @@ for (var i=0; i<asdfmts.length; i++)
 }
 
 
-nowgmt=new Date( (""+nowgmt).replace(/^20/, "18") )
+// Avoid midnight local boundary: if current local hour is 0, bump to 2am
+// to prevent DST offset mismatches on pre-1901 dates across platforms.
+var nowfor1800 = new Date(nowgmt);
+if(nowfor1800.getHours() < 2)
+    nowfor1800.setHours(2);
+
+nowgmt=new Date( (""+nowfor1800).replace(/^20/, "18") )
 midnight=new Date( (""+midnight).replace(/^20/, "18") );
 
 midnightlocal = new Date(nowgmt);
@@ -633,7 +639,7 @@ midnightlocal.setSeconds(0);
 midnightlocal.setMilliseconds(0);
 
 // duktape bug(??): erroneously sets dst for dates before 1901, or maybe not eroneous cuz node does the same.
-// either way, /usr/share/zonenfo has no data before 1901 and if we have '1824/06/01 -0800', we expect the equiv gmt to be 8 hours ahead.
+// either way, /usr/share/zoneinfo has no data before 1901 and if we have '1824/06/01 -0800', we expect the equiv gmt to be 8 hours ahead.
 // And apparently (according to wikipedia) "Port Arthur, Ontario, Canada, was the first city in the world to enact DST, on 1 July 1908"
 // - https://en.wikipedia.org/w/index.php?title=Daylight_saving_time&oldid=1234547798#History
 if( midnightlocal.getTimezoneOffset() != new Date("2024-01-01T12:00:00.000Z").getTimezoneOffset() )

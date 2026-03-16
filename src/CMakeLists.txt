@@ -66,6 +66,9 @@ if(CYGWIN)
         OUTPUT_VARIABLE BUILD_CC_PATH
         OUTPUT_STRIP_TRAILING_WHITESPACE
     )
+elseif(APPLE AND EXISTS "/usr/bin/cc")
+    # Use the Apple shim which automatically sets the SDK sysroot
+    set(BUILD_CC_PATH "/usr/bin/cc")
 else()
     set(BUILD_CC_PATH "${CMAKE_C_COMPILER}")
 endif()
@@ -865,15 +868,22 @@ add_dependencies(rampart-python openssl)
 set(GM_CONFIG "")
 if(APPLE)
     execute_process(
-        COMMAND bash -c "brew --prefix graphicsmagick 2>/dev/null"
+        COMMAND brew --prefix graphicsmagick
         OUTPUT_VARIABLE GM_BREW_PREFIX
         OUTPUT_STRIP_TRAILING_WHITESPACE
         RESULT_VARIABLE GM_BREW_RESULT
+        ERROR_QUIET
     )
     if(GM_BREW_RESULT EQUAL 0 AND NOT "${GM_BREW_PREFIX}" STREQUAL "")
         set(GM_CONFIG "${GM_BREW_PREFIX}/bin/GraphicsMagickWand-config")
         if(NOT EXISTS "${GM_CONFIG}")
-            set(GM_CONFIG "")
+            # config tool may be in the Cellar, not symlinked
+            file(GLOB GM_CONFIG_GLOB "${GM_BREW_PREFIX}/../graphicsmagick/*/bin/GraphicsMagickWand-config")
+            if(GM_CONFIG_GLOB)
+                list(GET GM_CONFIG_GLOB 0 GM_CONFIG)
+            else()
+                set(GM_CONFIG "")
+            endif()
         endif()
     endif()
 endif()
@@ -908,10 +918,11 @@ if(NOT "${GM_CONFIG}" STREQUAL "")
     # On macOS, add libtool path for ltdl
     if(APPLE)
         execute_process(
-            COMMAND bash -c "brew --prefix libtool 2>/dev/null"
+            COMMAND brew --prefix libtool
             OUTPUT_VARIABLE LIBTOOL_PREFIX
             OUTPUT_STRIP_TRAILING_WHITESPACE
             RESULT_VARIABLE LIBTOOL_RESULT
+            ERROR_QUIET
         )
         if(LIBTOOL_RESULT EQUAL 0 AND NOT "${LIBTOOL_PREFIX}" STREQUAL "")
             list(APPEND GM_ALL_FLAGS_LIST "-L${LIBTOOL_PREFIX}/lib")
