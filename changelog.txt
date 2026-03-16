@@ -18,6 +18,9 @@ v0.6.2
                             selfSign option.
                             iroh_webproxy start option.
 
+    - rampart-crypto
+                            gen_cert for self signed certs.
+
     - rampart-server
                             Proxy for http(s) and ws(s).
                             noAcceptRanges - for range requests
