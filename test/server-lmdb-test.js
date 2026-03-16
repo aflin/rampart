@@ -95,8 +95,12 @@ if(user == 'root') {
     var ret = shell(`chown -R nobody ${tmpdir}/lmdb-test-db`);
     if(ret.exitStatus)
     {
-        printf("chmod error: %s %s\n", ret.stderr, ret.stdout);
-        process.exit(ret.exitStatus);
+        // on at least one machine I'm getting exit 93, but it otherwise succeeds
+        var st = stat(`${tmpdir}/lmdb-test-db`);
+        if (st.owner !=  "nobody") {
+            printf("chmod error: %s %s EXIT=%s\n", ret.stderr, ret.stdout, ret.exitStatus);
+            process.exit(ret.exitStatus);
+        }
     }
 }
 
