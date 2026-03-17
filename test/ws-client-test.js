@@ -31,13 +31,15 @@ function kill_server(pid) {
 function do_cleanup() {
     if (server_pid) kill_server(server_pid);
     if (ssl_server_pid) kill_server(ssl_server_pid);
-    rmFile(tmpdir + '/ws-client-test-alog');
-    rmFile(tmpdir + '/ws-client-test-elog');
-    rmFile(tmpdir + '/ws-client-test-ssl-alog');
-    rmFile(tmpdir + '/ws-client-test-ssl-elog');
-    rmFile(tmpdir + '/sample-cert.pem');
-    rmFile(tmpdir + '/sample-key.pem');
-    rmdir(tmpdir);
+    try {
+        rmFile(tmpdir + '/ws-client-test-alog');
+        rmFile(tmpdir + '/ws-client-test-elog');
+        rmFile(tmpdir + '/ws-client-test-ssl-alog');
+        rmFile(tmpdir + '/ws-client-test-ssl-elog');
+        rmFile(tmpdir + '/sample-cert.pem');
+        rmFile(tmpdir + '/sample-key.pem');
+        rmdir(tmpdir);
+    } catch(e){}
 }
 
 function testFeature(name, test) {
