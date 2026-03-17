@@ -3593,9 +3593,9 @@ static int make_sock_conn(void *arg, int after)
         const char *ca_path      = NET_CA_PATH,
                    *ca_file      = rp_net_def_bundle;
 
-        if(strlen(ca_path)==0)
+        if(!ca_path || strlen(ca_path)==0)
             ca_path = NULL;
-        if(strlen(ca_file)==0)
+        if(!ca_file || strlen(ca_file)==0)
             ca_file = NULL;
 
         if(duk_get_prop_string(ctx, -1, "cacert"))
