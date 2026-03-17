@@ -890,6 +890,16 @@ endif()
 
 # Fall back to PATH lookup
 if("${GM_CONFIG}" STREQUAL "")
+    find_program(GM_CONFIG_PATH
+        NAMES GraphicsMagickWand-config
+        PATHS /usr/local/bin /usr/bin /opt/homebrew/bin
+    )
+    if(GM_CONFIG_PATH)
+        set(GM_CONFIG "${GM_CONFIG_PATH}")
+    endif()
+endif()
+
+if("${GM_CONFIG}" STREQUAL "")
     execute_process(
         COMMAND bash -c "which GraphicsMagickWand-config"
         OUTPUT_VARIABLE GM_CONFIG
@@ -931,9 +941,23 @@ if(NOT "${GM_CONFIG}" STREQUAL "")
 
     target_compile_options(rampart-graphicsmagick PRIVATE ${GM_ALL_FLAGS_LIST})
     target_link_libraries(rampart-graphicsmagick ${GM_ALL_FLAGS_LIST})
-    target_include_directories(rampart-graphicsmagick PRIVATE
-        ${PROJECT_SOURCE_DIR}/src/include
-    )
+
+    if(CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
+          execute_process(
+              COMMAND bash -c "${GM_CONFIG} --cppflags"
+              OUTPUT_VARIABLE GM_CPPFLAGS
+              OUTPUT_STRIP_TRAILING_WHITESPACE
+          )
+          string(REGEX REPLACE "^-I" "" GM_INCLUDE_DIR "${GM_CPPFLAGS}")
+          target_include_directories(rampart-graphicsmagick PRIVATE
+              ${PROJECT_SOURCE_DIR}/src/include
+              ${GM_INCLUDE_DIR}
+          )
+    else()
+          target_include_directories(rampart-graphicsmagick PRIVATE
+              ${PROJECT_SOURCE_DIR}/src/include
+          )
+    endif()
 
     set(HAVE_GRAPHICSMAGICK TRUE)
     message("-- GraphicsMagick found: ${GM_CONFIG}")

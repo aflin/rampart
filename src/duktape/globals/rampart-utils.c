@@ -92,7 +92,8 @@ int execvpe(const char *program, char **argv, char **envp)
 
 #include <sys/ioctl.h>
 #include <libutil.h>
-// execvpe polyfill
+// execvpe polyfill — only needed before FreeBSD 14
+#if __FreeBSD_version < 1400000
 int execvpe(const char *program, char **argv, char **envp)
 {
     char **saved = environ;
@@ -102,6 +103,7 @@ int execvpe(const char *program, char **argv, char **envp)
     environ = saved;
     return rc;
 }
+#endif
 
 #else // linux
 
