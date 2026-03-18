@@ -5044,7 +5044,10 @@ static int proxy_copy_req_header(evhtp_kv_t *kv, void *arg)
         !strcasecmp(kv->key, "Trailer") ||
         !strcasecmp(kv->key, "Upgrade") ||
         !strcasecmp(kv->key, "Proxy-Authorization") ||
-        !strcasecmp(kv->key, "Proxy-Connection"))
+        !strcasecmp(kv->key, "Proxy-Connection") ||
+        !strcasecmp(kv->key, "X-Forwarded-For") ||
+        !strcasecmp(kv->key, "X-Forwarded-Proto") ||
+        !strcasecmp(kv->key, "X-Forwarded-Host"))
         return 0;
 
     evhtp_headers_add_header(upstream_req->headers_out,
@@ -5678,12 +5681,15 @@ static void proxy_ws_upgrade(evhtp_request_t *req, PROXY_CONF *conf,
     evbuffer_add_printf(req_buf, "Host: %s\r\n", host_buf);
 
     /* copy all client headers INCLUDING WebSocket ones (Upgrade, Connection,
-       Sec-WebSocket-Key, etc.) but skip Host (already set) */
+       Sec-WebSocket-Key, etc.) but skip Host and X-Forwarded-* (set below) */
     {
         evhtp_kv_t *kv;
         TAILQ_FOREACH(kv, req->headers_in, next)
         {
-            if (!strcasecmp(kv->key, "Host"))
+            if (!strcasecmp(kv->key, "Host") ||
+                !strcasecmp(kv->key, "X-Forwarded-For") ||
+                !strcasecmp(kv->key, "X-Forwarded-Proto") ||
+                !strcasecmp(kv->key, "X-Forwarded-Host"))
                 continue;
             evbuffer_add(req_buf, kv->key, kv->klen);
             evbuffer_add(req_buf, ": ", 2);
