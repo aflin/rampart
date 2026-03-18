@@ -2868,18 +2868,17 @@ static void sock_readcb(struct bufferevent * bev, void * arg)
     duk_push_number(ctx, sinfo->read);
     duk_put_prop_string(ctx, -2, "bytesRead");
 
-    duk_push_external_buffer(ctx);
-    duk_config_buffer(ctx, -1, buf, len);
+    // Copy data into a fixed buffer owned by Duktape.
+    // (External buffers are unsafe here because wsSend
+    // uses evbuffer_add_reference which only stores a
+    // pointer — the evbuffer_drain below would free the
+    // memory before the write completes.)
+    void *dbuf = duk_push_fixed_buffer(ctx, len);
+    memcpy(dbuf, buf, len);
     // [ ..., this, bufferdata ]
-    duk_dup(ctx, -1);
-    duk_insert(ctx, 0);// save for later to invalidate it.
-    // [ bufferdata, ..., this, bufferdata ]
     do_callback(ctx, "data", 1);
-    // [ bufferdata, ...]
-    duk_config_buffer(ctx, 0, NULL, 0);// zero out buffer in case there are other refs in js.
-    duk_remove(ctx, 0); //remove it
 
-    evbuffer_drain(evbuf, len);//drain it.
+    evbuffer_drain(evbuf, len);
 }
 
 // chicken & egg problem.  We are getting 'this' from sinfo
