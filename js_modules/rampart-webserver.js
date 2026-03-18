@@ -1151,9 +1151,9 @@ function start(serverConf, dump) {
 
     if(ret.error) {
         if(retr.pid)
-            kill(retr.pid);
+            try { kill(retr.pid); } catch(e){}
         if(reti.pid)
-            kill(retr.pid);
+            try { kill(retr.pid); } catch(e){}
         return ret;
     }
 
