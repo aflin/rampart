@@ -1,0 +1,374 @@
+<para>
+  <link xlink:href="https://rampart.dev/" role="navbar-brand"><inlinemediaobject>
+    <imageobject>
+      <imagedata fileref="https://rampart.dev/images/rampart_transparent_white.gif" />
+    </imageobject>
+  </inlinemediaobject></link>
+</para>
+<para>
+</para>
+<anchor xml:id="navbarCollapse" />
+<itemizedlist spacing="compact">
+  <listitem>
+    <para>
+      <link xlink:href="https://rampart.dev/index.html" role="nav-link active">Home</link>
+    </para>
+  </listitem>
+  <listitem>
+    <para>
+      <link xlink:href="https://rampart.dev/download.html" role="nav-link active">Download</link>
+    </para>
+  </listitem>
+  <listitem>
+    <para>
+      <link xlink:href="https://rampart.dev/docs/" role="nav-link active">Documentation</link>
+    </para>
+  </listitem>
+  <listitem>
+    <para>
+      <link xlink:href="https://rampart.dev/demos.html" role="nav-link active">Demos</link>
+    </para>
+  </listitem>
+  <listitem>
+    <para>
+      <link xlink:href="https://rampart.dev/apps/site/contact.html" role="nav-link active">Help!</link>
+    </para>
+  </listitem>
+</itemizedlist>
+<para>
+  Search
+</para>
+<section xmlns="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" xml:id="squish-the-stack">
+  <title>Squish the Stack</title>
+  <para>
+    Rampart is a javascript based complete stack development environment
+    which is extremely resource stingy. This entire site is running on a
+    Raspberry Pi Zero (version 1). Rampart is also fast and portable; it
+    will run on nearly any *nix OS and benchmarks nearly as fast as
+    Nginx on static content. It's also free to use, modify, and
+    redistribute in most use cases.
+  </para>
+</section>
+<para>
+  We're not kidding about it being resource stingy. Here's the Rampart
+  HTTP server running on my machine as I'm coding this web page on an
+  Intel Mac with almost all of its modules loaded:
+</para>
+<para>
+  <inlinemediaobject>
+    <imageobject>
+      <imagedata fileref="https://rampart.dev/images/ram_usage.jpg" />
+    </imageobject>
+  </inlinemediaobject>
+</para>
+<section xml:id="full-text-search-with-sql">
+  <title>Full Text Search with SQL</title>
+  <para>
+    We've licensed the same fulltext and relational database engine that
+    powered eBay's auction search and
+    <link xlink:href="https://www.thunderstone.com/about-us/our-customers/">100's
+    of other large sites</link> across the internet. The SQL engine is
+    especially good at serving database driven content. It is also
+    realtime so that new or changed documents are instantly searchable.
+    We've included a CSV parser so you can migrate data into it as well.
+  </para>
+  <link xlink:href="https://rampart.dev/docs/rampart-sql.html" role="btn btn-primary tinybutt">more
+  info...</link>
+</section>
+<section xml:id="http-https-and-websockets">
+  <title>HTTP, HTTPS, and Websockets</title>
+  <para>
+    Rampart's HTTP/HTTPS server is based on a modded libevhtp_ws and
+    libevent2. Benchmarks showed that libevhtp outperformed Nginx (which
+    we really respect), so that's why we chose it. We haven't
+    benchmarked it against Node yet but it's reasonable to assume we'll
+    keep pace while consuming a lot less of the host's resources
+  </para>
+  <link xlink:href="https://rampart.dev/docs/rampart-server.html#the-rampart-server-http-module" role="btn btn-primary tinybutt">more
+  info...</link>
+</section>
+<section xml:id="curl-module">
+  <title>CURL Module</title>
+  <para>
+    Rampart provides a robust interface to the Curl library, giving you
+    the ability to fetch URLs, post forms, or send email and attachments
+    easily. It includes all the functionality you've come to expect with
+    the Curl command line utility, but from within Rampart JavaScript.
+    The combination of this module and the HTML Parser provide a fairly
+    robust data scraping tool set.
+  </para>
+  <link xlink:href="https://rampart.dev/docs/rampart-curl.html" role="btn btn-primary tinybutt">more
+  info...</link>
+</section>
+<section xml:id="threading">
+  <title>Threading</title>
+  <para>
+    Rampart threads let you run functions not only asynchronously but in
+    also in a multi-threaded environment. Running a function in a thread
+    is as easy as running one in a setTimeout(). Each thread is run in
+    its own isolated JavaScript interpreter and variables are easily
+    shared at any time via a clipboard. Running an asynchronous callback
+    in a thread when a variable is copied to the clipboard
+    <link xlink:href="https://rampart.dev/docs/rampart-thread.html#rampart-thread-onget">is
+    also possible</link>.
+  </para>
+  <link xlink:href="https://rampart.dev/docs/rampart-thread.html" role="btn btn-primary tinybutt">more
+  info...</link>
+</section>
+<section xml:id="redis-client">
+  <title>REDIS Client</title>
+  <para>
+    We've included direct REDIS integration for all the obvious reasons
+    one might want to use it. We also crafted a
+    <link xlink:href="https://rampart.dev/docs/rampart-redis.html#xread-auto-async">custom
+    XREAD command</link> to work like PUB/SUB so you can, in combination
+    with WebSockets, create chats, channels and DMs that don't require
+    the extra step of saving, retrieving and sorting messages from a
+    message queue.
+  </para>
+  <link xlink:href="https://rampart.dev/docs/rampart-redis.html" role="btn btn-primary tinybutt">more
+  info...</link>
+</section>
+<section xml:id="lightning-memory-mapped-database">
+  <title>Lightning Memory-mapped Database</title>
+  <para>
+    LMDB is a fast, truly ACID compliant RAM based key-value store. It's
+    read biased and serves binary or text data really well. We've added
+    automatic conversion to/from CBOR and JSON to make it that much
+    easier. It's not as fast as Redis when in full ACID mode, but then
+    again it'll never lose data when Redis might. LMDB startup is
+    relatively instant, even on large databases, and it's persistent to
+    disk in case of unexpected interruption.
+  </para>
+  <link xlink:href="https://rampart.dev/docs/rampart-lmdb.html" role="btn btn-primary tinybutt">more
+  info...</link>
+</section>
+<section xml:id="markdown-engine">
+  <title>Markdown Engine</title>
+  <para>
+    The markdown engine uses the Cmark library to implement the
+    <link xlink:href="https://commonmark.org">CommonMark syntax</link>.
+    This allows you to efficiently convert to HTML on the server side
+    and have symmetry with the CommonMark client-side javascript module.
+    This is handy for things like blog entries, documentation, and CMS
+    page markup. <emphasis>Note: We intend to eventually build and use
+    our own CMS using it.</emphasis>
+  </para>
+  <link xlink:href="https://rampart.dev/docs/rampart-cmark.html" role="btn btn-primary tinybutt">more
+  info...</link>
+</section>
+<section xml:id="robots.txt">
+  <title>ROBOTS.TXT</title>
+  <para>
+    Rampart gives you the power to crawl and scrape in a very flexible
+    manner. However, with great web crawlers come great
+    responsibilities. The ROBOTS.TXT module uses Google's robots.txt
+    code so you can avoid abusing sites that do not wish to have
+    portions of their content crawled.
+  </para>
+  <link xlink:href="https://rampart.dev/docs/rampart-robots.html" role="btn btn-primary tinybutt">more
+  info...</link>
+</section>
+<section xml:id="html-parser">
+  <title>HTML Parser</title>
+  <para>
+    Using a modded version of
+    <link xlink:href="https://www.html-tidy.org">HTMLTidy</link> Rampart
+    provides the ability to manipulate and traverse HTML in a manner
+    somewhat akin to JQuery, but on the server side. This module can
+    also clean up and format messy or compacted HTML after it's been
+    CURL'ed from somewhere. <emphasis>Note: I used this module several
+    times to locate errant imbalaced &lt;div&gt;s when writing this
+    site.</emphasis>
+  </para>
+  <link xlink:href="https://rampart.dev/docs/rampart-html.html" role="btn btn-primary tinybutt">more
+  info...</link>
+</section>
+<section xml:id="cryptography">
+  <title>Cryptography</title>
+  <para>
+    The OpenSSL library module provides the ability to safely encrypt
+    and decrypt stuff generate crypto-hashes, generate RSA key pairs,
+    and more. It also provides cryptographic quality random and Gaussian
+    random number generation. Sorry, it doesn't generate crypto-currency
+    though. <emphasis>Note: for speedy non-crypographic hashing see the
+    <link xlink:href="https://rampart.dev/docs/rampart-utils.html#hash">non-cryptographic
+    hashes</link>.</emphasis>
+  </para>
+  <link xlink:href="https://rampart.dev/docs/rampart-crypto.html" role="btn btn-primary tinybutt">more
+  info...</link>
+</section>
+<section xml:id="networking">
+  <title>Networking</title>
+  <para>
+    The rampart-net module provides access to low level, asynchronous
+    TCP/IP calls for creating client and server applications, as well as
+    name resolution. The functions are somewhat similar to node's net
+    functions, which makes learning easier if you are familiar.
+  </para>
+  <link xlink:href="https://rampart.dev/docs/rampart-net.html" role="btn btn-primary tinybutt">more
+  info...</link>
+</section>
+<section xml:id="python">
+  <title>Python</title>
+  <para>
+    Yes we embedded the c-python interpreter into a Rampart module. It
+    allows you to load python modules, run python scripts and manipulate
+    python variables in JavaScript without a writing a line of python.
+    Why? Python has a gazillion modules and support for many, many
+    databases. If you need functionality that Rampart doesn't (yet)
+    provide, this can get your there. See
+    <link xlink:href="https://rampart.dev/docs/rampart-python.html#example-use-importing-data">this
+    example</link> for a quick rundown of what is possible.
+  </para>
+  <link xlink:href="https://rampart.dev/docs/rampart-python.html" role="btn btn-primary tinybutt">more
+  info...</link>
+</section>
+<section xml:id="os-utilities">
+  <title>OS Utilities</title>
+  <para>
+    All the common commands and functions required to manipulate files
+    and talk to the OS are in here <emphasis>(hopefully)</emphasis>:
+    printf(), sprintf(), fopen(), fread(), fwrite(), hexify(),
+    dehexify(), trim(), stat(), exec(), shell(), kill(), mkdir(),
+    rmdir(), sleep()... and a lot more.
+  </para>
+  <link xlink:href="https://rampart.dev/docs/rampart-utils.html" role="btn btn-primary tinybutt">more
+  info...</link>
+</section>
+<section xml:id="fast-hyperloglog-non-crypto-hash-random">
+  <title>Fast HyperLogLog, non-crypto Hash, &amp; Random</title>
+  <para>
+    We implemented our own super-fast
+    <link xlink:href="https://en.wikipedia.org/wiki/HyperLogLog">HyperLogLog</link>
+    algorithm for on-line counting of distinct things. e.g. unique IP
+    addresses. It's substantially faster and more accurate than Redis's.
+    Our HLL uses Google's City Hash algorithm internally, but we also
+    expose City Hash and its cousin Murmur Hash, as well as a fast
+    pseudo random number generator based on
+    <link xlink:href="https://en.wikipedia.org/wiki/Xorshift">XorShift64</link>.
+  </para>
+  <link xlink:href="https://rampart.dev/docs/rampart-utils.html#rand-hash-and-hyperloglog" role="btn btn-primary tinybutt">more
+  info...</link>
+</section>
+<section xml:id="more-to-come">
+  <title>More to come</title>
+  <para>
+    We've been working on assembling Rampart for a beta release since
+    the start of Covid. Some stuff hasn't made it into it yet, but we
+    are continuing to add features and by no means are we nearly done
+    adding things. There are also
+    <link xlink:href="https://rampart.dev/docs/tutorialtoc.html">tutorials</link>
+    and
+    <link xlink:href="https://rampart.dev/docs/rampart-extras.html">unsupported
+    extras</link> which can give you an idea of the direction we are
+    heading.
+  </para>
+</section>
+<section xml:id="why-did-we-do-this">
+  <title>Why did we do this?</title>
+  <para>
+    While NodeJS is extremely popular and NPM provides a ton of add-ons
+    quickly, on the whole it's pretty fat. By the time you configure
+    MariaDB and Apache Lucene you've eaten a day (or more) and a
+    considerable amount of resources on the host machine. Additionally,
+    it's not that much fun.
+  </para>
+  <para>
+    In creating Rampart we sought to create a &quot;full stack&quot;
+    that was simple and fast to download, configure, and start creating
+    whatever application you had in mind in a time frame measured in
+    minutes rather than days. User machines, phones, and IOT devices
+    need to serve their primary role without impediment. Rampart's job
+    is to support that role and not get in the way. OTOH if you dedicate
+    a machine or cluster to a Rampart task you'll get a lot more done
+    with a lot less investment.
+  </para>
+  <para>
+    We chose the DukTape javascript engine over the V8 engine because
+    while V8 is very fast, it's also kind of a RAM and CPU pig. Our
+    philosophy was to do everything difficult or complex in C and let
+    javascript be the fun-glue. That way it really didn't matter what
+    engine was chosen. Almost every module is coded in C as is the
+    DukTape interpreter. This makes everything extremely portable with a
+    minimum amount of fuss. We include the Babel transpiler to drag
+    DukTape into ECMAScript 2015+ land. Rampart checks at runtime if
+    you've changed anything and then transpiles automatically behind the
+    scenes.
+  </para>
+</section>
+<section xml:id="who-are-we">
+  <title>Who are we?</title>
+  <para>
+    Moat Crossing Systems LLC, the makers of Rampart, is a couple of
+    guys who between them have developed software and applications that
+    have served many billions of pages of database backed content on the
+    internet. We had some summer help from a couple of Columbia students
+    who helped up keep tabs on the &quot;current-think&quot; and coded
+    some of the OS Utility functions. It all started in January of 2020
+    with a phone conversation where we were bitching about how un-fun
+    web development had become, and how resource heavy everything seemed
+    to be. A comment was made that if we could full-text index Wikipedia
+    and serve it up on a Raspberry Pi Zero, then we'd have something
+    unique that people might want.
+    <link xlink:href="https://rampart.dev/apps/site/run_demo.html?demo=wikipedia">So
+    that's what we did</link>.
+  </para>
+  <para>
+    We hope you will give this thing a try. Contact us
+    <link xlink:href="https://rampart.dev/apps/site/contact.html">here</link>
+    or at <inlinemediaobject>
+      <imageobject>
+        <imagedata fileref="data:image/svg+xml;base64,PHN2ZyBoZWlnaHQ9IjI4IiB3aWR0aD0iMjI4IiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHN0eWxlPSJwb3NpdGlvbjogcmVsYXRpdmU7IHRvcDo2cHgiPgogICAgICA8dGV4dCB4PSIwIiB5PSIxMiI+CiAgICAgICBzCiAgICAgIDwvdGV4dD4KICAgICAgPHRleHQgeD0iODQiIHk9IjEyIj4KICAgICAgIEAKICAgICAgPC90ZXh0PgogICAgICA8dGV4dCB4PSI5NiIgeT0iMTIiPgogICAgICAgcgogICAgICA8L3RleHQ+CiAgICAgIDx0ZXh0IHg9IjcyIiB5PSIxMiI+CiAgICAgICB0CiAgICAgIDwvdGV4dD4KICAgICAgPHRleHQgeD0iMzYiIHk9IjEyIj4KICAgICAgIHAKICAgICAgPC90ZXh0PgogICAgICA8dGV4dCB4PSIxMiIgeT0iMTIiPgogICAgICAgdQogICAgICA8L3RleHQ+CiAgICAgIDx0ZXh0IHg9IjE0NCIgeT0iMTIiPgogICAgICAgYQogICAgICA8L3RleHQ+CiAgICAgIDx0ZXh0IHg9IjEzMiIgeT0iMTIiPgogICAgICAgcAogICAgICA8L3RleHQ+CiAgICAgIDx0ZXh0IHg9IjE2OCIgeT0iMTIiPgogICAgICAgdAogICAgICA8L3RleHQ+CiAgICAgIDx0ZXh0IHg9IjEyMCIgeT0iMTIiPgogICAgICAgbQogICAgICA8L3RleHQ+CiAgICAgIDx0ZXh0IHg9IjYwIiB5PSIxMiI+CiAgICAgICByCiAgICAgIDwvdGV4dD4KICAgICAgPHRleHQgeD0iMjE2IiB5PSIxMiI+CiAgICAgICB2CiAgICAgIDwvdGV4dD4KICAgICAgPHRleHQgeD0iMjA0IiB5PSIxMiI+CiAgICAgICBlCiAgICAgIDwvdGV4dD4KICAgICAgPHRleHQgeD0iNDgiIHk9IjEyIj4KICAgICAgIG8KICAgICAgPC90ZXh0PgogICAgICA8dGV4dCB4PSIxMDgiIHk9IjEyIj4KICAgICAgIGEKICAgICAgPC90ZXh0PgogICAgICA8dGV4dCB4PSIxODAiIHk9IjEyIj4KICAgICAgIC4KICAgICAgPC90ZXh0PgogICAgICA8dGV4dCB4PSIxOTIiIHk9IjEyIj4KICAgICAgIGQKICAgICAgPC90ZXh0PgogICAgICA8dGV4dCB4PSIyNCIgeT0iMTIiPgogICAgICAgcAogICAgICA8L3RleHQ+CiAgICAgIDx0ZXh0IHg9IjE1NiIgeT0iMTIiPgogICAgICAgcgogICAgICA8L3RleHQ+PC9zdmc+" />
+      </imageobject>
+    </inlinemediaobject> if you have questions or need help with
+    something. Maybe later on we'll get more sophisticated with our
+    support infrastructure, but for now one of us will try to get back
+    to you as soon as possible.
+  </para>
+</section>
+<section xml:id="the-raspberry-bush">
+  <title><anchor xml:id="the_bush" />The Raspberry Bush</title>
+  <para>
+    Here's a photo of our fancy server farm before it was installed in a
+    rack at the ISP. There's four Pi Zeros and two Pi 4s. The four Zeros
+    are mirror copies of one another just in case *stuff* happens. The
+    two Pi 4's allow us to do development and builds a bit faster than
+    the Zeros allow us. The &quot;bush&quot; is proxied by an NginX
+    server running on a fairly large old Xeon machine. This made
+    certificate managment and other things somewhat easier on us.
+  </para>
+  <para>
+    <inlinemediaobject>
+      <imageobject>
+        <imagedata fileref="https://rampart.dev/images/server_farm_sm.jpg" />
+      </imageobject>
+    </inlinemediaobject>
+  </para>
+  <para>
+    Please note that we have no particular bias towards producing
+    software principally for the Raspberry Pi. The whole purpose for its
+    usage here is to demostrate how much Rampart can do with minimimal
+    resources. That way you can extrapolate how fast and efficient it
+    will be on larger Intel, AMD, and ARM platforms.
+  </para>
+</section>
+<programlisting>
+         |&gt;&gt;            |&gt;&gt;
+       __|__          __|__
+      \  |  /         \   /
+       | ^ |          | ^ |  
+     __| o |__________| o |__   
+    [__|_|__|(rp)|  | |______]
+____[|||||||||||||__|||||||||]____
+</programlisting>
+<para>
+  RAMPART
+</para>
+<para>
+  © 2024 Moat Crossing Systems. All rights reserved.
+</para>
+<para>
+  <link xlink:href="https://rampart.dev/apps/editor/?file=/apps/site.js" role="btn btn-outline-success">View
+  JS Source</link>
+</para>

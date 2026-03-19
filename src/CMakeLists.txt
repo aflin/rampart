@@ -423,6 +423,18 @@ target_include_directories(rampart-html PRIVATE
 )
 add_dependencies(rampart-html tidy)
 
+###TOTEXT###
+add_library(rampart-totext SHARED
+    duktape/modules/rampart-totext.c
+)
+target_link_libraries(rampart-totext
+    ${PROJECT_BINARY_DIR}/extern/libdeflate/libdeflate.a
+)
+target_include_directories(rampart-totext PRIVATE
+    ${PROJECT_BINARY_DIR}/extern/libdeflate/
+)
+add_dependencies(rampart-totext libdeflate)
+
 ###LMDB###
 
 add_library(rampart-lmdb SHARED
@@ -998,6 +1010,7 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
         rampart-redis rampart-crypto rampart-html
         rampart-cmark rampart-robots rampart-lmdb
         rampart-net rampart-python rampart-almanac
+        rampart-totext
         #example_name
           PROPERTIES
           LINK_FLAGS   "-undefined dynamic_lookup -Wl,-rpath,./"
@@ -1019,6 +1032,7 @@ elseif(CYGWIN)
   target_link_libraries(rampart-redis ${RAMPART_IMPLIB})
   target_link_libraries(rampart-robots ${RAMPART_IMPLIB})
   target_link_libraries(rampart-server ${RAMPART_IMPLIB})
+  target_link_libraries(rampart-totext ${RAMPART_IMPLIB})
   # Targets using keyword signature (match existing target_link_libraries form)
   target_link_libraries(rampart-crypto PRIVATE ${RAMPART_IMPLIB})
   target_link_libraries(rampart-curl PRIVATE ${RAMPART_IMPLIB})
@@ -1027,7 +1041,8 @@ elseif(CYGWIN)
   # Ensure modules are built after rampart (which generates the import library)
   foreach(_mod rampart-almanac rampart-cmark rampart-html rampart-lmdb
                rampart-net rampart-redis rampart-robots rampart-server
-               rampart-crypto rampart-curl rampart-python rampart-sql)
+               rampart-crypto rampart-curl rampart-python rampart-sql
+               rampart-totext)
     add_dependencies(${_mod} rampart)
   endforeach()
   set_target_properties(
@@ -1035,6 +1050,7 @@ elseif(CYGWIN)
         rampart-redis rampart-crypto rampart-html
         rampart-cmark rampart-robots rampart-lmdb
         rampart-net rampart-python rampart-almanac
+        rampart-totext
         #example_name
           PROPERTIES
           LINK_FLAGS "-Wl,-rpath,./"
@@ -1047,6 +1063,7 @@ else()
         rampart-redis rampart-crypto rampart-html
         rampart-cmark rampart-robots rampart-lmdb
         rampart-net rampart-python rampart-almanac
+        rampart-totext
         #example_name
           PROPERTIES
           LINK_FLAGS "-Wl,-rpath,./"
@@ -1089,6 +1106,7 @@ file(GLOB TEST_FILES
 foreach(TEST_FILE ${TEST_FILES})
 file(COPY ${TEST_FILE} DESTINATION ${CMAKE_BINARY_DIR}/src)
 endforeach()
+file(COPY "${CMAKE_SOURCE_DIR}/test/convtest" DESTINATION ${CMAKE_BINARY_DIR}/src)
 
 
 
@@ -1107,6 +1125,7 @@ install(TARGETS
     rampart-lmdb
     rampart-python
     rampart-almanac
+    rampart-totext
     DESTINATION "${CMAKE_INSTALL_PREFIX}/modules/"
 )
 
@@ -1203,6 +1222,13 @@ foreach(TEST_FILE ${TEST_FILES})
       )"
   )
 endforeach()
+
+install(CODE "execute_process( \
+    COMMAND ${CMAKE_COMMAND} -E copy_directory \
+    \"${CMAKE_SOURCE_DIR}/test/convtest\" \
+    \"${CMAKE_INSTALL_PREFIX}/test/convtest\"   \
+    )"
+)
 
 install(CODE "execute_process ( \
     COMMAND bash -c \"chmod 777 '${CMAKE_INSTALL_PREFIX}/test'\"
@@ -1394,6 +1420,7 @@ install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules
 install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-server.so\")")
 install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-sql.so\")")
 install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-almanac.so\")")
+install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-totext.so\")")
 install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-graphicsmagick.so\")")
 install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/bin/rampart\")")
 install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/bin/tsql\")")
