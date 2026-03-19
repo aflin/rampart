@@ -60,9 +60,13 @@ for(var file in expected) {
 
 /* ---- conversion tests ---- */
 
-var has_pdftotext = shell("which pdftotext").exitStatus === 0;
-var has_catdoc = shell("which catdoc").exitStatus === 0;
-var has_textutil = shell("which textutil").exitStatus === 0;
+var has_pdftotext = exec("which", "pdftotext");
+var has_catdoc = exec("which", "catdoc");
+var has_textutil = exec('which', "textutil");
+
+has_pdftotext = has_pdftotext.exitStatus ===0 ? !!has_pdftotext.stdout : false;
+has_textutil = has_textutil.exitStatus ===0 ? !!has_textutil.stdout : false;
+has_catdoc = has_catdoc.exitStatus ===0 ? !!has_catdoc.stdout : false;
 
 var convertible = [
     "test.txt",
@@ -90,7 +94,7 @@ var ext_tool_tests = {
 function skipOrTest(name, file, fn) {
     var ext = ext_tool_tests[file];
     if(ext && !ext.available) {
-        printf("testing %-50s - %s\n", name, ext.msg);
+        printf("testing %-60s - %s\n", name, ext.msg);
         return;
     }
     testFeature(name, fn);
