@@ -77,7 +77,7 @@ function scheduleUpdate(index, date, frequency, thresh, sql /* not working, tmpi
             if(!d)
                 thr("could not parse date ('"+date+"')");
             if(d.offset==0){ //assume localtime if no timezone provided
-                d = autoScanDate(date + ' ' + dateFmt('%z'));
+                d = rampart.utils.autoScanDate(date + ' ' + rampart.utils.dateFmt('%z'));
             }
             date=Math.floor(d.date.getTime()/1000);
         }
@@ -157,8 +157,9 @@ function updater(sql) {
             if(row.NEXT == 0) { //if start immediately
                 ret.push({ next: now+row.INTV, id:row.ID, when: 0, what: row.NAME, thresh: row.THRESH, where: params.indexTemp});
             } else {
+                // +59: treat anything due within the current minute as not yet past
                 var when = row.NEXT + 59;
-                var next
+                var next;
                 while( when < now)
                     when += row.INTV;
                 next = row.INTV + when - 59;
@@ -166,8 +167,8 @@ function updater(sql) {
                 ret.push({ next: next, id: row.ID, when: when, what: row.NAME, thresh: row.THRESH, where: params.indexTemp});
             }
         });
-        if(res==-1)
-            thrmsg(res.error);
+        if(res===null)
+            thrmsg(sql.errMsg);
         if(ret.length > 1)
             ret.sort(function(a,b){ return a.when - b.when});
         return {sched:ret, now:now};
@@ -325,7 +326,7 @@ function launchUpdater(npsql) {
     var res=rampart.utils.exec(process.installPathExec, process.modulesPath + '/rampart-sqlUpdate.js', npsql.db);
 
     if(res.exitStatus) {
-        npsql.errMsg=res.stedrr;
+        npsql.errMsg=res.stderr;
         return false;
     }    
     return true;
