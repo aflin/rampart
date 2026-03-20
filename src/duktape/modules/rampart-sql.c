@@ -335,9 +335,11 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf);
 
 int db_is_init = 0;
 int tx_rp_cancelled = 0;
-/*
+/* Dead code: tx_rp_cancelled is set by die_nicely() (SIGUSR2 handler),
+   but nothing in rampart currently sends SIGUSR2 to sql_helper processes.
+   If revived, guard with thisfork to avoid exit() in the parent process:
 #define EXIT_IF_CANCELLED \
-    if (tx_rp_cancelled)  \
+    if (tx_rp_cancelled && thisfork)  \
         exit(0);
 */
 
@@ -790,8 +792,10 @@ static SFI *check_fork(DB_HANDLE *h, int create)
 
     parent_pid=getpid();
 
-    /* waitpid: like kill(pid,0) except only works on child processes */
-    if (!finfo->childpid || waitpid(finfo->childpid, &pidstatus, WNOHANG))
+    /* waitpid doesn't work here because SIGCHLD is SIG_IGN (auto-reap).
+       kill(pid,0) reliably detects whether the child is still alive. */
+    //if (!finfo->childpid || waitpid(finfo->childpid, &pidstatus, WNOHANG))
+    if (!finfo->childpid || kill(finfo->childpid, 0) != 0)
     {
         if (!create)
             return NULL;
@@ -1986,10 +1990,9 @@ static void do_child_loop(SFI *finfo)
         ret = forkread(&command, sizeof(char));
         if (ret == 0)
         {
-            /* a read of 0 size might mean the parent exited,
-               otherwise this shouldn't happen                 */
-            usleep(10000);
-            continue;
+            /* read of 0 on a pipe = write end closed. Parent
+               either died or shut us down. No recovery.       */
+            exit(0);
         }
 
         /* this is in fork read now
