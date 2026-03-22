@@ -94,6 +94,10 @@ var serverConf = {
                            String. One of "hourly", "daily" or "weekly"        */
     //rotateInterval:      86400,
 
+    /* rotateCount         Number. Maximum number of old log files to keep.
+                                   Oldest logs beyond this count are deleted.  */
+    //rotateCount:         30,
+
     /* user                String. If started as root, switch to this user
                                    It is necessary to start as root if using ports < 1024   */
     //user:                'nobody',

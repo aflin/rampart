@@ -20,6 +20,7 @@ var defaultServerConf = function(wd){
         rotateLogs:     false,
         rotateInterval: 86400,
         rotateStart:    '00:00',
+        rotateCount:    30,
         user:           'nobody',
         threads:        -1,
         sslKeyFile:     '',
@@ -66,6 +67,7 @@ var defaultQuickServerConf = function(wd){
         rotateLogs:     false,
         rotateInterval: 86400,
         rotateStart:    '00:00',
+        rotateCount:    30,
         user:           'nobody',
         threads:        1,
         sslKeyFile:     '',
@@ -113,6 +115,7 @@ var optlist = {
 '--rotateLogs':     'Bool.   Whether to rotate the logs',
 '--rotateInterval': 'Number. Interval between log rotations in seconds',
 '--rotateStart':    'String. Time to start log rotations',
+'--rotateCount':    'Number. Maximum number of old log files to keep (default 30)',
 '--user':           'String. If started as root, switch to this user',
 '--threads':        'Number. Limit the number of threads used by the server.\n                     Default (-1) is the number of cores on the system',
 '--sslKeyFile':     'String. If https, the ssl/tls key file location',
@@ -928,6 +931,12 @@ function start(serverConf, dump) {
                 fprintf(stderr, 'serverConf.rotateInterval is set to less than 5 minutes, is that what your really want?\n');
             }
 
+            if(typeof serverConf.rotateCount != 'number') {
+                serverConf.rotateCount = -1;
+                fprintf(serverConf.logRoot + '/rotation-error.log', true,
+                    '%s - rotateCount is not a number, skipping deletion of old logs\n', dateFmt('%Y-%m-%d %H:%M:%S'));
+            }
+
             serverConf.isLocal=false;
             function getStartTime() {
                 var mdelay = serverConf.rotateInterval * 1000;
@@ -979,6 +988,12 @@ function start(serverConf, dump) {
 
             var prevAbackup=false, prevEbackup=false;
 
+            var rotErrLog = serverConf.logRoot + '/rotation-error.log';
+
+            function rotErr(msg) {
+                fprintf(rotErrLog, true, '%s - %s\n', dateFmt('%Y-%m-%d %H:%M:%S'), msg);
+            }
+
             function rotateLogs() {
                 serverpid=getPid('server');
                 if(!serverpid || !kill(serverpid,0)) {
@@ -998,7 +1013,7 @@ function start(serverConf, dump) {
                     try {
                         utils.rename( serverConf.accessLog, abackup);
                     } catch(e) {
-                        fpreintf(serverConf.errorLog, true, 'Cannot rename accessLog: %J\n', e.message);
+                        rotErr('Cannot rename accessLog: ' + e.message);
                         doArotate=false;
                     }
                 }
@@ -1009,7 +1024,7 @@ function start(serverConf, dump) {
                     try {
                         utils.rename( serverConf.errorLog, ebackup);
                     } catch(e) {
-                        fprintf(serverConf.errorLog, true, 'Cannot rename errorLog: %J\n', e.message);
+                        rotErr('Cannot rename errorLog: ' + e.message);
                         doErotate=false;
                     }
                 }
@@ -1025,6 +1040,31 @@ function start(serverConf, dump) {
                 if(doArotate) prevAbackup=abackup;
 
                 if(doErotate) prevEbackup=ebackup;
+
+                // delete old rotated logs beyond rotateCount
+                if(serverConf.rotateCount > 0) {
+                    try {
+                        var logdir = serverConf.logRoot;
+                        var files = utils.readDir(logdir);
+                        function cleanOld(baselog) {
+                            var base = baselog.substring(baselog.lastIndexOf('/') + 1);
+                            var old = files.filter(function(f) {
+                                return f.indexOf(base + '-') === 0;
+                            }).sort();
+                            while(old.length > serverConf.rotateCount) {
+                                try {
+                                    utils.rmFile(logdir + '/' + old.shift());
+                                } catch(e) {
+                                    rotErr('Cannot delete old log: ' + e.message);
+                                }
+                            }
+                        }
+                        if(doArotate) cleanOld(serverConf.accessLog);
+                        if(doErotate) cleanOld(serverConf.errorLog);
+                    } catch(e) {
+                        rotErr('Error cleaning old logs: ' + e.message);
+                    }
+                }
             }
 
             if(!serverConf.isLocal) {
