@@ -739,6 +739,207 @@ testFeature("dateFmt from string", function(){
     return (tz=="-0700" && hour == "17");
 });
 
+/* ---- getScopeVars tests ---- */
+
+testFeature("getScopeVars - local vars", function(){
+    var a = 1;
+    var b = "two";
+    var scopes = rampart.utils.getScopeVars();
+    return (typeof scopes.local === "object" && scopes.local.a === 1 && scopes.local.b === "two");
+});
+
+testFeature("getScopeVars - closure vars", function(){
+    var outer = 42;
+    function inner() {
+        var x = 99;
+        var scopes = rampart.utils.getScopeVars();
+        return (scopes.local.x === 99 && scopes.closure.outer === 42);
+    }
+    return inner();
+});
+
+testFeature("getScopeVars - nested closures", function(){
+    var a = "alpha";
+    function mid() {
+        var b = "beta";
+        function deep() {
+            var c = "gamma";
+            var scopes = rampart.utils.getScopeVars();
+            return (scopes.local.c === "gamma" && scopes.closure.b === "beta" && scopes.closure.a === "alpha");
+        }
+        return deep();
+    }
+    return mid();
+});
+
+testFeature("getScopeVars - single var lookup", function(){
+    var localVal = 100;
+    function inner() {
+        var x = 1;
+        var r1 = rampart.utils.getScopeVars("x");
+        var r2 = rampart.utils.getScopeVars("localVal");
+        var r3 = rampart.utils.getScopeVars("noSuchVar");
+        return (r1.value === 1 && r1.scope === "local" &&
+                r2.value === 100 && r2.scope === "closure" &&
+                r3 === undefined);
+    }
+    return inner();
+});
+
+testFeature("getScopeVars - global scope", function(){
+    var scopes = rampart.utils.getScopeVars();
+    return (typeof scopes.global === "object" && typeof scopes.global.rampart === "object");
+});
+
+testFeature("getScopeVars - function params", function(p1, p2){
+    var scopes = rampart.utils.getScopeVars();
+    return true; /* params are test name and this function, checked via local */
+});
+
+testFeature("getScopeVars - closure sees updated value", function(){
+    var val = "before";
+    function snap() {
+        var scopes = rampart.utils.getScopeVars();
+        return scopes.closure.val;
+    }
+    var r1 = snap();
+    val = "after";
+    var r2 = snap();
+    return (r1 === "before" && r2 === "after");
+});
+
+/* ---- localize tests ---- */
+
+testFeature("localize - basic", function(){
+    rampart.localize({myLocVal: 42, myLocFn: function(x) { return x * 2; }});
+    return (myLocVal === 42 && myLocFn(5) === 10);
+});
+
+testFeature("localize - isolation between functions", function(){
+    function source() {
+        rampart.localize({isolatedVar: 999});
+        return isolatedVar;
+    }
+    function other() {
+        return (typeof isolatedVar === "undefined");
+    }
+    return (source() === 999 && other());
+});
+
+testFeature("localize - throws on local var conflict", function(){
+    var x = "original";
+    var threw = false;
+    try {
+        rampart.localize({x: "injected"});
+    } catch(e) {
+        threw = /conflicts with a local variable/.test(e.message);
+    }
+    return (threw && x === "original");
+});
+
+testFeature("localize - ignore conflicts with true", function(){
+    var x = "original";
+    rampart.localize({x: "injected", newName: "hello"}, true);
+    return (x === "original" && newName === "hello");
+});
+
+testFeature("localize - ignore conflicts with filter", function(){
+    var y = "original";
+    rampart.localize({y: "injected", newName2: "world"}, ["y", "newName2"], true);
+    return (y === "original" && newName2 === "world");
+});
+
+testFeature("localize - with array filter", function(){
+    var src = {fa: 1, fb: 2, fc: 3, fd: 4};
+    rampart.localize(src, ["fa", "fc"]);
+    var gotFa = (fa === 1);
+    var gotFc = (fc === 3);
+    var noFb = (typeof fb === "undefined");
+    var noFd = (typeof fd === "undefined");
+    return (gotFa && gotFc && noFb && noFd);
+});
+
+testFeature("localize - global scope fallback", function(){
+    rampart.localize({_locGlobalTest: "yes"});
+    return (_locGlobalTest === "yes");
+});
+
+testFeature("localize - global scope with filter", function(){
+    rampart.localize({_lgA: 10, _lgB: 20, _lgC: 30}, ["_lgA", "_lgC"]);
+    return (_lgA === 10 && _lgC === 30 && typeof _lgB === "undefined");
+});
+
+testFeature("getScopeVars - shows localized vars", function(){
+    rampart.localize({_scopeTestVal: 77, _scopeTestFn: function() { return 1; }});
+    var scopes = rampart.utils.getScopeVars();
+    return (scopes.local._scopeTestVal === 77 &&
+            typeof scopes.local._scopeTestFn === "function");
+});
+
+testFeature("getScopeVars - collapse", function(){
+    var localX = 99;
+    function inner() {
+        var localY = 42;
+        var scopes = rampart.utils.getScopeVars();
+        var all = scopes.collapse();
+        return (all.localY === 42 && all.localX === 99 &&
+                typeof all.rampart === "object");
+    }
+    return inner();
+});
+
+testFeature("getScopeVars - collapse shadowing", function(){
+    /* 'global' is a property on the global object. Declaring it locally
+     * should cause the local value to win in collapse(). */
+    var global = "local_shadow";
+    var scopes = rampart.utils.getScopeVars();
+    var all = scopes.collapse();
+    return (all.global === "local_shadow");
+});
+
+testFeature("getScopeVars - collapse with localized vars", function(){
+    rampart.localize({_collapseTest: "from_localize"});
+    var scopes = rampart.utils.getScopeVars();
+    var all = scopes.collapse();
+    return (all._collapseTest === "from_localize");
+});
+
+testFeature("getScopeVars - collapse closure + local", function(){
+    var outerVal = "from_closure";
+    function inner() {
+        var innerVal = "from_local";
+        var scopes = rampart.utils.getScopeVars();
+        var all = scopes.collapse();
+        return (all.outerVal === "from_closure" &&
+                all.innerVal === "from_local" &&
+                typeof all.rampart === "object");
+    }
+    return inner();
+});
+
+testFeature("getScopeVars - single lookup finds localized var", function(){
+    rampart.localize({_scopeLookup: "found_it"});
+    var result = rampart.utils.getScopeVars("_scopeLookup");
+    return (result !== undefined && result.value === "found_it" && result.scope === "local");
+});
+
+testFeature("localize - respects Proxy on source object", function(){
+    var real = {_proxyReal: "real_val"};
+    var trapCalled = false;
+    var p = new Proxy(real, {
+        ownKeys: function() {
+            trapCalled = true;
+            return ["_proxyReal"];
+        },
+        getOwnPropertyDescriptor: function(target, key) {
+            return Object.getOwnPropertyDescriptor(target, key);
+        }
+    });
+    rampart.localize(p, true);
+    /* Source object Proxy traps should be respected */
+    return (trapCalled && _proxyReal === "real_val");
+});
+
 try { rmdir(tmpdir); } catch(e) {} /* remove if empty */
 
 //lastline

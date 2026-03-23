@@ -205,6 +205,26 @@ testFeature("redis proxyObj -- destroy", function() {
     return (set.length == 0);
 });
 
+testFeature("redis proxyObj -- localize proxy enum", function() {
+    /* Pass a proxyObj directly to localize.  This exercises the Proxy
+     * ownKeys trap (returns hkeys from Redis) and the get trap (reads
+     * each value from Redis) during duk_enum of the source object.
+     */
+    var rp = new rcl.proxyObj("loctest2");
+    rp.greeting = "hello from redis";
+    rp.count = 42;
+
+    rampart.localize(rp, true);
+
+    /* greeting and count are now in local scope, copied from Redis
+     * via Proxy get trap during the localize enumeration.
+     */
+    var ok = (greeting === "hello from redis" && count === 42);
+
+    rp._destroy();
+    return ok;
+});
+
 testFeature("K/V Command - set/get/getdel/keys", function() {
     var r1=rcl.set("testkey", "abcd");
     var r2=rcl.get("testkey");

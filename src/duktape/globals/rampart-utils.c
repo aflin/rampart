@@ -5609,6 +5609,113 @@ static duk_ret_t str_to_num(duk_context *ctx)
 // a test for "%m/%d/%y%n" failing to match space (linux)
 static int strptime_fmt_n_does_not_match=0;
 
+/* rampart.utils.getScopeVars([varname])
+ *
+ * No arguments:  return { local: {...}, closure: {...}, global: {...} }
+ *   with: included only if a 'with' scope exists.
+ *
+ * String argument:  look up that variable by name across all scopes,
+ *   return { value: <val>, scope: "local"|"closure"|"with"|"global" }
+ *   or undefined if not found.
+ *
+ * Stack level -2 from the C wrapper = the JS function that called us.
+ */
+/* collapse(): merge all scopes into one flat object.
+ * Applied outermost-first so inner scopes shadow outer ones:
+ * global -> with -> closure -> local
+ */
+static duk_ret_t duk_rp_scope_collapse(duk_context *ctx)
+{
+    static const char *scope_order[] = {"global", "with", "closure", "local"};
+    int i;
+    duk_idx_t this_idx, res_idx;
+
+    duk_push_this(ctx);
+    this_idx = duk_get_top_index(ctx);
+    duk_push_bare_object(ctx);
+    res_idx = duk_get_top_index(ctx);
+
+    for (i = 0; i < 4; i++) {
+        if (duk_get_prop_string(ctx, this_idx, scope_order[i]) && duk_is_object(ctx, -1)) {
+            duk_enum(ctx, -1, DUK_ENUM_OWN_PROPERTIES_ONLY | DUK_ENUM_NO_PROXY_BEHAVIOR);
+            while (duk_next(ctx, -1, 1 /*get_value*/)) {
+                duk_put_prop(ctx, res_idx); /* pops key+value */
+            }
+            duk_pop(ctx); /* pop enum */
+        }
+        duk_pop(ctx); /* pop scope object or undefined */
+    }
+
+    return 1; /* result object on top */
+}
+
+static duk_ret_t duk_rp_get_scope_vars_wrapper(duk_context *ctx)
+{
+    if (!duk_is_undefined(ctx, 0)) {
+        /* Single variable lookup */
+        const char *varname = REQUIRE_STRING(ctx, 0,
+            "rampart.utils.getScopeVars - first argument must be a String (variable name) or undefined");
+        duk_rp_get_scope_vars(ctx, -2, 0 /* ignored */, varname);
+        return 1;
+    }
+
+    /* Return all scopes as { local: {...}, closure: {...}, ... } */
+    duk_push_bare_object(ctx);
+
+    duk_rp_get_scope_vars(ctx, -2, DUK_SCOPE_LOCAL, NULL);
+    duk_put_prop_string(ctx, -2, "local");
+
+    duk_rp_get_scope_vars(ctx, -2, DUK_SCOPE_CLOSURE, NULL);
+    duk_put_prop_string(ctx, -2, "closure");
+
+    duk_rp_get_scope_vars(ctx, -2, DUK_SCOPE_WITH, NULL);
+    if (duk_is_undefined(ctx, -1)) {
+        duk_pop(ctx); /* no with scope, omit key */
+    } else {
+        duk_put_prop_string(ctx, -2, "with");
+    }
+
+    duk_rp_get_scope_vars(ctx, -2, DUK_SCOPE_GLOBAL, NULL);
+    duk_put_prop_string(ctx, -2, "global");
+
+    /* Attach collapse() method */
+    duk_push_c_function(ctx, duk_rp_scope_collapse, 0);
+    duk_put_prop_string(ctx, -2, "collapse");
+
+    return 1;
+}
+
+/* rampart.localize(obj [, arrayOrBool [, bool]])
+ *
+ * Copy enumerable own properties of 'obj' into the calling JS function's
+ * local scope.  Names that are not declared with 'var' in that function
+ * become accessible as if they were local variables.
+ *
+ * By default, throws a TypeError if a property name conflicts with a
+ * local variable declaration (var).  Pass true to silently skip conflicts.
+ *
+ * Forms:
+ *   rampart.localize(obj)                  - all keys, throw on conflict
+ *   rampart.localize(obj, true)            - all keys, ignore conflicts
+ *   rampart.localize(obj, ["keys"])        - filtered, throw on conflict
+ *   rampart.localize(obj, ["keys"], true)  - filtered, ignore conflicts
+ */
+static duk_ret_t duk_rp_localize_wrapper(duk_context *ctx)
+{
+    duk_bool_t ignore_conflicts = 0;
+
+    REQUIRE_OBJECT(ctx, 0, "rampart.localize - first argument must be an Object");
+
+    if (duk_is_boolean(ctx, 1)) {
+        ignore_conflicts = duk_get_boolean(ctx, 1);
+    } else if (duk_is_array(ctx, 1) && duk_is_boolean(ctx, 2)) {
+        ignore_conflicts = duk_get_boolean(ctx, 2);
+    }
+
+    duk_rp_localize(ctx, -2, 0, 1, ignore_conflicts);
+    return 0;
+}
+
 void duk_rampart_init(duk_context *ctx)
 {
     struct tm tst={0}, *tst_p=&tst;
@@ -5767,6 +5874,8 @@ void duk_rampart_init(duk_context *ctx)
     duk_put_prop_string(ctx, -2, "sleep");
     duk_push_c_function(ctx, str_to_num, 2);
     duk_put_prop_string(ctx, -2, "stringToNumber");
+    duk_push_c_function(ctx, duk_rp_get_scope_vars_wrapper, 1);
+    duk_put_prop_string(ctx, -2, "getScopeVars");
 
     /* all above are rampart.utils.xyz() functions*/
     duk_put_prop_string(ctx, -2, "utils");
@@ -5774,6 +5883,9 @@ void duk_rampart_init(duk_context *ctx)
     /* globalize is rampart.globalize() */
     duk_push_c_function(ctx, duk_rp_globalize,2);
     duk_put_prop_string(ctx, -2, "globalize");
+
+    duk_push_c_function(ctx, duk_rp_localize_wrapper, 3);
+    duk_put_prop_string(ctx, -2, "localize");
 
     duk_push_c_function(ctx, include_js, 1);
     duk_put_prop_string(ctx, -2, "include");

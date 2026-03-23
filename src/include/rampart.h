@@ -758,6 +758,12 @@ void run_b4loop_funcs();
 
 
 extern void duk_rp_fatal(void *udata, const char *msg);
+#define DUK_SCOPE_LOCAL   0
+#define DUK_SCOPE_CLOSURE 1
+#define DUK_SCOPE_WITH    2
+#define DUK_SCOPE_GLOBAL  3
+extern void duk_rp_get_scope_vars(duk_context *ctx, duk_int_t call_stack_level, int type, const char *varname);
+extern void duk_rp_localize(duk_context *ctx, duk_int_t call_stack_level, duk_idx_t obj_idx, duk_idx_t filter_arr_idx, duk_bool_t ignore_conflicts);
 
 /*
 #define DUK_USE_FATAL_HANDLER(udata,msg) do { \

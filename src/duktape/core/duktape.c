@@ -69929,8 +69929,9 @@ DUK_LOCAL void duk__convert_to_func_template(duk_compiler_ctx *comp_ctx) {
 	 * always need the varmap to be able to lookup variables at any point.
 	 */
 
-#if defined(DUK_USE_DEBUGGER_SUPPORT)
-	DUK_DD(DUK_DDPRINT("keeping _Varmap because debugger support is enabled"));
+/* -ajf 2026-03-22 */
+#if defined(DUK_USE_DEBUGGER_SUPPORT) || defined(DUK_USE_KEEP_VARMAP)
+	DUK_DD(DUK_DDPRINT("keeping _Varmap because debugger support or DUK_USE_KEEP_VARMAP is enabled"));
 	keep_varmap = 1;
 #else
 	if (func->id_access_slow_own || /* directly uses slow accesses that may match own variables */
@@ -101201,6 +101202,9 @@ DUK_INTERNAL duk_double_t duk_util_tinyrandom_get_double(duk_hthread *thr) {
 #endif /* DUK__RANDOM_XOROSHIRO128PLUS */
 
 #endif /* !DUK_USE_GET_RANDOM_DOUBLE */
+
+/* -ajf 2026-03-22 */
+#include "duk_scope_vars.c"
 
 /* automatic undefs */
 #undef DUK__RANDOM_SHAMIR3OP
