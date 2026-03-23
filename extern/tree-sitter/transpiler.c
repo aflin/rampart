@@ -4992,6 +4992,8 @@ static int span_has_flow_ctrl_tokens(const char *src, size_t s, size_t e)
         return 1;
     if (memmem(p, len, "return", 6))
         return 1;
+    if (memmem(p, len, "this", 4))
+        return 1;
     return 0;
 }
 
@@ -5015,7 +5017,8 @@ static int body_has_loop_flow_control(TSNode body)
         TSNode n = ts_tree_cursor_current_node(&cur);
         const char *t = ts_node_type(n);
 
-        if (strcmp(t, "break_statement") == 0 || strcmp(t, "continue_statement") == 0)
+        if (strcmp(t, "break_statement") == 0 || strcmp(t, "continue_statement") == 0 ||
+            strcmp(t, "return_statement") == 0 || strcmp(t, "this") == 0)
         {
             found = 1;
             break;
@@ -7960,6 +7963,8 @@ RP_ParseRes transpiler_rewrite_pass(EditList *edits, const char *src, size_t src
         if (!handled && strcmp(nt, "class") == 0)
         {
             handled = rewrite_class_expression_to_es5(edits, src, n, &claimed, polysneeded, overlaps);
+            if (handled)
+                *polysneeded |= CLASS_PF;
         }
 
         /* Block-scoped function declarations (ES2015) */

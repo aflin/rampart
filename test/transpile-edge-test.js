@@ -1201,3 +1201,39 @@ testFeature("const - nested destructuring", function() {
     const {a: {b}} = {a: {b: 42}};
     return b === 42;
 });
+
+/* ===================================================================
+   22. CLASS EXPRESSION POLYFILL EDGE CASES
+   =================================================================== */
+
+// class expression (var X = class _X {}) must emit CLASS_PF polyfill
+testFeature("class expr - polyfill emitted", function() {
+    var Foo = class _Foo {
+        constructor(v) { this.v = v; }
+        get() { return this.v; }
+    };
+    var f = new Foo(42);
+    return f.get() === 42;
+});
+
+// class expression with extends
+testFeature("class expr - extends works", function() {
+    var Base = class _Base {
+        constructor(v) { this.v = v; }
+    };
+    var Child = class _Child extends Base {
+        constructor(v) { super(v * 2); }
+        get() { return this.v; }
+    };
+    return new Child(5).get() === 10;
+});
+
+// class expression assigned inline (esbuild pattern)
+testFeature("class expr - inline assignment", function() {
+    var classes = {};
+    classes.Pair = class _Pair {
+        constructor(a, b) { this.a = a; this.b = b; }
+        sum() { return this.a + this.b; }
+    };
+    return new classes.Pair(3, 7).sum() === 10;
+});
