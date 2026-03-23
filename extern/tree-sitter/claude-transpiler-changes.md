@@ -553,3 +553,170 @@ if (edits.len || polysneeded)
 ```
 
 **Why:** When only non-polyfill edits are made (e.g., `let` -> `var`, destructuring), `polysneeded` stays 0, and the `_TrN_Sp` global object is never created. But the transpiled code may reference `_TrN_Sp` (e.g., destructuring in code that also uses other features). Setting `BASE_PF` ensures the preamble is always present when edits are applied.
+
+---
+
+March 23, 2026
+
+---
+
+## 17. Missing `overlaps` Check in `rewrite_for_of_simple`
+
+**Location:** Line ~6762
+
+**What changed:** Added the overlap guard that was missing from `rewrite_for_of_simple`. The `overlaps` parameter was previously cast to `(void)` and ignored.
+
+**Old code:**
+```c
+(void)polysneeded;
+(void)overlaps; // currently unused
+
+if (ts_node_is_null(forof))
+    return 0;
+if (strcmp(ts_node_type(forof), "for_in_statement") != 0)
+    return 0;
+```
+
+**New code:**
+```c
+(void)polysneeded;
+
+if (ts_node_is_null(forof))
+    return 0;
+if (strcmp(ts_node_type(forof), "for_in_statement") != 0)
+    return 0;
+
+if (overlaps)
+    return 1;
+```
+
+**Why:** When a `for...of` loop was inside an arrow function, the arrow function rewriter claimed the range in pass 1, but `rewrite_for_of_simple` ignored the overlap and also added edits to the same range. Both edits were applied, producing garbled output (the for-of rewrite appeared twice — once correctly in the arrow body and once appended after it). With the overlap check, the for-of is deferred to pass 2 where the arrow has already been rewritten to a regular function.
+
+---
+
+## 18. IIFE Wrapping Skipped for `let`/`const` in For Loops with `break`/`continue`
+
+**Location:** Lines ~5066 (`rewrite_lexical_declaration`) and ~6937 (`rewrite_for_of_simple`)
+
+**What changed:** Added `body_has_loop_flow_control(body)` check before IIFE-wrapping loop bodies when converting `let`/`const` to `var` in for loops and for-of loops.
+
+**New helper function** `body_has_loop_flow_control`:
+```c
+static int body_has_loop_flow_control(TSNode body)
+```
+AST-based walk that detects `break_statement` or `continue_statement` nodes that are direct children of the loop body. Stops descending at function boundaries (`function`, `arrow_function`) and nested loops (`for_statement`, `for_in_statement`, `while_statement`, `do_statement`) so that break/continue inside nested functions or inner loops don't false-positive.
+
+**In `rewrite_lexical_declaration` (for-loop path):**
+
+Old code unconditionally IIFE-wrapped:
+```c
+if (params->len > 0)
+{
+    // ... always wraps body in (function(i){ ... })(i);
+}
+```
+
+New code checks first:
+```c
+if (params->len > 0)
+{
+    // ...
+    if (!body_has_loop_flow_control(body))
+    {
+        // ... IIFE wrap
+    }
+}
+```
+
+**In `rewrite_for_of_simple` (for-of with `let`/`const`):**
+
+Added before the IIFE wrapping:
+```c
+if (is_let && body_has_loop_flow_control(body))
+    is_let = false;
+```
+
+**Why:** `break` and `continue` cannot cross function boundaries. When `for (let i = 0; ...) { if (x) break; }` was transpiled, the IIFE wrapping produced `(function(i){ if (x) break; })(i)` which is a syntax error — `break` is invalid inside an anonymous function. The fix skips the IIFE when the body contains flow control statements. The trade-off is that closures capturing the loop variable in such loops will see the final value instead of per-iteration values, but this is preferable to broken code.
+
+The text-based `span_has_flow_ctrl_tokens` (used in the non-for-loop path) was not reused here because it matches `break`/`continue`/`return` inside nested functions too, which would incorrectly prevent IIFE wrapping when the keywords are harmlessly inside closures.
+
+---
+
+## 19. `const`/`let` Not Converted in Plain `for...in` Loops
+
+**Location:** Lines ~8048-8079 (`transpiler_rewrite_pass` dispatch loop)
+
+**What changed:** Added a handler for `let`/`const` in plain `for...in` loops (not `for...of`). When both `rewrite_for_of_destructuring` and `rewrite_for_of_simple` return 0 (because the loop is `for...in`, not `for...of`), the new code checks for a `kind` field (`let`/`const`) and replaces it with `var`.
+
+**New code (in dispatch loop):**
+```c
+// Handle let/const in plain for...in: just replace the keyword with var
+if (!handled)
+{
+    TSNode kind = ts_node_child_by_field_name(n, "kind", 4);
+    if (!ts_node_is_null(kind))
+    {
+        size_t ks = ts_node_start_byte(kind), ke = ts_node_end_byte(kind);
+        if ((ke - ks == 3 && strncmp(src + ks, "let", 3) == 0))
+        {
+            if (!overlaps)
+                add_edit(edits, ks, ke, "var", &claimed);
+            handled = 1;
+        }
+        else if ((ke - ks == 5 && strncmp(src + ks, "const", 5) == 0))
+        {
+            if (!overlaps)
+                add_edit(edits, ks, ke, "var  ", &claimed);
+            handled = 1;
+        }
+    }
+}
+```
+
+**Why:** Tree-sitter encodes both `for...in` and `for...of` as `for_in_statement`. The existing for-of rewriters check for the `of` operator and return 0 for plain `for...in`. But when the `for...in` uses `let` or `const` (e.g., `for (const key in obj)`), the `rewrite_lexical_declaration` function never sees it because the `const` keyword is a `kind` child of the `for_in_statement`, not part of a `lexical_declaration` node. Duktape cannot parse `const` so this caused a syntax error.
+
+---
+
+## 20. `const`/`let` Destructuring Declarations Not Lowered
+
+**Location:** Lines ~1422-1425 (`rewrite_destructuring_declaration`) and ~8081-8085 (dispatch loop)
+
+**What changed:**
+
+1. `rewrite_destructuring_declaration` now accepts `lexical_declaration` in addition to `variable_declaration`:
+
+**Old code:**
+```c
+if (strcmp(ts_node_type(node), "variable_declaration") != 0)
+    return 0;
+```
+
+**New code:**
+```c
+if (strcmp(ts_node_type(node), "variable_declaration") != 0 &&
+    strcmp(ts_node_type(node), "lexical_declaration") != 0)
+    return 0;
+```
+
+2. In the dispatch loop, `lexical_declaration` now tries destructuring before the keyword-only conversion:
+
+**Old code:**
+```c
+if (!handled && strcmp(nt, "lexical_declaration") == 0)
+{
+    handled = rewrite_lexical_declaration(edits, src, n, &claimed, overlaps, no_program_wrap);
+}
+```
+
+**New code:**
+```c
+if (!handled && strcmp(nt, "lexical_declaration") == 0)
+{
+    // Try destructuring first — it handles the keyword change itself
+    handled = rewrite_destructuring_declaration(edits, src, n, &claimed, overlaps);
+    if (!handled)
+        handled = rewrite_lexical_declaration(edits, src, n, &claimed, overlaps, no_program_wrap);
+}
+```
+
+**Why:** `const [a, b] = arr;` is a `lexical_declaration` node, not a `variable_declaration`. Previously, `rewrite_lexical_declaration` would replace `const` with `var` and claim the range, but the array destructuring `[a, b] = arr` was not lowered — leaving `var [a, b] = arr` which Duktape cannot parse. By trying the destructuring rewriter first, the entire declaration is properly lowered to `var _d1 = arr; var a = _d1[0]; var b = _d1[1];` in a single edit.

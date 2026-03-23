@@ -1421,7 +1421,8 @@ static unsigned _destr_counter = 0;
 // Rewrite: var {x, y} = expr;    ->  var _d = expr; var x = _d.x; var y = _d.y;
 static int rewrite_destructuring_declaration(EditList *edits, const char *src, TSNode node, RangeList *claimed, int overlaps)
 {
-    if (strcmp(ts_node_type(node), "variable_declaration") != 0)
+    if (strcmp(ts_node_type(node), "variable_declaration") != 0 &&
+        strcmp(ts_node_type(node), "lexical_declaration") != 0)
         return 0;
 
     // Check each declarator for destructuring patterns
@@ -4994,6 +4995,57 @@ static int span_has_flow_ctrl_tokens(const char *src, size_t s, size_t e)
     return 0;
 }
 
+/* AST-based check: walk body for break/continue statements that belong
+   to THIS loop (not nested loops or functions). Stops descending at
+   function boundaries and nested loops. */
+static int body_has_loop_flow_control(TSNode body)
+{
+    TSTreeCursor cur = ts_tree_cursor_new(body);
+    int found = 0;
+
+    /* descend into first child to skip the body node itself */
+    if (!ts_tree_cursor_goto_first_child(&cur))
+    {
+        ts_tree_cursor_delete(&cur);
+        return 0;
+    }
+
+    for (;;)
+    {
+        TSNode n = ts_tree_cursor_current_node(&cur);
+        const char *t = ts_node_type(n);
+
+        if (strcmp(t, "break_statement") == 0 || strcmp(t, "continue_statement") == 0)
+        {
+            found = 1;
+            break;
+        }
+
+        /* Don't descend into functions or nested loops — their break/continue
+           don't affect our loop */
+        int skip_children = 0;
+        if (strstr(t, "function") || strcmp(t, "arrow_function") == 0 ||
+            strcmp(t, "for_statement") == 0 || strcmp(t, "for_in_statement") == 0 ||
+            strcmp(t, "while_statement") == 0 || strcmp(t, "do_statement") == 0)
+            skip_children = 1;
+
+        if (!skip_children && ts_tree_cursor_goto_first_child(&cur))
+            continue;
+
+        while (!ts_tree_cursor_goto_next_sibling(&cur))
+        {
+            if (!ts_tree_cursor_goto_parent(&cur))
+                goto done;
+            /* stop if we've walked back up to the body node */
+            if (ts_node_eq(ts_tree_cursor_current_node(&cur), body))
+                goto done;
+        }
+    }
+done:
+    ts_tree_cursor_delete(&cur);
+    return found;
+}
+
 static int rewrite_lexical_declaration(EditList *edits, const char *src, TSNode lexical_decl, RangeList *claimed,
                                        int overlaps, int no_program_wrap)
 {
@@ -5070,29 +5122,37 @@ static int rewrite_lexical_declaration(EditList *edits, const char *src, TSNode 
                     {
                         size_t bs = ts_node_start_byte(body);
                         size_t be = ts_node_end_byte(body);
-                        int is_block = (strcmp(ts_node_type(body), "statement_block") == 0);
 
-                        rp_string *pref = rp_string_new(64);
-                        rp_string *suff = rp_string_new(64);
-                        rp_string_puts(pref, "(function(");
-                        rp_string_putsn(pref, params->str ? params->str : "", params->len);
-                        rp_string_puts(pref, "){ ");
-                        rp_string_puts(suff, " })( ");
-                        rp_string_putsn(suff, args->str ? args->str : "", args->len);
-                        rp_string_puts(suff, " );");
+                        /* Skip IIFE wrapping if body contains break/continue
+                           that target this loop — these cannot cross function
+                           boundaries. The let->var conversion still happens;
+                           only the fresh-binding IIFE is skipped. */
+                        if (!body_has_loop_flow_control(body))
+                        {
+                            int is_block = (strcmp(ts_node_type(body), "statement_block") == 0);
 
-                        if (is_block)
-                        {
-                            add_edit_take_ownership(edits, bs + 1, bs + 1, rp_string_steal(pref), claimed);
-                            add_edit_take_ownership(edits, be - 1, be - 1, rp_string_steal(suff), claimed);
+                            rp_string *pref = rp_string_new(64);
+                            rp_string *suff = rp_string_new(64);
+                            rp_string_puts(pref, "(function(");
+                            rp_string_putsn(pref, params->str ? params->str : "", params->len);
+                            rp_string_puts(pref, "){ ");
+                            rp_string_puts(suff, " })( ");
+                            rp_string_putsn(suff, args->str ? args->str : "", args->len);
+                            rp_string_puts(suff, " );");
+
+                            if (is_block)
+                            {
+                                add_edit_take_ownership(edits, bs + 1, bs + 1, rp_string_steal(pref), claimed);
+                                add_edit_take_ownership(edits, be - 1, be - 1, rp_string_steal(suff), claimed);
+                            }
+                            else
+                            {
+                                add_edit_take_ownership(edits, bs, bs, rp_string_steal(pref), claimed);
+                                add_edit_take_ownership(edits, be, be, rp_string_steal(suff), claimed);
+                            }
+                            pref=rp_string_free(pref);
+                            suff=rp_string_free(suff);
                         }
-                        else
-                        {
-                            add_edit_take_ownership(edits, bs, bs, rp_string_steal(pref), claimed);
-                            add_edit_take_ownership(edits, be, be, rp_string_steal(suff), claimed);
-                        }
-                        pref=rp_string_free(pref);
-                        suff=rp_string_free(suff);
                     }
                 }
 
@@ -6759,12 +6819,14 @@ static int rewrite_for_of_simple(EditList *edits, const char *src, TSNode forof,
                                  uint32_t *polysneeded, int overlaps)
 {
     (void)polysneeded;
-    (void)overlaps; // currently unused
 
     if (ts_node_is_null(forof))
         return 0;
     if (strcmp(ts_node_type(forof), "for_in_statement") != 0)
         return 0;
+
+    if (overlaps)
+        return 1;
 
     // Ensure this is actually a "for … of …" (tree-sitter encodes both in the same node type)
     TSNode op = ts_node_child_by_field_name(forof, "operator", 8);
@@ -6872,7 +6934,11 @@ static int rewrite_for_of_simple(EditList *edits, const char *src, TSNode forof,
     rp_string_putsn(out, src + ns, ne - ns);
     rp_string_appendf(out, " = %s?%s.value:%s[%s++]; ", itbuf, rbuf, xbuf, ibuf);
 
-    // For let/const: IIFE-wrap body so closures get fresh per-iteration binding
+    // For let/const: IIFE-wrap body so closures get fresh per-iteration binding,
+    // but skip if body contains break/continue (can't cross function boundaries)
+    if (is_let && body_has_loop_flow_control(body))
+        is_let = false;
+
     if (is_let)
     {
         rp_string_puts(out, "(function(");
@@ -7993,11 +8059,35 @@ RP_ParseRes transpiler_rewrite_pass(EditList *edits, const char *src, size_t src
             {
                 handled = rewrite_for_of_simple(edits, src, n, &claimed, polysneeded, overlaps);
             }
+            // Handle let/const in plain for...in: just replace the keyword with var
+            if (!handled)
+            {
+                TSNode kind = ts_node_child_by_field_name(n, "kind", 4);
+                if (!ts_node_is_null(kind))
+                {
+                    size_t ks = ts_node_start_byte(kind), ke = ts_node_end_byte(kind);
+                    if ((ke - ks == 3 && strncmp(src + ks, "let", 3) == 0))
+                    {
+                        if (!overlaps)
+                            add_edit(edits, ks, ke, "var", &claimed);
+                        handled = 1;
+                    }
+                    else if ((ke - ks == 5 && strncmp(src + ks, "const", 5) == 0))
+                    {
+                        if (!overlaps)
+                            add_edit(edits, ks, ke, "var  ", &claimed);
+                        handled = 1;
+                    }
+                }
+            }
         }
 
         if (!handled && strcmp(nt, "lexical_declaration") == 0)
         {
-            handled = rewrite_lexical_declaration(edits, src, n, &claimed, overlaps, no_program_wrap);
+            // Try destructuring first — it handles the keyword change itself
+            handled = rewrite_destructuring_declaration(edits, src, n, &claimed, overlaps);
+            if (!handled)
+                handled = rewrite_lexical_declaration(edits, src, n, &claimed, overlaps, no_program_wrap);
         }
 
         if (!handled && strcmp(nt, "array") == 0)

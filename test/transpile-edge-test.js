@@ -1063,3 +1063,141 @@ testFeature("class - rest in method with leading params", function() {
     }
     return new Logger().log("INFO", "a", "b") === "INFO: a, b";
 });
+
+/* ===================================================================
+   18. FOR-OF INSIDE ARROW / OVERLAP EDGE CASES
+   =================================================================== */
+
+// for...of inside arrow function (was double-rewritten due to missing overlap check)
+testFeature("for-of - inside arrow function", function() {
+    var fn = (arr) => {
+        var result = [];
+        for (var x of arr) {
+            result.push(x * 2);
+        }
+        return result;
+    };
+    return fn([1,2,3]).join(",") === "2,4,6";
+});
+
+// for...of with let inside arrow (overlap + IIFE)
+testFeature("for-of - let in arrow", function() {
+    var fn = (arr) => {
+        var funcs = [];
+        for (let x of arr) {
+            funcs.push(function() { return x; });
+        }
+        return funcs.map(function(f) { return f(); });
+    };
+    return fn([10,20,30]).join(",") === "10,20,30";
+});
+
+/* ===================================================================
+   19. LET/CONST IN FOR LOOPS WITH BREAK/CONTINUE
+   =================================================================== */
+
+// let in for loop with break (IIFE must be skipped)
+testFeature("let - for loop with break", function() {
+    var result = [];
+    for (let i = 0; i < 5; i++) {
+        if (i === 3) break;
+        result.push(i);
+    }
+    return result.join(",") === "0,1,2";
+});
+
+// let in for loop with continue (IIFE must be skipped)
+testFeature("let - for loop with continue", function() {
+    var result = [];
+    for (let i = 0; i < 5; i++) {
+        if (i % 2 === 0) continue;
+        result.push(i);
+    }
+    return result.join(",") === "1,3";
+});
+
+// let in for loop with closure but no break (IIFE preserved)
+testFeature("let - for loop closure no break", function() {
+    var funcs = [];
+    for (let i = 0; i < 3; i++) {
+        funcs.push(function() { return i; });
+    }
+    return funcs[0]() === 0 && funcs[1]() === 1 && funcs[2]() === 2;
+});
+
+// const in for...of with continue (IIFE must be skipped)
+testFeature("const - for-of with continue", function() {
+    var result = [];
+    var items = [1, 2, 3, 4, 5];
+    for (const x of items) {
+        if (x % 2 === 0) continue;
+        result.push(x);
+    }
+    return result.join(",") === "1,3,5";
+});
+
+// const in for...of with break
+testFeature("const - for-of with break", function() {
+    var result = [];
+    var items = [10, 20, 30, 40];
+    for (const x of items) {
+        if (x > 20) break;
+        result.push(x);
+    }
+    return result.join(",") === "10,20";
+});
+
+// break inside nested function should NOT prevent IIFE
+testFeature("let - break in nested func still wraps IIFE", function() {
+    var funcs = [];
+    for (let i = 0; i < 3; i++) {
+        funcs.push(function() { if (i > 1) return "big"; return i; });
+    }
+    return funcs[0]() === 0 && funcs[1]() === 1 && funcs[2]() === "big";
+});
+
+/* ===================================================================
+   20. CONST/LET IN FOR...IN LOOPS
+   =================================================================== */
+
+testFeature("const - for-in loop", function() {
+    var obj = {a: 1, b: 2, c: 3};
+    var keys = [];
+    for (const key in obj) {
+        keys.push(key);
+    }
+    return keys.sort().join(",") === "a,b,c";
+});
+
+testFeature("let - for-in loop", function() {
+    var obj = {x: 10, y: 20};
+    var keys = [];
+    for (let key in obj) {
+        keys.push(key);
+    }
+    return keys.sort().join(",") === "x,y";
+});
+
+/* ===================================================================
+   21. CONST/LET DESTRUCTURING DECLARATIONS
+   =================================================================== */
+
+testFeature("const - array destructuring", function() {
+    const [a, b, c] = [1, 2, 3];
+    return a === 1 && b === 2 && c === 3;
+});
+
+testFeature("const - object destructuring", function() {
+    const {x, y} = {x: 10, y: 20, z: 30};
+    return x === 10 && y === 20;
+});
+
+testFeature("let - array destructuring with defaults", function() {
+    let [a, b, c] = [1, undefined, 3];
+    return a === 1 && b === undefined && c === 3;
+});
+
+testFeature("const - nested destructuring", function() {
+    const {a: {b}} = {a: {b: 42}};
+    return b === 42;
+});
