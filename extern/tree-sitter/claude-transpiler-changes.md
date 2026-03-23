@@ -720,3 +720,78 @@ if (!handled && strcmp(nt, "lexical_declaration") == 0)
 ```
 
 **Why:** `const [a, b] = arr;` is a `lexical_declaration` node, not a `variable_declaration`. Previously, `rewrite_lexical_declaration` would replace `const` with `var` and claim the range, but the array destructuring `[a, b] = arr` was not lowered — leaving `var [a, b] = arr` which Duktape cannot parse. By trying the destructuring rewriter first, the entire declaration is properly lowered to `var _d1 = arr; var a = _d1[0]; var b = _d1[1];` in a single edit.
+
+---
+
+## 21. CLASS_PF Polyfill Not Emitted for Class Expressions
+
+**Location:** Lines ~7960-7963 (`transpiler_rewrite_pass` dispatch loop)
+
+**What changed:** Added `*polysneeded |= CLASS_PF;` after successful handling of class expressions.
+
+**Old code:**
+```c
+if (!handled && strcmp(nt, "class") == 0)
+{
+    handled = rewrite_class_expression_to_es5(edits, src, n, &claimed, polysneeded, overlaps);
+}
+```
+
+**New code:**
+```c
+if (!handled && strcmp(nt, "class") == 0)
+{
+    handled = rewrite_class_expression_to_es5(edits, src, n, &claimed, polysneeded, overlaps);
+    if (handled)
+        *polysneeded |= CLASS_PF;
+}
+```
+
+**Why:** Class declarations (`class Foo {}`, node type `class_declaration`) correctly set `CLASS_PF` at line 7957, causing the `_TrN_Sp.createClass`, `_TrN_Sp.classCallCheck`, `_TrN_Sp.inherits`, etc. polyfill functions to be emitted. But class expressions (`var Foo = class Bar {}`, node type `class`), which are handled by `rewrite_class_expression_to_es5`, never set `CLASS_PF`. The transpiled output would contain calls to `_TrN_Sp.createClass()` but the function definition was missing, causing `TypeError: undefined not callable (property 'createClass')` at runtime. This particularly affects bundled code (e.g., esbuild output) which commonly uses `var X = class _X { ... }` syntax.
+
+---
+
+## 22. IIFE Wrapping Breaks `this` and `return` in Non-Loop Blocks and For-Of Loops
+
+**Location:** `span_has_flow_ctrl_tokens` (~line 4982) and `body_has_loop_flow_control` (~line 5003)
+
+**What changed:**
+
+1. Added `"this"` to `span_has_flow_ctrl_tokens` (text-based check used for non-loop block wrapping):
+
+**Old code:**
+```c
+if (memmem(p, len, "return", 6))
+    return 1;
+return 0;
+```
+
+**New code:**
+```c
+if (memmem(p, len, "return", 6))
+    return 1;
+if (memmem(p, len, "this", 4))
+    return 1;
+return 0;
+```
+
+2. Added `return_statement` and `this` to `body_has_loop_flow_control` (AST-based check used for for-loop and for-of IIFE wrapping):
+
+**Old code:**
+```c
+if (strcmp(t, "break_statement") == 0 || strcmp(t, "continue_statement") == 0)
+```
+
+**New code:**
+```c
+if (strcmp(t, "break_statement") == 0 || strcmp(t, "continue_statement") == 0 ||
+    strcmp(t, "return_statement") == 0 || strcmp(t, "this") == 0)
+```
+
+**Why:** The `let`/`const` → `var` IIFE wrapping `(function(x){ ... })(x)` breaks three categories of statements that cannot cross function boundaries:
+
+- **`break`/`continue`**: Already handled in fix #18. Cause `SyntaxError: invalid label`.
+- **`return`**: A `return def` inside an IIFE returns from the anonymous function, not from the enclosing function. The return value is silently discarded by the while loop. This caused `utils.get()` in the date-holidays 3.x bundle to never return `undefined` for missing keys — the `return def` was swallowed, and `get()` returned the last valid intermediate object instead. This broke `getStates()`, `getRegions()`, `getLanguages()`, and any method that relied on `_getValue()`.
+- **`this`**: Inside an IIFE in strict mode, `this` is `undefined` instead of the enclosing object. This caused `this.angle = ...` inside a class constructor's `else` block to throw `TypeError: cannot write property 'angle' of undefined`.
+
+All three cases now skip the IIFE wrapping. The trade-off (closures capturing the loop variable see final value instead of per-iteration values) is acceptable since these patterns are incompatible with IIFE wrapping.
