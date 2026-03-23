@@ -313,6 +313,12 @@ duk_ret_t holiday_err(duk_context *ctx)
     return 0;
 }
 
+duk_ret_t weather_err(duk_context *ctx)
+{
+    RP_THROW(ctx, "The rampart-open-meteo.js file was not found or did not compile.");
+    return 0;
+}
+
 /* **************************************************
    Initialize module
    ************************************************** */
@@ -338,7 +344,7 @@ duk_ret_t duk_open_module(duk_context *ctx)
         duk_get_prop_string(ctx, -1, "exports");
         duk_put_prop_string(ctx, -3, "holidays");
     }
-    else    
+    else
     {
         duk_push_c_function(ctx, holiday_err, 0);
         duk_put_prop_string(ctx, -3, "holidays");
@@ -346,6 +352,20 @@ duk_ret_t duk_open_module(duk_context *ctx)
 
     duk_pop(ctx);
 
+    ret = duk_rp_resolve(ctx, "rampart-open-meteo.js");
+
+    if(ret==1)
+    {
+        duk_get_prop_string(ctx, -1, "exports");
+        duk_put_prop_string(ctx, -3, "weather");
+    }
+    else
+    {
+        duk_push_c_function(ctx, weather_err, 0);
+        duk_put_prop_string(ctx, -3, "weather");
+    }
+
+    duk_pop(ctx);
 
     return 1;
 }

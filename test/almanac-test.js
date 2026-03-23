@@ -315,3 +315,251 @@ testFeature("holidays - init reinitializes", function() {
 });
 
 } // end hasHolidays
+
+/* ===================================================================
+   WEATHER (Open-Meteo)
+   =================================================================== */
+
+var weather = almanac.weather;
+var hasWeather = (typeof weather === 'object' && typeof weather.search === 'function');
+
+if(!hasWeather) {
+    fprintf(stderr, "almanac.weather not available, skipping weather tests\n");
+} else {
+
+// Check connectivity to open-meteo before running tests
+var weatherOnline = false;
+try {
+    var curl = require('rampart-curl');
+    var res = curl.fetch('https://geocoding-api.open-meteo.com/v1/search?name=Test&count=1');
+    if(Array.isArray(res)) res = res[0];
+    weatherOnline = (res && res.status === 200);
+} catch(e) {}
+
+if(!weatherOnline) {
+    fprintf(stderr, "WARNING: open-meteo.com not reachable, skipping weather tests\n");
+} else {
+
+// Use a known location for consistent testing
+var testLat = 37.7749;
+var testLon = -122.4194;
+
+// Clean cache for reproducible tests
+weather.clearCache();
+
+/* --- Geocoding --- */
+
+testFeature("weather - search returns results", function() {
+    var res = weather.search('San Francisco');
+    return Array.isArray(res) && res.length > 0;
+});
+
+testFeature("weather - search result has fields", function() {
+    var res = weather.search('San Francisco');
+    var p = res[0];
+    return p.name && typeof p.latitude === 'number' && typeof p.longitude === 'number' &&
+           p.country && p.timezone;
+});
+
+testFeature("weather - search with countryCode filter", function() {
+    var res = weather.search('London', {countryCode: 'GB'});
+    return Array.isArray(res) && res.length > 0 && res[0].country_code === 'GB';
+});
+
+testFeature("weather - search caches results", function() {
+    weather.search('Tokyo');
+    var t1 = new Date().getTime();
+    weather.search('Tokyo');
+    var t2 = new Date().getTime();
+    return (t2 - t1) < 50;
+});
+
+/* --- Current Weather --- */
+
+testFeature("weather - current returns data", function() {
+    var res = weather.current(testLat, testLon);
+    return typeof res === 'object' && !res.error && res.current;
+});
+
+testFeature("weather - current has temperature", function() {
+    var res = weather.current(testLat, testLon);
+    return typeof res.current.temperature_2m === 'number';
+});
+
+testFeature("weather - current has weather description", function() {
+    var res = weather.current(testLat, testLon);
+    return typeof res.current.weather_code_description === 'string';
+});
+
+testFeature("weather - current has units", function() {
+    var res = weather.current(testLat, testLon);
+    return res.current_units && res.current_units.temperature_2m;
+});
+
+testFeature("weather - current respects unit config", function() {
+    weather.configure({units: 'imperial'});
+    var res = weather.current(testLat, testLon);
+    weather.configure({units: 'metric'});
+    return res.current_units && res.current_units.temperature_2m === '°F';
+});
+
+/* --- Forecast --- */
+
+testFeature("weather - forecast returns data", function() {
+    var res = weather.forecast(testLat, testLon);
+    return typeof res === 'object' && !res.error;
+});
+
+testFeature("weather - forecast has hourly data", function() {
+    var res = weather.forecast(testLat, testLon);
+    return res.hourly && Array.isArray(res.hourly.time) && res.hourly.time.length > 0;
+});
+
+testFeature("weather - forecast has daily data", function() {
+    var res = weather.forecast(testLat, testLon);
+    return res.daily && Array.isArray(res.daily.time) && res.daily.time.length > 0;
+});
+
+testFeature("weather - forecast has current data", function() {
+    var res = weather.forecast(testLat, testLon);
+    return res.current && typeof res.current.temperature_2m === 'number';
+});
+
+testFeature("weather - forecast days option", function() {
+    var res = weather.forecast(testLat, testLon, {days: 3});
+    return res.daily && res.daily.time.length === 3;
+});
+
+testFeature("weather - forecast weather descriptions", function() {
+    var res = weather.forecast(testLat, testLon, {days: 1});
+    return res.daily && Array.isArray(res.daily.weather_code_description) &&
+           typeof res.daily.weather_code_description[0] === 'string';
+});
+
+testFeature("weather - forecast custom hourly vars", function() {
+    var res = weather.forecast(testLat, testLon, {
+        days: 1,
+        hourly: ['temperature_2m', 'dew_point_2m'],
+        daily: false,
+        current: false
+    });
+    return res.hourly && res.hourly.dew_point_2m && !res.daily;
+});
+
+/* --- Historical Weather --- */
+
+testFeature("weather - history returns data", function() {
+    var res = weather.history(testLat, testLon, '2024-01-01', '2024-01-03');
+    return typeof res === 'object' && !res.error;
+});
+
+testFeature("weather - history has hourly data", function() {
+    var res = weather.history(testLat, testLon, '2024-01-01', '2024-01-03');
+    return res.hourly && Array.isArray(res.hourly.time) && res.hourly.time.length > 0;
+});
+
+testFeature("weather - history has daily data", function() {
+    var res = weather.history(testLat, testLon, '2024-01-01', '2024-01-03');
+    return res.daily && res.daily.time.length === 3;
+});
+
+/* --- Air Quality --- */
+
+testFeature("weather - airQuality returns data", function() {
+    var res = weather.airQuality(testLat, testLon);
+    return typeof res === 'object' && !res.error;
+});
+
+testFeature("weather - airQuality has hourly data", function() {
+    var res = weather.airQuality(testLat, testLon);
+    return res.hourly && Array.isArray(res.hourly.time) && res.hourly.time.length > 0;
+});
+
+testFeature("weather - airQuality has PM2.5", function() {
+    var res = weather.airQuality(testLat, testLon);
+    return res.hourly && Array.isArray(res.hourly.pm2_5);
+});
+
+/* --- Marine Weather --- */
+
+// Use a coastal location
+var marineLat = 36.95;
+var marineLon = -122.02;
+
+testFeature("weather - marine returns data", function() {
+    var res = weather.marine(marineLat, marineLon);
+    return typeof res === 'object' && !res.error;
+});
+
+testFeature("weather - marine has hourly data", function() {
+    var res = weather.marine(marineLat, marineLon);
+    return res.hourly && Array.isArray(res.hourly.time);
+});
+
+testFeature("weather - marine has wave height", function() {
+    var res = weather.marine(marineLat, marineLon);
+    return res.hourly && Array.isArray(res.hourly.wave_height);
+});
+
+/* --- weatherAt convenience --- */
+
+testFeature("weather - weatherAt by name", function() {
+    var res = weather.weatherAt('Paris');
+    return typeof res === 'object' && !res.error && res.location && res.location.name === 'Paris';
+});
+
+testFeature("weather - weatherAt with country code", function() {
+    var res = weather.weatherAt('London, UK');
+    return typeof res === 'object' && !res.error &&
+           res.location && res.location.name === 'London';
+});
+
+testFeature("weather - weatherAt has forecast", function() {
+    var res = weather.weatherAt('Tokyo');
+    return res.daily && Array.isArray(res.daily.time) && res.daily.time.length > 0;
+});
+
+/* --- Configuration --- */
+
+testFeature("weather - configure units imperial", function() {
+    weather.configure({units: 'imperial'});
+    var res = weather.current(testLat, testLon);
+    weather.configure({units: 'metric'});
+    return res.current_units.wind_speed_10m === 'mp/h';
+});
+
+testFeature("weather - configure units metric", function() {
+    weather.configure({units: 'metric'});
+    var res = weather.current(testLat, testLon);
+    return res.current_units.temperature_2m === '°C';
+});
+
+testFeature("weather - configure disable cache", function() {
+    weather.configure({lmdbCache: null});
+    var t1 = new Date().getTime();
+    weather.search('Berlin');
+    var t2 = new Date().getTime();
+    weather.search('Berlin');
+    var t3 = new Date().getTime();
+    weather.configure({});  // re-enable auto cache
+    // both calls should take similar time (no caching)
+    return (t3 - t2) > 50;
+});
+
+/* --- weatherCodes --- */
+
+testFeature("weather - weatherCodes lookup", function() {
+    return weather.weatherCodes[0] === 'Clear sky' &&
+           weather.weatherCodes[61] === 'Rain: slight' &&
+           weather.weatherCodes[95] === 'Thunderstorm: slight or moderate';
+});
+
+/* --- clearCache --- */
+
+testFeature("weather - clearCache runs without error", function() {
+    weather.clearCache();
+    return true;
+});
+
+} // end weatherOnline
+} // end hasWeather
