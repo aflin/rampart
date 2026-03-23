@@ -940,6 +940,52 @@ testFeature("localize - respects Proxy on source object", function(){
     return (trapCalled && _proxyReal === "real_val");
 });
 
+testFeature("getScopeVars - closure survives after outer returns", function(){
+    function makeCounter() {
+        var count = 0;
+        rampart.localize({step: 5});
+
+        function increment() {
+            count += step;
+            return rampart.utils.getScopeVars();
+        }
+        return increment;
+    }
+
+    var inc = makeCounter(); /* makeCounter returns, its env is closed */
+
+    var scopes = inc(); /* call the returned closure */
+    var ok = (scopes.closure.count === 5 && scopes.closure.step === 5);
+
+    scopes = inc(); /* call again — count should have advanced */
+    ok = ok && (scopes.closure.count === 10);
+
+    /* single lookup should find them as closure vars */
+    scopes = inc();
+    var r = rampart.utils.getScopeVars("count");
+    /* count is in inc's closure, but getScopeVars is called from here,
+     * so look it up from within the closure itself: */
+    ok = ok && (scopes.closure.count === 15);
+
+    return ok;
+});
+
+testFeature("localize - localized var visible in closure", function(){
+    function outer() {
+        rampart.localize({injected: "from_outer"});
+
+        function inner() {
+            /* injected is not a var in inner(), so GETVAR walks to
+             * outer's env where it was localized */
+            return injected;
+        }
+        return inner;
+    }
+
+    var fn = outer(); /* outer returns, env is closed */
+    return (fn() === "from_outer");
+});
+
 try { rmdir(tmpdir); } catch(e) {} /* remove if empty */
 
 //lastline
