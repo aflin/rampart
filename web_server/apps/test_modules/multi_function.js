@@ -59,11 +59,11 @@ since we have:
 and since this script is at: process.scriptPath + "/apps/test_moudules/multi_function.js"
 
 the functions below map to:
-  http://example.com/test_modules/multi_function/
-  http://example.com/test_modules/multi_function/index.html
-  http://example.com/test_modules/multi_function/page1.html
-  http://example.com/test_modules/multi_function/page2.html
-  http://example.com/test_modules/multi_function/virtdir/page3.html
+  http://example.com/apps/test_modules/multi_function/
+  http://example.com/apps/test_modules/multi_function/index.html
+  http://example.com/apps/test_modules/multi_function/page1.html
+  http://example.com/apps/test_modules/multi_function/page2.html
+  http://example.com/apps/test_modules/multi_function/virtdir/page3.html
 */
 
 module.exports={
