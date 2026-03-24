@@ -116,7 +116,7 @@ openRespClientSocket(RESPCLIENT *rcp)
     // bug fix: close socket and reset fd on connect failure to prevent fd leak - 2026-02-27
     close(rcp->socket);
     rcp->socket = -1;
-    rcp->rppFrom->errorMsg = "respClient error: cannont connect to host";
+    rcp->rppFrom->errorMsg = "respClient error: cannot connect to host";
     return (RP_REDISFAIL);
   }
 
@@ -241,16 +241,18 @@ getRespReply(RESPCLIENT *rcp)
 
       totalRead += nread;
 
-      if (nread == (ssize_t)bufAvailable) // we need a bigger buffer becuase it got filled
+      if (nread == (ssize_t)bufAvailable) // we need a bigger buffer because it got filled
       {
-        rcp->fromBuf = respBufRealloc(rcp->rppFrom, rcp->fromBuf, rcp->fromBufSize + RESPCLIENTBUFSZ);
+        size_t grow = rcp->fromBufSize / 2; // grow by 1.5x
+        if (grow < RESPCLIENTBUFSZ) grow = RESPCLIENTBUFSZ; // but at least RESPCLIENTBUFSZ
+        rcp->fromBuf = respBufRealloc(rcp->rppFrom, rcp->fromBuf, rcp->fromBufSize + grow);
         if (!rcp->fromBuf)
         {
-          rcp->rppFrom->errorMsg = "Could not expand recieve buffer in getRespReply()";
+          rcp->rppFrom->errorMsg = "Could not expand receive buffer in getRespReply()";
           return (NULL);
         }
         rcp->fromReadp = rcp->fromBuf + totalRead;
-        rcp->fromBufSize = rcp->fromBufSize + RESPCLIENTBUFSZ;
+        rcp->fromBufSize = rcp->fromBufSize + grow;
         //bufAvailable = rcp->fromBufSize - totalRead; //see below - ajf
       }
       else
@@ -617,7 +619,8 @@ sendRespCommand(RESPCLIENT *rcp, char *fmt, ...)
   sprintf(bufp, "*%d\r\n", countRespCommandItems(fmt));
   bufp += strlen(bufp);
 
-  bufp += strlen(bufp); // not checking for fit here because it has to be long enough
+  // 2026-03-24: second strlen is a no-op (bufp already at NUL after first strlen advance)
+  //bufp += strlen(bufp); // not checking for fit here because it has to be long enough
   outBuffer = bufp;
 
   // bug fix: added commented-out va_end documenting second va_start without prior va_end - 2026-02-27
