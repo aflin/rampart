@@ -623,6 +623,59 @@ for (var i=0; i<asdfmts.length; i++)
 }
 
 
+// date-only formats: Mon DD YYYY and DD Mon YYYY
+testFeature('autoScanDate "Jan 1 2024"', function(){
+    var asd = autoScanDate("Jan 1 2024");
+    return asd && dateFmt('%Y-%m-%d', asd.date) === '2024-01-01';
+});
+
+testFeature('autoScanDate "Dec 31 1999"', function(){
+    var asd = autoScanDate("Dec 31 1999");
+    return asd && dateFmt('%Y-%m-%d', asd.date) === '1999-12-31';
+});
+
+testFeature('autoScanDate "3 Jan 2024"', function(){
+    var asd = autoScanDate("3 Jan 2024");
+    return asd && dateFmt('%Y-%m-%d', asd.date) === '2024-01-03';
+});
+
+testFeature('autoScanDate "31 Dec 1999"', function(){
+    var asd = autoScanDate("31 Dec 1999");
+    return asd && dateFmt('%Y-%m-%d', asd.date) === '1999-12-31';
+});
+
+testFeature('autoScanDate "Jan 1 2024 -0800"', function(){
+    var asd = autoScanDate("Jan 1 2024 -0800");
+    return asd && asd.offset === -28800;
+});
+
+testFeature('autoScanDate "31 Dec 1999 +0530"', function(){
+    var asd = autoScanDate("31 Dec 1999 +0530");
+    return asd && asd.offset === 19800;
+});
+
+// comma-stripped fallback
+testFeature('autoScanDate "Jan 21, 2026"', function(){
+    var asd = autoScanDate("Jan 21, 2026");
+    return asd && dateFmt('%Y-%m-%d', asd.date) === '2026-01-21';
+});
+
+testFeature('autoScanDate "December 25, 2024"', function(){
+    var asd = autoScanDate("December 25, 2024");
+    return asd && dateFmt('%Y-%m-%d', asd.date) === '2024-12-25';
+});
+
+testFeature('autoScanDate "21 Jan, 2026"', function(){
+    var asd = autoScanDate("21 Jan, 2026");
+    return asd && dateFmt('%Y-%m-%d', asd.date) === '2026-01-21';
+});
+
+// ensure RFC 2822 with comma still works on first try
+testFeature('autoScanDate "Wed, 04 Mar 2026 22:02:08 +0000"', function(){
+    var asd = autoScanDate("Wed, 04 Mar 2026 22:02:08 +0000");
+    return asd && asd.offset === 0 && dateFmt('%Y-%m-%d', asd.date) === '2026-03-04';
+});
+
 // Avoid midnight local boundary: if current local hour is 0, bump to 2am
 // to prevent DST offset mismatches on pre-1901 dates across platforms.
 var nowfor1800 = new Date(nowgmt);

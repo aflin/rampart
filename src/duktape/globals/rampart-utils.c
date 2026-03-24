@@ -9147,7 +9147,7 @@ static char *dfmts[N_DATE_FORMATS] = {
 };
 
 /* extended formats */
-#define EN_DATE_FORMATS 83
+#define EN_DATE_FORMATS 87
 static char *edfmts[EN_DATE_FORMATS] = {
     // standard
     "%Y-%m-%d %I:%M:%S %p %z",          //  0: 1999-12-31 11:59:59 pm -0800
@@ -9169,83 +9169,90 @@ static char *edfmts[EN_DATE_FORMATS] = {
     "%A, %d %b %Y %H:%M %z",            // 15: Wed, 04 Mar 2026 22:02 +0000
     "%A, %d %b %Y %H:%M",               // 16: Wed, 04 Mar 2026 22:02
     // standard without seconds
-    "%Y-%m-%d %I:%M %p %z",             // 13: 1999-12-31 11:59 pm -0800
-    "%A %B %d %I:%M %p %Y %z",          // 14: Fri Dec 31 11:59 pm 1999 -0800
-    "%Y-%m-%d %I:%M %p",                // 15: 1999-12-31 11:59 pm
-    "%A %B %d %I:%M %p %Y",             // 16: Fri Dec 31 11:59 pm 1999
-    "%Y-%m-%d %H:%M %z",                // 17: 1999-12-31 23:59 -0800
-    "%A %B %d %H:%M %Y %z",             // 18: Fri Dec 31 23:59 1999 -0800
-    "%Y-%m-%d %H:%M",                   // 19: 1999-12-31 23:59
-    "%A %B %d %H:%M %Y",                // 20: Fri Dec 31 23:59 1999
-    "%A %d %B %Y %I:%M %p %z",          // 21: Thu 24 Jul 2025 12:21 AM -0800
-    "%A %d %B %Y %I:%M %p",             // 22: Thu 24 Jul 2025 12:21 AM
-    "%A %d %B %Y %H:%M %z",             // 23: Thu 24 Jul 2025 00:21 -0800
-    "%A %d %B %Y %H:%M",                // 24: Thu 24 Jul 2025 00:21
+    "%Y-%m-%d %I:%M %p %z",             // 17: 1999-12-31 11:59 pm -0800
+    "%A %B %d %I:%M %p %Y %z",          // 18: Fri Dec 31 11:59 pm 1999 -0800
+    "%Y-%m-%d %I:%M %p",                // 19: 1999-12-31 11:59 pm
+    "%A %B %d %I:%M %p %Y",             // 20: Fri Dec 31 11:59 pm 1999
+    "%Y-%m-%d %H:%M %z",                // 21: 1999-12-31 23:59 -0800
+    "%A %B %d %H:%M %Y %z",             // 22: Fri Dec 31 23:59 1999 -0800
+    "%Y-%m-%d %H:%M",                   // 23: 1999-12-31 23:59
+    "%A %B %d %H:%M %Y",                // 24: Fri Dec 31 23:59 1999
+    "%A %d %B %Y %I:%M %p %z",          // 25: Thu 24 Jul 2025 12:21 AM -0800
+    "%A %d %B %Y %I:%M %p",             // 26: Thu 24 Jul 2025 12:21 AM
+    "%A %d %B %Y %H:%M %z",             // 27: Thu 24 Jul 2025 00:21 -0800
+    "%A %d %B %Y %H:%M",                // 28: Thu 24 Jul 2025 00:21
     // locale dependent:
-    "%x %r %z",                         // 25: date varies, time: 11:59:59 pm -0800
-    "%x %r",                            // 26: date varies, time: 11:59:59 pm
-    "%c",                               // 27: varies
-    "%x %X %z",                         // 28: varies
-    "%x %X",                            // 29: varies
-    // others
-    "%b %e %I:%M:%S %p %Y %z",          // 30: Dec 31 11:59:59 pm 1999 -0800
-    "%b %e %I:%M:%S %p %Y",             // 31: Dec 31 11:59:59 pm 1999
-    "%b %e %I:%M %p %Y %z",             // 32: Dec 31 11:59 pm 1999 -0800
-    "%b %e %I:%M %p %Y",                // 33: Dec 31 11:59 pm 1999
-    "%b %e %H:%M:%S %Y %z",             // 34: Dec 31 23:59:59 1999 -0800
-    "%b %e %H:%M:%S %Y",                // 35: Dec 31 23:59:59 1999
-    "%b %e %H:%M %Y %z",                // 36: Dec 31 23:59 1999 -0800
-    "%b %e %H:%M %Y",                   // 37: Dec 31 23:59 1999
-    "%e %b %I:%M:%S %p %Y %z",          // 38: 31 Dec 11:59:59 pm 1999 -0800
-    "%e %b %I:%M:%S %p %Y",             // 39: 31 Dec 11:59:59 pm 1999
-    "%e %b %I:%M %p %Y %z",             // 40: 31 Dec 11:59 pm 1999 -0800
-    "%e %b %I:%M %p %Y",                // 41: 31 Dec 11:59 pm 1999
-    "%e %b %H:%M:%S %Y %z",             // 42: 31 Dec 23:59:59 1999 -0800
-    "%e %b %H:%M:%S %Y",                // 43: 31 Dec 23:59:59 1999
-    "%e %b %H:%M %Y %z",                // 44: 31 Dec 23:59 1999 -0800
-    "%e %b %H:%M %Y",                   // 45: 31 Dec 23:59 1999
-    "%m/%d/%y %I:%M:%S %p %z",          // 46: 12/31/99 11:59:59 pm -0800
-    "%m/%d/%y %I:%M:%S %p",             // 47: 12/31/99 11:59:59 pm
-    "%m/%d/%y %I:%M %p %z",             // 48: 12/31/99 11:59 pm -0800
-    "%m/%d/%y %I:%M %p",                // 49: 12/31/99 11:59 pm
-    "%m/%d/%y %H:%M:%S %z",             // 50: 12/31/99 23:59:59 -0800
-    "%m/%d/%y %H:%M:%S",                // 51: 12/31/99 23:59:59
-    "%m/%d/%y %H:%M %z",                // 52: 12/31/99 23:59 -0800
-    "%m/%d/%y %H:%M",                   // 53: 12/31/99 23:59
-    "%m/%d/%Y %I:%M:%S %p %z",          // 54: 12/31/1999 11:59:59 pm -0800
-    "%m/%d/%Y %I:%M:%S %p",             // 55: 12/31/1999 11:59:59 pm
-    "%m/%d/%Y %I:%M %p %z",             // 56: 12/31/1999 11:59 pm -0800
-    "%m/%d/%Y %I:%M %p",                // 57: 12/31/1999 11:59 pm
-    "%m/%d/%Y %H:%M:%S %z",             // 58: 12/31/1999 23:59:59 -0800
-    "%m/%d/%Y %H:%M:%S",                // 59: 12/31/1999 23:59:59
-    "%m/%d/%Y %H:%M %z",                // 60: 12/31/1999 23:59 -0800
-    "%m/%d/%Y %H:%M",                   // 61: 12/31/1999 23:59
+    "%x %r %z",                         // 29: date varies, time: 11:59:59 pm -0800
+    "%x %r",                            // 30: date varies, time: 11:59:59 pm
+    "%c",                               // 31: varies
+    "%x %X %z",                         // 32: varies
+    "%x %X",                            // 33: varies
+    // others: Mon DD time Year
+    "%b %e %I:%M:%S %p %Y %z",          // 34: Dec 31 11:59:59 pm 1999 -0800
+    "%b %e %I:%M:%S %p %Y",             // 35: Dec 31 11:59:59 pm 1999
+    "%b %e %I:%M %p %Y %z",             // 36: Dec 31 11:59 pm 1999 -0800
+    "%b %e %I:%M %p %Y",                // 37: Dec 31 11:59 pm 1999
+    "%b %e %H:%M:%S %Y %z",             // 38: Dec 31 23:59:59 1999 -0800
+    "%b %e %H:%M:%S %Y",                // 39: Dec 31 23:59:59 1999
+    "%b %e %H:%M %Y %z",                // 40: Dec 31 23:59 1999 -0800
+    "%b %e %H:%M %Y",                   // 41: Dec 31 23:59 1999
+    "%b %e %Y %z",                      // 42: Dec 31 1999 -0800
+    "%b %e %Y",                         // 43: Dec 31 1999
+    // others: DD Mon time Year
+    "%e %b %I:%M:%S %p %Y %z",          // 44: 31 Dec 11:59:59 pm 1999 -0800
+    "%e %b %I:%M:%S %p %Y",             // 45: 31 Dec 11:59:59 pm 1999
+    "%e %b %I:%M %p %Y %z",             // 46: 31 Dec 11:59 pm 1999 -0800
+    "%e %b %I:%M %p %Y",                // 47: 31 Dec 11:59 pm 1999
+    "%e %b %H:%M:%S %Y %z",             // 48: 31 Dec 23:59:59 1999 -0800
+    "%e %b %H:%M:%S %Y",                // 49: 31 Dec 23:59:59 1999
+    "%e %b %H:%M %Y %z",                // 50: 31 Dec 23:59 1999 -0800
+    "%e %b %H:%M %Y",                   // 51: 31 Dec 23:59 1999
+    "%e %b %Y %z",                      // 52: 31 Dec 1999 -0800
+    "%e %b %Y",                         // 53: 31 Dec 1999
+    // mm/dd/yy with time
+    "%m/%d/%y %I:%M:%S %p %z",          // 54: 12/31/99 11:59:59 pm -0800
+    "%m/%d/%y %I:%M:%S %p",             // 55: 12/31/99 11:59:59 pm
+    "%m/%d/%y %I:%M %p %z",             // 56: 12/31/99 11:59 pm -0800
+    "%m/%d/%y %I:%M %p",                // 57: 12/31/99 11:59 pm
+    "%m/%d/%y %H:%M:%S %z",             // 58: 12/31/99 23:59:59 -0800
+    "%m/%d/%y %H:%M:%S",                // 59: 12/31/99 23:59:59
+    "%m/%d/%y %H:%M %z",                // 60: 12/31/99 23:59 -0800
+    "%m/%d/%y %H:%M",                   // 61: 12/31/99 23:59
+    // mm/dd/YYYY with time
+    "%m/%d/%Y %I:%M:%S %p %z",          // 62: 12/31/1999 11:59:59 pm -0800
+    "%m/%d/%Y %I:%M:%S %p",             // 63: 12/31/1999 11:59:59 pm
+    "%m/%d/%Y %I:%M %p %z",             // 64: 12/31/1999 11:59 pm -0800
+    "%m/%d/%Y %I:%M %p",                // 65: 12/31/1999 11:59 pm
+    "%m/%d/%Y %H:%M:%S %z",             // 66: 12/31/1999 23:59:59 -0800
+    "%m/%d/%Y %H:%M:%S",                // 67: 12/31/1999 23:59:59
+    "%m/%d/%Y %H:%M %z",                // 68: 12/31/1999 23:59 -0800
+    "%m/%d/%Y %H:%M",                   // 69: 12/31/1999 23:59
     // date only
-    "%m/%d/%y %z",                      // 62: 12/31/99 -0800
+    "%m/%d/%y %z",                      // 70: 12/31/99 -0800
     // %n is not matching space on linux - so this matches 01/01/2024 with year 2020
     // if this is the case, int strptime_fmt_n_does_not_match will be set to 1
-    "%m/%d/%y%n",                       // 63: 12/31/99
-    "%m/%d/%Y %z",                      // 64: 12/31/1999 -0800
-    "%m/%d/%Y",                         // 65: 12/31/1999
-    "%Y-%m-%d %z",                      // 66: 1999-12-31 -0800
-    "%Y-%m-%d",                         // 67: 1999-12-31
-    "%x",                               // 68: varies
+    "%m/%d/%y%n",                       // 71: 12/31/99
+    "%m/%d/%Y %z",                      // 72: 12/31/1999 -0800
+    "%m/%d/%Y",                         // 73: 12/31/1999
+    "%Y-%m-%d %z",                      // 74: 1999-12-31 -0800
+    "%Y-%m-%d",                         // 75: 1999-12-31
+    "%x",                               // 76: varies
     // time only
-    // gt 68:
-    "%I:%M:%S %p %z",                   // 69: 11:59:59 pm -0800
-    "%I:%M:%S %p",                      // 70: 11:59:59 pm
-    "%I:%M %p %z",                      // 71: 11:59 pm -0800
-    "%I:%M %p",                         // 72: 11:59 pm
-    "%X",                               // 73: varies
-    "%X %z",                            // 74: varies and -0800
-    "%H:%M:%S %z",                      // 75: 23:59:59 -0800
-    "%H:%M:%S",                         // 76: 23:59:59
-    "%H:%M %z",                         // 77: 23:59 -0800
-    "%H:%M",                            // 78: 23:59
+    // gt 76:
+    "%I:%M:%S %p %z",                   // 77: 11:59:59 pm -0800
+    "%I:%M:%S %p",                      // 78: 11:59:59 pm
+    "%I:%M %p %z",                      // 79: 11:59 pm -0800
+    "%I:%M %p",                         // 80: 11:59 pm
+    "%X",                               // 81: varies
+    "%X %z",                            // 82: varies and -0800
+    "%H:%M:%S %z",                      // 83: 23:59:59 -0800
+    "%H:%M:%S",                         // 84: 23:59:59
+    "%H:%M %z",                         // 85: 23:59 -0800
+    "%H:%M",                            // 86: 23:59
 };
-#define EN_FORMAT_W_N 67
+#define EN_FORMAT_W_N 71
 //all indexes greater than "time only" line above
-#define EN_DATE_FMT_RELATIVE 72
+#define EN_DATE_FMT_RELATIVE 76
 
 
 /* scan a string for a date, optionally with format in ifmt if not NULL
@@ -9462,9 +9469,20 @@ duk_ret_t rp_auto_scandate(duk_context *ctx)
 
     if((fidx=scandate(dt_p, datestr, NULL, 1, end_index))==-1)
     {
-        duk_push_null(ctx);
-        setlocale(LC_ALL, locale_as_set);
-        return 1;
+        // retry with commas stripped (e.g. "Jan 21, 2026" -> "Jan 21 2026")
+        char *nocomma = strdup(datestr);
+        char *r = nocomma, *w = nocomma;
+        while(*r) { if(*r != ',') *w++ = *r; r++; }
+        *w = '\0';
+        if(strcmp(nocomma, datestr) != 0)
+            fidx = scandate(dt_p, nocomma, NULL, 1, end_index);
+        free(nocomma);
+        if(fidx == -1)
+        {
+            duk_push_null(ctx);
+            setlocale(LC_ALL, locale_as_set);
+            return 1;
+        }
     }
 
     dateoff = (time_t)dt_p->tm_gmtoff;
