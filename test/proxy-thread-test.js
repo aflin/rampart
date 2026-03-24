@@ -173,9 +173,4 @@ testFeature("JS route works after slow request completes", function() {
 });
 
 cleanup();
-if (nfailed > 0)
-{
-    printf("\n%d test(s) FAILED.\n", nfailed);
-    process.exit(1);
-}
-printf("\nAll proxy thread tests passed.\n");
+process.exit(nfailed ? 1 : 0);

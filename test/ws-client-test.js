@@ -655,11 +655,7 @@ run_test_suite("ws://127.0.0.1:8110", "ws", false, function() {
 
         clearTimeout(safety_timer);
         do_cleanup();
-        if (nfailed > 0) {
-            printf("\n%d test(s) FAILED.\n", nfailed);
-            process.exit(1);
-        }
-        printf("\nAll WebSocket client tests passed.\n");
+        process.exit(nfailed ? 1 : 0);
     });
 });
 

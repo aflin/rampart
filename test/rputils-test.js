@@ -9,6 +9,8 @@ chdir(process.scriptPath);
 var tmpdir = process.scriptPath + '/tmp-test';
 if (!stat(tmpdir)) mkdir(tmpdir);
 
+var _nfailed = 0;
+
 function testFeature(name,test)
 {
     var error=false;
@@ -29,8 +31,7 @@ function testFeature(name,test)
     else
     {
         printf(">>>>> FAILED <<<<<\n");
-        if(error) console.log(error);
-        process.exit(1);
+        _nfailed++;
     }
     if(error) console.log(error);
 }
@@ -1041,4 +1042,5 @@ testFeature("localize - localized var visible in closure", function(){
 
 try { rmdir(tmpdir); } catch(e) {} /* remove if empty */
 
+process.exit(_nfailed ? 1 : 0);
 //lastline

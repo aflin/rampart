@@ -13,6 +13,8 @@ if (!stat(_cc)) {
     process.exit(0);
 }
 
+var _nfailed = 0;
+
 function testFeature(name,test,error)
 {
     if (typeof test =='function'){
@@ -29,9 +31,7 @@ function testFeature(name,test,error)
     else
     {
         printf(">>>>> FAILED <<<<<\n");
-        if(error) printf('%J\n',error);
-        cleanup();
-        process.exit(1);
+        _nfailed++;
     }
     if(error) console.log(error);
 }
@@ -301,3 +301,5 @@ testFeature(rampart.utils.sprintf("cmodule timing %s < %s", ctimestr, jstimestr)
 });
 
 cleanup();
+
+process.exit(_nfailed ? 1 : 0);

@@ -419,12 +419,7 @@ function finish_tests() {
 
     clearTimeout(safety_timer);
     do_cleanup();
-    if (nfailed > 0)
-    {
-        printf("\n%d test(s) FAILED.\n", nfailed);
-        process.exit(1);
-    }
-    printf("\nAll WebSocket proxy tests passed.\n");
+    process.exit(nfailed ? 1 : 0);
 }
 
 /* kick off the async tests: direct -> proxy -> multi -> finish */

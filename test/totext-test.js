@@ -4,6 +4,8 @@ rampart.globalize(rampart.utils);
 var totext = require("rampart-totext");
 var testdir = process.scriptPath + "/convtest/";
 
+var _nfailed = 0;
+
 function testFeature(name,test,error)
 {
     if (typeof test =='function'){
@@ -20,8 +22,7 @@ function testFeature(name,test,error)
     else
     {
         printf(">>>>> FAILED <<<<<\n");
-        if(error) printf('%J\n',error);
-        process.exit(1);
+        _nfailed++;
     }
     if(error) console.log(error);
 }
@@ -249,4 +250,4 @@ testFeature("convertFile() without details returns string", function(){
     return typeof ret === 'string';
 });
 
-printf("\nAll tests passed.\n");
+process.exit(_nfailed ? 1 : 0);

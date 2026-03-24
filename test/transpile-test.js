@@ -16,6 +16,7 @@
 
 if(global && global.rampart) {
     rampart.globalize(rampart.utils);
+    var _nfailed = 0;
     var _asyncQueue = [];
     var _asyncRunning = false;
     var _drainAsync = function() {
@@ -29,15 +30,17 @@ if(global && global.rampart) {
             else
             {
                 printf(">>>>> FAILED <<<<<\n");
-                process.exit(1);
+                _nfailed++;
             }
             _asyncRunning = false;
             _drainAsync();
         }).then(null, function(e) {
             printf("testing transpile - %-48s - ", item.name);
             printf(">>>>> FAILED <<<<<\n");
+            _nfailed++;
             console.log(e);
-            process.exit(1);
+            _asyncRunning = false;
+            _drainAsync();
         });
     };
     function testFeature(name,test)
@@ -63,8 +66,7 @@ if(global && global.rampart) {
         else
         {
             printf(">>>>> FAILED <<<<<\n");
-            if(error) console.log(error);
-            process.exit(1);
+            _nfailed++;
         }
         if(error) console.log(error);
     }
@@ -1895,3 +1897,10 @@ setTimeout(function(){
 },100);
 */
 /* TODO: export defaults http://es6-features.org/#DefaultWildcard */
+
+// cleanup transpiler cache files
+try { rampart.utils.rmFile(process.scriptPath + '/transpile-test.transpiled.js'); } catch(e) {}
+try { rampart.utils.rmFile(process.scriptPath + '/tmath.transpiled.js'); } catch(e) {}
+try { rampart.utils.rmFile(process.scriptPath + '/export-module.transpiled.js'); } catch(e) {}
+
+process.exit(_nfailed ? 1 : 0);

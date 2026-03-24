@@ -8,6 +8,8 @@ try {
     process.exit(0);
 }
 
+var _nfailed = 0;
+
 function testFeature(name,test)
 {
     var error=false;
@@ -25,8 +27,7 @@ function testFeature(name,test)
     else
     {
         printf(">>>>> FAILED <<<<<\n");
-        if(error) console.log(error);
-        process.exit(1);
+        _nfailed++;
     }
     if(error) console.log(error);
 }
@@ -584,3 +585,5 @@ testFeature("weather - clearCache runs without error", function() {
 
 } // end weatherOnline
 } // end hasWeather
+
+process.exit(_nfailed ? 1 : 0);

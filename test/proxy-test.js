@@ -262,4 +262,3 @@ testFeature("proxy to dead upstream returns 502", function() {
 });
 
 cleanup();
-printf("\nAll proxy tests passed.\n");

@@ -9,6 +9,7 @@ if (!isWindows) {
 
 chdir(process.scriptPath);
 
+var _nfailed = 0;
 var pathre = /^\/[a-z]\//;  /* matches /c/..., /d/..., etc. */
 
 var tmpdir = process.scriptPath + "/winpaths_tmp";
@@ -53,10 +54,7 @@ function testFeature(name, test)
     else
     {
         printf(">>>>> FAILED <<<<<\n");
-        if (error) console.log(error);
-        /* clean up before exit */
-        try { chdir(process.scriptPath); rmrf(tmpdir); } catch(e) {}
-        process.exit(1);
+        _nfailed++;
     }
     if (error) console.log(error);
 }
@@ -242,3 +240,5 @@ testFeature("rmdir with /c/... path", function(){
    ================================================================ */
 
 chdir(process.scriptPath);
+
+process.exit(_nfailed ? 1 : 0);

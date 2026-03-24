@@ -5,6 +5,7 @@ if (!stat(tmpdir)) mkdir(tmpdir);
 
 var ttype = "vector";
 var rawvec = rampart.vector.raw;
+var _nfailed = 0;
 
 function testFeature(name,test)
 {
@@ -30,8 +31,7 @@ function testFeature(name,test)
         printf(`testing ${ttype} - %-51s - passed\n`, name);
     } else {
         printf(`testing ${ttype} - %-51s - >>>>> FAILED <<<<<\n`, name);
-        if(error) console.log(error);
-        process.exit(1);
+        _nfailed++;
     }
     if(error) console.log(error);
 }
@@ -1554,7 +1554,7 @@ dosqltests(true);
 
 shell("rm -rf " + tmpdir + "/vdb");
 try { rmdir(tmpdir); } catch(e) {}
-process.exit(0);
+process.exit(_nfailed ? 1 : 0);
 // pretty much unnecessary:
 
 // repeat tests in a thread:

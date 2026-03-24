@@ -4,6 +4,8 @@ rampart.globalize(rampart.utils);
 var cmark = require("rampart-cmark");
 var html  = require("rampart-html");
 
+var _nfailed = 0;
+
 function testFeature(name,test)
 {
     var error=false;
@@ -22,8 +24,7 @@ function testFeature(name,test)
     else
     {
         printf(">>>>> FAILED <<<<<\n");
-        if(error) console.log(error);
-        process.exit(1);
+        _nfailed++;
     }
     if(error) console.log(error);
 }
@@ -254,3 +255,5 @@ testFeature("Html - destroy invalidates dependent Html Objs", function(){
 
   return ret;
 });
+
+process.exit(_nfailed ? 1 : 0);

@@ -21,6 +21,8 @@ var stringFormat=Sql.stringFormat;
 rampart.globalize(Sql);
 
 
+var _nfailed = 0;
+
 function testFeature(name,test)
 {
     var error=false;
@@ -39,8 +41,7 @@ function testFeature(name,test)
     else
     {
         printf(">>>>> FAILED <<<<<\n");
-        if(error) console.log(error);
-        process.exit(1);
+        _nfailed++;
     }
     if(error) console.log(error);
 }
@@ -328,3 +329,4 @@ testFeature("re2file - full record(re2 is slow)", function() {
   return 15084 == sum;
 });
 
+process.exit(_nfailed ? 1 : 0);

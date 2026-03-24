@@ -38,8 +38,6 @@ function testFeature(name, test) {
         nfailed++;
         printf(">>>>> FAILED <<<<<\n");
         if (error) console.log(error);
-        cleanup();
-        process.exit(1);
     }
 }
 
@@ -207,9 +205,4 @@ testFeature("server detects second dep change", function() {
 /* ===== Cleanup ===== */
 cleanup();
 
-if (nfailed > 0) {
-    printf("\n%d test(s) FAILED.\n", nfailed);
-    process.exit(1);
-}
-
-printf("\nAll module dependency tests passed.\n");
+process.exit(nfailed ? 1 : 0);

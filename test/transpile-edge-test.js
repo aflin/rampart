@@ -19,6 +19,7 @@
 
 if(global && global.rampart) {
     rampart.globalize(rampart.utils);
+    var _nfailed = 0;
     var _asyncQueue = [];
     var _asyncRunning = false;
     var _drainAsync = function() {
@@ -32,15 +33,17 @@ if(global && global.rampart) {
             else
             {
                 printf(">>>>> FAILED <<<<<\n");
-                process.exit(1);
+                _nfailed++;
             }
             _asyncRunning = false;
             _drainAsync();
         }).then(null, function(e) {
             printf("testing edge - %-52s - ", item.name);
             printf(">>>>> FAILED <<<<<\n");
+            _nfailed++;
             console.log(e);
-            process.exit(1);
+            _asyncRunning = false;
+            _drainAsync();
         });
     };
     function testFeature(name,test)
@@ -66,8 +69,7 @@ if(global && global.rampart) {
         else
         {
             printf(">>>>> FAILED <<<<<\n");
-            if(error) console.log(error);
-            process.exit(1);
+            _nfailed++;
         }
         if(error) console.log(error);
     }
@@ -1237,3 +1239,8 @@ testFeature("class expr - inline assignment", function() {
     };
     return new classes.Pair(3, 7).sum() === 10;
 });
+
+// cleanup transpiler cache file
+try { rampart.utils.rmFile(process.scriptPath + '/transpile-edge-test.transpiled.js'); } catch(e) {}
+
+process.exit(_nfailed ? 1 : 0);

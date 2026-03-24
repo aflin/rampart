@@ -10,11 +10,13 @@ var sampleCert = tmpdir + '/sample-cert.pem';
 var sampleKey  = tmpdir + '/sample-key.pem';
 
 function cleanup() {
-    rmFile(sampleCert);
-    rmFile(sampleKey);
+    try { rmFile(sampleCert); } catch(e) {}
+    try { rmFile(sampleKey); } catch(e) {}
 }
 
 testmodes();
+
+var _nfailed = 0;
 
 function testFeature(name,test)
 {
@@ -34,9 +36,7 @@ function testFeature(name,test)
     else
     {
         rampart.utils.printf(">>>>> FAILED <<<<<\n");
-        if(error) console.log(error);
-        cleanup();
-        process.exit(1);
+        _nfailed++;
     }
     if(error) console.log(error);
 }
@@ -934,8 +934,12 @@ function testmodes()
       
     if(plaintext==bufferToString(decBuffer))
       printf("passed\n");
-    else
+    else {
       printf(">>>>> FAILED <<<<<\n");
+      _nfailed++;
+    }
   }
 }
 
+cleanup();
+process.exit(_nfailed ? 1 : 0);

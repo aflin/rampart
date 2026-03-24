@@ -731,8 +731,4 @@ htmldirtest();
 lengthlimittest();
 googlespecstest();
 
-rampart.utils.printf("%d passed, %d failed of %d tests\n", npass, nfail, total);
-
-if (nfail)
-  process.exit(1);
-
+process.exit(nfail ? 1 : 0);

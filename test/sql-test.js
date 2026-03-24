@@ -36,6 +36,8 @@ if(res.rows.length==0) {
 var sha256=crypto.sha256;
 var md5=crypto.md5;
 
+var _nfailed = 0;
+
 function testFeature(name,test)
 {
     var error=false;
@@ -53,9 +55,7 @@ function testFeature(name,test)
     else
     {
         printf(">>>>> FAILED <<<<<\n");
-        if(error) console.log(error);
-        rm_rf_dir(tmpdir);
-        process.exit(1);
+        _nfailed++;
     }
     if(error) console.log(error);
 }
@@ -291,3 +291,5 @@ testFeature ("Create with addTables in existing db", function(){
 });
 
 rm_rf_dir(tmpdir);
+
+process.exit(_nfailed ? 1 : 0);

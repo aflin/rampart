@@ -14,6 +14,8 @@ function cleanup() {
     try { rmFile(process.scriptPath + "/math.babel.js"); } catch(e) {}
 }
 
+var _nfailed = 0;
+
 function testFeature(name,test)
 {
     var error=false;
@@ -31,9 +33,7 @@ function testFeature(name,test)
     else
     {
         printf(">>>>> FAILED <<<<<\n");
-        if(error) console.log(error);
-        cleanup();
-        process.exit(1);
+        _nfailed++;
     }
     if(error) console.log(error);
 }
@@ -672,4 +672,5 @@ try {
 setTimeout(function(){
   printf("NOT TESTED:  RE sticky flag and Internationalization\n");
   cleanup();
+  process.exit(_nfailed ? 1 : 0);
 },100);
