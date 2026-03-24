@@ -3545,8 +3545,14 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
         {
             if(-1 == write(stdin_pipe[1], stdin_txt, (size_t)stdin_sz))
             {
-                rp_pipe_close(stdin_pipe,1);
-                RP_THROW(ctx, "exec(): could not write to stdin of command: %s", strerror(errno));
+                /* EPIPE means child closed stdin early — not necessarily an error.
+                   Close the pipe and continue to read stdout/stderr normally.
+                   The child's exit code will indicate if it actually failed. */
+                if(errno != EPIPE)
+                {
+                    rp_pipe_close(stdin_pipe,1);
+                    RP_THROW(ctx, "exec(): could not write to stdin of command: %s", strerror(errno));
+                }
             }
             // this is the source of 2 days of misery.  Handle was also closed below, after exec and wait
             // during which time other threads could reopen it to only have it mysteriously closed in this thread.

@@ -650,7 +650,8 @@ static const char pdf_convert_file_js[] =
     "  return res.stdout;"
     "})";
 
-/* PDF -> text via pdftotext from stdin (takes content as argument) */
+/* PDF -> text via pdftotext from stdin (takes content as argument).
+   Falls back to a temp file if pdftotext doesn't support stdin ('-'). */
 static const char pdf_convert_buf_js[] =
     "(function(content) {"
     "  var exec = rampart.utils.exec;"
@@ -658,6 +659,15 @@ static const char pdf_convert_buf_js[] =
     "  if(!pdftotext)"
     "    throw new Error('convert pdf: pdftotext not found (install poppler-utils or xpdf)');"
     "  var res = exec(pdftotext, '-enc', 'UTF-8', '-', '-', {stdin:content});"
+    "  if(!res.exitStatus)"
+    "    return res.stdout;"
+    "  var tmpf = rampart.utils.realPath(rampart.utils.getenv('TMPDIR')||'/tmp') + '/_rp_pdf_' + rampart.utils.getpid() + '.pdf';"
+    "  rampart.utils.fprintf(rampart.utils.fopen(tmpf,'w+'), '%s', content);"
+    "  try {"
+    "    res = exec(pdftotext, '-enc', 'UTF-8', tmpf, '-');"
+    "  } finally {"
+    "    try{rampart.utils.rmFile(tmpf);}catch(e){}"
+    "  }"
     "  if(res.exitStatus)"
     "    throw new Error('convert pdf: pdftotext failed: ' + res.stderr);"
     "  return res.stdout;"
