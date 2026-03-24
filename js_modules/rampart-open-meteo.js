@@ -3,13 +3,13 @@
 
     https://open-meteo.com/
 
+    Weather data from Open-Meteo is licensed under CC BY 4.0
+    https://creativecommons.org/licenses/by/4.0/
+
     Open-Meteo is free for non-commercial use.
-    Attribution: "Weather data by Open-Meteo.com"
+    Commercial use requires a paid API subscription.
 
     License: MIT (this module)
-
-    Geocoding data from GeoNames (geonames.org)
-    Creative Commons Attribution 4.0
 */
 
 var curl = require('rampart-curl');
@@ -261,6 +261,19 @@ var DEFAULTS = {
 /* ===================================================================
    Unit parameters
    =================================================================== */
+/* Convert a Date, number (epoch seconds), or parseable string to YYYY-MM-DD */
+function toDateStr(d) {
+    if (typeof d === 'string') {
+        // Already YYYY-MM-DD?
+        var res = rampart.utils.autoScanDate(d);
+        if (res)
+            return rampart.utils.dateFmt('%Y-%m-%d', res.date);
+        return d; // pass through if unparseable
+    }
+    // Date object or epoch number
+    return rampart.utils.dateFmt('%Y-%m-%d', d);
+}
+
 function unitParams(opts) {
     var p = {};
     p.temperature_unit = (opts && opts.temperature_unit) || _config.temperature_unit;
@@ -521,8 +534,8 @@ function history(lat, lon, startDate, endDate, opts) {
     opts = opts || {};
     var params = {
         latitude: lat, longitude: lon,
-        start_date: startDate,
-        end_date: endDate,
+        start_date: toDateStr(startDate),
+        end_date: toDateStr(endDate),
         timezone: opts.timezone || _config.timezone
     };
     if (opts.hourly)
@@ -557,8 +570,8 @@ function historyAsync(lat, lon, startDate, endDate, opts, callback) {
     opts = opts || {};
     var params = {
         latitude: lat, longitude: lon,
-        start_date: startDate,
-        end_date: endDate,
+        start_date: toDateStr(startDate),
+        end_date: toDateStr(endDate),
         timezone: opts.timezone || _config.timezone
     };
     if (opts.hourly)

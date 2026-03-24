@@ -463,6 +463,27 @@ testFeature("weather - history has daily data", function() {
     return res.daily && res.daily.time.length === 3;
 });
 
+testFeature("weather - history with Date objects", function() {
+    var res = weather.history(testLat, testLon, new Date(2024, 0, 1), new Date(2024, 0, 3));
+    return res.daily && res.daily.time.length === 3 && res.daily.time[0] === '2024-01-01';
+});
+
+testFeature("weather - history with mm/dd/yyyy format", function() {
+    var res = weather.history(testLat, testLon, '01/01/2024', '01/03/2024');
+    return res.daily && res.daily.time.length === 3 && res.daily.time[0] === '2024-01-01';
+});
+
+testFeature("weather - history with 'Mon DD YYYY' format", function() {
+    var res = weather.history(testLat, testLon, 'Jan 1 2024', 'Jan 3 2024');
+    return res.daily && res.daily.time.length === 3 && res.daily.time[0] === '2024-01-01';
+});
+
+testFeature("weather - history with epoch seconds", function() {
+    // 2024-01-01 00:00:00 UTC = 1704067200
+    var res = weather.history(testLat, testLon, 1704067200, 1704240000);
+    return res.daily && res.daily.time.length >= 2 && res.daily.time[0] === '2024-01-01';
+});
+
 /* --- Air Quality --- */
 
 testFeature("weather - airQuality returns data", function() {
