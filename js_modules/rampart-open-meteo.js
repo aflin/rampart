@@ -104,7 +104,7 @@ function getDb() {
     try {
         var st = rampart.utils.stat(dir);
         if (!st) rampart.utils.mkdir(dir);
-        _db = new lmdb.init(dir, true);
+        _db = new lmdb.init(dir, true, { conversion: 'JSON' });
         _config.cacheDir = dir;
     } catch(e) {
         // silently disable caching if lmdb init fails
@@ -125,12 +125,9 @@ function cacheGet(key, ttl) {
     var db = getDb();
     if (!db) return null;
     try {
-        var raw = db.get(null, key);
-        if (raw !== undefined && raw !== null) {
-            var entry = JSON.parse(raw);
-            if (Date.now() - entry._cachedAt < ttl)
-                return entry.data;
-        }
+        var entry = db.get(null, key);
+        if (entry && entry._cachedAt && (Date.now() - entry._cachedAt < ttl))
+            return entry.data;
     } catch(e) {}
     return null;
 }
@@ -139,7 +136,7 @@ function cachePut(key, data) {
     var db = getDb();
     if (!db) return;
     try {
-        db.put(null, key, JSON.stringify({ _cachedAt: Date.now(), data: data }));
+        db.put(null, key, { _cachedAt: Date.now(), data: data });
     } catch(e) {}
 }
 
