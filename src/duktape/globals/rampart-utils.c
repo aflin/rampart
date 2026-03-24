@@ -3561,13 +3561,18 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
 
         // on rare occasions, this might hang without WNOHANG
         // no idea why
-        while(!waitpid(pid, &exit_status, WNOHANG))
         {
+            pid_t wp;
+            while((wp = waitpid(pid, &exit_status, WNOHANG)) == 0)
+                usleep(1000);
+
             if(WIFEXITED(exit_status))
-                break;
-            usleep(1000);
+                exit_status = WEXITSTATUS(exit_status);
+            else if(WIFSIGNALED(exit_status))
+                exit_status = 128 + WTERMSIG(exit_status);
+            else
+                exit_status = -1;
         }
-        exit_status = WEXITSTATUS(exit_status);
 
         // cancel timeout thread in case it is still running
         if (timeout > 0)
@@ -3759,7 +3764,8 @@ duk_ret_t duk_rp_exec(duk_context *ctx)
 duk_ret_t duk_rp_shell(duk_context *ctx)
 {
     duk_idx_t sidx=0;
-    const char *sh="/bin/bash";
+    const char *sh=NULL;
+    struct stat sb;
 
     if(!duk_is_string(ctx,sidx) && !duk_is_string(ctx,++sidx) )
         RP_THROW(ctx, "shell(): error, command must be a string");
@@ -3779,6 +3785,15 @@ duk_ret_t duk_rp_shell(duk_context *ctx)
                 sh = _shell_conv;
         }
 #endif
+    }
+    if (!sh || stat(sh, &sb))
+    {
+        if (stat("/bin/bash", &sb) == 0)
+            sh = "/bin/bash";
+        else if (stat("/bin/sh", &sb) == 0)
+            sh = "/bin/sh";
+        else
+            RP_THROW(ctx, "shell(): could not find a shell (tried $SHELL, /bin/bash, /bin/sh)");
     }
     duk_push_string(ctx,sh);
     duk_insert(ctx,0);
