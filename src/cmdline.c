@@ -3648,6 +3648,7 @@ int main(int argc, char *argv[])
     /* some control over our exit */
     signal(SIGINT, sigint_handler);
     signal(SIGTERM, sigint_handler);
+    signal(SIGPIPE, SIG_IGN);
 
     /* init setproctitle() as required */
 #ifdef RP_SPT_NEEDS_INIT
