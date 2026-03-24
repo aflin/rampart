@@ -133,7 +133,7 @@ static int load_js_module(duk_context *ctx, const char *file, duk_idx_t module_i
             }
             */
             int is_tickified=0;
-            RP_ParseRes res = rp_get_transpiled(buffer, &is_tickified);
+            RP_ParseRes res = rp_get_transpiled_cached((char *)file, buffer, sb.st_mtime, &is_tickified);
 
             char *dbug = getenv("RPDEBUG");
             if(res.transpiled)

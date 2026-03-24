@@ -1252,6 +1252,7 @@ RDEVARGS {
   RESPCLIENT *rcp;
   char * fname;
   int flag;
+  int is_promise; /* if true, use rd_push_response instead of rd_push_response_cb */
 };
 
 
@@ -1333,8 +1334,77 @@ static void rp_rdev_doevent(evutil_socket_t fd, short events, void* arg)
 
   // get response from redis
   response = getRespReply(args->rcp);
-  //parse response, run callback
-  ret=rd_push_response_cb(ctx, args->rcp, response, duk_normalize_index(ctx, -1), duk_normalize_index(ctx, -2), args->fname, args->flag);
+
+  if (args->is_promise)
+  {
+    // Promise mode: get full result as one value (like sync path),
+    // then call the resolve/reject callback once.
+    // Start clean — rebuild what we need from the global stash.
+    duk_set_top(ctx, 0);
+
+    // Get 'this' from rd_event using rcp pointer
+    duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("rd_event"));
+    duk_push_pointer(ctx, (void*)args->rcp);
+    duk_get_prop(ctx, -2);
+    duk_remove(ctx, -2); // [ this ]
+
+    // rd_push_response uses duk_push_this() to set errMsg,
+    // but we're in an event callback where 'this' isn't bound.
+    // Handle error cases ourselves, then call rd_push_response for success.
+    duk_get_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("subcallback"));
+    duk_dup(ctx, 0); // this for pcall_method
+    // [ this, callback, this ]
+
+    if (!response)
+    {
+      // connection error
+      char *connerr = args->rcp->rppFrom->errorMsg;
+      duk_push_undefined(ctx);
+      duk_push_sprintf(ctx, "%s: redis server connection error:%s", args->fname, connerr ? connerr : "Unknown Error");
+    }
+    else if (response->nItems == 1 && response->items->respType == RESPISERRORMSG)
+    {
+      // redis error response
+      duk_push_undefined(ctx);
+      duk_push_string(ctx, (const char *)response->items->loc);
+    }
+    else
+    {
+      // success: use rd_push_response to build the result
+      // Temporarily make 'this' at index 0 act as 'this' for duk_push_this
+      // by calling rd_push_response via a helper that sets this binding.
+      // Simpler: just build the result on the stack directly.
+      duk_set_top(ctx, 0);
+      duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("rd_event"));
+      duk_push_pointer(ctx, (void*)args->rcp);
+      duk_get_prop(ctx, -2);
+      duk_remove(ctx, -2); // [ this ]
+      // push this as 'this' binding for rd_push_response
+      // rd_push_response pushes one value
+      rd_push_response(ctx, response, args->fname, args->flag, args->rcp);
+      // [ this, result ]
+      // Now build the callback call
+      duk_get_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("subcallback"));
+      duk_dup(ctx, 0);
+      duk_dup(ctx, 1); // result
+      duk_push_undefined(ctx); // no error
+    }
+
+    ret = duk_pcall_method(ctx, 2);
+    if (ret != DUK_EXEC_SUCCESS)
+    {
+      const char *errmsg = rp_push_error(ctx, -1, "error in redis async promise callback:", rp_print_error_lines);
+      fprintf(stderr, "%s\n", errmsg);
+      duk_pop(ctx);
+    }
+    duk_pop(ctx);
+    ret = 0; // one-shot, always clean up
+  }
+  else
+  {
+    //parse response, run callback (per-item for arrays)
+    ret=rd_push_response_cb(ctx, args->rcp, response, duk_normalize_index(ctx, -1), duk_normalize_index(ctx, -2), args->fname, args->flag);
+  }
   // [ ..., this, callback, callback_return_val ]
 
   // if not subscribe or xread_auto_async, its a one time event. Else if returned false, unregister
@@ -1391,8 +1461,9 @@ static duk_ret_t duk_rp_cc_docmd(duk_context *ctx)
   RESPCLIENT *rcp=NULL;
   RESPROTO *response;
   duk_idx_t top=0, i=0;
-  int gotfunc=0, isasync=0, commandtype=0, retbuf=0, totalels=0;
+  int gotfunc=0, isasync=0, commandtype=0, retbuf=0, totalels=0, ispromise=0;
   const char *fname, *cname;
+  char *fmt=NULL;
   duk_size_t sz;
 
   duk_push_this(ctx);
@@ -1447,7 +1518,6 @@ static duk_ret_t duk_rp_cc_docmd(duk_context *ctx)
   /* for all commands except format & format_async - generate the format string */
   if(strcmp(fname, "format") != 0 && strcmp(fname, "format_async") != 0)
   {
-    char *fmt=NULL;
     int xread_auto_async_err=0;
 
     if(strcmp(fname,"xread_auto_async")==0)
@@ -1728,7 +1798,84 @@ static duk_ret_t duk_rp_cc_docmd(duk_context *ctx)
       }
 
       if (!gotfunc)
-        RP_THROW(ctx, "%s: subscribe and *_async functions require a callback", fname);
+      {
+        /* Check for transpiler Promise — inject a resolve/reject callback
+           and return a Promise. The command is already built in fmt/stack,
+           so we just need to provide the missing callback. */
+        int have_promise = rp_have_promise(ctx);
+
+        if (have_promise && strcmp(fname, "subscribe") && strcmp(fname, "psubscribe")
+            && strcmp(fname, "xread_block_async") && strcmp(fname, "xread_auto_async"))
+        {
+          /* Create a Promise and extract resolve/reject.
+             Build a callback that calls resolve(res) or reject(Error(err)).
+             Store it as subcallback on 'this', set gotfunc=1, and continue
+             into the normal async path. Return the Promise at the end. */
+          duk_push_global_stash(ctx);
+          if (!duk_get_prop_string(ctx, -1, "redis_mkcb"))
+          {
+            duk_pop(ctx);
+            duk_eval_string(ctx,
+              "(function(resolve, reject) {"
+              "  return function(res, err) {"
+              "    if (err) reject(new Error(err));"
+              "    else resolve(res);"
+              "  };"
+              "})");
+            duk_dup(ctx, -1);
+            duk_put_prop_string(ctx, -3, "redis_mkcb");
+          }
+          duk_remove(ctx, -2); /* remove stash */
+          /* stack: [ ..., mkcb_func ] */
+
+          /* We need to create the Promise and extract resolve/reject,
+             then use mkcb to build the callback.
+             Use: var p = new Promise(function(res,rej){ rcl._resolve=res; rcl._reject=rej; }); */
+          duk_push_global_stash(ctx);
+          if (!duk_get_prop_string(ctx, -1, "redis_promise_setup"))
+          {
+            duk_pop(ctx);
+            duk_eval_string(ctx,
+              "(function(rcl, mkcb) {"
+              "  var _resolve, _reject;"
+              "  var p = new Promise(function(res, rej) { _resolve = res; _reject = rej; });"
+              "  var cb = mkcb(_resolve, _reject);"
+              "  return { promise: p, callback: cb };"
+              "})");
+            duk_dup(ctx, -1);
+            duk_put_prop_string(ctx, -3, "redis_promise_setup");
+          }
+          duk_remove(ctx, -2); /* remove stash */
+
+          /* call setup(rcl, mkcb) */
+          duk_push_this(ctx);
+          duk_pull(ctx, -3); /* pull mkcb */
+          duk_call(ctx, 2);
+          /* stack: [ ..., { promise, callback } ] */
+
+          /* extract callback and store as subcallback */
+          duk_get_prop_string(ctx, -1, "callback");
+          duk_push_this(ctx);
+          duk_pull(ctx, -2);
+          duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("subcallback"));
+          duk_pop(ctx); /* this */
+          gotfunc = 1;
+
+          /* extract promise — we'll return it at the end */
+          duk_get_prop_string(ctx, -1, "promise");
+          duk_remove(ctx, -2); /* remove setup result object */
+          /* stack: [ ..., promise ] — save index */
+          duk_push_this(ctx);
+          duk_pull(ctx, -2);
+          duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("_async_promise"));
+          duk_pop(ctx); /* this */
+
+          ispromise = 1;
+          /* fall through to normal async path with gotfunc=1 */
+        }
+        else
+          RP_THROW(ctx, "%s: subscribe and *_async functions require a callback (or use Promises with 'use transpiler')", fname);
+      }
 
       REMALLOC(args, sizeof(RDEVARGS));
       /* args struct is populated with items we will need in the event callback */
@@ -1736,6 +1883,7 @@ static duk_ret_t duk_rp_cc_docmd(duk_context *ctx)
       args->rcp = subrcp;
       args->fname = strdup(fname);
       args->flag = ASYNCFLAG | commandtype | retbuf;
+      args->is_promise = ispromise;
       //fcntl(subrcp->socket, flags|O_NONBLOCK); //seems to work without this.
 
       // a new event to handle our callback
@@ -1758,6 +1906,16 @@ static duk_ret_t duk_rp_cc_docmd(duk_context *ctx)
       duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("args"));//and put it in 'this' as 0xffargs
       duk_put_prop(ctx, -3);//store key(subrcp)/val('this') in rd_event
       duk_pop(ctx); // rd_event object
+
+      /* If we created a Promise, return it instead of 0 */
+      duk_push_this(ctx);
+      if (duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("_async_promise")))
+      {
+        duk_del_prop_string(ctx, -3, DUK_HIDDEN_SYMBOL("_async_promise"));
+        duk_remove(ctx, -2); /* this */
+        return 1;
+      }
+      duk_pop_2(ctx); /* undefined, this */
 
       return 0;
     }

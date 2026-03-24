@@ -758,6 +758,11 @@ void run_b4loop_funcs();
 
 
 extern void duk_rp_fatal(void *udata, const char *msg);
+
+/* Check if the transpiler's Promise polyfill is available.
+   Returns 1 if _TrN_Sp exists on the global and Promise is a function.
+   Does not alter the Duktape stack. */
+int rp_have_promise(duk_context *ctx);
 #define DUK_SCOPE_LOCAL   0
 #define DUK_SCOPE_CLOSURE 1
 #define DUK_SCOPE_WITH    2

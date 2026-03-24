@@ -8,4 +8,10 @@
    and set is_tickified to 1                                               */
 RP_ParseRes rp_get_transpiled(char *src, int *is_tickified);
 
+/* Same as rp_get_transpiled but with file-based caching.
+   Cache file: file.js -> file.transpiled.js
+   If cache exists and is newer than src_mtime, loads from cache.
+   Otherwise transpiles and writes the cache file.                  */
+RP_ParseRes rp_get_transpiled_cached(char *fn, char *src, time_t src_mtime, int *is_tickified);
+
 #endif

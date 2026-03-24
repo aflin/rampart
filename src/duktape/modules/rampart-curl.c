@@ -3180,8 +3180,113 @@ static duk_ret_t duk_curl_fetch_sync_async(duk_context *ctx, int async)
         }
     }
 
-    if(async && func_idx==-1)
-        RP_THROW(ctx, "fetch_async: callback function is required");
+    /* Promise support: if transpiler is loaded (_TrN_Sp exists) and either:
+       - no callback: return Promise that resolves with the result
+       - has callback: return Promise that resolves when all requests finish (.finally)
+       The _curl_in_promise flag prevents re-entry from the wrapper calling fetchAsync */
+    if(async)
+    {
+        int have_promise = rp_have_promise(ctx);
+        int in_promise = 0;
+        if (have_promise)
+        {
+            /* check re-entry flag */
+            duk_get_global_string(ctx, "_TrN_Sp");
+            duk_get_prop_string(ctx, -1, "_curl_in_promise");
+            in_promise = duk_to_boolean(ctx, -1);
+            duk_pop_2(ctx);
+        }
+
+        if (have_promise && !in_promise)
+        {
+            /* set re-entry guard */
+            duk_get_global_string(ctx, "_TrN_Sp");
+            duk_push_true(ctx);
+            duk_put_prop_string(ctx, -2, "_curl_in_promise");
+            duk_pop(ctx);
+
+            if (func_idx == -1)
+            {
+                /* No callback: wrap in Promise, resolve with single result */
+                duk_push_global_stash(ctx);
+                if (!duk_get_prop_string(ctx, -1, "curl_fetch_promise"))
+                {
+                    duk_pop(ctx);
+                    duk_eval_string(ctx,
+                        "(function(curl, args) {"
+                        "  return new Promise(function(resolve, reject) {"
+                        "    var a = [];"
+                        "    for (var i = 0; i < args.length; i++) a.push(args[i]);"
+                        "    a.push(function(res) {"
+                        "      if (res.errMsg && res.errMsg.length)"
+                        "        reject(new Error(res.errMsg));"
+                        "      else"
+                        "        resolve(res);"
+                        "    });"
+                        "    curl.fetchAsync.apply(curl, a);"
+                        "  });"
+                        "})");
+                    duk_dup(ctx, -1);
+                    duk_put_prop_string(ctx, -3, "curl_fetch_promise");
+                }
+                duk_remove(ctx, -2);
+            }
+            else
+            {
+                /* Has callback: wrap so user callback fires per-URL,
+                   Promise resolves when all are done via .finally() */
+                duk_push_global_stash(ctx);
+                if (!duk_get_prop_string(ctx, -1, "curl_fetch_finally_promise"))
+                {
+                    duk_pop(ctx);
+                    duk_eval_string(ctx,
+                        "(function(curl, args) {"
+                        "  return new Promise(function(resolve, reject) {"
+                        "    var a = [];"
+                        "    for (var i = 0; i < args.length; i++) a.push(args[i]);"
+                        "    var ret = curl.fetchAsync.apply(curl, a);"
+                        "    if (ret && typeof ret['finally'] === 'function')"
+                        "      ret['finally'](function() { resolve(); });"
+                        "    else"
+                        "      resolve();"
+                        "  });"
+                        "})");
+                    duk_dup(ctx, -1);
+                    duk_put_prop_string(ctx, -3, "curl_fetch_finally_promise");
+                }
+                duk_remove(ctx, -2);
+            }
+
+            /* push curl module (this) */
+            duk_push_this(ctx);
+
+            /* push the original arguments as an array */
+            duk_push_array(ctx);
+            {
+                duk_uarridx_t ai = 0;
+                for (i = 1; i < 5; i++) {
+                    if (duk_get_type(ctx, i) != DUK_TYPE_UNDEFINED) {
+                        duk_dup(ctx, i);
+                        duk_put_prop_index(ctx, -2, ai++);
+                    }
+                }
+            }
+
+            /* call wrapper(curl, args) -> returns Promise */
+            duk_call(ctx, 2);
+
+            /* clear re-entry guard */
+            duk_get_global_string(ctx, "_TrN_Sp");
+            duk_del_prop_string(ctx, -1, "_curl_in_promise");
+            duk_pop(ctx);
+
+            return 1;
+        }
+
+        /* No Promise available and no callback */
+        if (func_idx == -1)
+            RP_THROW(ctx, "fetch_async: callback function is required (or use Promises with 'use transpiler')");
+    }
 
     /* parallel requests */
 
@@ -3384,6 +3489,43 @@ static duk_ret_t duk_curl_submit_sync_async(duk_context *ctx, int async)
     {
         func_idx=2;
         opts_idx=1;
+    }
+    else if(async)
+    {
+        /* No callback provided — check for transpiler Promise */
+        int have_promise = rp_have_promise(ctx);
+
+        if (have_promise)
+        {
+            /* Single request, no callback: resolve with result */
+            duk_push_global_stash(ctx);
+            if (!duk_get_prop_string(ctx, -1, "curl_submit_promise"))
+            {
+                duk_pop(ctx);
+                duk_eval_string(ctx,
+                    "(function(curl, opts) {"
+                    "  return new Promise(function(resolve, reject) {"
+                    "    curl.submitAsync(opts, function(res) {"
+                    "      if (res.errMsg && res.errMsg.length)"
+                    "        reject(new Error(res.errMsg));"
+                    "      else"
+                    "        resolve(res);"
+                    "    });"
+                    "  });"
+                    "})");
+                duk_dup(ctx, -1);
+                duk_put_prop_string(ctx, -3, "curl_submit_promise");
+            }
+            duk_remove(ctx, -2);
+
+            duk_push_this(ctx);
+            duk_dup(ctx, duk_is_object(ctx, 1) ? 1 : 2);
+
+            duk_call(ctx, 2);
+            return 1;
+        }
+
+        RP_THROW(ctx, "curl - submit requires an object of request options and a function (or use Promises with 'use transpiler')");
     }
     else
         RP_THROW(ctx, "curl - submit requires an object of request options and a function");

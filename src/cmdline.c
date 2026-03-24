@@ -1599,6 +1599,20 @@ static char *checkuse(char *src)
     return NULL;
 }
 
+int rp_have_promise(duk_context *ctx)
+{
+    int ret = 0;
+    duk_get_global_string(ctx, "_TrN_Sp");
+    if (duk_is_object(ctx, -1))
+    {
+        duk_get_global_string(ctx, "Promise");
+        ret = duk_is_function(ctx, -1);
+        duk_pop(ctx);
+    }
+    duk_pop(ctx);
+    return ret;
+}
+
 RP_ParseRes rp_get_transpiled(char *src, int *is_tickified)
 {
     RP_ParseRes ret = {0};
@@ -1644,6 +1658,74 @@ RP_ParseRes rp_get_transpiled(char *src, int *is_tickified)
     }
 
     return ret;
+}
+
+RP_ParseRes rp_get_transpiled_cached(char *fn, char *src, time_t src_mtime, int *is_tickified)
+{
+    RP_ParseRes res = {0};
+    char *cachefile = NULL;
+    struct stat cstat;
+
+    /* Build cache filename: file.js -> file.transpiled.js */
+    if (fn && strcmp(fn, "stdin") != 0 && strcmp(fn, "eval_code") != 0
+            && strcmp(fn, "command_line_script") != 0 && strcmp(fn, "built_in_server") != 0)
+    {
+        char *dot = strrchr(fn + 1, '.');
+        size_t pfx = dot ? (size_t)(dot - fn) : strlen(fn);
+        size_t ext_len = dot ? strlen(dot) : 3;
+        REMALLOC(cachefile, pfx + 12 + ext_len + 1); /* .transpiled + ext + nul */
+        memcpy(cachefile, fn, pfx);
+        cachefile[pfx] = '\0';
+        strcat(cachefile, ".transpiled");
+        strcat(cachefile, dot ? dot : ".js");
+
+        /* Check if cache file exists and is newer than source */
+        if (stat(cachefile, &cstat) != -1 && cstat.st_mtime >= src_mtime)
+        {
+            FILE *cf = fopen(cachefile, "r");
+            if (cf)
+            {
+                char *cbuf = NULL;
+                REMALLOC(cbuf, cstat.st_size + 1);
+                size_t cread = fread(cbuf, 1, cstat.st_size, cf);
+                fclose(cf);
+                if (cread == (size_t)cstat.st_size)
+                {
+                    cbuf[cread] = '\0';
+                    res.transpiled = cbuf;
+                    res.altered = 1;
+                    if (is_tickified)
+                        *is_tickified = 0;
+                    free(cachefile);
+                    return res;
+                }
+                free(cbuf);
+            }
+        }
+    }
+
+    /* No cache or stale — transpile */
+    res = rp_get_transpiled(src, is_tickified);
+
+    /* Write cache only if actually transpiled (not just tickified) */
+    /* Write cache only if actually transpiled (not just tickified) */
+    if (cachefile && res.transpiled && !res.err && is_tickified && !*is_tickified)
+    {
+        FILE *wf = fopen(cachefile, "w");
+        if (wf)
+        {
+            size_t tlen = strlen(res.transpiled);
+            size_t wrote = fwrite(res.transpiled, 1, tlen, wf);
+            fclose(wf);
+            if (wrote != tlen)
+                unlink(cachefile);
+        }
+    }
+
+    if (cachefile)
+        free(cachefile);
+
+    return res;
 }
 
 static char *checkbabel(char *src)
@@ -4018,7 +4100,7 @@ int main(int argc, char *argv[])
                 //char *tickified = tickify(file_src, src_sz, &err, &lineno);
 
                 int is_tickified=0;
-                RP_ParseRes res = rp_get_transpiled(file_src, &is_tickified);
+                RP_ParseRes res = rp_get_transpiled_cached(fn, file_src, entry_file_stat.st_mtime, &is_tickified);
 
                 if(res.errmsg)
                 {
