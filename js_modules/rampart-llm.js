@@ -1,406 +1,353 @@
 rampart.globalize(rampart.utils);
 
+var curl = require("rampart-curl.so");
 
 function err(msg) {
     throw new Error("rampart-llm: " + msg);
 }
 
-var curl = require("rampart-curl.so");
-
 function checkIsRunning(url) {
-    var res = curl.fetch(url, {maxTime:5});
-
-    if(res.status != 200)
-        return false;
-
-    return true;
+    var res = curl.fetch(url, {maxTime: 5});
+    return res.status == 200;
 }
 
-/* *********************  ollama ************************** */
+/* ---- SSE parsing helpers ---- */
 
-var ollamaDefaultOpts = {
-    server:      '127.0.0.1',
-    port:        11434,
-    query:       ollamaQuery
-}
+/* Parse an SSE chunk (possibly containing multiple data: lines)
+   into an array of event objects. */
+function parseSSEChunk(btxt) {
+    var events = [];
+    var lines = btxt.split('\n');
 
-function ollamaQuery(query, callback, finalCallback, ep) {
-    var self=this;
-    var thinkingtext="";
-    var answer="";
+    for(var i = 0; i < lines.length; i++) {
+        var line = lines[i].trim();
+        if(!line) continue;
 
-    self.thinking=false;
+        if(line.indexOf('data:') === 0)
+            line = line.substring(5).trim();
 
-    // allow three params as (query, callback, ep)
-    if(!ep && getType(finalCallback)=='String'){
-        ep=finalCallback;
-        finalCallback=undefined;
+        if(line === '[DONE]') {
+            events.push({done: true});
+            continue;
+        }
+
+        try {
+            events.push(JSON.parse(line));
+        } catch(e) {
+            /* skip unparseable lines (blank, partial, etc.) */
+        }
     }
 
-    self.cancel=false;
+    return events;
+}
 
-    if(!this.model)
-        err("model not set (use ollama.model='mymodel' to set)");
-    if( callback && typeof callback != 'function')
-        err("ollama.query - invalid parameters: call must be ollama.query(queryString, [callbackFunction||null] [,finalCallback])");
+/* Pull the token string out of an OpenAI-format SSE event.
+   Returns {token, thinking} to support --reasoning-format. */
+function extractToken(parsed) {
+    var choice = (getType(parsed.choices) == 'Array' && parsed.choices.length > 0)
+        ? parsed.choices[0] : null;
 
-    if (finalCallback && typeof finalCallback != "function")
-        err("ollama.query - invalid parameters: finalCallback must be a function: call must be ollama.query(queryString, [callbackFunction||null] [, finalCallback] [, endPoint])");
+    if(!choice || choice.finish_reason === "stop")
+        return {token: "", thinking: false};
 
+    /* reasoning_content is set by llama-server --reasoning-format deepseek */
+    if(choice.delta && choice.delta.reasoning_content)
+        return {token: choice.delta.reasoning_content, thinking: true};
+
+    var tok = (choice.delta && choice.delta.content) ? choice.delta.content : "";
+    return {token: tok, thinking: false};
+}
+
+
+/* ---- Shared query using OpenAI-compatible /v1/ endpoints ---- */
+
+function query(prompt, callback, finalCallback, ep) {
+    var self = this;
+    var thinkBuf    = "";
+    var thinkingText = "";
+    var answerText  = "";
+    var hadThinking = false;
+
+    self.thinking = false;
+
+    /* allow (query, callback, endpointString) shorthand */
+    if(!ep && getType(finalCallback) == 'String') {
+        ep = finalCallback;
+        finalCallback = undefined;
+    }
+
+    self.cancel = false;
+
+    if(!this.model) {
+        if(this._type === 'llamaCpp')
+            this.model = "mymod"; /* llama.cpp serves one model; name is irrelevant */
+        else
+            err("model not set (use instance.model='mymodel' to set)");
+    }
+
+    if(callback && typeof callback != 'function')
+        err("query - callback must be a function");
+    if(finalCallback && typeof finalCallback != 'function')
+        err("query - finalCallback must be a function");
     if(!callback && !finalCallback)
-        err("ollama.query - invalid setup: at least one callback must be provided ollama.query(queryString, [callbackFunction||null] [, finalCallback] [, endPoint])");
+        err("query - at least one callback must be provided");
 
-    this.fetchError=false;
+    this.fetchError = false;
 
-    postObj={
-        model: this.model,
-    }
+    var postObj = {
+        model:  this.model,
+        stream: true
+    };
 
-    var endPoint = "/api/chat";
-    if(ep) {
-        endPoint = ep;
-    }
+    var endPoint = ep || "/v1/chat/completions";
 
-    if(typeof query == 'string' && query.length) {
-        postObj.prompt=query;
+    if(typeof prompt == 'string' && prompt.length) {
+        postObj.prompt = prompt;
         if(!ep)
-            endPoint = '/api/generate';
-    }
-    else if(getType(query) == 'Array') {
-        postObj.messages=query;
-    }
-
-    function chunkcb(content) {
-        if(callback)
-            return callback(content);
-        if(content.error)
-            fprintf(stderr, 'error and no callback in rampart-llm.js: "%J"\n', content)
+            endPoint = '/v1/completions';
+    } else if(getType(prompt) == 'Array') {
+        postObj.messages = prompt;
     }
 
     if(this.params)
         Object.assign(postObj, this.params);
 
-    postObj.stream=true;
+    function chunkcb(content) {
+        if(callback)
+            return callback(content);
+        if(content.error)
+            fprintf(stderr, 'error and no callback in rampart-llm.js: "%J"\n', content);
+    }
 
-    self.tokens=[];
+    /*  Emit a token through the <think>-tag filter.
+        Buffers partial tags so a split like "<thi" + "nk>" is handled correctly.  */
+    function emitToken(token, serverResponse) {
+        thinkBuf += token;
+
+        while(thinkBuf.length > 0) {
+            var tag    = self.thinking ? "</think>" : "<think>";
+            var tagLen = tag.length;
+            var idx    = thinkBuf.indexOf(tag);
+
+            if(idx !== -1) {
+                /* complete tag found */
+                var before = thinkBuf.substring(0, idx);
+                thinkBuf = thinkBuf.substring(idx + tagLen);
+
+                if(before.length) {
+                    if(self.thinking)
+                        thinkingText += before;
+                    else if(hadThinking)
+                        answerText += before;
+
+                    var ret = chunkcb({
+                        thinking:       self.thinking,
+                        token:          before,
+                        serverResponse: serverResponse
+                    });
+                    if(ret === false) return false;
+                }
+
+                self.thinking = !self.thinking;
+                if(self.thinking) hadThinking = true;
+                continue;
+            }
+
+            /* check whether the tail of the buffer could be the start of the tag */
+            var partialAt = -1;
+            var minCheck  = Math.min(thinkBuf.length, tagLen - 1);
+            for(var n = minCheck; n > 0; n--) {
+                if(tag.substring(0, n) === thinkBuf.substring(thinkBuf.length - n)) {
+                    partialAt = thinkBuf.length - n;
+                    break;
+                }
+            }
+
+            if(partialAt > 0) {
+                /* emit the safe portion before the potential partial tag */
+                var safe = thinkBuf.substring(0, partialAt);
+                thinkBuf = thinkBuf.substring(partialAt);
+
+                if(self.thinking)
+                    thinkingText += safe;
+                else if(hadThinking)
+                    answerText += safe;
+
+                var ret = chunkcb({
+                    thinking:       self.thinking,
+                    token:          safe,
+                    serverResponse: serverResponse
+                });
+                if(ret === false) return false;
+            } else if(partialAt === 0) {
+                /* entire buffer is a potential partial tag – wait for more data */
+                break;
+            } else {
+                /* no partial match – emit everything */
+                if(self.thinking)
+                    thinkingText += thinkBuf;
+                else if(hadThinking)
+                    answerText += thinkBuf;
+
+                var ret = chunkcb({
+                    thinking:       self.thinking,
+                    token:          thinkBuf,
+                    serverResponse: serverResponse
+                });
+                thinkBuf = "";
+                if(ret === false) return false;
+            }
+
+            break;
+        }
+    }
+
+    self.tokens = [];
+
     curl.fetchAsync(this.urlbase + endPoint,
         {
             connectTimeout: 10,
             postJSON: postObj,
+
             chunkCallback: function(r) {
-
-                if(self.cancel===true)
-                {
-                    self.cancel=false;
+                if(self.cancel === true) {
+                    self.cancel = false;
                     return curl.cancel;
                 }
 
-                try {
-                    var parsed = JSON.parse(r.body);
-                } catch(e) {
-                    var parsed = {error:e.message, data:rampart.utils.bufferToString(r.body)}
-                    chunkcb(parsed);
-                    return false; //don't run any more callbacks
-                }
-                // empty string is ok.  check for undefined.
-                if(parsed.response===undefined && !(parsed.message && parsed.message.content!==undefined))
-                {
-                    var parsed = {
-                        error:"no response or message.content",
-                        data:rampart.utils.bufferToString(r.body),
-                        serverResponse: r,
-                        token: ""
+                var btxt   = sprintf('%s', r.body);
+                var events = parseSSEChunk(btxt);
+
+                for(var i = 0; i < events.length; i++) {
+                    var ev = events[i];
+
+                    if(ev.done) return;  /* [DONE] – final callback handles the rest */
+
+                    if(ev.error) {
+                        self.fetchError = ev.error;
+                        chunkcb({error: ev.error, serverResponse: r, token: ""});
+                        return false;
                     }
-                    chunkcb(parsed);
-                    return false;
-                }
-                var token = parsed.response ? parsed.response :parsed.message.content
 
-                 if( finalCallback && token.length )
-                     self.tokens.push(token);
+                    var result = extractToken(ev);
+                    if(!result.token.length) continue;
 
-                if(token && token.indexOf("<think>") != -1) {
-                    self.thinking=true;
-                    return;
-                }
-                else if (token && token.indexOf("</think>") != -1) {
-                    self.thinking=false;
-                    return;
-                }
-                parsed.thinking=self.thinking;
+                    if(result.thinking) {
+                        /* reasoning_content from API — already classified,
+                           bypass <think> tag parser and emit directly */
+                        thinkingText += result.token;
+                        hadThinking = true;
+                        self.thinking = true;
+                        var ret = chunkcb({
+                            thinking: true,
+                            token: result.token,
+                            serverResponse: r
+                        });
+                        if(ret === false) {
+                            self.cancel = false;
+                            return curl.cancel;
+                        }
+                    } else {
+                        /* reset thinking state so emitToken doesn't
+                           treat answer tokens as thinking content */
+                        if(self.thinking && hadThinking)
+                            self.thinking = false;
 
-                if(self.thinking)
-                    thinkingtext += token;
-                else if (thinkingtext)
-                    answer += token;
+                        if(finalCallback)
+                            self.tokens.push(result.token);
 
-                parsed.serverResponse=r;
-                parsed.token = token;
-
-                var ret=chunkcb(parsed);
-                if(ret===false)
-                {
-                    self.cancel=false;
-                    return curl.cancel;
+                        var ret = emitToken(result.token, r);
+                        if(ret === false) {
+                            self.cancel = false;
+                            return curl.cancel;
+                        }
+                    }
                 }
             }
         },
-        // run the final callback when we have all the data
-        function(r) {
-            callback({done:true, token:'', serverResponse:''});
-            if(finalCallback) {
-                var resp = {serverResponse:r, fullText: self.tokens.join('')};
-                self.tokens=undefined;
 
-                if(thinkingtext) {
-                    resp.thinkingText=thinkingtext;
-                    resp.answer=answer;
+        /* final callback – runs after the stream ends */
+        function(r) {
+            /* mid-stream SSE error already handled in chunkCallback */
+            if(self.fetchError) {
+                chunkcb({done: true, token: '', serverResponse: r});
+                if(finalCallback)
+                    finalCallback({serverResponse: r, fullText: '', error: self.fetchError});
+                return;
+            }
+
+            /* check for HTTP error (e.g. 400 context exceeded) */
+            if(!r.status || r.status != 200) {
+                var errInfo = {error: (r.status || 0) + " error", serverResponse: r};
+                try {
+                    var parsed = JSON.parse(sprintf('%s', r.body));
+                    if(parsed.error) errInfo.error = parsed.error;
+                } catch(e) {}
+                chunkcb({done: true, token: '', serverResponse: r, error: errInfo.error});
+                if(finalCallback)
+                    finalCallback({serverResponse: r, fullText: '', error: errInfo.error});
+                return;
+            }
+
+            /* flush any remaining buffered text */
+            if(thinkBuf.length) {
+                if(self.thinking)
+                    thinkingText += thinkBuf;
+                else {
+                    if(hadThinking) answerText += thinkBuf;
+                    chunkcb({thinking: self.thinking, token: thinkBuf, serverResponse: r});
+                }
+                thinkBuf = "";
+            }
+
+            /* signal done to per-token callback */
+            chunkcb({done: true, token: '', serverResponse: ''});
+
+            if(finalCallback) {
+                var resp = {serverResponse: r, fullText: self.tokens.join('')};
+                self.tokens = undefined;
+
+                if(thinkingText) {
+                    resp.thinkingText = thinkingText;
+                    resp.answer       = answerText;
                 }
                 finalCallback(resp);
             }
         }
     );
+}
 
+
+/* ---- Constructors ---- */
+
+function initBackend(self, defaults, opts) {
+    Object.assign(self, defaults, opts);
+
+    if(typeof self.server != 'string')
+        err("option 'server' must be a string (host name or ip)");
+    if(typeof self.port != 'number')
+        err("option 'port' must be a number");
+
+    self.urlbase = sprintf("http://%s:%d", self.server, self.port);
 }
 
 function ollama(opts) {
-    if(!opts) opts={};
+    initBackend(this, {server: '127.0.0.1', port: 11434, query: query}, opts || {});
+    this._type = 'ollama';
 
-    Object.assign(this, ollamaDefaultOpts, opts);
-
-    if(typeof this.server != 'string')
-        err("option 'server' must be a string (host name or ip)");
-
-    if(typeof this.port != 'number')
-        err("option 'port' must be a number");
-
-    this.urlbase = `http://${this.server}:${this.port}`;
-
-    if( !checkIsRunning(this.urlbase + '/') ) {
-        err(`ollama server at ${this.urlbase} doesn't appear to be running`);
-    }
-
-}
-
-/* *********************  llama.cpp ************************** */
-
-var llamaCppDefaultOpts = {
-    server:      '127.0.0.1',
-    port:        8080,
-    query:       llamaCppQuery
-}
-
-function llamaCppQuery(query, callback, finalCallback, ep) {
-    var self=this;
-    var thinkingtext="";
-    var answer="";
-
-    self.thinking=false;
-
-    // allow three params as (query, callback, ep)
-    if(!ep && getType(finalCallback)=='String'){
-        ep=finalCallback;
-        finalCallback=undefined;
-    }
-
-    self.cancel=false;
-
-    if(!this.model)
-        this.model="mymod"; // llama.cpp only holds one model and doesn't care.
-
-    if( callback && typeof callback != 'function')
-        err("llamaCpp.query - invalid parameters: call must be llamaCpp.query(queryString, [callbackFunction||null] [,finalCallback])");
-
-    if (finalCallback && typeof finalCallback != "function")
-        err("llamaCpp.query - invalid parameters: finalCallback must be a function: call must be llamaCpp.query(queryString, [callbackFunction||null] [, finalCallback] [, endPoint])");
-
-    if(!callback && !finalCallback)
-        err("llamaCpp.query - invalid setup: at least one callback must be provided llamaCpp.query(queryString, [callbackFunction||null] [, finalCallback] [, endPoint])");
-
-    this.fetchError=false;
-
-    postObj={
-        model:this.model,
-    }
-
-    var endPoint = "/v1/chat/completions";
-    if(ep) {
-        endPoint = ep;
-    }
-
-    if(typeof query == 'string' && query.length) {
-        postObj.prompt=query;
-        if(!ep)
-            endPoint = '/v1/completions';
-    }
-    else if(getType(query) == 'Array') {
-        postObj.messages=query;
-    }
-
-
-    if(this.params)
-        Object.assign(postObj, this.params);
-
-    function chunkcb(content) {
-        if(callback)
-            return callback(content);
-        if(content.error)
-            fprintf(stderr, 'error and no callback in rampart-llm.js: "%J"\n', content)
-    }
-
-    postObj.stream=true;
-    /*
-        data: {"choices":[{"finish_reason":null,"index":0,"delta":{"content":"."}}],"created":1756597116,"id":"chatcmpl-abvobwHo7AhZvUHU36sQ5ZV6Anjok43F","model":"qwen2.5-32b-instruct-q5_k_m.gguf","system_fingerprint":"b6290-a6a58d64","object":"chat.completion.chunk"}
-
-        data: {"choices":[{"finish_reason":"stop","index":0,"delta":{}}],"created":1756597116,"id":"chatcmpl-abvobwHo7AhZvUHU36sQ5ZV6Anjok43F","model":"qwen2.5-32b-instruct-q5_k_m.gguf","system_fingerprint":"b6290-a6a58d64","object":"chat.completion.chunk"}
-
-        data: {"choices":[],"created":1756597116,"id":"chatcmpl-abvobwHo7AhZvUHU36sQ5ZV6Anjok43F","model":"qwen2.5-32b-instruct-q5_k_m.gguf","system_fingerprint":"b6290-a6a58d64","object":"chat.completion.chunk","usage":{"completion_tokens":22,"prompt_tokens":28,"total_tokens":50},"timings":{"prompt_n":28,"prompt_ms":447.926,"prompt_per_token_ms":15.997357142857142,"prompt_per_second":62.510325366243535,"predicted_n":22,"predicted_ms":1317.711,"predicted_per_token_ms":59.89595454545454,"predicted_per_second":16.69561838673275}}
-
-        data: [DONE]
-    */
-    self.tokens=[];
-    var DONE=true; //make parsing a little easier
-    curl.fetchAsync(this.urlbase + endPoint,
-        {
-            connectTimeout: 10,
-            postJSON: postObj,
-            chunkCallback: function(r) {
-                var parsed;
-
-                if(self.cancel===true)
-                {
-                    self.cancel=false;
-                    return curl.cancel;
-                }
-
-                // first, get body as a string
-                var btxt = sprintf('%s', r.body);
-
-                // check for data: [DONE]
-                if( /\[DONE\]/.test(btxt) )
-                {
-                    parsed = {
-                        serverResponse: r,
-                        token: "",
-                        done: true
-                    }
-                    chunkcb(parsed)
-                    return;
-                }
-
-                try {
-                    btxt=btxt.replace('data:', '');
-                    //printf("parsing '%s'\n",btxt);
-                    parsed = JSON.parse(btxt);
-                } catch(e) {
-                    parsed = {
-                        error:e.message,
-                        data:rampart.utils.sprintf("%s", r.body),
-                        serverResponse: r,
-                        token: ""
-                    }
-                    chunkcb(parsed);
-                    return false; //don't run any more callbacks
-                }
-
-                if(typeof parsed != 'object')
-                {
-                    var parsed = {
-                        error:"no data in object",
-                        data:rampart.utils.bufferToString(r.body),
-                        serverResponse: r,
-                        token: ""
-                    }
-                    //printf("doing err 2: %J\n", parsed);
-                    chunkcb(parsed);
-                    return false;
-                }
-
-
-                var choice = (getType(parsed.choices)=='Array') ? parsed.choices[0] : null;
-                //printf("getType=%s, choice = '%s'\n", getType(parsed.choices), choice);
-                // we get choices:[] right after "finish_reason":"stop"
-                if(!choice || choice["finish_reason"] == "stop")
-                {
-                    var parsed = {
-                        serverResponse: r,
-                        token: ""
-                    }
-                    chunkcb(parsed);
-                }
-                var token = ( choice.delta && choice.delta.content )
-                    ? choice.delta.content
-                    : "";
-
-                //printf("token='%s'\n", token);
-
-                if( finalCallback && token.length )
-                    self.tokens.push(token);
-
-                if(token && token.indexOf("<think>") != -1) {
-                    self.thinking=true;
-                    return;
-                }
-                else if (token && token.indexOf("</think>") != -1) {
-                    self.thinking=false;
-                    return;
-                }
-
-                parsed.thinking=self.thinking;
-
-                if(self.thinking)
-                    thinkingtext += token;
-                else if (thinkingtext)
-                    answer += token;
-
-                parsed.serverResponse=r;
-                parsed.token = token;
-
-                var ret=chunkcb(parsed);
-                if(ret===false)
-                {
-                    self.cancel=false;
-                    return curl.cancel;
-                }
-            }
-        },
-        // run the final callback when we have all the data
-        function(r) {
-            if(finalCallback) {
-                var resp = {serverResponse:r, fullText: self.tokens.join('')};
-                self.tokens=undefined;
-
-                if(thinkingtext) {
-                    resp.thinkingText=thinkingtext;
-                    resp.answer=answer;
-                }
-                finalCallback(resp);
-            }
-        }
-    );
-
+    if(!checkIsRunning(this.urlbase + '/'))
+        err(sprintf("ollama server at %s doesn't appear to be running", this.urlbase));
 }
 
 function llamaCpp(opts) {
-    if(!opts) opts={};
+    initBackend(this, {server: '127.0.0.1', port: 8080, query: query}, opts || {});
+    this._type = 'llamaCpp';
 
-    Object.assign(this, llamaCppDefaultOpts, opts);
-
-    if(typeof this.server != 'string')
-        err("option 'server' must be a string (host name or ip)");
-
-    if(typeof this.port != 'number')
-        err("option 'port' must be a number");
-
-    this.urlbase = `http://${this.server}:${this.port}`;
-
-    if( !checkIsRunning(this.urlbase + '/') ) {
-        err(`llama.cpp server at ${this.urlbase} doesn't appear to be running`);
-    }
-
+    if(!checkIsRunning(this.urlbase + '/'))
+        err(sprintf("llama.cpp server at %s doesn't appear to be running", this.urlbase));
 }
 
 module.exports = {
-    ollama: ollama,
+    ollama:   ollama,
     llamaCpp: llamaCpp
 };
