@@ -613,12 +613,30 @@ static void call_js_with_string(duk_context *ctx, const char *js_src,
         RP_THROW(ctx, "convert %s: %s", name, duk_safe_to_string(ctx, -1));
 }
 
-/* convenience: call with file content buffer */
+/* convenience: call with file content as a string */
 static void call_js_converter(duk_context *ctx, const char *js_src,
                                const char *name,
                                const unsigned char *buf, size_t len)
 {
     call_js_with_string(ctx, js_src, name, (const char *)buf, len);
+}
+
+/* convenience: call with file content as a binary buffer (for PDF, DOC, etc.) */
+static void call_js_converter_buf(duk_context *ctx, const char *js_src,
+                               const char *name,
+                               const unsigned char *buf, size_t len)
+{
+    if(duk_pcompile_string(ctx, DUK_COMPILE_EVAL, js_src) != 0)
+        RP_THROW(ctx, "convert %s: compile error: %s", name, duk_safe_to_string(ctx, -1));
+
+    if(duk_pcall(ctx, 0) != 0)
+        RP_THROW(ctx, "convert %s: eval error: %s", name, duk_safe_to_string(ctx, -1));
+
+    void *b = duk_push_fixed_buffer(ctx, (duk_size_t)len);
+    memcpy(b, buf, len);
+
+    if(duk_pcall(ctx, 1) != 0)
+        RP_THROW(ctx, "convert %s: %s", name, duk_safe_to_string(ctx, -1));
 }
 
 /* HTML -> text via rampart-html */
@@ -661,8 +679,10 @@ static const char pdf_convert_buf_js[] =
     "  var res = exec(pdftotext, '-enc', 'UTF-8', '-', '-', {stdin:content});"
     "  if(!res.exitStatus)"
     "    return res.stdout;"
-    "  var tmpf = rampart.utils.realPath(rampart.utils.getenv('TMPDIR')||'/tmp') + '/_rp_pdf_' + rampart.utils.getpid() + '.pdf';"
-    "  rampart.utils.fprintf(rampart.utils.fopen(tmpf,'w+'), '%s', content);"
+    "  var tmpf = (process.env.TMPDIR||'/tmp') + '/_rp_pdf_' + process.getpid() + '.pdf';"
+    "  var fh = rampart.utils.fopen(tmpf,'w+');"
+    "  rampart.utils.fwrite(fh, content);"
+    "  rampart.utils.fclose(fh);"
     "  try {"
     "    res = exec(pdftotext, '-enc', 'UTF-8', tmpf, '-');"
     "  } finally {"
@@ -2155,14 +2175,14 @@ static void do_convert(const unsigned char *buf, size_t len,
             if(filename)
                 call_js_with_string(ctx, pdf_convert_file_js, "pdf", filename, strlen(filename));
             else
-                call_js_converter(ctx, pdf_convert_buf_js, "pdf", buf, len);
+                call_js_converter_buf(ctx, pdf_convert_buf_js, "pdf", buf, len);
             return;
 
         case FT_DOC:
             if(filename)
                 call_js_with_string(ctx, doc_convert_file_js, "doc", filename, strlen(filename));
             else
-                call_js_converter(ctx, doc_convert_buf_js, "doc", buf, len);
+                call_js_converter_buf(ctx, doc_convert_buf_js, "doc", buf, len);
             return;
 
         case FT_UNKNOWN:
