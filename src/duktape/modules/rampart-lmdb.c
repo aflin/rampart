@@ -190,11 +190,15 @@ static inline void check_txn_write_open(duk_context *ctx, LMDB_ENV *lenv, const 
             fname, wdb, lenv->dbpath);
     }
 }
+#define FLAG_GET_DBI_REDO (1 << 30)
 /* get a database handle at the given idx.  If it is a string, open the named db */
 static int get_dbi_idx(duk_context *ctx, MDB_txn *txn, MDB_dbi *dbi, int flags,
     duk_idx_t dbi_idx, const char *fname, const char **dbname)
 {
     const char *db;
+    int redo = flags & FLAG_GET_DBI_REDO;
+
+    flags &= ~FLAG_GET_DBI_REDO;
 
     if(duk_is_object(ctx, dbi_idx) && duk_has_prop_string(ctx, dbi_idx, DUK_HIDDEN_SYMBOL("dbi")) )
     {
@@ -208,8 +212,8 @@ static int get_dbi_idx(duk_context *ctx, MDB_txn *txn, MDB_dbi *dbi, int flags,
         if(dbname)
             *dbname=db;
 
-        /* we forked, need to get new handle */
-        if(pid != getpid())
+        /* we forked, or grew, need to get new handle */
+        if(pid != getpid() || redo)
         {
             int rc;
 
@@ -373,6 +377,7 @@ duk_ret_t duk_rp_lmdb_put(duk_context *ctx)
     const char *s=NULL, *dbname;
     duk_size_t sz;
     duk_idx_t top;
+    int redo_flag=0;
 
     duk_push_this(ctx);
 
@@ -428,7 +433,8 @@ duk_ret_t duk_rp_lmdb_put(duk_context *ctx)
             RP_THROW(ctx, "lmdb.put - error beginning transaction - %s", mdb_strerror(rc));
         }
 
-        rc = get_dbi_idx(ctx, txn, &dbi, MDB_CREATE, 0, "lmdb.put", &dbname);
+        rc = get_dbi_idx(ctx, txn, &dbi, MDB_CREATE|redo_flag, 0, "lmdb.put", &dbname);
+        redo_flag=0;
 
         if(rc)
         {
@@ -456,6 +462,13 @@ duk_ret_t duk_rp_lmdb_put(duk_context *ctx)
                 duk_push_this(ctx);
                 lenv=redo_env(ctx, lenv);
                 duk_set_top(ctx,top);
+
+                if(convtype == RP_LMDB_JSON)
+                    duk_json_decode(ctx, 2);
+                else if(convtype == RP_LMDB_CBOR)
+                    duk_cbor_decode(ctx, 2, 0);
+
+                redo_flag = FLAG_GET_DBI_REDO;
                 goto redo_txn;
             }
             RP_THROW(ctx, "lmdb.put failed to commit - %s", mdb_strerror(rc));
@@ -465,7 +478,6 @@ duk_ret_t duk_rp_lmdb_put(duk_context *ctx)
         return 0;
     }
 
-
     write_lock;
     rc = mdb_txn_begin(lenv->env, NULL, 0, &txn);
     if(rc)
@@ -474,7 +486,8 @@ duk_ret_t duk_rp_lmdb_put(duk_context *ctx)
         RP_THROW(ctx, "lmdb.put - error beginning transaction - %s", mdb_strerror(rc));
     }
 
-    rc = get_dbi_idx(ctx, txn, &dbi, MDB_CREATE, 0, "lmdb.put", &dbname);
+    rc = get_dbi_idx(ctx, txn, &dbi, MDB_CREATE|redo_flag, 0, "lmdb.put", &dbname);
+    redo_flag=0;
 
     if(rc)
     {
@@ -527,23 +540,31 @@ duk_ret_t duk_rp_lmdb_put(duk_context *ctx)
         key.mv_data=(void*)s;
         key.mv_size=strlen(s);
 
-	rc = mdb_put(txn, dbi, &key, &val, 0);
-	if(rc)
-	{
+        rc = mdb_put(txn, dbi, &key, &val, 0);
+        if(rc)
+        {
             mdb_txn_abort(txn);
             write_unlock;
-            // I think this might not happen until commit, but here for good measure
-            if(rc == MDB_MAP_FULL && lenv->rp_flags & GROW_ON_PUT)
-            {
-                lenv->mapsize = (lenv->mapsize *15)/10;
-                duk_push_this(ctx);
-                lenv=redo_env(ctx, lenv);
-                duk_set_top(ctx,top);
-                goto redo_txn;
-            }
-	    RP_THROW(ctx, "lmdb - put failed - %s", mdb_strerror(rc));
-	}
-	duk_pop_2(ctx);
+            RP_THROW(ctx, "lmdb.put failed - %s", mdb_strerror(rc));
+        }
+
+        if(rc)
+        {
+                mdb_txn_abort(txn);
+                write_unlock;
+                // I think this might not happen until commit, but here for good measure
+                if(rc == MDB_MAP_FULL && lenv->rp_flags & GROW_ON_PUT)
+                {
+                    lenv->mapsize = (lenv->mapsize *15)/10;
+                    duk_push_this(ctx);
+                    lenv=redo_env(ctx, lenv);
+                    duk_set_top(ctx,top);
+                    redo_flag = FLAG_GET_DBI_REDO;
+                    goto redo_txn;
+                }
+            RP_THROW(ctx, "lmdb - put failed - %s", mdb_strerror(rc));
+        }
+        duk_pop_2(ctx);
     }
 
     rc = mdb_txn_commit(txn);
@@ -560,6 +581,7 @@ duk_ret_t duk_rp_lmdb_put(duk_context *ctx)
             duk_push_this(ctx);
             lenv=redo_env(ctx, lenv);
             duk_set_top(ctx,top);
+            redo_flag = FLAG_GET_DBI_REDO;
             goto redo_txn;
         }
         RP_THROW(ctx, "lmdb.put - put failed to commit %s\n",  mdb_strerror(rc));
