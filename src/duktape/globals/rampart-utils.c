@@ -1665,6 +1665,9 @@ void duk_process_init(duk_context *ctx)
     duk_push_c_function(ctx, duk_process_set_max_mem,1);
     duk_put_prop_string(ctx,-2,"setMaxMem");
 
+    duk_push_int(ctx, (int)sysconf(_SC_NPROCESSORS_ONLN));
+    duk_put_prop_string(ctx,-2,"nCpu");
+
     duk_push_c_function(ctx,duk_process_exit,1);
     duk_put_prop_string(ctx,-2,"exit");
     duk_push_c_function(ctx,duk_process_getpid,0);
