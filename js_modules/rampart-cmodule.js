@@ -68,28 +68,104 @@ function extractBlock(code) {
     if (start === -1) return { mainfunc: null, leftover: code, error: "No initial '{' found" };
 
     var depth = 0;
-    var i, ch;
+    var i = start;
+    var len = code.length;
 
-    for (i = start; i < code.length; i++) {
-        ch = code[i];
+    while (i < len) {
+        var ch = code[i];
+
+        // Skip string literals "..." (respecting \" escapes)
+        if (ch === '"') {
+            i++;
+            while (i < len && code[i] !== '"') {
+                if (code[i] === '\\') i++; // skip escaped char
+                i++;
+            }
+            i++; // skip closing "
+            continue;
+        }
+
+        // Skip character literals '...' (respecting \' escapes)
+        if (ch === "'") {
+            i++;
+            while (i < len && code[i] !== "'") {
+                if (code[i] === '\\') i++;
+                i++;
+            }
+            i++;
+            continue;
+        }
+
+        // Skip block comments /* ... */
+        if (ch === '/' && i + 1 < len && code[i + 1] === '*') {
+            i += 2;
+            while (i + 1 < len && !(code[i] === '*' && code[i + 1] === '/')) i++;
+            i += 2;
+            continue;
+        }
+
+        // Skip line comments // ...
+        if (ch === '/' && i + 1 < len && code[i + 1] === '/') {
+            while (i < len && code[i] !== '\n') i++;
+            continue;
+        }
+
+        // Count braces only outside strings and comments
         if (ch === '{') {
             depth++;
         } else if (ch === '}') {
             depth--;
             if (depth === 0) {
-                // Found matching closing brace
                 var extractedText = code.substring(start, i + 1);
                 var leftOver = code.substring(0, start) + code.substring(i + 1);
                 var error;
-                if(leftOver.indexOf('}')!==-1)
-                    error="Unbalanced or extra '}'"
+                // Check leftover for unbalanced braces (also skipping strings/comments)
+                if (hasBraceOutsideLiterals(leftOver))
+                    error = "Unbalanced or extra '}'";
                 return { error: error, mainfunc: extractedText, leftover: leftOver };
             }
         }
+
+        i++;
     }
 
-    // If unbalanced braces
     return { error: "unbalanced '{}'", mainfunc: null, leftover: code };
+}
+
+// Check if a string contains } outside of string literals and comments
+function hasBraceOutsideLiterals(code) {
+    var i = 0, len = code.length;
+    while (i < len) {
+        var ch = code[i];
+        if (ch === '"') {
+            i++;
+            while (i < len && code[i] !== '"') {
+                if (code[i] === '\\') i++;
+                i++;
+            }
+            i++; continue;
+        }
+        if (ch === "'") {
+            i++;
+            while (i < len && code[i] !== "'") {
+                if (code[i] === '\\') i++;
+                i++;
+            }
+            i++; continue;
+        }
+        if (ch === '/' && i + 1 < len && code[i + 1] === '*') {
+            i += 2;
+            while (i + 1 < len && !(code[i] === '*' && code[i + 1] === '/')) i++;
+            i += 2; continue;
+        }
+        if (ch === '/' && i + 1 < len && code[i + 1] === '/') {
+            while (i < len && code[i] !== '\n') i++;
+            continue;
+        }
+        if (ch === '}') return true;
+        i++;
+    }
+    return false;
 }
 
 function sanitizeToCName(name) {
@@ -132,16 +208,52 @@ function findRampartHeader(hint){
     return ret;
 }
 
+/*
+   Find the directory of the module that called cmodule().
+   Walks the Error stack to find the first caller that isn't
+   rampart-cmodule.js itself, then extracts its directory.
+   Falls back to process.scriptPath, then /tmp.
+*/
+function findCallerDir() {
+    var stat = rampart.utils.stat;
+    var e = new Error("cmodule_caller_trace");
+    var lines = e.stack.split('\n');
+
+    for (var i = 1; i < lines.length; i++) {
+        /* Match "at funcname (/absolute/path:line)" or "at /absolute/path:line" */
+        var match = lines[i].match(/\(?(\/.+?):\d+\)?/);
+        if (match) {
+            var filepath = match[1];
+            /* Skip cmodule itself */
+            if (filepath.indexOf('rampart-cmodule') >= 0) continue;
+            var dir = filepath.replace(/\/[^/]+$/, '');
+            /* Verify we can write there */
+            var dirstat = stat(dir);
+            if (dirstat && dirstat.writable) return dir;
+        }
+    }
+
+    /* Fall back to process.scriptPath */
+    if (stat(process.scriptPath) && stat(process.scriptPath).writable)
+        return process.scriptPath;
+
+    /* Fall back to /tmp */
+    if (stat('/tmp') && stat('/tmp').writable)
+        return '/tmp';
+
+    throw new Error("cmodule - cannot find a writable directory for compiled module");
+}
+
 function makeCModule(name, prog, support, flags, libs, rpHeaderLoc) {
     var stat=rampart.utils.stat, sprintf=rampart.utils.sprintf,
-        exec=rampart.utils.exec, getType=rampart.utils.getType; 
+        exec=rampart.utils.exec, getType=rampart.utils.getType;
 
     if(getType(name) == 'Object') {
         prog        = name.exportFunction;
         support     = name.supportCode;
         flags       = name.compileFlags;
         libs        = name.libraries;
-        rpHeaderLoc = name.rpHeaderLoc; 
+        rpHeaderLoc = name.rpHeaderLoc;
         name        = name.name;
     }
 
@@ -152,7 +264,7 @@ function makeCModule(name, prog, support, flags, libs, rpHeaderLoc) {
 
     name=sanitizeToCName(name);
 
-    var sofile = process.scriptPath + '/' + name+'.so';
+    var sofile = findCallerDir() + '/' + name+'.so';
 
     if(!support)
         support='';
@@ -164,10 +276,17 @@ function makeCModule(name, prog, support, flags, libs, rpHeaderLoc) {
         return require.cache[sofile].exports;
     }
 
-    if(getType(prog)!='String' || !prog.length)
-        throw new Error("cmodule - argument exportFunction cannot be empty");
+    // If no source provided, try to load an existing .so from disk
+    if(!prog || (getType(prog)=='String' && !prog.length)) {
+        if(stat(sofile))
+            return require(sofile);
+        throw new Error("cmodule - no source provided and no cached module found for '" + name + "' at " + sofile);
+    }
 
-    var cfile  = process.scriptPath + '/' + name+'.c';
+    if(getType(prog)!='String')
+        throw new Error("cmodule - argument exportFunction must be a string");
+
+    var cfile  = findCallerDir() + '/' + name + name+'.c';
     var incl = prog.match(/\s*#include [^\n]*\s+/mg)
     var includes = "";
 
