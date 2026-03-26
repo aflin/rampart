@@ -1253,12 +1253,14 @@ duk_ret_t rp_thread_put(duk_context *ctx)
     const char *key = REQUIRE_LSTRING(ctx, 0, &len, "thread.put: First argument must be a string (key)");
     int i=0;
 
-    duk_remove(ctx,0);
-
-    if(duk_is_undefined(ctx, 0))
+    if(duk_is_undefined(ctx, 1))
         RP_THROW(ctx, "thread.put: Second argument is a variable to store and must be defined");
 
-    put_to_clipboard(ctx, 0, (char *)key);
+    /* Put value (at index 1) to clipboard while key (at index 0)
+       is still on the stack, keeping the key pointer valid. */
+    put_to_clipboard(ctx, 1, (char *)key);
+
+    duk_remove(ctx, 0);
 
     CBLOCKLOCK;
 
