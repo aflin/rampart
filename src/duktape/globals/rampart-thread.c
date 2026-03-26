@@ -10,6 +10,9 @@
 #include  <stdio.h>
 #include  <time.h>
 #include <poll.h>
+#ifndef _WIN32
+#include <sys/resource.h>
+#endif
 #include "rampart.h"
 #include "event.h"
 #include "event2/thread.h"
@@ -2801,6 +2804,18 @@ static duk_ret_t new_js_thread(duk_context *ctx)
     pthread_attr_init(&attr);
     pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
 
+    /* Match main thread's stack size so C modules with deep recursion
+       (e.g. recursive template expansion with duk_call callbacks)
+       don't hit stack overflow in child threads. */
+    {
+        size_t stack_size = 8 * 1024 * 1024; /* fallback: 8MB */
+#ifndef _WIN32
+        struct rlimit rl;
+        if (getrlimit(RLIMIT_STACK, &rl) == 0 && rl.rlim_cur != RLIM_INFINITY)
+            stack_size = rl.rlim_cur;
+#endif
+        pthread_attr_setstacksize(&attr, stack_size);
+    }
 
     // create the thread, which will start the loop
 
