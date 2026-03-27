@@ -469,13 +469,6 @@ rp_body_times *rp_body_gettimes(struct tm *tm, astro_body_t body, double lat, do
 
     ares  = Astronomy_SearchRiseSet(body,  observer, DIRECTION_SET, atm, 300.0);
     t2  = rp_astro_to_time(&ares.time);
-    if((t2-t)<0)
-    {
-        t2 =t;
-        astro_time_t atm2 = rp_time_to_astro(t2);
-        ares  = Astronomy_SearchRiseSet(body,  observer, DIRECTION_SET, atm2, 300.0);
-        t2  = rp_astro_to_time(&ares.time);
-    }
     rp_time_to_tm(t2, &times->set);
     //azimuth
     times->set_az=get_az(body, &ares.time, observer, NULL, NULL, NULL, NULL);
@@ -510,13 +503,6 @@ rp_moon_times *rp_moon_gettimes(struct tm *tm, double lat, double lon, rp_moon_t
 
     ares  = Astronomy_SearchRiseSet(BODY_MOON,  observer, DIRECTION_SET, atm, 300.0);
     t2  = rp_astro_to_time(&ares.time);
-    if((t2-t)<0)
-    {
-        t2 =t;
-        astro_time_t atm2 = rp_time_to_astro(t2);
-        ares  = Astronomy_SearchRiseSet(BODY_MOON,  observer, DIRECTION_SET, atm2, 300.0);
-        t2  = rp_astro_to_time(&ares.time);
-    }
     rp_time_to_tm(t2, &times->set);
     //azimuth
     times->set_az=get_az(BODY_MOON, &ares.time, observer, NULL, NULL, NULL, NULL);
@@ -587,13 +573,6 @@ rp_sun_times *rp_sun_gettimes(struct tm *tm, double lat, double lon, rp_sun_time
 
     ares  = Astronomy_SearchRiseSet(BODY_SUN,  observer, DIRECTION_SET, atm, 300.0);
     t2  = rp_astro_to_time(&ares.time);
-    if((t2-t)<0)
-    {
-        t2 =t;
-        astro_time_t atm2 = rp_time_to_astro(t2);
-        ares  = Astronomy_SearchRiseSet(BODY_SUN,  observer, DIRECTION_SET, atm2, 300.0);
-        t2  = rp_astro_to_time(&ares.time);
-    }
 
     //azimuth
     times->set_az=get_az(BODY_SUN, &ares.time, observer, NULL, NULL, NULL, NULL);
@@ -609,13 +588,6 @@ rp_sun_times *rp_sun_gettimes(struct tm *tm, double lat, double lon, rp_sun_time
 
     ares  = Astronomy_SearchAltitude(BODY_SUN,  observer, DIRECTION_SET, atm, 300.0, -6.0);
     t2  = rp_astro_to_time(&ares.time);
-    if((t2-t)<0)
-    {
-        t2 =t;
-        astro_time_t atm2 = rp_time_to_astro(t2);
-        ares  = Astronomy_SearchAltitude(BODY_SUN,  observer, DIRECTION_SET, atm2, 300.0, -6.0);
-        t2  = rp_astro_to_time(&ares.time);
-    }
     rp_time_to_tm(t2, &times->civ_end);
     times->civlen = (double)(t2-t)/3600.0;
 
@@ -625,13 +597,6 @@ rp_sun_times *rp_sun_gettimes(struct tm *tm, double lat, double lon, rp_sun_time
 
     ares  = Astronomy_SearchAltitude(BODY_SUN,  observer, DIRECTION_SET, atm, 300.0, -12.0);
     t2  = rp_astro_to_time(&ares.time);
-    if((t2-t)<0)
-    {
-        t2 =t;
-        astro_time_t atm2 = rp_time_to_astro(t2);
-        ares  = Astronomy_SearchAltitude(BODY_SUN,  observer, DIRECTION_SET, atm2, 300.0, -12.0);
-        t2  = rp_astro_to_time(&ares.time);
-    }
     rp_time_to_tm(t2, &times->naut_end);
     times->nautlen = (double)(t2-t)/3600.0;
 
@@ -641,13 +606,6 @@ rp_sun_times *rp_sun_gettimes(struct tm *tm, double lat, double lon, rp_sun_time
 
     ares  = Astronomy_SearchAltitude(BODY_SUN,  observer, DIRECTION_SET, atm, 300.0, -18.0);
     t2  = rp_astro_to_time(&ares.time);
-    if((t2-t)<0)
-    {
-        t2 =t;
-        astro_time_t atm2 = rp_time_to_astro(t2);
-        ares  = Astronomy_SearchAltitude(BODY_SUN,  observer, DIRECTION_SET, atm2, 300.0, -18.0);
-        t2  = rp_astro_to_time(&ares.time);
-    }
     rp_time_to_tm(t2, &times->astr_end);
 
     times->astrlen = (double)(t2-t)/3600.0;
