@@ -30,6 +30,9 @@
 #ifdef __APPLE__
 #include <uuid/uuid.h>
 #include <sys/sysctl.h>
+#ifdef __APPLE__
+#include <pthread/qos.h>
+#endif
 #endif
 
 #if defined(__FreeBSD__)
@@ -4600,6 +4603,9 @@ http_thread_callback(evhtp_request_t *req, DHS *dhs, int thrno)
         /* is this necessary? https://computing.llnl.gov/tutorials/pthreads/#Joining */
         pthread_attr_init(&attr);
         pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
+#ifdef __APPLE__
+        pthread_attr_set_qos_class_np(&attr, QOS_CLASS_USER_INITIATED, 0);
+#endif
 
         pthread_create(&dhr->script_runner, &attr, http_dothread_in_thread, dhr);
         debugf("0x%x, cond wait, UNLOCKING\n", (int)x);
@@ -6783,6 +6789,14 @@ duk_ret_t duk_server_start(duk_context *ctx)
             }
             
             /* else grandchild */
+
+#ifdef __APPLE__
+            /* Prevent macOS from throttling the daemon process.
+               Without this, double-forked processes get QoS 9 (background)
+               which on Apple Silicon means efficiency cores only (~12% speed).
+               Must be set before any threads are created. */
+            pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0);
+#endif
 
             rp_post_fork_clean_threads(); //threads are gone, remove related data
                                           //this call also does rp_unlock_all_locks(0)
