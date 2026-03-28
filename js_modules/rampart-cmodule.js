@@ -286,7 +286,7 @@ function makeCModule(name, prog, support, flags, libs, rpHeaderLoc) {
     if(getType(prog)!='String')
         throw new Error("cmodule - argument exportFunction must be a string");
 
-    var cfile  = findCallerDir() + '/' + name + name+'.c';
+    var cfile  = findCallerDir() + '/' + name+'.c';
     var incl = prog.match(/\s*#include [^\n]*\s+/mg)
     var includes = "";
 
