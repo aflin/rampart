@@ -534,50 +534,8 @@ function status(serverConf){
     return ret;    
 }
 
-var nohup;
-
-function checkMacos() {
-    var r = shell("uname -s");
-    if(r.stdout == "Darwin\n")
-    {
-        nohup = shell("which nohup").stdout.trim();
-        return true;
-    }
-    return false;
-}
-
-function nohupLaunch(ltype) {
-    var argv=process.argv;
-    var jmsg;
-
-    if(!nohup.length)
-        return serr('Error: could not find nohup command');
-
-    var cmd = `${nohup} ${argv[0]} ${argv[1]} manualLaunch ${ltype} &> /tmp/rampart-${ltype}.txt`;
-    var outfile = `/tmp/rampart-${ltype}.txt`;
-
-    var ret = shell(cmd, {background:true});        
-
-    sleep(0.5);
-    msg = readFile(outfile, true);
-    pid = getPid(ltype);
-    if(!pid)
-        return serr(msg);
-    if(!kill(pid, 0)) {
-        return serr(`Failed to start ${ltype}\n${msg}`);
-    }
-
-    try {
-        jmsg=JSON.parse(msg);
-        return jmsg;
-    } catch(e){}
-
-    return smsg(msg);
-}
-
 function start(serverConf, dump) {
-    var server=require('rampart-server'); 
-    var isMac=checkMacos();
+    var server=require('rampart-server');
 
     wd = serverConf.serverRoot;
     if(!wd)
@@ -586,18 +544,9 @@ function start(serverConf, dump) {
     if(!serverConf)
         serverConf=defaultServerConf(utils.realPath('.'));
 
-    if(!serverConf.manualLaunch) {
-        serverConf.launchServer = serverConf.letsencrypt!="setup";
-        serverConf.launchMonitor = (serverConf.log && serverConf.rotateLogs) || serverConf.monitor;
-        serverConf.launchRedir = serverConf.redirPort > 0 ;
-    } else {
-        if(!serverConf.shutdown && !serverConf.stop) {
-            if(rampart.utils.getType(serverConf.postForkFunc) == 'Function')
-                serverConf.postForkFunc();
-            else if(serverConf.postForkFunc)
-                throw new Error("server.start - postForkFunc must be a Function");
-        }
-    }
+    serverConf.launchServer = serverConf.letsencrypt!="setup";
+    serverConf.launchMonitor = (serverConf.log && serverConf.rotateLogs) || serverConf.monitor;
+    serverConf.launchRedir = serverConf.redirPort > 0 ;
 
     if(!unprivUser)
         unprivUser=serverConf.user;
@@ -622,14 +571,6 @@ function start(serverConf, dump) {
 
         return {message:msg};
     }
-
-    if(isMac && serverConf.daemon && serverConf.cmdline)
-        console.log(`Warn: macos will throttle the server if started in the background.
-        If you need full performace, set "--daemon false", e.g.
-          nohup rampart --server --daemon false &
-        Or use:
-          rampart web_server/web_server_conf.js 
-        which will launch with nohup for you.`);
 
     if(iam != 'root') {
         if(serverConf.ipPort < 1024)
@@ -705,9 +646,6 @@ function start(serverConf, dump) {
         if(!serverConf.launchServer)
             return {};
 
-        if(isMac && serverConf.daemon && !serverConf.cmdline)
-            return nohupLaunch('server');
-
         //set global serverConf for app/*.js and wsapp/*.js scripts
         global.serverConf=serverConf;
         serverpid=server.start(serverConf);
@@ -721,9 +659,8 @@ function start(serverConf, dump) {
 
         var wpres = writePid('server', serverpid);
 
-        if( (serverConf.daemon||serverConf.manualLaunch) && wpres.error) {
-            if(!serverConf.manualLaunch) //don't kill self, exit after error message
-                kill(serverpid);
+        if( serverConf.daemon && wpres.error) {
+            kill(serverpid);
             var p = getPid('monitor');
             if(p) kill(p);
             p = getPid('redir-server');
@@ -751,8 +688,7 @@ function start(serverConf, dump) {
         }
     }
 
-    if( !serverConf.manualLaunch && //skip this check if manually launching
-        (!serverConf.daemon || !serverConf.secure) && 
+    if( (!serverConf.daemon || !serverConf.secure) &&
         serverConf.fullServer==1 && 
         serverConf.redirPort!=-1 &&
         serverConf.letsencrypt!="setup")
@@ -766,9 +702,6 @@ function start(serverConf, dump) {
 
         if(!serverConf.launchRedir)
             return{};
-
-        if(isMac && serverConf.daemon && !serverConf.cmdline)
-            return nohupLaunch('redir-server');
 
         if(serverConf.bindAll) {
             redirbind = ['0.0.0.0:'+serverConf.redirPort, '[::]:'+serverConf.redirPort];
@@ -889,13 +822,10 @@ function start(serverConf, dump) {
         if(!serverConf.launchMonitor)
             return true; // no monitor requested, continue and run server
 
-        if(isMac && serverConf.daemon && !serverConf.cmdline)
-            return nohupLaunch('monitor');
-
         if(serverConf.fullServer!=1)
             return serr('options --rotateLogs or --monitor not available with --quickserver');
 
-        if(!serverConf.manualLaunch && !serverConf.daemon)
+        if(!serverConf.daemon)
             return serr('options --rotateLogs and --monitor require --daemon');
 
         var gzip = trim ( exec('which','gzip').stdout );
@@ -1088,12 +1018,6 @@ function start(serverConf, dump) {
         /**************** PROCESS MONITOR **********************/
         if(serverConf.monitor)
         {
-            //reset these here so if killed, will relaunch proper server
-            if(serverConf.manualLaunch) {
-                serverConf.launchServer = serverConf.letsencrypt!="setup";
-                serverConf.launchRedir = serverConf.redirPort > 0 ;
-                serverConf.daemon=true;
-            }
             var iv2 = setMetronome(function(){
                 serverpid=getPid('server');
                 if(!serverpid)
@@ -1257,7 +1181,6 @@ function cmdLine(nslice) {
 
     var conf=parseOptions(args);
     printmsg(conf,true);
-    conf.cmdline=true;
     var ret=start(conf);
     printmsg(ret);
 }
@@ -1269,29 +1192,6 @@ function web_server_conf(conf) {
     if (argv[2] == '--letssetup' || argv[2]=='letssetup') {
         conf.letsencryptHost = conf.letsencrypt;
         conf.letsencrypt="setup"; //flag we are doing letsencrypt, but don't start https
-        argv[2]="start";
-    }
-
-    // special case of daemon:true and macos
-    // we are using nohup to launch procs
-    if (argv[2]=='manualLaunch') {
-        conf.manualLaunch=true;
-        conf.daemon=false;
-        switch(argv[3]) {
-            case 'server':
-                conf.launchServer=true;
-                break;
-            case 'redir-server':
-                conf.launchRedir=true;
-                break;
-            case 'monitor':
-                conf.launchMonitor=true;
-                break;
-            default:
-                printf("manualLaunch is intended for internal use only\n");
-                process.exit(1);
-        }
-
         argv[2]="start";
     }
 
