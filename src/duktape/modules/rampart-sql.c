@@ -734,7 +734,7 @@ static char *scr_txt = "var S=require('rampart-sql.so');S.__helper(%d,%d,%d);\n"
 
 static SFI *check_fork(DB_HANDLE *h, int create)
 {
-    int pidstatus;
+    //int pidstatus;
     if(finfo == NULL)
     {
         if(!create)
@@ -4022,6 +4022,8 @@ static int parse_sql_parameters(
                     my_names[name_index++] = strndupx(idx_s, -1, 1);
                     *out_p='?';
                     ++out_p;
+                    if(*s == ';')
+                        gotsemi=1;
                     break;
                 }
 
@@ -4049,14 +4051,12 @@ static int parse_sql_parameters(
                    my_names[name_index++] = strndupx(p, (ssize_t)(s-p), 1);
                    *out_p='?';
                    ++out_p;
+                   if(*s == ';')
+                      gotsemi=1;
                    *out_p++=*s;
 
                    if(!*s)           //  terminated at the end of the sql we're done
                       goto end_return;
-                   else
-                   {
-                      *out_p=*s;
-                   }
                    ++s;
                  continue;
                 }
