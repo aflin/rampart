@@ -2631,8 +2631,11 @@ restart:
                     evhtp_ws_do_disconnect(c->request);
                     return;
                 }
-                htp__hook_connection_error_(c, -1);
-
+                /* 2026-04-01: Send a proper HTTP 413 response when the request
+                   body exceeds maxBodySize, instead of silently dropping the
+                   connection. The client receives a clean status code rather
+                   than a connection reset. */
+                evhtp_send_reply(c->request, EVHTP_RES_ENTOOLARGE);
                 evhtp_safe_free(c, evhtp_connection_free);
                 return;
             default:

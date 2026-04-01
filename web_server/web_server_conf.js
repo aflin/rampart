@@ -238,6 +238,9 @@ var serverConf = {
                            logFunc: myloggingfunc,                                                 */
     //logFunc:             false,
 
+    /* maxBodySize         Number (default 52428800; 50mb) max size of body for any request  */
+    //maxBodySize:         52428800,
+
     /* defaultRangeMBytes  Number (range 0.01 to 1000) default range size for a "range: x-"
                            open ended request in megabytes (often used to seek into and chunk videos) */
     //defaultRangeMbytes:  8,
