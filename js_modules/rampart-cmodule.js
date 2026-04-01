@@ -338,8 +338,9 @@ function makeCModule(name, prog, support, flags, libs, rpHeaderLoc) {
     var barecfile = cfile.split('/').pop();
     var spacelen = 20-barecfile.length;
     if(spacelen < 1) spacelen=1;
-    var progOut = sprintf(topfmt, barecfile, spacelen ,'*', wrapCommand(eline), allincludes, support, name, prog) + 
-                  sprintf(bottomfmt,name,name);
+    var cfuncname = 'rp_' + name;
+    var progOut = sprintf(topfmt, barecfile, spacelen ,'*', wrapCommand(eline), allincludes, support, cfuncname, prog) +
+                  sprintf(bottomfmt, cfuncname, cfuncname);
 
     // check for existing .so and .c file.  If progOut is the same as 
     // existing .c, skip compile and load the .so
