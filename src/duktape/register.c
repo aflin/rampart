@@ -826,7 +826,13 @@ duk_ret_t duk_rp_buffer_alloc(duk_context *ctx)
     duk_dup(ctx, 0);
     duk_new(ctx, 1);
 
-    if(duk_is_buffer_data(ctx, 1) || duk_is_string(ctx, 1) )
+    if(duk_is_number(ctx, 1))
+    {
+        unsigned char fill_val = (unsigned char)(duk_to_int(ctx, 1) & 0xFF);
+        unsigned char *to_buf = (unsigned char *) duk_get_buffer_data(ctx, -1, NULL);
+        memset(to_buf, fill_val, (size_t)size);
+    }
+    else if(duk_is_buffer_data(ctx, 1) || duk_is_string(ctx, 1) )
     {
         duk_size_t from_sz;
         int i=0;
@@ -844,7 +850,7 @@ duk_ret_t duk_rp_buffer_alloc(duk_context *ctx)
         }
     }
     else if(!duk_is_undefined(ctx, 1))
-        RP_THROW(ctx, "Buffer.alloc: Second argument must be a Buffer or String");
+        RP_THROW(ctx, "Buffer.alloc: Second argument must be a Number, Buffer, or String");
 
     return 1;
 }
