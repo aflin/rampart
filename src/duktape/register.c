@@ -312,7 +312,6 @@ static duk_ret_t duk_rp_array_from(duk_context *ctx)
     if (duk_is_string(ctx, 0))
     {
         /* iterate codepoints */
-        const char *s = duk_get_string(ctx, 0);
         duk_size_t slen = duk_get_length(ctx, 0);
         for (i = 0; i < (duk_uarridx_t)slen; i++)
         {
@@ -791,8 +790,26 @@ duk_ret_t duk_rp_buffer_from(duk_context *ctx)
         to_buf = duk_get_buffer_data(ctx, -1, NULL);
         memcpy(to_buf, from_buf, from_sz);
     }
-    else // TODO:do array case
-        RP_THROW(ctx, "Buffer.from: Argument must be a Buffer or String");
+    else if(duk_is_array(ctx, 0))
+    {
+        duk_size_t arr_len = duk_get_length(ctx, 0);
+        unsigned char *to_buf;
+        duk_size_t i;
+
+        duk_get_global_string(ctx, "Buffer");
+        duk_push_number(ctx, (double) arr_len);
+        duk_new(ctx, 1);
+
+        to_buf = (unsigned char *) duk_get_buffer_data(ctx, -1, NULL);
+        for(i = 0; i < arr_len; i++)
+        {
+            duk_get_prop_index(ctx, 0, (duk_uarridx_t) i);
+            to_buf[i] = (unsigned char)(duk_to_int(ctx, -1) & 0xFF);
+            duk_pop(ctx);
+        }
+    }
+    else
+        RP_THROW(ctx, "Buffer.from: Argument must be a Buffer, String, or Array");
 
     return 1;
 }
