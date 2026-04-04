@@ -1332,7 +1332,7 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
             else
             {
                 const char *s;
-                if(duk_is_object(ctx, fidx))
+                if(duk_is_object(ctx, fidx) && !duk_is_buffer_data(ctx, fidx))
                     duk_json_encode(ctx, fidx);
 
                 if (duk_is_string(ctx, fidx))
