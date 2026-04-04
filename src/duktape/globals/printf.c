@@ -1419,14 +1419,16 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
             int len=0;
             if (flags & FLAGS_BANG)
             {
-                s = PF_REQUIRE_LSTRING(ctx, fidx, &sz);
+                s = PF_REQUIRE_BUF_OR_STRING(ctx, fidx, &sz);
                 len = (int)sz;
                 u = duk_rp_url_decode((char *)s, &len);
             }
             else
             {
-                if(duk_is_object(ctx, -1))
-                    duk_json_encode(ctx, -1);
+                if(duk_is_buffer_data(ctx, fidx))
+                    duk_buffer_to_string(ctx, fidx);
+                else if(duk_is_object(ctx, fidx))
+                    duk_json_encode(ctx, fidx);
                 s = PF_REQUIRE_LSTRING(ctx, fidx, &sz);
                 u = duk_rp_url_encode((char *)s, (int)sz);
                 len = (int) strlen(u);
@@ -1675,8 +1677,9 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
             // string output
             if (flags & FLAGS_BANG)
             {
-                const char *p = PF_REQUIRE_STRING(ctx, fidx++, "String required at format string argument %d", fidx);
-                l = _strnlen_s(p, precision ? precision : (size_t)-1);
+                duk_size_t len=0;
+                const char *p = PF_REQUIRE_BUF_OR_STRING(ctx, fidx++, &len);
+                l = _strnlen_s(p, precision ? precision : (size_t)len);
 
                 // pre padding
                 if (flags & FLAGS_PRECISION)
@@ -1693,8 +1696,16 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
 
 
                 char *u_p, *free_p;
-                if(!p) p="null";
-                u_p = free_p = strdup(p);
+                //if(duk_is_string(ctx, fidx-1) && !p) p="null";
+                if(!len)
+                    u_p = free_p = strdup("");
+                else
+                {
+                    u_p=NULL;
+                    CALLOC(u_p, len + 1);
+                    strcpy(u_p, p);
+                    free_p=u_p;
+                }
 
                 decode_html_entities_utf8(u_p, NULL);
                 while ((*u_p != 0) && (!(flags & FLAGS_PRECISION) || precision--))
@@ -1706,6 +1717,7 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
             else
             {
                 const char *p = NULL;
+                duk_size_t len=0, i=0;
                 if( flags & FLAGS_COLOR )
                 {
                     if(!ccodes)
@@ -1737,8 +1749,8 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
                     idx=outs(out, buffer, idx, maxlen, ccodes->html_start);
                 }
 
-                p = PF_REQUIRE_STRING(ctx, fidx++, "String required at format string argument %d", fidx);
-                l = _strnlen_s(p, precision ? precision : (size_t)-1);
+                p = PF_REQUIRE_BUF_OR_STRING(ctx, fidx++, &len);
+                l = _strnlen_s(p, precision ? precision : (size_t)len);
 
                 // pre padding
                 if (flags & FLAGS_PRECISION)
@@ -1753,7 +1765,7 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
                     }
                 }
 
-                while ((*p != 0) && (!(flags & FLAGS_PRECISION) || precision--))
+                while ((*p != 0) && i<len && (!(flags & FLAGS_PRECISION) || precision--))
                 {
                     switch(*p)
                     {
@@ -1803,6 +1815,7 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
                             break;
                     }
                     p++;
+                    i++;
                 }
             }
             // post padding
