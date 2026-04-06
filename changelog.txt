@@ -1,22 +1,31 @@
 v0.6.2
     - rampart
                             Installer fixes.
-                            Transpiler improvements.
+                            Transpiler improvements and save/read cached
+                            script.transpiled.js.
                             cmake 4 compatibility.
                             Initial and experimental windows port
                             using msys2.
                             JSON.parse(cyclic_json,true) - parse and
                             reconstruct output of printf("%!J",json) if
                             cyclic.
+                            Some buffer fixes and additional methods.
+                            process.nCpu.
+                            rampart.localize().
+                            require - sub-module dependency tree for reload
+                            of changed scripts.
 
     - rampart-utils
                             autoScanDate properly accept ',' in RFC 2822
                             style formats.
+                            getScopeVars.
 
     - rampart-webserver
                             Print instructions after letssetup.
                             selfSign option.
                             iroh_webproxy start option.
+                            serverConf.rotateCount.
+                            removed nohup start for macos (didn't help).
 
     - rampart-crypto
                             gen_cert for self signed certs.
@@ -25,6 +34,8 @@ v0.6.2
                             Proxy for http(s) and ws(s).
                             noAcceptRanges - for range requests
                             noRangeCap     - for range requests
+                            maxBodySize reporting fix.
+                            new proxy for http and ws.
 
     - rampart-net
                             net.wsConnect websocket client.
@@ -39,6 +50,49 @@ v0.6.2
                             Was rampart-gm.  Include in main build.
                             rampart-gm.js prints out friendly message if 
                             libraries are missing.
+
+    - rampart-almanac
+                            Added Weather from open-meteo.com.
+
+    - rampart-cmodule
+                            Prefix rp- to function names to avoid namespace
+                            collision.
+                            Better parsing for main function.
+                            Written module path to calling module path.
+
+    - rampart-sql
+                            Semicolon fix.
+                            exit detection and fix for forked helpers.
+
+    - rampart-thread
+                            thread.put() internal bug fix.
+                            Made stack size of threads same as main.
+
+    - rampart-lmdb
+                            Reopen dbi on growOnPut.
+
+    - rampart-totext
+                            Initial.
+
+    - rampart-iroh
+                            Initial.
+
+    - test script
+                            Many rewrites and additions.
+
+    - rampart-net
+                            Replaced faulty buffer by reference (failed when
+                            used after callback).
+                            WebSocket client.
+
+    - rampart-curl and rampart-redis
+                            Added call detection of Promise/async/await when
+                            transpiled.
+
+    - rampart-gm
+                            Included compiled version in binary
+                            distribution.
+
 v0.6.1
     - rampart
                             Added ansi and css colors to printf.
