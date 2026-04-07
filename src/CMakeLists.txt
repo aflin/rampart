@@ -402,13 +402,17 @@ add_library(rampart-cmark SHARED
     duktape/modules/rampart-cmark.c
 )
 target_link_libraries(rampart-cmark
-    ${PROJECT_BINARY_DIR}/extern/cmark/src/libcmark.a
+    ${PROJECT_BINARY_DIR}/extern/cmark-gfm/extensions/libcmark-gfm-extensions.a
+    ${PROJECT_BINARY_DIR}/extern/cmark-gfm/src/libcmark-gfm.a
 )
 target_include_directories(rampart-cmark PRIVATE
-    ${PROJECT_SOURCE_DIR}/extern/cmark/src/
-    ${PROJECT_BINARY_DIR}/extern/cmark/src/
+    ${PROJECT_SOURCE_DIR}/extern/cmark-gfm/src/
+    ${PROJECT_BINARY_DIR}/extern/cmark-gfm/src/
+    ${PROJECT_SOURCE_DIR}/extern/cmark-gfm/extensions/
+    ${PROJECT_BINARY_DIR}/extern/cmark-gfm/extensions/
 )
-add_dependencies(rampart-cmark cmark_static)
+target_compile_definitions(rampart-cmark PRIVATE CMARK_GFM_STATIC_DEFINE CMARK_GFM_EXTENSIONS_STATIC_DEFINE)
+add_dependencies(rampart-cmark libcmark-gfm_static libcmark-gfm-extensions_static)
 
 ###HTML###
 add_library(rampart-html SHARED

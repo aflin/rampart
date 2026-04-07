@@ -38,6 +38,218 @@ This is an H1
   return ( trim(out) == '<h1>This is an H1</h1>');
 });
 
+/* ── CommonMark core features ── */
+
+testFeature("Cmark - Setext H2", function() {
+  var out = cmark.toHtml("Heading two\n-----------\n");
+  return trim(out) == '<h2>Heading two</h2>';
+});
+
+testFeature("Cmark - ATX headings h1-h6", function() {
+  var ok = true;
+  for (var i = 1; i <= 6; i++) {
+    var hashes = "";
+    for (var j = 0; j < i; j++) hashes += "#";
+    var out = trim(cmark.toHtml(hashes + " Level " + i + "\n"));
+    ok = ok && (out == '<h' + i + '>Level ' + i + '</h' + i + '>');
+  }
+  return ok;
+});
+
+testFeature("Cmark - Paragraphs", function() {
+  var out = cmark.toHtml("First paragraph.\n\nSecond paragraph.\n");
+  return out.indexOf('<p>First paragraph.</p>') != -1
+      && out.indexOf('<p>Second paragraph.</p>') != -1;
+});
+
+testFeature("Cmark - Blockquote", function() {
+  var out = cmark.toHtml("> Quoted text\n");
+  return out.indexOf('<blockquote>') != -1
+      && out.indexOf('<p>Quoted text</p>') != -1;
+});
+
+testFeature("Cmark - Fenced code block", function() {
+  var out = cmark.toHtml("```js\nvar x = 1;\n```\n");
+  return out.indexOf('<pre>') != -1
+      && out.indexOf('<code class="language-js">') != -1
+      && out.indexOf('var x = 1;') != -1;
+});
+
+testFeature("Cmark - Indented code block", function() {
+  var out = cmark.toHtml("    code line\n");
+  return out.indexOf('<pre>') != -1
+      && out.indexOf('<code>code line') != -1;
+});
+
+testFeature("Cmark - Inline code", function() {
+  var out = cmark.toHtml("Use `printf()` here.\n");
+  return out.indexOf('<code>printf()</code>') != -1;
+});
+
+testFeature("Cmark - Emphasis and strong", function() {
+  var out = cmark.toHtml("This is *italic* and **bold** and ***both***.\n");
+  return out.indexOf('<em>italic</em>') != -1
+      && out.indexOf('<strong>bold</strong>') != -1
+      && out.indexOf('<em>') != -1
+      && out.indexOf('<strong>both</strong>') != -1;
+});
+
+testFeature("Cmark - Links", function() {
+  var out = cmark.toHtml('[example](http://example.com "Title")\n');
+  return out.indexOf('<a href="http://example.com" title="Title">example</a>') != -1;
+});
+
+testFeature("Cmark - Images", function() {
+  var out = cmark.toHtml('![alt text](image.png "img title")\n');
+  return out.indexOf('<img src="image.png" alt="alt text" title="img title"') != -1;
+});
+
+testFeature("Cmark - Unordered list", function() {
+  var out = cmark.toHtml("- one\n- two\n- three\n");
+  return out.indexOf('<ul>') != -1
+      && out.indexOf('<li>one</li>') != -1
+      && out.indexOf('<li>two</li>') != -1
+      && out.indexOf('<li>three</li>') != -1;
+});
+
+testFeature("Cmark - Ordered list", function() {
+  var out = cmark.toHtml("1. first\n2. second\n3. third\n");
+  return out.indexOf('<ol>') != -1
+      && out.indexOf('<li>first</li>') != -1
+      && out.indexOf('<li>second</li>') != -1;
+});
+
+testFeature("Cmark - Thematic break", function() {
+  var out = cmark.toHtml("Above\n\n---\n\nBelow\n");
+  return out.indexOf('<hr') != -1;
+});
+
+/* ── Option: sourcePos ── */
+
+testFeature("Cmark - Option sourcePos", function() {
+  var out = cmark.toHtml("# Heading\n", {sourcePos: true});
+  return out.indexOf('data-sourcepos') != -1;
+});
+
+/* ── Option: hardBreaks ── */
+
+testFeature("Cmark - Option hardBreaks", function() {
+  var out = cmark.toHtml("line one\nline two\n", {hardBreaks: true});
+  return out.indexOf('<br') != -1;
+});
+
+/* ── Option: noBreaks ── */
+
+testFeature("Cmark - Option noBreaks", function() {
+  var out = cmark.toHtml("line one\nline two\n", {noBreaks: true});
+  return out.indexOf('<br') == -1 && out.indexOf('line one line two') != -1;
+});
+
+/* ── Option: smart ── */
+
+testFeature("Cmark - Option smart quotes", function() {
+  var out = cmark.toHtml('"Hello" -- world --- end\n', {smart: true});
+  return out.indexOf('\u201c') != -1   // left double curly quote
+      && out.indexOf('\u2013') != -1   // en dash
+      && out.indexOf('\u2014') != -1;  // em dash
+});
+
+/* ── Option: unsafe ── */
+
+testFeature("Cmark - Option unsafe (raw HTML allowed)", function() {
+  var out = cmark.toHtml("<div>raw html</div>\n", {unsafe: true});
+  return out.indexOf('<div>raw html</div>') != -1;
+});
+
+testFeature("Cmark - Raw HTML stripped by default", function() {
+  var out = cmark.toHtml("<div>raw html</div>\n");
+  return out.indexOf('<div>raw html</div>') == -1;
+});
+
+/* ── GFM: table ── */
+
+testFeature("Cmark GFM - Table basic", function() {
+  var out = cmark.toHtml("| A | B |\n|---|---|\n| 1 | 2 |\n", {table: true});
+  return out.indexOf('<table>') != -1
+      && out.indexOf('<thead>') != -1
+      && out.indexOf('<tbody>') != -1
+      && out.indexOf('<th>A</th>') != -1
+      && out.indexOf('<td>1</td>') != -1;
+});
+
+testFeature("Cmark GFM - Table alignment", function() {
+  var out = cmark.toHtml("| Left | Center | Right |\n|:-----|:------:|------:|\n| l | c | r |\n", {table: true});
+  return out.indexOf('align="left"') != -1
+      && out.indexOf('align="center"') != -1
+      && out.indexOf('align="right"') != -1;
+});
+
+testFeature("Cmark GFM - Table not parsed without option", function() {
+  var out = cmark.toHtml("| A | B |\n|---|---|\n| 1 | 2 |\n");
+  return out.indexOf('<table>') == -1;
+});
+
+/* ── GFM: strikethrough ── */
+
+testFeature("Cmark GFM - Strikethrough", function() {
+  var out = cmark.toHtml("This is ~~deleted~~ text.\n", {strikethrough: true});
+  return out.indexOf('<del>deleted</del>') != -1;
+});
+
+testFeature("Cmark GFM - Strikethrough not parsed without option", function() {
+  var out = cmark.toHtml("This is ~~deleted~~ text.\n");
+  return out.indexOf('<del>') == -1;
+});
+
+/* ── GFM: autolink ── */
+
+testFeature("Cmark GFM - Autolink URL", function() {
+  var out = cmark.toHtml("Visit https://example.com today.\n", {autolink: true});
+  return out.indexOf('<a href="https://example.com">https://example.com</a>') != -1;
+});
+
+testFeature("Cmark GFM - Autolink not parsed without option", function() {
+  var out = cmark.toHtml("Visit https://example.com today.\n");
+  return out.indexOf('<a href') == -1;
+});
+
+/* ── GFM: tasklist ── */
+
+testFeature("Cmark GFM - Tasklist checked and unchecked", function() {
+  var out = cmark.toHtml("- [x] Done\n- [ ] Todo\n", {tasklist: true});
+  return out.indexOf('checked') != -1
+      && out.indexOf('type="checkbox"') != -1
+      && (out.match(/input/g) || []).length == 2;
+});
+
+testFeature("Cmark GFM - Tasklist not parsed without option", function() {
+  var out = cmark.toHtml("- [x] Done\n- [ ] Todo\n");
+  return out.indexOf('checkbox') == -1;
+});
+
+/* ── GFM: tagfilter ── */
+
+testFeature("Cmark GFM - Tagfilter escapes dangerous tags", function() {
+  var out = cmark.toHtml("<textarea>evil</textarea>\n", {unsafe: true, tagfilter: true});
+  return out.indexOf('&lt;textarea') != -1;
+});
+
+testFeature("Cmark GFM - Tagfilter allows safe tags", function() {
+  var out = cmark.toHtml("<strong>ok</strong>\n", {unsafe: true, tagfilter: true});
+  return out.indexOf('<strong>ok</strong>') != -1;
+});
+
+/* ── GFM: multiple extensions combined ── */
+
+testFeature("Cmark GFM - Multiple extensions combined", function() {
+  var md = "# Status\n\n| Task | Note |\n|------|------|\n| ~~old~~ | done |\n\n- [x] Review\n\nSee https://example.com\n";
+  var out = cmark.toHtml(md, {table: true, strikethrough: true, autolink: true, tasklist: true});
+  return out.indexOf('<table>') != -1
+      && out.indexOf('<del>old</del>') != -1
+      && out.indexOf('checkbox') != -1
+      && out.indexOf('<a href="https://example.com">') != -1;
+});
+
 var htmltxt = cmark.toHtml(`
 This is an H1
 =============

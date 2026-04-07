@@ -5,12 +5,24 @@
  */
 
 #include "rampart.h"
-#include "cmark.h"
+#include "cmark-gfm.h"
+#include "cmark-gfm-core-extensions.h"
 
 #define checkflag(name,flag) do{\
     if(duk_get_prop_string(ctx, obj_idx, name)){\
         if(REQUIRE_BOOL(ctx, -1, "cmark.toHtml - option %s requires a boolean\n",name))\
             opts|=flag;\
+    }\
+    duk_pop(ctx);\
+} while (0)
+
+#define checkext(name) do{\
+    if(duk_get_prop_string(ctx, obj_idx, name)){\
+        if(REQUIRE_BOOL(ctx, -1, "cmark.toHtml - option %s requires a boolean\n",name)){\
+            cmark_syntax_extension *ext = cmark_find_syntax_extension(name);\
+            if(ext)\
+                cmark_parser_attach_syntax_extension(parser, ext);\
+        }\
     }\
     duk_pop(ctx);\
 } while (0)
@@ -22,6 +34,8 @@ static duk_ret_t to_html(duk_context *ctx)
     const char *input=NULL;
     char * res=NULL;
     duk_idx_t obj_idx=-1, str_idx=0;
+    cmark_parser *parser=NULL;
+    cmark_node *doc=NULL;
 
     if(duk_is_string(ctx, 1))
         str_idx=1;
@@ -38,9 +52,26 @@ static duk_ret_t to_html(duk_context *ctx)
         checkflag("noBreaks",CMARK_OPT_NOBREAKS);
         checkflag("smart",CMARK_OPT_SMART);
     }
-    res = cmark_markdown_to_html(input, (size_t)sz, opts);
+
+    parser = cmark_parser_new(opts);
+
+    if(obj_idx != -1)
+    {
+        checkext("table");
+        checkext("strikethrough");
+        checkext("autolink");
+        checkext("tagfilter");
+        checkext("tasklist");
+    }
+
+    cmark_parser_feed(parser, input, (size_t)sz);
+    doc = cmark_parser_finish(parser);
+    res = cmark_render_html(doc, opts, cmark_parser_get_syntax_extensions(parser));
+
     duk_push_string(ctx, res);
     free(res);
+    cmark_node_free(doc);
+    cmark_parser_free(parser);
     return 1;
 }
 
@@ -50,6 +81,7 @@ static duk_ret_t to_html(duk_context *ctx)
    ************************************************** */
 duk_ret_t duk_open_module(duk_context *ctx)
 {
+  cmark_gfm_core_extensions_ensure_registered();
   duk_push_object(ctx);
   duk_push_c_function(ctx, to_html, 2);
   duk_put_prop_string(ctx, -2, "toHtml");

@@ -43,6 +43,6 @@ add_subdirectory(${EXTERN_DIR}/libevhtp_ws)
 
 add_subdirectory(${EXTERN_DIR}/tidy-html5)
 
-add_subdirectory(${EXTERN_DIR}/cmark)
+add_subdirectory(${EXTERN_DIR}/cmark-gfm)
 
 add_subdirectory(${EXTERN_DIR}/robotstxt)
