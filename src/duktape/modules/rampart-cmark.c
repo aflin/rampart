@@ -10,21 +10,27 @@
 
 #define checkflag(name,flag) do{\
     if(duk_get_prop_string(ctx, obj_idx, name)){\
-        if(REQUIRE_BOOL(ctx, -1, "cmark.toHtml - option %s requires a boolean\n",name))\
+        if(REQUIRE_BOOL(ctx, -1, "cmark.toHtml - option %s requires a boolean",name))\
             opts|=flag;\
     }\
     duk_pop(ctx);\
 } while (0)
 
+#define attachext(name) do{\
+    cmark_syntax_extension *ext = cmark_find_syntax_extension(name);\
+    if(ext)\
+        cmark_parser_attach_syntax_extension(parser, ext);\
+} while (0)
+
 #define checkext(name) do{\
     if(duk_get_prop_string(ctx, obj_idx, name)){\
-        if(REQUIRE_BOOL(ctx, -1, "cmark.toHtml - option %s requires a boolean\n",name)){\
-            cmark_syntax_extension *ext = cmark_find_syntax_extension(name);\
-            if(ext)\
-                cmark_parser_attach_syntax_extension(parser, ext);\
+        if(!REQUIRE_BOOL(ctx, -1, "cmark.toHtml - option %s requires a boolean",name)){\
+            duk_pop(ctx);\
+            break;\
         }\
     }\
     duk_pop(ctx);\
+    attachext(name);\
 } while (0)
 
 static duk_ret_t to_html(duk_context *ctx)
@@ -42,7 +48,7 @@ static duk_ret_t to_html(duk_context *ctx)
     if(duk_is_object(ctx, !str_idx))
         obj_idx = !str_idx;
 
-    input = REQUIRE_LSTRING(ctx, 0, &sz, "cmark.toHtml - first argument must be a string\n");
+    input = REQUIRE_LSTRING(ctx, 0, &sz, "cmark.toHtml - first argument must be a string");
 
     if(obj_idx != -1)
     {
@@ -62,6 +68,14 @@ static duk_ret_t to_html(duk_context *ctx)
         checkext("autolink");
         checkext("tagfilter");
         checkext("tasklist");
+    }
+    else
+    {
+        attachext("table");
+        attachext("strikethrough");
+        attachext("autolink");
+        attachext("tagfilter");
+        attachext("tasklist");
     }
 
     cmark_parser_feed(parser, input, (size_t)sz);

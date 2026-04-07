@@ -168,8 +168,8 @@ testFeature("Cmark - Raw HTML stripped by default", function() {
 
 /* ── GFM: table ── */
 
-testFeature("Cmark GFM - Table basic", function() {
-  var out = cmark.toHtml("| A | B |\n|---|---|\n| 1 | 2 |\n", {table: true});
+testFeature("Cmark GFM - Table basic (on by default)", function() {
+  var out = cmark.toHtml("| A | B |\n|---|---|\n| 1 | 2 |\n");
   return out.indexOf('<table>') != -1
       && out.indexOf('<thead>') != -1
       && out.indexOf('<tbody>') != -1
@@ -178,72 +178,77 @@ testFeature("Cmark GFM - Table basic", function() {
 });
 
 testFeature("Cmark GFM - Table alignment", function() {
-  var out = cmark.toHtml("| Left | Center | Right |\n|:-----|:------:|------:|\n| l | c | r |\n", {table: true});
+  var out = cmark.toHtml("| Left | Center | Right |\n|:-----|:------:|------:|\n| l | c | r |\n");
   return out.indexOf('align="left"') != -1
       && out.indexOf('align="center"') != -1
       && out.indexOf('align="right"') != -1;
 });
 
-testFeature("Cmark GFM - Table not parsed without option", function() {
-  var out = cmark.toHtml("| A | B |\n|---|---|\n| 1 | 2 |\n");
+testFeature("Cmark GFM - Table disabled with false", function() {
+  var out = cmark.toHtml("| A | B |\n|---|---|\n| 1 | 2 |\n", {table: false});
   return out.indexOf('<table>') == -1;
 });
 
 /* ── GFM: strikethrough ── */
 
-testFeature("Cmark GFM - Strikethrough", function() {
-  var out = cmark.toHtml("This is ~~deleted~~ text.\n", {strikethrough: true});
+testFeature("Cmark GFM - Strikethrough (on by default)", function() {
+  var out = cmark.toHtml("This is ~~deleted~~ text.\n");
   return out.indexOf('<del>deleted</del>') != -1;
 });
 
-testFeature("Cmark GFM - Strikethrough not parsed without option", function() {
-  var out = cmark.toHtml("This is ~~deleted~~ text.\n");
+testFeature("Cmark GFM - Strikethrough disabled with false", function() {
+  var out = cmark.toHtml("This is ~~deleted~~ text.\n", {strikethrough: false});
   return out.indexOf('<del>') == -1;
 });
 
 /* ── GFM: autolink ── */
 
-testFeature("Cmark GFM - Autolink URL", function() {
-  var out = cmark.toHtml("Visit https://example.com today.\n", {autolink: true});
+testFeature("Cmark GFM - Autolink URL (on by default)", function() {
+  var out = cmark.toHtml("Visit https://example.com today.\n");
   return out.indexOf('<a href="https://example.com">https://example.com</a>') != -1;
 });
 
-testFeature("Cmark GFM - Autolink not parsed without option", function() {
-  var out = cmark.toHtml("Visit https://example.com today.\n");
+testFeature("Cmark GFM - Autolink disabled with false", function() {
+  var out = cmark.toHtml("Visit https://example.com today.\n", {autolink: false});
   return out.indexOf('<a href') == -1;
 });
 
 /* ── GFM: tasklist ── */
 
-testFeature("Cmark GFM - Tasklist checked and unchecked", function() {
-  var out = cmark.toHtml("- [x] Done\n- [ ] Todo\n", {tasklist: true});
+testFeature("Cmark GFM - Tasklist checked and unchecked (on by default)", function() {
+  var out = cmark.toHtml("- [x] Done\n- [ ] Todo\n");
   return out.indexOf('checked') != -1
       && out.indexOf('type="checkbox"') != -1
       && (out.match(/input/g) || []).length == 2;
 });
 
-testFeature("Cmark GFM - Tasklist not parsed without option", function() {
-  var out = cmark.toHtml("- [x] Done\n- [ ] Todo\n");
+testFeature("Cmark GFM - Tasklist disabled with false", function() {
+  var out = cmark.toHtml("- [x] Done\n- [ ] Todo\n", {tasklist: false});
   return out.indexOf('checkbox') == -1;
 });
 
 /* ── GFM: tagfilter ── */
 
-testFeature("Cmark GFM - Tagfilter escapes dangerous tags", function() {
-  var out = cmark.toHtml("<textarea>evil</textarea>\n", {unsafe: true, tagfilter: true});
+testFeature("Cmark GFM - Tagfilter escapes dangerous tags (on by default)", function() {
+  var out = cmark.toHtml("<textarea>evil</textarea>\n", {unsafe: true});
   return out.indexOf('&lt;textarea') != -1;
 });
 
 testFeature("Cmark GFM - Tagfilter allows safe tags", function() {
-  var out = cmark.toHtml("<strong>ok</strong>\n", {unsafe: true, tagfilter: true});
+  var out = cmark.toHtml("<strong>ok</strong>\n", {unsafe: true});
   return out.indexOf('<strong>ok</strong>') != -1;
 });
 
-/* ── GFM: multiple extensions combined ── */
+testFeature("Cmark GFM - Tagfilter disabled with false", function() {
+  var out = cmark.toHtml("<textarea>evil</textarea>\n", {unsafe: true, tagfilter: false});
+  return out.indexOf('<textarea>') != -1;
+});
 
-testFeature("Cmark GFM - Multiple extensions combined", function() {
+/* ── GFM: all extensions on by default (no options) ── */
+
+testFeature("Cmark GFM - All extensions on by default", function() {
   var md = "# Status\n\n| Task | Note |\n|------|------|\n| ~~old~~ | done |\n\n- [x] Review\n\nSee https://example.com\n";
-  var out = cmark.toHtml(md, {table: true, strikethrough: true, autolink: true, tasklist: true});
+  var out = cmark.toHtml(md);
   return out.indexOf('<table>') != -1
       && out.indexOf('<del>old</del>') != -1
       && out.indexOf('checkbox') != -1
