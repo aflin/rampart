@@ -1,0 +1,222 @@
+/* auth.css — styles for rampart-auth pages */
+
+:root {
+  --rp-accent: #16a34a;
+  --rp-accent-hover: #15803d;
+  --rp-text: #1e293b;
+  --rp-text-dim: #475569;
+  --rp-surface: #fff;
+  --rp-bg: #f8fafc;
+  --rp-border: #e2e8f0;
+  --rp-border-focus: #16a34a;
+  --rp-shadow: rgba(0,0,0,0.08);
+  --rp-radius: 8px;
+  --rp-font: 'Varela Round', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --rp-red: #dc2626;
+  --rp-red-bg: #fef2f2;
+  --rp-green-bg: #f0fdf4;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  font-family: var(--rp-font);
+  background: var(--rp-bg);
+  color: var(--rp-text);
+  margin: 0;
+  padding: 0;
+  -webkit-font-smoothing: antialiased;
+}
+
+.auth-wrap {
+  max-width: 48rem;
+  margin: 0 auto;
+  padding: 2rem 1.5rem;
+}
+
+.auth-header {
+  border-bottom: 1px solid var(--rp-border);
+  padding-bottom: 1rem;
+  margin-bottom: 2rem;
+}
+
+.auth-header h1 {
+  font-size: 1.3rem;
+  color: var(--rp-text);
+  margin: 0;
+}
+
+.auth-header h1 a {
+  color: var(--rp-accent);
+  text-decoration: none;
+}
+
+/* navigation */
+.auth-nav {
+  margin-bottom: 1.5rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--rp-border);
+}
+
+.auth-nav a {
+  color: var(--rp-text-dim);
+  text-decoration: none;
+  margin-right: 1.5rem;
+  font-size: 0.9rem;
+}
+
+.auth-nav a:hover {
+  color: var(--rp-accent);
+}
+
+/* cards */
+.auth-card {
+  background: var(--rp-surface);
+  border: 1px solid var(--rp-border);
+  border-radius: var(--rp-radius);
+  padding: 2rem;
+  margin-bottom: 1.5rem;
+  box-shadow: 0 1px 3px var(--rp-shadow);
+}
+
+.auth-card h2 {
+  font-size: 1.2rem;
+  margin: 0 0 1.5rem 0;
+  color: var(--rp-text);
+}
+
+/* forms */
+label {
+  display: block;
+  margin: 0.8em 0 0.3em;
+  font-size: 0.9rem;
+  color: var(--rp-text-dim);
+}
+
+input[type=text], input[type=password], input[type=email], select {
+  width: 100%;
+  max-width: 24rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--rp-border);
+  border-radius: 6px;
+  font-size: 0.95rem;
+  color: var(--rp-text);
+  background: var(--rp-surface);
+  transition: border-color 0.2s;
+}
+
+input:focus {
+  outline: none;
+  border-color: var(--rp-border-focus);
+  box-shadow: 0 0 0 2px rgba(22,163,74,0.12);
+}
+
+button, .auth-btn {
+  display: inline-block;
+  padding: 0.5rem 1.5rem;
+  background: var(--rp-accent);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background 0.2s;
+  margin-top: 0.5rem;
+}
+
+button:hover, .auth-btn:hover {
+  background: var(--rp-accent-hover);
+}
+
+button.danger {
+  background: var(--rp-red);
+}
+
+button.danger:hover {
+  background: #b91c1c;
+}
+
+/* messages */
+.auth-msg {
+  padding: 0.6rem 1rem;
+  margin-bottom: 1rem;
+  border-radius: 6px;
+  font-size: 0.9rem;
+}
+
+.auth-msg.err {
+  background: var(--rp-red-bg);
+  border: 1px solid #fca5a5;
+  color: var(--rp-red);
+}
+
+.auth-msg.ok {
+  background: var(--rp-green-bg);
+  border: 1px solid #86efac;
+  color: #15803d;
+}
+
+/* tables */
+table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.9rem;
+}
+
+th, td {
+  border: 1px solid var(--rp-border);
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+}
+
+th {
+  background: var(--rp-bg);
+  color: var(--rp-text-dim);
+  font-weight: 600;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+/* links */
+a { color: var(--rp-accent); }
+a:hover { color: var(--rp-accent-hover); }
+
+.auth-links {
+  margin-top: 1rem;
+  font-size: 0.9rem;
+}
+
+.auth-links a {
+  margin-right: 1rem;
+}
+
+/* login page centering */
+.auth-login-wrap {
+  max-width: 28rem;
+  margin: 4rem auto;
+  padding: 0 1.5rem;
+}
+
+/* footer */
+.auth-footer {
+  border-top: 1px solid var(--rp-border);
+  padding-top: 1rem;
+  margin-top: 2rem;
+  color: var(--rp-text-dim);
+  font-size: 0.8rem;
+}
+
+/* checkbox labels inline */
+label.inline {
+  display: inline;
+  margin: 0;
+}
+
+/* responsive */
+@media (max-width: 640px) {
+  .auth-wrap { padding: 1rem; }
+  .auth-card { padding: 1.25rem; }
+  input[type=text], input[type=password], input[type=email] { max-width: 100%; }
+}

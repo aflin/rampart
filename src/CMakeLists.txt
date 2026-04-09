@@ -448,6 +448,12 @@ target_link_libraries(rampart-lmdb
     ${PROJECT_BINARY_DIR}/extern/lmdb/liblmdb.a
 )
 
+###AUTH###
+
+add_library(rampart-auth SHARED
+ duktape/modules/rampart-auth.c
+)
+
 if(CYGWIN)
     # Cygwin/MSYS pthreads lack robust mutex support
     set(LMDB_XCFLAGS "-fPIC -DMDB_USE_ROBUST=0")
@@ -1014,7 +1020,7 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
         rampart-redis rampart-crypto rampart-html
         rampart-cmark rampart-robots rampart-lmdb
         rampart-net rampart-python rampart-almanac
-        rampart-totext
+        rampart-totext rampart-auth
         #example_name
           PROPERTIES
           LINK_FLAGS   "-undefined dynamic_lookup -Wl,-rpath,./"
@@ -1037,6 +1043,7 @@ elseif(CYGWIN)
   target_link_libraries(rampart-robots ${RAMPART_IMPLIB})
   target_link_libraries(rampart-server ${RAMPART_IMPLIB})
   target_link_libraries(rampart-totext ${RAMPART_IMPLIB})
+  target_link_libraries(rampart-auth ${RAMPART_IMPLIB})
   # Targets using keyword signature (match existing target_link_libraries form)
   target_link_libraries(rampart-crypto PRIVATE ${RAMPART_IMPLIB})
   target_link_libraries(rampart-curl PRIVATE ${RAMPART_IMPLIB})
@@ -1046,7 +1053,7 @@ elseif(CYGWIN)
   foreach(_mod rampart-almanac rampart-cmark rampart-html rampart-lmdb
                rampart-net rampart-redis rampart-robots rampart-server
                rampart-crypto rampart-curl rampart-python rampart-sql
-               rampart-totext)
+               rampart-totext rampart-auth)
     add_dependencies(${_mod} rampart)
   endforeach()
   set_target_properties(
@@ -1054,7 +1061,7 @@ elseif(CYGWIN)
         rampart-redis rampart-crypto rampart-html
         rampart-cmark rampart-robots rampart-lmdb
         rampart-net rampart-python rampart-almanac
-        rampart-totext
+        rampart-totext rampart-auth
         #example_name
           PROPERTIES
           LINK_FLAGS "-Wl,-rpath,./"
@@ -1067,7 +1074,7 @@ else()
         rampart-redis rampart-crypto rampart-html
         rampart-cmark rampart-robots rampart-lmdb
         rampart-net rampart-python rampart-almanac
-        rampart-totext
+        rampart-totext rampart-auth
         #example_name
           PROPERTIES
           LINK_FLAGS "-Wl,-rpath,./"
@@ -1130,6 +1137,7 @@ install(TARGETS
     rampart-python
     rampart-almanac
     rampart-totext
+    rampart-auth
     DESTINATION "${CMAKE_INSTALL_PREFIX}/modules/"
 )
 
@@ -1310,17 +1318,24 @@ install(CODE "execute_process( \
 )
 
 install(DIRECTORY DESTINATION "${PYTHON_BIN_DIR}/build/lib")
-install(CODE "execute_process( \
-    COMMAND bash -c \"cp -a \
-    '${PYTHON_BIN_DIR}/build/bin' \
-    '${PYTHON_BIN_DIR}/build/lib' \
-    '${CMAKE_INSTALL_PREFIX}/modules/python/' \"\
-    )"
-)
 
-install(
-    CODE "execute_process( COMMAND bash \"${CMAKE_INSTALL_PREFIX}/modules/python/rebase-python.sh\"  \
-    WORKING_DIRECTORY \"${CMAKE_INSTALL_PREFIX}/modules/python\")"
+# Only copy python bin/lib if the build is newer than the installed copy.
+# This avoids re-copying thousands of files on every 'make install'.
+install(CODE "execute_process( \
+    COMMAND bash -c \" \
+    BUILD='${PYTHON_BIN_DIR}/libpython3.${PYTHON_MINOR}.a'; \
+    INSTALLED='${CMAKE_INSTALL_PREFIX}/modules/python/bin/python3'; \
+    if [ -f \\\"\\$INSTALLED\\\" ] && [ ! \\\"\\$BUILD\\\" -nt \\\"\\$INSTALLED\\\" ]; then \
+        echo 'Python install is up to date -- skipping copy'; \
+    else \
+        echo 'Copying Python installation...'; \
+        cp -a '${PYTHON_BIN_DIR}/build/bin' '${PYTHON_BIN_DIR}/build/lib' \
+            '${CMAKE_INSTALL_PREFIX}/modules/python/'; \
+        bash '${CMAKE_INSTALL_PREFIX}/modules/python/rebase-python.sh'; \
+    fi \
+    \" \
+    WORKING_DIRECTORY \"${CMAKE_INSTALL_PREFIX}/modules/python\" \
+    )"
 )
 
 install(CODE "execute_process( \

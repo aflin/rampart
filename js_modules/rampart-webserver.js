@@ -668,6 +668,28 @@ function start(serverConf, dump) {
             return wpres;
         }
 
+        /* if authMod is enabled and we started as root, chown/chmod the
+           auth data directory so the unprivileged user can read/write it */
+        if (serverConf.authMod && serverConf.authModConf && iam == 'root' && unprivUser) {
+            try {
+                var authConf = require(serverConf.authModConf);
+                var authDbPath = authConf.dbPath || 'data/auth';
+                if (authDbPath.charAt(0) !== '/')
+                    authDbPath = wd + '/' + authDbPath;
+                if (stat(authDbPath)) {
+                    utils.chown({user: unprivUser, path: authDbPath});
+                    var authFiles = utils.readDir(authDbPath);
+                    for (var afi = 0; afi < authFiles.length; afi++) {
+                        var afp = authDbPath + '/' + authFiles[afi];
+                        utils.chmod(afp, '0600');
+                        utils.chown({user: unprivUser, path: afp});
+                    }
+                }
+            } catch(e) {
+                fprintf(stderr, 'warn: could not fix auth data permissions: %s\n', e.message);
+            }
+        }
+
         var ret = smsg(sprintf('Server has been started.'));
         ret.pid=serverpid;
         return ret;

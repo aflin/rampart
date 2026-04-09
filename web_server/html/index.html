@@ -43,6 +43,20 @@ ____[|||||||||||||__|||||||||]____
     </ul>
     <p>There are a few more in the <span class="courier">web_server/apps/test-modules/</span>
        directory.</p>
+
+    <h1>Authentication</h1>
+    <p>To enable authentication, set <span class="courier">authMod: true</span>
+       in <span class="courier">web_server_conf.js</span> and run initial setup:</p>
+    <pre>    rampart apps/auth.js</pre>
+    <p>Once enabled:</p>
+    <ul>
+      <li><a href="/apps/priv/showauth.html">Protected page</a> — requires login (shows auth info)</li>
+      <li><a href="/apps/auth/admin/">Admin panel</a> — user and session management (admin only)</li>
+      <li><a href="/apps/auth/login">Login page</a></li>
+    </ul>
+    <p>See <span class="courier">auth-conf.js</span> for configuration.
+       CLI admin: <span class="courier">rampart apps/auth.js help</span></p>
+
     <p>Documentation for Rampart can be found <a href="https://rampart.dev/docs/">here</a>.</p>
     <p>Enjoy!</p>
     <p>--The Rampart Development Team</p>

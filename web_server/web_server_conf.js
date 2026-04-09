@@ -244,6 +244,31 @@ var serverConf = {
     /* defaultRangeMBytes  Number (range 0.01 to 1000) default range size for a "range: x-"
                            open ended request in megabytes (often used to seek into and chunk videos) */
     //defaultRangeMbytes:  8,
+
+    /* authMod             Bool/String/Function. Enable session-based authentication.
+                           true    - loads the built-in rampart-auth module
+                           String  - loads a custom auth module by name/path
+                           Function - inline auth function
+                           false   - disabled (default)
+                           Requires authModConf to be set.
+
+                           The auth module exports a function that receives a req object.
+                           For files:       return true to serve, false to deny (403).
+                           For app modules: return req to pass through, false for 403,
+                                            or {redirect: "/path"} for 302.               */
+    //authMod:             false,
+    // To enable the built-in auth module:
+    //   authMod:           true,
+    //   authModConf:       working_directory + '/auth-conf.js',
+
+    /* rateLimit            Object. Per-path rate limiting using a token bucket
+                            algorithm.  Runs in C before auth or JS processing.
+                            See the rampart-server documentation for details.    */
+    // To enable rate limiting on auth endpoints:
+    //   rateLimit: {
+    //       "/apps/auth/": {rate: 20, window: 60, key: "ip"}
+    //   },
+
     serverRoot:            working_directory,
 }
 

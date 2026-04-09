@@ -178,6 +178,279 @@ static int begin_run_on_file=0;
 static DHS *dhs_endfunc_template = NULL;
 static DHS **dhs_endfuncs = NULL;
 
+/* ---- authMod: session authentication ---- */
+
+/* protected path config (parsed from authModConf JSON, stored in C) */
+typedef struct rp_auth_ppath_s {
+    char *path;
+    int   pathlen;
+    int   level;
+    char *redirect;
+} rp_auth_ppath;
+
+static rp_auth_ppath *auth_ppaths = NULL;
+static int auth_num_ppaths = 0;
+static char **auth_redir_exts = NULL;
+static int auth_num_redir_exts = 0;
+
+static int auth_mod_active = 0;
+/* ---- end authMod declarations ---- */
+
+/* forward declarations for rate limiter */
+void sa_to_string(void *sa, char *buf, size_t bufsz);
+static void sendresp(evhtp_request_t *request, evhtp_res code, int chunked);
+
+/* ---- rate limiter: token bucket with per-bucket locks ---- */
+
+#ifndef RP_RATELIMIT_BUCKETS
+#define RP_RATELIMIT_BUCKETS 64
+#endif
+
+#if (RP_RATELIMIT_BUCKETS & (RP_RATELIMIT_BUCKETS - 1)) != 0
+#error "RP_RATELIMIT_BUCKETS must be a power of 2"
+#endif
+
+#define RL_KEY_IP          0
+#define RL_KEY_FINGERPRINT 1
+#define RL_KEY_COOKIE      2
+
+typedef struct rl_entry_s {
+    char              *key;        /* hash key string (IP, fingerprint hash, cookie val) */
+    double             tokens;     /* remaining tokens */
+    double             last_time;  /* last refill time (seconds since epoch) */
+    struct rl_entry_s *next;       /* hash chain */
+} rl_entry;
+
+typedef struct rl_rule_s {
+    char  *path;                   /* URL path prefix to match */
+    int    pathlen;
+    int    rate;                   /* max requests per window */
+    int    window;                 /* window in seconds */
+    int    key_type;               /* RL_KEY_IP, RL_KEY_FINGERPRINT, RL_KEY_COOKIE */
+    char  *cookie_name;            /* cookie name if key_type == RL_KEY_COOKIE */
+} rl_rule;
+
+static rl_rule *rl_rules = NULL;
+static int rl_num_rules = 0;
+
+static rl_entry *rl_buckets[RP_RATELIMIT_BUCKETS] = {0};
+static pthread_mutex_t rl_locks[RP_RATELIMIT_BUCKETS];
+static int rl_initialized = 0;
+
+static void rl_init_locks(void)
+{
+    int i;
+    if (rl_initialized) return;
+    for (i = 0; i < RP_RATELIMIT_BUCKETS; i++)
+        pthread_mutex_init(&rl_locks[i], NULL);
+    rl_initialized = 1;
+}
+
+/* djb2 hash */
+static unsigned int rl_hash(const char *str)
+{
+    unsigned int h = 5381;
+    int c;
+    while ((c = (unsigned char)*str++))
+        h = ((h << 5) + h) + c;
+    return h;
+}
+
+/* build the rate limit key from the request */
+static const char *rl_build_key(evhtp_request_t *req, rl_rule *rule,
+                                char *buf, int bufsz)
+{
+    evhtp_connection_t *conn = evhtp_request_get_connection(req);
+
+    switch (rule->key_type)
+    {
+        case RL_KEY_IP:
+        {
+            sa_to_string((void *)conn->saddr, buf, bufsz);
+            return buf;
+        }
+        case RL_KEY_FINGERPRINT:
+        {
+            /* hash of IP + User-Agent + Accept-Language + Accept-Encoding */
+            char ipbuf[INET6_ADDRSTRLEN];
+            const char *ua, *al, *ae;
+            unsigned int h;
+
+            sa_to_string((void *)conn->saddr, ipbuf, sizeof(ipbuf));
+            ua = evhtp_kv_find(req->headers_in, "User-Agent");
+            al = evhtp_kv_find(req->headers_in, "Accept-Language");
+            ae = evhtp_kv_find(req->headers_in, "Accept-Encoding");
+
+            h = rl_hash(ipbuf);
+            if (ua) h ^= rl_hash(ua);
+            if (al) h ^= rl_hash(al);
+            if (ae) h ^= rl_hash(ae);
+
+            snprintf(buf, bufsz, "fp:%08x", h);
+            return buf;
+        }
+        case RL_KEY_COOKIE:
+        {
+            const char *cookie_hdr = evhtp_kv_find(req->headers_in, "Cookie");
+            if (cookie_hdr && rule->cookie_name)
+            {
+                /* simple cookie extraction */
+                const char *p = cookie_hdr;
+                int nlen = (int)strlen(rule->cookie_name);
+                while (*p)
+                {
+                    while (*p == ' ' || *p == ';' || *p == '\t') p++;
+                    if (!*p) break;
+                    if (strncmp(p, rule->cookie_name, nlen) == 0 && p[nlen] == '=')
+                    {
+                        const char *val = p + nlen + 1;
+                        const char *end = val;
+                        while (*end && *end != ';') end++;
+                        if (end - val > 0 && (int)(end - val) < bufsz - 3)
+                        {
+                            buf[0] = 'c'; buf[1] = ':';
+                            memcpy(buf + 2, val, end - val);
+                            buf[2 + (end - val)] = '\0';
+                            return buf;
+                        }
+                    }
+                    while (*p && *p != ';') p++;
+                }
+            }
+            /* cookie not found — fall back to IP */
+            sa_to_string((void *)conn->saddr, buf, bufsz);
+            return buf;
+        }
+    }
+    sa_to_string((void *)conn->saddr, buf, bufsz);
+    return buf;
+}
+
+/*
+ * Check rate limit for a request.
+ * Returns 1 if allowed, 0 if rate-limited.
+ */
+/*
+ * Check one rule against a keyed entry. Returns 1 if allowed, 0 if denied.
+ */
+static int rl_check_one(const char *key, rl_rule *rule, double now_time)
+{
+    unsigned int bucket_idx = rl_hash(key) & (RP_RATELIMIT_BUCKETS - 1);
+    double refill_rate = (double)rule->rate / (double)rule->window;
+    rl_entry *e, **prev;
+    int allowed = 1;
+
+    pthread_mutex_lock(&rl_locks[bucket_idx]);
+
+    prev = &rl_buckets[bucket_idx];
+    e = *prev;
+    while (e)
+    {
+        if (strcmp(e->key, key) == 0)
+            break;
+        prev = &e->next;
+        e = e->next;
+    }
+
+    if (!e)
+    {
+        e = malloc(sizeof(rl_entry));
+        e->key = strdup(key);
+        e->tokens = (double)rule->rate - 1.0;
+        e->last_time = now_time;
+        e->next = rl_buckets[bucket_idx];
+        rl_buckets[bucket_idx] = e;
+    }
+    else
+    {
+        double elapsed = now_time - e->last_time;
+        if (elapsed > 0)
+        {
+            e->tokens += elapsed * refill_rate;
+            if (e->tokens > (double)rule->rate)
+                e->tokens = (double)rule->rate;
+            e->last_time = now_time;
+        }
+
+        if (e->tokens >= 1.0)
+        {
+            e->tokens -= 1.0;
+        }
+        else
+        {
+            allowed = 0;
+        }
+
+        if (e->tokens >= (double)rule->rate && elapsed > (double)rule->window * 2)
+        {
+            *prev = e->next;
+            free(e->key);
+            free(e);
+        }
+    }
+
+    pthread_mutex_unlock(&rl_locks[bucket_idx]);
+    return allowed;
+}
+
+/*
+ * Check rate limit for a request.
+ * Checks ALL matching rules — the request must pass every one.
+ * Returns 1 if allowed, 0 if any rule denies.
+ */
+static int rl_check(evhtp_request_t *req)
+{
+    char keybuf[256];
+    double now_time;
+    int i, allowed = 1, matched = 0;
+    const char *request_path;
+
+    if (rl_num_rules == 0)
+        return 1;
+
+    request_path = req->uri->path->full;
+    now_time = (double)time(NULL);
+
+    for (i = 0; i < rl_num_rules; i++)
+    {
+        rl_rule *rule = &rl_rules[i];
+
+        if (strncmp(request_path, rule->path, rule->pathlen) != 0)
+            continue;
+
+        matched = 1;
+
+        /* build key with rule path prefix */
+        {
+            int plen = snprintf(keybuf, sizeof(keybuf), "%s|", rule->path);
+            rl_build_key(req, rule, keybuf + plen, sizeof(keybuf) - plen);
+        }
+
+        if (!rl_check_one(keybuf, rule, now_time))
+            allowed = 0;
+    }
+
+    if (!matched)
+        return 1;
+
+    return allowed;
+}
+
+static void send429(evhtp_request_t *req)
+{
+    evhtp_headers_add_header(req->headers_out,
+        evhtp_header_new("Content-Type", "text/html", 0, 0));
+    evhtp_headers_add_header(req->headers_out,
+        evhtp_header_new("Retry-After", "60", 0, 0));
+    char msg[] = "<html><head><title>429 Too Many Requests</title></head>"
+                 "<body><h1>Too Many Requests</h1>"
+                 "<p>Rate limit exceeded. Please try again later.</p></body></html>";
+    evbuffer_add(req->buffer_out, msg, strlen(msg));
+    sendresp(req, 429, 0);
+}
+
+/* ---- end rate limiter ---- */
+
 static DHS *new_dhs(duk_context *ctx, int idx)
 {
     DHS *dhs = NULL;
@@ -1897,6 +2170,7 @@ static int push_req_vars(DHS *dhs)
         ret=-1;//signal no post data at all.
     }
     duk_put_prop_string(ctx, -2, "body");
+
     return ret;
 }
 char msg500[] = "<html><head><title>500 Internal Server Error</title></head><body><h1>Internal Server Error</h1><p><pre>%s</pre></p></body></html>";
@@ -2368,6 +2642,15 @@ static void rp_sendfile(evhtp_request_t *req, char *fn, int haveCT, struct stat 
         len=filesize;
     }
 
+    /* HEAD: skip body entirely — just send headers with Content-Length */
+    if (evhtp_request_get_method(req) == htp_method_HEAD)
+    {
+        snprintf(slen, 64, "%" PRIu64, (uint64_t)len);
+        evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Length", slen, 0, 1));
+        close(fd);
+        sendresp(req, rescode, 0);
+        return;
+    }
 
     accept = evhtp_kv_find(req->headers_in,"Accept-Encoding");
     if (compressibles && accept && strcasestr(accept, "gzip"))
@@ -2506,6 +2789,383 @@ body, td, th, span { font-family: Geneva,Arial,Helvetica; }\n\
     sendresp(req, EVHTP_RES_FOUND, 0);
 }
 
+/* ---- authMod: per-request auth check ----
+ * Called from fileserver() and http_callback() for app modules.
+ * Uses rampart-lmdb via duktape C API for session lookup (no JS interpretation).
+ *
+ * ctx:     the thread's duktape context (for lmdb access)
+ * req:     the evhtp request (for Cookie header and path)
+ * req_idx: duktape stack index of the req object, or -1 for file serving.
+ *          When >= 0 and auth succeeds, req.userAuth is populated.
+ *
+ * Returns:
+ *   1  = request is allowed (proceed normally)
+ *   0  = request was denied (403 or redirect already sent)
+ *  -1  = path is not protected (proceed, no auth needed)
+ */
+/* ---- authMod: pure-C path checking helpers ---- */
+
+/* find the most specific protected path match (longest prefix) */
+static rp_auth_ppath *auth_find_protected_path(const char *request_path)
+{
+    rp_auth_ppath *best = NULL;
+    int best_len = 0, i;
+    for (i = 0; i < auth_num_ppaths; i++)
+    {
+        rp_auth_ppath *pp = &auth_ppaths[i];
+        if (strncmp(request_path, pp->path, pp->pathlen) == 0 && pp->pathlen > best_len)
+        {
+            best = pp;
+            best_len = pp->pathlen;
+        }
+    }
+    return best;
+}
+
+/* check if a file extension should trigger redirect (vs 403) */
+static int auth_ext_should_redirect(const char *request_path)
+{
+    const char *dot = NULL, *slash = NULL, *p = request_path;
+    const char *ext;
+    int i;
+
+    while (*p) { if (*p == '.') dot = p; else if (*p == '/') slash = p; p++; }
+    ext = (!dot || (slash && dot < slash)) ? "" : dot;
+
+    for (i = 0; i < auth_num_redir_exts; i++)
+        if (strcmp(ext, auth_redir_exts[i]) == 0) return 1;
+    return 0;
+}
+
+/* build redirect URL with $origin substitution */
+static int auth_build_redirect(const char *tmpl, const char *origin, char *buf, int buf_size)
+{
+    const char *p = tmpl;
+    int pos = 0;
+    while (*p && pos < buf_size - 1)
+    {
+        if (strncmp(p, "$origin", 7) == 0)
+        {
+            const char *s = origin;
+            while (*s && pos < buf_size - 4)
+            {
+                unsigned char c = (unsigned char)*s;
+                if (isalnum(c) || c == '/' || c == '-' || c == '_' || c == '.' || c == '~')
+                    buf[pos++] = c;
+                else {
+                    if (pos + 3 >= buf_size) return -1;
+                    snprintf(&buf[pos], 4, "%%%02X", c);
+                    pos += 3;
+                }
+                s++;
+            }
+            p += 7;
+        }
+        else
+            buf[pos++] = *p++;
+    }
+    if (pos >= buf_size) return -1;
+    buf[pos] = '\0';
+    return pos;
+}
+
+/*
+ * Call the auth module's exported function with a req-like object.
+ * The function is stored in the funcstash at dhs_authfuncs[thrno]->func_idx.
+ *
+ * For file serving (req_idx < 0): constructs a minimal {cookies:{...}} object,
+ *   calls the auth function, reads req.userAuth.authLevel from the result.
+ *   Returns the authLevel or -1 if not authenticated.
+ *   Stack is left clean (same top as entry).
+ *
+ * For app modules (req_idx >= 0): calls the auth function with the real req object.
+ *   req.userAuth is set by the function if valid session exists.
+ *   Returns 1 if userAuth was set, 0 if not.
+ *   Stack is left clean (req still at req_idx).
+ */
+/* name of the auth module for duk_rp_resolve, set during config parsing */
+static const char *auth_mod_name_cached = NULL;
+
+#define AUTH_FUNC_SYM "auth_check_func"
+
+/*
+ * Get the auth check function, loading the module on first call per thread.
+ * Pushes the function onto the stack and returns 1, or returns 0 on failure.
+ *
+ * Stack on success: [ ... auth_fn ]  (+1)
+ * Stack on failure: [ ... ]          (+0)
+ */
+static int auth_get_func(duk_context *ctx)
+{
+    /* check if already cached on this context */
+    if (duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL(AUTH_FUNC_SYM)))
+    {                                           /* stack: [ ... func ] */
+        if (duk_is_function(ctx, -1))
+            return 1;
+    }
+    duk_pop(ctx);                               /* stack: [ ... ] */
+
+    /* first call on this thread — load the module */
+    if (!auth_mod_name_cached)
+        return 0;
+
+    if (duk_rp_resolve(ctx, auth_mod_name_cached) != 1)
+    {
+        fprintf(stderr, "authMod: failed to load '%s' on thread\n", auth_mod_name_cached);
+        duk_pop(ctx);
+        return 0;
+    }
+    /* stack: [ ... module_obj ] */
+    duk_get_prop_string(ctx, -1, "exports");    /* stack: [ ... module_obj exports ] */
+    duk_remove(ctx, -2);                        /* stack: [ ... exports ] */
+
+    if (!duk_is_function(ctx, -1))
+    {
+        fprintf(stderr, "authMod: module '%s' did not export a function\n", auth_mod_name_cached);
+        duk_pop(ctx);
+        return 0;
+    }
+
+    /* cache for subsequent calls on this thread */
+    duk_dup(ctx, -1);                           /* stack: [ ... func func ] */
+    duk_put_global_string(ctx, DUK_HIDDEN_SYMBOL(AUTH_FUNC_SYM)); /* stack: [ ... func ] */
+
+    return 1;
+}
+
+/*
+ * Build a minimal req-like object for file serving auth checks.
+ * Pushes {cookies:{...}, path:{path:"..."}} onto the stack.
+ *
+ * Stack: [ ... ] → [ ... mini_req ]  (+1)
+ */
+static void auth_push_file_req(duk_context *ctx, evhtp_request_t *req)
+{
+    const char *cookie_hdr = evhtp_kv_find(req->headers_in, "Cookie");
+    evhtp_connection_t *conn = evhtp_request_get_connection(req);
+
+    duk_push_object(ctx);                       /* stack: [ ... mini_req ] */
+
+    /* mini_req.ip */
+    {
+        char address[INET6_ADDRSTRLEN];
+        sa_to_string((void *)conn->saddr, address, sizeof(address));
+        duk_push_string(ctx, address);          /* stack: [ ... mini_req ipstr ] */
+        duk_put_prop_string(ctx, -2, "ip");     /* stack: [ ... mini_req ] */
+    }
+
+    /* mini_req.path = {path: "/the/path"} */
+    duk_push_object(ctx);                       /* stack: [ ... mini_req path_obj ] */
+    duk_push_string(ctx, req->uri->path->full); /* stack: [ ... mini_req path_obj pathstr ] */
+    duk_put_prop_string(ctx, -2, "path");       /* stack: [ ... mini_req path_obj ] */
+    duk_put_prop_string(ctx, -2, "path");       /* stack: [ ... mini_req ] */
+
+    /* mini_req.query = {...} */
+    duk_rp_querystring2object(ctx, (char *)req->uri->query_raw);
+                                                /* stack: [ ... mini_req query_obj ] */
+    duk_put_prop_string(ctx, -2, "query");      /* stack: [ ... mini_req ] */
+
+    /* mini_req.headers = {...} */
+    duk_push_object(ctx);                       /* stack: [ ... mini_req headers_obj ] */
+    evhtp_headers_for_each(req->headers_in, putheaders, ctx);
+    duk_put_prop_string(ctx, -2, "headers");    /* stack: [ ... mini_req ] */
+
+    /* mini_req.cookies = {...} */
+    duk_push_object(ctx);                       /* stack: [ ... mini_req cookies_obj ] */
+    if (cookie_hdr)
+    {
+        const char *p = cookie_hdr;
+        while (*p)
+        {
+            const char *name_start, *name_end, *val_start, *val_end;
+
+            while (*p == ' ' || *p == ';' || *p == '\t') p++;
+            if (!*p) break;
+
+            name_start = p;
+            while (*p && *p != '=' && *p != ';') p++;
+            name_end = p;
+            if (*p == '=') p++;
+
+            val_start = p;
+            while (*p && *p != ';') p++;
+            val_end = p;
+
+            while (val_end > val_start && (val_end[-1] == ' ' || val_end[-1] == '\t'))
+                val_end--;
+
+            if (name_end > name_start)
+            {
+                duk_push_lstring(ctx, val_start, (duk_size_t)(val_end - val_start));
+                duk_put_prop_lstring(ctx, -2, name_start, (duk_size_t)(name_end - name_start));
+            }
+        }
+    }
+    duk_put_prop_string(ctx, -2, "cookies");    /* stack: [ ... mini_req ] */
+}
+
+/*
+ * Auth check for file serving.
+ * Calls the auth function with a mini-req.
+ *
+ * Returns:
+ *   1  = allowed (auth function returned true)
+ *   0  = denied (auth function returned false/anything else)
+ *
+ * Stack is left clean (same top as entry).
+ */
+static int auth_check_file(duk_context *ctx, evhtp_request_t *req)
+{
+    duk_idx_t top_save = duk_get_top(ctx);
+    int allowed = 0;
+
+    if (!auth_get_func(ctx))
+    {                                           /* stack: [ ... ] */
+        return 0; /* can't load auth module — deny */
+    }
+    /* stack: [ ... auth_fn ] */
+
+    auth_push_file_req(ctx, req);               /* stack: [ ... auth_fn mini_req ] */
+
+    if (duk_pcall(ctx, 1) != 0)
+    {                                           /* stack: [ ... error ] */
+        duk_set_top(ctx, top_save);
+        return 0; /* error — deny */
+    }
+    /* stack: [ ... retval ] */
+
+    /* true → serve, anything else → deny */
+    if (duk_is_boolean(ctx, -1) && duk_get_boolean(ctx, -1))
+        allowed = 1;
+
+    duk_set_top(ctx, top_save);                 /* stack: [ ... ] */
+    return allowed;
+}
+
+/*
+ * Auth check for app modules.
+ * Calls the auth function with the real req object.
+ *
+ * Returns:
+ *   1  = allowed (req passed through, possibly with userAuth set)
+ *   0  = denied, 403 already sent
+ *  -2  = denied, redirect (redirect URL in redir_buf)
+ *
+ * On return 1: req at req_idx may have been modified (userAuth set).
+ * On return -2: redir_buf contains the redirect URL.
+ * Stack is left clean (req still at req_idx).
+ */
+static int auth_check_app(duk_context *ctx, evhtp_request_t *req,
+                          duk_idx_t req_idx, char *redir_buf, int redir_buf_size)
+{
+    duk_idx_t top_save = duk_get_top(ctx);
+
+    if (!auth_get_func(ctx))
+    {
+        send403(req);
+        return 0;
+    }
+    /* stack: [ ... auth_fn ] */
+
+    duk_dup(ctx, req_idx);                      /* stack: [ ... auth_fn req ] */
+
+    if (duk_pcall(ctx, 1) != 0)
+    {                                           /* stack: [ ... error ] */
+        duk_set_top(ctx, top_save);
+        send403(req);
+        return 0;
+    }
+    /* stack: [ ... retval ] */
+
+    /* false → 403 */
+    if (duk_is_boolean(ctx, -1) && !duk_get_boolean(ctx, -1))
+    {
+        duk_set_top(ctx, top_save);
+        send403(req);
+        return 0;
+    }
+
+    /* {redirect: "/path"} → 302 */
+    if (duk_is_object(ctx, -1) && !duk_is_function(ctx, -1))
+    {
+        if (duk_get_prop_string(ctx, -1, "redirect"))
+        {                                       /* stack: [ ... retval redirect_str ] */
+            if (duk_is_string(ctx, -1))
+            {
+                const char *redir = duk_get_string(ctx, -1);
+                strncpy(redir_buf, redir, redir_buf_size - 1);
+                redir_buf[redir_buf_size - 1] = '\0';
+                duk_set_top(ctx, top_save);
+                sendredir(req, redir_buf);
+                return -2;
+            }
+        }
+        duk_pop(ctx);                           /* pop redirect or undefined */
+    }
+
+    /* anything else (including the returned req object) → pass through.
+       The auth function already modified req in-place (same JS reference). */
+    duk_set_top(ctx, top_save);                 /* stack: [ ... ] */
+    return 1;
+}
+
+/*
+ * Main auth check, called from fileserver() and http_dothread().
+ *
+ * For files (req_idx < 0):
+ *   Checks if path is protected, calls auth function.
+ *   Returns 1 (serve), 0 (denied — 403/redirect sent).
+ *   -1 = not protected (serve, no auth needed).
+ *
+ * For app modules (req_idx >= 0):
+ *   Always calls auth function (to populate req.userAuth).
+ *   Returns 1 (pass to endpoint), 0 (denied — 403/redirect sent).
+ *   -1 = auth module not active (pass through).
+ */
+static int auth_check_request(duk_context *ctx, evhtp_request_t *req,
+                              duk_idx_t req_idx, int thrno)
+{
+    if (!auth_mod_active)
+        return -1;
+
+    if (req_idx < 0)
+    {
+        /* file serving */
+        rp_auth_ppath *pp;
+        const char *request_path = req->uri->path->full;
+
+        pp = auth_find_protected_path(request_path);
+        if (!pp)
+            return -1; /* not protected — serve */
+
+        if (auth_check_file(ctx, req))
+            return 1; /* auth function said true — serve */
+
+        /* denied: send 403 or redirect based on config */
+        if (pp->redirect && auth_ext_should_redirect(request_path))
+        {
+            char redir_buf[2048];
+            if (auth_build_redirect(pp->redirect, request_path, redir_buf, sizeof(redir_buf)) > 0)
+            {
+                sendredir(req, redir_buf);
+                return 0;
+            }
+        }
+        send403(req);
+        return 0;
+    }
+    else
+    {
+        /* app module — always call auth function */
+        char redir_buf[2048];
+        int result = auth_check_app(ctx, req, req_idx, redir_buf, sizeof(redir_buf));
+        if (result == 1)
+            return 1; /* pass to endpoint */
+        return 0; /* denied — 403 or redirect already sent */
+    }
+}
+/* ---- end authMod per-request check ---- */
+
 #define TOKSTACK_SIZE 1024
 //0 on success, -1 on error
 static int safepath(char *path_in) {
@@ -2630,12 +3290,44 @@ static void fileserver(evhtp_request_t *req, void *arg)
         return;
     }
 
+    /* rate limiter — before any processing */
+    if (!rl_check(req))
+    {
+        send429(req);
+        return;
+    }
+
     if(safepath(path->full) == -1)
     {
         send400(req);
         return;
     }
-    else
+
+    /* only serve files on GET and HEAD */
+    {
+        int method = evhtp_request_get_method(req);
+        if (method != htp_method_GET && method != htp_method_HEAD)
+        {
+            evhtp_headers_add_header(req->headers_out, evhtp_header_new("Allow", "GET, HEAD", 0, 0));
+            evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Type", "text/html", 0, 0));
+            evbuffer_add_printf(req->buffer_out,
+                "<html><head><title>405 Method Not Allowed</title></head>"
+                "<body><h1>Method Not Allowed</h1></body></html>");
+            sendresp(req, 405, 0);
+            return;
+        }
+    }
+
+    /* authMod: check auth before serving any file */
+    if(auth_mod_active)
+    {
+        duk_context *actx = server_thread[thrno]->ctx;
+        int auth_result = auth_check_request(actx, req, -1, thrno);
+        if(auth_result == 0)
+            return; /* denied — 403 or redirect already sent */
+        /* auth_result == 1 (allowed) or -1 (not protected): proceed */
+    }
+
     {
         struct stat sb;
         /* take 2 off of key for the slash and * and add 1 for '\0' and one more for a potential '/' */
@@ -4197,6 +4889,16 @@ static void *http_dothread(void *arg)
     req_idx=duk_get_top_index(ctx);
     duk_dup(ctx,req_idx);
     duk_put_global_string(ctx, DUK_HIDDEN_SYMBOL("reqobj"));
+
+    /* authMod: check auth and populate req.userAuth for app modules.
+       For protected paths, deny here before any JS runs.
+       For unprotected paths, still call to populate req.userAuth. */
+    if(auth_mod_active && !dhs->skip_wrap && !req->cb_has_websock)
+    {
+        int auth_result = auth_check_request(ctx, req, req_idx, dhr->server_thread_num);
+        if (auth_result == 0)
+            goto end_func; /* denied — 403 or redirect already sent */
+    }
 
     // run beginfunc if exists and we are not in the middle of a 404
     if(dhs_beginfunc)
@@ -5861,6 +6563,13 @@ static void http_callback(evhtp_request_t *req, void *arg)
 
     ctx = thr->ctx;
 
+    /* rate limiter — before any JS or auth processing */
+    if (!rl_check(req))
+    {
+        send429(req);
+        return;
+    }
+
 #ifdef __linux__
     if(allow_user_switch && unprivu)
     {
@@ -6225,6 +6934,24 @@ void initThread(evhtp_t *htp, evthr_t *evthr, void *arg)
             REMALLOC(dhs_endfuncs, sizeof (DHS *) * totnthreads);
 
         dhs_endfuncs[*thrno]=clone_dhs(dhs_endfunc_template);
+    }
+
+    /* authMod: copy the config hidden symbol to this thread's context
+       so the auth module can read it when loaded lazily.
+       (Inline functions were already copied during config parsing.) */
+    if(auth_mod_active && auth_mod_name_cached)
+    {
+        CTXLOCK;
+        if(duk_get_global_string(main_ctx, DUK_HIDDEN_SYMBOL("authModConf")))
+        {
+            duk_json_encode(main_ctx, -1);
+            const char *json = duk_get_string(main_ctx, -1);
+            duk_push_string(ctx, json);
+            duk_json_decode(ctx, -1);
+            duk_put_global_string(ctx, DUK_HIDDEN_SYMBOL("authModConf"));
+        }
+        duk_pop(main_ctx);
+        CTXUNLOCK;
     }
 
     SETUPUNLOCK;
@@ -7247,6 +7974,302 @@ duk_ret_t duk_server_start(duk_context *ctx)
         }
         // NO POP
 
+        /* authMod */
+        if (duk_rp_GPS_icase(ctx, ob_idx, "authMod"))
+        {
+            const char *auth_mod_name = NULL;
+            char auth_mod_name_buf[PATH_MAX] = {0};
+            int auth_is_inline_func = 0;
+
+            if (duk_is_boolean(ctx, -1) && duk_get_boolean(ctx, -1))
+            {
+                /* authMod: true — use default rampart-auth */
+                auth_mod_name = "rampart-auth";
+            }
+            else if (duk_is_function(ctx, -1))
+            {
+                /* authMod: function(req){...} — inline function.
+                   Cache on main ctx. Threads get it copied in initThread
+                   via auth_inline_fpos + copy_cb_func pattern. */
+                auth_is_inline_func = 1;
+                duk_dup(ctx, -1);
+                duk_put_global_string(ctx, DUK_HIDDEN_SYMBOL(AUTH_FUNC_SYM));
+            }
+            else if (duk_is_string(ctx, -1))
+            {
+                /* authMod: "my-custom-auth" — module name/path */
+                strncpy(auth_mod_name_buf, duk_get_string(ctx, -1), PATH_MAX - 1);
+                auth_mod_name = auth_mod_name_buf;
+            }
+            else if (duk_is_object(ctx, -1) && !duk_is_array(ctx, -1))
+            {
+                /* authMod: {module: "my-custom-auth"} — beginFunc style */
+                if (duk_get_prop_string(ctx, -1, "module"))
+                {
+                    auth_mod_name = REQUIRE_STRING(ctx, -1,
+                        "server.start: authMod.module must be a string");
+                    strncpy(auth_mod_name_buf, auth_mod_name, PATH_MAX - 1);
+                    auth_mod_name = auth_mod_name_buf;
+                }
+                else
+                    RP_THROW(ctx, "server.start: authMod object must have a 'module' property");
+                duk_pop(ctx); /* pop module string */
+            }
+            else if (!(duk_is_boolean(ctx, -1) && !duk_get_boolean(ctx, -1)) && !duk_is_null(ctx, -1))
+            {
+                RP_THROW(ctx, "server.start: authMod must be true, false, a Function, a String, or {module:'name'}");
+            }
+            duk_pop(ctx);
+
+            if (auth_mod_name || auth_is_inline_func)
+            {
+                char auth_conf_path_buf[PATH_MAX] = {0};
+                const char *auth_conf_path = NULL;
+
+                /* load authModConf — a JS module that exports config object */
+                if (duk_rp_GPS_icase(ctx, ob_idx, "authModConf"))
+                {
+                    auth_conf_path = REQUIRE_STRING(ctx, -1, "server.start: authModConf must be a string path to a config module");
+                    strncpy(auth_conf_path_buf, auth_conf_path, PATH_MAX - 1);
+                    auth_conf_path = auth_conf_path_buf;
+                    duk_pop(ctx);
+                }
+                else
+                {
+                    duk_pop(ctx);
+                    /* authModConf is required for the built-in rampart-auth module */
+                    if (auth_mod_name && strcmp(auth_mod_name, "rampart-auth") == 0)
+                        RP_THROW(ctx, "server.start: authModConf is required when authMod is true (path to config module)");
+                    auth_conf_path = NULL;
+                }
+
+                /* load the config module via require(), if provided */
+                if (auth_conf_path)
+                {
+                    int j;
+
+                    if (duk_rp_resolve(ctx, auth_conf_path) != 1)
+                    {
+                        const char *err = duk_safe_to_string(ctx, -1);
+                        RP_THROW(ctx, "server.start: authModConf: failed to load '%s': %s", auth_conf_path, err);
+                    }
+                    /* stack: [ ... module_obj ] */
+                    duk_get_prop_string(ctx, -1, "exports");
+                    duk_remove(ctx, -2);
+                    /* stack: [ ... config_obj ] */
+
+                    if (!duk_is_object(ctx, -1))
+                        RP_THROW(ctx, "server.start: authModConf: module '%s' must export an object", auth_conf_path);
+
+                    /* extract protected paths config into C structs for server-side enforcement */
+                    if (duk_get_prop_string(ctx, -1, "protectedPaths") && duk_is_object(ctx, -1))
+                    {
+                        int count = 0;
+                        duk_enum(ctx, -1, 0);
+                        while (duk_next(ctx, -1, 0)) { count++; duk_pop(ctx); }
+                        duk_pop(ctx); /* pop enum */
+
+                        REMALLOC(auth_ppaths, count * sizeof(rp_auth_ppath));
+                        auth_num_ppaths = count;
+
+                        j = 0;
+                        duk_enum(ctx, -1, 0);
+                        while (duk_next(ctx, -1, 1))
+                        {
+                            auth_ppaths[j].path = strdup(duk_get_string(ctx, -2));
+                            auth_ppaths[j].pathlen = (int)strlen(auth_ppaths[j].path);
+                            if (duk_get_prop_string(ctx, -1, "level"))
+                                auth_ppaths[j].level = duk_get_int_default(ctx, -1, 0);
+                            duk_pop(ctx);
+                            if (duk_get_prop_string(ctx, -1, "redirect"))
+                                auth_ppaths[j].redirect = strdup(duk_get_string(ctx, -1));
+                            else
+                                auth_ppaths[j].redirect = NULL;
+                            duk_pop(ctx);
+                            duk_pop_2(ctx); /* key and value */
+                            j++;
+                        }
+                        duk_pop(ctx); /* pop enum */
+                    }
+                    duk_pop(ctx); /* pop protectedPaths or undefined */
+
+                    /* extract redirectExtensions */
+                    if (duk_get_prop_string(ctx, -1, "redirectExtensions") && duk_is_array(ctx, -1))
+                    {
+                        int n = (int)duk_get_length(ctx, -1);
+                        REMALLOC(auth_redir_exts, n * sizeof(char *));
+                        auth_num_redir_exts = n;
+                        for (j = 0; j < n; j++)
+                        {
+                            duk_get_prop_index(ctx, -1, (duk_uarridx_t)j);
+                            auth_redir_exts[j] = strdup(duk_safe_to_string(ctx, -1));
+                            duk_pop(ctx);
+                        }
+                    }
+                    else
+                    {
+                        auth_num_redir_exts = 4;
+                        REMALLOC(auth_redir_exts, 4 * sizeof(char *));
+                        auth_redir_exts[0] = strdup("");
+                        auth_redir_exts[1] = strdup(".html");
+                        auth_redir_exts[2] = strdup(".htm");
+                        auth_redir_exts[3] = strdup(".txt");
+                    }
+                    duk_pop(ctx); /* pop redirectExtensions or undefined */
+
+                    /* resolve dbPath relative to server root */
+                    if (duk_get_prop_string(ctx, -1, "dbPath"))
+                    {
+                        const char *dbrel = duk_get_string(ctx, -1);
+                        if (dbrel && dbrel[0] != '/')
+                        {
+                            char resolved[PATH_MAX];
+                            snprintf(resolved, PATH_MAX, "%s/%s", RP_script_path, dbrel);
+                            duk_pop(ctx);
+                            duk_push_string(ctx, resolved);
+                            duk_put_prop_string(ctx, -2, "dbPath");
+                        }
+                        else
+                            duk_pop(ctx);
+                    }
+                    else
+                    {
+                        duk_pop(ctx);
+                        char resolved[PATH_MAX];
+                        snprintf(resolved, PATH_MAX, "%s/data/auth", RP_script_path);
+                        duk_push_string(ctx, resolved);
+                        duk_put_prop_string(ctx, -2, "dbPath");
+                    }
+
+                    /* store parsed config in a hidden symbol for the auth module to read */
+                    duk_dup(ctx, -1);                           /* stack: [ ... config config ] */
+                    duk_put_global_string(ctx, DUK_HIDDEN_SYMBOL("authModConf")); /* stack: [ ... config ] */
+                    duk_pop(ctx);                               /* stack: [ ... ] */
+                }
+
+                if (auth_is_inline_func)
+                {
+                    /* function is cached in hidden symbol on main ctx.
+                       Copy to all thread contexts during initThread. We store
+                       it in funcstash temporarily to use copy_cb_func, then
+                       also cache in each thread's hidden symbol. */
+                    {
+                        DHS *tmp_dhs = new_dhs(ctx, fpos);
+                        tmp_dhs->module = MODULE_NONE;
+                        tmp_dhs->timeout = dhs->timeout;
+
+                        /* put the function in funcstash at fpos */
+                        duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL(AUTH_FUNC_SYM));
+                        duk_put_prop_index(ctx, 0, fpos);
+
+                        /* copy bytecode to all thread contexts */
+                        copy_cb_func(tmp_dhs, totnthreads);
+
+                        /* now pull the function from each thread's funcstash
+                           and store in their hidden symbol */
+                        for (i = 0; i < totnthreads; i++)
+                        {
+                            duk_context *tctx = server_thread[i]->ctx;
+                            duk_get_prop_index(tctx, 0, (duk_uarridx_t)fpos);
+                            duk_put_global_string(tctx, DUK_HIDDEN_SYMBOL(AUTH_FUNC_SYM));
+                        }
+                        fpos++;
+                        free(tmp_dhs);
+                    }
+                    fprintf(access_fh, "authMod loaded: inline function (config: %s, %d protected paths)\n",
+                            auth_conf_path, auth_num_ppaths);
+                }
+                else
+                {
+                    /* save module name for lazy per-thread loading in auth_get_func() */
+                    auth_mod_name_cached = strdup(auth_mod_name);
+
+                    /* pre-load on main context to verify the module works */
+                    if (!auth_get_func(ctx))
+                        RP_THROW(ctx, "server.start: authMod: failed to load '%s'", auth_mod_name);
+                    duk_pop(ctx); /* pop the function — it's cached in hidden symbol */
+
+                    fprintf(access_fh, "authMod loaded: %s (config: %s, %d protected paths)\n",
+                            auth_mod_name, auth_conf_path, auth_num_ppaths);
+                }
+                auth_mod_active = 1;
+            }
+        }
+        else
+            duk_pop(ctx);
+
+        /* rateLimit */
+        if (duk_rp_GPS_icase(ctx, ob_idx, "rateLimit"))
+        {
+            if (duk_is_object(ctx, -1) && !duk_is_array(ctx, -1))
+            {
+                int count = 0, j = 0;
+
+                /* count entries */
+                duk_enum(ctx, -1, 0);
+                while (duk_next(ctx, -1, 0)) { count++; duk_pop(ctx); }
+                duk_pop(ctx);
+
+                if (count > 0)
+                {
+                    REMALLOC(rl_rules, count * sizeof(rl_rule));
+                    rl_num_rules = count;
+
+                    duk_enum(ctx, -1, 0);
+                    while (duk_next(ctx, -1, 1))
+                    {
+                        /* key = path, value = {rate, window, key} */
+                        rl_rules[j].path = strdup(duk_get_string(ctx, -2));
+                        rl_rules[j].pathlen = (int)strlen(rl_rules[j].path);
+                        rl_rules[j].rate = 60;
+                        rl_rules[j].window = 60;
+                        rl_rules[j].key_type = RL_KEY_IP;
+                        rl_rules[j].cookie_name = NULL;
+
+                        if (duk_get_prop_string(ctx, -1, "rate"))
+                            rl_rules[j].rate = duk_get_int_default(ctx, -1, 60);
+                        duk_pop(ctx);
+
+                        if (duk_get_prop_string(ctx, -1, "window"))
+                            rl_rules[j].window = duk_get_int_default(ctx, -1, 60);
+                        duk_pop(ctx);
+
+                        if (duk_get_prop_string(ctx, -1, "key"))
+                        {
+                            const char *keystr = duk_get_string(ctx, -1);
+                            if (keystr)
+                            {
+                                if (strcmp(keystr, "fingerprint") == 0)
+                                    rl_rules[j].key_type = RL_KEY_FINGERPRINT;
+                                else if (strncmp(keystr, "cookie:", 7) == 0)
+                                {
+                                    rl_rules[j].key_type = RL_KEY_COOKIE;
+                                    rl_rules[j].cookie_name = strdup(keystr + 7);
+                                }
+                                /* else default to "ip" */
+                            }
+                        }
+                        duk_pop(ctx);
+
+                        fprintf(access_fh, "rateLimit: %s (%d/%ds, key=%s%s)\n",
+                                rl_rules[j].path,
+                                rl_rules[j].rate, rl_rules[j].window,
+                                rl_rules[j].key_type == RL_KEY_IP ? "ip" :
+                                rl_rules[j].key_type == RL_KEY_FINGERPRINT ? "fingerprint" : "cookie",
+                                rl_rules[j].cookie_name ? rl_rules[j].cookie_name : "");
+
+                        duk_pop_2(ctx); /* key and value */
+                        j++;
+                    }
+                    duk_pop(ctx); /* enum */
+
+                    rl_init_locks();
+                }
+            }
+            else
+                RP_THROW(ctx, "server.start: rateLimit must be an object");
+        }
+        duk_pop(ctx);
 
         /* endFunc */
         if (duk_rp_GPS_icase(ctx, ob_idx, "endFunc"))

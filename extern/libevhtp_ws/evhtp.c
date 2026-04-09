@@ -2601,6 +2601,23 @@ restart:
     }
     log_debug("nread = %zu", nread);
 
+    /* check for body-too-large BEFORE the ownership check, since threaded
+       dispatch clears EVHTP_CONN_FLAG_OWNER and would skip this otherwise */
+    if (c->request && c->cr_status == EVHTP_RES_DATA_TOO_LONG) {
+        if(req->websock)
+        {
+            evhtp_ws_do_disconnect(c->request);
+            return;
+        }
+        /* 2026-04-01: Send a proper HTTP 413 response when the request
+           body exceeds maxBodySize, instead of silently dropping the
+           connection. The client receives a clean status code rather
+           than a connection reset. */
+        evhtp_send_reply(c->request, EVHTP_RES_ENTOOLARGE);
+        evhtp_safe_free(c, evhtp_connection_free);
+        return;
+    }
+
     if (!(c->flags & EVHTP_CONN_FLAG_OWNER)) {
         /*
          * someone has taken the ownership of this connection, we still need to
@@ -2621,26 +2638,6 @@ restart:
         evhtp_safe_free(c, evhtp_connection_free);
 
         return;
-    }
-
-    if (c->request) {
-        switch (c->cr_status) {
-            case EVHTP_RES_DATA_TOO_LONG:
-                if(req->websock)
-                {
-                    evhtp_ws_do_disconnect(c->request);
-                    return;
-                }
-                /* 2026-04-01: Send a proper HTTP 413 response when the request
-                   body exceeds maxBodySize, instead of silently dropping the
-                   connection. The client receives a clean status code rather
-                   than a connection reset. */
-                evhtp_send_reply(c->request, EVHTP_RES_ENTOOLARGE);
-                evhtp_safe_free(c, evhtp_connection_free);
-                return;
-            default:
-                break;
-        }
     }
 
     evbuffer_drain(bufferevent_get_input(bev), nread);
