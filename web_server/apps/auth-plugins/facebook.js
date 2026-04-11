@@ -146,68 +146,19 @@ function handleCallback(req) {
         /* non-fatal — continue without picture */
     }
 
-    /* create or update local user */
-    var oauthId  = "facebook:" + userInfo.id;
-    var username = "fb_" + userInfo.id;
-    var existing = authApi.getUser(username);
-
-    if (!existing) {
-        var result = authApi.createUser({
-            username:      username,
-            password:      sprintf("%-0B", crypto.rand(32)),
+    /* return user data to auth.js — it handles session creation and cookies */
+    return {
+        ok: true,
+        returnTo: stateRec.returnTo || "/",
+        userData: {
+            username:      "fb_" + userInfo.id,
             name:          userInfo.name || "",
             email:         userInfo.email || "",
-            authLevel:     50,
+            picture:       picture,
             authMethod:    "facebook",
             oauthProvider: "facebook",
-            oauthId:       oauthId,
-            picture:       picture,
+            oauthId:       "facebook:" + userInfo.id,
             emailVerified: true
-        });
-
-        if (result.error) {
-            fprintf(stderr, "auth-plugin facebook: failed to create user: %s\n", result.error);
-            return {status: 302, headers: {"location": "/apps/auth/login?error=invalid"}};
-        }
-    } else {
-        authApi.updateUser(username, {
-            name:    userInfo.name || existing.name,
-            email:   userInfo.email || existing.email,
-            picture: picture || existing.picture || ""
-        });
-    }
-
-    /* create session */
-    var token = authApi.generateToken();
-    var csrfToken = authApi.generateToken();
-    var now = Math.floor(Date.now() / 1000);
-    var user = authApi.getUser(username);
-
-    var session = {};
-    var skipKeys = {passwordHash: 1};
-    for (var k in user) {
-        if (!(k in skipKeys))
-            session[k] = user[k];
-    }
-    session.csrfToken   = csrfToken;
-    session.expires     = now + 86400;
-    session.lastRefresh = now;
-    session.created     = now;
-
-    var Lmdb2 = require("rampart-lmdb");
-    var lmdb2 = new Lmdb2.init(authApi.getDbPath(), false, {conversion: "json"});
-    lmdb2.put(null, token, session);
-
-    var cookieName = authApi.getCookieName();
-    var cookie = cookieName + "=" + token + "; Path=/; Max-Age=86400; HttpOnly; SameSite=Lax";
-
-    var returnTo = stateRec.returnTo || "/";
-
-    return {
-        status: 302,
-        headers: {
-            "location": returnTo,
-            "Set-Cookie": [cookie]
         }
     };
 }

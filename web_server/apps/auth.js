@@ -39,6 +39,7 @@ var lockout = {
 };
 
 var emailConf = null;       /* email sending config, null = disabled */
+var displayCookieFields = null; /* fields to include in client-readable display cookie */
 var allowRegistration = false;
 var requireEmailVerification = true;
 var siteUrl = "";           /* base URL for links in emails */
@@ -100,6 +101,13 @@ function init() {
     /* password policy */
     if (conf.minPasswordLength !== undefined) minPasswordLength = conf.minPasswordLength;
 
+    /* email cooldown */
+    if (conf.emailCooldown !== undefined) emailCooldown = conf.emailCooldown;
+
+    /* display cookie — client-readable cookie with user info for static pages */
+    if (conf.displayCookie)
+        displayCookieFields = conf.displayCookie;
+
     /* email and registration config */
     if (conf.email && typeof conf.email === "object")
         emailConf = conf.email;
@@ -147,6 +155,7 @@ function buildCookieString(name, value, opts) {
     if (opts.sameSite) parts.push("SameSite=" + opts.sameSite);
     return parts.join("; ");
 }
+
 
 /* ---- user CRUD ---- */
 
@@ -418,19 +427,26 @@ function sendAuthEmail(to, subject, htmlBody, textBody) {
     if (emailConf.connectTimeout) opts.connectTimeout = emailConf.connectTimeout;
 
     try {
-        return email.send(opts);
+        var result = email.send(opts);
+        if (!result.ok) {
+            var errDetail = sprintf("%J", result);
+            fprintf(stderr, "auth email error: %s\n", errDetail);
+            return {error: "email send failed", detail: errDetail};
+        }
+        return result;
     } catch(e) {
+        fprintf(stderr, "auth email exception: %s\n", e.message || e);
         return {error: "email send failed: " + e.message};
     }
 }
 
 /* ---- email verification ---- */
 
-var EMAIL_COOLDOWN = 300; /* seconds between emails to same user (5 min) */
+var emailCooldown = 60; /* seconds between emails to same user */
 
 function checkEmailCooldown(key) {
     var rec = lmdb.get("lockouts", "email:" + key);
-    if (rec && rec.lastSent && (now() - rec.lastSent) < EMAIL_COOLDOWN)
+    if (rec && rec.lastSent && (now() - rec.lastSent) < emailCooldown)
         return false; /* too soon */
     return true;
 }
@@ -687,6 +703,105 @@ function login(username, password, req) {
     };
 }
 
+/* build a display cookie from session data — client-readable, NOT HttpOnly */
+function buildDisplayCookie(session) {
+    if (!displayCookieFields) return null;
+    var info = {};
+    var fields = displayCookieFields.fields || ["name", "picture"];
+    for (var i = 0; i < fields.length; i++) {
+        var f = fields[i];
+        if (session[f] !== undefined)
+            info[f] = session[f];
+    }
+    var encoded = sprintf("%-0B", JSON.stringify(info));
+    var cookieName = displayCookieFields.cookieName || "rp_user";
+    return cookieName + "=" + encoded + "; Path=/; Max-Age=" + (cookieFlags.maxAge || 86400)
+        + (cookieFlags.secure ? "; Secure" : "") + "; SameSite=Lax";
+}
+
+function clearDisplayCookie() {
+    if (!displayCookieFields) return null;
+    var cookieName = displayCookieFields.cookieName || "rp_user";
+    return cookieName + "=; Path=/; Max-Age=0";
+}
+
+/* build the Set-Cookie array for a login response */
+function buildLoginCookies(token, session) {
+    var cookieName = conf.cookieName || "rp_session";
+    var cookies = [buildCookieString(cookieName, token, cookieFlags)];
+    var dc = buildDisplayCookie(session);
+    if (dc) cookies.push(dc);
+    return cookies;
+}
+
+/* create a session for an OAuth login — called by auth.js on behalf of plugins */
+function createOAuthSession(userData) {
+    init();
+    if (!userData || !userData.username)
+        return {error: "username is required"};
+
+    var username = userData.username.toLowerCase().trim();
+    var existing = getUser(username);
+
+    if (!existing) {
+        /* new user */
+        var createOpts = {
+            username:      username,
+            password:      sprintf("%-0B", crypto.rand(32)),
+            authLevel:     userData.authLevel || 50,
+            emailVerified: true
+        };
+        /* copy all userData fields except username and password */
+        for (var k in userData) {
+            if (k !== "username" && k !== "password")
+                createOpts[k] = userData[k];
+        }
+        var result = createUser(createOpts);
+        if (result.error) return result;
+    } else {
+        /* update existing user with fresh data from provider */
+        var updates = {};
+        for (var k in userData) {
+            if (k !== "username" && k !== "password")
+                updates[k] = userData[k];
+        }
+        updateUser(username, updates);
+    }
+
+    /* create session */
+    var user = getUser(username);
+    var token = generateToken();
+    var csrfToken = generateToken();
+    var ts = now();
+
+    var session = {};
+    var skipKeys = {passwordHash: 1};
+    for (var k in user) {
+        if (!(k in skipKeys))
+            session[k] = user[k];
+    }
+    session.csrfToken   = csrfToken;
+    session.expires     = ts + (conf.sessionExpiry || 86400);
+    session.lastRefresh = ts;
+    session.created     = ts;
+
+    var Lmdb = require("rampart-lmdb");
+    var db = new Lmdb.init(dbPath, false, {conversion: "json"});
+    db.put(null, token, session);
+
+    if (hooks.onSessionCreated)
+        hooks.onSessionCreated(user, session, {});
+
+    maybeCleanup();
+
+    return {
+        ok: true,
+        token: token,
+        session: session,
+        cookies: buildLoginCookies(token, session)
+    };
+}
+
 function logout(token, req) {
     init();
     if (!token) return {error: "no token"};
@@ -809,10 +924,10 @@ function csrfField(req) {
     return '';
 }
 
-function msgDiv(msg, isError) {
+function msgDiv(msg, isError, rawHtml) {
     if (!msg) return '';
     return '<div class="auth-msg ' + (isError ? 'err' : 'ok') + '">'
-        + sprintf("%H", msg) + '</div>';
+        + (rawHtml ? msg : sprintf("%H", msg)) + '</div>';
 }
 
 /* admin page: user list */
@@ -1036,18 +1151,20 @@ function registerHandler(req) {
             msg = result.error; isError = true;
         } else if (requireEmailVerification) {
             if (result.emailSent)
-                msg = "Account created. Please check your email to verify your address.";
+                msg = 'Account created. Please check your email to verify your address. '
+                    + '<a href="/apps/auth/resend-verification">Resend verification email</a>';
             else
-                msg = "Account created but verification email could not be sent: "
-                    + (result.emailError || "unknown error");
+                msg = 'Account created but verification email could not be sent. '
+                    + '<a href="/apps/auth/resend-verification">Try resending</a>';
             isError = !result.emailSent;
         } else {
             return {status: 302, headers: {"location": "/apps/auth/login"}};
         }
     }
 
+    var hasLink = msg && msg.indexOf('<a ') >= 0;
     var html = '<h2>Create Account</h2>'
-        + msgDiv(msg, isError)
+        + msgDiv(msg, isError, hasLink)
         + '<form method="POST" action="/apps/auth/register">'
         + '<p>Username: <input type="text" name="username" required></p>'
         + '<p>Email: <input type="email" name="email" required></p>'
@@ -1085,20 +1202,37 @@ function resendVerificationHandler(req) {
 
     if (req.method === "POST" && req.postData && req.postData.content) {
         var p = req.postData.content;
-        var username = p.username || '';
-        if (username) {
-            var result = sendVerificationEmail(username);
-            if (result.error) { msg = result.error; isError = true; }
-            else { msg = "Verification email sent. Please check your inbox."; }
+        var input = (p.username || '').trim();
+        if (input) {
+            /* try as username first, then search by email */
+            var user = getUser(input);
+            if (!user) {
+                /* search users by email */
+                var allUsers = listUsers();
+                for (var uname in allUsers) {
+                    if (allUsers[uname].email && allUsers[uname].email.toLowerCase() === input.toLowerCase()) {
+                        user = allUsers[uname];
+                        input = uname;
+                        break;
+                    }
+                }
+            }
+            if (user) {
+                var result = sendVerificationEmail(input);
+                if (result.error) { msg = result.error; isError = true; }
+                else { msg = "Verification email sent. Please check your inbox."; }
+            } else {
+                msg = "Account not found."; isError = true;
+            }
         } else {
-            msg = "Username is required."; isError = true;
+            msg = "Username or email is required."; isError = true;
         }
     }
 
     var html = '<h2>Resend Verification</h2>'
         + msgDiv(msg, isError)
         + '<form method="POST" action="/apps/auth/resend-verification">'
-        + '<p>Username: <input type="text" name="username" required></p>'
+        + '<p>Username or email: <input type="text" name="username" required></p>'
         + '<p><button type="submit">Resend</button></p>'
         + '</form>';
     return {html: wrapPage("Resend Verification", html)};
@@ -1145,13 +1279,13 @@ function loginHandler(req) {
         var messages = {
             invalid:    'Invalid username or password.',
             locked:     'Account temporarily locked. Try again later.',
-            unverified: 'Email not verified. Check your inbox.'
+            unverified: 'Email not verified. Check your inbox.<br><a href="/apps/auth/resend-verification">Resend verification email</a>'
         };
         var msg = messages[error] || '';
 
         var html = '<div class="auth-card">'
             + '<h2>Login</h2>'
-            + (msg ? msgDiv(msg, true) : '')
+            + (msg ? msgDiv(msg, true, msg.indexOf('<a ') >= 0) : '')
             + '<form method="POST" action="/apps/auth/login">'
             + '<input type="hidden" name="returnTo" value="' + sprintf("%H", safeReturnTo(returnTo)) + '">'
             + '<label for="username">Username</label>'
@@ -1196,17 +1330,15 @@ function loginHandler(req) {
     }
 
     if (result.redirect) {
-        /* hook requested redirect (e.g., 2FA) */
         return {
             status: 302,
             headers: {
                 "location": result.redirect,
-                "Set-Cookie": [result.cookie]
+                "Set-Cookie": buildLoginCookies(result.token, result.session)
             }
         };
     }
 
-    /* check if password reset is required */
     var redirectTo = safeReturnTo(p.returnTo);
     if (result.mustResetPassword)
         redirectTo = "/apps/auth/force-reset";
@@ -1215,7 +1347,7 @@ function loginHandler(req) {
         status: 302,
         headers: {
             "location": redirectTo,
-            "Set-Cookie": [result.cookie]
+            "Set-Cookie": buildLoginCookies(result.token, result.session)
         }
     };
 }
@@ -1227,11 +1359,15 @@ function logoutHandler(req) {
     var token = req.cookies ? req.cookies[cookieName] : null;
     var result = logout(token, req);
 
+    var cookies = [result.cookie];
+    var dc = clearDisplayCookie();
+    if (dc) cookies.push(dc);
+
     return {
         status: 302,
         headers: {
             "location": "/",
-            "Set-Cookie": [result.cookie]
+            "Set-Cookie": cookies
         }
     };
 }
@@ -1565,7 +1701,8 @@ function loadPlugins() {
         generateToken:    generateToken,
         getDbPath:        getDbPath,
         getCookieName:    getCookieName,
-        refreshSessions:  refreshSessions
+        refreshSessions:  refreshSessions,
+        createOAuthSession: createOAuthSession
     };
 
     for (var i = 0; i < files.length; i++) {
@@ -1669,16 +1806,53 @@ if (module && module.exports) {
         sendAuthEmail:          sendAuthEmail,
         cleanupExpired:         cleanupExpired,
         generateToken:          generateToken,
+        createOAuthSession:     createOAuthSession,
         getDbPath:              getDbPath,
         getCookieName:          getCookieName,
         loadedPlugins:          loadedPlugins
     };
 
-    /* merge plugin endpoints into exports */
+    /* merge plugin endpoints into exports.
+       Callback endpoints (containing "callback") are wrapped: the plugin
+       returns {ok, username, returnTo, userData} and auth.js creates
+       the session and handles the redirect with all cookies. */
     for (var pi = 0; pi < loadedPlugins.length; pi++) {
         var ep = loadedPlugins[pi].endpoints;
         for (var path in ep) {
-            exports_obj[path] = ep[path];
+            if (path.indexOf("callback") >= 0) {
+                /* wrap callback endpoint */
+                exports_obj[path] = (function(handler) {
+                    return function(req) {
+                        var result = handler(req);
+
+                        /* if plugin returned an HTTP response (error/redirect), pass through */
+                        if (result && result.status)
+                            return result;
+
+                        /* plugin returned auth data — create session */
+                        if (!result || !result.ok)
+                            return {status: 302, headers: {"location": "/apps/auth/login?error=invalid"}};
+
+                        var sess = createOAuthSession(result.userData);
+                        if (sess.error) {
+                            fprintf(stderr, "auth plugin session error: %s\n", sess.error);
+                            return {status: 302, headers: {"location": "/apps/auth/login?error=invalid"}};
+                        }
+
+                        var returnTo = safeReturnTo(result.returnTo || "/");
+                        return {
+                            status: 302,
+                            headers: {
+                                "location": returnTo,
+                                "Set-Cookie": sess.cookies
+                            }
+                        };
+                    };
+                })(ep[path]);
+            } else {
+                /* start endpoints pass through directly */
+                exports_obj[path] = ep[path];
+            }
         }
     }
 

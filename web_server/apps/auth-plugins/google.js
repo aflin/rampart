@@ -129,70 +129,19 @@ function handleCallback(req) {
         return {status: 302, headers: {"location": "/apps/auth/login?error=invalid"}};
     }
 
-    /* create or update local user */
-    var oauthId  = "google:" + userInfo.sub;
-    var username = "google_" + userInfo.sub;
-    var existing = authApi.getUser(username);
-
-    if (!existing) {
-        /* new user — create with a random password (they'll use OAuth to log in) */
-        var result = authApi.createUser({
-            username:      username,
-            password:      sprintf("%-0B", crypto.rand(32)), /* random, unusable */
+    /* return user data to auth.js — it handles session creation and cookies */
+    return {
+        ok: true,
+        returnTo: stateRec.returnTo || "/",
+        userData: {
+            username:      "google_" + userInfo.sub,
             name:          userInfo.name || "",
             email:         userInfo.email || "",
-            authLevel:     50,
+            picture:       userInfo.picture || "",
             authMethod:    "google",
             oauthProvider: "google",
-            oauthId:       oauthId,
-            picture:       userInfo.picture || "",
-            emailVerified: true  /* Google already verified the email */
-        });
-
-        if (result.error) {
-            fprintf(stderr, "auth-plugin google: failed to create user: %s\n", result.error);
-            return {status: 302, headers: {"location": "/apps/auth/login?error=invalid"}};
-        }
-    } else {
-        /* update profile from Google */
-        authApi.updateUser(username, {
-            name:    userInfo.name || existing.name,
-            email:   userInfo.email || existing.email,
-            picture: userInfo.picture || existing.picture || ""
-        });
-    }
-
-    /* create session — bypass password check by using the internal API */
-    var token = authApi.generateToken();
-    var csrfToken = authApi.generateToken();
-    var now = Math.floor(Date.now() / 1000);
-    var user = authApi.getUser(username);
-
-    var session = {};
-    var skipKeys = {passwordHash: 1};
-    for (var k in user) {
-        if (!(k in skipKeys))
-            session[k] = user[k];
-    }
-    session.csrfToken   = csrfToken;
-    session.expires     = now + 86400;
-    session.lastRefresh = now;
-    session.created     = now;
-
-    /* write session to LMDB */
-    lmdb.put(null, token, session);
-
-    /* build cookie */
-    var cookieName = authApi.getCookieName();
-    var cookie = cookieName + "=" + token + "; Path=/; Max-Age=86400; HttpOnly; SameSite=Lax";
-
-    var returnTo = stateRec.returnTo || "/";
-
-    return {
-        status: 302,
-        headers: {
-            "location": returnTo,
-            "Set-Cookie": [cookie]
+            oauthId:       "google:" + userInfo.sub,
+            emailVerified: true
         }
     };
 }
