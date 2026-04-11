@@ -165,6 +165,79 @@ module.exports = {
                          (default: 900 = 15 minutes)                           */
     //lockoutDuration: 900,
 
+    /* displayCookie     Object. Optional. When set, a second cookie is created
+                         on login containing selected session fields in URL-safe
+                         base64-encoded JSON.  Unlike the session cookie, this
+                         cookie is NOT HttpOnly, so client-side JavaScript can
+                         read it to show the user's name, picture, etc. on
+                         static pages without server-side processing.
+
+                         cookieName: cookie name (default: "rp_user")
+                         fields:     array of session fields to include
+                                     (default: ["name", "picture"])              */
+    //displayCookie: {
+    //    cookieName: "rp_user",
+    //    fields: ["name", "picture"]
+    //},
+
+    /* oauth             Object. OAuth provider configurations.  Each key is a
+                         provider name.  Dedicated plugins (google.js, facebook.js)
+                         check for their own key.  The generic plugin handles any
+                         entry with plugin:"generic".
+
+                         Plugins are loaded from apps/auth-plugins/.  The login
+                         page automatically shows buttons with icons for each
+                         active provider.
+
+                         Optional per-provider properties:
+                           icon:   URL to a small icon for the login button
+                           label:  display name (default: capitalized key name)  */
+
+    /* Google OAuth — requires apps/auth-plugins/google.js
+       Set up at: https://console.cloud.google.com/ > APIs & Services > Credentials
+       Create an OAuth 2.0 Client ID (Web application type).                    */
+    //oauth: {
+    //    google: {
+    //        clientId:     "your-client-id.apps.googleusercontent.com",
+    //        clientSecret: "your-client-secret",
+    //        callbackUrl:  "https://example.com/apps/auth/oauth/google/callback"
+    //    },
+
+    /* Facebook OAuth — requires apps/auth-plugins/facebook.js
+       Set up at: https://developers.facebook.com/ > Create App > Add Facebook Login.
+       App must be in Live mode for non-developer users.                        */
+    //    facebook: {
+    //        clientId:     "your-app-id",
+    //        clientSecret: "your-app-secret",
+    //        callbackUrl:  "https://example.com/apps/auth/oauth/facebook/callback",
+    //        apiVersion:   "v21.0"     // optional, defaults to "v21.0"
+    //    },
+
+    /* Generic OAuth 2.0 — requires apps/auth-plugins/generic.js
+       Works with any standard OAuth 2.0 / OpenID Connect provider.
+       Set plugin:"generic" and configure the provider's URLs and field mapping.
+       Supports PKCE (pkce:true) for providers that require it.
+       emailUrl is optional — fetches email from a separate endpoint if the
+       main profile doesn't include one (e.g. GitHub).                          */
+    //    github: {
+    //        plugin:       "generic",
+    //        authorizeUrl: "https://github.com/login/oauth/authorize",
+    //        tokenUrl:     "https://github.com/login/oauth/access_token",
+    //        userInfoUrl:  "https://api.github.com/user",
+    //        emailUrl:     "https://api.github.com/user/emails",
+    //        clientId:     "your-client-id",
+    //        clientSecret: "your-client-secret",
+    //        callbackUrl:  "https://example.com/apps/auth/oauth/github/callback",
+    //        scope:        "user:email",
+    //        fieldMap: {
+    //            id:       "id",
+    //            name:     "name",
+    //            email:    "email",
+    //            picture:  "avatar_url"
+    //        }
+    //    }
+    //},
+
     /* protectedPaths    Object. Maps URL path prefixes to access rules.
                          Paths not listed here are public (no auth required).
                          Full inheritance: "/admin/" protects "/admin/reports/".

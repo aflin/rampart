@@ -214,6 +214,48 @@ label.inline {
   margin: 0;
 }
 
+/* OAuth buttons */
+.auth-oauth {
+  border-top: 1px solid var(--rp-border);
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+}
+
+.auth-oauth-label {
+  color: var(--rp-text-dim);
+  font-size: 0.9rem;
+  margin: 0 0 0.75rem 0;
+}
+
+.auth-oauth-btn {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  max-width: 24rem;
+  padding: 0.5rem 1rem;
+  margin-bottom: 0.5rem;
+  background: var(--rp-surface);
+  color: var(--rp-text);
+  border: 1px solid var(--rp-border);
+  border-radius: 6px;
+  text-decoration: none;
+  font-size: 0.9rem;
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.auth-oauth-btn:hover {
+  background: var(--rp-bg);
+  border-color: var(--rp-text-dim);
+  color: var(--rp-text);
+}
+
+.auth-oauth-btn img {
+  width: 18px;
+  height: 18px;
+  margin-right: 0.75rem;
+  flex-shrink: 0;
+}
+
 /* responsive */
 @media (max-width: 640px) {
   .auth-wrap { padding: 1rem; }

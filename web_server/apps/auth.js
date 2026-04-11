@@ -1300,16 +1300,17 @@ function loginHandler(req) {
             + '</div>';
 
         /* add OAuth buttons for loaded plugins */
-        if (loadedPlugins.length > 0) {
-            html += '<div style="border-top:1px solid #e2e8f0;margin-top:1.5rem;padding-top:1rem;">'
-                + '<p style="color:#475569;font-size:0.9rem;margin-bottom:0.75rem;">Or sign in with:</p>';
-            for (var oi = 0; oi < loadedPlugins.length; oi++) {
-                var pname = loadedPlugins[oi].name;
-                var label = pname.charAt(0).toUpperCase() + pname.slice(1);
-                html += '<a href="/apps/auth/oauth/' + sprintf("%U", pname)
+        if (loginProviders.length > 0) {
+            html += '<div class="auth-oauth">'
+                + '<p class="auth-oauth-label">Or sign in with:</p>';
+            for (var oi = 0; oi < loginProviders.length; oi++) {
+                var lp = loginProviders[oi];
+                html += '<a href="/apps/auth' + sprintf("%H", lp.startPath)
                     + '?returnTo=' + sprintf("%U", safeReturnTo(returnTo))
-                    + '" class="auth-btn" style="margin-right:0.5rem;">'
-                    + sprintf("%H", label) + '</a>';
+                    + '" class="auth-oauth-btn">';
+                if (lp.icon)
+                    html += '<img src="' + sprintf("%H", lp.icon) + '" alt="">';
+                html += sprintf("%H", lp.label) + '</a>';
             }
             html += '</div>';
         }
@@ -1753,6 +1754,67 @@ function loadPlugins() {
 
 /* load plugins at module load time (outside callbacks) */
 loadPlugins();
+
+/* ---- build login provider list for the login page ---- */
+
+var loginProviders = [];
+
+function buildLoginProviders() {
+    if (!conf || !conf.oauth) return;
+
+    var knownIcons = {
+        google:    "https://www.google.com/favicon.ico",
+        facebook:  "https://www.facebook.com/favicon.ico",
+        github:    "https://github.com/favicon.ico",
+        twitter:   "https://abs.twimg.com/favicons/twitter.3.ico",
+        microsoft: "https://www.microsoft.com/favicon.ico",
+        linkedin:  "https://www.linkedin.com/favicon.ico",
+        discord:   "https://discord.com/favicon.ico",
+        gitlab:    "https://gitlab.com/favicon.ico",
+        apple:     "https://www.apple.com/favicon.ico",
+        slack:     "https://slack.com/favicon.ico"
+    };
+
+    var knownLabels = {
+        google: "Google", facebook: "Facebook", github: "GitHub",
+        twitter: "X", microsoft: "Microsoft", linkedin: "LinkedIn",
+        discord: "Discord", gitlab: "GitLab", apple: "Apple",
+        slack: "Slack"
+    };
+
+    for (var pi = 0; pi < loadedPlugins.length; pi++) {
+        var ep = loadedPlugins[pi].endpoints;
+        for (var path in ep) {
+            if (path.indexOf("callback") >= 0) continue;
+            if (path.indexOf("/oauth/") !== 0) continue;
+
+            var provName = path.replace("/oauth/", "");
+            var provConf = conf.oauth[provName] || {};
+
+            /* determine icon URL: config > known > favicon from authorizeUrl */
+            var icon = provConf.icon || null;
+            if (!icon && knownIcons[provName])
+                icon = knownIcons[provName];
+            if (!icon && provConf.authorizeUrl) {
+                var match = provConf.authorizeUrl.match(/^https?:\/\/([^\/]+)/);
+                if (match)
+                    icon = "https://" + match[1] + "/favicon.ico";
+            }
+
+            var label = provConf.label || knownLabels[provName]
+                || (provName.charAt(0).toUpperCase() + provName.slice(1));
+
+            loginProviders.push({
+                name:      provName,
+                label:     label,
+                icon:      icon,
+                startPath: path
+            });
+        }
+    }
+}
+
+buildLoginProviders();
 
 /* ---- module detection: server or CLI ---- */
 
