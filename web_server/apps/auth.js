@@ -246,7 +246,7 @@ function deleteUser(username) {
     lmdb.del("users", username);
 
     /* delete all sessions for this user */
-    var sessions = lmdb.get(null, "", -1);
+    var sessions = lmdb.get(null, "", "*");
     if (sessions) {
         for (var token in sessions) {
             if (sessions[token].username === username)
@@ -785,9 +785,7 @@ function createOAuthSession(userData) {
     session.lastRefresh = ts;
     session.created     = ts;
 
-    var Lmdb = require("rampart-lmdb");
-    var db = new Lmdb.init(dbPath, false, {conversion: "json"});
-    db.put(null, token, session);
+    lmdb.put(null, token, session);
 
     if (hooks.onSessionCreated)
         hooks.onSessionCreated(user, session, {});
@@ -828,7 +826,7 @@ function refreshSessions(username) {
         return {error: "user not found"};
 
     var skipKeys = {passwordHash:1};
-    var all = lmdb.get(null, "", -1);
+    var all = lmdb.get(null, "", "*");
     var count = 0;
 
     if (all) {
@@ -851,13 +849,14 @@ function refreshSessions(username) {
 
 function listSessions(username) {
     init();
-    var all = lmdb.get(null, "", -1);
+    var all = lmdb.get(null, "", "*");
     var result = {};
     var ts = now();
 
     if (all) {
         for (var token in all) {
             var s = all[token];
+            if (!s || !s.username) continue;  /* skip non-session entries */
             if (username && s.username !== username) continue;
             if (s.expires && s.expires < ts) continue; /* skip expired */
             result[token] = s;
@@ -874,7 +873,7 @@ function deleteSession(token) {
 
 function deleteAllSessions(username) {
     init();
-    var all = lmdb.get(null, "", -1);
+    var all = lmdb.get(null, "", "*");
     var count = 0;
     if (all) {
         for (var token in all) {
@@ -930,6 +929,50 @@ function msgDiv(msg, isError, rawHtml) {
         + (rawHtml ? msg : sprintf("%H", msg)) + '</div>';
 }
 
+function friendlyDate(ts) {
+    var d = new Date(ts * 1000);
+    var today = new Date();
+    var yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    var h = d.getHours();
+    var m = d.getMinutes();
+    var ampm = h >= 12 ? 'pm' : 'am';
+    h = h % 12;
+    if (h === 0) h = 12;
+    var timeStr = h + ':' + (m < 10 ? '0' : '') + m + ' ' + ampm;
+
+    if (d.getFullYear() === today.getFullYear()
+        && d.getMonth() === today.getMonth()
+        && d.getDate() === today.getDate())
+        return 'Today at ' + timeStr;
+
+    if (d.getFullYear() === yesterday.getFullYear()
+        && d.getMonth() === yesterday.getMonth()
+        && d.getDate() === yesterday.getDate())
+        return 'Yesterday at ' + timeStr;
+
+    var tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    if (d.getFullYear() === tomorrow.getFullYear()
+        && d.getMonth() === tomorrow.getMonth()
+        && d.getDate() === tomorrow.getDate())
+        return 'Tomorrow at ' + timeStr;
+
+    var months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    var day = d.getDate();
+    var suffix = 'th';
+    if (day === 1 || day === 21 || day === 31) suffix = 'st';
+    else if (day === 2 || day === 22) suffix = 'nd';
+    else if (day === 3 || day === 23) suffix = 'rd';
+
+    var str = months[d.getMonth()] + ' ' + day + suffix + ' at ' + timeStr;
+    if (d.getFullYear() !== today.getFullYear())
+        str = months[d.getMonth()] + ' ' + day + suffix + ', ' + d.getFullYear() + ' at ' + timeStr;
+    return str;
+}
+
 /* admin page: user list */
 function adminIndex(req) {
     init();
@@ -947,8 +990,10 @@ function adminIndex(req) {
             + '<td>' + sprintf("%H", u.authMethod || '') + '</td>'
             + '<td>'
             + '<a href="' + adminBase + '/edit-user?u=' + sprintf("%U", u.username) + '">Edit</a> '
-            + '<a href="' + adminBase + '/reset-pw?u=' + sprintf("%U", u.username) + '">Reset PW</a> '
-            + '<a href="' + adminBase + '/delete-user?u=' + sprintf("%U", u.username) + '">Delete</a>'
+            + '<a href="' + adminBase + '/delete-user?u=' + sprintf("%U", u.username) + '">Delete</a> '
+            + (u.authMethod === 'password' || !u.authMethod
+                ? '<a style="white-space:nowrap" href="' + adminBase + '/reset-pw?u=' + sprintf("%U", u.username) + '">Reset PW</a>'
+                : '')
             + '</td></tr>';
     }
     html += '</table>';
@@ -1109,8 +1154,8 @@ function adminSessions(req) {
     html += '<table><tr><th>User</th><th>Created</th><th>Expires</th><th>Method</th><th>Actions</th></tr>';
     for (var token in sessions) {
         var s = sessions[token];
-        var created = s.created ? new Date(s.created * 1000).toISOString() : '?';
-        var expires = s.expires ? new Date(s.expires * 1000).toISOString() : '?';
+        var created = '<span style="white-space:nowrap">' + (s.created ? friendlyDate(s.created) : '?') + '</span>';
+        var expires = '<span style="white-space:nowrap">' + (s.expires ? friendlyDate(s.expires) : '?') + '</span>';
         html += '<tr>'
             + '<td>' + sprintf("%H", s.username || '?') + '</td>'
             + '<td>' + created + '</td>'
