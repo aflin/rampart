@@ -230,6 +230,7 @@ pid = server.start({
     bind: "127.0.0.1:" + port,
     daemon: true,
     log: true,
+    user: "nobody",
     accessLog: logsdir + '/access.log',
     errorLog: logsdir + '/error.log',
     developerMode: true,
@@ -240,18 +241,17 @@ pid = server.start({
         "/apps/":         {modulePath: appsdir}
     }
 });
-
 sleep(0.5);
 
 /* ---- helper ---- */
 function GET(path, cookie) {
-    var opts = {};
+    var opts = {maxTime:2};
     if (cookie) opts.headers = ["Cookie: test_session=" + cookie];
     return curl.fetch(opts, base + path);
 }
 
 function GET_noredir(path, cookie) {
-    var opts = {location: false};
+    var opts = {location: false, maxTime:2};
     if (cookie) opts.headers = ["Cookie: test_session=" + cookie];
     return curl.fetch(opts, base + path);
 }
@@ -597,6 +597,7 @@ pid2 = server.start({
     bind: "127.0.0.1:" + port2,
     daemon: true,
     log: true,
+    user: "nobody",
     accessLog: logsdir + '/access2.log',
     errorLog: logsdir + '/error2.log',
     developerMode: true,
