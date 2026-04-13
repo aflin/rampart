@@ -38,6 +38,7 @@ if(res.rows.length==0) {
 }
 
 function kill_server(pid) {
+    if(!pid) return;
     if (!kill(pid, 0)) return;
     kill(pid, 15);
     sleep(0.5);
@@ -188,6 +189,13 @@ pid=server.start(
        If it ends in a '/' then matches everything in that path
        except a more specific ('/something.html') path
        ********************************************************** */
+    rateLimit: {
+        "/limited":      {rate: 5, window: 10, key: "ip"},
+        "/fp-limited":   {rate: 3, window: 10, key: "fingerprint"},
+        "/ck-limited":   {rate: 3, window: 10, key: "cookie:rltest"},
+        "/casc/":        {rate: 8, window: 10, key: "ip"},
+        "/casc/tight/":  {rate: 3, window: 10, key: "ip"}
+    },
     map:
     {
         /*
@@ -203,7 +211,13 @@ pid=server.start(
                                 for (var i=0;i<1000000000;i++);
                                 return("done");
                             },
-        "/chunk.txt":       chunktest
+        "/chunk.txt":       chunktest,
+        "/limited":         function(req) { return {text: "ok"}; },
+        "/fp-limited":      function(req) { return {text: "ok"}; },
+        "/ck-limited":      function(req) { return {text: "ok"}; },
+        "/unlimited":       function(req) { return {text: "ok"}; },
+        "/casc/normal":     function(req) { return {text: "ok"}; },
+        "/casc/tight/a":    function(req) { return {text: "ok"}; }
     }
 });
 
@@ -314,56 +328,33 @@ var asyncTimeout2 = isMsys ? 5000  : 500;
 
 /* ---- rate limiter tests ---- */
 
-var rl_pid = server.start({
-    bind: "127.0.0.1:8086",
-    daemon: true,
-    log: true,
-    accessLog: tmpdir + '/rl-alog',
-    errorLog:  tmpdir + '/rl-elog',
-    developerMode: true,
-    rateLimit: {
-        "/limited":     {rate: 5, window: 10, key: "ip"},
-        "/fp-limited":  {rate: 3, window: 10, key: "fingerprint"},
-        "/ck-limited":  {rate: 3, window: 10, key: "cookie:rltest"}
-    },
-    map: {
-        "/limited":    function(req) { return {text: "ok"}; },
-        "/fp-limited": function(req) { return {text: "ok"}; },
-        "/ck-limited": function(req) { return {text: "ok"}; },
-        "/unlimited":  function(req) { return {text: "ok"}; }
-    }
-});
-
-sleep(0.3);
-
-testFeature("rate limiter server running", kill(rl_pid, 0));
 
 testFeature("rate limit: requests within limit pass", function() {
     /* 5 parallel requests, limit is 5/10s — all should pass */
     var urls = [];
-    for (var i = 0; i < 5; i++) urls.push("http://127.0.0.1:8086/limited");
+    for (var i = 0; i < 5; i++) urls.push("https://127.0.0.1:8087/limited");
     var ok = 0;
-    curl.fetch(urls, function(res) { if (res.status == 200) ok++; });
+    curl.fetch({insecure:true}, urls, function(res) { if (res.status == 200) ok++; });
     return ok === 5;
 });
 
 testFeature("rate limit: excess requests get 429", function() {
     /* 5 more — should all be 429 since we just used up the tokens */
     var urls = [];
-    for (var i = 0; i < 5; i++) urls.push("http://127.0.0.1:8086/limited");
+    for (var i = 0; i < 5; i++) urls.push("https://127.0.0.1:8087/limited");
     var blocked = 0;
-    curl.fetch(urls, function(res) { if (res.status == 429) blocked++; });
+    curl.fetch({insecure:true}, urls, function(res) { if (res.status == 429) blocked++; });
     return blocked === 5;
 });
 
 testFeature("rate limit: unrated path not affected", function() {
-    var res = curl.fetch("http://127.0.0.1:8086/unlimited");
+    var res = curl.fetch({insecure:true}, "https://127.0.0.1:8087/unlimited");
     return res.status === 200;
 });
 
 testFeature("rate limit: tokens refill over time", function() {
     sleep(3); /* at 0.5 tokens/sec, 3s = 1.5 tokens = 1 request */
-    var res = curl.fetch("http://127.0.0.1:8086/limited");
+    var res = curl.fetch({insecure:true}, "https://127.0.0.1:8087/limited");
     return res.status === 200;
 });
 
@@ -371,7 +362,7 @@ testFeature("rate limit: fingerprint key works", function() {
     /* 4 requests with same headers, limit is 3 */
     var n200 = 0, n429 = 0;
     for (var i = 0; i < 4; i++) {
-        var res = curl.fetch("http://127.0.0.1:8086/fp-limited");
+        var res = curl.fetch({insecure:true}, "https://127.0.0.1:8087/fp-limited");
         if (res.status === 200) n200++;
         else if (res.status === 429) n429++;
     }
@@ -382,8 +373,8 @@ testFeature("rate limit: cookie key, same cookie", function() {
     sleep(2); /* let fp tokens refill a bit */
     var n200 = 0, n429 = 0;
     for (var i = 0; i < 4; i++) {
-        var res = curl.fetch({headers: ["Cookie: rltest=user1"]},
-                             "http://127.0.0.1:8086/ck-limited");
+        var res = curl.fetch({insecure:true, headers: ["Cookie: rltest=user1"]},
+                             "https://127.0.0.1:8087/ck-limited");
         if (res.status === 200) n200++;
         else if (res.status === 429) n429++;
     }
@@ -391,61 +382,37 @@ testFeature("rate limit: cookie key, same cookie", function() {
 });
 
 testFeature("rate limit: different cookie not affected", function() {
-    var res = curl.fetch({headers: ["Cookie: rltest=user2"]},
-                         "http://127.0.0.1:8086/ck-limited");
+    var res = curl.fetch({insecure:true, headers: ["Cookie: rltest=user2"]},
+                         "https://127.0.0.1:8087/ck-limited");
     return res.status === 200;
 });
 
-kill_server(rl_pid);
-
-/* cascading rate limit test — global + per-path */
-var rl_pid2 = server.start({
-    bind: "127.0.0.1:8086",
-    daemon: true,
-    log: true,
-    accessLog: tmpdir + '/rl2-alog',
-    errorLog:  tmpdir + '/rl2-elog',
-    developerMode: true,
-    rateLimit: {
-        "/":        {rate: 8, window: 10, key: "ip"},
-        "/tight/":  {rate: 3, window: 10, key: "ip"}
-    },
-    map: {
-        "/normal":  function(req) { return {text: "ok"}; },
-        "/tight/a": function(req) { return {text: "ok"}; }
-    }
-});
-
-sleep(0.3);
-
 testFeature("rate limit: cascading, tight path", function() {
-    /* /tight/ has limit 3, and also counts against / limit 8 */
+    /* /casc/tight/ has limit 3, and also counts against /casc/ limit 8 */
     var n200 = 0, n429 = 0;
     for (var i = 0; i < 4; i++) {
-        var res = curl.fetch("http://127.0.0.1:8086/tight/a");
+        var res = curl.fetch({insecure:true}, "https://127.0.0.1:8087/casc/tight/a");
         if (res.status === 200) n200++;
         else if (res.status === 429) n429++;
     }
-    /* 3 allowed by /tight/, 4th blocked */
+    /* 3 allowed by /casc/tight/, 4th blocked */
     return n200 === 3 && n429 === 1;
 });
 
 testFeature("rate limit: cascading, global exhausted", function() {
-    /* / has 8 tokens. 3 /tight/ requests consumed 3 from global.
+    /* /casc/ has 8 tokens. 3 /casc/tight/ requests consumed 3 from /casc/.
        Remaining: 8 - 1 (first entry creation) - 2 (requests 2-3) = 5.
        But time(NULL) granularity may consume an extra token.
        Expect 4-5 allowed, then blocked. */
     var n200 = 0, n429 = 0;
     for (var i = 0; i < 6; i++) {
-        var res = curl.fetch("http://127.0.0.1:8086/normal");
+        var res = curl.fetch({insecure:true}, "https://127.0.0.1:8087/casc/normal");
         if (res.status === 200) n200++;
         else if (res.status === 429) n429++;
     }
     /* at least 4 allowed, at least 1 blocked */
     return n200 >= 4 && n429 >= 1;
 });
-
-kill_server(rl_pid2);
 /* ---- end rate limiter tests ---- */
 
 var thr = new rampart.thread();
