@@ -722,10 +722,11 @@ duk_ret_t duk_open_module(duk_context *ctx)
                 else
                     fprintf(stderr, "rampart-auth: warning: lmdb pre-warm failed\n");
             }
-
+            /*
             fprintf(stderr, "rampart-auth: initialized (cookie=%s, db=%s, %d protected paths, csrf=%s)\n",
                     auth_cookie_name, auth_db_path, auth_num_ppaths,
                     auth_csrf_enabled ? "on" : "off");
+            */
         }
     }
     duk_pop(ctx);                               /* pop authModConf or undefined */
