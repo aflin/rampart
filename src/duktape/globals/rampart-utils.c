@@ -49,6 +49,7 @@
 #include "../linenoise.h"
 #include "../core/module.h"
 #include "../../extern/utf8proc/utf8proc.h"
+#include "../../extern/tree-sitter/minify.h"
 
 char modules_dir[PATH_MAX];
 /*
@@ -3107,6 +3108,29 @@ duk_ret_t duk_rp_trim(duk_context *ctx)
     return 0;
 }
 
+duk_ret_t duk_rp_minify(duk_context *ctx)
+{
+    duk_size_t src_len;
+    const char *src;
+
+    if (!duk_is_string(ctx, 0))
+        RP_THROW(ctx, "minify(): a string argument is required");
+
+    src = duk_get_lstring(ctx, 0, &src_len);
+
+    MinifyResult res = minify(src, (size_t)src_len);
+
+    if (res.error && !res.code)
+    {
+        char *err = res.error;
+        minify_result_free(&res);
+        RP_THROW(ctx, "minify(): %s", err);
+    }
+
+    duk_push_lstring(ctx, res.code, res.code_len);
+    minify_result_free(&res);
+    return 1;
+}
 
 struct exec_thread_waitpid_arg
 {
@@ -5848,6 +5872,8 @@ void duk_rampart_init(duk_context *ctx)
     duk_put_prop_string(ctx, -2, "lstat");
     duk_push_c_function(ctx, duk_rp_trim, 1);
     duk_put_prop_string(ctx, -2, "trim");
+    duk_push_c_function(ctx, duk_rp_minify, 1);
+    duk_put_prop_string(ctx, -2, "minify");
     duk_push_c_function(ctx, duk_rp_exec_raw, 1);
     duk_put_prop_string(ctx, -2, "execRaw");
     duk_push_c_function(ctx, duk_rp_exec, DUK_VARARGS);

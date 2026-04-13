@@ -84,6 +84,7 @@ ADD_CUSTOM_TARGET (
 add_executable(rampart
     ${PROJECT_SOURCE_DIR}/extern/utf8proc/utf8proc.c
     ${PROJECT_SOURCE_DIR}/extern/tree-sitter/transpiler.c
+    ${PROJECT_SOURCE_DIR}/extern/tree-sitter/minify.c
     ${PROJECT_SOURCE_DIR}/extern/tree-sitter/tree-sitter-javascript/src/parser.c
     ${PROJECT_SOURCE_DIR}/extern/tree-sitter/tree-sitter-javascript/src/scanner.c
     ${PROJECT_SOURCE_DIR}/extern/tree-sitter/lib/src/lib.c
