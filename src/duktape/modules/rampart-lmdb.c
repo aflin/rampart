@@ -2239,7 +2239,7 @@ duk_ret_t duk_rp_lmdb_constructor(duk_context *ctx)
         duk_push_pointer(ctx, (void *) lenv);
         duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("lenv"));
         // reopen if null/closed
-        if(!lenv->env)
+        if(!lenv->env || lenv->pid != getpid())
         {
             lenv->pid       = getpid();
             lenv->openflags = openflags;
