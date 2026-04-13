@@ -41,7 +41,7 @@ var npass = 0;
 function testFeature(name, test) {
     var error = false;
     ntest++;
-    printf("testing auth - %-40s - ", name);
+    printf("testing auth - %-53s - ", name);
     fflush(stdout);
     if (typeof test == 'function') {
         try {
