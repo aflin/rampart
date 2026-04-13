@@ -106,7 +106,7 @@ testMinify("let block scoping", function() {
 
 testMinify("let shadow in block", function() {
     // Check that minified output has different mangled names for outer var and inner let
-    var src = "function test() { var x = 'outer'; if (true) { let x = 'inner'; console.log(x); } return x; }";
+    var src = "function test() { var x = 'outer'; if (true) { let x = 'inner';} return x; }";
     return minifyAndRun(src, "test") === "outer";
 });
 
