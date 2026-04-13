@@ -294,14 +294,9 @@ static void scopelist_free_all(ScopeList *sl)
 
 /* ============== helper: node type/field checks ============== */
 
-static inline int streq(const char *a, const char *b)
-{
-    return strcmp(a, b) == 0;
-}
-
 static inline int node_is(TSNode n, const char *type)
 {
-    return !ts_node_is_null(n) && streq(ts_node_type(n), type);
+    return !ts_node_is_null(n) && strcmp(ts_node_type(n), type) == 0;
 }
 
 /* Does this node create a function scope? */
@@ -309,25 +304,12 @@ static int is_function_node(TSNode n)
 {
     if (ts_node_is_null(n)) return 0;
     const char *t = ts_node_type(n);
-    return streq(t, "function_declaration") ||
-           streq(t, "function_expression") ||
-           streq(t, "arrow_function") ||
-           streq(t, "generator_function_declaration") ||
-           streq(t, "generator_function") ||
-           streq(t, "method_definition");
-}
-
-/* Does this node create a block scope for let/const? */
-static int is_block_scope_node(TSNode n)
-{
-    if (ts_node_is_null(n)) return 0;
-    const char *t = ts_node_type(n);
-    return streq(t, "for_statement") ||
-           streq(t, "for_in_statement") ||
-           streq(t, "for_of_statement") ||
-           streq(t, "catch_clause");
-    /* statement_block inside these is handled by the function/block scope
-       of the parent, not independently */
+    return strcmp(t, "function_declaration") == 0 ||
+           strcmp(t, "function_expression") == 0 ||
+           strcmp(t, "arrow_function") == 0 ||
+           strcmp(t, "generator_function_declaration") == 0 ||
+           strcmp(t, "generator_function") == 0 ||
+           strcmp(t, "method_definition") == 0;
 }
 
 /* Is this identifier in a position where it should NOT be renamed?
@@ -339,7 +321,7 @@ static int is_property_position(TSNode id, TSNode parent)
 
     /* obj.property — the property_identifier is a different node type,
        but just in case: */
-    if (streq(pt, "member_expression")) {
+    if (strcmp(pt, "member_expression") == 0) {
         const char *field = NULL;
         uint32_t count = ts_node_child_count(parent);
         for (uint32_t i = 0; i < count; i++) {
@@ -348,13 +330,13 @@ static int is_property_position(TSNode id, TSNode parent)
                 break;
             }
         }
-        if (field && streq(field, "property"))
+        if (field && strcmp(field, "property") == 0)
             return 1;
     }
 
     /* { key: value } in object literal — the key is property_identifier,
        not identifier, but pair_pattern keys are property_identifier too */
-    if (streq(pt, "pair") || streq(pt, "method_definition")) {
+    if (strcmp(pt, "pair") == 0 || strcmp(pt, "method_definition") == 0) {
         const char *field = NULL;
         uint32_t count = ts_node_child_count(parent);
         for (uint32_t i = 0; i < count; i++) {
@@ -363,13 +345,13 @@ static int is_property_position(TSNode id, TSNode parent)
                 break;
             }
         }
-        if (field && streq(field, "key"))
+        if (field && strcmp(field, "key") == 0)
             return 1;
     }
 
     /* label: or break label; or continue label; */
-    if (streq(pt, "labeled_statement") || streq(pt, "break_statement") ||
-        streq(pt, "continue_statement"))
+    if (strcmp(pt, "labeled_statement") == 0 || strcmp(pt, "break_statement") == 0 ||
+        strcmp(pt, "continue_statement") == 0)
         return 1;
 
     return 0;
@@ -389,40 +371,40 @@ static void collect_binding_names(TSNode pattern, const char *src,
 {
     const char *t = ts_node_type(pattern);
 
-    if (streq(t, "identifier")) {
+    if (strcmp(t, "identifier") == 0) {
         uint32_t s = ts_node_start_byte(pattern);
         uint32_t e = ts_node_end_byte(pattern);
         scope_add(scope, src + s, e - s, is_global);
         return;
     }
 
-    if (streq(t, "shorthand_property_identifier_pattern")) {
+    if (strcmp(t, "shorthand_property_identifier_pattern") == 0) {
         uint32_t s = ts_node_start_byte(pattern);
         uint32_t e = ts_node_end_byte(pattern);
         scope_add(scope, src + s, e - s, is_global);
         return;
     }
 
-    if (streq(t, "object_pattern")) {
+    if (strcmp(t, "object_pattern") == 0) {
         uint32_t count = ts_node_named_child_count(pattern);
         for (uint32_t i = 0; i < count; i++) {
             TSNode child = ts_node_named_child(pattern, i);
             const char *ct = ts_node_type(child);
-            if (streq(ct, "shorthand_property_identifier_pattern")) {
+            if (strcmp(ct, "shorthand_property_identifier_pattern") == 0) {
                 uint32_t s = ts_node_start_byte(child);
                 uint32_t e = ts_node_end_byte(child);
                 scope_add(scope, src + s, e - s, is_global);
-            } else if (streq(ct, "pair_pattern")) {
+            } else if (strcmp(ct, "pair_pattern") == 0) {
                 /* { key: binding } — the value side is the binding */
                 TSNode val = ts_node_child_by_field_name(child, "value", 5);
                 if (!ts_node_is_null(val))
                     collect_binding_names(val, src, scope, is_global);
-            } else if (streq(ct, "rest_pattern")) {
+            } else if (strcmp(ct, "rest_pattern") == 0) {
                 uint32_t nc = ts_node_named_child_count(child);
                 if (nc > 0)
                     collect_binding_names(ts_node_named_child(child, 0), src,
                                           scope, is_global);
-            } else if (streq(ct, "assignment_pattern")) {
+            } else if (strcmp(ct, "assignment_pattern") == 0) {
                 /* default value: binding = default */
                 TSNode left = ts_node_child_by_field_name(child, "left", 4);
                 if (!ts_node_is_null(left))
@@ -434,7 +416,7 @@ static void collect_binding_names(TSNode pattern, const char *src,
         return;
     }
 
-    if (streq(t, "array_pattern")) {
+    if (strcmp(t, "array_pattern") == 0) {
         uint32_t count = ts_node_named_child_count(pattern);
         for (uint32_t i = 0; i < count; i++) {
             TSNode child = ts_node_named_child(pattern, i);
@@ -443,7 +425,7 @@ static void collect_binding_names(TSNode pattern, const char *src,
         return;
     }
 
-    if (streq(t, "rest_pattern")) {
+    if (strcmp(t, "rest_pattern") == 0) {
         uint32_t nc = ts_node_named_child_count(pattern);
         if (nc > 0)
             collect_binding_names(ts_node_named_child(pattern, 0), src,
@@ -451,7 +433,7 @@ static void collect_binding_names(TSNode pattern, const char *src,
         return;
     }
 
-    if (streq(t, "assignment_pattern")) {
+    if (strcmp(t, "assignment_pattern") == 0) {
         TSNode left = ts_node_child_by_field_name(pattern, "left", 4);
         if (!ts_node_is_null(left))
             collect_binding_names(left, src, scope, is_global);
@@ -469,9 +451,9 @@ static int contains_eval_or_with(TSNode node, const char *src)
     if (is_function_node(node)) return 0;
 
     /* with statement makes all vars dynamically resolvable */
-    if (streq(type, "with_statement")) return 1;
+    if (strcmp(type, "with_statement") == 0) return 1;
 
-    if (streq(type, "call_expression")) {
+    if (strcmp(type, "call_expression") == 0) {
         TSNode fn = ts_node_child_by_field_name(node, "function", 8);
         if (!ts_node_is_null(fn) && node_is(fn, "identifier")) {
             uint32_t s = ts_node_start_byte(fn);
@@ -509,8 +491,8 @@ static void scan_declarations(TSNode node, const char *src, Scope *scope,
         if (!ts_node_is_null(name) && node_is(name, "identifier")) {
             uint32_t s = ts_node_start_byte(name);
             uint32_t e = ts_node_end_byte(name);
-            if (streq(type, "function_declaration") ||
-                streq(type, "generator_function_declaration")) {
+            if (strcmp(type, "function_declaration") == 0 ||
+                strcmp(type, "generator_function_declaration") == 0) {
                 /* named function declaration: name goes in outer/var scope */
                 Scope *target = find_var_scope(scope);
                 if (!target) target = scope;
@@ -548,7 +530,7 @@ static void scan_declarations(TSNode node, const char *src, Scope *scope,
     }
 
     /* catch clause: parameter gets its own block scope */
-    if (streq(type, "catch_clause")) {
+    if (strcmp(type, "catch_clause") == 0) {
         Scope *catch_scope = scope_new(scope, 0,
                                        ts_node_start_byte(node),
                                        ts_node_end_byte(node));
@@ -567,15 +549,15 @@ static void scan_declarations(TSNode node, const char *src, Scope *scope,
 
     /* for-in / for-of: the loop variable is an identifier(left), not
        a variable_declaration node. Collect it into the var scope. */
-    if (streq(type, "for_in_statement") || streq(type, "for_of_statement")) {
+    if (strcmp(type, "for_in_statement") == 0 || strcmp(type, "for_of_statement") == 0) {
         /* Check for "var"/"let"/"const" keyword child */
         int has_var = 0, has_lexical = 0;
         uint32_t cc = ts_node_child_count(node);
         for (uint32_t i = 0; i < cc; i++) {
             TSNode child = ts_node_child(node, i);
             const char *ct = ts_node_type(child);
-            if (streq(ct, "var")) has_var = 1;
-            if (streq(ct, "let") || streq(ct, "const")) has_lexical = 1;
+            if (strcmp(ct, "var") == 0) has_var = 1;
+            if (strcmp(ct, "let") == 0 || strcmp(ct, "const") == 0) has_lexical = 1;
         }
 
         Scope *loop_scope = scope;
@@ -609,7 +591,7 @@ static void scan_declarations(TSNode node, const char *src, Scope *scope,
     }
 
     /* for statement with lexical decl: create block scope */
-    if (streq(type, "for_statement")) {
+    if (strcmp(type, "for_statement") == 0) {
         /* Check if initializer is a lexical declaration */
         int has_lexical = 0;
         uint32_t count = ts_node_named_child_count(node);
@@ -640,7 +622,7 @@ static void scan_declarations(TSNode node, const char *src, Scope *scope,
 
     /* statement_block: creates a block scope if it contains let/const
        and is NOT a function body (function bodies are handled above) */
-    if (streq(type, "statement_block") && !is_function_node(ts_node_parent(node))) {
+    if (strcmp(type, "statement_block") == 0 && !is_function_node(ts_node_parent(node))) {
         /* Check for lexical declarations */
         int has_lexical = 0;
         uint32_t count = ts_node_named_child_count(node);
@@ -667,7 +649,7 @@ static void scan_declarations(TSNode node, const char *src, Scope *scope,
     }
 
     /* variable_declaration (var): hoisted to function scope */
-    if (streq(type, "variable_declaration")) {
+    if (strcmp(type, "variable_declaration") == 0) {
         Scope *target = find_var_scope(scope);
         if (!target) target = scope; /* global */
         int is_global = (target->parent == NULL);
@@ -689,7 +671,7 @@ static void scan_declarations(TSNode node, const char *src, Scope *scope,
     }
 
     /* lexical_declaration (let/const): stays in current scope */
-    if (streq(type, "lexical_declaration")) {
+    if (strcmp(type, "lexical_declaration") == 0) {
         int is_global = (scope->parent == NULL);
 
         uint32_t count = ts_node_named_child_count(node);
@@ -808,11 +790,11 @@ static void emit_leaf(EmitCtx *ctx, TSNode node)
     const char *type = ts_node_type(node);
 
     /* Skip comments entirely */
-    if (streq(type, "comment"))
+    if (strcmp(type, "comment") == 0)
         return;
 
     /* Identifiers: look up in scope for renaming */
-    if (streq(type, "identifier")) {
+    if (strcmp(type, "identifier") == 0) {
         /* Check if this is in a property position */
         TSNode parent = ts_node_parent(node);
         if (!is_property_position(node, parent)) {
@@ -831,8 +813,8 @@ static void emit_leaf(EmitCtx *ctx, TSNode node)
     /* shorthand_property_identifier / shorthand_property_identifier_pattern:
        In object literals: {x} means {x: x}. If x is renamed, emit {x: newname}.
        In destructuring:   {x} = obj means {x: x} = obj. Same logic. */
-    if (streq(type, "shorthand_property_identifier_pattern") ||
-        streq(type, "shorthand_property_identifier")) {
+    if (strcmp(type, "shorthand_property_identifier_pattern") == 0 ||
+        strcmp(type, "shorthand_property_identifier") == 0) {
         Scope *s = scopelist_find(ctx->all_scopes, start);
         if (!s) s = ctx->global_scope;
         Symbol *sym = scope_find(s, text, len);
@@ -848,10 +830,10 @@ static void emit_leaf(EmitCtx *ctx, TSNode node)
     }
 
     /* Preserve strings, regexes, template strings verbatim */
-    if (streq(type, "string") || streq(type, "regex") ||
-        streq(type, "template_string") || streq(type, "string_fragment") ||
-        streq(type, "escape_sequence") || streq(type, "regex_pattern") ||
-        streq(type, "regex_flags"))
+    if (strcmp(type, "string") == 0 || strcmp(type, "regex") == 0 ||
+        strcmp(type, "template_string") == 0 || strcmp(type, "string_fragment") == 0 ||
+        strcmp(type, "escape_sequence") == 0 || strcmp(type, "regex_pattern") == 0 ||
+        strcmp(type, "regex_flags") == 0)
     {
         emit_raw(ctx, text, len);
         return;
@@ -866,18 +848,18 @@ static void emit_leaf(EmitCtx *ctx, TSNode node)
 static int needs_semicolon(TSNode node)
 {
     const char *t = ts_node_type(node);
-    return streq(t, "variable_declaration") ||
-           streq(t, "lexical_declaration") ||
-           streq(t, "expression_statement") ||
-           streq(t, "return_statement") ||
-           streq(t, "throw_statement") ||
-           streq(t, "break_statement") ||
-           streq(t, "continue_statement") ||
-           streq(t, "do_statement") ||
-           streq(t, "import_statement") ||
-           streq(t, "export_statement") ||
-           streq(t, "debugger_statement") ||
-           streq(t, "empty_statement");
+    return strcmp(t, "variable_declaration") == 0 ||
+           strcmp(t, "lexical_declaration") == 0 ||
+           strcmp(t, "expression_statement") == 0 ||
+           strcmp(t, "return_statement") == 0 ||
+           strcmp(t, "throw_statement") == 0 ||
+           strcmp(t, "break_statement") == 0 ||
+           strcmp(t, "continue_statement") == 0 ||
+           strcmp(t, "do_statement") == 0 ||
+           strcmp(t, "import_statement") == 0 ||
+           strcmp(t, "export_statement") == 0 ||
+           strcmp(t, "debugger_statement") == 0 ||
+           strcmp(t, "empty_statement") == 0;
 }
 
 /* Emit a full AST node (recursive) */
@@ -890,25 +872,25 @@ static void emit_node(EmitCtx *ctx, TSNode node)
     uint32_t end = ts_node_end_byte(node);
 
     /* Skip comment nodes */
-    if (streq(type, "comment"))
+    if (strcmp(type, "comment") == 0)
         return;
 
     /* String, regex: emit entire source verbatim
        (don't recurse into child nodes which are fragments) */
-    if (streq(type, "string") || streq(type, "regex")) {
+    if (strcmp(type, "string") == 0 || strcmp(type, "regex") == 0) {
         emit_raw(ctx, ctx->src + start, (int)(end - start));
         return;
     }
 
     /* Template strings: must recurse so identifiers inside ${} get renamed.
        But emit the static parts (backticks, string_fragment) verbatim. */
-    if (streq(type, "template_string")) {
+    if (strcmp(type, "template_string") == 0) {
         uint32_t cc = ts_node_child_count(node);
         for (uint32_t i = 0; i < cc; i++) {
             TSNode child = ts_node_child(node, i);
             const char *ct = ts_node_type(child);
-            if (streq(ct, "`") || streq(ct, "string_fragment") ||
-                streq(ct, "escape_sequence")) {
+            if (strcmp(ct, "`") == 0 || strcmp(ct, "string_fragment") == 0 ||
+                strcmp(ct, "escape_sequence") == 0) {
                 /* static parts: emit verbatim */
                 uint32_t cs = ts_node_start_byte(child);
                 uint32_t ce = ts_node_end_byte(child);
@@ -932,16 +914,16 @@ static void emit_node(EmitCtx *ctx, TSNode node)
 
     /* For program and statement_block, emit children and ensure
        semicolons are present where required */
-    if (streq(type, "program") || streq(type, "statement_block")) {
+    if (strcmp(type, "program") == 0 || strcmp(type, "statement_block") == 0) {
         for (uint32_t i = 0; i < child_count; i++) {
             TSNode child = ts_node_child(node, i);
             const char *ct = ts_node_type(child);
 
-            if (streq(ct, "{") || streq(ct, "}")) {
+            if (strcmp(ct, "{") == 0 || strcmp(ct, "}") == 0) {
                 emit_leaf(ctx, child);
                 continue;
             }
-            if (streq(ct, "comment"))
+            if (strcmp(ct, "comment") == 0)
                 continue;
 
             emit_node(ctx, child);
