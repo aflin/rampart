@@ -1323,7 +1323,10 @@ typedef enum STRARRAY_STATE
   STRARRAY_END
 } STRARRAY_STATE;
 
-#define COPYCHAR if(result){*destinationbuffer++=*current;byteUsed[(int)*current]=1;}
+/* (int) cast causes negative index for chars >= 0x80 (e.g. UTF-8),
+ * corrupting the stack via out-of-bounds write to byteUsed[] -ajf 2026-04-14 */
+//#define COPYCHAR if(result){*destinationbuffer++=*current;byteUsed[(int)*current]=1;}
+#define COPYCHAR if(result){*destinationbuffer++=*current;byteUsed[(byte)*current]=1;}
 static int
 char2StrlstArrayFormat(char *input, size_t len, ft_strlst **result, char2strlstmode c2slmode)
 {
