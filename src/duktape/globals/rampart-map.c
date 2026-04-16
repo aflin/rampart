@@ -45,6 +45,13 @@ static void map_push_key_string(duk_context *ctx, duk_idx_t idx)
         return;
     }
     case DUK_TYPE_STRING:
+        /* Symbols are DUK_TYPE_STRING internally but cannot be
+           string-coerced.  Use heap pointer for identity. */
+        if (duk_is_symbol(ctx, idx)) {
+            void *ptr = duk_get_heapptr(ctx, idx);
+            duk_push_sprintf(ctx, "y:%p", ptr);
+            return;
+        }
         duk_push_string(ctx, "s:");
         duk_dup(ctx, idx);
         duk_concat(ctx, 2);
