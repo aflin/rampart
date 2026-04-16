@@ -28,6 +28,9 @@
 #define RP_MAX_THREADS 4096
 #endif
 
+/* Hidden symbol for Map/Set internal storage (must match rampart-map.c) */
+#define MAP_STORE  DUK_HIDDEN_SYMBOL("map_store")
+
 RPTHR **rpthread=NULL;
 uint16_t nrpthreads=0;
 
@@ -880,6 +883,57 @@ static int copy_any(duk_context *ctx, duk_context *tctx, duk_idx_t idx, int obji
                 duk_push_undefined(tctx);
 
             duk_pop_2(ctx); //res of pcall and the dup of the date object
+        }
+        /* check for Map or Set — rebuild by iterating entries so
+           object-key pointer strings are regenerated for the new heap */
+        else if (duk_has_prop_string(ctx, idx, MAP_STORE))
+        {
+            /* Determine if it's a Set (has "add") or Map (has "set") */
+            int is_set = duk_has_prop_string(ctx, idx, "add");
+            const char *ctor_name = is_set ? "Set" : "Map";
+
+            /* Create new Map/Set in target context */
+            duk_get_global_string(tctx, ctor_name);
+            duk_new(tctx, 0); /* new Map() or new Set() */
+
+            /* Iterate entries from source store (order-preserving enum) */
+            duk_get_prop_string(ctx, idx, MAP_STORE);
+            duk_idx_t store_idx = duk_normalize_index(ctx, -1);
+
+            duk_enum(ctx, store_idx, DUK_ENUM_OWN_PROPERTIES_ONLY);
+            while (duk_next(ctx, -1, 1)) {
+                /* stack: [store, enum, keystr, entry] */
+
+                /* Copy the key to tctx */
+                duk_get_prop_string(ctx, -1, "k");
+                rpthr_copy(ctx, tctx, duk_get_top_index(ctx));
+                duk_pop(ctx); /* key */
+
+                if (is_set) {
+                    /* set.add(value) */
+                    duk_get_prop_string(tctx, -2, "add");
+                    duk_dup(tctx, -3);   /* this = set */
+                    duk_pull(tctx, -3);  /* copied value */
+                    duk_call_method(tctx, 1);
+                    duk_pop(tctx); /* result of add */
+                } else {
+                    /* map.set(key, value) */
+                    duk_get_prop_string(ctx, -1, "v");
+                    rpthr_copy(ctx, tctx, duk_get_top_index(ctx));
+                    duk_pop(ctx); /* value */
+
+                    duk_get_prop_string(tctx, -3, "set");
+                    duk_dup(tctx, -4);   /* this = map */
+                    duk_pull(tctx, -4);  /* copied key */
+                    duk_pull(tctx, -4);  /* copied value */
+                    duk_call_method(tctx, 2);
+                    duk_pop(tctx); /* result of set */
+                }
+
+                duk_pop_2(ctx); /* entry, keystr */
+            }
+            duk_pop(ctx); /* enum */
+            duk_pop(ctx); /* store */
         }
         // check if it is an array, and if we've seen it before.
         // if not, get its pointer from the main stack, copy the array, store the array indexed by that pointer

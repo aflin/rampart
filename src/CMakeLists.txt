@@ -96,6 +96,7 @@ add_executable(rampart
     duktape/globals/colorspace.c
     duktape/globals/jcolor.c
     duktape/globals/rampart-event.c
+    duktape/globals/rampart-map.c
     duktape/globals/rampart-import.c
     duktape/globals/rampart-thread.c
     ${PROJECT_SOURCE_DIR}/extern/SimSIMD/c/lib.c

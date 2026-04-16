@@ -1065,4 +1065,5 @@ void duk_init_context(duk_context *ctx)
     add_extra_object_funcs(ctx);
     add_buffer_func(ctx);
     new_function_transpile(ctx);
+    duk_map_set_init(ctx);
 }
