@@ -256,6 +256,109 @@ testMinify("ASI - return on own line", function() {
 });
 
 /* ========================
+   ASI fixes — cases where stripping whitespace removes an implied
+   semicolon and we must insert one explicitly.
+   ======================== */
+
+testMinify("ASI - switch case body without ;", function() {
+    // original minify-err.js bug: `printhello()\nbreak` collapsed to
+    // `printhello()break`
+    var src = "function test() { var x = 1; var r = 'z'; switch (x) {" +
+              " case 1: r = 'one'\n break\n } return r; }";
+    return minifyAndRun(src, "test") === "one";
+});
+
+testMinify("ASI - if body (no braces) then sibling", function() {
+    var src = "function test() { var r = []; if (1) r.push('a')\n" +
+              " r.push('b'); return r.join(','); }";
+    return minifyAndRun(src, "test") === "a,b";
+});
+
+testMinify("ASI - for body (no braces) then sibling", function() {
+    var src = "function test() { var r = []; for (var i=0; i<1; i++)" +
+              " r.push('c')\n r.push('d'); return r.join(','); }";
+    return minifyAndRun(src, "test") === "c,d";
+});
+
+testMinify("ASI - while body (no braces) then sibling", function() {
+    var src = "function test() { var n = 0; while (n < 1) n++\n" +
+              " return n + 10; }";
+    return minifyAndRun(src, "test") === 11;
+});
+
+testMinify("ASI - if/else without braces", function() {
+    var src = "function test() { if (false) return 'X'\n else return 'Y' }";
+    return minifyAndRun(src, "test") === "Y";
+});
+
+testMinify("ASI - else-if chain without braces", function() {
+    var src = "function test() { if (false) return 'X'\n" +
+              " else if (true) return 'Y'\n else return 'Z' }";
+    return minifyAndRun(src, "test") === "Y";
+});
+
+testMinify("ASI - do-while with non-block body", function() {
+    var src = "function test() { var n = 0; do n++\n while (n < 3)\n" +
+              " return n; }";
+    return minifyAndRun(src, "test") === 3;
+});
+
+testMinify("ASI - labeled loop with non-block body", function() {
+    var src = "function test() { var r = []; outer: for (var i=0;i<1;i++)" +
+              " r.push('p')\n r.push('q'); return r.join(','); }";
+    return minifyAndRun(src, "test") === "p,q";
+});
+
+testMinify("ASI - class fields separated by newlines", function() {
+    var src = "function test() { class C { a = 1\n b = 2\n" +
+              " m() { return this.a + this.b } } return new C().m(); }";
+    return minifyAndRun(src, "test") === 3;
+});
+
+testMinify("ASI - class field with arrow function value", function() {
+    // without ; between fields, `a=()=>{}b=99` is a syntax error
+    var src = "function test() { class D { a = () => 42\n b = 99 }" +
+              " var d = new D(); return d.a() + d.b; }";
+    return minifyAndRun(src, "test") === 141;
+});
+
+testMinify("ASI - class field with object literal value", function() {
+    var src = "function test() { class E { a = {x: 7}\n b = 3 }" +
+              " var e = new E(); return e.a.x + e.b; }";
+    return minifyAndRun(src, "test") === 10;
+});
+
+testMinify("ASI - class fields with explicit ; not doubled", function() {
+    // source already supplies ;, minifier shouldn't emit ;;
+    var src = "class C{a=1;b=2;}";
+    var min = rampart.utils.minify(src);
+    return min.indexOf(";;") === -1 && min === "class C{a=1;b=2;}";
+});
+
+testMinify("ASI - switch default ordering", function() {
+    var src = "function test() { var r = 'none'; switch (1) {" +
+              " case 1: r = 'one'\n break\n default: r = 'other' }" +
+              " return r; }";
+    return minifyAndRun(src, "test") === "one";
+});
+
+testMinify("ASI - nested if without braces", function() {
+    var src = "function test() { if (true) if (false) return 'A'\n" +
+              " else return 'B' }";
+    return minifyAndRun(src, "test") === "B";
+});
+
+testMinify("ASI - preserves block-ending non-;", function() {
+    // function decls should NOT get an added ;
+    var src = "function a(){}function b(){}";
+    var min = rampart.utils.minify(src);
+    // single ; between is OK, but no ;; and still parses
+    return min.indexOf(";;") === -1 &&
+           minifyAndRun("function a(){return 1}function b(){return 2}" +
+                        "function test(){return a()+b()}", "test") === 3;
+});
+
+/* ========================
    Template literals
    ======================== */
 

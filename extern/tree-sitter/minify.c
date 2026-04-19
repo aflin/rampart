@@ -843,11 +843,9 @@ static void emit_leaf(EmitCtx *ctx, TSNode node)
     emit_raw(ctx, text, len);
 }
 
-/* Check if a node needs a semicolon after it.
-   Only statements that end in ';' in the source need this. */
-static int needs_semicolon(TSNode node)
+/* Is this node a statement of any kind? */
+static int is_statement_like(const char *t)
 {
-    const char *t = ts_node_type(node);
     return strcmp(t, "variable_declaration") == 0 ||
            strcmp(t, "lexical_declaration") == 0 ||
            strcmp(t, "expression_statement") == 0 ||
@@ -859,7 +857,71 @@ static int needs_semicolon(TSNode node)
            strcmp(t, "import_statement") == 0 ||
            strcmp(t, "export_statement") == 0 ||
            strcmp(t, "debugger_statement") == 0 ||
-           strcmp(t, "empty_statement") == 0;
+           strcmp(t, "empty_statement") == 0 ||
+           strcmp(t, "if_statement") == 0 ||
+           strcmp(t, "for_statement") == 0 ||
+           strcmp(t, "for_in_statement") == 0 ||
+           strcmp(t, "for_of_statement") == 0 ||
+           strcmp(t, "while_statement") == 0 ||
+           strcmp(t, "switch_statement") == 0 ||
+           strcmp(t, "try_statement") == 0 ||
+           strcmp(t, "with_statement") == 0 ||
+           strcmp(t, "labeled_statement") == 0 ||
+           strcmp(t, "statement_block") == 0 ||
+           strcmp(t, "function_declaration") == 0 ||
+           strcmp(t, "generator_function_declaration") == 0 ||
+           strcmp(t, "class_declaration") == 0;
+}
+
+/* Last character emitted (0 if output is empty) */
+static char last_out_char(EmitCtx *ctx)
+{
+    rp_string *s = ctx->out;
+    return (s->len == 0) ? 0 : s->str[s->len - 1];
+}
+
+/* Decide whether to emit ';' after a statement-like node.
+   `type` is the statement's node type; `lc` is the last emitted char.
+   Returns 1 if a ';' should be inserted. */
+static int need_trailing_semi(const char *type, char lc)
+{
+    if (lc == ';') return 0;                 /* already terminated */
+    if (lc == '}') {
+        /* Forms whose trailing '}' is itself the statement terminator */
+        if (strcmp(type, "function_declaration") == 0 ||
+            strcmp(type, "generator_function_declaration") == 0 ||
+            strcmp(type, "class_declaration") == 0 ||
+            strcmp(type, "statement_block") == 0 ||
+            strcmp(type, "if_statement") == 0 ||
+            strcmp(type, "for_statement") == 0 ||
+            strcmp(type, "for_in_statement") == 0 ||
+            strcmp(type, "for_of_statement") == 0 ||
+            strcmp(type, "while_statement") == 0 ||
+            strcmp(type, "with_statement") == 0 ||
+            strcmp(type, "try_statement") == 0 ||
+            strcmp(type, "switch_statement") == 0 ||
+            strcmp(type, "labeled_statement") == 0)
+            return 0;
+        /* Otherwise (e.g. variable_declaration ending in function
+           expression, or expression_statement ending in `{...}`), the
+           '}' is a value, not a terminator — ';' is required. */
+    }
+    return 1;
+}
+
+/* After emitting a statement-like child inside a container, peek forward
+   to see if the next non-comment sibling is a literal ';' — if so, the
+   source already supplies the separator and we don't double it. */
+static int next_sibling_is_semi(TSNode parent, uint32_t after_idx)
+{
+    uint32_t cc = ts_node_child_count(parent);
+    for (uint32_t j = after_idx + 1; j < cc; j++) {
+        TSNode n = ts_node_child(parent, j);
+        const char *nt = ts_node_type(n);
+        if (strcmp(nt, "comment") == 0) continue;
+        return strcmp(nt, ";") == 0;
+    }
+    return 0;
 }
 
 /* Emit a full AST node (recursive) */
@@ -912,9 +974,16 @@ static void emit_node(EmitCtx *ctx, TSNode node)
         return;
     }
 
-    /* For program and statement_block, emit children and ensure
-       semicolons are present where required */
-    if (strcmp(type, "program") == 0 || strcmp(type, "statement_block") == 0) {
+    /* Containers that hold statement children and rely on ASI/newlines
+       to separate them. After stripping whitespace, we must emit ';'
+       wherever ASI was supplying the separator.
+        - program / statement_block: top-level and braced-block statements.
+        - switch_case / switch_default: statements directly under a case.
+        - class_body: field_definitions need ';' between members. */
+    if (strcmp(type, "program") == 0 || strcmp(type, "statement_block") == 0 ||
+        strcmp(type, "switch_case") == 0 || strcmp(type, "switch_default") == 0 ||
+        strcmp(type, "class_body") == 0) {
+        int in_class = (strcmp(type, "class_body") == 0);
         for (uint32_t i = 0; i < child_count; i++) {
             TSNode child = ts_node_child(node, i);
             const char *ct = ts_node_type(child);
@@ -928,13 +997,79 @@ static void emit_node(EmitCtx *ctx, TSNode node)
 
             emit_node(ctx, child);
 
-            /* If this statement type needs a semicolon and the source
-               didn't have one (ASI), insert it now */
-            if (needs_semicolon(child)) {
-                uint32_t ce = ts_node_end_byte(child);
-                if (ce == 0 || ctx->src[ce - 1] != ';') {
-                    rp_string_putc(ctx->out, ';');
-                    ctx->last_cc = CC_NONE;
+            /* Decide if a ';' separator is needed after this child. */
+            int is_term_target;
+            if (in_class) {
+                /* In a class body, only field_definitions need ';';
+                   method_definitions end in '}' and are self-terminating. */
+                is_term_target = (strcmp(ct, "field_definition") == 0);
+            } else {
+                is_term_target = is_statement_like(ct);
+            }
+
+            if (!is_term_target) continue;
+            if (next_sibling_is_semi(node, i)) continue;
+
+            char lc = last_out_char(ctx);
+            int need;
+            if (in_class) {
+                /* field values may end in ')' or '}' (arrow/object); the
+                   class-member separator is always needed unless lc is
+                   already ';'. */
+                need = (lc != ';');
+            } else {
+                need = need_trailing_semi(ct, lc);
+            }
+            if (need) {
+                rp_string_putc(ctx->out, ';');
+                ctx->last_cc = CC_NONE;
+            }
+        }
+        return;
+    }
+
+    /* if_statement: between the consequent statement and the else_clause,
+       source relied on '\n' for ASI when the consequent was non-block
+       (e.g. `if(x)foo()\nelse bar()`). After stripping whitespace, we
+       must insert ';' or the output reads `foo()else bar()` which is a
+       parse error. */
+    if (strcmp(type, "if_statement") == 0) {
+        for (uint32_t i = 0; i < child_count; i++) {
+            TSNode child = ts_node_child(node, i);
+            const char *ct = ts_node_type(child);
+            emit_node(ctx, child);
+            if (i + 1 < child_count) {
+                TSNode next = ts_node_child(node, i + 1);
+                if (strcmp(ts_node_type(next), "else_clause") == 0 &&
+                    is_statement_like(ct)) {
+                    char lc = last_out_char(ctx);
+                    if (need_trailing_semi(ct, lc)) {
+                        rp_string_putc(ctx->out, ';');
+                        ctx->last_cc = CC_NONE;
+                    }
+                }
+            }
+        }
+        return;
+    }
+
+    /* do_statement: between the body and the 'while' keyword, ASI was
+       relying on a newline. `do foo()while(x)` is rejected by strict
+       parsers (including duktape), so insert ';' after a non-block body. */
+    if (strcmp(type, "do_statement") == 0) {
+        for (uint32_t i = 0; i < child_count; i++) {
+            TSNode child = ts_node_child(node, i);
+            const char *ct = ts_node_type(child);
+            emit_node(ctx, child);
+            if (i + 1 < child_count) {
+                TSNode next = ts_node_child(node, i + 1);
+                if (strcmp(ts_node_type(next), "while") == 0 &&
+                    is_statement_like(ct)) {
+                    char lc = last_out_char(ctx);
+                    if (need_trailing_semi(ct, lc)) {
+                        rp_string_putc(ctx->out, ';');
+                        ctx->last_cc = CC_NONE;
+                    }
                 }
             }
         }
@@ -1046,24 +1181,50 @@ static char *read_entire_file(const char *path, size_t *out_len)
     return buf;
 }
 
+static void dump_tree(TSNode n, int depth, const char *src)
+{
+    for (int i = 0; i < depth; i++) fputs("  ", stderr);
+    uint32_t s = ts_node_start_byte(n), e = ts_node_end_byte(n);
+    uint32_t show = (e - s > 40) ? 40 : (e - s);
+    fprintf(stderr, "%s [%u-%u] %.*s%s\n",
+            ts_node_type(n), s, e, (int)show, src + s,
+            (e - s > 40) ? "..." : "");
+    uint32_t cc = ts_node_child_count(n);
+    for (uint32_t i = 0; i < cc; i++)
+        dump_tree(ts_node_child(n, i), depth + 1, src);
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 2) {
         fprintf(stderr,
-                "Usage: %s <path-to-js> [-o outfile]\n"
-                "       Use '-' to read from stdin.\n",
+                "Usage: %s <path-to-js> [-o outfile] [-t]\n"
+                "       Use '-' to read from stdin.\n"
+                "       -t prints the parse tree to stderr.\n",
                 argv[0]);
         return 2;
     }
 
     const char *outpath = NULL;
+    int dump_flag = 0;
     for (int i = 2; i < argc; i++) {
         if (strcmp(argv[i], "-o") == 0 && i + 1 < argc)
             outpath = argv[++i];
+        else if (strcmp(argv[i], "-t") == 0)
+            dump_flag = 1;
     }
 
     size_t src_len = 0;
     char *src = read_entire_file(argv[1], &src_len);
+
+    if (dump_flag) {
+        TSParser *parser = ts_parser_new();
+        ts_parser_set_language(parser, tree_sitter_javascript());
+        TSTree *tree = ts_parser_parse_string(parser, NULL, src, (uint32_t)src_len);
+        dump_tree(ts_tree_root_node(tree), 0, src);
+        ts_tree_delete(tree);
+        ts_parser_delete(parser);
+    }
 
     MinifyResult res = minify(src, src_len);
 
