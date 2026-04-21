@@ -3490,8 +3490,19 @@ static void attachbuf(DHS *dhs, duk_idx_t idx)
         s = duk_get_buffer_data(ctx, idx, &sz);
         evbuffer_add_reference(dhs->req->buffer_out, s, (size_t)sz, NULL, NULL);
     }
+    else if (duk_is_object(ctx, idx))
+    /* Buffer object (Uint8Array, Node Buffer, ArrayBuffer, DataView). We
+       can't zero-copy because the backing storage may be GC'd before
+       libevent drains. duk_to_dynamic_buffer would go through a ToString
+       coercion here (see duk_to_buffer_raw in duktape.c) which mangles
+       binary bytes via UTF-8. Grab the raw bytes with duk_get_buffer_data
+       and evbuffer_add (which copies immediately). */
+    {
+        s = duk_get_buffer_data(ctx, idx, &sz);
+        evbuffer_add(dhs->req->buffer_out, s, (size_t)sz);
+    }
     else
-    /* no it isn't, steal and free later */
+    /* Plain fixed/dynamic buffer — steal and free later */
     {
         duk_to_dynamic_buffer(ctx, idx, &sz);
         s = duk_steal_buffer(ctx, idx, &sz);
