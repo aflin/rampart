@@ -1875,6 +1875,162 @@ testFeature("Object.fromEntries",function(){
     return obj.a === 1 && obj.b === 2 && obj.c === 3;
 });
 
+/* Function.prototype.toString returns original pre-transpile source */
+
+testFeature("fn source - named declaration",function(){
+    function greet(name) { return "hi " + name; }
+    return greet.toString() === 'function greet(name) { return "hi " + name; }';
+});
+
+testFeature("fn source - anonymous expression",function(){
+    var adder = function(a, b) { return a + b; };
+    return adder.toString() === "function(a, b) { return a + b; }";
+});
+
+testFeature("fn source - named expression",function(){
+    var x = function doit(x) { return x * 2; };
+    return x.toString() === "function doit(x) { return x * 2; }";
+});
+
+testFeature("fn source - arrow",function(){
+    var sq = (x) => x * x;
+    return sq.toString() === "(x) => x * x";
+});
+
+testFeature("fn source - arrow no parens",function(){
+    var neg = x => -x;
+    return neg.toString() === "x => -x";
+});
+
+testFeature("fn source - arrow block body",function(){
+    var add = (a, b, c) => { return a + b + c; };
+    return add.toString() === "(a, b, c) => { return a + b + c; }";
+});
+
+testFeature("fn source - generator declaration",function(){
+    function* counter() { yield 1; yield 2; }
+    return counter.toString() === "function* counter() { yield 1; yield 2; }";
+});
+
+testFeature("fn source - hoisting preserved",function(){
+    return hoisted() === 7;
+    function hoisted() { return 7; }
+});
+
+testFeature("fn source - nested inner captured correctly",function(){
+    function outer() {
+        function inner() { return "in"; }
+        return inner.toString();
+    }
+    return outer() === 'function inner() { return "in"; }';
+});
+
+testFeature("fn source - nested outer contains original inner",function(){
+    function outer() {
+        function inner() { return "in"; }
+        return inner;
+    }
+    return outer.toString().indexOf('function inner() { return "in"; }') !== -1;
+});
+
+testFeature("fn source - special chars round-trip",function(){
+    function s() { return "\"q\" and \\ and \n\t"; }
+    var expected = 'function s() { return "\\"q\\" and \\\\ and \\n\\t"; }';
+    return s.toString() === expected;
+});
+
+testFeature("fn source - native toString fallthrough",function(){
+    var s = Math.max.toString();
+    return typeof s === "string" && s.indexOf("[native code]") !== -1;
+});
+
+testFeature("fn source - IIFE inner fn wrapped",function(){
+    var r = (function double(n) { return n * 2; })(21);
+    return r === 42;
+});
+
+/* async function source capture — covers decl, expression, arrow, and
+   verifies that the wrapped async function still runs correctly after
+   the regenerator lowering. */
+
+testFeature("fn source - async declaration",function(){
+    async function later() { return 42; }
+    return later.toString() === "async function later() { return 42; }";
+});
+
+testFeature("fn source - async expression",function(){
+    var a = async function(x) { return x + 1; };
+    return a.toString() === "async function(x) { return x + 1; }";
+});
+
+testFeature("fn source - async named expression",function(){
+    var a = async function named(x) { return x * 3; };
+    return a.toString() === "async function named(x) { return x * 3; }";
+});
+
+testFeature("fn source - async arrow",function(){
+    var a = async (x) => x * 2;
+    return a.toString() === "async (x) => x * 2";
+});
+
+testFeature("fn source - async arrow with await",function(){
+    var a = async (x) => { var y = await Promise.resolve(x); return y + 1; };
+    return a.toString() === "async (x) => { var y = await Promise.resolve(x); return y + 1; }";
+});
+
+testFeature("fn source - async decl with await body",function(){
+    async function fetchy(n) { var v = await Promise.resolve(n); return v * 2; }
+    return fetchy.toString() === "async function fetchy(n) { var v = await Promise.resolve(n); return v * 2; }";
+});
+
+/* Functions defined INSIDE async function bodies. Previously broken: the
+   async-to-regenerator rewrite copies the body verbatim and clobbered any
+   inner-fn wrappers. Fix: fn-source runs on every pass (not just pass 0),
+   skipping the prepended polyfill prefix, so inner arrows/functions get
+   wrapped after async lowering has finished. */
+
+testFeature("fn source - arrow defined inside async body",function(){
+    var captured;
+    async function outer() {
+        var inner = () => 42;
+        captured = inner;
+    }
+    outer();
+    return captured.toString() === "() => 42";
+});
+
+testFeature("fn source - function expr defined inside async body",function(){
+    var captured;
+    async function outer() {
+        captured = function named() { return 7; };
+    }
+    outer();
+    return captured.toString() === "function named() { return 7; }";
+});
+
+testFeature("fn source - arrow in doubly-nested async",function(){
+    var captured;
+    async function outer() {
+        async function inner() {
+            captured = () => "deep";
+        }
+        inner();
+    }
+    outer();
+    return captured && captured.toString() === '() => "deep"';
+});
+
+testFeature("fn source - arrow defined inside generator body",function(){
+    var captured;
+    function* gen() {
+        var inner = () => 99;
+        captured = inner;
+        yield 1;
+    }
+    var it = gen(); it.next();
+    return captured.toString() === "() => 99";
+});
+
 /*
 // TODO: find a working polyfill
 testFeature("Internationalization",function(){

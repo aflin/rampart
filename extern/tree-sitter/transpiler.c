@@ -188,12 +188,14 @@ typedef struct {
 static int _tp_fn_sources = 1;
 void transpile_set_fn_sources(int on) { _tp_fn_sources = on ? 1 : 0; }
 
-/* Set to the current pass index by transpile_code(). The fn-source rewriter
-   only runs on pass 0 — on later passes the prepended polyfill text is part
-   of src and we don't want to walk into it. User-code wraps emitted on pass
-   0 are detected via is_wrapped/is_decl_already_attached if they ever show
-   up in later passes. */
+/* Set to the current pass index by transpile_code(). */
 static int _tp_pass_idx = 0;
+
+/* On pass >= 1, src begins with the polyfill prefix prepended in pass 0. Any
+   function whose range is inside this prefix is part of the polyfills and
+   must NOT be wrapped by fn-source. transpile_code() detects the prefix end
+   offset in src at the top of each pass and stores it here. */
+static size_t _tp_polyfill_prefix_len = 0;
 
 
 polyfills allpolys[] = {
@@ -4165,7 +4167,14 @@ static char *_build_regenerator_switch_body(const char *src, TSNode body)
             }
             else if (is_var_decl && !has_await)
             {
-                // Emit as assignments without var/let/const keyword
+                // Emit as assignments without var/let/const keyword.
+                // Preserve leading whitespace (newlines) for line numbering —
+                // _emit_var_decl_as_assignments starts at the first
+                // declarator and would otherwise collapse the stmt onto the
+                // preceding line of the output.
+                size_t stmt_s = ts_node_start_byte(stmt);
+                if (ss < stmt_s)
+                    rp_string_putsn(out, src + ss, stmt_s - ss);
                 _emit_var_decl_as_assignments(out, src, stmt);
             }
             else if (!has_await && next_has_await && i == 0)
@@ -8043,6 +8052,8 @@ static int rewrite_attach_fn_source(EditList *edits, const char *src, TSNode nod
        is_named first, and also require a `body` field so we don't grab
        keyword-only nodes that happen to share a type name. */
     if (!ts_node_is_named(node)) return 0;
+    /* Skip anything inside the prepended polyfill prefix (pass >= 1). */
+    if (ts_node_end_byte(node) <= _tp_polyfill_prefix_len) return 0;
     const char *t = ts_node_type(node);
     int is_decl = (strcmp(t, "function_declaration") == 0 ||
                    strcmp(t, "generator_function_declaration") == 0);
@@ -8082,9 +8093,6 @@ static int rewrite_attach_fn_source(EditList *edits, const char *src, TSNode nod
 
         add_edit_take_ownership(edits, ne, ne, rp_string_steal(ins), claimed);
         ins = rp_string_free(ins);
-        /* Don't claim the full function range — our edits are zero-width
-           inserts at [ns,ns]/[ne,ne] and compose cleanly with whole-function
-           replacements (e.g. async/arrow) and inner-body rewrites. */
         return 1;
     }
 
@@ -8167,11 +8175,12 @@ RP_ParseRes transpiler_rewrite_pass(EditList *edits, const char *src, size_t src
         }
 
         /* Attach original pre-transpile function source so toString can return
-           it. Only runs on pass 0 — on subsequent passes the transpiled src
-           already contains prepended polyfill text that we must not walk
-           into. Zero-width inserts at [ns,ns]/[ne,ne] compose with any
-           same-node replace (async/arrow) via cmp_desc tie-break. */
-        if (_tp_fn_sources && _tp_pass_idx == 0)
+           it. Runs on every pass — on pass 1+ this wraps functions that were
+           copied verbatim out of an async/generator body-rewrite (so the
+           original-source text of nested arrows/fns is preserved). Functions
+           inside the prepended polyfill text are skipped via the range check
+           below against _tp_polyfill_prefix_len. */
+        if (_tp_fn_sources)
         {
             int saw = rewrite_attach_fn_source(edits, src, n, &claimed, overlaps);
             if (saw)
@@ -8539,6 +8548,36 @@ static RP_ParseRes transpile_code(const char *src, size_t src_len, int printTree
 
         _tp_pass_idx = npasses;
         npasses++;
+
+        /* Compute polyfill-prefix length for this pass's src so fn-source
+           skips functions that are part of the prepended polyfill preamble.
+           Each preamble starts with "if(!global._TrN_Sp)" and ends with the
+           literal ";_TrN_Sp.load();". When later passes detect additional
+           polyfills, apply_edits prepends a SECOND preamble ahead of the
+           first — we loop to skip all consecutive preambles. */
+        _tp_polyfill_prefix_len = 0;
+        {
+            const char *poly_prefix = "if(!global._TrN_Sp)";
+            size_t poly_prefix_sz = strlen(poly_prefix);
+            const char *end_marker = ";_TrN_Sp.load();";
+            size_t end_sz = strlen(end_marker);
+            size_t off = 0;
+            /* allow shebang line to precede the preamble */
+            if (src_len > 2 && src[0] == '#' && src[1] == '!')
+            {
+                const char *nl = memchr(src, '\n', src_len);
+                if (nl) off = (size_t)(nl + 1 - src);
+            }
+            for (;;)
+            {
+                if (off + poly_prefix_sz > src_len) break;
+                if (memcmp(src + off, poly_prefix, poly_prefix_sz) != 0) break;
+                const char *hit = memmem(src + off, src_len - off, end_marker, end_sz);
+                if (!hit) break;
+                off = (size_t)(hit - src) + end_sz;
+                _tp_polyfill_prefix_len = off;
+            }
+        }
 
         if (npasses > MAX_PASSES)
         {
