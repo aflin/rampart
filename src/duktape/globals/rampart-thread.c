@@ -1293,6 +1293,11 @@ void put_to_clipboard(duk_context *ctx, duk_idx_t val_idx, char *key)
     duk_put_prop_string(cpctx, -2, key);
     //cpctx: [ cpctx_global_stash(with-holder) ]
 
+    /* Clear the ptr->copied-array cache */
+    duk_push_global_object(cpctx);
+    duk_del_prop_string(cpctx, -1, DUK_HIDDEN_SYMBOL("arrRefPtr"));
+    duk_pop(cpctx);
+
     RP_EMPTY_STACK(cpctx);
     //cpctx: []
 
@@ -1354,6 +1359,11 @@ static duk_ret_t _thread_get_del(duk_context *ctx, char *key, int del)
     duk_push_object(ctx);
     rpthr_copy_obj(cpctx, ctx, 0, 0);
     rpthr_clean_obj(cpctx, ctx);
+
+    /* Clear the ptr->copied-array cache */
+    duk_push_global_object(ctx);
+    duk_del_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("arrRefPtr"));
+    duk_pop(ctx);
 
     if(del)
     {
