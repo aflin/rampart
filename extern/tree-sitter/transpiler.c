@@ -120,6 +120,14 @@ static int cmp_desc(const void *a, const void *b)
         return 1; // sort by start descending
     if (ea->start > eb->start)
         return -1;
+    /* Same start: apply wider (larger-end) edit first. Needed for the
+       fn-source rewriter where an [ns,ns] insert-prefix coexists with a
+       [ns,ne] replace (arrow/async) — replace must land before the insert
+       so the prefix ends up outside, not inside, the replacement. */
+    if (ea->end < eb->end)
+        return 1;
+    if (ea->end > eb->end)
+        return -1;
     return 0;
 }
 
@@ -174,6 +182,18 @@ typedef struct {
 #define BASE_PF     (1<<6)  // ensures _TrN_Sp preamble is emitted even with no specific polyfill
 #define ES2017_PF   (1<<7)  // Object.entries, padStart/padEnd, getOwnPropertyDescriptors
 #define COLLECT_PF  (1<<8)  // Set, Map, WeakSet, WeakMap polyfills
+#define FN_SOURCE_PF (1<<9) // _TrN_Sp._fs + Function.prototype.toString override
+
+/* toggled from outside via transpile_set_fn_sources(); default on */
+static int _tp_fn_sources = 1;
+void transpile_set_fn_sources(int on) { _tp_fn_sources = on ? 1 : 0; }
+
+/* Set to the current pass index by transpile_code(). The fn-source rewriter
+   only runs on pass 0 — on later passes the prepended polyfill text is part
+   of src and we don't want to walk into it. User-code wraps emitted on pass
+   0 are detected via is_wrapped/is_decl_already_attached if they ever show
+   up in later passes. */
+static int _tp_pass_idx = 0;
 
 
 polyfills allpolys[] = {
@@ -221,6 +241,16 @@ polyfills allpolys[] = {
         "if(!String.prototype.padEnd){String.prototype.padEnd=function(n,c){c=c||' ';var s=String(this);while(s.length<n)s=s+c;return s.slice(0,n);};}"
         "if(!Object.getOwnPropertyDescriptors){Object.getOwnPropertyDescriptors=function(o){var k=Object.getOwnPropertyNames(o),r={},i;for(i=0;i<k.length;i++)r[k[i]]=Object.getOwnPropertyDescriptor(o,k[i]);if(Object.getOwnPropertySymbols){var s=Object.getOwnPropertySymbols(o);for(i=0;i<s.length;i++)r[s[i]]=Object.getOwnPropertyDescriptor(o,s[i]);}return r;};}",
         0, (uint32_t)ES2017_PF },
+    {
+        /* Attach original pre-transpile source to functions and make toString
+           return it when present. Note: duktape puts toString/call/apply/bind
+           on an internal ecmascript/native function prototype (the actual
+           `Object.getPrototypeOf(fn)`), NOT on Function.prototype — so we
+           override there. Native/bound functions without __source__ fall
+           through to the built-in. */
+        "_TrN_Sp._fs=function(fn,src){if(typeof fn==='function'){try{Object.defineProperty(fn,'__source__',{value:src,configurable:true,writable:false,enumerable:false});}catch(e){}}return fn;};"
+        "if(!_TrN_Sp._origToString){var _fnp=Object.getPrototypeOf(function(){});_TrN_Sp._origToString=_fnp.toString;_fnp.toString=function(){if(this&&typeof this.__source__==='string')return this.__source__;return _TrN_Sp._origToString.call(this);};}",
+        0, (uint32_t)FN_SOURCE_PF },
     { NULL, 0}
 };
 
@@ -7893,6 +7923,190 @@ static int rewrite_block_scoped_functions(EditList *edits, const char *src, TSNo
     return 1;
 }
 
+/* Emit a JS string literal into `out` covering src[s..e].
+   Escapes backslash, double-quote, and C0 control chars; passes UTF-8 through. */
+static void emit_js_string_literal(rp_string *out, const char *src, size_t s, size_t e)
+{
+    rp_string_puts(out, "\"");
+    for (size_t i = s; i < e; i++)
+    {
+        unsigned char c = (unsigned char)src[i];
+        switch (c)
+        {
+            case '\\': rp_string_puts(out, "\\\\"); break;
+            case '"':  rp_string_puts(out, "\\\""); break;
+            case '\n': rp_string_puts(out, "\\n"); break;
+            case '\r': rp_string_puts(out, "\\r"); break;
+            case '\t': rp_string_puts(out, "\\t"); break;
+            case '\b': rp_string_puts(out, "\\b"); break;
+            case '\f': rp_string_puts(out, "\\f"); break;
+            case '\v': rp_string_puts(out, "\\v"); break;
+            case '\0': rp_string_puts(out, "\\u0000"); break;
+            /* U+2028 / U+2029 LINE/PARAGRAPH SEPARATOR: legal as raw chars in
+               string literals in ES2019+, but stay safe and escape the 3-byte
+               UTF-8 sequences E2 80 A8 / E2 80 A9. */
+            default:
+                if (c == 0xE2 && i + 2 < e
+                    && (unsigned char)src[i+1] == 0x80
+                    && ((unsigned char)src[i+2] == 0xA8 || (unsigned char)src[i+2] == 0xA9))
+                {
+                    rp_string_puts(out, (unsigned char)src[i+2] == 0xA8 ? "\\u2028" : "\\u2029");
+                    i += 2;
+                }
+                else if (c < 0x20)
+                {
+                    char buf[8];
+                    snprintf(buf, sizeof(buf), "\\u%04X", c);
+                    rp_string_puts(out, buf);
+                }
+                else
+                {
+                    rp_string_putsn(out, (const char *)&c, 1);
+                }
+                break;
+        }
+    }
+    rp_string_puts(out, "\"");
+}
+
+/* Return 1 if the expression `node` is already the first argument of a
+   _TrN_Sp._fs(...) call — used across passes to avoid double-wrapping
+   function/arrow expressions. */
+static int is_wrapped_fn_source(const char *src, TSNode node)
+{
+    TSNode parent = ts_node_parent(node);
+    if (ts_node_is_null(parent)) return 0;
+    /* The function is the first argument of the call, so parent is `arguments`
+       (i.e. the call's argument list) — walk one more up to find call_expression. */
+    TSNode grand = ts_node_parent(parent);
+    if (ts_node_is_null(grand)) return 0;
+    const char *gt = ts_node_type(grand);
+    if (strcmp(gt, "call_expression") != 0) return 0;
+    TSNode callee = ts_node_child_by_field_name(grand, "function", 8);
+    if (ts_node_is_null(callee)) return 0;
+    if (strcmp(ts_node_type(callee), "member_expression") != 0) return 0;
+    size_t cs = ts_node_start_byte(callee), ce = ts_node_end_byte(callee);
+    if (ce - cs == 11 && memcmp(src + cs, "_TrN_Sp._fs", 11) == 0) return 1;
+    return 0;
+}
+
+/* For function_declaration: look at the immediately-following sibling to see if
+   it's already `_TrN_Sp._fs(<name>, ...);`. If so, we've wrapped this one on a
+   prior pass — skip. */
+static int is_decl_already_attached(const char *src, TSNode decl, const char *name_s, size_t name_len)
+{
+    TSNode parent = ts_node_parent(decl);
+    if (ts_node_is_null(parent)) return 0;
+    uint32_t nc = ts_node_child_count(parent);
+    /* find decl's index among children */
+    int idx = -1;
+    for (uint32_t i = 0; i < nc; i++)
+    {
+        TSNode kid = ts_node_child(parent, i);
+        if (ts_node_eq(kid, decl)) { idx = (int)i; break; }
+    }
+    if (idx < 0) return 0;
+    /* scan forward past ';' tokens for next statement */
+    for (uint32_t i = (uint32_t)idx + 1; i < nc; i++)
+    {
+        TSNode sib = ts_node_child(parent, i);
+        const char *st = ts_node_type(sib);
+        if (strcmp(st, ";") == 0 || strcmp(st, "empty_statement") == 0) continue;
+        if (strcmp(st, "expression_statement") != 0) return 0;
+        TSNode expr = ts_node_named_child(sib, 0);
+        if (ts_node_is_null(expr)) return 0;
+        if (strcmp(ts_node_type(expr), "call_expression") != 0) return 0;
+        TSNode callee = ts_node_child_by_field_name(expr, "function", 8);
+        if (ts_node_is_null(callee)) return 0;
+        if (strcmp(ts_node_type(callee), "member_expression") != 0) return 0;
+        size_t cs = ts_node_start_byte(callee), ce = ts_node_end_byte(callee);
+        if (!(ce - cs == 11 && memcmp(src + cs, "_TrN_Sp._fs", 11) == 0)) return 0;
+        TSNode args = ts_node_child_by_field_name(expr, "arguments", 9);
+        if (ts_node_is_null(args)) return 0;
+        TSNode first = ts_node_named_child(args, 0);
+        if (ts_node_is_null(first)) return 0;
+        if (strcmp(ts_node_type(first), "identifier") != 0) return 0;
+        size_t is = ts_node_start_byte(first), ie = ts_node_end_byte(first);
+        if (ie - is == name_len && memcmp(src + is, name_s, name_len) == 0) return 1;
+        return 0;
+    }
+    return 0;
+}
+
+/* Capture original pre-transpile function source and emit a _TrN_Sp._fs wrapper.
+   Claims the node range so other function rewriters defer to the next pass. */
+static int rewrite_attach_fn_source(EditList *edits, const char *src, TSNode node, RangeList *claimed,
+                                    int overlaps)
+{
+    /* tree-sitter also emits anonymous keyword nodes whose type is "function"
+       or "function_expression" — those would match the strcmps below. Gate on
+       is_named first, and also require a `body` field so we don't grab
+       keyword-only nodes that happen to share a type name. */
+    if (!ts_node_is_named(node)) return 0;
+    const char *t = ts_node_type(node);
+    int is_decl = (strcmp(t, "function_declaration") == 0 ||
+                   strcmp(t, "generator_function_declaration") == 0);
+    int is_expr = (strcmp(t, "function_expression") == 0 ||
+                   strcmp(t, "function") == 0 ||
+                   strcmp(t, "arrow_function") == 0 ||
+                   strcmp(t, "generator_function_expression") == 0 ||
+                   strcmp(t, "generator_function") == 0);
+    if (!is_decl && !is_expr) return 0;
+    if (ts_node_is_null(ts_node_child_by_field_name(node, "body", 4))) return 0;
+
+    /* Skip if we've already wrapped this node in a previous pass. */
+    if (is_expr && is_wrapped_fn_source(src, node)) return 0;
+
+    size_t ns = ts_node_start_byte(node), ne = ts_node_end_byte(node);
+
+    if (is_decl)
+    {
+        TSNode name = ts_node_child_by_field_name(node, "name", 4);
+        if (ts_node_is_null(name)) return 0; /* skip anonymous default-export decls */
+        size_t nms = ts_node_start_byte(name), nme = ts_node_end_byte(name);
+
+        if (is_decl_already_attached(src, node, src + nms, nme - nms)) return 0;
+
+        if (overlaps) return 1;
+
+        rp_string *lit = rp_string_new(ne - ns + 32);
+        emit_js_string_literal(lit, src, ns, ne);
+
+        rp_string *ins = rp_string_new(ne - ns + 64);
+        rp_string_puts(ins, ";_TrN_Sp._fs(");
+        rp_string_putsn(ins, src + nms, nme - nms);
+        rp_string_puts(ins, ",");
+        rp_string_putsn(ins, lit->str, lit->len);
+        rp_string_puts(ins, ");");
+        lit = rp_string_free(lit);
+
+        add_edit_take_ownership(edits, ne, ne, rp_string_steal(ins), claimed);
+        ins = rp_string_free(ins);
+        /* Don't claim the full function range — our edits are zero-width
+           inserts at [ns,ns]/[ne,ne] and compose cleanly with whole-function
+           replacements (e.g. async/arrow) and inner-body rewrites. */
+        return 1;
+    }
+
+    /* Expression form: wrap with _TrN_Sp._fs(<expr>, "<src>"). */
+    if (overlaps) return 1;
+    {
+        rp_string *lit = rp_string_new(ne - ns + 32);
+        emit_js_string_literal(lit, src, ns, ne);
+
+        rp_string *tail = rp_string_new(ne - ns + 16);
+        rp_string_puts(tail, ",");
+        rp_string_putsn(tail, lit->str, lit->len);
+        rp_string_puts(tail, ")");
+        lit = rp_string_free(lit);
+
+        add_edit(edits, ns, ns, "_TrN_Sp._fs(", claimed);
+        add_edit_take_ownership(edits, ne, ne, rp_string_steal(tail), claimed);
+        tail = rp_string_free(tail);
+    }
+    return 1;
+}
+
 RP_ParseRes transpiler_rewrite_pass(EditList *edits, const char *src, size_t src_len, TSNode root,
                                     uint32_t *polysneeded, int *unresolved, int no_program_wrap)
 {
@@ -7950,6 +8164,18 @@ RP_ParseRes transpiler_rewrite_pass(EditList *edits, const char *src, size_t src
         if (!handled && (strcmp(nt, "string") == 0 || strcmp(nt, "template_literal") == 0))
         {
             handled = rewrite_raw_node(edits, src, n, &claimed, overlaps);
+        }
+
+        /* Attach original pre-transpile function source so toString can return
+           it. Only runs on pass 0 — on subsequent passes the transpiled src
+           already contains prepended polyfill text that we must not walk
+           into. Zero-width inserts at [ns,ns]/[ne,ne] compose with any
+           same-node replace (async/arrow) via cmp_desc tie-break. */
+        if (_tp_fn_sources && _tp_pass_idx == 0)
+        {
+            int saw = rewrite_attach_fn_source(edits, src, n, &claimed, overlaps);
+            if (saw)
+                *polysneeded |= FN_SOURCE_PF;
         }
 
         /* class transpile produces functions, and then in pass2, handle them */
@@ -8274,6 +8500,8 @@ static RP_ParseRes transpile_code(const char *src, size_t src_len, int printTree
     if (!track_polys)
         polysdone = 0;
 
+    _tp_pass_idx = 0;
+
     while (unresolved)
     {
         parser = ts_parser_new();
@@ -8309,6 +8537,7 @@ static RP_ParseRes transpile_code(const char *src, size_t src_len, int printTree
             }
         }
 
+        _tp_pass_idx = npasses;
         npasses++;
 
         if (npasses > MAX_PASSES)

@@ -1547,9 +1547,11 @@ static char * load_polyfill(duk_context *ctx, int setting)
     return NULL;
 }
 
-static char *checkuse(char *src)
+static char *checkuse(char *src, char **opt_out)
 {
     char *s=src, *uline, *ret=NULL;
+
+    if(opt_out) *opt_out = NULL;
 
     /* skip comments at top of file */
     while(isspace(*s)) s++;
@@ -1584,7 +1586,8 @@ static char *checkuse(char *src)
             s++;
         p=s;
 
-        while(p && !isspace(*p)  && *p!='"')
+        /* directive ends at whitespace, quote, or ':' (for :{opts} form) */
+        while(p && !isspace(*p) && *p!='"' && *p!=':')
             p++;
         c=*p;
         if(!c)
@@ -1592,6 +1595,33 @@ static char *checkuse(char *src)
         *p='\0';
         ret=strdup(s);
         *p=c;
+
+        /* optional :{ ... } block after directive */
+        if(opt_out && c==':')
+        {
+            char *os, *oe;
+            os = p + 1;
+            while(isspace(*os)) os++;
+            if(*os == '{')
+            {
+                int depth = 0;
+                oe = os;
+                while(*oe && *oe != '"' && *oe != '\n')
+                {
+                    if(*oe == '{') depth++;
+                    else if(*oe == '}') { depth--; if(depth==0) { oe++; break; } }
+                    oe++;
+                }
+                if(depth == 0 && oe > os)
+                {
+                    size_t olen = oe - os;
+                    *opt_out = (char *)malloc(olen + 1);
+                    memcpy(*opt_out, os, olen);
+                    (*opt_out)[olen] = '\0';
+                }
+            }
+        }
+
         /* replace "use xxx" line with spaces, to preserve line nums */
         while (*uline && *uline!='\n') *uline++ = ' ';
         return(ret);
@@ -1613,16 +1643,48 @@ int rp_have_promise(duk_context *ctx)
     return ret;
 }
 
+/* Parse a single boolean option `name: true|false` from an options string.
+   Returns 1 if found (and sets *out), 0 otherwise. Minimal scan — accepts
+   unquoted identifier keys as used in the "use transpiler:{...}" form. */
+static int parse_bool_opt(const char *opts, const char *name, int *out)
+{
+    if (!opts) return 0;
+    size_t nlen = strlen(name);
+    const char *p = opts;
+    while ((p = strstr(p, name)) != NULL)
+    {
+        /* require word boundary before name */
+        if (p != opts)
+        {
+            char b = *(p - 1);
+            if (isalnum((unsigned char)b) || b == '_' || b == '$') { p += nlen; continue; }
+        }
+        const char *q = p + nlen;
+        /* require non-identifier char after */
+        if (isalnum((unsigned char)*q) || *q == '_' || *q == '$') { p = q; continue; }
+        while (isspace((unsigned char)*q)) q++;
+        if (*q != ':') { p = q; continue; }
+        q++;
+        while (isspace((unsigned char)*q)) q++;
+        if (strncmp(q, "true", 4) == 0) { *out = 1; return 1; }
+        if (strncmp(q, "false", 5) == 0) { *out = 0; return 1; }
+        p = q;
+    }
+    return 0;
+}
+
 RP_ParseRes rp_get_transpiled(char *src, int *is_tickified)
 {
     RP_ParseRes ret = {0};
+    char *opts = NULL;
+    int fn_sources = 1; /* default on */
 
     size_t src_sz = strlen(src);
 
     if(!duk_rp_globaltranspile)
     {
         /* check for "use transpiler" */
-        char *use = checkuse(src);
+        char *use = checkuse(src, &opts);
 
         if(!use)
             goto do_tickify;
@@ -1631,11 +1693,19 @@ RP_ParseRes rp_get_transpiled(char *src, int *is_tickified)
         else if( strcmp("transpiler", use) != 0)
         {
             free(use);
+            if(opts) free(opts);
             goto do_tickify;
         }
         if(use)
             free(use);
     }
+
+    if (opts)
+    {
+        parse_bool_opt(opts, "functionSources", &fn_sources);
+        free(opts);
+    }
+    transpile_set_fn_sources(fn_sources);
 
     ret = transpile((const char *)src, src_sz, 0);
     if(is_tickified)
@@ -1843,7 +1913,7 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
             return NULL;
         opt=main_babel_opt;
 
-        char *use = checkuse(src);
+        char *use = checkuse(src, NULL);
 
         if(use && strcmp("transpiler", use) != 0)
         {

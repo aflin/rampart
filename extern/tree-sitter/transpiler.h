@@ -51,6 +51,11 @@ RP_ParseRes transpile_standalone(const char *src, size_t src_len, int printTree)
 /* like transpile() but skips program-level IIFE wrapping (for eval'd code) */
 RP_ParseRes transpile_eval(const char *src, size_t src_len, int printTree);
 
+/* Toggle emission of per-function original source (attached via __source__
+   and returned by Function.prototype.toString). Default: on. Non-reentrant —
+   set before calling transpile*(). */
+void transpile_set_fn_sources(int on);
+
 void freeParseRes(RP_ParseRes *res);
 char *stealParseRes(RP_ParseRes *res);
 
