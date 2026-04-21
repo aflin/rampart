@@ -234,6 +234,7 @@ RPSOCK {
     uint32_t                thiskey;        // a key for stashing a non-disappearing ref to 'this' in stash
     uint32_t                open_conn;      // number of open connections for server, whether opened and incremented for client.
     uint32_t                max_conn;       // maximum number of open connections for server, after which we start dropping connections
+    int                     tls_upgrading;  // 1 while startTls() is waiting for TLS handshake to complete
 };
 
 int rp_put_gs_object(duk_context *ctx, const char *objname, const char *key);
@@ -265,6 +266,7 @@ static RPSOCK * new_sockinfo(duk_context *ctx)
     args->parent=NULL;
     args->post_dns_cb=NULL;
     args->fd=-1;
+    args->tls_upgrading=0;
 
     sprintf(keystr, "%d", (int) args->thiskey);
     rp_put_gs_object(ctx, "connkeymap", keystr );
@@ -2967,6 +2969,16 @@ static duk_ret_t socket_destroy(duk_context *ctx)
     sinfo = (RPSOCK *) duk_get_pointer(ctx, -1);
     duk_pop(ctx);
 
+    /* If the socket already went through socket_cleanup (e.g. the server
+       closed first), the prop exists but is a NULL pointer. Nothing more to
+       do — just mark destroyed and return. Without this check we'd NULL-deref
+       sinfo->ctx below. */
+    if (!sinfo) {
+        duk_push_true(ctx);
+        duk_put_prop_string(ctx, -2, "destroyed");
+        return 1;
+    }
+
     REMALLOC(dinfo, sizeof(DESTROYINFO));
     dinfo->ctx = sinfo->ctx;
     dinfo->thisptr = sinfo->thisptr;
@@ -3071,6 +3083,171 @@ static duk_ret_t socket_write(duk_context *ctx)
     return 1;
 }
 
+
+/* socket.startTls([opts], [callback])
+ *   opts.hostname  — SNI + cert-verify name (defaults to connect's host)
+ *   opts.insecure  — true skips cert verification
+ *   opts.cacert    — path to CA bundle file
+ *   opts.capath    — path to CA directory
+ * The callback (or a .on('upgrade', cb) handler) receives (err, info) where
+ *   err  = null on success, string on failure
+ *   info = { cipher, protocol } on success
+ * After a successful upgrade all sock.write()s are encrypted and all 'data'
+ * events carry decrypted bytes. The socket object is unchanged.
+ */
+static duk_ret_t socket_startTls(duk_context *ctx)
+{
+    RPSOCK *sinfo;
+    const char *hostname = NULL;
+    int insecure = 0;
+    const char *ca_path = NET_CA_PATH;
+    const char *ca_file = rp_net_def_bundle;
+    struct bufferevent *filter_bev;
+    duk_idx_t opts_idx = -1, cb_idx = -1;
+
+    if (!ca_path || !*ca_path) ca_path = NULL;
+    if (!ca_file || !*ca_file) ca_file = NULL;
+
+    /* Parse args: startTls(), startTls(fn), startTls(opts), startTls(opts, fn) */
+    if (duk_is_function(ctx, 0))
+        cb_idx = 0;
+    else if (duk_is_object(ctx, 0)) {
+        opts_idx = 0;
+        if (duk_is_function(ctx, 1)) cb_idx = 1;
+    }
+
+    duk_push_this(ctx);
+
+    if (!duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("sinfo")))
+        RP_THROW(ctx, "socket.startTls: socket is not open");
+    sinfo = (RPSOCK *) duk_get_pointer(ctx, -1);
+    duk_pop(ctx);
+    if (!sinfo || !sinfo->bev)
+        RP_THROW(ctx, "socket.startTls: socket is not open");
+    if (sinfo->ssl)
+        RP_THROW(ctx, "socket.startTls: socket is already using TLS");
+    if (sinfo->tls_upgrading)
+        RP_THROW(ctx, "socket.startTls: TLS upgrade already in progress");
+
+    /* Pick up options. hostname defaults to the connect() host. */
+    if (opts_idx >= 0) {
+        if (duk_get_prop_string(ctx, opts_idx, "hostname"))
+            hostname = duk_get_string(ctx, -1);
+        duk_pop(ctx);
+        if (duk_get_prop_string(ctx, opts_idx, "insecure"))
+            insecure = duk_get_boolean(ctx, -1);
+        duk_pop(ctx);
+        if (duk_get_prop_string(ctx, opts_idx, "cacert")) {
+            ca_file = duk_get_string(ctx, -1);
+            ca_path = NULL;
+        }
+        duk_pop(ctx);
+        if (duk_get_prop_string(ctx, opts_idx, "capath")) {
+            ca_path = duk_get_string(ctx, -1);
+            ca_file = NULL;
+        }
+        duk_pop(ctx);
+    }
+    if (!hostname) {
+        if (duk_get_prop_string(ctx, -1, "hostname"))
+            hostname = duk_get_string(ctx, -1);
+        duk_pop(ctx);
+    }
+    if (!hostname) {
+        if (duk_get_prop_string(ctx, -1, "host"))
+            hostname = duk_get_string(ctx, -1);
+        duk_pop(ctx);
+    }
+
+    /* Persist the insecure flag on 'this' so sock_eventcb's upgrade path
+       honors the same policy (it reads 'insecure' from this). */
+    duk_push_boolean(ctx, insecure);
+    duk_put_prop_string(ctx, -2, "insecure");
+
+    /* If a callback was supplied, wire it as once('upgrade'). */
+    if (cb_idx >= 0) {
+        duk_push_true(ctx);
+        duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("once"));
+        duk_dup(ctx, cb_idx);
+        duk_rp_net_on(ctx, "socket.startTls", "upgrade", duk_get_top_index(ctx), -2);
+        duk_pop(ctx);
+    }
+
+    /* Set up SSL_CTX (mirrors the client TLS path in make_sock_conn). */
+    if (duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("ssl_ctx")))
+        sinfo->ssl_ctx = duk_get_pointer(ctx, -1);
+    duk_pop(ctx);
+
+    if (!sinfo->ssl_ctx) {
+        sinfo->ssl_ctx = SSL_CTX_new(TLS_client_method());
+        if (!sinfo->ssl_ctx)
+            RP_THROW(ctx, "socket.startTls: SSL_CTX_new failed");
+        duk_push_pointer(ctx, sinfo->ssl_ctx);
+        duk_put_global_string(ctx, DUK_HIDDEN_SYMBOL("ssl_ctx"));
+    }
+
+    if (!insecure) {
+        SSL_CTX_set_options(sinfo->ssl_ctx, SSL_OP_ALL);
+        if (SSL_CTX_load_verify_locations(sinfo->ssl_ctx, ca_file, ca_path) < 1) {
+            if (SSL_CTX_load_verify_locations(sinfo->ssl_ctx, NULL, ca_path) < 1)
+                RP_THROW(ctx, "socket.startTls: failed to load CA certificates");
+        }
+    }
+
+    sinfo->ssl = SSL_new(sinfo->ssl_ctx);
+    if (!sinfo->ssl)
+        RP_THROW(ctx, "socket.startTls: SSL_new failed");
+
+    if (hostname && !SSL_set_tlsext_host_name(sinfo->ssl, hostname)) {
+        SSL_free(sinfo->ssl);
+        sinfo->ssl = NULL;
+        RP_THROW(ctx, "socket.startTls: failed to set SNI hostname");
+    }
+
+    /* Extract the raw fd from the current plaintext bev, detach it so the
+       old bev can be freed without closing the socket, then rebuild the
+       bev as a TLS one wrapping the same fd. This uses the same code path
+       as a tls:true connect, which is known to work. Avoids the filter
+       machinery entirely. */
+    {
+        int fd = bufferevent_getfd(sinfo->bev);
+        if (fd < 0) {
+            SSL_free(sinfo->ssl);
+            sinfo->ssl = NULL;
+            RP_THROW(ctx, "socket.startTls: could not get socket fd");
+        }
+
+        /* Silence any pending callbacks on the old bev, then detach the fd. */
+        bufferevent_setcb(sinfo->bev, NULL, NULL, NULL, NULL);
+        bufferevent_setfd(sinfo->bev, -1);
+        bufferevent_free(sinfo->bev);
+        sinfo->bev = NULL;
+
+        filter_bev = bufferevent_openssl_socket_new(
+            sinfo->base, fd, sinfo->ssl,
+            BUFFEREVENT_SSL_CONNECTING,
+            BEV_OPT_CLOSE_ON_FREE
+        );
+
+        if (!filter_bev) {
+            SSL_free(sinfo->ssl);
+            sinfo->ssl = NULL;
+            close(fd);
+            RP_THROW(ctx, "socket.startTls: bufferevent_openssl_socket_new failed");
+        }
+    }
+
+    sinfo->bev = filter_bev;
+    sinfo->tls_upgrading = 1;
+
+    /* sock_eventcb will fire BEV_EVENT_CONNECTED on handshake success, or
+       BEV_EVENT_ERROR on failure. Both branches notice tls_upgrading and
+       emit "upgrade" accordingly. */
+    bufferevent_setcb(sinfo->bev, NULL, NULL, sock_eventcb, sinfo);
+    bufferevent_enable(sinfo->bev, EV_READ|EV_WRITE);
+
+    return 1;   /* return 'this' for chaining */
+}
 
 static int set_nodelay(int fd, int nodelay)
 {
@@ -3223,6 +3400,121 @@ static void sock_eventcb(struct bufferevent * bev, short events, void * arg)
         if(duk_get_prop_string(ctx, -1, "insecure"))
             insecure=duk_get_boolean(ctx, -1);
         duk_pop(ctx);
+
+        /* startTls upgrade: TLS handshake just completed on an already-connected
+           plaintext socket. Do cert verify, fire "upgrade", skip the initial
+           connect setup (local addr, timeouts, keepalive — done at connect). */
+        if (sinfo->tls_upgrading)
+        {
+            sinfo->tls_upgrading = 0;
+
+            if(!insecure && sinfo->ssl)
+            {
+                X509 *peer = SSL_get_peer_certificate(sinfo->ssl);
+                const char *vstr = NULL;
+                if (peer)
+                {
+                    long lerr = SSL_get_verify_result(sinfo->ssl);
+                    X509_free(peer);
+                    if (lerr != X509_V_OK)
+                        vstr = X509_verify_cert_error_string(lerr);
+                }
+                else
+                    vstr = "failed to retrieve peer certificate";
+
+                if (vstr)
+                {
+                    /* fire "upgrade" with err string */
+                    duk_push_string(ctx, vstr);
+                    do_callback(ctx, "upgrade", 1);
+                    /* fire normal "error" so on('error') handlers run */
+                    duk_push_heapptr(ctx, sinfo->thisptr);
+                    duk_push_string(ctx, vstr);
+                    do_callback(ctx, "error", 1);
+                    socket_cleanup(ctx, sinfo, WITH_CALLBACKS);
+                    duk_set_top(ctx, top);
+                    return;
+                }
+            }
+
+            /* record cipher on the socket object */
+            if (sinfo->ssl)
+            {
+                const char *cn = SSL_get_cipher_name(sinfo->ssl);
+                if (cn) {
+                    duk_push_string(ctx, cn);
+                    duk_put_prop_string(ctx, -2, "sslCipher");
+                }
+            }
+
+            /* enable reads/writes and re-attach callbacks on the filter bev */
+            bufferevent_enable(sinfo->bev, EV_READ|EV_WRITE);
+            bufferevent_setcb(sinfo->bev, sock_readcb, sock_writecb, sock_eventcb, sinfo);
+
+            /* fire "upgrade" with (null, info) */
+            duk_push_null(ctx);
+            duk_push_object(ctx);
+            if (sinfo->ssl)
+            {
+                const char *cn = SSL_get_cipher_name(sinfo->ssl);
+                const char *pv = SSL_get_version(sinfo->ssl);
+                STACK_OF(X509) *chain;
+                int nchain, ci;
+
+                if (cn) { duk_push_string(ctx, cn); duk_put_prop_string(ctx, -2, "cipher"); }
+                if (pv) { duk_push_string(ctx, pv); duk_put_prop_string(ctx, -2, "protocol"); }
+
+                /* peerCertChain: array of DER-encoded certs the server sent.
+                   On the client side SSL_get_peer_cert_chain is documented
+                   to include the leaf, but some builds / TLS versions omit
+                   it — so we prepend the leaf (via SSL_get_peer_certificate)
+                   if it's not already in the chain. */
+                {
+                    X509 *leaf = SSL_get_peer_certificate(sinfo->ssl);
+                    int leaf_in_chain = 0;
+
+                    chain = SSL_get_peer_cert_chain(sinfo->ssl);
+                    nchain = chain ? sk_X509_num(chain) : 0;
+
+                    if (leaf && nchain > 0) {
+                        X509 *first = sk_X509_value(chain, 0);
+                        if (first && X509_cmp(first, leaf) == 0) leaf_in_chain = 1;
+                    }
+
+                    duk_push_array(ctx);
+                    int arr_i = 0;
+
+                    if (leaf && !leaf_in_chain) {
+                        unsigned char *der = NULL;
+                        int der_len = i2d_X509(leaf, &der);
+                        if (der_len > 0 && der) {
+                            void *dbuf = duk_push_fixed_buffer(ctx, der_len);
+                            memcpy(dbuf, der, der_len);
+                            duk_put_prop_index(ctx, -2, arr_i++);
+                        }
+                        if (der) OPENSSL_free(der);
+                    }
+
+                    for (ci = 0; ci < nchain; ci++) {
+                        X509 *cert = sk_X509_value(chain, ci);
+                        unsigned char *der = NULL;
+                        int der_len = i2d_X509(cert, &der);
+                        if (der_len > 0 && der) {
+                            void *dbuf = duk_push_fixed_buffer(ctx, der_len);
+                            memcpy(dbuf, der, der_len);
+                            duk_put_prop_index(ctx, -2, arr_i++);
+                        }
+                        if (der) OPENSSL_free(der);
+                    }
+
+                    if (leaf) X509_free(leaf);   // get_peer_certificate increments refcount
+                    duk_put_prop_string(ctx, -2, "peerCertChain");
+                }
+            }
+            do_callback(ctx, "upgrade", 2);
+            duk_set_top(ctx, top);
+            return;
+        }
 
         /* count open connections for server */
         if(sinfo->parent)
@@ -3481,6 +3773,17 @@ static void sock_eventcb(struct bufferevent * bev, short events, void * arg)
                 break;
             }
         } while(0);
+
+        /* If this error interrupted a startTls handshake, notify the
+           "upgrade" listener (and its optional callback) first, then fall
+           through to the normal error path. Re-push 'this' for that path. */
+        if (sinfo->tls_upgrading)
+        {
+            sinfo->tls_upgrading = 0;
+            duk_push_string(ctx, errstr);
+            do_callback(ctx, "upgrade", 1);
+            duk_push_heapptr(ctx, sinfo->thisptr);
+        }
 
         duk_push_string(ctx, errstr);//evutil_socket_error_to_string(EVUTIL_SOCKET_ERROR()));
         do_callback(ctx, "error", 1);
@@ -5144,6 +5447,10 @@ duk_ret_t duk_open_module(duk_context *ctx)
         // socket.write()
         duk_push_c_function(ctx, socket_write, 1);
         duk_put_prop_string(ctx, -2, "write");
+
+        // socket.startTls()
+        duk_push_c_function(ctx, socket_startTls, 2);
+        duk_put_prop_string(ctx, -2, "startTls");
 
         // socket.on()
         duk_push_c_function(ctx, duk_rp_net_x_on, 2);
