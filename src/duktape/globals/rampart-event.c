@@ -410,14 +410,28 @@ void rp_jsev_doevent(evutil_socket_t fd, short events, void* arg)
 
     } while(1);
 
-    if( earg->varno > -1)
+    if( earg->varno > -1 && earg->refcount)
     {
-        if(earg->refcount)
+        int is_last;
+        RP_MLOCK(rp_ev_var_lock);
+        is_last = (--(*earg->refcount) == 0);
+        //printf("thr=%d, ref=%p refcount = %d\n",get_thread_num(), earg->refcount, *earg->refcount);
+        RP_MUNLOCK(rp_ev_var_lock);
+        if(is_last)
         {
-            RP_MLOCK(rp_ev_var_lock);
-            (*earg->refcount)--;
-            //printf("thr=%d, ref=%p refcount = %d\n",get_thread_num(), earg->refcount, *earg->refcount);
-            RP_MUNLOCK(rp_ev_var_lock);
+            /* We are the last reference holder -- evloop_insert has
+             * already released its hold.  Do the shared cleanup that
+             * rp_jsev_freevar used to do. */
+            duk_context *cleanup_ctx = thr->ctx;
+            if(cleanup_ctx)
+            {
+                size_t clsz = strlen(earg->key) + 16;
+                char clvar[clsz];
+                sprintf(clvar, "\xff%s%d", earg->key, earg->varno);
+                del_from_clipboard(cleanup_ctx, clvar);
+                duk_pop(cleanup_ctx);
+            }
+            free(earg->refcount);
         }
     }
 
@@ -490,11 +504,15 @@ static void evloop_insert(duk_context *ctx, const char *evname, const char *fnam
     timeout.tv_usec=0; 
 
     /* if triggering and we are passing a variable, keep a refcount so
-       we know when we are done using it                              */
+       we know when we are done using it.  Initialize to 1 as a hold
+       owned by this evloop_insert call -- it prevents a dispatched
+       doevent on a fast-running thread from racing us to free
+       refcount while we're still iterating the thread list.  The hold
+       is released (decremented) by the post-loop code below. */
     if(action == JSEVENT_TRIGGER && varno > -1)
     {
         REMALLOC(refcount, sizeof(int));
-        *refcount=0;
+        *refcount=1;
         //printf("ALLC %p\n", refcount);
     }
 
@@ -579,26 +597,29 @@ static void evloop_insert(duk_context *ctx, const char *evname, const char *fnam
         //if(i==4)printf("added event '%s' to loop thr=%d\n", evname, i);
     }
 
-    if(refcount && *refcount == 0)
-        free(refcount);
-    else if (refcount)
+    if (refcount)
     {
-        // refcount can be decremented to 0 and freed in other threads running rp_jsev_doevent
-        // faster than we can insert the next one.  So rather than free refcount and delete the
-        // triggervar in rp_jsev_doevent, we will insert an event to do it after all insertions
-        // are done
-        args=NULL;
-        REMALLOC(args,sizeof(JSEVARGS));
-        if(lastkey)
-            args->key=lastkey;
-        else
-            args->key=strdup(evname);
-        args->refcount = refcount;
-        args->e = event_new((get_current_thread())->base, -1, 0, rp_jsev_freevar, args);
-        args->varno=varno;
-        args->action=0; //Action not used in rp_jsev_freevar -- repurpose this as a counter
-        ev_add(args->e, &timeout);
+        /* Release our hold.  If that takes refcount to 0 it means
+         * either no threads had listeners, or every dispatched
+         * doevent already completed during the loop above -- in
+         * either case we (the triggering thread) own the cleanup.
+         * Otherwise, some still-pending doevent will be the last
+         * decrementer and handle cleanup itself (see rp_jsev_doevent). */
+        int is_last;
+        RP_MLOCK(rp_ev_var_lock);
+        is_last = (--(*refcount) == 0);
+        RP_MUNLOCK(rp_ev_var_lock);
+        if (is_last)
+        {
+            size_t clsz = strlen(evname) + 16;
+            char clvar[clsz];
+            sprintf(clvar, "\xff%s%d", evname, varno);
+            del_from_clipboard(ctx, clvar);
+            duk_pop(ctx);
+            free(refcount);
+        }
     }
+    if (lastkey) free(lastkey);
     THRUNLOCK;
 }
 

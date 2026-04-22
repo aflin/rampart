@@ -4295,6 +4295,10 @@ int main(int argc, char *argv[])
                 THRUNLOCK;
                 usleep(50000);//nchildren can change during this sleep - just fyi
             } while (nchildren || sent_finalizers);
+            /* Drain any cross-thread triggers that arrived between the
+             * last dispatch-return and now (e.g., a worker firing one
+             * final event just before its finalizer completed).  */
+            event_base_loop(mainthr->base, EVLOOP_NONBLOCK);
             //printf("FINAL EXIT main loop with %d children and %s finalizers set\n", mainthr->nchildren, (sent_finalizers?"some":"no"));
         }
     }
