@@ -1316,10 +1316,10 @@ duk_ret_t rp_thread_put(duk_context *ctx)
         RP_THROW(ctx, "thread.put: Second argument is a variable to store and must be defined");
 
     /* Put value (at index 1) to clipboard while key (at index 0)
-       is still on the stack, keeping the key pointer valid. */
+       is still on the stack, keeping the key pointer valid.  Do NOT
+       duk_remove the key before the thrwrite loop below or Duktape
+       may GC the interned string while we're still reading from it. */
     put_to_clipboard(ctx, 1, (char *)key);
-
-    duk_remove(ctx, 0);
 
     CBLOCKLOCK;
 
@@ -1335,6 +1335,8 @@ duk_ret_t rp_thread_put(duk_context *ctx)
         }
     }
     CBLOCKUNLOCK;
+
+    duk_remove(ctx, 0);   /* key no longer needed; safe to remove now */
     return 0;
 }
 
@@ -1947,6 +1949,13 @@ void rp_close_thread(RPTHR *thr)
     if(! RPTHR_TEST(thr, RPTHR_FLAG_IN_USE))
         return;
 
+    /* Drain rampart.event doevents that are queued on this thread's
+     * base but haven't dispatched yet.  Must happen while ctx and base
+     * are still valid so we can do the refcount accounting and
+     * clipboard cleanup; skipping this would leak refcount + the
+     * trigger var in the clipboard for every orphaned doevent. */
+    rp_jsev_sweep_thread(thr);
+
     thr->flags=0; //reset all flags
 
     if(thr->htctx)
@@ -2188,6 +2197,7 @@ RPTHR *rp_new_thread(uint16_t flags, duk_context *ctx)
     ret->nchildren=0;
     ret->reader=-1;
     ret->writer=-1;
+    ret->pending_jsev_head=NULL;
     if(ret->index !=0 ) //if not main thread
     {
         //set our parent thread

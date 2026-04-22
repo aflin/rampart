@@ -284,6 +284,7 @@ JSEVARGS {
     int      action;
     int      varno;
     int     *refcount;
+    JSEVARGS *next;     /* link in owning thread's pending_jsev_head list */
 };
 
 void rp_jsev_doevent(evutil_socket_t fd, short events, void* arg)
@@ -295,6 +296,19 @@ void rp_jsev_doevent(evutil_socket_t fd, short events, void* arg)
     // bug fix: changed strlen(key)+8 to strlen(key)+16 for VLA size - 2026-02-27
     size_t varname_sz = strlen(earg->key) + 16;
     char varname[varname_sz];
+
+    /* Unlink from the target thread's pending-doevents list so a
+     * later rp_jsev_sweep_thread() (called from rp_close_thread) does
+     * not try to account for us twice. */
+    RP_MLOCK(rp_ev_var_lock);
+    {
+        JSEVARGS **pp = &thr->pending_jsev_head;
+        while (*pp) {
+            if (*pp == earg) { *pp = earg->next; earg->next = NULL; break; }
+            pp = &(*pp)->next;
+        }
+    }
+    RP_MUNLOCK(rp_ev_var_lock);
 
 #define jsev_exec_func do{\
     duk_enum(ctx, -1, 0); /* [ {jsevents}, {myevent}, enum ]*/\
@@ -442,6 +456,62 @@ void rp_jsev_doevent(evutil_socket_t fd, short events, void* arg)
     free(earg);
 }
 
+/* Called from rp_close_thread with the target thread's ctx/base still
+ * alive.  Walks the thread's pending-doevents list, accounting for
+ * each as if its callback had run: unlink, event_del + event_free,
+ * decrement refcount (if any), do the shared cleanup on the last
+ * decrement, and free the doevent's own args/key/fname.  This prevents
+ * the leak that happens when a thread is closed with doevents still
+ * queued on its base that never get a chance to dispatch. */
+void rp_jsev_sweep_thread(RPTHR *thr)
+{
+    JSEVARGS *p;
+
+    if (!thr)
+        return;
+
+    RP_MLOCK(rp_ev_var_lock);
+    p = thr->pending_jsev_head;
+    thr->pending_jsev_head = NULL;
+    RP_MUNLOCK(rp_ev_var_lock);
+
+    while (p)
+    {
+        JSEVARGS *next = p->next;
+
+        /* Remove from libevent's queue before we free its arg. */
+        event_del(p->e);
+        event_free(p->e);
+
+        if (p->varno > -1 && p->refcount)
+        {
+            int is_last;
+            RP_MLOCK(rp_ev_var_lock);
+            is_last = (--(*p->refcount) == 0);
+            RP_MUNLOCK(rp_ev_var_lock);
+            if (is_last)
+            {
+                duk_context *cleanup_ctx = thr->ctx;
+                if (cleanup_ctx)
+                {
+                    size_t clsz = strlen(p->key) + 16;
+                    char clvar[clsz];
+                    sprintf(clvar, "\xff%s%d", p->key, p->varno);
+                    del_from_clipboard(cleanup_ctx, clvar);
+                    duk_pop(cleanup_ctx);
+                }
+                free(p->refcount);
+            }
+        }
+
+        free(p->key);
+        if (p->fname) free(p->fname);
+        free(p);
+
+        p = next;
+    }
+}
+
 static struct timeval fiftyms={0,50000};
 #define ev_add(a,b) do{ /*printf("event:%d - adding %p\n",__LINE__, (a));*/ event_add(a,b);}while(0)
 
@@ -585,12 +655,17 @@ static void evloop_insert(duk_context *ctx, const char *evname, const char *fnam
         args->e = event_new(base, -1, 0, rp_jsev_doevent, args);
         args->varno=varno;
         args->refcount = refcount;
+        args->next = NULL;
+        /* Under one lock: optionally bump refcount (trigger path only)
+         * and always push onto target thread's pending list so
+         * rp_jsev_sweep_thread can drain every in-flight doevent
+         * cleanly if the target thread is closed before dispatching. */
+        RP_MLOCK(rp_ev_var_lock);
         if(refcount)
-        {
-            RP_MLOCK(rp_ev_var_lock);
             (*refcount)++;
-            RP_MUNLOCK(rp_ev_var_lock);
-        }
+        args->next = thr->pending_jsev_head;
+        thr->pending_jsev_head = args;
+        RP_MUNLOCK(rp_ev_var_lock);
         //printf("event = %p, base=%p in thread %d, flag=%d, thr=%p\n", args->e, thr->base, get_thread_num(), thr->flags, thr);
         //if(!action) printf ("Adding event to thread %d, ctx %p\n", i, thr->ctx);
         ev_add(args->e, &timeout);

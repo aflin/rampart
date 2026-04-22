@@ -362,6 +362,10 @@ typedef pid_t rp_tid;
 typedef void (*rpthr_fin_cb)(void *fin_cb_arg);
 #define RPTHR struct rampart_thread_s
 
+/* Forward decl so RPTHR can carry a list of pending doevent args.
+ * Full definition lives in rampart-event.c. */
+struct jsev_args;
+
 RPTHR {
     duk_context       *ctx;         // js context paired with this thread.  One of the two below.
     duk_context       *wsctx;       // only for server threads and websocket requests
@@ -381,7 +385,15 @@ RPTHR {
     int                reader;      // reader for thread.waitfor()
     int                writer;      // writer for thread.waitfor()
     void              *evthr;       // evthr_t* for server threads (used by proxy re-dispatch)
+    struct jsev_args  *pending_jsev_head; // LIFO of pending rampart.event doevent args
 };
+
+/* Sweep any pending rampart.event doevents queued to `thr` and
+ * account for them as if they had run (decrement refcount, cleanup on
+ * last decrement), without invoking their callbacks.  Call from the
+ * thread-being-closed's own close path, BEFORE its ctx is destroyed
+ * and its event_base is freed.  Defined in rampart-event.c. */
+void rp_jsev_sweep_thread(RPTHR *thr);
 
 #define RPTHR_FLAG_IN_USE     0x01  // if struct is in use and ctxs are set up
 #define RPTHR_FLAG_THR_SAFE   0x02  // if we can execute texis or python without forking
