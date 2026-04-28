@@ -934,6 +934,29 @@ static int copy_any(duk_context *ctx, duk_context *tctx, duk_idx_t idx, int obji
             }
             duk_pop(ctx); /* enum */
             duk_pop(ctx); /* store */
+
+            /* Copy any other own properties on the source Map/Set
+               (e.g. plain assignments like `m.foo = 1` that bypass
+               .set/.add).  The internal map_store is already
+               rebuilt above; objRefId is an internal cycle marker. */
+            duk_enum(ctx, idx, DUK_ENUM_OWN_PROPERTIES_ONLY |
+                                DUK_ENUM_INCLUDE_HIDDEN |
+                                DUK_ENUM_INCLUDE_SYMBOLS |
+                                DUK_ENUM_NO_PROXY_BEHAVIOR);
+            while (duk_next(ctx, -1, 1)) {
+                const char *s = duk_get_string(ctx, -2);
+                if (s && (strcmp(s, MAP_STORE) == 0 ||
+                          strcmp(s, DUK_HIDDEN_SYMBOL("objRefId")) == 0))
+                {
+                    duk_pop_2(ctx);
+                    continue;
+                }
+                rpthr_copy(ctx, tctx, duk_get_top_index(ctx));
+                /* tctx: [..., new_map, copied_val] */
+                duk_put_prop_string(tctx, -2, s);
+                duk_pop_2(ctx); /* key, val */
+            }
+            duk_pop(ctx); /* enum */
         }
         // check if it is an array, and if we've seen it before.
         // if not, get its pointer from the main stack, copy the array, store the array indexed by that pointer

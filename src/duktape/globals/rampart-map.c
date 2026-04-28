@@ -243,7 +243,7 @@ static duk_ret_t map_iter_next(duk_context *ctx)
         /* stack: [..., result, this, store, entry] */
 
         if (kind == 0) {
-            /* entries: [key, value] */
+            /* Map entries: [key, value] */
             duk_push_array(ctx);
             duk_get_prop_string(ctx, -2, "k");
             duk_put_prop_index(ctx, -2, 0);
@@ -252,6 +252,13 @@ static duk_ret_t map_iter_next(duk_context *ctx)
         } else if (kind == 1) {
             /* keys */
             duk_get_prop_string(ctx, -1, "k");
+        } else if (kind == 3) {
+            /* Set entries: [value, value] (Set stores value in .k) */
+            duk_push_array(ctx);
+            duk_get_prop_string(ctx, -2, "k");
+            duk_put_prop_index(ctx, -2, 0);
+            duk_get_prop_string(ctx, -2, "k");
+            duk_put_prop_index(ctx, -2, 1);
         } else {
             /* values */
             duk_get_prop_string(ctx, -1, "v");
@@ -334,6 +341,12 @@ static duk_ret_t map_keys(duk_context *ctx)
 static duk_ret_t map_values(duk_context *ctx)
 {
     map_push_iterator(ctx, 2);
+    return 1;
+}
+
+static duk_ret_t set_entries(duk_context *ctx)
+{
+    map_push_iterator(ctx, 3);
     return 1;
 }
 
@@ -523,7 +536,7 @@ void duk_map_set_init(duk_context *ctx)
     duk_put_prop_string(ctx, -2, "values");
     duk_push_c_function(ctx, map_keys, 0);
     duk_put_prop_string(ctx, -2, "keys");
-    duk_push_c_function(ctx, map_entries, 0);
+    duk_push_c_function(ctx, set_entries, 0);
     duk_put_prop_string(ctx, -2, "entries");
 
     /* size getter */

@@ -1,13 +1,31 @@
-/* make printf et. al. global */
-rampart.globalize(rampart.utils);
+/* This file runs under both rampart and node:
+ *     rampart map-test.js
+ *     node    map-test.js
+ * Under rampart it additionally tests cross-thread Map/Set copy.
+ */
+
+var IS_RAMPART = (typeof global !== "undefined") && !!global.rampart;
+
+var _write;
+if (IS_RAMPART) {
+    rampart.globalize(rampart.utils);
+    _write = function(s) { printf("%s", s); fflush(stdout); };
+} else {
+    _write = function(s) { process.stdout.write(s); };
+}
+
+function _pad(s, n) {
+    s = String(s);
+    while (s.length < n) s += " ";
+    return s;
+}
 
 var _nfailed = 0;
 
 function testFeature(name, test)
 {
     var error=false;
-    printf("testing %-60s - ", name);
-    fflush(stdout);
+    _write("testing " + _pad(name, 60) + " - ");
     if (typeof test =='function'){
         try {
             test=test();
@@ -17,10 +35,10 @@ function testFeature(name, test)
         }
     }
     if(test)
-        printf("passed\n")
+        _write("passed\n");
     else
     {
-        printf(">>>>> FAILED <<<<<\n");
+        _write(">>>>> FAILED <<<<<\n");
         _nfailed++;
     }
     if(error) console.log(error);
@@ -53,6 +71,24 @@ gSetMixed.add(null);
 var gMapChain = new Map();
 gMapChain.set("a", 1).set("b", 2).set("c", 3).set("d", 4).set("e", 5);
 
+/* Map and Set with plain own properties set via direct assignment.
+   These bypass .set/.add and live as regular properties on the
+   instance (not in the internal map_store).  The thread copy must
+   preserve them. */
+var gMapWithProps = new Map();
+gMapWithProps.set("entryKey", "entryVal");
+gMapWithProps.plainProp     = "plain-string";
+gMapWithProps.numProp       = 12345;
+gMapWithProps.deepProp      = {nested: {deeper: [7, 8, 9]}};
+gMapWithProps[7]            = "indexed-prop";
+gMapWithProps["[object Object]"] = "object-stringified-key";
+
+var gSetWithProps = new Set();
+gSetWithProps.add("a"); gSetWithProps.add("b");
+gSetWithProps.label   = "labeled-set";
+gSetWithProps.payload = {flag: true};
+gSetWithProps[0]      = "indexed-set-prop";
+
 
 /* ================================================================
    Test suite — runs once in main, once in thread
@@ -60,7 +96,7 @@ gMapChain.set("a", 1).set("b", 2).set("c", 3).set("d", 4).set("e", 5);
 
 function runTests(label) {
 
-    printf("\n=== %s ===\n\n", label);
+    _write("\n=== " + label + " ===\n\n");
 
     /* ---- Map basics ---- */
 
@@ -325,33 +361,93 @@ function runTests(label) {
         var s = new Set([o1, o2, o1]);
         return s.size === 2;
     });
+
+    /* ---- Set.entries() yields [value, value] pairs (not [value, true]) ---- */
+
+    testFeature(label + " - Set.entries() yields [v,v] pairs", function() {
+        var s = new Set(["x", "y", "z"]);
+        var e = Array.from(s.entries());
+        return e.length === 3
+            && e[0][0] === "x" && e[0][1] === "x"
+            && e[1][0] === "y" && e[1][1] === "y"
+            && e[2][0] === "z" && e[2][1] === "z";
+    });
+
+    testFeature(label + " - Set.entries() iterator next()", function() {
+        var s = new Set([1, 2]);
+        var it = s.entries();
+        var n1 = it.next();
+        var n2 = it.next();
+        var n3 = it.next();
+        return !n1.done && n1.value[0] === 1 && n1.value[1] === 1
+            && !n2.done && n2.value[0] === 2 && n2.value[1] === 2
+            &&  n3.done;
+    });
+
+    /* ---- Plain own properties survive thread copy ---- */
+
+    testFeature(label + " - Map preserves plain own properties", function() {
+        return gMapWithProps.plainProp === "plain-string"
+            && gMapWithProps.numProp   === 12345
+            && gMapWithProps[7]        === "indexed-prop"
+            && gMapWithProps["[object Object]"] === "object-stringified-key";
+    });
+
+    testFeature(label + " - Map preserves nested object property", function() {
+        var d = gMapWithProps.deepProp;
+        return d && d.nested && Array.isArray(d.nested.deeper)
+            && d.nested.deeper[0] === 7
+            && d.nested.deeper[2] === 9;
+    });
+
+    testFeature(label + " - Map entries unaffected by plain props", function() {
+        return gMapWithProps.size === 1
+            && gMapWithProps.get("entryKey") === "entryVal";
+    });
+
+    testFeature(label + " - Set preserves plain own properties", function() {
+        return gSetWithProps.label === "labeled-set"
+            && gSetWithProps.payload && gSetWithProps.payload.flag === true
+            && gSetWithProps[0] === "indexed-set-prop";
+    });
+
+    testFeature(label + " - Set entries unaffected by plain props", function() {
+        return gSetWithProps.size === 2
+            && gSetWithProps.has("a")
+            && gSetWithProps.has("b");
+    });
 }
 
 
-/* ================================================================
-   Run in main thread
-   ================================================================ */
-
-runTests("Main thread");
-
-
-/* ================================================================
-   Run in child thread (globals are copied)
-   ================================================================ */
-
-var thr = new rampart.thread();
-
-thr.exec(function() {
-    runTests("Child thread");
-}, null, function(result, err) {
-    if (err)
-        console.log("Thread error:", err);
-
-    printf("\n");
+function _finish() {
+    _write("\n");
     if (_nfailed)
-        printf("%d test(s) FAILED\n", _nfailed);
+        _write(_nfailed + " test(s) FAILED\n");
     else
-        printf("All tests passed.\n");
-
+        _write("All tests passed.\n");
     process.exit(_nfailed ? 1 : 0);
-});
+}
+
+/* ================================================================
+   Run in main (always)
+   ================================================================ */
+
+runTests(IS_RAMPART ? "Main thread" : "Node");
+
+
+/* ================================================================
+   Run in child thread (rampart only — globals are copied)
+   ================================================================ */
+
+if (IS_RAMPART) {
+    var thr = new rampart.thread();
+    thr.exec(function() {
+        runTests("Child thread");
+    }, null, function(result, err) {
+        if (err)
+            console.log("Thread error:", err);
+        _finish();
+    });
+} else {
+    _finish();
+}
