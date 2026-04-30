@@ -8,6 +8,13 @@
 # and if python export PYTHONMALLOC=malloc
 # or pymalloc will be used and asan will miss massive amounts of frees
 
+## to use SimSIMD's faster-but-much-less-accurate Quake-style fast invsqrt
+## for the SERIAL scalar fallback (cosine/L2/log paths used when no SIMD
+## kernel matches the runtime CPU), run:
+#   cmake -DRP_SIMSIMD_APPROXIMATE_SCALAR=1 ../
+# Default behavior uses libc's exact 1/sqrt for serial fallbacks, which
+# costs ~2% on the serial path but keeps cosine/L2 results bit-accurate.
+
 cmake_minimum_required(VERSION 3.13)
 
 project(Rampart VERSION 0.5.0 LANGUAGES C CXX)

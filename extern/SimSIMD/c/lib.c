@@ -8,10 +8,25 @@
 #define SIMSIMD_NATIVE_BF16 0
 
 /*  Override the primary serial operations to avoid the LibC dependency.
+ *
+ *  The upstream default substitutes a Quake-style f32 fast-invsqrt for
+ *  rsqrt (~1.75e-3 relative error).  That makes the SERIAL fallback —
+ *  used on CPUs without AVX2 (e.g. Westmere) and on Apple NEON for bf16
+ *  when the BF16 ISA extension isn't advertised — wildly inaccurate for
+ *  cosine/L2/log: cosine on opposite vectors lands around 2.0011 instead
+ *  of 2.0, which breaks any test or threshold tighter than ~0.005.
+ *
+ *  Rampart's default is to skip the override and let types.h fall back
+ *  to libc's exact `1/sqrt(x)`.  Cost: ~5–10 ns per cosine call on the
+ *  serial path (well under 2% on typical embedding sizes), and a libm
+ *  dependency we already have.  Pass -DRP_SIMSIMD_APPROXIMATE_SCALAR=1
+ *  to the build to opt back into the upstream behavior.
  */
+#if defined(RP_SIMSIMD_APPROXIMATE_SCALAR)
 #define SIMSIMD_SQRT(x) simsimd_approximate_square_root(x)
 #define SIMSIMD_RSQRT(x) simsimd_approximate_inverse_square_root(x)
 #define SIMSIMD_LOG(x) simsimd_approximate_log(x)
+#endif
 
 /*  Depending on the Operating System, the following intrinsics are available
  *  on recent compiler toolchains:

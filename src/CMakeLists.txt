@@ -152,6 +152,16 @@ set(SIMSIMD_FLAGS "-DSIMSIMD_DYNAMIC_DISPATCH=1")
 set(SIMSIMD_ENABLE_TARGETS "")
 set(SIMSIMD_DISABLE_TARGETS "")
 
+# RP_SIMSIMD_APPROXIMATE_SCALAR=1 opts back into upstream's approximate
+# Quake-style fast-invsqrt for the serial fallback (faster but ~1.75e-3
+# relative error).  Default off → libc's exact 1/sqrt (see lib.c).
+if(RP_SIMSIMD_APPROXIMATE_SCALAR)
+    set(SIMSIMD_FLAGS "${SIMSIMD_FLAGS} -DRP_SIMSIMD_APPROXIMATE_SCALAR=1")
+    message("-- ${GREEN}SimSIMD scalar fallback: approximate (faster, ~1.75e-3 err)${RESET}")
+else()
+    message("-- ${GREEN}SimSIMD scalar fallback: libc exact (default)${RESET}")
+endif()
+
 
 if(CMAKE_C_COMPILER_ID STREQUAL "GNU" AND CMAKE_C_COMPILER_VERSION VERSION_LESS "4.9")
     message(STATUS "GCC ${CMAKE_C_COMPILER_VERSION} too old, disabling all SIMD targets")
