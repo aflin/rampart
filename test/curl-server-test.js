@@ -158,7 +158,7 @@ function chunktest(req) {
 
 pid=server.start(
 {
-    bind: "127.0.0.1:8087",
+    bind: "127.0.0.1:8287",
     developerMode: true,
     /* only applies if starting as root */
     user: "nobody",
@@ -239,8 +239,8 @@ testFeature("curl secure request/redirect/follow", function() {
 });
 
 testFeature("curl https request localhost --insecure", function() {
-    var res=curl.fetch("https://localhost:8087/sample");
-    var res2=curl.fetch({insecure:true},"https://localhost:8087/sample");
+    var res=curl.fetch("https://localhost:8287/sample");
+    var res2=curl.fetch({insecure:true},"https://localhost:8287/sample");
     if (res.errMsg.length && res2.text == "test")
         return true;
     console.log(res.errMsg,res2.errMsg);
@@ -248,7 +248,7 @@ testFeature("curl https request localhost --insecure", function() {
 });
 
 testFeature("server, global func and copy self ref object", function() {
-    var res=curl.fetch({insecure:true},"https://localhost:8087/global");
+    var res=curl.fetch({insecure:true},"https://localhost:8287/global");
     if (res.text == "ok")
         return true;
     console.log(res.text);
@@ -256,7 +256,7 @@ testFeature("server, global func and copy self ref object", function() {
 });
 
 testFeature("curl parallel fetch", function() {
-    var a="https://localhost:8087/sample";
+    var a="https://localhost:8287/sample";
     var aa=[a,a,a,a,a,a,a,a,a,a];
     var n=0;
     curl.fetch({insecure:true},aa,function(res){
@@ -266,17 +266,17 @@ testFeature("curl parallel fetch", function() {
 });
 
 testFeature("server modpath", function (){
-    var res=curl.fetch({insecure:true},"https://localhost:8087/modtest/testmod.txt");
+    var res=curl.fetch({insecure:true},"https://localhost:8287/modtest/testmod.txt");
     return res.status == 200 && res.text == "test";
 });
 
 testFeature("server custom not found", function (){
-    var res=curl.fetch({insecure:true},"https://localhost:8087/nowhere");
+    var res=curl.fetch({insecure:true},"https://localhost:8287/nowhere");
     return res.status == 404 && res.text == "notfound";
 });
 
 testFeature("server script timeout", function (){
-    var res=curl.fetch({insecure:true},"https://localhost:8087/timeout");
+    var res=curl.fetch({insecure:true},"https://localhost:8287/timeout");
     return res.status == 500;
 });
 
@@ -285,7 +285,7 @@ testFeature("server/curl chunking", function(){
     var coutput = tmpdir + '/coutput'
     var f = fopen(coutput, 'w+');
     var shortsizes=0;
-    curl.fetch('https://localhost:8087/chunk.txt',
+    curl.fetch('https://localhost:8287/chunk.txt',
     {
         insecure:true,
 
@@ -332,7 +332,7 @@ var asyncTimeout2 = isMsys ? 5000  : 500;
 testFeature("rate limit: requests within limit pass", function() {
     /* 5 parallel requests, limit is 5/10s — all should pass */
     var urls = [];
-    for (var i = 0; i < 5; i++) urls.push("https://127.0.0.1:8087/limited");
+    for (var i = 0; i < 5; i++) urls.push("https://127.0.0.1:8287/limited");
     var ok = 0;
     curl.fetch({insecure:true}, urls, function(res) { if (res.status == 200) ok++; });
     return ok === 5;
@@ -341,20 +341,20 @@ testFeature("rate limit: requests within limit pass", function() {
 testFeature("rate limit: excess requests get 429", function() {
     /* 5 more — should all be 429 since we just used up the tokens */
     var urls = [];
-    for (var i = 0; i < 5; i++) urls.push("https://127.0.0.1:8087/limited");
+    for (var i = 0; i < 5; i++) urls.push("https://127.0.0.1:8287/limited");
     var blocked = 0;
     curl.fetch({insecure:true}, urls, function(res) { if (res.status == 429) blocked++; });
     return blocked === 5;
 });
 
 testFeature("rate limit: unrated path not affected", function() {
-    var res = curl.fetch({insecure:true}, "https://127.0.0.1:8087/unlimited");
+    var res = curl.fetch({insecure:true}, "https://127.0.0.1:8287/unlimited");
     return res.status === 200;
 });
 
 testFeature("rate limit: tokens refill over time", function() {
     sleep(3); /* at 0.5 tokens/sec, 3s = 1.5 tokens = 1 request */
-    var res = curl.fetch({insecure:true}, "https://127.0.0.1:8087/limited");
+    var res = curl.fetch({insecure:true}, "https://127.0.0.1:8287/limited");
     return res.status === 200;
 });
 
@@ -362,7 +362,7 @@ testFeature("rate limit: fingerprint key works", function() {
     /* 4 requests with same headers, limit is 3 */
     var n200 = 0, n429 = 0;
     for (var i = 0; i < 4; i++) {
-        var res = curl.fetch({insecure:true}, "https://127.0.0.1:8087/fp-limited");
+        var res = curl.fetch({insecure:true}, "https://127.0.0.1:8287/fp-limited");
         if (res.status === 200) n200++;
         else if (res.status === 429) n429++;
     }
@@ -374,7 +374,7 @@ testFeature("rate limit: cookie key, same cookie", function() {
     var n200 = 0, n429 = 0;
     for (var i = 0; i < 4; i++) {
         var res = curl.fetch({insecure:true, headers: ["Cookie: rltest=user1"]},
-                             "https://127.0.0.1:8087/ck-limited");
+                             "https://127.0.0.1:8287/ck-limited");
         if (res.status === 200) n200++;
         else if (res.status === 429) n429++;
     }
@@ -383,7 +383,7 @@ testFeature("rate limit: cookie key, same cookie", function() {
 
 testFeature("rate limit: different cookie not affected", function() {
     var res = curl.fetch({insecure:true, headers: ["Cookie: rltest=user2"]},
-                         "https://127.0.0.1:8087/ck-limited");
+                         "https://127.0.0.1:8287/ck-limited");
     return res.status === 200;
 });
 
@@ -391,7 +391,7 @@ testFeature("rate limit: cascading, tight path", function() {
     /* /casc/tight/ has limit 3, and also counts against /casc/ limit 8 */
     var n200 = 0, n429 = 0;
     for (var i = 0; i < 4; i++) {
-        var res = curl.fetch({insecure:true}, "https://127.0.0.1:8087/casc/tight/a");
+        var res = curl.fetch({insecure:true}, "https://127.0.0.1:8287/casc/tight/a");
         if (res.status === 200) n200++;
         else if (res.status === 429) n429++;
     }
@@ -406,7 +406,7 @@ testFeature("rate limit: cascading, global exhausted", function() {
        Expect 4-5 allowed, then blocked. */
     var n200 = 0, n429 = 0;
     for (var i = 0; i < 6; i++) {
-        var res = curl.fetch({insecure:true}, "https://127.0.0.1:8087/casc/normal");
+        var res = curl.fetch({insecure:true}, "https://127.0.0.1:8287/casc/normal");
         if (res.status === 200) n200++;
         else if (res.status === 429) n429++;
     }
@@ -418,7 +418,7 @@ testFeature("rate limit: cascading, global exhausted", function() {
 var thr = new rampart.thread();
 
 thr.exec(function() {
-    var a="https://localhost:8087/sample";
+    var a="https://localhost:8287/sample";
     var aa=[a,a,a,a,a,a,a,a,a,a];
     var ao = {url:a, insecure:true};
     var aao = [ao,ao,ao,ao,ao,ao,ao,ao,ao,ao];

@@ -12,7 +12,7 @@ var htmldir = tmpdir + '/html';
 var appsdir = tmpdir + '/apps';
 var logsdir = tmpdir + '/logs';
 var confpath = tmpdir + '/auth-conf.js';
-var port = 8095;
+var port = 8295;
 var base = 'http://127.0.0.1:' + port;
 
 /* ---- setup ---- */

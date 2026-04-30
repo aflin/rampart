@@ -76,7 +76,7 @@ server.on("connection", function(ssocket){
 
 server.listen(
     {
-        port: 8085,
+        port: 8285,
         host: 'localhost'
     }
 );
@@ -104,7 +104,7 @@ socket.on('timeout', function(){
 socket.setTimeout(100);
 
 // first connect
-socket.connect(8085,'127.0.0.1');
+socket.connect(8285,'127.0.0.1');
 
 var res = net.resolve("dns.google.")
 

@@ -344,7 +344,7 @@ thr4.exec(function(){
     try {
     var pid=server.start(
     {
-        bind: "127.0.0.1:8084",
+        bind: "127.0.0.1:8284",
         developerMode: true,
         /* only applies if starting as root */
         user: "nobody",
@@ -397,7 +397,7 @@ thr5.exec(function(){
 thr5.exec(function(){
         var pid = thread.get("server_pid",1000);
         testFeature("thread - server with thread and defer", function(){
-            var res=curl.fetch("http://localhost:8084/threadtest.txt?myvar=123abc");
+            var res=curl.fetch("http://localhost:8284/threadtest.txt?myvar=123abc");
             if (res.text == '123abc')
                 return true;
             else {

@@ -154,7 +154,7 @@ function ltest(req) {
 
 var pid=server.start(
 {
-    bind: "127.0.0.1:8086",
+    bind: "127.0.0.1:8286",
     developerMode: true,
     /* only applies if starting as root */
     user: "nobody",
@@ -181,7 +181,7 @@ sleep(1);
 testFeature("server is running", rampart.utils.kill(pid,0) );
 
 testFeature("new lmdb transaction after fork", function() {
-    var url="http://localhost:8086/ltest?firstrun=1";
+    var url="http://localhost:8286/ltest?firstrun=1";
     var i=0;
     var res, ret;
 
@@ -192,7 +192,7 @@ testFeature("new lmdb transaction after fork", function() {
 });
 
 testFeature("500 requests (10 puts, 100 gets each)", function() {
-    var url="http://localhost:8086/ltest";
+    var url="http://localhost:8286/ltest";
     var i=0;
     var urls=[]
     var err, res, ret = true;
