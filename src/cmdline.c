@@ -1766,6 +1766,22 @@ RP_ParseRes rp_get_transpiled_cached(char *fn, char *src, time_t src_mtime, int 
                     res.altered = 1;
                     if (is_tickified)
                         *is_tickified = 0;
+                    /* Apply the source's "use transpilerGlobally" directive
+                       even when serving from cache. rp_get_transpiled sets
+                       duk_rp_globaltranspile as a side effect; without this,
+                       a cached top-level script never enables global
+                       transpilation and subsequent require()s of files
+                       lacking the directive fail to transpile. */
+                    if (!duk_rp_globaltranspile)
+                    {
+                        char *use = checkuse(src, NULL);
+                        if (use)
+                        {
+                            if (strcasecmp("transpilerGlobally", use) == 0)
+                                duk_rp_globaltranspile = 1;
+                            free(use);
+                        }
+                    }
                     free(cachefile);
                     return res;
                 }
