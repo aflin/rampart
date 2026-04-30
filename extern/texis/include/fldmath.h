@@ -107,9 +107,12 @@ typedef enum FOP_tag
  */
     FOP_INTERSECT_IS_EMPTY  =  (FOP_CMP | 0x1b), /* set-intersect is empty*/
     FOP_INTERSECT_IS_NOT_EMPTY = (FOP_CMP | 0x1c), /* "" is not empty */
+    FOP_MMV = 0x1d,                             /* vector LIKEV - dot product
+                                                 * on L2-normalized vectors,
+                                                 * score in [-1, 1] */
 /* NOTE: see FOP_LAST-sized arrays if FOP_... values change or are added to */
 /* NOTE: also update QNODE_OP enum if changing/adding FOP_... values */
-    FOP_LAST = 0x1c,                            /* highest op - 0x80 bit */
+    FOP_LAST = 0x1d,                            /* highest op - 0x80 bit */
 
 #define FOP_NTYPES      FTN_LAST    /* # built in types - dep on dbtable.h */
 

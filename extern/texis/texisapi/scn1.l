@@ -267,6 +267,8 @@ LIKEP		{ return LIKEP; }
 likep		{ return LIKEP; }
 LIKER		{ return LIKER; }
 liker		{ return LIKER; }
+LIKEV		{ return LIKEV; }
+likev		{ return LIKEV; }
 LINK		{ return LINK; }
 link		{ return LINK; }
 LOCK		{ return TX_LOCK; }
@@ -377,6 +379,8 @@ VARBYTE		{ return VARBYTE; }
 varbyte		{ return VARBYTE; }
 VARCHAR		{ return VARCHAR; }
 varchar		{ return VARCHAR; }
+VEC		{ return VEC; }
+vec		{ return VEC; }
 VIEW		{ return VIEW; }
 view		{ return VIEW; }
 WHEN		{ return WHEN; }

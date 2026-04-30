@@ -61,6 +61,7 @@ typedef enum QNODE_OP
 	FLDMATH_MAT,
 	FLDMATH_RELEV,
 	FLDMATH_PROXIM,
+	FLDMATH_MMV = FOP_MMV,	/* vector LIKEV; must match FOP_MMV */
 	PRED_OP = 'P',
 	FLDMATH_EQ = 0x88,
 	FLDMATH_LT,
@@ -201,6 +202,8 @@ typedef enum QNODE_OP
 #define INDEX_MM        'M'     /* INDEX_FULL without position data */
 #define INDEX_MMCR      'm'
 #define INDEX_CR	'c' /* Regular index create */
+#define INDEX_VEC	'N' /* Vamana ANN index for vector columns */
+#define INDEX_VECCR	'n' /* Vamana ANN index being created */
 
 /******************************************************************/
 /* Systable IDs */
@@ -804,6 +807,9 @@ struct DBTBL_tag {
 	char	**fdbiIndexFldNames;		/* Parallel fields for "" */
 	char	**fdbiIndexParams;		/* parallel SYSINDEX.PARAMS */
 	int	nfdbi;                         /* Number of fdb indexes */
+	char	**vecIndexFiles;		/* INDEX_VEC index file paths */
+	char	**vecIndexFldNames;		/* parallel field name per index */
+	int	nvecidx;			/* Number of INDEX_VEC entries */
 	int	nfldstatcountonly;
 	FLD	**projfldcache;
 	PROJ	*cachedproj;

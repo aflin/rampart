@@ -12,6 +12,7 @@
 #include "texint.h"
 #include "fdbi.h"
 #include "cgi.h"
+#include "vecindex.h"
 
 /******************************************************************/
 /*String compare function for qsort*/
@@ -170,6 +171,23 @@ int	type;	/* INDEX_... type */
 				}
 			}
 			break;
+		case INDEX_VEC:
+		case INDEX_VECCR:
+			/* Invalidate any cached open handle BEFORE we remove
+			 * the file, otherwise a subsequent CREATE INDEX with
+			 * the same name would return the stale in-memory state
+			 * instead of loading the freshly-written file. */
+			*d = '\0';   /* fname is now path with no extension */
+			TXvecInvalidateHandle(fname);
+			strcpy(d, ".vec");	/* current backend (usearch payload) */
+			if (unlink(fname) < 0 && errno != ENOENT) rc = -1;
+			strcpy(d, ".vec.new");	/* atomic-write tmp from save_atomic */
+			if (unlink(fname) < 0 && errno != ENOENT && errno != EISDIR)
+				/* leftover tmp ignored on failure */;
+			strcpy(d, ".usearch");	/* legacy extension from earlier dev builds */
+			if (unlink(fname) < 0 && errno != ENOENT && errno != EISDIR)
+				/* leftover legacy file ignored */;
+			break;
 		default:
 			putmsg(MWARN, fn,
 			       "Unknown index type `%c' found for index `%s'",
@@ -296,6 +314,12 @@ char	*iname;
 			/* Bug 3756: close indexes *before* trying to rm: */
 			if (tbln[i])
 				TXclosecacheindex(ddic, tbln[i]);
+			/* INDEX_VEC: drop the auxiliary WAL table that was
+			 * created alongside the index.  Must happen before
+			 * TXdelindex's file unlink (which invalidates the
+			 * cached handle), and while ddic is still live. */
+			if (itype[i] == INDEX_VEC || itype[i] == INDEX_VECCR)
+				TXvecDropAux(ddic, indn[i]);
 			if(TXdelindex(indn[i], itype[i])==-1)
 			{
 				typeVal[0] = INDEX_DEL;

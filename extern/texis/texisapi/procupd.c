@@ -27,6 +27,7 @@
 #endif
 #include "dbquery.h"
 #include "texint.h"
+#include "vecindex.h"
 
 
 #define BTCSIZE	TXbtreecache
@@ -202,6 +203,9 @@ DBTBL *tb;
          */
         for (i = 0; i < tb->nfdbi; i++)
           delfromfdbi(tb, tb->fdbies[i], &btloc);
+	for (i = 0; i < tb->nvecidx; i++)
+		TXvecDelRow(tb->ddic, tb, tb->vecIndexFiles[i],
+			    tb->vecIndexFldNames[i], &btloc);
 	tb->ddic->messages[MESSAGES_FAILED_DELETE] = tm;
 
 	TXbtreelog_dbtbl = savtbl;		/* for btreelog debug */
@@ -260,6 +264,10 @@ DBTBL *db;
          */
 	for (i = 0; i < db->nfdbi; i++)
 		addtofdbi(db, db->fdbies[i], &pos);
+
+	for (i = 0; i < db->nvecidx; i++)
+		TXvecAddRow(db->ddic, db, db->vecIndexFiles[i],
+			    db->vecIndexFldNames[i], &pos);
 
 	ret = 0;				/* ok */
 	goto done;

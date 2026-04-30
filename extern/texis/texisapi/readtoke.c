@@ -519,6 +519,10 @@ readtoken ARGS((void))
 					case 'v' :
 						ret = CONVERT_OP;
 						goto finally;
+					case 'y' :
+						/* LIKEV (vector) - matches grammar in sql1.y */
+						ret = FLDMATH_MMV;
+						goto finally;
 					case 'x':	/* hex constant */
 					{
 						char	*e;
@@ -762,6 +766,9 @@ readtoken (TX_READ_TOKEN *toke)
 						return FOP_PROXIM;
 					case '~' :
 						return FOP_NMM;
+					case 'y' :
+						/* LIKEV (vector) - matches grammar in sql1.y */
+						return FOP_MMV;
 					case '-' :
 						return FOP_SUB;
 					case '0' :

@@ -22,6 +22,7 @@
 #include "meter.h"
 #include "ramdbf.h"		/* for closerdbf() prototype */
 #include "cgi.h"
+#include "vecindex.h"
 #ifdef NEED_GETOPT_H
 #  ifdef NEED_EPIGETOPT_H
 #    include "epigetopt.h"
@@ -1901,6 +1902,8 @@ TXgetIndexTypeDescription(int indexType)
 	case INDEX_INV:		return("inverted");
 	case INDEX_TEMP:	return("temporary");
 	case INDEX_DEL:		return("deleted");
+	case INDEX_VECCR:
+	case INDEX_VEC:		return("Vector (Vamana ANN)");
 	default:		return("unknown-type");
 	}
 }
@@ -2069,6 +2072,84 @@ TXindOpts	*options;	/* (in/out) options, opt. w/`WITH ...' */
 	if (!dbtb)
 		goto err;
 	closeindexes(dbtb);
+	if (itype == INDEX_VEC)
+	{
+		/* INDEX_VEC has its own build pipeline (full-table scan +
+		 * monolithic Vamana build + persist via vecio).  Bypass the
+		 * TXmkindCreateXxx + TXmkindBuildIndex path entirely.
+		 */
+		TXvecParams vp, vpFinal;
+		RECID vecCrRecid;
+		int vrc;
+
+		/* Options were already processed by the call to
+		 * TXindOptsProcessRawOptions() above; vec_* values are now
+		 * sitting in `options` waiting for us to pick them up.
+		 */
+		if (TXvecParamsFromOptions(&vp, options) < 0)
+			goto err;
+		if (TXvecParamsToText(sysindexParams, sizeof(sysindexParams),
+				      &vp) < 0)
+		{
+			putmsg(MERR + MAE, Fn,
+			       "SYSINDEX.PARAMS value too large for index %s",
+			       indname);
+			goto err;
+		}
+
+		if (TXlocktable(dbtb, R_LCK) != 0) goto err;
+		uberlock++;
+
+		dbLen = strlen(ddic->pname);
+		if (TXpathcmp(indfile, dbLen, ddic->pname, dbLen) == 0)
+			sysindexFname = indfile + dbLen;
+		else
+			sysindexFname = indfile;
+
+		/* In-progress SYSINDEX entry (dim=0, will be overwritten). */
+		TXsetrecid(&vecCrRecid, -1);
+		TXaddindexrec(ddic, indname, table, sysindexFname, ' ',
+			      unique, field, INDEX_VECCR, sysindexParams,
+			      &vecCrRecid);
+
+		vrc = TXvecCreateIndex(ddic, dbtb, field, indname, indfile,
+				       options, &vpFinal);
+		switch (vrc) {
+		case 1:  success = 1; gotPartialErr = 0; break;
+		case 0:  success = 1; gotPartialErr = 1; break;
+		default: success = 0; gotPartialErr = 0; break;
+		}
+
+		if (success) {
+			/* Refresh PARAMS with actual dim, then write final
+			 * SYSINDEX entry.  vpFinal.graph.dim was filled in
+			 * by TXvecCreateIndex from the data.
+			 */
+			if (TXvecParamsToText(sysindexParams,
+					      sizeof(sysindexParams),
+					      &vpFinal) < 0)
+			{
+				putmsg(MERR + MAE, Fn,
+				       "SYSINDEX.PARAMS value too large for index %s",
+				       indname);
+				success = 0;
+				goto vecAfterFinalParams;
+			}
+			TXaddindexrec(ddic, indname, table, sysindexFname, ' ',
+				      unique, field, INDEX_VEC,
+				      sysindexParams, RECIDPN);
+		} else {
+		vecAfterFinalParams:
+			TXdelindex(indfile, INDEX_VEC);
+		}
+		TXdeleteSysindexEntry(ddic, table, indname, INDEX_VECCR);
+
+		if (success) {
+			TXgetindexes(dbtb, PM_ALLPERMS, NULL, 0);
+			setindexperms(dbtb);
+		}
+		goto done;
+	}
 	switch (itype)
 	{
 	case INDEX_BTREE:

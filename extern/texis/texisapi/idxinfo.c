@@ -17,6 +17,7 @@
 #include "dbquery.h"
 #include "texint.h"
 #include "cgi.h"
+#include "vecindex.h"
 
 /******************************************************************/
 
@@ -67,6 +68,11 @@ indexscore(char *indexFields,           /* (in) fields from index */
 		subScore = TX3dbiScoreIndex(indexType, sysindexParams,
 					    dbtbl->ddic->options, indexPath,
                                             fldOp);
+		break;
+	case INDEX_VEC:
+		subScore = TXvecScoreIndex(indexFields, sysindexParams,
+					   dbtbl, fldOp, param,
+					   (paramIsRHS == TXbool_True));
 		break;
 	default:
 		subScore = 1;
@@ -242,6 +248,18 @@ int	paramIsRHS;	/* (in) nonzero: `param' is right-hand-side of op */
 				if (thistype == INDEX_3DB ||
                                     thistype == INDEX_MM ||
                                     thistype == INDEX_FULL)
+				{
+					indexinfo->lastreturn = j;
+					return indexinfo->iscores[j].orgArrayIdx;
+				}
+			}
+			break;
+		case FOP_MMV:
+			for(j=start; j < indexinfo->numIndexes; j++)
+			{
+				if (indexinfo->iscores[j].score <= 0) continue;
+				thistype = indexinfo->itypes[indexinfo->iscores[j].orgArrayIdx];
+				if (thistype == INDEX_VEC)
 				{
 					indexinfo->lastreturn = j;
 					return indexinfo->iscores[j].orgArrayIdx;

@@ -81,6 +81,7 @@ static CONST char * CONST fldopnames[FOP_LAST+1] = {
 	"INTERSECT",
 	"INTERSECT IS EMPTY WITH",
 	"INTERSECT IS NOT EMPTY WITH",
+	"LIKEV",
 };
 
 

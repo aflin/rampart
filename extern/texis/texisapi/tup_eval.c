@@ -1171,6 +1171,7 @@ FLDOP *fo;
 		case FOP_INTERSECT_IS_NOT_EMPTY :
 		case FOP_MAT :
 		case FOP_TWIXT :
+		case FOP_MMV :		/* vector LIKEV - dispatch to fobyby */
 			/* Get types of top two items, before foop2(): */
 		      { FLD *f1, *f2;
 			  /* optimized version of fopeek[2](): */
@@ -1428,6 +1429,12 @@ FLDOP *fo;
         if ((p->op == FLDMATH_MM || p->op == FLDMATH_MMIN) &&
 	    rc > 1 && tup != DBTBLPN)
           tup->rank = rc;
+        /* LIKEV: rc is the scaled cosine similarity (range [-100000, 100000]).
+         * Save unconditionally (even for negative/zero scores); ORDER BY $rank
+         * gives the per-row distance ordering for top-k.
+         */
+        else if (p->op == FLDMATH_MMV && tup != DBTBLPN)
+          tup->rank = rc;
 
 done:
 	if(tf1)
@@ -1487,6 +1494,14 @@ FLDOP *fo;
 		if (ip)
 		{
 			rc = *ip;
+			/* LIKEV: scaled cosine in [-100000, 100000].  Negative
+			 * means "doesn't match" — but tup_read interprets
+			 * tup_match() < 0 as an error and breaks the row scan,
+			 * so clamp here.  The full signed rank still lives on
+			 * the result FLD and was already saved into tup->rank
+			 * by pred_eval(), so ORDER BY $rank is unaffected.
+			 */
+			if (rc < 0 && p->op == FLDMATH_MMV) rc = 0;
 		}
 		else
 			rc = 0;

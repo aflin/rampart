@@ -104,6 +104,7 @@ DD *TXordspec2dd ARGS((DBTBL *dbtb, char *field, int maxf, int skip,
 /* Note: if this list is altered, update TXindOptsProcessOptions(): */
 #define TX_INDEX_OPTIONS_SYMBOLS_LIST   \
 I(counts)               \
+I(flush)                \
 I(indexmaxsingle)       \
 I(indexmem)             \
 I(indexmeter)           \
@@ -115,6 +116,11 @@ I(max_index_text)       \
 I(noiselist)            \
 I(stringcomparemode)    \
 I(textsearchmode)       \
+I(vec_alpha)            \
+I(vec_dtype)            \
+I(vec_efc)              \
+I(vec_m)                \
+I(vec_metric)           \
 I(wordexpressions)      \
 I(wordpositions)
 

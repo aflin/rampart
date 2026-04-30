@@ -83,7 +83,7 @@ int	mmViaFdbi;	/* (in) nonzero: open MM as FDBI objects */
 	static CONST char	Fn[] = "TXgetindexes";
 	static CONST char	unableToOpen[] =
 					"Unable to open index %s for %s";
-	int i, nb=0, n3=0, nf=0, nv = 0, nt, rc = 0, updfield = 0;
+	int i, nb=0, n3=0, nf=0, nv = 0, nx = 0, nt, rc = 0, updfield = 0;
 	int dof;
 	char *itype, *iunique, **iidxn, **ifields, **iname, **iparams;
 	FLDCMP *fc;
@@ -122,6 +122,7 @@ int	mmViaFdbi;	/* (in) nonzero: open MM as FDBI objects */
 				case INDEX_3CR:
 				case INDEX_3DB: n3++; break;
 				case INDEX_INV: nv++; break;
+				case INDEX_VEC: nx++; break;
 			}
 		}
 	}
@@ -181,11 +182,24 @@ int	mmViaFdbi;	/* (in) nonzero: open MM as FDBI objects */
 		t->fdbiIndexNames = t->fdbiIndexFldNames = CHARPPN;
 		t->fdbiIndexParams = CHARPPN;
 	}
+	if (nx)
+	{
+		t->vecIndexFiles    = (char **)TXcalloc(TXPMBUFPN, Fn, nx,
+							sizeof(char *));
+		t->vecIndexFldNames = (char **)TXcalloc(TXPMBUFPN, Fn, nx,
+							sizeof(char *));
+	}
+	else
+	{
+		t->vecIndexFiles    = CHARPPN;
+		t->vecIndexFldNames = CHARPPN;
+	}
 	t->nindex = nb;
 	t->ndbi = n3;
 	t->ninv = nv;
 	t->nfdbi = nf;
-	nb = 0; n3 = 0; nv = 0, nf = 0;
+	t->nvecidx = nx;
+	nb = 0; n3 = 0; nv = 0, nf = 0; nx = 0;
 	for (i=0; i < nt; i++)
 	{
 		updfield = fieldsmatch(ifields[i], fields);
@@ -328,6 +342,24 @@ int	mmViaFdbi;	/* (in) nonzero: open MM as FDBI objects */
 					goto cleanup;
 				}
 				break;
+			case INDEX_VEC:
+				/* INDEX_VEC has no in-process handle to keep
+				 * open for mods — just remember the file path
+				 * so addtoindices/delfromindices can mark it
+				 * stale.  The graph (if loaded for searching)
+				 * lives in the per-process TXvecOpen cache.
+				 */
+				t->vecIndexFiles[nx]    = TXstrdup(TXPMBUFPN, Fn,
+								   iname[i]);
+				t->vecIndexFldNames[nx] = TXstrdup(TXPMBUFPN, Fn,
+								   ifields[i]);
+				if (!t->vecIndexFiles[nx] || !t->vecIndexFldNames[nx])
+				{
+					rc = -1;
+					goto cleanup;
+				}
+				nx++;
+				break;
 			case INDEX_DEL:		/* Windows: to be deleted */
 				/* no update needed */
 				break;
@@ -379,6 +411,7 @@ cleanup:
 	t->ndbi = n3;
 	t->ninv = nv;
 	t->nfdbi = nf;
+	t->nvecidx = nx;
 	if (itype != (char *)NULL)
 		free(itype);
 	if (iunique != (char *)NULL)
@@ -593,6 +626,14 @@ DBTBL *db;
 	db->invertedIndexParams = TXfreeStrList(db->invertedIndexParams,
 						db->ninv);
 	db->ninv = 0;
+
+	if (db->vecIndexFiles)
+		db->vecIndexFiles    = TXfreeStrList(db->vecIndexFiles,
+						     db->nvecidx);
+	if (db->vecIndexFldNames)
+		db->vecIndexFldNames = TXfreeStrList(db->vecIndexFldNames,
+						     db->nvecidx);
+	db->nvecidx = 0;
 
 	TXbtreelog_dbtbl = savtbl;		/* for btreelog debug */
 }

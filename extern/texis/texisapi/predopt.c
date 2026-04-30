@@ -21,6 +21,7 @@
 #include "sregex.h"
 #include "fdbi.h"
 #include "cgi.h"
+#include "vecindex.h"
 
 #undef NO_SAFE_BTREE
 
@@ -4274,6 +4275,29 @@ TBSPEC *tbspec;
 		fld = closefld(fld);
 		if (ix == IINDEXPN)
 			goto makepbt;
+		goto done;
+	case FOP_MMV:				/* LIKEV (vector ANN) */
+		if (rev != 0)
+			goto err;
+		for (j = TXchooseindex(&indexinfo, tb, p->op, infld,
+				       lookright);
+		     j >= 0; j = TXchooseindex(&indexinfo, tb, p->op, infld,
+					       lookright))
+		{
+			int cop;
+
+			ix = TXvecIxVecIndex(indexinfo.paths[j],
+					     indexinfo.sysindexParamsVals[j],
+					     (FLD *)infld, dname, tb,
+					     p->op, &cop);
+			/* Always need post-process: predicate per-row computes
+			 * `$rank' and re-filters by score truthiness.
+			 */
+			p->handled = 0;
+			if (!ix) continue;
+			break;
+		}
+		closeindexinfo(&indexinfo);
 		goto done;
 	case FOP_MAT:
 		{

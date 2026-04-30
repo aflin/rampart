@@ -21,6 +21,7 @@
 #include "dbquery.h"
 #include "texint.h"
 #include "texisapi.h"
+#include "vecindex.h"
 #include "cgi.h"
 #include "rampart.h"
 #include "api3.h"
@@ -914,6 +915,14 @@ static void free_thread_handles()
 static void free_all_handles(void *unused)
 {
     DB_HANDLE *n, *h=db_handle_head;
+
+    /* Backstop flush.  Most handles will already have flushed via their
+     * own h_close() path while their DDIC was live; this catches any
+     * vec_handle_cache entries that weren't tied to a connection (or
+     * that survived).  ddic may be null here — in that case we still
+     * save the .vec files but skip SYSINDEX dirty-bit clearing
+     * (next open will reconcile). */
+    TXvecFlushAll(TXvecGetExitHookDDIC());
 
     while(h)
     {
@@ -2124,6 +2133,16 @@ static int h_close(DB_HANDLE *h)
 
     if(!h) {
         return 1;
+    }
+
+    /* Flush any vec indexes mutated through this handle's DDIC, while
+     * the DDIC is still live.  In auto-flush mode this is a no-op (no
+     * dirty handles).  Skip for forked-helper connections — the helper
+     * child runs its own h_close path and flushes there. */
+    if(!DB_HANDLE_IS(h, DB_FLAG_FORK) && h->tx) {
+        extern DDIC *texis_getddic(TEXIS *tx);
+        DDIC *ddic = texis_getddic(h->tx);
+        if (ddic) TXvecFlushAll(ddic);
     }
 
     if(DB_HANDLE_IS(h, DB_FLAG_FORK))
@@ -4994,6 +5013,22 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
         */
         const char *prop=duk_get_string(ctx, -2);
         int retlisttype=-1, setlisttype=-1;
+
+        /* vecAutoFlush — connection-scoped override of the per-index
+         * flush mode for INDEX_VEC.  Setting false makes every per-row
+         * INSERT/DELETE defer the .vec save; setting back to true
+         * triggers an immediate flush of any indexes that went dirty
+         * under this connection. */
+        if (strcasecmp(prop, "vecAutoFlush") == 0)
+        {
+            int on = duk_is_boolean(ctx, -1) ? duk_get_boolean(ctx, -1) : 1;
+            int wasForceDefer = TXvecGetForceDefer();
+            TXvecSetForceDefer(!on);
+            /* false→true edge: caller wants writes durable now. */
+            if (on && wasForceDefer)
+                TXvecFlushAll(ddic);
+            goto propnext;
+        }
 
         /* useDerivations, set eqprefix and related */
         if( strcmp(prop,"usederivations")==0 )

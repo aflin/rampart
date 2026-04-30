@@ -674,6 +674,7 @@ ireadnode(DDIC *ddic, TX_READ_TOKEN *toke, int depth, QNODE *pq, QTOKEN x, FLDOP
 		case FOP_RELEV :
 		case FOP_PROXIM :
 		case FOP_MMIN :
+		case FOP_MMV :
 		case FOP_IN :
 		case FOP_IS_SUBSET :
 		case FOP_INTERSECT :

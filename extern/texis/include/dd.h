@@ -87,6 +87,21 @@ I(VEC_U8,       "vecU8",     sizeof(ft_byte),      0,          0)               
 #define FTN_VEC_START 30
 #define FTN_VEC_END 35
 
+/* Type-tag predicates for vector types.  Mask off DDVARBIT/etc. internally
+ * so callers can pass either raw `f->type` or a pre-masked base type.
+ * Statement-expression form keeps the argument evaluation single-shot.
+ */
+#define FTN_IS_VEC(v) ({ \
+    int __vtype = ((v) & DDTYPEBITS); \
+    (__vtype >= FTN_VEC_START && __vtype <= FTN_VEC_END); \
+})
+
+#define FTN_IS_VEC_OR_BYTE(v) ({ \
+    int __vtype = ((v) & DDTYPEBITS); \
+    (__vtype == FTN_BYTE || \
+     (__vtype >= FTN_VEC_START && __vtype <= FTN_VEC_END)); \
+})
+
 typedef enum FTN_tag
 {
   FTN_unknownType0,                             /* placeholder; makes byte=1*/

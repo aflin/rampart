@@ -126,8 +126,30 @@ string(ASCII 27 ESC)
 set(GREEN "${ESC}[32m")
 set(RESET "${ESC}[0m")
 
+# simsimd flag layout (see also extern/texis/texisapi/CMakeLists.txt for the
+# duplicate detection block — keep them in sync):
+#
+#   SIMSIMD_FLAGS:           always includes -DSIMSIMD_DYNAMIC_DISPATCH=1, plus
+#                            -DSIMSIMD_TARGET_X=0 for any kernel family the
+#                            compiler can't build.  Applied to both lib.c and
+#                            its consumers, so consumers don't try to inline a
+#                            dispatcher referring to symbols lib.c didn't emit.
+#   SIMSIMD_ENABLE_TARGETS:  -DSIMSIMD_TARGET_X=1 for each kernel family that
+#                            CMake's compile-tests verified is buildable.  The
+#                            kernel BODIES are scoped by the headers' per-
+#                            function `#pragma GCC target("avx2,...")` blocks,
+#                            so we deliberately do NOT pass -mavx2 etc. as
+#                            baseline flags.  Applied only to lib.c.
+#
+# Why this matters: with -mavx2 baseline, the compiler may emit AVX
+# instructions in lib.c's wrapper code (capabilities probe, dispatch
+# scaffolding) that lives outside any pragma block.  That code would then
+# crash on a deployed CPU lacking AVX.  Letting the pragmas do the scoping
+# keeps the wrappers compiled for plain x86_64 — safe to invoke on any CPU
+# at runtime, with the per-target kernels still emitting AVX inside their
+# pragma blocks.
 set(SIMSIMD_FLAGS "-DSIMSIMD_DYNAMIC_DISPATCH=1")
-set(SIMSIMD_ARCH_FLAGS "")
+set(SIMSIMD_ENABLE_TARGETS "")
 set(SIMSIMD_DISABLE_TARGETS "")
 
 
@@ -144,7 +166,10 @@ elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "(i686|i386)")
 elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64|AMD64|i686|i386)")
     message(WARNING "Testing x86_64 instruction set support...")
 
-    # Test Haswell (AVX2, FMA, F16C)
+    # Test Haswell (AVX2, FMA, F16C).  The compile-test still passes -m
+    # flags because the test program isn't pragma-scoped — it just verifies
+    # the compiler can produce these intrinsics at all.  Once verified, we
+    # rely on simsimd's per-kernel pragma blocks at actual build time.
     set(CMAKE_REQUIRED_FLAGS "-mavx2 -mfma -mf16c")
     check_c_source_compiles("
         #include <immintrin.h>
@@ -164,7 +189,7 @@ elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64|AMD64|i686|i386)")
 
     if(HAVE_HASWELL)
         message("-- ${GREEN}Haswell (AVX2)${RESET}")
-        set(SIMSIMD_ARCH_FLAGS "${SIMSIMD_ARCH_FLAGS} -mavx2 -mfma -mf16c")
+        set(SIMSIMD_ENABLE_TARGETS "${SIMSIMD_ENABLE_TARGETS} -DSIMSIMD_TARGET_HASWELL=1")
     else()
         message(WARNING "Haswell - disabling all SIMD")
         set(SIMSIMD_DISABLE_TARGETS "-DSIMSIMD_TARGET_HASWELL=0 -DSIMSIMD_TARGET_SKYLAKE=0 -DSIMSIMD_TARGET_ICE=0 -DSIMSIMD_TARGET_GENOA=0 -DSIMSIMD_TARGET_SAPPHIRE=0 -DSIMSIMD_TARGET_TURIN=0")
@@ -195,7 +220,7 @@ elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64|AMD64|i686|i386)")
             message(WARNING "Skylake (AVX512) - disabling Skylake/Ice/Genoa/Sapphire/Turin")
             set(SIMSIMD_DISABLE_TARGETS "${SIMSIMD_DISABLE_TARGETS} -DSIMSIMD_TARGET_SKYLAKE=0 -DSIMSIMD_TARGET_ICE=0 -DSIMSIMD_TARGET_GENOA=0 -DSIMSIMD_TARGET_SAPPHIRE=0 -DSIMSIMD_TARGET_TURIN=0")
         else()
-            set(SIMSIMD_ARCH_FLAGS "${SIMSIMD_ARCH_FLAGS} -mavx512f -mavx512dq -mavx512bw -mavx512vl")
+            set(SIMSIMD_ENABLE_TARGETS "${SIMSIMD_ENABLE_TARGETS} -DSIMSIMD_TARGET_SKYLAKE=1")
             message("-- ${GREEN}Skylake (AVX512)${RESET}")
         endif()
     else()
@@ -218,7 +243,7 @@ elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64|AMD64|i686|i386)")
             message(WARNING "Ice Lake - disabling Ice/Genoa/Sapphire/Turin")
             set(SIMSIMD_DISABLE_TARGETS "${SIMSIMD_DISABLE_TARGETS} -DSIMSIMD_TARGET_ICE=0 -DSIMSIMD_TARGET_GENOA=0 -DSIMSIMD_TARGET_SAPPHIRE=0 -DSIMSIMD_TARGET_TURIN=0")
         else()
-            set(SIMSIMD_ARCH_FLAGS "${SIMSIMD_ARCH_FLAGS} -mavx512vnni -mavx512vbmi2 -mavx512bitalg")
+            set(SIMSIMD_ENABLE_TARGETS "${SIMSIMD_ENABLE_TARGETS} -DSIMSIMD_TARGET_ICE=1")
             message("-- ${GREEN}Ice Lake${RESET}")
         endif()
     endif()
@@ -248,7 +273,7 @@ elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64|AMD64|i686|i386)")
             message(WARNING "Sapphire Rapids - disabling Sapphire")
             set(SIMSIMD_DISABLE_TARGETS "${SIMSIMD_DISABLE_TARGETS} -DSIMSIMD_TARGET_SAPPHIRE=0")
         else()
-            set(SIMSIMD_ARCH_FLAGS "${SIMSIMD_ARCH_FLAGS} -mavx512vp2intersect -mavx512fp16")
+            set(SIMSIMD_ENABLE_TARGETS "${SIMSIMD_ENABLE_TARGETS} -DSIMSIMD_TARGET_SAPPHIRE=1")
             message("-- ${GREEN}Sapphire Rapids${RESET}")
         endif()
 
@@ -267,43 +292,51 @@ elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64|AMD64|i686|i386)")
             message(WARNING "BF16 - disabling Turin/Genoa")
             set(SIMSIMD_DISABLE_TARGETS "${SIMSIMD_DISABLE_TARGETS} -DSIMSIMD_TARGET_TURIN=0 -DSIMSIMD_TARGET_GENOA=0")
         else()
-            set(SIMSIMD_ARCH_FLAGS "${SIMSIMD_ARCH_FLAGS} -mavx512bf16")
+            set(SIMSIMD_ENABLE_TARGETS "${SIMSIMD_ENABLE_TARGETS} -DSIMSIMD_TARGET_GENOA=1 -DSIMSIMD_TARGET_TURIN=1")
             message("-- ${GREEN}BF16 (Turin/Genoa)${RESET}")
         endif()
     endif()
 endif()
 
 set(SIMSIMD_FLAGS "${SIMSIMD_FLAGS} ${SIMSIMD_DISABLE_TARGETS}")
-message("-- ${GREEN}Final flags: ${SIMSIMD_FLAGS}${RESET}")
-message("-- ${GREEN}Arch flags: ${SIMSIMD_ARCH_FLAGS}${RESET}")
+message("-- ${GREEN}Consumer flags: ${SIMSIMD_FLAGS}${RESET}")
+message("-- ${GREEN}lib.c enable flags: ${SIMSIMD_ENABLE_TARGETS}${RESET}")
 
+# lib.c: enables for built kernels + dispatcher define + disables.  No -m
+# flags so the wrapper functions outside the pragma blocks stay plain
+# x86_64.  The kernel bodies still emit AVX inside their `#pragma GCC
+# target(...)` blocks.
 set_source_files_properties(
   ${CMAKE_SOURCE_DIR}/extern/SimSIMD/c/lib.c
   PROPERTIES
-    COMPILE_FLAGS "-O3 ${SIMSIMD_WARN} ${SIMSIMD_FLAGS} ${SIMSIMD_ARCH_FLAGS}"
+    COMPILE_FLAGS "-O3 ${SIMSIMD_WARN} ${SIMSIMD_FLAGS} ${SIMSIMD_ENABLE_TARGETS}"
 )
+# Consumers: SIMSIMD_DYNAMIC_DISPATCH=1 routes simsimd_capabilities and
+# simsimd_find_kernel_punned through lib.c's runtime dispatcher rather than
+# inlining a serial-only fallback.  This is what makes vector.distance() and
+# vecdist() actually use AVX kernels at runtime when the host CPU has them.
 set_source_files_properties(
   ${CMAKE_SOURCE_DIR}/src/duktape/globals/vector-distance.c
   PROPERTIES
-    COMPILE_FLAGS "-O3 ${SIMSIMD_WARN}"
+    COMPILE_FLAGS "-O3 ${SIMSIMD_WARN} ${SIMSIMD_FLAGS}"
 )
 
 set_source_files_properties(
   ${CMAKE_SOURCE_DIR}/src/duktape/globals/rampart-vector.c
   PROPERTIES
-    COMPILE_FLAGS "-O3 ${SIMSIMD_WARN}"
+    COMPILE_FLAGS "-O3 ${SIMSIMD_WARN} ${SIMSIMD_FLAGS}"
 )
 
 set_source_files_properties(
   ${PROJECT_SOURCE_DIR}/extern/SimSIMD/c/lib.c
   PROPERTIES
-    COMPILE_FLAGS "-O3 ${SIMSIMD_WARN} ${SIMSIMD_FLAGS} ${SIMSIMD_ARCH_FLAGS}"
+    COMPILE_FLAGS "-O3 ${SIMSIMD_WARN} ${SIMSIMD_FLAGS} ${SIMSIMD_ENABLE_TARGETS}"
 )
 
 set_source_files_properties(
   duktape/globals/vector-distance.c
   PROPERTIES
-    COMPILE_FLAGS "-O3 ${SIMSIMD_WARN}"
+    COMPILE_FLAGS "-O3 ${SIMSIMD_WARN} ${SIMSIMD_FLAGS}"
 )
 
 add_dependencies(rampart texisapi timestamp)

@@ -446,6 +446,12 @@ IF(PARSERS_FOUND)
     ${CMAKE_SOURCE_DIR}/extern/SimSIMD/c/lib.c
     ${CMAKE_SOURCE_DIR}/src/duktape/globals/vector-distance.c
 
+    # ANN vector index (usearch HNSW backend; Vamana sources kept for revert)
+    vecgraph.c
+    vecio.c
+    vecindex.c
+    ${CMAKE_SOURCE_DIR}/extern/texis/thirdparty/usearch/c/lib.cpp
+
 
     blob.c
     blobz.c
@@ -611,9 +617,11 @@ IF(PARSERS_FOUND)
   set(GREEN "${ESC}[32m")
   set(RESET "${ESC}[0m")
 
+  # Same simsimd flag layout as src/CMakeLists.txt — see the comment block
+  # there for the rationale.  Kept in sync by hand.
   set(SIMSIMD_WARN "-Wno-unused-function -Wno-unknown-pragmas -Wno-unused-variable -Wno-unused-but-set-variable")
   set(SIMSIMD_FLAGS "-DSIMSIMD_DYNAMIC_DISPATCH=1")
-  set(SIMSIMD_ARCH_FLAGS "")
+  set(SIMSIMD_ENABLE_TARGETS "")
   set(SIMSIMD_DISABLE_TARGETS "")
 
   if(CMAKE_C_COMPILER_ID STREQUAL "GNU" AND CMAKE_C_COMPILER_VERSION VERSION_LESS "4.9")
@@ -649,7 +657,7 @@ IF(PARSERS_FOUND)
 
       if(HAVE_HASWELL)
           message("-- ${GREEN}Haswell (AVX2)${RESET}")
-          set(SIMSIMD_ARCH_FLAGS "${SIMSIMD_ARCH_FLAGS} -mavx2 -mfma -mf16c")
+          set(SIMSIMD_ENABLE_TARGETS "${SIMSIMD_ENABLE_TARGETS} -DSIMSIMD_TARGET_HASWELL=1")
       else()
           message(WARNING "Haswell - disabling all SIMD")
           set(SIMSIMD_DISABLE_TARGETS "-DSIMSIMD_TARGET_HASWELL=0 -DSIMSIMD_TARGET_SKYLAKE=0 -DSIMSIMD_TARGET_ICE=0 -DSIMSIMD_TARGET_GENOA=0 -DSIMSIMD_TARGET_SAPPHIRE=0 -DSIMSIMD_TARGET_TURIN=0")
@@ -680,7 +688,7 @@ IF(PARSERS_FOUND)
               message(WARNING "Skylake (AVX512) - disabling Skylake/Ice/Genoa/Sapphire/Turin")
               set(SIMSIMD_DISABLE_TARGETS "${SIMSIMD_DISABLE_TARGETS} -DSIMSIMD_TARGET_SKYLAKE=0 -DSIMSIMD_TARGET_ICE=0 -DSIMSIMD_TARGET_GENOA=0 -DSIMSIMD_TARGET_SAPPHIRE=0 -DSIMSIMD_TARGET_TURIN=0")
           else()
-              set(SIMSIMD_ARCH_FLAGS "${SIMSIMD_ARCH_FLAGS} -mavx512f -mavx512dq -mavx512bw -mavx512vl")
+              set(SIMSIMD_ENABLE_TARGETS "${SIMSIMD_ENABLE_TARGETS} -DSIMSIMD_TARGET_SKYLAKE=1")
               message("-- ${GREEN}Skylake (AVX512)${RESET}")
           endif()
       else()
@@ -703,7 +711,7 @@ IF(PARSERS_FOUND)
               message(WARNING "Ice Lake - disabling Ice/Genoa/Sapphire/Turin")
               set(SIMSIMD_DISABLE_TARGETS "${SIMSIMD_DISABLE_TARGETS} -DSIMSIMD_TARGET_ICE=0 -DSIMSIMD_TARGET_GENOA=0 -DSIMSIMD_TARGET_SAPPHIRE=0 -DSIMSIMD_TARGET_TURIN=0")
           else()
-              set(SIMSIMD_ARCH_FLAGS "${SIMSIMD_ARCH_FLAGS} -mavx512vnni -mavx512vbmi2 -mavx512bitalg")
+              set(SIMSIMD_ENABLE_TARGETS "${SIMSIMD_ENABLE_TARGETS} -DSIMSIMD_TARGET_ICE=1")
               message("-- ${GREEN}Ice Lake${RESET}")
           endif()
       endif()
@@ -733,7 +741,7 @@ IF(PARSERS_FOUND)
               message(WARNING "Sapphire Rapids - disabling Sapphire")
               set(SIMSIMD_DISABLE_TARGETS "${SIMSIMD_DISABLE_TARGETS} -DSIMSIMD_TARGET_SAPPHIRE=0")
           else()
-              set(SIMSIMD_ARCH_FLAGS "${SIMSIMD_ARCH_FLAGS} -mavx512vp2intersect -mavx512fp16")
+              set(SIMSIMD_ENABLE_TARGETS "${SIMSIMD_ENABLE_TARGETS} -DSIMSIMD_TARGET_SAPPHIRE=1")
               message("-- ${GREEN}Sapphire Rapids${RESET}")
           endif()
 
@@ -752,26 +760,33 @@ IF(PARSERS_FOUND)
               message(WARNING "BF16 - disabling Turin/Genoa")
               set(SIMSIMD_DISABLE_TARGETS "${SIMSIMD_DISABLE_TARGETS} -DSIMSIMD_TARGET_TURIN=0 -DSIMSIMD_TARGET_GENOA=0")
           else()
-              set(SIMSIMD_ARCH_FLAGS "${SIMSIMD_ARCH_FLAGS} -mavx512bf16")
+              set(SIMSIMD_ENABLE_TARGETS "${SIMSIMD_ENABLE_TARGETS} -DSIMSIMD_TARGET_GENOA=1 -DSIMSIMD_TARGET_TURIN=1")
               message("-- ${GREEN}BF16 (Turin/Genoa)${RESET}")
           endif()
       endif()
   endif()
 
   set(SIMSIMD_FLAGS "${SIMSIMD_FLAGS} ${SIMSIMD_DISABLE_TARGETS}")
-  message("-- ${GREEN}Final flags: ${SIMSIMD_FLAGS}${RESET}")
-  message("-- ${GREEN}Arch flags: ${SIMSIMD_ARCH_FLAGS}${RESET}")
+  message("-- ${GREEN}Consumer flags: ${SIMSIMD_FLAGS}${RESET}")
+  message("-- ${GREEN}lib.c enable flags: ${SIMSIMD_ENABLE_TARGETS}${RESET}")
 
   set_source_files_properties(
     ${CMAKE_SOURCE_DIR}/extern/SimSIMD/c/lib.c
     PROPERTIES
-      COMPILE_FLAGS "-O3 ${SIMSIMD_WARN} ${SIMSIMD_FLAGS} ${SIMSIMD_ARCH_FLAGS}"
+      COMPILE_FLAGS "-O3 ${SIMSIMD_WARN} ${SIMSIMD_FLAGS} ${SIMSIMD_ENABLE_TARGETS}"
   )
 
+  # Consumers route through lib.c's runtime dispatcher via DYNAMIC_DISPATCH=1.
   set_source_files_properties(
     ${CMAKE_SOURCE_DIR}/src/duktape/globals/vector-distance.c
     PROPERTIES
-      COMPILE_FLAGS "-O3 ${SIMSIMD_WARN}"
+      COMPILE_FLAGS "-O3 ${SIMSIMD_WARN} ${SIMSIMD_FLAGS}"
+  )
+
+  set_source_files_properties(
+    ${CMAKE_CURRENT_SOURCE_DIR}/vecindex.c
+    PROPERTIES
+      COMPILE_FLAGS "${SIMSIMD_WARN} ${SIMSIMD_FLAGS}"
   )
 
 ELSE(PARSERS_FOUND)
@@ -872,6 +887,9 @@ target_include_directories(
   ${TEXISAPI_BINARY_DIR}
   # ajf - 2025-10-25
   ${CMAKE_SOURCE_DIR}/extern/SimSIMD/include
+  # usearch (vec-index backend)
+  ${CMAKE_SOURCE_DIR}/extern/texis/thirdparty/usearch/include
+  ${CMAKE_SOURCE_DIR}/extern/texis/thirdparty/usearch/c
 )
 
 target_link_options(texisbuild PUBLIC -L${JANSSON_RELEASE_DIR})
@@ -891,6 +909,9 @@ target_include_directories(
   ${TEXISAPI_BINARY_DIR}
   # ajf - 2025-10-25
   ${CMAKE_SOURCE_DIR}/extern/SimSIMD/include
+  # usearch (vec-index backend)
+  ${CMAKE_SOURCE_DIR}/extern/texis/thirdparty/usearch/include
+  ${CMAKE_SOURCE_DIR}/extern/texis/thirdparty/usearch/c
 )
 target_link_options(texisapi PUBLIC -L${JANSSON_RELEASE_DIR})
 target_link_libraries(texisapi PUBLIC m z ${JANSSON_LIBS})

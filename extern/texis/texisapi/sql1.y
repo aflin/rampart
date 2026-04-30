@@ -143,13 +143,13 @@ int stxalrevoke(int f) {int o=txalrevoke; txalrevoke=f; return(o);}
 %token CURSOR DATABASE TX_DATE TX_DECIMAL DECLARE DEFAULT TX_DELETE DESC DISTINCT TX_DOUBLE
 %token EMPTY ESCAPE EXISTS FETCH TX_FLOAT FOR FOREIGN FOUND FROM GOTO
 %token GRANT TX_GROUP HAVING IDENTIFIED TX_IN INDICATOR INDIRECT INSERT INTEGER INTO
-%token IS KEY LANGUAGE LIKE LIKEA LIKEIN LIKER LIKEP LINK MATCHES MODULE NULLX
+%token IS KEY LANGUAGE LIKE LIKEA LIKEIN LIKER LIKEP LIKEV LINK MATCHES MODULE NULLX
 %token NUMERIC OF ON OPEN OPTION ORDER PRECISION PRIMARY PRIVILEGES PROCEDURE
 %token PUBLIC REAL REFERENCES ROLLBACK SCHEMA SELECT SET QSTRING
 %token SMALLINT SOME SQLCODE SQLERROR STRLST TX_SUBSET TABLE TO UNION
 %token UNIQUE TX_UPDATE USER USING VALUES VIEW WHENEVER WHERE WITH WORK
 %token COBOL FORTRAN TX_PASCAL PLI ADA INVERTED UNSIGNED NOCASE
-%token VARCHAR INDEX TDB TX_BLOB DROP REVOKE TX_BYTE VARBYTE REFERENCING TX_TRIGGER
+%token VARCHAR INDEX TDB TX_BLOB DROP REVOKE TX_BYTE VARBYTE REFERENCING TX_TRIGGER VEC
 %token AFTER INSTEAD OLD NEW EACH STATEMENT ROW WHEN SHELL TX_IF
 %token TX_LOCK TX_UNLOCK TABLES READ WRITE SHOW
 
@@ -666,6 +666,14 @@ opt_index_type:	TDB
 			char	tmp[2];
 
 			tmp[0] = INDEX_INV;
+			tmp[1] = '\0';
+			$$ = strdup(tmp);
+		}
+		|	VEC
+		{
+			char	tmp[2];
+
+			tmp[0] = INDEX_VEC;
 			tmp[1] = '\0';
 			$$ = strdup(tmp);
 		}
@@ -2182,6 +2190,15 @@ like_predicate:
 	|	scalar_exp LIKER scalar_exp opt_escape
 		{
 			$$ = TXstrcat4("@", $1, " ", $3);
+			free($1);
+			free($3);
+		}
+	|	scalar_exp LIKEV scalar_exp opt_escape
+		{
+			/* `_y` prefix: `_v` is taken by CONVERT_OP in readtoke.c.
+			 * `y` is unused in both readtoken dispatch tables.
+			 */
+			$$ = TXstrcat4("_y", $1, " ", $3);
 			free($1);
 			free($3);
 		}

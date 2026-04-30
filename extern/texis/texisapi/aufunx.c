@@ -9,18 +9,7 @@
 #include <stddef.h>
 #include <string.h>
 
-#define FTN_IS_VEC(v) ({\
-    int __vtype=(v);\
-    __vtype=(__vtype>=FTN_VEC_START && __vtype<=FTN_VEC_END);\
-    __vtype;\
-})
-
-#define FTN_IS_VEC_OR_BYTE(v) ({\
-    int __vtype=(v);\
-    __vtype= (__vtype== FTN_BYTE || (__vtype>=FTN_VEC_START && __vtype<=FTN_VEC_END));\
-    __vtype;\
-})
-
+/* FTN_IS_VEC and FTN_IS_VEC_OR_BYTE moved to dd.h for shared use. */
 
 // calculate distance using simsimd - in vector-distance.c
 double rp_vector_distance(void *a, void *b, size_t bytesize, const char *metric, const char *datatype, const char **err);

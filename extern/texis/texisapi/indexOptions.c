@@ -654,6 +654,32 @@ int             forUpdate;      /* (in) nonzero: index update not create */
           break;
 
           /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+          /* INDEX_VEC build params.  Validated here for syntax (single
+           * value, parseable); semantic checks (range, applicability)
+           * happen in vecindex.c, which holds the only knowledge of the
+           * Vamana parameter space.  Allowed only when itype is
+           * INDEX_VEC; rejected otherwise to surface user mistakes early.
+           */
+        case TXindOpt_vec_alpha:
+        case TXindOpt_vec_dtype:
+        case TXindOpt_vec_efc:
+        case TXindOpt_vec_m:
+        case TXindOpt_vec_metric:
+        case TXindOpt_flush:
+          if (*indexType != INDEX_VEC)
+            {
+              putmsg(MERR + UGE, fn,
+                     "Index option `%s' can only be set for VEC index type",
+                     TXindOptEnumToString(opt));
+              goto err;
+            }
+          if (!TXindOptIsSingleValue(options, opt)) goto err;
+          /* Numeric/string parsing is done at consumption time in
+           * TXvecParamsFromOptions(); just leave the raw values in place.
+           */
+          break;
+
+          /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
         default:
           putmsg(MERR, fn, "Internal error: Unknown option #%d", (int)opt);
           goto err;

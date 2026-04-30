@@ -21,6 +21,31 @@ int __cdecl sscanf(const char *, const char *, ...);
 #include "fldops.h"
 #include "cgi.h"		/* for htsnpf() */
 
+/* Vector distance via simsimd; defined in src/duktape/globals/vector-distance.c.
+ * Used by FOP_MMV (LIKEV operator).  See also vecdist() in aufunx.c.
+ */
+extern double rp_vector_distance(void *a, void *b, size_t bytesize,
+                                 const char *metric, const char *datatype,
+                                 const char **err);
+
+/* Map a typed-vector FTN to the simsimd dtype string.
+ * Returns NULL for FTN_BYTE (caller must default) or non-vector types.
+ */
+static const char *
+TXvecFtnToSimsimdDtype(FTN t)
+{
+	switch (t & DDTYPEBITS)
+	{
+	case FTN_VEC_F64:  return "f64";
+	case FTN_VEC_F32:  return "f32";
+	case FTN_VEC_F16:  return "f16";
+	case FTN_VEC_BF16: return "bf16";
+	case FTN_VEC_I8:   return "i8";
+	case FTN_VEC_U8:   return "u8";
+	default:           return NULL;
+	}
+}
+
 /**********************************************************************
 implemented functions:
    -- is "don't do"
@@ -475,8 +500,36 @@ int op;
 		case FOP_ASN:			/* f1 data = f2 data */
 			if (var1)
 			{
+				size_t	new_elsz;
+
 				copyfld(f3, f2);	/* f3 = f2 */
 				f3->type = f1->type;	/* save f1 var bit */
+
+				/* copyfld() carried over f2's elsz/n.  When the
+				 * destination type has a different element size
+				 * (BYTE↔VEC_F* especially), recompute elsz/n so
+				 * the byte invariant n*elsz == size still holds.
+				 * Without this, e.g. a 768-byte varbyte becomes
+				 * a "varvecF16" with elsz=1, n=768, size=768 —
+				 * downstream consumers reading n*sizeof(f16)
+				 * would see 1536 bytes for a 768-byte buffer.
+				 */
+				new_elsz = ddftsize((int)f1->type);
+				if ((ssize_t)new_elsz > 0 &&
+				    new_elsz != f3->elsz)
+				{
+					if (new_elsz != 0 &&
+					    f3->size % new_elsz != 0)
+					{
+						putmsg(MWARN, "fobyby",
+						   "byte length %lu not a multiple of element size %lu for type 0x%x; truncating",
+						   (unsigned long)f3->size,
+						   (unsigned long)new_elsz,
+						   (unsigned)(f1->type & DDTYPEBITS));
+					}
+					f3->elsz = new_elsz;
+					f3->n = f3->size / new_elsz;
+				}
 			}
 			else
 			{
@@ -526,6 +579,86 @@ int op;
 			case FOP_COM:
 				rc = fld2finv(f3, rc);
 				break;
+			}
+			break;
+		case FOP_MMV:
+			/* Vector LIKEV: dot product of f1 and f2.
+			 *
+			 * Inputs are assumed L2-normalized; raw score is cosine
+			 * similarity in [-1, 1].  Following the LIKE/LIKEP/LIKER
+			 * convention, the result FLD is FTN_INT carrying a scaled
+			 * rank: cosine * 100000 → range [-100000, 100000].
+			 * tup_match reads this from the result FLD into tup->rank
+			 * (see tup_eval.c FLDMATH_MMV branch); ORDER BY $rank
+			 * gives top-similar-first.
+			 *
+			 * Type rules:
+			 *   - both typed vec: types must match.
+			 *   - one typed vec, one byte: assume same dtype as typed.
+			 *   - both byte: default to f16 (matches vecdist).
+			 * Byte length must match in all cases.
+			 */
+			{
+				FTN	t1 = TXfldType(f1);
+				FTN	t2 = TXfldType(f2);
+				const char *dtype = NULL;
+				const char *err_msg = NULL;
+				double	score;
+
+				if (TXfldIsNull(f1) || TXfldIsNull(f2))
+				{
+					rc = TXfldmathReturnNull(f1, f3);
+					break;
+				}
+				if (!FTN_IS_VEC_OR_BYTE(t1) ||
+				    !FTN_IS_VEC_OR_BYTE(t2))
+				{
+					putmsg(MERR + UGE, "LIKEV",
+					       "operands must be vector or byte types");
+					rc = FOP_EINVAL;
+					break;
+				}
+				if (f1->size != f2->size)
+				{
+					putmsg(MERR + UGE, "LIKEV",
+					       "operand byte lengths differ (%lu vs %lu)",
+					       (unsigned long)f1->size,
+					       (unsigned long)f2->size);
+					rc = FOP_EINVAL;
+					break;
+				}
+				if (FTN_IS_VEC(t1) && FTN_IS_VEC(t2) &&
+				    (t1 & DDTYPEBITS) != (t2 & DDTYPEBITS))
+				{
+					putmsg(MERR + UGE, "LIKEV",
+					       "operand vector types differ");
+					rc = FOP_EINVAL;
+					break;
+				}
+				if (FTN_IS_VEC(t1))
+					dtype = TXvecFtnToSimsimdDtype(t1);
+				else if (FTN_IS_VEC(t2))
+					dtype = TXvecFtnToSimsimdDtype(t2);
+				else
+					dtype = "f16";	/* both byte */
+				if (!dtype)	/* shouldn't happen given checks above */
+				{
+					putmsg(MERR + UGE, "LIKEV",
+					       "could not determine vector dtype");
+					rc = FOP_EINVAL;
+					break;
+				}
+				score = rp_vector_distance(vp1, vp2, f1->size,
+							   "dot", dtype, &err_msg);
+				if (err_msg)
+				{
+					putmsg(MERR + UGE, "LIKEV", "%s", err_msg);
+					rc = FOP_EINVAL;
+					break;
+				}
+				if (score >  1.0) score =  1.0;
+				if (score < -1.0) score = -1.0;
+				rc = fld2finv(f3, (ft_int)(score * 100000.0));
 			}
 			break;
 		default:
