@@ -1,8 +1,7 @@
-/* vecindex.h — texis-engine integration for the Vamana ANN vector index.
+/* vecindex.h — texis-engine integration for the usearch ANN vector index.
  *
  * This is the only header in the vec-index module that depends on texis
- * engine types (DDIC, DBTBL, IINODE, PRED, etc.).  vecgraph.h and vecio.h
- * are pure C with no engine deps and can be tested standalone.
+ * engine types (DDIC, DBTBL, IINODE, PRED, etc.).
  *
  * The integration glue lives in vecindex.c.  Engine code (index.c,
  * predopt.c, idxinfo.c, addtoind.c) calls into the TXvec* functions
@@ -12,12 +11,53 @@
 #ifndef VECINDEX_H
 #define VECINDEX_H
 
+#include <stddef.h>
+#include <stdint.h>
 #include "dbquery.h"          /* DDIC, DBTBL, etc. */
-#include "vecgraph.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/* ----- Index parameters (formerly in vecgraph.h) -------------------- */
+
+typedef uint64_t vec_id_t;
+#define VEC_ID_INVALID ((vec_id_t)-1)
+
+typedef enum {
+    VEC_METRIC_DOT = 1,    /* inner product; on normalized vectors == cosine */
+    VEC_METRIC_L2  = 2,    /* squared Euclidean */
+} vec_metric_t;
+
+typedef struct {
+    int           dim;             /* vector dimensionality (required) */
+    int           M;               /* max neighbors per node (typical 64-96) */
+    int           ef_construction; /* search width during build (typical 200) */
+    float         alpha;           /* RobustPrune relaxation (typical 1.2) */
+    vec_metric_t  metric;
+    uint32_t      seed;            /* RNG seed; 0 = use a default */
+    /* Hard cap on in-memory build size, in bytes.  0 = unlimited. */
+    size_t        max_build_memory;
+} vec_graph_params_t;
+
+/* Sensible defaults for general use. */
+#define VEC_GRAPH_PARAMS_DEFAULT { \
+    .dim = 0,                     \
+    .M = 64,                      \
+    .ef_construction = 128,       \
+    .alpha = 1.2f,                \
+    .metric = VEC_METRIC_DOT,     \
+    .seed = 0,                    \
+    .max_build_memory = 0,        \
+}
+
+typedef struct {
+    vec_id_t  id;
+    float     score;   /* metric-natural value: dot ↑, L2 ↓.  Caller sorts
+                        * appropriately.  Returned arrays are pre-sorted by
+                        * "best first" for the metric (descending for dot,
+                        * ascending for L2). */
+} vec_search_result_t;
 
 /* ----- SYSINDEX.PARAMS handling ------------------------------------- */
 

@@ -1,13 +1,8 @@
 /* vecindex.c — texis engine integration for the ANN vector index.
  *
  * Backend: usearch (HNSW), embedded under extern/texis/thirdparty/usearch.
- * The previous Vamana backend is preserved verbatim in vecindex_vamana.c
- * for easy revert if this swap doesn't pan out.
- *
- * Public surface is unchanged from the Vamana version; this file only
- * replaces the body of the TXvec* functions.  Engine code (index.c,
- * predopt.c, idxinfo.c, procupd.c, droptbl.c) keeps calling the same
- * symbols.
+ * Engine code (index.c, predopt.c, idxinfo.c, procupd.c, droptbl.c)
+ * calls into the TXvec* functions here when handling INDEX_VEC.
  */
 
 #include "txcoreconfig.h"
@@ -28,7 +23,6 @@
 #include "meter.h"
 
 #include "vecindex.h"
-#include "vecgraph.h"          /* still used for vec_metric_t enum and TXvecParams.graph */
 
 #include "usearch.h"           /* usearch C API */
 

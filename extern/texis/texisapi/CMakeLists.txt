@@ -446,9 +446,7 @@ IF(PARSERS_FOUND)
     ${CMAKE_SOURCE_DIR}/extern/SimSIMD/c/lib.c
     ${CMAKE_SOURCE_DIR}/src/duktape/globals/vector-distance.c
 
-    # ANN vector index (usearch HNSW backend; Vamana sources kept for revert)
-    vecgraph.c
-    vecio.c
+    # ANN vector index (usearch HNSW backend)
     vecindex.c
     ${CMAKE_SOURCE_DIR}/extern/texis/thirdparty/usearch/c/lib.cpp
 
