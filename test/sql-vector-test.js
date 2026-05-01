@@ -3,7 +3,7 @@
  * Covers:
  *   - rampart.vector type construction & dim accessor
  *   - varvec* and varbyte columns
- *   - CREATE VEC INDEX with WITH options (vec_m, vec_metric, vec_dtype, flush)
+ *   - CREATE VECTOR INDEX with WITH options (vec_m, vec_metric, vec_dtype, flush)
  *   - LIKEV search + $rank ordering
  *   - Indexed vs brute-force agreement
  *   - Per-row INSERT/DELETE through the index
@@ -106,11 +106,11 @@ testFeature("insert rows with vector values", function () {
 });
 
 /* ============================================================
- * CREATE VEC INDEX
+ * CREATE VECTOR INDEX
  * ============================================================ */
 
-testFeature("CREATE VEC INDEX (defaults)", function () {
-    sql.exec("create vec index emb_vec on emb (v);");
+testFeature("CREATE VECTOR INDEX (defaults)", function () {
+    sql.exec("create vector index emb_vec on emb (v);");
     var r = sql.exec("select TYPE, PARAMS from SYSINDEX where NAME='emb_vec';");
     return r.rows[0] && r.rows[0].TYPE === 'N';   /* N = INDEX_VEC */
 });
@@ -150,7 +150,7 @@ testFeature("indexed top-1 == brute-force top-1", function () {
     var bruteHit = sql.exec(
         "select id, $rank from emb where v likev ? order by 2 desc;",
         [vec_for(13)], 1).rows[0].id;
-    sql.exec("create vec index emb_vec on emb (v);");   /* rebuild for next tests */
+    sql.exec("create vector index emb_vec on emb (v);");   /* rebuild for next tests */
     return idxHit === bruteHit;
 });
 
@@ -162,11 +162,11 @@ testFeature("vec_m=2 (below min) rejected at CREATE", function () {
     var msg = null;
     try {
         sql.exec("drop index emb_vec;");
-        sql.exec("create vec index emb_vec on emb (v) with vec_m 2;");
+        sql.exec("create vector index emb_vec on emb (v) with vec_m 2;");
     } catch (e) { msg = String(e); }
     /* Re-create the index for subsequent tests regardless of outcome. */
     try { sql.exec("drop index emb_vec;"); } catch(e) {}
-    sql.exec("create vec index emb_vec on emb (v);");
+    sql.exec("create vector index emb_vec on emb (v);");
     return msg !== null && /vec_m must.*\[4, 1024\]/.test(msg);
 });
 
@@ -174,10 +174,10 @@ testFeature("vec_metric='bogus' rejected at CREATE", function () {
     var msg = null;
     try {
         sql.exec("drop index emb_vec;");
-        sql.exec("create vec index emb_vec on emb (v) with vec_metric 'bogus';");
+        sql.exec("create vector index emb_vec on emb (v) with vec_metric 'bogus';");
     } catch (e) { msg = String(e); }
     try { sql.exec("drop index emb_vec;"); } catch(e) {}
-    sql.exec("create vec index emb_vec on emb (v);");
+    sql.exec("create vector index emb_vec on emb (v);");
     return msg !== null && /vec_metric must/.test(msg);
 });
 
@@ -214,13 +214,13 @@ testFeature("varbyte CREATE without vec_dtype is rejected", function () {
         sql.exec("insert into embb values (?, ?);",
                  [i, vec_for(i, 8, 'f16').toRaw()]);
     var msg = null;
-    try { sql.exec("create vec index embb_vec on embb (v);"); }
+    try { sql.exec("create vector index embb_vec on embb (v);"); }
     catch (e) { msg = String(e); }
     return msg !== null && /vec_dtype/.test(msg);
 });
 
 testFeature("varbyte CREATE with vec_dtype 'f16' succeeds", function () {
-    sql.exec("create vec index embb_vec on embb (v) with vec_dtype 'f16';");
+    sql.exec("create vector index embb_vec on embb (v) with vec_dtype 'f16';");
     var p = sql.exec("select PARAMS from SYSINDEX where NAME='embb_vec';").rows[0].PARAMS;
     return /dim=8/.test(p) && /dtype=f16/.test(p);
 });
@@ -246,7 +246,7 @@ testFeature("DROP INDEX on varbyte index", function () {
 
 testFeature("CREATE INDEX with flush 'manual' creates WAL table", function () {
     sql.exec("drop index emb_vec;");
-    sql.exec("create vec index emb_vec on emb (v) with flush 'manual';");
+    sql.exec("create vector index emb_vec on emb (v) with flush 'manual';");
     var r = sql.exec("select NAME from SYSTABLES where NAME='emb_vec_wal';");
     return r.rows.length === 1;
 });
@@ -295,7 +295,7 @@ testFeature("DROP INDEX also drops the WAL table", function () {
  * ============================================================ */
 
 testFeature("sql.set vecAutoFlush=false defers, =true flushes", function () {
-    sql.exec("create vec index emb_vec on emb (v);");   /* auto-flush index */
+    sql.exec("create vector index emb_vec on emb (v);");   /* auto-flush index */
     sql.set({vecAutoFlush: false});
     sql.exec("insert into emb values (?, ?, ?);", [777, vec_for(777), 'r777']);
     var p_dirty = sql.exec("select PARAMS from SYSINDEX where NAME='emb_vec';").rows[0].PARAMS;
@@ -318,7 +318,7 @@ testFeature("sql.set vecAutoFlush=false defers, =true flushes", function () {
 
 /* Recreate the index in manual mode for the multi-process test. */
 sql.exec("drop index emb_vec;");
-sql.exec("create vec index emb_vec on emb (v) with flush 'manual';");
+sql.exec("create vector index emb_vec on emb (v) with flush 'manual';");
 sql.close();      /* let the threads fight over the db without us */
 
 /* The thread inherits module-scope globals via fork — DB is reachable

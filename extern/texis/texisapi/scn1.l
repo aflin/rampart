@@ -379,6 +379,8 @@ VARBYTE		{ return VARBYTE; }
 varbyte		{ return VARBYTE; }
 VARCHAR		{ return VARCHAR; }
 varchar		{ return VARCHAR; }
+VECTOR		{ return VEC; }
+vector		{ return VEC; }
 VEC		{ return VEC; }
 vec		{ return VEC; }
 VIEW		{ return VIEW; }
