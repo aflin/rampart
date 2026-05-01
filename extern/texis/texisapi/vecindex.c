@@ -16,6 +16,9 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <stdint.h>
+#include <limits.h>
+#include <float.h>
+#include <math.h>
 
 #include "dbquery.h"
 #include "texint.h"
@@ -29,10 +32,23 @@
 
 /* Vector dtype conversion helpers — defined in
  * src/duktape/globals/vector-distance.c (linked into the texis engine).
+ * Declarations also exist in src/include/rampart.h, but that header
+ * isn't on the texis include path; forward-declaring here keeps the
+ * dependency local and explicit.
  */
 extern void rpvec_f16_to_f32(const uint16_t *src, float *dst, size_t n);
 extern void rpvec_bf16_to_f32(const uint16_t *src, float *dst, size_t n);
 extern void rpvec_f64_to_f32(const double *src, float *dst, size_t n);
+/* Quantized → f32 dequantization (value = (q - zp) * scale) */
+extern void rpvec_i8_to_f32(const int8_t *src, float *dst, size_t n,
+                            float scale, int zp);
+extern void rpvec_u8_to_f32(const uint8_t *src, float *dst, size_t n,
+                            float scale, int zp);
+/* f32 → quantized quantization (q = round(v / scale + zp), clamped) */
+extern void rpvec_f32_to_i8(const float *src, int8_t *dst, size_t n,
+                            float scale, int zp);
+extern void rpvec_f32_to_u8(const float *src, uint8_t *dst, size_t n,
+                            float scale, int zp);
 
 /* Suffix used for the on-disk usearch file.  Distinct from the previous
  * Vamana backend's `.vec' so the two backends never confuse each other's
@@ -51,6 +67,14 @@ static int  vec_wal_create_table(DDIC *ddic, const char *indfile);
 
 /* ----- TXvecParams: defaults / parse / from-options / to-text ------- */
 
+/* Sentinel used in TXvecParams.quant_zp to distinguish "user didn't set
+ * it, apply the dtype default" from a deliberate zero (which is the
+ * correct symmetric default for i8 but a deliberate choice for u8).
+ * Never appears in persisted PARAMS — apply_quant_defaults() always
+ * resolves it to a real value before the index is built or saved.
+ */
+#define TX_VEC_ZP_UNSET INT_MIN
+
 static void
 vec_params_init(TXvecParams *p)
 {
@@ -59,6 +83,33 @@ vec_params_init(TXvecParams *p)
     p->graph = graph_defaults;
     p->threshold_t = 10000;
     p->threshold_d = 1000;
+    /* sentinels: scale<=0 → "use dtype default"; zp == TX_VEC_ZP_UNSET → "use dtype default" */
+    p->quant_scale = 0.0f;
+    p->quant_zp = TX_VEC_ZP_UNSET;
+}
+
+/* Once `p->dtype` is locked in, fill in default quantization parameters
+ * for i8/u8 if the caller didn't supply them.  Called from
+ * TXvecCreateIndex after the dtype-resolution block; idempotent.
+ */
+static void
+vec_params_apply_quant_defaults(TXvecParams *p)
+{
+    int zp_user_set = (p->quant_zp != TX_VEC_ZP_UNSET);
+    switch (p->dtype) {
+    case FTN_VEC_I8:
+        if (p->quant_scale <= 0.0f) p->quant_scale = 1.0f / 127.0f;
+        if (!zp_user_set)            p->quant_zp = 0;
+        break;
+    case FTN_VEC_U8:
+        if (p->quant_scale <= 0.0f) p->quant_scale = 1.0f / 127.0f;
+        if (!zp_user_set)            p->quant_zp = 128;
+        break;
+    default:
+        /* float dtypes — zero out unused fields for tidiness */
+        if (!zp_user_set) p->quant_zp = 0;
+        break;
+    }
 }
 
 static const char *
@@ -149,10 +200,40 @@ TXvecParamsFromOptions(TXvecParams *out, TXindOpts *options)
         else if (!strcasecmp(s, "f32"))  out->dtype = FTN_VEC_F32;
         else if (!strcasecmp(s, "f16"))  out->dtype = FTN_VEC_F16;
         else if (!strcasecmp(s, "bf16")) out->dtype = FTN_VEC_BF16;
+        else if (!strcasecmp(s, "i8"))   out->dtype = FTN_VEC_I8;
+        else if (!strcasecmp(s, "u8"))   out->dtype = FTN_VEC_U8;
         else {
             putmsg(MERR + UGE, fn,
-                "vec_dtype must be one of `f64',`f32',`f16',`bf16'; got `%s'",
+                "vec_dtype must be one of `f64',`f32',`f16',`bf16',`i8',`u8'; got `%s'",
                 s);
+            return -1;
+        }
+    }
+    if ((s = vec_opt_get(options, TXindOpt_vec_scale)) != NULL) {
+        d = strtod(s, &e);
+        if (e == s || *e || d <= 0.0) {
+            putmsg(MERR + UGE, fn,
+                "vec_scale must be a positive number; got `%s'", s);
+            return -1;
+        }
+        out->quant_scale = (float)d;
+    }
+    if ((s = vec_opt_get(options, TXindOpt_vec_zero_point)) != NULL) {
+        li = strtol(s, &e, 10);
+        if (e == s || *e || li < -128 || li > 255) {
+            putmsg(MERR + UGE, fn,
+                "vec_zero_point must be an integer in [-128, 255]; got `%s'", s);
+            return -1;
+        }
+        out->quant_zp = (int)li;     /* clears the TX_VEC_ZP_UNSET sentinel */
+    }
+    if ((s = vec_opt_get(options, TXindOpt_vec_calibrate)) != NULL) {
+        if      (!strcasecmp(s, "none"))                       out->calibrate_mode = 0;
+        else if (!strcasecmp(s, "auto") ||
+                 !strcasecmp(s, "asymmetric"))                  out->calibrate_mode = 1;
+        else {
+            putmsg(MERR + UGE, fn,
+                "vec_calibrate must be `none' or `auto'; got `%s'", s);
             return -1;
         }
     }
@@ -233,6 +314,12 @@ TXvecParamsParse(TXvecParams *out, const char *params)
             else if (!strcmp(val, "i8"))   out->dtype = FTN_VEC_I8;
             else if (!strcmp(val, "u8"))   out->dtype = FTN_VEC_U8;
         }
+        else if (!strcmp(key, "quant_scale")) {
+            out->quant_scale = (float)atof(val);
+        }
+        else if (!strcmp(key, "quant_zp")) {
+            out->quant_zp = atoi(val);
+        }
         *end = saved;
         p = (saved ? end + 1 : end);
     }
@@ -247,17 +334,33 @@ TXvecParamsToText(char *buf, size_t bufSz, const TXvecParams *p)
      * guess the default — and so a state transition is just a substring
      * rewrite of the existing line.  dtype is emitted when known so a
      * varbyte-backed index can be reopened without consulting the
-     * column. */
+     * column.  Quant fields are appended only for i8/u8 indexes; floats
+     * leave them off the wire entirely. */
     const char *dtypeStr = vec_dtype_name(p->dtype);
-    int n = snprintf(buf, bufSz,
-        "type=vec;backend=usearch;dim=%d;dtype=%s;M=%d;efc=%d;alpha=%.3f;metric=%s"
-        ";flush=%s;state=%s",
-        p->graph.dim,
-        dtypeStr ? dtypeStr : "f32",
-        p->graph.M, p->graph.ef_construction, p->graph.alpha,
-        (p->graph.metric == VEC_METRIC_L2) ? "l2" : "dot",
-        p->flush_mode ? "manual" : "auto",
-        p->dirty ? "dirty" : "clean");
+    int is_quantized = (p->dtype == FTN_VEC_I8 || p->dtype == FTN_VEC_U8);
+    int n;
+    if (is_quantized) {
+        n = snprintf(buf, bufSz,
+            "type=vec;backend=usearch;dim=%d;dtype=%s;M=%d;efc=%d;alpha=%.3f;metric=%s"
+            ";flush=%s;state=%s;quant_scale=%.6f;quant_zp=%d",
+            p->graph.dim,
+            dtypeStr ? dtypeStr : "f32",
+            p->graph.M, p->graph.ef_construction, p->graph.alpha,
+            (p->graph.metric == VEC_METRIC_L2) ? "l2" : "dot",
+            p->flush_mode ? "manual" : "auto",
+            p->dirty ? "dirty" : "clean",
+            (double)p->quant_scale, p->quant_zp);
+    } else {
+        n = snprintf(buf, bufSz,
+            "type=vec;backend=usearch;dim=%d;dtype=%s;M=%d;efc=%d;alpha=%.3f;metric=%s"
+            ";flush=%s;state=%s",
+            p->graph.dim,
+            dtypeStr ? dtypeStr : "f32",
+            p->graph.M, p->graph.ef_construction, p->graph.alpha,
+            (p->graph.metric == VEC_METRIC_L2) ? "l2" : "dot",
+            p->flush_mode ? "manual" : "auto",
+            p->dirty ? "dirty" : "clean");
+    }
     return (n < 0 || (size_t)n >= bufSz) ? -1 : n;
 }
 
@@ -282,11 +385,32 @@ metric_to_usearch(vec_metric_t m)
     return (m == VEC_METRIC_L2) ? usearch_metric_l2sq_k : usearch_metric_ip_k;
 }
 
-/* Convert one row's vector to f32 in `dst[0..dim)`.  Returns 0 on success,
- * -1 on unsupported/empty.
+/* Map an FTN_VEC_* tag to the corresponding usearch_scalar_*_k.  Returns
+ * usearch_scalar_unknown_k for unsupported types — caller treats that
+ * as a hard error.
+ */
+static usearch_scalar_kind_t
+dtype_to_usearch_scalar(int dtype)
+{
+    switch (dtype) {
+    case FTN_VEC_F64:  return usearch_scalar_f64_k;
+    case FTN_VEC_F32:  return usearch_scalar_f32_k;
+    case FTN_VEC_F16:  return usearch_scalar_f16_k;
+    case FTN_VEC_BF16: return usearch_scalar_bf16_k;
+    case FTN_VEC_I8:   return usearch_scalar_i8_k;
+    case FTN_VEC_U8:   return usearch_scalar_u8_k;
+    default:           return usearch_scalar_unknown_k;
+    }
+}
+
+/* Convert one row's vector to f32 in `dst[0..dim)`.  For i8/u8 sources,
+ * `scale` and `zp` are the dequantization parameters from the index's
+ * PARAMS (the column carries no inherent calibration).  Returns 0 on
+ * success, -1 on unsupported/empty.
  */
 static int
-convert_to_f32(int t, const void *raw, size_t n_elems, int dim, float *dst)
+convert_to_f32(int t, const void *raw, size_t n_elems, int dim,
+               float scale, int zp, float *dst)
 {
     if ((int)n_elems != dim) return -1;
     switch (t) {
@@ -302,9 +426,84 @@ convert_to_f32(int t, const void *raw, size_t n_elems, int dim, float *dst)
     case FTN_VEC_BF16:
         rpvec_bf16_to_f32((const uint16_t *)raw, dst, (size_t)dim);
         return 0;
+    case FTN_VEC_I8:
+        rpvec_i8_to_f32((const int8_t *)raw, dst, (size_t)dim, scale, zp);
+        return 0;
+    case FTN_VEC_U8:
+        rpvec_u8_to_f32((const uint8_t *)raw, dst, (size_t)dim, scale, zp);
+        return 0;
     default:
         return -1;
     }
+}
+
+/* Convert the f32 vector in `src[0..dim)` to the index's storage dtype,
+ * writing into `dst` (caller-allocated, dim * vec_dtype_elsz(dst_dtype)
+ * bytes).  For i8/u8 destinations, `scale` and `zp` apply.  Returns 0
+ * on success, -1 on unsupported.
+ */
+static int
+quantize_from_f32(int dst_dtype, const float *src, int dim,
+                  float scale, int zp, void *dst)
+{
+    switch (dst_dtype) {
+    case FTN_VEC_F32:
+        memcpy(dst, src, (size_t)dim * sizeof(float));
+        return 0;
+    case FTN_VEC_F64: {
+        double *d = (double *)dst;
+        for (int i = 0; i < dim; i++) d[i] = (double)src[i];
+        return 0;
+    }
+    case FTN_VEC_F16:
+        /* No vectorized rpvec_f32_to_f16 in the texis-side externs; use
+         * the round-trip via the existing f16 helper if needed.  In
+         * practice the vec-index doesn't quantize-to-f16 outputs — see
+         * the dtype-passthrough fast paths in callers. */
+        return -1;
+    case FTN_VEC_BF16:
+        return -1;
+    case FTN_VEC_I8:
+        rpvec_f32_to_i8(src, (int8_t *)dst, (size_t)dim, scale, zp);
+        return 0;
+    case FTN_VEC_U8:
+        rpvec_f32_to_u8(src, (uint8_t *)dst, (size_t)dim, scale, zp);
+        return 0;
+    default:
+        return -1;
+    }
+}
+
+/* End-to-end "feed one row to usearch" pipeline:
+ *   raw column bytes -> f32 (qbuf_f32) -> [optional quantize to qbuf_idx]
+ *   -> usearch_add with the matching scalar kind.
+ *
+ * For float-storage indexes (f32) qbuf_idx may be NULL; the f32 buffer
+ * is fed directly.  For i8/u8 storage qbuf_idx must be pre-allocated to
+ * dim * vec_dtype_elsz(index_dtype) bytes.  Returns 0 on success, -1 on
+ * any conversion or usearch error (with `*uerr_out` populated by usearch).
+ */
+static int
+vec_add_one(usearch_index_t idx, usearch_key_t key, int dim,
+            int index_dtype, float scale, int zp,
+            int column_dtype, const void *raw, size_t cells,
+            float *qbuf_f32, void *qbuf_idx,
+            const char **uerr_out)
+{
+    if (convert_to_f32(column_dtype, raw, cells, dim, scale, zp, qbuf_f32) < 0)
+        return -1;
+    const void *uvec = qbuf_f32;
+    usearch_scalar_kind_t ukind = usearch_scalar_f32_k;
+    if (index_dtype == FTN_VEC_I8 || index_dtype == FTN_VEC_U8) {
+        if (!qbuf_idx) return -1;
+        if (quantize_from_f32(index_dtype, qbuf_f32, dim, scale, zp, qbuf_idx) < 0)
+            return -1;
+        uvec = qbuf_idx;
+        ukind = dtype_to_usearch_scalar(index_dtype);
+    }
+    *uerr_out = NULL;
+    usearch_add(idx, key, uvec, ukind, uerr_out);
+    return *uerr_out ? -1 : 0;
 }
 
 /* ----- Index creation ----------------------------------------------- */
@@ -319,7 +518,8 @@ TXvecCreateIndex(DDIC *ddic, DBTBL *dbtbl,
     int rc = -1;
     int dim = 0;
     size_t n_added = 0, skipped = 0;
-    float *qbuf = NULL;
+    float *qbuf = NULL;        /* per-row f32 work buffer */
+    void  *qbuf_idx = NULL;    /* per-row index-dtype buffer (i8/u8) when needed */
     char *vecpath = NULL;
     METER *meter = NULL;
     EPI_HUGEINT meterDone = 0;
@@ -344,43 +544,31 @@ TXvecCreateIndex(DDIC *ddic, DBTBL *dbtbl,
             field, (unsigned)fld->type);
         return -1;
     }
-    if (t == FTN_VEC_I8 || t == FTN_VEC_U8) {
-        putmsg(MERR + UGE, fn,
-            "INDEX_VEC: i8/u8 vector columns not yet supported");
-        return -1;
-    }
 
     /* Parse params. */
     TXvecParams vp;
     if (TXvecParamsFromOptions(&vp, options) < 0) goto err;
 
     /* dtype resolution.
-     *   - typed varvec column: dtype is the column's element type;
-     *     vec_dtype option (if given) must agree.
-     *   - varbyte column: vec_dtype is required (we have no other way
-     *     to know how to interpret cell bytes). */
+     *   - typed varvec column (incl. varvecI8/U8): the index dtype is
+     *     the column's element type by default; an explicit vec_dtype
+     *     option may override (cross-conversion at the index boundary).
+     *   - varbyte/byte column: vec_dtype is required (we have no other
+     *     way to know how to interpret cell bytes). */
     if (FTN_IS_VEC(t)) {
-        if (vp.dtype != 0 && vp.dtype != t) {
-            putmsg(MERR + UGE, fn,
-                "INDEX_VEC: vec_dtype `%s' conflicts with column type",
-                vec_dtype_name(vp.dtype) ? vec_dtype_name(vp.dtype) : "?");
-            goto err;
-        }
-        vp.dtype = t;
+        if (vp.dtype == 0) vp.dtype = t;     /* no override → match column */
     } else {        /* FTN_BYTE */
         if (vp.dtype == 0) {
             putmsg(MERR + UGE, fn,
-                "INDEX_VEC on a varbyte column requires `with vec_dtype "
-                "'f16'` (or f32/f64/bf16) so the index knows how to "
-                "interpret cell bytes");
-            goto err;
-        }
-        if (vp.dtype == FTN_VEC_I8 || vp.dtype == FTN_VEC_U8) {
-            putmsg(MERR + UGE, fn,
-                "INDEX_VEC: i8/u8 dtype not yet supported");
+                "INDEX_VEC on a byte/varbyte column requires `with "
+                "vec_dtype '...'` (f64/f32/f16/bf16/i8/u8) so the index "
+                "knows how to interpret cell bytes");
             goto err;
         }
     }
+    /* dtype now reflects the index's storage; fill in default scale/zp
+     * for i8/u8 if the user didn't supply them. */
+    vec_params_apply_quant_defaults(&vp);
 
     /* Pre-pass: count live rows so we can reserve usearch's capacity
      * (and pre-allocate per-thread context buffers).  usearch_reserve
@@ -391,6 +579,101 @@ TXvecCreateIndex(DDIC *ddic, DBTBL *dbtbl,
     TXrewinddbtbl(dbtbl);
     while ((recid = getdbtblrow(dbtbl)) != RECIDPN && TXrecidvalid(recid))
         row_estimate++;
+
+    /* Optional second pre-pass: vec_calibrate 'auto' on a quantized
+     * index runs through the table once to find global min/max, then
+     * derives scale + zp asymmetrically.  Skipped for float dtypes and
+     * when the user passed `none` (the default).  Has its own progress
+     * meter when indexmeter is enabled, mirroring fulltext's per-phase
+     * meter convention (see fdbim.c). */
+    if (vp.calibrate_mode == 1 &&
+        (vp.dtype == FTN_VEC_I8 || vp.dtype == FTN_VEC_U8)) {
+        float gmin =  FLT_MAX, gmax = -FLT_MAX;
+        int   calib_dim = 0;
+        float *calib_buf = NULL;
+        METER *cmeter = NULL;
+        EPI_HUGEINT cmeterDone = 0;
+        if (options && options->indexmeter != TXMDT_NONE) {
+            EPI_STAT_S st;
+            EPI_OFF_T total = 0;
+            if (EPI_FSTAT(getdbffh(dbtbl->tbl->df), &st) == 0)
+                total = (EPI_OFF_T)st.st_size;
+            if (total > 0)
+                cmeter = openmeter("INDEX_VEC: calibrating quantization:",
+                                   options->indexmeter,
+                                   MDOUTFUNCPN, MDFLUSHFUNCPN, NULL,
+                                   (EPI_HUGEINT)total);
+        }
+        TXrewinddbtbl(dbtbl);
+        while ((recid = getdbtblrow(dbtbl)) != RECIDPN && TXrecidvalid(recid)) {
+            if (cmeter) {
+                cmeterDone += (EPI_HUGEINT)dbtbl->tbl->irecsz;
+                METER_UPDATEDONE(cmeter, cmeterDone);
+            }
+            size_t cn = 0;
+            void *crow = getfld(fld, &cn);
+            if (!crow || cn == 0) continue;
+            int cdtype = (t == FTN_BYTE) ? vp.dtype : t;
+            size_t cells = cn;
+            if (t == FTN_BYTE) {
+                size_t elsz = vec_dtype_elsz(cdtype);
+                if (elsz == 0 || (cn % elsz) != 0) continue;
+                cells = cn / elsz;
+            }
+            if (calib_dim == 0) {
+                calib_dim = (int)cells;
+                calib_buf = (float *)malloc((size_t)calib_dim * sizeof(float));
+                if (!calib_buf) {
+                    putmsg(MERR + MAE, fn, "alloc calib_buf");
+                    if (cmeter) cmeter = closemeter(cmeter);
+                    goto err;
+                }
+            } else if ((int)cells != calib_dim) {
+                continue;       /* mismatch: skip; main build will warn */
+            }
+            /* For calibration we only need native column values —
+             * pass scale=1, zp=0 (i8/u8 native sources rarely matter
+             * here since calibrating them is unusual). */
+            if (convert_to_f32(cdtype, crow, cells, calib_dim,
+                               1.0f, 0, calib_buf) < 0)
+                continue;
+            for (int i = 0; i < calib_dim; i++) {
+                float v = calib_buf[i];
+                if (v < gmin) gmin = v;
+                if (v > gmax) gmax = v;
+            }
+        }
+        free(calib_buf);
+        if (cmeter) {
+            EPI_STAT_S st;
+            EPI_OFF_T total = 0;
+            if (EPI_FSTAT(getdbffh(dbtbl->tbl->df), &st) == 0)
+                total = (EPI_OFF_T)st.st_size;
+            meter_updatedone(cmeter, (EPI_HUGEINT)total);
+            meter_end(cmeter);
+            cmeter = closemeter(cmeter);
+        }
+        if (gmin > gmax) {
+            putmsg(MWARN, fn,
+                "vec_calibrate 'auto': no usable rows; falling back to defaults");
+        } else if (gmax - gmin < 1e-12f) {
+            putmsg(MWARN, fn,
+                "vec_calibrate 'auto': zero data range; falling back to defaults");
+        } else {
+            float new_scale = (gmax - gmin) / 255.0f;
+            long  new_zp;
+            if (vp.dtype == FTN_VEC_I8)
+                new_zp = (long)lrintf(-128.0f - gmin / new_scale);
+            else
+                new_zp = (long)lrintf(-gmin / new_scale);
+            if (new_zp < (vp.dtype == FTN_VEC_I8 ? -128 : 0))
+                new_zp = (vp.dtype == FTN_VEC_I8 ? -128 : 0);
+            else if (new_zp > (vp.dtype == FTN_VEC_I8 ? 127 : 255))
+                new_zp = (vp.dtype == FTN_VEC_I8 ? 127 : 255);
+            vp.quant_scale = new_scale;
+            vp.quant_zp = (int)new_zp;
+        }
+    }
 
     /* Open progress meter sized by table file bytes. */
     if (options && options->indexmeter != TXMDT_NONE) {
@@ -415,11 +698,17 @@ TXvecCreateIndex(DDIC *ddic, DBTBL *dbtbl,
         void *raw = getfld(fld, &n_elems);
         if (!raw || n_elems == 0) { skipped++; continue; }
 
+        /* Resolve column dtype: how to interpret raw bytes from getfld().
+         *   - typed varvec column: column_dtype is the column's element type
+         *   - byte/varbyte column: column_dtype = vp.dtype (user-specified
+         *     interpretation; the bytes ARE values of that type) */
+        int column_dtype = (t == FTN_BYTE) ? vp.dtype : t;
+
         /* For varbyte columns getfld() returns byte count, not cells.
-         * Translate so dim/convert logic below sees cell count. */
+         * Typed varvec columns return cell count directly. */
         size_t cell_count = n_elems;
         if (t == FTN_BYTE) {
-            size_t elsz = vec_dtype_elsz(vp.dtype);
+            size_t elsz = vec_dtype_elsz(column_dtype);
             if (elsz == 0 || (n_elems % elsz) != 0) {
                 putmsg(MWARN, fn,
                     "INDEX_VEC: row byte length %lu not a multiple of "
@@ -435,11 +724,17 @@ TXvecCreateIndex(DDIC *ddic, DBTBL *dbtbl,
             /* First row: lock dim and initialize the index. */
             dim = (int)cell_count;
 
+            /* Index storage is f32 by default; for i8/u8 indexes use the
+             * matching usearch scalar kind so on-disk size shrinks 4x. */
+            usearch_scalar_kind_t store_kind = usearch_scalar_f32_k;
+            if (vp.dtype == FTN_VEC_I8) store_kind = usearch_scalar_i8_k;
+            else if (vp.dtype == FTN_VEC_U8) store_kind = usearch_scalar_u8_k;
+
             usearch_init_options_t uo;
             memset(&uo, 0, sizeof(uo));
             uo.metric_kind   = metric_to_usearch(vp.graph.metric);
             uo.metric        = NULL;
-            uo.quantization  = usearch_scalar_f32_k;
+            uo.quantization  = store_kind;
             uo.dimensions    = (size_t)dim;
             uo.connectivity  = (size_t)vp.graph.M;
             uo.expansion_add = (size_t)vp.graph.ef_construction;
@@ -467,23 +762,31 @@ TXvecCreateIndex(DDIC *ddic, DBTBL *dbtbl,
 
             qbuf = (float *)malloc((size_t)dim * sizeof(float));
             if (!qbuf) { putmsg(MERR + MAE, fn, "alloc qbuf"); goto err; }
+
+            /* Allocate the index-dtype output buffer for i8/u8 indexes. */
+            if (vp.dtype == FTN_VEC_I8 || vp.dtype == FTN_VEC_U8) {
+                qbuf_idx = malloc((size_t)dim * vec_dtype_elsz(vp.dtype));
+                if (!qbuf_idx) { putmsg(MERR + MAE, fn, "alloc qbuf_idx"); goto err; }
+            }
         }
 
-        if (convert_to_f32(vp.dtype, raw, cell_count, dim, qbuf) < 0) {
-            if ((int)cell_count != dim) {
-                putmsg(MWARN, fn,
-                    "INDEX_VEC: skipping row: vector dim %lu != index dim %d",
-                    (unsigned long)cell_count, dim);
-            }
+        if ((int)cell_count != dim) {
+            putmsg(MWARN, fn,
+                "INDEX_VEC: skipping row: vector dim %lu != index dim %d",
+                (unsigned long)cell_count, dim);
             skipped++;
             continue;
         }
-
-        usearch_add(idx, (usearch_key_t)(uint64_t)recid->off,
-                    qbuf, usearch_scalar_f32_k, &uerr);
-        if (uerr) {
-            putmsg(MERR + UGE, fn, "usearch_add: %s", uerr);
-            goto err;
+        if (vec_add_one(idx, (usearch_key_t)(uint64_t)recid->off, dim,
+                        vp.dtype, vp.quant_scale, vp.quant_zp,
+                        column_dtype, raw, cell_count,
+                        qbuf, qbuf_idx, &uerr) < 0) {
+            if (uerr) {
+                putmsg(MERR + UGE, fn, "usearch_add: %s", uerr);
+                goto err;
+            }
+            skipped++;
+            continue;
         }
         n_added++;
     }
@@ -530,6 +833,7 @@ cleanup:
     if (meter) meter = closemeter(meter);
     if (idx) usearch_free(idx, &uerr);
     free(qbuf);
+    free(qbuf_idx);
     free(vecpath);
     return rc;
 }
@@ -544,6 +848,11 @@ struct TXvecHandle {
     vec_metric_t     metric;
     int              dtype;       /* FTN_VEC_F* — interpretation of cell
                                    * bytes for byte-backed indexes. */
+    /* Quantization parameters — only meaningful when dtype is i8/u8;
+     * cached from PARAMS for use by per-row hooks and LIKEV queries
+     * without re-parsing on each call. */
+    float            quant_scale;
+    int              quant_zp;
     int              flush_mode;  /* 0=auto, 1=manual (cached from PARAMS) */
     int              dirty;       /* in-memory state diverges from disk */
     DDIC            *ddic;        /* DDIC observed at last open; used by
@@ -860,6 +1169,7 @@ vec_reconcile(DDIC *ddic, TXvecHandle *h)
     FLD *fld;
     RECID *recid;
     float *qbuf = NULL;
+    void  *qbuf_idx = NULL;
     size_t added = 0, scanned = 0;
     int rc = -1;
     const char *uerr = NULL;
@@ -889,7 +1199,14 @@ vec_reconcile(DDIC *ddic, TXvecHandle *h)
     qbuf = (float *)malloc((size_t)h->dim * sizeof(float));
     if (!qbuf) { putmsg(MERR + MAE, fn, "alloc qbuf"); goto cleanup; }
 
+    /* Index-dtype output buffer for quantized indexes. */
+    if (h->dtype == FTN_VEC_I8 || h->dtype == FTN_VEC_U8) {
+        qbuf_idx = malloc((size_t)h->dim * vec_dtype_elsz(h->dtype));
+        if (!qbuf_idx) { putmsg(MERR + MAE, fn, "alloc qbuf_idx"); goto cleanup; }
+    }
+
     int colType = fld->type & DDTYPEBITS;
+    int column_dtype = (colType == FTN_BYTE) ? h->dtype : colType;
 
     TXrewinddbtbl(dbtbl);
     while ((recid = getdbtblrow(dbtbl)) != RECIDPN && TXrecidvalid(recid)) {
@@ -904,12 +1221,11 @@ vec_reconcile(DDIC *ddic, TXvecHandle *h)
 
         size_t cells = n_elems;
         if (colType == FTN_BYTE) {
-            size_t elsz = vec_dtype_elsz(h->dtype);
+            size_t elsz = vec_dtype_elsz(column_dtype);
             if (elsz == 0 || (n_elems % elsz) != 0) continue;
             cells = n_elems / elsz;
         }
         if ((int)cells != h->dim) continue;
-        if (convert_to_f32(h->dtype, raw, cells, h->dim, qbuf) < 0) continue;
 
         size_t sz = usearch_size(h->index, &uerr);     uerr = NULL;
         size_t cap = usearch_capacity(h->index, &uerr); uerr = NULL;
@@ -919,8 +1235,13 @@ vec_reconcile(DDIC *ddic, TXvecHandle *h)
             if (uerr) { putmsg(MERR + UGE, fn, "reserve: %s", uerr);
                         goto cleanup; }
         }
-        usearch_add(h->index, key, qbuf, usearch_scalar_f32_k, &uerr);
-        if (uerr) { putmsg(MERR + UGE, fn, "add: %s", uerr); goto cleanup; }
+        if (vec_add_one(h->index, key, h->dim,
+                        h->dtype, h->quant_scale, h->quant_zp,
+                        column_dtype, raw, cells,
+                        qbuf, qbuf_idx, &uerr) < 0) {
+            if (uerr) { putmsg(MERR + UGE, fn, "add: %s", uerr); goto cleanup; }
+            continue;
+        }
         added++;
     }
 
@@ -935,6 +1256,7 @@ vec_reconcile(DDIC *ddic, TXvecHandle *h)
 
 cleanup:
     free(qbuf);
+    free(qbuf_idx);
     if (dbtbl) closedbtbl(dbtbl);
     free(tbName);
     free(fieldName);
@@ -1240,12 +1562,14 @@ vec_wal_replay_and_clear(struct TXvecHandle *h, DDIC *ddic)
     FLD   *fld       = NULL;
     FLD   *walRid    = NULL, *walOp = NULL;
     float *qbuf      = NULL;
+    void  *qbuf_idx  = NULL;
     vec_wal_entry_t *entries = NULL;
     size_t  nentries = 0, capentries = 0;
     const char *uerr = NULL;
     size_t  applied_add = 0, applied_del = 0;
     int     rc = -1;
     int     colType = 0;
+    int     column_dtype = 0;
     int     hold_table_lock = 0;
 
     if (!ddic || !h) return -1;
@@ -1285,6 +1609,7 @@ vec_wal_replay_and_clear(struct TXvecHandle *h, DDIC *ddic)
         goto cleanup;
     }
     colType = fld->type & DDTYPEBITS;
+    column_dtype = (colType == FTN_BYTE) ? h->dtype : colType;
 
     wal = opendbtbl(ddic, walTbName);
     if (!wal) {
@@ -1357,6 +1682,10 @@ vec_wal_replay_and_clear(struct TXvecHandle *h, DDIC *ddic)
      * pick up any other process's flushes since our load. */
     qbuf = (float *)malloc((size_t)h->dim * sizeof(float));
     if (!qbuf) { putmsg(MERR + MAE, fn, "alloc qbuf"); goto cleanup; }
+    if (h->dtype == FTN_VEC_I8 || h->dtype == FTN_VEC_U8) {
+        qbuf_idx = malloc((size_t)h->dim * vec_dtype_elsz(h->dtype));
+        if (!qbuf_idx) { putmsg(MERR + MAE, fn, "alloc qbuf_idx"); goto cleanup; }
+    }
 
     {
         usearch_index_t fresh = NULL;
@@ -1410,12 +1739,11 @@ vec_wal_replay_and_clear(struct TXvecHandle *h, DDIC *ddic)
         size_t cells = n_elems;
         if (!raw || n_elems == 0) ok = 0;
         else if (colType == FTN_BYTE) {
-            size_t elsz = vec_dtype_elsz(h->dtype);
+            size_t elsz = vec_dtype_elsz(column_dtype);
             if (elsz == 0 || (n_elems % elsz) != 0) ok = 0;
             else cells = n_elems / elsz;
         }
         if (ok && (int)cells != h->dim) ok = 0;
-        if (ok && convert_to_f32(h->dtype, raw, cells, h->dim, qbuf) < 0) ok = 0;
         if (!ok) continue;
 
         size_t sz  = usearch_size(h->index, &uerr);     uerr = NULL;
@@ -1429,8 +1757,13 @@ vec_wal_replay_and_clear(struct TXvecHandle *h, DDIC *ddic)
             usearch_remove(h->index, key, &uerr);
             uerr = NULL;
         }
-        usearch_add(h->index, key, qbuf, usearch_scalar_f32_k, &uerr);
-        if (uerr) { putmsg(MERR + UGE, fn, "add: %s", uerr); goto cleanup; }
+        if (vec_add_one(h->index, key, h->dim,
+                        h->dtype, h->quant_scale, h->quant_zp,
+                        column_dtype, raw, cells,
+                        qbuf, qbuf_idx, &uerr) < 0) {
+            if (uerr) { putmsg(MERR + UGE, fn, "add: %s", uerr); goto cleanup; }
+            continue;
+        }
         applied_add++;
     }
 
@@ -1460,6 +1793,7 @@ vec_wal_replay_and_clear(struct TXvecHandle *h, DDIC *ddic)
 
 cleanup:
     free(qbuf);
+    free(qbuf_idx);
     free(entries);
     if (wal) closedbtbl(wal);
     if (hold_table_lock && dbtbl) TXunlocktable(dbtbl, W_LCK);
@@ -1547,6 +1881,8 @@ TXvecOpen(DDIC *ddic, const char *indfile)
     h->flush_mode = 0;            /* default; PARAMS lookup may override */
     h->dirty      = 0;
     h->dtype      = FTN_VEC_F32;  /* default; overridden from PARAMS */
+    h->quant_scale = 0.0f;        /* unused unless dtype is i8/u8 */
+    h->quant_zp    = 0;
     h->ddic       = ddic;         /* may be NULL; refreshed on cache hit */
 
     /* Capture file identity for cross-process change detection.  Done
@@ -1566,6 +1902,8 @@ TXvecOpen(DDIC *ddic, const char *indfile)
                 h->flush_mode = vp.flush_mode;
                 h->dirty      = vp.dirty;
                 if (vp.dtype) h->dtype = vp.dtype;
+                h->quant_scale = vp.quant_scale;
+                h->quant_zp    = vp.quant_zp;
             }
             free(currParams);
         }
@@ -1626,10 +1964,12 @@ TXvecAddRow(DDIC *ddic, DBTBL *dbtbl,
         return 0;
     }
 
+    int column_dtype = (t == FTN_BYTE) ? h->dtype : t;
+
     /* Compute cell count from byte length when the column is varbyte. */
     size_t cell_count = n_elems;
     if (t == FTN_BYTE) {
-        size_t elsz = vec_dtype_elsz(h->dtype);
+        size_t elsz = vec_dtype_elsz(column_dtype);
         if (elsz == 0 || (n_elems % elsz) != 0) {
             putmsg(MWARN, fn,
                 "INDEX_VEC: row byte length %lu not a multiple of dtype "
@@ -1648,15 +1988,16 @@ TXvecAddRow(DDIC *ddic, DBTBL *dbtbl,
 
     float *qbuf = (float *)malloc((size_t)h->dim * sizeof(float));
     if (!qbuf) { putmsg(MERR + MAE, fn, "alloc qbuf"); return -1; }
-
-    int rc = 0;
-    if (convert_to_f32(h->dtype, raw, cell_count, h->dim, qbuf) < 0) {
-        putmsg(MWARN, fn, "INDEX_VEC: skipping row with unsupported dtype");
-        rc = 0;
-        goto cleanup;
+    void *qbuf_idx = NULL;
+    if (h->dtype == FTN_VEC_I8 || h->dtype == FTN_VEC_U8) {
+        qbuf_idx = malloc((size_t)h->dim * vec_dtype_elsz(h->dtype));
+        if (!qbuf_idx) { putmsg(MERR + MAE, fn, "alloc qbuf_idx");
+                          free(qbuf); return -1; }
     }
 
+    int rc = 0;
     const char *uerr = NULL;
+
     /* If the recid is already present (UPDATE path can call us after
      * TXdelfromindices, but a stray duplicate shouldn't crash us),
      * remove first then add.  Surface remove errors as a warning so
@@ -1689,11 +2030,17 @@ TXvecAddRow(DDIC *ddic, DBTBL *dbtbl,
         }
     }
 
-    usearch_add(h->index, (usearch_key_t)(uint64_t)recid->off,
-                qbuf, usearch_scalar_f32_k, &uerr);
-    if (uerr) {
-        putmsg(MERR + UGE, fn, "usearch_add: %s", uerr);
-        rc = -1; goto cleanup;
+    if (vec_add_one(h->index, (usearch_key_t)(uint64_t)recid->off, h->dim,
+                    h->dtype, h->quant_scale, h->quant_zp,
+                    column_dtype, raw, cell_count,
+                    qbuf, qbuf_idx, &uerr) < 0) {
+        if (uerr) {
+            putmsg(MERR + UGE, fn, "usearch_add: %s", uerr);
+            rc = -1;
+        } else {
+            putmsg(MWARN, fn, "INDEX_VEC: skipping row with unsupported dtype");
+        }
+        goto cleanup;
     }
 
     /* Defer when the index is configured for manual flush, OR when
@@ -1718,6 +2065,7 @@ TXvecAddRow(DDIC *ddic, DBTBL *dbtbl,
 
 cleanup:
     free(qbuf);
+    free(qbuf_idx);
     return rc;
 }
 
@@ -1768,9 +2116,23 @@ TXvecSearch(TXvecHandle *h, const float *query, size_t k, size_t ef,
 {
     static const char fn[] = "TXvecSearch";
     const char *uerr = NULL;
-    (void)ef;   /* usearch's expansion_search was set at index creation;
-                 * dynamic adjustment per query isn't exposed. */
+    void *qbuf_idx = NULL;
     if (!h || !h->index) return SIZE_MAX;
+    /* Per-query ef.  Caller's `ef` arg wins if non-zero; otherwise fall
+     * back to the global TXlikevef set via sql.set/SET; 0 means leave
+     * the index's existing expansion_search alone. */
+    {
+        size_t want_ef = (ef > 0) ? ef
+                       : (TXlikevef > 0 ? (size_t)TXlikevef : 0);
+        if (want_ef > 0) {
+            const char *uerr2 = NULL;
+            usearch_change_expansion_search(h->index, want_ef, &uerr2);
+            if (uerr2) {
+                putmsg(MWARN, fn, "usearch_change_expansion_search: %s",
+                       uerr2);
+            }
+        }
+    }
 
     usearch_key_t *keys = (usearch_key_t *)
         malloc(k * sizeof(usearch_key_t));
@@ -1781,11 +2143,26 @@ TXvecSearch(TXvecHandle *h, const float *query, size_t k, size_t ef,
         return SIZE_MAX;
     }
 
-    size_t got = usearch_search(h->index, query, usearch_scalar_f32_k,
+    /* For i8/u8 indexes, quantize the query before searching so it lands
+     * in the same coordinate space as the stored vectors. */
+    const void *uquery = query;
+    usearch_scalar_kind_t ukind = usearch_scalar_f32_k;
+    if (h->dtype == FTN_VEC_I8 || h->dtype == FTN_VEC_U8) {
+        qbuf_idx = malloc((size_t)h->dim * vec_dtype_elsz(h->dtype));
+        if (!qbuf_idx) { free(keys); free(dists); return SIZE_MAX; }
+        if (quantize_from_f32(h->dtype, query, h->dim,
+                              h->quant_scale, h->quant_zp, qbuf_idx) < 0) {
+            free(keys); free(dists); free(qbuf_idx); return SIZE_MAX;
+        }
+        uquery = qbuf_idx;
+        ukind = dtype_to_usearch_scalar(h->dtype);
+    }
+
+    size_t got = usearch_search(h->index, uquery, ukind,
                                 k, keys, dists, &uerr);
     if (uerr) {
         putmsg(MERR + UGE, fn, "usearch_search: %s", uerr);
-        free(keys); free(dists);
+        free(keys); free(dists); free(qbuf_idx);
         return SIZE_MAX;
     }
 
@@ -1804,7 +2181,7 @@ TXvecSearch(TXvecHandle *h, const float *query, size_t k, size_t ef,
             results[i].score = 1.0f - (float)dists[i];   /* dot ~= 1 - returned */
     }
 
-    free(keys); free(dists);
+    free(keys); free(dists); free(qbuf_idx);
     return got;
 }
 
@@ -1982,6 +2359,7 @@ TXvecIxVecIndex(const char *iname, const char *sysindexParams,
     IINDEX *ix = NULL;
     BTREE *bt = NULL;
     float *qbuf = NULL;
+    void  *qbuf_idx = NULL;
     usearch_key_t *keys = NULL;
     usearch_distance_t *dists = NULL;
     EPI_HUGEUINT cnt = 0;
@@ -2009,7 +2387,7 @@ TXvecIxVecIndex(const char *iname, const char *sysindexParams,
     int qDtype = FTN_IS_VEC(t) ? t : h->dtype;
     size_t qCells = qn;
     if (t == FTN_BYTE) {
-        size_t elsz = vec_dtype_elsz(h->dtype);
+        size_t elsz = vec_dtype_elsz(qDtype);
         if (elsz == 0 || (qn % elsz) != 0) goto err;
         qCells = qn / elsz;
     }
@@ -2023,16 +2401,41 @@ TXvecIxVecIndex(const char *iname, const char *sysindexParams,
 
     qbuf = (float *)malloc((size_t)h->dim * sizeof(float));
     if (!qbuf) goto err;
-    if (convert_to_f32(qDtype, qraw, qCells, h->dim, qbuf) < 0) goto err;
+    if (convert_to_f32(qDtype, qraw, qCells, h->dim,
+                       h->quant_scale, h->quant_zp, qbuf) < 0) goto err;
 
-    /* Top-K search. */
-    size_t k = 1000;
+    /* For i8/u8 indexes, quantize the query to the index's storage
+     * format using the same scale/zp the build used. */
+    const void *uquery = qbuf;
+    usearch_scalar_kind_t ukind = usearch_scalar_f32_k;
+    if (h->dtype == FTN_VEC_I8 || h->dtype == FTN_VEC_U8) {
+        qbuf_idx = malloc((size_t)h->dim * vec_dtype_elsz(h->dtype));
+        if (!qbuf_idx) goto err;
+        if (quantize_from_f32(h->dtype, qbuf, h->dim,
+                              h->quant_scale, h->quant_zp, qbuf_idx) < 0)
+            goto err;
+        uquery = qbuf_idx;
+        ukind = dtype_to_usearch_scalar(h->dtype);
+    }
+
+    /* Top-K search.  Pool size and per-query ef both come from the
+     * sql.set / SET process-globals, with sane defaults baked in. */
+    size_t k = (TXnlikevhits > 0) ? (size_t)TXnlikevhits : 1000;
     keys  = (usearch_key_t *)     malloc(k * sizeof(usearch_key_t));
     dists = (usearch_distance_t *)malloc(k * sizeof(usearch_distance_t));
     if (!keys || !dists) goto err;
 
     const char *uerr = NULL;
-    size_t got = usearch_search(h->index, qbuf, usearch_scalar_f32_k,
+    /* Apply per-query ef override.  0 = leave the index's existing
+     * setting in effect (set at build time from vec_efc). */
+    if (TXlikevef > 0) {
+        usearch_change_expansion_search(h->index, (size_t)TXlikevef, &uerr);
+        if (uerr) {
+            putmsg(MWARN, fn, "usearch_change_expansion_search: %s", uerr);
+            uerr = NULL;
+        }
+    }
+    size_t got = usearch_search(h->index, uquery, ukind,
                                 k, keys, dists, &uerr);
     if (uerr) {
         putmsg(MERR + UGE, fn, "usearch_search: %s", uerr);
@@ -2075,6 +2478,7 @@ err:
 cleanup:
     if (bt) bt = closebtree(bt);
     free(qbuf);
+    free(qbuf_idx);
     free(keys);
     free(dists);
     return ix;

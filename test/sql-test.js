@@ -290,6 +290,95 @@ testFeature ("Create with addTables in existing db", function(){
     return res.rowCount;
 });
 
+/* ----- Sql.list() — explicit IN-list parameter wrapper ----- */
+
+testFeature("Sql.list - setup test table", function() {
+    if (sql1.one("select * from SYSTABLES where NAME='listtest'"))
+        sql1.one("drop table listtest");
+    sql1.one("create table listtest ( id int, val double, name varchar(64) )");
+    var rows = [
+        [1, 1.5, 'alpha'],
+        [2, 2.5, 'beta'],
+        [3, 3.5, 'gamma'],
+        [4, 4.5, 'delta'],
+        [5, 5.5, 'epsilon']
+    ];
+    for (var i = 0; i < rows.length; i++)
+        sql1.exec("insert into listtest values(?,?,?)", rows[i]);
+    return sql1.one("select count(*) c from listtest").c == 5;
+});
+
+testFeature("Sql.list - numeric IN against int column", function() {
+    var ids = sql1.exec("select id from listtest where id in (?) order by id",
+                        [Sql.list([1,3,5])]).rows.map(function(r){return r.id});
+    return JSON.stringify(ids) === "[1,3,5]";
+});
+
+testFeature("Sql.list - numeric IN with no matches", function() {
+    var rs = sql1.exec("select id from listtest where id in (?)", [Sql.list([99])]).rows;
+    return rs.length === 0;
+});
+
+testFeature("Sql.list - single-element numeric list", function() {
+    var ids = sql1.exec("select id from listtest where id in (?)",
+                        [Sql.list([1])]).rows.map(function(r){return r.id});
+    return JSON.stringify(ids) === "[1]";
+});
+
+testFeature("Sql.list - numeric IN against double column", function() {
+    var ids = sql1.exec("select id from listtest where val in (?) order by id",
+                        [Sql.list([1.5, 3.5])]).rows.map(function(r){return r.id});
+    return JSON.stringify(ids) === "[1,3]";
+});
+
+testFeature("Sql.list - ints do not coerce to non-equal doubles", function() {
+    /* val column has 1.5,2.5,...; passing [2,4] should not match */
+    var rs = sql1.exec("select id from listtest where val in (?)",
+                       [Sql.list([2,4])]).rows;
+    return rs.length === 0;
+});
+
+testFeature("Sql.list - string IN against varchar (strlst)", function() {
+    var ids = sql1.exec("select id from listtest where name in (?) order by id",
+                        [Sql.list(['alpha','gamma','epsilon'])]).rows.map(function(r){return r.id});
+    return JSON.stringify(ids) === "[1,3,5]";
+});
+
+testFeature("Sql.list - string IN with no matches", function() {
+    var rs = sql1.exec("select id from listtest where name in (?)",
+                       [Sql.list(['nonexistent'])]).rows;
+    return rs.length === 0;
+});
+
+testFeature("Sql.list - single-element string list", function() {
+    var ids = sql1.exec("select id from listtest where name in (?)",
+                        [Sql.list(['alpha'])]).rows.map(function(r){return r.id});
+    return JSON.stringify(ids) === "[1]";
+});
+
+/* error paths — each should throw */
+function _listShouldThrow(arg) {
+    try { Sql.list(arg); return false; }
+    catch(e) { return true; }
+}
+function _listShouldThrowNoArg() {
+    try { Sql.list(); return false; }
+    catch(e) { return true; }
+}
+
+testFeature("Sql.list - throws on no argument",          _listShouldThrowNoArg);
+testFeature("Sql.list - throws on non-array argument",   function(){ return _listShouldThrow(123) && _listShouldThrow('abc') && _listShouldThrow({}); });
+testFeature("Sql.list - throws on empty array",          function(){ return _listShouldThrow([]); });
+testFeature("Sql.list - throws on mixed types",          function(){ return _listShouldThrow([1,'a',2]); });
+testFeature("Sql.list - throws on NaN/Infinity",         function(){ return _listShouldThrow([NaN]) && _listShouldThrow([Infinity]); });
+testFeature("Sql.list - throws on null/boolean elements",function(){ return _listShouldThrow([null]) && _listShouldThrow([true]); });
+
+testFeature("Sql.list - bare-array (deprecated) still works", function() {
+    var ids = sql1.exec("select id from listtest where id in (?) order by id",
+                        [[1,3,5]]).rows.map(function(r){return r.id});
+    return JSON.stringify(ids) === "[1,3,5]";
+});
+
 rm_rf_dir(tmpdir);
 
 process.exit(_nfailed ? 1 : 0);

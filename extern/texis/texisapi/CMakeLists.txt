@@ -386,6 +386,7 @@ IF(PARSERS_FOUND)
     node_rename.c
     node_table.c
     optpred.c
+    orderbyaliases.c
     preptree.c
     procupd.c
     product.c

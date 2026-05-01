@@ -2464,6 +2464,232 @@ static QUERY_STRUCT rp_get_query(duk_context *ctx)
     return (q_st);
 }
 
+/* ------------------------------------------------------------------
+ * Sql.list(arr) — explicit wrapper marking a JS array as a SQL list
+ * (i.e. for `WHERE col IN (?)`).  Returns an opaque object carrying
+ * the array under DUK_HIDDEN_SYMBOL("sql_list") and the inferred
+ * element type ("number" or "string") under DUK_HIDDEN_SYMBOL("sql_list_type").
+ * Hidden symbols are not settable from JS, so the bind path can
+ * trust that any object carrying them came from this constructor.
+ *
+ * Validation happens here (non-empty, homogeneous, no NaN/Infinity)
+ * so the bind path is decision-free.
+ *
+ * Numbers are emitted as SQL_DOUBLE arrays (texis promotes to the
+ * column type at compare time).  Strings are emitted as SQL_STRLST
+ * (single ft_strlst parameter); texis 7+ promotes a varchar LHS to a
+ * single-element strlst for `varchcol IN (strlst_param)` semantics
+ * with inMode=subset (rampart default).
+ *
+ * Values outside JS-safe-integer range have already lost precision in
+ * JS; pass an array of strings if you need exact >2^53 integers.
+ */
+static duk_ret_t rp_sql_list_create(duk_context *ctx)
+{
+    duk_uarridx_t i, len;
+    int firsttype, type;
+    const char *type_str;
+
+    if (!duk_is_array(ctx, 0))
+        RP_THROW(ctx, "Sql.list: argument must be an array");
+
+    len = (duk_uarridx_t)duk_get_length(ctx, 0);
+    if (len == 0)
+        RP_THROW(ctx, "Sql.list: array must not be empty");
+
+    duk_get_prop_index(ctx, 0, 0);
+    firsttype = rp_gettype(ctx, -1);
+    duk_pop(ctx);
+
+    if (firsttype != RP_TYPE_NUMBER && firsttype != RP_TYPE_STRING)
+        RP_THROW(ctx, "Sql.list: array elements must be all numbers or all strings");
+
+    for (i = 0; i < len; i++)
+    {
+        duk_get_prop_index(ctx, 0, i);
+        type = rp_gettype(ctx, -1);
+        if (type != firsttype)
+        {
+            duk_pop(ctx);
+            RP_THROW(ctx, "Sql.list: array must be homogeneous; element at index %u differs from first", (unsigned)i);
+        }
+        if (firsttype == RP_TYPE_NUMBER)
+        {
+            double d = duk_get_number(ctx, -1);
+            if (isnan(d) || isinf(d))
+            {
+                duk_pop(ctx);
+                RP_THROW(ctx, "Sql.list: array contains NaN/Infinity at index %u", (unsigned)i);
+            }
+        }
+        duk_pop(ctx);
+    }
+
+    type_str = (firsttype == RP_TYPE_NUMBER) ? "number" : "string";
+
+    /* wrapper: { [HIDDEN("sql_list")]: arr, [HIDDEN("sql_list_type")]: type_str } */
+    duk_push_object(ctx);
+    duk_dup(ctx, 0);
+    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("sql_list"));
+    duk_push_string(ctx, type_str);
+    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("sql_list_type"));
+
+    return 1;
+}
+
+/* Build an ft_strlst from a JS array of strings sitting at stack
+ * index `arr_idx`.  Returns malloc'd buffer (caller frees) and
+ * writes total byte size to *out_size.  Caller has already verified
+ * homogeneity / non-empty.
+ */
+static void *build_strlst_from_jsarray(duk_context *ctx, duk_idx_t arr_idx, size_t *out_size)
+{
+    duk_uarridx_t i, len;
+    size_t payload_sz, total_sz;
+    ft_strlst *p;
+    char *q;
+    byte byteUsed[256];
+    int j;
+
+    len = (duk_uarridx_t)duk_get_length(ctx, arr_idx);
+
+    /* First pass: compute payload size = sum(strlen(s)+1) + 1 terminator */
+    payload_sz = 1; /* the final terminator nul */
+    for (i = 0; i < len; i++)
+    {
+        duk_size_t slen;
+        duk_get_prop_index(ctx, arr_idx, i);
+        (void)duk_get_lstring(ctx, -1, &slen);
+        payload_sz += (size_t)slen + 1;
+        duk_pop(ctx);
+    }
+
+    total_sz = (size_t)TX_STRLST_MINSZ + payload_sz;
+    if (total_sz < sizeof(ft_strlst))
+        total_sz = sizeof(ft_strlst);
+
+    p = NULL;
+    REMALLOC(p, total_sz);
+    memset(p, 0, total_sz);
+    p->nb = payload_sz;
+
+    /* Copy strings + nuls into buf */
+    q = p->buf;
+    memset(byteUsed, 0, sizeof(byteUsed));
+    for (i = 0; i < len; i++)
+    {
+        duk_size_t slen;
+        const char *s;
+        duk_get_prop_index(ctx, arr_idx, i);
+        s = duk_get_lstring(ctx, -1, &slen);
+        if (slen > 0)
+        {
+            memcpy(q, s, slen);
+            for (j = 0; j < (int)slen; j++)
+                byteUsed[(byte)s[j]] = 1;
+            q += slen;
+        }
+        *q++ = '\0';
+        duk_pop(ctx);
+    }
+    *q = '\0'; /* terminator */
+
+    /* Pick a delimiter byte not used in any string (display only) */
+    p->delim = '\0';
+    for (j = 0; j < 256; j++)
+    {
+        if (!byteUsed[(byte)TxPrefStrlstDelims[j]])
+        {
+            p->delim = TxPrefStrlstDelims[j];
+            break;
+        }
+    }
+
+    *out_size = total_sz;
+    return (void *)p;
+}
+
+/* If the value at the top of the stack is a Sql.list wrapper, alloc
+ * the appropriate buffer and fill out (*in,*out,*olen).  Returns
+ * the buffer on success (caller must free), or NULL when the value
+ * is not a Sql.list wrapper.
+ */
+static void *check_sql_list(duk_context *ctx, long *olen, int *in, int *out)
+{
+    duk_uarridx_t i, len;
+    const char *type_str;
+    duk_idx_t arr_idx;
+
+    *olen = 0;
+
+    if (!duk_is_object(ctx, -1) || duk_is_array(ctx, -1) || duk_is_function(ctx, -1))
+        return NULL;
+
+    if (!duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("sql_list")))
+    {
+        duk_pop(ctx);
+        return NULL;
+    }
+    /* stack: ..., wrapper, arr */
+    arr_idx = duk_get_top_index(ctx);
+
+    if (!duk_get_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("sql_list_type")))
+    {
+        duk_pop_2(ctx);
+        return NULL;
+    }
+    type_str = duk_get_string(ctx, -1);
+    duk_pop(ctx); /* pop type_str */
+    /* stack: ..., wrapper, arr */
+
+    if (type_str && !strcmp(type_str, "number"))
+    {
+        double *dret = NULL;
+        len = (duk_uarridx_t)duk_get_length(ctx, arr_idx);
+        REMALLOC(dret, sizeof(double) * (size_t)len);
+        for (i = 0; i < len; i++)
+        {
+            duk_get_prop_index(ctx, arr_idx, i);
+            dret[i] = duk_get_number(ctx, -1);
+            duk_pop(ctx);
+        }
+        duk_pop(ctx); /* pop arr */
+        *in   = SQL_C_DOUBLE;
+        *out  = SQL_DOUBLE;
+        *olen = (long)len * (long)sizeof(double);
+        return (void *)dret;
+    }
+    else if (type_str && !strcmp(type_str, "string"))
+    {
+        size_t total_sz = 0;
+        void *buf = build_strlst_from_jsarray(ctx, arr_idx, &total_sz);
+        duk_pop(ctx); /* pop arr */
+        *in   = SQL_C_STRLST;
+        *out  = SQL_STRLST;
+        *olen = (long)total_sz;
+        return buf;
+    }
+
+    duk_pop(ctx); /* pop arr; unknown type — fall back to JSON path */
+    return NULL;
+}
+
+/* ------------------------------------------------------------------
+ * DEPRECATED: bare-array auto-detection of homogeneous numeric arrays.
+ * The replacement is Sql.list(arr) (above), which is explicit, supports
+ * strings via strlst, and is forgery-proof via hidden symbols.
+ * Bare-array support is preserved for backward compatibility and will
+ * be removed in a future release.
+ *
+ * Differences from Sql.list:
+ *  - Splits int64 vs double based on whether all values are integral
+ *    and within INT64 range.  Sql.list always uses double — JS source
+ *    is a double regardless, and texis promotes to the column type.
+ *  - Only handles number arrays.  Sql.list handles string arrays too.
+ *  - Silently does nothing for non-number / non-homogeneous arrays
+ *    (caller falls through to JSON stringification).  Sql.list throws
+ *    a clear error instead.
+ */
 void *check_array_params(duk_context *ctx, long *olen, int *in, int *out)
 {
     void *ret=NULL;
@@ -2614,6 +2840,10 @@ void *check_for_vector_type(duk_context *ctx, long *olen, int *in, int *out)
            this works (or will work) for several datatypes (varchar,int(x),strlst,json varchar) */\
         case DUK_TYPE_OBJECT:\
         {\
+            /* Sql.list(arr) — explicit list parameter (preferred). */\
+            vfree=v=check_sql_list(ctx, &plen, &in, &out);\
+            if(v) break;\
+            /* DEPRECATED: bare array auto-detection. Use Sql.list(arr). */\
             vfree=v=check_array_params(ctx, &plen, &in, &out);\
             if(v) break;\
             v=check_for_vector_type(ctx, &plen, &in, &out);\
@@ -4735,6 +4965,17 @@ static char *prop_defaults[][2] = {
    {"likepDocFreq", "500"},
    {"likepTblFreq", "500"},
    {"likepRows", "100"},
+   /* INDEX_VEC: cap on the candidate pool returned per LIKEV before
+    * SQL-side filtering / vecdist re-ranking.  Default 1000. */
+   {"likevRows", "1000"},
+   /* INDEX_VEC: per-query HNSW expansion factor (recall/latency knob).
+    * 0 = inherit the index's ef_construction (the build-time setting). */
+   {"likevEf", "0"},
+   /* INDEX_VEC: connection-scoped override of the per-index flush mode.
+    * 1 = auto-flush every per-row mutation (default, same as the
+    * underlying texis behavior); 0 = defer all .vec saves until the
+    * connection toggles this back to 1, closes, or process-exits. */
+   {"vecAutoFlush", "1"},
    {"likepMode", "1"},
    {"likepAllMatch", "0"},
    {"likepObeyIntersects", "0"},
@@ -6280,6 +6521,11 @@ duk_ret_t duk_open_module(duk_context *ctx)
     /* shortcut for new sql.connection() */
     duk_push_c_function(ctx, rp_sql_connect, 2);
     duk_put_prop_string(ctx, -2, "connect");
+
+    /* Sql.list(arr) — explicit wrapper for `WHERE col IN (?)` lists.
+     * Numbers → SQL_DOUBLE array, strings → SQL_STRLST. */
+    duk_push_c_function(ctx, rp_sql_list_create, 1);
+    duk_put_prop_string(ctx, -2, "list");
 
     duk_push_c_function(ctx, RPfunc_stringformat, DUK_VARARGS);
     duk_put_prop_string(ctx, -2, "stringFormat");

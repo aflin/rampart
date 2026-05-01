@@ -89,6 +89,21 @@ typedef struct {
      * Persisted in PARAMS so the open path can pick the right
      * convert_to_f32 routine without consulting the column. */
     int                dtype;
+    /* For i8/u8 indexes (and any future quantized type): dequantization
+     * parameters such that  value = (q - quant_zp) * quant_scale  and
+     * quantization is  q = round(value / quant_scale + quant_zp).
+     * Defaults applied when dtype is locked in:
+     *   i8 → scale = 1/127, zp = 0   (symmetric, unit-norm friendly)
+     *   u8 → scale = 1/127, zp = 128 (asymmetric, unit-norm friendly)
+     * Floats leave both fields at 0; they are unused on the float path.
+     * Persisted in PARAMS so subsequent INSERTs and queries quantize
+     * with the same calibration as the build. */
+    float              quant_scale;
+    int                quant_zp;
+    /* Transient: only meaningful between TXvecParamsFromOptions() and
+     * TXvecCreateIndex().  Drives the pre-scan calibration; the result
+     * (scale, zp) is what gets persisted in PARAMS.  Not parsed back. */
+    int                calibrate_mode;  /* 0=none, 1=auto (asymmetric) */
 } TXvecParams;
 
 /* Parse a SYSINDEX.PARAMS string of the form

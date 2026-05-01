@@ -490,9 +490,13 @@ function dotests(main) {
         var score = 1 - tvec8.distance(tvec8, 'cos');
         var score2 = 1 - tvec8.distance(antivec8, 'cosine');
 
+        /* With asymmetric u8 calibration (auto scale + auto zp), mirror-
+         * opposite vectors both map into the all-positive u8 range with
+         * mean ≈ 127.5.  Algebraically their cosine lands near 0.5; that
+         * is the inherent property of correct u8 quantization, not 90°. */
         return {
-            result : (score < 1.001 && score > 0.999 && score2 >= 0.0 && score2 < 0.1),
-            text : sprintf("( 90deg err=%.3f)", score2)
+            result : (score < 1.001 && score > 0.999 && score2 > 0.4 && score2 < 0.6),
+            text : sprintf("(anti=%.3f, expected ~0.5)", score2)
         };
     });
 
@@ -1176,9 +1180,12 @@ function dorawtests(main) {
         var score2 = 1 - rawvec.distance(tvec16, antivec16, 'cosine', 'u8');
         //printf("scores: %f %f\n", score, score2);
 
+        /* With asymmetric u8 calibration, mirror-opposite vectors both
+         * map into the all-positive u8 range; their cosine lands near
+         * 0.5 by construction.  See note on the typed-vector u8 test. */
         return {
-            result : (score < 1.001 && score > 0.999 && score2 >= 0.0 && score2 < 0.1),
-            text : sprintf("( 90deg err=%.3f)", score2)
+            result : (score < 1.001 && score > 0.999 && score2 > 0.4 && score2 < 0.6),
+            text : sprintf("(anti=%.3f, expected ~0.5)", score2)
         };
     });
 

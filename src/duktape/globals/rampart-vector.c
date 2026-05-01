@@ -78,7 +78,7 @@ static duk_ret_t rp_f64_to_u8(duk_context *ctx)
 {
     duk_size_t sz, dim = 0;
     double scale=-1.0;
-    int zp=0;
+    int zp=0, zp_set=0;
     double *in = REQUIRE_BUFFER_DATA(ctx, 0, &sz, "vector.f64ToU8 - argument must be a Buffer");
     dim = sz / sizeof(double);
 
@@ -94,6 +94,7 @@ static duk_ret_t rp_f64_to_u8(duk_context *ctx)
         zp = REQUIRE_POSINT(ctx, 2, "vector.f64ToU8 - third argument, if present must be a Positive Int 0-255 (zero point)");
         if(zp < 0 || zp >255)
             RP_THROW(ctx, "vector.f64ToU8 - third argument, if present must be a Positive Int 0-255 (zero point)");
+        zp_set = 1;
     }
 
     uint8_t *out = (uint8_t *)duk_push_fixed_buffer(ctx, dim);
@@ -109,6 +110,14 @@ static duk_ret_t rp_f64_to_u8(duk_context *ctx)
                 min=d;
         }
         scale = (max-min)/255.0;
+        if(!zp_set)
+        {
+            /* asymmetric calibration: zp = round(-min / scale), clamped to [0, 255] */
+            long zpr = lrint(-min / scale);
+            if (zpr < 0) zpr = 0;
+            else if (zpr > 255) zpr = 255;
+            zp = (int)zpr;
+        }
     }
 
     rpvec_f64_to_u8(in, out, dim, scale, zp);
@@ -146,7 +155,7 @@ static duk_ret_t rp_f32_to_u8(duk_context *ctx)
 {
     duk_size_t sz, dim = 0;
     float scale=-1.0;
-    int zp=0;
+    int zp=0, zp_set=0;
     float *in = REQUIRE_BUFFER_DATA(ctx, 0, &sz, "vector.f32ToU8 - argument must be a Buffer");
     dim = sz / sizeof(float);
 
@@ -162,6 +171,7 @@ static duk_ret_t rp_f32_to_u8(duk_context *ctx)
         zp = REQUIRE_POSINT(ctx, 2, "vector.f32ToU8 - third argument, if present must be a Positive Int 0-255 (zero point)");
         if(zp < 0 || zp >255)
             RP_THROW(ctx, "vector.f32ToU8 - third argument, if present must be a Positive Int 0-255 (zero point)");
+        zp_set = 1;
     }
 
     uint8_t *out = (uint8_t *)duk_push_fixed_buffer(ctx, dim);
@@ -177,6 +187,14 @@ static duk_ret_t rp_f32_to_u8(duk_context *ctx)
                 min=d;
         }
         scale = (max-min)/255.0;
+        if(!zp_set)
+        {
+            /* asymmetric calibration: zp = round(-min / scale), clamped to [0, 255] */
+            long zpr = lrintf(-min / scale);
+            if (zpr < 0) zpr = 0;
+            else if (zpr > 255) zpr = 255;
+            zp = (int)zpr;
+        }
     }
 
     rpvec_f32_to_u8(in, out, dim, scale, zp);
@@ -232,7 +250,7 @@ static duk_ret_t rp_f16_to_u8(duk_context *ctx)
 {
     duk_size_t sz, dim = 0;
     float scale=-1.0;
-    int zp=0;
+    int zp=0, zp_set=0;
     uint16_t *in = REQUIRE_BUFFER_DATA(ctx, 0, &sz, "vector.f16ToU8 - argument must be a Buffer");
     dim = sz / sizeof(uint16_t);
 
@@ -248,6 +266,7 @@ static duk_ret_t rp_f16_to_u8(duk_context *ctx)
         zp = REQUIRE_POSINT(ctx, 2, "vector.f16ToU8 - third argument, if present must be a Positive Int 0-255 (zero point)");
         if(zp < 0 || zp >255)
             RP_THROW(ctx, "vector.f16ToU8 - third argument, if present must be a Positive Int 0-255 (zero point)");
+        zp_set = 1;
     }
 
     uint8_t *out = (uint8_t *)duk_push_fixed_buffer(ctx, dim);
@@ -269,6 +288,14 @@ static duk_ret_t rp_f16_to_u8(duk_context *ctx)
                 min=d;
         }
         scale = (max-min)/255.0;
+        if(!zp_set)
+        {
+            /* asymmetric calibration: zp = round(-min / scale), clamped to [0, 255] */
+            long zpr = lrintf(-min / scale);
+            if (zpr < 0) zpr = 0;
+            else if (zpr > 255) zpr = 255;
+            zp = (int)zpr;
+        }
     }
 
     rpvec_f32_to_u8(in32, out, dim, scale, zp);

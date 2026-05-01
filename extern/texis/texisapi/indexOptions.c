@@ -661,10 +661,13 @@ int             forUpdate;      /* (in) nonzero: index update not create */
            * INDEX_VEC; rejected otherwise to surface user mistakes early.
            */
         case TXindOpt_vec_alpha:
+        case TXindOpt_vec_calibrate:
         case TXindOpt_vec_dtype:
         case TXindOpt_vec_efc:
         case TXindOpt_vec_m:
         case TXindOpt_vec_metric:
+        case TXindOpt_vec_scale:
+        case TXindOpt_vec_zero_point:
         case TXindOpt_flush:
           if (*indexType != INDEX_VEC)
             {

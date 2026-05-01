@@ -117,10 +117,13 @@ I(noiselist)            \
 I(stringcomparemode)    \
 I(textsearchmode)       \
 I(vec_alpha)            \
+I(vec_calibrate)        \
 I(vec_dtype)            \
 I(vec_efc)              \
 I(vec_m)                \
 I(vec_metric)           \
+I(vec_scale)            \
+I(vec_zero_point)       \
 I(wordexpressions)      \
 I(wordpositions)
 
@@ -737,6 +740,7 @@ int	TXtblstillthere ARGS((DBTBL *));
 /******************************************************************/
 
 QNODE  *TXreorgqnode ARGS((QNODE *));
+int     TXrewriteOrderByAliases ARGS((QNODE *));
 PARAM	*TXneeddata ARGS((QNODE *, int));
 int	TXparamunset ARGS((QNODE *, int));
 FLD *   TXqtreetofld ARGS((QNODE *, DBTBL *, int *, FLDOP *));
@@ -1722,6 +1726,8 @@ extern int TXlikepstartwt;
 extern long TXlikeptime;
 extern int TXlikepmode;
 extern int TXnlikephits;
+extern int TXnlikevhits;        /* INDEX_VEC: candidate pool cap per LIKEV */
+extern int TXlikevef;           /* INDEX_VEC: per-query HNSW expansion factor */
 extern int TXlikermaxthresh;
 extern int TXlikermaxrows;
 extern int TXbtreemaxpercent;

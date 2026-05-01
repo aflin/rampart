@@ -259,6 +259,13 @@ SDWORD	cbSqlStr;
 #else
 	q = readnode(lpstmt->dbc->ddic, lpstmt->fo, 0);
 #endif
+	/* Rewrite SELECT-list aliases referenced in ORDER BY into the
+	 * equivalent positional form BEFORE TXreorgqnode runs.  The reorg
+	 * pass treats ORDER_OP (named) and ORDERNUM_OP (positional)
+	 * differently and skips reorg for plain `ORDER_OP` queries — so
+	 * we have to flip the op early or the tree ends up half-reorged. */
+	if (q && TXrewriteOrderByAliases(q) < 0)
+		return SQL_ERROR;
 	q = TXreorgqnode(q);
 	if(!q)
 		return SQL_ERROR;

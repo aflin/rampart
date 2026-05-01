@@ -15,6 +15,7 @@
 #include "meter.h"
 #include "merge.h"
 #include "cgi.h"
+#include "vecindex.h"     /* TXvecSetForceDefer / TXvecGetForceDefer / TXvecFlushAll */
 
 #define CHKCP()	TXget_globalcp()
 /******************************************************************/
@@ -283,6 +284,42 @@ char	*value;
 	{
 		TXsetparm(ddic, "likeprows", value);
 		TXnlikephits = atoi(value);
+		return 0;
+	}
+	if (!strcmp(propi, "likevrows")) /* docs */
+	{
+		/* Cap on the candidate pool that a LIKEV query pulls from
+		 * the vec index before SQL-side filtering / vecdist re-rank.
+		 * Mirrors likeprows for LIKEP.  Default 1000. */
+		TXsetparm(ddic, "likevrows", value);
+		TXnlikevhits = atoi(value);
+		return 0;
+	}
+	if (!strcmp(propi, "likevef")) /* docs */
+	{
+		/* Per-query HNSW expansion factor (recall/latency knob).
+		 * 0 = leave the index's ef_construction in effect.  Higher
+		 * values increase recall at the cost of search time. */
+		TXsetparm(ddic, "likevef", value);
+		TXlikevef = atoi(value);
+		return 0;
+	}
+	if (!strcmp(propi, "vecautoflush")) /* docs */
+	{
+		/* Connection-scoped override of the per-INDEX_VEC flush mode.
+		 * Setting false defers .vec saves on every per-row mutation;
+		 * setting back to true triggers an immediate flush of any
+		 * indexes that went dirty under this connection.  Mirrors the
+		 * JS-side handler in rampart-sql.c so both `tsql -d db
+		 * "set vecautoflush 0"` and `sql.set({vecAutoFlush:false})`
+		 * route through the same TXvecSetForceDefer plumbing. */
+		int on = TXgetBooleanOrInt(TXPMBUFPN, SQLpropGroup, propi, value,
+		                           CHARPN, 2);
+		int wasForceDefer = TXvecGetForceDefer();
+		TXsetparm(ddic, "vecautoflush", value);
+		TXvecSetForceDefer(!on);
+		if (on && wasForceDefer)
+			TXvecFlushAll(ddic);
 		return 0;
 	}
 	if (!strcmp(propi, "likepallmatch")) /* docs */

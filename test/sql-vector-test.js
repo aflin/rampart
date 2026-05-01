@@ -241,6 +241,114 @@ testFeature("DROP INDEX on varbyte index", function () {
 });
 
 /* ============================================================
+ * i8 / u8 quantized indexes
+ * ============================================================ */
+
+testFeature("i8 index on varvecF16 column (default calibration)", function () {
+    sql.exec("drop index emb_vec;");
+    sql.exec("create vector index emb_vec on emb (v) with vec_dtype 'i8';");
+    var p = sql.exec("select PARAMS from SYSINDEX where NAME='emb_vec';").rows[0].PARAMS;
+    return /dtype=i8/.test(p) &&
+           /quant_scale=0\.007874/.test(p) &&
+           /quant_zp=0/.test(p);
+});
+
+testFeature("i8 indexed search returns correct top-1", function () {
+    var hits = sql.exec(
+        "select id, $rank from emb where v likev ? order by 2 desc;",
+        [vec_for(7)], 1);
+    return hits.rows[0] && hits.rows[0].id === 7;
+});
+
+testFeature("u8 index on varvecF16 column (default calibration)", function () {
+    sql.exec("drop index emb_vec;");
+    sql.exec("create vector index emb_vec on emb (v) with vec_dtype 'u8';");
+    var p = sql.exec("select PARAMS from SYSINDEX where NAME='emb_vec';").rows[0].PARAMS;
+    return /dtype=u8/.test(p) &&
+           /quant_scale=0\.007874/.test(p) &&
+           /quant_zp=128/.test(p);
+});
+
+testFeature("u8 indexed search returns correct top-1", function () {
+    var hits = sql.exec(
+        "select id, $rank from emb where v likev ? order by 2 desc;",
+        [vec_for(7)], 1);
+    return hits.rows[0] && hits.rows[0].id === 7;
+});
+
+testFeature("explicit vec_scale and vec_zero_point", function () {
+    sql.exec("drop index emb_vec;");
+    sql.exec("create vector index emb_vec on emb (v) " +
+             "with vec_dtype 'i8' vec_scale 0.01 vec_zero_point 5;");
+    var p = sql.exec("select PARAMS from SYSINDEX where NAME='emb_vec';").rows[0].PARAMS;
+    return /dtype=i8/.test(p) &&
+           /quant_scale=0\.010000/.test(p) &&
+           /quant_zp=5/.test(p);
+});
+
+testFeature("vec_calibrate 'auto' computes scale + zp", function () {
+    sql.exec("drop index emb_vec;");
+    sql.exec("create vector index emb_vec on emb (v) " +
+             "with vec_dtype 'i8' vec_calibrate 'auto';");
+    var p = sql.exec("select PARAMS from SYSINDEX where NAME='emb_vec';").rows[0].PARAMS;
+    /* Scale should differ from the dtype default (0.007874) since the
+     * actual data range from sin()-derived unit vectors is narrower. */
+    var m = /quant_scale=([0-9.]+)/.exec(p);
+    return m && parseFloat(m[1]) > 0 && parseFloat(m[1]) !== 0.007874;
+});
+
+testFeature("PARAMS omits quant fields for float indexes", function () {
+    sql.exec("drop index emb_vec;");
+    sql.exec("create vector index emb_vec on emb (v);");   /* default = f32 */
+    var p = sql.exec("select PARAMS from SYSINDEX where NAME='emb_vec';").rows[0].PARAMS;
+    return !/quant_scale/.test(p) && !/quant_zp/.test(p);
+});
+
+testFeature("vec_dtype 'bogus' is rejected at CREATE", function () {
+    var msg = null;
+    try {
+        sql.exec("drop index emb_vec;");
+        sql.exec("create vector index emb_vec on emb (v) with vec_dtype 'bogus';");
+    } catch (e) { msg = String(e); }
+    try { sql.exec("drop index emb_vec;"); } catch(e) {}
+    sql.exec("create vector index emb_vec on emb (v);");   /* restore */
+    return msg !== null && /vec_dtype/.test(msg);
+});
+
+testFeature("INSERT through i8 index then find it by LIKEV", function () {
+    sql.exec("drop index emb_vec;");
+    sql.exec("create vector index emb_vec on emb (v) with vec_dtype 'i8';");
+    sql.exec("insert into emb values (?, ?, ?);",
+             [555, vec_for(555), 'r555']);
+    var hits = sql.exec(
+        "select id, $rank from emb where v likev ? order by 2 desc;",
+        [vec_for(555)], 1);
+    return hits.rows[0] && hits.rows[0].id === 555;
+});
+
+testFeature("varbyte column indexed at i8", function () {
+    sql.exec("create table emb_vb (id int, v varbyte(16));");
+    /* 8 i8 values = 8 bytes; pad to 16 isn't needed since varbyte. */
+    for (var i = 0; i < 5; i++) {
+        var raw = new rampart.vector('i8', vec_for(i).toF32().toNumbers());
+        sql.exec("insert into emb_vb values (?, ?);", [i, raw.toRaw()]);
+    }
+    sql.exec("create vector index emb_vb_vec on emb_vb (v) with vec_dtype 'i8';");
+    var p = sql.exec("select PARAMS from SYSINDEX where NAME='emb_vb_vec';").rows[0].PARAMS;
+    var ok = /dim=8/.test(p) && /dtype=i8/.test(p);
+    sql.exec("drop index emb_vb_vec;");
+    sql.exec("drop table emb_vb;");
+    return ok;
+});
+
+testFeature("DROP INDEX cleans up i8 index", function () {
+    sql.exec("drop index emb_vec;");
+    sql.exec("create vector index emb_vec on emb (v);");   /* restore default for later tests */
+    var r = sql.exec("select NAME from SYSINDEX where NAME='emb_vec';");
+    return r.rows.length === 1;   /* the f32 index now exists again */
+});
+
+/* ============================================================
  * Manual flush mode + WAL table
  * ============================================================ */
 
@@ -301,6 +409,42 @@ testFeature("sql.set vecAutoFlush=false defers, =true flushes", function () {
     var p_dirty = sql.exec("select PARAMS from SYSINDEX where NAME='emb_vec';").rows[0].PARAMS;
     sql.set({vecAutoFlush: true});
     var p_clean = sql.exec("select PARAMS from SYSINDEX where NAME='emb_vec';").rows[0].PARAMS;
+    return /state=dirty/.test(p_dirty) && /state=clean/.test(p_clean);
+});
+
+testFeature("sql.set likevRows caps the candidate pool", function () {
+    sql.set({likevRows: 3});
+    var hits = sql.exec(
+        "select id, $rank from emb where v likev ? order by 2 desc;",
+        [vec_for(7)], -1);
+    sql.set({likevRows: 1000});
+    return hits.rows.length === 3;
+});
+
+testFeature("SQL set likevrows= caps the candidate pool", function () {
+    sql.exec("set likevrows=4;");
+    var hits = sql.exec(
+        "select id, $rank from emb where v likev ? order by 2 desc;",
+        [vec_for(7)], -1);
+    sql.exec("set likevrows=1000;");
+    return hits.rows.length === 4;
+});
+
+testFeature("sql.set likevEf accepted (per-query expansion)", function () {
+    var thrown = false;
+    try { sql.set({likevEf: 200}); sql.set({likevEf: 0}); }
+    catch (e) { thrown = true; }
+    return !thrown;
+});
+
+testFeature("sql.set vecAutoFlush via SQL `set vecautoflush=0`", function () {
+    sql.exec("create vector index emb2_vec on emb (v);");
+    sql.exec("set vecautoflush=0;");
+    sql.exec("insert into emb values (?, ?, ?);", [888, vec_for(888), 'r888']);
+    var p_dirty = sql.exec("select PARAMS from SYSINDEX where NAME='emb2_vec';").rows[0].PARAMS;
+    sql.exec("set vecautoflush=1;");
+    var p_clean = sql.exec("select PARAMS from SYSINDEX where NAME='emb2_vec';").rows[0].PARAMS;
+    sql.exec("drop index emb2_vec;");
     return /state=dirty/.test(p_dirty) && /state=clean/.test(p_clean);
 });
 
