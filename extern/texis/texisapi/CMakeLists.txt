@@ -926,14 +926,25 @@ target_include_directories(
   ${CMAKE_SOURCE_DIR}/extern/faiss
 )
 target_link_options(texisapi PUBLIC -L${JANSSON_RELEASE_DIR})
-# FAISS_IVFPQ must be linked with --whole-archive so that .o files
-# defining only weak C++ typeinfo (e.g. FaissException.cpp.o) are
-# pulled into the consuming shared object.  Without this, rampart-sql.so
-# fails to load with "undefined symbol: _ZTIN5faiss14FaissExceptionE"
-# because the linker drops the .o whose symbols are only referenced
-# weakly by external try/catch blocks.
-target_link_libraries(texisapi PUBLIC m z ${JANSSON_LIBS}
-    -Wl,--whole-archive faiss_ivfpq -Wl,--no-whole-archive)
+# FAISS_IVFPQ must be force-loaded so that .o files defining only weak
+# C++ typeinfo (e.g. FaissException.cpp.o) are pulled into the consuming
+# shared object.  Without this, rampart-sql.so fails to load with
+# "undefined symbol: _ZTIN5faiss14FaissExceptionE" because the linker
+# drops the .o whose symbols are only referenced weakly by external
+# try/catch blocks.  GNU ld and Apple ld spell this differently.
+if(APPLE)
+    # force_load is a raw flag, so it doesn't carry faiss_ivfpq's
+    # transitive deps (OpenMP, Accelerate).  List the target as a
+    # regular dep too so its PUBLIC interface propagates; the archive
+    # shows up twice on the link line but the second pass is a no-op
+    # since force_load already pulled every .o.
+    target_link_libraries(texisapi PUBLIC m z ${JANSSON_LIBS}
+        "-Wl,-force_load,$<TARGET_FILE:faiss_ivfpq>"
+        faiss_ivfpq)
+else()
+    target_link_libraries(texisapi PUBLIC m z ${JANSSON_LIBS}
+        -Wl,--whole-archive faiss_ivfpq -Wl,--no-whole-archive)
+endif()
 
 #target_include_directories(PUBLIC, $(TEXISAPI_SOURCE_DIR))
 #

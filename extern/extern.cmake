@@ -1,6 +1,34 @@
 set(EXTERN_DIR ${CMAKE_SOURCE_DIR}/extern)
 
 
+# FAISS needs OpenMP, and Apple Clang doesn't ship it.  Use Homebrew's
+# libomp and pre-fill the cache vars so the find_package(OpenMP) call
+# inside extern/faiss/CMakeLists.txt finds it without further hints.
+# Mirrors the rampart-langtools setup (extern/extern.cmake there).
+# Static-linking libomp.a into the .so means no runtime dep on Homebrew.
+if(APPLE)
+    execute_process(
+        COMMAND brew --prefix libomp
+        OUTPUT_VARIABLE OMP_PREFIX
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+    )
+    if(NOT OMP_PREFIX)
+        message(FATAL_ERROR "OpenMP not found; try: brew install libomp")
+    endif()
+    set(OpenMP_omp_LIBRARY   "${OMP_PREFIX}/lib/libomp.a"
+        CACHE STRING "OpenMP_omp_LIBRARY"   FORCE)
+    set(OpenMP_C_FLAGS       "-Xpreprocessor -fopenmp -I${OMP_PREFIX}/include"
+        CACHE STRING "OpenMP_C_FLAGS"       FORCE)
+    set(OpenMP_C_LIB_NAMES   "omp"
+        CACHE STRING "OpenMP_C_LIB_NAMES"   FORCE)
+    set(OpenMP_CXX_FLAGS     "-Xpreprocessor -fopenmp -I${OMP_PREFIX}/include"
+        CACHE STRING "OpenMP_CXX_FLAGS"     FORCE)
+    set(OpenMP_CXX_LIB_NAMES "omp"
+        CACHE STRING "OpenMP_CXX_LIB_NAMES" FORCE)
+endif()
+
+
 # FAISS (pruned subset, IVFPQ-only) — must be declared before texis
 # so the `faiss_ivfpq` target exists when texisapi links against it.
 # See extern/faiss/NOTICE.md for what's vendored.
