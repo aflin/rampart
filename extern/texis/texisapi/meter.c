@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 #include "txcoreconfig.h"
 #include "sizes.h"
 #ifdef TEST
@@ -74,6 +75,7 @@ METER   *m;
     {
     case TXMDT_SIMPLE:
     case TXMDT_PERCENT:
+    case TXMDT_ETA:
       c = strlen(m->label);
       if (c >= m->cols) c = m->cols - 1;
       m->out(m->usr, m->label, c);
@@ -132,6 +134,7 @@ METER   *m;
       for (c = 0; c < m->donecols; c++) m->out(m->usr, "#", 1);
       break;
     case TXMDT_PERCENT:
+    case TXMDT_ETA:
       for (c = 0; c < m->donecols; c++) m->out(m->usr, "#", 1);
       for ( ; c < m->mcols; c++) m->out(m->usr, "-", 1);
       sprintf(tmp, "%3d.%d%%%c", m->donemils/10, m->donemils%10,
@@ -191,6 +194,7 @@ EPI_HUGEINT     totalsz;        /* total byte size to reach 100% done */
       m->mcols = m->cols - 1;
       break;
     case TXMDT_PERCENT:
+    case TXMDT_ETA:
       m->mcols = m->cols - 8;
       break;
     default:
@@ -200,6 +204,11 @@ EPI_HUGEINT     totalsz;        /* total byte size to reach 100% done */
   meter_redraw(m);
   m->flush(m->usr);
   m->lastprint = TXgettimeofday();
+  m->tstart = m->lastprint;
+  m->lastUpdateT = m->lastprint;
+  m->lastUpdateDone = (EPI_HUGEINT)0;
+  m->rateEma = 0.0;
+  m->etaVisible = 0;
   if (m->mcols < 1) m->mcols = 1;
   m->donecols = m->donemils = 0;
   m->donesz = (EPI_HUGEINT)0;
@@ -225,6 +234,7 @@ EPI_HUGEINT totalsz;
       switch (mp->type)                         /* go below current meter */
         {
         case TXMDT_PERCENT:
+        case TXMDT_ETA:
           mp->out(mp->usr, "\b ", 2);           /* delete spinner */
         case TXMDT_SIMPLE:
           mp->out(mp->usr, "\n", 1);
@@ -298,6 +308,7 @@ EPI_HUGEINT donesz;
       m->flush(m->usr);
       break;
     case TXMDT_PERCENT:
+    case TXMDT_ETA:
       /* Compute the percentage to print: */
 #if EPI_HUGEINT_BITS >= 64
       mils = (int)((m->donesz*(EPI_HUGEINT)1000)/m->totalsz);
@@ -324,8 +335,47 @@ EPI_HUGEINT donesz;
         }
       if (m->curfrac < (EPI_HUGEINT)1) m->curfrac = (EPI_HUGEINT)1;
       m->lastprint = now;
+
+      /* ETA bookkeeping (only when the user asked for it via WITH
+       * indexmeter 'eta').  Update the rate EMA from the most recent
+       * (donesz, time) sample, then decide whether to show ETA.
+       * The display is gated by total elapsed and predicted total
+       * — short tasks never see it; once shown for a given meter
+       * it stays shown (sticky etaVisible).  Suffix format depends
+       * on duration: HH:MM:SS under 24h, "Dd HH:MM" past that. */
+      if (m->type == TXMDT_ETA)
+        {
+          double dt_step = now - m->lastUpdateT;
+          EPI_HUGEINT done_step = m->donesz - m->lastUpdateDone;
+          if (dt_step > (double)0.0 && done_step > (EPI_HUGEINT)0)
+            {
+              double inst_rate = (double)done_step / dt_step;
+              double alpha = 1.0 - exp(-dt_step / 30.0); /* tau = 30 s */
+              if (m->rateEma <= 0.0) m->rateEma = inst_rate;
+              else m->rateEma = alpha * inst_rate +
+                                (1.0 - alpha) * m->rateEma;
+              m->lastUpdateT = now;
+              m->lastUpdateDone = m->donesz;
+            }
+          if (!m->etaVisible &&
+              m->rateEma > 0.0 &&
+              (now - m->tstart) >= 60.0 &&
+              m->donesz < m->totalsz)
+            {
+              double eta_s = (double)(m->totalsz - m->donesz) / m->rateEma;
+              if ((now - m->tstart) + eta_s >= 180.0)
+                m->etaVisible = 1;
+            }
+        }
+
       if (cols <= 0)                            /* no new meter to print */
-        m->out(m->usr, "\b\b\b\b\b\b\b", 7);    /* back up over percentage */
+        {
+          /* Back up over the previous percentage (7 chars) plus the
+           * previously printed ETA suffix (variable length). */
+          int back = 7 + m->etaPrintedLen;
+          int i;
+          for (i = 0; i < back; i++) m->out(m->usr, "\b", 1);
+        }
       else
         {
           m->out(m->usr, "\r", 1);              /* start of line for meter */
@@ -338,6 +388,39 @@ EPI_HUGEINT donesz;
       sprintf(tmp, "%3d.%d%%%c", m->donemils/10, m->donemils % 10,
               Spin[m->spidx]);
       m->out(m->usr, tmp, 7);
+      m->etaPrintedLen = 0;
+      if (m->type == TXMDT_ETA && m->etaVisible)
+        {
+          char etabuf[32];
+          int suffixLen;
+          double eta_s_d = (m->rateEma > 0.0)
+              ? (double)(m->totalsz - m->donesz) / m->rateEma
+              : 0.0;
+          long long s;
+          if (eta_s_d < 0.0) eta_s_d = 0.0;
+          s = (long long)(eta_s_d + 0.5);
+          if (s >= 86400LL)                     /* >= 1 day: drop seconds */
+            {
+              long long d = s / 86400LL;
+              long long h = (s / 3600LL) % 24LL;
+              long long mi = (s / 60LL) % 60LL;
+              suffixLen = sprintf(etabuf,
+                                  " ETA %lldd %02lld:%02lld", d, h, mi);
+            }
+          else
+            {
+              long long h = s / 3600LL;
+              long long mi = (s / 60LL) % 60LL;
+              long long se = s % 60LL;
+              suffixLen = sprintf(etabuf,
+                                  " ETA %02lld:%02lld:%02lld", h, mi, se);
+            }
+          if (suffixLen > 0)
+            {
+              m->out(m->usr, etabuf, suffixLen);
+              m->etaPrintedLen = suffixLen;
+            }
+        }
       m->flush(m->usr);
       break;
     default:
@@ -373,6 +456,7 @@ EPI_HUGEINT totalsz;
       m->curfrac = m->totalsz/(EPI_HUGEINT)m->cols;
       break;
     case TXMDT_PERCENT:
+    case TXMDT_ETA:
     default:
       c = (m->mcols > 1000 ? m->mcols : 1000);
       m->curfrac = m->totalsz/(EPI_HUGEINT)c;
@@ -412,6 +496,7 @@ METER   *m;
       switch (m->type)
         {
         case TXMDT_PERCENT:
+        case TXMDT_ETA:
           m->out(m->usr, "\b \n", 3);           /* delete spinner */
           if (!m->parent->didend) meter_redraw(m->parent);
           break;
@@ -429,6 +514,7 @@ METER   *m;
       switch (m->type)
         {
         case TXMDT_PERCENT:
+        case TXMDT_ETA:
           m->out(m->usr, "\b \n", 3);           /* delete spinner */
           break;
         case TXMDT_SIMPLE:
@@ -461,6 +547,8 @@ CONST char      *e;     /* (in, opt.) end of `s' (NULL: s + strlen(s)) */
   else if ((sLen == 7 && strnicmp(s, "percent", 7) == 0) ||
            (sLen == 3 && strnicmp(s, "pct", 3) == 0))
     return(TXMDT_PERCENT);
+  else if (sLen == 3 && strnicmp(s, "eta", 3) == 0)
+    return(TXMDT_ETA);
 
   i = TXstrtoi(s, e, &ei, 0, &errnum);
   if (i < 0) i = 0;
@@ -480,6 +568,7 @@ TXMDT     meterType;
     case TXMDT_NONE:    return("none");
     case TXMDT_SIMPLE:  return("simple");
     case TXMDT_PERCENT: return("percent");
+    case TXMDT_ETA:     return("eta");
     default:            return("unknown");
     }
 }
@@ -489,7 +578,7 @@ meter_listtypes()
 /* Returns list of possible meter types, eg. for a usage message.
  */
 {
-  return("none|simple|pct");
+  return("none|simple|pct|eta");
 }
 
 /* ------------------------------------------------------------------------- */

@@ -7,7 +7,8 @@ typedef enum TXMDT_tag                  /* METER display type */
   TXMDT_INVALID = -1,
   TXMDT_NONE    = 0,
   TXMDT_SIMPLE,                         /* low-bandwidth, no VT100 codes */
-  TXMDT_PERCENT                         /* print %-done, use VT100 codes */
+  TXMDT_PERCENT,                        /* print %-done, use VT100 codes */
+  TXMDT_ETA                             /* like PERCENT, plus ETA suffix */
 }
 TXMDT;
 #define TXMDTPN   ((TXMDT *)NULL)
@@ -40,6 +41,19 @@ typedef struct METER_tag
   EPI_HUGEINT           mindone;        /* `donesz' delta estimate */
   double                lastprint;      /* time of day of last printing */
   int                   spidx;          /* spinner index */
+  /* ETA bookkeeping (TXMDT_ETA only).  We EMA-smooth the rate
+   * (work units per second) over a 30s time constant and divide
+   * remaining-work by it to produce the ETA.  Display kicks in once
+   * elapsed >= 60s AND the predicted total runtime is >= 180s; once
+   * shown for a given meter, stays shown (sticky `etaVisible`).
+   * Suffix is variable-width (HH:MM:SS, or "Dd HH:MM" past 24h),
+   * so etaPrintedLen tracks last-print length for backup arithmetic. */
+  double                tstart;         /* meter open time (gettimeofday) */
+  double                lastUpdateT;    /* time of last donesz update */
+  EPI_HUGEINT           lastUpdateDone; /* donesz at lastUpdateT */
+  double                rateEma;        /* smoothed work-per-second rate */
+  int                   etaVisible;     /* sticky flag: ETA is being shown */
+  int                   etaPrintedLen;  /* chars of ETA suffix last printed */
 }
 METER;
 #define METERPN ((METER *)NULL)
