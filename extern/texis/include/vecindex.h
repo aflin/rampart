@@ -15,6 +15,15 @@
 #include <stdint.h>
 #include "dbquery.h"          /* DDIC, DBTBL, etc. */
 
+/* Forward decl for IINDEX (defined in texint.h as `struct tagIINDEX`)
+ * so this header doesn't have to pull in texint.h transitively.
+ * Callers of TXvecIxVecIndex should include texint.h to use the
+ * returned pointer. */
+struct tagIINDEX;
+#ifndef IINDEX
+#define IINDEX struct tagIINDEX
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -62,25 +71,21 @@ typedef struct {
 /* ----- SYSINDEX.PARAMS handling ------------------------------------- */
 
 /* Parsed parameters from SYSINDEX.PARAMS for a vec index.  Mirrors
- * vec_graph_params_t plus texis-side merge thresholds plus persistent
- * flush state.
- *
- * `flush_mode` controls per-row save behavior:
- *   0 = auto   — save_atomic after every row mutation (current default,
- *                always-coherent on disk)
- *   1 = manual — defer saves until explicit flush, connection close,
- *                or process exit; faster bulk loads, requires reconcile
- *                on next open if process crashes mid-burst
- * `dirty` is the persisted bit indicating in-memory state has unflushed
- * mutations; reconcile-on-open consults it to skip the table scan when
- * disk and memory match.  Only set in manual-flush mode.
+ * vec_graph_params_t plus texis-side merge thresholds.
  */
 typedef struct {
+    /* Backend selector: 0 = HNSW, 1 = IVFPQ.  PARAMS without a backend=
+     * key (legacy SYSINDEX rows from before IVFPQ landed) parse as
+     * HNSW for back-compat; new CREATE INDEX statements without `WITH
+     * backend` get IVFPQ as the default (set by TXvecParamsFromOptions).
+     * Defined values live in vecindex_internal.h's anonymous enum
+     * (VEC_BACKEND_HNSW / VEC_BACKEND_IVFPQ).  Held as a plain int
+     * here so vecindex.h doesn't have to expose internal types to
+     * public callers. */
+    int                backend;
     vec_graph_params_t graph;     /* dim, M, ef_construction, alpha, metric, ... */
     int                threshold_t;   /* delta-tier insert count → trigger merge */
     int                threshold_d;   /* tombstone count → trigger merge */
-    int                flush_mode;    /* 0=auto, 1=manual */
-    int                dirty;         /* 1 iff unflushed writes exist on disk */
     /* Element dtype — an FTN_VEC_* tag indicating how each cell of the
      * indexed column should be interpreted.  For typed varvec columns
      * this matches the column type and is set automatically.  For
@@ -104,6 +109,22 @@ typedef struct {
      * TXvecCreateIndex().  Drives the pre-scan calibration; the result
      * (scale, zp) is what gets persisted in PARAMS.  Not parsed back. */
     int                calibrate_mode;  /* 0=none, 1=auto (asymmetric) */
+
+    /* IVFPQ-specific (only meaningful when backend == VEC_BACKEND_IVFPQ).
+     * 0 means "not set" → CREATE-time auto-tune from pq_target_rows.
+     * Persisted in PARAMS so subsequent INSERT/SEARCH see the same shape. */
+    int                pq_m;            /* number of subquantizers */
+    int                pq_nlist;        /* number of inverted lists / coarse centroids */
+    int                pq_nbits;        /* bits per PQ code (8 only for v1) */
+    int                pq_target_rows;  /* asymptotic-size hint, drives auto-pick */
+    /* Minimum training points per centroid.  Default 39 (FAISS's own
+     * "no-warning" threshold).  Lower values are accepted by FAISS
+     * (with quality warnings); we expose the knob so the regression
+     * tests can train an IVFPQ index from a few hundred rows instead
+     * of the 9984+ that the default floor demands.  Wired to both
+     * idx->cp.min_points_per_centroid and idx->pq.cp.min_points_per_centroid
+     * so coarse and PQ k-means use the same threshold. */
+    int                pq_min_points_per_centroid;
 } TXvecParams;
 
 /* Parse a SYSINDEX.PARAMS string of the form
@@ -123,8 +144,12 @@ int  TXvecParamsFromOptions(TXvecParams *out, TXindOpts *options);
 /* Stringify TXvecParams into a SYSINDEX.PARAMS line.  Buffer must be at
  * least TX_VEC_PARAMS_TEXT_MAX bytes.  Returns the number of bytes written
  * (excluding null), or -1 on overflow.
+ *
+ * Sized to fit the IVFPQ-backend variant comfortably (which has more
+ * fields than HNSW): backend=ivfpq;dim=NNNN;dtype=XXXX;metric=XXX;
+ * pq_m=NNN;pq_nlist=NNNNN;pq_nbits=N;pq_target_rows=NNNNNNNNN; ≈ 100 B.
  */
-#define TX_VEC_PARAMS_TEXT_MAX 256
+#define TX_VEC_PARAMS_TEXT_MAX 384
 int  TXvecParamsToText(char *buf, size_t bufSz, const TXvecParams *p);
 
 /* ----- Index creation ----------------------------------------------- */
@@ -168,22 +193,35 @@ int  TXvecDelRow(DDIC *ddic, DBTBL *dbtbl,
 
 /* ----- Search-side --------------------------------------------------- */
 
-/* Per-process cached graph handle.  Opaque to callers; currently a flat
- * map keyed by index file path.
+/* Per-process cached index handle.  Opaque to callers; the concrete
+ * type is `struct TXvecHandleBase` (defined in vecindex_internal.h) and
+ * each backend's handle type embeds that as its first field.  Public
+ * callers exchange this opaque pointer through TXvecOpen / TXvecSearch /
+ * etc.; only the backend impl modules cast it down to their concrete
+ * struct.
  */
-typedef struct TXvecHandle TXvecHandle;
+typedef struct TXvecHandleBase TXvecHandle;
 
-/* Open (or fetch from cache) a graph handle for the given index file.
+/* Open (or fetch from cache) an index handle for the given index file.
  * Returns NULL on error.
+ *
+ * `params` is the SYSINDEX.PARAMS string for this index, if the caller
+ * already has it (e.g., predopt.c handing it through from the planner).
+ * Pass NULL to have TXvecOpen look it up from SYSINDEX itself —
+ * callers without ready access to PARAMS pay one SYSINDEX read per
+ * cache miss (zero per cache hit).  The parsed `backend` field of the
+ * params determines which backend's open implementation handles the
+ * request.
  */
-TXvecHandle *TXvecOpen(DDIC *ddic, const char *indfile);
+TXvecHandle *TXvecOpen(DDIC *ddic, const char *indfile, const char *params);
 
 /* Search: top-k nearest to `query`, with beam width `ef` (0 = use
  * ef_construction from index params).  `results` must be size k.
  * Returns number of results filled (≤ k), or SIZE_MAX on error.
  */
-size_t       TXvecSearch(TXvecHandle *h, const float *query, size_t k,
-                         size_t ef, vec_search_result_t *results);
+size_t       TXvecSearch(TXvecHandle *h, DBTBL *dbtbl, const char *field,
+                         const float *query, size_t k, size_t ef,
+                         vec_search_result_t *results);
 
 /* Close all cached handles (called on engine shutdown). */
 void         TXvecCloseAll(void);
@@ -201,6 +239,27 @@ void         TXvecInvalidateHandle(const char *indfile);
  * already-dropped. */
 void         TXvecDropAux(DDIC *ddic, const char *indfile);
 
+/* ALTER INDEX OPTIMIZE entry point for INDEX_VEC.  Used by alterIndex.c
+ * when the SYSINDEX type is INDEX_VEC.  Both backends produce the new
+ * artifacts at a Tnnnn temp basename and atomic-swap them in place;
+ * concurrent searches see the old index until the swap completes.
+ * `params` may be NULL — dispatcher reads it from SYSINDEX.  `options`
+ * carries the connection-scoped knobs (notably `indexmeter`) so the
+ * backend can drive a progress meter for long phases. */
+int          TXvecOptimize(DDIC *ddic, const char *indname,
+                           const char *indfile, const char *tableName,
+                           const char *field, const char *params,
+                           TXindOpts *options);
+
+/* ALTER INDEX REBUILD entry point for INDEX_VEC.  Both backends rebuild
+ * from scratch into a Tnnnn temp basename and atomic-swap; concurrent
+ * searches keep hitting the old index until the swap.  `options` is
+ * the connection-scoped TXindOpts (drives indexmeter). */
+int          TXvecRebuild(DDIC *ddic, const char *indname,
+                          const char *indfile, const char *tableName,
+                          const char *field, const char *params,
+                          TXindOpts *options);
+
 /* Flush a specific index: save the in-memory state to disk and clear
  * the SYSINDEX dirty bit.  No-op (returns 0) if the cached handle for
  * `indfile` is already clean or no handle exists.  Returns 0 on success,
@@ -208,10 +267,12 @@ void         TXvecDropAux(DDIC *ddic, const char *indfile);
  */
 int          TXvecFlush(DDIC *ddic, const char *indfile);
 
-/* Flush every dirty handle in the per-process cache.  Used by the exit
- * hook (clean shutdown) and by the connection-close path (when the
- * connection had vecAutoFlush=false).  Returns 0 on success, -1 if
- * any handle failed (other handles are still attempted).
+/* Flush every cached handle in the per-process cache.  Used by the
+ * exit hook (clean shutdown).  Under the `_T.btr` design every INSERT
+ * is already durable, so this is a near no-op — but it still gives
+ * each backend a chance to round-trip any in-memory metadata
+ * (e.g. IVFPQ's max_recid_at_create) before exit.  Returns 0 on
+ * success, -1 if any handle failed.
  */
 int          TXvecFlushAll(DDIC *ddic);
 
@@ -221,23 +282,6 @@ int          TXvecFlushAll(DDIC *ddic);
  */
 void         TXvecRegisterExitHook(DDIC *ddic);
 DDIC        *TXvecGetExitHookDDIC(void);
-
-/* Connection-scoped defer override.  When the embedder sets this to
- * non-zero (e.g. via JS `sql.set({vecAutoFlush:false})`), per-row
- * INSERT/DELETE skip save_atomic regardless of the per-index PARAMS
- * `flush=auto|manual` setting — the index is treated as if it were in
- * manual mode for the duration.  Set back to zero to return to per-
- * index policy; the embedder typically calls TXvecFlushAll() right
- * after that to make the write visible on disk.
- *
- * The flag is process-static.  In rampart-sql's forked-helper mode
- * each connection has its own process, so this is naturally per-
- * connection.  In single-process embeddings with multiple concurrent
- * connections (rare for texis given its single-threaded engine), the
- * flag is shared — last writer wins.
- */
-void         TXvecSetForceDefer(int on);
-int          TXvecGetForceDefer(void);
 
 /* ----- Planner integration ------------------------------------------ */
 

@@ -660,15 +660,20 @@ int             forUpdate;      /* (in) nonzero: index update not create */
            * Vamana parameter space.  Allowed only when itype is
            * INDEX_VEC; rejected otherwise to surface user mistakes early.
            */
+        case TXindOpt_backend:
         case TXindOpt_vec_alpha:
         case TXindOpt_vec_calibrate:
         case TXindOpt_vec_dtype:
         case TXindOpt_vec_efc:
         case TXindOpt_vec_m:
         case TXindOpt_vec_metric:
+        case TXindOpt_vec_pq_m:
+        case TXindOpt_vec_pq_min_points_per_centroid:
+        case TXindOpt_vec_pq_nbits:
+        case TXindOpt_vec_pq_nlist:
+        case TXindOpt_vec_pq_target_rows:
         case TXindOpt_vec_scale:
         case TXindOpt_vec_zero_point:
-        case TXindOpt_flush:
           if (*indexType != INDEX_VEC)
             {
               putmsg(MERR + UGE, fn,

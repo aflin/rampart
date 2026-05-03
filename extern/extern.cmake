@@ -1,6 +1,11 @@
 set(EXTERN_DIR ${CMAKE_SOURCE_DIR}/extern)
 
 
+# FAISS (pruned subset, IVFPQ-only) — must be declared before texis
+# so the `faiss_ivfpq` target exists when texisapi links against it.
+# See extern/faiss/NOTICE.md for what's vendored.
+add_subdirectory(${EXTERN_DIR}/faiss EXCLUDE_FROM_ALL)
+
 add_subdirectory(${EXTERN_DIR}/texis)
 
 target_compile_definitions(

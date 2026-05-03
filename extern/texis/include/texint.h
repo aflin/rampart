@@ -103,8 +103,8 @@ DD *TXordspec2dd ARGS((DBTBL *dbtb, char *field, int maxf, int skip,
 /* Note: must be sorted ascending: */
 /* Note: if this list is altered, update TXindOptsProcessOptions(): */
 #define TX_INDEX_OPTIONS_SYMBOLS_LIST   \
+I(backend)              \
 I(counts)               \
-I(flush)                \
 I(indexmaxsingle)       \
 I(indexmem)             \
 I(indexmeter)           \
@@ -122,6 +122,11 @@ I(vec_dtype)            \
 I(vec_efc)              \
 I(vec_m)                \
 I(vec_metric)           \
+I(vec_pq_m)             \
+I(vec_pq_min_points_per_centroid) \
+I(vec_pq_nbits)         \
+I(vec_pq_nlist)         \
+I(vec_pq_target_rows)   \
 I(vec_scale)            \
 I(vec_zero_point)       \
 I(wordexpressions)      \
@@ -1728,6 +1733,9 @@ extern int TXlikepmode;
 extern int TXnlikephits;
 extern int TXnlikevhits;        /* INDEX_VEC: candidate pool cap per LIKEV */
 extern int TXlikevef;           /* INDEX_VEC: per-query HNSW expansion factor */
+extern int TXlikevPqNprobe;     /* INDEX_VEC ivfpq: per-query nprobe */
+extern int TXvecPqMaxTrainSamples; /* INDEX_VEC ivfpq: training-sample cap at CREATE */
+extern float TXvecPqOverFetchPad;  /* INDEX_VEC ivfpq: live-mask over-fetch padding */
 extern int TXlikermaxthresh;
 extern int TXlikermaxrows;
 extern int TXbtreemaxpercent;

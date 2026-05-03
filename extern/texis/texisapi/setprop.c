@@ -15,7 +15,7 @@
 #include "meter.h"
 #include "merge.h"
 #include "cgi.h"
-#include "vecindex.h"     /* TXvecSetForceDefer / TXvecGetForceDefer / TXvecFlushAll */
+#include "vecindex.h"     /* TXvecFlushAll */
 
 #define CHKCP()	TXget_globalcp()
 /******************************************************************/
@@ -304,22 +304,31 @@ char	*value;
 		TXlikevef = atoi(value);
 		return 0;
 	}
-	if (!strcmp(propi, "vecautoflush")) /* docs */
+	if (!strcmp(propi, "likevpqnprobe")) /* docs */
 	{
-		/* Connection-scoped override of the per-INDEX_VEC flush mode.
-		 * Setting false defers .vec saves on every per-row mutation;
-		 * setting back to true triggers an immediate flush of any
-		 * indexes that went dirty under this connection.  Mirrors the
-		 * JS-side handler in rampart-sql.c so both `tsql -d db
-		 * "set vecautoflush 0"` and `sql.set({vecAutoFlush:false})`
-		 * route through the same TXvecSetForceDefer plumbing. */
-		int on = TXgetBooleanOrInt(TXPMBUFPN, SQLpropGroup, propi, value,
-		                           CHARPN, 2);
-		int wasForceDefer = TXvecGetForceDefer();
-		TXsetparm(ddic, "vecautoflush", value);
-		TXvecSetForceDefer(!on);
-		if (on && wasForceDefer)
-			TXvecFlushAll(ddic);
+		/* INDEX_VEC ivfpq per-query nprobe.  Higher = more recall,
+		 * more time.  0 = use the index's saved nprobe (set at CREATE). */
+		TXsetparm(ddic, "likevpqnprobe", value);
+		TXlikevPqNprobe = atoi(value);
+		return 0;
+	}
+	if (!strcmp(propi, "vecpqmaxtrainsamples")) /* docs */
+	{
+		/* INDEX_VEC ivfpq: hard cap on training-sample count at
+		 * CREATE.  Default 1_000_000.  Larger needs more disk for the
+		 * .train.tmp file but improves codebook quality on large data. */
+		TXsetparm(ddic, "vecpqmaxtrainsamples", value);
+		TXvecPqMaxTrainSamples = atoi(value);
+		return 0;
+	}
+	if (!strcmp(propi, "vecpqoverfetchpad")) /* docs */
+	{
+		/* INDEX_VEC ivfpq: fractional padding on k_over.  0.10 = 10%
+		 * over-fetch to absorb live-mask exclusions.  Higher when the
+		 * index has accumulated many tombstones; lower for quiet
+		 * data.  Float value, range [0.0, 1.0]. */
+		TXsetparm(ddic, "vecpqoverfetchpad", value);
+		TXvecPqOverFetchPad = (float)atof(value);
 		return 0;
 	}
 	if (!strcmp(propi, "likepallmatch")) /* docs */

@@ -4971,11 +4971,16 @@ static char *prop_defaults[][2] = {
    /* INDEX_VEC: per-query HNSW expansion factor (recall/latency knob).
     * 0 = inherit the index's ef_construction (the build-time setting). */
    {"likevEf", "0"},
-   /* INDEX_VEC: connection-scoped override of the per-index flush mode.
-    * 1 = auto-flush every per-row mutation (default, same as the
-    * underlying texis behavior); 0 = defer all .vec saves until the
-    * connection toggles this back to 1, closes, or process-exits. */
-   {"vecAutoFlush", "1"},
+   /* INDEX_VEC ivfpq: per-query nprobe (number of inverted lists scanned).
+    * Higher = more recall, more time.  0 = use index's saved default. */
+   {"likevPqNprobe", "8"},
+   /* INDEX_VEC ivfpq: hard cap on training-sample count at CREATE INDEX.
+    * Larger needs more disk for the temp .train.tmp file but improves
+    * codebook quality on large data. */
+   {"vecPqMaxTrainSamples", "1000000"},
+   /* INDEX_VEC ivfpq: fractional over-fetch on LIKEV k to absorb live-
+    * mask exclusions.  0.10 = 10%; bump for delete-heavy indexes. */
+   {"vecPqOverFetchPad", "0.10"},
    {"likepMode", "1"},
    {"likepAllMatch", "0"},
    {"likepObeyIntersects", "0"},
@@ -5254,22 +5259,6 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
         */
         const char *prop=duk_get_string(ctx, -2);
         int retlisttype=-1, setlisttype=-1;
-
-        /* vecAutoFlush — connection-scoped override of the per-index
-         * flush mode for INDEX_VEC.  Setting false makes every per-row
-         * INSERT/DELETE defer the .vec save; setting back to true
-         * triggers an immediate flush of any indexes that went dirty
-         * under this connection. */
-        if (strcasecmp(prop, "vecAutoFlush") == 0)
-        {
-            int on = duk_is_boolean(ctx, -1) ? duk_get_boolean(ctx, -1) : 1;
-            int wasForceDefer = TXvecGetForceDefer();
-            TXvecSetForceDefer(!on);
-            /* false→true edge: caller wants writes durable now. */
-            if (on && wasForceDefer)
-                TXvecFlushAll(ddic);
-            goto propnext;
-        }
 
         /* useDerivations, set eqprefix and related */
         if( strcmp(prop,"usederivations")==0 )

@@ -1,6 +1,15 @@
 /* vecindex.c — texis engine integration for the ANN vector index.
  *
- * Backend: usearch (HNSW), embedded under extern/texis/thirdparty/usearch.
+ * This translation unit owns:
+ *   1. The HNSW backend (uses usearch under extern/texis/thirdparty/usearch).
+ *   2. The dispatcher for backend-polymorphic public entry points
+ *      (TXvecCreateIndex, TXvecOpen, TXvecSearch, etc.).
+ *   3. The shared per-process handle cache (polymorphic; stores both
+ *      HNSW and IVFPQ handles; backend tag in the base struct).
+ *
+ * The IVFPQ backend lives in vecindex_ivfpq.cpp.  The two backends share
+ * the vtable / base-struct types defined in vecindex_internal.h.
+ *
  * Engine code (index.c, predopt.c, idxinfo.c, procupd.c, droptbl.c)
  * calls into the TXvec* functions here when handling INDEX_VEC.
  */
@@ -26,6 +35,7 @@
 #include "meter.h"
 
 #include "vecindex.h"
+#include "vecindex_internal.h" /* TXvecHandleBase, TXvecBackend, vec_backend_for */
 
 #include "usearch.h"           /* usearch C API */
 
@@ -56,14 +66,8 @@ extern void rpvec_f32_to_u8(const float *src, uint8_t *dst, size_t n,
  */
 #define VECIDX_FILE_SUFFIX ".vec"
 
-/* Suffix appended to the index name to form the WAL table's name.
- * E.g. CREATE VEC INDEX wv3_vec → WAL table named wv3_vec_wal.  Used
- * only in defer (manual flush) mode; harmless and empty otherwise. */
-#define VECIDX_WAL_SUFFIX  "_wal"
-
 /* Forward decls — definitions are after the handle/SYSINDEX helpers
  * section since they need TXvecHandle and vec_sysindex_lookup_*. */
-static int  vec_wal_create_table(DDIC *ddic, const char *indfile);
 
 /* ----- TXvecParams: defaults / parse / from-options / to-text ------- */
 
@@ -80,19 +84,89 @@ vec_params_init(TXvecParams *p)
 {
     static const vec_graph_params_t graph_defaults = VEC_GRAPH_PARAMS_DEFAULT;
     memset(p, 0, sizeof(*p));
+    p->backend = VEC_BACKEND_HNSW;     /* legacy SYSINDEX.PARAMS strings
+                                        * have no `backend=' key and were
+                                        * always HNSW; TXvecParamsFromOptions
+                                        * overrides this to IVFPQ for new
+                                        * CREATE statements that don't say
+                                        * WITH backend explicitly */
     p->graph = graph_defaults;
     p->threshold_t = 10000;
     p->threshold_d = 1000;
     /* sentinels: scale<=0 → "use dtype default"; zp == TX_VEC_ZP_UNSET → "use dtype default" */
     p->quant_scale = 0.0f;
     p->quant_zp = TX_VEC_ZP_UNSET;
+    /* IVFPQ fields default to 0 = "auto-pick from target_rows / row count
+     * at CREATE time".  Filled in by vec_params_apply_pq_defaults(). */
+    p->pq_m = 0;
+    p->pq_nlist = 0;
+    p->pq_nbits = 0;
+    p->pq_target_rows = 0;
+    p->pq_min_points_per_centroid = 0;   /* 0 = use FAISS default (39) */
+}
+
+/* Round x up to the next power of 2.  `x` must be > 0. */
+static uint64_t
+round_pow2_u64(uint64_t x)
+{
+    uint64_t r = 1;
+    while (r < x) r <<= 1;
+    return r;
+}
+
+/* Round x up to the next multiple of m.  `m` must be > 0. */
+static int
+round_to_mult(int x, int m)
+{
+    return ((x + m - 1) / m) * m;
+}
+
+/* Auto-tune IVFPQ params from `pq_target_rows` (or current row count)
+ * for any field the user didn't supply explicitly.  Called from the
+ * IVFPQ create path.  Idempotent — running it twice with the same
+ * inputs is a no-op.  See plan §4 for the heuristics.
+ *
+ * `dim` is the column dimensionality (must be > 0); used to pick `M`
+ * such that the per-subquantizer subspace dimension `dim/M` lands
+ * in [8, 16].  Caller passes dim from the column type.
+ */
+void
+vec_params_apply_pq_defaults(TXvecParams *p, int dim, size_t current_rows)
+{
+    size_t n_target = (size_t)p->pq_target_rows;
+    if (n_target < current_rows) n_target = current_rows;
+    if (n_target == 0) n_target = 1;
+
+    if (p->pq_nlist == 0) {
+        /* nlist ≈ 4 * sqrt(N_target), clamped to [64, 65536], rounded
+         * up to a power of two for cleaner partitioning. */
+        double s = 4.0 * sqrt((double)n_target);
+        uint64_t nl = (s < 64.0) ? 64 : (uint64_t)s;
+        nl = round_pow2_u64(nl);
+        if (nl < 64)    nl = 64;
+        if (nl > 65536) nl = 65536;
+        p->pq_nlist = (int)nl;
+    }
+    if (p->pq_m == 0 && dim > 0) {
+        /* Aim for dsub = dim/M ≈ 8.  Round M to a multiple of 4 so
+         * future FastScan compatibility is preserved.  Clamp to
+         * [8, 96]. */
+        int target_m = dim / 8;
+        if (target_m < 8)  target_m = 8;
+        if (target_m > 96) target_m = 96;
+        target_m = round_to_mult(target_m, 4);
+        p->pq_m = target_m;
+    }
+    if (p->pq_nbits == 0) {
+        p->pq_nbits = 8;            /* v1: hardcoded; FastScan = 4 in phase 4 */
+    }
 }
 
 /* Once `p->dtype` is locked in, fill in default quantization parameters
  * for i8/u8 if the caller didn't supply them.  Called from
  * TXvecCreateIndex after the dtype-resolution block; idempotent.
  */
-static void
+void
 vec_params_apply_quant_defaults(TXvecParams *p)
 {
     int zp_user_set = (p->quant_zp != TX_VEC_ZP_UNSET);
@@ -134,6 +208,26 @@ TXvecParamsFromOptions(TXvecParams *out, TXindOpts *options)
 
     vec_params_init(out);
     if (!options) return 0;
+
+    /* Backend selector.  CREATE-time default is IVFPQ (smaller on-disk
+     * footprint, faster optimize, comparable search latency, recall=1
+     * via the delta + sealed merge).  HNSW remains available via
+     * `WITH backend 'hnsw'` for tables below the IVFPQ training floor
+     * (~10k rows) or for ultra-high-dim corpora where PQ approximation
+     * degrades. */
+    if ((s = vec_opt_get(options, TXindOpt_backend)) != NULL) {
+        if      (!strcasecmp(s, "hnsw")  || !strcasecmp(s, "usearch"))
+            out->backend = VEC_BACKEND_HNSW;
+        else if (!strcasecmp(s, "ivfpq") || !strcasecmp(s, "faiss"))
+            out->backend = VEC_BACKEND_IVFPQ;
+        else {
+            putmsg(MERR + UGE, fn,
+                "backend must be `hnsw' or `ivfpq'; got `%s'", s);
+            return -1;
+        }
+    } else {
+        out->backend = VEC_BACKEND_IVFPQ;
+    }
 
     if ((s = vec_opt_get(options, TXindOpt_vec_m)) != NULL) {
         li = strtol(s, &e, 10);
@@ -184,17 +278,65 @@ TXvecParamsFromOptions(TXvecParams *out, TXindOpts *options)
             return -1;
         }
     }
-    if ((s = vec_opt_get(options, TXindOpt_flush)) != NULL) {
-        if (!strcasecmp(s, "auto"))
-            out->flush_mode = 0;
-        else if (!strcasecmp(s, "manual"))
-            out->flush_mode = 1;
-        else {
+    /* ----- IVFPQ-specific options ----------------------------------- */
+
+    if ((s = vec_opt_get(options, TXindOpt_vec_pq_m)) != NULL) {
+        li = strtol(s, &e, 10);
+        if (e == s || *e || li < 4 || li > 256) {
             putmsg(MERR + UGE, fn,
-                "flush must be `auto' or `manual'; got `%s'", s);
+                "vec_pq_m must be an integer in [4, 256]; got `%s'", s);
             return -1;
         }
+        out->pq_m = (int)li;
     }
+    if ((s = vec_opt_get(options, TXindOpt_vec_pq_nlist)) != NULL) {
+        li = strtol(s, &e, 10);
+        if (e == s || *e || li < 4 || li > 65536) {
+            putmsg(MERR + UGE, fn,
+                "vec_pq_nlist must be an integer in [4, 65536]; got `%s'", s);
+            return -1;
+        }
+        out->pq_nlist = (int)li;
+    }
+    if ((s = vec_opt_get(options, TXindOpt_vec_pq_nbits)) != NULL) {
+        li = strtol(s, &e, 10);
+        /* v1 supports nbits=8 only; FastScan's 4-bit path comes in
+         * phase 4.  Accept the value to allow forward-compat PARAMS
+         * strings, but warn loudly if it isn't 8. */
+        if (e == s || *e || li < 4 || li > 8) {
+            putmsg(MERR + UGE, fn,
+                "vec_pq_nbits must be an integer in [4, 8]; got `%s'", s);
+            return -1;
+        }
+        if (li != 8) {
+            putmsg(MERR + UGE, fn,
+                "vec_pq_nbits=%ld not yet supported (FastScan is phase 4); "
+                "use vec_pq_nbits=8", li);
+            return -1;
+        }
+        out->pq_nbits = (int)li;
+    }
+    if ((s = vec_opt_get(options, TXindOpt_vec_pq_target_rows)) != NULL) {
+        li = strtol(s, &e, 10);
+        if (e == s || *e || li < 1) {
+            putmsg(MERR + UGE, fn,
+                "vec_pq_target_rows must be a positive integer; got `%s'", s);
+            return -1;
+        }
+        if (li > INT_MAX) li = INT_MAX;
+        out->pq_target_rows = (int)li;
+    }
+    if ((s = vec_opt_get(options, TXindOpt_vec_pq_min_points_per_centroid)) != NULL) {
+        li = strtol(s, &e, 10);
+        if (e == s || *e || li < 1 || li > 39) {
+            putmsg(MERR + UGE, fn,
+                "vec_pq_min_points_per_centroid must be an integer in [1, 39]; "
+                "got `%s'", s);
+            return -1;
+        }
+        out->pq_min_points_per_centroid = (int)li;
+    }
+
     if ((s = vec_opt_get(options, TXindOpt_vec_dtype)) != NULL) {
         if      (!strcasecmp(s, "f64"))  out->dtype = FTN_VEC_F64;
         else if (!strcasecmp(s, "f32"))  out->dtype = FTN_VEC_F32;
@@ -256,7 +398,7 @@ vec_dtype_name(int dtype)
 }
 
 /* Map dtype FTN tag → element size in bytes, 0 on unknown. */
-static size_t
+size_t
 vec_dtype_elsz(int dtype)
 {
     switch (dtype) {
@@ -292,19 +434,20 @@ TXvecParamsParse(TXvecParams *out, const char *params)
         char saved = *end;
         *end = '\0';
 
-        if      (!strcmp(key, "dim"))    out->graph.dim = atoi(val);
+        if      (!strcmp(key, "backend")) {
+            if      (!strcmp(val, "hnsw") ||
+                     !strcmp(val, "usearch")) out->backend = VEC_BACKEND_HNSW;
+            else if (!strcmp(val, "ivfpq") ||
+                     !strcmp(val, "faiss"))   out->backend = VEC_BACKEND_IVFPQ;
+            /* unknown backend value: leave as init default (HNSW) */
+        }
+        else if (!strcmp(key, "dim"))    out->graph.dim = atoi(val);
         else if (!strcmp(key, "M"))      out->graph.M = atoi(val);
         else if (!strcmp(key, "efc"))    out->graph.ef_construction = atoi(val);
         else if (!strcmp(key, "alpha"))  out->graph.alpha = (float)atof(val);
         else if (!strcmp(key, "metric")) {
             if (!strcmp(val, "l2"))       out->graph.metric = VEC_METRIC_L2;
             else if (!strcmp(val, "dot")) out->graph.metric = VEC_METRIC_DOT;
-        }
-        else if (!strcmp(key, "flush")) {
-            out->flush_mode = !strcmp(val, "manual") ? 1 : 0;
-        }
-        else if (!strcmp(key, "state")) {
-            out->dirty = !strcmp(val, "dirty") ? 1 : 0;
         }
         else if (!strcmp(key, "dtype")) {
             if      (!strcmp(val, "f64"))  out->dtype = FTN_VEC_F64;
@@ -320,6 +463,15 @@ TXvecParamsParse(TXvecParams *out, const char *params)
         else if (!strcmp(key, "quant_zp")) {
             out->quant_zp = atoi(val);
         }
+        /* IVFPQ-specific (only present when backend=ivfpq).  HNSW
+         * indexes will never see these keys; the parser silently
+         * accepts them on any backend so the values round-trip
+         * through ALTER INDEX paths that don't touch backend. */
+        else if (!strcmp(key, "pq_m"))            out->pq_m = atoi(val);
+        else if (!strcmp(key, "pq_nlist"))        out->pq_nlist = atoi(val);
+        else if (!strcmp(key, "pq_nbits"))        out->pq_nbits = atoi(val);
+        else if (!strcmp(key, "pq_target_rows"))  out->pq_target_rows = atoi(val);
+        else if (!strcmp(key, "pq_min_ppc"))      out->pq_min_points_per_centroid = atoi(val);
         *end = saved;
         p = (saved ? end + 1 : end);
     }
@@ -330,36 +482,76 @@ TXvecParamsParse(TXvecParams *out, const char *params)
 int
 TXvecParamsToText(char *buf, size_t bufSz, const TXvecParams *p)
 {
-    /* Always emit flush=... and state=... so reading code never has to
-     * guess the default — and so a state transition is just a substring
-     * rewrite of the existing line.  dtype is emitted when known so a
-     * varbyte-backed index can be reopened without consulting the
-     * column.  Quant fields are appended only for i8/u8 indexes; floats
-     * leave them off the wire entirely. */
+    /* HNSW path emits flush= and state= so reading code never has to
+     * guess the default — and so a state transition (dirty→clean and
+     * back) is just a fixed-length substring rewrite of the existing
+     * line.  IVFPQ omits those fields entirely; see plan §3 for why
+     * IVFPQ doesn't have HNSW's auto/manual + dirty-bit machinery.
+     *
+     * dtype is emitted when known so a varbyte-backed index can be
+     * reopened without consulting the column.  HNSW quant fields are
+     * appended only for i8/u8 indexes; floats leave them off the wire.
+     */
     const char *dtypeStr = vec_dtype_name(p->dtype);
-    int is_quantized = (p->dtype == FTN_VEC_I8 || p->dtype == FTN_VEC_U8);
     int n;
-    if (is_quantized) {
-        n = snprintf(buf, bufSz,
-            "type=vec;backend=usearch;dim=%d;dtype=%s;M=%d;efc=%d;alpha=%.3f;metric=%s"
-            ";flush=%s;state=%s;quant_scale=%.6f;quant_zp=%d",
-            p->graph.dim,
-            dtypeStr ? dtypeStr : "f32",
-            p->graph.M, p->graph.ef_construction, p->graph.alpha,
-            (p->graph.metric == VEC_METRIC_L2) ? "l2" : "dot",
-            p->flush_mode ? "manual" : "auto",
-            p->dirty ? "dirty" : "clean",
-            (double)p->quant_scale, p->quant_zp);
+
+    if (p->backend == VEC_BACKEND_IVFPQ) {
+        /* IVFPQ form.  No flush= / state= (HNSW-only).  No graph.M /
+         * efc / alpha (HNSW-only).  Quant fields only emitted when
+         * the column dtype is i8/u8 (column-level scalar quantization,
+         * orthogonal to the PQ codes that IVFPQ stores internally). */
+        int is_quant_col = (p->dtype == FTN_VEC_I8 || p->dtype == FTN_VEC_U8);
+        /* `pq_min_ppc` (min training points per centroid) is emitted only
+         * when explicitly set; the read-back parser falls back to the
+         * FAISS default (39) when absent. */
+        char min_ppc_clause[32] = "";
+        if (p->pq_min_points_per_centroid > 0)
+            snprintf(min_ppc_clause, sizeof(min_ppc_clause),
+                     ";pq_min_ppc=%d", p->pq_min_points_per_centroid);
+        if (is_quant_col) {
+            n = snprintf(buf, bufSz,
+                "type=vec;backend=ivfpq;dim=%d;dtype=%s;metric=%s"
+                ";pq_m=%d;pq_nlist=%d;pq_nbits=%d;pq_target_rows=%d%s"
+                ";quant_scale=%.6f;quant_zp=%d",
+                p->graph.dim,
+                dtypeStr ? dtypeStr : "f32",
+                (p->graph.metric == VEC_METRIC_L2) ? "l2" : "dot",
+                p->pq_m, p->pq_nlist, p->pq_nbits, p->pq_target_rows,
+                min_ppc_clause,
+                (double)p->quant_scale, p->quant_zp);
+        } else {
+            n = snprintf(buf, bufSz,
+                "type=vec;backend=ivfpq;dim=%d;dtype=%s;metric=%s"
+                ";pq_m=%d;pq_nlist=%d;pq_nbits=%d;pq_target_rows=%d%s",
+                p->graph.dim,
+                dtypeStr ? dtypeStr : "f32",
+                (p->graph.metric == VEC_METRIC_L2) ? "l2" : "dot",
+                p->pq_m, p->pq_nlist, p->pq_nbits, p->pq_target_rows,
+                min_ppc_clause);
+        }
     } else {
-        n = snprintf(buf, bufSz,
-            "type=vec;backend=usearch;dim=%d;dtype=%s;M=%d;efc=%d;alpha=%.3f;metric=%s"
-            ";flush=%s;state=%s",
-            p->graph.dim,
-            dtypeStr ? dtypeStr : "f32",
-            p->graph.M, p->graph.ef_construction, p->graph.alpha,
-            (p->graph.metric == VEC_METRIC_L2) ? "l2" : "dot",
-            p->flush_mode ? "manual" : "auto",
-            p->dirty ? "dirty" : "clean");
+        /* HNSW form (existing).  backend=usearch is the literal value
+         * we've always emitted; kept for back-compat with PARAMS strings
+         * already on disk.  An equivalent `backend=hnsw` is also accepted
+         * by the parser. */
+        int is_quantized = (p->dtype == FTN_VEC_I8 || p->dtype == FTN_VEC_U8);
+        if (is_quantized) {
+            n = snprintf(buf, bufSz,
+                "type=vec;backend=usearch;dim=%d;dtype=%s;M=%d;efc=%d;alpha=%.3f;metric=%s"
+                ";quant_scale=%.6f;quant_zp=%d",
+                p->graph.dim,
+                dtypeStr ? dtypeStr : "f32",
+                p->graph.M, p->graph.ef_construction, p->graph.alpha,
+                (p->graph.metric == VEC_METRIC_L2) ? "l2" : "dot",
+                (double)p->quant_scale, p->quant_zp);
+        } else {
+            n = snprintf(buf, bufSz,
+                "type=vec;backend=usearch;dim=%d;dtype=%s;M=%d;efc=%d;alpha=%.3f;metric=%s",
+                p->graph.dim,
+                dtypeStr ? dtypeStr : "f32",
+                p->graph.M, p->graph.ef_construction, p->graph.alpha,
+                (p->graph.metric == VEC_METRIC_L2) ? "l2" : "dot");
+        }
     }
     return (n < 0 || (size_t)n >= bufSz) ? -1 : n;
 }
@@ -408,9 +600,9 @@ dtype_to_usearch_scalar(int dtype)
  * PARAMS (the column carries no inherent calibration).  Returns 0 on
  * success, -1 on unsupported/empty.
  */
-static int
-convert_to_f32(int t, const void *raw, size_t n_elems, int dim,
-               float scale, int zp, float *dst)
+int
+vec_convert_to_f32(int t, const void *raw, size_t n_elems, int dim,
+                   float scale, int zp, float *dst)
 {
     if ((int)n_elems != dim) return -1;
     switch (t) {
@@ -490,7 +682,7 @@ vec_add_one(usearch_index_t idx, usearch_key_t key, int dim,
             float *qbuf_f32, void *qbuf_idx,
             const char **uerr_out)
 {
-    if (convert_to_f32(column_dtype, raw, cells, dim, scale, zp, qbuf_f32) < 0)
+    if (vec_convert_to_f32(column_dtype, raw, cells, dim, scale, zp, qbuf_f32) < 0)
         return -1;
     const void *uvec = qbuf_f32;
     usearch_scalar_kind_t ukind = usearch_scalar_f32_k;
@@ -508,8 +700,23 @@ vec_add_one(usearch_index_t idx, usearch_key_t key, int dim,
 
 /* ----- Index creation ----------------------------------------------- */
 
+/* Public dispatcher: parse options to learn which backend the user
+ * asked for, then delegate to that backend's create slot. */
 int
 TXvecCreateIndex(DDIC *ddic, DBTBL *dbtbl,
+                 const char *field, const char *indname,
+                 const char *indfile, TXindOpts *options,
+                 TXvecParams *outParams)
+{
+    TXvecParams vp;
+    if (TXvecParamsFromOptions(&vp, options) < 0) return -1;
+    return vec_backend_for(vp.backend)->create(ddic, dbtbl, field, indname,
+                                               indfile, options, outParams);
+}
+
+/* HNSW slot for create.  Existing body, unchanged. */
+static int
+hnsw_create_impl(DDIC *ddic, DBTBL *dbtbl,
                  const char *field, const char *indname,
                  const char *indfile, TXindOpts *options,
                  TXvecParams *outParams)
@@ -634,7 +841,7 @@ TXvecCreateIndex(DDIC *ddic, DBTBL *dbtbl,
             /* For calibration we only need native column values —
              * pass scale=1, zp=0 (i8/u8 native sources rarely matter
              * here since calibrating them is unusual). */
-            if (convert_to_f32(cdtype, crow, cells, calib_dim,
+            if (vec_convert_to_f32(cdtype, crow, cells, calib_dim,
                                1.0f, 0, calib_buf) < 0)
                 continue;
             for (int i = 0; i < calib_dim; i++) {
@@ -818,11 +1025,33 @@ TXvecCreateIndex(DDIC *ddic, DBTBL *dbtbl,
         outParams->dtype = vp.dtype;
     }
 
-    /* Create the per-index WAL table.  Lives for the lifetime of the
-     * index; dropped at DROP INDEX.  Failing here is fatal so a name
-     * collision is surfaced at create time rather than silently
-     * disabling defer mode. */
-    if (vec_wal_create_table(ddic, indfile) != 0) goto err;
+    /* Create empty `_T.btr` (newrec) and `_del.btr` (tombstone)
+     * alongside the .vec.  All post-CREATE INSERTs accumulate in
+     * `_T.btr`; deletes accumulate in `_del.btr`; SEARCH unions
+     * sealed (.vec) + linear-scanned newrec rows + applies the
+     * tombstone filter; ALTER INDEX OPTIMIZE folds them back into
+     * the .vec via usearch_add + a single save_atomic.  Mirrors
+     * texis fulltext's pattern (texis-internals.md §8.5). */
+    {
+        char *tomb_base   = TXvecMakeBtreeBasePath(indfile, "_del");
+        char *newrec_base = TXvecMakeBtreeBasePath(indfile, "_T");
+        if (!tomb_base || !newrec_base) {
+            free(tomb_base); free(newrec_base);
+            putmsg(MERR + MAE, fn, "alloc aux btree paths");
+            goto err;
+        }
+        /* Defensive: erase prior leftovers from a re-created index. */
+        TXvecBtreeUnlink(tomb_base);
+        TXvecBtreeUnlink(newrec_base);
+        int rc_t = TXvecBtreeCreateEmpty(tomb_base);
+        int rc_n = TXvecBtreeCreateEmpty(newrec_base);
+        free(tomb_base); free(newrec_base);
+        if (rc_t != 0 || rc_n != 0) {
+            putmsg(MERR + UGE, fn,
+                "INDEX_VEC: could not create auxiliary btrees");
+            goto err;
+        }
+    }
 
     rc = (skipped > 0) ? 0 : 1;
     goto cleanup;
@@ -840,64 +1069,62 @@ cleanup:
 
 /* ----- Search-side handle cache ------------------------------------- */
 
-struct TXvecHandle {
-    char            *path;        /* SYSINDEX path (no extension) */
-    char            *fpath;       /* path + .vec suffix */
+/* HNSW-backend concrete handle.  First field is `base` (the polymorphic
+ * TXvecHandleBase from vecindex_internal.h, carrying backend tag, cache
+ * list pointer, path string, ddic, file identity).  HNSW-specific state
+ * follows.  IVFPQ has its own struct in vecindex_ivfpq.cpp that embeds
+ * the same base; both go into the same cache list. */
+struct TXvecHnswHandle {
+    struct TXvecHandleBase  base;        /* MUST be first; dim/metric/dtype live here */
+    char            *fpath;       /* base.path + .vec suffix */
+    char            *tomb_base;   /* "<base.path>_del" — _del.btr stem */
+    char            *newrec_base; /* "<base.path>_T"   — _T.btr stem */
     usearch_index_t  index;       /* opaque usearch handle */
-    int              dim;
-    vec_metric_t     metric;
-    int              dtype;       /* FTN_VEC_F* — interpretation of cell
-                                   * bytes for byte-backed indexes. */
-    /* Quantization parameters — only meaningful when dtype is i8/u8;
-     * cached from PARAMS for use by per-row hooks and LIKEV queries
-     * without re-parsing on each call. */
+    /* HNSW-specific quantization parameters — only meaningful when
+     * base.dtype is i8/u8; cached from PARAMS for use by per-row hooks
+     * and LIKEV queries without re-parsing on each call. */
     float            quant_scale;
     int              quant_zp;
-    int              flush_mode;  /* 0=auto, 1=manual (cached from PARAMS) */
-    int              dirty;       /* in-memory state diverges from disk */
-    DDIC            *ddic;        /* DDIC observed at last open; used by
-                                   * the exit-time flush to update SYSINDEX.
-                                   * May go stale if connection closes
-                                   * while the process keeps the cache;
-                                   * stale-check happens via best-effort
-                                   * try (lock failure → skip SYSINDEX). */
-    /* Filesystem identity captured at load time — used to detect that
-     * another process has rewritten the file (save_atomic uses rename,
-     * so the inode changes).  Compared on cache hit; mismatch evicts
-     * the handle and reloads.  The same check covers same-inode
-     * truncate-and-rewrite via mtime, which save_atomic doesn't do but
-     * a hand-edit might. */
-    dev_t            file_dev;
-    ino_t            file_ino;
-    EPI_OFF_T        file_mtime;
-    EPI_OFF_T        file_size;
-    struct TXvecHandle *next;
 };
 
-static struct TXvecHandle *vec_handle_cache = NULL;
-static int vec_force_defer = 0;       /* set by TXvecSetForceDefer */
+/* Cache stores the polymorphic base; both HNSW and IVFPQ handles
+ * embed it as their first field.  Per-handle teardown dispatches via
+ * base.backend → the right backend's close slot.
+ *
+ * The cache itself is private to this translation unit — the only
+ * way for the IVFPQ backend (vecindex_ivfpq.cpp) to insert is via
+ * vec_handle_cache_push() below. */
+static struct TXvecHandleBase *vec_handle_cache = NULL;
+
+void
+vec_handle_cache_push(struct TXvecHandleBase *hb)
+{
+    if (!hb) return;
+    hb->next = vec_handle_cache;
+    vec_handle_cache = hb;
+}
 
 static int save_atomic(usearch_index_t idx, const char *fpath, const char *fn);
-static int save_atomic_h(struct TXvecHandle *h, const char *fn);
+static int save_atomic_h(struct TXvecHnswHandle *h, const char *fn);
 
 /* Capture (dev, ino, mtime, size) for `fpath`.  Sets all fields to 0
  * on stat() failure (file missing, permissions); the resulting record
  * compares unequal to any later stat with the file present, which is
  * what we want — a missing → present transition forces reload. */
 static void
-vec_capture_file_id(const char *fpath, struct TXvecHandle *h)
+vec_capture_file_id(const char *fpath, struct TXvecHnswHandle *h)
 {
     EPI_STAT_S st;
     if (EPI_STAT(fpath, &st) == 0) {
-        h->file_dev   = st.st_dev;
-        h->file_ino   = st.st_ino;
-        h->file_mtime = (EPI_OFF_T)st.st_mtime;
-        h->file_size  = (EPI_OFF_T)st.st_size;
+        h->base.file_dev   = st.st_dev;
+        h->base.file_ino   = st.st_ino;
+        h->base.file_mtime = (EPI_OFF_T)st.st_mtime;
+        h->base.file_size  = (EPI_OFF_T)st.st_size;
     } else {
-        h->file_dev   = 0;
-        h->file_ino   = 0;
-        h->file_mtime = 0;
-        h->file_size  = 0;
+        h->base.file_dev   = 0;
+        h->base.file_ino   = 0;
+        h->base.file_mtime = 0;
+        h->base.file_size  = 0;
     }
 }
 
@@ -905,40 +1132,35 @@ vec_capture_file_id(const char *fpath, struct TXvecHandle *h)
  * matches what we recorded at load.  A mismatch means another process
  * has rewritten the file (save_atomic's rename gives a new inode);
  * our cached usearch state is now stale and must be discarded.
- *
- * Always treated as "stale" if our handle has unflushed writes
- * (h->dirty == 1) — we shouldn't reload over our own pending state.
- * In manual-flush mode the same-process cache is the source of truth
- * until flush; cross-process visibility in defer mode is documented
- * as not provided.
  */
 static int
-vec_handle_is_stale(const struct TXvecHandle *h)
+vec_handle_is_stale(const struct TXvecHnswHandle *h)
 {
     EPI_STAT_S st;
-    if (h->dirty) return 0;
     if (EPI_STAT(h->fpath, &st) != 0) {
         /* File disappeared (DROP from another process between our
          * load and now): treat as stale; subsequent open will fail
          * cleanly via usearch_metadata. */
         return 1;
     }
-    if (st.st_dev != h->file_dev || st.st_ino != h->file_ino) return 1;
-    if ((EPI_OFF_T)st.st_mtime != h->file_mtime) return 1;
-    if ((EPI_OFF_T)st.st_size != h->file_size) return 1;
+    if (st.st_dev != h->base.file_dev || st.st_ino != h->base.file_ino) return 1;
+    if ((EPI_OFF_T)st.st_mtime != h->base.file_mtime) return 1;
+    if ((EPI_OFF_T)st.st_size != h->base.file_size) return 1;
     return 0;
 }
 
 /* Internal: free `h` (frees usearch state and string fields).  Does
  * NOT touch the cache list — caller is responsible for unlinking. */
 static void
-vec_handle_free(struct TXvecHandle *h)
+vec_handle_free(struct TXvecHnswHandle *h)
 {
     const char *uerr = NULL;
     if (!h) return;
     if (h->index) usearch_free(h->index, &uerr);
-    free(h->path);
+    free(h->base.path);
     free(h->fpath);
+    free(h->tomb_base);
+    free(h->newrec_base);
     free(h);
 }
 
@@ -995,274 +1217,6 @@ vec_sysindex_get_params(DDIC *ddic, const char *indfile, char **outParams)
     return rc;
 }
 
-/* Locate the SYSINDEX row for the vec index file `indfile`, replace
- * its PARAMS field with `newParams`, and write back at the same RECID.
- * Returns 0 on success, -1 on failure.
- *
- * `newParams` must be the same byte length as the existing value when
- * we want to guarantee true in-place rewrite (the texis dbf layer will
- * relocate if size differs).  Our toText output is fixed-length per
- * (mode,state) tuple, so callers meet this naturally.
- */
-static int
-vec_sysindex_update_params(DDIC *ddic, const char *indfile,
-                           const char *newParams)
-{
-    static const char fn[] = "vec_sysindex_update_params";
-    TBL  *tb;
-    FLD  *fnameFld, *paramsFld, *typeFld;
-    RECID *at, foundRecid;
-    int   rc = -1;
-
-    if (!ddic || !indfile || !newParams) return -1;
-    tb = ddic->indextbl;
-    if (!tb) {
-        putmsg(MERR, fn, "no index TBL");
-        return -1;
-    }
-    fnameFld  = nametofld(tb, "FNAME");
-    paramsFld = nametofld(tb, "PARAMS");
-    typeFld   = nametofld(tb, "TYPE");
-    if (!fnameFld || !paramsFld || !typeFld) {
-        putmsg(MERR, fn, "SYSINDEX missing FNAME/PARAMS/TYPE");
-        return -1;
-    }
-
-    if (TXlocksystbl(ddic, SYSTBL_INDEX, W_LCK, NULL) == -1) return -1;
-
-    rewindtbl(tb);
-    TXsetrecid(&foundRecid, -1);
-    while (TXrecidvalid(at = gettblrow(tb, NULL))) {
-        const char *fn_ = (const char *)getfld(fnameFld, NULL);
-        int t = fn_ ? (int)(*(char *)getfld(typeFld, NULL)) : 0;
-        if (fn_ && t == INDEX_VEC && vec_fname_matches(fn_, indfile)) {
-            foundRecid = *at;
-            putfld(paramsFld, (void *)newParams, strlen(newParams));
-            if (puttblrow(tb, &foundRecid) == NULL) {
-                putmsg(MERR + UGE, fn,
-                    "SYSINDEX puttblrow for %s failed", indfile);
-                goto unlock;
-            }
-            rc = 0;
-            break;
-        }
-    }
-    if (rc != 0)
-        putmsg(MWARN, fn, "SYSINDEX entry for `%s' not found", indfile);
-
-    /* Force SYSINDEX cache refresh so subsequent reads see the update. */
-    if (!ddic->dblock && ddic->indtblcache)
-        ddic->indtblcache->tbl = closetbl(ddic->indtblcache->tbl);
-
-unlock:
-    TXunlocksystbl(ddic, SYSTBL_INDEX, W_LCK);
-    return rc;
-}
-
-/* Rewrite SYSINDEX.PARAMS for `h` to reflect `dirty`.  Reads the
- * current PARAMS to preserve build-time fields (M/efc/alpha) we don't
- * carry on the handle, then writes back with updated state.
- */
-static int
-vec_persist_state(DDIC *ddic, TXvecHandle *h, int dirty)
-{
-    static const char fn[] = "vec_persist_state";
-    TXvecParams vp;
-    char        buf[TX_VEC_PARAMS_TEXT_MAX];
-    char       *currParams = NULL;
-
-    if (!ddic || !h) return -1;
-    if (vec_sysindex_get_params(ddic, h->path, &currParams) != 0 ||
-        !currParams) {
-        putmsg(MWARN, fn, "could not read current PARAMS for %s", h->path);
-        return -1;
-    }
-    if (TXvecParamsParse(&vp, currParams) != 0) {
-        free(currParams);
-        return -1;
-    }
-    free(currParams);
-    /* Override mutable bits from the in-memory handle. */
-    vp.flush_mode = h->flush_mode;
-    vp.dirty      = dirty ? 1 : 0;
-    if (TXvecParamsToText(buf, sizeof(buf), &vp) < 0) {
-        putmsg(MERR, fn, "PARAMS too long");
-        return -1;
-    }
-    return vec_sysindex_update_params(ddic, h->path, buf);
-}
-
-/* Mark the index dirty and lazily persist the clean→dirty transition.
- * Subsequent calls within the same dirty window are no-ops, so the
- * typical defer-burst path triggers exactly one SYSINDEX write per
- * clean→dirty edge.
- */
-static int
-vec_mark_dirty(DDIC *ddic, TXvecHandle *h)
-{
-    if (!h || h->dirty) return 0;
-    h->dirty = 1;
-    if (!ddic) return 0;        /* best effort if no DDIC available */
-    return vec_persist_state(ddic, h, 1);
-}
-
-/* Read SYSINDEX for `indfile` to learn TBNAME + FIELDS.  The two output
- * strings are alloc'd; caller frees.  Returns 0 on success, -1 on miss.
- */
-static int
-vec_sysindex_lookup_table_field(DDIC *ddic, const char *indfile,
-                                char **outTbName, char **outFieldName)
-{
-    TBL *tb;
-    FLD *fnameFld, *typeFld, *tbnameFld, *fieldsFld;
-    RECID *at;
-    int rc = -1;
-    *outTbName = NULL;
-    *outFieldName = NULL;
-    if (!ddic || !indfile) return -1;
-    tb = ddic->indextbl;
-    if (!tb) return -1;
-    fnameFld  = nametofld(tb, "FNAME");
-    typeFld   = nametofld(tb, "TYPE");
-    tbnameFld = nametofld(tb, "TBNAME");
-    fieldsFld = nametofld(tb, "FIELDS");
-    if (!fnameFld || !typeFld || !tbnameFld || !fieldsFld) return -1;
-    if (TXlocksystbl(ddic, SYSTBL_INDEX, R_LCK, NULL) == -1) return -1;
-    rewindtbl(tb);
-    while (TXrecidvalid(at = gettblrow(tb, NULL))) {
-        const char *fn_ = (const char *)getfld(fnameFld, NULL);
-        int t = fn_ ? (int)(*(char *)getfld(typeFld, NULL)) : 0;
-        if (fn_ && t == INDEX_VEC && vec_fname_matches(fn_, indfile)) {
-            const char *tbName = (const char *)getfld(tbnameFld, NULL);
-            const char *fName  = (const char *)getfld(fieldsFld, NULL);
-            *outTbName     = tbName ? strdup(tbName) : strdup("");
-            *outFieldName  = fName  ? strdup(fName)  : strdup("");
-            rc = 0;
-            break;
-        }
-    }
-    TXunlocksystbl(ddic, SYSTBL_INDEX, R_LCK);
-    return rc;
-}
-
-/* Reconcile the loaded index against the current table contents:
- * for each table row, if its RECID isn't already in the index, read
- * its vector and add it.  This recovers writes the previous process
- * deferred and didn't flush before crashing.
- *
- * Forward-only: orphans (keys in usearch for since-deleted rows) are
- * tolerated.  They get returned by the ANN search but the LIKEV
- * post-filter (which iterates a btree of the candidate RECIDs) drops
- * any candidate whose row isn't found in the table.  Periodic REBUILD
- * collapses these.
- *
- * Returns 0 on success (and saves + clears dirty bit), -1 on hard error
- * (handle remains dirty; caller can retry next open).
- */
-static int
-vec_reconcile(DDIC *ddic, TXvecHandle *h)
-{
-    static const char fn[] = "vec_reconcile";
-    char *tbName = NULL, *fieldName = NULL;
-    DBTBL *dbtbl = NULL;
-    TBL *tb = NULL;
-    FLD *fld;
-    RECID *recid;
-    float *qbuf = NULL;
-    void  *qbuf_idx = NULL;
-    size_t added = 0, scanned = 0;
-    int rc = -1;
-    const char *uerr = NULL;
-
-    if (vec_sysindex_lookup_table_field(ddic, h->path,
-                                        &tbName, &fieldName) != 0 ||
-        !tbName || !fieldName) {
-        putmsg(MWARN, fn, "could not find SYSINDEX entry for %s", h->path);
-        goto cleanup;
-    }
-
-    /* Open the table for read.  We need a DBTBL (not raw TBL) so
-     * dbnametofld() resolves the field. */
-    dbtbl = opendbtbl(ddic, tbName);
-    if (!dbtbl) {
-        putmsg(MERR + UGE, fn, "could not open table `%s'", tbName);
-        goto cleanup;
-    }
-    tb = dbtbl->tbl;
-    fld = dbnametofld(dbtbl, fieldName);
-    if (!fld) {
-        putmsg(MERR + UGE, fn, "field `%s' not in table `%s'",
-               fieldName, tbName);
-        goto cleanup;
-    }
-
-    qbuf = (float *)malloc((size_t)h->dim * sizeof(float));
-    if (!qbuf) { putmsg(MERR + MAE, fn, "alloc qbuf"); goto cleanup; }
-
-    /* Index-dtype output buffer for quantized indexes. */
-    if (h->dtype == FTN_VEC_I8 || h->dtype == FTN_VEC_U8) {
-        qbuf_idx = malloc((size_t)h->dim * vec_dtype_elsz(h->dtype));
-        if (!qbuf_idx) { putmsg(MERR + MAE, fn, "alloc qbuf_idx"); goto cleanup; }
-    }
-
-    int colType = fld->type & DDTYPEBITS;
-    int column_dtype = (colType == FTN_BYTE) ? h->dtype : colType;
-
-    TXrewinddbtbl(dbtbl);
-    while ((recid = getdbtblrow(dbtbl)) != RECIDPN && TXrecidvalid(recid)) {
-        scanned++;
-        usearch_key_t key = (usearch_key_t)(uint64_t)recid->off;
-        uerr = NULL;
-        if (usearch_contains(h->index, key, &uerr)) continue;
-
-        size_t n_elems = 0;
-        void *raw = getfld(fld, &n_elems);
-        if (!raw || n_elems == 0) continue;
-
-        size_t cells = n_elems;
-        if (colType == FTN_BYTE) {
-            size_t elsz = vec_dtype_elsz(column_dtype);
-            if (elsz == 0 || (n_elems % elsz) != 0) continue;
-            cells = n_elems / elsz;
-        }
-        if ((int)cells != h->dim) continue;
-
-        size_t sz = usearch_size(h->index, &uerr);     uerr = NULL;
-        size_t cap = usearch_capacity(h->index, &uerr); uerr = NULL;
-        if (sz >= cap) {
-            size_t want = cap * 2 < cap + 16 ? cap + 16 : cap * 2;
-            usearch_reserve(h->index, want, &uerr);
-            if (uerr) { putmsg(MERR + UGE, fn, "reserve: %s", uerr);
-                        goto cleanup; }
-        }
-        if (vec_add_one(h->index, key, h->dim,
-                        h->dtype, h->quant_scale, h->quant_zp,
-                        column_dtype, raw, cells,
-                        qbuf, qbuf_idx, &uerr) < 0) {
-            if (uerr) { putmsg(MERR + UGE, fn, "add: %s", uerr); goto cleanup; }
-            continue;
-        }
-        added++;
-    }
-
-    if (added > 0) {
-        if (save_atomic_h(h, fn) != 0) goto cleanup;
-    }
-    h->dirty = 0;
-    (void)vec_persist_state(ddic, h, 0);
-    putmsg(MINFO, fn, "INDEX_VEC: reconcile of `%s' added %lu rows (scanned %lu)",
-           h->path, (unsigned long)added, (unsigned long)scanned);
-    rc = 0;
-
-cleanup:
-    free(qbuf);
-    free(qbuf_idx);
-    if (dbtbl) closedbtbl(dbtbl);
-    free(tbName);
-    free(fieldName);
-    return rc;
-}
-
 /* Atomically replace the on-disk index file with the in-memory state.
  * Writes to <fpath>.new, then renames over <fpath>.  Crash mid-write
  * leaves the original intact.
@@ -1306,533 +1260,27 @@ save_atomic(usearch_index_t idx, const char *fpath, const char *fn)
 /* Same as save_atomic but also refreshes the handle's cached file
  * identity so vec_handle_is_stale doesn't fire on our own write. */
 static int
-save_atomic_h(struct TXvecHandle *h, const char *fn)
+save_atomic_h(struct TXvecHnswHandle *h, const char *fn)
 {
     if (save_atomic(h->index, h->fpath, fn) != 0) return -1;
     vec_capture_file_id(h->fpath, h);
     return 0;
 }
 
-/* ----- Write-Ahead Log (WAL) ----------------------------------------
- *
- * In defer (manual-flush) mode, per-row INSERT/DELETE writes a record
- * to a per-index texis SQL TABLE named `<indname>_wal` instead of
- * save_atomic'ing the .vec.  Using a regular texis table (not a
- * standalone btree) gives us cross-process locking, atomic single-
- * row insert, and cache invalidation through texislockd's existing
- * machinery — none of which we can replicate cleanly outside texis.
- *
- * Schema:  rid uint64    (recid offset of the indexed table row)
- *          op  char(1)   ('A' for add, 'D' for delete)
- *
- * Flush protocol — vec_wal_replay_and_clear():
- *   1. Iterate WAL via getdbtblrow under per-row R_LCK; build a local
- *      list of (wal_recid, rid, op) triples.  This snapshots what the
- *      WAL contained at iteration time.
- *   2. Reload .vec from disk; apply every list entry to the in-memory
- *      state.  ADDs read the row's vector from the indexed table;
- *      DELs just usearch_remove.  All ops are idempotent
- *      (contains+remove+add for ADD, no-op-on-missing for DEL).
- *   3. save_atomic_h to commit.
- *   4. freedbf each wal_recid we processed; rids that arrived during
- *      step 2 are left alone for the next flush.
- *
- * Concurrent flushers see overlapping snapshots — both apply, both
- * delete the rids they applied — re-applies are idempotent so the
- * final state is correct.  Crash anywhere preserves the WAL contents
- * up to that point; next flush re-applies.
+/* (Write-Ahead Log infrastructure was removed when the `_T.btr`
+ * newrec design landed — every INSERT is now durable via the btree,
+ * with no deferred state to log.  See vec-ivfpq-integration-plan.md
+ * and texis-internals.md §8.5/§8.7.)
  */
 
-#define VEC_WAL_OP_ADD  ((uint8_t)'A')
-#define VEC_WAL_OP_DEL  ((uint8_t)'D')
 
-/* WAL table name = basename(indfile) + "_wal".  E.g. for indfile
- * "/db/wv3_vec" the table is "wv3_vec_wal".  Caller frees. */
-static char *
-vec_wal_table_name(const char *indfile)
-{
-    const char *slash = strrchr(indfile, '/');
-    const char *base  = slash ? slash + 1 : indfile;
-    size_t blen = strlen(base);
-    char *name = (char *)malloc(blen + 5);  /* base + "_wal" + NUL */
-    if (!name) return NULL;
-    memcpy(name, base, blen);
-    memcpy(name + blen, "_wal", 5);
-    return name;
-}
-
-/* The on-disk file for the WAL table — texis appends ".tbl". */
-static char *
-vec_wal_table_fname(const char *indfile)
-{
-    /* Same naming as the indname suffix, since opendbtbl resolves a
-     * relative fname under ddic->pname.  The indfile path may be
-     * absolute under the db dir; in that case use just the basename. */
-    return vec_wal_table_name(indfile);
-}
-
-/* Create the WAL table for `indfile`.  Called exactly once, from
- * TXvecCreateIndex; the table lives for the lifetime of the index
- * and is dropped at DROP INDEX time.  A name collision (e.g. a user
- * table happens to be called <indname>_wal) fails the index create
- * loudly so the conflict is caught immediately.
- *
- * Returns 0 on success, -1 on error.
- */
-static int
-vec_wal_create_table(DDIC *ddic, const char *indfile)
-{
-    static const char fn[] = "vec_wal_create_table";
-    DD     *dd      = NULL;
-    DBTBL  *dbtbl   = NULL;
-    char   *tbname  = NULL;
-    char   *fname   = NULL;
-    int     rc      = -1;
-
-    if (!ddic || !indfile) return -1;
-    tbname = vec_wal_table_name(indfile);
-    fname  = vec_wal_table_fname(indfile);
-    if (!tbname || !fname) goto cleanup;
-
-    /* Refuse if a table with this name already exists.  Two reasons:
-     *  - prevents silently colliding with a user's table.
-     *  - makes "CREATE VEC INDEX twice with same name" fail in a
-     *    clear place, vs. quietly reusing stale WAL state. */
-    dbtbl = opendbtbl(ddic, tbname);
-    if (dbtbl) {
-        putmsg(MERR + UGE, fn,
-            "table `%s' already exists; rename or drop it before "
-            "creating the vec index", tbname);
-        goto cleanup;
-    }
-
-    dd = opendd();
-    if (!dd) { putmsg(MERR + UGE, fn, "opendd"); goto cleanup; }
-    ddsettype(dd, 1);
-    if (putdd(dd, "rid", "uint64", 1, 0) < 0) {
-        putmsg(MERR + UGE, fn, "putdd rid"); goto cleanup;
-    }
-    if (putdd(dd, "op",  "char",   1, 0) < 0) {
-        putmsg(MERR + UGE, fn, "putdd op"); goto cleanup;
-    }
-    dbtbl = createdbtbl(ddic, dd, fname, tbname,
-                        "INDEX_VEC WAL", 'T');
-    if (!dbtbl) {
-        putmsg(MERR + UGE, fn, "createdbtbl(%s)", tbname);
-        goto cleanup;
-    }
-    rc = 0;
-
-cleanup:
-    if (dbtbl) closedbtbl(dbtbl);
-    if (dd)    closedd(dd);
-    free(tbname);
-    free(fname);
-    return rc;
-}
-
-/* Drop the WAL table.  Best-effort — silently no-ops if missing. */
-static void
-vec_wal_drop_table(DDIC *ddic, const char *indfile)
-{
-    char *tbname = vec_wal_table_name(indfile);
-    if (!tbname) return;
-    /* TXdropdtable handles SYSTABLES/SYSCOLUMNS row removal + the
-     * .tbl file unlink + index cleanup. */
-    extern int TXdropdtable(DDIC *, char *);
-    (void)TXdropdtable(ddic, tbname);
-    free(tbname);
-}
-
-void
-TXvecDropAux(DDIC *ddic, const char *indfile)
-{
-    if (!ddic || !indfile) return;
-    vec_wal_drop_table(ddic, indfile);
-}
-
-/* Append (recid, op) to the WAL table.  Each call is its own DBTBL
- * open/insert/close — texis's cross-process locking around puttblrow
- * gives us the cache invalidation we need.  Higher-frequency callers
- * already pay the per-row INSERT lock dance for their main table; the
- * extra WAL row is the same cost.
- *
- * Returns 0 on success, -1 on error.
- */
-static int
-vec_wal_append(DDIC *ddic, const char *indfile, RECID *recid, uint8_t op)
-{
-    static const char fn[] = "vec_wal_append";
-    DBTBL *wal    = NULL;
-    char  *tbname = NULL;
-    FLD   *ridFld = NULL, *opFld = NULL;
-    EPI_UINT64 rid_u64;
-    char   op_c;
-    int    rc = -1;
-
-    if (!ddic) return -1;
-    tbname = vec_wal_table_name(indfile);
-    if (!tbname) return -1;
-
-    wal = opendbtbl(ddic, tbname);
-    if (!wal) {
-        putmsg(MERR + UGE, fn, "opendbtbl(%s)", tbname);
-        goto cleanup;
-    }
-    ridFld = dbnametofld(wal, "rid");
-    opFld  = dbnametofld(wal, "op");
-    if (!ridFld || !opFld) {
-        putmsg(MERR + UGE, fn, "missing rid/op field");
-        goto cleanup;
-    }
-
-    if (TXlocktable(wal, W_LCK) != 0) {
-        putmsg(MERR + UGE, fn, "lock %s", tbname);
-        goto cleanup;
-    }
-    rid_u64 = (EPI_UINT64)(uint64_t)recid->off;
-    op_c    = (char)op;
-    putfld(ridFld, &rid_u64, 1);
-    putfld(opFld,  &op_c,    1);
-    if (puttblrow(wal->tbl, NULL) == NULL) {
-        putmsg(MERR + UGE, fn, "puttblrow(%s)", tbname);
-        TXunlocktable(wal, W_LCK);
-        goto cleanup;
-    }
-    TXunlocktable(wal, W_LCK);
-    rc = 0;
-
-cleanup:
-    if (wal) closedbtbl(wal);
-    free(tbname);
-    return rc;
-}
-
-/* Returns 1 if the WAL table has any rows, 0 if empty/missing, -1 on
- * error.  Used by TXvecOpen to decide whether to invoke replay. */
-static int
-vec_wal_has_entries(DDIC *ddic, const char *indfile)
-{
-    DBTBL *wal = NULL;
-    char  *tbname = vec_wal_table_name(indfile);
-    int    has = 0;
-
-    if (!tbname || !ddic) { free(tbname); return 0; }
-    wal = opendbtbl(ddic, tbname);
-    if (!wal) { free(tbname); return 0; }   /* missing = empty */
-
-    if (TXlocktable(wal, R_LCK) == 0) {
-        TXrewinddbtbl(wal);
-        RECID *r = getdbtblrow(wal);
-        if (r != RECIDPN && TXrecidvalid(r)) has = 1;
-        TXunlocktable(wal, R_LCK);
-    }
-    closedbtbl(wal);
-    free(tbname);
-    return has;
-}
-
-/* Replay all WAL entries onto h's index, save .vec, clear the WAL.
- *
- * Multi-process safety: the WAL btree has no built-in cross-process
- * lock (texis btrees rely on a parent table's R/W_LCK for that).  We
- * serialize WAL access by taking W_LCK on the indexed table for the
- * duration of replay.  Per-row vec_wal_append happens inside
- * TXvecAddRow which is already under the table's W_LCK (held by
- * procupd around per-row index updates), so its access is naturally
- * serialized against this flush.
- *
- * Returns 0 on success, -1 on hard error.
- */
-/* One pending entry from the WAL table. */
-typedef struct {
-    RECID    walRecid;     /* RECID within the WAL table — used for delete-after-apply */
-    EPI_OFF_T rid;         /* offset into the indexed table */
-    uint8_t  op;           /* 'A' or 'D' */
-} vec_wal_entry_t;
-
-static int
-vec_wal_replay_and_clear(struct TXvecHandle *h, DDIC *ddic)
-{
-    static const char fn[] = "vec_wal_replay_and_clear";
-    char  *tbName    = NULL, *fieldName = NULL;
-    char  *walTbName = NULL;
-    DBTBL *dbtbl     = NULL;
-    DBTBL *wal       = NULL;
-    FLD   *fld       = NULL;
-    FLD   *walRid    = NULL, *walOp = NULL;
-    float *qbuf      = NULL;
-    void  *qbuf_idx  = NULL;
-    vec_wal_entry_t *entries = NULL;
-    size_t  nentries = 0, capentries = 0;
-    const char *uerr = NULL;
-    size_t  applied_add = 0, applied_del = 0;
-    int     rc = -1;
-    int     colType = 0;
-    int     column_dtype = 0;
-    int     hold_table_lock = 0;
-
-    if (!ddic || !h) return -1;
-
-    if (vec_sysindex_lookup_table_field(ddic, h->path,
-                                        &tbName, &fieldName) != 0 ||
-        !tbName || !fieldName) {
-        putmsg(MWARN, fn, "no SYSINDEX entry for %s", h->path);
-        goto cleanup;
-    }
-    walTbName = vec_wal_table_name(h->path);
-    if (!walTbName) goto cleanup;
-
-    dbtbl = opendbtbl(ddic, tbName);
-    if (!dbtbl) {
-        putmsg(MERR + UGE, fn, "could not open table `%s'", tbName);
-        goto cleanup;
-    }
-    /* Take W_LCK on the indexed table for the duration of flush.
-     * This serializes against:
-     *   - other processes' INSERT/DELETE on the indexed table
-     *     (their per-row vec_wal_append takes the same W_LCK), and
-     *   - other processes' concurrent flush attempts (only one
-     *     flush in flight at a time).
-     * The latter is critical: without it, two processes can each
-     * SELECT the WAL, reload .vec, save_atomic, and the second
-     * rename() races and clobbers the first's writes. */
-    if (TXlocktable(dbtbl, W_LCK) != 0) {
-        putmsg(MERR + UGE, fn, "lock %s for flush", tbName);
-        goto cleanup;
-    }
-    hold_table_lock = 1;
-
-    fld = dbnametofld(dbtbl, fieldName);
-    if (!fld) {
-        putmsg(MERR + UGE, fn, "field `%s' not in table", fieldName);
-        goto cleanup;
-    }
-    colType = fld->type & DDTYPEBITS;
-    column_dtype = (colType == FTN_BYTE) ? h->dtype : colType;
-
-    wal = opendbtbl(ddic, walTbName);
-    if (!wal) {
-        /* No WAL table → nothing to replay (probably a stale dirty
-         * flag from a pre-WAL build).  Caller falls back to reconcile. */
-        rc = 0;
-        goto cleanup;
-    }
-    walRid = dbnametofld(wal, "rid");
-    walOp  = dbnametofld(wal, "op");
-    if (!walRid || !walOp) {
-        putmsg(MERR + UGE, fn, "WAL table missing rid/op");
-        goto cleanup;
-    }
-
-    /* Step 1: snapshot the WAL into a local list.  We hold W_LCK on
-     * the indexed table for the entire flush, so other processes'
-     * vec_wal_append calls block until we finish — the WAL contents
-     * are stable during this iteration. */
-    TXrewinddbtbl(wal);
-    {
-        RECID *r;
-        while ((r = getdbtblrow(wal)) != RECIDPN && TXrecidvalid(r)) {
-            if (nentries >= capentries) {
-                size_t newcap = capentries ? capentries * 2 : 64;
-                vec_wal_entry_t *p = (vec_wal_entry_t *)realloc(
-                    entries, newcap * sizeof(*p));
-                if (!p) {
-                    putmsg(MERR + MAE, fn, "alloc entries");
-                    goto cleanup;
-                }
-                entries = p;
-                capentries = newcap;
-            }
-            entries[nentries].walRecid = *r;
-            entries[nentries].rid = (EPI_OFF_T)*(EPI_UINT64 *)getfld(walRid, NULL);
-            entries[nentries].op  = (uint8_t)*(char *)getfld(walOp, NULL);
-            nentries++;
-        }
-    }
-
-    if (nentries == 0) {
-        /* Empty WAL — another process already applied any pending
-         * writes (or we never had any).  Reload .vec from disk so
-         * our in-memory state reflects the merged result, then
-         * clear the dirty bit.  Without the reload, our cached
-         * usearch state could miss the sibling's flushed adds and
-         * subsequent same-process queries would be stale. */
-        const char *uerr2 = NULL;
-        usearch_init_options_t opts;
-        usearch_index_t fresh = NULL;
-        memset(&opts, 0, sizeof(opts));
-        usearch_metadata(h->fpath, &opts, &uerr2);
-        if (!uerr2) fresh = usearch_init(&opts, &uerr2);
-        if (!uerr2 && fresh) usearch_load(fresh, h->fpath, &uerr2);
-        if (!uerr2 && fresh) {
-            usearch_free(h->index, &uerr2);
-            h->index = fresh;
-            vec_capture_file_id(h->fpath, h);
-        } else if (fresh) {
-            usearch_free(fresh, &uerr2);
-        }
-        h->dirty = 0;
-        (void)vec_persist_state(ddic, h, 0);
-        rc = 0;
-        goto cleanup;
-    }
-
-    /* Step 2: reload .vec from disk into a fresh usearch state, so we
-     * pick up any other process's flushes since our load. */
-    qbuf = (float *)malloc((size_t)h->dim * sizeof(float));
-    if (!qbuf) { putmsg(MERR + MAE, fn, "alloc qbuf"); goto cleanup; }
-    if (h->dtype == FTN_VEC_I8 || h->dtype == FTN_VEC_U8) {
-        qbuf_idx = malloc((size_t)h->dim * vec_dtype_elsz(h->dtype));
-        if (!qbuf_idx) { putmsg(MERR + MAE, fn, "alloc qbuf_idx"); goto cleanup; }
-    }
-
-    {
-        usearch_index_t fresh = NULL;
-        usearch_init_options_t opts;
-        memset(&opts, 0, sizeof(opts));
-        usearch_metadata(h->fpath, &opts, &uerr);
-        if (uerr) {
-            putmsg(MERR + UGE, fn, "usearch_metadata: %s", uerr);
-            goto cleanup;
-        }
-        fresh = usearch_init(&opts, &uerr);
-        if (!fresh || uerr) {
-            putmsg(MERR + UGE, fn, "usearch_init: %s",
-                   uerr ? uerr : "(null)");
-            if (fresh) usearch_free(fresh, &uerr);
-            goto cleanup;
-        }
-        usearch_load(fresh, h->fpath, &uerr);
-        if (uerr) {
-            putmsg(MERR + UGE, fn, "usearch_load: %s", uerr);
-            usearch_free(fresh, &uerr);
-            goto cleanup;
-        }
-        usearch_free(h->index, &uerr);
-        h->index = fresh;
-    }
-
-    /* Step 3: apply each WAL entry to the in-memory state. */
-    for (size_t i = 0; i < nentries; i++) {
-        EPI_OFF_T ridOff = entries[i].rid;
-        uint8_t   op     = entries[i].op;
-        usearch_key_t key = (usearch_key_t)(uint64_t)ridOff;
-
-        if (op == VEC_WAL_OP_DEL) {
-            uerr = NULL;
-            usearch_remove(h->index, key, &uerr);
-            uerr = NULL;
-            applied_del++;
-            continue;
-        }
-        /* ADD: read row's vector from indexed table.  We already hold
-         * W_LCK on dbtbl, so no per-row sub-lock needed. */
-        RECID r;
-        TXsetrecid(&r, ridOff);
-        if (gettblrow(dbtbl->tbl, &r) == NULL) {
-            continue;       /* row gone — fine, skip. */
-        }
-        size_t n_elems = 0;
-        void *raw = getfld(fld, &n_elems);
-        int   ok = 1;
-        size_t cells = n_elems;
-        if (!raw || n_elems == 0) ok = 0;
-        else if (colType == FTN_BYTE) {
-            size_t elsz = vec_dtype_elsz(column_dtype);
-            if (elsz == 0 || (n_elems % elsz) != 0) ok = 0;
-            else cells = n_elems / elsz;
-        }
-        if (ok && (int)cells != h->dim) ok = 0;
-        if (!ok) continue;
-
-        size_t sz  = usearch_size(h->index, &uerr);     uerr = NULL;
-        size_t cap = usearch_capacity(h->index, &uerr); uerr = NULL;
-        if (sz >= cap) {
-            size_t want = cap * 2 < cap + 16 ? cap + 16 : cap * 2;
-            usearch_reserve(h->index, want, &uerr);
-            if (uerr) { putmsg(MERR + UGE, fn, "reserve: %s", uerr); goto cleanup; }
-        }
-        if (usearch_contains(h->index, key, &uerr)) {
-            usearch_remove(h->index, key, &uerr);
-            uerr = NULL;
-        }
-        if (vec_add_one(h->index, key, h->dim,
-                        h->dtype, h->quant_scale, h->quant_zp,
-                        column_dtype, raw, cells,
-                        qbuf, qbuf_idx, &uerr) < 0) {
-            if (uerr) { putmsg(MERR + UGE, fn, "add: %s", uerr); goto cleanup; }
-            continue;
-        }
-        applied_add++;
-    }
-
-    /* Step 4: save the merged state. */
-    if (save_atomic_h(h, fn) != 0) goto cleanup;
-
-    /* Step 5: delete each WAL row we processed.  We hold W_LCK on
-     * the indexed table; a separate brief W_LCK on the WAL table per
-     * row is fine.  (We can't keep the WAL locked for all deletions
-     * because we might already hold the indexed table's lock on
-     * conflicting hierarchies.) */
-    for (size_t i = 0; i < nentries; i++) {
-        if (TXlocktable(wal, W_LCK) != 0) continue;
-        (void)freedbf(wal->tbl->df, TXgetoff(&entries[i].walRecid));
-        TXunlocktable(wal, W_LCK);
-    }
-
-    /* Step 6: clear the SYSINDEX dirty bit so the next opener can
-     * skip the recovery path. */
-    h->dirty = 0;
-    (void)vec_persist_state(ddic, h, 0);
-    rc = 0;
-    if (TXverbosity > 0)
-        putmsg(MINFO, fn, "WAL replay: %lu ADDs, %lu DELs (of %lu entries)",
-               (unsigned long)applied_add, (unsigned long)applied_del,
-               (unsigned long)nentries);
-
-cleanup:
-    free(qbuf);
-    free(qbuf_idx);
-    free(entries);
-    if (wal) closedbtbl(wal);
-    if (hold_table_lock && dbtbl) TXunlocktable(dbtbl, W_LCK);
-    if (dbtbl) closedbtbl(dbtbl);
-    free(tbName);
-    free(fieldName);
-    free(walTbName);
-    return rc;
-}
-
-TXvecHandle *
-TXvecOpen(DDIC *ddic, const char *indfile)
+/* HNSW vtable slot: open.  Dispatcher has already done cache lookup
+ * and PARAMS parse; this function is on the cache-miss path only. */
+static TXvecHandle *
+hnsw_open_impl(DDIC *ddic, const char *indfile, const TXvecParams *vp)
 {
     static const char fn[] = "TXvecOpen";
     const char *uerr = NULL;
-
-    /* Cache lookup.  On hit, validate that the on-disk file hasn't
-     * been replaced by another process; if it has, evict and fall
-     * through to a fresh load.  Refresh ddic on hit so the most
-     * recent caller's DDIC is what an exit-time flush will use.
-     *
-     * Pointer-to-pointer walk so we can unlink in place if stale.  */
-    {
-        struct TXvecHandle **pp = &vec_handle_cache;
-        while (*pp) {
-            struct TXvecHandle *h = *pp;
-            if (strcmp(h->path, indfile) == 0) {
-                if (vec_handle_is_stale(h)) {
-                    /* Another process rewrote the file. */
-                    *pp = h->next;
-                    vec_handle_free(h);
-                    break;          /* fall through to reload */
-                }
-                if (ddic) h->ddic = ddic;
-                return h;
-            }
-            pp = &h->next;
-        }
-    }
 
     char *fpath = make_usearch_path(indfile);
     if (!fpath) { putmsg(MERR + MAE, fn, "alloc path"); return NULL; }
@@ -1868,255 +1316,154 @@ TXvecOpen(DDIC *ddic, const char *indfile)
         return NULL;
     }
 
-    struct TXvecHandle *h =
-        (struct TXvecHandle *)calloc(1, sizeof(*h));
+    struct TXvecHnswHandle *h =
+        (struct TXvecHnswHandle *)calloc(1, sizeof(*h));
     if (!h) { usearch_free(idx, &uerr); free(fpath); return NULL; }
-    h->path = strdup(indfile);
-    if (!h->path) { free(h); usearch_free(idx, &uerr); free(fpath); return NULL; }
-    h->fpath  = fpath;            /* h takes ownership */
+    h->base.backend = VEC_BACKEND_HNSW;
+    h->base.path = strdup(indfile);
+    if (!h->base.path) { free(h); usearch_free(idx, &uerr); free(fpath); return NULL; }
+    h->fpath       = fpath;            /* h takes ownership */
+    h->tomb_base   = TXvecMakeBtreeBasePath(indfile, "_del");
+    h->newrec_base = TXvecMakeBtreeBasePath(indfile, "_T");
     h->index  = idx;
-    h->dim    = (int)opts.dimensions;
-    h->metric = (opts.metric_kind == usearch_metric_l2sq_k)
+    h->base.dim    = (int)opts.dimensions;
+    h->base.metric = (opts.metric_kind == usearch_metric_l2sq_k)
                 ? VEC_METRIC_L2 : VEC_METRIC_DOT;
-    h->flush_mode = 0;            /* default; PARAMS lookup may override */
-    h->dirty      = 0;
-    h->dtype      = FTN_VEC_F32;  /* default; overridden from PARAMS */
-    h->quant_scale = 0.0f;        /* unused unless dtype is i8/u8 */
-    h->quant_zp    = 0;
-    h->ddic       = ddic;         /* may be NULL; refreshed on cache hit */
+    h->base.ddic       = ddic;         /* may be NULL; refreshed on cache hit */
+
+    /* Take dtype + quant params from the parsed PARAMS (already supplied
+     * by the dispatcher).  Pre-i8 / pre-quant indexes leave vp->dtype
+     * zero — fall back to F32. */
+    h->base.dtype       = vp->dtype ? vp->dtype : FTN_VEC_F32;
+    h->quant_scale = vp->quant_scale;
+    h->quant_zp    = vp->quant_zp;
 
     /* Capture file identity for cross-process change detection.  Done
      * AFTER usearch_load returns so the inode/mtime reflect what we
      * actually loaded. */
     vec_capture_file_id(fpath, h);
 
-    /* Read flush_mode + dirty from SYSINDEX.PARAMS so subsequent writes
-     * know whether to defer.  Best-effort: if DDIC is missing or the
-     * SYSINDEX row can't be located, we keep the auto/clean defaults. */
-    if (ddic) {
-        char *currParams = NULL;
-        if (vec_sysindex_get_params(ddic, indfile, &currParams) == 0 &&
-            currParams) {
-            TXvecParams vp;
-            if (TXvecParamsParse(&vp, currParams) == 0) {
-                h->flush_mode = vp.flush_mode;
-                h->dirty      = vp.dirty;
-                if (vp.dtype) h->dtype = vp.dtype;
-                h->quant_scale = vp.quant_scale;
-                h->quant_zp    = vp.quant_zp;
+    h->base.next     = vec_handle_cache;
+    vec_handle_cache = &h->base;
+
+    return (TXvecHandle *)h;
+}
+
+/* Public dispatcher.  Cache lookup is shared across backends; the
+ * cache-miss path peels PARAMS, parses it, and dispatches by backend. */
+TXvecHandle *
+TXvecOpen(DDIC *ddic, const char *indfile, const char *params_in)
+{
+    /* Cache lookup.  On hit, validate that the on-disk file hasn't
+     * been replaced by another process; if it has, evict and fall
+     * through to a fresh load.  Refresh ddic on hit so the most
+     * recent caller's DDIC is what an exit-time flush will use.
+     *
+     * Pointer-to-pointer walk so we can unlink in place if stale.  */
+    {
+        struct TXvecHandleBase **pp = &vec_handle_cache;
+        while (*pp) {
+            struct TXvecHandleBase *hb = *pp;
+            if (strcmp(hb->path, indfile) == 0) {
+                if (vec_backend_for(hb->backend)->is_stale((TXvecHandle *)hb)) {
+                    /* Another process rewrote the file. */
+                    *pp = hb->next;
+                    vec_backend_for(hb->backend)->close((TXvecHandle *)hb);
+                    break;          /* fall through to reload */
+                }
+                if (ddic) hb->ddic = ddic;
+                return (TXvecHandle *)hb;
             }
-            free(currParams);
+            pp = &hb->next;
         }
     }
 
-    h->next   = vec_handle_cache;
-    vec_handle_cache = h;
-
-    /* Recovery path.  When PARAMS state=dirty (set on the first defer
-     * write per burst, cleared after a successful flush), there's
-     * pending work to apply.  Try the WAL first — it's the cheap path
-     * (replays only the recorded ops) and covers the common case of
-     * a clean shutdown that didn't get a chance to flush, plus crash-
-     * mid-burst.  If the WAL replay fails, fall back to the table-
-     * scan reconcile so missing rows are still recovered. */
-    if (h->dirty && ddic) {
-        if (vec_wal_replay_and_clear(h, ddic) != 0) {
-            putmsg(MWARN, fn,
-                "INDEX_VEC: WAL replay for `%s' failed; falling back to "
-                "table-scan reconcile", indfile);
-            if (vec_reconcile(ddic, h) != 0)
-                putmsg(MWARN, fn,
-                    "INDEX_VEC: reconcile of `%s' failed; index may be "
-                    "missing rows until manually rebuilt", indfile);
-        }
+    /* Get PARAMS — caller may have passed it (predopt.c does); else
+     * look it up.  This is the only SYSINDEX read on the cache-miss
+     * path; the parsed result drives backend dispatch and seeds the
+     * fresh handle so the backend impl never re-reads PARAMS. */
+    char *owned_params = NULL;
+    const char *params = params_in;
+    if (!params) {
+        if (vec_sysindex_get_params(ddic, indfile, &owned_params) != 0)
+            return NULL;
+        params = owned_params;
     }
-    return h;
+
+    TXvecParams vp;
+    int rc = TXvecParamsParse(&vp, params ? params : "");
+    free(owned_params);
+    if (rc != 0) return NULL;
+
+    return vec_backend_for(vp.backend)->open(ddic, indfile, &vp);
 }
 
 /* ----- Per-row hooks ------------------------------------------------ */
 
-int
-TXvecAddRow(DDIC *ddic, DBTBL *dbtbl,
-            const char *indfile, const char *field, RECID *recid)
+/* HNSW vtable slot: add_row.
+ *
+ * The recid is recorded in `<base>_T.btr` (newrec).  No usearch_add,
+ * no save_atomic — those happen at OPTIMIZE time when newrec entries
+ * are folded into the .vec.  Cost: one btree insert (~µs) instead of
+ * a full-file rewrite of the .vec (~hundreds of ms at scale).
+ *
+ * Mirrors texis fulltext's `addto3dbi` (3dbindex.c:4400). */
+static int
+hnsw_add_row_impl(DDIC *ddic, TXvecHandle *h_, DBTBL *dbtbl,
+                  const char *field, RECID *recid)
 {
     static const char fn[] = "TXvecAddRow";
-    if (!dbtbl || !indfile || !field || !recid) return -1;
-
-    TXvecHandle *h = TXvecOpen(ddic, indfile);
-    if (!h) return -1;
-
-    FLD *fld = dbnametofld(dbtbl, (char *)field);
-    if (!fld) {
-        putmsg(MERR + UGE, fn, "field `%s' not found", field);
-        return -1;
-    }
-    int t = fld->type & DDTYPEBITS;
-    if (!FTN_IS_VEC_OR_BYTE(t)) {
+    (void)ddic; (void)dbtbl; (void)field;
+    if (!recid) return -1;
+    struct TXvecHnswHandle *h = (struct TXvecHnswHandle *)h_;
+    if (!h || !h->newrec_base) return -1;
+    int64_t r = (int64_t)(uint64_t)recid->off;
+    if (TXvecBtreeInsertRecid(h->newrec_base, r) != 0) {
         putmsg(MERR + UGE, fn,
-            "field `%s' is not a vector or varbyte type", field);
+            "INDEX_VEC: btinsert into `_T.btr' failed for recid %lld",
+            (long long)r);
         return -1;
-    }
-
-    size_t n_elems = 0;
-    void *raw = getfld(fld, &n_elems);
-    if (!raw || n_elems == 0) {
-        /* NULL or empty vector: nothing to add to the index. */
-        return 0;
-    }
-
-    int column_dtype = (t == FTN_BYTE) ? h->dtype : t;
-
-    /* Compute cell count from byte length when the column is varbyte. */
-    size_t cell_count = n_elems;
-    if (t == FTN_BYTE) {
-        size_t elsz = vec_dtype_elsz(column_dtype);
-        if (elsz == 0 || (n_elems % elsz) != 0) {
-            putmsg(MWARN, fn,
-                "INDEX_VEC: row byte length %lu not a multiple of dtype "
-                "element size %lu; skipping",
-                (unsigned long)n_elems, (unsigned long)elsz);
-            return 0;
-        }
-        cell_count = n_elems / elsz;
-    }
-    if ((int)cell_count != h->dim) {
-        putmsg(MWARN, fn,
-            "INDEX_VEC: row vector dim %lu != index dim %d; skipping",
-            (unsigned long)cell_count, h->dim);
-        return 0;
-    }
-
-    float *qbuf = (float *)malloc((size_t)h->dim * sizeof(float));
-    if (!qbuf) { putmsg(MERR + MAE, fn, "alloc qbuf"); return -1; }
-    void *qbuf_idx = NULL;
-    if (h->dtype == FTN_VEC_I8 || h->dtype == FTN_VEC_U8) {
-        qbuf_idx = malloc((size_t)h->dim * vec_dtype_elsz(h->dtype));
-        if (!qbuf_idx) { putmsg(MERR + MAE, fn, "alloc qbuf_idx");
-                          free(qbuf); return -1; }
-    }
-
-    int rc = 0;
-    const char *uerr = NULL;
-
-    /* If the recid is already present (UPDATE path can call us after
-     * TXdelfromindices, but a stray duplicate shouldn't crash us),
-     * remove first then add.  Surface remove errors as a warning so
-     * the subsequent failed add doesn't look like a duplicate-key
-     * mystery.
-     */
-    if (usearch_contains(h->index, (usearch_key_t)(uint64_t)recid->off, &uerr)) {
-        usearch_remove(h->index, (usearch_key_t)(uint64_t)recid->off, &uerr);
-        if (uerr) {
-            putmsg(MWARN, fn, "usearch_remove (pre-add cleanup): %s", uerr);
-            uerr = NULL;
-        }
-    }
-
-    /* usearch_reserve doesn't auto-grow on add(); ensure capacity
-     * before we hit it.  After load(), capacity == size, so the very
-     * first add would fail with "Reserve capacity ahead of insertions".
-     */
-    {
-        size_t sz = usearch_size(h->index, &uerr);     uerr = NULL;
-        size_t cap = usearch_capacity(h->index, &uerr); uerr = NULL;
-        if (sz >= cap) {
-            size_t want = cap * 2;
-            if (want < cap + 16) want = cap + 16;
-            usearch_reserve(h->index, want, &uerr);
-            if (uerr) {
-                putmsg(MERR + UGE, fn, "usearch_reserve: %s", uerr);
-                rc = -1; goto cleanup;
-            }
-        }
-    }
-
-    if (vec_add_one(h->index, (usearch_key_t)(uint64_t)recid->off, h->dim,
-                    h->dtype, h->quant_scale, h->quant_zp,
-                    column_dtype, raw, cell_count,
-                    qbuf, qbuf_idx, &uerr) < 0) {
-        if (uerr) {
-            putmsg(MERR + UGE, fn, "usearch_add: %s", uerr);
-            rc = -1;
-        } else {
-            putmsg(MWARN, fn, "INDEX_VEC: skipping row with unsupported dtype");
-        }
-        goto cleanup;
-    }
-
-    /* Defer when the index is configured for manual flush, OR when
-     * the connection has set vecAutoFlush=false.  In defer mode we
-     * record the op in the per-index WAL btree (cross-process durable,
-     * locked) and skip save_atomic; flush replays the WAL onto a
-     * fresh disk load, merging all processes' pending writes. */
-    if (getenv("TX_VEC_TRACE"))
-        fprintf(stderr, "[AddRow] flush_mode=%d force_defer=%d\n",
-            h->flush_mode, vec_force_defer);
-    if (h->flush_mode || vec_force_defer) {
-        if (vec_wal_append(ddic, indfile, recid, VEC_WAL_OP_ADD) != 0) {
-            putmsg(MWARN, fn,
-                "WAL append failed; falling back to eager save");
-            if (save_atomic_h(h, fn) != 0) { rc = -1; goto cleanup; }
-        } else {
-            (void)vec_mark_dirty(ddic, h);
-        }
-    } else {
-        if (save_atomic_h(h, fn) != 0) { rc = -1; goto cleanup; }
-    }
-
-cleanup:
-    free(qbuf);
-    free(qbuf_idx);
-    return rc;
-}
-
-int
-TXvecDelRow(DDIC *ddic, DBTBL *dbtbl,
-            const char *indfile, const char *field, RECID *recid)
-{
-    static const char fn[] = "TXvecDelRow";
-    (void)dbtbl; (void)field;
-    if (!indfile || !recid) return -1;
-
-    TXvecHandle *h = TXvecOpen(ddic, indfile);
-    if (!h) return -1;
-
-    const char *uerr = NULL;
-    size_t removed = usearch_remove(h->index,
-                                    (usearch_key_t)(uint64_t)recid->off,
-                                    &uerr);
-    if (uerr) {
-        putmsg(MERR + UGE, fn, "usearch_remove: %s", uerr);
-        return -1;
-    }
-    if (removed == 0) {
-        /* Recid wasn't in the index — nothing to persist.  This happens
-         * when the row was inserted with a NULL or invalid vector and
-         * thus never added; not an error.
-         */
-        return 0;
-    }
-
-    if (h->flush_mode || vec_force_defer) {
-        if (vec_wal_append(ddic, indfile, recid, VEC_WAL_OP_DEL) != 0) {
-            putmsg(MWARN, fn,
-                "WAL append failed; falling back to eager save");
-            if (save_atomic_h(h, fn) != 0) return -1;
-        } else {
-            (void)vec_mark_dirty(ddic, h);
-        }
-    } else {
-        if (save_atomic_h(h, fn) != 0) return -1;
     }
     return 0;
 }
 
-size_t
-TXvecSearch(TXvecHandle *h, const float *query, size_t k, size_t ef,
-            vec_search_result_t *results)
+/* HNSW vtable slot: del_row.
+ *
+ * Try to remove from `_T.btr` (no-op if recid wasn't a post-CREATE
+ * insert).  Always tombstone via `_del.btr` so SEARCH filters out
+ * stale .vec hits.  No usearch_remove on the cached index, no
+ * save_atomic — those happen at OPTIMIZE time. */
+static int
+hnsw_del_row_impl(DDIC *ddic, TXvecHandle *h_, DBTBL *dbtbl,
+                  const char *field, RECID *recid)
+{
+    static const char fn[] = "TXvecDelRow";
+    (void)ddic; (void)dbtbl; (void)field;
+    if (!recid) return 0;
+    struct TXvecHnswHandle *h = (struct TXvecHnswHandle *)h_;
+    if (!h) return 0;
+    int64_t r = (int64_t)(uint64_t)recid->off;
+    if (h->newrec_base) TXvecBtreeDeleteRecid(h->newrec_base, r);
+    if (h->tomb_base && TXvecBtreeInsertRecid(h->tomb_base, r) != 0) {
+        putmsg(MWARN, fn,
+            "INDEX_VEC: tombstone insert failed for recid %lld; "
+            "subsequent SEARCH may return a stale entry", (long long)r);
+    }
+    return 0;
+}
+
+/* HNSW vtable slot: search.  Public dispatcher TXvecSearch passes
+ * the handle through after walking the cache. */
+static size_t
+hnsw_search_impl(TXvecHandle *h_, DBTBL *dbtbl, const char *field,
+                 const float *query, size_t k, size_t ef,
+                 vec_search_result_t *results)
 {
     static const char fn[] = "TXvecSearch";
     const char *uerr = NULL;
     void *qbuf_idx = NULL;
+    (void)dbtbl; (void)field;     /* HNSW doesn't need a delta-scan path */
+    struct TXvecHnswHandle *h = (struct TXvecHnswHandle *)h_;
     if (!h || !h->index) return SIZE_MAX;
     /* Per-query ef.  Caller's `ef` arg wins if non-zero; otherwise fall
      * back to the global TXlikevef set via sql.set/SET; 0 means leave
@@ -2147,15 +1494,15 @@ TXvecSearch(TXvecHandle *h, const float *query, size_t k, size_t ef,
      * in the same coordinate space as the stored vectors. */
     const void *uquery = query;
     usearch_scalar_kind_t ukind = usearch_scalar_f32_k;
-    if (h->dtype == FTN_VEC_I8 || h->dtype == FTN_VEC_U8) {
-        qbuf_idx = malloc((size_t)h->dim * vec_dtype_elsz(h->dtype));
+    if (h->base.dtype == FTN_VEC_I8 || h->base.dtype == FTN_VEC_U8) {
+        qbuf_idx = malloc((size_t)h->base.dim * vec_dtype_elsz(h->base.dtype));
         if (!qbuf_idx) { free(keys); free(dists); return SIZE_MAX; }
-        if (quantize_from_f32(h->dtype, query, h->dim,
+        if (quantize_from_f32(h->base.dtype, query, h->base.dim,
                               h->quant_scale, h->quant_zp, qbuf_idx) < 0) {
             free(keys); free(dists); free(qbuf_idx); return SIZE_MAX;
         }
         uquery = qbuf_idx;
-        ukind = dtype_to_usearch_scalar(h->dtype);
+        ukind = dtype_to_usearch_scalar(h->base.dtype);
     }
 
     size_t got = usearch_search(h->index, uquery, ukind,
@@ -2166,33 +1513,168 @@ TXvecSearch(TXvecHandle *h, const float *query, size_t k, size_t ef,
         return SIZE_MAX;
     }
 
-    /* Translate.  usearch returns distances (lower = better) for both
-     * inner-product (1 - dot) and L2sq.  vec_search_result_t.score
-     * historically holds the metric-natural value (higher = better for
-     * dot, lower = better for L2).  The LIKEV path doesn't actually use
-     * this score (it re-evaluates per row); set a reasonable value for
-     * any caller that does inspect it.
-     */
-    for (size_t i = 0; i < got; i++) {
-        results[i].id = (vec_id_t)keys[i];
-        if (h->metric == VEC_METRIC_L2)
-            results[i].score = (float)dists[i];
-        else
-            results[i].score = 1.0f - (float)dists[i];   /* dot ~= 1 - returned */
+    /* Walk auxiliary btrees: tombstones (recids whose .vec entry is
+     * stale) and newrec (recids inserted post-CREATE that haven't
+     * been folded yet).  Each is a sorted int64 array we bsearch
+     * for the per-candidate filter. */
+    struct vec_recid_vec { int64_t *data; size_t len; size_t cap; };
+    struct vec_recid_vec tomb_v   = {NULL, 0, 0};
+    struct vec_recid_vec newrec_v = {NULL, 0, 0};
+    /* Local closure: append to a vec_recid_vec. */
+    /* (TXvecBtreeWalkRecids takes a C function pointer; use a static
+     * helper at file scope — see vec_recid_vec_push above.) */
+    extern void vec_recid_vec_push_(int64_t r, void *user);
+    TXvecBtreeWalkRecids(h->tomb_base,   vec_recid_vec_push_, &tomb_v);
+    TXvecBtreeWalkRecids(h->newrec_base, vec_recid_vec_push_, &newrec_v);
+
+    extern int vec_int64_cmp_(const void *a, const void *b);
+    if (tomb_v.len)   qsort(tomb_v.data,   tomb_v.len,   sizeof(int64_t), vec_int64_cmp_);
+    if (newrec_v.len) qsort(newrec_v.data, newrec_v.len, sizeof(int64_t), vec_int64_cmp_);
+
+    /* Build the merged candidate set: sealed hits (.vec) minus
+     * tombstones and newrec-overrides, plus a full linear scan of
+     * newrec.  Sort by metric-natural score and trim to k.  Mirrors
+     * the IVFPQ search path so HNSW recall is also unbiased by
+     * delta-set fraction.  See vecindex_ivfpq.cpp's search_impl. */
+    int ascending = (h->base.metric == VEC_METRIC_L2);
+    size_t cap = (size_t)got + newrec_v.len;
+    vec_search_result_t *merged = (cap > 0)
+        ? (vec_search_result_t *)malloc(cap * sizeof(vec_search_result_t))
+        : NULL;
+    size_t mlen = 0;
+    if (cap > 0 && !merged) {
+        free(tomb_v.data); free(newrec_v.data);
+        free(keys); free(dists); free(qbuf_idx);
+        return SIZE_MAX;
     }
 
+    /* Pack sealed (.vec) hits, dropping any whose recid is tombstoned
+     * or has a newrec override (in which case the newrec scan below
+     * carries the current vector). */
+    for (size_t i = 0; i < got; i++) {
+        int64_t id = (int64_t)(uint64_t)keys[i];
+        if (tomb_v.len &&
+            bsearch(&id, tomb_v.data, tomb_v.len, sizeof(int64_t), vec_int64_cmp_))
+            continue;
+        if (newrec_v.len &&
+            bsearch(&id, newrec_v.data, newrec_v.len, sizeof(int64_t), vec_int64_cmp_))
+            continue;
+        merged[mlen].id = (vec_id_t)keys[i];
+        merged[mlen].score = (h->base.metric == VEC_METRIC_L2)
+                             ? (float)dists[i]
+                             : 1.0f - (float)dists[i];
+        mlen++;
+    }
+
+    /* Linear scan newrec: fetch each row, compute exact distance.
+     * Always scan the whole delta (not capped at k) so the merged
+     * top-k is correct regardless of delta size. */
+    if (newrec_v.len > 0 && dbtbl && field) {
+        FLD *fld = dbnametofld(dbtbl, (char *)field);
+        if (fld) {
+            int t = fld->type & DDTYPEBITS;
+            int column_dtype = (t == FTN_BYTE) ? h->base.dtype : t;
+            float *qbuf = (float *)malloc((size_t)h->base.dim * sizeof(float));
+            if (qbuf) {
+                int use_dot = (h->base.metric != VEC_METRIC_L2);
+                for (size_t i = 0; i < newrec_v.len; i++) {
+                    int64_t r = newrec_v.data[i];
+                    BTLOC bl;
+                    memset(&bl, 0, sizeof(bl));
+                    bl.off = (EPI_OFF_T)r;
+                    RECID *res = gettblrow(dbtbl->tbl, &bl);
+                    if (!res || !TXrecidvalid(res)) continue;
+                    size_t n_elems = 0;
+                    void *raw = getfld(fld, &n_elems);
+                    if (!raw || n_elems == 0) continue;
+                    size_t cells = n_elems;
+                    if (t == FTN_BYTE) {
+                        size_t elsz = vec_dtype_elsz(column_dtype);
+                        if (elsz == 0 || (n_elems % elsz) != 0) continue;
+                        cells = n_elems / elsz;
+                    }
+                    if ((int)cells != h->base.dim) continue;
+                    if (vec_convert_to_f32(column_dtype, raw, cells, h->base.dim,
+                                           /*scale*/0.0f, /*zp*/0, qbuf) != 0)
+                        continue;
+                    float score = 0.0f;
+                    if (use_dot) {
+                        for (int j = 0; j < h->base.dim; j++)
+                            score += query[j] * qbuf[j];
+                    } else {
+                        for (int j = 0; j < h->base.dim; j++) {
+                            float d = query[j] - qbuf[j];
+                            score += d * d;
+                        }
+                    }
+                    merged[mlen].id = (vec_id_t)(uint64_t)r;
+                    merged[mlen].score = score;
+                    mlen++;
+                }
+                free(qbuf);
+            }
+        }
+    }
+
+    /* Sort merged by metric-natural score, then copy first k into
+     * the caller's results buffer. */
+    if (mlen > 1) {
+        extern int vec_search_cmp_asc_(const void *, const void *);
+        extern int vec_search_cmp_desc_(const void *, const void *);
+        qsort(merged, mlen, sizeof(*merged),
+              ascending ? vec_search_cmp_asc_ : vec_search_cmp_desc_);
+    }
+
+    size_t out = mlen < k ? mlen : k;
+    for (size_t i = 0; i < out; i++) results[i] = merged[i];
+
+    free(merged);
+    free(tomb_v.data);
+    free(newrec_v.data);
     free(keys); free(dists); free(qbuf_idx);
-    return got;
+    return out;
+}
+
+/* Helpers used by hnsw_search_impl's btree walk + sort.  Defined at
+ * file scope so they can be `extern` declared inline above (avoiding
+ * forward decls littering the top of the file). */
+void vec_recid_vec_push_(int64_t r, void *user)
+{
+    struct { int64_t *data; size_t len; size_t cap; } *v = user;
+    if (v->len == v->cap) {
+        size_t nc = v->cap ? v->cap * 2 : 16;
+        int64_t *nd = (int64_t *)realloc(v->data, nc * sizeof(int64_t));
+        if (!nd) return;     /* on failure, drop the entry */
+        v->data = nd; v->cap = nc;
+    }
+    v->data[v->len++] = r;
+}
+int vec_int64_cmp_(const void *a, const void *b)
+{
+    int64_t la = *(const int64_t *)a, lb = *(const int64_t *)b;
+    return (la > lb) - (la < lb);
+}
+int vec_search_cmp_asc_(const void *a, const void *b)
+{
+    float fa = ((const vec_search_result_t *)a)->score;
+    float fb = ((const vec_search_result_t *)b)->score;
+    return (fa > fb) - (fa < fb);
+}
+int vec_search_cmp_desc_(const void *a, const void *b)
+{
+    float fa = ((const vec_search_result_t *)a)->score;
+    float fb = ((const vec_search_result_t *)b)->score;
+    return (fa < fb) - (fa > fb);
 }
 
 void
 TXvecCloseAll(void)
 {
-    struct TXvecHandle *h = vec_handle_cache;
-    while (h) {
-        struct TXvecHandle *next = h->next;
-        vec_handle_free(h);
-        h = next;
+    struct TXvecHandleBase *hb = vec_handle_cache;
+    while (hb) {
+        struct TXvecHandleBase *next = hb->next;
+        vec_backend_for(hb->backend)->close((TXvecHandle *)hb);
+        hb = next;
     }
     vec_handle_cache = NULL;
 }
@@ -2200,16 +1682,16 @@ TXvecCloseAll(void)
 void
 TXvecInvalidateHandle(const char *indfile)
 {
-    struct TXvecHandle **pp = &vec_handle_cache;
+    struct TXvecHandleBase **pp = &vec_handle_cache;
     if (!indfile) return;
     while (*pp) {
-        struct TXvecHandle *h = *pp;
-        if (strcmp(h->path, indfile) == 0) {
-            *pp = h->next;
-            vec_handle_free(h);
+        struct TXvecHandleBase *hb = *pp;
+        if (strcmp(hb->path, indfile) == 0) {
+            *pp = hb->next;
+            vec_backend_for(hb->backend)->close((TXvecHandle *)hb);
             break;
         }
-        pp = &h->next;
+        pp = &hb->next;
     }
     /* The WAL TABLE drop is wired separately via TXvecDropAux,
      * called from droptbl.c::TXdropdindex while the DDIC is still
@@ -2218,57 +1700,12 @@ TXvecInvalidateHandle(const char *indfile)
 
 /* ----- Flush API ---------------------------------------------------- */
 
-/* Reload h->index from h->fpath, replacing the in-memory state.  Used
- * after flush so the cached handle reflects the freshly-saved disk
- * state (including any sibling-process writes that got merged in). */
+/* HNSW writes are durable on every INSERT (via `_T.btr` newrec +
+ * usearch_save_atomic on OPTIMIZE), so flush is a no-op. */
 static int
-vec_handle_reload_from_disk(struct TXvecHandle *h, const char *fn)
+hnsw_flush_impl(DDIC *ddic, TXvecHandle *h_)
 {
-    const char *uerr = NULL;
-    usearch_init_options_t opts;
-    usearch_index_t fresh = NULL;
-
-    memset(&opts, 0, sizeof(opts));
-    usearch_metadata(h->fpath, &opts, &uerr);
-    if (uerr) {
-        putmsg(MWARN, fn, "reload metadata: %s", uerr);
-        return -1;
-    }
-    fresh = usearch_init(&opts, &uerr);
-    if (!fresh || uerr) {
-        putmsg(MWARN, fn, "reload init: %s", uerr ? uerr : "(null)");
-        if (fresh) usearch_free(fresh, &uerr);
-        return -1;
-    }
-    usearch_load(fresh, h->fpath, &uerr);
-    if (uerr) {
-        putmsg(MWARN, fn, "reload load: %s", uerr);
-        usearch_free(fresh, &uerr);
-        return -1;
-    }
-    usearch_free(h->index, &uerr);
-    h->index = fresh;
-    vec_capture_file_id(h->fpath, h);
-    return 0;
-}
-
-static int
-vec_flush_handle(DDIC *ddic, TXvecHandle *h)
-{
-    static const char fn[] = "TXvecFlush";
-    (void)fn;
-
-    if (!h->dirty) return 0;
-
-    /* Always replay.  vec_wal_replay_and_clear takes W_LCK on the
-     * indexed table for its duration (serializing against concurrent
-     * INSERTs and other flushes), reloads .vec from disk fresh
-     * (picking up any sibling flushes that happened since our load),
-     * applies the WAL atomically, saves, and deletes the entries it
-     * processed.  Empty-WAL is a fast no-op; non-empty handles all
-     * cross-process merge cases via the per-row idempotent ops. */
-    if (vec_wal_replay_and_clear(h, ddic) != 0) return -1;
-    h->dirty = 0;
+    (void)ddic; (void)h_;
     return 0;
 }
 
@@ -2276,9 +1713,10 @@ int
 TXvecFlush(DDIC *ddic, const char *indfile)
 {
     if (!indfile) return -1;
-    for (struct TXvecHandle *h = vec_handle_cache; h; h = h->next)
-        if (strcmp(h->path, indfile) == 0)
-            return vec_flush_handle(ddic, h);
+    for (struct TXvecHandleBase *hb = vec_handle_cache; hb; hb = hb->next) {
+        if (strcmp(hb->path, indfile) == 0)
+            return vec_backend_for(hb->backend)->flush(ddic, (TXvecHandle *)hb);
+    }
     return 0;       /* not in cache → nothing to flush */
 }
 
@@ -2286,14 +1724,15 @@ int
 TXvecFlushAll(DDIC *ddic)
 {
     int rc = 0;
-    for (struct TXvecHandle *h = vec_handle_cache; h; h = h->next) {
-        if (!h->dirty) continue;
+    for (struct TXvecHandleBase *hb = vec_handle_cache; hb; hb = hb->next) {
         /* Prefer the caller's DDIC, fall back to the one captured at
-         * the handle's last open.  If both are NULL, we still save the
-         * .vec but skip the SYSINDEX clean bit (next open will
+         * the handle's last open.  If both are NULL, the backend's
+         * flush handler is expected to skip SYSINDEX-side housekeeping
+         * but still persist the on-disk artifact (next open will
          * reconcile to verify and clear). */
-        DDIC *useDdic = ddic ? ddic : h->ddic;
-        if (vec_flush_handle(useDdic, h) != 0) rc = -1;
+        DDIC *useDdic = ddic ? ddic : hb->ddic;
+        if (vec_backend_for(hb->backend)->flush(useDdic, (TXvecHandle *)hb) != 0)
+            rc = -1;
     }
     return rc;
 }
@@ -2321,21 +1760,6 @@ TXvecGetExitHookDDIC(void)
     return vec_exit_hook_ddic;
 }
 
-/* Connection-scoped force-defer flag (see vecindex.h).  Storage is
- * defined near the top of the file; setter/getter live here. */
-
-void
-TXvecSetForceDefer(int on)
-{
-    vec_force_defer = on ? 1 : 0;
-}
-
-int
-TXvecGetForceDefer(void)
-{
-    return vec_force_defer;
-}
-
 /* ----- Planner integration ------------------------------------------ */
 
 int
@@ -2359,9 +1783,10 @@ TXvecIxVecIndex(const char *iname, const char *sysindexParams,
     IINDEX *ix = NULL;
     BTREE *bt = NULL;
     float *qbuf = NULL;
-    void  *qbuf_idx = NULL;
-    usearch_key_t *keys = NULL;
-    usearch_distance_t *dists = NULL;
+    void  *qbuf_idx = NULL;             /* HNSW internal use only — kept
+                                         * for cleanup symmetry; backend
+                                         * does its own quantization */
+    vec_search_result_t *res = NULL;
     EPI_HUGEUINT cnt = 0;
 
     (void)sysindexParams; (void)fname;
@@ -2374,86 +1799,66 @@ TXvecIxVecIndex(const char *iname, const char *sysindexParams,
     int t = infld->type & DDTYPEBITS;
     if (!FTN_IS_VEC_OR_BYTE(t)) goto err;
 
-    TXvecHandle *h = TXvecOpen(dbtbl ? dbtbl->ddic : NULL, iname);
-    if (!h) goto err;
+    TXvecHandle *h_ = TXvecOpen(dbtbl ? dbtbl->ddic : NULL, iname,
+                                sysindexParams);
+    if (!h_) goto err;
+    struct TXvecHandleBase *hb = (struct TXvecHandleBase *)h_;
 
-    /* Extract + convert query to f32.  For varbyte queries we use the
-     * index's persisted dtype to translate cell bytes; for typed varvec
-     * queries the column type already discriminates. */
+    /* Extract + convert query to f32.  Backend-agnostic: TXvecSearch
+     * dispatches to the right backend, and each backend's search slot
+     * handles its own internal quantization (HNSW: query → i8/u8 if
+     * index is quantized; IVFPQ: f32 throughout). */
     size_t qn = 0;
     void *qraw = getfld(infld, &qn);
     if (!qraw || qn == 0) goto err;
 
-    int qDtype = FTN_IS_VEC(t) ? t : h->dtype;
+    int qDtype = FTN_IS_VEC(t) ? t : hb->dtype;
     size_t qCells = qn;
     if (t == FTN_BYTE) {
         size_t elsz = vec_dtype_elsz(qDtype);
         if (elsz == 0 || (qn % elsz) != 0) goto err;
         qCells = qn / elsz;
     }
-    if ((int)qCells != h->dim) {
+    if ((int)qCells != hb->dim) {
         if (TXverbosity > 0)
             putmsg(MINFO, fn,
                 "INDEX_VEC dim=%d but query dim=%lu; falling back to brute force",
-                h->dim, (unsigned long)qCells);
+                hb->dim, (unsigned long)qCells);
         goto err;
     }
 
-    qbuf = (float *)malloc((size_t)h->dim * sizeof(float));
+    qbuf = (float *)malloc((size_t)hb->dim * sizeof(float));
     if (!qbuf) goto err;
-    if (convert_to_f32(qDtype, qraw, qCells, h->dim,
-                       h->quant_scale, h->quant_zp, qbuf) < 0) goto err;
+    /* For HNSW i8/u8 indexes the search slot quantizes internally
+     * with its own quant_scale/quant_zp; pass 0/0 here since the
+     * caller side doesn't have those (and shouldn't need to). */
+    if (vec_convert_to_f32(qDtype, qraw, qCells, hb->dim,
+                           0.0f, 0, qbuf) < 0) goto err;
 
-    /* For i8/u8 indexes, quantize the query to the index's storage
-     * format using the same scale/zp the build used. */
-    const void *uquery = qbuf;
-    usearch_scalar_kind_t ukind = usearch_scalar_f32_k;
-    if (h->dtype == FTN_VEC_I8 || h->dtype == FTN_VEC_U8) {
-        qbuf_idx = malloc((size_t)h->dim * vec_dtype_elsz(h->dtype));
-        if (!qbuf_idx) goto err;
-        if (quantize_from_f32(h->dtype, qbuf, h->dim,
-                              h->quant_scale, h->quant_zp, qbuf_idx) < 0)
-            goto err;
-        uquery = qbuf_idx;
-        ukind = dtype_to_usearch_scalar(h->dtype);
-    }
-
-    /* Top-K search.  Pool size and per-query ef both come from the
-     * sql.set / SET process-globals, with sane defaults baked in. */
+    /* Top-K search via the dispatcher.  Pool size from likevRows;
+     * per-query expansion (ef for HNSW, nprobe for IVFPQ) from
+     * likevEf — backend interprets in its own units. */
     size_t k = (TXnlikevhits > 0) ? (size_t)TXnlikevhits : 1000;
-    keys  = (usearch_key_t *)     malloc(k * sizeof(usearch_key_t));
-    dists = (usearch_distance_t *)malloc(k * sizeof(usearch_distance_t));
-    if (!keys || !dists) goto err;
-
-    const char *uerr = NULL;
-    /* Apply per-query ef override.  0 = leave the index's existing
-     * setting in effect (set at build time from vec_efc). */
-    if (TXlikevef > 0) {
-        usearch_change_expansion_search(h->index, (size_t)TXlikevef, &uerr);
-        if (uerr) {
-            putmsg(MWARN, fn, "usearch_change_expansion_search: %s", uerr);
-            uerr = NULL;
-        }
-    }
-    size_t got = usearch_search(h->index, uquery, ukind,
-                                k, keys, dists, &uerr);
-    if (uerr) {
-        putmsg(MERR + UGE, fn, "usearch_search: %s", uerr);
-        goto err;
-    }
+    size_t ef = (TXlikevef > 0) ? (size_t)TXlikevef : 0;
+    res = (vec_search_result_t *)
+        malloc(k * sizeof(vec_search_result_t));
+    if (!res) goto err;
+    size_t got = TXvecSearch(h_, dbtbl, fname, qbuf, k, ef, res);
+    if (got == SIZE_MAX) { free(res); goto err; }
 
     /* Materialize into in-memory btree, recid as btloc, sequence number
-     * as key (best-first iteration since usearch returns sorted).
+     * as key (best-first iteration since search returns sorted).
      */
     bt = openbtree(NULL, BTFSIZE, 20, BT_FIXED | BT_UNSIGNED,
                    O_RDWR | O_CREAT);
-    if (!bt) goto err;
+    if (!bt) { free(res); goto err; }
 
     for (size_t i = 0; i < got; i++) {
-        /* Filter for dot metric: distance >= 1 means dot <= 0 (no match). */
-        if (h->metric == VEC_METRIC_DOT && dists[i] >= 1.0f) continue;
+        /* DOT metric: score is the inner product (or 1-cos for HNSW
+         * cosine).  Filter zero-or-negative correlation. */
+        if (hb->metric == VEC_METRIC_DOT && res[i].score <= 0.0f) continue;
         BTLOC bl;
-        TXsetrecid(&bl, (EPI_OFF_T)(uint64_t)keys[i]);
+        TXsetrecid(&bl, (EPI_OFF_T)(uint64_t)res[i].id);
         EPI_OFF_T key = (EPI_OFF_T)i;
         btinsert(bt, &bl, sizeof(key), &key);
         cnt++;
@@ -2479,7 +1884,912 @@ cleanup:
     if (bt) bt = closebtree(bt);
     free(qbuf);
     free(qbuf_idx);
-    free(keys);
-    free(dists);
+    free(res);
     return ix;
+}
+
+/* ====================================================================
+ * Public dispatchers + HNSW backend vtable
+ * ==================================================================== */
+
+/* Slot wrappers — public-API signature, delegate to HNSW impls. */
+
+static void
+hnsw_close_impl(TXvecHandle *h_)
+{
+    vec_handle_free((struct TXvecHnswHandle *)h_);
+}
+
+static int
+hnsw_is_stale_impl(TXvecHandle *h_)
+{
+    return vec_handle_is_stale((const struct TXvecHnswHandle *)h_);
+}
+
+static void
+hnsw_drop_aux_impl(DDIC *ddic, const char *indfile)
+{
+    (void)ddic;
+    if (!indfile) return;
+    char *tomb_base   = TXvecMakeBtreeBasePath(indfile, "_del");
+    char *newrec_base = TXvecMakeBtreeBasePath(indfile, "_T");
+    if (tomb_base)   { TXvecBtreeUnlink(tomb_base);   free(tomb_base); }
+    if (newrec_base) { TXvecBtreeUnlink(newrec_base); free(newrec_base); }
+}
+
+/* HNSW vtable slot: optimize.
+ *
+ * Fold `_T.btr` newrec entries into the .vec via usearch_add, then
+ * one save_atomic at the end (avoids rewriting the .vec for every
+ * absorbed row).  Tombstones are also applied: each newrec recid that
+ * was simultaneously in tomb_bt (UPDATE-in-place) gets removed via
+ * usearch_remove and dropped from the tombstone btree.  After absorb:
+ * truncate `_T.btr`.  Mirrors texis fulltext's `wtix_getnewlist` path. */
+/* HNSW vtable slot: optimize.
+ *
+ * Atomic-swap design: the dispatcher allocates a Tnnnn temp basename
+ * and we build new artifacts at Tnnnn_*.  Caller atomic-swaps Tnnnn
+ * over the live files at commit (under brief table W_LCK) and bumps
+ * the cross-process index version counter.
+ *
+ *   1. Snapshot live `_T.btr' newrec recids.
+ *   2. Load a FRESH usearch index from live .vec (don't pollute
+ *      h->index — if we fail the cached handle is still consistent
+ *      with the on-disk live state).
+ *   3. Reserve capacity, walk the table sequentially, absorb each
+ *      recid that's in the snapshot (UPDATE-in-place: usearch_remove
+ *      then add).
+ *   4. save_atomic the absorbed graph to Tnnnn.vec.
+ *   5. Create empty Tnnnn_T.btr and Tnnnn_del.btr — the dispatcher's
+ *      carry-forward populates them at commit time from live aux
+ *      btrees (filtered by the absorbed set we return). */
+static int
+hnsw_optimize_impl(DDIC *ddic, TXvecHandle *h_, DBTBL *dbtbl,
+                   const char *field, const char *tempBase,
+                   TXindOpts *options,
+                   int64_t **out_absorbed, size_t *out_n_absorbed)
+{
+    static const char fn[] = "TXvecOptimize(hnsw)";
+    (void)ddic;
+    struct TXvecHnswHandle *h = (struct TXvecHnswHandle *)h_;
+    if (!h || !dbtbl || !field || !tempBase) return -1;
+    *out_absorbed = NULL; *out_n_absorbed = 0;
+
+    FLD *fld = dbnametofld(dbtbl, (char *)field);
+    if (!fld) {
+        putmsg(MERR + UGE, fn, "field `%s' not found", field);
+        return -1;
+    }
+    int t = fld->type & DDTYPEBITS;
+    if (!FTN_IS_VEC_OR_BYTE(t)) {
+        putmsg(MERR + UGE, fn,
+            "field `%s' is not a vector or varbyte type", field);
+        return -1;
+    }
+
+    /* Snapshot the live newrec recids — these are the rows the build
+     * phase will absorb into sealed. */
+    struct { int64_t *data; size_t len; size_t cap; } newrec_v = {NULL, 0, 0};
+    extern void vec_recid_vec_push_(int64_t r, void *user);
+    extern int  vec_int64_cmp_(const void *a, const void *b);
+    TXvecBtreeWalkRecids(h->newrec_base, vec_recid_vec_push_, &newrec_v);
+    if (newrec_v.len > 0)
+        qsort(newrec_v.data, newrec_v.len, sizeof(int64_t), vec_int64_cmp_);
+
+    char tempVec[PATH_MAX], tempT[PATH_MAX], tempD[PATH_MAX];
+    if (snprintf(tempVec, sizeof(tempVec), "%s.vec", tempBase) >= (int)sizeof(tempVec) ||
+        snprintf(tempT,   sizeof(tempT),   "%s_T",   tempBase) >= (int)sizeof(tempT) ||
+        snprintf(tempD,   sizeof(tempD),   "%s_del", tempBase) >= (int)sizeof(tempD)) {
+        putmsg(MERR + UGE, fn, "tempBase path too long");
+        free(newrec_v.data);
+        return -1;
+    }
+
+    /* Load a fresh usearch graph from live .vec.  Don't mutate h->index;
+     * leave the cached handle consistent with what's still on disk
+     * until commit. */
+    const char *uerr = NULL;
+    usearch_init_options_t opts;
+    memset(&opts, 0, sizeof(opts));
+    usearch_metadata(h->fpath, &opts, &uerr);
+    if (uerr) {
+        putmsg(MERR + UGE, fn, "usearch_metadata: %s", uerr);
+        free(newrec_v.data);
+        return -1;
+    }
+    usearch_index_t fresh = usearch_init(&opts, &uerr);
+    if (!fresh || uerr) {
+        putmsg(MERR + UGE, fn, "usearch_init: %s", uerr ? uerr : "(null)");
+        if (fresh) usearch_free(fresh, &uerr);
+        free(newrec_v.data);
+        return -1;
+    }
+    usearch_load(fresh, h->fpath, &uerr);
+    if (uerr) {
+        putmsg(MERR + UGE, fn, "usearch_load: %s", uerr);
+        usearch_free(fresh, &uerr);
+        free(newrec_v.data);
+        return -1;
+    }
+
+    /* Reserve capacity for the delta inserts. */
+    if (newrec_v.len > 0) {
+        size_t cur = usearch_size(fresh, &uerr);     uerr = NULL;
+        size_t cap = usearch_capacity(fresh, &uerr); uerr = NULL;
+        if (cur + newrec_v.len > cap) {
+            size_t want = cap * 2;
+            if (want < cur + newrec_v.len) want = cur + newrec_v.len + 16;
+            usearch_reserve(fresh, want, &uerr);
+            if (uerr) {
+                putmsg(MERR + UGE, fn, "usearch_reserve: %s", uerr);
+                usearch_free(fresh, &uerr);
+                free(newrec_v.data);
+                return -1;
+            }
+        }
+    }
+
+    int column_dtype = (t == FTN_BYTE) ? h->base.dtype : t;
+    float *qbuf = (float *)malloc((size_t)h->base.dim * sizeof(float));
+    void  *qbuf_idx = NULL;
+    if (h->base.dtype == FTN_VEC_I8 || h->base.dtype == FTN_VEC_U8)
+        qbuf_idx = malloc((size_t)h->base.dim * vec_dtype_elsz(h->base.dtype));
+    int64_t *absorbed = (newrec_v.len > 0)
+        ? (int64_t *)malloc(newrec_v.len * sizeof(int64_t)) : NULL;
+    if (!qbuf || ((h->base.dtype == FTN_VEC_I8 || h->base.dtype == FTN_VEC_U8)
+                  && !qbuf_idx) || (newrec_v.len > 0 && !absorbed)) {
+        putmsg(MERR + MAE, fn, "alloc qbuf/absorbed");
+        usearch_free(fresh, &uerr);
+        free(qbuf); free(qbuf_idx); free(newrec_v.data); free(absorbed);
+        return -1;
+    }
+    size_t absorbed_n = 0;
+
+    /* Walk the table sequentially, absorbing rows in the snapshot.
+     * Meter sized to table file bytes; ticks per visited recid offset.
+     * Same shape as the IVFPQ OPTIMIZE encode meter. */
+    METER *encode_meter = NULL;
+    if (newrec_v.len > 0 && options
+        && options->indexmeter != TXMDT_NONE) {
+        EPI_STAT_S st;
+        EPI_OFF_T total = 0;
+        if (EPI_FSTAT(getdbffh(dbtbl->tbl->df), &st) == 0)
+            total = (EPI_OFF_T)st.st_size;
+        if (total > 0)
+            encode_meter = openmeter(
+                "INDEX_VEC hnsw OPTIMIZE (encode delta):",
+                options->indexmeter,
+                MDOUTFUNCPN, MDFLUSHFUNCPN, NULL,
+                (EPI_HUGEINT)total);
+    }
+    if (newrec_v.len > 0) {
+        RECID *recid;
+        TXrewinddbtbl(dbtbl);
+        while ((recid = getdbtblrow(dbtbl)) != RECIDPN && TXrecidvalid(recid)) {
+            int64_t r = (int64_t)(uint64_t)recid->off;
+            if (encode_meter)
+                meter_updatedone(encode_meter, (EPI_HUGEINT)TXgetoff(recid));
+            if (!bsearch(&r, newrec_v.data, newrec_v.len,
+                         sizeof(int64_t), vec_int64_cmp_))
+                continue;
+            size_t n_elems = 0;
+            void *raw = getfld(fld, &n_elems);
+            if (!raw || n_elems == 0) continue;
+            size_t cells = n_elems;
+            if (t == FTN_BYTE) {
+                size_t elsz = vec_dtype_elsz(column_dtype);
+                if (elsz == 0 || (n_elems % elsz) != 0) continue;
+                cells = n_elems / elsz;
+            }
+            if ((int)cells != h->base.dim) continue;
+            if (usearch_contains(fresh, (usearch_key_t)(uint64_t)r, &uerr)) {
+                usearch_remove(fresh, (usearch_key_t)(uint64_t)r, &uerr);
+                uerr = NULL;
+            }
+            if (vec_add_one(fresh, (usearch_key_t)(uint64_t)r, h->base.dim,
+                            h->base.dtype, h->quant_scale, h->quant_zp,
+                            column_dtype, raw, cells,
+                            qbuf, qbuf_idx, &uerr) < 0) {
+                if (uerr) {
+                    putmsg(MWARN, fn, "usearch_add for recid %lld: %s",
+                           (long long)r, uerr);
+                    uerr = NULL;
+                }
+                continue;
+            }
+            absorbed[absorbed_n++] = r;
+        }
+    }
+    if (encode_meter) { meter_end(encode_meter); closemeter(encode_meter); }
+
+    /* Save the absorbed graph to Tnnnn.vec. */
+    if (save_atomic(fresh, tempVec, fn) != 0) {
+        usearch_free(fresh, &uerr);
+        free(qbuf); free(qbuf_idx); free(newrec_v.data); free(absorbed);
+        return -1;
+    }
+    usearch_free(fresh, &uerr);
+
+    /* Empty Tnnnn aux btrees — dispatcher carry-forward fills them in
+     * at commit from live aux btrees, filtered by the absorbed set. */
+    TXvecBtreeUnlink(tempT);
+    TXvecBtreeUnlink(tempD);
+    if (TXvecBtreeCreateEmpty(tempT) != 0 ||
+        TXvecBtreeCreateEmpty(tempD) != 0) {
+        putmsg(MERR + UGE, fn, "create empty Tnnnn aux btrees failed");
+        free(qbuf); free(qbuf_idx); free(newrec_v.data); free(absorbed);
+        return -1;
+    }
+
+    free(qbuf); free(qbuf_idx); free(newrec_v.data);
+
+    if (absorbed_n > 0)
+        qsort(absorbed, absorbed_n, sizeof(int64_t), vec_int64_cmp_);
+    *out_absorbed = absorbed;
+    *out_n_absorbed = absorbed_n;
+
+    putmsg(MINFO, fn,
+        "INDEX_VEC hnsw OPTIMIZE: absorbed %lu rows into temp `%s.vec'",
+        (unsigned long)absorbed_n, tempBase);
+    return 0;
+}
+
+/* HNSW vtable slot: rebuild.
+ *
+ * Build a fresh HNSW graph from the current table contents into the
+ * dispatcher-supplied Tnnnn temp basename:
+ *   1. Initialize a new usearch index with the same params as the
+ *      existing handle (dim, M, ef_construction, metric, dtype).
+ *   2. Walk the table, encode each row's vector, usearch_add.
+ *   3. save_atomic to Tnnnn.vec.
+ *   4. Empty Tnnnn_T.btr and Tnnnn_del.btr (the dispatcher's
+ *      carry-forward at commit will pick up any concurrent
+ *      INSERTs/DELETEs whose recids weren't in our walk's absorbed
+ *      set). */
+static int
+hnsw_rebuild_impl(DDIC *ddic, TXvecHandle *h_, DBTBL *dbtbl,
+                  const char *field, const TXvecParams *vp,
+                  const char *tempBase, TXindOpts *options,
+                  int64_t **out_absorbed, size_t *out_n_absorbed)
+{
+    static const char fn[] = "TXvecRebuild(hnsw)";
+    (void)ddic; (void)vp;
+    struct TXvecHnswHandle *h = (struct TXvecHnswHandle *)h_;
+    if (!h || !dbtbl || !field || !tempBase) return -1;
+    *out_absorbed = NULL; *out_n_absorbed = 0;
+
+    FLD *fld = dbnametofld(dbtbl, (char *)field);
+    if (!fld) {
+        putmsg(MERR + UGE, fn, "field `%s' not found", field);
+        return -1;
+    }
+    int t = fld->type & DDTYPEBITS;
+    if (!FTN_IS_VEC_OR_BYTE(t)) {
+        putmsg(MERR + UGE, fn,
+            "field `%s' is not a vector or varbyte type", field);
+        return -1;
+    }
+
+    char tempVec[PATH_MAX], tempT[PATH_MAX], tempD[PATH_MAX];
+    if (snprintf(tempVec, sizeof(tempVec), "%s.vec", tempBase) >= (int)sizeof(tempVec) ||
+        snprintf(tempT,   sizeof(tempT),   "%s_T",   tempBase) >= (int)sizeof(tempT) ||
+        snprintf(tempD,   sizeof(tempD),   "%s_del", tempBase) >= (int)sizeof(tempD)) {
+        putmsg(MERR + UGE, fn, "tempBase path too long");
+        return -1;
+    }
+
+    /* Mirror the existing handle's usearch params for the fresh
+     * index.  Pull metadata from the live .vec; that's the simplest
+     * way to preserve dim/M/efc/metric without re-deriving from PARAMS. */
+    const char *uerr = NULL;
+    usearch_init_options_t opts;
+    memset(&opts, 0, sizeof(opts));
+    usearch_metadata(h->fpath, &opts, &uerr);
+    if (uerr) {
+        putmsg(MERR + UGE, fn, "usearch_metadata: %s", uerr);
+        return -1;
+    }
+    usearch_index_t fresh = usearch_init(&opts, &uerr);
+    if (!fresh || uerr) {
+        putmsg(MERR + UGE, fn, "usearch_init: %s", uerr ? uerr : "(null)");
+        if (fresh) usearch_free(fresh, &uerr);
+        return -1;
+    }
+
+    int column_dtype = (t == FTN_BYTE) ? h->base.dtype : t;
+    float *qbuf = (float *)malloc((size_t)h->base.dim * sizeof(float));
+    void  *qbuf_idx = NULL;
+    if (h->base.dtype == FTN_VEC_I8 || h->base.dtype == FTN_VEC_U8)
+        qbuf_idx = malloc((size_t)h->base.dim * vec_dtype_elsz(h->base.dtype));
+    if (!qbuf || ((h->base.dtype == FTN_VEC_I8 || h->base.dtype == FTN_VEC_U8)
+                  && !qbuf_idx)) {
+        putmsg(MERR + MAE, fn, "alloc qbuf");
+        usearch_free(fresh, &uerr);
+        free(qbuf); free(qbuf_idx);
+        return -1;
+    }
+
+    /* usearch needs an explicit reservation before adds; without it
+     * the first add aborts.  Start at a reasonable default and grow
+     * 2x when we hit the cap. */
+    size_t reserved = 1024;
+    usearch_reserve(fresh, reserved, &uerr);
+    if (uerr) {
+        putmsg(MERR + UGE, fn, "usearch_reserve(initial): %s", uerr);
+        usearch_free(fresh, &uerr);
+        free(qbuf); free(qbuf_idx);
+        return -1;
+    }
+
+    /* Allocate absorbed buffer; grow as we encode.  No cheap row-count
+     * available at this layer, so start small and realloc as we go. */
+    size_t absorbed_cap = 64;
+    int64_t *absorbed = (int64_t *)malloc(absorbed_cap * sizeof(int64_t));
+    if (!absorbed) {
+        putmsg(MERR + MAE, fn, "alloc absorbed");
+        usearch_free(fresh, &uerr);
+        free(qbuf); free(qbuf_idx);
+        return -1;
+    }
+    size_t absorbed_n = 0;
+
+    /* Meter sized to table file bytes; ticks per visited recid offset.
+     * Mirrors the HNSW OPTIMIZE encode meter. */
+    METER *encode_meter = NULL;
+    if (options && options->indexmeter != TXMDT_NONE) {
+        EPI_STAT_S st;
+        EPI_OFF_T total = 0;
+        if (EPI_FSTAT(getdbffh(dbtbl->tbl->df), &st) == 0)
+            total = (EPI_OFF_T)st.st_size;
+        if (total > 0)
+            encode_meter = openmeter(
+                "INDEX_VEC hnsw REBUILD (encode rows):",
+                options->indexmeter,
+                MDOUTFUNCPN, MDFLUSHFUNCPN, NULL,
+                (EPI_HUGEINT)total);
+    }
+    RECID *recid;
+    TXrewinddbtbl(dbtbl);
+    while ((recid = getdbtblrow(dbtbl)) != RECIDPN && TXrecidvalid(recid)) {
+        int64_t r = (int64_t)(uint64_t)recid->off;
+        if (encode_meter)
+            meter_updatedone(encode_meter, (EPI_HUGEINT)TXgetoff(recid));
+        size_t n_elems = 0;
+        void *raw = getfld(fld, &n_elems);
+        if (!raw || n_elems == 0) continue;
+        size_t cells = n_elems;
+        if (t == FTN_BYTE) {
+            size_t elsz = vec_dtype_elsz(column_dtype);
+            if (elsz == 0 || (n_elems % elsz) != 0) continue;
+            cells = n_elems / elsz;
+        }
+        if ((int)cells != h->base.dim) continue;
+        /* Double reservation if we're about to exceed it. */
+        if (absorbed_n + 1 >= reserved) {
+            reserved *= 2;
+            usearch_reserve(fresh, reserved, &uerr);
+            if (uerr) {
+                putmsg(MWARN, fn, "usearch_reserve(grow %zu): %s",
+                       reserved, uerr);
+                uerr = NULL;
+            }
+        }
+        if (vec_add_one(fresh, (usearch_key_t)(uint64_t)r, h->base.dim,
+                        h->base.dtype, h->quant_scale, h->quant_zp,
+                        column_dtype, raw, cells,
+                        qbuf, qbuf_idx, &uerr) < 0) {
+            if (uerr) {
+                putmsg(MWARN, fn, "usearch_add for recid %lld: %s",
+                       (long long)r, uerr);
+                uerr = NULL;
+            }
+            continue;
+        }
+        if (absorbed_n == absorbed_cap) {
+            size_t newcap = absorbed_cap * 2;
+            int64_t *p = (int64_t *)realloc(absorbed, newcap * sizeof(int64_t));
+            if (!p) { putmsg(MERR + MAE, fn, "realloc absorbed"); break; }
+            absorbed = p; absorbed_cap = newcap;
+        }
+        absorbed[absorbed_n++] = r;
+    }
+    if (encode_meter) { meter_end(encode_meter); closemeter(encode_meter); }
+
+    if (save_atomic(fresh, tempVec, fn) != 0) {
+        usearch_free(fresh, &uerr);
+        free(qbuf); free(qbuf_idx); free(absorbed);
+        return -1;
+    }
+    usearch_free(fresh, &uerr);
+
+    /* Empty Tnnnn aux btrees. */
+    (void)TXvecBtreeUnlink(tempT);
+    (void)TXvecBtreeUnlink(tempD);
+    if (TXvecBtreeCreateEmpty(tempT) != 0 ||
+        TXvecBtreeCreateEmpty(tempD) != 0) {
+        putmsg(MERR + UGE, fn, "create empty Tnnnn aux btrees failed");
+        free(qbuf); free(qbuf_idx); free(absorbed);
+        return -1;
+    }
+
+    free(qbuf); free(qbuf_idx);
+
+    extern int vec_int64_cmp_(const void *a, const void *b);
+    if (absorbed_n > 0)
+        qsort(absorbed, absorbed_n, sizeof(int64_t), vec_int64_cmp_);
+    *out_absorbed = absorbed;
+    *out_n_absorbed = absorbed_n;
+
+    putmsg(MINFO, fn,
+        "INDEX_VEC hnsw REBUILD: encoded %lu rows into temp `%s.vec'",
+        (unsigned long)absorbed_n, tempBase);
+    return 0;
+}
+
+/* The HNSW backend table — populated entirely with hnsw_*_impl static
+ * funcs.  Picked up by vec_backend_for(VEC_BACKEND_HNSW). */
+const TXvecBackend TXvecHnswBackend = {
+    .create   = hnsw_create_impl,
+    .open     = hnsw_open_impl,
+    .close    = hnsw_close_impl,
+    .search   = hnsw_search_impl,
+    .add_row  = hnsw_add_row_impl,
+    .del_row  = hnsw_del_row_impl,
+    .flush    = hnsw_flush_impl,
+    .drop_aux = hnsw_drop_aux_impl,
+    .is_stale = hnsw_is_stale_impl,
+    .optimize = hnsw_optimize_impl,
+    .rebuild  = hnsw_rebuild_impl,
+};
+
+/* Public dispatchers.  Each opens the right backend's handle (via
+ * TXvecOpen which dispatches at the cache-miss point) and forwards. */
+
+int
+TXvecAddRow(DDIC *ddic, DBTBL *dbtbl,
+            const char *indfile, const char *field, RECID *recid)
+{
+    if (!dbtbl || !indfile || !field || !recid) return -1;
+    TXvecHandle *h = TXvecOpen(ddic, indfile, NULL);
+    if (!h) return -1;
+    struct TXvecHandleBase *hb = (struct TXvecHandleBase *)h;
+    return vec_backend_for(hb->backend)->add_row(ddic, h, dbtbl, field, recid);
+}
+
+int
+TXvecDelRow(DDIC *ddic, DBTBL *dbtbl,
+            const char *indfile, const char *field, RECID *recid)
+{
+    if (!indfile || !recid) return -1;
+    TXvecHandle *h = TXvecOpen(ddic, indfile, NULL);
+    if (!h) return -1;
+    struct TXvecHandleBase *hb = (struct TXvecHandleBase *)h;
+    return vec_backend_for(hb->backend)->del_row(ddic, h, dbtbl, field, recid);
+}
+
+size_t
+TXvecSearch(TXvecHandle *h, DBTBL *dbtbl, const char *field,
+            const float *query, size_t k, size_t ef,
+            vec_search_result_t *results)
+{
+    if (!h) return SIZE_MAX;
+    struct TXvecHandleBase *hb = (struct TXvecHandleBase *)h;
+    return vec_backend_for(hb->backend)
+            ->search(h, dbtbl, field, query, k, ef, results);
+}
+
+void
+TXvecDropAux(DDIC *ddic, const char *indfile)
+{
+    if (!ddic || !indfile) return;
+    /* DROP INDEX may race with backend identification — the SYSINDEX
+     * entry's PARAMS string is generally still readable here, but the
+     * cleanup operations are idempotent in either backend.  Try both;
+     * each no-ops on missing artifacts. */
+    TXvecHnswBackend.drop_aux(ddic, indfile);
+    TXvecIvfpqBackend.drop_aux(ddic, indfile);
+}
+
+/* ====================================================================
+ * Atomic ALTER INDEX (OPTIMIZE / REBUILD) plumbing
+ *
+ * Mirrors the fulltext (updindex.c) flow:
+ *   Phase 1.  Allocate a unique Tnnnn basename in the live index's
+ *             directory.  Insert an INDEX_TEMP SYSINDEX row pointing
+ *             at it via TXcreateTempIndexOrTableEntry; that row +
+ *             Tnnnn.PID lockfile let TXdocleanup reap orphan files
+ *             after a crashed build.  No exclusive lock held during
+ *             the lockfile creation other than the brief SYSINDEX
+ *             write lock TXcreateTempIndexOrTableEntry takes itself.
+ *   Phase 2.  Backend builds vec artifacts at Tnnnn_*ext.  No
+ *             exclusive lock held; live searches keep hitting the
+ *             original (untouched) files.
+ *   Phase 3.  Brief commit under table W_LCK:
+ *               - Invalidate this process's vec_handle_cache entry
+ *                 (so subsequent opens pick up the renamed files).
+ *               - rename(2) Tnnnn_*ext → live_*ext for each backend
+ *                 extension that exists at Tnnnn (ENOENT-tolerant).
+ *               - Delete the INDEX_TEMP SYSINDEX row.
+ *               - TXtouchindexfile bumps the cross-process version
+ *                 counter, prompting other processes to reopen.
+ *
+ * On error during Phase 2, vec_abort_temp_build() unlinks the Tnnnn
+ * artifacts and removes the INDEX_TEMP row.
+ *
+ * The five vec extensions:
+ *   .vec       (HNSW only)
+ *   _H.idxpq   (IVFPQ only)
+ *   _I.idxpq   (IVFPQ only)
+ *   _T.btr     (both backends — newrec)
+ *   _del.btr   (both backends — tombstones)
+ * ==================================================================== */
+
+static const char * const VEC_RENAME_EXTS[] = {
+    ".vec",
+    "_H.idxpq",
+    "_I.idxpq",
+    "_T.btr",
+    "_del.btr",
+    NULL
+};
+
+/* Allocate a unique Tnnnn temp basename in the same directory as
+ * `liveBase`, and insert an INDEX_TEMP SYSINDEX row pointing at it.
+ * `*out_temp_base` holds the temp basename on success (caller frees).
+ * `*out_temp_recid` is the SYSINDEX row's recid, used by the commit
+ * helper to remove the temp row after the swap. */
+static int
+vec_alloc_temp_base(DDIC *ddic, const char *indname,
+                    const char *tableName, const char *field,
+                    const char *params, const char *liveBase,
+                    char **out_temp_base, RECID *out_temp_recid)
+{
+    static const char fn[] = "vec_alloc_temp_base";
+
+    /* Strip the basename to get the directory.  TXbasename returns a
+     * pointer into the input; the prefix length is the directory. */
+    char dir[PATH_MAX];
+    const char *bn = TXbasename(liveBase);
+    size_t dlen = (size_t)(bn - liveBase);
+    if (dlen == 0) {
+        dir[0] = '.';
+        dir[1] = '\0';
+    } else {
+        if (dlen >= sizeof(dir)) dlen = sizeof(dir) - 1;
+        memcpy(dir, liveBase, dlen);
+        /* Strip trailing slash unless dir is just "/". */
+        while (dlen > 1 && dir[dlen - 1] == '/') dlen--;
+        dir[dlen] = '\0';
+    }
+
+    /* TXcreateTempIndexOrTableEntry flags:
+     *   0x2: rebuild — required on Unix to insert the INDEX_TEMP row
+     *                  (we always want it inserted for crash recovery).
+     *   0x8: yap and fail if a temp/CR entry already exists for this name. */
+    int flags = 0x2 | 0x8;
+    char *tempBase = NULL;
+    RECID tempRow;
+    TXsetrecid(&tempRow, RECID_INVALID);
+    if (!TXcreateTempIndexOrTableEntry(ddic, dir, indname, tableName,
+                                       field, /*numTblFlds*/0, flags,
+                                       /*remark*/NULL,
+                                       params ? params : "",
+                                       &tempBase, &tempRow)) {
+        putmsg(MERR + UGE, fn,
+            "could not allocate temp basename for ALTER INDEX `%s'", indname);
+        return -1;
+    }
+    *out_temp_base = tempBase;
+    if (out_temp_recid) *out_temp_recid = tempRow;
+    return 0;
+}
+
+/* Walk a btree at `liveBase` and copy each recid that's NOT in the
+ * sorted `absorbed` array into the btree at `tempBase`.  Used during
+ * commit to carry forward concurrent INSERTs (live `_T.btr`) and
+ * concurrent DELETEs (live `_del.btr`) that arrived during the build
+ * phase, while filtering out recids the backend already absorbed into
+ * sealed (so we don't carry them as delta).  Returns 0 on success. */
+static int
+vec_carry_forward_recids(const char *liveBase, const char *tempBase,
+                         const int64_t *absorbed, size_t n_absorbed)
+{
+    /* Snapshot live recids first so we can iterate and insert into
+     * tempBase without conflicting btree open semantics. */
+    extern int vec_int64_cmp_(const void *a, const void *b);
+    extern void vec_recid_vec_push_(int64_t r, void *user);
+    struct { int64_t *data; size_t len; size_t cap; } live_v = {NULL, 0, 0};
+    TXvecBtreeWalkRecids(liveBase, vec_recid_vec_push_, &live_v);
+    int rc = 0;
+    for (size_t i = 0; i < live_v.len; i++) {
+        int64_t r = live_v.data[i];
+        if (n_absorbed > 0 &&
+            bsearch(&r, absorbed, n_absorbed, sizeof(int64_t),
+                    vec_int64_cmp_))
+            continue;       /* absorbed → don't carry as delta */
+        if (TXvecBtreeInsertRecid(tempBase, r) != 0) {
+            rc = -1;
+            break;
+        }
+    }
+    free(live_v.data);
+    return rc;
+}
+
+/* Atomic-ish swap of vec artifacts.  Caller holds no locks; this
+ * acquires the table W_LCK briefly to fence concurrent searchers and
+ * writers from the rename window.  `absorbed` (sorted) lists recids
+ * the backend folded into sealed; the carry-forward step copies live
+ * `_T.btr` / `_del.btr` entries that aren't in the absorbed set into
+ * the new `Tnnnn_T.btr` / `Tnnnn_del.btr` so concurrent INSERTs and
+ * DELETEs against the live index during the build phase aren't lost. */
+static int
+vec_commit_temp_swap(DDIC *ddic, DBTBL *dbtbl, const char *indfile,
+                     const char *tempBase, RECID tempRow,
+                     const int64_t *absorbed, size_t n_absorbed)
+{
+    static const char fn[] = "vec_commit_temp_swap";
+    int rc = -1;
+    int locked = 0;
+
+    if (TXlocktable(dbtbl, W_LCK) != 0) {
+        putmsg(MERR + UGE, fn, "could not lock table for atomic swap");
+        return -1;
+    }
+    locked = 1;
+
+    /* Drop our cached vec handle so subsequent opens fault in the
+     * post-rename files.  Cross-process invalidation is via
+     * TXtouchindexfile below. */
+    TXvecInvalidateHandle(indfile);
+
+    /* Carry-forward live aux btrees into Tnnnn aux btrees.  Backend
+     * already pre-populated Tnnnn_*.btr (e.g. with non-absorbed live
+     * tombstones for OPTIMIZE, or empty for REBUILD); we append the
+     * post-snapshot live entries that weren't in the absorbed set. */
+    {
+        char liveT[PATH_MAX], tempT[PATH_MAX];
+        char liveD[PATH_MAX], tempD[PATH_MAX];
+        if (snprintf(liveT, sizeof(liveT), "%s_T", indfile) < (int)sizeof(liveT) &&
+            snprintf(tempT, sizeof(tempT), "%s_T", tempBase) < (int)sizeof(tempT)) {
+            if (vec_carry_forward_recids(liveT, tempT,
+                                         absorbed, n_absorbed) != 0) {
+                putmsg(MWARN, fn, "carry-forward `_T.btr' failed");
+            }
+        }
+        if (snprintf(liveD, sizeof(liveD), "%s_del", indfile) < (int)sizeof(liveD) &&
+            snprintf(tempD, sizeof(tempD), "%s_del", tempBase) < (int)sizeof(tempD)) {
+            if (vec_carry_forward_recids(liveD, tempD,
+                                         absorbed, n_absorbed) != 0) {
+                putmsg(MWARN, fn, "carry-forward `_del.btr' failed");
+            }
+        }
+    }
+
+    for (size_t i = 0; VEC_RENAME_EXTS[i]; i++) {
+        char src[PATH_MAX], dst[PATH_MAX];
+        int s_len = snprintf(src, sizeof(src), "%s%s",
+                             tempBase, VEC_RENAME_EXTS[i]);
+        int d_len = snprintf(dst, sizeof(dst), "%s%s",
+                             indfile, VEC_RENAME_EXTS[i]);
+        if (s_len < 0 || s_len >= (int)sizeof(src) ||
+            d_len < 0 || d_len >= (int)sizeof(dst)) {
+            putmsg(MERR + UGE, fn, "path too long for vec artifact swap");
+            goto unlock;
+        }
+        EPI_STAT_S st;
+        if (EPI_STAT(src, &st) != 0) continue;     /* backend skipped this ext */
+        if (rename(src, dst) != 0) {
+            putmsg(MERR + UGE, fn, "rename `%s' → `%s': %s",
+                   src, dst, strerror(errno));
+            goto unlock;
+        }
+    }
+
+    /* Live row's FNAME still points at `indfile`; the renames have
+     * replaced that file's content.  No SYSINDEX TYPE flip needed.
+     * The INDEX_TEMP row was just for crash-cleanup tracking — drop it. */
+    if (TXrecidvalid(&tempRow))
+        (void)TXdelindexrec(ddic, tempRow);
+
+    /* Remove the .PID lockfile that TXcreateTempIndexOrTableEntry
+     * created (also for crash-cleanup tracking; no longer needed). */
+    {
+        char pidPath[PATH_MAX];
+        if (snprintf(pidPath, sizeof(pidPath), "%s%s",
+                     tempBase, TXtempPidExt) < (int)sizeof(pidPath))
+            (void)unlink(pidPath);
+    }
+
+    /* Bump the cross-process index version counter.  Other rampart
+     * processes re-stat their cached handles on next op and reopen. */
+    TXtouchindexfile(ddic);
+
+    rc = 0;
+
+unlock:
+    if (locked) TXunlocktable(dbtbl, W_LCK);
+    return rc;
+}
+
+/* Roll back a failed Phase-2 build: unlink any Tnnnn artifacts and
+ * remove the INDEX_TEMP SYSINDEX row.  Best-effort; logs nothing on
+ * already-missing files. */
+static void
+vec_abort_temp_build(DDIC *ddic, const char *tempBase, RECID tempRow)
+{
+    if (!tempBase) return;
+    for (size_t i = 0; VEC_RENAME_EXTS[i]; i++) {
+        char path[PATH_MAX];
+        if (snprintf(path, sizeof(path), "%s%s",
+                     tempBase, VEC_RENAME_EXTS[i]) >= (int)sizeof(path))
+            continue;
+        (void)unlink(path);
+    }
+    /* Also drop the .PID lockfile that TXcreateTempIndexOrTableEntry
+     * created for crash-tracking. */
+    {
+        char pidPath[PATH_MAX];
+        if (snprintf(pidPath, sizeof(pidPath), "%s%s",
+                     tempBase, TXtempPidExt) < (int)sizeof(pidPath))
+            (void)unlink(pidPath);
+    }
+    if (ddic && TXrecidvalid(&tempRow))
+        (void)TXdelindexrec(ddic, tempRow);
+}
+
+/* ALTER INDEX OPTIMIZE entry point.  Allocates Tnnnn, dispatches to
+ * the backend's optimize slot (which writes new artifacts at Tnnnn_*),
+ * and atomic-swaps on success.  Returns 0 on success, -1 on error. */
+int
+TXvecOptimize(DDIC *ddic, const char *indname, const char *indfile,
+              const char *tableName, const char *field, const char *params,
+              TXindOpts *options)
+{
+    static const char fn[] = "TXvecOptimize";
+    if (!ddic || !indname || !indfile || !tableName || !field) return -1;
+
+    /* Short-circuit when there's nothing to absorb.  Walk `_T.btr` to
+     * count newrec entries; if zero, OPTIMIZE has no work to do (no
+     * delta to fold into sealed) and skipping avoids the byte-copy of
+     * `_I.idxpq` which can be many seconds on a large index. */
+    {
+        char *newrec_base = TXvecMakeBtreeBasePath(indfile, "_T");
+        if (newrec_base) {
+            extern void vec_recid_vec_push_(int64_t r, void *user);
+            struct { int64_t *data; size_t len; size_t cap; }
+                v = {NULL, 0, 0};
+            TXvecBtreeWalkRecids(newrec_base, vec_recid_vec_push_, &v);
+            free(newrec_base);
+            size_t n = v.len;
+            free(v.data);
+            if (n == 0) return 0;
+        }
+    }
+
+    /* Pull the WITH clause (e.g. `with indexmeter 'on'`) into the
+     * options struct.  Mirrors updindex() — fulltext's re-CREATE/ALTER
+     * processes options before consuming them, so the WITH clause
+     * affects this run even though PARAMS-changing options are
+     * ignored at the backend layer. */
+    if (options) {
+        int afterIndexType = INDEX_VEC;
+        if (!TXindOptsProcessRawOptions(options, &afterIndexType, 1))
+            return -1;
+    }
+
+    DBTBL *dbtbl = opendbtbl(ddic, (char *)tableName);
+    if (!dbtbl) {
+        putmsg(MERR + UGE, fn, "could not open table `%s'", tableName);
+        return -1;
+    }
+
+    TXvecHandle *h = TXvecOpen(ddic, indfile, params);
+    if (!h) {
+        closedbtbl(dbtbl);
+        return -1;
+    }
+    struct TXvecHandleBase *hb = (struct TXvecHandleBase *)h;
+
+    char *tempBase = NULL;
+    RECID tempRow;
+    TXsetrecid(&tempRow, RECID_INVALID);
+    if (vec_alloc_temp_base(ddic, indname, tableName, field, params,
+                            indfile, &tempBase, &tempRow) != 0) {
+        closedbtbl(dbtbl);
+        return -1;
+    }
+
+    int64_t *absorbed = NULL;
+    size_t n_absorbed = 0;
+    int rc = vec_backend_for(hb->backend)->optimize(
+        ddic, h, dbtbl, field, tempBase, options, &absorbed, &n_absorbed);
+    if (rc != 0) {
+        free(absorbed);
+        vec_abort_temp_build(ddic, tempBase, tempRow);
+        free(tempBase);
+        closedbtbl(dbtbl);
+        return -1;
+    }
+
+    rc = vec_commit_temp_swap(ddic, dbtbl, indfile, tempBase, tempRow,
+                              absorbed, n_absorbed);
+    if (rc != 0)
+        vec_abort_temp_build(ddic, tempBase, tempRow);
+
+    free(absorbed);
+    free(tempBase);
+    closedbtbl(dbtbl);
+    return rc;
+}
+
+/* ALTER INDEX REBUILD entry point.  Same shape as TXvecOptimize but
+ * the backend's rebuild slot does a from-scratch build into Tnnnn. */
+int
+TXvecRebuild(DDIC *ddic, const char *indname, const char *indfile,
+             const char *tableName, const char *field, const char *params,
+             TXindOpts *options)
+{
+    static const char fn[] = "TXvecRebuild";
+    if (!ddic || !indname || !indfile || !tableName || !field) return -1;
+
+    /* Process WITH clause; mirrors updindex(). */
+    if (options) {
+        int afterIndexType = INDEX_VEC;
+        if (!TXindOptsProcessRawOptions(options, &afterIndexType, 1))
+            return -1;
+    }
+
+    DBTBL *dbtbl = opendbtbl(ddic, (char *)tableName);
+    if (!dbtbl) {
+        putmsg(MERR + UGE, fn, "could not open table `%s'", tableName);
+        return -1;
+    }
+
+    TXvecHandle *h = TXvecOpen(ddic, indfile, params);
+    if (!h) {
+        closedbtbl(dbtbl);
+        return -1;
+    }
+    struct TXvecHandleBase *hb = (struct TXvecHandleBase *)h;
+
+    TXvecParams vp;
+    memset(&vp, 0, sizeof(vp));
+    if (TXvecParamsParse(&vp, params ? params : "") != 0) {
+        putmsg(MERR + UGE, fn,
+            "could not parse SYSINDEX.PARAMS for `%s'", indfile);
+        closedbtbl(dbtbl);
+        return -1;
+    }
+
+    char *tempBase = NULL;
+    RECID tempRow;
+    TXsetrecid(&tempRow, RECID_INVALID);
+    if (vec_alloc_temp_base(ddic, indname, tableName, field, params,
+                            indfile, &tempBase, &tempRow) != 0) {
+        closedbtbl(dbtbl);
+        return -1;
+    }
+
+    int64_t *absorbed = NULL;
+    size_t n_absorbed = 0;
+    int rc = vec_backend_for(hb->backend)->rebuild(
+        ddic, h, dbtbl, field, &vp, tempBase, options, &absorbed, &n_absorbed);
+    if (rc != 0) {
+        free(absorbed);
+        vec_abort_temp_build(ddic, tempBase, tempRow);
+        free(tempBase);
+        closedbtbl(dbtbl);
+        return -1;
+    }
+
+    rc = vec_commit_temp_swap(ddic, dbtbl, indfile, tempBase, tempRow,
+                              absorbed, n_absorbed);
+    if (rc != 0)
+        vec_abort_temp_build(ddic, tempBase, tempRow);
+
+    free(absorbed);
+    free(tempBase);
+    closedbtbl(dbtbl);
+    return rc;
 }

@@ -1995,6 +1995,31 @@ TXindOpts	*options;	/* (in/out) options, opt. w/`WITH ...' */
 					       indname, indexTables[i], indexFields[i]);
 				}
 				break;
+			case INDEX_VEC:
+				/* Same shape as the fulltext branch above:
+				 * re-CREATE on the same table+field is an
+				 * OPTIMIZE.  WITH options (vec_pq_m, etc.)
+				 * are ignored — the persisted PARAMS line
+				 * is the source of truth, mirroring
+				 * fulltext's re-CREATE semantics. */
+				if (!strcmp(indexTables[i], table)
+				    && !strcmp(indexFields[i], field))
+				{
+					if (TXvecOptimize(ddic, indname,
+					                  indexFiles[i],
+					                  indexTables[i],
+					                  indexFields[i],
+					                  sysindexParamsVals[i],
+					                  options) == 0)
+						rc = 0;
+				}
+				else
+				{
+					putmsg(MWARN, Fn,
+					       "Vector Index %s already exists on %s(%s)",
+					       indname, indexTables[i], indexFields[i]);
+				}
+				break;
 			case INDEX_BTREE:
 			case INDEX_INV:
 				putmsg(MWARN, Fn,

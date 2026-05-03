@@ -533,10 +533,24 @@ add_library(rampart-sql SHARED
  duktape/modules/rampart-sql.c
 )
 
+# FAISS_IVFPQ_LINK: vendored FAISS subset linked with --whole-archive so
+# that .o files defining only weak C++ typeinfo (e.g. FaissException.cpp.o
+# emitting `_ZTIN5faiss14FaissExceptionE`) are pulled into rampart-sql.so.
+# Without --whole-archive the linker drops those .o's and the .so fails
+# to load with "undefined symbol".  See vec-ivfpq-integration-plan.md
+# §1 (build/visibility decisions).
+if (APPLE)
+    set(FAISS_IVFPQ_LINK -Wl,-force_load,$<TARGET_FILE:faiss_ivfpq>)
+else()
+    set(FAISS_IVFPQ_LINK -Wl,--whole-archive $<TARGET_FILE:faiss_ivfpq> -Wl,--no-whole-archive)
+endif()
+
 if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
 
     target_link_libraries(rampart-sql
         ${PROJECT_BINARY_DIR}/extern/texis/texisapi/libtexisapi.a
+        ${FAISS_IVFPQ_LINK}
+        faiss_ivfpq                 # transitive deps: openblas, openmp, threads
         z
         re2
         pthread
@@ -548,6 +562,8 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
 
     target_link_libraries(rampart-sql
         ${PROJECT_BINARY_DIR}/extern/texis/texisapi/libtexisapi.a
+        ${FAISS_IVFPQ_LINK}
+        faiss_ivfpq                 # transitive deps: openblas, openmp, threads
         z
         re2
         pthread
@@ -560,6 +576,8 @@ else()
 
     target_link_libraries(rampart-sql LINK_PUBLIC
         ${PROJECT_BINARY_DIR}/extern/texis/texisapi/libtexisapi.a
+        ${FAISS_IVFPQ_LINK}
+        faiss_ivfpq                 # transitive deps: openblas, openmp, threads
         z
         re2
         pthread

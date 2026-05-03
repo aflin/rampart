@@ -7,6 +7,7 @@
 #  include <unistd.h>
 #endif /* EPI_HAVE_UNISTD_H */
 #include "texint.h"
+#include "vecindex.h"
 
 /* ALTER INDEX tokens: */
 typedef enum
@@ -165,6 +166,44 @@ TXalterIndex(DDIC *ddic, CONST char *indexName, TXAITOK action, TXAITOK option, 
             putmsg(MERR + UGE, fn, "Unknown ALTER INDEX action `%s'",
                    TXalterIndexTokenToStr(action));
             goto err;
+          }
+        goto done;
+      case INDEX_VEC:
+        if (!(options = TXindOptsOpen(ddic))) goto err;
+        switch (action)
+          {
+          case TXAITOK_OPTIMIZE:
+            ret = (TXvecOptimize(ddic, indexName, indexFiles[i],
+                                 indexTables[i],
+                                 indexFields[i], sysindexParams[i],
+                                 options) == 0)
+                  ? 2 : 0;
+            break;
+          case TXAITOK_REBUILD:
+            ret = (TXvecRebuild(ddic, indexName, indexFiles[i],
+                                indexTables[i],
+                                indexFields[i], sysindexParams[i],
+                                options) == 0)
+                  ? 2 : 0;
+            break;
+          default:
+            goto unknownAction;
+          }
+        goto done;
+      case INDEX_VECCR:
+        switch (action)
+          {
+          case TXAITOK_OPTIMIZE:
+            /* OPTIMIZE is a no-op if index is being created: */
+            ret = 2;
+            break;
+          case TXAITOK_REBUILD:
+            putmsg(MERR + UGE, fn,
+                   "Cannot rebuild index %s: Currently being created",
+                   indexName);
+            goto err;
+          default:
+            goto unknownAction;
           }
         goto done;
       case INDEX_DEL:

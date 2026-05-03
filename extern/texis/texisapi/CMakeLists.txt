@@ -450,6 +450,11 @@ IF(PARSERS_FOUND)
     # ANN vector index (usearch HNSW backend)
     vecindex.c
     ${CMAKE_SOURCE_DIR}/extern/texis/thirdparty/usearch/c/lib.cpp
+    # ANN vector index (FAISS IVFPQ backend) — phase-1 stub; see
+    # vec-ivfpq-integration-plan.md.  This file expands in phase 2.
+    vecindex_ivfpq.cpp
+    # Auxiliary _T.btr / _del.btr helpers shared by both backends.
+    vecindex_aux_btree.c
 
 
     blob.c
@@ -893,14 +898,16 @@ target_include_directories(
   # usearch (vec-index backend)
   ${CMAKE_SOURCE_DIR}/extern/texis/thirdparty/usearch/include
   ${CMAKE_SOURCE_DIR}/extern/texis/thirdparty/usearch/c
+  # FAISS (vec-index backend, IVFPQ — phase 1 wiring)
+  ${CMAKE_SOURCE_DIR}/extern/faiss
 )
 
 target_link_options(texisbuild PUBLIC -L${JANSSON_RELEASE_DIR})
 
 if(CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
-    target_link_libraries(texisbuild LINK_PUBLIC m z kvm Threads::Threads ${JANSSON_LIBS})
+    target_link_libraries(texisbuild LINK_PUBLIC m z kvm Threads::Threads ${JANSSON_LIBS} faiss_ivfpq)
 else()
-    target_link_libraries(texisbuild LINK_PUBLIC m z Threads::Threads ${JANSSON_LIBS})
+    target_link_libraries(texisbuild LINK_PUBLIC m z Threads::Threads ${JANSSON_LIBS} faiss_ivfpq)
 endif()
 
 #
@@ -915,9 +922,18 @@ target_include_directories(
   # usearch (vec-index backend)
   ${CMAKE_SOURCE_DIR}/extern/texis/thirdparty/usearch/include
   ${CMAKE_SOURCE_DIR}/extern/texis/thirdparty/usearch/c
+  # FAISS (vec-index backend, IVFPQ — phase 1 wiring)
+  ${CMAKE_SOURCE_DIR}/extern/faiss
 )
 target_link_options(texisapi PUBLIC -L${JANSSON_RELEASE_DIR})
-target_link_libraries(texisapi PUBLIC m z ${JANSSON_LIBS})
+# FAISS_IVFPQ must be linked with --whole-archive so that .o files
+# defining only weak C++ typeinfo (e.g. FaissException.cpp.o) are
+# pulled into the consuming shared object.  Without this, rampart-sql.so
+# fails to load with "undefined symbol: _ZTIN5faiss14FaissExceptionE"
+# because the linker drops the .o whose symbols are only referenced
+# weakly by external try/catch blocks.
+target_link_libraries(texisapi PUBLIC m z ${JANSSON_LIBS}
+    -Wl,--whole-archive faiss_ivfpq -Wl,--no-whole-archive)
 
 #target_include_directories(PUBLIC, $(TEXISAPI_SOURCE_DIR))
 #
