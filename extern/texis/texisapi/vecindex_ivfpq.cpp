@@ -696,12 +696,19 @@ int ivfpq_create_impl(DDIC *ddic, DBTBL *dbtbl,
          * Walks the table once, writing up to n_train f32 vectors into
          * a temp file.  Mirrors rampart-langtools/rampart-faiss.c —
          * avoids holding `n_train × dim × 4` bytes in RAM.
+         *
+         * n_train = need_train (FAISS's exact min_ppc × max(nlist,ksub)
+         * threshold) + 2% headroom to absorb any NULL/dim-mismatched
+         * rows the reservoir skips.  TXvecPqMaxTrainSamples acts as a
+         * soft *floor*, not a ceiling: when nlist is small we
+         * oversample to it for centroid quality, but when nlist
+         * demands more we honor that.  Capped at row_count.
          */
-        size_t n_train = need_train;
-        const size_t train_cap = (TXvecPqMaxTrainSamples > 0)
-                                 ? (size_t)TXvecPqMaxTrainSamples
-                                 : 1000000u;
-        if (n_train > train_cap) n_train = train_cap;
+        size_t n_train = need_train + need_train / 50;     /* +2% */
+        const size_t train_floor = (TXvecPqMaxTrainSamples > 0)
+                                   ? (size_t)TXvecPqMaxTrainSamples
+                                   : 1000000u;
+        if (n_train < train_floor) n_train = train_floor;
         if (n_train > row_count) n_train = row_count;
 
         std::string train_path_s = std::string(indfile) + ".train.tmp";
@@ -729,12 +736,48 @@ int ivfpq_create_impl(DDIC *ddic, DBTBL *dbtbl,
             FTN_IS_VEC(t) ? t : vp.dtype,
             vp.quant_scale, vp.quant_zp, dim, n_train, train_path,
             /*seed=*/0xfa155eedu, meter1);
-        if (meter1) { meter_end(meter1); closemeter(meter1); }
+        if (meter1) { meter_end(meter1); closemeter(meter1); meter1 = NULL; }
+
+        /* Safety net: first pass underdelivered (e.g. unexpectedly many
+         * NULL/dim-mismatched rows).  Retry once with extra headroom,
+         * up to row_count.  Reservoir reopen truncates the file so
+         * this is a fresh pass, not an append. */
+        if (got < need_train && n_train < row_count) {
+            size_t bumped = need_train + need_train / 5;   /* +20% */
+            if (bumped > row_count) bumped = row_count;
+            if (bumped > n_train) {
+                putmsg(MINFO, fn,
+                    "INDEX_VEC: first pass yielded %zu valid rows < %zu "
+                    "needed; retrying with target %zu",
+                    got, need_train, bumped);
+                n_train = bumped;
+                if (options && options->indexmeter != TXMDT_NONE) {
+                    EPI_STAT_S st;
+                    EPI_OFF_T total = 0;
+                    if (EPI_FSTAT(getdbffh(dbtbl->tbl->df), &st) == 0)
+                        total = (EPI_OFF_T)st.st_size;
+                    if (total > 0)
+                        meter1 = openmeter(
+                            "INDEX_VEC ivfpq stage 1/3 (sampling, retry):",
+                            options->indexmeter,
+                            MDOUTFUNCPN, MDFLUSHFUNCPN, NULL,
+                            (EPI_HUGEINT)total);
+                }
+                got = reservoir_sample_to_file(dbtbl, fld,
+                    FTN_IS_VEC(t) ? t : vp.dtype,
+                    vp.quant_scale, vp.quant_zp, dim, n_train, train_path,
+                    /*seed=*/0xfa155eedu, meter1);
+                if (meter1) { meter_end(meter1); closemeter(meter1); meter1 = NULL; }
+            }
+        }
         if (got < need_train) {
             putmsg(MERR + UGE, fn,
-                "INDEX_VEC: reservoir sample yielded %zu vectors, "
-                "need %zu — too many rows have NULL/dim-mismatched vectors",
-                got, need_train);
+                "INDEX_VEC: training sample produced %zu valid vectors; "
+                "FAISS needs %zu (nlist=%d, min_ppc=%d).  Table has %zu "
+                "rows total — many may be NULL or dim-mismatched.  "
+                "Insert more data, lower vec_pq_min_points_per_centroid, "
+                "or lower vec_pq_nlist.",
+                got, need_train, vp.pq_nlist, min_ppc, row_count);
             ::unlink(train_path);
             goto build_err;
         }
@@ -1694,12 +1737,16 @@ int ivfpq_rebuild_impl(DDIC *ddic, TXvecHandle *h_, DBTBL *dbtbl,
             (size_t)vp.pq_nlist, idx->pq.code_size, temp_invl);
         idx->replace_invlists(invlists, /*own=*/true);
 
-        /* === STAGE 1/3: reservoir-sample training rows ===================== */
-        size_t n_train = need_train;
-        const size_t train_cap = (TXvecPqMaxTrainSamples > 0)
-                                 ? (size_t)TXvecPqMaxTrainSamples
-                                 : 1000000u;
-        if (n_train > train_cap) n_train = train_cap;
+        /* === STAGE 1/3: reservoir-sample training rows =====================
+         * See ivfpq_create_impl for the n_train rationale (FAISS exact
+         * threshold + 2% headroom; floor not ceiling on TXvecPqMaxTrain-
+         * Samples; one-shot retry on under-delivery).
+         */
+        size_t n_train = need_train + need_train / 50;     /* +2% */
+        const size_t train_floor = (TXvecPqMaxTrainSamples > 0)
+                                   ? (size_t)TXvecPqMaxTrainSamples
+                                   : 1000000u;
+        if (n_train < train_floor) n_train = train_floor;
         if (n_train > row_count) n_train = row_count;
 
         std::string train_path_s = std::string(tempBase) + ".train.tmp";
@@ -1727,11 +1774,44 @@ int ivfpq_rebuild_impl(DDIC *ddic, TXvecHandle *h_, DBTBL *dbtbl,
             FTN_IS_VEC(t) ? t : vp.dtype,
             vp.quant_scale, vp.quant_zp, dim, n_train, train_path,
             /*seed=*/0xfa155eedu, meter1);
-        if (meter1) { meter_end(meter1); closemeter(meter1); }
+        if (meter1) { meter_end(meter1); closemeter(meter1); meter1 = NULL; }
+
+        if (got < need_train && n_train < row_count) {
+            size_t bumped = need_train + need_train / 5;   /* +20% */
+            if (bumped > row_count) bumped = row_count;
+            if (bumped > n_train) {
+                putmsg(MINFO, fn,
+                    "INDEX_VEC REBUILD: first pass yielded %zu valid rows "
+                    "< %zu needed; retrying with target %zu",
+                    got, need_train, bumped);
+                n_train = bumped;
+                if (options && options->indexmeter != TXMDT_NONE) {
+                    EPI_STAT_S st;
+                    EPI_OFF_T total = 0;
+                    if (EPI_FSTAT(getdbffh(dbtbl->tbl->df), &st) == 0)
+                        total = (EPI_OFF_T)st.st_size;
+                    if (total > 0)
+                        meter1 = openmeter(
+                            "INDEX_VEC ivfpq REBUILD stage 1/3 (sampling, retry):",
+                            options->indexmeter,
+                            MDOUTFUNCPN, MDFLUSHFUNCPN, NULL,
+                            (EPI_HUGEINT)total);
+                }
+                got = reservoir_sample_to_file(dbtbl, fld,
+                    FTN_IS_VEC(t) ? t : vp.dtype,
+                    vp.quant_scale, vp.quant_zp, dim, n_train, train_path,
+                    /*seed=*/0xfa155eedu, meter1);
+                if (meter1) { meter_end(meter1); closemeter(meter1); meter1 = NULL; }
+            }
+        }
         if (got < need_train) {
             putmsg(MERR + UGE, fn,
-                "INDEX_VEC REBUILD: reservoir sample yielded %zu, need %zu",
-                got, need_train);
+                "INDEX_VEC REBUILD: training sample produced %zu valid "
+                "vectors; FAISS needs %zu (nlist=%d, min_ppc=%d).  Table "
+                "has %zu rows — many may be NULL or dim-mismatched.  "
+                "Insert more data, lower vec_pq_min_points_per_centroid, "
+                "or lower vec_pq_nlist.",
+                got, need_train, vp.pq_nlist, min_ppc, row_count);
             ::unlink(train_path);
             goto rebuild_err;
         }
