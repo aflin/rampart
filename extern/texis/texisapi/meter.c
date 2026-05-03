@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <time.h>
 #include "txcoreconfig.h"
 #include "sizes.h"
 #ifdef TEST
@@ -194,8 +195,15 @@ EPI_HUGEINT     totalsz;        /* total byte size to reach 100% done */
       m->mcols = m->cols - 1;
       break;
     case TXMDT_PERCENT:
-    case TXMDT_ETA:
       m->mcols = m->cols - 8;
+      break;
+    case TXMDT_ETA:
+      /* Reserve room for percent (7) + suffix
+       *   "| ETR: HH:MM:SS - ETA YYYY-MM-DD HH:MM"  ≈ 38 chars
+       *   "| ETR: 99d 12:34 - ETA YYYY-MM-DD HH:MM" ≈ 39 chars (worst sane)
+       * Round to 50 for safety.  On <50-col terminals the bar would
+       * disappear; the caller probably shouldn't request ETA mode there. */
+      m->mcols = m->cols - 50;
       break;
     default:
       m->mcols = m->cols - 1;
@@ -391,30 +399,43 @@ EPI_HUGEINT donesz;
       m->etaPrintedLen = 0;
       if (m->type == TXMDT_ETA && m->etaVisible)
         {
-          char etabuf[32];
+          char etabuf[80];
+          char etr[24];
+          char etaclock[24];
           int suffixLen;
           double eta_s_d = (m->rateEma > 0.0)
               ? (double)(m->totalsz - m->donesz) / m->rateEma
               : 0.0;
           long long s;
+          time_t eta_t;
+          struct tm tm_eta;
           if (eta_s_d < 0.0) eta_s_d = 0.0;
           s = (long long)(eta_s_d + 0.5);
+
+          /* ETR — countdown duration ("time remaining"). */
           if (s >= 86400LL)                     /* >= 1 day: drop seconds */
             {
               long long d = s / 86400LL;
               long long h = (s / 3600LL) % 24LL;
               long long mi = (s / 60LL) % 60LL;
-              suffixLen = sprintf(etabuf,
-                                  " ETA %lldd %02lld:%02lld", d, h, mi);
+              sprintf(etr, "%lldd %02lld:%02lld", d, h, mi);
             }
           else
             {
               long long h = s / 3600LL;
               long long mi = (s / 60LL) % 60LL;
               long long se = s % 60LL;
-              suffixLen = sprintf(etabuf,
-                                  " ETA %02lld:%02lld:%02lld", h, mi, se);
+              sprintf(etr, "%02lld:%02lld:%02lld", h, mi, se);
             }
+
+          /* ETA — local clock-time of completion (now + remaining). */
+          eta_t = (time_t)(now + eta_s_d);
+          localtime_r(&eta_t, &tm_eta);
+          sprintf(etaclock, "%04d-%02d-%02d %02d:%02d",
+                  tm_eta.tm_year + 1900, tm_eta.tm_mon + 1,
+                  tm_eta.tm_mday, tm_eta.tm_hour, tm_eta.tm_min);
+
+          suffixLen = sprintf(etabuf, "| ETR: %s - ETA %s", etr, etaclock);
           if (suffixLen > 0)
             {
               m->out(m->usr, etabuf, suffixLen);
@@ -472,6 +493,46 @@ EPI_HUGEINT totalsz;
   return(1);
 }
 
+/* For TXMDT_ETA meters, print a one-line completion summary on
+ * meter_end() showing the wall-clock completion time and total
+ * elapsed duration.  Useful for long-running jobs (the whole point
+ * of the ETA mode).  Called in both meter_end() branches. */
+static void
+print_eta_completion(METER *m)
+{
+  double now = TXgettimeofday();
+  double elapsed = now - m->tstart;
+  time_t completed_t = (time_t)now;
+  struct tm tm_done;
+  char buf[160];
+  char totalbuf[24];
+  long long e = (long long)(elapsed + 0.5);
+  int len;
+
+  localtime_r(&completed_t, &tm_done);
+  if (e >= 86400LL)
+    {
+      long long d = e / 86400LL;
+      long long h = (e / 3600LL) % 24LL;
+      long long mi = (e / 60LL) % 60LL;
+      long long se = e % 60LL;
+      sprintf(totalbuf, "%lldd %02lld:%02lld:%02lld", d, h, mi, se);
+    }
+  else
+    {
+      long long h = e / 3600LL;
+      long long mi = (e / 60LL) % 60LL;
+      long long se = e % 60LL;
+      sprintf(totalbuf, "%02lld:%02lld:%02lld", h, mi, se);
+    }
+  len = sprintf(buf,
+    "Completed at %04d-%02d-%02d %02d:%02d:%02d.  Total time %s.\n",
+    tm_done.tm_year + 1900, tm_done.tm_mon + 1, tm_done.tm_mday,
+    tm_done.tm_hour, tm_done.tm_min, tm_done.tm_sec,
+    totalbuf);
+  m->out(m->usr, buf, len);
+}
+
 int
 meter_end(m)
 METER   *m;
@@ -496,8 +557,12 @@ METER   *m;
       switch (m->type)
         {
         case TXMDT_PERCENT:
+          m->out(m->usr, "\b \n", 3);           /* delete spinner */
+          if (!m->parent->didend) meter_redraw(m->parent);
+          break;
         case TXMDT_ETA:
           m->out(m->usr, "\b \n", 3);           /* delete spinner */
+          print_eta_completion(m);
           if (!m->parent->didend) meter_redraw(m->parent);
           break;
         case TXMDT_SIMPLE:
@@ -514,8 +579,11 @@ METER   *m;
       switch (m->type)
         {
         case TXMDT_PERCENT:
+          m->out(m->usr, "\b \n", 3);           /* delete spinner */
+          break;
         case TXMDT_ETA:
           m->out(m->usr, "\b \n", 3);           /* delete spinner */
+          print_eta_completion(m);
           break;
         case TXMDT_SIMPLE:
           for (i = m->donecols; i < m->mcols; i++) m->out(m->usr, "-", 1);
