@@ -435,7 +435,7 @@ EPI_HUGEINT donesz;
                   tm_eta.tm_year + 1900, tm_eta.tm_mon + 1,
                   tm_eta.tm_mday, tm_eta.tm_hour, tm_eta.tm_min);
 
-          suffixLen = sprintf(etabuf, "| ETR: %s - ETA %s", etr, etaclock);
+          suffixLen = sprintf(etabuf, "| ETR: %s - ETA: %s", etr, etaclock);
           if (suffixLen > 0)
             {
               m->out(m->usr, etabuf, suffixLen);

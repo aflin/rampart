@@ -290,10 +290,11 @@ TXvecParamsFromOptions(TXvecParams *out, TXindOpts *options)
         out->pq_m = (int)li;
     }
     if ((s = vec_opt_get(options, TXindOpt_vec_pq_nlist)) != NULL) {
+        errno = 0;
         li = strtol(s, &e, 10);
-        if (e == s || *e || li < 4 || li > 65536) {
+        if (e == s || *e || errno == ERANGE || li < 4 || li > INT_MAX) {
             putmsg(MERR + UGE, fn,
-                "vec_pq_nlist must be an integer in [4, 65536]; got `%s'", s);
+                "vec_pq_nlist must be an integer >= 4; got `%s'", s);
             return -1;
         }
         out->pq_nlist = (int)li;

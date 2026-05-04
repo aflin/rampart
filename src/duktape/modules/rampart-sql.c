@@ -4972,8 +4972,9 @@ static char *prop_defaults[][2] = {
     * 0 = inherit the index's ef_construction (the build-time setting). */
    {"likevEf", "0"},
    /* INDEX_VEC ivfpq: per-query nprobe (number of inverted lists scanned).
-    * Higher = more recall, more time.  0 = use index's saved default. */
-   {"likevPqNprobe", "8"},
+    * Higher = more recall, more time.  0 = auto (compute from nlist:
+    * max(8, nlist/128)); >0 = explicit override. */
+   {"likevPqNprobe", "0"},
    /* INDEX_VEC ivfpq: hard cap on training-sample count at CREATE INDEX.
     * Larger needs more disk for the temp .train.tmp file but improves
     * codebook quality on large data. */

@@ -97,6 +97,18 @@ struct TXvecIvfpqHandle {
     int                dirty_meta;      /* head file needs rewrite */
 };
 
+/* Auto-scale nprobe with nlist when the user hasn't set an explicit
+ * value.  At default nlist=32768 (46M-row indexes) the FAISS default
+ * nprobe of 1, or our previous global default of 8, both produced
+ * abysmal recall (~0.024% of cells visited). The 1/128 ratio
+ * (≈0.78% of cells) maps to nprobe=256 at nlist=32768, which is
+ * empirically the right sweet spot. Floor at 8 so small indexes
+ * still get reasonable coverage. */
+inline size_t auto_nprobe(size_t nlist) {
+    size_t n = nlist >> 7;          /* nlist / 128 */
+    return n < 8 ? 8 : n;
+}
+
 /* C++ wrapper around the shared C `TXvecBtreeWalkRecids` callback API
  * that fills a std::vector — convenient for the IVFPQ search loop. */
 void cb_push_recid(int64_t recid_off, void *user) {
@@ -357,18 +369,57 @@ extern "C" int TXvecIvfpqAvailable(void)
 
 namespace {
 
-/* Drives a texis METER from FAISS k-means iteration callbacks.  Set on
- * both idx->cp and idx->pq.cp before idx->train(); FAISS fires
- * on_iteration() once per k-means pass.  Total expected ticks is
- * (1 + M) * niter * nredo with default cp settings — we open the
- * meter sized to that count and advance by 1 each callback. */
-struct PqProgressCallback : public faiss::ClusteringIterationCallback {
-    METER *meter;
+/* Drives texis METERs from FAISS k-means iteration callbacks.  We use
+ * separate meters for the two phases of IVFPQ training because they
+ * have wildly different per-iter costs (coarse: minutes/iter for
+ * nlist=32k; PQ: sub-ms/iter for 8-dim slices) — a single combined
+ * meter looks broken (crawls then jumps).  Coarse runs first; on the
+ * first PQ callback we force the coarse meter to 100% (it may have
+ * early-terminated below cp.niter), close it, and lazily open the PQ
+ * meter so the new bar lands on a fresh line. */
+struct CoarseProgressCallback : public faiss::ClusteringIterationCallback {
+    METER       *meter;
     EPI_HUGEUINT done;
-    PqProgressCallback(METER *m) : meter(m), done(0) {}
+    CoarseProgressCallback(METER *m) : meter(m), done(0) {}
     void on_iteration(int iter, int n_iter, int redo, int n_redo,
                       const faiss::ClusteringIterationStats& stats) override {
         (void)iter; (void)n_iter; (void)redo; (void)n_redo; (void)stats;
+        ++done;
+        if (meter) meter_updatedone(meter, (EPI_HUGEINT)done);
+    }
+};
+
+struct PqProgressCallback : public faiss::ClusteringIterationCallback {
+    CoarseProgressCallback *coarse_cb;   /* borrowed; we end its meter
+                                          * at first PQ tick */
+    METER       *meter;                  /* lazily opened on first tick */
+    TXMDT        meter_type;             /* TXMDT_NONE → never open */
+    EPI_HUGEUINT total;
+    EPI_HUGEUINT done;
+    const char  *label;
+    PqProgressCallback(CoarseProgressCallback *c, TXMDT t, EPI_HUGEUINT n,
+                       const char *lbl)
+        : coarse_cb(c), meter(NULL), meter_type(t), total(n), done(0),
+          label(lbl) {}
+    void on_iteration(int iter, int n_iter, int redo, int n_redo,
+                      const faiss::ClusteringIterationStats& stats) override {
+        (void)iter; (void)n_iter; (void)redo; (void)n_redo; (void)stats;
+        if (!meter && total > 0) {
+            /* Hand off from coarse: force its meter to 100% (in case
+             * coarse early-terminated) before closing, then open ours
+             * on a fresh line. */
+            if (coarse_cb && coarse_cb->meter) {
+                meter_updatedone(coarse_cb->meter,
+                                 coarse_cb->meter->totalsz);
+                meter_end(coarse_cb->meter);
+                closemeter(coarse_cb->meter);
+                coarse_cb->meter = NULL;
+            }
+            if (meter_type != TXMDT_NONE)
+                meter = openmeter((char *)label, meter_type,
+                                  MDOUTFUNCPN, MDFLUSHFUNCPN, NULL,
+                                  (EPI_HUGEINT)total);
+        }
         ++done;
         if (meter) meter_updatedone(meter, (EPI_HUGEINT)done);
     }
@@ -828,27 +879,32 @@ int ivfpq_create_impl(DDIC *ddic, DBTBL *dbtbl,
         idx->cp.min_points_per_centroid    = min_ppc;
         idx->pq.cp.min_points_per_centroid = min_ppc;
 
-        EPI_HUGEUINT total_iters =
-            (EPI_HUGEUINT)idx->cp.niter * idx->cp.nredo +
-            (EPI_HUGEUINT)idx->pq.M * idx->pq.cp.niter * idx->pq.cp.nredo;
+        EPI_HUGEUINT coarse_iters =
+            (EPI_HUGEUINT)idx->cp.niter * idx->cp.nredo;
+        EPI_HUGEUINT pq_iters_per_slice =
+            (EPI_HUGEUINT)idx->pq.cp.niter * idx->pq.cp.nredo;
+        EPI_HUGEUINT pq_iters = (EPI_HUGEUINT)idx->pq.M * pq_iters_per_slice;
         putmsg(MINFO, fn,
             "INDEX_VEC ivfpq stage 2/3: training "
-            "(coarse=%d kmeans + %d PQ slices; %llu k-means iters total)",
-            (int)idx->cp.nredo, (int)idx->pq.M,
-            (unsigned long long)total_iters);
+            "(coarse: %llu iters; PQ: %d slices x %llu iters)",
+            (unsigned long long)coarse_iters,
+            (int)idx->pq.M, (unsigned long long)pq_iters_per_slice);
 
-        METER *meter2 = NULL;
-        if (options && options->indexmeter != TXMDT_NONE && total_iters > 0) {
-            meter2 = openmeter(
-                "INDEX_VEC ivfpq stage 2/3 (training):",
-                options->indexmeter,
-                MDOUTFUNCPN, MDFLUSHFUNCPN, NULL,
-                (EPI_HUGEINT)total_iters);
+        TXMDT mtype = (options && options->indexmeter != TXMDT_NONE)
+                      ? options->indexmeter : TXMDT_NONE;
+
+        METER *coarse_meter = NULL;
+        if (mtype != TXMDT_NONE && coarse_iters > 0) {
+            coarse_meter = openmeter(
+                "INDEX_VEC ivfpq stage 2a/3 (coarse k-means):",
+                mtype, MDOUTFUNCPN, MDFLUSHFUNCPN, NULL,
+                (EPI_HUGEINT)coarse_iters);
         }
-
-        PqProgressCallback iter_cb(meter2);
-        idx->cp.iter_cb    = &iter_cb;
-        idx->pq.cp.iter_cb = &iter_cb;
+        CoarseProgressCallback coarse_cb(coarse_meter);
+        PqProgressCallback     pq_cb(&coarse_cb, mtype, pq_iters,
+            "INDEX_VEC ivfpq stage 2b/3 (PQ subquantizers):");
+        idx->cp.iter_cb    = &coarse_cb;
+        idx->pq.cp.iter_cb = &pq_cb;
 
         struct timespec t_train_start, t_train_end;
         clock_gettime(CLOCK_MONOTONIC, &t_train_start);
@@ -857,7 +913,8 @@ int ivfpq_create_impl(DDIC *ddic, DBTBL *dbtbl,
         } catch (const faiss::FaissException &e) {
             idx->cp.iter_cb    = nullptr;
             idx->pq.cp.iter_cb = nullptr;
-            if (meter2) { meter_end(meter2); closemeter(meter2); }
+            if (coarse_cb.meter) { meter_end(coarse_cb.meter); closemeter(coarse_cb.meter); }
+            if (pq_cb.meter)     { meter_end(pq_cb.meter);     closemeter(pq_cb.meter); }
             putmsg(MERR + UGE, fn, "FAISS train: %s", e.what());
             ::munmap(train_addr, train_bytes);
             ::unlink(train_path);
@@ -865,7 +922,18 @@ int ivfpq_create_impl(DDIC *ddic, DBTBL *dbtbl,
         }
         idx->cp.iter_cb    = nullptr;
         idx->pq.cp.iter_cb = nullptr;
-        if (meter2) { meter_end(meter2); closemeter(meter2); }
+        /* Force any still-open meter to 100% before close (covers
+         * early-terminated coarse, and the normal PQ-finished case). */
+        if (coarse_cb.meter) {
+            meter_updatedone(coarse_cb.meter, coarse_cb.meter->totalsz);
+            meter_end(coarse_cb.meter);
+            closemeter(coarse_cb.meter);
+        }
+        if (pq_cb.meter) {
+            meter_updatedone(pq_cb.meter, pq_cb.meter->totalsz);
+            meter_end(pq_cb.meter);
+            closemeter(pq_cb.meter);
+        }
 
         clock_gettime(CLOCK_MONOTONIC, &t_train_end);
         double train_secs = (t_train_end.tv_sec - t_train_start.tv_sec) +
@@ -926,7 +994,10 @@ int ivfpq_create_impl(DDIC *ddic, DBTBL *dbtbl,
         }
         if (meter3) { meter_end(meter3); closemeter(meter3); }
 
-        /* 9. Save head file (codebooks + max_recid_at_create boundary). */
+        /* 9. Save head file (codebooks + max_recid_at_create boundary).
+         * Bake the auto-scaled nprobe into the saved index, so loaders
+         * that don't override get the right default for this nlist. */
+        idx->nprobe = auto_nprobe((size_t)idx->nlist);
         {
             faiss::FileIOWriter w(head_path);
             if (save_ivfpq_head(idx, &w, max_recid_at_create) != 0) {
@@ -1178,10 +1249,8 @@ size_t ivfpq_search_impl(TXvecHandle *h_, DBTBL *dbtbl, const char *field,
             params.nprobe = ef;
         else if (TXlikevPqNprobe > 0)
             params.nprobe = (size_t)TXlikevPqNprobe;
-        else if (h->idx->nprobe > 0)
-            params.nprobe = h->idx->nprobe;
         else
-            params.nprobe = 8;
+            params.nprobe = auto_nprobe(h->idx->nlist);
 
         std::vector<float>        dists(k_over_sealed);
         std::vector<faiss::idx_t> ids(k_over_sealed, -1);
@@ -1568,6 +1637,8 @@ int ivfpq_optimize_impl(DDIC *ddic, TXvecHandle *h_, DBTBL *dbtbl,
         auto *od = static_cast<faiss::OnDiskInvertedLists *>(temp_idx->invlists);
         std::string saved_fname = od->filename;
         od->filename = h->invl_path;
+        /* Bake auto-scaled nprobe before save (mirrors CREATE path). */
+        temp_idx->nprobe = auto_nprobe((size_t)temp_idx->nlist);
         try {
             faiss::FileIOWriter w(temp_head);
             if (save_ivfpq_head(temp_idx, &w, new_max) != 0) {
@@ -1836,36 +1907,43 @@ int ivfpq_rebuild_impl(DDIC *ddic, TXvecHandle *h_, DBTBL *dbtbl,
                 goto rebuild_err;
             }
 
-            EPI_HUGEUINT total_iters =
-                (EPI_HUGEUINT)idx->cp.niter * idx->cp.nredo +
-                (EPI_HUGEUINT)idx->pq.M * idx->pq.cp.niter * idx->pq.cp.nredo;
+            EPI_HUGEUINT coarse_iters =
+                (EPI_HUGEUINT)idx->cp.niter * idx->cp.nredo;
+            EPI_HUGEUINT pq_iters_per_slice =
+                (EPI_HUGEUINT)idx->pq.cp.niter * idx->pq.cp.nredo;
+            EPI_HUGEUINT pq_iters =
+                (EPI_HUGEUINT)idx->pq.M * pq_iters_per_slice;
             putmsg(MINFO, fn,
                 "INDEX_VEC ivfpq REBUILD stage 2/3: training "
-                "(coarse=%d kmeans + %d PQ slices; %llu k-means iters total)",
-                (int)idx->cp.nredo, (int)idx->pq.M,
-                (unsigned long long)total_iters);
+                "(coarse: %llu iters; PQ: %d slices x %llu iters)",
+                (unsigned long long)coarse_iters,
+                (int)idx->pq.M, (unsigned long long)pq_iters_per_slice);
             idx->verbose    = false;
             idx->pq.verbose = false;
             idx->cp.min_points_per_centroid    = min_ppc;
             idx->pq.cp.min_points_per_centroid = min_ppc;
 
-            METER *meter2 = NULL;
-            if (options && options->indexmeter != TXMDT_NONE && total_iters > 0) {
-                meter2 = openmeter(
-                    "INDEX_VEC ivfpq REBUILD stage 2/3 (training):",
-                    options->indexmeter,
-                    MDOUTFUNCPN, MDFLUSHFUNCPN, NULL,
-                    (EPI_HUGEINT)total_iters);
+            TXMDT mtype = (options && options->indexmeter != TXMDT_NONE)
+                          ? options->indexmeter : TXMDT_NONE;
+            METER *coarse_meter = NULL;
+            if (mtype != TXMDT_NONE && coarse_iters > 0) {
+                coarse_meter = openmeter(
+                    "INDEX_VEC ivfpq REBUILD stage 2a/3 (coarse k-means):",
+                    mtype, MDOUTFUNCPN, MDFLUSHFUNCPN, NULL,
+                    (EPI_HUGEINT)coarse_iters);
             }
-            PqProgressCallback iter_cb(meter2);
-            idx->cp.iter_cb    = &iter_cb;
-            idx->pq.cp.iter_cb = &iter_cb;
+            CoarseProgressCallback coarse_cb(coarse_meter);
+            PqProgressCallback     pq_cb(&coarse_cb, mtype, pq_iters,
+                "INDEX_VEC ivfpq REBUILD stage 2b/3 (PQ subquantizers):");
+            idx->cp.iter_cb    = &coarse_cb;
+            idx->pq.cp.iter_cb = &pq_cb;
             try {
                 idx->train(got, (const float *)train_addr);
             } catch (const faiss::FaissException &e) {
                 idx->cp.iter_cb    = nullptr;
                 idx->pq.cp.iter_cb = nullptr;
-                if (meter2) { meter_end(meter2); closemeter(meter2); }
+                if (coarse_cb.meter) { meter_end(coarse_cb.meter); closemeter(coarse_cb.meter); }
+                if (pq_cb.meter)     { meter_end(pq_cb.meter);     closemeter(pq_cb.meter); }
                 putmsg(MERR + UGE, fn, "FAISS train: %s", e.what());
                 ::munmap(train_addr, train_bytes);
                 ::unlink(train_path);
@@ -1873,7 +1951,16 @@ int ivfpq_rebuild_impl(DDIC *ddic, TXvecHandle *h_, DBTBL *dbtbl,
             }
             idx->cp.iter_cb    = nullptr;
             idx->pq.cp.iter_cb = nullptr;
-            if (meter2) { meter_end(meter2); closemeter(meter2); }
+            if (coarse_cb.meter) {
+                meter_updatedone(coarse_cb.meter, coarse_cb.meter->totalsz);
+                meter_end(coarse_cb.meter);
+                closemeter(coarse_cb.meter);
+            }
+            if (pq_cb.meter) {
+                meter_updatedone(pq_cb.meter, pq_cb.meter->totalsz);
+                meter_end(pq_cb.meter);
+                closemeter(pq_cb.meter);
+            }
             ::munmap(train_addr, train_bytes);
             ::unlink(train_path);
         }
@@ -1936,6 +2023,8 @@ int ivfpq_rebuild_impl(DDIC *ddic, TXvecHandle *h_, DBTBL *dbtbl,
             auto *od = static_cast<faiss::OnDiskInvertedLists *>(idx->invlists);
             std::string saved_fname = od->filename;
             od->filename = h->invl_path;
+            /* Bake auto-scaled nprobe before save (mirrors CREATE/OPTIMIZE). */
+            idx->nprobe = auto_nprobe((size_t)idx->nlist);
             try {
                 faiss::FileIOWriter w(temp_head);
                 if (save_ivfpq_head(idx, &w, new_max) != 0) {

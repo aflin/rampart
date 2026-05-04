@@ -144,8 +144,10 @@ int	TXnlikephits = 100;
 int	TXnlikevhits = 1000;        /* INDEX_VEC: candidate pool cap per LIKEV */
 int	TXlikevef    = 0;           /* INDEX_VEC: per-query HNSW expansion;
 				     * 0 = use the index's ef_construction */
-int	TXlikevPqNprobe = 8;            /* INDEX_VEC ivfpq: per-query nprobe;
-				         * 0 = use index's saved default */
+int	TXlikevPqNprobe = 0;            /* INDEX_VEC ivfpq: per-query nprobe;
+				         * 0 = auto (compute from nlist:
+				         *   max(8, nlist/128));
+				         * > 0 = explicit override */
 int	TXvecPqMaxTrainSamples = 1000000; /* INDEX_VEC ivfpq: hard cap on
 				           * training-sample count at CREATE */
 float	TXvecPqOverFetchPad = 0.10f;    /* INDEX_VEC ivfpq: fraction added to

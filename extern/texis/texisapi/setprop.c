@@ -307,9 +307,14 @@ char	*value;
 	if (!strcmp(propi, "likevpqnprobe")) /* docs */
 	{
 		/* INDEX_VEC ivfpq per-query nprobe.  Higher = more recall,
-		 * more time.  0 = use the index's saved nprobe (set at CREATE). */
+		 * more time.  Accepts an integer or the literal string "auto"
+		 * (which scales nprobe with the index's nlist:
+		 * max(8, nlist/128) — empirically right for 384-dim corpora). */
 		TXsetparm(ddic, "likevpqnprobe", value);
-		TXlikevPqNprobe = atoi(value);
+		if (!strcasecmp(value, "auto"))
+			TXlikevPqNprobe = 0;
+		else
+			TXlikevPqNprobe = atoi(value);
 		return 0;
 	}
 	if (!strcmp(propi, "vecpqmaxtrainsamples")) /* docs */
