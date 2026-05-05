@@ -70,12 +70,12 @@ sysupdate_nstages_for(const char *kind, int isRebuild)
         return 3;
     /* Vec IVFPQ:
      *   OPTIMIZE: 2 stages (copy sealed, encode delta)
-     *   REBUILD : 4 stages (sampling, train coarse, train PQ, encode)
+     *   REBUILD : 5 stages (scan table, sampling, train coarse, train PQ, encode)
      * The training phase is split because coarse k-means and PQ
      * subquantizer training have wildly different per-iter costs and
      * users want to know which one is currently running. */
     if (strcmp(kind, "vec-ivfpq") == 0)
-        return isRebuild ? 4 : 2;
+        return isRebuild ? 5 : 2;
     /* Fulltext: 3 stages — creating tokens, indexing, final merge.
      * The actual stage transitions happen via the openmeter hook in
      * meter.c (TXsysupdateAdvanceStageByLabel), which matches the
@@ -228,6 +228,28 @@ TXalterIndex(DDIC *ddic, CONST char *indexName, TXAITOK action, TXAITOK option, 
       case INDEX_FULL:
       case INDEX_MM:
         if (!(options = TXindOptsOpen(ddic))) goto err;
+        /* Mirror the vec branch (case INDEX_VEC below): evaluate the
+         * HAVING gate externally and write a "skipped" note to
+         * SYSUPDATE.COMMENTS so observers can distinguish "did the
+         * work" from "skipped because no NewRows".  Fulltext's newrec
+         * btree uses the same `<base>_T.btr' naming and BTLOC layout
+         * as vec (3dbindex.c:1330, vecindex_aux_btree.c:79), so the
+         * existing TXvecCountNewRows walker works for both. */
+        if (conditions != NULL &&
+            (action == TXAITOK_OPTIMIZE || action == TXAITOK_REBUILD))
+          {
+            long newRowCount = (long)TXvecCountNewRows(indexFiles[i]);
+            if (!TXalterIndexEvalHaving(conditions, newRowCount))
+              {
+                char skipMsg[128];
+                snprintf(skipMsg, sizeof(skipMsg),
+                  "skipped: HAVING condition not met (NewRows = %ld)",
+                  newRowCount);
+                TXsysupdateNote(ddic, indexName, skipMsg);
+                ret = 2;
+                goto done;
+              }
+          }
         {
           TXsysupdateSink sink;
           const char *ftKind = sysupdate_kind_label(indexTypes[i],
@@ -334,9 +356,15 @@ TXalterIndex(DDIC *ddic, CONST char *indexName, TXAITOK action, TXAITOK option, 
                            vecKind,
                            (action == TXAITOK_REBUILD) ? "rebuild" : "optimize",
                            nstages, "starting");
-          /* Expose the sink to the operation via DDIC so vec ops can
-           * advance stages and report fractional progress. */
+          /* Expose the sink BOTH on DDIC and as the process-static
+           * current sink — sub-functions reach it via DDIC (e.g., the
+           * scan/encode loops in vecindex_ivfpq.cpp), while
+           * helpers without DDIC access (reservoir_sample_to_file,
+           * Coarse/PqProgressCallback) read the process-static via
+           * TXsysupdateGetCurrent().  Mirrors what fulltext at line
+           * 266 and CREATE at index.c:2149 do. */
           ddic->sysupdSink = &sink;
+          TXsysupdateSetCurrent(&sink);
           switch (action)
             {
             case TXAITOK_OPTIMIZE:
@@ -354,10 +382,12 @@ TXalterIndex(DDIC *ddic, CONST char *indexName, TXAITOK action, TXAITOK option, 
                     ? 2 : 0;
               break;
             default:
+              TXsysupdateSetCurrent(NULL);
               ddic->sysupdSink = NULL;
               TXsysupdateEnd(&sink, "unknown action");
               goto unknownAction;
             }
+          TXsysupdateSetCurrent(NULL);
           ddic->sysupdSink = NULL;
           TXsysupdateProgress(&sink, 1.0);
           TXsysupdateEnd(&sink, (ret == 2) ? NULL : "operation failed");

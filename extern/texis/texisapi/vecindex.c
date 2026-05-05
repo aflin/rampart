@@ -805,12 +805,28 @@ hnsw_create_impl(DDIC *ddic, DBTBL *dbtbl,
     /* Pre-pass: count live rows so we can reserve usearch's capacity
      * (and pre-allocate per-thread context buffers).  usearch_reserve
      * doesn't auto-grow, so we need an upper bound up front.  Iterating
-     * the table once without reading vectors is cheap.
+     * the table once without reading vectors is cheap if blob preload
+     * is suppressed; otherwise gettblrow drags the vector blob through
+     * TXblobiGetPayload for every row, which is the bulk of the I/O.
      */
     size_t row_estimate = 0;
+    EPI_OFF_T scan_total_bytes = 0;
+    {
+        EPI_STAT_S st;
+        if (EPI_FSTAT(getdbffh(dbtbl->tbl->df), &st) == 0)
+            scan_total_bytes = (EPI_OFF_T)st.st_size;
+    }
+    int saved_preLoad_scan = (TXApp != NULL) ? TXApp->preLoadBlobs : 0;
+    if (TXApp) TXApp->preLoadBlobs = 0;
     TXrewinddbtbl(dbtbl);
-    while ((recid = getdbtblrow(dbtbl)) != RECIDPN && TXrecidvalid(recid))
+    while ((recid = getdbtblrow(dbtbl)) != RECIDPN && TXrecidvalid(recid)) {
+        EPI_OFF_T off = TXgetoff(recid);
         row_estimate++;
+        if (scan_total_bytes > 0)
+            TXsysupdateProgress((TXsysupdateSink *)ddic->sysupdSink,
+                (double)off / (double)scan_total_bytes);
+    }
+    if (TXApp) TXApp->preLoadBlobs = saved_preLoad_scan;
 
     /* Optional second pre-pass: vec_calibrate 'auto' on a quantized
      * index runs through the table once to find global min/max, then
@@ -836,12 +852,22 @@ hnsw_create_impl(DDIC *ddic, DBTBL *dbtbl,
                                    MDOUTFUNCPN, MDFLUSHFUNCPN, NULL,
                                    (EPI_HUGEINT)total);
         }
+        EPI_OFF_T calib_total_bytes = 0;
+        {
+            EPI_STAT_S st2;
+            if (EPI_FSTAT(getdbffh(dbtbl->tbl->df), &st2) == 0)
+                calib_total_bytes = (EPI_OFF_T)st2.st_size;
+        }
         TXrewinddbtbl(dbtbl);
         while ((recid = getdbtblrow(dbtbl)) != RECIDPN && TXrecidvalid(recid)) {
+            EPI_OFF_T calib_off = TXgetoff(recid);
             if (cmeter) {
                 cmeterDone += (EPI_HUGEINT)dbtbl->tbl->irecsz;
                 METER_UPDATEDONE(cmeter, cmeterDone);
             }
+            if (calib_total_bytes > 0)
+                TXsysupdateProgress((TXsysupdateSink *)ddic->sysupdSink,
+                    (double)calib_off / (double)calib_total_bytes);
             size_t cn = 0;
             void *crow = getfld(fld, &cn);
             if (!crow || cn == 0) continue;
@@ -2132,7 +2158,7 @@ hnsw_optimize_impl(DDIC *ddic, TXvecHandle *h_, DBTBL *dbtbl,
              * See project_texis_recid_static memo. */
             int64_t r = (int64_t)(uint64_t)recid->off;
             if (encode_meter)
-                meter_updatedone(encode_meter, (EPI_HUGEINT)r);
+                METER_UPDATEDONE(encode_meter, (EPI_HUGEINT)r);
             if (encode_total_bytes > 0)
                 TXsysupdateProgress((TXsysupdateSink *)ddic->sysupdSink,
                     (double)r / (double)encode_total_bytes);
@@ -2339,7 +2365,7 @@ hnsw_rebuild_impl(DDIC *ddic, TXvecHandle *h_, DBTBL *dbtbl,
         /* Snapshot recid->off once (process-static; SQL calls stomp it). */
         int64_t r = (int64_t)(uint64_t)recid->off;
         if (encode_meter)
-            meter_updatedone(encode_meter, (EPI_HUGEINT)r);
+            METER_UPDATEDONE(encode_meter, (EPI_HUGEINT)r);
         if (encode_total_bytes > 0)
             TXsysupdateProgress((TXsysupdateSink *)ddic->sysupdSink,
                 (double)r / (double)encode_total_bytes);
@@ -2776,8 +2802,20 @@ TXvecOptimize(DDIC *ddic, const char *indname, const char *indfile,
         return -1;
     }
 
+    /* Hold R_LCK on the table for the duration of OPTIMIZE.  Mirrors
+     * CREATE INDEX's uberlock at index.c:2333.  Without this,
+     * getdbtblrow's per-row R_LCK acquire/release goes to texislockd
+     * over a socket on every one of millions of rows — many minutes
+     * of pure lock chatter on a large table. */
+    if (TXlocktable(dbtbl, R_LCK) != 0) {
+        putmsg(MERR + UGE, fn, "could not R_LCK table `%s'", tableName);
+        closedbtbl(dbtbl);
+        return -1;
+    }
+
     TXvecHandle *h = TXvecOpen(ddic, indfile, params);
     if (!h) {
+        TXunlocktable(dbtbl, R_LCK);
         closedbtbl(dbtbl);
         return -1;
     }
@@ -2788,6 +2826,7 @@ TXvecOptimize(DDIC *ddic, const char *indname, const char *indfile,
     TXsetrecid(&tempRow, RECID_INVALID);
     if (vec_alloc_temp_base(ddic, indname, tableName, field, params,
                             indfile, &tempBase, &tempRow) != 0) {
+        TXunlocktable(dbtbl, R_LCK);
         closedbtbl(dbtbl);
         return -1;
     }
@@ -2796,6 +2835,8 @@ TXvecOptimize(DDIC *ddic, const char *indname, const char *indfile,
     size_t n_absorbed = 0;
     int rc = vec_backend_for(hb->backend)->optimize(
         ddic, h, dbtbl, field, tempBase, options, &absorbed, &n_absorbed);
+    /* Release R_LCK before commit acquires W_LCK on the same dbtbl. */
+    TXunlocktable(dbtbl, R_LCK);
     if (rc != 0) {
         free(absorbed);
         vec_abort_temp_build(ddic, tempBase, tempRow);
@@ -2838,8 +2879,20 @@ TXvecRebuild(DDIC *ddic, const char *indname, const char *indfile,
         return -1;
     }
 
+    /* Hold R_LCK on the table for the duration of REBUILD.  Mirrors
+     * CREATE INDEX's uberlock at index.c:2333.  Without this,
+     * getdbtblrow's per-row R_LCK acquire/release goes to texislockd
+     * over a socket on every one of millions of rows — many minutes
+     * of pure lock chatter on a large table. */
+    if (TXlocktable(dbtbl, R_LCK) != 0) {
+        putmsg(MERR + UGE, fn, "could not R_LCK table `%s'", tableName);
+        closedbtbl(dbtbl);
+        return -1;
+    }
+
     TXvecHandle *h = TXvecOpen(ddic, indfile, params);
     if (!h) {
+        TXunlocktable(dbtbl, R_LCK);
         closedbtbl(dbtbl);
         return -1;
     }
@@ -2850,6 +2903,7 @@ TXvecRebuild(DDIC *ddic, const char *indname, const char *indfile,
     if (TXvecParamsParse(&vp, params ? params : "") != 0) {
         putmsg(MERR + UGE, fn,
             "could not parse SYSINDEX.PARAMS for `%s'", indfile);
+        TXunlocktable(dbtbl, R_LCK);
         closedbtbl(dbtbl);
         return -1;
     }
@@ -2859,6 +2913,7 @@ TXvecRebuild(DDIC *ddic, const char *indname, const char *indfile,
     TXsetrecid(&tempRow, RECID_INVALID);
     if (vec_alloc_temp_base(ddic, indname, tableName, field, params,
                             indfile, &tempBase, &tempRow) != 0) {
+        TXunlocktable(dbtbl, R_LCK);
         closedbtbl(dbtbl);
         return -1;
     }
@@ -2867,6 +2922,8 @@ TXvecRebuild(DDIC *ddic, const char *indname, const char *indfile,
     size_t n_absorbed = 0;
     int rc = vec_backend_for(hb->backend)->rebuild(
         ddic, h, dbtbl, field, &vp, tempBase, options, &absorbed, &n_absorbed);
+    /* Release R_LCK before commit acquires W_LCK on the same dbtbl. */
+    TXunlocktable(dbtbl, R_LCK);
     if (rc != 0) {
         free(absorbed);
         vec_abort_temp_build(ddic, tempBase, tempRow);

@@ -2135,7 +2135,7 @@ TXindOpts	*options;	/* (in/out) options, opt. w/`WITH ...' */
 		 * hook in meter.c when the operation opens its meters. */
 		int nstages = 1;
 		if (itype == INDEX_VEC) {
-			if (!strcmp(sysupdKind, "vec-ivfpq")) nstages = 4;
+			if (!strcmp(sysupdKind, "vec-ivfpq")) nstages = 5;
 			else if (!strcmp(sysupdKind, "vec-hnsw")) nstages = 3;
 		} else {
 			nstages = 3;       /* fulltext: 3 stages */
