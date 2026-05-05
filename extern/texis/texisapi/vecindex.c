@@ -36,6 +36,7 @@
 
 #include "vecindex.h"
 #include "vecindex_internal.h" /* TXvecHandleBase, TXvecBackend, vec_backend_for */
+#include "sysupdate.h"
 
 #include "usearch.h"           /* usearch C API */
 
@@ -195,6 +196,24 @@ vec_opt_get(TXindOpts *options, TXindOpt opt)
         if (options->option[i] == opt)
             return options->values[i] ? options->values[i][0] : NULL;
     return NULL;
+}
+
+/* Public helper: peek at the backend option (default IVFPQ) and
+ * return the SYSUPDATE.KIND label that would apply.  Used by
+ * createindex (in index.c) at CREATE time, before SYSINDEX.PARAMS
+ * exists, so the SYSUPDATE row can be tagged with the specific
+ * backend from the start. */
+const char *
+TXvecKindFromOptions(TXindOpts *options)
+{
+    const char *s = vec_opt_get(options, TXindOpt_backend);
+    if (s) {
+        if (!strcasecmp(s, "hnsw") || !strcasecmp(s, "usearch"))
+            return "vec-hnsw";
+    }
+    /* Default backend (no `WITH backend ...`) is IVFPQ — same as
+     * TXvecParamsFromOptions:229. */
+    return "vec-ivfpq";
 }
 
 int
@@ -736,8 +755,13 @@ hnsw_create_impl(DDIC *ddic, DBTBL *dbtbl,
     const char *uerr = NULL;
     RECID *recid;
 
-    (void)ddic;
     (void)indname;
+
+    /* SYSUPDATE: stage 1 of 3 (init + scan).  Stage 2 (encode) takes
+     * over once the index is initialized on the first row; stage 3
+     * (save) at the end. */
+    TXsysupdateAdvanceStage((TXsysupdateSink *)ddic->sysupdSink, 1,
+                            "scan rows");
 
     FLD *fld = dbnametofld(dbtbl, (char *)field);
     if (!fld) {
@@ -883,6 +907,10 @@ hnsw_create_impl(DDIC *ddic, DBTBL *dbtbl,
         }
     }
 
+    /* SYSUPDATE: stage 2 of 3 (encode rows). */
+    TXsysupdateAdvanceStage((TXsysupdateSink *)ddic->sysupdSink, 2,
+                            "encode rows");
+
     /* Open progress meter sized by table file bytes. */
     if (options && options->indexmeter != TXMDT_NONE) {
         EPI_STAT_S st;
@@ -893,14 +921,28 @@ hnsw_create_impl(DDIC *ddic, DBTBL *dbtbl,
                               options->indexmeter,
                               MDOUTFUNCPN, MDFLUSHFUNCPN, NULL,
                               (EPI_HUGEINT)meterTotal);
+    } else {
+        /* Need byte total for SYSUPDATE progress fraction even if no
+         * indexmeter requested. */
+        EPI_STAT_S st;
+        if (EPI_FSTAT(getdbffh(dbtbl->tbl->df), &st) == 0)
+            meterTotal = (EPI_OFF_T)st.st_size;
     }
 
     TXrewinddbtbl(dbtbl);
     while ((recid = getdbtblrow(dbtbl)) != RECIDPN && TXrecidvalid(recid)) {
+        /* gettblrow returns a pointer to a process-static RECID; any
+         * call that runs internal SQL (e.g. TXsysupdateProgress' UPDATE
+         * on SYSUPDATE) walks that table and stomps the static.  Snapshot
+         * the offset NOW before we run any such call. */
+        EPI_OFF_T row_off = TXgetoff(recid);
         if (meter) {
             meterDone += (EPI_HUGEINT)dbtbl->tbl->irecsz;
             METER_UPDATEDONE(meter, meterDone);
         }
+        if (meterTotal > 0)
+            TXsysupdateProgress((TXsysupdateSink *)ddic->sysupdSink,
+                (double)row_off / (double)meterTotal);
 
         size_t n_elems = 0;
         void *raw = getfld(fld, &n_elems);
@@ -985,7 +1027,7 @@ hnsw_create_impl(DDIC *ddic, DBTBL *dbtbl,
             skipped++;
             continue;
         }
-        if (vec_add_one(idx, (usearch_key_t)(uint64_t)recid->off, dim,
+        if (vec_add_one(idx, (usearch_key_t)(uint64_t)row_off, dim,
                         vp.dtype, vp.quant_scale, vp.quant_zp,
                         column_dtype, raw, cell_count,
                         qbuf, qbuf_idx, &uerr) < 0) {
@@ -1010,6 +1052,10 @@ hnsw_create_impl(DDIC *ddic, DBTBL *dbtbl,
             (unsigned long)skipped);
         goto err;
     }
+
+    /* SYSUPDATE: stage 3 of 3 (save). */
+    TXsysupdateAdvanceStage((TXsysupdateSink *)ddic->sysupdSink, 3,
+                            "save");
 
     /* Persist. */
     vecpath = make_usearch_path(indfile);
@@ -1986,6 +2032,10 @@ hnsw_optimize_impl(DDIC *ddic, TXvecHandle *h_, DBTBL *dbtbl,
         return -1;
     }
 
+    /* SYSUPDATE: stage 1 of 3 (load fresh graph from disk). */
+    TXsysupdateAdvanceStage((TXsysupdateSink *)ddic->sysupdSink, 1,
+                            "load fresh graph");
+
     /* Load a fresh usearch graph from live .vec.  Don't mutate h->index;
      * leave the cached handle consistent with what's still on disk
      * until commit. */
@@ -2046,30 +2096,46 @@ hnsw_optimize_impl(DDIC *ddic, TXvecHandle *h_, DBTBL *dbtbl,
     }
     size_t absorbed_n = 0;
 
+    /* SYSUPDATE: stage 2 of 3 (encode delta). */
+    TXsysupdateAdvanceStage((TXsysupdateSink *)ddic->sysupdSink, 2,
+                            "encode delta");
+
     /* Walk the table sequentially, absorbing rows in the snapshot.
      * Meter sized to table file bytes; ticks per visited recid offset.
      * Same shape as the IVFPQ OPTIMIZE encode meter. */
     METER *encode_meter = NULL;
+    EPI_OFF_T encode_total_bytes = 0;
     if (newrec_v.len > 0 && options
         && options->indexmeter != TXMDT_NONE) {
         EPI_STAT_S st;
         EPI_OFF_T total = 0;
         if (EPI_FSTAT(getdbffh(dbtbl->tbl->df), &st) == 0)
             total = (EPI_OFF_T)st.st_size;
+        encode_total_bytes = total;
         if (total > 0)
             encode_meter = openmeter(
                 "INDEX_VEC hnsw OPTIMIZE (encode delta):",
                 options->indexmeter,
                 MDOUTFUNCPN, MDFLUSHFUNCPN, NULL,
                 (EPI_HUGEINT)total);
+    } else {
+        EPI_STAT_S st;
+        if (EPI_FSTAT(getdbffh(dbtbl->tbl->df), &st) == 0)
+            encode_total_bytes = (EPI_OFF_T)st.st_size;
     }
     if (newrec_v.len > 0) {
         RECID *recid;
         TXrewinddbtbl(dbtbl);
         while ((recid = getdbtblrow(dbtbl)) != RECIDPN && TXrecidvalid(recid)) {
+            /* Snapshot recid->off once.  recid points to a process-static
+             * RECID; any internal SQL call (TXsysupdateProgress) stomps it.
+             * See project_texis_recid_static memo. */
             int64_t r = (int64_t)(uint64_t)recid->off;
             if (encode_meter)
-                meter_updatedone(encode_meter, (EPI_HUGEINT)TXgetoff(recid));
+                meter_updatedone(encode_meter, (EPI_HUGEINT)r);
+            if (encode_total_bytes > 0)
+                TXsysupdateProgress((TXsysupdateSink *)ddic->sysupdSink,
+                    (double)r / (double)encode_total_bytes);
             if (!bsearch(&r, newrec_v.data, newrec_v.len,
                          sizeof(int64_t), vec_int64_cmp_))
                 continue;
@@ -2102,6 +2168,10 @@ hnsw_optimize_impl(DDIC *ddic, TXvecHandle *h_, DBTBL *dbtbl,
         }
     }
     if (encode_meter) { meter_end(encode_meter); closemeter(encode_meter); }
+
+    /* SYSUPDATE: stage 3 of 3 (save). */
+    TXsysupdateAdvanceStage((TXsysupdateSink *)ddic->sysupdSink, 3,
+                            "save");
 
     /* Save the absorbed graph to Tnnnn.vec. */
     if (save_atomic(fresh, tempVec, fn) != 0) {
@@ -2154,10 +2224,14 @@ hnsw_rebuild_impl(DDIC *ddic, TXvecHandle *h_, DBTBL *dbtbl,
                   int64_t **out_absorbed, size_t *out_n_absorbed)
 {
     static const char fn[] = "TXvecRebuild(hnsw)";
-    (void)ddic; (void)vp;
+    (void)vp;
     struct TXvecHnswHandle *h = (struct TXvecHnswHandle *)h_;
     if (!h || !dbtbl || !field || !tempBase) return -1;
     *out_absorbed = NULL; *out_n_absorbed = 0;
+
+    /* SYSUPDATE: stage 1 of 3 (init fresh graph). */
+    TXsysupdateAdvanceStage((TXsysupdateSink *)ddic->sysupdSink, 1,
+                            "init fresh graph");
 
     FLD *fld = dbnametofld(dbtbl, (char *)field);
     if (!fld) {
@@ -2234,27 +2308,41 @@ hnsw_rebuild_impl(DDIC *ddic, TXvecHandle *h_, DBTBL *dbtbl,
     }
     size_t absorbed_n = 0;
 
+    /* SYSUPDATE: stage 2 of 3 (encode rows). */
+    TXsysupdateAdvanceStage((TXsysupdateSink *)ddic->sysupdSink, 2,
+                            "encode rows");
+
     /* Meter sized to table file bytes; ticks per visited recid offset.
      * Mirrors the HNSW OPTIMIZE encode meter. */
     METER *encode_meter = NULL;
+    EPI_OFF_T encode_total_bytes = 0;
     if (options && options->indexmeter != TXMDT_NONE) {
         EPI_STAT_S st;
         EPI_OFF_T total = 0;
         if (EPI_FSTAT(getdbffh(dbtbl->tbl->df), &st) == 0)
             total = (EPI_OFF_T)st.st_size;
+        encode_total_bytes = total;
         if (total > 0)
             encode_meter = openmeter(
                 "INDEX_VEC hnsw REBUILD (encode rows):",
                 options->indexmeter,
                 MDOUTFUNCPN, MDFLUSHFUNCPN, NULL,
                 (EPI_HUGEINT)total);
+    } else {
+        EPI_STAT_S st;
+        if (EPI_FSTAT(getdbffh(dbtbl->tbl->df), &st) == 0)
+            encode_total_bytes = (EPI_OFF_T)st.st_size;
     }
     RECID *recid;
     TXrewinddbtbl(dbtbl);
     while ((recid = getdbtblrow(dbtbl)) != RECIDPN && TXrecidvalid(recid)) {
+        /* Snapshot recid->off once (process-static; SQL calls stomp it). */
         int64_t r = (int64_t)(uint64_t)recid->off;
         if (encode_meter)
-            meter_updatedone(encode_meter, (EPI_HUGEINT)TXgetoff(recid));
+            meter_updatedone(encode_meter, (EPI_HUGEINT)r);
+        if (encode_total_bytes > 0)
+            TXsysupdateProgress((TXsysupdateSink *)ddic->sysupdSink,
+                (double)r / (double)encode_total_bytes);
         size_t n_elems = 0;
         void *raw = getfld(fld, &n_elems);
         if (!raw || n_elems == 0) continue;
@@ -2295,6 +2383,9 @@ hnsw_rebuild_impl(DDIC *ddic, TXvecHandle *h_, DBTBL *dbtbl,
         absorbed[absorbed_n++] = r;
     }
     if (encode_meter) { meter_end(encode_meter); closemeter(encode_meter); }
+
+    /* SYSUPDATE: stage 3 of 3 (save). */
+    TXsysupdateAdvanceStage((TXsysupdateSink *)ddic->sysupdSink, 3, "save");
 
     if (save_atomic(fresh, tempVec, fn) != 0) {
         usearch_free(fresh, &uerr);

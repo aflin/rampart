@@ -260,6 +260,20 @@ int          TXvecRebuild(DDIC *ddic, const char *indname,
                           const char *field, const char *params,
                           TXindOpts *options);
 
+/* Count rows in the `_T.btr` newrec auxiliary btree for an INDEX_VEC.
+ * Used by alterIndex.c to evaluate `HAVING COUNT(NewRows) > N` on
+ * ALTER INDEX OPTIMIZE / REBUILD, mirroring the fulltext path's
+ * predicate-eval at updindex.c.  Returns 0 if the file is missing
+ * or unreadable. */
+size_t       TXvecCountNewRows(const char *indfile);
+
+/* Inspect a TXindOpts to determine which vec backend would be used
+ * for a CREATE INDEX with these options.  Used by createindex (in
+ * index.c) to write a refined SYSUPDATE.KIND label at CREATE time.
+ * Returns "vec-hnsw" or "vec-ivfpq" (string literal — do not free).
+ * Defaults to "vec-ivfpq" if no explicit backend is set. */
+const char  *TXvecKindFromOptions(TXindOpts *options);
+
 /* Flush a specific index: save the in-memory state to disk and clear
  * the SYSINDEX dirty bit.  No-op (returns 0) if the cached handle for
  * `indfile` is already clean or no handle exists.  Returns 0 on success,

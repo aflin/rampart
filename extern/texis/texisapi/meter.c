@@ -11,6 +11,7 @@
 #endif /* TEST */
 #include "texint.h"
 #include "meter.h"
+#include "sysupdate.h"
 
 
 /*
@@ -222,6 +223,14 @@ EPI_HUGEINT     totalsz;        /* total byte size to reach 100% done */
   m->donesz = (EPI_HUGEINT)0;
   meter_updatetotal(m, totalsz);
 
+  /* If the dispatch layer set a current SYSUPDATE sink (alterIndex.c
+   * or createindex.c around the operation), advance the stage based
+   * on this meter's label.  Lets fulltext indexing get sysupdate
+   * stage transitions without each fdbim/index callsite having to
+   * call AdvanceStage explicitly.  No-op if there's no current sink
+   * or if the label doesn't match a known stage. */
+  TXsysupdateAdvanceStageByLabel(label);
+
 done:
   return(m);
 }
@@ -297,6 +306,26 @@ EPI_HUGEINT donesz;
   if (donesz > m->totalsz) m->donesz = m->totalsz;
   else if (donesz < (EPI_HUGEINT)0) m->donesz = (EPI_HUGEINT)0;
   else m->donesz = donesz;
+
+  /* SYSUPDATE: report fractional progress to the current sink (set
+   * by the dispatch layer around CREATE/ALTER INDEX).
+   *
+   * IMPORTANT: only fire for fulltext-stage meters.  Vec ops have
+   * their own explicit TXsysupdateProgress calls in the vec
+   * encode loops; calling SQL via ihstmt mid-walk (which is what
+   * TXsysupdateProgress does) appears to interfere with the
+   * row-walk cursor in vec CREATE INDEX paths and causes
+   * "duplicate key" failures from usearch_add.  Gating the hook
+   * to fulltext labels avoids the issue.  Identified by the
+   * `INDEX_VEC` prefix on vec meter labels (vec ops never hit the
+   * fulltext-label match below either). */
+  if (m->totalsz > 0 && m->label && strstr(m->label, "INDEX_VEC") == NULL) {
+      TXsysupdateSink *sink = TXsysupdateGetCurrent();
+      if (sink) {
+          double frac = (double)m->donesz / (double)m->totalsz;
+          TXsysupdateProgress(sink, frac);
+      }
+  }
 
   /* Compute additional meter columns to print: */
 #if EPI_HUGEINT_BITS >= 64

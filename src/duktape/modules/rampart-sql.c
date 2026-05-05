@@ -6408,6 +6408,12 @@ static const char *schupd =
 "try { su=require('rampart-sqlUpdate.js'); } catch(e){}\n"
 "if(su) su.scheduleUpdate\n";
 
+//the sql.scheduleRebuild function (vec REBUILD scheduling)
+static const char *schreb =
+"var su;\n"
+"try { su=require('rampart-sqlUpdate.js'); } catch(e){}\n"
+"if(su) su.scheduleRebuild\n";
+
 /* **************************************************
    Initialize Sql module
    ************************************************** */
@@ -6501,6 +6507,10 @@ duk_ret_t duk_open_module(duk_context *ctx)
     /* set Sql.connection.prototype.scheduleUpdate */
     duk_eval_string(ctx, schupd);
     duk_put_prop_string(ctx, -2, "scheduleUpdate");
+
+    /* set Sql.connection.prototype.scheduleRebuild */
+    duk_eval_string(ctx, schreb);
+    duk_put_prop_string(ctx, -2, "scheduleRebuild");
 
     /* Set Sql.connection.prototype = protoObj */
     duk_put_prop_string(ctx, -2, "prototype"); /* -> stack: [ {}, constructor-->[prototype-->{exe=fn_exe,...}] ] */

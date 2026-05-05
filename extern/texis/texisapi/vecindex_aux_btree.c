@@ -145,6 +145,30 @@ TXvecBtreeWalkRecids(const char *base_path, TXvecRecidCallback cb, void *user)
     closebtree(bt);
 }
 
+/* Counter callback for TXvecBtreeWalkRecids — bumps a size_t through user. */
+static void
+vec_count_recid_cb(int64_t recid, void *user)
+{
+    (void)recid;
+    (*(size_t *)user)++;
+}
+
+/* Public helper: count entries in the `_T.btr` newrec auxiliary btree
+ * for a vec index.  Used by alterIndex.c to populate the COUNT(NewRows)
+ * stat for HAVING-clause evaluation.  Returns 0 if the index has no
+ * `_T.btr` (treat as "no work to do"). */
+size_t
+TXvecCountNewRows(const char *indfile)
+{
+    if (!indfile) return 0;
+    char *base = TXvecMakeBtreeBasePath(indfile, "_T");
+    if (!base) return 0;
+    size_t count = 0;
+    TXvecBtreeWalkRecids(base, vec_count_recid_cb, &count);
+    free(base);
+    return count;
+}
+
 /* Truncate the named btree by unlinking the file + recreating empty.
  * Used at OPTIMIZE time after newrec entries have been folded into
  * the main index.  Returns 0 on success, -1 on error. */

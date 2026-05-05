@@ -8,6 +8,7 @@
 #endif /* EPI_HAVE_UNISTD_H */
 #include "texint.h"
 #include "vecindex.h"
+#include "sysupdate.h"
 
 /* ALTER INDEX tokens: */
 typedef enum
@@ -30,6 +31,105 @@ static CONST char * CONST       TXalterIndexTokenStrs[TXAITOK_NUM] =
 static CONST char       TXcommaWhitespace[] = ", \t\r\n\v\f";
 
 /* ------------------------------------------------------------------------ */
+
+/* Map a SYSINDEX type code + (for vec) PARAMS string to the SYSUPDATE
+ * KIND string written by TXsysupdateBegin.  Centralized here so the
+ * whole alterIndex switch uses the same labels. */
+static const char *
+sysupdate_kind_label(char itype, const char *params)
+{
+    switch (itype) {
+    case INDEX_3DB:
+    case INDEX_FULL:
+    case INDEX_MM:
+        return "fulltext";
+    case INDEX_VEC:
+        if (params && strstr(params, "backend=ivfpq")) return "vec-ivfpq";
+        return "vec-hnsw";
+    case INDEX_BTREE:
+    case INDEX_INV:
+        return "btree";
+    default:
+        return "other";
+    }
+}
+
+/* How many stages a given (kind, action) goes through, for SYSUPDATE
+ * progress reporting.  Operations call AdvanceStage to move between
+ * them and TXsysupdateProgress to report within-stage fractional
+ * progress.  Match the labels emitted via meter_open/meter_end in the
+ * underlying op so STAGENAME values are coherent. */
+static int
+sysupdate_nstages_for(const char *kind, int isRebuild)
+{
+    if (kind == NULL) return 1;
+    /* Vec HNSW: snapshot newrec → encode delta → save (3 stages).
+     * REBUILD substitutes "scan rows + build graph" for the first
+     * two — same count. */
+    if (strcmp(kind, "vec-hnsw") == 0)
+        return 3;
+    /* Vec IVFPQ:
+     *   OPTIMIZE: 2 stages (copy sealed, encode delta)
+     *   REBUILD : 4 stages (sampling, train coarse, train PQ, encode)
+     * The training phase is split because coarse k-means and PQ
+     * subquantizer training have wildly different per-iter costs and
+     * users want to know which one is currently running. */
+    if (strcmp(kind, "vec-ivfpq") == 0)
+        return isRebuild ? 4 : 2;
+    /* Fulltext: 3 stages — creating tokens, indexing, final merge.
+     * The actual stage transitions happen via the openmeter hook in
+     * meter.c (TXsysupdateAdvanceStageByLabel), which matches the
+     * meter labels emitted by fdbim.c/index.c at each phase
+     * boundary.  Within-stage progress is also driven from the
+     * meter via meter_updatedone — see the parallel call in meter.c. */
+    if (kind && strcmp(kind, "fulltext") == 0)
+        return 3;
+    return 1;
+}
+
+/* Evaluate an ALTER INDEX HAVING-clause predicate against a precomputed
+ * newrec count (the rows added since the last optimize/rebuild).
+ * `conditions` is the parsed predicate from the SQL "HAVING ..." tail;
+ * NULL means the SQL had no HAVING and the action should always run.
+ * Returns 1 if the conditions match (run), 0 if they don't (skip).
+ *
+ * This duplicates the predicate-eval logic at updindex.c:2174-2208
+ * intentionally — keeping the fulltext path completely untouched.  The
+ * COUNT(NewRows) source btree differs (fulltext: dbi->newrec opened by
+ * the live DBI; vec: _T.btr opened via TXvecCountNewRows), so the count
+ * is computed by the caller and passed in. */
+static int
+TXalterIndexEvalHaving(PRED *conditions, long newRowCount)
+{
+    DBTBL *vTbl;
+    NFLDSTAT *nf;
+    FLDOP *fo;
+    int conditions_match;
+
+    if (!conditions) return 1;
+
+    vTbl = TXnewDbtbl(NULL);
+    fo = TXgetFldopFromCache();
+
+    TXaddnewstatsfrompred(vTbl, conditions, fo);
+    for (nf = vTbl->nfldstat; nf; nf = nf->next)
+      {
+        PRED *p = nf->pred;
+        if (p && p->op == AGG_FUN_OP && p->lt == NAME_OP && p->rt == NAME_OP)
+          {
+            if (TXstrcmp(p->left, "count") == 0 &&
+                TXstrcmp(p->right, "NewRows") == 0)
+              {
+                TXsetcountstat(nf, newRowCount);
+              }
+          }
+      }
+    conditions_match = tup_match(vTbl, conditions, fo);
+
+    vTbl = closedbtbl(vTbl);
+    fo = TXreleaseFldopToCache(fo);
+    return conditions_match;
+}
 
 static TXAITOK TXstrToAlterIndexToken ARGS((CONST char *s, CONST char *e));
 static TXAITOK
@@ -128,7 +228,25 @@ TXalterIndex(DDIC *ddic, CONST char *indexName, TXAITOK action, TXAITOK option, 
       case INDEX_FULL:
       case INDEX_MM:
         if (!(options = TXindOptsOpen(ddic))) goto err;
-        ret = (updindex(ddic, (char *)indexName, updindexFlags, options, conditions) == 0 ? 2 : 0);
+        {
+          TXsysupdateSink sink;
+          const char *ftKind = sysupdate_kind_label(indexTypes[i],
+                                                    sysindexParams[i]);
+          int nstages = sysupdate_nstages_for(ftKind, 0);
+          TXsysupdateBegin(&sink, ddic, indexName, indexTables[i],
+                           ftKind,
+                           (action == TXAITOK_REBUILD) ? "rebuild" : "optimize",
+                           nstages, "starting");
+          /* Set process-static current sink so the openmeter hook in
+           * meter.c can advance stages based on the labels fdbim.c
+           * and index.c emit ("Creating new token", "Indexing",
+           * "Final merge"). */
+          TXsysupdateSetCurrent(&sink);
+          ret = (updindex(ddic, (char *)indexName, updindexFlags, options, conditions) == 0 ? 2 : 0);
+          TXsysupdateSetCurrent(NULL);
+          TXsysupdateProgress(&sink, 1.0);
+          TXsysupdateEnd(&sink, (ret == 2) ? NULL : "operation failed");
+        }
         goto done;
       case INDEX_BTREE:
       case INDEX_INV:
@@ -140,7 +258,18 @@ TXalterIndex(DDIC *ddic, CONST char *indexName, TXAITOK action, TXAITOK option, 
             break;
           case TXAITOK_REBUILD:
             if (!(options = TXindOptsOpen(ddic))) goto err;
-            ret = (updindex(ddic, (char *)indexName, updindexFlags, options, conditions) == 0 ? 2 : 0);
+            {
+              TXsysupdateSink sink;
+              TXsysupdateBegin(&sink, ddic, indexName, indexTables[i],
+                               sysupdate_kind_label(indexTypes[i],
+                                                    sysindexParams[i]),
+                               "rebuild", 1, "running");
+              TXsysupdateSetCurrent(&sink);
+              ret = (updindex(ddic, (char *)indexName, updindexFlags, options, conditions) == 0 ? 2 : 0);
+              TXsysupdateSetCurrent(NULL);
+              TXsysupdateProgress(&sink, 1.0);
+              TXsysupdateEnd(&sink, (ret == 2) ? NULL : "operation failed");
+            }
             break;
           default:
             goto unknownAction;
@@ -170,25 +299,69 @@ TXalterIndex(DDIC *ddic, CONST char *indexName, TXAITOK action, TXAITOK option, 
         goto done;
       case INDEX_VEC:
         if (!(options = TXindOptsOpen(ddic))) goto err;
-        switch (action)
+        /* Honor `ALTER INDEX ... HAVING COUNT(NewRows) > N` for vec
+         * indexes the same way fulltext does at updindex.c.  Count the
+         * newrec entries via the public _T.btr walker and run the
+         * predicate; skip the action (silent no-op, treated as "no
+         * work to do") when conditions don't match.  Brief Begin/End
+         * pair writes a "skipped: HAVING ..." comment to SYSUPDATE so
+         * an observer doing `SELECT COMMENTS FROM SYSUPDATE` sees the
+         * skip rather than nothing. */
+        if (conditions != NULL &&
+            (action == TXAITOK_OPTIMIZE || action == TXAITOK_REBUILD))
           {
-          case TXAITOK_OPTIMIZE:
-            ret = (TXvecOptimize(ddic, indexName, indexFiles[i],
-                                 indexTables[i],
-                                 indexFields[i], sysindexParams[i],
-                                 options) == 0)
-                  ? 2 : 0;
-            break;
-          case TXAITOK_REBUILD:
-            ret = (TXvecRebuild(ddic, indexName, indexFiles[i],
-                                indexTables[i],
-                                indexFields[i], sysindexParams[i],
-                                options) == 0)
-                  ? 2 : 0;
-            break;
-          default:
-            goto unknownAction;
+            long newRowCount = (long)TXvecCountNewRows(indexFiles[i]);
+            if (!TXalterIndexEvalHaving(conditions, newRowCount))
+              {
+                /* HAVING gate skipped the work — note the reason in
+                 * SYSUPDATE.COMMENTS (no-op if no row exists yet). */
+                char skipMsg[128];
+                snprintf(skipMsg, sizeof(skipMsg),
+                  "skipped: HAVING condition not met (NewRows = %ld)",
+                  newRowCount);
+                TXsysupdateNote(ddic, indexName, skipMsg);
+                ret = 2;
+                goto done;
+              }
           }
+        {
+          TXsysupdateSink sink;
+          const char *vecKind = sysupdate_kind_label(INDEX_VEC,
+                                                    sysindexParams[i]);
+          int nstages = sysupdate_nstages_for(vecKind,
+                                action == TXAITOK_REBUILD);
+          TXsysupdateBegin(&sink, ddic, indexName, indexTables[i],
+                           vecKind,
+                           (action == TXAITOK_REBUILD) ? "rebuild" : "optimize",
+                           nstages, "starting");
+          /* Expose the sink to the operation via DDIC so vec ops can
+           * advance stages and report fractional progress. */
+          ddic->sysupdSink = &sink;
+          switch (action)
+            {
+            case TXAITOK_OPTIMIZE:
+              ret = (TXvecOptimize(ddic, indexName, indexFiles[i],
+                                   indexTables[i],
+                                   indexFields[i], sysindexParams[i],
+                                   options) == 0)
+                    ? 2 : 0;
+              break;
+            case TXAITOK_REBUILD:
+              ret = (TXvecRebuild(ddic, indexName, indexFiles[i],
+                                  indexTables[i],
+                                  indexFields[i], sysindexParams[i],
+                                  options) == 0)
+                    ? 2 : 0;
+              break;
+            default:
+              ddic->sysupdSink = NULL;
+              TXsysupdateEnd(&sink, "unknown action");
+              goto unknownAction;
+            }
+          ddic->sysupdSink = NULL;
+          TXsysupdateProgress(&sink, 1.0);
+          TXsysupdateEnd(&sink, (ret == 2) ? NULL : "operation failed");
+        }
         goto done;
       case INDEX_VECCR:
         switch (action)

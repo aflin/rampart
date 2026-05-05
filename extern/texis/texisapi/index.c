@@ -23,6 +23,7 @@
 #include "ramdbf.h"		/* for closerdbf() prototype */
 #include "cgi.h"
 #include "vecindex.h"
+#include "sysupdate.h"
 #ifdef NEED_GETOPT_H
 #  ifdef NEED_EPIGETOPT_H
 #    include "epigetopt.h"
@@ -1941,6 +1942,15 @@ TXindOpts	*options;	/* (in/out) options, opt. w/`WITH ...' */
 	TXMKIND *ind = NULL;
 	int success = 1;
 
+	/* SYSUPDATE progress tracking for new CREATE INDEX (re-CREATE
+	 * branches at the existing-index check below get tracked
+	 * separately via the OPTIMIZE path).  newCreateActive flips on
+	 * after the existing-check confirms this is a fresh build; the
+	 * done: cleanup writes the final row state. */
+	TXsysupdateSink sysupdSink;
+	int newCreateActive = 0;
+	memset(&sysupdSink, 0, sizeof(sysupdSink));
+
 	memset(&fakeDbi, 0, sizeof(A3DBI));
 
 	if (itype == INDEX_3DB)
@@ -1985,8 +1995,23 @@ TXindOpts	*options;	/* (in/out) options, opt. w/`WITH ...' */
 				if (!strcmp(indexTables[i], table)
 				    && !strcmp(indexFields[i], field))
 				{
+					/* Re-CREATE = OPTIMIZE (mirrors
+					 * fulltext semantics).  Wrap in
+					 * SYSUPDATE Begin/End so observers
+					 * see the same "running"/"done"
+					 * state as a regular ALTER. */
+					TXsysupdateSink reSink;
+					TXsysupdateBegin(&reSink, ddic, indname,
+					    indexTables[i], "fulltext",
+					    "optimize", 3, "starting");
+					ddic->sysupdSink = &reSink;
+					TXsysupdateSetCurrent(&reSink);
 					if (updindex(ddic, indname, 0, options, NULL) == 0)
 						rc = 0;	/* success */
+					ddic->sysupdSink = NULL;
+					TXsysupdateSetCurrent(NULL);
+					TXsysupdateEnd(&reSink,
+					    rc == 0 ? NULL : "operation failed");
 				}
 				else
 				{
@@ -2005,6 +2030,22 @@ TXindOpts	*options;	/* (in/out) options, opt. w/`WITH ...' */
 				if (!strcmp(indexTables[i], table)
 				    && !strcmp(indexFields[i], field))
 				{
+					/* SYSUPDATE Begin/End around the
+					 * OPTIMIZE call.  KIND derived from
+					 * the persisted PARAMS line; same
+					 * shape as alterIndex.c. */
+					TXsysupdateSink reSink;
+					const char *vecKind =
+					  (sysindexParamsVals[i] &&
+					   strstr(sysindexParamsVals[i],
+					          "backend=ivfpq"))
+					  ? "vec-ivfpq" : "vec-hnsw";
+					int nst = !strcmp(vecKind, "vec-ivfpq")
+					          ? 2 : 3;
+					TXsysupdateBegin(&reSink, ddic, indname,
+					    indexTables[i], vecKind,
+					    "optimize", nst, "starting");
+					ddic->sysupdSink = &reSink;
 					if (TXvecOptimize(ddic, indname,
 					                  indexFiles[i],
 					                  indexTables[i],
@@ -2012,6 +2053,9 @@ TXindOpts	*options;	/* (in/out) options, opt. w/`WITH ...' */
 					                  sysindexParamsVals[i],
 					                  options) == 0)
 						rc = 0;
+					ddic->sysupdSink = NULL;
+					TXsysupdateEnd(&reSink,
+					    rc == 0 ? NULL : "operation failed");
 				}
 				else
 				{
@@ -2071,6 +2115,40 @@ TXindOpts	*options;	/* (in/out) options, opt. w/`WITH ...' */
 	 */
 	if (!TXindOptsProcessRawOptions(options, &itype, 0))
 		goto err;
+
+	/* New CREATE: register a SYSUPDATE row so observers can see this
+	 * index being built.  Only for fulltext (F/M/3DB) and vec types;
+	 * btree/inverted CREATE finishes too quickly to bother.  For vec
+	 * we read the backend from options to set the refined KIND label
+	 * ('vec-hnsw' or 'vec-ivfpq') before SYSINDEX.PARAMS exists.
+	 * Helper tolerates a missing/mismatched SYSUPDATE table. */
+	if (itype == INDEX_FULL || itype == INDEX_MM || itype == INDEX_3DB ||
+	    itype == INDEX_VEC)
+	{
+		const char *sysupdKind = (itype == INDEX_VEC)
+		                         ? TXvecKindFromOptions(options)
+		                         : "fulltext";
+		/* Vec CREATE goes through 3 stages (sample/train/encode for
+		 * IVFPQ; scan/encode/save for HNSW).  Fulltext also goes
+		 * through 3 stages (creating tokens / indexing / final
+		 * merge) — those transitions are driven by the openmeter
+		 * hook in meter.c when the operation opens its meters. */
+		int nstages = 1;
+		if (itype == INDEX_VEC) {
+			if (!strcmp(sysupdKind, "vec-ivfpq")) nstages = 4;
+			else if (!strcmp(sysupdKind, "vec-hnsw")) nstages = 3;
+		} else {
+			nstages = 3;       /* fulltext: 3 stages */
+		}
+		TXsysupdateBegin(&sysupdSink, ddic, indname, table,
+		                 sysupdKind, "create", nstages, "starting");
+		ddic->sysupdSink = &sysupdSink;
+		/* Process-static current sink: lets meter.c openmeter() hook
+		 * advance fulltext stages by label without each fdbim/index
+		 * meter callsite needing explicit AdvanceStage calls. */
+		TXsysupdateSetCurrent(&sysupdSink);
+		newCreateActive = 1;
+	}
 
 	/* Determine index file path.  Note: see similar rules in updindex().
 	 * `ddic->pname' and `options->indexspace' assumed to have trailing
@@ -2329,6 +2407,26 @@ TXindOpts	*options;	/* (in/out) options, opt. w/`WITH ...' */
       err:
 	success = 0;
       done:
+	/* Finalize SYSUPDATE row for new CREATE: on success, write
+	 * "completed at ..." and reset run-state to idle.  On failure,
+	 * delete the row entirely (no SYSINDEX entry, no SYSUPDATE
+	 * orphan).  No-op if the helper was never activated (legacy
+	 * schema, missing table, non-tracked index type). */
+	if (newCreateActive)
+	{
+		ddic->sysupdSink = NULL;
+		TXsysupdateSetCurrent(NULL);
+		if (success)
+		{
+			TXsysupdateProgress(&sysupdSink, 1.0);
+			TXsysupdateEnd(&sysupdSink, NULL);
+		}
+		else
+		{
+			TXsysupdateOnCreateFailure(&sysupdSink);
+		}
+	}
+
 	if (uberlock > 0)
 	{
 		TXunlocktable(dbtb, R_LCK);

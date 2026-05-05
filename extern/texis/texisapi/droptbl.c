@@ -13,6 +13,7 @@
 #include "fdbi.h"
 #include "cgi.h"
 #include "vecindex.h"
+#include "sysupdate.h"
 
 /******************************************************************/
 /*String compare function for qsort*/
@@ -360,6 +361,12 @@ char	*iname;
 	 * puttblrow(), and thus be out-of-date with respect to latter:
 	 */
 	ddic->indtblcache = TXtblcacheClose(ddic->indtblcache);
+
+	/* Clean up any SYSUPDATE row for this index.  Covers DROP INDEX
+	 * directly and DROP TABLE cascade (TXdropdtable iterates indexes
+	 * via this same function).  No-op if SYSUPDATE doesn't exist. */
+	TXsysupdateOnDrop(ddic, iname);
+
 	return ni>0;
 }
 
@@ -499,6 +506,12 @@ char *tbl;	/* The name of the table being dropped */
 
 	fcVal[0] = fcVal[1] = '\0';
 	*creatorVal = '\0';
+
+	/* If the user is dropping SYSUPDATE itself, invalidate our cached
+	 * "schema is OK" flag so the next index op will re-check (and
+	 * potentially re-create the table). */
+	if (tbl && strcmp(tbl, "SYSUPDATE") == 0)
+		TXsysupdateInvalidateCache();
 
 /*	Get the table out of the cache */
 

@@ -456,6 +456,10 @@ IF(PARSERS_FOUND)
     # Auxiliary _T.btr / _del.btr helpers shared by both backends.
     vecindex_aux_btree.c
 
+    # SYSUPDATE table maintenance (auto-create, progress reporting,
+    # DROP cleanup) for both fulltext and vec index operations.
+    sysupdate.c
+
 
     blob.c
     blobz.c

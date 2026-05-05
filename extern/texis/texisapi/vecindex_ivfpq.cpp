@@ -49,6 +49,7 @@ extern "C" {
 #include "meter.h"
 #include "vecindex.h"
 #include "vecindex_internal.h"
+#include "sysupdate.h"
 }
 
 /* ====================================================================
@@ -379,13 +380,17 @@ namespace {
  * meter so the new bar lands on a fresh line. */
 struct CoarseProgressCallback : public faiss::ClusteringIterationCallback {
     METER       *meter;
+    EPI_HUGEUINT total;
     EPI_HUGEUINT done;
-    CoarseProgressCallback(METER *m) : meter(m), done(0) {}
+    CoarseProgressCallback(METER *m, EPI_HUGEUINT n) : meter(m), total(n), done(0) {}
     void on_iteration(int iter, int n_iter, int redo, int n_redo,
                       const faiss::ClusteringIterationStats& stats) override {
         (void)iter; (void)n_iter; (void)redo; (void)n_redo; (void)stats;
         ++done;
         if (meter) meter_updatedone(meter, (EPI_HUGEINT)done);
+        if (total > 0)
+            TXsysupdateProgress(TXsysupdateGetCurrent(),
+                (double)done / (double)total);
     }
 };
 
@@ -419,9 +424,17 @@ struct PqProgressCallback : public faiss::ClusteringIterationCallback {
                 meter = openmeter((char *)label, meter_type,
                                   MDOUTFUNCPN, MDFLUSHFUNCPN, NULL,
                                   (EPI_HUGEINT)total);
+            /* SYSUPDATE: advance from "coarse k-means" (stage 2) to
+             * "PQ subquantizers" (stage 3).  This fires the first
+             * time PQ training ticks. */
+            TXsysupdateAdvanceStage(TXsysupdateGetCurrent(), 3,
+                                    "training PQ subquantizers");
         }
         ++done;
         if (meter) meter_updatedone(meter, (EPI_HUGEINT)done);
+        if (total > 0)
+            TXsysupdateProgress(TXsysupdateGetCurrent(),
+                (double)done / (double)total);
     }
 };
 
@@ -766,9 +779,13 @@ int ivfpq_create_impl(DDIC *ddic, DBTBL *dbtbl,
         const char *train_path = train_path_s.c_str();
 
         putmsg(MINFO, fn,
-            "INDEX_VEC ivfpq stage 1/3: sampling %zu of %zu rows "
+            "INDEX_VEC ivfpq stage 1/4: sampling %zu of %zu rows "
             "(nlist=%d, M=%d, nbits=%d)",
             n_train, row_count, vp.pq_nlist, vp.pq_m, vp.pq_nbits);
+
+        /* SYSUPDATE: stage 1 of 3 (sample/reservoir). */
+        TXsysupdateAdvanceStage((TXsysupdateSink *)ddic->sysupdSink, 1,
+                                "sampling");
 
         METER *meter1 = NULL;
         if (options && options->indexmeter != TXMDT_NONE) {
@@ -778,7 +795,7 @@ int ivfpq_create_impl(DDIC *ddic, DBTBL *dbtbl,
                 total = (EPI_OFF_T)st.st_size;
             if (total > 0)
                 meter1 = openmeter(
-                    "INDEX_VEC ivfpq stage 1/3 (sampling):",
+                    "INDEX_VEC ivfpq stage 1/4 (sampling):",
                     options->indexmeter,
                     MDOUTFUNCPN, MDFLUSHFUNCPN, NULL,
                     (EPI_HUGEINT)total);
@@ -809,7 +826,7 @@ int ivfpq_create_impl(DDIC *ddic, DBTBL *dbtbl,
                         total = (EPI_OFF_T)st.st_size;
                     if (total > 0)
                         meter1 = openmeter(
-                            "INDEX_VEC ivfpq stage 1/3 (sampling, retry):",
+                            "INDEX_VEC ivfpq stage 1/4 (sampling, retry):",
                             options->indexmeter,
                             MDOUTFUNCPN, MDFLUSHFUNCPN, NULL,
                             (EPI_HUGEINT)total);
@@ -885,10 +902,16 @@ int ivfpq_create_impl(DDIC *ddic, DBTBL *dbtbl,
             (EPI_HUGEUINT)idx->pq.cp.niter * idx->pq.cp.nredo;
         EPI_HUGEUINT pq_iters = (EPI_HUGEUINT)idx->pq.M * pq_iters_per_slice;
         putmsg(MINFO, fn,
-            "INDEX_VEC ivfpq stage 2/3: training "
+            "INDEX_VEC ivfpq stage 2/4: training "
             "(coarse: %llu iters; PQ: %d slices x %llu iters)",
             (unsigned long long)coarse_iters,
             (int)idx->pq.M, (unsigned long long)pq_iters_per_slice);
+
+        /* SYSUPDATE: stage 2 of 4 (training, coarse k-means).
+         * Stage 3 of 4 (PQ subquantizers) advances from inside the
+         * PqProgressCallback's first on_iteration tick. */
+        TXsysupdateAdvanceStage((TXsysupdateSink *)ddic->sysupdSink, 2,
+                                "training coarse k-means");
 
         TXMDT mtype = (options && options->indexmeter != TXMDT_NONE)
                       ? options->indexmeter : TXMDT_NONE;
@@ -896,13 +919,13 @@ int ivfpq_create_impl(DDIC *ddic, DBTBL *dbtbl,
         METER *coarse_meter = NULL;
         if (mtype != TXMDT_NONE && coarse_iters > 0) {
             coarse_meter = openmeter(
-                "INDEX_VEC ivfpq stage 2a/3 (coarse k-means):",
+                "INDEX_VEC ivfpq stage 2/4 (coarse k-means):",
                 mtype, MDOUTFUNCPN, MDFLUSHFUNCPN, NULL,
                 (EPI_HUGEINT)coarse_iters);
         }
-        CoarseProgressCallback coarse_cb(coarse_meter);
+        CoarseProgressCallback coarse_cb(coarse_meter, coarse_iters);
         PqProgressCallback     pq_cb(&coarse_cb, mtype, pq_iters,
-            "INDEX_VEC ivfpq stage 2b/3 (PQ subquantizers):");
+            "INDEX_VEC ivfpq stage 3/4 (PQ subquantizers):");
         idx->cp.iter_cb    = &coarse_cb;
         idx->pq.cp.iter_cb = &pq_cb;
 
@@ -939,29 +962,40 @@ int ivfpq_create_impl(DDIC *ddic, DBTBL *dbtbl,
         double train_secs = (t_train_end.tv_sec - t_train_start.tv_sec) +
             (t_train_end.tv_nsec - t_train_start.tv_nsec) / 1e9;
         putmsg(MINFO, fn,
-            "INDEX_VEC ivfpq stage 2/3: training done in %.1fs", train_secs);
+            "INDEX_VEC ivfpq stage 2/4: training done in %.1fs", train_secs);
         ::munmap(train_addr, train_bytes);
         ::unlink(train_path);
 
-        /* === STAGE 3/3: encode all rows ================================
+        /* === STAGE 4/4: encode all rows ================================
          * Stream the table through `add_with_ids`; this is where the
          * PQ codes get written into the mmap'd OnDiskInvertedLists.
          * Sized by table file bytes for the meter.
          */
         putmsg(MINFO, fn,
-            "INDEX_VEC ivfpq stage 3/3: encoding %zu rows", row_count);
+            "INDEX_VEC ivfpq stage 4/4: encoding %zu rows", row_count);
+
+        /* SYSUPDATE: stage 4 of 4 (encoding). */
+        TXsysupdateAdvanceStage((TXsysupdateSink *)ddic->sysupdSink, 4,
+                                "encoding");
+
         METER *meter3 = NULL;
+        EPI_OFF_T encode3_total_bytes = 0;
         if (options && options->indexmeter != TXMDT_NONE) {
             EPI_STAT_S st;
             EPI_OFF_T total = 0;
             if (EPI_FSTAT(getdbffh(dbtbl->tbl->df), &st) == 0)
                 total = (EPI_OFF_T)st.st_size;
+            encode3_total_bytes = total;
             if (total > 0)
                 meter3 = openmeter(
-                    "INDEX_VEC ivfpq stage 3/3 (encoding):",
+                    "INDEX_VEC ivfpq stage 4/4 (encoding):",
                     options->indexmeter,
                     MDOUTFUNCPN, MDFLUSHFUNCPN, NULL,
                     (EPI_HUGEINT)total);
+        } else {
+            EPI_STAT_S st;
+            if (EPI_FSTAT(getdbffh(dbtbl->tbl->df), &st) == 0)
+                encode3_total_bytes = (EPI_OFF_T)st.st_size;
         }
         {
             std::vector<float> qbuf((size_t)dim);
@@ -971,10 +1005,18 @@ int ivfpq_create_impl(DDIC *ddic, DBTBL *dbtbl,
             TXrewinddbtbl(dbtbl);
             while ((recid = getdbtblrow(dbtbl)) != RECIDPN &&
                    TXrecidvalid(recid)) {
+                /* gettblrow returns a pointer to a process-static RECID;
+                 * any internal SQL (e.g. TXsysupdateProgress' UPDATE on
+                 * SYSUPDATE) can stomp it.  Snapshot the offset before
+                 * any such call. */
+                EPI_OFF_T row_off = TXgetoff(recid);
                 if (meter3) {
                     meter3_done += (EPI_HUGEINT)dbtbl->tbl->irecsz;
                     METER_UPDATEDONE(meter3, meter3_done);
                 }
+                if (encode3_total_bytes > 0)
+                    TXsysupdateProgress((TXsysupdateSink *)ddic->sysupdSink,
+                        (double)row_off / (double)encode3_total_bytes);
                 size_t n_elems = 0;
                 void *raw = getfld(fld, &n_elems);
                 if (!raw || n_elems == 0) continue;
@@ -988,7 +1030,7 @@ int ivfpq_create_impl(DDIC *ddic, DBTBL *dbtbl,
                 if (vec_convert_to_f32(column_dtype, raw, cells, dim,
                                        vp.quant_scale, vp.quant_zp,
                                        qbuf.data()) != 0) continue;
-                faiss::idx_t fid = (faiss::idx_t)(uint64_t)recid->off;
+                faiss::idx_t fid = (faiss::idx_t)(uint64_t)row_off;
                 idx->add_with_ids(1, qbuf.data(), &fid);
             }
         }
@@ -1479,6 +1521,10 @@ int ivfpq_optimize_impl(DDIC *ddic, TXvecHandle *h_, DBTBL *dbtbl,
     newrec_set.reserve(newrec_recids.size() * 2 + 1);
     for (int64_t r : newrec_recids) newrec_set.insert((uint64_t)r);
 
+    /* SYSUPDATE: stage 1 of 2 (copy sealed).  Independent of meter. */
+    TXsysupdateAdvanceStage((TXsysupdateSink *)ddic->sysupdSink, 1,
+                            "copy sealed");
+
     /* Byte-copy live invlist → temp.  This is the OPTIMIZE cost knob:
      * it scales with sealed (`_I.idxpq`) size, not delta size.  Drive
      * a meter from the connection's indexmeter setting so the user
@@ -1495,6 +1541,8 @@ int ivfpq_optimize_impl(DDIC *ddic, TXvecHandle *h_, DBTBL *dbtbl,
     }
     int copy_rc = vec_copy_file_bytes(h->invl_path, temp_invl, copy_meter);
     if (copy_meter) { meter_end(copy_meter); closemeter(copy_meter); }
+    /* SYSUPDATE: copy stage finished — flush 100% before next stage. */
+    TXsysupdateProgress((TXsysupdateSink *)ddic->sysupdSink, 1.0);
     if (copy_rc != 0) {
         ::unlink(temp_invl);
         std::free(temp_head); std::free(temp_invl);
@@ -1570,26 +1618,42 @@ int ivfpq_optimize_impl(DDIC *ddic, TXvecHandle *h_, DBTBL *dbtbl,
      * meter so progress advances smoothly through the unmatched
      * leading rows — sizing to delta count would leave it at 0% until
      * the walk reaches the new INSERTs at the tail of the table. */
+    /* SYSUPDATE: stage 2 of 2 (encode delta).  Independent of meter. */
+    TXsysupdateAdvanceStage((TXsysupdateSink *)ddic->sysupdSink, 2,
+                            "encode delta");
+
     METER *encode_meter = NULL;
+    EPI_OFF_T encode_total_bytes = 0;
     if (options && options->indexmeter != TXMDT_NONE) {
         EPI_STAT_S st;
         EPI_OFF_T total = 0;
         if (EPI_FSTAT(getdbffh(dbtbl->tbl->df), &st) == 0)
             total = (EPI_OFF_T)st.st_size;
+        encode_total_bytes = total;
         if (total > 0)
             encode_meter = openmeter(
                 "INDEX_VEC ivfpq OPTIMIZE stage 2/2 (encode delta):",
                 options->indexmeter,
                 MDOUTFUNCPN, MDFLUSHFUNCPN, NULL,
                 (EPI_HUGEINT)total);
+    } else {
+        EPI_STAT_S st;
+        if (EPI_FSTAT(getdbffh(dbtbl->tbl->df), &st) == 0)
+            encode_total_bytes = (EPI_OFF_T)st.st_size;
     }
     RECID *recid;
     TXrewinddbtbl(dbtbl);
     while ((recid = getdbtblrow(dbtbl)) != RECIDPN && TXrecidvalid(recid)) {
+        /* Snapshot recid->off once (process-static; SQL calls stomp it). */
         int64_t r = (int64_t)(uint64_t)recid->off;
         if (r > new_max) new_max = r;
         if (encode_meter)
-            meter_updatedone(encode_meter, (EPI_HUGEINT)TXgetoff(recid));
+            meter_updatedone(encode_meter, (EPI_HUGEINT)r);
+        /* SYSUPDATE: report fractional progress through encode stage,
+         * independent of indexmeter.  Rate-limited inside the helper. */
+        if (encode_total_bytes > 0)
+            TXsysupdateProgress((TXsysupdateSink *)ddic->sysupdSink,
+                (double)r / (double)encode_total_bytes);
         if (newrec_set.count((uint64_t)r) == 0) continue;
 
         size_t n_elems = 0;
@@ -1824,9 +1888,13 @@ int ivfpq_rebuild_impl(DDIC *ddic, TXvecHandle *h_, DBTBL *dbtbl,
         const char *train_path = train_path_s.c_str();
 
         putmsg(MINFO, fn,
-            "INDEX_VEC ivfpq REBUILD stage 1/3: sampling %zu of %zu rows "
+            "INDEX_VEC ivfpq REBUILD stage 1/4: sampling %zu of %zu rows "
             "(nlist=%d, M=%d, nbits=%d)",
             n_train, row_count, vp.pq_nlist, vp.pq_m, vp.pq_nbits);
+
+        /* SYSUPDATE: stage 1 of 3 (sampling). */
+        TXsysupdateAdvanceStage((TXsysupdateSink *)ddic->sysupdSink, 1,
+                                "sampling");
 
         METER *meter1 = NULL;
         if (options && options->indexmeter != TXMDT_NONE) {
@@ -1836,7 +1904,7 @@ int ivfpq_rebuild_impl(DDIC *ddic, TXvecHandle *h_, DBTBL *dbtbl,
                 total = (EPI_OFF_T)st.st_size;
             if (total > 0)
                 meter1 = openmeter(
-                    "INDEX_VEC ivfpq REBUILD stage 1/3 (sampling):",
+                    "INDEX_VEC ivfpq REBUILD stage 1/4 (sampling):",
                     options->indexmeter,
                     MDOUTFUNCPN, MDFLUSHFUNCPN, NULL,
                     (EPI_HUGEINT)total);
@@ -1863,7 +1931,7 @@ int ivfpq_rebuild_impl(DDIC *ddic, TXvecHandle *h_, DBTBL *dbtbl,
                         total = (EPI_OFF_T)st.st_size;
                     if (total > 0)
                         meter1 = openmeter(
-                            "INDEX_VEC ivfpq REBUILD stage 1/3 (sampling, retry):",
+                            "INDEX_VEC ivfpq REBUILD stage 1/4 (sampling, retry):",
                             options->indexmeter,
                             MDOUTFUNCPN, MDFLUSHFUNCPN, NULL,
                             (EPI_HUGEINT)total);
@@ -1914,7 +1982,7 @@ int ivfpq_rebuild_impl(DDIC *ddic, TXvecHandle *h_, DBTBL *dbtbl,
             EPI_HUGEUINT pq_iters =
                 (EPI_HUGEUINT)idx->pq.M * pq_iters_per_slice;
             putmsg(MINFO, fn,
-                "INDEX_VEC ivfpq REBUILD stage 2/3: training "
+                "INDEX_VEC ivfpq REBUILD stage 2/4: training "
                 "(coarse: %llu iters; PQ: %d slices x %llu iters)",
                 (unsigned long long)coarse_iters,
                 (int)idx->pq.M, (unsigned long long)pq_iters_per_slice);
@@ -1923,18 +1991,24 @@ int ivfpq_rebuild_impl(DDIC *ddic, TXvecHandle *h_, DBTBL *dbtbl,
             idx->cp.min_points_per_centroid    = min_ppc;
             idx->pq.cp.min_points_per_centroid = min_ppc;
 
+            /* SYSUPDATE: stage 2 of 4 (training, coarse k-means).
+             * Stage 3 (PQ subquantizers) advances inside the
+             * PqProgressCallback's first on_iteration tick. */
+            TXsysupdateAdvanceStage((TXsysupdateSink *)ddic->sysupdSink, 2,
+                                    "training coarse k-means");
+
             TXMDT mtype = (options && options->indexmeter != TXMDT_NONE)
                           ? options->indexmeter : TXMDT_NONE;
             METER *coarse_meter = NULL;
             if (mtype != TXMDT_NONE && coarse_iters > 0) {
                 coarse_meter = openmeter(
-                    "INDEX_VEC ivfpq REBUILD stage 2a/3 (coarse k-means):",
+                    "INDEX_VEC ivfpq REBUILD stage 2/4 (coarse k-means):",
                     mtype, MDOUTFUNCPN, MDFLUSHFUNCPN, NULL,
                     (EPI_HUGEINT)coarse_iters);
             }
-            CoarseProgressCallback coarse_cb(coarse_meter);
+            CoarseProgressCallback coarse_cb(coarse_meter, coarse_iters);
             PqProgressCallback     pq_cb(&coarse_cb, mtype, pq_iters,
-                "INDEX_VEC ivfpq REBUILD stage 2b/3 (PQ subquantizers):");
+                "INDEX_VEC ivfpq REBUILD stage 3/4 (PQ subquantizers):");
             idx->cp.iter_cb    = &coarse_cb;
             idx->pq.cp.iter_cb = &pq_cb;
             try {
@@ -1965,9 +2039,14 @@ int ivfpq_rebuild_impl(DDIC *ddic, TXvecHandle *h_, DBTBL *dbtbl,
             ::unlink(train_path);
         }
 
-        /* === STAGE 3/3: encode all rows ===================================== */
+        /* === STAGE 4/4: encode all rows ===================================== */
         putmsg(MINFO, fn,
-            "INDEX_VEC ivfpq REBUILD stage 3/3: encoding %zu rows", row_count);
+            "INDEX_VEC ivfpq REBUILD stage 4/4: encoding %zu rows", row_count);
+
+        /* SYSUPDATE: stage 4 of 4 (encoding). */
+        TXsysupdateAdvanceStage((TXsysupdateSink *)ddic->sysupdSink, 4,
+                                "encoding");
+
         abs_arr = (int64_t *)std::malloc(row_count * sizeof(int64_t));
         if (!abs_arr) {
             putmsg(MERR + MAE, fn, "alloc absorbed");
@@ -1975,17 +2054,23 @@ int ivfpq_rebuild_impl(DDIC *ddic, TXvecHandle *h_, DBTBL *dbtbl,
         }
         {
             METER *meter3 = NULL;
+            EPI_OFF_T encode3_total_bytes = 0;
             if (options && options->indexmeter != TXMDT_NONE) {
                 EPI_STAT_S st;
                 EPI_OFF_T total = 0;
                 if (EPI_FSTAT(getdbffh(dbtbl->tbl->df), &st) == 0)
                     total = (EPI_OFF_T)st.st_size;
+                encode3_total_bytes = total;
                 if (total > 0)
                     meter3 = openmeter(
-                        "INDEX_VEC ivfpq REBUILD stage 3/3 (encoding):",
+                        "INDEX_VEC ivfpq REBUILD stage 4/4 (encoding):",
                         options->indexmeter,
                         MDOUTFUNCPN, MDFLUSHFUNCPN, NULL,
                         (EPI_HUGEINT)total);
+            } else {
+                EPI_STAT_S st;
+                if (EPI_FSTAT(getdbffh(dbtbl->tbl->df), &st) == 0)
+                    encode3_total_bytes = (EPI_OFF_T)st.st_size;
             }
             std::vector<float> qbuf((size_t)dim);
             RECID *recid;
@@ -1993,6 +2078,8 @@ int ivfpq_rebuild_impl(DDIC *ddic, TXvecHandle *h_, DBTBL *dbtbl,
             TXrewinddbtbl(dbtbl);
             while ((recid = getdbtblrow(dbtbl)) != RECIDPN &&
                    TXrecidvalid(recid)) {
+                /* Snapshot recid->off once (process-static; SQL stomps it). */
+                EPI_OFF_T off = TXgetoff(recid);
                 size_t n_elems = 0;
                 void *raw = getfld(fld, &n_elems);
                 if (!raw || n_elems == 0) continue;
@@ -2006,12 +2093,14 @@ int ivfpq_rebuild_impl(DDIC *ddic, TXvecHandle *h_, DBTBL *dbtbl,
                 if (vec_convert_to_f32(column_dtype, raw, cells, dim,
                                        vp.quant_scale, vp.quant_zp,
                                        qbuf.data()) != 0) continue;
-                faiss::idx_t fid = (faiss::idx_t)(uint64_t)recid->off;
+                faiss::idx_t fid = (faiss::idx_t)(uint64_t)off;
                 idx->add_with_ids(1, qbuf.data(), &fid);
                 abs_arr[abs_n++] = (int64_t)fid;
                 if (meter3)
-                    meter_updatedone(meter3,
-                        (EPI_HUGEINT)TXgetoff(recid));
+                    meter_updatedone(meter3, (EPI_HUGEINT)off);
+                if (encode3_total_bytes > 0)
+                    TXsysupdateProgress((TXsysupdateSink *)ddic->sysupdSink,
+                        (double)off / (double)encode3_total_bytes);
             }
             if (meter3) { meter_end(meter3); closemeter(meter3); }
         }

@@ -664,6 +664,14 @@ struct DDIC_tag {
 	int	rlocks, wlocks;	/* Total index+table read/write locks */
 	TXPMBUF	*pmbuf;		/* (opt.) owned/cloned putmsg buffer */
 	struct LOCKTABLES_ENTRY *locktables_entry;
+	/* SYSUPDATE progress sink for the in-flight CREATE/ALTER INDEX
+	 * operation.  Set by alterIndex.c / createindex.c around the
+	 * dispatch; nested operations (HNSW load fresh, IVFPQ byte-copy,
+	 * etc.) call TXsysupdateProgress(ddic->sysupdSink, frac) and
+	 * TXsysupdateAdvanceStage() through this pointer.  NULL when no
+	 * operation is in flight.  Type is `void *` to avoid an include
+	 * cycle with sysupdate.h. */
+	void	*sysupdSink;
 };
 
 #define DDIC_OPTIONS_NO_TRIGGERS	0
