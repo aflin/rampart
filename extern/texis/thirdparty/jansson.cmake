@@ -28,6 +28,10 @@ set(JANSSON_RELEASE_DIR ${CMAKE_CURRENT_BINARY_DIR}/contrib/${JANSSON_PREFIX}/li
 set(JANSSON_INCLUDE_DIRS ${CMAKE_CURRENT_BINARY_DIR}/contrib/${JANSSON_PREFIX}/include)
 include_directories(${JANSSON_INCLUDE_DIRS})
 
-link_directories(${JANSSON_RELEASE_DIR})
-set(JANSSON_LIBS jansson)
+# Use the full archive path rather than -L + -ljansson.  The release
+# dir is created by jansson's ExternalProject_Add at build time, so
+# during a parallel build any target that links before jansson finishes
+# would emit a "search path not found" ld warning under link_directories.
+# Linking by file path lets CMake track existence as a real dependency.
+set(JANSSON_LIBS ${JANSSON_RELEASE_DIR}/libjansson.a)
 set(JANSSON_LIBRARY_DIRS ${JANSSON_RELEASE_DIR})

@@ -49,11 +49,11 @@ target_link_libraries(rex LINK_PUBLIC texisapi)
 target_link_libraries(metamorph LINK_PUBLIC texisapi)
 target_link_libraries(backref LINK_PUBLIC texisapi)
 target_link_libraries(tsql PUBLIC Threads::Threads)
-target_link_libraries(tsql LINK_PUBLIC texisapi z)
+target_link_libraries(tsql LINK_PUBLIC texisapi)
 target_link_libraries(addtable PUBLIC Threads::Threads)
-target_link_libraries(addtable LINK_PUBLIC texisapi z)
+target_link_libraries(addtable LINK_PUBLIC texisapi)
 target_link_libraries(kdbfchk PUBLIC Threads::Threads)
-target_link_libraries(kdbfchk LINK_PUBLIC texisapi z)
+target_link_libraries(kdbfchk LINK_PUBLIC texisapi)
 
 if(${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION} VERSION_LESS 3.14)
   install(TARGETS rex tsql RUNTIME DESTINATION bin)
@@ -66,7 +66,7 @@ add_executable(texislockd
   lockd_main.c
 )
 target_link_libraries(texislockd LINK_PUBLIC event_core)
-target_link_libraries(texislockd LINK_PUBLIC texisapi z)
+target_link_libraries(texislockd LINK_PUBLIC texisapi)
 set(LOCKD_EXE  ${TEXIS_BINARY_DIR}/apps/texislockd PARENT_SCOPE)
 
 #if(${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION} VERSION_LESS 3.14)
@@ -76,3 +76,11 @@ set(LOCKD_EXE  ${TEXIS_BINARY_DIR}/apps/texislockd PARENT_SCOPE)
 #endif(${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION} VERSION_LESS 3.14)
 
 endif(LOCK_SERVER AND EVENT_LIBRARY)
+
+if(TEXIS_SILENCE_AUDITED_WARNINGS)
+    # daemon() works fine on macOS 11; Apple just deprecated it in favor
+    # of posix_spawn for new code.  Single-file suppression keeps the
+    # deprecation warning enabled everywhere else.
+    set_source_files_properties(lockd_main.c
+        PROPERTIES COMPILE_OPTIONS "-Wno-deprecated-declarations")
+endif()

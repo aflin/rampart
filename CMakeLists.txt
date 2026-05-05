@@ -19,6 +19,29 @@ cmake_minimum_required(VERSION 3.13)
 
 project(Rampart VERSION 0.5.0 LANGUAGES C CXX)
 
+# Suppress all warnings on vendored upstream code we don't maintain
+# (libevent, jansson, abseil, re2, cre2, usearch, openssl).  Set OFF
+# when auditing one of these or after a vendor refresh.
+option(SILENCE_VENDORED_WARNINGS "Silence warnings on vendored upstream libraries" ON)
+
+# Texis is legacy C code maintained in-tree by this project.  These are
+# specific warning categories audited as benign (analysis 2026-05-05).
+# Set OFF to re-surface them if something new breaks.  Anything not in
+# the list below will still warn.
+option(TEXIS_SILENCE_AUDITED_WARNINGS "Silence the audited texis warnings" ON)
+set(TEXIS_AUDITED_WARNING_FLAGS
+    -Wno-unsequenced                   # 147x: macros mutate shared state across one expr
+    -Wno-enum-compare                  #  39x: intentional cross-enum compares (op codes)
+    -Wno-return-type                   #   8x: unreachable fall-through paths
+    -Wno-switch                        #   6x: enum switch doesn't cover every value
+    -Wno-dangling-else                 #   4x: stylistic if-else nesting
+    -Wno-unused-value                  #   2x: comma-op macro fragments
+    -Wno-string-plus-int               #   2x: intentional pointer-into-string arithmetic
+    -Wno-tautological-constant-compare #   1x: constant-shift always-true
+    -Wno-pointer-to-int-cast           #   1x: pthread_t truncation for logging only
+    -Wno-extern-c-compat               #   1x: empty union size differs C vs C++
+)
+
 # Set install prefix (before any add_subdirectory calls)
 # Override the default /usr/local, but respect a user-supplied -DCMAKE_INSTALL_PREFIX=...
 if(NOT CMAKE_INSTALL_PREFIX OR CMAKE_INSTALL_PREFIX STREQUAL "/usr/local")

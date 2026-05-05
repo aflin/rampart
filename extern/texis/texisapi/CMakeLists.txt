@@ -884,9 +884,9 @@ add_custom_command(OUTPUT ${TEXISAPI_BINARY_DIR}/langNgrams.c
 
 
 if(CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
-target_link_libraries(genNgrams LINK_PUBLIC texisbuild z kvm Threads::Threads)
+target_link_libraries(genNgrams LINK_PUBLIC texisbuild kvm Threads::Threads)
 else()
-target_link_libraries(genNgrams LINK_PUBLIC texisbuild z Threads::Threads)
+target_link_libraries(genNgrams LINK_PUBLIC texisbuild Threads::Threads)
 endif()
 
 
@@ -979,3 +979,16 @@ add_custom_command(OUTPUT ${TEXIS_BINARY_DIR}/texisapi.h
 target_sources(genFldFuncsSorted PRIVATE ${TEXIS_BINARY_DIR}/texisapi.h)
 
 #install(FILES ${TEXISAPI_BINARY_DIR}/ftinternalsyms.h;${TEXIS_BINARY_DIR}/texisapi.h DESTINATION include/texis)
+
+if(TEXIS_SILENCE_AUDITED_WARNINGS)
+    target_compile_options(texisbuild PRIVATE ${TEXIS_AUDITED_WARNING_FLAGS})
+    target_compile_options(texisapi   PRIVATE ${TEXIS_AUDITED_WARNING_FLAGS})
+endif()
+
+if(SILENCE_VENDORED_WARNINGS)
+    set_source_files_properties(
+        ${CMAKE_SOURCE_DIR}/extern/texis/thirdparty/cre2/src/cre2.cpp
+        ${CMAKE_SOURCE_DIR}/extern/texis/thirdparty/usearch/c/lib.cpp
+        PROPERTIES COMPILE_OPTIONS "-w"
+    )
+endif()

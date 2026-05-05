@@ -27,7 +27,7 @@ set(LIBEVENT_INCLUDE_DIRS
     ${CMAKE_SOURCE_DIR}/extern/libevent/include
 )
 
-set(LIBEVENT_LIBRARY_DIRS "${PROJECT_BINARY_DIR}/extern/libevent/lib")
+set(LIBEVENT_LIBRARY_DIRS "${CMAKE_BINARY_DIR}/extern/libevent/lib")
 
 add_definitions(-D_XOPEN_SOURCE -D_GNU_SOURCE -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -D_FILE_OFFSET_BITS=64)
 add_compile_options(-fPIC -g)
@@ -43,6 +43,20 @@ add_compile_options(-fPIC -g)
 
 include(CheckIncludeFile)
 include(ExternalProject)
+
+# Silence warnings on vendored third-party code (Google's abseil/re2,
+# jansson, libevent, openssl) when SILENCE_VENDORED_WARNINGS is ON.
+# We don't maintain these, so warnings here are noise, not signal.
+# Save/restore is scoped to the includes/add_subdirectory block below
+# so -w doesn't leak into texisapi/texisbuild (which have their own
+# precise audited list under TEXIS_SILENCE_AUDITED_WARNINGS).
+if(SILENCE_VENDORED_WARNINGS)
+    set(_TEXIS_TP_SAVED_C_FLAGS   "${CMAKE_C_FLAGS}")
+    set(_TEXIS_TP_SAVED_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+    set(CMAKE_C_FLAGS   "${CMAKE_C_FLAGS} -w")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -w")
+endif()
+
 include(thirdparty/openssl.cmake)
 include(thirdparty/jansson.cmake)
 if(LOCK_SERVER)
@@ -65,6 +79,10 @@ set(RE2_BUILD_TESTING OFF CACHE BOOL "" FORCE)
 endif()
 add_subdirectory(thirdparty/re2)
 
+if(SILENCE_VENDORED_WARNINGS)
+    set(CMAKE_C_FLAGS   "${_TEXIS_TP_SAVED_C_FLAGS}")
+    set(CMAKE_CXX_FLAGS "${_TEXIS_TP_SAVED_CXX_FLAGS}")
+endif()
 
 #endif(HAVE_RE2)
 

@@ -11,12 +11,14 @@ message("install = ${CMAKE_INSTALL_PREFIX}")
 execute_process (
     COMMAND bash -c "which gmake"
     OUTPUT_VARIABLE MAKE
+    OUTPUT_STRIP_TRAILING_WHITESPACE
 )
 
 if (MAKE STREQUAL "")
 execute_process (
         COMMAND bash -c "which make"
         OUTPUT_VARIABLE MAKE
+        OUTPUT_STRIP_TRAILING_WHITESPACE
 )
 message("gmake NOT FOUND, using ${MAKE}")
 else()
@@ -501,9 +503,9 @@ add_library(rampart-auth SHARED
 
 if(CYGWIN)
     # Cygwin/MSYS pthreads lack robust mutex support
-    set(LMDB_XCFLAGS "-fPIC -DMDB_USE_ROBUST=0")
+    set(LMDB_XCFLAGS "-fPIC -DMDB_USE_ROBUST=0 ${CMAKE_C_FLAGS}")
 else()
-    set(LMDB_XCFLAGS "-fPIC")
+    set(LMDB_XCFLAGS "-fPIC ${CMAKE_C_FLAGS}")
 endif()
 
 add_custom_command(
@@ -698,7 +700,7 @@ add_custom_target(cp_libdeflate
 
 add_custom_command(
     OUTPUT ${PROJECT_BINARY_DIR}/extern/libdeflate/libdeflate.a
-    COMMAND ${MAKE} CFLAGS=${CMAKE_C_FLAGS} CPPFLAGS=${CMAKE_CXX_FLAGS} LDFLAGS=${CMAKE_C_FLAGS}
+    COMMAND ${MAKE} "CFLAGS=${CMAKE_C_FLAGS}" "CPPFLAGS=${CMAKE_CXX_FLAGS}" "LDFLAGS=${CMAKE_C_FLAGS}"
     WORKING_DIRECTORY ${PROJECT_BINARY_DIR}/extern/libdeflate/
 )
 
@@ -807,6 +809,16 @@ set(PYFLAGS "-I/usr/local/include -fPIC ${CMAKE_C_FLAGS}")
 set(PYLDFLAGS "-L /usr/local/lib")
 set(PYPKG "")
 
+if(SILENCE_VENDORED_WARNINGS)
+    # Silence all warnings on Python's build.  Python is vendored
+    # upstream code; per-category suppression turned into whack-a-mole
+    # across CPython, distutils, and the PGO training stage.  Note: this
+    # also hides _cursesmodule.c's macOS 14 'is_pad' warning — a real
+    # macOS 11 compat concern.  Drop the toggle to OFF if you ever want
+    # to audit the curses/availability issues.
+    set(PYFLAGS "${PYFLAGS} -w")
+endif()
+
 if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
 
     execute_process(COMMAND brew --prefix gdbm OUTPUT_VARIABLE GDBM_PREF OUTPUT_STRIP_TRAILING_WHITESPACE)
@@ -855,7 +867,7 @@ endif()
 add_custom_command(
     OUTPUT ${PYTHON_BIN_DIR}/Makefile
     DEPENDS rampart-crypto
-    COMMAND ${BASH_CMD} -c "if [ ! -e ${PYTHON_BIN_DIR}/Makefile ]; then ${PYTHON_EXTRA_ENV} RAMPART_SSL_DIR=${PROJECT_BINARY_DIR}/extern/openssl PKG_CONFIG_PATH=\"${PYPKG}\" LDFLAGS=\"${PYLDFLAGS}\" CPPFLAGS=\"${PYFLAGS}\" TCLTK_LIBS=\"-ltk -ltcl\" ./configure ${PYTHON_CONFIGURE_OPTS};fi"
+    COMMAND ${BASH_CMD} -c "if [ ! -e ${PYTHON_BIN_DIR}/Makefile ]; then ${PYTHON_EXTRA_ENV} RAMPART_SSL_DIR=${PROJECT_BINARY_DIR}/extern/openssl PKG_CONFIG_PATH=\"${PYPKG}\" LDFLAGS=\"${PYLDFLAGS}\" CFLAGS=\"${PYFLAGS}\" CPPFLAGS=\"${PYFLAGS}\" TCLTK_LIBS=\"-ltk -ltcl\" ./configure ${PYTHON_CONFIGURE_OPTS};fi"
     WORKING_DIRECTORY ${PYTHON_BIN_DIR}
     VERBATIM
 )
@@ -997,10 +1009,18 @@ if("${GM_CONFIG}" STREQUAL "")
 endif()
 
 if(NOT "${GM_CONFIG}" STREQUAL "")
-    # Get all flags in one call, just like the original Makefile
+    # Query compile flags and link flags separately.  Combining them and
+    # feeding the merged list to both target_compile_options and
+    # target_link_libraries makes clang warn that -l/-L args are unused
+    # at compile time.
     execute_process(
-        COMMAND bash -c "${GM_CONFIG} --cppflags --ldflags --libs"
-        OUTPUT_VARIABLE GM_ALL_FLAGS
+        COMMAND bash -c "${GM_CONFIG} --cppflags"
+        OUTPUT_VARIABLE GM_CPPFLAGS
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+    execute_process(
+        COMMAND bash -c "${GM_CONFIG} --ldflags --libs"
+        OUTPUT_VARIABLE GM_LDFLAGS
         OUTPUT_STRIP_TRAILING_WHITESPACE
     )
 
@@ -1008,7 +1028,8 @@ if(NOT "${GM_CONFIG}" STREQUAL "")
         duktape/modules/rampart-graphicsmagick.c
     )
 
-    separate_arguments(GM_ALL_FLAGS_LIST UNIX_COMMAND "${GM_ALL_FLAGS}")
+    separate_arguments(GM_CPPFLAGS_LIST UNIX_COMMAND "${GM_CPPFLAGS}")
+    separate_arguments(GM_LDFLAGS_LIST  UNIX_COMMAND "${GM_LDFLAGS}")
 
     # On macOS, add libtool path for ltdl
     if(APPLE)
@@ -1020,19 +1041,14 @@ if(NOT "${GM_CONFIG}" STREQUAL "")
             ERROR_QUIET
         )
         if(LIBTOOL_RESULT EQUAL 0 AND NOT "${LIBTOOL_PREFIX}" STREQUAL "")
-            list(APPEND GM_ALL_FLAGS_LIST "-L${LIBTOOL_PREFIX}/lib")
+            list(APPEND GM_LDFLAGS_LIST "-L${LIBTOOL_PREFIX}/lib")
         endif()
     endif()
 
-    target_compile_options(rampart-graphicsmagick PRIVATE ${GM_ALL_FLAGS_LIST})
-    target_link_libraries(rampart-graphicsmagick ${GM_ALL_FLAGS_LIST})
+    target_compile_options(rampart-graphicsmagick PRIVATE ${GM_CPPFLAGS_LIST})
+    target_link_libraries(rampart-graphicsmagick ${GM_LDFLAGS_LIST})
 
     if(CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
-          execute_process(
-              COMMAND bash -c "${GM_CONFIG} --cppflags"
-              OUTPUT_VARIABLE GM_CPPFLAGS
-              OUTPUT_STRIP_TRAILING_WHITESPACE
-          )
           string(REGEX REPLACE "^-I" "" GM_INCLUDE_DIR "${GM_CPPFLAGS}")
           target_include_directories(rampart-graphicsmagick PRIVATE
               ${PROJECT_SOURCE_DIR}/src/include

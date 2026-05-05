@@ -1,28 +1,24 @@
 set(EXTERN_DIR ${CMAKE_SOURCE_DIR}/extern)
 
 
-# FAISS needs OpenMP, and Apple Clang doesn't ship it.  Use Homebrew's
-# libomp and pre-fill the cache vars so the find_package(OpenMP) call
-# inside extern/faiss/CMakeLists.txt finds it without further hints.
-# Mirrors the rampart-langtools setup (extern/extern.cmake there).
-# Static-linking libomp.a into the .so means no runtime dep on Homebrew.
+# FAISS needs OpenMP.  Apple Clang doesn't ship it, so on macOS we
+# build a static libomp from the vendored LLVM 22.1.1 runtime sources
+# under extern/libomp/.  On every other supported platform (Linux,
+# FreeBSD, MSYS2) the system toolchain provides OpenMP and we fall
+# through to find_package(OpenMP) with no overrides.
+#
+# Pre-filling the OpenMP_* cache vars makes the find_package(OpenMP)
+# call inside extern/faiss/CMakeLists.txt pick up our static lib
+# without searching the system.
 if(APPLE)
-    execute_process(
-        COMMAND brew --prefix libomp
-        OUTPUT_VARIABLE OMP_PREFIX
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-        ERROR_QUIET
-    )
-    if(NOT OMP_PREFIX)
-        message(FATAL_ERROR "OpenMP not found; try: brew install libomp")
-    endif()
-    set(OpenMP_omp_LIBRARY   "${OMP_PREFIX}/lib/libomp.a"
+    add_subdirectory(${EXTERN_DIR}/libomp)
+    set(OpenMP_omp_LIBRARY   "$<TARGET_FILE:omp>"
         CACHE STRING "OpenMP_omp_LIBRARY"   FORCE)
-    set(OpenMP_C_FLAGS       "-Xpreprocessor -fopenmp -I${OMP_PREFIX}/include"
+    set(OpenMP_C_FLAGS       "-Xpreprocessor -fopenmp -I${CMAKE_BINARY_DIR}/extern/libomp"
         CACHE STRING "OpenMP_C_FLAGS"       FORCE)
     set(OpenMP_C_LIB_NAMES   "omp"
         CACHE STRING "OpenMP_C_LIB_NAMES"   FORCE)
-    set(OpenMP_CXX_FLAGS     "-Xpreprocessor -fopenmp -I${OMP_PREFIX}/include"
+    set(OpenMP_CXX_FLAGS     "-Xpreprocessor -fopenmp -I${CMAKE_BINARY_DIR}/extern/libomp"
         CACHE STRING "OpenMP_CXX_FLAGS"     FORCE)
     set(OpenMP_CXX_LIB_NAMES "omp"
         CACHE STRING "OpenMP_CXX_LIB_NAMES" FORCE)
@@ -40,6 +36,18 @@ target_compile_definitions(
     texisapi PRIVATE
     RAMPART_INCLUDE_TEXIS_USERFUNC="${CMAKE_SOURCE_DIR}/src/duktape/modules/sql-userfunc.c"
 )
+
+# Everything below this point is vendored upstream code we don't
+# maintain (openssl, oniguruma, curl, libevent, libevhtp_ws, tidy-html5,
+# cmark-gfm, robotstxt).  Wrap with the SILENCE_VENDORED_WARNINGS toggle
+# so warning noise from these libraries doesn't drown out warnings from
+# the rampart code we actually own.  Restored at the bottom of the file.
+if(SILENCE_VENDORED_WARNINGS)
+    set(_VENDORED_SAVED_C_FLAGS   "${CMAKE_C_FLAGS}")
+    set(_VENDORED_SAVED_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+    set(CMAKE_C_FLAGS   "${CMAKE_C_FLAGS} -w")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -w")
+endif()
 
 add_subdirectory(${EXTERN_DIR}/openssl)
 
@@ -79,3 +87,8 @@ add_subdirectory(${EXTERN_DIR}/tidy-html5)
 add_subdirectory(${EXTERN_DIR}/cmark-gfm)
 
 add_subdirectory(${EXTERN_DIR}/robotstxt)
+
+if(SILENCE_VENDORED_WARNINGS)
+    set(CMAKE_C_FLAGS   "${_VENDORED_SAVED_C_FLAGS}")
+    set(CMAKE_CXX_FLAGS "${_VENDORED_SAVED_CXX_FLAGS}")
+endif()
