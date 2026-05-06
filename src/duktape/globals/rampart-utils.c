@@ -46,6 +46,7 @@
 #include "event.h"
 #include "event2/thread.h"
 #include "rampart.h"
+#include "rp_zip.h"
 #include "../linenoise.h"
 #include "../core/module.h"
 #include "../../extern/utf8proc/utf8proc.h"
@@ -179,7 +180,7 @@ int rp_gettype(duk_context *ctx, duk_idx_t idx)
 duk_ret_t rp_get_line(duk_context *ctx, const char *filename, int line_number, int nlines)
 {
 
-    FILE *file = fopen(filename, "r");
+    FILE *file = rp_fopen(filename, "r");
     int start,end;
     duk_uarridx_t alen=0;
 
@@ -225,7 +226,7 @@ duk_ret_t rp_get_line(duk_context *ctx, const char *filename, int line_number, i
             if(!nlines)
             {
                 // bug fix: close file before early return when nlines==0 - 2026-02-27
-                fclose(file);
+                rp_fclose(file);
                 return 1;
             }
         }
@@ -237,7 +238,7 @@ duk_ret_t rp_get_line(duk_context *ctx, const char *filename, int line_number, i
         current_line++;
     }
 
-    fclose(file);
+    rp_fclose(file);
 
     if (line)
         free(line);
@@ -424,7 +425,7 @@ rp_stack *parse_stack_string_lines(rp_stack *stack, const char *s)
                     if(p)
                     {
                         p[0]='j';p[1]='s';p[2]='\0';
-                        if (access(fntemp, F_OK) == 0)
+                        if (rp_access(fntemp, F_OK) == 0)
                         {
                             fn=fntemp;
                         }
@@ -834,6 +835,7 @@ RPPATH rp_find_path_vari(char *file, ...)
     if(*file == '/')
     {
         //printf("0: checking %s\n", file);
+        /* disk-only search; the zip namespace is searched separately */
         if (stat(file, &sb) != -1)
         {
             ret.stat=sb;
@@ -945,6 +947,713 @@ RPPATH rp_find_path_vari(char *file, ...)
     return ret;
 }
 
+/* Same shape as rp_find_path_vari, but searches the appended-zip namespace
+   instead of the filesystem.  Returns RPPATH with path = ":zip:/<entry>" on
+   hit, or empty path on miss.  Caller should consult rp_has_zip_payload
+   before calling -- this function is a no-op when no zip is present.
+   Variadic args:
+     - relative subpaths (e.g. "modules/")           -> try "<sub>/<file>" in zip
+     - args starting with ":zip:/<dir>"              -> try "<dir>/<file>" in zip
+     - absolute disk paths (starting with "/")       -> skipped
+   .so entries in the zip are skipped (native modules can't be dlopen'd from
+   a buffer; resolve falls through to disk for those). */
+RPPATH rp_find_path_zip_vari(char *file, ...)
+{
+    RPPATH ret={{0}};
+    va_list args;
+    char *arg, path[PATH_MAX];
+    char *f;
+    const rp_zip_entry *e = NULL;
+
+    if (!file || !rp_has_zip_payload) return ret;
+    if (rp_zip_init() != 0) return ret;
+
+    /* strip "./" prefix the same way rp_find_path_vari does */
+    f = file;
+    if (f[0]=='.' && f[1]=='/')
+    {
+        f++;
+        while (*f == '/') f++;
+    }
+    /* absolute disk paths are not zip-relative */
+    if (*f == '/') return ret;
+
+    /* :zip:/ prefix on `file` itself = already-absolute zip path.  Strip
+       the prefix and try direct lookup; do not fall through to variadic
+       subpath search (the path already includes its location). */
+    if (strncmp(f, ":zip:/", 6) == 0)
+    {
+        e = rp_zip_resolve(f + 6);
+        if (e) goto found;
+        return ret;
+    }
+
+    /* 1) try the bare name */
+    e = rp_zip_resolve(f);
+
+    /* 2) try each variadic subpath (zip-relative or :zip:/-prefixed) */
+    if (!e)
+    {
+        va_start(args, file);
+        while ((arg = va_arg(args, char *)))
+        {
+            if (!arg || !*arg) continue;
+            if (*arg == '/') continue; /* absolute disk path -- not zip */
+
+            if (strncmp(arg, ":zip:/", 6) == 0)
+            {
+                const char *zsub = arg + 6;
+                if (*zsub)
+                    snprintf(path, PATH_MAX, "%s%s%s", zsub,
+                             zsub[strlen(zsub)-1]=='/' ? "" : "/", f);
+                else
+                    snprintf(path, PATH_MAX, "%s", f);
+            }
+            else
+            {
+                snprintf(path, PATH_MAX, "%s%s%s", arg,
+                         arg[strlen(arg)-1]=='/' ? "" : "/", f);
+            }
+            e = rp_zip_resolve(path);
+            if (e) break;
+        }
+        va_end(args);
+    }
+
+    /* 3) try RP_script_path if it points at a zip subdir.  The disk
+       resolver does the equivalent via standard_locs[0]; this gives
+       top-level zip-loaded scripts a script-relative search root for
+       things like require("./helper") when the script lives in a
+       subdirectory of the zip. */
+    if (!e && RP_script_path && strncmp(RP_script_path, ":zip:/", 6) == 0)
+    {
+        const char *zsub = RP_script_path + 6;
+        if (*zsub)
+            snprintf(path, PATH_MAX, "%s%s%s", zsub,
+                     zsub[strlen(zsub)-1]=='/' ? "" : "/", f);
+        else
+            snprintf(path, PATH_MAX, "%s", f);
+        e = rp_zip_resolve(path);
+    }
+
+    if (!e) return ret;
+    found:
+
+    /* synthesize an RPPATH the rest of the loader will be happy with.
+       .so entries are handled by load_so_module: extracted to /tmp,
+       dlopen'd, unlinked immediately. */
+    if (e->name_len + 6 + 1 > PATH_MAX) return ret;
+    memcpy(ret.path, ":zip:/", 6);
+    memcpy(ret.path + 6, e->name, e->name_len);
+    ret.path[6 + e->name_len] = '\0';
+
+    ret.stat.st_mtime = 1;             /* stable, never reload */
+    ret.stat.st_mode  = S_IFREG | 0444;
+    ret.stat.st_size  = e->uncomp_size;
+
+    return ret;
+}
+
+/* rampart.utils.payloadList() -- array of names in the appended zip, or [] */
+/* Push a rp_stat()-like attribute object for one zip entry. */
+static void rp_push_zip_entry_attrs(duk_context *ctx, const rp_zip_entry *e)
+{
+    duk_push_object(ctx);
+
+    duk_push_uint(ctx, e->uncomp_size);
+    duk_put_prop_string(ctx, -2, "size");
+    duk_push_uint(ctx, e->comp_size);
+    duk_put_prop_string(ctx, -2, "compressedSize");
+    duk_push_uint(ctx, e->method);
+    duk_put_prop_string(ctx, -2, "method");
+    duk_push_uint(ctx, e->crc32);
+    duk_put_prop_string(ctx, -2, "crc32");
+    duk_push_uint(ctx, e->mode);
+    duk_put_prop_string(ctx, -2, "mode");
+
+    if (e->mtime > 0)
+    {
+        (void)duk_get_global_string(ctx, "Date");
+        duk_push_number(ctx, (double)e->mtime * 1000.0);
+        duk_new(ctx, 1);
+        duk_put_prop_string(ctx, -2, "mtime");
+    }
+
+    duk_push_boolean(ctx, S_ISREG(e->mode));
+    duk_put_prop_string(ctx, -2, "isFile");
+    duk_push_boolean(ctx, S_ISDIR(e->mode));
+    duk_put_prop_string(ctx, -2, "isDirectory");
+    duk_push_boolean(ctx, S_ISLNK(e->mode));
+    duk_put_prop_string(ctx, -2, "isSymbolicLink");
+
+    char perms[11];
+    perms[0] = S_ISDIR(e->mode) ? 'd' : (S_ISLNK(e->mode) ? 'l' : '-');
+    perms[1] = (e->mode & S_IRUSR) ? 'r' : '-';
+    perms[2] = (e->mode & S_IWUSR) ? 'w' : '-';
+    perms[3] = (e->mode & S_ISUID) ? 's' : ((e->mode & S_IXUSR) ? 'x' : '-');
+    perms[4] = (e->mode & S_IRGRP) ? 'r' : '-';
+    perms[5] = (e->mode & S_IWGRP) ? 'w' : '-';
+    perms[6] = (e->mode & S_ISGID) ? 's' : ((e->mode & S_IXGRP) ? 'x' : '-');
+    perms[7] = (e->mode & S_IROTH) ? 'r' : '-';
+    perms[8] = (e->mode & S_IWOTH) ? 'w' : '-';
+    perms[9] = (e->mode & S_ISVTX) ? 't' : ((e->mode & S_IXOTH) ? 'x' : '-');
+    perms[10] = '\0';
+    duk_push_string(ctx, perms);
+    duk_put_prop_string(ctx, -2, "permissions");
+}
+
+static duk_ret_t duk_rp_payload_list(duk_context *ctx)
+{
+    duk_push_object(ctx);
+    if (!rp_has_zip_payload || rp_zip_init() != 0)
+        return 1;
+    size_t n = rp_zip_count();
+    char namebuf[PATH_MAX + 1];
+    for (size_t i = 0; i < n; i++)
+    {
+        const rp_zip_entry *e = rp_zip_at(i);
+        if (!e) break;
+        if (e->name_len >= sizeof(namebuf)) continue;
+        memcpy(namebuf, e->name, e->name_len);
+        namebuf[e->name_len] = '\0';
+        rp_push_zip_entry_attrs(ctx, e);
+        duk_put_prop_string(ctx, -2, namebuf);
+    }
+    return 1;
+}
+
+/* Best-effort: apply a zip entry's mode and mtime to a freshly-extracted
+   path.  Skip chmod for symlinks (POSIX chmod follows the link).  All
+   errors silently swallowed -- we never want metadata fixup to abort a
+   bulk extract. */
+static void rp_apply_zip_metadata(const char *path, uint32_t mode,
+                                  time_t mtime, int is_symlink)
+{
+    if (!is_symlink && (mode & 07777))
+        (void)chmod(path, (mode_t)(mode & 07777));
+
+    if (mtime > 0)
+    {
+        struct timespec ts[2];
+        ts[0].tv_sec = mtime; ts[0].tv_nsec = 0;
+        ts[1].tv_sec = mtime; ts[1].tv_nsec = 0;
+        (void)utimensat(AT_FDCWD, path, ts,
+                        is_symlink ? AT_SYMLINK_NOFOLLOW : 0);
+    }
+}
+
+/* Reject path traversal: any path segment that is exactly ".." */
+static int rp_path_has_dotdot(const char *p)
+{
+    while (*p)
+    {
+        const char *seg = p;
+        while (*p && *p != '/') p++;
+        if (p - seg == 2 && seg[0]=='.' && seg[1]=='.') return 1;
+        if (*p) p++;
+    }
+    return 0;
+}
+
+/* rampart.utils.payloadExtract(destPath, [arrayOfFiles])
+   Writes zip entries to disk under destPath.  If arrayOfFiles is given,
+   only entries whose name equals an element OR begins with "<element>/"
+   are extracted (each element first has its leading "./" and trailing "/"
+   stripped, so "web_server", "./web_server", "web_server/", "./web_server/"
+   all select the same set).  Returns the number of files written.
+   Refuses to extract entries whose path contains a ".." segment or starts
+   with "/" (zip-slip protection). */
+static duk_ret_t duk_rp_payload_extract(duk_context *ctx)
+{
+    const char *destpath = REQUIRE_STRING(ctx, 0,
+        "payloadExtract: first arg must be a string (destination path)");
+    if (!rp_has_zip_payload)
+        RP_THROW(ctx, "payloadExtract: this rampart has no zip payload");
+    if (rp_zip_init() != 0)
+        RP_THROW(ctx, "payloadExtract: zip payload could not be initialized");
+
+    /* Optional filter list -> array of normalized patterns */
+    int has_filter = 0;
+    char **patterns = NULL;
+    size_t n_patterns = 0;
+    if (!duk_is_undefined(ctx, 1) && !duk_is_null(ctx, 1))
+    {
+        if (!duk_is_array(ctx, 1))
+            RP_THROW(ctx, "payloadExtract: second arg must be an array of strings or undefined");
+        has_filter = 1;
+        n_patterns = (size_t)duk_get_length(ctx, 1);
+        patterns = (char **)calloc(n_patterns ? n_patterns : 1, sizeof(char *));
+        if (!patterns) RP_THROW(ctx, "payloadExtract: out of memory");
+        for (size_t i = 0; i < n_patterns; i++)
+        {
+            duk_get_prop_index(ctx, 1, (duk_uarridx_t)i);
+            if (!duk_is_string(ctx, -1))
+            {
+                for (size_t j = 0; j < i; j++) free(patterns[j]);
+                free(patterns);
+                RP_THROW(ctx, "payloadExtract: filter[%zu] must be a string", i);
+            }
+            const char *raw = duk_get_string(ctx, -1);
+            if (raw[0]=='.' && raw[1]=='/') raw += 2;
+            while (*raw == '/') raw++;
+            patterns[i] = strdup(raw);
+            size_t l = strlen(patterns[i]);
+            while (l > 0 && patterns[i][l-1] == '/') { patterns[i][--l] = '\0'; }
+            duk_pop(ctx);
+        }
+    }
+
+    /* Ensure destination root exists */
+    if (rp_mkdir_parent(destpath, 0755) != 0 && errno != EEXIST)
+    {
+        if (patterns)
+        {
+            for (size_t i = 0; i < n_patterns; i++) free(patterns[i]);
+            free(patterns);
+        }
+        RP_THROW(ctx, "payloadExtract: could not create '%s': %s",
+                 destpath, strerror(errno));
+    }
+
+    int n_extracted = 0;
+    char ename[PATH_MAX];
+    char full[PATH_MAX];
+
+    size_t n = rp_zip_count();
+    for (size_t i = 0; i < n; i++)
+    {
+        const rp_zip_entry *e = rp_zip_at(i);
+        if (!e) break;
+
+        /* Filter */
+        if (has_filter)
+        {
+            int matched = 0;
+            for (size_t j = 0; j < n_patterns; j++)
+            {
+                size_t pl = strlen(patterns[j]);
+                if (pl == 0) continue;
+                if (e->name_len == pl && memcmp(e->name, patterns[j], pl) == 0)
+                { matched = 1; break; }
+                if (e->name_len > pl && memcmp(e->name, patterns[j], pl) == 0
+                    && e->name[pl] == '/')
+                { matched = 1; break; }
+            }
+            if (!matched) continue;
+        }
+
+        if (e->name_len >= sizeof(ename)) continue;
+        memcpy(ename, e->name, e->name_len);
+        ename[e->name_len] = '\0';
+
+        /* zip-slip + absolute path rejection */
+        if (ename[0] == '/') continue;
+        if (rp_path_has_dotdot(ename)) continue;
+
+        if (snprintf(full, sizeof(full), "%s/%s", destpath, ename) >= (int)sizeof(full))
+            continue;
+
+        /* Directory entry (trailing slash) -> mkdir, apply metadata. */
+        size_t fl = strlen(full);
+        if (fl > 0 && full[fl-1] == '/')
+        {
+            full[fl-1] = '\0';
+            if (rp_mkdir_parent(full, 0755) != 0 && errno != EEXIST)
+            {
+                /* fail loud */
+                if (patterns)
+                {
+                    for (size_t k = 0; k < n_patterns; k++) free(patterns[k]);
+                    free(patterns);
+                }
+                RP_THROW(ctx, "payloadExtract: mkdir '%s' failed: %s",
+                         full, strerror(errno));
+            }
+            rp_apply_zip_metadata(full, e->mode, e->mtime, 0);
+            continue;
+        }
+
+        /* Make parent dirs */
+        char *slash = strrchr(full, '/');
+        if (slash && slash != full)
+        {
+            *slash = '\0';
+            if (rp_mkdir_parent(full, 0755) != 0 && errno != EEXIST)
+            {
+                if (patterns)
+                {
+                    for (size_t k = 0; k < n_patterns; k++) free(patterns[k]);
+                    free(patterns);
+                }
+                RP_THROW(ctx, "payloadExtract: mkdir '%s' failed: %s",
+                         full, strerror(errno));
+            }
+            *slash = '/';
+        }
+
+        /* Symlink -> entry's content is the link target string. */
+        if (S_ISLNK(e->mode))
+        {
+            unsigned char *tbuf = NULL;
+            size_t tlen = 0;
+            if (rp_zip_read(e, &tbuf, &tlen) != 0)
+            {
+                if (patterns)
+                {
+                    for (size_t k = 0; k < n_patterns; k++) free(patterns[k]);
+                    free(patterns);
+                }
+                RP_THROW(ctx, "payloadExtract: read failed for symlink '%s'", ename);
+            }
+            (void)unlink(full); /* in case a stale link/file exists */
+            int sl = symlink((char *)tbuf, full);
+            free(tbuf);
+            if (sl != 0)
+            {
+                if (patterns)
+                {
+                    for (size_t k = 0; k < n_patterns; k++) free(patterns[k]);
+                    free(patterns);
+                }
+                RP_THROW(ctx, "payloadExtract: symlink '%s' failed: %s",
+                         full, strerror(errno));
+            }
+            rp_apply_zip_metadata(full, e->mode, e->mtime, 1);
+            n_extracted++;
+            continue;
+        }
+
+        /* Read + write file body */
+        unsigned char *zbuf = NULL;
+        size_t zlen = 0;
+        if (rp_zip_read(e, &zbuf, &zlen) != 0)
+        {
+            if (patterns)
+            {
+                for (size_t k = 0; k < n_patterns; k++) free(patterns[k]);
+                free(patterns);
+            }
+            RP_THROW(ctx, "payloadExtract: read failed for '%s'", ename);
+        }
+        FILE *f = rp_fopen(full, "wb");
+        if (!f)
+        {
+            free(zbuf);
+            if (patterns)
+            {
+                for (size_t k = 0; k < n_patterns; k++) free(patterns[k]);
+                free(patterns);
+            }
+            RP_THROW(ctx, "payloadExtract: could not open '%s' for writing: %s",
+                     full, strerror(errno));
+        }
+        size_t wrote = fwrite(zbuf, 1, zlen, f);
+        rp_fclose(f);
+        free(zbuf);
+        if (wrote != zlen)
+        {
+            unlink(full);
+            if (patterns)
+            {
+                for (size_t k = 0; k < n_patterns; k++) free(patterns[k]);
+                free(patterns);
+            }
+            RP_THROW(ctx, "payloadExtract: short write for '%s'", full);
+        }
+        rp_apply_zip_metadata(full, e->mode, e->mtime, 0);
+        n_extracted++;
+    }
+
+    if (patterns)
+    {
+        for (size_t i = 0; i < n_patterns; i++) free(patterns[i]);
+        free(patterns);
+    }
+
+    duk_push_int(ctx, n_extracted);
+    return 1;
+}
+
+/* rampart.utils.payloadGet(path) -- fixed-buffer contents of the named entry.
+   Throws if no zip payload, entry missing, or read fails. */
+static duk_ret_t duk_rp_payload_get(duk_context *ctx)
+{
+    const char *path = REQUIRE_STRING(ctx, 0, "payloadGet: argument must be a string");
+    if (!rp_has_zip_payload)
+        RP_THROW(ctx, "payloadGet: this rampart has no zip payload");
+    if (rp_zip_init() != 0)
+        RP_THROW(ctx, "payloadGet: zip payload could not be initialized");
+    const rp_zip_entry *e = rp_zip_resolve(path);
+    if (!e)
+        RP_THROW(ctx, "payloadGet: '%s' not found in payload", path);
+    unsigned char *zbuf = NULL;
+    size_t zlen = 0;
+    if (rp_zip_read(e, &zbuf, &zlen) != 0)
+        RP_THROW(ctx, "payloadGet: failed to read '%s'", path);
+    void *out = duk_push_fixed_buffer(ctx, (duk_size_t)zlen);
+    if (zlen) memcpy(out, zbuf, zlen);
+    free(zbuf);
+    return 1;
+}
+
+/* ============================================================
+ * Generic zip utilities -- operate on any zip file on disk.
+ * Mirror payloadList / payloadGet / payloadExtract semantics.
+ * ============================================================ */
+
+/* rampart.utils.zipList(path) -- array of names in the named zip file.
+   Throws if the file can't be opened or isn't a valid zip. */
+static duk_ret_t duk_rp_zip_list(duk_context *ctx)
+{
+    const char *path = REQUIRE_STRING(ctx, 0,
+        "zipList: argument must be a string (zip path)");
+    rp_zip_t *z = rp_zip_open(path);
+    if (!z)
+        RP_THROW(ctx, "zipList: could not open '%s' as a zip archive", path);
+
+    duk_push_object(ctx);
+    size_t n = rp_zip_h_count(z);
+    char namebuf[PATH_MAX + 1];
+    for (size_t i = 0; i < n; i++)
+    {
+        const rp_zip_entry *e = rp_zip_h_at(z, i);
+        if (!e) break;
+        if (e->name_len >= sizeof(namebuf)) continue;
+        memcpy(namebuf, e->name, e->name_len);
+        namebuf[e->name_len] = '\0';
+        rp_push_zip_entry_attrs(ctx, e);
+        duk_put_prop_string(ctx, -2, namebuf);
+    }
+    rp_zip_close(z);
+    return 1;
+}
+
+/* rampart.utils.zipGet(path, entryName) -- fixed buffer of the named entry.
+   Throws on bad zip / missing entry / unsupported method. */
+static duk_ret_t duk_rp_zip_get(duk_context *ctx)
+{
+    const char *path = REQUIRE_STRING(ctx, 0,
+        "zipGet: first arg must be a string (zip path)");
+    const char *fn = REQUIRE_STRING(ctx, 1,
+        "zipGet: second arg must be a string (entry name)");
+
+    rp_zip_t *z = rp_zip_open(path);
+    if (!z)
+        RP_THROW(ctx, "zipGet: could not open '%s' as a zip archive", path);
+
+    const rp_zip_entry *e = rp_zip_h_resolve(z, fn);
+    if (!e)
+    {
+        rp_zip_close(z);
+        RP_THROW(ctx, "zipGet: '%s' not found in '%s'", fn, path);
+    }
+
+    unsigned char *zbuf = NULL;
+    size_t zlen = 0;
+    if (rp_zip_h_read(z, e, &zbuf, &zlen) != 0)
+    {
+        rp_zip_close(z);
+        RP_THROW(ctx, "zipGet: failed to read '%s' from '%s'", fn, path);
+    }
+
+    void *out = duk_push_fixed_buffer(ctx, (duk_size_t)zlen);
+    if (zlen) memcpy(out, zbuf, zlen);
+    free(zbuf);
+    rp_zip_close(z);
+    return 1;
+}
+
+/* rampart.utils.zipExtract(path, destPath [, arrayOfFiles])
+   Same filter normalization rules as payloadExtract.  Returns the number
+   of files written. */
+static duk_ret_t duk_rp_zip_extract(duk_context *ctx)
+{
+    const char *path = REQUIRE_STRING(ctx, 0,
+        "zipExtract: first arg must be a string (zip path)");
+    const char *destpath = REQUIRE_STRING(ctx, 1,
+        "zipExtract: second arg must be a string (destination path)");
+
+    rp_zip_t *z = rp_zip_open(path);
+    if (!z)
+        RP_THROW(ctx, "zipExtract: could not open '%s' as a zip archive", path);
+
+    /* Optional filter list -> array of normalized patterns */
+    int has_filter = 0;
+    char **patterns = NULL;
+    size_t n_patterns = 0;
+    if (!duk_is_undefined(ctx, 2) && !duk_is_null(ctx, 2))
+    {
+        if (!duk_is_array(ctx, 2))
+        {
+            rp_zip_close(z);
+            RP_THROW(ctx, "zipExtract: third arg must be an array of strings or undefined");
+        }
+        has_filter = 1;
+        n_patterns = (size_t)duk_get_length(ctx, 2);
+        patterns = (char **)calloc(n_patterns ? n_patterns : 1, sizeof(char *));
+        if (!patterns) { rp_zip_close(z); RP_THROW(ctx, "zipExtract: out of memory"); }
+        for (size_t i = 0; i < n_patterns; i++)
+        {
+            duk_get_prop_index(ctx, 2, (duk_uarridx_t)i);
+            if (!duk_is_string(ctx, -1))
+            {
+                for (size_t j = 0; j < i; j++) free(patterns[j]);
+                free(patterns);
+                rp_zip_close(z);
+                RP_THROW(ctx, "zipExtract: filter[%zu] must be a string", i);
+            }
+            const char *raw = duk_get_string(ctx, -1);
+            if (raw[0]=='.' && raw[1]=='/') raw += 2;
+            while (*raw == '/') raw++;
+            patterns[i] = strdup(raw);
+            size_t l = strlen(patterns[i]);
+            while (l > 0 && patterns[i][l-1] == '/') { patterns[i][--l] = '\0'; }
+            duk_pop(ctx);
+        }
+    }
+
+    if (rp_mkdir_parent(destpath, 0755) != 0 && errno != EEXIST)
+    {
+        if (patterns)
+        {
+            for (size_t i = 0; i < n_patterns; i++) free(patterns[i]);
+            free(patterns);
+        }
+        rp_zip_close(z);
+        RP_THROW(ctx, "zipExtract: could not create '%s': %s",
+                 destpath, strerror(errno));
+    }
+
+    int n_extracted = 0;
+    char ename[PATH_MAX];
+    char full[PATH_MAX];
+
+    size_t n = rp_zip_h_count(z);
+    for (size_t i = 0; i < n; i++)
+    {
+        const rp_zip_entry *e = rp_zip_h_at(z, i);
+        if (!e) break;
+
+        if (has_filter)
+        {
+            int matched = 0;
+            for (size_t j = 0; j < n_patterns; j++)
+            {
+                size_t pl = strlen(patterns[j]);
+                if (pl == 0) continue;
+                if (e->name_len == pl && memcmp(e->name, patterns[j], pl) == 0)
+                { matched = 1; break; }
+                if (e->name_len > pl && memcmp(e->name, patterns[j], pl) == 0
+                    && e->name[pl] == '/')
+                { matched = 1; break; }
+            }
+            if (!matched) continue;
+        }
+
+        if (e->name_len >= sizeof(ename)) continue;
+        memcpy(ename, e->name, e->name_len);
+        ename[e->name_len] = '\0';
+
+        if (ename[0] == '/') continue;
+        if (rp_path_has_dotdot(ename)) continue;
+
+        if (snprintf(full, sizeof(full), "%s/%s", destpath, ename) >= (int)sizeof(full))
+            continue;
+
+        size_t fl = strlen(full);
+        if (fl > 0 && full[fl-1] == '/')
+        {
+            full[fl-1] = '\0';
+            if (rp_mkdir_parent(full, 0755) != 0 && errno != EEXIST)
+            {
+                if (patterns) { for (size_t k = 0; k < n_patterns; k++) free(patterns[k]); free(patterns); }
+                rp_zip_close(z);
+                RP_THROW(ctx, "zipExtract: mkdir '%s' failed: %s", full, strerror(errno));
+            }
+            rp_apply_zip_metadata(full, e->mode, e->mtime, 0);
+            continue;
+        }
+
+        char *slash = strrchr(full, '/');
+        if (slash && slash != full)
+        {
+            *slash = '\0';
+            if (rp_mkdir_parent(full, 0755) != 0 && errno != EEXIST)
+            {
+                if (patterns) { for (size_t k = 0; k < n_patterns; k++) free(patterns[k]); free(patterns); }
+                rp_zip_close(z);
+                RP_THROW(ctx, "zipExtract: mkdir '%s' failed: %s", full, strerror(errno));
+            }
+            *slash = '/';
+        }
+
+        /* Symlink: entry's content is the target string. */
+        if (S_ISLNK(e->mode))
+        {
+            unsigned char *tbuf = NULL;
+            size_t tlen = 0;
+            if (rp_zip_h_read(z, e, &tbuf, &tlen) != 0)
+            {
+                if (patterns) { for (size_t k = 0; k < n_patterns; k++) free(patterns[k]); free(patterns); }
+                rp_zip_close(z);
+                RP_THROW(ctx, "zipExtract: read failed for symlink '%s'", ename);
+            }
+            (void)unlink(full);
+            int sl = symlink((char *)tbuf, full);
+            free(tbuf);
+            if (sl != 0)
+            {
+                if (patterns) { for (size_t k = 0; k < n_patterns; k++) free(patterns[k]); free(patterns); }
+                rp_zip_close(z);
+                RP_THROW(ctx, "zipExtract: symlink '%s' failed: %s", full, strerror(errno));
+            }
+            rp_apply_zip_metadata(full, e->mode, e->mtime, 1);
+            n_extracted++;
+            continue;
+        }
+
+        unsigned char *zbuf = NULL;
+        size_t zlen = 0;
+        if (rp_zip_h_read(z, e, &zbuf, &zlen) != 0)
+        {
+            if (patterns) { for (size_t k = 0; k < n_patterns; k++) free(patterns[k]); free(patterns); }
+            rp_zip_close(z);
+            RP_THROW(ctx, "zipExtract: read failed for '%s'", ename);
+        }
+        FILE *f = rp_fopen(full, "wb");
+        if (!f)
+        {
+            free(zbuf);
+            if (patterns) { for (size_t k = 0; k < n_patterns; k++) free(patterns[k]); free(patterns); }
+            rp_zip_close(z);
+            RP_THROW(ctx, "zipExtract: could not open '%s' for writing: %s",
+                     full, strerror(errno));
+        }
+        size_t wrote = fwrite(zbuf, 1, zlen, f);
+        rp_fclose(f);
+        free(zbuf);
+        if (wrote != zlen)
+        {
+            unlink(full);
+            if (patterns) { for (size_t k = 0; k < n_patterns; k++) free(patterns[k]); free(patterns); }
+            rp_zip_close(z);
+            RP_THROW(ctx, "zipExtract: short write for '%s'", full);
+        }
+        rp_apply_zip_metadata(full, e->mode, e->mtime, 0);
+        n_extracted++;
+    }
+
+    if (patterns)
+    {
+        for (size_t i = 0; i < n_patterns; i++) free(patterns[i]);
+        free(patterns);
+    }
+    rp_zip_close(z);
+
+    duk_push_int(ctx, n_extracted);
+    return 1;
+}
+
 int rp_mkdir_parent(const char *path, mode_t mode)
 {
     char _path[PATH_MAX], *p;
@@ -1000,7 +1709,7 @@ RPPATH rp_get_home_path(char *file, char *subdir)
         home = _home_convpath;
 #endif
 
-    if( !home || access(home, W_OK)==-1 )
+    if( !home || rp_access(home, W_OK)==-1 )
     {
          home="/tmp";
          mode=0777;
@@ -1022,7 +1731,7 @@ RPPATH rp_get_home_path(char *file, char *subdir)
     }
 
     strcat(ret.path,file);
-    if (stat(ret.path, &ret.stat) == -1)
+    if (rp_stat(ret.path, &ret.stat) == -1)
     {
         ret.stat=(struct stat){0};
     }
@@ -1623,15 +2332,15 @@ void duk_process_init(duk_context *ctx)
     }
 #endif
 
-    if ( !home_dir || access(home_dir, R_OK)==-1 )
+    if ( !home_dir || rp_access(home_dir, R_OK)==-1 )
     {
         home_dir="/tmp";
-        if(access(home_dir, R_OK)==-1)
+        if(rp_access(home_dir, R_OK)==-1)
             home_dir=NULL;
     }
 
     rampart_path=getenv("RAMPART_PATH");
-    if(rampart_path && access(rampart_path, R_OK)==-1)
+    if(rampart_path && rp_access(rampart_path, R_OK)==-1)
         rampart_path=NULL;
 
     duk_push_global_object(ctx);
@@ -2371,12 +3080,12 @@ duk_ret_t duk_rp_read_file(duk_context *ctx)
 
     if(fp)
     {
-        if (fstat(fileno(fp), &filestat) == -1)
+        if (rp_fstat(fp, &filestat) == -1)
             RP_THROW(ctx, "readFile(\"%s\") - error accessing: %s", filename, strerror(errno));
     }
     else
     {
-        if (stat(filename, &filestat) == -1)
+        if (rp_stat(filename, &filestat) == -1)
             RP_THROW(ctx, "readFile(\"%s\") - error accessing: %s", filename, strerror(errno));
     }
 
@@ -2393,7 +3102,7 @@ duk_ret_t duk_rp_read_file(duk_context *ctx)
 
     if(filename)
     {
-        fp = fopen(filename, "r");
+        fp = rp_fopen(filename, "r");
         if (fp == NULL)
             RP_THROW(ctx, "readFile(\"%s\") - error opening: %s", filename, strerror(errno));
     }
@@ -2402,7 +3111,7 @@ duk_ret_t duk_rp_read_file(duk_context *ctx)
     {
         if (fseek(fp, offset, SEEK_SET))
         {
-            fclose(fp);
+            rp_fclose(fp);
             RP_THROW(ctx, "readFile(\"%s\") - error seeking file: %s", filename, strerror(errno));
         }
     }
@@ -2414,7 +3123,8 @@ duk_ret_t duk_rp_read_file(duk_context *ctx)
 
     off = 0;
 
-    if(!lock_p)
+    int zip_fh = rp_fstat_is_zip(fp);
+    if(!lock_p && !zip_fh)
     {
         if (flock(fileno(fp), LOCK_SH) == -1)
             RP_THROW(ctx, "error readFile(): could not get read lock");
@@ -2425,7 +3135,7 @@ duk_ret_t duk_rp_read_file(duk_context *ctx)
         off += nbytes;
     }
 
-    if(!lock_p)
+    if(!lock_p && !zip_fh)
     {
         if (flock(fileno(fp), LOCK_UN) == -1)
             RP_THROW(ctx, "error readFile(): could not get read lock");
@@ -2435,7 +3145,7 @@ duk_ret_t duk_rp_read_file(duk_context *ctx)
         RP_THROW(ctx, "readFile(\"%s\") - error reading file: %s", filename, strerror(errno));
 
     if(close)
-        fclose(fp);
+        rp_fclose(fp);
 
     if(retstring)
     {
@@ -2477,7 +3187,7 @@ duk_ret_t duk_rp_readln_finalizer(duk_context *ctx)
         duk_pop(ctx);
         if (fp)
         {
-            fclose(fp);
+            rp_fclose(fp);
         }
     }
     duk_push_pointer(ctx, NULL);
@@ -2695,19 +3405,19 @@ static duk_ret_t readline_next(duk_context *ctx)
         filename = REQUIRE_STRING(ctx, idx, "%s - first argument must be a string or rampart.utils.stdin", fname);\
         if(type){/* look for fifo */\
             struct stat sb;\
-            if(stat(filename,&sb))\
+            if(rp_stat(filename,&sb))\
                 RP_THROW(ctx, "%s: error opening '%s': %s", fname, filename, strerror(errno));\
             if((sb.st_mode & S_IFMT) == S_IFIFO){\
                 type=open(filename, O_RDONLY | O_NONBLOCK);\
                 if(type==-1)\
                     RP_THROW(ctx, "%s: error opening '%s': %s", fname, filename, strerror(errno));\
             } else {\
-                f = fopen(filename, "r");\
+                f = rp_fopen(filename, "r");\
                 if (f == NULL)\
                     RP_THROW(ctx, "%s: error opening '%s': %s", fname, filename, strerror(errno));\
             }\
         } else {\
-            f = fopen(filename, "r");\
+            f = rp_fopen(filename, "r");\
             if (f == NULL){\
                 RP_THROW(ctx, "%s: error opening '%s': %s", fname, filename, strerror(errno));\
                 type=RTYPE_FILE;\
@@ -2906,9 +3616,9 @@ duk_ret_t duk_rp_stat_lstat(duk_context *ctx, int islstat)
         safestat=1;
 
     if (islstat)
-        err=lstat(path, &path_stat);
+        err=rp_lstat(path, &path_stat);
     else
-        err=stat(path, &path_stat);
+        err=rp_stat(path, &path_stat);
 
     if (err)
     {
@@ -2957,7 +3667,7 @@ duk_ret_t duk_rp_stat_lstat(duk_context *ctx, int islstat)
             }
         }
 
-        if ( access(path, X_OK) != -1)
+        if ( rp_access(path, X_OK) != -1)
             duk_push_true(ctx);
         else
             duk_push_false(ctx);
@@ -2986,19 +3696,19 @@ duk_ret_t duk_rp_stat_lstat(duk_context *ctx, int islstat)
     else //stat
     {
         duk_push_object(ctx);
-        if ( access(path, R_OK) != -1)
+        if ( rp_access(path, R_OK) != -1)
             duk_push_true(ctx);
         else
             duk_push_false(ctx);
         duk_put_prop_string(ctx, -2, "readable");
 
-        if ( access(path, W_OK) != -1)
+        if ( rp_access(path, W_OK) != -1)
             duk_push_true(ctx);
         else
             duk_push_false(ctx);
         duk_put_prop_string(ctx, -2, "writable");
 
-        if ( access(path, X_OK) != -1)
+        if ( rp_access(path, X_OK) != -1)
             duk_push_true(ctx);
         else
             duk_push_false(ctx);
@@ -3309,7 +4019,7 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
     if(cd)
     {
         struct stat sb;
-        if(stat(cd, &sb))
+        if(rp_stat(cd, &sb))
             RP_THROW(ctx, "exec(): changeDirectory value does not exist");
 
         if( ! S_ISDIR(sb.st_mode) )
@@ -3478,9 +4188,9 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
             }
             //grandchild from here on
             rp_pipe_close(child2par,1);
-            fclose(stdin);
-            fclose(stdout);
-            fclose(stderr);
+            rp_fclose(stdin);
+            rp_fclose(stdout);
+            rp_fclose(stderr);
         }
         else
         {
@@ -3819,11 +4529,11 @@ duk_ret_t duk_rp_shell(duk_context *ctx)
         }
 #endif
     }
-    if (!sh || stat(sh, &sb))
+    if (!sh || rp_stat(sh, &sb))
     {
-        if (stat("/bin/bash", &sb) == 0)
+        if (rp_stat("/bin/bash", &sb) == 0)
             sh = "/bin/bash";
-        else if (stat("/bin/sh", &sb) == 0)
+        else if (rp_stat("/bin/sh", &sb) == 0)
             sh = "/bin/sh";
         else
             RP_THROW(ctx, "shell(): could not find a shell (tried $SHELL, /bin/bash, /bin/sh)");
@@ -3997,11 +4707,71 @@ duk_ret_t duk_rp_rmdir(duk_context *ctx)
 duk_ret_t duk_rp_readdir(duk_context *ctx)
 {
     const char *path = duk_require_string(ctx, 0);
-    DIR *dir = opendir(path);
-    struct dirent *entry=NULL;
     int i=0,
         showhidden=duk_get_boolean_default(ctx,1,0);
 
+    /* :zip: paths: enumerate zip entries that are immediate children of
+       the requested prefix.  Honors showhidden. */
+    if (rp_has_zip_payload && strncmp(path, ":zip:", 5) == 0)
+    {
+        if (rp_zip_init() != 0)
+            RP_THROW(ctx, "readdir(): zip payload init failed for %s", path);
+        const char *zp = path + 5;
+        if (*zp == '/') zp++;
+
+        char prefix[PATH_MAX];
+        size_t plen = 0;
+        if (*zp)
+        {
+            /* normalize "." / ".." then ensure trailing '/' */
+            if (rp_zip_normalize("", zp, prefix, sizeof(prefix)) != 0)
+                RP_THROW(ctx, "readdir(): bad :zip: path %s", path);
+            plen = strlen(prefix);
+            if (plen && prefix[plen-1] != '/')
+            {
+                if (plen + 2 > sizeof(prefix))
+                    RP_THROW(ctx, "readdir(): :zip: path too long: %s", path);
+                prefix[plen++] = '/';
+                prefix[plen] = '\0';
+            }
+        }
+
+        size_t n = rp_zip_count();
+        int dir_exists = (plen == 0);  /* root always exists */
+        duk_push_array(ctx);
+        for (size_t k = 0; k < n; k++)
+        {
+            const rp_zip_entry *e = rp_zip_at(k);
+            if (e->name_len < plen) continue;
+            if (plen && memcmp(e->name, prefix, plen) != 0) continue;
+            dir_exists = 1;
+
+            const char *child = e->name + plen;
+            size_t clen = e->name_len - plen;
+            if (clen == 0) continue;  /* the dir marker itself */
+
+            /* trim a single trailing '/' on directory entries */
+            if (child[clen-1] == '/') clen--;
+            if (clen == 0) continue;
+
+            /* immediate children only -- no internal slash */
+            int internal_slash = 0;
+            for (size_t j = 0; j < clen; j++)
+                if (child[j] == '/') { internal_slash = 1; break; }
+            if (internal_slash) continue;
+
+            if (!showhidden && child[0] == '.') continue;
+
+            duk_push_lstring(ctx, child, clen);
+            duk_put_prop_index(ctx, -2, i++);
+        }
+        if (!dir_exists)
+            RP_THROW(ctx, "readdir(): could not open directory %s: No such file or directory", path);
+        return 1;
+    }
+
+    DIR *dir = opendir(path);
+    struct dirent *entry=NULL;
 
     if (dir == NULL)
         RP_THROW(ctx, "readdir(): could not open directory %s: %s", path, strerror(errno));
@@ -4092,7 +4862,7 @@ duk_ret_t duk_rp_copyFile(duk_context *ctx, char *fname)
     */
 
     {
-        FILE *dest, *src = fopen(src_filename, "r");
+        FILE *dest, *src = rp_fopen(src_filename, "r");
         struct stat src_stat, dest_stat;
         int err;
 
@@ -4101,13 +4871,13 @@ duk_ret_t duk_rp_copyFile(duk_context *ctx, char *fname)
             RP_THROW(ctx, "%s: could not open file '%s': %s", fname, src_filename, strerror(errno));
         }
 
-        if (stat(src_filename, &src_stat))
+        if (rp_stat(src_filename, &src_stat))
         {
-            fclose(src);
+            rp_fclose(src);
             RP_THROW(ctx, "%s: error getting status '%s': %s", fname, src_filename, strerror(errno));
         }
 
-        err = stat(dest_filename, &dest_stat);
+        err = rp_stat(dest_filename, &dest_stat);
         if(!err)
         {
             if(dest_stat.st_ino == src_stat.st_ino)
@@ -4117,20 +4887,20 @@ duk_ret_t duk_rp_copyFile(duk_context *ctx, char *fname)
         if (!err && !overwrite)
         {
             // file exists and shouldn't be overwritten
-            fclose(src);
+            rp_fclose(src);
             RP_THROW(ctx, "%s: error copying '%s': %s", fname, dest_filename, "file already exists");
         }
 
         if (err && errno != ENOENT)
         {
-            fclose(src);
+            rp_fclose(src);
             RP_THROW(ctx, "%s: error getting status '%s': %s", fname, dest_filename, strerror(errno));
         }
 
-        dest = fopen(dest_filename, "w");
+        dest = rp_fopen(dest_filename, "w");
         if (dest == NULL)
         {
-            fclose(src);
+            rp_fclose(src);
             RP_THROW(ctx, "%s: could not open file '%s': %s", fname, dest_filename, strerror(errno));
         }
         {
@@ -4140,32 +4910,32 @@ duk_ret_t duk_rp_copyFile(duk_context *ctx, char *fname)
             {
                 if (write(fileno(dest), buf, nread) != nread)
                 {
-                    fclose(src);
-                    fclose(dest);
+                    rp_fclose(src);
+                    rp_fclose(dest);
                     DUK_UTIL_REMOVE_FILE(ctx, dest_filename);
                     RP_THROW(ctx, "%s: could not write to file '%s': %s", fname, dest_filename, strerror(errno));
                 }
             }
             if (nread < 0)
             {
-                fclose(src);
-                fclose(dest);
+                rp_fclose(src);
+                rp_fclose(dest);
                 DUK_UTIL_REMOVE_FILE(ctx, dest_filename);
                 RP_THROW(ctx, "%s: error reading file '%s': %s", fname, src_filename, strerror(errno));
             }
             if (chmod(dest_filename, src_stat.st_mode))
             {
                 //DUK_UTIL_REMOVE_FILE(ctx, dest_filename);
-                fclose(src);
-                fclose(dest);
+                rp_fclose(src);
+                rp_fclose(dest);
                 RP_THROW(ctx, "%s: error setting file mode %o for '%s': %s", fname, src_stat.st_mode, dest_filename, strerror(errno));
             }
         }
-        fclose(src);
-        fclose(dest);
+        rp_fclose(src);
+        rp_fclose(dest);
         /* check that file stats and is the same size */
         errno=0;
-        if (stat(dest_filename, &dest_stat) != 0)
+        if (rp_stat(dest_filename, &dest_stat) != 0)
             RP_THROW(ctx, "%s: error getting information for '%s' after copy: %s", fname, dest_filename, strerror(errno));
 
         /* if src is growing, dest might be smaller now
@@ -4409,7 +5179,7 @@ duk_ret_t duk_rp_touch(duk_context *ctx)
         struct stat refrence_stat;
         struct utimbuf new_times;
 
-        if (stat(path, &filestat) != 0) // file doesn't exist
+        if (rp_stat(path, &filestat) != 0) // file doesn't exist
         {
             if (nocreate)
             {
@@ -4417,11 +5187,11 @@ duk_ret_t duk_rp_touch(duk_context *ctx)
             }
             else
             {
-                FILE *fp = fopen(path, "w"); // create file
+                FILE *fp = rp_fopen(path, "w"); // create file
                 if (!fp)
                     RP_THROW(ctx, "touch(): failed to create file");
-                fclose(fp);
-                if ( stat(path, &filestat) != 0)
+                rp_fclose(fp);
+                if ( rp_stat(path, &filestat) != 0)
                 {
                     RP_THROW(ctx, "touch(): failed to get file information");
                 }
@@ -4437,7 +5207,7 @@ duk_ret_t duk_rp_touch(duk_context *ctx)
         if (reference)
         {
 
-            if (stat(reference, &refrence_stat) != 0) //reference file doesn't exist
+            if (rp_stat(reference, &refrence_stat) != 0) //reference file doesn't exist
                 RP_THROW(ctx, "touch(): reference file does not exist");
 
             new_times.modtime = setmodify ? refrence_stat.st_mtime : filestat.st_mtime; // if setmodify, update m_time
@@ -4600,7 +5370,7 @@ duk_ret_t duk_rp_chown(duk_context *ctx)
         }
 
 
-        stat(path, &file_stat);
+        rp_stat(path, &file_stat);
         if (uid == -1) // no specified user
         {
             user_id = file_stat.st_uid;
@@ -4633,16 +5403,25 @@ static duk_ret_t include_js(duk_context *ctx)
     const char *script= REQUIRE_STRING(ctx, -1, "rampart.include: - parameter must be a String (path of script to include)" );
     const char *bfn=NULL;
     size_t slen = strlen(script);
-    RPPATH rp;
+    RPPATH rp = {{0}};
     char *buffer = NULL;
-    rp=rp_find_path((char*)script, "includes/");
+    /* Try the appended-zip payload first when present, fall back to disk.
+       Same precedence as require()'s resolve_id, so a bundle's includes/
+       can ship JS that include() finds before any same-named disk file. */
+    if (rp_has_zip_payload)
+        rp = rp_find_zip_path((char*)script, "includes/");
+    if (!strlen(rp.path))
+        rp = rp_find_path((char*)script, "includes/");
 
     if(!strlen(rp.path) && strcmp(&script[slen-3], ".js") )
     {
         char jsscript[slen + 4];
         strcpy(jsscript, script);
         strcat(jsscript, ".js");
-        rp=rp_find_path(jsscript, "includes/");
+        if (rp_has_zip_payload)
+            rp = rp_find_zip_path(jsscript, "includes/");
+        if (!strlen(rp.path))
+            rp = rp_find_path(jsscript, "includes/");
     }
 
     if(!strlen(rp.path))
@@ -4650,7 +5429,7 @@ static duk_ret_t include_js(duk_context *ctx)
         RP_THROW(ctx, "could not include file %s: %s", script,  strerror(errno));
     }
 
-    FILE *f = fopen(rp.path, "r");
+    FILE *f = rp_fopen(rp.path, "r");
     if (!f)
         RP_THROW(ctx, "Could not open %s: %s\n", rp.path, strerror(errno));
 
@@ -4692,7 +5471,7 @@ static duk_ret_t include_js(duk_context *ctx)
         duk_push_string(ctx, buffer);
     }
 
-    fclose(f);
+    rp_fclose(f);
     free(buffer);
 
     if(bfn)
@@ -4894,6 +5673,26 @@ duk_ret_t duk_rp_hash_file(duk_context *ctx)
 
     val_idx = !opts_idx;
     fn = REQUIRE_STRING(ctx, val_idx, "hashFile() - argument (filename) must be a string");
+
+    /* :zip: paths: read+decompress through rp_zip_read; no mmap, no fd. */
+    if (rp_has_zip_payload && strncmp(fn, ":zip:", 5) == 0)
+    {
+        if (rp_zip_init() != 0)
+            RP_THROW(ctx, "hashFile() - zip payload init failed for '%s'", fn);
+        const char *zname = fn + 5;
+        if (*zname == '/') zname++;
+        const rp_zip_entry *e = rp_zip_resolve(zname);
+        if (!e)
+            RP_THROW(ctx, "hashFile() - could not open file '%s' - %s", fn, strerror(ENOENT));
+        unsigned char *buf = NULL;
+        size_t blen = 0;
+        if (rp_zip_read(e, &buf, &blen) != 0)
+            RP_THROW(ctx, "hashFile() - could not read file '%s'", fn);
+        duk_ret_t ret = _hash(ctx, buf, blen);
+        free(buf);
+        return ret;
+    }
+
     fd = open(fn, O_RDONLY);
     if (fd == -1)
         RP_THROW(ctx, "hashFile() - could not open file '%s' - %s", fn, strerror(errno));
@@ -5265,7 +6064,7 @@ duk_ret_t duk_rp_hll_addfile(duk_context *ctx)
     free(line);
 
     if(type == RTYPE_FILE)
-        fclose(f);
+        rp_fclose(f);
 
     duk_push_this(ctx);
     return 1;
@@ -5560,13 +6359,13 @@ static void find_bundle()
     char **cur=ca_bundle_locs;
 
     // if the default is there, all is good
-    //if(access(CURL_CA_BUNDLE, R_OK)== 0)
+    //if(rp_access(CURL_CA_BUNDLE, R_OK)== 0)
     //    return;
 
     //else if we find one somewhere else, set char *ca_bundle to it
     while(*cur)
     {
-        if (access(*cur, R_OK) == 0)
+        if (rp_access(*cur, R_OK) == 0)
         {
             rp_ca_bundle=*cur;
             return;
@@ -5581,7 +6380,7 @@ static void find_bundle()
     {
         static char local_bundle[PATH_MAX];
         snprintf(local_bundle, sizeof(local_bundle), "%s/etc/ca-bundle.crt", rampart_dir);
-        if (access(local_bundle, R_OK) == 0)
+        if (rp_access(local_bundle, R_OK) == 0)
             rp_ca_bundle = local_bundle;
     }
 #endif
@@ -5862,6 +6661,24 @@ void duk_rampart_init(duk_context *ctx)
     duk_put_prop_string(ctx, -2, "queryToObject");
     duk_push_c_function(ctx, duk_rp_read_file, DUK_VARARGS);
     duk_put_prop_string(ctx, -2, "readFile");
+    /* Only expose payload* when an SFX zip is actually present.  Callers
+       can feature-detect with `if (rampart.utils.payloadList) ...` */
+    if (rp_has_zip_payload)
+    {
+        duk_push_c_function(ctx, duk_rp_payload_list, 0);
+        duk_put_prop_string(ctx, -2, "payloadList");
+        duk_push_c_function(ctx, duk_rp_payload_get, 1);
+        duk_put_prop_string(ctx, -2, "payloadGet");
+        duk_push_c_function(ctx, duk_rp_payload_extract, 2);
+        duk_put_prop_string(ctx, -2, "payloadExtract");
+    }
+    /* Generic zip utilities -- always available, work on any zip on disk. */
+    duk_push_c_function(ctx, duk_rp_zip_list, 1);
+    duk_put_prop_string(ctx, -2, "zipList");
+    duk_push_c_function(ctx, duk_rp_zip_get, 2);
+    duk_put_prop_string(ctx, -2, "zipGet");
+    duk_push_c_function(ctx, duk_rp_zip_extract, 3);
+    duk_put_prop_string(ctx, -2, "zipExtract");
     duk_push_c_function(ctx, duk_rp_readline, 2);
     duk_put_prop_string(ctx, -2, "readLine");
 //    duk_push_c_function(ctx, duk_rp_readln, 1);
@@ -6249,7 +7066,7 @@ duk_ret_t duk_rp_fread(duk_context *ctx)
         duk_buffer_to_string(ctx, -1);
 
     if(type == RTYPE_FILE)
-        fclose(f);
+        rp_fclose(f);
 
     return (1);
 }
@@ -6492,7 +7309,7 @@ static duk_ret_t duk_rp_fgets_getchar(duk_context *ctx, int gtype)
     }
 
     if(type == RTYPE_FILE)
-        fclose(f);
+        rp_fclose(f);
 
     duk_push_string(ctx, buf);
     free(buf);
@@ -6543,12 +7360,12 @@ duk_ret_t duk_rp_fwrite(duk_context *ctx)
 
         if(append)
         {
-            if( (f=fopen(fn,"a")) == NULL )
+            if( (f=rp_fopen(fn,"a")) == NULL )
                 RP_THROW(ctx, "fwrite(): error opening file '%s': %s", fn, strerror(errno));
         }
         else
         {
-            if( (f=fopen(fn,"w")) == NULL )
+            if( (f=rp_fopen(fn,"w")) == NULL )
                 RP_THROW(ctx, "fwrite(): error opening file '%s': %s", fn, strerror(errno));
         }
     }
@@ -6593,7 +7410,7 @@ duk_ret_t duk_rp_fwrite(duk_context *ctx)
         }
     }
     if(closefh)
-        fclose(f);
+        rp_fclose(f);
 
     if(wrote != sz)
         RP_THROW(ctx, "fwrite(): error writing file (wrote %d of %d bytes)", wrote, sz);
@@ -6661,7 +7478,7 @@ duk_ret_t duk_rp_fclose(duk_context *ctx)
             else
                 RP_THROW(ctx,"error: fclose({stream:\"streamName\"},...): streamName must be stdout, stderr, stdin, accessLog or errorLog");
 
-            fclose(f);
+            rp_fclose(f);
             return 0;
         }
         else
@@ -6670,7 +7487,7 @@ duk_ret_t duk_rp_fclose(duk_context *ctx)
             f = getfh(ctx,0,"fclose()");
             if(f)
             {
-                fclose(f);
+                rp_fclose(f);
                 duk_push_pointer(ctx,NULL);
                 duk_put_prop_string(ctx,0,DUK_HIDDEN_SYMBOL("filehandle") );
             }
@@ -6747,14 +7564,14 @@ duk_ret_t duk_rp_fprintf(duk_context *ctx)
 
         if(append)
         {
-            if( (f=fopen(fn,"a")) == NULL )
+            if( (f=rp_fopen(fn,"a")) == NULL )
             {
                     goto err;
             }
         }
         else
         {
-            if( (f=fopen(fn,"w")) == NULL )
+            if( (f=rp_fopen(fn,"w")) == NULL )
                 goto err;
         }
     }
@@ -6794,7 +7611,7 @@ duk_ret_t duk_rp_fprintf(duk_context *ctx)
         RP_THROW(ctx, "fprintf(): error - %s", strerror(errno));
 
     if(closefh)
-        fclose(f);
+        rp_fclose(f);
 
     duk_push_int(ctx, ret);
     return 1;
@@ -6906,7 +7723,7 @@ static int f_return_this[10] = {
   0
 };
 
-/* for var h=fopen(); h.fprintf, h.fseek, ... */
+/* for var h=rp_fopen(); h.fprintf, h.fseek, ... */
 
 static duk_ret_t f_func(duk_context *ctx)
 {
@@ -6976,7 +7793,7 @@ duk_ret_t duk_rp_fopen(duk_context *ctx)
     )
         RP_THROW(ctx, "error opening file '%s': invalid mode '%s'", fn, mode);
 
-    f=fopen(fn,mode);
+    f=rp_fopen(fn,mode);
     if(f==NULL) goto err;
 
     switch(redir_stream)
@@ -6984,7 +7801,7 @@ duk_ret_t duk_rp_fopen(duk_context *ctx)
         case 0:
             if(mode[1]=='+' || mode[0]!='r')
             {
-                fclose(f);
+                rp_fclose(f);
                 RP_THROW(ctx, "fopen() - cannot assign writing filehandle to stdin");
             }
             stdsave=stdin;
@@ -6993,7 +7810,7 @@ duk_ret_t duk_rp_fopen(duk_context *ctx)
         case 1:
             if(mode[1]=='+' || mode[0]=='r')
             {
-                fclose(f);
+                rp_fclose(f);
                 RP_THROW(ctx, "fopen() - cannot assign reading filehandle to stdout");
             }
             stdsave=stdout;
@@ -7002,7 +7819,7 @@ duk_ret_t duk_rp_fopen(duk_context *ctx)
         case 2:
             if(mode[1]=='+' || mode[0]=='r')
             {
-                fclose(f);
+                rp_fclose(f);
                 RP_THROW(ctx, "fopen() - cannot assign reading filehandle to stdout");
             }
             stdsave=stderr;
@@ -7014,6 +7831,14 @@ duk_ret_t duk_rp_fopen(duk_context *ctx)
     mark_as_fh();
     duk_push_pointer(ctx,(void *)f);
     duk_put_prop_string(ctx,-2,DUK_HIDDEN_SYMBOL("filehandle") );
+
+    /* zip-backed FILE* has no fd; mark with the existing fopenBuffer
+       "cookie" symbol so fread/fwrite/readFile skip flock(fileno(fp)). */
+    if (rp_fstat_is_zip(f))
+    {
+        duk_push_true(ctx);
+        duk_put_prop_string(ctx,-2,DUK_HIDDEN_SYMBOL("cookie"));
+    }
 
     if(stdsave)
     {

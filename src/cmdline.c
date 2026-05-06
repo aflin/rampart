@@ -8,6 +8,7 @@
 #include "rampart.h"
 #include "duktape/register.h"
 #include "include/version.h"
+#include "rp_zip.h"
 #include <stdio.h>
 #include <limits.h>
 #include <stdlib.h>
@@ -22,6 +23,7 @@
 #include <dlfcn.h>
 #include <sys/ioctl.h>
 #include <dirent.h>
+#include <fcntl.h>
 #ifdef __CYGWIN__
 #include <sys/cygwin.h>
 #include <sys/mount.h>
@@ -1735,30 +1737,53 @@ RP_ParseRes rp_get_transpiled_cached(char *fn, char *src, time_t src_mtime, int 
     RP_ParseRes res = {0};
     char *cachefile = NULL;
     struct stat cstat;
+    int is_zip_src = 0;
 
     /* Build cache filename: file.js -> file.transpiled.js */
     if (fn && strcmp(fn, "stdin") != 0 && strcmp(fn, "eval_code") != 0
             && strcmp(fn, "command_line_script") != 0 && strcmp(fn, "built_in_server") != 0)
     {
-        char *dot = strrchr(fn + 1, '.');
-        size_t pfx = dot ? (size_t)(dot - fn) : strlen(fn);
+        /* Detect zip-origin sources.  Two shapes reach us:
+             - require() path:        fn = ":zip:/<entry>"
+             - bundle entry script:   fn = "<entry>" (bare; RP_script form)
+           Normalize the bare form so the cachefile lands as
+           ":zip:/<entry>.transpiled.<ext>" -- rp_stat / rp_fopen will then
+           find a pre-built cache that was bundled alongside the source. */
+        char zfn[PATH_MAX];
+        const char *cache_base = fn;
+        if (strncmp(fn, ":zip:/", 6) == 0)
+        {
+            is_zip_src = 1;
+        }
+        else if (rp_has_zip_payload && rp_zip_init() == 0
+                 && rp_zip_lookup(fn) != NULL)
+        {
+            is_zip_src = 1;
+            snprintf(zfn, sizeof(zfn), ":zip:/%s", fn);
+            cache_base = zfn;
+        }
+
+        char *dot = strrchr(cache_base + 1, '.');
+        size_t pfx = dot ? (size_t)(dot - cache_base) : strlen(cache_base);
         size_t ext_len = dot ? strlen(dot) : 3;
         REMALLOC(cachefile, pfx + 12 + ext_len + 1); /* .transpiled + ext + nul */
-        memcpy(cachefile, fn, pfx);
+        memcpy(cachefile, cache_base, pfx);
         cachefile[pfx] = '\0';
         strcat(cachefile, ".transpiled");
         strcat(cachefile, dot ? dot : ".js");
 
-        /* Check if cache file exists and is newer than source */
-        if (stat(cachefile, &cstat) != -1 && cstat.st_mtime >= src_mtime)
+        /* Check if cache file exists and is newer than source.  rp_stat /
+           rp_fopen handle both ":zip:/..." paths (read from zip) and
+           regular disk paths transparently. */
+        if (rp_stat(cachefile, &cstat) != -1 && cstat.st_mtime >= src_mtime)
         {
-            FILE *cf = fopen(cachefile, "r");
+            FILE *cf = rp_fopen(cachefile, "r");
             if (cf)
             {
                 char *cbuf = NULL;
                 REMALLOC(cbuf, cstat.st_size + 1);
                 size_t cread = fread(cbuf, 1, cstat.st_size, cf);
-                fclose(cf);
+                rp_fclose(cf);
                 if (cread == (size_t)cstat.st_size)
                 {
                     cbuf[cread] = '\0';
@@ -1793,9 +1818,14 @@ RP_ParseRes rp_get_transpiled_cached(char *fn, char *src, time_t src_mtime, int 
     /* No cache or stale — transpile */
     res = rp_get_transpiled(src, is_tickified);
 
-    /* Write cache only if actually transpiled (not just tickified) */
-    /* Write cache only if actually transpiled (not just tickified) */
-    if (cachefile && res.transpiled && !res.err && is_tickified && !*is_tickified)
+    /* Write cache only if actually transpiled (not just tickified).  Skip
+       writes for zip-origin sources: the bundle author is expected to ship
+       the .transpiled.js alongside the source if they want a build-time
+       cache.  Writing here would either fail (read-only filesystem) or
+       pollute the user's cwd with a file that can never be re-found by
+       the read path above. */
+    if (cachefile && !is_zip_src
+        && res.transpiled && !res.err && is_tickified && !*is_tickified)
     {
         FILE *wf = fopen(cachefile, "w");
         if (wf)
@@ -1913,10 +1943,11 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
 {
     char *s, *babelcode=NULL;
     struct stat babstat;
-    char babelsrc[strlen(fn)+10];
+    char babelsrc[PATH_MAX];
     FILE *f;
     size_t read;
     duk_size_t bsz=0;
+    int is_zip_src = 0;
 
     babelsrc[0]='\0';
 
@@ -1964,25 +1995,46 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
 
     if(strcmp("stdin",fn) != 0  && strcmp("eval_code",fn) != 0)
     {
+        /* Detect zip-origin sources.  Two shapes reach us:
+             - require() path:        fn = ":zip:/<entry>"
+             - bundle entry script:   fn = "<entry>" (bare; RP_script form)
+           Normalize the bare form so the cache file lookup hits
+           ":zip:/<entry>.babel.<ext>" -- rp_stat / rp_fopen will then find
+           a pre-built cache that was bundled alongside the source. */
+        char zfn[PATH_MAX];
+        const char *cache_base = fn;
+        if (strncmp(fn, ":zip:/", 6) == 0)
+        {
+            is_zip_src = 1;
+        }
+        else if (rp_has_zip_payload && rp_zip_init() == 0
+                 && rp_zip_lookup(fn) != NULL)
+        {
+            is_zip_src = 1;
+            snprintf(zfn, sizeof(zfn), ":zip:/%s", fn);
+            cache_base = zfn;
+        }
+
         /* file.js => file.babel.js */
         /* skip the first char in case of "./file" */
-        s=strrchr(fn+1,'.');
+        s=strrchr(cache_base+1,'.');
         if(s)
         {
-            size_t l=s-fn;
-            strncpy(babelsrc,fn,l);
+            size_t l=s-cache_base;
+            strncpy(babelsrc,cache_base,l);
             babelsrc[l]='\0';
             strcat(babelsrc,".babel");
             strcat(babelsrc,s);
         }
         else
         {
-            strcpy (babelsrc, fn);
+            strcpy (babelsrc, cache_base);
             strcat (babelsrc, ".babel.js");
         }
 
-        /* does the file.babel.js exist? */
-        if (stat(babelsrc, &babstat) != -1)
+        /* does the file.babel.js exist?  rp_stat / rp_fopen handle both
+           ":zip:/..." (read from zip) and disk paths transparently. */
+        if (rp_stat(babelsrc, &babstat) != -1)
         {
             /* is it newer than the file.js */
             if(babstat.st_mtime >= src_mtime)
@@ -1990,7 +2042,7 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
                 /* load the cached file.babel.js */
                 REMALLOC(babelcode,babstat.st_size);
 
-                f=fopen(babelsrc,"r");
+                f=rp_fopen(babelsrc,"r");
                 if(f==NULL)
                 {
                     fprintf(stderr,"error fopen(): error opening file '%s': %s\n",babelsrc,strerror(errno));
@@ -2012,7 +2064,7 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
                     duk_push_lstring(ctx, babelcode, (duk_size_t)babstat.st_size);
                     free(babelcode);
                     babelcode=(char *)duk_get_string(ctx,-1);
-                    fclose(f);
+                    rp_fclose(f);
                     goto end;
                 }
             }
@@ -2041,7 +2093,12 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
         duk_rp_exit(ctx, 1);
     }
     babelcode=(char *)duk_get_lstring(ctx,-1,&bsz);
-    if(strcmp("stdin",fn) != 0  && strcmp("eval_code",fn) != 0)
+    /* Skip cache write for zip-origin sources: the bundle author is
+       expected to ship the .babel.js alongside the source if they want a
+       build-time cache.  Writing here would either fail on a read-only
+       filesystem or pollute the user's cwd with a file the read path
+       above can never re-find. */
+    if(strcmp("stdin",fn) != 0  && strcmp("eval_code",fn) != 0 && !is_zip_src)
     {
         f=fopen(babelsrc,"w");
         if(f==NULL)
@@ -3468,6 +3525,59 @@ char rampart_dir[PATH_MAX];
 char rampart_bin[PATH_MAX];
 int base_loop_exited=0;
 
+/* Set to 1 by rp_check_zip_payload() at startup if the rampart executable
+   has a zip archive concatenated to it (SFX-style: cat myapp.zip >> rampart).
+   Used by the single-file bundle feature; consumers (e.g. require()) read
+   modules out of the appended archive when this is non-zero. */
+int rp_has_zip_payload=0;
+
+/* When rp_has_zip_payload is non-zero, this holds the absolute byte offset
+   within rampart_exec to the start of the End-of-Central-Directory record.
+   Stashed during detection so rp_zip_init() doesn't need to re-scan. */
+off_t rp_zip_eocd_off=0;
+
+/* Look for a zip End-of-Central-Directory record in the tail of our own
+   executable.  EOCD signature is 'PK\005\006' followed by an 18-byte fixed
+   tail and an optional comment of up to 65535 bytes; total max distance
+   from EOF is therefore 65557 bytes.  Validate any candidate by checking
+   that its stored comment_length matches the bytes remaining in the tail
+   -- this rejects spurious 4-byte matches inside binary code/data. */
+static void rp_check_zip_payload(void)
+{
+    int fd = open(rampart_exec, O_RDONLY);
+    if (fd < 0) return;
+
+    struct stat st;
+    if (fstat(fd, &st) < 0) { close(fd); return; }
+
+    off_t tail_len = (st.st_size < 65557) ? st.st_size : 65557;
+    if (tail_len < 22) { close(fd); return; }
+
+    unsigned char *buf = malloc((size_t)tail_len);
+    if (!buf) { close(fd); return; }
+
+    if (pread(fd, buf, (size_t)tail_len, st.st_size - tail_len) != tail_len)
+    {
+        free(buf); close(fd); return;
+    }
+    close(fd);
+
+    for (off_t i = tail_len - 22; i >= 0; i--)
+    {
+        if (buf[i]==0x50 && buf[i+1]==0x4b && buf[i+2]==0x05 && buf[i+3]==0x06)
+        {
+            uint16_t comment_len = (uint16_t)buf[i+20] | ((uint16_t)buf[i+21] << 8);
+            if ((off_t)comment_len + 22 == tail_len - i)
+            {
+                rp_has_zip_payload = 1;
+                rp_zip_eocd_off = (st.st_size - tail_len) + i;
+                break;
+            }
+        }
+    }
+    free(buf);
+}
+
 /* mutex for locking in rampart.thread */
 pthread_mutex_t thr_lock;
 RPTHR_LOCK *rp_thr_lock;
@@ -3693,6 +3803,9 @@ int main(int argc, char *argv[])
     }
 #endif
 
+    /* Detect SFX-style appended zip payload before any other startup work. */
+    rp_check_zip_payload();
+
     strcpy(rampart_dir, rampart_exec);
     ptr=strrchr(rampart_dir, '/');
     if(!ptr)
@@ -3912,6 +4025,96 @@ int main(int argc, char *argv[])
         RP_script=strdup("built_in_upgrade_script");
     }
 */
+    /* When a zip is appended to this rampart binary, look for an entry
+       script at the zip root and arrange to load it later.  Splicing
+       happens here (not in the later source-loading section) because
+       process.argv is built from rampart_argv when the duktape context
+       is created, which happens before that later section. */
+    else if (rp_has_zip_payload)
+    {
+        static const char *entry_names[] = {
+            "entry_script.js",
+            "entry-script.js",
+            "entryScript.js",
+            "entryscript.js",
+        };
+
+        /* Two ways to choose the script in a bundle:
+             (1) explicit ":zip:/path/foo.js" positional arg -> run that entry,
+             (2) auto-run an entry_script.js / similar at the zip root.       */
+        char *zip_arg = NULL;
+        if (scriptarg >= 0
+            && strncmp(argv[scriptarg], ":zip:/", 6) == 0
+            && rp_zip_init() == 0)
+        {
+            const rp_zip_entry *e = rp_zip_resolve(argv[scriptarg] + 6);
+            if (!e)
+            {
+                fprintf(stderr, "Error: '%s' not found in payload\n",
+                        argv[scriptarg]);
+                exit(1);
+            }
+            zip_arg = argv[scriptarg];
+        }
+
+        if (zip_arg)
+        {
+            /* Explicit zip-path script: leave argv as the user typed it
+               (process.argv == ["./mybundle", ":zip:/...", arg1, ...]).
+               RP_script is the in-zip name (no :zip:/ prefix); the late
+               loader uses it as a direct rp_zip_lookup key. */
+            const char *zname = zip_arg + 6;
+            RP_script = strdup(zname);
+            const char *slash = strrchr(zname, '/');
+            if (slash)
+            {
+                size_t dlen = (size_t)(slash - zname);
+                char *dir = (char *)malloc(dlen + 7); /* ":zip:/" + dir + NUL */
+                memcpy(dir, ":zip:/", 6);
+                memcpy(dir + 6, zname, dlen);
+                dir[6 + dlen] = '\0';
+                RP_script_path = dir;
+            }
+            else
+            {
+                RP_script_path = strdup(":zip:");
+            }
+        }
+        else if (rp_zip_init() == 0)
+        {
+            for (size_t i = 0; i < sizeof(entry_names)/sizeof(*entry_names); i++)
+            {
+                if (rp_zip_resolve(entry_names[i]))
+                {
+                    RP_script      = strdup(entry_names[i]);
+                    /* ":zip:" is the zip-root sentinel; "<scriptPath>/foo"
+                       in user code naturally yields ":zip:/foo" which
+                       rp_find_path_zip_vari and rp_sendfile_zip recognize. */
+                    RP_script_path = strdup(":zip:");
+                    /* Splice entry-script name into argv at index 1 so
+                       `./mybundle a b` looks like `rampart entry_script.js a b`
+                       to the script (process.argv consistency). */
+                    {
+                        char **new_argv = (char **)malloc(sizeof(char *) * (rampart_argc + 1));
+                        if (new_argv)
+                        {
+                            new_argv[0] = rampart_argv[0];
+                            new_argv[1] = (char *)entry_names[i];
+                            for (int k = 1; k < rampart_argc; k++)
+                                new_argv[k + 1] = rampart_argv[k];
+                            rampart_argv = new_argv;
+                            rampart_argc = rampart_argc + 1;
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+        /* Suppress positional-arg interpretation regardless of whether
+           an entry script was found -- a malformed bundle should not
+           accidentally try to stat user data as a script path. */
+        scriptarg = -1;
+    }
     else if (scriptarg>-1)
     {
         char p[PATH_MAX], *s;
@@ -4046,6 +4249,27 @@ int main(int argc, char *argv[])
             else
                 fn="command_line_script";
             goto have_src;
+        }
+
+        /* The early if/else chain (above) sets RP_script to the matched
+           zip entry name when a bundled entry script is present.  Here
+           we read its bytes from the zip and feed them to the loader. */
+        if (rp_has_zip_payload && RP_script && !isstdin && !server && !cmdline_src)
+        {
+            const rp_zip_entry *e = rp_zip_resolve(RP_script);
+            if (e)
+            {
+                unsigned char *zbuf = NULL;
+                size_t zlen = 0;
+                if (rp_zip_read(e, &zbuf, &zlen) == 0)
+                {
+                    file_src = (char *)zbuf;
+                    fn = RP_script;
+                    src_sz = zlen;
+                    entry_file_stat.st_mtime = 1; /* stable cache key */
+                    goto have_src;
+                }
+            }
         }
 
         /* scriptarg equiv was '-' */

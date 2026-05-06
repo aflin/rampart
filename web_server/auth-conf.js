@@ -25,8 +25,8 @@ module.exports = {
     cookieName: "rp_session",
 
     /* dbPath            String. Path to LMDB database directory.
-                         Relative paths are resolved from the server root.      */
-    dbPath: "data/auth",
+                         Default: serverConf.dataRoot + "/auth"                 */
+    //dbPath: "data/auth",
 
     /* beginHtml / endHtml   Strings. HTML wrapper for all auth pages (login,
                          register, admin, password reset, etc.).  The auth module

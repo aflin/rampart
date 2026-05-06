@@ -904,12 +904,12 @@ duk_ret_t dosearchfile(duk_context *ctx, const char *search, const char *file, A
     else
     {
         fname="searchFile";
-        if((fh=fopen(file,"r"))==(FILE *)NULL)
+        if((fh=rp_fopen(file,"r"))==(FILE *)NULL)
             RP_THROW(ctx, "Unable to open input file: %s",file);
     }
     if ((mm = openmmapi(search, TXbool_False, cp)) == MMAPIPN)/* open API and do NULL chk */
     {
-        fclose(fh);
+        rp_fclose(fh);
         closeapicp(cp);                  /* cleanup the control parameters */
         RP_THROW(ctx, "%s: Unable to open API (bad query or other fault):\n%s", fname, errmap0);
     }
@@ -1016,7 +1016,7 @@ duk_ret_t dosearchfile(duk_context *ctx, const char *search, const char *file, A
         closemmapi(mm);
     if(cp)
         closeapicp(cp);                  /* cleanup the control parameters */
-    fclose(fh);
+    rp_fclose(fh);
     free(buf);                               /* deallocate the data buffer */
     return 1;
 }

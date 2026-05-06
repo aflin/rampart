@@ -1836,6 +1836,17 @@ extern int TXverifysingle;/* JMT 1999-08-11 */
 extern int TXexceptionbehaviour;/* JMT 2000-07-07 */
 #ifdef LOCK_SERVER
 PID_T TXrunlockdaemon(DDIC *ddic);
+
+/* Optional resolver hook: when set (non-NULL), TXrunlockdaemon calls it
+   before walking the standard search path.  The hook fills `path` with
+   an executable texislockd location it has prepared (e.g. extracted from
+   a single-file bundle) and may set `*idle_secs` to N to add `-i N` to
+   the launched argv (also `-u` to ask the daemon to unlink its own image
+   at startup).  Return 0 on success; non-zero falls through to standard
+   search.  Used by rampart-sql.so's bundled-zip code path. */
+typedef int (*tx_lockd_resolver_t)(char *path, size_t pathsz, int *idle_secs);
+extern tx_lockd_resolver_t tx_lockd_resolver_hook;
+
 #define TX_I_AM_DB_MONITOR (TXApp->role == TXAppDBMonitor)
 #else
 extern int TXminserver;

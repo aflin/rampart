@@ -19,6 +19,7 @@
 #include <fcntl.h>
 #include <netdb.h>
 #include "rampart.h"
+#include "rp_zip.h"
 #include "event.h"
 #include "event2/bufferevent_ssl.h"
 #include "event2/dns.h"
@@ -5144,6 +5145,10 @@ static duk_ret_t duk_rp_net_server(duk_context *ctx)
             {
                 const char *kfile = REQUIRE_STRING(ctx, -1, "new Server: option 'sslKeyFile' must be a String");
 
+                /* TLS key/cert files are intentionally NOT zip-aware: OpenSSL
+                   loads them by path later (SSL_CTX_use_PrivateKey_file etc.),
+                   and shipping private keys in a redistributable bundle is a
+                   bad idea anyway. */
                 if (stat(kfile, &f_stat) != 0)
                     RP_THROW(ctx, "server.start: Cannot load ssl key '%s' (%s)", kfile, strerror(errno));
                 else
@@ -5175,6 +5180,7 @@ static duk_ret_t duk_rp_net_server(duk_context *ctx)
             {
                 const char *pfile = REQUIRE_STRING(ctx, -1, "new Server: option 'sslCertFile' must be a String");
 
+                /* see TLS-key comment above; cert files stay disk-only */
                 if (stat(pfile, &f_stat) != 0)
                     RP_THROW(ctx, "server.start: Cannot load ssl cert file '%s' (%s)", pfile, strerror(errno));
                 else

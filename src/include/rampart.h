@@ -329,6 +329,8 @@ extern char rampart_exec[PATH_MAX];          // the full path to the executable
 extern char rampart_dir[PATH_MAX];           // the base directory
 extern char rampart_bin[PATH_MAX];           // the base directory - with /bin if executable is in bin
 extern char modules_dir[PATH_MAX];           // where modules live
+extern int  rp_has_zip_payload;              // 1 if SFX-style zip is appended to rampart_exec
+extern off_t rp_zip_eocd_off;                // absolute offset of EOCD within rampart_exec
 extern duk_context *main_ctx;                // the context if/when single threaded
 extern struct event_base **thread_base;      // each thread (or pair or ctxs) gets an event loop
 extern int totnthreads;                      // when threading in server - number of ctx contexts
@@ -722,6 +724,8 @@ RPPATH {
 };
 RPPATH rp_find_path_vari(char *file, ...);
 #define rp_find_path(file, ...) rp_find_path_vari(file, __VA_ARGS__, NULL)
+RPPATH rp_find_path_zip_vari(char *file, ...);
+#define rp_find_zip_path(file, ...) rp_find_path_zip_vari(file, __VA_ARGS__, NULL)
 
 int rp_mkdir_parent(const char *path, mode_t mode);
 RPPATH rp_get_home_path(char *file, char *subdir);

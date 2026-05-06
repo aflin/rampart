@@ -30,6 +30,14 @@ FILE *logfile;
 
 #define MAX_LINE 16384
 
+/* Idle-exit state: when idle_seconds > 0, the daemon exits cleanly after
+   idle_seconds elapse with active_conns == 0.  Set via -i / --idle. */
+static int idle_seconds = 0;
+static int active_conns = 0;
+static time_t last_activity = 0;
+static struct event *idle_check_event = NULL;
+static struct event_base *g_base = NULL;
+
 void do_read(evutil_socket_t fd, short events, void *arg);
 void do_write(evutil_socket_t fd, short events, void *arg);
 
@@ -550,6 +558,8 @@ errorcb(struct bufferevent *bev, short error, void *ctx)
   }
   bufferevent_free(bev);
   connection_delete(c);
+  if (active_conns > 0) active_conns--;
+  last_activity = time(NULL);
 }
 
 void
@@ -574,8 +584,30 @@ do_accept(evutil_socket_t listener, short event, void *arg)
         bufferevent_setcb(ctx->bev, readcb, NULL, errorcb, (void *)ctx);
         bufferevent_setwatermark(ctx->bev, EV_READ, 0, MAX_LINE);
         bufferevent_enable(ctx->bev, EV_READ|EV_WRITE);
+        active_conns++;
+        last_activity = time(NULL);
     }
     (void)event;
+}
+
+/* Periodic idle check: exits the loop cleanly when there have been no
+   active connections for at least `idle_seconds`.  Re-arms itself. */
+static void
+idle_check_cb(evutil_socket_t fd, short events, void *arg)
+{
+    (void)fd; (void)events; (void)arg;
+    if (active_conns == 0 && idle_seconds > 0 &&
+        time(NULL) - last_activity >= (time_t)idle_seconds)
+    {
+        event_base_loopexit(g_base, NULL);
+        return;
+    }
+    {
+        struct timeval tv;
+        tv.tv_sec  = (idle_seconds > 4) ? (idle_seconds / 4) : 1;
+        tv.tv_usec = 0;
+        event_add(idle_check_event, &tv);
+    }
 }
 
 int
@@ -618,6 +650,16 @@ run(void)
     /*XXX check it */
     event_add(listener_event, NULL);
 
+    if (idle_seconds > 0) {
+        struct timeval tv;
+        g_base = base;
+        last_activity = time(NULL);
+        idle_check_event = event_new(base, -1, 0, idle_check_cb, NULL);
+        tv.tv_sec  = (idle_seconds > 4) ? (idle_seconds / 4) : 1;
+        tv.tv_usec = 0;
+        event_add(idle_check_event, &tv);
+    }
+
     event_base_dispatch(base);
 
     return 0;
@@ -628,7 +670,9 @@ int
 main(int c, char **v)
 {
   int dologging = 0;
-  (void)v;
+  int foreground = 0;
+  int unlink_self = 0;
+  int saw_recognized_opt = 0;
 
   // increase ulimit -n to max
   struct rlimit rlp;
@@ -638,7 +682,35 @@ main(int c, char **v)
   rlp.rlim_cur = rlp.rlim_max;
   setrlimit(RLIMIT_NOFILE, &rlp);
 
-  if(c == 1) {
+  /* CLI options.  -i N / --idle N : self-exit after N idle seconds.
+                   -f / --foreground : do not daemonize.
+                   -d / --daemon     : explicit daemonize (default for these args).
+     Backward compat: bare 'texislockd' (c==1) still daemonizes.
+     Unrecognized args keep the historical "any arg = stay foreground" path. */
+  for (int i = 1; i < c; i++) {
+    if ((!strcmp(v[i], "-i") || !strcmp(v[i], "--idle")) && i + 1 < c) {
+      idle_seconds = atoi(v[++i]);
+      if (idle_seconds < 0) idle_seconds = 0;
+      saw_recognized_opt = 1;
+    } else if (!strcmp(v[i], "-f") || !strcmp(v[i], "--foreground")) {
+      foreground = 1;
+      saw_recognized_opt = 1;
+    } else if (!strcmp(v[i], "-d") || !strcmp(v[i], "--daemon")) {
+      saw_recognized_opt = 1;
+    } else if (!strcmp(v[i], "-u") || !strcmp(v[i], "--unlink-self")) {
+      unlink_self = 1;
+      saw_recognized_opt = 1;
+    }
+    /* Unknown args are ignored here (no help/usage to preserve old silent behavior). */
+  }
+
+  /* If we were extracted to a tempfile (bundled launch), remove the on-disk
+     copy now -- the running process keeps the inode alive via its mapping. */
+  if (unlink_self && v[0] && v[0][0] == '/') {
+    (void)unlink(v[0]);
+  }
+
+  if ((c == 1) || (saw_recognized_opt && !foreground)) {
     daemon(0, 0);
   }
   setvbuf(stdout, NULL, _IONBF, 0);

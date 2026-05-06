@@ -7,6 +7,7 @@
 
 #define RP_STRING_IMPLEMENTATION
 #include "rampart.h"
+#include "rp_zip.h"
 #include "libdeflate.h"
 
 /* file types we can identify */
@@ -341,11 +342,11 @@ static filetype_t identify_content(const unsigned char *buf, size_t len,
 static unsigned char *read_file_contents(const char *filename, size_t *out_len)
 {
     struct stat st;
-    if(stat(filename, &st) != 0)
+    if(rp_stat(filename, &st) != 0)
         return NULL;
 
     size_t fsize = (size_t)st.st_size;
-    FILE *f = fopen(filename, "rb");
+    FILE *f = rp_fopen(filename, "rb");
     if(!f)
         return NULL;
 
@@ -353,7 +354,7 @@ static unsigned char *read_file_contents(const char *filename, size_t *out_len)
     REMALLOC(buf, fsize + 1);
 
     size_t nread = fread(buf, 1, fsize, f);
-    fclose(f);
+    rp_fclose(f);
 
     buf[nread] = 0;
     *out_len = nread;

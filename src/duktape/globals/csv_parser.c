@@ -21,6 +21,7 @@
 #include <sys/stat.h>
 #include <string.h>
 #include "rampart.h"
+#include "rp_zip.h"
 #include "csv_parser.h"
 
 
@@ -56,16 +57,16 @@ openCSV(char *fileName)
    }
    
    // read in the raw file
-   if( stat(fileName, &st)<0
+   if( rp_stat(fileName, &st)<0
    || !(csv->buf=malloc((size_t)st.st_size+1))
-   || !(fh=fopen(fileName,"r"))
+   || !(fh=rp_fopen(fileName,"r"))
    || fread(csv->buf,1,(size_t)st.st_size,fh)!=st.st_size
    )
    {
       csvErrNo=errno;
-      
+
       if(fh)
-         fclose(fh);
+         rp_fclose(fh);
 
       if(csv->buf)  // thanks for the catch Ben
          free(csv->buf);
@@ -75,7 +76,7 @@ openCSV(char *fileName)
       return(NULL);
    }
    
-   fclose(fh);                     // we no longer need the file
+   rp_fclose(fh);                  // we no longer need the file
    
    csvDefaultSettings(csv);
    csv->fileSize=st.st_size;

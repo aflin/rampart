@@ -18,6 +18,7 @@
 #include "event2/thread.h"
 #include "curl_config.h"
 #include "rampart.h"
+#include "rp_zip.h"
 
 static char *rp_curl_def_bundle=NULL;
 
@@ -694,7 +695,7 @@ size_t read_callback(void *ptr, size_t size, size_t nmemb, void *userdata)
 
 int post_from_file(duk_context *ctx, CURL *handle, CSOS *sopts, const char *fn)
 {
-    FILE *file = fopen(fn, "r");
+    FILE *file = rp_fopen(fn, "r");
     size_t sz;
     char hbuf[64];
 
@@ -2573,7 +2574,7 @@ static void clean_req(CURLREQ *req)
         free(sopts->postdata);
         // bug fix: fclose post file handle during cleanup to prevent leak - 2026-02-27
         if(sopts->postfile)
-            fclose(sopts->postfile);
+            rp_fclose(sopts->postfile);
         if (sopts->mime != (curl_mime *)NULL)
             curl_mime_free(sopts->mime);
         free(sopts->refcount);

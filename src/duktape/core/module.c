@@ -14,6 +14,7 @@
 #include "duktape.h"
 #include "module.h"
 #include "rampart.h"
+#include "rp_zip.h"
 #include "rp_transpile.h"
 
 duk_ret_t duk_rp_push_current_module(duk_context *ctx)
@@ -70,31 +71,57 @@ struct module_loader
 
 static int load_js_module(duk_context *ctx, const char *file, duk_idx_t module_idx, int is_server)
 {
-    struct stat sb;
+    struct stat sb={0};
     const char *bfn=NULL;
-    if (stat(file, &sb))
-        MOD_THROW(ctx, DUK_ERR_ERROR, "Could not open %s: %s\n", file, strerror(errno));
+    char *buffer = NULL;
+    char *freebuffer = NULL;
+    size_t len = 0;
+    FILE *f = NULL;
+
+    /* :zip:/<entry> -- module bundled in the SFX-appended zip.  Read its
+       bytes via rp_zip_read and synthesize a stat (mtime=1 = stable). */
+    if (strncmp(file, ":zip:/", 6) == 0)
+    {
+        const rp_zip_entry *e = rp_zip_resolve(file + 6);
+        if (!e)
+            MOD_THROW(ctx, DUK_ERR_ERROR, "Could not load zip module %s: not in archive\n", file);
+        unsigned char *zbuf = NULL;
+        size_t zlen = 0;
+        if (rp_zip_read(e, &zbuf, &zlen) != 0)
+            MOD_THROW(ctx, DUK_ERR_ERROR, "Could not read zip module %s\n", file);
+        buffer = (char *)zbuf;
+        freebuffer = buffer;
+        len = zlen;
+        sb.st_size  = (off_t)zlen;
+        sb.st_mtime = 1;
+        sb.st_atime = 1;
+    }
+    else
+    {
+        if (stat(file, &sb))
+            MOD_THROW(ctx, DUK_ERR_ERROR, "Could not open %s: %s\n", file, strerror(errno));
+
+        f = fopen(file, "r");
+        if (!f)
+            MOD_THROW(ctx, DUK_ERR_ERROR, "Could not open %s: %s\n", file, strerror(errno));
+
+        buffer = malloc(sb.st_size + 1);
+        freebuffer = buffer;
+
+        len = fread(buffer, 1, sb.st_size, f);
+        if (sb.st_size != (off_t)len)
+        {
+            // bug fix: close file and free buffer before throwing on fread failure - 2026-02-27
+            fclose(f);
+            free(buffer);
+            MOD_THROW(ctx, DUK_ERR_ERROR, "Error loading file %s: %s\n", file, strerror(errno));
+        }
+    }
 
     duk_push_number(ctx, sb.st_mtime);
     duk_put_prop_string(ctx, module_idx, "mtime");
     duk_push_number(ctx, sb.st_atime);
     duk_put_prop_string(ctx, module_idx, "atime");
-
-    FILE *f = fopen(file, "r");
-    if (!f)
-        MOD_THROW(ctx, DUK_ERR_ERROR, "Could not open %s: %s\n", file, strerror(errno));
-
-    char *buffer = malloc(sb.st_size + 1);
-    char *freebuffer=buffer;
-
-    size_t len = fread(buffer, 1, sb.st_size, f);
-    if (sb.st_size != len)
-    {
-        // bug fix: close file and free buffer before throwing on fread failure - 2026-02-27
-        fclose(f);
-        free(buffer);
-        MOD_THROW(ctx, DUK_ERR_ERROR, "Error loading file %s: %s\n", file, strerror(errno));
-    }
 
     //skip any #! line in case this module doubles as a script
     buffer[sb.st_size]='\0';
@@ -149,7 +176,7 @@ static int load_js_module(duk_context *ctx, const char *file, duk_idx_t module_i
                 const char *out = duk_get_string(ctx, -1);
                 // bug fix: free parse result, close file, and free buffer before throwing on transpile error - 2026-02-27
                 freeParseRes(&res);
-                fclose(f);
+                if (f) fclose(f);
                 free(freebuffer);
                 MOD_THROW(ctx, DUK_ERR_SYNTAX_ERROR, "\n%s\n    at %s:%d", out, file, err_line);
             }
@@ -166,7 +193,7 @@ static int load_js_module(duk_context *ctx, const char *file, duk_idx_t module_i
             duk_push_string(ctx, buffer);
     }
     // else is babel, babelized source is on top of stack.
-    fclose(f);
+    if (f) fclose(f);
     free(freebuffer);
 
     duk_push_string(ctx, "\n})");
@@ -222,10 +249,96 @@ size_t rp_n_opened_mods=0;
     rp_n_opened_mods++;                                                 \
 }while(0)
 
+/* Process-wide cache of dlopen handles for bundled .so's.  Each thread's
+   require() of e.g. "rampart-auth" triggers an independent mkstemp +
+   dlopen, and dlopen of distinct paths gives distinct mappings -- each
+   with its own copy of any static C state.  Cache by zip-entry name so
+   all threads share one mapping (matches normal disk-dlopen semantics
+   where dlopen of the same path returns the same handle). */
+typedef struct zip_so_cache_s {
+    char  *zname;     /* zip-entry name (key) */
+    void  *handle;    /* dlopen result */
+    struct zip_so_cache_s *next;
+} zip_so_cache_t;
+
+static zip_so_cache_t *zip_so_cache_head = NULL;
+static pthread_mutex_t zip_so_cache_lock = PTHREAD_MUTEX_INITIALIZER;
+
+static void *zip_so_cache_get(const char *zname)
+{
+    pthread_mutex_lock(&zip_so_cache_lock);
+    void *h = NULL;
+    for (zip_so_cache_t *c = zip_so_cache_head; c; c = c->next)
+    {
+        if (strcmp(c->zname, zname) == 0) { h = c->handle; break; }
+    }
+    pthread_mutex_unlock(&zip_so_cache_lock);
+    return h;
+}
+
+static void zip_so_cache_put(const char *zname, void *handle)
+{
+    zip_so_cache_t *c = (zip_so_cache_t *)malloc(sizeof(*c));
+    if (!c) return;
+    c->zname = strdup(zname);
+    c->handle = handle;
+    pthread_mutex_lock(&zip_so_cache_lock);
+    c->next = zip_so_cache_head;
+    zip_so_cache_head = c;
+    pthread_mutex_unlock(&zip_so_cache_lock);
+}
+
+/* dlopen wrapper that transparently handles :zip:/<entry>.so paths by
+   extracting to a tmpfile and unlinking right after dlopen returns.  The
+   inode survives the unlink via the dlopen handle, so no on-disk trace
+   remains even on a crash mid-load.  Cached process-wide so multiple
+   threads' require()s share one mapping (and hence one set of statics). */
+static void *zip_aware_dlopen(const char *path, int flags)
+{
+    if (strncmp(path, ":zip:/", 6) != 0)
+        return dlopen(path, flags);
+
+    const char *zname = path + 6;
+
+    /* return cached handle for this zip entry if we already loaded it */
+    void *cached = zip_so_cache_get(zname);
+    if (cached) return cached;
+
+    const rp_zip_entry *e = rp_zip_resolve(zname);
+    if (!e) { errno = ENOENT; return NULL; }
+
+    unsigned char *zbuf = NULL;
+    size_t zlen = 0;
+    if (rp_zip_read(e, &zbuf, &zlen) != 0) { errno = EIO; return NULL; }
+
+    char tp[256];
+    snprintf(tp, sizeof(tp), "/tmp/rampart-zipso-XXXXXX");
+    int fd = mkstemp(tp);
+    if (fd < 0) { free(zbuf); return NULL; }
+    ssize_t w = write(fd, zbuf, zlen);
+    free(zbuf);
+    close(fd);
+    if (w != (ssize_t)zlen) { unlink(tp); errno = EIO; return NULL; }
+
+    void *h = dlopen(tp, flags);
+    unlink(tp); /* always unlink; inode lives via handle if dlopen succeeded */
+
+    if (h) zip_so_cache_put(zname, h);
+    return h;
+}
+
 static int load_so_module(duk_context *ctx, const char *file, duk_idx_t module_idx, int is_server)
 {
+    time_t mtime_for_cache = 1; /* synthetic for zip; replaced via stat() for disk */
+    if (strncmp(file, ":zip:/", 6) != 0)
+    {
+        struct stat sb;
+        if (stat(file, &sb) == 0)
+            mtime_for_cache = sb.st_mtime;
+    }
+
     pthread_mutex_lock(&modlock);
-    void *lib = dlopen(file, RTLD_GLOBAL|RTLD_NOW); // --RTLD_GLOBAL is necessary for python to load .so modules properly
+    void *lib = zip_aware_dlopen(file, RTLD_GLOBAL|RTLD_NOW); // --RTLD_GLOBAL is necessary for python to load .so modules properly
 
     if (lib == NULL)
     {
@@ -239,13 +352,16 @@ static int load_so_module(duk_context *ctx, const char *file, duk_idx_t module_i
            fallback when any module fails to load. */
         int try_crypto = 1;
 #else
-        int try_crypto = (strstr(dl_err, "rampart-crypto.so") != NULL);
+        int try_crypto = (dl_err && strstr(dl_err, "rampart-crypto.so") != NULL);
 #endif
         if(try_crypto)
         {
-            RPPATH rp;
+            RPPATH rp = {{0}};
 
-            rp=rp_find_path("rampart-crypto.so", "modules/", "lib/rampart_modules/");
+            if (rp_has_zip_payload)
+                rp = rp_find_zip_path("rampart-crypto.so", "modules/", "lib/rampart_modules/");
+            if (!strlen(rp.path))
+                rp = rp_find_path("rampart-crypto.so", "modules/", "lib/rampart_modules/");
 
             if(!strlen(rp.path))
             {
@@ -257,11 +373,11 @@ static int load_so_module(duk_context *ctx, const char *file, duk_idx_t module_i
             }
             else
             {
-                void *lib2 = dlopen(rp.path, RTLD_GLOBAL|RTLD_NOW);
+                void *lib2 = zip_aware_dlopen(rp.path, RTLD_GLOBAL|RTLD_NOW);
                 if (lib2)
                 {
                     addhandle_to_close(lib2);
-                    lib = dlopen(file, RTLD_NOW);
+                    lib = zip_aware_dlopen(file, RTLD_NOW);
                     if (lib)
                         goto libload_success;
                     else
@@ -275,6 +391,12 @@ static int load_so_module(duk_context *ctx, const char *file, duk_idx_t module_i
         // bug fix: removed duplicate pthread_mutex_unlock at libload_success label - 2026-02-27
         libload_success: ;
     }
+
+    /* Set mtime so the require() cache check at module.c's _duk_resolve
+       finds a value and short-circuits to "module already loaded".
+       Without this, every repeated require("foo.so") re-runs this loader. */
+    duk_push_number(ctx, (double)mtime_for_cache);
+    duk_put_prop_string(ctx, module_idx, "mtime");
 
     addhandle_to_close(lib);
 
@@ -473,7 +595,10 @@ static RPPATH resolve_id(duk_context *ctx, const char *request_id)
         // we have a ".so" or a '.js'
         if( extlen && !strcmp(fext,module_loaders[module_loader_idx].ext) )
         {
-            rppath=rp_find_path((char*)request_id, "modules/", "lib/rampart_modules/", modpath);
+            if (rp_has_zip_payload)
+                rppath = rp_find_zip_path((char*)request_id, "modules/", "lib/rampart_modules/", modpath);
+            if (!strlen(rppath.path))
+                rppath = rp_find_path((char*)request_id, "modules/", "lib/rampart_modules/", modpath);
             id = (strlen(rppath.path))?rppath.path:NULL;
         }
         else
@@ -482,7 +607,10 @@ static RPPATH resolve_id(duk_context *ctx, const char *request_id)
             duk_push_string(ctx, request_id);
             duk_push_string(ctx, module_loaders[module_loader_idx].ext);
             duk_concat(ctx, 2);
-            rppath=rp_find_path((char *)duk_get_string(ctx,-1), "modules/", "lib/rampart_modules/", modpath);
+            if (rp_has_zip_payload)
+                rppath = rp_find_zip_path((char *)duk_get_string(ctx,-1), "modules/", "lib/rampart_modules/", modpath);
+            if (!strlen(rppath.path))
+                rppath = rp_find_path((char *)duk_get_string(ctx,-1), "modules/", "lib/rampart_modules/", modpath);
             id = (strlen(rppath.path))?rppath.path:NULL;
             duk_pop(ctx);
         }

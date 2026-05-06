@@ -115,6 +115,7 @@ add_executable(rampart
     setproctitle.c
     version.c
     cmdline.c
+    rp_zip.c
 )
 
 set_target_properties(rampart PROPERTIES
@@ -478,9 +479,8 @@ add_dependencies(rampart-html tidy)
 add_library(rampart-totext SHARED
     duktape/modules/rampart-totext.c
 )
-target_link_libraries(rampart-totext
-    ${PROJECT_BINARY_DIR}/extern/libdeflate/libdeflate.a
-)
+# libdeflate is linked into the main rampart executable; rampart-totext.so
+# resolves libdeflate symbols from the rampart process at dlopen time.
 target_include_directories(rampart-totext PRIVATE
     ${PROJECT_BINARY_DIR}/extern/libdeflate/
 )
@@ -655,12 +655,13 @@ add_dependencies(rampart-crypto openssl)
 add_library(rampart-server SHARED
  duktape/modules/rampart-server.c
 )
+# libdeflate is linked into the main rampart executable; rampart-server.so
+# resolves libdeflate symbols from the rampart process at dlopen time.
 target_link_libraries(rampart-server
     ${LIBEVHTP_TARGET_DIR}/libevhtp_ws.a
     ${LIBEVENT_TARGET_DIR}/lib/libevent_openssl.a
       rampart-crypto
     ${ONIGURUMA_TARGET_DIR}/libonig.a
-    ${PROJECT_BINARY_DIR}/extern/libdeflate/libdeflate.a
 )
 
 set_property(TARGET rampart-server PROPERTY IMPORTED_LOCATION "./rampart-crypto.so")
@@ -691,6 +692,9 @@ add_custom_command(
     OUTPUT ${PROJECT_BINARY_DIR}/extern/libdeflate
     COMMAND mkdir -p ${PROJECT_BINARY_DIR}/extern
     COMMAND cp -a ${PROJECT_SOURCE_DIR}/extern/libdeflate ${PROJECT_BINARY_DIR}/extern
+    # Drop -fvisibility=hidden so libdeflate API symbols can be exported
+    # from the main rampart executable for dlopen'd .so's to resolve against.
+    COMMAND sed -i.bak "s/-fvisibility=hidden//" ${PROJECT_BINARY_DIR}/extern/libdeflate/Makefile
 )
 
 add_custom_target(cp_libdeflate
@@ -710,6 +714,22 @@ add_custom_target(libdeflate
 
 add_dependencies(rampart-server libdeflate)
 add_dependencies(libdeflate cp_libdeflate)
+
+# libdeflate centralized in main rampart binary; ENABLE_EXPORTS (above)
+# makes its API symbols available to dlopen'd .so's.  Whole-archive is
+# required because rampart's own translation units don't reference libdeflate
+# directly — only the dlopen'd .so's do — so the linker would otherwise drop
+# the archive as unreferenced.  Same pattern as FAISS_IVFPQ_LINK above.
+if (APPLE)
+    set(LIBDEFLATE_LINK -Wl,-force_load,${PROJECT_BINARY_DIR}/extern/libdeflate/libdeflate.a)
+else()
+    set(LIBDEFLATE_LINK -Wl,--whole-archive ${PROJECT_BINARY_DIR}/extern/libdeflate/libdeflate.a -Wl,--no-whole-archive)
+endif()
+target_link_libraries(rampart LINK_PUBLIC ${LIBDEFLATE_LINK})
+target_include_directories(rampart PRIVATE
+    ${PROJECT_BINARY_DIR}/extern/libdeflate/
+)
+add_dependencies(rampart libdeflate)
 
 ###NET###
 

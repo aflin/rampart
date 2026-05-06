@@ -65,8 +65,27 @@ function init() {
     } else {
         /* CLI or standalone: look for data/auth relative to the parent of the
            apps directory (i.e., the web server root) */
-        dbPath = process.scriptPath + "/../data/auth";
-        try { dbPath = realPath(dbPath); } catch(e) {}
+        // first try to find the path using web_server_conf.js:
+        var getConf;
+        try {
+            getConf = require(process.scriptPath + "/../web_server_conf.js");
+        } catch(e) {}
+        if (!getConf) {
+            try {
+                getConf = require(process.scriptPath + "/../entry_script.js");
+            } catch(e) { rampart.utils.printf("  caught: %s\n", e.message); }
+        }
+        if(getConf) {
+            var cnf = getConf();
+            if(cnf.dataRoot)
+                dbPath = cnf.dataRoot + "/auth";
+        }
+        // fall back to best guess
+        if(!dbPath.length)
+        {
+            dbPath = process.scriptPath + "/../data/auth";
+            try { dbPath = realPath(dbPath); } catch(e) {}
+        }
     }
 
     lmdb = new Lmdb.init(dbPath, true, {conversion: "json"});

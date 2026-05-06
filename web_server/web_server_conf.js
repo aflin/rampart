@@ -22,11 +22,13 @@ Help:
 //set working directory to the location of this script
 var working_directory = process.scriptPath;
 
+
 /* ****************************************************** *
  *  UNCOMMENT AND CHANGE DEFAULTS BELOW TO CONFIG SERVER  *
  * ****************************************************** */
 
 var serverConf = {
+bindAll:true,
     //the defaults for full server
 
     /* ipAddr              String. The ipv4 address to bind   */
@@ -137,6 +139,10 @@ var serverConf = {
     //directoryFunc:       false,
 
     /* daemon              Bool.   whether to detach from terminal and run as a daemon  */
+
+
+
+
     //daemon:              true,
 
     /* monitor':           Bool.   whether to launch monitor process to auto restart server if
@@ -272,6 +278,82 @@ var serverConf = {
     serverRoot:            working_directory,
 }
 
+/*     ******** BUNDLE CONFIG MODIFICATIONS **********
+
+   This is just an example of how data and logs (the two dirs that can't be read only for the 
+   webserver) might be mapped to another location.
+
+   Here it is mapped to either: 
+     $HOME/.rampart/web_server_${ipPort}
+       or 
+     /tmp/.rampart/web_server_${ipPort}
+
+   Note that inside the server, scripts should use serverConf.dataRoot for databases and such:
+   i.e. var sql = Sql.connect(erverConf.dataRoot +'/mydb', true)
+
+*/
+
+// check if we are in a bundle, and if so change the location of dataRoot and logRoot
+if(rampart.utils.payloadGet) {
+
+    function err(msg) {
+        rampart.utils.fprintf(rampart.utils.stderr, "%s\n", msg);
+        process.exit(1);
+    }
+
+    function mkdirOrDie(path) {
+
+        var st = rampart.utils.stat(path)
+        if(!st) {
+            try {
+                rampart.utils.mkdir(path, true);
+            } catch(e) {
+                err(`Could not create working directory ${rpdir}: ${e.message}`);
+            }
+        }
+    }
+
+    var user = serverConf.user || 'nobody';
+    var iam;
+    try {
+        var iam = rampart.utils.exec('whoami').stdout.trim();
+    } catch(e) {
+        err(e);
+    }
+
+    var home = (iam=='root') ? '/tmp' : process.env.HOME || '/tmp';
+
+    var addrPort = serverConf.bindAll ? "bindAll": (serverConf.ipAddr || serverConf.ipv6Addr || '127.0.0.1')
+    addrPort += ':'+ ( serverConf.port || serverConf.ipPort || serverConf.ipv6Port || '8088');
+
+    var rpdir = home + `/.rampart/web_server_${addrPort}`;
+
+    mkdirOrDie(rpdir);
+
+    var st = rampart.utils.stat(rpdir);
+    if(!st || !st.writable || !st.executable) {
+        err(`Cannot use ${rpdir}: Lacking permission`);
+    }
+
+    mkdirOrDie(rpdir+'/data');
+    mkdirOrDie(rpdir+'/logs');
+
+    serverConf.dataRoot = rpdir+'/data';
+    serverConf.logRoot  = rpdir+'/logs';
+
+
+    if(iam=='root') {
+        try {
+            rampart.utils.chown({user:user, path:serverConf.dataRoot});
+            rampart.utils.chown({user:user, path:serverConf.logRoot});
+        } catch(e) {
+            err(e);
+        }
+    }
+
+}
+
+
 /*  Example logging functions :
     logdata: an object of various individual logging datum
     logline: the line which would have been written but for logFunc being set
@@ -302,4 +384,22 @@ function myloggingfunc_alt (logdata, logline) {
 /* **************************************************** *
  *  process command line options and start/stop server  *
  * **************************************************** */
-require("rampart-webserver").web_server_conf(serverConf);
+
+if(module && module.exports){
+
+    // if called as a module itself, only thing we do is export a function
+    // that returns the configure object.  This is useful for apps/ scripts
+    // that need to know where things are when run from the command line.
+    module.exports = function(){
+        serverConf.dumpObj=true;
+        var ret = require("rampart-webserver").web_server_conf(serverConf);
+        delete ret.dumpObj;
+        return ret;
+    }
+
+} else {
+
+    // normal command line use:
+    require("rampart-webserver").web_server_conf(serverConf);
+
+}

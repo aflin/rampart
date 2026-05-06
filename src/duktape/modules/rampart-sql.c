@@ -24,6 +24,7 @@
 #include "vecindex.h"
 #include "cgi.h"
 #include "rampart.h"
+#include "rp_zip.h"
 #include "api3.h"
 #include "../globals/csv_parser.h"
 #include "event.h"
@@ -6423,6 +6424,76 @@ duk_ret_t rp_exec(duk_context *ctx);
 extern int TX_is_rampart;
 void rp_add_vector_types();
 
+/* Find a zip entry whose basename is `name`.  Prefers an exact root match
+   (cheap, O(log N)); on miss, scans for any entry ending in "/name".
+   Result is symlink-resolved so a symlink at any of these positions
+   pointing at the real binary still works. */
+static const rp_zip_entry *rp_zip_find_basename(const char *name)
+{
+    const rp_zip_entry *e = rp_zip_resolve(name);
+    if (e) return e;
+
+    size_t target_len = strlen(name);
+    size_t n = rp_zip_count();
+    for (size_t i = 0; i < n; i++)
+    {
+        e = rp_zip_at(i);
+        if (!e) break;
+        if (e->name_len == 0 || e->name[e->name_len - 1] == '/') continue;
+        if (e->name_len > target_len + 1 &&
+            e->name[e->name_len - target_len - 1] == '/' &&
+            memcmp(e->name + e->name_len - target_len, name, target_len) == 0)
+        {
+            /* Resolve symlinks at the matched buried path too. */
+            char namebuf[PATH_MAX];
+            if (e->name_len < sizeof(namebuf))
+            {
+                memcpy(namebuf, e->name, e->name_len);
+                namebuf[e->name_len] = '\0';
+                const rp_zip_entry *r = rp_zip_resolve(namebuf);
+                if (r) return r;
+            }
+            return e;
+        }
+    }
+    return NULL;
+}
+
+/* Resolver hook for the bundled-rampart case: extract texislockd from the
+   appended zip to a tempfile and hand the path back to TXrunlockdaemon.
+   The launched daemon, told via -i and -u, idle-exits after 15 minutes
+   and unlinks its own image at startup so /tmp stays clean. */
+static int rp_lockd_resolver(char *path, size_t pathsz, int *idle_secs)
+{
+    if (!rp_has_zip_payload) return -1;
+    if (rp_zip_init() != 0) return -1;
+
+    const rp_zip_entry *e = rp_zip_find_basename("texislockd");
+    if (!e) return -1;
+
+    unsigned char *zbuf = NULL;
+    size_t zlen = 0;
+    if (rp_zip_read(e, &zbuf, &zlen) != 0) return -1;
+
+    char tp[256];
+    snprintf(tp, sizeof(tp), "/tmp/rampart-texislockd-XXXXXX");
+    int fd = mkstemp(tp);
+    if (fd < 0) { free(zbuf); return -1; }
+
+    ssize_t w = write(fd, zbuf, zlen);
+    free(zbuf);
+    if (w != (ssize_t)zlen) { close(fd); unlink(tp); return -1; }
+
+    /* Must be executable for execv */
+    if (fchmod(fd, 0700) != 0) { close(fd); unlink(tp); return -1; }
+    close(fd);
+
+    if (strlen(tp) >= pathsz) { unlink(tp); return -1; }
+    strcpy(path, tp);
+    if (idle_secs) *idle_secs = 900;
+    return 0;
+}
+
 duk_ret_t duk_open_module(duk_context *ctx)
 {
 
@@ -6437,6 +6508,17 @@ duk_ret_t duk_open_module(duk_context *ctx)
         char *TexisArgv[2];
 
         RP_PTINIT(&tx_handle_lock);
+
+        /* If this rampart binary is bundled and the bundle includes a
+           texislockd entry, route TXrunlockdaemon through our resolver so
+           it extracts and launches that bundled binary.  Otherwise leave
+           the hook NULL and the standard %EXEDIR%/%BINDIR%/$PATH search
+           finds an installed texislockd as before. */
+        if (rp_has_zip_payload && rp_zip_init() == 0
+            && rp_zip_find_basename("texislockd") != NULL)
+        {
+            tx_lockd_resolver_hook = rp_lockd_resolver;
+        }
 
         TexisArgv[0]=rampart_exec;
 

@@ -1,6 +1,12 @@
 #include "texint.h"
 #include <errno.h>
 #include <unistd.h>
+#include <limits.h>
+
+/* Optional resolver hook -- see typedef in texint.h.  rampart-sql.so installs
+   this when it detects an SFX-style bundled rampart that contains a
+   texislockd entry; otherwise it stays NULL and the standard search runs. */
+tx_lockd_resolver_t tx_lockd_resolver_hook = NULL;
 
 /******************************************************************/
 
@@ -30,15 +36,30 @@ TXrunlockdaemon(DDIC *ddic)
 #    define MAXARGS	64
 	char	*args[MAXARGS];
 	int	nargs;
+	char	idle_arg[32];
 #  endif /* !_WIN32 */
 
   int n;
   char **list;
+  char hookpath_buf[PATH_MAX];
+  int hook_idle_secs = 0;
+  int hook_used = 0;
 
-  n = TXlib_expandpath("%EXEDIR%" PATH_DIV_S "%BINDIR%", &list);
-  for (i = 0; i < n; i++) {
-    if (!list[i]) continue;  /* %SYSLIBPATH%, not relevant here */
-    thepath = epipathfindmode("texislockd", list[i], 0x8 /* or maybe 0x9 not sure */);
+  /* Resolver hook first -- bundled rampart provides its own extracted
+     texislockd binary path (and an idle timeout to use). */
+  if (tx_lockd_resolver_hook &&
+      tx_lockd_resolver_hook(hookpath_buf, sizeof(hookpath_buf), &hook_idle_secs) == 0)
+  {
+    thepath = hookpath_buf;
+    hook_used = 1;
+  }
+  else
+  {
+    n = TXlib_expandpath("%EXEDIR%" PATH_DIV_S "%BINDIR%", &list);
+    for (i = 0; i < n; i++) {
+      if (!list[i]) continue;  /* %SYSLIBPATH%, not relevant here */
+      thepath = epipathfindmode("texislockd", list[i], 0x8 /* or maybe 0x9 not sure */);
+    }
   }
 	if(!thepath) {
 		thepath = epipathfindmode("texislockd", getenv("PATH"), 0x8);
@@ -66,6 +87,14 @@ TXrunlockdaemon(DDIC *ddic)
 				chdir("/");	/* don't sit on NFS */
 				nargs = 0;
 				args[nargs++] = thepath;
+				if (hook_used) {
+					if (hook_idle_secs > 0) {
+						htsnpf(idle_arg, sizeof(idle_arg), "%d", hook_idle_secs);
+						args[nargs++] = "-i";
+						args[nargs++] = idle_arg;
+					}
+					args[nargs++] = "-u"; /* unlink-self at startup */
+				}
 				args[nargs] = CHARPN;
 				execv(thepath, args);
 				_exit(TXEXIT_CANNOTEXECMON);	/* last resort if failure */

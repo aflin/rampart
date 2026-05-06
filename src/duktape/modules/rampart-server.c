@@ -44,6 +44,7 @@
 
 #include "evhtp/evhtp.h"
 #include "../ws/evhtp_ws.h"
+#include "rp_zip.h"
 #include "rp_server.h"
 #include "../core/module.h"
 #include "mime.h"
@@ -65,6 +66,7 @@ size_t default_range_bytes=1<<23;
 
 extern int RP_TX_isforked;
 extern char *RP_script_path;
+extern int rp_has_zip_payload;
 uid_t unprivu=0;
 gid_t unprivg=0;
 #ifdef __linux__
@@ -2415,8 +2417,203 @@ static char *cachedir = ".gzipcache/";
 */
 #define SENDFILE_NO_RANGE_CAP      0x01
 #define SENDFILE_NO_ACCEPT_RANGES  0x02
+/* Serve a static file from the SFX-appended zip when fn starts with ":zip:/".
+   Returns 1 if the request was handled (status 200/206/404/416/500 sent),
+   0 if fn isn't a zip path so the caller should fall through to the disk
+   path.  Decompresses to a heap buffer, sets Content-Type via the same
+   mime lookup as rp_sendfile, supports HEAD and Range requests on the
+   in-memory buffer. */
+static int rp_sendfile_zip(evhtp_request_t *req, char *fn, int haveCT, uint16_t sendfile_flags)
+{
+    if (strncmp(fn, ":zip:/", 6) != 0) return 0;
+
+    const char *zname = fn + 6;
+    const rp_zip_entry *e = NULL;
+    char idxbuf[PATH_MAX];
+    size_t zl = strlen(zname);
+
+    /* Directory-style request (trailing /): bare lookup would only hit a
+       0-byte directory marker (created by `zip -r`).  Skip directly to
+       index.html / index.htm. */
+    if (zl > 0 && zname[zl-1] == '/')
+    {
+        snprintf(idxbuf, sizeof(idxbuf), "%sindex.html", zname);
+        e = rp_zip_resolve(idxbuf);
+        if (!e)
+        {
+            snprintf(idxbuf, sizeof(idxbuf), "%sindex.htm", zname);
+            e = rp_zip_resolve(idxbuf);
+        }
+        if (e) zname = idxbuf;
+    }
+    else
+    {
+        e = rp_zip_resolve(zname);
+    }
+
+    if (!e) { send404(req); return 1; }
+
+    setdate_header(req, 1);
+
+    /* Same URL may be served compressed or plain depending on the client;
+       Vary on Accept-Encoding so caches and CDNs differentiate. */
+    evhtp_headers_add_header(req->headers_out, evhtp_header_new("Vary", "Accept-Encoding", 0, 0));
+
+    if (!haveCT)
+    {
+        const char *mime = "application/octet-stream";
+        const char *ext = strrchr(zname, '.');
+        if (ext)
+        {
+            RP_MTYPES m, *mres;
+            m.ext = (char *)(ext + 1);
+            mres = bsearch(&m, allmimes, n_allmimes, sizeof(RP_MTYPES), compare_mtypes);
+            if (mres) mime = mres->mime;
+        }
+        evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Type", mime, 0, 0));
+    }
+
+    /* v2 gzip-passthrough: method-8 entry + Accept-Encoding includes gzip
+       + no Range request -> ship the zip's raw deflate bytes wrapped in
+       18 bytes of gzip framing.  CRC32 and uncompressed size come straight
+       from the central directory entry; no decompression required. */
+    {
+        const char *accept_enc = evhtp_kv_find(req->headers_in, "Accept-Encoding");
+        const char *range_hdr  = evhtp_kv_find(req->headers_in, "Range");
+        int accepts_gzip = accept_enc && strcasestr(accept_enc, "gzip") != NULL;
+        if (e->method == 8 && accepts_gzip && !range_hdr)
+        {
+            const unsigned char *raw = NULL;
+            size_t raw_len = 0;
+            if (rp_zip_raw_ptr(e, &raw, &raw_len) == 0)
+            {
+                evhtp_headers_add_header(req->headers_out,
+                    evhtp_header_new("Content-Encoding", "gzip", 0, 0));
+                /* Deliberately no Accept-Ranges: byte-range over compressed
+                   bytes is opaque to clients. */
+                uint64_t total = (uint64_t)raw_len + 18; /* 10 hdr + 8 trailer */
+                char slen[64];
+                snprintf(slen, sizeof(slen), "%" PRIu64, total);
+                evhtp_headers_add_header(req->headers_out,
+                    evhtp_header_new("Content-Length", slen, 0, 1));
+
+                if (evhtp_request_get_method(req) == htp_method_HEAD)
+                {
+                    sendresp(req, 200, 0);
+                    return 1;
+                }
+
+                /* gzip header: magic, deflate, no flags, mtime=0, xfl=0, OS=Unix */
+                static const unsigned char gzhdr[10] = {
+                    0x1f, 0x8b, 0x08, 0x00, 0,0,0,0, 0x00, 0x03
+                };
+                evbuffer_add(req->buffer_out, gzhdr, 10);
+                evbuffer_add(req->buffer_out, raw, raw_len);
+                unsigned char trailer[8];
+                trailer[0] = (unsigned char)(e->crc32        & 0xff);
+                trailer[1] = (unsigned char)((e->crc32 >>  8) & 0xff);
+                trailer[2] = (unsigned char)((e->crc32 >> 16) & 0xff);
+                trailer[3] = (unsigned char)((e->crc32 >> 24) & 0xff);
+                trailer[4] = (unsigned char)(e->uncomp_size        & 0xff);
+                trailer[5] = (unsigned char)((e->uncomp_size >>  8) & 0xff);
+                trailer[6] = (unsigned char)((e->uncomp_size >> 16) & 0xff);
+                trailer[7] = (unsigned char)((e->uncomp_size >> 24) & 0xff);
+                evbuffer_add(req->buffer_out, trailer, 8);
+                sendresp(req, 200, 0);
+                return 1;
+            }
+            /* on raw-ptr failure, fall through to decompress path */
+        }
+    }
+
+    unsigned char *zbuf = NULL;
+    size_t zlen = 0;
+    if (rp_zip_read(e, &zbuf, &zlen) != 0)
+    {
+        sendresp(req, 500, 0);
+        return 1;
+    }
+
+    /* HEAD: headers + Content-Length, no body. */
+    if (evhtp_request_get_method(req) == htp_method_HEAD)
+    {
+        char slen[64];
+        snprintf(slen, sizeof(slen), "%" PRIu64, (uint64_t)zlen);
+        evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Length", slen, 0, 1));
+        free(zbuf);
+        sendresp(req, 200, 0);
+        return 1;
+    }
+
+    /* Range. */
+    ev_off_t beg = 0, len = (ev_off_t)zlen;
+    int rescode = 200;
+    if (!(sendfile_flags & SENDFILE_NO_ACCEPT_RANGES))
+        evhtp_headers_add_header(req->headers_out, evhtp_header_new("Accept-Ranges", "bytes", 0, 0));
+
+    const char *range = evhtp_kv_find(req->headers_in, "Range");
+    if (range && !strncasecmp("bytes=", range, 6))
+    {
+        char *eptr;
+        ev_off_t bv = (ev_off_t)strtoll(range + 6, &eptr, 10);
+        if (eptr != range + 6)
+        {
+            ev_off_t endval = (ev_off_t)zlen - 1;
+            if (bv < 0 || bv >= (ev_off_t)zlen)
+            {
+                char crng[128];
+                snprintf(crng, sizeof(crng), "bytes */%" PRIu64, (uint64_t)zlen);
+                evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Range", crng, 0, 1));
+                evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Type", "text/plain", 0, 0));
+                free(zbuf);
+                sendresp(req, 416, 0);
+                return 1;
+            }
+            eptr++; /* skip '-' */
+            if (*eptr != '\0')
+            {
+                ev_off_t ev = (ev_off_t)strtoll(eptr, NULL, 10);
+                if (ev > bv) endval = ev;
+            }
+            else if (!(sendfile_flags & SENDFILE_NO_RANGE_CAP)
+                     && (ev_off_t)zlen - bv > (ev_off_t)default_range_bytes)
+            {
+                endval = bv + (ev_off_t)default_range_bytes - 1;
+            }
+            if (endval > (ev_off_t)zlen - 1) endval = (ev_off_t)zlen - 1;
+            beg = bv;
+            len = endval - beg + 1;
+            rescode = 206;
+
+            char reprange[128];
+            snprintf(reprange, sizeof(reprange), "bytes %" PRIu64 "-%" PRIu64 "/%" PRIu64,
+                     (uint64_t)beg, (uint64_t)endval, (uint64_t)zlen);
+            evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Range", reprange, 0, 1));
+        }
+    }
+
+    {
+        char slen[64];
+        snprintf(slen, sizeof(slen), "%" PRIu64, (uint64_t)len);
+        evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Length", slen, 0, 1));
+    }
+
+    /* evbuffer_add copies, so freeing zbuf below is safe. */
+    evbuffer_add(req->buffer_out, zbuf + beg, (size_t)len);
+    free(zbuf);
+
+    sendresp(req, rescode, 0);
+    return 1;
+}
+
 static void rp_sendfile(evhtp_request_t *req, char *fn, int haveCT, struct stat *filestat, int is_fileserver, uint16_t sendfile_flags)
 {
+    if (rp_has_zip_payload == 1)
+    {
+        if (rp_sendfile_zip(req, fn, haveCT, sendfile_flags))
+            return;
+    }
+
     int fd = -1;
     ev_off_t beg = 0, len = -1;
     ev_off_t filesize;
@@ -3381,6 +3578,14 @@ static void fileserver(evhtp_request_t *req, void *arg)
         strcpy(&fn[strlen(map->val)], s + strlen(map->key) +1);
 
         free(s);
+
+        /* zip-served roots: skip disk stat, dispatch to rp_sendfile (which
+           routes to rp_sendfile_zip for :zip:/ paths). */
+        if (rp_has_zip_payload == 1 && strncmp(fn, ":zip:/", 6) == 0)
+        {
+            rp_sendfile(req, fn, 0, NULL, 1, 0);
+            return;
+        }
 
         if (stat(fn, &sb) == -1)
         {
@@ -5439,6 +5644,14 @@ static int getmod(DHS *dhs)
         filename=duk_get_string(ctx,-1);
         duk_pop(ctx);
 
+        /* :zip:/ modules are immutable for the process lifetime; cache hit
+           always wins, no stat or dep check. */
+        if (rp_has_zip_payload == 1 && filename && strncmp(filename, ":zip:/", 6) == 0)
+        {
+            duk_pop_2(ctx);
+            return 1;
+        }
+
         if (stat(filename, &sb) != -1)
         {
             time_t lmtime;
@@ -5553,12 +5766,16 @@ static int getmod_path(DHS *dhs)
     //printf("modpath=%s, path=%s\n", modpath, path->full);
     mplen=strlen(modpath);
     duk_pop(ctx);
-    if(stat(modpath, &pathstat)== -1)
+    /* :zip:/ modulePaths are virtual; skip the disk stat. */
+    if (rp_has_zip_payload != 1 || strncmp(modpath, ":zip:/", 6) != 0)
     {
-        send404(dhs->req);
-        ret=0;
+        if(stat(modpath, &pathstat)== -1)
+        {
+            send404(dhs->req);
+            ret=0;
+            goto getmod_path_done;
+        }
     }
-    else
     {
         char *s;
         char modname[ strlen(path->full) + strlen(modpath) + 1 ];
@@ -5690,6 +5907,7 @@ static int getmod_path(DHS *dhs)
         }
         dhs->module_name=NULL;
     }
+    getmod_path_done:
     return ret;
 }
 
@@ -8128,28 +8346,46 @@ duk_ret_t duk_server_start(duk_context *ctx)
                     }
                     duk_pop(ctx); /* pop redirectExtensions or undefined */
 
-                    /* resolve dbPath relative to server root */
-                    if (duk_get_prop_string(ctx, -1, "dbPath"))
+                    /* resolve dbPath to an absolute disk path.  Prefer
+                       serverConf.dataRoot (set explicitly by the user, e.g.
+                       in entry_script.js) over RP_script_path (which for a
+                       bundle is the virtual ":zip:" sentinel and can't be
+                       a real LMDB location). */
                     {
-                        const char *dbrel = duk_get_string(ctx, -1);
-                        if (dbrel && dbrel[0] != '/')
+                        const char *db_base = NULL;
+                        /* fish out serverConf.dataRoot from the outer config */
+                        if (duk_rp_GPS_icase(ctx, ob_idx, "dataRoot")
+                            && duk_is_string(ctx, -1))
+                            db_base = duk_get_string(ctx, -1);
+                        /* leave it on the stack so the pointer stays valid;
+                           we'll pop after we're done using db_base */
+                        if (!db_base || !*db_base
+                            || strncmp(db_base, ":zip:", 5) == 0)
+                            db_base = RP_script_path;
+
+                        if (duk_get_prop_string(ctx, -2, "dbPath"))
                         {
-                            char resolved[PATH_MAX];
-                            snprintf(resolved, PATH_MAX, "%s/%s", RP_script_path, dbrel);
-                            duk_pop(ctx);
-                            duk_push_string(ctx, resolved);
-                            duk_put_prop_string(ctx, -2, "dbPath");
+                            const char *dbrel = duk_get_string(ctx, -1);
+                            if (dbrel && dbrel[0] != '/')
+                            {
+                                char resolved[PATH_MAX];
+                                snprintf(resolved, PATH_MAX, "%s/%s", db_base, dbrel);
+                                duk_pop(ctx);
+                                duk_push_string(ctx, resolved);
+                                duk_put_prop_string(ctx, -3, "dbPath");
+                            }
+                            else
+                                duk_pop(ctx);
                         }
                         else
+                        {
                             duk_pop(ctx);
-                    }
-                    else
-                    {
-                        duk_pop(ctx);
-                        char resolved[PATH_MAX];
-                        snprintf(resolved, PATH_MAX, "%s/data/auth", RP_script_path);
-                        duk_push_string(ctx, resolved);
-                        duk_put_prop_string(ctx, -2, "dbPath");
+                            char resolved[PATH_MAX];
+                            snprintf(resolved, PATH_MAX, "%s/auth", db_base);
+                            duk_push_string(ctx, resolved);
+                            duk_put_prop_string(ctx, -3, "dbPath");
+                        }
+                        duk_pop(ctx); /* pop dataRoot or undefined */
                     }
 
                     /* store parsed config in a hidden symbol for the auth module to read */
@@ -8546,8 +8782,9 @@ duk_ret_t duk_server_start(duk_context *ctx)
                                     RP_THROW(ctx, "server.start: parameter \"map:modulePath\" -- glob and regex not allowed in module path %s",s);
 
                                 fname = duk_get_string(ctx, -1);
-                                /* relative to script path */
-                                if (*fname !='/')
+                                /* relative to script path -- but not when it
+                                   already names a zip-virtual root (:zip:/...) */
+                                if (*fname !='/' && strncmp(fname, ":zip:/", 6) != 0)
                                 {
                                     int l = strlen(RP_script_path) + strlen(fname) +2;
                                     char np[l];
@@ -8943,14 +9180,22 @@ duk_ret_t duk_server_start(duk_context *ctx)
                             fspath = (char *)REQUIRE_STRING(ctx, -1, "server.start: map '%s'- value must be a String, Object, Function", path);
                         }
 
-                        if (stat(fspath, &sb) == -1)
+                        /* :zip:/ roots are virtual; skip stat & directory check. */
+                        if (rp_has_zip_payload == 1 && strncmp(fspath, ":zip:/", 6) == 0)
                         {
-                            RP_THROW(ctx, "server.start: parameter \"map\" -- Couldn't find fileserver path '%s'",fspath);
+                            /* nothing to validate -- entries are looked up at request time */
                         }
-                        mode = sb.st_mode & S_IFMT;
+                        else
+                        {
+                            if (stat(fspath, &sb) == -1)
+                            {
+                                RP_THROW(ctx, "server.start: parameter \"map\" -- Couldn't find fileserver path '%s'",fspath);
+                            }
+                            mode = sb.st_mode & S_IFMT;
 
-                        if (mode != S_IFDIR)
-                            RP_THROW(ctx, "server.start: parameter \"map\" -- Fileserver path '%s' requires a directory",fspath);
+                            if (mode != S_IFDIR)
+                                RP_THROW(ctx, "server.start: parameter \"map\" -- Fileserver path '%s' requires a directory",fspath);
+                        }
 
                         REMALLOC(fs, strlen(fspath) + 2);
 
@@ -9017,6 +9262,9 @@ duk_ret_t duk_server_start(duk_context *ctx)
     {
         int filecount = 0;
 
+        /* TLS files stay disk-only: shipping private keys in a redistributable
+           bundle is a bad idea, and h2o/OpenSSL load these by path internally
+           so faking validation through :zip: would just defer the failure. */
         if (ssl_config->pemfile)
         {
             filecount++;

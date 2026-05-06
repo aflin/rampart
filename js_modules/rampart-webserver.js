@@ -1,4 +1,20 @@
+/* When running from a single-file bundle (process.scriptPath === ':zip:'),
+   writable defaults (logs, dataRoot, runtime pid files) cannot live inside
+   the zip.  Substitute the directory next to the bundle binary so the user's
+   web_server_conf.js doesn't need to know whether it's bundled or not.
+   Read-only paths (htmlRoot, appsRoot, wsappsRoot) stay as ':zip:/...'. */
+function _writableWd(wd) {
+    if (wd !== ':zip:') return wd;
+    var argv0 = process.argv0 || '';
+    var rp = rampart.utils.realPath(argv0);
+    if (!rp) return rampart.utils.getcwd();
+    var idx = rp.lastIndexOf('/');
+    if (idx < 0) return rampart.utils.getcwd();
+    return rp.substring(0, idx);
+}
+
 var defaultServerConf = function(wd){
+    var ww = _writableWd(wd);
     return {
         ipAddr:       '127.0.0.1',
         ipv6Addr:     '[::1]',
@@ -12,10 +28,10 @@ var defaultServerConf = function(wd){
         htmlRoot:       wd + '/html',
         appsRoot:       wd + '/apps',
         wsappsRoot:     wd + '/wsapps',
-        dataRoot:       wd + '/data',
-        logRoot:        wd + '/logs',
-        accessLog:      wd + '/logs/access.log',
-        errorLog:       wd + '/logs/error.log',
+        dataRoot:       ww + '/data',
+        logRoot:        ww + '/logs',
+        accessLog:      ww + '/logs/access.log',
+        errorLog:       ww + '/logs/error.log',
         log:            true,
         rotateLogs:     false,
         rotateInterval: 86400,
@@ -366,10 +382,16 @@ function parseOptions (argv){
     // if an object, argv should be settings to override the defaults
     else if (getType(argv)=='Object'){
         var def;
+        // first set up accessLog and errorLog if logRoot is set.
+        if( argv.logRoot ){
+            if(!argv.accessLog) argv.accessLog = argv.logRoot + '/access.log';
+            if(!argv.errorLog)  argv.errorLog  = argv.logRoot + '/error.log';
+        }
+
         if(!argv.serverRoot)
             argv.serverRoot=realPath('.');
         else
-            wd = argv.serverRoot;
+            wd = _writableWd(argv.serverRoot);  /* writable runtime dir; differs from serverRoot when bundled */
 
         if(argv.quickserver)
             def=Object.assign({}, defaultQuickServerConf(argv.serverRoot));
@@ -518,7 +540,7 @@ function status(serverConf){
     if(!unprivUser)
         unprivUser=serverConf.user;
 
-    wd = serverConf.serverRoot;
+    wd = _writableWd(serverConf.serverRoot);
     if(!wd)
         serverConf.serverRoot=wd=utils.realPath('.');
 
@@ -537,7 +559,7 @@ function status(serverConf){
 function start(serverConf, dump) {
     var server=require('rampart-server');
 
-    wd = serverConf.serverRoot;
+    wd = _writableWd(serverConf.serverRoot);
     if(!wd)
         serverConf.serverRoot=wd=utils.realPath('.');
 
@@ -1172,7 +1194,7 @@ Example:
 function dumpConfig(serverConf) {
     var conf = start(serverConf, true);
     var ret={};
-    var props = ["bind","scriptTimeout","connectTimeout","log","accessLog","errorLog","daemon","useThreads","threads","maxRead","maxWrite","secure","sslKeyFile","sslCertFile","sslMinVersion","notFoundFunc","developerMode","directoryFunc","user","cacheControl","compressFiles","compressScripts","compressLevel","compressMinSize","mimeMap","map","appendProcTitle"];
+    var props = ["bind","scriptTimeout","connectTimeout","log",'logRoot', 'dataRoot',"accessLog","errorLog","daemon","useThreads","threads","maxRead","maxWrite","secure","sslKeyFile","sslCertFile","sslMinVersion","notFoundFunc","developerMode","directoryFunc","user","cacheControl","compressFiles","compressScripts","compressLevel","compressMinSize","mimeMap","map","appendProcTitle"];
     for (var i=0; i<props.length; i++)
         ret[props[i]]=conf[props[i]];
     return ret;
@@ -1219,6 +1241,9 @@ function web_server_conf(conf) {
 
     // fill in the missing pieces and do some checks
     conf = parseOptions(conf);
+
+    if (conf.dumpObj)
+        return start(conf, /* dump = */ true);
 
     function check_conf_err() {
         if(conf.error)
