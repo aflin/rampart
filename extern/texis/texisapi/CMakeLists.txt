@@ -9,6 +9,18 @@ include(${TEXIS_SOURCE_DIR}/cmake/FindParsers.cmake)
 #include(FindLibXml2)
 add_definitions(-DFORMMAPI -DEPI_NO_VERSION_FUNCTIONS)
 
+# Detect 32-bit ARM for the standalone-texis build path (the parent
+# rampart build also detects this in extern/extern.cmake; we duplicate
+# here so `cmake ../../../extern/texis` works too).  RP_NO_FAISS gates
+# vecindex_ivfpq.cpp out of the source list and skips the faiss_ivfpq
+# link below.  See extern/extern.cmake for the rationale.
+if(CMAKE_SIZEOF_VOID_P EQUAL 4 AND CMAKE_SYSTEM_PROCESSOR MATCHES "^arm" AND NOT DEFINED RP_NO_FAISS)
+    set(RP_NO_FAISS ON CACHE INTERNAL "FAISS unsupported on 32-bit ARM")
+endif()
+if(RP_NO_FAISS)
+    add_definitions(-DRP_NO_FAISS)
+endif()
+
 set(TEXISAPI_BINARY_DIR "${TEXIS_BINARY_DIR}/texisapi")
 set(TEXISAPI_SOURCE_DIR "${TEXIS_SOURCE_DIR}/texisapi")
 
@@ -450,9 +462,6 @@ IF(PARSERS_FOUND)
     # ANN vector index (usearch HNSW backend)
     vecindex.c
     ${CMAKE_SOURCE_DIR}/extern/texis/thirdparty/usearch/c/lib.cpp
-    # ANN vector index (FAISS IVFPQ backend) — phase-1 stub; see
-    # vec-ivfpq-integration-plan.md.  This file expands in phase 2.
-    vecindex_ivfpq.cpp
     # Auxiliary _T.btr / _del.btr helpers shared by both backends.
     vecindex_aux_btree.c
 
@@ -620,6 +629,15 @@ IF(PARSERS_FOUND)
     ${TEXISAPI_SOURCE_DIR}/texisapi.c
     ${TEXISAPI_BINARY_DIR}/texver.c
   )
+
+  # Add the FAISS IVFPQ backend source only when FAISS is built —
+  # i.e., not on 32-bit ARM (see top-of-file RP_NO_FAISS detection).
+  if(NOT RP_NO_FAISS)
+      target_sources(texisapi PRIVATE
+          ${TEXISAPI_SOURCE_DIR}/vecindex_ivfpq.cpp)
+      target_sources(texisbuild PRIVATE
+          ${TEXISAPI_SOURCE_DIR}/vecindex_ivfpq.cpp)
+  endif()
 
   string(ASCII 27 ESC)
   set(GREEN "${ESC}[32m")
@@ -908,10 +926,16 @@ target_include_directories(
 
 target_link_options(texisbuild PUBLIC -L${JANSSON_RELEASE_DIR})
 
-if(CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
-    target_link_libraries(texisbuild LINK_PUBLIC m z kvm Threads::Threads ${JANSSON_LIBS} faiss_ivfpq)
+if(RP_NO_FAISS)
+    set(_FAISS_LINK "")
 else()
-    target_link_libraries(texisbuild LINK_PUBLIC m z Threads::Threads ${JANSSON_LIBS} faiss_ivfpq)
+    set(_FAISS_LINK faiss_ivfpq)
+endif()
+
+if(CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
+    target_link_libraries(texisbuild LINK_PUBLIC m z kvm Threads::Threads ${JANSSON_LIBS} ${_FAISS_LINK})
+else()
+    target_link_libraries(texisbuild LINK_PUBLIC m z Threads::Threads ${JANSSON_LIBS} ${_FAISS_LINK})
 endif()
 
 #
@@ -936,7 +960,9 @@ target_link_options(texisapi PUBLIC -L${JANSSON_RELEASE_DIR})
 # "undefined symbol: _ZTIN5faiss14FaissExceptionE" because the linker
 # drops the .o whose symbols are only referenced weakly by external
 # try/catch blocks.  GNU ld and Apple ld spell this differently.
-if(APPLE)
+if(RP_NO_FAISS)
+    target_link_libraries(texisapi PUBLIC m z ${JANSSON_LIBS})
+elseif(APPLE)
     # force_load is a raw flag, so it doesn't carry faiss_ivfpq's
     # transitive deps (OpenMP, Accelerate).  List the target as a
     # regular dep too so its PUBLIC interface propagates; the archive

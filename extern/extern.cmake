@@ -25,10 +25,24 @@ if(APPLE)
 endif()
 
 
+# FAISS doesn't support 32-bit ARM upstream — it builds, but
+# OnDiskInvertedLists hits a libstdc++/gcc-8 std::string destructor
+# bug on armhf that corrupts heap memory.  See FAISS issues #1071,
+# #2281, #2955, #3292 — all 32-bit-ARM reports closed without fix or
+# unanswered.  Skip FAISS on this target so a generic-Buster Pi
+# binary still builds; HNSW (which uses usearch, not FAISS) works
+# fine and CREATE INDEX with backend=ivfpq returns a clear error.
+if(CMAKE_SIZEOF_VOID_P EQUAL 4 AND CMAKE_SYSTEM_PROCESSOR MATCHES "^arm")
+    set(RP_NO_FAISS ON CACHE INTERNAL "FAISS unsupported on 32-bit ARM")
+    message(STATUS "32-bit ARM detected — skipping FAISS (IVFPQ backend unavailable)")
+endif()
+
 # FAISS (pruned subset, IVFPQ-only) — must be declared before texis
 # so the `faiss_ivfpq` target exists when texisapi links against it.
 # See extern/faiss/NOTICE.md for what's vendored.
-add_subdirectory(${EXTERN_DIR}/faiss EXCLUDE_FROM_ALL)
+if(NOT RP_NO_FAISS)
+    add_subdirectory(${EXTERN_DIR}/faiss EXCLUDE_FROM_ALL)
+endif()
 
 add_subdirectory(${EXTERN_DIR}/texis)
 
@@ -36,6 +50,9 @@ target_compile_definitions(
     texisapi PRIVATE
     RAMPART_INCLUDE_TEXIS_USERFUNC="${CMAKE_SOURCE_DIR}/src/duktape/modules/sql-userfunc.c"
 )
+if(RP_NO_FAISS)
+    target_compile_definitions(texisapi PUBLIC RP_NO_FAISS)
+endif()
 
 # Everything below this point is vendored upstream code we don't
 # maintain (openssl, oniguruma, curl, libevent, libevhtp_ws, tidy-html5,

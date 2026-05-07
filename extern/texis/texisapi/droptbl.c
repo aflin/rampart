@@ -76,7 +76,13 @@ int	type;	/* INDEX_... type */
 	int	rc = 0, failedErrno = 0;
 	TXPMBUF	*pmbuf = TXPMBUFPN;
 
-        fname = TXmalloc(pmbuf, fn, strlen(iname) + 8);
+        /* +16 (not +8): the longest extensions written below are
+         * `.vec.new` and `.usearch` at 9 bytes including the null
+         * terminator.  The original `+ 8` overflowed by 1 on every
+         * vec-index drop (caught on 32-bit ARM by ASan as a
+         * heap-buffer-overflow at fname+strlen+8).  Sized to 16 for
+         * headroom against any future extension up to 15 chars. */
+        fname = TXmalloc(pmbuf, fn, strlen(iname) + 16);
         if (fname == (char *)NULL)
 		return(-1);
         strcpy(fname, iname);

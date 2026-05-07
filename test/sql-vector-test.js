@@ -447,6 +447,25 @@ function vec_unique(id, dim) {
     return new rampart.vector('f32', arr);
 }
 
+/* IVFPQ uses FAISS, which upstream does not support 32-bit ARM
+ * (issues #1071, #2281, #2955, #3292 — all closed without fix or
+ * unanswered).  On 32-bit ARM rampart builds without FAISS and any
+ * `with backend 'ivfpq'` CREATE returns a clear error.  Skip the
+ * IVFPQ-only test cases and the IVFPQ side of the multi-process
+ * tests below. */
+var _ivfpqAvailable = true;
+try {
+    var _arch = (_hasShell ? shell("uname -m").stdout : "").trim();
+    if (/^arm(v[567]l?|hf)?$/.test(_arch))
+        _ivfpqAvailable = false;
+} catch (e) {}
+
+if (!_ivfpqAvailable) {
+    printf("Skipping IVFPQ test cases on 32-bit ARM (FAISS unsupported upstream)\n");
+    if (_nfailed > 0) process.exit(1);
+    process.exit(0);
+}
+
 /* Drop any prior IVFPQ test table from a re-run. */
 try { sql.exec("drop index iv32_vec;"); } catch (e) {}
 try { sql.exec("drop table iv32;");     } catch (e) {}

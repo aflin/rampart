@@ -136,16 +136,27 @@ typedef struct TXvecBackend {
 } TXvecBackend;
 
 extern const TXvecBackend TXvecHnswBackend;     /* defined in vecindex.c */
+#ifndef RP_NO_FAISS
 extern const TXvecBackend TXvecIvfpqBackend;    /* defined in vecindex_ivfpq.cpp */
+#endif
 
-/* Pick the right backend by parsed-params tag.  Unknown values fall
- * back to HNSW (back-compat for PARAMS strings predating this change). */
+/* Pick the right backend by parsed-params tag.  On builds without FAISS
+ * (RP_NO_FAISS — 32-bit ARM) the IVFPQ vtable doesn't exist; callers
+ * are expected to gate IVFPQ requests with a clear error before
+ * dispatching, but we fall back to HNSW here as a safety net.
+ * Unknown values fall back to HNSW (back-compat for PARAMS strings
+ * predating this change). */
 static inline const TXvecBackend *
 vec_backend_for(int backend_id)
 {
+#ifdef RP_NO_FAISS
+    (void)backend_id;
+    return &TXvecHnswBackend;
+#else
     return (backend_id == VEC_BACKEND_IVFPQ)
             ? &TXvecIvfpqBackend
             : &TXvecHnswBackend;
+#endif
 }
 
 /* One-time process init that pins OpenBLAS to 1 thread on Linux/FreeBSD.

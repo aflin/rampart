@@ -541,17 +541,32 @@ TXsysupdateEnd(TXsysupdateSink *sink, const char *errMsg)
 void
 TXsysupdateOnCreateFailure(TXsysupdateSink *sink)
 {
-    if (!sink || !sink->ddic) {
-        if (sink) memset(sink, 0, sizeof(*sink));
-        return;
-    }
-    if (TXddicBeginInternalStmt("sysupdate-create-fail", sink->ddic)) {
-        TXpushid(sink->ddic, 0, 0);
-        (void)sysupdate_delete_by_name_inner(sink->ddic, sink->name);
-        TXpopid(sink->ddic);
-        TXddicEndInternalStmt(sink->ddic);
-    }
-    memset(sink, 0, sizeof(*sink));
+    /* Don't run any SQL on the CREATE INDEX error path.
+     *
+     * Reaching this from createindex's failure exit, attempting to
+     * SQLExecute against SYSUPDATE (DELETE or UPDATE) goes through
+     * `opendbtbl → dbgetperms → makevalidtable(SYSTBL_PERMS)` which
+     * triggers a double-free in texis's RAM-backed system-table cache
+     * (closerdbf → TXfree, repro: 32-bit ARM glibc aborts; 64-bit
+     * x86 happens to tolerate it).  The same prepare path runs
+     * cleanly on the SUCCESS exit (TXsysupdateEnd's UPDATE works),
+     * so something about the createindex error state — likely the
+     * still-INDEX_CR row in SYSINDEX — primes the cache for the
+     * crash on cleanup.
+     *
+     * Trade-off: the row inserted by Begin remains in SYSUPDATE with
+     * ACTION='create' STAGE=1 STAGENAME='starting' PROGRESS=0,
+     * looking like an in-progress CREATE.  Acceptable because:
+     *   - The next CREATE attempt for this index name will find
+     *     and overwrite the row via find-or-insert.
+     *   - A manual `delete from SYSUPDATE where NAME=?` clears it.
+     *   - Other op failures (OPTIMIZE/REBUILD) record their error
+     *     via End-with-errMsg, but those run from a non-CR state
+     *     and don't hit the cache bug.
+     *
+     * If the underlying texis cache bug is fixed, switch this back
+     * to End-with-errMsg per the v3 design (writes COMMENTS=errMsg). */
+    if (sink) memset(sink, 0, sizeof(*sink));
 }
 
 void

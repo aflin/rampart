@@ -212,8 +212,13 @@ TXvecKindFromOptions(TXindOpts *options)
             return "vec-hnsw";
     }
     /* Default backend (no `WITH backend ...`) is IVFPQ — same as
-     * TXvecParamsFromOptions:229. */
+     * TXvecParamsFromOptions.  On 32-bit ARM FAISS is not built and
+     * the default flips to HNSW to match. */
+#ifdef RP_NO_FAISS
+    return "vec-hnsw";
+#else
     return "vec-ivfpq";
+#endif
 }
 
 int
@@ -245,7 +250,15 @@ TXvecParamsFromOptions(TXvecParams *out, TXindOpts *options)
             return -1;
         }
     } else {
+#ifdef RP_NO_FAISS
+        /* On 32-bit ARM FAISS is not built — default to HNSW so users
+         * without an explicit `with backend` clause still get a working
+         * CREATE.  Explicit `backend ivfpq' still errors at dispatch
+         * with a clear message (see TXvecCreateIndex). */
+        out->backend = VEC_BACKEND_HNSW;
+#else
         out->backend = VEC_BACKEND_IVFPQ;
+#endif
     }
 
     if ((s = vec_opt_get(options, TXindOpt_vec_m)) != NULL) {
@@ -728,8 +741,21 @@ TXvecCreateIndex(DDIC *ddic, DBTBL *dbtbl,
                  const char *indfile, TXindOpts *options,
                  TXvecParams *outParams)
 {
+    static const char fn[] = "TXvecCreateIndex";
     TXvecParams vp;
     if (TXvecParamsFromOptions(&vp, options) < 0) return -1;
+#ifdef RP_NO_FAISS
+    /* FAISS is not built on this platform (32-bit ARM) — see
+     * extern/extern.cmake.  IVFPQ requests must error cleanly rather
+     * than silently fall through to HNSW. */
+    if (vp.backend == VEC_BACKEND_IVFPQ) {
+        putmsg(MERR + UGE, fn,
+            "INDEX_VEC backend=ivfpq is not supported on 32-bit ARM "
+            "(FAISS upstream does not support this platform); use "
+            "backend=hnsw");
+        return -1;
+    }
+#endif
     return vec_backend_for(vp.backend)->create(ddic, dbtbl, field, indname,
                                                indfile, options, outParams);
 }
@@ -1467,6 +1493,18 @@ TXvecOpen(DDIC *ddic, const char *indfile, const char *params_in)
     int rc = TXvecParamsParse(&vp, params ? params : "");
     free(owned_params);
     if (rc != 0) return NULL;
+
+#ifdef RP_NO_FAISS
+    /* FAISS is not built on this platform (32-bit ARM).  Any existing
+     * IVFPQ index file (e.g. copied in from another machine) cannot
+     * be opened — the backend impl is absent.  Refuse cleanly. */
+    if (vp.backend == VEC_BACKEND_IVFPQ) {
+        putmsg(MERR + UGE, "TXvecOpen",
+            "INDEX_VEC `%s' is backend=ivfpq, which is not supported on "
+            "32-bit ARM (FAISS unavailable on this platform)", indfile);
+        return NULL;
+    }
+#endif
 
     return vec_backend_for(vp.backend)->open(ddic, indfile, &vp);
 }
@@ -2505,7 +2543,9 @@ TXvecDropAux(DDIC *ddic, const char *indfile)
      * cleanup operations are idempotent in either backend.  Try both;
      * each no-ops on missing artifacts. */
     TXvecHnswBackend.drop_aux(ddic, indfile);
+#ifndef RP_NO_FAISS
     TXvecIvfpqBackend.drop_aux(ddic, indfile);
+#endif
 }
 
 /* ====================================================================
