@@ -2409,6 +2409,31 @@ static char *_compressibles[] =
 
 static char **compressibles = _compressibles;
 static char *cachedir = ".gzipcache/";
+
+/* Charset appended to "text/" Content-Type for static file serving.
+   NULL disables. Set via server.start({defaultCharset: ...}). */
+static const char *default_charset = "utf-8";
+
+/* Set the Content-Type header, appending "; charset=<default_charset>"
+   when mime is a "text/" type and a charset is configured.  Used for
+   both static file serving and dynamic handler responses that return
+   {html: ...}, {txt: ...}, {css: ...}, etc. */
+static void add_content_type_with_charset(evhtp_request_t *req, const char *mime)
+{
+    if (default_charset && strncmp(mime, "text/", 5) == 0)
+    {
+        char buf[256];
+        snprintf(buf, sizeof(buf), "%s; charset=%s", mime, default_charset);
+        evhtp_headers_add_header(req->headers_out,
+            evhtp_header_new("Content-Type", buf, 0, 1));
+    }
+    else
+    {
+        evhtp_headers_add_header(req->headers_out,
+            evhtp_header_new("Content-Type", mime, 0, 0));
+    }
+}
+
 /*
     Send a file, whole or partial with range if requested
       haveCT - non-zero if content-type is already set
@@ -2470,7 +2495,7 @@ static int rp_sendfile_zip(evhtp_request_t *req, char *fn, int haveCT, uint16_t 
             mres = bsearch(&m, allmimes, n_allmimes, sizeof(RP_MTYPES), compare_mtypes);
             if (mres) mime = mres->mime;
         }
-        evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Type", mime, 0, 0));
+        add_content_type_with_charset(req, mime);
     }
 
     /* v2 gzip-passthrough: method-8 entry + Accept-Encoding includes gzip
@@ -2759,7 +2784,7 @@ static void rp_sendfile(evhtp_request_t *req, char *fn, int haveCT, struct stat 
             /* look for proper mime type listed in mime.h */
             mres = bsearch(m_p, allmimes, n_allmimes, sizeof(RP_MTYPES), compare_mtypes);
             if (mres)
-                evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Type", mres->mime, 0, 0));
+                add_content_type_with_charset(req, mres->mime);
             else
                 evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Type", "application/octet-stream", 0, 0));
         }
@@ -4009,7 +4034,7 @@ static evhtp_res obj_to_buffer(DHS *dhs)
             gotdata = 1;
             setkey=m.ext;
             if (!gotct)
-                evhtp_headers_add_header(dhs->req->headers_out, evhtp_header_new("Content-Type", mres->mime, 0, 0));
+                add_content_type_with_charset(dhs->req, mres->mime);
 
             if(!gotdate)
                 setdate_header(dhs->req,0);
@@ -7885,6 +7910,19 @@ duk_ret_t duk_server_start(duk_context *ctx)
             }
             else
                 cache_control = REQUIRE_STRING(ctx, -1, "server.start: cacheControl requires a string");
+        }
+        duk_pop(ctx);
+
+        /* default charset appended to "text/" Content-Type for fileserver */
+        if (duk_rp_GPS_icase(ctx, ob_idx, "defaultCharset"))
+        {
+            if(duk_is_boolean(ctx, -1))
+            {
+                if(!duk_get_boolean(ctx, -1))
+                    default_charset=NULL;
+            }
+            else
+                default_charset = REQUIRE_STRING(ctx, -1, "server.start: defaultCharset requires a string or false");
         }
         duk_pop(ctx);
 

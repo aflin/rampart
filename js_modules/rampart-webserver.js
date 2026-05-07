@@ -57,6 +57,7 @@ var defaultServerConf = function(wd){
         endFunc:        false,
         irohProxy:      false,
         selfSign:       false,
+        defaultCharset: "utf-8",
         serverRoot:     wd
     }
 }
@@ -104,6 +105,7 @@ var defaultQuickServerConf = function(wd){
         endFunc:        false,
         irohProxy:      false,
         selfSign:       false,
+        defaultCharset: "utf-8",
         serverRoot:     wd
     }
 }
@@ -149,6 +151,8 @@ var optlist = {
 '--monitor':        'Bool.   whether to launch monitor process to auto restart server if killed or crashes',
 '--scriptTimeout':  'Number  Max time to wait for a script module to return a reply in seconds (default 20)',
 '--connectTimeout': 'Number  Max time to wait for client send request in seconds (default 20)',
+'--defaultCharset': 'String. Charset appended to text/* Content-Type headers (default "utf-8").\n' +
+'                     Use "false" to disable.  Applies to static files and dynamic responses.',
 '-d':               'alias for \'--daemon true\'',
 '--detach':         'alias for \'--daemon true\'',
 '--monitor':        'fork and run a monitor as a daemon which restarts server w/in 10 seconds if it dies',
@@ -521,7 +525,8 @@ function parseOptions (argv){
             else
                 return serr(sprintf('\'%s\' is an invalid option, a non-existant root directory or a duplicate root directory.', earg));
         }
-        if(arg != "rotateInterval" || getType(val) != 'String')
+        if((arg != "rotateInterval" || getType(val) != 'String') &&
+           (arg != "defaultCharset" || getType(val) != 'Boolean'))
         {
             if(getType(serverConf[arg]) != getType(val))
                 return serr(sprintf('Error: \'%s\' expects a %s but got \'%s\'', earg, getType(serverConf[arg]), val) );
@@ -1194,7 +1199,7 @@ Example:
 function dumpConfig(serverConf) {
     var conf = start(serverConf, true);
     var ret={};
-    var props = ["bind","scriptTimeout","connectTimeout","log",'logRoot', 'dataRoot',"accessLog","errorLog","daemon","useThreads","threads","maxRead","maxWrite","secure","sslKeyFile","sslCertFile","sslMinVersion","notFoundFunc","developerMode","directoryFunc","user","cacheControl","compressFiles","compressScripts","compressLevel","compressMinSize","mimeMap","map","appendProcTitle"];
+    var props = ["bind","scriptTimeout","connectTimeout","log",'logRoot', 'dataRoot',"accessLog","errorLog","daemon","useThreads","threads","maxRead","maxWrite","secure","sslKeyFile","sslCertFile","sslMinVersion","notFoundFunc","developerMode","directoryFunc","user","cacheControl","defaultCharset","compressFiles","compressScripts","compressLevel","compressMinSize","mimeMap","map","appendProcTitle"];
     for (var i=0; i<props.length; i++)
         ret[props[i]]=conf[props[i]];
     return ret;

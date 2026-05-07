@@ -251,6 +251,14 @@ bindAll:true,
                            open ended request in megabytes (often used to seek into and chunk videos) */
     //defaultRangeMbytes:  8,
 
+    /* defaultCharset      String/Bool  charset appended to the Content-Type header for
+                           text/* mime types.  Applies to both static files and dynamic
+                           handler responses (e.g. {html:...}, {txt:...}).  Set to a
+                           string such as "iso-8859-1" to use a different charset, or
+                           false to disable.  Responses that supply their own
+                           Content-Type header are left untouched.                       */
+    //defaultCharset:      "utf-8",
+
     /* authMod             Bool/String/Function. Enable session-based authentication.
                            true    - loads the built-in rampart-auth module
                            String  - loads a custom auth module by name/path
