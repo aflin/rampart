@@ -2796,7 +2796,18 @@ CURLREQ *new_request(char *url, CURLREQ *cloner, duk_context *ctx, duk_idx_t opt
             curl_easy_setopt(req->curl, CURLOPT_HTTP_TRANSFER_DECODING, 1L);
 
         curl_easy_setopt(req->curl, CURLOPT_HTTP_CONTENT_DECODING, 1L);  // Automatic decode
-        curl_easy_setopt(req->curl, CURLOPT_ACCEPT_ENCODING, "");             // Defaults for this build
+        /* Accept-Encoding: when there's no chunkCallback, ask libcurl to negotiate
+         * compression and transparently decode. With a chunkCallback, default to
+         * NO compression — we manually parse transfer-encoding chunk frames, and
+         * a gzip stream wrapped inside chunked frames cannot be gunzipped per
+         * frame (the gzip stream spans frame boundaries). The chunk parser would
+         * deliver still-compressed bytes to the JS callback. The caller can opt
+         * back into compression with `{compressed: true}` and is then responsible
+         * for decoding what arrives in chunkCallback. */
+        if(chunkfunc_idx==-1)
+            curl_easy_setopt(req->curl, CURLOPT_ACCEPT_ENCODING, "");
+        else
+            curl_easy_setopt(req->curl, CURLOPT_ACCEPT_ENCODING, NULL);
 
         curl_easy_setopt(req->curl, CURLOPT_BUFFERSIZE, 100*1024);
         /* send all body data to this function  */
