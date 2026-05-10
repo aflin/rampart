@@ -195,6 +195,7 @@ int stxalrevoke(int f) {int o=txalrevoke; txalrevoke=f; return(o);}
 %type <strval>	create_index_option
 %type <strval>	create_index_option_list opt_create_index_options
 %type <strval>  opt_if_exists
+%type <strval>  opt_if_not_exists
 %type <strval>  json_subpath
 %type <strval>  lock_table_def lock_table_commalist lock_type
 %type <strval>  show_open_tables info_statement
@@ -258,6 +259,17 @@ opt_if_exists:
 		}
 	;
 
+opt_if_not_exists:
+		/* empty */
+		{
+			$$ = TXstrdup(TXPMBUFPN, CHARPN, "");
+		}
+	|	TX_IF NOT EXISTS
+		{
+			$$ = TXstrdup(TXPMBUFPN, CHARPN, "ifnotexists");
+		}
+	;
+
 base_table_drop:	DROP TABLE {yycontext = 8;} table opt_if_exists
 		{
 			if(!txalcrtbl)
@@ -277,7 +289,7 @@ base_table_drop:	DROP TABLE {yycontext = 8;} table opt_if_exists
 		}
 		;
 
-index_drop:	DROP INDEX {yycontext = 7;} table
+index_drop:	DROP INDEX {yycontext = 7;} table opt_if_exists
 		{
 			if(!txalcrndx)
 			{
@@ -287,6 +299,12 @@ index_drop:	DROP INDEX {yycontext = 7;} table
 			genout("_* index ");
 			genout($4);
 			free($4);
+			if ($5 && *$5)
+			{
+				genout(" ");
+				genout($5);	/* "ifexists" marker */
+			}
+			$5 = TXfree($5);
 		}
 		;
 
@@ -735,7 +753,7 @@ opt_create_index_options:
 	;
 
 index_def:
-		CREATE opt_index_type INDEX {yycontext = 3;} table ON table '(' ordering_spec_commalist ')' opt_create_index_options
+		CREATE opt_index_type INDEX opt_if_not_exists {yycontext = 3;} table ON table '(' ordering_spec_commalist ')' opt_create_index_options
 		{
 /*	WTF, need to namemangle the index name to get a file name,
 particularly for MSDOS, and old Unix file systems with short filenames.
@@ -743,6 +761,11 @@ MSDOS	8.3
 Unix	14 char
 
 indexname can be up to ~18 chars, + need 2.3 for own use.
+
+slots: $1=CREATE $2=opt_index_type $3=INDEX
+       $4=opt_if_not_exists {yycontext}
+       $6=table $7=ON $8=table $9='(' $10=ordering_spec $11=')'
+       $12=opt_create_index_options
 */
 			if(!txalcrndx)
 			{
@@ -750,27 +773,33 @@ indexname can be up to ~18 chars, + need 2.3 for own use.
 				YYERROR;
 			}
 #ifndef NO_KEEP_STATS
-			genout($11 && *$11 ? "_M index ,,," : "_M index ,,");
-			genout($5);		/* index name */
+			genout($12 && *$12 ? "_M index ,,," : "_M index ,,");
+			genout($6);		/* index name */
 			genout(" ");
-			genout($7);		/* table */
+			genout($8);		/* table */
 			genout(" ");
 			genout($2);		/* index type */
-			if ($11 && *$11)
+			if ($12 && *$12)
 			{
 				genout(" ");
-				genout($11);	/* options */
+				genout($12);	/* options */
 			}
 			genout(" ");
-			genout($9);		/* fields */
+			genout($10);		/* fields */
+			if ($4 && *$4)
+			{
+				genout(" ");
+				genout($4);	/* "ifnotexists" trailing marker */
+			}
 #else
 			was createindex call;
 #endif
 			free($2);
-			free($5);
-			free($7);
-			free($9);
-			$11 = TXfree($11);
+			free($4);
+			free($6);
+			free($8);
+			free($10);
+			$12 = TXfree($12);
 		}
 	;
 
@@ -811,8 +840,11 @@ opt_table_type:	cname
 	}
 	;
 base_table_def:
-		CREATE opt_table_type TABLE table {yycontext = 4;} '(' base_table_element_commalist ')'
+		CREATE opt_table_type TABLE opt_if_not_exists table {yycontext = 4;} '(' base_table_element_commalist ')'
 	{
+		/* slots: $1=CREATE $2=opt_table_type $3=TABLE
+		 *        $4=opt_if_not_exists $5=table {yycontext=4 mid-rule}
+		 *        $7='(' $8=base_table_element_commalist $9=')' */
 		if(!txalcrtbl && strcmp($2, "R"))
 		{
 			putmsg(MERR+UGE, NULL, "Feature Disabled");
@@ -821,13 +853,19 @@ base_table_def:
 		genout("_T ");
 		genout($2);		/* table type */
 		genout(" ");
-		genout($7);		/* schema */
+		genout($8);		/* schema */
 		genout(" ");
-		genout($4);		/* table name */
+		genout($5);		/* table name */
+		if ($4 && *$4)
+		{
+			genout(" ");
+			genout($4);	/* "ifnotexists" marker (optional trailing token) */
+		}
 		genout("\n");
 		free($2);
 		free($4);
-		free($7);
+		free($5);
+		free($8);
 	}
 	|	create_table_as_head query_spec
 	{
@@ -847,8 +885,13 @@ base_table_def:
 	;
 
 create_table_as_head:
-		CREATE opt_table_type TABLE table {yycontext = 4;} AS
+		CREATE opt_table_type TABLE opt_if_not_exists table {yycontext = 4;} AS
 		{
+			/* slots: $1=CREATE $2=opt_table_type $3=TABLE
+			 *        $4=opt_if_not_exists $5=table {yycontext} $7=AS
+			 * IF NOT EXISTS for the AS form is accepted by the grammar
+			 * but the marker is not yet threaded into the engine
+			 * (TABLE_AS_OP path).  Free and ignore for v1. */
 			if(!txalcrtbl)
 			{
 				putmsg(MERR+UGE, NULL, "Feature Disabled");
@@ -858,23 +901,29 @@ create_table_as_head:
 			genout($2);
 			genout(" ");
 			free($2);
-			$$ = $4;
+			free($4);
+			$$ = $5;
 		}
 	;
 
 create_table_referencing_head:
-	CREATE opt_table_type TABLE table {yycontext = 4;} REFERENCING
+	CREATE opt_table_type TABLE opt_if_not_exists table {yycontext = 4;} REFERENCING
 	{
+		/* slots: $1=CREATE $2=opt_table_type $3=TABLE
+		 *        $4=opt_if_not_exists $5=table {yycontext} $7=REFERENCING
+		 * IF NOT EXISTS for REFERENCING form is accepted by the grammar
+		 * but not yet threaded through the engine.  Free and ignore. */
 		if(!txalcrtbl)
 		{
 			putmsg(MERR+UGE, NULL, "Feature Disabled");
 			YYERROR;
 		}
 		genout("_M table ");
-		genout($4);
+		genout($5);
 		genout(" ,fileref ");
 		free($2);
 		free($4);
+		free($5);
 	}
 
 base_table_element_commalist:

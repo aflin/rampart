@@ -2584,8 +2584,10 @@ int	TXdeleteSysindexEntry ARGS((DDIC *ddic, CONST char *tableName,
                                     CONST char *indexName, int type));
 int	TXdroptable ARGS((char *, char *));
 int	TXdropdtable ARGS((DDIC *, char *));
+int	TXdropdtableEx ARGS((DDIC *, char *, int /*if_exists*/));
 int	TXdropindex ARGS((char *, char *));
 int	TXdropdindex ARGS((DDIC *, char *));
+int	TXdropdindexEx ARGS((DDIC *, char *, int /*if_exists*/));
 int	TXdroptrigger ARGS((DDIC *, char *));
 int	TXdropuser ARGS((DDIC *, char *));
 int	TXdelsyscols ARGS((DDIC *, char *));

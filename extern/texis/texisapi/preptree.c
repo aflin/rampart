@@ -769,6 +769,9 @@ int *success;		/* Where to store a success code */
 			char ttype;
 			DD *dd = (DD *)query->left;
 			DBTBL	*rc;
+			int if_not_exists = (query->right &&
+			                     query->right->tname &&
+			                     !strcmp(query->right->tname, "ifnotexists"));
 
 			ttype = TEXIS_TABLE;
 			switch(dd->tbltype)
@@ -787,7 +790,8 @@ int *success;		/* Where to store a success code */
 					strcpy(fn, ddic->tbspc);
 					strcat(fn, query->tname);
 			}
-			rc = createdbtbl(ddic, dd, fn, query->tname, "", ttype);
+			rc = createdbtblEx(ddic, dd, fn, query->tname, "", ttype,
+			                   if_not_exists);
 			if(fn) free(fn);
 			return rc;
 		}
@@ -1407,13 +1411,20 @@ orderproj:
 				rc = -1;
 				goto afterCreateIndex;
 			}
-			rc = createindex(ddic,
-					 indexName,	/* index file */
-					 indexName,
-					 tableName,
-					 fields,
-					 (indexType[0] == INDEX_UNIQUE),
-					 indexType[0], options);
+			{
+				int if_not_exists = (query->predicate_node &&
+				                     query->predicate_node->tname &&
+				                     !strcmp(query->predicate_node->tname,
+				                             "ifnotexists"));
+				rc = createindexEx(ddic,
+						 indexName,	/* index file */
+						 indexName,
+						 tableName,
+						 fields,
+						 (indexType[0] == INDEX_UNIQUE),
+						 indexType[0], options,
+						 if_not_exists);
+			}
 		afterCreateIndex:
 			options = TXindOptsClose(options);
 			if(rc != -1)
@@ -1500,12 +1511,18 @@ orderproj:
 	case DROP_OP:
 		if(!strcmp(query->tname, "table") && query->left)
 		{
-			TXdropdtable(ddic, query->left->tname);
+			int if_exists = (query->right &&
+			                 query->right->tname &&
+			                 !strcmp(query->right->tname, "ifexists"));
+			TXdropdtableEx(ddic, query->left->tname, if_exists);
 			*success=1;
 		}
 		if(!strcmp(query->tname, "index") && query->left)
 		{
-			TXdropdindex(ddic, query->left->tname);
+			int if_exists = (query->right &&
+			                 query->right->tname &&
+			                 !strcmp(query->right->tname, "ifexists"));
+			TXdropdindexEx(ddic, query->left->tname, if_exists);
 			*success=1;
 		}
 		if(!strcmp(query->tname, "trigger") && query->left)

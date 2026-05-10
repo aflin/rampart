@@ -1109,6 +1109,13 @@ ireadnode(DDIC *ddic, TX_READ_TOKEN *toke, int depth, QNODE *pq, QTOKEN x, FLDOP
 			this->tname = TXstrdup(pmbuf, Fn, ZZTEXT);
 			this->left = (void *)dd;
 			this->op = TABLE_OP;
+			/* Optional trailing "ifnotexists" marker emitted by
+			 * sql1.y base_table_def for CREATE TABLE IF NOT EXISTS.
+			 * READNEXTNODE returns an empty (op==0) node when the
+			 * marker is absent; mirror the DROP_OP pattern. */
+			this->right = READNEXTNODE;
+			if (this->right && this->right->op == 0)
+				this->right = closeqnode(this->right);
 			break;
 		case INSERT_OP :
 #if DEBUG
@@ -1366,6 +1373,17 @@ ireadnode(DDIC *ddic, TX_READ_TOKEN *toke, int depth, QNODE *pq, QTOKEN x, FLDOP
 				*/
 				this->left = READNEXTNODE;
 				this->right = READNEXTNODE;	/* fields */
+				/* Optional trailing "ifnotexists" marker emitted by
+				 * sql1.y index_def for CREATE INDEX IF NOT EXISTS.
+				 * Other CREATE_OP forms (link, fileref-table, user)
+				 * don't emit a trailing token; READNEXTNODE returns
+				 * an empty (op==0) node which we close.  Stored in
+				 * predicate_node since right is taken by fields and
+				 * predicate_node is otherwise unused for non-ALTER-
+				 * INDEX CREATE_OP paths. */
+				this->predicate_node = READNEXTNODE;
+				if (this->predicate_node && this->predicate_node->op == 0)
+					this->predicate_node = closeqnode(this->predicate_node);
 			}
 			break;
 		case DROP_OP :

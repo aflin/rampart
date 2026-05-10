@@ -263,7 +263,16 @@ TXdropdindex(ddic, iname)
 DDIC	*ddic;
 char	*iname;
 {
-	static const char	Fn[] = "TXdropdindex";
+	return TXdropdindexEx(ddic, iname, 0);
+}
+
+int
+TXdropdindexEx(ddic, iname, if_exists)
+DDIC	*ddic;
+char	*iname;
+int	if_exists;	/* If nonzero, suppress not-found error and return success */
+{
+	static const char	Fn[] = "TXdropdindexEx";
 	char	*itype, **indn, **tbln, **fldn;
 	int	i, ni;
 	FLD	*f, *t, *fn, *tbn;
@@ -281,6 +290,8 @@ char	*iname;
 			      CHARPPPN);
 	if(ni<=0)                       /* MAW 03-02-94 - error check */
 	{
+		if (if_exists)
+			return 1;	/* DROP INDEX IF EXISTS: silent success */
 		putmsg(MERR + FOE, Fn, "Could not find index %s in database",
 		       iname, ddic->epname);
 	}
@@ -499,6 +510,18 @@ char *tbl;	/* The name of the table being dropped */
 /* Returns 0 on error, 1 on success.
  */
 {
+	return TXdropdtableEx(ddic, tbl, 0);
+}
+
+int
+TXdropdtableEx(ddic, tbl, if_exists)
+DDIC *ddic;	/* The database containing the table */
+char *tbl;	/* The name of the table being dropped */
+int if_exists;	/* If nonzero, suppress not-found error and return success */
+/* Returns 0 on error, 1 on success.  When `if_exists' is set and the
+ * table is not found, returns 1 silently instead of erroring.
+ */
+{
 	static CONST char	fn[] = "TXdropdtable";
 	char	type, *fname = NULL, *itype=NULL, *iunique=NULL, **iname=NULL;
 	char	**ifields=NULL, **ifiles=NULL, *typeStr, *s;
@@ -586,6 +609,8 @@ char *tbl;	/* The name of the table being dropped */
 		fname = TXddgetanytable(ddic, tbl, &type, 0);
 		if (fname == CHARPN)
 		{
+			if (if_exists)
+				return(1);	/* DROP TABLE IF EXISTS: silent success */
 			putmsg(MERR + FOE, fn,
 			       "Could not find table %s in database %s",
 			       tbl, ddic->epname);

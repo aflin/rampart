@@ -530,6 +530,36 @@ DBTBL *db;			/* The table to close */
  */
 
 DBTBL *
+createdbtblEx(ddic, dd, tn, lname, comment, type, if_not_exists)
+DDIC *ddic;			/* data dictionary to use */
+DD *dd;				/* data definition for table */
+char *tn;			/* file name for the table */
+char *lname;			/* Logical table name */
+char *comment;			/* A description of the table */
+int type;			/* Table type */
+int if_not_exists;		/* If nonzero, return existing table on collision */
+{
+	if (if_not_exists && lname != (char *) NULL)
+	{
+		char	ct = '\1';	/* match any type */
+		char	*fname;
+
+		fname = TXddgetanytable(ddic, lname, &ct, 1);
+		if (fname != (char *) NULL)
+		{
+			/* Table already exists.  CREATE TABLE IF NOT EXISTS is
+			 * a silent no-op success: return the existing table's
+			 * DBTBL so the caller treats this as a successful CREATE.
+			 * No MWARN; schema of existing table is not validated
+			 * against the requested DD (matches PostgreSQL semantics). */
+			fname = TXfree(fname);
+			return opendbtbl(ddic, lname);
+		}
+	}
+	return createdbtbl(ddic, dd, tn, lname, comment, type);
+}
+
+DBTBL *
 createdbtbl(ddic, dd, tn, lname, comment, type)
 DDIC *ddic;			/* data dictionary to use */
 DD *dd;				/* data definition for table */

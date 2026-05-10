@@ -350,6 +350,8 @@ RECID	dbidxgetnext ARGS((DBIDX *, int *, void *, byte **));
 DBTBL *TXnewDbtbl(TXPMBUF *pmbuf);
 DBTBL  *opendbtbl    ARGS((DDIC *, char *));
 DBTBL  *createdbtbl  ARGS((DDIC *, DD *, char *, char *, char *, int));
+DBTBL  *createdbtblEx ARGS((DDIC *, DD *, char *, char *, char *, int,
+                            int /*if_not_exists*/));
 DBTBL  *closedbtbl   ARGS((DBTBL *));
 DBTBL  *_closedbtbl   ARGS((DBTBL *));
 void	rewinddbtbl  ARGS((DBTBL *));
@@ -611,6 +613,9 @@ typedef struct TXindOpts_tag    TXindOpts;
 int	createindex ARGS((DDIC *ddic, char *idxfile, char *indname,
                           char *table, char *field, int unique, int itype,
                           TXindOpts *options));
+int	createindexEx ARGS((DDIC *ddic, char *idxfile, char *indname,
+                            char *table, char *field, int unique, int itype,
+                            TXindOpts *options, int /*if_not_exists*/));
 int	TXalterIndexes (DDIC *ddic, CONST char *indexName, CONST char *tableName, CONST char *actionOptions, PRED *conditions);
 
 /******************************************************************/

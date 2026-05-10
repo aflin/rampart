@@ -1918,6 +1918,35 @@ TXgetIndexTypeDescription(int indexType)
  */
 
 int
+createindexEx(ddic, idxfile, indname, table, field, unique, itype, options,
+              if_not_exists)
+DDIC *ddic;
+char *idxfile;	/* (in) [/path/]filename (sans extension) */
+char *indname;	/* (in) index name */
+char *table;	/* (in) table name */
+char *field;	/* (in) SYSINDEX.FIELDS value */
+int unique;	/* (in) nonzero if unique index */
+int itype;	/* (in) INDEX_... type */
+TXindOpts	*options;	/* (in/out) options, opt. w/`WITH ...' */
+int if_not_exists;	/* If nonzero and an index with `indname' already
+			 * exists (any type / table / field), return
+			 * success silently (PostgreSQL semantics).
+			 * Bypasses the re-CREATE-as-OPTIMIZE behavior. */
+{
+	if (if_not_exists)
+	{
+		int n = ddgetindexbyname(ddic, indname,
+		                        (char **)NULL, (char **)NULL,
+		                        (char ***)NULL, (char ***)NULL,
+		                        (char ***)NULL, (char ***)NULL);
+		if (n > 0)
+			return 0;	/* silent no-op success */
+	}
+	return createindex(ddic, idxfile, indname, table, field,
+	                   unique, itype, options);
+}
+
+int
 createindex(ddic, idxfile, indname, table, field, unique, itype, options)
 DDIC *ddic;
 char *idxfile;	/* (in) [/path/]filename (sans extension) */
