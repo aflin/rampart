@@ -832,6 +832,45 @@ static SFI *check_fork(DB_HANDLE *h, int create)
 
 
         /***** fork ******/
+        /* NOTE — alternative design (saved in case the SIG_IGN below ever
+         * needs to go away):  DOUBLE-FORK the helper so it gets reparented
+         * to init at birth.  init reaps it when it exits.  Then the
+         * `signal(SIGCHLD, SIG_IGN)` line below is no longer necessary —
+         * which removes the global side effect that breaks
+         * `rampart.utils.exec`'s waitpid in unrelated threads.
+         *
+         * Sketch:
+         *   pid_t first = fork();                                 // (1) parent forks first child
+         *   if (first == 0) {
+         *       pid_t gc = fork();                                // (2) first child forks grandchild
+         *       if (gc < 0) _exit(1);
+         *       if (gc > 0) {                                     // (3) first child reports gc pid to parent and exits
+         *           write(child2par[1], &gc, sizeof(gc));
+         *           _exit(0);
+         *       }
+         *       // grandchild — same exec path as the existing child branch,
+         *       // but pass the ORIGINAL parent pid as an extra script arg
+         *       // (use parent_pid captured before fork(); getppid() will be 1
+         *       // by the time we get here because the first child exited).
+         *       sprintf(script, scr_txt, par2child[0], child2par[1],
+         *               h->forknum, parent_pid);                  // 4 args, not 3
+         *       execl(rampart_exec, rampart_exec, "-c", script, NULL);
+         *       _exit(0);
+         *   }
+         *   waitpid(first, NULL, 0);                              // (4) reap the first child
+         *   read(child2par[0], &finfo->childpid, sizeof(pid_t));  // (5) grandchild pid
+         *
+         * Then in fork_helper() (the helper-side entry), read the new arg
+         * and pass it explicitly to rp_watch_pid() instead of getppid()
+         * (which would be 1 = init).
+         *
+         * Reason this is NOT the chosen fix: significant restructuring of
+         * a fork lifecycle that took non-trivial effort to get right (no
+         * orphan helpers, no zombies). The chosen fix lives in
+         * rampart-utils.c's exec() — it briefly toggles SIGCHLD to SIG_DFL
+         * around its own fork+waitpid window, leaving sql_helper's lifecycle
+         * code completely untouched.
+         */
         finfo->childpid = fork();
 
         if (finfo->childpid < 0)

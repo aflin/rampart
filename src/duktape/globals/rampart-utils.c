@@ -62,6 +62,9 @@ pthread_mutex_t loglock;
 pthread_mutex_t errlock;
 pthread_mutex_t pflock;
 pthread_mutex_t pflock_err;
+/* Serializes SIGCHLD save/restore in duk_rp_exec_raw — see comment there.
+ * Process-wide because SIGCHLD disposition is process-wide. */
+static pthread_mutex_t exec_sigchld_lock = PTHREAD_MUTEX_INITIALIZER;
 FILE *access_fh;
 FILE *error_fh;
 int rp_print_simplified_errors=0;
@@ -4140,8 +4143,42 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
 
     }
 
+    /* SIGCHLD save/restore window — start.
+     *
+     * Why: rampart-sql.c sets SIGCHLD to SIG_IGN after forking the
+     * sql_helper, to prevent helper-zombie accumulation in the parent.
+     * That disposition is PROCESS-WIDE, so it also makes the kernel
+     * auto-reap THIS exec()'s child before our waitpid() can see it —
+     * waitpid then returns -1/ECHILD, exit_status keeps stack garbage,
+     * and the caller gets a bogus exit code (we observed first-call=0,
+     * rerun=230 for a gcc that should report exit=1).
+     *
+     * Fix: serialize across threads with exec_sigchld_lock, save the
+     * current SIGCHLD action, force SIG_DFL for the brief fork+wait
+     * window so waitpid works normally, then restore the saved action
+     * after wait. On Linux, restoring SIG_IGN immediately auto-reaps any
+     * zombies that accumulated during the (microseconds-long) window —
+     * so sql_helper's zombie-prevention contract is preserved.
+     *
+     * Restoration happens at every exit path below (background-branch
+     * after blocking waitpid; foreground-branch after the WNOHANG poll
+     * loop; error path after fork failure). Search for "SIGCHLD restore"
+     * to find them. */
+    struct sigaction saved_sigchld_act, dfl_sigchld_act;
+    int sigchld_saved = 0;
+    pthread_mutex_lock(&exec_sigchld_lock);
+    memset(&dfl_sigchld_act, 0, sizeof(dfl_sigchld_act));
+    dfl_sigchld_act.sa_handler = SIG_DFL;
+    sigemptyset(&dfl_sigchld_act.sa_mask);
+    if (sigaction(SIGCHLD, &dfl_sigchld_act, &saved_sigchld_act) == 0)
+        sigchld_saved = 1;
+
     if ((pid = fork()) == -1)
     {
+        /* SIGCHLD restore — fork-error path */
+        if (sigchld_saved)
+            sigaction(SIGCHLD, &saved_sigchld_act, NULL);
+        pthread_mutex_unlock(&exec_sigchld_lock);
         free(args);
         free_made_env(env);
         RP_THROW(ctx, "exec(): could not fork: %s", strerror(errno));
@@ -4236,6 +4273,10 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
         duk_push_object(ctx);
         rp_pipe_close(child2par,1);
         waitpid(pid,&exit_status,0);
+        /* SIGCHLD restore — background-branch */
+        if (sigchld_saved)
+            sigaction(SIGCHLD, &saved_sigchld_act, NULL);
+        pthread_mutex_unlock(&exec_sigchld_lock);
         if(-1 == read(child2par[0], &pid2, sizeof(pid_t)) )
             RP_THROW(ctx, "exec(): failed to get pid from child");
 
@@ -4306,15 +4347,44 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
         // no idea why
         {
             pid_t wp;
+            /* exit_status declared at top of function — initialize defensively
+             * so a waitpid that returns -1 doesn't leave us decoding stack
+             * garbage (the historical symptom: exit reported as 0 then 230
+             * for the same failing cmd). */
+            exit_status = -1;
+            /* Re-assert SIG_DFL right before the wait loop. Our mutex
+             * serializes against other rampart.utils.exec callers, but
+             * rampart-sql.c's signal(SIGCHLD, SIG_IGN) calls (fired from
+             * other threads doing Sql.connection) don't go through that
+             * mutex. If one fires between our initial save+set and the
+             * waitpid, the kernel auto-reaps our child and we'd get
+             * wp=-1 and bogus exit. Re-asserting SIG_DFL right before
+             * the wait closes most of that race window. */
+            sigaction(SIGCHLD, &dfl_sigchld_act, NULL);
             while((wp = waitpid(pid, &exit_status, WNOHANG)) == 0)
                 usleep(1000);
 
-            if(WIFEXITED(exit_status))
-                exit_status = WEXITSTATUS(exit_status);
-            else if(WIFSIGNALED(exit_status))
-                exit_status = 128 + WTERMSIG(exit_status);
-            else
+            /* SIGCHLD restore — foreground-branch (after waitpid completes,
+             * before we decode exit_status). Doing this BEFORE decoding so
+             * the disposition is already restored when we return. */
+            if (sigchld_saved)
+                sigaction(SIGCHLD, &saved_sigchld_act, NULL);
+            pthread_mutex_unlock(&exec_sigchld_lock);
+
+            if (wp > 0) {
+                if(WIFEXITED(exit_status))
+                    exit_status = WEXITSTATUS(exit_status);
+                else if(WIFSIGNALED(exit_status))
+                    exit_status = 128 + WTERMSIG(exit_status);
+                else
+                    exit_status = -1;
+            } else {
+                /* wp < 0: child auto-reaped before our waitpid (would mean
+                 * SIG_IGN was somehow still in effect — shouldn't happen
+                 * after the save/set above, but stay defensive). Don't
+                 * decode garbage. */
                 exit_status = -1;
+            }
         }
 
         // cancel timeout thread in case it is still running
