@@ -1,0 +1,58 @@
+/* css sample for rampart-treesitter tests.
+ * Covers: rule_set with various selector types, keyframes_statement,
+ * media_statement. For rule_set the "name" is the first selector
+ * descendant — class_selector, id_selector, tag_name, etc. */
+
+/* class selector */
+.button {
+    color: red;
+}
+
+/* compound class selector — single class_selector node spans both */
+.button.primary {
+    background: blue;
+}
+
+/* id selector */
+#main-nav {
+    padding: 1em;
+}
+
+/* tag selectors */
+h1 {
+    font-size: 2em;
+}
+
+/* multi-selector rule — name picks the first */
+h2, h3, h4 {
+    font-weight: bold;
+}
+
+/* pseudo-class selector */
+a:hover {
+    text-decoration: underline;
+}
+
+/* :root pseudo (custom property defs live here typically) */
+:root {
+    --primary-color: #333;
+    --spacing: 1rem;
+}
+
+/* @keyframes — name extracted from keyframes_name field */
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes slideOut {
+    0% { transform: translateX(0); }
+    100% { transform: translateX(-100%); }
+}
+
+/* @media — picks the first inner rule selector as name */
+@media (max-width: 600px) {
+    .button {
+        font-size: 12px;
+    }
+}

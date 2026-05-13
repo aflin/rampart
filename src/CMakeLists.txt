@@ -1106,24 +1106,100 @@ else()
 endif()
 
 ###TREE-SITTER###
+# Grammars live INSIDE this module's .so, not in the main rampart binary.
+# Main only contains:
+#   - the tree-sitter runtime (lib.c), which the transpiler needs anyway
+#   - the JavaScript grammar (already there for the transpiler)
+# The module resolves the runtime symbols (ts_parser_new, ts_node_*, etc.)
+# and the JS grammar's tree_sitter_javascript() from the main process at
+# dlopen — same pattern rampart-totext.so uses for libdeflate.
+# Every OTHER grammar (C, Python, Rust, ...) is statically linked into
+# this .so, so main stays small and users who don't load this module
+# pay zero.
+#
+# Adding a new grammar later: vendor it under
+# extern/tree-sitter/tree-sitter-<lang>/ (mirroring the JS grammar's
+# layout at extern/tree-sitter/tree-sitter-javascript/), add its
+# parser.c (and scanner.c if present) to the source list below, and
+# add an entry to LANGUAGES[] in rampart-treesitter.c. No changes to
+# the main rampart binary's add_executable().
 add_library(rampart-treesitter SHARED
     duktape/modules/rampart-treesitter.c
+    ${PROJECT_SOURCE_DIR}/extern/tree-sitter/tree-sitter-c/src/parser.c
+    ${PROJECT_SOURCE_DIR}/extern/tree-sitter/tree-sitter-python/src/parser.c
+    ${PROJECT_SOURCE_DIR}/extern/tree-sitter/tree-sitter-python/src/scanner.c
+    ${PROJECT_SOURCE_DIR}/extern/tree-sitter/tree-sitter-java/src/parser.c
+    ${PROJECT_SOURCE_DIR}/extern/tree-sitter/tree-sitter-cpp/src/parser.c
+    ${PROJECT_SOURCE_DIR}/extern/tree-sitter/tree-sitter-cpp/src/scanner.c
+    ${PROJECT_SOURCE_DIR}/extern/tree-sitter/tree-sitter-go/src/parser.c
+    ${PROJECT_SOURCE_DIR}/extern/tree-sitter/tree-sitter-rust/src/parser.c
+    ${PROJECT_SOURCE_DIR}/extern/tree-sitter/tree-sitter-rust/src/scanner.c
+    ${PROJECT_SOURCE_DIR}/extern/tree-sitter/tree-sitter-typescript/typescript/src/parser.c
+    ${PROJECT_SOURCE_DIR}/extern/tree-sitter/tree-sitter-typescript/typescript/src/scanner.c
+    ${PROJECT_SOURCE_DIR}/extern/tree-sitter/tree-sitter-typescript/tsx/src/parser.c
+    ${PROJECT_SOURCE_DIR}/extern/tree-sitter/tree-sitter-typescript/tsx/src/scanner.c
+    ${PROJECT_SOURCE_DIR}/extern/tree-sitter/tree-sitter-c-sharp/src/parser.c
+    ${PROJECT_SOURCE_DIR}/extern/tree-sitter/tree-sitter-c-sharp/src/scanner.c
+    # Tier-2 programming grammars
+    ${PROJECT_SOURCE_DIR}/extern/tree-sitter/tree-sitter-ruby/src/parser.c
+    ${PROJECT_SOURCE_DIR}/extern/tree-sitter/tree-sitter-ruby/src/scanner.c
+    ${PROJECT_SOURCE_DIR}/extern/tree-sitter/tree-sitter-bash/src/parser.c
+    ${PROJECT_SOURCE_DIR}/extern/tree-sitter/tree-sitter-bash/src/scanner.c
+    ${PROJECT_SOURCE_DIR}/extern/tree-sitter/tree-sitter-kotlin/src/parser.c
+    ${PROJECT_SOURCE_DIR}/extern/tree-sitter/tree-sitter-kotlin/src/scanner.c
+    ${PROJECT_SOURCE_DIR}/extern/tree-sitter/tree-sitter-php/php_only/src/parser.c
+    ${PROJECT_SOURCE_DIR}/extern/tree-sitter/tree-sitter-php/php_only/src/scanner.c
+    ${PROJECT_SOURCE_DIR}/extern/tree-sitter/tree-sitter-swift/src/parser.c
+    ${PROJECT_SOURCE_DIR}/extern/tree-sitter/tree-sitter-swift/src/scanner.c
+    # Tier-3 programming grammars
+    ${PROJECT_SOURCE_DIR}/extern/tree-sitter/tree-sitter-lua/src/parser.c
+    ${PROJECT_SOURCE_DIR}/extern/tree-sitter/tree-sitter-lua/src/scanner.c
+    ${PROJECT_SOURCE_DIR}/extern/tree-sitter/tree-sitter-dart/src/parser.c
+    ${PROJECT_SOURCE_DIR}/extern/tree-sitter/tree-sitter-dart/src/scanner.c
+    ${PROJECT_SOURCE_DIR}/extern/tree-sitter/tree-sitter-scala/src/parser.c
+    ${PROJECT_SOURCE_DIR}/extern/tree-sitter/tree-sitter-scala/src/scanner.c
+    ${PROJECT_SOURCE_DIR}/extern/tree-sitter/tree-sitter-elixir/src/parser.c
+    ${PROJECT_SOURCE_DIR}/extern/tree-sitter/tree-sitter-elixir/src/scanner.c
+    ${PROJECT_SOURCE_DIR}/extern/tree-sitter/tree-sitter-haskell/src/parser.c
+    ${PROJECT_SOURCE_DIR}/extern/tree-sitter/tree-sitter-haskell/src/scanner.c
+    ${PROJECT_SOURCE_DIR}/extern/tree-sitter/tree-sitter-ocaml/grammars/ocaml/src/parser.c
+    ${PROJECT_SOURCE_DIR}/extern/tree-sitter/tree-sitter-ocaml/grammars/ocaml/src/scanner.c
+    # Markup / config grammars — bundled for general rampart use; not
+    # currently exposed in extractSymbols (no LANGUAGES[] entry). Future
+    # parse() API can use these.
+    ${PROJECT_SOURCE_DIR}/extern/tree-sitter/tree-sitter-css/src/parser.c
+    ${PROJECT_SOURCE_DIR}/extern/tree-sitter/tree-sitter-css/src/scanner.c
+    ${PROJECT_SOURCE_DIR}/extern/tree-sitter/tree-sitter-toml/src/parser.c
+    ${PROJECT_SOURCE_DIR}/extern/tree-sitter/tree-sitter-toml/src/scanner.c
+    ${PROJECT_SOURCE_DIR}/extern/tree-sitter/tree-sitter-yaml/src/parser.c
+    # scanner.cc already #include's schema.generated.cc inline, so we
+    # don't add schema.generated.cc as a separate compile unit (would
+    # produce duplicate-symbol link errors).
+    ${PROJECT_SOURCE_DIR}/extern/tree-sitter/tree-sitter-yaml/src/scanner.cc
+    ${PROJECT_SOURCE_DIR}/extern/tree-sitter/tree-sitter-markdown/tree-sitter-markdown/src/parser.c
+    ${PROJECT_SOURCE_DIR}/extern/tree-sitter/tree-sitter-markdown/tree-sitter-markdown/src/scanner.c
+    ${PROJECT_SOURCE_DIR}/extern/tree-sitter/tree-sitter-markdown/tree-sitter-markdown-inline/src/parser.c
+    ${PROJECT_SOURCE_DIR}/extern/tree-sitter/tree-sitter-markdown/tree-sitter-markdown-inline/src/scanner.c
 )
 target_include_directories(rampart-treesitter PRIVATE
     ${PROJECT_SOURCE_DIR}/extern/tree-sitter/lib/include/
+    # tree-sitter-yaml uses angle-bracketed <tree_sitter/parser.h>
+    # (most grammars use quoted form which resolves relative to their
+    # own src/). Adding yaml's src/ to the include path makes the
+    # angle-form resolve. parser.h files across grammars are generated
+    # from the same template, so picking any one for the global -I
+    # search is fine.
+    ${PROJECT_SOURCE_DIR}/extern/tree-sitter/tree-sitter-yaml/src/
 )
-# The tree-sitter runtime symbols (ts_parser_new, ts_node_*, etc.) and
-# the JavaScript grammar's tree_sitter_javascript() symbol both live in
-# the main rampart binary (linked there for the transpiler in
-# extern/tree-sitter/transpiler.c). This module declares them extern
-# and resolves them at dlopen via the main process — exactly the
-# pattern rampart-totext.so uses for libdeflate.
-#
-# Adding a new grammar later: vendor its parser.c/scanner.c into
-# extern/tree-sitter-<lang>/, add those source files to the main
-# add_executable(rampart ...) block above so the main binary owns the
-# tree_sitter_<lang>() symbol, then add an entry to LANGUAGES[] in
-# rampart-treesitter.c. No CMake changes needed here.
+# tree-sitter-cpp's scanner.c uses `static_assert` (C11 macro from
+# <assert.h>). Linux GCC defaults to gnu11+ which picks it up; macOS
+# clang and some older toolchains default to C99/gnu99 where the
+# macro isn't defined. Pin C11 explicitly so the build works
+# everywhere without modifying vendored sources.
+set_target_properties(rampart-treesitter PROPERTIES
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+)
 
 
 ###### EXAMPLE USER MODULE######
@@ -1247,6 +1323,7 @@ foreach(TEST_FILE ${TEST_FILES})
 file(COPY ${TEST_FILE} DESTINATION ${CMAKE_BINARY_DIR}/src)
 endforeach()
 file(COPY "${CMAKE_SOURCE_DIR}/test/convtest" DESTINATION ${CMAKE_BINARY_DIR}/src)
+file(COPY "${CMAKE_SOURCE_DIR}/test/treesitter-tests" DESTINATION ${CMAKE_BINARY_DIR}/src)
 
 
 
@@ -1267,6 +1344,7 @@ install(TARGETS
     rampart-almanac
     rampart-totext
     rampart-auth
+    rampart-treesitter
     DESTINATION "${CMAKE_INSTALL_PREFIX}/modules/"
 )
 
@@ -1569,6 +1647,7 @@ install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules
 install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-sql.so\")")
 install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-almanac.so\")")
 install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-totext.so\")")
+install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-treesitter.so\")")
 install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-graphicsmagick.so\")")
 install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/bin/rampart\")")
 install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/bin/tsql\")")
