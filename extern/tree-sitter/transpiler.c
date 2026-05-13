@@ -729,10 +729,15 @@ static char *build_param_default_inits(const char *src, TSNode params)
         }                                                                                                              \
     } while (0)
 
-    for (uint32_t i = 0, pi = 0; i < c; i++, pi++)
+    uint32_t pi = 0;
+    for (uint32_t i = 0; i < c; i++)
     {
         TSNode p = ts_node_named_child(params, i);
         const char *pt = ts_node_type(p);
+        /* Skip comment children — they aren't params and don't count
+           toward the argument index. */
+        if (strcmp(pt, "comment") == 0)
+            continue;
         if (strcmp(pt, "identifier") == 0)
         {
             size_t ns = ts_node_start_byte(p), ne = ts_node_end_byte(p);
@@ -762,6 +767,7 @@ static char *build_param_default_inits(const char *src, TSNode params)
             free(buf);
             return NULL;
         }
+        pi++;
     }
     return buf;
 }
@@ -1128,6 +1134,10 @@ static int collect_flat_destructure_bindings(TSNode pattern, const char *src, co
                 continue;
             }
             const char *kt = ts_node_type(k);
+            /* Comments inside an array pattern appear as named `comment`
+               children. Skip them — they aren't bindings. */
+            if (strcmp(kt, "comment") == 0)
+                continue;
             if (strcmp(kt, "identifier") == 0)
             {
                 size_t ns = ts_node_start_byte(k), ne = ts_node_end_byte(k);
@@ -1205,6 +1215,10 @@ static int collect_flat_destructure_bindings(TSNode pattern, const char *src, co
             if (!ts_node_is_named(k))
                 continue;
             const char *kt = ts_node_type(k);
+            /* Comments inside the pattern appear as named `comment` children.
+               Skip them — they aren't bindings. */
+            if (strcmp(kt, "comment") == 0)
+                continue;
             if (strcmp(kt, "pair_pattern") == 0 || strcmp(kt, "pair") == 0)
             {
                 TSNode key = ts_node_child_by_field_name(k, "key", 3);
@@ -1825,7 +1839,23 @@ static void append_excluded_key_node(rp_string *excluded_csv, TSNode prop, const
 static int rewrite_export_node(EditList *edits, const char *src, TSNode snode, RangeList *claimed, int overlaps)
 {
     size_t ns = ts_node_start_byte(snode), ne = ts_node_end_byte(snode);
-    int is_default_export = !ts_node_is_null(ts_node_child_by_field_name(snode, "default", 7));
+    /* `default` is an UNNAMED keyword token in the tree-sitter-javascript
+       grammar (see `seq('default', …)` in the grammar) — it is NOT exposed
+       via a field name. `ts_node_child_by_field_name(snode, "default", …)`
+       always returns null here. Detect by walking unnamed children and
+       matching their byte range to "default". */
+    int is_default_export = 0;
+    for (uint32_t _i = 0, _n = ts_node_child_count(snode); _i < _n; _i++)
+    {
+        TSNode _ch = ts_node_child(snode, _i);
+        if (ts_node_is_named(_ch)) continue;
+        size_t _cs = ts_node_start_byte(_ch), _ce = ts_node_end_byte(_ch);
+        if (_ce - _cs == 7 && memcmp(src + _cs, "default", 7) == 0)
+        {
+            is_default_export = 1;
+            break;
+        }
+    }
     /* export default */
     {
         TSNode val =
@@ -3622,7 +3652,14 @@ static int rewrite_arrow_function_node(EditList *edits, const char *src, TSNode 
                         }
                         if (*pc == ')')
                         {
-                            char *brace = strchr(rep, '{');
+                            /* Search for the function body's opening `{` AFTER
+                               the closing `)` of the parameter list — the
+                               first `{` from the start of rep would match the
+                               `{` of an object-literal default value
+                               (e.g. `function(a, b = {}) {…}`), then
+                               pre_block < pc and the size arithmetic below
+                               underflows → heap corruption. */
+                            char *brace = strchr(pc, '{');
                             if (brace)
                             {
                                 size_t head_len = (size_t)(po - rep);
@@ -3701,7 +3738,17 @@ static int rewrite_array_spread(EditList *edits, const char *src, TSNode arr, in
     for (i = 0; i < cnt1; i++)
     {
         TSNode kid = ts_node_child(arr, i);
-        if (strcmp(ts_node_type(kid), "spread_element") == 0)
+        const char *_kt = ts_node_type(kid);
+        /* Skip `comment` children. They are named, so they'd otherwise
+           fall into the else-if branch below and be emitted as if they
+           were property values — which is wrong twice over: comments
+           aren't properties, and the rewriter collapses multi-line
+           literals onto one line, so a `// line comment` would then
+           consume everything that follows it on the line (including
+           later properties). */
+        if (strcmp(_kt, "comment") == 0)
+            continue;
+        if (strcmp(_kt, "spread_element") == 0)
         {
             cnt2 = ts_node_child_count(kid);
             for (j = 0; j < cnt2; j++)
@@ -3717,7 +3764,7 @@ static int rewrite_array_spread(EditList *edits, const char *src, TSNode arr, in
         }
         else if (ts_node_is_named(kid))
         {
-            if (strcmp(ts_node_type(kid), "shorthand_property_identifier") == 0)
+            if (strcmp(_kt, "shorthand_property_identifier") == 0)
             {
                 needed += (ts_node_end_byte(kid) - ts_node_start_byte(kid)) * 2 + addcsize + 1; // x -> x:x
                 nshort++;
@@ -3795,8 +3842,13 @@ static int rewrite_array_spread(EditList *edits, const char *src, TSNode arr, in
     for (i = 0; i < cnt1; i++)
     {
         TSNode kid = ts_node_child(arr, i);
+        const char *_kt2 = ts_node_type(kid);
 
-        if (strcmp(ts_node_type(kid), "spread_element") == 0)
+        /* Skip comments — see size-pass note. */
+        if (strcmp(_kt2, "comment") == 0)
+            continue;
+
+        if (strcmp(_kt2, "spread_element") == 0)
         {
             cnt2 = ts_node_child_count(kid);
             for (j = 0; j < cnt2; j++)
@@ -3830,7 +3882,7 @@ static int rewrite_array_spread(EditList *edits, const char *src, TSNode arr, in
             }
 
             addstr(src + start, (end - start));
-            if (strcmp(ts_node_type(kid), "shorthand_property_identifier") == 0)
+            if (strcmp(_kt2, "shorthand_property_identifier") == 0)
             {
                 addchar(':');
                 addstr(src + start, (end - start));
@@ -6588,6 +6640,31 @@ static void copy_body_replace_super(rp_string *bucket, const char *body, size_t 
      return Name;
    }(Super);
 */
+
+/* Returns 1 if `name` (length `len`) is a JavaScript reserved word that
+   cannot legally appear as a function-expression name. Used to decide
+   whether a class method's name can be inlined into `function NAME(){}`
+   or must be emitted anonymously (the `key:` field still carries the
+   user-facing name). */
+static int _name_is_reserved(const char *name, size_t len)
+{
+    static const char *RES[] = {
+        "break","case","catch","class","const","continue","debugger","default",
+        "delete","do","else","enum","export","extends","false","finally","for",
+        "function","if","import","in","instanceof","new","null","return","super",
+        "switch","this","throw","true","try","typeof","var","void","while","with",
+        "yield","let","static","implements","interface","package","private",
+        "protected","public","await", NULL
+    };
+    for (size_t i = 0; RES[i]; i++)
+    {
+        size_t rl = strlen(RES[i]);
+        if (rl == len && memcmp(name, RES[i], len) == 0)
+            return 1;
+    }
+    return 0;
+}
+
 static void es5_emit_class_core(rp_string *out, const char *src, const char *cname, size_t cname_len, int has_super,
                                 size_t sups, size_t supe, TSNode body)
 {
@@ -6670,7 +6747,8 @@ static void es5_emit_class_core(rp_string *out, const char *src, const char *cna
         int is_static = 0;
         int is_getter = 0;
         int is_setter = 0;
-        // detect "static", "get", "set" modifiers
+        int is_async = 0;
+        // detect "static", "get", "set", "async" modifiers
         for (uint32_t j = 0, cn = ts_node_child_count(mth); j < cn; j++)
         {
             TSNode ch = ts_node_child(mth, j);
@@ -6684,6 +6762,8 @@ static void es5_emit_class_core(rp_string *out, const char *src, const char *cna
                 is_getter = 1;
             else if (slen == 3 && strncmp(src + ss, "set", 3) == 0)
                 is_setter = 1;
+            else if (slen == 5 && strncmp(src + ss, "async", 5) == 0)
+                is_async = 1;
         }
 
         if (is_ctor)
@@ -6740,7 +6820,12 @@ static void es5_emit_class_core(rp_string *out, const char *src, const char *cna
             rp_string_puts(bucket, "{key:'");
             rp_string_putsn(bucket, src + ks, ke - ks);
             rp_string_appendf(bucket, "',%s:function ", desc_field);
-            if (!is_getter && !is_setter)
+            /* Suppress the function NAME if it would be a parse error
+               (reserved word). Method-property names like `default()`,
+               `delete()`, `return()` are valid as method names but invalid
+               as function-expression names. The `key:` field still carries
+               the user-facing name. */
+            if (!is_getter && !is_setter && !_name_is_reserved(src + ks, ke - ks))
                 rp_string_putsn(bucket, src + ks, ke - ks);
         }
         /* Check for rest parameter in method params */
@@ -6801,7 +6886,31 @@ static void es5_emit_class_core(rp_string *out, const char *src, const char *cna
 
         /* Emit body (with rest shim and super rewrite as needed) */
         rp_string_puts(bucket, " ");
-        if (bs && be)
+        if (is_async && bs && be)
+        {
+            /* Async class method:
+                 value: function name(params) {
+                    return _TrN_Sp.asyncToGenerator(_TrN_Sp.regeneratorRuntime.mark(
+                        function _callee(params) { <regenerator-switch> }
+                    )).apply(this, arguments);
+                 }
+               The outer wrapper's params are unused (apply forwards
+               `arguments`); the inner _callee receives the real params. */
+            rp_string_puts(bucket, "{return _TrN_Sp.asyncToGenerator(_TrN_Sp.regeneratorRuntime.mark(function _callee");
+            if (ps && pe)
+                rp_string_putsn(bucket, src + ps, pe - ps);
+            else
+                rp_string_puts(bucket, "()");
+            rp_string_puts(bucket, " {");
+            char *_wrap = _build_regenerator_switch_body(src, mb);
+            if (_wrap)
+            {
+                rp_string_puts(bucket, _wrap);
+                free(_wrap);
+            }
+            rp_string_puts(bucket, "})).apply(this, arguments);}");
+        }
+        else if (bs && be)
         {
             if (rest_name || has_super)
             {
@@ -8035,13 +8144,39 @@ static int rewrite_plain_method_shorthand(EditList *edits, const char *src, TSNo
         return 0;
     size_t ns = ts_node_start_byte(nname), ne_name = ts_node_end_byte(nname);
     size_t namelen = ne_name - ns;
-    /* Only rewrite "get" and "set" -- other shorthand methods work in Duktape */
-    if (!((namelen == 3 && strncmp(src + ns, "get", 3) == 0) ||
-          (namelen == 3 && strncmp(src + ns, "set", 3) == 0)))
+    /* Always rewrite get/set (Duktape doesn't support method-shorthand
+       accessors). Also rewrite if params use ES2015+ features (rest,
+       default, destructuring) so the function-param rewriters can fire
+       on the resulting function_expression. Plain method shorthand with
+       plain identifier params is left alone — Duktape handles it. */
+    int is_get_or_set = ((namelen == 3 && strncmp(src + ns, "get", 3) == 0) ||
+                        (namelen == 3 && strncmp(src + ns, "set", 3) == 0));
+    int needs_param_rewrite = 0;
+    if (!is_get_or_set)
+    {
+        TSNode params = ts_node_child_by_field_name(node, "parameters", 10);
+        if (!ts_node_is_null(params))
+        {
+            uint32_t np = ts_node_named_child_count(params);
+            for (uint32_t i = 0; i < np; i++)
+            {
+                TSNode p = ts_node_named_child(params, i);
+                const char *pt = ts_node_type(p);
+                if (strcmp(pt, "rest_pattern") == 0 ||
+                    strcmp(pt, "assignment_pattern") == 0 ||
+                    strcmp(pt, "object_pattern") == 0 ||
+                    strcmp(pt, "array_pattern") == 0)
+                {
+                    needs_param_rewrite = 1;
+                    break;
+                }
+            }
+        }
+    }
+    if (!is_get_or_set && !needs_param_rewrite)
         return 0;
     if (overlaps)
         return 1;
-    /* Insert ": function" between name and params */
     add_edit(edits, ne_name, ne_name, ": function", claimed);
     return 1;
 }
@@ -8703,7 +8838,13 @@ RP_ParseRes transpiler_rewrite_pass(EditList *edits, const char *src, size_t src
 
         if (!handled && strcmp(nt, "method_definition") == 0)
         {
-            handled = rewrite_plain_method_shorthand(edits, src, n, &claimed, overlaps);
+            /* Run method-shorthand rewriting but do NOT set handled — the
+               function-param rewriters below also need to fire on this node
+               to lower rest/default/destructuring params. The two edits
+               don't conflict: shorthand inserts `: function` at name-end
+               (zero-width); param rewriters edit inside the params or
+               after the closing paren. */
+            (void)rewrite_plain_method_shorthand(edits, src, n, &claimed, overlaps);
         }
         if (!handled && strcmp(nt, "method_definition") == 0)
         {
@@ -8723,7 +8864,8 @@ RP_ParseRes transpiler_rewrite_pass(EditList *edits, const char *src, size_t src
         }
         if (!handled && (strcmp(nt, "function_declaration") == 0 || strcmp(nt, "function") == 0 ||
                          strcmp(nt, "function_expression") == 0 || strcmp(nt, "generator_function_declaration") == 0 ||
-                         strcmp(nt, "generator_function") == 0 || strcmp(nt, "generator_function_expression") == 0))
+                         strcmp(nt, "generator_function") == 0 || strcmp(nt, "generator_function_expression") == 0 ||
+                         strcmp(nt, "method_definition") == 0))
         {
             handled = rewrite_function_like_default_params(edits, src, n, &claimed, overlaps);
             if (!handled)
