@@ -64,6 +64,9 @@ int linenoiseHistoryAdd(const char *line);
 int linenoiseHistorySetMaxLen(int len);
 int linenoiseHistorySave(const char *filename);
 int linenoiseHistoryLoad(const char *filename);
+int linenoiseHistoryLen(void);                    // -- ajf
+const char *linenoiseHistoryGet(int idx);          // -- ajf
+void linenoiseHistoryClear(void);                  // -- ajf
 void linenoiseClearScreen(void);
 void linenoiseSetMultiLine(int ml);
 void linenoiseMaskModeEnable(void);

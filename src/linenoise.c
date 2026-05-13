@@ -2633,6 +2633,37 @@ int linenoiseHistoryAdd(const char *line)
     return lhAdd_to((char *)line, 0);
 }
 
+// -ajf - read access to the process-global history buffer. The returned
+// pointers are owned by linenoise; do not free or hold across operations
+// that may modify history (linenoiseHistoryAdd/Set/Load/Save, arrow-key
+// scrolling).
+int linenoiseHistoryLen(void)
+{
+    return history_len;
+}
+
+const char *linenoiseHistoryGet(int idx)
+{
+    if (!history || idx < 0 || idx >= history_len)
+        return NULL;
+    return history[idx];
+}
+
+// -ajf - drop all in-memory history entries. Allocation is freed so the
+// next History*-add reallocs as needed. history_max_len is preserved.
+void linenoiseHistoryClear(void)
+{
+    if (history)
+    {
+        int j;
+        for (j = 0; j < history_len; j++)
+            free(history[j]);
+        free(history);
+        history = NULL;
+    }
+    history_len = 0;
+}
+
 /* Set the maximum length for the history. This function can be called even
  * if there is already some history, the function will make sure to retain
  * just the latest 'len' elements if the new history length value is smaller

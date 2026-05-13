@@ -7146,9 +7146,61 @@ static duk_ret_t repl_refresh(duk_context *ctx) {
     return 0;
 }
 
+// -ajf - replace linenoise's in-memory history with the contents of a JS
+// array of strings. Non-string entries are skipped. Capped to the current
+// history_max_len (older entries roll out per the existing add logic).
+static duk_ret_t repl_replace_history(duk_context *ctx) {
+    if (!duk_is_array(ctx, 0))
+        RP_THROW(ctx, "replaceHistory: argument must be an Array of strings");
+
+    duk_size_t n = duk_get_length(ctx, 0);
+    linenoiseHistoryClear();
+    for (duk_uarridx_t i = 0; i < (duk_uarridx_t)n; i++) {
+        duk_get_prop_index(ctx, 0, i);
+        if (duk_is_string(ctx, -1))
+            linenoiseHistoryAdd(duk_get_string(ctx, -1));
+        duk_pop(ctx);
+    }
+    return 0;
+}
+
+// -ajf - append entries to linenoise's in-memory history without clearing.
+// Useful for seeding *after* a load (so file-loaded history stays at the
+// front and the seed acts like a separator before the new session's lines).
+static duk_ret_t repl_append_history(duk_context *ctx) {
+    if (!duk_is_array(ctx, 0))
+        RP_THROW(ctx, "appendHistory: argument must be an Array of strings");
+
+    duk_size_t n = duk_get_length(ctx, 0);
+    for (duk_uarridx_t i = 0; i < (duk_uarridx_t)n; i++) {
+        duk_get_prop_index(ctx, 0, i);
+        if (duk_is_string(ctx, -1))
+            linenoiseHistoryAdd(duk_get_string(ctx, -1));
+        duk_pop(ctx);
+    }
+    return 0;
+}
+
+// -ajf - return linenoise's current history as a JS array of strings.
+// Snapshot semantics: safe to call at any time, but the array reflects
+// state at call time; concurrent edits (e.g. an arrow-key scroll inside
+// repl().next()) may have stale entries.
+static duk_ret_t repl_get_history(duk_context *ctx) {
+    int n = linenoiseHistoryLen();
+    duk_push_array(ctx);
+    for (int i = 0; i < n; i++) {
+        const char *s = linenoiseHistoryGet(i);
+        if (s) duk_push_string(ctx, s);
+        else   duk_push_null(ctx);
+        duk_put_prop_index(ctx, -2, (duk_uarridx_t)i);
+    }
+    return 1;
+}
+
 static duk_ret_t repl_next(duk_context *ctx) {
     char *line = NULL;
     const char *prompt="";
+    const char *history_file = NULL;
 
     duk_push_this(ctx);
     if(duk_get_prop_string(ctx, -1, "_prompt"))
@@ -7156,15 +7208,47 @@ static duk_ret_t repl_next(duk_context *ctx) {
         prompt=duk_to_string(ctx, -1);
     }
     duk_pop(ctx);
+    if(duk_get_prop_string(ctx, -1, "_history_file"))
+    {
+        history_file=duk_get_string(ctx, -1);
+    }
+    duk_pop(ctx);
 
     line = linenoise(prompt);
     if(!line)
     {
+        // -ajf - linenoiseEdit adds an empty "" placeholder at the start of
+        // every call so up-arrow scrolling has something at position 0. The
+        // ENTER and Ctrl-D paths free it before returning; the Ctrl-C and
+        // read-failure paths return without freeing, leaving a trailing
+        // empty entry visible from getHistory(). Strip it here without
+        // changing linenoise.c's behavior.
+        int n = linenoiseHistoryLen();
+        if (n > 0) {
+            const char *last = linenoiseHistoryGet(n - 1);
+            if (last && last[0] == '\0') {
+                char **keep = (n > 1) ? malloc((n - 1) * sizeof(char *)) : NULL;
+                int i;
+                for (i = 0; i < n - 1; i++)
+                    keep[i] = strdup(linenoiseHistoryGet(i));
+                linenoiseHistoryClear();
+                for (i = 0; i < n - 1; i++) {
+                    linenoiseHistoryAdd(keep[i]);
+                    free(keep[i]);
+                }
+                free(keep);
+            }
+        }
         duk_push_null(ctx);
         return 1;
     }
 
     linenoiseHistoryAdd(line);
+    // -ajf - persist on every accepted line so a process kill mid-session
+    // doesn't lose more than the line currently being edited (matches the
+    // built-in REPL's behavior).
+    if (history_file)
+        (void)linenoiseHistorySave(history_file);
     duk_push_string(ctx, line);
     free(line);
     return 1;
@@ -7233,8 +7317,17 @@ static duk_ret_t rp_repl(duk_context *ctx) {
 
     if(history_file)
     {
+        // -ajf - APPEND semantics: a script that has seeded the history via
+        // replaceHistory() before constructing the repl keeps the seed; the
+        // file's contents are added after. Each session's save will include
+        // both. (Callers wanting strict replace can call linenoiseHistoryClear
+        // via a helper or simply rm the file.)
+        //
+        // First-run case: the file may not exist yet. Treat ENOENT as
+        // "start with empty file; will be created on next save" (matches
+        // the built-in REPL's behavior). Other errors still surface.
         hret=linenoiseHistoryLoad(history_file);
-        if(hret)
+        if(hret && errno != ENOENT)
             RP_THROW(ctx, "repl: history error - %s", strerror(errno));
 
         duk_push_string(ctx, history_file);
@@ -12064,6 +12157,12 @@ void duk_printf_init(duk_context *ctx)
     duk_push_c_function(ctx, rp_repl, 1);
     duk_push_c_function(ctx, repl_refresh, 0);
     duk_put_prop_string(ctx, -2, "refresh");
+    duk_push_c_function(ctx, repl_get_history, 0);
+    duk_put_prop_string(ctx, -2, "getHistory");
+    duk_push_c_function(ctx, repl_replace_history, 1);
+    duk_put_prop_string(ctx, -2, "replaceHistory");
+    duk_push_c_function(ctx, repl_append_history, 1);
+    duk_put_prop_string(ctx, -2, "appendHistory");
     duk_put_prop_string(ctx, -2, "repl");
 
     duk_push_c_function(ctx, duk_rp_fwrite, 4);
