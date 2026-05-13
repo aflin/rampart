@@ -1105,6 +1105,27 @@ else()
     message("")
 endif()
 
+###TREE-SITTER###
+add_library(rampart-treesitter SHARED
+    duktape/modules/rampart-treesitter.c
+)
+target_include_directories(rampart-treesitter PRIVATE
+    ${PROJECT_SOURCE_DIR}/extern/tree-sitter/lib/include/
+)
+# The tree-sitter runtime symbols (ts_parser_new, ts_node_*, etc.) and
+# the JavaScript grammar's tree_sitter_javascript() symbol both live in
+# the main rampart binary (linked there for the transpiler in
+# extern/tree-sitter/transpiler.c). This module declares them extern
+# and resolves them at dlopen via the main process — exactly the
+# pattern rampart-totext.so uses for libdeflate.
+#
+# Adding a new grammar later: vendor its parser.c/scanner.c into
+# extern/tree-sitter-<lang>/, add those source files to the main
+# add_executable(rampart ...) block above so the main binary owns the
+# tree_sitter_<lang>() symbol, then add an entry to LANGUAGES[] in
+# rampart-treesitter.c. No CMake changes needed here.
+
+
 ###### EXAMPLE USER MODULE######
 #add_library(example_name SHARED
 # example.c
@@ -1127,7 +1148,7 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
         rampart-redis rampart-crypto rampart-html
         rampart-cmark rampart-robots rampart-lmdb
         rampart-net rampart-python rampart-almanac
-        rampart-totext rampart-auth
+        rampart-totext rampart-auth rampart-treesitter
         #example_name
           PROPERTIES
           LINK_FLAGS   "-undefined dynamic_lookup -Wl,-rpath,./"
@@ -1151,6 +1172,7 @@ elseif(CYGWIN)
   target_link_libraries(rampart-server ${RAMPART_IMPLIB})
   target_link_libraries(rampart-totext ${RAMPART_IMPLIB})
   target_link_libraries(rampart-auth ${RAMPART_IMPLIB})
+  target_link_libraries(rampart-treesitter ${RAMPART_IMPLIB})
   # Targets using keyword signature (match existing target_link_libraries form)
   target_link_libraries(rampart-crypto PRIVATE ${RAMPART_IMPLIB})
   target_link_libraries(rampart-curl PRIVATE ${RAMPART_IMPLIB})
@@ -1160,7 +1182,7 @@ elseif(CYGWIN)
   foreach(_mod rampart-almanac rampart-cmark rampart-html rampart-lmdb
                rampart-net rampart-redis rampart-robots rampart-server
                rampart-crypto rampart-curl rampart-python rampart-sql
-               rampart-totext rampart-auth)
+               rampart-totext rampart-auth rampart-treesitter)
     add_dependencies(${_mod} rampart)
   endforeach()
   set_target_properties(
@@ -1168,7 +1190,7 @@ elseif(CYGWIN)
         rampart-redis rampart-crypto rampart-html
         rampart-cmark rampart-robots rampart-lmdb
         rampart-net rampart-python rampart-almanac
-        rampart-totext rampart-auth
+        rampart-totext rampart-auth rampart-treesitter
         #example_name
           PROPERTIES
           LINK_FLAGS "-Wl,-rpath,./"
@@ -1181,7 +1203,7 @@ else()
         rampart-redis rampart-crypto rampart-html
         rampart-cmark rampart-robots rampart-lmdb
         rampart-net rampart-python rampart-almanac
-        rampart-totext rampart-auth
+        rampart-totext rampart-auth rampart-treesitter
         #example_name
           PROPERTIES
           LINK_FLAGS "-Wl,-rpath,./"

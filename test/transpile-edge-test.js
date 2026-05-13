@@ -7,8 +7,6 @@
    Known transpiler limitations (ES2015+ → ES5):
    - const is converted to var and is NOT read-only (no enforcement).
    - let/const at top level become var and attach to the global object.
-   - Destructuring with await (e.g. const {a,b} = await expr) is not supported.
-     Workaround: const tmp = await expr; const {a,b} = tmp;
    - await inside for/while/do loops does not execute per-iteration.
      Workaround: move await outside the loop or use Promise.all().
    - yield inside for/while/do loops is dropped from the output.
@@ -757,15 +755,312 @@ testFeature("async - await then destructure", function() {
     return fetchPair().then(v => v === 3);
 });
 
-// Verify transpiler warns about destructuring + await
-testFeature("warning - destructuring + await", function() {
-    if (!global.rampart) return true; // Node supports this natively
-    var fh = fopenBuffer(stderr);
-    try { eval('async function _wdsa() { const {a, b} = await Promise.resolve({a:1,b:2}); }'); } catch(e) {}
-    fclose(fh);
-    var msg = fh.getString();
-    fh.destroy();
-    return msg.indexOf("destructuring") !== -1 && msg.indexOf("await") !== -1;
+/* destructuring + await is now supported — verify it works. Previous
+   version of this test checked for a transpiler warning; that warning
+   was removed when the async rewriter learned to lower
+   `const {a,b} = await x` to a temp-var + destructure expansion. */
+testFeature("destructuring + await - object pattern", function() {
+    return new Promise(function(resolve){
+        async function f() {
+            const {a, b} = await Promise.resolve({a: 1, b: 2});
+            resolve(a === 1 && b === 2);
+        }
+        f();
+    });
+});
+
+testFeature("destructuring + await - array pattern", function() {
+    return new Promise(function(resolve){
+        async function f() {
+            const [x, y, z] = await Promise.resolve([10, 20, 30]);
+            resolve(x === 10 && y === 20 && z === 30);
+        }
+        f();
+    });
+});
+
+testFeature("destructuring + await - defaults", function() {
+    return new Promise(function(resolve){
+        async function f() {
+            const {a = 5, b = 9} = await Promise.resolve({a: 1});
+            resolve(a === 1 && b === 9);
+        }
+        f();
+    });
+});
+
+testFeature("destructuring + await - renaming", function() {
+    return new Promise(function(resolve){
+        async function f() {
+            const {a: x, b: y} = await Promise.resolve({a: 1, b: 2});
+            resolve(x === 1 && y === 2);
+        }
+        f();
+    });
+});
+
+testFeature("destructuring + await - var + let variants", function() {
+    return new Promise(function(resolve){
+        async function f() {
+            var {a, b} = await Promise.resolve({a: 1, b: 2});
+            let [c, d] = await Promise.resolve([3, 4]);
+            resolve(a === 1 && b === 2 && c === 3 && d === 4);
+        }
+        f();
+    });
+});
+
+testFeature("destructuring + await - multiple in one fn", function() {
+    return new Promise(function(resolve){
+        async function f() {
+            const {a} = await Promise.resolve({a: 1});
+            const {b} = await Promise.resolve({b: 2});
+            const x = await Promise.resolve(100);
+            resolve(a === 1 && b === 2 && x === 100);
+        }
+        f();
+    });
+});
+
+/* destructure ASSIGNMENT (not declaration) with await on RHS:
+   `({a,b} = await x);` and `[a,b] = await x;` — the bindings already
+   exist, so the lowering reassigns instead of declaring. */
+
+testFeature("destructure-assign + await - object pattern", function() {
+    return new Promise(function(resolve){
+        async function f() {
+            var a, b;
+            ({a, b} = await Promise.resolve({a: 1, b: 2}));
+            resolve(a === 1 && b === 2);
+        }
+        f();
+    });
+});
+
+testFeature("destructure-assign + await - array pattern", function() {
+    return new Promise(function(resolve){
+        async function f() {
+            var x, y, z;
+            [x, y, z] = await Promise.resolve([10, 20, 30]);
+            resolve(x === 10 && y === 20 && z === 30);
+        }
+        f();
+    });
+});
+
+testFeature("destructure-assign + await - defaults", function() {
+    return new Promise(function(resolve){
+        async function f() {
+            var a, b;
+            ({a = 5, b = 9} = await Promise.resolve({a: 1}));
+            resolve(a === 1 && b === 9);
+        }
+        f();
+    });
+});
+
+testFeature("destructure-assign + await - renaming", function() {
+    return new Promise(function(resolve){
+        async function f() {
+            var x, y;
+            ({a: x, b: y} = await Promise.resolve({a: 1, b: 2}));
+            resolve(x === 1 && y === 2);
+        }
+        f();
+    });
+});
+
+testFeature("destructure-assign + await - reassignment overwrites", function() {
+    return new Promise(function(resolve){
+        async function f() {
+            var a = 'init', b = 'init';
+            ({a, b} = await Promise.resolve({a: 'new-a', b: 'new-b'}));
+            resolve(a === 'new-a' && b === 'new-b');
+        }
+        f();
+    });
+});
+
+/* Multi-declarator destructuring + await — pattern and await can be in
+   the same declarator (`const {a, b} = await x`) or different
+   declarators (`const x = 1, {a} = await y` / `const [a] = arr, b = await x`).
+   _stmt_is_destructure_await fires whenever ANY declarator has a
+   destructure pattern AND ANY declarator has await — the emitter then
+   handles each declarator according to its own (pattern, await) state. */
+
+testFeature("destructure-await - multi: plain + destructure-await", function() {
+    return new Promise(function(resolve){
+        async function f() {
+            const a = 1, {b} = await Promise.resolve({b: 2});
+            resolve(a === 1 && b === 2);
+        }
+        f();
+    });
+});
+
+testFeature("destructure-await - multi: destructure-await + plain", function() {
+    return new Promise(function(resolve){
+        async function f() {
+            const {a} = await Promise.resolve({a: 1}), b = 2;
+            resolve(a === 1 && b === 2);
+        }
+        f();
+    });
+});
+
+testFeature("destructure-await - multi: plain-await + destructure-await", function() {
+    return new Promise(function(resolve){
+        async function f() {
+            const a = await Promise.resolve(1), {b} = await Promise.resolve({b: 2});
+            resolve(a === 1 && b === 2);
+        }
+        f();
+    });
+});
+
+testFeature("destructure-await - multi: two destructure-awaits in one stmt", function() {
+    return new Promise(function(resolve){
+        async function f() {
+            const {a} = await Promise.resolve({a: 1}), {b} = await Promise.resolve({b: 2});
+            resolve(a === 1 && b === 2);
+        }
+        f();
+    });
+});
+
+testFeature("destructure-await - multi: destructure-noawait + destructure-await", function() {
+    return new Promise(function(resolve){
+        async function f() {
+            var src = {x: 100};
+            let {x} = src, {y} = await Promise.resolve({y: 2});
+            resolve(x === 100 && y === 2);
+        }
+        f();
+    });
+});
+
+testFeature("destructure-await - multi: array-destructure-noawait + await-plain", function() {
+    return new Promise(function(resolve){
+        async function f() {
+            var arr = [99];
+            let [a] = arr, b = await Promise.resolve(7);
+            resolve(a === 99 && b === 7);
+        }
+        f();
+    });
+});
+
+testFeature("destructure-await - multi: no-value + destructure-await", function() {
+    return new Promise(function(resolve){
+        async function f() {
+            let a, {b, c} = await Promise.resolve({b: 1, c: 2});
+            resolve(a === undefined && b === 1 && c === 2);
+        }
+        f();
+    });
+});
+
+/* Embedded await positions — single embedded awaits (member access,
+   subscript, fn arg), short-circuit chains, sibling awaits, conditional
+   branches. Multi-await values use per-await `_context._ts<N>` slots
+   so each resolved value survives across state-machine resumptions. */
+
+testFeature("embedded-await - member access (await x).y", function() {
+    return new Promise(function(resolve){
+        async function f() {
+            const {a, b} = (await Promise.resolve({result: {a: 1, b: 2}})).result;
+            resolve(a === 1 && b === 2);
+        }
+        f();
+    });
+});
+
+testFeature("embedded-await - || default", function() {
+    return new Promise(function(resolve){
+        async function f() {
+            const {a} = (await Promise.resolve(null)) || {a: 5};
+            resolve(a === 5);
+        }
+        f();
+    });
+});
+
+testFeature("embedded-await - fn(await x)", function() {
+    return new Promise(function(resolve){
+        async function f() {
+            function wrap(v) { return {a: v}; }
+            const {a} = wrap(await Promise.resolve(42));
+            resolve(a === 42);
+        }
+        f();
+    });
+});
+
+testFeature("embedded-await - arr[await x]", function() {
+    return new Promise(function(resolve){
+        async function f() {
+            const arr = [{x: 100}, {x: 200}];
+            const {x} = arr[await Promise.resolve(1)];
+            resolve(x === 200);
+        }
+        f();
+    });
+});
+
+testFeature("embedded-await - (await fn)(await x)", function() {
+    return new Promise(function(resolve){
+        async function f() {
+            async function getFn() { return function(v) { return {a: v}; }; }
+            const {a} = (await getFn())(await Promise.resolve(99));
+            resolve(a === 99);
+        }
+        f();
+    });
+});
+
+testFeature("embedded-await - conditional with two awaits", function() {
+    return new Promise(function(resolve){
+        async function f() {
+            const cond = true;
+            const {a} = cond ? (await Promise.resolve({a: 1})) : (await Promise.resolve({a: 99}));
+            resolve(a === 1);
+        }
+        f();
+    });
+});
+
+testFeature("embedded-await - fn(await a, await b)", function() {
+    return new Promise(function(resolve){
+        async function f() {
+            function mk(x, y) { return {a: x + y}; }
+            const {a} = mk(await Promise.resolve(10), await Promise.resolve(32));
+            resolve(a === 42);
+        }
+        f();
+    });
+});
+
+testFeature("embedded-await - destructure-assign with embedded await", function() {
+    return new Promise(function(resolve){
+        async function f() {
+            var a;
+            ({a} = (await Promise.resolve({a: 5})));
+            resolve(a === 5);
+        }
+        f();
+    });
+});
+
+testFeature("embedded-await - destructure-assign with sibling awaits", function() {
+    return new Promise(function(resolve){
+        async function f() {
+            var a;
+            function mk(x, y) { return {a: x * y}; }
+            ({a} = mk(await Promise.resolve(6), await Promise.resolve(7)));
+            resolve(a === 42);
+        }
+        f();
+    });
 });
 
 // Multiple sequential awaits
@@ -1243,4 +1538,12 @@ testFeature("class expr - inline assignment", function() {
 // cleanup transpiler cache file
 try { rampart.utils.rmFile(process.scriptPath + '/transpile-edge-test.transpiled.js'); } catch(e) {}
 
-process.exit(_nfailed ? 1 : 0);
+/* Drain pending async tests before exiting. Poll _asyncQueue and the
+   _asyncRunning flag — when both are clear the queue is fully drained. */
+(function waitAndExit() {
+    if ((_asyncQueue && _asyncQueue.length > 0) || _asyncRunning) {
+        setTimeout(waitAndExit, 25);
+        return;
+    }
+    process.exit(_nfailed ? 1 : 0);
+})();

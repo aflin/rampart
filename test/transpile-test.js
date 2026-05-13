@@ -4,8 +4,6 @@
 /* Known transpiler limitations (ES2015+ → ES5):
    - const is converted to var and is NOT read-only (no enforcement).
    - let/const at top level become var and attach to the global object.
-   - Destructuring with await (e.g. const {a,b} = await expr) is not supported.
-     Workaround: const tmp = await expr; const {a,b} = tmp;
    - await inside for/while/do loops does not execute per-iteration.
      Workaround: move await outside the loop or use Promise.all().
    - yield inside for/while/do loops is dropped from the output.

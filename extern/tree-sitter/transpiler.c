@@ -562,25 +562,8 @@ static void warn_unsupported_patterns(TSNode root)
                 fprintf(stderr, "Transpiler warning (line %u): 'await' inside a loop is not supported "
                         "and may not work correctly. Move the await outside the loop or use Promise.all().\n", p.row + 1);
             }
-            else
-            {
-                TSNode par = ts_node_parent(n);
-                if (!ts_node_is_null(par) && strcmp(ts_node_type(par), "variable_declarator") == 0)
-                {
-                    TSNode decl_name = ts_node_child_by_field_name(par, "name", 4);
-                    if (!ts_node_is_null(decl_name))
-                    {
-                        const char *dnt = ts_node_type(decl_name);
-                        if (strcmp(dnt, "object_pattern") == 0 || strcmp(dnt, "array_pattern") == 0)
-                        {
-                            TSPoint p = ts_node_start_point(n);
-                            fprintf(stderr, "Transpiler warning (line %u): destructuring with 'await' "
-                                    "(e.g. 'const {a, b} = await expr') is not supported. "
-                                    "Use a temp variable: 'const tmp = await expr; const {a, b} = tmp;'\n", p.row + 1);
-                        }
-                    }
-                }
-            }
+            /* destructuring with await is now handled by
+               _emit_destructure_await_lower — no warning needed. */
         }
         else if (strcmp(nt, "yield_expression") == 0)
         {
@@ -3880,6 +3863,69 @@ static int rewrite_array_spread(EditList *edits, const char *src, TSNode arr, in
 // Collect all var/let/const identifier names declared at any nesting level
 // in the function body, stopping at function/class boundaries.
 // Returns a malloc'd comma-separated string of names, or NULL if none found.
+/* Walk an array_pattern or object_pattern node and append any binding
+   identifier names to `names`. Recurses into nested patterns. */
+static void _collect_pattern_names(const char *src, TSNode pattern, rp_string *names, int *first)
+{
+    const char *pt = ts_node_type(pattern);
+    if (strcmp(pt, "identifier") == 0)
+    {
+        size_t ns = ts_node_start_byte(pattern), ne = ts_node_end_byte(pattern);
+        if (!*first)
+            rp_string_puts(names, ", ");
+        rp_string_putsn(names, src + ns, ne - ns);
+        *first = 0;
+        return;
+    }
+    if (strcmp(pt, "rest_pattern") == 0 || strcmp(pt, "rest_element") == 0)
+    {
+        TSNode inner = ts_node_named_child(pattern, 0);
+        if (!ts_node_is_null(inner))
+            _collect_pattern_names(src, inner, names, first);
+        return;
+    }
+    if (strcmp(pt, "assignment_pattern") == 0)
+    {
+        TSNode left = ts_node_child_by_field_name(pattern, "left", 4);
+        if (!ts_node_is_null(left))
+            _collect_pattern_names(src, left, names, first);
+        return;
+    }
+    if (strcmp(pt, "shorthand_property_identifier_pattern") == 0)
+    {
+        size_t ns = ts_node_start_byte(pattern), ne = ts_node_end_byte(pattern);
+        if (!*first)
+            rp_string_puts(names, ", ");
+        rp_string_putsn(names, src + ns, ne - ns);
+        *first = 0;
+        return;
+    }
+    if (strcmp(pt, "object_assignment_pattern") == 0)
+    {
+        /* { x = 1 } — the left side is the binding identifier */
+        TSNode left = ts_node_child_by_field_name(pattern, "left", 4);
+        if (!ts_node_is_null(left))
+            _collect_pattern_names(src, left, names, first);
+        return;
+    }
+    if (strcmp(pt, "pair_pattern") == 0)
+    {
+        /* { a: x } — the value is the binding (possibly another pattern) */
+        TSNode val = ts_node_child_by_field_name(pattern, "value", 5);
+        if (!ts_node_is_null(val))
+            _collect_pattern_names(src, val, names, first);
+        return;
+    }
+    if (strcmp(pt, "array_pattern") == 0 || strcmp(pt, "object_pattern") == 0)
+    {
+        uint32_t cc = ts_node_named_child_count(pattern);
+        for (uint32_t i = 0; i < cc; i++)
+            _collect_pattern_names(src, ts_node_named_child(pattern, i), names, first);
+        return;
+    }
+    /* Anything else: don't traverse. */
+}
+
 static void _collect_var_names_recursive(const char *src, TSNode node, rp_string *names, int *first)
 {
     const char *t = ts_node_type(node);
@@ -3901,14 +3947,23 @@ static void _collect_var_names_recursive(const char *src, TSNode node, rp_string
             TSNode nm = ts_node_child_by_field_name(declarator, "name", 4);
             if (ts_node_is_null(nm))
                 continue;
-            // Only handle simple identifiers (not destructuring patterns)
-            if (strcmp(ts_node_type(nm), "identifier") != 0)
-                continue;
-            size_t ns = ts_node_start_byte(nm), ne = ts_node_end_byte(nm);
-            if (!*first)
-                rp_string_puts(names, ", ");
-            rp_string_putsn(names, src + ns, ne - ns);
-            *first = 0;
+            const char *nmt = ts_node_type(nm);
+            if (strcmp(nmt, "identifier") == 0)
+            {
+                size_t ns = ts_node_start_byte(nm), ne = ts_node_end_byte(nm);
+                if (!*first)
+                    rp_string_puts(names, ", ");
+                rp_string_putsn(names, src + ns, ne - ns);
+                *first = 0;
+            }
+            else if (strcmp(nmt, "array_pattern") == 0 || strcmp(nmt, "object_pattern") == 0)
+            {
+                /* Hoist destructured binding names so the async rewriter can
+                   emit them as plain assignments in the destructure-await
+                   lowering. Safe in non-async contexts too — extra var
+                   declarations at function scope have no observable effect. */
+                _collect_pattern_names(src, nm, names, first);
+            }
         }
         // Don't recurse into the declarators — we already handled them
         return;
@@ -4000,6 +4055,384 @@ static void _collect_awaits_shallow(TSNode node, _AsyncNodeVec *out)
     uint32_t c = ts_node_child_count(node);
     for (uint32_t i = 0; i < c; i++)
         _collect_awaits_shallow(ts_node_child(node, i), out);
+}
+
+/* Returns 1 iff `stmt` is a variable/lexical declaration that needs the
+   destructure-await emitter — i.e. it has SOME declarator with an
+   await-containing value AND SOME declarator with a destructure pattern.
+   The two can be the same declarator (`{a,b} = await x`) or different
+   declarators (`[a] = arr, b = await x`). In both cases the existing
+   per-statement lowering can't handle the stmt correctly: it would
+   either emit invalid `{a,b} = _context.sent` syntax, or emit naked
+   `[a] = arr` (destructure-assignment) which duktape doesn't support. */
+static int _stmt_is_destructure_await(TSNode stmt)
+{
+    const char *st = ts_node_type(stmt);
+    if (strcmp(st, "variable_declaration") != 0 &&
+        strcmp(st, "lexical_declaration") != 0)
+        return 0;
+    int has_pattern = 0, has_await = 0;
+    uint32_t dc = ts_node_named_child_count(stmt);
+    for (uint32_t i = 0; i < dc; i++)
+    {
+        TSNode decl = ts_node_named_child(stmt, i);
+        if (strcmp(ts_node_type(decl), "variable_declarator") != 0)
+            continue;
+        TSNode name = ts_node_child_by_field_name(decl, "name", 4);
+        TSNode val = ts_node_child_by_field_name(decl, "value", 5);
+        if (ts_node_is_null(name))
+            continue;
+        const char *nt = ts_node_type(name);
+        if (strcmp(nt, "array_pattern") == 0 || strcmp(nt, "object_pattern") == 0)
+            has_pattern = 1;
+        if (!ts_node_is_null(val))
+        {
+            _AsyncNodeVec av = {0};
+            _collect_awaits_shallow(val, &av);
+            if (av.len > 0) has_await = 1;
+            if (av.a) free(av.a);
+        }
+        if (has_pattern && has_await) return 1;
+    }
+    return 0;
+}
+
+/* Emit state-machine steps for every TOP-LEVEL await in val_node, appending
+   to dst. Returns a malloc'd string of the substituted value expression
+   (with a unique intermediate `_context._ts<N>` reference in place of
+   each await). Caller frees.
+
+   Each await binds its resolved value to its own `_context._ts<N>` slot
+   (stored on the persistent _context object, not a local var) so that
+   later references in the substituted expression don't all collapse to
+   the last `_context.sent` value. Local `var _tsN = _context.sent` in a
+   case label would NOT work: each entry to _callee$ re-hoists the var
+   to `undefined`, losing the assignment from a prior case. Storing on
+   _context survives across the multiple _callee$ invocations.
+
+   That matters for any value with more than one await
+   (e.g. `fn(await a, await b)`, `cond ? await a : await b`,
+   `(await f)(await x)`).
+
+   Top-level means: not nested inside another await. Same limitation as
+   _emit_stmt_async_lower — `await f(await g())` would emit only the
+   outer await step. */
+static char *_emit_value_awaits_lower(rp_string *dst, const char *src, TSNode val_node,
+                                      int *p_next_label)
+{
+    static unsigned _ts_counter = 0;
+    _AsyncNodeVec av = {0};
+    _collect_awaits_shallow(val_node, &av);
+    size_t vs = ts_node_start_byte(val_node), ve = ts_node_end_byte(val_node);
+
+    if (av.len == 0)
+    {
+        char *r = (char *)malloc(ve - vs + 1);
+        memcpy(r, src + vs, ve - vs);
+        r[ve - vs] = '\0';
+        return r;
+    }
+
+    /* sort awaits ascending by start position */
+    for (size_t i = 0; i + 1 < av.len; i++)
+        for (size_t j = i + 1; j < av.len; j++)
+            if (ts_node_start_byte(av.a[j]) < ts_node_start_byte(av.a[i]))
+            {
+                TSNode t = av.a[i]; av.a[i] = av.a[j]; av.a[j] = t;
+            }
+
+    size_t cursor = vs;
+    rp_string *acc = rp_string_new(128);
+
+    for (size_t k = 0; k < av.len; k++)
+    {
+        TSNode aw = av.a[k];
+        TSNode arg = ts_node_child_by_field_name(aw, "argument", 8);
+        if (ts_node_is_null(arg)) arg = ts_node_named_child(aw, 0);
+
+        *p_next_label += 3;
+        char lblbuf[16];
+        snprintf(lblbuf, sizeof(lblbuf), "%d", *p_next_label);
+
+        char tsref[32];
+        snprintf(tsref, sizeof(tsref), "_context._ts%u", ++_ts_counter);
+
+        /* ensure dst ends with a terminator */
+        if (dst->len)
+        {
+            char *p = dst->str + dst->len - 1;
+            while (p > dst->str && isspace((unsigned char)*p)) p--;
+            if (*p != ';' && *p != ':' && *p != '{')
+                rp_string_putc(dst, ';');
+        }
+        rp_string_puts(dst, "_context._y=true;_context.next = ");
+        rp_string_puts(dst, lblbuf);
+        rp_string_puts(dst, "; return (");
+        size_t as = ts_node_start_byte(arg), ae = ts_node_end_byte(arg);
+        rp_string_putsn(dst, src + as, ae - as);
+        rp_string_puts(dst, "); case ");
+        rp_string_puts(dst, lblbuf);
+        rp_string_puts(dst, ": ");
+        rp_string_puts(dst, tsref);
+        rp_string_puts(dst, " = _context.sent;");
+
+        size_t aws = ts_node_start_byte(aw), awe = ts_node_end_byte(aw);
+        rp_string_putsn(acc, src + cursor, aws - cursor);
+        rp_string_puts(acc, tsref);
+        cursor = awe;
+    }
+    rp_string_putsn(acc, src + cursor, ve - cursor);
+
+    char *ret = rp_string_steal(acc);
+    acc = rp_string_free(acc);
+    if (av.a) free(av.a);
+    return ret;
+}
+
+/* Lower `var/let/const PATTERN = <value-with-await>` into:
+     <state-machine steps for each await in value>
+     var _daN = <substituted-value>;
+     <name1> = _daN.<prop1>;
+     <name2> = _daN.<prop2>;
+   The destructured names themselves are hoisted at the top of _callee via
+   _collect_var_names_recursive so they're plain assignments here.
+   For declarators without destructure or without await, emits with the
+   keyword stripped (same as _emit_var_decl_as_assignments). */
+static void _emit_destructure_await_lower(rp_string *dst, const char *src, TSNode stmt,
+                                          int *p_next_label)
+{
+    uint32_t dc = ts_node_named_child_count(stmt);
+    for (uint32_t i = 0; i < dc; i++)
+    {
+        TSNode decl = ts_node_named_child(stmt, i);
+        if (strcmp(ts_node_type(decl), "variable_declarator") != 0)
+            continue;
+        TSNode name = ts_node_child_by_field_name(decl, "name", 4);
+        TSNode val = ts_node_child_by_field_name(decl, "value", 5);
+        if (ts_node_is_null(name) || ts_node_is_null(val))
+            continue;
+        const char *nt = ts_node_type(name);
+        int is_pattern = (strcmp(nt, "array_pattern") == 0 ||
+                          strcmp(nt, "object_pattern") == 0);
+
+        /* Does this declarator's value contain await? */
+        _AsyncNodeVec av = {0};
+        _collect_awaits_shallow(val, &av);
+        int has_await = (av.len > 0);
+
+        if (is_pattern && has_await)
+        {
+            char tmpname[24];
+            snprintf(tmpname, sizeof(tmpname), "_da%u", ++_destr_counter);
+
+            /* Emit state-machine steps for each await in the value, then
+               substitute `_context.sent` in for each. Handles single
+               embedded awaits like `(await x).y` and sibling awaits like
+               `fn(await a, await b)`. Does NOT handle nested awaits like
+               `await fn(await y)` — those need a deeper rewrite. */
+            char *subst = _emit_value_awaits_lower(dst, src, val, p_next_label);
+
+            rp_string_puts(dst, " var ");
+            rp_string_puts(dst, tmpname);
+            rp_string_puts(dst, " = ");
+            rp_string_puts(dst, subst);
+            rp_string_puts(dst, ";");
+            free(subst);
+
+            /* Emit destructure expansion. Names hoisted at top of _callee
+               (see _collect_var_names_recursive), so emit plain assignments. */
+            Bindings binds;
+            binds_init(&binds);
+            if (collect_flat_destructure_bindings(name, src, tmpname, &binds))
+            {
+                for (size_t b = 0; b < binds.len; b++)
+                {
+                    rp_string_puts(dst, " ");
+                    rp_string_puts(dst, binds.a[b].name);
+                    rp_string_puts(dst, " = ");
+                    if (binds.a[b].defval)
+                    {
+                        rp_string_puts(dst, binds.a[b].repl);
+                        rp_string_puts(dst, " !== undefined ? ");
+                        rp_string_puts(dst, binds.a[b].repl);
+                        rp_string_puts(dst, " : ");
+                        rp_string_puts(dst, binds.a[b].defval);
+                    }
+                    else
+                    {
+                        rp_string_puts(dst, binds.a[b].repl);
+                    }
+                    rp_string_puts(dst, ";");
+                }
+            }
+            binds_free(&binds);
+        }
+        else if (has_await)
+        {
+            /* identifier = <value-with-await>; share the same multi-await
+               helper used for destructure cases. */
+            char *subst = _emit_value_awaits_lower(dst, src, val, p_next_label);
+
+            size_t ns_id = ts_node_start_byte(name), ne_id = ts_node_end_byte(name);
+            rp_string_puts(dst, " ");
+            rp_string_putsn(dst, src + ns_id, ne_id - ns_id);
+            rp_string_puts(dst, " = ");
+            rp_string_puts(dst, subst);
+            rp_string_puts(dst, ";");
+            free(subst);
+        }
+        else
+        {
+            /* No await — emit as plain assignment if there's an initializer,
+               same shape as _emit_var_decl_as_assignments. */
+            if (!is_pattern)
+            {
+                size_t ns_id = ts_node_start_byte(name), ne_id = ts_node_end_byte(name);
+                size_t vs = ts_node_start_byte(val), ve = ts_node_end_byte(val);
+                rp_string_putsn(dst, src + ns_id, ne_id - ns_id);
+                rp_string_puts(dst, " = ");
+                rp_string_putsn(dst, src + vs, ve - vs);
+                rp_string_puts(dst, ";");
+            }
+            else
+            {
+                /* Destructure without await — expand inline using a sync
+                   temp. Emitting the declarator verbatim would produce
+                   `{x} = obj;` which is a parse error inside the state
+                   machine (looks like a block-statement followed by junk).
+                   Letting the destructuring rewriter handle it on a later
+                   pass doesn't help because async clobbers our text. */
+                char tmpname[24];
+                snprintf(tmpname, sizeof(tmpname), "_da%u", ++_destr_counter);
+                size_t vs = ts_node_start_byte(val), ve = ts_node_end_byte(val);
+                rp_string_puts(dst, "var ");
+                rp_string_puts(dst, tmpname);
+                rp_string_puts(dst, " = ");
+                rp_string_putsn(dst, src + vs, ve - vs);
+                rp_string_puts(dst, ";");
+
+                Bindings binds;
+                binds_init(&binds);
+                if (collect_flat_destructure_bindings(name, src, tmpname, &binds))
+                {
+                    for (size_t b = 0; b < binds.len; b++)
+                    {
+                        rp_string_puts(dst, " ");
+                        rp_string_puts(dst, binds.a[b].name);
+                        rp_string_puts(dst, " = ");
+                        if (binds.a[b].defval)
+                        {
+                            rp_string_puts(dst, binds.a[b].repl);
+                            rp_string_puts(dst, " !== undefined ? ");
+                            rp_string_puts(dst, binds.a[b].repl);
+                            rp_string_puts(dst, " : ");
+                            rp_string_puts(dst, binds.a[b].defval);
+                        }
+                        else
+                        {
+                            rp_string_puts(dst, binds.a[b].repl);
+                        }
+                        rp_string_puts(dst, ";");
+                    }
+                }
+                binds_free(&binds);
+            }
+        }
+
+        if (av.a) free(av.a);
+    }
+}
+
+/* Returns the destructure-assignment LHS/RHS pair when `stmt` is an
+   expression_statement wrapping `({a,b} = expr)` or `[a,b] = expr` whose RHS
+   contains an await. Returns 1 on match and fills *out_left / *out_right;
+   returns 0 otherwise. */
+static int _stmt_is_destructure_assignment_await(TSNode stmt, TSNode *out_left, TSNode *out_right)
+{
+    if (strcmp(ts_node_type(stmt), "expression_statement") != 0)
+        return 0;
+    TSNode expr = ts_node_named_child(stmt, 0);
+    if (ts_node_is_null(expr))
+        return 0;
+    /* Unwrap `({a,b} = expr)` — parenthesized form. */
+    if (strcmp(ts_node_type(expr), "parenthesized_expression") == 0)
+    {
+        TSNode inner = ts_node_named_child(expr, 0);
+        if (!ts_node_is_null(inner) && strcmp(ts_node_type(inner), "assignment_expression") == 0)
+            expr = inner;
+    }
+    if (strcmp(ts_node_type(expr), "assignment_expression") != 0)
+        return 0;
+    TSNode left = ts_node_child_by_field_name(expr, "left", 4);
+    TSNode right = ts_node_child_by_field_name(expr, "right", 5);
+    if (ts_node_is_null(left) || ts_node_is_null(right))
+        return 0;
+    const char *lt = ts_node_type(left);
+    if (strcmp(lt, "array_pattern") != 0 && strcmp(lt, "object_pattern") != 0)
+        return 0;
+    /* RHS must contain an await. */
+    _AsyncNodeVec av = {0};
+    _collect_awaits_shallow(right, &av);
+    int has_await = (av.len > 0);
+    if (av.a) free(av.a);
+    if (!has_await) return 0;
+    if (out_left) *out_left = left;
+    if (out_right) *out_right = right;
+    return 1;
+}
+
+/* Lower `({a, b} = await EXPR);` into:
+     _context._y=true; _context.next=K; return (EXPR);
+     case K: var _daN = _context.sent;
+     a = _daN.a;
+     b = _daN.b;
+   The bindings (a, b) already exist — this is assignment, not declaration —
+   so no var-hoisting needed for the LHS names. The temp is var-declared
+   inline (hoisted by JS to the enclosing _callee). */
+static void _emit_destructure_assignment_await_lower(rp_string *dst, const char *src,
+                                                    TSNode left, TSNode right,
+                                                    int *p_next_label)
+{
+    char tmpname[24];
+    snprintf(tmpname, sizeof(tmpname), "_da%u", ++_destr_counter);
+
+    /* Emit state-machine steps for awaits in RHS; subst is the RHS with
+       _context.sent substituted in. Handles embedded and sibling awaits. */
+    char *subst = _emit_value_awaits_lower(dst, src, right, p_next_label);
+
+    rp_string_puts(dst, " var ");
+    rp_string_puts(dst, tmpname);
+    rp_string_puts(dst, " = ");
+    rp_string_puts(dst, subst);
+    rp_string_puts(dst, ";");
+    free(subst);
+
+    /* Emit binding assignments using existing bindings (no var). */
+    Bindings binds;
+    binds_init(&binds);
+    if (collect_flat_destructure_bindings(left, src, tmpname, &binds))
+    {
+        for (size_t b = 0; b < binds.len; b++)
+        {
+            rp_string_puts(dst, " ");
+            rp_string_puts(dst, binds.a[b].name);
+            rp_string_puts(dst, " = ");
+            if (binds.a[b].defval)
+            {
+                rp_string_puts(dst, binds.a[b].repl);
+                rp_string_puts(dst, " !== undefined ? ");
+                rp_string_puts(dst, binds.a[b].repl);
+                rp_string_puts(dst, " : ");
+                rp_string_puts(dst, binds.a[b].defval);
+            }
+            else
+            {
+                rp_string_puts(dst, binds.a[b].repl);
+            }
+            rp_string_puts(dst, ";");
+        }
+    }
+    binds_free(&binds);
 }
 
 // Lower a statement containing 0..N awaits into state-machine steps
@@ -4132,6 +4565,37 @@ static char *_build_regenerator_switch_body(const char *src, TSNode body)
             /* include white space (particularly \n) in the replacement */
             while(ss>0 && isspace(*(src + ss -1)) )
                 ss--;
+
+            /* Destructuring + await:  const {a, b} = await x;
+               Handled by a dedicated emitter — the simple "skip the keyword"
+               adjustment below doesn't help because the regenerator-runtime
+               state machine would see `{a,b} = _context.sent` which is not
+               valid (parenthesized destructuring assignment isn't supported
+               by duktape anyway). */
+            int is_destr_await = is_var_decl && has_await && _stmt_is_destructure_await(stmt);
+            if (is_destr_await)
+            {
+                size_t stmt_s = ts_node_start_byte(stmt);
+                if (ss < stmt_s)
+                    rp_string_putsn(out, src + ss, stmt_s - ss);
+                _emit_destructure_await_lower(out, src, stmt, &next_label);
+                continue;
+            }
+
+            /* Destructuring assignment + await:  ({a, b} = await x);
+               Same fix as the declaration form but using existing bindings
+               (no var on LHS names — they're already declared elsewhere). */
+            {
+                TSNode da_left, da_right;
+                if (has_await && _stmt_is_destructure_assignment_await(stmt, &da_left, &da_right))
+                {
+                    size_t stmt_s = ts_node_start_byte(stmt);
+                    if (ss < stmt_s)
+                        rp_string_putsn(out, src + ss, stmt_s - ss);
+                    _emit_destructure_assignment_await_lower(out, src, da_left, da_right, &next_label);
+                    continue;
+                }
+            }
 
             // For var/let/const declarations with await: skip the keyword by
             // adjusting ss to start at the first declarator
