@@ -28,7 +28,7 @@ var working_directory = process.scriptPath;
  * ****************************************************** */
 
 var serverConf = {
-bindAll:true,
+
     //the defaults for full server
 
     /* ipAddr              String. The ipv4 address to bind   */
