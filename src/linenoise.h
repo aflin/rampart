@@ -69,6 +69,7 @@ void linenoiseSetMultiLine(int ml);
 void linenoiseMaskModeEnable(void);
 void linenoiseMaskModeDisable(void);
 void linenoise_refresh(void); // -- ajf
+int  linenoiseIsMultiLine(void); // -- ajf - true in force_ml or paste/edit ml mode
 
 #ifdef __cplusplus
 }

@@ -707,6 +707,26 @@ static void refreshSingleLine(struct linenoiseState *l)
 
     (void)write(fd, ab.b, ab.len);
     abFree(&ab);
+
+    // -ajf - track promptrow through terminal auto-wrap scrolls. When the
+    // wrapped rendering would extend past the bottom row, the terminal
+    // scrolls; the actual prompt moves up but rcp->promptrow stays stale.
+    // Subsequent transitions to multi-line mode (e.g. polpaste) then use
+    // a stale promptrow and refresh_full leaves a duplicate of the first
+    // line above the fresh render.
+    {
+        int rows_used = ((int)l->promptlen + (int)l->len + (int)l->cols - 1) / (int)l->cols;
+        if (rows_used < 1)
+            rows_used = 1;
+        // refreshSingleLine writes a trailing "\n\r" when the cursor sits
+        // exactly at a row boundary; that extra row counts toward scrolls.
+        if (l->pos > 0 && l->pos == l->len
+            && ((int)l->pos + (int)l->promptlen) % (int)l->cols == 0)
+            rows_used++;
+        int last_row = l->rc.promptrow + rows_used - 1;
+        if (last_row > l->rc.screendim_r)
+            l->rc.promptrow -= (last_row - l->rc.screendim_r);
+    }
 }
 
 /* ***************************** MULTILINE -ajf ***************************** */
@@ -830,6 +850,14 @@ static void get_bufpos(struct linenoiseState *l)
         rcp->bufpos_r = rcp->bufdim_r; // at the last line
     }
     rcp->bufpos_c = l->pos - rcp->linestart;
+    // -ajf - the loop above only measures lines bounded by '\n'; the final
+    // line (after the last '\n', or the only line if there are no '\n's at
+    // all) was never compared into bufdim_c. Measure it now.
+    {
+        int last_linelen = (int)l->len - (lastn + 1);
+        if (last_linelen > rcp->bufdim_c)
+            rcp->bufdim_c = last_linelen;
+    }
 }
 
 // Helper to parse response from ESC [ row ; col R
@@ -885,12 +913,17 @@ static void get_screenpos(struct linenoiseState *l)
     int tr = 0, tc = 0;
     rowcol *rcp = &(l->rc);
 
-    rcp->screenpos_r = 1;
-    rcp->screenpos_c = 1;
-    rcp->screendim_r = 24;
-    rcp->screendim_c = 80;
+    // -ajf - Save cursor with DECSC (ESC 7) so we can always restore it,
+    // even when the CPR read below fails. Previously, when queued user
+    // input bytes (e.g. autorepeating arrow keys) collided with the CPR
+    // response, read_cpr would parse them as garbage and return -1; the
+    // subsequent dimension probe (\033[9999;9999H) then left the cursor
+    // stranded at the bottom-right corner.
+    (void)write(l->ofd, "\0337", 2);
 
-    // Query current position
+    // Query current position. On failure, keep previous screenpos values
+    // (do not zero them — stale values are better than (1,1) defaults
+    // which would confuse vert_scroll's edge checks).
     WCODE("6n", 2);
     if (read_cpr(l, &r, &c) == 0)
     {
@@ -898,7 +931,7 @@ static void get_screenpos(struct linenoiseState *l)
         rcp->screenpos_c = c;
     }
 
-    // Move to bottom-right, ask again
+    // Move to bottom-right, ask again to discover screen dimensions.
     WCODE("9999;9999H", 10);
     WCODE("6n", 2);
     if (read_cpr(l, &tr, &tc) == 0)
@@ -907,9 +940,8 @@ static void get_screenpos(struct linenoiseState *l)
         rcp->screendim_c = tc;
     }
 
-    // Restore original cursor position
-    if (r && c)
-        WCODEF(16, "%d;%dH", r, c);
+    // -ajf - Always restore (DECRC, ESC 8), regardless of read success.
+    (void)write(l->ofd, "\0338", 2);
 }
 
 static inline void write_prompt(struct linenoiseState *l)
@@ -926,39 +958,81 @@ static inline void write_prompt(struct linenoiseState *l)
 static void update_promptrow(struct linenoiseState *l, int rows_added)
 {
     rowcol *rcp = &(l->rc);
-    int rows_below = rcp->screendim_r - rcp->promptrow;
+    // -ajf - the relevant "space below" is below the CURSOR (= promptrow +
+    // bufpos_r), not below the prompt row itself. When the cursor is on a
+    // non-prompt row at paste/Enter time, the prompt-relative measurement
+    // over-counts available space and promptrow doesn't get decremented
+    // enough. Subsequent refresh_full then clears below where the prompt
+    // actually moved to, leaving a stale copy of the first row above the
+    // fresh render.
+    int cursor_row = rcp->promptrow + rcp->bufpos_r;
+    int rows_below = rcp->screendim_r - cursor_row;
     int pushed_up = rows_added - rows_below;
 
     if (pushed_up > 0)
         rcp->promptrow -= pushed_up;
 }
 
+static void place_cursor(struct linenoiseState *l);
+
 // scroll one line up or down, if necessary
 static void vert_scroll(struct linenoiseState *l, int up)
 {
     rowcol *rcp = &(l->rc);
 
-    if (up && rcp->screenpos_r == 1)
+    // -ajf - only scroll if the buf row we just stepped to is actually
+    // off-screen. The screen-edge check (screenpos_r at 1 or screendim_r) is
+    // necessary but not sufficient: if the buffer fits on screen and the
+    // target row is already visible, scrolling here causes a spurious
+    // terminal scroll that leaves the cursor one row away from the row's
+    // display position.
+    if (up && rcp->screenpos_r == 1
+        && rcp->promptrow + rcp->bufpos_r < 1)
     {
         get_bufpos(l);
         WCODE("H", 1);
         WCODE("L", 1);
+        // -ajf - mirror write_to_end's prompt + bufshift handling so a
+        // long top buf row doesn't auto-wrap over the rows below
+        // (overwriting them and desyncing the row↔buf-row mapping).
+        size_t curcol = 0;
+        int bufshift = 0;
         if (!l->rc.bufpos_r)
         {
-            write_prompt(l);
-            rcp->screenpos_c += l->promptlen;
+            int visible = (int)l->promptlen - rcp->hshift;
+            if (visible > 0)
+            {
+                if (force_ml_edit)
+                    WCODE("35m", 3);
+                (void)write(l->ofd, l->prompt + rcp->hshift, visible);
+                if (force_ml_edit)
+                    WCODE("0m", 2);
+                curcol = (size_t)visible;
+                bufshift = -rcp->hshift;
+            }
+            else
+            {
+                bufshift = -(int)l->promptlen;
+            }
         }
-        write(l->ofd, l->buf + rcp->linestart, rcp->eol - rcp->linestart);
-        WCODEF(16, "%d;%dH", rcp->screenpos_r, rcp->screenpos_c);
+        write_line(l, l->buf + rcp->linestart, rcp->screendim_c, curcol, bufshift, 0);
+        // -ajf - bump promptrow then let place_cursor compute the screen
+        // position from bufpos. The previous code did `screenpos_c +=
+        // promptlen` then a raw WCODEF, which mapped buf col → screen col
+        // wrong on the prompt row (off by promptlen) and left the cursor
+        // visually stuck — typing a char would force a refresh_whole_line
+        // that corrected it.
         rcp->promptrow++;
+        place_cursor(l);
     }
-    else if (!up && rcp->screenpos_r == rcp->screendim_r)
+    else if (!up && rcp->screenpos_r == rcp->screendim_r
+             && rcp->promptrow + rcp->bufpos_r > rcp->screendim_r)
     {
         get_bufpos(l);
         WCODE("9999;9999H\n", 11); // newline at bottom
         write_line(l, l->buf + rcp->linestart, l->rc.screendim_c, 0, 0, 0);
-        WCODEF(16, "%d;%dH", rcp->screenpos_r, rcp->screenpos_c);
         rcp->promptrow--;
+        place_cursor(l);
     }
 }
 
@@ -971,9 +1045,14 @@ static void place_cursor(struct linenoiseState *l)
 
     if (!row)
     {
-        int onscreen_promptlen = l->promptlen - rcp->hshift;
+        int onscreen_promptlen = (int)l->promptlen - rcp->hshift;
+        // -ajf - on the prompt row, when 0 < hshift < promptlen the buffer is
+        // written starting from offset 0 at col `onscreen_promptlen` (because
+        // write_to_end / refresh_whole_line use bufshift=-hshift). So the
+        // cursor column is bufpos_c + onscreen_promptlen, NOT bufcolpos +
+        // onscreen_promptlen. Old formula was off by hshift in this range.
         if (onscreen_promptlen > 0)
-            col += onscreen_promptlen;
+            col = rcp->bufpos_c + onscreen_promptlen;
         else
             col += l->promptlen;
     }
@@ -989,6 +1068,10 @@ static void place_cursor(struct linenoiseState *l)
     }
 
     WCODEF(32, "%d;%dH", row, col);
+    // -ajf - track where the cursor now is, so refresh_* paths don't have
+    // to query the terminal (which is racy under autorepeating input).
+    rcp->screenpos_r = row;
+    rcp->screenpos_c = col;
 }
 
 // write line within constraints of screen, return beginning of next line, or NULL
@@ -1003,6 +1086,7 @@ static char *write_line(
 )
 {
     char *e = strchr(startpos, '\n');
+    char *bufend = l->buf + l->len; // end of the C-string, NOT end of allocation
 
     startpos += l->rc.hshift + bufshift;
 
@@ -1013,10 +1097,16 @@ static char *write_line(
         return e + 1;
     }
 
-    // safety check:
-    if (startpos < l->buf || startpos >= l->buf + l->buflen)
+    // -ajf - shift puts us past the end of the final (unterminated) line.
+    // Without this, strlen() below would walk past the '\0' into allocated-but-
+    // unused heap (often stale history bytes after a realloc).
+    if (!e && startpos > bufend)
+        return NULL;
+
+    // defense-in-depth: bound by l->len, not l->buflen
+    if (startpos < l->buf || startpos > bufend)
     {
-        printf("Startpos (%p) before/after buffer at (%p to %p)\n", startpos, l->buf, l->buf + l->buflen);
+        printf("Startpos (%p) before/after buffer at (%p to %p)\n", startpos, l->buf, bufend);
         abort();
     }
 
@@ -1142,11 +1232,13 @@ static int horiz_scroll(struct linenoiseState *l)
         return 1;
     }
 
-    if (bufcolpos < 0)
+    if (bufcolpos + promptadd < 0)
     {
+        // -ajf - mirror the right-edge formula: target cursor at display col 8
+        // (i.e. 8 cols from the left edge of the screen, accounting for prompt).
         DEBUGF(22, 5, "UNDER LIMIT, hshift before %d, after %d", rcp->hshift,
-               rcp->hshift - 8 > 0 ? rcp->hshift - 8 : 0);
-        rcp->hshift = -8 + (rcp->bufpos_c - rcp->screendim_c);
+               rcp->bufpos_c + promptadd - 8 > 0 ? rcp->bufpos_c + promptadd - 8 : 0);
+        rcp->hshift = rcp->bufpos_c + promptadd - 8;
         if (rcp->hshift < 0)
             rcp->hshift = 0;
         refresh_window(l);
@@ -1159,8 +1251,7 @@ static int horiz_scroll(struct linenoiseState *l)
 static void refresh_from_pos(struct linenoiseState *l)
 {
     get_bufpos(l);
-    place_cursor(l);
-    get_screenpos(l);
+    place_cursor(l); // also updates screenpos_r/c
     WCODE("0J", 2); // erase from cursor to end of screen
     write_to_end(l, 0);
     place_cursor(l);
@@ -1168,15 +1259,36 @@ static void refresh_from_pos(struct linenoiseState *l)
 
 static void refresh_whole_line(struct linenoiseState *l)
 {
-    // rowcol *rcp = &(l->rc);
+    rowcol *rcp = &(l->rc);
     get_bufpos(l);
-    WCODE("1G", 2); // 0 col
-    WCODE("0K", 2); // clear
+    WCODE("1G", 2); // col 1
+    WCODE("0K", 2); // clear from cursor to end of line
 
-    if (!l->rc.bufpos_r)
-        write_prompt(l);
+    size_t curcol = 0;
+    int bufshift = 0;
+    // -ajf - mirror write_to_end's prompt/hshift handling so this row honors
+    // horizontal scroll. The old version wrote the full prompt + uncapped buf,
+    // which overflowed past the right edge and left stale content on rows below.
+    if (!rcp->bufpos_r)
+    {
+        int visible = (int)l->promptlen - rcp->hshift;
+        if (visible > 0)
+        {
+            if (force_ml_edit)
+                WCODE("35m", 3);
+            (void)write(l->ofd, l->prompt + rcp->hshift, visible);
+            if (force_ml_edit)
+                WCODE("0m", 2);
+            curcol = (size_t)visible;
+            bufshift = -rcp->hshift;
+        }
+        else
+        {
+            bufshift = -(int)l->promptlen;
+        }
+    }
 
-    write_line(l, l->buf + l->rc.linestart, l->rc.screendim_c, 0, 0, 0);
+    write_line(l, l->buf + rcp->linestart, rcp->screendim_c, curcol, bufshift, 0);
 
     place_cursor(l);
 }
@@ -1279,6 +1391,7 @@ static void refresh_reposition(struct linenoiseState *l)
                     l->pos++; // undo the -- in EditMoveLeft
                     rcp->bufpos_c = linelen;
                     WCODEF(16, "%dG", basepos + linelen + 1); // go to col
+                    rcp->screenpos_c = basepos + linelen + 1;
                     rcp->savecol = 0;
                     goto hshift;
                     // return;
@@ -1293,7 +1406,9 @@ static void refresh_reposition(struct linenoiseState *l)
                 rcp->bufpos_r--;
                 basepos = rcp->bufpos_r ? 0 : l->promptlen;
                 WCODEF(16, "%dG", basepos + linelen + 1); // go to col
+                rcp->screenpos_c = basepos + linelen + 1;
                 WCODE("1A", 2);                           // one up
+                if (rcp->screenpos_r > 1) rcp->screenpos_r--;
                 vert_scroll(l, 1);
             }
             else
@@ -1301,6 +1416,7 @@ static void refresh_reposition(struct linenoiseState *l)
                 rcp->bufpos_c--;
                 // linelen = getlinelen(l,0);
                 WCODE("1D", 2); // one left
+                if (rcp->screenpos_c > 1) rcp->screenpos_c--;
             }
         }
         // right
@@ -1311,20 +1427,23 @@ static void refresh_reposition(struct linenoiseState *l)
                 if (rcp->hshift)
                 {
                     rcp->hshift = 0;
-                    refresh_window(l);
+                    refresh_window(l); // calls place_cursor → updates screenpos
                 }
                 else
                 {
                     WCODE("1B", 2);
+                    if (rcp->screenpos_r < rcp->screendim_r) rcp->screenpos_r++;
                     rcp->bufpos_r++;
                     rcp->bufpos_c = 0;
                     WCODE("1G", 2);
+                    rcp->screenpos_c = 1;
                 }
                 vert_scroll(l, 0);
             }
             else
             {
                 WCODE("1C", 2);
+                if (rcp->screenpos_c < rcp->screendim_c) rcp->screenpos_c++;
                 rcp->bufpos_c++;
             }
         }
@@ -1335,9 +1454,14 @@ static void refresh_reposition(struct linenoiseState *l)
 
     if (!dc && (dr == -1 || dr == 1))
     {
-        // do not allow scrolling up into the prompt
-        if (rcp->bufpos_r == 1 && dr == -1 && rcp->screenpos_c + rcp->hshift < l->promptlen + 1)
-            return;
+        // -ajf - removed an early-return guard here that blocked navigation
+        // from bufpos_r==1 to bufpos_r==0 whenever the cursor sat in the
+        // first promptlen columns. The clamp at "if (rcp->bufpos_c < 0)" below
+        // already snaps the cursor to bufpos_c=0 (just after the prompt) when
+        // crossing onto the prompt row from a short/empty row, so the guard
+        // was just preventing the user from reaching the prompt row at all
+        // (e.g. across a "\n\n" gap, or after a screen-scroll has pushed the
+        // prompt off the top).
 
         if (rcp->savecol) // keep in same col until something other than up/down is pressed
             rcp->bufpos_c = rcp->savecol;
@@ -1362,26 +1486,25 @@ static void refresh_reposition(struct linenoiseState *l)
             else
                 rcp->bufpos_c = 0;
         }
-        else if (dc > 0 && rcp->bufpos_c > linelen + 1)
-        {
-            rcp->bufpos_c = 0;
-            rcp->bufpos_r++;
-        }
+        // -ajf - removed `else if (dc > 0 && rcp->bufpos_c > linelen + 1)`.
+        // That branch was unreachable: it sat inside `if (!dc && ...)` so dc
+        // was always 0, and `linelen` was still -1 from its initializer in
+        // this code path.
 
         rcp->savecol = rcp->bufpos_c;
 
         set_pos(l);
 
         if (dr == -1) // up
-        {
             vert_scroll(l, 1);
-            WCODE("1A", 2);
-        }
         else // down
-        {
             vert_scroll(l, 0);
-            WCODE("1B", 2);
-        }
+        // -ajf - place_cursor computes the correct screen position from
+        // bufpos (including the prompt offset on row 0). Using it here
+        // handles the buf-row-1→buf-row-0 transition correctly (bufpos_c
+        // was snapped, so the cursor needs to jump to col = promptlen+1
+        // rather than just moving up a row at the same col).
+        place_cursor(l);
     }
     // if we ever need something other than moving one col or row - do that here:
 }
@@ -1389,7 +1512,12 @@ static void refresh_reposition(struct linenoiseState *l)
 static void refreshMultiLine(struct linenoiseState *l)
 {
     rowcol *rcp = &(l->rc);
-    get_screenpos(l);
+    // -ajf - intentionally no get_screenpos here. screenpos_r/c are
+    // maintained by place_cursor and by the inline cursor moves in
+    // refresh_reposition. Querying the terminal on every refresh was
+    // racy under autorepeating input (queued bytes got eaten by the
+    // CPR read) and added a visible cursor flicker plus a synchronous
+    // terminal round-trip that halved sustained arrow-key speed.
 
     DEBUGF(10, 15,
            "BEFORE - type: %d pos: %lu prow: %d scrdim: %dx%d, scrpos: %dx%d  bufpos: %dx%d bufdim: %dx%d linelen=%d "
@@ -1437,6 +1565,24 @@ static void refreshLine(struct linenoiseState *l)
         refreshMultiLine(l);
     else
         refreshSingleLine(l);
+}
+
+// -ajf - find start of the current line: position right after preceding '\n', or 0.
+static size_t line_start(struct linenoiseState *l)
+{
+    size_t p = l->pos;
+    while (p > 0 && l->buf[p - 1] != '\n')
+        p--;
+    return p;
+}
+
+// -ajf - find end of the current line: position of next '\n', or l->len.
+static size_t line_end(struct linenoiseState *l)
+{
+    size_t p = l->pos;
+    while (p < l->len && l->buf[p] != '\n')
+        p++;
+    return p;
 }
 
 /* Insert the character 'c' at cursor current position.
@@ -1523,12 +1669,23 @@ void linenoiseEditMoveRight(struct linenoiseState *l)
     }
 }
 
-/* Move cursor to the start of the line. */
+/* Move cursor to the start of the line.
+ * In multiline mode this is the start of the current line within the buffer;
+ * otherwise it is the start of the buffer (legacy single-line behavior). */
 void linenoiseEditMoveHome(struct linenoiseState *l)
 {
-    if (l->pos != 0)
+    int ml = in_ml_paste_or_edit || force_ml_edit;
+    size_t target = ml ? line_start(l) : 0;
+    if (l->pos == target)
+        return;
+    l->pos = target;
+    l->rc.hshift = 0;
+    if (ml)
     {
-        l->pos = 0;
+        l->rc.refresh_type = REFRESH_LINE;
+    }
+    else
+    {
         l->rc.bufpos_r = 0;
         l->rc.bufpos_c = 0;
         if (l->rc.promptrow < 1)
@@ -1538,19 +1695,22 @@ void linenoiseEditMoveHome(struct linenoiseState *l)
             write_prompt(l);
         }
         l->rc.refresh_type = REFRESH_FROM_POS;
-        refreshLine(l);
     }
+    refreshLine(l);
 }
 
-/* Move cursor to the end of the line. */
+/* Move cursor to the end of the line.
+ * In multiline mode this is the end of the current line (just before '\n');
+ * otherwise it is the end of the buffer (legacy single-line behavior). */
 void linenoiseEditMoveEnd(struct linenoiseState *l)
 {
-    if (l->pos != l->len)
-    {
-        l->pos = l->len;
-        l->rc.refresh_type = REFRESH_FULL;
-        refreshLine(l);
-    }
+    int ml = in_ml_paste_or_edit || force_ml_edit;
+    size_t target = ml ? line_end(l) : l->len;
+    if (l->pos == target)
+        return;
+    l->pos = target;
+    l->rc.refresh_type = ml ? REFRESH_LINE : REFRESH_FULL;
+    refreshLine(l);
 }
 
 /* Substitute the currently edited line with the next or previous history
@@ -1645,12 +1805,19 @@ void linenoiseEditBackspace(struct linenoiseState *l)
         memmove(l->buf + l->pos - 1, l->buf + l->pos, l->len - l->pos);
         l->pos--;
         l->len--;
-        rcp->bufpos_c--;
         l->buf[l->len] = '\0';
         if (c == '\n')
         {
+            // -ajf - deleting a '\n' joins this row with the previous one.
+            // bufpos_c is not "one less" — it's the previous row's length
+            // at the join point. Let get_bufpos recompute everything from
+            // l->pos rather than poisoning bufpos_c with a stale --.
             get_bufpos(l);
             l->rc.refresh_type = REFRESH_FROM_POS;
+        }
+        else
+        {
+            rcp->bufpos_c--;
         }
         refreshLine(l);
     }
@@ -1681,6 +1848,15 @@ void linenoise_refresh()
 {
     if (linenoise_lnstate)
         refreshLine(linenoise_lnstate);
+}
+
+// -ajf - true when the editor is in multi-line mode (either user-forced via
+// Ctrl-X, or auto-entered because the buffer contains '\n' from a paste).
+// Callers (e.g. cmdline.c's completion()) use this to skip side-output that
+// would collide with the multi-line render.
+int linenoiseIsMultiLine(void)
+{
+    return in_ml_paste_or_edit || force_ml_edit;
 }
 
 /* suspend on ctrl-z - ajf 2025-10-11 */
@@ -1757,6 +1933,28 @@ static int polpaste(struct linenoiseState *l, char pc)
             break; /* cap safety */
     }
 
+    /* -ajf - if we ended with a lone '\r' it may just be the first half of a
+     * CRLF that got split across drain cycles (5ms-gap timed out between '\r'
+     * and '\n', or the chunk happened to end right at the '\r'). Try a few
+     * extra short polls so the next '\n' joins this capture and the CRLF
+     * normalizer below can collapse the pair into a single '\n'. Without this
+     * the lone '\r' gets normalized to '\n' here AND the matching '\n' lands
+     * in the buffer separately, producing a spurious extra newline. */
+    {
+        int extra = 3;
+        while (extra-- > 0 && len > 0 && buf[len - 1] == '\r' && len < sizeof(buf))
+        {
+            struct pollfd p = {.fd = l->ifd, .events = POLLIN, .revents = 0};
+            int r = poll(&p, 1, 5);
+            if (r <= 0 || !(p.revents & POLLIN))
+                break;
+            ssize_t n = read(l->ifd, buf + len, sizeof(buf) - len);
+            if (n <= 0)
+                break;
+            len += (size_t)n;
+        }
+    }
+
     /* Normalize CRLF → LF */
     size_t w = 0;
     for (size_t i = 0; i < len;)
@@ -1768,7 +1966,7 @@ static int polpaste(struct linenoiseState *l, char pc)
                 buf[w++] = '\n';
                 i += 2;
             }
-            else // dangerous if on a boundry.  might get two \n
+            else
             {
                 buf[w++] = '\n';
                 i++;
@@ -1806,9 +2004,18 @@ static int polpaste(struct linenoiseState *l, char pc)
         l->len += (int)len;
         l->buf[l->len] = '\0';
 
-        if (write(l->ofd, buf, len) == -1)
-            return 0;
-        update_promptrow(l, lines_written);
+        // -ajf - do NOT write `buf` directly. The previous version did
+        // `write(l->ofd, buf, len)` to give visual feedback while pasting,
+        // then called update_promptrow(l, lines_written) to track scrolls.
+        // But lines_written only counts '\n's in the paste — it misses
+        // scrolls caused by terminal auto-wrap of long pasted lines. The
+        // result was that update_promptrow under-decremented and the
+        // trailing refresh_full cleared below the actual prompt, leaving
+        // a stale copy of the first paragraph above the fresh render.
+        // The refresh_full below redraws everything from promptrow; with
+        // promptrow correctly maintained by refreshSingleLine through
+        // wrap-scrolls, this is sufficient.
+        (void)lines_written;
         get_bufpos(l);
         l->rc.refresh_type = REFRESH_FULL;
         refreshLine(l);
@@ -1843,6 +2050,12 @@ static char *linenoiseEdit(int stdin_fd, int stdout_fd, size_t buflen, const cha
     l.history_index = 0;
     memset(&(l.rc), 0, sizeof(rowcol));
     rcp = &(l.rc);
+    // -ajf - sane defaults before first get_screenpos. If the initial probe
+    // fails for any reason these keep us from operating on zeroed values.
+    rcp->screenpos_r = 1;
+    rcp->screenpos_c = 1;
+    rcp->screendim_r = 24;
+    rcp->screendim_c = 80;
     l.buf = malloc(buflen);
     if (!l.buf)
         return NULL;
@@ -2141,15 +2354,47 @@ static char *linenoiseEdit(int stdin_fd, int stdout_fd, size_t buflen, const cha
             if (linenoiseEditInsert(&l, c))
                 goto end_fail;
             break;
-        case CTRL_U: /* Ctrl+u, delete the whole line. */
-            l.buf[0] = '\0';
-            l.pos = l.len = 0;
-            refreshLine(&l);
+        case CTRL_U: /* Ctrl+u, delete the current line (multiline) or whole buffer (single-line). */
+            if (in_ml_paste_or_edit || force_ml_edit)
+            {
+                size_t s = line_start(&l), e = line_end(&l);
+                if (e > s)
+                {
+                    memmove(l.buf + s, l.buf + e, l.len - e);
+                    l.len -= (e - s);
+                    l.pos = s;
+                    l.buf[l.len] = '\0';
+                    l.rc.hshift = 0;
+                    l.rc.refresh_type = REFRESH_LINE;
+                    refreshLine(&l);
+                }
+            }
+            else
+            {
+                l.buf[0] = '\0';
+                l.pos = l.len = 0;
+                refreshLine(&l);
+            }
             break;
-        case CTRL_K: /* Ctrl+k, delete from current to end of line. */
-            l.buf[l.pos] = '\0';
-            l.len = l.pos;
-            refreshLine(&l);
+        case CTRL_K: /* Ctrl+k, delete from cursor to end of current line. */
+            if (in_ml_paste_or_edit || force_ml_edit)
+            {
+                size_t e = line_end(&l);
+                if (e > l.pos)
+                {
+                    memmove(l.buf + l.pos, l.buf + e, l.len - e);
+                    l.len -= (e - l.pos);
+                    l.buf[l.len] = '\0';
+                    l.rc.refresh_type = REFRESH_LINE;
+                    refreshLine(&l);
+                }
+            }
+            else
+            {
+                l.buf[l.pos] = '\0';
+                l.len = l.pos;
+                refreshLine(&l);
+            }
             break;
         case CTRL_A: /* Ctrl+a, go to the start of the line */
             linenoiseEditMoveHome(&l);
@@ -2161,7 +2406,10 @@ static char *linenoiseEdit(int stdin_fd, int stdout_fd, size_t buflen, const cha
             if (in_ml_paste_or_edit)
             {
                 (void)write(l.ofd, "\033[2J\033[1;1H", 10);
-                get_screenpos(&l);
+                // -ajf - we just sent \033[1;1H, so the cursor is at (1,1).
+                // No need to query the terminal for it.
+                l.rc.screenpos_r = 1;
+                l.rc.screenpos_c = 1;
                 l.rc.promptrow=1;
                 refresh_window(&l);
                 break;

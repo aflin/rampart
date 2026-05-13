@@ -261,6 +261,11 @@ static void completion(const char *inbuf, linenoiseCompletions *lc) {
     int startlen = 0;
     int insq=0;
     int indq=0;
+    // -ajf - In multi-line mode the printf-based suggestion list collides
+    // with linenoise's row tracking. Build the completion list as usual but
+    // skip the side-output. The TAB-cycler in linenoise still cycles through
+    // candidates inline.
+    int show_list = !linenoiseIsMultiLine();
     char *bbk = rp_color ? RPCOL_BBLK  : "";
     char *rst = rp_color ? RPCOL_RESET : "";
 
@@ -340,30 +345,33 @@ static void completion(const char *inbuf, linenoiseCompletions *lc) {
                     longest +=4;
 
                     linenoiseAddCompletionUnshift(lc, startpos);
-                    rewinddir(dir);
-                    while ((entry = readdir(dir)) != NULL)
+                    if (show_list)
                     {
-                        int slen = strlen(entry->d_name);
-                        if( !strcmp(".", entry->d_name) || !strcmp("..", entry->d_name))
-                            continue;
-                        if( postlen && strncmp(inbuf+pathlen, entry->d_name, postlen)!=0 )
-                            continue;
+                        rewinddir(dir);
+                        while ((entry = readdir(dir)) != NULL)
+                        {
+                            int slen = strlen(entry->d_name);
+                            if( !strcmp(".", entry->d_name) || !strcmp("..", entry->d_name))
+                                continue;
+                            if( postlen && strncmp(inbuf+pathlen, entry->d_name, postlen)!=0 )
+                                continue;
 
-                        if(gotone==0)
-                        {
-                            printf("\n   ");
-                            gotone=1;
+                            if(gotone==0)
+                            {
+                                printf("\n   ");
+                                gotone=1;
+                            }
+                            if(curpos + longest + 3 > width)
+                            {
+                                printf("\n   ");
+                                curpos=0;
+                            }
+                            printf("%s%s%*s%s", bbk, entry->d_name, (int)(3+longest - slen), " ", rst);
+                            curpos += longest + 3;
                         }
-                        if(curpos + longest + 3 > width)
-                        {
-                            printf("\n   ");
-                            curpos=0;
-                        }
-                        printf("%s%s%*s%s", bbk, entry->d_name, (int)(3+longest - slen), " ", rst);
-                        curpos += longest + 3;
+                        if(gotone)
+                            putchar('\n');
                     }
-                    if(gotone)
-                        putchar('\n');
                 }
 
                 // check if it is a directory
@@ -462,43 +470,51 @@ static void completion(const char *inbuf, linenoiseCompletions *lc) {
                 duk_pop(ctx); //enum
                 if(nsugg == 1)
                 {
-                    rp_string_putc(firstsugg, '.');
+                    // -ajf - for a function completion the suggestion already
+                    // ends with '(' (added in the loop above). Appending '.'
+                    // here would produce "func(." Only chain a '.' when the
+                    // completion is an object (no trailing '(').
+                    if (firstsugg->len == 0 || firstsugg->str[firstsugg->len - 1] != '(')
+                        rp_string_putc(firstsugg, '.');
                     linenoiseReplaceCompletion(lc, sugg->str, 0);
                     firstsugg = rp_string_free(firstsugg);
                 }
                 else if(nsugg > 1)
                 {
                     linenoiseAddCompletionUnshift(lc, startpos);
-                    duk_enum(ctx, -1, DUK_ENUM_INCLUDE_NONENUMERABLE);
-                    while(duk_next(ctx, -1, 1))
+                    if (show_list)
                     {
-                        duk_size_t slen;
-                        const char *sym = duk_get_lstring(ctx, -2, &slen);
-                        int isfunc = duk_is_function(ctx, -1);
-                        duk_pop_2(ctx);
-                        if(isdigit(*sym))
-                            continue;
-                        if(dotpos && strncmp(dotpos, sym, postlen)!=0)
-                            continue;
-                        if(gotone==0)
+                        duk_enum(ctx, -1, DUK_ENUM_INCLUDE_NONENUMERABLE);
+                        while(duk_next(ctx, -1, 1))
                         {
-                            printf("\n   ");
-                            gotone=1;
+                            duk_size_t slen;
+                            const char *sym = duk_get_lstring(ctx, -2, &slen);
+                            int isfunc = duk_is_function(ctx, -1);
+                            duk_pop_2(ctx);
+                            if(isdigit(*sym))
+                                continue;
+                            if(dotpos && strncmp(dotpos, sym, postlen)!=0)
+                                continue;
+                            if(gotone==0)
+                            {
+                                printf("\n   ");
+                                gotone=1;
+                            }
+                            if(curpos + longest + 3 + isfunc *2> width)
+                            {
+                                printf("\n   ");
+                                curpos=0;
+                            }
+                            if(isfunc)
+                                printf("%s%s()%*s%s", bbk, sym, (int)(3+longest - slen -2), " ", rst);
+                            else
+                                printf("%s%s%*s%s", bbk, sym, (int)(3+longest - slen), " ", rst);
+                            curpos += longest + 3 + isfunc *2;
                         }
-                        if(curpos + longest + 3 + isfunc *2> width)
-                        {
-                            printf("\n   ");
-                            curpos=0;
-                        }
-                        if(isfunc)
-                            printf("%s%s()%*s%s", bbk, sym, (int)(3+longest - slen -2), " ", rst);
-                        else
-                            printf("%s%s%*s%s", bbk, sym, (int)(3+longest - slen), " ", rst);
-                        curpos += longest + 3 + isfunc *2;
+                        if(gotone)
+                            putchar('\n');
+                        duk_pop(ctx); //enum
                     }
-                    if(gotone)
-                        putchar('\n');
-                    duk_pop(ctx); //enum
                 }
                 if(firstsugg)
                     rp_string_free(firstsugg);
@@ -546,34 +562,37 @@ static void completion(const char *inbuf, linenoiseCompletions *lc) {
         {
             linenoiseAddCompletionUnshift(lc, startpos);
             longest +=4;
-            duk_enum(ctx, -1, DUK_ENUM_INCLUDE_NONENUMERABLE);
-            while(duk_next(ctx, -1, 1))
+            if (show_list)
             {
-                duk_size_t slen;
-                const char *sym = duk_get_lstring(ctx, -2, &slen);
-                int isfunc = duk_is_function(ctx, -1);
-                duk_pop_2(ctx);
-                if(inlen && strncmp(inbuf, sym, inlen) != 0)
-                    continue;
-                if(gotone==0)
+                duk_enum(ctx, -1, DUK_ENUM_INCLUDE_NONENUMERABLE);
+                while(duk_next(ctx, -1, 1))
                 {
-                    printf("\n   ");
-                    gotone=1;
+                    duk_size_t slen;
+                    const char *sym = duk_get_lstring(ctx, -2, &slen);
+                    int isfunc = duk_is_function(ctx, -1);
+                    duk_pop_2(ctx);
+                    if(inlen && strncmp(inbuf, sym, inlen) != 0)
+                        continue;
+                    if(gotone==0)
+                    {
+                        printf("\n   ");
+                        gotone=1;
+                    }
+                    if(curpos + longest + 3 + isfunc *2> width)
+                    {
+                        printf("\n   ");
+                        curpos=0;
+                    }
+                    if(isfunc)
+                        printf("%s%s()%*s%s", bbk, sym, (int)(3+longest - slen -2), " ", rst);
+                    else
+                        printf("%s%s%*s%s", bbk, sym, (int)(3+longest - slen), " ", rst);
+                    curpos += longest + 3 + isfunc *2;
                 }
-                if(curpos + longest + 3 + isfunc *2> width)
-                {
-                    printf("\n   ");
-                    curpos=0;
-                }
-                if(isfunc)
-                    printf("%s%s()%*s%s", bbk, sym, (int)(3+longest - slen -2), " ", rst);
-                else
-                    printf("%s%s%*s%s", bbk, sym, (int)(3+longest - slen), " ", rst);
-                curpos += longest + 3 + isfunc *2;
+                if(gotone)
+                    putchar('\n');
+                duk_pop(ctx); //enum
             }
-            if(gotone)
-                putchar('\n');
-            duk_pop(ctx); //enum
         }
         duk_pop(ctx);  //global object
 
@@ -609,18 +628,19 @@ static void completion(const char *inbuf, linenoiseCompletions *lc) {
                     continue;
                 if(gotone==0)
                 {
-                    printf("\n   ");
+                    if (show_list) printf("\n   ");
                     gotone=1;
                 }
                 if(curpos + longest + 3 > width)
                 {
-                    printf("\n   ");
+                    if (show_list) printf("\n   ");
                     curpos=0;
                 }
-                printf("%s%s%*s%s", bbk, sym, (int)(3+longest - slen), " ", rst);
+                if (show_list)
+                    printf("%s%s%*s%s", bbk, sym, (int)(3+longest - slen), " ", rst);
                 curpos += longest + 3;
             }
-            printf("\n");
+            if (show_list) printf("\n");
         }
 
         if(lc->len==1)
