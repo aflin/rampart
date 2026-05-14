@@ -855,6 +855,8 @@ PRESERVE_PINNED(struct evbuffer *src, struct evbuffer_chain **first,
 		struct evbuffer_chain *tmp;
 
 		EVUTIL_ASSERT(pinned == src->last_with_datap);
+		if (chain->misalign + chain->off > chain->buffer_len)
+			return -1;
 		tmp = evbuffer_chain_new(chain->off);
 		if (!tmp)
 			return -1;
