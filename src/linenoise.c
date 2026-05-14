@@ -1900,7 +1900,233 @@ static void suspend_self(void)
     on_sigcont(SIGCONT);
 }
 
-// Check for waiting data w/in 5ms and assume its a paste -ajf
+/* ============================ Output recording -ajf ============================
+ *
+ * Every byte written to STDOUT_FILENO (by linenoise, by JS printf/console.log,
+ * by subprocesses inheriting our fd 1) is mirrored to the original terminal
+ * AND captured in a fixed-size ring buffer sized to 2 * cols * rows. On Ctrl-Z
+ * resume we clear the screen + scrollback and replay the ring, so the user
+ * sees the screen as it looked before they suspended (modulo anything the
+ * shell wrote during the detour, which the alt-screen approach can't avoid
+ * either unless we go full-screen).
+ *
+ * Lazy init on first linenoiseEdit call. Can be forced earlier via
+ * linenoiseEnableRecording() so output emitted before the first prompt
+ * (e.g. a program banner) is also captured.
+ */
+#include <pthread.h>
+
+static int    rec_inited       = 0;
+static int    rec_orig_stdout  = -1;
+static int    rec_pipefd[2]    = { -1, -1 };
+static pthread_t rec_thread;
+static char  *rec_buf          = NULL;
+static size_t rec_cap          = 0;
+static size_t rec_head         = 0;   /* next write index */
+static size_t rec_len          = 0;   /* bytes currently stored */
+static int    rec_redraw_on_resume = 1; /* toggled via linenoiseSetRedrawOnResume */
+static pthread_mutex_t rec_lock;
+
+static void rec_append(const char *src, size_t n)
+{
+    pthread_mutex_lock(&rec_lock);
+    for (size_t i = 0; i < n; i++)
+    {
+        rec_buf[rec_head] = src[i];
+        rec_head = (rec_head + 1) % rec_cap;
+        if (rec_len < rec_cap)
+            rec_len++;
+    }
+    /* If the ring just filled (and thereby overwrote bytes from the start),
+     * trim leading bytes up to and including the next '\n' so a future replay
+     * never starts mid-escape-sequence. */
+    if (rec_len == rec_cap)
+    {
+        size_t tail = rec_head;            /* tail == head when full */
+        size_t scanned = 0;
+        while (scanned < rec_len && rec_buf[tail] != '\n')
+        {
+            tail = (tail + 1) % rec_cap;
+            scanned++;
+        }
+        if (scanned < rec_len)
+        {
+            scanned++;                     /* drop the '\n' itself too */
+            rec_len -= scanned;
+        }
+    }
+    pthread_mutex_unlock(&rec_lock);
+}
+
+static void *recorder_thread_fn(void *unused)
+{
+    (void)unused;
+    char buf[4096];
+    for (;;)
+    {
+        ssize_t n = read(rec_pipefd[0], buf, sizeof(buf));
+        // -ajf - SIGCONT delivery on resume from Ctrl-Z can interrupt this
+        // read() with EINTR (suspend_self installs an on_sigcont handler
+        // after the first raise). Without this retry, the thread would
+        // exit on resume and subsequent writes to stdout would pile up in
+        // the pipe with no reader, eventually deadlocking get_screenpos
+        // and freezing the REPL.
+        if (n < 0 && errno == EINTR)
+            continue;
+        if (n <= 0)
+            break;
+        (void)write(rec_orig_stdout, buf, (size_t)n);
+        rec_append(buf, (size_t)n);
+    }
+    return NULL;
+}
+
+static void ensure_recorder(int cols, int rows)
+{
+    if (rec_inited)
+        return;
+    rec_inited = 1;                        /* set early so failures don't retry */
+
+    rec_cap = 2 * (size_t)cols * (size_t)rows;
+    if (rec_cap < 4096)
+        rec_cap = 4096;
+    rec_buf = malloc(rec_cap);
+    if (!rec_buf) { rec_inited = 0; return; }
+
+    if (pthread_mutex_init(&rec_lock, NULL) != 0)
+    {
+        free(rec_buf); rec_buf = NULL; rec_inited = 0; return;
+    }
+
+    rec_orig_stdout = dup(STDOUT_FILENO);
+    if (rec_orig_stdout < 0)
+    {
+        pthread_mutex_destroy(&rec_lock);
+        free(rec_buf); rec_buf = NULL; rec_inited = 0; return;
+    }
+
+    if (pipe(rec_pipefd) != 0)
+    {
+        close(rec_orig_stdout); rec_orig_stdout = -1;
+        pthread_mutex_destroy(&rec_lock);
+        free(rec_buf); rec_buf = NULL; rec_inited = 0; return;
+    }
+
+    if (dup2(rec_pipefd[1], STDOUT_FILENO) < 0)
+    {
+        close(rec_pipefd[0]); close(rec_pipefd[1]);
+        rec_pipefd[0] = rec_pipefd[1] = -1;
+        close(rec_orig_stdout); rec_orig_stdout = -1;
+        pthread_mutex_destroy(&rec_lock);
+        free(rec_buf); rec_buf = NULL; rec_inited = 0; return;
+    }
+    close(rec_pipefd[1]);
+    rec_pipefd[1] = -1;
+
+    /* stdio's line/block buffering would hide writes from us — make printf
+     * etc. unbuffered so every byte hits the pipe immediately. */
+    setvbuf(stdout, NULL, _IONBF, 0);
+
+    if (pthread_create(&rec_thread, NULL, recorder_thread_fn, NULL) != 0)
+    {
+        /* couldn't spawn the recorder — restore stdout and bail */
+        dup2(rec_orig_stdout, STDOUT_FILENO);
+        close(rec_orig_stdout); rec_orig_stdout = -1;
+        close(rec_pipefd[0]); rec_pipefd[0] = -1;
+        pthread_mutex_destroy(&rec_lock);
+        free(rec_buf); rec_buf = NULL; rec_inited = 0; return;
+    }
+}
+
+static void replay_recording(void)
+{
+    if (!rec_inited)
+        return;
+    /* clear scrollback + screen + home — bypass the pipe so we don't pollute
+     * the recording with our own clears. */
+    static const char clear[] = "\033[3J\033[2J\033[H";
+    (void)write(rec_orig_stdout, clear, sizeof(clear) - 1);
+
+    pthread_mutex_lock(&rec_lock);
+
+    /* -ajf - linearize the ring and strip out any "\033[6n" (Device Status
+     * Report — Cursor Position Query) sequences. Without this the terminal
+     * would respond to each re-emitted query via stdin, and linenoise's main
+     * loop would see the CPR responses ("\033[r;cR") as a flood of keystrokes
+     * once we return. The cursor-set "\033[9999;9999H" that linenoise pairs
+     * with the query is left intact — it doesn't generate a response and
+     * the surrounding DECSC/DECRC bracketing restores the cursor anyway. */
+    size_t tail = (rec_head + rec_cap - rec_len) % rec_cap;
+    char *flat = malloc(rec_len);
+    size_t flat_len = 0;
+    if (flat)
+    {
+        int state = 0;
+        for (size_t i = 0; i < rec_len; i++)
+        {
+            char c = rec_buf[(tail + i) % rec_cap];
+            switch (state)
+            {
+            case 0:
+                if (c == '\033') state = 1;
+                else flat[flat_len++] = c;
+                break;
+            case 1:
+                if (c == '[') state = 2;
+                else { flat[flat_len++] = '\033'; flat[flat_len++] = c; state = 0; }
+                break;
+            case 2:
+                if (c == '6') state = 3;
+                else { flat[flat_len++] = '\033'; flat[flat_len++] = '['; flat[flat_len++] = c; state = 0; }
+                break;
+            case 3:
+                if (c == 'n')      { /* drop the whole ESC[6n */ state = 0; }
+                else { flat[flat_len++] = '\033'; flat[flat_len++] = '['; flat[flat_len++] = '6'; flat[flat_len++] = c; state = 0; }
+                break;
+            }
+        }
+        /* If the recording ended mid-sequence, flush the partial bytes so we
+         * don't silently drop them. */
+        if (state >= 1) flat[flat_len++] = '\033';
+        if (state >= 2) flat[flat_len++] = '[';
+        if (state >= 3) flat[flat_len++] = '6';
+        (void)write(rec_orig_stdout, flat, flat_len);
+        free(flat);
+    }
+    else
+    {
+        /* malloc failed — fall back to raw replay (CPR responses will leak) */
+        if (tail + rec_len <= rec_cap)
+            (void)write(rec_orig_stdout, rec_buf + tail, rec_len);
+        else
+        {
+            size_t first = rec_cap - tail;
+            (void)write(rec_orig_stdout, rec_buf + tail, first);
+            (void)write(rec_orig_stdout, rec_buf, rec_len - first);
+        }
+    }
+
+    pthread_mutex_unlock(&rec_lock);
+}
+
+/* Public: caller can force recording on before the first linenoise() call so
+ * pre-prompt output is also captured. Uses a default 80x24 cap if invoked
+ * before we know the real terminal size. */
+void linenoiseEnableRecording(void)
+{
+    ensure_recorder(80, 24);
+}
+
+/* Public: toggle whether Ctrl-Z resume replays the screen recording. When
+ * disabled, the Ctrl-Z handler falls back to redrawing just the prompt + buf
+ * at the cursor's current row (the previous, pre-recording behavior). The
+ * recording itself is still maintained — only the replay step is skipped. */
+void linenoiseSetRedrawOnResume(int enable)
+{
+    rec_redraw_on_resume = enable ? 1 : 0;
+}
+
+/* Check for waiting data w/in 5ms and assume its a paste -ajf */
 static int polpaste(struct linenoiseState *l, char pc)
 {
     unsigned char nextc;
@@ -2066,6 +2292,10 @@ static char *linenoiseEdit(int stdin_fd, int stdout_fd, size_t buflen, const cha
     get_screenpos(&l); // initial screen size and cursor pos
     l.cols = l.rc.screendim_c;
     rcp->promptrow = rcp->screenpos_r; // our cursor is on the prompt row at this point
+
+    // -ajf - lazy init of the stdout recorder so Ctrl-Z resume can replay
+    // what was on screen. No-op after first call.
+    ensure_recorder(l.rc.screendim_c, l.rc.screendim_r);
 
     linenoise_lnstate = &l; //-- ajf
 
@@ -2240,12 +2470,48 @@ static char *linenoiseEdit(int stdin_fd, int stdout_fd, size_t buflen, const cha
         // -ajf 2025-10-11
         case CTRL_Z:
             suspend_self(); // returns after `fg`
-            enableRawMode(l.ofd);
-            l.rc.refresh_type = REFRESH_FULL;
-            int old = in_ml_paste_or_edit;
-            in_ml_paste_or_edit = 1;
-            refreshLine(&l);
-            in_ml_paste_or_edit = old;
+            // -ajf - must restore raw mode on STDIN (the input fd). The pre-
+            // recording version happened to work because l.ofd was the tty
+            // and termios is per-tty; once we redirect stdout to a pipe,
+            // tcsetattr(pipe_fd) fails silently with ENOTTY and stdin stays
+            // in the shell's cooked mode — arrow keys and Enter then look
+            // broken because the tty driver line-buffers them.
+            enableRawMode(l.ifd);
+            if (rec_inited && rec_redraw_on_resume)
+            {
+                // -ajf - replay restores the screen content (prompt history,
+                // previous output rows). The recording's last cursor position
+                // may not perfectly match linenoise's bufpos state — small
+                // drift here causes subsequent refresh_whole_line writes to
+                // land a few cols off and confuses the next Ctrl-Z. So after
+                // replay, force a refresh_full: that redraws the prompt + buf
+                // at linenoise's expected position and resyncs cursor /
+                // screenpos / promptrow from internal state. The rows ABOVE
+                // promptrow (the history the replay restored) are preserved
+                // because refresh_full only clears from promptrow downward.
+                replay_recording();
+                get_screenpos(&l);
+                get_bufpos(&l);
+                l.rc.promptrow = l.rc.screenpos_r - l.rc.bufpos_r;
+                if (l.rc.promptrow < 1) l.rc.promptrow = 1;
+                l.rc.refresh_type = REFRESH_FULL;
+                int old_ml = in_ml_paste_or_edit;
+                in_ml_paste_or_edit = 1;
+                refreshLine(&l);
+                in_ml_paste_or_edit = old_ml;
+            }
+            else
+            {
+                // Fallback when the recorder didn't initialize: redraw
+                // prompt + buf at the current cursor row.
+                get_screenpos(&l);
+                l.rc.promptrow = l.rc.screenpos_r;
+                l.rc.refresh_type = REFRESH_FULL;
+                int old = in_ml_paste_or_edit;
+                in_ml_paste_or_edit = 1;
+                refreshLine(&l);
+                in_ml_paste_or_edit = old;
+            }
             break;
         case CTRL_N: /* ctrl-n */
             linenoiseEditHistoryNext(&l, LINENOISE_HISTORY_NEXT);

@@ -67,6 +67,8 @@ int linenoiseHistoryLoad(const char *filename);
 int linenoiseHistoryLen(void);                    // -- ajf
 const char *linenoiseHistoryGet(int idx);          // -- ajf
 void linenoiseHistoryClear(void);                  // -- ajf
+void linenoiseEnableRecording(void);              // -- ajf - opt early init
+void linenoiseSetRedrawOnResume(int enable);      // -- ajf - toggle replay on SIGCONT
 void linenoiseClearScreen(void);
 void linenoiseSetMultiLine(int ml);
 void linenoiseMaskModeEnable(void);

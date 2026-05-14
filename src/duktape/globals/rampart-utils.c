@@ -7273,6 +7273,7 @@ static duk_ret_t rp_repl(duk_context *ctx) {
     // char **compl = NULL;
     const char *history_file=NULL, *prompt="";
     int history=1024, hret;
+    int redraw_on_resume=1;
 
     if(duk_is_object(ctx, 0))
     {
@@ -7293,6 +7294,16 @@ static duk_ret_t rp_repl(duk_context *ctx) {
             prompt=REQUIRE_STRING(ctx, -1, "repl: option 'prompt' must be a String");
         }
         duk_pop(ctx);
+
+        // -ajf - redrawOnResume (default true): on Ctrl-Z resume, replay
+        // the captured stdout to restore the screen as it was before
+        // suspend. When false, fall back to the pre-recording behavior
+        // (redraw prompt + buf at the current cursor row).
+        if(duk_get_prop_string(ctx, 0, "redrawOnResume"))
+        {
+            redraw_on_resume = duk_to_boolean(ctx, -1) ? 1 : 0;
+        }
+        duk_pop(ctx);
     }
     else if (duk_is_string(ctx,0))
     {
@@ -7304,6 +7315,7 @@ static duk_ret_t rp_repl(duk_context *ctx) {
     tcgetattr(1,&orig_term);
     //linenoiseSetMultiLine(1);
     linenoiseHistorySetMaxLen(history);
+    linenoiseSetRedrawOnResume(redraw_on_resume);
 
     duk_push_object(ctx);
     duk_push_c_function(ctx, repl_close, 0);
