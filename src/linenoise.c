@@ -150,6 +150,15 @@ static char **history = NULL;
 
 static int in_ml_paste_or_edit = 0; // -- ajf - 2025-10-10 - whether in the middle of a multi-lined paste/edit
 static int force_ml_edit = 0;       // -- ajf - 2025-10-11 - whether to force multi-line mode
+
+/* Interrupt pipe: caller writes to the writable end to wake an in-flight
+ * linenoise read; the edit loop polls the readable end alongside stdin
+ * and returns with errno=ECANCELED when a byte arrives. Lazy-created on
+ * first linenoiseInterrupt() call. Bytes written (if any) are stashed
+ * in linenoise_intr_last for the caller to surface to JS. */
+static int linenoise_intr_pipe[2] = {-1, -1};
+static char *linenoise_intr_last = NULL;
+static size_t linenoise_intr_last_len = 0;
 #define REFRESH_REPOSITION 0        // just move cursor based on bufpos_r & bufpos_c and update l->pos
 #define REFRESH_FROM_POS 1          // refresh from currrent l->pos to end
 #define REFRESH_LINE 2              // refresh the current line
@@ -268,6 +277,62 @@ void linenoiseMaskModeEnable(void)
 void linenoiseMaskModeDisable(void)
 {
     maskmode = 0;
+}
+
+/* Lazy self-pipe init. Non-fatal if pipe(2) fails — interrupt support
+ * just stays disabled and linenoise reads block on stdin only. */
+static void linenoise_intr_pipe_ensure(void)
+{
+    if (linenoise_intr_pipe[0] >= 0)
+        return;
+    if (pipe(linenoise_intr_pipe) < 0)
+    {
+        linenoise_intr_pipe[0] = -1;
+        linenoise_intr_pipe[1] = -1;
+    }
+}
+
+static void linenoise_intr_set_last(const char *buf, size_t len)
+{
+    free(linenoise_intr_last);
+    linenoise_intr_last = NULL;
+    linenoise_intr_last_len = 0;
+    char *copy = malloc(len + 1);
+    if (!copy)
+        return;
+    if (len)
+        memcpy(copy, buf, len);
+    copy[len] = '\0';
+    linenoise_intr_last = copy;
+    linenoise_intr_last_len = len;
+}
+
+/* Wake any in-flight linenoise read. `payload`/`len` are written to the
+ * pipe; on the read side they get surfaced via linenoiseLastIntrSignal().
+ * No-payload (len==0) writes a single null byte; the drain side maps a
+ * lone null back to an empty signal string. Safe to call from any
+ * thread — write(2) on a pipe fd is atomic for PIPE_BUF-sized writes. */
+void linenoiseInterrupt(const char *payload, size_t len)
+{
+    linenoise_intr_pipe_ensure();
+    if (linenoise_intr_pipe[1] < 0)
+        return;
+    if (!payload || len == 0)
+    {
+        char z = 0;
+        (void)write(linenoise_intr_pipe[1], &z, 1);
+        return;
+    }
+    (void)write(linenoise_intr_pipe[1], payload, len);
+}
+
+/* Returns the bytes drained from the pipe at the last wake (or "" if
+ * none / lone-null sentinel). Owned by linenoise; valid until next wake. */
+const char *linenoiseLastIntrSignal(size_t *len_out)
+{
+    if (len_out)
+        *len_out = linenoise_intr_last_len;
+    return linenoise_intr_last ? linenoise_intr_last : "";
 }
 
 /* Return true if the terminal name is in the list of terminals we know are
@@ -2308,11 +2373,52 @@ static char *linenoiseEdit(int stdin_fd, int stdout_fd, size_t buflen, const cha
     // bug fix: changed write(..., 5) to write(..., 4) for correct escape sequence length - 2026-02-27
     if (write(l.ofd, "\033[0J", 4) == -1)
         goto end_fail;
+
+    /* Eagerly create the interrupt pipe so the very first poll iteration
+     * includes it. If we wait until linenoiseInterrupt() does the lazy
+     * init, a wake fired before main hits poll() would only become
+     * visible after the next stdin keystroke advanced the loop. The
+     * pipe pair is permanent process state; one-time cost. */
+    linenoise_intr_pipe_ensure();
+
     while (1)
     {
         char c;
         int nread;
         char seq[3];
+
+        /* Poll stdin and (if armed) the interrupt pipe together. The
+         * interrupt pipe is created above; this branch only stays
+         * disabled if pipe(2) failed (memory exhaustion, fd limit). */
+        if (linenoise_intr_pipe[0] >= 0)
+        {
+            struct pollfd pfds[2];
+            int pr;
+            pfds[0].fd = l.ifd;
+            pfds[0].events = POLLIN;
+            pfds[0].revents = 0;
+            pfds[1].fd = linenoise_intr_pipe[0];
+            pfds[1].events = POLLIN;
+            pfds[1].revents = 0;
+            do {
+                pr = poll(pfds, 2, -1);
+            } while (pr < 0 && errno == EINTR);
+            if (pr < 0)
+                return l.buf;
+            if (pfds[1].revents & POLLIN)
+            {
+                char drainbuf[256];
+                ssize_t dn = read(linenoise_intr_pipe[0], drainbuf, sizeof(drainbuf));
+                if (dn < 0) dn = 0;
+                if (dn == 1 && drainbuf[0] == 0)
+                    linenoise_intr_set_last("", 0);
+                else
+                    linenoise_intr_set_last(drainbuf, (size_t)dn);
+                errno = ECANCELED;
+                goto end_fail;
+            }
+            /* stdin readable — fall through to read(2) below */
+        }
 
         nread = read(l.ifd, &c, 1);
         if (nread <= 0)

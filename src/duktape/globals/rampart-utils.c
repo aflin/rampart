@@ -7146,6 +7146,21 @@ static duk_ret_t repl_refresh(duk_context *ctx) {
     return 0;
 }
 
+/* rampart.utils.repl.interrupt([payloadString]) — wake any in-flight
+ * linenoise read. With no argument or "", writes a single null byte
+ * (drain side surfaces it as signal=''). Otherwise the argument's
+ * bytes are written to the pipe verbatim and surfaced as `signal` on
+ * the woken next() call. Safe to call from any thread. */
+static duk_ret_t repl_interrupt(duk_context *ctx) {
+    duk_size_t len = 0;
+    const char *payload = NULL;
+    if (!duk_is_undefined(ctx, 0)) {
+        payload = duk_require_lstring(ctx, 0, &len);
+    }
+    linenoiseInterrupt(payload, len);
+    return 0;
+}
+
 // -ajf - replace linenoise's in-memory history with the contents of a JS
 // array of strings. Non-string entries are skipped. Capped to the current
 // history_max_len (older entries roll out per the existing add logic).
@@ -7197,10 +7212,29 @@ static duk_ret_t repl_get_history(duk_context *ctx) {
     return 1;
 }
 
+/* Push an objectMode result onto the stack: {text, status[, signal]}.
+ * `signal` is only attached for status='wake'. */
+static void push_repl_result(duk_context *ctx, const char *status,
+                             const char *text, const char *signal,
+                             size_t signal_len)
+{
+    duk_push_object(ctx);
+    duk_push_string(ctx, text ? text : "");
+    duk_put_prop_string(ctx, -2, "text");
+    duk_push_string(ctx, status);
+    duk_put_prop_string(ctx, -2, "status");
+    if (signal)
+    {
+        duk_push_lstring(ctx, signal, signal_len);
+        duk_put_prop_string(ctx, -2, "signal");
+    }
+}
+
 static duk_ret_t repl_next(duk_context *ctx) {
     char *line = NULL;
     const char *prompt="";
     const char *history_file = NULL;
+    int object_mode = 0;
 
     duk_push_this(ctx);
     if(duk_get_prop_string(ctx, -1, "_prompt"))
@@ -7213,10 +7247,25 @@ static duk_ret_t repl_next(duk_context *ctx) {
         history_file=duk_get_string(ctx, -1);
     }
     duk_pop(ctx);
-
-    line = linenoise(prompt);
-    if(!line)
+    if(duk_get_prop_string(ctx, -1, "_object_mode"))
     {
+        object_mode = duk_get_int_default(ctx, -1, 0);
+    }
+    duk_pop(ctx);
+
+    while (1)
+    {
+        errno = 0;
+        line = linenoise(prompt);
+        if (line) break;
+
+        // Distinguish Ctrl-C cases / wake / EOF via errno set in linenoise.c:
+        //   EAGAIN     - Ctrl-C with non-empty line: clear line, loop & redraw
+        //   ENODATA    - Ctrl-C with empty line:    status='cancel' (or false)
+        //   ECANCELED  - woken via linenoiseInterrupt: status='wake' (or false)
+        //   else       - Ctrl-D / EOF / error:       status='eof'    (or null)
+        int saved_errno = errno;
+
         // -ajf - linenoiseEdit adds an empty "" placeholder at the start of
         // every call so up-arrow scrolling has something at position 0. The
         // ENTER and Ctrl-D paths free it before returning; the Ctrl-C and
@@ -7239,7 +7288,33 @@ static duk_ret_t repl_next(duk_context *ctx) {
                 free(keep);
             }
         }
-        duk_push_null(ctx);
+
+        if (saved_errno == EAGAIN) {
+            /* Ctrl-C mid-type: linenoise printed "^C" without a newline;
+               put one out so the next prompt starts on a fresh line. */
+            (void)write(STDOUT_FILENO, "\n", 1);
+            continue;
+        }
+        if (saved_errno == ENODATA) {
+            if (object_mode)
+                push_repl_result(ctx, "cancel", "", NULL, 0);
+            else
+                duk_push_false(ctx);
+            return 1;
+        }
+        if (saved_errno == ECANCELED) {
+            size_t siglen = 0;
+            const char *sig = linenoiseLastIntrSignal(&siglen);
+            if (object_mode)
+                push_repl_result(ctx, "wake", "", sig, siglen);
+            else
+                duk_push_false(ctx);
+            return 1;
+        }
+        if (object_mode)
+            push_repl_result(ctx, "eof", "", NULL, 0);
+        else
+            duk_push_null(ctx);
         return 1;
     }
 
@@ -7249,7 +7324,10 @@ static duk_ret_t repl_next(duk_context *ctx) {
     // built-in REPL's behavior).
     if (history_file)
         (void)linenoiseHistorySave(history_file);
-    duk_push_string(ctx, line);
+    if (object_mode)
+        push_repl_result(ctx, "ok", line, NULL, 0);
+    else
+        duk_push_string(ctx, line);
     free(line);
     return 1;
 }
@@ -7274,6 +7352,7 @@ static duk_ret_t rp_repl(duk_context *ctx) {
     const char *history_file=NULL, *prompt="";
     int history=1024, hret;
     int redraw_on_resume=1;
+    int object_mode=0;
 
     if(duk_is_object(ctx, 0))
     {
@@ -7304,6 +7383,17 @@ static duk_ret_t rp_repl(duk_context *ctx) {
             redraw_on_resume = duk_to_boolean(ctx, -1) ? 1 : 0;
         }
         duk_pop(ctx);
+
+        // objectMode: r.next() returns {text, status[, signal]} instead of
+        // the legacy string|null|false trichotomy. Lets callers distinguish
+        // wake-via-interrupt-pipe (status:'wake') from Ctrl-C (status:'cancel')
+        // and EOF (status:'eof'); in legacy mode a wake comes back as `false`
+        // (same as Ctrl-C — cannot be distinguished).
+        if(duk_get_prop_string(ctx, 0, "objectMode"))
+        {
+            object_mode = duk_to_boolean(ctx, -1) ? 1 : 0;
+        }
+        duk_pop(ctx);
     }
     else if (duk_is_string(ctx,0))
     {
@@ -7326,6 +7416,8 @@ static duk_ret_t rp_repl(duk_context *ctx) {
     duk_put_prop_string(ctx, -2, "refresh");
     duk_push_string(ctx, prompt);
     duk_put_prop_string(ctx, -2, "_prompt");
+    duk_push_int(ctx, object_mode);
+    duk_put_prop_string(ctx, -2, "_object_mode");
 
     if(history_file)
     {
@@ -12169,6 +12261,8 @@ void duk_printf_init(duk_context *ctx)
     duk_push_c_function(ctx, rp_repl, 1);
     duk_push_c_function(ctx, repl_refresh, 0);
     duk_put_prop_string(ctx, -2, "refresh");
+    duk_push_c_function(ctx, repl_interrupt, 1);
+    duk_put_prop_string(ctx, -2, "interrupt");
     duk_push_c_function(ctx, repl_get_history, 0);
     duk_put_prop_string(ctx, -2, "getHistory");
     duk_push_c_function(ctx, repl_replace_history, 1);

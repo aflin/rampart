@@ -76,6 +76,12 @@ void linenoiseMaskModeDisable(void);
 void linenoise_refresh(void); // -- ajf
 int  linenoiseIsMultiLine(void); // -- ajf - true in force_ml or paste/edit ml mode
 
+/* Wake an in-flight linenoise read with an optional payload. The bytes
+ * are surfaced via linenoiseLastIntrSignal() after the read returns
+ * with errno=ECANCELED. Safe to call from any thread. */
+void linenoiseInterrupt(const char *payload, size_t len);
+const char *linenoiseLastIntrSignal(size_t *len_out);
+
 #ifdef __cplusplus
 }
 #endif

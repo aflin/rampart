@@ -3890,7 +3890,11 @@ int main(int argc, char *argv[])
         {
             /* the source is the first non option*/
             if(scriptarg<0)
+            {
                 scriptarg=argi;
+                // DO NOT PROCESS ANY MORE AFTER WE GET THE SCRIPT. -ajf 2026-05-14
+                break;
+            }
         }
         else if (*(opt+1) == '-')
         {
