@@ -217,7 +217,20 @@ pid=server.start(
         "/ck-limited":      function(req) { return {text: "ok"}; },
         "/unlimited":       function(req) { return {text: "ok"}; },
         "/casc/normal":     function(req) { return {text: "ok"}; },
-        "/casc/tight/a":    function(req) { return {text: "ok"}; }
+        "/casc/tight/a":    function(req) { return {text: "ok"}; },
+        /* Slow endpoint for xferCallback prefill-window tests: blocks
+         * the server thread for ~500ms before responding. Stays under
+         * scriptTimeout (1.0s) so the request completes normally. */
+        "/slow":            function(req) { sleep(0.5); return {text: "slow"}; },
+        /* Redirect endpoint for xferCallback originalUrl/url tests:
+         * 302 → /slow (a 500ms endpoint). With location:true on the
+         * curl side the client follows; originalUrl should stay
+         * /redirect while url advances to /slow on post-redirect ticks.
+         * Redirecting to a fast endpoint (e.g. /sample) leaves no
+         * window for a tick on the followed leg. */
+        "/redirect":        function(req) {
+                                return {status: 302, headers: {Location: "/slow"}, text: ""};
+                            }
     }
 });
 
@@ -414,6 +427,119 @@ testFeature("rate limit: cascading, global exhausted", function() {
     return n200 >= 4 && n429 >= 1;
 });
 /* ---- end rate limiter tests ---- */
+
+/* ---- xferCallback tests ---- */
+
+testFeature("xferCallback fires during slow response", function() {
+    /* /slow blocks 500ms on the server. At rate=4 (250ms cadence) we
+     * expect at least 1 callback fire during the wait. Also confirms
+     * the info object has the documented fields. */
+    var calls = 0;
+    var sawInfo = null;
+    var res = curl.fetch("https://localhost:8287/slow", {
+        insecure: true,
+        xferCallback: function(info) {
+            calls++;
+            sawInfo = info;
+            /* no return — keep going */
+        },
+        xferCallbackRate: 4
+    });
+    if (res.text !== "slow") { console.log("body", res.text); return false; }
+    if (calls < 1) { console.log("calls", calls); return false; }
+    /* Field presence — every documented key should appear. */
+    var keys = ["dlNow", "dlTotal", "ulNow", "ulTotal", "elapsed",
+                "speedDl", "speedUl", "connectTime", "appConnectTime",
+                "headerTime", "httpStatus", "originalUrl", "url"];
+    for (var i = 0; i < keys.length; i++) {
+        if (!(keys[i] in sawInfo)) {
+            console.log("missing field:", keys[i], "info:", sawInfo);
+            return false;
+        }
+    }
+    return true;
+});
+
+testFeature("xferCallback abort on return-false ends transfer", function() {
+    /* /slow normally takes ~500ms. Abort on first tick after 200ms;
+     * the transfer should end with libcurl's CURLE_ABORTED_BY_CALLBACK. */
+    var t0 = Date.now();
+    var res = curl.fetch("https://localhost:8287/slow", {
+        insecure: true,
+        xferCallback: function(info) {
+            if (info.elapsed >= 0.2) return false;   /* abort */
+        },
+        xferCallbackRate: 10
+    });
+    var dt = (Date.now() - t0) / 1000;
+    if (dt > 0.5) { console.log("abort too late, elapsed", dt); return false; }
+    /* errMsg may be a string (sync fetch) or an array (parallel fetch). */
+    var msg;
+    if (Array.isArray(res.errMsg)) msg = res.errMsg.join(' ');
+    else                           msg = res.errMsg ? String(res.errMsg) : '';
+    if (msg.indexOf('aborted by an application callback') < 0) {
+        console.log("unexpected errMsg:", msg);
+        return false;
+    }
+    return true;
+});
+
+testFeature("xferCallback rate=10 fires more than rate=2", function() {
+    /* Same endpoint, two rates; higher rate must produce more calls. */
+    var n2 = 0, n10 = 0;
+    curl.fetch("https://localhost:8287/slow", {
+        insecure: true,
+        xferCallback:     function(){ n2++; },
+        xferCallbackRate: 2
+    });
+    curl.fetch("https://localhost:8287/slow", {
+        insecure: true,
+        xferCallback:     function(){ n10++; },
+        xferCallbackRate: 10
+    });
+    if (n10 <= n2) { console.log("rate not respected: n2=" + n2 + " n10=" + n10); return false; }
+    return true;
+});
+
+testFeature("xferCallback originalUrl through redirect", function() {
+    /* /redirect 302s to /sample. With location:true curl follows the
+     * redirect; info.originalUrl stays at /redirect while info.url
+     * advances to /sample on the post-redirect tick. */
+    var origs = {}, finals = {};
+    var res = curl.fetch("https://localhost:8287/redirect", {
+        insecure: true,
+        location: true,
+        xferCallback: function(info) {
+            origs[info.originalUrl]  = true;
+            finals[info.url]         = true;
+        },
+        xferCallbackRate: 10
+    });
+    if (res.text !== "slow") { console.log("body after follow:", res.text); return false; }
+    if (!origs["https://localhost:8287/redirect"]) {
+        console.log("originalUrl set:", Object.keys(origs));
+        return false;
+    }
+    if (!finals["https://localhost:8287/slow"]) {
+        console.log("url set:", Object.keys(finals));
+        return false;
+    }
+    return true;
+});
+
+testFeature("xferCallback omitted - no behavior change", function() {
+    /* Sanity: fetch without xferCallback returns the same body and
+     * status as one with a no-op xferCallback. Catches any silent
+     * regression where adding the hook changed the transfer path. */
+    var a = curl.fetch("https://localhost:8287/sample", {insecure: true});
+    var b = curl.fetch("https://localhost:8287/sample", {
+        insecure: true,
+        xferCallback: function(){ /* no return, keep going */ }
+    });
+    return a.status === b.status && sprintf('%s', a.body) === sprintf('%s', b.body);
+});
+
+/* ---- end xferCallback tests ---- */
 
 var thr = new rampart.thread();
 

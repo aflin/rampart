@@ -209,6 +209,23 @@ function query(prompt, callback, finalCallback, ep) {
             connectTimeout: 10,
             postJSON: postObj,
 
+            /* Tick-driven cancel check: fires regardless of whether SSE
+             * bytes are flowing, so the same self.cancel = true that
+             * the chunkCallback honors also aborts during prefill /
+             * silent server wait. 4 Hz = ~250ms upper bound on
+             * cancel-to-abort latency for the slow-start phase.
+             *
+             * Per rampart's callback convention, returning false is
+             * the abort signal; anything else (including undefined)
+             * continues. */
+            xferCallback: function(info) {
+                if(self.cancel === true) {
+                    self.cancel = false;
+                    return false;
+                }
+            },
+            xferCallbackRate: 4,
+
             chunkCallback: function(r) {
                 if(self.cancel === true) {
                     self.cancel = false;

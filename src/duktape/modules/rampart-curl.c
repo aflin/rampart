@@ -136,6 +136,9 @@ CURLREQ
     void        *chunkfuncptr;  // duktape heap pointer to chunk callback
     CHUNKDATA   *chunkdata;     // see above - struct for chunking and overlapping data
     void        *progfuncptr;   // duktape heap pointer to progress callback
+    void        *xferfuncptr;   // duktape heap pointer to xferinfo callback (CURLOPT_XFERINFOFUNCTION); NULL = none
+    double       xfer_rate;     // xferCallback invocation cap in Hz; 0 = uncapped (every libcurl tick)
+    uint64_t     last_xfer_ms;  // monotonic ms timestamp of last xferCallback invocation
     char        *errbuf;        // buffer for curl to store errors
     char        *c_errbuf;      // buffer for chunk_errors;
     duk_context *ctx;           // if async in websockets, get_current_thread() will return wrong ctx, so keep it here
@@ -2214,7 +2217,20 @@ WriteCallback(void *contents, size_t size, size_t nmemb, void *userp)
             if( required > cdat->chunkmsize )
             {
                 size_t pos = cdat->chunkpos - cdat->chunkbuf;        // 'chunkpos' position from beginning of buf
-                size_t bpos = cdat->chunkdatabegin - cdat->chunkbuf; // 'begindata' position from beginning of buf -- THIS MAY GENERATE A WARNING FOR THE VERY THING WE ARE PREVENTING!!!
+                // 2026-05: guard the chunkdatabegin offset capture against
+                // a NULL pointer. chunkdatabegin can be NULL on first call
+                // (CALLOC-zeroed) or right after a complete chunk reset
+                // (line ~2349). NULL - char* is technically UB and triggers
+                // gcc -Wuse-after-free here even though the bad value is
+                // never dereferenced (reads are gated on chunksize, which
+                // is paired with chunkdatabegin). Treating NULL as offset
+                // 0 silences the warning and removes the latent UB; no
+                // behavioral change because the bad value was never read.
+                // OLD:
+                // size_t bpos = cdat->chunkdatabegin - cdat->chunkbuf;
+                size_t bpos = cdat->chunkdatabegin
+                              ? (size_t)(cdat->chunkdatabegin - cdat->chunkbuf)
+                              : 0;
 
                 cdat->chunkmsize = required;
                 // if there's a parse error, don't continue to grow.
@@ -2479,7 +2495,8 @@ void duk_curl_setopts(duk_context *ctx, CURL *curl, int idx, CURLREQ *req)
 
         // these are handled elsewhere
         if( !strcmp(op,"url")  || !strcmp(op,"callback") || !strcmp(sop,"chunkCallback") ||
-            !strcmp(sop,"progressCallback") || !strcmp(sop,"skipFinalRes") )
+            !strcmp(sop,"progressCallback") || !strcmp(sop,"skipFinalRes") ||
+            !strcmp(sop,"xferCallback") || !strcmp(sop,"xferCallbackRate") )
         {
             duk_pop_2(ctx);
             continue;
@@ -2556,6 +2573,191 @@ void duk_curl_setopts(duk_context *ctx, CURL *curl, int idx, CURLREQ *req)
     if(rp_curl_def_bundle && !got_cert_opt)
         curl_easy_setopt(curl, CURLOPT_CAINFO, rp_curl_def_bundle);
 
+}
+
+static int xferinfo_cb(void *clientp,
+                       curl_off_t dltotal, curl_off_t dlnow,
+                       curl_off_t ultotal, curl_off_t ulnow);
+
+/* Parse xferCallback / xferCallbackRate from the options object and
+ * wire them onto an already-created request. Called from each user-
+ * facing entry point (fetch/fetchAsync/submit/submitAsync) right
+ * after new_request returns. Purely additive: if 'xferCallback' is
+ * absent the request is left untouched (CURLOPT_NOPROGRESS stays at
+ * its libcurl default of 1, no callback fires, zero overhead). */
+static void setup_xfer_callback(CURLREQ *req, duk_context *ctx, duk_idx_t options_idx)
+{
+    if (!req || options_idx < 0) return;
+    if (!duk_is_object(ctx, options_idx)) return;
+
+    if (!duk_get_prop_string(ctx, options_idx, "xferCallback")) {
+        duk_pop(ctx);
+        return;
+    }
+    if (!duk_is_function(ctx, -1)) {
+        duk_pop(ctx);
+        RP_THROW(ctx, "curl - 'xferCallback' option must be a Function");
+    }
+
+    /* Anchor the JS function on req->thisptr so it survives GC for
+     * the lifetime of the transfer. The whole "this" object is in the
+     * stash under "curlthis_<ptr>" and gets freed in clean_req. */
+    if (req->thisptr) {
+        duk_push_heapptr(ctx, req->thisptr);
+        duk_dup(ctx, -2);
+        duk_put_prop_string(ctx, -2, "xferCallback");
+        duk_pop(ctx);
+    }
+
+    req->xferfuncptr  = duk_get_heapptr(ctx, -1);
+    req->last_xfer_ms = 0;
+    duk_pop(ctx);   /* the xferCallback function */
+
+    /* xferCallbackRate is in Hz. Default 4 (250ms between calls).
+     * Zero / missing-but-non-numeric is treated as "uncapped" — fire
+     * on every libcurl tick. Negative values are clamped to 0. */
+    req->xfer_rate = 4.0;
+    if (duk_get_prop_string(ctx, options_idx, "xferCallbackRate")) {
+        if (duk_is_number(ctx, -1)) {
+            double r = duk_get_number(ctx, -1);
+            req->xfer_rate = (r < 0) ? 0 : r;
+        }
+    }
+    duk_pop(ctx);
+
+    /* Wire up libcurl. CURLOPT_NOPROGRESS defaults to 1 (silent); we
+     * have to flip it to 0 for the xferinfo callback to be called. */
+    curl_easy_setopt(req->curl, CURLOPT_NOPROGRESS,        0L);
+    curl_easy_setopt(req->curl, CURLOPT_XFERINFOFUNCTION,  xferinfo_cb);
+    curl_easy_setopt(req->curl, CURLOPT_XFERINFODATA,      (void *)req);
+}
+
+/* Monotonic milliseconds. CLOCK_MONOTONIC is the right choice here —
+ * the throttle math must be immune to wall-clock jumps (NTP step,
+ * settimeofday). On systems where clock_gettime is unavailable we'd
+ * fall back to gettimeofday, but every supported platform has it. */
+static uint64_t curl_now_ms(void)
+{
+    struct timespec ts;
+    if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0)
+        return 0;
+    return (uint64_t)ts.tv_sec * 1000ULL + (uint64_t)(ts.tv_nsec / 1000000);
+}
+
+/* CURLOPT_XFERINFOFUNCTION handler. libcurl invokes this on its own
+ * tick (~1Hz idle, more often when transferring). We throttle to
+ * req->xfer_rate (in Hz) — 0 means no throttle. The JS callback
+ * receives an info object and returns truthy to abort the transfer
+ * (libcurl maps that to CURLE_ABORTED_BY_CALLBACK).
+ *
+ * This is purely additive — if req->xferfuncptr is NULL we never
+ * register this handler with libcurl in the first place, so the
+ * cost on the no-xferCallback path is zero. */
+static int xferinfo_cb(void *clientp,
+                       curl_off_t dltotal, curl_off_t dlnow,
+                       curl_off_t ultotal, curl_off_t ulnow)
+{
+    CURLREQ *req = (CURLREQ *)clientp;
+    if (!req || !req->xferfuncptr) return 0;
+
+    /* Throttle. xfer_rate is Hz; convert to a min-interval gate. */
+    if (req->xfer_rate > 0.0) {
+        uint64_t now    = curl_now_ms();
+        uint64_t minms  = (uint64_t)(1000.0 / req->xfer_rate);
+        if (req->last_xfer_ms && (now - req->last_xfer_ms) < minms)
+            return 0;
+        req->last_xfer_ms = now;
+    }
+
+    duk_context *ctx = req->ctx;
+    if (!ctx) return 0;
+
+    /* Pull the JS callback onto the stack and build the info arg. */
+    duk_push_heapptr(ctx, req->xferfuncptr);
+    duk_push_object(ctx);   /* info */
+
+    duk_push_number(ctx, (double)dlnow);
+    duk_put_prop_string(ctx, -2, "dlNow");
+    duk_push_number(ctx, (double)dltotal);
+    duk_put_prop_string(ctx, -2, "dlTotal");
+    duk_push_number(ctx, (double)ulnow);
+    duk_put_prop_string(ctx, -2, "ulNow");
+    duk_push_number(ctx, (double)ultotal);
+    duk_put_prop_string(ctx, -2, "ulTotal");
+
+    /* Phase/speed info via curl_easy_getinfo. These calls are cheap
+     * (struct reads on the easy handle); not RPCs. */
+    double dval;
+    if (curl_easy_getinfo(req->curl, CURLINFO_TOTAL_TIME, &dval) == CURLE_OK) {
+        duk_push_number(ctx, dval);
+        duk_put_prop_string(ctx, -2, "elapsed");
+    }
+    if (curl_easy_getinfo(req->curl, CURLINFO_SPEED_DOWNLOAD, &dval) == CURLE_OK) {
+        duk_push_number(ctx, dval);
+        duk_put_prop_string(ctx, -2, "speedDl");
+    }
+    if (curl_easy_getinfo(req->curl, CURLINFO_SPEED_UPLOAD, &dval) == CURLE_OK) {
+        duk_push_number(ctx, dval);
+        duk_put_prop_string(ctx, -2, "speedUl");
+    }
+    if (curl_easy_getinfo(req->curl, CURLINFO_CONNECT_TIME, &dval) == CURLE_OK) {
+        duk_push_number(ctx, dval);
+        duk_put_prop_string(ctx, -2, "connectTime");
+    }
+    if (curl_easy_getinfo(req->curl, CURLINFO_APPCONNECT_TIME, &dval) == CURLE_OK) {
+        duk_push_number(ctx, dval);
+        duk_put_prop_string(ctx, -2, "appConnectTime");
+    }
+    if (curl_easy_getinfo(req->curl, CURLINFO_STARTTRANSFER_TIME, &dval) == CURLE_OK) {
+        duk_push_number(ctx, dval);
+        duk_put_prop_string(ctx, -2, "headerTime");
+    }
+
+    long lval = 0;
+    if (curl_easy_getinfo(req->curl, CURLINFO_RESPONSE_CODE, &lval) == CURLE_OK) {
+        duk_push_int(ctx, (int)lval);
+        duk_put_prop_string(ctx, -2, "httpStatus");
+    }
+
+    /* originalUrl = the URL the script handed to fetch/Async. Stored
+     * verbatim in req->url at request creation, before any redirect. */
+    if (req->url) {
+        duk_push_string(ctx, req->url);
+        duk_put_prop_string(ctx, -2, "originalUrl");
+    }
+
+    /* url = effective URL after any redirect chain. May equal originalUrl
+     * if no redirects were followed. */
+    const char *effurl = NULL;
+    if (curl_easy_getinfo(req->curl, CURLINFO_EFFECTIVE_URL, &effurl) == CURLE_OK
+        && effurl)
+    {
+        duk_push_string(ctx, effurl);
+        duk_put_prop_string(ctx, -2, "url");
+    }
+
+    /* Call the JS function. If it throws, swallow the error and don't
+     * abort — same defensive posture as the existing progressCallback
+     * path. The transfer continues; subsequent ticks will retry.
+     *
+     * Convention (matches rampart's other callback APIs): the callback
+     * returns false to abort the transfer; any other return — including
+     * true, an object, or no return at all (undefined) — continues.
+     * duk_get_boolean_default(..., 1) defaults undefined to true (1)
+     * so "no return" doesn't accidentally cancel; only an explicit
+     * false (or other falsy: 0, null, "") triggers the abort. */
+    int abort_xfer = 0;
+    if (duk_pcall(ctx, 1) == 0) {
+        if (!duk_get_boolean_default(ctx, -1, 1))
+            abort_xfer = 1;
+    } else {
+        fprintf(stderr,
+                "rampart-curl: error in xferCallback: %s\n",
+                duk_safe_to_string(ctx, -1));
+    }
+    duk_pop(ctx);
+
+    return abort_xfer;
 }
 
 static void clean_req(CURLREQ *req)
@@ -2768,6 +2970,19 @@ CURLREQ *new_request(char *url, CURLREQ *cloner, duk_context *ctx, duk_idx_t opt
         curl_easy_setopt(req->curl, CURLOPT_WRITEDATA, (void *)&(req->body));
         curl_easy_setopt(req->curl, CURLOPT_HEADERDATA, (void *)&(req->header));
         curl_easy_setopt(req->curl, CURLOPT_URL, req->url);
+        /* curl_easy_duphandle copies CURLOPT_XFERINFOFUNCTION and the
+         * accompanying CURLOPT_XFERINFODATA, but the latter would point
+         * at cloner's request struct — using it would scribble on the
+         * wrong CURLREQ. We don't preserve xferCallback across addurl;
+         * clear the wire-up on the cloned handle. Caller can re-arm via
+         * setup_xfer_callback on this req if an options_idx is available
+         * (today addurl doesn't accept options, so it stays disabled). */
+        req->xferfuncptr = NULL;
+        req->xfer_rate   = 0;
+        req->last_xfer_ms = 0;
+        curl_easy_setopt(req->curl, CURLOPT_NOPROGRESS,       1L);
+        curl_easy_setopt(req->curl, CURLOPT_XFERINFOFUNCTION, NULL);
+        curl_easy_setopt(req->curl, CURLOPT_XFERINFODATA,     NULL);
         if(cf_idx > -1)
             duk_remove(ctx, cf_idx);
 
@@ -3375,6 +3590,7 @@ static duk_ret_t duk_curl_fetch_sync_async(duk_context *ctx, int async)
             if (!preq)
                 RP_THROW(ctx, "Failed to get new curl handle while getting %s", u);
 
+            setup_xfer_callback(preq, ctx, options_idx);
 
             curl_easy_setopt(preq->curl, CURLOPT_PRIVATE, preq);
             curl_multi_add_handle(cm, preq->curl);
@@ -3415,6 +3631,7 @@ static duk_ret_t duk_curl_fetch_sync_async(duk_context *ctx, int async)
     {
         if(skipdata)
             SET_BIT(req->flags, CURLREQ_F_PROGRESS_ONLY);
+        setup_xfer_callback(req, ctx, options_idx);
         /* Perform the request, res will get the return code */
         res = curl_easy_perform(req->curl);
         /* Check for errors */
@@ -3646,6 +3863,8 @@ static duk_ret_t duk_curl_submit_sync_async(duk_context *ctx, int async)
             if (!preq)
                 RP_THROW(ctx, "Failed to get new curl handle while getting %s", u);
 
+            setup_xfer_callback(preq, ctx, opts_obj_idx);
+
             curl_easy_setopt(preq->curl, CURLOPT_PRIVATE, preq);
             curl_multi_add_handle(cm, preq->curl);
 
@@ -3690,6 +3909,7 @@ static duk_ret_t duk_curl_submit_sync_async(duk_context *ctx, int async)
 
     if (req)
     {
+        setup_xfer_callback(req, ctx, opts_idx);
         /* Perform the request, res will get the return code */
         res = curl_easy_perform(req->curl);
         /* Check for errors */
