@@ -3184,14 +3184,53 @@ duk_ret_t duk_rp_read_file(duk_context *ctx)
 
 duk_ret_t duk_rp_readln_finalizer(duk_context *ctx)
 {
+    /* Object being finalized is at -1. We may have two resources to
+     * release: (a) saved termios if we put a tty/pty into canonical
+     * mode at construction; (b) a FILE* if we opened it ourselves
+     * (RTYPE_FILE) — for stdin / caller-supplied handles we MUST
+     * NOT fclose. The `owns_fp` flag distinguishes those. */
+
+    /* (a) Restore termios on the original fd, if saved. */
+    int restore_fd = -1;
+    if (duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("orig_termios_fd")))
+        restore_fd = duk_get_int(ctx, -1);
+    duk_pop(ctx);
+    if (duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("orig_termios")))
+    {
+        struct termios *orig = duk_get_pointer(ctx, -1);
+        duk_pop(ctx);
+        if (orig)
+        {
+            if (restore_fd >= 0)
+                tcsetattr(restore_fd, TCSAFLUSH, orig);
+            free(orig);
+        }
+        duk_push_pointer(ctx, NULL);
+        duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("orig_termios"));
+    }
+    else
+    {
+        duk_pop(ctx);
+    }
+
+    /* (b) Close fp only if we own it. */
+    int owns_fp = 0;
+    if (duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("owns_fp")))
+        owns_fp = duk_to_boolean(ctx, -1);
+    duk_pop(ctx);
+
     if (duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("filepointer")))
     {
         FILE *fp = duk_get_pointer(ctx, -1);
         duk_pop(ctx);
-        if (fp)
+        if (fp && owns_fp)
         {
             rp_fclose(fp);
         }
+    }
+    else
+    {
+        duk_pop(ctx);
     }
     duk_push_pointer(ctx, NULL);
     duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("filepointer"));
@@ -3525,6 +3564,53 @@ duk_ret_t duk_rp_readline(duk_context *ctx)
     duk_push_pointer(ctx,f);
     duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("filepointer"));
 
+    /* Mark fp ownership: RTYPE_FILE means we opened a file by path
+     * and must fclose it on finalize. For stdin / caller-supplied
+     * handles / fopenBuffer we MUST NOT fclose. */
+    duk_push_boolean(ctx, type == RTYPE_FILE);
+    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("owns_fp"));
+
+    /* If the underlying fd is a terminal (real tty, pty, or
+     * /dev/tty opened by path), put it into canonical "cooked" mode
+     * for the duration of this readLine handle. getline() relies on
+     * the kernel's line discipline for ERASE / KILL / line buffering
+     * — without ICANON, backspace echoes as ^? and the user can't
+     * edit their input. We save the prior termios and restore it on
+     * finalize so the terminal state outlives this script cleanly.
+     *
+     * isatty() correctly skips pipes / redirected files / regular
+     * files / fifos — none of those have a termios to set, and
+     * cooked mode is meaningless without a terminal. */
+    if (f != NULL)
+    {
+        int fd = fileno(f);
+        if (fd >= 0 && isatty(fd))
+        {
+            struct termios cur;
+            if (tcgetattr(fd, &cur) == 0)
+            {
+                struct termios cooked = cur;
+                /* OR in the canonical-mode + echo flags. We don't
+                 * touch input/output flags or c_cc — the user's
+                 * existing erase/kill characters and CR/LF
+                 * translation stay as configured. */
+                cooked.c_lflag |= ICANON | ECHO | ECHOE | ECHOK | ISIG | IEXTEN;
+                if (tcsetattr(fd, TCSANOW, &cooked) == 0)
+                {
+                    struct termios *saved = malloc(sizeof(struct termios));
+                    if (saved)
+                    {
+                        *saved = cur;
+                        duk_push_pointer(ctx, saved);
+                        duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("orig_termios"));
+                        duk_push_int(ctx, fd);
+                        duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("orig_termios_fd"));
+                    }
+                }
+            }
+        }
+    }
+
     if(f==NULL && type!=RTYPE_FOPEN_BUFFER) //its a fifo
     {
         int to=-1;
@@ -3544,7 +3630,12 @@ duk_ret_t duk_rp_readline(duk_context *ctx)
 
     duk_put_prop_string(ctx, -2, "next");
 
-    if(type == RTYPE_FILE)
+    /* Attach finalizer for any case that owns cleanup work: either
+     * we own the FILE* (RTYPE_FILE), or we saved termios state to
+     * restore. The other types (RTYPE_STDIN / RTYPE_HANDLE / fifo
+     * / fopenBuffer) only need cleanup on the termios path. */
+    if (type == RTYPE_FILE ||
+        duk_has_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("orig_termios")))
     {
         duk_push_c_function(ctx,duk_rp_readln_finalizer,1);
         duk_set_finalizer(ctx, -2);
