@@ -75,3 +75,12 @@ char *prototype_c(void);
 int some_global_var = 42;
 my_ret_t another_var;
 extern int an_extern_var;
+
+/* #define macros — both object-like and function-like get captured
+ * as kind="preproc_def" / "preproc_function_def" with the macro
+ * name. The fallback name search ('identifier' first) returns the
+ * macro's identifier child. */
+#define MAX_BUFFER_SIZE 4096
+#define VERSION_STRING "1.0"
+#define SQUARE(x) ((x) * (x))
+#define MIN_VAL(a, b) ((a) < (b) ? (a) : (b))

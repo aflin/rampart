@@ -102,8 +102,14 @@ static const lang_def_t LANGUAGES[] = {
     {
         "c",
         tree_sitter_c,
+        /* preproc_def covers `#define X value`; preproc_function_def
+         * covers `#define FOO(x) ...`. Both have an identifier as their
+         * first named child (the macro name). They get treated as
+         * symbols so list_project_symbols / recall_project_def can find
+         * macros without a separate code path. */
         { "function_definition", "struct_specifier", "enum_specifier",
-          "union_specifier", "type_definition", NULL },
+          "union_specifier", "type_definition",
+          "preproc_def", "preproc_function_def", NULL },
         "name",
         /* C function_definition has no "name" field; the identifier is
          * buried inside the declarator. First identifier or type_identifier
@@ -116,10 +122,13 @@ static const lang_def_t LANGUAGES[] = {
         /* C++ shares C's function_definition structure but adds class,
          * namespace, and template declarations. Skipping template_declaration
          * here — its body is a class/function we want to capture at the
-         * inner level so we don't double-emit. */
+         * inner level so we don't double-emit.
+         * preproc_def / preproc_function_def included for symmetry with
+         * the C grammar — both capture macro names. */
         { "function_definition", "class_specifier", "struct_specifier",
           "enum_specifier", "union_specifier", "namespace_definition",
-          "type_definition", NULL },
+          "type_definition",
+          "preproc_def", "preproc_function_def", NULL },
         "name",
         /* Only "identifier" in the fallback list — NOT type_identifier.
          * C++ template functions like `T identity(T)` have the return

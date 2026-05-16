@@ -302,15 +302,22 @@ var expected_c = [
      * descent in c_proto_declarator (mirrored implicitly in
      * function_definition narrowing) lets us find the function name. */
     {name: "typed_ptr_returner", kind: "function_definition", line: 61},
-    /* Function PROTOTYPES — new in this build. kind="function_declaration"
-     * distinguishes them from the body-containing function_definition. */
+    /* Function PROTOTYPES — kind="function_declaration" distinguishes
+     * them from the body-containing function_definition. */
     {name: "prototype_a", kind: "function_declaration", line: 68},
     {name: "prototype_b", kind: "function_declaration", line: 69},
-    {name: "prototype_c", kind: "function_declaration", line: 70}
+    {name: "prototype_c", kind: "function_declaration", line: 70},
     /* some_global_var / another_var / an_extern_var on lines 75-77
      * are variable declarations — they must NOT appear here. The
      * c_proto_declarator function rejects them because their
      * declarator is not a function_declarator. */
+    /* #define macros — both forms captured. preproc_def for
+     * object-like macros (no parens), preproc_function_def for
+     * function-like macros. */
+    {name: "MAX_BUFFER_SIZE", kind: "preproc_def",          line: 83},
+    {name: "VERSION_STRING",  kind: "preproc_def",          line: 84},
+    {name: "SQUARE",          kind: "preproc_function_def", line: 85},
+    {name: "MIN_VAL",         kind: "preproc_function_def", line: 86}
 ];
 
 var expected_cpp = [
@@ -652,7 +659,7 @@ testFeature("javascript: 10 symbols", function() {
                          expected_javascript);
 });
 
-testFeature("c: 18 symbols returned", function() {
+testFeature("c: 22 symbols returned", function() {
     return assertSymbols(ts.extractSymbols(readSample('c.c'), 'c'),
                          expected_c);
 });
