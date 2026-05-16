@@ -446,22 +446,103 @@ static void push_signature(duk_context *ctx, const char *src, TSNode node)
     duk_concat(ctx, 2);
 }
 
+/* True for C and C++ — those grammars share a function_definition shape
+ * where the identifier is buried inside a function_declarator subtree
+ * via the `declarator` field, AND prototypes appear as `declaration`
+ * nodes (free-function decls in headers) or `field_declaration` (class
+ * member decls inside a class body). Both cases need treatment that
+ * other tree-sitter grammars don't. */
+static int is_c_family(const lang_def_t *lang)
+{
+    return lang && lang->name &&
+        (strcmp(lang->name, "c") == 0 || strcmp(lang->name, "cpp") == 0);
+}
+
+/* For a C/C++ `declaration` node, determine whether its declarator is
+ * a function_declarator (i.e., this is a function prototype, not a
+ * variable / type / extern declaration). Returns the function_declarator
+ * subtree on match, else (TSNode){0}. */
+static TSNode c_proto_declarator(TSNode decl)
+{
+    TSNode d = ts_node_child_by_field_name(decl, "declarator", 10);
+    if (ts_node_is_null(d)) return (TSNode){0};
+    /* Walk down through pointer_declarator wrappers (for return-type
+     * pointers like `char *foo();`). The innermost declarator is the
+     * function_declarator if this is a prototype. */
+    while (!ts_node_is_null(d) &&
+           strcmp(ts_node_type(d), "pointer_declarator") == 0) {
+        TSNode inner = ts_node_child_by_field_name(d, "declarator", 10);
+        if (ts_node_is_null(inner)) break;
+        d = inner;
+    }
+    if (!ts_node_is_null(d) &&
+        strcmp(ts_node_type(d), "function_declarator") == 0)
+        return d;
+    return (TSNode){0};
+}
+
 /* Visit `node`. If it's a definition we care about, push one object
  * onto the array at `arr_idx`. Then recurse into children — class
- * bodies contain method_definitions which we want to surface. */
+ * bodies contain method_definitions which we want to surface.
+ *
+ * C/C++ special cases:
+ *   - function_definition: the identifier lives inside the
+ *     `declarator` subtree, NOT at the top of the node. Restricting
+ *     the fallback search to that subtree avoids picking the return
+ *     type (a type_identifier for typedef returns like `duk_ret_t fn`)
+ *     as the function name.
+ *   - declaration: if the declarator is a function_declarator, this is
+ *     a function prototype (typical of headers). Emit it with
+ *     kind="function_declaration" so callers can filter; the name
+ *     extraction uses the same declarator-subtree narrowing.
+ */
 static void walk_collect(duk_context *ctx, const char *src,
                          const lang_def_t *lang,
                          TSNode node, duk_idx_t arr_idx, duk_uarridx_t *out_i)
 {
     const char *type = ts_node_type(node);
-    if (is_fn_node(lang, type)) {
+
+    /* Determine whether this node should be emitted, what subtree to
+     * search for the name, and what kind label to attach. */
+    int emit               = is_fn_node(lang, type);
+    const char *kind_label = type;
+    TSNode subject         = node;     /* node-wide name search by default */
+
+    if (is_c_family(lang)) {
+        if (strcmp(type, "function_definition") == 0) {
+            /* Narrow the name search to the declarator subtree so the
+             * return type's type_identifier (e.g., duk_ret_t) can't be
+             * mistaken for the function name via depth-first match. */
+            TSNode d = ts_node_child_by_field_name(node, "declarator", 10);
+            if (!ts_node_is_null(d)) subject = d;
+        } else if (!emit && strcmp(type, "declaration") == 0) {
+            /* Function prototype detection. Only emit when the
+             * declarator is a function_declarator; ordinary variable
+             * and typedef-extern declarations stay invisible. */
+            TSNode d = c_proto_declarator(node);
+            if (!ts_node_is_null(d)) {
+                emit       = 1;
+                kind_label = "function_declaration";
+                subject    = d;
+            }
+        }
+    }
+
+    if (emit) {
         TSNode name_node = (TSNode){0};
-        if (lang->name_field) {
+        /* Field-name lookup is meaningless on a `declaration` node
+         * (its top-level field is `declarator`, not `name`); skip it
+         * when we routed through the prototype branch above. The
+         * existing field-name lookup is fine for everything else. */
+        int try_field = lang->name_field &&
+                        !(is_c_family(lang) &&
+                          strcmp(type, "declaration") == 0);
+        if (try_field) {
             name_node = ts_node_child_by_field_name(
                 node, lang->name_field, (uint32_t)strlen(lang->name_field));
         }
         if (ts_node_is_null(name_node))
-            name_node = find_fallback_name(lang, node);
+            name_node = find_fallback_name(lang, subject);
         TSPoint p = ts_node_start_point(node);
 
         duk_push_object(ctx);
@@ -473,7 +554,7 @@ static void walk_collect(duk_context *ctx, const char *src,
         }
         duk_put_prop_string(ctx, -2, "name");
 
-        duk_push_string(ctx, type);
+        duk_push_string(ctx, kind_label);
         duk_put_prop_string(ctx, -2, "kind");
 
         duk_push_uint(ctx, p.row + 1);          /* 1-based */

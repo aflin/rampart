@@ -178,7 +178,7 @@ testFeature("strict=true returns clean on valid input", function() {
     } catch (e) { return false; }
 });
 
-testFeature("strict=false default returns partial on broken input", function() {
+testFeature("strict=false returns partial on broken input", function() {
     /* Partial result expected — tree-sitter recovers and surfaces
      * whatever it can. hasErrors=true tells the caller it's incomplete. */
     var r = ts.extractSymbols(
@@ -188,7 +188,7 @@ testFeature("strict=false default returns partial on broken input", function() {
 
 /* ========== parse() ========== */
 
-testFeature("parse: returns root node with type/line/children", function() {
+testFeature("parse: returns root with type/line/children", function() {
     var t = ts.parse('function foo() {}', 'javascript');
     return t.type === 'program'
         && t.line === 1
@@ -232,7 +232,7 @@ testFeature("parse: works on parse-only grammar (markdown)", function() {
     return Array.isArray(t.children) && t.hasError === false;
 });
 
-testFeature("parse: includeText attaches source slice per node", function() {
+testFeature("parse: includeText attaches src slice per node", function() {
     var t = ts.parse('var x = 1;', 'javascript', {includeText: true});
     return typeof t.text === 'string' && t.text.indexOf('var x = 1') === 0;
 });
@@ -242,7 +242,7 @@ testFeature("parse: omits text by default", function() {
     return typeof t.text === 'undefined';
 });
 
-testFeature("parse: includeUnnamed includes punctuation nodes", function() {
+testFeature("parse: includeUnnamed includes punct nodes", function() {
     /* Named-only walk skips '{' / '}' / ';' etc.; includeUnnamed
      * surfaces them as children too. The function body should have
      * MORE children with the flag than without. */
@@ -292,7 +292,25 @@ var expected_c = [
     {name: "Variant", kind: "union_specifier", line: 36},
     {name: "callback_id", kind: "type_definition", line: 41},
     {name: "main", kind: "function_definition", line: 43},
-    {name: "Point", kind: "struct_specifier", line: 44}
+    {name: "Point", kind: "struct_specifier", line: 44},
+    /* Typedef-return-type fix: the function name is "fancy_returner",
+     * NOT "my_ret_t" (the return type). Before the walk_collect fix
+     * this row would have shown name="my_ret_t". */
+    {name: "my_ret_t", kind: "type_definition", line: 52},
+    {name: "fancy_returner", kind: "function_definition", line: 54},
+    /* Pointer return with typedef-able type. The pointer_declarator
+     * descent in c_proto_declarator (mirrored implicitly in
+     * function_definition narrowing) lets us find the function name. */
+    {name: "typed_ptr_returner", kind: "function_definition", line: 61},
+    /* Function PROTOTYPES — new in this build. kind="function_declaration"
+     * distinguishes them from the body-containing function_definition. */
+    {name: "prototype_a", kind: "function_declaration", line: 68},
+    {name: "prototype_b", kind: "function_declaration", line: 69},
+    {name: "prototype_c", kind: "function_declaration", line: 70}
+    /* some_global_var / another_var / an_extern_var on lines 75-77
+     * are variable declarations — they must NOT appear here. The
+     * c_proto_declarator function rejects them because their
+     * declarator is not a function_declarator. */
 ];
 
 var expected_cpp = [
@@ -634,7 +652,7 @@ testFeature("javascript: 10 symbols", function() {
                          expected_javascript);
 });
 
-testFeature("c: 12 symbols (incl anon-struct quirk)", function() {
+testFeature("c: 18 symbols returned", function() {
     return assertSymbols(ts.extractSymbols(readSample('c.c'), 'c'),
                          expected_c);
 });
