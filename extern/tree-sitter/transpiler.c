@@ -5611,7 +5611,11 @@ static int rewrite_lexical_declaration(EditList *edits, const char *src, TSNode 
     uint32_t c = ts_node_child_count(lexical_decl);
     int have_let = 0;
 
-    // --- 1) Replace 'let'/'const' keyword with 'var'
+    // --- 1) Replace 'let' keyword with 'var'. Leave 'const' alone:
+    // duktape parses 'const' natively (treats it as var), and rewriting
+    // it triggers the block-wrap path below which broke 'arguments'.
+    // See transpiler-todo.md §8 for the planned proper fix.
+    int have_const = 0;
     for (uint32_t i = 0; i < c; i++)
     {
         TSNode kid = ts_node_child(lexical_decl, i);
@@ -5629,15 +5633,16 @@ static int rewrite_lexical_declaration(EditList *edits, const char *src, TSNode 
 
         if (strcmp(kw, "const") == 0)
         {
-            if (overlaps)
-                return 1;
-
-            add_edit(edits, ts_node_start_byte(kid), ts_node_end_byte(kid), "var  ", NULL);
-            have_let = 1;
+            /* Leave const alone — duktape parses it natively.
+               Don't fall through to the IIFE wrap below. */
+            have_const = 1;
             break;
         }
     }
+    (void)have_const;
 
+    /* Only `let` needs the wrap/scope handling below. `const` is left
+       fully alone for Phase 0 (see transpiler-todo.md §8). */
     if (!have_let)
         return ret;
 
@@ -5720,43 +5725,14 @@ static int rewrite_lexical_declaration(EditList *edits, const char *src, TSNode 
         }
         else
         {
-            // Not in a for-header. Consider block-wrapping for plain blocks to preserve let scope.
-            // Find nearest enclosing statement_block stopping at structural boundaries.
-            TSNode anc = parent;
-            TSNode block = (TSNode){0};
-            while (!ts_node_is_null(anc))
-            {
-                const char *t = ts_node_type(anc);
-                if (strcmp(t, "statement_block") == 0)
-                {
-                    block = anc;
-                    break;
-                }
-                if (strcmp(t, "function") == 0 || strcmp(t, "function_declaration") == 0 ||
-                    strcmp(t, "method_definition") == 0 || strcmp(t, "arrow_function") == 0 ||
-                    strcmp(t, "class_body") == 0 || strcmp(t, "program") == 0 || strcmp(t, "switch_statement") == 0 ||
-                    strcmp(t, "for_statement") == 0 || strcmp(t, "for_in_statement") == 0 ||
-                    strcmp(t, "for_of_statement") == 0 || strcmp(t, "while_statement") == 0 ||
-                    strcmp(t, "do_statement") == 0)
-                {
-                    break;
-                }
-                anc = ts_node_parent(anc);
-            }
-            if (!ts_node_is_null(block))
-            {
-                size_t bs = ts_node_start_byte(block);
-                size_t be = ts_node_end_byte(block);
-                if (!span_has_flow_ctrl_tokens(src, bs, be))
-                {
-                    add_edit(edits, bs + 1, bs + 1, "(function(){ ", claimed);
-                    add_edit(edits, be - 1, be - 1, " }());", claimed);
-                }
-            }
-
-            /* Top-level let/const at program level: converting to var is sufficient.
-               IIFE wrapping would break eval() since the C eval replacement
-               always runs as indirect eval (global scope). */
+            /* Phase 0 (see transpiler-todo.md §8): drop the
+               block-wrap-via-IIFE entirely. The IIFE shadowed `arguments`
+               (and would also shadow `this`, return/break/continue) for
+               any function body that used both a `let` and `arguments`.
+               Trade-off: block-scoped `let x` inside a nested `if`/`{}`
+               within a function now gets var-style scoping (same as
+               duktape's native behavior for var and const). The proper
+               fix is the babel-style rename pass planned in §8. */
         }
     }
 
@@ -5970,20 +5946,44 @@ static int rewrite_for_of_destructuring(EditList *edits, const char *src, TSNode
 
     int is_block = (strcmp(ts_node_type(body), "statement_block") == 0);
 
+    /* Generate unique helper names per call so nested for-of loops don't
+       collide. Previously these were hardcoded `_pairs`/`_i`/`_loop`/`_pairs$_i`
+       and inner `var _pairs = ...` declarations would hoist into the outer
+       _loop's scope, shadowing the closure refs the outer body needed.
+       See transpiler-todo.md §9 (now fixed). */
+    unsigned ctr = ++_destr_counter;
+    char nm_loop[32], nm_pairs[32], nm_i[32], nm_pi[32];
+    snprintf(nm_loop,  sizeof(nm_loop),  "_loop%u",   ctr);
+    snprintf(nm_pairs, sizeof(nm_pairs), "_pairs%u",  ctr);
+    snprintf(nm_i,     sizeof(nm_i),     "_i%u",      ctr);
+    snprintf(nm_pi,    sizeof(nm_pi),    "_pi%u",     ctr);
+
     rp_string *out = rp_string_new(256);
 
     // _loop declaration
-    rp_string_puts(out, "var _loop = function _loop() { var _pairs$_i = _TrN_Sp.slicedToArray(_pairs[_i], ");
+    rp_string_puts(out, "var ");
+    rp_string_puts(out, nm_loop);
+    rp_string_puts(out, " = function ");
+    rp_string_puts(out, nm_loop);
+    rp_string_puts(out, "() { var ");
+    rp_string_puts(out, nm_pi);
+    rp_string_puts(out, " = _TrN_Sp.slicedToArray(");
+    rp_string_puts(out, nm_pairs);
+    rp_string_puts(out, "[");
+    rp_string_puts(out, nm_i);
+    rp_string_puts(out, "], ");
     rp_string_appendf(out, "%d", N);
     rp_string_puts(out, "), ");
 
-    // bindings: a = _pairs$_i[0], b = _pairs$_i[1];
+    // bindings: a = <nm_pi>[0], b = <nm_pi>[1];
     for (size_t k = 0; k < alen; k++)
     {
         if (k)
             rp_string_puts(out, ",");
         rp_string_puts(out, arr[k].name);
-        rp_string_puts(out, " = _pairs$_i[");
+        rp_string_puts(out, " = ");
+        rp_string_puts(out, nm_pi);
+        rp_string_puts(out, "[");
         char ibuf[32];
         snprintf(ibuf, sizeof(ibuf), "%d", arr[k].index);
         rp_string_puts(out, ibuf);
@@ -6005,9 +6005,21 @@ static int rewrite_for_of_destructuring(EditList *edits, const char *src, TSNode
     }
 
     // for loop header using array length
-    rp_string_puts(out, "for (var _i = 0, _pairs = ");
+    rp_string_puts(out, "for (var ");
+    rp_string_puts(out, nm_i);
+    rp_string_puts(out, " = 0, ");
+    rp_string_puts(out, nm_pairs);
+    rp_string_puts(out, " = ");
     rp_string_putsn(out, src + rs, re - rs);
-    rp_string_puts(out, "; _i < _pairs.length; _i++) { _loop(); }");
+    rp_string_puts(out, "; ");
+    rp_string_puts(out, nm_i);
+    rp_string_puts(out, " < ");
+    rp_string_puts(out, nm_pairs);
+    rp_string_puts(out, ".length; ");
+    rp_string_puts(out, nm_i);
+    rp_string_puts(out, "++) { ");
+    rp_string_puts(out, nm_loop);
+    rp_string_puts(out, "(); }");
 
     // Replace entire for-of statement
     add_edit_take_ownership(edits, fs, fe, rp_string_steal(out), claimed);

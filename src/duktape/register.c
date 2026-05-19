@@ -7,6 +7,7 @@
 #include "register.h"
 #include "core/module.h"
 #include "globals/printf.h"
+#include "globals/rampart-buffer.h"
 #include "rampart.h"
 #include "../include/version.h"
 #include "rp_transpile.h"
@@ -774,101 +775,17 @@ static void add_extra_object_funcs(duk_context *ctx)
     duk_pop(ctx); /* pop Object */
 }
 
-duk_ret_t duk_rp_buffer_from(duk_context *ctx)
-{
+/* Buffer.from / Buffer.alloc / encoding-aware methods moved to
+ * duktape/globals/rampart-buffer.c. Init is duk_rp_buffer_init(). */
 
-    if(duk_is_buffer_data(ctx, 0) || duk_is_string(ctx, 0) )
-    {
-        duk_size_t from_sz;
-        void *from_buf = (void *) REQUIRE_STR_OR_BUF(ctx, 0, &from_sz, "");
-        void *to_buf = duk_get_buffer_data(ctx, -1, NULL);
+/* TextEncoder/TextDecoder WHATWG-spec fixes live in
+ * duktape/globals/rampart-textencoding.c. Init runs AFTER Buffer init
+ * because TextDecoder is implemented in terms of Buffer.toString(enc). */
+#include "globals/rampart-textencoding.h"
 
-        duk_get_global_string(ctx, "Buffer");
-        duk_push_number(ctx, (double) from_sz);
-        duk_new(ctx, 1);
-
-        to_buf = duk_get_buffer_data(ctx, -1, NULL);
-        memcpy(to_buf, from_buf, from_sz);
-    }
-    else if(duk_is_array(ctx, 0))
-    {
-        duk_size_t arr_len = duk_get_length(ctx, 0);
-        unsigned char *to_buf;
-        duk_size_t i;
-
-        duk_get_global_string(ctx, "Buffer");
-        duk_push_number(ctx, (double) arr_len);
-        duk_new(ctx, 1);
-
-        to_buf = (unsigned char *) duk_get_buffer_data(ctx, -1, NULL);
-        for(i = 0; i < arr_len; i++)
-        {
-            duk_get_prop_index(ctx, 0, (duk_uarridx_t) i);
-            to_buf[i] = (unsigned char)(duk_to_int(ctx, -1) & 0xFF);
-            duk_pop(ctx);
-        }
-    }
-    else
-        RP_THROW(ctx, "Buffer.from: Argument must be a Buffer, String, or Array");
-
-    return 1;
-}
-
-duk_ret_t duk_rp_buffer_alloc(duk_context *ctx)
-{
-    int size = 0;
-
-    size = REQUIRE_INT(ctx, 0, "Buffer.alloc: size must be an integer");
-    if(size < 0)
-        RP_THROW(ctx, "Buffer.alloc: size must be a positive number");
-
-    duk_get_global_string(ctx, "Buffer");
-    duk_dup(ctx, 0);
-    duk_new(ctx, 1);
-
-    if(duk_is_number(ctx, 1))
-    {
-        unsigned char fill_val = (unsigned char)(duk_to_int(ctx, 1) & 0xFF);
-        unsigned char *to_buf = (unsigned char *) duk_get_buffer_data(ctx, -1, NULL);
-        memset(to_buf, fill_val, (size_t)size);
-    }
-    else if(duk_is_buffer_data(ctx, 1) || duk_is_string(ctx, 1) )
-    {
-        duk_size_t from_sz;
-        int i=0;
-        const char *from_buf = REQUIRE_STR_OR_BUF(ctx, 1, &from_sz, "");
-        char *to_buf = (char *) duk_get_buffer_data(ctx, -1, NULL);
-
-        if (from_sz > 0)
-        {
-            while(i<size)
-            {
-                int idx = i%from_sz;
-                to_buf[i]=from_buf[idx];
-                i++;
-            }
-        }
-    }
-    else if(!duk_is_undefined(ctx, 1))
-        RP_THROW(ctx, "Buffer.alloc: Second argument must be a Number, Buffer, or String");
-
-    return 1;
-}
-
-static void add_buffer_func(duk_context *ctx)
-{
-    duk_get_global_string(ctx, "Buffer");
-    duk_push_c_function(ctx, duk_rp_buffer_alloc, 3);
-    duk_put_prop_string(ctx, -2, "alloc");
-    duk_push_c_function(ctx, duk_rp_buffer_from, 1);
-    duk_put_prop_string(ctx, -2, "from");
-
-    duk_rp_set_enum_false(ctx, -1, "alloc");
-    duk_rp_set_enum_false(ctx, -1, "from");
-
-    /* TODO: add all node methods */
-    duk_pop(ctx);
-}
+/* Node-style additions to the global console (time/table/group/count/clear).
+ * Patches the global; benefits all rampart code. */
+#include "globals/rampart-console.h"
 
 static duk_ret_t rp_eval_js(duk_context *ctx)
 {
@@ -905,14 +822,21 @@ static duk_ret_t rp_eval_js(duk_context *ctx)
         duk_push_string(ctx, tickified);
         free(tickified);
         */
-        /* Use transpile_eval to skip program-level IIFE wrapping,
-           which would hide caller's variables from eval scope */
-        RP_ParseRes res = transpile_eval(source, strlen(source), 0);
+        /* Only transpile if -t was passed or source has "use transpiler".
+           Otherwise tickify (template-literal processing only).  This
+           keeps eval'd code free of `_TrN_Sp._fs(...)` wrappers in the
+           common no-transpiler case — important for worker threads that
+           eval plain ES5 in fresh duktape heaps where _TrN_Sp may not
+           be installed. */
+        RP_ParseRes res = rp_get_transpiled_eval((char *)source, NULL);
 
         if (res.err)
         {
+            const char *emsg = res.errmsg ? res.errmsg : "Syntax error: parse error in eval";
+            char *emcopy = emsg ? strdup(emsg) : NULL;
             freeParseRes(&res);
-            RP_THROW(ctx, "Syntax error: parse error in eval");
+            RP_THROW(ctx, "%s", emcopy ? emcopy : "Syntax error: parse error in eval");
+            if (emcopy) free(emcopy);
         }
 
         if(res.transpiled)
@@ -1063,7 +987,9 @@ void duk_init_context(duk_context *ctx)
     add_array_funcs(ctx);
     add_string_funcs(ctx);
     add_extra_object_funcs(ctx);
-    add_buffer_func(ctx);
+    duk_rp_buffer_init(ctx);
+    duk_rp_textencoding_init(ctx);
+    duk_rp_console_init(ctx);
     new_function_transpile(ctx);
     duk_map_set_init(ctx);
 }

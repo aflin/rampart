@@ -941,5 +941,44 @@ function testmodes()
   }
 }
 
+/* ---------------------------------------------------------------
+ * returnType option for hash / hmac / rand.
+ * Three legal trailing-arg forms (all backward compatible):
+ *   omitted / false  → hex string
+ *   true             → Uint8Array (raw, historical)
+ *   { returnType: 'hex' | 'uint8array' | 'buffer' }
+ * --------------------------------------------------------------- */
+function tagOf(v) { return Object.prototype.toString.call(v); }
+function runRTtest(name, got, want) {
+    printf("testing crypto - %-46s - ", name);
+    if(got === want) printf("passed\n");
+    else { printf(">>>>> FAILED <<<<< got %s want %s\n", got, want); _nfailed++; }
+}
+
+/* hash — verify each return shape */
+runRTtest("hash default → string",        tagOf(crypto.hash(Buffer.from('hi'), 'sha256')),          '[object String]');
+runRTtest("hash true → Uint8Array",       tagOf(crypto.hash(Buffer.from('hi'), 'sha256', true)),    '[object Uint8Array]');
+runRTtest("hash false → string",          tagOf(crypto.hash(Buffer.from('hi'), 'sha256', false)),   '[object String]');
+runRTtest("hash {hex} → string",          tagOf(crypto.hash(Buffer.from('hi'), 'sha256', {returnType:'hex'})),         '[object String]');
+runRTtest("hash {uint8array} → Uint8Array", tagOf(crypto.hash(Buffer.from('hi'), 'sha256', {returnType:'uint8array'})), '[object Uint8Array]');
+runRTtest("hash {buffer} isBuffer",       Buffer.isBuffer(crypto.hash(Buffer.from('hi'), 'sha256', {returnType:'buffer'})), true);
+
+/* hmac — same matrix */
+runRTtest("hmac default → string",        tagOf(crypto.hmac('k','m','sha256')),                    '[object String]');
+runRTtest("hmac true → Uint8Array",       tagOf(crypto.hmac('k','m','sha256', true)),              '[object Uint8Array]');
+runRTtest("hmac {buffer} isBuffer",       Buffer.isBuffer(crypto.hmac('k','m','sha256', {returnType:'buffer'})), true);
+runRTtest("hmac {hex} → string",          tagOf(crypto.hmac('k','m','sha256', {returnType:'hex'})), '[object String]');
+
+/* rand — historical default is Uint8Array (NOT hex); preserve that */
+runRTtest("rand default → Uint8Array",    tagOf(crypto.rand(8)),                                   '[object Uint8Array]');
+runRTtest("rand true → Uint8Array",       tagOf(crypto.rand(8, true)),                             '[object Uint8Array]');
+runRTtest("rand {buffer} isBuffer",       Buffer.isBuffer(crypto.rand(8, {returnType:'buffer'})), true);
+runRTtest("rand {hex} → string of 16",    crypto.rand(8, {returnType:'hex'}).length,              16);
+
+/* Round-trip: hash → buffer → hex matches hash → hex directly */
+var asBuffer = crypto.hash(Buffer.from('round-trip'), 'sha256', {returnType:'buffer'});
+var asHex    = crypto.hash(Buffer.from('round-trip'), 'sha256');
+runRTtest("hash buffer.toString(hex) === hash hex", asBuffer.toString('hex'), asHex);
+
 cleanup();
 process.exit(_nfailed ? 1 : 0);

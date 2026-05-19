@@ -35,10 +35,25 @@
 #include <wctype.h>
 #include "rp_tz.h"
 
-//getTotalMem setMaxMem
+/* ENODATA is glibc-specific.  linenoise uses it as a sentinel for
+   "Ctrl-C on an empty line, no input to deliver" — and defines a
+   compat value (8088) on platforms without it (see linenoise.c).
+   Mirror that here so the rampart side recognizes the same sentinel
+   from `linenoise()`'s errno when reading replies. */
+#ifndef ENODATA
+#define ENODATA 8088
+#endif
+
+//getTotalMem, getFreeMem, uptime, getCpuInfo, setMaxMem
 #ifdef __APPLE__
 #include <mach/mach.h>
+#include <mach/mach_host.h>
+#include <mach/vm_statistics.h>
+#include <mach/processor_info.h>
 #include <sys/sysctl.h>
+#elif defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__) || defined(__DragonFly__)
+#include <sys/sysctl.h>
+#include <sys/resource.h>      /* CPUSTATES on the BSDs */
 #elif __linux__
 #include <sys/sysinfo.h>
 #endif
@@ -1963,7 +1978,7 @@ static char *rp_json_object(duk_context *ctx, duk_idx_t idx, char *r, char *path
             if(*k=='\xff')
             {
                 if(dohidden)
-                    snprintf(key, keylen, ", \"DUK_HIDDEN_SYMBOL(%s)\": \"", k+1 );
+                    snprintf(key, keylen, ", \"DUK_HIDDEN_SYMBOL(%s)\": ", k+1 );
                 else
                 {
                     duk_pop_2(ctx);
@@ -1971,11 +1986,21 @@ static char *rp_json_object(duk_context *ctx, duk_idx_t idx, char *r, char *path
                 }
             }
             else
-                snprintf(key, keylen, ", \"%s\": \"", k );
+                snprintf(key, keylen, ", \"%s\": ", k );
             r= strcatdup(r, key);
-            r= strcatdup(r, (char*)duk_safe_to_string(ctx, -1));
-            r= strcatdup(r, "\"");
-            duk_pop_2(ctx);
+            /* Recursively safe-stringify the value.  This produces:
+                 - escaped JSON literals for strings (incl. newlines/
+                   quotes/backslashes — Module.wrap's wrapper template
+                   used to break the JSON output here).
+                 - {"_..._func": true, ...} markers for nested functions
+                   (e.g. EventEmitter.EventEmitter self-reference).
+                 - recursive {} for nested objects.
+                 - "null" for undefined.
+               Previously safe-to-string was wedged inside literal "..."
+               quotes, which broke whenever the value held a special
+               char OR when the value was a function (encoded as ""). */
+            r= rp_to_json_safe(ctx, -1, r, path, dohidden);
+            duk_pop_2(ctx); /* key + value */
         }
         duk_pop(ctx);
 
@@ -2102,19 +2127,22 @@ static double _get_total_mem()
     double total_memory = 0;
 
 #ifdef __APPLE__
-    // Get total memory
     int mib[2] = {CTL_HW, HW_MEMSIZE};
     int64_t memsize;
     size_t len = sizeof(memsize);
-    if (sysctl(mib, 2, &memsize, &len, NULL, 0) == 0) {
+    if (sysctl(mib, 2, &memsize, &len, NULL, 0) == 0)
         total_memory = (double)memsize;
-    }
+#elif defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__) || defined(__DragonFly__)
+    /* FreeBSD: hw.physmem fits 64-bit on amd64; use unsigned long. */
+    unsigned long physmem = 0;
+    size_t len = sizeof(physmem);
+    int mib[2] = {CTL_HW, HW_PHYSMEM};
+    if (sysctl(mib, 2, &physmem, &len, NULL, 0) == 0)
+        total_memory = (double)physmem;
 #elif __linux__
-    // Get total memory
     struct sysinfo info;
-    if (sysinfo(&info) == 0) {
+    if (sysinfo(&info) == 0)
         total_memory = (double)info.totalram * info.mem_unit;
-    }
 #endif
     return total_memory;
 }
@@ -2123,6 +2151,305 @@ duk_ret_t duk_process_get_total_mem(duk_context *ctx)
 {
     duk_push_number(ctx, _get_total_mem()/1048576);
     return 1;
+}
+
+/* --------------- getFreeMem --------------- */
+static double _get_free_mem()
+{
+    double free_memory = 0;
+
+#ifdef __APPLE__
+    mach_msg_type_number_t count = HOST_VM_INFO64_COUNT;
+    vm_statistics64_data_t vmstat;
+    if (host_statistics64(mach_host_self(), HOST_VM_INFO64,
+                          (host_info64_t)&vmstat, &count) == KERN_SUCCESS) {
+        /* "Free" by node's reckoning = truly free + inactive + speculative;
+           macOS aggressively keeps pages in inactive/speculative even when
+           they're available for reuse. */
+        long page = sysconf(_SC_PAGESIZE);
+        if (page <= 0) page = 4096;
+        free_memory = ((double)vmstat.free_count
+                     + (double)vmstat.inactive_count
+                     + (double)vmstat.speculative_count) * (double)page;
+    }
+#elif defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__) || defined(__DragonFly__)
+    u_int free_pages = 0;
+    size_t len = sizeof(free_pages);
+    long page = sysconf(_SC_PAGESIZE);
+    if (page <= 0) page = 4096;
+    if (sysctlbyname("vm.stats.vm.v_free_count", &free_pages, &len, NULL, 0) == 0)
+        free_memory = (double)free_pages * (double)page;
+#elif __linux__
+    struct sysinfo info;
+    if (sysinfo(&info) == 0)
+        free_memory = (double)info.freeram * info.mem_unit;
+#endif
+    return free_memory;
+}
+
+duk_ret_t duk_process_get_free_mem(duk_context *ctx)
+{
+    duk_push_number(ctx, _get_free_mem()/1048576);
+    return 1;
+}
+
+/* --------------- uptime --------------- */
+static double _get_uptime_secs()
+{
+    double up = 0;
+
+#ifdef __linux__
+    struct sysinfo info;
+    if (sysinfo(&info) == 0)
+        up = (double)info.uptime;
+#elif defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__) || defined(__DragonFly__)
+    /* KERN_BOOTTIME: boot moment as timeval; uptime = wall now - boottime. */
+    struct timeval boottime;
+    size_t len = sizeof(boottime);
+    int mib[2] = {CTL_KERN, KERN_BOOTTIME};
+    struct timespec now;
+    if (sysctl(mib, 2, &boottime, &len, NULL, 0) == 0
+        && clock_gettime(CLOCK_REALTIME, &now) == 0
+        && boottime.tv_sec > 0)
+        up = (double)(now.tv_sec - boottime.tv_sec);
+#endif
+
+    if (up <= 0) {
+        /* Fallback: CLOCK_MONOTONIC tv_sec — typically since-boot too. */
+        struct timespec ts;
+        if (clock_gettime(CLOCK_MONOTONIC, &ts) == 0)
+            up = (double)ts.tv_sec;
+    }
+    return up;
+}
+
+duk_ret_t duk_process_uptime(duk_context *ctx)
+{
+    duk_push_number(ctx, _get_uptime_secs());
+    return 1;
+}
+
+/* --------------- getCpuInfo --------------- */
+/* Returns array of { model, speed (MHz), times: {user, nice, sys, idle, irq} }.
+   Times are in milliseconds, matching node's os.cpus() convention. */
+static int _push_cpu_info(duk_context *ctx)
+{
+    long hz = sysconf(_SC_CLK_TCK);
+    double mul = (hz > 0) ? (1000.0 / (double)hz) : 10.0;
+    duk_push_array(ctx);
+    int n_cpu = 0;
+
+#ifdef __APPLE__
+    {
+        char model[256] = {0};
+        size_t modlen = sizeof(model) - 1;
+        sysctlbyname("machdep.cpu.brand_string", model, &modlen, NULL, 0);
+
+        uint64_t freq_hz = 0;
+        size_t freqlen = sizeof(freq_hz);
+        /* hw.cpufrequency_max is missing on Apple Silicon; fall back to
+           hw.cpufrequency, and to 0 if neither responds. */
+        if (sysctlbyname("hw.cpufrequency_max", &freq_hz, &freqlen, NULL, 0) != 0) {
+            freqlen = sizeof(freq_hz);
+            sysctlbyname("hw.cpufrequency", &freq_hz, &freqlen, NULL, 0);
+        }
+        int mhz = (int)(freq_hz / 1000000);
+
+        processor_cpu_load_info_t cpuload;
+        mach_msg_type_number_t infoCount = 0;
+        natural_t processor_count = 0;
+        if (host_processor_info(mach_host_self(), PROCESSOR_CPU_LOAD_INFO,
+                                &processor_count,
+                                (processor_info_array_t *)&cpuload,
+                                &infoCount) == KERN_SUCCESS) {
+            for (natural_t i = 0; i < processor_count; i++) {
+                duk_push_object(ctx);
+                duk_push_string(ctx, model[0] ? model : "unknown");
+                duk_put_prop_string(ctx, -2, "model");
+                duk_push_int(ctx, mhz);
+                duk_put_prop_string(ctx, -2, "speed");
+                duk_push_object(ctx);
+                duk_push_number(ctx, (double)cpuload[i].cpu_ticks[CPU_STATE_USER]   * mul);
+                duk_put_prop_string(ctx, -2, "user");
+                duk_push_number(ctx, 0.0); /* macOS doesn't expose nice */
+                duk_put_prop_string(ctx, -2, "nice");
+                duk_push_number(ctx, (double)cpuload[i].cpu_ticks[CPU_STATE_SYSTEM] * mul);
+                duk_put_prop_string(ctx, -2, "sys");
+                duk_push_number(ctx, (double)cpuload[i].cpu_ticks[CPU_STATE_IDLE]   * mul);
+                duk_put_prop_string(ctx, -2, "idle");
+                duk_push_number(ctx, 0.0); /* macOS doesn't expose irq separately */
+                duk_put_prop_string(ctx, -2, "irq");
+                duk_put_prop_string(ctx, -2, "times");
+                duk_put_prop_index(ctx, -2, (duk_uarridx_t)i);
+            }
+            vm_deallocate(mach_task_self(),
+                          (vm_address_t)cpuload,
+                          (vm_size_t)(infoCount * sizeof(integer_t)));
+            n_cpu = (int)processor_count;
+        }
+    }
+#elif defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__) || defined(__DragonFly__)
+    {
+        int ncpu = 0;
+        size_t len = sizeof(ncpu);
+        if (sysctlbyname("hw.ncpu", &ncpu, &len, NULL, 0) != 0 || ncpu < 1)
+            ncpu = (int)sysconf(_SC_NPROCESSORS_ONLN);
+        if (ncpu < 1) ncpu = 1;
+
+        char model[256] = {0};
+        size_t modlen = sizeof(model) - 1;
+        sysctlbyname("hw.model", model, &modlen, NULL, 0);
+
+        int mhz = 0;
+        size_t freqlen = sizeof(mhz);
+        /* dev.cpu.0.freq is in MHz on FreeBSD. */
+        sysctlbyname("dev.cpu.0.freq", &mhz, &freqlen, NULL, 0);
+
+        /* kern.cp_times: long[CPUSTATES * ncpu]; CPUSTATES is 5 on
+           {Free,Open,Net,Dragon}BSD with layout USER, NICE, SYS, INTR, IDLE. */
+        size_t cp_len = sizeof(long) * (size_t)CPUSTATES * (size_t)ncpu;
+        long *cp_times = (long*)malloc(cp_len);
+        if (cp_times && sysctlbyname("kern.cp_times", cp_times, &cp_len, NULL, 0) == 0) {
+            for (int i = 0; i < ncpu; i++) {
+                long *t = &cp_times[i * CPUSTATES];
+                duk_push_object(ctx);
+                duk_push_string(ctx, model[0] ? model : "unknown");
+                duk_put_prop_string(ctx, -2, "model");
+                duk_push_int(ctx, mhz);
+                duk_put_prop_string(ctx, -2, "speed");
+                duk_push_object(ctx);
+                duk_push_number(ctx, (double)t[CP_USER] * mul);
+                duk_put_prop_string(ctx, -2, "user");
+                duk_push_number(ctx, (double)t[CP_NICE] * mul);
+                duk_put_prop_string(ctx, -2, "nice");
+                duk_push_number(ctx, (double)t[CP_SYS]  * mul);
+                duk_put_prop_string(ctx, -2, "sys");
+                duk_push_number(ctx, (double)t[CP_IDLE] * mul);
+                duk_put_prop_string(ctx, -2, "idle");
+                duk_push_number(ctx, (double)t[CP_INTR] * mul);
+                duk_put_prop_string(ctx, -2, "irq");
+                duk_put_prop_string(ctx, -2, "times");
+                duk_put_prop_index(ctx, -2, (duk_uarridx_t)i);
+            }
+            n_cpu = ncpu;
+        }
+        if (cp_times) free(cp_times);
+    }
+#elif __linux__
+    {
+        FILE *f = fopen("/proc/stat", "r");
+        if (f) {
+            char line[512];
+            duk_uarridx_t idx = 0;
+            while (fgets(line, sizeof(line), f)) {
+                int cpu_n;
+                unsigned long long user, nice, sys, idle, iowait, irq, softirq;
+                /* /proc/stat's first line is the aggregate `cpu ` (no
+                   number).  Without this guard, sscanf would skip the
+                   leading whitespace and parse the first per-cpu
+                   number as cpu_n, double-counting one entry. */
+                if (line[0] != 'c' || line[1] != 'p' || line[2] != 'u'
+                    || line[3] < '0' || line[3] > '9')
+                    continue;
+                if (sscanf(line, "cpu%d %llu %llu %llu %llu %llu %llu %llu",
+                           &cpu_n, &user, &nice, &sys, &idle, &iowait, &irq, &softirq) >= 5) {
+                    duk_push_object(ctx);
+                    duk_push_string(ctx, "unknown"); duk_put_prop_string(ctx, -2, "model");
+                    duk_push_int(ctx, 0); duk_put_prop_string(ctx, -2, "speed");
+                    duk_push_object(ctx);
+                    duk_push_number(ctx, (double)user * mul); duk_put_prop_string(ctx, -2, "user");
+                    duk_push_number(ctx, (double)nice * mul); duk_put_prop_string(ctx, -2, "nice");
+                    duk_push_number(ctx, (double)sys  * mul); duk_put_prop_string(ctx, -2, "sys");
+                    duk_push_number(ctx, (double)idle * mul); duk_put_prop_string(ctx, -2, "idle");
+                    duk_push_number(ctx, (double)irq  * mul); duk_put_prop_string(ctx, -2, "irq");
+                    duk_put_prop_string(ctx, -2, "times");
+                    duk_put_prop_index(ctx, -2, idx++);
+                    n_cpu++;
+                }
+            }
+            fclose(f);
+        }
+        /* Fill in model + speed from /proc/cpuinfo (best-effort). */
+        if (n_cpu > 0) {
+            f = fopen("/proc/cpuinfo", "r");
+            if (f) {
+                char line[512];
+                char *model = NULL;
+                double mhz = 0;
+                duk_uarridx_t idx = 0;
+                while (fgets(line, sizeof(line), f)) {
+                    if (strncmp(line, "model name", 10) == 0) {
+                        char *p = strchr(line, ':');
+                        if (p) {
+                            p++;
+                            while (*p == ' ' || *p == '\t') p++;
+                            char *end = p + strlen(p);
+                            while (end > p && (end[-1] == '\n' || end[-1] == ' ')) end--;
+                            free(model);
+                            model = strndup(p, end - p);
+                        }
+                    } else if (strncmp(line, "cpu MHz", 7) == 0) {
+                        char *p = strchr(line, ':');
+                        if (p) mhz = strtod(p + 1, NULL);
+                    } else if (line[0] == '\n' || strncmp(line, "processor", 9) == 0) {
+                        if (idx > 0 && (model || mhz > 0)) {
+                            duk_get_prop_index(ctx, -1, idx - 1);
+                            if (model) {
+                                duk_push_string(ctx, model);
+                                duk_put_prop_string(ctx, -2, "model");
+                            }
+                            if (mhz > 0) {
+                                duk_push_int(ctx, (int)(mhz + 0.5));
+                                duk_put_prop_string(ctx, -2, "speed");
+                            }
+                            duk_pop(ctx);
+                        }
+                        if (strncmp(line, "processor", 9) == 0) idx++;
+                    }
+                }
+                if (idx > 0 && (model || mhz > 0) && (idx - 1) < (duk_uarridx_t)n_cpu) {
+                    duk_get_prop_index(ctx, -1, idx - 1);
+                    if (model) {
+                        duk_push_string(ctx, model);
+                        duk_put_prop_string(ctx, -2, "model");
+                    }
+                    if (mhz > 0) {
+                        duk_push_int(ctx, (int)(mhz + 0.5));
+                        duk_put_prop_string(ctx, -2, "speed");
+                    }
+                    duk_pop(ctx);
+                }
+                free(model);
+                fclose(f);
+            }
+        }
+    }
+#endif
+
+    /* Fallback: one stub entry per logical CPU. */
+    if (n_cpu == 0) {
+        long n = sysconf(_SC_NPROCESSORS_ONLN);
+        if (n < 1) n = 1;
+        for (long i = 0; i < n; i++) {
+            duk_push_object(ctx);
+            duk_push_string(ctx, "unknown"); duk_put_prop_string(ctx, -2, "model");
+            duk_push_int(ctx, 0);            duk_put_prop_string(ctx, -2, "speed");
+            duk_push_object(ctx);
+            duk_push_number(ctx, 0); duk_put_prop_string(ctx, -2, "user");
+            duk_push_number(ctx, 0); duk_put_prop_string(ctx, -2, "nice");
+            duk_push_number(ctx, 0); duk_put_prop_string(ctx, -2, "sys");
+            duk_push_number(ctx, 0); duk_put_prop_string(ctx, -2, "idle");
+            duk_push_number(ctx, 0); duk_put_prop_string(ctx, -2, "irq");
+            duk_put_prop_string(ctx, -2, "times");
+            duk_put_prop_index(ctx, -2, (duk_uarridx_t)i);
+        }
+    }
+    return 1;
+}
+
+duk_ret_t duk_process_get_cpu_info(duk_context *ctx)
+{
+    return _push_cpu_info(ctx);
 }
 
 duk_ret_t duk_process_set_max_mem(duk_context *ctx)
@@ -2375,6 +2702,12 @@ void duk_process_init(duk_context *ctx)
 
     duk_push_c_function(ctx, duk_process_get_total_mem, 0);
     duk_put_prop_string(ctx,-2,"getTotalMem");
+    duk_push_c_function(ctx, duk_process_get_free_mem, 0);
+    duk_put_prop_string(ctx,-2,"getFreeMem");
+    duk_push_c_function(ctx, duk_process_uptime, 0);
+    duk_put_prop_string(ctx,-2,"uptime");
+    duk_push_c_function(ctx, duk_process_get_cpu_info, 0);
+    duk_put_prop_string(ctx,-2,"getCpuInfo");
     duk_push_c_function(ctx, duk_process_set_max_mem,1);
     duk_put_prop_string(ctx,-2,"setMaxMem");
 
@@ -5357,8 +5690,8 @@ duk_ret_t duk_rp_touch(duk_context *ctx)
                     RP_THROW(ctx, "touch(): failed to get file information");
                 }
                 if(setaccess == 2 || setmodify==2) {
-                    new_times.actime =  (setmodify == 2) ? mtime : filestat.st_atime;
-                    new_times.modtime = (setaccess == 2) ? atime : filestat.st_mtime;
+                    new_times.actime =  (setaccess == 2) ? atime : filestat.st_atime;
+                    new_times.modtime = (setmodify == 2) ? mtime : filestat.st_mtime;
                     utime(path, &new_times);
                 }
             }
@@ -6724,6 +7057,11 @@ static duk_ret_t duk_rp_localize_wrapper(duk_context *ctx)
     return 0;
 }
 
+/* Forward declarations — definitions live in the included
+   fs-extras.c (printf.c-style include further down). */
+static void rp_fs_extras_register(duk_context *ctx);
+static void rp_fs_extras_attach_fh_methods(duk_context *ctx);
+
 void duk_rampart_init(duk_context *ctx)
 {
     struct tm tst={0}, *tst_p=&tst;
@@ -6904,6 +7242,11 @@ void duk_rampart_init(duk_context *ctx)
     duk_put_prop_string(ctx, -2, "stringToNumber");
     duk_push_c_function(ctx, duk_rp_get_scope_vars_wrapper, 1);
     duk_put_prop_string(ctx, -2, "getScopeVars");
+
+    /* Additional fs primitives — readLink, truncate, statVfs,
+       writeFile, appendFile, exists, tmpDir, homeDir, mkdTemp (+
+       Phase 2-4 additions as those land). */
+    rp_fs_extras_register(ctx);
 
     /* all above are rampart.utils.xyz() functions*/
     duk_put_prop_string(ctx, -2, "utils");
@@ -8111,6 +8454,12 @@ static duk_ret_t f_func(duk_context *ctx)
     duk_put_prop_string(ctx,-2,(fname));\
 } while(0)
 
+/* Additional fs primitives (Sections 1–5; see fs-extras.c).
+   Placed AFTER the `getfh_nonull` and `pushffunc` macro definitions so
+   the included file can reference them.  Same-TU include keeps access
+   to rp_fopen / rp_stat / rp_lstat / DUK_PUT_NUMBER and friends. */
+#include "fs-extras.c"
+
 #define mark_as_fh() do{\
     duk_push_true(ctx);\
     duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("rp_is_fh"));\
@@ -8219,6 +8568,9 @@ duk_ret_t duk_rp_fopen(duk_context *ctx)
     pushffunc("readLine",   func_readline,  0           );
     pushffunc("fgets",      func_fgets,     1           );
     pushffunc("fclose",     func_fclose,    0           );
+
+    /* Phase 2: fstat/fsync/fdatasync/ftruncate/fchmod/fchown/fUtimes/fileNo */
+    rp_fs_extras_attach_fh_methods(ctx);
 
     return 1;
 

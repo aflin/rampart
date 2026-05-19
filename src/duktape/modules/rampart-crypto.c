@@ -501,6 +501,61 @@ static KEYIV pw_to_keyiv(duk_context *ctx, const char *pass, const char *cipher_
 void duk_rp_hexToBuf(duk_context *ctx, duk_idx_t idx);
 void duk_rp_toHex(duk_context *ctx, duk_idx_t idx, int ucase);
 
+/* Finalize a plain buffer at top of stack into the caller-requested
+ * shape. Backward compatible with the historical boolean convention:
+ *   (omitted / falsy)           → hex string  (current default)
+ *   true                         → Uint8Array  (current "raw" mode)
+ *   { returnType: 'hex' }       → hex string  (explicit)
+ *   { returnType: 'uint8array' }→ Uint8Array  (same as `true`)
+ *   { returnType: 'buffer' }    → node-style Buffer
+ *
+ * The plain buffer at stack top is consumed/replaced. */
+static void rc_finalize_buffer(duk_context *ctx, duk_idx_t opt_idx)
+{
+    /* Detect options object (but NOT array/function/Buffer-data, which are
+     * also typed as object). */
+    if (duk_is_object(ctx, opt_idx) &&
+        !duk_is_array(ctx, opt_idx) &&
+        !duk_is_function(ctx, opt_idx) &&
+        !duk_is_buffer_data(ctx, opt_idx))
+    {
+        if (duk_get_prop_string(ctx, opt_idx, "returnType") && duk_is_string(ctx, -1))
+        {
+            const char *t = duk_get_string(ctx, -1);
+            duk_pop(ctx);
+            if (strcmp(t, "buffer") == 0)
+            {
+                /* Wrap plain buffer in Node-style Buffer */
+                duk_get_global_string(ctx, "Buffer");
+                duk_get_prop_string(ctx, -1, "from");
+                duk_remove(ctx, -2);            /* drop Buffer constructor */
+                duk_dup(ctx, -2);               /* dup the plain buffer */
+                duk_call(ctx, 1);               /* Buffer.from(plain) */
+                duk_remove(ctx, -2);            /* drop old plain buffer */
+                return;
+            }
+            else if (strcmp(t, "uint8array") == 0 ||
+                     strcmp(t, "Uint8Array")  == 0)
+            {
+                /* Plain buffer already presents as Uint8Array — no-op */
+                return;
+            }
+            /* returnType: 'hex' or any other string → fall through to hex */
+        }
+        else
+        {
+            duk_pop(ctx);  /* drop the non-string returnType lookup */
+        }
+        /* Object without recognized returnType: default to hex */
+        duk_rp_toHex(ctx, -1, 0);
+        return;
+    }
+
+    /* Boolean convention: true = raw (Uint8Array); falsy/missing = hex */
+    if (!duk_is_boolean(ctx, opt_idx) || !duk_get_boolean(ctx, opt_idx))
+        duk_rp_toHex(ctx, -1, 0);
+}
+
 /* produce a hash from a password using pbkdf2 */
 duk_ret_t duk_rp_pass_to_keyiv(duk_context *ctx)
 {
@@ -812,8 +867,7 @@ static duk_ret_t duk_hmac(duk_context *ctx)
     void *out = duk_push_fixed_buffer(ctx, (duk_size_t)md_len);
     memcpy(out, md_value, (size_t)md_len );
 
-    if(!duk_is_boolean(ctx,3)||!duk_get_boolean(ctx,3))
-        duk_rp_toHex(ctx,-1,0);
+    rc_finalize_buffer(ctx, 3);
 
     return 1;
 }
@@ -923,8 +977,7 @@ static duk_ret_t duk_hash(duk_context *ctx)
 
     duk_resize_buffer(ctx, -1, (duk_size_t) md_len);
 
-    if(!duk_is_boolean(ctx, bool_idx)||!duk_get_boolean(ctx, bool_idx))
-        duk_rp_toHex(ctx,-1,0);
+    rc_finalize_buffer(ctx, bool_idx);
 
     return 1;
 }
@@ -965,12 +1018,21 @@ DUK_SHA_FUNC(sm3,"sm3")
  */
 static duk_ret_t duk_rand(duk_context *ctx)
 {
-    duk_size_t len = REQUIRE_POSINT(ctx, -1, "crypto.rand requires a positive integer");
+    /* Historical signature: rand(len) → Uint8Array.
+     * Extended signature: rand(len, opt) where opt is true (raw), false (hex),
+     * or { returnType: 'hex'|'uint8array'|'buffer' }. When `opt` is omitted,
+     * preserves the historical default of returning a raw Uint8Array
+     * (NOT hex, unlike hash/hmac, since rand has always returned bytes). */
+    duk_size_t len = REQUIRE_POSINT(ctx, 0, "crypto.rand requires a positive integer");
     void *buffer = duk_push_fixed_buffer(ctx, len);
-    /* RAND_bytes may return 0 or -1 on error */
     checkseed(ctx);
     if (RAND_bytes(buffer, len) != 1)
         DUK_OPENSSL_ERROR(ctx);
+
+    /* If opt is provided, honor it. Omitted → keep historical Uint8Array. */
+    if (!duk_is_undefined(ctx, 1)) {
+        rc_finalize_buffer(ctx, 1);
+    }
     return 1;
 }
 
@@ -4130,7 +4192,7 @@ const duk_function_list_entry crypto_funcs[] = {
     {"shake128", duk_shake128, 2},
     {"shake256", duk_shake256, 2},
     {"sm3", duk_sm3, 2},
-    {"rand", duk_rand, 1},
+    {"rand", duk_rand, 2},
     {"gaussrand", duk_gaussrand, 1},
     {"normrand", duk_normrand, 1},
     {"randnum", duk_randnum, 0},

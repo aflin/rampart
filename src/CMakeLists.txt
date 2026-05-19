@@ -95,6 +95,9 @@ add_executable(rampart
     duktape/core/module.c
     ${PROJECT_SOURCE_DIR}/extern/texis/texisapi/npmp.c
     duktape/globals/rampart-utils.c
+    duktape/globals/rampart-buffer.c
+    duktape/globals/rampart-textencoding.c
+    duktape/globals/rampart-console.c
     duktape/globals/colorspace.c
     duktape/globals/jcolor.c
     duktape/globals/rampart-event.c
@@ -452,6 +455,11 @@ add_library(rampart-cmark SHARED
 target_link_libraries(rampart-cmark
     ${PROJECT_BINARY_DIR}/extern/cmark-gfm/extensions/libcmark-gfm-extensions.a
     ${PROJECT_BINARY_DIR}/extern/cmark-gfm/src/libcmark-gfm.a
+)
+
+###NODESHIM###
+add_library(rampart-nodeshim SHARED
+    duktape/modules/rampart-nodeshim.c
 )
 target_include_directories(rampart-cmark PRIVATE
     ${PROJECT_SOURCE_DIR}/extern/cmark-gfm/src/
@@ -1225,6 +1233,7 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
         rampart-cmark rampart-robots rampart-lmdb
         rampart-net rampart-python rampart-almanac
         rampart-totext rampart-auth rampart-treesitter
+        rampart-nodeshim
         #example_name
           PROPERTIES
           LINK_FLAGS   "-undefined dynamic_lookup -Wl,-rpath,./"
@@ -1249,6 +1258,7 @@ elseif(CYGWIN)
   target_link_libraries(rampart-totext ${RAMPART_IMPLIB})
   target_link_libraries(rampart-auth ${RAMPART_IMPLIB})
   target_link_libraries(rampart-treesitter ${RAMPART_IMPLIB})
+  target_link_libraries(rampart-nodeshim ${RAMPART_IMPLIB})
   # Targets using keyword signature (match existing target_link_libraries form)
   target_link_libraries(rampart-crypto PRIVATE ${RAMPART_IMPLIB})
   target_link_libraries(rampart-curl PRIVATE ${RAMPART_IMPLIB})
@@ -1258,7 +1268,8 @@ elseif(CYGWIN)
   foreach(_mod rampart-almanac rampart-cmark rampart-html rampart-lmdb
                rampart-net rampart-redis rampart-robots rampart-server
                rampart-crypto rampart-curl rampart-python rampart-sql
-               rampart-totext rampart-auth rampart-treesitter)
+               rampart-totext rampart-auth rampart-treesitter
+               rampart-nodeshim)
     add_dependencies(${_mod} rampart)
   endforeach()
   set_target_properties(
@@ -1267,6 +1278,7 @@ elseif(CYGWIN)
         rampart-cmark rampart-robots rampart-lmdb
         rampart-net rampart-python rampart-almanac
         rampart-totext rampart-auth rampart-treesitter
+        rampart-nodeshim
         #example_name
           PROPERTIES
           LINK_FLAGS "-Wl,-rpath,./"
@@ -1280,6 +1292,7 @@ else()
         rampart-cmark rampart-robots rampart-lmdb
         rampart-net rampart-python rampart-almanac
         rampart-totext rampart-auth rampart-treesitter
+        rampart-nodeshim
         #example_name
           PROPERTIES
           LINK_FLAGS "-Wl,-rpath,./"
@@ -1345,6 +1358,7 @@ install(TARGETS
     rampart-totext
     rampart-auth
     rampart-treesitter
+    rampart-nodeshim
     DESTINATION "${CMAKE_INSTALL_PREFIX}/modules/"
 )
 
@@ -1648,6 +1662,7 @@ install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules
 install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-almanac.so\")")
 install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-totext.so\")")
 install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-treesitter.so\")")
+install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-nodeshim.so\")")
 install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-graphicsmagick.so\")")
 install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/bin/rampart\")")
 install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/bin/tsql\")")

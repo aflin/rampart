@@ -8,6 +8,12 @@
    and set is_tickified to 1                                               */
 RP_ParseRes rp_get_transpiled(char *src, int *is_tickified);
 
+/* Same gating as rp_get_transpiled, but for eval() — uses
+   transpile_eval() so the program-level IIFE wrap is skipped (eval
+   preserves caller scope).  Without -t or "use transpiler", tickify
+   only — no _TrN_Sp._fs() wrappers are emitted.                       */
+RP_ParseRes rp_get_transpiled_eval(char *src, int *is_tickified);
+
 /* Same as rp_get_transpiled but with file-based caching.
    Cache file: file.js -> file.transpiled.js
    If cache exists and is newer than src_mtime, loads from cache.

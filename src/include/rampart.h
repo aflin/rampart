@@ -406,6 +406,7 @@ void rp_jsev_sweep_thread(RPTHR *thr);
 #define RPTHR_FLAG_ACTIVE     0x40  // flag that this thread is running JS in a duk_pcall()
 #define RPTHR_FLAG_WAITING    0x80  // flag that we are waiting in thread.waitfor()
 #define RPTHR_FLAG_KEEP_OPEN  0x100 //  do not autoclose when thread event base is empty
+#define RPTHR_FLAG_TERMINATING 0x200 // thr.terminate() requested forcible shutdown
 
 
 #define RP_USE_LOCKLOCKS

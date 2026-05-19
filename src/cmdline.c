@@ -1695,40 +1695,60 @@ static int parse_bool_opt(const char *opts, const char *name, int *out)
     return 0;
 }
 
-RP_ParseRes rp_get_transpiled(char *src, int *is_tickified)
+/* Shared gating: only transpile if -t was passed (duk_rp_globaltranspile)
+   or the source carries a "use transpiler"/"use transpilerGlobally"
+   directive.  Otherwise fall through to tickify (template-literal
+   processing only).
+   Returns 1 = transpile, 0 = tickify.  On return, *fn_sources_out is
+   set per the source's "functionSources" option (defaults to 1).
+   On transpile path, *opts_consumed is set to 1 and the caller need not
+   re-parse opts.  Internal helper; the public entry points below use it. */
+static int _decide_transpile(char *src, int *fn_sources_out)
 {
-    RP_ParseRes ret = {0};
     char *opts = NULL;
-    int fn_sources = 1; /* default on */
+    int fn_sources = 1;
 
-    size_t src_sz = strlen(src);
-
-    if(!duk_rp_globaltranspile)
+    if (duk_rp_globaltranspile)
     {
-        /* check for "use transpiler" */
-        char *use = checkuse(src, &opts);
-
-        if(!use)
-            goto do_tickify;
-        if( strcasecmp("transpilerGlobally", use) == 0)
-            duk_rp_globaltranspile=1;
-        else if( strcmp("transpiler", use) != 0)
-        {
-            free(use);
-            if(opts) free(opts);
-            goto do_tickify;
-        }
-        if(use)
-            free(use);
+        *fn_sources_out = fn_sources;
+        return 1;
     }
+
+    char *use = checkuse(src, &opts);
+    if (!use)
+    {
+        if (opts) free(opts);
+        return 0;
+    }
+    if (strcasecmp("transpilerGlobally", use) == 0)
+        duk_rp_globaltranspile = 1;
+    else if (strcmp("transpiler", use) != 0)
+    {
+        free(use);
+        if (opts) free(opts);
+        return 0;
+    }
+    free(use);
 
     if (opts)
     {
         parse_bool_opt(opts, "functionSources", &fn_sources);
         free(opts);
     }
-    transpile_set_fn_sources(fn_sources);
+    *fn_sources_out = fn_sources;
+    return 1;
+}
 
+RP_ParseRes rp_get_transpiled(char *src, int *is_tickified)
+{
+    RP_ParseRes ret = {0};
+    int fn_sources = 1;
+    size_t src_sz = strlen(src);
+
+    if (!_decide_transpile(src, &fn_sources))
+        goto do_tickify;
+
+    transpile_set_fn_sources(fn_sources);
     ret = transpile((const char *)src, src_sz, 0);
     if(is_tickified)
         *is_tickified=0;
@@ -1749,6 +1769,43 @@ RP_ParseRes rp_get_transpiled(char *src, int *is_tickified)
         snprintf(ret.errmsg, errsz, "SyntaxError: %s (line %d)\n", tickify_err(ret.err), ret.line_num);
     }
 
+    return ret;
+}
+
+/* Like rp_get_transpiled but for eval() — uses transpile_eval()
+   (no program-level IIFE wrap, so the eval'd code sees caller scope
+   correctly).  Same gating: only transpile if -t was passed or source
+   carries "use transpiler".  Otherwise tickify.  Critically, this
+   keeps eval'd code free of `_TrN_Sp._fs(...)` wrappers when the
+   user isn't using the transpiler — so workers that just eval plain
+   ES5 don't pay for transpiler polyfill state.                       */
+RP_ParseRes rp_get_transpiled_eval(char *src, int *is_tickified)
+{
+    RP_ParseRes ret = {0};
+    int fn_sources = 1;
+    size_t src_sz = strlen(src);
+
+    if (!_decide_transpile(src, &fn_sources))
+        goto do_tickify;
+
+    transpile_set_fn_sources(fn_sources);
+    ret = transpile_eval((const char *)src, src_sz, 0);
+    if (is_tickified)
+        *is_tickified = 0;
+    return ret;
+
+    do_tickify:
+
+    if (is_tickified)
+        *is_tickified = 1;
+
+    ret.transpiled = tickify(src, src_sz, &(ret.err), &(ret.line_num));
+    if (ret.err)
+    {
+        size_t errsz = 128 + strlen(tickify_err(ret.err));
+        REMALLOC(ret.errmsg, errsz);
+        snprintf(ret.errmsg, errsz, "SyntaxError: %s (line %d)\n", tickify_err(ret.err), ret.line_num);
+    }
     return ret;
 }
 
@@ -2531,6 +2588,18 @@ duk_ret_t duk_rp_set_interval(duk_context *ctx)
 duk_ret_t duk_rp_set_metronome(duk_context *ctx)
 {
     return duk_rp_set_to(ctx, 2, "setMetronome", NULL, NULL);
+}
+
+/* setImmediate(fn, ...args) -- node-style "defer to next tick".
+ * Equivalent to setTimeout(fn, 0, ...args) except args start at index 1
+ * (no delay slot).  Same handle shape as setTimeout so clearImmediate is
+ * just clearTimeout. */
+duk_ret_t duk_rp_set_immediate(duk_context *ctx)
+{
+    return duk_rp_insert_timeout(ctx, 0, "setImmediate", NULL, NULL,
+                                  0,    /* func_idx */
+                                  1,    /* arg_start_idx -- args start after fn */
+                                  0.0   /* no delay */);
 }
 
 duk_ret_t duk_rp_clear_either(duk_context *ctx)
@@ -4249,6 +4318,12 @@ int main(int argc, char *argv[])
         duk_put_global_string(ctx,"setMetronome");
         duk_push_c_function(ctx, duk_rp_clear_either, 1);
         duk_put_global_string(ctx,"clearMetronome");
+        /* setImmediate -- node compatibility, defers to next tick.
+         * clearImmediate is just clearTimeout (same handle shape). */
+        duk_push_c_function(ctx, duk_rp_set_immediate, DUK_VARARGS);
+        duk_put_global_string(ctx, "setImmediate");
+        duk_push_c_function(ctx, duk_rp_clear_either, 1);
+        duk_put_global_string(ctx, "clearImmediate");
 
         /* set up object to hold timeout callback function */
         duk_push_global_stash(ctx);

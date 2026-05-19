@@ -1264,13 +1264,19 @@ START FUNCTIONS FOR COPY/PASTE PUT AND GET
     fprintf(stderr,"pipe error in rampart.thread %s:%d\n", __FILE__, __LINE__);\
 }while(0)
 
+/* Notification-pipe I/O macros.  EPIPE / EBADF on the notification
+   pipe is normal during teardown races (peer's read end closed, or
+   pipe fd closed by another teardown path).  In those cases just
+   return -1 silently; the caller deals with the failure.  For other
+   errors print a diagnostic but still don't exit -- aborting the
+   whole process for one stale thread's pipe state is unjustified
+   and can cascade into segfaults if other threads are mid-teardown.  */
 #define thrwrite(b,c) ({\
     int r=0;\
     if(thr->writer>-1) {\
         r=write(thr->writer, (b),(c));\
-        if(r==-1) {\
+        if(r==-1 && errno != EPIPE && errno != EBADF) {\
             fprintf(stderr, "thread write failed: '%s' at %d, fd:%d\n",strerror(errno),__LINE__,thr->writer);\
-            exit(0);\
         }\
     }\
     r;\
@@ -1280,9 +1286,8 @@ START FUNCTIONS FOR COPY/PASTE PUT AND GET
     int r=0;\
     if(thr->reader>-1) {\
         r= read(thr->reader,(b),(c));\
-        if(r==-1) {\
+        if(r==-1 && errno != EPIPE && errno != EBADF) {\
             fprintf(stderr, "thread read failed: '%s' at %d\n",strerror(errno),__LINE__);\
-            exit(0);\
         }\
     }\
     r;\
@@ -1483,11 +1488,22 @@ static void onget_event(evutil_socket_t fd, short events, void* arg)
 
     CBLOCKLOCK;
 
-    thrread(&len, sizeof(duk_size_t));
+    /* On read failure (EPIPE/EBADF during shutdown), abandon this
+       wakeup -- pipe was closed underneath us by a teardown race.  */
+    if (thrread(&len, sizeof(duk_size_t)) <= 0)
+    {
+        CBLOCKUNLOCK;
+        return;
+    }
 
     REMALLOC(waitkey, len);
 
-    thrread(waitkey, len);
+    if (thrread(waitkey, len) <= 0)
+    {
+        CBLOCKUNLOCK;
+        free(waitkey);
+        return;
+    }
 
     CBLOCKUNLOCK;
 
@@ -1751,12 +1767,27 @@ static duk_ret_t _thread_waitfor(duk_context *ctx, const char *key, const char *
 
         CBLOCKLOCK;
 
-        thrread(&len, sizeof(duk_size_t));
+        /* On read failure (EPIPE/EBADF during shutdown), treat as a
+           clean timeout: bail out of the waitfor loop instead of
+           reading garbage `len` and over-allocating.                  */
+        if (thrread(&len, sizeof(duk_size_t)) <= 0)
+        {
+            CBLOCKUNLOCK;
+            free(waitkey);
+            closepipes;
+            return 0;
+        }
 
         if(lastlen<len)
             REMALLOC(waitkey, len);
 
-        thrread(waitkey, len);
+        if (thrread(waitkey, len) <= 0)
+        {
+            CBLOCKUNLOCK;
+            free(waitkey);
+            closepipes;
+            return 0;
+        }
 
         CBLOCKUNLOCK;
 
@@ -1924,7 +1955,7 @@ static duk_context *new_context(RPTHR *thr)
 
 
     // check for transpile polyfills
-    duk_eval_string(tctx, 
+    duk_eval_string(tctx,
         "(function(){"
             "if(global._TrN_Sp && global._TrN_Sp.load){"
                 "var load=global._TrN_Sp.load;"
@@ -2570,6 +2601,17 @@ static duk_ret_t finalize_thr(duk_context *ctx)
         return 0;
     }
 
+    /* If thr.terminate() has been called, the worker's own do_thread_setup
+       will handle the close path.  Don't schedule a finalize_event on a
+       base that's about to be freed -- the event allocation would leak
+       and worst case the event could race with rp_close_thread.        */
+    if (RPTHR_TEST(thr, RPTHR_FLAG_TERMINATING))
+    {
+        rp_debug_printf("finalize_thr: thread terminating, skipping\n");
+        duk_del_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("thr"));
+        return 0;
+    }
+
     duk_del_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("thr"));
 
     if(thr->base && !RPTHR_TESTSET(thr, RPTHR_FLAG_FINAL ))
@@ -2581,6 +2623,190 @@ static duk_ret_t finalize_thr(duk_context *ctx)
         rp_debug_printf("adding closer to base %p\n", thr->base);
         ev_add(*e, &immediate);
     }
+    return 0;
+}
+
+/* Sweep state used by thr.terminate() to collect events to free after the
+   foreach lock is released.  libevent docs are explicit that the foreach
+   callback must NOT add/remove events from the base; event_free()
+   implicitly does an event_del, so we can't call it inside the callback.
+   We collect (event, arg, kind) tuples here and process them after
+   event_base_foreach_event returns.                                    */
+#define SWEEP_KIND_DOEVENT 1
+#define SWEEP_KIND_ONGET   2
+
+struct sweep_entry_s {
+    struct event *ev;
+    void         *arg;
+    int           kind;
+};
+
+struct sweep_list_s {
+    struct sweep_entry_s *items;
+    size_t                len;
+    size_t                cap;
+};
+
+/* foreach_event callback: collect any pending events that we own (so we
+   can free their args and the event struct itself after the foreach
+   returns).  Recognized kinds:
+     - thread_doevent:  RPTINFO* (allocated bytecode + struct)
+     - onget_event:     GETEV* (+ KEYLIST chain)
+   finalize_event and unknown callbacks (rampart.event jsevents handled
+   separately via rp_jsev_sweep_thread; curl/server/etc.) are skipped.   */
+static int sweep_pending_event_cb(const struct event_base *base,
+                                  const struct event *ev, void *arg)
+{
+    struct sweep_list_s *sl = (struct sweep_list_s *)arg;
+    event_callback_fn cb = event_get_callback(ev);
+    void *ev_arg        = event_get_callback_arg(ev);
+    int kind = 0;
+    (void)base;
+
+    if      (cb == thread_doevent) kind = SWEEP_KIND_DOEVENT;
+    else if (cb == onget_event)    kind = SWEEP_KIND_ONGET;
+    else return 0; /* not ours -- skip */
+
+    if (sl->len == sl->cap)
+    {
+        size_t ncap = sl->cap ? sl->cap * 2 : 8;
+        struct sweep_entry_s *ni = realloc(sl->items, ncap * sizeof(*ni));
+        if (!ni) return 1; /* abort iteration on OOM */
+        sl->items = ni;
+        sl->cap   = ncap;
+    }
+    sl->items[sl->len].ev   = (struct event *)ev;
+    sl->items[sl->len].arg  = ev_arg;
+    sl->items[sl->len].kind = kind;
+    sl->len++;
+    return 0;
+}
+
+/* Process the events collected by sweep_pending_event_cb.  Safe to call
+   outside libevent's foreach lock -- this is where we event_free and
+   free the user-args.                                                  */
+static void sweep_drain(struct sweep_list_s *sl)
+{
+    size_t i;
+    for (i = 0; i < sl->len; i++)
+    {
+        struct sweep_entry_s *e = &sl->items[i];
+        if (e->kind == SWEEP_KIND_DOEVENT)
+        {
+            RPTINFO *info = (RPTINFO *)e->arg;
+            if (info)
+            {
+                if (info->bytecode) free(info->bytecode);
+                free(info);
+            }
+        }
+        else if (e->kind == SWEEP_KIND_ONGET)
+        {
+            GETEV *gev = (GETEV *)e->arg;
+            if (gev)
+            {
+                KEYLIST *kl = gev->keys;
+                while (kl)
+                {
+                    KEYLIST *next = kl->next;
+                    if (kl->key) free(kl->key);
+                    free(kl);
+                    kl = next;
+                }
+                free(gev);
+                if (gev == getev) getev = NULL;
+            }
+        }
+        if (e->ev)
+        {
+            event_del(e->ev);
+            event_free(e->ev);
+        }
+    }
+    free(sl->items);
+    sl->items = NULL;
+    sl->len = sl->cap = 0;
+}
+
+/* Close pipe fds and clear WAITING flag for a thread being terminated.
+   Pipe was opened by openpipes() from waitfor or onGet registration.
+   Must run in the worker's own thread (it touches the thread's reader/
+   writer fds and __thread state).                                       */
+static void close_pipes_locked(RPTHR *thr)
+{
+    if (thr->reader >= 0) { close(thr->reader); thr->reader = -1; }
+    if (thr->writer >= 0) { close(thr->writer); thr->writer = -1; }
+    RPTHR_CLEAR(thr, RPTHR_FLAG_WAITING);
+}
+
+/* One-shot helper run from inside the worker's event_base_loop to
+   request loop break.  Called via event_base_once() from terminate_thread.
+   This is needed because event_base_loop unconditionally clears the
+   event_break flag at its entry (libevent event.c ~line 1979); a
+   loopbreak issued from outside *before* the worker reaches that line
+   would be lost.  This callback runs INSIDE the worker's loop, past the
+   clear, so the loopbreak it issues is honored on the next iteration. */
+static void terminate_break_cb(evutil_socket_t fd, short events, void *arg)
+{
+    struct event_base *base = (struct event_base *)arg;
+    (void)fd; (void)events;
+    if (base) event_base_loopbreak(base);
+}
+
+/* thr.terminate() -- forcible-but-graceful worker shutdown.
+   Asks the worker's event_base_loop to exit at the end of its current
+   iteration.  Issues loopbreak two ways to win the start-of-loop race:
+     1. Schedule a 0-timeout event_base_once() that runs inside the loop
+        and calls loopbreak from the worker's own context (race-free).
+     2. Also call loopbreak directly to wake the loop if it's currently
+        idle in epoll_wait.
+   Any currently-running JS callback completes naturally; future-scheduled
+   events on this base will NOT fire and their attached C allocations are
+   swept in do_thread_setup before rp_close_thread runs.
+
+   Idempotent: calling twice is a no-op. Calling on a thread that has
+   already exited is a no-op.                                          */
+static duk_ret_t terminate_thread(duk_context *ctx)
+{
+    RPTHR *thr;
+    int thrno = 0;
+    struct timeval imm = {0, 0};
+
+    duk_push_this(ctx);
+    if (!duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("thr")))
+    {
+        duk_pop_2(ctx);
+        return 0;
+    }
+    thrno = duk_get_int(ctx, -1);
+    duk_pop_2(ctx);
+
+    if (thrno < 0 || thrno >= nrpthreads)
+        return 0;
+
+    THRLOCK;
+    thr = rpthread[thrno];
+    if (!thr || !RPTHR_TEST(thr, RPTHR_FLAG_IN_USE) || !thr->base)
+    {
+        THRUNLOCK;
+        return 0;
+    }
+    if (RPTHR_TESTSET(thr, RPTHR_FLAG_TERMINATING))
+    {
+        THRUNLOCK;
+        return 0; /* already terminating */
+    }
+
+    /* In-loop loopbreak (race-safe even if worker hasn't entered loop yet).
+       event_base_once allocates its own struct via libevent and is freed
+       either when it fires or when event_base_free walks the once_events
+       list during rp_close_thread.                                       */
+    event_base_once(thr->base, -1, EV_TIMEOUT, terminate_break_cb,
+                    thr->base, &imm);
+
+    /* Also wake the loop if it's blocked in dispatch. */
+    event_base_loopbreak(thr->base);
+    THRUNLOCK;
     return 0;
 }
 
@@ -2832,6 +3058,26 @@ static void *do_thread_setup(void *arg)
     //start event loop
     event_base_loop(thr->base, EVLOOP_NO_EXIT_ON_EMPTY);
 
+    /* If thr.terminate() was called from another thread, the loop above
+       returned early via event_base_loopbreak with pending events still
+       attached to this base.  Sweep their C-side allocations (RPTINFO
+       bytecode + structs, GETEV/KEYLIST onGet entries) and event_free
+       the event structs themselves before rp_close_thread frees the
+       base.  Pipe fds also closed here since we won't go through
+       closepipes/onget_remove normally.                                */
+    if (RPTHR_TEST(thr, RPTHR_FLAG_TERMINATING))
+    {
+        struct sweep_list_s sl = { NULL, 0, 0 };
+        if (thr->base)
+            event_base_foreach_event((struct event_base *)thr->base,
+                                     sweep_pending_event_cb, &sl);
+        sweep_drain(&sl);
+        close_pipes_locked(thr);
+        THRLOCK;
+        rp_close_thread(thr);
+        THRUNLOCK;
+    }
+
     return NULL;
 }
 
@@ -2899,6 +3145,9 @@ static duk_ret_t new_js_thread(duk_context *ctx)
 
     duk_push_c_function(ctx, close_thread,0);
     duk_put_prop_string(ctx, -2, "close");
+
+    duk_push_c_function(ctx, terminate_thread, 0);
+    duk_put_prop_string(ctx, -2, "terminate");
 
     pthread_attr_init(&attr);
     pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
