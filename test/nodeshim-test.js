@@ -728,11 +728,17 @@ testModule("process (rampart core)", function() {
     mustEq(os.cpus().length, process.getCpuInfo().length,
            "os.cpus().length === process.getCpuInfo().length");
 
-    /* setMaxMem: don't actually change the live limit — just verify
-       it accepts a number (percentage form is also valid).  We pass
-       a sky-high value so it doesn't constrain the rest of the test. */
-    var ret = process.setMaxMem(tot * 10);  /* 10x total mem; effectively unlimited */
-    must(typeof ret === 'number', "setMaxMem returns number");
+    /* setMaxMem: on Linux/BSD, verify it accepts a number and returns one
+       (sky-high value so it doesn't constrain the rest of the test).  On
+       macOS, the kernel does not enforce RLIMIT_AS, so setMaxMem throws by
+       design rather than lying about a limit it can't apply. */
+    if (os.platform() === 'darwin') {
+        mustThrow(function(){ process.setMaxMem(tot * 10); },
+                  "setMaxMem throws on darwin (not supported)");
+    } else {
+        var ret = process.setMaxMem(tot * 10);  /* 10x total mem; effectively unlimited */
+        must(typeof ret === 'number', "setMaxMem returns number");
+    }
 });
 
 testModule("punycode", function() {

@@ -2454,6 +2454,13 @@ duk_ret_t duk_process_get_cpu_info(duk_context *ctx)
 
 duk_ret_t duk_process_set_max_mem(duk_context *ctx)
 {
+#ifdef __APPLE__
+    /* macOS aliases RLIMIT_AS to RLIMIT_RSS and does not enforce it;
+       bare-metal Darwin silently no-ops, Virtualization.framework guests
+       (VMAPPLE kernel) reject finite values with EINVAL. Fail loudly so
+       callers know the limit is not being applied. */
+    RP_THROW(ctx, "process.setMaxMem - not supported on macOS: the kernel does not enforce per-process memory limits (RLIMIT_AS is a no-op on Darwin)");
+#endif
     double mb=0;
     const char *perc;
     struct rlimit limit;
