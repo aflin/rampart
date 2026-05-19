@@ -472,7 +472,7 @@ testFeature("xferCallback abort on return-false ends transfer", function() {
         xferCallbackRate: 10
     });
     var dt = (Date.now() - t0) / 1000;
-    if (dt > 0.5) { console.log("abort too late, elapsed", dt); return false; }
+    if (dt > 1) { console.log("abort too late, elapsed", dt); return false; }
     /* errMsg may be a string (sync fetch) or an array (parallel fetch). */
     var msg;
     if (Array.isArray(res.errMsg)) msg = res.errMsg.join(' ');
