@@ -1463,6 +1463,13 @@ install(CODE "execute_process( \
     )"
 )
 
+install(CODE "execute_process( \
+    COMMAND ${CMAKE_COMMAND} -E copy_directory \
+    \"${CMAKE_SOURCE_DIR}/test/treesitter-tests\" \
+    \"${CMAKE_INSTALL_PREFIX}/test/treesitter-tests\"   \
+    )"
+)
+
 install(CODE "execute_process ( \
     COMMAND bash -c \"chmod 777 '${CMAKE_INSTALL_PREFIX}/test'\"
  )"
