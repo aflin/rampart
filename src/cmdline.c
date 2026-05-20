@@ -42,6 +42,19 @@ int duk_rp_globalbabel=0;
 
 int duk_rp_globaltranspile=0;
 
+/* Default babel transform options used when a script invokes "use babel"
+   (or .babel in the REPL) without explicit options.  Enables the modern
+   class-field / private-method / nullish-coalescing / optional-chaining
+   proposals on top of preset-env. The bundled babel-standalone
+   v7.12.17 has all of these registered. Update both this string and
+   the matching language in rampart-main.rst (:ref:`babeljs`) when
+   changing the set. */
+#define BABEL_DEFAULT_OPTS \
+    "{ presets: ['env'], plugins: ['proposal-class-properties', " \
+    "'proposal-private-methods', 'proposal-private-property-in-object', " \
+    "'proposal-nullish-coalescing-operator', 'proposal-optional-chaining'], " \
+    "retainLines: true }"
+
 //clock_gettime for macos < sierra
 #ifdef NEEDS_CLOCK_GETTIME
 int clock_gettime(clockid_t type, struct timespec *rettime)
@@ -1124,7 +1137,7 @@ static void *repl_thr(void *arg)
             linenoiseHistoryAdd(line);
             free(line);
             if(!duk_rp_globalbabel)
-                main_babel_opt=strdup("{ presets: ['env'],retainLines:true }");
+                main_babel_opt=strdup(BABEL_DEFAULT_OPTS);
             duk_rp_globalbabel=1;
             duk_rp_globaltranspile=0;
             continue;
@@ -2001,7 +2014,7 @@ static char *checkbabel(char *src)
             else if (*s=='"')
             {
                 //file_src=(char *)duk_rp_babelize(ctx, argv[0], file_src, NULL, entry_file_stat.st_mtime);
-                ret=strdup ("{ presets: ['env'],retainLines:true }");
+                ret=strdup (BABEL_DEFAULT_OPTS);
             }
             /* replace "use babel" line with spaces, to preserve line nums */
             while (*bline && *bline!='\n') *bline++ = ' ';
@@ -4008,7 +4021,7 @@ int main(int argc, char *argv[])
                 if(!duk_rp_globalbabel)
                 {
                     duk_rp_globalbabel=1;
-                    main_babel_opt=strdup("{ presets: ['env'],retainLines:true }");
+                    main_babel_opt=strdup(BABEL_DEFAULT_OPTS);
                 }
             }
             else if(!strcmp(opt,"--color"))
@@ -4056,7 +4069,7 @@ int main(int argc, char *argv[])
                         if(!duk_rp_globalbabel)
                         {
                             duk_rp_globalbabel=1;
-                            main_babel_opt=strdup("{ presets: ['env'],retainLines:true }");
+                            main_babel_opt=strdup(BABEL_DEFAULT_OPTS);
                         }
                         break;
                     case 'v':
