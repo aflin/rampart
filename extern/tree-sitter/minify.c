@@ -800,6 +800,33 @@ static void emit_leaf(EmitCtx *ctx, TSNode node)
         if (!is_property_position(node, parent)) {
             Scope *s = scopelist_find(ctx->all_scopes, start);
             if (!s) s = ctx->global_scope;
+
+            /* For function_declaration's "name" field, the name belongs
+               to the OUTER (parent) scope, not the function's own scope.
+               scopelist_find returns the inner fn_scope because the name
+               token sits inside the declaration's byte range — but if a
+               parameter shadows the function name (e.g.
+               `function f(f){...}`), looking up here would resolve to
+               the parameter and emit the wrong mangled name. Step out
+               one scope so we find the function's own outer binding. */
+            if (!ts_node_is_null(parent)) {
+                const char *pt = ts_node_type(parent);
+                if (strcmp(pt, "function_declaration") == 0 ||
+                    strcmp(pt, "generator_function_declaration") == 0) {
+                    uint32_t pcc = ts_node_child_count(parent);
+                    for (uint32_t i = 0; i < pcc; i++) {
+                        if (ts_node_eq(ts_node_child(parent, i), node)) {
+                            const char *field =
+                                ts_node_field_name_for_child(parent, i);
+                            if (field && strcmp(field, "name") == 0 &&
+                                s->parent)
+                                s = s->parent;
+                            break;
+                        }
+                    }
+                }
+            }
+
             Symbol *sym = scope_find(s, text, len);
             if (sym && !sym->is_global && sym->short_len > 0) {
                 emit_raw(ctx, sym->short_name, sym->short_len);
