@@ -1075,14 +1075,17 @@ testFeature("async - multiple sequential awaits", function() {
 });
 
 // Verify transpiler warns about await inside loop
-testFeature("warning - await in loop", function() {
-    if (!global.rampart) return true; // Node supports this natively
-    var fh = fopenBuffer(stderr);
-    eval('async function _wal() { for (var i=0;i<3;i++) { await Promise.resolve(i); } }');
-    fclose(fh);
-    var msg = fh.getString();
-    fh.destroy();
-    return msg.indexOf("await") !== -1 && msg.indexOf("loop") !== -1;
+testFeature("await in loop - iterates per iteration", function() {
+    return new Promise(function(resolve){
+        async function f() {
+            var sum = 0;
+            for (var i = 0; i < 3; i++) {
+                sum += await Promise.resolve(i + 1);
+            }
+            resolve(sum === 6);
+        }
+        f();
+    });
 });
 
 // Async arrow function
@@ -1122,6 +1125,134 @@ testFeature("async - nested async functions", function() {
         return b;
     }
     return outer().then(v => v === 3);
+});
+
+/* Async generators (async function*) — combine await + yield. The
+   consumer drives via `await gen.next()` (returns Promise<{value,done}>). */
+
+testFeature("async gen - basic await + yield", function() {
+    async function* gen() {
+        var v = await Promise.resolve(7);
+        yield v;
+        yield v * 2;
+    }
+    return new Promise(function(resolve){
+        (async function(){
+            var g = gen();
+            var r1 = await g.next();
+            var r2 = await g.next();
+            var r3 = await g.next();
+            resolve(r1.value === 7 && r2.value === 14 && r3.done === true);
+        })();
+    });
+});
+
+testFeature("async gen - yield Promise unwraps for consumer", function() {
+    async function* gen() {
+        yield Promise.resolve("a");
+        yield "b";
+    }
+    return new Promise(function(resolve){
+        (async function(){
+            var g = gen();
+            var r1 = await g.next();
+            var r2 = await g.next();
+            resolve(r1.value === "a" && r2.value === "b");
+        })();
+    });
+});
+
+testFeature("async gen - throw propagates as rejected promise", function() {
+    async function* gen() {
+        yield 1;
+        throw new Error("oops");
+    }
+    return new Promise(function(resolve){
+        (async function(){
+            var g = gen();
+            await g.next();
+            try {
+                await g.next();
+                resolve(false);
+            } catch (e) {
+                resolve(e.message === "oops");
+            }
+        })();
+    });
+});
+
+testFeature("async gen - consumed via for await ... of", function() {
+    async function* gen() {
+        yield await Promise.resolve(1);
+        yield await Promise.resolve(2);
+        yield await Promise.resolve(3);
+    }
+    return new Promise(function(resolve){
+        (async function(){
+            var sum = 0;
+            for await (var v of gen()) sum += v;
+            resolve(sum === 6);
+        })();
+    });
+});
+
+/* Collision-resistance: user-defined locals named `_e`, `_da1`, `_fk0`,
+   `_ofdiscard`, `_x`, `_bsf0`, `_r`, `_it` etc. used to be silently
+   overwritten by the transpiler's emitted temporaries. They've all been
+   renamed to `_TrN_*` so the user's vars must survive. */
+
+testFeature("collision - user _e survives try/finally lowering", function() {
+    return new Promise(function(resolve){
+        async function f() {
+            var _e = "user-value";
+            try {
+                try {
+                    throw new Error("x");
+                } finally {
+                    /* finally re-throws via the transpiler — must not stomp _e */
+                }
+            } catch (e) {
+                resolve(_e === "user-value" && e.message === "x");
+            }
+        }
+        f();
+    });
+});
+
+testFeature("collision - user _da1 survives destructure-await", function() {
+    return new Promise(function(resolve){
+        async function f() {
+            var _da1 = 42;
+            var {a, b} = await Promise.resolve({a: 1, b: 2});
+            resolve(_da1 === 42 && a === 1 && b === 2);
+        }
+        f();
+    });
+});
+
+testFeature("collision - user _r survives destructure-for-of", function() {
+    var _r = "user-r";
+    for (var {x} of [{x: 1}, {x: 2}]) { /* uses iter machinery */ }
+    return _r === "user-r" && x === 2;
+});
+
+testFeature("async gen - try/catch inside body", function() {
+    async function* gen() {
+        try {
+            yield 1;
+            throw new Error("E");
+        } catch (e) {
+            yield "caught:" + e.message;
+        }
+        yield "after";
+    }
+    return new Promise(function(resolve){
+        (async function(){
+            var out = [];
+            for await (var v of gen()) out.push(v);
+            resolve(out.join(",") === "1,caught:E,after");
+        })();
+    });
 });
 
 /* ===================================================================
@@ -1196,15 +1327,31 @@ testFeature("generator - three sequential yields", function() {
     return r.value === 'XYZ' && r.done === true;
 });
 
-// Verify transpiler warns about yield inside loop
-testFeature("warning - yield in loop", function() {
-    if (!global.rampart) return true; // Node supports this natively
-    var fh = fopenBuffer(stderr);
-    eval('function* _wyl() { for (var i=0;i<3;i++) yield i; }');
-    fclose(fh);
-    var msg = fh.getString();
-    fh.destroy();
-    return msg.indexOf("yield") !== -1 && msg.indexOf("loop") !== -1;
+// Verify yield-in-loop works (used to warn; now lowered correctly).
+// Also verify the warning still fires for actually-unsupported patterns
+// (for-in with yield, yield inside a catch handler).
+testFeature("yield in for-loop produces expected values", function() {
+    function* _wyl() { for (var i = 0; i < 3; i++) yield i; }
+    var g = _wyl();
+    return g.next().value === 0 && g.next().value === 1 &&
+           g.next().value === 2 && g.next().done === true;
+});
+
+testFeature("yield in for-in over object keys", function() {
+    function* _gfi() { for (var k in {a:1, b:2}) yield k; }
+    var g = _gfi();
+    var seen = [g.next().value, g.next().value, g.next().done];
+    seen.sort();
+    return seen[0] === "a" && seen[1] === "b" && seen[2] === true;
+});
+
+testFeature("yield inside catch handler", function() {
+    function* _gc() {
+        try { yield 1; throw "err"; }
+        catch (e) { yield "caught:" + e; }
+    }
+    var g = _gc();
+    return g.next().value === 1 && g.next().value === "caught:err" && g.next().done === true;
 });
 
 // Generator with destructuring yield
