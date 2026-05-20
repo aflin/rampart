@@ -183,6 +183,9 @@ typedef struct {
 #define ES2017_PF   (1<<7)  // Object.entries, padStart/padEnd, getOwnPropertyDescriptors
 #define COLLECT_PF  (1<<8)  // Set, Map, WeakSet, WeakMap polyfills
 #define FN_SOURCE_PF (1<<9) // _TrN_Sp._fs + Function.prototype.toString override
+#define REGEXP_U_PF  (1<<10) // RegExp constructor wrapper that strips `u` flag
+#define BARE_REQ_PF  (1<<11) // _TrN_Sp._req — node_modules walk for bare-spec require()
+#define JSON_REQ_PF  (1<<12) // _TrN_Sp._reqJson — read+JSON.parse for .json require()
 
 /* toggled from outside via transpile_set_fn_sources(); default on */
 static int _tp_fn_sources = 1;
@@ -207,7 +210,7 @@ polyfills allpolys[] = {
         "_TrN_Sp._typeof=function(obj) {\"@babel/helpers - typeof\";if (typeof Symbol === \"function\" && typeof Symbol.iterator === \"symbol\") {_TrN_Sp._typeof = function(obj) {return typeof obj;};} else {_TrN_Sp._typeof = function(obj) {return obj && typeof Symbol === \"function\" && obj.constructor === Symbol && obj !== Symbol.prototype ? \"symbol\" : typeof obj;};}return _TrN_Sp._typeof(obj);};_TrN_Sp._getRequireWildcardCache=function() {if (typeof WeakMap !== \"function\") return null;var cache = new WeakMap();_TrN_Sp._getRequireWildcardCache=function(){return cache;};return cache;};_TrN_Sp._interopRequireWildcard=function(obj) {if (obj && obj.__esModule) {return obj;}if (obj === null || _TrN_Sp._typeof(obj) !== \"object\" && typeof obj !== \"function\") {return { \"default\": obj };}var cache = _TrN_Sp._getRequireWildcardCache();if (cache && cache.has(obj)) {return cache.get(obj);}var newObj = {};var hasPropertyDescriptor = Object.defineProperty && Object.getOwnPropertyDescriptor;for (var key in obj) {if (Object.prototype.hasOwnProperty.call(obj, key)) {var desc = hasPropertyDescriptor ? Object.getOwnPropertyDescriptor(obj, key) : null;if (desc && (desc.get || desc.set)) {Object.defineProperty(newObj, key, desc);} else {newObj[key] = obj[key];}}}newObj[\"default\"] = obj;if (cache) {cache.set(obj, newObj);}return newObj;};_TrN_Sp._interopDefault=function(m){if(typeof m =='object' && m.__esModule){return m.default}return m;};",
         0, (uint32_t)IMPORT_PF },
     {
-        "_TrN_Sp.typeof =function(obj) {'@babel/helpers - typeof';if (typeof Symbol === 'function' && typeof Symbol.iterator === 'symbol') {_typeof = function _typeof(obj) {return typeof obj;};} else {_typeof = function _typeof(obj) {return obj && typeof Symbol === 'function' &&obj.constructor === Symbol && obj !== Symbol.prototype ?'symbol' :typeof obj;};}return _typeof(obj);}; _TrN_Sp.inherits =function(subClass, superClass) {if (typeof superClass !== 'function' && superClass !== null) {throw new TypeError('Super expression must either be null or a function');}subClass.prototype = Object.create(superClass && superClass.prototype,{constructor: {value: subClass, writable: true, configurable: true}});if (superClass) _TrN_Sp.setPrototypeOf(subClass, superClass);}; _TrN_Sp.setPrototypeOf =function(o, p) {_setPrototypeOf = Object.setPrototypeOf || function _setPrototypeOf(o, p) {o.__proto__ = p;return o;};return _setPrototypeOf(o, p);}; _TrN_Sp.createSuper =function(Derived) {var hasNativeReflectConstruct = _TrN_Sp.isNativeReflectConstruct();return function _createSuperInternal() {var Super = _TrN_Sp.getPrototypeOf(Derived), result;result = Super.apply(this, arguments);return _TrN_Sp.possibleConstructorReturn(this, result);};}; _TrN_Sp.possibleConstructorReturn =function(self, call) {if (call && (typeof call === 'object' || typeof call === 'function')) {return call;}return _TrN_Sp.assertThisInitialized(self);}; _TrN_Sp.assertThisInitialized =function(self) {if (self === void 0) {throw new ReferenceError('this hasn\\'t been initialised - super() hasn\\'t been called');}return self;}; _TrN_Sp.isNativeReflectConstruct =function() {if (typeof Reflect === 'undefined' || !Reflect.construct) return false;if (Reflect.construct.sham) return false;if (typeof Proxy === 'function') return true;try {Date.prototype.toString.call(Reflect.construct(Date, [], function() {}));return true;} catch (e) {return false;}}; _TrN_Sp.getPrototypeOf =function(o) {_getPrototypeOf = Object.setPrototypeOf ?Object.getPrototypeOf :function _getPrototypeOf(o) {return o.__proto__ || Object.getPrototypeOf(o);};return _getPrototypeOf(o);}; _TrN_Sp.classCallCheck =function(instance, Constructor) {if (!(instance instanceof Constructor)) {throw new TypeError('Cannot call a class as a function');}}; _TrN_Sp.defineProperties =function(target, props) {for (var i = 0; i < props.length; i++) {var descriptor = props[i];descriptor.enumerable = descriptor.enumerable || false;descriptor.configurable = true;if ('value' in descriptor) descriptor.writable = true;Object.defineProperty(target, descriptor.key, descriptor);}}; _TrN_Sp.createClass =function(Constructor, protoProps,staticProps) {if (protoProps) _TrN_Sp.defineProperties(Constructor.prototype, protoProps);if (staticProps) _TrN_Sp.defineProperties(Constructor, staticProps);return Constructor;};",
+        "_TrN_Sp.typeof =function(obj) {'@babel/helpers - typeof';if (typeof Symbol === 'function' && typeof Symbol.iterator === 'symbol') {_typeof = function _typeof(obj) {return typeof obj;};} else {_typeof = function _typeof(obj) {return obj && typeof Symbol === 'function' &&obj.constructor === Symbol && obj !== Symbol.prototype ?'symbol' :typeof obj;};}return _typeof(obj);}; _TrN_Sp.inherits =function(subClass, superClass) {if (typeof superClass !== 'function' && superClass !== null) {throw new TypeError('Super expression must either be null or a function');}subClass.prototype = Object.create(superClass && superClass.prototype,{constructor: {value: subClass, writable: true, configurable: true}});if (superClass) _TrN_Sp.setPrototypeOf(subClass, superClass);}; _TrN_Sp.setPrototypeOf =function(o, p) {_setPrototypeOf = Object.setPrototypeOf || function _setPrototypeOf(o, p) {o.__proto__ = p;return o;};return _setPrototypeOf(o, p);}; _TrN_Sp.createSuper =function(Derived) {var hasNativeReflectConstruct = _TrN_Sp.isNativeReflectConstruct();return function _createSuperInternal() {var Super = _TrN_Sp.getPrototypeOf(Derived), result;result = Super.apply(this, arguments);return _TrN_Sp.possibleConstructorReturn(this, result);};}; _TrN_Sp.possibleConstructorReturn =function(self, call) {if (call && (typeof call === 'object' || typeof call === 'function')) {return call;}return _TrN_Sp.assertThisInitialized(self);}; _TrN_Sp.assertThisInitialized =function(self) {if (self === void 0) {throw new ReferenceError('this hasn\\'t been initialised - super() hasn\\'t been called');}return self;}; _TrN_Sp.isNativeReflectConstruct =function() {if (typeof Reflect === 'undefined' || !Reflect.construct) return false;if (Reflect.construct.sham) return false;if (typeof Proxy === 'function') return true;try {Date.prototype.toString.call(Reflect.construct(Date, [], function() {}));return true;} catch (e) {return false;}}; _TrN_Sp.getPrototypeOf =function(o) {_getPrototypeOf = Object.setPrototypeOf ?Object.getPrototypeOf :function _getPrototypeOf(o) {return o.__proto__ || Object.getPrototypeOf(o);};return _getPrototypeOf(o);}; _TrN_Sp.classCallCheck =function(instance, Constructor) {if (!(instance instanceof Constructor)) {throw new TypeError('Cannot call a class as a function');}}; _TrN_Sp.defineProperties =function(target, props) {for (var i = 0; i < props.length; i++) {var descriptor = props[i];descriptor.enumerable = descriptor.enumerable || false;descriptor.configurable = true;if ('value' in descriptor) descriptor.writable = true;Object.defineProperty(target, descriptor.key, descriptor);}}; _TrN_Sp.createClass =function(Constructor, A, B, swapOrder) {var protoProps = swapOrder ? B : A;var staticProps = swapOrder ? A : B;if (protoProps) _TrN_Sp.defineProperties(Constructor.prototype, protoProps);if (staticProps) _TrN_Sp.defineProperties(Constructor, staticProps);return Constructor;};",
         0, (uint32_t)CLASS_PF  },
     {
         "_TrN_Sp.slicedToArray=function (arr, i) {return _TrN_Sp.arrayWithHoles(arr) || _TrN_Sp.iterableToArrayLimit(arr, i) || _TrN_Sp.unsupportedIterableToArray(arr, i) || _TrN_Sp.nonIterableRest();};_TrN_Sp.nonIterableRest=function(){throw new TypeError(\"Invalid attempt to destructure non-iterable instance.\\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method.\");};_TrN_Sp.unsupportedIterableToArray=function(o, minLen) {if (!o) return;if (typeof o === \"string\") return _TrN_Sp.arrayLikeToArray(o, minLen);var n = Object.prototype.toString.call(o).slice(8, -1);if (n === \"Object\" && o.constructor) n = o.constructor.name;if (n === \"Map\" || n === \"Set\") return Array.from(o);if (n === \"Arguments\" || /^(?:Ui|I)nt(?:8|16|32)(?:Clamped)?Array$/.test(n)) return _TrN_Sp.arrayLikeToArray(o, minLen);};_TrN_Sp.arrayLikeToArray=function(arr, len) {if (len == null || len > arr.length) len = arr.length;for (var i = 0, arr2 = new Array(len); i < len; i++) {arr2[i] = arr[i];}return arr2;};_TrN_Sp.iterableToArrayLimit=function(arr, i){if (typeof Symbol === \"undefined\" || !(Symbol.iterator in Object(arr))) return;var _arr = [];var _n = true;var _d = false;var _e = undefined;try {for (var _i = arr[Symbol.iterator](), _s; !(_n = (_s = _i.next()).done); _n = true) {_arr.push(_s.value);if (i && _arr.length === i) break;}} catch (err) {_d = true;_e = err;} finally {try {if (!_n && _i[\"return\"] != null) _i[\"return\"]();} finally {if (_d) throw _e;}}return _arr;};_TrN_Sp.arrayWithHoles=function(arr) {if (Array.isArray(arr)) return arr;};",
@@ -253,6 +256,30 @@ polyfills allpolys[] = {
         "_TrN_Sp._fs=function(fn,src){if(typeof fn==='function'){try{Object.defineProperty(fn,'__source__',{value:src,configurable:true,writable:false,enumerable:false});}catch(e){}}return fn;};"
         "if(!_TrN_Sp._origToString){var _fnp=Object.getPrototypeOf(function(){});_TrN_Sp._origToString=_fnp.toString;_fnp.toString=function(){if(this&&typeof this.__source__==='string')return this.__source__;return _TrN_Sp._origToString.call(this);};}",
         0, (uint32_t)FN_SOURCE_PF },
+    {
+        /* Wrap RegExp so `new RegExp(pat, 'gu')` / `RegExp(pat, 'u')` strip
+           the `u` flag — duktape doesn't accept it. Same hook covers
+           library code that builds regex flags dynamically (marked's
+           `edit()` helper passes 'gu' through as a parameter). */
+        "if(!_TrN_Sp._origRegExp){_TrN_Sp._origRegExp=RegExp;global.RegExp=function(p,f){if(typeof f==='string'&&f.indexOf('u')>=0)f=f.replace(/u/g,'');return this instanceof _TrN_Sp._origRegExp?new _TrN_Sp._origRegExp(p,f):_TrN_Sp._origRegExp(p,f);};global.RegExp.prototype=_TrN_Sp._origRegExp.prototype;}",
+        0, (uint32_t)REGEXP_U_PF },
+    {
+        /* Bare-specifier require: walk up from the calling module's
+           directory looking for node_modules/<spec>/. Read package.json
+           for "main", fall back to index.js. If nothing resolves, fall
+           through to rampart's native require (which checks
+           process.modulesPath). The cache (_c) memoises spec→absPath
+           lookups so repeated require()s of the same spec are O(1). */
+        "_TrN_Sp._req=function(m,s){var c=_TrN_Sp._req._c||(_TrN_Sp._req._c={});var d=(m&&m.path)?m.path:(typeof process!=='undefined'&&process.scriptPath?process.scriptPath:'');var k=d+'|'+s;if(k in c)return require(c[k]);var st=rampart.utils.stat,rf=rampart.utils.readFile;while(d&&d.length>1){var pd=d+'/node_modules/'+s;var pj=pd+'/package.json';var mn=null;if(st(pj)){try{var meta=JSON.parse(rf(pj,{returnString:true}));mn=meta.main||'index.js';}catch(e){mn='index.js';}var p=pd+'/'+mn;if(st(p)){c[k]=p;return require(p);}}var idx=pd+'/index.js';if(st(idx)){c[k]=idx;return require(idx);}var n=d.lastIndexOf('/');if(n<=0)break;d=d.substring(0,n);}return require(s);};",
+        0, (uint32_t)BARE_REQ_PF },
+    {
+        /* JSON require: rampart's loader treats every spec as JS, so
+           `require('./foo.json')` parses the JSON file as JavaScript and
+           fails. Resolve the path (relative against module.path, or via
+           node_modules walk for bare specs), then JSON.parse the file.
+           Results are memoised in _c. */
+        "_TrN_Sp._reqJson=function(m,s){var c=_TrN_Sp._reqJson._c||(_TrN_Sp._reqJson._c={});var base=(m&&m.path)?m.path:(typeof process!=='undefined'&&process.scriptPath?process.scriptPath:'');var k=base+'|'+s;if(k in c)return c[k];var st=rampart.utils.stat,rf=rampart.utils.readFile;var p=null;if(s.charAt(0)==='/'){p=s;}else if(s.charAt(0)==='.'){var t=s,b=base;while(t.indexOf('../')===0){t=t.substring(3);var n=b.lastIndexOf('/');if(n<=0)break;b=b.substring(0,n);}if(t.indexOf('./')===0)t=t.substring(2);p=b+'/'+t;}else{var d=base;while(d&&d.length>1){var cand=d+'/node_modules/'+s;if(st(cand)){p=cand;break;}var n=d.lastIndexOf('/');if(n<=0)break;d=d.substring(0,n);}}if(!p||!st(p))throw new Error('JSON module not found: '+s);var v=JSON.parse(rf(p,{returnString:true}));c[k]=v;return v;};",
+        0, (uint32_t)JSON_REQ_PF },
     { NULL, 0}
 };
 
@@ -310,6 +337,11 @@ char *apply_edits(const char *src, size_t src_len, EditList *e, uint32_t polysne
             out_cap = out_len;
     }
 
+    out_cap++;
+    /* Reserve one extra byte so we can always append a trailing
+       newline. Duktape's parser fails with "end of input" when the
+       file ends mid-`//` comment with no terminating newline; appending
+       `\n` unconditionally avoids that. */
     out_cap++;
     // printf("src_len=%d, outcap=%d\n", (int)src_len, (int)out_cap);
 
@@ -460,6 +492,18 @@ char *apply_edits(const char *src, size_t src_len, EditList *e, uint32_t polysne
             memset(out + before + rep_len, '\n', pad_nls);
         }
 
+        out[out_len] = '\0';
+    }
+
+    /* Ensure the final output ends with a newline.  Duktape's parser
+       rejects files that end inside a `//` line comment with no
+       trailing newline ("parse error, end of input").  Source maps
+       routinely emit `//# sourceMappingURL=...` as the last line
+       without a terminating newline, so without this every transpiled
+       file that started with one would fail to load. */
+    if (out_len == 0 || out[out_len - 1] != '\n')
+    {
+        out[out_len++] = '\n';
         out[out_len] = '\0';
     }
 
@@ -973,15 +1017,18 @@ static void collect_template_by_offsets(TSNode tpl, Piece **lits, size_t *nl, Pi
         {
             size_t sub_s = ts_node_start_byte(kid);
 
-            if (sub_s > cursor)
-            { // literal before ${...}
-                if (*nl == capL)
-                {
-                    capL = capL ? capL * 2 : 8;
-                    REMALLOC(*lits, capL * sizeof(Piece));
-                }
-                (*lits)[(*nl)++] = (Piece){0, cursor, sub_s};
+            /* Always emit a literal piece between subs (and before the first
+               sub) — even if empty. Tagged-template invocation requires the
+               invariant `nlits = nexprs + 1`; with `${a}${b}` the parts
+               array must be `["", "", ""]`, not `[]`. Without this we'd
+               drop the leading/trailing/between-empty literals and the
+               tag would see a shorter array than it expects. */
+            if (*nl == capL)
+            {
+                capL = capL ? capL * 2 : 8;
+                REMALLOC(*lits, capL * sizeof(Piece));
             }
+            (*lits)[(*nl)++] = (Piece){0, cursor, sub_s};
             uint32_t nexp = ts_node_child_count(kid);
             TSNode expr = ts_node_named_child(kid, 0);
             TSNode lexpr = expr;
@@ -1010,24 +1057,16 @@ static void collect_template_by_offsets(TSNode tpl, Piece **lits, size_t *nl, Pi
             cursor = ts_node_end_byte(kid);
         }
     }
-    if (close_tick > cursor)
-    { // trailing literal
-        if (*nl == capL)
-        {
-            capL = capL ? capL * 2 : 8;
-            REMALLOC(*lits, capL * sizeof(Piece));
-        }
-        (*lits)[(*nl)++] = (Piece){0, cursor, close_tick};
+    /* Trailing literal — always emit, even if empty, so that
+       `nlits == nexprs + 1`. The earlier `if (close_tick > cursor)`
+       guard was wrong: a template ending with `${expr}` (close_tick
+       == cursor) still needs a final empty string in the parts array. */
+    if (*nl == capL)
+    {
+        capL = capL ? capL * 2 : 8;
+        REMALLOC(*lits, capL * sizeof(Piece));
     }
-    if (*nl == 0)
-    { // ensure at least 1 slot
-        if (*nl == capL)
-        {
-            capL = capL ? capL * 2 : 8;
-            REMALLOC(*lits, capL * sizeof(Piece));
-        }
-        (*lits)[(*nl)++] = (Piece){0, open_tick, open_tick};
-    }
+    (*lits)[(*nl)++] = (Piece){0, cursor, close_tick};
 }
 
 // nearest previous named sibling
@@ -2515,21 +2554,32 @@ static int rewrite_export_node(EditList *edits, const char *src, TSNode snode, R
         return 1;
     }
 
-    /* export * from "mod" */
+    /* export * from "mod"
+       The tree-sitter-javascript grammar represents the `*` as an
+       anonymous token child (not a named field), so we walk children
+       to detect it instead of relying on field-name lookup. */
     {
-        TSNode star = ts_node_child_by_field_name(snode, "wildcard", 8);
         TSNode srcnode = ts_node_child_by_field_name(snode, "source", 6);
-        if (!ts_node_is_null(star) && !ts_node_is_null(srcnode))
+        int saw_star = 0;
+        uint32_t cn = ts_node_child_count(snode);
+        for (uint32_t ci = 0; ci < cn; ci++)
+        {
+            TSNode ch = ts_node_child(snode, ci);
+            if (ts_node_is_named(ch)) continue;
+            size_t cs = ts_node_start_byte(ch), ce = ts_node_end_byte(ch);
+            if (ce - cs == 1 && src[cs] == '*') { saw_star = 1; break; }
+        }
+        if (saw_star && !ts_node_is_null(srcnode))
         {
             if (overlaps)
                 return 1;
             size_t ms = ts_node_start_byte(srcnode), me = ts_node_end_byte(srcnode);
             char *mod = dup_range(src, ms, me);
             rp_string *out = rp_string_new(64);
-            rp_string_puts(out, "var __tmpExp = require(");
+            rp_string_puts(out, "{var __tmpExp = require(");
             rp_string_puts(out, mod);
             rp_string_puts(out,
-                        "); for (var k in __tmpExp) { if (k === \"default\") continue; exports[k] = __tmpExp[k]; }");
+                ");for (var __k in __tmpExp) {if (__k === \"default\" || __k === \"__esModule\") continue;exports[__k] = __tmpExp[__k];}}");
             add_edit_take_ownership(edits, ns, ne, rp_string_steal(out), claimed);
             rp_string_free(out);
             free(mod);
@@ -2854,7 +2904,37 @@ static int rewrite_function_destructuring_params(EditList *edits, const char *sr
         }
         else
         {
-            /* Non-destructured param: copy as-is */
+            /* Non-destructured param. If it's `x = default` we have to
+               lower the default too — otherwise duktape rejects the
+               whole `(x = "y", _dp1)` shape. function_like_default_params
+               would normally handle this, but it bails out when ANY
+               param uses destructure-with-default (its
+               build_param_default_inits returns NULL), so the method
+               falls through to us. Handle simple defaults inline. */
+            if (strcmp(pt, "assignment_pattern") == 0)
+            {
+                TSNode left = ts_node_child_by_field_name(p, "left", 4);
+                TSNode right = ts_node_child_by_field_name(p, "right", 5);
+                if (!ts_node_is_null(left) && !ts_node_is_null(right) &&
+                    strcmp(ts_node_type(left), "identifier") == 0)
+                {
+                    size_t ls = ts_node_start_byte(left), le = ts_node_end_byte(left);
+                    size_t rs = ts_node_start_byte(right), re = ts_node_end_byte(right);
+                    /* param is just the identifier */
+                    rp_string_putsn(new_params, src + ls, le - ls);
+                    /* body inj: if (X === void 0) X = <default>; */
+                    rp_string_puts(body_inj, "if (");
+                    rp_string_putsn(body_inj, src + ls, le - ls);
+                    rp_string_puts(body_inj, " === void 0) ");
+                    rp_string_putsn(body_inj, src + ls, le - ls);
+                    rp_string_puts(body_inj, " = ");
+                    rp_string_putsn(body_inj, src + rs, re - rs);
+                    rp_string_puts(body_inj, "; ");
+                    if (param_def) free(param_def);
+                    continue;
+                }
+            }
+            /* Fallback: copy as-is. */
             rp_string_putsn(new_params, src + pps, ppe - pps);
             if (param_def) free(param_def);
         }
@@ -3178,8 +3258,26 @@ static int rewrite_template_node(EditList *edits, const char *src, TSNode tpl_no
 
     size_t ns = ts_node_start_byte(tpl_node), ne = ts_node_end_byte(tpl_node);
 
-    TSNode tag = prev_named_sibling(tpl_node);
-    int is_tagged = (!ts_node_is_null(tag) && ts_node_end_byte(tag) == ns);
+    /* Detect tagged-template form: the template_string is the
+       `arguments` field of a `call_expression` whose `function` field
+       is the tag. Tree-sitter wraps `tag \`...\`` in a call_expression
+       regardless of whitespace between the tag and the backtick. The
+       old check used `prev_named_sibling` and compared end-byte to the
+       template's start-byte, which failed whenever there was any
+       whitespace (as in ajv `(0, codegen_1._) \`...\``). */
+    TSNode tag = (TSNode){{0}};
+    int is_tagged = 0;
+    TSNode parent = ts_node_parent(tpl_node);
+    if (!ts_node_is_null(parent) && strcmp(ts_node_type(parent), "call_expression") == 0)
+    {
+        TSNode parent_args = ts_node_child_by_field_name(parent, "arguments", 9);
+        if (!ts_node_is_null(parent_args) && ts_node_eq(parent_args, tpl_node))
+        {
+            tag = ts_node_child_by_field_name(parent, "function", 8);
+            if (!ts_node_is_null(tag))
+                is_tagged = 1;
+        }
+    }
 
     Piece *lits = NULL, *exprs = NULL;
     size_t nl = 0, neP = 0;
@@ -3411,6 +3509,50 @@ static int rewrite_template_node(EditList *edits, const char *src, TSNode tpl_no
     return 1;
 }
 
+/* Forward decl: defined later in the file. Needed here so the arrow
+   rewriter can run block-scope rename on its body into a local edit
+   list before assembling its wholesale replacement. */
+static int rewrite_block_scope_rename(EditList *edits, const char *src, TSNode fn_node,
+                                      RangeList *claimed, int overlaps);
+
+/* Apply edits whose ranges all fall inside [slice_start, slice_end) to
+   the slice src[slice_start..slice_end), returning a malloc'd
+   null-terminated string. Edits at absolute src positions are
+   translated to slice-relative on the fly. The input edits list is
+   re-sorted in descending start order. */
+static char *_apply_edits_to_slice(const char *src, size_t slice_start, size_t slice_end,
+                                   EditList *e)
+{
+    qsort(e->items, e->len, sizeof(Edit), cmp_desc);
+    size_t slen = slice_end - slice_start;
+    size_t worst = slen;
+    for (size_t i = 0; i < e->len; i++)
+    {
+        Edit *ed = &e->items[i];
+        if (ed->start < slice_start || ed->end > slice_end) continue;
+        worst += strlen(ed->text);
+    }
+    char *buf = NULL;
+    REMALLOC(buf, worst + 1);
+    memcpy(buf, src + slice_start, slen);
+    size_t cur = slen;
+    buf[cur] = 0;
+    for (size_t i = 0; i < e->len; i++)
+    {
+        Edit *ed = &e->items[i];
+        if (ed->start < slice_start || ed->end > slice_end) continue;
+        size_t rs = ed->start - slice_start;
+        size_t re = ed->end - slice_start;
+        size_t rep_len = strlen(ed->text);
+        size_t old_len = re - rs;
+        memmove(buf + rs + rep_len, buf + re, cur - re);
+        memcpy(buf + rs, ed->text, rep_len);
+        cur = cur - old_len + rep_len;
+    }
+    buf[cur] = 0;
+    return buf;
+}
+
 // Arrow functions (concise + block, with flat destructuring lowering)
 static int rewrite_arrow_function_node(EditList *edits, const char *src, TSNode arrow_node, RangeList *claimed,
                                        int overlaps)
@@ -3464,6 +3606,33 @@ static int rewrite_arrow_function_node(EditList *edits, const char *src, TSNode 
     size_t bs = ts_node_start_byte(body), be = ts_node_end_byte(body);
     int bind_this = contains_lexical_this(body);
     int is_block = (strcmp(ts_node_type(body), "statement_block") == 0); // Single-parameter pattern detection
+
+    /* For block-body arrows, run babel-style block-scope let/const
+       rename on the arrow's body into a LOCAL edit list and produce a
+       substituted body string. The arrow's wholesale-replace below
+       would otherwise clobber identifier-level edits inside the body
+       (we'd add the edits to the main list, they'd apply first since
+       they're at higher start positions, and then the arrow's edit at
+       [ns, ne] would overwrite the renamed bytes). */
+    char *body_subst = NULL;
+    size_t body_subst_len = 0;
+    if (is_block && !overlaps)
+    {
+        EditList _local_edits;
+        init_edits(&_local_edits);
+        RangeList _local_claimed;
+        rl_init(&_local_claimed);
+        rewrite_block_scope_rename(&_local_edits, src, arrow_node, &_local_claimed, 0);
+        if (_local_edits.len > 0)
+        {
+            body_subst = _apply_edits_to_slice(src, bs, be, &_local_edits);
+            body_subst_len = strlen(body_subst);
+        }
+        free_edits(&_local_edits);
+        free(_local_claimed.a);
+    }
+    const char *body_src = body_subst ? body_subst : (src + bs);
+    size_t body_src_len = body_subst ? body_subst_len : (be - bs);
     TSNode pattern = (TSNode){0};
     int single = 0;
     if (strcmp(ts_node_type(params), "formal_parameters") == 0)
@@ -3478,6 +3647,144 @@ static int rewrite_arrow_function_node(EditList *edits, const char *src, TSNode 
     {
         pattern = params;
         single = 1;
+    }
+
+    // Multi-param destructuring (block body only): when there are
+    // multiple params and at least one is an array/object pattern,
+    // assign each destructure to a fresh `_arr_N` or `_obj_N` and emit
+    // bindings in a body prelude. This is the ES2015 case that blocks
+    // luxon's `([sofar, current], item) => …`.
+    int multi_did = 0;
+    rp_string *multi_params = NULL;
+    rp_string *multi_inj = NULL;
+    if (!single &&
+        strcmp(ts_node_type(params), "formal_parameters") == 0)
+    {
+        uint32_t np = ts_node_named_child_count(params);
+        int has_destruct = 0;
+        for (uint32_t i = 0; i < np; i++)
+        {
+            TSNode p = ts_node_named_child(params, i);
+            const char *pt = ts_node_type(p);
+            if (strcmp(pt, "array_pattern") == 0 || strcmp(pt, "object_pattern") == 0)
+            {
+                has_destruct = 1;
+                break;
+            }
+            if (strcmp(pt, "assignment_pattern") == 0)
+            {
+                TSNode left = ts_node_child_by_field_name(p, "left", 4);
+                if (!ts_node_is_null(left))
+                {
+                    const char *lt = ts_node_type(left);
+                    if (strcmp(lt, "array_pattern") == 0 || strcmp(lt, "object_pattern") == 0)
+                    {
+                        has_destruct = 1;
+                        break;
+                    }
+                }
+            }
+        }
+        if (has_destruct)
+        {
+            multi_params = rp_string_new(64);
+            multi_inj = rp_string_new(128);
+            rp_string_putc(multi_params, '(');
+            unsigned arr_n = 0, obj_n = 0;
+            for (uint32_t i = 0; i < np; i++)
+            {
+                if (i > 0) rp_string_puts(multi_params, ", ");
+                TSNode p = ts_node_named_child(params, i);
+                const char *pt = ts_node_type(p);
+                size_t pps = ts_node_start_byte(p), ppe = ts_node_end_byte(p);
+
+                TSNode destr_pat = (TSNode){{0}};
+                char *param_def = NULL;
+                if (strcmp(pt, "array_pattern") == 0 || strcmp(pt, "object_pattern") == 0)
+                {
+                    destr_pat = p;
+                }
+                else if (strcmp(pt, "assignment_pattern") == 0)
+                {
+                    TSNode left = ts_node_child_by_field_name(p, "left", 4);
+                    TSNode right = ts_node_child_by_field_name(p, "right", 5);
+                    if (!ts_node_is_null(left))
+                    {
+                        const char *lt = ts_node_type(left);
+                        if (strcmp(lt, "array_pattern") == 0 || strcmp(lt, "object_pattern") == 0)
+                        {
+                            destr_pat = left;
+                            if (!ts_node_is_null(right))
+                            {
+                                size_t ds = ts_node_start_byte(right), de = ts_node_end_byte(right);
+                                param_def = malloc(de - ds + 1);
+                                memcpy(param_def, src + ds, de - ds);
+                                param_def[de - ds] = '\0';
+                            }
+                        }
+                    }
+                }
+
+                if (!ts_node_is_null(destr_pat))
+                {
+                    char tmpname[32];
+                    int is_array_pat = (strcmp(ts_node_type(destr_pat), "array_pattern") == 0);
+                    if (is_array_pat)
+                        snprintf(tmpname, sizeof(tmpname), "_arr_%u", ++arr_n);
+                    else
+                        snprintf(tmpname, sizeof(tmpname), "_obj_%u", ++obj_n);
+                    rp_string_puts(multi_params, tmpname);
+
+                    if (param_def)
+                    {
+                        rp_string_appendf(multi_inj, "if (%s === void 0) %s = %s; ",
+                                          tmpname, tmpname, param_def);
+                        free(param_def);
+                    }
+
+                    Bindings mb;
+                    binds_init(&mb);
+                    if (collect_flat_destructure_bindings(destr_pat, src, tmpname, &mb) && mb.len > 0)
+                    {
+                        rp_string_puts(multi_inj, "var ");
+                        for (size_t bi = 0; bi < mb.len; bi++)
+                        {
+                            if (bi > 0) rp_string_puts(multi_inj, ", ");
+                            rp_string_puts(multi_inj, mb.a[bi].name);
+                            rp_string_puts(multi_inj, "=");
+                            if (mb.a[bi].defval)
+                            {
+                                rp_string_puts(multi_inj, mb.a[bi].repl);
+                                rp_string_puts(multi_inj, " !== undefined ? ");
+                                rp_string_puts(multi_inj, mb.a[bi].repl);
+                                rp_string_puts(multi_inj, " : ");
+                                rp_string_puts(multi_inj, mb.a[bi].defval);
+                            }
+                            else
+                            {
+                                rp_string_puts(multi_inj, mb.a[bi].repl);
+                            }
+                        }
+                        rp_string_puts(multi_inj, "; ");
+                    }
+                    binds_free(&mb);
+                    multi_did = 1;
+                }
+                else
+                {
+                    /* Plain param (identifier, rest_pattern, etc.) — copy bytes. */
+                    rp_string_putsn(multi_params, src + pps, ppe - pps);
+                }
+            }
+            rp_string_putc(multi_params, ')');
+            if (!multi_did)
+            {
+                /* No destructure actually emitted (shouldn't happen given
+                   has_destruct check above, but defensive). */
+                multi_params = rp_string_free(multi_params);
+                multi_inj = rp_string_free(multi_inj);
+            }
+        }
     }
 
     // Destructuring bindings (flat)
@@ -3529,7 +3836,38 @@ static int rewrite_arrow_function_node(EditList *edits, const char *src, TSNode 
     }
 
     char *rep = NULL;
-    if (did && !is_block)
+    if (multi_did)
+    {
+        /* Multi-param destructure. Build:
+             block body:  function (params) { body_inj; original_body; }
+             concise:     function (params) { body_inj; return <expr>; } */
+        rp_string *rbuf = rp_string_new(128);
+        rp_string_puts(rbuf, "function ");
+        rp_string_puts(rbuf, multi_params->str);
+        if (is_block)
+        {
+            size_t body_len = body_src_len;
+            const char *bsrc = body_src;
+            size_t brace = 0;
+            while (brace < body_len && bsrc[brace] != '{') brace++;
+            if (brace < body_len) brace++;
+            rp_string_putc(rbuf, ' ');
+            rp_string_putsn(rbuf, bsrc, brace);
+            rp_string_puts(rbuf, multi_inj->str);
+            rp_string_putsn(rbuf, bsrc + brace, body_len - brace);
+        }
+        else
+        {
+            rp_string_puts(rbuf, " { ");
+            rp_string_puts(rbuf, multi_inj->str);
+            rp_string_puts(rbuf, "return ");
+            rp_string_putsn(rbuf, body_src, body_src_len);
+            rp_string_puts(rbuf, "; }");
+        }
+        rep = rp_string_steal(rbuf);
+        rbuf = rp_string_free(rbuf);
+    }
+    else if (did && !is_block)
     {
         char *rew = rewrite_concise_body_with_bindings(src, body, &binds, claimed);
         rp_string *rbuf = rp_string_new(64);
@@ -3543,8 +3881,8 @@ static int rewrite_arrow_function_node(EditList *edits, const char *src, TSNode 
     }
     else if (did && is_block)
     {
-        size_t body_len = be - bs;
-        const char *bsrc = src + bs;
+        size_t body_len = body_src_len;
+        const char *bsrc = body_src;
         size_t brace = 0;
         while (brace < body_len && bsrc[brace] != '{')
             brace++;
@@ -3598,25 +3936,25 @@ static int rewrite_arrow_function_node(EditList *edits, const char *src, TSNode 
     else
     {
         int needs_paren = !slice_starts_with_paren(src, ps, pe);
-        size_t cap = 96 + (pe - ps) + (be - bs) + 1;
+        size_t cap = 96 + (pe - ps) + body_src_len + 1;
 
         REMALLOC(rep, cap);
 
         if (is_block)
         {
             if (needs_paren)
-                snprintf(rep, cap, "function (%.*s) %.*s", (int)(pe - ps), src + ps, (int)(be - bs), src + bs);
+                snprintf(rep, cap, "function (%.*s) %.*s", (int)(pe - ps), src + ps, (int)body_src_len, body_src);
             else
-                snprintf(rep, cap, "function %.*s %.*s", (int)(pe - ps), src + ps, (int)(be - bs), src + bs);
+                snprintf(rep, cap, "function %.*s %.*s", (int)(pe - ps), src + ps, (int)body_src_len, body_src);
         }
         else
         {
             if (needs_paren)
-                snprintf(rep, cap, "function (%.*s) { return %.*s; }", (int)(pe - ps), src + ps, (int)(be - bs),
-                         src + bs);
+                snprintf(rep, cap, "function (%.*s) { return %.*s; }", (int)(pe - ps), src + ps, (int)body_src_len,
+                         body_src);
             else
-                snprintf(rep, cap, "function %.*s { return %.*s; }", (int)(pe - ps), src + ps, (int)(be - bs),
-                         src + bs);
+                snprintf(rep, cap, "function %.*s { return %.*s; }", (int)(pe - ps), src + ps, (int)body_src_len,
+                         body_src);
         }
     }
 
@@ -3710,6 +4048,10 @@ static int rewrite_arrow_function_node(EditList *edits, const char *src, TSNode 
     binds_free(&binds);
     if (param_default)
         free(param_default);
+    if (body_subst)
+        free(body_subst);
+    if (multi_params) multi_params = rp_string_free(multi_params);
+    if (multi_inj) multi_inj = rp_string_free(multi_inj);
     return 1;
 }
 static int rewrite_array_spread(EditList *edits, const char *src, TSNode arr, int isObject, RangeList *claimed,
@@ -3731,6 +4073,10 @@ static int rewrite_array_spread(EditList *edits, const char *src, TSNode arr, in
 #define newarrsz 19
 
     size_t needed = 1 + newobjsz; // for "_TrN_Sp._newObject()" and '\0'
+    /* Reserve headroom for newlines injected between children so the
+       transpiled output preserves source line positions. Upper bound:
+       one newline per source byte of the literal span. */
+    needed += (ts_node_end_byte(arr) - ts_node_start_byte(arr));
 
     int nshort = 0;
     int nspread = 0;
@@ -3838,6 +4184,12 @@ static int rewrite_array_spread(EditList *edits, const char *src, TSNode arr, in
         addstr(newarr, newarrsz);
 
     int lasttype = -1;
+    /* For source-line preservation: track end-byte of previous emitted
+       child so we can count source newlines between it and the next
+       child, and inject them into out.  Initialised to just after the
+       opening `{`/`[` so the first child also gets pre-padding. */
+    size_t prev_kid_end = ts_node_start_byte(arr) + 1;
+    int have_emitted_kid = 0;
 
     for (i = 0; i < cnt1; i++)
     {
@@ -3847,6 +4199,18 @@ static int rewrite_array_spread(EditList *edits, const char *src, TSNode arr, in
         /* Skip comments — see size-pass note. */
         if (strcmp(_kt2, "comment") == 0)
             continue;
+
+        /* Count source newlines between previous kid end (or the
+           opening `{`/`[` for the first kid) and this kid start so we
+           can preserve line numbers in the rewrite. */
+        (void)have_emitted_kid;
+        size_t kid_start_byte = ts_node_start_byte(kid);
+        int between_nl = 0;
+        if (kid_start_byte > prev_kid_end)
+        {
+            for (size_t p = prev_kid_end; p < kid_start_byte; p++)
+                if (src[p] == '\n') between_nl++;
+        }
 
         if (strcmp(_kt2, "spread_element") == 0)
         {
@@ -3858,11 +4222,17 @@ static int rewrite_array_spread(EditList *edits, const char *src, TSNode arr, in
                 if (ts_node_is_named(gkid) && strcmp(ts_node_type(gkid), "spread_element") != 0)
                 {
                     size_t start = ts_node_start_byte(gkid), end = ts_node_end_byte(gkid);
+                    /* Pad newlines BEFORE the spread-chunk's connector
+                       so the spread starts on its original source line. */
+                    for (int z = 0; z < between_nl; z++) addchar('\n');
+                    between_nl = 0;
                     addstr(fpref, 32);
                     addstr(src + start, (end - start));
                     addchar(')');
                     addchar(')');
                     lasttype = isspread;
+                    prev_kid_end = end;
+                    have_emitted_kid = 1;
                 }
             }
         }
@@ -3874,9 +4244,14 @@ static int rewrite_array_spread(EditList *edits, const char *src, TSNode arr, in
             {
                 spos -= 2; // go back to the }
                 addchar(',');
+                /* Pad newlines AFTER the comma so the new property's
+                   text starts on its original source line. */
+                for (int z = 0; z < between_nl; z++) addchar('\n');
             }
             else
             {
+                /* Pad newlines BEFORE the `._concat(` connector. */
+                for (int z = 0; z < between_nl; z++) addchar('\n');
                 addstr("._concat(", 9);
                 addchar(open);
             }
@@ -3890,6 +4265,8 @@ static int rewrite_array_spread(EditList *edits, const char *src, TSNode arr, in
             addchar(close);
             addchar(')');
             lasttype = isplain;
+            prev_kid_end = end;
+            have_emitted_kid = 1;
         }
     }
 #undef spreadsize
@@ -4980,19 +5357,33 @@ static int _text_has_yield(const char *src, size_t ss, size_t se)
     return 0;
 }
 
-// Lower a statement containing 0..N yields into state-machine steps
-static void _emit_stmt_yield_lower(rp_string *dst, const char *src, size_t ss, size_t se, TSNode stmt_node,
-                                   int *p_next_label)
+/* Helper: lower yields in src range [ss..se] (with `container` as the
+   tree-sitter subtree covering it). Emits each yield's state-machine
+   transition into `dst`. Returns a malloc'd string that is the original
+   source with yield expressions replaced by `_context.sent`. Handles
+   nested yields (e.g. `yield yield __await(v)`) by recursing into each
+   yield's argument first, so inner yields get lower case numbers and
+   their post-resume value (`_context.sent`) becomes the outer yield's
+   actual return-argument. */
+static char *_lower_range_with_yields(rp_string *dst, const char *src,
+                                      size_t ss, size_t se, TSNode container,
+                                      int *p_next_label)
 {
     _AsyncNodeVec av = {0};
-    _collect_yields_shallow(stmt_node, &av);
+    _collect_yields_shallow(container, &av);
+
     if (av.len == 0)
     {
-        rp_string_putsn(dst, src+ss, se-ss);
-        if (av.a)
-            free(av.a);
-        return;
+        size_t len = se - ss;
+        char *out = NULL;
+        REMALLOC(out, len + 1);
+        memcpy(out, src + ss, len);
+        out[len] = '\0';
+        if (av.a) free(av.a);
+        return out;
     }
+
+    /* Sort by start ascending. */
     for (size_t i = 0; i + 1 < av.len; i++)
         for (size_t j = i + 1; j < av.len; j++)
             if (ts_node_start_byte(av.a[j]) < ts_node_start_byte(av.a[i]))
@@ -5001,56 +5392,101 @@ static void _emit_stmt_yield_lower(rp_string *dst, const char *src, size_t ss, s
                 av.a[i] = av.a[j];
                 av.a[j] = t;
             }
-    size_t cursor = ss;
 
-    rp_string *acc = rp_string_new(256);
+    /* When multiple yields appear at this level (e.g. `(yield A) + (yield B)`)
+       each needs its own slot, because `_context.sent` is overwritten on
+       every re-entry and the later expression can't read the earlier
+       sent value. Use `_context.s<N>` (a fresh property on the runtime
+       context object, indexed by case number) as the slot. For the
+       single-yield case the slot is unnecessary and we just use
+       `_context.sent` directly to keep the output minimal. */
+    int use_slots = (av.len > 1);
+
+    rp_string *acc = rp_string_new(64);
+    size_t cursor = ss;
 
     for (size_t k = 0; k < av.len; k++)
     {
         TSNode yw = av.a[k];
-        // yield_expression's first named child is the argument (if any)
+        size_t yws = ts_node_start_byte(yw), ywe = ts_node_end_byte(yw);
+
+        /* Recurse into the arg FIRST so any nested yields emit their
+           cases to `dst` BEFORE this yield's case (i.e. innermost gets
+           the lower case number). The recursion returns the substituted
+           arg text. */
         TSNode arg = ts_node_named_child(yw, 0);
+        char *arg_lowered = NULL;
+        if (!ts_node_is_null(arg))
+        {
+            size_t as = ts_node_start_byte(arg), ae = ts_node_end_byte(arg);
+            arg_lowered = _lower_range_with_yields(dst, src, as, ae, arg, p_next_label);
+        }
+
+        /* Emit this yield's case transition. */
         *p_next_label += 3;
         char tmp[24];
         snprintf(tmp, sizeof(tmp), "%d", *p_next_label);
-        if(dst->len)
+
+        char slot_name[40];
+        if (use_slots)
+            snprintf(slot_name, sizeof(slot_name), "_context.s%s", tmp);
+        else
+            strcpy(slot_name, "_context.sent");
+
+        if (dst->len)
         {
-            char *p = dst->str + dst->len-1;
-            while( p > dst->str && isspace(*p))
-                p--;
-            if(*p!=';')
-                rp_string_putc(dst, ';');
+            char *p = dst->str + dst->len - 1;
+            while (p > dst->str && isspace(*p)) p--;
+            if (*p != ';') rp_string_putc(dst, ';');
         }
         rp_string_puts(dst, "_context._y=true;_context.next = ");
         rp_string_puts(dst, tmp);
         rp_string_puts(dst, "; return (");
-
-        if (!ts_node_is_null(arg))
-        {
-            size_t as = ts_node_start_byte(arg), ae = ts_node_end_byte(arg);
-            rp_string_putsn(dst, src + as, ae-as);
-        }
+        if (arg_lowered)
+            rp_string_puts(dst, arg_lowered);
         else
-        {
             rp_string_puts(dst, "undefined");
-        }
         rp_string_puts(dst, ");");
         rp_string_puts(dst, " case ");
         rp_string_puts(dst, tmp);
         rp_string_puts(dst, ":");
+        if (use_slots)
+        {
+            /* Save `_context.sent` to this yield's slot immediately on
+               re-entry, before any later code (or another yield) can
+               overwrite it. */
+            rp_string_puts(dst, slot_name);
+            rp_string_puts(dst, "=_context.sent;");
+        }
 
-        size_t yws = ts_node_start_byte(yw), ywe = ts_node_end_byte(yw);
-        rp_string_putsn(acc, src+cursor, yws-cursor);
-        rp_string_puts(acc, "_context.sent");
+        if (arg_lowered) free(arg_lowered);
+
+        /* Replace the yield-expression range in the accumulator with
+           the slot name (or `_context.sent` if no slot needed). */
+        rp_string_putsn(acc, src + cursor, yws - cursor);
+        rp_string_puts(acc, slot_name);
         cursor = ywe;
     }
-    rp_string_putsn(acc, src+cursor, se-cursor);
-    rp_string_puts(dst, acc->str);
-    if (acc->len == 0 || acc->str[acc->len - 1] != ';')
-        rp_string_puts(dst, ";");
+    rp_string_putsn(acc, src + cursor, se - cursor);
+
+    char *result = rp_string_steal(acc);
     acc = rp_string_free(acc);
-    if (av.a)
-        free(av.a);
+    if (av.a) free(av.a);
+    return result;
+}
+
+// Lower a statement containing 0..N yields (including nested) into
+// state-machine steps. Emits case-transitions to `dst` and appends the
+// substituted statement (yields replaced by `_context.sent`).
+static void _emit_stmt_yield_lower(rp_string *dst, const char *src, size_t ss, size_t se, TSNode stmt_node,
+                                   int *p_next_label)
+{
+    char *lowered = _lower_range_with_yields(dst, src, ss, se, stmt_node, p_next_label);
+    rp_string_puts(dst, lowered);
+    size_t lowered_len = strlen(lowered);
+    if (lowered_len == 0 || lowered[lowered_len - 1] != ';')
+        rp_string_puts(dst, ";");
+    free(lowered);
 }
 
 /* Process children of a statement_block, lowering yields into state-machine
@@ -5552,6 +5988,454 @@ static int span_has_flow_ctrl_tokens(const char *src, size_t s, size_t e)
     return 0;
 }
 
+/* Forward decls for §8 Phase 5 helpers (definitions are below the
+   _bs_* family of scope-rename helpers). */
+typedef struct _bs_name_set_s _BS_NameSet;
+static int _bs_is_fn_boundary(TSNode node);
+static int _bs_ns_contains(const _BS_NameSet *s, const char *name, size_t len);
+
+/* §8 Phase 5 helpers: capture detection and sentinel rewriting for the
+   for-let → _loop transformation. See transpiler-todo.md §8 Phase 5. */
+
+/* Walk a subtree, returning 1 if any identifier reference inside a
+   NESTED function/arrow/method references one of the names in `names`.
+   "Capture" means: a closure created inside the for-loop body that
+   references the loop-let binding — the closure must capture the
+   iteration's fresh binding to behave correctly. References at the
+   body's top level (not inside a nested function) don't count, because
+   those execute synchronously per iteration. */
+static int _bs_for_has_capture(TSNode node, const char *src,
+                               _BS_NameSet *names, int inside_fn)
+{
+    const char *t = ts_node_type(node);
+    int now_inside = inside_fn || _bs_is_fn_boundary(node);
+
+    if (now_inside && strcmp(t, "identifier") == 0)
+    {
+        size_t s = ts_node_start_byte(node), e = ts_node_end_byte(node);
+        if (_bs_ns_contains(names, src + s, e - s))
+        {
+            TSNode parent = ts_node_parent(node);
+            int skip = 0;
+            if (!ts_node_is_null(parent))
+            {
+                const char *pt = ts_node_type(parent);
+                if (strcmp(pt, "member_expression") == 0)
+                {
+                    TSNode prop = ts_node_child_by_field_name(parent, "property", 8);
+                    if (!ts_node_is_null(prop) && ts_node_eq(prop, node)) skip = 1;
+                }
+                else if (strcmp(pt, "pair") == 0 || strcmp(pt, "pair_pattern") == 0)
+                {
+                    TSNode key = ts_node_child_by_field_name(parent, "key", 3);
+                    if (!ts_node_is_null(key) && ts_node_eq(key, node)) skip = 1;
+                }
+                else if (strcmp(pt, "variable_declarator") == 0)
+                {
+                    TSNode nn = ts_node_child_by_field_name(parent, "name", 4);
+                    if (!ts_node_is_null(nn) && ts_node_eq(nn, node)) skip = 1;
+                }
+            }
+            if (!skip) return 1;
+        }
+    }
+
+    uint32_t cc = ts_node_child_count(node);
+    for (uint32_t i = 0; i < cc; i++)
+        if (_bs_for_has_capture(ts_node_child(node, i), src, names, now_inside)) return 1;
+    return 0;
+}
+
+/* §8 Phase 5 — full babel-parity sentinel walker.
+
+   Context carried through the recursive walk:
+   - edits          : sentinel substitution edits (positions are absolute src bytes)
+   - has_bare_break / has_bare_continue / has_return : which dispatch arms to emit
+   - break_labels / continue_labels (deduped): labels seen on labeled break/continue
+     whose target is the for-let or an enclosing loop (these must propagate)
+   - args_positions : every `arguments` identifier reference at body scope (not
+     inside nested functions). If non-empty, the wrap emits a
+     `var _TrN_loop_args = arguments;` prefix and rewrites each occurrence.
+   - giveup         : set when we encounter something we can't safely handle
+     (label target inside the body that we can't analyse, etc.)
+
+   Depth counters:
+   - switch_depth : enclosing switch_statements. While >0, bare `break` targets
+     the switch and is left alone; labeled break/continue and return still apply.
+   - loop_depth   : enclosing loops INSIDE the for-let body (not the for-let
+     itself). While >0, bare `break`/`continue` and labeled-targeting-inner
+     don't reach the for-let; only `return` and labels targeting our level or
+     above still propagate. */
+
+typedef struct {
+    char  **labels;
+    size_t  len, cap;
+} _BS_LblSet;
+
+static int _bs_lbl_has(const _BS_LblSet *s, const char *name, size_t len)
+{
+    for (size_t i = 0; i < s->len; i++)
+    {
+        if (strlen(s->labels[i]) == len && memcmp(s->labels[i], name, len) == 0)
+            return 1;
+    }
+    return 0;
+}
+static void _bs_lbl_add(_BS_LblSet *s, const char *name, size_t len)
+{
+    if (_bs_lbl_has(s, name, len)) return;
+    if (s->len == s->cap) {
+        s->cap = s->cap ? s->cap * 2 : 4;
+        REMALLOC(s->labels, s->cap * sizeof(char *));
+    }
+    char *copy = NULL;
+    REMALLOC(copy, len + 1);
+    memcpy(copy, name, len);
+    copy[len] = '\0';
+    s->labels[s->len++] = copy;
+}
+static void _bs_lbl_free(_BS_LblSet *s)
+{
+    for (size_t i = 0; i < s->len; i++) free(s->labels[i]);
+    free(s->labels);
+    s->labels = NULL;
+    s->len = s->cap = 0;
+}
+
+typedef struct {
+    size_t *a;
+    size_t  len, cap;
+} _BS_SizeVec;
+
+static void _bs_sv_push(_BS_SizeVec *v, size_t x)
+{
+    if (v->len == v->cap) {
+        v->cap = v->cap ? v->cap * 2 : 8;
+        REMALLOC(v->a, v->cap * sizeof(size_t));
+    }
+    v->a[v->len++] = x;
+}
+static void _bs_sv_free(_BS_SizeVec *v) { free(v->a); v->a = NULL; v->len = v->cap = 0; }
+
+typedef struct {
+    EditList    *edits;
+    _BS_LblSet   break_labels;
+    _BS_LblSet   continue_labels;
+    _BS_SizeVec  args_positions;
+    TSNode       body;            /* the for-let's body — for inside-body checks */
+    int          has_bare_break;
+    int          has_bare_continue;
+    int          has_return;
+    int          giveup;
+    /* Nested-wrap depth: counts for-lets-with-let-init encountered while
+       descending. At depth > 0 we're inside another wrap's body — labels
+       and `has_return` are still collected (so OUR dispatch can propagate
+       them upward), but sentinel EDITS are not emitted (the inner wrap
+       owns those edits). Bare break/continue at any depth > 0 is also
+       not OUR concern. `arguments` references inside a nested wrap are
+       handled by that wrap's own argument-capture, not ours. */
+} _BS_ForCtx;
+
+/* Walk parent chain from `from` looking for a labeled_statement with the
+   given label name. Stops at function boundaries. Returns null if not
+   found. */
+static TSNode _bs_find_label_target(TSNode from, const char *src,
+                                    const char *label, size_t label_len)
+{
+    TSNode p = ts_node_parent(from);
+    while (!ts_node_is_null(p))
+    {
+        if (_bs_is_fn_boundary(p)) return (TSNode){{0}};
+        if (strcmp(ts_node_type(p), "labeled_statement") == 0)
+        {
+            TSNode lname = ts_node_child_by_field_name(p, "label", 5);
+            if (!ts_node_is_null(lname))
+            {
+                size_t ls = ts_node_start_byte(lname), le = ts_node_end_byte(lname);
+                if (le - ls == label_len && memcmp(src + ls, label, label_len) == 0)
+                    return p;
+            }
+        }
+        p = ts_node_parent(p);
+    }
+    return (TSNode){{0}};
+}
+
+/* Returns 1 if `for_stmt` looks like a for-let that WILL emit a wrap
+   (has lexical_declaration with `let` keyword in init/left position).
+   Conservatively assumes captures exist — a for-let without captures
+   gets the simple wrap which doesn't have a dispatch, so misclassifying
+   either direction is harmless for label-propagation reasoning EXCEPT
+   for the case where we'd cross a no-capture wrap thinking it's a
+   wrap-emitting one. In practice, for-lets without captures are rare;
+   this approximation keeps the code simple. */
+static int _bs_for_is_let(TSNode for_stmt)
+{
+    const char *t = ts_node_type(for_stmt);
+    if (strcmp(t, "for_statement") != 0 &&
+        strcmp(t, "for_in_statement") != 0 &&
+        strcmp(t, "for_of_statement") != 0)
+        return 0;
+    TSNode init = ts_node_child_by_field_name(for_stmt, "initializer", 11);
+    if (ts_node_is_null(init))
+        init = ts_node_child_by_field_name(for_stmt, "left", 4);
+    if (ts_node_is_null(init)) return 0;
+    if (strcmp(ts_node_type(init), "lexical_declaration") != 0) return 0;
+    uint32_t nc = ts_node_child_count(init);
+    for (uint32_t i = 0; i < nc; i++)
+    {
+        TSNode kid = ts_node_child(init, i);
+        if (ts_node_is_named(kid)) break;
+        if (strcmp(ts_node_type(kid), "let") == 0) return 1;
+    }
+    return 0;
+}
+
+/* Is there an ancestor for-let between `my_for` and the function
+   boundary? If yes, we're inside another wrap → not outermost. */
+static int _bs_has_outer_wrap(TSNode my_for)
+{
+    TSNode p = ts_node_parent(my_for);
+    while (!ts_node_is_null(p))
+    {
+        if (_bs_is_fn_boundary(p)) return 0;
+        if (_bs_for_is_let(p)) return 1;
+        p = ts_node_parent(p);
+    }
+    return 0;
+}
+
+/* Can our wrap's dispatch directly do `break LABEL` / `continue LABEL`?
+   That requires the labeled_statement to be reachable from our
+   dispatch site without crossing another wrap's IIFE. */
+static int _bs_label_dispatchable(TSNode my_for, TSNode label_target)
+{
+    TSNode p = ts_node_parent(my_for);
+    while (!ts_node_is_null(p))
+    {
+        if (ts_node_eq(p, label_target)) return 1;
+        if (_bs_is_fn_boundary(p)) return 0;
+        if (_bs_for_is_let(p)) return 0;  /* intervening wrap hides label */
+        p = ts_node_parent(p);
+    }
+    return 0;
+}
+
+/* Returns 1 if `node` is the same as `ancestor` or a descendant of it. */
+static int _bs_node_is_inside(TSNode node, TSNode ancestor)
+{
+    TSNode p = node;
+    while (!ts_node_is_null(p))
+    {
+        if (ts_node_eq(p, ancestor)) return 1;
+        p = ts_node_parent(p);
+    }
+    return 0;
+}
+
+static void _bs_for_walk(TSNode node, const char *src, _BS_ForCtx *ctx,
+                         int switch_depth, int loop_depth, int wrap_depth)
+{
+    if (ctx->giveup) return;
+
+    const char *t = ts_node_type(node);
+
+    if (strcmp(t, "for_statement") == 0 || strcmp(t, "for_in_statement") == 0 ||
+        strcmp(t, "for_of_statement") == 0)
+    {
+        TSNode init = ts_node_child_by_field_name(node, "initializer", 11);
+        if (ts_node_is_null(init))
+            init = ts_node_child_by_field_name(node, "left", 4);
+        int is_inner_forlet = (!ts_node_is_null(init) &&
+                               strcmp(ts_node_type(init), "lexical_declaration") == 0);
+        uint32_t cc = ts_node_child_count(node);
+        for (uint32_t i = 0; i < cc; i++)
+            _bs_for_walk(ts_node_child(node, i), src, ctx,
+                         switch_depth, loop_depth + 1,
+                         is_inner_forlet ? wrap_depth + 1 : wrap_depth);
+        return;
+    }
+    if (strcmp(t, "while_statement") == 0 || strcmp(t, "do_statement") == 0)
+    {
+        uint32_t cc = ts_node_child_count(node);
+        for (uint32_t i = 0; i < cc; i++)
+            _bs_for_walk(ts_node_child(node, i), src, ctx,
+                         switch_depth, loop_depth + 1, wrap_depth);
+        return;
+    }
+
+    /* Nested function: separate scope. Don't descend. */
+    if (_bs_is_fn_boundary(node))
+        return;
+
+    /* Switch: bare `break` inside targets the switch, not our loop. */
+    if (strcmp(t, "switch_statement") == 0)
+    {
+        uint32_t cc = ts_node_child_count(node);
+        for (uint32_t i = 0; i < cc; i++)
+            _bs_for_walk(ts_node_child(node, i), src, ctx,
+                         switch_depth + 1, loop_depth, wrap_depth);
+        return;
+    }
+
+    /* `arguments` reference at body scope (we never descend into nested fns,
+       so any arguments we see is genuinely the enclosing function's). */
+    if (strcmp(t, "identifier") == 0)
+    {
+        size_t s = ts_node_start_byte(node), e = ts_node_end_byte(node);
+        if (e - s == 9 && memcmp(src + s, "arguments", 9) == 0)
+        {
+            TSNode parent = ts_node_parent(node);
+            int skip = 0;
+            if (!ts_node_is_null(parent))
+            {
+                const char *pt = ts_node_type(parent);
+                if (strcmp(pt, "member_expression") == 0)
+                {
+                    TSNode prop = ts_node_child_by_field_name(parent, "property", 8);
+                    if (!ts_node_is_null(prop) && ts_node_eq(prop, node)) skip = 1;
+                }
+                else if (strcmp(pt, "pair") == 0 || strcmp(pt, "pair_pattern") == 0)
+                {
+                    TSNode key = ts_node_child_by_field_name(parent, "key", 3);
+                    if (!ts_node_is_null(key) && ts_node_eq(key, node)) skip = 1;
+                }
+                else if (strcmp(pt, "variable_declarator") == 0)
+                {
+                    TSNode nn = ts_node_child_by_field_name(parent, "name", 4);
+                    if (!ts_node_is_null(nn) && ts_node_eq(nn, node)) skip = 1;
+                }
+            }
+            /* Only WE (this for-let's wrap) capture arguments at OUR
+               body level. Inside a nested wrap's body, that wrap does
+               its own capture. */
+            if (!skip && wrap_depth == 0) _bs_sv_push(&ctx->args_positions, s);
+        }
+    }
+
+    if (strcmp(t, "break_statement") == 0)
+    {
+        TSNode lblnode = (TSNode){{0}};
+        uint32_t cc = ts_node_child_count(node);
+        for (uint32_t i = 0; i < cc; i++)
+        {
+            TSNode kid = ts_node_child(node, i);
+            if (ts_node_is_named(kid) && strcmp(ts_node_type(kid), "statement_identifier") == 0)
+            {
+                lblnode = kid;
+                break;
+            }
+        }
+        if (ts_node_is_null(lblnode))
+        {
+            /* Bare break belongs to the innermost enclosing loop/switch
+               (or our for-let if neither). We only OWN it if loop_depth
+               == 0 and switch_depth == 0. */
+            if (loop_depth > 0) return;
+            if (switch_depth > 0) return;
+            if (wrap_depth > 0) return;  /* inside another wrap — its concern */
+            ctx->has_bare_break = 1;
+            size_t s = ts_node_start_byte(node), e = ts_node_end_byte(node);
+            add_edit(ctx->edits, s, e, "return \"break\";", NULL);
+            return;
+        }
+        /* Labeled break. */
+        size_t ls = ts_node_start_byte(lblnode), le = ts_node_end_byte(lblnode);
+        size_t llen = le - ls;
+        TSNode target = _bs_find_label_target(node, src, src + ls, llen);
+        if (ts_node_is_null(target))
+        {
+            ctx->giveup = 1;
+            return;
+        }
+        if (_bs_node_is_inside(target, ctx->body))
+            return;  /* nested labeled_statement handles it */
+        /* Collect the label regardless of wrap_depth: our dispatch needs
+           it to either dispatch directly or propagate. */
+        _bs_lbl_add(&ctx->break_labels, src + ls, llen);
+        if (wrap_depth > 0) return;  /* inner wrap emits the sentinel edit */
+        size_t s = ts_node_start_byte(node), e = ts_node_end_byte(node);
+        rp_string *rep = rp_string_new(32);
+        rp_string_puts(rep, "return \"b:");
+        rp_string_putsn(rep, src + ls, llen);
+        rp_string_puts(rep, "\";");
+        add_edit_take_ownership(ctx->edits, s, e, rp_string_steal(rep), NULL);
+        rep = rp_string_free(rep);
+        return;
+    }
+
+    if (strcmp(t, "continue_statement") == 0)
+    {
+        TSNode lblnode = (TSNode){{0}};
+        uint32_t cc = ts_node_child_count(node);
+        for (uint32_t i = 0; i < cc; i++)
+        {
+            TSNode kid = ts_node_child(node, i);
+            if (ts_node_is_named(kid) && strcmp(ts_node_type(kid), "statement_identifier") == 0)
+            {
+                lblnode = kid;
+                break;
+            }
+        }
+        if (ts_node_is_null(lblnode))
+        {
+            if (loop_depth > 0) return;
+            if (wrap_depth > 0) return;
+            ctx->has_bare_continue = 1;
+            size_t s = ts_node_start_byte(node), e = ts_node_end_byte(node);
+            add_edit(ctx->edits, s, e, "return \"continue\";", NULL);
+            return;
+        }
+        size_t ls = ts_node_start_byte(lblnode), le = ts_node_end_byte(lblnode);
+        size_t llen = le - ls;
+        TSNode target = _bs_find_label_target(node, src, src + ls, llen);
+        if (ts_node_is_null(target))
+        {
+            ctx->giveup = 1;
+            return;
+        }
+        if (_bs_node_is_inside(target, ctx->body))
+            return;
+        _bs_lbl_add(&ctx->continue_labels, src + ls, llen);
+        if (wrap_depth > 0) return;
+        size_t s = ts_node_start_byte(node), e = ts_node_end_byte(node);
+        rp_string *rep = rp_string_new(32);
+        rp_string_puts(rep, "return \"c:");
+        rp_string_putsn(rep, src + ls, llen);
+        rp_string_puts(rep, "\";");
+        add_edit_take_ownership(ctx->edits, s, e, rp_string_steal(rep), NULL);
+        rep = rp_string_free(rep);
+        return;
+    }
+
+    if (strcmp(t, "return_statement") == 0)
+    {
+        ctx->has_return = 1;
+        if (wrap_depth > 0) {
+            /* Inner wrap emits the sentinel; we just record that returns
+               exist so our dispatch propagates. */
+            return;
+        }
+        TSNode expr = ts_node_named_child(node, 0);
+        size_t s = ts_node_start_byte(node), e = ts_node_end_byte(node);
+        if (ts_node_is_null(expr))
+        {
+            add_edit(ctx->edits, s, e, "return {};", NULL);
+        }
+        else
+        {
+            add_edit(ctx->edits, s, s + 6, "return {v:", NULL);
+            size_t ee = ts_node_end_byte(expr);
+            add_edit(ctx->edits, ee, ee, "}", NULL);
+        }
+        return;
+    }
+
+    uint32_t cc = ts_node_child_count(node);
+    for (uint32_t i = 0; i < cc; i++)
+        _bs_for_walk(ts_node_child(node, i), src, ctx, switch_depth, loop_depth, wrap_depth);
+}
+
 /* AST-based check: walk body for break/continue statements that belong
    to THIS loop (not nested loops or functions). Stops descending at
    function boundaries and nested loops. */
@@ -5602,6 +6486,639 @@ static int body_has_loop_flow_control(TSNode body)
 done:
     ts_tree_cursor_delete(&cur);
     return found;
+}
+
+/* =================================================================
+   Block-scope rename pass (transpiler-todo.md §8 Phases 1-4).
+
+   Babel-style: walk each function scope, find `let`/`const`
+   declarations in nested blocks that would shadow another binding
+   in the same function, and rename them with a fresh uid `_name`,
+   `_name2`, … plus rewrite all lexical references that resolve to
+   that binding.
+
+   Per-function-scope freshness (not program-wide). Bindings we
+   detect-against in a function:
+     - var declarations at any nested depth
+     - function declarations at any nested depth
+     - class declarations at any nested depth
+     - formal parameters of the function
+     - let/const declarations elsewhere in the same function
+
+   We do NOT descend into nested function/method/arrow bodies — those
+   are independent scopes, processed when the cursor reaches them.
+   ================================================================= */
+
+typedef struct _bs_name_set_s {
+    char  **names;
+    size_t *name_lens;
+    size_t  len, cap;
+} _BS_NameSet;
+
+static void _bs_ns_init(_BS_NameSet *s) { s->names = NULL; s->name_lens = NULL; s->len = s->cap = 0; }
+static void _bs_ns_free(_BS_NameSet *s)
+{
+    for (size_t i = 0; i < s->len; i++) free(s->names[i]);
+    free(s->names);
+    free(s->name_lens);
+    s->names = NULL;
+    s->name_lens = NULL;
+    s->len = s->cap = 0;
+}
+static void _bs_ns_add(_BS_NameSet *s, const char *name, size_t len)
+{
+    if (s->len == s->cap)
+    {
+        s->cap = s->cap ? s->cap * 2 : 8;
+        REMALLOC(s->names, s->cap * sizeof(char *));
+        REMALLOC(s->name_lens, s->cap * sizeof(size_t));
+    }
+    s->names[s->len] = (char *)malloc(len + 1);
+    memcpy(s->names[s->len], name, len);
+    s->names[s->len][len] = '\0';
+    s->name_lens[s->len] = len;
+    s->len++;
+}
+static int _bs_ns_contains(const _BS_NameSet *s, const char *name, size_t len)
+{
+    for (size_t i = 0; i < s->len; i++)
+        if (s->name_lens[i] == len && memcmp(s->names[i], name, len) == 0)
+            return 1;
+    return 0;
+}
+
+/* Helper: is `node` a function-like scope boundary we shouldn't cross? */
+static int _bs_is_fn_boundary(TSNode node)
+{
+    const char *t = ts_node_type(node);
+    return (strcmp(t, "function_declaration") == 0 ||
+            strcmp(t, "function_expression") == 0 ||
+            strcmp(t, "function") == 0 ||
+            strcmp(t, "arrow_function") == 0 ||
+            strcmp(t, "generator_function_declaration") == 0 ||
+            strcmp(t, "generator_function") == 0 ||
+            strcmp(t, "generator_function_expression") == 0 ||
+            strcmp(t, "method_definition") == 0);
+}
+
+/* Collect formal parameter identifier names from a `formal_parameters`
+   or single-param `identifier` node. Skip destructuring for now (we
+   don't rename around them, but we DO want to count them as shadow
+   sources, so we recurse to pick up the binding names). */
+static void _bs_collect_param_names(TSNode params, const char *src, _BS_NameSet *out)
+{
+    if (ts_node_is_null(params)) return;
+    const char *pt = ts_node_type(params);
+    if (strcmp(pt, "identifier") == 0)
+    {
+        size_t s = ts_node_start_byte(params), e = ts_node_end_byte(params);
+        _bs_ns_add(out, src + s, e - s);
+        return;
+    }
+    if (strcmp(pt, "shorthand_property_identifier_pattern") == 0 ||
+        strcmp(pt, "shorthand_property_identifier") == 0)
+    {
+        size_t s = ts_node_start_byte(params), e = ts_node_end_byte(params);
+        _bs_ns_add(out, src + s, e - s);
+        return;
+    }
+    uint32_t c = ts_node_named_child_count(params);
+    for (uint32_t i = 0; i < c; i++)
+        _bs_collect_param_names(ts_node_named_child(params, i), src, out);
+}
+
+/* Recursively walk a node, collecting names of:
+     - var declarations
+     - function declarations
+     - class declarations
+   Skips descent into nested function-like bodies (those are separate
+   scopes). Does NOT collect let/const here. */
+static void _bs_collect_var_fn_class_names(TSNode node, const char *src, _BS_NameSet *out, int is_root)
+{
+    if (!is_root && _bs_is_fn_boundary(node))
+        return;
+    const char *t = ts_node_type(node);
+
+    if (strcmp(t, "variable_declaration") == 0)
+    {
+        uint32_t dc = ts_node_named_child_count(node);
+        for (uint32_t i = 0; i < dc; i++)
+        {
+            TSNode d = ts_node_named_child(node, i);
+            if (strcmp(ts_node_type(d), "variable_declarator") != 0) continue;
+            TSNode name = ts_node_child_by_field_name(d, "name", 4);
+            if (ts_node_is_null(name)) continue;
+            const char *nt = ts_node_type(name);
+            if (strcmp(nt, "identifier") == 0)
+            {
+                size_t s = ts_node_start_byte(name), e = ts_node_end_byte(name);
+                _bs_ns_add(out, src + s, e - s);
+            }
+            else if (strcmp(nt, "array_pattern") == 0 || strcmp(nt, "object_pattern") == 0)
+            {
+                _bs_collect_param_names(name, src, out);
+            }
+        }
+    }
+    else if (strcmp(t, "function_declaration") == 0 ||
+             strcmp(t, "generator_function_declaration") == 0 ||
+             strcmp(t, "class_declaration") == 0)
+    {
+        TSNode name = ts_node_child_by_field_name(node, "name", 4);
+        if (!ts_node_is_null(name) && strcmp(ts_node_type(name), "identifier") == 0)
+        {
+            size_t s = ts_node_start_byte(name), e = ts_node_end_byte(name);
+            _bs_ns_add(out, src + s, e - s);
+        }
+        /* Don't descend INTO the function body. */
+        return;
+    }
+    /* Recurse into children. */
+    uint32_t cc = ts_node_child_count(node);
+    for (uint32_t i = 0; i < cc; i++)
+        _bs_collect_var_fn_class_names(ts_node_child(node, i), src, out, 0);
+}
+
+/* Recursively walk, collecting all let/const-bound names from the
+   function scope (any nesting depth, but stopping at nested function
+   boundaries). Two outputs: `all_names` gets every let/const name
+   (used as shadow sources), `decl_list` gets the declarator TSNodes
+   themselves for later targeted rewriting. */
+typedef struct {
+    TSNode *a;       /* the variable_declarator nodes */
+    size_t  len, cap;
+} _BS_NodeVec;
+
+static void _bs_nv_init(_BS_NodeVec *v) { v->a = NULL; v->len = v->cap = 0; }
+static void _bs_nv_free(_BS_NodeVec *v) { free(v->a); v->a = NULL; v->len = v->cap = 0; }
+static void _bs_nv_push(_BS_NodeVec *v, TSNode n)
+{
+    if (v->len == v->cap)
+    {
+        v->cap = v->cap ? v->cap * 2 : 8;
+        REMALLOC(v->a, v->cap * sizeof(TSNode));
+    }
+    v->a[v->len++] = n;
+}
+
+static void _bs_collect_lexical_decls(TSNode node, const char *src,
+                                      _BS_NameSet *all_names,
+                                      _BS_NodeVec *decl_list,
+                                      int is_root)
+{
+    if (!is_root && _bs_is_fn_boundary(node))
+        return;
+    const char *t = ts_node_type(node);
+
+    if (strcmp(t, "lexical_declaration") == 0)
+    {
+        uint32_t dc = ts_node_named_child_count(node);
+        for (uint32_t i = 0; i < dc; i++)
+        {
+            TSNode d = ts_node_named_child(node, i);
+            if (strcmp(ts_node_type(d), "variable_declarator") != 0) continue;
+            TSNode name = ts_node_child_by_field_name(d, "name", 4);
+            if (ts_node_is_null(name)) continue;
+            const char *nt = ts_node_type(name);
+            if (strcmp(nt, "identifier") == 0)
+            {
+                size_t s = ts_node_start_byte(name), e = ts_node_end_byte(name);
+                _bs_ns_add(all_names, src + s, e - s);
+                _bs_nv_push(decl_list, d);
+            }
+            /* TODO: destructuring patterns in let/const */
+        }
+    }
+
+    uint32_t cc = ts_node_child_count(node);
+    for (uint32_t i = 0; i < cc; i++)
+        _bs_collect_lexical_decls(ts_node_child(node, i), src, all_names, decl_list, 0);
+}
+
+/* Generate a fresh uid for `base`. Strategy: try `_base`, `_base2`,
+   `_base3`, … until we find one not in `taken`. Caller frees. */
+static char *_bs_fresh_uid(const char *base, size_t base_len, const _BS_NameSet *taken)
+{
+    /* strip leading _ and trailing digits from base */
+    while (base_len > 0 && base[0] == '_') { base++; base_len--; }
+    while (base_len > 0 && isdigit((unsigned char)base[base_len - 1])) { base_len--; }
+    if (base_len == 0) { base = "ref"; base_len = 3; }
+
+    /* try _base, _base2, _base3, ... */
+    char *buf = NULL;
+    size_t cap = base_len + 16;
+    REMALLOC(buf, cap);
+    int i = 1;
+    for (;;)
+    {
+        int n;
+        if (i == 1) n = snprintf(buf, cap, "_%.*s", (int)base_len, base);
+        else        n = snprintf(buf, cap, "_%.*s%d", (int)base_len, base, i);
+        if ((size_t)n >= cap)
+        {
+            cap = (size_t)n + 1;
+            REMALLOC(buf, cap);
+            continue;
+        }
+        if (!_bs_ns_contains(taken, buf, (size_t)n))
+            return buf;
+        i++;
+        if (i > 99999) { free(buf); return NULL; } /* safety */
+    }
+}
+
+/* Determine the lexical scope for a let/const declaration: the
+   nearest enclosing statement_block (or for-loop body / arrow concise
+   body / function body, whichever first). */
+static TSNode _bs_enclosing_block(TSNode decl)
+{
+    TSNode p = ts_node_parent(decl);
+    while (!ts_node_is_null(p))
+    {
+        const char *pt = ts_node_type(p);
+        if (strcmp(pt, "statement_block") == 0 ||
+            strcmp(pt, "program") == 0 ||
+            strcmp(pt, "switch_case") == 0 ||
+            strcmp(pt, "switch_default") == 0)
+            return p;
+        if (_bs_is_fn_boundary(p)) return p;
+        p = ts_node_parent(p);
+    }
+    return p;
+}
+
+/* Walk `block` recursively, finding every `identifier` reference that
+   matches `name` and resolves to the binding declared at `decl`.
+   Emit an edit replacing that identifier with `new_name`. Skip:
+     - property identifiers after `.`
+     - object-literal keys (pair, method names)
+     - destructuring keys
+     - declarators that redeclare `name` (and their entire scope)
+     - the declarator's own name node (that's rewritten separately)
+   For shorthand_property_identifier, expand to `name: _name` rather
+   than just replace. */
+/* Does `block` (or one of its direct children) declare `name` via
+   `let`/`const`, in a declarator OTHER than `skip_decl`? Used to decide
+   whether to descend into a nested block when rewriting references —
+   if the nested block has its own `let name` binding, that block's
+   scope shadows the outer one and we must not rewrite inside it. */
+static int _bs_block_shadows(TSNode block, const char *src,
+                             const char *name, size_t name_len,
+                             TSNode skip_decl)
+{
+    if (ts_node_is_null(block)) return 0;
+    uint32_t cc = ts_node_child_count(block);
+    for (uint32_t i = 0; i < cc; i++)
+    {
+        TSNode child = ts_node_child(block, i);
+        if (strcmp(ts_node_type(child), "lexical_declaration") != 0) continue;
+        uint32_t dc = ts_node_named_child_count(child);
+        for (uint32_t j = 0; j < dc; j++)
+        {
+            TSNode d = ts_node_named_child(child, j);
+            if (strcmp(ts_node_type(d), "variable_declarator") != 0) continue;
+            if (ts_node_eq(d, skip_decl)) continue;
+            TSNode nn = ts_node_child_by_field_name(d, "name", 4);
+            if (ts_node_is_null(nn)) continue;
+            if (strcmp(ts_node_type(nn), "identifier") != 0) continue;
+            size_t ns = ts_node_start_byte(nn), ne = ts_node_end_byte(nn);
+            if (ne - ns == name_len && memcmp(src + ns, name, name_len) == 0)
+                return 1;
+        }
+    }
+    return 0;
+}
+
+static void _bs_rewrite_refs_in_block(TSNode node, const char *src,
+                                      const char *name, size_t name_len,
+                                      const char *new_name,
+                                      TSNode decl_node,
+                                      EditList *edits, RangeList *claimed)
+{
+    const char *t = ts_node_type(node);
+
+    /* Don't descend into nested function/method/arrow — they're separate scopes. */
+    if (_bs_is_fn_boundary(node))
+        return;
+
+    /* If this node is itself a statement_block that declares `name`
+       (other than via the declarator we're processing), its scope
+       shadows the outer one — don't descend at all. The decl-node we
+       were called with is the OUTER one whose refs we're chasing;
+       inside this shadowing block, references to `name` belong to the
+       INNER binding (which will be — or has been — renamed by its own
+       pass). */
+    if (strcmp(t, "statement_block") == 0 ||
+        strcmp(t, "switch_case") == 0 ||
+        strcmp(t, "switch_default") == 0)
+    {
+        if (_bs_block_shadows(node, src, name, name_len, decl_node))
+            return;
+    }
+
+    /* Identifier reference? */
+    if (strcmp(t, "identifier") == 0)
+    {
+        size_t s = ts_node_start_byte(node), e = ts_node_end_byte(node);
+        if (e - s == name_len && memcmp(src + s, name, name_len) == 0)
+        {
+            /* Skip if parent is member_expression with this as property,
+               or pair with this as key, or variable_declarator name
+               position, etc. */
+            TSNode parent = ts_node_parent(node);
+            int skip = 0;
+            if (!ts_node_is_null(parent))
+            {
+                const char *pt = ts_node_type(parent);
+                if (strcmp(pt, "member_expression") == 0)
+                {
+                    TSNode prop = ts_node_child_by_field_name(parent, "property", 8);
+                    if (!ts_node_is_null(prop) && ts_node_eq(prop, node)) skip = 1;
+                }
+                else if (strcmp(pt, "pair") == 0 || strcmp(pt, "pair_pattern") == 0)
+                {
+                    TSNode key = ts_node_child_by_field_name(parent, "key", 3);
+                    if (!ts_node_is_null(key) && ts_node_eq(key, node)) skip = 1;
+                }
+                else if (strcmp(pt, "method_definition") == 0)
+                {
+                    TSNode nname = ts_node_child_by_field_name(parent, "name", 4);
+                    if (!ts_node_is_null(nname) && ts_node_eq(nname, node)) skip = 1;
+                }
+                else if (strcmp(pt, "variable_declarator") == 0)
+                {
+                    TSNode nn = ts_node_child_by_field_name(parent, "name", 4);
+                    if (!ts_node_is_null(nn) && ts_node_eq(nn, node)) skip = 1;
+                }
+            }
+            if (!skip)
+                add_edit(edits, s, e, new_name, claimed);
+        }
+    }
+
+    /* Shorthand property `{ name }` — when our binding is referenced
+       here it must be expanded to `{ name: _name }`. */
+    if (strcmp(t, "shorthand_property_identifier") == 0)
+    {
+        size_t s = ts_node_start_byte(node), e = ts_node_end_byte(node);
+        if (e - s == name_len && memcmp(src + s, name, name_len) == 0)
+        {
+            /* Insert ": _name" after the identifier; identifier itself stays. */
+            rp_string *ins = rp_string_new(name_len + 8);
+            rp_string_puts(ins, ": ");
+            rp_string_puts(ins, new_name);
+            add_edit_take_ownership(edits, e, e, rp_string_steal(ins), claimed);
+            ins = rp_string_free(ins);
+        }
+    }
+
+    uint32_t cc = ts_node_child_count(node);
+    for (uint32_t i = 0; i < cc; i++)
+        _bs_rewrite_refs_in_block(ts_node_child(node, i), src, name, name_len, new_name, decl_node, edits, claimed);
+}
+
+/* Does the function body (walked from `node`) contain any identifier
+   reference to `name` that lives OUTSIDE `my_block`? Used to decide
+   whether a `let name` in a nested block needs renaming to avoid the
+   let→var hoisting capturing free references that were meant to
+   resolve in an outer scope.
+
+   Skips:
+     - nested function/method/arrow bodies (separate scopes)
+     - descent into `my_block` itself (refs there belong to this binding)
+     - property-key positions (member.prop, pair-key, method-name,
+       declarator-name, fn-decl-name) — those aren't reads
+   Counts:
+     - bare identifier references
+     - shorthand_property_identifier references (`{ name }`) — those
+       expand to `{ name: name }` and the value side IS a read */
+static int _bs_has_ref_outside_block(TSNode node, const char *src,
+                                     const char *name, size_t name_len,
+                                     TSNode my_block)
+{
+    if (_bs_is_fn_boundary(node))
+        return 0;
+    if (ts_node_eq(node, my_block))
+        return 0;
+
+    const char *t = ts_node_type(node);
+    if (strcmp(t, "identifier") == 0)
+    {
+        size_t s = ts_node_start_byte(node), e = ts_node_end_byte(node);
+        if (e - s == name_len && memcmp(src + s, name, name_len) == 0)
+        {
+            TSNode parent = ts_node_parent(node);
+            if (!ts_node_is_null(parent))
+            {
+                const char *pt = ts_node_type(parent);
+                if (strcmp(pt, "member_expression") == 0)
+                {
+                    TSNode prop = ts_node_child_by_field_name(parent, "property", 8);
+                    if (!ts_node_is_null(prop) && ts_node_eq(prop, node)) goto descend;
+                }
+                else if (strcmp(pt, "pair") == 0 || strcmp(pt, "pair_pattern") == 0)
+                {
+                    TSNode key = ts_node_child_by_field_name(parent, "key", 3);
+                    if (!ts_node_is_null(key) && ts_node_eq(key, node)) goto descend;
+                }
+                else if (strcmp(pt, "method_definition") == 0)
+                {
+                    TSNode nname = ts_node_child_by_field_name(parent, "name", 4);
+                    if (!ts_node_is_null(nname) && ts_node_eq(nname, node)) goto descend;
+                }
+                else if (strcmp(pt, "variable_declarator") == 0)
+                {
+                    TSNode nn = ts_node_child_by_field_name(parent, "name", 4);
+                    if (!ts_node_is_null(nn) && ts_node_eq(nn, node)) goto descend;
+                }
+                else if (strcmp(pt, "function_declaration") == 0 ||
+                         strcmp(pt, "generator_function_declaration") == 0 ||
+                         strcmp(pt, "class_declaration") == 0)
+                {
+                    TSNode fname = ts_node_child_by_field_name(parent, "name", 4);
+                    if (!ts_node_is_null(fname) && ts_node_eq(fname, node)) goto descend;
+                }
+            }
+            return 1;
+        }
+    }
+    if (strcmp(t, "shorthand_property_identifier") == 0)
+    {
+        size_t s = ts_node_start_byte(node), e = ts_node_end_byte(node);
+        if (e - s == name_len && memcmp(src + s, name, name_len) == 0)
+            return 1;
+    }
+descend:;
+    uint32_t cc = ts_node_child_count(node);
+    for (uint32_t i = 0; i < cc; i++)
+    {
+        if (_bs_has_ref_outside_block(ts_node_child(node, i), src, name, name_len, my_block))
+            return 1;
+    }
+    return 0;
+}
+
+/* Main entry: process one function scope (or `program`). */
+static int rewrite_block_scope_rename(EditList *edits, const char *src, TSNode fn_node,
+                                      RangeList *claimed, int overlaps)
+{
+    /* Find the function's body. For `program` the node itself is the
+       body. For arrow_function with a concise body the body is an
+       expression — no let/const can appear there, so skip. */
+    const char *t = ts_node_type(fn_node);
+    TSNode body;
+    if (strcmp(t, "program") == 0)
+        body = fn_node;
+    else
+    {
+        body = ts_node_child_by_field_name(fn_node, "body", 4);
+        if (ts_node_is_null(body)) return 0;
+        if (strcmp(ts_node_type(body), "statement_block") != 0)
+            return 0;  /* concise arrow body — nothing to do */
+    }
+
+    /* Step 1: collect all function-scope names (var/fn/class/params). */
+    _BS_NameSet scope_names;
+    _bs_ns_init(&scope_names);
+
+    if (strcmp(t, "program") != 0)
+    {
+        TSNode params = ts_node_child_by_field_name(fn_node, "parameters", 10);
+        _bs_collect_param_names(params, src, &scope_names);
+        /* If fn_node has a `name` field (function_declaration), include it
+           — JS function-declaration names are visible inside the function. */
+        TSNode fn_name = ts_node_child_by_field_name(fn_node, "name", 4);
+        if (!ts_node_is_null(fn_name) && strcmp(ts_node_type(fn_name), "identifier") == 0)
+        {
+            size_t s = ts_node_start_byte(fn_name), e = ts_node_end_byte(fn_name);
+            _bs_ns_add(&scope_names, src + s, e - s);
+        }
+    }
+
+    uint32_t bc = ts_node_child_count(body);
+    for (uint32_t i = 0; i < bc; i++)
+        _bs_collect_var_fn_class_names(ts_node_child(body, i), src, &scope_names, 0);
+
+    /* Step 2: collect all let/const declarators. */
+    _BS_NameSet lex_names;
+    _bs_ns_init(&lex_names);
+    _BS_NodeVec lex_decls;
+    _bs_nv_init(&lex_decls);
+    for (uint32_t i = 0; i < bc; i++)
+        _bs_collect_lexical_decls(ts_node_child(body, i), src, &lex_names, &lex_decls, 0);
+
+    if (lex_decls.len == 0)
+    {
+        _bs_ns_free(&scope_names);
+        _bs_ns_free(&lex_names);
+        _bs_nv_free(&lex_decls);
+        return 0;
+    }
+
+    /* `taken` is the union of all names used in this function: scope
+       names + let/const names + already-generated uids (we'll add to
+       this set as we rename). */
+    _BS_NameSet taken;
+    _bs_ns_init(&taken);
+    for (size_t i = 0; i < scope_names.len; i++)
+        _bs_ns_add(&taken, scope_names.names[i], scope_names.name_lens[i]);
+    for (size_t i = 0; i < lex_names.len; i++)
+        if (!_bs_ns_contains(&taken, lex_names.names[i], lex_names.name_lens[i]))
+            _bs_ns_add(&taken, lex_names.names[i], lex_names.name_lens[i]);
+
+    /* Step 3: for each let/const declarator, decide rename.
+       A binding shadows iff:
+         (a) Its name appears in scope_names (var/fn/class/param), OR
+         (b) Some OTHER let/const with the same name is declared in a
+             strictly ENCLOSING block within this function scope. */
+    int did_any_rename = 0;
+    int saw_overlap = 0;
+
+    for (size_t di = 0; di < lex_decls.len; di++)
+    {
+        TSNode decl = lex_decls.a[di];
+        TSNode name_node = ts_node_child_by_field_name(decl, "name", 4);
+        if (ts_node_is_null(name_node)) continue;
+        if (strcmp(ts_node_type(name_node), "identifier") != 0) continue;
+        size_t ns = ts_node_start_byte(name_node), ne = ts_node_end_byte(name_node);
+        size_t nlen = ne - ns;
+        const char *name = src + ns;
+
+        int conflicts = 0;
+        TSNode my_block = _bs_enclosing_block(decl);
+        if (_bs_ns_contains(&scope_names, name, nlen))
+            conflicts = 1;
+        if (!conflicts)
+        {
+            /* Check sibling lex_decls. Conflict only when another decl
+               with the same name lives in a STRICTLY ENCLOSING block
+               (its block is a proper ancestor of this decl's block). */
+            for (size_t li = 0; li < lex_decls.len && !conflicts; li++)
+            {
+                if (li == di) continue;
+                TSNode other = lex_decls.a[li];
+                TSNode oname = ts_node_child_by_field_name(other, "name", 4);
+                if (ts_node_is_null(oname)) continue;
+                if (strcmp(ts_node_type(oname), "identifier") != 0) continue;
+                size_t os = ts_node_start_byte(oname), oe = ts_node_end_byte(oname);
+                if (oe - os != nlen || memcmp(src + os, name, nlen) != 0) continue;
+                /* Same name. Is `other`'s block a proper ancestor of mine? */
+                TSNode oblock = _bs_enclosing_block(other);
+                TSNode p = ts_node_parent(my_block);
+                while (!ts_node_is_null(p))
+                {
+                    if (ts_node_eq(p, oblock)) { conflicts = 1; break; }
+                    if (_bs_is_fn_boundary(p)) break;
+                    p = ts_node_parent(p);
+                }
+            }
+        }
+        if (!conflicts && !ts_node_is_null(my_block) && !ts_node_eq(my_block, body))
+        {
+            /* Free-reference check: a `let name` in a nested block
+               needs renaming if any reference to `name` exists outside
+               its block within the same function. Otherwise the
+               let→var lowering's hoisted local var would capture
+               references that were meant to resolve in an outer scope
+               (closure capture, sibling-block let, etc.).
+               Skipped for top-level (my_block == body) — those `let`s
+               share scope with params/vars and any conflict is already
+               caught above. */
+            if (_bs_has_ref_outside_block(body, src, name, nlen, my_block))
+                conflicts = 1;
+        }
+        if (!conflicts) continue;
+
+        if (overlaps)
+        {
+            saw_overlap = 1;
+            continue;
+        }
+
+        /* Generate fresh uid and reserve. */
+        char *new_name = _bs_fresh_uid(name, nlen, &taken);
+        if (!new_name) continue;
+        _bs_ns_add(&taken, new_name, strlen(new_name));
+
+        /* Rewrite the declarator's name. */
+        add_edit(edits, ns, ne, new_name, claimed);
+
+        /* Rewrite all references in the declarator's enclosing block. */
+        TSNode encl = _bs_enclosing_block(decl);
+        if (!ts_node_is_null(encl))
+            _bs_rewrite_refs_in_block(encl, src, name, nlen, new_name, decl, edits, claimed);
+
+        free(new_name);
+        did_any_rename = 1;
+    }
+
+    _bs_ns_free(&scope_names);
+    _bs_ns_free(&lex_names);
+    _bs_nv_free(&lex_decls);
+    _bs_ns_free(&taken);
+
+    if (saw_overlap) return 1;
+    return did_any_rename ? 1 : 0;
 }
 
 static int rewrite_lexical_declaration(EditList *edits, const char *src, TSNode lexical_decl, RangeList *claimed,
@@ -5686,36 +7203,197 @@ static int rewrite_lexical_declaration(EditList *edits, const char *src, TSNode 
                         size_t bs = ts_node_start_byte(body);
                         size_t be = ts_node_end_byte(body);
 
-                        /* Skip IIFE wrapping if body contains break/continue
-                           that target this loop — these cannot cross function
-                           boundaries. The let->var conversion still happens;
-                           only the fresh-binding IIFE is skipped. */
-                        if (!body_has_loop_flow_control(body))
+                        /* §8 Phase 5: capture-aware wrapping.
+                           - No captures: skip wrap entirely (closure-of-final
+                             doesn't matter when no closure is created).
+                           - Captures, no flow control: simple IIFE wrap.
+                           - Captures with break/continue/return: emit babel-
+                             style sentinel wrap so flow-control can cross
+                             the synthesized function boundary.
+                           - Captures with `arguments` or labeled break/
+                             continue: can't safely wrap; fall back to no
+                             wrap (closure semantics will be var-like, an
+                             accepted limitation). */
+                        _BS_NameSet names_set;
+                        _bs_ns_init(&names_set);
                         {
-                            int is_block = (strcmp(ts_node_type(body), "statement_block") == 0);
+                            uint32_t nc2 = ts_node_child_count(lexical_decl);
+                            for (uint32_t k = 0; k < nc2; k++)
+                            {
+                                TSNode dec = ts_node_child(lexical_decl, k);
+                                if (strcmp(ts_node_type(dec), "variable_declarator") != 0) continue;
+                                TSNode name = ts_node_child_by_field_name(dec, "name", 4);
+                                if (ts_node_is_null(name)) continue;
+                                if (strcmp(ts_node_type(name), "identifier") == 0)
+                                {
+                                    size_t ns = ts_node_start_byte(name), ne = ts_node_end_byte(name);
+                                    _bs_ns_add(&names_set, src + ns, ne - ns);
+                                }
+                            }
+                        }
 
-                            rp_string *pref = rp_string_new(64);
-                            rp_string *suff = rp_string_new(64);
-                            rp_string_puts(pref, "(function(");
-                            rp_string_putsn(pref, params->str ? params->str : "", params->len);
-                            rp_string_puts(pref, "){ ");
-                            rp_string_puts(suff, " })( ");
-                            rp_string_putsn(suff, args->str ? args->str : "", args->len);
-                            rp_string_puts(suff, " );");
+                        int has_captures = _bs_for_has_capture(body, src, &names_set, 0);
+                        int has_flow_control = body_has_loop_flow_control(body);
+                        int is_block = (strcmp(ts_node_type(body), "statement_block") == 0);
+
+                        if (has_captures)
+                        {
+                            /* Pre-scan body for sentinels, labels, arguments
+                               references, and giveup conditions. We emit the
+                               wrap via prefix/suffix inserts (no wholesale
+                               replacement), and let sentinel substitutions plus
+                               the arguments capture compose with the rest. */
+                            _BS_ForCtx ctx;
+                            memset(&ctx, 0, sizeof(ctx));
+                            EditList sent_edits;
+                            init_edits(&sent_edits);
+                            ctx.edits = &sent_edits;
+                            ctx.body  = body;
 
                             if (is_block)
                             {
-                                add_edit_take_ownership(edits, bs + 1, bs + 1, rp_string_steal(pref), claimed);
-                                add_edit_take_ownership(edits, be - 1, be - 1, rp_string_steal(suff), claimed);
+                                uint32_t bcc = ts_node_child_count(body);
+                                for (uint32_t i = 0; i < bcc && !ctx.giveup; i++)
+                                    _bs_for_walk(ts_node_child(body, i), src, &ctx, 0, 0, 0);
+                            }
+
+                            if (ctx.giveup)
+                            {
+                                /* Can't safely wrap; fall back to no-wrap.
+                                   let→var only. */
+                                free_edits(&sent_edits);
+                                _bs_lbl_free(&ctx.break_labels);
+                                _bs_lbl_free(&ctx.continue_labels);
+                                _bs_sv_free(&ctx.args_positions);
                             }
                             else
                             {
-                                add_edit_take_ownership(edits, bs, bs, rp_string_steal(pref), claimed);
-                                add_edit_take_ownership(edits, be, be, rp_string_steal(suff), claimed);
+                                int has_args = (ctx.args_positions.len > 0);
+                                int need_sentinels = (sent_edits.len > 0) ||
+                                                     ctx.break_labels.len > 0 ||
+                                                     ctx.continue_labels.len > 0 ||
+                                                     ctx.has_return;
+                                int is_outermost = !_bs_has_outer_wrap(parent);
+
+                                rp_string *pref = rp_string_new(96);
+                                rp_string *suff = rp_string_new(256);
+
+                                if (need_sentinels)
+                                {
+                                    rp_string_puts(pref, "var _TrN_loop_ret = (function(");
+                                }
+                                else
+                                {
+                                    rp_string_puts(pref, "(function(");
+                                }
+                                rp_string_putsn(pref, params->str ? params->str : "", params->len);
+                                rp_string_puts(pref, "){ ");
+
+                                rp_string_puts(suff, " }).call(this");
+                                if (args->len > 0)
+                                {
+                                    rp_string_puts(suff, ", ");
+                                    rp_string_putsn(suff, args->str, args->len);
+                                }
+                                rp_string_puts(suff, ");");
+                                if (need_sentinels)
+                                {
+                                    /* Bare break/continue are ours by definition
+                                       (collected only at our loop_depth==0). */
+                                    if (ctx.has_bare_break)
+                                        rp_string_puts(suff, " if (_TrN_loop_ret === \"break\") break;");
+                                    if (ctx.has_bare_continue)
+                                        rp_string_puts(suff, " if (_TrN_loop_ret === \"continue\") continue;");
+                                    /* Labeled break: per label, dispatch directly if reachable
+                                       from our dispatch site; otherwise propagate up. */
+                                    for (size_t li = 0; li < ctx.break_labels.len; li++)
+                                    {
+                                        const char *l = ctx.break_labels.labels[li];
+                                        TSNode tgt = _bs_find_label_target(body, src, l, strlen(l));
+                                        if (!ts_node_is_null(tgt) && _bs_label_dispatchable(parent, tgt))
+                                            rp_string_appendf(suff,
+                                                " if (_TrN_loop_ret === \"b:%s\") break %s;", l, l);
+                                        else
+                                            rp_string_appendf(suff,
+                                                " if (_TrN_loop_ret === \"b:%s\") return _TrN_loop_ret;", l);
+                                    }
+                                    for (size_t li = 0; li < ctx.continue_labels.len; li++)
+                                    {
+                                        const char *l = ctx.continue_labels.labels[li];
+                                        TSNode tgt = _bs_find_label_target(body, src, l, strlen(l));
+                                        if (!ts_node_is_null(tgt) && _bs_label_dispatchable(parent, tgt))
+                                            rp_string_appendf(suff,
+                                                " if (_TrN_loop_ret === \"c:%s\") continue %s;", l, l);
+                                        else
+                                            rp_string_appendf(suff,
+                                                " if (_TrN_loop_ret === \"c:%s\") return _TrN_loop_ret;", l);
+                                    }
+                                    /* Return-value sentinel: outermost wrap unwraps,
+                                       intermediate wraps propagate as-is. */
+                                    if (ctx.has_return)
+                                    {
+                                        if (is_outermost)
+                                            rp_string_puts(suff,
+                                                " if (typeof _TrN_loop_ret === \"object\" && _TrN_loop_ret !== null) return _TrN_loop_ret.v;");
+                                        else
+                                            rp_string_puts(suff,
+                                                " if (typeof _TrN_loop_ret === \"object\" && _TrN_loop_ret !== null) return _TrN_loop_ret;");
+                                    }
+                                }
+
+                                if (is_block)
+                                {
+                                    add_edit_take_ownership(edits, bs + 1, bs + 1, rp_string_steal(pref), claimed);
+                                    add_edit_take_ownership(edits, be - 1, be - 1, rp_string_steal(suff), claimed);
+                                }
+                                else
+                                {
+                                    add_edit_take_ownership(edits, bs, bs, rp_string_steal(pref), claimed);
+                                    add_edit_take_ownership(edits, be, be, rp_string_steal(suff), claimed);
+                                }
+                                pref = rp_string_free(pref);
+                                suff = rp_string_free(suff);
+
+                                /* arguments capture: emit `var _TrN_loop_args =
+                                   arguments;` BEFORE the for-statement, and
+                                   rewrite each arguments-reference in the body
+                                   to `_TrN_loop_args`. */
+                                if (has_args)
+                                {
+                                    size_t fs = ts_node_start_byte(parent);
+                                    add_edit(edits, fs, fs, "var _TrN_loop_args = arguments; ", claimed);
+                                    for (size_t ai = 0; ai < ctx.args_positions.len; ai++)
+                                    {
+                                        size_t pos = ctx.args_positions.a[ai];
+                                        add_edit(edits, pos, pos + 9 /* len("arguments") */,
+                                                 "_TrN_loop_args", claimed);
+                                    }
+                                }
+
+                                /* Hand sentinel edits to the main list. */
+                                for (size_t si = 0; si < sent_edits.len; si++)
+                                {
+                                    Edit *e = &sent_edits.items[si];
+                                    if (e->own_text)
+                                    {
+                                        add_edit_take_ownership(edits, e->start, e->end, e->text, claimed);
+                                        e->text = NULL;
+                                        e->own_text = 0;
+                                    }
+                                    else
+                                    {
+                                        add_edit(edits, e->start, e->end, e->text, claimed);
+                                    }
+                                }
+                                free_edits(&sent_edits);
+                                _bs_lbl_free(&ctx.break_labels);
+                                _bs_lbl_free(&ctx.continue_labels);
+                                _bs_sv_free(&ctx.args_positions);
                             }
-                            pref=rp_string_free(pref);
-                            suff=rp_string_free(suff);
                         }
+                        /* else: !has_captures — skip wrap entirely. */
+
+                        _bs_ns_free(&names_set);
                     }
                 }
 
@@ -6677,6 +8355,134 @@ static int _name_is_reserved(const char *name, size_t len)
     return 0;
 }
 
+/* Private-name lowering for ES2022 class private fields/methods.
+
+   Tree-sitter parses `#name` as `private_property_identifier`. Duktape
+   has no concept of `#` in identifiers, so we strip the `#` and
+   prepend `_priv_` to produce a regular identifier. The substitution
+   leaks no privacy enforcement (duktape doesn't check accessor scope
+   anyway), but with `_priv_` as the prefix accidental collisions with
+   user code are vanishingly rare.
+
+   Emit `src[ss..se]` into `out` but replace every
+   `private_property_identifier` node within the subtree rooted at
+   `root` with `_priv_<name>` (where <name> is the original identifier
+   text without the `#`). The substitution preserves byte ranges of
+   non-private code so any other rewrites inside the span continue to
+   work via the edit list. */
+static void _collect_priv_ids(TSNode node, _BS_NodeVec *out, size_t lo, size_t hi)
+{
+    size_t ns = ts_node_start_byte(node), ne = ts_node_end_byte(node);
+    if (ne <= lo || ns >= hi) return;
+    if (strcmp(ts_node_type(node), "private_property_identifier") == 0)
+    {
+        _bs_nv_push(out, node);
+        return;
+    }
+    uint32_t c = ts_node_child_count(node);
+    for (uint32_t i = 0; i < c; i++)
+        _collect_priv_ids(ts_node_child(node, i), out, lo, hi);
+}
+
+static void _emit_with_priv_subst(rp_string *out, const char *src, size_t ss, size_t se, TSNode root)
+{
+    _BS_NodeVec privs;
+    _bs_nv_init(&privs);
+    _collect_priv_ids(root, &privs, ss, se);
+
+    if (privs.len == 0)
+    {
+        rp_string_putsn(out, src + ss, se - ss);
+        _bs_nv_free(&privs);
+        return;
+    }
+
+    /* Sort by start ascending. */
+    for (size_t i = 0; i + 1 < privs.len; i++)
+        for (size_t j = i + 1; j < privs.len; j++)
+            if (ts_node_start_byte(privs.a[j]) < ts_node_start_byte(privs.a[i]))
+            {
+                TSNode t = privs.a[i];
+                privs.a[i] = privs.a[j];
+                privs.a[j] = t;
+            }
+
+    size_t cursor = ss;
+    for (size_t i = 0; i < privs.len; i++)
+    {
+        size_t ps = ts_node_start_byte(privs.a[i]);
+        size_t pe = ts_node_end_byte(privs.a[i]);
+        if (ps < cursor) continue;  /* skip nested duplicates */
+        if (ps > cursor)
+            rp_string_putsn(out, src + cursor, ps - cursor);
+        /* Skip leading `#`, prepend `_priv_`. */
+        rp_string_puts(out, "_priv_");
+        rp_string_putsn(out, src + ps + 1, pe - ps - 1);
+        cursor = pe;
+    }
+    if (cursor < se)
+        rp_string_putsn(out, src + cursor, se - cursor);
+    _bs_nv_free(&privs);
+}
+
+/* Emit the params node's text into `out`, stripping comment children.
+   Used by the class method emitter (which copies params verbatim).
+   If the source has comments BETWEEN params (common in wide method
+   signatures — see ajv core.js `errorsText(...)`), the verbatim copy
+   plus subsequent single-line flattening lets a line-comment swallow
+   the closing paren and break parsing.
+
+   Strategy: walk the params children, skip `comment` nodes, emit
+   intervening bytes from src so the comma/whitespace separators
+   between params survive. */
+static void _emit_params_no_comments(rp_string *out, const char *src, TSNode params)
+{
+    size_t ps = ts_node_start_byte(params), pe = ts_node_end_byte(params);
+    uint32_t nc = ts_node_child_count(params);
+    size_t cur = ps;
+    for (uint32_t i = 0; i < nc; i++)
+    {
+        TSNode kid = ts_node_child(params, i);
+        const char *kt = ts_node_type(kid);
+        if (strcmp(kt, "comment") == 0)
+        {
+            /* Emit bytes from `cur` to start of comment, then jump past it. */
+            size_t cs = ts_node_start_byte(kid), ce = ts_node_end_byte(kid);
+            if (cs > cur)
+                rp_string_putsn(out, src + cur, cs - cur);
+            cur = ce;
+        }
+    }
+    if (cur < pe)
+        rp_string_putsn(out, src + cur, pe - cur);
+}
+
+/* Count `\n`s in src[0..off). Used to keep emitted class members on
+   the same line as the source so error stacks point to the right place. */
+static int _src_line_at(const char *src, size_t off)
+{
+    int line = 1;
+    for (size_t i = 0; i < off; i++)
+        if (src[i] == '\n') line++;
+    return line;
+}
+
+static void _emit_n_newlines(rp_string *out, int n)
+{
+    while (n-- > 0) rp_string_putc(out, '\n');
+}
+
+/* Count `\n`s in the bucket's tail beyond `since_len`. Used to keep
+   the bucket's notional "current source line" in sync with the
+   newlines we've actually emitted into it. */
+static int _count_newlines_since(rp_string *bucket, size_t since_len)
+{
+    int n = 0;
+    for (size_t i = since_len; i < bucket->len; i++)
+        if (bucket->str[i] == '\n') n++;
+    return n;
+}
+
 static void es5_emit_class_core(rp_string *out, const char *src, const char *cname, size_t cname_len, int has_super,
                                 size_t sups, size_t supe, TSNode body)
 {
@@ -6693,6 +8499,29 @@ static void es5_emit_class_core(rp_string *out, const char *src, const char *cna
     // Collect class field definitions (ES2022)
     rp_string *field_inits = rp_string_new(64);
     rp_string *static_field_inits = rp_string_new(64);
+
+    /* Source line of the class body's opening `{`. Each bucket
+       (proto_arr, static_arr, field_inits, static_field_inits) tracks
+       the "virtual current source line" we've emitted up to in the
+       bucket. We pad with `\n` characters before each new member so
+       that the member's content lands on its source line. We can't
+       use the source END line of the previous member as a proxy: some
+       methods (e.g. async ones) compress to fewer newlines than the
+       source body had, so we must count the actual newlines emitted. */
+    int body_open_line = _src_line_at(src, ts_node_start_byte(body));
+    int proto_cur_line = body_open_line;
+    int static_cur_line = body_open_line;
+    int field_cur_line = body_open_line;
+    int sfield_cur_line = body_open_line;
+    /* First-method source line for each bucket. The buckets are filled
+       BEFORE the OUT prelude/ctor are assembled, so we don't yet know
+       what line OUT will be at when we append each bucket. At assembly
+       time we'll compute (first_method_src_line - actual_out_line) and
+       prepend that many newlines so the bucket's first member lands at
+       its source line. */
+    int proto_first_line = -1;
+    int static_first_line = -1;
+    int sfield_first_line = -1;
     for (uint32_t i = 0; i < n; i++)
     {
         TSNode ch = ts_node_child(body, i);
@@ -6717,6 +8546,29 @@ static void es5_emit_class_core(rp_string *out, const char *src, const char *cna
         size_t fps = ts_node_start_byte(fprop), fpe = ts_node_end_byte(fprop);
         TSNode fval = ts_node_child_by_field_name(ch, "value", 5);
         rp_string *dest = is_static_field ? static_field_inits : field_inits;
+        int is_private_field = (strcmp(ts_node_type(fprop), "private_property_identifier") == 0);
+
+        /* Align this field's emit with its source line, then advance
+           the cursor by however many newlines the emission actually
+           writes (the value may span multiple lines in source).
+           For the FIRST static field, defer the leading pad to OUT
+           assembly time (we don't yet know OUT's current line). */
+        int *fpcur = is_static_field ? &sfield_cur_line : &field_cur_line;
+        int fline = _src_line_at(src, ts_node_start_byte(ch));
+        int is_first_sfield = (is_static_field && sfield_first_line < 0);
+        if (is_first_sfield)
+        {
+            sfield_first_line = fline;
+        }
+        else
+        {
+            int fdelta = fline - *fpcur;
+            if (fdelta > 0)
+                _emit_n_newlines(dest, fdelta);
+        }
+        *fpcur = fline;
+        size_t pre_field_len = dest->len;
+
         if (is_static_field)
         {
             rp_string_putsn(dest, cname, cname_len);
@@ -6726,18 +8578,29 @@ static void es5_emit_class_core(rp_string *out, const char *src, const char *cna
         {
             rp_string_puts(dest, "this.");
         }
-        rp_string_putsn(dest, src + fps, fpe - fps);
+        if (is_private_field)
+        {
+            /* Strip leading `#`, prepend `_priv_`. */
+            rp_string_puts(dest, "_priv_");
+            rp_string_putsn(dest, src + fps + 1, fpe - fps - 1);
+        }
+        else
+        {
+            rp_string_putsn(dest, src + fps, fpe - fps);
+        }
         if (!ts_node_is_null(fval))
         {
             size_t fvs = ts_node_start_byte(fval), fve = ts_node_end_byte(fval);
             rp_string_puts(dest, " = ");
-            rp_string_putsn(dest, src + fvs, fve - fvs);
+            /* The value may reference `this.#x` — substitute. */
+            _emit_with_priv_subst(dest, src, fvs, fve, fval);
         }
         else
         {
             rp_string_puts(dest, " = undefined");
         }
         rp_string_puts(dest, ";");
+        *fpcur += _count_newlines_since(dest, pre_field_len);
     }
 
     for (uint32_t i = 0; i < n; i++)
@@ -6789,9 +8652,18 @@ static void es5_emit_class_core(rp_string *out, const char *src, const char *cna
         int is_computed = 0;
         size_t ks, ke;
 
+        int is_private_method = 0;
         if (!ts_node_is_null(nname) && strcmp(ts_node_type(nname), "property_identifier") == 0)
         {
             ks = ts_node_start_byte(nname);
+            ke = ts_node_end_byte(nname);
+        }
+        else if (!ts_node_is_null(nname) && strcmp(ts_node_type(nname), "private_property_identifier") == 0)
+        {
+            /* `#name` — skip the `#`, the emit path below will prepend
+               `_priv_` for both the `key:` and `function NAME` slots. */
+            is_private_method = 1;
+            ks = ts_node_start_byte(nname) + 1;
             ke = ts_node_end_byte(nname);
         }
         else if (!ts_node_is_null(nname) && strcmp(ts_node_type(nname), "computed_property_name") == 0)
@@ -6812,8 +8684,29 @@ static void es5_emit_class_core(rp_string *out, const char *src, const char *cna
         size_t be = ts_node_is_null(mb) ? 0 : ts_node_end_byte(mb);
 
         rp_string *bucket = is_static ? static_arr : proto_arr;
-        if (bucket->len)
+        int is_first = (bucket->len == 0);
+        if (!is_first)
             rp_string_puts(bucket, ",");
+
+        /* For the first method in a bucket, just record its source
+           line; no leading newlines yet — the OUT-assembly step will
+           prepend the right number once it knows OUT's position. For
+           subsequent methods, pad with the inter-method line delta. */
+        int *pcur = is_static ? &static_cur_line : &proto_cur_line;
+        int *pfirst = is_static ? &static_first_line : &proto_first_line;
+        int mline = _src_line_at(src, ts_node_start_byte(mth));
+        if (is_first)
+        {
+            *pfirst = mline;
+        }
+        else
+        {
+            int delta = mline - *pcur;
+            if (delta > 0)
+                _emit_n_newlines(bucket, delta);
+        }
+        *pcur = mline;
+        size_t pre_emit_len = bucket->len;
 
         const char *desc_field = "value";
         if (is_getter) desc_field = "get";
@@ -6830,6 +8723,7 @@ static void es5_emit_class_core(rp_string *out, const char *src, const char *cna
         {
             // {key:'name',value:function name(){...}}  or get/set variant
             rp_string_puts(bucket, "{key:'");
+            if (is_private_method) rp_string_puts(bucket, "_priv_");
             rp_string_putsn(bucket, src + ks, ke - ks);
             rp_string_appendf(bucket, "',%s:function ", desc_field);
             /* Suppress the function NAME if it would be a parse error
@@ -6838,7 +8732,10 @@ static void es5_emit_class_core(rp_string *out, const char *src, const char *cna
                as function-expression names. The `key:` field still carries
                the user-facing name. */
             if (!is_getter && !is_setter && !_name_is_reserved(src + ks, ke - ks))
+            {
+                if (is_private_method) rp_string_puts(bucket, "_priv_");
                 rp_string_putsn(bucket, src + ks, ke - ks);
+            }
         }
         /* Check for rest parameter in method params */
         const char *rest_name = NULL;
@@ -6879,18 +8776,24 @@ static void es5_emit_class_core(rp_string *out, const char *src, const char *cna
             }
         }
 
-        /* Emit params (minus rest if present) */
+        /* Emit params (minus rest if present, minus inline comments).
+           Comments BETWEEN params would otherwise survive verbatim into
+           a single-line function expression and let `//` swallow the
+           closing `)`. */
         if (ps && pe)
         {
             if (rest_name)
             {
-                /* Copy params but skip the rest portion */
+                /* Copy params but skip the rest portion. The rest-strip
+                   is done by hand on byte ranges; comment-strip is not
+                   applied here because the rest-method-params case is
+                   simpler in practice — fix if it ever bites. */
                 rp_string_putsn(bucket, src + ps, rest_remove_s - ps);
                 rp_string_putsn(bucket, src + rest_remove_e, pe - rest_remove_e);
             }
             else
             {
-                rp_string_putsn(bucket, src + ps, pe - ps);
+                _emit_params_no_comments(bucket, src, params);
             }
         }
         else
@@ -6935,21 +8838,33 @@ static void es5_emit_class_core(rp_string *out, const char *src, const char *cna
                     rp_string_putsn(bucket, rest_name, rest_name_len);
                     rp_string_appendf(bucket, " = Object.values(arguments).slice(%u); ", rest_before_count);
                 }
-                /* copy body contents (skip outer braces), with super rewrite if needed */
+                /* copy body contents (skip outer braces), with super rewrite if needed.
+                   Private-name substitution happens unconditionally — for non-private
+                   classes the helper short-circuits to a raw copy. The super path
+                   needs the substituted bytes too, so build a temp buffer first. */
                 if (has_super)
-                    copy_body_replace_super(bucket, src + bs + 1, be - bs - 2, is_static);
+                {
+                    rp_string *subbed = rp_string_new(64);
+                    _emit_with_priv_subst(subbed, src, bs + 1, be - 1, mb);
+                    copy_body_replace_super(bucket, subbed->str, subbed->len, is_static);
+                    subbed = rp_string_free(subbed);
+                }
                 else
-                    rp_string_putsn(bucket, src + bs + 1, be - bs - 2);
+                    _emit_with_priv_subst(bucket, src, bs + 1, be - 1, mb);
                 rp_string_putc(bucket, '}');
             }
             else
             {
-                rp_string_putsn(bucket, src + bs, be - bs);
+                _emit_with_priv_subst(bucket, src, bs, be, mb);
             }
         }
         else
             rp_string_puts(bucket, "{}");
         rp_string_puts(bucket, "}");
+
+        /* Advance the bucket's notional source-line by however many
+           newlines this method's emission actually wrote. */
+        *pcur += _count_newlines_since(bucket, pre_emit_len);
     }
 
     /* ——— open wrapper ——— */
@@ -7115,13 +9030,26 @@ static void es5_emit_class_core(rp_string *out, const char *src, const char *cna
                     }
                 }
 
+                /* Inject class field initializations after super() but before
+                   the rest of the ctor body. */
+                if (field_inits->len)
+                    rp_string_puts(out, field_inits->str);
+
                 /* Copy remainder of ctor body after the super(...) statement's semicolon,
-                   rewriting any super.method() calls */
+                   rewriting any super.method() calls and substituting private names. */
                 size_t after = call_rp + 1; /* position after ')' */
                 if (after < blen && b[after] == ';')
                     after++; /* swallow trailing semicolon if any */
                 if (after < blen)
-                    copy_body_replace_super(out, b + after, blen - after, 0);
+                {
+                    rp_string *subbed = rp_string_new(64);
+                    _emit_with_priv_subst(subbed, src,
+                                          ts_node_start_byte(ctor_body) + 1 + after,
+                                          ts_node_start_byte(ctor_body) + 1 + blen,
+                                          ctor_body);
+                    copy_body_replace_super(out, subbed->str, subbed->len, 0);
+                    subbed = rp_string_free(subbed);
+                }
 
                 /* Ensure the constructor returns _this */
                 rp_string_puts(out, "return _this;");
@@ -7132,15 +9060,30 @@ static void es5_emit_class_core(rp_string *out, const char *src, const char *cna
                 rp_string_puts(out, "_TrN_Sp.classCallCheck(this, ");
                 rp_string_putsn(out, cname, cname_len);
                 rp_string_puts(out, ");");
+                if (field_inits->len)
+                    rp_string_puts(out, field_inits->str);
                 if (blen)
-                    copy_body_replace_super(out, b, blen, 0);
+                {
+                    rp_string *subbed = rp_string_new(64);
+                    _emit_with_priv_subst(subbed, src,
+                                          ts_node_start_byte(ctor_body) + 1,
+                                          ts_node_start_byte(ctor_body) + 1 + blen,
+                                          ctor_body);
+                    copy_body_replace_super(out, subbed->str, subbed->len, 0);
+                    subbed = rp_string_free(subbed);
+                }
             }
         }
         else
         {
+            /* No explicit constructor in `class … extends Base { … }`. Emit
+               default ctor that forwards to super, then runs field inits. */
             rp_string_puts(out, "var _this;_TrN_Sp.classCallCheck(this, ");
             rp_string_putsn(out, cname, cname_len);
-            rp_string_puts(out, ");_this = _super.apply(this, arguments);return _this;");
+            rp_string_puts(out, ");_this = _super.apply(this, arguments);");
+            if (field_inits->len)
+                rp_string_puts(out, field_inits->str);
+            rp_string_puts(out, "return _this;");
         }
     }
     else
@@ -7155,19 +9098,61 @@ static void es5_emit_class_core(rp_string *out, const char *src, const char *cna
         if (ctor_found && !ts_node_is_null(ctor_body))
         {
             size_t bs = ts_node_start_byte(ctor_body), be = ts_node_end_byte(ctor_body);
-            rp_string_putsn(out, src + bs, be - bs);
+            _emit_with_priv_subst(out, src, bs, be, ctor_body);
         }
     }
     rp_string_puts(out, "};");
 
-    /* ——— _TrN_Sp.createClass(Name, [proto], [static]) ——— */
+    /* Static field initializations are emitted INSIDE the IIFE, at
+       their source line positions, so per-file line numbers stay
+       aligned.  Pad to first static-field source line, then dump the
+       bucket which already has inter-field padding tracked. */
+    if (static_field_inits->len)
+    {
+        if (sfield_first_line >= 0)
+        {
+            int out_lines_now = body_open_line + _count_newlines_since(out, 0);
+            int pad = sfield_first_line - out_lines_now;
+            if (pad > 0) _emit_n_newlines(out, pad);
+        }
+        rp_string_puts(out, static_field_inits->str);
+    }
+
+    /* ——— _TrN_Sp.createClass(Name, [...], [...] [, 1]) ———
+       Emit static bucket first when it sits at an earlier source line
+       than the proto bucket, so per-method padding can align both
+       buckets to their source positions.  In that case we pass an
+       extra `1` flag and the helper swaps interpretation.  */
+    int swap_order = (static_first_line >= 0
+                      && proto_first_line >= 0
+                      && static_first_line < proto_first_line);
+    rp_string *first_arr  = swap_order ? static_arr : proto_arr;
+    int        first_line = swap_order ? static_first_line : proto_first_line;
+    rp_string *second_arr = swap_order ? proto_arr : static_arr;
+    int        second_line= swap_order ? proto_first_line : static_first_line;
+
     rp_string_puts(out, "_TrN_Sp.createClass(");
     rp_string_putsn(out, cname, cname_len);
     rp_string_puts(out, ",[");
-    rp_string_puts(out, proto_arr->str);
+    if (first_line >= 0)
+    {
+        int out_lines_now = body_open_line + _count_newlines_since(out, 0);
+        int pad = first_line - out_lines_now;
+        if (pad > 0) _emit_n_newlines(out, pad);
+    }
+    rp_string_puts(out, first_arr->str);
     rp_string_puts(out, "],[");
-    rp_string_puts(out, static_arr->str);
-    rp_string_puts(out, "]);");
+    if (second_line >= 0)
+    {
+        int out_lines_now = body_open_line + _count_newlines_since(out, 0);
+        int pad = second_line - out_lines_now;
+        if (pad > 0) _emit_n_newlines(out, pad);
+    }
+    rp_string_puts(out, second_arr->str);
+    if (swap_order)
+        rp_string_puts(out, "],1);");
+    else
+        rp_string_puts(out, "]);");
 
     /* ——— return + close wrapper ——— */
     rp_string_puts(out, "return ");
@@ -7184,10 +9169,6 @@ static void es5_emit_class_core(rp_string *out, const char *src, const char *cna
         rp_string_putsn(out, src + sups, supe - sups);
         rp_string_puts(out, ");");
     }
-
-    /* Emit static field initializations after the IIFE */
-    if (static_field_inits->len)
-        rp_string_puts(out, static_field_inits->str);
 
     proto_arr = rp_string_free(proto_arr);
     static_arr = rp_string_free(static_arr);
@@ -7361,6 +9342,66 @@ static int rewrite_class_expression_to_es5(EditList *edits, const char *src, TSN
     add_edit_take_ownership(edits, cs, ce, rp_string_steal(expr), claimed);
     expr = rp_string_free(expr); // expr now owns the final buffer
 
+    return 1;
+}
+
+/* Duktape's regex tokenizer ends the regex at the first unescaped `/`
+   even when that `/` lives inside a character class `[...]`. Spec-wise
+   `/` inside `[]` is a literal char and doesn't need escaping, but
+   duktape gets it wrong when followed by certain characters (notably
+   `` ` ``, which makes duktape's parser fall through and try to start a
+   template literal). The fix is harmless and portable: scan the regex
+   pattern, escape any `/` inside `[]` to `\/`.
+
+   Confirmed by marked 12.0.2 inline grammar `/^\\([!"#$%&'()*+,\-./:;<=>?@\[\]\\^_`{|}~])/`. */
+static int rewrite_regex_slash_in_class(EditList *edits, const char *src, TSNode regex_node, RangeList *claimed, int overlaps)
+{
+    if (strcmp(ts_node_type(regex_node), "regex") != 0) return 0;
+    TSNode pattern = find_child_type(regex_node, "regex_pattern", NULL);
+    if (ts_node_is_null(pattern)) return 0;
+    size_t ps = ts_node_start_byte(pattern), pe = ts_node_end_byte(pattern);
+
+    /* First pass: count unescaped slashes inside char classes. */
+    int in_class = 0;
+    int needs_fix = 0;
+    for (size_t i = ps; i < pe; i++)
+    {
+        char c = src[i];
+        if (c == '\\' && i + 1 < pe) { i++; continue; }
+        if (!in_class && c == '[') in_class = 1;
+        else if (in_class && c == ']') in_class = 0;
+        else if (in_class && c == '/') { needs_fix = 1; break; }
+    }
+    if (!needs_fix) return 0;
+    if (overlaps) return 1;
+
+    /* Second pass: build escaped pattern. */
+    size_t cap = (pe - ps) * 2 + 1;
+    char *out = NULL;
+    REMALLOC(out, cap);
+    size_t k = 0;
+    in_class = 0;
+    for (size_t i = ps; i < pe; i++)
+    {
+        char c = src[i];
+        if (c == '\\' && i + 1 < pe)
+        {
+            out[k++] = c;
+            out[k++] = src[++i];
+            continue;
+        }
+        if (!in_class && c == '[') in_class = 1;
+        else if (in_class && c == ']') in_class = 0;
+        else if (in_class && c == '/')
+        {
+            out[k++] = '\\';
+            out[k++] = '/';
+            continue;
+        }
+        out[k++] = c;
+    }
+    out[k] = '\0';
+    add_edit_take_ownership(edits, ps, pe, out, claimed);
     return 1;
 }
 
@@ -8403,6 +10444,108 @@ int rewrite_string_raw(EditList *edits, const char *src, TSNode call_expr, Range
     return 1;
 }
 
+/* Rewrite `require("bare-spec")` to `_TrN_Sp._req(module,"bare-spec")`
+   so the runtime helper can walk node_modules from module.path.  Only
+   bare specifiers — anything starting with `./`, `../`, `/`, `:` is left
+   alone so existing relative/absolute/zip paths pass through untouched.
+   The helper falls through to native require() if nothing resolves, so
+   process.modulesPath specs (rampart-sql, etc.) still work. */
+/* Shared detection: is this call `require("string-literal")`?  Returns
+   1 with out-fields populated when yes, 0 otherwise. */
+static int _detect_require_str_call(const char *src, TSNode call_expr,
+                                    size_t *fs_out, size_t *a_s_out,
+                                    const char **spec_out, size_t *spec_len_out)
+{
+    if (ts_node_is_null(call_expr) || strcmp(ts_node_type(call_expr), "call_expression") != 0)
+        return 0;
+    TSNode func = ts_node_child_by_field_name(call_expr, "function", 8);
+    if (ts_node_is_null(func) || strcmp(ts_node_type(func), "identifier") != 0)
+        return 0;
+    size_t fs = ts_node_start_byte(func), fe = ts_node_end_byte(func);
+    if (fe - fs != 7 || strncmp(src + fs, "require", 7) != 0)
+        return 0;
+    TSNode args = ts_node_child_by_field_name(call_expr, "arguments", 9);
+    if (ts_node_is_null(args) || strcmp(ts_node_type(args), "arguments") != 0)
+        return 0;
+    if (ts_node_named_child_count(args) != 1)
+        return 0;
+    TSNode arg0 = ts_node_named_child(args, 0);
+    if (strcmp(ts_node_type(arg0), "string") != 0)
+        return 0;
+    size_t a_s = ts_node_start_byte(arg0), a_e = ts_node_end_byte(arg0);
+    if (a_e - a_s < 2) return 0;
+    char q = src[a_s];
+    if (q != '"' && q != '\'') return 0;
+    *fs_out = fs;
+    *a_s_out = a_s;
+    *spec_out = src + a_s + 1;
+    *spec_len_out = (a_e - a_s) - 2;
+    return *spec_len_out > 0;
+}
+
+/* Rewrite `require("X.json")` to `_TrN_Sp._reqJson(module,"X.json")`.
+   Rampart's loader treats every spec as JS source; without this, doing
+   `require("./refs/data.json")` parses the JSON file as JavaScript and
+   fails. */
+static int rewrite_json_require(EditList *edits, const char *src, TSNode call_expr,
+                                RangeList *claimed, uint32_t *polysneeded, int overlaps)
+{
+    size_t fs, a_s, spec_len;
+    const char *spec;
+    if (!_detect_require_str_call(src, call_expr, &fs, &a_s, &spec, &spec_len))
+        return 0;
+    if (spec_len < 5 || strncmp(spec + spec_len - 5, ".json", 5) != 0)
+        return 0;
+
+    if (overlaps)
+        return 1;
+
+    char *rep = NULL;
+    const char *repl = "_TrN_Sp._reqJson(module,";
+    size_t rl = strlen(repl);
+    REMALLOC(rep, rl + 1);
+    memcpy(rep, repl, rl);
+    rep[rl] = '\0';
+    add_edit_take_ownership(edits, fs, a_s, rep, claimed);
+    *polysneeded |= JSON_REQ_PF;
+    return 1;
+}
+
+static int rewrite_bare_require(EditList *edits, const char *src, TSNode call_expr,
+                                RangeList *claimed, uint32_t *polysneeded, int overlaps)
+{
+    size_t fs, a_s, spec_len;
+    const char *spec;
+    if (!_detect_require_str_call(src, call_expr, &fs, &a_s, &spec, &spec_len))
+        return 0;
+
+    /* Bare-spec test: anything starting with `.`, `/`, `:` is not bare. */
+    char c0 = spec[0];
+    if (c0 == '.' || c0 == '/' || c0 == ':') return 0;
+
+    /* `.json` is handled by rewrite_json_require so it can resolve via
+       its own helper (returns parsed JSON, not a require result). */
+    if (spec_len >= 5 && strncmp(spec + spec_len - 5, ".json", 5) == 0)
+        return 0;
+
+    if (overlaps)
+        return 1;
+
+    /* Replace the byte range [start_of_`require`, start_of_string_arg)
+       with `_TrN_Sp._req(module,` so the open-paren + whitespace gets
+       absorbed into the rewrite.  The string arg and closing `)` are
+       left untouched. */
+    char *rep = NULL;
+    const char *repl = "_TrN_Sp._req(module,";
+    size_t rl = strlen(repl);
+    REMALLOC(rep, rl + 1);
+    memcpy(rep, repl, rl);
+    rep[rl] = '\0';
+    add_edit_take_ownership(edits, fs, a_s, rep, claimed);
+    *polysneeded |= BARE_REQ_PF;
+    return 1;
+}
+
 /* Check whether any ancestor statement_block (up to a function boundary)
    contains a function_declaration with the given name.  Used to detect
    shadowing for block-scoped function rewrites. */
@@ -8751,6 +10894,18 @@ RP_ParseRes transpiler_rewrite_pass(EditList *edits, const char *src, size_t src
         const char *nt = ts_node_type(n);
         size_t ns = ts_node_start_byte(n), ne = ts_node_end_byte(n);
 
+        /* Skip nodes entirely inside the prepended polyfill prefix:
+           - Rewriters firing here would edit the polyfill text.
+           - More importantly, scanning identifiers and member_expressions
+             inside the polyfill body (which mentions Promise, Set, Map,
+             Object.entries, getOwnPropertyDescriptors, …) would trigger
+             *_PF detections, causing apply_edits to prepend a SECOND
+             polyfill preamble on the next pass. See transpiler-todo §3.
+           Skip the whole subtree by going to the next sibling instead of
+           descending into children. */
+        if (_tp_polyfill_prefix_len && ne <= _tp_polyfill_prefix_len)
+            goto skip_subtree;
+
         // errors
         if (!ret.err && (nt && strcmp(nt, "ERROR") == 0))
         {
@@ -8768,6 +10923,8 @@ RP_ParseRes transpiler_rewrite_pass(EditList *edits, const char *src, size_t src
         if (strcmp(nt, "regex") == 0)
         {
             handled = rewrite_regex_u_to_es5(edits, src, n, &claimed, overlaps);
+            if (!handled)
+                handled = rewrite_regex_slash_in_class(edits, src, n, &claimed, overlaps);
         }
 
         if (!handled && (strcmp(nt, "template_string") == 0 || strcmp(nt, "template_literal") == 0))
@@ -8778,6 +10935,16 @@ RP_ParseRes transpiler_rewrite_pass(EditList *edits, const char *src, size_t src
         if (!handled && (strcmp(nt, "call_expression") == 0))
         {
             handled = rewrite_string_raw(edits, src, n, &claimed, overlaps);
+        }
+
+        if (!handled && (strcmp(nt, "call_expression") == 0))
+        {
+            handled = rewrite_json_require(edits, src, n, &claimed, polysneeded, overlaps);
+        }
+
+        if (!handled && (strcmp(nt, "call_expression") == 0))
+        {
+            handled = rewrite_bare_require(edits, src, n, &claimed, polysneeded, overlaps);
         }
 
         if (!handled && (strcmp(nt, "string") == 0 || strcmp(nt, "template_literal") == 0))
@@ -8817,6 +10984,31 @@ RP_ParseRes transpiler_rewrite_pass(EditList *edits, const char *src, size_t src
         if (!handled && strcmp(nt, "statement_block") == 0)
         {
             handled = rewrite_block_scoped_functions(edits, src, n, &claimed, overlaps);
+        }
+
+        /* Babel-style block-scope rename for let/const in nested blocks.
+           Dispatched once per function-like scope (and once for `program`).
+           See transpiler-todo.md §8 Phases 1-4.
+           arrow_function is intentionally NOT dispatched here — the arrow
+           rewriter calls rewrite_block_scope_rename itself into a LOCAL
+           edit list and splices the renamed body into its wholesale
+           replacement. Dispatching from the main pass too would just
+           queue edits that the arrow's wholesale-replace clobbers. */
+        if (!handled && (strcmp(nt, "function_declaration") == 0 ||
+                         strcmp(nt, "function_expression") == 0 ||
+                         strcmp(nt, "function") == 0 ||
+                         strcmp(nt, "generator_function_declaration") == 0 ||
+                         strcmp(nt, "generator_function") == 0 ||
+                         strcmp(nt, "generator_function_expression") == 0 ||
+                         strcmp(nt, "method_definition") == 0 ||
+                         strcmp(nt, "program") == 0))
+        {
+            int saw = rewrite_block_scope_rename(edits, src, n, &claimed, overlaps);
+            /* Don't set handled — other rewriters need to also fire on
+               this same function node (async, generator, default params,
+               etc.). Block-scope rename emits non-overlapping edits at
+               identifier positions only. */
+            (void)saw;
         }
 
         if (!handled && (strcmp(nt, "import_statement") == 0))
@@ -9028,7 +11220,12 @@ RP_ParseRes transpiler_rewrite_pass(EditList *edits, const char *src, size_t src
                 handled = 1;
         }
 
-        /* Strip trailing commas from function params and call arguments (ES2017 -> ES5) */
+        /* Strip trailing commas from function params and call arguments (ES2017 -> ES5).
+           Skip if the comma is inside an already-claimed region (e.g. the
+           enclosing arrow rewrite has wholesale-replaced this byte range —
+           it preserves the comma verbatim in its output, and our stripper
+           edit would collide with the wider replace in apply_edits and
+           corrupt the surrounding bytes). */
         if (strcmp(nt, "formal_parameters") == 0 || strcmp(nt, "arguments") == 0)
         {
             uint32_t nc = ts_node_named_child_count(n);
@@ -9041,7 +11238,10 @@ RP_ParseRes transpiler_rewrite_pass(EditList *edits, const char *src, size_t src
                 {
                     if (src[j] == ',')
                     {
-                        add_edit(edits, j, j + 1, "", &claimed);
+                        if (!rl_overlaps(&claimed, j, j + 1, "trailing-comma-strip"))
+                            add_edit(edits, j, j + 1, "", &claimed);
+                        else
+                            *unresolved = 1; /* re-scan after the wider rewrite settles */
                         break;
                     }
                 }
@@ -9061,6 +11261,13 @@ RP_ParseRes transpiler_rewrite_pass(EditList *edits, const char *src, size_t src
                 (ilen == 7 && strncmp(src + start, "WeakSet", 7) == 0) ||
                 (ilen == 7 && strncmp(src + start, "WeakMap", 7) == 0))
                 *polysneeded |= COLLECT_PF;
+            /* `RegExp` used as constructor/callee — install the wrapper
+               that strips the `u` flag at runtime, since duktape rejects
+               it. Static `/foo/u` literals are handled by the dedicated
+               u-to-es5 rewriter; this catches the dynamic case where the
+               flag comes from a variable (e.g. marked's `edit(..., 'gu')`). */
+            if (ilen == 6 && strncmp(src + start, "RegExp", 6) == 0)
+                *polysneeded |= REGEXP_U_PF;
         }
 
         /* ES2017 polyfills: Object.entries, padStart/padEnd, getOwnPropertyDescriptors */
@@ -9095,6 +11302,7 @@ RP_ParseRes transpiler_rewrite_pass(EditList *edits, const char *src, size_t src
 
         if (ts_tree_cursor_goto_first_child(&cur))
             continue;
+    skip_subtree:
         while (!ts_tree_cursor_goto_next_sibling(&cur))
         {
             if (!ts_tree_cursor_goto_parent(&cur))
@@ -9122,10 +11330,17 @@ static RP_ParseRes transpile_code(const char *src, size_t src_len, int printTree
     int npasses = 0;
     int unresolved = 1;
     char *free_src = NULL;
-    static uint32_t polysdone = 0;
-
-    if (!track_polys)
-        polysdone = 0;
+    /* polysdone tracks which polyfills have already been emitted into
+       the output across multi-pass transpilation of THIS file.  It used
+       to be `static`, which made cached `.transpiled.js` files non
+       self-contained: a child file transpiled after a parent that had
+       already needed `_fs` would silently omit the helper from its own
+       cache (because polysdone carried it).  Reloading the cached file
+       standalone then failed with `_TrN_Sp.* undefined`.  Per-call
+       state keeps each cache self-contained.  Multi-pass within one
+       file still dedupes via the loop's own update of polysdone. */
+    uint32_t polysdone = 0;
+    (void)track_polys;
 
     _tp_pass_idx = 0;
 

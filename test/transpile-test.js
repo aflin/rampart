@@ -403,6 +403,37 @@ testFeature("template literals (tag)",function(){
 });
 //`
 
+testFeature("tagged template with whitespace before backtick", function() {
+    /* ajv's `edit()` returns a function-like callable used as:
+       `(0, codegen_1._) \`${data} && ${data}\`` — note the space
+       between the function expression and the backtick. */
+    var tag = function(parts) {
+        var args = Array.prototype.slice.call(arguments, 1);
+        return parts.join("|") + " " + args.join(",");
+    };
+    var x = "X";
+    var r = tag `${x} && ${x}`;
+    return r === "| && | X,X";
+});
+
+testFeature("untagged template with leading/trailing interpolation", function() {
+    /* parts array for `${a}${b}` is ["", "", ""] — three empty strings.
+       Earlier the empty literals were dropped so the parts array came
+       out too short. */
+    var a = "A", b = "B";
+    return `${a}${b}` === "AB" && `${a} ${b}` === "A B";
+});
+
+testFeature("tagged template with leading interpolation", function() {
+    var tag = function(parts) {
+        var args = Array.prototype.slice.call(arguments, 1);
+        return JSON.stringify(parts) + "|" + JSON.stringify(args);
+    };
+    var x = "X";
+    var r = tag`${x}`;
+    return r === '["",""]|["X"]';
+});
+
 /*
 testFeature("String.raw",
     String.raw`this\nthat`=="this\\nthat"

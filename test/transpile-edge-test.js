@@ -1155,6 +1155,47 @@ testFeature("generator - manual iteration", function() {
     return a === 10 && b === 20 && c === 30 && g.next().done === true;
 });
 
+// Nested yield: `yield yield X` — the inner yield's sent value
+// becomes the outer yield's arg. Each yield is a separate state
+// transition. The rxjs `isReadableStreamLike` pattern lives here.
+testFeature("generator - nested yield", function() {
+    function* gen() {
+        var a = yield yield 1;
+        return a;
+    }
+    var g = gen();
+    var r1 = g.next();          // emits inner yield's arg: 1
+    var r2 = g.next("x");        // sends "x" to inner; outer yields "x"
+    var r3 = g.next("y");        // sends "y" to outer; assigns "y" to a; returns "y"
+    return r1.value === 1 && r2.value === "x" && r3.value === "y" && r3.done === true;
+});
+
+// Sequential yields in the same expression need separate slots so
+// each yield's sent value survives the next yield's re-entry.
+testFeature("generator - sequential yields in expression", function() {
+    function* gen() {
+        return (yield 1) + (yield 2);
+    }
+    var g = gen();
+    var r1 = g.next();          // emits 1
+    var r2 = g.next(10);         // sends 10; emits 2
+    var r3 = g.next(20);         // sends 20; returns 10+20=30
+    return r1.value === 1 && r2.value === 2 && r3.value === 30 && r3.done === true;
+});
+
+// Three sequential yields
+testFeature("generator - three sequential yields", function() {
+    function* gen() {
+        return (yield 'a') + (yield 'b') + (yield 'c');
+    }
+    var g = gen();
+    g.next();
+    g.next('X');
+    g.next('Y');
+    var r = g.next('Z');
+    return r.value === 'XYZ' && r.done === true;
+});
+
 // Verify transpiler warns about yield inside loop
 testFeature("warning - yield in loop", function() {
     if (!global.rampart) return true; // Node supports this natively

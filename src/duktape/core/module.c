@@ -625,6 +625,38 @@ static RPPATH resolve_id(duk_context *ctx, const char *request_id)
         return rppath;
     }
 
+    /* Directory → index.js fallback for the JS loader path only.
+       CommonJS proper doesn't require this, but Node's resolution
+       algorithm does — and most npm packages (ajv, marked submodules,
+       etc.) `require("./subdir")` expecting `./subdir/index.js` to be
+       found. Restricted to the JS loaders (extension ".js" or empty);
+       the .so loader is left untouched. Only the literal `index.js`
+       file inside the directory is tried (no package.json#main
+       resolution — keeping the rule minimal and predictable). */
+    if (S_ISDIR(rppath.stat.st_mode) &&
+        module_loaders[module_loader_idx].loader == &load_js_module)
+    {
+        char idxpath[PATH_MAX];
+        int n = snprintf(idxpath, sizeof(idxpath), "%s/index.js", rppath.path);
+        struct stat sb;
+        if (n > 0 && n < (int)sizeof(idxpath) && stat(idxpath, &sb) == 0 && !S_ISDIR(sb.st_mode))
+        {
+            strncpy(rppath.path, idxpath, sizeof(rppath.path) - 1);
+            rppath.path[sizeof(rppath.path) - 1] = '\0';
+            rppath.stat = sb;
+            id = rppath.path;
+        }
+        else
+        {
+            /* Directory resolved but no index.js inside — fail
+               resolution so the caller's error message is the usual
+               "Could not resolve module id" rather than the misleading
+               "Is a directory" from fread. */
+            rppath.path[0] = '\0';
+            return rppath;
+        }
+    }
+
     duk_push_string(ctx, id);
     duk_push_int(ctx, module_loader_idx);
 
