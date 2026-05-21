@@ -194,6 +194,7 @@ typedef struct {
 #define REGEXP_U_PF  (1<<10) // RegExp constructor wrapper that strips `u` flag
 #define BARE_REQ_PF  (1<<11) // _TrN_Sp._req — node_modules walk for bare-spec require()
 #define JSON_REQ_PF  (1<<12) // _TrN_Sp._reqJson — read+JSON.parse for .json require()
+#define DECORATORS_PF (1<<13) // _TrN_Sp._applyDecoratedDescriptor — TC39 Stage 1 legacy decorators
 
 /* toggled from outside via transpile_set_fn_sources(); default on */
 static int _tp_fn_sources = 1;
@@ -289,6 +290,20 @@ polyfills allpolys[] = {
            Results are memoised in _c. */
         "_TrN_Sp._reqJson=function(m,s){var c=_TrN_Sp._reqJson._c||(_TrN_Sp._reqJson._c={});var base=(m&&m.path)?m.path:(typeof process!=='undefined'&&process.scriptPath?process.scriptPath:'');var k=base+'|'+s;if(k in c)return c[k];var st=rampart.utils.stat,rf=rampart.utils.readFile;var p=null;if(s.charAt(0)==='/'){p=s;}else if(s.charAt(0)==='.'){var t=s,b=base;while(t.indexOf('../')===0){t=t.substring(3);var n=b.lastIndexOf('/');if(n<=0)break;b=b.substring(0,n);}if(t.indexOf('./')===0)t=t.substring(2);p=b+'/'+t;}else{var d=base;while(d&&d.length>1){var cand=d+'/node_modules/'+s;if(st(cand)){p=cand;break;}var n=d.lastIndexOf('/');if(n<=0)break;d=d.substring(0,n);}}if(!p||!st(p))throw new Error('JSON module not found: '+s);var v=JSON.parse(rf(p,{returnString:true}));c[k]=v;return v;};",
         0, (uint32_t)JSON_REQ_PF },
+    {
+        /* TC39 Stage 1 / TypeScript experimentalDecorators / babel legacy
+           decorator runtime.  Applies a list of decorators to a method,
+           accessor, or field descriptor, in reverse declaration order
+           (the spec's evaluation order).  `desc` may be undefined for
+           field decorators that have no existing prototype descriptor;
+           we synthesize a default { value: undefined } slot for the
+           decorators to mutate.  If any decorator returns a non-falsy
+           replacement descriptor, that overrides.  Final result is
+           installed via Object.defineProperty; for fields with
+           initializers, the initializer is invoked with `ctx` as
+           `this`. */
+        "_TrN_Sp._applyDecoratedDescriptor=function(target,key,decorators,desc,ctx){var d;if(desc){d={};Object.keys(desc).forEach(function(k){d[k]=desc[k];});d.enumerable=!!d.enumerable;d.configurable=!!d.configurable;if('value' in d||d.initializer)d.writable=true;}else{d={enumerable:true,configurable:true,writable:true,value:undefined};}d=decorators.slice().reverse().reduce(function(dd,dec){return dec(target,key,dd)||dd;},d);if(ctx&&d.initializer!==void 0){d.value=d.initializer?d.initializer.call(ctx):void 0;d.initializer=undefined;}if(d.initializer===void 0){Object.defineProperty(target,key,d);d=null;}return d;};",
+        0, (uint32_t)DECORATORS_PF },
     { NULL, 0}
 };
 
@@ -4660,6 +4675,29 @@ static int rewrite_arrow_function_node(EditList *edits, const char *src, TSNode 
         snprintf(wrapped, cap_bind, "(%s).bind(this)", rep);
         free(rep);
         rep = wrapped;
+    }
+    /* Token-fusion guard: if the source byte immediately before the
+       arrow's start is an identifier char (letter / digit / `_` / `$`)
+       and our replacement begins with one, JS lexer will read them as
+       a single token.  Real-world hit: `return (x)=>x` — the `return`
+       fuses with `_TrN_Sp` or `function` and parses as a bogus
+       identifier `returnFunction` / `return_TrN_Sp`.  Prepend a space
+       to keep them as separate tokens. */
+    if (ns > 0 && rep && rep[0]) {
+        unsigned char pb = (unsigned char)src[ns - 1];
+        unsigned char rb = (unsigned char)rep[0];
+        int pb_id = (pb >= 'a' && pb <= 'z') || (pb >= 'A' && pb <= 'Z')
+                 || (pb >= '0' && pb <= '9') || pb == '_' || pb == '$';
+        int rb_id = (rb >= 'a' && rb <= 'z') || (rb >= 'A' && rb <= 'Z')
+                 || (rb >= '0' && rb <= '9') || rb == '_' || rb == '$';
+        if (pb_id && rb_id) {
+            size_t rlen = strlen(rep);
+            char *spaced = (char *)malloc(rlen + 2);
+            spaced[0] = ' ';
+            memcpy(spaced + 1, rep, rlen + 1);
+            free(rep);
+            rep = spaced;
+        }
     }
     add_edit_take_ownership(edits, ns, ne, rep, claimed);
     binds_free(&binds);
@@ -11084,12 +11122,19 @@ static int _count_newlines_since(rp_string *bucket, size_t since_len)
 }
 
 static void es5_emit_class_core(rp_string *out, const char *src, const char *cname, size_t cname_len, int has_super,
-                                size_t sups, size_t supe, TSNode body)
+                                size_t sups, size_t supe, TSNode body,
+                                uint32_t *polysneeded)
 {
     /* Reserve a unique class id for private-field name mangling so
        two classes that use the same `#name` don't collide.  See
        `_emit_with_priv_subst` for the mangling scheme. */
     unsigned class_priv_id = _priv_class_counter++;
+
+    /* Accumulator for TC39 Stage 1 decorator-apply calls emitted
+       AFTER the class IIFE.  Each method/field decorator-application
+       appends a `_TrN_Sp._applyDecoratedDescriptor(...)` call here;
+       drained at the bottom of this function. */
+    rp_string *dec_calls = rp_string_new(0);
 
     /* ——— gather constructor and methods ——— */
     int ctor_found = 0;
@@ -11206,6 +11251,39 @@ static void es5_emit_class_core(rp_string *out, const char *src, const char *cna
         }
         rp_string_puts(dest, ";");
         *fpcur += _count_newlines_since(dest, pre_field_len);
+
+        /* TC39 Stage 1 decorator support on fields.  Same shape as
+           methods but `desc` is undefined (field has no prototype
+           descriptor — the helper synthesizes one). */
+        {
+            int n_dec = 0;
+            for (uint32_t j = 0, cn = ts_node_child_count(ch); j < cn; j++) {
+                TSNode dch = ts_node_child(ch, j);
+                if (strcmp(ts_node_type(dch), "decorator") == 0) n_dec++;
+            }
+            if (n_dec > 0 && !is_private_field) {
+                rp_string_puts(dec_calls, "_TrN_Sp._applyDecoratedDescriptor(");
+                rp_string_putsn(dec_calls, cname, cname_len);
+                if (!is_static_field) rp_string_puts(dec_calls, ".prototype");
+                rp_string_puts(dec_calls, ",\"");
+                rp_string_putsn(dec_calls, src + fps, fpe - fps);
+                rp_string_puts(dec_calls, "\",[");
+                int emitted = 0;
+                for (uint32_t j = 0, cn = ts_node_child_count(ch); j < cn; j++) {
+                    TSNode dch = ts_node_child(ch, j);
+                    if (strcmp(ts_node_type(dch), "decorator") != 0) continue;
+                    if (emitted++) rp_string_puts(dec_calls, ",");
+                    size_t ds = ts_node_start_byte(dch) + 1;
+                    size_t de = ts_node_end_byte(dch);
+                    rp_string_putsn(dec_calls, src + ds, de - ds);
+                }
+                rp_string_puts(dec_calls, "],void 0,");
+                rp_string_putsn(dec_calls, cname, cname_len);
+                if (!is_static_field) rp_string_puts(dec_calls, ".prototype");
+                rp_string_puts(dec_calls, ");");
+                if (polysneeded) *polysneeded |= DECORATORS_PF | CLASS_PF;
+            }
+        }
     }
 
     for (uint32_t i = 0; i < n; i++)
@@ -11484,6 +11562,52 @@ static void es5_emit_class_core(rp_string *out, const char *src, const char *cna
         /* Advance the bucket's notional source-line by however many
            newlines this method's emission actually wrote. */
         *pcur += _count_newlines_since(bucket, pre_emit_len);
+
+        /* TC39 Stage 1 decorator support.  Walk method_definition
+           children for `decorator` nodes (siblings of name/params).
+           For each decorated method, emit a post-class call:
+             _TrN_Sp._applyDecoratedDescriptor(<target>, "name", [dec...],
+                 Object.getOwnPropertyDescriptor(<target>, "name"),
+                 <target>);
+           where <target> is `<Class>.prototype` (instance method) or
+           `<Class>` (static method).  Decorators are emitted in source
+           order in the array; the helper applies them in reverse. */
+        {
+            int n_dec = 0;
+            for (uint32_t j = 0, cn = ts_node_child_count(mth); j < cn; j++) {
+                TSNode dch = ts_node_child(mth, j);
+                if (strcmp(ts_node_type(dch), "decorator") == 0) n_dec++;
+            }
+            if (n_dec > 0 && !is_computed && !is_private_method) {
+                rp_string_puts(dec_calls, "_TrN_Sp._applyDecoratedDescriptor(");
+                rp_string_putsn(dec_calls, cname, cname_len);
+                if (!is_static) rp_string_puts(dec_calls, ".prototype");
+                rp_string_puts(dec_calls, ",\"");
+                rp_string_putsn(dec_calls, src + ks, ke - ks);
+                rp_string_puts(dec_calls, "\",[");
+                int emitted = 0;
+                for (uint32_t j = 0, cn = ts_node_child_count(mth); j < cn; j++) {
+                    TSNode dch = ts_node_child(mth, j);
+                    if (strcmp(ts_node_type(dch), "decorator") != 0) continue;
+                    if (emitted++) rp_string_puts(dec_calls, ",");
+                    /* skip the leading `@` (1 byte) — the child after
+                       is identifier / call_expression / member_expression. */
+                    size_t ds = ts_node_start_byte(dch) + 1;
+                    size_t de = ts_node_end_byte(dch);
+                    rp_string_putsn(dec_calls, src + ds, de - ds);
+                }
+                rp_string_puts(dec_calls, "],Object.getOwnPropertyDescriptor(");
+                rp_string_putsn(dec_calls, cname, cname_len);
+                if (!is_static) rp_string_puts(dec_calls, ".prototype");
+                rp_string_puts(dec_calls, ",\"");
+                rp_string_putsn(dec_calls, src + ks, ke - ks);
+                rp_string_puts(dec_calls, "\"),");
+                rp_string_putsn(dec_calls, cname, cname_len);
+                if (!is_static) rp_string_puts(dec_calls, ".prototype");
+                rp_string_puts(dec_calls, ");");
+                if (polysneeded) *polysneeded |= DECORATORS_PF | CLASS_PF;
+            }
+        }
     }
 
     /* ——— open wrapper ——— */
@@ -11812,13 +11936,21 @@ static void es5_emit_class_core(rp_string *out, const char *src, const char *cna
         rp_string_puts(out, ");");
     }
 
+    /* Append any decorator-apply calls collected from method/field
+       loops above.  These need to fire AFTER the class IIFE has run
+       so the descriptors are present on the prototype / static side. */
+    if (dec_calls->len)
+        rp_string_puts(out, dec_calls->str);
+    dec_calls = rp_string_free(dec_calls);
+
     proto_arr = rp_string_free(proto_arr);
     static_arr = rp_string_free(static_arr);
     field_inits = rp_string_free(field_inits);
     static_field_inits = rp_string_free(static_field_inits);
 }
 
-static int rewrite_class_to_es5(EditList *edits, const char *src, TSNode class_node, RangeList *claimed, int overlaps)
+static int rewrite_class_to_es5(EditList *edits, const char *src, TSNode class_node, RangeList *claimed,
+                                uint32_t *polysneeded, int overlaps)
 {
     const char *ctype = ts_node_type(class_node);
     int has_super = 0;
@@ -11879,7 +12011,41 @@ static int rewrite_class_to_es5(EditList *edits, const char *src, TSNode class_n
     }
 
     rp_string *out = rp_string_new(256);
-    es5_emit_class_core(out, src, nameptr, namelen, has_super, sups, supe, body);
+    es5_emit_class_core(out, src, nameptr, namelen, has_super, sups, supe, body, polysneeded);
+
+    /* TC39 Stage 1 class-level decorators.  `@dec class Foo {…}` —
+       decorators are children of class_declaration BEFORE the `class`
+       keyword.  Apply in reverse declaration order after the IIFE:
+         Foo = dec2(Foo) || Foo;
+         Foo = dec1(Foo) || Foo;
+       (Conventional spec order: outermost decorator runs last.) */
+    {
+        TSNode dec_nodes[16];
+        int n_dec = 0;
+        for (uint32_t i = 0, cn = ts_node_child_count(class_node); i < cn && n_dec < 16; i++) {
+            TSNode dch = ts_node_child(class_node, i);
+            if (strcmp(ts_node_type(dch), "decorator") == 0)
+                dec_nodes[n_dec++] = dch;
+        }
+        if (n_dec > 0) {
+            for (int k = n_dec - 1; k >= 0; k--) {
+                rp_string_putsn(out, nameptr, namelen);
+                rp_string_puts(out, "=");
+                size_t ds = ts_node_start_byte(dec_nodes[k]) + 1;  /* skip `@` */
+                size_t de = ts_node_end_byte(dec_nodes[k]);
+                rp_string_putsn(out, src + ds, de - ds);
+                /* If the decorator is a member expression / identifier
+                   (not a call), wrap as a call: `dec(Foo) || Foo`. */
+                rp_string_puts(out, "(");
+                rp_string_putsn(out, nameptr, namelen);
+                rp_string_puts(out, ")||");
+                rp_string_putsn(out, nameptr, namelen);
+                rp_string_puts(out, ";");
+            }
+            if (polysneeded) *polysneeded |= CLASS_PF;
+        }
+    }
+
     add_edit_take_ownership(edits, cs, ce, rp_string_steal(out), claimed);
     out=rp_string_free(out);
     return 1;
@@ -11966,7 +12132,7 @@ static int rewrite_class_expression_to_es5(EditList *edits, const char *src, TSN
     rp_string_puts(expr, "(function(){");
     // emit the same var Name = function(){...}(); but as an expression we only need the IIFE value.
     // So we generate the same code and then reference the Name immediately.
-    es5_emit_class_core(expr, src, nameptr, namelen, has_super, sups, supe, body);
+    es5_emit_class_core(expr, src, nameptr, namelen, has_super, sups, supe, body, polysneeded);
 
     // Replace with just the identifier, because the class expression should yield the constructor.
     // The var/IIFE we just emitted must be inserted *before* and we return the name here.
@@ -13778,7 +13944,18 @@ static int rewrite_attach_fn_source(EditList *edits, const char *src, TSNode nod
         rp_string_puts(tail, ")");
         lit = rp_string_free(lit);
 
-        add_edit(edits, ns, ns, "_TrN_Sp._fs(", claimed);
+        /* Token-fusion guard: same pattern as the arrow rewriter.
+           `return(e,o)=>…` puts byte `n` (end of `return`) right
+           before our `_TrN_Sp._fs(` insert.  JS lexer reads
+           `return_TrN_Sp` as one identifier and silently breaks. */
+        const char *prefix = "_TrN_Sp._fs(";
+        if (ns > 0) {
+            unsigned char pb = (unsigned char)src[ns - 1];
+            int pb_id = (pb >= 'a' && pb <= 'z') || (pb >= 'A' && pb <= 'Z')
+                     || (pb >= '0' && pb <= '9') || pb == '_' || pb == '$';
+            if (pb_id) prefix = " _TrN_Sp._fs(";
+        }
+        add_edit(edits, ns, ns, prefix, claimed);
         add_edit_take_ownership(edits, ne, ne, rp_string_steal(tail), claimed);
         tail = rp_string_free(tail);
     }
@@ -13886,7 +14063,7 @@ RP_ParseRes transpiler_rewrite_pass(EditList *edits, const char *src, size_t src
         /* class transpile produces functions, and then in pass2, handle them */
         if (!handled && strcmp(nt, "class_declaration") == 0)
         {
-            handled = rewrite_class_to_es5(edits, src, n, &claimed, overlaps);
+            handled = rewrite_class_to_es5(edits, src, n, &claimed, polysneeded, overlaps);
             if (handled)
             {
                 *polysneeded |= CLASS_PF;

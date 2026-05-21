@@ -80,6 +80,47 @@ testFeature("String.raw", function()
 
 });
 
+/* Regression: TC39 Stage 1 (legacy) decorators.  Three forms:
+   class decorator, method decorator, field decorator.  Lowered to
+   `_TrN_Sp._applyDecoratedDescriptor(...)` calls emitted AFTER the
+   class IIFE; class decorators emit `Foo = dec(Foo) || Foo;`.
+   Verifies the dec runs once per element with the right args. */
+testFeature("Decorators — Stage 1 class + method + field", function() {
+    global.__tdec_calls = [];
+    global.__logClass = function (cls) {
+        global.__tdec_calls.push("class:" + cls.name);
+        cls.tagged = 1;
+        return cls;
+    };
+    global.__logMethod = function (target, key, desc) {
+        global.__tdec_calls.push("method:" + key + ",writable=" + desc.writable);
+        return desc;
+    };
+    global.__logField = function (target, key, desc) {
+        /* Stage 1 callers pass undefined desc for fields; helper
+           synthesizes one with writable:true, value:undefined. */
+        global.__tdec_calls.push("field:" + key + ",writable=" + desc.writable);
+        return desc;
+    };
+    /* eval keeps duktape's parser away from `@` — eval input goes
+       through the transpiler before duktape sees it. */
+    eval(
+        "@global.__logClass class TestDec {\n" +
+        "  @global.__logMethod greet() { return 'hi'; }\n" +
+        "  @global.__logField x = 42;\n" +
+        "}\n" +
+        "global.__tdec_cls = TestDec;"
+    );
+    var cls = global.__tdec_cls;
+    var got = global.__tdec_calls;
+    var inst = new cls();
+    return cls.tagged === 1
+        && got.indexOf("class:TestDec") >= 0
+        && got.indexOf("method:greet,writable=true") >= 0
+        && got.indexOf("field:x,writable=true") >= 0
+        && inst.greet() === "hi";
+});
+
 /* Regression: `export * as Ns from "./mod"` (ES2020 namespace
    re-export).  Pre-fix the rewriter only handled bare `export *
    from "mod"`, so the `as Ns` form fell through to "drop export,
