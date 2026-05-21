@@ -1492,7 +1492,7 @@ static int rewrite_destructuring_declaration(EditList *edits, const char *src, T
         if (strcmp(nt, "array_pattern") == 0 || strcmp(nt, "object_pattern") == 0) {
             if (ts_node_is_null(val)) continue;
             char tmpvar[32];
-            snprintf(tmpvar, sizeof(tmpvar), "_d%u", ++_destr_counter);
+            snprintf(tmpvar, sizeof(tmpvar), "_TrN_d%u", ++_destr_counter);
             Bindings binds;
             binds_init(&binds);
             if (!collect_flat_destructure_bindings(name, src, tmpvar, &binds)) {
@@ -1575,7 +1575,7 @@ static int rewrite_destructuring_assignment(EditList *edits, const char *src, TS
         return 1;
 
     char tmpvar[32];
-    snprintf(tmpvar, sizeof(tmpvar), "_d%u", ++_destr_counter);
+    snprintf(tmpvar, sizeof(tmpvar), "_TrN_d%u", ++_destr_counter);
 
     Bindings binds;
     binds_init(&binds);
@@ -2494,7 +2494,7 @@ static int rewrite_export_node(EditList *edits, const char *src, TSNode snode, R
 
         if (mod)
         {
-            snprintf(tmp, sizeof(tmp), "__tmpExp0");
+            snprintf(tmp, sizeof(tmp), "_TrN_tmpExp0");
             rp_string_puts(out, "var ");
             rp_string_puts(out, tmp);
             rp_string_puts(out, " = require(");
@@ -2850,7 +2850,7 @@ static int rewrite_function_destructuring_params(EditList *edits, const char *sr
         {
             /* Generate temp name and collect bindings */
             char tmpname[32];
-            snprintf(tmpname, sizeof(tmpname), "_dp%u", _dp_counter++);
+            snprintf(tmpname, sizeof(tmpname), "_TrN_dp%u", _dp_counter++);
             rp_string_puts(new_params, tmpname);
 
             /* Inject param default if present */
@@ -3044,7 +3044,7 @@ static int do_named_imports(EditList *edits, const char *src, TSNode snode, TSNo
     size_t mod_s = ts_node_start_byte(string_frag), mod_e = ts_node_end_byte(string_frag);
 
     /* temp module binding */
-    sprintf(buf, "__tmpModImp%u", tmpn);
+    sprintf(buf, "_TrN_modImp%u", tmpn);
     rp_string *out = rp_string_new(64);
 
     rp_string_appendf(out, "var %s=require(\"%.*s\");if(_TrN_Sp._pP)_TrN_Sp._pP();", buf, (int)(mod_e - mod_s), src + mod_s);
@@ -3167,7 +3167,7 @@ static int do_default_and_named_imports(EditList *edits, const char *src, TSNode
 {
     static uint32_t tmpn = 0;
     char tbuf[32];
-    sprintf(tbuf, "__tmpModImpdn%u", tmpn);
+    sprintf(tbuf, "_TrN_modImpdn%u", tmpn);
 
     size_t mod_s = ts_node_start_byte(string_frag), mod_e = ts_node_end_byte(string_frag);
     size_t id_s = ts_node_start_byte(default_ident), id_e = ts_node_end_byte(default_ident);
@@ -4011,9 +4011,9 @@ static int rewrite_arrow_function_node(EditList *edits, const char *src, TSNode 
                     char tmpname[32];
                     int is_array_pat = (strcmp(ts_node_type(destr_pat), "array_pattern") == 0);
                     if (is_array_pat)
-                        snprintf(tmpname, sizeof(tmpname), "_arr_%u", ++arr_n);
+                        snprintf(tmpname, sizeof(tmpname), "_TrN_arr%u", ++arr_n);
                     else
-                        snprintf(tmpname, sizeof(tmpname), "_obj_%u", ++obj_n);
+                        snprintf(tmpname, sizeof(tmpname), "_TrN_obj%u", ++obj_n);
                     rp_string_puts(multi_params, tmpname);
 
                     if (param_def)
@@ -4868,7 +4868,7 @@ static void _collect_awaits_shallow(TSNode node, _AsyncNodeVec *out)
    The two can be the same declarator (`{a,b} = await x`) or different
    declarators (`[a] = arr, b = await x`). In both cases the existing
    per-statement lowering can't handle the stmt correctly: it would
-   either emit invalid `{a,b} = _context.sent` syntax, or emit naked
+   either emit invalid `{a,b} = _TrN_context.sent` syntax, or emit naked
    `[a] = arr` (destructure-assignment) which duktape doesn't support. */
 static int _stmt_is_destructure_await(TSNode stmt)
 {
@@ -4904,16 +4904,16 @@ static int _stmt_is_destructure_await(TSNode stmt)
 
 /* Emit state-machine steps for every TOP-LEVEL await in val_node, appending
    to dst. Returns a malloc'd string of the substituted value expression
-   (with a unique intermediate `_context._ts<N>` reference in place of
+   (with a unique intermediate `_TrN_context._ts<N>` reference in place of
    each await). Caller frees.
 
-   Each await binds its resolved value to its own `_context._ts<N>` slot
+   Each await binds its resolved value to its own `_TrN_context._ts<N>` slot
    (stored on the persistent _context object, not a local var) so that
    later references in the substituted expression don't all collapse to
-   the last `_context.sent` value. Local `var _tsN = _context.sent` in a
-   case label would NOT work: each entry to _callee$ re-hoists the var
+   the last `_TrN_context.sent` value. Local `var _tsN = _TrN_context.sent` in a
+   case label would NOT work: each entry to _TrN_callee$ re-hoists the var
    to `undefined`, losing the assignment from a prior case. Storing on
-   _context survives across the multiple _callee$ invocations.
+   _context survives across the multiple _TrN_callee$ invocations.
 
    That matters for any value with more than one await
    (e.g. `fn(await a, await b)`, `cond ? await a : await b`,
@@ -4958,7 +4958,7 @@ static char *_emit_value_awaits_lower(rp_string *dst, const char *src, TSNode va
         /* Recurse into the argument FIRST so any nested awaits (e.g.
            `await fn(await g())`) emit their state-machine cases to `dst`
            BEFORE this outer await's case.  arg_lowered contains the arg
-           text with inner awaits replaced by `_context._tsM` refs. */
+           text with inner awaits replaced by `_TrN_context._tsM` refs. */
         char *arg_lowered = NULL;
         if (!ts_node_is_null(arg))
             arg_lowered = _emit_value_awaits_lower(dst, src, arg, p_next_label);
@@ -4968,7 +4968,7 @@ static char *_emit_value_awaits_lower(rp_string *dst, const char *src, TSNode va
         snprintf(lblbuf, sizeof(lblbuf), "%d", *p_next_label);
 
         char tsref[32];
-        snprintf(tsref, sizeof(tsref), "_context._ts%u", ++_ts_counter);
+        snprintf(tsref, sizeof(tsref), "_TrN_context._ts%u", ++_ts_counter);
 
         /* ensure dst ends with a terminator */
         if (dst->len)
@@ -4978,7 +4978,7 @@ static char *_emit_value_awaits_lower(rp_string *dst, const char *src, TSNode va
             if (*p != ';' && *p != ':' && *p != '{')
                 rp_string_putc(dst, ';');
         }
-        rp_string_puts(dst, "_context._y=true;_context.next = ");
+        rp_string_puts(dst, "_TrN_context._y=true;_TrN_context.next = ");
         rp_string_puts(dst, lblbuf);
         rp_string_puts(dst, "; return (");
         if (arg_lowered)
@@ -4989,7 +4989,7 @@ static char *_emit_value_awaits_lower(rp_string *dst, const char *src, TSNode va
         rp_string_puts(dst, lblbuf);
         rp_string_puts(dst, ": ");
         rp_string_puts(dst, tsref);
-        rp_string_puts(dst, " = _context.sent;");
+        rp_string_puts(dst, " = _TrN_context.sent;");
 
         if (arg_lowered) free(arg_lowered);
 
@@ -5043,7 +5043,7 @@ static void _emit_destructure_await_lower(rp_string *dst, const char *src, TSNod
             snprintf(tmpname, sizeof(tmpname), "_TrN_da%u", ++_destr_counter);
 
             /* Emit state-machine steps for each await in the value, then
-               substitute `_context.sent` in for each. Handles single
+               substitute `_TrN_context.sent` in for each. Handles single
                embedded awaits like `(await x).y` and sibling awaits like
                `fn(await a, await b)`. Does NOT handle nested awaits like
                `await fn(await y)` — those need a deeper rewrite. */
@@ -5199,8 +5199,8 @@ static int _stmt_is_destructure_assignment_await(TSNode stmt, TSNode *out_left, 
 }
 
 /* Lower `({a, b} = await EXPR);` into:
-     _context._y=true; _context.next=K; return (EXPR);
-     case K: var _daN = _context.sent;
+     _TrN_context._y=true; _TrN_context.next=K; return (EXPR);
+     case K: var _daN = _TrN_context.sent;
      a = _daN.a;
      b = _daN.b;
    The bindings (a, b) already exist — this is assignment, not declaration —
@@ -5214,7 +5214,7 @@ static void _emit_destructure_assignment_await_lower(rp_string *dst, const char 
     snprintf(tmpname, sizeof(tmpname), "_TrN_da%u", ++_destr_counter);
 
     /* Emit state-machine steps for awaits in RHS; subst is the RHS with
-       _context.sent substituted in. Handles embedded and sibling awaits. */
+       _TrN_context.sent substituted in. Handles embedded and sibling awaits. */
     char *subst = _emit_value_awaits_lower(dst, src, right, p_next_label);
 
     rp_string_puts(dst, " var ");
@@ -5321,7 +5321,7 @@ _emit_stmt_async_lower(rp_string *dst, const char *src, size_t ss, size_t se, TS
             if(*p!=';')
                 rp_string_putc(dst, ';');
         }
-        rp_string_puts(dst, "_context._y=true;_context.next = ");
+        rp_string_puts(dst, "_TrN_context._y=true;_TrN_context.next = ");
         rp_string_puts(dst, tmp);
         rp_string_puts(dst, "; return (");
 
@@ -5334,7 +5334,7 @@ _emit_stmt_async_lower(rp_string *dst, const char *src, size_t ss, size_t se, TS
 
         size_t aws = ts_node_start_byte(aw), awe = ts_node_end_byte(aw);
         rp_string_putsn(acc, src+cursor, aws-cursor);
-        rp_string_puts(acc, "_context.sent");
+        rp_string_puts(acc, "_TrN_context.sent");
         cursor = awe;
     }
     rp_string_putsn(acc, src+cursor, se-cursor);
@@ -5347,14 +5347,14 @@ _emit_stmt_async_lower(rp_string *dst, const char *src, size_t ss, size_t se, TS
 }
 
 // Build the body: return _TrN_Sp.regeneratorRuntime.wrap(function
-// _callee$(_context){while(1){switch(_context.prev=_context.next){case 0: ... }} , _callee);
+// _TrN_callee$(_context){while(1){switch(_TrN_context.prev=_TrN_context.next){case 0: ... }} , _callee);
 static char *_build_regenerator_switch_body(const char *src, TSNode body)
 {
     rp_string *out = rp_string_new(384);
 
     int next_label = 0;
 
-    // Hoist var/let/const declarations so they persist across _callee$ invocations via closure
+    // Hoist var/let/const declarations so they persist across _TrN_callee$ invocations via closure
     char *hoisted = _collect_body_var_names(src, body);
     if (hoisted)
     {
@@ -5366,7 +5366,7 @@ static char *_build_regenerator_switch_body(const char *src, TSNode body)
 
     rp_string_puts(
         out,
-        "return _TrN_Sp.regeneratorRuntime.wrap(function _callee$(_context){while(1){switch(_context.prev=_context.next){case 0:");
+        "return _TrN_Sp.regeneratorRuntime.wrap(function _TrN_callee$(_TrN_context){while(1){switch(_TrN_context.prev=_TrN_context.next){case 0:");
     const char *bt = ts_node_type(body);
     if (strcmp(bt, "statement_block") == 0)
     {
@@ -5388,7 +5388,7 @@ static char *_build_regenerator_switch_body(const char *src, TSNode body)
         /* _emit_stmt_yield_lower now handles awaits too (the collector
            covers both yield_expression and await_expression). */
         _emit_stmt_yield_lower(tmp, src, ss, se, expr, NULL, NULL, &next_label);
-        if (strstr(tmp->str, "_context.next") == NULL)
+        if (strstr(tmp->str, "_TrN_context.next") == NULL)
         {
             rp_string_puts(out, " return ");
             rp_string_puts(out, tmp->str);
@@ -5397,7 +5397,7 @@ static char *_build_regenerator_switch_body(const char *src, TSNode body)
         else
         {
             // The await was lowered. The last segment (after the final "case N:")
-            // contains _context.sent which is the value to implicitly return.
+            // contains _TrN_context.sent which is the value to implicitly return.
             // Insert "return " before that final segment.
             char *last_case = tmp->str;
             char *p;
@@ -5436,7 +5436,7 @@ static char *_build_regenerator_switch_body(const char *src, TSNode body)
     }
     rp_string_puts(out, "case ");
     rp_string_puts(out, etmp);
-    rp_string_puts(out, ":case \"end\":return _context.stop();}}}, _callee, this);");
+    rp_string_puts(out, ":case \"end\":return _TrN_context.stop();}}}, _TrN_callee, this);");
     char *ret = rp_string_steal(out);
     out=rp_string_free(out);
     return ret;
@@ -5497,7 +5497,7 @@ static char *_emit_async_decl_replacement(const char *src, TSNode node)
         rp_string_putsn(out, src+ns, ne-ns);
     else
         rp_string_puts(out, fallback);
-    rp_string_puts(out, " = _TrN_Sp.asyncToGenerator(_TrN_Sp.regeneratorRuntime.mark(function _callee");
+    rp_string_puts(out, " = _TrN_Sp.asyncToGenerator(_TrN_Sp.regeneratorRuntime.mark(function _TrN_callee");
     _append_params_sig(out, src, node);
     rp_string_puts(out, " {");
     char *wrap = _build_regenerator_switch_body(src, body);
@@ -5526,7 +5526,7 @@ static char *_emit_async_expr_replacement(const char *src, TSNode node)
         return NULL;
 
     rp_string *out = rp_string_new(768);
-    rp_string_puts(out, "(function(){var _ref = _TrN_Sp.asyncToGenerator(_TrN_Sp.regeneratorRuntime.mark(function _callee");
+    rp_string_puts(out, "(function(){var _TrN_ref = _TrN_Sp.asyncToGenerator(_TrN_Sp.regeneratorRuntime.mark(function _TrN_callee");
     _append_params_sig(out, src, node);
     rp_string_puts(out, " {");
     char *wrap = _build_regenerator_switch_body(src, body);
@@ -5537,7 +5537,7 @@ static char *_emit_async_expr_replacement(const char *src, TSNode node)
     }
     rp_string_puts(out, wrap);
     free(wrap);
-    rp_string_puts(out, "})); return function(){ return _ref.apply(this, arguments); };})()");
+    rp_string_puts(out, "})); return function(){ return _TrN_ref.apply(this, arguments); };})()");
 
     char *ret = rp_string_steal(out);
     out = rp_string_free(out);
@@ -5557,9 +5557,9 @@ static char *_emit_async_method_replacement(const char *src, TSNode node)
     // property label: <name>:
     rp_string_putsn(out, src+ns, ne-ns);
     rp_string_puts(out, ": ");
-    // value: (function(){ var _ref = asyncToGenerator(mark(function <name>(params){...}));
-    //                     return function <name>(params){ return _ref.apply(this, arguments); };})()
-    rp_string_puts(out, "(function(){var _ref = _TrN_Sp.asyncToGenerator(_TrN_Sp.regeneratorRuntime.mark(function ");
+    // value: (function(){ var _TrN_ref = asyncToGenerator(mark(function <name>(params){...}));
+    //                     return function <name>(params){ return _TrN_ref.apply(this, arguments); };})()
+    rp_string_puts(out, "(function(){var _TrN_ref = _TrN_Sp.asyncToGenerator(_TrN_Sp.regeneratorRuntime.mark(function ");
     // Try to preserve method name in inner generator function for stack traces
     // When name is not an identifier (e.g., string literal), fallback to _callee
     const char *nt = ts_node_type(nname);
@@ -5567,7 +5567,7 @@ static char *_emit_async_method_replacement(const char *src, TSNode node)
     if (named)
         rp_string_putsn(out, src+ns, ne-ns);
     else
-        rp_string_puts(out, "_callee");
+        rp_string_puts(out, "_TrN_callee");
     _append_params_sig(out, src, node);
     rp_string_puts(out, " {");
     char *wrap = _build_regenerator_switch_body(src, body);
@@ -5582,9 +5582,9 @@ static char *_emit_async_method_replacement(const char *src, TSNode node)
     if (named)
         rp_string_putsn(out, src+ns, ne-ns);
     else
-        rp_string_puts(out, "_callee");
+        rp_string_puts(out, "_TrN_callee");
     _append_params_sig(out, src, node);
-    rp_string_puts(out, " { return _ref.apply(this, arguments); };})()");
+    rp_string_puts(out, " { return _TrN_ref.apply(this, arguments); };})()");
 
     char *ret = rp_string_steal(out);
     out=rp_string_free(out);
@@ -5637,7 +5637,7 @@ static int rewrite_async_await_to_regenerator(EditList *edits, const char *src, 
 
 /* Per-loop context tracked during yield lowering so that break/continue
    inside a loop body translate into state-machine transitions rather
-   than `break`-out-of-switch (which would leave _context.next unchanged
+   than `break`-out-of-switch (which would leave _TrN_context.next unchanged
    and spin forever in the outer `while(1)`).
 
    If the loop is the body of a `labeled_statement`, `label`/`label_len`
@@ -5653,9 +5653,9 @@ typedef struct LoopCtx {
 
 /* Per-try-finally context. When a `return X;` appears inside the try
    body, it must route through the finally before actually returning;
-   the runtime stores the deferred value in `_context.rval` and sets
-   `_context._rret = true`, then jumps to finally_case.  The finally
-   body, after running, checks `_context._rret` and returns the saved
+   the runtime stores the deferred value in `_TrN_context.rval` and sets
+   `_TrN_context._rret = true`, then jumps to finally_case.  The finally
+   body, after running, checks `_TrN_context._rret` and returns the saved
    value (which triggers the iterator-end path in the wrap). */
 typedef struct FinCtx {
     int finally_case;
@@ -5722,8 +5722,8 @@ _collect_loop_control(TSNode node, _AsyncNodeVec *brks, _AsyncNodeVec *conts)
 }
 
 /* Collect yield_expression AND await_expression nodes — both lower to
-   the same state-machine transition shape (`_context.next=N; return X;
-   case N: _context.sent`).  An async function body never contains
+   the same state-machine transition shape (`_TrN_context.next=N; return X;
+   case N: _TrN_context.sent`).  An async function body never contains
    yields and a generator body never contains awaits (each is a syntax
    error in the other context), so combining them in one collector is
    safe. */
@@ -5763,10 +5763,10 @@ static int _text_has_yield(const char *src, size_t ss, size_t se)
 /* Helper: lower yields in src range [ss..se] (with `container` as the
    tree-sitter subtree covering it). Emits each yield's state-machine
    transition into `dst`. Returns a malloc'd string that is the original
-   source with yield expressions replaced by `_context.sent`. Handles
+   source with yield expressions replaced by `_TrN_context.sent`. Handles
    nested yields (e.g. `yield yield __await(v)`) by recursing into each
    yield's argument first, so inner yields get lower case numbers and
-   their post-resume value (`_context.sent`) becomes the outer yield's
+   their post-resume value (`_TrN_context.sent`) becomes the outer yield's
    actual return-argument.
 
    When `ctx` is non-NULL, also substitutes unlabelled break/continue
@@ -5774,7 +5774,7 @@ static int _text_has_yield(const char *src, size_t ss, size_t se)
    enclosing loop's exit/continue case.
 
    When `fctx` is non-NULL, return statements in the range are
-   translated to set `_context.rval` and route through the enclosing
+   translated to set `_TrN_context.rval` and route through the enclosing
    finally case before actually returning. */
 static char *_lower_range_with_yields(rp_string *dst, const char *src,
                                       size_t ss, size_t se, TSNode container,
@@ -5816,12 +5816,12 @@ static char *_lower_range_with_yields(rp_string *dst, const char *src,
             }
 
     /* When multiple yields appear at this level (e.g. `(yield A) + (yield B)`)
-       each needs its own slot, because `_context.sent` is overwritten on
+       each needs its own slot, because `_TrN_context.sent` is overwritten on
        every re-entry and the later expression can't read the earlier
-       sent value. Use `_context.s<N>` (a fresh property on the runtime
+       sent value. Use `_TrN_context.s<N>` (a fresh property on the runtime
        context object, indexed by case number) as the slot. For the
        single-yield case the slot is unnecessary and we just use
-       `_context.sent` directly to keep the output minimal. */
+       `_TrN_context.sent` directly to keep the output minimal. */
     int use_slots = (av.len > 1);
 
     /* Build a merged sorted list of substitution sites (yields +
@@ -5936,8 +5936,8 @@ static char *_lower_range_with_yields(rp_string *dst, const char *src,
                 *p_next_label += 3;
                 int done_label = *p_next_label;
                 char iter_slot[32], step_slot[32];
-                snprintf(iter_slot, sizeof(iter_slot), "_context._ys%d", loop_label);
-                snprintf(step_slot, sizeof(step_slot), "_context._yr%d", loop_label);
+                snprintf(iter_slot, sizeof(iter_slot), "_TrN_context._ys%d", loop_label);
+                snprintf(step_slot, sizeof(step_slot), "_TrN_context._yr%d", loop_label);
 
                 if (dst->len)
                 {
@@ -5955,25 +5955,25 @@ static char *_lower_range_with_yields(rp_string *dst, const char *src,
                 if (async_mode)
                 {
                     /* LOOP_NEXT: await iter.next() */
-                    rp_string_appendf(dst, "case %d:_context._y=true;_context.next=%d;"
+                    rp_string_appendf(dst, "case %d:_TrN_context._y=true;_TrN_context.next=%d;"
                                            "return _TrN_Sp.__await(%s.next());",
                                       loop_label, after_next_label, iter_slot);
                     /* AFTER_NEXT: store step, check done, yield value */
-                    rp_string_appendf(dst, "case %d:%s=_context.sent;"
-                                           "if(%s.done){_context.next=%d;break;}"
-                                           "_context._y=true;_context.next=%d;return %s.value;",
+                    rp_string_appendf(dst, "case %d:%s=_TrN_context.sent;"
+                                           "if(%s.done){_TrN_context.next=%d;break;}"
+                                           "_TrN_context._y=true;_TrN_context.next=%d;return %s.value;",
                                       after_next_label, step_slot, step_slot,
                                       done_label, resume_label, step_slot);
                 }
                 else
                 {
                     /* Sync-gen: just .next() inline. */
-                    rp_string_appendf(dst, "case %d:%s=%s.next();if(%s.done){_context.next=%d;break;}",
+                    rp_string_appendf(dst, "case %d:%s=%s.next();if(%s.done){_TrN_context.next=%d;break;}",
                                       loop_label, step_slot, iter_slot, step_slot, done_label);
-                    rp_string_appendf(dst, "_context._y=true;_context.next=%d;return %s.value;",
+                    rp_string_appendf(dst, "_TrN_context._y=true;_TrN_context.next=%d;return %s.value;",
                                       resume_label, step_slot);
                 }
-                rp_string_appendf(dst, "case %d:_context.next=%d;break;case %d:",
+                rp_string_appendf(dst, "case %d:_TrN_context.next=%d;break;case %d:",
                                   resume_label, loop_label, done_label);
 
                 if (arg_lowered) free(arg_lowered);
@@ -5988,9 +5988,9 @@ static char *_lower_range_with_yields(rp_string *dst, const char *src,
 
             char slot_name[40];
             if (use_slots)
-                snprintf(slot_name, sizeof(slot_name), "_context.s%s", tmp);
+                snprintf(slot_name, sizeof(slot_name), "_TrN_context.s%s", tmp);
             else
-                strcpy(slot_name, "_context.sent");
+                strcpy(slot_name, "_TrN_context.sent");
 
             if (dst->len)
             {
@@ -6009,7 +6009,7 @@ static char *_lower_range_with_yields(rp_string *dst, const char *src,
                 if (strcmp(nt, "await_expression") == 0)
                     is_await_in_async_gen = 1;
             }
-            rp_string_puts(dst, "_context._y=true;_context.next = ");
+            rp_string_puts(dst, "_TrN_context._y=true;_TrN_context.next = ");
             rp_string_puts(dst, tmp);
             rp_string_puts(dst, "; return (");
             if (is_await_in_async_gen)
@@ -6027,7 +6027,7 @@ static char *_lower_range_with_yields(rp_string *dst, const char *src,
             if (use_slots)
             {
                 rp_string_puts(dst, slot_name);
-                rp_string_puts(dst, "=_context.sent;");
+                rp_string_puts(dst, "=_TrN_context.sent;");
             }
 
             if (arg_lowered) free(arg_lowered);
@@ -6039,8 +6039,8 @@ static char *_lower_range_with_yields(rp_string *dst, const char *src,
             /* return_statement: route via the enclosing finally before
                actually returning.  If the return has a value, lower it
                (yields in the arg emit their case-transitions to dst) and
-               store in _context.rval.  Then jump to the finally case;
-               the finally's tail will return _context.rval to the wrap. */
+               store in _TrN_context.rval.  Then jump to the finally case;
+               the finally's tail will return _TrN_context.rval to the wrap. */
             TSNode ret = node;
             TSNode arg = ts_node_named_child(ret, 0);
             char *arg_lowered = NULL;
@@ -6052,11 +6052,11 @@ static char *_lower_range_with_yields(rp_string *dst, const char *src,
             rp_string_puts(acc, "{");
             if (arg_lowered)
             {
-                rp_string_puts(acc, "_context.rval=");
+                rp_string_puts(acc, "_TrN_context.rval=");
                 rp_string_puts(acc, arg_lowered);
                 rp_string_puts(acc, ";");
             }
-            rp_string_appendf(acc, "_context._rret=true;_context.next=%d;break;}",
+            rp_string_appendf(acc, "_TrN_context._rret=true;_TrN_context.next=%d;break;}",
                               fctx->finally_case);
             if (arg_lowered) free(arg_lowered);
         }
@@ -6105,7 +6105,7 @@ static char *_lower_range_with_yields(rp_string *dst, const char *src,
             if (target_ctx)
             {
                 int tgt = (items[k].kind == 1) ? target_ctx->exit_case : target_ctx->continue_case;
-                rp_string_appendf(acc, "{_context.next=%d;break;}", tgt);
+                rp_string_appendf(acc, "{_TrN_context.next=%d;break;}", tgt);
             }
             else
             {
@@ -6131,7 +6131,7 @@ static char *_lower_range_with_yields(rp_string *dst, const char *src,
 
 // Lower a statement containing 0..N yields (including nested) into
 // state-machine steps. Emits case-transitions to `dst` and appends the
-// substituted statement (yields replaced by `_context.sent`).
+// substituted statement (yields replaced by `_TrN_context.sent`).
 static void _emit_stmt_yield_lower(rp_string *dst, const char *src, size_t ss, size_t se, TSNode stmt_node,
                                    LoopCtx *ctx, FinCtx *fctx, int *p_next_label)
 {
@@ -6192,7 +6192,7 @@ static void _emit_yield_body_range(rp_string *out, const char *src, TSNode block
         /* Pre-filter: multi-declarator destructure-await like
            `const a = 1, {b} = await X;` — the generic strip-keyword +
            paren-wrap below can't represent this with a single
-           `_context.sent` substitution.  Route to the dedicated emitter
+           `_TrN_context.sent` substitution.  Route to the dedicated emitter
            which fans the declarators out into individual statements.
            Also catches single-declarator destructure-await; the dedicated
            path emits cleaner code than the generic wrap_paren. */
@@ -6281,13 +6281,13 @@ static void _emit_yield_body_range(rp_string *out, const char *src, TSNode block
         {
             /* Unlabelled break inside a yield-lowered loop body. Bare
                `break` would only exit the surrounding switch, leaving
-               _context.next unchanged — spin forever. Translate. */
-            rp_string_appendf(out, "{_context.next=%d;break;}", ctx->exit_case);
+               _TrN_context.next unchanged — spin forever. Translate. */
+            rp_string_appendf(out, "{_TrN_context.next=%d;break;}", ctx->exit_case);
         }
         else if (strcmp(stmt_type, "continue_statement") == 0 && ctx
                  && ts_node_named_child_count(stmt) == 0)
         {
-            rp_string_appendf(out, "{_context.next=%d;break;}", ctx->continue_case);
+            rp_string_appendf(out, "{_TrN_context.next=%d;break;}", ctx->continue_case);
         }
         else if (strcmp(stmt_type, "while_statement") == 0 && has_yield)
         {
@@ -6298,9 +6298,9 @@ static void _emit_yield_body_range(rp_string *out, const char *src, TSNode block
                 if (ss < stmt_s) rp_string_putsn(out, src + ss, stmt_s - ss);
             }
             /* Decompose: while (cond) { body }
-               -> case COND: if(!cond){_context.next=EXIT;break;}
+               -> case COND: if(!cond){_TrN_context.next=EXIT;break;}
                   <body stmts with yields lowered>
-                  _context.next=COND;break;
+                  _TrN_context.next=COND;break;
                   case EXIT: */
             TSNode cond = ts_node_child_by_field_name(stmt, "condition", 9);
             TSNode wbody = ts_node_child_by_field_name(stmt, "body", 4);
@@ -6346,7 +6346,7 @@ static void _emit_yield_body_range(rp_string *out, const char *src, TSNode block
                                                               NULL, NULL, p_next_label);
                 rp_string_puts(out, "if(!(");
                 rp_string_puts(out, cond_lowered);
-                rp_string_puts(out, ")){_context.next=");
+                rp_string_puts(out, ")){_TrN_context.next=");
                 rp_string_puts(out, etmp);
                 rp_string_puts(out, ";break;}");
                 free(cond_lowered);
@@ -6360,7 +6360,7 @@ static void _emit_yield_body_range(rp_string *out, const char *src, TSNode block
                 rp_string_putc(out, ';');
 
             /* Loop back */
-            rp_string_puts(out, "_context.next=");
+            rp_string_puts(out, "_TrN_context.next=");
             rp_string_puts(out, ctmp);
             rp_string_puts(out, ";break;");
 
@@ -6377,9 +6377,9 @@ static void _emit_yield_body_range(rp_string *out, const char *src, TSNode block
             }
             /* Decompose: for (init; cond; incr) { body }
                -> init;
-                  case COND: if(!(cond)){_context.next=EXIT;break;}
+                  case COND: if(!(cond)){_TrN_context.next=EXIT;break;}
                   <body>
-                  case INCR: incr; _context.next=COND;break;
+                  case INCR: incr; _TrN_context.next=COND;break;
                   case EXIT:
                INCR is a separate case so `continue` can jump to it. */
             TSNode init = ts_node_child_by_field_name(stmt, "initializer", 11);
@@ -6391,7 +6391,7 @@ static void _emit_yield_body_range(rp_string *out, const char *src, TSNode block
                variable/lexical declarations we strip the var/let/const
                keyword because the variable names are already hoisted to
                the enclosing function's scope via _collect_body_var_names;
-               keeping `var` here would create a fresh local in _callee$
+               keeping `var` here would create a fresh local in _TrN_callee$
                that shadows the hoisted outer binding and the state
                wouldn't persist across iterations. */
             if (!ts_node_is_null(init) && strcmp(ts_node_type(init), "empty_statement") != 0)
@@ -6456,7 +6456,7 @@ static void _emit_yield_body_range(rp_string *out, const char *src, TSNode block
                                                               NULL, NULL, p_next_label);
                 rp_string_puts(out, "if(!(");
                 rp_string_puts(out, cond_lowered);
-                rp_string_puts(out, ")){_context.next=");
+                rp_string_puts(out, ")){_TrN_context.next=");
                 rp_string_puts(out, etmp);
                 rp_string_puts(out, ";break;}");
                 free(cond_lowered);
@@ -6479,7 +6479,7 @@ static void _emit_yield_body_range(rp_string *out, const char *src, TSNode block
                 rp_string_putc(out, ';');
             }
 
-            rp_string_puts(out, "_context.next=");
+            rp_string_puts(out, "_TrN_context.next=");
             rp_string_puts(out, ctmp);
             rp_string_puts(out, ";break;");
 
@@ -6495,8 +6495,8 @@ static void _emit_yield_body_range(rp_string *out, const char *src, TSNode block
             }
             /* try/catch/finally with yields inside.  The regenerator
                wrap catches any throw from innerFn and, if
-               _context._catch is set, routes to the catch case.  This
-               handler sets _context._catch around the try body, clears
+               _TrN_context._catch is set, routes to the catch case.  This
+               handler sets _TrN_context._catch around the try body, clears
                it on normal exit, and lowers the catch and finally
                bodies into their own cases.
 
@@ -6578,7 +6578,7 @@ static void _emit_yield_body_range(rp_string *out, const char *src, TSNode block
             }
 
             /* Allocate state slots:
-                 _oc<N>  : saved outer _context._catch  (per-try unique)
+                 _oc<N>  : saved outer _TrN_context._catch  (per-try unique)
                  _fe<N>  : pending exception to re-throw after finally
                And, if has_finally without user catch, allocate a synthetic
                FIN_THROW label that routes exceptions through finally before
@@ -6586,8 +6586,8 @@ static void _emit_yield_body_range(rp_string *out, const char *src, TSNode block
             static unsigned _trycatch_counter = 0;
             unsigned my_id = ++_trycatch_counter;
             char save_slot[24], err_slot[24];
-            snprintf(save_slot, sizeof(save_slot), "_context._oc%u", my_id);
-            snprintf(err_slot, sizeof(err_slot),  "_context._fe%u", my_id);
+            snprintf(save_slot, sizeof(save_slot), "_TrN_context._oc%u", my_id);
+            snprintf(err_slot, sizeof(err_slot),  "_TrN_context._fe%u", my_id);
 
             int fin_throw_label = 0;
             if (has_finally)
@@ -6610,8 +6610,8 @@ static void _emit_yield_body_range(rp_string *out, const char *src, TSNode block
                slot. */
             if (body_throw_target)
             {
-                rp_string_appendf(out, "%s=_context._catch||0;", save_slot);
-                rp_string_appendf(out, "_context._catch=%d;", body_throw_target);
+                rp_string_appendf(out, "%s=_TrN_context._catch||0;", save_slot);
+                rp_string_appendf(out, "_TrN_context._catch=%d;", body_throw_target);
             }
             if (has_finally)
             {
@@ -6619,7 +6619,7 @@ static void _emit_yield_body_range(rp_string *out, const char *src, TSNode block
                 /* Push this try's finally label onto the runtime _ts stack
                    so the iterator's .return(v) can find an active finally
                    and run it before completing. */
-                rp_string_appendf(out, "(_context._ts||(_context._ts=[])).push(%d);", fin_label);
+                rp_string_appendf(out, "(_TrN_context._ts||(_TrN_context._ts=[])).push(%d);", fin_label);
             }
 
             /* Lower the try body. */
@@ -6635,8 +6635,8 @@ static void _emit_yield_body_range(rp_string *out, const char *src, TSNode block
 
             /* After normal try-body exit, restore outer's _catch and jump on. */
             if (body_throw_target)
-                rp_string_appendf(out, "_context._catch=%s;", save_slot);
-            rp_string_appendf(out, "_context.next=%d;break;", after_body_target);
+                rp_string_appendf(out, "_TrN_context._catch=%s;", save_slot);
+            rp_string_appendf(out, "_TrN_context.next=%d;break;", after_body_target);
 
             /* case CATCH: throws from try-body land here.  If a finally
                follows, install FIN_THROW as the new _catch so throws inside
@@ -6645,10 +6645,10 @@ static void _emit_yield_body_range(rp_string *out, const char *src, TSNode block
             if (has_catch)
             {
                 if (has_finally)
-                    rp_string_appendf(out, "case %d:_context._catch=%d;",
+                    rp_string_appendf(out, "case %d:_TrN_context._catch=%d;",
                                       catch_label, fin_throw_label);
                 else
-                    rp_string_appendf(out, "case %d:_context._catch=%s;",
+                    rp_string_appendf(out, "case %d:_TrN_context._catch=%s;",
                                       catch_label, save_slot);
                 if (!ts_node_is_null(catch_param) &&
                     strcmp(ts_node_type(catch_param), "identifier") == 0)
@@ -6659,7 +6659,7 @@ static void _emit_yield_body_range(rp_string *out, const char *src, TSNode block
                        catch body even though we're inside a switch. */
                     rp_string_puts(out, "var ");
                     rp_string_putsn(out, src + cps, cpe - cps);
-                    rp_string_puts(out, "=_context._caught;");
+                    rp_string_puts(out, "=_TrN_context._caught;");
                 }
                 if (!ts_node_is_null(catch_body) &&
                     strcmp(ts_node_type(catch_body), "statement_block") == 0)
@@ -6675,8 +6675,8 @@ static void _emit_yield_body_range(rp_string *out, const char *src, TSNode block
                     rp_string_putc(out, ';');
                 /* If finally, restore _catch (FIN_THROW no longer needed) before jumping. */
                 if (has_finally)
-                    rp_string_appendf(out, "_context._catch=%s;", save_slot);
-                rp_string_appendf(out, "_context.next=%d;break;", after_body_target);
+                    rp_string_appendf(out, "_TrN_context._catch=%s;", save_slot);
+                rp_string_appendf(out, "_TrN_context.next=%d;break;", after_body_target);
             }
 
             /* case FIN_THROW: throws from try-body (no user catch) or from
@@ -6684,7 +6684,7 @@ static void _emit_yield_body_range(rp_string *out, const char *src, TSNode block
                outer _catch, fall through to FIN. */
             if (has_finally)
             {
-                rp_string_appendf(out, "case %d:%s=_context._caught;_context._catch=%s;",
+                rp_string_appendf(out, "case %d:%s=_TrN_context._caught;_TrN_context._catch=%s;",
                                   fin_throw_label, err_slot, save_slot);
                 /* Fall through to FIN. */
             }
@@ -6710,13 +6710,13 @@ static void _emit_yield_body_range(rp_string *out, const char *src, TSNode block
                 /* Pop this try's finally label off the runtime _ts stack —
                    we're leaving the try-finally either via re-throw,
                    pending-return, or normal exit. */
-                rp_string_puts(out, "_context._ts&&_context._ts.pop();");
+                rp_string_puts(out, "_TrN_context._ts&&_TrN_context._ts.pop();");
                 /* Pending throw takes precedence over pending return. */
                 rp_string_appendf(out,
                     "if(%s!==void 0){var _TrN_te=%s;%s=void 0;throw _TrN_te;}",
                     err_slot, err_slot, err_slot);
-                rp_string_puts(out, "if(_context._rret){_context._rret=false;return _context.rval;}");
-                rp_string_appendf(out, "_context.next=%d;break;", post_label);
+                rp_string_puts(out, "if(_TrN_context._rret){_TrN_context._rret=false;return _TrN_context.rval;}");
+                rp_string_appendf(out, "_TrN_context.next=%d;break;", post_label);
             }
 
             /* case POST: */
@@ -6774,7 +6774,7 @@ static void _emit_yield_body_range(rp_string *out, const char *src, TSNode block
             /* Allocate a slot for the switch value on the context. */
             int sw_id = ++(*p_next_label);
             char sx_name[48];
-            snprintf(sx_name, sizeof(sx_name), "_context._sw%d", sw_id);
+            snprintf(sx_name, sizeof(sx_name), "_TrN_context._sw%d", sw_id);
 
             /* Emit `_sx = (value);` */
             rp_string_appendf(out, "%s=(", sx_name);
@@ -6796,10 +6796,10 @@ static void _emit_yield_body_range(rp_string *out, const char *src, TSNode block
                 size_t cvs = ts_node_start_byte(kv), cve = ts_node_end_byte(kv);
                 rp_string_appendf(out, "if(%s===(", sx_name);
                 rp_string_putsn(out, src + cvs, cve - cvs);
-                rp_string_appendf(out, ")){_context.next=%d;break;}", case_labels[i2]);
+                rp_string_appendf(out, ")){_TrN_context.next=%d;break;}", case_labels[i2]);
             }
             int dispatch_else = (default_idx >= 0) ? case_labels[default_idx] : after_case;
-            rp_string_appendf(out, "_context.next=%d;break;", dispatch_else);
+            rp_string_appendf(out, "_TrN_context.next=%d;break;", dispatch_else);
 
             /* Each case body: emit `case CASE_K:` then the body, then
                either `next=AFTER; break;` (if break) or `next=NEXT_K; break;`
@@ -6879,7 +6879,7 @@ static void _emit_yield_body_range(rp_string *out, const char *src, TSNode block
                     }
                     succ = (found_next >= 0) ? case_labels[found_next] : after_case;
                 }
-                rp_string_appendf(out, "_context.next=%d;break;", succ);
+                rp_string_appendf(out, "_TrN_context.next=%d;break;", succ);
             }
 
             /* case AFTER */
@@ -6935,9 +6935,9 @@ static void _emit_yield_body_range(rp_string *out, const char *src, TSNode block
             /* Dispatch */
             rp_string_puts(out, "if");
             rp_string_puts(out, cond_lowered ? cond_lowered : "(false)");
-            rp_string_appendf(out, "{_context.next=%d;break;}", then_case);
+            rp_string_appendf(out, "{_TrN_context.next=%d;break;}", then_case);
             if (cond_lowered) free(cond_lowered);
-            rp_string_appendf(out, "_context.next=%d;break;", has_else ? else_case : after_case);
+            rp_string_appendf(out, "_TrN_context.next=%d;break;", has_else ? else_case : after_case);
 
             /* case THEN */
             rp_string_appendf(out, "case %d:", then_case);
@@ -6953,7 +6953,7 @@ static void _emit_yield_body_range(rp_string *out, const char *src, TSNode block
             }
             if (out->len && out->str[out->len - 1] != ';')
                 rp_string_putc(out, ';');
-            rp_string_appendf(out, "_context.next=%d;break;", after_case);
+            rp_string_appendf(out, "_TrN_context.next=%d;break;", after_case);
 
             /* case ELSE */
             if (has_else)
@@ -6968,7 +6968,7 @@ static void _emit_yield_body_range(rp_string *out, const char *src, TSNode block
                 }
                 if (out->len && out->str[out->len - 1] != ';')
                     rp_string_putc(out, ';');
-                rp_string_appendf(out, "_context.next=%d;break;", after_case);
+                rp_string_appendf(out, "_TrN_context.next=%d;break;", after_case);
             }
 
             /* case AFTER */
@@ -7040,8 +7040,8 @@ static void _emit_yield_body_range(rp_string *out, const char *src, TSNode block
             int exit_label = *p_next_label;
 
             char coll_name[48], idx_name[48];
-            snprintf(coll_name, sizeof(coll_name), "_context._fx%d", test_label);
-            snprintf(idx_name,  sizeof(idx_name),  "_context._fi%d", test_label);
+            snprintf(coll_name, sizeof(coll_name), "_TrN_context._fx%d", test_label);
+            snprintf(idx_name,  sizeof(idx_name),  "_TrN_context._fi%d", test_label);
 
             /* Initialize:
                  for-of  : _ctx._fxN = _TrN_Sp._iter(EXPR);
@@ -7049,7 +7049,7 @@ static void _emit_yield_body_range(rp_string *out, const char *src, TSNode block
                _fyN holds the per-iteration step result so re-entry through
                a yield boundary doesn't re-call .next(). */
             char step_name[48];
-            snprintf(step_name, sizeof(step_name), "_context._fy%d", test_label);
+            snprintf(step_name, sizeof(step_name), "_TrN_context._fy%d", test_label);
             if (is_of)
             {
                 /* For-of: wrap with _TrN_Sp._iter so generators / Sets /
@@ -7066,7 +7066,7 @@ static void _emit_yield_body_range(rp_string *out, const char *src, TSNode block
             else
             {
                 /* For-in: collect keys upfront via an inline (non-yielding)
-                   for-in.  `_context._fxN` here is the keys ARRAY. */
+                   for-in.  `_TrN_context._fxN` here is the keys ARRAY. */
                 rp_string_appendf(out, "%s=[];", coll_name);
                 rp_string_appendf(out, "for(var _TrN_fk%d in (", test_label);
                 if (!ts_node_is_null(right))
@@ -7094,30 +7094,30 @@ static void _emit_yield_body_range(rp_string *out, const char *src, TSNode block
                 const char *aw_close = _g_in_async_gen ? ")"                : "";
                 /* case TEST: await iter.next() */
                 rp_string_appendf(out,
-                    "case %d:_context._y=true;_context.next=%d;return %s%s.next()%s;",
+                    "case %d:_TrN_context._y=true;_TrN_context.next=%d;return %s%s.next()%s;",
                     test_label, await_next_label, aw_open, coll_name, aw_close);
                 /* case AWAIT_NEXT: store step, check done, then await value */
                 rp_string_appendf(out,
-                    "case %d:%s=_context.sent;if(%s.done){_context.next=%d;break;}"
-                    "_context._y=true;_context.next=%d;return %s%s.value%s;",
+                    "case %d:%s=_TrN_context.sent;if(%s.done){_TrN_context.next=%d;break;}"
+                    "_TrN_context._y=true;_TrN_context.next=%d;return %s%s.value%s;",
                     await_next_label, step_name, step_name, exit_label,
                     await_value_label, aw_open, step_name, aw_close);
-                /* case AWAIT_VALUE: fall through with _context.sent as the resolved value */
+                /* case AWAIT_VALUE: fall through with _TrN_context.sent as the resolved value */
                 rp_string_appendf(out, "case %d:", await_value_label);
             }
             else if (is_of)
             {
-                rp_string_appendf(out, "case %d:%s=%s.next();if(%s.done){_context.next=%d;break;}",
+                rp_string_appendf(out, "case %d:%s=%s.next();if(%s.done){_TrN_context.next=%d;break;}",
                                   test_label, step_name, coll_name, step_name, exit_label);
             }
             else
             {
-                rp_string_appendf(out, "case %d:if(%s>=%s.length){_context.next=%d;break;}",
+                rp_string_appendf(out, "case %d:if(%s>=%s.length){_TrN_context.next=%d;break;}",
                                   test_label, idx_name, coll_name, exit_label);
             }
 
             /* Emit BINDING = step.value (for-of) or coll[idx] (for-in).
-               for-await-of: BINDING = _context.sent (already-awaited value).
+               for-await-of: BINDING = _TrN_context.sent (already-awaited value).
                MVP: identifier binding only. Strip the var/let/const keyword. */
             if (!ts_node_is_null(left))
             {
@@ -7143,7 +7143,7 @@ static void _emit_yield_body_range(rp_string *out, const char *src, TSNode block
                     size_t ns2 = ts_node_start_byte(name_node), ne2 = ts_node_end_byte(name_node);
                     rp_string_putsn(out, src + ns2, ne2 - ns2);
                     if (is_await_of)
-                        rp_string_puts(out, "=_context.sent;");
+                        rp_string_puts(out, "=_TrN_context.sent;");
                     else if (is_of)
                         rp_string_appendf(out, "=%s.value;", step_name);
                     else
@@ -7153,7 +7153,7 @@ static void _emit_yield_body_range(rp_string *out, const char *src, TSNode block
                 {
                     /* Destructure / pattern binding — MVP doesn't support. */
                     if (is_await_of)
-                        rp_string_puts(out, "var _TrN_ofd=_context.sent;");
+                        rp_string_puts(out, "var _TrN_ofd=_TrN_context.sent;");
                     else if (is_of)
                         rp_string_appendf(out, "var _TrN_ofd=%s.value;", step_name);
                     else
@@ -7181,10 +7181,10 @@ static void _emit_yield_body_range(rp_string *out, const char *src, TSNode block
             /* case INCR (continue target): re-test. For for-in we bump the
                index; for-of advances via the iterator protocol so no bump. */
             if (is_of)
-                rp_string_appendf(out, "case %d:_context.next=%d;break;",
+                rp_string_appendf(out, "case %d:_TrN_context.next=%d;break;",
                                   incr_label, test_label);
             else
-                rp_string_appendf(out, "case %d:%s++;_context.next=%d;break;",
+                rp_string_appendf(out, "case %d:%s++;_TrN_context.next=%d;break;",
                                   incr_label, idx_name, test_label);
             /* case EXIT */
             rp_string_appendf(out, "case %d:", exit_label);
@@ -7196,8 +7196,8 @@ static void _emit_yield_body_range(rp_string *out, const char *src, TSNode block
                 if (ss < stmt_s) rp_string_putsn(out, src + ss, stmt_s - ss);
             }
             /* Decompose: do { body } while (cond)
-               -> case BODY: <body> case TEST: if(!cond){_context.next=EXIT;break;}
-                  _context.next=BODY;break;
+               -> case BODY: <body> case TEST: if(!cond){_TrN_context.next=EXIT;break;}
+                  _TrN_context.next=BODY;break;
                   case EXIT:
                Body executes once before the test, so BODY case comes first
                (fall through from surrounding code).  `continue` jumps to
@@ -7254,12 +7254,12 @@ static void _emit_yield_body_range(rp_string *out, const char *src, TSNode block
                                                                NULL, NULL, p_next_label);
                 rp_string_puts(out, "if(!(");
                 rp_string_puts(out, dcond_lowered);
-                rp_string_puts(out, ")){_context.next=");
+                rp_string_puts(out, ")){_TrN_context.next=");
                 rp_string_puts(out, etmp);
                 rp_string_puts(out, ";break;}");
                 free(dcond_lowered);
             }
-            rp_string_puts(out, "_context.next=");
+            rp_string_puts(out, "_TrN_context.next=");
             rp_string_puts(out, btmp);
             rp_string_puts(out, ";break;");
 
@@ -7324,7 +7324,7 @@ static char *_build_regenerator_switch_body_for_yield(const char *src, TSNode bo
 
     int next_label = 0;
 
-    // Hoist var/let/const declarations so they persist across _callee$ invocations via closure
+    // Hoist var/let/const declarations so they persist across _TrN_callee$ invocations via closure
     char *hoisted = _collect_body_var_names(src, body);
     if (hoisted)
     {
@@ -7336,7 +7336,7 @@ static char *_build_regenerator_switch_body_for_yield(const char *src, TSNode bo
 
     rp_string_puts(
         out,
-        "return _TrN_Sp.regeneratorRuntime.wrap(function _callee$(_context){while(1){switch(_context.prev=_context.next){case 0:");
+        "return _TrN_Sp.regeneratorRuntime.wrap(function _TrN_callee$(_TrN_context){while(1){switch(_TrN_context.prev=_TrN_context.next){case 0:");
     const char *bt = ts_node_type(body);
     if (strcmp(bt, "statement_block") == 0)
     {
@@ -7349,7 +7349,7 @@ static char *_build_regenerator_switch_body_for_yield(const char *src, TSNode bo
         size_t ss = ts_node_start_byte(expr), se = ts_node_end_byte(expr);
         rp_string *tmp = rp_string_new(64);
         _emit_stmt_yield_lower(tmp, src, ss, se, expr, NULL /* loop */, NULL /* finally */, &next_label);
-        if (strstr(tmp->str, "_context.next") == NULL)
+        if (strstr(tmp->str, "_TrN_context.next") == NULL)
         {
             rp_string_puts(out, " return ");
             rp_string_puts(out, tmp->str);
@@ -7358,7 +7358,7 @@ static char *_build_regenerator_switch_body_for_yield(const char *src, TSNode bo
         else
         {
             // The yield was lowered. The last segment (after the final "case N:")
-            // contains _context.sent which is the value to implicitly return.
+            // contains _TrN_context.sent which is the value to implicitly return.
             // Insert "return " before that final segment.
             char *last_case = tmp->str;
             char *p;
@@ -7394,7 +7394,7 @@ static char *_build_regenerator_switch_body_for_yield(const char *src, TSNode bo
     }
     rp_string_puts(out, "case ");
     rp_string_puts(out, etmp);
-    rp_string_puts(out, ":case \"end\":return _context.stop();}}}, null, this);");
+    rp_string_puts(out, ":case \"end\":return _TrN_context.stop();}}}, null, this);");
     char *ret = rp_string_steal(out);
     out=rp_string_free(out);
     return ret;
@@ -7464,12 +7464,12 @@ static char *_emit_generator_decl_replacement(const char *src, TSNode node)
     if (!ts_node_is_null(name))
         rp_string_putsn(out, src+ns, ne-ns);
     else
-        rp_string_puts(out, "_gen");
+        rp_string_puts(out, "_TrN_gen");
     rp_string_puts(out, " = _TrN_Sp.regeneratorRuntime.mark(function ");
     if (!ts_node_is_null(name))
         rp_string_putsn(out, src+ns, ne-ns);
     else
-        rp_string_puts(out, "_gen");
+        rp_string_puts(out, "_TrN_gen");
     _append_params_sig(out, src, node);
     rp_string_puts(out, " {");
     char *wrap = _build_regenerator_switch_body_for_yield(src, body);
@@ -7505,7 +7505,7 @@ static char *_emit_generator_method_replacement(const char *src, TSNode node)
     if (named)
         rp_string_putsn(out, src+ns, ne-ns);
     else
-        rp_string_puts(out, "_callee");
+        rp_string_puts(out, "_TrN_callee");
     _append_params_sig(out, src, node);
     rp_string_puts(out, " {");
     char *wrap = _build_regenerator_switch_body_for_yield(src, body);
@@ -7540,7 +7540,7 @@ static char *_emit_generator_expr_replacement(const char *src, TSNode node)
         rp_string_putsn(out, src+ns, ne-ns);
     }
     else
-        rp_string_puts(out, "_gen");
+        rp_string_puts(out, "_TrN_gen");
     _append_params_sig(out, src, node);
     rp_string_puts(out, " {");
     char *wrap = _build_regenerator_switch_body_for_yield(src, body);
@@ -7579,9 +7579,9 @@ static char *_emit_async_gen_decl_replacement(const char *src, TSNode node)
     rp_string *out = rp_string_new(256);
     rp_string_puts(out, "function ");
     if (!ts_node_is_null(name)) rp_string_putsn(out, src+ns, ne-ns);
-    else rp_string_puts(out, "_asyncGen");
+    else rp_string_puts(out, "_TrN_asyncGen");
     _append_params_sig(out, src, node);
-    rp_string_puts(out, "{return _TrN_Sp.__asyncGenerator(this,arguments,_TrN_Sp.regeneratorRuntime.mark(function _callee");
+    rp_string_puts(out, "{return _TrN_Sp.__asyncGenerator(this,arguments,_TrN_Sp.regeneratorRuntime.mark(function _TrN_callee");
     _append_params_sig(out, src, node);
     rp_string_puts(out, " {");
     _g_in_async_gen++;
@@ -7616,7 +7616,7 @@ static char *_emit_async_gen_expr_replacement(const char *src, TSNode node)
         rp_string_putsn(out, src+ns, ne-ns);
     }
     _append_params_sig(out, src, node);
-    rp_string_puts(out, "{return _TrN_Sp.__asyncGenerator(this,arguments,_TrN_Sp.regeneratorRuntime.mark(function _callee");
+    rp_string_puts(out, "{return _TrN_Sp.__asyncGenerator(this,arguments,_TrN_Sp.regeneratorRuntime.mark(function _TrN_callee");
     _append_params_sig(out, src, node);
     rp_string_puts(out, " {");
     _g_in_async_gen++;
@@ -7651,7 +7651,7 @@ static char *_emit_async_gen_method_replacement(const char *src, TSNode node)
     rp_string_puts(out, ": function ");
     if (named) rp_string_putsn(out, src+ns, ne-ns);
     _append_params_sig(out, src, node);
-    rp_string_puts(out, "{return _TrN_Sp.__asyncGenerator(this,arguments,_TrN_Sp.regeneratorRuntime.mark(function _callee");
+    rp_string_puts(out, "{return _TrN_Sp.__asyncGenerator(this,arguments,_TrN_Sp.regeneratorRuntime.mark(function _TrN_callee");
     _append_params_sig(out, src, node);
     rp_string_puts(out, " {");
     _g_in_async_gen++;
@@ -8758,6 +8758,12 @@ static int _imp_fn_declares_name(TSNode fn_node, const char *src,
                                  const char *name, size_t name_len)
 {
     TSNode params = ts_node_child_by_field_name(fn_node, "parameters", 10);
+    /* Arrow function with a bare-identifier param (`x => …`) stores the
+       parameter under the field `parameter` (singular), not
+       `parameters`.  Check that variant too so the body of such an
+       arrow doesn't get its references rewritten — the parameter
+       shadows the import. */
+    TSNode param1 = ts_node_child_by_field_name(fn_node, "parameter", 9);
     TSNode body = ts_node_child_by_field_name(fn_node, "body", 4);
 
     _BS_NameSet ns;
@@ -8765,6 +8771,8 @@ static int _imp_fn_declares_name(TSNode fn_node, const char *src,
 
     if (!ts_node_is_null(params))
         _bs_collect_param_names(params, src, &ns);
+    if (!ts_node_is_null(param1))
+        _bs_collect_param_names(param1, src, &ns);
 
     /* For non-arrow function-likes, the function's own name is in
        scope inside its body. */
@@ -8822,6 +8830,21 @@ static void _imp_rewrite_refs(TSNode node, const char *src,
             return;
     }
 
+    /* `catch (e) { ... }`: the catch parameter introduces a fresh
+       binding for the body.  If it matches the import name, stop —
+       references inside the catch body are the local binding, not
+       the import. */
+    if (strcmp(t, "catch_clause") == 0)
+    {
+        TSNode param = ts_node_child_by_field_name(node, "parameter", 9);
+        if (!ts_node_is_null(param) && strcmp(ts_node_type(param), "identifier") == 0)
+        {
+            size_t ps = ts_node_start_byte(param), pe = ts_node_end_byte(param);
+            if (pe - ps == name_len && memcmp(src + ps, name, name_len) == 0)
+                return;
+        }
+    }
+
     if (strcmp(t, "identifier") == 0)
     {
         size_t s = ts_node_start_byte(node), e = ts_node_end_byte(node);
@@ -8864,6 +8887,27 @@ static void _imp_rewrite_refs(TSNode node, const char *src,
                          strcmp(pt, "assignment_pattern") == 0)
                 {
                     skip = 1;
+                }
+                else if (strcmp(pt, "arrow_function") == 0)
+                {
+                    /* `x => x`: the bare identifier IS the parameter
+                       field — rewriting it would produce
+                       `__tmpModImp0.x => __tmpModImp0.x`, illegal in a
+                       parameter position.  Only skip the parameter
+                       binding, not body references. */
+                    TSNode param = ts_node_child_by_field_name(parent, "parameter", 9);
+                    if (!ts_node_is_null(param) && ts_node_eq(param, node))
+                        skip = 1;
+                }
+                else if (strcmp(pt, "catch_clause") == 0)
+                {
+                    /* `catch (e) {...}`: skip rewriting the catch
+                       parameter identifier itself.  Body refs are
+                       handled by the catch-shadowing check on descent
+                       below. */
+                    TSNode param = ts_node_child_by_field_name(parent, "parameter", 9);
+                    if (!ts_node_is_null(param) && ts_node_eq(param, node))
+                        skip = 1;
                 }
                 else if (strcmp(pt, "function_declaration") == 0 ||
                          strcmp(pt, "function") == 0 ||
@@ -9623,7 +9667,7 @@ static int rewrite_for_of_destructuring(EditList *edits, const char *src, TSNode
         *polysneeded |= FOROF_PF;
 
         char tmpvar[32];
-        snprintf(tmpvar, sizeof(tmpvar), "_dof%u", ++_destr_counter);
+        snprintf(tmpvar, sizeof(tmpvar), "_TrN_dof%u", ++_destr_counter);
 
         Bindings binds;
         binds_init(&binds);
@@ -9806,7 +9850,7 @@ static int rewrite_for_of_destructuring(EditList *edits, const char *src, TSNode
     char nm_loop[32], nm_pairs[32], nm_i[32], nm_pi[32], nm_ret[32];
     snprintf(nm_loop,  sizeof(nm_loop),  "_loop%u",   ctr);
     snprintf(nm_pairs, sizeof(nm_pairs), "_pairs%u",  ctr);
-    snprintf(nm_i,     sizeof(nm_i),     "_i%u",      ctr);
+    snprintf(nm_i,     sizeof(nm_i),     "_TrN_i%u",      ctr);
     snprintf(nm_pi,    sizeof(nm_pi),    "_pi%u",     ctr);
     snprintf(nm_ret,   sizeof(nm_ret),   "_ret%u",    ctr);
 
@@ -10503,9 +10547,9 @@ static void copy_body_replace_super(rp_string *bucket, const char *body, size_t 
             {
                 /* method call: super.name(...) → _Super[.prototype].name.call(this[, ...]) */
                 if (is_static)
-                    rp_string_puts(bucket, "_Super.");
+                    rp_string_puts(bucket, "_TrN_Super.");
                 else
-                    rp_string_puts(bucket, "_Super.prototype.");
+                    rp_string_puts(bucket, "_TrN_Super.prototype.");
                 rp_string_putsn(bucket, body + id_start, id_len);
                 rp_string_puts(bucket, ".call(this");
 
@@ -10539,9 +10583,9 @@ static void copy_body_replace_super(rp_string *bucket, const char *body, size_t 
                    and returns desc.value. */
                 rp_string_puts(bucket, "_TrN_Sp._superGet(");
                 if (is_static)
-                    rp_string_puts(bucket, "_Super");
+                    rp_string_puts(bucket, "_TrN_Super");
                 else
-                    rp_string_puts(bucket, "_Super.prototype");
+                    rp_string_puts(bucket, "_TrN_Super.prototype");
                 rp_string_puts(bucket, ",\"");
                 rp_string_putsn(bucket, body + id_start, id_len);
                 rp_string_puts(bucket, "\",this)");
@@ -10684,7 +10728,7 @@ static void _emit_with_priv_subst(rp_string *out, const char *src, size_t ss, si
         if (ps > cursor)
             rp_string_putsn(out, src + cursor, ps - cursor);
         /* Skip leading `#`, prepend `_priv_`. */
-        rp_string_puts(out, "_priv_");
+        rp_string_puts(out, "_TrN_priv_");
         rp_string_putsn(out, src + ps + 1, pe - ps - 1);
         cursor = pe;
     }
@@ -10849,7 +10893,7 @@ static void es5_emit_class_core(rp_string *out, const char *src, const char *cna
         if (is_private_field)
         {
             /* Strip leading `#`, prepend `_priv_`. */
-            rp_string_puts(dest, "_priv_");
+            rp_string_puts(dest, "_TrN_priv_");
             rp_string_putsn(dest, src + fps + 1, fpe - fps - 1);
         }
         else
@@ -11003,7 +11047,7 @@ static void es5_emit_class_core(rp_string *out, const char *src, const char *cna
             // supported. The `key:` field always carries the user-facing
             // name regardless.
             rp_string_puts(bucket, "{key:'");
-            if (is_private_method) rp_string_puts(bucket, "_priv_");
+            if (is_private_method) rp_string_puts(bucket, "_TrN_priv_");
             rp_string_putsn(bucket, src + ks, ke - ks);
             rp_string_appendf(bucket, "',%s:function ", desc_field);
         }
@@ -11081,7 +11125,7 @@ static void es5_emit_class_core(rp_string *out, const char *src, const char *cna
                  }
                The outer wrapper's params are unused (apply forwards
                `arguments`); the inner _callee receives the real params. */
-            rp_string_puts(bucket, "{return _TrN_Sp.asyncToGenerator(_TrN_Sp.regeneratorRuntime.mark(function _callee");
+            rp_string_puts(bucket, "{return _TrN_Sp.asyncToGenerator(_TrN_Sp.regeneratorRuntime.mark(function _TrN_callee");
             if (ps && pe)
                 rp_string_putsn(bucket, src + ps, pe - ps);
             else
@@ -11159,9 +11203,9 @@ static void es5_emit_class_core(rp_string *out, const char *src, const char *cna
     {
         rp_string_puts(out, "var ");
         rp_string_putsn(out, cname, cname_len);
-        rp_string_puts(out, " = (function(_Super) {_TrN_Sp.inherits(");
+        rp_string_puts(out, " = (function(_TrN_Super) {_TrN_Sp.inherits(");
         rp_string_putsn(out, cname, cname_len);
-        rp_string_puts(out, ", _Super);var _super = _TrN_Sp.createSuper(");
+        rp_string_puts(out, ", _TrN_Super);var _TrN_super = _TrN_Sp.createSuper(");
         rp_string_putsn(out, cname, cname_len);
         rp_string_puts(out, ");");
     }
@@ -11292,7 +11336,7 @@ static void es5_emit_class_core(rp_string *out, const char *src, const char *cna
                         && memchr(atext + 3, ',', alen - 3) == NULL)
                     {
                         /* single spread: super(...expr) -> _super.apply(this, expr) */
-                        rp_string_puts(out, "_TrN_this = _super.apply(this, ");
+                        rp_string_puts(out, "_TrN_this = _TrN_super.apply(this,");
                         rp_string_putsn(out, atext + 3, alen - 3);
                         rp_string_puts(out, ");");
                     }
@@ -11300,12 +11344,12 @@ static void es5_emit_class_core(rp_string *out, const char *src, const char *cna
                     {
                         if (alen > 0)
                         {
-                            rp_string_puts(out, "_TrN_this = _super.call(this, ");
+                            rp_string_puts(out, "_TrN_this = _TrN_super.call(this, ");
                             rp_string_putsn(out, atext, alen);
                         }
                         else
                         {
-                            rp_string_puts(out, "_TrN_this = _super.call(this");
+                            rp_string_puts(out, "_TrN_this = _TrN_super.call(this");
                         }
                         rp_string_puts(out, ");");
                     }
@@ -11361,7 +11405,7 @@ static void es5_emit_class_core(rp_string *out, const char *src, const char *cna
                default ctor that forwards to super, then runs field inits. */
             rp_string_puts(out, "var _TrN_this;_TrN_Sp.classCallCheck(this, ");
             rp_string_putsn(out, cname, cname_len);
-            rp_string_puts(out, ");_TrN_this = _super.apply(this, arguments);");
+            rp_string_puts(out, ");_TrN_this = _TrN_super.apply(this, arguments);");
             if (field_inits->len)
                 rp_string_puts(out, field_inits->str);
             rp_string_puts(out, "return _TrN_this;");
@@ -11538,7 +11582,7 @@ static int rewrite_class_expression_to_es5(EditList *edits, const char *src, TSN
     size_t namelen = 0;
     if (ts_node_is_null(id))
     {
-        snprintf(tmpname, sizeof(tmpname), "__TrC%u", (unsigned)cs);
+        snprintf(tmpname, sizeof(tmpname), "_TrN_C%u", (unsigned)cs);
         nameptr = tmpname;
         namelen = strlen(tmpname);
     }
@@ -11748,16 +11792,18 @@ static void make_fresh_forof_names(char *ibuf, size_t ibufsz, char *xbuf, size_t
 {
     static unsigned counter = 0;
     ++counter;
-    // first pair is "_i" / "_x", then suffix numbers for subsequent pairs
+    // All generated names are _TrN_-prefixed to avoid collisions with
+    // user variables.  Counter 1 emits "_TrN_i"/"_TrN_x"; later pairs
+    // get a numeric suffix.
     if (counter == 1)
     {
-        snprintf(ibuf, ibufsz, "_i");
-        snprintf(xbuf, xbufsz, "_x");
+        snprintf(ibuf, ibufsz, "_TrN_i");
+        snprintf(xbuf, xbufsz, "_TrN_x");
     }
     else
     {
-        snprintf(ibuf, ibufsz, "_i%u", counter);
-        snprintf(xbuf, xbufsz, "_x%u", counter);
+        snprintf(ibuf, ibufsz, "_TrN_i%u", counter);
+        snprintf(xbuf, xbufsz, "_TrN_x%u", counter);
     }
 }
 
@@ -11859,9 +11905,11 @@ static int rewrite_for_of_simple(EditList *edits, const char *src, TSNode forof,
     make_fresh_forof_names(ibuf, sizeof ibuf, xbuf, sizeof xbuf);
     // derive iterator and result names from the same counter suffix
     {
-        const char *suffix = ibuf + 2; /* skip "_i" prefix to get number suffix */
-        snprintf(itbuf, TPSMALLBUFSZ+1, "_it%s", suffix);
-        snprintf(rbuf, TPSMALLBUFSZ, "_r%s", suffix);
+        /* ibuf is "_TrN_i" or "_TrN_iN"; skip the "_TrN_i" (6 chars) to
+           get the numeric suffix portion (empty for counter==1). */
+        const char *suffix = ibuf + 6;
+        snprintf(itbuf, TPSMALLBUFSZ+1, "_TrN_it%s", suffix);
+        snprintf(rbuf, TPSMALLBUFSZ, "_TrN_r%s", suffix);
     }
 
     // Build replacement — supports both arrays and iterables (Symbol.iterator)
@@ -12160,7 +12208,7 @@ static int rewrite_nullish_coalescing(EditList *edits, const char *src, TSNode n
     {
         /* (_nc = left, _nc != null ? _nc : right) */
         char tvar[32];
-        snprintf(tvar, sizeof(tvar), "_nc%u", _nc_counter++);
+        snprintf(tvar, sizeof(tvar), "_TrN_nc%u", _nc_counter++);
         rp_string_appendf(out, "(%s = ", tvar);
         rp_string_putsn(out, src + ls, le - ls);
         rp_string_appendf(out, ", %s != null ? %s : ", tvar, tvar);
@@ -12322,7 +12370,7 @@ static int rewrite_optional_chaining(EditList *edits, const char *src, TSNode no
     if (needs_temp)
     {
         char tmpname[32];
-        snprintf(tmpname, sizeof(tmpname), "_oc%d", oc_counter++);
+        snprintf(tmpname, sizeof(tmpname), "_TrN_oc%d", oc_counter++);
 
         /* (_ocN = <base>, nested ternaries using _ocN as base) */
         rp_string_puts(out, "(");
