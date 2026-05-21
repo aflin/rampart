@@ -80,6 +80,42 @@ testFeature("String.raw", function()
 
 });
 
+/* Regression: `import { X } from "./m"; export { X };` used to emit
+   invalid `export { _TrN_modImp0.X };` (the import rewriter walked
+   into export_specifier; the export rewriter then bailed on overlap).
+   Fixture files are written to /tmp at test time and cleaned up so
+   we don't pollute the test/ directory.  Surfaced as a load-failure
+   in date-fns format.mjs after the May 2026 `_TrN_` identifier
+   rename cleared stale .transpiled.* caches. */
+testFeature("Re-export of named import (passthrough)", function() {
+  if (!_baseTestFeature.isRampart) return true;  /* node skips */
+  var fs = rampart.utils;
+  var dir = '/tmp/rampart-reexport-' + process.pid + '-' + Date.now();
+  fs.mkdir(dir);
+  var src_path = dir + '/reexport-source.mjs';
+  var pt_path  = dir + '/reexport-passthrough.mjs';
+  var cleanup = function() {
+    [src_path, src_path.replace('.mjs','.transpiled.mjs'),
+     pt_path,  pt_path.replace('.mjs','.transpiled.mjs')].forEach(function(p) {
+      try { fs.rmFile(p); } catch(_e) {}
+    });
+    try { fs.rmDir(dir); } catch(_e) {}
+  };
+  try {
+    fs.writeFile(src_path,
+      'export const formatters = { kind: "F", marker: 42 };\n' +
+      'export const longFormatters = { kind: "L", marker: 99 };\n');
+    fs.writeFile(pt_path,
+      'import { formatters } from "./reexport-source.mjs";\n' +
+      'import { longFormatters as lf } from "./reexport-source.mjs";\n' +
+      'export { formatters, lf as longFormatters };\n');
+    var mod = require(pt_path);
+    return mod.formatters.marker === 42 && mod.longFormatters.marker === 99;
+  } finally {
+    cleanup();
+  }
+});
+
 // Sanity: default export (identifier case)
 testFeature("Default export object tag", function() {
   return defPayload && defPayload.tag === "OK";

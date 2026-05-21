@@ -9027,7 +9027,9 @@ static void _imp_rewrite_refs(TSNode node, const char *src,
                        races against rewrite_export_node's own
                        range-claim.  rewrite_export_node will look up
                        imports separately and emit the modImp form on
-                       the RHS. */
+                       the RHS.  Regression test:
+                       test/transpile-test.js "Re-export of named
+                       import (passthrough)". */
                     skip = 1;
                 }
                 else if (strcmp(pt, "required_parameter") == 0 ||
