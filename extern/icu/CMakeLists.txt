@@ -21,6 +21,27 @@ else()
     set(ICU_PLATFORM "Linux")  # best-effort default
 endif()
 
+# Build flag set that flows into ICU's configure via env (runConfigureICU
+# takes CFLAGS/CXXFLAGS from the environment, not positional args).  On
+# macOS we must propagate the deployment-target/arch flags from the
+# parent build so the resulting archives link cleanly against rampart's
+# main binary (which is built with -mmacosx-version-min=11.0).  Otherwise
+# Apple's ld warns: "object file was built for newer 'macOS' version
+# (15.0) than being linked (11.0)".
+set(ICU_BASE_CFLAGS   "-fPIC -fvisibility=hidden")
+set(ICU_BASE_CXXFLAGS "-fPIC -fvisibility=hidden")
+if(APPLE)
+    if(MACOS_UNIVERSAL)
+        set(_ICU_MAC_FLAGS "-arch x86_64 -arch arm64 -mmacosx-version-min=11.0")
+    elseif(CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL "arm64")
+        set(_ICU_MAC_FLAGS "-arch arm64 -mmacosx-version-min=11.0")
+    else()
+        set(_ICU_MAC_FLAGS "-arch x86_64 -mmacosx-version-min=11.0")
+    endif()
+    set(ICU_BASE_CFLAGS   "${ICU_BASE_CFLAGS} ${_ICU_MAC_FLAGS}")
+    set(ICU_BASE_CXXFLAGS "${ICU_BASE_CXXFLAGS} ${_ICU_MAC_FLAGS}")
+endif()
+
 # Determine parallelism for ICU's make step. CMake's --parallel doesn't pass
 # through to ExternalProject build commands automatically; pass -jN explicitly.
 include(ProcessorCount)
@@ -42,8 +63,8 @@ ExternalProject_Add(icu4c
      # positional args (it word-splits "$@" so quoted multi-value vars
      # get mangled). Pass via cmake -E env.
     CONFIGURE_COMMAND ${CMAKE_COMMAND} -E env
-                        "CFLAGS=-fPIC -fvisibility=hidden"
-                        "CXXFLAGS=-fPIC -fvisibility=hidden"
+                        "CFLAGS=${ICU_BASE_CFLAGS}"
+                        "CXXFLAGS=${ICU_BASE_CXXFLAGS}"
                         ${ICU_SOURCE_DIR}/runConfigureICU ${ICU_PLATFORM}
                         --prefix=${ICU_INSTALL_DIR}
                         --enable-static

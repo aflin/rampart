@@ -6749,17 +6749,16 @@ static void _emit_yield_body_range(rp_string *out, const char *src, TSNode block
             }
 
             uint32_t nc = ts_node_named_child_count(sbody);
-            /* First pass: count cases (excluding default) and allocate
-               labels.  We also need an AFTER label and a default case
-               label (used or unused). */
-            int n_cases = 0;
+            /* First pass: locate the default case (if any).  We allocate
+               one label per child slot below regardless of switch_case
+               vs switch_default, so an explicit case count isn't
+               needed here. */
             int default_idx = -1;
             for (uint32_t i2 = 0; i2 < nc; i2++)
             {
                 TSNode kid = ts_node_named_child(sbody, i2);
                 const char *kt = ts_node_type(kid);
-                if (strcmp(kt, "switch_case") == 0) n_cases++;
-                else if (strcmp(kt, "switch_default") == 0) default_idx = (int)i2;
+                if (strcmp(kt, "switch_default") == 0) default_idx = (int)i2;
             }
 
             *p_next_label += 3;
@@ -8293,11 +8292,12 @@ done:
    are independent scopes, processed when the cursor reaches them.
    ================================================================= */
 
-typedef struct _bs_name_set_s {
+/* Body defined here; `_BS_NameSet` typedef alias declared at line ~7775. */
+struct _bs_name_set_s {
     char  **names;
     size_t *name_lens;
     size_t  len, cap;
-} _BS_NameSet;
+};
 
 static void _bs_ns_init(_BS_NameSet *s) { s->names = NULL; s->name_lens = NULL; s->len = s->cap = 0; }
 static void _bs_ns_free(_BS_NameSet *s)
