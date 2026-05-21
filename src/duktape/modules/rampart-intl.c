@@ -284,7 +284,8 @@ static void validate_locale_tag(duk_context *ctx, const char *tag)
 /* Per ECMA-402 GetOptionsObject: if `options` is not undefined and
    not an object, throw TypeError.  Call once at the top of each
    construct to reject explicit `null` (and other non-object values). */
-static void require_options_arg(duk_context *ctx, duk_idx_t opts_idx,
+static __attribute__((unused)) void
+require_options_arg(duk_context *ctx, duk_idx_t opts_idx,
                                 const char *kind)
 {
     if (opts_idx == DUK_INVALID_INDEX) return;
@@ -1549,11 +1550,10 @@ static duk_ret_t nf_construct(duk_context *ctx)
             int ok = 1;
             const char *p = u;
             int in_comp = 0;
-            int dashes = 0;
             for (; *p; p++) {
                 char c = *p;
                 if ((c >= 'a' && c <= 'z')) { in_comp = 1; }
-                else if (c == '-') { dashes++; in_comp = 0; }
+                else if (c == '-') { in_comp = 0; }
                 else { ok = 0; break; }
             }
             if (!ok || !in_comp)
@@ -1723,14 +1723,8 @@ static duk_ret_t nf_construct(duk_context *ctx)
         duk_pop(ctx);
     }
     if (have_sig) {
-        char part[48];
-        if (min_sig == max_sig)
-            snprintf(part, sizeof(part), "@@@@@@@@@@@@@@@@@@@@@" + (21 - min_sig));
-        else
-            snprintf(part, sizeof(part), "%.*s/%.*s",
-                     min_sig, "@@@@@@@@@@@@@@@@@@@@@",
-                     max_sig - min_sig, "########################");
-        /* Build "@@ etc." with min '@' and (max-min) '#' */
+        /* Build "@@..##.." with min '@' followed by (max-min) '#' for the
+           ICU significant-digits skeleton. */
         char buf[64]; size_t bi = 0;
         for (int k = 0; k < min_sig && bi < sizeof(buf)-1; k++) buf[bi++] = '@';
         for (int k = 0; k < max_sig - min_sig && bi < sizeof(buf)-1; k++) buf[bi++] = '#';
@@ -3264,7 +3258,8 @@ static duk_ret_t rtf_resolved_options(duk_context *ctx)
  * ListFormat
  * ============================================================== */
 
-static UListFormatterType lf_type_from_str(const char *s)
+static __attribute__((unused)) UListFormatterType
+lf_type_from_str(const char *s)
 {
     if (!s) return ULISTFMT_TYPE_AND;
     if (!strcmp(s, "or"))    return ULISTFMT_TYPE_OR;
@@ -4072,7 +4067,8 @@ static duk_ret_t loc_getter_by_magic(duk_context *ctx)
     return 1;
 }
 
-static duk_ret_t loc_get_field(duk_context *ctx)
+static __attribute__((unused)) duk_ret_t
+loc_get_field(duk_context *ctx)
 {
     /* Generic getter: field name passed via magic / wrapped via this->field */
     const char *field = duk_require_string(ctx, 0);
@@ -4940,7 +4936,7 @@ static duk_ret_t intl_supported_locales_of(duk_context *ctx)
 
    The unbound function (`fn`) is provided by the caller (e.g.
    `col_compare`); it consumes `this` and its arguments. */
-static const char *K_BOUND_FN = "\xff" "bound_fn";
+static __attribute__((unused)) const char *K_BOUND_FN = "\xff" "bound_fn";
 
 static duk_ret_t bound_getter_impl(duk_context *ctx,
                                    const char *slot, duk_c_function fn,
@@ -5069,7 +5065,8 @@ static void attach_supported_locales_of(duk_context *ctx)
    [..., constructor, prototype].  After: unchanged (still
    constructor + prototype at top).  ECMA-402 expects
    `Intl.Foo.prototype.constructor === Intl.Foo`. */
-static void set_proto_constructor(duk_context *ctx)
+static __attribute__((unused)) void
+set_proto_constructor(duk_context *ctx)
 {
     duk_dup(ctx, -2);
     duk_put_prop_string(ctx, -2, "constructor");
