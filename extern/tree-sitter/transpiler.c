@@ -279,7 +279,7 @@ polyfills allpolys[] = {
            through to rampart's native require (which checks
            process.modulesPath). The cache (_c) memoises spec→absPath
            lookups so repeated require()s of the same spec are O(1). */
-        "_TrN_Sp._req=function(m,s){var c=_TrN_Sp._req._c||(_TrN_Sp._req._c={});var d=(m&&m.path)?m.path:(typeof process!=='undefined'&&process.scriptPath?process.scriptPath:'');var k=d+'|'+s;if(k in c)return require(c[k]);var st=rampart.utils.stat,rf=rampart.utils.readFile;while(d&&d.length>1){var pd=d+'/node_modules/'+s;var pj=pd+'/package.json';var mn=null;if(st(pj)){try{var meta=JSON.parse(rf(pj,{returnString:true}));mn=meta.main||'index.js';}catch(e){mn='index.js';}var p=pd+'/'+mn;if(st(p)){c[k]=p;return require(p);}}var idx=pd+'/index.js';if(st(idx)){c[k]=idx;return require(idx);}var n=d.lastIndexOf('/');if(n<=0)break;d=d.substring(0,n);}return require(s);};",
+        "_TrN_Sp._req=function(m,s){var c=_TrN_Sp._req._c||(_TrN_Sp._req._c={});var d=(m&&m.path)?m.path:(typeof process!=='undefined'&&process.scriptPath?process.scriptPath:'');var k=d+'|'+s;if(k in c)return require(c[k]);var st=rampart.utils.stat,rf=rampart.utils.readFile;var exts=['','.js','.cjs','.mjs','.json'];while(d&&d.length>1){var pd=d+'/node_modules/'+s;var sp=st(pd);if(sp&&sp.isFile){c[k]=pd;return require(pd);}if(sp&&sp.isDirectory){var pj=pd+'/package.json';var mn=null;if(st(pj)){try{var meta=JSON.parse(rf(pj,{returnString:true}));mn=meta.main||'index.js';}catch(e){mn='index.js';}var p=pd+'/'+mn;if(st(p)){c[k]=p;return require(p);}}var idx=pd+'/index.js';if(st(idx)){c[k]=idx;return require(idx);}var idxc=pd+'/index.cjs';if(st(idxc)){c[k]=idxc;return require(idxc);}}else{for(var ei=1;ei<exts.length;ei++){var pde=pd+exts[ei];if(st(pde)){c[k]=pde;return require(pde);}}}var n=d.lastIndexOf('/');if(n<=0)break;d=d.substring(0,n);}return require(s);};",
         0, (uint32_t)BARE_REQ_PF },
     {
         /* JSON require: rampart's loader treats every spec as JS, so
@@ -822,7 +822,10 @@ static int rewrite_function_like_default_params(EditList *edits, const char *src
         return 0;
 
     if (overlaps)
+    {
+        free(decls);  /* not handed to add_edit_take_ownership yet */
         return 1;
+    }
 
     // Insert after the opening '{'
     size_t insert_at = bs + 1;
@@ -872,7 +875,10 @@ static int rewrite_var_function_expression_defaults(EditList *edits, const char 
         return 0;
 
     if (overlaps)
+    {
+        free(decls);  /* not handed to add_edit_take_ownership yet */
         return 1;
+    }
 
     // Replace params with "()"
     size_t ps = ts_node_start_byte(params), pe = ts_node_end_byte(params);
@@ -1969,7 +1975,12 @@ static int _exp_find_import_binding(TSNode program, TSNode export_node, const ch
 }
 
 /* ============================  export rewriter  ============================ */
-static int rewrite_export_node(EditList *edits, const char *src, TSNode snode, RangeList *claimed, int overlaps)
+/* Forward decl — defined below in the import-rewrite section. */
+static void _emit_require_call(rp_string *out, const char *spec, size_t spec_len,
+                               uint32_t *polysneeded_or_null);
+
+static int rewrite_export_node(EditList *edits, const char *src, TSNode snode, RangeList *claimed,
+                               uint32_t *polysneeded, int overlaps)
 {
     size_t ns = ts_node_start_byte(snode), ne = ts_node_end_byte(snode);
     /* `default` is an UNNAMED keyword token in the tree-sitter-javascript
@@ -2594,10 +2605,17 @@ static int rewrite_export_node(EditList *edits, const char *src, TSNode snode, R
             return 1;
         TSNode srcnode = ts_node_child_by_field_name(snode, "source", 6);
         char *mod = NULL;
+        const char *mod_spec = NULL;  /* unquoted */
+        size_t mod_spec_len = 0;
         if (!ts_node_is_null(srcnode))
         {
             size_t ms = ts_node_start_byte(srcnode), me = ts_node_end_byte(srcnode);
             mod = dup_range(src, ms, me);
+            /* Strip surrounding quote chars to get the raw spec. */
+            if (me - ms >= 2) {
+                mod_spec = src + ms + 1;
+                mod_spec_len = (me - ms) - 2;
+            }
         }
 
         rp_string *out = rp_string_new(64);
@@ -2609,9 +2627,9 @@ static int rewrite_export_node(EditList *edits, const char *src, TSNode snode, R
             snprintf(tmp, sizeof(tmp), "_TrN_tmpExp0");
             rp_string_puts(out, "var ");
             rp_string_puts(out, tmp);
-            rp_string_puts(out, " = require(");
-            rp_string_puts(out, mod);
-            rp_string_puts(out, "); ");
+            rp_string_puts(out, " = ");
+            _emit_require_call(out, mod_spec, mod_spec_len, polysneeded);
+            rp_string_puts(out, "; ");
         }
 
         uint32_t k = ts_node_named_child_count(specs);
@@ -2677,6 +2695,39 @@ static int rewrite_export_node(EditList *edits, const char *src, TSNode snode, R
         return 1;
     }
 
+    /* export * as Foo from "mod"  (ES2020 namespace re-export)
+       The `* as Foo` part is wrapped in a `namespace_export` node;
+       inside it sits the identifier `Foo`.  Emit:
+         exports.Foo = _TrN_Sp._interopRequireWildcard(require("mod")); */
+    {
+        TSNode nsexp = find_child_type(snode, "namespace_export", NULL);
+        TSNode srcnode_ns = ts_node_child_by_field_name(snode, "source", 6);
+        if (!ts_node_is_null(nsexp) && !ts_node_is_null(srcnode_ns))
+        {
+            if (overlaps) return 1;
+            TSNode alias = find_child_type(nsexp, "identifier", NULL);
+            if (ts_node_is_null(alias))
+                alias = find_child_type(nsexp, "property_identifier", NULL);
+            if (!ts_node_is_null(alias))
+            {
+                size_t as_ = ts_node_start_byte(alias), ae_ = ts_node_end_byte(alias);
+                size_t ms_ = ts_node_start_byte(srcnode_ns), me_ = ts_node_end_byte(srcnode_ns);
+                const char *spec = (me_ - ms_ >= 2) ? (src + ms_ + 1) : NULL;
+                size_t spec_len = (me_ - ms_ >= 2) ? (me_ - ms_) - 2 : 0;
+                rp_string *out = rp_string_new(64);
+                rp_string_puts(out, "exports.");
+                rp_string_putsn(out, src + as_, ae_ - as_);
+                rp_string_puts(out, " = _TrN_Sp._interopRequireWildcard(");
+                _emit_require_call(out, spec, spec_len, polysneeded);
+                rp_string_puts(out, ");");
+                add_edit_take_ownership(edits, ns, ne, rp_string_steal(out), claimed);
+                rp_string_free(out);
+                *polysneeded |= IMPORT_PF;
+                return 1;
+            }
+        }
+    }
+
     /* export * from "mod"
        The tree-sitter-javascript grammar represents the `*` as an
        anonymous token child (not a named field), so we walk children
@@ -2698,11 +2749,13 @@ static int rewrite_export_node(EditList *edits, const char *src, TSNode snode, R
                 return 1;
             size_t ms = ts_node_start_byte(srcnode), me = ts_node_end_byte(srcnode);
             char *mod = dup_range(src, ms, me);
+            const char *mod_spec = (me - ms >= 2) ? (src + ms + 1) : NULL;
+            size_t mod_spec_len = (me - ms >= 2) ? (me - ms) - 2 : 0;
             rp_string *out = rp_string_new(64);
-            rp_string_puts(out, "{var __tmpExp = require(");
-            rp_string_puts(out, mod);
+            rp_string_puts(out, "{var __tmpExp = ");
+            _emit_require_call(out, mod_spec, mod_spec_len, polysneeded);
             rp_string_puts(out,
-                ");for (var __k in __tmpExp) {if (__k === \"default\" || __k === \"__esModule\") continue;exports[__k] = __tmpExp[__k];}}");
+                ";for (var __k in __tmpExp) {if (__k === \"default\" || __k === \"__esModule\") continue;exports[__k] = __tmpExp[__k];}}");
             add_edit_take_ownership(edits, ns, ne, rp_string_steal(out), claimed);
             rp_string_free(out);
             free(mod);
@@ -3165,6 +3218,41 @@ static void _imp_rewrite_refs(TSNode node, const char *src,
                               EditList *edits, RangeList *claimed);
 static TSNode _imp_find_program(TSNode n);
 
+/* True if a string specifier is "bare" (no relative/absolute prefix
+   and not a zip-style `:` path).  Bare specs need to resolve via the
+   node_modules walk in `_TrN_Sp._req`. */
+static int _is_bare_spec(const char *spec, size_t spec_len)
+{
+    if (spec_len == 0) return 0;
+    char c = spec[0];
+    if (c == '.' || c == '/' || c == ':') return 0;
+    return 1;
+}
+
+/* Emit either `require("spec")` (relative / absolute / zip paths) or
+   `_TrN_Sp._req(module,"spec")` (bare specs).  When the spec is bare,
+   set *polysneeded_or_null |= BARE_REQ_PF (if non-NULL) so the helper
+   is emitted into the preamble.  The import rewriters emit `require()`
+   literals inside their edit replacement text, which the later
+   bare-spec rewriter doesn't see (it walks the AST, not the edit
+   list); we have to choose the right form here. */
+static void _emit_require_call(rp_string *out, const char *spec, size_t spec_len,
+                               uint32_t *polysneeded_or_null)
+{
+    if (_is_bare_spec(spec, spec_len))
+    {
+        rp_string_appendf(out, "_TrN_Sp._req(module,\"%.*s\")",
+                          (int)spec_len, spec);
+        if (polysneeded_or_null)
+            *polysneeded_or_null |= BARE_REQ_PF;
+    }
+    else
+    {
+        rp_string_appendf(out, "require(\"%.*s\")",
+                          (int)spec_len, spec);
+    }
+}
+
 static int do_named_imports(EditList *edits, const char *src, TSNode snode, TSNode named_imports, TSNode string_frag,
                             size_t start, size_t end, RangeList *claimed)
 {
@@ -3183,7 +3271,9 @@ static int do_named_imports(EditList *edits, const char *src, TSNode snode, TSNo
     sprintf(buf, "_TrN_modImp%u", tmpn);
     rp_string *out = rp_string_new(64);
 
-    rp_string_appendf(out, "var %s=require(\"%.*s\");if(_TrN_Sp._pP)_TrN_Sp._pP();", buf, (int)(mod_e - mod_s), src + mod_s);
+    rp_string_appendf(out, "var %s=", buf);
+    _emit_require_call(out, src + mod_s, mod_e - mod_s, NULL);
+    rp_string_puts(out, ";if(_TrN_Sp._pP)_TrN_Sp._pP();");
 
     /* Locate the enclosing program so we can rewrite refs across the
        whole module (closures included). */
@@ -3267,8 +3357,10 @@ static int do_namespace_import(EditList *edits, const char *src, TSNode snode, T
 
     // var math = _interopRequireWildcard(require("math"));
     out=rp_string_new(0);
-    rp_string_appendf(out, "var %.*s=_TrN_Sp._interopRequireWildcard(require(\"%.*s\"));if(_TrN_Sp._pP)_TrN_Sp._pP();", (id_end - id_start),
-                  src + id_start, (mod_name_end - mod_name_start), src + mod_name_start);
+    rp_string_appendf(out, "var %.*s=_TrN_Sp._interopRequireWildcard(",
+                      (id_end - id_start), src + id_start);
+    _emit_require_call(out, src + mod_name_start, mod_name_end - mod_name_start, polysneeded);
+    rp_string_puts(out, ");if(_TrN_Sp._pP)_TrN_Sp._pP();");
 
     add_edit_take_ownership(edits, start, end, rp_string_steal(out), claimed);
 
@@ -3288,8 +3380,10 @@ static int do_default_import(EditList *edits, const char *src, TSNode snode, TSN
 
     /* With our export lowering, default import is the entire module.exports */
     out=rp_string_new(0);
-    rp_string_appendf(out, "var %.*s=_TrN_Sp._interopDefault(require(\"%.*s\"));if(_TrN_Sp._pP)_TrN_Sp._pP();", (int)(id_e - id_s), src + id_s,
-                  (int)(mod_e - mod_s), src + mod_s);
+    rp_string_appendf(out, "var %.*s=_TrN_Sp._interopDefault(",
+                      (int)(id_e - id_s), src + id_s);
+    _emit_require_call(out, src + mod_s, mod_e - mod_s, NULL);
+    rp_string_puts(out, ");if(_TrN_Sp._pP)_TrN_Sp._pP();");
 
     add_edit_take_ownership(edits, start, end, rp_string_steal(out), claimed);
 
@@ -3311,7 +3405,9 @@ static int do_default_and_named_imports(EditList *edits, const char *src, TSNode
 
     /* require once */
     rp_string *out=rp_string_new(512);
-    rp_string_appendf(out, "var %s=require(\"%.*s\");if(_TrN_Sp._pP)_TrN_Sp._pP();", tbuf, (int)(mod_e - mod_s), src + mod_s);
+    rp_string_appendf(out, "var %s=", tbuf);
+    _emit_require_call(out, src + mod_s, mod_e - mod_s, NULL);
+    rp_string_puts(out, ";if(_TrN_Sp._pP)_TrN_Sp._pP();");
 
     /* bind default: var def = __tmp.default;  Default values can be
        eager-bound because interopDefault freezes the value at require
@@ -3401,6 +3497,16 @@ static int rewrite_import_node(EditList *edits, const char *src, TSNode snode, R
     if (overlaps)
         return 1;
 
+    /* If the module specifier is a bare spec, the helpers below will
+       emit `_TrN_Sp._req(module, "...")` instead of `require("...")`
+       so the node_modules walk resolves it.  Flag the polyfill now. */
+    {
+        size_t ms = ts_node_start_byte(string_frag);
+        size_t me = ts_node_end_byte(string_frag);
+        if (_is_bare_spec(src + ms, me - ms))
+            *polysneeded |= BARE_REQ_PF;
+    }
+
     // look for template string here:
     TSNode child = find_child_type(snode, "import_clause", NULL);
     if (!ts_node_is_null(child))
@@ -3429,13 +3535,13 @@ static int rewrite_import_node(EditList *edits, const char *src, TSNode snode, R
 
     size_t sstart = ts_node_start_byte(string_frag), send = ts_node_end_byte(string_frag), slen = send - sstart;
 
-    // require(""); + if(_TrN_Sp._pP)_TrN_Sp._pP();
-    char *out = NULL;
-    size_t outlen = 13 + slen + 30;
-    REMALLOC(out, outlen);
-    snprintf(out, outlen, "require(\"%.*s\");if(_TrN_Sp._pP)_TrN_Sp._pP();", (int)slen, src + sstart);
-    // check for newlines between ns and ne.  add an edit to insert however many, cuz this rewrites on one line
-    add_edit_take_ownership(edits, ns, ne, out, claimed);
+    /* Side-effect import:  import "X";  →  require("X");
+       Bare spec needs the helper form so the node_modules walk runs. */
+    rp_string *side = rp_string_new(64);
+    _emit_require_call(side, src + sstart, slen, NULL);
+    rp_string_puts(side, ";if(_TrN_Sp._pP)_TrN_Sp._pP();");
+    add_edit_take_ownership(edits, ns, ne, rp_string_steal(side), claimed);
+    rp_string_free(side);
     return 1;
 }
 
@@ -5588,7 +5694,10 @@ static void _append_params_sig(rp_string *out, const char *src, TSNode func_like
     }
     TSNode param = ts_node_child_by_field_name(func_like, "parameter", 9);
     if (!ts_node_is_null(param)) {
-        size_t s = ts_node_start_byte(params), e=ts_node_end_byte(params);
+        /* Arrow with bare-identifier param `x => …` has no `parameters`
+           field — the single `parameter` field is the identifier.
+           Pre-fix, this branch dereferenced `params` (null), segfault. */
+        size_t s = ts_node_start_byte(param), e = ts_node_end_byte(param);
         rp_string_puts(out, "(");
         rp_string_putsn(out, src+s, e-s);
         rp_string_putc(out, ')');
@@ -5683,45 +5792,60 @@ static char *_emit_async_expr_replacement(const char *src, TSNode node)
 
 static char *_emit_async_method_replacement(const char *src, TSNode node)
 {
-    // node is method_definition inside an object literal (or class, but we only handle object here)
+    /* A method_definition node lives inside either:
+       (a) an object literal — emit `name: (function(){...})()`
+           (object-property form), or
+       (b) a class body — emit `name(params){ body }` (method form);
+           the `name:value` form is a syntax error in class bodies. */
     TSNode body = ts_node_child_by_field_name(node, "body", 4);
     TSNode nname = ts_node_child_by_field_name(node, "name", 4);
     if (ts_node_is_null(body) || ts_node_is_null(nname))
         return NULL;
     size_t ns = ts_node_start_byte(nname), ne = ts_node_end_byte(nname);
+    TSNode parent = ts_node_parent(node);
+    int in_class_body = !ts_node_is_null(parent)
+                     && strcmp(ts_node_type(parent), "class_body") == 0;
     rp_string *out = rp_string_new(512);
 
-    // property label: <name>:
-    rp_string_putsn(out, src+ns, ne-ns);
-    rp_string_puts(out, ": ");
-    // value: (function(){ var _TrN_ref = asyncToGenerator(mark(function <name>(params){...}));
-    //                     return function <name>(params){ return _TrN_ref.apply(this, arguments); };})()
-    rp_string_puts(out, "(function(){var _TrN_ref = _TrN_Sp.asyncToGenerator(_TrN_Sp.regeneratorRuntime.mark(function ");
-    // Try to preserve method name in inner generator function for stack traces
-    // When name is not an identifier (e.g., string literal), fallback to _callee
     const char *nt = ts_node_type(nname);
     int named = (strcmp(nt, "property_identifier") == 0 || strcmp(nt, "identifier") == 0);
-    if (named)
-        rp_string_putsn(out, src+ns, ne-ns);
-    else
-        rp_string_puts(out, "_TrN_callee");
-    _append_params_sig(out, src, node);
-    rp_string_puts(out, " {");
-    char *wrap = _build_regenerator_switch_body(src, body);
-    if (!wrap)
+
+    if (in_class_body)
     {
-        out=rp_string_free(out);
-        return NULL;
-    }
-    rp_string_puts(out, wrap);
-    free(wrap);
-    rp_string_puts(out, "})); return function ");
-    if (named)
+        /* Class method form: name(params){ var _TrN_ref = ...; return _TrN_ref.apply(this, arguments); } */
         rp_string_putsn(out, src+ns, ne-ns);
+        _append_params_sig(out, src, node);
+        rp_string_puts(out, " { var _TrN_ref = _TrN_Sp.asyncToGenerator(_TrN_Sp.regeneratorRuntime.mark(function ");
+        if (named) rp_string_putsn(out, src+ns, ne-ns);
+        else       rp_string_puts(out, "_TrN_callee");
+        _append_params_sig(out, src, node);
+        rp_string_puts(out, " {");
+        char *wrap = _build_regenerator_switch_body(src, body);
+        if (!wrap) { out = rp_string_free(out); return NULL; }
+        rp_string_puts(out, wrap);
+        free(wrap);
+        rp_string_puts(out, "})); return _TrN_ref.apply(this, arguments); }");
+    }
     else
-        rp_string_puts(out, "_TrN_callee");
-    _append_params_sig(out, src, node);
-    rp_string_puts(out, " { return _TrN_ref.apply(this, arguments); };})()");
+    {
+        /* Object-property form: name: (function(){ ... })() */
+        rp_string_putsn(out, src+ns, ne-ns);
+        rp_string_puts(out, ": ");
+        rp_string_puts(out, "(function(){var _TrN_ref = _TrN_Sp.asyncToGenerator(_TrN_Sp.regeneratorRuntime.mark(function ");
+        if (named) rp_string_putsn(out, src+ns, ne-ns);
+        else       rp_string_puts(out, "_TrN_callee");
+        _append_params_sig(out, src, node);
+        rp_string_puts(out, " {");
+        char *wrap = _build_regenerator_switch_body(src, body);
+        if (!wrap) { out = rp_string_free(out); return NULL; }
+        rp_string_puts(out, wrap);
+        free(wrap);
+        rp_string_puts(out, "})); return function ");
+        if (named) rp_string_putsn(out, src+ns, ne-ns);
+        else       rp_string_puts(out, "_TrN_callee");
+        _append_params_sig(out, src, node);
+        rp_string_puts(out, " { return _TrN_ref.apply(this, arguments); };})()");
+    }
 
     char *ret = rp_string_steal(out);
     out=rp_string_free(out);
@@ -10847,7 +10971,18 @@ static void _collect_priv_ids(TSNode node, _BS_NodeVec *out, size_t lo, size_t h
         _collect_priv_ids(ts_node_child(node, i), out, lo, hi);
 }
 
-static void _emit_with_priv_subst(rp_string *out, const char *src, size_t ss, size_t se, TSNode root)
+/* Class-scoped counter for private-field name mangling.  Each call to
+   `es5_emit_class_core` reserves a fresh `_priv_class_id` so two
+   classes that both use `#x` end up with distinct mangled names
+   (`_TrN_priv0_x` vs `_TrN_priv1_x`) — no cross-class leakage.  Static
+   because the counter just needs to be unique per-process; resetting
+   it across transpile() calls would risk a cached `.transpiled.js`
+   referring to a class_id that a fresh transpile reallocates to a
+   different class. */
+static unsigned _priv_class_counter = 0;
+
+static void _emit_with_priv_subst(rp_string *out, const char *src, size_t ss, size_t se, TSNode root,
+                                  unsigned class_id)
 {
     _BS_NodeVec privs;
     _bs_nv_init(&privs);
@@ -10878,8 +11013,10 @@ static void _emit_with_priv_subst(rp_string *out, const char *src, size_t ss, si
         if (ps < cursor) continue;  /* skip nested duplicates */
         if (ps > cursor)
             rp_string_putsn(out, src + cursor, ps - cursor);
-        /* Skip leading `#`, prepend `_priv_`. */
-        rp_string_puts(out, "_TrN_priv_");
+        /* Skip leading `#`, prepend `_TrN_priv<class_id>_`.  The
+           class-scoped id prevents accidental cross-class collision
+           when two unrelated classes both use the same private name. */
+        rp_string_appendf(out, "_TrN_priv%u_", class_id);
         rp_string_putsn(out, src + ps + 1, pe - ps - 1);
         cursor = pe;
     }
@@ -10949,6 +11086,11 @@ static int _count_newlines_since(rp_string *bucket, size_t since_len)
 static void es5_emit_class_core(rp_string *out, const char *src, const char *cname, size_t cname_len, int has_super,
                                 size_t sups, size_t supe, TSNode body)
 {
+    /* Reserve a unique class id for private-field name mangling so
+       two classes that use the same `#name` don't collide.  See
+       `_emit_with_priv_subst` for the mangling scheme. */
+    unsigned class_priv_id = _priv_class_counter++;
+
     /* ——— gather constructor and methods ——— */
     int ctor_found = 0;
     TSNode ctor_params = {{0}};
@@ -11043,8 +11185,8 @@ static void es5_emit_class_core(rp_string *out, const char *src, const char *cna
         }
         if (is_private_field)
         {
-            /* Strip leading `#`, prepend `_priv_`. */
-            rp_string_puts(dest, "_TrN_priv_");
+            /* Strip leading `#`, prepend the class-scoped `_priv<id>_`. */
+            rp_string_appendf(dest, "_TrN_priv%u_", class_priv_id);
             rp_string_putsn(dest, src + fps + 1, fpe - fps - 1);
         }
         else
@@ -11056,7 +11198,7 @@ static void es5_emit_class_core(rp_string *out, const char *src, const char *cna
             size_t fvs = ts_node_start_byte(fval), fve = ts_node_end_byte(fval);
             rp_string_puts(dest, " = ");
             /* The value may reference `this.#x` — substitute. */
-            _emit_with_priv_subst(dest, src, fvs, fve, fval);
+            _emit_with_priv_subst(dest, src, fvs, fve, fval, class_priv_id);
         }
         else
         {
@@ -11198,7 +11340,8 @@ static void es5_emit_class_core(rp_string *out, const char *src, const char *cna
             // supported. The `key:` field always carries the user-facing
             // name regardless.
             rp_string_puts(bucket, "{key:'");
-            if (is_private_method) rp_string_puts(bucket, "_TrN_priv_");
+            if (is_private_method)
+                rp_string_appendf(bucket, "_TrN_priv%u_", class_priv_id);
             rp_string_putsn(bucket, src + ks, ke - ks);
             rp_string_appendf(bucket, "',%s:function ", desc_field);
         }
@@ -11310,17 +11453,17 @@ static void es5_emit_class_core(rp_string *out, const char *src, const char *cna
                 if (has_super)
                 {
                     rp_string *subbed = rp_string_new(64);
-                    _emit_with_priv_subst(subbed, src, bs + 1, be - 1, mb);
+                    _emit_with_priv_subst(subbed, src, bs + 1, be - 1, mb, class_priv_id);
                     copy_body_replace_super(bucket, subbed->str, subbed->len, is_static);
                     subbed = rp_string_free(subbed);
                 }
                 else
-                    _emit_with_priv_subst(bucket, src, bs + 1, be - 1, mb);
+                    _emit_with_priv_subst(bucket, src, bs + 1, be - 1, mb, class_priv_id);
                 rp_string_putc(bucket, '}');
             }
             else
             {
-                _emit_with_priv_subst(bucket, src, bs, be, mb);
+                _emit_with_priv_subst(bucket, src, bs, be, mb, class_priv_id);
             }
         }
         else
@@ -11467,68 +11610,91 @@ static void es5_emit_class_core(rp_string *out, const char *src, const char *cna
                 if (depth != 0)
                     goto NO_SUPER_REWRITE;
 
-                /* Emit prelude */
+                /* Emit prelude (var _TrN_this; classCallCheck) */
                 rp_string_puts(out, "var _TrN_this;_TrN_Sp.classCallCheck(this, ");
                 rp_string_putsn(out, cname, cname_len);
                 rp_string_puts(out, ");");
 
-                /* _TrN_this = _super.call(this, <args>);
-                   If args is a single spread like ...x, use apply instead */
+                /* Inject class field initializations BEFORE the body.
+                   Most class layouts don't read `this` until after super
+                   anyway; pre-super reads would be runtime errors in
+                   spec-correct JS regardless. */
+                if (field_inits->len)
+                    rp_string_puts(out, field_inits->str);
+
+                /* Copy body bytes [0..super_call_start) verbatim — these
+                   are the structural context surrounding `super(...)`,
+                   e.g. `if(`, `try{`, control-flow leading up to the
+                   call.  Pre-fix, the rewriter dropped this prefix and
+                   assumed super was the first statement, which broke
+                   patterns like `constructor(){ if(super(x),y) throw }`. */
+                size_t super_kw_pos = (size_t)(open - b);
+                if (super_kw_pos > 0)
+                {
+                    rp_string *pre = rp_string_new(64);
+                    _emit_with_priv_subst(pre, src,
+                                          ts_node_start_byte(ctor_body) + 1,
+                                          ts_node_start_byte(ctor_body) + 1 + super_kw_pos,
+                                          ctor_body, class_priv_id);
+                    copy_body_replace_super(out, pre->str, pre->len, 0);
+                    pre = rp_string_free(pre);
+                }
+
+                /* Replace `super(args)` with an EXPRESSION that assigns
+                   to _TrN_this and evaluates to that value:
+                     (_TrN_this = _TrN_super.call(this, args), _TrN_this)
+                   This form fits inside any expression position (an
+                   `if`-condition, a comma sequence, a logical op, etc.)
+                   without disturbing the surrounding parens. */
+                rp_string_puts(out, "(_TrN_this = ");
                 {
                     const char *atext = b + args_s;
                     size_t alen = call_rp - args_s;
-                    /* trim leading whitespace */
                     while (alen > 0 && (*atext == ' ' || *atext == '\t' || *atext == '\n' || *atext == '\r'))
                     { atext++; alen--; }
-                    /* trim trailing whitespace */
                     while (alen > 0 && (atext[alen-1] == ' ' || atext[alen-1] == '\t' || atext[alen-1] == '\n' || atext[alen-1] == '\r'))
                         alen--;
                     if (alen > 3 && atext[0] == '.' && atext[1] == '.' && atext[2] == '.'
                         && memchr(atext + 3, ',', alen - 3) == NULL)
                     {
                         /* single spread: super(...expr) -> _super.apply(this, expr) */
-                        rp_string_puts(out, "_TrN_this = _TrN_super.apply(this,");
+                        rp_string_puts(out, "_TrN_super.apply(this,");
                         rp_string_putsn(out, atext + 3, alen - 3);
-                        rp_string_puts(out, ");");
+                        rp_string_puts(out, ")");
+                    }
+                    else if (alen > 0)
+                    {
+                        rp_string_puts(out, "_TrN_super.call(this, ");
+                        rp_string_putsn(out, atext, alen);
+                        rp_string_puts(out, ")");
                     }
                     else
                     {
-                        if (alen > 0)
-                        {
-                            rp_string_puts(out, "_TrN_this = _TrN_super.call(this, ");
-                            rp_string_putsn(out, atext, alen);
-                        }
-                        else
-                        {
-                            rp_string_puts(out, "_TrN_this = _TrN_super.call(this");
-                        }
-                        rp_string_puts(out, ");");
+                        rp_string_puts(out, "_TrN_super.call(this)");
                     }
                 }
+                rp_string_puts(out, ", _TrN_this)");
 
-                /* Inject class field initializations after super() but before
-                   the rest of the ctor body. */
-                if (field_inits->len)
-                    rp_string_puts(out, field_inits->str);
-
-                /* Copy remainder of ctor body after the super(...) statement's semicolon,
-                   rewriting any super.method() calls and substituting private names. */
+                /* Copy bytes AFTER `super(...)` — i.e. from byte after
+                   the closing ')' to the end of body.  Preserves any
+                   wrapping context (`if(super(),x) body`'s closing `)`,
+                   `try{super();...}catch`, etc.). */
                 size_t after = call_rp + 1; /* position after ')' */
-                if (after < blen && b[after] == ';')
-                    after++; /* swallow trailing semicolon if any */
                 if (after < blen)
                 {
                     rp_string *subbed = rp_string_new(64);
                     _emit_with_priv_subst(subbed, src,
                                           ts_node_start_byte(ctor_body) + 1 + after,
                                           ts_node_start_byte(ctor_body) + 1 + blen,
-                                          ctor_body);
+                                          ctor_body, class_priv_id);
                     copy_body_replace_super(out, subbed->str, subbed->len, 0);
                     subbed = rp_string_free(subbed);
                 }
 
-                /* Ensure the constructor returns _TrN_this */
-                rp_string_puts(out, "return _TrN_this;");
+                /* Ensure the constructor returns _TrN_this.  Lead with `;`
+                   so we don't concatenate `=3return` when the body's last
+                   expression has no trailing semicolon. */
+                rp_string_puts(out, ";return _TrN_this;");
             }
             else
             {
@@ -11544,7 +11710,7 @@ static void es5_emit_class_core(rp_string *out, const char *src, const char *cna
                     _emit_with_priv_subst(subbed, src,
                                           ts_node_start_byte(ctor_body) + 1,
                                           ts_node_start_byte(ctor_body) + 1 + blen,
-                                          ctor_body);
+                                          ctor_body, class_priv_id);
                     copy_body_replace_super(out, subbed->str, subbed->len, 0);
                     subbed = rp_string_free(subbed);
                 }
@@ -11574,7 +11740,7 @@ static void es5_emit_class_core(rp_string *out, const char *src, const char *cna
         if (ctor_found && !ts_node_is_null(ctor_body))
         {
             size_t bs = ts_node_start_byte(ctor_body), be = ts_node_end_byte(ctor_body);
-            _emit_with_priv_subst(out, src, bs, be, ctor_body);
+            _emit_with_priv_subst(out, src, bs, be, ctor_body, class_priv_id);
         }
     }
     rp_string_puts(out, "};");
@@ -11938,6 +12104,240 @@ static int rewrite_regex_u_to_es5(EditList *edits, const char *src, TSNode regex
 
     return 1;
 }
+/* Walk a regex pattern byte-by-byte counting capture groups.  Builds
+   a list of (name, index) for each `(?<name>…)` and returns it via
+   *names_out / *indices_out / *n_out (caller frees names_out).
+   Returns 1 on success, 0 on parse failure.  Does NOT validate the
+   regex — just tracks paren context so it can distinguish capture
+   groups from `(?:…)`, `(?=…)`, `(?!…)`, `(?<=…)`, `(?<!…)`. */
+static int regex_collect_named_groups(const char *in, size_t len,
+                                      char ***names_out, int **indices_out,
+                                      int *n_out)
+{
+    char **names = NULL;
+    int *indices = NULL;
+    int cap = 0, n = 0;
+    int group_idx = 0;  /* incremented on each capturing `(` */
+    int esc = 0;
+    int in_class = 0;
+    for (size_t i = 0; i < len; i++)
+    {
+        char c = in[i];
+        if (esc) { esc = 0; continue; }
+        if (c == '\\') { esc = 1; continue; }
+        if (in_class) {
+            if (c == ']') in_class = 0;
+            continue;
+        }
+        if (c == '[') { in_class = 1; continue; }
+        if (c != '(') continue;
+        /* It's a `(`.  Determine if it opens a capture group. */
+        if (i + 1 < len && in[i + 1] == '?') {
+            /* `(?:` or `(?=` or `(?!` — non-capturing.  `(?<name>` is
+               capturing (named).  `(?<=` and `(?<!` are non-capturing
+               (lookbehind, which duktape doesn't support anyway). */
+            if (i + 2 < len && in[i + 2] == '<' &&
+                i + 3 < len && in[i + 3] != '=' && in[i + 3] != '!')
+            {
+                /* `(?<name>…)` */
+                group_idx++;
+                size_t name_start = i + 3;
+                size_t name_end = name_start;
+                while (name_end < len && in[name_end] != '>') name_end++;
+                if (name_end >= len) { /* malformed */ }
+                size_t name_len = name_end - name_start;
+                if (n >= cap) {
+                    cap = cap ? cap * 2 : 4;
+                    names = realloc(names, cap * sizeof(char *));
+                    indices = realloc(indices, cap * sizeof(int));
+                }
+                names[n] = malloc(name_len + 1);
+                memcpy(names[n], in + name_start, name_len);
+                names[n][name_len] = 0;
+                indices[n] = group_idx;
+                n++;
+            }
+            /* else: `(?:` / `(?=` / `(?!` / `(?<=` / `(?<!` — non-capturing */
+        } else {
+            /* plain capture group */
+            group_idx++;
+        }
+    }
+    *names_out = names;
+    *indices_out = indices;
+    *n_out = n;
+    return 1;
+}
+
+/* Rewrite a regex pattern for ES5 compatibility with the modern
+   non-/u features removed:
+   - `/s` (dotall): substitute `.` outside character class with `[\s\S]`
+   - `(?<name>…)` named capture group: substitute with `(…)`
+   - `\k<name>` named backref: substitute with `\N` from groups map
+
+   Returns malloc'd string (caller frees) or NULL on parse failure.  */
+static char *regex_modern_strip_pattern(const char *in, size_t len, int has_s,
+                                        char **names, int *indices, int n_named)
+{
+    rp_string *out = rp_string_new(256);
+    int esc = 0;
+    int in_class = 0;
+    for (size_t i = 0; i < len;)
+    {
+        char c = in[i];
+        if (esc)
+        {
+            /* `\k<name>` backref?  Only valid outside char class. */
+            if (!in_class && c == 'k' && i + 1 < len && in[i + 1] == '<' && n_named > 0)
+            {
+                size_t name_start = i + 2;
+                size_t name_end = name_start;
+                while (name_end < len && in[name_end] != '>') name_end++;
+                if (name_end < len) {
+                    size_t name_len = name_end - name_start;
+                    int idx = 0;
+                    for (int k = 0; k < n_named; k++) {
+                        if (strlen(names[k]) == name_len
+                            && memcmp(names[k], in + name_start, name_len) == 0) {
+                            idx = indices[k];
+                            break;
+                        }
+                    }
+                    /* out already has the leading `\`; replace `\k<name>` with `\<idx>`. */
+                    rp_string_appendf(out, "%d", idx);
+                    i = name_end + 1;
+                    esc = 0;
+                    continue;
+                }
+            }
+            rp_string_putc(out, c);
+            i++;
+            esc = 0;
+            continue;
+        }
+        if (c == '\\') { rp_string_putc(out, '\\'); esc = 1; i++; continue; }
+        if (in_class) {
+            rp_string_putc(out, c);
+            if (c == ']') in_class = 0;
+            i++;
+            continue;
+        }
+        if (c == '[') { rp_string_putc(out, '['); in_class = 1; i++; continue; }
+        if (c == '.' && has_s) {
+            rp_string_puts(out, "[\\s\\S]");
+            i++;
+            continue;
+        }
+        if (c == '(' && i + 3 < len && in[i + 1] == '?' && in[i + 2] == '<'
+            && in[i + 3] != '=' && in[i + 3] != '!')
+        {
+            /* `(?<name>…)` → `(…)` */
+            rp_string_putc(out, '(');
+            /* skip past `?<name>` */
+            i += 3;
+            while (i < len && in[i] != '>') i++;
+            if (i < len) i++;  /* skip the `>` */
+            continue;
+        }
+        rp_string_putc(out, c);
+        i++;
+    }
+    char *ret = rp_string_steal(out);
+    out = rp_string_free(out);
+    return ret;
+}
+
+/* Strip modern non-/u regex flags (`/s`, `/y`, `/d`) and convert named
+   captures + named backrefs to numeric.  Lossy for /y (sticky) and /d
+   (match indices) — the flag-driven behavior is lost but the regex
+   still parses and matches the same characters.  /s gets a proper
+   `.` → `[\s\S]` substitution.  Named-group references via
+   `match.groups.name` will return undefined (we don't synthesize the
+   .groups property) but `\k<name>` backrefs work correctly via the
+   index map.  Runs AFTER `rewrite_regex_u_to_es5` — if /u was present,
+   that rewriter already claimed the range and this one bails on
+   overlap, leaving /us etc. unhandled (rare). */
+static int rewrite_regex_modern_to_es5(EditList *edits, const char *src, TSNode regex_node,
+                                       RangeList *claimed, int overlaps)
+{
+    if (strcmp(ts_node_type(regex_node), "regex") != 0)
+        return 0;
+    size_t rs = ts_node_start_byte(regex_node), re = ts_node_end_byte(regex_node);
+    TSNode pattern = find_child_type(regex_node, "regex_pattern", NULL);
+    TSNode flags = find_child_type(regex_node, "regex_flags", NULL);
+    if (ts_node_is_null(pattern)) return 0;
+
+    size_t ps = ts_node_start_byte(pattern), pe = ts_node_end_byte(pattern);
+    size_t fs = ts_node_is_null(flags) ? 0 : ts_node_start_byte(flags);
+    size_t fe = ts_node_is_null(flags) ? 0 : ts_node_end_byte(flags);
+
+    int has_s = 0, has_y = 0, has_d = 0;
+    for (size_t i = fs; i < fe; i++) {
+        if (src[i] == 's') has_s = 1;
+        else if (src[i] == 'y') has_y = 1;
+        else if (src[i] == 'd') has_d = 1;
+    }
+
+    /* Detect named groups in pattern (cheap pre-scan). */
+    int has_named = 0;
+    {
+        int esc = 0, in_class = 0;
+        for (size_t i = ps; i < pe; i++) {
+            char c = src[i];
+            if (esc) { esc = 0; continue; }
+            if (c == '\\') { esc = 1; continue; }
+            if (in_class) { if (c == ']') in_class = 0; continue; }
+            if (c == '[') { in_class = 1; continue; }
+            if (c == '(' && i + 3 < pe && src[i+1] == '?' && src[i+2] == '<'
+                && src[i+3] != '=' && src[i+3] != '!') { has_named = 1; break; }
+        }
+    }
+
+    if (!has_s && !has_y && !has_d && !has_named) return 0;
+    if (overlaps) return 1;
+
+    /* Collect named-group map (needed for \k<name> conversion). */
+    char **names = NULL; int *indices = NULL; int n_named = 0;
+    if (has_named)
+        regex_collect_named_groups(src + ps, pe - ps, &names, &indices, &n_named);
+
+    char *newpat = regex_modern_strip_pattern(src + ps, pe - ps, has_s,
+                                              names, indices, n_named);
+    if (names) {
+        for (int k = 0; k < n_named; k++) free(names[k]);
+        free(names);
+    }
+    if (indices) free(indices);
+    if (!newpat) return 0;
+
+    /* Strip s/y/d from flags. */
+    size_t nflen = 0;
+    char *newflags = NULL;
+    if (fe > fs) {
+        newflags = malloc((fe - fs) + 1);
+        for (size_t i = fs; i < fe; i++) {
+            char c = src[i];
+            if (c == 's' || c == 'y' || c == 'd') continue;
+            newflags[nflen++] = c;
+        }
+        newflags[nflen] = 0;
+    }
+
+    size_t outlen = 1 + strlen(newpat) + 1 + nflen;
+    char *rep = malloc(outlen + 1);
+    size_t k = 0;
+    rep[k++] = '/';
+    memcpy(rep + k, newpat, strlen(newpat));
+    k += strlen(newpat);
+    rep[k++] = '/';
+    if (nflen) { memcpy(rep + k, newflags, nflen); k += nflen; }
+    rep[k] = 0;
+    free(newpat);
+    if (newflags) free(newflags);
+    add_edit_take_ownership(edits, rs, re, rep, claimed);
+    return 1;
+}
+
 // helper: generate fresh temporary names following _i, _x, _i2, _x2, ...
 static void make_fresh_forof_names(char *ibuf, size_t ibufsz, char *xbuf, size_t xbufsz)
 {
@@ -12427,7 +12827,7 @@ static int _parent_is_optional_chain(TSNode node)
 }
 
 static int rewrite_optional_chaining(EditList *edits, const char *src, TSNode node,
-                                     RangeList *claimed, int overlaps)
+                                     RangeList *claimed, int overlaps, int *unresolved)
 {
     const char *nt = ts_node_type(node);
 
@@ -12445,7 +12845,14 @@ static int rewrite_optional_chaining(EditList *edits, const char *src, TSNode no
         return 0;
 
     if (overlaps)
+    {
+        /* A wider rewriter (e.g. class-body, async-method) has claimed
+           the range we're inside.  Defer to the next pass once that
+           wholesale rewrite settles into plain function bodies; our
+           ?. operator will then be visible at the AST top level. */
+        *unresolved = 1;
         return 1;
+    }
 
     size_t es = ts_node_start_byte(node), ee = ts_node_end_byte(node);
     size_t elen = ee - es;
@@ -12458,9 +12865,20 @@ static int rewrite_optional_chaining(EditList *edits, const char *src, TSNode no
     size_t oc_clean[32];
     int noc = 0;
 
+    /* Track paren / bracket / brace depth: only process `?.` operators
+       at depth 0.  Nested `?.` (inside call arguments, subscript keys,
+       arrow-fn bodies, etc.) belong to their own sub-chain and will
+       be rewritten by a separate top-level invocation — pre-fix, this
+       loop greedily counted every `?.` in the byte range, which broke
+       cases like `obj?.forEach(t => t.x?.())` (the inner chain's `?.`
+       got merged into the outer's ternary nesting). */
+    int paren_depth = 0;
+
     for (size_t i = 0; i < elen; i++)
     {
-        if (i + 1 < elen && src[es + i] == '?' && src[es + i + 1] == '.')
+        char c = src[es + i];
+        if (paren_depth == 0
+            && i + 1 < elen && c == '?' && src[es + i + 1] == '.')
         {
             if (noc < 32)
             {
@@ -12478,11 +12896,11 @@ static int rewrite_optional_chaining(EditList *edits, const char *src, TSNode no
                 clean[ci++] = '.';
                 i++; /* skip ? */
             }
+            continue;
         }
-        else
-        {
-            clean[ci++] = src[es + i];
-        }
+        if (c == '(' || c == '[' || c == '{') paren_depth++;
+        else if (c == ')' || c == ']' || c == '}') paren_depth--;
+        clean[ci++] = c;
     }
     clean[ci] = '\0';
 
@@ -12578,7 +12996,7 @@ static int rewrite_optional_chaining(EditList *edits, const char *src, TSNode no
 
 /* ——— Logical assignment (ES2021): a ??= b → a = (a != null ? a : b), etc. ——— */
 static int rewrite_logical_assignment(EditList *edits, const char *src, TSNode node,
-                                      RangeList *claimed, int overlaps)
+                                      RangeList *claimed, int overlaps, int *unresolved)
 {
     if (strcmp(ts_node_type(node), "augmented_assignment_expression") != 0)
         return 0;
@@ -12609,7 +13027,17 @@ static int rewrite_logical_assignment(EditList *edits, const char *src, TSNode n
         return 0;
 
     if (overlaps)
+    {
+        /* A wholesale rewriter (typically the class-body emitter) has
+           already claimed this range and is about to copy the source
+           bytes verbatim — including our `||=`/`&&=`/`??=`.  Signal a
+           re-pass so once that wider rewrite settles, our augmented
+           assignment lives in a plain function context and can be
+           lowered.  Returning 1 (handled) without an edit prevents
+           competing rewriters from acting on the same node this pass. */
+        *unresolved = 1;
         return 1;
+    }
 
     size_t ls = ts_node_start_byte(left);
     size_t re = ts_node_end_byte(right);
@@ -12661,7 +13089,7 @@ static int rewrite_logical_assignment(EditList *edits, const char *src, TSNode n
 //   get(params) { body }  ->  get: function(params) { body }
 // Duktape misparses "get"/"set" as accessor keywords in this context.
 static int rewrite_plain_method_shorthand(EditList *edits, const char *src, TSNode node,
-                                          RangeList *claimed, int overlaps)
+                                          RangeList *claimed, int overlaps, int *unresolved)
 {
     if (strcmp(ts_node_type(node), "method_definition") != 0)
         return 0;
@@ -12708,7 +13136,16 @@ static int rewrite_plain_method_shorthand(EditList *edits, const char *src, TSNo
     if (!is_get_or_set && !needs_param_rewrite)
         return 0;
     if (overlaps)
+    {
+        /* A wider rewriter (arrow, async, class wholesale) has claimed
+           the range we're inside.  Defer to next pass so when its
+           rewrite settles into plain JS, our `get(){…}` → `get: function(){…}`
+           rewrite can fire at top-level.  Pre-fix this silently
+           dropped the rewrite and left invalid `{get(){…}}` in
+           duktape-targeted output. */
+        *unresolved = 1;
         return 1;
+    }
     add_edit(edits, ne_name, ne_name, ": function", claimed);
     return 1;
 }
@@ -13403,6 +13840,8 @@ RP_ParseRes transpiler_rewrite_pass(EditList *edits, const char *src, size_t src
         {
             handled = rewrite_regex_u_to_es5(edits, src, n, &claimed, overlaps);
             if (!handled)
+                handled = rewrite_regex_modern_to_es5(edits, src, n, &claimed, overlaps);
+            if (!handled)
                 handled = rewrite_regex_slash_in_class(edits, src, n, &claimed, overlaps);
         }
 
@@ -13523,7 +13962,7 @@ RP_ParseRes transpiler_rewrite_pass(EditList *edits, const char *src, size_t src
         }
         if (!handled && (strcmp(nt, "export_statement") == 0))
         {
-            handled = rewrite_export_node(edits, src, n, &claimed, overlaps);
+            handled = rewrite_export_node(edits, src, n, &claimed, polysneeded, overlaps);
             if (handled)
                 *polysneeded |= IMPORT_PF;
         }
@@ -13554,7 +13993,7 @@ RP_ParseRes transpiler_rewrite_pass(EditList *edits, const char *src, size_t src
                don't conflict: shorthand inserts `: function` at name-end
                (zero-width); param rewriters edit inside the params or
                after the closing paren. */
-            (void)rewrite_plain_method_shorthand(edits, src, n, &claimed, overlaps);
+            (void)rewrite_plain_method_shorthand(edits, src, n, &claimed, overlaps, unresolved);
         }
         if (!handled && strcmp(nt, "method_definition") == 0)
         {
@@ -13672,13 +14111,13 @@ RP_ParseRes transpiler_rewrite_pass(EditList *edits, const char *src, size_t src
                          strcmp(nt, "call_expression") == 0 ||
                          strcmp(nt, "subscript_expression") == 0))
         {
-            handled = rewrite_optional_chaining(edits, src, n, &claimed, overlaps);
+            handled = rewrite_optional_chaining(edits, src, n, &claimed, overlaps, unresolved);
         }
 
         /* Logical assignment (ES2021): a ??= b, a ||= b, a &&= b */
         if (!handled && strcmp(nt, "augmented_assignment_expression") == 0)
         {
-            handled = rewrite_logical_assignment(edits, src, n, &claimed, overlaps);
+            handled = rewrite_logical_assignment(edits, src, n, &claimed, overlaps, unresolved);
         }
 
         /* Optional catch binding (ES2019): catch {} -> catch(_unused) {} */
@@ -13920,8 +14359,27 @@ static RP_ParseRes transpile_code(const char *src, size_t src_len, int printTree
 
         if (npasses > MAX_PASSES)
         {
-            fprintf(stderr, "Transpiler: Giving up after %d passes over source\n", MAX_PASSES);
-            exit(1);
+            /* Deeply-nested async-inside-async / generator-inside-generator
+               can require one pass per level (each pass "opens up" one
+               layer for fn-source to see).  Bail with a recoverable
+               error instead of `exit(1)` — calling exit() from a
+               library tears down the whole process. */
+            char msg[128];
+            snprintf(msg, sizeof(msg),
+                "Transpiler: gave up after %d passes (probably deeply-nested async/generator)\n",
+                MAX_PASSES);
+            res.transpiled = NULL;
+            res.errmsg = strdup(msg);
+            res.err = 1;
+            res.pos = 0;
+            res.line_num = 0;
+            res.col_num = 0;
+            res.altered = 0;
+            if (free_src) free(free_src);
+            free_edits(&edits);
+            ts_tree_delete(tree);
+            ts_parser_delete(parser);
+            return res;
         }
 
         res = transpiler_rewrite_pass(&edits, src, src_len, root, &polysneeded, &unresolved, no_program_wrap);

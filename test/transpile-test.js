@@ -80,6 +80,37 @@ testFeature("String.raw", function()
 
 });
 
+/* Regression: `export * as Ns from "./mod"` (ES2020 namespace
+   re-export).  Pre-fix the rewriter only handled bare `export *
+   from "mod"`, so the `as Ns` form fell through to "drop export,
+   keep inner statement", producing zero exports. */
+testFeature("Re-export as namespace (export * as Ns from)", function() {
+  if (!_baseTestFeature.isRampart) return true;
+  var fs = rampart.utils;
+  var dir = '/tmp/rampart-nsexp-' + process.pid + '-' + Date.now();
+  fs.mkdir(dir);
+  var src_path = dir + '/nsexp-source.mjs';
+  var pt_path  = dir + '/nsexp-passthrough.mjs';
+  var cleanup = function() {
+    [src_path, src_path.replace('.mjs','.transpiled.mjs'),
+     pt_path,  pt_path.replace('.mjs','.transpiled.mjs')].forEach(function(p) {
+      try { fs.rmFile(p); } catch(_e) {}
+    });
+    try { fs.rmDir(dir); } catch(_e) {}
+  };
+  try {
+    fs.writeFile(src_path,
+      'export const x = 7;\n' +
+      'export const y = 11;\n');
+    fs.writeFile(pt_path,
+      'export * as Bag from "./nsexp-source.mjs";\n');
+    var mod = require(pt_path);
+    return mod.Bag && mod.Bag.x === 7 && mod.Bag.y === 11;
+  } finally {
+    cleanup();
+  }
+});
+
 /* Regression: `import { X } from "./m"; export { X };` used to emit
    invalid `export { _TrN_modImp0.X };` (the import rewriter walked
    into export_specifier; the export rewriter then bailed on overlap).
