@@ -973,6 +973,131 @@ static duk_ret_t transpile_rewrite_args (duk_context *ctx)
    trap on `proxy` to throw TypeError, matching ES2015 spec. Wraps the
    caller's handler so each trap method first checks the revoked flag,
    then delegates to the user's trap (or Reflect.<trap> as fallback). */
+/* JS-level polyfills for ES2020+ globals duktape doesn't provide.
+   Each is gated on `typeof X !== 'function'` so a future duktape
+   that adds them natively will skip the polyfill.  Costs ~120 bytes
+   of source at context init; no runtime overhead unless called. */
+static void install_modern_polyfills(duk_context *ctx)
+{
+    const char *src =
+        /* String.prototype.matchAll(regex) — ES2020.  Returns an
+           iterator over all matches of a global regex.  Spec throws
+           TypeError if the regex is non-null and lacks the `g` flag. */
+        "if (typeof String.prototype.matchAll !== 'function') {"
+        "  Object.defineProperty(String.prototype, 'matchAll', {"
+        "    configurable: true, writable: true, enumerable: false,"
+        "    value: function(regex) {"
+        "      if (regex != null && regex instanceof RegExp) {"
+        "        if (regex.flags.indexOf('g') === -1)"
+        "          throw new TypeError('String.prototype.matchAll requires a global RegExp');"
+        "      }"
+        "      var re = (regex != null && regex instanceof RegExp)"
+        "               ? new RegExp(regex.source, regex.flags)"
+        "               : new RegExp(String(regex == null ? '' : regex), 'g');"
+        "      var str = String(this);"
+        "      var done = false;"
+        "      var iter = {"
+        "        next: function() {"
+        "          if (done) return { value: undefined, done: true };"
+        "          var m = re.exec(str);"
+        "          if (m === null) { done = true; return { value: undefined, done: true }; }"
+        /* zero-width match: advance lastIndex by 1 to avoid infinite loop */
+        "          if (m[0] === '') re.lastIndex = re.lastIndex + 1;"
+        "          return { value: m, done: false };"
+        "        }"
+        "      };"
+        "      if (typeof Symbol !== 'undefined' && Symbol.iterator)"
+        "        iter[Symbol.iterator] = function() { return this; };"
+        "      return iter;"
+        "    }"
+        "  });"
+        "}"
+        /* Object.groupBy(items, keyFn) — ES2024.  Returns a null-
+           prototype object whose keys are the keyFn results and
+           values are arrays of grouped items.  Accepts any iterable. */
+        "if (typeof Object.groupBy !== 'function') {"
+        "  Object.defineProperty(Object, 'groupBy', {"
+        "    configurable: true, writable: true, enumerable: false,"
+        "    value: function(items, keyFn) {"
+        "      if (items == null) throw new TypeError('Object.groupBy: items must be iterable');"
+        "      if (typeof keyFn !== 'function') throw new TypeError('Object.groupBy: keyFn must be callable');"
+        "      var result = Object.create(null);"
+        "      var i = 0;"
+        "      if (typeof Symbol !== 'undefined' && Symbol.iterator"
+        "          && typeof items[Symbol.iterator] === 'function') {"
+        "        var it = items[Symbol.iterator]();"
+        "        var step;"
+        "        while (!(step = it.next()).done) {"
+        "          var key = keyFn(step.value, i++);"
+        "          if (!result[key]) result[key] = [];"
+        "          result[key].push(step.value);"
+        "        }"
+        "      } else {"
+        /* array-like fallback (length-based, skips holes) */
+        "        var len = items.length >>> 0;"
+        "        for (i = 0; i < len; i++) {"
+        "          if (i in items) {"
+        "            var k = keyFn(items[i], i);"
+        "            if (!result[k]) result[k] = [];"
+        "            result[k].push(items[i]);"
+        "          }"
+        "        }"
+        "      }"
+        "      return result;"
+        "    }"
+        "  });"
+        "}";
+    if (duk_peval_string(ctx, src) != 0)
+    {
+        fprintf(stderr, "modern polyfills install failed: %s\n", duk_safe_to_string(ctx, -1));
+    }
+    duk_pop(ctx);
+}
+
+/* Install Array.prototype.{keys,values,entries,[Symbol.iterator]}.
+   Duktape's stock Array prototype is missing the iteration spec
+   surface entirely — plain arrays aren't iterable, so `for (x of arr)`,
+   `[...arr]`, `new Set(arr)` all fail.  Pure addition: every slot
+   below is currently `undefined`, so installing them can't displace
+   any existing behavior.  Per spec, Array.prototype[Symbol.iterator]
+   IS Array.prototype.values (same function reference). */
+static void install_array_iter(duk_context *ctx)
+{
+    const char *src =
+        "if (typeof Array.prototype[Symbol.iterator] !== 'function') {"
+        "  var _arrIter = function(self, kind) {"
+        "    var i = 0;"
+        "    var iter = {"
+        "      next: function() {"
+        "        if (i >= self.length) return {value: undefined, done: true};"
+        "        var idx = i++;"
+        "        var v = (kind === 0) ? idx"
+        "              : (kind === 1) ? self[idx]"
+        "              :                [idx, self[idx]];"
+        "        return {value: v, done: false};"
+        "      }"
+        "    };"
+        "    iter[Symbol.iterator] = function() { return this; };"
+        "    return iter;"
+        "  };"
+        "  var _def = function(name, fn) {"
+        "    Object.defineProperty(Array.prototype, name,"
+        "      {value: fn, writable: true, enumerable: false, configurable: true});"
+        "  };"
+        "  _def('keys',    function() { return _arrIter(this, 0); });"
+        "  var _valuesFn  = function() { return _arrIter(this, 1); };"
+        "  _def('values',  _valuesFn);"
+        "  _def('entries', function() { return _arrIter(this, 2); });"
+        "  Object.defineProperty(Array.prototype, Symbol.iterator,"
+        "    {value: _valuesFn, writable: true, enumerable: false, configurable: true});"
+        "}";
+    if (duk_peval_string(ctx, src) != 0)
+    {
+        fprintf(stderr, "Array iterator install failed: %s\n", duk_safe_to_string(ctx, -1));
+    }
+    duk_pop(ctx);
+}
+
 static void install_proxy_revocable(duk_context *ctx)
 {
     const char *src =
@@ -1072,6 +1197,8 @@ void duk_init_context(duk_context *ctx)
     duk_rp_console_init(ctx);
     new_function_transpile(ctx);
     install_proxy_revocable(ctx);
+    install_modern_polyfills(ctx);
+    install_array_iter(ctx);
     /* Install `globalThis.Intl` as a lazy getter — `require('rampart-intl')`
        only fires on first access.  Two motivations:
          1. ~37 MB ICU data isn't paid for by scripts that never touch Intl.

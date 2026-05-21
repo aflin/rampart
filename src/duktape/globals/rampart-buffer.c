@@ -813,47 +813,14 @@ static duk_ret_t buf_swap64(duk_context *ctx)
 
 /* keys/values/entries — return arrays (node returns iterators; arrays
  * work for most consumers including for...of). */
-static duk_ret_t buf_keys(duk_context *ctx)
-{
-    duk_push_this(ctx);
-    duk_size_t blen;
-    duk_get_buffer_data(ctx, -1, &blen);
-    duk_pop(ctx);
-    duk_push_array(ctx);
-    for (duk_uarridx_t i = 0; i < (duk_uarridx_t)blen; i++) {
-        duk_push_uint(ctx, i);
-        duk_put_prop_index(ctx, -2, i);
-    }
-    return 1;
-}
-static duk_ret_t buf_values(duk_context *ctx)
-{
-    duk_push_this(ctx);
-    duk_size_t blen;
-    unsigned char *buf = (unsigned char *)duk_get_buffer_data(ctx, -1, &blen);
-    duk_pop(ctx);
-    duk_push_array(ctx);
-    for (duk_uarridx_t i = 0; i < (duk_uarridx_t)blen; i++) {
-        duk_push_uint(ctx, buf[i]);
-        duk_put_prop_index(ctx, -2, i);
-    }
-    return 1;
-}
-static duk_ret_t buf_entries(duk_context *ctx)
-{
-    duk_push_this(ctx);
-    duk_size_t blen;
-    unsigned char *buf = (unsigned char *)duk_get_buffer_data(ctx, -1, &blen);
-    duk_pop(ctx);
-    duk_push_array(ctx);
-    for (duk_uarridx_t i = 0; i < (duk_uarridx_t)blen; i++) {
-        duk_push_array(ctx);
-        duk_push_uint(ctx, i);     duk_put_prop_index(ctx, -2, 0);
-        duk_push_uint(ctx, buf[i]); duk_put_prop_index(ctx, -2, 1);
-        duk_put_prop_index(ctx, -2, i);
-    }
-    return 1;
-}
+/* keys()/values()/entries() are intentionally NOT installed on
+   Buffer.prototype.  Buffer inherits them from %TypedArray%.prototype
+   via the JS polyfill installed below by rp_install_typedarray_methods,
+   which returns spec-compliant iterators (an object with .next() and
+   [Symbol.iterator]).  An earlier C implementation returned plain
+   Arrays — that violated the spec contract and silently broke
+   `for (b of buffer)` (the inherited [Symbol.iterator] calls
+   this.values() and expected a real iterator, not an Array). */
 
 /* ============================================================
  * Buffer.prototype.subarray — returns a Buffer (not bare Uint8Array)
@@ -1296,12 +1263,7 @@ void duk_rp_buffer_init(duk_context *ctx)
     duk_put_prop_string(ctx, -2, "swap64");
     duk_push_c_function(ctx, buf_subarray, 2);
     duk_put_prop_string(ctx, -2, "subarray");
-    duk_push_c_function(ctx, buf_keys, 0);
-    duk_put_prop_string(ctx, -2, "keys");
-    duk_push_c_function(ctx, buf_values, 0);
-    duk_put_prop_string(ctx, -2, "values");
-    duk_push_c_function(ctx, buf_entries, 0);
-    duk_put_prop_string(ctx, -2, "entries");
+    /* keys/values/entries: inherited from %TypedArray%.prototype (iterator-returning). */
     duk_push_c_function(ctx, buf_inspect, 0);
     duk_put_prop_string(ctx, -2, "inspect");
 
@@ -1314,9 +1276,6 @@ void duk_rp_buffer_init(duk_context *ctx)
     duk_rp_set_enum_false(ctx, -1, "swap32");
     duk_rp_set_enum_false(ctx, -1, "swap64");
     duk_rp_set_enum_false(ctx, -1, "subarray");
-    duk_rp_set_enum_false(ctx, -1, "keys");
-    duk_rp_set_enum_false(ctx, -1, "values");
-    duk_rp_set_enum_false(ctx, -1, "entries");
     duk_rp_set_enum_false(ctx, -1, "inspect");
 
     duk_pop(ctx);  /* prototype */
