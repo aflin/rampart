@@ -1857,6 +1857,117 @@ static void append_excluded_key_node(rp_string *excluded_csv, TSNode prop, const
     }
 }
 
+/* Forward decls: defined in the import-rewrite section further down.
+   `_imp_modimp_counter` is process-static within this file; we read it
+   from the export rewriter to compute the modImp index of an already-
+   processed named-import. */
+static TSNode _imp_find_program(TSNode n);
+static uint32_t _imp_modimp_counter;
+
+/* Walk the program for an import_statement whose named_imports
+   contains a binding matching `local` (as alias when present, else
+   as remote name).  The export rewriter fires AFTER the import
+   rewriter on the same dispatch pass, so the modImp counter has
+   already been incremented for every named-imports statement that
+   precedes our export in source order.  We count those preceding
+   imports (K) and compute the matched import's index as
+   `_imp_modimp_counter - (K_before_export - K_within)`.
+
+   Sets *out_idx to the matched import's modImp index and
+   *out_remote_start / *out_remote_end to the REMOTE name source
+   bytes.  Returns 1 on match, 0 otherwise. */
+static int _exp_find_import_binding(TSNode program, TSNode export_node, const char *src,
+                                    const char *binding, size_t binding_len,
+                                    uint32_t *out_idx,
+                                    size_t *out_remote_start,
+                                    size_t *out_remote_end)
+{
+    if (ts_node_is_null(program)) return 0;
+    size_t exp_start = ts_node_start_byte(export_node);
+    uint32_t cn = ts_node_named_child_count(program);
+    /* Two-pass: first count named-imports statements that precede our
+       export, then on a second walk find the matching binding and
+       compute its absolute modImp index. */
+    uint32_t k_before_export = 0;
+    int matched = 0;
+    uint32_t matched_k = 0;
+    size_t matched_rs = 0, matched_re = 0;
+    for (uint32_t i = 0; i < cn; i++)
+    {
+        TSNode stmt = ts_node_named_child(program, i);
+        if (strcmp(ts_node_type(stmt), "import_statement") != 0) continue;
+        TSNode named = {{0}};
+        uint32_t sc = ts_node_named_child_count(stmt);
+        for (uint32_t j = 0; j < sc && ts_node_is_null(named); j++)
+        {
+            TSNode c = ts_node_named_child(stmt, j);
+            if (strcmp(ts_node_type(c), "import_clause") == 0)
+            {
+                uint32_t cc = ts_node_named_child_count(c);
+                for (uint32_t k = 0; k < cc; k++)
+                {
+                    TSNode cc2 = ts_node_named_child(c, k);
+                    if (strcmp(ts_node_type(cc2), "named_imports") == 0) { named = cc2; break; }
+                }
+            }
+            else if (strcmp(ts_node_type(c), "named_imports") == 0)
+            {
+                named = c;
+            }
+        }
+        if (ts_node_is_null(named)) continue;
+        if (ts_node_start_byte(stmt) >= exp_start) break;
+        /* This statement was processed by do_named_imports — its
+           index among preceding statements is k_before_export. */
+        if (!matched)
+        {
+            uint32_t k = ts_node_named_child_count(named);
+            for (uint32_t kk = 0; kk < k; kk++)
+            {
+                TSNode spec = ts_node_named_child(named, kk);
+                if (strcmp(ts_node_type(spec), "import_specifier") != 0) continue;
+                TSNode local = ts_node_child_by_field_name(spec, "name", 4);
+                TSNode alias = ts_node_child_by_field_name(spec, "alias", 5);
+                const char *bind_t = NULL; size_t bind_l = 0;
+                size_t rem_s = 0, rem_e = 0;
+                if (!ts_node_is_null(local))
+                {
+                    rem_s = ts_node_start_byte(local);
+                    rem_e = ts_node_end_byte(local);
+                    if (!ts_node_is_null(alias))
+                    {
+                        bind_t = src + ts_node_start_byte(alias);
+                        bind_l = ts_node_end_byte(alias) - ts_node_start_byte(alias);
+                    }
+                    else
+                    {
+                        bind_t = src + rem_s;
+                        bind_l = rem_e - rem_s;
+                    }
+                }
+                if (bind_l == binding_len && bind_t && memcmp(bind_t, binding, binding_len) == 0)
+                {
+                    matched = 1;
+                    matched_k = k_before_export;
+                    matched_rs = rem_s;
+                    matched_re = rem_e;
+                    break;
+                }
+            }
+        }
+        k_before_export++;
+    }
+    if (!matched) return 0;
+    /* The counter currently sits at (start_of_pass_for_file + k_before_export).
+       Our match is the matched_k-th statement among those preceding.  Its
+       emitted index is start_of_pass_for_file + matched_k
+       = _imp_modimp_counter - k_before_export + matched_k. */
+    *out_idx = _imp_modimp_counter - k_before_export + matched_k;
+    *out_remote_start = matched_rs;
+    *out_remote_end = matched_re;
+    return 1;
+}
+
 /* ============================  export rewriter  ============================ */
 static int rewrite_export_node(EditList *edits, const char *src, TSNode snode, RangeList *claimed, int overlaps)
 {
@@ -2532,8 +2643,31 @@ static int rewrite_export_node(EditList *edits, const char *src, TSNode snode, R
             {
                 rp_string_puts(out, tmp);
                 rp_string_puts(out, ".");
+                rp_string_putsn(out, src + ls, le - ls); /* tmp.prop */
             }
-            rp_string_putsn(out, src + ls, le - ls); /* local or tmp.prop */
+            else
+            {
+                /* Local re-export — if the name is a named-import
+                   binding from this module, emit `_TrN_modImp<N>.<remote>`
+                   so the cross-module live binding survives.  The
+                   import rewriter no longer rewrites identifiers
+                   inside export_specifier (see _imp_rewrite_refs),
+                   so without this lookup the RHS would be an
+                   undefined name. */
+                uint32_t modidx = 0;
+                size_t rstart = 0, rend = 0;
+                if (_exp_find_import_binding(_imp_find_program(snode), snode, src,
+                                             src + ls, le - ls,
+                                             &modidx, &rstart, &rend))
+                {
+                    rp_string_appendf(out, "_TrN_modImp%u.", modidx);
+                    rp_string_putsn(out, src + rstart, rend - rstart);
+                }
+                else
+                {
+                    rp_string_putsn(out, src + ls, le - ls);
+                }
+            }
             rp_string_puts(out, ";");
         }
 
@@ -3034,7 +3168,8 @@ static TSNode _imp_find_program(TSNode n);
 static int do_named_imports(EditList *edits, const char *src, TSNode snode, TSNode named_imports, TSNode string_frag,
                             size_t start, size_t end, RangeList *claimed)
 {
-    static uint32_t tmpn = 0;
+    uint32_t *tmpn_p = &_imp_modimp_counter;
+#define tmpn (*tmpn_p)
     uint32_t pos = 0;
     char buf[32];
 
@@ -3114,6 +3249,7 @@ static int do_named_imports(EditList *edits, const char *src, TSNode snode, TSNo
     out=rp_string_free(out);
 
     tmpn++;
+#undef tmpn
     return 1;
 }
 
@@ -8880,6 +9016,18 @@ static void _imp_rewrite_refs(TSNode node, const char *src,
                          strcmp(pt, "import_clause") == 0 ||
                          strcmp(pt, "named_imports") == 0)
                 {
+                    skip = 1;
+                }
+                else if (strcmp(pt, "export_specifier") == 0)
+                {
+                    /* `export { name }` / `export { name as alias }`:
+                       the rewrite is the export rewriter's job, not
+                       ours.  Rewriting the inner identifier produces
+                       invalid `export { mod.name }` syntax and also
+                       races against rewrite_export_node's own
+                       range-claim.  rewrite_export_node will look up
+                       imports separately and emit the modImp form on
+                       the RHS. */
                     skip = 1;
                 }
                 else if (strcmp(pt, "required_parameter") == 0 ||
