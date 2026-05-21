@@ -2084,6 +2084,19 @@ char *str_rp_to_json_safe(duk_context *ctx, duk_idx_t idx, char *r, int dohidden
     duk_del_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("jsonrefmap"));
     duk_pop(ctx);
 
+    /* Duktape stores JS strings as CESU-8, so duk_json_encode + duk_get_string
+       emit invalid-UTF-8 surrogate-pair bytes (ED A0-BF 80-BF, twice) for any
+       code point above the BMP — emoji and other supplementary-plane chars.
+       Recombine them into proper 4-byte UTF-8 so the output is a valid UTF-8
+       stream for downstream consumers (webview IPC eval, HTTP bodies,
+       terminals, UTF-8-declared files).  The strchr(ret, 0xED) fast-path
+       skips the second allocation entirely for ASCII / Latin-1 / BMP-only
+       payloads, which is the overwhelming common case. */
+    if (ret && strchr(ret, 0xED)) {
+        char *u = to_utf8(ret);
+        free(ret);
+        ret = u;
+    }
     return ret;
 }
 
