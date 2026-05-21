@@ -21,29 +21,10 @@ try{
     sql.exec("drop table test2;");
 }catch(e){}
 
-function testFeature(name,test,error)
-{
-    if (typeof test =='function'){
-        try {
-            test=test();
-        } catch(e) {
-            error=e;
-            test=false;
-        }
-    }
-    //printf("testing(%d) %-58s - ", thread.getId(), name);
-    printf("testing %-60s - ", name);
-    if(test)
-        printf("passed\n")
-    else
-    {
-        printf(">>>>> FAILED <<<<<\n");
-        if(error) printf('%J\n',error);
-        py_cleanup();
-        process.exit(1);
-    }
-    if(error) printf('%J\n',error);
-}
+var testFeature = new (require('./test-feature.js'))({
+    prefix: "python",
+    onFail: function() { py_cleanup(); process.exit(1); }
+});
 
 //var pip=python.import('pip');
 //var res=pip.main({pyType:'list', value:['install', 'Pillow']});
@@ -273,8 +254,10 @@ function copy_to_texis(tbname)
     cursor.execute("select * from test");
     res = cursor.fetchall()
     res = res.toValue();
-    if(res.length != 50)
-        testFeature("python - copy from sqlite to texis tables in two threads", false, `got ${res.length} results`);
+    if(res.length != 50) {
+        printf("got %d results\n", res.length);
+        testFeature("python - copy from sqlite to texis tables in two threads", false);
+    }
     for (i=0;i<res.length;i++) {
         sql.exec(`insert into ${tbname} values(?,?);`,res[i]);
     }
@@ -334,5 +317,6 @@ def trigger():
     mymod.trigger();
 
     py_cleanup();
+    testFeature.exit();
 });
 

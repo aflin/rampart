@@ -5,158 +5,52 @@
    Runs on both Rampart (transpiled) and Node (native).
 
    Known transpiler limitations (ES2015+ → ES5):
-   - const is converted to var and is NOT read-only (no enforcement).
+   - const is converted to var and is NOT read-only (no reassignment
+     enforcement at runtime).
    - let/const at top level become var and attach to the global object.
-   - await inside for/while/do loops does not execute per-iteration.
-     Workaround: move await outside the loop or use Promise.all().
-   - yield inside for/while/do loops is dropped from the output.
-     Workaround: use a manual iteration pattern.
-   - BigInt literals (123n) and BigInt operators are not supported.
-   - Intl (Internationalization API) is not available.
+   - BigInt literals (123n) and BigInt operators are not supported
+     (duktape limitation, not the transpiler).
 */
 
-if(global && global.rampart) {
-    rampart.globalize(rampart.utils);
-    var _nfailed = 0;
-    var _asyncQueue = [];
-    var _asyncRunning = false;
-    var _drainAsync = function() {
-        if (_asyncRunning || _asyncQueue.length === 0) return;
-        _asyncRunning = true;
-        var item = _asyncQueue.shift();
-        item.promise.then(function(result) {
-            printf("testing edge - %-53s - ", item.name);
-            if (result)
-                printf("passed\n");
-            else
-            {
-                printf(">>>>> FAILED <<<<<\n");
-                _nfailed++;
-            }
-            _asyncRunning = false;
-            _drainAsync();
-        }).then(null, function(e) {
-            printf("testing edge - %-53s - ", item.name);
-            printf(">>>>> FAILED <<<<<\n");
-            _nfailed++;
-            console.log(e);
-            _asyncRunning = false;
-            _drainAsync();
-        });
-    };
-    function testFeature(name,test)
-    {
-        var error=false;
-        if (typeof test =='function'){
-            try {
-                test=test();
-            } catch(e) {
-                error=e;
-    console.log(e);
-                test=false;
-            }
-        }
-        if (test && typeof test === 'object' && typeof test.then === 'function') {
-            _asyncQueue.push({name: name, promise: test});
-            _drainAsync();
-            return;
-        }
-        printf("testing edge - %-53s - ", name);
-        if(test)
-            printf("passed\n")
-        else
-        {
-            printf(">>>>> FAILED <<<<<\n");
-            _nfailed++;
-        }
-        if(error) console.log(error);
-    }
-    _TrN_Sp.warnUnhandledPromise=false;
-} else {
-    /* for testing against node */
-    global.printf=function(fmt) {
-      var args = Array.prototype.slice.call(arguments, 1);
-      var i = 0;
+var _baseTestFeature = new (require('./test-feature.js'))({prefix: "edge", allowNode: true});
 
-      var output = fmt.replace(/%(-?)(\d*)s/g, function(match, flag, width) {
-        var arg = (i < args.length) ? args[i++] : "";
-        var str = String(arg);
-        width = parseInt(width, 10) || 0;
-
-        if (width > str.length) {
-          var padding = Array(width - str.length + 1).join(" ");
-          if (flag === "-") {
-            str = str + padding;
-          } else {
-            str = padding + str;
-          }
-        }
-        return str;
-      });
-
-      if (typeof process !== "undefined" && process.stdout && process.stdout.write) {
-        process.stdout.write(output);
-      } else {
-        console.log(output);
-      }
-
-      return output.length;
-    }
-
-    var _asyncQueue = [];
-    var _asyncRunning = false;
-    var _drainAsync = function() {
-        if (_asyncRunning || _asyncQueue.length === 0) return;
-        _asyncRunning = true;
-        var item = _asyncQueue.shift();
-        item.promise.then(function(result) {
-            printf("testing node edge - %-52s - ", item.name);
-            if (result)
-                printf("passed\n");
-            else
-            {
-                printf(">>>>> FAILED <<<<<\n");
-                process.exit(1);
-            }
-            _asyncRunning = false;
-            _drainAsync();
-        }).then(null, function(e) {
-            printf("testing node edge - %-52s - ", item.name);
-            printf(">>>>> FAILED <<<<<\n");
-            console.log(e);
-            process.exit(1);
-        });
-    };
-    var testFeature = function(name,test)
-    {
-        var error=false;
-        if (typeof test =='function'){
-            try {
-                test=test();
-            } catch(e) {
-                error=e;
-    console.log(e);
-                test=false;
-            }
-        }
-        if (test && typeof test === 'object' && typeof test.then === 'function') {
-            _asyncQueue.push({name: name, promise: test});
-            _drainAsync();
-            return;
-        }
-        printf("testing node edge - %-52s - ", name);
-        if(test)
-            printf("passed\n")
-        else
-        {
-            printf(">>>>> FAILED <<<<<\n");
-            if(error) console.log(error);
-            process.exit(1);
-        }
-        if(error) console.log(error);
-    }
-
+if (_baseTestFeature.isRampart) {
+    try { rampart.utils.rmFile(process.scriptPath + '/transpile-edge-test.transpiled.js'); } catch(e) {}
 }
+
+/* Async-aware testFeature: thenable returns get queued and drained. */
+var _asyncQueue = [];
+var _asyncRunning = false;
+function _drainAsync() {
+    if (_asyncRunning || _asyncQueue.length === 0) return;
+    _asyncRunning = true;
+    var item = _asyncQueue.shift();
+    item.promise.then(function(result) {
+        _baseTestFeature(item.name, !!result);
+        _asyncRunning = false;
+        _drainAsync();
+    }).then(null, function(e) {
+        _baseTestFeature(item.name, function(){ throw e; });
+        _asyncRunning = false;
+        _drainAsync();
+    });
+}
+function testFeature(name, test) {
+    if (typeof test === 'function') {
+        try { test = test(); }
+        catch (e) { _baseTestFeature(name, function(){ throw e; }); return; }
+    }
+    if (test && typeof test === 'object' && typeof test.then === 'function') {
+        _asyncQueue.push({name: name, promise: test});
+        _drainAsync();
+        return;
+    }
+    _baseTestFeature(name, !!test);
+}
+testFeature.exit = function() { _baseTestFeature.exit(); };
+/* Silence the "Possible Unhandled Promise Rejection" warning — many
+   edge-case tests intentionally create promises that aren't awaited. */
+if (_baseTestFeature.isRampart) rampart.warnUnhandledPromise = false;
 
 /* ===================================================================
    1. OPTIONAL CHAINING EDGE CASES
@@ -1863,5 +1757,5 @@ try { rampart.utils.rmFile(process.scriptPath + '/transpile-edge-test.transpiled
         setTimeout(waitAndExit, 25);
         return;
     }
-    process.exit(_nfailed ? 1 : 0);
+    testFeature.exit();
 })();

@@ -13,28 +13,7 @@ if (!stat(_cc)) {
     process.exit(0);
 }
 
-var _nfailed = 0;
-
-function testFeature(name,test,error)
-{
-    if (typeof test =='function'){
-        try {
-            test=test();
-        } catch(e) {
-            error=e;
-            test=false;
-        }
-    }
-    printf("testing %-60s - ", name);
-    if(test)
-        printf("passed\n")
-    else
-    {
-        printf(">>>>> FAILED <<<<<\n");
-        _nfailed++;
-    }
-    if(error) console.log(error);
-}
+var testFeature = new (require('./test-feature.js'))({prefix: "cmodule"});
 
 
 var cmodule = require('rampart-cmodule.js');
@@ -273,7 +252,7 @@ var libs = "-lm"
 var countPrimes;
 try {
     countPrimes = cmodule(name, func, supportFuncs, extraFlags, libs);
-    printf("testing %-60s - passed\n", "cmodule compile");
+    testFeature("cmodule compile", true);
 } catch(e) {
     fprintf(stderr, "C module compilation failed: %s\nSKIPPING CMODULE TESTS\n", e.message || e);
     cleanup();
@@ -302,4 +281,4 @@ testFeature(rampart.utils.sprintf("cmodule timing %s < %s", ctimestr, jstimestr)
 
 cleanup();
 
-process.exit(_nfailed ? 1 : 0);
+testFeature.exit();

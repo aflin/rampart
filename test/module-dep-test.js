@@ -5,7 +5,7 @@ rampart.globalize(rampart.utils);
 var server = require("rampart-server");
 var curl = require("rampart-curl");
 
-var nfailed = 0;
+var testFeature = new (require('./test-feature.js'))({prefix: "module-deps"});
 var server_pid = 0;
 
 var iam = trim(exec('whoami').stdout);
@@ -26,20 +26,6 @@ function cleanup() {
     shell("rm -rf " + moddir);
 }
 
-function testFeature(name, test) {
-    var error = false;
-    if (typeof test == 'function') {
-        try { test = test(); } catch(e) { error = e; test = false; }
-    }
-    printf("testing module-deps - %-46s - ", name);
-    if (test)
-        printf("passed\n");
-    else {
-        nfailed++;
-        printf(">>>>> FAILED <<<<<\n");
-        if (error) console.log(error);
-    }
-}
 
 /* ===== Setup: create temp modules ===== */
 
@@ -205,4 +191,4 @@ testFeature("server detects second dep change", function() {
 /* ===== Cleanup ===== */
 cleanup();
 
-process.exit(nfailed ? 1 : 0);
+testFeature.exit();

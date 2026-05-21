@@ -10,32 +10,10 @@
    - `this` preservation via .call(this, ...)
    - Labeled break / `arguments` fall through to no-wrap (limitations) */
 
-if (global && global.rampart) {
-    rampart.globalize(rampart.utils);
-    var _nfailed = 0;
-    function testFeature(name, test) {
-        var error = false;
-        if (typeof test == 'function') {
-            try { test = test(); }
-            catch (e) { error = e; test = false; }
-        }
-        printf("testing for-loop scope - %-46s - ", name);
-        if (test) printf("passed\n");
-        else { printf(">>>>> FAILED <<<<<\n"); _nfailed++; }
-        if (error) console.log(error);
-    }
-} else {
-    var testFeature = function (name, test) {
-        var error = false;
-        if (typeof test == 'function') {
-            try { test = test(); }
-            catch (e) { error = e; test = false; }
-        }
-        process.stdout.write("testing node ES2015+ - " + name + " - ");
-        if (test) process.stdout.write("passed\n");
-        else { process.stdout.write(">>>>> FAILED <<<<<\n"); if (error) console.log(error); process.exit(1); }
-    };
-    global.printf = function() {};
+var testFeature = new (require('./test-feature.js'))({prefix: "for-loop scope", allowNode: true});
+
+if (testFeature.isRampart) {
+    try { rampart.utils.rmFile(process.scriptPath + '/transpile-forloop-scope-test.transpiled.js'); } catch(e) {}
 }
 
 /* ---------------- No captures: simple let bodies ---------------- */
@@ -487,7 +465,7 @@ testFeature("nested for-let, return undefined crosses two wraps", function () {
     return fn() === undefined;
 });
 
-if (global && global.rampart) {
+if (testFeature.isRampart) {
     try { rampart.utils.rmFile(process.scriptPath + '/transpile-forloop-scope-test.transpiled.js'); } catch (e) {}
-    process.exit(_nfailed ? 1 : 0);
 }
+testFeature.exit();

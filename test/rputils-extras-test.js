@@ -36,31 +36,7 @@ chdir(process.scriptPath);
 var tmpdir = process.scriptPath + '/tmp-extras-test';
 if (!stat(tmpdir)) mkdir(tmpdir);
 
-var _nfailed = 0;
-
-function testFeature(name, test)
-{
-    var error = false;
-    if (typeof test == 'function') {
-        try {
-            test = test();
-        } catch (e) {
-            error = e;
-            test = false;
-        }
-    }
-    printf("testing utils - %-52s - ", name);
-    if (test)
-        if (typeof test == 'string')
-            printf("%s\n", test);
-        else
-            printf("passed\n");
-    else {
-        printf(">>>>> FAILED <<<<<\n");
-        _nfailed++;
-    }
-    if (error) console.log(error);
-}
+var testFeature = new (require('./test-feature.js'))({prefix: "utils"});
 
 /* ============================================================
  * Phase 1 -- path-based primitives
@@ -804,5 +780,5 @@ testFeature("console.table / group / clear present", function() {
 
 try { rmdir(tmpdir); } catch (e) {} /* remove if empty */
 
-process.exit(_nfailed ? 1 : 0);
+testFeature.exit();
 //lastline

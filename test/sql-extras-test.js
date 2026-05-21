@@ -21,30 +21,7 @@ var stringFormat=Sql.stringFormat;
 rampart.globalize(Sql);
 
 
-var _nfailed = 0;
-
-function testFeature(name,test)
-{
-    var error=false;
-    printf("testing sql extras - %-47s - ", name);
-    fflush(stdout);
-    if (typeof test =='function'){
-        try {
-            test=test();
-        } catch(e) {
-            error=e;
-            test=false;
-        }
-    }
-    if(test)
-        printf("passed\n")
-    else
-    {
-        printf(">>>>> FAILED <<<<<\n");
-        _nfailed++;
-    }
-    if(error) console.log(error);
-}
+var testFeature = new (require('./test-feature.js'))({prefix: "sql extras"});
 
 
 
@@ -287,7 +264,7 @@ testFeature("rex - with callback and cancel", function() {
 testFeature("rexfile - basic", function() {
   var res=rexFile(">>function=[^\n]+",process.scriptPath+"/sql-extras-test.js");
   //console.log(res.length);
-  return res.length == 38;
+  return res.length == 36;
 });
 
 
@@ -329,4 +306,4 @@ testFeature("re2file - full record(re2 is slow)", function() {
   return 15084 == sum;
 });
 
-process.exit(_nfailed ? 1 : 0);
+testFeature.exit();

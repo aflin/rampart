@@ -42,31 +42,15 @@ function cleanup() {
     try { rmFile(tmpdir+"/thread-test-elog"); } catch(e) {}
 }
 
-function testFeature(name,test,error)
-{
-    if (typeof test =='function'){
-        try {
-            test=test();
-        } catch(e) {
-            error=e;
-            test=false;
-        }
-    }
-    //printf("testing(%d) %-58s - ", thread.getId(), name);
-    printf("testing %-60s - ", name);
-    if(test)
-        printf("passed\n")
-    else
-    {
-        printf(">>>>> FAILED <<<<<\n");
-        if(error) printf('%J\n',error);
-        var pid = thread.get("server_pid",1000);
-        if(pid) kill_server(pid);
+var testFeature = new (require('./test-feature.js'))({
+    prefix: "thread",
+    onFail: function() {
+        var pid = thread.get("server_pid", 1000);
+        if (pid) kill_server(pid);
         cleanup();
         process.exit(1);
     }
-    if(error) printf('%J\n',error);
-}
+});
 
 testFeature("thread - Open test lmdb database env in main thread", function() {
     lmdb= new Lmdb.init(
@@ -489,5 +473,6 @@ var iv=setInterval(function(){
         testFeature("thread - wait for exit while events pending", true);
         clearInterval(iv);
         cleanup();
+        testFeature.exit();
     }
 },100);

@@ -3,29 +3,11 @@ rampart.globalize(rampart.utils);
 
 var net = require("rampart-net");
 
-function testFeature(name,test)
-{
-    var error=false;
-    printf("testing net - %-54s - ", name);
-    fflush(stdout);
-    if (typeof test =='function'){
-        try {
-            test=test();
-        } catch(e) {
-            error=e;
-            test=false;
-        }
-    }
-    if(test)
-        printf("passed\n")
-    else
-    {
-        printf(">>>>> FAILED <<<<<\n");
-        if(error) console.log(error);
-        process.exit(1);
-    }
-    if(error) console.log(error);
-}
+/* net-test bails on first failure (later tests depend on the server). */
+var testFeature = new (require('./test-feature.js'))({
+    prefix: "net",
+    onFail: function() { process.exit(1); }
+});
 
 
 var listeningcb=false;

@@ -1,33 +1,7 @@
-/* make printf et. al. global */
-rampart.globalize(rampart.utils);
+var testFeature = new (require('./test-feature.js'))({prefix: "cmark"});
 
 var cmark = require("rampart-cmark");
 var html  = require("rampart-html");
-
-var _nfailed = 0;
-
-function testFeature(name,test)
-{
-    var error=false;
-    printf("testing %-60s - ", name);
-    fflush(stdout);
-    if (typeof test =='function'){
-        try {
-            test=test();
-        } catch(e) {
-            error=e;
-            test=false;
-        }
-    }
-    if(test)
-        printf("passed\n")
-    else
-    {
-        printf(">>>>> FAILED <<<<<\n");
-        _nfailed++;
-    }
-    if(error) console.log(error);
-}
 
 
 testFeature("Cmark - Basic Functionality - H1", function() {
@@ -473,4 +447,4 @@ testFeature("Html - destroy invalidates dependent Html Objs", function(){
   return ret;
 });
 
-process.exit(_nfailed ? 1 : 0);
+testFeature.exit();

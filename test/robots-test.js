@@ -2,37 +2,12 @@ var robots=require("rampart-robots");
 
 /* this is mostly a copy and paste of robots_test.cc */
 
+var testFeature = new (require('./test-feature.js'))({prefix: "robots"});
 var x=1;
 var name="";
 
-var npass=0;
-var nfail=0;
-var total=0;
-
-function expect_true(b)
-{
-    total++;
-    rampart.utils.printf("testing robots - #%2d %-47s - ", x++, name + " Test");
-    if(b==true){
-      console.log("passed");
-      npass++;
-    } else {
-      console.log(">>>>> FAILED <<<<<");
-      nfail++;
-    }
-}
-function expect_false(b)
-{
-    total++;
-    rampart.utils.printf("testing robots - #%2d %-47s - ", x++, name + " Test");
-    if(b==false) {
-      console.log("passed");
-      npass++;
-    } else {
-      console.log(">>>>> FAILED <<<<<");
-      nfail++;
-    }
-}
+function expect_true(b)  { testFeature(rampart.utils.sprintf("#%2d %s Test", x++, name), b == true); }
+function expect_false(b) { testFeature(rampart.utils.sprintf("#%2d %s Test", x++, name), b == false); }
 
 function IsUserAgentAllowed(robotstxt, bot, url) {
   return robots.isAllowed(bot, robotstxt, url);
@@ -731,4 +706,4 @@ htmldirtest();
 lengthlimittest();
 googlespecstest();
 
-process.exit(nfail ? 1 : 0);
+testFeature.exit();

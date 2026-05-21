@@ -31,32 +31,10 @@ function do_cleanup() {
     rmFile(tmpdir + '/ws-proxy-test-proxy-elog');
 }
 
-var nfailed = 0;
-
-function testFeature(name, test)
-{
-    var error = false;
-    if (typeof test == 'function') {
-        try {
-            test = test();
-        } catch(e) {
-            error = e;
-            test = false;
-        }
-    }
-    printf("testing ws-proxy - %-49s - ", name);
-    if (test)
-        printf("passed\n");
-    else
-    {
-        nfailed++;
-        printf(">>>>> FAILED <<<<<\n");
-        if (error) console.log(error);
-        do_cleanup();
-        process.exit(1);
-    }
-    if (error) console.log(error);
-}
+var testFeature = new (require('./test-feature.js'))({
+    prefix: "ws-proxy",
+    onFail: function() { do_cleanup(); process.exit(1); }
+});
 
 /* *** Start upstream server on port 8100 with a WebSocket echo endpoint *** */
 upstream_pid = server.start({
@@ -419,7 +397,7 @@ function finish_tests() {
 
     clearTimeout(safety_timer);
     do_cleanup();
-    process.exit(nfailed ? 1 : 0);
+    testFeature.exit();
 }
 
 /* kick off the async tests: direct -> proxy -> multi -> finish */

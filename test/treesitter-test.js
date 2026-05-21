@@ -16,29 +16,7 @@
 rampart.globalize(rampart.utils);
 var ts = require('rampart-treesitter');
 
-var _nfailed = 0;
-
-function testFeature(name, test)
-{
-    var error = false;
-    printf("testing treesitter - %-47s - ", name);
-    fflush(stdout);
-    if (typeof test == 'function') {
-        try {
-            test = test();
-        } catch(e) {
-            error = e;
-            test = false;
-        }
-    }
-    if (test)
-        printf("passed\n");
-    else {
-        printf(">>>>> FAILED <<<<<\n");
-        _nfailed++;
-    }
-    if (error) console.log(error);
-}
+var testFeature = new (require('./test-feature.js'))({prefix: "treesitter"});
 
 var SAMPLES_DIR = process.scriptPath + '/treesitter-tests';
 
@@ -759,4 +737,4 @@ testFeature("css: 11 symbols (selectors, @keyframes)", function() {
                          expected_css);
 });
 
-process.exit(_nfailed ? 1 : 0);
+testFeature.exit();

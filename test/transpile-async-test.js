@@ -13,8 +13,12 @@ var _hasShell = !!stat('/bin/bash');
    Test harness
    =================================================================== */
 
+var _baseTestFeature = new (require('./test-feature.js'))({prefix: "async"});
+
+/* Drop stale .transpiled.js so we always test fresh transpiler output. */
+try { rampart.utils.rmFile(process.scriptPath + '/transpile-async-test.transpiled.js'); } catch(e) {}
+
 // Async-aware testFeature: supports both sync booleans and Promises
-var _nfailed = 0;
 var _testQueue = [];
 var _testRunning = false;
 
@@ -23,18 +27,11 @@ function testFeature(name, test) {
         try { test = test(); } catch(e) { test = false; }
     }
     if (test && typeof test === 'object' && typeof test.then === 'function') {
-        // Promise — queue it
         _testQueue.push({ name: name, promise: test });
         _drainTests();
         return;
     }
-    printf("testing async - %-52s - ", name);
-    if (test)
-        printf("passed\n");
-    else {
-        printf(">>>>> FAILED <<<<<\n");
-        _nfailed++;
-    }
+    _baseTestFeature(name, !!test);
 }
 
 function _drainTests() {
@@ -42,24 +39,16 @@ function _drainTests() {
     _testRunning = true;
     var item = _testQueue.shift();
     item.promise.then(function(result) {
-        printf("testing async - %-52s - ", item.name);
-        if (result)
-            printf("passed\n");
-        else {
-            printf(">>>>> FAILED <<<<<\n");
-            _nfailed++;
-        }
+        _baseTestFeature(item.name, !!result);
         _testRunning = false;
         _drainTests();
     })['catch'](function(err) {
-        printf("testing async - %-52s - ", item.name);
-        printf(">>>>> FAILED <<<<<\n");
-        _nfailed++;
-        console.log(err);
+        _baseTestFeature(item.name, function(){ throw err; });
         _testRunning = false;
         _drainTests();
     });
 }
+testFeature.exit = function() { _baseTestFeature.exit(); };
 
 /* ===================================================================
    Redis server management
@@ -307,7 +296,7 @@ async function main() {
     await redisTests(rcl);
 
     cleanup();
-    process.exit(_nfailed ? 1 : 0);
+    testFeature.exit();
 }
 
 main();

@@ -32,32 +32,10 @@ function cleanup() {
     rmFile(tmpdir + '/proxy-thread-test-proxy-elog');
 }
 
-var nfailed = 0;
-
-function testFeature(name, test)
-{
-    var error = false;
-    if (typeof test == 'function') {
-        try {
-            test = test();
-        } catch(e) {
-            error = e;
-            test = false;
-        }
-    }
-    printf("testing proxy-thr- %-49s - ", name);
-    if (test)
-        printf("passed\n");
-    else
-    {
-        nfailed++;
-        printf(">>>>> FAILED <<<<<\n");
-        if (error) console.log(error);
-        cleanup();
-        process.exit(1);
-    }
-    if (error) console.log(error);
-}
+var testFeature = new (require('./test-feature.js'))({
+    prefix: "proxy-thr",
+    onFail: function() { cleanup(); process.exit(1); }
+});
 
 /* *** Upstream server on port 8102 *** */
 upstream_pid = server.start({
@@ -173,4 +151,4 @@ testFeature("JS route works after slow request completes", function() {
 });
 
 cleanup();
-process.exit(nfailed ? 1 : 0);
+testFeature.exit();

@@ -30,29 +30,10 @@ function cleanup() {
     rmFile(tmpdir + '/proxy-test-proxy-elog');
 }
 
-function testFeature(name, test)
-{
-    var error = false;
-    if (typeof test == 'function') {
-        try {
-            test = test();
-        } catch(e) {
-            error = e;
-            test = false;
-        }
-    }
-    printf("testing proxy    - %-49s - ", name);
-    if (test)
-        printf("passed\n");
-    else
-    {
-        printf(">>>>> FAILED <<<<<\n");
-        if (error) console.log(error);
-        cleanup();
-        process.exit(1);
-    }
-    if (error) console.log(error);
-}
+var testFeature = new (require('./test-feature.js'))({
+    prefix: "proxy",
+    onFail: function() { cleanup(); process.exit(1); }
+});
 
 /* *** Start upstream server on port 8060 *** */
 upstream_pid = server.start({

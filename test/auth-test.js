@@ -36,31 +36,12 @@ function cleanup() {
     shell("rm -rf " + tmpdir);
 }
 
-var ntest = 0;
-var npass = 0;
-function testFeature(name, test) {
-    var error = false;
-    ntest++;
-    printf("testing auth - %-53s - ", name);
-    fflush(stdout);
-    if (typeof test == 'function') {
-        try {
-            test = test();
-        } catch(e) {
-            error = e;
-            test = false;
-        }
-    }
-    if (test) {
-        npass++;
-        printf("passed\n");
-    } else {
-        printf(">>>>> FAILED <<<<<\n");
-        if (error) console.log(error);
-        cleanup();
-        process.exit(1);
-    }
-}
+/* auth-test bails on first failure — a hard server start failure
+   invalidates the rest of the suite. */
+var testFeature = new (require('./test-feature.js'))({
+    prefix: "auth",
+    onFail: function() { cleanup(); process.exit(1); }
+});
 
 /* create directory structure */
 shell("rm -rf " + tmpdir);
@@ -693,5 +674,5 @@ testFeature("3p: return true, req.userAuth set", function() {
 kill_server(pid2);
 
 /* ---- done ---- */
-printf("\n%d/%d tests passed.\n", npass, ntest);
 cleanup();
+testFeature.exit();

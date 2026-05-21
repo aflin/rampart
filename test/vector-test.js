@@ -3,38 +3,23 @@ rampart.globalize(rampart.utils);
 var tmpdir = process.scriptPath + '/tmp-test';
 if (!stat(tmpdir)) mkdir(tmpdir);
 
-var ttype = "vector";
 var rawvec = rampart.vector.raw;
-var _nfailed = 0;
-
-function testFeature(name,test)
-{
-    var error=false;
-
-    if (typeof test =='function'){
-        try {
-            test=test();
-        } catch(e) {
-            error=e;
-            test=false;
-        }
+/* vector-test allows a test to return `{result, text}` so a diagnostic
+   string can be appended to the name.  We coerce that shape into a
+   plain pass/fail before handing it to the harness. */
+var _baseTestFeature = new (require('./test-feature.js'))({prefix: "vector"});
+function testFeature(name, test) {
+    if (typeof test === 'function') {
+        try { test = test(); }
+        catch (e) { _baseTestFeature(name, function(){ throw e; }); return; }
     }
-
-    if(getType(test) == 'Object')
-    {
-        if(typeof test.text == 'string')
-            name += ' ' + test.text;
+    if (getType(test) === 'Object') {
+        if (typeof test.text === 'string') name += ' ' + test.text;
         test = test.result;
     }
-
-    if(test) {
-        printf(`testing ${ttype} - %-51s - passed\n`, name);
-    } else {
-        printf(`testing ${ttype} - %-51s - >>>>> FAILED <<<<<\n`, name);
-        _nfailed++;
-    }
-    if(error) console.log(error);
+    _baseTestFeature(name, test);
 }
+testFeature.exit = function() { _baseTestFeature.exit(); };
 
 function dotests(main) {
     var pref="";
@@ -1561,7 +1546,7 @@ dosqltests(true);
 
 shell("rm -rf " + tmpdir + "/vdb");
 try { rmdir(tmpdir); } catch(e) {}
-process.exit(_nfailed ? 1 : 0);
+testFeature.exit();
 // pretty much unnecessary:
 
 // repeat tests in a thread:

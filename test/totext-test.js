@@ -4,28 +4,7 @@ rampart.globalize(rampart.utils);
 var totext = require("rampart-totext");
 var testdir = process.scriptPath + "/convtest/";
 
-var _nfailed = 0;
-
-function testFeature(name,test,error)
-{
-    if (typeof test =='function'){
-        try {
-            test=test();
-        } catch(e) {
-            error=e;
-            test=false;
-        }
-    }
-    printf("testing %-60s - ", name);
-    if(test)
-        printf("passed\n")
-    else
-    {
-        printf(">>>>> FAILED <<<<<\n");
-        _nfailed++;
-    }
-    if(error) console.log(error);
-}
+var testFeature = new (require('./test-feature.js'))({prefix: "totext"});
 
 /* ---- identification tests ---- */
 var expected = {
@@ -94,8 +73,8 @@ var ext_tool_tests = {
 
 function skipOrTest(name, file, fn) {
     var ext = ext_tool_tests[file];
-    if(ext && !ext.available) {
-        printf("testing %-60s - %s\n", name, ext.msg);
+    if (ext && !ext.available) {
+        testFeature.skip(name, ext.msg);
         return;
     }
     testFeature(name, fn);
@@ -250,4 +229,4 @@ testFeature("convertFile() without details returns string", function(){
     return typeof ret === 'string';
 });
 
-process.exit(_nfailed ? 1 : 0);
+testFeature.exit();

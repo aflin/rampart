@@ -14,32 +14,9 @@ function cleanup() {
     try { rmFile(sampleKey); } catch(e) {}
 }
 
+var testFeature = new (require('./test-feature.js'))({prefix: "crypto"});
+
 testmodes();
-
-var _nfailed = 0;
-
-function testFeature(name,test)
-{
-    var error=false;
-    rampart.utils.printf("testing crypto - %-51s - ", name);
-    fflush(stdout);
-    if (typeof test =='function'){
-        try {
-            test=test();
-        } catch(e) {
-            error=e;
-            test=false;
-        }
-    }
-    if(test)
-        rampart.utils.printf("passed\n")
-    else
-    {
-        rampart.utils.printf(">>>>> FAILED <<<<<\n");
-        _nfailed++;
-    }
-    if(error) console.log(error);
-}
 
 var hashes = [
 "2aae6c35c94fcfb415dbe95f408b9ce91ee846ed", "2f05477fc24bb4faefd86517156dafdecec45b8ad3cf2522a563582b", "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9", "fdbd8e75a67f29f701a4e040385e2e23986303ea10239211af907fcbb83578b3e417cb71ce646efd0819dd8c088de1bd", "309ecc489c12d6eb4cc40f50c902f2b4d0ed77ee511a7c7a9bcd3ca86d4cd86f989dd35bc5ff499670da34255b45b0cfd830e81f605dcf7dc5542e93ae9cd76f", "aa010fbc1d14c795d86ef98c95479d17", "5eb63bbbe01eeed093cb22bb8f5acdc3", "dfb7f18c77e928bb56faeb2da27291bd790bc1045cde45f3210bb6c5", "644bcc7e564373040999aac89e7622f3ca71fba1d972fd94a31c3bfbf24e3938", "83bff28dde1b1bf5810071c6643c08e5b05bdb836effd70b403ea8ea0a634dc4997eb1053aa3593f590f9c63630dd90b", "840006653e9ac9e95117a15c915caab81662918e925de9e004f774ff82d7079a40d4d27b1b372657c61d46d470304c88c788b3a4527ad074d1dccbee5dbaa99a", "021ced8799296ceca557832ab941a50b4a11f83478cf141f51f933f653ab9fbcc05a037cddbed06e309bf334942c4e58cdf1a46e237911ccd7fcf9787cbc7fd0", "9aec6806794561107e594b1f6a8a6b0c92a0cba9acf5e5e93cca06f781813b0b", "9ce411cc3449bf73a54568d783b5900d", "98c615784ccb5fe5936fbc0cbe9dfdb408d92f0f", "22e0d52336f64a998085078b05a6e37b26f8120f43bf4db4c43a64ee", "0ac561fac838104e3f2e4ad107b4bee3e938bf15f2b15f009ccccd61a913f017", "3a9159f071e4dd1c8c4f968607c30942", "369771bb2cb9d2b04c1d54cca487e372d9f187f73f7ba3f65b95c8ee7798c527", "44f0061e69fa6fdfc290c494654a05dc0c053da7e5c52b84ef93a9d67d3fff88"
@@ -914,30 +891,16 @@ function testmodes()
   var pass=";lkjhgfdsaqwer";
   for (i=0;i<mcodes.length;i++)
   {
-    printf("testing crypto cypher modes - %-38s - ",modes[mcodes[i]]);
-    try{
-      encBuffer = crypto.encrypt({
-        pass: pass,
-        cipher: mcodes[i],
-        data: plaintext
-      });
-
-      decBuffer = crypto.decrypt({
-        pass: pass,
-        cipher: mcodes[i],
-        data: encBuffer,
-      });
+    var modeName = modes[mcodes[i]];
+    var encBuffer, decBuffer;
+    try {
+      encBuffer = crypto.encrypt({pass: pass, cipher: mcodes[i], data: plaintext});
+      decBuffer = crypto.decrypt({pass: pass, cipher: mcodes[i], data: encBuffer});
     } catch(e) {
-      printf(">>>>> UNSUPPORTED <<<<<\n");
+      testFeature.skip("cipher " + modeName, "unsupported");
       continue;
     }
-      
-    if(plaintext==bufferToString(decBuffer))
-      printf("passed\n");
-    else {
-      printf(">>>>> FAILED <<<<<\n");
-      _nfailed++;
-    }
+    testFeature("cipher " + modeName, plaintext == bufferToString(decBuffer));
   }
 }
 
@@ -949,11 +912,7 @@ function testmodes()
  *   { returnType: 'hex' | 'uint8array' | 'buffer' }
  * --------------------------------------------------------------- */
 function tagOf(v) { return Object.prototype.toString.call(v); }
-function runRTtest(name, got, want) {
-    printf("testing crypto - %-46s - ", name);
-    if(got === want) printf("passed\n");
-    else { printf(">>>>> FAILED <<<<< got %s want %s\n", got, want); _nfailed++; }
-}
+function runRTtest(name, got, want) { testFeature(name, got === want); }
 
 /* hash — verify each return shape */
 runRTtest("hash default → string",        tagOf(crypto.hash(Buffer.from('hi'), 'sha256')),          '[object String]');
@@ -981,4 +940,4 @@ var asHex    = crypto.hash(Buffer.from('round-trip'), 'sha256');
 runRTtest("hash buffer.toString(hex) === hash hex", asBuffer.toString('hex'), asHex);
 
 cleanup();
-process.exit(_nfailed ? 1 : 0);
+testFeature.exit();

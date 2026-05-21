@@ -7,90 +7,16 @@
        rampart  intl-test.js
        node     intl-test.js
 
-   The runtime is auto-detected via `global.rampart`.  When running
-   under node, we shim the few rampart-globals the harness needs
-   (printf/fflush/stdout). */
-var _isRampart = (typeof rampart !== 'undefined' && rampart && rampart.utils);
-
-if (_isRampart) {
-    rampart.globalize(rampart.utils);
-} else {
-    /* Minimal printf shim.  We only use %s, %d, %j, %%, with optional
-       width (%-NNs / %NNs). */
-    global.stdout = process.stdout;
-    global.fflush = function(/* stream */) { /* node writes are sync */ };
-    global.printf = function(fmt) {
-        var args = Array.prototype.slice.call(arguments, 1);
-        var out = String(fmt).replace(/%(-?\d*)([sdj%])/g, function(m, w, t) {
-            if (t === '%') return '%';
-            var v = args.shift();
-            var s;
-            if (t === 'j')      s = JSON.stringify(v);
-            else if (t === 'd') s = String(Math.trunc(Number(v)));
-            else                s = String(v);
-            var pad = w ? parseInt(w, 10) : 0;
-            if (pad < 0) {
-                pad = -pad;
-                while (s.length < pad) s += ' ';
-            } else if (pad > 0) {
-                while (s.length < pad) s = ' ' + s;
-            }
-            return s;
-        });
-        process.stdout.write(out);
-    };
-}
-
-var _runtimeLabel = _isRampart ? 'intl' : 'node';
-var _nfailed = 0;
-
-/* Match the "passed" column of sql/auth/redis (col 72): prefix
-   "testing intl - " (15) + name(%-53s) + " - " = 71, then "passed". */
-function testFeature(name, test)
-{
-    var err = null;
-    var ok = false;
-    try {
-        var r = test();
-        ok = (r === undefined || r === true);
-    } catch (e) {
-        err = e;
-    }
-    printf("testing %s - %-53s - ", _runtimeLabel, name);
-    if (ok)
-        printf("passed\n");
-    else {
-        printf(">>>>> FAILED <<<<<\n");
-        if (err) printf("    %s\n", (err && err.message) || String(err));
-        _nfailed++;
-    }
-}
-
-function must(cond, label) {
-    if (!cond) throw new Error(label);
-}
-function mustEq(got, want, label) {
-    if (got !== want) {
-        if (typeof got === 'object' && typeof want === 'object'
-            && JSON.stringify(got) === JSON.stringify(want)) return;
-        throw new Error(label + ': got ' + JSON.stringify(got)
-                              + ', want ' + JSON.stringify(want));
-    }
-}
-function mustThrow(fn, ctor, label) {
-    if (typeof ctor === 'string') { label = ctor; ctor = null; }
-    var threw = false, got = null;
-    try { fn(); } catch (e) { threw = true; got = e; }
-    if (!threw) throw new Error(label + ': no throw');
-    if (ctor && !(got instanceof ctor))
-        throw new Error(label + ': wrong error type: ' + (got && got.name));
-}
-/* Lenient contains-check for output strings whose exact format may
-   differ between rampart's CLDR build and node's. */
-function mustContain(haystack, needle, label) {
-    if (String(haystack).indexOf(needle) < 0)
-        throw new Error(label + ': "' + haystack + '" missing "' + needle + '"');
-}
+   The shared test-feature harness handles the runtime shims, label,
+   layout, and assertion helpers. */
+var testFeature = new (require('./test-feature.js'))({
+    prefix:    "intl",
+    allowNode: true
+});
+var must         = testFeature.must;
+var mustEq       = testFeature.mustEq;
+var mustThrow    = testFeature.mustThrow;
+var mustContain  = testFeature.mustContain;
 
 /* ============================================================
  * Intl namespace + getCanonicalLocales
@@ -604,15 +530,5 @@ testFeature("Cross-locale - number formatting in fr/de/ja", function() {
     mustContain(ja, "12",  "ja digits");
 });
 
-/* ============================================================
- * Summary
- * ============================================================ */
-
-if (_isRampart) {
-    /* rampart sets process.exit semantics via process module if needed */
-    if (typeof process !== 'undefined' && process.exit)
-        process.exit(_nfailed ? 1 : 0);
-} else {
-    process.exit(_nfailed ? 1 : 0);
-}
+testFeature.exit();
 //lastline

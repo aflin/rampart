@@ -30,17 +30,7 @@ function rm_rf_dir(path) {
     try { rmdir(path); } catch(e) {}
 }
 
-var _nfailed = 0;
-function testFeature(name, test) {
-    var error = false;
-    if (typeof test == 'function') {
-        try { test = test(); } catch (e) { error = e; test = false; }
-    }
-    printf("testing vector - %-54s - ", name);
-    if (test) printf("passed\n");
-    else      { printf(">>>>> FAILED <<<<<\n"); _nfailed++; }
-    if (error) console.log(error);
-}
+var testFeature = new (require('./test-feature.js'))({prefix: "vector"});
 
 /* Convenience: build a unit-norm vector of given dim with seeded values
  * derived from the integer id so they're reproducible. */
@@ -462,8 +452,7 @@ try {
 
 if (!_ivfpqAvailable) {
     printf("Skipping IVFPQ test cases on 32-bit ARM (FAISS unsupported upstream)\n");
-    if (_nfailed > 0) process.exit(1);
-    process.exit(0);
+    testFeature.exit();
 }
 
 /* Drop any prior IVFPQ test table from a re-run. */
@@ -940,20 +929,15 @@ function finishAll() {
         s2.close();
     }
 
-    printf("testing vector - %-54s - ", hnsw_name);
-    if (hnsw_pass) printf("passed\n");
-    else { printf(">>>>> FAILED <<<<<\n"); _nfailed++; }
+    testFeature(hnsw_name,  hnsw_pass);
     if (hnsw_diag) printf("  %s\n", hnsw_diag);
-
-    printf("testing vector - %-54s - ", ivfpq_name);
-    if (ivfpq_pass) printf("passed\n");
-    else { printf(">>>>> FAILED <<<<<\n"); _nfailed++; }
+    testFeature(ivfpq_name, ivfpq_pass);
     if (ivfpq_diag) printf("  %s\n", ivfpq_diag);
 
     if (verify_err) console.log(verify_err);
 
     rm_rf_dir(tmpdir);
-    process.exit(_nfailed ? 1 : 0);
+    testFeature.exit();
 }
 
 /* Keep thread refs at module scope so they aren't GC'd. */

@@ -25,15 +25,8 @@
      * rampart.include(":zip:/...")
 */
 
-rampart.globalize(rampart.utils);
-
-var _nfailed = 0;
-function check(name, ok)
-{
-    printf("testing bundle  - %-50s - ", name);
-    if (ok) printf("passed\n");
-    else { printf(">>>>> FAILED <<<<<\n"); _nfailed++; }
-}
+var testFeature = new (require('./test-feature.js'))({prefix: "bundle"});
+function check(name, ok) { testFeature(name, ok); }
 
 /* ---- locate the rampart binary ---------------------------------- */
 
@@ -238,7 +231,4 @@ function cleanup()
 
 cleanup();
 
-printf("\nbundle tests complete: ");
-if (_nfailed) printf("%d FAILED\n", _nfailed);
-else          printf("all passed\n");
-process.exit(_nfailed ? 1 : 0);
+testFeature.exit();

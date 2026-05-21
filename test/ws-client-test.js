@@ -15,7 +15,10 @@ if (!stat(tmpdir)) mkdir(tmpdir);
 
 var server_pid = 0;
 var ssl_server_pid = 0;
-var nfailed = 0;
+var testFeature = new (require('./test-feature.js'))({
+    prefix: "ws-client",
+    onFail: function() { do_cleanup(); process.exit(1); }
+});
 
 function kill_server(pid) {
     if (!kill(pid, 0)) return;
@@ -42,28 +45,6 @@ function do_cleanup() {
     } catch(e){}
 }
 
-function testFeature(name, test) {
-    var error = false;
-    if (typeof test == 'function') {
-        try {
-            test = test();
-        } catch(e) {
-            error = e;
-            test = false;
-        }
-    }
-    printf("testing ws-client- %-49s - ", name);
-    if (test)
-        printf("passed\n");
-    else {
-        nfailed++;
-        printf(">>>>> FAILED <<<<<\n");
-        if (error) console.log(error);
-        do_cleanup();
-        process.exit(1);
-    }
-    if (error) console.log(error);
-}
 
 /* *** WebSocket endpoint handlers (shared by both servers) *** */
 var ws_map = {
@@ -655,7 +636,7 @@ run_test_suite("ws://127.0.0.1:8110", "ws", false, function() {
 
         clearTimeout(safety_timer);
         do_cleanup();
-        process.exit(nfailed ? 1 : 0);
+        testFeature.exit();
     });
 });
 

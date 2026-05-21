@@ -1,4 +1,4 @@
-rampart.globalize(rampart.utils);
+var testFeature = new (require('./test-feature.js'))({prefix: "almanac"});
 
 var almanac;
 try {
@@ -6,30 +6,6 @@ try {
 } catch(e) {
     fprintf(stderr, "Could not load rampart-almanac: %s\nSKIPPING ALMANAC TESTS\n", e.message);
     process.exit(0);
-}
-
-var _nfailed = 0;
-
-function testFeature(name,test)
-{
-    var error=false;
-    if (typeof test =='function'){
-        try {
-            test=test();
-        } catch(e) {
-            error=e;
-            test=false;
-        }
-    }
-    printf("testing almanac - %-52s - ", name);
-    if(test)
-        printf("passed\n")
-    else
-    {
-        printf(">>>>> FAILED <<<<<\n");
-        _nfailed++;
-    }
-    if(error) console.log(error);
 }
 
 /* ===================================================================
@@ -586,4 +562,4 @@ testFeature("weather - clearCache runs without error", function() {
 } // end weatherOnline
 } // end hasWeather
 
-process.exit(_nfailed ? 1 : 0);
+testFeature.exit();

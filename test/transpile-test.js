@@ -2,160 +2,37 @@
 "use transpilerGlobally"
 
 /* Known transpiler limitations (ES2015+ → ES5):
-   - const is converted to var and is NOT read-only (no enforcement).
+   - const is converted to var and is NOT read-only (no reassignment
+     enforcement at runtime).
    - let/const at top level become var and attach to the global object.
-   - await inside for/while/do loops does not execute per-iteration.
-     Workaround: move await outside the loop or use Promise.all().
-   - yield inside for/while/do loops is dropped from the output.
-     Workaround: use a manual iteration pattern.
-   - BigInt literals (123n) and BigInt operators are not supported.
-   - Intl (Internationalization API) is not available.
+   - BigInt literals (123n) and BigInt operators are not supported
+     (duktape limitation, not the transpiler).
 */
 
-if(global && global.rampart) {
-    rampart.globalize(rampart.utils);
-    var _nfailed = 0;
-    var _asyncQueue = [];
-    var _asyncRunning = false;
-    var _drainAsync = function() {
-        if (_asyncRunning || _asyncQueue.length === 0) return;
-        _asyncRunning = true;
-        var item = _asyncQueue.shift();
-        item.promise.then(function(result) {
-            printf("testing transpile - %-48s - ", item.name);
-            if (result)
-                printf("passed\n");
-            else
-            {
-                printf(">>>>> FAILED <<<<<\n");
-                _nfailed++;
-            }
-            _asyncRunning = false;
-            _drainAsync();
-        }).then(null, function(e) {
-            printf("testing transpile - %-48s - ", item.name);
-            printf(">>>>> FAILED <<<<<\n");
-            _nfailed++;
-            console.log(e);
-            _asyncRunning = false;
-            _drainAsync();
-        });
-    };
-    function testFeature(name,test)
-    {
-        var error=false;
-        if (typeof test =='function'){
-            try {
-                test=test();
-            } catch(e) {
-                error=e;
-    console.log(e);
-                test=false;
-            }
-        }
-        if (test && typeof test === 'object' && typeof test.then === 'function') {
-            _asyncQueue.push({name: name, promise: test});
-            _drainAsync();
-            return;
-        }
-        printf("testing transpile - %-48s - ", name);
-        if(test)
-            printf("passed\n")
-        else
-        {
-            printf(">>>>> FAILED <<<<<\n");
-            _nfailed++;
-        }
-        if(error) console.log(error);
-    }
-    _TrN_Sp.warnUnhandledPromise=false;
-} else {
-    /* for testing against node */
-    global.printf=function(fmt) {
-      var args = Array.prototype.slice.call(arguments, 1);
-      var i = 0;
-
-      var output = fmt.replace(/%(-?)(\d*)s/g, function(match, flag, width) {
-        var arg = (i < args.length) ? args[i++] : "";
-        var str = String(arg);
-        width = parseInt(width, 10) || 0;
-
-        if (width > str.length) {
-          var padding = Array(width - str.length + 1).join(" ");
-          if (flag === "-") {
-            str = str + padding; // left justify
-          } else {
-            str = padding + str; // right justify
-          }
-        }
-        return str;
-      });
-
-      // Print like C printf
-      if (typeof process !== "undefined" && process.stdout && process.stdout.write) {
-        process.stdout.write(output);
-      } else {
-        // fallback (browser)
-        console.log(output);
-      }
-
-      return output.length;
-    }
-
-    var _asyncQueue = [];
-    var _asyncRunning = false;
-    var _drainAsync = function() {
-        if (_asyncRunning || _asyncQueue.length === 0) return;
-        _asyncRunning = true;
-        var item = _asyncQueue.shift();
-        item.promise.then(function(result) {
-            printf("testing node ES2015+ - %-48s - ", item.name);
-            if (result)
-                printf("passed\n");
-            else
-            {
-                printf(">>>>> FAILED <<<<<\n");
-                process.exit(1);
-            }
-            _asyncRunning = false;
-            _drainAsync();
-        }).then(null, function(e) {
-            printf("testing node ES2015+ - %-48s - ", item.name);
-            printf(">>>>> FAILED <<<<<\n");
-            console.log(e);
-            process.exit(1);
-        });
-    };
-    var testFeature = function(name,test)
-    {
-        var error=false;
-        if (typeof test =='function'){
-            try {
-                test=test();
-            } catch(e) {
-                error=e;
-    console.log(e);
-                test=false;
-            }
-        }
-        if (test && typeof test === 'object' && typeof test.then === 'function') {
-            _asyncQueue.push({name: name, promise: test});
-            _drainAsync();
-            return;
-        }
-        printf("testing node ES2015+ - %-48s - ", name);
-        if(test)
-            printf("passed\n")
-        else
-        {
-            printf(">>>>> FAILED <<<<<\n");
-            if(error) console.log(error);
-            process.exit(1);
-        }
-        if(error) console.log(error);
-    }
-
+var _baseTestFeature = new (require('./test-feature.js'))({prefix: "transpile", allowNode: true});
+/* Tests that return a thenable get queued and their resolved value
+   fed back through the harness once the promise settles. */
+var _asyncQueue = [], _asyncRunning = false;
+function _drainAsync() {
+    if (_asyncRunning || _asyncQueue.length === 0) return;
+    _asyncRunning = true;
+    var item = _asyncQueue.shift();
+    item.promise.then(function(r) { _baseTestFeature(item.name, !!r); _asyncRunning = false; _drainAsync(); })
+                .then(null, function(err) { _baseTestFeature(item.name, function(){throw err;}); _asyncRunning = false; _drainAsync(); });
 }
+function testFeature(name, test) {
+    if (typeof test === 'function') {
+        try { test = test(); } catch (err) { _baseTestFeature(name, function(){throw err;}); return; }
+    }
+    if (test && typeof test === 'object' && typeof test.then === 'function') {
+        _asyncQueue.push({name: name, promise: test}); _drainAsync(); return;
+    }
+    _baseTestFeature(name, !!test);
+}
+testFeature.exit = function() { _baseTestFeature.exit(); };
+/* These tests intentionally create promises that aren't awaited; silence
+   the "Possible Unhandled Promise Rejection" console warning. */
+if (_baseTestFeature.isRampart) rampart.warnUnhandledPromise = false;
 
 import * as tmath from "./tmath.js";
 import { sum, pi } from "./tmath.js";
@@ -2084,8 +1961,10 @@ setTimeout(function(){
 /* TODO: export defaults http://es6-features.org/#DefaultWildcard */
 
 // cleanup transpiler cache files
-try { rampart.utils.rmFile(process.scriptPath + '/transpile-test.transpiled.js'); } catch(e) {}
-try { rampart.utils.rmFile(process.scriptPath + '/tmath.transpiled.js'); } catch(e) {}
-try { rampart.utils.rmFile(process.scriptPath + '/export-module.transpiled.js'); } catch(e) {}
+if (_baseTestFeature.isRampart) {
+    try { rampart.utils.rmFile(process.scriptPath + '/transpile-test.transpiled.js'); } catch(e) {}
+    try { rampart.utils.rmFile(process.scriptPath + '/tmath.transpiled.js'); } catch(e) {}
+    try { rampart.utils.rmFile(process.scriptPath + '/export-module.transpiled.js'); } catch(e) {}
+}
 
-process.exit(_nfailed ? 1 : 0);
+testFeature.exit();

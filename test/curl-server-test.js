@@ -61,29 +61,10 @@ function cleanup() {
     if(stat(tmpdir)) shell("rm -rf " + tmpdir);
 }
 
-function testFeature(name,test)
-{
-    var error=false;
-    if (typeof test =='function'){
-        try {
-            test=test();
-        } catch(e) {
-            error=e;
-            test=false;
-        }
-    }
-    printf("testing curl/serv - %-48s - ", name);
-    if(test)
-        printf("passed\n")
-    else
-    {
-        printf(">>>>> FAILED <<<<<\n");
-        if(error) console.log(error);
-        cleanup();
-        process.exit(1);
-    }
-    if(error) console.log(error);
-}
+var testFeature = new (require('./test-feature.js'))({
+    prefix: "curl/serv",
+    onFail: function() { cleanup(); process.exit(1); }
+});
 
 var cert = tmpdir+'/sample-cert.pem';
 var key = tmpdir+'/sample-key.pem';
@@ -570,4 +551,5 @@ setTimeout( function(){
     });
 
     cleanup();
+    testFeature.exit();
 }, 2);

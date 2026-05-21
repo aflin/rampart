@@ -7,86 +7,18 @@
        rampart  nodeshim-test.js
        node     nodeshim-test.js
 
-   The runtime is auto-detected via `global.rampart`.  When running
-   under node, we shim the rampart-globals the harness needs
-   (printf/fflush/stdout) and skip rampart-only test blocks. */
-var _isRampart = (typeof rampart !== 'undefined' && rampart && rampart.utils);
-
-if (_isRampart) {
-    rampart.globalize(rampart.utils);
-} else {
-    /* Minimal printf/fflush/stdout shims for the harness only.  We only
-       implement the format specifiers actually used below:
-       %s, %d, %j, %%, with optional width (%-NNs / %NNs). */
-    global.stdout = process.stdout;
-    global.fflush = function(/* stream */) { /* node's writes are sync */ };
-    global.printf = function(fmt) {
-        var args = Array.prototype.slice.call(arguments, 1);
-        var out = String(fmt).replace(/%(-?\d*)([sdj%])/g, function(m, w, t) {
-            if (t === '%') return '%';
-            var v = args.shift();
-            var s;
-            if (t === 'j')      s = JSON.stringify(v);
-            else if (t === 'd') s = String(Math.trunc(Number(v)));
-            else                s = String(v);
-            var pad = w ? parseInt(w, 10) : 0;
-            if (pad < 0) {
-                pad = -pad;
-                while (s.length < pad) s += ' ';
-            } else if (pad > 0) {
-                while (s.length < pad) s = ' ' + s;
-            }
-            return s;
-        });
-        process.stdout.write(out);
-    };
-}
-
-var _runtimeLabel = _isRampart ? 'nodeshim' : 'node     ';
-var _nfailed = 0;
-
-function testModule(name, test)
-{
-    var err = null;
-    var ok = false;
-    try {
-        var r = test();
-        ok = (r === undefined || r === true);
-    } catch (e) {
-        err = e;
-    }
-    printf("testing %s - %-49s - ", _runtimeLabel, name);
-    if (ok)
-        printf("passed\n");
-    else {
-        printf(">>>>> FAILED <<<<<\n");
-        if (err) printf("    %s\n", (err && err.message) || String(err));
-        _nfailed++;
-    }
-}
-
-function skipModule(name, why) {
-    printf("testing %s - %-49s - skipped (%s)\n", _runtimeLabel, name, why);
-}
-
-/* Internal-assertion helper: throws with `label` so the testModule
-   catch reports it as the failure reason. */
-function must(cond, label) {
-    if (!cond) throw new Error(label);
-}
-function mustEq(got, want, label) {
-    if (got !== want) {
-        if (typeof got === 'object' && typeof want === 'object'
-            && JSON.stringify(got) === JSON.stringify(want)) return;
-        throw new Error(label + ': got ' + JSON.stringify(got)
-                              + ', want ' + JSON.stringify(want));
-    }
-}
-function mustThrow(fn, label) {
-    var threw = false;
-    try { fn(); } catch (e) { threw = true; }
-    if (!threw) throw new Error(label + ': no throw');
-}
+   The shared test-feature harness handles the runtime shims, label,
+   layout, and assertion helpers. */
+var testModule = new (require('./test-feature.js'))({
+    prefix:    "nodeshim",
+    allowNode: true
+});
+var skipModule = testModule.skip;
+var must       = testModule.must;
+var mustEq     = testModule.mustEq;
+var mustThrow  = testModule.mustThrow;
+/* Convenience: some nodeshim sites referenced _isRampart directly. */
+var _isRampart = testModule.isRampart;
 
 /* ============================================================
  * Sync submodules
@@ -968,20 +900,16 @@ testModule("util", function() {
  * ============================================================ */
 
 function asyncBlock(name, run) {
-    /* Wrap an async test so it reports via testModule format.  `run`
-       gets (done, must, mustEq, mustThrow); call done(err?) to report. */
+    /* Wrap an async test so it reports via testModule.  `run` gets
+       (done); call done(err?) to report — testModule does the line. */
     return function(next) {
         var reported = false;
         function done(err) {
             if (reported) return;
             reported = true;
-            printf("testing %s - %-49s - ", _runtimeLabel, name);
-            if (!err) printf("passed\n");
-            else {
-                printf(">>>>> FAILED <<<<<\n");
-                printf("    %s\n", (err && err.message) || String(err));
-                _nfailed++;
-            }
+            testModule(name, function() {
+                if (err) throw (err.message ? err : new Error(String(err)));
+            });
             next();
         }
         try { run(done); }
@@ -1297,7 +1225,7 @@ function runAsync() {
     var i = 0;
     function next() {
         if (i >= asyncQ.length) {
-            process.exit(_nfailed ? 1 : 0);
+            testModule.exit();
             return;
         }
         asyncQ[i++](next);

@@ -1,15 +1,13 @@
-rampart.globalize(rampart.utils);
+var testFeature = new (require('./test-feature.js'))({prefix: "winpaths"});
 
 var isWindows = /MSYS_NT/.test(rampart.buildPlatform);
-
 if (!isWindows) {
-    printf("testing winpaths - %-49s - skipping (non-Windows)\n", "all tests");
+    testFeature.skip("all tests", "non-Windows");
     process.exit(0);
 }
 
 chdir(process.scriptPath);
 
-var _nfailed = 0;
 var pathre = /^\/[a-z]\//;  /* matches /c/..., /d/..., etc. */
 
 var tmpdir = process.scriptPath + "/winpaths_tmp";
@@ -34,30 +32,6 @@ rmrf(tmpdir);
 
 mkdir(tmpdir);
 
-function testFeature(name, test)
-{
-    var error = false;
-    if (typeof test == 'function') {
-        try {
-            test = test();
-        } catch(e) {
-            error = e;
-            test = false;
-        }
-    }
-    printf("testing winpaths - %-49s - ", name);
-    if (test)
-        if (typeof test == 'string')
-            printf("%s\n", test);
-        else
-            printf("passed\n");
-    else
-    {
-        printf(">>>>> FAILED <<<<<\n");
-        _nfailed++;
-    }
-    if (error) console.log(error);
-}
 
 
 /* ================================================================
@@ -241,4 +215,4 @@ testFeature("rmdir with /c/... path", function(){
 
 chdir(process.scriptPath);
 
-process.exit(_nfailed ? 1 : 0);
+testFeature.exit();

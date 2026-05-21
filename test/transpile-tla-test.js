@@ -12,29 +12,10 @@
    bindings don't attach to globalThis — node test uses module-local
    reads instead. */
 
-if (typeof global !== 'undefined' && global.rampart) {
-    rampart.globalize(rampart.utils);
-}
+var testFeature = new (require('./test-feature.js'))({prefix: "tla", allowNode: true});
 
-var _nfailed = 0;
-function testFeature(name, test) {
-    var label = (typeof global !== 'undefined' && global.rampart)
-        ? "testing tla - "
-        : "testing node tla - ";
-    var ok = false;
-    try { ok = !!test; } catch (e) { /* ok stays false */ }
-    var line = label + name;
-    while (line.length < 56) line += " ";
-    line += " - " + (ok ? "passed" : ">>>>> FAILED <<<<<");
-    if (typeof process !== 'undefined' && process.stdout && process.stdout.write) {
-        process.stdout.write(line + "\n");
-    } else {
-        console.log(line);
-    }
-    if (!ok) {
-        _nfailed++;
-        if (typeof process !== 'undefined' && process.exit) process.exit(1);
-    }
+if (testFeature.isRampart) {
+    try { rampart.utils.rmFile(process.scriptPath + '/transpile-tla-test.transpiled.js'); } catch(e) {}
 }
 
 /* For node ESM, top-level var/function don't attach to globalThis.
@@ -120,4 +101,4 @@ testFeature("expr - await in object literal", objWithAwait.x === 7 && objWithAwa
 var trueBranch = true ? await Promise.resolve("yes") : await Promise.resolve("no");
 testFeature("expr - await in conditional", trueBranch === "yes");
 
-if (_nfailed) process.exit(1);
+testFeature.exit();

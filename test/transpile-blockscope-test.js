@@ -4,32 +4,11 @@
 /* Block-scope tests for §8 (babel-style let/const rename in nested blocks).
    See transpiler-todo.md §8. */
 
-if (global && global.rampart) {
-    rampart.globalize(rampart.utils);
-    var _nfailed = 0;
-    function testFeature(name, test) {
-        var error = false;
-        if (typeof test == 'function') {
-            try { test = test(); }
-            catch (e) { error = e; test = false; }
-        }
-        printf("testing blockscope - %-50s - ", name);
-        if (test) printf("passed\n");
-        else { printf(">>>>> FAILED <<<<<\n"); _nfailed++; }
-        if (error) console.log(error);
-    }
-} else {
-    var testFeature = function (name, test) {
-        var error = false;
-        if (typeof test == 'function') {
-            try { test = test(); }
-            catch (e) { error = e; test = false; }
-        }
-        process.stdout.write("testing node ES2015+ - " + name + " - ");
-        if (test) process.stdout.write("passed\n");
-        else { process.stdout.write(">>>>> FAILED <<<<<\n"); if (error) console.log(error); process.exit(1); }
-    };
-    global.printf = function() {};
+var testFeature = new (require('./test-feature.js'))({prefix: "blockscope", allowNode: true});
+
+/* Drop stale .transpiled.js so we always test fresh transpiler output. */
+if (testFeature.isRampart) {
+    try { rampart.utils.rmFile(process.scriptPath + '/transpile-blockscope-test.transpiled.js'); } catch(e) {}
 }
 
 /* ---------------- Basic shadowing in function scopes ---------------- */
@@ -419,7 +398,7 @@ testFeature("multiple sibling block lets", function () {
 
 /* ---------------- Exit ---------------- */
 
-if (global && global.rampart) {
+if (testFeature.isRampart) {
     try { rampart.utils.rmFile(process.scriptPath + '/transpile-blockscope-test.transpiled.js'); } catch (e) {}
-    process.exit(_nfailed ? 1 : 0);
 }
+testFeature.exit();

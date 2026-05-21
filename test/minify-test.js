@@ -1,31 +1,10 @@
 #!/usr/bin/env rampart
 "use transpilerGlobally"
 
-rampart.globalize(rampart.utils);
+var testMinify = new (require('./test-feature.js'))({prefix: "minify"});
 
-var _nfailed = 0;
-
-function testMinify(name, test)
-{
-    var error = false;
-    if (typeof test == 'function') {
-        try {
-            test = test();
-        } catch(e) {
-            error = e;
-            test = false;
-        }
-    }
-    printf("testing minify  - %-50s - ", name);
-    if (test)
-        printf("passed\n");
-    else
-    {
-        printf(">>>>> FAILED <<<<<\n");
-        _nfailed++;
-    }
-    if (error) console.log(error);
-}
+/* Wipe stale .transpiled.js for this script — uses "use transpiler". */
+try { rampart.utils.rmFile(process.scriptPath + '/minify-test.transpiled.js'); } catch(e) {}
 
 /* helper: minify and eval, return the result of calling fn_name() */
 var _minRunCounter = 0;
@@ -540,10 +519,4 @@ testMinify("minify reduces size", function() {
    Done
    ======================== */
 
-printf("\nminify tests complete: ");
-if (_nfailed)
-    printf("%d FAILED\n", _nfailed);
-else
-    printf("all passed\n");
-
-process.exit(_nfailed ? 1 : 0);
+testMinify.exit();

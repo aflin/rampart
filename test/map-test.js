@@ -4,44 +4,20 @@
  * Under rampart it additionally tests cross-thread Map/Set copy.
  */
 
-var IS_RAMPART = (typeof global !== "undefined") && !!global.rampart;
-
-var _write;
+/* `testFeature`'s closure won't survive `.exec()` into a child thread
+   (rampart copies globals, not closures), so we publish a recipe and
+   rebuild testFeature on demand if missing.  The worker re-requires
+   the harness on first use. */
+var _tfRecipe = {prefix: "map", allowNode: true};
+function _makeTF() {
+    return new (require('./test-feature.js'))(_tfRecipe);
+}
+var testFeature = _makeTF();
+var IS_RAMPART = testFeature.isRampart;
 if (IS_RAMPART) {
-    rampart.globalize(rampart.utils);
-    _write = function(s) { printf("%s", s); fflush(stdout); };
-} else {
-    _write = function(s) { process.stdout.write(s); };
-}
-
-function _pad(s, n) {
-    s = String(s);
-    while (s.length < n) s += " ";
-    return s;
-}
-
-var _nfailed = 0;
-
-function testFeature(name, test)
-{
-    var error=false;
-    _write("testing " + _pad(name, 60) + " - ");
-    if (typeof test =='function'){
-        try {
-            test=test();
-        } catch(e) {
-            error=e;
-            test=false;
-        }
-    }
-    if(test)
-        _write("passed\n");
-    else
-    {
-        _write(">>>>> FAILED <<<<<\n");
-        _nfailed++;
-    }
-    if(error) console.log(error);
+    /* Make the recipe + factory visible to child threads. */
+    global._tfRecipe = _tfRecipe;
+    global._makeTF   = _makeTF;
 }
 
 
@@ -96,7 +72,10 @@ gSetWithProps[0]      = "indexed-set-prop";
 
 function runTests(label) {
 
-    _write("\n=== " + label + " ===\n\n");
+    if (typeof printf !== 'undefined')
+        printf("\n=== %s ===\n\n", label);
+    else
+        process.stdout.write("\n=== " + label + " ===\n\n");
 
     /* ---- Map basics ---- */
 
@@ -420,12 +399,7 @@ function runTests(label) {
 
 
 function _finish() {
-    _write("\n");
-    if (_nfailed)
-        _write(_nfailed + " test(s) FAILED\n");
-    else
-        _write("All tests passed.\n");
-    process.exit(_nfailed ? 1 : 0);
+    testFeature.exit();
 }
 
 /* ================================================================
@@ -442,6 +416,9 @@ runTests(IS_RAMPART ? "Main thread" : "Node");
 if (IS_RAMPART) {
     var thr = new rampart.thread();
     thr.exec(function() {
+        /* Rebuild testFeature in the child context — the parent's
+           closure didn't cross the thread boundary. */
+        testFeature = _makeTF();
         runTests("Child thread");
     }, null, function(result, err) {
         if (err)

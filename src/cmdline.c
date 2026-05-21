@@ -1864,6 +1864,22 @@ RP_ParseRes rp_get_transpiled_cached(char *fn, char *src, time_t src_mtime, int 
     struct stat cstat;
     int is_zip_src = 0;
 
+    /* Cached .transpiled.js files are *transpiler output* — they may
+       reference `_TrN_Sp.*` polyfills that only exist when the
+       transpiler runtime is loaded.  If this run wouldn't transpile
+       the source (no -t, no "use transpiler" directive), the cache is
+       incompatible: loading it produces `_TrN_Sp undefined` at first
+       reference.  Skip the cache and tickify directly in that case.
+       Side effect note: _decide_transpile sets
+       duk_rp_globaltranspile if the source carries
+       "use transpilerGlobally", which is the same side effect the
+       cache-hit branch below used to apply manually. */
+    {
+        int fn_sources_unused = 1;
+        if (!_decide_transpile(src, &fn_sources_unused))
+            return rp_get_transpiled(src, is_tickified);
+    }
+
     /* Build cache filename: file.js -> file.transpiled.js */
     if (fn && strcmp(fn, "stdin") != 0 && strcmp(fn, "eval_code") != 0
             && strcmp(fn, "command_line_script") != 0 && strcmp(fn, "built_in_server") != 0)

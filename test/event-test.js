@@ -1,29 +1,8 @@
-/* make printf et. al. global */
-rampart.globalize(rampart.utils);
-
+var testFeature = new (require('./test-feature.js'))({
+    prefix: "event",
+    onFail: function() { process.exit(1); }
+});
 var thread = rampart.thread;
-
-function testFeature(name,test)
-{
-    var error=false;
-    if (typeof test =='function'){
-        try {
-            test=test();
-        } catch(e) {
-            error=e;
-            test=false;
-        }
-    }
-    if(test){
-        printf("testing event - %-52s - passed\n", name);
-        fflush(stdout);
-    } else {
-        printf("testing event - %-52s - >>>>> FAILED <<<<<\n", name);
-        if(error) console.log(error);
-        process.exit(1);
-    }
-    if(error) console.log(error);
-}
 
 
 var usr_var = "Basic Functionality";

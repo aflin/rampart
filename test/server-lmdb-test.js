@@ -43,31 +43,10 @@ function kill_server(pid) {
     fprintf(stderr, "WARNING: process %d could not be terminated\n", pid);
 }
 
-function testFeature(name,test)
-{
-    var error=false;
-    printf("testing server/lmdb - %-46s - ", name);
-    fflush(stdout);
-    if (typeof test =='function'){
-        try {
-            test=test();
-        } catch(e) {
-            error=e;
-            test=false;
-        }
-    }
-    if(test)
-        printf("passed\n")
-    else
-    {
-        printf(">>>>> FAILED <<<<<\n");
-        if(error) console.log(error);
-        kill_server(pid);
-        cleanup();
-        process.exit(1);
-    }
-    if(error) console.log(error);
-}
+var testFeature = new (require('./test-feature.js'))({
+    prefix: "server/lmdb",
+    onFail: function() { kill_server(pid); cleanup(); process.exit(1); }
+});
 /* these tests fail if errors are thrown */
 testFeature("Open test database env", function() {
     /* 
@@ -279,3 +258,4 @@ testFeature("reopen db, growOnPut", function() {
 });
 
 cleanup();
+testFeature.exit();

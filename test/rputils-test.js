@@ -9,42 +9,14 @@ chdir(process.scriptPath);
 var tmpdir = process.scriptPath + '/tmp-test';
 if (!stat(tmpdir)) mkdir(tmpdir);
 
-var _nfailed = 0;
+var testFeature = new (require('./test-feature.js'))({prefix: "utils"});
 
-function testFeature(name,test)
-{
-    var error=false;
-    if (typeof test =='function'){
-        try {
-            test=test();
-        } catch(e) {
-            error=e;
-            test=false;
-        }
-    }
-    printf("testing utils - %-52s - ", name);
-    if(test)
-        if(typeof test =='string')
-            printf("%s\n", test);
-        else
-            printf("passed\n")
-    else
-    {
-        printf(">>>>> FAILED <<<<<\n");
-        _nfailed++;
-    }
-    if(error) console.log(error);
-}
-
-
-printf("testing utils - %-52s - ", "printf");
-printf("passed\n");
-
-fprintf(stdout,"testing utils - %-52s - ", "fprintf(stdout,...)");
-fprintf(stdout,"passed\n");
-
-fprintf(stderr,"testing utils - %-52s - ", "fprintf(stderr,...)");
-fprintf(stderr,"passed\n");
+/* Smoke tests for printf/fprintf — the very fact that testFeature's own
+   line prints implies printf works; we still exercise fprintf to both
+   streams to verify the file-descriptor variant. */
+testFeature("printf",              true);
+testFeature("fprintf(stdout,...)", function() { fprintf(stdout, ""); return true; });
+testFeature("fprintf(stderr,...)", function() { fprintf(stderr, ""); return true; });
 
 
 testFeature("fopen/fseek/fprint/fread/fwrite/rewind",function(){
@@ -1042,5 +1014,5 @@ testFeature("localize - localized var visible in closure", function(){
 
 try { rmdir(tmpdir); } catch(e) {} /* remove if empty */
 
-process.exit(_nfailed ? 1 : 0);
+testFeature.exit();
 //lastline

@@ -36,29 +36,7 @@ if(res.rows.length==0) {
 var sha256=crypto.sha256;
 var md5=crypto.md5;
 
-var _nfailed = 0;
-
-function testFeature(name,test)
-{
-    var error=false;
-    if (typeof test =='function'){
-        try {
-            test=test();
-        } catch(e) {
-            error=e;
-            test=false;
-        }
-    }
-    printf("testing sql - %-54s - ", name);
-    if(test)
-        printf("passed\n")
-    else
-    {
-        printf(">>>>> FAILED <<<<<\n");
-        _nfailed++;
-    }
-    if(error) console.log(error);
-}
+var testFeature = new (require('./test-feature.js'))({prefix: "sql"});
 
 /*
 This one belongs elsewhere
@@ -381,4 +359,4 @@ testFeature("Sql.list - bare-array (deprecated) still works", function() {
 
 rm_rf_dir(tmpdir);
 
-process.exit(_nfailed ? 1 : 0);
+testFeature.exit();

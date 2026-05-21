@@ -7,35 +7,11 @@ import * as math from "math";
 
 import { sum, pi } from "math";
 
-rampart.globalize(rampart.utils);
+var testFeature = new (require('./test-feature.js'))({prefix: "babel"});
 
 function cleanup() {
     try { rmFile(process.scriptPath + "/babel-test.babel.js"); } catch(e) {}
     try { rmFile(process.scriptPath + "/math.babel.js"); } catch(e) {}
-}
-
-var _nfailed = 0;
-
-function testFeature(name,test)
-{
-    var error=false;
-    if (typeof test =='function'){
-        try {
-            test=test();
-        } catch(e) {
-            error=e;
-            test=false;
-        }
-    }
-    printf("testing babel - %-52s - ", name);
-    if(test)
-        printf("passed\n")
-    else
-    {
-        printf(">>>>> FAILED <<<<<\n");
-        _nfailed++;
-    }
-    if(error) console.log(error);
 }
 
 testFeature("polyfill loaded",
@@ -672,5 +648,5 @@ try {
 setTimeout(function(){
   printf("NOT TESTED:  RE sticky flag and Internationalization\n");
   cleanup();
-  process.exit(_nfailed ? 1 : 0);
+  testFeature.exit();
 },100);

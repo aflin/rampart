@@ -1072,13 +1072,23 @@ void duk_init_context(duk_context *ctx)
     duk_rp_console_init(ctx);
     new_function_transpile(ctx);
     install_proxy_revocable(ctx);
-    /* Load rampart-intl via rampart's module resolver — its
-       open-module entry installs globalThis.Intl as a side-effect.
-       If missing, the resolver throws (in module.c:_duk_resolve)
-       which propagates out of duk_init_context — that's intentional:
-       rampart-intl is part of the standard distribution and a
-       missing .so indicates a broken install. To skip Intl loading
-       in custom builds, configure with -DRAMPART_INTL=OFF (planned). */
-    duk_eval_string_noresult(ctx, "require('rampart-intl');");
+    /* Install `globalThis.Intl` as a lazy getter — `require('rampart-intl')`
+       only fires on first access.  Two motivations:
+         1. ~37 MB ICU data isn't paid for by scripts that never touch Intl.
+         2. Bundled-rampart binaries don't always carry rampart-intl.so,
+            so an eager require would FATAL the context init for any
+            bundle (see test/bundle-test.js) — lazy makes the cost optional.
+       rampart-intl's open-module entry assigns globalThis.Intl as a
+       side-effect; we delete our getter first so the assignment isn't
+       blocked, then return whatever it installed. */
+    duk_eval_string_noresult(ctx,
+        "Object.defineProperty(globalThis, 'Intl', {"
+        "  configurable: true,"
+        "  get: function() {"
+        "    delete globalThis.Intl;"
+        "    require('rampart-intl');"
+        "    return globalThis.Intl;"
+        "  }"
+        "});");
     duk_map_set_init(ctx);
 }

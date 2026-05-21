@@ -102,31 +102,16 @@ function cleanup() {
     try { rmdir(tmpdir); } catch(e) {}
 }
 
-function testFeature(name,test)
-{
-    var error=false;
-    printf("testing redis - %-52s - ", name);
-    fflush(stdout);
-    if (typeof test =='function'){
-        try {
-            test=test();
-        } catch(e) {
-            error=e;
-            test=false;
-        }
-    }
-    if(test)
-        printf("passed\n")
-    else
-    {
-        printf(">>>>> FAILED <<<<<\n");
-        if(error) console.log(error);
-        if(rcl && rcl.errMsg) console.log(rcl.errMsg);
+/* redis-test bails on first failure with cleanup (server is on a
+   temporary socket; later tests can't make progress). */
+var testFeature = new (require('./test-feature.js'))({
+    prefix: "redis",
+    onFail: function() {
+        if (rcl && rcl.errMsg) console.log(rcl.errMsg);
         cleanup();
         process.exit(1);
     }
-    if(error) console.log(error);
-}
+});
 
 
 testFeature("send set and get", function() {
@@ -648,4 +633,5 @@ rcl.xread_block_async(0, "STREAMS", "x1", "x2", "$", "$", function(x)
 setTimeout(function(){
     rcl.flushall();
     cleanup();
+    testFeature.exit();
 },10);
