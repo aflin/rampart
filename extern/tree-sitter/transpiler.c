@@ -15,6 +15,14 @@
 
 //#define RP_STRING_REPORT_FREES
 
+/* Uncomment to enable runtime TDZ + const-reassign checks for top-level
+   let/const in each function. Disabled by default: the checks add an
+   inline `(function(){throw …})()` at each statically-detected violation
+   point, which is small but non-zero runtime cost and may surface
+   pre-existing TDZ/const-reassign bugs in code that has been silently
+   tolerated. Re-enable when cross-runtime parity with node is required. */
+//#define TDZ_RUNTIME_CHECKS 1
+
 #include "transpiler.h"
 #define RP_STRING_IMPLEMENTATION // include the functions
 #include "rp_string.h"
@@ -210,7 +218,7 @@ polyfills allpolys[] = {
         "_TrN_Sp._typeof=function(obj) {\"@babel/helpers - typeof\";if (typeof Symbol === \"function\" && typeof Symbol.iterator === \"symbol\") {_TrN_Sp._typeof = function(obj) {return typeof obj;};} else {_TrN_Sp._typeof = function(obj) {return obj && typeof Symbol === \"function\" && obj.constructor === Symbol && obj !== Symbol.prototype ? \"symbol\" : typeof obj;};}return _TrN_Sp._typeof(obj);};_TrN_Sp._getRequireWildcardCache=function() {if (typeof WeakMap !== \"function\") return null;var cache = new WeakMap();_TrN_Sp._getRequireWildcardCache=function(){return cache;};return cache;};_TrN_Sp._interopRequireWildcard=function(obj) {if (obj && obj.__esModule) {return obj;}if (obj === null || _TrN_Sp._typeof(obj) !== \"object\" && typeof obj !== \"function\") {return { \"default\": obj };}var cache = _TrN_Sp._getRequireWildcardCache();if (cache && cache.has(obj)) {return cache.get(obj);}var newObj = {};var hasPropertyDescriptor = Object.defineProperty && Object.getOwnPropertyDescriptor;for (var key in obj) {if (Object.prototype.hasOwnProperty.call(obj, key)) {var desc = hasPropertyDescriptor ? Object.getOwnPropertyDescriptor(obj, key) : null;if (desc && (desc.get || desc.set)) {Object.defineProperty(newObj, key, desc);} else {newObj[key] = obj[key];}}}newObj[\"default\"] = obj;if (cache) {cache.set(obj, newObj);}return newObj;};_TrN_Sp._interopDefault=function(m){if(typeof m =='object' && m.__esModule){return m.default}return m;};",
         0, (uint32_t)IMPORT_PF },
     {
-        "_TrN_Sp.typeof =function(obj) {'@babel/helpers - typeof';if (typeof Symbol === 'function' && typeof Symbol.iterator === 'symbol') {_typeof = function _typeof(obj) {return typeof obj;};} else {_typeof = function _typeof(obj) {return obj && typeof Symbol === 'function' &&obj.constructor === Symbol && obj !== Symbol.prototype ?'symbol' :typeof obj;};}return _typeof(obj);}; _TrN_Sp.inherits =function(subClass, superClass) {if (typeof superClass !== 'function' && superClass !== null) {throw new TypeError('Super expression must either be null or a function');}subClass.prototype = Object.create(superClass && superClass.prototype,{constructor: {value: subClass, writable: true, configurable: true}});if (superClass) _TrN_Sp.setPrototypeOf(subClass, superClass);}; _TrN_Sp.setPrototypeOf =function(o, p) {_setPrototypeOf = Object.setPrototypeOf || function _setPrototypeOf(o, p) {o.__proto__ = p;return o;};return _setPrototypeOf(o, p);}; _TrN_Sp.createSuper =function(Derived) {var hasNativeReflectConstruct = _TrN_Sp.isNativeReflectConstruct();return function _createSuperInternal() {var Super = _TrN_Sp.getPrototypeOf(Derived), result;result = Super.apply(this, arguments);return _TrN_Sp.possibleConstructorReturn(this, result);};}; _TrN_Sp.possibleConstructorReturn =function(self, call) {if (call && (typeof call === 'object' || typeof call === 'function')) {return call;}return _TrN_Sp.assertThisInitialized(self);}; _TrN_Sp.assertThisInitialized =function(self) {if (self === void 0) {throw new ReferenceError('this hasn\\'t been initialised - super() hasn\\'t been called');}return self;}; _TrN_Sp.isNativeReflectConstruct =function() {if (typeof Reflect === 'undefined' || !Reflect.construct) return false;if (Reflect.construct.sham) return false;if (typeof Proxy === 'function') return true;try {Date.prototype.toString.call(Reflect.construct(Date, [], function() {}));return true;} catch (e) {return false;}}; _TrN_Sp.getPrototypeOf =function(o) {_getPrototypeOf = Object.setPrototypeOf ?Object.getPrototypeOf :function _getPrototypeOf(o) {return o.__proto__ || Object.getPrototypeOf(o);};return _getPrototypeOf(o);}; _TrN_Sp.classCallCheck =function(instance, Constructor) {if (!(instance instanceof Constructor)) {throw new TypeError('Cannot call a class as a function');}}; _TrN_Sp.defineProperties =function(target, props) {for (var i = 0; i < props.length; i++) {var descriptor = props[i];descriptor.enumerable = descriptor.enumerable || false;descriptor.configurable = true;if ('value' in descriptor) descriptor.writable = true;Object.defineProperty(target, descriptor.key, descriptor);}}; _TrN_Sp.createClass =function(Constructor, A, B, swapOrder) {var protoProps = swapOrder ? B : A;var staticProps = swapOrder ? A : B;if (protoProps) _TrN_Sp.defineProperties(Constructor.prototype, protoProps);if (staticProps) _TrN_Sp.defineProperties(Constructor, staticProps);return Constructor;};",
+        "_TrN_Sp.typeof =function(obj) {'@babel/helpers - typeof';if (typeof Symbol === 'function' && typeof Symbol.iterator === 'symbol') {_typeof = function _typeof(obj) {return typeof obj;};} else {_typeof = function _typeof(obj) {return obj && typeof Symbol === 'function' &&obj.constructor === Symbol && obj !== Symbol.prototype ?'symbol' :typeof obj;};}return _typeof(obj);}; _TrN_Sp.inherits =function(subClass, superClass) {if (typeof superClass !== 'function' && superClass !== null) {throw new TypeError('Super expression must either be null or a function');}subClass.prototype = Object.create(superClass && superClass.prototype,{constructor: {value: subClass, writable: true, configurable: true}});if (superClass) _TrN_Sp.setPrototypeOf(subClass, superClass);}; _TrN_Sp.setPrototypeOf =function(o, p) {_setPrototypeOf = Object.setPrototypeOf || function _setPrototypeOf(o, p) {o.__proto__ = p;return o;};return _setPrototypeOf(o, p);}; _TrN_Sp.createSuper =function(Derived) {var hasNativeReflectConstruct = _TrN_Sp.isNativeReflectConstruct();return function _createSuperInternal() {var Super = _TrN_Sp.getPrototypeOf(Derived), result;result = Super.apply(this, arguments);return _TrN_Sp.possibleConstructorReturn(this, result);};}; _TrN_Sp.possibleConstructorReturn =function(self, call) {if (call && (typeof call === 'object' || typeof call === 'function')) {return call;}return _TrN_Sp.assertThisInitialized(self);}; _TrN_Sp.assertThisInitialized =function(self) {if (self === void 0) {throw new ReferenceError('this hasn\\'t been initialised - super() hasn\\'t been called');}return self;}; _TrN_Sp.isNativeReflectConstruct =function() {if (typeof Reflect === 'undefined' || !Reflect.construct) return false;if (Reflect.construct.sham) return false;if (typeof Proxy === 'function') return true;try {Date.prototype.toString.call(Reflect.construct(Date, [], function() {}));return true;} catch (e) {return false;}}; _TrN_Sp.getPrototypeOf =function(o) {_getPrototypeOf = Object.setPrototypeOf ?Object.getPrototypeOf :function _getPrototypeOf(o) {return o.__proto__ || Object.getPrototypeOf(o);};return _getPrototypeOf(o);}; _TrN_Sp.classCallCheck =function(instance, Constructor) {if (!(instance instanceof Constructor)) {throw new TypeError('Cannot call a class as a function');}}; _TrN_Sp.defineProperties =function(target, props) {for (var i = 0; i < props.length; i++) {var descriptor = props[i];if (descriptor.src && _TrN_Sp._fs) {if (typeof descriptor.value === 'function') _TrN_Sp._fs(descriptor.value, descriptor.src);if (typeof descriptor.get === 'function') _TrN_Sp._fs(descriptor.get, descriptor.src);if (typeof descriptor.set === 'function') _TrN_Sp._fs(descriptor.set, descriptor.src);delete descriptor.src;}descriptor.enumerable = descriptor.enumerable || false;descriptor.configurable = true;if ('value' in descriptor) descriptor.writable = true;Object.defineProperty(target, descriptor.key, descriptor);}}; _TrN_Sp.createClass =function(Constructor, A, B, swapOrder) {var protoProps = swapOrder ? B : A;var staticProps = swapOrder ? A : B;if (protoProps) _TrN_Sp.defineProperties(Constructor.prototype, protoProps);if (staticProps) _TrN_Sp.defineProperties(Constructor, staticProps);return Constructor;}; _TrN_Sp._superGet =function(target, prop, recv) {while (target) {var desc = Object.getOwnPropertyDescriptor(target, prop);if (desc) {if (desc.get) return desc.get.call(recv);return desc.value;}target = Object.getPrototypeOf(target);}return undefined;};",
         0, (uint32_t)CLASS_PF  },
     {
         "_TrN_Sp.slicedToArray=function (arr, i) {return _TrN_Sp.arrayWithHoles(arr) || _TrN_Sp.iterableToArrayLimit(arr, i) || _TrN_Sp.unsupportedIterableToArray(arr, i) || _TrN_Sp.nonIterableRest();};_TrN_Sp.nonIterableRest=function(){throw new TypeError(\"Invalid attempt to destructure non-iterable instance.\\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method.\");};_TrN_Sp.unsupportedIterableToArray=function(o, minLen) {if (!o) return;if (typeof o === \"string\") return _TrN_Sp.arrayLikeToArray(o, minLen);var n = Object.prototype.toString.call(o).slice(8, -1);if (n === \"Object\" && o.constructor) n = o.constructor.name;if (n === \"Map\" || n === \"Set\") return Array.from(o);if (n === \"Arguments\" || /^(?:Ui|I)nt(?:8|16|32)(?:Clamped)?Array$/.test(n)) return _TrN_Sp.arrayLikeToArray(o, minLen);};_TrN_Sp.arrayLikeToArray=function(arr, len) {if (len == null || len > arr.length) len = arr.length;for (var i = 0, arr2 = new Array(len); i < len; i++) {arr2[i] = arr[i];}return arr2;};_TrN_Sp.iterableToArrayLimit=function(arr, i){if (typeof Symbol === \"undefined\" || !(Symbol.iterator in Object(arr))) return;var _arr = [];var _n = true;var _d = false;var _e = undefined;try {for (var _i = arr[Symbol.iterator](), _s; !(_n = (_s = _i.next()).done); _n = true) {_arr.push(_s.value);if (i && _arr.length === i) break;}} catch (err) {_d = true;_e = err;} finally {try {if (!_n && _i[\"return\"] != null) _i[\"return\"]();} finally {if (_d) throw _e;}}return _arr;};_TrN_Sp.arrayWithHoles=function(arr) {if (Array.isArray(arr)) return arr;};",
@@ -219,7 +227,7 @@ polyfills allpolys[] = {
         // Debug controls: pending warnings (ON by default, turn off with _TrN_Sp.warnOnLongPending=false)
         // do not warn for merely pending promises.
         // Enable only for debugging "long-pending" promises.
-        "_TrN_Sp._wrapLongPending = function(p, label) {if (!_TrN_Sp.warnOnLongPending) return p;try {var id = setTimeout(function () {if (typeof console !== 'undefined' && console && console.warn) {console.warn('Promise still pending after', _TrN_Sp.pendingWarnMs, 'ms', label ? '(' + label + ')' : '');}}, _TrN_Sp.pendingWarnMs);if (p && typeof p['finally'] === 'function') {p['finally'](function () { clearTimeout(id); });} else if (p && typeof p.then === 'function') {p.then(function(){ clearTimeout(id); }, function(){ clearTimeout(id); });}} catch (_e) {}return p;};_TrN_Sp.asyncGeneratorStep = function(gen, resolve, reject, _next, _throw, key, arg) {try {var info = gen[key](arg);var value = info.value;} catch (error) {reject(error);return;}if (info.done) {resolve(value);} else {Promise.resolve(value).then(_next, _throw);}};_TrN_Sp.asyncToGenerator = function(fn) {return function() {var self = this, args = arguments;var __p = new Promise(function(resolve, reject) {var gen = fn.apply(self, args);function _next(value) {_TrN_Sp.asyncGeneratorStep(gen, resolve, reject, _next, _throw, 'next', value);}function _throw(err) {_TrN_Sp.asyncGeneratorStep(gen, resolve, reject, _next, _throw, 'throw', err);}_next(undefined);});return _TrN_Sp._wrapLongPending(__p, fn && fn.name ? fn.name : 'async');};_TrN_Sp.warnOnLongPending = (_TrN_Sp.warnOnLongPending === undefined ? true: _TrN_Sp.warnOnLongPending);_TrN_Sp.pendingWarnMs = (typeof _TrN_Sp.pendingWarnMs === 'number' && _TrN_Sp.pendingWarnMs >= 0) ? _TrN_Sp.pendingWarnMs : 2000;};_TrN_Sp.regeneratorRuntime = (function() {function mark(genFn) {return genFn;}function wrap(innerFn, outerFn, outerThis) {var _s=void 0,_t=false,_te;var context = {prev: 0,next: 0,done: false,rval: void 0,stop: function() {this.done = true;return this.rval;}};Object.defineProperty(context,'sent',{get:function(){if(_t){_t=false;var e=_te;_te=void 0;throw e;}return _s;},set:function(v){_s=v;},configurable:true});var _iter={next: function(arg) {if (context.done) return {value: undefined, done: true};context.sent = arg;context._y=false;var value;while(true){try{value = innerFn.call(outerThis, context);break;}catch(_e){if(context._catch){context._caught=_e;context.next=context._catch;context._catch=0;continue;}context.done=true;throw _e;}}if (context.done || context.next === 'end') {return {value: context.rval, done: true};}if (!context._y) {context.done = true;context.rval = value;return {value: context.rval, done: true};}return {value: value, done: false};},throw: function(err) {_t=true;_te=err;return this.next(err);}};if(typeof Symbol!=='undefined'&&Symbol.iterator)_iter[Symbol.iterator]=function(){return this;};return _iter;}return {mark: mark, wrap: wrap};})();if(typeof Symbol!=='undefined'&&Symbol.asyncIterator===undefined){try{Symbol.asyncIterator=Symbol('Symbol.asyncIterator');}catch(_e){}}_TrN_Sp._iter=function(x){if(x==null)throw new TypeError('not iterable');if(typeof x.next==='function')return x;if(typeof Symbol!=='undefined'&&Symbol.iterator&&typeof x[Symbol.iterator]==='function')return x[Symbol.iterator]();var i=0;return{next:function(){if(i>=x.length)return{value:undefined,done:true};return{value:x[i++],done:false};}};};_TrN_Sp.__await=function(v){return{__await:true,value:v};};_TrN_Sp.__asyncGenerator=function(thisArg,_args,fn){if(!fn||typeof fn.apply!=='function')throw new TypeError('async generator body must be a function');var iter=fn.apply(thisArg,_args||[]);var q=[],running=false;function step(){if(q.length===0){running=false;return;}running=true;var cur=q[0];var r;try{r=iter[cur.key](cur.arg);}catch(e){q.shift();cur.reject(e);return step();}if(r.done){q.shift();cur.resolve({value:r.value,done:true});return step();}var v=r.value;if(v&&v.__await){Promise.resolve(v.value).then(function(rv){q[0]={key:'next',arg:rv,resolve:cur.resolve,reject:cur.reject};step();},function(re){q[0]={key:'throw',arg:re,resolve:cur.resolve,reject:cur.reject};step();});}else{Promise.resolve(v).then(function(rv){q.shift();cur.resolve({value:rv,done:false});step();},function(re){q.shift();cur.reject(re);step();});}}function enqueue(key,arg){return new Promise(function(resolve,reject){q.push({key:key,arg:arg,resolve:resolve,reject:reject});if(!running)step();});}var aiter={next:function(v){return enqueue('next',v);},'throw':function(e){return enqueue('throw',e);},'return':function(v){return enqueue('return',v);}};if(typeof Symbol!=='undefined'&&Symbol.asyncIterator)aiter[Symbol.asyncIterator]=function(){return this;};return aiter;};",
+        "_TrN_Sp._wrapLongPending = function(p, label) {if (!_TrN_Sp.warnOnLongPending) return p;try {var id = setTimeout(function () {if (typeof console !== 'undefined' && console && console.warn) {console.warn('Promise still pending after', _TrN_Sp.pendingWarnMs, 'ms', label ? '(' + label + ')' : '');}}, _TrN_Sp.pendingWarnMs);if (p && typeof p['finally'] === 'function') {p['finally'](function () { clearTimeout(id); });} else if (p && typeof p.then === 'function') {p.then(function(){ clearTimeout(id); }, function(){ clearTimeout(id); });}} catch (_e) {}return p;};_TrN_Sp.asyncGeneratorStep = function(gen, resolve, reject, _next, _throw, key, arg) {try {var info = gen[key](arg);var value = info.value;} catch (error) {reject(error);return;}if (info.done) {resolve(value);} else {Promise.resolve(value).then(_next, _throw);}};_TrN_Sp.asyncToGenerator = function(fn) {return function() {var self = this, args = arguments;var __p = new Promise(function(resolve, reject) {var gen = fn.apply(self, args);function _next(value) {_TrN_Sp.asyncGeneratorStep(gen, resolve, reject, _next, _throw, 'next', value);}function _throw(err) {_TrN_Sp.asyncGeneratorStep(gen, resolve, reject, _next, _throw, 'throw', err);}_next(undefined);});return _TrN_Sp._wrapLongPending(__p, fn && fn.name ? fn.name : 'async');};_TrN_Sp.warnOnLongPending = (_TrN_Sp.warnOnLongPending === undefined ? true: _TrN_Sp.warnOnLongPending);_TrN_Sp.pendingWarnMs = (typeof _TrN_Sp.pendingWarnMs === 'number' && _TrN_Sp.pendingWarnMs >= 0) ? _TrN_Sp.pendingWarnMs : 2000;};_TrN_Sp.regeneratorRuntime = (function() {function mark(genFn) {return genFn;}function wrap(innerFn, outerFn, outerThis) {var _s=void 0,_t=false,_te;var context = {prev: 0,next: 0,done: false,rval: void 0,_ts:null,stop: function() {this.done = true;return this.rval;}};Object.defineProperty(context,'sent',{get:function(){if(_t){_t=false;var e=_te;_te=void 0;throw e;}return _s;},set:function(v){_s=v;},configurable:true});var _iter={next: function(arg) {if (context.done) return {value: undefined, done: true};context.sent = arg;context._y=false;var value;while(true){try{value = innerFn.call(outerThis, context);break;}catch(_e){if(context._catch){context._caught=_e;context.next=context._catch;context._catch=0;continue;}context.done=true;throw _e;}}if (context.done || context.next === 'end') {return {value: context.rval, done: true};}if (!context._y) {context.done = true;context.rval = value;return {value: context.rval, done: true};}return {value: value, done: false};},'throw': function(err) {_t=true;_te=err;return this.next(err);},'return': function(v) {if (context.done) return {value: v, done: true};if (context._ts && context._ts.length) {context.rval = v;context._rret = true;context.next = context._ts[context._ts.length - 1];return this.next();}context.done = true;return {value: v, done: true};}};if(typeof Symbol!=='undefined'&&Symbol.iterator)_iter[Symbol.iterator]=function(){return this;};return _iter;}return {mark: mark, wrap: wrap};})();if(typeof Symbol!=='undefined'&&Symbol.asyncIterator===undefined){try{Symbol.asyncIterator=Symbol('Symbol.asyncIterator');}catch(_e){}}_TrN_Sp._iter=function(x){if(x==null)throw new TypeError('not iterable');if(typeof x.next==='function')return x;if(typeof Symbol!=='undefined'&&Symbol.iterator&&typeof x[Symbol.iterator]==='function')return x[Symbol.iterator]();var i=0;return{next:function(){if(i>=x.length)return{value:undefined,done:true};return{value:x[i++],done:false};}};};_TrN_Sp._asyncIter=function(x){if(x==null)throw new TypeError('not iterable');if(typeof Symbol!=='undefined'&&Symbol.asyncIterator&&typeof x[Symbol.asyncIterator]==='function')return x[Symbol.asyncIterator]();return _TrN_Sp._iter(x);};_TrN_Sp.__await=function(v){return{__await:true,value:v};};_TrN_Sp.__asyncGenerator=function(thisArg,_args,fn){if(!fn||typeof fn.apply!=='function')throw new TypeError('async generator body must be a function');var iter=fn.apply(thisArg,_args||[]);var q=[],running=false;function step(){if(q.length===0){running=false;return;}running=true;var cur=q[0];var r;try{r=iter[cur.key](cur.arg);}catch(e){q.shift();cur.reject(e);return step();}if(r.done){q.shift();cur.resolve({value:r.value,done:true});return step();}var v=r.value;if(v&&v.__await){Promise.resolve(v.value).then(function(rv){q[0]={key:'next',arg:rv,resolve:cur.resolve,reject:cur.reject};step();},function(re){q[0]={key:'throw',arg:re,resolve:cur.resolve,reject:cur.reject};step();});}else{Promise.resolve(v).then(function(rv){q.shift();cur.resolve({value:rv,done:false});step();},function(re){q.shift();cur.reject(re);step();});}}function enqueue(key,arg){return new Promise(function(resolve,reject){q.push({key:key,arg:arg,resolve:resolve,reject:reject});if(!running)step();});}var aiter={next:function(v){return enqueue('next',v);},'throw':function(e){return enqueue('throw',e);},'return':function(v){return enqueue('return',v);}};if(typeof Symbol!=='undefined'&&Symbol.asyncIterator)aiter[Symbol.asyncIterator]=function(){return this;};return aiter;};",
         // old overly verbose version:
         //"_TrN_Sp.asyncGeneratorStep = function(gen, resolve, reject, _next, _throw, key, arg) {try{var info = gen[key](arg);var value = info.value;}catch (error){reject(error);return;}if (info.done){resolve(value);}else{Promise.resolve(value).then(_next, _throw);}};_TrN_Sp.asyncToGenerator = function(fn) {return function() {var self = this, args = arguments;return new Promise(function(resolve, reject) {var gen = fn.apply(self, args);function _next(value){_TrN_Sp.asyncGeneratorStep(gen, resolve, reject, _next, _throw, \"next\", value);}function _throw(err){_TrN_Sp.asyncGeneratorStep(gen, resolve, reject, _next, _throw, \"throw\", err);}_next(undefined);});};};_TrN_Sp.regeneratorRuntime = (function () {function mark(genFn) { return genFn; }function wrap(innerFn) {var context = {prev: 0,next: 0,sent: void 0,done: false,rval: void 0,stop: function () { this.done = true; return this.rval; }};return {next: function (arg) {var prevNext = context.next;context.sent = arg;var value = innerFn(context);if (context.done || context.next === \"end\") {return { value: context.rval, done: true };}if (context.next === prevNext) {context.done = true;context.rval = value;return { value: context.rval, done: true };}return { value: value, done: false };},throw: function (err) { throw err; }};}return { mark: mark, wrap: wrap };})();",
         0, (uint32_t)ASYNC_PF  },
@@ -532,59 +540,6 @@ static inline bool is_ws(char c)
 
 // Provided by tree-sitter-javascript (parser.c)
 extern const TSLanguage *tree_sitter_javascript(void);
-
-/*
-// Returns the field name for `node` relative to its parent, or NULL if none.
-// The returned pointer is owned by the language and remains valid for the
-// lifetime of the language; do not free it.
-static const char *ts_node_field_name(TSNode node)
-{
-    TSNode parent = ts_node_parent(node);
-    if (ts_node_is_null(parent))
-    {
-        return NULL; // no parent => no field
-    }
-
-    const char *result = NULL;
-    TSTreeCursor cursor = ts_tree_cursor_new(parent);
-
-    if (ts_tree_cursor_goto_first_child(&cursor))
-    {
-        do
-        {
-            TSNode child = ts_tree_cursor_current_node(&cursor);
-            if (ts_node_eq(child, node))
-            {
-                result = ts_tree_cursor_current_field_name(&cursor); // may be NULL
-                break;
-            }
-        } while (ts_tree_cursor_goto_next_sibling(&cursor));
-    }
-
-    ts_tree_cursor_delete(&cursor);
-    return result;
-}
-/* Check if node is inside a loop (for/while/do) within the same function scope. */
-static int is_inside_loop(TSNode node)
-{
-    TSNode anc = ts_node_parent(node);
-    while (!ts_node_is_null(anc))
-    {
-        const char *t = ts_node_type(anc);
-        if (strcmp(t, "for_statement") == 0 || strcmp(t, "while_statement") == 0 ||
-            strcmp(t, "do_statement") == 0 || strcmp(t, "for_in_statement") == 0)
-            return 1;
-        /* Stop at function boundaries */
-        if (strcmp(t, "function_declaration") == 0 || strcmp(t, "function_expression") == 0 ||
-            strcmp(t, "function") == 0 || strcmp(t, "arrow_function") == 0 ||
-            strcmp(t, "generator_function_declaration") == 0 || strcmp(t, "generator_function") == 0 ||
-            strcmp(t, "generator_function_expression") == 0 || strcmp(t, "method_definition") == 0 ||
-            strcmp(t, "program") == 0)
-            return 0;
-        anc = ts_node_parent(anc);
-    }
-    return 0;
-}
 
 /* Check whether a yield_expression is inside a context our lowering
    actually fails on.  The MVP yield-in-loop lowering covers
@@ -1096,25 +1051,6 @@ static void collect_template_by_offsets(TSNode tpl, Piece **lits, size_t *nl, Pi
     (*lits)[(*nl)++] = (Piece){0, cursor, close_tick};
 }
 
-// nearest previous named sibling
-static TSNode prev_named_sibling(TSNode node)
-{
-    TSNode parent = ts_node_parent(node);
-    if (ts_node_is_null(parent))
-        return (TSNode){0};
-    uint32_t n = ts_node_child_count(parent);
-    TSNode prev = (TSNode){0};
-    for (uint32_t i = 0; i < n; i++)
-    {
-        TSNode kid = ts_node_child(parent, i);
-        if (ts_node_eq(kid, node))
-            return prev;
-        if (ts_node_is_named(kid))
-            prev = kid;
-    }
-    return (TSNode){0};
-}
-
 // ============== arrow destructuring helpers ==============
 typedef struct
 {
@@ -1520,8 +1456,28 @@ static int rewrite_destructuring_declaration(EditList *edits, const char *src, T
         strcmp(ts_node_type(node), "lexical_declaration") != 0)
         return 0;
 
-    // Check each declarator for destructuring patterns
+    // Scan ALL declarators first.  If any uses destructuring, we
+    // expand every declarator in order — otherwise we'd drop the
+    // sibling declarators when we replace the whole statement
+    // (e.g. `const x = 1, [a,b] = y, z = 2` used to silently lose
+    // `x` and `z`).
     uint32_t dc = ts_node_named_child_count(node);
+    int any_destr = 0;
+    for (uint32_t di = 0; di < dc && !any_destr; di++) {
+        TSNode decl = ts_node_named_child(node, di);
+        if (strcmp(ts_node_type(decl), "variable_declarator") != 0) continue;
+        TSNode name = ts_node_child_by_field_name(decl, "name", 4);
+        if (ts_node_is_null(name)) continue;
+        const char *nt = ts_node_type(name);
+        if (strcmp(nt, "array_pattern") == 0 || strcmp(nt, "object_pattern") == 0)
+            any_destr = 1;
+    }
+    if (!any_destr) return 0;
+    if (overlaps) return 1;
+
+    size_t ns = ts_node_start_byte(node), ne = ts_node_end_byte(node);
+    rp_string *out = rp_string_new(256);
+
     for (uint32_t di = 0; di < dc; di++)
     {
         TSNode decl = ts_node_named_child(node, di);
@@ -1529,63 +1485,62 @@ static int rewrite_destructuring_declaration(EditList *edits, const char *src, T
             continue;
         TSNode name = ts_node_child_by_field_name(decl, "name", 4);
         TSNode val  = ts_node_child_by_field_name(decl, "value", 5);
-        if (ts_node_is_null(name) || ts_node_is_null(val))
+        if (ts_node_is_null(name))
             continue;
         const char *nt = ts_node_type(name);
-        if (strcmp(nt, "array_pattern") != 0 && strcmp(nt, "object_pattern") != 0)
-            continue;
 
-        // We have a destructuring declaration
-        if (overlaps)
-            return 1;
-
-        char tmpvar[32];
-        snprintf(tmpvar, sizeof(tmpvar), "_d%u", ++_destr_counter);
-
-        Bindings binds;
-        binds_init(&binds);
-        if (!collect_flat_destructure_bindings(name, src, tmpvar, &binds))
-        {
-            binds_free(&binds);
-            return 0;
-        }
-
-        size_t vs = ts_node_start_byte(val), ve = ts_node_end_byte(val);
-        size_t ns = ts_node_start_byte(node), ne = ts_node_end_byte(node);
-
-        rp_string *out = rp_string_new(256);
-        rp_string_puts(out, "var ");
-        rp_string_puts(out, tmpvar);
-        rp_string_puts(out, " = ");
-        rp_string_putsn(out, src + vs, ve - vs);
-        rp_string_puts(out, "; ");
-
-        for (size_t i = 0; i < binds.len; i++)
-        {
-            rp_string_puts(out, "var ");
-            rp_string_puts(out, binds.a[i].name);
-            rp_string_puts(out, " = ");
-            if (binds.a[i].defval)
-            {
-                rp_string_puts(out, binds.a[i].repl);
-                rp_string_puts(out, " !== undefined ? ");
-                rp_string_puts(out, binds.a[i].repl);
-                rp_string_puts(out, " : ");
-                rp_string_puts(out, binds.a[i].defval);
+        if (strcmp(nt, "array_pattern") == 0 || strcmp(nt, "object_pattern") == 0) {
+            if (ts_node_is_null(val)) continue;
+            char tmpvar[32];
+            snprintf(tmpvar, sizeof(tmpvar), "_d%u", ++_destr_counter);
+            Bindings binds;
+            binds_init(&binds);
+            if (!collect_flat_destructure_bindings(name, src, tmpvar, &binds)) {
+                binds_free(&binds);
+                /* Bail out: leave original code intact rather than
+                   produce a malformed mix. */
+                out = rp_string_free(out);
+                return 0;
             }
-            else
-            {
-                rp_string_puts(out, binds.a[i].repl);
+            size_t vs = ts_node_start_byte(val), ve = ts_node_end_byte(val);
+            rp_string_puts(out, "var ");
+            rp_string_puts(out, tmpvar);
+            rp_string_puts(out, " = ");
+            rp_string_putsn(out, src + vs, ve - vs);
+            rp_string_puts(out, "; ");
+            for (size_t i = 0; i < binds.len; i++) {
+                rp_string_puts(out, "var ");
+                rp_string_puts(out, binds.a[i].name);
+                rp_string_puts(out, " = ");
+                if (binds.a[i].defval) {
+                    rp_string_puts(out, binds.a[i].repl);
+                    rp_string_puts(out, " !== undefined ? ");
+                    rp_string_puts(out, binds.a[i].repl);
+                    rp_string_puts(out, " : ");
+                    rp_string_puts(out, binds.a[i].defval);
+                } else {
+                    rp_string_puts(out, binds.a[i].repl);
+                }
+                rp_string_puts(out, "; ");
+            }
+            binds_free(&binds);
+        } else {
+            /* Plain `name = expr` (or `name` with no initializer). */
+            size_t nms = ts_node_start_byte(name), nme = ts_node_end_byte(name);
+            rp_string_puts(out, "var ");
+            rp_string_putsn(out, src + nms, nme - nms);
+            if (!ts_node_is_null(val)) {
+                size_t vs = ts_node_start_byte(val), ve = ts_node_end_byte(val);
+                rp_string_puts(out, " = ");
+                rp_string_putsn(out, src + vs, ve - vs);
             }
             rp_string_puts(out, "; ");
         }
-
-        binds_free(&binds);
-        add_edit_take_ownership(edits, ns, ne, rp_string_steal(out), claimed);
-        out = rp_string_free(out);
-        return 1;
     }
-    return 0;
+
+    add_edit_take_ownership(edits, ns, ne, rp_string_steal(out), claimed);
+    out = rp_string_free(out);
+    return 1;
 }
 
 // Rewrite: [b, a] = [a, b];  ->  var _d = [a, b]; b = _d[0]; a = _d[1];
@@ -1950,8 +1905,14 @@ static int rewrite_export_node(EditList *edits, const char *src, TSNode snode, R
                     rp_string *post = rp_string_new(32);
                     if (is_default_export)
                     {
-                        /* default: function f(...){} ; module.exports = f; */
-                        rp_string_puts(post, "; module.exports = ");
+                        /* default: function f(...){} ; exports.default = f;
+                           Set __esModule so _interopDefault unwraps to `f`
+                           on the consumer side.  We do NOT overwrite
+                           module.exports (`module.exports = f`) because
+                           that would erase any sibling named exports —
+                           luxon/datetime.js has BOTH `export default class
+                           Duration` and `export const lowOrderMatrix`. */
+                        rp_string_puts(post, "; exports.__esModule=true; exports.default = ");
                         rp_string_putsn(post, src + is, ie - is);
                         rp_string_puts(post, ";");
                     }
@@ -2001,7 +1962,7 @@ static int rewrite_export_node(EditList *edits, const char *src, TSNode snode, R
             rp_string *out = rp_string_new(64);
             rp_string_puts(out, "var _TrN_default = ");
             rp_string_puts(out, body);
-            rp_string_puts(out, "; exports.default = _TrN_default;");
+            rp_string_puts(out, "; exports.__esModule=true; exports.default = _TrN_default;");
             add_edit_take_ownership(edits, ns, ne, rp_string_steal(out), claimed); /* replace whole export statement */
             rp_string_free(out);
             free(body);
@@ -3061,6 +3022,14 @@ static int rewrite_raw_node(EditList *edits, const char *src, TSNode snode, Rang
     return 1;
 }
 
+/* Forward decls — bodies live after the _bs_* helpers in the
+   block-scope section (which we depend on). */
+static void _imp_rewrite_refs(TSNode node, const char *src,
+                              const char *name, size_t name_len,
+                              const char *new_text,
+                              EditList *edits, RangeList *claimed);
+static TSNode _imp_find_program(TSNode n);
+
 static int do_named_imports(EditList *edits, const char *src, TSNode snode, TSNode named_imports, TSNode string_frag,
                             size_t start, size_t end, RangeList *claimed)
 {
@@ -3080,33 +3049,62 @@ static int do_named_imports(EditList *edits, const char *src, TSNode snode, TSNo
 
     rp_string_appendf(out, "var %s=require(\"%.*s\");if(_TrN_Sp._pP)_TrN_Sp._pP();", buf, (int)(mod_e - mod_s), src + mod_s);
 
-    /* each specifier: var <aliasOrName> = tmp.<name>; */
+    /* Locate the enclosing program so we can rewrite refs across the
+       whole module (closures included). */
+    TSNode program = _imp_find_program(snode);
+
+    /* For each specifier: rewrite all references to the binding (alias
+       if present, else local name) into `<buf>.<remoteName>` member
+       expressions. This preserves live-binding semantics: cycles see
+       the export at call time rather than at destructure time. The
+       previous emission of `var <name>=<buf>.<remoteName>;` is dropped;
+       references are rewritten directly. */
     while (!ts_node_is_null(spec))
     {
         TSNode local = ts_node_child_by_field_name(spec, "name", 4);
         TSNode alias = ts_node_child_by_field_name(spec, "alias", 5);
 
+        const char *binding_text = NULL;
+        size_t binding_len = 0;
+        const char *remote_text = NULL;
+        size_t remote_len = 0;
+
         if (ts_node_is_null(local))
         {
-            /* fallback: use raw slice */
+            /* fallback: use spec's raw text */
             size_t s = ts_node_start_byte(spec), e = ts_node_end_byte(spec);
-            rp_string_appendf(out, "var %.*s=%s.%.*s;", (int)(e - s), src + s, buf, (int)(e - s), src + s);
+            binding_text = src + s; binding_len = e - s;
+            remote_text  = binding_text; remote_len = binding_len;
         }
         else
         {
             size_t ls = ts_node_start_byte(local), le = ts_node_end_byte(local);
+            remote_text = src + ls; remote_len = le - ls;
             if (!ts_node_is_null(alias))
             {
                 size_t as = ts_node_start_byte(alias), ae = ts_node_end_byte(alias);
-                rp_string_appendf(out, "var %.*s=%s.%.*s;", (int)(ae - as), src + as, /* alias binding on LHS */
-                              buf, (int)(le - ls), src + ls);                           /* local name on RHS from tmp */
+                binding_text = src + as; binding_len = ae - as;
             }
             else
             {
-                rp_string_appendf(out, "var %.*s=%s.%.*s;", (int)(le - ls), src + ls, /* same name */
-                              buf, (int)(le - ls), src + ls);
+                binding_text = remote_text; binding_len = remote_len;
             }
         }
+
+        /* Build "buf.remote" replacement text. */
+        rp_string *acc = rp_string_new(strlen(buf) + remote_len + 2);
+        rp_string_puts(acc, buf);
+        rp_string_putc(acc, '.');
+        rp_string_putsn(acc, remote_text, remote_len);
+        char *member_text = rp_string_steal(acc);
+        acc = rp_string_free(acc);
+
+        if (!ts_node_is_null(program))
+        {
+            _imp_rewrite_refs(program, src, binding_text, binding_len,
+                              member_text, edits, claimed);
+        }
+        free(member_text);
 
         pos++;
         spec = find_child_type(named_imports, "import_specifier", &pos);
@@ -3178,10 +3176,20 @@ static int do_default_and_named_imports(EditList *edits, const char *src, TSNode
     rp_string *out=rp_string_new(512);
     rp_string_appendf(out, "var %s=require(\"%.*s\");if(_TrN_Sp._pP)_TrN_Sp._pP();", tbuf, (int)(mod_e - mod_s), src + mod_s);
 
-    /* bind default: var def = __tmp;  (we lower default export to module.exports) */
+    /* bind default: var def = __tmp.default;  Default values can be
+       eager-bound because interopDefault freezes the value at require
+       time; circular partial-load happily returns the early value or
+       undefined and the consumer handles that. */
     rp_string_appendf(out, "var %.*s=%s.default;", (int)(id_e - id_s), src + id_s, tbuf);
 
-    /* named specifiers with aliases */
+    /* Locate the enclosing program for live-binding rewrites. */
+    TSNode program = _imp_find_program(snode);
+
+    /* Named specifiers: rewrite each reference to `<tbuf>.<remote>`
+       (live binding) rather than emit an eager `var X = T.X;`.
+       Required for ES module cycles — e.g. luxon's datetime.js ↔
+       interval.js: interval imports `friendlyDateTime`, which datetime
+       defines AFTER it imports interval, so an eager copy is `undefined`. */
     uint32_t pos = 0;
     TSNode spec = find_child_type(named_imports, "import_specifier", &pos);
     while (!ts_node_is_null(spec))
@@ -3189,27 +3197,44 @@ static int do_default_and_named_imports(EditList *edits, const char *src, TSNode
         TSNode local = ts_node_child_by_field_name(spec, "name", 4);
         TSNode alias = ts_node_child_by_field_name(spec, "alias", 5);
 
+        const char *binding_text = NULL;
+        size_t binding_len = 0;
+        const char *remote_text = NULL;
+        size_t remote_len = 0;
+
         if (ts_node_is_null(local))
         {
-            /* fallback: raw slice */
             size_t s = ts_node_start_byte(spec), e = ts_node_end_byte(spec);
-            rp_string_appendf(out, "var %.*s=%s.%.*s;", (int)(e - s), src + s, tbuf, (int)(e - s), src + s);
+            binding_text = src + s; binding_len = e - s;
+            remote_text  = binding_text; remote_len = binding_len;
         }
         else
         {
             size_t ls = ts_node_start_byte(local), le = ts_node_end_byte(local);
+            remote_text = src + ls; remote_len = le - ls;
             if (!ts_node_is_null(alias))
             {
                 size_t as = ts_node_start_byte(alias), ae = ts_node_end_byte(alias);
-                rp_string_appendf(out, "var %.*s=%s.%.*s;", (int)(ae - as), src + as, /* alias */
-                              tbuf, (int)(le - ls), src + ls);                          /* local */
+                binding_text = src + as; binding_len = ae - as;
             }
             else
             {
-                rp_string_appendf(out, "var %.*s=%s.%.*s;", (int)(le - ls), src + ls, /* same name */
-                              tbuf, (int)(le - ls), src + ls);
+                binding_text = remote_text; binding_len = remote_len;
             }
         }
+
+        /* Build "tbuf.remote" replacement text. */
+        rp_string *acc = rp_string_new(strlen(tbuf) + remote_len + 2);
+        rp_string_puts(acc, tbuf);
+        rp_string_putc(acc, '.');
+        rp_string_putsn(acc, remote_text, remote_len);
+        char *member_text = rp_string_steal(acc);
+        acc = rp_string_free(acc);
+
+        if (!ts_node_is_null(program))
+            _imp_rewrite_refs(program, src, binding_text, binding_len,
+                              member_text, edits, claimed);
+        free(member_text);
 
         pos++;
         spec = find_child_type(named_imports, "import_specifier", &pos);
@@ -3274,6 +3299,235 @@ static int rewrite_import_node(EditList *edits, const char *src, TSNode snode, R
     snprintf(out, outlen, "require(\"%.*s\");if(_TrN_Sp._pP)_TrN_Sp._pP();", (int)slen, src + sstart);
     // check for newlines between ns and ne.  add an edit to insert however many, cuz this rewrites on one line
     add_edit_take_ownership(edits, ns, ne, out, claimed);
+    return 1;
+}
+
+/* Dynamic `import(<spec>)` — lower to a Promise that resolves to the
+   module's namespace.  Native `import()` returns a Promise<ModuleNamespace>;
+   we approximate by wrapping require() with `_interopRequireWildcard` so
+   CommonJS modules appear with `{default, ...named}` shape, matching
+   what node's CJS-import gives.  `<spec>` may be any expression (literal
+   string, template, identifier, …) so we copy its source bytes verbatim.
+   `_pP` is invoked for the side-effect of patching Promise methods that
+   the require may have installed, before the Promise.resolve call. */
+static int rewrite_dynamic_import(EditList *edits, const char *src, TSNode snode, RangeList *claimed,
+                                  uint32_t *polysneeded, int overlaps)
+{
+    if (strcmp(ts_node_type(snode), "call_expression") != 0)
+        return 0;
+    TSNode fn = ts_node_child_by_field_name(snode, "function", 8);
+    if (ts_node_is_null(fn))
+        return 0;
+    if (strcmp(ts_node_type(fn), "import") != 0)
+        return 0;
+
+    TSNode args = ts_node_child_by_field_name(snode, "arguments", 9);
+    if (ts_node_is_null(args))
+        return 0;
+    uint32_t nc = ts_node_named_child_count(args);
+    if (nc < 1)
+        return 0;
+
+    if (overlaps)
+        return 1;
+
+    TSNode spec = ts_node_named_child(args, 0);
+    size_t ss = ts_node_start_byte(spec), se = ts_node_end_byte(spec);
+    size_t ns = ts_node_start_byte(snode), ne = ts_node_end_byte(snode);
+
+    /* Use `new Promise(...)` so synchronous throws from require() become
+       rejections (matches node's `import("./bad")` rejecting instead of
+       throwing). _pP runs AFTER require, since require() is what installs
+       the polyfill's missing Promise methods. */
+    rp_string *out = rp_string_new(128);
+    rp_string_puts(out, "(new Promise(function(_TrN_r){var _TrN_m=_TrN_Sp._interopRequireWildcard(require(");
+    rp_string_putsn(out, src + ss, se - ss);
+    rp_string_puts(out, "));if(_TrN_Sp._pP)_TrN_Sp._pP();_TrN_r(_TrN_m);}))");
+    char *rep = rp_string_steal(out);
+    out = rp_string_free(out);
+    add_edit_take_ownership(edits, ns, ne, rep, claimed);
+    *polysneeded |= IMPORT_PF | PROMISE_PF;
+    return 1;
+}
+
+/* True iff `n`'s subtree contains an await_expression that isn't nested
+   inside a function-like (function/arrow/method/generator). Used to detect
+   top-level await in a program. */
+static int _has_top_level_await(TSNode n)
+{
+    const char *t = ts_node_type(n);
+    if (strcmp(t, "await_expression") == 0)
+        return 1;
+    /* Stop descending at function boundaries — awaits inside async functions
+       are not top-level. Also stop at class bodies (await isn't legal there
+       at evaluation-of-body time anyway; field initializers are deferred). */
+    if (strcmp(t, "function_declaration") == 0 ||
+        strcmp(t, "function_expression") == 0 ||
+        strcmp(t, "function") == 0 ||
+        strcmp(t, "arrow_function") == 0 ||
+        strcmp(t, "method_definition") == 0 ||
+        strcmp(t, "generator_function") == 0 ||
+        strcmp(t, "generator_function_declaration") == 0 ||
+        strcmp(t, "generator_function_expression") == 0 ||
+        strcmp(t, "class_declaration") == 0 ||
+        strcmp(t, "class") == 0 ||
+        strcmp(t, "class_body") == 0)
+        return 0;
+    uint32_t c = ts_node_child_count(n);
+    for (uint32_t i = 0; i < c; i++)
+        if (_has_top_level_await(ts_node_child(n, i)))
+            return 1;
+    return 0;
+}
+
+/* Top-level `await`. Duktape rejects `await` outside an async function.
+   When a program has at least one top-level await, we:
+     1. Wrap all top-level statements (after the directive prologue) in an
+        IIFE: `(async function(){ ... }).call(this).then(null, errHandler)`.
+     2. Rewrite top-level `var x = init;` / `let` / `const` to
+        `global.x = init;` so they remain visible on the global object
+        (preserves today's "top-level var attaches to global" semantics).
+     3. Append `;global.X = X;` after top-level `function`/`class`
+        declarations so they remain externally callable.
+   The async IIFE will be picked up on the next rewrite pass by the
+   existing async-function lowering, which converts it to a regenerator-
+   driven state machine. */
+static int rewrite_top_level_await(EditList *edits, const char *src, TSNode prog_node,
+                                   RangeList *claimed, uint32_t *polysneeded, int *unresolved,
+                                   int overlaps)
+{
+    if (strcmp(ts_node_type(prog_node), "program") != 0)
+        return 0;
+    if (!_has_top_level_await(prog_node))
+        return 0;
+    if (overlaps)
+        return 1;
+
+    uint32_t nc = ts_node_named_child_count(prog_node);
+    if (nc == 0)
+        return 0;
+
+    /* Skip directive prologue ("use strict", "use transpilerGlobally", …). */
+    uint32_t first_idx = 0;
+    while (first_idx < nc)
+    {
+        TSNode k = ts_node_named_child(prog_node, first_idx);
+        const char *kt = ts_node_type(k);
+        if (strcmp(kt, "expression_statement") == 0)
+        {
+            uint32_t ec = ts_node_named_child_count(k);
+            if (ec >= 1)
+            {
+                TSNode e = ts_node_named_child(k, 0);
+                if (strcmp(ts_node_type(e), "string") == 0)
+                {
+                    first_idx++;
+                    continue;
+                }
+            }
+        }
+        break;
+    }
+    if (first_idx >= nc)
+        return 0;
+
+    TSNode first = ts_node_named_child(prog_node, first_idx);
+    TSNode last = ts_node_named_child(prog_node, nc - 1);
+    size_t open_pos = ts_node_start_byte(first);
+    size_t close_pos = ts_node_end_byte(last);
+
+    add_edit(edits, open_pos, open_pos,
+             ";(async function(){\n", claimed);
+    add_edit(edits, close_pos, close_pos,
+             "\n}).call(this).then(null,function(_TrN_e){"
+             "if(typeof console!=='undefined'&&console&&console.error)console.error(_TrN_e);"
+             "if(typeof process!=='undefined'&&process.exit)process.exit(1);"
+             "else throw _TrN_e;});",
+             claimed);
+
+    /* Rewrite top-level declarations. */
+    for (uint32_t i = first_idx; i < nc; i++)
+    {
+        TSNode stmt = ts_node_named_child(prog_node, i);
+        const char *st = ts_node_type(stmt);
+
+        if (strcmp(st, "variable_declaration") == 0 ||
+            strcmp(st, "lexical_declaration") == 0)
+        {
+            uint32_t dc = ts_node_named_child_count(stmt);
+            rp_string *rep = rp_string_new(64);
+            int any_destr = 0;
+            for (uint32_t j = 0; j < dc; j++)
+            {
+                TSNode decl = ts_node_named_child(stmt, j);
+                if (strcmp(ts_node_type(decl), "variable_declarator") != 0) continue;
+                TSNode name = ts_node_child_by_field_name(decl, "name", 4);
+                TSNode val  = ts_node_child_by_field_name(decl, "value", 5);
+                if (ts_node_is_null(name)) continue;
+
+                const char *nt = ts_node_type(name);
+                if (strcmp(nt, "identifier") == 0)
+                {
+                    size_t nns = ts_node_start_byte(name), nne = ts_node_end_byte(name);
+                    if (rep->len) rp_string_puts(rep, " ");
+                    rp_string_puts(rep, "global.");
+                    rp_string_putsn(rep, src + nns, nne - nns);
+                    if (!ts_node_is_null(val))
+                    {
+                        size_t vs = ts_node_start_byte(val), ve = ts_node_end_byte(val);
+                        rp_string_puts(rep, "=");
+                        rp_string_putsn(rep, src + vs, ve - vs);
+                    }
+                    else
+                    {
+                        rp_string_puts(rep, "=void 0");
+                    }
+                    rp_string_puts(rep, ";");
+                }
+                else
+                {
+                    /* Destructure at top level — fall back to keeping the
+                       declaration as-is (bindings stay local to the IIFE).
+                       MVP limitation; would need an inline temp +
+                       per-binding `global.name = temp.field` pass. */
+                    any_destr = 1;
+                    break;
+                }
+            }
+            if (!any_destr && rep->len > 0)
+            {
+                char *r = rp_string_steal(rep);
+                size_t ss = ts_node_start_byte(stmt), se = ts_node_end_byte(stmt);
+                add_edit_take_ownership(edits, ss, se, r, claimed);
+            }
+            rep = rp_string_free(rep);
+        }
+        else if (strcmp(st, "function_declaration") == 0 ||
+                 strcmp(st, "class_declaration") == 0)
+        {
+            TSNode nm = ts_node_child_by_field_name(stmt, "name", 4);
+            if (!ts_node_is_null(nm) && strcmp(ts_node_type(nm), "identifier") == 0)
+            {
+                size_t nns = ts_node_start_byte(nm), nne = ts_node_end_byte(nm);
+                rp_string *rep = rp_string_new(32);
+                rp_string_puts(rep, ";global.");
+                rp_string_putsn(rep, src + nns, nne - nns);
+                rp_string_puts(rep, "=");
+                rp_string_putsn(rep, src + nns, nne - nns);
+                rp_string_puts(rep, ";");
+                size_t se = ts_node_end_byte(stmt);
+                char *r = rp_string_steal(rep);
+                rep = rp_string_free(rep);
+                add_edit_take_ownership(edits, se, se, r, claimed);
+            }
+        }
+    }
+
+    *polysneeded |= ASYNC_PF | PROMISE_PF;
+    /* Force a second rewrite pass so the just-emitted `async function(){}`
+       wrapper gets picked up by `rewrite_async_await_to_regenerator` and
+       lowered to regenerator state machine. */
+    *unresolved = 1;
     return 1;
 }
 
@@ -3814,6 +4068,68 @@ static int rewrite_arrow_function_node(EditList *edits, const char *src, TSNode 
         }
     }
 
+    /* Rest parameter detection. Arrows go through this rewriter directly
+       (not rewrite_function_rest, which only sees function_declaration /
+       function_expression / method_definition).  If the params contain a
+       rest_pattern, we strip it from the emitted params and inject
+       `var <name> = Object.values(arguments).slice(N);` into the rewritten
+       body. Works for block AND concise bodies (concise gets the IIFE
+       wrap with the shim before the return).
+       Only handles the simple rest case (identifier in rest_pattern); rest
+       combined with destructure-rest inside a pattern would need extra
+       work — not blocking. */
+    char *rest_shim_name = NULL;
+    size_t rest_shim_idx = 0;
+    char *rest_emitted_params = NULL; /* params text minus rest */
+    if (!multi_did && !ts_node_is_null(params) &&
+        strcmp(ts_node_type(params), "formal_parameters") == 0)
+    {
+        uint32_t np = ts_node_named_child_count(params);
+        for (uint32_t i = 0; i < np; i++)
+        {
+            TSNode p = ts_node_named_child(params, i);
+            if (strcmp(ts_node_type(p), "rest_pattern") == 0)
+            {
+                TSNode nm = (TSNode){{0}};
+                uint32_t rc = ts_node_named_child_count(p);
+                for (uint32_t k = 0; k < rc; k++)
+                {
+                    TSNode kp = ts_node_named_child(p, k);
+                    if (strcmp(ts_node_type(kp), "identifier") == 0)
+                    {
+                        nm = kp;
+                        break;
+                    }
+                }
+                if (ts_node_is_null(nm))
+                    break;
+                size_t ns2 = ts_node_start_byte(nm), ne2 = ts_node_end_byte(nm);
+                rest_shim_name = malloc(ne2 - ns2 + 1);
+                memcpy(rest_shim_name, src + ns2, ne2 - ns2);
+                rest_shim_name[ne2 - ns2] = '\0';
+                rest_shim_idx = i;
+                /* Build emitted params: original params text minus the
+                   rest_pattern (and its leading comma if not first).
+                   Always wrap in parens since `function args (...)` needs
+                   parens around params regardless. */
+                rp_string *pbuf = rp_string_new(32);
+                rp_string_putc(pbuf, '(');
+                for (uint32_t k = 0; k < np; k++)
+                {
+                    if (k == i) continue;
+                    TSNode kp = ts_node_named_child(params, k);
+                    size_t kps = ts_node_start_byte(kp), kpe = ts_node_end_byte(kp);
+                    if (pbuf->len > 1) rp_string_puts(pbuf, ", ");
+                    rp_string_putsn(pbuf, src + kps, kpe - kps);
+                }
+                rp_string_putc(pbuf, ')');
+                rest_emitted_params = rp_string_steal(pbuf);
+                pbuf = rp_string_free(pbuf);
+                break;
+            }
+        }
+    }
+
     // Destructuring bindings (flat)
     int did = 0;
     Bindings binds;
@@ -3960,6 +4276,37 @@ static int rewrite_arrow_function_node(EditList *edits, const char *src, TSNode 
             pdef = rp_string_free(pdef);
         decls = rp_string_free(decls);
     }
+    else if (rest_shim_name)
+    {
+        /* Rest-aware arrow rewrite. Emit
+             function <params-without-rest> { var <name>=Object.values(arguments).slice(N); <body> }
+           Works for block AND concise bodies. */
+        rp_string *rbuf = rp_string_new(96);
+        rp_string_puts(rbuf, "function ");
+        rp_string_puts(rbuf, rest_emitted_params);
+        if (is_block)
+        {
+            const char *bsrc = body_src;
+            size_t blen = body_src_len;
+            size_t brace = 0;
+            while (brace < blen && bsrc[brace] != '{') brace++;
+            if (brace < blen) brace++;
+            rp_string_putc(rbuf, ' ');
+            rp_string_putsn(rbuf, bsrc, brace);
+            rp_string_appendf(rbuf, "var %s=Object.values(arguments).slice(%u); ",
+                              rest_shim_name, (unsigned)rest_shim_idx);
+            rp_string_putsn(rbuf, bsrc + brace, blen - brace);
+        }
+        else
+        {
+            rp_string_appendf(rbuf, " { var %s=Object.values(arguments).slice(%u); return ",
+                              rest_shim_name, (unsigned)rest_shim_idx);
+            rp_string_putsn(rbuf, body_src, body_src_len);
+            rp_string_puts(rbuf, "; }");
+        }
+        rep = rp_string_steal(rbuf);
+        rbuf = rp_string_free(rbuf);
+    }
     else
     {
         int needs_paren = !slice_starts_with_paren(src, ps, pe);
@@ -4079,6 +4426,8 @@ static int rewrite_arrow_function_node(EditList *edits, const char *src, TSNode 
         free(body_subst);
     if (multi_params) multi_params = rp_string_free(multi_params);
     if (multi_inj) multi_inj = rp_string_free(multi_inj);
+    if (rest_shim_name) free(rest_shim_name);
+    if (rest_emitted_params) free(rest_emitted_params);
     return 1;
 }
 static int rewrite_array_spread(EditList *edits, const char *src, TSNode arr, int isObject, RangeList *claimed,
@@ -4911,6 +5260,11 @@ static void _emit_destructure_assignment_await_lower(rp_string *dst, const char 
    `_collect_yields_shallow` stops at function boundaries). */
 static int _g_in_async_gen = 0;
 
+/* Forward decl for the JS-string-literal emitter, defined down by the
+   rewriter pass — used earlier by the class-method fn-source emission
+   to attach a `src:"..."` field to method descriptors. */
+static void emit_js_string_literal(rp_string *out, const char *src, size_t s, size_t e);
+
 /* Forward decls so the async dispatcher can delegate to the unified
    yield/await lowering machinery defined further down. The actual
    LoopCtx/FinCtx structs are defined later; only the typedef'd-pointer
@@ -4922,8 +5276,10 @@ static void _emit_yield_body(rp_string *out, const char *src, TSNode block,
 static void _emit_stmt_yield_lower(rp_string *dst, const char *src, size_t ss, size_t se, TSNode stmt_node,
                                    struct LoopCtx *ctx, struct FinCtx *fctx, int *p_next_label);
 
-// Lower a statement containing 0..N awaits into state-machine steps
-static void _emit_stmt_async_lower(rp_string *dst, const char *src, size_t ss, size_t se, TSNode stmt_node,
+// Lower a statement containing 0..N awaits into state-machine steps.
+// Currently unused; the structural lowering pipeline emits these inline.
+static __attribute__((unused)) void
+_emit_stmt_async_lower(rp_string *dst, const char *src, size_t ss, size_t se, TSNode stmt_node,
                                    int *p_next_label)
 {
     _AsyncNodeVec av = {0};
@@ -5359,7 +5715,8 @@ static void _collect_control(TSNode node, _AsyncNodeVec *brks, _AsyncNodeVec *co
 }
 
 /* Back-compat wrapper for sites that don't care about returns. */
-static void _collect_loop_control(TSNode node, _AsyncNodeVec *brks, _AsyncNodeVec *conts)
+static __attribute__((unused)) void
+_collect_loop_control(TSNode node, _AsyncNodeVec *brks, _AsyncNodeVec *conts)
 {
     _collect_control(node, brks, conts, NULL);
 }
@@ -5539,9 +5896,9 @@ static char *_lower_range_with_yields(rp_string *dst, const char *src,
 
             if (is_star)
             {
-                /* yield* iter — delegate: walk iter via _TrN_Sp._iter and
-                   yield each value. Result expression is the iterator's
-                   final value (often undefined). State machine:
+                /* yield* iter — delegate: walk iter and yield each value.
+
+                   Sync-gen mode (`_g_in_async_gen == 0`):
                      _ctx._ys<N> = _TrN_Sp._iter(<arg>);
                      case LOOP:
                         _ctx._yr<N> = _ctx._ys<N>.next();
@@ -5550,9 +5907,30 @@ static char *_lower_range_with_yields(rp_string *dst, const char *src,
                         _ctx.next=RESUME;
                         return _ctx._yr<N>.value;
                      case RESUME: _ctx.next=LOOP; break;
+                     case DONE:
+
+                   Async-gen mode (await every step):
+                     _ctx._ys<N> = _TrN_Sp._asyncIter(<arg>);
+                     case LOOP_NEXT:
+                        _ctx._y=true; _ctx.next=AFTER_NEXT;
+                        return __await(_ctx._ys<N>.next());
+                     case AFTER_NEXT:
+                        _ctx._yr<N> = _ctx.sent;
+                        if (_ctx._yr<N>.done) { _ctx.next=DONE; break; }
+                        _ctx._y=true; _ctx.next=RESUME;
+                        return _ctx._yr<N>.value;
+                     case RESUME: _ctx.next=LOOP_NEXT; break;
                      case DONE: */
+                int async_mode = _g_in_async_gen;
+
                 *p_next_label += 3;
                 int loop_label = *p_next_label;
+                int after_next_label = 0;
+                if (async_mode)
+                {
+                    *p_next_label += 3;
+                    after_next_label = *p_next_label;
+                }
                 *p_next_label += 3;
                 int resume_label = *p_next_label;
                 *p_next_label += 3;
@@ -5568,13 +5946,33 @@ static char *_lower_range_with_yields(rp_string *dst, const char *src,
                     if (*p != ';' && *p != ':' && *p != '{')
                         rp_string_putc(dst, ';');
                 }
-                rp_string_appendf(dst, "%s=_TrN_Sp._iter(", iter_slot);
+                rp_string_appendf(dst, "%s=_TrN_Sp.%s(",
+                                  iter_slot, async_mode ? "_asyncIter" : "_iter");
                 if (arg_lowered) rp_string_puts(dst, arg_lowered);
                 else             rp_string_puts(dst, "undefined");
-                rp_string_appendf(dst, ");case %d:%s=%s.next();if(%s.done){_context.next=%d;break;}",
-                                  loop_label, step_slot, iter_slot, step_slot, done_label);
-                rp_string_appendf(dst, "_context._y=true;_context.next=%d;return %s.value;",
-                                  resume_label, step_slot);
+                rp_string_puts(dst, ");");
+
+                if (async_mode)
+                {
+                    /* LOOP_NEXT: await iter.next() */
+                    rp_string_appendf(dst, "case %d:_context._y=true;_context.next=%d;"
+                                           "return _TrN_Sp.__await(%s.next());",
+                                      loop_label, after_next_label, iter_slot);
+                    /* AFTER_NEXT: store step, check done, yield value */
+                    rp_string_appendf(dst, "case %d:%s=_context.sent;"
+                                           "if(%s.done){_context.next=%d;break;}"
+                                           "_context._y=true;_context.next=%d;return %s.value;",
+                                      after_next_label, step_slot, step_slot,
+                                      done_label, resume_label, step_slot);
+                }
+                else
+                {
+                    /* Sync-gen: just .next() inline. */
+                    rp_string_appendf(dst, "case %d:%s=%s.next();if(%s.done){_context.next=%d;break;}",
+                                      loop_label, step_slot, iter_slot, step_slot, done_label);
+                    rp_string_appendf(dst, "_context._y=true;_context.next=%d;return %s.value;",
+                                      resume_label, step_slot);
+                }
                 rp_string_appendf(dst, "case %d:_context.next=%d;break;case %d:",
                                   resume_label, loop_label, done_label);
 
@@ -5871,6 +6269,11 @@ static void _emit_yield_body_range(rp_string *out, const char *src, TSNode block
         }
         else if (is_var_decl && !has_yield)
         {
+            /* Preserve leading whitespace so the assignment lands on the
+               same source line as the original `var`/`let`/`const`. */
+            size_t stmt_s = ts_node_start_byte(stmt);
+            if (ss < stmt_s)
+                rp_string_putsn(out, src + ss, stmt_s - ss);
             _emit_var_decl_as_assignments(out, src, stmt);
         }
         else if (strcmp(stmt_type, "break_statement") == 0 && ctx
@@ -5888,6 +6291,12 @@ static void _emit_yield_body_range(rp_string *out, const char *src, TSNode block
         }
         else if (strcmp(stmt_type, "while_statement") == 0 && has_yield)
         {
+            /* Preserve leading whitespace so the `case COND:` lands on
+               the original `while` source line. */
+            {
+                size_t stmt_s = ts_node_start_byte(stmt);
+                if (ss < stmt_s) rp_string_putsn(out, src + ss, stmt_s - ss);
+            }
             /* Decompose: while (cond) { body }
                -> case COND: if(!cond){_context.next=EXIT;break;}
                   <body stmts with yields lowered>
@@ -5962,6 +6371,10 @@ static void _emit_yield_body_range(rp_string *out, const char *src, TSNode block
         }
         else if (strcmp(stmt_type, "for_statement") == 0 && has_yield)
         {
+            {
+                size_t stmt_s = ts_node_start_byte(stmt);
+                if (ss < stmt_s) rp_string_putsn(out, src + ss, stmt_s - ss);
+            }
             /* Decompose: for (init; cond; incr) { body }
                -> init;
                   case COND: if(!(cond)){_context.next=EXIT;break;}
@@ -6076,6 +6489,10 @@ static void _emit_yield_body_range(rp_string *out, const char *src, TSNode block
         }
         else if (strcmp(stmt_type, "try_statement") == 0 && has_yield)
         {
+            {
+                size_t stmt_s = ts_node_start_byte(stmt);
+                if (ss < stmt_s) rp_string_putsn(out, src + ss, stmt_s - ss);
+            }
             /* try/catch/finally with yields inside.  The regenerator
                wrap catches any throw from innerFn and, if
                _context._catch is set, routes to the catch case.  This
@@ -6197,7 +6614,13 @@ static void _emit_yield_body_range(rp_string *out, const char *src, TSNode block
                 rp_string_appendf(out, "_context._catch=%d;", body_throw_target);
             }
             if (has_finally)
+            {
                 rp_string_appendf(out, "%s=void 0;", err_slot);
+                /* Push this try's finally label onto the runtime _ts stack
+                   so the iterator's .return(v) can find an active finally
+                   and run it before completing. */
+                rp_string_appendf(out, "(_context._ts||(_context._ts=[])).push(%d);", fin_label);
+            }
 
             /* Lower the try body. */
             if (!ts_node_is_null(tbody) && strcmp(ts_node_type(tbody), "statement_block") == 0)
@@ -6284,6 +6707,10 @@ static void _emit_yield_body_range(rp_string *out, const char *src, TSNode block
                 }
                 if (out->len && out->str[out->len - 1] != ';')
                     rp_string_putc(out, ';');
+                /* Pop this try's finally label off the runtime _ts stack —
+                   we're leaving the try-finally either via re-throw,
+                   pending-return, or normal exit. */
+                rp_string_puts(out, "_context._ts&&_context._ts.pop();");
                 /* Pending throw takes precedence over pending return. */
                 rp_string_appendf(out,
                     "if(%s!==void 0){var _TrN_te=%s;%s=void 0;throw _TrN_te;}",
@@ -6297,6 +6724,10 @@ static void _emit_yield_body_range(rp_string *out, const char *src, TSNode block
         }
         else if (strcmp(stmt_type, "switch_statement") == 0 && has_yield)
         {
+            {
+                size_t stmt_s = ts_node_start_byte(stmt);
+                if (ss < stmt_s) rp_string_putsn(out, src + ss, stmt_s - ss);
+            }
             /* Structural lowering for switch with yields.  Cache the
                value, dispatch to each case via if-comparison + jump,
                then emit each case body as its own state.  This MVP:
@@ -6458,6 +6889,10 @@ static void _emit_yield_body_range(rp_string *out, const char *src, TSNode block
         }
         else if (strcmp(stmt_type, "if_statement") == 0 && has_yield)
         {
+            {
+                size_t stmt_s = ts_node_start_byte(stmt);
+                if (ss < stmt_s) rp_string_putsn(out, src + ss, stmt_s - ss);
+            }
             /* Structural lowering for if-with-yield-in-body.  Linearising
                an if's body would extract the yield to switch level,
                making it fire unconditionally — the bug behind
@@ -6542,6 +6977,10 @@ static void _emit_yield_body_range(rp_string *out, const char *src, TSNode block
         }
         else if (strcmp(stmt_type, "for_in_statement") == 0 && has_yield)
         {
+            {
+                size_t stmt_s = ts_node_start_byte(stmt);
+                if (ss < stmt_s) rp_string_putsn(out, src + ss, stmt_s - ss);
+            }
             /* Decompose for-of (only "of" — for-in is not lowered here)
                into index-based iteration through the regenerator state
                machine.  Duktape doesn't have Array.prototype[Symbol.iterator]
@@ -6753,6 +7192,10 @@ static void _emit_yield_body_range(rp_string *out, const char *src, TSNode block
         }
         else if (strcmp(stmt_type, "do_statement") == 0 && has_yield)
         {
+            {
+                size_t stmt_s = ts_node_start_byte(stmt);
+                if (ss < stmt_s) rp_string_putsn(out, src + ss, stmt_s - ss);
+            }
             /* Decompose: do { body } while (cond)
                -> case BODY: <body> case TEST: if(!cond){_context.next=EXIT;break;}
                   _context.next=BODY;break;
@@ -7310,7 +7753,8 @@ static void collect_ids_from_pattern(const char *src, TSNode name_node, rp_strin
     }
 }
 
-static int span_has_flow_ctrl_tokens(const char *src, size_t s, size_t e)
+static __attribute__((unused)) int
+span_has_flow_ctrl_tokens(const char *src, size_t s, size_t e)
 {
     size_t len = (e > s) ? (e - s) : 0;
     if (len == 0)
@@ -7802,12 +8246,13 @@ static int body_has_loop_flow_control(TSNode body)
             break;
         }
 
-        /* Don't descend into functions or nested loops — their break/continue
-           don't affect our loop */
+        /* Don't descend into nested FUNCTIONS — their break/continue/this
+           are someone else's concern.  We DO descend into nested loops/
+           switches because `this`, `return`, and labeled break/continue
+           inside them still belong to OUR enclosing function and an IIFE
+           wrap of our body would still hide them. */
         int skip_children = 0;
-        if (strstr(t, "function") || strcmp(t, "arrow_function") == 0 ||
-            strcmp(t, "for_statement") == 0 || strcmp(t, "for_in_statement") == 0 ||
-            strcmp(t, "while_statement") == 0 || strcmp(t, "do_statement") == 0)
+        if (strstr(t, "function") || strcmp(t, "arrow_function") == 0)
             skip_children = 1;
 
         if (!skip_children && ts_tree_cursor_goto_first_child(&cur))
@@ -8297,6 +8742,181 @@ descend:;
     return 0;
 }
 
+/* --------------- Import live-binding rewrite helpers ---------------
+   Used by do_named_imports to rewrite each named-import binding into
+   member-expression access on a `__tmpModImpN` namespace var. This
+   restores ESM-style live-binding semantics: a reference reads the
+   import at CALL time rather than at declaration time, so circular
+   modules don't snapshot undefined.  Reuses _bs_* helpers for scope
+   walking and shadow detection. */
+
+/* True iff `fn_node` (a function-like) declares `name` as a param
+   or in its body via var/let/const/function/class — in which case
+   refs inside the function body refer to the LOCAL binding, not
+   the outer import. */
+static int _imp_fn_declares_name(TSNode fn_node, const char *src,
+                                 const char *name, size_t name_len)
+{
+    TSNode params = ts_node_child_by_field_name(fn_node, "parameters", 10);
+    TSNode body = ts_node_child_by_field_name(fn_node, "body", 4);
+
+    _BS_NameSet ns;
+    _bs_ns_init(&ns);
+
+    if (!ts_node_is_null(params))
+        _bs_collect_param_names(params, src, &ns);
+
+    /* For non-arrow function-likes, the function's own name is in
+       scope inside its body. */
+    TSNode fn_name = ts_node_child_by_field_name(fn_node, "name", 4);
+    if (!ts_node_is_null(fn_name) && strcmp(ts_node_type(fn_name), "identifier") == 0)
+    {
+        size_t s = ts_node_start_byte(fn_name), e = ts_node_end_byte(fn_name);
+        _bs_ns_add(&ns, src + s, e - s);
+    }
+
+    if (!ts_node_is_null(body))
+    {
+        uint32_t bc = ts_node_named_child_count(body);
+        for (uint32_t i = 0; i < bc; i++)
+            _bs_collect_var_fn_class_names(ts_node_named_child(body, i), src, &ns, 0);
+        _BS_NodeVec lex_decls;
+        _bs_nv_init(&lex_decls);
+        for (uint32_t i = 0; i < bc; i++)
+            _bs_collect_lexical_decls(ts_node_named_child(body, i), src, &ns, &lex_decls, 0);
+        _bs_nv_free(&lex_decls);
+    }
+
+    int found = _bs_ns_contains(&ns, name, name_len);
+    _bs_ns_free(&ns);
+    return found;
+}
+
+static void _imp_rewrite_refs(TSNode node, const char *src,
+                              const char *name, size_t name_len,
+                              const char *new_text,
+                              EditList *edits, RangeList *claimed)
+{
+    const char *t = ts_node_type(node);
+
+    /* Skip the import_statement subtree itself. */
+    if (strcmp(t, "import_statement") == 0)
+        return;
+
+    /* If we cross a function-like boundary that shadows the name,
+       don't descend; otherwise descend (closures inside still need
+       the rewrite). */
+    if (_bs_is_fn_boundary(node))
+    {
+        if (_imp_fn_declares_name(node, src, name, name_len))
+            return;
+    }
+
+    /* If this block re-declares the name via let/const, stop. */
+    if (strcmp(t, "statement_block") == 0 ||
+        strcmp(t, "switch_case") == 0 ||
+        strcmp(t, "switch_default") == 0)
+    {
+        TSNode none = {{0}};
+        if (_bs_block_shadows(node, src, name, name_len, none))
+            return;
+    }
+
+    if (strcmp(t, "identifier") == 0)
+    {
+        size_t s = ts_node_start_byte(node), e = ts_node_end_byte(node);
+        if (e - s == name_len && memcmp(src + s, name, name_len) == 0)
+        {
+            TSNode parent = ts_node_parent(node);
+            int skip = 0;
+            if (!ts_node_is_null(parent))
+            {
+                const char *pt = ts_node_type(parent);
+                if (strcmp(pt, "member_expression") == 0)
+                {
+                    TSNode prop = ts_node_child_by_field_name(parent, "property", 8);
+                    if (!ts_node_is_null(prop) && ts_node_eq(prop, node)) skip = 1;
+                }
+                else if (strcmp(pt, "pair") == 0 || strcmp(pt, "pair_pattern") == 0)
+                {
+                    TSNode key = ts_node_child_by_field_name(parent, "key", 3);
+                    if (!ts_node_is_null(key) && ts_node_eq(key, node)) skip = 1;
+                }
+                else if (strcmp(pt, "method_definition") == 0)
+                {
+                    TSNode nname = ts_node_child_by_field_name(parent, "name", 4);
+                    if (!ts_node_is_null(nname) && ts_node_eq(nname, node)) skip = 1;
+                }
+                else if (strcmp(pt, "variable_declarator") == 0)
+                {
+                    TSNode nn = ts_node_child_by_field_name(parent, "name", 4);
+                    if (!ts_node_is_null(nn) && ts_node_eq(nn, node)) skip = 1;
+                }
+                else if (strcmp(pt, "import_specifier") == 0 ||
+                         strcmp(pt, "import_clause") == 0 ||
+                         strcmp(pt, "named_imports") == 0)
+                {
+                    skip = 1;
+                }
+                else if (strcmp(pt, "required_parameter") == 0 ||
+                         strcmp(pt, "optional_parameter") == 0 ||
+                         strcmp(pt, "rest_pattern") == 0 ||
+                         strcmp(pt, "assignment_pattern") == 0)
+                {
+                    skip = 1;
+                }
+                else if (strcmp(pt, "function_declaration") == 0 ||
+                         strcmp(pt, "function") == 0 ||
+                         strcmp(pt, "function_expression") == 0 ||
+                         strcmp(pt, "generator_function_declaration") == 0 ||
+                         strcmp(pt, "generator_function") == 0 ||
+                         strcmp(pt, "generator_function_expression") == 0 ||
+                         strcmp(pt, "class_declaration") == 0 ||
+                         strcmp(pt, "class") == 0)
+                {
+                    TSNode nn = ts_node_child_by_field_name(parent, "name", 4);
+                    if (!ts_node_is_null(nn) && ts_node_eq(nn, node)) skip = 1;
+                }
+                else if (strcmp(pt, "labeled_statement") == 0 ||
+                         strcmp(pt, "break_statement") == 0 ||
+                         strcmp(pt, "continue_statement") == 0)
+                {
+                    skip = 1;
+                }
+            }
+            if (!skip)
+                add_edit(edits, s, e, new_text, claimed);
+        }
+    }
+
+    if (strcmp(t, "shorthand_property_identifier") == 0)
+    {
+        size_t s = ts_node_start_byte(node), e = ts_node_end_byte(node);
+        if (e - s == name_len && memcmp(src + s, name, name_len) == 0)
+        {
+            rp_string *ins = rp_string_new(name_len + 16);
+            rp_string_puts(ins, ": ");
+            rp_string_puts(ins, new_text);
+            add_edit_take_ownership(edits, e, e, rp_string_steal(ins), claimed);
+            ins = rp_string_free(ins);
+        }
+    }
+
+    uint32_t cc = ts_node_child_count(node);
+    for (uint32_t i = 0; i < cc; i++)
+        _imp_rewrite_refs(ts_node_child(node, i), src, name, name_len, new_text, edits, claimed);
+}
+
+static TSNode _imp_find_program(TSNode n)
+{
+    while (!ts_node_is_null(n))
+    {
+        if (strcmp(ts_node_type(n), "program") == 0) return n;
+        n = ts_node_parent(n);
+    }
+    return n;
+}
+
 /* Main entry: process one function scope (or `program`). */
 static int rewrite_block_scope_rename(EditList *edits, const char *src, TSNode fn_node,
                                       RangeList *claimed, int overlaps)
@@ -8460,6 +9080,199 @@ static int rewrite_block_scope_rename(EditList *edits, const char *src, TSNode f
     return did_any_rename ? 1 : 0;
 }
 
+#ifdef TDZ_RUNTIME_CHECKS
+/* Runtime TDZ + const-reassign checks for let/const bindings.
+   Detects statically (at transpile time) the common cases where node
+   would throw at runtime:
+     - reading a let/const before its declaration in the same lexical
+       block (TDZ) → throws ReferenceError
+     - assigning to a const (with `=`, `+=`, `++`, etc.) → throws
+       TypeError
+   For each such case the offending expression is replaced with an
+   inline IIFE that throws when reached. Nested function bodies are
+   NOT descended into — closure-captured TDZ reads and const-reassigns
+   inside closures are missed (MVP). */
+
+typedef struct {
+    const char *src;
+    const char *name;
+    size_t name_len;
+    size_t decl_start;
+    int is_const;
+    EditList *edits;
+    RangeList *claimed;
+    int did_any;
+} _TdzCtx;
+
+static void _tdz_walk_block(TSNode node, _TdzCtx *ctx)
+{
+    if (_bs_is_fn_boundary(node)) return;
+
+    const char *t = ts_node_type(node);
+
+    if (strcmp(t, "identifier") == 0)
+    {
+        size_t s = ts_node_start_byte(node), e = ts_node_end_byte(node);
+        if (e - s == ctx->name_len &&
+            memcmp(ctx->src + s, ctx->name, ctx->name_len) == 0)
+        {
+            TSNode parent = ts_node_parent(node);
+            if (!ts_node_is_null(parent))
+            {
+                const char *pt = ts_node_type(parent);
+                int skip = 0;
+                if (strcmp(pt, "member_expression") == 0)
+                {
+                    TSNode prop = ts_node_child_by_field_name(parent, "property", 8);
+                    if (!ts_node_is_null(prop) && ts_node_eq(prop, node)) skip = 1;
+                }
+                else if (strcmp(pt, "pair") == 0 || strcmp(pt, "pair_pattern") == 0)
+                {
+                    TSNode key = ts_node_child_by_field_name(parent, "key", 3);
+                    if (!ts_node_is_null(key) && ts_node_eq(key, node)) skip = 1;
+                }
+                else if (strcmp(pt, "method_definition") == 0)
+                {
+                    TSNode nname = ts_node_child_by_field_name(parent, "name", 4);
+                    if (!ts_node_is_null(nname) && ts_node_eq(nname, node)) skip = 1;
+                }
+                else if (strcmp(pt, "variable_declarator") == 0)
+                {
+                    TSNode nn = ts_node_child_by_field_name(parent, "name", 4);
+                    if (!ts_node_is_null(nn) && ts_node_eq(nn, node)) skip = 1;
+                }
+                if (!skip)
+                {
+                    int is_lhs = 0;
+                    TSNode target = parent;
+                    if (strcmp(pt, "assignment_expression") == 0 ||
+                        strcmp(pt, "augmented_assignment_expression") == 0)
+                    {
+                        TSNode left = ts_node_child_by_field_name(parent, "left", 4);
+                        if (!ts_node_is_null(left) && ts_node_eq(left, node))
+                            is_lhs = 1;
+                    }
+                    else if (strcmp(pt, "update_expression") == 0)
+                    {
+                        is_lhs = 1;
+                    }
+
+                    if (ctx->is_const && is_lhs)
+                    {
+                        /* Replace the whole assignment/update expression. */
+                        size_t a_s = ts_node_start_byte(target),
+                               a_e = ts_node_end_byte(target);
+                        char *r = strdup("(function(){throw new TypeError(\"Assignment to constant variable.\");})()");
+                        add_edit_take_ownership(ctx->edits, a_s, a_e, r, ctx->claimed);
+                        ctx->did_any = 1;
+                    }
+                    else if (!is_lhs && s < ctx->decl_start)
+                    {
+                        /* TDZ read before declaration. */
+                        rp_string *rep = rp_string_new(96);
+                        rp_string_appendf(rep,
+                            "(function(){throw new ReferenceError(\"Cannot access '%.*s' before initialization\");})()",
+                            (int)ctx->name_len, ctx->name);
+                        char *rdup = rp_string_steal(rep);
+                        rep = rp_string_free(rep);
+                        add_edit_take_ownership(ctx->edits, s, e, rdup, ctx->claimed);
+                        ctx->did_any = 1;
+                    }
+                }
+            }
+        }
+    }
+
+    uint32_t cc = ts_node_child_count(node);
+    for (uint32_t i = 0; i < cc; i++)
+        _tdz_walk_block(ts_node_child(node, i), ctx);
+}
+
+static int rewrite_let_const_runtime_checks(EditList *edits, const char *src,
+                                            TSNode fn_node, RangeList *claimed, int overlaps)
+{
+    const char *t = ts_node_type(fn_node);
+    TSNode body;
+    if (strcmp(t, "program") == 0)
+        body = fn_node;
+    else
+    {
+        body = ts_node_child_by_field_name(fn_node, "body", 4);
+        if (ts_node_is_null(body)) return 0;
+        if (strcmp(ts_node_type(body), "statement_block") != 0) return 0;
+    }
+
+    _BS_NameSet lex_names;
+    _bs_ns_init(&lex_names);
+    _BS_NodeVec lex_decls;
+    _bs_nv_init(&lex_decls);
+    uint32_t bc = ts_node_child_count(body);
+    for (uint32_t i = 0; i < bc; i++)
+        _bs_collect_lexical_decls(ts_node_child(body, i), src, &lex_names, &lex_decls, 0);
+
+    if (lex_decls.len == 0)
+    {
+        _bs_ns_free(&lex_names);
+        _bs_nv_free(&lex_decls);
+        return 0;
+    }
+
+    if (overlaps)
+    {
+        _bs_ns_free(&lex_names);
+        _bs_nv_free(&lex_decls);
+        return 1;
+    }
+
+    int did_any = 0;
+
+    for (size_t di = 0; di < lex_decls.len; di++)
+    {
+        TSNode decl = lex_decls.a[di];
+        TSNode name_node = ts_node_child_by_field_name(decl, "name", 4);
+        if (ts_node_is_null(name_node)) continue;
+        if (strcmp(ts_node_type(name_node), "identifier") != 0) continue;
+        size_t ns = ts_node_start_byte(name_node), ne = ts_node_end_byte(name_node);
+        size_t nlen = ne - ns;
+        const char *name = src + ns;
+
+        /* Determine if this declarator is const by inspecting its
+           parent lexical_declaration's keyword. */
+        TSNode lex_node = ts_node_parent(decl);
+        int is_const = 0;
+        uint32_t lc = ts_node_child_count(lex_node);
+        for (uint32_t i = 0; i < lc; i++)
+        {
+            TSNode kid = ts_node_child(lex_node, i);
+            if (ts_node_is_named(kid)) continue;
+            const char *kw = ts_node_type(kid);
+            if (strcmp(kw, "const") == 0) { is_const = 1; break; }
+            if (strcmp(kw, "let") == 0) break;
+        }
+
+        TSNode encl = _bs_enclosing_block(decl);
+        if (ts_node_is_null(encl)) continue;
+
+        _TdzCtx ctx;
+        ctx.src = src;
+        ctx.name = name;
+        ctx.name_len = nlen;
+        ctx.decl_start = ts_node_start_byte(decl);
+        ctx.is_const = is_const;
+        ctx.edits = edits;
+        ctx.claimed = claimed;
+        ctx.did_any = 0;
+
+        _tdz_walk_block(encl, &ctx);
+        if (ctx.did_any) did_any = 1;
+    }
+
+    _bs_ns_free(&lex_names);
+    _bs_nv_free(&lex_decls);
+    return did_any;
+}
+#endif /* TDZ_RUNTIME_CHECKS */
+
 static int rewrite_lexical_declaration(EditList *edits, const char *src, TSNode lexical_decl, RangeList *claimed,
                                        int overlaps, int no_program_wrap)
 {
@@ -8572,7 +9385,6 @@ static int rewrite_lexical_declaration(EditList *edits, const char *src, TSNode 
                         }
 
                         int has_captures = _bs_for_has_capture(body, src, &names_set, 0);
-                        int has_flow_control = body_has_loop_flow_control(body);
                         int is_block = (strcmp(ts_node_type(body), "statement_block") == 0);
 
                         if (has_captures)
@@ -8882,6 +9694,11 @@ static int rewrite_for_of_destructuring(EditList *edits, const char *src, TSNode
     size_t alen = 0, acap = 0;
     int idx = 0;
     int last_was_value = 0; // have we just consumed a value element?
+    /* Optional rest pattern `[a, b, ...rest]`: when present, slice from
+       rest_idx to end of the iterable, bound to rest_name.  Only one
+       allowed per array pattern, must come last. */
+    char *rest_name = NULL;
+    int rest_idx = 0;
     uint32_t c = ts_node_child_count(pattern);
     for (uint32_t i = 0; i < c; i++)
     {
@@ -8942,7 +9759,23 @@ static int rewrite_for_of_destructuring(EditList *edits, const char *src, TSNode
         }
         else if (strcmp(ct, "rest_pattern") == 0)
         {
-            // ignore for now
+            /* `...name` captures the tail. Expect a single identifier
+               child; bail on anything more complex. */
+            TSNode rid = {{0}};
+            uint32_t rnc = ts_node_named_child_count(ch);
+            for (uint32_t ri = 0; ri < rnc; ri++) {
+                TSNode kid = ts_node_named_child(ch, ri);
+                if (strcmp(ts_node_type(kid), "identifier") == 0) { rid = kid; break; }
+            }
+            if (ts_node_is_null(rid)) {
+                /* unsupported rest target (e.g. nested pattern) */
+                for (size_t k = 0; k < alen; k++) free(arr[k].name);
+                free(arr);
+                return 0;
+            }
+            size_t ns = ts_node_start_byte(rid), ne = ts_node_end_byte(rid);
+            rest_name = strndup(src + ns, ne - ns);
+            rest_idx = idx;
             last_was_value = 1;
         }
         else
@@ -8970,11 +9803,37 @@ static int rewrite_for_of_destructuring(EditList *edits, const char *src, TSNode
        _loop's scope, shadowing the closure refs the outer body needed.
        See transpiler-todo.md §9 (now fixed). */
     unsigned ctr = ++_destr_counter;
-    char nm_loop[32], nm_pairs[32], nm_i[32], nm_pi[32];
+    char nm_loop[32], nm_pairs[32], nm_i[32], nm_pi[32], nm_ret[32];
     snprintf(nm_loop,  sizeof(nm_loop),  "_loop%u",   ctr);
     snprintf(nm_pairs, sizeof(nm_pairs), "_pairs%u",  ctr);
     snprintf(nm_i,     sizeof(nm_i),     "_i%u",      ctr);
     snprintf(nm_pi,    sizeof(nm_pi),    "_pi%u",     ctr);
+    snprintf(nm_ret,   sizeof(nm_ret),   "_ret%u",    ctr);
+
+    /* Flow-control propagation: when body has return/break/continue,
+       wrapping it in `_loopN.call(this)` swallows them.  Rewrite each
+       to a sentinel value returned from the wrap and dispatch in the
+       outer for-loop.  Uses the same _BS_ForCtx machinery that the
+       for-let-block-scope path uses; see lines ~8035 / ~9402. */
+    int has_flow = body_has_loop_flow_control(body);
+    _BS_ForCtx fc;
+    memset(&fc, 0, sizeof(fc));
+    EditList sent_edits;
+    init_edits(&sent_edits);
+    int use_sentinels = 0;
+    int is_outermost_wrap = 1;  /* destructured for-of bodies are
+                                   self-contained; safe to unwrap. */
+    if (has_flow && is_block) {
+        fc.edits = &sent_edits;
+        fc.body  = body;
+        uint32_t bcc = ts_node_child_count(body);
+        for (uint32_t i = 0; i < bcc && !fc.giveup; i++)
+            _bs_for_walk(ts_node_child(body, i), src, &fc, 0, 0, 0);
+        if (!fc.giveup) {
+            use_sentinels = (sent_edits.len > 0) || fc.has_return
+                          || fc.break_labels.len > 0 || fc.continue_labels.len > 0;
+        }
+    }
 
     rp_string *out = rp_string_new(256);
 
@@ -8989,8 +9848,10 @@ static int rewrite_for_of_destructuring(EditList *edits, const char *src, TSNode
     rp_string_puts(out, nm_pairs);
     rp_string_puts(out, "[");
     rp_string_puts(out, nm_i);
-    rp_string_puts(out, "], ");
-    rp_string_appendf(out, "%d", N);
+    rp_string_puts(out, "]");
+    /* If a rest pattern is present we want the full array; passing 0
+       (falsy) makes iterableToArrayLimit collect everything. */
+    if (!rest_name) rp_string_appendf(out, ", %d", N);
     rp_string_puts(out, "), ");
 
     // bindings: a = <nm_pi>[0], b = <nm_pi>[1];
@@ -9007,13 +9868,22 @@ static int rewrite_for_of_destructuring(EditList *edits, const char *src, TSNode
         rp_string_puts(out, ibuf);
         rp_string_puts(out, "]");
     }
+    if (rest_name) {
+        if (alen) rp_string_puts(out, ",");
+        rp_string_appendf(out, "%s = %s.slice(%d)", rest_name, nm_pi, rest_idx);
+    }
     rp_string_puts(out, "; ");
 
-    // body content
+    // body content — apply sentinel edits if we're propagating flow
     if (is_block)
     {
-        // insert inner of block
-        rp_string_putsn(out, src + bs + 1, (be - 1) - (bs + 1));
+        if (use_sentinels) {
+            char *modbody = _apply_edits_to_slice(src, bs + 1, be - 1, &sent_edits);
+            rp_string_puts(out, modbody);
+            free(modbody);
+        } else {
+            rp_string_putsn(out, src + bs + 1, (be - 1) - (bs + 1));
+        }
         rp_string_puts(out, " }; ");
     }
     else
@@ -9036,8 +9906,57 @@ static int rewrite_for_of_destructuring(EditList *edits, const char *src, TSNode
     rp_string_puts(out, ".length; ");
     rp_string_puts(out, nm_i);
     rp_string_puts(out, "++) { ");
-    rp_string_puts(out, nm_loop);
-    rp_string_puts(out, "(); }");
+    if (use_sentinels) {
+        /* Capture the wrap's return value and dispatch.  `.call(this)`
+           still propagates `this` for class-method bodies. */
+        rp_string_puts(out, "var ");
+        rp_string_puts(out, nm_ret);
+        rp_string_puts(out, " = ");
+        rp_string_puts(out, nm_loop);
+        rp_string_puts(out, ".call(this);");
+        if (fc.has_bare_break) {
+            rp_string_appendf(out, " if (%s === \"break\") break;", nm_ret);
+        }
+        if (fc.has_bare_continue) {
+            rp_string_appendf(out, " if (%s === \"continue\") continue;", nm_ret);
+        }
+        /* Labeled break/continue: dispatch directly when target is
+           reachable from here, else propagate up. */
+        for (size_t li = 0; li < fc.break_labels.len; li++) {
+            const char *l = fc.break_labels.labels[li];
+            rp_string_appendf(out, " if (%s === \"b:%s\") return %s;",
+                              nm_ret, l, nm_ret);
+        }
+        for (size_t li = 0; li < fc.continue_labels.len; li++) {
+            const char *l = fc.continue_labels.labels[li];
+            rp_string_appendf(out, " if (%s === \"c:%s\") return %s;",
+                              nm_ret, l, nm_ret);
+        }
+        if (fc.has_return) {
+            if (is_outermost_wrap)
+                rp_string_appendf(out,
+                    " if (typeof %s === \"object\" && %s !== null) return %s.v;",
+                    nm_ret, nm_ret, nm_ret);
+            else
+                rp_string_appendf(out,
+                    " if (typeof %s === \"object\" && %s !== null) return %s;",
+                    nm_ret, nm_ret, nm_ret);
+        }
+        rp_string_puts(out, " }");
+    } else {
+        rp_string_puts(out, nm_loop);
+        /* `.call(this)` so `this.opts` and similar references inside the
+           destructured body resolve to the enclosing function's `this`
+           (e.g. inside a class method).  Without this binding the inner
+           _loopN call would see `this === undefined` (strict) or globalThis
+           (sloppy), breaking ajv-style code like `this.opts.es5`. */
+        rp_string_puts(out, ".call(this); }");
+    }
+
+    free_edits(&sent_edits);
+    _bs_lbl_free(&fc.break_labels);
+    _bs_lbl_free(&fc.continue_labels);
+    _bs_sv_free(&fc.args_positions);
 
     // Replace entire for-of statement
     add_edit_take_ownership(edits, fs, fe, rp_string_steal(out), claimed);
@@ -9048,6 +9967,7 @@ static int rewrite_for_of_destructuring(EditList *edits, const char *src, TSNode
     for (size_t k = 0; k < alen; k++)
         free(arr[k].name);
     free(arr);
+    if (rest_name) free(rest_name);
 
     return 1;
 }
@@ -9612,12 +10532,19 @@ static void copy_body_replace_super(rp_string *bucket, const char *body, size_t 
             }
             else
             {
-                /* property access: super.name → _Super[.prototype].name */
+                /* Property access: super.name → _TrN_Sp._superGet(<target>, "name", this)
+                   so getters resolve correctly (calling them with `this` bound to
+                   the actual instance rather than the prototype object). For
+                   ordinary data properties the helper walks the prototype chain
+                   and returns desc.value. */
+                rp_string_puts(bucket, "_TrN_Sp._superGet(");
                 if (is_static)
-                    rp_string_puts(bucket, "_Super.");
+                    rp_string_puts(bucket, "_Super");
                 else
-                    rp_string_puts(bucket, "_Super.prototype.");
+                    rp_string_puts(bucket, "_Super.prototype");
+                rp_string_puts(bucket, ",\"");
                 rp_string_putsn(bucket, body + id_start, id_len);
+                rp_string_puts(bucket, "\",this)");
                 i = j;
                 last_copy = i;
             }
@@ -9676,7 +10603,8 @@ static void copy_body_replace_super(rp_string *bucket, const char *body, size_t 
    whether a class method's name can be inlined into `function NAME(){}`
    or must be emitted anonymously (the `key:` field still carries the
    user-facing name). */
-static int _name_is_reserved(const char *name, size_t len)
+static __attribute__((unused)) int
+_name_is_reserved(const char *name, size_t len)
 {
     static const char *RES[] = {
         "break","case","catch","class","const","continue","debugger","default",
@@ -10061,21 +10989,23 @@ static void es5_emit_class_core(rp_string *out, const char *src, const char *cna
         }
         else
         {
-            // {key:'name',value:function name(){...}}  or get/set variant
+            // {key:'name',value:function(){...}}  or get/set variant.
+            // The inner function is ANONYMOUS: a named function expression
+            // would bind its own name inside the body, shadowing a
+            // free identifier of the same name from the enclosing
+            // scope.  Real-world hit: luxon's `class DateTime` has a
+            // `toISODate({format = "extended"} = {})` method whose body
+            // calls the *outer* `function toISODate(o, extended)` helper
+            // via `toISODate(this, ...)`.  A named expression would make
+            // that recurse instead.  ES6 method definitions never create
+            // such a binding; we match that semantic.  fn.name still
+            // surfaces via Object descriptor NamedEvaluation where
+            // supported. The `key:` field always carries the user-facing
+            // name regardless.
             rp_string_puts(bucket, "{key:'");
             if (is_private_method) rp_string_puts(bucket, "_priv_");
             rp_string_putsn(bucket, src + ks, ke - ks);
             rp_string_appendf(bucket, "',%s:function ", desc_field);
-            /* Suppress the function NAME if it would be a parse error
-               (reserved word). Method-property names like `default()`,
-               `delete()`, `return()` are valid as method names but invalid
-               as function-expression names. The `key:` field still carries
-               the user-facing name. */
-            if (!is_getter && !is_setter && !_name_is_reserved(src + ks, ke - ks))
-            {
-                if (is_private_method) rp_string_puts(bucket, "_priv_");
-                rp_string_putsn(bucket, src + ks, ke - ks);
-            }
         }
         /* Check for rest parameter in method params */
         const char *rest_name = NULL;
@@ -10200,6 +11130,17 @@ static void es5_emit_class_core(rp_string *out, const char *src, const char *cna
         }
         else
             rp_string_puts(bucket, "{}");
+        /* Attach the original method source so that Function.prototype.
+           toString returns it (fn-source feature for class methods).
+           defineProperties applies this via _TrN_Sp._fs at install time. */
+        {
+            size_t mts = ts_node_start_byte(mth), mte = ts_node_end_byte(mth);
+            rp_string *lit = rp_string_new(mte - mts + 8);
+            emit_js_string_literal(lit, src, mts, mte);
+            rp_string_puts(bucket, ",src:");
+            rp_string_putsn(bucket, lit->str, lit->len);
+            lit = rp_string_free(lit);
+        }
         rp_string_puts(bucket, "}");
 
         /* Advance the bucket's notional source-line by however many
@@ -11315,7 +12256,7 @@ static int rewrite_optional_chaining(EditList *edits, const char *src, TSNode no
     size_t ci = 0;
 
     /* Collect positions of ?. in original, and map to clean positions */
-    size_t oc_orig[32], oc_clean[32];
+    size_t oc_clean[32];
     int noc = 0;
 
     for (size_t i = 0; i < elen; i++)
@@ -11324,7 +12265,6 @@ static int rewrite_optional_chaining(EditList *edits, const char *src, TSNode no
         {
             if (noc < 32)
             {
-                oc_orig[noc] = i;
                 oc_clean[noc] = ci;
                 noc++;
             }
@@ -12310,14 +13250,23 @@ RP_ParseRes transpiler_rewrite_pass(EditList *edits, const char *src, size_t src
         {
             handled = rewrite_class_to_es5(edits, src, n, &claimed, overlaps);
             if (handled)
+            {
                 *polysneeded |= CLASS_PF;
+                /* Class method descriptors now carry a `src:"..."` field
+                   that defineProperties wires up via `_TrN_Sp._fs` for
+                   per-method Function.prototype.toString. */
+                if (_tp_fn_sources) *polysneeded |= FN_SOURCE_PF;
+            }
         }
 
         if (!handled && strcmp(nt, "class") == 0)
         {
             handled = rewrite_class_expression_to_es5(edits, src, n, &claimed, polysneeded, overlaps);
             if (handled)
+            {
                 *polysneeded |= CLASS_PF;
+                if (_tp_fn_sources) *polysneeded |= FN_SOURCE_PF;
+            }
         }
 
         /* Block-scoped function declarations (ES2015) */
@@ -12343,6 +13292,12 @@ RP_ParseRes transpiler_rewrite_pass(EditList *edits, const char *src, size_t src
                          strcmp(nt, "method_definition") == 0 ||
                          strcmp(nt, "program") == 0))
         {
+#ifdef TDZ_RUNTIME_CHECKS
+            /* TDZ + const-reassign checks run BEFORE block-scope rename
+               so any conflicting identifier rewrite (TDZ throw replaces
+               the same position the rename would touch) wins. */
+            (void)rewrite_let_const_runtime_checks(edits, src, n, &claimed, overlaps);
+#endif
             int saw = rewrite_block_scope_rename(edits, src, n, &claimed, overlaps);
             /* Don't set handled — other rewriters need to also fire on
                this same function node (async, generator, default params,
@@ -12354,6 +13309,18 @@ RP_ParseRes transpiler_rewrite_pass(EditList *edits, const char *src, size_t src
         if (!handled && (strcmp(nt, "import_statement") == 0))
         {
             handled = rewrite_import_node(edits, src, n, &claimed, polysneeded, overlaps);
+        }
+        if (!handled && strcmp(nt, "call_expression") == 0)
+        {
+            handled = rewrite_dynamic_import(edits, src, n, &claimed, polysneeded, overlaps);
+        }
+        if (!handled && strcmp(nt, "program") == 0)
+        {
+            int saw = rewrite_top_level_await(edits, src, n, &claimed, polysneeded,
+                                              unresolved, overlaps);
+            /* Don't set handled — block-scope and other program-level
+               rewriters need to fire on the same node. */
+            (void)saw;
         }
         if (!handled && (strcmp(nt, "export_statement") == 0))
         {

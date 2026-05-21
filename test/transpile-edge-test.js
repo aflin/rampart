@@ -404,6 +404,129 @@ testFeature("arrow - in method chain", [1,2,3].filter(x => x > 1).map(x => x * 1
 var adder = (a) => (b) => a + b;
 testFeature("arrow - nested (curried)", adder(3)(4) === 7);
 
+// Rest params in arrow — bare
+var restBare = (...args) => args.length + ":" + args.join(",");
+testFeature("arrow - rest params bare (block)", restBare(1,2,3) === "3:1,2,3");
+
+// Rest params in arrow — with leading regular param
+var restLead = (a, ...rest) => a + "/" + rest.join(",");
+testFeature("arrow - rest params after regular", restLead("hd", 1, 2, 3) === "hd/1,2,3");
+
+// Rest params in arrow — concise body
+var restConcise = (...xs) => xs.reduce(function(a,b){return a+b;}, 0);
+testFeature("arrow - rest params concise body", restConcise(1,2,3,4) === 10);
+
+/* Dynamic import — lowers to Promise.resolve(_interopRequireWildcard(require(spec))).
+   Works for static-string specs, dynamic specs, and the rejection path. */
+testFeature("dynamic import - literal specifier", function() {
+    return import("./tmath.js").then(function(m){
+        return m.sum(2,3) === 5 && Math.abs(m.pi - Math.PI) < 0.01;
+    });
+});
+
+testFeature("dynamic import - dynamic specifier (variable)", function() {
+    var spec = "./tmath.js";
+    return import(spec).then(function(m){ return m.sum(7,8) === 15; });
+});
+
+testFeature("dynamic import - bad path rejects", function() {
+    return import("./does-not-exist-xyz-abc.js").then(
+        function(){ return false; },
+        function(e){ return true; }
+    );
+});
+
+/* yield* asyncIter — async generator delegating to another async iterable. */
+testFeature("yield* asyncIter - delegate to async gen", function() {
+    async function* inner() { yield "a"; yield "b"; }
+    async function* outer() { yield "start"; yield* inner(); yield "end"; }
+    return new Promise(function(resolve){
+        (async function(){
+            var out = [];
+            for await (var v of outer()) out.push(v);
+            resolve(out.join(",") === "start,a,b,end");
+        })();
+    });
+});
+
+/* .return() propagation through __asyncGenerator should run pending finally. */
+testFeature("async gen - explicit .return() runs finally", function() {
+    var finRan = false;
+    async function* g() {
+        try { yield 1; yield 2; } finally { finRan = true; }
+    }
+    return new Promise(function(resolve){
+        (async function(){
+            var it = g();
+            await it.next();
+            await it.return("forced");
+            resolve(finRan === true);
+        })();
+    });
+});
+
+/* Sync generator .return() should run pending finally. */
+testFeature("sync gen - .return() runs finally", function() {
+    var finRan = false;
+    function* g() {
+        try { yield 1; yield 2; } finally { finRan = true; }
+    }
+    var it = g();
+    it.next();
+    var r = it.return("v");
+    return finRan === true && r.value === "v" && r.done === true;
+});
+
+/* Class method __source__ — toString returns the source bytes. */
+testFeature("class - method toString returns source", function() {
+    class CounterX {
+        bump(n) { return n + 1; }
+        static make() { return new CounterX(); }
+        get current() { return this._c; }
+        set current(v) { this._c = v; }
+    }
+    var bumpS = CounterX.prototype.bump.toString();
+    var makeS = CounterX.make.toString();
+    var pd = Object.getOwnPropertyDescriptor(CounterX.prototype, "current");
+    var getS = pd && pd.get && pd.get.toString();
+    var setS = pd && pd.set && pd.set.toString();
+    return bumpS.indexOf("return n + 1") >= 0
+        && makeS.indexOf("new CounterX") >= 0
+        && getS.indexOf("this._c") >= 0
+        && setS.indexOf("this._c = v") >= 0;
+});
+
+/* Async body line-number preservation: a runtime error inside an async
+   body should report on the same source line.  Easy to regress; pre-fix
+   the throw on the throw-line below was reported as line N-1 because
+   the var-decl-then-await and if-with-await-cond paths fused their
+   leading whitespace into the `case 0:` header line.
+   Rampart-only: node executes async natively, different line semantics. */
+if (typeof global !== 'undefined' && global.rampart) {
+    testFeature("async - line numbers preserved through var+await", function() {
+        var src = '"use transpiler"\n'
+                + 'async function fA() {\n'
+                + '    var a = 1;\n'
+                + '\n'
+                + '    var b = await Promise.resolve(2);\n'
+                + '\n'
+                + '\n'
+                + '    throw new Error("expected line 8");\n'
+                + '}\n'
+                + 'fA().then(null,function(e){global.__lineNo = e.stack.match(/:(\\d+)/)[1];});';
+        eval(src);
+        return new Promise(function(resolve){
+            var n = 0;
+            var tick = function(){
+                if (global.__lineNo !== undefined) resolve(global.__lineNo === '8');
+                else if (n++ < 50) setTimeout(tick, 5);
+                else resolve(false);
+            };
+            tick();
+        });
+    });
+}
+
 // Arrow with destructuring parameter
 var arrowDestr = ({x, y}) => x + y;
 testFeature("arrow - destructuring param", arrowDestr({x: 3, y: 7}) === 10);

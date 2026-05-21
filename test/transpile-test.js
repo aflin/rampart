@@ -718,15 +718,6 @@ testFeature("Non-block single statement - let captures", function () {
   return JSON.stringify(got) === JSON.stringify([0,1,2]);
 });
 
-/* DISABLED: bare-block `let`/`const` scoping is a known transpiler
-   limitation — `let` lowers to `var`, which has function scope, so the
-   outer `void z` finds `7` instead of throwing ReferenceError.  We
-   previously IIFE-wrapped such blocks to fake block scope, but that
-   was reverted because it shadowed `arguments` in async/borrowed-test
-   function bodies (see [[project_transpiler_arguments_iife]]).
-   Proper fix needs block-scoped lexical environments in duktape itself
-   — multi-week change.  Re-enable when that lands.
-
 testFeature("Block scope with inner function - let scoped", function () {
   let outerSeenUndefined = false;
   (function () {
@@ -735,7 +726,6 @@ testFeature("Block scope with inner function - let scoped", function () {
   }());
   return outerSeenUndefined;
 });
-*/
 
 // Helpers
 const nextMicrotask = () => Promise.resolve();

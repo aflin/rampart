@@ -1785,6 +1785,41 @@ RP_ParseRes rp_get_transpiled(char *src, int *is_tickified)
     return ret;
 }
 
+/* Like rp_get_transpiled but forces fn_sources=0 — used for
+   `new Function(body)` bodies which must compile as a single
+   function expression (no `_TrN_Sp._fs(...)` post-decls, no
+   preamble). Same gating as rp_get_transpiled. */
+RP_ParseRes rp_get_transpiled_no_fn_sources(char *src, int *is_tickified)
+{
+    RP_ParseRes ret = {0};
+    int fn_sources = 1;  /* not actually used after _decide_transpile */
+    size_t src_sz = strlen(src);
+
+    if (!_decide_transpile(src, &fn_sources))
+        goto do_tickify_nf;
+
+    transpile_set_fn_sources(0);
+    ret = transpile((const char *)src, src_sz, 0);
+    transpile_set_fn_sources(1);
+    if (is_tickified)
+        *is_tickified = 0;
+    return ret;
+
+    do_tickify_nf:
+
+    if (is_tickified)
+        *is_tickified = 1;
+
+    ret.transpiled = tickify(src, src_sz, &(ret.err), &(ret.line_num));
+    if (ret.err)
+    {
+        size_t errsz = 128 + strlen(tickify_err(ret.err));
+        REMALLOC(ret.errmsg, errsz);
+        snprintf(ret.errmsg, errsz, "SyntaxError: %s (line %d)\n", tickify_err(ret.err), ret.line_num);
+    }
+    return ret;
+}
+
 /* Like rp_get_transpiled but for eval() — uses transpile_eval()
    (no program-level IIFE wrap, so the eval'd code sees caller scope
    correctly).  Same gating: only transpile if -t was passed or source

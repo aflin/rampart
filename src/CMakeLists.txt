@@ -457,6 +457,26 @@ target_link_libraries(rampart-cmark
     ${PROJECT_BINARY_DIR}/extern/cmark-gfm/src/libcmark-gfm.a
 )
 
+###INTL###
+# rampart-intl.so — Intl runtime backed by vendored ICU4C 76.1.
+# Static-links libicui18n.a + libicuuc.a + libicudata.a so the
+# module is self-contained. Big .so (~35MB with data) but no
+# runtime dep on system libicu.
+add_library(rampart-intl SHARED
+    duktape/modules/rampart-intl.c
+)
+add_dependencies(rampart-intl icu4c)
+target_include_directories(rampart-intl PRIVATE
+    ${ICU_INCLUDE_DIR}
+)
+target_link_libraries(rampart-intl
+    icu_i18n icu_uc icu_data
+)
+# ICU itself is C++; link the C++ runtime.
+set_target_properties(rampart-intl PROPERTIES
+    LINKER_LANGUAGE CXX
+)
+
 ###NODESHIM###
 add_library(rampart-nodeshim SHARED
     duktape/modules/rampart-nodeshim.c
@@ -1230,7 +1250,7 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
   set_target_properties(
         rampart-curl rampart-server rampart-sql
         rampart-redis rampart-crypto rampart-html
-        rampart-cmark rampart-robots rampart-lmdb
+        rampart-cmark rampart-intl rampart-robots rampart-lmdb
         rampart-net rampart-python rampart-almanac
         rampart-totext rampart-auth rampart-treesitter
         rampart-nodeshim
@@ -1275,7 +1295,7 @@ elseif(CYGWIN)
   set_target_properties(
         rampart-curl rampart-server rampart-sql
         rampart-redis rampart-crypto rampart-html
-        rampart-cmark rampart-robots rampart-lmdb
+        rampart-cmark rampart-intl rampart-robots rampart-lmdb
         rampart-net rampart-python rampart-almanac
         rampart-totext rampart-auth rampart-treesitter
         rampart-nodeshim
@@ -1289,7 +1309,7 @@ else()
   set_target_properties(
         rampart-curl rampart-server rampart-sql
         rampart-redis rampart-crypto rampart-html
-        rampart-cmark rampart-robots rampart-lmdb
+        rampart-cmark rampart-intl rampart-robots rampart-lmdb
         rampart-net rampart-python rampart-almanac
         rampart-totext rampart-auth rampart-treesitter
         rampart-nodeshim
@@ -1359,6 +1379,7 @@ install(TARGETS
     rampart-auth
     rampart-treesitter
     rampart-nodeshim
+    rampart-intl
     DESTINATION "${CMAKE_INSTALL_PREFIX}/modules/"
 )
 
@@ -1670,6 +1691,7 @@ install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules
 install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-totext.so\")")
 install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-treesitter.so\")")
 install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-nodeshim.so\")")
+install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-intl.so\")")
 install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-graphicsmagick.so\")")
 install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/bin/rampart\")")
 install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/bin/tsql\")")

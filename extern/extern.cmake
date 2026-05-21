@@ -105,6 +105,12 @@ add_subdirectory(${EXTERN_DIR}/cmark-gfm)
 
 add_subdirectory(${EXTERN_DIR}/robotstxt)
 
+# ICU4C — Unicode + i18n primitives used by rampart-intl.so. Heavy
+# autoconf+make build, ~5-10 minutes; ExternalProject_Add invokes it
+# at build time and exposes libicui18n.a / libicuuc.a / libicudata.a
+# as IMPORTED targets icu_i18n / icu_uc / icu_data.
+add_subdirectory(${EXTERN_DIR}/icu)
+
 if(SILENCE_VENDORED_WARNINGS)
     set(CMAKE_C_FLAGS   "${_VENDORED_SAVED_C_FLAGS}")
     set(CMAKE_CXX_FLAGS "${_VENDORED_SAVED_CXX_FLAGS}")

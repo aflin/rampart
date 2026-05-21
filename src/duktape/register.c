@@ -910,17 +910,51 @@ static duk_ret_t transpile_rewrite_args (duk_context *ctx)
         }
         const char *src = duk_get_string(ctx,-1);
 
-        //int is_tickified=0;
+        /* Disable fn-sources for `new Function(...)` bodies:
+           1. `_TrN_Sp._fs(...)` wrapper calls would emit AFTER the
+              function declaration, turning the source into multiple
+              statements which DUK_COMPILE_FUNCTION rejects.
+           2. The FN_SOURCE_PF polyfill preamble would be prepended
+              (when polysdone hasn't yet recorded it), also breaking
+              DUK_COMPILE_FUNCTION's single-expression requirement.
+           3. A `new Function`-built function's "source" is just the
+              body again — not useful for debugging.
+           The body still gets full ES2015+ transpilation (async, gen,
+           classes, etc.) — just no `__source__` attachment. */
         char *free_src=strdup(src);
-        RP_ParseRes res = rp_get_transpiled(free_src, NULL);
+        RP_ParseRes res = rp_get_transpiled_no_fn_sources(free_src, NULL);
         free(free_src);
 
         if (!res.err && res.transpiled)
         {
+            /* The transpiler always emits a `if(!global._TrN_Sp){…};
+               _TrN_Sp.load();` preamble. duk_compile(DUK_COMPILE_FUNCTION)
+               requires a single function expression — preamble bytes
+               ahead of the function break that. Eval the preamble
+               first (so polyfills the body needs but the outer script
+               didn't are installed), then compile only the function
+               expression part. `_TrN_Sp.load()` is idempotent and only
+               adds polys, so re-running it across new-Function calls
+               doesn't undo anything. */
+            const char *out = res.transpiled;
+            const char *marker = ";_TrN_Sp.load();";
+            const char *p = strstr(out, marker);
+            if (p)
+            {
+                size_t preamble_end = (size_t)(p - out) + strlen(marker);
+                duk_push_lstring(ctx, out, preamble_end);
+                /* peval to surface errors without aborting; on success
+                   pop the result; on failure pop the error. The
+                   subsequent compile of the function expression will
+                   throw if polys really were required. */
+                (void)duk_peval(ctx);
+                duk_pop(ctx);
+                out = p + strlen(marker);
+            }
             duk_pop(ctx); //src
-            duk_push_string(ctx, res.transpiled);
+            duk_push_string(ctx, out);
         }
-        freeParseRes(&res);            
+        freeParseRes(&res);
     }
 
     duk_push_string(ctx, "anonymous");
@@ -932,6 +966,52 @@ static duk_ret_t transpile_rewrite_args (duk_context *ctx)
 }
 
 
+
+/* Install `Proxy.revocable(target, handler)` polyfill — duktape has
+   Proxy + Reflect but not the revocable factory. Returns
+   `{proxy, revoke}` where calling `revoke()` causes every subsequent
+   trap on `proxy` to throw TypeError, matching ES2015 spec. Wraps the
+   caller's handler so each trap method first checks the revoked flag,
+   then delegates to the user's trap (or Reflect.<trap> as fallback). */
+static void install_proxy_revocable(duk_context *ctx)
+{
+    const char *src =
+        "if(typeof Proxy==='function' && !Proxy.revocable){"
+            "Proxy.revocable=function(target,handler){"
+                "if(target==null||(typeof target!=='object'&&typeof target!=='function'))"
+                    "throw new TypeError('Cannot create proxy with a non-object as target');"
+                "if(handler==null||typeof handler!=='object')"
+                    "throw new TypeError('Cannot create proxy with a non-object as handler');"
+                "var revoked=false;"
+                "var traps=['getPrototypeOf','setPrototypeOf','isExtensible','preventExtensions','getOwnPropertyDescriptor','defineProperty','has','get','set','deleteProperty','ownKeys','apply','construct'];"
+                "var wrapped={};"
+                "traps.forEach(function(t){"
+                    "wrapped[t]=function(){"
+                        "if(revoked)throw new TypeError(\"Cannot perform '\"+t+\"' on a proxy that has been revoked\");"
+                        "var fn=handler[t];"
+                        "if(typeof fn==='function')return fn.apply(handler,arguments);"
+                        "if(typeof Reflect!=='undefined'&&typeof Reflect[t]==='function')"
+                            "return Reflect[t].apply(Reflect,arguments);"
+                        /* minimal fallbacks for the common traps when Reflect lacks them */
+                        "var a=arguments;"
+                        "if(t==='get')return a[0][a[1]];"
+                        "if(t==='set'){a[0][a[1]]=a[2];return true;}"
+                        "if(t==='has')return a[1] in a[0];"
+                        "if(t==='deleteProperty'){delete a[0][a[1]];return true;}"
+                        "if(t==='ownKeys')return Object.getOwnPropertyNames(a[0]);"
+                        "if(t==='getOwnPropertyDescriptor')return Object.getOwnPropertyDescriptor(a[0],a[1]);"
+                        "throw new TypeError('Proxy trap \"'+t+'\" not available');"
+                    "};"
+                "});"
+                "return {proxy:new Proxy(target,wrapped),revoke:function(){revoked=true;}};"
+            "};"
+        "}";
+    if (duk_peval_string(ctx, src) != 0)
+    {
+        fprintf(stderr, "Proxy.revocable install failed: %s\n", duk_safe_to_string(ctx, -1));
+    }
+    duk_pop(ctx);
+}
 
 static void new_function_transpile(duk_context *ctx) {
     duk_push_global_object(ctx);
@@ -991,5 +1071,14 @@ void duk_init_context(duk_context *ctx)
     duk_rp_textencoding_init(ctx);
     duk_rp_console_init(ctx);
     new_function_transpile(ctx);
+    install_proxy_revocable(ctx);
+    /* Load rampart-intl via rampart's module resolver — its
+       open-module entry installs globalThis.Intl as a side-effect.
+       If missing, the resolver throws (in module.c:_duk_resolve)
+       which propagates out of duk_init_context — that's intentional:
+       rampart-intl is part of the standard distribution and a
+       missing .so indicates a broken install. To skip Intl loading
+       in custom builds, configure with -DRAMPART_INTL=OFF (planned). */
+    duk_eval_string_noresult(ctx, "require('rampart-intl');");
     duk_map_set_init(ctx);
 }
