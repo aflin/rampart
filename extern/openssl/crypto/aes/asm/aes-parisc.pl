@@ -1,17 +1,17 @@
 #! /usr/bin/env perl
-# Copyright 2009-2020 The OpenSSL Project Authors. All Rights Reserved.
+# Copyright 2009-2025 The OpenSSL Project Authors. All Rights Reserved.
 #
-# Licensed under the OpenSSL license (the "License").  You may not use
+# Licensed under the Apache License 2.0 (the "License").  You may not use
 # this file except in compliance with the License.  You can obtain a copy
 # in the file LICENSE in the source distribution or at
 # https://www.openssl.org/source/license.html
 
 
 # ====================================================================
-# Written by Andy Polyakov <appro@openssl.org> for the OpenSSL
+# Written by Andy Polyakov, @dot-asm, initially for use in the OpenSSL
 # project. The module is, however, dual licensed under OpenSSL and
 # CRYPTOGAMS licenses depending on where you obtain it. For further
-# details see http://www.openssl.org/~appro/cryptogams/.
+# details see https://github.com/dot-asm/cryptogams/.
 # ====================================================================
 
 # AES for PA-RISC.
@@ -28,9 +28,12 @@
 #
 # Special thanks to polarhome.com for providing HP-UX account.
 
-$flavour = shift;
-$output = shift;
-open STDOUT,">$output";
+# $output is the last argument if it looks like a file (it has an extension)
+# $flavour is the first argument if it doesn't look like a file
+$output = $#ARGV >= 0 && $ARGV[$#ARGV] =~ m|\.\w+$| ? pop : undef;
+$flavour = $#ARGV >= 0 && $ARGV[0] !~ m|\.| ? shift : undef;
+
+$output and open STDOUT,">$output";
 
 if ($flavour =~ /64/) {
 	$LEVEL		="2.0W";
@@ -1009,7 +1012,7 @@ L\$AES_Td
 	.BYTE	0xc8, 0xeb, 0xbb, 0x3c, 0x83, 0x53, 0x99, 0x61
 	.BYTE	0x17, 0x2b, 0x04, 0x7e, 0xba, 0x77, 0xd6, 0x26
 	.BYTE	0xe1, 0x69, 0x14, 0x63, 0x55, 0x21, 0x0c, 0x7d
-	.STRINGZ "AES for PA-RISC, CRYPTOGAMS by <appro\@openssl.org>"
+	.STRINGZ "AES for PA-RISC, CRYPTOGAMS by <https://github.com/dot-asm>"
 ___
 
 if (`$ENV{CC} -Wa,-v -c -o /dev/null -x assembler /dev/null 2>&1`

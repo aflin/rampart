@@ -1,7 +1,7 @@
 /*
- * Copyright 2000-2019 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2000-2020 The OpenSSL Project Authors. All Rights Reserved.
  *
- * Licensed under the OpenSSL license (the "License").  You may not use
+ * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
  * in the file LICENSE in the source distribution or at
  * https://www.openssl.org/source/license.html
@@ -30,7 +30,7 @@ static char *find_friendly_name(PKCS12 *p12)
     for (n = 0; n < sk_PKCS7_num(safes) && name == NULL; n++) {
         safe = sk_PKCS7_value(safes, n);
         if (OBJ_obj2nid(safe->type) != NID_pkcs7_data
-                || (bags = PKCS12_unpack_p7data(safe)) == NULL)
+            || (bags = PKCS12_unpack_p7data(safe)) == NULL)
             continue;
 
         for (m = 0; m < sk_PKCS12_SAFEBAG_num(bags) && name == NULL; m++) {
@@ -79,7 +79,7 @@ int main(int argc, char **argv)
     name = find_friendly_name(p12);
     PKCS12_free(p12);
     if ((fp = fopen(argv[3], "w")) == NULL) {
-        fprintf(stderr, "Error opening file %s\n", argv[1]);
+        fprintf(stderr, "Error opening file %s\n", argv[3]);
         goto err;
     }
     if (name != NULL)
@@ -101,11 +101,11 @@ int main(int argc, char **argv)
 
     ret = EXIT_SUCCESS;
 
- err:
+err:
     OPENSSL_free(name);
     X509_free(cert);
     EVP_PKEY_free(pkey);
-    sk_X509_pop_free(ca, X509_free);
+    OSSL_STACK_OF_X509_free(ca);
 
     return ret;
 }

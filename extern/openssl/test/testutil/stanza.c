@@ -1,7 +1,7 @@
 /*
- * Copyright 2017 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2017-2025 The OpenSSL Project Authors. All Rights Reserved.
  *
- * Licensed under the OpenSSL license (the "License").  You may not use
+ * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
  * in the file LICENSE in the source distribution or at
  * https://www.openssl.org/source/license.html
@@ -30,7 +30,7 @@ int test_start_file(STANZA *s, const char *testfile)
 int test_end_file(STANZA *s)
 {
     TEST_info("Completed %d tests with %d errors and %d skipped",
-              s->numtests, s->errors, s->numskip);
+        s->numtests, s->errors, s->numskip);
     BIO_free(s->fp);
     return 1;
 }
@@ -54,13 +54,12 @@ static int read_key(STANZA *s)
         s->curr++;
         if (!TEST_int_gt(BIO_puts(s->key, tmpbuf), 0))
             return 0;
-        if (strncmp(tmpbuf, "-----END", 8) == 0)
+        if (HAS_PREFIX(tmpbuf, "-----END"))
             return 1;
     }
     TEST_error("Can't find key end");
     return 0;
 }
-
 
 /*
  * Delete leading and trailing spaces from a string
@@ -72,10 +71,10 @@ static char *strip_spaces(char *p)
     /* Skip over leading spaces */
     while (*p && isspace((unsigned char)*p))
         p++;
-    if (!*p)
+    if (*p == '\0')
         return NULL;
 
-    for (q = p + strlen(p) - 1; q != p && isspace((unsigned char)*q); )
+    for (q = p + strlen(p) - 1; q != p && isspace((unsigned char)*q);)
         *q-- = '\0';
     return *p ? p : NULL;
 }
@@ -86,31 +85,33 @@ static char *strip_spaces(char *p)
 int test_readstanza(STANZA *s)
 {
     PAIR *pp = s->pairs;
-    char *p, *equals, *key, *value;
+    char *p, *equals, *key;
+    const char *value;
+    static char buff[131072];
 
-    for (s->numpairs = 0; BIO_gets(s->fp, s->buff, sizeof(s->buff)); ) {
+    for (s->numpairs = 0; BIO_gets(s->fp, buff, sizeof(buff));) {
         s->curr++;
-        if (!TEST_ptr(p = strchr(s->buff, '\n'))) {
+        if (!TEST_ptr(p = strchr(buff, '\n'))) {
             TEST_info("Line %d too long", s->curr);
             return 0;
         }
         *p = '\0';
 
         /* Blank line marks end of tests. */
-        if (s->buff[0] == '\0')
+        if (buff[0] == '\0')
             break;
 
         /* Lines starting with a pound sign are ignored. */
-        if (s->buff[0] == '#')
+        if (buff[0] == '#')
             continue;
 
         /* Parse into key=value */
-        if (!TEST_ptr(equals = strchr(s->buff, '='))) {
+        if (!TEST_ptr(equals = strchr(buff, '='))) {
             TEST_info("Missing = at line %d\n", s->curr);
             return 0;
         }
         *equals++ = '\0';
-        if (!TEST_ptr(key = strip_spaces(s->buff))) {
+        if (!TEST_ptr(key = strip_spaces(buff))) {
             TEST_info("Empty field at line %d\n", s->curr);
             return 0;
         }
@@ -125,18 +126,16 @@ int test_readstanza(STANZA *s)
         if (s->numpairs == 0)
             s->start = s->curr;
 
-        if (strcmp(key, "PrivateKey") == 0) {
-            if (!read_key(s))
-                return 0;
-        }
-        if (strcmp(key, "PublicKey") == 0) {
+        if (strcmp(key, "PrivateKey") == 0
+            || strcmp(key, "PublicKey") == 0
+            || strcmp(key, "ParamKey") == 0) {
             if (!read_key(s))
                 return 0;
         }
 
         if (!TEST_int_lt(s->numpairs++, TESTMAXPAIRS)
-                || !TEST_ptr(pp->key = OPENSSL_strdup(key))
-                || !TEST_ptr(pp->value = OPENSSL_strdup(value)))
+            || !TEST_ptr(pp->key = OPENSSL_strdup(key))
+            || !TEST_ptr(pp->value = OPENSSL_strdup(value)))
             return 0;
         pp++;
     }
@@ -150,7 +149,7 @@ void test_clearstanza(STANZA *s)
     PAIR *pp = s->pairs;
     int i = s->numpairs;
 
-    for ( ; --i >= 0; pp++) {
+    for (; --i >= 0; pp++) {
         OPENSSL_free(pp->key);
         OPENSSL_free(pp->value);
     }

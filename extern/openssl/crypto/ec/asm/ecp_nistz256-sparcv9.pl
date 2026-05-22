@@ -1,17 +1,17 @@
 #! /usr/bin/env perl
-# Copyright 2015-2020 The OpenSSL Project Authors. All Rights Reserved.
+# Copyright 2015-2025 The OpenSSL Project Authors. All Rights Reserved.
 #
-# Licensed under the OpenSSL license (the "License").  You may not use
+# Licensed under the Apache License 2.0 (the "License").  You may not use
 # this file except in compliance with the License.  You can obtain a copy
 # in the file LICENSE in the source distribution or at
 # https://www.openssl.org/source/license.html
 
 
 # ====================================================================
-# Written by Andy Polyakov <appro@openssl.org> for the OpenSSL
+# Written by Andy Polyakov, @dot-asm, initially for use in the OpenSSL
 # project. The module is, however, dual licensed under OpenSSL and
 # CRYPTOGAMS licenses depending on where you obtain it. For further
-# details see http://www.openssl.org/~appro/cryptogams/.
+# details see https://github.com/dot-asm/cryptogams/.
 # ====================================================================
 #
 # ECP_NISTZ256 module for SPARCv9.
@@ -31,11 +31,13 @@
 # on benchmark. Lower coefficients are for ECDSA sign, server-side
 # operation. Keep in mind that +200% means 3x improvement.
 
-$output = pop;
-open STDOUT,">$output";
+$output = pop and open STDOUT,">$output";
 
 $code.=<<___;
-#include "sparc_arch.h"
+#ifndef __ASSEMBLER__
+# define __ASSEMBLER__ 1
+#endif
+#include "crypto/sparc_arch.h"
 
 #define LOCALS	(STACK_BIAS+STACK_FRAME)
 #ifdef	__arch64__
@@ -109,7 +111,7 @@ $code.=<<___;
 .long	0xfffffffe, 0xffffffff, 0xfffffffd, 0x00000004
 .Lone:
 .long	1,0,0,0,0,0,0,0
-.asciz	"ECP_NISTZ256 for SPARCv9, CRYPTOGAMS by <appro\@openssl.org>"
+.asciz	"ECP_NISTZ256 for SPARCv9, CRYPTOGAMS by <https://github.com/dot-asm>"
 
 ! void	ecp_nistz256_to_mont(BN_ULONG %i0[8],const BN_ULONG %i1[8]);
 .globl	ecp_nistz256_to_mont

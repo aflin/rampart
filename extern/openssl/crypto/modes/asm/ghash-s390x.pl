@@ -1,17 +1,17 @@
 #! /usr/bin/env perl
-# Copyright 2010-2020 The OpenSSL Project Authors. All Rights Reserved.
+# Copyright 2010-2025 The OpenSSL Project Authors. All Rights Reserved.
 #
-# Licensed under the OpenSSL license (the "License").  You may not use
+# Licensed under the Apache License 2.0 (the "License").  You may not use
 # this file except in compliance with the License.  You can obtain a copy
 # in the file LICENSE in the source distribution or at
 # https://www.openssl.org/source/license.html
 
 
 # ====================================================================
-# Written by Andy Polyakov <appro@openssl.org> for the OpenSSL
+# Written by Andy Polyakov, @dot-asm, initially for use in the OpenSSL
 # project. The module is, however, dual licensed under OpenSSL and
 # CRYPTOGAMS licenses depending on where you obtain it. For further
-# details see http://www.openssl.org/~appro/cryptogams/.
+# details see https://github.com/dot-asm/cryptogams/.
 # ====================================================================
 
 # September 2010.
@@ -44,7 +44,10 @@
 # it's actually almost 2 times slower. Which is the reason why
 # KIMD-GHASH is not used in gcm_gmult_4bit.
 
-$flavour = shift;
+# $output is the last argument if it looks like a file (it has an extension)
+# $flavour is the first argument if it doesn't look like a file
+$output = $#ARGV >= 0 && $ARGV[$#ARGV] =~ m|\.\w+$| ? pop : undef;
+$flavour = $#ARGV >= 0 && $ARGV[0] !~ m|\.| ? shift : undef;
 
 if ($flavour =~ /3[12]/) {
 	$SIZE_T=4;
@@ -54,8 +57,7 @@ if ($flavour =~ /3[12]/) {
 	$g="g";
 }
 
-while (($output=shift) && ($output!~/\w[\w\-]*\.\w+$/)) {}
-open STDOUT,">$output";
+$output and open STDOUT,">$output";
 
 $softonly=0;
 
@@ -88,25 +90,6 @@ $code.=<<___;
 .align	32
 gcm_gmult_4bit:
 ___
-$code.=<<___ if(!$softonly && 0);	# hardware is slow for single block...
-	larl	%r1,OPENSSL_s390xcap_P
-	lghi	%r0,0
-	lg	%r1,S390X_KIMD+8(%r1)	# load second word of kimd capabilities
-					#  vector
-	tmhh	%r1,0x4000	# check for function 65
-	jz	.Lsoft_gmult
-	stg	%r0,16($sp)	# arrange 16 bytes of zero input
-	stg	%r0,24($sp)
-	lghi	%r0,S390X_GHASH	# function 65
-	la	%r1,0($Xi)	# H lies right after Xi in gcm128_context
-	la	$inp,16($sp)
-	lghi	$len,16
-	.long	0xb93e0004	# kimd %r0,$inp
-	brc	1,.-4		# pay attention to "partial completion"
-	br	%r14
-.align	32
-.Lsoft_gmult:
-___
 $code.=<<___;
 	stm${g}	%r6,%r14,6*$SIZE_T($sp)
 
@@ -130,10 +113,21 @@ $code.=<<___ if(!$softonly);
 					#  vector
 	tmhh	%r0,0x4000	# check for function 65
 	jz	.Lsoft_ghash
+	# Do not assume this function is called from a gcm128_context.
+	# This is not true, e.g., for AES-GCM-SIV.
+	# Parameter Block:
+	# Chaining Value (XI) 128byte
+	# Key (Htable[8]) 128byte
+	lmg	%r0,%r1,0($Xi)
+	stmg	%r0,%r1,8($sp)
+	lmg	%r0,%r1,8*16($Htbl)
+	stmg	%r0,%r1,24($sp)
+	la	%r1,8($sp)
 	lghi	%r0,S390X_GHASH	# function 65
-	la	%r1,0($Xi)	# H lies right after Xi in gcm128_context
 	.long	0xb93e0004	# kimd %r0,$inp
 	brc	1,.-4		# pay attention to "partial completion"
+	lmg	%r0,%r1,8($sp)
+	stmg	%r0,%r1,0($Xi)
 	br	%r14
 .align	32
 .Lsoft_ghash:
@@ -254,7 +248,7 @@ rem_4bit:
 	.long	`0x9180<<12`,0,`0x8DA0<<12`,0,`0xA9C0<<12`,0,`0xB5E0<<12`,0
 .type	rem_4bit,\@object
 .size	rem_4bit,(.-rem_4bit)
-.string	"GHASH for s390x, CRYPTOGAMS by <appro\@openssl.org>"
+.string	"GHASH for s390x, CRYPTOGAMS by <https://github.com/dot-asm>"
 ___
 
 $code =~ s/\`([^\`]*)\`/eval $1/gem;

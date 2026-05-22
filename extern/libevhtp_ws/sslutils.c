@@ -422,9 +422,13 @@ htp_sslutil_x509_ext_tostr(evhtp_ssl_t * ssl, const char * oid) {
         return NULL;
     }
 
-    octet_data = octet->data;
+    /* OpenSSL 1.1+ made ASN1_STRING (typedef'd as ASN1_OCTET_STRING)
+       opaque — direct ->data / ->length / ->type access no longer
+       compiles.  Use the public accessors instead. */
+    octet_data = ASN1_STRING_get0_data(octet);
 
-    if (ASN1_get_object(&octet_data, &xlen, &xtag, &xclass, octet->length)) {
+    if (ASN1_get_object(&octet_data, &xlen, &xtag, &xclass,
+                        ASN1_STRING_length(octet))) {
         ASN1_OBJECT_free(oid_obj);
         X509_free(cert);
         return NULL;
@@ -433,7 +437,7 @@ htp_sslutil_x509_ext_tostr(evhtp_ssl_t * ssl, const char * oid) {
     /* We're only supporting string data. Could optionally add support
      * for encoded binary data */
 
-    if (xlen > 0 && xtag == 0x0C && octet->type == V_ASN1_OCTET_STRING) {
+    if (xlen > 0 && xtag == 0x0C && ASN1_STRING_type(octet) == V_ASN1_OCTET_STRING) {
         ext_str = (unsigned char *)strndup((const char *)octet_data, xlen);
     }
 

@@ -1,7 +1,7 @@
 #! /usr/bin/env perl
-# Copyright 2017-2018 The OpenSSL Project Authors. All Rights Reserved.
+# Copyright 2017-2023 The OpenSSL Project Authors. All Rights Reserved.
 #
-# Licensed under the OpenSSL license (the "License").  You may not use
+# Licensed under the Apache License 2.0 (the "License").  You may not use
 # this file except in compliance with the License.  You can obtain a copy
 # in the file LICENSE in the source distribution or at
 # https://www.openssl.org/source/license.html
@@ -11,6 +11,7 @@ use OpenSSL::Test qw/:DEFAULT cmdstr srctop_file srctop_dir bldtop_dir/;
 use OpenSSL::Test::Utils;
 use File::Temp qw(tempfile);
 use TLSProxy::Proxy;
+use Cwd qw(abs_path);
 
 my $test_name = "test_tls13psk";
 setup($test_name);
@@ -18,17 +19,16 @@ setup($test_name);
 plan skip_all => "TLSProxy isn't usable on $^O"
     if $^O =~ /^(VMS)$/;
 
-plan skip_all => "$test_name needs the dynamic engine feature enabled"
-    if disabled("engine") || disabled("dynamic-engine");
+plan skip_all => "$test_name needs the module feature enabled"
+    if disabled("module");
 
 plan skip_all => "$test_name needs the sock feature enabled"
     if disabled("sock");
 
 plan skip_all => "$test_name needs TLSv1.3 enabled"
-    if disabled("tls1_3");
+    if disabled("tls1_3") || (disabled("ec") && disabled("dh"));
 
-$ENV{OPENSSL_ia32cap} = '~0x200000200000000';
-$ENV{CTLOG_FILE} = srctop_file("test", "ct", "log_list.conf");
+$ENV{OPENSSL_MODULES} = abs_path(bldtop_dir("test"));
 
 my $proxy = TLSProxy::Proxy->new(
     undef,
@@ -66,7 +66,11 @@ ok(TLSProxy::Message->fail(), "PSK not last");
 #        ciphersuite. Should see PSK on second ClientHello
 $proxy->clear();
 $proxy->clientflags("-sess_in ".$session);
-$proxy->serverflags("-curves P-256");
+if (disabled("ec")) {
+    $proxy->serverflags("-curves ffdhe3072");
+} else {
+    $proxy->serverflags("-curves P-384");
+}
 $proxy->filter(undef);
 $proxy->start();
 #Check if the PSK is present in the second ClientHello
@@ -81,7 +85,11 @@ ok($pskseen, "PSK hash matches");
 $proxy->clear();
 $proxy->clientflags("-sess_in ".$session);
 $proxy->filter(\&modify_psk_filter);
-$proxy->serverflags("-curves P-256");
+if (disabled("ec")) {
+    $proxy->serverflags("-curves ffdhe3072");
+} else {
+    $proxy->serverflags("-curves P-384");
+}
 $proxy->ciphersuitesc("TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384");
 $proxy->ciphersuitess("TLS_AES_256_GCM_SHA384");
 #We force an early failure because TLS Proxy doesn't actually support

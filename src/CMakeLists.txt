@@ -98,6 +98,7 @@ add_executable(rampart
     duktape/globals/rampart-buffer.c
     duktape/globals/rampart-textencoding.c
     duktape/globals/rampart-console.c
+    duktape/globals/rampart-promise.c
     duktape/globals/colorspace.c
     duktape/globals/jcolor.c
     duktape/globals/rampart-event.c
@@ -748,7 +749,7 @@ add_custom_target(libdeflate
     DEPENDS ${PROJECT_BINARY_DIR}/extern/libdeflate/libdeflate.a
 )
 
-add_dependencies(rampart-server libdeflate)
+add_dependencies(rampart-server libdeflate openssl)
 add_dependencies(libdeflate cp_libdeflate)
 
 # libdeflate centralized in main rampart binary; ENABLE_EXPORTS (above)
@@ -824,6 +825,7 @@ target_include_directories(rampart-net PRIVATE
     ${PROJECT_SOURCE_DIR}/extern/libevent/include/
     ${PROJECT_BINARY_DIR}/extern/libevent/include/
 )
+add_dependencies(rampart-net openssl)
 
 
 ###CURL###
@@ -864,6 +866,16 @@ add_custom_target(cp_python
 set(PYFLAGS "-I/usr/local/include -fPIC ${CMAKE_C_FLAGS}")
 set(PYLDFLAGS "-L /usr/local/lib")
 set(PYPKG "")
+
+# 32-bit ARM (Raspberry Pi, etc): GCC doesn't auto-link libatomic for
+# 8-byte atomic intrinsics like __atomic_fetch_sub_8 that Python's
+# _hashlib / _ssl etc. pull in transitively.  Without -latomic, those
+# extension modules build but fail to load with "undefined symbol:
+# __atomic_fetch_sub_8".  Add libatomic to the link line.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux"
+   AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm|armhf|armv6|armv7|armv7l)$")
+    set(PYLDFLAGS "${PYLDFLAGS} -latomic")
+endif()
 
 if(SILENCE_VENDORED_WARNINGS)
     # Silence all warnings on Python's build.  Python is vendored
@@ -942,8 +954,11 @@ else()
 add_custom_command(
     DEPENDS ${PYTHON_BIN_DIR}/Makefile
     OUTPUT ${PYTHON_BIN_DIR}/libpython3.${PYTHON_MINOR}.a
-    COMMAND ${CMAKE_MAKE_PROGRAM} ${PYTHON_MAKE_FLAGS}
-    COMMAND ${CMAKE_MAKE_PROGRAM} ${PYTHON_MAKE_FLAGS} install
+    # $(MAKE) (literal, not a CMake var) gets jobserver-passthrough
+    # semantics from gmake, so the parent make's -jN is inherited by
+    # Python's recursive sub-makes.  Same trick as the OpenSSL build.
+    COMMAND $(MAKE) ${PYTHON_MAKE_FLAGS}
+    COMMAND $(MAKE) ${PYTHON_MAKE_FLAGS} install
     WORKING_DIRECTORY ${PYTHON_BIN_DIR}
 )
 endif()

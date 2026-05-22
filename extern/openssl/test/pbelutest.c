@@ -1,7 +1,7 @@
 /*
  * Copyright 2015-2017 The OpenSSL Project Authors. All Rights Reserved.
  *
- * Licensed under the OpenSSL license (the "License").  You may not use
+ * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
  * in the file LICENSE in the source distribution or at
  * https://www.openssl.org/source/license.html
@@ -34,9 +34,9 @@ static int test_pbelu(void)
     /* Error: print out whole table */
     for (i = 0; EVP_PBE_get(&pbe_type, &pbe_nid, i) != 0; i++) {
         failed = pbe_type < last_type
-                 || (pbe_type == last_type && pbe_nid < last_nid);
+            || (pbe_type == last_type && pbe_nid < last_nid);
         TEST_note("PBE type=%d %d (%s): %s\n", pbe_type, pbe_nid,
-                  OBJ_nid2sn(pbe_nid), failed ? "ERROR" : "OK");
+            OBJ_nid2sn(pbe_nid), failed ? "ERROR" : "OK");
         last_type = pbe_type;
         last_nid = pbe_nid;
     }

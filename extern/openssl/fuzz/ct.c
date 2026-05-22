@@ -1,7 +1,7 @@
 /*
- * Copyright 2016 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2016-2025 The OpenSSL Project Authors. All Rights Reserved.
  *
- * Licensed under the OpenSSL licenses, (the "License");
+ * Licensed under the Apache License 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  * https://www.openssl.org/source/license.html
@@ -21,7 +21,7 @@ int FuzzerInitialize(int *argc, char ***argv)
 {
     OPENSSL_init_crypto(OPENSSL_INIT_LOAD_CRYPTO_STRINGS, NULL);
     CRYPTO_free_ex_index(0, -1);
-    ERR_get_state();
+    ERR_clear_error();
     return 1;
 }
 
@@ -29,7 +29,7 @@ int FuzzerTestOneInput(const uint8_t *buf, size_t len)
 {
     const uint8_t **pp = &buf;
     unsigned char *der = NULL;
-    STACK_OF(SCT) *scts = d2i_SCT_LIST(NULL, pp, len);
+    STACK_OF(SCT) *scts = d2i_SCT_LIST(NULL, pp, (long)len);
     if (scts != NULL) {
         BIO *bio = BIO_new(BIO_s_null());
         SCT_LIST_print(scts, bio, 4, "\n", NULL);

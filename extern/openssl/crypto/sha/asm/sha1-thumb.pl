@@ -1,17 +1,17 @@
 #! /usr/bin/env perl
-# Copyright 2007-2020 The OpenSSL Project Authors. All Rights Reserved.
+# Copyright 2007-2025 The OpenSSL Project Authors. All Rights Reserved.
 #
-# Licensed under the OpenSSL license (the "License").  You may not use
+# Licensed under the Apache License 2.0 (the "License").  You may not use
 # this file except in compliance with the License.  You can obtain a copy
 # in the file LICENSE in the source distribution or at
 # https://www.openssl.org/source/license.html
 
 
 # ====================================================================
-# Written by Andy Polyakov <appro@openssl.org> for the OpenSSL
+# Written by Andy Polyakov, @dot-asm, initially for use in the OpenSSL
 # project. The module is, however, dual licensed under OpenSSL and
 # CRYPTOGAMS licenses depending on where you obtain it. For further
-# details see http://www.openssl.org/~appro/cryptogams/.
+# details see https://github.com/dot-asm/cryptogams/.
 # ====================================================================
 
 # sha1_block for Thumb.
@@ -26,8 +26,7 @@
 # by over 40%, while code increases by only 10% or 32 bytes. But once
 # again, the goal was to establish _size_ benchmark, not performance.
 
-$output=shift;
-open STDOUT,">$output";
+$output=pop and open STDOUT,">$output";
 
 $inline=0;
 #$cheat_on_binutils=1;
@@ -259,7 +258,7 @@ $code.=<<___;
 .LK_40_59:	.word	0x8f1bbcdc
 .LK_60_79:	.word	0xca62c1d6
 .size	sha1_block_data_order,.-sha1_block_data_order
-.asciz	"SHA1 block transform for Thumb, CRYPTOGAMS by <appro\@openssl.org>"
+.asciz	"SHA1 block transform for Thumb, CRYPTOGAMS by <https://github.com/dot-asm>"
 ___
 
 print $code;

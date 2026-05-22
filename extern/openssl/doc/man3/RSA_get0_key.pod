@@ -7,7 +7,7 @@ RSA_get0_factors, RSA_get0_crt_params,
 RSA_get0_n, RSA_get0_e, RSA_get0_d, RSA_get0_p, RSA_get0_q,
 RSA_get0_dmp1, RSA_get0_dmq1, RSA_get0_iqmp, RSA_get0_pss_params,
 RSA_clear_flags,
-RSA_test_flags, RSA_set_flags, RSA_get0_engine, RSA_get_multi_prime_extra_count,
+RSA_test_flags, RSA_set_flags, RSA_get_multi_prime_extra_count,
 RSA_get0_multi_prime_factors, RSA_get0_multi_prime_crt_params,
 RSA_set0_multi_prime_params, RSA_get_version
 - Routines for getting and setting data in an RSA object
@@ -15,6 +15,10 @@ RSA_set0_multi_prime_params, RSA_get_version
 =head1 SYNOPSIS
 
  #include <openssl/rsa.h>
+
+The following functions have been deprecated since OpenSSL 3.0, and can be
+hidden entirely by defining B<OPENSSL_API_COMPAT> with a suitable version value,
+see L<openssl_user_macros(7)>:
 
  int RSA_set0_key(RSA *r, BIGNUM *n, BIGNUM *e, BIGNUM *d);
  int RSA_set0_factors(RSA *r, BIGNUM *p, BIGNUM *q);
@@ -37,7 +41,6 @@ RSA_set0_multi_prime_params, RSA_get_version
  void RSA_clear_flags(RSA *r, int flags);
  int RSA_test_flags(const RSA *r, int flags);
  void RSA_set_flags(RSA *r, int flags);
- ENGINE *RSA_get0_engine(RSA *r);
  int RSA_get_multi_prime_extra_count(const RSA *r);
  int RSA_get0_multi_prime_factors(const RSA *r, const BIGNUM *primes[]);
  int RSA_get0_multi_prime_crt_params(const RSA *r, const BIGNUM *exps[],
@@ -47,6 +50,10 @@ RSA_set0_multi_prime_params, RSA_get_version
  int RSA_get_version(RSA *r);
 
 =head1 DESCRIPTION
+
+All of the functions described on this page are deprecated.
+Applications should instead use L<EVP_PKEY_get_bn_param(3)> for any methods that
+return a B<BIGNUM>. Refer to L<EVP_PKEY-DH(7)> for more information.
 
 An RSA object contains the components for the public and private key,
 B<n>, B<e>, B<d>, B<p>, B<q>, B<dmp1>, B<dmq1> and B<iqmp>.  B<n> is
@@ -110,9 +117,6 @@ flags that are currently set are returned, or zero if none of the
 flags are set. RSA_clear_flags() clears the specified flags within the
 RSA object.
 
-RSA_get0_engine() returns a handle to the ENGINE that has been set for
-this RSA object, or NULL if no such ENGINE has been set.
-
 RSA_get_version() returns the version of an RSA object B<r>.
 
 =head1 NOTES
@@ -139,6 +143,9 @@ RSA_get0_n(), RSA_get0_e(), RSA_get0_d(), RSA_get0_p(), RSA_get0_q(),
 RSA_get0_dmp1(), RSA_get0_dmq1(), and RSA_get0_iqmp()
 return the respective value.
 
+RSA_get0_pss_params() returns a B<RSA_PSS_PARAMS> pointer, or NULL if
+there is none.
+
 RSA_get0_multi_prime_factors() and RSA_get0_multi_prime_crt_params() return
 1 on success or 0 on failure.
 
@@ -150,9 +157,6 @@ RSA_get_version() returns B<RSA_ASN1_VERSION_MULTI> for multi-prime RSA and
 B<RSA_ASN1_VERSION_DEFAULT> for normal two-prime RSA, as defined in RFC 8017.
 
 RSA_test_flags() returns the current state of the flags in the RSA object.
-
-RSA_get0_engine() returns the ENGINE set for the RSA object or NULL if no
-ENGINE has been set.
 
 =head1 SEE ALSO
 
@@ -169,11 +173,15 @@ and RSA_get_version() functions were added in OpenSSL 1.1.1.
 
 Other functions described here were added in OpenSSL 1.1.0.
 
+All of these functions were deprecated in OpenSSL 3.0.
+
+The RSA_get0_engine() was removed in OpenSSL 4.0.
+
 =head1 COPYRIGHT
 
-Copyright 2016-2018 The OpenSSL Project Authors. All Rights Reserved.
+Copyright 2016-2022 The OpenSSL Project Authors. All Rights Reserved.
 
-Licensed under the OpenSSL license (the "License").  You may not use
+Licensed under the Apache License 2.0 (the "License").  You may not use
 this file except in compliance with the License.  You can obtain a copy
 in the file LICENSE in the source distribution or at
 L<https://www.openssl.org/source/license.html>.

@@ -1,6 +1,6 @@
-# Copyright 2016-2019 The OpenSSL Project Authors. All Rights Reserved.
+# Copyright 2016-2025 The OpenSSL Project Authors. All Rights Reserved.
 #
-# Licensed under the OpenSSL license (the "License").  You may not use
+# Licensed under the Apache License 2.0 (the "License").  You may not use
 # this file except in compliance with the License.  You can obtain a copy
 # in the file LICENSE in the source distribution or at
 # https://www.openssl.org/source/license.html
@@ -15,15 +15,23 @@ push @ISA, 'TLSProxy::Message';
 sub new
 {
     my $class = shift;
-    my ($server,
+    my ($isdtls,
+        $server,
+        $msgseq,
+        $msgfrag,
+        $msgfragoffs,
         $data,
         $records,
         $startoffset,
         $message_frag_lens) = @_;
 
     my $self = $class->SUPER::new(
+        $isdtls,
         $server,
-        TLSProxy::Message::MT_SERVER_KEY_EXCHANGE,
+        TLSProxy::Message::MT_SERVER_KEY_EXCHANGE(),
+        $msgseq,
+        $msgfrag,
+        $msgfragoffs,
         $data,
         $records,
         $startoffset,
@@ -46,9 +54,9 @@ sub parse
 
     #Minimal SKE parsing. Only supports one known DHE ciphersuite at the moment
     return if TLSProxy::Proxy->ciphersuite()
-                 != TLSProxy::Message::CIPHER_ADH_AES_128_SHA
+                 != TLSProxy::Message::CIPHER_ADH_AES_128_SHA()
               && TLSProxy::Proxy->ciphersuite()
-                 != TLSProxy::Message::CIPHER_DHE_RSA_AES_128_SHA;
+                 != TLSProxy::Message::CIPHER_DHE_RSA_AES_128_SHA();
 
     my $p_len = unpack('n', $self->data);
     my $ptr = 2;
@@ -69,7 +77,7 @@ sub parse
     my $record = ${$self->records}[0];
 
     if (TLSProxy::Proxy->is_tls13()
-            || $record->version() == TLSProxy::Record::VERS_TLS_1_2) {
+            || $record->version() == TLSProxy::Record::VERS_TLS_1_2()) {
         $sigalg = unpack('n', substr($self->data, $ptr));
         $ptr += 2;
     }

@@ -1,17 +1,17 @@
 #! /usr/bin/env perl
-# Copyright 2011-2020 The OpenSSL Project Authors. All Rights Reserved.
+# Copyright 2011-2025 The OpenSSL Project Authors. All Rights Reserved.
 #
-# Licensed under the OpenSSL license (the "License").  You may not use
+# Licensed under the Apache License 2.0 (the "License").  You may not use
 # this file except in compliance with the License.  You can obtain a copy
 # in the file LICENSE in the source distribution or at
 # https://www.openssl.org/source/license.html
 
 #
 # ====================================================================
-# Written by Andy Polyakov <appro@openssl.org> for the OpenSSL
+# Written by Andy Polyakov, @dot-asm, initially for use in the OpenSSL
 # project. The module is, however, dual licensed under OpenSSL and
 # CRYPTOGAMS licenses depending on where you obtain it. For further
-# details see http://www.openssl.org/~appro/cryptogams/.
+# details see https://github.com/dot-asm/cryptogams/.
 # ====================================================================
 #
 # May 2011
@@ -32,7 +32,10 @@
 #	so that improvement coefficients can vary from one specific
 #	setup to another.
 
-$flavour = shift;
+# $output is the last argument if it looks like a file (it has an extension)
+# $flavour is the first argument if it doesn't look like a file
+$output = $#ARGV >= 0 && $ARGV[$#ARGV] =~ m|\.\w+$| ? pop : undef;
+$flavour = $#ARGV >= 0 && $ARGV[0] !~ m|\.| ? shift : undef;
 
 if ($flavour =~ /3[12]/) {
         $SIZE_T=4;
@@ -42,8 +45,7 @@ if ($flavour =~ /3[12]/) {
         $g="g";
 }
 
-while (($output=shift) && ($output!~/\w[\w\-]*\.\w+$/)) {}
-open STDOUT,">$output";
+$output and open STDOUT,">$output";
 
 $stdframe=16*$SIZE_T+4*8;
 
@@ -220,7 +222,7 @@ $code.=<<___;
 	lm${g}	%r6,%r15,`$stdframe+128+6*$SIZE_T`($sp)
 	br	$ra
 .size	bn_GF2m_mul_2x2,.-bn_GF2m_mul_2x2
-.string	"GF(2^m) Multiplication for s390x, CRYPTOGAMS by <appro\@openssl.org>"
+.string	"GF(2^m) Multiplication for s390x, CRYPTOGAMS by <https://github.com/dot-asm>"
 ___
 
 $code =~ s/\`([^\`]*)\`/eval($1)/gem;

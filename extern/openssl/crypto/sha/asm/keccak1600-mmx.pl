@@ -1,16 +1,16 @@
 #!/usr/bin/env perl
-# Copyright 2017-2020 The OpenSSL Project Authors. All Rights Reserved.
+# Copyright 2017-2025 The OpenSSL Project Authors. All Rights Reserved.
 #
-# Licensed under the OpenSSL license (the "License").  You may not use
+# Licensed under the Apache License 2.0 (the "License").  You may not use
 # this file except in compliance with the License.  You can obtain a copy
 # in the file LICENSE in the source distribution or at
 # https://www.openssl.org/source/license.html
 #
 # ====================================================================
-# Written by Andy Polyakov <appro@openssl.org> for the OpenSSL
+# Written by Andy Polyakov, @dot-asm, initially for use in the OpenSSL
 # project. The module is, however, dual licensed under OpenSSL and
 # CRYPTOGAMS licenses depending on where you obtain it. For further
-# details see http://www.openssl.org/~appro/cryptogams/.
+# details see https://github.com/dot-asm/cryptogams/.
 # ====================================================================
 #
 # Keccak-1600 for x86 MMX.
@@ -65,8 +65,7 @@ $0 =~ m/(.*[\/\\])[^\/\\]+$/; $dir=$1;
 push(@INC,"${dir}","${dir}../../perlasm");
 require "x86asm.pl";
 
-$output=pop;
-open STDOUT,">$output";
+$output=pop and open STDOUT,">$output";
 
 &asm_init($ARGV[0],$ARGV[$#ARGV] eq "386");
 
@@ -433,7 +432,7 @@ sub Rho() {				######### regular Rho step
 	&data_word(0x00008080,0x80000000);
 	&data_word(0x80000001,0x00000000);
 	&data_word(0x80008008,0x80000000);
-&asciz("Keccak-1600 absorb and squeeze for MMX, CRYPTOGAMS by <appro\@openssl.org>");
+&asciz("Keccak-1600 absorb and squeeze for MMX, CRYPTOGAMS by <https://github.com/dot-asm>");
 
 &asm_finish();
 

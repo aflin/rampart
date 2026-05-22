@@ -1,17 +1,17 @@
 #! /usr/bin/env perl
-# Copyright 1998-2020 The OpenSSL Project Authors. All Rights Reserved.
+# Copyright 1998-2025 The OpenSSL Project Authors. All Rights Reserved.
 #
-# Licensed under the OpenSSL license (the "License").  You may not use
+# Licensed under the Apache License 2.0 (the "License").  You may not use
 # this file except in compliance with the License.  You can obtain a copy
 # in the file LICENSE in the source distribution or at
 # https://www.openssl.org/source/license.html
 
 
 # ====================================================================
-# [Re]written by Andy Polyakov <appro@openssl.org> for the OpenSSL
+# [Re]written by Andy Polyakov <https://github.com/dot-asm> for the OpenSSL
 # project. The module is, however, dual licensed under OpenSSL and
 # CRYPTOGAMS licenses depending on where you obtain it. For further
-# details see http://www.openssl.org/~appro/cryptogams/.
+# details see https://github.com/dot-asm/cryptogams/.
 # ====================================================================
 
 # At some point it became apparent that the original SSLeay RC4
@@ -68,8 +68,7 @@ $0 =~ m/(.*[\/\\])[^\/\\]+$/; $dir=$1;
 push(@INC,"${dir}","${dir}../../perlasm");
 require "x86asm.pl";
 
-$output=pop;
-open STDOUT,">$output";
+$output = pop and open STDOUT,">$output";
 
 &asm_init($ARGV[0],$x86only = $ARGV[$#ARGV] eq "386");
 
@@ -417,7 +416,7 @@ $idx="edx";
 &asciz	("rc4(4x,int)");
 &asciz	("rc4(1x,char)");
 &asciz	("rc4(8x,mmx)");
-&asciz	("RC4 for x86, CRYPTOGAMS by <appro\@openssl.org>");
+&asciz	("RC4 for x86, CRYPTOGAMS by <https://github.com/dot-asm>");
 &align	(64);
 &function_end_B("RC4_options");
 

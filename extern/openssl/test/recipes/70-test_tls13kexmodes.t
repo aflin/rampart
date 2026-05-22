@@ -1,7 +1,7 @@
 #! /usr/bin/env perl
-# Copyright 2017-2019 The OpenSSL Project Authors. All Rights Reserved.
+# Copyright 2017-2026 The OpenSSL Project Authors. All Rights Reserved.
 #
-# Licensed under the OpenSSL license (the "License").  You may not use
+# Licensed under the Apache License 2.0 (the "License").  You may not use
 # this file except in compliance with the License.  You can obtain a copy
 # in the file LICENSE in the source distribution or at
 # https://www.openssl.org/source/license.html
@@ -12,6 +12,7 @@ use OpenSSL::Test::Utils;
 use File::Temp qw(tempfile);
 use TLSProxy::Proxy;
 use checkhandshake qw(checkhandshake @handmessages @extensions);
+use Cwd qw(abs_path);
 
 my $test_name = "test_tls13kexmodes";
 setup($test_name);
@@ -19,18 +20,17 @@ setup($test_name);
 plan skip_all => "TLSProxy isn't usable on $^O"
     if $^O =~ /^(VMS)$/;
 
-plan skip_all => "$test_name needs the dynamic engine feature enabled"
-    if disabled("engine") || disabled("dynamic-engine");
+plan skip_all => "$test_name needs the module feature enabled"
+    if disabled("module");
 
 plan skip_all => "$test_name needs the sock feature enabled"
     if disabled("sock");
 
 plan skip_all => "$test_name needs TLSv1.3 enabled"
-    if disabled("tls1_3");
+    if disabled("tls1_3") || (disabled("ec") && disabled("dh"));
 
-$ENV{OPENSSL_ia32cap} = '~0x200000200000000';
-$ENV{CTLOG_FILE} = srctop_file("test", "ct", "log_list.conf");
-
+plan skip_all => "$test_name needs EC enabled"
+    if disabled("ec");
 
 @handmessages = (
     [TLSProxy::Message::MT_CLIENT_HELLO,
@@ -70,9 +70,10 @@ $ENV{CTLOG_FILE} = srctop_file("test", "ct", "log_list.conf");
     [TLSProxy::Message::MT_CLIENT_HELLO, TLSProxy::Message::EXT_SUPPORTED_GROUPS,
         TLSProxy::Message::CLIENT,
         checkhandshake::DEFAULT_EXTENSIONS],
-    [TLSProxy::Message::MT_CLIENT_HELLO, TLSProxy::Message::EXT_EC_POINT_FORMATS,
-        TLSProxy::Message::CLIENT,
-        checkhandshake::DEFAULT_EXTENSIONS],
+    (disabled("tls1_2") ? () :
+        [TLSProxy::Message::MT_CLIENT_HELLO, TLSProxy::Message::EXT_EC_POINT_FORMATS,
+            TLSProxy::Message::CLIENT,
+            checkhandshake::DEFAULT_EXTENSIONS]),
     [TLSProxy::Message::MT_CLIENT_HELLO, TLSProxy::Message::EXT_SIG_ALGS,
         TLSProxy::Message::CLIENT,
         checkhandshake::DEFAULT_EXTENSIONS],
@@ -103,6 +104,9 @@ $ENV{CTLOG_FILE} = srctop_file("test", "ct", "log_list.conf");
     [TLSProxy::Message::MT_CLIENT_HELLO, TLSProxy::Message::EXT_PSK,
         TLSProxy::Message::CLIENT,
         checkhandshake::PSK_CLI_EXTENSION],
+    [TLSProxy::Message::MT_CLIENT_HELLO, TLSProxy::Message::EXT_RENEGOTIATE,
+        TLSProxy::Message::CLIENT,
+        checkhandshake::DEFAULT_EXTENSIONS],
 
     [TLSProxy::Message::MT_SERVER_HELLO, TLSProxy::Message::EXT_SUPPORTED_VERSIONS,
         TLSProxy::Message::SERVER,
@@ -120,9 +124,10 @@ $ENV{CTLOG_FILE} = srctop_file("test", "ct", "log_list.conf");
     [TLSProxy::Message::MT_CLIENT_HELLO, TLSProxy::Message::EXT_SUPPORTED_GROUPS,
         TLSProxy::Message::CLIENT,
         checkhandshake::DEFAULT_EXTENSIONS],
-    [TLSProxy::Message::MT_CLIENT_HELLO, TLSProxy::Message::EXT_EC_POINT_FORMATS,
-        TLSProxy::Message::CLIENT,
-        checkhandshake::DEFAULT_EXTENSIONS],
+    (disabled("tls1_2") ? () :
+        [TLSProxy::Message::MT_CLIENT_HELLO, TLSProxy::Message::EXT_EC_POINT_FORMATS,
+            TLSProxy::Message::CLIENT,
+            checkhandshake::DEFAULT_EXTENSIONS]),
     [TLSProxy::Message::MT_CLIENT_HELLO, TLSProxy::Message::EXT_SIG_ALGS,
         TLSProxy::Message::CLIENT,
         checkhandshake::DEFAULT_EXTENSIONS],
@@ -153,6 +158,9 @@ $ENV{CTLOG_FILE} = srctop_file("test", "ct", "log_list.conf");
     [TLSProxy::Message::MT_CLIENT_HELLO, TLSProxy::Message::EXT_PSK,
         TLSProxy::Message::CLIENT,
         checkhandshake::PSK_CLI_EXTENSION],
+    [TLSProxy::Message::MT_CLIENT_HELLO, TLSProxy::Message::EXT_RENEGOTIATE,
+        TLSProxy::Message::CLIENT,
+        checkhandshake::DEFAULT_EXTENSIONS],
 
     [TLSProxy::Message::MT_SERVER_HELLO, TLSProxy::Message::EXT_SUPPORTED_VERSIONS,
         TLSProxy::Message::SERVER,
@@ -179,6 +187,8 @@ use constant {
     BOTH_KEX_MODES => 5
 };
 
+$ENV{OPENSSL_MODULES} = abs_path(bldtop_dir("test"));
+
 my $proxy = TLSProxy::Proxy->new(
     undef,
     cmdstr(app(["openssl"]), display => 1),
@@ -188,29 +198,29 @@ my $proxy = TLSProxy::Proxy->new(
 
 #Test 1: First get a session
 (undef, my $session) = tempfile();
-$proxy->clientflags("-sess_out ".$session);
-$proxy->serverflags("-servername localhost");
+$proxy->cipherc("DEFAULT:\@SECLEVEL=2");
+$proxy->clientflags("-no_rx_cert_comp -sess_out ".$session);
+$proxy->serverflags("-no_rx_cert_comp -servername localhost");
 $proxy->sessionfile($session);
 $proxy->start() or plan skip_all => "Unable to start up Proxy for tests";
-plan tests => 11;
+plan tests => 13;
 ok(TLSProxy::Message->success(), "Initial connection");
 
-#Test 2: Attempt a resume with no kex modes extension. Should not resume
+#Test 2: Attempt a resume with no kex modes extension. Should fail (server
+#        MUST abort handshake with pre_shared key and no psk_kex_modes)
 $proxy->clear();
-$proxy->clientflags("-sess_in ".$session);
+$proxy->cipherc("DEFAULT:\@SECLEVEL=2");
+$proxy->clientflags("-no_rx_cert_comp -sess_in ".$session);
 my $testtype = DELETE_EXTENSION;
 $proxy->filter(\&modify_kex_modes_filter);
 $proxy->start();
-checkhandshake($proxy, checkhandshake::DEFAULT_HANDSHAKE,
-               checkhandshake::DEFAULT_EXTENSIONS
-               | checkhandshake::KEY_SHARE_SRV_EXTENSION
-               | checkhandshake::PSK_CLI_EXTENSION,
-               "Resume with no kex modes");
+ok(TLSProxy::Message->fail(), "Resume with no kex modes");
 
 #Test 3: Attempt a resume with empty kex modes extension. Should fail (empty
 #        extension is invalid)
 $proxy->clear();
-$proxy->clientflags("-sess_in ".$session);
+$proxy->cipherc("DEFAULT:\@SECLEVEL=2");
+$proxy->clientflags("-no_rx_cert_comp -sess_in ".$session);
 $testtype = EMPTY_EXTENSION;
 $proxy->start();
 ok(TLSProxy::Message->fail(), "Resume with empty kex modes");
@@ -218,8 +228,9 @@ ok(TLSProxy::Message->fail(), "Resume with empty kex modes");
 #Test 4: Attempt a resume with non-dhe kex mode only. Should resume without a
 #        key_share
 $proxy->clear();
-$proxy->clientflags("-allow_no_dhe_kex -sess_in ".$session);
-$proxy->serverflags("-allow_no_dhe_kex");
+$proxy->cipherc("DEFAULT:\@SECLEVEL=2");
+$proxy->clientflags("-no_rx_cert_comp -allow_no_dhe_kex -sess_in ".$session);
+$proxy->serverflags("-no_rx_cert_comp -allow_no_dhe_kex");
 $testtype = NON_DHE_KEX_MODE_ONLY;
 $proxy->start();
 checkhandshake($proxy, checkhandshake::RESUME_HANDSHAKE,
@@ -231,7 +242,8 @@ checkhandshake($proxy, checkhandshake::RESUME_HANDSHAKE,
 
 #Test 5: Attempt a resume with dhe kex mode only. Should resume with a key_share
 $proxy->clear();
-$proxy->clientflags("-sess_in ".$session);
+$proxy->cipherc("DEFAULT:\@SECLEVEL=2");
+$proxy->clientflags("-no_rx_cert_comp -sess_in ".$session);
 $testtype = DHE_KEX_MODE_ONLY;
 $proxy->start();
 checkhandshake($proxy, checkhandshake::RESUME_HANDSHAKE,
@@ -243,8 +255,10 @@ checkhandshake($proxy, checkhandshake::RESUME_HANDSHAKE,
                "Resume with non-dhe kex mode");
 
 #Test 6: Attempt a resume with only unrecognised kex modes. Should not resume
+#        but rather fall back to full handshake
 $proxy->clear();
-$proxy->clientflags("-sess_in ".$session);
+$proxy->cipherc("DEFAULT:\@SECLEVEL=2");
+$proxy->clientflags("-no_rx_cert_comp -sess_in ".$session);
 $testtype = UNKNOWN_KEX_MODES;
 $proxy->start();
 checkhandshake($proxy, checkhandshake::DEFAULT_HANDSHAKE,
@@ -252,12 +266,14 @@ checkhandshake($proxy, checkhandshake::DEFAULT_HANDSHAKE,
                | checkhandshake::PSK_KEX_MODES_EXTENSION
                | checkhandshake::KEY_SHARE_SRV_EXTENSION
                | checkhandshake::PSK_CLI_EXTENSION,
-               "Resume with empty kex modes");
+               "Resume with unrecognized kex mode");
 
-#Test 7: Attempt a resume with both non-dhe and dhe kex mode. Should resume with
-#        a key_share
+#Test 7: Attempt a resume with both, non-dhe and dhe kex mode. Should resume with
+#        a key_share, even though non-dhe is allowed, but not explicitly preferred.
 $proxy->clear();
-$proxy->clientflags("-sess_in ".$session);
+$proxy->cipherc("DEFAULT:\@SECLEVEL=2");
+$proxy->clientflags("-no_rx_cert_comp -allow_no_dhe_kex -sess_in ".$session);
+$proxy->serverflags("-allow_no_dhe_kex");
 $testtype = BOTH_KEX_MODES;
 $proxy->start();
 checkhandshake($proxy, checkhandshake::RESUME_HANDSHAKE,
@@ -266,13 +282,45 @@ checkhandshake($proxy, checkhandshake::RESUME_HANDSHAKE,
                | checkhandshake::KEY_SHARE_SRV_EXTENSION
                | checkhandshake::PSK_CLI_EXTENSION
                | checkhandshake::PSK_SRV_EXTENSION,
-               "Resume with non-dhe kex mode");
+               "Resume with both kex modes");
 
-#Test 8: Attempt a resume with both non-dhe and dhe kex mode, but unacceptable
+#Test 8: Attempt a resume with both, non-dhe and dhe kex mode, but with server-side
+#        preference for non-dhe. Should resume without a key_share.
+$proxy->clear();
+$proxy->cipherc("DEFAULT:\@SECLEVEL=2");
+$proxy->clientflags("-no_rx_cert_comp -allow_no_dhe_kex -sess_in ".$session);
+$proxy->serverflags("-allow_no_dhe_kex -prefer_no_dhe_kex");
+$testtype = BOTH_KEX_MODES;
+$proxy->start();
+checkhandshake($proxy, checkhandshake::RESUME_HANDSHAKE,
+               checkhandshake::DEFAULT_EXTENSIONS
+               | checkhandshake::PSK_KEX_MODES_EXTENSION
+               | checkhandshake::PSK_CLI_EXTENSION
+               | checkhandshake::PSK_SRV_EXTENSION,
+               "Resume with both kex modes, preference for non-dhe");
+
+#Test 9: Attempt a resume with both, non-dhe and dhe kex mode, with server-side
+#        preference for non-dhe, but non-dhe not allowed. Should resume with a key_share.
+$proxy->clear();
+$proxy->cipherc("DEFAULT:\@SECLEVEL=2");
+$proxy->clientflags("-no_rx_cert_comp -allow_no_dhe_kex -sess_in ".$session);
+$proxy->serverflags("-prefer_no_dhe_kex");
+$testtype = BOTH_KEX_MODES;
+$proxy->start();
+checkhandshake($proxy, checkhandshake::RESUME_HANDSHAKE,
+               checkhandshake::DEFAULT_EXTENSIONS
+               | checkhandshake::PSK_KEX_MODES_EXTENSION
+               | checkhandshake::KEY_SHARE_SRV_EXTENSION
+               | checkhandshake::PSK_CLI_EXTENSION
+               | checkhandshake::PSK_SRV_EXTENSION,
+               "Resume with both kex modes, preference for but disabled non-dhe");
+
+#Test 10: Attempt a resume with both non-dhe and dhe kex mode, but unacceptable
 #        initial key_share. Should resume with a key_share following an HRR
 $proxy->clear();
-$proxy->clientflags("-sess_in ".$session);
-$proxy->serverflags("-curves P-256");
+$proxy->cipherc("DEFAULT:\@SECLEVEL=2");
+$proxy->clientflags("-no_rx_cert_comp -sess_in ".$session);
+$proxy->serverflags("-no_rx_cert_comp -curves P-384");
 $testtype = BOTH_KEX_MODES;
 $proxy->start();
 checkhandshake($proxy, checkhandshake::HRR_RESUME_HANDSHAKE,
@@ -284,11 +332,12 @@ checkhandshake($proxy, checkhandshake::HRR_RESUME_HANDSHAKE,
                | checkhandshake::PSK_SRV_EXTENSION,
                "Resume with both kex modes and HRR");
 
-#Test 9: Attempt a resume with dhe kex mode only and an unacceptable initial
+#Test 11: Attempt a resume with dhe kex mode only and an unacceptable initial
 #        key_share. Should resume with a key_share following an HRR
 $proxy->clear();
-$proxy->clientflags("-sess_in ".$session);
-$proxy->serverflags("-curves P-256");
+$proxy->cipherc("DEFAULT:\@SECLEVEL=2");
+$proxy->clientflags("-no_rx_cert_comp -sess_in ".$session);
+$proxy->serverflags("-no_rx_cert_comp -curves P-384");
 $testtype = DHE_KEX_MODE_ONLY;
 $proxy->start();
 checkhandshake($proxy, checkhandshake::HRR_RESUME_HANDSHAKE,
@@ -300,12 +349,13 @@ checkhandshake($proxy, checkhandshake::HRR_RESUME_HANDSHAKE,
                | checkhandshake::PSK_SRV_EXTENSION,
                "Resume with dhe kex mode and HRR");
 
-#Test 10: Attempt a resume with both non-dhe and dhe kex mode, unacceptable
+#Test 12: Attempt a resume with both non-dhe and dhe kex mode, unacceptable
 #         initial key_share and no overlapping groups. Should resume without a
 #         key_share
 $proxy->clear();
-$proxy->clientflags("-allow_no_dhe_kex -curves P-384 -sess_in ".$session);
-$proxy->serverflags("-allow_no_dhe_kex -curves P-256");
+$proxy->cipherc("DEFAULT:\@SECLEVEL=2");
+$proxy->clientflags("-no_rx_cert_comp -allow_no_dhe_kex -curves P-384 -sess_in ".$session);
+$proxy->serverflags("-no_rx_cert_comp -allow_no_dhe_kex -curves P-256");
 $testtype = BOTH_KEX_MODES;
 $proxy->start();
 checkhandshake($proxy, checkhandshake::RESUME_HANDSHAKE,
@@ -315,11 +365,12 @@ checkhandshake($proxy, checkhandshake::RESUME_HANDSHAKE,
                | checkhandshake::PSK_SRV_EXTENSION,
                "Resume with both kex modes, no overlapping groups");
 
-#Test 11: Attempt a resume with dhe kex mode only, unacceptable
+#Test 13: Attempt a resume with dhe kex mode only, unacceptable
 #         initial key_share and no overlapping groups. Should fail
 $proxy->clear();
-$proxy->clientflags("-curves P-384 -sess_in ".$session);
-$proxy->serverflags("-curves P-256");
+$proxy->cipherc("DEFAULT:\@SECLEVEL=2");
+$proxy->clientflags("-no_rx_cert_comp -curves P-384 -sess_in ".$session);
+$proxy->serverflags("-no_rx_cert_comp -curves P-256");
 $testtype = DHE_KEX_MODE_ONLY;
 $proxy->start();
 ok(TLSProxy::Message->fail(), "Resume with dhe kex mode, no overlapping groups");
@@ -354,7 +405,7 @@ sub modify_kex_modes_filter
                     0xfe,       #unknown
                     0xff;       #unknown
             } elsif ($testtype == BOTH_KEX_MODES) {
-                #We deliberately list psk_ke first...should still use psk_dhe_ke
+                #We deliberately list psk_ke first...should still use psk_dhe_ke, except if the server is configured otherwise.
                 $ext = pack "C3",
                     0x02,       #List length
                     0x00,       #psk_ke

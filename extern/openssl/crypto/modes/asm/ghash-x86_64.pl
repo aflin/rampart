@@ -1,17 +1,17 @@
 #! /usr/bin/env perl
-# Copyright 2010-2020 The OpenSSL Project Authors. All Rights Reserved.
+# Copyright 2010-2025 The OpenSSL Project Authors. All Rights Reserved.
 #
-# Licensed under the OpenSSL license (the "License").  You may not use
+# Licensed under the Apache License 2.0 (the "License").  You may not use
 # this file except in compliance with the License.  You can obtain a copy
 # in the file LICENSE in the source distribution or at
 # https://www.openssl.org/source/license.html
 
 #
 # ====================================================================
-# Written by Andy Polyakov <appro@openssl.org> for the OpenSSL
+# Written by Andy Polyakov, @dot-asm, initially for use in the OpenSSL
 # project. The module is, however, dual licensed under OpenSSL and
 # CRYPTOGAMS licenses depending on where you obtain it. For further
-# details see http://www.openssl.org/~appro/cryptogams/.
+# details see https://github.com/dot-asm/cryptogams/.
 # ====================================================================
 #
 # March, June 2010
@@ -90,9 +90,10 @@
 #
 # [1] http://rt.openssl.org/Ticket/Display.html?id=2900&user=guest&pass=guest
 
-$flavour = shift;
-$output  = shift;
-if ($flavour =~ /\./) { $output = $flavour; undef $flavour; }
+# $output is the last argument if it looks like a file (it has an extension)
+# $flavour is the first argument if it doesn't look like a file
+$output = $#ARGV >= 0 && $ARGV[$#ARGV] =~ m|\.\w+$| ? pop : undef;
+$flavour = $#ARGV >= 0 && $ARGV[0] !~ m|\.| ? shift : undef;
 
 $win64=0; $win64=1 if ($flavour =~ /[nm]asm|mingw64/ || $output =~ /\.asm$/);
 
@@ -116,11 +117,12 @@ if (!$avx && $win64 && ($flavour =~ /masm/ || $ENV{ASM} =~ /ml64/) &&
 	$avx = ($1>=10) + ($1>=11);
 }
 
-if (!$avx && `$ENV{CC} -v 2>&1` =~ /((?:^clang|LLVM) version|.*based on LLVM) ([0-9]+\.[0-9]+)/) {
+if (!$avx && `$ENV{CC} -v 2>&1` =~ /((?:clang|LLVM) version|.*based on LLVM) ([0-9]+\.[0-9]+)/) {
 	$avx = ($2>=3.0) + ($2>3.0);
 }
 
-open OUT,"| \"$^X\" \"$xlate\" $flavour \"$output\"";
+open OUT,"| \"$^X\" \"$xlate\" $flavour \"$output\""
+    or die "can't call $xlate: $!";
 *STDOUT=*OUT;
 
 $do4xaggr=1;
@@ -239,6 +241,7 @@ $code=<<___;
 .align	16
 gcm_gmult_4bit:
 .cfi_startproc
+	endbranch
 	push	%rbx
 .cfi_push	%rbx
 	push	%rbp		# %rbp and others are pushed exclusively in
@@ -286,6 +289,7 @@ $code.=<<___;
 .align	16
 gcm_ghash_4bit:
 .cfi_startproc
+	endbranch
 	push	%rbx
 .cfi_push	%rbx
 	push	%rbp
@@ -530,6 +534,7 @@ $code.=<<___;
 .align	16
 gcm_init_clmul:
 .cfi_startproc
+	endbranch
 .L_init_clmul:
 ___
 $code.=<<___ if ($win64);
@@ -612,6 +617,7 @@ $code.=<<___;
 .align	16
 gcm_gmult_clmul:
 .cfi_startproc
+	endbranch
 .L_gmult_clmul:
 	movdqu		($Xip),$Xi
 	movdqa		.Lbswap_mask(%rip),$T3
@@ -663,6 +669,7 @@ $code.=<<___;
 .align	32
 gcm_ghash_clmul:
 .cfi_startproc
+	endbranch
 .L_ghash_clmul:
 ___
 $code.=<<___ if ($win64);
@@ -1021,6 +1028,7 @@ $code.=<<___;
 .align	32
 gcm_init_avx:
 .cfi_startproc
+	endbranch
 ___
 if ($avx) {
 my ($Htbl,$Xip)=@_4args;
@@ -1166,6 +1174,7 @@ $code.=<<___;
 .align	32
 gcm_gmult_avx:
 .cfi_startproc
+	endbranch
 	jmp	.L_gmult_clmul
 .cfi_endproc
 .size	gcm_gmult_avx,.-gcm_gmult_avx
@@ -1177,6 +1186,7 @@ $code.=<<___;
 .align	32
 gcm_ghash_avx:
 .cfi_startproc
+	endbranch
 ___
 if ($avx) {
 my ($Xip,$Htbl,$inp,$len)=@_4args;
@@ -1601,6 +1611,7 @@ ___
 }
 
 $code.=<<___;
+.section .rodata align=64
 .align	64
 .Lbswap_mask:
 	.byte	15,14,13,12,11,10,9,8,7,6,5,4,3,2,1,0
@@ -1652,8 +1663,9 @@ $code.=<<___;
 	.value	0xB5E0,0xB422,0xB664,0xB7A6,0xB2E8,0xB32A,0xB16C,0xB0AE
 	.value	0xBBF0,0xBA32,0xB874,0xB9B6,0xBCF8,0xBD3A,0xBF7C,0xBEBE
 
-.asciz	"GHASH for x86_64, CRYPTOGAMS by <appro\@openssl.org>"
+.asciz	"GHASH for x86_64, CRYPTOGAMS by <https://github.com/dot-asm>"
 .align	64
+.previous
 ___
 
 # EXCEPTION_DISPOSITION handler (EXCEPTION_RECORD *rec,ULONG64 frame,

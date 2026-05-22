@@ -129,6 +129,17 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 add_library(evhtp_ws STATIC ${LIBEVHTP_SOURCE_FILES})
 target_link_libraries(evhtp_ws PUBLIC ${LIBEVHTP_EXTERNAL_LIBS})
 target_include_directories(evhtp_ws PUBLIC ${LIBEVHTP_EXTERNAL_INCLUDES})
+# Force the vendored OpenSSL build to complete (source-copy + Configure +
+# headers populated) before this target compiles.  Without this, a
+# fresh "from scratch" parallel make can race: evhtp.c does
+# #include <openssl/ssl.h> while ${CMAKE_BINARY_DIR}/extern/openssl/
+# include/ is still empty, gcc falls through to /usr/include/openssl/
+# ssl.h, then resolves the rest of the includes from the vendored dir
+# (which finishes populating before the next include lookup), producing
+# a mismatched OpenSSL-version compile error.
+if(NOT EVHTP_DISABLE_SSL)
+    add_dependencies(evhtp_ws openssl)
+endif()
 # set_target_properties(evhtp_ws PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_compile_definitions(evhtp_ws PUBLIC "PROJECT_VERSION=${PROJECT_VERSION}")
 if(has_stack_protector)

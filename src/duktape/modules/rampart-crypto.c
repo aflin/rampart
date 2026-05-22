@@ -18,6 +18,10 @@
 #include <openssl/asn1t.h>
 #include <openssl/x509.h>
 #include <openssl/x509v3.h>
+#include <openssl/opensslv.h>
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+#include <openssl/provider.h>
+#endif
 #include <string.h>
 #include <stdio.h>
 #include <stdint.h>
@@ -970,9 +974,36 @@ static duk_ret_t duk_hash(duk_context *ctx)
     md_value = duk_push_dynamic_buffer(ctx, EVP_MAX_MD_SIZE);
 
     mdctx = EVP_MD_CTX_new();
-    EVP_DigestInit_ex(mdctx, md, NULL);
-    EVP_DigestUpdate(mdctx, in, (size_t)in_len);
-    EVP_DigestFinal_ex(mdctx, md_value, &md_len);
+    if (!mdctx)
+        RP_THROW(ctx, "crypto.hash (%s) - EVP_MD_CTX_new failed", algo);
+    if (!EVP_DigestInit_ex(mdctx, md, NULL)) {
+        EVP_MD_CTX_free(mdctx);
+        RP_THROW(ctx, "crypto.hash (%s) - EVP_DigestInit_ex failed", algo);
+    }
+    if (!EVP_DigestUpdate(mdctx, in, (size_t)in_len)) {
+        EVP_MD_CTX_free(mdctx);
+        RP_THROW(ctx, "crypto.hash (%s) - EVP_DigestUpdate failed", algo);
+    }
+
+    /* SHAKE128 / SHAKE256 are extendable-output functions (XOFs).  In
+       OpenSSL 3.x, EVP_DigestFinal_ex on a XOF either fails or
+       produces an unspecified length — the correct API is
+       EVP_DigestFinalXOF with an explicit output length.  Use
+       EVP_MD_get_size() as the default length (16 bytes for shake128,
+       32 for shake256), matching what OpenSSL 1.1.1's
+       EVP_DigestFinal_ex produced. */
+    if (EVP_MD_get_flags(md) & EVP_MD_FLAG_XOF) {
+        md_len = (unsigned int)EVP_MD_get_size(md);
+        if (!EVP_DigestFinalXOF(mdctx, md_value, (size_t)md_len)) {
+            EVP_MD_CTX_free(mdctx);
+            RP_THROW(ctx, "crypto.hash (%s) - EVP_DigestFinalXOF failed", algo);
+        }
+    } else {
+        if (!EVP_DigestFinal_ex(mdctx, md_value, &md_len)) {
+            EVP_MD_CTX_free(mdctx);
+            RP_THROW(ctx, "crypto.hash (%s) - EVP_DigestFinal_ex failed", algo);
+        }
+    }
     EVP_MD_CTX_free(mdctx);
 
     duk_resize_buffer(ctx, -1, (duk_size_t) md_len);
@@ -1219,10 +1250,9 @@ duk_ret_t duk_rsa_pub_encrypt_bak(duk_context *ctx)
             rsasize-=42;
         }
         else if (!strcmp ("ssl", pad) )
-        {
-            padding=RSA_SSLV23_PADDING;
-            rsasize-=11;
-        }
+            RP_EVP_THROW(ctx, "rsa padding 'ssl' (RSA_SSLV23_PADDING) "
+                "was removed in OpenSSL 3.0 along with SSLv2/SSLv3 support; "
+                "use 'pkcs' or 'oaep' instead");
         else if (!strcmp ("raw", pad) )
             padding=RSA_NO_PADDING;
         else
@@ -1858,8 +1888,9 @@ static int sig_dump(BIO *bp, const ASN1_STRING *sig)
     const unsigned char *s;
     int i, n;
 
-    n = sig->length;
-    s = sig->data;
+    /* OpenSSL 1.1+: ASN1_STRING is opaque; use accessors. */
+    n = ASN1_STRING_length(sig);
+    s = ASN1_STRING_get0_data(sig);
     for (i = 0; i < n; i++) {
         if (BIO_printf(bp, "%02x", s[i]) <= 0)
             return 0;
@@ -2659,7 +2690,9 @@ duk_ret_t duk_rsa_priv_decrypt(duk_context *ctx)
         else if (!strcmp ("oaep", pad) )
             padding=RSA_PKCS1_OAEP_PADDING;
         else if (!strcmp ("ssl", pad) )
-            padding=RSA_SSLV23_PADDING;
+            RP_EVP_THROW(ctx, "rsa padding 'ssl' (RSA_SSLV23_PADDING) "
+                "was removed in OpenSSL 3.0 along with SSLv2/SSLv3 support; "
+                "use 'pkcs' or 'oaep' instead");
         else if (!strcmp ("raw", pad) )
             padding=RSA_NO_PADDING;
         else
@@ -2762,10 +2795,9 @@ duk_ret_t duk_rsa_pub_encrypt(duk_context *ctx)
             rsasize-=42;
         }
         else if (!strcmp ("ssl", pad) )
-        {
-            padding=RSA_SSLV23_PADDING;
-            rsasize-=11;
-        }
+            RP_EVP_THROW(ctx, "rsa padding 'ssl' (RSA_SSLV23_PADDING) "
+                "was removed in OpenSSL 3.0 along with SSLv2/SSLv3 support; "
+                "use 'pkcs' or 'oaep' instead");
         else if (!strcmp ("raw", pad) )
             padding=RSA_NO_PADDING;
         else
@@ -4219,6 +4251,18 @@ const duk_function_list_entry crypto_funcs[] = {
 duk_ret_t duk_open_module(duk_context *ctx)
 {
     OpenSSL_add_all_digests() ;
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+    /* OpenSSL 3.0+: digests like md4, mdc2, rmd160 live in the legacy
+       provider, which isn't loaded by default.  Loading legacy alone
+       hides the default provider, so explicitly load both.  Once-only:
+       OSSL_PROVIDER_load is internally refcounted. */
+    static int providers_loaded = 0;
+    if (!providers_loaded) {
+        OSSL_PROVIDER_load(NULL, "legacy");
+        OSSL_PROVIDER_load(NULL, "default");
+        providers_loaded = 1;
+    }
+#endif
     duk_push_object(ctx);
     duk_put_function_list(ctx, -1, crypto_funcs);
     duk_rp_create_jsbi(ctx);

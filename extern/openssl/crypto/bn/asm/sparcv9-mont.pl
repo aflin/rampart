@@ -1,17 +1,17 @@
 #! /usr/bin/env perl
-# Copyright 2005-2020 The OpenSSL Project Authors. All Rights Reserved.
+# Copyright 2005-2026 The OpenSSL Project Authors. All Rights Reserved.
 #
-# Licensed under the OpenSSL license (the "License").  You may not use
+# Licensed under the Apache License 2.0 (the "License").  You may not use
 # this file except in compliance with the License.  You can obtain a copy
 # in the file LICENSE in the source distribution or at
 # https://www.openssl.org/source/license.html
 
 
 # ====================================================================
-# Written by Andy Polyakov <appro@openssl.org> for the OpenSSL
+# Written by Andy Polyakov, @dot-asm, initially for use in the OpenSSL
 # project. The module is, however, dual licensed under OpenSSL and
 # CRYPTOGAMS licenses depending on where you obtain it. For further
-# details see http://www.openssl.org/~appro/cryptogams/.
+# details see https://github.com/dot-asm/cryptogams/.
 # ====================================================================
 
 # December 2005
@@ -49,8 +49,7 @@
 # module still have hidden potential [see TODO list there], which is
 # estimated to be larger than 20%...
 
-$output = pop;
-open STDOUT,">$output";
+$output = pop and open STDOUT,">$output";
 
 # int bn_mul_mont(
 $rp="%i0";	# BN_ULONG *rp,
@@ -84,7 +83,10 @@ $tpj="%l7";
 $fname="bn_mul_mont_int";
 
 $code=<<___;
-#include "sparc_arch.h"
+#ifndef __ASSEMBLER__
+# define __ASSEMBLER__ 1
+#endif
+#include "crypto/sparc_arch.h"
 
 .section	".text",#alloc,#execinstr
 
@@ -392,11 +394,11 @@ $code.=<<___;
 
 	mulx	$car1,$mul1,$car1
 	mulx	$npj,$mul1,$acc1
+	add	$tmp1,$car0,$car0
 	add	$tmp0,$car1,$car1
 	and	$car0,$mask,$acc0
 	ld	[$np+8],$npj			! np[2]
 	srlx	$car1,32,$car1
-	add	$tmp1,$car1,$car1
 	srlx	$car0,32,$car0
 	add	$acc0,$car1,$car1
 	and	$car0,1,$sbit
@@ -612,7 +614,7 @@ $code.=<<___;
 	add	$tp,8,$tp
 .type	$fname,#function
 .size	$fname,(.-$fname)
-.asciz	"Montgomery Multiplication for SPARCv9, CRYPTOGAMS by <appro\@openssl.org>"
+.asciz	"Montgomery Multiplication for SPARCv9, CRYPTOGAMS by <https://github.com/dot-asm>"
 .align	32
 ___
 $code =~ s/\`([^\`]*)\`/eval($1)/gem;

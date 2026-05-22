@@ -1,16 +1,16 @@
 #!/usr/bin/env perl
-# Copyright 2017-2020 The OpenSSL Project Authors. All Rights Reserved.
+# Copyright 2017-2026 The OpenSSL Project Authors. All Rights Reserved.
 #
-# Licensed under the OpenSSL license (the "License").  You may not use
+# Licensed under the Apache License 2.0 (the "License").  You may not use
 # this file except in compliance with the License.  You can obtain a copy
 # in the file LICENSE in the source distribution or at
 # https://www.openssl.org/source/license.html
 #
 # ====================================================================
-# Written by Andy Polyakov <appro@openssl.org> for the OpenSSL
+# Written by Andy Polyakov, @dot-asm, initially for use in the OpenSSL
 # project. The module is, however, dual licensed under OpenSSL and
 # CRYPTOGAMS licenses depending on where you obtain it. For further
-# details see http://www.openssl.org/~appro/cryptogams/.
+# details see https://github.com/dot-asm/cryptogams/.
 # ====================================================================
 #
 # Keccak-1600 for s390x.
@@ -30,7 +30,10 @@
 # amount of instruction and assumed instruction issue rate. It's ~2.5x
 # faster than compiler-generated code.
 
-$flavour = shift;
+# $output is the last argument if it looks like a file (it has an extension)
+# $flavour is the first argument if it doesn't look like a file
+$output = $#ARGV >= 0 && $ARGV[$#ARGV] =~ m|\.\w+$| ? pop : undef;
+$flavour = $#ARGV >= 0 && $ARGV[0] !~ m|\.| ? shift : undef;
 
 if ($flavour =~ /3[12]/) {
 	$SIZE_T=4;
@@ -40,8 +43,7 @@ if ($flavour =~ /3[12]/) {
 	$g="g";
 }
 
-while (($output=shift) && ($output!~/\w[\w\-]*\.\w+$/)) {}
-open STDOUT,">$output";
+$output and open STDOUT,">$output";
 
 my @A = map([ 8*$_, 8*($_+1), 8*($_+2), 8*($_+3), 8*($_+4) ], (0,5,10,15,20));
 
@@ -65,6 +67,7 @@ my @rhotates = ([  0,  1, 62, 28, 27 ],
 
 $code.=<<___;
 .text
+.machine	"z10"
 
 .type	__KeccakF1600,\@function
 .align	32
@@ -470,7 +473,7 @@ SHA3_absorb:
 .size	SHA3_absorb,.-SHA3_absorb
 ___
 }
-{ my ($A_flat,$out,$len,$bsz) = map("%r$_",(2..5));
+{ my ($A_flat,$out,$len,$bsz,$next) = map("%r$_",(2..6));
 
 $code.=<<___;
 .globl	SHA3_squeeze
@@ -482,6 +485,7 @@ SHA3_squeeze:
 	lghi	%r14,8
 	st${g}	$bsz,5*$SIZE_T($sp)
 	la	%r1,0($A_flat)
+	cijne	$next,0,.Lnext_block
 
 	j	.Loop_squeeze
 
@@ -499,6 +503,7 @@ SHA3_squeeze:
 
 	brct	$bsz,.Loop_squeeze	# bsz--
 
+.Lnext_block:
 	stm${g}	$out,$len,3*$SIZE_T($sp)
 	bras	%r14,.LKeccakF1600
 	lm${g}	$out,$bsz,3*$SIZE_T($sp)
@@ -550,7 +555,7 @@ iotas:
 	.quad	0x0000000080000001
 	.quad	0x8000000080008008
 .size	iotas,.-iotas
-.asciz	"Keccak-1600 absorb and squeeze for s390x, CRYPTOGAMS by <appro\@openssl.org>"
+.asciz	"Keccak-1600 absorb and squeeze for s390x, CRYPTOGAMS by <https://github.com/dot-asm>"
 ___
 
 # unlike 32-bit shift 64-bit one takes three arguments

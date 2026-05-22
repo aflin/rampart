@@ -1,21 +1,20 @@
 #! /usr/bin/env perl
-# Copyright 2008-2020 The OpenSSL Project Authors. All Rights Reserved.
+# Copyright 2008-2025 The OpenSSL Project Authors. All Rights Reserved.
 #
-# Licensed under the OpenSSL license (the "License").  You may not use
+# Licensed under the Apache License 2.0 (the "License").  You may not use
 # this file except in compliance with the License.  You can obtain a copy
 # in the file LICENSE in the source distribution or at
 # https://www.openssl.org/source/license.html
 
 
 # ====================================================================
-# Copyright (c) 2008 Andy Polyakov <appro@openssl.org>
+# Copyright (c) 2008 Andy Polyakov <https://github.com/dot-asm>
 #
 # This module may be used under the terms of either the GNU General
 # Public License version 2 or later, the GNU Lesser General Public
 # License version 2.1 or later, the Mozilla Public License version
 # 1.1 or the BSD License. The exact terms of either license are
-# distributed along with this module. For further details see
-# http://www.openssl.org/~appro/camellia/.
+# distributed along with this module.
 # ====================================================================
 
 # Performance in cycles per processed byte (less is better) in
@@ -36,9 +35,10 @@
 # EM64T, pre-Core2 Intel x86_64 CPU, is not as impressive, because it
 # apparently emulates some of 64-bit operations in [32-bit] microcode.
 
-$flavour = shift;
-$output  = shift;
-if ($flavour =~ /\./) { $output = $flavour; undef $flavour; }
+# $output is the last argument if it looks like a file (it has an extension)
+# $flavour is the first argument if it doesn't look like a file
+$output = $#ARGV >= 0 && $ARGV[$#ARGV] =~ m|\.\w+$| ? pop : undef;
+$flavour = $#ARGV >= 0 && $ARGV[0] !~ m|\.| ? shift : undef;
 
 $win64=0; $win64=1 if ($flavour =~ /[nm]asm|mingw64/ || $output =~ /\.asm$/);
 
@@ -47,7 +47,8 @@ $0 =~ m/(.*[\/\\])[^\/\\]+$/; $dir=$1;
 ( $xlate="${dir}../../perlasm/x86_64-xlate.pl" and -f $xlate) or
 die "can't locate x86_64-xlate.pl";
 
-open OUT,"| \"$^X\" \"$xlate\" $flavour \"$output\"";
+open OUT,"| \"$^X\" \"$xlate\" $flavour \"$output\""
+    or die "can't call $xlate: $!";
 *STDOUT=*OUT;
 
 sub hi() { my $r=shift; $r =~ s/%[er]([a-d])x/%\1h/;    $r; }
@@ -655,6 +656,7 @@ sub S0222 { my $i=shift; $i=@SBOX[$i]; $i=($i<<1|$i>>7)&0xff; $i=$i<<16|$i<<8|$i
 sub S3033 { my $i=shift; $i=@SBOX[$i]; $i=($i>>1|$i<<7)&0xff; $i=$i<<24|$i<<8|$i; sprintf("0x%08x",$i); }
 
 $code.=<<___;
+.section .rodata align=64
 .align	64
 .LCamellia_SIGMA:
 .long	0x3bcc908b, 0xa09e667f, 0x4caa73b2, 0xb67ae858
@@ -680,11 +682,13 @@ $_ivp="40(%rsp)";
 $_rsp="48(%rsp)";
 
 $code.=<<___;
+.text
 .globl	Camellia_cbc_encrypt
 .type	Camellia_cbc_encrypt,\@function,6
 .align	16
 Camellia_cbc_encrypt:
 .cfi_startproc
+	endbranch
 	cmp	\$0,%rdx
 	je	.Lcbc_abort
 	push	%rbx
@@ -932,7 +936,7 @@ Camellia_cbc_encrypt:
 .cfi_endproc
 .size	Camellia_cbc_encrypt,.-Camellia_cbc_encrypt
 
-.asciz	"Camellia for x86_64 by <appro\@openssl.org>"
+.asciz	"Camellia for x86_64 by <https://github.com/dot-asm>"
 ___
 }
 

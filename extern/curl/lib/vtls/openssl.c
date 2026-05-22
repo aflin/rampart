@@ -2531,31 +2531,15 @@ static CURLcode ossl_connect_step1(struct connectdata *conn, int sockindex)
     use_sni(TRUE);
     break;
   case CURL_SSLVERSION_SSLv2:
-#ifdef OPENSSL_NO_SSL2
+    /* SSLv2_client_method was removed in OpenSSL 1.1.0; SSLv3_client_method
+       was removed in OpenSSL 3.0.  SSLv2/v3 are insecure and unsupported
+       at the protocol level — return not-built-in regardless of how
+       OpenSSL was configured. */
     failf(data, OSSL_PACKAGE " was built without SSLv2 support");
     return CURLE_NOT_BUILT_IN;
-#else
-#ifdef HAVE_OPENSSL_SRP
-    if(ssl_authtype == CURL_TLSAUTH_SRP)
-      return CURLE_SSL_CONNECT_ERROR;
-#endif
-    req_method = SSLv2_client_method();
-    use_sni(FALSE);
-    break;
-#endif
   case CURL_SSLVERSION_SSLv3:
-#ifdef OPENSSL_NO_SSL3_METHOD
     failf(data, OSSL_PACKAGE " was built without SSLv3 support");
     return CURLE_NOT_BUILT_IN;
-#else
-#ifdef HAVE_OPENSSL_SRP
-    if(ssl_authtype == CURL_TLSAUTH_SRP)
-      return CURLE_SSL_CONNECT_ERROR;
-#endif
-    req_method = SSLv3_client_method();
-    use_sni(FALSE);
-    break;
-#endif
   default:
     failf(data, "Unrecognized parameter passed via CURLOPT_SSLVERSION");
     return CURLE_SSL_CONNECT_ERROR;
@@ -3521,10 +3505,15 @@ static CURLcode get_cert_chain(struct connectdata *conn,
     push_certinfo("Version", i);
 
     num = X509_get_serialNumber(x);
-    if(num->type == V_ASN1_NEG_INTEGER)
+    /* OpenSSL 1.1+: ASN1_INTEGER is opaque; use accessors. */
+    if(ASN1_STRING_type(num) == V_ASN1_NEG_INTEGER)
       BIO_puts(mem, "-");
-    for(j = 0; j < num->length; j++)
-      BIO_printf(mem, "%02x", num->data[j]);
+    {
+      const unsigned char *snd = ASN1_STRING_get0_data(num);
+      int snl = ASN1_STRING_length(num);
+      for(j = 0; j < snl; j++)
+        BIO_printf(mem, "%02x", snd[j]);
+    }
     push_certinfo("Serial Number", i);
 
 #if defined(HAVE_X509_GET0_SIGNATURE) && defined(HAVE_X509_GET0_EXTENSIONS)
@@ -3679,8 +3668,11 @@ static CURLcode get_cert_chain(struct connectdata *conn,
     }
 
     if(psig) {
-      for(j = 0; j < psig->length; j++)
-        BIO_printf(mem, "%02x:", psig->data[j]);
+      /* OpenSSL 1.1+: ASN1_BIT_STRING is opaque; use accessors. */
+      const unsigned char *psd = ASN1_STRING_get0_data(psig);
+      int psl = ASN1_STRING_length(psig);
+      for(j = 0; j < psl; j++)
+        BIO_printf(mem, "%02x:", psd[j]);
       push_certinfo("Signature", i);
     }
 

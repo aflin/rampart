@@ -1,7 +1,7 @@
 /*
- * Copyright 2017-2019 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2017-2025 The OpenSSL Project Authors. All Rights Reserved.
  *
- * Licensed under the OpenSSL license (the "License").  You may not use
+ * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
  * in the file LICENSE in the source distribution or at
  * https://www.openssl.org/source/license.html
@@ -16,12 +16,12 @@
 #include "testutil.h"
 
 #ifdef __GNUC__
-# pragma GCC diagnostic ignored "-Wunused-function"
-# pragma GCC diagnostic ignored "-Wformat"
+#pragma GCC diagnostic ignored "-Wunused-function"
+#pragma GCC diagnostic ignored "-Wformat"
 #endif
 #ifdef __clang__
-# pragma clang diagnostic ignored "-Wunused-function"
-# pragma clang diagnostic ignored "-Wformat"
+#pragma clang diagnostic ignored "-Wunused-function"
+#pragma clang diagnostic ignored "-Wformat"
 #endif
 
 /***** Custom test data ******************************************************/
@@ -93,9 +93,11 @@ typedef struct {
     unsigned char *bytes2;
     size_t nbytes2;
 } TEST_CUSTOM_DATA;
-#define CUSTOM_DATA(v)                          \
-    { v, sizeof(v), t_one, sizeof(t_one) },     \
-    { t_one, sizeof(t_one), v, sizeof(v) }
+#define CUSTOM_DATA(v)                      \
+    { v, sizeof(v), t_one, sizeof(t_one) }, \
+    {                                       \
+        t_one, sizeof(t_one), v, sizeof(v)  \
+    }
 
 static TEST_CUSTOM_DATA test_custom_data[] = {
     CUSTOM_DATA(t_zero),
@@ -117,7 +119,6 @@ static TEST_CUSTOM_DATA test_custom_data[] = {
     CUSTOM_DATA(t_4bytes_5_negpad),
 };
 
-
 /***** Type specific test data ***********************************************/
 
 /*
@@ -129,12 +130,14 @@ static TEST_CUSTOM_DATA test_custom_data[] = {
  * For easy creation of arrays of expected data.  These macros correspond to
  * the uses of CUSTOM_DATA above.
  */
-#define CUSTOM_EXPECTED_SUCCESS(num, znum)      \
-    { 0xff, num, 1 },                           \
-    { 0xff, 1, znum }
-#define CUSTOM_EXPECTED_FAILURE                 \
-    { 0, 0, 0 },                                \
-    { 0, 0, 0 }
+#define CUSTOM_EXPECTED_SUCCESS(num, znum) \
+    { 0xff, num, 1 },                      \
+    {                                      \
+        0xff, 1, znum                      \
+    }
+#define CUSTOM_EXPECTED_FAILURE \
+    { 0, 0, 0 },                \
+        { 0, 0, 0 }
 
 /*
  * A structure to collect all test information in.  There MUST be one instance
@@ -146,7 +149,7 @@ typedef void ifree_fn(void *a);
 typedef struct {
     ASN1_ITEM_EXP *asn1_type;
     const char *name;
-    int skip;                    /* 1 if this package should be skipped */
+    int skip; /* 1 if this package should be skipped */
 
     /* An array of structures to compare decoded custom data with */
     void *encode_expectations;
@@ -170,16 +173,16 @@ typedef struct {
 } TEST_PACKAGE;
 
 /* To facilitate the creation of an encdec_data array */
-#define ENCDEC_DATA(num, znum)                  \
+#define ENCDEC_DATA(num, znum) \
     { 0xff, num, 1 }, { 0xff, 1, znum }
-#define ENCDEC_ARRAY(max, zmax, min, zmin)      \
-    ENCDEC_DATA(max,zmax),                      \
-    ENCDEC_DATA(min,zmin),                      \
-    ENCDEC_DATA(1, 1),                          \
-    ENCDEC_DATA(-1, -1),                        \
-    ENCDEC_DATA(0, ASN1_LONG_UNDEF)
+#define ENCDEC_ARRAY(max, zmax, min, zmin) \
+    ENCDEC_DATA(max, zmax),                \
+        ENCDEC_DATA(min, zmin),            \
+        ENCDEC_DATA(1, 1),                 \
+        ENCDEC_DATA(-1, -1),               \
+        ENCDEC_DATA(0, ASN1_LONG_UNDEF)
 
-#if OPENSSL_API_COMPAT < 0x10200000L
+#ifndef OPENSSL_NO_DEPRECATED_3_0
 /***** LONG ******************************************************************/
 
 typedef struct {
@@ -190,7 +193,7 @@ typedef struct {
 } ASN1_LONG_DATA;
 
 ASN1_SEQUENCE(ASN1_LONG_DATA) = {
-    ASN1_SIMPLE(ASN1_LONG_DATA, success, ASN1_FBOOLEAN),
+    ASN1_SIMPLE(ASN1_LONG_DATA, success, ASN1_BOOLEAN),
     ASN1_SIMPLE(ASN1_LONG_DATA, test_long, LONG),
     ASN1_EXP_OPT(ASN1_LONG_DATA, test_zlong, ZLONG, 0)
 } static_ASN1_SEQUENCE_END(ASN1_LONG_DATA)
@@ -200,23 +203,25 @@ IMPLEMENT_STATIC_ASN1_ALLOC_FUNCTIONS(ASN1_LONG_DATA)
 
 static ASN1_LONG_DATA long_expected_32bit[] = {
     /* The following should fail on the second because it's the default */
-    { 0xff, 0, 1 }, { 0, 0, 0 }, /* t_zero */
-    { 0, 0, 0 }, { 0xff, 1, 0x7fffffff }, /* t_longundef */
+    { 0xff, 0, 1 },
+    { 0, 0, 0 }, /* t_zero */
+    { 0, 0, 0 },
+    { 0xff, 1, 0x7fffffff }, /* t_longundef */
     CUSTOM_EXPECTED_SUCCESS(1, 1), /* t_one */
     CUSTOM_EXPECTED_SUCCESS(-1, -1), /* t_one_neg */
     CUSTOM_EXPECTED_SUCCESS(-256, -256), /* t_minus_256 */
-    CUSTOM_EXPECTED_FAILURE,     /* t_9bytes_1 */
-    CUSTOM_EXPECTED_FAILURE,     /* t_8bytes_1 */
-    CUSTOM_EXPECTED_FAILURE,     /* t_8bytes_2 */
-    CUSTOM_EXPECTED_FAILURE,     /* t_8bytes_3_pad */
-    CUSTOM_EXPECTED_FAILURE,     /* t_8bytes_4_neg */
-    CUSTOM_EXPECTED_FAILURE,     /* t_8bytes_5_negpad */
-    CUSTOM_EXPECTED_FAILURE,     /* t_5bytes_1 */
-    CUSTOM_EXPECTED_FAILURE,     /* t_4bytes_1 (too large positive) */
-    CUSTOM_EXPECTED_SUCCESS(INT32_MAX - 1, INT32_MAX -1), /* t_4bytes_2 */
-    CUSTOM_EXPECTED_FAILURE,     /* t_4bytes_3_pad (illegal padding) */
+    CUSTOM_EXPECTED_FAILURE, /* t_9bytes_1 */
+    CUSTOM_EXPECTED_FAILURE, /* t_8bytes_1 */
+    CUSTOM_EXPECTED_FAILURE, /* t_8bytes_2 */
+    CUSTOM_EXPECTED_FAILURE, /* t_8bytes_3_pad */
+    CUSTOM_EXPECTED_FAILURE, /* t_8bytes_4_neg */
+    CUSTOM_EXPECTED_FAILURE, /* t_8bytes_5_negpad */
+    CUSTOM_EXPECTED_FAILURE, /* t_5bytes_1 */
+    CUSTOM_EXPECTED_FAILURE, /* t_4bytes_1 (too large positive) */
+    CUSTOM_EXPECTED_SUCCESS(INT32_MAX - 1, INT32_MAX - 1), /* t_4bytes_2 */
+    CUSTOM_EXPECTED_FAILURE, /* t_4bytes_3_pad (illegal padding) */
     CUSTOM_EXPECTED_SUCCESS(INT32_MIN, INT32_MIN), /* t_4bytes_4_neg */
-    CUSTOM_EXPECTED_FAILURE,     /* t_4bytes_5_negpad (illegal padding) */
+    CUSTOM_EXPECTED_FAILURE, /* t_4bytes_5_negpad (illegal padding) */
 };
 static ASN1_LONG_DATA long_encdec_data_32bit[] = {
     ENCDEC_ARRAY(LONG_MAX - 1, LONG_MAX, LONG_MIN, LONG_MIN),
@@ -236,23 +241,25 @@ static TEST_PACKAGE long_test_package_32bit = {
 
 static ASN1_LONG_DATA long_expected_64bit[] = {
     /* The following should fail on the second because it's the default */
-    { 0xff, 0, 1 }, { 0, 0, 0 }, /* t_zero */
-    { 0, 0, 0 }, { 0xff, 1, 0x7fffffff }, /* t_longundef */
+    { 0xff, 0, 1 },
+    { 0, 0, 0 }, /* t_zero */
+    { 0, 0, 0 },
+    { 0xff, 1, 0x7fffffff }, /* t_longundef */
     CUSTOM_EXPECTED_SUCCESS(1, 1), /* t_one */
     CUSTOM_EXPECTED_SUCCESS(-1, -1), /* t_one_neg */
     CUSTOM_EXPECTED_SUCCESS(-256, -256), /* t_minus_256 */
-    CUSTOM_EXPECTED_FAILURE,     /* t_9bytes_1 */
-    CUSTOM_EXPECTED_FAILURE,     /* t_8bytes_1 */
+    CUSTOM_EXPECTED_FAILURE, /* t_9bytes_1 */
+    CUSTOM_EXPECTED_FAILURE, /* t_8bytes_1 */
     CUSTOM_EXPECTED_SUCCESS(LONG_MAX, LONG_MAX), /* t_8bytes_2 */
-    CUSTOM_EXPECTED_FAILURE,     /* t_8bytes_3_pad (illegal padding) */
+    CUSTOM_EXPECTED_FAILURE, /* t_8bytes_3_pad (illegal padding) */
     CUSTOM_EXPECTED_SUCCESS(LONG_MIN, LONG_MIN), /* t_8bytes_4_neg */
-    CUSTOM_EXPECTED_FAILURE,     /* t_8bytes_5_negpad (illegal padding) */
+    CUSTOM_EXPECTED_FAILURE, /* t_8bytes_5_negpad (illegal padding) */
     CUSTOM_EXPECTED_SUCCESS((long)0x1ffffffff, (long)0x1ffffffff), /* t_5bytes_1 */
     CUSTOM_EXPECTED_SUCCESS((long)0x80000000, (long)0x80000000), /* t_4bytes_1 */
-    CUSTOM_EXPECTED_SUCCESS(INT32_MAX - 1, INT32_MAX -1), /* t_4bytes_2 */
-    CUSTOM_EXPECTED_FAILURE,     /* t_4bytes_3_pad (illegal padding) */
+    CUSTOM_EXPECTED_SUCCESS(INT32_MAX - 1, INT32_MAX - 1), /* t_4bytes_2 */
+    CUSTOM_EXPECTED_FAILURE, /* t_4bytes_3_pad (illegal padding) */
     CUSTOM_EXPECTED_SUCCESS(INT32_MIN, INT32_MIN), /* t_4bytes_4_neg */
-    CUSTOM_EXPECTED_FAILURE,     /* t_4bytes_5_negpad (illegal padding) */
+    CUSTOM_EXPECTED_FAILURE, /* t_4bytes_5_negpad (illegal padding) */
 };
 static ASN1_LONG_DATA long_encdec_data_64bit[] = {
     ENCDEC_ARRAY(LONG_MAX, LONG_MAX, LONG_MIN, LONG_MIN),
@@ -280,7 +287,7 @@ typedef struct {
 } ASN1_INT32_DATA;
 
 ASN1_SEQUENCE(ASN1_INT32_DATA) = {
-    ASN1_SIMPLE(ASN1_INT32_DATA, success, ASN1_FBOOLEAN),
+    ASN1_SIMPLE(ASN1_INT32_DATA, success, ASN1_BOOLEAN),
     ASN1_EMBED(ASN1_INT32_DATA, test_int32, INT32),
     ASN1_EXP_OPT_EMBED(ASN1_INT32_DATA, test_zint32, ZINT32, 0)
 } static_ASN1_SEQUENCE_END(ASN1_INT32_DATA)
@@ -294,18 +301,18 @@ static ASN1_INT32_DATA int32_expected[] = {
     CUSTOM_EXPECTED_SUCCESS(1, 1), /* t_one */
     CUSTOM_EXPECTED_SUCCESS(-1, -1), /* t_one_neg */
     CUSTOM_EXPECTED_SUCCESS(-256, -256), /* t_minus_256 */
-    CUSTOM_EXPECTED_FAILURE,     /* t_9bytes_1 */
-    CUSTOM_EXPECTED_FAILURE,     /* t_8bytes_1 */
-    CUSTOM_EXPECTED_FAILURE,     /* t_8bytes_2 */
-    CUSTOM_EXPECTED_FAILURE,     /* t_8bytes_3_pad */
-    CUSTOM_EXPECTED_FAILURE,     /* t_8bytes_4_neg */
-    CUSTOM_EXPECTED_FAILURE,     /* t_8bytes_5_negpad */
-    CUSTOM_EXPECTED_FAILURE,     /* t_5bytes_1 */
-    CUSTOM_EXPECTED_FAILURE,     /* t_4bytes_1 (too large positive) */
-    CUSTOM_EXPECTED_SUCCESS(INT32_MAX - 1, INT32_MAX -1), /* t_4bytes_2 */
-    CUSTOM_EXPECTED_FAILURE,     /* t_4bytes_3_pad (illegal padding) */
+    CUSTOM_EXPECTED_FAILURE, /* t_9bytes_1 */
+    CUSTOM_EXPECTED_FAILURE, /* t_8bytes_1 */
+    CUSTOM_EXPECTED_FAILURE, /* t_8bytes_2 */
+    CUSTOM_EXPECTED_FAILURE, /* t_8bytes_3_pad */
+    CUSTOM_EXPECTED_FAILURE, /* t_8bytes_4_neg */
+    CUSTOM_EXPECTED_FAILURE, /* t_8bytes_5_negpad */
+    CUSTOM_EXPECTED_FAILURE, /* t_5bytes_1 */
+    CUSTOM_EXPECTED_FAILURE, /* t_4bytes_1 (too large positive) */
+    CUSTOM_EXPECTED_SUCCESS(INT32_MAX - 1, INT32_MAX - 1), /* t_4bytes_2 */
+    CUSTOM_EXPECTED_FAILURE, /* t_4bytes_3_pad (illegal padding) */
     CUSTOM_EXPECTED_SUCCESS(INT32_MIN, INT32_MIN), /* t_4bytes_4_neg */
-    CUSTOM_EXPECTED_FAILURE,     /* t_4bytes_5_negpad (illegal padding) */
+    CUSTOM_EXPECTED_FAILURE, /* t_4bytes_5_negpad (illegal padding) */
 };
 static ASN1_INT32_DATA int32_encdec_data[] = {
     ENCDEC_ARRAY(INT32_MAX, INT32_MAX, INT32_MIN, INT32_MIN),
@@ -328,7 +335,7 @@ typedef struct {
 } ASN1_UINT32_DATA;
 
 ASN1_SEQUENCE(ASN1_UINT32_DATA) = {
-    ASN1_SIMPLE(ASN1_UINT32_DATA, success, ASN1_FBOOLEAN),
+    ASN1_SIMPLE(ASN1_UINT32_DATA, success, ASN1_BOOLEAN),
     ASN1_EMBED(ASN1_UINT32_DATA, test_uint32, UINT32),
     ASN1_EXP_OPT_EMBED(ASN1_UINT32_DATA, test_zuint32, ZUINT32, 0)
 } static_ASN1_SEQUENCE_END(ASN1_UINT32_DATA)
@@ -340,20 +347,20 @@ static ASN1_UINT32_DATA uint32_expected[] = {
     CUSTOM_EXPECTED_SUCCESS(0, 0), /* t_zero */
     CUSTOM_EXPECTED_SUCCESS(ASN1_LONG_UNDEF, ASN1_LONG_UNDEF), /* t_zero */
     CUSTOM_EXPECTED_SUCCESS(1, 1), /* t_one */
-    CUSTOM_EXPECTED_FAILURE,     /* t_one_neg (illegal negative value) */
-    CUSTOM_EXPECTED_FAILURE,     /* t_minus_256 (illegal negative value) */
-    CUSTOM_EXPECTED_FAILURE,     /* t_9bytes_1 */
-    CUSTOM_EXPECTED_FAILURE,     /* t_8bytes_1 */
-    CUSTOM_EXPECTED_FAILURE,     /* t_8bytes_2 */
-    CUSTOM_EXPECTED_FAILURE,     /* t_8bytes_3_pad */
-    CUSTOM_EXPECTED_FAILURE,     /* t_8bytes_4_neg */
-    CUSTOM_EXPECTED_FAILURE,     /* t_8bytes_5_negpad */
-    CUSTOM_EXPECTED_FAILURE,     /* t_5bytes_1 */
+    CUSTOM_EXPECTED_FAILURE, /* t_one_neg (illegal negative value) */
+    CUSTOM_EXPECTED_FAILURE, /* t_minus_256 (illegal negative value) */
+    CUSTOM_EXPECTED_FAILURE, /* t_9bytes_1 */
+    CUSTOM_EXPECTED_FAILURE, /* t_8bytes_1 */
+    CUSTOM_EXPECTED_FAILURE, /* t_8bytes_2 */
+    CUSTOM_EXPECTED_FAILURE, /* t_8bytes_3_pad */
+    CUSTOM_EXPECTED_FAILURE, /* t_8bytes_4_neg */
+    CUSTOM_EXPECTED_FAILURE, /* t_8bytes_5_negpad */
+    CUSTOM_EXPECTED_FAILURE, /* t_5bytes_1 */
     CUSTOM_EXPECTED_SUCCESS(0x80000000, 0x80000000), /* t_4bytes_1 */
-    CUSTOM_EXPECTED_SUCCESS(INT32_MAX - 1, INT32_MAX -1), /* t_4bytes_2 */
-    CUSTOM_EXPECTED_FAILURE,     /* t_4bytes_3_pad (illegal padding) */
-    CUSTOM_EXPECTED_FAILURE,     /* t_4bytes_4_neg (illegal negative value) */
-    CUSTOM_EXPECTED_FAILURE,     /* t_4bytes_5_negpad (illegal padding) */
+    CUSTOM_EXPECTED_SUCCESS(INT32_MAX - 1, INT32_MAX - 1), /* t_4bytes_2 */
+    CUSTOM_EXPECTED_FAILURE, /* t_4bytes_3_pad (illegal padding) */
+    CUSTOM_EXPECTED_FAILURE, /* t_4bytes_4_neg (illegal negative value) */
+    CUSTOM_EXPECTED_FAILURE, /* t_4bytes_5_negpad (illegal padding) */
 };
 static ASN1_UINT32_DATA uint32_encdec_data[] = {
     ENCDEC_ARRAY(UINT32_MAX, UINT32_MAX, 0, 0),
@@ -376,7 +383,7 @@ typedef struct {
 } ASN1_INT64_DATA;
 
 ASN1_SEQUENCE(ASN1_INT64_DATA) = {
-    ASN1_SIMPLE(ASN1_INT64_DATA, success, ASN1_FBOOLEAN),
+    ASN1_SIMPLE(ASN1_INT64_DATA, success, ASN1_BOOLEAN),
     ASN1_EMBED(ASN1_INT64_DATA, test_int64, INT64),
     ASN1_EXP_OPT_EMBED(ASN1_INT64_DATA, test_zint64, ZINT64, 0)
 } static_ASN1_SEQUENCE_END(ASN1_INT64_DATA)
@@ -390,18 +397,18 @@ static ASN1_INT64_DATA int64_expected[] = {
     CUSTOM_EXPECTED_SUCCESS(1, 1), /* t_one */
     CUSTOM_EXPECTED_SUCCESS(-1, -1), /* t_one_neg */
     CUSTOM_EXPECTED_SUCCESS(-256, -256), /* t_minus_256 */
-    CUSTOM_EXPECTED_FAILURE,     /* t_9bytes_1 */
-    CUSTOM_EXPECTED_FAILURE,     /* t_8bytes_1 (too large positive) */
+    CUSTOM_EXPECTED_FAILURE, /* t_9bytes_1 */
+    CUSTOM_EXPECTED_FAILURE, /* t_8bytes_1 (too large positive) */
     CUSTOM_EXPECTED_SUCCESS(INT64_MAX, INT64_MAX), /* t_8bytes_2 */
-    CUSTOM_EXPECTED_FAILURE,     /* t_8bytes_3_pad (illegal padding) */
+    CUSTOM_EXPECTED_FAILURE, /* t_8bytes_3_pad (illegal padding) */
     CUSTOM_EXPECTED_SUCCESS(INT64_MIN, INT64_MIN), /* t_8bytes_4_neg */
-    CUSTOM_EXPECTED_FAILURE,     /* t_8bytes_5_negpad (illegal padding) */
+    CUSTOM_EXPECTED_FAILURE, /* t_8bytes_5_negpad (illegal padding) */
     CUSTOM_EXPECTED_SUCCESS(0x1ffffffffULL, 0x1ffffffffULL), /* t_5bytes_1 */
     CUSTOM_EXPECTED_SUCCESS(0x80000000, 0x80000000), /* t_4bytes_1 */
-    CUSTOM_EXPECTED_SUCCESS(INT32_MAX - 1, INT32_MAX -1), /* t_4bytes_2 */
-    CUSTOM_EXPECTED_FAILURE,     /* t_4bytes_3_pad (illegal padding) */
+    CUSTOM_EXPECTED_SUCCESS(INT32_MAX - 1, INT32_MAX - 1), /* t_4bytes_2 */
+    CUSTOM_EXPECTED_FAILURE, /* t_4bytes_3_pad (illegal padding) */
     CUSTOM_EXPECTED_SUCCESS(INT32_MIN, INT32_MIN), /* t_4bytes_4_neg */
-    CUSTOM_EXPECTED_FAILURE,     /* t_4bytes_5_negpad (illegal padding) */
+    CUSTOM_EXPECTED_FAILURE, /* t_4bytes_5_negpad (illegal padding) */
 };
 static ASN1_INT64_DATA int64_encdec_data[] = {
     ENCDEC_ARRAY(INT64_MAX, INT64_MAX, INT64_MIN, INT64_MIN),
@@ -425,7 +432,7 @@ typedef struct {
 } ASN1_UINT64_DATA;
 
 ASN1_SEQUENCE(ASN1_UINT64_DATA) = {
-    ASN1_SIMPLE(ASN1_UINT64_DATA, success, ASN1_FBOOLEAN),
+    ASN1_SIMPLE(ASN1_UINT64_DATA, success, ASN1_BOOLEAN),
     ASN1_EMBED(ASN1_UINT64_DATA, test_uint64, UINT64),
     ASN1_EXP_OPT_EMBED(ASN1_UINT64_DATA, test_zuint64, ZUINT64, 0)
 } static_ASN1_SEQUENCE_END(ASN1_UINT64_DATA)
@@ -437,21 +444,21 @@ static ASN1_UINT64_DATA uint64_expected[] = {
     CUSTOM_EXPECTED_SUCCESS(0, 0), /* t_zero */
     CUSTOM_EXPECTED_SUCCESS(ASN1_LONG_UNDEF, ASN1_LONG_UNDEF), /* t_zero */
     CUSTOM_EXPECTED_SUCCESS(1, 1), /* t_one */
-    CUSTOM_EXPECTED_FAILURE,     /* t_one_neg (illegal negative value) */
-    CUSTOM_EXPECTED_FAILURE,     /* t_minus_256 (illegal negative value) */
-    CUSTOM_EXPECTED_FAILURE,     /* t_9bytes_1 */
-    CUSTOM_EXPECTED_SUCCESS((uint64_t)INT64_MAX+1, (uint64_t)INT64_MAX+1),
-                                 /* t_8bytes_1 */
+    CUSTOM_EXPECTED_FAILURE, /* t_one_neg (illegal negative value) */
+    CUSTOM_EXPECTED_FAILURE, /* t_minus_256 (illegal negative value) */
+    CUSTOM_EXPECTED_FAILURE, /* t_9bytes_1 */
+    CUSTOM_EXPECTED_SUCCESS((uint64_t)INT64_MAX + 1, (uint64_t)INT64_MAX + 1),
+    /* t_8bytes_1 */
     CUSTOM_EXPECTED_SUCCESS(INT64_MAX, INT64_MAX), /* t_8bytes_2 */
-    CUSTOM_EXPECTED_FAILURE,     /* t_8bytes_3_pad */
-    CUSTOM_EXPECTED_FAILURE,     /* t_8bytes_4_neg */
-    CUSTOM_EXPECTED_FAILURE,     /* t_8bytes_5_negpad */
+    CUSTOM_EXPECTED_FAILURE, /* t_8bytes_3_pad */
+    CUSTOM_EXPECTED_FAILURE, /* t_8bytes_4_neg */
+    CUSTOM_EXPECTED_FAILURE, /* t_8bytes_5_negpad */
     CUSTOM_EXPECTED_SUCCESS(0x1ffffffffULL, 0x1ffffffffULL), /* t_5bytes_1 */
     CUSTOM_EXPECTED_SUCCESS(0x80000000, 0x80000000), /* t_4bytes_1 */
-    CUSTOM_EXPECTED_SUCCESS(INT32_MAX - 1, INT32_MAX -1), /* t_4bytes_2 */
-    CUSTOM_EXPECTED_FAILURE,     /* t_4bytes_3_pad (illegal padding) */
-    CUSTOM_EXPECTED_FAILURE,     /* t_4bytes_4_neg (illegal negative value) */
-    CUSTOM_EXPECTED_FAILURE,     /* t_4bytes_5_negpad (illegal padding) */
+    CUSTOM_EXPECTED_SUCCESS(INT32_MAX - 1, INT32_MAX - 1), /* t_4bytes_2 */
+    CUSTOM_EXPECTED_FAILURE, /* t_4bytes_3_pad (illegal padding) */
+    CUSTOM_EXPECTED_FAILURE, /* t_4bytes_4_neg (illegal negative value) */
+    CUSTOM_EXPECTED_FAILURE, /* t_4bytes_5_negpad (illegal padding) */
 };
 static ASN1_UINT64_DATA uint64_encdec_data[] = {
     ENCDEC_ARRAY(UINT64_MAX, UINT64_MAX, 0, 0),
@@ -467,11 +474,10 @@ static TEST_PACKAGE uint64_test_package = {
 
 /***** General testing functions *********************************************/
 
-
 /* Template structure to map onto any test data structure */
 typedef struct {
     ASN1_BOOLEAN success;
-    unsigned char bytes[1];       /* In reality, there's more */
+    unsigned char bytes[1]; /* In reality, there's more */
 } EXPECTED;
 
 /*
@@ -482,8 +488,8 @@ typedef struct {
  *      1       decoded structure was what was expected (success)
  */
 static int do_decode(unsigned char *bytes, long nbytes,
-                     const EXPECTED *expected, size_t expected_size,
-                     const TEST_PACKAGE *package)
+    const EXPECTED *expected, size_t expected_size,
+    const TEST_PACKAGE *package)
 {
     EXPECTED *enctst = NULL;
     const unsigned char *start;
@@ -518,8 +524,8 @@ static int do_decode(unsigned char *bytes, long nbytes,
  *      1       encoded DER was what was expected (success)
  */
 static int do_encode(EXPECTED *input,
-                     const unsigned char *expected, size_t expected_len,
-                     const TEST_PACKAGE *package)
+    const unsigned char *expected, size_t expected_len,
+    const TEST_PACKAGE *package)
 {
     unsigned char *data = NULL;
     int len;
@@ -547,7 +553,7 @@ static int do_encode(EXPECTED *input,
 
 /* Do an encode/decode round trip */
 static int do_enc_dec(EXPECTED *bytes, long nbytes,
-                      const TEST_PACKAGE *package)
+    const TEST_PACKAGE *package)
 {
     unsigned char *data = NULL;
     int len;
@@ -592,7 +598,7 @@ static size_t der_encode_length(size_t len, unsigned char **pp)
 }
 
 static size_t make_custom_der(const TEST_CUSTOM_DATA *custom_data,
-                              unsigned char **encoding, int explicit_default)
+    unsigned char **encoding, int explicit_default)
 {
     size_t firstbytes, secondbytes = 0, secondbytesinner = 0, seqbytes;
     const unsigned char t_true[] = { V_ASN1_BOOLEAN, 0x01, 0xff };
@@ -602,8 +608,7 @@ static size_t make_custom_der(const TEST_CUSTOM_DATA *custom_data,
     /*
      * The first item is just an INTEGER tag, INTEGER length and INTEGER content
      */
-    firstbytes =
-        1 + der_encode_length(custom_data->nbytes1, NULL)
+    firstbytes = 1 + der_encode_length(custom_data->nbytes1, NULL)
         + custom_data->nbytes1;
 
     for (i = custom_data->nbytes2; i > 0; i--) {
@@ -615,11 +620,9 @@ static size_t make_custom_der(const TEST_CUSTOM_DATA *custom_data,
          * The second item is an explicit tag, content length, INTEGER tag,
          * INTEGER length, INTEGER bytes
          */
-        secondbytesinner =
-            1 + der_encode_length(custom_data->nbytes2, NULL)
+        secondbytesinner = 1 + der_encode_length(custom_data->nbytes2, NULL)
             + custom_data->nbytes2;
-        secondbytes =
-            1 + der_encode_length(secondbytesinner, NULL) + secondbytesinner;
+        secondbytes = 1 + der_encode_length(secondbytesinner, NULL) + secondbytesinner;
     }
 
     /*
@@ -627,8 +630,7 @@ static size_t make_custom_der(const TEST_CUSTOM_DATA *custom_data,
      * (copied from t_true), the first (firstbytes) and second (secondbytes)
      * items
      */
-    seqbytes =
-        1 + der_encode_length(sizeof(t_true) + firstbytes + secondbytes, NULL)
+    seqbytes = 1 + der_encode_length(sizeof(t_true) + firstbytes + secondbytes, NULL)
         + sizeof(t_true) + firstbytes + secondbytes;
 
     *encoding = p = OPENSSL_malloc(seqbytes);
@@ -667,8 +669,8 @@ static size_t make_custom_der(const TEST_CUSTOM_DATA *custom_data,
 
 /* Attempt to decode a custom encoding of the test structure */
 static int do_decode_custom(const TEST_CUSTOM_DATA *custom_data,
-                            const EXPECTED *expected, size_t expected_size,
-                            const TEST_PACKAGE *package)
+    const EXPECTED *expected, size_t expected_size,
+    const TEST_PACKAGE *package)
 {
     unsigned char *encoding = NULL;
     /*
@@ -681,8 +683,8 @@ static int do_decode_custom(const TEST_CUSTOM_DATA *custom_data,
     if (encoding_length == 0)
         return -1;
 
-    ret = do_decode(encoding, encoding_length, expected, expected_size,
-                    package);
+    ret = do_decode(encoding, (long)encoding_length, expected, expected_size,
+        package);
     OPENSSL_free(encoding);
 
     return ret;
@@ -690,8 +692,8 @@ static int do_decode_custom(const TEST_CUSTOM_DATA *custom_data,
 
 /* Attempt to encode the test structure and compare it to custom DER */
 static int do_encode_custom(EXPECTED *input,
-                            const TEST_CUSTOM_DATA *custom_data,
-                            const TEST_PACKAGE *package)
+    const TEST_CUSTOM_DATA *custom_data,
+    const TEST_PACKAGE *package)
 {
     unsigned char *expected = NULL;
     size_t expected_length = make_custom_der(custom_data, &expected, 0);
@@ -717,14 +719,13 @@ static int do_print_item(const TEST_PACKAGE *package)
     if ((o = OPENSSL_malloc(DATA_BUF_SIZE)) == NULL)
         return 0;
 
-    (void)RAND_bytes((unsigned char*)o,
-                     (int)package->encode_expectations_elem_size);
+    (void)RAND_bytes((unsigned char *)o,
+        (int)package->encode_expectations_elem_size);
     ret = ASN1_item_print(bio_err, o, 0, i, NULL);
     OPENSSL_free(o);
 
     return ret;
 }
-
 
 static int test_intern(const TEST_PACKAGE *package)
 {
@@ -738,22 +739,24 @@ static int test_intern(const TEST_PACKAGE *package)
     /* Do decode_custom checks */
     nelems = package->encode_expectations_size
         / package->encode_expectations_elem_size;
-    OPENSSL_assert(nelems ==
-                   sizeof(test_custom_data) / sizeof(test_custom_data[0]));
+    OPENSSL_assert(nelems == OSSL_NELEM(test_custom_data));
     for (i = 0; i < nelems; i++) {
         size_t pos = i * package->encode_expectations_elem_size;
-        switch (do_encode_custom((EXPECTED *)&((unsigned char *)package
-                                               ->encode_expectations)[pos],
-                                 &test_custom_data[i], package)) {
+        EXPECTED *expected
+            = (EXPECTED *)&((unsigned char *)package->encode_expectations)[pos];
+
+        switch (do_encode_custom(expected, &test_custom_data[i], package)) {
         case -1:
-            TEST_error("Failed custom encode round trip %u of %s",
-                       i, package->name);
-            TEST_openssl_errors();
-            fail++;
+            if (expected->success) {
+                TEST_error("Failed custom encode round trip %u of %s",
+                    i, package->name);
+                TEST_openssl_errors();
+                fail++;
+            }
             break;
         case 0:
             TEST_error("Custom encode round trip %u of %s mismatch",
-                       i, package->name);
+                i, package->name);
             TEST_openssl_errors();
             fail++;
             break;
@@ -761,22 +764,22 @@ static int test_intern(const TEST_PACKAGE *package)
             break;
         default:
             OPENSSL_die("do_encode_custom() return unknown value",
-                        __FILE__, __LINE__);
+                __FILE__, __LINE__);
         }
-        switch (do_decode_custom(&test_custom_data[i],
-                                 (EXPECTED *)&((unsigned char *)package
-                                               ->encode_expectations)[pos],
-                                 package->encode_expectations_elem_size,
-                                 package)) {
+        switch (do_decode_custom(&test_custom_data[i], expected,
+            package->encode_expectations_elem_size,
+            package)) {
         case -1:
-            TEST_error("Failed custom decode round trip %u of %s",
-                       i, package->name);
-            TEST_openssl_errors();
-            fail++;
+            if (expected->success) {
+                TEST_error("Failed custom decode round trip %u of %s",
+                    i, package->name);
+                TEST_openssl_errors();
+                fail++;
+            }
             break;
         case 0:
             TEST_error("Custom decode round trip %u of %s mismatch",
-                       i, package->name);
+                i, package->name);
             TEST_openssl_errors();
             fail++;
             break;
@@ -784,7 +787,7 @@ static int test_intern(const TEST_PACKAGE *package)
             break;
         default:
             OPENSSL_die("do_decode_custom() return unknown value",
-                        __FILE__, __LINE__);
+                __FILE__, __LINE__);
         }
     }
 
@@ -792,26 +795,29 @@ static int test_intern(const TEST_PACKAGE *package)
     nelems = package->encdec_data_size / package->encdec_data_elem_size;
     for (i = 0; i < nelems; i++) {
         size_t pos = i * package->encdec_data_elem_size;
-        switch (do_enc_dec((EXPECTED *)&((unsigned char *)package
-                                         ->encdec_data)[pos],
-                           package->encdec_data_elem_size,
-                           package)) {
+        EXPECTED *expected
+            = (EXPECTED *)&((unsigned char *)package->encdec_data)[pos];
+
+        switch (do_enc_dec(expected, (long)package->encdec_data_elem_size,
+            package)) {
         case -1:
-            TEST_error("Failed encode/decode round trip %u of %s",
-                       i, package->name);
-            TEST_openssl_errors();
-            fail++;
+            if (expected->success) {
+                TEST_error("Failed encode/decode round trip %u of %s",
+                    i, package->name);
+                TEST_openssl_errors();
+                fail++;
+            }
             break;
         case 0:
             TEST_error("Encode/decode round trip %u of %s mismatch",
-                       i, package->name);
+                i, package->name);
             fail++;
             break;
         case 1:
             break;
         default:
             OPENSSL_die("do_enc_dec() return unknown value",
-                        __FILE__, __LINE__);
+                __FILE__, __LINE__);
         }
     }
 
@@ -824,7 +830,7 @@ static int test_intern(const TEST_PACKAGE *package)
     return fail == 0;
 }
 
-#if OPENSSL_API_COMPAT < 0x10200000L
+#ifndef OPENSSL_NO_DEPRECATED_3_0
 static int test_long_32bit(void)
 {
     return test_intern(&long_test_package_32bit);
@@ -856,9 +862,40 @@ static int test_uint64(void)
     return test_intern(&uint64_test_package);
 }
 
+typedef struct {
+    ASN1_STRING *invalidDirString;
+} INVALIDTEMPLATE;
+
+ASN1_SEQUENCE(INVALIDTEMPLATE) = {
+    /*
+     * DirectoryString is a CHOICE type so it must use explicit tagging -
+     * but we deliberately use implicit here, which makes this template invalid.
+     */
+    ASN1_IMP(INVALIDTEMPLATE, invalidDirString, DIRECTORYSTRING, 12)
+} static_ASN1_SEQUENCE_END(INVALIDTEMPLATE)
+
+IMPLEMENT_STATIC_ASN1_ENCODE_FUNCTIONS(INVALIDTEMPLATE)
+IMPLEMENT_STATIC_ASN1_ALLOC_FUNCTIONS(INVALIDTEMPLATE)
+
+static int test_invalid_template(void)
+{
+    INVALIDTEMPLATE *temp = INVALIDTEMPLATE_new();
+    int ret;
+
+    if (!TEST_ptr(temp))
+        return 0;
+
+    ret = i2d_INVALIDTEMPLATE(temp, NULL);
+
+    INVALIDTEMPLATE_free(temp);
+
+    /* We expect the i2d operation to fail */
+    return ret < 0;
+}
+
 int setup_tests(void)
 {
-#if OPENSSL_API_COMPAT < 0x10200000L
+#ifndef OPENSSL_NO_DEPRECATED_3_0
     ADD_TEST(test_long_32bit);
     ADD_TEST(test_long_64bit);
 #endif
@@ -866,5 +903,6 @@ int setup_tests(void)
     ADD_TEST(test_uint32);
     ADD_TEST(test_int64);
     ADD_TEST(test_uint64);
+    ADD_TEST(test_invalid_template);
     return 1;
 }

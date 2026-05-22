@@ -1,17 +1,17 @@
 #! /usr/bin/env perl
-# Copyright 2009-2020 The OpenSSL Project Authors. All Rights Reserved.
+# Copyright 2009-2025 The OpenSSL Project Authors. All Rights Reserved.
 #
-# Licensed under the OpenSSL license (the "License").  You may not use
+# Licensed under the Apache License 2.0 (the "License").  You may not use
 # this file except in compliance with the License.  You can obtain a copy
 # in the file LICENSE in the source distribution or at
 # https://www.openssl.org/source/license.html
 
 
 # ====================================================================
-# Written by Andy Polyakov <appro@openssl.org> for the OpenSSL
+# Written by Andy Polyakov, @dot-asm, initially for use in the OpenSSL
 # project. The module is, however, dual licensed under OpenSSL and
 # CRYPTOGAMS licenses depending on where you obtain it. For further
-# details see http://www.openssl.org/~appro/cryptogams/.
+# details see https://github.com/dot-asm/cryptogams/.
 # ====================================================================
 
 # SHA1 block procedure for MIPS.
@@ -52,8 +52,12 @@
 # ($t0,$t1,$t2,$t3,$t8,$t9)=map("\$$_",(12..15,24,25));
 # ($s0,$s1,$s2,$s3,$s4,$s5,$s6,$s7)=map("\$$_",(16..23));
 # ($gp,$sp,$fp,$ra)=map("\$$_",(28..31));
-#
-$flavour = shift || "o32"; # supported flavours are o32,n32,64,nubi32,nubi64
+
+# $output is the last argument if it looks like a file (it has an extension)
+# $flavour is the first argument if it doesn't look like a file
+$output = $#ARGV >= 0 && $ARGV[$#ARGV] =~ m|\.\w+$| ? pop : undef;
+# supported flavours are o32,n32,64,nubi32,nubi64, default is o32
+$flavour = $#ARGV >= 0 && $ARGV[0] !~ m|\.| ? shift : "o32"; 
 
 if ($flavour =~ /64|n32/i) {
 	$PTR_ADD="daddu";	# incidentally works even on n32
@@ -71,14 +75,13 @@ if ($flavour =~ /64|n32/i) {
 	$SZREG=4;
 }
 #
-# <appro@openssl.org>
+# <https://github.com/dot-asm>
 #
 ######################################################################
 
 $big_endian=(`echo MIPSEB | $ENV{CC} -E -`=~/MIPSEB/)?0:1 if ($ENV{CC});
 
-for (@ARGV) {	$output=$_ if (/\w[\w\-]*\.\w+$/);   }
-open STDOUT,">$output";
+$output and open STDOUT,">$output";
 
 if (!defined($big_endian))
             {   $big_endian=(unpack('L',pack('N',1))==1);   }
@@ -455,7 +458,7 @@ $code.=<<___;
 	$PTR_ADD $sp,$FRAMESIZE*$SZREG
 .end	sha1_block_data_order
 .rdata
-.asciiz	"SHA1 for MIPS, CRYPTOGAMS by <appro\@openssl.org>"
+.asciiz	"SHA1 for MIPS, CRYPTOGAMS by <https://github.com/dot-asm>"
 ___
 print $code;
 close STDOUT or die "error closing STDOUT: $!";

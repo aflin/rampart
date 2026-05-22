@@ -66,7 +66,7 @@ if(SILENCE_VENDORED_WARNINGS)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -w")
 endif()
 
-add_subdirectory(${EXTERN_DIR}/openssl)
+include(${EXTERN_DIR}/openssl.cmake)
 
 add_subdirectory(${EXTERN_DIR}/oniguruma)
 

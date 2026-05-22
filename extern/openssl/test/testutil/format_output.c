@@ -1,7 +1,7 @@
 /*
- * Copyright 2017-2018 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2017-2026 The OpenSSL Project Authors. All Rights Reserved.
  *
- * Licensed under the OpenSSL license (the "License").  You may not use
+ * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
  * in the file LICENSE in the source distribution or at
  * https://www.openssl.org/source/license.html
@@ -13,12 +13,11 @@
 
 #include <string.h>
 #include <ctype.h>
-#include "internal/nelem.h"
 
 /* The size of memory buffers to display on failure */
-#define MEM_BUFFER_SIZE     (2000)
-#define MAX_STRING_WIDTH    (80)
-#define BN_OUTPUT_SIZE      (8)
+#define MEM_BUFFER_SIZE (2000)
+#define MAX_STRING_WIDTH (80)
+#define BN_OUTPUT_SIZE (8)
 
 /* Output a diff header */
 static void test_diff_header(const char *left, const char *right)
@@ -31,18 +30,18 @@ static void test_diff_header(const char *left, const char *right)
 static void test_string_null_empty(const char *m, char c)
 {
     if (m == NULL)
-        test_printf_stderr("% 4s %c NULL\n", "", c);
+        test_printf_stderr("%4s %c NULL\n", "", c);
     else
-        test_printf_stderr("% 4u:%c ''\n", 0u, c);
+        test_printf_stderr("%4u:%c ''\n", 0u, c);
 }
 
 static void test_fail_string_common(const char *prefix, const char *file,
-                                    int line, const char *type,
-                                    const char *left, const char *right,
-                                    const char *op, const char *m1, size_t l1,
-                                    const char *m2, size_t l2)
+    int line, const char *type,
+    const char *left, const char *right,
+    const char *op, const char *m1, size_t l1,
+    const char *m2, size_t l2)
 {
-    const size_t width = (MAX_STRING_WIDTH - subtest_level() - 12) / 16 * 16;
+    const size_t width = (MAX_STRING_WIDTH - BIO_get_indent(bio_err) - 12) / 16 * 16;
     char b1[MAX_STRING_WIDTH + 1], b2[MAX_STRING_WIDTH + 1];
     char bdiff[MAX_STRING_WIDTH + 1];
     size_t n1, n2, i;
@@ -64,7 +63,7 @@ static void test_fail_string_common(const char *prefix, const char *file,
         goto fin;
     }
 
-    if (l1 != l2 || strcmp(m1, m2) != 0)
+    if (l1 != l2 || strncmp(m1, m2, l1) != 0)
         test_diff_header(left, right);
 
     while (l1 > 0 || l2 > 0) {
@@ -94,24 +93,26 @@ static void test_fail_string_common(const char *prefix, const char *file,
             bdiff[i] = '\0';
         }
         if (n1 == n2 && !diff) {
-            test_printf_stderr("% 4u:  '%s'\n", cnt, n2 > n1 ? b2 : b1);
+            test_printf_stderr("%4u:  '%s'\n", cnt, n2 > n1 ? b2 : b1);
         } else {
             if (cnt == 0 && (m1 == NULL || *m1 == '\0'))
                 test_string_null_empty(m1, '-');
             else if (n1 > 0)
-                test_printf_stderr("% 4u:- '%s'\n", cnt, b1);
+                test_printf_stderr("%4u:- '%s'\n", cnt, b1);
             if (cnt == 0 && (m2 == NULL || *m2 == '\0'))
-               test_string_null_empty(m2, '+');
+                test_string_null_empty(m2, '+');
             else if (n2 > 0)
-                test_printf_stderr("% 4u:+ '%s'\n", cnt, b2);
+                test_printf_stderr("%4u:+ '%s'\n", cnt, b2);
             if (diff && i > 0)
-                test_printf_stderr("% 4s    %s\n", "", bdiff);
+                test_printf_stderr("%4s    %s\n", "", bdiff);
         }
-        m1 += n1;
-        m2 += n2;
+        if (m1 != NULL)
+            m1 += n1;
+        if (m2 != NULL)
+            m2 += n2;
         l1 -= n1;
         l2 -= n2;
-        cnt += width;
+        cnt += (unsigned int)width;
     }
 fin:
     test_flush_stderr();
@@ -123,20 +124,20 @@ fin:
  * fails.  The second is the user's call to dump a string.
  */
 void test_fail_string_message(const char *prefix, const char *file,
-                              int line, const char *type,
-                              const char *left, const char *right,
-                              const char *op, const char *m1, size_t l1,
-                              const char *m2, size_t l2)
+    int line, const char *type,
+    const char *left, const char *right,
+    const char *op, const char *m1, size_t l1,
+    const char *m2, size_t l2)
 {
     test_fail_string_common(prefix, file, line, type, left, right, op,
-                            m1, l1, m2, l2);
+        m1, l1, m2, l2);
     test_printf_stderr("\n");
 }
 
 void test_output_string(const char *name, const char *m, size_t l)
 {
     test_fail_string_common("string", NULL, 0, NULL, NULL, NULL, name,
-                            m, l, m, l);
+        m, l, m, l);
 }
 
 /* BIGNUM formatted output routines */
@@ -146,7 +147,7 @@ void test_output_string(const char *name, const char *m, size_t l)
  * every so often.
  */
 static void hex_convert_memory(const unsigned char *m, size_t n, char *b,
-                               size_t width)
+    size_t width)
 {
     size_t i;
 
@@ -166,9 +167,10 @@ static void hex_convert_memory(const unsigned char *m, size_t n, char *b,
  * of characters these take.
  */
 static const int bn_bytes = (MAX_STRING_WIDTH - 9) / (BN_OUTPUT_SIZE * 2 + 1)
-                            * BN_OUTPUT_SIZE;
+    * BN_OUTPUT_SIZE;
 static const int bn_chars = (MAX_STRING_WIDTH - 9) / (BN_OUTPUT_SIZE * 2 + 1)
-                            * (BN_OUTPUT_SIZE * 2 + 1) - 1;
+        * (BN_OUTPUT_SIZE * 2 + 1)
+    - 1;
 
 /*
  * Output the header line for the bignum
@@ -202,10 +204,11 @@ static void test_bignum_zero_print(const BIGNUM *bn, char sep)
  * string with appropriate visual aid spaces inserted.
  */
 static int convert_bn_memory(const unsigned char *in, size_t bytes,
-                             char *out, int *lz, const BIGNUM *bn)
+    char *out, int *lz, const BIGNUM *bn)
 {
-    int n = bytes * 2, i;
+    int n = (int)(bytes * 2), i;
     char *p = out, *q = NULL;
+    const char *r;
 
     if (bn != NULL && !BN_is_zero(bn)) {
         hex_convert_memory(in, bytes, out, BN_OUTPUT_SIZE);
@@ -238,7 +241,7 @@ static int convert_bn_memory(const unsigned char *in, size_t bytes,
                 }
             }
         }
-       return n;
+        return n;
     }
 
     for (i = 0; i < n; i++) {
@@ -248,10 +251,10 @@ static int convert_bn_memory(const unsigned char *in, size_t bytes,
     }
     *p = '\0';
     if (bn == NULL)
-        q = "NULL";
+        r = "NULL";
     else
-        q = BN_is_negative(bn) ? "-0" : "0";
-    strcpy(p - strlen(q), q);
+        r = BN_is_negative(bn) ? "-0" : "0";
+    strcpy(p - strlen(r), r);
     return 0;
 }
 
@@ -260,10 +263,10 @@ static int convert_bn_memory(const unsigned char *in, size_t bytes,
  * pointers for changes (only when there are two).
  */
 static void test_fail_bignum_common(const char *prefix, const char *file,
-                                    int line, const char *type,
-                                    const char *left, const char *right,
-                                    const char *op,
-                                    const BIGNUM *bn1, const BIGNUM *bn2)
+    int line, const char *type,
+    const char *left, const char *right,
+    const char *op,
+    const BIGNUM *bn1, const BIGNUM *bn2)
 {
     const size_t bytes = bn_bytes;
     char b1[MAX_STRING_WIDTH + 1], b2[MAX_STRING_WIDTH + 1];
@@ -296,7 +299,7 @@ static void test_fail_bignum_common(const char *prefix, const char *file,
 
     len = ((l1 > l2 ? l1 : l2) + bytes - 1) / bytes * bytes;
 
-    if (len > MEM_BUFFER_SIZE && (bufp = OPENSSL_malloc(len * 2)) == NULL) {
+    if (len > MEM_BUFFER_SIZE && (bufp = OPENSSL_malloc_array(2, len)) == NULL) {
         bufp = buffer;
         len = MEM_BUFFER_SIZE;
         test_printf_stderr("WARNING: these BIGNUMs have been truncated\n");
@@ -304,22 +307,22 @@ static void test_fail_bignum_common(const char *prefix, const char *file,
 
     if (bn1 != NULL) {
         m1 = bufp;
-        BN_bn2binpad(bn1, m1, len);
+        BN_bn2binpad(bn1, m1, (int)len);
     }
     if (bn2 != NULL) {
         m2 = bufp + len;
-        BN_bn2binpad(bn2, m2, len);
+        BN_bn2binpad(bn2, m2, (int)len);
     }
 
     while (len > 0) {
-        cnt = 8 * (len - bytes);
+        cnt = (unsigned int)(8 * (len - bytes));
         n1 = convert_bn_memory(m1, bytes, b1, &lz1, bn1);
         n2 = convert_bn_memory(m2, bytes, b2, &lz2, bn2);
 
         diff = real_diff = 0;
         i = 0;
         p = bdiff;
-        for (i=0; b1[i] != '\0'; i++)
+        for (i = 0; b1[i] != '\0'; i++)
             if (b1[i] == b2[i] || b1[i] == ' ' || b2[i] == ' ') {
                 *p++ = ' ';
                 diff |= b1[i] != b2[i];
@@ -340,7 +343,7 @@ static void test_fail_bignum_common(const char *prefix, const char *file,
             else if (cnt == 0 || n2 > 0)
                 test_printf_stderr("+%s:% 5d\n", b2, cnt);
             if (real_diff && (cnt == 0 || (n1 > 0 && n2 > 0))
-                    && bn1 != NULL && bn2 != NULL)
+                && bn1 != NULL && bn2 != NULL)
                 test_printf_stderr(" %s\n", bdiff);
         }
         if (m1 != NULL)
@@ -361,19 +364,19 @@ fin:
  * fails.  The third is the user's call to dump a bignum.
  */
 void test_fail_bignum_message(const char *prefix, const char *file,
-                              int line, const char *type,
-                              const char *left, const char *right,
-                              const char *op,
-                              const BIGNUM *bn1, const BIGNUM *bn2)
+    int line, const char *type,
+    const char *left, const char *right,
+    const char *op,
+    const BIGNUM *bn1, const BIGNUM *bn2)
 {
     test_fail_bignum_common(prefix, file, line, type, left, right, op, bn1, bn2);
     test_printf_stderr("\n");
 }
 
 void test_fail_bignum_mono_message(const char *prefix, const char *file,
-                                   int line, const char *type,
-                                   const char *left, const char *right,
-                                   const char *op, const BIGNUM *bn)
+    int line, const char *type,
+    const char *left, const char *right,
+    const char *op, const BIGNUM *bn)
 {
     test_fail_bignum_common(prefix, file, line, type, left, right, op, bn, bn);
     test_printf_stderr("\n");
@@ -382,8 +385,9 @@ void test_fail_bignum_mono_message(const char *prefix, const char *file,
 void test_output_bignum(const char *name, const BIGNUM *bn)
 {
     if (bn == NULL || BN_is_zero(bn)) {
-        test_printf_stderr("bignum: '%s' = %s\n", name,
-                           test_bignum_zero_null(bn));
+        test_printf_stderr("bignum: '%s' = %s\n",
+            name == NULL ? "<NULL>" : name,
+            test_bignum_zero_null(bn));
     } else if (BN_num_bytes(bn) <= BN_OUTPUT_SIZE) {
         unsigned char buf[BN_OUTPUT_SIZE];
         char out[2 * sizeof(buf) + 1];
@@ -393,11 +397,12 @@ void test_output_bignum(const char *name, const BIGNUM *bn)
         hex_convert_memory(buf, n, p, BN_OUTPUT_SIZE);
         while (*p == '0' && *++p != '\0')
             ;
-        test_printf_stderr("bignum: '%s' = %s0x%s\n", name,
-                           BN_is_negative(bn) ? "-" : "", p);
+        test_printf_stderr("bignum: '%s' = %s0x%s\n",
+            name == NULL ? "<NULL>" : name,
+            BN_is_negative(bn) ? "-" : "", p);
     } else {
         test_fail_bignum_common("bignum", NULL, 0, NULL, NULL, NULL, name,
-                                bn, bn);
+            bn, bn);
     }
 }
 
@@ -409,7 +414,7 @@ void test_output_bignum(const char *name, const BIGNUM *bn)
 static void test_memory_null_empty(const unsigned char *m, char c)
 {
     if (m == NULL)
-        test_printf_stderr("% 4s %c%s\n", "", c, "NULL");
+        test_printf_stderr("%4s %c%s\n", "", c, "NULL");
     else
         test_printf_stderr("%04x %c%s\n", 0u, c, "empty");
 }
@@ -418,11 +423,11 @@ static void test_memory_null_empty(const unsigned char *m, char c)
  * Common code to display one or two blocks of memory.
  */
 static void test_fail_memory_common(const char *prefix, const char *file,
-                                    int line, const char *type,
-                                    const char *left, const char *right,
-                                    const char *op,
-                                    const unsigned char *m1, size_t l1,
-                                    const unsigned char *m2, size_t l2)
+    int line, const char *type,
+    const char *left, const char *right,
+    const char *op,
+    const unsigned char *m1, size_t l1,
+    const unsigned char *m2, size_t l2)
 {
     const size_t bytes = (MAX_STRING_WIDTH - 9) / 17 * 8;
     char b1[MAX_STRING_WIDTH + 1], b2[MAX_STRING_WIDTH + 1];
@@ -493,13 +498,15 @@ static void test_fail_memory_common(const char *prefix, const char *file,
             else if (n2 > 0)
                 test_printf_stderr("%04x:+%s\n", cnt, b2);
             if (diff && i > 0)
-                test_printf_stderr("% 4s  %s\n", "", bdiff);
+                test_printf_stderr("%4s  %s\n", "", bdiff);
         }
-        m1 += n1;
-        m2 += n2;
+        if (m1 != NULL)
+            m1 += n1;
+        if (m2 != NULL)
+            m2 += n2;
         l1 -= n1;
         l2 -= n2;
-        cnt += bytes;
+        cnt += (unsigned int)bytes;
     }
 fin:
     test_flush_stderr();
@@ -511,19 +518,19 @@ fin:
  * fails.  The second is the user's call to dump memory.
  */
 void test_fail_memory_message(const char *prefix, const char *file,
-                              int line, const char *type,
-                              const char *left, const char *right,
-                              const char *op,
-                              const unsigned char *m1, size_t l1,
-                              const unsigned char *m2, size_t l2)
+    int line, const char *type,
+    const char *left, const char *right,
+    const char *op,
+    const unsigned char *m1, size_t l1,
+    const unsigned char *m2, size_t l2)
 {
     test_fail_memory_common(prefix, file, line, type, left, right, op,
-                            m1, l1, m2, l2);
+        m1, l1, m2, l2);
     test_printf_stderr("\n");
 }
 
 void test_output_memory(const char *name, const unsigned char *m, size_t l)
 {
     test_fail_memory_common("memory", NULL, 0, NULL, NULL, NULL, name,
-                            m, l, m, l);
+        m, l, m, l);
 }

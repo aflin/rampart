@@ -1,15 +1,18 @@
 #! /usr/bin/env perl
-# Copyright 2009-2020 The OpenSSL Project Authors. All Rights Reserved.
+# Copyright 2009-2025 The OpenSSL Project Authors. All Rights Reserved.
 #
-# Licensed under the OpenSSL license (the "License").  You may not use
+# Licensed under the Apache License 2.0 (the "License").  You may not use
 # this file except in compliance with the License.  You can obtain a copy
 # in the file LICENSE in the source distribution or at
 # https://www.openssl.org/source/license.html
 
 
-$flavour = shift;
-$output = shift;
-open STDOUT,">$output";
+# $output is the last argument if it looks like a file (it has an extension)
+# $flavour is the first argument if it doesn't look like a file
+$output = $#ARGV >= 0 && $ARGV[$#ARGV] =~ m|\.\w+$| ? pop : undef;
+$flavour = $#ARGV >= 0 && $ARGV[0] !~ m|\.| ? shift : undef;
+
+$output and open STDOUT,">$output";
 
 if ($flavour =~ /64/) {
 	$LEVEL		="2.0W";
@@ -51,46 +54,6 @@ OPENSSL_rdtsc
 	bv	($rp)
 	.EXIT
 	nop
-	.PROCEND
-
-	.EXPORT	OPENSSL_wipe_cpu,ENTRY
-	.ALIGN	8
-OPENSSL_wipe_cpu
-	.PROC
-	.CALLINFO	NO_CALLS
-	.ENTRY
-	xor		%r0,%r0,%r1
-	fcpy,dbl	%fr0,%fr4
-	xor		%r0,%r0,%r19
-	fcpy,dbl	%fr0,%fr5
-	xor		%r0,%r0,%r20
-	fcpy,dbl	%fr0,%fr6
-	xor		%r0,%r0,%r21
-	fcpy,dbl	%fr0,%fr7
-	xor		%r0,%r0,%r22
-	fcpy,dbl	%fr0,%fr8
-	xor		%r0,%r0,%r23
-	fcpy,dbl	%fr0,%fr9
-	xor		%r0,%r0,%r24
-	fcpy,dbl	%fr0,%fr10
-	xor		%r0,%r0,%r25
-	fcpy,dbl	%fr0,%fr11
-	xor		%r0,%r0,%r26
-	fcpy,dbl	%fr0,%fr22
-	xor		%r0,%r0,%r29
-	fcpy,dbl	%fr0,%fr23
-	xor		%r0,%r0,%r31
-	fcpy,dbl	%fr0,%fr24
-	fcpy,dbl	%fr0,%fr25
-	fcpy,dbl	%fr0,%fr26
-	fcpy,dbl	%fr0,%fr27
-	fcpy,dbl	%fr0,%fr28
-	fcpy,dbl	%fr0,%fr29
-	fcpy,dbl	%fr0,%fr30
-	fcpy,dbl	%fr0,%fr31
-	bv		($rp)
-	.EXIT
-	ldo		0($sp),$rv
 	.PROCEND
 ___
 {

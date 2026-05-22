@@ -206,7 +206,11 @@ typedef int (* evhtp_headers_iterator)(evhtp_header_t * header, void * arg);
 
 #ifndef EVHTP_DISABLE_SSL
 typedef int (* evhtp_ssl_verify_cb)(int pre_verify, evhtp_x509_store_ctx_t * ctx);
-typedef int (* evhtp_ssl_chk_issued_cb)(evhtp_x509_store_ctx_t * ctx, evhtp_x509_t * x, evhtp_x509_t * issuer);
+/* OpenSSL 3.x changed X509_STORE_CTX_check_issued_fn to take const
+   X509* for the cert and issuer.  Linux GCC treats the resulting
+   mismatch as a warning (silenced under -w via SILENCE_VENDORED_WARNINGS);
+   macOS clang treats it as a hard error.  Match the new signature. */
+typedef int (* evhtp_ssl_chk_issued_cb)(evhtp_x509_store_ctx_t * ctx, const evhtp_x509_t * x, const evhtp_x509_t * issuer);
 typedef EVP_PKEY * (* evhtp_ssl_decrypt_cb)(char * privfile);
 
 typedef int (* evhtp_ssl_scache_add)(evhtp_connection_t * connection, evhtp_ssl_data_t * sid, int sid_len, evhtp_ssl_sess_t * sess);

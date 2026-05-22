@@ -1,7 +1,7 @@
 /*
- * Copyright 2016-2019 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2016-2025 The OpenSSL Project Authors. All Rights Reserved.
  *
- * Licensed under the OpenSSL license (the "License").  You may not use
+ * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
  * in the file LICENSE in the source distribution or at
  * https://www.openssl.org/source/license.html
@@ -14,48 +14,55 @@
 #include "testutil.h"
 
 #ifdef _WIN32
-# include <direct.h>
-# define DIRSEP "/\\"
-# define chdir _chdir
-# define DIRSEP_PRESERVE 0
+#include <direct.h>
+#define DIRSEP "/\\"
+#ifndef __BORLANDC__
+#define chdir _chdir
+#endif
+#define DIRSEP_PRESERVE 0
 #elif !defined(OPENSSL_NO_POSIX_IO)
-# include <unistd.h>
-# ifndef OPENSSL_SYS_VMS
-#  define DIRSEP "/"
-#  define DIRSEP_PRESERVE 0
-# else
-#  define DIRSEP "/]:"
-#  define DIRSEP_PRESERVE 1
-# endif
+#include <unistd.h>
+#ifndef OPENSSL_SYS_VMS
+#define DIRSEP "/"
+#define DIRSEP_PRESERVE 0
+#else
+#define DIRSEP "/]:"
+#define DIRSEP_PRESERVE 1
+#endif
 #else
 /* the test does not work without chdir() */
-# define chdir(x) (-1);
-# define DIRSEP "/"
-#  define DIRSEP_PRESERVE 0
+#define chdir(x) (-1);
+#define DIRSEP "/"
+#define DIRSEP_PRESERVE 0
 #endif
 
 /* changes path to that of the filename */
-static int change_path(const char *file)
+static char *change_path(const char *file)
 {
     char *s = OPENSSL_strdup(file);
     char *p = s;
     char *last = NULL;
-    int ret;
+    int ret = 0;
+    char *new_config_name = NULL;
 
     if (s == NULL)
-        return -1;
+        return NULL;
 
     while ((p = strpbrk(p, DIRSEP)) != NULL) {
         last = p++;
     }
     if (last == NULL)
-        return 0;
-    last[DIRSEP_PRESERVE] = 0;
+        goto err;
 
+    last[DIRSEP_PRESERVE] = 0;
     TEST_note("changing path to %s", s);
+
     ret = chdir(s);
+    if (ret == 0)
+        new_config_name = OPENSSL_strdup(last + DIRSEP_PRESERVE + 1);
+err:
     OPENSSL_free(s);
-    return ret;
+    return new_config_name;
 }
 
 /*
@@ -65,6 +72,9 @@ static int change_path(const char *file)
 static CONF *conf;
 static BIO *in;
 static int expect_failure = 0;
+static int test_providers = 0;
+static OSSL_LIB_CTX *libctx = NULL;
+static char *rel_conf_file = NULL;
 
 static int test_load_config(void)
 {
@@ -87,13 +97,6 @@ static int test_load_config(void)
 
     if (!TEST_int_gt(CONF_modules_load(conf, NULL, 0), 0)) {
         TEST_note("Failed in CONF_modules_load");
-        return 0;
-    }
-
-    /* verify whether RANDFILE is set correctly */
-    str = NCONF_get_string(conf, "", "RANDFILE");
-    if (!TEST_ptr(str) || !TEST_str_eq(str, "./.rnd")) {
-        TEST_note("RANDFILE incorrect");
         return 0;
     }
 
@@ -120,22 +123,43 @@ static int test_load_config(void)
         return 0;
     }
 
+    if (test_providers != 0) {
+        /* test for `active` directive in configuration file */
+        val = 0;
+        if (!TEST_int_eq(NCONF_get_number(conf, "null_sect", "activate", &val), 1)
+            || !TEST_int_eq(val, 1)) {
+            TEST_note("null provider not activated");
+            return 0;
+        }
+        val = 0;
+        if (!TEST_int_eq(NCONF_get_number(conf, "default_sect", "activate", &val), 1)
+            || !TEST_int_eq(val, 1)) {
+            TEST_note("default provider not activated");
+            return 0;
+        }
+        val = 0;
+        if (!TEST_int_eq(NCONF_get_number(conf, "legacy_sect", "activate", &val), 1)
+            || !TEST_int_eq(val, 1)) {
+            TEST_note("legacy provider not activated");
+            return 0;
+        }
+    }
     return 1;
 }
 
 static int test_check_null_numbers(void)
 {
-#if defined(_BSD_SOURCE) \
-        || (defined(_POSIX_C_SOURCE) && _POSIX_C_SOURCE >= 200112L) \
-        || (defined(_XOPEN_SOURCE) && _XOPEN_SOURCE >= 600)
+#if defined(_BSD_SOURCE)                                        \
+    || (defined(_POSIX_C_SOURCE) && _POSIX_C_SOURCE >= 200112L) \
+    || (defined(_XOPEN_SOURCE) && _XOPEN_SOURCE >= 600)
     long val = 0;
 
     /* Verify that a NULL config with a present environment variable returns
      * success and the value.
      */
     if (!TEST_int_eq(setenv("FNORD", "123", 1), 0)
-            || !TEST_true(NCONF_get_number(NULL, "missing", "FNORD", &val))
-            || !TEST_long_eq(val, 123)) {
+        || !TEST_true(NCONF_get_number(NULL, "missing", "FNORD", &val))
+        || !TEST_long_eq(val, 123)) {
         TEST_note("environment variable with NULL conf failed");
         return 0;
     }
@@ -145,7 +169,7 @@ static int test_check_null_numbers(void)
      * a failure code.
      */
     if (!TEST_int_eq(unsetenv("FNORD"), 0)
-            || !TEST_false(NCONF_get_number(NULL, "missing", "FNORD", &val))) {
+        || !TEST_false(NCONF_get_number(NULL, "missing", "FNORD", &val))) {
         TEST_note("missing environment variable with NULL conf failed");
         return 0;
     }
@@ -155,17 +179,17 @@ static int test_check_null_numbers(void)
 
 static int test_check_overflow(void)
 {
-#if defined(_BSD_SOURCE) \
-        || (defined(_POSIX_C_SOURCE) && _POSIX_C_SOURCE >= 200112L) \
-        || (defined(_XOPEN_SOURCE) && _XOPEN_SOURCE >= 600)
+#if defined(_BSD_SOURCE)                                        \
+    || (defined(_POSIX_C_SOURCE) && _POSIX_C_SOURCE >= 200112L) \
+    || (defined(_XOPEN_SOURCE) && _XOPEN_SOURCE >= 600)
     long val = 0;
     char max[(sizeof(long) * 8) / 3 + 3];
     char *p;
 
-    p = max + sprintf(max, "0%ld", LONG_MAX) - 1;
+    p = max + BIO_snprintf(max, sizeof(max), "0%ld", LONG_MAX) - 1;
     setenv("FNORD", max, 1);
     if (!TEST_true(NCONF_get_number(NULL, "missing", "FNORD", &val))
-            || !TEST_long_eq(val, LONG_MAX))
+        || !TEST_long_eq(val, LONG_MAX))
         return 0;
 
     while (++*p > '9')
@@ -178,40 +202,99 @@ static int test_check_overflow(void)
     return 1;
 }
 
+static int test_available_providers(void)
+{
+    libctx = OSSL_LIB_CTX_new();
+    if (!TEST_ptr(libctx))
+        return 0;
+
+    if (!TEST_ptr(rel_conf_file) || !OSSL_LIB_CTX_load_config(libctx, rel_conf_file)) {
+        TEST_note("Failed to load config");
+        return 0;
+    }
+
+    if (OSSL_PROVIDER_available(libctx, "default") != 1) {
+        TEST_note("Default provider is missing");
+        return 0;
+    }
+    if (OSSL_PROVIDER_available(libctx, "legacy") != 1) {
+        TEST_note("Legacy provider is missing");
+        return 0;
+    }
+    return 1;
+}
+
+typedef enum OPTION_choice {
+    OPT_ERR = -1,
+    OPT_EOF = 0,
+    OPT_FAIL,
+    OPT_TEST_PROV,
+    OPT_TEST_ENUM
+} OPTION_CHOICE;
+
+const OPTIONS *test_get_options(void)
+{
+    static const OPTIONS test_options[] = {
+        OPT_TEST_OPTIONS_WITH_EXTRA_USAGE("conf_file\n"),
+        { "f", OPT_FAIL, '-', "A failure is expected" },
+        { "providers", OPT_TEST_PROV, '-',
+            "Test for activated default and legacy providers" },
+        { NULL }
+    };
+    return test_options;
+}
+
 int setup_tests(void)
 {
-    const char *conf_file;
-    const char *arg2;
+    char *conf_file = NULL;
+    OPTION_CHOICE o;
 
     if (!TEST_ptr(conf = NCONF_new(NULL)))
         return 0;
 
-    conf_file = test_get_argument(0);
+    while ((o = opt_next()) != OPT_EOF) {
+        switch (o) {
+        case OPT_FAIL:
+            expect_failure = 1;
+            break;
+        case OPT_TEST_PROV:
+            test_providers = 1;
+        case OPT_TEST_CASES:
+            break;
+        default:
+            return 0;
+        }
+    }
 
+    conf_file = test_get_argument(0);
     if (!TEST_ptr(conf_file)
         || !TEST_ptr(in = BIO_new_file(conf_file, "r"))) {
         TEST_note("Unable to open the file argument");
         return 0;
     }
 
-    if ((arg2 = test_get_argument(1)) != NULL && *arg2 == 'f') {
-       expect_failure = 1;
-    }
-
     /*
      * For this test we need to chdir as we use relative
      * path names in the config files.
      */
-    change_path(conf_file);
+    rel_conf_file = change_path(conf_file);
+    if (!TEST_ptr(rel_conf_file)) {
+        TEST_note("Unable to change path");
+        return 0;
+    }
 
     ADD_TEST(test_load_config);
     ADD_TEST(test_check_null_numbers);
     ADD_TEST(test_check_overflow);
+    if (test_providers != 0)
+        ADD_TEST(test_available_providers);
+
     return 1;
 }
 
 void cleanup_tests(void)
 {
+    OPENSSL_free(rel_conf_file);
     BIO_vfree(in);
     NCONF_free(conf);
     CONF_modules_unload(1);

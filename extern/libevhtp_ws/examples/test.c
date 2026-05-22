@@ -415,7 +415,7 @@ dummy_ssl_verify_callback(int ok, X509_STORE_CTX * x509_store) {
 }
 
 static int
-dummy_check_issued_cb(X509_STORE_CTX * ctx, X509 * x, X509 * issuer) {
+dummy_check_issued_cb(X509_STORE_CTX * ctx, const X509 * x, const X509 * issuer) {
     return 1;
 }
 

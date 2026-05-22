@@ -61,6 +61,15 @@ if(CYGWIN)
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu11")
 endif()
 
+# 32-bit ARM (Raspberry Pi etc.): GCC doesn't auto-link libatomic for
+# 8-byte (__atomic_*_8) intrinsics that OpenSSL 4.0's threads_pthread.c
+# uses for RCU.  Python's _hashlib has the same issue.  Add -latomic to
+# every link step so libcrypto.a + Python extensions resolve cleanly.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux"
+   AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm|armhf|armv6|armv7|armv7l)$")
+    add_link_options(-latomic)
+endif()
+
 #set(CMAKE_BUILD_TYPE Debug)
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")

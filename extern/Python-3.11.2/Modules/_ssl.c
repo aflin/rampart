@@ -65,6 +65,41 @@
 #  error "OPENSSL_THREADS is not defined, Python requires thread-safe OpenSSL"
 #endif
 
+/* OpenSSL 3.0 deprecated SSL_get_peer_certificate and added
+   SSL_get1_peer_certificate (same behavior, new name).  OpenSSL 4.0
+   removed the deprecated name entirely.  Python 3.12+ uses the new
+   name; 3.11.x still has the old name in this file.  Re-route at
+   the macro level so 3.11 builds against OpenSSL 3.0+ and 4.0+. */
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+#  ifdef SSL_get_peer_certificate
+#    undef SSL_get_peer_certificate
+#  endif
+#  define SSL_get_peer_certificate SSL_get1_peer_certificate
+#endif
+
+/* OpenSSL 4.0 removed the version-specific method factories
+   (SSLv3_method, TLSv1_method, TLSv1_1_method, TLSv1_2_method).
+   Modern code uses TLS_method() + SSL_set_min/max_proto_version().
+   _ssl.c gates its extern declarations on OPENSSL_NO_*_METHOD, but
+   OpenSSL 4.0 doesn't define those (it dropped per-version methods
+   entirely rather than disabling them via macro).  Define them
+   ourselves so the extern declarations + code paths that use the
+   functions are skipped. */
+#if OPENSSL_VERSION_NUMBER >= 0x40000000L
+#  ifndef OPENSSL_NO_SSL3_METHOD
+#    define OPENSSL_NO_SSL3_METHOD
+#  endif
+#  ifndef OPENSSL_NO_TLS1_METHOD
+#    define OPENSSL_NO_TLS1_METHOD
+#  endif
+#  ifndef OPENSSL_NO_TLS1_1_METHOD
+#    define OPENSSL_NO_TLS1_1_METHOD
+#  endif
+#  ifndef OPENSSL_NO_TLS1_2_METHOD
+#    define OPENSSL_NO_TLS1_2_METHOD
+#  endif
+#endif
+
 
 
 struct py_ssl_error_code {
@@ -1322,15 +1357,16 @@ _get_peer_alt_names (_sslmodulestate *state, X509 *certificate) {
                 }
                 PyTuple_SET_ITEM(t, 0, v);
 
-                if (name->d.ip->length == 4) {
-                    unsigned char *p = name->d.ip->data;
+                /* OpenSSL 1.1+: ASN1_OCTET_STRING is opaque; use accessors */
+                if (ASN1_STRING_length(name->d.ip) == 4) {
+                    const unsigned char *p = ASN1_STRING_get0_data(name->d.ip);
                     v = PyUnicode_FromFormat(
                         "%d.%d.%d.%d",
                         p[0], p[1], p[2], p[3]
                     );
-                } else if (name->d.ip->length == 16) {
+                } else if (ASN1_STRING_length(name->d.ip) == 16) {
                     /* PyUnicode_FromFormat() does not support %X */
-                    unsigned char *p = name->d.ip->data;
+                    const unsigned char *p = ASN1_STRING_get0_data(name->d.ip);
                     len = sprintf(
                         buf,
                         "%X:%X:%X:%X:%X:%X:%X:%X",
@@ -1463,8 +1499,9 @@ _get_aia_uri(X509 *certificate, int nid) {
             continue;
         }
         uri = ad->location->d.uniformResourceIdentifier;
-        ostr = PyUnicode_FromStringAndSize((char *)uri->data,
-                                           uri->length);
+        /* OpenSSL 1.1+: ASN1_IA5STRING is opaque; use accessors */
+        ostr = PyUnicode_FromStringAndSize((const char *)ASN1_STRING_get0_data(uri),
+                                           ASN1_STRING_length(uri));
         if (ostr == NULL) {
             goto fail;
         }
