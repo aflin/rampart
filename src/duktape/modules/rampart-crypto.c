@@ -21,7 +21,18 @@
 #include <openssl/opensslv.h>
 #if OPENSSL_VERSION_NUMBER >= 0x30000000L
 #include <openssl/provider.h>
+#include <openssl/core_names.h>
+#include <openssl/param_build.h>
 #endif
+#include <openssl/ec.h>
+#include <openssl/ecdsa.h>
+#include <openssl/objects.h>
+
+/* Forward decl — rc_md_from_name is defined alongside the other Tier-1/2
+ * helpers near the bottom of this file, but it's referenced earlier by
+ * the RSA-PSS / RSA-OAEP extensions in rsa_sign/rsa_verify/rsa_pub_encrypt/
+ * rsa_priv_decrypt. */
+static const EVP_MD *rc_md_from_name(const char *name);
 #include <string.h>
 #include <stdio.h>
 #include <stdint.h>
@@ -372,6 +383,16 @@ void printkiv(unsigned char *key,unsigned char *iv,unsigned char *salt,const EVP
   else printf("NULL\n");
 }
 
+/* Internal cipher encrypt/decrypt.  Handles:
+ *   - "classic" CBC/CTR/ECB/etc. — straight EVP_EncryptUpdate/Final
+ *   - AEAD (GCM/OCB/CCM) — optional aad, tag append/extract
+ *   - WRAP (aes-*-wrap)  — RFC-3394; no IV; output = input + 8 bytes
+ *
+ * For AEAD encrypt, output = (salt prefix if password) || ciphertext || tag.
+ * For AEAD decrypt, input  = (salt prefix if password) || ciphertext || tag
+ *   (salt stripping happens in the caller before in_buffer reaches here).
+ * `tag_len` is 0 for non-AEAD ciphers; >0 for AEAD (typically 16).
+ */
 static void rpcrypt(
   duk_context *ctx,
   unsigned char *key,
@@ -380,7 +401,10 @@ static void rpcrypt(
   void *in_buffer,
   duk_size_t in_len,
   unsigned char *salt,
-  int decrypt
+  int decrypt,
+  const void *aad,
+  duk_size_t aad_len,
+  int tag_len
   )
 {
     EVP_CIPHER_CTX *cipher_ctx;
@@ -389,67 +413,168 @@ static void rpcrypt(
     void *out_buffer;
     const EVP_CIPHER *cipher;
     int saltspace=0;
+    int mode;
+    int is_aead = 0, is_wrap = 0;
 
     if(!decrypt && salt)
         saltspace=PKCS5_SALT_LEN+m_len;
+
+    /* Retrieve the cipher by name first so we can introspect its mode. */
+    cipher = EVP_get_cipherbyname(cipher_name);
+    if (cipher == NULL)
+        RP_THROW(ctx, "Cipher %s not found", cipher_name);
+
+    mode = EVP_CIPHER_mode(cipher);
+    is_aead = (mode == EVP_CIPH_GCM_MODE || mode == EVP_CIPH_CCM_MODE ||
+               mode == EVP_CIPH_OCB_MODE);
+    is_wrap = (mode == EVP_CIPH_WRAP_MODE);
+
+    /* Sanity: only AEAD ciphers accept aad/tag_len. */
+    if (!is_aead && tag_len)
+        RP_THROW(ctx, "cipher '%s' is not an AEAD mode; tagLength/aad cannot be set", cipher_name);
+    if (!is_aead && aad_len)
+        RP_THROW(ctx, "cipher '%s' is not an AEAD mode; aad cannot be set", cipher_name);
+
+    /* On AEAD decrypt, the last tag_len bytes of the input are the tag.
+     * Split them off and pass the rest as ciphertext to EVP. */
+    const unsigned char *tag_in = NULL;
+    duk_size_t ct_len = in_len;
+    if (is_aead && decrypt)
+    {
+        if (in_len < (duk_size_t)tag_len)
+            RP_THROW(ctx, "AEAD decrypt: input shorter than tagLength (%d < %d)",
+                     (int)in_len, tag_len);
+        ct_len = in_len - (duk_size_t)tag_len;
+        tag_in = (const unsigned char *)in_buffer + ct_len;
+    }
 
     /* Create and initialise the context */
     if (!(cipher_ctx = EVP_CIPHER_CTX_new()))
         DUK_OPENSSL_ERROR(ctx);
 
-    /* Retrieve the cipher by name */
-    cipher = EVP_get_cipherbyname(cipher_name);
-    if (cipher == NULL)
-        RP_THROW(ctx, "Cipher %s not found", cipher_name);
+    /* Allocate output: ciphertext can be up to (input + blocksize),
+     * plus salt prefix (if password), plus AEAD tag (on encrypt),
+     * plus WRAP overhead (8 bytes on encrypt). */
+    int extra = EVP_CIPHER_block_size(cipher) + saltspace;
+    if (is_aead && !decrypt) extra += tag_len;
+    if (is_wrap && !decrypt) extra += 8;
+    out_buffer = duk_push_dynamic_buffer(ctx, in_len + extra);
 
-    out_buffer = duk_push_dynamic_buffer(ctx, in_len + EVP_CIPHER_block_size(cipher) + saltspace);
+    /* AES-KW (wrap) needs an explicit "I know what I'm doing" flag, and
+     * doesn't take an IV (the spec defines a fixed IV).  Detect and
+     * disable IV passing for wrap ciphers. */
+    if (is_wrap)
+        EVP_CIPHER_CTX_set_flags(cipher_ctx, EVP_CIPHER_CTX_FLAG_WRAP_ALLOW);
+
     if (decrypt)
     {
-        /* Initialize the decryption operation with the found cipher, key and iv */
-        if (!EVP_DecryptInit_ex(cipher_ctx, cipher, NULL, key, iv))
+        if (!EVP_DecryptInit_ex(cipher_ctx, cipher, NULL, key,
+                                is_wrap ? NULL : iv))
+        {
+            EVP_CIPHER_CTX_free(cipher_ctx);
             DUK_OPENSSL_ERROR(ctx);
+        }
 
-        if (!EVP_DecryptUpdate(cipher_ctx, out_buffer, &current_len, in_buffer, (int)in_len))
+        /* For AEAD: feed any AAD before the ciphertext. */
+        if (is_aead && aad_len)
+        {
+            if (!EVP_DecryptUpdate(cipher_ctx, NULL, &current_len,
+                                   (const unsigned char *)aad, (int)aad_len))
+            {
+                EVP_CIPHER_CTX_free(cipher_ctx);
                 DUK_OPENSSL_ERROR(ctx);
+            }
+        }
+
+        if (!EVP_DecryptUpdate(cipher_ctx, out_buffer, &current_len,
+                               in_buffer, (int)ct_len))
+        {
+            EVP_CIPHER_CTX_free(cipher_ctx);
+            DUK_OPENSSL_ERROR(ctx);
+        }
         out_len += current_len;
 
-        /*
-         * Finalise the decryption. Further ciphertext bytes may be written at
-         * this stage.
-         */
+        /* For AEAD: set the expected tag BEFORE the final call. */
+        if (is_aead)
+        {
+            if (!EVP_CIPHER_CTX_ctrl(cipher_ctx, EVP_CTRL_AEAD_SET_TAG,
+                                     tag_len, (void *)tag_in))
+            {
+                EVP_CIPHER_CTX_free(cipher_ctx);
+                DUK_OPENSSL_ERROR(ctx);
+            }
+        }
 
-        if (!EVP_DecryptFinal_ex(cipher_ctx, out_buffer + out_len, &current_len))
-            DUK_OPENSSL_ERROR(ctx);
+        if (!EVP_DecryptFinal_ex(cipher_ctx, (unsigned char *)out_buffer + out_len, &current_len))
+        {
+            EVP_CIPHER_CTX_free(cipher_ctx);
+            /* For AEAD this is the tag-verification failure path. */
+            RP_THROW(ctx, "decrypt: %s",
+                     is_aead ? "authentication tag verification failed" :
+                               "EVP_DecryptFinal_ex failed (bad padding or wrong key)");
+        }
     }
     else
     {
-        /* Initialize the encryption operation with the found cipher, key and iv */
-        if (!EVP_EncryptInit_ex(cipher_ctx, cipher, NULL, key, iv))
+        if (!EVP_EncryptInit_ex(cipher_ctx, cipher, NULL, key,
+                                is_wrap ? NULL : iv))
+        {
+            EVP_CIPHER_CTX_free(cipher_ctx);
             DUK_OPENSSL_ERROR(ctx);
+        }
 
         /* with password, we need to write magic and the salt necessary to recreate key,iv */
         if(saltspace)
         {
             memcpy(out_buffer,magic,m_len);
-            memcpy(out_buffer+m_len,salt,PKCS5_SALT_LEN);
+            memcpy((unsigned char *)out_buffer+m_len,salt,PKCS5_SALT_LEN);
             out_len=saltspace;
         }
 
-        if (!EVP_EncryptUpdate(cipher_ctx, out_buffer + out_len, &current_len, in_buffer, (int)in_len))
+        /* For AEAD: feed any AAD before the plaintext. */
+        if (is_aead && aad_len)
         {
+            if (!EVP_EncryptUpdate(cipher_ctx, NULL, &current_len,
+                                   (const unsigned char *)aad, (int)aad_len))
+            {
+                EVP_CIPHER_CTX_free(cipher_ctx);
+                DUK_OPENSSL_ERROR(ctx);
+            }
+        }
+
+        if (!EVP_EncryptUpdate(cipher_ctx, (unsigned char *)out_buffer + out_len, &current_len, in_buffer, (int)in_len))
+        {
+            EVP_CIPHER_CTX_free(cipher_ctx);
             DUK_OPENSSL_ERROR(ctx);
         }
         out_len += current_len;
 
-        /*
-         * Finalise the encryption. Further ciphertext bytes may be written at
-         * this stage.
-         */
-        if (!EVP_EncryptFinal_ex(cipher_ctx, out_buffer + out_len, &current_len))
+        if (!EVP_EncryptFinal_ex(cipher_ctx, (unsigned char *)out_buffer + out_len, &current_len))
+        {
+            EVP_CIPHER_CTX_free(cipher_ctx);
             DUK_OPENSSL_ERROR(ctx);
+        }
+        out_len += current_len;
+
+        /* For AEAD: extract the tag and append to output. */
+        if (is_aead)
+        {
+            if (!EVP_CIPHER_CTX_ctrl(cipher_ctx, EVP_CTRL_AEAD_GET_TAG,
+                                     tag_len, (unsigned char *)out_buffer + out_len))
+            {
+                EVP_CIPHER_CTX_free(cipher_ctx);
+                DUK_OPENSSL_ERROR(ctx);
+            }
+            out_len += tag_len;
+        }
+
+        /* AEAD path adds tag to current_len's running total above;
+         * non-AEAD already added current_len in EVP_EncryptFinal block. */
+        goto skip_final_current;
     }
 
     out_len += current_len;
+skip_final_current:
 
     /* Resize the buffer to the actual output length */
     duk_resize_buffer(ctx, -1, out_len);
@@ -529,13 +654,14 @@ static void rc_finalize_buffer(duk_context *ctx, duk_idx_t opt_idx)
             duk_pop(ctx);
             if (strcmp(t, "buffer") == 0)
             {
-                /* Wrap plain buffer in Node-style Buffer */
+                /* Wrap plain buffer in Node-style Buffer (rampart-nodeshim
+                 * relies on this distinction). */
                 duk_get_global_string(ctx, "Buffer");
                 duk_get_prop_string(ctx, -1, "from");
-                duk_remove(ctx, -2);            /* drop Buffer constructor */
-                duk_dup(ctx, -2);               /* dup the plain buffer */
-                duk_call(ctx, 1);               /* Buffer.from(plain) */
-                duk_remove(ctx, -2);            /* drop old plain buffer */
+                duk_remove(ctx, -2);
+                duk_dup(ctx, -2);
+                duk_call(ctx, 1);
+                duk_remove(ctx, -2);
                 return;
             }
             else if (strcmp(t, "uint8array") == 0 ||
@@ -663,12 +789,15 @@ duk_ret_t duk_rp_pass_to_keyiv(duk_context *ctx)
 
 static duk_ret_t duk_rp_crypt(duk_context *ctx, int decrypt)
 {
-    duk_size_t in_len=0;
+    duk_size_t in_len=0, aad_len=0;
     void *in_buffer=NULL;
+    const void *aad=NULL;
     const char *cipher_name = "aes-256-cbc";
     unsigned char *key=NULL, *iv=NULL, salt[PKCS5_SALT_LEN], *salt_p=NULL;
     KEYIV kiv;
     int iter=10000;
+    int tag_len=0;       /* 0 = not AEAD; >0 = AEAD tag length to use */
+    int is_aead=0, is_wrap=0;
     static const char magic[] = "Salted__";
     if(duk_is_object(ctx,0))
     {
@@ -683,6 +812,40 @@ static duk_ret_t duk_rp_crypt(duk_context *ctx, int decrypt)
             RP_THROW(ctx, "option 'data' missing from en/decrypt");
 
         in_buffer = (void*)REQUIRE_STR_OR_BUF(ctx, -1, &in_len, "crypto.en/decrypt - 'data' must be a Buffer or String");
+        duk_pop(ctx);
+
+        /* Detect AEAD / WRAP mode early so we can adapt the iv check
+         * and pick a default tag length. */
+        {
+            const EVP_CIPHER *_c = EVP_get_cipherbyname(cipher_name);
+            if (_c) {
+                int _m = EVP_CIPHER_mode(_c);
+                is_aead = (_m == EVP_CIPH_GCM_MODE || _m == EVP_CIPH_CCM_MODE ||
+                           _m == EVP_CIPH_OCB_MODE);
+                is_wrap = (_m == EVP_CIPH_WRAP_MODE);
+            }
+        }
+        if (is_aead) tag_len = 16; /* default; overridden by tagLength opt */
+
+        /* AEAD-only opts: aad (additional authenticated data) + tagLength. */
+        if (duk_get_prop_string(ctx, 0, "aad"))
+        {
+            if (duk_is_string(ctx, -1))
+                aad = duk_get_lstring(ctx, -1, &aad_len);
+            else if (duk_is_buffer_data(ctx, -1))
+                aad = duk_get_buffer_data(ctx, -1, &aad_len);
+            else if (!duk_is_null(ctx, -1) && !duk_is_undefined(ctx, -1))
+                RP_THROW(ctx, "crypto.[en|de]crypt: option 'aad' must be a buffer or string");
+        }
+        duk_pop(ctx);
+
+        if (duk_get_prop_string(ctx, 0, "tagLength"))
+        {
+            tag_len = (int)REQUIRE_NUMBER(ctx, -1, "crypto.[en|de]crypt: option 'tagLength' must be a Number (bytes)");
+            if (tag_len != 4 && tag_len != 8 && tag_len != 12 &&
+                tag_len != 13 && tag_len != 14 && tag_len != 15 && tag_len != 16)
+                RP_THROW(ctx, "crypto.[en|de]crypt: 'tagLength' must be one of 4/8/12/13/14/15/16 (bytes)");
+        }
         duk_pop(ctx);
 
         if(decrypt)
@@ -756,10 +919,28 @@ static duk_ret_t duk_rp_crypt(duk_context *ctx, int decrypt)
                     duk_insert(ctx,1);
                 }
 
-                if (!duk_is_buffer_data(ctx, -1) || duk_get_length(ctx, -1) != ivlen)
-                    RP_THROW(ctx, "crypto.[en|de]crypt: option 'iv' must be a buffer (%d bytes) or a string (%d bytes in hex)", ivlen, ivlen);
-
-                iv = (unsigned char *)duk_get_buffer_data(ctx, -1, NULL);
+                if (is_wrap)
+                {
+                    /* AES-KW uses a fixed RFC-3394 IV; reject a user-
+                     * supplied one rather than silently ignore it. */
+                    RP_THROW(ctx, "crypto.[en|de]crypt: AES-KW (wrap) cipher does not accept 'iv' — RFC 3394 fixed IV is used internally");
+                }
+                else if (is_aead)
+                {
+                    /* AEAD modes (GCM/CCM/OCB) accept variable-length
+                     * nonces; OpenSSL's default ivlen for GCM is 12.
+                     * Don't fight the user's choice — pass whatever
+                     * they gave (must be a buffer). */
+                    if (!duk_is_buffer_data(ctx, -1))
+                        RP_THROW(ctx, "crypto.[en|de]crypt: option 'iv' must be a buffer (or string in hex)");
+                    iv = (unsigned char *)duk_get_buffer_data(ctx, -1, NULL);
+                }
+                else
+                {
+                    if (!duk_is_buffer_data(ctx, -1) || duk_get_length(ctx, -1) != ivlen)
+                        RP_THROW(ctx, "crypto.[en|de]crypt: option 'iv' must be a buffer (%d bytes) or a string (%d bytes in hex)", ivlen, ivlen);
+                    iv = (unsigned char *)duk_get_buffer_data(ctx, -1, NULL);
+                }
             }
             duk_pop(ctx);
         }
@@ -802,10 +983,29 @@ static duk_ret_t duk_rp_crypt(duk_context *ctx, int decrypt)
     }
     //printkiv(key,iv,salt_p,EVP_get_cipherbyname(cipher_name));
 
-    if(!key || !iv)
-        RP_THROW(ctx, "en/decrypt: error- either a password or a key/iv pair must be provided");
+    if (!key)
+        RP_THROW(ctx, "en/decrypt: error- either a password or a key (and iv where required) must be provided");
 
-    rpcrypt ( ctx, key, iv, cipher_name, in_buffer, in_len, salt_p, decrypt);
+    /* If we came through the positional-path (encrypt('pass', data, 'aes-256-gcm'))
+     * the opts-path mode-detection block didn't run; fill in here. */
+    if (!is_aead && !is_wrap)
+    {
+        const EVP_CIPHER *_c = EVP_get_cipherbyname(cipher_name);
+        if (_c)
+        {
+            int _m = EVP_CIPHER_mode(_c);
+            is_aead = (_m == EVP_CIPH_GCM_MODE || _m == EVP_CIPH_CCM_MODE ||
+                       _m == EVP_CIPH_OCB_MODE);
+            is_wrap = (_m == EVP_CIPH_WRAP_MODE);
+            if (is_aead && tag_len == 0) tag_len = 16;
+        }
+    }
+
+    if (!iv && !is_wrap)
+        RP_THROW(ctx, "en/decrypt: error- 'iv' is required for cipher '%s' (only AES-KW wrap mode omits it)", cipher_name);
+
+    rpcrypt ( ctx, key, iv, cipher_name, in_buffer, in_len, salt_p, decrypt,
+              aad, aad_len, tag_len);
 
     return 1;
 }
@@ -2386,7 +2586,13 @@ duk_ret_t duk_rsa_sign(duk_context *ctx)
     size_t outsize;
     BIO *pfile;
     EVP_MD_CTX *pctx=NULL;
+    EVP_PKEY_CTX *kctx=NULL;
     unsigned char *buf;
+    /* Tier 1.4 PSS opts (when arg 3 is an object): */
+    int use_pss = 0;
+    int saltlen = -1;             /* RSA_PSS_SALTLEN_DIGEST (= -1) */
+    const EVP_MD *sign_md = NULL;
+    const EVP_MD *mgf_md  = NULL;
 
     /* data to be encrypted */
     if(duk_is_string(ctx, 0) )
@@ -2406,10 +2612,55 @@ duk_ret_t duk_rsa_sign(duk_context *ctx)
     if(!privfile)
         RP_THROW(ctx, "crypt.rsa_sign - argument must be a string or buffer (pem file content)");
 
-    if(duk_is_string(ctx, 2))
+    /* Arg 2: either a string (legacy: password) or an object (new: PSS opts
+     * + password inside).  Backwards-compatible. */
+    if (duk_is_string(ctx, 2))
+    {
         passwd = duk_get_string(ctx, 2);
-    else if (!duk_is_null(ctx, 2) && !duk_is_undefined(ctx, 2) )
-        RP_MD_THROW(ctx, "crypt.rsa_sign - third optional argument must be a string (password)");
+    }
+    else if (duk_is_object(ctx, 2) && !duk_is_buffer_data(ctx, 2) &&
+             !duk_is_array(ctx, 2) && !duk_is_function(ctx, 2))
+    {
+        const char *pad = NULL, *hn = NULL, *mn = NULL;
+        if (duk_get_prop_string(ctx, 2, "padding"))
+            pad = REQUIRE_STRING(ctx, -1, "rsa_sign: 'padding' must be a string ('pkcs1' or 'pss')");
+        duk_pop(ctx);
+        if (pad && !strcmp(pad, "pss"))
+            use_pss = 1;
+        else if (pad && strcmp(pad, "pkcs1"))
+            RP_MD_THROW(ctx, "rsa_sign: unknown 'padding' value '%s' (use 'pkcs1' or 'pss')", pad);
+
+        if (duk_get_prop_string(ctx, 2, "hash"))
+            hn = REQUIRE_STRING(ctx, -1, "rsa_sign: 'hash' must be a string");
+        duk_pop(ctx);
+        if (hn) {
+            sign_md = rc_md_from_name(hn);
+            if (!sign_md) RP_MD_THROW(ctx, "rsa_sign: unsupported hash '%s'", hn);
+        }
+
+        if (duk_get_prop_string(ctx, 2, "mgfHash"))
+            mn = REQUIRE_STRING(ctx, -1, "rsa_sign: 'mgfHash' must be a string");
+        duk_pop(ctx);
+        if (mn) {
+            mgf_md = rc_md_from_name(mn);
+            if (!mgf_md) RP_MD_THROW(ctx, "rsa_sign: unsupported mgfHash '%s'", mn);
+        }
+
+        if (duk_get_prop_string(ctx, 2, "saltLength"))
+            saltlen = (int)REQUIRE_NUMBER(ctx, -1, "rsa_sign: 'saltLength' must be a Number");
+        duk_pop(ctx);
+
+        if (duk_get_prop_string(ctx, 2, "password"))
+            passwd = REQUIRE_STRING(ctx, -1, "rsa_sign: 'password' must be a string");
+        duk_pop(ctx);
+    }
+    else if (!duk_is_null(ctx, 2) && !duk_is_undefined(ctx, 2))
+    {
+        RP_MD_THROW(ctx, "crypt.rsa_sign - third argument must be a string (password) or options object");
+    }
+
+    if (!sign_md) sign_md = EVP_sha256();
+    if (!mgf_md)  mgf_md  = sign_md;
 
     pfile = BIO_new_mem_buf((const void*)privfile, (int)psz);
 
@@ -2429,8 +2680,20 @@ duk_ret_t duk_rsa_sign(duk_context *ctx)
     if (!pctx)
         DUK_MD_OPENSSL_ERROR(ctx);
 
-    if( EVP_DigestSignInit(pctx, NULL, EVP_sha256(), NULL, key) <= 0)
+    /* EVP_DigestSignInit returns the EVP_PKEY_CTX via &kctx so we can
+     * tweak padding/saltlen/mgf for PSS. */
+    if( EVP_DigestSignInit(pctx, &kctx, sign_md, NULL, key) <= 0)
         DUK_MD_OPENSSL_ERROR(ctx);
+
+    if (use_pss)
+    {
+        if (EVP_PKEY_CTX_set_rsa_padding(kctx, RSA_PKCS1_PSS_PADDING) <= 0)
+            DUK_MD_OPENSSL_ERROR(ctx);
+        if (EVP_PKEY_CTX_set_rsa_pss_saltlen(kctx, saltlen) <= 0)
+            DUK_MD_OPENSSL_ERROR(ctx);
+        if (EVP_PKEY_CTX_set_rsa_mgf1_md(kctx, mgf_md) <= 0)
+            DUK_MD_OPENSSL_ERROR(ctx);
+    }
 
     if( EVP_DigestSignUpdate(pctx, msg, (size_t)sz) <= 0)
         DUK_MD_OPENSSL_ERROR(ctx);
@@ -2447,6 +2710,7 @@ duk_ret_t duk_rsa_sign(duk_context *ctx)
 
     EVP_PKEY_free(key);
     EVP_MD_CTX_free(pctx);
+    /* kctx is owned by pctx; freed with it */
 
     return 1;
 }
@@ -2460,7 +2724,13 @@ duk_ret_t duk_rsa_verify(duk_context *ctx)
     EVP_PKEY *key=EVP_PKEY_new();
     BIO *pfile;
     EVP_MD_CTX *pctx=NULL;
+    EVP_PKEY_CTX *kctx=NULL;
     unsigned char *sig=NULL;
+    /* Tier 1.4 PSS opts (arg 3, optional, object): */
+    int use_pss = 0;
+    int saltlen = -1;             /* RSA_PSS_SALTLEN_DIGEST */
+    const EVP_MD *verify_md = NULL;
+    const EVP_MD *mgf_md    = NULL;
 
     if(duk_is_string(ctx, 0) )
         msg = (unsigned char *) duk_get_lstring(ctx, 0, &sz);
@@ -2486,6 +2756,43 @@ duk_ret_t duk_rsa_verify(duk_context *ctx)
     else
         RP_MD_THROW(ctx, "crypt.rsa_verify - third argument must be a string or buffer (signature)");
 
+    /* Optional arg 3: opts object for PSS / non-default hash */
+    if (duk_is_object(ctx, 3) && !duk_is_buffer_data(ctx, 3) &&
+        !duk_is_array(ctx, 3) && !duk_is_function(ctx, 3))
+    {
+        const char *pad = NULL, *hn = NULL, *mn = NULL;
+        if (duk_get_prop_string(ctx, 3, "padding"))
+            pad = REQUIRE_STRING(ctx, -1, "rsa_verify: 'padding' must be a string ('pkcs1' or 'pss')");
+        duk_pop(ctx);
+        if (pad && !strcmp(pad, "pss"))
+            use_pss = 1;
+        else if (pad && strcmp(pad, "pkcs1"))
+            RP_MD_THROW(ctx, "rsa_verify: unknown 'padding' value '%s' (use 'pkcs1' or 'pss')", pad);
+
+        if (duk_get_prop_string(ctx, 3, "hash"))
+            hn = REQUIRE_STRING(ctx, -1, "rsa_verify: 'hash' must be a string");
+        duk_pop(ctx);
+        if (hn) {
+            verify_md = rc_md_from_name(hn);
+            if (!verify_md) RP_MD_THROW(ctx, "rsa_verify: unsupported hash '%s'", hn);
+        }
+
+        if (duk_get_prop_string(ctx, 3, "mgfHash"))
+            mn = REQUIRE_STRING(ctx, -1, "rsa_verify: 'mgfHash' must be a string");
+        duk_pop(ctx);
+        if (mn) {
+            mgf_md = rc_md_from_name(mn);
+            if (!mgf_md) RP_MD_THROW(ctx, "rsa_verify: unsupported mgfHash '%s'", mn);
+        }
+
+        if (duk_get_prop_string(ctx, 3, "saltLength"))
+            saltlen = (int)REQUIRE_NUMBER(ctx, -1, "rsa_verify: 'saltLength' must be a Number");
+        duk_pop(ctx);
+    }
+
+    if (!verify_md) verify_md = EVP_sha256();
+    if (!mgf_md)    mgf_md    = verify_md;
+
     pfile = BIO_new_mem_buf((const void*)pubfile, (int)psz);
 
     rsa = PEM_read_bio_RSA_PUBKEY(pfile, NULL, NULL, NULL);
@@ -2507,8 +2814,18 @@ duk_ret_t duk_rsa_verify(duk_context *ctx)
     if (!pctx)
         DUK_MD_OPENSSL_ERROR(ctx);
 
-    if( EVP_DigestVerifyInit(pctx, NULL, EVP_sha256(), NULL, key) <= 0)
+    if( EVP_DigestVerifyInit(pctx, &kctx, verify_md, NULL, key) <= 0)
         DUK_MD_OPENSSL_ERROR(ctx);
+
+    if (use_pss)
+    {
+        if (EVP_PKEY_CTX_set_rsa_padding(kctx, RSA_PKCS1_PSS_PADDING) <= 0)
+            DUK_MD_OPENSSL_ERROR(ctx);
+        if (EVP_PKEY_CTX_set_rsa_pss_saltlen(kctx, saltlen) <= 0)
+            DUK_MD_OPENSSL_ERROR(ctx);
+        if (EVP_PKEY_CTX_set_rsa_mgf1_md(kctx, mgf_md) <= 0)
+            DUK_MD_OPENSSL_ERROR(ctx);
+    }
 
     if( EVP_DigestVerifyUpdate(pctx, msg, (size_t)sz) <= 0)
         DUK_MD_OPENSSL_ERROR(ctx);
@@ -2663,10 +2980,22 @@ duk_ret_t duk_rsa_priv_decrypt(duk_context *ctx)
     if(!privfile)
         RP_THROW(ctx, "crypt.rsa_priv_decrypt - argument must be a string or buffer (pem file content)");
 
-    if(duk_is_string(ctx, 3))
+    /* Pre-parse password from EITHER the legacy arg-3 string position OR
+     * the new arg-2 opts-object 'password' property.  The opts-object
+     * branch also captures the padding/hash/label so we can forward
+     * them after the PEM read.  (We re-parse padding below to keep the
+     * legacy string-padding branch unchanged.) */
+    if (duk_is_string(ctx, 3))
         passwd = duk_get_string(ctx, 3);
-    else if (!duk_is_null(ctx, 3) && !duk_is_undefined(ctx, 3) )
+    else if (!duk_is_null(ctx, 3) && !duk_is_undefined(ctx, 3))
         RP_EVP_THROW(ctx, "crypt.rsa_priv_decrypt - fourth optional argument must be a string (password)");
+    if (!passwd && duk_is_object(ctx, 2) && !duk_is_buffer_data(ctx, 2) &&
+        !duk_is_array(ctx, 2) && !duk_is_function(ctx, 2))
+    {
+        if (duk_get_prop_string(ctx, 2, "password"))
+            passwd = REQUIRE_STRING(ctx, -1, "rsa_priv_decrypt: 'password' must be a string");
+        duk_pop(ctx);
+    }
 
     pfile = BIO_new_mem_buf((const void*)privfile, (int)psz);
 
@@ -2681,6 +3010,11 @@ duk_ret_t duk_rsa_priv_decrypt(duk_context *ctx)
         RP_EVP_THROW(ctx, "Invalid public key file%s", passwd?" or bad password":"");
 
     rsasize = RSA_size(rsa);
+
+    /* OAEP opts (only meaningful when padding=='oaep'): */
+    const EVP_MD *oaep_md = NULL;
+    const void   *oaep_label = NULL;
+    duk_size_t    oaep_label_len = 0;
 
     if(duk_is_string(ctx, 2) )
     {
@@ -2698,8 +3032,47 @@ duk_ret_t duk_rsa_priv_decrypt(duk_context *ctx)
         else
             RP_EVP_THROW(ctx, "crypt.rsa_priv_decrypt - third optional argument (padding type) '%s' is invalid", pad);
     }
+    else if (duk_is_object(ctx, 2) && !duk_is_buffer_data(ctx, 2) &&
+             !duk_is_array(ctx, 2) && !duk_is_function(ctx, 2))
+    {
+        /* Tier 1.5: opts-object form.  padding/hash/label/(password). */
+        const char *pad = NULL, *hn = NULL;
+        if (duk_get_prop_string(ctx, 2, "padding"))
+            pad = REQUIRE_STRING(ctx, -1, "rsa_priv_decrypt: 'padding' must be a string ('pkcs1'|'oaep'|'raw')");
+        duk_pop(ctx);
+        if (pad)
+        {
+            if (!strcmp(pad, "pkcs1") || !strcmp(pad, "pkcs")) padding = RSA_PKCS1_PADDING;
+            else if (!strcmp(pad, "oaep"))                     padding = RSA_PKCS1_OAEP_PADDING;
+            else if (!strcmp(pad, "raw"))                      padding = RSA_NO_PADDING;
+            else RP_EVP_THROW(ctx, "rsa_priv_decrypt: unknown padding '%s'", pad);
+        }
+
+        if (duk_get_prop_string(ctx, 2, "hash"))
+            hn = REQUIRE_STRING(ctx, -1, "rsa_priv_decrypt: 'hash' must be a string");
+        duk_pop(ctx);
+        if (hn)
+        {
+            oaep_md = rc_md_from_name(hn);
+            if (!oaep_md) RP_EVP_THROW(ctx, "rsa_priv_decrypt: unsupported hash '%s'", hn);
+        }
+
+        if (duk_get_prop_string(ctx, 2, "label"))
+        {
+            if (duk_is_string(ctx, -1))
+                oaep_label = duk_get_lstring(ctx, -1, &oaep_label_len);
+            else if (duk_is_buffer_data(ctx, -1))
+                oaep_label = duk_get_buffer_data(ctx, -1, &oaep_label_len);
+            else if (!duk_is_null(ctx, -1) && !duk_is_undefined(ctx, -1))
+                RP_EVP_THROW(ctx, "rsa_priv_decrypt: 'label' must be a string or buffer");
+        }
+        duk_pop(ctx);
+
+        /* Password from the opts object was already captured before the
+         * PEM read above; nothing to do here. */
+    }
     else if (!duk_is_undefined(ctx, 2) && !duk_is_null(ctx, 2) )
-        RP_EVP_THROW(ctx, "crypt.rsa_priv_decrypt - third optional argument must be a string (padding type)");
+        RP_EVP_THROW(ctx, "crypt.rsa_priv_decrypt - third optional argument must be a string (padding) or options object");
 
     if((int)sz > rsasize )
         RP_EVP_THROW(ctx, "crypt.rsa_priv_decrypt, input data is %d long, must be less than or equal to %d\n", sz, rsasize);
@@ -2715,6 +3088,30 @@ duk_ret_t duk_rsa_priv_decrypt(duk_context *ctx)
 
     if( EVP_PKEY_CTX_set_rsa_padding(pctx, padding) <= 0)
         DUK_EVP_OPENSSL_ERROR(ctx);
+
+    /* OAEP extras (only relevant when padding==OAEP). */
+    if (padding == RSA_PKCS1_OAEP_PADDING)
+    {
+        if (oaep_md)
+        {
+            if (EVP_PKEY_CTX_set_rsa_oaep_md(pctx, oaep_md) <= 0)
+                DUK_EVP_OPENSSL_ERROR(ctx);
+            if (EVP_PKEY_CTX_set_rsa_mgf1_md(pctx, oaep_md) <= 0)
+                DUK_EVP_OPENSSL_ERROR(ctx);
+        }
+        if (oaep_label)
+        {
+            /* set0 takes ownership of the buffer; malloc + memcpy. */
+            unsigned char *label_dup = (unsigned char *)OPENSSL_malloc(oaep_label_len);
+            if (!label_dup) RP_EVP_THROW(ctx, "rsa_priv_decrypt: oom allocating label");
+            memcpy(label_dup, oaep_label, oaep_label_len);
+            if (EVP_PKEY_CTX_set0_rsa_oaep_label(pctx, label_dup, (int)oaep_label_len) <= 0)
+            {
+                OPENSSL_free(label_dup);
+                DUK_EVP_OPENSSL_ERROR(ctx);
+            }
+        }
+    }
 
     if (EVP_PKEY_decrypt(pctx, NULL, &outsize, enc, (int)sz) <= 0)
         DUK_EVP_OPENSSL_ERROR(ctx);
@@ -2781,32 +3178,77 @@ duk_ret_t duk_rsa_pub_encrypt(duk_context *ctx)
 
     rsasize = RSA_size(rsa);
 
+    /* Tier 1.5: OAEP opts (used when arg 2 is an opts-object): */
+    const EVP_MD *oaep_md = NULL;
+    const void   *oaep_label = NULL;
+    duk_size_t    oaep_label_len = 0;
+    int           rsasize_adjust = 11;  /* default PKCS1 overhead */
+
     if(duk_is_string(ctx, 2) )
     {
         const char *pad = duk_get_string(ctx, 2);
         if (!strcmp ("pkcs", pad) )
         {
             padding=RSA_PKCS1_PADDING;
-            rsasize-=11;
+            rsasize_adjust = 11;
         }
         else if (!strcmp ("oaep", pad) )
         {
             padding=RSA_PKCS1_OAEP_PADDING;
-            rsasize-=42;
+            rsasize_adjust = 42;
         }
         else if (!strcmp ("ssl", pad) )
             RP_EVP_THROW(ctx, "rsa padding 'ssl' (RSA_SSLV23_PADDING) "
                 "was removed in OpenSSL 3.0 along with SSLv2/SSLv3 support; "
                 "use 'pkcs' or 'oaep' instead");
         else if (!strcmp ("raw", pad) )
+        {
             padding=RSA_NO_PADDING;
+            rsasize_adjust = 0;
+        }
         else
             RP_EVP_THROW(ctx, "crypt.rsa_pub_encrypt - third optional argument (padding type) '%s' is invalid", pad);
     }
+    else if (duk_is_object(ctx, 2) && !duk_is_buffer_data(ctx, 2) &&
+             !duk_is_array(ctx, 2) && !duk_is_function(ctx, 2))
+    {
+        /* Opts-object form: {padding, hash, label} */
+        const char *pad = NULL, *hn = NULL;
+        if (duk_get_prop_string(ctx, 2, "padding"))
+            pad = REQUIRE_STRING(ctx, -1, "rsa_pub_encrypt: 'padding' must be a string ('pkcs1'|'oaep'|'raw')");
+        duk_pop(ctx);
+        if (pad)
+        {
+            if (!strcmp(pad, "pkcs1") || !strcmp(pad, "pkcs")) { padding = RSA_PKCS1_PADDING;      rsasize_adjust = 11; }
+            else if (!strcmp(pad, "oaep"))                     { padding = RSA_PKCS1_OAEP_PADDING; rsasize_adjust = 42; }
+            else if (!strcmp(pad, "raw"))                      { padding = RSA_NO_PADDING;         rsasize_adjust = 0; }
+            else RP_EVP_THROW(ctx, "rsa_pub_encrypt: unknown padding '%s'", pad);
+        }
+
+        if (duk_get_prop_string(ctx, 2, "hash"))
+            hn = REQUIRE_STRING(ctx, -1, "rsa_pub_encrypt: 'hash' must be a string");
+        duk_pop(ctx);
+        if (hn)
+        {
+            oaep_md = rc_md_from_name(hn);
+            if (!oaep_md) RP_EVP_THROW(ctx, "rsa_pub_encrypt: unsupported hash '%s'", hn);
+        }
+
+        if (duk_get_prop_string(ctx, 2, "label"))
+        {
+            if (duk_is_string(ctx, -1))
+                oaep_label = duk_get_lstring(ctx, -1, &oaep_label_len);
+            else if (duk_is_buffer_data(ctx, -1))
+                oaep_label = duk_get_buffer_data(ctx, -1, &oaep_label_len);
+            else if (!duk_is_null(ctx, -1) && !duk_is_undefined(ctx, -1))
+                RP_EVP_THROW(ctx, "rsa_pub_encrypt: 'label' must be a string or buffer");
+        }
+        duk_pop(ctx);
+    }
     else if (!duk_is_undefined(ctx, 2) && !duk_is_null(ctx, 2) )
-        RP_EVP_THROW(ctx, "crypt.rsa_pub_encrypt - third optional argument must be a string (padding type)");
-    else
-        rsasize -= 11; //default is RSA_PKCS1_PADDING
+        RP_EVP_THROW(ctx, "crypt.rsa_pub_encrypt - third optional argument must be a string (padding) or options object");
+
+    rsasize -= rsasize_adjust;
 
     if((int)sz > rsasize )
         RP_EVP_THROW(ctx, "crypt.rsa_pub_encrypt, input data is %d long, must be less than or equal to %d\n", sz, rsasize);
@@ -2823,6 +3265,29 @@ duk_ret_t duk_rsa_pub_encrypt(duk_context *ctx)
 
     if( EVP_PKEY_CTX_set_rsa_padding(pctx, padding) <= 0)
         DUK_EVP_OPENSSL_ERROR(ctx);
+
+    /* OAEP extras (only meaningful when padding==OAEP). */
+    if (padding == RSA_PKCS1_OAEP_PADDING)
+    {
+        if (oaep_md)
+        {
+            if (EVP_PKEY_CTX_set_rsa_oaep_md(pctx, oaep_md) <= 0)
+                DUK_EVP_OPENSSL_ERROR(ctx);
+            if (EVP_PKEY_CTX_set_rsa_mgf1_md(pctx, oaep_md) <= 0)
+                DUK_EVP_OPENSSL_ERROR(ctx);
+        }
+        if (oaep_label)
+        {
+            unsigned char *label_dup = (unsigned char *)OPENSSL_malloc(oaep_label_len);
+            if (!label_dup) RP_EVP_THROW(ctx, "rsa_pub_encrypt: oom allocating label");
+            memcpy(label_dup, oaep_label, oaep_label_len);
+            if (EVP_PKEY_CTX_set0_rsa_oaep_label(pctx, label_dup, (int)oaep_label_len) <= 0)
+            {
+                OPENSSL_free(label_dup);
+                DUK_EVP_OPENSSL_ERROR(ctx);
+            }
+        }
+    }
 
     if (EVP_PKEY_encrypt(pctx, NULL, &outsize, plain, (int)sz) <= 0)
         DUK_EVP_OPENSSL_ERROR(ctx);
@@ -4201,6 +4666,1593 @@ static void duk_rp_create_jsbi(duk_context *ctx)
 }
 
 
+/* ========================================================================
+ * Tier 1 / Tier 2 Web-Crypto-supporting primitives.
+ *
+ *   crypto.timingSafeEqual(a, b)           — constant-time compare
+ *   crypto.pbkdf2({...})                   — PBKDF2 standalone
+ *   crypto.hkdf({...})                     — HKDF (HMAC-based)
+ *   crypto.ec_gen_key({curve})             — EC keypair
+ *   crypto.ec_import_pub_key({...})        — normalize EC pub key to SPKI
+ *   crypto.ec_import_priv_key({...})       — normalize EC priv key to PKCS#8
+ *   crypto.ec_export_pub_key({key,format}) — SPKI <-> raw point
+ *   crypto.ec_export_priv_key({key,format})— PKCS#8 <-> raw scalar
+ *   crypto.ecdsa_sign({...})               — ECDSA sign (DER or P1363)
+ *   crypto.ecdsa_verify({...})             — ECDSA verify
+ *   crypto.ecdh({privateKey, publicKey})   — ECDH shared secret
+ *
+ * AES-GCM, AES-KW, RSA-PSS, RSA-OAEP are integrated into the existing
+ * encrypt/decrypt/rsa_sign/rsa_verify/rsa_pub_encrypt/rsa_priv_decrypt
+ * functions (see those sites for the per-cipher / padding additions).
+ * ====================================================================== */
+
+#include <openssl/kdf.h>
+
+/* Like rc_finalize_buffer above, but the default (no returnType opt)
+ * is the plain duktape buffer (presents as Uint8Array) — matching the
+ * convention of crypto.encrypt / rsa_pub_encrypt / rsa_sign / rand
+ * etc.  The hash/hmac convention of "default = hex" is wrong for the
+ * Tier-1/2 byte-producing functions where bytes are the obvious form.
+ *
+ * Recognized returnType values:
+ *   'hex'        → hex :green:`String`
+ *   'uint8array' → plain duktape buffer (Uint8Array) — same as default
+ *   'buffer'     → Node-style Buffer wrap (Buffer.from(plain));
+ *                  rampart-nodeshim depends on this distinction. */
+static void rc_finalize_buffer_buf_default(duk_context *ctx, duk_idx_t opt_idx)
+{
+    if (duk_is_object(ctx, opt_idx) &&
+        !duk_is_array(ctx, opt_idx) &&
+        !duk_is_function(ctx, opt_idx) &&
+        !duk_is_buffer_data(ctx, opt_idx))
+    {
+        if (duk_get_prop_string(ctx, opt_idx, "returnType") && duk_is_string(ctx, -1))
+        {
+            const char *t = duk_get_string(ctx, -1);
+            if (!strcmp(t, "hex"))
+            {
+                duk_pop(ctx);
+                duk_rp_toHex(ctx, -1, 0);
+                return;
+            }
+            if (!strcmp(t, "buffer"))
+            {
+                duk_pop(ctx);
+                duk_get_global_string(ctx, "Buffer");
+                duk_get_prop_string(ctx, -1, "from");
+                duk_remove(ctx, -2);
+                duk_dup(ctx, -2);
+                duk_call(ctx, 1);
+                duk_remove(ctx, -2);
+                return;
+            }
+            /* 'uint8array' or unrecognized → fall through (no-op) */
+        }
+        duk_pop(ctx);
+    }
+    /* Plain duktape buffer already on stack — presents as Uint8Array. */
+}
+
+/* Map a JS hash name ('sha1'/'sha256'/'sha384'/'sha512') to an EVP_MD*.
+ * Returns NULL on unknown name; caller throws.  Accepts the common
+ * dashed forms too ('sha-256'). */
+static const EVP_MD *rc_md_from_name(const char *name)
+{
+    if (!name) return NULL;
+    if (!strcmp(name, "sha1") || !strcmp(name, "sha-1"))   return EVP_sha1();
+    if (!strcmp(name, "sha224") || !strcmp(name, "sha-224")) return EVP_sha224();
+    if (!strcmp(name, "sha256") || !strcmp(name, "sha-256")) return EVP_sha256();
+    if (!strcmp(name, "sha384") || !strcmp(name, "sha-384")) return EVP_sha384();
+    if (!strcmp(name, "sha512") || !strcmp(name, "sha-512")) return EVP_sha512();
+    return NULL;
+}
+
+/* --- 1.3 timingSafeEqual ---
+ * crypto.timingSafeEqual(a, b) → boolean.  Constant-time bytes
+ * comparison.  Throws RangeError if lengths differ (matches node).
+ */
+static duk_ret_t duk_timing_safe_equal(duk_context *ctx)
+{
+    duk_size_t alen, blen;
+    const void *a = NULL, *b = NULL;
+
+    if (duk_is_string(ctx, 0))      a = duk_get_lstring(ctx, 0, &alen);
+    else if (duk_is_buffer_data(ctx, 0)) a = duk_get_buffer_data(ctx, 0, &alen);
+    else RP_THROW(ctx, "crypto.timingSafeEqual - arg 1 must be a string or buffer");
+
+    if (duk_is_string(ctx, 1))      b = duk_get_lstring(ctx, 1, &blen);
+    else if (duk_is_buffer_data(ctx, 1)) b = duk_get_buffer_data(ctx, 1, &blen);
+    else RP_THROW(ctx, "crypto.timingSafeEqual - arg 2 must be a string or buffer");
+
+    if (alen != blen)
+        RP_THROW(ctx, "crypto.timingSafeEqual - input buffers must have the same length (got %d and %d)",
+                 (int)alen, (int)blen);
+
+    /* CRYPTO_memcmp returns 0 on equal; we want true on equal */
+    duk_push_boolean(ctx, CRYPTO_memcmp(a, b, (size_t)alen) == 0);
+    return 1;
+}
+
+/* --- 1.2 PBKDF2 standalone ---
+ * crypto.pbkdf2({pass, salt, iter, length, hash, returnType})
+ *   → Buffer (or hex/uint8array per returnType).
+ *
+ * Same primitive used internally by pw_to_keyiv (PKCS5_PBKDF2_HMAC),
+ * just exposed directly with a configurable hash + length.
+ */
+static duk_ret_t duk_pbkdf2(duk_context *ctx)
+{
+    const char *pass = NULL, *hash_name = "sha256";
+    const void *salt = NULL;
+    duk_size_t passlen, saltlen;
+    int iter = 0, length = 0;
+    const EVP_MD *md;
+    unsigned char *out;
+
+    REQUIRE_OBJECT(ctx, 0, "crypto.pbkdf2 requires an options object");
+
+    if (!duk_get_prop_string(ctx, 0, "pass"))
+        RP_THROW(ctx, "crypto.pbkdf2: option 'pass' is required (string or buffer)");
+    if (duk_is_string(ctx, -1))
+        pass = duk_get_lstring(ctx, -1, &passlen);
+    else if (duk_is_buffer_data(ctx, -1))
+        pass = (const char *)duk_get_buffer_data(ctx, -1, &passlen);
+    else
+        RP_THROW(ctx, "crypto.pbkdf2: 'pass' must be a string or buffer");
+    duk_pop(ctx);
+
+    if (!duk_get_prop_string(ctx, 0, "salt"))
+        RP_THROW(ctx, "crypto.pbkdf2: option 'salt' is required (string or buffer)");
+    if (duk_is_string(ctx, -1))
+        salt = duk_get_lstring(ctx, -1, &saltlen);
+    else if (duk_is_buffer_data(ctx, -1))
+        salt = duk_get_buffer_data(ctx, -1, &saltlen);
+    else
+        RP_THROW(ctx, "crypto.pbkdf2: 'salt' must be a string or buffer");
+    duk_pop(ctx);
+
+    if (!duk_get_prop_string(ctx, 0, "iter"))
+        RP_THROW(ctx, "crypto.pbkdf2: option 'iter' is required (Number, iteration count)");
+    iter = (int)REQUIRE_NUMBER(ctx, -1, "crypto.pbkdf2: 'iter' must be a Number");
+    duk_pop(ctx);
+    if (iter < 1)
+        RP_THROW(ctx, "crypto.pbkdf2: 'iter' must be >= 1");
+
+    if (!duk_get_prop_string(ctx, 0, "length"))
+        RP_THROW(ctx, "crypto.pbkdf2: option 'length' is required (Number, output bytes)");
+    length = (int)REQUIRE_NUMBER(ctx, -1, "crypto.pbkdf2: 'length' must be a Number");
+    duk_pop(ctx);
+    if (length < 1)
+        RP_THROW(ctx, "crypto.pbkdf2: 'length' must be >= 1");
+
+    if (duk_get_prop_string(ctx, 0, "hash"))
+        hash_name = REQUIRE_STRING(ctx, -1, "crypto.pbkdf2: 'hash' must be a string");
+    duk_pop(ctx);
+
+    md = rc_md_from_name(hash_name);
+    if (!md)
+        RP_THROW(ctx, "crypto.pbkdf2: unsupported hash '%s' (use sha1, sha256, sha384, or sha512)", hash_name);
+
+    out = (unsigned char *)duk_push_fixed_buffer(ctx, (duk_size_t)length);
+    if (!PKCS5_PBKDF2_HMAC(pass, (int)passlen, (const unsigned char *)salt,
+                           (int)saltlen, iter, md, length, out))
+        DUK_OPENSSL_ERROR(ctx);
+
+    rc_finalize_buffer_buf_default(ctx, 0);
+    return 1;
+}
+
+/* --- 2.2 HKDF ---
+ * crypto.hkdf({ikm, salt, info, length, hash, returnType}) → Buffer.
+ * Uses OpenSSL 3.x EVP_KDF.
+ */
+static duk_ret_t duk_hkdf(duk_context *ctx)
+{
+    const void *ikm = NULL, *salt = NULL, *info = NULL;
+    duk_size_t ikmlen = 0, saltlen = 0, infolen = 0;
+    const char *hash_name = "sha256";
+    int length = 0;
+    const EVP_MD *md;
+    unsigned char *out;
+    EVP_KDF *kdf = NULL;
+    EVP_KDF_CTX *kctx = NULL;
+    OSSL_PARAM params[5];
+    int nparams = 0;
+
+    REQUIRE_OBJECT(ctx, 0, "crypto.hkdf requires an options object");
+
+    if (!duk_get_prop_string(ctx, 0, "ikm"))
+        RP_THROW(ctx, "crypto.hkdf: option 'ikm' is required (input keying material, buffer/string)");
+    if (duk_is_string(ctx, -1))
+        ikm = duk_get_lstring(ctx, -1, &ikmlen);
+    else if (duk_is_buffer_data(ctx, -1))
+        ikm = duk_get_buffer_data(ctx, -1, &ikmlen);
+    else
+        RP_THROW(ctx, "crypto.hkdf: 'ikm' must be a string or buffer");
+    duk_pop(ctx);
+
+    if (duk_get_prop_string(ctx, 0, "salt"))
+    {
+        if (duk_is_string(ctx, -1))
+            salt = duk_get_lstring(ctx, -1, &saltlen);
+        else if (duk_is_buffer_data(ctx, -1))
+            salt = duk_get_buffer_data(ctx, -1, &saltlen);
+        else if (!duk_is_null(ctx, -1) && !duk_is_undefined(ctx, -1))
+            RP_THROW(ctx, "crypto.hkdf: 'salt' must be a string or buffer");
+    }
+    duk_pop(ctx);
+
+    if (duk_get_prop_string(ctx, 0, "info"))
+    {
+        if (duk_is_string(ctx, -1))
+            info = duk_get_lstring(ctx, -1, &infolen);
+        else if (duk_is_buffer_data(ctx, -1))
+            info = duk_get_buffer_data(ctx, -1, &infolen);
+        else if (!duk_is_null(ctx, -1) && !duk_is_undefined(ctx, -1))
+            RP_THROW(ctx, "crypto.hkdf: 'info' must be a string or buffer");
+    }
+    duk_pop(ctx);
+
+    if (!duk_get_prop_string(ctx, 0, "length"))
+        RP_THROW(ctx, "crypto.hkdf: option 'length' is required (Number, output bytes)");
+    length = (int)REQUIRE_NUMBER(ctx, -1, "crypto.hkdf: 'length' must be a Number");
+    duk_pop(ctx);
+    if (length < 1)
+        RP_THROW(ctx, "crypto.hkdf: 'length' must be >= 1");
+
+    if (duk_get_prop_string(ctx, 0, "hash"))
+        hash_name = REQUIRE_STRING(ctx, -1, "crypto.hkdf: 'hash' must be a string");
+    duk_pop(ctx);
+
+    md = rc_md_from_name(hash_name);
+    if (!md)
+        RP_THROW(ctx, "crypto.hkdf: unsupported hash '%s'", hash_name);
+
+    kdf = EVP_KDF_fetch(NULL, "HKDF", NULL);
+    if (!kdf)
+        RP_THROW(ctx, "crypto.hkdf: EVP_KDF_fetch(HKDF) failed");
+    kctx = EVP_KDF_CTX_new(kdf);
+    EVP_KDF_free(kdf);
+    if (!kctx)
+        RP_THROW(ctx, "crypto.hkdf: EVP_KDF_CTX_new failed");
+
+    /* OSSL_PARAM digest takes a UTF-8 string of the digest's name. */
+    params[nparams++] = OSSL_PARAM_construct_utf8_string(
+        OSSL_KDF_PARAM_DIGEST, (char *)EVP_MD_get0_name(md), 0);
+    params[nparams++] = OSSL_PARAM_construct_octet_string(
+        OSSL_KDF_PARAM_KEY, (void *)ikm, ikmlen);
+    if (salt)
+        params[nparams++] = OSSL_PARAM_construct_octet_string(
+            OSSL_KDF_PARAM_SALT, (void *)salt, saltlen);
+    if (info)
+        params[nparams++] = OSSL_PARAM_construct_octet_string(
+            OSSL_KDF_PARAM_INFO, (void *)info, infolen);
+    params[nparams] = OSSL_PARAM_construct_end();
+
+    out = (unsigned char *)duk_push_fixed_buffer(ctx, (duk_size_t)length);
+    if (EVP_KDF_derive(kctx, out, (size_t)length, params) <= 0)
+    {
+        EVP_KDF_CTX_free(kctx);
+        DUK_OPENSSL_ERROR(ctx);
+    }
+    EVP_KDF_CTX_free(kctx);
+
+    rc_finalize_buffer_buf_default(ctx, 0);
+    return 1;
+}
+
+/* --- 2.1 EC family (P-256 / P-384 / P-521) ---
+ *
+ * Uses EVP_PKEY_* throughout (recommended path in OpenSSL 3.x; the
+ * older EC_KEY_* API is deprecated but the EVP layer is stable).
+ *
+ *   ec_gen_key({curve}) → {publicKey:Buffer(SPKI DER), privateKey:Buffer(PKCS#8 DER)}
+ *   ec_import_pub_key({key, curve?, format?})  → SPKI Buffer
+ *   ec_import_priv_key({key, curve?, format?}) → PKCS#8 Buffer
+ *   ec_export_pub_key({key, format})           → Buffer ('spki' default; 'raw' = uncompressed 04||X||Y)
+ *   ec_export_priv_key({key, format})          → Buffer ('pkcs8' default; 'raw' = scalar bytes)
+ *   ecdsa_sign({key, data, hash, format})      → Buffer ('der' default; 'p1363' = r||s)
+ *   ecdsa_verify({key, data, signature, hash, format}) → boolean
+ *   ecdh({privateKey, publicKey})              → Buffer (raw shared secret)
+ */
+
+/* Curve name → NID + group name + scalar byte size.  Returns 0 on
+ * unknown curve. */
+static int rc_ec_curve_from_name(const char *name, int *out_nid,
+                                 const char **out_group, int *out_size)
+{
+    if (!name) return 0;
+    if (!strcmp(name, "P-256") || !strcmp(name, "prime256v1") || !strcmp(name, "secp256r1")) {
+        *out_nid = NID_X9_62_prime256v1; *out_group = "prime256v1"; *out_size = 32; return 1;
+    }
+    if (!strcmp(name, "P-384") || !strcmp(name, "secp384r1")) {
+        *out_nid = NID_secp384r1; *out_group = "secp384r1"; *out_size = 48; return 1;
+    }
+    if (!strcmp(name, "P-521") || !strcmp(name, "secp521r1")) {
+        *out_nid = NID_secp521r1; *out_group = "secp521r1"; *out_size = 66; return 1;
+    }
+    return 0;
+}
+
+/* Get EVP_PKEY's curve byte size by querying its group.  Returns 0 on
+ * non-EC keys.  Used by ECDSA P1363 format conversion. */
+static int rc_ec_pkey_size(EVP_PKEY *pkey)
+{
+    char gname[64] = {0};
+    size_t gname_len = 0;
+    int nid, dummy_size;
+    const char *dummy_group;
+    if (EVP_PKEY_get_utf8_string_param(pkey, OSSL_PKEY_PARAM_GROUP_NAME,
+                                       gname, sizeof(gname), &gname_len) <= 0)
+        return 0;
+    if (rc_ec_curve_from_name(gname, &nid, &dummy_group, &dummy_size))
+        return dummy_size;
+    return 0;
+}
+
+/* Helper: pull a buffer/string opt; sets *out + *out_len. */
+static int rc_get_opt_bytes(duk_context *ctx, duk_idx_t obj_idx,
+                            const char *propname, const void **out, duk_size_t *out_len)
+{
+    int have = 0;
+    if (duk_get_prop_string(ctx, obj_idx, propname))
+    {
+        if (duk_is_string(ctx, -1))      { *out = duk_get_lstring(ctx, -1, out_len); have = 1; }
+        else if (duk_is_buffer_data(ctx, -1)) { *out = duk_get_buffer_data(ctx, -1, out_len); have = 1; }
+        else if (!duk_is_null(ctx, -1) && !duk_is_undefined(ctx, -1))
+            RP_THROW(ctx, "option '%s' must be a string or buffer", propname);
+    }
+    /* leave the value on stack; caller pops */
+    return have;
+}
+
+/* Push a Buffer with the SPKI DER of pkey's public part. */
+/* Push the SPKI DER of pkey's public part as a plain duktape buffer
+ * (presents to JS as Uint8Array — same convention as
+ * rsa_pub_encrypt / encrypt / rand etc.).  Callers wanting a Node
+ * Buffer wrap can do `Buffer.from(x)` in JS. */
+static void rc_push_pkey_spki(duk_context *ctx, EVP_PKEY *pkey)
+{
+    int spki_len = i2d_PUBKEY(pkey, NULL);
+    if (spki_len <= 0) DUK_OPENSSL_ERROR(ctx);
+    unsigned char *spki = (unsigned char *)duk_push_fixed_buffer(ctx, (duk_size_t)spki_len);
+    unsigned char *p = spki;
+    if (i2d_PUBKEY(pkey, &p) <= 0) DUK_OPENSSL_ERROR(ctx);
+}
+
+/* Same — PKCS#8 DER of pkey's private part. */
+static void rc_push_pkey_pkcs8(duk_context *ctx, EVP_PKEY *pkey)
+{
+    PKCS8_PRIV_KEY_INFO *p8 = EVP_PKEY2PKCS8(pkey);
+    if (!p8) DUK_OPENSSL_ERROR(ctx);
+    int p8_len = i2d_PKCS8_PRIV_KEY_INFO(p8, NULL);
+    if (p8_len <= 0) { PKCS8_PRIV_KEY_INFO_free(p8); DUK_OPENSSL_ERROR(ctx); }
+    unsigned char *buf = (unsigned char *)duk_push_fixed_buffer(ctx, (duk_size_t)p8_len);
+    unsigned char *p = buf;
+    if (i2d_PKCS8_PRIV_KEY_INFO(p8, &p) <= 0) { PKCS8_PRIV_KEY_INFO_free(p8); DUK_OPENSSL_ERROR(ctx); }
+    PKCS8_PRIV_KEY_INFO_free(p8);
+}
+
+/* Decode SPKI DER → EVP_PKEY*.  Caller frees. */
+static EVP_PKEY *rc_pkey_from_spki(const unsigned char *spki, duk_size_t spki_len)
+{
+    const unsigned char *p = spki;
+    return d2i_PUBKEY(NULL, &p, (long)spki_len);
+}
+
+/* Decode PKCS#8 DER → EVP_PKEY*.  Caller frees. */
+static EVP_PKEY *rc_pkey_from_pkcs8(const unsigned char *p8, duk_size_t p8_len)
+{
+    const unsigned char *p = p8;
+    PKCS8_PRIV_KEY_INFO *info = d2i_PKCS8_PRIV_KEY_INFO(NULL, &p, (long)p8_len);
+    if (!info) return NULL;
+    EVP_PKEY *pkey = EVP_PKCS82PKEY(info);
+    PKCS8_PRIV_KEY_INFO_free(info);
+    return pkey;
+}
+
+/* Build an EC EVP_PKEY (public) from raw uncompressed point bytes. */
+static EVP_PKEY *rc_pkey_from_raw_pub(const char *group, const unsigned char *raw, duk_size_t raw_len)
+{
+    EVP_PKEY *pkey = NULL;
+    EVP_PKEY_CTX *pctx = EVP_PKEY_CTX_new_id(EVP_PKEY_EC, NULL);
+    if (!pctx) return NULL;
+    if (EVP_PKEY_fromdata_init(pctx) <= 0) { EVP_PKEY_CTX_free(pctx); return NULL; }
+    OSSL_PARAM params[] = {
+        OSSL_PARAM_construct_utf8_string(OSSL_PKEY_PARAM_GROUP_NAME, (char *)group, 0),
+        OSSL_PARAM_construct_octet_string(OSSL_PKEY_PARAM_PUB_KEY, (void *)raw, raw_len),
+        OSSL_PARAM_construct_end()
+    };
+    if (EVP_PKEY_fromdata(pctx, &pkey, EVP_PKEY_PUBLIC_KEY, params) <= 0)
+        pkey = NULL;
+    EVP_PKEY_CTX_free(pctx);
+    return pkey;
+}
+
+/* Build an EC EVP_PKEY (private) from raw scalar bytes. */
+static EVP_PKEY *rc_pkey_from_raw_priv(const char *group, const unsigned char *raw, duk_size_t raw_len)
+{
+    EVP_PKEY *pkey = NULL;
+    EVP_PKEY_CTX *pctx = EVP_PKEY_CTX_new_id(EVP_PKEY_EC, NULL);
+    if (!pctx) return NULL;
+    if (EVP_PKEY_fromdata_init(pctx) <= 0) { EVP_PKEY_CTX_free(pctx); return NULL; }
+    BIGNUM *priv = BN_bin2bn(raw, (int)raw_len, NULL);
+    if (!priv) { EVP_PKEY_CTX_free(pctx); return NULL; }
+    OSSL_PARAM params[] = {
+        OSSL_PARAM_construct_utf8_string(OSSL_PKEY_PARAM_GROUP_NAME, (char *)group, 0),
+        OSSL_PARAM_construct_BN(OSSL_PKEY_PARAM_PRIV_KEY, NULL, 0),
+        OSSL_PARAM_construct_end()
+    };
+    /* OSSL_PARAM_construct_BN doesn't accept a literal value pointer
+     * directly; build the param via the bld API for portability. */
+    OSSL_PARAM_BLD *bld = OSSL_PARAM_BLD_new();
+    OSSL_PARAM *p_built = NULL;
+    if (!bld) { BN_free(priv); EVP_PKEY_CTX_free(pctx); return NULL; }
+    OSSL_PARAM_BLD_push_utf8_string(bld, OSSL_PKEY_PARAM_GROUP_NAME, group, 0);
+    OSSL_PARAM_BLD_push_BN(bld, OSSL_PKEY_PARAM_PRIV_KEY, priv);
+    p_built = OSSL_PARAM_BLD_to_param(bld);
+    OSSL_PARAM_BLD_free(bld);
+    if (!p_built) { BN_free(priv); EVP_PKEY_CTX_free(pctx); return NULL; }
+    if (EVP_PKEY_fromdata(pctx, &pkey, EVP_PKEY_KEYPAIR, p_built) <= 0)
+        pkey = NULL;
+    OSSL_PARAM_free(p_built);
+    BN_free(priv);
+    EVP_PKEY_CTX_free(pctx);
+    (void)params; /* silence unused */
+    return pkey;
+}
+
+/* ===========================================================
+ * Generic key I/O helpers — used by EC functions to match the
+ * shape of the RSA functions (PEM-first, accepts both PEM and DER,
+ * optional password).
+ * =========================================================== */
+
+/* Universal private-key parser: accepts PEM string, PEM in Buffer,
+ * or DER Buffer (encrypted PKCS#8 supported via password).  Returns
+ * EVP_PKEY*; caller frees. */
+static EVP_PKEY *rc_load_priv_pkey_any(const void *data, duk_size_t len, const char *password)
+{
+    EVP_PKEY *pkey = NULL;
+    BIO *bio;
+
+    /* Try PEM first. */
+    bio = BIO_new_mem_buf(data, (int)len);
+    if (bio)
+    {
+        pkey = PEM_read_bio_PrivateKey(bio, NULL, pass_cb, (void *)password);
+        BIO_free(bio);
+        if (pkey) return pkey;
+    }
+
+    /* Fall back to encrypted PKCS#8 DER. */
+    bio = BIO_new_mem_buf(data, (int)len);
+    if (bio)
+    {
+        pkey = d2i_PKCS8PrivateKey_bio(bio, NULL, pass_cb, (void *)password);
+        BIO_free(bio);
+        if (pkey) return pkey;
+    }
+
+    /* Fall back to unencrypted DER (PKCS#8 or legacy SEC1/PKCS#1). */
+    {
+        const unsigned char *p = (const unsigned char *)data;
+        pkey = d2i_AutoPrivateKey(NULL, &p, (long)len);
+    }
+    return pkey;
+}
+
+/* Universal public-key parser: PEM (SPKI) or DER. */
+static EVP_PKEY *rc_load_pub_pkey_any(const void *data, duk_size_t len)
+{
+    EVP_PKEY *pkey = NULL;
+    BIO *bio = BIO_new_mem_buf(data, (int)len);
+    if (bio)
+    {
+        pkey = PEM_read_bio_PUBKEY(bio, NULL, NULL, NULL);
+        BIO_free(bio);
+        if (pkey) return pkey;
+    }
+    const unsigned char *p = (const unsigned char *)data;
+    pkey = d2i_PUBKEY(NULL, &p, (long)len);
+    return pkey;
+}
+
+/* Push SPKI PEM string of pkey's public part. */
+static void rc_push_pkey_pem_pub(duk_context *ctx, EVP_PKEY *pkey)
+{
+    BIO *bio = BIO_new(BIO_s_mem());
+    if (!bio) RP_THROW(ctx, "BIO_new failed");
+    if (PEM_write_bio_PUBKEY(bio, pkey) != 1)
+        { BIO_free(bio); DUK_OPENSSL_ERROR(ctx); }
+    char *buf; long len = BIO_get_mem_data(bio, &buf);
+    duk_push_lstring(ctx, buf, (duk_size_t)len);
+    BIO_free(bio);
+}
+
+/* Push PKCS#8 PEM of pkey's private part.  Encrypted (AES-256-CBC)
+ * if password is non-NULL, else unencrypted PRIVATE KEY PEM. */
+static void rc_push_pkey_pem_priv(duk_context *ctx, EVP_PKEY *pkey, const char *password)
+{
+    BIO *bio = BIO_new(BIO_s_mem());
+    if (!bio) RP_THROW(ctx, "BIO_new failed");
+    int ok;
+    if (password)
+        ok = PEM_write_bio_PKCS8PrivateKey(bio, pkey, EVP_aes_256_cbc(),
+                 (char *)password, (int)strlen(password), NULL, NULL);
+    else
+        ok = PEM_write_bio_PKCS8PrivateKey(bio, pkey, NULL, NULL, 0, NULL, NULL);
+    if (!ok) { BIO_free(bio); DUK_OPENSSL_ERROR(ctx); }
+    char *buf; long len = BIO_get_mem_data(bio, &buf);
+    duk_push_lstring(ctx, buf, (duk_size_t)len);
+    BIO_free(bio);
+}
+
+/* Push traditional-OpenSSL form (SEC1 "EC PRIVATE KEY" for EC,
+ * PKCS#1 "RSA PRIVATE KEY" for RSA, etc.) of pkey's private part.
+ * Encrypted if password is non-NULL.  Returns 1 on success, 0 if
+ * the key type has no traditional form (e.g. X25519/Ed25519). */
+static int rc_push_pkey_pem_traditional(duk_context *ctx, EVP_PKEY *pkey, const char *password)
+{
+    BIO *bio = BIO_new(BIO_s_mem());
+    if (!bio) RP_THROW(ctx, "BIO_new failed");
+    int ok;
+    if (password)
+        ok = PEM_write_bio_PrivateKey_traditional(bio, pkey, EVP_aes_256_cbc(),
+                 (unsigned char *)password, (int)strlen(password), NULL, NULL);
+    else
+        ok = PEM_write_bio_PrivateKey_traditional(bio, pkey, NULL, NULL, 0, NULL, NULL);
+    if (!ok) { BIO_free(bio); return 0; }
+    char *buf; long len = BIO_get_mem_data(bio, &buf);
+    duk_push_lstring(ctx, buf, (duk_size_t)len);
+    BIO_free(bio);
+    return 1;
+}
+
+/* Common: read a "key" argument from positional slot or opts.
+ * Stack slot stays live; caller pops at end.  Returns 1 if found. */
+static int rc_get_key_any(duk_context *ctx, duk_idx_t pos_idx,
+                          const void **out, duk_size_t *out_len)
+{
+    if (duk_is_string(ctx, pos_idx))
+    {
+        *out = duk_get_lstring(ctx, pos_idx, out_len);
+        return 1;
+    }
+    if (duk_is_buffer_data(ctx, pos_idx))
+    {
+        *out = duk_get_buffer_data(ctx, pos_idx, out_len);
+        return 1;
+    }
+    return 0;
+}
+
+/* --- ec_gen_key([curve][, password]) ---
+ *   ec_gen_key()                          → P-256, unencrypted PEMs
+ *   ec_gen_key("P-384")                   → P-384, unencrypted PEMs
+ *   ec_gen_key("P-384", "pw")             → P-384, private PEMs encrypted with "pw"
+ *   ec_gen_key({curve:"P-384", password:"pw"})
+ * Returns {public, private, ec_private} — all PEM strings (mirrors
+ * rsa_gen_key's {public, private, rsa_public, rsa_private} shape,
+ * minus the SEC1 EC PUBLIC KEY form which OpenSSL doesn't define). */
+static duk_ret_t duk_ec_gen_key(duk_context *ctx)
+{
+    const char *curve_name = "P-256";   /* default */
+    const char *password = NULL;
+    int nid, size;
+    const char *group_name;
+    EVP_PKEY_CTX *pctx = NULL;
+    EVP_PKEY *pkey = NULL;
+
+    /* Two calling styles: opts object or positional (curve, password). */
+    if (duk_is_object(ctx, 0) && !duk_is_buffer_data(ctx, 0) &&
+        !duk_is_array(ctx, 0) && !duk_is_function(ctx, 0))
+    {
+        if (duk_get_prop_string(ctx, 0, "curve"))
+            curve_name = REQUIRE_STRING(ctx, -1, "ec_gen_key: 'curve' must be a string");
+        duk_pop(ctx);
+        if (duk_get_prop_string(ctx, 0, "password"))
+            password = REQUIRE_STRING(ctx, -1, "ec_gen_key: 'password' must be a string");
+        duk_pop(ctx);
+    }
+    else
+    {
+        if (duk_is_string(ctx, 0)) curve_name = duk_get_string(ctx, 0);
+        else if (!duk_is_undefined(ctx, 0) && !duk_is_null(ctx, 0))
+            RP_THROW(ctx, "ec_gen_key: first argument must be a curve name string or options object");
+        if (duk_is_string(ctx, 1)) password = duk_get_string(ctx, 1);
+        else if (!duk_is_undefined(ctx, 1) && !duk_is_null(ctx, 1))
+            RP_THROW(ctx, "ec_gen_key: second argument must be a password string");
+    }
+
+    if (!rc_ec_curve_from_name(curve_name, &nid, &group_name, &size))
+        RP_THROW(ctx, "ec_gen_key: unsupported curve '%s' (use P-256, P-384, or P-521)", curve_name);
+
+    pctx = EVP_PKEY_CTX_new_id(EVP_PKEY_EC, NULL);
+    if (!pctx) DUK_OPENSSL_ERROR(ctx);
+    if (EVP_PKEY_keygen_init(pctx) <= 0) { EVP_PKEY_CTX_free(pctx); DUK_OPENSSL_ERROR(ctx); }
+    if (EVP_PKEY_CTX_set_ec_paramgen_curve_nid(pctx, nid) <= 0)
+        { EVP_PKEY_CTX_free(pctx); DUK_OPENSSL_ERROR(ctx); }
+    if (EVP_PKEY_keygen(pctx, &pkey) <= 0)
+        { EVP_PKEY_CTX_free(pctx); DUK_OPENSSL_ERROR(ctx); }
+    EVP_PKEY_CTX_free(pctx);
+
+    duk_push_object(ctx);
+    rc_push_pkey_pem_pub(ctx, pkey);
+    duk_put_prop_string(ctx, -2, "public");
+    rc_push_pkey_pem_priv(ctx, pkey, password);
+    duk_put_prop_string(ctx, -2, "private");
+    if (rc_push_pkey_pem_traditional(ctx, pkey, password))
+        duk_put_prop_string(ctx, -2, "ec_private");
+    EVP_PKEY_free(pkey);
+    return 1;
+}
+
+/* --- ec_import_pub_key(pub_or_raw [, curve]) ---
+ *   ec_import_pub_key(pem_or_der)        → re-canonicalize to SPKI PEM
+ *   ec_import_pub_key(raw_bytes, "P-256") → build SPKI PEM from 04||X||Y point
+ *   ec_import_pub_key({key, curve, format:"raw"|"spki"})  opts form
+ * Returns the canonical SPKI PEM string. */
+static duk_ret_t duk_ec_import_pub_key(duk_context *ctx)
+{
+    const void *key = NULL; duk_size_t key_len = 0;
+    const char *format = NULL, *curve = NULL;
+
+    /* Opts-object form first. */
+    if (duk_is_object(ctx, 0) && !duk_is_buffer_data(ctx, 0) &&
+        !duk_is_array(ctx, 0) && !duk_is_function(ctx, 0) &&
+        !duk_is_string(ctx, 0))
+    {
+        if (!rc_get_opt_bytes(ctx, 0, "key", &key, &key_len))
+            RP_THROW(ctx, "ec_import_pub_key: 'key' is required");
+        if (duk_get_prop_string(ctx, 0, "format"))
+            format = REQUIRE_STRING(ctx, -1, "ec_import_pub_key: 'format' must be a string");
+        duk_pop(ctx);
+        if (duk_get_prop_string(ctx, 0, "curve"))
+            curve = REQUIRE_STRING(ctx, -1, "ec_import_pub_key: 'curve' must be a string");
+        duk_pop(ctx);
+    }
+    else
+    {
+        if (!rc_get_key_any(ctx, 0, &key, &key_len))
+            RP_THROW(ctx, "ec_import_pub_key: first argument must be string or buffer");
+        if (duk_is_string(ctx, 1)) curve = duk_get_string(ctx, 1);
+        /* If curve is provided positionally, assume raw format. */
+        if (curve) format = "raw";
+    }
+    if (!format) format = "spki";
+
+    EVP_PKEY *pkey = NULL;
+    if (!strcmp(format, "spki") || !strcmp(format, "pem") || !strcmp(format, "der"))
+    {
+        pkey = rc_load_pub_pkey_any(key, key_len);
+        if (!pkey) RP_THROW(ctx, "ec_import_pub_key: failed to parse PEM/DER public key");
+    }
+    else if (!strcmp(format, "raw"))
+    {
+        int nid, size;
+        const char *group;
+        if (!curve)
+            RP_THROW(ctx, "ec_import_pub_key: 'curve' is required when format='raw'");
+        if (!rc_ec_curve_from_name(curve, &nid, &group, &size))
+            RP_THROW(ctx, "ec_import_pub_key: unsupported curve '%s'", curve);
+        pkey = rc_pkey_from_raw_pub(group, (const unsigned char *)key, key_len);
+        if (!pkey) RP_THROW(ctx, "ec_import_pub_key: failed to build key from raw point (wrong length or invalid point?)");
+    }
+    else
+        RP_THROW(ctx, "ec_import_pub_key: unknown format '%s'", format);
+
+    rc_push_pkey_pem_pub(ctx, pkey);
+    EVP_PKEY_free(pkey);
+    return 1;
+}
+
+/* --- ec_import_priv_key(priv [, oldpass [, newpass]]) ---
+ *   ec_import_priv_key(pem)              → {public, private, ec_private} unencrypted
+ *   ec_import_priv_key(pem, "OLD")       → decrypt input with OLD, output unencrypted
+ *   ec_import_priv_key(pem, "OLD","NEW") → re-encrypt output with NEW
+ *   ec_import_priv_key(pem, {decryptPassword, encryptPassword})
+ *   ec_import_priv_key({key, curve, format:"raw"})  raw bytes + curve
+ * Mirrors rsa_import_priv_key. */
+static duk_ret_t duk_ec_import_priv_key(duk_context *ctx)
+{
+    const void *key = NULL; duk_size_t key_len = 0;
+    const char *inpasswd = NULL, *outpasswd = NULL;
+    const char *format = NULL, *curve = NULL;
+    EVP_PKEY *pkey = NULL;
+
+    /* Detect call shape. */
+    if (duk_is_object(ctx, 0) && !duk_is_buffer_data(ctx, 0) &&
+        !duk_is_array(ctx, 0) && !duk_is_function(ctx, 0) &&
+        !duk_is_string(ctx, 0))
+    {
+        if (!rc_get_opt_bytes(ctx, 0, "key", &key, &key_len))
+            RP_THROW(ctx, "ec_import_priv_key: 'key' is required");
+        if (duk_get_prop_string(ctx, 0, "format"))
+            format = REQUIRE_STRING(ctx, -1, "ec_import_priv_key: 'format' must be a string");
+        duk_pop(ctx);
+        if (duk_get_prop_string(ctx, 0, "curve"))
+            curve = REQUIRE_STRING(ctx, -1, "ec_import_priv_key: 'curve' must be a string");
+        duk_pop(ctx);
+        if (duk_get_prop_string(ctx, 0, "decryptPassword"))
+            inpasswd = REQUIRE_STRING(ctx, -1, "ec_import_priv_key: 'decryptPassword' must be a string");
+        duk_pop(ctx);
+        if (duk_get_prop_string(ctx, 0, "encryptPassword"))
+            outpasswd = REQUIRE_STRING(ctx, -1, "ec_import_priv_key: 'encryptPassword' must be a string");
+        duk_pop(ctx);
+    }
+    else
+    {
+        if (!rc_get_key_any(ctx, 0, &key, &key_len))
+            RP_THROW(ctx, "ec_import_priv_key: first argument must be string or buffer");
+        if (duk_is_string(ctx, 1))      inpasswd  = duk_get_string(ctx, 1);
+        else if (duk_is_object(ctx, 1) && !duk_is_null(ctx, 1) && !duk_is_undefined(ctx, 1))
+            RP_THROW(ctx, "ec_import_priv_key: second argument must be a password string or null");
+        if (duk_is_string(ctx, 2))      outpasswd = duk_get_string(ctx, 2);
+    }
+
+    if (format && !strcmp(format, "raw"))
+    {
+        int nid, size;
+        const char *group;
+        if (!curve)
+            RP_THROW(ctx, "ec_import_priv_key: 'curve' is required when format='raw'");
+        if (!rc_ec_curve_from_name(curve, &nid, &group, &size))
+            RP_THROW(ctx, "ec_import_priv_key: unsupported curve '%s'", curve);
+        pkey = rc_pkey_from_raw_priv(group, (const unsigned char *)key, key_len);
+        if (!pkey) RP_THROW(ctx, "ec_import_priv_key: failed to build key from raw scalar");
+    }
+    else
+    {
+        pkey = rc_load_priv_pkey_any(key, key_len, inpasswd);
+        if (!pkey) RP_THROW(ctx, "ec_import_priv_key: failed to parse PEM/DER private key%s",
+                            inpasswd ? " (wrong password?)" : "");
+    }
+
+    duk_push_object(ctx);
+    rc_push_pkey_pem_pub(ctx, pkey);
+    duk_put_prop_string(ctx, -2, "public");
+    rc_push_pkey_pem_priv(ctx, pkey, outpasswd);
+    duk_put_prop_string(ctx, -2, "private");
+    if (rc_push_pkey_pem_traditional(ctx, pkey, outpasswd))
+        duk_put_prop_string(ctx, -2, "ec_private");
+    EVP_PKEY_free(pkey);
+    return 1;
+}
+
+/* Convert DER ECDSA signature → IEEE P1363 (r||s) with `size`-byte
+ * components.  Caller provides out buffer of 2*size bytes. */
+static int rc_ecdsa_der_to_p1363(const unsigned char *der, size_t der_len,
+                                 int size, unsigned char *out)
+{
+    const unsigned char *p = der;
+    ECDSA_SIG *sig = d2i_ECDSA_SIG(NULL, &p, (long)der_len);
+    if (!sig) return 0;
+    const BIGNUM *r, *s;
+    ECDSA_SIG_get0(sig, &r, &s);
+    if (BN_bn2binpad(r, out,        size) < 0 ||
+        BN_bn2binpad(s, out + size, size) < 0) { ECDSA_SIG_free(sig); return 0; }
+    ECDSA_SIG_free(sig);
+    return 1;
+}
+
+/* Convert IEEE P1363 (r||s) → DER ECDSA signature.  `*out_len` set
+ * to actual DER length; caller responsible for OPENSSL_free(*out). */
+static int rc_ecdsa_p1363_to_der(const unsigned char *p1363, int size,
+                                 unsigned char **out, int *out_len)
+{
+    BIGNUM *r = BN_bin2bn(p1363,        size, NULL);
+    BIGNUM *s = BN_bin2bn(p1363 + size, size, NULL);
+    if (!r || !s) { BN_free(r); BN_free(s); return 0; }
+    ECDSA_SIG *sig = ECDSA_SIG_new();
+    if (!sig) { BN_free(r); BN_free(s); return 0; }
+    ECDSA_SIG_set0(sig, r, s);   /* takes ownership of r,s */
+    int len = i2d_ECDSA_SIG(sig, NULL);
+    if (len <= 0) { ECDSA_SIG_free(sig); return 0; }
+    *out = (unsigned char *)OPENSSL_malloc(len);
+    if (!*out) { ECDSA_SIG_free(sig); return 0; }
+    unsigned char *q = *out;
+    if (i2d_ECDSA_SIG(sig, &q) <= 0) { OPENSSL_free(*out); ECDSA_SIG_free(sig); return 0; }
+    *out_len = len;
+    ECDSA_SIG_free(sig);
+    return 1;
+}
+
+/* --- ecdsa_sign(message, private_key [, password|opts]) ---
+ *   ecdsa_sign(msg, priv)              → DER signature, sha256
+ *   ecdsa_sign(msg, priv, "pw")        → priv decrypted with "pw"
+ *   ecdsa_sign(msg, priv, {hash, format, password})
+ * Mirrors rsa_sign. */
+static duk_ret_t duk_ecdsa_sign(duk_context *ctx)
+{
+    const void *keybytes = NULL, *data = NULL;
+    duk_size_t keylen = 0, datalen = 0;
+    const char *hash_name = "sha256", *format = "der", *password = NULL;
+    const EVP_MD *md;
+    EVP_PKEY *pkey;
+    EVP_MD_CTX *mctx = NULL;
+    size_t siglen = 0;
+    unsigned char *sig_der;
+
+    if (!rc_get_key_any(ctx, 0, &data, &datalen))
+        RP_THROW(ctx, "ecdsa_sign: first argument (data) must be string or buffer");
+    if (!rc_get_key_any(ctx, 1, &keybytes, &keylen))
+        RP_THROW(ctx, "ecdsa_sign: second argument (private_key) must be string or buffer");
+
+    if (duk_is_string(ctx, 2))
+        password = duk_get_string(ctx, 2);
+    else if (duk_is_object(ctx, 2) && !duk_is_buffer_data(ctx, 2) &&
+             !duk_is_array(ctx, 2) && !duk_is_function(ctx, 2))
+    {
+        if (duk_get_prop_string(ctx, 2, "hash"))
+            hash_name = REQUIRE_STRING(ctx, -1, "ecdsa_sign: 'hash' must be a string");
+        duk_pop(ctx);
+        if (duk_get_prop_string(ctx, 2, "format"))
+            format = REQUIRE_STRING(ctx, -1, "ecdsa_sign: 'format' must be a string");
+        duk_pop(ctx);
+        if (duk_get_prop_string(ctx, 2, "password"))
+            password = REQUIRE_STRING(ctx, -1, "ecdsa_sign: 'password' must be a string");
+        duk_pop(ctx);
+    }
+    else if (!duk_is_undefined(ctx, 2) && !duk_is_null(ctx, 2))
+        RP_THROW(ctx, "ecdsa_sign: third argument must be a password string or options object");
+
+    md = rc_md_from_name(hash_name);
+    if (!md) RP_THROW(ctx, "ecdsa_sign: unsupported hash '%s'", hash_name);
+    if (strcmp(format, "der") && strcmp(format, "p1363"))
+        RP_THROW(ctx, "ecdsa_sign: unknown format '%s' (use 'der' or 'p1363')", format);
+
+    pkey = rc_load_priv_pkey_any(keybytes, keylen, password);
+    if (!pkey) RP_THROW(ctx, "ecdsa_sign: failed to parse private key%s",
+                       password ? " (wrong password?)" : "");
+
+    mctx = EVP_MD_CTX_new();
+    if (!mctx) { EVP_PKEY_free(pkey); DUK_OPENSSL_ERROR(ctx); }
+    if (EVP_DigestSignInit(mctx, NULL, md, NULL, pkey) <= 0)
+        { EVP_MD_CTX_free(mctx); EVP_PKEY_free(pkey); DUK_OPENSSL_ERROR(ctx); }
+    if (EVP_DigestSignUpdate(mctx, data, (size_t)datalen) <= 0)
+        { EVP_MD_CTX_free(mctx); EVP_PKEY_free(pkey); DUK_OPENSSL_ERROR(ctx); }
+    if (EVP_DigestSignFinal(mctx, NULL, &siglen) <= 0)
+        { EVP_MD_CTX_free(mctx); EVP_PKEY_free(pkey); DUK_OPENSSL_ERROR(ctx); }
+    sig_der = (unsigned char *)OPENSSL_malloc(siglen);
+    if (!sig_der) { EVP_MD_CTX_free(mctx); EVP_PKEY_free(pkey); RP_THROW(ctx, "ecdsa_sign: oom"); }
+    if (EVP_DigestSignFinal(mctx, sig_der, &siglen) <= 0)
+        { OPENSSL_free(sig_der); EVP_MD_CTX_free(mctx); EVP_PKEY_free(pkey); DUK_OPENSSL_ERROR(ctx); }
+    EVP_MD_CTX_free(mctx);
+
+    if (!strcmp(format, "der"))
+    {
+        void *out = duk_push_fixed_buffer(ctx, (duk_size_t)siglen);
+        memcpy(out, sig_der, siglen);
+        OPENSSL_free(sig_der);
+    }
+    else /* p1363 */
+    {
+        int size = rc_ec_pkey_size(pkey);
+        if (size == 0) { OPENSSL_free(sig_der); EVP_PKEY_free(pkey); RP_THROW(ctx, "ecdsa_sign: not an EC key"); }
+        unsigned char *out = (unsigned char *)duk_push_fixed_buffer(ctx, (duk_size_t)(2 * size));
+        if (!rc_ecdsa_der_to_p1363(sig_der, siglen, size, out))
+            { OPENSSL_free(sig_der); EVP_PKEY_free(pkey); RP_THROW(ctx, "ecdsa_sign: DER→P1363 conversion failed"); }
+        OPENSSL_free(sig_der);
+    }
+    EVP_PKEY_free(pkey);
+    return 1;
+}
+
+/* --- ecdsa_verify(data, public_key, signature [, opts]) ---
+ *   ecdsa_verify(msg, pub, sig)
+ *   ecdsa_verify(msg, pub, sig, {hash, format})
+ * Mirrors rsa_verify. */
+static duk_ret_t duk_ecdsa_verify(duk_context *ctx)
+{
+    const void *keybytes = NULL, *data = NULL, *sig = NULL;
+    duk_size_t keylen = 0, datalen = 0, siglen = 0;
+    const char *hash_name = "sha256", *format = "der";
+    const EVP_MD *md;
+    EVP_PKEY *pkey;
+    EVP_MD_CTX *mctx = NULL;
+    unsigned char *sig_der = NULL;
+    int sig_der_len = 0;
+    int verify_result;
+
+    if (!rc_get_key_any(ctx, 0, &data, &datalen))
+        RP_THROW(ctx, "ecdsa_verify: first argument (data) must be string or buffer");
+    if (!rc_get_key_any(ctx, 1, &keybytes, &keylen))
+        RP_THROW(ctx, "ecdsa_verify: second argument (public_key) must be string or buffer");
+    if (!rc_get_key_any(ctx, 2, &sig, &siglen))
+        RP_THROW(ctx, "ecdsa_verify: third argument (signature) must be string or buffer");
+
+    if (duk_is_object(ctx, 3) && !duk_is_buffer_data(ctx, 3) &&
+        !duk_is_array(ctx, 3) && !duk_is_function(ctx, 3))
+    {
+        if (duk_get_prop_string(ctx, 3, "hash"))
+            hash_name = REQUIRE_STRING(ctx, -1, "ecdsa_verify: 'hash' must be a string");
+        duk_pop(ctx);
+        if (duk_get_prop_string(ctx, 3, "format"))
+            format = REQUIRE_STRING(ctx, -1, "ecdsa_verify: 'format' must be a string");
+        duk_pop(ctx);
+    }
+
+    md = rc_md_from_name(hash_name);
+    if (!md) RP_THROW(ctx, "ecdsa_verify: unsupported hash '%s'", hash_name);
+
+    pkey = rc_load_pub_pkey_any(keybytes, keylen);
+    if (!pkey) RP_THROW(ctx, "ecdsa_verify: failed to parse public key");
+
+    /* If signature is in P1363 format, convert to DER for OpenSSL. */
+    const unsigned char *sig_use = (const unsigned char *)sig;
+    int sig_use_len = (int)siglen;
+    if (!strcmp(format, "p1363"))
+    {
+        int size = rc_ec_pkey_size(pkey);
+        if (size == 0 || (int)siglen != 2 * size)
+            { EVP_PKEY_free(pkey); RP_THROW(ctx, "crypto.ecdsa_verify: P1363 signature length mismatch (got %d, expected %d for this curve)", (int)siglen, 2*size); }
+        if (!rc_ecdsa_p1363_to_der((const unsigned char *)sig, size, &sig_der, &sig_der_len))
+            { EVP_PKEY_free(pkey); RP_THROW(ctx, "crypto.ecdsa_verify: P1363→DER conversion failed"); }
+        sig_use = sig_der;
+        sig_use_len = sig_der_len;
+    }
+    else if (strcmp(format, "der"))
+        { EVP_PKEY_free(pkey); RP_THROW(ctx, "crypto.ecdsa_verify: unknown format '%s' (use 'der' or 'p1363')", format); }
+
+    mctx = EVP_MD_CTX_new();
+    if (!mctx) { if (sig_der) OPENSSL_free(sig_der); EVP_PKEY_free(pkey); DUK_OPENSSL_ERROR(ctx); }
+    if (EVP_DigestVerifyInit(mctx, NULL, md, NULL, pkey) <= 0)
+        { EVP_MD_CTX_free(mctx); if (sig_der) OPENSSL_free(sig_der); EVP_PKEY_free(pkey); DUK_OPENSSL_ERROR(ctx); }
+    if (EVP_DigestVerifyUpdate(mctx, data, (size_t)datalen) <= 0)
+        { EVP_MD_CTX_free(mctx); if (sig_der) OPENSSL_free(sig_der); EVP_PKEY_free(pkey); DUK_OPENSSL_ERROR(ctx); }
+    verify_result = EVP_DigestVerifyFinal(mctx, sig_use, (size_t)sig_use_len);
+    EVP_MD_CTX_free(mctx);
+    if (sig_der) OPENSSL_free(sig_der);
+    EVP_PKEY_free(pkey);
+
+    duk_push_boolean(ctx, verify_result == 1);
+    return 1;
+}
+
+/* --- ecdh(private_key, public_key [, password]) ---
+ *   ecdh(priv, pub)            → shared secret bytes
+ *   ecdh(priv, pub, "pw")      → priv decrypted with "pw"
+ *   ecdh({private, public, password, returnType})
+ * Returns the raw X-coordinate; pass through hkdf for a real key. */
+static duk_ret_t duk_ecdh(duk_context *ctx)
+{
+    const void *priv_bytes = NULL, *pub_bytes = NULL;
+    duk_size_t priv_len = 0, pub_len = 0;
+    const char *password = NULL;
+    EVP_PKEY *priv = NULL, *pub = NULL;
+    EVP_PKEY_CTX *pctx = NULL;
+    size_t secret_len = 0;
+    int opt_idx = -1;
+
+    if (duk_is_object(ctx, 0) && !duk_is_buffer_data(ctx, 0) &&
+        !duk_is_array(ctx, 0) && !duk_is_function(ctx, 0) &&
+        !duk_is_string(ctx, 0))
+    {
+        opt_idx = 0;
+        if (duk_get_prop_string(ctx, 0, "private"))
+        {
+            if (duk_is_string(ctx, -1))      priv_bytes = duk_get_lstring(ctx, -1, &priv_len);
+            else if (duk_is_buffer_data(ctx, -1)) priv_bytes = duk_get_buffer_data(ctx, -1, &priv_len);
+        }
+        if (!priv_bytes) RP_THROW(ctx, "ecdh: 'private' is required (string/buffer)");
+        if (duk_get_prop_string(ctx, 0, "public"))
+        {
+            if (duk_is_string(ctx, -1))      pub_bytes = duk_get_lstring(ctx, -1, &pub_len);
+            else if (duk_is_buffer_data(ctx, -1)) pub_bytes = duk_get_buffer_data(ctx, -1, &pub_len);
+        }
+        if (!pub_bytes) RP_THROW(ctx, "ecdh: 'public' is required (string/buffer)");
+        if (duk_get_prop_string(ctx, 0, "password"))
+            password = REQUIRE_STRING(ctx, -1, "ecdh: 'password' must be a string");
+        duk_pop(ctx);
+    }
+    else
+    {
+        if (!rc_get_key_any(ctx, 0, &priv_bytes, &priv_len))
+            RP_THROW(ctx, "ecdh: first argument (private_key) must be string or buffer");
+        if (!rc_get_key_any(ctx, 1, &pub_bytes, &pub_len))
+            RP_THROW(ctx, "ecdh: second argument (public_key) must be string or buffer");
+        if (duk_is_string(ctx, 2)) password = duk_get_string(ctx, 2);
+    }
+
+    priv = rc_load_priv_pkey_any(priv_bytes, priv_len, password);
+    if (!priv) RP_THROW(ctx, "ecdh: failed to parse private key%s",
+                       password ? " (wrong password?)" : "");
+    pub = rc_load_pub_pkey_any(pub_bytes, pub_len);
+    if (!pub) { EVP_PKEY_free(priv); RP_THROW(ctx, "ecdh: failed to parse public key"); }
+
+    pctx = EVP_PKEY_CTX_new(priv, NULL);
+    if (!pctx) { EVP_PKEY_free(priv); EVP_PKEY_free(pub); DUK_OPENSSL_ERROR(ctx); }
+    if (EVP_PKEY_derive_init(pctx) <= 0 ||
+        EVP_PKEY_derive_set_peer(pctx, pub) <= 0 ||
+        EVP_PKEY_derive(pctx, NULL, &secret_len) <= 0)
+        { EVP_PKEY_CTX_free(pctx); EVP_PKEY_free(priv); EVP_PKEY_free(pub); DUK_OPENSSL_ERROR(ctx); }
+
+    unsigned char *out = (unsigned char *)duk_push_fixed_buffer(ctx, (duk_size_t)secret_len);
+    if (EVP_PKEY_derive(pctx, out, &secret_len) <= 0)
+        { EVP_PKEY_CTX_free(pctx); EVP_PKEY_free(priv); EVP_PKEY_free(pub); DUK_OPENSSL_ERROR(ctx); }
+
+    EVP_PKEY_CTX_free(pctx);
+    EVP_PKEY_free(priv);
+    EVP_PKEY_free(pub);
+
+    if (opt_idx >= 0) rc_finalize_buffer_buf_default(ctx, opt_idx);
+    return 1;
+}
+
+/* --- ec_components(key) ---
+ * Returns {curve, x, y} for an EC public key or {curve, x, y, scalar}
+ * for a private key.  All numeric fields are hex strings (matches the
+ * rsa_components convention). */
+static duk_ret_t duk_ec_components(duk_context *ctx)
+{
+    const void *key = NULL; duk_size_t key_len = 0;
+    EVP_PKEY *pkey = NULL;
+    int is_private = 0;
+    char *gname_buf;
+    size_t gname_len = 0;
+    BIGNUM *x = NULL, *y = NULL, *scalar = NULL;
+    char *hex = NULL;
+
+    if (!rc_get_key_any(ctx, 0, &key, &key_len))
+        RP_THROW(ctx, "ec_components: argument must be string or buffer");
+
+    /* Try as private first, then as public. */
+    pkey = rc_load_priv_pkey_any(key, key_len, NULL);
+    if (pkey) is_private = 1;
+    else      pkey = rc_load_pub_pkey_any(key, key_len);
+    if (!pkey) RP_THROW(ctx, "ec_components: failed to parse key");
+
+    if (EVP_PKEY_get_group_name(pkey, NULL, 0, &gname_len) <= 0 || gname_len == 0)
+        { EVP_PKEY_free(pkey); RP_THROW(ctx, "ec_components: not an EC key"); }
+    gname_buf = (char *)OPENSSL_malloc(gname_len + 1);
+    if (!gname_buf) { EVP_PKEY_free(pkey); RP_THROW(ctx, "ec_components: oom"); }
+    if (EVP_PKEY_get_group_name(pkey, gname_buf, gname_len + 1, &gname_len) <= 0)
+        { OPENSSL_free(gname_buf); EVP_PKEY_free(pkey); DUK_OPENSSL_ERROR(ctx); }
+
+    duk_push_object(ctx);
+    /* Translate OpenSSL group name to friendly "P-256" etc. */
+    {
+        const char *friendly = gname_buf;
+        if      (!strcmp(gname_buf, "prime256v1")) friendly = "P-256";
+        else if (!strcmp(gname_buf, "secp384r1"))  friendly = "P-384";
+        else if (!strcmp(gname_buf, "secp521r1"))  friendly = "P-521";
+        duk_push_string(ctx, friendly);
+        duk_put_prop_string(ctx, -2, "curve");
+    }
+    OPENSSL_free(gname_buf);
+
+    /* X / Y from OSSL_PKEY_PARAM_EC_PUB_X / Y (BIGNUM params). */
+    if (EVP_PKEY_get_bn_param(pkey, OSSL_PKEY_PARAM_EC_PUB_X, &x) <= 0 ||
+        EVP_PKEY_get_bn_param(pkey, OSSL_PKEY_PARAM_EC_PUB_Y, &y) <= 0)
+        { BN_free(x); BN_free(y); EVP_PKEY_free(pkey); DUK_OPENSSL_ERROR(ctx); }
+    hex = BN_bn2hex(x); duk_push_string(ctx, hex); duk_put_prop_string(ctx, -2, "x"); OPENSSL_free(hex);
+    hex = BN_bn2hex(y); duk_push_string(ctx, hex); duk_put_prop_string(ctx, -2, "y"); OPENSSL_free(hex);
+    BN_free(x); BN_free(y);
+
+    if (is_private)
+    {
+        if (EVP_PKEY_get_bn_param(pkey, OSSL_PKEY_PARAM_PRIV_KEY, &scalar) <= 0)
+            { EVP_PKEY_free(pkey); DUK_OPENSSL_ERROR(ctx); }
+        hex = BN_bn2hex(scalar);
+        duk_push_string(ctx, hex);
+        duk_put_prop_string(ctx, -2, "scalar");
+        OPENSSL_free(hex);
+        BN_free(scalar);
+    }
+    EVP_PKEY_free(pkey);
+    return 1;
+}
+
+/* --- pemToDer(pem) → Buffer ---
+ * Strip any PEM headers/whitespace and base64-decode the body. */
+static duk_ret_t duk_pem_to_der(duk_context *ctx)
+{
+    const char *pem = NULL; duk_size_t pem_len = 0;
+    if (duk_is_string(ctx, 0))           pem = duk_get_lstring(ctx, 0, &pem_len);
+    else if (duk_is_buffer_data(ctx, 0)) pem = (const char *)duk_get_buffer_data(ctx, 0, &pem_len);
+    else RP_THROW(ctx, "pemToDer: argument must be a string or buffer");
+
+    BIO *bio = BIO_new_mem_buf(pem, (int)pem_len);
+    if (!bio) RP_THROW(ctx, "pemToDer: BIO_new_mem_buf failed");
+    char *name = NULL, *header = NULL;
+    unsigned char *data = NULL;
+    long dlen = 0;
+    if (PEM_read_bio(bio, &name, &header, &data, &dlen) != 1)
+        { BIO_free(bio); RP_THROW(ctx, "pemToDer: not a valid PEM block"); }
+    BIO_free(bio);
+    OPENSSL_free(name);
+    OPENSSL_free(header);
+
+    void *out = duk_push_fixed_buffer(ctx, (duk_size_t)dlen);
+    memcpy(out, data, dlen);
+    OPENSSL_free(data);
+    return 1;
+}
+
+/* --- derToPem(der, type) → string ---
+ * Wrap DER bytes in PEM headers with the given type label. */
+static duk_ret_t duk_der_to_pem(duk_context *ctx)
+{
+    const void *der = NULL; duk_size_t der_len = 0;
+    const char *type = NULL;
+    if (!rc_get_key_any(ctx, 0, &der, &der_len))
+        RP_THROW(ctx, "derToPem: first argument (DER bytes) must be string or buffer");
+    type = REQUIRE_STRING(ctx, 1, "derToPem: second argument (type) must be a string (e.g. 'PUBLIC KEY', 'CERTIFICATE')");
+
+    BIO *bio = BIO_new(BIO_s_mem());
+    if (!bio) RP_THROW(ctx, "derToPem: BIO_new failed");
+    ERR_clear_error();   /* don't report stale errors from earlier PEM-detect probes */
+    /* PEM_write_bio returns the encoded byte count, not 1, in OpenSSL 4.0. */
+    if (PEM_write_bio(bio, type, "", (unsigned char *)der, (long)der_len) <= 0)
+        { BIO_free(bio); DUK_OPENSSL_ERROR(ctx); }
+    char *buf; long len = BIO_get_mem_data(bio, &buf);
+    duk_push_lstring(ctx, buf, (duk_size_t)len);
+    BIO_free(bio);
+    return 1;
+}
+
+/* ===========================================================
+ * Tier 3 additions: X25519, Ed25519, scrypt
+ *
+ * X25519/Ed25519 functions mirror the EC family's calling
+ * convention (positional + opts forms, PEM output, password/rekey
+ * support, *_components introspection).
+ * =========================================================== */
+
+/* Generate an EVP_PKEY of the given simple type (X25519/ED25519). */
+static EVP_PKEY *rc_keygen_simple(int pkey_type)
+{
+    EVP_PKEY *pkey = NULL;
+    EVP_PKEY_CTX *pctx = EVP_PKEY_CTX_new_id(pkey_type, NULL);
+    if (!pctx) return NULL;
+    if (EVP_PKEY_keygen_init(pctx) <= 0) { EVP_PKEY_CTX_free(pctx); return NULL; }
+    if (EVP_PKEY_keygen(pctx, &pkey) <= 0) pkey = NULL;
+    EVP_PKEY_CTX_free(pctx);
+    return pkey;
+}
+
+/* --- gen_key([password]) / gen_key({password}) → {public, private} PEMs --- */
+static duk_ret_t rc_25519_gen_key(duk_context *ctx, int pkey_type, const char *fname)
+{
+    const char *password = NULL;
+
+    if (duk_is_object(ctx, 0) && !duk_is_buffer_data(ctx, 0) &&
+        !duk_is_array(ctx, 0) && !duk_is_function(ctx, 0) &&
+        !duk_is_string(ctx, 0))
+    {
+        if (duk_get_prop_string(ctx, 0, "password"))
+            password = REQUIRE_STRING(ctx, -1, "password must be a string");
+        duk_pop(ctx);
+    }
+    else if (duk_is_string(ctx, 0))
+        password = duk_get_string(ctx, 0);
+    else if (!duk_is_undefined(ctx, 0) && !duk_is_null(ctx, 0))
+        RP_THROW(ctx, "crypto.%s: first argument must be a password string or options object", fname);
+
+    EVP_PKEY *pkey = rc_keygen_simple(pkey_type);
+    if (!pkey) RP_THROW(ctx, "crypto.%s: keygen failed", fname);
+    duk_push_object(ctx);
+    rc_push_pkey_pem_pub(ctx, pkey);
+    duk_put_prop_string(ctx, -2, "public");
+    rc_push_pkey_pem_priv(ctx, pkey, password);
+    duk_put_prop_string(ctx, -2, "private");
+    EVP_PKEY_free(pkey);
+    return 1;
+}
+
+/* --- import_pub_key(pub) or ({key, format:"raw"}) → SPKI PEM --- */
+static duk_ret_t rc_25519_import_pub_key(duk_context *ctx, int pkey_type, const char *fname)
+{
+    const void *key = NULL; duk_size_t key_len = 0;
+    const char *format = NULL;
+    EVP_PKEY *pkey = NULL;
+
+    if (duk_is_object(ctx, 0) && !duk_is_buffer_data(ctx, 0) &&
+        !duk_is_array(ctx, 0) && !duk_is_function(ctx, 0) &&
+        !duk_is_string(ctx, 0))
+    {
+        if (!rc_get_opt_bytes(ctx, 0, "key", &key, &key_len))
+            RP_THROW(ctx, "crypto.%s: 'key' is required", fname);
+        if (duk_get_prop_string(ctx, 0, "format"))
+            format = REQUIRE_STRING(ctx, -1, "format must be a string");
+        duk_pop(ctx);
+    }
+    else
+    {
+        if (!rc_get_key_any(ctx, 0, &key, &key_len))
+            RP_THROW(ctx, "crypto.%s: first argument must be string or buffer", fname);
+    }
+
+    if (format && !strcmp(format, "raw"))
+        pkey = EVP_PKEY_new_raw_public_key(pkey_type, NULL,
+                                           (const unsigned char *)key, (size_t)key_len);
+    else
+        pkey = rc_load_pub_pkey_any(key, key_len);
+
+    if (!pkey) RP_THROW(ctx, "crypto.%s: failed to parse public key", fname);
+    rc_push_pkey_pem_pub(ctx, pkey);
+    EVP_PKEY_free(pkey);
+    return 1;
+}
+
+/* --- import_priv_key(priv [, oldpass [, newpass]]) → {public, private} --- */
+static duk_ret_t rc_25519_import_priv_key(duk_context *ctx, int pkey_type, const char *fname)
+{
+    const void *key = NULL; duk_size_t key_len = 0;
+    const char *inpasswd = NULL, *outpasswd = NULL, *format = NULL;
+    EVP_PKEY *pkey = NULL;
+
+    if (duk_is_object(ctx, 0) && !duk_is_buffer_data(ctx, 0) &&
+        !duk_is_array(ctx, 0) && !duk_is_function(ctx, 0) &&
+        !duk_is_string(ctx, 0))
+    {
+        if (!rc_get_opt_bytes(ctx, 0, "key", &key, &key_len))
+            RP_THROW(ctx, "crypto.%s: 'key' is required", fname);
+        if (duk_get_prop_string(ctx, 0, "format"))
+            format = REQUIRE_STRING(ctx, -1, "format must be a string");
+        duk_pop(ctx);
+        if (duk_get_prop_string(ctx, 0, "decryptPassword"))
+            inpasswd = REQUIRE_STRING(ctx, -1, "decryptPassword must be a string");
+        duk_pop(ctx);
+        if (duk_get_prop_string(ctx, 0, "encryptPassword"))
+            outpasswd = REQUIRE_STRING(ctx, -1, "encryptPassword must be a string");
+        duk_pop(ctx);
+    }
+    else
+    {
+        if (!rc_get_key_any(ctx, 0, &key, &key_len))
+            RP_THROW(ctx, "crypto.%s: first argument must be string or buffer", fname);
+        if (duk_is_string(ctx, 1)) inpasswd  = duk_get_string(ctx, 1);
+        if (duk_is_string(ctx, 2)) outpasswd = duk_get_string(ctx, 2);
+    }
+
+    if (format && !strcmp(format, "raw"))
+        pkey = EVP_PKEY_new_raw_private_key(pkey_type, NULL,
+                                            (const unsigned char *)key, (size_t)key_len);
+    else
+    {
+        pkey = rc_load_priv_pkey_any(key, key_len, inpasswd);
+        if (!pkey) RP_THROW(ctx, "crypto.%s: failed to parse private key%s",
+                            fname, inpasswd ? " (wrong password?)" : "");
+    }
+    if (!pkey) RP_THROW(ctx, "crypto.%s: failed to build key", fname);
+
+    duk_push_object(ctx);
+    rc_push_pkey_pem_pub(ctx, pkey);
+    duk_put_prop_string(ctx, -2, "public");
+    rc_push_pkey_pem_priv(ctx, pkey, outpasswd);
+    duk_put_prop_string(ctx, -2, "private");
+    EVP_PKEY_free(pkey);
+    return 1;
+}
+
+/* --- components(key) → {curve, public, private?} where each is hex --- */
+static duk_ret_t rc_25519_components(duk_context *ctx, const char *curve_label, const char *fname)
+{
+    const void *key = NULL; duk_size_t key_len = 0;
+    EVP_PKEY *pkey = NULL;
+    int is_private = 0;
+
+    if (!rc_get_key_any(ctx, 0, &key, &key_len))
+        RP_THROW(ctx, "crypto.%s: argument must be string or buffer", fname);
+
+    pkey = rc_load_priv_pkey_any(key, key_len, NULL);
+    if (pkey) is_private = 1;
+    else      pkey = rc_load_pub_pkey_any(key, key_len);
+    if (!pkey) RP_THROW(ctx, "crypto.%s: failed to parse key", fname);
+
+    duk_push_object(ctx);
+    duk_push_string(ctx, curve_label);
+    duk_put_prop_string(ctx, -2, "curve");
+
+    /* Public bytes — always 32 for X25519/Ed25519. */
+    {
+        size_t rawlen = 0;
+        if (EVP_PKEY_get_raw_public_key(pkey, NULL, &rawlen) <= 0)
+            { EVP_PKEY_free(pkey); DUK_OPENSSL_ERROR(ctx); }
+        unsigned char tmp[64];
+        if (rawlen > sizeof(tmp)) rawlen = sizeof(tmp);
+        if (EVP_PKEY_get_raw_public_key(pkey, tmp, &rawlen) <= 0)
+            { EVP_PKEY_free(pkey); DUK_OPENSSL_ERROR(ctx); }
+        char *hex = OPENSSL_buf2hexstr(tmp, rawlen);
+        /* OPENSSL_buf2hexstr inserts ':' between bytes; strip them. */
+        if (hex)
+        {
+            char *clean = (char *)OPENSSL_malloc(rawlen * 2 + 1);
+            if (clean)
+            {
+                int j = 0;
+                for (char *p = hex; *p; ++p) if (*p != ':') clean[j++] = *p;
+                clean[j] = 0;
+                duk_push_string(ctx, clean);
+                OPENSSL_free(clean);
+            } else duk_push_string(ctx, hex);
+            OPENSSL_free(hex);
+        } else duk_push_string(ctx, "");
+        duk_put_prop_string(ctx, -2, "public");
+    }
+    if (is_private)
+    {
+        size_t rawlen = 0;
+        if (EVP_PKEY_get_raw_private_key(pkey, NULL, &rawlen) <= 0)
+            { EVP_PKEY_free(pkey); DUK_OPENSSL_ERROR(ctx); }
+        unsigned char tmp[64];
+        if (rawlen > sizeof(tmp)) rawlen = sizeof(tmp);
+        if (EVP_PKEY_get_raw_private_key(pkey, tmp, &rawlen) <= 0)
+            { EVP_PKEY_free(pkey); DUK_OPENSSL_ERROR(ctx); }
+        char *hex = OPENSSL_buf2hexstr(tmp, rawlen);
+        if (hex)
+        {
+            char *clean = (char *)OPENSSL_malloc(rawlen * 2 + 1);
+            if (clean)
+            {
+                int j = 0;
+                for (char *p = hex; *p; ++p) if (*p != ':') clean[j++] = *p;
+                clean[j] = 0;
+                duk_push_string(ctx, clean);
+                OPENSSL_free(clean);
+            } else duk_push_string(ctx, hex);
+            OPENSSL_free(hex);
+        } else duk_push_string(ctx, "");
+        duk_put_prop_string(ctx, -2, "private");
+    }
+    EVP_PKEY_free(pkey);
+    return 1;
+}
+
+/* === X25519 (key agreement) === */
+
+static duk_ret_t duk_x25519_gen_key(duk_context *ctx)
+    { return rc_25519_gen_key(ctx, EVP_PKEY_X25519, "x25519_gen_key"); }
+static duk_ret_t duk_x25519_import_pub_key(duk_context *ctx)
+    { return rc_25519_import_pub_key(ctx, EVP_PKEY_X25519, "x25519_import_pub_key"); }
+static duk_ret_t duk_x25519_import_priv_key(duk_context *ctx)
+    { return rc_25519_import_priv_key(ctx, EVP_PKEY_X25519, "x25519_import_priv_key"); }
+static duk_ret_t duk_x25519_components(duk_context *ctx)
+    { return rc_25519_components(ctx, "X25519", "x25519_components"); }
+
+/* x25519_derive(private_key, public_key [, password]) — mirrors ecdh */
+static duk_ret_t duk_x25519_derive(duk_context *ctx)
+{
+    const void *priv_bytes = NULL, *pub_bytes = NULL;
+    duk_size_t priv_len = 0, pub_len = 0;
+    const char *password = NULL;
+    EVP_PKEY *priv = NULL, *pub = NULL;
+    EVP_PKEY_CTX *pctx = NULL;
+    size_t secret_len = 0;
+    int opt_idx = -1;
+
+    if (duk_is_object(ctx, 0) && !duk_is_buffer_data(ctx, 0) &&
+        !duk_is_array(ctx, 0) && !duk_is_function(ctx, 0) &&
+        !duk_is_string(ctx, 0))
+    {
+        opt_idx = 0;
+        if (duk_get_prop_string(ctx, 0, "private"))
+        {
+            if (duk_is_string(ctx, -1))      priv_bytes = duk_get_lstring(ctx, -1, &priv_len);
+            else if (duk_is_buffer_data(ctx, -1)) priv_bytes = duk_get_buffer_data(ctx, -1, &priv_len);
+        }
+        if (!priv_bytes) RP_THROW(ctx, "x25519_derive: 'private' is required");
+        if (duk_get_prop_string(ctx, 0, "public"))
+        {
+            if (duk_is_string(ctx, -1))      pub_bytes = duk_get_lstring(ctx, -1, &pub_len);
+            else if (duk_is_buffer_data(ctx, -1)) pub_bytes = duk_get_buffer_data(ctx, -1, &pub_len);
+        }
+        if (!pub_bytes) RP_THROW(ctx, "x25519_derive: 'public' is required");
+        if (duk_get_prop_string(ctx, 0, "password"))
+            password = REQUIRE_STRING(ctx, -1, "password must be a string");
+        duk_pop(ctx);
+    }
+    else
+    {
+        if (!rc_get_key_any(ctx, 0, &priv_bytes, &priv_len))
+            RP_THROW(ctx, "x25519_derive: first argument (private_key) must be string or buffer");
+        if (!rc_get_key_any(ctx, 1, &pub_bytes, &pub_len))
+            RP_THROW(ctx, "x25519_derive: second argument (public_key) must be string or buffer");
+        if (duk_is_string(ctx, 2)) password = duk_get_string(ctx, 2);
+    }
+
+    priv = rc_load_priv_pkey_any(priv_bytes, priv_len, password);
+    if (!priv) RP_THROW(ctx, "x25519_derive: failed to parse private key%s",
+                       password ? " (wrong password?)" : "");
+    pub = rc_load_pub_pkey_any(pub_bytes, pub_len);
+    if (!pub) { EVP_PKEY_free(priv); RP_THROW(ctx, "x25519_derive: failed to parse public key"); }
+
+    pctx = EVP_PKEY_CTX_new(priv, NULL);
+    if (!pctx) { EVP_PKEY_free(priv); EVP_PKEY_free(pub); DUK_OPENSSL_ERROR(ctx); }
+    if (EVP_PKEY_derive_init(pctx) <= 0 ||
+        EVP_PKEY_derive_set_peer(pctx, pub) <= 0 ||
+        EVP_PKEY_derive(pctx, NULL, &secret_len) <= 0)
+        { EVP_PKEY_CTX_free(pctx); EVP_PKEY_free(priv); EVP_PKEY_free(pub); DUK_OPENSSL_ERROR(ctx); }
+
+    unsigned char *out = (unsigned char *)duk_push_fixed_buffer(ctx, (duk_size_t)secret_len);
+    if (EVP_PKEY_derive(pctx, out, &secret_len) <= 0)
+        { EVP_PKEY_CTX_free(pctx); EVP_PKEY_free(priv); EVP_PKEY_free(pub); DUK_OPENSSL_ERROR(ctx); }
+
+    EVP_PKEY_CTX_free(pctx);
+    EVP_PKEY_free(priv);
+    EVP_PKEY_free(pub);
+
+    if (opt_idx >= 0) rc_finalize_buffer_buf_default(ctx, opt_idx);
+    return 1;
+}
+
+/* === Ed25519 (signing) === */
+
+static duk_ret_t duk_ed25519_gen_key(duk_context *ctx)
+    { return rc_25519_gen_key(ctx, EVP_PKEY_ED25519, "ed25519_gen_key"); }
+static duk_ret_t duk_ed25519_import_pub_key(duk_context *ctx)
+    { return rc_25519_import_pub_key(ctx, EVP_PKEY_ED25519, "ed25519_import_pub_key"); }
+static duk_ret_t duk_ed25519_import_priv_key(duk_context *ctx)
+    { return rc_25519_import_priv_key(ctx, EVP_PKEY_ED25519, "ed25519_import_priv_key"); }
+static duk_ret_t duk_ed25519_components(duk_context *ctx)
+    { return rc_25519_components(ctx, "Ed25519", "ed25519_components"); }
+
+/* ed25519_sign(message, private_key [, password | opts]) — mirrors rsa_sign.
+ * Ed25519 is a "pure" signature scheme: no hash arg; uses one-shot
+ * EVP_DigestSign (OpenSSL requires NULL MD and the one-shot variant). */
+static duk_ret_t duk_ed25519_sign(duk_context *ctx)
+{
+    const void *keybytes = NULL, *data = NULL;
+    duk_size_t keylen = 0, datalen = 0;
+    const char *password = NULL;
+    EVP_PKEY *pkey = NULL;
+    EVP_MD_CTX *mctx = NULL;
+    size_t siglen = 0;
+    unsigned char *out;
+
+    if (!rc_get_key_any(ctx, 0, &data, &datalen))
+        RP_THROW(ctx, "ed25519_sign: first argument (data) must be string or buffer");
+    if (!rc_get_key_any(ctx, 1, &keybytes, &keylen))
+        RP_THROW(ctx, "ed25519_sign: second argument (private_key) must be string or buffer");
+
+    if (duk_is_string(ctx, 2))
+        password = duk_get_string(ctx, 2);
+    else if (duk_is_object(ctx, 2) && !duk_is_buffer_data(ctx, 2) &&
+             !duk_is_array(ctx, 2) && !duk_is_function(ctx, 2))
+    {
+        if (duk_get_prop_string(ctx, 2, "password"))
+            password = REQUIRE_STRING(ctx, -1, "ed25519_sign: 'password' must be a string");
+        duk_pop(ctx);
+    }
+    else if (!duk_is_undefined(ctx, 2) && !duk_is_null(ctx, 2))
+        RP_THROW(ctx, "ed25519_sign: third argument must be a password string or options object");
+
+    pkey = rc_load_priv_pkey_any(keybytes, keylen, password);
+    if (!pkey) RP_THROW(ctx, "ed25519_sign: failed to parse private key%s",
+                       password ? " (wrong password?)" : "");
+
+    mctx = EVP_MD_CTX_new();
+    if (!mctx) { EVP_PKEY_free(pkey); DUK_OPENSSL_ERROR(ctx); }
+    if (EVP_DigestSignInit(mctx, NULL, NULL, NULL, pkey) <= 0)
+        { EVP_MD_CTX_free(mctx); EVP_PKEY_free(pkey); DUK_OPENSSL_ERROR(ctx); }
+    if (EVP_DigestSign(mctx, NULL, &siglen, (const unsigned char *)data, (size_t)datalen) <= 0)
+        { EVP_MD_CTX_free(mctx); EVP_PKEY_free(pkey); DUK_OPENSSL_ERROR(ctx); }
+
+    out = (unsigned char *)duk_push_fixed_buffer(ctx, (duk_size_t)siglen);
+    if (EVP_DigestSign(mctx, out, &siglen, (const unsigned char *)data, (size_t)datalen) <= 0)
+        { EVP_MD_CTX_free(mctx); EVP_PKEY_free(pkey); DUK_OPENSSL_ERROR(ctx); }
+
+    EVP_MD_CTX_free(mctx);
+    EVP_PKEY_free(pkey);
+    return 1;
+}
+
+/* ed25519_verify(data, public_key, signature) — mirrors rsa_verify. */
+static duk_ret_t duk_ed25519_verify(duk_context *ctx)
+{
+    const void *keybytes = NULL, *data = NULL, *sig = NULL;
+    duk_size_t keylen = 0, datalen = 0, siglen = 0;
+    EVP_PKEY *pkey = NULL;
+    EVP_MD_CTX *mctx = NULL;
+    int verify_result = 0;
+
+    if (!rc_get_key_any(ctx, 0, &data, &datalen))
+        RP_THROW(ctx, "ed25519_verify: first argument (data) must be string or buffer");
+    if (!rc_get_key_any(ctx, 1, &keybytes, &keylen))
+        RP_THROW(ctx, "ed25519_verify: second argument (public_key) must be string or buffer");
+    if (!rc_get_key_any(ctx, 2, &sig, &siglen))
+        RP_THROW(ctx, "ed25519_verify: third argument (signature) must be string or buffer");
+
+    pkey = rc_load_pub_pkey_any(keybytes, keylen);
+    if (!pkey) RP_THROW(ctx, "ed25519_verify: failed to parse public key");
+
+    mctx = EVP_MD_CTX_new();
+    if (!mctx) { EVP_PKEY_free(pkey); DUK_OPENSSL_ERROR(ctx); }
+    if (EVP_DigestVerifyInit(mctx, NULL, NULL, NULL, pkey) <= 0)
+        { EVP_MD_CTX_free(mctx); EVP_PKEY_free(pkey); DUK_OPENSSL_ERROR(ctx); }
+    verify_result = EVP_DigestVerify(mctx, (const unsigned char *)sig, (size_t)siglen,
+                                     (const unsigned char *)data, (size_t)datalen);
+    EVP_MD_CTX_free(mctx);
+    EVP_PKEY_free(pkey);
+
+    duk_push_boolean(ctx, verify_result == 1);
+    return 1;
+}
+
+/* === scrypt === */
+
+static duk_ret_t duk_scrypt(duk_context *ctx)
+{
+    const void *pass = NULL, *salt = NULL;
+    duk_size_t passlen = 0, saltlen = 0;
+    unsigned int N = 0, r = 0, p = 0;
+    int length = 0;
+    EVP_KDF *kdf = NULL;
+    EVP_KDF_CTX *kctx = NULL;
+    OSSL_PARAM params[6];
+    int nparams = 0;
+    uint64_t Nv = 0;
+    unsigned char *out;
+
+    REQUIRE_OBJECT(ctx, 0, "crypto.scrypt requires an options object");
+
+    if (!rc_get_opt_bytes(ctx, 0, "pass", &pass, &passlen))
+        RP_THROW(ctx, "crypto.scrypt: 'pass' is required (string/buffer)");
+    if (!rc_get_opt_bytes(ctx, 0, "salt", &salt, &saltlen))
+        RP_THROW(ctx, "crypto.scrypt: 'salt' is required (string/buffer)");
+
+    if (!duk_get_prop_string(ctx, 0, "N"))
+        RP_THROW(ctx, "crypto.scrypt: option 'N' is required (Number, cost factor)");
+    Nv = (uint64_t)REQUIRE_NUMBER(ctx, -1, "crypto.scrypt: 'N' must be a Number");
+    duk_pop(ctx);
+    if (Nv < 2 || (Nv & (Nv - 1)) != 0)
+        RP_THROW(ctx, "crypto.scrypt: 'N' must be a power of two ≥ 2");
+    N = (unsigned int)Nv;
+
+    if (!duk_get_prop_string(ctx, 0, "r"))
+        RP_THROW(ctx, "crypto.scrypt: option 'r' is required (Number, block size)");
+    r = (unsigned int)REQUIRE_NUMBER(ctx, -1, "crypto.scrypt: 'r' must be a Number");
+    duk_pop(ctx);
+    if (r < 1) RP_THROW(ctx, "crypto.scrypt: 'r' must be ≥ 1");
+
+    if (!duk_get_prop_string(ctx, 0, "p"))
+        RP_THROW(ctx, "crypto.scrypt: option 'p' is required (Number, parallelization)");
+    p = (unsigned int)REQUIRE_NUMBER(ctx, -1, "crypto.scrypt: 'p' must be a Number");
+    duk_pop(ctx);
+    if (p < 1) RP_THROW(ctx, "crypto.scrypt: 'p' must be ≥ 1");
+
+    if (!duk_get_prop_string(ctx, 0, "length"))
+        RP_THROW(ctx, "crypto.scrypt: option 'length' is required (Number, output bytes)");
+    length = (int)REQUIRE_NUMBER(ctx, -1, "crypto.scrypt: 'length' must be a Number");
+    duk_pop(ctx);
+    if (length < 1) RP_THROW(ctx, "crypto.scrypt: 'length' must be ≥ 1");
+
+    kdf = EVP_KDF_fetch(NULL, "SCRYPT", NULL);
+    if (!kdf) RP_THROW(ctx, "crypto.scrypt: EVP_KDF_fetch(SCRYPT) failed");
+    kctx = EVP_KDF_CTX_new(kdf);
+    EVP_KDF_free(kdf);
+    if (!kctx) RP_THROW(ctx, "crypto.scrypt: EVP_KDF_CTX_new failed");
+
+    params[nparams++] = OSSL_PARAM_construct_octet_string(
+        OSSL_KDF_PARAM_PASSWORD, (void *)pass, passlen);
+    params[nparams++] = OSSL_PARAM_construct_octet_string(
+        OSSL_KDF_PARAM_SALT, (void *)salt, saltlen);
+    params[nparams++] = OSSL_PARAM_construct_uint64(
+        OSSL_KDF_PARAM_SCRYPT_N, &Nv);
+    params[nparams++] = OSSL_PARAM_construct_uint(
+        OSSL_KDF_PARAM_SCRYPT_R, &r);
+    params[nparams++] = OSSL_PARAM_construct_uint(
+        OSSL_KDF_PARAM_SCRYPT_P, &p);
+    params[nparams] = OSSL_PARAM_construct_end();
+
+    out = (unsigned char *)duk_push_fixed_buffer(ctx, (duk_size_t)length);
+    if (EVP_KDF_derive(kctx, out, (size_t)length, params) <= 0)
+    {
+        EVP_KDF_CTX_free(kctx);
+        DUK_OPENSSL_ERROR(ctx);
+    }
+    EVP_KDF_CTX_free(kctx);
+
+    /* drop 'pass' and 'salt' stack refs */
+    duk_remove(ctx, -2);
+    duk_remove(ctx, -2);
+
+    rc_finalize_buffer_buf_default(ctx, 0);
+    return 1;
+}
+
 const duk_function_list_entry crypto_funcs[] = {
     {"encrypt", duk_encrypt, 3},
     {"decrypt", duk_decrypt, 3},
@@ -4234,7 +6286,7 @@ const duk_function_list_entry crypto_funcs[] = {
     {"rsa_pub_encrypt", duk_rsa_pub_encrypt, 3},
     {"rsa_priv_decrypt", duk_rsa_priv_decrypt, 4},
     {"rsa_sign", duk_rsa_sign, 3},
-    {"rsa_verify", duk_rsa_verify, 3},
+    {"rsa_verify", duk_rsa_verify, 4},
     {"rsa_gen_key", duk_rsa_gen_key, 2},
     {"gen_csr", duk_gen_csr, 3},
     {"gen_cert", duk_gen_cert, 2},
@@ -4245,6 +6297,32 @@ const duk_function_list_entry crypto_funcs[] = {
     {"passwd", do_passwd, 3},
     {"passwdCheck", check_passwd, 2},
     {"passwdComponents", passwd_components, 1},
+    /* Tier 1 / Tier 2 additions */
+    {"timingSafeEqual", duk_timing_safe_equal, 2},
+    {"pbkdf2", duk_pbkdf2, 1},
+    {"hkdf", duk_hkdf, 1},
+    {"ec_gen_key", duk_ec_gen_key, 2},
+    {"ec_import_pub_key", duk_ec_import_pub_key, 2},
+    {"ec_import_priv_key", duk_ec_import_priv_key, 3},
+    {"ec_components", duk_ec_components, 1},
+    {"ecdsa_sign", duk_ecdsa_sign, 3},
+    {"ecdsa_verify", duk_ecdsa_verify, 4},
+    {"ecdh", duk_ecdh, 3},
+    {"pemToDer", duk_pem_to_der, 1},
+    {"derToPem", duk_der_to_pem, 2},
+    /* Tier 3: X25519 / Ed25519 / scrypt */
+    {"x25519_gen_key", duk_x25519_gen_key, 1},
+    {"x25519_import_pub_key", duk_x25519_import_pub_key, 1},
+    {"x25519_import_priv_key", duk_x25519_import_priv_key, 3},
+    {"x25519_components", duk_x25519_components, 1},
+    {"x25519_derive", duk_x25519_derive, 3},
+    {"ed25519_gen_key", duk_ed25519_gen_key, 1},
+    {"ed25519_import_pub_key", duk_ed25519_import_pub_key, 1},
+    {"ed25519_import_priv_key", duk_ed25519_import_priv_key, 3},
+    {"ed25519_components", duk_ed25519_components, 1},
+    {"ed25519_sign", duk_ed25519_sign, 3},
+    {"ed25519_verify", duk_ed25519_verify, 3},
+    {"scrypt", duk_scrypt, 1},
     {NULL, NULL, 0}
 };
 
