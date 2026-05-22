@@ -1012,6 +1012,160 @@ testFeature("localize - localized var visible in closure", function(){
     return (fn() === "from_outer");
 });
 
+/* ================================================================
+   deepCopy — Map, Set, RegExp handling
+   ================================================================ */
+
+testFeature("deepCopy - nested Map keeps prototype", function() {
+    var src = { tag: "outer", m: new Map([["k", 1], ["k2", 2]]) };
+    var c = deepCopy({}, src);
+    return c.m instanceof Map && c.m.size === 2 && c.m.get("k") === 1;
+});
+
+testFeature("deepCopy - nested Set keeps prototype", function() {
+    var c = deepCopy({}, { s: new Set([10, 20, 30]) });
+    return c.s instanceof Set && c.s.size === 3 && c.s.has(20);
+});
+
+testFeature("deepCopy - Map clone is independent", function() {
+    var m1 = new Map([["a", 1], ["b", 2]]);
+    var m2 = deepCopy(new Map(), m1);
+    m2.set("c", 3);
+    m2.delete("a");
+    return m1.size === 2 && m1.has("a") && !m1.has("c");
+});
+
+testFeature("deepCopy - object-keyed Map re-hashes after clone", function() {
+    var ko = {a: 1};
+    var src = new Map();
+    src.set(ko, "obj-val");
+    var c = deepCopy(new Map(), src);
+    var clonedKey = null;
+    c.forEach(function(v, k) { if (typeof k === "object") clonedKey = k; });
+    return clonedKey && clonedKey !== ko
+        && c.has(clonedKey) && c.get(clonedKey) === "obj-val";
+});
+
+testFeature("deepCopy - RegExp nested keeps prototype", function() {
+    var src = { r: /foo/gi };
+    var c = deepCopy({}, src);
+    return c.r instanceof RegExp
+        && c.r.source === "foo"
+        && c.r.flags === "gi"
+        && c.r !== src.r;
+});
+
+testFeature("deepCopy - RegExp preserves lastIndex", function() {
+    var r = /abc/g;
+    r.lastIndex = 7;
+    var c = deepCopy({}, {r: r});
+    return c.r.lastIndex === 7;
+});
+
+testFeature("deepCopy - RegExp clone is independent", function() {
+    var r = /pattern/g;
+    r.lastIndex = 2;
+    var c = deepCopy({}, {r: r});
+    r.lastIndex = 99;
+    c.r.lastIndex = 5;
+    /* mutating one must not affect the other */
+    return r.lastIndex === 99 && c.r.lastIndex === 5;
+});
+
+testFeature("deepCopy - RegExp .test still works on clone", function() {
+    var c = deepCopy({}, {r: /^hello/i});
+    return c.r.test("Hello world") === true
+        && c.r.test("nope") === false;
+});
+
+testFeature("deepCopy - RegExp user-added own prop propagates", function() {
+    var r = /x/;
+    r.tag = "labelled";
+    var c = deepCopy({}, {r: r});
+    return c.r instanceof RegExp && c.r.tag === "labelled";
+});
+
+testFeature("deepCopy - same RegExp referenced twice is shared in clone", function() {
+    var shared = /shared/;
+    var c = deepCopy({}, {a: shared, b: shared});
+    return c.a === c.b
+        && c.a instanceof RegExp
+        && c.a !== shared;
+});
+
+testFeature("deepCopy - RegExp inside Map value", function() {
+    var m = new Map([["pat", /abc/m]]);
+    var c = deepCopy(new Map(), m);
+    var inner = c.get("pat");
+    return inner instanceof RegExp
+        && inner.source === "abc"
+        && inner.flags === "m";
+});
+
+testFeature("deepCopy - array of RegExps inside object", function() {
+    var c = deepCopy({}, {arr: [/x/g, /y/i, /z/]});
+    return c.arr[0] instanceof RegExp && c.arr[0].flags === "g"
+        && c.arr[1] instanceof RegExp && c.arr[1].flags === "i"
+        && c.arr[2] instanceof RegExp && c.arr[2].flags === "";
+});
+
+testFeature("deepCopy - Error nested keeps prototype", function() {
+    var e = new Error("oops");
+    var c = deepCopy({}, {err: e});
+    return c.err instanceof Error
+        && c.err.message === "oops"
+        && c.err.name === "Error"
+        && c.err !== e;
+});
+
+testFeature("deepCopy - Error subclasses preserve type", function() {
+    var c = deepCopy({}, {
+        a: new TypeError("t"),
+        b: new RangeError("r"),
+        d: new SyntaxError("s"),
+        e: new ReferenceError("ref")
+    });
+    return c.a instanceof TypeError      && c.a instanceof Error
+        && c.b instanceof RangeError     && c.b.message === "r"
+        && c.d instanceof SyntaxError    && c.d.name === "SyntaxError"
+        && c.e instanceof ReferenceError && c.e.message === "ref";
+});
+
+testFeature("deepCopy - Error user-added own props propagate", function() {
+    var e = new Error("oops");
+    e.code = "EBAD";
+    e.context = {file: "x.js", line: 42};
+    var c = deepCopy({}, {e: e});
+    return c.e.code === "EBAD"
+        && c.e.context.file === "x.js"
+        && c.e.context.line === 42
+        && c.e.context !== e.context;  /* deep */
+});
+
+testFeature("deepCopy - thrown Error preserves stack", function() {
+    var thrown;
+    try { throw new Error("with stack"); } catch(e) { thrown = e; }
+    var c = deepCopy({}, {e: thrown});
+    return typeof c.e.stack === "string"
+        && c.e.stack.indexOf("Error: with stack") === 0;
+});
+
+testFeature("deepCopy - Error clone is independent", function() {
+    var e = new Error("orig");
+    e.tag = "v1";
+    var c = deepCopy({}, {e: e});
+    e.message = "MUTATED";   /* won't propagate (message is intrinsic) */
+    e.tag = "MUTATED";
+    return c.e.message === "orig" && c.e.tag === "v1";
+});
+
+testFeature("deepCopy - Error inside Map value", function() {
+    var m = new Map([["err", new TypeError("inMap")]]);
+    var c = deepCopy(new Map(), m);
+    var got = c.get("err");
+    return got instanceof TypeError && got.message === "inMap";
+});
+
 try { rmdir(tmpdir); } catch(e) {} /* remove if empty */
 
 testFeature.exit();

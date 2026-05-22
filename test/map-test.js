@@ -65,6 +65,36 @@ gSetWithProps.label   = "labeled-set";
 gSetWithProps.payload = {flag: true};
 gSetWithProps[0]      = "indexed-set-prop";
 
+/* RegExps — top-level, nested in object, and nested inside a Map.
+   The thread-copy code must rebuild each as a real RegExp via
+   `new RegExp(source, flags)` in the target context. */
+var gRegExp        = /foo/gi;
+gRegExp.lastIndex  = 4;
+gRegExp.tag        = "labelled";
+var gRegExpPlain   = /bar/m;
+var gRegExpNested  = { r: /^baz$/, list: [/a/g, /b/i] };
+var gRegExpInMap   = new Map([["pat", /xyz/g]]);
+
+/* Errors — base, subclass, with own props, thrown (has stack), nested. */
+var gError         = new Error("topE");
+gError.code        = "EBAD";
+var gTypeError     = new TypeError("type error");
+var gRangeError    = new RangeError("range error");
+var gErrorThrown;
+try { throw new SyntaxError("syntax bad"); } catch (e) { gErrorThrown = e; }
+var gErrorNested   = { err: new Error("nested"), list: [new TypeError("a"), new RangeError("b")] };
+var gErrorInMap    = new Map([["e", new Error("inMap")]]);
+
+/* Errors — base, subclass, with own props, thrown (has stack), nested. */
+var gError         = new Error("topE");
+gError.code        = "EBAD";
+var gTypeError     = new TypeError("type error");
+var gRangeError    = new RangeError("range error");
+var gErrorThrown;
+try { throw new SyntaxError("syntax bad"); } catch (e) { gErrorThrown = e; }
+var gErrorNested   = { err: new Error("nested"), list: [new TypeError("a"), new RangeError("b")] };
+var gErrorInMap    = new Map([["e", new Error("inMap")]]);
+
 
 /* ================================================================
    Test suite — runs once in main, once in thread
@@ -394,6 +424,192 @@ function runTests(label) {
         return gSetWithProps.size === 2
             && gSetWithProps.has("a")
             && gSetWithProps.has("b");
+    });
+
+    /* ---- RegExp (verifies cross-thread copy in the Child pass) ---- */
+
+    testFeature(label + " - RegExp keeps prototype", function() {
+        return gRegExp instanceof RegExp
+            && typeof gRegExp.test === "function";
+    });
+
+    testFeature(label + " - RegExp source + flags preserved", function() {
+        return gRegExp.source === "foo"
+            && gRegExp.flags  === "gi"
+            && gRegExpPlain.source === "bar"
+            && gRegExpPlain.flags  === "m";
+    });
+
+    testFeature(label + " - RegExp lastIndex preserved", function() {
+        return gRegExp.lastIndex === 4;
+    });
+
+    testFeature(label + " - RegExp user-added own prop preserved", function() {
+        return gRegExp.tag === "labelled";
+    });
+
+    testFeature(label + " - RegExp .test() works", function() {
+        var r = /^hello/i;
+        return r.test("Hello world") === true
+            && r.test("nope")        === false;
+    });
+
+    testFeature(label + " - RegExp nested in object", function() {
+        return gRegExpNested.r instanceof RegExp
+            && gRegExpNested.r.source === "^baz$"
+            && Array.isArray(gRegExpNested.list)
+            && gRegExpNested.list[0] instanceof RegExp
+            && gRegExpNested.list[0].flags === "g"
+            && gRegExpNested.list[1].flags === "i";
+    });
+
+    testFeature(label + " - RegExp inside Map value", function() {
+        var r = gRegExpInMap.get("pat");
+        return r instanceof RegExp && r.source === "xyz" && r.flags === "g";
+    });
+
+    /* ---- Error (verifies cross-thread copy in the Child pass) ---- */
+
+    testFeature(label + " - Error keeps prototype", function() {
+        return gError instanceof Error
+            && typeof gError.message === "string";
+    });
+
+    testFeature(label + " - Error message + name preserved", function() {
+        return gError.message === "topE"
+            && gError.name    === "Error";
+    });
+
+    testFeature(label + " - Error user-added own prop preserved", function() {
+        return gError.code === "EBAD";
+    });
+
+    testFeature(label + " - TypeError subclass preserved", function() {
+        return gTypeError instanceof TypeError
+            && gTypeError instanceof Error
+            && gTypeError.name    === "TypeError"
+            && gTypeError.message === "type error";
+    });
+
+    testFeature(label + " - RangeError subclass preserved", function() {
+        return gRangeError instanceof RangeError
+            && gRangeError instanceof Error
+            && gRangeError.name === "RangeError";
+    });
+
+    testFeature(label + " - thrown Error preserves stack", function() {
+        return gErrorThrown instanceof SyntaxError
+            && typeof gErrorThrown.stack === "string"
+            && gErrorThrown.stack.indexOf("SyntaxError") === 0;
+    });
+
+    testFeature(label + " - Error nested in object", function() {
+        return gErrorNested.err instanceof Error
+            && gErrorNested.err.message === "nested"
+            && Array.isArray(gErrorNested.list)
+            && gErrorNested.list[0] instanceof TypeError
+            && gErrorNested.list[1] instanceof RangeError;
+    });
+
+    testFeature(label + " - Error inside Map value", function() {
+        var em = gErrorInMap.get("e");
+        return em instanceof Error && em.message === "inMap";
+    });
+
+    /* ---- rampart.utils.deepCopy: Map/Set support (rampart only) ---- */
+
+    if (!IS_RAMPART) return;
+
+    var deepCopy = rampart.utils.deepCopy;
+
+    testFeature(label + " - deepCopy: nested Map keeps prototype", function() {
+        var src = { tag: "outer", m: new Map([["k", 1], ["k2", 2]]) };
+        var c = deepCopy({}, src);
+        return c.m instanceof Map && c.m.size === 2 && c.m.get("k") === 1;
+    });
+
+    testFeature(label + " - deepCopy: nested Set keeps prototype", function() {
+        var src = { s: new Set([10, 20, 30]) };
+        var c = deepCopy({}, src);
+        return c.s instanceof Set && c.s.size === 3 && c.s.has(20);
+    });
+
+    testFeature(label + " - deepCopy: Map -> Map merge entries + plain props", function() {
+        var m1 = new Map([["a", 1], ["b", 2]]);
+        m1.tagProp = "tag";
+        var m2 = deepCopy(new Map(), m1);
+        return m2 instanceof Map
+            && m2.size === 2
+            && m2.get("a") === 1 && m2.get("b") === 2
+            && m2.tagProp === "tag";
+    });
+
+    testFeature(label + " - deepCopy: Map clone is independent", function() {
+        var m1 = new Map([["a", 1], ["b", 2]]);
+        var m2 = deepCopy(new Map(), m1);
+        m2.set("c", 3);
+        m2.delete("a");
+        return m1.size === 2 && m1.has("a") && !m1.has("c");
+    });
+
+    testFeature(label + " - deepCopy: object-keyed Map re-hashes correctly", function() {
+        var ko = {a: 1};
+        var src = new Map();
+        src.set(ko, "obj-val");
+        src.set("strk", "str-val");
+        var c = deepCopy(new Map(), src);
+
+        var clonedKey = null;
+        c.forEach(function(v, k) {
+            if (typeof k === "object" && k !== null) clonedKey = k;
+        });
+        return c.size === 2
+            && c.get("strk") === "str-val"
+            && clonedKey && clonedKey !== ko
+            && c.has(clonedKey)
+            && c.get(clonedKey) === "obj-val";
+    });
+
+    testFeature(label + " - deepCopy: nested object values inside Map are deep", function() {
+        var inner = {n: 1, arr: [10, 20]};
+        var m = new Map([["k", inner]]);
+        var c = deepCopy(new Map(), m);
+        inner.n = 999;
+        inner.arr.push(30);
+        var got = c.get("k");
+        return got && got.n === 1
+            && Array.isArray(got.arr)
+            && got.arr.length === 2;
+    });
+
+    testFeature(label + " - deepCopy: deeply nested Map containing Set", function() {
+        var src = { a: { b: new Map([["x", new Set([1, 2, 3])]]) }};
+        var c = deepCopy({}, src);
+        var s = c.a.b instanceof Map && c.a.b.get("x");
+        return c.a.b instanceof Map
+            && s instanceof Set
+            && s.size === 3 && s.has(2);
+    });
+
+    testFeature(label + " - deepCopy: Set -> Set merge + plain prop", function() {
+        var s1 = new Set([1, 2, 3]);
+        s1.note = "labelled";
+        var s2 = deepCopy(new Set(), s1);
+        return s2 instanceof Set
+            && s2.size === 3
+            && s2.has(1) && s2.has(3)
+            && s2.note === "labelled";
+    });
+
+    testFeature(label + " - deepCopy: plain target does not transmute to Map", function() {
+        var m = new Map([["k", "v"]]);
+        m.tag = "t";
+        var c = deepCopy({}, m);
+        /* Plain target stays plain.  Plain own props propagate; the Map's
+           internal entries do NOT (target isn't a Map). */
+        return !(c instanceof Map) && c.tag === "t"
+            && typeof c.get !== "function"
+            && c.size === undefined;
     });
 }
 

@@ -613,9 +613,44 @@ testModule("process", function() {
     }
 });
 
-/* The rampart-core process object (the GLOBAL `process`, not the
-   nodeshim wrapper above) exposes platform helpers used to back
-   nodeshim's os.*.  These tests verify the helpers themselves AND
+/* After require('rampart-nodeshim') (which the testModule blocks
+   above already triggered transitively), globalThis.process has
+   been α′-augmented with node-style fields (stdin/stdout/stderr
+   with fd 0/1/2, platform, arch, hrtime, etc.) WITHOUT clobbering
+   rampart-core's extras (installPath, scriptPath, getCpuInfo, …).
+   Rampart-only — node has these natively. */
+if (!_isRampart)
+    skipModule("process α′ augmentation", "rampart-only");
+else
+testModule("process α′ augmentation", function() {
+    /* node-style fields installed via augmentation */
+    must(typeof process.stdin  === 'object', "global process.stdin");
+    must(typeof process.stdout === 'object', "global process.stdout");
+    must(typeof process.stderr === 'object', "global process.stderr");
+    mustEq(process.stdin.fd,  0, "stdin.fd === 0");
+    mustEq(process.stdout.fd, 1, "stdout.fd === 1");
+    mustEq(process.stderr.fd, 2, "stderr.fd === 2");
+    must(typeof process.platform === 'string', "platform");
+    must(typeof process.arch     === 'string', "arch");
+    must(typeof process.hrtime   === 'function', "hrtime");
+    must(typeof process.nextTick === 'function', "nextTick");
+    /* rampart-core extras preserved */
+    must(typeof process.installPath === 'string',  "rampart installPath kept");
+    must(typeof process.scriptPath  === 'string',  "rampart scriptPath kept");
+    must(typeof process.getCpuInfo  === 'function', "rampart getCpuInfo kept");
+    must(typeof process.setMaxMem   === 'function', "rampart setMaxMem kept");
+    must(typeof process.systemUptime === 'function', "rampart systemUptime kept");
+    /* Note: global.process !== require('process') by design — globalThis.
+       process is rampart-core's process AUGMENTED with nodeshim fields,
+       while require('process') is nodeshim's separate process object.
+       They share the augmented surface but differ on rampart extras. */
+    var nsP = require('process');
+    must(process.stdout.fd === nsP.stdout.fd, "stdout.fd matches between global + require");
+    must(process.platform === nsP.platform,   "platform matches");
+});
+
+/* The rampart-core process object exposes platform helpers used to
+   back nodeshim's os.*.  These tests verify the helpers themselves AND
    that the os shim's delegation lines up.  Rampart-only. */
 if (!_isRampart)
     skipModule("process (rampart core)", "rampart-only");
@@ -636,8 +671,16 @@ testModule("process (rampart core)", function() {
     var fre = process.getFreeMem();
     must(typeof fre === 'number' && fre >= 0, "getFreeMem returns non-negative MB");
     must(fre <= tot, "free <= total");
+    /* process.uptime now returns PROCESS lifetime in seconds
+       (matches node).  At test-runtime that's usually a few ms;
+       allow 0 since the first call may catch zero exactly. */
     var up = process.uptime();
-    must(typeof up === 'number' && up > 0, "uptime > 0 seconds");
+    must(typeof up === 'number' && up >= 0, "uptime >= 0 seconds (process lifetime)");
+    /* systemUptime separately exposes the boot-uptime value */
+    if (typeof process.systemUptime === 'function') {
+        var sup = process.systemUptime();
+        must(typeof sup === 'number' && sup > 0, "systemUptime > 0 seconds (system boot)");
+    }
     var ci = process.getCpuInfo();
     must(Array.isArray(ci) && ci.length > 0, "getCpuInfo returns non-empty array");
     must(typeof ci[0].model === 'string', "cpu[0].model is string");
@@ -659,9 +702,14 @@ testModule("process (rampart core)", function() {
     var fr1 = os.freemem(), fr2 = process.getFreeMem() * 1048576;
     must(Math.abs(fr1 - fr2) < 64 * 1048576,
          "os.freemem within 64MB of process.getFreeMem");
-    /* uptime advances continuously; verify within 1 second */
-    var u1 = os.uptime(), u2 = process.uptime();
-    must(Math.abs(u1 - u2) < 2, "os.uptime within 2s of process.uptime");
+    /* os.uptime is SYSTEM uptime (matches node's os module);
+       process.systemUptime exposes the same number — verify they
+       agree within 2 seconds.  process.uptime() (process lifetime,
+       small number) is intentionally different from os.uptime. */
+    if (typeof process.systemUptime === 'function') {
+        var su1 = os.uptime(), su2 = process.systemUptime();
+        must(Math.abs(su1 - su2) < 2, "os.uptime within 2s of process.systemUptime (both system-boot)");
+    }
     /* cpus: same length */
     mustEq(os.cpus().length, process.getCpuInfo().length,
            "os.cpus().length === process.getCpuInfo().length");
@@ -1080,6 +1128,202 @@ asyncQ.push(asyncBlock("util.promisify / callbackify (async)", function(done) {
             });
         });
     }, function(err) { done(err); });
+}));
+
+asyncQ.push(asyncBlock("webcrypto (subtle)", function(done) {
+    /* Smoke test for require('crypto').webcrypto — one happy path per
+       algorithm family plus a JWK round-trip per asymmetric family. */
+    var wc = require('crypto').webcrypto;
+    var enc = new TextEncoder(), dec = new TextDecoder();
+    function hexAB(buf) {
+        var u8 = new Uint8Array(buf), s = '';
+        for (var i = 0; i < u8.length; i++) {
+            var v = u8[i]; s += (v < 16 ? '0' : '') + v.toString(16);
+        }
+        return s;
+    }
+    /* Sequential per-family test to keep error messages readable. */
+    var steps = [
+        function () {
+            /* getRandomValues + randomUUID */
+            var arr = new Uint8Array(16);
+            wc.getRandomValues(arr);
+            must(arr.some(function(v) { return v !== 0; }), "getRandomValues fills");
+            must(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(wc.randomUUID()),
+                 "randomUUID v4 format");
+            return Promise.resolve();
+        },
+        function () {
+            /* digest SHA-256 KAT */
+            return wc.subtle.digest('SHA-256', enc.encode('hello')).then(function (h) {
+                mustEq(hexAB(h),
+                    '2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824',
+                    "digest SHA-256(hello)");
+            });
+        },
+        function () {
+            /* HMAC RFC 4231 Test 1 */
+            var k20 = new Uint8Array(20); for (var i = 0; i < 20; i++) k20[i] = 0x0b;
+            return wc.subtle.importKey('raw', k20,
+                {name:'HMAC', hash:'SHA-256'}, true, ['sign','verify']
+            ).then(function (k) {
+                return wc.subtle.sign('HMAC', k, enc.encode('Hi There')).then(function (sig) {
+                    mustEq(hexAB(sig),
+                        'b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7',
+                        "HMAC RFC4231#1");
+                    return wc.subtle.verify('HMAC', k, sig, enc.encode('Hi There'));
+                }).then(function (ok) { must(ok === true, "HMAC verify good"); });
+            });
+        },
+        function () {
+            /* AES-GCM round-trip with AAD */
+            return wc.subtle.generateKey({name:'AES-GCM', length:256}, true, ['encrypt','decrypt']
+            ).then(function (k) {
+                var iv = new Uint8Array(12); wc.getRandomValues(iv);
+                var pt = enc.encode('secret payload');
+                var aad = enc.encode('public');
+                return wc.subtle.encrypt({name:'AES-GCM', iv:iv, additionalData:aad}, k, pt
+                ).then(function (ct) {
+                    mustEq(ct.byteLength, pt.byteLength + 16, "AES-GCM ct+tag len");
+                    return wc.subtle.decrypt({name:'AES-GCM', iv:iv, additionalData:aad}, k, ct);
+                }).then(function (rt) { mustEq(dec.decode(rt), 'secret payload', "AES-GCM round-trip"); });
+            });
+        },
+        function () {
+            /* RSA-PSS generateKey + sign + verify + JWK round-trip */
+            return wc.subtle.generateKey(
+                {name:'RSA-PSS', modulusLength:2048,
+                 publicExponent:new Uint8Array([1,0,1]), hash:'SHA-256'},
+                true, ['sign','verify']
+            ).then(function (kp) {
+                return wc.subtle.sign({name:'RSA-PSS', saltLength:32}, kp.privateKey, enc.encode('rsa-pss')
+                ).then(function (sig) {
+                    return wc.subtle.verify({name:'RSA-PSS', saltLength:32}, kp.publicKey, sig, enc.encode('rsa-pss'));
+                }).then(function (ok) {
+                    must(ok === true, "RSA-PSS sign+verify");
+                    /* JWK round-trip */
+                    return Promise.all([
+                        wc.subtle.exportKey('jwk', kp.privateKey),
+                        wc.subtle.exportKey('jwk', kp.publicKey)
+                    ]);
+                }).then(function (rs) {
+                    var priv = rs[0], pub = rs[1];
+                    mustEq(priv.kty, 'RSA', "RSA priv JWK kty");
+                    must(priv.n && priv.e && priv.d && priv.p && priv.q && priv.dp && priv.dq && priv.qi,
+                         "RSA priv JWK has all CRT params");
+                });
+            });
+        },
+        function () {
+            /* ECDSA P-256 + ECDH P-256 + EC JWK round-trip */
+            return wc.subtle.generateKey({name:'ECDSA', namedCurve:'P-256'}, true, ['sign','verify']
+            ).then(function (kp) {
+                return wc.subtle.sign({name:'ECDSA', hash:'SHA-256'}, kp.privateKey, enc.encode('ecdsa')
+                ).then(function (sig) {
+                    mustEq(sig.byteLength, 64, "ECDSA P-256 sig is IEEE P1363 (64 bytes)");
+                    return wc.subtle.verify({name:'ECDSA', hash:'SHA-256'}, kp.publicKey, sig, enc.encode('ecdsa'));
+                }).then(function (ok) { must(ok === true, "ECDSA verify"); });
+            }).then(function () {
+                /* ECDH */
+                return Promise.all([
+                    wc.subtle.generateKey({name:'ECDH', namedCurve:'P-256'}, true, ['deriveBits','deriveKey']),
+                    wc.subtle.generateKey({name:'ECDH', namedCurve:'P-256'}, true, ['deriveBits','deriveKey'])
+                ]);
+            }).then(function (kps) {
+                return Promise.all([
+                    wc.subtle.deriveBits({name:'ECDH', public:kps[1].publicKey}, kps[0].privateKey, 256),
+                    wc.subtle.deriveBits({name:'ECDH', public:kps[0].publicKey}, kps[1].privateKey, 256)
+                ]).then(function (ss) { mustEq(hexAB(ss[0]), hexAB(ss[1]), "ECDH shared secret agreement"); });
+            });
+        },
+        function () {
+            /* PBKDF2 RFC 6070 #1 + deriveKey chain → AES-GCM */
+            return wc.subtle.importKey('raw', enc.encode('password'), 'PBKDF2', false, ['deriveBits','deriveKey']
+            ).then(function (k) {
+                return wc.subtle.deriveBits(
+                    {name:'PBKDF2', salt:enc.encode('salt'), iterations:1, hash:'SHA-1'}, k, 160
+                ).then(function (out) {
+                    mustEq(hexAB(out), '0c60c80f961f0e71f3a9b524af6012062fe037a6', "PBKDF2 RFC6070#1");
+                    return wc.subtle.deriveKey(
+                        {name:'PBKDF2', salt:enc.encode('saltsalt'), iterations:100, hash:'SHA-256'},
+                        k, {name:'AES-GCM', length:256}, true, ['encrypt','decrypt']
+                    );
+                }).then(function (derived) {
+                    mustEq(derived.algorithm.name, 'AES-GCM', "deriveKey produces AES-GCM key");
+                    mustEq(derived.algorithm.length, 256, "deriveKey length");
+                });
+            });
+        },
+        function () {
+            /* HKDF RFC 5869 #1 */
+            var ikm  = new Uint8Array(22); for (var i=0;i<22;i++) ikm[i] = 0x0b;
+            var salt = new Uint8Array(13); for (var i=0;i<13;i++) salt[i] = i;
+            var info = new Uint8Array(10); for (var i=0;i<10;i++) info[i] = 0xf0 + i;
+            return wc.subtle.importKey('raw', ikm, 'HKDF', false, ['deriveBits']
+            ).then(function (k) {
+                return wc.subtle.deriveBits({name:'HKDF', salt:salt, info:info, hash:'SHA-256'}, k, 42*8);
+            }).then(function (out) {
+                mustEq(hexAB(out),
+                    '3cb25f25faacd57a90434f64d0362f2a2d2d0a90cf1a5a4c5db02d56ecc4c5bf34007208d5b887185865',
+                    "HKDF RFC5869#1");
+            });
+        },
+        function () {
+            /* AES-KW wrap/unwrap an AES-GCM key */
+            return Promise.all([
+                wc.subtle.generateKey({name:'AES-KW', length:256}, true, ['wrapKey','unwrapKey']),
+                wc.subtle.generateKey({name:'AES-GCM', length:128}, true, ['encrypt','decrypt'])
+            ]).then(function (ks) {
+                return wc.subtle.wrapKey('raw', ks[1], ks[0], {name:'AES-KW'}
+                ).then(function (wrapped) {
+                    mustEq(wrapped.byteLength, 24, "AES-KW wrap len = 16+8");
+                    return wc.subtle.unwrapKey('raw', wrapped, ks[0], {name:'AES-KW'},
+                        {name:'AES-GCM'}, true, ['encrypt','decrypt']);
+                }).then(function (uw) {
+                    mustEq(uw.algorithm.name, 'AES-GCM', "AES-KW unwrap → AES-GCM");
+                });
+            });
+        },
+        function () {
+            /* Ed25519 sign+verify + JWK round-trip */
+            return wc.subtle.generateKey({name:'Ed25519'}, true, ['sign','verify']
+            ).then(function (kp) {
+                return wc.subtle.sign('Ed25519', kp.privateKey, enc.encode('ed-test')
+                ).then(function (sig) {
+                    mustEq(sig.byteLength, 64, "Ed25519 sig len");
+                    return wc.subtle.verify('Ed25519', kp.publicKey, sig, enc.encode('ed-test'));
+                }).then(function (ok) {
+                    must(ok === true, "Ed25519 verify");
+                    return wc.subtle.exportKey('jwk', kp.publicKey);
+                }).then(function (jwk) {
+                    mustEq(jwk.kty, 'OKP', "Ed25519 JWK kty");
+                    mustEq(jwk.crv, 'Ed25519', "Ed25519 JWK crv");
+                });
+            });
+        },
+        function () {
+            /* X25519 deriveBits round-trip */
+            return Promise.all([
+                wc.subtle.generateKey({name:'X25519'}, true, ['deriveBits','deriveKey']),
+                wc.subtle.generateKey({name:'X25519'}, true, ['deriveBits','deriveKey'])
+            ]).then(function (kps) {
+                return Promise.all([
+                    wc.subtle.deriveBits({name:'X25519', public:kps[1].publicKey}, kps[0].privateKey, 256),
+                    wc.subtle.deriveBits({name:'X25519', public:kps[0].publicKey}, kps[1].privateKey, 256)
+                ]);
+            }).then(function (ss) { mustEq(hexAB(ss[0]), hexAB(ss[1]), "X25519 shared secret agreement"); });
+        }
+    ];
+    /* Chain steps; report first failure. */
+    var i = 0;
+    function next() {
+        if (i >= steps.length) return done();
+        var step = steps[i++];
+        try {
+            Promise.resolve(step()).then(next, done);
+        } catch (e) { done(e); }
+    }
+    next();
 }));
 
 asyncQ.push(asyncBlock("fs (async)", function(done) {

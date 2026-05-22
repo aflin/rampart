@@ -2206,8 +2206,12 @@ duk_ret_t duk_process_get_free_mem(duk_context *ctx)
     return 1;
 }
 
-/* --------------- uptime --------------- */
-static double _get_uptime_secs()
+/* --------------- system uptime --------------- */
+/* Seconds since the operating system booted.  Matches the node `os.
+   uptime()` API contract (NOT `process.uptime()` — see below).
+   Implementation: sysinfo(2) on Linux, KERN_BOOTTIME on BSDs, fall
+   back to CLOCK_MONOTONIC tv_sec (typically since-boot too). */
+static double _get_system_uptime_secs(void)
 {
     double up = 0;
 
@@ -2216,7 +2220,6 @@ static double _get_uptime_secs()
     if (sysinfo(&info) == 0)
         up = (double)info.uptime;
 #elif defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__) || defined(__DragonFly__)
-    /* KERN_BOOTTIME: boot moment as timeval; uptime = wall now - boottime. */
     struct timeval boottime;
     size_t len = sizeof(boottime);
     int mib[2] = {CTL_KERN, KERN_BOOTTIME};
@@ -2228,7 +2231,6 @@ static double _get_uptime_secs()
 #endif
 
     if (up <= 0) {
-        /* Fallback: CLOCK_MONOTONIC tv_sec — typically since-boot too. */
         struct timespec ts;
         if (clock_gettime(CLOCK_MONOTONIC, &ts) == 0)
             up = (double)ts.tv_sec;
@@ -2236,9 +2238,41 @@ static double _get_uptime_secs()
     return up;
 }
 
+/* --------------- process uptime --------------- */
+/* Seconds since *this* rampart process started.  Matches node's
+   `process.uptime()` contract: every other JS runtime (node, deno,
+   bun, browsers) means "process lifetime" by this name.  The origin
+   is set on the first call across any context; subsequent calls use
+   the same origin so workers see the parent-process lifetime (which
+   matches node's behavior — node's workers also report the parent's
+   uptime via process.uptime()).  Inaccuracy = time between process
+   start and the first process.uptime() call; for typical scripts
+   that's a few ms at most. */
+static struct timespec _proc_start_ts;
+static int             _proc_start_set = 0;
+
+static double _get_process_uptime_secs(void)
+{
+    struct timespec ts;
+    if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0)
+        return 0.0;
+    if (!_proc_start_set) {
+        _proc_start_ts = ts;
+        _proc_start_set = 1;
+    }
+    return (double)(ts.tv_sec  - _proc_start_ts.tv_sec)
+         +         (ts.tv_nsec - _proc_start_ts.tv_nsec) / 1e9;
+}
+
 duk_ret_t duk_process_uptime(duk_context *ctx)
 {
-    duk_push_number(ctx, _get_uptime_secs());
+    duk_push_number(ctx, _get_process_uptime_secs());
+    return 1;
+}
+
+duk_ret_t duk_process_system_uptime(duk_context *ctx)
+{
+    duk_push_number(ctx, _get_system_uptime_secs());
     return 1;
 }
 
@@ -2726,6 +2760,12 @@ void duk_process_init(duk_context *ctx)
     duk_put_prop_string(ctx,-2,"getFreeMem");
     duk_push_c_function(ctx, duk_process_uptime, 0);
     duk_put_prop_string(ctx,-2,"uptime");
+    /* systemUptime: seconds since OS boot.  Was historically called
+       'uptime' but that name collides with node's process.uptime()
+       which means process-lifetime — uptime() now returns the
+       node-compatible meaning. */
+    duk_push_c_function(ctx, duk_process_system_uptime, 0);
+    duk_put_prop_string(ctx,-2,"systemUptime");
     duk_push_c_function(ctx, duk_process_get_cpu_info, 0);
     duk_put_prop_string(ctx,-2,"getCpuInfo");
     duk_push_c_function(ctx, duk_process_set_max_mem,1);
@@ -11701,11 +11741,140 @@ static duk_ret_t print_simplified_err(duk_context *ctx)
 #define DEEPCOPY_APPENDARRAY 1
 #define DEEPCOPY_COPYBUFFER  2
 
+/* Returns 1 if obj at idx is a Map or Set instance.  Sets *is_set if non-NULL. */
+static int rp_is_map_or_set(duk_context *ctx, duk_idx_t idx, int *is_set)
+{
+    if (!duk_is_object(ctx, idx) || duk_is_function(ctx, idx))
+        return 0;
+    if (!duk_has_prop_string(ctx, idx, DUK_HIDDEN_SYMBOL("map_store")))
+        return 0;
+    if (is_set)
+        *is_set = duk_has_prop_string(ctx, idx, "add");
+    return 1;
+}
+
+/* Returns 1 if obj at idx is a RegExp.  Uses duk_inspect_value's "class" field
+   (DUK_HOBJECT_CLASS_REGEXP == 11) — that's internal but stable and the only
+   accurate way short of installing a brand-check helper. */
+#define RP_DUK_CLASS_REGEXP 11
+static int rp_is_regexp(duk_context *ctx, duk_idx_t idx)
+{
+    int cls;
+    if (!duk_is_object(ctx, idx) || duk_is_function(ctx, idx))
+        return 0;
+    duk_inspect_value(ctx, idx);
+    duk_get_prop_string(ctx, -1, "class");
+    cls = duk_get_int_default(ctx, -1, 0);
+    duk_pop_2(ctx);
+    return cls == RP_DUK_CLASS_REGEXP;
+}
+
+/* Push a fresh RegExp built from the source RegExp at srcidx
+   (same pattern + flags + lastIndex).  Non-standard user-added own props
+   propagate via the subsequent enumeration loop in _deepcopy. */
+static void rp_push_regexp_clone(duk_context *ctx, duk_idx_t srcidx)
+{
+    srcidx = duk_normalize_index(ctx, srcidx);
+    duk_get_global_string(ctx, "RegExp");
+    duk_get_prop_string(ctx, srcidx, "source");
+    duk_get_prop_string(ctx, srcidx, "flags");
+    duk_new(ctx, 2);
+    /* lastIndex is a non-enumerable own prop, so the deepcopy enum
+       skips it.  Copy it explicitly. */
+    duk_get_prop_string(ctx, srcidx, "lastIndex");
+    duk_put_prop_string(ctx, -2, "lastIndex");
+}
+
+/* Returns 1 if obj at idx is an Error or one of its built-in subclasses
+   (TypeError, RangeError, etc.).  All share DUK_HOBJECT_CLASS_ERROR == 7. */
+#define RP_DUK_CLASS_ERROR 7
+static int rp_is_error(duk_context *ctx, duk_idx_t idx)
+{
+    int cls;
+    if (!duk_is_object(ctx, idx) || duk_is_function(ctx, idx))
+        return 0;
+    duk_inspect_value(ctx, idx);
+    duk_get_prop_string(ctx, -1, "class");
+    cls = duk_get_int_default(ctx, -1, 0);
+    duk_pop_2(ctx);
+    return cls == RP_DUK_CLASS_ERROR;
+}
+
+/* Push a fresh Error built from the source Error at srcidx.  The
+   constructor is resolved by `name` (so TypeError stays a TypeError,
+   etc.); falls back to Error for user-defined subclasses not on the
+   global object.  `message` is set by the constructor; `stack` and
+   user-added own enum props propagate via the enumeration loop. */
+static void rp_push_error_clone(duk_context *ctx, duk_idx_t srcidx)
+{
+    const char *name;
+    srcidx = duk_normalize_index(ctx, srcidx);
+
+    duk_get_prop_string(ctx, srcidx, "name");
+    name = duk_get_string(ctx, -1);
+
+    if (!name || !duk_get_global_string(ctx, name) ||
+        !duk_is_function(ctx, -1))
+    {
+        duk_pop(ctx);
+        duk_get_global_string(ctx, "Error");
+    }
+    duk_remove(ctx, -2); /* name string */
+
+    duk_get_prop_string(ctx, srcidx, "message");
+    duk_new(ctx, 1);
+}
+
+static void _deepcopy(duk_context *ctx, duk_idx_t targidx, duk_idx_t srcidx, int flags);
+
+/* Push a deep copy of the value currently at the top of the stack,
+   replacing the original.  Primitives, buffers, functions, etc. are
+   left in place.  The cyc-tracking object at stack[0] is consulted. */
+static void _deepcopy_value(duk_context *ctx, int flags)
+{
+    int type = rp_gettype(ctx, -1);
+    int v_is_set = 0;
+    void *p;
+
+    if (type == RP_TYPE_ARRAY || type == RP_TYPE_OBJECT) {
+        p = duk_get_heapptr(ctx, -1);
+        duk_push_sprintf(ctx, "d%p", p);
+        if (duk_get_prop(ctx, 0)) {
+            duk_replace(ctx, -2);
+            return;
+        }
+        duk_pop(ctx);
+    }
+
+    if (type == RP_TYPE_ARRAY) {
+        duk_push_array(ctx);
+    } else if (type == RP_TYPE_OBJECT) {
+        if (rp_is_map_or_set(ctx, -1, &v_is_set)) {
+            duk_get_global_string(ctx, v_is_set ? "Set" : "Map");
+            duk_new(ctx, 0);
+        } else if (rp_is_regexp(ctx, -1)) {
+            rp_push_regexp_clone(ctx, -1);
+        } else if (rp_is_error(ctx, -1)) {
+            rp_push_error_clone(ctx, -1);
+        } else {
+            duk_push_object(ctx);
+        }
+    } else {
+        return;
+    }
+
+    duk_idx_t i = duk_get_top_index(ctx);
+    _deepcopy(ctx, i, i-1, flags);
+    duk_remove(ctx, -2);
+}
+
 static void _deepcopy(duk_context *ctx, duk_idx_t targidx, duk_idx_t srcidx, int flags)
 {
     duk_idx_t i;
     void *p;
     int isdupobj=0;
+    int src_is_set = 0;
+    int src_is_ms = rp_is_map_or_set(ctx, srcidx, &src_is_set);
 
     //store target with src pointer for cyclic tracking
     p=duk_get_heapptr(ctx, srcidx);
@@ -11713,12 +11882,58 @@ static void _deepcopy(duk_context *ctx, duk_idx_t targidx, duk_idx_t srcidx, int
     duk_dup(ctx, targidx);
     duk_put_prop(ctx, 0);
 
+    /* If source is a Map/Set, merge its entries into the target when the
+       target is a Map/Set of the same kind.  The internal map_store is
+       skipped by the regular enumeration loop below — only plain own
+       properties propagate. */
+    if (src_is_ms) {
+        int tgt_is_set = 0;
+        if (rp_is_map_or_set(ctx, targidx, &tgt_is_set) &&
+            tgt_is_set == src_is_set)
+        {
+            duk_get_prop_string(ctx, srcidx, DUK_HIDDEN_SYMBOL("map_store"));
+            duk_enum(ctx, -1, DUK_ENUM_OWN_PROPERTIES_ONLY);
+            while (duk_next(ctx, -1, 1)) {
+                /* [..., store, enum, keystr, entry] */
+                duk_get_prop_string(ctx, -1, "k");
+                _deepcopy_value(ctx, flags);
+                if (src_is_set) {
+                    duk_get_prop_string(ctx, targidx, "add");
+                    duk_dup(ctx, targidx);
+                    duk_pull(ctx, -3); /* copied_k */
+                    duk_call_method(ctx, 1);
+                    duk_pop(ctx);
+                } else {
+                    duk_get_prop_string(ctx, -2, "v");
+                    _deepcopy_value(ctx, flags);
+                    duk_get_prop_string(ctx, targidx, "set");
+                    duk_dup(ctx, targidx);
+                    duk_pull(ctx, -4); /* copied_k */
+                    duk_pull(ctx, -4); /* copied_v */
+                    duk_call_method(ctx, 2);
+                    duk_pop(ctx);
+                }
+                duk_pop_2(ctx); /* entry, keystr */
+            }
+            duk_pop_2(ctx); /* enum, store */
+        }
+    }
+
     duk_enum(ctx, srcidx, DUK_ENUM_OWN_PROPERTIES_ONLY|DUK_ENUM_NO_PROXY_BEHAVIOR|DUK_ENUM_INCLUDE_HIDDEN|DUK_ENUM_INCLUDE_SYMBOLS|DUK_ENUM_SORT_ARRAY_INDICES);
     while(duk_next(ctx, -1, 1))
     {
         // [ ..., enum(-3), key(-2), value(-1) ]
         //printf("checking key %s\n", duk_get_string(ctx, -2));
         isdupobj=0;
+
+        /* Skip the Map/Set internal store — entries are merged above. */
+        if (src_is_ms) {
+            const char *_ks = duk_get_string(ctx, -2);
+            if (_ks && strcmp(_ks, DUK_HIDDEN_SYMBOL("map_store")) == 0) {
+                duk_pop_2(ctx);
+                continue;
+            }
+        }
 
         int type =rp_gettype(ctx, -1);
 
@@ -11775,19 +11990,49 @@ static void _deepcopy(duk_context *ctx, duk_idx_t targidx, duk_idx_t srcidx, int
         }
         else if ( type == RP_TYPE_OBJECT)
         {
+            int val_is_set = 0;
+            int val_is_ms = rp_is_map_or_set(ctx, -1, &val_is_set);
+            int val_is_re = !val_is_ms && rp_is_regexp(ctx, -1);
+            int val_is_err = !val_is_ms && !val_is_re && rp_is_error(ctx, -1);
+
             duk_dup(ctx, -2); //the key
-            if(!duk_get_prop(ctx, targidx)) //check if key in target
+            int target_exists = duk_get_prop(ctx, targidx); //check if key in target
+
+            if (val_is_re) {
+                /* RegExp source/flags are intrinsic — always replace target slot. */
+                duk_pop(ctx); /* target_at_key or undef */
+                rp_push_regexp_clone(ctx, -1); /* source at -1 */
+            }
+            else if (val_is_err) {
+                /* Error subclass/message are intrinsic — always replace target slot. */
+                duk_pop(ctx);
+                rp_push_error_clone(ctx, -1);
+            }
+            else if (!target_exists)
             {
                 duk_pop(ctx);//undefined;
-                duk_push_object(ctx); //use empty object
+                if (val_is_ms) {
+                    duk_get_global_string(ctx, val_is_set ? "Set" : "Map");
+                    duk_new(ctx, 0);
+                } else {
+                    duk_push_object(ctx);
+                }
             }
             else
             {
-                //overwrite value if value is not an object
-                if(rp_gettype(ctx, -1) != RP_TYPE_OBJECT)
-                {
-                    duk_pop(ctx);//non object;
-                    duk_push_object(ctx); //use empty object
+                if (val_is_ms) {
+                    /* require existing target to be a Map/Set of the same kind,
+                       else replace with a fresh one */
+                    int t_set = 0;
+                    if (!rp_is_map_or_set(ctx, -1, &t_set) || t_set != val_is_set) {
+                        duk_pop(ctx);
+                        duk_get_global_string(ctx, val_is_set ? "Set" : "Map");
+                        duk_new(ctx, 0);
+                    }
+                } else if (rp_gettype(ctx, -1) != RP_TYPE_OBJECT) {
+                    //overwrite value if value is not an object
+                    duk_pop(ctx);
+                    duk_push_object(ctx);
                 }
             }
             //new target is at -1;

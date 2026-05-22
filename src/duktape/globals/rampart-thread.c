@@ -31,6 +31,26 @@
 /* Hidden symbol for Map/Set internal storage (must match rampart-map.c) */
 #define MAP_STORE  DUK_HIDDEN_SYMBOL("map_store")
 
+/* DUK_HOBJECT_CLASS_REGEXP / DUK_HOBJECT_CLASS_ERROR — internal class
+   numbers; stable across the duktape versions we ship.  Checked via
+   duk_inspect_value's "class" field. */
+#define RP_DUK_CLASS_ERROR  7
+#define RP_DUK_CLASS_REGEXP 11
+
+static int rp_thr_class_is(duk_context *ctx, duk_idx_t idx, int wanted_cls)
+{
+    int cls;
+    if (!duk_is_object(ctx, idx) || duk_is_function(ctx, idx))
+        return 0;
+    duk_inspect_value(ctx, idx);
+    duk_get_prop_string(ctx, -1, "class");
+    cls = duk_get_int_default(ctx, -1, 0);
+    duk_pop_2(ctx);
+    return cls == wanted_cls;
+}
+#define rp_thr_is_regexp(c,i) rp_thr_class_is((c),(i), RP_DUK_CLASS_REGEXP)
+#define rp_thr_is_error(c,i)  rp_thr_class_is((c),(i), RP_DUK_CLASS_ERROR)
+
 RPTHR **rpthread=NULL;
 uint16_t nrpthreads=0;
 
@@ -955,6 +975,90 @@ static int copy_any(duk_context *ctx, duk_context *tctx, duk_idx_t idx, int obji
                 /* tctx: [..., new_map, copied_val] */
                 duk_put_prop_string(tctx, -2, s);
                 duk_pop_2(ctx); /* key, val */
+            }
+            duk_pop(ctx); /* enum */
+        }
+        /* check for RegExp — rebuild via `new RegExp(source, flags)` in
+           the target context so the prototype/internal state is correct */
+        else if (rp_thr_is_regexp(ctx, idx))
+        {
+            const char *src_str, *flags_str;
+
+            duk_get_prop_string(ctx, idx, "source");
+            src_str = duk_get_string(ctx, -1);
+            duk_get_prop_string(ctx, idx, "flags");
+            flags_str = duk_get_string(ctx, -1);
+
+            duk_get_global_string(tctx, "RegExp");
+            duk_push_string(tctx, src_str ? src_str : "");
+            duk_push_string(tctx, flags_str ? flags_str : "");
+            duk_new(tctx, 2);
+
+            duk_pop_2(ctx); /* source, flags */
+
+            /* lastIndex is a non-enumerable own prop — copy explicitly. */
+            duk_get_prop_string(ctx, idx, "lastIndex");
+            duk_push_number(tctx, duk_get_number_default(ctx, -1, 0));
+            duk_put_prop_string(tctx, -2, "lastIndex");
+            duk_pop(ctx);
+
+            /* Copy any user-added own enumerable props (e.g. r.tag = "x"). */
+            duk_enum(ctx, idx, DUK_ENUM_OWN_PROPERTIES_ONLY |
+                                DUK_ENUM_NO_PROXY_BEHAVIOR);
+            while (duk_next(ctx, -1, 1)) {
+                const char *s = duk_get_string(ctx, -2);
+                if (s && (strcmp(s, "lastIndex") == 0 ||
+                          strcmp(s, DUK_HIDDEN_SYMBOL("objRefId")) == 0))
+                {
+                    duk_pop_2(ctx);
+                    continue;
+                }
+                rpthr_copy(ctx, tctx, duk_get_top_index(ctx));
+                duk_put_prop_string(tctx, -2, s);
+                duk_pop_2(ctx);
+            }
+            duk_pop(ctx); /* enum */
+        }
+        /* check for Error (or one of its built-in subclasses) — rebuild
+           via `new <Name>(message)` in the target context, preserving the
+           subclass when the name maps to a global constructor (TypeError,
+           RangeError, etc.).  Stack and user-added props propagate. */
+        else if (rp_thr_is_error(ctx, idx))
+        {
+            const char *name, *msg;
+
+            duk_get_prop_string(ctx, idx, "name");
+            name = duk_get_string(ctx, -1);
+
+            if (!name || !duk_get_global_string(tctx, name) ||
+                !duk_is_function(tctx, -1))
+            {
+                duk_pop(tctx);
+                duk_get_global_string(tctx, "Error");
+            }
+            duk_pop(ctx); /* name string from ctx */
+
+            duk_get_prop_string(ctx, idx, "message");
+            msg = duk_get_string(ctx, -1);
+            duk_push_string(tctx, msg ? msg : "");
+            duk_new(tctx, 1);
+            duk_pop(ctx); /* message */
+
+            /* Copy stack and any user-added own enumerable props. */
+            duk_enum(ctx, idx, DUK_ENUM_OWN_PROPERTIES_ONLY |
+                                DUK_ENUM_NO_PROXY_BEHAVIOR);
+            while (duk_next(ctx, -1, 1)) {
+                const char *s = duk_get_string(ctx, -2);
+                if (s && (strcmp(s, "message") == 0 ||
+                          strcmp(s, "duktape_stack") == 0 ||
+                          strcmp(s, DUK_HIDDEN_SYMBOL("objRefId")) == 0))
+                {
+                    duk_pop_2(ctx);
+                    continue;
+                }
+                rpthr_copy(ctx, tctx, duk_get_top_index(ctx));
+                duk_put_prop_string(tctx, -2, s);
+                duk_pop_2(ctx);
             }
             duk_pop(ctx); /* enum */
         }

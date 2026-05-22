@@ -790,6 +790,9 @@ static void add_extra_object_funcs(duk_context *ctx)
 /* Eager Promise install in vanilla rampart.  Same polyfill source the
  * transpiler emits under PROMISE_PF; available before any -t/-b. */
 #include "globals/rampart-promise.h"
+/* rampart-blob.h was moved into the rampart-whatwg.so build; no
+ * longer included by the rampart binary.  Blob/File become available
+ * on first access via the lazy getters installed in duk_init_context. */
 
 static duk_ret_t rp_eval_js(duk_context *ctx)
 {
@@ -1204,6 +1207,71 @@ void duk_init_context(duk_context *ctx)
     install_modern_polyfills(ctx);
     install_array_iter(ctx);
     duk_rp_promise_init(ctx);
+    /* WHATWG / W3C Web platform standards live in rampart-whatwg.so
+     * (Blob, File, URL, URLSearchParams, Event, EventTarget,
+     * CustomEvent, AbortController, AbortSignal, structuredClone,
+     * atob, btoa, MessageChannel, MessagePort, BroadcastChannel,
+     * queueMicrotask, reportError, performance extras, crypto
+     * (Web Crypto), navigator).
+     *
+     * Same lazy-load pattern as Intl below: install a configurable
+     * getter on globalThis for each name; first access deletes ALL
+     * the getters together, require()s rampart-whatwg (which installs
+     * the real values), and returns the now-real value.  Scripts that
+     * never touch a WHATWG global never load the .so. */
+    duk_eval_string_noresult(ctx,
+        "(function(){"
+        /*   NAMES excludes 'performance' because duktape already
+             provides performance.now() — augmenting (not replacing)
+             happens at whatwg load time.  Similarly we exclude
+             'crypto' for now — see the open question about
+             load.crypto vs Web Crypto. */
+        "  var NAMES = ['Blob','File','URL','URLSearchParams',"
+        "               'Event','EventTarget',"
+        "               'AbortController','AbortSignal',"
+        "               'structuredClone','atob','btoa',"
+        "               'MessageChannel','MessagePort','BroadcastChannel',"
+        "               'queueMicrotask','reportError','navigator'];"
+        "  NAMES.forEach(function(n){"
+        "    Object.defineProperty(globalThis, n, {"
+        "      configurable: true,"
+        "      get: function(){"
+        /*       Delete only THIS getter before requiring whatwg.  The
+                 other getters stay in place; whatwg's install replaces
+                 each one with a real value via defineProperty(...,
+                 configurable:true).  Deleting all up-front would
+                 leave (e.g.) `performance`/`Buffer`-like globals in
+                 an unexpected state during nodeshim's load chain. */
+        "        delete globalThis[n];"
+        "        require('rampart-whatwg');"
+        "        return globalThis[n];"
+        "      }"
+        "    });"
+        "  });"
+        /*   Augmentation case: duktape's `performance` object already
+             exists with `.now()`.  Install lazy getters for the W3C
+             Performance Timeline extras on the SAME object — first
+             access to any triggers whatwg load, which augments the
+             existing performance with the real methods. */
+        "  if (typeof globalThis.performance === 'object' && globalThis.performance !== null) {\n"
+        "    var P = globalThis.performance;\n"
+        "    var PNAMES = ['mark','measure','clearMarks','clearMeasures',\n"
+        "                  'getEntries','getEntriesByName','getEntriesByType',\n"
+        "                  'PerformanceEntry','PerformanceMark','PerformanceMeasure',\n"
+        "                  'timeOrigin'];\n"
+        "    PNAMES.forEach(function(n){\n"
+        "      if (n in P) return;  /* already defined */\n"
+        "      Object.defineProperty(P, n, {\n"
+        "        configurable: true,\n"
+        "        get: function(){\n"
+        "          delete P[n];\n"
+        "          require('rampart-whatwg');\n"
+        "          return P[n];\n"
+        "        }\n"
+        "      });\n"
+        "    });\n"
+        "  }\n"
+        "})();");
     /* Install `globalThis.Intl` as a lazy getter — `require('rampart-intl')`
        only fires on first access.  Two motivations:
          1. ~37 MB ICU data isn't paid for by scripts that never touch Intl.

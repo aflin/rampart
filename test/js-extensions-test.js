@@ -658,4 +658,371 @@ testJS("console extras", function() {
 });
 
 
-testJS.exit();
+/* ============================================================
+ * WHATWG / W3C Web platform standards (rampart-whatwg.so, lazy)
+ * Migrated from the now-deleted node-compat-test.js.  All of these
+ * trigger the lazy load on first access; subsequent accesses use the
+ * installed real values.
+ * ============================================================ */
+
+testJS("URL / URLSearchParams", function () {
+    var u = new URL('https://user:pass@example.com:8080/path?q=1#frag');
+    mustEq(u.protocol, 'https:',       "URL.protocol");
+    mustEq(u.hostname, 'example.com',  "URL.hostname");
+    mustEq(u.port,     '8080',         "URL.port");
+    mustEq(u.pathname, '/path',        "URL.pathname");
+    mustEq(u.search,   '?q=1',         "URL.search");
+    mustEq(u.hash,     '#frag',        "URL.hash");
+    var sp = new URLSearchParams('a=1&b=2');
+    mustEq(sp.get('a'), '1', "URLSearchParams.get");
+    sp.append('c', '3');
+    must(sp.toString().indexOf('c=3') >= 0, "URLSearchParams.append");
+    /* identity: require('url').URL === global URL (rampart only;
+       node uses different module wiring) */
+    if (_isRampart) {
+        var modURL = require('url').URL;
+        mustEq(modURL, URL, "require('url').URL === global URL");
+    }
+});
+
+testJS("performance (extras + timeOrigin)", function () {
+    /* performance.now() is duktape native; performance.mark/measure/
+       getEntries* etc. trigger rampart-whatwg lazy load. */
+    must(typeof performance.now === 'function', "performance.now");
+    must(typeof performance.mark === 'function', "performance.mark");
+    must(typeof performance.measure === 'function', "performance.measure");
+    must(typeof performance.getEntries === 'function', "performance.getEntries");
+    must(typeof performance.timeOrigin === 'number' && performance.timeOrigin > 0,
+         "performance.timeOrigin > 0");
+    /* mark/measure round-trip */
+    performance.mark('whatwg-test-a');
+    performance.mark('whatwg-test-b');
+    var meas = performance.measure('whatwg-test-ab', 'whatwg-test-a', 'whatwg-test-b');
+    must(meas && typeof meas.duration === 'number', "measure returns entry with .duration");
+    var entries = performance.getEntriesByName('whatwg-test-ab');
+    must(entries.length >= 1, "getEntriesByName finds measure");
+    performance.clearMarks('whatwg-test-a');
+    performance.clearMarks('whatwg-test-b');
+    performance.clearMeasures('whatwg-test-ab');
+});
+
+testJS("atob / btoa", function () {
+    mustEq(btoa('hello'),    'aGVsbG8=', "btoa(hello)");
+    mustEq(atob('aGVsbG8='), 'hello',    "atob(aGVsbG8=)");
+    /* round-trip with all 256 byte values */
+    var bin = '';
+    for (var i = 0; i < 256; i++) bin += String.fromCharCode(i);
+    mustEq(atob(btoa(bin)), bin, "atob/btoa 256-byte round-trip");
+});
+
+testJS("reportError", function () {
+    /* node v22 still doesn't ship reportError as a global — gate. */
+    if (typeof reportError !== 'function') {
+        if (_isRampart) throw new Error("reportError missing in rampart-whatwg");
+        return true;  /* node gap — accept */
+    }
+    /* Should NOT throw — silence console.error during the call. */
+    var origErr = console.error;
+    console.error = function () {};
+    try { reportError(new Error('report-test')); }
+    finally { console.error = origErr; }
+});
+
+testJS("Event / EventTarget", function () {
+    var e = new Event('test', {cancelable: true});
+    mustEq(e.type,             'test', "Event.type");
+    mustEq(e.cancelable,       true,   "Event.cancelable");
+    mustEq(e.defaultPrevented, false,  "Event.defaultPrevented default");
+    e.preventDefault();
+    mustEq(e.defaultPrevented, true,   "Event.preventDefault");
+    var et = new EventTarget();
+    var fired = 0;
+    et.addEventListener('hello', function (ev) {
+        fired++;
+        mustEq(ev.type, 'hello', "dispatched event.type");
+        mustEq(ev.target, et,    "dispatched event.target");
+    });
+    et.dispatchEvent(new Event('hello'));
+    mustEq(fired, 1, "dispatch fires listener");
+    /* once option */
+    var onceN = 0;
+    et.addEventListener('o', function () { onceN++; }, {once: true});
+    et.dispatchEvent(new Event('o'));
+    et.dispatchEvent(new Event('o'));
+    mustEq(onceN, 1, "once removes listener after first fire");
+    /* removeEventListener */
+    var rfn = function () { throw new Error('should not fire'); };
+    et.addEventListener('r', rfn);
+    et.removeEventListener('r', rfn);
+    et.dispatchEvent(new Event('r'));  /* should not throw */
+    /* stopImmediatePropagation */
+    var sip = [];
+    et.addEventListener('s', function (ev) { sip.push('a'); ev.stopImmediatePropagation(); });
+    et.addEventListener('s', function () { sip.push('b'); });
+    et.dispatchEvent(new Event('s'));
+    mustEq(sip.length, 1, "stopImmediatePropagation halts dispatch");
+    mustEq(sip[0],     'a', "stopped after first listener");
+});
+
+testJS("AbortController / AbortSignal", function () {
+    var ac = new AbortController();
+    must(ac.signal instanceof AbortSignal, "AbortController.signal is AbortSignal");
+    mustEq(ac.signal.aborted, false,     "signal.aborted false initially");
+    mustEq(ac.signal.reason,  undefined, "signal.reason undefined initially");
+    var fired = false, gotReason = null;
+    ac.signal.addEventListener('abort', function () { fired = true; gotReason = ac.signal.reason; });
+    ac.abort('user-cancel');
+    mustEq(ac.signal.aborted, true,          "signal.aborted true after abort");
+    mustEq(ac.signal.reason,  'user-cancel', "signal.reason propagated");
+    mustEq(fired,             true,          "abort listener fired");
+    mustEq(gotReason,         'user-cancel', "listener saw reason");
+    mustThrow(function () { ac.signal.throwIfAborted(); }, "throwIfAborted throws after abort");
+    /* static abort */
+    var pre = AbortSignal.abort('pre');
+    mustEq(pre.aborted, true,  "AbortSignal.abort already aborted");
+    mustEq(pre.reason,  'pre', "AbortSignal.abort reason");
+    /* AbortSignal.any */
+    var a1 = new AbortController(), a2 = new AbortController();
+    var any = AbortSignal.any([a1.signal, a2.signal]);
+    mustEq(any.aborted, false, "any not yet aborted");
+    var anyFired = false;
+    any.addEventListener('abort', function () { anyFired = true; });
+    a2.abort('from-a2');
+    mustEq(any.aborted, true,      "any propagates abort");
+    mustEq(any.reason,  'from-a2', "any propagates reason");
+    mustEq(anyFired,    true,      "any listener fired");
+    var early = AbortSignal.any([AbortSignal.abort('early')]);
+    mustEq(early.aborted, true,    "any picks up already-aborted input");
+    mustEq(early.reason,  'early', "any takes first aborted reason");
+});
+
+testJS("structuredClone", function () {
+    /* Primitives pass through */
+    mustEq(structuredClone(null),      null,      "null");
+    mustEq(structuredClone(42),        42,        "number");
+    mustEq(structuredClone('hi'),      'hi',      "string");
+    mustEq(structuredClone(true),      true,      "boolean");
+    mustEq(structuredClone(undefined), undefined, "undefined");
+    /* Plain object deep-cloned */
+    var o = {a: 1, b: {c: 2, d: [3, 4]}};
+    var co = structuredClone(o);
+    must(co !== o,     "clone !== orig");
+    must(co.b !== o.b, "nested clone is deep");
+    mustEq(JSON.stringify(co), JSON.stringify(o), "structure preserved");
+    /* Date / RegExp */
+    var d = new Date(1234567890000);
+    var dc = structuredClone(d);
+    must(dc instanceof Date,         "Date preserved");
+    mustEq(dc.getTime(), d.getTime(), "Date time");
+    var r = /abc/gi;
+    var rc = structuredClone(r);
+    must(rc instanceof RegExp, "RegExp preserved");
+    mustEq(rc.source, 'abc',   "RegExp.source");
+    mustEq(rc.flags,  'gi',    "RegExp.flags");
+    /* Map / Set */
+    var m = new Map([['k', 'v'], ['k2', {nested: true}]]);
+    var mc = structuredClone(m);
+    must(mc instanceof Map,            "Map preserved");
+    mustEq(mc.size, 2,                 "Map size");
+    must(mc.get('k2').nested === true, "Map nested object preserved");
+    var s = new Set([1, 2, 3]);
+    var sc = structuredClone(s);
+    must(sc instanceof Set, "Set preserved");
+    mustEq(sc.size, 3,      "Set size");
+    /* Error subclass */
+    var e = new TypeError('typeOops');
+    var ec = structuredClone(e);
+    must(ec instanceof TypeError, "Error subclass preserved");
+    mustEq(ec.message, 'typeOops', "Error.message preserved");
+    /* TypedArray + cycle + shared reference */
+    var u8 = new Uint8Array([10, 20, 30]);
+    var u8c = structuredClone(u8);
+    must(u8c instanceof Uint8Array, "Uint8Array preserved");
+    must(u8c.buffer !== u8.buffer,  "ArrayBuffer cloned");
+    var cyc = {n: 1}; cyc.self = cyc;
+    var cycC = structuredClone(cyc);
+    must(cycC.self === cycC, "cycle preserved");
+    must(cycC.self !== cyc,  "cycle points at clone, not original");
+    var shared = {x: 1};
+    var shc = structuredClone({a: shared, b: shared});
+    must(shc.a === shc.b, "shared-reference collapsed");
+    /* Function / Symbol rejection */
+    mustThrow(function () { structuredClone(function(){}); }, "function rejected");
+    mustThrow(function () { structuredClone(Symbol());    }, "symbol rejected");
+    /* {transfer:[…]} — rampart doesn't support detachment; node does */
+    if (_isRampart)
+        mustThrow(function () { structuredClone({}, {transfer:[new ArrayBuffer(4)]}); },
+                  "{transfer} rejected (rampart only)");
+});
+
+testJS("MessageChannel / MessagePort", function () {
+    must(typeof MessageChannel === 'function', "MessageChannel global");
+    must(typeof MessagePort    === 'function', "MessagePort global");
+    var mc = new MessageChannel();
+    must(mc.port1 && mc.port2,                  "channel has two ports");
+    must(mc.port1 !== mc.port2,                 "ports are distinct");
+    /* postMessage round-trip is async — covered in the async tail */
+    mc.port1.close(); mc.port2.close();
+});
+
+testJS("navigator", function () {
+    must(typeof navigator === 'object',                "navigator is object");
+    must(typeof navigator.userAgent === 'string',      "userAgent string");
+    must(navigator.userAgent.length > 0,               "userAgent non-empty");
+    must(typeof navigator.platform === 'string',       "platform string");
+    must(typeof navigator.hardwareConcurrency === 'number',  "hardwareConcurrency number");
+    must(navigator.hardwareConcurrency >= 1,           "hardwareConcurrency >= 1");
+});
+
+testJS("global.crypto (Web Crypto sanity)", function () {
+    must(typeof crypto === 'object',                  "crypto is object");
+    must(typeof crypto.subtle === 'object',           "crypto.subtle");
+    must(typeof crypto.getRandomValues === 'function', "getRandomValues");
+    must(typeof crypto.randomUUID === 'function',      "randomUUID");
+    var u = crypto.randomUUID();
+    must(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(u),
+         "randomUUID v4 format");
+    var arr = new Uint8Array(8);
+    crypto.getRandomValues(arr);
+    must(Array.prototype.some.call(arr, function (v) { return v !== 0; }),
+         "getRandomValues fills");
+});
+
+
+testJS("Blob / File (sync surface)", function () {
+    must(typeof Blob === 'function',  "Blob global");
+    must(typeof File === 'function',  "File global");
+    /* construction shapes */
+    var b = new Blob(['hello, ', 'world!'], {type:'text/plain'});
+    mustEq(b.size, 13,           "Blob.size");
+    mustEq(b.type, 'text/plain', "Blob.type");
+    /* slice — spec default content-type is empty, not source's type */
+    var s = b.slice(0, 5);
+    mustEq(s.size, 5,            "slice.size");
+    mustEq(s.type, '',           "slice default contentType is empty");
+    mustEq(b.slice(0, 5, 'application/x-foo').type, 'application/x-foo', "slice explicit contentType");
+    mustEq(b.slice(-6).size, 6,  "slice negative start");
+    /* mixed parts: string + Uint8Array + ArrayBuffer + Blob */
+    var ab = new ArrayBuffer(3); new Uint8Array(ab).set([65,66,67]);
+    var mixed = new Blob([new Uint8Array([72,73,74]), 'def', ab, b]);
+    mustEq(mixed.size, 3+3+3+13, "mixed-part size");
+    /* type lowercasing + invalid-char collapse */
+    mustEq(new Blob(['x'], {type:'TEXT/Plain'}).type,    'text/plain', "type lowercased");
+    mustEq(new Blob(['x'], {type:'invalid\nmime'}).type, '',           "invalid type collapses");
+    /* empty */
+    mustEq(new Blob().size, 0,   "empty Blob size");
+    /* toStringTag */
+    mustEq(Object.prototype.toString.call(b), '[object Blob]', "Blob toStringTag");
+    /* stream() throws NotSupportedError on rampart (no stream/web yet);
+       node returns a real ReadableStream — gate the assertion. */
+    if (_isRampart)
+        mustThrow(function(){ b.stream(); }, "rampart: Blob.stream() throws NotSupportedError");
+    /* no-new */
+    mustThrow(function(){ Blob(['x']); },     "Blob() without new throws");
+    mustThrow(function(){ File(['x'], 'f'); }, "File() without new throws");
+    /* text/arrayBuffer/bytes return thenables (Promise per spec) */
+    must(typeof b.text().then        === 'function', "text() returns thenable");
+    must(typeof b.arrayBuffer().then === 'function', "arrayBuffer() returns thenable");
+    must(typeof b.bytes().then       === 'function', "bytes() returns thenable");
+    /* File */
+    var f = new File(['hello'], 'doc.txt', {type:'text/plain', lastModified:1234567890000});
+    mustEq(f.name, 'doc.txt',             "File.name");
+    mustEq(f.lastModified, 1234567890000, "File.lastModified");
+    mustEq(f.type, 'text/plain',          "File.type");
+    mustEq(f.size, 5,                     "File.size");
+    must(f instanceof Blob,               "File instanceof Blob");
+    must(f instanceof File,               "File instanceof File");
+    mustEq(Object.prototype.toString.call(f), '[object File]', "File toStringTag");
+    must(new File(['x'], 'n.txt').lastModified > 0, "File default lastModified = now()");
+});
+
+
+/* ---------- async tail ----------
+   testJS is sync-only by design; some WHATWG bits return Promises or
+   schedule timers.  Use a counter — each async test increments
+   _pendingAsync at start, calls _doneAsync() when its async work
+   resolves; when counter hits 0 we testJS.exit(). */
+var _pendingAsync = 0;
+var _exitOnce = false;
+function _doneAsync() {
+    if (--_pendingAsync <= 0 && !_exitOnce) {
+        _exitOnce = true;
+        testJS.exit();
+    }
+}
+function _asyncFail(label, e) {
+    if (typeof printf === 'function')
+        printf("  %s: async assertion failed: %s\n", label, (e && e.message) || String(e));
+    else if (typeof console !== 'undefined') console.error(label, e);
+    try { if (typeof process !== 'undefined' && process.exit) process.exit(1); } catch (_) {}
+}
+
+testJS("Blob async (text/arrayBuffer/bytes)", function () {
+    _pendingAsync++;
+    var b = new Blob(['hello'], {type:'text/plain'});
+    Promise.all([b.text(), b.arrayBuffer(), b.bytes()]).then(function (rs) {
+        try {
+            mustEq(rs[0], 'hello',                "Blob.text() resolves to string");
+            must(rs[1] instanceof ArrayBuffer,    "Blob.arrayBuffer() resolves to ArrayBuffer");
+            mustEq(rs[1].byteLength, 5,           "arrayBuffer byteLength");
+            must(rs[2] instanceof Uint8Array,     "Blob.bytes() resolves to Uint8Array");
+            mustEq(rs[2].length, 5,               "bytes length");
+            mustEq(rs[2][0], 104,                 "bytes[0] === 'h' code");
+        } catch (e) { _asyncFail("Blob async", e); }
+        _doneAsync();
+    }, function (e) { _asyncFail("Blob async (rejected)", e); _doneAsync(); });
+    return true;
+});
+
+testJS("queueMicrotask (async)", function () {
+    _pendingAsync++;
+    var fired = false;
+    queueMicrotask(function () { fired = true; });
+    setTimeout(function () {
+        try { mustEq(fired, true, "queueMicrotask fires before setTimeout"); }
+        catch (e) { _asyncFail("queueMicrotask", e); }
+        _doneAsync();
+    }, 1);
+    return true;
+});
+
+testJS("MessageChannel postMessage (async)", function () {
+    _pendingAsync++;
+    var mc = new MessageChannel();
+    var got = null;
+    mc.port2.on('message', function (m) { got = m; });
+    mc.port1.postMessage('mc-ping');
+    setTimeout(function () {
+        try { mustEq(got, 'mc-ping', "port2 received port1's postMessage"); }
+        catch (e) { _asyncFail("MessageChannel", e); }
+        mc.port1.close(); mc.port2.close();
+        _doneAsync();
+    }, 50);
+    return true;
+});
+
+testJS("AbortSignal.timeout (async)", function () {
+    _pendingAsync++;
+    var sig = AbortSignal.timeout(20);
+    mustEq(sig.aborted, false, "timeout signal not yet aborted");
+    var fired = false;
+    sig.addEventListener('abort', function () { fired = true; });
+    setTimeout(function () {
+        try {
+            mustEq(sig.aborted, true,           "timeout signal aborted");
+            mustEq(fired,       true,           "timeout listener fired");
+            must(sig.reason && sig.reason.name === 'TimeoutError',
+                 "timeout reason is TimeoutError");
+        } catch (e) { _asyncFail("AbortSignal.timeout", e); }
+        _doneAsync();
+    }, 100);
+    return true;
+});
+
+/* Safety net: if scheduling somehow doesn't fire, exit after a tick. */
+setTimeout(function () {
+    if (!_exitOnce) {
+        _exitOnce = true;
+        testJS.exit();
+    }
+}, 500);

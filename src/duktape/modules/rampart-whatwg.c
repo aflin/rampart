@@ -1,0 +1,352 @@
+/* Copyright (C) 2026 Aaron Flin - All Rights Reserved
+ * MIT license -- https://opensource.org/licenses/MIT
+ *
+ * rampart-whatwg: lazy-loaded WHATWG / W3C Web platform standards.
+ *
+ *   require('rampart-whatwg')   -> installs everything onto globalThis
+ *
+ * Normally not require()'d directly — register.c installs lazy
+ * getters on globalThis for each whatwg name (Blob, URL, Event,
+ * EventTarget, AbortController, AbortSignal, structuredClone, atob,
+ * btoa, MessageChannel, MessagePort, BroadcastChannel, queueMicrotask,
+ * reportError, performance (extras), crypto (Web Crypto), navigator).
+ * First access to any of those triggers this module to load, which
+ * replaces all the getters with real values.  Subsequent accesses are
+ * direct property reads — zero overhead.
+ *
+ * Scripts that never touch a WHATWG name pay no runtime or memory
+ * cost — same lazy pattern as rampart-intl.
+ */
+
+#include "rampart.h"
+#include <string.h>
+
+/* Blob/File live in rampart-blob.c — compiled into THIS .so (no longer
+ * eager in the rampart binary). */
+void duk_rp_blob_init(duk_context *ctx);
+
+/* JS body that installs everything except Blob/File.
+ * Style notes:
+ *  - Self-contained: only uses Promise, Buffer, rampart-nodeshim (all
+ *    of which are reachable at load time).
+ *  - Uses Object.defineProperty with configurable:true so values can
+ *    be re-installed if user also does require('node-compat').
+ *  - URL/URLSearchParams, MessageChannel/MessagePort/BroadcastChannel,
+ *    performance, and Web Crypto are lifted from rampart-nodeshim
+ *    sub-modules — single source of truth (no duplicated implementations).
+ *  - Event/EventTarget/AbortController/AbortSignal/atob/btoa/
+ *    structuredClone/queueMicrotask/reportError/navigator are inline
+ *    JS — same code as currently lives in node-compat.js (which will
+ *    be removed in Pass 2).
+ */
+static const char *whatwg_install_js =
+"(function () {\n"
+"  'use strict';\n"
+"  var ns = require('rampart-nodeshim');\n"
+"\n"
+"  /* --- Lift from nodeshim sub-modules ---------------------- */\n"
+"  function _set(name, value) {\n"
+"    Object.defineProperty(globalThis, name, {\n"
+"      value: value, writable: true, configurable: true, enumerable: false\n"
+"    });\n"
+"  }\n"
+"  _set('URL',              ns.url.URL);\n"
+"  _set('URLSearchParams',  ns.url.URLSearchParams);\n"
+"  _set('MessageChannel',   ns.worker_threads.MessageChannel);\n"
+"  _set('MessagePort',      ns.worker_threads.MessagePort);\n"
+"  _set('BroadcastChannel', ns.worker_threads.BroadcastChannel);\n"
+"  /* performance: duktape already provides .now() globally — augment\n"
+"     the existing performance object with the W3C Performance Timeline\n"
+"     extras (mark, measure, getEntries*, clearMarks/Measures, the\n"
+"     three Entry classes).  Don't replace it. */\n"
+"  if (ns.perf_hooks && ns.perf_hooks.performance) {\n"
+"    var pSrc = ns.perf_hooks.performance;\n"
+"    var pDst = (typeof globalThis.performance === 'object' && globalThis.performance !== null)\n"
+"             ? globalThis.performance\n"
+"             : (globalThis.performance = {});\n"
+"    Object.keys(pSrc).forEach(function (k) {\n"
+"      /* Don't overwrite duktape's native now() with a slower JS wrapper. */\n"
+"      if (k === 'now' && typeof pDst.now === 'function') return;\n"
+"      /* defineProperty (not bare assignment) because some of these\n"
+"         names are currently lazy getter-only accessors on pDst\n"
+"         (installed in register.c).  Bare assignment would fail with\n"
+"         'setter undefined'.  configurable so subsequent installs can\n"
+"         still replace if needed. */\n"
+"      Object.defineProperty(pDst, k, {\n"
+"        value: pSrc[k], writable: true, configurable: true, enumerable: true\n"
+"      });\n"
+"    });\n"
+"  }\n"
+"  /* Web Crypto: lifted but not via the lazy-getter list (load.crypto\n"
+"     conflict deferred to a later pass).  Installed unconditionally\n"
+"     so node-compat use cases continue to work. */\n"
+"  if (ns.crypto && ns.crypto.webcrypto) _set('crypto', ns.crypto.webcrypto);\n"
+"\n"
+"  /* --- atob / btoa ---------------------------------------- */\n"
+"  if (typeof globalThis.atob !== 'function')\n"
+"    _set('atob', function (s) {\n"
+"      if (typeof s !== 'string') s = String(s);\n"
+"      return Buffer.from(s, 'base64').toString('latin1');\n"
+"    });\n"
+"  if (typeof globalThis.btoa !== 'function')\n"
+"    _set('btoa', function (s) {\n"
+"      if (typeof s !== 'string') s = String(s);\n"
+"      return Buffer.from(s, 'latin1').toString('base64');\n"
+"    });\n"
+"\n"
+"  /* --- reportError ---------------------------------------- */\n"
+"  if (typeof globalThis.reportError !== 'function')\n"
+"    _set('reportError', function (err) {\n"
+"      try {\n"
+"        if (typeof process !== 'undefined' && typeof process.emit === 'function')\n"
+"          process.emit('uncaughtException', err);\n"
+"      } catch (_) {}\n"
+"      try { console.error(err); } catch (_) {}\n"
+"    });\n"
+"\n"
+"  /* --- queueMicrotask ------------------------------------- */\n"
+"  if (typeof globalThis.queueMicrotask !== 'function' && typeof Promise === 'function')\n"
+"    _set('queueMicrotask', function (fn) {\n"
+"      if (typeof fn !== 'function')\n"
+"        throw new TypeError('queueMicrotask: argument is not a function');\n"
+"      Promise.resolve().then(fn);\n"
+"    });\n"
+"\n"
+"  /* --- Event ---------------------------------------------- */\n"
+"  if (typeof globalThis.Event !== 'function') {\n"
+"    function Event(type, init) {\n"
+"      if (!(this instanceof Event))\n"
+"        throw new TypeError(\"Failed to construct 'Event'\");\n"
+"      if (typeof type !== 'string') throw new TypeError('Event: type required');\n"
+"      init = init || {};\n"
+"      Object.defineProperty(this, 'type',         {value: type, enumerable: true});\n"
+"      Object.defineProperty(this, 'bubbles',      {value: !!init.bubbles,    enumerable: true});\n"
+"      Object.defineProperty(this, 'cancelable',   {value: !!init.cancelable, enumerable: true});\n"
+"      Object.defineProperty(this, 'composed',     {value: !!init.composed,   enumerable: true});\n"
+"      Object.defineProperty(this, 'timeStamp',    {value: Date.now(),        enumerable: true});\n"
+"      Object.defineProperty(this, 'isTrusted',    {value: false,             enumerable: true});\n"
+"      this.target = null; this.currentTarget = null; this.eventPhase = 2;\n"
+"      this.defaultPrevented = false;\n"
+"      this._propagationStopped = false; this._immediatePropagationStopped = false;\n"
+"    }\n"
+"    Event.prototype.preventDefault = function () { if (this.cancelable) this.defaultPrevented = true; };\n"
+"    Event.prototype.stopPropagation = function () { this._propagationStopped = true; };\n"
+"    Event.prototype.stopImmediatePropagation = function () {\n"
+"      this._propagationStopped = true; this._immediatePropagationStopped = true;\n"
+"    };\n"
+"    Event.NONE = 0; Event.CAPTURING_PHASE = 1; Event.AT_TARGET = 2; Event.BUBBLING_PHASE = 3;\n"
+"    _set('Event', Event);\n"
+"  }\n"
+"\n"
+"  /* --- EventTarget ---------------------------------------- */\n"
+"  if (typeof globalThis.EventTarget !== 'function') {\n"
+"    function EventTarget() {\n"
+"      if (!(this instanceof EventTarget))\n"
+"        throw new TypeError(\"Failed to construct 'EventTarget'\");\n"
+"      Object.defineProperty(this, '_etListeners',\n"
+"        {value: Object.create(null), writable: true});\n"
+"    }\n"
+"    EventTarget.prototype.addEventListener = function (type, listener, options) {\n"
+"      if (listener == null) return;\n"
+"      if (typeof listener !== 'function' &&\n"
+"          !(listener && typeof listener.handleEvent === 'function'))\n"
+"        throw new TypeError('addEventListener: listener invalid');\n"
+"      var opts = (typeof options === 'object' && options !== null) ? options\n"
+"               : {capture: !!options};\n"
+"      var bucket = this._etListeners[type] || (this._etListeners[type] = []);\n"
+"      for (var i = 0; i < bucket.length; i++)\n"
+"        if (bucket[i].listener === listener && !!bucket[i].capture === !!opts.capture) return;\n"
+"      var entry = {listener: listener, once: !!opts.once,\n"
+"                   capture: !!opts.capture, signal: opts.signal || null};\n"
+"      bucket.push(entry);\n"
+"      if (entry.signal && entry.signal.aborted) {\n"
+"        bucket.splice(bucket.indexOf(entry), 1); return;\n"
+"      }\n"
+"      if (entry.signal && typeof entry.signal.addEventListener === 'function') {\n"
+"        var self = this;\n"
+"        entry.signal.addEventListener('abort', function () {\n"
+"          var b = self._etListeners[type];\n"
+"          if (b) { var idx = b.indexOf(entry); if (idx >= 0) b.splice(idx, 1); }\n"
+"        }, {once: true});\n"
+"      }\n"
+"    };\n"
+"    EventTarget.prototype.removeEventListener = function (type, listener, options) {\n"
+"      var bucket = this._etListeners[type];\n"
+"      if (!bucket) return;\n"
+"      var capture = (typeof options === 'object' && options !== null) ? !!options.capture : !!options;\n"
+"      for (var i = 0; i < bucket.length; i++)\n"
+"        if (bucket[i].listener === listener && !!bucket[i].capture === capture) {\n"
+"          bucket.splice(i, 1); return;\n"
+"        }\n"
+"    };\n"
+"    EventTarget.prototype.dispatchEvent = function (event) {\n"
+"      if (!(event instanceof Event))\n"
+"        throw new TypeError('dispatchEvent: event must be an Event');\n"
+"      event.target = this; event.currentTarget = this;\n"
+"      var bucket = this._etListeners[event.type];\n"
+"      if (!bucket || bucket.length === 0) return !event.defaultPrevented;\n"
+"      var snapshot = bucket.slice();\n"
+"      for (var i = 0; i < snapshot.length; i++) {\n"
+"        var entry = snapshot[i];\n"
+"        if (bucket.indexOf(entry) < 0) continue;\n"
+"        try {\n"
+"          if (typeof entry.listener === 'function') entry.listener.call(this, event);\n"
+"          else entry.listener.handleEvent(event);\n"
+"        } catch (e) {\n"
+"          if (typeof globalThis.reportError === 'function') globalThis.reportError(e);\n"
+"          else if (typeof console !== 'undefined') console.error(e);\n"
+"        }\n"
+"        if (entry.once) {\n"
+"          var idx = bucket.indexOf(entry); if (idx >= 0) bucket.splice(idx, 1);\n"
+"        }\n"
+"        if (event._immediatePropagationStopped) break;\n"
+"      }\n"
+"      event.currentTarget = null;\n"
+"      return !event.defaultPrevented;\n"
+"    };\n"
+"    _set('EventTarget', EventTarget);\n"
+"  }\n"
+"\n"
+"  /* --- AbortSignal ---------------------------------------- */\n"
+"  if (typeof globalThis.AbortSignal !== 'function') {\n"
+"    function AbortSignal() {\n"
+"      if (!(this instanceof AbortSignal))\n"
+"        throw new TypeError(\"Illegal constructor — use AbortSignal.abort/timeout/any/AbortController\");\n"
+"      globalThis.EventTarget.call(this);\n"
+"      Object.defineProperty(this, 'aborted', {value: false, writable: true, enumerable: true});\n"
+"      Object.defineProperty(this, 'reason',  {value: undefined, writable: true, enumerable: true});\n"
+"      this.onabort = null;\n"
+"    }\n"
+"    AbortSignal.prototype = Object.create(globalThis.EventTarget.prototype);\n"
+"    AbortSignal.prototype.constructor = AbortSignal;\n"
+"    AbortSignal.prototype.throwIfAborted = function () { if (this.aborted) throw this.reason; };\n"
+"    function _doAbort(signal, reason) {\n"
+"      if (signal.aborted) return;\n"
+"      signal.aborted = true;\n"
+"      signal.reason = (reason === undefined)\n"
+"        ? (function(){ var e=new Error('signal is aborted without reason'); e.name='AbortError'; return e; })()\n"
+"        : reason;\n"
+"      var ev = new globalThis.Event('abort');\n"
+"      try { if (typeof signal.onabort === 'function') signal.onabort.call(signal, ev); }\n"
+"      catch (e) { if (typeof globalThis.reportError === 'function') globalThis.reportError(e); }\n"
+"      signal.dispatchEvent(ev);\n"
+"    }\n"
+"    AbortSignal.abort = function (reason) {\n"
+"      var s = Object.create(AbortSignal.prototype);\n"
+"      globalThis.EventTarget.call(s);\n"
+"      s.aborted = true;\n"
+"      s.reason = (reason === undefined)\n"
+"        ? (function(){ var e=new Error('signal is aborted without reason'); e.name='AbortError'; return e; })()\n"
+"        : reason;\n"
+"      s.onabort = null;\n"
+"      return s;\n"
+"    };\n"
+"    AbortSignal.timeout = function (ms) {\n"
+"      if (typeof ms !== 'number' || ms < 0)\n"
+"        throw new TypeError('AbortSignal.timeout: ms must be a non-negative number');\n"
+"      var s = Object.create(AbortSignal.prototype);\n"
+"      globalThis.EventTarget.call(s);\n"
+"      s.aborted = false; s.reason = undefined; s.onabort = null;\n"
+"      var timer = setTimeout(function () {\n"
+"        var e = new Error('The operation was aborted due to timeout');\n"
+"        e.name = 'TimeoutError';\n"
+"        _doAbort(s, e);\n"
+"      }, ms);\n"
+"      if (timer && typeof timer.unref === 'function') timer.unref();\n"
+"      return s;\n"
+"    };\n"
+"    AbortSignal.any = function (signals) {\n"
+"      if (!signals || typeof signals[Symbol.iterator] !== 'function')\n"
+"        throw new TypeError('AbortSignal.any: argument must be iterable');\n"
+"      var s = Object.create(AbortSignal.prototype);\n"
+"      globalThis.EventTarget.call(s);\n"
+"      s.aborted = false; s.reason = undefined; s.onabort = null;\n"
+"      var arr = [], it = signals[Symbol.iterator](), step;\n"
+"      while (!(step = it.next()).done) arr.push(step.value);\n"
+"      for (var i = 0; i < arr.length; i++)\n"
+"        if (arr[i].aborted) { _doAbort(s, arr[i].reason); return s; }\n"
+"      for (var j = 0; j < arr.length; j++) (function (src) {\n"
+"        src.addEventListener('abort', function () { _doAbort(s, src.reason); }, {once: true});\n"
+"      })(arr[j]);\n"
+"      return s;\n"
+"    };\n"
+"    AbortSignal._abort = _doAbort;\n"
+"    _set('AbortSignal', AbortSignal);\n"
+"  }\n"
+"\n"
+"  /* --- AbortController ------------------------------------ */\n"
+"  if (typeof globalThis.AbortController !== 'function') {\n"
+"    function AbortController() {\n"
+"      if (!(this instanceof AbortController))\n"
+"        throw new TypeError(\"Failed to construct 'AbortController'\");\n"
+"      var s = Object.create(globalThis.AbortSignal.prototype);\n"
+"      globalThis.EventTarget.call(s);\n"
+"      s.aborted = false; s.reason = undefined; s.onabort = null;\n"
+"      Object.defineProperty(this, 'signal', {value: s, enumerable: true});\n"
+"    }\n"
+"    AbortController.prototype.abort = function (reason) {\n"
+"      globalThis.AbortSignal._abort(this.signal, reason);\n"
+"    };\n"
+"    _set('AbortController', AbortController);\n"
+"  }\n"
+"\n"
+"  /* --- structuredClone ------------------------------------ */\n"
+"  if (typeof globalThis.structuredClone !== 'function') {\n"
+"    _set('structuredClone', function (value, options) {\n"
+"      if (options && options.transfer && options.transfer.length) {\n"
+"        var e = new Error('structuredClone: {transfer:[...]} not supported');\n"
+"        e.name = 'NotSupportedError'; throw e;\n"
+"      }\n"
+"      if (typeof value === 'function' || typeof value === 'symbol') {\n"
+"        var e2 = new Error('Cannot clone ' + typeof value);\n"
+"        e2.name = 'DataCloneError'; throw e2;\n"
+"      }\n"
+"      if (value === null || typeof value !== 'object') return value;\n"
+"      /* deepCopy handles cycles, shared-refs, Map/Set/RegExp/Error,\n"
+"         ArrayBuffer/TypedArrays/Date — full structuredClone semantics. */\n"
+"      return rampart.utils.deepCopy({}, {_: value})._;\n"
+"    });\n"
+"  }\n"
+"\n"
+"  /* --- navigator ------------------------------------------ */\n"
+"  if (typeof globalThis.navigator === 'undefined') {\n"
+"    /* Rampart-core's process doesn't have .platform; nodeshim's\n"
+"       does.  Use nodeshim's process for the platform string. */\n"
+"    var _platform = (ns.process && ns.process.platform) || 'unknown';\n"
+"    _set('navigator', Object.freeze({\n"
+"      userAgent:           'Rampart/' + ((typeof rampart !== 'undefined' && rampart.version) || '0.0.0'),\n"
+"      platform:            _platform,\n"
+"      language:            'en-US',\n"
+"      languages:           Object.freeze(['en-US']),\n"
+"      hardwareConcurrency: (typeof process !== 'undefined' && typeof process.nCpu === 'number')\n"
+"                              ? process.nCpu : 1\n"
+"    }));\n"
+"  }\n"
+"})();\n";
+
+/* duk_open_module: the entry point require('rampart-whatwg') hits. */
+duk_ret_t duk_open_module(duk_context *ctx)
+{
+    /* 1. Install Blob and File (native C — see rampart-blob.c). */
+    duk_rp_blob_init(ctx);
+
+    /* 2. Run the JS install block which lifts URL/MessageChannel/
+          performance/crypto from nodeshim and defines Event/
+          EventTarget/AbortController/etc. inline. */
+    duk_push_string(ctx, "rampart-whatwg.c:install");
+    if (duk_pcompile_string_filename(ctx, DUK_COMPILE_EVAL, whatwg_install_js) != 0
+        || duk_pcall(ctx, 0) != 0) {
+        /* Propagate the error — the require() will surface it. */
+        duk_throw(ctx);
+    } else {
+        duk_pop(ctx);  /* discard the (void) eval result */
+    }
+
+    /* 3. Module exports object.  The side effect (globals installed)
+          is the real product; the exports just hand back a marker so
+          users can `var w = require('rampart-whatwg')` for ergonomics. */
+    duk_push_object(ctx);
+    duk_push_true(ctx);
+    duk_put_prop_string(ctx, -2, "loaded");
+    return 1;
+}
