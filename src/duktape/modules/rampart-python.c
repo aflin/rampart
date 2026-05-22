@@ -223,6 +223,7 @@ int debugl=rpydebug;
     };\
     rp_debug_printf(5,"%s read %d bytes of %d wanted\n", is_child?"child":"parent", r, (int)c);\
     if(r!=(int)c) {\
+        if(is_child && ir==0 && r==0) exit(0);\
         fprintf(stderr, "rampart-python helper: read failed: '%s' at %d\n",strerror(errno),__LINE__);\
         if(is_child) {fprintf(stderr, "child proc exiting\n");exit(0);}\
     };\
