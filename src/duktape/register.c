@@ -787,6 +787,10 @@ static void add_extra_object_funcs(duk_context *ctx)
  * Patches the global; benefits all rampart code. */
 #include "globals/rampart-console.h"
 
+/* Eager Promise install in vanilla rampart.  Same polyfill source the
+ * transpiler emits under PROMISE_PF; available before any -t/-b. */
+#include "globals/rampart-promise.h"
+
 static duk_ret_t rp_eval_js(duk_context *ctx)
 {
     const char *source=NULL;
@@ -1199,6 +1203,7 @@ void duk_init_context(duk_context *ctx)
     install_proxy_revocable(ctx);
     install_modern_polyfills(ctx);
     install_array_iter(ctx);
+    duk_rp_promise_init(ctx);
     /* Install `globalThis.Intl` as a lazy getter — `require('rampart-intl')`
        only fires on first access.  Two motivations:
          1. ~37 MB ICU data isn't paid for by scripts that never touch Intl.

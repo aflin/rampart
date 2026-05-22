@@ -85,6 +85,7 @@ static void nodeshim_init_perf_hooks(duk_context *ctx);
 static void nodeshim_init_dns(duk_context *ctx);
 static void nodeshim_init_zlib(duk_context *ctx);
 static void nodeshim_init_worker_threads(duk_context *ctx);
+static void nodeshim_init_tty(duk_context *ctx);
 
 /* ============================================================
  * path
@@ -4828,6 +4829,30 @@ static duk_ret_t proc_setgroups(duk_context *ctx)
     return 0;
 }
 
+/* Plain writes to stdout / stderr — bypass console.log/error, which in
+   rampart format with "Error:" prefix + stack trace.  Node's
+   process.stdout.write / process.stderr.write are just fputs to the
+   respective fd with no decoration. */
+static duk_ret_t proc_stdout_write(duk_context *ctx)
+{
+    duk_size_t len;
+    const char *s = duk_safe_to_lstring(ctx, 0, &len);
+    if (s && len) fwrite(s, 1, len, stdout);
+    fflush(stdout);
+    duk_push_true(ctx);
+    return 1;
+}
+
+static duk_ret_t proc_stderr_write(duk_context *ctx)
+{
+    duk_size_t len;
+    const char *s = duk_safe_to_lstring(ctx, 0, &len);
+    if (s && len) fwrite(s, 1, len, stderr);
+    fflush(stderr);
+    duk_push_true(ctx);
+    return 1;
+}
+
 /* Inline JS that takes a `natives` object containing C helpers + the
    rampart-process source, and assembles a node-style process. Made an
    EventEmitter by inheriting from nodeshim.events. */
@@ -4950,21 +4975,22 @@ static const char *process_js =
 "  p.getegid = p.getgid;\n"
 "  p.getgroups = function() { return []; };\n"
 "\n"
-"  /* Minimal stdout/stderr/stdin streams — just .write that prints. */\n"
-"  function makeStream(printer) {\n"
+"  /* Minimal stdout/stderr/stdin streams.  .write is fputs to the\n"
+"     respective fd via the native writers in `natives` (no Error:\n"
+"     prefix or stack-trace decoration that console.error would add). */\n"
+"  function makeStream(fd, writer) {\n"
 "    var s = new EventEmitter();\n"
-"    s.write = function(chunk) { printer(typeof chunk === 'string' ? chunk : String(chunk)); return true; };\n"
+"    s.write = writer\n"
+"      ? function(chunk) { writer(typeof chunk === 'string' ? chunk : String(chunk)); return true; }\n"
+"      : function() { return true; };\n"
 "    s.end = function() {};\n"
 "    s.isTTY = false;\n"
-"    s.fd = 0;\n"
+"    s.fd = fd;\n"
 "    return s;\n"
 "  }\n"
-"  /* console.log appends newline; node's stdout.write does not — use\n"
-"     bare printers. process is rarely-written-to so we accept the\n"
-"     simplicity of just routing through console for now. */\n"
-"  p.stdout = makeStream(function(s) { try { console.log(s.replace(/\\n$/, '')); } catch (e) {} });\n"
-"  p.stderr = makeStream(function(s) { try { console.error ? console.error(s.replace(/\\n$/, '')) : console.log(s.replace(/\\n$/, '')); } catch (e) {} });\n"
-"  p.stdin = makeStream(function(){});\n"
+"  p.stdout = makeStream(1, natives.stdoutWrite);\n"
+"  p.stderr = makeStream(2, natives.stderrWrite);\n"
+"  p.stdin  = makeStream(0, null);\n"
 "\n"
 "  return p;\n"
 "}";
@@ -4992,6 +5018,8 @@ static void nodeshim_init_process(duk_context *ctx)
     duk_push_c_function(ctx, proc_setgid,       1); duk_put_prop_string(ctx, -2, "setgid");
     duk_push_c_function(ctx, proc_setegid,      1); duk_put_prop_string(ctx, -2, "setegid");
     duk_push_c_function(ctx, proc_setgroups,    1); duk_put_prop_string(ctx, -2, "setgroups");
+    duk_push_c_function(ctx, proc_stdout_write, 1); duk_put_prop_string(ctx, -2, "stdoutWrite");
+    duk_push_c_function(ctx, proc_stderr_write, 1); duk_put_prop_string(ctx, -2, "stderrWrite");
     duk_push_string(ctx, NS_PLATFORM); duk_put_prop_string(ctx, -2, "platform");
     duk_push_string(ctx, NS_ARCH);     duk_put_prop_string(ctx, -2, "arch");
 
@@ -7691,7 +7719,7 @@ static const char *module_js =
 "  var builtinModules = [\n"
 "    'assert','buffer','console','crypto','dns','events','fs','module',\n"
 "    'os','path','perf_hooks','process','punycode','querystring',\n"
-"    'string_decoder','timers','url','util','worker_threads','zlib'\n"
+"    'string_decoder','timers','tty','url','util','worker_threads','zlib'\n"
 "  ];\n"
 "  function isBuiltin(name) {\n"
 "    if (typeof name !== 'string') return false;\n"
@@ -8814,6 +8842,243 @@ static void nodeshim_init_worker_threads(duk_context *ctx)
     duk_call(ctx, 1);
 }
 
+/* ============================================================
+ * tty — minimal but useful v1.  Covers isatty + the query/control
+ * surface that color/progress/prompt libraries actually use:
+ *   - isatty(fd)
+ *   - ReadStream(fd):  setRawMode(b), isRaw, isTTY, columns, rows,
+ *                      getWindowSize()
+ *   - WriteStream(fd): isTTY, columns, rows, getWindowSize(),
+ *                      cursorTo, moveCursor, clearLine,
+ *                      clearScreenDown, getColorDepth, hasColors
+ * Full Readable/Writable stream behavior is deferred until the
+ * `stream` module lands; constructors take an fd but do NOT extend
+ * Readable/Writable for v1.  ReadStream.setRawMode toggles termios
+ * canonical mode via the native helper below — original termios is
+ * saved on first call per-fd so the state is restorable.
+ * ============================================================ */
+#include <termios.h>
+#include <sys/ioctl.h>
+
+/* Saved termios per-fd so setRawMode(false) can restore.  We expect
+   at most a handful of TTY fds in a process (stdin, maybe a forkpty
+   slave), so a small static table is fine. */
+typedef struct {
+    int            fd;
+    int            saved;
+    struct termios orig;
+} ns_termios_save_t;
+#define NS_TTY_SAVE_MAX 8
+static ns_termios_save_t _ns_tty_saves[NS_TTY_SAVE_MAX];
+
+static ns_termios_save_t *_ns_tty_slot(int fd, int create)
+{
+    int i, free_i = -1;
+    for (i = 0; i < NS_TTY_SAVE_MAX; i++) {
+        if (_ns_tty_saves[i].saved && _ns_tty_saves[i].fd == fd)
+            return &_ns_tty_saves[i];
+        if (!_ns_tty_saves[i].saved && free_i < 0)
+            free_i = i;
+    }
+    if (create && free_i >= 0) {
+        _ns_tty_saves[free_i].fd = fd;
+        return &_ns_tty_saves[free_i];
+    }
+    return NULL;
+}
+
+static duk_ret_t tty_isatty_c(duk_context *ctx)
+{
+    int fd = duk_to_int(ctx, 0);
+    duk_push_boolean(ctx, isatty(fd) ? 1 : 0);
+    return 1;
+}
+
+static duk_ret_t tty_get_window_size_c(duk_context *ctx)
+{
+    int fd = duk_to_int(ctx, 0);
+    struct winsize w;
+    if (ioctl(fd, TIOCGWINSZ, &w) != 0) {
+        duk_push_null(ctx);
+        return 1;
+    }
+    /* Return [cols, rows] to match node's getWindowSize(). */
+    duk_push_array(ctx);
+    duk_push_int(ctx, w.ws_col); duk_put_prop_index(ctx, -2, 0);
+    duk_push_int(ctx, w.ws_row); duk_put_prop_index(ctx, -2, 1);
+    return 1;
+}
+
+/* setRawMode(fd, mode) → true on success, false on failure.
+   On first true→raw transition, saves the current termios so the
+   subsequent setRawMode(false) can restore. */
+static duk_ret_t tty_set_raw_mode_c(duk_context *ctx)
+{
+    int fd   = duk_to_int(ctx, 0);
+    int mode = duk_to_boolean(ctx, 1);
+    if (!isatty(fd)) {
+        duk_push_boolean(ctx, 0);
+        return 1;
+    }
+    if (mode) {
+        ns_termios_save_t *slot = _ns_tty_slot(fd, 1);
+        if (slot && !slot->saved) {
+            if (tcgetattr(fd, &slot->orig) != 0) {
+                duk_push_boolean(ctx, 0);
+                return 1;
+            }
+            slot->saved = 1;
+        }
+        struct termios raw;
+        if (tcgetattr(fd, &raw) != 0) { duk_push_boolean(ctx, 0); return 1; }
+        cfmakeraw(&raw);
+        if (tcsetattr(fd, TCSANOW, &raw) != 0) { duk_push_boolean(ctx, 0); return 1; }
+    } else {
+        ns_termios_save_t *slot = _ns_tty_slot(fd, 0);
+        if (!slot || !slot->saved) {
+            /* Nothing saved — nothing to restore.  Return true so
+               callers idempotently toggling raw mode don't error. */
+            duk_push_boolean(ctx, 1);
+            return 1;
+        }
+        if (tcsetattr(fd, TCSANOW, &slot->orig) != 0) {
+            duk_push_boolean(ctx, 0);
+            return 1;
+        }
+        slot->saved = 0;
+        slot->fd = -1;
+    }
+    duk_push_boolean(ctx, 1);
+    return 1;
+}
+
+static const char *tty_js =
+"function(natives) {\n"
+"  'use strict';\n"
+"  var ESC = '\\x1b[';\n"
+"\n"
+"  function isatty(fd) { return natives.isatty(fd|0); }\n"
+"\n"
+"  /* getColorDepth: 1 (mono) / 4 (16) / 8 (256) / 24 (truecolor).\n"
+"     Mirrors node's heuristic over TERM/COLORTERM/NO_COLOR/FORCE_COLOR. */\n"
+"  function envColorDepth(env) {\n"
+"    env = env || (typeof process !== 'undefined' ? process.env : {}) || {};\n"
+"    if (env.NO_COLOR && env.NO_COLOR !== '') return 1;\n"
+"    if (env.FORCE_COLOR !== undefined && env.FORCE_COLOR !== '') {\n"
+"      var fc = String(env.FORCE_COLOR);\n"
+"      if (fc === '1' || fc === 'true')  return 4;\n"
+"      if (fc === '2')                   return 8;\n"
+"      if (fc === '3' || fc === 'true')  return 24;\n"
+"    }\n"
+"    var term  = env.TERM || '';\n"
+"    var cterm = env.COLORTERM || '';\n"
+"    if (term === 'dumb') return 1;\n"
+"    if (cterm === 'truecolor' || cterm === '24bit') return 24;\n"
+"    if (/-256(color)?/.test(term)) return 8;\n"
+"    if (/^xterm|color|ansi|cygwin|linux|screen|tmux|vt100|vt220|rxvt/i.test(term)) return 4;\n"
+"    return 1;\n"
+"  }\n"
+"\n"
+"  /* hasColors([count], [env]) — node signature variants. */\n"
+"  function hasColors(count, env) {\n"
+"    if (typeof count === 'object' && count !== null) { env = count; count = 16; }\n"
+"    if (typeof count !== 'number') count = 16;\n"
+"    var depth = envColorDepth(env);\n"
+"    return count <= (1 << depth);\n"
+"  }\n"
+"\n"
+"  /* Window-size getter shared by Read/Write stream. */\n"
+"  function _winsize(fd) {\n"
+"    var ws = natives.getWindowSize(fd|0);\n"
+"    return ws || [80, 24];\n"
+"  }\n"
+"\n"
+"  /* ReadStream — wraps an fd that IS a TTY.  v1: no Readable extension. */\n"
+"  function ReadStream(fd, opts) {\n"
+"    if (!(this instanceof ReadStream)) return new ReadStream(fd, opts);\n"
+"    this.fd     = fd|0;\n"
+"    this.isTTY  = true;\n"
+"    this.isRaw  = false;\n"
+"    var self = this;\n"
+"    Object.defineProperty(this, 'columns', {get: function(){ return _winsize(self.fd)[0]; }, configurable: true});\n"
+"    Object.defineProperty(this, 'rows',    {get: function(){ return _winsize(self.fd)[1]; }, configurable: true});\n"
+"  }\n"
+"  ReadStream.prototype.setRawMode = function(mode) {\n"
+"    var m = !!mode;\n"
+"    if (natives.setRawMode(this.fd|0, m)) this.isRaw = m;\n"
+"    return this;\n"
+"  };\n"
+"  ReadStream.prototype.getWindowSize = function() { return _winsize(this.fd); };\n"
+"\n"
+"  /* WriteStream — wraps an fd that IS a TTY.  ANSI helpers write\n"
+"     escape sequences via process.stdout/stderr matching this.fd. */\n"
+"  function WriteStream(fd) {\n"
+"    if (!(this instanceof WriteStream)) return new WriteStream(fd);\n"
+"    this.fd    = fd|0;\n"
+"    this.isTTY = true;\n"
+"    var self = this;\n"
+"    Object.defineProperty(this, 'columns', {get: function(){ return _winsize(self.fd)[0]; }, configurable: true});\n"
+"    Object.defineProperty(this, 'rows',    {get: function(){ return _winsize(self.fd)[1]; }, configurable: true});\n"
+"  }\n"
+"  function _writeFd(fd, s) {\n"
+"    var p = (typeof process !== 'undefined') ? process : null;\n"
+"    if (p && fd === 2 && p.stderr && typeof p.stderr.write === 'function') p.stderr.write(s);\n"
+"    else if (p && p.stdout && typeof p.stdout.write === 'function')         p.stdout.write(s);\n"
+"  }\n"
+"  WriteStream.prototype.getWindowSize = function() { return _winsize(this.fd); };\n"
+"  WriteStream.prototype.cursorTo = function(x, y, cb) {\n"
+"    if (typeof y === 'function') { cb = y; y = undefined; }\n"
+"    if (typeof y === 'number') _writeFd(this.fd, ESC + (y+1) + ';' + (x+1) + 'H');\n"
+"    else                       _writeFd(this.fd, ESC + (x+1) + 'G');\n"
+"    if (typeof cb === 'function') cb();\n"
+"    return true;\n"
+"  };\n"
+"  WriteStream.prototype.moveCursor = function(dx, dy, cb) {\n"
+"    var s = '';\n"
+"    if (dy < 0) s += ESC + (-dy) + 'A';\n"
+"    else if (dy > 0) s += ESC + dy + 'B';\n"
+"    if (dx > 0) s += ESC + dx + 'C';\n"
+"    else if (dx < 0) s += ESC + (-dx) + 'D';\n"
+"    if (s) _writeFd(this.fd, s);\n"
+"    if (typeof cb === 'function') cb();\n"
+"    return true;\n"
+"  };\n"
+"  /* clearLine(dir): -1 left of cursor, 1 right, 0 entire line */\n"
+"  WriteStream.prototype.clearLine = function(dir, cb) {\n"
+"    var code = (dir < 0) ? '1K' : (dir > 0 ? '0K' : '2K');\n"
+"    _writeFd(this.fd, ESC + code);\n"
+"    if (typeof cb === 'function') cb();\n"
+"    return true;\n"
+"  };\n"
+"  WriteStream.prototype.clearScreenDown = function(cb) {\n"
+"    _writeFd(this.fd, ESC + '0J');\n"
+"    if (typeof cb === 'function') cb();\n"
+"    return true;\n"
+"  };\n"
+"  WriteStream.prototype.getColorDepth = function(env) { return envColorDepth(env); };\n"
+"  WriteStream.prototype.hasColors     = function(c, e) { return hasColors(c, e); };\n"
+"\n"
+"  return {\n"
+"    isatty:      isatty,\n"
+"    ReadStream:  ReadStream,\n"
+"    WriteStream: WriteStream\n"
+"  };\n"
+"}";
+
+static void nodeshim_init_tty(duk_context *ctx)
+{
+    duk_push_string(ctx, "rampart-nodeshim.c:tty_js");
+    duk_compile_string_filename(ctx, DUK_COMPILE_FUNCTION, tty_js);
+
+    /* natives object */
+    duk_push_object(ctx);
+    duk_push_c_function(ctx, tty_isatty_c,         1); duk_put_prop_string(ctx, -2, "isatty");
+    duk_push_c_function(ctx, tty_get_window_size_c, 1); duk_put_prop_string(ctx, -2, "getWindowSize");
+    duk_push_c_function(ctx, tty_set_raw_mode_c,   2); duk_put_prop_string(ctx, -2, "setRawMode");
+
+    duk_call(ctx, 1);
+}
+
 #define NODESHIM_SLOT(name, init_fn) do { \
     init_fn(ctx); \
     duk_put_prop_string(ctx, -2, name); \
@@ -8844,6 +9109,7 @@ duk_ret_t duk_open_module(duk_context *ctx)
     NODESHIM_SLOT("perf_hooks",     nodeshim_init_perf_hooks);
     NODESHIM_SLOT("dns",            nodeshim_init_dns);
     NODESHIM_SLOT("zlib",           nodeshim_init_zlib);
+    NODESHIM_SLOT("tty",            nodeshim_init_tty);
     /* Tier 2: worker_threads */
     NODESHIM_SLOT("worker_threads", nodeshim_init_worker_threads);
 

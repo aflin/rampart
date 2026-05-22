@@ -7211,6 +7211,14 @@ static void _emit_yield_body_range(rp_string *out, const char *src, TSNode block
             TSNode conseq = ts_node_child_by_field_name(stmt, "consequence", 11);
             TSNode altr = ts_node_child_by_field_name(stmt, "alternative", 11);
             int has_else = !ts_node_is_null(altr);
+            /* tree-sitter-javascript wraps the else branch in an
+               `else_clause` = seq('else', statement) node.  Descend
+               into the inner statement so the state-machine emission
+               below doesn't include the literal `else` keyword
+               between its `case N:` label and the branch body. */
+            if (has_else && strcmp(ts_node_type(altr), "else_clause") == 0
+                && ts_node_named_child_count(altr) > 0)
+                altr = ts_node_named_child(altr, 0);
 
             /* Lower the condition (may itself contain yields). */
             char *cond_lowered = NULL;
@@ -8872,6 +8880,88 @@ static int _bs_block_shadows(TSNode block, const char *src,
     return 0;
 }
 
+/* Does `pat` (a function parameter pattern) bind `name`?  Handles
+   identifier, rest, assignment, array, and object destructuring
+   patterns.  Used by _bs_fn_shadows to decide whether a nested
+   function locally redefines `name`. */
+static int _bs_pattern_binds(TSNode pat, const char *src,
+                             const char *name, size_t name_len)
+{
+    const char *t = ts_node_type(pat);
+    if (strcmp(t, "identifier") == 0) {
+        size_t s = ts_node_start_byte(pat), e = ts_node_end_byte(pat);
+        return (e - s == name_len && memcmp(src + s, name, name_len) == 0);
+    }
+    if (strcmp(t, "rest_pattern") == 0 || strcmp(t, "rest_element") == 0) {
+        if (ts_node_named_child_count(pat) > 0)
+            return _bs_pattern_binds(ts_node_named_child(pat, 0), src, name, name_len);
+        return 0;
+    }
+    if (strcmp(t, "assignment_pattern") == 0) {
+        TSNode left = ts_node_child_by_field_name(pat, "left", 4);
+        if (!ts_node_is_null(left))
+            return _bs_pattern_binds(left, src, name, name_len);
+        return 0;
+    }
+    if (strcmp(t, "array_pattern") == 0) {
+        uint32_t cc = ts_node_named_child_count(pat);
+        for (uint32_t i = 0; i < cc; i++)
+            if (_bs_pattern_binds(ts_node_named_child(pat, i), src, name, name_len))
+                return 1;
+        return 0;
+    }
+    if (strcmp(t, "object_pattern") == 0) {
+        uint32_t cc = ts_node_named_child_count(pat);
+        for (uint32_t i = 0; i < cc; i++) {
+            TSNode ch = ts_node_named_child(pat, i);
+            const char *ct = ts_node_type(ch);
+            if (strcmp(ct, "shorthand_property_identifier_pattern") == 0) {
+                size_t s = ts_node_start_byte(ch), e = ts_node_end_byte(ch);
+                if (e - s == name_len && memcmp(src + s, name, name_len) == 0)
+                    return 1;
+            } else if (strcmp(ct, "pair_pattern") == 0) {
+                TSNode val = ts_node_child_by_field_name(ch, "value", 5);
+                if (!ts_node_is_null(val) && _bs_pattern_binds(val, src, name, name_len))
+                    return 1;
+            } else if (strcmp(ct, "rest_pattern") == 0 || strcmp(ct, "rest_element") == 0) {
+                if (ts_node_named_child_count(ch) > 0
+                    && _bs_pattern_binds(ts_node_named_child(ch, 0), src, name, name_len))
+                    return 1;
+            }
+        }
+        return 0;
+    }
+    return 0;
+}
+
+/* Returns 1 if function-like `fn_node` declares `name` as a parameter
+   binding.  When false, references to `name` inside the function body
+   resolve to the outer scope — so an outer block-scope rename must
+   propagate into the function's body.  (Function-scoped `var name`
+   shadowing inside the body is not yet handled; rare in real code.) */
+static int _bs_fn_shadows(TSNode fn_node, const char *src,
+                          const char *name, size_t name_len)
+{
+    /* Single-identifier arrow: `name => ...` */
+    TSNode single = ts_node_child_by_field_name(fn_node, "parameter", 9);
+    if (!ts_node_is_null(single)) {
+        if (strcmp(ts_node_type(single), "identifier") == 0) {
+            size_t s = ts_node_start_byte(single), e = ts_node_end_byte(single);
+            if (e - s == name_len && memcmp(src + s, name, name_len) == 0)
+                return 1;
+        }
+        return 0;
+    }
+    TSNode params = ts_node_child_by_field_name(fn_node, "parameters", 10);
+    if (ts_node_is_null(params)) return 0;
+    uint32_t pc = ts_node_named_child_count(params);
+    for (uint32_t i = 0; i < pc; i++) {
+        if (_bs_pattern_binds(ts_node_named_child(params, i), src, name, name_len))
+            return 1;
+    }
+    return 0;
+}
+
 static void _bs_rewrite_refs_in_block(TSNode node, const char *src,
                                       const char *name, size_t name_len,
                                       const char *new_name,
@@ -8880,9 +8970,23 @@ static void _bs_rewrite_refs_in_block(TSNode node, const char *src,
 {
     const char *t = ts_node_type(node);
 
-    /* Don't descend into nested function/method/arrow — they're separate scopes. */
-    if (_bs_is_fn_boundary(node))
+    /* Nested function/method/arrow.  Previously we returned outright,
+       which broke renames like `array.find(e => e.id === entry)` where
+       the closure references the outer block's renamed binding.  Now:
+       only stop if the function actually shadows `name` via its own
+       parameters; otherwise descend into the body so references inside
+       the closure get rewritten too.  We skip the parameters subtree
+       (those are bindings, not references) and only follow the `body`
+       field. */
+    if (_bs_is_fn_boundary(node)) {
+        if (_bs_fn_shadows(node, src, name, name_len))
+            return;
+        TSNode body = ts_node_child_by_field_name(node, "body", 4);
+        if (!ts_node_is_null(body))
+            _bs_rewrite_refs_in_block(body, src, name, name_len, new_name,
+                                      decl_node, edits, claimed);
         return;
+    }
 
     /* If this node is itself a statement_block that declares `name`
        (other than via the declarator we're processing), its scope
