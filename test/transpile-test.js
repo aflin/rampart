@@ -1561,6 +1561,68 @@ try {
     testFeature("Async - Promises/async function", false);
 }
 
+/* NDE.1 (2026-05-22): async if/else with `await` in one branch and
+   `return`/`throw` in the other used to parse-error.  The
+   regenerator state-machine emitter left the else branch as a
+   literal `else { ... }` adjacent to a `case N:` label.  Fix:
+   descend into the tree-sitter `else_clause` wrapper so the inner
+   statement_block is what gets state-machine-lowered.
+
+   Since the bug was a parse error, the test file simply CONTAINING
+   these async functions is the regression check — if the transpile
+   regresses, this file fails to load and every test fails.  The
+   testFeature entries below also validate the function compiles to
+   a callable that returns a Promise. */
+testFeature("NDE.1 - async if/else: await-then + return-else", function() {
+    async function _nde1(p) {
+        await Promise.resolve();
+        if (p) {
+            await Promise.resolve(1);
+            return "then-branch";
+        } else {
+            return 42;
+        }
+    }
+    var p = _nde1(false);
+    return p && typeof p.then === "function";
+});
+
+testFeature("NDE.1 - async if/else: throw-in-else compiles", function() {
+    async function _nde1b(p) {
+        if (p) {
+            await Promise.resolve();
+            return "ok";
+        } else {
+            throw new Error("nope");
+        }
+    }
+    var p = _nde1b(true);
+    return p && typeof p.then === "function";
+});
+
+testFeature("NDE.1 - async if/else: await in both branches still works", function() {
+    /* No-mixed-flow control — should already have worked pre-fix;
+       guard against regression. */
+    async function _nde1c(p) {
+        if (p) { await Promise.resolve(1); }
+        else   { await Promise.resolve(2); }
+    }
+    var p = _nde1c(true);
+    return p && typeof p.then === "function";
+});
+
+testFeature("NDE.1 - async if/else: bare statement in else (no block)", function() {
+    /* else's body is a single expression statement, not a block —
+       the else_clause unwrap must still work. */
+    async function _nde1d(p) {
+        await Promise.resolve();
+        if (p) await Promise.resolve(1);
+        else   return 99;
+    }
+    var p = _nde1d(false);
+    return p && typeof p.then === "function";
+});
+
 testFeature("generator function/iterator protocol",function(){
     let fibonacci = {
         *[Symbol.iterator]() {

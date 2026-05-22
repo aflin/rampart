@@ -396,6 +396,60 @@ testFeature("multiple sibling block lets", function () {
     return fn() === "A,B";
 });
 
+/* NDE.2 (2026-05-22): when two sibling `case` arms each declare
+   `const X`, the renamer assigns `X` to one and `_X2` to the next.
+   References to the renamed `X` *inside a callback created in the
+   same arm* (e.g. `array.find(e => e.id === X)`) used to keep the
+   stale identifier and silently bind to an outer/undefined `X`.
+   Fix: _bs_rewrite_refs_in_block now descends into nested
+   function/arrow bodies that don't shadow the renamed name. */
+testFeature("NDE.2 - rename propagates into sibling-arm closure", function () {
+    function go(messages) {
+        var out = [];
+        for (const m of messages) {
+            switch (m.method) {
+                case 'B': {
+                    const entry = m.other;
+                    out.push("B:" + entry);
+                    break;
+                }
+                case 'C': {
+                    const entry = m.third;
+                    var found = [{id: entry}].find(function(e){ return e.id === entry; });
+                    out.push("C:" + (found ? found.id : "miss"));
+                    break;
+                }
+            }
+        }
+        return out;
+    }
+    var r = go([{method:'B', other:'b1'}, {method:'C', third:'c1'}, {method:'C', third:'c2'}]);
+    return JSON.stringify(r) === '["B:b1","C:c1","C:c2"]';
+});
+
+testFeature("NDE.2 - rename propagates into arrow closure (arrow body)", function () {
+    var matches = [];
+    for (var i = 0; i < 1; i++) {
+        const entry = 7;
+        var pool = [{val: 7}, {val: 99}];
+        /* Arrow with single-id param closes over `entry` */
+        matches.push(pool.find(e => e.val === entry));
+    }
+    return matches[0] && matches[0].val === 7;
+});
+
+testFeature("NDE.2 - inner fn that shadows `name` is NOT renamed", function () {
+    /* If a nested function declares its own `entry` (as param), the
+       outer renamer must NOT touch references to that inner `entry`. */
+    var got = null;
+    {
+        const entry = "outer";
+        var fn = function (entry) { got = entry; };
+        fn("inner");
+    }
+    return got === "inner";
+});
+
 /* ---------------- Exit ---------------- */
 
 if (testFeature.isRampart) {

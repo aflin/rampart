@@ -366,6 +366,27 @@ testJS("Intl", function() {
 });
 
 
+testJS("Promise (vanilla rampart)", function() {
+    /* Rampart installs Promise eagerly at context init
+       (src/duktape/globals/rampart-promise.c) so vanilla
+       `./rampart script.js` has it without any `-t` / `-b`. */
+    must(typeof Promise === 'function', "Promise is a function");
+    must(typeof Promise.resolve === 'function', "Promise.resolve");
+    must(typeof Promise.reject === 'function', "Promise.reject");
+    must(typeof Promise.all === 'function', "Promise.all");
+    must(typeof Promise.race === 'function', "Promise.race");
+    must(typeof Promise.allSettled === 'function', "Promise.allSettled (ES2020)");
+    must(typeof Promise.any === 'function', "Promise.any (ES2021)");
+    must(typeof Promise.prototype.then === 'function', "Promise.prototype.then");
+    must(typeof Promise.prototype['catch'] === 'function', "Promise.prototype.catch");
+    must(typeof Promise.prototype['finally'] === 'function', "Promise.prototype.finally (ES2018)");
+
+    /* Constructor shape — `new Promise(executor)` */
+    var p = new Promise(function(resolve){ resolve("ok"); });
+    must(p && typeof p.then === "function", "new Promise returns thenable");
+});
+
+
 testJS("Buffer (statics)", function() {
     /* Buffer must be a global */
     must(typeof Buffer === 'function', "Buffer is global");

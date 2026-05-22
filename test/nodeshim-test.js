@@ -596,6 +596,12 @@ testModule("process", function() {
     /* stdout/stderr fields */
     must(typeof p.stdout === 'object' || typeof p.stdout === 'function'
         || typeof p.stdout === 'undefined', "stdout (optional)");
+    /* stdio fds — node guarantees 0/1/2 for stdin/stdout/stderr.  This
+       previously returned 0 for all three in rampart-nodeshim, breaking
+       tty.isatty(process.stderr.fd) etc. */
+    if (p.stdin  && typeof p.stdin.fd  === 'number') mustEq(p.stdin.fd,  0, "stdin.fd === 0");
+    if (p.stdout && typeof p.stdout.fd === 'number') mustEq(p.stdout.fd, 1, "stdout.fd === 1");
+    if (p.stderr && typeof p.stderr.fd === 'number') mustEq(p.stderr.fd, 2, "stderr.fd === 2");
     /* chdir / cwd round-trip */
     var orig = p.cwd();
     p.chdir(orig);
@@ -815,6 +821,75 @@ testModule("url", function() {
     }
 });
 
+testModule("tty", function() {
+    var tty = require('tty');
+    /* surface */
+    must(typeof tty.isatty      === 'function', "isatty");
+    must(typeof tty.ReadStream  === 'function', "ReadStream");
+    must(typeof tty.WriteStream === 'function', "WriteStream");
+    /* isatty: bogus fd returns false; valid fd returns boolean */
+    mustEq(tty.isatty(99),  false, "isatty bogus fd");
+    must(typeof tty.isatty(1) === 'boolean', "isatty returns boolean");
+    /* getColorDepth / hasColors — env-only, no fd needed; instantiate
+       a stream only if we're actually on a TTY (node throws otherwise). */
+    /* Pick any TTY-ish fd so node's strict constructor doesn't EBADF.
+       If none of 0/1/2 is a TTY (CI pipe), skip the stream-surface tests. */
+    var ttyFd = tty.isatty(1) ? 1 : tty.isatty(2) ? 2 : tty.isatty(0) ? 0 : -1;
+    if (ttyFd >= 0) {
+        var w = new tty.WriteStream(ttyFd);
+        must(w instanceof tty.WriteStream, "WriteStream constructor");
+        must(w.isTTY === true, "WriteStream.isTTY");
+        must(typeof w.columns === 'number' && w.columns > 0, "WriteStream.columns");
+        must(typeof w.rows    === 'number' && w.rows    > 0, "WriteStream.rows");
+        var ws = w.getWindowSize();
+        must(Array.isArray(ws) && ws.length === 2, "getWindowSize() shape");
+        mustEq(w.getColorDepth({TERM: 'dumb'}),               1,  "depth dumb");
+        mustEq(w.getColorDepth({NO_COLOR: '1'}),              1,  "depth NO_COLOR");
+        mustEq(w.getColorDepth({COLORTERM: 'truecolor'}),     24, "depth truecolor");
+        mustEq(w.getColorDepth({TERM: 'xterm-256color'}),     8,  "depth xterm-256color");
+        mustEq(w.getColorDepth({TERM: 'xterm'}),              4,  "depth xterm");
+        must(w.hasColors(16,  {TERM: 'xterm-256color'}) === true,  "hasColors(16) on 256-term");
+        must(w.hasColors(256, {TERM: 'xterm-256color'}) === true,  "hasColors(256) on 256-term");
+        must(w.hasColors(256, {TERM: 'xterm'})          === false, "hasColors(256) on 16-term");
+        /* ANSI helpers: just verify they're callable and return true.
+           Actual escape bytes go to the matching fd's stream — silence
+           by swapping its write method. */
+        var sinkProp = (ttyFd === 2) ? 'stderr' : 'stdout';
+        var orig = process[sinkProp] && process[sinkProp].write;
+        if (orig) process[sinkProp].write = function(){ return true; };
+        try {
+            mustEq(w.cursorTo(0, 0),     true, "cursorTo");
+            mustEq(w.moveCursor(1, 1),   true, "moveCursor");
+            mustEq(w.clearLine(0),       true, "clearLine");
+            mustEq(w.clearScreenDown(),  true, "clearScreenDown");
+        } finally {
+            if (orig) process[sinkProp].write = orig;
+        }
+        /* ReadStream surface — only if stdin is a TTY (node EBADFs
+           otherwise; rampart wouldn't but we want one shape that works
+           under both runtimes). */
+        if (tty.isatty(0)) {
+            var r = new tty.ReadStream(0);
+            must(r instanceof tty.ReadStream, "ReadStream constructor");
+            must(r.isTTY === true, "ReadStream.isTTY");
+            must(r.isRaw === false, "ReadStream.isRaw default");
+            must(typeof r.setRawMode === 'function', "setRawMode");
+            must(typeof r.getWindowSize === 'function', "ReadStream.getWindowSize");
+            /* Don't actually flip raw mode (could leave the terminal in
+               raw state if a later test throws); just verify the chainable
+               return.  Node returns `this` from setRawMode; rampart does
+               too. */
+            must(r.setRawMode(false) === r, "setRawMode chainable");
+        }
+    }
+    /* builtinModules has 'tty' (rampart only — node doesn't add to ours) */
+    if (_isRampart) {
+        var m = require('module');
+        must(m.builtinModules.indexOf('tty') >= 0, "builtinModules has tty");
+        must(m.isBuiltin('tty'), "isBuiltin('tty')");
+    }
+});
+
 testModule("util", function() {
     var u = require('util');
     /* format */
@@ -852,9 +927,18 @@ testModule("util", function() {
     var binst = new B();
     must(binst instanceof A, "inherits");
     mustEq(binst.greet(), 'hi', "inherits method available");
-    /* promisify / callbackify exist (full behavior needs Promise) */
+    /* promisify / callbackify — Promise is now installed eagerly in
+       rampart core (rampart-promise.c), so these work in vanilla
+       rampart with no -t.  Surface check + thenable shape here; the
+       resolve/reject round-trip is exercised in the async block. */
     must(typeof u.promisify === 'function', "promisify present");
     must(typeof u.callbackify === 'function', "callbackify present");
+    var pFn = u.promisify(function(x, cb) { cb(null, x); });
+    must(typeof pFn === 'function', "promisify returns function");
+    var p = pFn(1);
+    must(p && typeof p.then === 'function', "promisify result is thenable");
+    var cbFn = u.callbackify(function() { return Promise.resolve(1); });
+    must(typeof cbFn === 'function', "callbackify returns function");
     /* deprecate — silences the warning (writes via console.warn) so the
        test output stays clean. */
     var fn = u.deprecate(function(x) { return x * 2; }, "msg");
@@ -963,6 +1047,39 @@ asyncQ.push(asyncBlock("timers", function(done) {
             }, 50);
         } catch (e) { done(e); }
     }, 80);
+}));
+
+asyncQ.push(asyncBlock("util.promisify / callbackify (async)", function(done) {
+    var u = require('util');
+    /* promisify resolve path: cb(null, value) → Promise resolves */
+    var pResolve = u.promisify(function(x, cb) {
+        setTimeout(function() { cb(null, x * 2); }, 5);
+    });
+    /* promisify reject path: cb(err) → Promise rejects */
+    var pReject  = u.promisify(function(cb) {
+        setTimeout(function() { cb(new Error('boom')); }, 5);
+    });
+    /* callbackify: returning Promise → node-style (err, val) cb */
+    var cb = u.callbackify(function(x) {
+        return Promise.resolve(x + 100);
+    });
+    pResolve(21).then(function(v) {
+        try { mustEq(v, 42, "promisify resolves with cb value"); }
+        catch (e) { return done(e); }
+        pReject().then(function() {
+            done(new Error("promisify reject path resolved instead"));
+        }, function(err) {
+            try { mustEq(err && err.message, 'boom', "promisify rejects with cb err"); }
+            catch (e) { return done(e); }
+            cb(7, function(cberr, cbval) {
+                try {
+                    mustEq(cberr, null, "callbackify err === null");
+                    mustEq(cbval, 107, "callbackify cb value");
+                    done();
+                } catch (e) { done(e); }
+            });
+        });
+    }, function(err) { done(err); });
 }));
 
 asyncQ.push(asyncBlock("fs (async)", function(done) {
