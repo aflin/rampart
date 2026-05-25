@@ -40,6 +40,16 @@ extern int rp_print_error_lines;
     (void) duk_throw(ctx);\
 } while(0)
 
+#define RP_TYPE_THROW(ctx,...) do {\
+    duk_push_error_object(ctx, DUK_ERR_TYPE_ERROR, __VA_ARGS__);\
+    (void) duk_throw(ctx);\
+} while(0)
+
+#define RP_RANGE_THROW(ctx,...) do {\
+    duk_push_error_object(ctx, DUK_ERR_RANGE_ERROR, __VA_ARGS__);\
+    (void) duk_throw(ctx);\
+} while(0)
+
 #define REQUIRE_STRING(ctx,idx,...) ({\
     duk_idx_t __rp_i=(idx);\
     if(!duk_is_string((ctx),__rp_i)) {\
@@ -768,6 +778,19 @@ extern FILE *error_fh;
 typedef void (*rp_vfunc)(void* arg);
 void add_exit_func(rp_vfunc func, void *arg);
 void duk_rp_exit(duk_context *ctx, int ec);
+
+/* Request a clean process exit from inside the main event loop.
+   Sets a pending-exit flag and event_base_loopbreak()s the main base
+   so the dispatcher unwinds; the natural wait-for-children drain at the
+   top of main() then runs and duk_rp_exit is called once, from outside
+   any event_base_loop. */
+void rp_request_exit(int ec);
+
+/* Non-zero while the main thread is inside event_base_loop on
+   mainthr->base.  process.exit() checks this to decide whether the
+   synchronous duk_rp_exit teardown is safe (false) or whether it must
+   defer via rp_request_exit (true) to avoid nesting event_base_loop. */
+extern volatile int rp_in_main_loop;
 
 /* functions to be run before a new thread starts its loop */
 void add_b4loop_func(rp_vfunc func, void *arg);

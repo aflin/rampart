@@ -20,6 +20,11 @@
 #include "rampart.h"
 #include "rp_zip.h"
 
+/* From rampart-url.cpp.  Both return malloc()'d strings (or NULL on
+ * parse failure / OOM) — caller frees with free(). */
+extern char *rp_url_canonicalize(const char *href, size_t len);
+extern char *rp_url_host_to_unicode(const char *href, size_t len);
+
 static char *rp_curl_def_bundle=NULL;
 
 typedef uint8_t byte;
@@ -132,6 +137,8 @@ CURLREQ
     CURLM       *multi;         // the multi request, if doing multi
     CSOS        *sopts;         // see above  - curl options
     char        *url;           // url we will possibly append and will always need to free later
+    char        *originalUrl;   // verbatim user-passed URL (preserved before any normalization); NULL if same as url
+    int          normalize_url; // 1 = normalize via upa before handing to libcurl; 0 = pass through
     void        *thisptr;       // duktape heap pointer to 'this'
     void        *chunkfuncptr;  // duktape heap pointer to chunk callback
     CHUNKDATA   *chunkdata;     // see above - struct for chunking and overlapping data
@@ -1862,8 +1869,25 @@ static int duk_curl_add_req_details(duk_context *ctx, CURLREQ *req)
     duk_push_string(ctx, s);
     duk_put_prop_string(ctx, -2, "effectiveUrl");
 
-    /* the request url, in case of redirects */
-    duk_push_string(ctx, req->url);
+    /* effectiveUrlUnicode: same as effectiveUrl but with the hostname
+     * converted from punycode back to its Unicode display form (UTS #46).
+     * For non-IDN hosts the string is byte-identical to effectiveUrl. */
+    if (s) {
+        char *unicode = rp_url_host_to_unicode(s, strlen(s));
+        if (unicode) {
+            duk_push_string(ctx, unicode);
+            free(unicode);
+        } else {
+            duk_push_string(ctx, s);
+        }
+        duk_put_prop_string(ctx, -2, "effectiveUrlUnicode");
+    }
+
+    /* the request url, as given to fetch().  When normalizeUrl was
+     * enabled (default), req->url is the canonical form we handed to
+     * libcurl; req->originalUrl preserves the user's literal input.
+     * Per existing docs, `url` should be the user's literal. */
+    duk_push_string(ctx, req->originalUrl ? req->originalUrl : req->url);
     duk_put_prop_string(ctx, -2, "url");
 
     /* local IP address */
@@ -1984,18 +2008,28 @@ static int duk_curl_push_res(duk_context *ctx, CURLREQ *req)
     d = duk_curl_add_req_details(ctx, req);
 
     duk_push_heapptr(ctx, req->thisptr);
+    /* Empty-body responses (HTTP 204, HEAD, Content-Length:0) never reach
+       the WriteCallback body branch where headers normally get parsed onto
+       thisptr.  Detect that case and parse from req->header.text here.
+       NB: rawHeader must be pushed BEFORE parse_headers since the parser
+       mutates the buffer (writes NULs). */
+    if(!duk_get_prop_string(ctx, -1, "rawHeader"))
+    {
+        duk_pop(ctx); // undefined
+        if((req->header).text && (req->header).size > 0)
+            duk_push_lstring(ctx, (req->header).text, (req->header).size);
+        else
+            duk_push_string(ctx,""); // empty raw header
+    }
+    duk_put_prop_string(ctx, -3, "rawHeader");
     if(!duk_get_prop_string(ctx, -1, "headers"))
     {
         duk_pop(ctx); // undefined
         duk_push_object(ctx); // empty headers object
+        if((req->header).text && (req->header).size > 0)
+            duk_curl_parse_headers(ctx, (req->header).text);
     }
     duk_put_prop_string(ctx, -3, "headers");
-    if(!duk_get_prop_string(ctx, -1, "rawHeader"))
-    {
-        duk_pop(ctx); // undefined
-        duk_push_string(ctx,""); // empty raw header
-    }
-    duk_put_prop_string(ctx, -3, "rawHeader");
     duk_pop(ctx);// thisptr
 
     /* total time for request */
@@ -2496,7 +2530,8 @@ void duk_curl_setopts(duk_context *ctx, CURL *curl, int idx, CURLREQ *req)
         // these are handled elsewhere
         if( !strcmp(op,"url")  || !strcmp(op,"callback") || !strcmp(sop,"chunkCallback") ||
             !strcmp(sop,"progressCallback") || !strcmp(sop,"skipFinalRes") ||
-            !strcmp(sop,"xferCallback") || !strcmp(sop,"xferCallbackRate") )
+            !strcmp(sop,"xferCallback") || !strcmp(sop,"xferCallbackRate") ||
+            !strcmp(sop,"normalizeUrl") )
         {
             duk_pop_2(ctx);
             continue;
@@ -2719,21 +2754,35 @@ static int xferinfo_cb(void *clientp,
         duk_put_prop_string(ctx, -2, "httpStatus");
     }
 
-    /* originalUrl = the URL the script handed to fetch/Async. Stored
-     * verbatim in req->url at request creation, before any redirect. */
-    if (req->url) {
-        duk_push_string(ctx, req->url);
-        duk_put_prop_string(ctx, -2, "originalUrl");
+    /* originalUrl = the literal URL the script handed to fetch/Async.
+     * If normalizeUrl was enabled, req->originalUrl preserves the literal
+     * input separately from the canonical form passed to libcurl. */
+    {
+        const char *orig = req->originalUrl ? req->originalUrl : req->url;
+        if (orig) {
+            duk_push_string(ctx, orig);
+            duk_put_prop_string(ctx, -2, "originalUrl");
+        }
     }
 
-    /* url = effective URL after any redirect chain. May equal originalUrl
-     * if no redirects were followed. */
+    /* url = effective URL after any redirect chain.  urlUnicode is the
+     * same URL with the hostname converted from punycode back to its
+     * Unicode display form (UTS #46); for non-IDN hosts the two strings
+     * are byte-identical. */
     const char *effurl = NULL;
     if (curl_easy_getinfo(req->curl, CURLINFO_EFFECTIVE_URL, &effurl) == CURLE_OK
         && effurl)
     {
         duk_push_string(ctx, effurl);
         duk_put_prop_string(ctx, -2, "url");
+        char *unicode = rp_url_host_to_unicode(effurl, strlen(effurl));
+        if (unicode) {
+            duk_push_string(ctx, unicode);
+            free(unicode);
+        } else {
+            duk_push_string(ctx, effurl);
+        }
+        duk_put_prop_string(ctx, -2, "urlUnicode");
     }
 
     /* Call the JS function. If it throws, swallow the error and don't
@@ -2802,6 +2851,7 @@ static void clean_req(CURLREQ *req)
 
     curl_easy_cleanup(req->curl);
     free(req->url);
+    free(req->originalUrl);
     free((req->header).text);
     free(req->errbuf);
     if(req->c_errbuf)
@@ -2947,6 +2997,45 @@ CURLREQ *new_request(char *url, CURLREQ *cloner, duk_context *ctx, duk_idx_t opt
 {
     CURLREQ *req;
     CSOS *sopts;
+    char *original_to_keep = NULL;   /* literal user URL, surfaced as originalUrl */
+    int normalize = 1;               /* default: run URL through upa */
+
+    /* Determine normalize flag.  Per-call override: opts.normalizeUrl
+     * (default true).  For addurl-style clones the options_idx is 0 (i.e.
+     * we don't read a per-call option) and we inherit the cloner's flag. */
+    if (options_idx > 0 && duk_is_object(ctx, options_idx)) {
+        if (duk_get_prop_string(ctx, options_idx, "normalizeUrl"))
+            normalize = duk_to_boolean(ctx, -1);
+        duk_pop(ctx);
+    } else if (cloner) {
+        normalize = cloner->normalize_url;
+    }
+
+    /* Normalize through upa.  On parse failure, free the strdup'd input
+     * and throw a TypeError — gives the user a clear, early error rather
+     * than libcurl's later cryptic message.  On success, the canonical
+     * form is what we hand to libcurl; the literal is preserved as
+     * originalUrl on the request. */
+    if (normalize && url && *url) {
+        size_t ulen = strlen(url);
+        char *canon = rp_url_canonicalize(url, ulen);
+        if (!canon) {
+            char *bad = url;   /* keep a ref for the error msg before free */
+            (void)bad;
+            char *copy_for_msg = NULL;
+            REMALLOC(copy_for_msg, ulen + 1);
+            memcpy(copy_for_msg, url, ulen + 1);
+            free(url);
+            duk_push_error_object(ctx, DUK_ERR_TYPE_ERROR,
+                "curl: invalid URL: '%s'", copy_for_msg);
+            free(copy_for_msg);
+            (void)duk_throw(ctx);
+        }
+        /* Swap: original_to_keep takes the incoming literal; url becomes
+         * the canonical form passed downstream. */
+        original_to_keep = url;
+        url = canon;
+    }
 
     if (cloner != (CURLREQ *)NULL)
     {
@@ -2963,6 +3052,8 @@ CURLREQ *new_request(char *url, CURLREQ *cloner, duk_context *ctx, duk_idx_t opt
         }
 
         req = new_curlreq(ctx, url, cloner->sopts, cm, func_idx, cf_idx, pr_idx, add_addurl);
+        req->originalUrl = original_to_keep;
+        req->normalize_url = normalize;
         sopts = req->sopts;
         req->curl = curl_easy_duphandle(cloner->curl);
         req->flags = cloner->flags;
@@ -2992,6 +3083,8 @@ CURLREQ *new_request(char *url, CURLREQ *cloner, duk_context *ctx, duk_idx_t opt
     else
     {
         req = new_curlreq(ctx, url, NULL, cm, func_idx, chunkfunc_idx, progfunc_idx, add_addurl);
+        req->originalUrl = original_to_keep;
+        req->normalize_url = normalize;
         // bug fix: removed premature curl_easy_setopt on NULL handle - 2026-02-27
         // req->curl is NULL here (set by curl_easy_init() below), and
         // CURLOPT_BUFFERSIZE is set again to 100*1024 after curl_easy_init().
@@ -3011,18 +3104,13 @@ CURLREQ *new_request(char *url, CURLREQ *cloner, duk_context *ctx, duk_idx_t opt
             curl_easy_setopt(req->curl, CURLOPT_HTTP_TRANSFER_DECODING, 1L);
 
         curl_easy_setopt(req->curl, CURLOPT_HTTP_CONTENT_DECODING, 1L);  // Automatic decode
-        /* Accept-Encoding: when there's no chunkCallback, ask libcurl to negotiate
-         * compression and transparently decode. With a chunkCallback, default to
-         * NO compression — we manually parse transfer-encoding chunk frames, and
-         * a gzip stream wrapped inside chunked frames cannot be gunzipped per
-         * frame (the gzip stream spans frame boundaries). The chunk parser would
-         * deliver still-compressed bytes to the JS callback. The caller can opt
-         * back into compression with `{compressed: true}` and is then responsible
-         * for decoding what arrives in chunkCallback. */
-        if(chunkfunc_idx==-1)
-            curl_easy_setopt(req->curl, CURLOPT_ACCEPT_ENCODING, "");
-        else
-            curl_easy_setopt(req->curl, CURLOPT_ACCEPT_ENCODING, NULL);
+        /* Accept-Encoding: ask libcurl to negotiate compression and decode
+         * before delivery.  Chunked+compressed is a theoretical conflict for
+         * the chunkCallback path (we set TRANSFER_DECODING=0 there so we see
+         * chunk frame boundaries), but is vanishingly rare in practice and
+         * the WHATWG fetch model wants decompressed bytes either way.  Real
+         * users (incl. WPT content-encoding tests) need decompression. */
+        curl_easy_setopt(req->curl, CURLOPT_ACCEPT_ENCODING, "");
 
         curl_easy_setopt(req->curl, CURLOPT_BUFFERSIZE, 100*1024);
         /* send all body data to this function  */

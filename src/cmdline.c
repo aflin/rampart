@@ -755,6 +755,24 @@ extern void **rp_opened_mods;
 extern size_t rp_n_opened_mods;
 static int repl(duk_context *ctx);
 
+/* Set while the main thread is dispatching inside event_base_loop on
+   mainthr->base.  process.exit() checks this: when set, it routes
+   through rp_request_exit() (flag + event_base_loopbreak + tagged
+   duk_throw) instead of calling duk_rp_exit synchronously, so the
+   wait-for-children drain runs OUTSIDE event_base_loop and avoids
+   libevent's "reentrant invocation" warning.                        */
+volatile int rp_in_main_loop = 0;
+static volatile int rp_exit_pending = 0;
+static volatile int rp_exit_code    = 0;
+
+void rp_request_exit(int ec)
+{
+    rp_exit_pending = 1;
+    rp_exit_code    = ec;
+    if (mainthr && mainthr->base)
+        event_base_loopbreak(mainthr->base);
+}
+
 void duk_rp_exit(duk_context *ctx, int ec)
 {
     int i=0,len=0;
@@ -786,11 +804,42 @@ void duk_rp_exit(duk_context *ctx, int ec)
         duk_pop(ctx);
     }
 
-    duk_destroy_heap(ctx);
-    free(RP_script_path);
-    free(RP_script);
+    /* Bail out of any running worker threads (rampart.thread workers,
+       e.g. rampart-curl's libevent loop) BEFORE we tear down heaps and
+       dlclose modules.  Otherwise a worker mid-callback dereferences a
+       freed duktape ctx (or an unmapped .so) and SIGSEGVs.  Mirrors the
+       wait-for-children pattern the normal main-loop exit path uses. */
+    if(mainthr)
+    {
+        int spins = 0;
+        int sent = 0;
+        int nchildren = 0;
+        do {
+            THRLOCK;
+            sent = rp_thread_close_children();
+            nchildren = mainthr->nchildren;
+            THRUNLOCK;
+            if (!nchildren && !sent) break;
+            /* Pump the main event loop so finalize_event triggers fire
+               on worker bases.  Non-block so we don't hang on a stuck
+               worker. */
+            event_base_loop(mainthr->base, EVLOOP_NONBLOCK);
+            usleep(20000);
+        } while (++spins < 100);  /* 2s cap on the wait */
+        /* If a worker (e.g. a curl request stuck mid-decompression on a
+           giant zstd window) hasn't terminated after 2s, bypass the rest
+           of cleanup and _exit immediately.  Letting duk_destroy_heap or
+           dlclose run while the worker is still alive WILL crash. */
+        if (nchildren > 0)
+            _exit(ec);
+    }
 
-    // run added exit functions
+    // Run added exit functions BEFORE duk_destroy_heap.  Background
+    // workers (e.g. rampart-curl's libevent thread) can still be firing
+    // callbacks that dereference the duktape context; their exit hooks
+    // need to stop those threads first to avoid use-after-free on heap
+    // teardown.  All current exit_func registrations are simple frees
+    // that do not call into the duktape API, so the reorder is safe.
     if(exit_funcs)
     {
         EXIT_FUNC *ef;
@@ -802,7 +851,12 @@ void duk_rp_exit(duk_context *ctx, int ec)
             free(ef);
         }
         free(exit_funcs);
+        exit_funcs = NULL;
     }
+
+    duk_destroy_heap(ctx);
+    free(RP_script_path);
+    free(RP_script);
 
     // close opened modules AFTER exit_funcs
     for (i=0; i<rp_n_opened_mods;i++)
@@ -2418,6 +2472,7 @@ static void rp_el_doevent(evutil_socket_t fd, short events, void* arg)
         if(duk_pcall_method(ctx, nargs) != 0)
         {
             const char *errmsg;
+
             // the function name
             duk_push_number(ctx, evargs->key +0.3);
             duk_get_prop(ctx, 1);
@@ -4684,7 +4739,15 @@ int main(int argc, char *argv[])
             int sent_finalizers=0;
             int nchildren=0;
             do {
+                rp_in_main_loop = 1;
                 event_base_loop(mainthr->base, 0);
+                rp_in_main_loop = 0;
+                /* If a JS callback called process.exit() during dispatch,
+                   rp_request_exit set rp_exit_pending and loopbreak'd
+                   above.  Skip the natural-drain logic and let
+                   duk_rp_exit's wait-for-children block (now safely
+                   outside event_base_loop) handle worker shutdown.   */
+                if (rp_exit_pending) break;
                 THRLOCK;
                 sent_finalizers=0;
                 //printf("ENTER main loop\n");
@@ -4701,12 +4764,13 @@ int main(int argc, char *argv[])
             /* Drain any cross-thread triggers that arrived between the
              * last dispatch-return and now (e.g., a worker firing one
              * final event just before its finalizer completed).  */
-            event_base_loop(mainthr->base, EVLOOP_NONBLOCK);
+            if (!rp_exit_pending)
+                event_base_loop(mainthr->base, EVLOOP_NONBLOCK);
             //printf("FINAL EXIT main loop with %d children and %s finalizers set\n", mainthr->nchildren, (sent_finalizers?"some":"no"));
         }
     }
 
-    duk_rp_exit(ctx, 0);
+    duk_rp_exit(ctx, rp_exit_pending ? rp_exit_code : 0);
 
     return 0;
 }

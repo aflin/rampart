@@ -69,7 +69,9 @@ function testFeature(name, test) {
 
     var status = ok ? "passed" : FAILED_TEXT;
     var s = String(name);
-    if (s.length > MAX_NAME_W) s = s.substring(0, MAX_NAME_W - 1) + '…';
+    /* ASCII '...' (3 chars/3 bytes) instead of unicode '…' (1 char/3 bytes) so byte-count
+       matches char-count for terminal layout.  Subtract 3 from the cut point. */
+    if (s.length > MAX_NAME_W) s = s.substring(0, MAX_NAME_W - 3) + '...';
     var target = width - FIXED_OVERHEAD - status.length;
     if (target < 1) target = 1;
     while (s.length < target) s += ' ';
@@ -91,7 +93,9 @@ testFeature.skip = function(name, why) {
     var MAX_NAME_W = width - FIXED_OVERHEAD - 18;
     if (MAX_NAME_W < 8) MAX_NAME_W = 8;
     var s = String(name);
-    if (s.length > MAX_NAME_W) s = s.substring(0, MAX_NAME_W - 1) + '…';
+    /* ASCII '...' (3 chars/3 bytes) instead of unicode '…' (1 char/3 bytes) so byte-count
+       matches char-count for terminal layout.  Subtract 3 from the cut point. */
+    if (s.length > MAX_NAME_W) s = s.substring(0, MAX_NAME_W - 3) + '...';
     var target = width - FIXED_OVERHEAD - tag.length;
     if (target < 1) target = 1;
     while (s.length < target) s += ' ';

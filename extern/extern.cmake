@@ -91,6 +91,17 @@ if(CYGWIN)
   set(SEND_QUAL_ARG2 "const" CACHE INTERNAL "")
   set(HAVE_SEND 1 CACHE INTERNAL "")
 endif()
+# Enable brotli/zstd in libcurl if system libs are available.  Required
+# for full WHATWG fetch content-encoding support (gzip is always on via
+# the vendored zlib).
+find_library(_BROTLIDEC_LIB brotlidec)
+find_library(_ZSTD_LIB zstd)
+if(_BROTLIDEC_LIB)
+    set(CURL_BROTLI ON CACHE BOOL "Enable brotli in libcurl" FORCE)
+endif()
+if(_ZSTD_LIB)
+    set(CURL_ZSTD ON CACHE BOOL "Enable zstd in libcurl" FORCE)
+endif()
 add_subdirectory(${EXTERN_DIR}/curl)
 
 include_directories(${CMAKE_BINARY_DIR}/extern/oniguruma/include)
@@ -104,6 +115,13 @@ add_subdirectory(${EXTERN_DIR}/tidy-html5)
 add_subdirectory(${EXTERN_DIR}/cmark-gfm)
 
 add_subdirectory(${EXTERN_DIR}/robotstxt)
+
+# upa-url — vendored WHATWG URL parser + UTS #46 IDN (BSD-2-Clause,
+# pure C++17, ~270KB on ARM32 / ~380KB on x86_64). Replaces the JS
+# regex parser in rampart-nodeshim.c and provides IDN to rampart-utils.
+# Uses a minimal local CMakeLists (extern/upa/CMakeLists.txt); the
+# upstream one is preserved as CMakeLists.upstream.txt for reference.
+add_subdirectory(${EXTERN_DIR}/upa EXCLUDE_FROM_ALL)
 
 # ICU4C — Unicode + i18n primitives used by rampart-intl.so. Heavy
 # autoconf+make build, ~5-10 minutes; ExternalProject_Add invokes it

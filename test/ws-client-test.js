@@ -552,7 +552,123 @@ function run_timeout_test(url_base, rp, insecure, callback) {
 
 printf("Websocket tests running...\r");
 
-/* *** Run all 8 tests sequentially for a given URL base *** */
+/* *** Test 9: WHATWG WebSocket class (rampart-whatwg.so) round-trip
+   Exercises the WHATWG-shape WebSocket against the same echo
+   endpoint as the net.wsConnect tests.  Validates that the class
+   wrapper correctly translates rampart-net's callback shape to
+   open/message/close/error events, that binaryType='arraybuffer'
+   yields ArrayBuffer payloads, default binaryType='blob' yields
+   Blob payloads (with async .text()/.arrayBuffer() reads), and that
+   close() drives the wasClean=true close path. */
+function run_whatwg_test(url_base, rp, insecure, callback) {
+    /* wss + insecure server certs: WHATWG WebSocket has no `insecure`
+       option (spec doesn't expose cert-verification toggles).  Skip
+       the wss leg for now — net.wsConnect's `insecure` flag is the
+       rampart-net-only escape hatch. */
+    if (insecure) {
+        results[rp + "_skipped"] = true;
+        callback();
+        return;
+    }
+
+    /* --- 1. text echo with onevent handlers --- */
+    var got_open = false, got_welcome = false, got_echo = false;
+    var phase = "welcome";
+    var ws = new WebSocket(url_base + "/wsecho");
+    ws.binaryType = 'arraybuffer';   /* exercised in step 2 */
+
+    ws.onopen = function() { got_open = true; };
+    ws.onmessage = function(ev) {
+        /* ev must be a MessageEvent */
+        if (!(ev instanceof MessageEvent)) {
+            results[rp + "_event_class_wrong"] = true;
+        }
+        if (phase === "welcome") {
+            got_welcome = (typeof ev.data === 'string' && ev.data === 'welcome');
+            phase = "echo";
+            ws.send("hello world");
+        } else if (phase === "echo") {
+            got_echo = (typeof ev.data === 'string' && ev.data === 'hello world');
+            phase = "binary";
+            /* --- 2. binary echo with binaryType=arraybuffer --- */
+            var u8 = new Uint8Array([0, 1, 127, 200, 255]);
+            ws.send(u8.buffer);
+        } else if (phase === "binary") {
+            results[rp + "_binary_arraybuffer_isAB"] = (ev.data instanceof ArrayBuffer);
+            if (ev.data instanceof ArrayBuffer) {
+                var bb = new Uint8Array(ev.data);
+                results[rp + "_binary_arraybuffer_bytes_ok"] =
+                    (bb.length === 5 && bb[0] === 0 && bb[1] === 1
+                     && bb[2] === 127 && bb[3] === 200 && bb[4] === 255);
+            }
+            phase = "done";
+            ws.close();
+        }
+    };
+    ws.onerror = function(ev) {
+        results[rp + "_error"] = (ev && ev.message) || "(no message)";
+    };
+    ws.onclose = function(ev) {
+        results[rp + "_open"]        = got_open;
+        results[rp + "_welcome"]     = got_welcome;
+        results[rp + "_echo"]        = got_echo;
+        results[rp + "_close_class"] = (ev instanceof CloseEvent);
+        results[rp + "_wasClean"]    = !!(ev && ev.wasClean);
+        results[rp + "_readyState"]  = ws.readyState;  /* expect 3 (CLOSED) */
+        /* --- 3. blob round-trip with default binaryType --- */
+        run_whatwg_blob_subtest(url_base, rp, insecure, callback);
+    };
+
+    /* Safety: bail if connection never establishes */
+    setTimeout(function() {
+        if (!got_echo && ws.readyState !== WebSocket.CLOSED) {
+            results[rp + "_timeout"] = true;
+            try { ws.close(); } catch (_) {}
+        }
+    }, 5000);
+}
+
+function run_whatwg_blob_subtest(url_base, rp, insecure, callback) {
+    var ws = new WebSocket(url_base + "/wsecho");
+    /* default binaryType is 'blob' per spec */
+    if (ws.binaryType !== 'blob') {
+        results[rp + "_blob_default_wrong"] = ws.binaryType;
+    }
+    var phase = "welcome";
+    ws.onmessage = function(ev) {
+        if (phase === "welcome") {
+            phase = "binary";
+            ws.send(new Uint8Array([42, 99, 200]).buffer);
+        } else if (phase === "binary") {
+            if (!(ev.data instanceof Blob)) {
+                results[rp + "_blob_is_blob"] = false;
+                ws.close();
+                return;
+            }
+            results[rp + "_blob_is_blob"] = true;
+            results[rp + "_blob_size"]    = ev.data.size;
+            /* Async read the Blob bytes and verify */
+            ev.data.arrayBuffer().then(function(ab) {
+                var b = new Uint8Array(ab);
+                results[rp + "_blob_bytes_ok"] =
+                    (b.length === 3 && b[0] === 42 && b[1] === 99 && b[2] === 200);
+                ws.close();
+            }, function() {
+                results[rp + "_blob_bytes_ok"] = false;
+                ws.close();
+            });
+        }
+    };
+    ws.onclose = function() { callback(); };
+    setTimeout(function() {
+        if (ws.readyState !== WebSocket.CLOSED) {
+            results[rp + "_blob_timeout"] = true;
+            try { ws.close(); } catch(_) {}
+        }
+    }, 5000);
+}
+
+/* *** Run all 9 tests sequentially for a given URL base *** */
 function run_test_suite(url_base, rp, insecure, callback) {
     run_echo_test(url_base, rp + "_echo", insecure, function() {
         run_binary_test(url_base, rp + "_binary", insecure, function() {
@@ -562,7 +678,9 @@ function run_test_suite(url_base, rp, insecure, callback) {
                         run_sequential_stress(url_base, rp + "_sequential", insecure, function() {
                             run_ping_test(url_base, rp + "_ping", insecure, function() {
                                 run_timeout_test(url_base, rp + "_timeout", insecure, function() {
-                                    callback();
+                                    run_whatwg_test(url_base, rp + "_whatwg", insecure, function() {
+                                        callback();
+                                    });
                                 });
                             });
                         });
@@ -626,17 +744,143 @@ function report_suite(label, rp) {
         }
         return true;
     });
+
+    /* wss leg silently omits the WHATWG WS test: WHATWG WebSocket
+       has no `insecure` flag for self-signed certs (cert-verification
+       toggle isn't part of the spec), so we can't connect to our
+       self-signed test server.  ws:// covers the wrapper logic. */
+    if (results[rp + "_whatwg_skipped"]) return;
+    testFeature(label + " WHATWG WS round-trip", function() {
+        if (results[rp + "_whatwg_timeout"])
+            { printf("\nWHATWG timed out before text echo completed\n"); return false; }
+        if (results[rp + "_whatwg_blob_timeout"])
+            { printf("\nWHATWG blob subtest timed out\n"); return false; }
+        if (results[rp + "_whatwg_error"])
+            { printf("\nWHATWG error: %s\n", results[rp + "_whatwg_error"]); return false; }
+        if (results[rp + "_whatwg_event_class_wrong"])
+            { printf("\nmessage event is not a MessageEvent\n"); return false; }
+        if (!results[rp + "_whatwg_open"])
+            { printf("\nonopen never fired\n"); return false; }
+        if (!results[rp + "_whatwg_welcome"])
+            { printf("\nwelcome text not received\n"); return false; }
+        if (!results[rp + "_whatwg_echo"])
+            { printf("\ntext echo failed\n"); return false; }
+        if (!results[rp + "_whatwg_binary_arraybuffer_isAB"])
+            { printf("\nbinary message (arraybuffer mode) was not an ArrayBuffer\n"); return false; }
+        if (!results[rp + "_whatwg_binary_arraybuffer_bytes_ok"])
+            { printf("\nbinary ArrayBuffer bytes wrong\n"); return false; }
+        if (!results[rp + "_whatwg_close_class"])
+            { printf("\nclose event is not a CloseEvent\n"); return false; }
+        if (!results[rp + "_whatwg_wasClean"])
+            { printf("\nclose was not wasClean=true\n"); return false; }
+        if (results[rp + "_whatwg_readyState"] !== 3)
+            { printf("\nclose readyState was %s, expected 3 (CLOSED)\n",
+                     results[rp + "_whatwg_readyState"]); return false; }
+        if (results[rp + "_whatwg_blob_default_wrong"])
+            { printf("\ndefault binaryType was '%s', expected 'blob'\n",
+                     results[rp + "_whatwg_blob_default_wrong"]); return false; }
+        if (results[rp + "_whatwg_blob_is_blob"] !== true)
+            { printf("\nbinary message (blob mode) was not a Blob\n"); return false; }
+        if (results[rp + "_whatwg_blob_size"] !== 3)
+            { printf("\nBlob.size was %s, expected 3\n", results[rp + "_whatwg_blob_size"]); return false; }
+        if (!results[rp + "_whatwg_blob_bytes_ok"])
+            { printf("\nBlob.arrayBuffer() bytes wrong\n"); return false; }
+        return true;
+    });
 }
 
 /* *** Run ws:// suite, then wss:// suite, then report all *** */
+/* --- Optional wss:// test against a public echo server with a real
+   cert.  Skipped silently (no test line emitted at all) when the
+   public host isn't reachable — offline runs, restricted DNS,
+   firewalled CI, service-down, etc.  Connectivity probed by a plain
+   TCP connect with a 1s timeout before the real WebSocket attempt.
+
+   ws.postman-echo.com is operated by Postman; the /raw path is a
+   bidirectional echo (whatever the client sends, the server sends
+   back as-is).  No welcome message. */
+var PUBLIC_HOST = 'ws.postman-echo.com';
+var PUBLIC_PATH = '/raw';
+var PUBLIC_PORT = 443;
+
+function probe_public(callback) {
+    var done = false;
+    var sock = new net.Socket();
+    function finish(ok) {
+        if (done) return; done = true;
+        try { sock.destroy(); } catch(_) {}
+        callback(ok);
+    }
+    sock.on("connect", function() { finish(true);  });
+    sock.on("error",   function() { finish(false); });
+    sock.on("timeout", function() { finish(false); });
+    try {
+        sock.connect({host: PUBLIC_HOST, port: PUBLIC_PORT, timeout: 1000});
+    } catch (_) { finish(false); }
+    /* belt-and-braces fallback */
+    setTimeout(function() { finish(false); }, 1200);
+}
+
+function run_whatwg_public_test(callback) {
+    var got_open    = false;
+    var got_echo    = false;
+    var url = 'wss://' + PUBLIC_HOST + PUBLIC_PATH;
+    var test_msg = 'rampart whatwg websocket test ' + Date.now();
+    var safety = setTimeout(function() {
+        results.public_whatwg_timeout = true;
+        try { ws.close(); } catch(_) {}
+    }, 5000);
+    var ws = new WebSocket(url);
+    ws.onopen = function() {
+        got_open = true;
+        ws.send(test_msg);
+    };
+    ws.onmessage = function(ev) {
+        /* Match on equality with our outgoing message.  Postman's
+           /raw echo has no welcome; the first message we receive
+           SHOULD be our own send echoed back. */
+        if (typeof ev.data === 'string' && ev.data === test_msg) {
+            got_echo = true;
+            ws.close();
+        }
+    };
+    ws.onerror = function(ev) {
+        results.public_whatwg_error = (ev && ev.message) || 'unknown';
+    };
+    ws.onclose = function(ev) {
+        clearTimeout(safety);
+        results.public_whatwg_open      = got_open;
+        results.public_whatwg_echo      = got_echo;
+        results.public_whatwg_wasClean  = !!(ev && ev.wasClean);
+        callback();
+    };
+}
+
 run_test_suite("ws://127.0.0.1:8110", "ws", false, function() {
     run_test_suite("wss://127.0.0.1:8111", "wss", true, function() {
         report_suite("ws://  ", "ws");
         report_suite("wss:// ", "wss");
 
-        clearTimeout(safety_timer);
-        do_cleanup();
-        testFeature.exit();
+        probe_public(function(reachable) {
+            function finish() {
+                clearTimeout(safety_timer);
+                do_cleanup();
+                testFeature.exit();
+            }
+            if (!reachable) { finish(); return; }
+            run_whatwg_public_test(function() {
+                testFeature("public  WHATWG WS round-trip (" + PUBLIC_HOST + ")", function() {
+                    if (results.public_whatwg_timeout) { printf("\ntimed out\n"); return false; }
+                    if (results.public_whatwg_error)
+                        { printf("\nerror: %s\n", results.public_whatwg_error); return false; }
+                    if (!results.public_whatwg_open) { printf("\nonopen never fired\n"); return false; }
+                    if (!results.public_whatwg_echo) { printf("\necho mismatch\n"); return false; }
+                    if (!results.public_whatwg_wasClean) { printf("\nclose was not wasClean\n"); return false; }
+                    return true;
+                });
+                finish();
+            });
+        });
     });
 });
 

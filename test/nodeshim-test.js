@@ -168,6 +168,11 @@ testModule("console (global enhancements)", function() {
 testModule("console (Console class)", function() {
     var Console = require('console').Console;
     must(typeof Console === 'function', "Console exported");
+    /* Our Console accepts minimal {write:fn} streams; node's Console
+       requires real Writable streams (with .on/.removeListener for
+       error/finish wiring).  Don't enforce real-stream semantics
+       under node — that's not the parity goal for our Console. */
+    if (!_isRampart) return;
     var buf = '';
     var stream = {write: function(s) { buf += s; }};
     var c = new Console({stdout: stream, stderr: stream});
@@ -805,6 +810,34 @@ testModule("string_decoder", function() {
     mustEq(d7.write(Buffer.from([0x00])), 'A', "utf-16le complete");
 });
 
+testModule("stream", function() {
+    var stream = require('stream');
+    /* Surface check */
+    must(typeof stream.Readable    === 'function', "Readable class");
+    must(typeof stream.Writable    === 'function', "Writable class");
+    must(typeof stream.Duplex      === 'function', "Duplex class");
+    must(typeof stream.Transform   === 'function', "Transform class");
+    must(typeof stream.PassThrough === 'function', "PassThrough class");
+    must(typeof stream.pipeline    === 'function', "pipeline fn");
+    must(typeof stream.finished    === 'function', "finished fn");
+    must(typeof stream.Readable.from === 'function',     "Readable.from");
+    must(typeof stream.Readable.toWeb === 'function',    "Readable.toWeb");
+    must(typeof stream.Readable.fromWeb === 'function',  "Readable.fromWeb");
+    must(typeof stream.Writable.toWeb === 'function',    "Writable.toWeb");
+    must(typeof stream.Writable.fromWeb === 'function',  "Writable.fromWeb");
+    must(typeof stream.promises    === 'object',         "stream.promises namespace");
+    must(typeof stream.promises.pipeline === 'function', "stream.promises.pipeline");
+    must(typeof stream.promises.finished === 'function', "stream.promises.finished");
+    /* Inheritance */
+    var t = new stream.Transform({transform: function(c,e,cb){cb(null,c);}});
+    must(t instanceof stream.Transform,  "Transform instance");
+    must(t instanceof stream.Duplex,     "Transform extends Duplex");
+    must(t instanceof stream.Readable,   "Duplex extends Readable");
+    var pt = new stream.PassThrough();
+    must(pt instanceof stream.PassThrough, "PassThrough instance");
+    must(pt instanceof stream.Transform,   "PassThrough extends Transform");
+});
+
 testModule("url", function() {
     var u = require('url');
     var URL = u.URL;
@@ -944,7 +977,10 @@ testModule("util", function() {
     mustEq(u.format('%s is %d', 'pi', 3.14), 'pi is 3.14', "format %s %d");
     mustEq(u.format('%j', {a:1}), '{"a":1}', "format %j");
     mustEq(u.format('%o', {x:1}).indexOf('x') >= 0, true, "format %o");
-    mustEq(u.format('%%'), '%', "format %% literal");
+    /* Per node spec: with no extra args, format string is returned
+       unchanged — no specifier processing.  '%%' stays as '%%'. */
+    mustEq(u.format('%%'), '%%', "format %% no-args: no specifier processing");
+    mustEq(u.format('%%', 'x'), '% x', "format %% with args: escape to %");
     mustEq(u.format('no specifier'), 'no specifier', "format passthrough");
     mustEq(u.format('%s', 'a', 'b'), 'a b', "format extra args appended");
     /* inspect */
@@ -1442,9 +1478,12 @@ asyncQ.push(asyncBlock("zlib", function(done) {
     if (typeof z.adler32 === 'function') {
         mustEq(z.adler32(Buffer.from('hello')), 0x062c0215, "adler32 hello");
     }
-    /* Stream classes throw ENOSYS pending stream module */
-    mustThrow(function() { z.createGzip(); }, "createGzip ENOSYS");
-    mustThrow(function() { z.createGunzip(); }, "createGunzip ENOSYS");
+    /* Stream classes throw ENOSYS pending stream module.  Under node
+       they're real and don't throw — skip the assertion there. */
+    if (_isRampart) {
+        mustThrow(function() { z.createGzip(); }, "createGzip ENOSYS");
+        mustThrow(function() { z.createGunzip(); }, "createGunzip ENOSYS");
+    }
     /* Async callback path */
     z.gzip(input, function(err, result) {
         try {
@@ -1539,7 +1578,11 @@ asyncQ.push(asyncBlock("worker_threads", function(done) {
                     mustEq(got2b, 'reply', "MessageChannel port2->port1");
                     mc.port1.close();
                     mc.port2.close();
-                    /* BroadcastChannel — 3 subscribers, sender does NOT see own */
+                    /* BroadcastChannel — our impl uses Node-style EE
+                       (.on/.emit); node's BC is WHATWG (extends
+                       EventTarget, uses addEventListener + MessageEvent).
+                       Different APIs; skip this subsection under node. */
+                    if (!_isRampart) { done(); return; }
                     var bcA = new wt.BroadcastChannel('test-chan');
                     var bcB = new wt.BroadcastChannel('test-chan');
                     var bcC = new wt.BroadcastChannel('test-chan');
@@ -1576,6 +1619,120 @@ asyncQ.push(asyncBlock("worker_threads", function(done) {
             }, 100);
         } catch (e) { done(e); }
     }, 300);
+}));
+
+asyncQ.push(asyncBlock("stream (async — flowing / write / pipeline)", function(done) {
+    var stream = require('stream');
+    /* Phase 1: Readable.from + flowing mode */
+    var src = stream.Readable.from(["alpha ", "beta ", "gamma"]);
+    var collected = [];
+    src.on('data', function(c) { collected.push(String(c)); });
+    src.on('end', function() {
+        try {
+            mustEq(collected.join(""), "alpha beta gamma", "Readable.from + flowing");
+        } catch (e) { done(e); return; }
+
+        /* Phase 2: Writable callback path */
+        var written = [];
+        var finishedFired = false;
+        var sink = new stream.Writable({
+            write: function(chunk, enc, cb) { written.push(String(chunk)); cb(); }
+        });
+        sink.on('finish', function() { finishedFired = true; });
+        sink.write("x");
+        sink.write("y");
+        sink.end("z", function() {
+            try {
+                mustEq(written.join(""), "xyz", "Writable accepts ordered writes");
+            } catch (e) { done(e); return; }
+            /* 'finish' may fire synchronously (rampart adapter) or after
+               the end-callback in a microtask (node).  Defer the check. */
+            setImmediate(function() {
+                try { must(finishedFired, "'finish' event fired"); }
+                catch (e) { done(e); return; }
+
+            /* Phase 3: Transform pipeline through PassThrough */
+            var pt = new stream.PassThrough();
+            var got = [];
+            var ws = new stream.Writable({
+                write: function(c,e,cb) { got.push(String(c)); cb(); }
+            });
+            stream.pipeline(
+                stream.Readable.from(["aa","bb","cc"]),
+                pt, ws,
+                function(err) {
+                    try {
+                        mustEq(err == null, true, "pipeline no error");
+                        mustEq(got.join(""), "aabbcc", "pipeline data through PassThrough");
+                    } catch (e) { done(e); return; }
+
+                    /* Phase 4: Transform that mutates chunks */
+                    var up = new stream.Transform({
+                        transform: function(chunk, enc, cb) {
+                            cb(null, String(chunk).toUpperCase());
+                        }
+                    });
+                    var out = [];
+                    stream.pipeline(
+                        stream.Readable.from(["one ", "two ", "three"]),
+                        up,
+                        new stream.Writable({
+                            write: function(c,e,cb) { out.push(String(c)); cb(); }
+                        }),
+                        function(err2) {
+                            try {
+                                mustEq(out.join(""), "ONE TWO THREE", "Transform mutates");
+                            } catch (e) { done(e); return; }
+                            done();
+                        }
+                    );
+                }
+            );
+            });  /* close setImmediate */
+        });
+    });
+}));
+
+asyncQ.push(asyncBlock("stream (WHATWG interop, async)", function(done) {
+    var stream = require('stream');
+    /* Node Readable → WHATWG ReadableStream → drain via getReader */
+    var nodeR = stream.Readable.from(["one", "two", "three"]);
+    var webR = stream.Readable.toWeb(nodeR);
+    try {
+        must(webR instanceof globalThis.ReadableStream, "toWeb returns WHATWG ReadableStream");
+    } catch (e) { done(e); return; }
+    var reader = webR.getReader();
+    var collected = [];
+    function pump() {
+        reader.read().then(function(r) {
+            if (r.done) {
+                try {
+                    mustEq(collected.join(""), "onetwothree", "Node→WHATWG via toWeb");
+                } catch (e) { done(e); return; }
+
+                /* WHATWG ReadableStream → Node Readable */
+                var web = new globalThis.ReadableStream({
+                    start: function(c) { c.enqueue("a"); c.enqueue("b"); c.close(); }
+                });
+                var node = stream.Readable.fromWeb(web);
+                try {
+                    must(node instanceof stream.Readable, "fromWeb returns Node Readable");
+                } catch (e) { done(e); return; }
+                var got = [];
+                node.on('data', function(c) { got.push(String(c)); });
+                node.on('end', function() {
+                    try {
+                        mustEq(got.join(""), "ab", "WHATWG→Node via fromWeb");
+                    } catch (e) { done(e); return; }
+                    done();
+                });
+                return;
+            }
+            collected.push(r.value);
+            pump();
+        }, function(e) { done(e); });
+    }
+    pump();
 }));
 
 /* ============================================================

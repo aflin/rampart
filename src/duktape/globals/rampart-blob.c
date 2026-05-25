@@ -50,16 +50,39 @@ static duk_size_t _blob_collect_part(duk_context *ctx, duk_idx_t i,
     const unsigned char *src = NULL;
 
     if (duk_is_string(ctx, i)) {
-        /* Duktape stores strings as CESU-8 internally but
-         * duk_to_lstring exposes the canonical-form bytes that
-         * round-trip through the standard string API.  For the
-         * common ASCII / valid-UTF-8 case this is equivalent to
-         * UTF-8; surrogate pairs follow the CESU-8 → UTF-8
-         * conversion that other rampart APIs use. */
+        /* Duktape strings are CESU-8; Blob byte length must be UTF-8.
+         * Walk the bytes and collapse any CESU-8 surrogate pair (6
+         * bytes) into a 4-byte UTF-8 sequence. */
         duk_size_t slen;
-        const char *s = duk_to_lstring(ctx, i, &slen);
-        src = (const unsigned char *)s;
-        need = slen;
+        const unsigned char *s = (const unsigned char *)duk_to_lstring(ctx, i, &slen);
+        /* Ensure capacity for worst-case (no shrink possible — copy
+         * as we go). */
+        if (outlen + slen > *outcap) {
+            duk_size_t newcap = (*outcap) ? *outcap : 64;
+            while (newcap < outlen + slen) newcap *= 2;
+            unsigned char *nb = (unsigned char *)realloc(*outp, newcap);
+            if (!nb) RP_THROW(ctx, "Blob: out of memory");
+            *outp = nb;
+            *outcap = newcap;
+        }
+        unsigned char *dst = *outp + outlen;
+        duk_size_t written = 0;
+        const unsigned char *end = s + slen;
+        const unsigned char *five_before_end = (slen >= 5) ? (end - 5) : s;
+        while (s < end) {
+            if (s < five_before_end
+                && s[0] == 0xED && (s[1] & 0xF0) == 0xA0 && (s[2] & 0xC0) == 0x80
+                && s[3] == 0xED && (s[4] & 0xF0) == 0xB0 && (s[5] & 0xC0) == 0x80) {
+                dst[0] = 0xF0 | ((s[1] + 1) & 0x1C) >> 2;
+                dst[1] = 0x80 | ((s[1] + 1) & 0x03) << 4 | (s[2] & 0x3C) >> 2;
+                dst[2] = 0x80 | (s[2] & 0x03) << 4 | (s[4] & 0x0F);
+                dst[3] = s[5];
+                dst += 4; s += 6; written += 4;
+            } else {
+                *dst++ = *s++; written++;
+            }
+        }
+        return written;
     } else if (duk_is_buffer_data(ctx, i)) {
         /* ArrayBuffer / TypedArray / DataView / Buffer all expose
          * bytes via duk_get_buffer_data. */
@@ -102,9 +125,17 @@ static void _ascii_lower(char *s)
  * ASCII (0x20–0x7E).  Anything else collapses to "". */
 static int _valid_blob_type(const char *s, duk_size_t len)
 {
+    /* HTTP quoted-string charset per WHATWG MIME spec: HTAB, SP-~ (0x20-0x7E),
+       obs-text (0x80-0xFF).  We don't reject NUL/CR/LF here either — the
+       JS-side wrap (rampart-whatwg.c parse-a-mime-type) already drops any
+       parse-failed type to "" so by the time we get the string it's
+       already a valid serialized MIME or empty. */
     duk_size_t i;
-    for (i = 0; i < len; i++)
-        if ((unsigned char)s[i] < 0x20 || (unsigned char)s[i] > 0x7E) return 0;
+    for (i = 0; i < len; i++) {
+        unsigned char c = (unsigned char)s[i];
+        if (c == 0x09 || (c >= 0x20 && c <= 0x7E) || c >= 0x80) continue;
+        return 0;
+    }
     return 1;
 }
 
@@ -188,17 +219,32 @@ static duk_ret_t blob_ctor(duk_context *ctx)
     }
 
     /* Parse options.type (lowercased, validated). */
-    char typebuf[256];
+    char typebuf[4096];
     typebuf[0] = '\0';
     if (duk_is_object(ctx, 1)) {
         if (duk_get_prop_string(ctx, 1, "type")) {
             duk_size_t tlen;
             const char *t = duk_to_lstring(ctx, -1, &tlen);
+            /* The JS-side wrap in rampart-whatwg.c's install JS runs the
+               type string through the WHATWG parse-a-mime-type algorithm
+               before we get here, so the value is already normalized
+               (lowercased type/subtype + param names, param values
+               preserved as-is, invalid types collapsed to '').  Just
+               store it; no additional lowercasing — that would wrongly
+               flatten param values like 'charset=UTF-8'. */
             if (_valid_blob_type(t, tlen) && tlen < sizeof(typebuf)) {
                 memcpy(typebuf, t, tlen);
                 typebuf[tlen] = '\0';
-                _ascii_lower(typebuf);
             }
+        }
+        duk_pop(ctx);
+        /* Spec: endings must be "transparent" or "native" when present
+           (undefined skips the dict member; missing-or-undefined defaults
+           to "transparent"). */
+        if (duk_get_prop_string(ctx, 1, "endings") && !duk_is_undefined(ctx, -1)) {
+            const char *e = duk_to_string(ctx, -1);
+            if (strcmp(e, "transparent") != 0 && strcmp(e, "native") != 0)
+                RP_TYPE_THROW(ctx, "Blob: invalid endings value '%s'", e);
         }
         duk_pop(ctx);
     }
@@ -236,7 +282,7 @@ static duk_ret_t blob_slice(duk_context *ctx)
     duk_size_t slice_len = (duk_size_t)(end - start);
 
     /* contentType: defaults to "" (NOT the source blob's type — per spec). */
-    char typebuf[256];
+    char typebuf[4096];
     typebuf[0] = '\0';
     if (!duk_is_undefined(ctx, 2)) {
         duk_size_t tlen;
@@ -318,6 +364,26 @@ static duk_ret_t blob_bytes(duk_context *ctx)
 }
 
 /* ---------------------------------------------------------------- */
+/* Blob.prototype._syncBytes() → Uint8Array (non-spec, internal)    */
+/* Returns the Blob's bytes synchronously as a fresh Uint8Array     */
+/* (NOT a Promise).  Used by rampart-whatwg's _bodyToBytes so the   */
+/* Request/Response constructors can accept Blob bodies without a   */
+/* round-trip through the async arrayBuffer() Promise.              */
+/* ---------------------------------------------------------------- */
+
+static duk_ret_t blob_sync_bytes(duk_context *ctx)
+{
+    duk_push_this(ctx);
+    duk_size_t total;
+    unsigned char *src = _blob_data(ctx, -1, &total);
+    void *dst = duk_push_fixed_buffer(ctx, total);
+    if (total) memcpy(dst, src, total);
+    duk_push_buffer_object(ctx, -1, 0, total, DUK_BUFOBJ_UINT8ARRAY);
+    duk_remove(ctx, -2);
+    return 1;
+}
+
+/* ---------------------------------------------------------------- */
 /* Blob.prototype.stream() — throws until stream/web lands          */
 /* ---------------------------------------------------------------- */
 
@@ -340,10 +406,12 @@ static duk_ret_t blob_stream(duk_context *ctx)
 static duk_ret_t file_ctor(duk_context *ctx)
 {
     if (!duk_is_constructor_call(ctx))
-        RP_THROW(ctx, "File: must be called with new");
-    /* args: parts, name (required), options ({type, lastModified}) */
+        RP_TYPE_THROW(ctx, "File: must be called with new");
+    /* args: parts (required), name (required), options ({type, lastModified, endings}) */
+    if (duk_get_top(ctx) < 1 || duk_is_undefined(ctx, 0))
+        RP_TYPE_THROW(ctx, "File: bits argument required");
     if (duk_is_undefined(ctx, 1))
-        RP_THROW(ctx, "File: name argument required");
+        RP_TYPE_THROW(ctx, "File: name argument required");
 
     /* Run Blob's logic on (parts, options) for bytes + type.  Stash
      * name + lastModified, then call _blob_install_bytes manually. */
@@ -371,7 +439,7 @@ static duk_ret_t file_ctor(duk_context *ctx)
     memcpy(namecopy, name, namelen);
     namecopy[namelen] = '\0';
 
-    char typebuf[256];
+    char typebuf[4096];
     typebuf[0] = '\0';
     duk_double_t last_modified = 0.0;
     int have_lm = 0;
@@ -379,16 +447,32 @@ static duk_ret_t file_ctor(duk_context *ctx)
         if (duk_get_prop_string(ctx, 2, "type")) {
             duk_size_t tlen;
             const char *t = duk_to_lstring(ctx, -1, &tlen);
+            /* The JS-side wrap in rampart-whatwg.c's install JS runs the
+               type string through the WHATWG parse-a-mime-type algorithm
+               before we get here, so the value is already normalized
+               (lowercased type/subtype + param names, param values
+               preserved as-is, invalid types collapsed to '').  Just
+               store it; no additional lowercasing — that would wrongly
+               flatten param values like 'charset=UTF-8'. */
             if (_valid_blob_type(t, tlen) && tlen < sizeof(typebuf)) {
                 memcpy(typebuf, t, tlen);
                 typebuf[tlen] = '\0';
-                _ascii_lower(typebuf);
             }
         }
         duk_pop(ctx);
         if (duk_get_prop_string(ctx, 2, "lastModified")) {
             last_modified = duk_to_number(ctx, -1);
             have_lm = 1;
+        }
+        duk_pop(ctx);
+        /* Spec: endings must be "transparent" or "native" when present
+           (undefined skips the dict member). */
+        if (duk_get_prop_string(ctx, 2, "endings") && !duk_is_undefined(ctx, -1)) {
+            const char *e = duk_to_string(ctx, -1);
+            if (strcmp(e, "transparent") != 0 && strcmp(e, "native") != 0) {
+                free(namecopy); free(bytes);
+                RP_TYPE_THROW(ctx, "File: invalid endings value '%s'", e);
+            }
         }
         duk_pop(ctx);
     }
@@ -445,6 +529,7 @@ void duk_rp_blob_init(duk_context *ctx)
     duk_push_c_function(ctx, blob_text,         0); duk_put_prop_string(ctx, -2, "text");
     duk_push_c_function(ctx, blob_array_buffer, 0); duk_put_prop_string(ctx, -2, "arrayBuffer");
     duk_push_c_function(ctx, blob_bytes,        0); duk_put_prop_string(ctx, -2, "bytes");
+    duk_push_c_function(ctx, blob_sync_bytes,   0); duk_put_prop_string(ctx, -2, "_syncBytes");
     duk_push_c_function(ctx, blob_stream,       0); duk_put_prop_string(ctx, -2, "stream");
 
     /* Symbol.toStringTag = 'Blob' so Object.prototype.toString.call(b)

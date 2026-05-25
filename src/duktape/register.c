@@ -794,6 +794,57 @@ static void add_extra_object_funcs(duk_context *ctx)
  * longer included by the rampart binary.  Blob/File become available
  * on first access via the lazy getters installed in duk_init_context. */
 
+/* Install a Duktape.errCreate hook that trims transpile-output parse
+   errors.  When the transpiled source fails to parse, duktape's
+   SyntaxError.message includes the *entire* source — for transpiled
+   async/regenerator code that's 10–12 KB of `_TrN_Sp.load()`
+   boilerplate followed by the user's source, with `^` at the failure
+   position.  The relevant context is buried.  The hook strips the
+   boilerplate prefix and clips to a window around `^` so the visible
+   error starts at the user's source.  Fires for *every* Error object
+   created in the heap, but only modifies the message when the marker
+   `_TrN_Sp.load();` is present — so unrelated errors pass through.
+   NDE.4 in transpiler-todo.md. */
+static void install_transpile_err_trim(duk_context *ctx)
+{
+    const char *src =
+        "Duktape.errCreate = function(err) {"
+        "  try {"
+        "    if (!err || typeof err.message !== 'string') return err;"
+        "    var marker = '_TrN_Sp.load();';"
+        "    var idx = err.message.indexOf(marker);"
+        "    if (idx === -1) return err;"
+        "    var rest = err.message.substring(idx + marker.length);"
+        /* Skip any pragma / whitespace immediately after the marker. */
+        "    rest = rest.replace(/^[\\s\"']+(use [^\"']*[\"'])?\\s*/, '');"
+        /* If a `^` (parse-position caret) is in the trimmed text,
+           clip to a ±300 char window around it so the error fits
+           on screen.  Otherwise show the first 600 chars. */
+        "    var car = rest.indexOf('\\n^');"
+        "    var prefix = '', suffix = '';"
+        "    if (car === -1) car = rest.indexOf('^');"
+        "    if (car >= 0) {"
+        "      var s = Math.max(0, car - 300);"
+        "      var e = Math.min(rest.length, car + 300);"
+        "      if (s > 0) prefix = '... ';"
+        "      if (e < rest.length) suffix = ' ...';"
+        "      rest = rest.substring(s, e);"
+        "    } else if (rest.length > 600) {"
+        "      rest = rest.substring(0, 600);"
+        "      suffix = ' ...';"
+        "    }"
+        "    err.message = 'SyntaxError in transpiled output' +"
+        "                  (car >= 0 ? ' (context around ^)' : '') +"
+        "                  ':\\n' + prefix + rest + suffix;"
+        "  } catch (_e) {}"
+        "  return err;"
+        "};";
+    if (duk_peval_string(ctx, src) != 0)
+        fprintf(stderr, "errCreate trim install failed: %s\n",
+                duk_safe_to_string(ctx, -1));
+    duk_pop(ctx);
+}
+
 static duk_ret_t rp_eval_js(duk_context *ctx)
 {
     const char *source=NULL;
@@ -806,7 +857,7 @@ static duk_ret_t rp_eval_js(duk_context *ctx)
         duk_call(ctx, duk_get_top_index(ctx));
         return 1;
     }
-    
+
     source=duk_get_string(ctx, 0);
 
     struct timespec tsnow;
@@ -1053,6 +1104,94 @@ static void install_modern_polyfills(duk_context *ctx)
         "      return result;"
         "    }"
         "  });"
+        "}"
+        /* TypedArray.from / TypedArray.of (ES2015). Spec defines these
+           on %TypedArray% but duktape has no shared base; install on
+           each concrete constructor.  `this` is the constructor when
+           called as Uint8Array.from(...). */
+        "['Int8Array','Uint8Array','Uint8ClampedArray','Int16Array',"
+        " 'Uint16Array','Int32Array','Uint32Array','Float32Array',"
+        " 'Float64Array'].forEach(function (n) {"
+        "  var C = globalThis[n];"
+        "  if (!C) return;"
+        "  if (typeof C.from !== 'function') {"
+        "    Object.defineProperty(C, 'from', {"
+        "      configurable: true, writable: true,"
+        "      value: function (src, mapFn, thisArg) {"
+        "        var arr = Array.from(src, mapFn, thisArg);"
+        "        return new this(arr);"
+        "      }"
+        "    });"
+        "  }"
+        "  if (typeof C.of !== 'function') {"
+        "    Object.defineProperty(C, 'of', {"
+        "      configurable: true, writable: true,"
+        "      value: function () {"
+        "        var a = new Array(arguments.length);"
+        "        for (var i = 0; i < arguments.length; i++) a[i] = arguments[i];"
+        "        return new this(a);"
+        "      }"
+        "    });"
+        "  }"
+        "});"
+        /* ArrayBuffer.prototype.transfer / transferToFixedLength / detached
+           (ES2024).  Partial-spec polyfill: copies bytes into a fresh
+           buffer and flips a JS-level _detached flag.  Tests that just
+           check 'transfer() returns a new buffer with the right bytes'
+           pass; tests that verify true detachment (the source's
+           byteLength reads 0, and TypedArray views over it collapse to
+           zero) still fail.  True detach needs a duktape engine patch:
+           the AB's [[ArrayBufferByteLength]] is a cached slot that
+           neither duk_resize_buffer nor duk_steal_buffer can reach
+           through the public API, and views don't auto-track their
+           parent AB's underlying buffer reference. */
+        "if (typeof ArrayBuffer.prototype.transfer !== 'function') {"
+        "  Object.defineProperty(ArrayBuffer.prototype, 'detached', {"
+        "    configurable: true,"
+        "    get: function () { return this._detached === true; }"
+        "  });"
+        "  function __abTransfer(self, newLength) {"
+        "    if (self._detached) {"
+        "      var de = new TypeError('ArrayBuffer is detached');"
+        "      de.name = 'TypeError'; throw de;"
+        "    }"
+        "    var len = (newLength === undefined) ? self.byteLength : (newLength|0);"
+        "    if (len < 0) throw new RangeError('Invalid length');"
+        "    var dst = new ArrayBuffer(len);"
+        "    var src = new Uint8Array(self);"
+        "    var view = new Uint8Array(dst);"
+        "    var copy = Math.min(src.length, len);"
+        "    for (var i = 0; i < copy; i++) view[i] = src[i];"
+        "    Object.defineProperty(self, '_detached', "
+        "      {value: true, writable: false, configurable: true, enumerable: false});"
+        "    return dst;"
+        "  }"
+        "  Object.defineProperty(ArrayBuffer.prototype, 'transfer', {"
+        "    configurable: true, writable: true,"
+        "    value: function (newLength) { return __abTransfer(this, newLength); }"
+        "  });"
+        "  Object.defineProperty(ArrayBuffer.prototype, 'transferToFixedLength', {"
+        "    configurable: true, writable: true,"
+        "    value: function (newLength) { return __abTransfer(this, newLength); }"
+        "  });"
+        "}"
+        /* Array.prototype.fill(value, start?, end?) — ES2015.  Fills
+           [start, end) in-place with `value`; negative indices wrap from
+           length.  Required by WPT tests that construct fixed-size
+           buffers via `Array(N).fill(0)`. */
+        "if (typeof Array.prototype.fill !== 'function') {"
+        "  Object.defineProperty(Array.prototype, 'fill', {"
+        "    configurable: true, writable: true, enumerable: false,"
+        "    value: function (value, start, end) {"
+        "      var len = this.length >>> 0;"
+        "      var s = start === undefined ? 0 : (start | 0);"
+        "      var e = end === undefined ? len : (end | 0);"
+        "      if (s < 0) s = Math.max(len + s, 0); else s = Math.min(s, len);"
+        "      if (e < 0) e = Math.max(len + e, 0); else e = Math.min(e, len);"
+        "      for (var i = s; i < e; i++) this[i] = value;"
+        "      return this;"
+        "    }"
+        "  });"
         "}";
     if (duk_peval_string(ctx, src) != 0)
     {
@@ -1187,6 +1326,7 @@ void duk_init_context(duk_context *ctx)
     duk_module_init(ctx);                     /* register require() function */
     duk_printf_init(ctx);                     /* register the printf and sprintf functions from printf.c */
     duk_misc_init(ctx);                       /* register functions in rampart-utils.c */
+    duk_rp_url_init(ctx);                     /* rampart.utils.urlComponents/absUrl/toASCII/toUnicode via upa-url */
     duk_import_init(ctx);                     /* register functions in rampart-import.c */
     duk_process_init(ctx);                    /* register process.* vars */
     duk_event_init(ctx);                      /* register functions in rampart-event.c */
@@ -1206,6 +1346,7 @@ void duk_init_context(duk_context *ctx)
     install_proxy_revocable(ctx);
     install_modern_polyfills(ctx);
     install_array_iter(ctx);
+    install_transpile_err_trim(ctx);
     duk_rp_promise_init(ctx);
     /* WHATWG / W3C Web platform standards live in rampart-whatwg.so
      * (Blob, File, URL, URLSearchParams, Event, EventTarget,
@@ -1223,15 +1364,40 @@ void duk_init_context(duk_context *ctx)
         "(function(){"
         /*   NAMES excludes 'performance' because duktape already
              provides performance.now() — augmenting (not replacing)
-             happens at whatwg load time.  Similarly we exclude
-             'crypto' for now — see the open question about
-             load.crypto vs Web Crypto. */
-        "  var NAMES = ['Blob','File','URL','URLSearchParams',"
-        "               'Event','EventTarget',"
-        "               'AbortController','AbortSignal',"
+             happens at whatwg load time (the PNAMES block below
+             installs lazy getters on the existing performance object
+             for the W3C extras). */
+        "  var NAMES = ['Blob','File','FileReader','URL','URLSearchParams','URLPattern',"
+        "               'Event','EventTarget','CustomEvent',"
+        "               'MessageEvent','CloseEvent','ErrorEvent',"
+        "               'ProgressEvent','PromiseRejectionEvent',"
+        "               'AbortController','AbortSignal','DOMException',"
         "               'structuredClone','atob','btoa',"
         "               'MessageChannel','MessagePort','BroadcastChannel',"
-        "               'queueMicrotask','reportError','navigator'];"
+        "               'queueMicrotask','reportError','navigator','location',"
+        "               'WebSocket','EventSource',"
+        "               'PerformanceObserver','PerformanceEntry','PerformanceMark','PerformanceMeasure',"
+        "               'crypto','Crypto','SubtleCrypto','CryptoKey',"
+        /* WHATWG Streams — installed by rampart-whatwg from the
+           vendored web-streams-polyfill bundle. */
+        "               'ReadableStream','ReadableStreamDefaultController',"
+        "               'ReadableByteStreamController','ReadableStreamBYOBRequest',"
+        "               'ReadableStreamDefaultReader','ReadableStreamBYOBReader',"
+        "               'WritableStream','WritableStreamDefaultController',"
+        "               'WritableStreamDefaultWriter',"
+        "               'ByteLengthQueuingStrategy','CountQueuingStrategy',"
+        "               'TransformStream','TransformStreamDefaultController',"
+        /* Stream-flavored encoders / compression — built on top of
+           TransformStream in rampart-whatwg's install JS. */
+        "               'TextEncoderStream','TextDecoderStream',"
+        "               'CompressionStream','DecompressionStream',"
+        /* WHATWG Fetch — Headers/FormData/Request/Response are pure
+           JS; fetch() lazy-requires rampart-curl on first call. */
+        "               'Headers','FormData','Request','Response','fetch',"
+        "               'XMLHttpRequest','WebSocketError',"
+        /* Tier 3 — Storage/Cache (in-memory v1) */
+        "               'Storage','localStorage','sessionStorage',"
+        "               'Cache','CacheStorage','caches'];"
         "  NAMES.forEach(function(n){"
         "    Object.defineProperty(globalThis, n, {"
         "      configurable: true,"
@@ -1245,6 +1411,26 @@ void duk_init_context(duk_context *ctx)
         "        delete globalThis[n];"
         "        require('rampart-whatwg');"
         "        return globalThis[n];"
+        "      },"
+        /*    A setter is essential: user code like `var crypto =
+              require('rampart-crypto')` at top level is an assignment
+              to globalThis.crypto.  Without a setter, that assignment
+              silently fails (non-strict) or throws (strict), because
+              the lazy accessor is getter-only.  The setter replaces
+              the accessor with a data property holding the user's
+              value — exactly what a plain global would do.
+
+              enumerable:true is important — rampart.thread copies
+              globals via duk_enum (which by default skips non-
+              enumerable), so a user-assigned value MUST be enumerable
+              to propagate into spawned threads.  Matches the
+              `{writable, enumerable, configurable}` flags that a
+              top-level `var x = y` would create. */
+        "      set: function(v){"
+        "        delete globalThis[n];"
+        "        Object.defineProperty(globalThis, n, {"
+        "          value: v, writable: true, configurable: true, enumerable: true"
+        "        });"
         "      }"
         "    });"
         "  });"
@@ -1267,6 +1453,12 @@ void duk_init_context(duk_context *ctx)
         "          delete P[n];\n"
         "          require('rampart-whatwg');\n"
         "          return P[n];\n"
+        "        },\n"
+        "        set: function(v){\n"
+        "          delete P[n];\n"
+        "          Object.defineProperty(P, n, {\n"
+        "            value: v, writable: true, configurable: true, enumerable: true\n"
+        "          });\n"
         "        }\n"
         "      });\n"
         "    });\n"

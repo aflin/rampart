@@ -465,6 +465,215 @@ testFeature("nested for-let, return undefined crosses two wraps", function () {
     return fn() === undefined;
 });
 
+/* NDE.8 (2026-05-23): body-scoped `let`/`const` declarations inside a
+   `for (let i = ...; …)` loop, when captured by a closure, were not
+   per-iteration — every closure saw the final iteration's value
+   because duktape gives `const`/`let` a single binding for the whole
+   function scope rather than per-iteration semantics.  Phase 5
+   already wraps each iteration in an IIFE when an init-let is
+   captured; the bug was that Phase 5 only checked init-let names for
+   captures.  Fix: extend `_bs_for_has_capture`'s name set with
+   body-scoped lexical decls collected via `_bs_collect_lexical_decls`
+   — the IIFE wrap then triggers and the wrap's fresh function scope
+   gives the body-scoped declarations per-iteration semantics
+   naturally.  Surfaced in WPT fetch/data-urls (~50 fails). */
+testFeature("NDE.8 - body-scoped const captured by closure", function () {
+    var fns = [];
+    for (let i = 0; i < 3; i++) {
+        const v = i * 10;
+        fns.push(function () { return v; });
+    }
+    return fns[0]() === 0 && fns[1]() === 10 && fns[2]() === 20;
+});
+
+testFeature("NDE.8 - body-scoped let captured by closure", function () {
+    var fns = [];
+    for (let i = 0; i < 3; i++) {
+        let v = i * 100;
+        fns.push(function () { return v; });
+    }
+    return fns[0]() === 0 && fns[1]() === 100 && fns[2]() === 200;
+});
+
+testFeature("NDE.8 - for-of with body-scoped const captured", function () {
+    var fns = [];
+    for (let x of [1, 2, 3]) {
+        const w = x * 1000;
+        fns.push(function () { return w; });
+    }
+    return fns[0]() === 1000 && fns[1]() === 2000 && fns[2]() === 3000;
+});
+
+testFeature("NDE.8 - multiple body-scoped const captured (WPT data-urls shape)", function () {
+    /* Exact shape from the WPT fetch/data-urls fails: const-extract
+       from indexed tests, then closure over the extracted names. */
+    var tests = [["a", 1], ["b", 2], ["c", 3]];
+    var fns = [];
+    for (let i = 0; i < tests.length; i++) {
+        const input = tests[i][0], output = tests[i][1];
+        fns.push(function () { return input + ":" + output; });
+    }
+    return fns.map(function (f) { return f(); }).join(",") === "a:1,b:2,c:3";
+});
+
+testFeature("NDE.8 - loop-let still captures correctly (regression-guard)", function () {
+    /* Variant A from the probe — was already working pre-fix.
+       Make sure the fix didn't break Phase 5's existing path. */
+    var fns = [];
+    for (let i = 0; i < 3; i++) {
+        fns.push(function () { return i; });
+    }
+    return fns[0]() === 0 && fns[1]() === 1 && fns[2]() === 2;
+});
+
+/* NDE.9 (2026-05-23): `for (var/let/const [a, b] of iter)` iterated
+   zero times when `iter` lacked a `.length` property (Map, Set,
+   custom iterable).  The array-pattern for-of lowering in
+   `rewrite_for_of_destructuring` used a plain
+   `for (_i = 0, _pairs = <right>; _i < _pairs.length; _i++)` header
+   that silently terminated immediately when `.length` was undefined.
+
+   Fix: drive the iteration via `Symbol.iterator` when the RHS has
+   one (eagerly materializing all values into a temp array before the
+   body loop), falling back to array-like indexing for plain Arrays.
+   Mirrors the object-pattern branch that was already doing this.
+   The eager-materialize design keeps the existing `_loopN` function
+   shape + sentinel-based flow-control propagation intact.
+
+   Surfaced in WPT fetch/api/headers iteration (~5 fails). */
+testFeature("NDE.9 - array destructure for-of Map", function () {
+    var m = new Map([['a',1], ['b',2]]);
+    var got = [];
+    for (var [k, v] of m) got.push(k + '=' + v);
+    return got.length === 2 && got[0] === 'a=1' && got[1] === 'b=2';
+});
+
+testFeature("NDE.9 - array destructure for-of Set", function () {
+    var s = new Set([['x','1'], ['y','2']]);
+    var got = [];
+    for (let [k, v] of s) got.push(k + ':' + v);
+    return got.join(',') === 'x:1,y:2';
+});
+
+testFeature("NDE.9 - array destructure for-of plain array (regression-guard)", function () {
+    /* Was already working pre-fix; ensure the iterator-protocol
+       rewrite still handles the .length fallback case. */
+    var arr = [['a',1], ['b',2], ['c',3]];
+    var got = [];
+    for (const [k, v] of arr) got.push(k + ':' + v);
+    return got.join(',') === 'a:1,b:2,c:3';
+});
+
+testFeature("NDE.9 - array destructure for-of custom Symbol.iterator", function () {
+    var src = {
+        _entries: [['foo','a'], ['bar','b']],
+        [Symbol.iterator]: function () {
+            var arr = this._entries, i = 0;
+            return { next: function () {
+                return i < arr.length
+                    ? { value: arr[i++], done: false }
+                    : { value: undefined, done: true };
+            }};
+        }
+    };
+    var got = [];
+    for (var [k, v] of src) got.push(k + '=' + v);
+    return got.length === 2 && got[0] === 'foo=a' && got[1] === 'bar=b';
+});
+
+testFeature("NDE.9 - array destructure for-of inside function preserves `this`", function () {
+    /* The `_loopN.call(this)` wrap had to be preserved.  Verify by
+       calling a method that uses `this` inside a destructured for-of. */
+    var obj = {
+        scale: 10,
+        run: function () {
+            var out = [];
+            for (var [k, v] of new Map([['a',1], ['b',2]])) {
+                out.push(k + ':' + (v * this.scale));
+            }
+            return out;
+        }
+    };
+    var r = obj.run();
+    return r.length === 2 && r[0] === 'a:10' && r[1] === 'b:20';
+});
+
+testFeature("NDE.9 - array destructure for-of with break", function () {
+    /* Sentinel-based break/continue flow control should still
+       propagate correctly. */
+    var m = new Map([['a',1], ['b',2], ['c',3]]);
+    var got = [];
+    for (var [k, v] of m) {
+        if (k === 'c') break;
+        got.push(k + v);
+    }
+    return got.length === 2 && got[0] === 'a1' && got[1] === 'b2';
+});
+
+/* NDE.9b (2026-05-23): the NDE.9 fix's first attempt pre-buffered
+   the iterator into a temp array before any body iteration ran.
+   That violates spec lazy-iteration semantics — mutations to a live
+   iterable during the body were invisible because the iterator had
+   already been fully drained.  WPT headers-basic
+   Iteration-skips/Removing/Appending/Prepending tests rely on
+   per-step lazy iteration.  Fix: advance the iterator inside the
+   loop header, one step per body run.  See NDE.9b in
+   transpiler-todo.md. */
+testFeature("NDE.9b - iterator advances lazily (per body step, not upfront)", function () {
+    var calls = 0;
+    var iter = {
+        [Symbol.iterator]: function () {
+            return {
+                next: function () {
+                    calls++;
+                    if (calls === 1) return {value: ['a', 1], done: false};
+                    if (calls === 2) return {value: ['b', 2], done: false};
+                    return {value: undefined, done: true};
+                }
+            };
+        }
+    };
+    var sequence = [];
+    for (var [k, v] of iter) {
+        /* Record (k, v) AND how many next() calls have happened so
+           far.  Lazy iteration: calls===1 on first body run, ===2 on
+           second.  Pre-buffered (NDE.9b bug): both body runs see
+           calls===3 because the iterator was fully drained. */
+        sequence.push(k + v + '@' + calls);
+    }
+    return sequence.length === 2
+        && sequence[0] === 'a1@1'
+        && sequence[1] === 'b2@2';
+});
+
+testFeature("NDE.9b - mutation during loop body affects later iterations", function () {
+    /* The headers-basic style test: an iterable whose contents
+       change while we iterate.  After NDE.9b fix, the next .next()
+       call sees the mutated state. */
+    var data = [['a', 1], ['b', 2], ['c', 3]];
+    var consumed = 0;
+    var live = {
+        [Symbol.iterator]: function () {
+            return {
+                next: function () {
+                    if (consumed >= data.length)
+                        return {value: undefined, done: true};
+                    return {value: data[consumed++], done: false};
+                }
+            };
+        }
+    };
+    var got = [];
+    for (var [k, v] of live) {
+        got.push(k + v);
+        /* Remove the next entry mid-iteration.  After 'a1' the
+           next pending item is 'b'.  We splice it out — so the
+           next .next() call should now return 'c'. */
+        if (k === 'a') data.splice(consumed, 1);   /* remove 'b' */
+    }
+    return got.length === 2 && got[0] === 'a1' && got[1] === 'c3';
+});
+
 if (testFeature.isRampart) {
     try { rampart.utils.rmFile(process.scriptPath + '/transpile-forloop-scope-test.transpiled.js'); } catch (e) {}
 }

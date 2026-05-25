@@ -95,6 +95,7 @@ add_executable(rampart
     duktape/core/module.c
     ${PROJECT_SOURCE_DIR}/extern/texis/texisapi/npmp.c
     duktape/globals/rampart-utils.c
+    duktape/globals/rampart-url.cpp
     duktape/globals/rampart-buffer.c
     duktape/globals/rampart-textencoding.c
     duktape/globals/rampart-console.c
@@ -483,6 +484,12 @@ add_library(rampart-whatwg SHARED
     duktape/modules/rampart-whatwg.c
     duktape/globals/rampart-blob.c
 )
+# zlib (libz.so.1) — dynamically linked.  Provides the streaming
+# (de)flate state machine used by WHATWG CompressionStream /
+# DecompressionStream.  Available by default on Linux/macOS/FreeBSD;
+# rampart-sql.so already depends on it.  libdeflate (vendored, in
+# rampart core) stays for the one-shot path; zlib is only for streams.
+target_link_libraries(rampart-whatwg PRIVATE z)
 
 ###NODESHIM###
 add_library(rampart-nodeshim SHARED
@@ -774,6 +781,15 @@ target_include_directories(rampart PRIVATE
 )
 add_dependencies(rampart libdeflate)
 
+# upa-url static lib (WHATWG URL parser + UTS #46 IDN). C++17.
+# Linking it into the rampart binary requires CXX linker driver so
+# libstdc++ comes in for free.
+target_link_libraries(rampart LINK_PUBLIC upa_url)
+target_include_directories(rampart PRIVATE
+    ${CMAKE_SOURCE_DIR}/extern/upa/include
+)
+set_target_properties(rampart PROPERTIES LINKER_LANGUAGE CXX)
+
 ###NET###
 
 set(SEARCH_CA_BUNDLE_FILES
@@ -843,6 +859,13 @@ target_link_libraries(rampart-curl PRIVATE
     rampart-crypto
     z
 )
+# Link brotli/zstd when libcurl was built with them (see extern/extern.cmake).
+if(CURL_BROTLI)
+    target_link_libraries(rampart-curl PRIVATE brotlidec brotlicommon)
+endif()
+if(CURL_ZSTD)
+    target_link_libraries(rampart-curl PRIVATE zstd)
+endif()
 target_include_directories(rampart-curl PRIVATE
     ${PROJECT_SOURCE_DIR}/extern/curl/include/
     ${PROJECT_BINARY_DIR}/extern/openssl/include/

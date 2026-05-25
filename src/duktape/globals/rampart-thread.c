@@ -1280,8 +1280,42 @@ int rpthr_copy_obj(duk_context *ctx, duk_context *tctx, int objid, int skiprefcn
 
         cprintf("copying %s\n",s);
 
+        /* Property exists in target?  Normally we skip — don't clobber
+           globals the child already has.  EXCEPTION: if the target's
+           property is a CONFIGURABLE ACCESSOR (the WHATWG lazy-load
+           placeholders installed by register.c — Blob, URL, crypto,
+           etc.), allow the copy to overwrite.  The accessor's setter
+           replaces itself with a data property holding the parent's
+           value — which is exactly what we want when the parent's
+           script did e.g. `var crypto = require('rampart-crypto')` at
+           top level.  Without this, the child's lazy accessor "wins"
+           and `crypto` resolves to the WHATWG Crypto singleton, not
+           the parent's user-chosen value.
+
+           Detection: get the property descriptor.  Accessor descriptors
+           have `get`/`set` keys (data descriptors have `value`).
+           Configurable check guards against breaking ECMAScript globals
+           (Object/Array/etc. are non-configurable data props). */
+        int can_overwrite = 0;
+        if (duk_has_prop_string(tctx, -1, s)) {
+            duk_push_global_object(tctx);
+            duk_get_prop_string(tctx, -1, "Object");
+            duk_get_prop_string(tctx, -1, "getOwnPropertyDescriptor");
+            duk_dup(tctx, -5);   /* the target object we're copying into */
+            duk_push_string(tctx, s);
+            if (duk_pcall(tctx, 2) == 0 && duk_is_object(tctx, -1)) {
+                int is_accessor = duk_has_prop_string(tctx, -1, "get")
+                               || duk_has_prop_string(tctx, -1, "set");
+                duk_get_prop_string(tctx, -1, "configurable");
+                int is_configurable = duk_to_boolean(tctx, -1);
+                duk_pop(tctx);
+                if (is_accessor && is_configurable) can_overwrite = 1;
+            }
+            duk_pop_3(tctx);     /* descriptor, Object, global */
+        }
+
         // don't copy props we already have, or console or performance if we are in global object
-        if ( !duk_has_prop_string(tctx, -1, s) &&
+        if ( (!duk_has_prop_string(tctx, -1, s) || can_overwrite) &&
             (!is_global || (strcmp(s, "console") != 0 && strcmp(s, "performance") != 0))
         ){
             objid=copy_any(ctx, tctx, -1, objid, is_global);

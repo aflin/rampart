@@ -215,6 +215,89 @@ testFeature("aes-128-gcm round-trip", function() {
 
 
 /* ---------------------------------------------------------------
+ * ChaCha20-Poly1305 (RFC 8439)
+ * --------------------------------------------------------------- */
+
+testFeature("chacha20-poly1305 round-trip", function() {
+    var key = crypto.rand(32);
+    var nonce = crypto.rand(12);
+    var pt = Buffer.from("ChaCha20-Poly1305 interop plaintext");
+    var ct = crypto.encrypt({cipher:"chacha20-poly1305", key:key, iv:nonce, data:pt});
+    if (ct.length !== pt.length + 16) return "tag length wrong";
+    var dt = crypto.decrypt({cipher:"chacha20-poly1305", key:key, iv:nonce, data:ct});
+    return bufferToString(dt) === bufferToString(pt);
+});
+
+testFeature("chacha20-poly1305 with AAD round-trip", function() {
+    var key = crypto.rand(32);
+    var nonce = crypto.rand(12);
+    var aad = "authenticated metadata";
+    var pt = Buffer.from("hello");
+    var ct = crypto.encrypt({cipher:"chacha20-poly1305", key:key, iv:nonce, aad:aad, data:pt});
+    var dt = crypto.decrypt({cipher:"chacha20-poly1305", key:key, iv:nonce, aad:aad, data:ct});
+    return bufferToString(dt) === "hello";
+});
+
+testFeature("chacha20-poly1305 AAD mismatch → throws", function() {
+    var key = crypto.rand(32);
+    var nonce = crypto.rand(12);
+    var ct = crypto.encrypt({cipher:"chacha20-poly1305", key:key, iv:nonce,
+                             aad:Buffer.from("original"), data:Buffer.from("hi")});
+    try {
+        crypto.decrypt({cipher:"chacha20-poly1305", key:key, iv:nonce,
+                        aad:Buffer.from("tampered"), data:ct});
+        return false;
+    } catch(e) { return /tag verification/i.test(e.message); }
+});
+
+testFeature("chacha20-poly1305 RFC 8439 §2.8.2 KAT", function() {
+    var key   = dehexify("808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f");
+    var nonce = dehexify("070000004041424344454647");
+    var aad   = dehexify("50515253c0c1c2c3c4c5c6c7");
+    var pt    = "Ladies and Gentlemen of the class of '99: If I could offer you only one tip for the future, sunscreen would be it.";
+    var ct    = crypto.encrypt({cipher:"chacha20-poly1305", key:key, iv:nonce, aad:aad, data:pt});
+    var want  = "d31a8d34648e60db7b86afbc53ef7ec2a4aded51296e08fea9e2b5a736ee62d6"
+              + "3dbea45e8ca9671282fafb69da92728b1a71de0a9e060b2905d6a5b67ecd3b36"
+              + "92ddbd7f2d778b8c9803aee328091b58fab324e4fad675945585808b4831d7bc"
+              + "3ff4def08e4b7a9de576d26586cec64b6116"
+              + "1ae10b594f09e26a7e902ecbd0600691";   /* ciphertext + tag */
+    return hexify(ct) === want;
+});
+
+
+/* ---------------------------------------------------------------
+ * AES-OCB (RFC 7253) — verify our generic AEAD path handles it
+ * --------------------------------------------------------------- */
+
+testFeature("aes-256-ocb round-trip", function() {
+    var key = crypto.rand(32);
+    var iv  = crypto.rand(12);
+    var pt  = Buffer.from("AES-OCB interop plaintext");
+    var ct = crypto.encrypt({cipher:"aes-256-ocb", key:key, iv:iv, data:pt});
+    if (ct.length !== pt.length + 16) return "tag length wrong";
+    var dt = crypto.decrypt({cipher:"aes-256-ocb", key:key, iv:iv, data:ct});
+    return bufferToString(dt) === bufferToString(pt);
+});
+
+testFeature("aes-256-ocb with AAD round-trip", function() {
+    var key = crypto.rand(32);
+    var iv  = crypto.rand(12);
+    var aad = Buffer.from("header");
+    var ct  = crypto.encrypt({cipher:"aes-256-ocb", key:key, iv:iv, aad:aad, data:"plain"});
+    var dt  = crypto.decrypt({cipher:"aes-256-ocb", key:key, iv:iv, aad:aad, data:ct});
+    return bufferToString(dt) === "plain";
+});
+
+testFeature("aes-128-ocb round-trip", function() {
+    var key = crypto.rand(16);
+    var iv  = crypto.rand(12);
+    var ct = crypto.encrypt({cipher:"aes-128-ocb", key:key, iv:iv, data:"x"});
+    var dt = crypto.decrypt({cipher:"aes-128-ocb", key:key, iv:iv, data:ct});
+    return bufferToString(dt) === "x";
+});
+
+
+/* ---------------------------------------------------------------
  * 2.3  AES-KW (RFC 3394)
  *
  * RFC 3394 Test Vector 4.1 (128-bit KEK, 128-bit data):
@@ -759,6 +842,303 @@ testFeature("ed25519_import_priv_key encrypted → re-encrypted", function() {
     var sig = crypto.ed25519_sign("x", k2.private, "NEW");
     return crypto.ed25519_verify("x", k2.public, sig) === true;
 });
+
+/* ---------------------------------------------------------------
+ * KMAC (NIST SP 800-185)
+ *
+ * NIST KMAC test data taken from
+ * test/recipes/30-test_evp_data/evpmac_common.txt in OpenSSL.
+ * Key K = bytes 0x40..0x5F (32 bytes), used in all samples below.
+ * --------------------------------------------------------------- */
+
+(function() {
+    var KKEY = (function() {
+        var a = [];
+        for (var i = 0x40; i <= 0x5F; i++) a.push(i);
+        return Buffer.from(a);
+    })();
+
+    testFeature("kmac-128 NIST sample #1 (K=40..5F, X=00010203, no custom)", function() {
+        var got = crypto.kmac(KKEY, Buffer.from([0,1,2,3]));
+        return hexify(got).toUpperCase() ===
+            "E5780B0D3EA6F7D3A429C5706AA43A00FADBD7D49628839E3187243F456EE14E";
+    });
+
+    testFeature("kmac-128 NIST sample #2 (with 'My Tagged Application' custom)", function() {
+        var got = crypto.kmac(KKEY, Buffer.from([0,1,2,3]), "kmac-128",
+                              {customization: "My Tagged Application"});
+        return hexify(got).toUpperCase() ===
+            "3B1FBA963CD8B0B59E8C1A6D71888B7143651AF8BA0A7070C0979E2811324AA5";
+    });
+
+    testFeature("kmac-256 NIST sample (with 'My Tagged Application' custom)", function() {
+        var got = crypto.kmac(KKEY, Buffer.from([0,1,2,3]), "kmac-256",
+                              {customization: "My Tagged Application"});
+        return hexify(got).toUpperCase() ===
+            "20C570C31346F703C9AC36C61C03CB64C3970D0CFC787E9B79599D273A68D2F7" +
+            "F69D4CC3DE9D104A351689F27CF6F5951F0103F33F4F24871024D9C27773A8DD";
+    });
+
+    /* OpenSSL's KMAC enforces a minimum key length of 4 bytes
+     * (32 bits); below that it throws "invalid key length". */
+    testFeature("kmac-128 default output length is 32 bytes", function() {
+        return crypto.kmac(KKEY, "d").length === 32;
+    });
+
+    testFeature("kmac-256 default output length is 64 bytes", function() {
+        return crypto.kmac(KKEY, "d", "kmac-256").length === 64;
+    });
+
+    testFeature("kmac custom length override", function() {
+        return crypto.kmac(KKEY, "d", "kmac-128", {length: 16}).length === 16
+            && crypto.kmac(KKEY, "d", "kmac-256", {length: 8}).length === 8;
+    });
+
+    testFeature("kmac rejects key shorter than 4 bytes (OpenSSL minimum)", function() {
+        try { crypto.kmac(Buffer.alloc(2, 0), "d"); return false; }
+        catch (e) { return /key length/i.test(e.message); }
+    });
+
+    testFeature("kmac unknown variant throws", function() {
+        try { crypto.kmac(KKEY, "d", "kmac-512"); return false; }
+        catch (e) { return /unknown variant/i.test(e.message); }
+    });
+})();
+
+
+/* ---------------------------------------------------------------
+ * cSHAKE (NIST SP 800-185)
+ * --------------------------------------------------------------- */
+
+testFeature("cshake-128 NIST SP 800-185 sample #2 (S='Email Signature')", function() {
+    /* X = bytes 0x00..0xC7 (200 bytes), N = "", S = "Email Signature", L = 256 bits */
+    var X = []; for (var i = 0; i <= 0xC7; i++) X.push(i);
+    var got = crypto.cshake128(Buffer.from(X), {length: 32, customization: "Email Signature"});
+    return hexify(got).toUpperCase() ===
+        "C5221D50E4F822D96A2E8881A961420F294B7B24FE3D2094BAED2C6524CC166B";
+});
+
+testFeature("cshake-128 with empty N and S equals shake-128", function() {
+    return hexify(crypto.cshake128("hello")) === crypto.shake128("hello");
+});
+
+testFeature("cshake-256 with empty N and S equals shake-256", function() {
+    var c = crypto.cshake256("hello", {length: 32});
+    return hexify(c) === crypto.shake256("hello");
+});
+
+testFeature("cshake customization changes output", function() {
+    var a = crypto.cshake128("hi", {customization: "A"});
+    var b = crypto.cshake128("hi", {customization: "B"});
+    return hexify(a) !== hexify(b);
+});
+
+testFeature("cshake default lengths (128 → 16, 256 → 32)", function() {
+    return crypto.cshake128("x").length === 16
+        && crypto.cshake256("x").length === 32;
+});
+
+
+/* ---------------------------------------------------------------
+ * X448 / Ed448 (Curve448 family — same shape as 25519)
+ * --------------------------------------------------------------- */
+
+testFeature("x448_gen_key returns PEM public/private", function() {
+    var k = crypto.x448_gen_key();
+    return /BEGIN PUBLIC KEY/.test(k.public)
+        && /BEGIN PRIVATE KEY/.test(k.private);
+});
+
+testFeature("x448_components shape (X448 raw = 56 bytes)", function() {
+    var k = crypto.x448_gen_key();
+    var pub = crypto.x448_components(k.public);
+    var priv = crypto.x448_components(k.private);
+    return pub.curve === "X448"
+        && /^[0-9A-F]{112}$/i.test(pub.public)
+        && priv.curve === "X448"
+        && priv.public === pub.public
+        && /^[0-9A-F]{112}$/i.test(priv.private);
+});
+
+testFeature("x448_derive symmetry + 56-byte shared secret", function() {
+    var a = crypto.x448_gen_key();
+    var b = crypto.x448_gen_key();
+    var sAB = crypto.x448_derive(a.private, b.public);
+    var sBA = crypto.x448_derive(b.private, a.public);
+    return _isU8(sAB) && sAB.length === 56 && crypto.timingSafeEqual(sAB, sBA);
+});
+
+testFeature("x448 with password + import_priv_key re-encrypt", function() {
+    var a = crypto.x448_gen_key("OLD");
+    var a2 = crypto.x448_import_priv_key(a.private, "OLD", "NEW");
+    var b = crypto.x448_gen_key();
+    var s = crypto.x448_derive(a2.private, b.public, "NEW");
+    return _isU8(s) && s.length === 56;
+});
+
+testFeature("ed448_gen_key + sign/verify (114-byte sig)", function() {
+    var k = crypto.ed448_gen_key();
+    var sig = crypto.ed448_sign("hello", k.private);
+    return _isU8(sig) && sig.length === 114
+        && crypto.ed448_verify("hello", k.public, sig) === true;
+});
+
+testFeature("ed448_verify rejects tampered message", function() {
+    var k = crypto.ed448_gen_key();
+    var sig = crypto.ed448_sign("original", k.private);
+    return crypto.ed448_verify("tampered", k.public, sig) === false;
+});
+
+/* ---------------------------------------------------------------
+ * ML-DSA (NIST FIPS 204 — post-quantum signatures)
+ *
+ * ML-DSA signing is non-deterministic (samples randomness internally),
+ * so we don't have a byte-equal KAT through our API.  Tests cover
+ * round-trip, variant sizes, tamper detection, and password support.
+ * --------------------------------------------------------------- */
+
+[
+    ["ml-dsa-44", 1312, 2420],
+    ["ml-dsa-65", 1952, 3309],
+    ["ml-dsa-87", 2592, 4627]
+].forEach(function(spec) {
+    var variant = spec[0], rawPubBytes = spec[1], sigBytes = spec[2];
+
+    testFeature("mldsa " + variant + " gen_key + sign/verify round-trip", function() {
+        var k = crypto.mldsa_gen_key(variant);
+        if (!/BEGIN PUBLIC KEY/.test(k.public) || !/BEGIN PRIVATE KEY/.test(k.private))
+            return "PEM shape wrong";
+        var msg = "ml-dsa interop " + variant;
+        var sig = crypto.mldsa_sign(msg, k.private);
+        if (!_isU8(sig) || sig.length !== sigBytes)
+            return "sig length " + sig.length + " (expected " + sigBytes + ")";
+        return crypto.mldsa_verify(msg, k.public, sig) === true;
+    });
+
+    testFeature("mldsa " + variant + " components has correct raw public size", function() {
+        var k = crypto.mldsa_gen_key(variant);
+        var comp = crypto.mldsa_components(k.public);
+        return comp.variant === variant.toUpperCase().replace("ML-DSA-","ML-DSA-")
+            && comp.public.length === rawPubBytes * 2;   /* hex chars */
+    });
+
+    testFeature("mldsa " + variant + " rejects tampered message", function() {
+        var k = crypto.mldsa_gen_key(variant);
+        var sig = crypto.mldsa_sign("original", k.private);
+        return crypto.mldsa_verify("tampered", k.public, sig) === false;
+    });
+
+    testFeature("mldsa " + variant + " rejects wrong public key", function() {
+        var k  = crypto.mldsa_gen_key(variant);
+        var k2 = crypto.mldsa_gen_key(variant);
+        var sig = crypto.mldsa_sign("x", k.private);
+        return crypto.mldsa_verify("x", k2.public, sig) === false;
+    });
+});
+
+testFeature("mldsa with password + decrypt round-trip", function() {
+    var k = crypto.mldsa_gen_key("ml-dsa-65", "secret");
+    if (!/BEGIN ENCRYPTED PRIVATE KEY/.test(k.private)) return "not encrypted";
+    var sig = crypto.mldsa_sign("x", k.private, "secret");
+    return crypto.mldsa_verify("x", k.public, sig) === true;
+});
+
+testFeature("mldsa unknown variant throws", function() {
+    try { crypto.mldsa_gen_key("ml-dsa-128"); return false; }
+    catch (e) { return /unknown variant/i.test(e.message); }
+});
+
+
+/* ---------------------------------------------------------------
+ * ML-KEM (NIST FIPS 203 — post-quantum key encapsulation)
+ *
+ * Spec sizes:
+ *   ML-KEM-512:  pub=800,  ciphertext=768,  shared=32
+ *   ML-KEM-768:  pub=1184, ciphertext=1088, shared=32
+ *   ML-KEM-1024: pub=1568, ciphertext=1568, shared=32
+ * --------------------------------------------------------------- */
+
+[
+    ["ml-kem-512",  800,  768],
+    ["ml-kem-768",  1184, 1088],
+    ["ml-kem-1024", 1568, 1568]
+].forEach(function(spec) {
+    var variant = spec[0], rawPubBytes = spec[1], ctBytes = spec[2];
+
+    testFeature("mlkem " + variant + " encapsulate/decapsulate round-trip", function() {
+        var k = crypto.mlkem_gen_key(variant);
+        if (!/BEGIN PUBLIC KEY/.test(k.public) || !/BEGIN PRIVATE KEY/.test(k.private))
+            return "PEM shape wrong";
+        var enc = crypto.mlkem_encapsulate(k.public);
+        if (!_isU8(enc.ciphertext) || enc.ciphertext.length !== ctBytes)
+            return "ciphertext size " + enc.ciphertext.length + " (expected " + ctBytes + ")";
+        if (!_isU8(enc.sharedSecret) || enc.sharedSecret.length !== 32)
+            return "shared-secret size " + enc.sharedSecret.length + " (expected 32)";
+        var ss2 = crypto.mlkem_decapsulate(enc.ciphertext, k.private);
+        return crypto.timingSafeEqual(enc.sharedSecret, ss2);
+    });
+
+    testFeature("mlkem " + variant + " components has correct raw public size", function() {
+        var k = crypto.mlkem_gen_key(variant);
+        var comp = crypto.mlkem_components(k.public);
+        return comp.variant === variant.toUpperCase().replace("ML-KEM-","ML-KEM-")
+            && comp.public.length === rawPubBytes * 2;
+    });
+
+    testFeature("mlkem " + variant + " decapsulate with wrong key fails (different shared)", function() {
+        var k1 = crypto.mlkem_gen_key(variant);
+        var k2 = crypto.mlkem_gen_key(variant);
+        var enc = crypto.mlkem_encapsulate(k1.public);
+        /* ML-KEM is IND-CCA2: decapsulating with the wrong key
+         * doesn't throw — it returns a deterministically-derived
+         * pseudo-shared-secret that won't match the original (this
+         * is "implicit rejection", a core PQ KEM property). */
+        var ss2 = crypto.mlkem_decapsulate(enc.ciphertext, k2.private);
+        return _isU8(ss2) && ss2.length === 32
+            && !crypto.timingSafeEqual(enc.sharedSecret, ss2);
+    });
+});
+
+testFeature("mlkem with password + decapsulate round-trip", function() {
+    var k = crypto.mlkem_gen_key("ml-kem-768", "secret");
+    if (!/BEGIN ENCRYPTED PRIVATE KEY/.test(k.private)) return "not encrypted";
+    var enc = crypto.mlkem_encapsulate(k.public);
+    var ss2 = crypto.mlkem_decapsulate(enc.ciphertext, k.private, "secret");
+    return crypto.timingSafeEqual(enc.sharedSecret, ss2);
+});
+
+testFeature("mlkem unknown variant throws", function() {
+    try { crypto.mlkem_gen_key("ml-kem-128"); return false; }
+    catch (e) { return /unknown variant/i.test(e.message); }
+});
+
+
+testFeature("ed448 RFC 8032 §7.4 Test 1 (empty msg KAT)", function() {
+    /* RFC 8032 §7.4 — first published Ed448 test vector. */
+    var sk = dehexify("6c82a562cb808d10d632be89c8513ebf"
+                    + "6c929f34ddfa8c9f63c9960ef6e348a3"
+                    + "528c8a3fcc2f044e39a3fc5b94492f8f"
+                    + "032e7549a20098f95b");
+    var pk = dehexify("5fd7449b59b461fd2ce787ec616ad46a"
+                    + "1da1342485a70e1f8a0ea75d80e96778"
+                    + "edf124769b46c7061bd6783df1e50f6c"
+                    + "d1fa1abeafe8256180");
+    var skKey = crypto.ed448_import_priv_key({key: sk, format:"raw"});
+    var pkKey = crypto.ed448_import_pub_key({key: pk, format:"raw"});
+    var sig = crypto.ed448_sign(Buffer.alloc(0), skKey.private);
+    var want = dehexify(
+        "533a37f6bbe457251f023c0d88f976ae"
+      + "2dfb504a843e34d2074fd823d41a591f"
+      + "2b233f034f628281f2fd7a22ddd47d78"
+      + "28c59bd0a21bfd3980ff0d2028d4b18a"
+      + "9df63e006c5d1c2d345b925d8dc00b41"
+      + "04852db99ac5c7cdda8530a113a0f4db"
+      + "b61149f05a7363268c71d95808ff2e65"
+      + "2600");
+    return crypto.timingSafeEqual(sig, want)
+        && crypto.ed448_verify(Buffer.alloc(0), pkKey, sig) === true;
+});
+
 
 testFeature("ed25519 RFC 8032 Test 1 (all-zero key)", function() {
     /* RFC 8032 §7.1 Test 1:

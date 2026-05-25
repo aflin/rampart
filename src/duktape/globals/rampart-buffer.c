@@ -373,15 +373,43 @@ duk_ret_t duk_rp_buffer_from(duk_context *ctx)
         }
     }
 
-    /* Default path (also used for: buffer, plain string without encoding, array) */
+    /* Default path (also used for: buffer, plain string without encoding, array)
+     *
+     * Node API: Buffer.from(arrayBuffer[, byteOffset[, length]]) creates
+     * a Buffer over the SAME memory as the given ArrayBuffer, starting
+     * at byteOffset for length bytes.  Default offset=0, length=remaining.
+     * Our Buffer uses a fresh fixed buffer (no shared backing), so we
+     * COPY the requested slice rather than view — but we still honor
+     * byteOffset and byteLength correctly per spec.
+     */
     if (duk_is_buffer_data(ctx, 0) || duk_is_string(ctx, 0)) {
         duk_size_t from_sz;
         const char *from_buf = REQUIRE_STR_OR_BUF(ctx, 0, &from_sz, "");
+        /* Honor optional byteOffset / byteLength args when the source
+           is a buffer/ArrayBuffer (Node Buffer.from(ab, off, len) form).
+           Skip for string sources — those forms aren't spec'd. */
+        duk_size_t offset = 0;
+        duk_size_t length = from_sz;
+        if (duk_is_buffer_data(ctx, 0)) {
+            if (!duk_is_undefined(ctx, 1)) {
+                double od = duk_to_number(ctx, 1);
+                if (od < 0 || od > (double)from_sz)
+                    RP_THROW(ctx, "Buffer.from: byteOffset out of range");
+                offset = (duk_size_t)od;
+                length = from_sz - offset;
+            }
+            if (!duk_is_undefined(ctx, 2)) {
+                double ld = duk_to_number(ctx, 2);
+                if (ld < 0 || ld > (double)(from_sz - offset))
+                    RP_THROW(ctx, "Buffer.from: length out of range");
+                length = (duk_size_t)ld;
+            }
+        }
         duk_get_global_string(ctx, "Buffer");
-        duk_push_number(ctx, (double)from_sz);
+        duk_push_number(ctx, (double)length);
         duk_new(ctx, 1);
         void *to_buf = duk_get_buffer_data(ctx, -1, NULL);
-        memcpy(to_buf, from_buf, from_sz);
+        memcpy(to_buf, from_buf + offset, length);
     } else if (duk_is_array(ctx, 0)) {
         duk_size_t arr_len = duk_get_length(ctx, 0);
         duk_size_t i;
@@ -1206,6 +1234,16 @@ static void rp_install_typedarray_methods(duk_context *ctx)
     duk_call(ctx, 0);
     duk_pop(ctx);  /* discard result */
 }
+
+/* ArrayBuffer.prototype.transfer/transferToFixedLength (ES2024) is
+ * installed as a JS polyfill in register.c rather than natively here.
+ * The polyfill copies bytes into a fresh ArrayBuffer and flips a
+ * JS-level _detached flag.  True spec detach (views collapse to
+ * byteLength=0, source.byteLength=0) would require a duktape engine
+ * patch — duktape's ArrayBuffer caches [[ArrayBufferByteLength]] per
+ * ES spec and there's no public-API primitive to clear it.  See
+ * earlier git history for a probe that confirms duk_steal_buffer +
+ * duk_to_dynamic_buffer don't reach the slot either. */
 
 /* ============================================================
  * Install everything onto the global Buffer

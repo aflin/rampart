@@ -4949,6 +4949,38 @@ static int rewrite_array_spread(EditList *edits, const char *src, TSNode arr, in
 // Collect all var/let/const identifier names declared at any nesting level
 // in the function body, stopping at function/class boundaries.
 // Returns a malloc'd comma-separated string of names, or NULL if none found.
+/* Returns 1 if `names` already contains `nm` (length `nl`) as a
+   comma-separated entry.  Used by the hoist below to dedupe binding
+   names so two sibling-block `const X = …` declarations don't emit
+   `var X, X, …;` and then collapse to a single slot at runtime —
+   NDE.3 in `transpiler-todo.md`.  The duplicate is harmless syntax
+   (var allows re-declaration) but the resulting state-machine has
+   one storage cell shared between the branches; with sibling
+   blocks only one branch executes, so the runtime semantics are
+   actually OK — what breaks is the brace structure of the emitted
+   case dispatch, which fails to parse downstream. */
+static int _bs_name_already_in(const rp_string *names, const char *nm, size_t nl)
+{
+    const char *s = names->str;
+    size_t len = names->len;
+    /* Names are emitted as "X" or ", X"; scan for `nm` as a token. */
+    for (size_t i = 0; i + nl <= len; ) {
+        /* Find next identifier start */
+        while (i < len && (s[i] == ' ' || s[i] == ','))
+            i++;
+        if (i + nl > len)
+            break;
+        /* Token end */
+        size_t j = i;
+        while (j < len && s[j] != ' ' && s[j] != ',')
+            j++;
+        if (j - i == nl && memcmp(s + i, nm, nl) == 0)
+            return 1;
+        i = j;
+    }
+    return 0;
+}
+
 /* Walk an array_pattern or object_pattern node and append any binding
    identifier names to `names`. Recurses into nested patterns. */
 static void _collect_pattern_names(const char *src, TSNode pattern, rp_string *names, int *first)
@@ -4957,6 +4989,8 @@ static void _collect_pattern_names(const char *src, TSNode pattern, rp_string *n
     if (strcmp(pt, "identifier") == 0)
     {
         size_t ns = ts_node_start_byte(pattern), ne = ts_node_end_byte(pattern);
+        if (_bs_name_already_in(names, src + ns, ne - ns))
+            return;
         if (!*first)
             rp_string_puts(names, ", ");
         rp_string_putsn(names, src + ns, ne - ns);
@@ -4980,6 +5014,8 @@ static void _collect_pattern_names(const char *src, TSNode pattern, rp_string *n
     if (strcmp(pt, "shorthand_property_identifier_pattern") == 0)
     {
         size_t ns = ts_node_start_byte(pattern), ne = ts_node_end_byte(pattern);
+        if (_bs_name_already_in(names, src + ns, ne - ns))
+            return;
         if (!*first)
             rp_string_puts(names, ", ");
         rp_string_putsn(names, src + ns, ne - ns);
@@ -5037,6 +5073,7 @@ static void _collect_var_names_recursive(const char *src, TSNode node, rp_string
             if (strcmp(nmt, "identifier") == 0)
             {
                 size_t ns = ts_node_start_byte(nm), ne = ts_node_end_byte(nm);
+                if (_bs_name_already_in(names, src + ns, ne - ns)) continue;
                 if (!*first)
                     rp_string_puts(names, ", ");
                 rp_string_putsn(names, src + ns, ne - ns);
@@ -5089,6 +5126,11 @@ static char *_collect_body_var_names(const char *src, TSNode body)
 // Emit a variable_declaration or lexical_declaration as assignments (without the keyword).
 // For declarators with initializers: "name = value;"
 // For declarators without initializers: skipped (the hoisted decl handles it)
+// For object-pattern destructure targets, wraps the assignment in parens —
+// `({key} = expr);` — so the parser sees a destructuring-assignment expression
+// instead of `{` at statement position parsing as a block.  Array-pattern
+// targets don't need wrapping because `[a,b] = expr` is unambiguous.  NDE.5
+// in transpiler-todo.md.
 static void _emit_var_decl_as_assignments(rp_string *out, const char *src, TSNode decl)
 {
     uint32_t dc = ts_node_named_child_count(decl);
@@ -5105,10 +5147,13 @@ static void _emit_var_decl_as_assignments(rp_string *out, const char *src, TSNod
             continue;
         size_t ns = ts_node_start_byte(nm), ne = ts_node_end_byte(nm);
         size_t vs = ts_node_start_byte(val), ve = ts_node_end_byte(val);
+        int is_obj_pat = (strcmp(ts_node_type(nm), "object_pattern") == 0);
+        if (is_obj_pat) rp_string_putc(out, '(');
         rp_string_putsn(out, src + ns, ne - ns);
         rp_string_puts(out, " = ");
         rp_string_putsn(out, src + vs, ve - vs);
-        rp_string_puts(out, ";");
+        if (is_obj_pat) rp_string_puts(out, ");");
+        else            rp_string_puts(out, ";");
     }
 }
 
@@ -6442,6 +6487,103 @@ static void _emit_stmt_yield_lower(rp_string *dst, const char *src, size_t ss, s
     free(lowered);
 }
 
+/* Forward decls for the if-with-yield helper and its mutual recursion
+   into the statement-block iterator.  See `_emit_if_with_yield` below. */
+static void _emit_yield_body(rp_string *out, const char *src, TSNode block,
+                             LoopCtx *ctx, FinCtx *fctx, int *p_next_label);
+static void _emit_if_with_yield(rp_string *out, const char *src, TSNode stmt,
+                                LoopCtx *ctx, FinCtx *fctx, int *p_next_label);
+
+/* Structural lowering for an `if (cond) <then> [else <else>]` whose body
+   contains await/yield.  Allocates a case-label per branch and emits a
+   dispatch + branch bodies + merge point.  Recursive: when a branch is
+   itself an `if_statement` with await/yield (i.e. an `else if` chain),
+   the branch handler calls back into this helper so the inner if also
+   gets state-machine lowering — without this recursion the inner
+   branch would fall into `_emit_stmt_yield_lower` (expression-level
+   await extraction), which lifts all awaits to BEFORE the dispatch,
+   causing them to fire unconditionally.  NDE.6 in transpiler-todo.md. */
+static void _emit_if_with_yield(rp_string *out, const char *src, TSNode stmt,
+                                LoopCtx *ctx, FinCtx *fctx, int *p_next_label)
+{
+    TSNode cond   = ts_node_child_by_field_name(stmt, "condition",   9);
+    TSNode conseq = ts_node_child_by_field_name(stmt, "consequence", 11);
+    TSNode altr   = ts_node_child_by_field_name(stmt, "alternative", 11);
+    int has_else = !ts_node_is_null(altr);
+    /* tree-sitter-javascript wraps the else branch in an
+       `else_clause` = seq('else', statement) node.  Descend into the
+       inner statement so the state-machine emission doesn't include
+       the literal `else` keyword between its `case N:` label and the
+       branch body.  NDE.1. */
+    if (has_else && strcmp(ts_node_type(altr), "else_clause") == 0
+        && ts_node_named_child_count(altr) > 0)
+        altr = ts_node_named_child(altr, 0);
+
+    /* Lower the condition (may itself contain yields). */
+    char *cond_lowered = NULL;
+    if (!ts_node_is_null(cond))
+    {
+        size_t cs = ts_node_start_byte(cond), ce = ts_node_end_byte(cond);
+        cond_lowered = _lower_range_with_yields(out, src, cs, ce, cond, ctx, fctx, p_next_label);
+    }
+
+    *p_next_label += 3;
+    int then_case = *p_next_label;
+    int else_case = 0;
+    if (has_else)
+    {
+        *p_next_label += 3;
+        else_case = *p_next_label;
+    }
+    *p_next_label += 3;
+    int after_case = *p_next_label;
+
+    /* Dispatch */
+    rp_string_puts(out, "if");
+    rp_string_puts(out, cond_lowered ? cond_lowered : "(false)");
+    rp_string_appendf(out, "{_TrN_context.next=%d;break;}", then_case);
+    if (cond_lowered) free(cond_lowered);
+    rp_string_appendf(out, "_TrN_context.next=%d;break;", has_else ? else_case : after_case);
+
+    /* Emit one branch.  If the branch body is itself an
+       `if_statement` with a yield, recurse via _emit_if_with_yield;
+       a statement_block goes through _emit_yield_body; anything else
+       falls back to _emit_stmt_yield_lower. */
+#define EMIT_BRANCH(BR) do {                                                          \
+        TSNode _br = (BR);                                                            \
+        const char *_bt = ts_node_type(_br);                                          \
+        size_t _bs = ts_node_start_byte(_br), _be = ts_node_end_byte(_br);            \
+        if (strcmp(_bt, "statement_block") == 0)                                      \
+            _emit_yield_body(out, src, _br, ctx, fctx, p_next_label);                 \
+        else if (strcmp(_bt, "if_statement") == 0                                     \
+                 && _text_has_yield(src, _bs, _be))                                   \
+            _emit_if_with_yield(out, src, _br, ctx, fctx, p_next_label);              \
+        else                                                                          \
+            _emit_stmt_yield_lower(out, src, _bs, _be, _br, ctx, fctx, p_next_label); \
+    } while (0)
+
+    /* case THEN */
+    rp_string_appendf(out, "case %d:", then_case);
+    if (!ts_node_is_null(conseq)) EMIT_BRANCH(conseq);
+    if (out->len && out->str[out->len - 1] != ';')
+        rp_string_putc(out, ';');
+    rp_string_appendf(out, "_TrN_context.next=%d;break;", after_case);
+
+    /* case ELSE */
+    if (has_else)
+    {
+        rp_string_appendf(out, "case %d:", else_case);
+        EMIT_BRANCH(altr);
+        if (out->len && out->str[out->len - 1] != ';')
+            rp_string_putc(out, ';');
+        rp_string_appendf(out, "_TrN_context.next=%d;break;", after_case);
+    }
+#undef EMIT_BRANCH
+
+    /* case AFTER */
+    rp_string_appendf(out, "case %d:", after_case);
+}
+
 /* Process children of a statement_block, lowering yields into state-machine
    cases.  Recursively decomposes while/for loops that contain yields.
    `ctx` (if non-NULL) carries the enclosing-loop labels so break/continue
@@ -7191,95 +7333,7 @@ static void _emit_yield_body_range(rp_string *out, const char *src, TSNode block
                 size_t stmt_s = ts_node_start_byte(stmt);
                 if (ss < stmt_s) rp_string_putsn(out, src + ss, stmt_s - ss);
             }
-            /* Structural lowering for if-with-yield-in-body.  Linearising
-               an if's body would extract the yield to switch level,
-               making it fire unconditionally — the bug behind
-               "yield-in-conditional-branch is broken".  Allocate cases
-               for the then/else bodies and dispatch via state
-               transitions.
-
-               if (cond) <then> else <else>
-               ->
-                 if (cond) { _ctx.next=THEN; break; }
-                 _ctx.next=(ELSE or AFTER); break;
-                 case THEN: <then lowered>;
-                            _ctx.next=AFTER; break;
-                 case ELSE: <else lowered>;
-                            _ctx.next=AFTER; break;
-                 case AFTER: */
-            TSNode cond = ts_node_child_by_field_name(stmt, "condition", 9);
-            TSNode conseq = ts_node_child_by_field_name(stmt, "consequence", 11);
-            TSNode altr = ts_node_child_by_field_name(stmt, "alternative", 11);
-            int has_else = !ts_node_is_null(altr);
-            /* tree-sitter-javascript wraps the else branch in an
-               `else_clause` = seq('else', statement) node.  Descend
-               into the inner statement so the state-machine emission
-               below doesn't include the literal `else` keyword
-               between its `case N:` label and the branch body. */
-            if (has_else && strcmp(ts_node_type(altr), "else_clause") == 0
-                && ts_node_named_child_count(altr) > 0)
-                altr = ts_node_named_child(altr, 0);
-
-            /* Lower the condition (may itself contain yields). */
-            char *cond_lowered = NULL;
-            if (!ts_node_is_null(cond))
-            {
-                size_t cs = ts_node_start_byte(cond), ce = ts_node_end_byte(cond);
-                cond_lowered = _lower_range_with_yields(out, src, cs, ce, cond, ctx, fctx, p_next_label);
-            }
-
-            *p_next_label += 3;
-            int then_case = *p_next_label;
-            int else_case = 0;
-            if (has_else)
-            {
-                *p_next_label += 3;
-                else_case = *p_next_label;
-            }
-            *p_next_label += 3;
-            int after_case = *p_next_label;
-
-            /* Dispatch */
-            rp_string_puts(out, "if");
-            rp_string_puts(out, cond_lowered ? cond_lowered : "(false)");
-            rp_string_appendf(out, "{_TrN_context.next=%d;break;}", then_case);
-            if (cond_lowered) free(cond_lowered);
-            rp_string_appendf(out, "_TrN_context.next=%d;break;", has_else ? else_case : after_case);
-
-            /* case THEN */
-            rp_string_appendf(out, "case %d:", then_case);
-            if (!ts_node_is_null(conseq))
-            {
-                if (strcmp(ts_node_type(conseq), "statement_block") == 0)
-                    _emit_yield_body(out, src, conseq, ctx, fctx, p_next_label);
-                else
-                {
-                    size_t bs = ts_node_start_byte(conseq), be = ts_node_end_byte(conseq);
-                    _emit_stmt_yield_lower(out, src, bs, be, conseq, ctx, fctx, p_next_label);
-                }
-            }
-            if (out->len && out->str[out->len - 1] != ';')
-                rp_string_putc(out, ';');
-            rp_string_appendf(out, "_TrN_context.next=%d;break;", after_case);
-
-            /* case ELSE */
-            if (has_else)
-            {
-                rp_string_appendf(out, "case %d:", else_case);
-                if (strcmp(ts_node_type(altr), "statement_block") == 0)
-                    _emit_yield_body(out, src, altr, ctx, fctx, p_next_label);
-                else
-                {
-                    size_t bs = ts_node_start_byte(altr), be = ts_node_end_byte(altr);
-                    _emit_stmt_yield_lower(out, src, bs, be, altr, ctx, fctx, p_next_label);
-                }
-                if (out->len && out->str[out->len - 1] != ';')
-                    rp_string_putc(out, ';');
-                rp_string_appendf(out, "_TrN_context.next=%d;break;", after_case);
-            }
-
-            /* case AFTER */
-            rp_string_appendf(out, "case %d:", after_case);
+            _emit_if_with_yield(out, src, stmt, ctx, fctx, p_next_label);
         }
         else if (strcmp(stmt_type, "for_in_statement") == 0 && has_yield)
         {
@@ -9397,6 +9451,23 @@ static int rewrite_block_scope_rename(EditList *edits, const char *src, TSNode f
             return 0;  /* concise arrow body — nothing to do */
     }
 
+    /* Skip async + generator functions.  The wholesale async/regenerator
+       rewriter (which fires later in the same dispatch loop) replaces the
+       entire byte range of this function with a state-machine emission and
+       collects/hoists var names itself.  An inner rename edit added here
+       would shift bytes inside the async-replace's range; apply_edits then
+       leaves the original closing `}` outside the wholesale-replace's
+       removed range, producing a parse-error in the transpiled output
+       (NDE.3 in transpiler-todo.md).  The wholesale rewriter handles
+       sibling-block shadows by collapsing them onto a single hoisted var
+       (the dedup in _bs_name_already_in / _collect_var_names_recursive),
+       which is correct because only one if/else branch executes. */
+    if (strcmp(t, "program") != 0)
+    {
+        if (_is_async_function_like(fn_node)) return 0;
+        if (_is_generator_function_like(src, fn_node)) return 0;
+    }
+
     /* Step 1: collect all function-scope names (var/fn/class/params). */
     _BS_NameSet scope_names;
     _bs_ns_init(&scope_names);
@@ -9844,6 +9915,22 @@ static int rewrite_lexical_declaration(EditList *edits, const char *src, TSNode 
                                 }
                             }
                         }
+
+                        /* NDE.8: also add body-scoped `let`/`const` names.
+                           Without this, a body-scoped `const v = ...` captured
+                           by a closure in the body keeps duktape's
+                           function-scope binding (one slot for the whole loop)
+                           — all closures see the final iteration's value.  By
+                           including these names in the capture-detection set,
+                           the IIFE wrap triggers; the wrap creates a fresh
+                           function scope per iteration; body-scoped const/let
+                           inside that scope are naturally per-iteration.
+                           The wrap doesn't need them as params (they're
+                           declared inside the wrapped body). */
+                        _BS_NodeVec body_lex_decls;
+                        _bs_nv_init(&body_lex_decls);
+                        _bs_collect_lexical_decls(body, src, &names_set, &body_lex_decls, 1);
+                        _bs_nv_free(&body_lex_decls);
 
                         int has_captures = _bs_for_has_capture(body, src, &names_set, 0);
                         int is_block = (strcmp(ts_node_type(body), "statement_block") == 0);
@@ -10353,20 +10440,60 @@ static int rewrite_for_of_destructuring(EditList *edits, const char *src, TSNode
         rp_string_puts(out, "; }; ");
     }
 
-    // for loop header using array length
-    rp_string_puts(out, "for (var ");
-    rp_string_puts(out, nm_i);
-    rp_string_puts(out, " = 0, ");
-    rp_string_puts(out, nm_pairs);
+    /* Iteration header.  NDE.9 / NDE.9b (2026-05-23): use the
+       Symbol.iterator protocol when the right-hand side has one (Map,
+       Set, custom iterables), falling back to array-like indexing for
+       plain Arrays.  Advance the iterator one step PER body run (no
+       pre-buffering) so live-iterable mutations during the body are
+       visible to subsequent `.next()` calls — required by spec and by
+       WPT headers-basic tests.  The pre-buffer design (NDE.9 first
+       attempt) violated that by draining the iterator before any body
+       iteration ran.
+
+       Shape:
+         var _x = <right>,
+             _it = (... has Symbol.iterator ...) ? _x[Symbol.iterator]() : null,
+             _pairs = [], _r;
+         for (_i = 0; ; _i++) {
+             if (_it) {
+                 _r = _it.next(); if (_r.done) break;
+                 _pairs[_i] = _r.value;
+             } else {
+                 if (_i >= _x.length) break;
+                 _pairs[_i] = _x[_i];
+             }
+             _loop.call(this);    // _loop reads _pairs[_i] internally
+         }
+       `_pairs` accumulates one slot per iteration but the iterator is
+       advanced lazily; mutations during the body can affect later
+       steps because `_it.next()` runs after the body returns. */
+    char nm_x[32], nm_it[32], nm_r[32];
+    snprintf(nm_x,  sizeof(nm_x),  "_TrN_x%u",  ctr);
+    snprintf(nm_it, sizeof(nm_it), "_TrN_it%u", ctr);
+    snprintf(nm_r,  sizeof(nm_r),  "_TrN_r%u",  ctr);
+
+    rp_string_puts(out, "var ");
+    rp_string_puts(out, nm_x);
     rp_string_puts(out, " = ");
     rp_string_putsn(out, src + rs, re - rs);
-    rp_string_puts(out, "; ");
+    rp_string_appendf(out,
+        ", %s = (typeof Symbol!=='undefined'&&%s!=null&&typeof %s[Symbol.iterator]==='function')"
+        "?%s[Symbol.iterator]():null, %s = [], %s; ",
+        nm_it, nm_x, nm_x, nm_x, nm_pairs, nm_r);
+
+    /* Lazy loop header: advance iterator (or check array length) BEFORE
+       the body runs, then dispatch _loopN.call(this).  Break out when
+       the iterator signals done. */
+    rp_string_puts(out, "for (var ");
     rp_string_puts(out, nm_i);
-    rp_string_puts(out, " < ");
-    rp_string_puts(out, nm_pairs);
-    rp_string_puts(out, ".length; ");
+    rp_string_puts(out, " = 0; ; ");
     rp_string_puts(out, nm_i);
     rp_string_puts(out, "++) { ");
+    rp_string_appendf(out,
+        "if (%s) { %s = %s.next(); if (%s.done) break; %s[%s] = %s.value; } "
+        "else { if (%s >= %s.length) break; %s[%s] = %s[%s]; } ",
+        nm_it, nm_r, nm_it, nm_r, nm_pairs, nm_i, nm_r,
+        nm_i, nm_x, nm_pairs, nm_i, nm_x, nm_i);
     if (use_sentinels) {
         /* Capture the wrap's return value and dispatch.  `.call(this)`
            still propagates `this` for class-method bodies. */

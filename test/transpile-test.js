@@ -1623,6 +1623,287 @@ testFeature("NDE.1 - async if/else: bare statement in else (no block)", function
     return p && typeof p.then === "function";
 });
 
+/* NDE.3 (2026-05-23): sibling-block `const SAME_NAME = …` inside an
+   async function with `await` in at least one branch produced
+   `var X, X, …;` plus an extra `}` in the transpiled output (the
+   block-scope alpha-rename fired but its inner edits shifted bytes
+   inside the async-wholesale-replace's range, leaving the original
+   closing `}` outside the removed range).  Fix: gate
+   `rewrite_block_scope_rename` on non-async/non-generator functions;
+   the wholesale async rewriter handles body emission and the hoist's
+   _bs_name_already_in dedup folds same-named hoists into a single
+   var.  Surfaced running the WebCryptoAPI WPT suite, ~38 of 120
+   tests blocked by the `successes.js` / `failures.js` shape. */
+testFeature("NDE.3 - sibling const + await in async (non-destructure)", function() {
+    async function _nde3(p) {
+        if (p) {
+            const v = "then-branch";
+            return v;
+        } else {
+            const v = "else-branch";
+            const x = await Promise.resolve(v);
+            return x;
+        }
+    }
+    var ret = _nde3(true);
+    return ret && typeof ret.then === "function";
+});
+
+testFeature("NDE.3 - sibling const + await + destructure in async", function() {
+    async function _nde3b() {
+        if (false) {
+            const arr = [1];
+            return arr;
+        } else {
+            const arr = [2];
+            const [a, b] = await Promise.all(arr);
+            return a;
+        }
+    }
+    var p = _nde3b();
+    return p && typeof p.then === "function";
+});
+
+testFeature("NDE.3 - sibling const inside .then(async function () {…})", function() {
+    /* Exact shape from WPT WebCryptoAPI/generateKey: const-sibling
+       inside the async callback passed to .then(). */
+    function maker() {
+        return Promise.resolve(0).then(async function (r) {
+            if (r === 0) {
+                const arr = [1];
+                return arr;
+            } else {
+                const arr = [2];
+                const v = await Promise.resolve(arr);
+                return v;
+            }
+        });
+    }
+    var p = maker();
+    return p && typeof p.then === "function";
+});
+
+/* NDE.4 (2026-05-23): when transpiled output fails to parse, the
+   resulting SyntaxError.message could be the entire ~12 KB
+   _TrN_Sp.load() preamble plus the user source with a `^` at the
+   parse position.  Fix: Duktape.errCreate hook installed in
+   register.c trims the message — strips the boilerplate prefix and
+   clips to ±300 chars around `^`.  The hook fires on every Error
+   creation but only modifies the message when the marker
+   `_TrN_Sp.load();` is present (so unrelated errors pass through). */
+testFeature("NDE.4 - errCreate trim leaves non-transpile errors alone", function() {
+    var caught = null;
+    try { throw new Error("ordinary message, no marker here"); }
+    catch (e) { caught = e; }
+    return caught && caught.message === "ordinary message, no marker here";
+});
+
+testFeature("NDE.4 - errCreate trims long transpile-output messages", function() {
+    /* Build a long synthetic message containing the marker.  The
+       hook should strip everything before `_TrN_Sp.load();` and
+       clip to a window around `^`. */
+    var pre = ("if(!global._TrN_Sp){global._TrN_Sp={};};".repeat(40)) + "_TrN_Sp.load();\n";
+    var rest = "after_marker_content_that_should_be_preserved ".repeat(8) + "^\n";
+    rest += "tail content after caret ".repeat(8);
+    var raw = pre + rest;
+    var caught = null;
+    try { throw new Error(raw); }
+    catch (e) { caught = e; }
+    return caught
+        && caught.message.length < raw.length / 2
+        && caught.message.indexOf("SyntaxError in transpiled output") === 0
+        && caught.message.indexOf("after_marker_content") !== -1;
+});
+
+/* NDE.5 (2026-05-23): inside an async function body, the regenerator
+   pass strips the var/let/const keyword from a destructure declaration
+   and emits the destructuring-assignment bare: `{key} = expr;`.  A `{`
+   at statement position parses as a block, not an object pattern, so
+   the result is a parse error.  Fix: in
+   `_emit_var_decl_as_assignments` (transpiler.c), when the
+   declarator's name is an object_pattern, wrap the assignment in
+   parens: `({key} = expr);`.  Array-pattern targets don't need
+   wrapping (`[a,b] = expr` is unambiguous).  Surfaced running the
+   WebCryptoAPI WPT serialization tests (~19 of 120 files used
+   `const {key} = structuredClone(...)`). */
+/* NDE.5 was a parse error — the file simply CONTAINING these async
+   functions exercises the regression.  If the transpile regresses,
+   this file fails to load and every test fails.  The testFeature
+   entries below also validate each function compiles to a callable
+   that returns a Promise (synchronous shape check). */
+testFeature("NDE.5 - async shorthand const destructure compiles", function() {
+    async function _nde5(){ const {key} = {key: 'k'}; return key; }
+    var p = _nde5();
+    return p && typeof p.then === "function";
+});
+
+testFeature("NDE.5 - async shorthand let destructure compiles", function() {
+    async function _nde5(){ let {key} = {key: 'L'}; return key; }
+    var p = _nde5();
+    return p && typeof p.then === "function";
+});
+
+testFeature("NDE.5 - async shorthand var destructure compiles", function() {
+    async function _nde5(){ var {key} = {key: 'V'}; return key; }
+    var p = _nde5();
+    return p && typeof p.then === "function";
+});
+
+testFeature("NDE.5 - async multi-key shorthand destructure compiles", function() {
+    async function _nde5(){ const {a, b} = {a: 'A', b: 'B'}; return a + b; }
+    var p = _nde5();
+    return p && typeof p.then === "function";
+});
+
+testFeature("NDE.5 - async arrow shorthand destructure compiles", function() {
+    var f = async t => { const {x} = {x: t}; return x; };
+    var p = f('ok');
+    return p && typeof p.then === "function";
+});
+
+testFeature("NDE.5 - explicit rename `{key: k1}` still works", function() {
+    /* This shape worked pre-fix; regression-guard. */
+    async function _nde5(){ const {key: k1} = {key: 'kept'}; return k1; }
+    var p = _nde5();
+    return p && typeof p.then === "function";
+});
+
+/* NDE.6 (2026-05-23): `else if` with `await` in the else-if body
+   hoisted the await above the if-dispatch, so it fired
+   unconditionally — for `if (a) {} else if (b) { await X } else {}`,
+   the `await X` ran even when `b` was false.  Surfaced ~1394 false
+   failures (~15%) in the WPT WebCryptoAPI generateKey/successes
+   suite with the message `Promise.all accepts an array` (because
+   the hoisted `await Promise.all(promises)` saw `promises`
+   undefined on entry to the else arm).
+
+   Root cause: the if-statement structural lowering at
+   `transpiler.c:7233` dispatched the else branch through
+   `_emit_yield_body` only when it was a `statement_block`;
+   otherwise it fell through to `_emit_stmt_yield_lower`, which
+   extracts awaits to expression scope.  When the else branch was
+   itself an `if_statement` (the `else if` shape), that fallback
+   was wrong.
+
+   Fix: extracted the if-lowering into `_emit_if_with_yield` and
+   made it recurse when a branch is itself an `if_statement` with
+   yields.  Both then-branch and else-branch handlers now dispatch:
+   `statement_block` → `_emit_yield_body`, nested-if-with-yield →
+   recurse via `_emit_if_with_yield`, anything else →
+   `_emit_stmt_yield_lower`. */
+testFeature("NDE.6 - else-if with await runs only when condition matches", function() {
+    async function _nde6(x) {
+        if (x === 1) {
+            return 'one';
+        } else if (x === 2) {
+            const promises = [Promise.resolve(10), Promise.resolve(20)];
+            const [a, b] = await Promise.all(promises);
+            return 'two:' + (a + b);
+        } else {
+            return 'else';
+        }
+    }
+    /* Synchronous shape check: _nde6(3) must NOT throw when called.
+       Pre-fix it threw `Promise.all accepts an array` because the
+       hoisted await Promise.all(promises) fired with promises
+       undefined.  Post-fix, _nde6(3) returns a Promise that
+       resolves to 'else' without ever evaluating the else-if's
+       await. */
+    var p;
+    try { p = _nde6(3); } catch (e) { return false; }
+    return p && typeof p.then === "function";
+});
+
+testFeature("NDE.6 - nested else-if chains compile", function() {
+    /* Three-deep else-if chain with awaits in different positions. */
+    async function _nde6b(x) {
+        if (x === 1) {
+            await Promise.resolve(1);
+            return 'one';
+        } else if (x === 2) {
+            await Promise.resolve(2);
+            return 'two';
+        } else if (x === 3) {
+            await Promise.resolve(3);
+            return 'three';
+        } else {
+            return 'else';
+        }
+    }
+    var p = _nde6b(1);
+    return p && typeof p.then === "function";
+});
+
+testFeature("NDE.6 - else-if branch with bare statement (no block)", function() {
+    /* The else-if body without braces is rare but legal — single
+       statement.  Pre-fix the fallback path was used regardless. */
+    async function _nde6c(x) {
+        if (x === 1) return 'one';
+        else if (x === 2) return await Promise.resolve('two');
+        else return 'else';
+    }
+    var p = _nde6c(3);
+    return p && typeof p.then === "function";
+});
+
+/* NDE.7 (2026-05-23): destructuring default values dropped — `{a, b,
+   c = 99}` where the source lacks `c` produced `c === undefined`
+   instead of `c === 99`.  Was reported against WPT WebCryptoAPI's
+   raw_format_aliases (~10 fails).  By the time we got to checking
+   it, the bug was no longer reproducible — the assignment_pattern /
+   object_assignment_pattern handling in the destructure lowering
+   (transpiler.c ~line 1396, emitting `(src.key !== undefined ?
+   src.key : default)`) already does the right thing, presumably
+   landed as a side effect of one of the other destructure fixes
+   (NDE.3 / NDE.5).  Tests below lock the surface in so regressions
+   would be loud. */
+testFeature("NDE.7 - object destructure default fires on missing prop", function() {
+    var {a, b, c = 99} = {a: 1, b: 2};
+    return a === 1 && b === 2 && c === 99;
+});
+
+testFeature("NDE.7 - object destructure default skipped on present prop", function() {
+    var {a, b, c = 99} = {a: 1, b: 2, c: 7};
+    return a === 1 && b === 2 && c === 7;
+});
+
+testFeature("NDE.7 - explicit false honored, doesn't fall through to default", function() {
+    var {extractable = true} = {extractable: false};
+    return extractable === false;
+});
+
+testFeature("NDE.7 - array destructure default", function() {
+    var [a = 10, b = 20] = [1];
+    return a === 1 && b === 20;
+});
+
+testFeature("NDE.7 - for-of with const destructure default", function() {
+    var items = [{a:1, b:2}, {a:1, b:2, c:7}];
+    var out = [];
+    for (const {a, b, c = 99} of items) out.push(c);
+    return out.length === 2 && out[0] === 99 && out[1] === 7;
+});
+
+testFeature("NDE.7 - function-param destructure default", function() {
+    function _nde7p({x = 1, y = 2}) { return x + y; }
+    var a = _nde7p({}),         eA = (a === 3);
+    var b = _nde7p({x: 100}),   eB = (b === 102);
+    var c = _nde7p({x: 10, y: 0}), eC = (c === 10);
+    if (!(eA && eB && eC))
+        throw new Error("a=" + a + " b=" + b + " c=" + c);
+    return true;
+});
+
+testFeature("NDE.7 - default expression references earlier name", function() {
+    var {p = 10, q = p * 2} = {};
+    return p === 10 && q === 20;
+});
+
+testFeature("NDE.7 - rename + default `{key: rx = 5}` works", function() {
+    var {missing: rx = 5} = {};
+    return rx === 5;
+});
+
 testFeature("generator function/iterator protocol",function(){
     let fibonacci = {
         *[Symbol.iterator]() {

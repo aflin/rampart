@@ -1844,6 +1844,25 @@ static char * rp_to_json_safe(duk_context *ctx, duk_idx_t idx, char *r, char *pa
 
 #define RP_SJ_MAX_PATH 4096
 
+/* Safe-property-get for the enumeration loops below.  Some properties on
+ * built-in objects are getters that throw if invoked without the right
+ * `this` (e.g. `Map.prototype.size` requires a Map internal slot; reading
+ * it off Map.prototype directly raises "object required, found undefined").
+ * Before this wrapper, hitting any such property aborted the whole
+ * safe-stringify with that error.  duk_safe_call lets the throw turn into
+ * a marker on the stack instead.
+ *
+ * Stack on entry: [..., target, key]   (both consumed)
+ * Stack on success exit: [..., value]
+ * On throw, duk_safe_call leaves [..., error]; caller pops + replaces.
+ */
+static duk_ret_t _safe_get_prop(duk_context *ctx, void *udata) {
+    (void)udata;
+    duk_get_prop(ctx, -2);   /* fires getter if any */
+    duk_remove(ctx, -2);     /* drop target */
+    return 1;
+}
+
 static void store_ref(duk_context *ctx, duk_idx_t idx, char *path)
 {
     void *p;
@@ -1899,7 +1918,14 @@ static char *rp_json_array(duk_context *ctx, duk_idx_t idx, char *r, char *path,
 
         snprintf(&path[plen], pleft, "[%d]", (int)i );
 
-        duk_get_prop_index(ctx, idx, i);
+        /* Safe property fetch — survives throwing index getters. */
+        duk_dup(ctx, idx);
+        duk_push_uint(ctx, i);
+        if (duk_safe_call(ctx, _safe_get_prop, NULL, 2, 1) != 0) {
+            duk_pop(ctx);  /* drop error */
+            duk_push_string(ctx, "null");
+            duk_json_decode(ctx, -1);  /* leaves null on stack */
+        }
         r= rp_to_json_safe(ctx, -1, r, path, dohidden);
         duk_pop(ctx);
         i++;
@@ -1972,22 +1998,31 @@ static char *rp_json_object(duk_context *ctx, duk_idx_t idx, char *r, char *path
         }
         duk_enum(ctx, idx, DUK_ENUM_NO_PROXY_BEHAVIOR|DUK_ENUM_INCLUDE_HIDDEN|DUK_ENUM_INCLUDE_SYMBOLS);
 
-        while(duk_next(ctx, -1, 1))
+        /* key-only enum so throwing getters don't abort us; fetch value
+           via _safe_get_prop below. */
+        while(duk_next(ctx, -1, 0))
         {
-            k=duk_get_string(ctx, -2);
+            k=duk_get_string(ctx, -1);
             if(*k=='\xff')
             {
                 if(dohidden)
                     snprintf(key, keylen, ", \"DUK_HIDDEN_SYMBOL(%s)\": ", k+1 );
                 else
                 {
-                    duk_pop_2(ctx);
+                    duk_pop(ctx);   /* drop key */
                     continue;
                 }
             }
             else
                 snprintf(key, keylen, ", \"%s\": ", k );
             r= strcatdup(r, key);
+            /* Fetch value safely. */
+            duk_dup(ctx, idx);     /* target */
+            duk_dup(ctx, -2);      /* dup key */
+            if (duk_safe_call(ctx, _safe_get_prop, NULL, 2, 1) != 0) {
+                duk_pop(ctx);  /* drop error */
+                duk_push_string(ctx, "{\"_threw\": true}");
+            }
             /* Recursively safe-stringify the value.  This produces:
                  - escaped JSON literals for strings (incl. newlines/
                    quotes/backslashes — Module.wrap's wrapper template
@@ -2010,9 +2045,10 @@ static char *rp_json_object(duk_context *ctx, duk_idx_t idx, char *r, char *path
     {
         r = strcatdup(r, "{");
         duk_enum(ctx, idx, DUK_ENUM_NO_PROXY_BEHAVIOR);
-        while (duk_next(ctx, -1, 1))
+        /* key-only enum + safe value fetch — see _safe_get_prop docstring. */
+        while (duk_next(ctx, -1, 0))
         {
-            k=duk_to_string(ctx, -2);
+            k=duk_to_string(ctx, -1);
             snprintf(key, keylen, "\"%s\":", k );
             if(i)
                 r = strcatdup(r, ", ");
@@ -2021,8 +2057,14 @@ static char *rp_json_object(duk_context *ctx, duk_idx_t idx, char *r, char *path
 
             snprintf(&path[plen], pleft, ".%s", k );
 
+            duk_dup(ctx, idx);     /* target */
+            duk_dup(ctx, -2);      /* dup key */
+            if (duk_safe_call(ctx, _safe_get_prop, NULL, 2, 1) != 0) {
+                duk_pop(ctx);  /* drop error */
+                duk_push_string(ctx, "{\"_threw\": true}");
+            }
             r= rp_to_json_safe(ctx, -1, r, path, dohidden);
-            duk_pop_2(ctx);
+            duk_pop_2(ctx);  /* key + value */
         }
         duk_pop(ctx); //enum
         r= strcatdup(r, "}");
@@ -2549,6 +2591,30 @@ duk_ret_t duk_process_set_max_mem(duk_context *ctx)
 duk_ret_t duk_process_exit(duk_context *ctx)
 {
     int exitval=duk_get_int_default(ctx,0,0);
+
+    /* If we're inside the main event_base_loop (called from a JS callback
+       dispatched by setInterval/setTimeout/server/ws/etc), running
+       duk_rp_exit's wait-for-children block here would re-enter
+       event_base_loop on the same base — libevent prints "reentrant
+       invocation" and the call no-ops.  Defer: set the pending flag and
+       loopbreak.  The current JS callback runs to its natural end; when
+       it returns the dispatcher returns up through event_base_loop, which
+       returns due to loopbreak; main()'s do-while sees rp_exit_pending,
+       breaks, and calls duk_rp_exit once outside any event loop.
+
+       Tradeoff: code written as `process.exit(0); foo();` will run foo()
+       in the calling frame before the dispatcher returns.  We don't
+       throw to abort the frame because that's fragile — JS try/catch in
+       WHATWG glue (reportError) swallows it, and unprotected duk_call
+       sites in dispatchers let it reach duktape's fatal handler. */
+    if(rp_in_main_loop)
+    {
+        rp_request_exit(exitval);
+        return 0;
+    }
+
+    /* Top-level script, REPL .exit, error paths — not nested inside
+       event_base_loop, so the original synchronous teardown is safe. */
     duk_rp_exit(ctx, exitval);
     return 0;
 }

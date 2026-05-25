@@ -38,6 +38,11 @@ static const EVP_MD *rc_md_from_name(const char *name);
 #include <stdint.h>
 #include "rampart.h"
 
+/* Forward decl — used by kmac/cshake before the EC section where
+ * it is defined. */
+static int rc_get_key_any(duk_context *ctx, duk_idx_t pos_idx,
+                          const void **out, duk_size_t *out_len);
+
 
 
 #define OPENSSL_ERR_STRING_MAX_SIZE 1024
@@ -397,6 +402,7 @@ static void rpcrypt(
   duk_context *ctx,
   unsigned char *key,
   unsigned char *iv,
+  duk_size_t iv_len,
   const char *cipher_name,
   void *in_buffer,
   duk_size_t in_len,
@@ -425,8 +431,10 @@ static void rpcrypt(
         RP_THROW(ctx, "Cipher %s not found", cipher_name);
 
     mode = EVP_CIPHER_mode(cipher);
-    is_aead = (mode == EVP_CIPH_GCM_MODE || mode == EVP_CIPH_CCM_MODE ||
-               mode == EVP_CIPH_OCB_MODE);
+    /* Detect AEAD via the cipher's flag — covers GCM, CCM, OCB,
+     * ChaCha20-Poly1305, and any future AEAD ciphers OpenSSL adds
+     * (e.g. AES-SIV).  Avoids hard-coding a mode list. */
+    is_aead = (EVP_CIPHER_get_flags(cipher) & EVP_CIPH_FLAG_AEAD_CIPHER) != 0;
     is_wrap = (mode == EVP_CIPH_WRAP_MODE);
 
     /* Sanity: only AEAD ciphers accept aad/tag_len. */
@@ -466,10 +474,43 @@ static void rpcrypt(
     if (is_wrap)
         EVP_CIPHER_CTX_set_flags(cipher_ctx, EVP_CIPHER_CTX_FLAG_WRAP_ALLOW);
 
+    /* For AEAD with a non-default IV length, OpenSSL needs the IVLEN
+     * set via EVP_CTRL_AEAD_SET_IVLEN AFTER the cipher is bound but
+     * BEFORE key+iv are bound — otherwise it silently uses the
+     * cipher's default IV length (12 for GCM/CCM, 12 for OCB) and
+     * truncates/ignores the rest of the user's IV.  Split-init when
+     * the lengths disagree. */
+    int needs_ivlen_set = 0;
+    if (is_aead && iv && iv_len > 0)
+    {
+        int default_iv = EVP_CIPHER_iv_length(cipher);
+        if ((int)iv_len != default_iv)
+            needs_ivlen_set = 1;
+    }
+
     if (decrypt)
     {
-        if (!EVP_DecryptInit_ex(cipher_ctx, cipher, NULL, key,
-                                is_wrap ? NULL : iv))
+        if (needs_ivlen_set)
+        {
+            if (!EVP_DecryptInit_ex(cipher_ctx, cipher, NULL, NULL, NULL))
+            {
+                EVP_CIPHER_CTX_free(cipher_ctx);
+                DUK_OPENSSL_ERROR(ctx);
+            }
+            if (!EVP_CIPHER_CTX_ctrl(cipher_ctx, EVP_CTRL_AEAD_SET_IVLEN,
+                                     (int)iv_len, NULL))
+            {
+                EVP_CIPHER_CTX_free(cipher_ctx);
+                DUK_OPENSSL_ERROR(ctx);
+            }
+            if (!EVP_DecryptInit_ex(cipher_ctx, NULL, NULL, key, iv))
+            {
+                EVP_CIPHER_CTX_free(cipher_ctx);
+                DUK_OPENSSL_ERROR(ctx);
+            }
+        }
+        else if (!EVP_DecryptInit_ex(cipher_ctx, cipher, NULL, key,
+                                     is_wrap ? NULL : iv))
         {
             EVP_CIPHER_CTX_free(cipher_ctx);
             DUK_OPENSSL_ERROR(ctx);
@@ -516,8 +557,27 @@ static void rpcrypt(
     }
     else
     {
-        if (!EVP_EncryptInit_ex(cipher_ctx, cipher, NULL, key,
-                                is_wrap ? NULL : iv))
+        if (needs_ivlen_set)
+        {
+            if (!EVP_EncryptInit_ex(cipher_ctx, cipher, NULL, NULL, NULL))
+            {
+                EVP_CIPHER_CTX_free(cipher_ctx);
+                DUK_OPENSSL_ERROR(ctx);
+            }
+            if (!EVP_CIPHER_CTX_ctrl(cipher_ctx, EVP_CTRL_AEAD_SET_IVLEN,
+                                     (int)iv_len, NULL))
+            {
+                EVP_CIPHER_CTX_free(cipher_ctx);
+                DUK_OPENSSL_ERROR(ctx);
+            }
+            if (!EVP_EncryptInit_ex(cipher_ctx, NULL, NULL, key, iv))
+            {
+                EVP_CIPHER_CTX_free(cipher_ctx);
+                DUK_OPENSSL_ERROR(ctx);
+            }
+        }
+        else if (!EVP_EncryptInit_ex(cipher_ctx, cipher, NULL, key,
+                                     is_wrap ? NULL : iv))
         {
             EVP_CIPHER_CTX_free(cipher_ctx);
             DUK_OPENSSL_ERROR(ctx);
@@ -789,7 +849,7 @@ duk_ret_t duk_rp_pass_to_keyiv(duk_context *ctx)
 
 static duk_ret_t duk_rp_crypt(duk_context *ctx, int decrypt)
 {
-    duk_size_t in_len=0, aad_len=0;
+    duk_size_t in_len=0, aad_len=0, iv_len=0;
     void *in_buffer=NULL;
     const void *aad=NULL;
     const char *cipher_name = "aes-256-cbc";
@@ -815,13 +875,14 @@ static duk_ret_t duk_rp_crypt(duk_context *ctx, int decrypt)
         duk_pop(ctx);
 
         /* Detect AEAD / WRAP mode early so we can adapt the iv check
-         * and pick a default tag length. */
+         * and pick a default tag length.  AEAD is detected via the
+         * cipher's flag — covers GCM/CCM/OCB/ChaCha20-Poly1305 plus
+         * any future AEAD ciphers OpenSSL adds. */
         {
             const EVP_CIPHER *_c = EVP_get_cipherbyname(cipher_name);
             if (_c) {
                 int _m = EVP_CIPHER_mode(_c);
-                is_aead = (_m == EVP_CIPH_GCM_MODE || _m == EVP_CIPH_CCM_MODE ||
-                           _m == EVP_CIPH_OCB_MODE);
+                is_aead = (EVP_CIPHER_get_flags(_c) & EVP_CIPH_FLAG_AEAD_CIPHER) != 0;
                 is_wrap = (_m == EVP_CIPH_WRAP_MODE);
             }
         }
@@ -930,16 +991,19 @@ static duk_ret_t duk_rp_crypt(duk_context *ctx, int decrypt)
                     /* AEAD modes (GCM/CCM/OCB) accept variable-length
                      * nonces; OpenSSL's default ivlen for GCM is 12.
                      * Don't fight the user's choice — pass whatever
-                     * they gave (must be a buffer). */
+                     * they gave (must be a buffer).  Capture the
+                     * length so rpcrypt can call EVP_CTRL_AEAD_SET_IVLEN
+                     * when it differs from the cipher's default
+                     * (otherwise OpenSSL truncates to 12 bytes). */
                     if (!duk_is_buffer_data(ctx, -1))
                         RP_THROW(ctx, "crypto.[en|de]crypt: option 'iv' must be a buffer (or string in hex)");
-                    iv = (unsigned char *)duk_get_buffer_data(ctx, -1, NULL);
+                    iv = (unsigned char *)duk_get_buffer_data(ctx, -1, &iv_len);
                 }
                 else
                 {
                     if (!duk_is_buffer_data(ctx, -1) || duk_get_length(ctx, -1) != ivlen)
                         RP_THROW(ctx, "crypto.[en|de]crypt: option 'iv' must be a buffer (%d bytes) or a string (%d bytes in hex)", ivlen, ivlen);
-                    iv = (unsigned char *)duk_get_buffer_data(ctx, -1, NULL);
+                    iv = (unsigned char *)duk_get_buffer_data(ctx, -1, &iv_len);
                 }
             }
             duk_pop(ctx);
@@ -1004,7 +1068,7 @@ static duk_ret_t duk_rp_crypt(duk_context *ctx, int decrypt)
     if (!iv && !is_wrap)
         RP_THROW(ctx, "en/decrypt: error- 'iv' is required for cipher '%s' (only AES-KW wrap mode omits it)", cipher_name);
 
-    rpcrypt ( ctx, key, iv, cipher_name, in_buffer, in_len, salt_p, decrypt,
+    rpcrypt ( ctx, key, iv, iv_len, cipher_name, in_buffer, in_len, salt_p, decrypt,
               aad, aad_len, tag_len);
 
     return 1;
@@ -4941,6 +5005,194 @@ static duk_ret_t duk_hkdf(duk_context *ctx)
     return 1;
 }
 
+/* --- KMAC (NIST SP 800-185) ---
+ *
+ *   kmac(key, data [, variant] [, opts])
+ *     variant: "kmac-128" (default) or "kmac-256"
+ *     opts:    { length, customization, returnType }
+ *
+ * Output length defaults to 32 bytes for KMAC-128 and 64 bytes for
+ * KMAC-256 (matching the natural security level).  Customization
+ * string is empty by default.
+ */
+static duk_ret_t duk_kmac(duk_context *ctx)
+{
+    const void *key = NULL, *data = NULL, *custom = NULL;
+    duk_size_t keylen = 0, datalen = 0, customlen = 0;
+    const char *variant = "kmac-128";
+    int length = -1;       /* -1 = use default for the variant */
+    EVP_MAC *mac = NULL;
+    EVP_MAC_CTX *mctx = NULL;
+    OSSL_PARAM params[3];
+    int nparams = 0;
+    size_t outlen;
+    int opt_idx = -1;
+
+    if (!rc_get_key_any(ctx, 0, &key, &keylen))
+        RP_THROW(ctx, "kmac: first argument (key) must be string or buffer");
+    if (!rc_get_key_any(ctx, 1, &data, &datalen))
+        RP_THROW(ctx, "kmac: second argument (data) must be string or buffer");
+
+    /* 3rd arg: variant string OR opts object. */
+    if (duk_is_string(ctx, 2))
+        variant = duk_get_string(ctx, 2);
+    else if (duk_is_object(ctx, 2) && !duk_is_buffer_data(ctx, 2) &&
+             !duk_is_array(ctx, 2) && !duk_is_function(ctx, 2))
+        opt_idx = 2;
+    else if (!duk_is_undefined(ctx, 2) && !duk_is_null(ctx, 2))
+        RP_THROW(ctx, "kmac: third argument must be a variant string or options object");
+
+    /* 4th arg: opts object (if 3rd was variant). */
+    if (opt_idx < 0 && duk_is_object(ctx, 3) && !duk_is_buffer_data(ctx, 3) &&
+        !duk_is_array(ctx, 3) && !duk_is_function(ctx, 3))
+        opt_idx = 3;
+
+    if (opt_idx >= 0)
+    {
+        if (duk_get_prop_string(ctx, opt_idx, "length"))
+            length = (int)REQUIRE_NUMBER(ctx, -1, "kmac: 'length' must be a Number");
+        duk_pop(ctx);
+        if (duk_get_prop_string(ctx, opt_idx, "customization"))
+        {
+            if (duk_is_string(ctx, -1))      custom = duk_get_lstring(ctx, -1, &customlen);
+            else if (duk_is_buffer_data(ctx, -1)) custom = duk_get_buffer_data(ctx, -1, &customlen);
+            else if (!duk_is_null(ctx, -1) && !duk_is_undefined(ctx, -1))
+                RP_THROW(ctx, "kmac: 'customization' must be a string or buffer");
+        }
+        duk_pop(ctx);
+    }
+
+    /* Map variant → KMAC algorithm name + default output length. */
+    const char *algo;
+    int default_len;
+    if (!strcmp(variant, "kmac-128") || !strcmp(variant, "KMAC-128") ||
+        !strcmp(variant, "kmac128")  || !strcmp(variant, "KMAC128"))
+        { algo = "KMAC-128"; default_len = 32; }
+    else if (!strcmp(variant, "kmac-256") || !strcmp(variant, "KMAC-256") ||
+             !strcmp(variant, "kmac256")  || !strcmp(variant, "KMAC256"))
+        { algo = "KMAC-256"; default_len = 64; }
+    else
+        RP_THROW(ctx, "kmac: unknown variant '%s' (use 'kmac-128' or 'kmac-256')", variant);
+
+    if (length < 0) length = default_len;
+    if (length < 1) RP_THROW(ctx, "kmac: 'length' must be >= 1");
+
+    mac = EVP_MAC_fetch(NULL, algo, NULL);
+    if (!mac) RP_THROW(ctx, "kmac: EVP_MAC_fetch(%s) failed", algo);
+    mctx = EVP_MAC_CTX_new(mac);
+    EVP_MAC_free(mac);
+    if (!mctx) RP_THROW(ctx, "kmac: EVP_MAC_CTX_new failed");
+
+    if (custom && customlen)
+        params[nparams++] = OSSL_PARAM_construct_octet_string(
+            OSSL_MAC_PARAM_CUSTOM, (void *)custom, customlen);
+    {
+        size_t lenz = (size_t)length;
+        params[nparams++] = OSSL_PARAM_construct_size_t(
+            OSSL_MAC_PARAM_SIZE, &lenz);
+        params[nparams] = OSSL_PARAM_construct_end();
+
+        if (EVP_MAC_init(mctx, (const unsigned char *)key, (size_t)keylen, params) <= 0)
+            { EVP_MAC_CTX_free(mctx); DUK_OPENSSL_ERROR(ctx); }
+        if (EVP_MAC_update(mctx, (const unsigned char *)data, (size_t)datalen) <= 0)
+            { EVP_MAC_CTX_free(mctx); DUK_OPENSSL_ERROR(ctx); }
+
+        unsigned char *out = (unsigned char *)duk_push_fixed_buffer(ctx, (duk_size_t)length);
+        outlen = (size_t)length;
+        if (EVP_MAC_final(mctx, out, &outlen, (size_t)length) <= 0)
+            { EVP_MAC_CTX_free(mctx); DUK_OPENSSL_ERROR(ctx); }
+    }
+    EVP_MAC_CTX_free(mctx);
+
+    if (opt_idx >= 0) rc_finalize_buffer_buf_default(ctx, opt_idx);
+    return 1;
+}
+
+/* --- cSHAKE (NIST SP 800-185) ---
+ *
+ *   cshake128(data [, opts])
+ *   cshake256(data [, opts])
+ *     opts: { length, customization, functionName, returnType }
+ *
+ * Default length: 16 bytes for cSHAKE-128, 32 bytes for cSHAKE-256
+ * (matching shake128 / shake256 defaults).  With empty N and S,
+ * cSHAKE-X is identical to SHAKE-X.  In OpenSSL, cSHAKE is exposed
+ * via the regular EVP_MD interface with an OSSL_DIGEST_PARAM_*
+ * parameter for the function-name N and customization S strings.
+ */
+static duk_ret_t rc_cshake(duk_context *ctx, int bits)
+{
+    const void *data = NULL, *custom = NULL, *fname = NULL;
+    duk_size_t datalen = 0, customlen = 0, fnamelen = 0;
+    int length = (bits == 128) ? 16 : 32;
+    EVP_MD *md = NULL;
+    EVP_MD_CTX *mctx = NULL;
+    OSSL_PARAM params[3];
+    int nparams = 0;
+    int opt_idx = -1;
+
+    if (!rc_get_key_any(ctx, 0, &data, &datalen))
+        RP_THROW(ctx, "cshake: first argument (data) must be string or buffer");
+
+    if (duk_is_object(ctx, 1) && !duk_is_buffer_data(ctx, 1) &&
+        !duk_is_array(ctx, 1) && !duk_is_function(ctx, 1))
+    {
+        opt_idx = 1;
+        if (duk_get_prop_string(ctx, opt_idx, "length"))
+            length = (int)REQUIRE_NUMBER(ctx, -1, "cshake: 'length' must be a Number");
+        duk_pop(ctx);
+        if (duk_get_prop_string(ctx, opt_idx, "customization"))
+        {
+            if (duk_is_string(ctx, -1))      custom = duk_get_lstring(ctx, -1, &customlen);
+            else if (duk_is_buffer_data(ctx, -1)) custom = duk_get_buffer_data(ctx, -1, &customlen);
+            else if (!duk_is_null(ctx, -1) && !duk_is_undefined(ctx, -1))
+                RP_THROW(ctx, "cshake: 'customization' must be a string or buffer");
+        }
+        duk_pop(ctx);
+        if (duk_get_prop_string(ctx, opt_idx, "functionName"))
+        {
+            if (duk_is_string(ctx, -1))      fname = duk_get_lstring(ctx, -1, &fnamelen);
+            else if (duk_is_buffer_data(ctx, -1)) fname = duk_get_buffer_data(ctx, -1, &fnamelen);
+            else if (!duk_is_null(ctx, -1) && !duk_is_undefined(ctx, -1))
+                RP_THROW(ctx, "cshake: 'functionName' must be a string or buffer");
+        }
+        duk_pop(ctx);
+    }
+    if (length < 1) RP_THROW(ctx, "cshake: 'length' must be >= 1");
+
+    md = EVP_MD_fetch(NULL, bits == 128 ? "CSHAKE-128" : "CSHAKE-256", NULL);
+    if (!md) RP_THROW(ctx, "cshake: EVP_MD_fetch(CSHAKE-%d) failed", bits);
+    mctx = EVP_MD_CTX_new();
+    if (!mctx) { EVP_MD_free(md); RP_THROW(ctx, "cshake: EVP_MD_CTX_new failed"); }
+
+    /* cSHAKE customization (S) and function-name (N) are UTF-8
+     * strings in OpenSSL's params interface. */
+    if (custom && customlen)
+        params[nparams++] = OSSL_PARAM_construct_utf8_string(
+            OSSL_DIGEST_PARAM_CUSTOMIZATION, (char *)custom, customlen);
+    if (fname && fnamelen)
+        params[nparams++] = OSSL_PARAM_construct_utf8_string(
+            OSSL_DIGEST_PARAM_FUNCTION_NAME, (char *)fname, fnamelen);
+    params[nparams] = OSSL_PARAM_construct_end();
+
+    if (EVP_DigestInit_ex2(mctx, md, params) <= 0)
+        { EVP_MD_CTX_free(mctx); EVP_MD_free(md); DUK_OPENSSL_ERROR(ctx); }
+    if (EVP_DigestUpdate(mctx, data, (size_t)datalen) <= 0)
+        { EVP_MD_CTX_free(mctx); EVP_MD_free(md); DUK_OPENSSL_ERROR(ctx); }
+
+    unsigned char *out = (unsigned char *)duk_push_fixed_buffer(ctx, (duk_size_t)length);
+    if (EVP_DigestFinalXOF(mctx, out, (size_t)length) <= 0)
+        { EVP_MD_CTX_free(mctx); EVP_MD_free(md); DUK_OPENSSL_ERROR(ctx); }
+    EVP_MD_CTX_free(mctx);
+    EVP_MD_free(md);
+
+    if (opt_idx >= 0) rc_finalize_buffer_buf_default(ctx, opt_idx);
+    return 1;
+}
+
+static duk_ret_t duk_cshake128(duk_context *ctx) { return rc_cshake(ctx, 128); }
+static duk_ret_t duk_cshake256(duk_context *ctx) { return rc_cshake(ctx, 256); }
+
 /* --- 2.1 EC family (P-256 / P-384 / P-521) ---
  *
  * Uses EVP_PKEY_* throughout (recommended path in OpenSSL 3.x; the
@@ -6033,13 +6285,13 @@ static duk_ret_t duk_x25519_derive(duk_context *ctx)
             if (duk_is_string(ctx, -1))      priv_bytes = duk_get_lstring(ctx, -1, &priv_len);
             else if (duk_is_buffer_data(ctx, -1)) priv_bytes = duk_get_buffer_data(ctx, -1, &priv_len);
         }
-        if (!priv_bytes) RP_THROW(ctx, "x25519_derive: 'private' is required");
+        if (!priv_bytes) RP_THROW(ctx, "x_derive: 'private' is required");
         if (duk_get_prop_string(ctx, 0, "public"))
         {
             if (duk_is_string(ctx, -1))      pub_bytes = duk_get_lstring(ctx, -1, &pub_len);
             else if (duk_is_buffer_data(ctx, -1)) pub_bytes = duk_get_buffer_data(ctx, -1, &pub_len);
         }
-        if (!pub_bytes) RP_THROW(ctx, "x25519_derive: 'public' is required");
+        if (!pub_bytes) RP_THROW(ctx, "x_derive: 'public' is required");
         if (duk_get_prop_string(ctx, 0, "password"))
             password = REQUIRE_STRING(ctx, -1, "password must be a string");
         duk_pop(ctx);
@@ -6047,17 +6299,17 @@ static duk_ret_t duk_x25519_derive(duk_context *ctx)
     else
     {
         if (!rc_get_key_any(ctx, 0, &priv_bytes, &priv_len))
-            RP_THROW(ctx, "x25519_derive: first argument (private_key) must be string or buffer");
+            RP_THROW(ctx, "x_derive: first argument (private_key) must be string or buffer");
         if (!rc_get_key_any(ctx, 1, &pub_bytes, &pub_len))
-            RP_THROW(ctx, "x25519_derive: second argument (public_key) must be string or buffer");
+            RP_THROW(ctx, "x_derive: second argument (public_key) must be string or buffer");
         if (duk_is_string(ctx, 2)) password = duk_get_string(ctx, 2);
     }
 
     priv = rc_load_priv_pkey_any(priv_bytes, priv_len, password);
-    if (!priv) RP_THROW(ctx, "x25519_derive: failed to parse private key%s",
+    if (!priv) RP_THROW(ctx, "x_derive: failed to parse private key%s",
                        password ? " (wrong password?)" : "");
     pub = rc_load_pub_pkey_any(pub_bytes, pub_len);
-    if (!pub) { EVP_PKEY_free(priv); RP_THROW(ctx, "x25519_derive: failed to parse public key"); }
+    if (!pub) { EVP_PKEY_free(priv); RP_THROW(ctx, "x_derive: failed to parse public key"); }
 
     pctx = EVP_PKEY_CTX_new(priv, NULL);
     if (!pctx) { EVP_PKEY_free(priv); EVP_PKEY_free(pub); DUK_OPENSSL_ERROR(ctx); }
@@ -6103,9 +6355,9 @@ static duk_ret_t duk_ed25519_sign(duk_context *ctx)
     unsigned char *out;
 
     if (!rc_get_key_any(ctx, 0, &data, &datalen))
-        RP_THROW(ctx, "ed25519_sign: first argument (data) must be string or buffer");
+        RP_THROW(ctx, "ed_sign: first argument (data) must be string or buffer");
     if (!rc_get_key_any(ctx, 1, &keybytes, &keylen))
-        RP_THROW(ctx, "ed25519_sign: second argument (private_key) must be string or buffer");
+        RP_THROW(ctx, "ed_sign: second argument (private_key) must be string or buffer");
 
     if (duk_is_string(ctx, 2))
         password = duk_get_string(ctx, 2);
@@ -6113,14 +6365,14 @@ static duk_ret_t duk_ed25519_sign(duk_context *ctx)
              !duk_is_array(ctx, 2) && !duk_is_function(ctx, 2))
     {
         if (duk_get_prop_string(ctx, 2, "password"))
-            password = REQUIRE_STRING(ctx, -1, "ed25519_sign: 'password' must be a string");
+            password = REQUIRE_STRING(ctx, -1, "ed_sign: 'password' must be a string");
         duk_pop(ctx);
     }
     else if (!duk_is_undefined(ctx, 2) && !duk_is_null(ctx, 2))
-        RP_THROW(ctx, "ed25519_sign: third argument must be a password string or options object");
+        RP_THROW(ctx, "ed_sign: third argument must be a password string or options object");
 
     pkey = rc_load_priv_pkey_any(keybytes, keylen, password);
-    if (!pkey) RP_THROW(ctx, "ed25519_sign: failed to parse private key%s",
+    if (!pkey) RP_THROW(ctx, "ed_sign: failed to parse private key%s",
                        password ? " (wrong password?)" : "");
 
     mctx = EVP_MD_CTX_new();
@@ -6149,14 +6401,14 @@ static duk_ret_t duk_ed25519_verify(duk_context *ctx)
     int verify_result = 0;
 
     if (!rc_get_key_any(ctx, 0, &data, &datalen))
-        RP_THROW(ctx, "ed25519_verify: first argument (data) must be string or buffer");
+        RP_THROW(ctx, "ed_verify: first argument (data) must be string or buffer");
     if (!rc_get_key_any(ctx, 1, &keybytes, &keylen))
-        RP_THROW(ctx, "ed25519_verify: second argument (public_key) must be string or buffer");
+        RP_THROW(ctx, "ed_verify: second argument (public_key) must be string or buffer");
     if (!rc_get_key_any(ctx, 2, &sig, &siglen))
-        RP_THROW(ctx, "ed25519_verify: third argument (signature) must be string or buffer");
+        RP_THROW(ctx, "ed_verify: third argument (signature) must be string or buffer");
 
     pkey = rc_load_pub_pkey_any(keybytes, keylen);
-    if (!pkey) RP_THROW(ctx, "ed25519_verify: failed to parse public key");
+    if (!pkey) RP_THROW(ctx, "ed_verify: failed to parse public key");
 
     mctx = EVP_MD_CTX_new();
     if (!mctx) { EVP_PKEY_free(pkey); DUK_OPENSSL_ERROR(ctx); }
@@ -6168,6 +6420,431 @@ static duk_ret_t duk_ed25519_verify(duk_context *ctx)
     EVP_PKEY_free(pkey);
 
     duk_push_boolean(ctx, verify_result == 1);
+    return 1;
+}
+
+/* === X448 / Ed448 ===
+ * Same call shapes as X25519 / Ed25519.  The derive/sign/verify
+ * functions are reused directly (registered under both names) since
+ * they get the algorithm from the key's pkey type at load time.
+ * Only gen_key / import_* / components need new wrappers that pass
+ * EVP_PKEY_X448 / EVP_PKEY_ED448 to the generic helpers. */
+
+static duk_ret_t duk_x448_gen_key(duk_context *ctx)
+    { return rc_25519_gen_key(ctx, EVP_PKEY_X448, "x448_gen_key"); }
+static duk_ret_t duk_x448_import_pub_key(duk_context *ctx)
+    { return rc_25519_import_pub_key(ctx, EVP_PKEY_X448, "x448_import_pub_key"); }
+static duk_ret_t duk_x448_import_priv_key(duk_context *ctx)
+    { return rc_25519_import_priv_key(ctx, EVP_PKEY_X448, "x448_import_priv_key"); }
+static duk_ret_t duk_x448_components(duk_context *ctx)
+    { return rc_25519_components(ctx, "X448", "x448_components"); }
+
+static duk_ret_t duk_ed448_gen_key(duk_context *ctx)
+    { return rc_25519_gen_key(ctx, EVP_PKEY_ED448, "ed448_gen_key"); }
+static duk_ret_t duk_ed448_import_pub_key(duk_context *ctx)
+    { return rc_25519_import_pub_key(ctx, EVP_PKEY_ED448, "ed448_import_pub_key"); }
+static duk_ret_t duk_ed448_import_priv_key(duk_context *ctx)
+    { return rc_25519_import_priv_key(ctx, EVP_PKEY_ED448, "ed448_import_priv_key"); }
+static duk_ret_t duk_ed448_components(duk_context *ctx)
+    { return rc_25519_components(ctx, "Ed448", "ed448_components"); }
+
+/* === ML-DSA (NIST FIPS 204, formerly CRYSTALS-Dilithium) ===
+ *
+ * Three variants: ML-DSA-44, ML-DSA-65, ML-DSA-87 (security strengths
+ * roughly equivalent to AES-128, AES-192, AES-256 respectively).
+ *
+ * Sign/verify shape is identical to Ed25519 — pure signature scheme,
+ * no hash arg; uses one-shot EVP_DigestSign with NULL md.  So the
+ * existing duk_ed25519_sign/verify functions work transparently for
+ * ML-DSA keys; we register them under mldsa_sign/verify names.
+ *
+ * Only gen_key / import / components need ML-DSA-specific wrappers
+ * to translate the user-facing variant name to OpenSSL's algorithm
+ * name and run the right keygen path. */
+
+/* Generate an EVP_PKEY by algorithm name (used by ML-DSA, ML-KEM). */
+static EVP_PKEY *rc_keygen_byname(const char *algo)
+{
+    EVP_PKEY *pkey = NULL;
+    EVP_PKEY_CTX *pctx = EVP_PKEY_CTX_new_from_name(NULL, algo, NULL);
+    if (!pctx) return NULL;
+    if (EVP_PKEY_keygen_init(pctx) <= 0) { EVP_PKEY_CTX_free(pctx); return NULL; }
+    if (EVP_PKEY_keygen(pctx, &pkey) <= 0) pkey = NULL;
+    EVP_PKEY_CTX_free(pctx);
+    return pkey;
+}
+
+/* Translate a user-facing variant string to OpenSSL's algorithm name. */
+static const char *rc_mldsa_name(const char *variant)
+{
+    if (!strcmp(variant, "ml-dsa-44") || !strcmp(variant, "ML-DSA-44") ||
+        !strcmp(variant, "mldsa44")   || !strcmp(variant, "MLDSA44")) return "ML-DSA-44";
+    if (!strcmp(variant, "ml-dsa-65") || !strcmp(variant, "ML-DSA-65") ||
+        !strcmp(variant, "mldsa65")   || !strcmp(variant, "MLDSA65")) return "ML-DSA-65";
+    if (!strcmp(variant, "ml-dsa-87") || !strcmp(variant, "ML-DSA-87") ||
+        !strcmp(variant, "mldsa87")   || !strcmp(variant, "MLDSA87")) return "ML-DSA-87";
+    return NULL;
+}
+
+/* mldsa_gen_key(variant [, password]) → {public, private} PEMs. */
+static duk_ret_t duk_mldsa_gen_key(duk_context *ctx)
+{
+    const char *variant = NULL, *password = NULL, *algo = NULL;
+    EVP_PKEY *pkey = NULL;
+
+    if (duk_is_object(ctx, 0) && !duk_is_buffer_data(ctx, 0) &&
+        !duk_is_array(ctx, 0) && !duk_is_function(ctx, 0) &&
+        !duk_is_string(ctx, 0))
+    {
+        if (duk_get_prop_string(ctx, 0, "variant"))
+            variant = REQUIRE_STRING(ctx, -1, "mldsa_gen_key: 'variant' must be a string");
+        duk_pop(ctx);
+        if (duk_get_prop_string(ctx, 0, "password"))
+            password = REQUIRE_STRING(ctx, -1, "mldsa_gen_key: 'password' must be a string");
+        duk_pop(ctx);
+    }
+    else
+    {
+        if (duk_is_string(ctx, 0)) variant = duk_get_string(ctx, 0);
+        if (duk_is_string(ctx, 1)) password = duk_get_string(ctx, 1);
+    }
+    if (!variant)
+        RP_THROW(ctx, "mldsa_gen_key: variant is required ('ml-dsa-44', 'ml-dsa-65', or 'ml-dsa-87')");
+    algo = rc_mldsa_name(variant);
+    if (!algo) RP_THROW(ctx, "mldsa_gen_key: unknown variant '%s'", variant);
+
+    pkey = rc_keygen_byname(algo);
+    if (!pkey) RP_THROW(ctx, "mldsa_gen_key: keygen failed for %s", algo);
+
+    duk_push_object(ctx);
+    rc_push_pkey_pem_pub(ctx, pkey);
+    duk_put_prop_string(ctx, -2, "public");
+    rc_push_pkey_pem_priv(ctx, pkey, password);
+    duk_put_prop_string(ctx, -2, "private");
+    EVP_PKEY_free(pkey);
+    return 1;
+}
+
+/* mldsa_import_pub_key(pub) → canonical SPKI PEM. */
+static duk_ret_t duk_mldsa_import_pub_key(duk_context *ctx)
+{
+    const void *key = NULL; duk_size_t key_len = 0;
+    if (!rc_get_key_any(ctx, 0, &key, &key_len))
+        RP_THROW(ctx, "mldsa_import_pub_key: argument must be string or buffer");
+    EVP_PKEY *pkey = rc_load_pub_pkey_any(key, key_len);
+    if (!pkey) RP_THROW(ctx, "mldsa_import_pub_key: failed to parse public key");
+    rc_push_pkey_pem_pub(ctx, pkey);
+    EVP_PKEY_free(pkey);
+    return 1;
+}
+
+/* mldsa_import_priv_key(priv [, oldpass [, newpass]]) → {public, private}. */
+static duk_ret_t duk_mldsa_import_priv_key(duk_context *ctx)
+{
+    const void *key = NULL; duk_size_t key_len = 0;
+    const char *inpasswd = NULL, *outpasswd = NULL;
+    EVP_PKEY *pkey = NULL;
+
+    if (duk_is_object(ctx, 0) && !duk_is_buffer_data(ctx, 0) &&
+        !duk_is_array(ctx, 0) && !duk_is_function(ctx, 0) &&
+        !duk_is_string(ctx, 0))
+    {
+        if (!rc_get_opt_bytes(ctx, 0, "key", &key, &key_len))
+            RP_THROW(ctx, "mldsa_import_priv_key: 'key' is required");
+        if (duk_get_prop_string(ctx, 0, "decryptPassword"))
+            inpasswd = REQUIRE_STRING(ctx, -1, "decryptPassword must be a string");
+        duk_pop(ctx);
+        if (duk_get_prop_string(ctx, 0, "encryptPassword"))
+            outpasswd = REQUIRE_STRING(ctx, -1, "encryptPassword must be a string");
+        duk_pop(ctx);
+    }
+    else
+    {
+        if (!rc_get_key_any(ctx, 0, &key, &key_len))
+            RP_THROW(ctx, "mldsa_import_priv_key: first argument must be string or buffer");
+        if (duk_is_string(ctx, 1)) inpasswd  = duk_get_string(ctx, 1);
+        if (duk_is_string(ctx, 2)) outpasswd = duk_get_string(ctx, 2);
+    }
+
+    pkey = rc_load_priv_pkey_any(key, key_len, inpasswd);
+    if (!pkey) RP_THROW(ctx, "mldsa_import_priv_key: failed to parse private key%s",
+                       inpasswd ? " (wrong password?)" : "");
+
+    duk_push_object(ctx);
+    rc_push_pkey_pem_pub(ctx, pkey);
+    duk_put_prop_string(ctx, -2, "public");
+    rc_push_pkey_pem_priv(ctx, pkey, outpasswd);
+    duk_put_prop_string(ctx, -2, "private");
+    EVP_PKEY_free(pkey);
+    return 1;
+}
+
+/* Helper: hex-encode a raw byte buffer, stripping the colons that
+ * OPENSSL_buf2hexstr inserts.  Used for ML-DSA / ML-KEM components
+ * where keys are too large for the small stack buffer used by 25519. */
+static void rc_push_hex_octets(duk_context *ctx, const unsigned char *bytes, size_t len)
+{
+    char *hex = OPENSSL_buf2hexstr(bytes, len);
+    if (!hex) { duk_push_string(ctx, ""); return; }
+    /* allocate and strip colons */
+    char *clean = (char *)OPENSSL_malloc(len * 2 + 1);
+    if (clean)
+    {
+        int j = 0;
+        for (char *p = hex; *p; ++p) if (*p != ':') clean[j++] = *p;
+        clean[j] = 0;
+        duk_push_string(ctx, clean);
+        OPENSSL_free(clean);
+    }
+    else duk_push_string(ctx, hex);
+    OPENSSL_free(hex);
+}
+
+/* Generic components extractor for PQ-shape keys (large raw bytes,
+ * variant name as the curve label).  Used by both ML-DSA and ML-KEM. */
+static duk_ret_t rc_pq_components(duk_context *ctx, const char *fname,
+                                  const char *fallback_variant)
+{
+    const void *key = NULL; duk_size_t key_len = 0;
+    EVP_PKEY *pkey = NULL;
+    int is_private = 0;
+
+    if (!rc_get_key_any(ctx, 0, &key, &key_len))
+        RP_THROW(ctx, "crypto.%s: argument must be string or buffer", fname);
+
+    pkey = rc_load_priv_pkey_any(key, key_len, NULL);
+    if (pkey) is_private = 1;
+    else      pkey = rc_load_pub_pkey_any(key, key_len);
+    if (!pkey) RP_THROW(ctx, "crypto.%s: failed to parse key", fname);
+
+    duk_push_object(ctx);
+    const char *type_name = EVP_PKEY_get0_type_name(pkey);
+    duk_push_string(ctx, type_name ? type_name : fallback_variant);
+    duk_put_prop_string(ctx, -2, "variant");
+
+    size_t rawlen = 0;
+    if (EVP_PKEY_get_raw_public_key(pkey, NULL, &rawlen) > 0 && rawlen > 0)
+    {
+        unsigned char *buf = (unsigned char *)OPENSSL_malloc(rawlen);
+        if (buf && EVP_PKEY_get_raw_public_key(pkey, buf, &rawlen) > 0)
+        {
+            rc_push_hex_octets(ctx, buf, rawlen);
+            duk_put_prop_string(ctx, -2, "public");
+        }
+        OPENSSL_free(buf);
+    }
+    if (is_private)
+    {
+        rawlen = 0;
+        if (EVP_PKEY_get_raw_private_key(pkey, NULL, &rawlen) > 0 && rawlen > 0)
+        {
+            unsigned char *buf = (unsigned char *)OPENSSL_malloc(rawlen);
+            if (buf && EVP_PKEY_get_raw_private_key(pkey, buf, &rawlen) > 0)
+            {
+                rc_push_hex_octets(ctx, buf, rawlen);
+                duk_put_prop_string(ctx, -2, "private");
+            }
+            OPENSSL_free(buf);
+        }
+    }
+    EVP_PKEY_free(pkey);
+    return 1;
+}
+
+static duk_ret_t duk_mldsa_components(duk_context *ctx)
+    { return rc_pq_components(ctx, "mldsa_components", "ML-DSA"); }
+
+
+/* === ML-KEM (NIST FIPS 203, formerly CRYSTALS-Kyber) ===
+ *
+ * Three variants: ML-KEM-512 / ML-KEM-768 / ML-KEM-1024.
+ *
+ * KEM (Key Encapsulation Mechanism) is a different shape from key
+ * agreement:
+ *   - encapsulate(pub) → {ciphertext, sharedSecret}
+ *   - decapsulate(ciphertext, priv) → sharedSecret
+ *
+ * The sender uses encapsulate to produce a ciphertext to send to the
+ * receiver and a shared secret to use locally.  The receiver runs
+ * decapsulate on the ciphertext with its private key to recover the
+ * same shared secret. */
+
+static const char *rc_mlkem_name(const char *variant)
+{
+    if (!strcmp(variant, "ml-kem-512")  || !strcmp(variant, "ML-KEM-512") ||
+        !strcmp(variant, "mlkem512")    || !strcmp(variant, "MLKEM512"))   return "ML-KEM-512";
+    if (!strcmp(variant, "ml-kem-768")  || !strcmp(variant, "ML-KEM-768") ||
+        !strcmp(variant, "mlkem768")    || !strcmp(variant, "MLKEM768"))   return "ML-KEM-768";
+    if (!strcmp(variant, "ml-kem-1024") || !strcmp(variant, "ML-KEM-1024") ||
+        !strcmp(variant, "mlkem1024")   || !strcmp(variant, "MLKEM1024"))  return "ML-KEM-1024";
+    return NULL;
+}
+
+static duk_ret_t duk_mlkem_gen_key(duk_context *ctx)
+{
+    const char *variant = NULL, *password = NULL, *algo = NULL;
+    EVP_PKEY *pkey = NULL;
+
+    if (duk_is_object(ctx, 0) && !duk_is_buffer_data(ctx, 0) &&
+        !duk_is_array(ctx, 0) && !duk_is_function(ctx, 0) &&
+        !duk_is_string(ctx, 0))
+    {
+        if (duk_get_prop_string(ctx, 0, "variant"))
+            variant = REQUIRE_STRING(ctx, -1, "mlkem_gen_key: 'variant' must be a string");
+        duk_pop(ctx);
+        if (duk_get_prop_string(ctx, 0, "password"))
+            password = REQUIRE_STRING(ctx, -1, "mlkem_gen_key: 'password' must be a string");
+        duk_pop(ctx);
+    }
+    else
+    {
+        if (duk_is_string(ctx, 0)) variant = duk_get_string(ctx, 0);
+        if (duk_is_string(ctx, 1)) password = duk_get_string(ctx, 1);
+    }
+    if (!variant)
+        RP_THROW(ctx, "mlkem_gen_key: variant is required ('ml-kem-512', 'ml-kem-768', or 'ml-kem-1024')");
+    algo = rc_mlkem_name(variant);
+    if (!algo) RP_THROW(ctx, "mlkem_gen_key: unknown variant '%s'", variant);
+
+    pkey = rc_keygen_byname(algo);
+    if (!pkey) RP_THROW(ctx, "mlkem_gen_key: keygen failed for %s", algo);
+
+    duk_push_object(ctx);
+    rc_push_pkey_pem_pub(ctx, pkey);
+    duk_put_prop_string(ctx, -2, "public");
+    rc_push_pkey_pem_priv(ctx, pkey, password);
+    duk_put_prop_string(ctx, -2, "private");
+    EVP_PKEY_free(pkey);
+    return 1;
+}
+
+static duk_ret_t duk_mlkem_import_pub_key(duk_context *ctx)
+{
+    const void *key = NULL; duk_size_t key_len = 0;
+    if (!rc_get_key_any(ctx, 0, &key, &key_len))
+        RP_THROW(ctx, "mlkem_import_pub_key: argument must be string or buffer");
+    EVP_PKEY *pkey = rc_load_pub_pkey_any(key, key_len);
+    if (!pkey) RP_THROW(ctx, "mlkem_import_pub_key: failed to parse public key");
+    rc_push_pkey_pem_pub(ctx, pkey);
+    EVP_PKEY_free(pkey);
+    return 1;
+}
+
+static duk_ret_t duk_mlkem_import_priv_key(duk_context *ctx)
+{
+    const void *key = NULL; duk_size_t key_len = 0;
+    const char *inpasswd = NULL, *outpasswd = NULL;
+    EVP_PKEY *pkey = NULL;
+
+    if (duk_is_object(ctx, 0) && !duk_is_buffer_data(ctx, 0) &&
+        !duk_is_array(ctx, 0) && !duk_is_function(ctx, 0) &&
+        !duk_is_string(ctx, 0))
+    {
+        if (!rc_get_opt_bytes(ctx, 0, "key", &key, &key_len))
+            RP_THROW(ctx, "mlkem_import_priv_key: 'key' is required");
+        if (duk_get_prop_string(ctx, 0, "decryptPassword"))
+            inpasswd = REQUIRE_STRING(ctx, -1, "decryptPassword must be a string");
+        duk_pop(ctx);
+        if (duk_get_prop_string(ctx, 0, "encryptPassword"))
+            outpasswd = REQUIRE_STRING(ctx, -1, "encryptPassword must be a string");
+        duk_pop(ctx);
+    }
+    else
+    {
+        if (!rc_get_key_any(ctx, 0, &key, &key_len))
+            RP_THROW(ctx, "mlkem_import_priv_key: first argument must be string or buffer");
+        if (duk_is_string(ctx, 1)) inpasswd  = duk_get_string(ctx, 1);
+        if (duk_is_string(ctx, 2)) outpasswd = duk_get_string(ctx, 2);
+    }
+
+    pkey = rc_load_priv_pkey_any(key, key_len, inpasswd);
+    if (!pkey) RP_THROW(ctx, "mlkem_import_priv_key: failed to parse private key%s",
+                       inpasswd ? " (wrong password?)" : "");
+
+    duk_push_object(ctx);
+    rc_push_pkey_pem_pub(ctx, pkey);
+    duk_put_prop_string(ctx, -2, "public");
+    rc_push_pkey_pem_priv(ctx, pkey, outpasswd);
+    duk_put_prop_string(ctx, -2, "private");
+    EVP_PKEY_free(pkey);
+    return 1;
+}
+
+static duk_ret_t duk_mlkem_components(duk_context *ctx)
+    { return rc_pq_components(ctx, "mlkem_components", "ML-KEM"); }
+
+/* mlkem_encapsulate(public_key) → {ciphertext, sharedSecret} */
+static duk_ret_t duk_mlkem_encapsulate(duk_context *ctx)
+{
+    const void *pub_bytes = NULL; duk_size_t pub_len = 0;
+    EVP_PKEY *pub = NULL;
+    EVP_PKEY_CTX *pctx = NULL;
+    size_t ct_len = 0, ss_len = 0;
+
+    if (!rc_get_key_any(ctx, 0, &pub_bytes, &pub_len))
+        RP_THROW(ctx, "mlkem_encapsulate: argument must be a public key (string or buffer)");
+
+    pub = rc_load_pub_pkey_any(pub_bytes, pub_len);
+    if (!pub) RP_THROW(ctx, "mlkem_encapsulate: failed to parse public key");
+
+    pctx = EVP_PKEY_CTX_new(pub, NULL);
+    if (!pctx) { EVP_PKEY_free(pub); DUK_OPENSSL_ERROR(ctx); }
+    if (EVP_PKEY_encapsulate_init(pctx, NULL) <= 0)
+        { EVP_PKEY_CTX_free(pctx); EVP_PKEY_free(pub); DUK_OPENSSL_ERROR(ctx); }
+    if (EVP_PKEY_encapsulate(pctx, NULL, &ct_len, NULL, &ss_len) <= 0)
+        { EVP_PKEY_CTX_free(pctx); EVP_PKEY_free(pub); DUK_OPENSSL_ERROR(ctx); }
+
+    duk_push_object(ctx);
+    unsigned char *ct_out = (unsigned char *)duk_push_fixed_buffer(ctx, (duk_size_t)ct_len);
+    unsigned char *ss_out = (unsigned char *)OPENSSL_malloc(ss_len);
+    if (!ss_out) { EVP_PKEY_CTX_free(pctx); EVP_PKEY_free(pub); RP_THROW(ctx, "mlkem_encapsulate: oom"); }
+    if (EVP_PKEY_encapsulate(pctx, ct_out, &ct_len, ss_out, &ss_len) <= 0)
+        { OPENSSL_free(ss_out); EVP_PKEY_CTX_free(pctx); EVP_PKEY_free(pub); DUK_OPENSSL_ERROR(ctx); }
+    duk_put_prop_string(ctx, -2, "ciphertext");
+
+    unsigned char *ss_buf = (unsigned char *)duk_push_fixed_buffer(ctx, (duk_size_t)ss_len);
+    memcpy(ss_buf, ss_out, ss_len);
+    OPENSSL_clear_free(ss_out, ss_len);
+    duk_put_prop_string(ctx, -2, "sharedSecret");
+
+    EVP_PKEY_CTX_free(pctx);
+    EVP_PKEY_free(pub);
+    return 1;
+}
+
+/* mlkem_decapsulate(ciphertext, private_key [, password]) → sharedSecret */
+static duk_ret_t duk_mlkem_decapsulate(duk_context *ctx)
+{
+    const void *ct = NULL, *priv_bytes = NULL;
+    duk_size_t ct_len_in = 0, priv_len = 0;
+    const char *password = NULL;
+    EVP_PKEY *priv = NULL;
+    EVP_PKEY_CTX *pctx = NULL;
+    size_t ss_len = 0;
+
+    if (!rc_get_key_any(ctx, 0, &ct, &ct_len_in))
+        RP_THROW(ctx, "mlkem_decapsulate: first argument (ciphertext) must be string or buffer");
+    if (!rc_get_key_any(ctx, 1, &priv_bytes, &priv_len))
+        RP_THROW(ctx, "mlkem_decapsulate: second argument (private_key) must be string or buffer");
+    if (duk_is_string(ctx, 2)) password = duk_get_string(ctx, 2);
+
+    priv = rc_load_priv_pkey_any(priv_bytes, priv_len, password);
+    if (!priv) RP_THROW(ctx, "mlkem_decapsulate: failed to parse private key%s",
+                       password ? " (wrong password?)" : "");
+
+    pctx = EVP_PKEY_CTX_new(priv, NULL);
+    if (!pctx) { EVP_PKEY_free(priv); DUK_OPENSSL_ERROR(ctx); }
+    if (EVP_PKEY_decapsulate_init(pctx, NULL) <= 0)
+        { EVP_PKEY_CTX_free(pctx); EVP_PKEY_free(priv); DUK_OPENSSL_ERROR(ctx); }
+    if (EVP_PKEY_decapsulate(pctx, NULL, &ss_len, (const unsigned char *)ct, (size_t)ct_len_in) <= 0)
+        { EVP_PKEY_CTX_free(pctx); EVP_PKEY_free(priv); DUK_OPENSSL_ERROR(ctx); }
+
+    unsigned char *ss_out = (unsigned char *)duk_push_fixed_buffer(ctx, (duk_size_t)ss_len);
+    if (EVP_PKEY_decapsulate(pctx, ss_out, &ss_len, (const unsigned char *)ct, (size_t)ct_len_in) <= 0)
+        { EVP_PKEY_CTX_free(pctx); EVP_PKEY_free(priv); DUK_OPENSSL_ERROR(ctx); }
+
+    EVP_PKEY_CTX_free(pctx);
+    EVP_PKEY_free(priv);
     return 1;
 }
 
@@ -6301,6 +6978,9 @@ const duk_function_list_entry crypto_funcs[] = {
     {"timingSafeEqual", duk_timing_safe_equal, 2},
     {"pbkdf2", duk_pbkdf2, 1},
     {"hkdf", duk_hkdf, 1},
+    {"kmac", duk_kmac, 4},
+    {"cshake128", duk_cshake128, 2},
+    {"cshake256", duk_cshake256, 2},
     {"ec_gen_key", duk_ec_gen_key, 2},
     {"ec_import_pub_key", duk_ec_import_pub_key, 2},
     {"ec_import_priv_key", duk_ec_import_priv_key, 3},
@@ -6322,6 +7002,34 @@ const duk_function_list_entry crypto_funcs[] = {
     {"ed25519_components", duk_ed25519_components, 1},
     {"ed25519_sign", duk_ed25519_sign, 3},
     {"ed25519_verify", duk_ed25519_verify, 3},
+    /* X448 / Ed448 — derive/sign/verify share the 25519 C functions
+     * (algorithm is determined by the key's pkey type). */
+    {"x448_gen_key", duk_x448_gen_key, 1},
+    {"x448_import_pub_key", duk_x448_import_pub_key, 1},
+    {"x448_import_priv_key", duk_x448_import_priv_key, 3},
+    {"x448_components", duk_x448_components, 1},
+    {"x448_derive", duk_x25519_derive, 3},
+    {"ed448_gen_key", duk_ed448_gen_key, 1},
+    {"ed448_import_pub_key", duk_ed448_import_pub_key, 1},
+    {"ed448_import_priv_key", duk_ed448_import_priv_key, 3},
+    {"ed448_components", duk_ed448_components, 1},
+    {"ed448_sign", duk_ed25519_sign, 3},
+    {"ed448_verify", duk_ed25519_verify, 3},
+    /* ML-DSA — sign/verify share Ed25519 C functions (pure signature
+     * scheme, one-shot EVP_DigestSign with NULL md). */
+    {"mldsa_gen_key", duk_mldsa_gen_key, 2},
+    {"mldsa_import_pub_key", duk_mldsa_import_pub_key, 1},
+    {"mldsa_import_priv_key", duk_mldsa_import_priv_key, 3},
+    {"mldsa_components", duk_mldsa_components, 1},
+    {"mldsa_sign", duk_ed25519_sign, 3},
+    {"mldsa_verify", duk_ed25519_verify, 3},
+    /* ML-KEM — Key Encapsulation Mechanism (NIST FIPS 203). */
+    {"mlkem_gen_key", duk_mlkem_gen_key, 2},
+    {"mlkem_import_pub_key", duk_mlkem_import_pub_key, 1},
+    {"mlkem_import_priv_key", duk_mlkem_import_priv_key, 3},
+    {"mlkem_components", duk_mlkem_components, 1},
+    {"mlkem_encapsulate", duk_mlkem_encapsulate, 1},
+    {"mlkem_decapsulate", duk_mlkem_decapsulate, 3},
     {"scrypt", duk_scrypt, 1},
     {NULL, NULL, 0}
 };
