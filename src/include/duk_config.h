@@ -2936,7 +2936,20 @@ typedef struct duk_hthread duk_context;
 #undef DUK_USE_EXEC_INDIRECT_BOUND_CHECK
 #undef DUK_USE_EXEC_PREFER_SIZE
 #define DUK_USE_EXEC_REGCONST_OPTIMIZE
-#undef DUK_USE_EXEC_TIMEOUT_CHECK
+/* rampart: hook duktape's bytecode-interrupt check to our cancel API
+   (see cmdline.c: duk_cancel / rp_cancel_check).  Returns:
+       0 - continue execution
+       1 - throw RangeError("execution timeout") (visible error)
+       2 - silent unwind via DUK_LJ_TYPE_RETURN (no error)              */
+extern int rp_cancel_check(void *udata);
+#define DUK_USE_EXEC_TIMEOUT_CHECK(udata) rp_cancel_check(udata)
+
+/* rampart: called by duktape's RETURN-unwind handler when a finally
+   block is about to fire.  Disarms the cancel so the finally body runs
+   uninterrupted; duktape's native ENDFIN→RETURN routing then continues
+   the unwind without needing further interrupts.                      */
+extern void rp_cancel_disarm(void);
+#define DUK_USE_EXEC_TIMEOUT_DISARM() rp_cancel_disarm()
 #undef DUK_USE_EXPLICIT_NULL_INIT
 #undef DUK_USE_EXTSTR_FREE
 #undef DUK_USE_EXTSTR_INTERN_CHECK
@@ -2978,7 +2991,9 @@ typedef struct duk_hthread duk_context;
 #define DUK_USE_HTML_COMMENTS
 #define DUK_USE_IDCHAR_FASTPATH
 #undef DUK_USE_INJECT_HEAP_ALLOC_ERROR
-#undef DUK_USE_INTERRUPT_COUNTER
+/* rampart: required for DUK_USE_EXEC_TIMEOUT_CHECK to fire from the
+   bytecode-interrupt path. */
+#define DUK_USE_INTERRUPT_COUNTER
 #undef DUK_USE_INTERRUPT_DEBUG_FIXUP
 #define DUK_USE_JC
 #define DUK_USE_JSON_BUILTIN

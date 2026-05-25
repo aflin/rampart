@@ -2904,11 +2904,52 @@ static void terminate_break_cb(evutil_socket_t fd, short events, void *arg)
 
    Idempotent: calling twice is a no-op. Calling on a thread that has
    already exited is a no-op.                                          */
+/* Inner helper: terminate one worker.  Caller MUST hold THRLOCK.
+   Returns 1 if a terminate was issued, 0 if not eligible / already
+   terminating.  Idempotent.  Skips server threads (RPTHR_FLAG_SERVER)
+   and threads marked KEEP_OPEN.                                       */
+static int rp_thread_terminate_locked(RPTHR *thr)
+{
+    struct timeval imm = {0, 0};
+    if (!thr || !RPTHR_TEST(thr, RPTHR_FLAG_IN_USE) || !thr->base)
+        return 0;
+    if (RPTHR_TEST(thr, RPTHR_FLAG_SERVER))
+        return 0;  /* server threads never exit */
+    if (RPTHR_TEST(thr, RPTHR_FLAG_KEEP_OPEN))
+        return 0;  /* explicit user override */
+    if (RPTHR_TESTSET(thr, RPTHR_FLAG_TERMINATING))
+        return 0;  /* already terminating */
+
+    /* In-loop loopbreak (race-safe even if worker hasn't entered loop yet).
+       event_base_once allocates its own struct via libevent and is freed
+       either when it fires or when event_base_free walks the once_events
+       list during rp_close_thread.                                       */
+    event_base_once(thr->base, -1, EV_TIMEOUT, terminate_break_cb,
+                    thr->base, &imm);
+
+    /* Also wake the loop if it's blocked in dispatch. */
+    event_base_loopbreak(thr->base);
+    return 1;
+}
+
+/* Public: terminate all eligible child workers.  Called from duk_rp_exit
+   (process.exit shutdown path) to replace the older drain-via-pump
+   approach.  Each worker's do_thread_setup post-loop will sweep its
+   queued events (without firing JS) and call rp_close_thread, which
+   decrements mainthr->nchildren.                                       */
+void rp_thread_terminate_children(void)
+{
+    int i;
+    THRLOCK;
+    for (i = 1; i < nrpthreads; i++)
+        (void)rp_thread_terminate_locked(rpthread[i]);
+    THRUNLOCK;
+}
+
+/* JS binding: thr.terminate() */
 static duk_ret_t terminate_thread(duk_context *ctx)
 {
-    RPTHR *thr;
     int thrno = 0;
-    struct timeval imm = {0, 0};
 
     duk_push_this(ctx);
     if (!duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("thr")))
@@ -2923,27 +2964,7 @@ static duk_ret_t terminate_thread(duk_context *ctx)
         return 0;
 
     THRLOCK;
-    thr = rpthread[thrno];
-    if (!thr || !RPTHR_TEST(thr, RPTHR_FLAG_IN_USE) || !thr->base)
-    {
-        THRUNLOCK;
-        return 0;
-    }
-    if (RPTHR_TESTSET(thr, RPTHR_FLAG_TERMINATING))
-    {
-        THRUNLOCK;
-        return 0; /* already terminating */
-    }
-
-    /* In-loop loopbreak (race-safe even if worker hasn't entered loop yet).
-       event_base_once allocates its own struct via libevent and is freed
-       either when it fires or when event_base_free walks the once_events
-       list during rp_close_thread.                                       */
-    event_base_once(thr->base, -1, EV_TIMEOUT, terminate_break_cb,
-                    thr->base, &imm);
-
-    /* Also wake the loop if it's blocked in dispatch. */
-    event_base_loopbreak(thr->base);
+    (void)rp_thread_terminate_locked(rpthread[thrno]);
     THRUNLOCK;
     return 0;
 }

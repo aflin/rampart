@@ -773,6 +773,68 @@ void rp_request_exit(int ec)
         event_base_loopbreak(mainthr->base);
 }
 
+/* ============================================================
+ * JS execution cancellation (duk_cancel / rp_cancel_check)
+ *
+ * Hooks duktape's bytecode-interrupt check (DUK_USE_EXEC_TIMEOUT_CHECK,
+ * configured in src/include/duk_config.h) to abort JS execution at a
+ * safe interrupt point.
+ *
+ * Per-pthread via TLS: each pthread sets its own deadline and reads its
+ * own deadline.  Workers run on their own pthreads with their own TLS
+ * slot, so process.exit cancelling the main pthread leaves workers
+ * untouched.  For rampart-server timeouts (planned), the script_runner
+ * pthread sets its own deadline at the start of running user JS.
+ *
+ * The print callback is consulted to decide the unwind mode:
+ *   print_cb returns 0 => silent unwind via DUK_LJ_TYPE_RETURN
+ *                        (duk_pcall returns success, no error visible)
+ *   print_cb returns 1 => throw RangeError("execution timeout")
+ *                        (normal error propagation)
+ *
+ * duk_cancel(-1, NULL) disarms.
+ * ============================================================ */
+static __thread int64_t rp_cancel_deadline_ms = -1;
+static __thread int (*rp_cancel_print_cb)(void) = NULL;
+
+static int64_t rp_now_ms(void)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (int64_t)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+}
+
+void duk_cancel(duk_context *ctx, int timeout_ms, int (*print_cb)(void))
+{
+    rp_cancel_print_cb    = print_cb;
+    rp_cancel_deadline_ms = (timeout_ms < 0) ? -1 : (rp_now_ms() + timeout_ms);
+    /* Force an interrupt soon so the check fires before another
+       DUK_HTHREAD_INTCTR_DEFAULT (256K) opcodes execute.  Only meaningful
+       when arming; disarm (-1) doesn't need to force.                  */
+    if (timeout_ms >= 0 && ctx)
+        duk_force_interrupt(ctx);
+}
+
+int rp_cancel_check(void *udata)
+{
+    (void)udata;
+    int64_t d = rp_cancel_deadline_ms;
+    if (d < 0) return 0;
+    if (rp_now_ms() < d) return 0;
+    if (rp_cancel_print_cb && rp_cancel_print_cb() == 0)
+        return 2;  /* silent unwind */
+    return 1;      /* throw RangeError */
+}
+
+/* Called by duktape's RETURN-unwind handler when the current dispatch
+   sets up a finally body.  Disarms our deadline so the finally body
+   runs uninterrupted; duktape's natural ENDFIN→RETURN routing then
+   continues the unwind on its own.                                   */
+void rp_cancel_disarm(void)
+{
+    rp_cancel_deadline_ms = -1;
+}
+
 void duk_rp_exit(duk_context *ctx, int ec)
 {
     int i=0,len=0;
@@ -781,6 +843,11 @@ void duk_rp_exit(duk_context *ctx, int ec)
     if(ran_already)
         exit(ec);
     ran_already=1;
+
+    /* Disarm any pending cancel before we run exit_funcs or
+       duk_destroy_heap — finalizers and JS exit hooks must not be
+       interrupted mid-execution by the bytecode-interrupt check. */
+    duk_cancel(NULL, -1, NULL);
 
     if(exit_to_repl)
     {
@@ -804,32 +871,44 @@ void duk_rp_exit(duk_context *ctx, int ec)
         duk_pop(ctx);
     }
 
-    /* Bail out of any running worker threads (rampart.thread workers,
-       e.g. rampart-curl's libevent loop) BEFORE we tear down heaps and
-       dlclose modules.  Otherwise a worker mid-callback dereferences a
-       freed duktape ctx (or an unmapped .so) and SIGSEGVs.  Mirrors the
-       wait-for-children pattern the normal main-loop exit path uses. */
-    if(mainthr)
+    /* Terminate every live worker BEFORE we tear down heaps and dlclose
+       modules.  Each worker's current JS callback completes naturally;
+       queued-but-not-fired events get C-side cleanup via the sweep in
+       do_thread_setup (no further JS dispatch); rp_close_thread then
+       destroys the worker heap and decrements mainthr->nchildren.
+
+       No event_base_loop pump of main's base here — that's what caused
+       the previous design to re-fire setInterval/etc. during shutdown
+       and re-enter process.exit (which then hit ran_already → exit() and
+       skipped exit_funcs).  Workers terminate on their own pthreads;
+       main just waits for the nchildren count to drop to zero.
+
+       Skip the wait block when duk_rp_exit is called from a WORKER
+       pthread (process.exit from inside thr.exec).  The calling worker
+       is itself one of mainthr->nchildren and can't decrement that
+       count while it's busy executing this function, so waiting would
+       always hit the 2s cap.  Match the pre-existing behavior for the
+       worker-initiated exit case: skip the wait and proceed straight
+       to exit_funcs + heap destroy.                                   */
+    if(mainthr && get_current_thread() == mainthr)
     {
         int spins = 0;
-        int sent = 0;
         int nchildren = 0;
+
+        rp_thread_terminate_children();
+
         do {
             THRLOCK;
-            sent = rp_thread_close_children();
             nchildren = mainthr->nchildren;
             THRUNLOCK;
-            if (!nchildren && !sent) break;
-            /* Pump the main event loop so finalize_event triggers fire
-               on worker bases.  Non-block so we don't hang on a stuck
-               worker. */
-            event_base_loop(mainthr->base, EVLOOP_NONBLOCK);
+            if (!nchildren) break;
             usleep(20000);
-        } while (++spins < 100);  /* 2s cap on the wait */
-        /* If a worker (e.g. a curl request stuck mid-decompression on a
-           giant zstd window) hasn't terminated after 2s, bypass the rest
-           of cleanup and _exit immediately.  Letting duk_destroy_heap or
-           dlclose run while the worker is still alive WILL crash. */
+        } while (++spins < 100);  /* 2s sanity cap */
+
+        /* If a worker is stuck in a long synchronous C call (sleep,
+           blocking I/O, etc.) terminate's loopbreak can't take effect
+           until that call returns; abandon and _exit.  We've already
+           run JS exit_funcs above; the OS reclaims the rest.          */
         if (nchildren > 0)
             _exit(ec);
     }

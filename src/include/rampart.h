@@ -792,6 +792,29 @@ void rp_request_exit(int ec);
    defer via rp_request_exit (true) to avoid nesting event_base_loop. */
 extern volatile int rp_in_main_loop;
 
+/* Terminate every live worker thread (skipping server threads and any
+   marked RPTHR_FLAG_KEEP_OPEN).  Each worker's current JS callback
+   completes naturally; queued-but-not-fired events get C-side cleanup
+   (no JS dispatch) via do_thread_setup's sweep; then rp_close_thread
+   destroys the worker heap and decrements mainthr->nchildren.
+   Used by duk_rp_exit's shutdown path.                                */
+void rp_thread_terminate_children(void);
+
+/* Cancel JS execution in the CURRENT pthread.
+   ctx must be the duk_context running on this pthread (used to force
+   the bytecode interrupt to fire promptly; pass NULL on disarm).
+   timeout_ms < 0 : disarm (no cancellation pending).
+   timeout_ms = 0 : cancel immediately (next bytecode interrupt).
+   timeout_ms > 0 : cancel after the given delay.
+   print_cb is consulted when the deadline fires; its return value
+   selects the unwind mode:
+     0 => silent unwind via DUK_LJ_TYPE_RETURN (duk_pcall returns success,
+          no error is propagated, finally blocks fire).
+     1 => throw RangeError("execution timeout") (normal error path).
+   The TLS deadline auto-resets per-pthread, so script_runner threads
+   that exit after each callback don't need explicit disarm. */
+void duk_cancel(duk_context *ctx, int timeout_ms, int (*print_cb)(void));
+
 /* functions to be run before a new thread starts its loop */
 void add_b4loop_func(rp_vfunc func, void *arg);
 void run_b4loop_funcs();

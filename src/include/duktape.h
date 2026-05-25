@@ -542,6 +542,10 @@ DUK_API_NORETURN(DUK_EXTERNAL_DECL void duk_throw_raw(duk_context *ctx));
 DUK_API_NORETURN(DUK_EXTERNAL_DECL void duk_fatal_raw(duk_context *ctx, const char *err_msg));
 #define duk_fatal(ctx,err_msg) \
 	(duk_fatal_raw((ctx), (err_msg)), (duk_ret_t) 0)
+
+/* rampart: force the bytecode-interrupt to fire on the next executed
+   instruction (only defined when DUK_USE_INTERRUPT_COUNTER is enabled). */
+DUK_EXTERNAL_DECL void duk_force_interrupt(duk_context *ctx);
 DUK_API_NORETURN(DUK_EXTERNAL_DECL void duk_error_raw(duk_context *ctx, duk_errcode_t err_code, const char *filename, duk_int_t line, const char *fmt, ...));
 
 #if defined(DUK_API_VARIADIC_MACROS)

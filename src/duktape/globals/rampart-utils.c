@@ -2588,28 +2588,27 @@ duk_ret_t duk_process_set_max_mem(duk_context *ctx)
 }
 
 
+static int rp_exit_silent_cb(void) { return 0; }  /* silent unwind */
+
 duk_ret_t duk_process_exit(duk_context *ctx)
 {
     int exitval=duk_get_int_default(ctx,0,0);
 
     /* If we're inside the main event_base_loop (called from a JS callback
-       dispatched by setInterval/setTimeout/server/ws/etc), running
-       duk_rp_exit's wait-for-children block here would re-enter
-       event_base_loop on the same base — libevent prints "reentrant
-       invocation" and the call no-ops.  Defer: set the pending flag and
-       loopbreak.  The current JS callback runs to its natural end; when
-       it returns the dispatcher returns up through event_base_loop, which
-       returns due to loopbreak; main()'s do-while sees rp_exit_pending,
-       breaks, and calls duk_rp_exit once outside any event loop.
-
-       Tradeoff: code written as `process.exit(0); foo();` will run foo()
-       in the calling frame before the dispatcher returns.  We don't
-       throw to abort the frame because that's fragile — JS try/catch in
-       WHATWG glue (reportError) swallows it, and unprotected duk_call
-       sites in dispatchers let it reach duktape's fatal handler. */
+       dispatched by setInterval/setTimeout/server/ws/etc):
+         1. Set rp_exit_pending and loopbreak so main()'s do-while breaks
+            out and duk_rp_exit runs from outside any event_base_loop.
+         2. Arm duk_cancel(0, silent_cb) so the bytecode-interrupt path
+            in this pthread unwinds the calling JS frame silently via
+            DUK_LJ_TYPE_RETURN — code after process.exit() in the same
+            callback (and in callers up to entry_act) does NOT run, and
+            try/catch around the call sees nothing (it's a return-style
+            unwind, not a throw).  Workers run on other pthreads with
+            their own TLS slot and are unaffected. */
     if(rp_in_main_loop)
     {
         rp_request_exit(exitval);
+        duk_cancel(ctx, 0, rp_exit_silent_cb);
         return 0;
     }
 
