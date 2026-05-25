@@ -91,17 +91,12 @@ if(CYGWIN)
   set(SEND_QUAL_ARG2 "const" CACHE INTERNAL "")
   set(HAVE_SEND 1 CACHE INTERNAL "")
 endif()
-# Enable brotli/zstd in libcurl if system libs are available.  Required
-# for full WHATWG fetch content-encoding support (gzip is always on via
-# the vendored zlib).
-find_library(_BROTLIDEC_LIB brotlidec)
-find_library(_ZSTD_LIB zstd)
-if(_BROTLIDEC_LIB)
-    set(CURL_BROTLI ON CACHE BOOL "Enable brotli in libcurl" FORCE)
-endif()
-if(_ZSTD_LIB)
-    set(CURL_ZSTD ON CACHE BOOL "Enable zstd in libcurl" FORCE)
-endif()
+# HTTP content-encoding in libcurl: gzip only, via the vendored zlib.
+# libz is ubiquitous (every supported platform has it; texis already
+# links it).  Brotli and zstd would require non-base libraries on
+# macOS/FreeBSD/minimal Linux — keep rampart-curl free of those.
+# Real-world impact: servers fall back to gzip when br/zstd aren't
+# advertised; decoded bodies are identical to the application.
 add_subdirectory(${EXTERN_DIR}/curl)
 
 include_directories(${CMAKE_BINARY_DIR}/extern/oniguruma/include)

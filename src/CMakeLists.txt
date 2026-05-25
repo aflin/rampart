@@ -859,13 +859,6 @@ target_link_libraries(rampart-curl PRIVATE
     rampart-crypto
     z
 )
-# Link brotli/zstd when libcurl was built with them (see extern/extern.cmake).
-if(CURL_BROTLI)
-    target_link_libraries(rampart-curl PRIVATE brotlidec brotlicommon)
-endif()
-if(CURL_ZSTD)
-    target_link_libraries(rampart-curl PRIVATE zstd)
-endif()
 target_include_directories(rampart-curl PRIVATE
     ${PROJECT_SOURCE_DIR}/extern/curl/include/
     ${PROJECT_BINARY_DIR}/extern/openssl/include/
