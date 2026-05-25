@@ -13,6 +13,7 @@ extern "C"
 
 #include "rampart.h"
   extern void duk_init_context(duk_context *ctx);
+  void duk_rp_url_init(duk_context *ctx);     /* defined in C++: rampart-url.cpp */
   void duk_process_init(duk_context *ctx);
   void duk_import_init(duk_context *ctx);
   void duk_event_init(duk_context *ctx);
