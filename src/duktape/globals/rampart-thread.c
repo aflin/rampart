@@ -110,12 +110,37 @@ pthread_mutex_t thr_list_lock;
 
 /* lock to prevent new rampart locks before a fork */
 pthread_mutex_t *rp_fork_lock=NULL;
-#define FORKLOCK    do{\
-    while( (rp_fork_lock) && pthread_mutex_trylock(rp_fork_lock))\
-    { rp_debug_printf("TRYING to get forklock\n");    usleep(1000000);}\
-}while(0)
 
-#define FORKUNLOCK  if(rp_fork_lock) RP_PTUNLOCK(rp_fork_lock)
+/* Snapshot rp_fork_lock at FORKLOCK time into a function-scoped local so
+   FORKUNLOCK uses the same pointer.  Without this, the global can be
+   initialized (FORKLOCK_INIT) by a fork-prep thread BETWEEN our FORKLOCK
+   (which read NULL) and our FORKUNLOCK (which would read non-NULL and
+   try to unlock a mutex we never held).  On Linux's default PTHREAD_
+   MUTEX_NORMAL ownership isn't checked, so the bug is silent; on
+   FreeBSD pthread_mutex_unlock returns EPERM and RP_PTUNLOCK exits.
+
+   Caller declares the local via DECLARE_FORKLOCK at function top, then
+   uses FORKLOCK / FORKUNLOCK freely (including inside conditionals).
+   Used in: rp_lock, _rp_trylock, rp_unlock (paired in one function).
+   For the fork-prep lifecycle (rp_claim_all_locks acquires; later
+   rp_unlock_all_locks releases — across two functions) we don't go
+   through these macros; that path manages rp_fork_lock directly.    */
+#define DECLARE_FORKLOCK  pthread_mutex_t *_my_forklock = NULL
+
+#define FORKLOCK \
+    do { \
+        _my_forklock = rp_fork_lock; \
+        while (_my_forklock && pthread_mutex_trylock(_my_forklock)) { \
+            rp_debug_printf("TRYING to get forklock\n"); \
+            usleep(1000000); \
+            _my_forklock = rp_fork_lock; /* re-snapshot in case it changed */ \
+        } \
+    } while (0)
+
+#define FORKUNLOCK \
+    do { \
+        if (_my_forklock) { RP_PTUNLOCK(_my_forklock); _my_forklock = NULL; } \
+    } while (0)
 
 #define FORKLOCK_INIT do{\
     REMALLOC(rp_fork_lock, sizeof(pthread_mutex_t));\
@@ -268,6 +293,7 @@ static int rp_check_lock(RPTHR_LOCK *thrlock)
 int rp_lock(RPTHR_LOCK *thrlock)
 {
     int ret=0;
+    DECLARE_FORKLOCK;
     //printf("islocked=%d thrsame=%d\n", ISLOCKED, (thrlock->thread_idx == thread_local_thread_num));
     //if( ISLOCKED && thrlock->thread_idx == thread_local_thread_num)
     //    return -100;
@@ -296,6 +322,7 @@ int rp_lock(RPTHR_LOCK *thrlock)
 static int _rp_trylock(RPTHR_LOCK *thrlock, int skip_forklock)
 {
     int ret=0;
+    DECLARE_FORKLOCK;
 
     if(!skip_forklock) //we need to try for the lock in claim_all() below
         FORKLOCK; // No new locking while setting up for fork.
@@ -403,7 +430,8 @@ void rp_unlock_all_locks(int isparent)
         if (!thrlock)
             break;
     }
-    FORKUNLOCK; //resume normal locking
+    /* Paired with the direct acquire in rp_claim_all_locks above. */
+    pthread_mutex_unlock(rp_fork_lock);
     FORKLOCK_DESTROY;
 }
 
@@ -419,7 +447,15 @@ void rp_claim_all_locks()
     int nlocked_elsewhere=0, nuser_locked_elsewhere=0, lres, nattempts=0;
 
     FORKLOCK_INIT;
-    FORKLOCK;  // don't allow any new locking (unlocked in unlock_all_locks() above)
+    /* Acquire rp_fork_lock directly here (rather than via the FORKLOCK
+       macro) because the release is in rp_unlock_all_locks - a different
+       function.  The macro relies on a function-scoped local that's
+       paired in the same function; for this cross-function lifecycle,
+       go straight to the global.                                       */
+    while (pthread_mutex_trylock(rp_fork_lock)) {
+        rp_debug_printf("TRYING to get forklock (claim_all)\n");
+        usleep(1000000);
+    }
     // obtain every lock
     while(1)
     {
