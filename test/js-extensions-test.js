@@ -2736,6 +2736,361 @@ testJS("AbortSignal.timeout (async)", function () {
     return true;
 });
 
+/* ===========================================================
+   Coverage for whatwg additions that don't need a live server.
+   Surface + semantic checks for the symbols installed by
+   rampart-whatwg.so that previously had no unit test.
+   =========================================================== */
+
+testJS("WebSocketError", function () {
+    must(typeof WebSocketError === 'function',  "global WebSocketError class");
+
+    /* Defaults */
+    var e1 = new WebSocketError();
+    must(e1 instanceof DOMException,            "extends DOMException");
+    mustEq(e1.name,      'WebSocketError',      "default name");
+    mustEq(e1.code,      0,                     "DOMException code is 0");
+    mustEq(e1.message,   '',                    "default message empty");
+    mustEq(e1.closeCode, null,                  "default closeCode null");
+    mustEq(e1.reason,    '',                    "default reason empty");
+
+    /* Full init */
+    var e2 = new WebSocketError('lost', {closeCode: 3456, reason: 'gone'});
+    mustEq(e2.message,   'lost',                "custom message");
+    mustEq(e2.closeCode, 3456,                  "closeCode honored");
+    mustEq(e2.reason,    'gone',                "reason honored");
+
+    /* Reason without closeCode → default to 1000 */
+    var e3 = new WebSocketError('', {reason: 'specified'});
+    mustEq(e3.closeCode, 1000,                  "reason-only defaults closeCode to 1000");
+    mustEq(e3.reason,    'specified',           "reason kept");
+
+    /* Custom 3xxx range allowed */
+    var e4 = new WebSocketError('', {closeCode: 3333});
+    mustEq(e4.closeCode, 3333,                  "custom 3xxx closeCode");
+
+    /* Invalid codes throw InvalidAccessError DOMException */
+    var bads = [999, 1001, 2999, 5000];
+    for (var i = 0; i < bads.length; i++) {
+        var threw = false;
+        try { new WebSocketError('', {closeCode: bads[i]}); }
+        catch (e) {
+            threw = true;
+            mustEq(e.name, 'InvalidAccessError',
+                   "invalid code " + bads[i] + " → InvalidAccessError");
+        }
+        must(threw, "invalid closeCode " + bads[i] + " must throw");
+    }
+
+    /* Constructor-without-new throws */
+    var threw = false;
+    try { WebSocketError(); } catch (e) { threw = true; }
+    must(threw, "constructor-without-new throws");
+});
+
+testJS("XMLHttpRequest (surface, no network)", function () {
+    must(typeof XMLHttpRequest === 'function',  "global XMLHttpRequest class");
+    /* readyState constants */
+    mustEq(XMLHttpRequest.UNSENT,           0,  "UNSENT=0");
+    mustEq(XMLHttpRequest.OPENED,           1,  "OPENED=1");
+    mustEq(XMLHttpRequest.HEADERS_RECEIVED, 2,  "HEADERS_RECEIVED=2");
+    mustEq(XMLHttpRequest.LOADING,          3,  "LOADING=3");
+    mustEq(XMLHttpRequest.DONE,             4,  "DONE=4");
+
+    var xhr = new XMLHttpRequest();
+    /* Prototype constants too */
+    mustEq(xhr.DONE,                        4,  "instance.DONE");
+    mustEq(xhr.readyState,                  0,  "initial readyState UNSENT");
+    mustEq(xhr.status,                      0,  "initial status 0");
+    mustEq(xhr.statusText,                  '', "initial statusText empty");
+    mustEq(xhr.responseType,                '', "initial responseType empty");
+    mustEq(xhr.timeout,                     0,  "initial timeout 0");
+    mustEq(xhr.withCredentials,             false, "initial withCredentials false");
+    must(typeof xhr.upload === 'object',        "upload is an object (EventTarget)");
+    must(typeof xhr.upload.addEventListener === 'function', "upload has addEventListener");
+    must(typeof xhr.addEventListener === 'function', "xhr is an EventTarget");
+
+    /* open() validation */
+    var threw;
+    threw = false;
+    try { xhr.open('IN VALID', 'http://x/'); } catch (e) {
+        threw = true; mustEq(e.name, 'SyntaxError', "bad method → SyntaxError");
+    }
+    must(threw, "open with invalid method throws");
+
+    threw = false;
+    try { xhr.open('TRACE', 'http://x/'); } catch (e) {
+        threw = true; mustEq(e.name, 'SecurityError', "forbidden method TRACE → SecurityError");
+    }
+    must(threw, "open with TRACE throws");
+
+    /* sync mode not supported in our shim */
+    threw = false;
+    try { xhr.open('GET', 'http://x/', false); } catch (e) {
+        threw = true; mustEq(e.name, 'InvalidAccessError', "sync XHR → InvalidAccessError");
+    }
+    must(threw, "open with async=false throws");
+
+    /* normal open transitions readyState to OPENED (1) */
+    xhr.open('GET', 'http://example.com/path');
+    mustEq(xhr.readyState, 1,                   "readyState OPENED after open");
+
+    /* responseType setter silently ignores invalid values, accepts valid */
+    xhr.responseType = 'json';
+    mustEq(xhr.responseType, 'json',            "responseType=json accepted");
+    xhr.responseType = 'nosuchtype';
+    mustEq(xhr.responseType, 'json',            "invalid responseType silently kept previous");
+    xhr.responseType = 'arraybuffer';
+    mustEq(xhr.responseType, 'arraybuffer',     "responseType=arraybuffer accepted");
+
+    /* setRequestHeader validation */
+    threw = false;
+    try { xhr.setRequestHeader('Bad Name', 'v'); } catch (e) {
+        threw = true; mustEq(e.name, 'SyntaxError', "bad header name → SyntaxError");
+    }
+    must(threw, "setRequestHeader with space in name throws");
+
+    threw = false;
+    try { xhr.setRequestHeader('X-Test', 'a\nb'); } catch (e) {
+        threw = true; mustEq(e.name, 'SyntaxError', "bad header value → SyntaxError");
+    }
+    must(threw, "setRequestHeader with LF in value throws");
+
+    xhr.setRequestHeader('X-Test', 'ok');        /* shouldn't throw */
+
+    /* abort() on UNSENT/OPENED-without-send doesn't fire events but is OK */
+    xhr.abort();                                /* shouldn't throw */
+
+    /* Constructor-without-new */
+    threw = false;
+    try { XMLHttpRequest(); } catch (e) { threw = true; }
+    must(threw, "XHR constructor-without-new throws");
+});
+
+testJS("Blob.type WHATWG MIME normalization", function () {
+    /* Type is run through parse-a-mime-type then re-serialized. */
+    mustEq(new Blob([], {type: 'text/plain'}).type,        'text/plain',
+                                                "simple type preserved");
+    mustEq(new Blob([], {type: 'IMAGE/png'}).type,         'image/png',
+                                                "type/subtype lowercased");
+    mustEq(new Blob([], {type: 'text/plain;CHARSET=UTF-8'}).type, 'text/plain;charset=UTF-8',
+                                                "param NAME lowercased, VALUE preserved");
+    mustEq(new Blob([], {type: 'text/plain;,'}).type,      'text/plain',
+                                                "empty trailing param dropped");
+    mustEq(new Blob([], {type: 'BAD'}).type,               '',
+                                                "no slash → invalid → empty");
+    mustEq(new Blob([], {type: 'text / html'}).type,       '',
+                                                "whitespace in type → invalid → empty");
+    mustEq(new Blob([], {type: 'text/plain;a=",",x=y'}).type, 'text/plain;a=","',
+                                                "quoted-string with comma kept literally");
+
+    /* File constructor wraps Blob's normalization */
+    mustEq(new File([], 'n', {type: 'TEXT/HTML'}).type,    'text/html',
+                                                "File type normalized too");
+});
+
+testJS("Response/Request init validation", function () {
+    /* Response statusText per RFC 9110 §15.1 */
+    var threw = false;
+    try { new Response('', {statusText: '\n'}); } catch (e) { threw = true; }
+    must(threw, "statusText with LF throws");
+
+    threw = false;
+    try { new Response('', {statusText: 'Ā'}); } catch (e) { threw = true; }
+    must(threw, "statusText with non-ASCII throws");
+
+    new Response('', {statusText: 'OK extended status text'});  /* valid */
+
+    /* Null-body statuses can't have a body */
+    threw = false;
+    try { new Response('body', {status: 204}); } catch (e) { threw = true; }
+    must(threw, "Response(body, status:204) throws");
+
+    threw = false;
+    try { new Response('body', {status: 304}); } catch (e) { threw = true; }
+    must(threw, "Response(body, status:304) throws");
+
+    /* Response.json with non-encodable data throws */
+    threw = false;
+    try { Response.json(Symbol('s')); } catch (e) { threw = true; }
+    must(threw, "Response.json(Symbol) throws");
+
+    /* Request: bad enum values throw */
+    var bads = [
+        {mode: 'navigate'},
+        {mode: 'bogus'},
+        {credentials: 'BAD'},
+        {cache: 'BAD'},
+        {redirect: 'BAD'},
+        {referrerPolicy: 'BAD'},
+        {priority: 'BAD'},
+        {duplex: 'full'},      /* unsupported; only 'half' valid */
+        {window: 'http://x/'}, /* must be null */
+        {cache: 'only-if-cached', mode: 'cors'},  /* only-if-cached requires same-origin */
+    ];
+    for (var i = 0; i < bads.length; i++) {
+        threw = false;
+        try { new Request('http://example.com/', bads[i]); }
+        catch (e) { threw = true; }
+        must(threw, "Request init " + JSON.stringify(bads[i]) + " throws");
+    }
+
+    /* GET/HEAD with body throws */
+    threw = false;
+    try { new Request('http://x/', {method: 'GET', body: 'x'}); } catch (e) { threw = true; }
+    must(threw, "Request(GET) with body throws");
+
+    /* Invalid URL throws */
+    threw = false;
+    try { new Request('http://:not a valid URL'); } catch (e) { threw = true; }
+    must(threw, "Request with invalid URL throws");
+
+    /* URL with credentials throws */
+    threw = false;
+    try { new Request('http://user:pass@x/'); } catch (e) { threw = true; }
+    must(threw, "Request with userinfo URL throws");
+
+    /* Forbidden methods throw */
+    var forbiddenMethods = ['CONNECT', 'TRACE', 'TRACK', 'trace'];
+    for (var i = 0; i < forbiddenMethods.length; i++) {
+        threw = false;
+        try { new Request('http://x/', {method: forbiddenMethods[i]}); }
+        catch (e) { threw = true; }
+        must(threw, "Request with forbidden method " + forbiddenMethods[i] + " throws");
+    }
+});
+
+testJS("fetch(): unsupported scheme rejects, data: URL works (async)", function () {
+    _pendingAsync++;
+    /* data: URL is handled inline (no network); test the synthesized Response. */
+    fetch('data:text/plain;charset=utf-8,hello').then(function (r) {
+        mustEq(r.status, 200,                   "data: URL Response status 200");
+        mustEq(r.headers.get('content-type'), 'text/plain;charset=utf-8',
+                                                "data: URL content-type from URL");
+        return r.text();
+    }).then(function (t) {
+        mustEq(t, 'hello',                      "data: URL body decoded");
+
+        /* Unsupported scheme should reject without hitting curl. */
+        return fetch('ftp://example.com/').then(
+            function () { _asyncFail('fetch', new Error('ftp:// should reject')); },
+            function (e) {
+                mustEq(e.name, 'TypeError',     "ftp:// rejects with TypeError");
+                _doneAsync();
+            }
+        );
+    }).catch(function (e) { _asyncFail("fetch(data:/ftp:)", e); _doneAsync(); });
+    return true;
+});
+
+testJS("Headers: forbidden request-header filtering (silent drop)", function () {
+    /* Request constructor sets headers._guard='request'.  Forbidden header
+       names are silently dropped per WHATWG spec. */
+    var r = new Request('http://x/', {
+        method: 'POST',
+        headers: {
+            'X-Allowed': 'yes',
+            'Cookie': 'session=abc',
+            'Host': 'evil.com',
+            'Content-Length': '999',
+            'Origin': 'http://x/',  /* forbidden via guard */
+            'Sec-Anything': 'no',   /* Sec- prefix forbidden */
+            'Proxy-Anything': 'no', /* Proxy- prefix forbidden */
+        }
+    });
+    mustEq(r.headers.get('x-allowed'), 'yes',   "non-forbidden header kept");
+    mustEq(r.headers.get('cookie'),    null,    "Cookie dropped");
+    mustEq(r.headers.get('host'),      null,    "Host dropped");
+    mustEq(r.headers.get('content-length'), null, "Content-Length dropped");
+    mustEq(r.headers.get('origin'),    null,    "Origin dropped (by guard)");
+    mustEq(r.headers.get('sec-anything'), null, "Sec-* prefix dropped");
+    mustEq(r.headers.get('proxy-anything'), null, "Proxy-* prefix dropped");
+
+    /* X-HTTP-Method-Override family: silent drop when value names a forbidden method */
+    r = new Request('http://x/', {
+        method: 'POST',
+        headers: {'X-HTTP-Method-Override': 'TRACE'}
+    });
+    mustEq(r.headers.get('x-http-method-override'), null,
+                                                "method-override with TRACE value dropped");
+
+    /* But non-forbidden override value is kept */
+    r = new Request('http://x/', {
+        method: 'POST',
+        headers: {'X-HTTP-Method-Override': 'PATCH'}
+    });
+    mustEq(r.headers.get('x-http-method-override'), 'PATCH',
+                                                "method-override with PATCH value kept");
+});
+
+testJS("Response.formData multipart rejects malformed (async)", function () {
+    _pendingAsync++;
+    /* Boundary followed by junk instead of '--' or CRLF = malformed (RFC 2046). */
+    var malformed =
+        "--BoundaryXYZ\r\n" +
+        "Content-Disposition: form-data; name=\"f\"\r\n\r\n" +
+        "value\r\n" +
+        "--BoundaryXYZ-some-junk-not-dashdash-not-crlf";
+    var r = new Response(new Blob([malformed]), {
+        headers: [["Content-Type", "multipart/form-data; boundary=BoundaryXYZ"]]
+    });
+    r.formData().then(
+        function () { _asyncFail('formData', new Error('malformed multipart should reject')); _doneAsync(); },
+        function (e) {
+            mustEq(e.name, 'TypeError',         "malformed multipart rejects with TypeError");
+            _doneAsync();
+        }
+    );
+    return true;
+});
+
+testJS("Empty FormData → empty body bytes (async)", function () {
+    _pendingAsync++;
+    var fd = new FormData();
+    var r = new Response(fd);
+    r.arrayBuffer().then(function (ab) {
+        mustEq(ab.byteLength, 0,                "empty FormData body is 0 bytes");
+        _doneAsync();
+    }).catch(function (e) { _asyncFail("empty FormData", e); _doneAsync(); });
+    return true;
+});
+
+testJS("URLSearchParams.size + sort()", function () {
+    var sp = new URLSearchParams('a=1&b=2&a=3');
+    mustEq(sp.size, 3,                          ".size counts all entries (dupes included)");
+    sp.delete('a');
+    mustEq(sp.size, 1,                          ".size after delete");
+
+    /* sort() — stable; same-name pairs preserve relative order */
+    sp = new URLSearchParams('b=2&a=4&a=1&c=3');
+    sp.sort();
+    mustEq(sp.toString(), 'a=4&a=1&b=2&c=3',    "sort() stable + alphabetic");
+});
+
+testJS("Response.error() + Response.redirect() static helpers", function () {
+    var err = Response.error();
+    mustEq(err.type,       'error',             "error response type");
+    mustEq(err.status,     0,                   "error response status 0");
+    mustEq(err.statusText, '',                  "error response statusText empty");
+    mustEq(err.body,       null,                "error response body null");
+    must(err.headers,                            "error response has headers");
+    var threwAppend = false;
+    try { err.headers.append('x', '1'); } catch (e) { threwAppend = true; }
+    must(threwAppend,                           "error response headers are immutable");
+
+    /* Response.redirect requires a valid redirect status (301/302/303/307/308) */
+    var red = Response.redirect('http://example.com/new', 301);
+    mustEq(red.status,       301,               "redirect status 301");
+    mustEq(red.headers.get('location'), 'http://example.com/new',
+                                                "redirect Location header set");
+
+    var threwRange = false;
+    try { Response.redirect('http://x/', 200); } catch (e) {
+        threwRange = true; mustEq(e instanceof RangeError, true, "→ RangeError");
+    }
+    must(threwRange,                            "redirect with non-redirect status throws RangeError");
+});
+
 /* Safety net: if scheduling somehow doesn't fire, exit after a tick. */
 setTimeout(function () {
     if (!_exitOnce) {

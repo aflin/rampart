@@ -72,8 +72,8 @@ run_test() {
         done <<< "$fail_lines"
         # If exit was non-zero but no FAILED lines, report the last few lines as context
         if [ "$fail_count" -eq 0 ]; then
-            local errmsg=$(tail -3 "$TMPOUT" | head -1)
-            FAIL_SUMMARY="${FAIL_SUMMARY}  ${testname}: (exit code ${exit_code}) ${errmsg}\n"
+            local errmsg=$(tail -5 "$TMPOUT")
+            FAIL_SUMMARY="${FAIL_SUMMARY}  ${testname}: (exit code ${exit_code}) Last 5 lines:\n ${errmsg}\n"
             TOTAL_FAIL_COUNT=$((TOTAL_FAIL_COUNT+1))
         fi
     else
