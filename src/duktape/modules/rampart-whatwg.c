@@ -21,7 +21,11 @@
 #include "rampart.h"
 #include <string.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include <zlib.h>
+#if !defined(_WIN32)
+#include <sys/utsname.h>
+#endif
 
 /* Blob/File live in rampart-blob.c — compiled into THIS .so (no longer
  * eager in the rampart binary). */
@@ -7116,7 +7120,7 @@ duk_ret_t duk_open_module(duk_context *ctx)
     duk_push_string(ctx, "rampart-whatwg.c:web-streams-polyfill");
     if (duk_pcompile_string_filename(ctx, DUK_COMPILE_EVAL, web_streams_polyfill_js) != 0
         || duk_pcall(ctx, 0) != 0) {
-        duk_throw(ctx);
+        (void)duk_throw(ctx);
     }
     duk_pop(ctx);  /* discard UMD eval result (it's the exports obj) */
 
@@ -7129,35 +7133,47 @@ duk_ret_t duk_open_module(duk_context *ctx)
           of host info needed and we pass it from C. */
     duk_push_string(ctx, "rampart-whatwg.c:install");
     if (duk_pcompile_string_filename(ctx, DUK_COMPILE_EVAL, whatwg_install_js) != 0) {
-        duk_throw(ctx);
+        (void)duk_throw(ctx);
     }
     /* DUK_COMPILE_EVAL gives us a program function; running it (with
        zero args) returns the value of the program expression — which
        is the (function (rampartPlatform) { ... }) function itself. */
     if (duk_pcall(ctx, 0) != 0) {
-        duk_throw(ctx);
+        (void)duk_throw(ctx);
     }
     /* Stack: [install_fn].  Push platform string + zlib-stream
        helper functions and call.  The zlib helpers stay private to
        the install JS closure scope — never exposed as public API. */
+    /* navigator.platform per WHATWG/HTML spec.  Apple and Microsoft both
+       intentionally lie about architecture for compat ("MacIntel" even on
+       Apple Silicon Macs, "Win32" even on 64-bit Windows) — match the
+       browsers' behavior on those.  Everything else gets real sysname +
+       machine via uname() so ARM/aarch64/riscv hosts report accurately
+       instead of being mislabeled "x86_64". */
 #if defined(__APPLE__)
     duk_push_string(ctx, "MacIntel");
-#elif defined(__linux__)
-    duk_push_string(ctx, "Linux x86_64");
-#elif defined(__FreeBSD__)
-    duk_push_string(ctx, "FreeBSD x86_64");
-#elif defined(__OpenBSD__)
-    duk_push_string(ctx, "OpenBSD x86_64");
 #elif defined(_WIN32)
     duk_push_string(ctx, "Win32");
 #else
-    duk_push_string(ctx, "unknown");
+    {
+        /* utsname field sizes vary (Linux 65, glibc-GNU-ext 257).  Use
+           printf precision to bound each field to 30 chars — real values
+           are short ("Linux"/"FreeBSD"/"Darwin", "x86_64"/"aarch64") so
+           truncation is harmless and keeps the buffer compact. */
+        struct utsname _u;
+        char _platbuf[80];
+        if (uname(&_u) == 0)
+            snprintf(_platbuf, sizeof _platbuf, "%.30s %.30s", _u.sysname, _u.machine);
+        else
+            snprintf(_platbuf, sizeof _platbuf, "unknown");
+        duk_push_string(ctx, _platbuf);
+    }
 #endif
     duk_push_c_function(ctx, rp_zs_init,   3);
     duk_push_c_function(ctx, rp_zs_push,   2);
     duk_push_c_function(ctx, rp_zs_finish, 1);
     if (duk_pcall(ctx, 4) != 0) {
-        duk_throw(ctx);
+        (void)duk_throw(ctx);
     }
     duk_pop(ctx);  /* discard the (void) call result */
 
