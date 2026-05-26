@@ -936,6 +936,23 @@ EVHTP_EXPORT int evhtp_use_threads_wexit(evhtp_t *,
     int nthreads, void * arg);
 
 /**
+ * @brief Share an existing htp's worker thread pool with another htp.
+ *        Used when multiple evhtp_t instances on the same event_base
+ *        should dispatch work onto the same set of worker threads
+ *        (e.g. one htp per listener config, sharing one pool).
+ *
+ *        The thread init/exit callbacks are NOT re-run for the
+ *        borrower — workers were already initialized by `src`.
+ *        At request time, libevhtp dispatches off `connection->htp`,
+ *        which is set per-accept on the borrower, so SSL/routes
+ *        come from the borrower correctly.
+ *
+ *        Teardown is intentionally unhandled: do not call
+ *        evhtp_free on the borrower before the owner.
+ */
+EVHTP_EXPORT int evhtp_use_existing_threads(evhtp_t * htp, evhtp_t * src);
+
+/**
  * @brief generates all the right information for a reply to be sent to the client
  *
  * @param request

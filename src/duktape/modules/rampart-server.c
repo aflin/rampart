@@ -7628,6 +7628,486 @@ static void evexit(void *arg)
     event_base_free(mainthr->base);
 }
 
+/* httpRedirect: 301 redirect callback used by an auxiliary plain-HTTP
+   listener to bounce every request to the equivalent https URL.
+   The arg pointer carries the target https port (cast via uintptr_t).
+   Port 443 is omitted from the URL; anything else is appended as :port. */
+static void http_redirect_cb(evhtp_request_t *req, void *arg)
+{
+    uint16_t target_port = (uint16_t)(uintptr_t)arg;
+    const char *host_hdr = evhtp_kv_find(req->headers_in, "Host");
+    char host_buf[256];
+
+    /* Strip :port suffix from Host. IPv6 literals in Host come bracketed
+       as "[::1]:port", which we need to preserve up to the closing ']'. */
+    if (host_hdr && *host_hdr) {
+        size_t i = 0;
+        const char *p = host_hdr;
+        if (*p == '[') {
+            while (*p && *p != ']' && i + 1 < sizeof(host_buf)) host_buf[i++] = *p++;
+            if (*p == ']' && i + 1 < sizeof(host_buf)) host_buf[i++] = *p++;
+        } else {
+            while (*p && *p != ':' && i + 1 < sizeof(host_buf)) host_buf[i++] = *p++;
+        }
+        host_buf[i] = '\0';
+    } else {
+        host_buf[0] = '\0';
+    }
+
+    const char *path = (req->uri && req->uri->path && req->uri->path->full)
+                        ? req->uri->path->full : "/";
+    const char *qs = (req->uri && req->uri->query_raw && *req->uri->query_raw)
+                      ? (const char *)req->uri->query_raw : NULL;
+
+    char location[2048];
+    if (target_port == 443) {
+        snprintf(location, sizeof(location), "https://%s%s%s%s",
+                 host_buf, path, qs ? "?" : "", qs ? qs : "");
+    } else {
+        snprintf(location, sizeof(location), "https://%s:%u%s%s%s",
+                 host_buf, (unsigned)target_port, path,
+                 qs ? "?" : "", qs ? qs : "");
+    }
+
+    evhtp_headers_add_header(req->headers_out,
+        evhtp_header_new("Location", location, 0, 1));
+    evhtp_headers_add_header(req->headers_out,
+        evhtp_header_new("Content-Type", "text/html; charset=utf-8", 0, 0));
+    evbuffer_add_printf(req->buffer_out,
+        "<html><body><h1>301 Moved Permanently</h1>"
+        "<p>Document moved <a href=\"%s\">here</a></p></body></html>",
+        location);
+    evhtp_send_reply(req, 301);
+}
+
+/* Phase 3b: per-listen-block SSL init. Builds an evhtp_ssl_cfg_t from
+   block-level sslKeyFile/sslCertFile (with top-level fallback),
+   validates the files load, calls evhtp_ssl_init on the block's htp,
+   and applies top-level sslMinVersion (default TLS 1.2). Throws on
+   any error. The ssl_config is allocated here and is owned by evhtp
+   for process lifetime (same as the legacy single-htp path). */
+static void listen_block_init_ssl_(duk_context *ctx, evhtp_t *htp,
+                                   duk_idx_t ob_idx, duk_idx_t block_idx,
+                                   int block_num)
+{
+    evhtp_ssl_cfg_t *cfg = calloc(1, sizeof(evhtp_ssl_cfg_t));
+    if (!cfg)
+        RP_THROW(ctx, "server.start: listen[%d]: calloc ssl_cfg failed", block_num);
+    cfg->ssl_opts = SSL_OP_ALL;
+
+    /* sslKeyFile: block first, then top-level fallback. */
+    if (duk_rp_GPS_icase(ctx, block_idx, "sslKeyFile")) {
+        cfg->privfile = strdup(duk_get_string(ctx, -1));
+    } else {
+        duk_pop(ctx);
+        if (duk_rp_GPS_icase(ctx, ob_idx, "sslKeyFile"))
+            cfg->privfile = strdup(duk_get_string(ctx, -1));
+    }
+    duk_pop(ctx);
+
+    /* sslCertFile: block first, then top-level fallback. */
+    if (duk_rp_GPS_icase(ctx, block_idx, "sslCertFile")) {
+        cfg->pemfile = strdup(duk_get_string(ctx, -1));
+    } else {
+        duk_pop(ctx);
+        if (duk_rp_GPS_icase(ctx, ob_idx, "sslCertFile"))
+            cfg->pemfile = strdup(duk_get_string(ctx, -1));
+    }
+    duk_pop(ctx);
+
+    if (!cfg->privfile || !cfg->pemfile)
+        RP_THROW(ctx, "server.start: listen[%d].secure:true requires sslKeyFile and sslCertFile (either per-block or at the top level)", block_num);
+
+    /* File validation (mirrors legacy path 9598-9655). */
+    struct stat f_stat;
+    if (stat(cfg->pemfile, &f_stat) != 0)
+        RP_THROW(ctx, "server.start: listen[%d]: Cannot load SSL cert '%s' (%s)", block_num, cfg->pemfile, strerror(errno));
+    {
+        FILE *f = fopen(cfg->pemfile, "r");
+        if (!f)
+            RP_THROW(ctx, "server.start: listen[%d]: open cert '%s' failed: %s", block_num, cfg->pemfile, strerror(errno));
+        X509 *x509 = PEM_read_X509(f, NULL, NULL, NULL);
+        unsigned long err = ERR_get_error();
+        if (x509) X509_free(x509);
+        fclose(f);
+        if (err) {
+            char tbuf[256]; ERR_error_string(err, tbuf);
+            RP_THROW(ctx, "server.start: listen[%d]: Invalid sslcertfile: %s", block_num, tbuf);
+        }
+    }
+
+    if (stat(cfg->privfile, &f_stat) != 0)
+        RP_THROW(ctx, "server.start: listen[%d]: Cannot load SSL key '%s' (%s)", block_num, cfg->privfile, strerror(errno));
+    {
+        FILE *f = fopen(cfg->privfile, "r");
+        if (!f)
+            RP_THROW(ctx, "server.start: listen[%d]: open key '%s' failed: %s", block_num, cfg->privfile, strerror(errno));
+        EVP_PKEY *pkey = PEM_read_PrivateKey(f, NULL, NULL, NULL);
+        unsigned long err = ERR_get_error();
+        if (pkey) EVP_PKEY_free(pkey);
+        fclose(f);
+        if (err) {
+            char tbuf[256]; ERR_error_string(err, tbuf);
+            RP_THROW(ctx, "server.start: listen[%d]: Invalid sslkeyfile: %s", block_num, tbuf);
+        }
+    }
+
+    fprintf(access_fh, "Initializing ssl/tls for listen[%d] cert=%s key=%s\n",
+            block_num, cfg->pemfile, cfg->privfile);
+
+    if (evhtp_ssl_init(htp, cfg) == -1)
+        RP_THROW(ctx, "server.start: listen[%d]: evhtp_ssl_init failed", block_num);
+    {
+        unsigned long err = ERR_get_error();
+        if (err) {
+            char tbuf[256]; ERR_error_string(err, tbuf);
+            RP_THROW(ctx, "server.start: listen[%d]: Ssl init err: %s", block_num, tbuf);
+        }
+    }
+
+    /* sslMinVersion is process-global in v1 (top-level only). */
+    if (duk_rp_GPS_icase(ctx, ob_idx, "sslMinVersion")) {
+        const char *v = duk_get_string(ctx, -1);
+        if (v) {
+            if      (!strcmp("tls1.2", v)) SSL_CTX_set_min_proto_version(htp->ssl_ctx, TLS1_2_VERSION);
+            else if (!strcmp("tls1.1", v)) SSL_CTX_set_min_proto_version(htp->ssl_ctx, TLS1_1_VERSION);
+            else if (!strcmp("tls1.0", v) || !strcmp("tls1", v))
+                                            SSL_CTX_set_min_proto_version(htp->ssl_ctx, TLS1_VERSION);
+            else if (!strcmp("ssl3",  v))  SSL_CTX_set_min_proto_version(htp->ssl_ctx, SSL3_VERSION);
+            else RP_THROW(ctx, "server.start: sslMinVersion must be ssl3, tls1, tls1.1, or tls1.2");
+        }
+    } else {
+        SSL_CTX_set_min_proto_version(htp->ssl_ctx, TLS1_2_VERSION);
+    }
+    duk_pop(ctx);
+}
+
+/* Resolve effective per-block maxBodySize (returns -1 if unset both
+   places, caller uses its own default). */
+static int64_t listen_block_effective_max_body_size_(duk_context *ctx,
+                                                      duk_idx_t ob_idx,
+                                                      duk_idx_t block_idx)
+{
+    int64_t v = -1;
+    if (duk_rp_GPS_icase(ctx, block_idx, "maxBodySize")) {
+        v = (int64_t)duk_get_number(ctx, -1);
+        duk_pop(ctx);
+        return v;
+    }
+    duk_pop(ctx);
+    if (duk_rp_GPS_icase(ctx, ob_idx, "maxBodySize"))
+        v = (int64_t)duk_get_number(ctx, -1);
+    duk_pop(ctx);
+    return v;
+}
+
+/* Resolve effective per-block scriptTimeout in MILLISECONDS (matching
+   the units stored on `dhs->timeout`). Returns -1 if unset both
+   places — caller falls back to the existing dhs->timeout default. */
+static int listen_block_effective_script_timeout_ms_(duk_context *ctx,
+                                                      duk_idx_t ob_idx,
+                                                      duk_idx_t block_idx)
+{
+    double sec = -1.0;
+    if (duk_rp_GPS_icase(ctx, block_idx, "scriptTimeout")) {
+        sec = duk_get_number(ctx, -1);
+        duk_pop(ctx);
+    } else {
+        duk_pop(ctx);
+        if (duk_rp_GPS_icase(ctx, ob_idx, "scriptTimeout"))
+            sec = duk_get_number(ctx, -1);
+        duk_pop(ctx);
+    }
+    if (sec <= 0.0)
+        return -1;
+    return (int)(sec * 1000.0);
+}
+
+/* Resolve effective per-block connectTimeout (in seconds, fractional).
+   Returns -1.0 if unset both places — caller uses its own default. */
+static double listen_block_effective_connect_timeout_(duk_context *ctx,
+                                                       duk_idx_t ob_idx,
+                                                       duk_idx_t block_idx)
+{
+    double v = -1.0;
+    if (duk_rp_GPS_icase(ctx, block_idx, "connectTimeout")) {
+        v = duk_get_number(ctx, -1);
+        duk_pop(ctx);
+        return v;
+    }
+    duk_pop(ctx);
+    if (duk_rp_GPS_icase(ctx, ob_idx, "connectTimeout"))
+        v = duk_get_number(ctx, -1);
+    duk_pop(ctx);
+    return v;
+}
+
+/* Resolve effective `secure` for a listen block: block-local secure
+   wins; falling back to top-level secure if unspecified. */
+static int listen_block_effective_secure_(duk_context *ctx,
+                                          duk_idx_t ob_idx,
+                                          duk_idx_t block_idx)
+{
+    int result = 0;
+    if (duk_rp_GPS_icase(ctx, block_idx, "secure")) {
+        result = duk_get_boolean(ctx, -1) ? 1 : 0;
+        duk_pop(ctx);
+        return result;
+    }
+    duk_pop(ctx);
+    if (duk_rp_GPS_icase(ctx, ob_idx, "secure"))
+        result = duk_get_boolean(ctx, -1) ? 1 : 0;
+    duk_pop(ctx);
+    return result;
+}
+
+/* Bind one listen block (by stash index) onto a given htp.
+   Reads listen[block_idx].bind which is a string or array of strings;
+   for each "ip:port" entry calls bind_sock_port. The block's stack
+   entry is left on the stack on entry and exit unchanged. */
+static void listen_bind_block_to_htp_(duk_context *ctx, evhtp_t *htp,
+                                      duk_idx_t listen_idx, int block_idx)
+{
+    /* Push the block. */
+    duk_get_prop_index(ctx, listen_idx, (duk_uarridx_t)block_idx);
+
+    /* Bind entries. */
+    duk_get_prop_string(ctx, -1, "bind");
+    if (duk_is_string(ctx, -1)) {
+        char ipany[INET6_ADDRSTRLEN + 5] = {0};
+        uint16_t port = 0;
+        char *ip_addr = NULL;
+        getipport(duk_get_string(ctx, -1));
+        if (!(ip_addr = bind_sock_port(htp, ipany, port, SOCKBACKLOG))) {
+            RP_THROW(ctx, "server.start: listen[%d]: could not bind to %s port %d",
+                     block_idx, ipany, port);
+        }
+        free(ip_addr);
+    } else {
+        /* array */
+        duk_size_t n = duk_get_length(ctx, -1);
+        for (duk_uarridx_t i = 0; i < (duk_uarridx_t)n; i++) {
+            duk_get_prop_index(ctx, -1, i);
+            char ipany[INET6_ADDRSTRLEN + 5] = {0};
+            uint16_t port = 0;
+            char *ip_addr = NULL;
+            getipport(duk_get_string(ctx, -1));
+            if (!(ip_addr = bind_sock_port(htp, ipany, port, SOCKBACKLOG))) {
+                RP_THROW(ctx, "server.start: listen[%d].bind[%u]: could not bind to %s port %d",
+                         block_idx, (unsigned)i, ipany, port);
+            }
+            free(ip_addr);
+            duk_pop(ctx);
+        }
+    }
+    duk_pop(ctx); /* pop bind */
+    duk_pop(ctx); /* pop block */
+}
+
+/* ====================================================================
+ * listen:[] block parsing.
+ *
+ * `listen:` is an array of listen-block objects. Presence of `listen:`
+ * activates the new multi-htp construction path. `listen:` and `bind:`
+ * are mutually exclusive at the top level.
+ *
+ * Phase 3 scope (this commit): HTTP-only multi-listener. The block
+ * allowlist is intentionally narrow:
+ *   bind        — required, "ip:port" string or array thereof
+ *   secure      — boolean; must be false in Phase 3 (true is Phase 3b)
+ *
+ * Per-block features deferred to later phases (rejected by validator
+ * with a clear "Phase X" message so users know it's known-missing):
+ *   map               — Phase 4
+ *   sslKeyFile/sslCertFile, secure:true   — Phase 3b
+ *   connectTimeout/scriptTimeout/maxBodySize — later
+ *
+ * Top-level rejections when listen: is present:
+ *   bind   — mutually exclusive with listen:
+ *   map    — Phase 4 (per-block only)
+ *   secure:true — Phase 3b (no SSL in listen mode yet)
+ *
+ * Process-global keys (must be top-level only; not allowed in a block):
+ *   threads/useThreads, daemon, user, allowUserSwitching,
+ *   appendProcTitle, postForkFunc, mimeMap, developerMode,
+ *   accessLog, errorLog, log, logIpFromHeader, maxRead, maxWrite
+ * ==================================================================== */
+
+static const char * const listen_block_allowed_[] = {
+    "bind", "map", "secure",
+    "sslKeyFile", "sslCertFile",
+    "connectTimeout", "scriptTimeout", "maxBodySize",
+    NULL
+};
+
+/* Keys present in the validator allowlist of future phases but
+   explicitly rejected with a "coming soon" message.
+   (Empty for now — all v1 per-block keys are wired.) */
+static const struct { const char *name; const char *phase; } listen_block_deferred_[] = {
+    {NULL, NULL}
+};
+
+static int listen_block_key_allowed_(const char *k)
+{
+    for (int i = 0; listen_block_allowed_[i]; i++) {
+        if (!strcasecmp(k, listen_block_allowed_[i]))
+            return 1;
+    }
+    return 0;
+}
+
+/* Validate one listen block. Block object is on top of stack.
+   Idx is the block's array index, for error messages. */
+static void validate_listen_block_(duk_context *ctx, duk_uarridx_t idx)
+{
+    duk_idx_t block_idx = duk_get_top_index(ctx);
+
+    /* Required: bind (string or array of strings) */
+    if (!duk_get_prop_string(ctx, block_idx, "bind")) {
+        duk_pop(ctx);
+        RP_THROW(ctx, "server.start: listen[%u] requires 'bind'", (unsigned)idx);
+    }
+    /* Required: map (object); validated for shape below at the map check. */
+    {
+        int has_map = duk_get_prop_string(ctx, block_idx, "map");
+        if (!has_map) {
+            duk_pop(ctx); /* undefined */
+            duk_pop(ctx); /* bind value still on top from line above */
+            RP_THROW(ctx, "server.start: listen[%u] requires 'map'", (unsigned)idx);
+        }
+        if (!duk_is_object(ctx, -1) || duk_is_array(ctx, -1) || duk_is_function(ctx, -1)) {
+            RP_THROW(ctx, "server.start: listen[%u].map must be an object", (unsigned)idx);
+        }
+        duk_pop(ctx); /* pop map */
+    }
+    if (duk_is_string(ctx, -1)) {
+        /* ok */
+    } else if (duk_is_array(ctx, -1)) {
+        duk_size_t n = duk_get_length(ctx, -1);
+        if (n == 0)
+            RP_THROW(ctx, "server.start: listen[%u].bind array must contain at least one entry", (unsigned)idx);
+        for (duk_uarridx_t i = 0; i < (duk_uarridx_t)n; i++) {
+            duk_get_prop_index(ctx, -1, i);
+            if (!duk_is_string(ctx, -1))
+                RP_THROW(ctx, "server.start: listen[%u].bind[%u] must be a string \"ip:port\"", (unsigned)idx, (unsigned)i);
+            duk_pop(ctx);
+        }
+    } else {
+        RP_THROW(ctx, "server.start: listen[%u].bind must be a string or array of strings", (unsigned)idx);
+    }
+    duk_pop(ctx);
+
+    /* secure: boolean if present. Phase 3b accepts true. */
+    if (duk_rp_GPS_icase(ctx, block_idx, "secure")) {
+        if (!duk_is_boolean(ctx, -1))
+            RP_THROW(ctx, "server.start: listen[%u].secure must be boolean", (unsigned)idx);
+    }
+    duk_pop(ctx);
+
+    /* sslKeyFile / sslCertFile: strings if present. Actual file
+       validation + load happens at evhtp_ssl_init time in the
+       construction loop, with top-level fallback resolution. */
+    if (duk_rp_GPS_icase(ctx, block_idx, "sslKeyFile")) {
+        if (!duk_is_string(ctx, -1))
+            RP_THROW(ctx, "server.start: listen[%u].sslKeyFile must be a string", (unsigned)idx);
+    }
+    duk_pop(ctx);
+    if (duk_rp_GPS_icase(ctx, block_idx, "sslCertFile")) {
+        if (!duk_is_string(ctx, -1))
+            RP_THROW(ctx, "server.start: listen[%u].sslCertFile must be a string", (unsigned)idx);
+    }
+    duk_pop(ctx);
+
+    /* connectTimeout: number (seconds, fractional ok). */
+    if (duk_rp_GPS_icase(ctx, block_idx, "connectTimeout")) {
+        if (!duk_is_number(ctx, -1))
+            RP_THROW(ctx, "server.start: listen[%u].connectTimeout must be a number (seconds)", (unsigned)idx);
+        if (duk_get_number(ctx, -1) < 0)
+            RP_THROW(ctx, "server.start: listen[%u].connectTimeout must be >= 0", (unsigned)idx);
+    }
+    duk_pop(ctx);
+
+    /* scriptTimeout: number (seconds, fractional ok). */
+    if (duk_rp_GPS_icase(ctx, block_idx, "scriptTimeout")) {
+        if (!duk_is_number(ctx, -1))
+            RP_THROW(ctx, "server.start: listen[%u].scriptTimeout must be a number (seconds)", (unsigned)idx);
+        if (duk_get_number(ctx, -1) <= 0)
+            RP_THROW(ctx, "server.start: listen[%u].scriptTimeout must be > 0", (unsigned)idx);
+    }
+    duk_pop(ctx);
+
+    /* maxBodySize: number of bytes. */
+    if (duk_rp_GPS_icase(ctx, block_idx, "maxBodySize")) {
+        if (!duk_is_number(ctx, -1))
+            RP_THROW(ctx, "server.start: listen[%u].maxBodySize must be a number (bytes)", (unsigned)idx);
+        if (duk_get_number(ctx, -1) < 0)
+            RP_THROW(ctx, "server.start: listen[%u].maxBodySize must be >= 0", (unsigned)idx);
+    }
+    duk_pop(ctx);
+
+    /* Reject keys that are reserved for later phases with a clear message. */
+    for (int j = 0; listen_block_deferred_[j].name; j++) {
+        if (duk_rp_GPS_icase(ctx, block_idx, listen_block_deferred_[j].name)) {
+            RP_THROW(ctx, "server.start: listen[%u].%s is not yet implemented (%s — keep it at the top level for now)",
+                (unsigned)idx, listen_block_deferred_[j].name, listen_block_deferred_[j].phase);
+        }
+        duk_pop(ctx);
+    }
+
+    /* Reject any key not in the Phase 3 per-listener allowlist. */
+    duk_enum(ctx, block_idx, 0);
+    while (duk_next(ctx, -1, 0)) {
+        const char *k = duk_get_string(ctx, -1);
+        if (!listen_block_key_allowed_(k)) {
+            /* deferred keys would have been caught above with a better msg;
+               this branch only fires for truly-unrecognised/global-only keys. */
+            RP_THROW(ctx, "server.start: listen[%u]: option '%s' is not allowed inside a listen block (either process-global or not yet supported per-listener — keep it at the top level)", (unsigned)idx, k);
+        }
+        duk_pop(ctx);
+    }
+    duk_pop(ctx);
+}
+
+/* Validate the listen: array. Called only when listen: is present on
+   the top-level options object. Throws on any malformed input. */
+static void validate_listen_array_(duk_context *ctx, duk_idx_t ob_idx)
+{
+    /* Caller leaves the listen array on top of stack. */
+    if (!duk_is_array(ctx, -1))
+        RP_THROW(ctx, "server.start: 'listen' must be an array of objects");
+
+    duk_size_t n = duk_get_length(ctx, -1);
+    if (n == 0)
+        RP_THROW(ctx, "server.start: 'listen' must contain at least one block");
+
+    /* Top-level bind: is mutually exclusive with listen: */
+    if (duk_rp_GPS_icase(ctx, ob_idx, "bind")) {
+        duk_pop(ctx);
+        RP_THROW(ctx, "server.start: 'bind' and 'listen' are mutually exclusive — use one or the other");
+    }
+    duk_pop(ctx);
+
+    /* Top-level map: rejected when listen: is present — each block defines its own map. */
+    if (duk_rp_GPS_icase(ctx, ob_idx, "map")) {
+        duk_pop(ctx);
+        RP_THROW(ctx, "server.start: top-level 'map' is not allowed with 'listen:' — put map inside each listen block");
+    }
+    duk_pop(ctx);
+
+    /* Phase 3b: top-level secure / sslKeyFile / sslCertFile are
+       allowed as inheritable defaults when listen: is present.
+       Each listen block may override them. */
+
+    duk_idx_t listen_idx = duk_get_top_index(ctx);
+    for (duk_uarridx_t i = 0; i < (duk_uarridx_t)n; i++) {
+        duk_get_prop_index(ctx, listen_idx, i);
+        if (!duk_is_object(ctx, -1) || duk_is_array(ctx, -1) || duk_is_function(ctx, -1))
+            RP_THROW(ctx, "server.start: listen[%u] must be an object", (unsigned)i);
+        validate_listen_block_(ctx, i);
+        duk_pop(ctx);
+    }
+}
+
 /* The godzilla function.  Big, Scary and you just don't know what it's gonna
    step on next.
    TODO: turn this function from hell into something readable */
@@ -7652,6 +8132,16 @@ duk_ret_t duk_server_start(duk_context *ctx)
     ctimeout.tv_usec = 0;
     uint64_t max_body_size = 52428800;
     const char *cache_control="max-age=84600, public";
+    /* httpRedirect: optional plain-HTTP listener that 301's everything to https. */
+    uint16_t http_redirect_port = 0;       /* 0 = disabled */
+    char *http_redirect_bind_ip = NULL;    /* NULL = bind on 0.0.0.0 + [::] */
+    uint16_t http_redirect_target = 0;     /* set later from the secure listener's port */
+    /* httpRedirect passthrough: URL prefixes that serve from disk on
+       the http listener instead of being 301'd. Typical use: ACME
+       /.well-known/acme-challenge/ for letsencrypt renewals. */
+    char **http_redirect_pt_paths = NULL;
+    char **http_redirect_pt_dirs = NULL;
+    int http_redirect_n_pt = 0;
     size_t maxread=65536, maxwrite=65536;
 
     main_dhs=dhs;
@@ -7674,6 +8164,25 @@ duk_ret_t duk_server_start(duk_context *ctx)
             ob_idx = 1;
     else
         RP_THROW(ctx, "server.start - error - argument must be an object (options)");
+
+    /* listen:[] detection. If present, validate the array shape, then
+       stash it on the duktape global STASH (not the global object). The
+       global stash isn't reached by function-copy traversal (copy_obj_recurse),
+       so the user's function values inside listen[i].map don't get
+       double-tagged with objRefId via the global-object enumeration path.
+       Legacy bind:/port: path runs only when listen: is absent —
+       no behavior change in that mode. */
+    int listen_block_count = 0;
+    if (duk_rp_GPS_icase(ctx, ob_idx, "listen")) {
+        validate_listen_array_(ctx, ob_idx);
+        listen_block_count = (int)duk_get_length(ctx, -1);
+        /* Stash on the global STASH (not the global object). */
+        duk_push_global_stash(ctx);
+        duk_dup(ctx, -2);
+        duk_put_prop_string(ctx, -2, "rampart_server_listen");
+        duk_pop(ctx); /* global stash */
+    }
+    duk_pop(ctx);
 
     /* get ip address for logging from a header (if set by proxy like nginx) */
     if (duk_rp_GPS_icase(ctx, ob_idx, "logIpFromHeader"))
@@ -8051,6 +8560,99 @@ duk_ret_t duk_server_start(duk_context *ctx)
         {
             get_secure(ctx, ob_idx, ssl_config);
         }
+
+        /* httpRedirect: <number>, "ip:port" string, or
+           { port: N | bind: "ip:port", passthrough: { "/url/": "/fs/dir/", ... } }
+           Spawns an auxiliary plain-HTTP listener that 301-redirects
+           every request to https://<host>:<https-port><path>?<query>,
+           except paths matching a passthrough prefix — those are
+           served from disk via the existing fileserver callback.
+           Typical passthrough use: ACME /.well-known/acme-challenge/
+           for letsencrypt renewals. */
+        if (duk_rp_GPS_icase(ctx, ob_idx, "httpRedirect")) {
+            if (duk_is_number(ctx, -1)) {
+                double p = duk_get_number(ctx, -1);
+                if (p < 1.0 || p > 65535.0)
+                    RP_THROW(ctx, "server.start: httpRedirect port must be 1..65535");
+                http_redirect_port = (uint16_t)p;
+            } else if (duk_is_string(ctx, -1)) {
+                /* getipport writes into the function's own ipany[] + port locals,
+                   so snapshot afterwards. */
+                getipport(duk_get_string(ctx, -1));
+                http_redirect_port = port;
+                http_redirect_bind_ip = strdup(ipany);
+            } else if (duk_is_object(ctx, -1) && !duk_is_array(ctx, -1) && !duk_is_function(ctx, -1)) {
+                /* object form: port or bind, plus optional passthrough */
+                int got_port = 0;
+                if (duk_get_prop_string(ctx, -1, "port")) {
+                    if (!duk_is_number(ctx, -1))
+                        RP_THROW(ctx, "server.start: httpRedirect.port must be a number");
+                    double p = duk_get_number(ctx, -1);
+                    if (p < 1.0 || p > 65535.0)
+                        RP_THROW(ctx, "server.start: httpRedirect.port must be 1..65535");
+                    http_redirect_port = (uint16_t)p;
+                    got_port = 1;
+                }
+                duk_pop(ctx);
+                if (!got_port) {
+                    if (duk_get_prop_string(ctx, -1, "bind")) {
+                        if (!duk_is_string(ctx, -1))
+                            RP_THROW(ctx, "server.start: httpRedirect.bind must be an 'ip:port' string");
+                        getipport(duk_get_string(ctx, -1));
+                        http_redirect_port = port;
+                        http_redirect_bind_ip = strdup(ipany);
+                        got_port = 1;
+                    }
+                    duk_pop(ctx);
+                }
+                if (!got_port)
+                    RP_THROW(ctx, "server.start: httpRedirect object requires either 'port' or 'bind'");
+
+                if (duk_get_prop_string(ctx, -1, "passthrough")) {
+                    if (!duk_is_object(ctx, -1) || duk_is_array(ctx, -1) || duk_is_function(ctx, -1))
+                        RP_THROW(ctx, "server.start: httpRedirect.passthrough must be an object mapping url prefixes to filesystem paths");
+                    duk_enum(ctx, -1, 0);
+                    while (duk_next(ctx, -1, 1)) {
+                        const char *k = duk_get_string(ctx, -2);
+                        if (!duk_is_string(ctx, -1))
+                            RP_THROW(ctx, "server.start: httpRedirect.passthrough[%s] must be a filesystem-path string", k ? k : "?");
+                        const char *v = duk_get_string(ctx, -1);
+                        if (!k || !*k || k[0] != '/')
+                            RP_THROW(ctx, "server.start: httpRedirect.passthrough key '%s' must start with '/'", k ? k : "?");
+                        /* fs-path validation up front so a bad config fails
+                           fast — before the worker pool starts. */
+                        if (!v || !*v)
+                            RP_THROW(ctx, "server.start: httpRedirect.passthrough[%s] fs path is empty", k);
+                        struct stat _pt_sb;
+                        if (stat(v, &_pt_sb) != 0)
+                            RP_THROW(ctx, "server.start: httpRedirect.passthrough[%s] fs path '%s' does not exist (%s)",
+                                k, v, strerror(errno));
+                        if (!S_ISDIR(_pt_sb.st_mode))
+                            RP_THROW(ctx, "server.start: httpRedirect.passthrough[%s] fs path '%s' is not a directory",
+                                k, v);
+                        int n = http_redirect_n_pt + 1;
+                        REMALLOC(http_redirect_pt_paths, n * sizeof(char*));
+                        REMALLOC(http_redirect_pt_dirs,  n * sizeof(char*));
+                        http_redirect_pt_paths[n-1] = strdup(k);
+                        http_redirect_pt_dirs[n-1]  = strdup(v);
+                        http_redirect_n_pt = n;
+                        duk_pop_2(ctx);
+                    }
+                    duk_pop(ctx); /* enum */
+                }
+                duk_pop(ctx);     /* passthrough value (or undefined) */
+            } else {
+                RP_THROW(ctx, "server.start: httpRedirect must be a number (port), 'ip:port' string, or an object {port|bind, passthrough?}");
+            }
+            /* Validate early — before any pool init — that we have a secure
+               listener somewhere. Bind: mode → top-level secure; listen mode →
+               at least one block must be secure:true. The block check is left
+               to construction (we'd have to scan the array twice otherwise);
+               this early check catches the common bind:-mode mistake cleanly. */
+            if (listen_block_count == 0 && !rp_using_ssl)
+                RP_THROW(ctx, "server.start: httpRedirect requires secure:true (in bind: mode) or at least one secure listen block");
+        }
+        duk_pop(ctx);
     }
 
     /* use specified number of threads */
@@ -8119,6 +8721,48 @@ duk_ret_t duk_server_start(duk_context *ctx)
 
     evhtp_set_max_keepalive_requests(htp, 128);
     evhtp_set_max_body_size(htp, max_body_size);
+
+    /* Phase 4: in listen mode, hoist creation of htps for blocks 1..N-1
+       *before* the map block, so per-block map registration has a
+       target htp to register against. listen_htps[0] is always main_htp.
+       Phase 3b also runs SSL init for each `secure: true` block here,
+       BEFORE the thread pool is started (so a cert/key validation throw
+       doesn't strand worker threads). Full bind/timeouts/pool-borrow
+       still happen in the Phase 3 finalisation loop after threads init. */
+    evhtp_t **listen_htps = NULL;
+    if (listen_block_count > 0) {
+        listen_htps = malloc(sizeof(evhtp_t*) * (size_t)listen_block_count);
+        if (!listen_htps)
+            RP_THROW(ctx, "server.start: malloc listen_htps failed");
+        listen_htps[0] = htp;  /* main_htp */
+        for (int b = 1; b < listen_block_count; b++) {
+            listen_htps[b] = evhtp_new(mainthr->base, NULL);
+            if (!listen_htps[b])
+                RP_THROW(ctx, "server.start: listen[%d]: evhtp_new failed", b);
+            evhtp_set_max_keepalive_requests(listen_htps[b], 128);
+            evhtp_set_max_body_size(listen_htps[b], max_body_size);
+        }
+        /* Per-block SSL init + maxBodySize override (before threads, before map). */
+        duk_push_global_stash(ctx);
+        duk_get_prop_string(ctx, -1, "rampart_server_listen");
+        duk_remove(ctx, -2);
+        duk_idx_t larr = duk_get_top_index(ctx);
+        for (int b = 0; b < listen_block_count; b++) {
+            duk_get_prop_index(ctx, larr, (duk_uarridx_t)b);
+            duk_idx_t bidx = duk_get_top_index(ctx);
+
+            int64_t mbs = listen_block_effective_max_body_size_(ctx, ob_idx, bidx);
+            if (mbs >= 0)
+                evhtp_set_max_body_size(listen_htps[b], (uint64_t)mbs);
+
+            if (listen_block_effective_secure_(ctx, ob_idx, bidx)) {
+                listen_block_init_ssl_(ctx, listen_htps[b], ob_idx, bidx, b);
+                if (!rp_using_ssl) { rp_using_ssl = 1; scheme = "https://"; }
+            }
+            duk_pop(ctx);
+        }
+        duk_pop(ctx); /* listen array */
+    }
 
     /* testing for pure c benchmarking*
     evhtp_set_cb(htp, "/test", testcb, NULL);
@@ -8690,7 +9334,38 @@ duk_ret_t duk_server_start(duk_context *ctx)
         }
         duk_pop(ctx);
 
-        if (duk_rp_GPS_icase(ctx, ob_idx, "map"))
+        /* Phase 4: map registration. In legacy mode iterates once with
+           the top-level map registered against main_htp. In listen mode
+           iterates per block, registering listen[b].map against
+           listen_htps[b]. The inner code uses target_htp for all
+           evhtp_set_*_cb calls; the outer loop swaps it per iteration. */
+        evhtp_t *target_htp = htp;
+        duk_idx_t listen_arr_idx = -1;
+        int map_n_iters = (listen_block_count > 0) ? listen_block_count : 1;
+        if (listen_block_count > 0) {
+            duk_push_global_stash(ctx);
+            duk_get_prop_string(ctx, -1, "rampart_server_listen");
+            duk_remove(ctx, -2);  /* drop global stash, leave array on top */
+            listen_arr_idx = duk_get_top_index(ctx);
+        }
+        for (int map_iter = 0; map_iter < map_n_iters; map_iter++)
+        {
+        int map_found;
+        int block_script_timeout_ms = dhs->timeout;  /* default: top-level */
+        if (listen_block_count > 0) {
+            target_htp = listen_htps[map_iter];
+            duk_get_prop_index(ctx, listen_arr_idx, (duk_uarridx_t)map_iter);
+            duk_idx_t bidx_local = duk_get_top_index(ctx);
+            int t = listen_block_effective_script_timeout_ms_(ctx, ob_idx, bidx_local);
+            if (t >= 0)
+                block_script_timeout_ms = t;
+            duk_get_prop_string(ctx, -1, "map");
+            duk_remove(ctx, -2);  /* drop the block, leave map on top */
+            map_found = 1;  /* validator already enforced map presence */
+        } else {
+            map_found = duk_rp_GPS_icase(ctx, ob_idx, "map");
+        }
+        if (map_found)
         {
             if (duk_is_object(ctx, -1) && !duk_is_function(ctx, -1) && !duk_is_array(ctx, -1))
             {
@@ -8792,6 +9467,18 @@ duk_ret_t duk_server_start(duk_context *ctx)
                             duk_get_prop_string(ctx, -1, "name");
                             fname = duk_get_string(ctx, -1);
                             duk_pop(ctx);
+                            /* `new Function(src)` produces a function with
+                               name == "anonymous". rampart-server's
+                               function-copy machinery cannot replicate such
+                               functions into worker threads reliably
+                               (fatal "function 'anonymous' not found"
+                               when assigned to a top-level var, "big time
+                               error" when constructed in a loop). Reject
+                               up front with a clear message — modulePath
+                               or a named function declaration covers the
+                               legitimate use cases. */
+                            if (fname && !strcmp(fname, "anonymous"))
+                                RP_THROW(ctx, "server.start: map[%s]: function with name 'anonymous' is not supported (looks like `new Function(...)`). Use a named function declaration (function foo(req){...}) or modulePath.", s);
                             fprintf(access_fh, "mapping %s path to function   %-20s ->    function %s()\n", pathtypes[cbtype], s, fname);
                             goto copyfunction;
                         }
@@ -9027,13 +9714,13 @@ duk_ret_t duk_server_start(duk_context *ctx)
 
                                 /* register with evhtp using proxy_callback */
                                 if (cbtype == 2)
-                                    evhtp_set_regex_cb(htp, s, proxy_callback, pconf);
+                                    evhtp_set_regex_cb(target_htp, s, proxy_callback, pconf);
                                 else if (cbtype == 1)
-                                    evhtp_set_glob_cb(htp, s, proxy_callback, pconf);
+                                    evhtp_set_glob_cb(target_htp, s, proxy_callback, pconf);
                                 else if (cbtype == 3)
-                                    evhtp_set_cb(htp, s, proxy_callback, pconf);
+                                    evhtp_set_cb(target_htp, s, proxy_callback, pconf);
                                 else
-                                    evhtp_set_exact_cb(htp, s, proxy_callback, pconf);
+                                    evhtp_set_exact_cb(target_htp, s, proxy_callback, pconf);
 
                                 n_proxy_confs++;
                                 add_exit_func(simplefree, pconf);
@@ -9058,7 +9745,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
                         add_exit_func(simplefree, cb_dhs);
                         cb_dhs->module=mod;
                         cb_dhs->pathlen=pathlen;
-                        cb_dhs->timeout = dhs->timeout;
+                        cb_dhs->timeout = block_script_timeout_ms;
                         /* copy function to all the heaps/ctxs */
                         if(mod)
                         {
@@ -9075,25 +9762,25 @@ duk_ret_t duk_server_start(duk_context *ctx)
                         /* register callback with evhtp using the callback dhs struct */
                         if(cbtype==2)
                         {
-                            req_callback =evhtp_set_regex_cb(htp, s, http_callback, cb_dhs);
+                            req_callback =evhtp_set_regex_cb(target_htp, s, http_callback, cb_dhs);
                             if(!req_callback)
                                 RP_THROW(ctx, "server.start - parameter \"map\": Bad regular expression");
                         }
                         else if (cbtype==1)
-                            evhtp_set_glob_cb(htp, s, http_callback, cb_dhs);
+                            evhtp_set_glob_cb(target_htp, s, http_callback, cb_dhs);
                         else if (cbtype==3)
-                            evhtp_set_cb(htp, s, http_callback, cb_dhs);
+                            evhtp_set_cb(target_htp, s, http_callback, cb_dhs);
                         else
                         {
                             size_t slen = strlen(s);
                             //printf("setting exact path %s %d\n",s, cb_dhs->module);
-                            evhtp_set_exact_cb(htp, s, http_callback, cb_dhs);
+                            evhtp_set_exact_cb(target_htp, s, http_callback, cb_dhs);
 
                             // if '*/index.html', then map '/' as well
                             if(slen > 10 && !strcmp ( s + (slen - 11), "/index.html") )
                             {
                                 s[slen - 10] = '\0';
-                                evhtp_set_exact_cb(htp, s, http_callback, cb_dhs);
+                                evhtp_set_exact_cb(target_htp, s, http_callback, cb_dhs);
                             }
                         }
                         free(s);
@@ -9257,12 +9944,12 @@ duk_ret_t duk_server_start(duk_context *ctx)
                         if(!*s)
                         {
                             fprintf(access_fh, "mapping filesystem folder        %-20s ->    %s\n", "/", fs);
-                            evhtp_set_cb(htp, "/", fileserver, map);
+                            evhtp_set_cb(target_htp, "/", fileserver, map);
                         }
                         else
                         {
                             fprintf(access_fh, "mapping filesystem folder        %-20s ->    %s\n", s, fs);
-                            evhtp_set_cb(htp, s, fileserver, map);
+                            evhtp_set_cb(target_htp, s, fileserver, map);
                         }
                         duk_pop_2(ctx);
                     }
@@ -9271,9 +9958,13 @@ duk_ret_t duk_server_start(duk_context *ctx)
             else
                 RP_THROW(ctx, "server.start: value of parameter \"map\" requires an object");
         }
-        else
+        else if (listen_block_count == 0)
             RP_THROW(ctx, "server.start: No \"map\" object provided, nothing to do");
-        duk_pop(ctx);
+        duk_pop(ctx);  /* pop map */
+        }  /* end outer map_iter for-loop */
+        if (listen_block_count > 0) {
+            duk_pop(ctx);  /* listen array */
+        }
     }
     duk_pop(ctx);
 
@@ -9304,7 +9995,10 @@ duk_ret_t duk_server_start(duk_context *ctx)
             proxy_extra_threads, totnthreads);
     }
 
-    if (rp_using_ssl)
+    /* Phase 3b: skip the legacy single-htp SSL init when listen mode is
+       active — per-block SSL init runs later in the construction loop
+       and may install different certs on different htps. */
+    if (rp_using_ssl && listen_block_count == 0)
     {
         int filecount = 0;
 
@@ -9404,63 +10098,67 @@ duk_ret_t duk_server_start(duk_context *ctx)
     else
         free(ssl_config);
 
-    if (duk_rp_GPS_icase(ctx, ob_idx, "bind"))
+    if (listen_block_count == 0)
     {
-        if ( duk_is_string(ctx, -1) )
+        if (duk_rp_GPS_icase(ctx, ob_idx, "bind"))
         {
-            getipport(duk_get_string(ctx,-1));
-            if (!(ip_addr = bind_sock_port(htp, ipany, port, SOCKBACKLOG)))
+            if ( duk_is_string(ctx, -1) )
             {
-                if (!strncmp("ipv6:",ipany,5))
+                getipport(duk_get_string(ctx,-1));
+                if (!(ip_addr = bind_sock_port(htp, ipany, port, SOCKBACKLOG)))
                 {
-                    RP_THROW(ctx, "server.start: could not bind to [%s] port %d", ipany+5, port);
-                }
-                else
-                {
-                    RP_THROW(ctx, "server.start: could not bind to %s port %d", ipany, port);
-                }
-            }
-            free(ip_addr);
-            ip_addr=NULL;
-        }
-        else if ( duk_is_array(ctx, -1) )
-        {
-            int n=duk_get_length(ctx, -1);
-            for (i=0;i<n;i++)
-            {
-                if(duk_get_prop_index(ctx,-1,(duk_uarridx_t)i))
-                {
-                    getipport(duk_get_string(ctx,-1));
-                    if (!(ip_addr = bind_sock_port(htp, ipany, port, SOCKBACKLOG)))
+                    if (!strncmp("ipv6:",ipany,5))
                     {
-                        if (!strncmp("ipv6:",ipany,5))
-                        {
-                            RP_THROW(ctx, "server.start: could not bind to [%s] port %d", ipany+5, port);
-                        }
-                        else
-                        {
-                            RP_THROW(ctx, "server.start: could not bind to %s port %d", ipany, port);
-                        }
+                        RP_THROW(ctx, "server.start: could not bind to [%s] port %d", ipany+5, port);
                     }
-                    free(ip_addr);
-                    ip_addr=NULL;
+                    else
+                    {
+                        RP_THROW(ctx, "server.start: could not bind to %s port %d", ipany, port);
+                    }
                 }
-                duk_pop(ctx);
+                free(ip_addr);
+                ip_addr=NULL;
             }
+            else if ( duk_is_array(ctx, -1) )
+            {
+                int n=duk_get_length(ctx, -1);
+                for (i=0;i<n;i++)
+                {
+                    if(duk_get_prop_index(ctx,-1,(duk_uarridx_t)i))
+                    {
+                        getipport(duk_get_string(ctx,-1));
+                        if (!(ip_addr = bind_sock_port(htp, ipany, port, SOCKBACKLOG)))
+                        {
+                            if (!strncmp("ipv6:",ipany,5))
+                            {
+                                RP_THROW(ctx, "server.start: could not bind to [%s] port %d", ipany+5, port);
+                            }
+                            else
+                            {
+                                RP_THROW(ctx, "server.start: could not bind to %s port %d", ipany, port);
+                            }
+                        }
+                        free(ip_addr);
+                        ip_addr=NULL;
+                    }
+                    duk_pop(ctx);
+                }
+            }
+            else
+                RP_THROW(ctx,"server.start() - option bind requires a string or array of strings");
         }
         else
-            RP_THROW(ctx,"server.start() - option bind requires a string or array of strings");
+        {
+            if (!(ip_addr = bind_sock_port(htp, ipv4, port, SOCKBACKLOG)))
+                RP_THROW(ctx, "server.start: could not bind to %s port %d", ipv4, port);
+            if (!(ip_addr = bind_sock_port(htp, ipv6, port, SOCKBACKLOG)))
+                RP_THROW(ctx, "server.start: could not bind to %s, %d", ipv6, port);
+        }
+        duk_pop(ctx);
     }
-    else
-    {
-        if (!(ip_addr = bind_sock_port(htp, ipv4, port, SOCKBACKLOG)))
-            RP_THROW(ctx, "server.start: could not bind to %s port %d", ipv4, port);
-        if (!(ip_addr = bind_sock_port(htp, ipv6, port, SOCKBACKLOG)))
-            RP_THROW(ctx, "server.start: could not bind to %s, %d", ipv6, port);
-    }
-    duk_pop(ctx);
-    //done with options, get rid of ob_idx
-    duk_remove(ctx, ob_idx);
+    /* Phase 3b: duk_remove(ctx, ob_idx) deferred until after the
+       listen construction loop, since per-block SSL init needs to read
+       top-level sslKeyFile/sslCertFile/secure as inheritable defaults. */
 
     if(ctimeout.tv_sec != RP_TIME_T_FOREVER)
         evhtp_set_timeouts(htp, &ctimeout, &ctimeout);
@@ -9470,6 +10168,194 @@ duk_ret_t duk_server_start(duk_context *ctx)
     evhtp_set_pre_accept_cb(htp, pre_accept_callback, NULL);
 
     evhtp_use_threads_wexit(htp, initThread, NULL, nthr, NULL);
+
+    /* Phase 3/4 listen-mode finalisation. main_htp (= listen_htps[0])
+       and listen_htps[1..N-1] were created earlier (before map block)
+       so Phase 4 map registration could target each. They had only
+       evhtp_new + set_max_keepalive_requests + set_max_body_size.
+       Now finish per-htp setup (timeouts, pre_accept_cb, binds) and
+       borrow the thread pool for non-main htps. */
+    if (listen_block_count > 0) {
+        duk_push_global_stash(ctx);
+        duk_get_prop_string(ctx, -1, "rampart_server_listen");
+        duk_remove(ctx, -2);  /* drop global stash, leave array on top */
+        duk_idx_t listen_idx = duk_get_top_index(ctx);
+
+        for (int b = 0; b < listen_block_count; b++) {
+            evhtp_t *h = listen_htps[b];
+
+            /* Per-block connectTimeout override (block-local or top-level
+               fallback). Applies to all htps including main_htp — calling
+               evhtp_set_timeouts twice on main_htp is harmless. */
+            duk_get_prop_index(ctx, listen_idx, (duk_uarridx_t)b);
+            duk_idx_t bidx = duk_get_top_index(ctx);
+            double to = listen_block_effective_connect_timeout_(ctx, ob_idx, bidx);
+            duk_pop(ctx); /* pop block */
+            if (to >= 0.0) {
+                struct timeval block_to;
+                block_to.tv_sec  = (time_t)to;
+                block_to.tv_usec = (suseconds_t)(1000000.0 * (to - (double)block_to.tv_sec));
+                evhtp_set_timeouts(h, &block_to, &block_to);
+            } else if (b > 0) {
+                /* No per-block override + non-main htp: inherit the global
+                   ctimeout that legacy lines just above already applied to
+                   main_htp. */
+                if (ctimeout.tv_sec != RP_TIME_T_FOREVER)
+                    evhtp_set_timeouts(h, &ctimeout, &ctimeout);
+                else
+                    evhtp_set_timeouts(h, NULL, NULL);
+            }
+
+            if (b > 0) {
+                evhtp_set_pre_accept_cb(h, pre_accept_callback, NULL);
+                if (evhtp_use_existing_threads(h, htp) < 0)
+                    RP_THROW(ctx, "server.start: listen[%d]: evhtp_use_existing_threads failed", b);
+            }
+            listen_bind_block_to_htp_(ctx, h, listen_idx, b);
+            fprintf(access_fh, "HTTP server - listen[%d] -> %s\n", b,
+                (b == 0) ? "main_htp" : "borrowed thread pool from main_htp");
+        }
+        duk_pop(ctx); /* listen array */
+        free(listen_htps);
+        listen_htps = NULL;
+    }
+
+    /* httpRedirect: auxiliary plain-HTTP listener that 301s to https.
+       Build it after the main thread pool exists so we can borrow it. */
+    if (http_redirect_port) {
+        /* Determine the https target port. In bind: mode, `port` is the
+           last parsed bind port. In listen mode we need the first secure
+           block's port. */
+        if (http_redirect_target == 0) {
+            if (listen_block_count > 0) {
+                duk_push_global_stash(ctx);
+                duk_get_prop_string(ctx, -1, "rampart_server_listen");
+                duk_remove(ctx, -2);
+                duk_idx_t larr = duk_get_top_index(ctx);
+                for (int b = 0; b < listen_block_count; b++) {
+                    duk_get_prop_index(ctx, larr, (duk_uarridx_t)b);
+                    duk_idx_t bidx = duk_get_top_index(ctx);
+                    if (listen_block_effective_secure_(ctx, ob_idx, bidx)) {
+                        /* first secure block: grab the first bind's port */
+                        duk_get_prop_string(ctx, bidx, "bind");
+                        const char *bind_str = NULL;
+                        if (duk_is_string(ctx, -1)) {
+                            bind_str = duk_get_string(ctx, -1);
+                        } else if (duk_is_array(ctx, -1)) {
+                            duk_get_prop_index(ctx, -1, 0);
+                            bind_str = duk_get_string(ctx, -1);
+                            duk_pop(ctx);
+                        }
+                        if (bind_str) {
+                            getipport(bind_str);
+                            http_redirect_target = port;
+                        }
+                        duk_pop(ctx); /* bind */
+                        duk_pop(ctx); /* block */
+                        break;
+                    }
+                    duk_pop(ctx); /* block */
+                }
+                duk_pop(ctx); /* listen array */
+            } else {
+                http_redirect_target = port;  /* legacy bind: port */
+            }
+        }
+
+        if (!rp_using_ssl && listen_block_count == 0)
+            RP_THROW(ctx, "server.start: httpRedirect requires secure:true (or a secure listen block)");
+        if (http_redirect_target == 0)
+            RP_THROW(ctx, "server.start: httpRedirect requires at least one secure listener to point at");
+        if (http_redirect_target == http_redirect_port)
+            RP_THROW(ctx, "server.start: httpRedirect port (%u) must differ from the https target port", (unsigned)http_redirect_port);
+
+        evhtp_t *rhtp = evhtp_new(mainthr->base, NULL);
+        if (!rhtp)
+            RP_THROW(ctx, "server.start: httpRedirect: evhtp_new failed");
+        evhtp_set_max_keepalive_requests(rhtp, 128);
+        evhtp_set_max_body_size(rhtp, max_body_size);
+        if (ctimeout.tv_sec != RP_TIME_T_FOREVER)
+            evhtp_set_timeouts(rhtp, &ctimeout, &ctimeout);
+        evhtp_set_pre_accept_cb(rhtp, pre_accept_callback, NULL);
+
+        /* Borrow the main thread pool BEFORE registering callbacks —
+           fileserver dereferences thread-local state at request time
+           that's set up by the main pool's initThread. */
+        if (evhtp_use_existing_threads(rhtp, htp) < 0)
+            RP_THROW(ctx, "server.start: httpRedirect: evhtp_use_existing_threads failed");
+
+        /* passthrough paths: register fileserver callbacks for each
+           URL prefix BEFORE the catch-all gencb. evhtp tries explicit
+           callbacks first; anything not matched falls through to the
+           gencb (the 301 handler).
+           DHMAP fields mirror the legacy map-block fileserver setup:
+           map->key holds the URL prefix WITHOUT trailing slash;
+           map->val holds the filesystem dir WITH trailing slash;
+           map->dhs/nheaders/hkeys/hvals are set so fileserver's
+           header-injection loop sees a valid (empty) header set. */
+        for (int i = 0; i < http_redirect_n_pt; i++) {
+            const char *raw_dir = http_redirect_pt_dirs[i];
+            size_t dlen = strlen(raw_dir);  /* fs path was validated at parse time */
+            /* normalise fs path to end with '/' (REMALLOC pattern
+               requires the pointer to start NULL). */
+            char *fs_norm = NULL;
+            REMALLOC(fs_norm, dlen + 2);
+            strcpy(fs_norm, raw_dir);
+            if (fs_norm[dlen - 1] != '/') {
+                fs_norm[dlen]     = '/';
+                fs_norm[dlen + 1] = '\0';
+            }
+            /* URL prefix without trailing slash (libevhtp's prefix
+               matching handles both /foo and /foo/ that way). */
+            const char *raw_url = http_redirect_pt_paths[i];
+            size_t ulen = strlen(raw_url);
+            char *url_key = NULL;
+            REMALLOC(url_key, ulen + 1);
+            strcpy(url_key, raw_url);
+            if (ulen > 1 && url_key[ulen - 1] == '/')
+                url_key[ulen - 1] = '\0';
+
+            DHMAP *pmap = NULL;
+            REMALLOC(pmap, sizeof(DHMAP));
+            memset(pmap, 0, sizeof(*pmap));
+            pmap->key      = url_key;
+            pmap->val      = fs_norm;
+            pmap->dhs      = dhs;
+            pmap->nheaders = 0;
+            pmap->hkeys    = NULL;
+            pmap->hvals    = NULL;
+            evhtp_set_cb(rhtp, url_key, fileserver, pmap);
+            fprintf(access_fh, "httpRedirect passthrough: %s -> %s\n",
+                url_key, fs_norm);
+        }
+
+        evhtp_set_gencb(rhtp, http_redirect_cb,
+            (void *)(uintptr_t)http_redirect_target);
+
+        char *ip_addr2 = NULL;
+        if (http_redirect_bind_ip) {
+            if (!(ip_addr2 = bind_sock_port(rhtp, http_redirect_bind_ip,
+                                            http_redirect_port, SOCKBACKLOG)))
+                RP_THROW(ctx, "server.start: httpRedirect: could not bind to %s port %u",
+                    http_redirect_bind_ip, (unsigned)http_redirect_port);
+            free(ip_addr2);
+        } else {
+            if (!(ip_addr2 = bind_sock_port(rhtp, ipv4, http_redirect_port, SOCKBACKLOG)))
+                RP_THROW(ctx, "server.start: httpRedirect: could not bind to %s port %u",
+                    ipv4, (unsigned)http_redirect_port);
+            free(ip_addr2);
+            if (!(ip_addr2 = bind_sock_port(rhtp, ipv6, http_redirect_port, SOCKBACKLOG)))
+                RP_THROW(ctx, "server.start: httpRedirect: could not bind to %s port %u",
+                    ipv6, (unsigned)http_redirect_port);
+            free(ip_addr2);
+        }
+        fprintf(access_fh, "httpRedirect: listening on %s port %u -> https port %u\n",
+            http_redirect_bind_ip ? http_redirect_bind_ip : "0.0.0.0+[::]",
+            (unsigned)http_redirect_port, (unsigned)http_redirect_target);
+    }
+
+    /* now safe to remove ob_idx — all top-level option reads are done */
+    duk_remove(ctx, ob_idx);
 
     evhtp_set_max_single_read(maxread);
     evhtp_set_max_single_write(maxwrite);

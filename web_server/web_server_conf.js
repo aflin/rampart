@@ -73,10 +73,6 @@ var serverConf = {
     /* redir               Bool.   Launch http->https redirect server and set to port 80   */
     //redir:               false,
 
-    /* redirTemp           Bool. If true, and if redir is true or redirPort is set, send a
-                                 302 Moved Temporarily instead of a 301 Moved Permanently   */
-    //redirTemp            false,
-
     /* accessLog           String. Log file name or null for stdout  */
     //accessLog:           working_directory + '/logs/access.log',
 

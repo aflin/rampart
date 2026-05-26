@@ -5127,6 +5127,17 @@ evhtp_use_threads_wexit(evhtp_t * htp,
     return htp__use_threads_(htp, init_cb, exit_cb, nthreads, arg);
 }
 
+int
+evhtp_use_existing_threads(evhtp_t * htp, evhtp_t * src)
+{
+    if (htp == NULL || src == NULL || src->thr_pool == NULL) {
+        return -1;
+    }
+
+    htp->thr_pool = src->thr_pool;
+    return 0;
+}
+
 #endif
 
 #ifndef EVHTP_DISABLE_EVTHR

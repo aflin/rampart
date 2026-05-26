@@ -24,7 +24,6 @@ var defaultServerConf = function(wd){
         port:           -1,
         redirPort:      -1,
         redir:          false,
-        redirTemp:      false,
         htmlRoot:       wd + '/html',
         appsRoot:       wd + '/apps',
         wsappsRoot:     wd + '/wsapps',
@@ -72,7 +71,6 @@ var defaultQuickServerConf = function(wd){
         port:           -1,
         redirPort:      -1,
         redir:          false,
-        redirTemp:      false,
         htmlRoot:       wd + '/',
         appsRoot:       '',
         wsappsRoot:     '',
@@ -117,9 +115,8 @@ var optlist = {
 '--ipPort':         'Number. Set ipv4 port',
 '--ipv6Port':       'Number. Set ipv6 port',
 '--port':           'Number. Set both ipv4 and ipv6 port',
-'--redirPort':      'Number. Launch http->https redirect server and set port',
-'--redir':          'Bool.   Launch http->https redirect server and set to port 80',
-'--redirTemp':      'Bool.   When redirecting, send 302 instead of default 301 for redirect',
+'--redirPort':      'Number. Listen on this port and 301-redirect to the https server (in-process)',
+'--redir':          'Bool.   Equivalent to --redirPort 80',
 '--htmlRoot':       'String. Root directory from which to serve files',
 '--appsRoot':       'String. Root directory from which to serve apps',
 '--wsappsRoot':     'String. Root directory from which to serve wsapps',
@@ -142,7 +139,7 @@ var optlist = {
 '--developerMode':  'Bool.   Whether script errors result in 500 and return a stack trace.  Otherwise 404',
 '--letsencrypt':    'String. If using letsencrypt, the \'domain.tld\' name for automatic setup of https\n'+
 '                     (assumes --secure true and looks for \'/etc/letsencrypt/live/domain.tld/\' directory)\n' +
-'                     (if redir is set, also map ./letsencrypt-wd/.well-known/ --> http://mydom.com/.well-known/)\n' +
+'                     (if redir is set, also map ./letsencrypt_wd/.well-known/ --> http://mydom.com/.well-known/)\n' +
 '                     (if set to "setup", don\'t start https server, but do map ".well-known/" for http)\n' +
 '                     (sets port:443 unless set otherwise)',
 '--rootScripts':    'Bool.   Whether to treat *.js files in htmlRoot as apps (not secure)',
@@ -554,8 +551,6 @@ function status(serverConf){
     ret.serverPid=pret;
     var pret=getPid('monitor', true);
     ret.monitorPid=pret;
-    var pret=getPid('redir-server', true);
-    ret.redirPid=pret;
     var iret=getPid('iroh-server', true);
     ret.irohPid=iret;
     return ret;    
@@ -571,26 +566,112 @@ function start(serverConf, dump) {
     if(!serverConf)
         serverConf=defaultServerConf(utils.realPath('.'));
 
-    serverConf.launchServer = serverConf.letsencrypt!="setup";
+    serverConf.launchServer = true;
     serverConf.launchMonitor = (serverConf.log && serverConf.rotateLogs) || serverConf.monitor;
     serverConf.launchRedir = serverConf.redirPort > 0 ;
+
+    /* Setup mode: initial letsencrypt issuance, no https yet.
+       Override serverConf so the regular start_server flow runs as
+       a single minimal HTTP listener serving /.well-known/ only.
+       No monitor, no iroh, no second daemon. Skip the rewrite when
+       we're being called to stop/shutdown — those paths only need
+       killPid('server') and shouldn't touch serverConf. */
+    if (serverConf.letsencrypt == "setup"
+        && !serverConf.stop && !serverConf.shutdown) {
+        var le_wd = serverConf.serverRoot + '/letsencrypt_wd/.well-known';
+        var le_st = stat(le_wd);
+        if (!le_st) {
+            try { mkdir(le_wd); } catch(e) {
+                return serr('letsencrypt setup: could not create ' + le_wd + ': ' + e.message);
+            }
+            if (iam == 'root') {
+                try {
+                    utils.chown({user: serverConf.user, path: serverConf.serverRoot + '/letsencrypt_wd'});
+                    utils.chown({user: serverConf.user, path: le_wd});
+                } catch(e) {
+                    fprintf(stderr, 'warn: could not chown %s to "%s" - %s\n', le_wd, serverConf.user, e.message);
+                }
+            }
+        } else if (!le_st.isDirectory) {
+            return serr('letsencrypt setup: ' + le_wd + ' exists but is not a directory');
+        }
+        serverConf.secure       = false;
+        serverConf.sslKeyFile   = '';
+        serverConf.sslCertFile  = '';
+        serverConf.ipPort       = serverConf.redirPort;
+        serverConf.ipv6Port     = serverConf.redirPort;
+        /* parseOptions has already built serverConf.bind from the
+           pre-override ipPort/ipv6Port — rebuild it on the redir port. */
+        var setup_bind = [];
+        if (serverConf.bindAll) {
+            setup_bind = ['0.0.0.0:'+serverConf.redirPort, '[::]:'+serverConf.redirPort];
+        } else {
+            if (serverConf.ipAddr)   setup_bind.push(serverConf.ipAddr   + ':' + serverConf.redirPort);
+            if (serverConf.ipv6Addr) setup_bind.push(serverConf.ipv6Addr + ':' + serverConf.redirPort);
+        }
+        serverConf.bind         = setup_bind;
+        serverConf.map          = { '/.well-known/': le_wd + '/' };
+        serverConf.launchServer = true;
+        serverConf.launchRedir  = false;
+        serverConf.launchMonitor = false;
+        serverConf.redirPort    = -1;
+        delete serverConf.httpRedirect;
+    }
+
+    /* When redirPort is set AND we're running https, use the in-process
+       C-level httpRedirect option on the main server instead of forking
+       a second process. The letsencrypt case adds a /.well-known/
+       passthrough so ACME HTTP-01 challenges still serve over plain
+       HTTP for renewals; everything else 301's to https.
+       If the user has already set serverConf.httpRedirect (number,
+       string, or object), respect it — they want full control. */
+    if (serverConf.launchRedir
+        && serverConf.secure
+        && serverConf.letsencrypt != "setup")
+    {
+        if (!serverConf.httpRedirect) {
+            var hr = { port: serverConf.redirPort };
+            if (getType(serverConf.letsencrypt) == 'String' && serverConf.letsencrypt.length) {
+                var le_wd = serverConf.serverRoot + '/letsencrypt_wd/.well-known';
+                var le_st = stat(le_wd);
+                if (!le_st) {
+                    try { mkdir(le_wd); } catch(e) {
+                        console.log("Error making directory for letsencrypt challenge updates:", e.message);
+                    }
+                    if (iam == 'root') {
+                        try {
+                            utils.chown({user:serverConf.user, path:serverConf.serverRoot + '/letsencrypt_wd'});
+                            utils.chown({user:serverConf.user, path:le_wd});
+                        } catch(e) {
+                            fprintf(stderr, 'warn: could not chown dir %s to user "%s" - %s\n', le_wd, serverConf.user, e.message);
+                        }
+                    }
+                } else if (!le_st.isDirectory) {
+                    console.log("Error: " + le_wd + " is not a directory");
+                }
+                hr.passthrough = { "/.well-known/": le_wd + '/' };
+            }
+            serverConf.httpRedirect = hr;
+        }
+        serverConf.launchRedir = false;
+    }
 
     if(!unprivUser)
         unprivUser=serverConf.user;
 
     if(serverConf.shutdown || serverConf.stop) {
         var res = killPid('server');
-        var msg = 'Main Server has been stopped';
+        var msg = 'Server has been stopped';
         if(!res.success)
-            msg = 'Main Server is not running or pid file is invalid';
+            msg = 'Server is not running or pid file is invalid';
 
         res=killPid('monitor');
         if(res.success)
             msg += '\nMonitor process has been stopped';
 
-        res=killPid('redir-server');
-        if(res.success)
-            msg += '\nRedirect Server has been stopped';
+        /* http->https redirect is now handled in-process by the
+           server (httpRedirect), so there is no separate redirect
+           server to track or kill. */
 
         res=killPid('iroh-server');
         if(res.success)
@@ -690,8 +771,6 @@ function start(serverConf, dump) {
             kill(serverpid);
             var p = getPid('monitor');
             if(p) kill(p);
-            p = getPid('redir-server');
-            if(p) kill(p);
             return wpres;
         }
 
@@ -722,110 +801,20 @@ function start(serverConf, dump) {
         return ret;
     }
 
-    /* REDIRECT VARS AND CALLBACK */
-    global.redircode = serverConf.redirTemp? 302: 301;
-    global.redirHtmlFmt = '<html><body><h1>' + redircode + ' Moved</h1>'+
-                       '<p>Document moved <a href="\%s\">here</a></p></body></html>';
-
-    function doredir(req)
-    {
-        var url = 'https://' + req.path.host.replace(/:\d+/,'') + req.path.path;
-        return {
-            html:rampart.utils.sprintf(redirHtmlFmt, url),
-            status: redircode,
-            headers: { 'location': url}
-        }
+    /* http->https redirect is handled in-process via the C-level
+       httpRedirect option (server.start()). No second daemon or JS
+       redirect callback is needed. */
+    if (serverConf.httpRedirect && !serverConf.secure) {
+        return serr('options --redir[Port] requires --secure');
     }
 
-    if( (!serverConf.daemon || !serverConf.secure) &&
-        serverConf.fullServer==1 && 
-        serverConf.redirPort!=-1 &&
-        serverConf.letsencrypt!="setup")
-    {
-        return serr('options --redir[Port] requires --daemon and --secure');
-    }
-
-    /************ START THE REDIRECT SERVER ***************/
-    function start_redir(restart) {
-        var redirbind=[];
-
-        if(!serverConf.launchRedir)
-            return{};
-
-        if(serverConf.bindAll) {
-            redirbind = ['0.0.0.0:'+serverConf.redirPort, '[::]:'+serverConf.redirPort];
-        } else {
-            if(serverConf.ipAddr)
-                redirbind.push(serverConf.ipAddr + ':' + serverConf.redirPort);
-            if(serverConf.ipv6Addr)
-                redirbind.push(serverConf.ipv6Addr + ':' + serverConf.redirPort);
-        }
-
-        var redirmap = { '/':  doredir };
-        if (getType(serverConf.letsencrypt)=='String' && serverConf.letsencrypt.length) {
-            var le_wd = serverConf.serverRoot + '/letsencrypt_wd/.well-known';
-            var st = stat(le_wd);
-            if(!st) {
-                try {
-                    mkdir(le_wd);
-                } catch(e) {
-                    console.log("Error making directory for letsencrypt challenge updates:", e.message);
-                }
-                if(iam == 'root') {
-                    try {
-                        utils.chown({user:serverConf.user, path:serverConf.serverRoot + '/letsencrypt_wd'});
-                        utils.chown({user:serverConf.user, path:le_wd});
-                    } catch(e) {
-                        fprintf(stderr,'warn: could chown dir %s to user "%s" - %s\n', le_wd, serverConf.user, e.message);
-                    }
-                }
-
-            } else if (!st.isDirectory) {
-                console.log("Error: "+ serverConf.serverRoot + '/letsencrypt_wd is not a directory');
-            }
-            redirmap["/.well-known/"]=  serverConf.serverRoot + "/letsencrypt_wd/.well-known/";
-        }
-
-        var rpid=server.start(
-        {
-            bind: redirbind,
-            user: serverConf.user,
-            scriptTimeout: 20.0,
-            connectTimeout:20.0,
-            developerMode: true,
-            log: true,
-            accessLog: "/dev/null",
-            errorLog: "/dev/null",
-            daemon: true,
-            threads: 2,
-            directoryFunc: false,
-            map: redirmap,
-            appendProcTitle: serverConf.appendProcTitle
-        });
-
-        if(!serverConf.launchRedir)
-            sleep(0.5); //give proc time to exit if error
-
-        if(!kill(rpid, 0)) {
-            return serr('Failed to start redirect webserver');
-        }
-
-        var wpres = writePid('redir-server', rpid);
-        if(wpres.error) {
-            if(serverConf.launchRedir)
-                return wpres;
-            kill(rpid);
-            var p = getPid('monitor');
-            if(p) kill(p);
-            p = getPid('server');
-            if(p) kill(p);
-            return wpres;
-        }
-
-        var ret = smsg('Redirect Server has been started');
-        ret.pid=rpid;
-        return ret;
-    }
+    /* start_redir() and the doredir/redircode/redirHtmlFmt JS handlers
+       used to live here. They spawned a second daemon to do http->https
+       redirects (and serve /.well-known/ for letsencrypt). Both jobs
+       are now done in-process via server.start({httpRedirect: ...}) —
+       see the promotion block above. Setup-mode (letsencrypt=="setup")
+       was overridden at the top of start() to become a plain HTTP
+       server with /.well-known/ as its only map. */
 
     /* ****************** START THE IROH SERVER ************************ */
 
@@ -1080,61 +1069,29 @@ function start(serverConf, dump) {
                         process.exit(1);
                     }
                 }
-                if(serverConf.redirPort!=-1)
-                {
-                    var redirpid=getPid('redir-server');
-                    if(!redirpid)
-                        return;
-                    if(!kill(redirpid,0))
-                    {
-                        fprintf(serverConf.errorLog, true, '%s - monitor: restarting redirect server\n', dateFmt('%Y-%m-%d-%H-%M-%S'));
-                        var res=start_redir(true);
-                        if(res.error) {
-                            fprintf(serverConf.errorLog, true, '%s - monitor: restarting redirect server failed -%s. Monitor exiting\n', dateFmt('%Y-%m-%d-%H-%M-%S'), res.error);
-                            process.exit(1);
-                        }
-                    }
-                }
+                /* redirect server is no longer tracked separately —
+                   http->https redirect lives in the main server via
+                   httpRedirect, so it dies/restarts with the main pid. */
             }, 10000);
             // check that servers return something via http(s).
             var curl = require("rampart-curl");
             var thisurl = serverConf.secure ? "https://" : "http://";
-            var thisredirurl = serverConf.redirPort>0 ? "http://" : false;
 
             if(serverConf.bindAll)
             {
                 thisurl += "127.0.0.1:" + serverConf.ipPort + '/';
-                if(thisredirurl)
-                    thisredirurl +=  "127.0.0.1:" + serverConf.redirPort + '/';
             } else {
                 thisurl += serverConf.bind[0] + '/';
-                if(thisredirurl)
-                {
-                    var u=serverConf.bind[0];
-                    thisredirurl += u.substring(0, u.lastIndexOf(':'))  + serverConf.redirPort + '/';
-                }
             }
             var iv3 = setMetronome(function(){
                 var res = curl.fetch({insecure:true, "max-time": 10}, thisurl);
                 if(res.status==0) {
-                    fprintf(serverConf.errorLog, true, '%s - monitor: failed to fetch %s - %s\n', 
+                    fprintf(serverConf.errorLog, true, '%s - monitor: failed to fetch %s - %s\n',
                         dateFmt('%Y-%m-%d %H:%M:%S %z'), thisurl, res.errMsg);
                     serverpid=getPid('server');
                     if(serverpid)
                         kill(serverpid,9);  //don't be nice
                     //let the function above restart
-                }
-                if(thisredirurl)
-                {
-                    res = curl.fetch({"max-time": 10}, thisredirurl);
-                    if(res.status==0) {
-                        fprintf(serverConf.errorLog, true, '%s - monitor: failed to fetch %s - %s\n', 
-                            dateFmt('%Y-%m-%d %H:%M:%S %z'), thisredirurl, res.errMsg);
-                        var rserverpid=getPid('redir-server');
-                        if(rserverpid)
-                            kill(rserverpid,9);  //don't be nice
-                        //let the function above restart
-                    }
                 }
             },60000);
 
@@ -1145,35 +1102,19 @@ function start(serverConf, dump) {
     if(dump)
         return serverConf;
 
-    // start redir server if so configured
-    var retr=start_redir();
-
-    if(retr.error)
-        return retr;
-
     // start iroh (order doesn't matter)
     var reti = start_iroh();
-    if(reti.error) {
-        if(retr.pid)
-            kill(retr.pid);
+    if(reti.error)
         return reti;
-    }
 
     // start the main server
     var ret=start_server();
 
     if(ret.error) {
-        if(retr.pid)
-            try { kill(retr.pid); } catch(e){}
         if(reti.pid)
-            try { kill(retr.pid); } catch(e){}
+            try { kill(reti.pid); } catch(e){}
         return ret;
     }
-
-
-    // add redir pid if redir server launched
-    if(retr.pid)
-        ret.redirPid=retr.pid;
 
     if(serverConf.letsencrypt=="setup") {
         printf(
@@ -1244,8 +1185,16 @@ function web_server_conf(conf) {
         argv[2]="start";
     }
 
+    /* Preserve the user's original conf (just serverRoot is needed)
+       so stop/restart can find the pid files even if parseOptions
+       errored — e.g., letsencrypt cert files unreadable as a non-root
+       user trying to stop a server running as root. */
+    var originalServerRoot = conf && conf.serverRoot;
+
     // fill in the missing pieces and do some checks
     conf = parseOptions(conf);
+    if (conf && !conf.serverRoot && originalServerRoot)
+        conf.serverRoot = originalServerRoot;
 
     if (conf.dumpObj)
         return start(conf, /* dump = */ true);
@@ -1298,11 +1247,6 @@ function web_server_conf(conf) {
             printf("server is running. pid: %s\n", res.serverPid);
         else
             printf("server is not running\n");
-
-        if( res.redirPid && kill(res.redirPid,0) )
-            printf("redirect server is running. pid: %s\n", res.redirPid);
-        else
-            printf("redirect server is not running\n");
 
         if( res.monitorPid && kill(res.monitorPid,0) )
             printf("monitor process is running. pid: %s\n", res.monitorPid);
