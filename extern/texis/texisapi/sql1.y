@@ -502,6 +502,7 @@ index_change:	ALTER INDEX {yycontext = 18;} index_or_all opt_on_table alter_inde
 			$4 = TXfree($4);
 			$5 = TXfree($5);
 			$6 = TXfree($6);
+			$7 = TXfree($7);
 		}
 		;
 

@@ -3715,10 +3715,18 @@ static void attachbuf(DHS *dhs, duk_idx_t idx)
     duk_pop_2(ctx);
 
     if(variant == 2)
-    // indeed it is, no need to free.
     {
         s = duk_get_buffer_data(ctx, idx, &sz);
-        evbuffer_add_reference(dhs->req->buffer_out, s, (size_t)sz, NULL, NULL);
+        if (dhs->req->websock)
+            /* req.body is an external duktape buffer aliased into
+               req->buffer_in (update_req_vars, rampart-server.c:1814-1816).
+               _ws_msg_fini drains buffer_in right after the JS callback
+               returns (extern/libevhtp_ws/evhtp.c:2512); adding by reference
+               would leave buffer_out pointing at freed bytes that the I/O
+               thread later writev's. Copy. */
+            evbuffer_add(dhs->req->buffer_out, s, (size_t)sz);
+        else
+            evbuffer_add_reference(dhs->req->buffer_out, s, (size_t)sz, NULL, NULL);
     }
     else if (duk_is_object(ctx, idx))
     /* Buffer object (Uint8Array, Node Buffer, ArrayBuffer, DataView). We

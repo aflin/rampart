@@ -754,7 +754,7 @@ add_custom_target(cp_libdeflate
 
 add_custom_command(
     OUTPUT ${PROJECT_BINARY_DIR}/extern/libdeflate/libdeflate.a
-    COMMAND ${MAKE} "CFLAGS=${CMAKE_C_FLAGS}" "CPPFLAGS=${CMAKE_CXX_FLAGS}" "LDFLAGS=${CMAKE_C_FLAGS}"
+    COMMAND ${MAKE} "CFLAGS=${CMAKE_C_FLAGS} -g" "CPPFLAGS=${CMAKE_CXX_FLAGS} -g" "LDFLAGS=${CMAKE_C_FLAGS}"
     WORKING_DIRECTORY ${PROJECT_BINARY_DIR}/extern/libdeflate/
 )
 

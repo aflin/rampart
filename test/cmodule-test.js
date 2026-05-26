@@ -85,8 +85,11 @@ var func =  ```
         for (; i < seg_len_odds; ++i) if (!BITGET(bits, i)) ++count;
     }
 
+    free(bits);
+    free(pr);
+
     duk_push_number(ctx, (double)count);
-    
+
     return 1;
 }
 

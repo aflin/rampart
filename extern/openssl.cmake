@@ -63,7 +63,7 @@ endif()
 #                 rampart-crypto.so / rampart-net.so / rampart-server.so
 #   --prefix    — only matters if `make install` runs; harmless
 set(_OPENSSL_CONFIGURE_ARGS
-    no-shared no-module no-tests no-docs no-apps -fPIC
+    no-shared no-module no-tests no-docs no-apps -fPIC -g
     --prefix=${OPENSSL_BUILD_DIR}
 )
 

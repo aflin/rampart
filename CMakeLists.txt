@@ -42,6 +42,20 @@ set(TEXIS_AUDITED_WARNING_FLAGS
     -Wno-extern-c-compat               #   1x: empty union size differs C vs C++
 )
 
+# Always ship debug info from the build tree; `strip -S` on install removes
+# the debug sections, so installed binaries stay small.  Without this,
+# vendored cmake-subprojects (curl, libevent, oniguruma, cmark-gfm, ...)
+# pick up CMAKE_*_FLAGS_RELEASE which has no -g, leaving valgrind/gdb
+# unable to resolve symbols in those libs.
+foreach(_lang C CXX)
+    foreach(_cfg RELEASE MINSIZEREL)
+        if(NOT CMAKE_${_lang}_FLAGS_${_cfg} MATCHES "-g( |$)")
+            set(CMAKE_${_lang}_FLAGS_${_cfg} "${CMAKE_${_lang}_FLAGS_${_cfg}} -g"
+                CACHE STRING "" FORCE)
+        endif()
+    endforeach()
+endforeach()
+
 # Set install prefix (before any add_subdirectory calls)
 # Override the default /usr/local, but respect a user-supplied -DCMAKE_INSTALL_PREFIX=...
 if(NOT CMAKE_INSTALL_PREFIX OR CMAKE_INSTALL_PREFIX STREQUAL "/usr/local")

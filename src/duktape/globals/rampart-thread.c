@@ -2184,6 +2184,30 @@ void rp_close_thread(RPTHR *thr)
      * trigger var in the clipboard for every orphaned doevent. */
     rp_jsev_sweep_thread(thr);
 
+    /* Sweep setTimeout/setInterval/setImmediate/setMetronome events that
+     * were scheduled by this thread (or its ws-context).  Their EVARGS
+     * live in the global `tohead` SLIST but their libevent `e` lives on
+     * THIS thread's base; if we leave them in tohead and free the base
+     * below, the final free_tos() at process exit will call event_del()
+     * on a dangling pointer and abort in libevent's mutex code (the
+     * base's mutex is already destroyed).                              */
+    {
+        extern struct slisthead tohead;
+        EVARGS *ev, *evtmp;
+        SLISTLOCK;
+        SLIST_FOREACH_SAFE(ev, &tohead, entries, evtmp)
+        {
+            if (ev->ctx == thr->htctx || ev->ctx == thr->wsctx)
+            {
+                SLIST_REMOVE(&tohead, ev, ev_args, entries);
+                event_del(ev->e);
+                event_free(ev->e);
+                free(ev);
+            }
+        }
+        SLISTUNLOCK;
+    }
+
     thr->flags=0; //reset all flags
 
     if(thr->htctx)

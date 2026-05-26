@@ -351,6 +351,7 @@ static duk_ret_t check_passwd(duk_context *ctx)
     else
         duk_push_false(ctx);
 
+    free(hash);
     return 1;
 }
 
@@ -7034,8 +7035,41 @@ const duk_function_list_entry crypto_funcs[] = {
     {NULL, NULL, 0}
 };
 
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+/* Saved handles from the OSSL_PROVIDER_load calls in duk_open_module so
+   we can OSSL_PROVIDER_unload at exit.  Without the unload, OpenSSL keeps
+   the providers' init state alive past OPENSSL_cleanup, leaving ~40 KB
+   indirect plus a CRYPTO_zalloc direct alloc reported as definitely-lost. */
+static OSSL_PROVIDER *rp_legacy_provider = NULL;
+static OSSL_PROVIDER *rp_default_provider = NULL;
+#endif
+
+static void rp_openssl_cleanup_atexit(void *arg)
+{
+    (void)arg;
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+    if (rp_legacy_provider)  { OSSL_PROVIDER_unload(rp_legacy_provider);  rp_legacy_provider  = NULL; }
+    if (rp_default_provider) { OSSL_PROVIDER_unload(rp_default_provider); rp_default_provider = NULL; }
+#endif
+    OPENSSL_cleanup();
+}
+
+/* Called from this module's duk_open_module and from rampart-curl.c's
+   curl_global_init path.  Guarded so OPENSSL_cleanup runs at most once
+   even if both modules are loaded. */
+void rp_openssl_register_cleanup(void)
+{
+    static int registered = 0;
+    if (!registered)
+    {
+        add_exit_func(rp_openssl_cleanup_atexit, NULL);
+        registered = 1;
+    }
+}
+
 duk_ret_t duk_open_module(duk_context *ctx)
 {
+    rp_openssl_register_cleanup();
     OpenSSL_add_all_digests() ;
 #if OPENSSL_VERSION_NUMBER >= 0x30000000L
     /* OpenSSL 3.0+: digests like md4, mdc2, rmd160 live in the legacy
@@ -7044,8 +7078,8 @@ duk_ret_t duk_open_module(duk_context *ctx)
        OSSL_PROVIDER_load is internally refcounted. */
     static int providers_loaded = 0;
     if (!providers_loaded) {
-        OSSL_PROVIDER_load(NULL, "legacy");
-        OSSL_PROVIDER_load(NULL, "default");
+        rp_legacy_provider  = OSSL_PROVIDER_load(NULL, "legacy");
+        rp_default_provider = OSSL_PROVIDER_load(NULL, "default");
         providers_loaded = 1;
     }
 #endif

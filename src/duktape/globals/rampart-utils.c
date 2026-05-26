@@ -10767,7 +10767,7 @@ static rp_abbr_match **get_abbr_list(char *abbr_s, struct tm *dt_p, int *ambig, 
         int ntrans=e->timecnt, transidx=0;
         int32_t *trans = e->transitions, tzdiff;
 
-        local = gm - e->ttinfo[ e->types[idx] ].gmtoff; //get local time for this entry
+        local = gm - e->ttinfo[idx].gmtoff; //get local time for this entry
 
         for(transidx=0; transidx<ntrans; transidx++)
         {
@@ -11245,7 +11245,7 @@ duk_ret_t rp_auto_scandate(duk_context *ctx)
 
     /* Check for numeric timezone offset (+/-HHMM) remaining after match,
        for platforms where strptime doesn't support %z (e.g. Cygwin) */
-    if(matched[strlen(matched)-1] != 'z')
+    if(matched[strlen(matched)-1] != 'z' && *(datestr + eix - 1) != '\0')
     {
         p=(char*)datestr + eix;
         while(isspace(*p))p++;

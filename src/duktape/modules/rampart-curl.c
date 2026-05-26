@@ -212,6 +212,18 @@ duk_ret_t duk_curl_decode(duk_context *ctx)
     return (1);
 }
 
+/* Registered once by rampart-crypto.c; ensures OPENSSL_cleanup runs from
+   duk_rp_exit's exit_funcs.  Calling it from here covers the case where
+   the user loads rampart-curl but never `require('rampart-crypto')` —
+   libcurl still triggers OpenSSL static init at curl_global_init time. */
+extern void rp_openssl_register_cleanup(void);
+
+static void rp_curl_global_cleanup_atexit(void *arg)
+{
+    (void)arg;
+    curl_global_cleanup();
+}
+
 void duk_curl_check_global(duk_context *ctx)
 {
     duk_push_this(ctx);
@@ -219,6 +231,11 @@ void duk_curl_check_global(duk_context *ctx)
     if (!duk_get_boolean(ctx, -1))
     {
         curl_global_init(CURL_GLOBAL_DEFAULT);
+        /* Register curl_global_cleanup first, then OPENSSL_cleanup.  exit_funcs
+           run FIFO, so libcurl tears down (releasing its OpenSSL refs) before
+           OpenSSL itself is finalised. */
+        add_exit_func(rp_curl_global_cleanup_atexit, NULL);
+        rp_openssl_register_cleanup();
         duk_push_boolean(ctx, 1);
         duk_put_prop_string(ctx, -3, "inited");
     }

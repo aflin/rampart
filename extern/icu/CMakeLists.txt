@@ -28,8 +28,8 @@ endif()
 # main binary (which is built with -mmacosx-version-min=11.0).  Otherwise
 # Apple's ld warns: "object file was built for newer 'macOS' version
 # (15.0) than being linked (11.0)".
-set(ICU_BASE_CFLAGS   "-fPIC -fvisibility=hidden")
-set(ICU_BASE_CXXFLAGS "-fPIC -fvisibility=hidden")
+set(ICU_BASE_CFLAGS   "-g -fPIC -fvisibility=hidden")
+set(ICU_BASE_CXXFLAGS "-g -fPIC -fvisibility=hidden")
 if(APPLE)
     if(MACOS_UNIVERSAL)
         set(_ICU_MAC_FLAGS "-arch x86_64 -arch arm64 -mmacosx-version-min=11.0")

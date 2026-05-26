@@ -50,6 +50,7 @@
 #include <unicode/ucurr.h>
 #include <unicode/uscript.h>
 #include <unicode/unumsys.h>
+#include <unicode/uclean.h>
 
 /* ECMA-402 mandates specific error subtypes (TypeError for receiver
    / brand-check violations, RangeError for out-of-range options).
@@ -5312,8 +5313,20 @@ static void install_intl(duk_context *ctx)
 
 /* Module entry: idempotent install of Intl; also returns the Intl
    object so `var Intl = require('rampart-intl')` works. */
+static void rp_intl_cleanup_atexit(void *arg)
+{
+    (void)arg;
+    u_cleanup();
+}
+
 duk_ret_t duk_open_module(duk_context *ctx)
 {
+    static int registered = 0;
+    if (!registered)
+    {
+        add_exit_func(rp_intl_cleanup_atexit, NULL);
+        registered = 1;
+    }
     install_intl(ctx);
     duk_push_global_object(ctx);
     duk_get_prop_string(ctx, -1, "Intl");
