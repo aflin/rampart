@@ -761,17 +761,33 @@ static duk_ret_t rp_thread_safe_get_prop(duk_context *ctx, void *udata);
 
 void rpthr_clean_obj(duk_context *ctx, duk_context *tctx)
 {
+    duk_require_stack(ctx, 16);
     const char *prev = duk_get_string(ctx, -2);
-    /* prototype was not marked, so we need to dive into it regardless */
-    if (duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("objRefId")) || (prev && !strcmp(prev, "prototype")))
+
+    /* Check for our OWN cycle marker - NOT inherited.  duk_get_prop_string
+       walks the prototype chain, which is wrong here: rpthr_copy_obj marks
+       every object it visits, and when one marked object inherits from
+       another (e.g. http shim: EventEmitter and EventEmitter.prototype
+       are both marked, every function inherits from Function.prototype
+       which is itself marked), the get_prop on a cleaned-but-still-
+       inheriting object would re-find the inherited marker.  duk_del
+       only removes own, so the marker effectively "stuck" via inheritance,
+       and any self-referential property (e.g. events.EventEmitter ===
+       events) recursed forever.  Use duk_get_prop_attrs which reports
+       own properties only.                                            */
+    duk_push_string(ctx, DUK_HIDDEN_SYMBOL("objRefId"));
+    int has_marker = duk_get_prop_attrs(ctx, -2, NULL);
+    /* duk_get_prop_attrs pops the key, so stack is unchanged from entry. */
+
+    if (has_marker || (prev && !strcmp(prev, "prototype")))
     {
-        duk_del_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("objRefId"));
+        duk_del_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("objRefId"));
         /* Inspect properties without invoking accessor getters.  An accessor
            getter on the source object can throw (e.g. Express's req.protocol
            when this.connection is missing during the copy traversal); we
            don't need the value here anyway -- only its type, to decide
            whether to recurse for objRefId cleanup.                       */
-        duk_idx_t obj_idx = duk_normalize_index(ctx, -2);
+        duk_idx_t obj_idx = duk_normalize_index(ctx, -1);
         duk_enum(ctx, obj_idx, DUK_ENUM_INCLUDE_HIDDEN|DUK_ENUM_INCLUDE_SYMBOLS);
         while (duk_next(ctx, -1, 0))   /* key only */
         {
@@ -808,9 +824,8 @@ void rpthr_clean_obj(duk_context *ctx, duk_context *tctx)
                 rpthr_clean_obj(ctx, NULL);
             duk_pop_2(ctx);   /* value, key */
         }
-        duk_pop(ctx);
+        duk_pop(ctx);   /* enum */
     }
-    duk_pop(ctx);
     if (tctx)
     {
         duk_push_global_stash(tctx);
