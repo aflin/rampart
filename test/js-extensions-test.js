@@ -195,6 +195,47 @@ testJS("Array iteration (values/keys/entries/[Symbol.iterator])", function() {
 });
 
 
+testJS("String iteration (Symbol.iterator)", function() {
+    must(typeof String.prototype[Symbol.iterator] === "function",
+        "String.prototype[Symbol.iterator] is callable");
+
+    /* BMP-only: yields one code unit per step */
+    var it = "héllo"[Symbol.iterator]();
+    var parts = [];
+    var step;
+    while (!(step = it.next()).done) parts.push(step.value);
+    mustEq(parts.join(","), "h,é,l,l,o",            "BMP per-codepoint");
+    mustEq(parts.length, 5,                          "BMP step count");
+
+    /* Iterator self-iterable (so it can be re-handed to for-of) */
+    var it2 = "ab"[Symbol.iterator]();
+    must(it2[Symbol.iterator]() === it2,
+        "iterator is self-iterable");
+
+    /* Supplementary-plane (emoji): surrogate pair combined into ONE step */
+    var it3 = "a👍b"[Symbol.iterator]();
+    var parts3 = [];
+    while (!(step = it3.next()).done) parts3.push(step.value);
+    mustEq(parts3.length, 3,                         "emoji 3 code-points");
+    mustEq(parts3[0], "a",                           "emoji step 0");
+    mustEq(parts3[1].length, 2,
+        "emoji step 1 keeps surrogate pair (length 2 code units)");
+    mustEq(parts3[2], "b",                           "emoji step 2");
+
+    /* Unpaired high surrogate (lone high w/o following low) — emits as
+       its own 1-code-unit step.  Doesn't crash. */
+    var lone = "\uD83D" + "x";
+    var partsLone = [];
+    var itL = lone[Symbol.iterator]();
+    while (!(step = itL.next()).done) partsLone.push(step.value);
+    mustEq(partsLone.length, 2,                     "unpaired surrogate emits separately");
+
+    /* Empty string */
+    var itE = ""[Symbol.iterator]();
+    mustEq(itE.next().done, true,                    "empty string: done immediately");
+});
+
+
 testJS("Array statics", function() {
     /* Array.from on various input shapes */
     mustEq(Array.from('abc').join(','), 'a,b,c', "from string");
@@ -203,6 +244,11 @@ testJS("Array statics", function() {
            '10,20,30', "from array + mapFn");
     mustEq(Array.from('abc', function(c) { return c.toUpperCase(); }).join(''),
            'ABC', "from string + mapFn");
+    /* String iteration is per code-point: emoji combines surrogate pair */
+    mustEq(Array.from('a👍b').length, 3,
+           "from string: emoji is one code-point step (not two surrogate halves)");
+    mustEq(Array.from('a👍b')[1].length, 2,
+           "from string: emoji step preserves surrogate-pair (2 code units)");
     mustEq(Array.from({length: 3, 0: 'x', 1: 'y', 2: 'z'}).join(','),
            'x,y,z', "from array-like");
     mustEq(Array.from(new Set([1, 2, 3])).join(','), '1,2,3', "from Set (iterable)");
