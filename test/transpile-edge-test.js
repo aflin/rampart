@@ -1213,6 +1213,72 @@ testFeature("async gen - consumed via for await ... of", function() {
     });
 });
 
+/* `for await` over an object that exposes ONLY Symbol.asyncIterator
+   (no Symbol.iterator, no direct .next).  Pre-fix the transpiler
+   emitted `_TrN_Sp._iter(<arg>)` for both `for-of` and `for-await-of`;
+   `_iter` only honors Symbol.iterator and falls through to its
+   length-based fallback otherwise.  An object with neither
+   Symbol.iterator nor a numeric length looped forever (`undefined >=
+   length-undefined` is always false).  Fix: emit `_TrN_Sp._asyncIter`
+   when `is_await_of`, which checks Symbol.asyncIterator first.
+   Required `Symbol.asyncIterator` to be installed as a real well-
+   known symbol in register.c (otherwise user code couldn't attach a
+   real property keyed by it). */
+testFeature("for await over plain object keyed by Symbol.asyncIterator", function() {
+    function asyncIterFrom(arr) {
+        var obj = {};
+        obj[Symbol.asyncIterator] = function () {
+            var i = 0;
+            return { next: function () {
+                if (i >= arr.length) return Promise.resolve({value: undefined, done: true});
+                return Promise.resolve({value: arr[i++], done: false});
+            }};
+        };
+        return obj;
+    }
+    return new Promise(function(resolve){
+        (async function(){
+            var out = [];
+            for await (var v of asyncIterFrom([10, 20, 30])) out.push(v);
+            resolve(out.length === 3 && out[0] === 10 && out[2] === 30);
+        })();
+    });
+});
+
+/* `_asyncIter` falls back to `_iter` when the source has no
+   Symbol.asyncIterator — verify `for await` over a sync iterable
+   (Map) still works after the emission change. */
+testFeature("for await over sync iterable (Map) still works", function() {
+    return new Promise(function(resolve){
+        (async function(){
+            var m = new Map([['a', 1], ['b', 2]]);
+            var out = [];
+            for await (var pair of m) out.push(pair[0] + '=' + pair[1]);
+            resolve(out.join(',') === 'a=1,b=2');
+        })();
+    });
+});
+
+/* Iter object exposing direct `.next()` returning Promise — already
+   worked pre-fix (short-circuits `_iter`'s `typeof x.next === 'function'`
+   check).  Regression-guard so the fix doesn't break this path. */
+testFeature("for await over iter with direct .next() returning Promise", function() {
+    function pairs(arr) {
+        var i = 0;
+        return { next: function () {
+            if (i >= arr.length) return Promise.resolve({value: undefined, done: true});
+            return Promise.resolve({value: arr[i++], done: false});
+        }};
+    }
+    return new Promise(function(resolve){
+        (async function(){
+            var out = [];
+            for await (var v of pairs([7, 8, 9])) out.push(v);
+            resolve(out.join(',') === '7,8,9');
+        })();
+    });
+});
+
 /* Collision-resistance: user-defined locals named `_e`, `_da1`, `_fk0`,
    `_ofdiscard`, `_x`, `_bsf0`, `_r`, `_it` etc. used to be silently
    overwritten by the transpiler's emitted temporaries. They've all been
