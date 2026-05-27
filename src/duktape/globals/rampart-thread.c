@@ -756,6 +756,9 @@ static void copy_prim(duk_context *ctx, duk_context *tctx)
     }
 }
 
+/* Forward decl - defined below near rpthr_copy_obj. */
+static duk_ret_t rp_thread_safe_get_prop(duk_context *ctx, void *udata);
+
 void rpthr_clean_obj(duk_context *ctx, duk_context *tctx)
 {
     const char *prev = duk_get_string(ctx, -2);
@@ -763,12 +766,47 @@ void rpthr_clean_obj(duk_context *ctx, duk_context *tctx)
     if (duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("objRefId")) || (prev && !strcmp(prev, "prototype")))
     {
         duk_del_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("objRefId"));
-        duk_enum(ctx, -2, DUK_ENUM_INCLUDE_HIDDEN|DUK_ENUM_INCLUDE_SYMBOLS);
-        while (duk_next(ctx, -1, 1))
+        /* Inspect properties without invoking accessor getters.  An accessor
+           getter on the source object can throw (e.g. Express's req.protocol
+           when this.connection is missing during the copy traversal); we
+           don't need the value here anyway -- only its type, to decide
+           whether to recurse for objRefId cleanup.                       */
+        duk_idx_t obj_idx = duk_normalize_index(ctx, -2);
+        duk_enum(ctx, obj_idx, DUK_ENUM_INCLUDE_HIDDEN|DUK_ENUM_INCLUDE_SYMBOLS);
+        while (duk_next(ctx, -1, 0))   /* key only */
         {
+            /* Lightweight check: own property and accessor flag, no
+               descriptor allocation.  Stack effect: pops key dup,
+               leaves original key on stack.                           */
+            duk_uint_t attrs = 0;
+            duk_dup(ctx, -1);
+            int is_own = duk_get_prop_attrs(ctx, obj_idx, &attrs);
+            if (is_own && (attrs & DUK_PROPATTR_ACCESSOR)) {
+                /* own accessor: don't fetch value, don't recurse */
+                duk_pop(ctx);   /* key */
+                continue;
+            }
+
+            if (is_own) {
+                /* Own data: duk_get_prop cannot invoke any getter; skip
+                   duk_safe_call overhead.                               */
+                duk_dup(ctx, obj_idx);
+                duk_dup(ctx, -2);
+                duk_get_prop(ctx, -2);
+                duk_remove(ctx, -2);
+            } else {
+                /* Inherited: might be a prototype-accessor that throws;
+                   use safe_call.                                        */
+                duk_dup(ctx, obj_idx);
+                duk_dup(ctx, -2);
+                if (duk_safe_call(ctx, rp_thread_safe_get_prop, NULL, 2, 1) != 0) {
+                    duk_pop_2(ctx);   /* error, key */
+                    continue;
+                }
+            }
             if (duk_is_object(ctx, -1) || duk_is_c_function(ctx, -1))
                 rpthr_clean_obj(ctx, NULL);
-            duk_pop_2(ctx);
+            duk_pop_2(ctx);   /* value, key */
         }
         duk_pop(ctx);
     }
@@ -1188,6 +1226,20 @@ void rpthr_copy(duk_context *ctx, duk_context *tctx, duk_idx_t idx)
 }
 
 /* ctx object and tctx object should be at top of respective stacks */
+/* duk_safe_call body: fetch property value safely.
+   Stack on entry:  [..., obj, key]
+   Stack on success: [value]
+   Stack on error:   [error]
+   Used by rpthr_copy_obj to tolerate a prototype-chain accessor's
+   getter that throws (e.g. Express's `req.protocol` whose getter
+   inspects `this.connection.encrypted`).                          */
+static duk_ret_t rp_thread_safe_get_prop(duk_context *ctx, void *udata)
+{
+    (void)udata;
+    duk_get_prop(ctx, -2);   /* invokes getter for accessor; may throw */
+    return 1;                /* return the value */
+}
+
 int rpthr_copy_obj(duk_context *ctx, duk_context *tctx, int objid, int skiprefcnt)
 {
     const char *s;
@@ -1282,75 +1334,188 @@ int rpthr_copy_obj(duk_context *ctx, duk_context *tctx, int objid, int skiprefcn
     /*  get keys,vals inside ctx object on top of the stack
         and copy to the tctx object on top of the stack     */
 
-    duk_enum(ctx, -1, DUK_ENUM_INCLUDE_HIDDEN|DUK_ENUM_INCLUDE_SYMBOLS|DUK_ENUM_SORT_ARRAY_INDICES);
-    while (duk_next(ctx, -1, 1))
+    duk_idx_t src_obj_idx = duk_normalize_index(ctx, -1);
+
+    duk_enum(ctx, src_obj_idx, DUK_ENUM_INCLUDE_HIDDEN|DUK_ENUM_INCLUDE_SYMBOLS|DUK_ENUM_SORT_ARRAY_INDICES);
+    while (duk_next(ctx, -1, 0))   /* key only - value fetched explicitly below */
     {
-        s = duk_get_string(ctx, -2);
-        /* this is an internal flags and should not be copied to threads */
+        s = duk_get_string(ctx, -1);
+        /* this is an internal flag and should not be copied to threads */
         if(!strcmp(s, "\xffobjRefId") )
         {
-            duk_pop_2(ctx);
+            duk_pop(ctx);
             continue;
+        }
+
+        /* Lightweight check: is this an own property and what are its
+           attribute flags?  Uses duk_get_prop_attrs (rampart-added
+           duktape API) which reads duk_propdesc directly without
+           allocating a descriptor object every property -- significantly
+           faster than the duk_get_prop_desc + JS-level inspection path
+           on the hot copy loop.                                       */
+        duk_uint_t prop_attrs = 0;
+        duk_dup(ctx, -1);                                  /* dup key (consumed) */
+        int is_own = duk_get_prop_attrs(ctx, src_obj_idx, &prop_attrs);
+        int is_accessor = is_own && (prop_attrs & DUK_PROPATTR_ACCESSOR);
+
+        if (is_accessor)
+        {
+            /* === OWN ACCESSOR ===
+               Preserve getter/setter as an accessor on the target rather
+               than invoking the getter and storing the snapshot as data.
+               Avoids `this`-dependent or throwing getters breaking the
+               copy (e.g. Express's `req.protocol` whose getter inspects
+               `this.connection.encrypted`).                            */
+            /* Attribute flags came from the lightweight check above. */
+            int prop_enum_flag = (prop_attrs & DUK_PROPATTR_ENUMERABLE) != 0;
+            int prop_conf_flag = (prop_attrs & DUK_PROPATTR_CONFIGURABLE) != 0;
+
+            /* For an accessor we still need the get/set functions, so
+               fall back to duk_get_prop_desc here -- only for accessors,
+               which are rare on cross-thread-copied objects.            */
+            duk_dup(ctx, -1);   /* dup key */
+            duk_get_prop_desc(ctx, src_obj_idx, 0);
+            /* stack: [..., src_obj, enum, key, desc] */
+
+            /* Determine whether to overwrite an existing target property.
+               Same logic as the data path: skip clobber unless target's
+               existing property is a configurable accessor (WHATWG
+               lazy-load placeholders).                                 */
+            int can_overwrite = 0;
+            if (duk_has_prop_string(tctx, -1, s)) {
+                duk_push_global_object(tctx);
+                duk_get_prop_string(tctx, -1, "Object");
+                duk_get_prop_string(tctx, -1, "getOwnPropertyDescriptor");
+                duk_dup(tctx, -5);
+                duk_push_string(tctx, s);
+                if (duk_pcall(tctx, 2) == 0 && duk_is_object(tctx, -1)) {
+                    int t_is_accessor = duk_has_prop_string(tctx, -1, "get")
+                                     || duk_has_prop_string(tctx, -1, "set");
+                    duk_get_prop_string(tctx, -1, "configurable");
+                    int t_is_configurable = duk_to_boolean(tctx, -1);
+                    duk_pop(tctx);
+                    if (t_is_accessor && t_is_configurable) can_overwrite = 1;
+                }
+                duk_pop_3(tctx);
+            }
+
+            if ((!duk_has_prop_string(tctx, -1, s) || can_overwrite) &&
+                (!is_global || (strcmp(s, "console") != 0 && strcmp(s, "performance") != 0)))
+            {
+                duk_idx_t tobj_idx_before = duk_get_top_index(tctx);
+                duk_uint_t defflags = 0;
+
+                /* push the key on tctx for duk_def_prop */
+                duk_push_string(tctx, s);
+
+                /* getter: copy if present and callable */
+                int have_get = 0;
+                if (duk_get_prop_string(ctx, -1, "get") && !duk_is_undefined(ctx, -1)) {
+                    if (duk_is_callable(ctx, -1)) {
+                        objid = copy_any(ctx, tctx, -1, objid, 0);
+                        defflags |= DUK_DEFPROP_HAVE_GETTER;
+                        have_get = 1;
+                    }
+                }
+                duk_pop(ctx);
+
+                /* setter: copy if present and callable */
+                int have_set = 0;
+                if (duk_get_prop_string(ctx, -1, "set") && !duk_is_undefined(ctx, -1)) {
+                    if (duk_is_callable(ctx, -1)) {
+                        objid = copy_any(ctx, tctx, -1, objid, 0);
+                        defflags |= DUK_DEFPROP_HAVE_SETTER;
+                        have_set = 1;
+                    }
+                }
+                duk_pop(ctx);
+
+                if (have_get || have_set) {
+                    defflags |= DUK_DEFPROP_HAVE_ENUMERABLE;
+                    if (prop_enum_flag) defflags |= DUK_DEFPROP_ENUMERABLE;
+                    defflags |= DUK_DEFPROP_HAVE_CONFIGURABLE;
+                    if (prop_conf_flag) defflags |= DUK_DEFPROP_CONFIGURABLE;
+                    if (can_overwrite) defflags |= DUK_DEFPROP_FORCE;
+                    duk_def_prop(tctx, tobj_idx_before, defflags);
+                } else {
+                    /* Neither get nor set was copyable (e.g. native c_fn
+                       with state we can't recreate).  Drop the key we
+                       pushed and skip silently.                        */
+                    duk_set_top(tctx, tobj_idx_before + 1);
+                }
+            }
+
+            duk_pop(ctx);   /* descriptor */
+            duk_pop(ctx);   /* key */
+            continue;
+        }
+
+        /* === DATA PROPERTY (own or inherited) ===
+           Stack here is [..., src_obj, enum, key].  duk_get_prop_attrs
+           above consumed its key dup and returned via out param, so
+           there is no descriptor object to pop.                      */
+        if (is_own) {
+            /* Own data property: duk_get_prop cannot invoke any getter,
+               so skip the duk_safe_call overhead.  This is the common
+               case (most properties on most copied objects).            */
+            duk_dup(ctx, src_obj_idx);
+            duk_dup(ctx, -2);   /* key */
+            duk_get_prop(ctx, -2);   /* value */
+            duk_remove(ctx, -2);     /* drop src_obj dup */
+            /* stack: [..., src_obj, enum, key, value] */
+        } else {
+            /* Inherited: the property could be data OR an accessor
+               defined up the prototype chain.  Use duk_safe_call so a
+               throwing prototype-accessor (Express's req.protocol case)
+               is contained.                                             */
+            duk_dup(ctx, src_obj_idx);
+            duk_dup(ctx, -2);   /* key */
+            if (duk_safe_call(ctx, rp_thread_safe_get_prop, NULL, 2, 1) != 0) {
+                /* prototype accessor threw at copy time - skip silently
+                   (worker likely re-sets up the property via re-required
+                   modules).  Log to aid diagnosis.                      */
+                const char *errmsg = duk_safe_to_string(ctx, -1);
+                fprintf(stderr,
+                    "rpthr_copy_obj: getter for '%s' threw during copy (%s); property dropped\n",
+                    s ? s : "?", errmsg ? errmsg : "?");
+                duk_pop(ctx);   /* error */
+                duk_pop(ctx);   /* key */
+                continue;
+            }
+            /* stack: [..., src_obj, enum, key, value] */
         }
 
         /* If this property exists, run specified function */
         if(!has_ref && !strcmp(s, "\xffobjOnCopyCallback") )
         {
             duk_dup(ctx, -1); // the callback
-            duk_dup(ctx, -5);  // the object
+            duk_dup(ctx, src_obj_idx);  // the object
             duk_call(ctx, 1); // call callback(object)
             duk_pop(ctx);     //discard return, and proceed as usual
             do_finalizer=1;
         }
 
-        // if the object has a hidden refcnt *int, increment it
-        // this is currently not used, but leaving in for possible future use
-        /*
-        if(!skiprefcnt && !strcmp(s, "\xffrefcnt_ptr") )
-        {
-            int *refcnt_ptr;
-            refcnt_ptr=duk_get_pointer(ctx, -1);
-            (*refcnt_ptr)++;
-        }
-        */
-
         cprintf("copying %s\n",s);
 
-        /* Property exists in target?  Normally we skip — don't clobber
-           globals the child already has.  EXCEPTION: if the target's
-           property is a CONFIGURABLE ACCESSOR (the WHATWG lazy-load
-           placeholders installed by register.c — Blob, URL, crypto,
-           etc.), allow the copy to overwrite.  The accessor's setter
-           replaces itself with a data property holding the parent's
-           value — which is exactly what we want when the parent's
-           script did e.g. `var crypto = require('rampart-crypto')` at
-           top level.  Without this, the child's lazy accessor "wins"
-           and `crypto` resolves to the WHATWG Crypto singleton, not
-           the parent's user-chosen value.
-
-           Detection: get the property descriptor.  Accessor descriptors
-           have `get`/`set` keys (data descriptors have `value`).
-           Configurable check guards against breaking ECMAScript globals
-           (Object/Array/etc. are non-configurable data props). */
+        /* can_overwrite check (same as before) */
         int can_overwrite = 0;
         if (duk_has_prop_string(tctx, -1, s)) {
             duk_push_global_object(tctx);
             duk_get_prop_string(tctx, -1, "Object");
             duk_get_prop_string(tctx, -1, "getOwnPropertyDescriptor");
-            duk_dup(tctx, -5);   /* the target object we're copying into */
+            duk_dup(tctx, -5);
             duk_push_string(tctx, s);
             if (duk_pcall(tctx, 2) == 0 && duk_is_object(tctx, -1)) {
-                int is_accessor = duk_has_prop_string(tctx, -1, "get")
-                               || duk_has_prop_string(tctx, -1, "set");
+                int t_is_accessor = duk_has_prop_string(tctx, -1, "get")
+                                 || duk_has_prop_string(tctx, -1, "set");
                 duk_get_prop_string(tctx, -1, "configurable");
-                int is_configurable = duk_to_boolean(tctx, -1);
+                int t_is_configurable = duk_to_boolean(tctx, -1);
                 duk_pop(tctx);
-                if (is_accessor && is_configurable) can_overwrite = 1;
+                if (t_is_accessor && t_is_configurable) can_overwrite = 1;
             }
-            duk_pop_3(tctx);     /* descriptor, Object, global */
+            duk_pop_3(tctx);
         }
 
-        // don't copy props we already have, or console or performance if we are in global object
         if ( (!duk_has_prop_string(tctx, -1, s) || can_overwrite) &&
             (!is_global || (strcmp(s, "console") != 0 && strcmp(s, "performance") != 0))
         ){
@@ -1358,8 +1523,8 @@ int rpthr_copy_obj(duk_context *ctx, duk_context *tctx, int objid, int skiprefcn
             duk_put_prop_string(tctx, -2, s);
         }
 
-        /* remove key and val from stack and repeat */
-        duk_pop_2(ctx);
+        duk_pop(ctx);   /* value */
+        duk_pop(ctx);   /* key */
     }
 
     /* remove enum from stack */

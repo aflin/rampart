@@ -1120,6 +1120,15 @@ DUK_EXTERNAL_DECL duk_bool_t duk_has_prop_heapptr(duk_context *ctx, duk_idx_t ob
 DUK_EXTERNAL_DECL void duk_get_prop_desc(duk_context *ctx, duk_idx_t obj_idx, duk_uint_t flags);
 DUK_EXTERNAL_DECL void duk_def_prop(duk_context *ctx, duk_idx_t obj_idx, duk_uint_t flags);
 
+/* -ajf 2026-05-27: lightweight own-property attribute query without
+   allocating a descriptor object.  See duktape.c definition.
+   Output flags bits match the DUK_PROPATTR_* constants below.       */
+#define DUK_PROPATTR_WRITABLE     (1U << 0)
+#define DUK_PROPATTR_ENUMERABLE   (1U << 1)
+#define DUK_PROPATTR_CONFIGURABLE (1U << 2)
+#define DUK_PROPATTR_ACCESSOR     (1U << 3)
+DUK_EXTERNAL_DECL duk_int_t duk_get_prop_attrs(duk_context *ctx, duk_idx_t obj_idx, duk_uint_t *out_flags);
+
 DUK_EXTERNAL_DECL duk_bool_t duk_get_global_string(duk_context *ctx, const char *key);
 DUK_EXTERNAL_DECL duk_bool_t duk_get_global_lstring(duk_context *ctx, const char *key, duk_size_t key_len);
 #if defined(DUK_USE_PREFER_SIZE)

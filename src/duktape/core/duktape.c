@@ -18208,6 +18208,42 @@ DUK_EXTERNAL void duk_get_prop_desc(duk_hthread *thr, duk_idx_t obj_idx, duk_uin
 	duk_hobject_object_get_own_property_descriptor(thr, obj_idx); /* [ ... key ] -> [ ... desc ] */
 }
 
+/* -ajf 2026-05-27: lightweight "is this an own property and what are its
+   attribute flags?" check.  Same information as duk_get_prop_desc would
+   put on an allocated descriptor object, but without the per-call
+   allocation -- reads duk_propdesc directly from object internals.
+   Returns 1 if the key is an OWN property of obj_idx, 0 otherwise.
+   On a hit, *out_flags receives a bitmask of DUK_PROPATTR_* flags.
+   The key (at stack top) is popped, matching duk_get_prop_desc's
+   stack effect.  Used by rampart's cross-thread copy (rampart-thread.c)
+   to detect accessor properties without paying the descriptor-object
+   allocation cost on every iteration.                                 */
+DUK_EXTERNAL duk_int_t duk_get_prop_attrs(duk_hthread *thr, duk_idx_t obj_idx, duk_uint_t *out_flags) {
+	duk_hobject *obj;
+	duk_hstring *key;
+	duk_propdesc desc;
+	duk_bool_t exists;
+
+	DUK_ASSERT_API_ENTRY(thr);
+
+	obj = duk_require_hobject(thr, obj_idx);
+	key = duk_to_property_key_hstring(thr, -1);
+	DUK_ASSERT(key != NULL);
+
+	exists = duk_hobject_get_own_propdesc(thr, obj, key, &desc, 0 /*flags - no push*/);
+	duk_pop(thr); /* consume key */
+
+	if (!exists) {
+		if (out_flags) *out_flags = 0;
+		return 0;
+	}
+	if (out_flags) {
+		/* DUK_PROPDESC_FLAG_* bits map 1:1 to DUK_PROPATTR_* */
+		*out_flags = (duk_uint_t) (desc.flags & 0xfU);
+	}
+	return 1;
+}
+
 /* Object.defineProperty() equivalent C binding. */
 DUK_EXTERNAL void duk_def_prop(duk_hthread *thr, duk_idx_t obj_idx, duk_uint_t flags) {
 	duk_idx_t idx_base;
