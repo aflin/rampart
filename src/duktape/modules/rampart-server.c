@@ -8123,6 +8123,8 @@ duk_ret_t duk_server_start(duk_context *ctx)
     uint16_t port = 8088;
     int nthr=0, mapsort=1;
     evhtp_t *htp = NULL;
+    evhtp_t *rhtp = NULL;  /* httpRedirect listener, NULL = disabled. Hoisted
+                              so post-pool fixup can attach it to the worker pool. */
     evhtp_ssl_cfg_t *ssl_config = NULL;
     int i=0, confThreads = -1, daemon=0, settitle=0;
     struct stat f_stat;
@@ -10167,14 +10169,15 @@ duk_ret_t duk_server_start(duk_context *ctx)
 
     evhtp_set_pre_accept_cb(htp, pre_accept_callback, NULL);
 
-    evhtp_use_threads_wexit(htp, initThread, NULL, nthr, NULL);
-
-    /* Phase 3/4 listen-mode finalisation. main_htp (= listen_htps[0])
-       and listen_htps[1..N-1] were created earlier (before map block)
-       so Phase 4 map registration could target each. They had only
-       evhtp_new + set_max_keepalive_requests + set_max_body_size.
-       Now finish per-htp setup (timeouts, pre_accept_cb, binds) and
-       borrow the thread pool for non-main htps. */
+    /* Phase 3/4 listen-mode pre-pool finalisation. main_htp (= listen_htps[0])
+       and listen_htps[1..N-1] were created earlier (before map block) so
+       Phase 4 map registration could target each. They had only evhtp_new +
+       set_max_keepalive_requests + set_max_body_size. Now finish per-htp
+       setup (timeouts, pre_accept_cb, binds) BEFORE the thread pool starts —
+       binding low ports requires CAP_NET_BIND_SERVICE, and Linux glibc's
+       setresuid in initThread broadcasts the privilege drop process-wide.
+       The pool attach (evhtp_use_existing_threads) is deferred to the
+       post-pool fixup below. */
     if (listen_block_count > 0) {
         duk_push_global_stash(ctx);
         duk_get_prop_string(ctx, -1, "rampart_server_listen");
@@ -10206,22 +10209,20 @@ duk_ret_t duk_server_start(duk_context *ctx)
                     evhtp_set_timeouts(h, NULL, NULL);
             }
 
-            if (b > 0) {
+            if (b > 0)
                 evhtp_set_pre_accept_cb(h, pre_accept_callback, NULL);
-                if (evhtp_use_existing_threads(h, htp) < 0)
-                    RP_THROW(ctx, "server.start: listen[%d]: evhtp_use_existing_threads failed", b);
-            }
             listen_bind_block_to_htp_(ctx, h, listen_idx, b);
             fprintf(access_fh, "HTTP server - listen[%d] -> %s\n", b,
                 (b == 0) ? "main_htp" : "borrowed thread pool from main_htp");
         }
         duk_pop(ctx); /* listen array */
-        free(listen_htps);
-        listen_htps = NULL;
+        /* listen_htps free deferred to post-pool fixup */
     }
 
     /* httpRedirect: auxiliary plain-HTTP listener that 301s to https.
-       Build it after the main thread pool exists so we can borrow it. */
+       Setup + bind happens BEFORE evhtp_use_threads_wexit so we still
+       have CAP_NET_BIND_SERVICE for low ports (port 80 is the common
+       case). Pool attach is deferred to the post-pool fixup. */
     if (http_redirect_port) {
         /* Determine the https target port. In bind: mode, `port` is the
            last parsed bind port. In listen mode we need the first secure
@@ -10269,7 +10270,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
         if (http_redirect_target == http_redirect_port)
             RP_THROW(ctx, "server.start: httpRedirect port (%u) must differ from the https target port", (unsigned)http_redirect_port);
 
-        evhtp_t *rhtp = evhtp_new(mainthr->base, NULL);
+        rhtp = evhtp_new(mainthr->base, NULL);
         if (!rhtp)
             RP_THROW(ctx, "server.start: httpRedirect: evhtp_new failed");
         evhtp_set_max_keepalive_requests(rhtp, 128);
@@ -10277,12 +10278,6 @@ duk_ret_t duk_server_start(duk_context *ctx)
         if (ctimeout.tv_sec != RP_TIME_T_FOREVER)
             evhtp_set_timeouts(rhtp, &ctimeout, &ctimeout);
         evhtp_set_pre_accept_cb(rhtp, pre_accept_callback, NULL);
-
-        /* Borrow the main thread pool BEFORE registering callbacks —
-           fileserver dereferences thread-local state at request time
-           that's set up by the main pool's initThread. */
-        if (evhtp_use_existing_threads(rhtp, htp) < 0)
-            RP_THROW(ctx, "server.start: httpRedirect: evhtp_use_existing_threads failed");
 
         /* passthrough paths: register fileserver callbacks for each
            URL prefix BEFORE the catch-all gencb. evhtp tries explicit
@@ -10340,18 +10335,40 @@ duk_ret_t duk_server_start(duk_context *ctx)
                     http_redirect_bind_ip, (unsigned)http_redirect_port);
             free(ip_addr2);
         } else {
-            if (!(ip_addr2 = bind_sock_port(rhtp, ipv4, http_redirect_port, SOCKBACKLOG)))
+            /* number form: bind on all interfaces (v4 + v6). The
+               legacy ipv4/ipv6 defaults are 127.0.0.1/::1, which is
+               wrong for a redirect listener — the whole point is
+               that the public can reach it. */
+            if (!(ip_addr2 = bind_sock_port(rhtp, "0.0.0.0", http_redirect_port, SOCKBACKLOG)))
                 RP_THROW(ctx, "server.start: httpRedirect: could not bind to %s port %u",
-                    ipv4, (unsigned)http_redirect_port);
+                    "0.0.0.0", (unsigned)http_redirect_port);
             free(ip_addr2);
-            if (!(ip_addr2 = bind_sock_port(rhtp, ipv6, http_redirect_port, SOCKBACKLOG)))
+            if (!(ip_addr2 = bind_sock_port(rhtp, "ipv6:::", http_redirect_port, SOCKBACKLOG)))
                 RP_THROW(ctx, "server.start: httpRedirect: could not bind to %s port %u",
-                    ipv6, (unsigned)http_redirect_port);
+                    "[::]", (unsigned)http_redirect_port);
             free(ip_addr2);
         }
         fprintf(access_fh, "httpRedirect: listening on %s port %u -> https port %u\n",
             http_redirect_bind_ip ? http_redirect_bind_ip : "0.0.0.0+[::]",
             (unsigned)http_redirect_port, (unsigned)http_redirect_target);
+    }
+
+    evhtp_use_threads_wexit(htp, initThread, NULL, nthr, NULL);
+
+    /* Post-pool fixup: pool attach for listen blocks + httpRedirect.
+       evhtp_use_existing_threads writes htp->thr_pool, so it requires
+       evhtp_use_threads_wexit to have completed on the donor htp. */
+    if (listen_block_count > 0) {
+        for (int b = 1; b < listen_block_count; b++) {
+            if (evhtp_use_existing_threads(listen_htps[b], htp) < 0)
+                RP_THROW(ctx, "server.start: listen[%d]: evhtp_use_existing_threads failed", b);
+        }
+        free(listen_htps);
+        listen_htps = NULL;
+    }
+    if (rhtp) {
+        if (evhtp_use_existing_threads(rhtp, htp) < 0)
+            RP_THROW(ctx, "server.start: httpRedirect: evhtp_use_existing_threads failed");
     }
 
     /* now safe to remove ob_idx — all top-level option reads are done */
