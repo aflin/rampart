@@ -7414,9 +7414,21 @@ static void _emit_yield_body_range(rp_string *out, const char *src, TSNode block
             if (is_of)
             {
                 /* For-of: wrap with _TrN_Sp._iter so generators / Sets /
-                   Maps / iterator-only objects work alongside arrays. */
+                   Maps / iterator-only objects work alongside arrays.
+                   For-await-of: use _asyncIter so plain objects keyed
+                   by Symbol.asyncIterator (no Symbol.iterator) work
+                   too.  `_asyncIter` checks Symbol.asyncIterator first,
+                   falls back to _iter on miss — so async generators
+                   and ReadableStream-style objects (which expose
+                   either Symbol.asyncIterator OR a direct .next) are
+                   both covered.  Pre-fix, `for await` over a plain
+                   object with only Symbol.asyncIterator fell to the
+                   length-based _iter fallback and infinite-looped on
+                   `length === undefined`. */
                 rp_string_puts(out, coll_name);
-                rp_string_puts(out, "=_TrN_Sp._iter(");
+                rp_string_puts(out, is_await_of
+                                      ? "=_TrN_Sp._asyncIter("
+                                      : "=_TrN_Sp._iter(");
                 if (!ts_node_is_null(right))
                 {
                     size_t rs = ts_node_start_byte(right), re = ts_node_end_byte(right);

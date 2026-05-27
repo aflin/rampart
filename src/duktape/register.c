@@ -300,6 +300,35 @@ duk_ret_t duk_rp_array_find_index(duk_context *ctx)
     return 1;
 }
 
+/* Drain an iterator (already on top of stack) into the result array at
+   arr_idx, optionally mapping each value through mapFn (at stack 1).
+   Pops the iterator on exit. */
+static void _array_from_drain_iterator(duk_context *ctx, duk_idx_t arr_idx, int has_map)
+{
+    duk_idx_t iter_idx = duk_normalize_index(ctx, -1);
+    duk_uarridx_t i = 0;
+    for (;;) {
+        duk_get_prop_string(ctx, iter_idx, "next");
+        duk_dup(ctx, iter_idx);
+        duk_call_method(ctx, 0);
+        duk_get_prop_string(ctx, -1, "done");
+        int done = duk_to_boolean(ctx, -1);
+        duk_pop(ctx);
+        if (done) { duk_pop(ctx); break; }
+        duk_get_prop_string(ctx, -1, "value");
+        duk_remove(ctx, -2); /* remove result obj */
+        if (has_map) {
+            duk_dup(ctx, 1);
+            duk_insert(ctx, -2);
+            duk_push_uint(ctx, i);
+            duk_call(ctx, 2);
+        }
+        duk_put_prop_index(ctx, arr_idx, i);
+        i++;
+    }
+    duk_pop(ctx); /* iter */
+}
+
 /* ——— Array.from(iterable, mapFn?) ——— */
 static duk_ret_t duk_rp_array_from(duk_context *ctx)
 {
@@ -312,19 +341,47 @@ static duk_ret_t duk_rp_array_from(duk_context *ctx)
 
     if (duk_is_string(ctx, 0))
     {
-        /* iterate codepoints */
-        duk_size_t slen = duk_get_length(ctx, 0);
-        for (i = 0; i < (duk_uarridx_t)slen; i++)
-        {
-            duk_get_prop_index(ctx, 0, i); /* string char */
-            if (has_map)
-            {
-                duk_dup(ctx, 1);
-                duk_insert(ctx, -2);
-                duk_push_uint(ctx, i);
-                duk_call(ctx, 2);
+        /* Drive iteration through String.prototype[Symbol.iterator]
+           (installed by install_string_iter in register.c) so
+           supplementary-plane code points come out as ONE step rather
+           than two surrogate halves.  Falls back to char-by-char
+           indexing if Symbol.iterator isn't installed (defensive —
+           shouldn't happen in rampart). */
+        int handled = 0;
+        duk_get_global_string(ctx, "Symbol");
+        if (!duk_is_undefined(ctx, -1)) {
+            duk_get_prop_string(ctx, -1, "iterator");
+            if (!duk_is_undefined(ctx, -1)) {
+                duk_get_prop(ctx, 0); /* pops Symbol.iterator, pushes str[Symbol.iterator] */
+                if (duk_is_function(ctx, -1)) {
+                    duk_dup(ctx, 0);
+                    duk_call_method(ctx, 0); /* call iterator() */
+                    duk_remove(ctx, -2);     /* drop Symbol */
+                    _array_from_drain_iterator(ctx, arr_idx, has_map);
+                    handled = 1;
+                } else {
+                    duk_pop(ctx); /* the non-fn we got from str[Symbol.iterator] */
+                }
+            } else {
+                duk_pop(ctx); /* undefined Symbol.iterator */
             }
-            duk_put_prop_index(ctx, arr_idx, i);
+        }
+        if (!handled) {
+            duk_pop(ctx); /* Symbol (or undefined) */
+            /* Fallback: char-by-char.  Splits surrogate pairs, but only
+               reached if Symbol.iterator missing entirely. */
+            duk_size_t slen = duk_get_length(ctx, 0);
+            for (i = 0; i < (duk_uarridx_t)slen; i++)
+            {
+                duk_get_prop_index(ctx, 0, i);
+                if (has_map) {
+                    duk_dup(ctx, 1);
+                    duk_insert(ctx, -2);
+                    duk_push_uint(ctx, i);
+                    duk_call(ctx, 2);
+                }
+                duk_put_prop_index(ctx, arr_idx, i);
+            }
         }
     }
     else if (duk_is_array(ctx, 0))
@@ -359,29 +416,8 @@ static duk_ret_t duk_rp_array_from(duk_context *ctx)
                     has_iter = 1;
                     duk_dup(ctx, 0);
                     duk_call_method(ctx, 0); /* call iterator() */
-                    duk_idx_t iter_idx = duk_normalize_index(ctx, -1);
-                    for (;;)
-                    {
-                        duk_get_prop_string(ctx, iter_idx, "next");
-                        duk_dup(ctx, iter_idx);
-                        duk_call_method(ctx, 0);
-                        duk_get_prop_string(ctx, -1, "done");
-                        int done = duk_to_boolean(ctx, -1);
-                        duk_pop(ctx);
-                        if (done) { duk_pop(ctx); break; }
-                        duk_get_prop_string(ctx, -1, "value");
-                        duk_remove(ctx, -2); /* remove result obj */
-                        if (has_map)
-                        {
-                            duk_dup(ctx, 1);
-                            duk_insert(ctx, -2);
-                            duk_push_uint(ctx, i);
-                            duk_call(ctx, 2);
-                        }
-                        duk_put_prop_index(ctx, arr_idx, i);
-                        i++;
-                    }
-                    duk_pop(ctx); /* iter */
+                    duk_remove(ctx, -2); /* drop Symbol */
+                    _array_from_drain_iterator(ctx, arr_idx, has_map);
                 }
                 else
                     duk_pop(ctx);
@@ -389,7 +425,7 @@ static duk_ret_t duk_rp_array_from(duk_context *ctx)
             else
                 duk_pop(ctx);
         }
-        duk_pop(ctx); /* Symbol */
+        if (!has_iter) duk_pop(ctx); /* Symbol */
 
         if (!has_iter)
         {
@@ -1244,6 +1280,87 @@ static void install_array_iter(duk_context *ctx)
     duk_pop(ctx);
 }
 
+/* Install String.prototype[Symbol.iterator].  Duktape doesn't ship it,
+   so `for (var ch of str)`, `[...str]`, `Array.from(str)` (when going
+   through the iterable path), and `new Set(str)` all fail for plain
+   JS strings.
+
+   Per ES2015, the iterator yields code POINTS as substrings, not code
+   UNITS — so an emoji or other supplementary-plane character should
+   come out as ONE step (a 2-code-unit substring), not two separate
+   surrogate-half steps.  Duktape stores strings as CESU-8, but
+   `.charCodeAt(i)` still reports surrogate halves with their proper
+   numeric values (0xD800-0xDBFF / 0xDC00-0xDFFF), so we can detect and
+   re-pair them in pure JS using the standard ranges.  The yielded
+   strings stay in duktape's native CESU-8 form — we just choose where
+   the boundaries fall. */
+static void install_string_iter(duk_context *ctx)
+{
+    const char *src =
+        "if (typeof String.prototype[Symbol.iterator] !== 'function') {"
+        "  Object.defineProperty(String.prototype, Symbol.iterator, {"
+        "    writable: true, enumerable: false, configurable: true,"
+        "    value: function() {"
+        "      var s = String(this), i = 0;"
+        "      var iter = {"
+        "        next: function() {"
+        "          if (i >= s.length) return {value: undefined, done: true};"
+        "          var c = s.charCodeAt(i);"
+        /* High surrogate followed by low surrogate = one code point;
+           emit both halves together as a 2-code-unit substring. */
+        "          if (c >= 0xD800 && c <= 0xDBFF && i + 1 < s.length) {"
+        "            var lo = s.charCodeAt(i + 1);"
+        "            if (lo >= 0xDC00 && lo <= 0xDFFF) {"
+        "              var v = s.substring(i, i + 2);"
+        "              i += 2;"
+        "              return {value: v, done: false};"
+        "            }"
+        "          }"
+        /* BMP char or unpaired surrogate: emit one code unit. */
+        "          return {value: s.charAt(i++), done: false};"
+        "        }"
+        "      };"
+        "      iter[Symbol.iterator] = function() { return this; };"
+        "      return iter;"
+        "    }"
+        "  });"
+        "}";
+    if (duk_peval_string(ctx, src) != 0)
+    {
+        fprintf(stderr, "String iterator install failed: %s\n",
+                duk_safe_to_string(ctx, -1));
+    }
+    duk_pop(ctx);
+}
+
+/* Install Symbol.asyncIterator as a well-known symbol.  Duktape ships
+   Symbol but not the async-iterator slot.  The transpiler's ASYNC_PF
+   polyfill installs it lazily when transpiled code uses async/yield,
+   but that means user code that *defines* an async iterable (e.g.
+   `class Stream { [Symbol.asyncIterator]() {...} }`) silently keys on
+   `undefined` until something triggers ASYNC_PF.  Installing eagerly
+   here makes the symbol always-available; the transpiler's redundant
+   install is gated on `Symbol.asyncIterator === undefined` and
+   becomes a no-op.  Consuming via `for await` syntax still needs the
+   transpiler (duktape's parser rejects the `await` token in a `for`
+   head), but iteration via manual `.next()` calls works in vanilla
+   rampart after this. */
+static void install_async_iterator_symbol(duk_context *ctx)
+{
+    const char *src =
+        "if (typeof Symbol !== 'undefined'"
+        "    && Symbol.asyncIterator === undefined) {"
+        "  try { Symbol.asyncIterator = Symbol('Symbol.asyncIterator'); }"
+        "  catch (_e) {}"
+        "}";
+    if (duk_peval_string(ctx, src) != 0)
+    {
+        fprintf(stderr, "Symbol.asyncIterator install failed: %s\n",
+                duk_safe_to_string(ctx, -1));
+    }
+    duk_pop(ctx);
+}
+
 static void install_proxy_revocable(duk_context *ctx)
 {
     const char *src =
@@ -1346,6 +1463,8 @@ void duk_init_context(duk_context *ctx)
     install_proxy_revocable(ctx);
     install_modern_polyfills(ctx);
     install_array_iter(ctx);
+    install_string_iter(ctx);
+    install_async_iterator_symbol(ctx);
     install_transpile_err_trim(ctx);
     duk_rp_promise_init(ctx);
     /* WHATWG / W3C Web platform standards live in rampart-whatwg.so
