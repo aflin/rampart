@@ -238,7 +238,7 @@ polyfills allpolys[] = {
     {
         // set rampart.warnUnhandledPromise=false to silence the
         // "Possible Unhandled Promise Rejection" console warning.
-        "delete global.Promise;(function(e, t) {'object' == typeof exports && 'undefined' != typeof module ? t() :'function' == typeof define && define.amd              ? define(t) :t()})(0, function() {'use strict';function e(e) {var t = this.constructor;return this.then(function(n) {return t.resolve(e()).then(function() {return n})},function(n) {return t.resolve(e()).then(function() {return t.reject(n)})})}function t(e) {return new this(function(t, n) {function r(e, n) {if (n && ('object' == typeof n || 'function' == typeof n)) {var f = n.then;if ('function' == typeof f)return void f.call(n,function(t) {r(e, t)},function(n) {o[e] = {status: 'rejected', reason: n}, 0 == --i && t(o)})}o[e] = {status: 'fulfilled', value: n}, 0 == --i && t(o)}if (!e || 'undefined' == typeof e.length)return n(new TypeError(typeof e + ' ' + e +' is not iterable(cannot read property Symbol(Symbol.iterator))'));var o = Array.prototype.slice.call(e);if (0 === o.length) return t([]);for (var i = o.length, f = 0; o.length > f; f++) r(f, o[f])})}function n(e, t) {this.name = 'AggregateError', this.errors = e, this.message = t || ''}function r(e) {var t = this;return new t(function(r, o) {if (!e || 'undefined' == typeof e.length)return o(new TypeError('Promise.any accepts an array'));var i = Array.prototype.slice.call(e);if (0 === i.length) return o(new n([],'All promises were rejected'));for (var f = [], u = 0; i.length > u; u++) try {t.resolve(i[u]).then(r)['catch'](function(e) {f.push(e),f.length === i.length && o(new n(f, 'All promises were rejected'))})} catch (c) {o(c)}})}function o(e) {return !(!e || 'undefined' == typeof e.length)}function i() {}function f(e) {if (!(this instanceof f))throw new TypeError('Promises must be constructed via new');if ('function' != typeof e) throw new TypeError('not a function');this._state = 0, this._handled = !1, this._value = undefined,this._deferreds = [], s(e, this)}function u(e, t) {for (; 3 === e._state;) e = e._value;0 !== e._state ? (e._handled = !0, f._immediateFn(function() {var n = 1 === e._state ? t.onFulfilled : t.onRejected;if (null !== n) {var r;try {r = n(e._value)} catch (o) {return void a(t.promise, o)}c(t.promise, r)} else(1 === e._state ? c : a)(t.promise, e._value)})) :e._deferreds.push(t)}function c(e, t) {try {if (t === e)throw new TypeError('A promise cannot be resolved with itself.');if (t && ('object' == typeof t || 'function' == typeof t)) {var n = t.then;if (t instanceof f) return e._state = 3, e._value = t, void l(e);if ('function' == typeof n)return void s(function(e, t) {return function() {e.apply(t, arguments)}}(n, t), e)}e._state = 1, e._value = t, l(e)} catch (r) {a(e, r)}}function a(e, t) {e._state = 2, e._value = t, l(e)}function l(e) {2 === e._state && 0 === e._deferreds.length && f._immediateFn(function() {e._handled || f._unhandledRejectionFn(e._value)});for (var t = 0, n = e._deferreds.length; n > t; t++) u(e, e._deferreds[t]);e._deferreds = null}function s(e, t) {var n = !1;try {e(function(e) {n || (n = !0, c(t, e))},function(e) {n || (n = !0, a(t, e))})} catch (r) {if (n) return;n = !0, a(t, r)}}n.prototype = Error.prototype;var d = setTimeout;f.prototype['catch'] = function(e) {return this.then(null, e)}, f.prototype.then = function(e, t) {var n = new this.constructor(i);return u(this, new function(e, t, n) {this.onFulfilled = 'function' == typeof e ? e : null,this.onRejected = 'function' == typeof t ? t : null, this.promise = n}(e, t, n)), n}, f.prototype['finally'] = e, f.all = function(e) {return new f(function(t, n) {function r(e, o) {try {if (o && ('object' == typeof o || 'function' == typeof o)) {var u = o.then;if ('function' == typeof u)return void u.call(o, function(t) {r(e, t)}, n)}i[e] = o, 0 == --f && t(i)} catch (c) {n(c)}}if (!o(e)) return n(new TypeError('Promise.all accepts an array'));var i = Array.prototype.slice.call(e);if (0 === i.length) return t([]);for (var f = i.length, u = 0; i.length > u; u++) r(u, i[u])})}, f.any = r, f.allSettled = t, f.resolve = function(e) {return e && 'object' == typeof e && e.constructor === f ? e :new f(function(t) {t(e)})}, f.reject = function(e) {return new f(function(t, n) {n(e)})}, f.race = function(e) {return new f(function(t, n) {if (!o(e)) return n(new TypeError('Promise.race accepts an array'));for (var r = 0, i = e.length; i > r; r++) f.resolve(e[r]).then(t, n)})}, f._immediateFn = (function(){var q=[],s=false;function fl(){var c=q;q=[];s=false;for(var j=0;j<c.length;j++)c[j]();}return function(e){q.push(e);if(!s){s=true;d(fl,0);}};})(), f._unhandledRejectionFn = function(e) {if (typeof console === 'undefined' || !console) return;var warn = (typeof rampart === 'undefined') ? true : (rampart.warnUnhandledPromise !== false);if (warn) console.warn('Possible Unhandled Promise Rejection:', e);};var p = function() {if ('undefined' != typeof self) return self;if ('undefined' != typeof window) return window;if ('undefined' != typeof global) return global;throw Error('unable to locate global object')}();'function' != typeof p.Promise ?p.Promise = f :(p.Promise.prototype['finally'] || (p.Promise.prototype['finally'] = e),p.Promise.allSettled || (p.Promise.allSettled = t),p.Promise.any || (p.Promise.any = r))});_TrN_Sp._pAS=Promise.allSettled;_TrN_Sp._pAn=Promise.any;_TrN_Sp._pF=Promise.prototype['finally'];_TrN_Sp._pP=function(){if(typeof Promise==='function'){if(!Promise.allSettled&&_TrN_Sp._pAS)Promise.allSettled=_TrN_Sp._pAS;if(!Promise.any&&_TrN_Sp._pAn)Promise.any=_TrN_Sp._pAn;if(Promise.prototype&&!Promise.prototype['finally']&&_TrN_Sp._pF)Promise.prototype['finally']=_TrN_Sp._pF;}};",
+        "delete global.Promise;(function(e, t) {'object' == typeof exports && 'undefined' != typeof module ? t() :'function' == typeof define && define.amd              ? define(t) :t()})(0, function() {'use strict';function e(e) {var t = this.constructor;return this.then(function(n) {return t.resolve(e()).then(function() {return n})},function(n) {return t.resolve(e()).then(function() {return t.reject(n)})})}function t(e) {return new this(function(t, n) {function r(e, n) {if (n && ('object' == typeof n || 'function' == typeof n)) {var f = n.then;if ('function' == typeof f)return void f.call(n,function(t) {r(e, t)},function(n) {o[e] = {status: 'rejected', reason: n}, 0 == --i && t(o)})}o[e] = {status: 'fulfilled', value: n}, 0 == --i && t(o)}if (!e || 'undefined' == typeof e.length)return n(new TypeError(typeof e + ' ' + e +' is not iterable(cannot read property Symbol(Symbol.iterator))'));var o = Array.prototype.slice.call(e);if (0 === o.length) return t([]);for (var i = o.length, f = 0; o.length > f; f++) r(f, o[f])})}function n(e, t) {this.name = 'AggregateError', this.errors = e, this.message = t || ''}function r(e) {var t = this;return new t(function(r, o) {if (!e || 'undefined' == typeof e.length)return o(new TypeError('Promise.any accepts an array'));var i = Array.prototype.slice.call(e);if (0 === i.length) return o(new n([],'All promises were rejected'));for (var f = [], u = 0; i.length > u; u++) try {t.resolve(i[u]).then(r)['catch'](function(e) {f.push(e),f.length === i.length && o(new n(f, 'All promises were rejected'))})} catch (c) {o(c)}})}function o(e) {return !(!e || 'undefined' == typeof e.length)}function i() {}function f(e) {if (!(this instanceof f))throw new TypeError('Promises must be constructed via new');if ('function' != typeof e) throw new TypeError('not a function');this._state = 0, this._handled = !1, this._value = undefined,this._deferreds = [], s(e, this)}function u(e, t) {for (; 3 === e._state;) e = e._value;0 !== e._state ? (e._handled = !0, f._immediateFn(function() {var n = 1 === e._state ? t.onFulfilled : t.onRejected;if (null !== n) {var r;try {r = n(e._value)} catch (o) {return void a(t.promise, o)}c(t.promise, r)} else(1 === e._state ? c : a)(t.promise, e._value)})) :e._deferreds.push(t)}function c(e, t) {try {if (t === e)throw new TypeError('A promise cannot be resolved with itself.');if (t && ('object' == typeof t || 'function' == typeof t)) {var n = t.then;if (t instanceof f) return e._state = 3, e._value = t, void l(e);if ('function' == typeof n)return void s(function(e, t) {return function() {e.apply(t, arguments)}}(n, t), e)}e._state = 1, e._value = t, l(e)} catch (r) {a(e, r)}}function a(e, t) {e._state = 2, e._value = t, l(e)}function l(e) {2 === e._state && 0 === e._deferreds.length && f._immediateFn(function() {e._handled || f._unhandledRejectionFn(e._value)});for (var t = 0, n = e._deferreds.length; n > t; t++) u(e, e._deferreds[t]);e._deferreds = null}function s(e, t) {var n = !1;try {e(function(e) {n || (n = !0, c(t, e))},function(e) {n || (n = !0, a(t, e))})} catch (r) {if (n) return;n = !0, a(t, r)}}n.prototype = Error.prototype;var d = setTimeout;f.prototype['catch'] = function(e) {return this.then(null, e)}, f.prototype.then = function(e, t) {var n = new this.constructor(i);return u(this, new function(e, t, n) {this.onFulfilled = 'function' == typeof e ? e : null,this.onRejected = 'function' == typeof t ? t : null, this.promise = n}(e, t, n)), n}, f.prototype['finally'] = e, f.all = function(e) {return new f(function(t, n) {function r(e, o) {try {if (o && ('object' == typeof o || 'function' == typeof o)) {var u = o.then;if ('function' == typeof u)return void u.call(o, function(t) {r(e, t)}, n)}i[e] = o, 0 == --f && t(i)} catch (c) {n(c)}}if (!o(e)) return n(new TypeError('Promise.all accepts an array'));var i = Array.prototype.slice.call(e);if (0 === i.length) return t([]);for (var f = i.length, u = 0; i.length > u; u++) r(u, i[u])})}, f.any = r, f.allSettled = t, f.resolve = function(e) {return e && 'object' == typeof e && e.constructor === f ? e :new f(function(t) {t(e)})}, f.reject = function(e) {return new f(function(t, n) {n(e)})}, f.race = function(e) {return new f(function(t, n) {if (!o(e)) return n(new TypeError('Promise.race accepts an array'));for (var r = 0, i = e.length; i > r; r++) f.resolve(e[r]).then(t, n)})}, f._immediateFn = (function(){var q=[],s=false;function fl(){var c=q;q=[];s=false;for(var j=0;j<c.length;j++)c[j]();}return function(e){q.push(e);if(!s){s=true;d(fl,0);}};})(), f._unhandledRejectionFn = function(e) {if (typeof console === 'undefined' || !console) return;var warn = (typeof rampart === 'undefined') ? true : (rampart.warnUnhandledPromise !== false);if (warn) console.warn('Possible Unhandled Promise Rejection:', e);};var p = function() {if ('undefined' != typeof self) return self;if ('undefined' != typeof window) return window;if ('undefined' != typeof global) return global;throw Error('unable to locate global object')}();'function' != typeof p.Promise ?p.Promise = f :(p.Promise.prototype['finally'] || (p.Promise.prototype['finally'] = e),p.Promise.allSettled || (p.Promise.allSettled = t),p.Promise.any || (p.Promise.any = r));_TrN_Sp._gp=p});_TrN_Sp._pAS=_TrN_Sp._gp.Promise.allSettled;_TrN_Sp._pAn=_TrN_Sp._gp.Promise.any;_TrN_Sp._pF=_TrN_Sp._gp.Promise.prototype['finally'];_TrN_Sp._pP=function(){var _P=_TrN_Sp._gp&&_TrN_Sp._gp.Promise;if(typeof _P==='function'){if(!_P.allSettled&&_TrN_Sp._pAS)_P.allSettled=_TrN_Sp._pAS;if(!_P.any&&_TrN_Sp._pAn)_P.any=_TrN_Sp._pAn;if(_P.prototype&&!_P.prototype['finally']&&_TrN_Sp._pF)_P.prototype['finally']=_TrN_Sp._pF;}};",
         // oldver
         //"delete global.Promise;(function(e,t){\"object\"==typeof exports&&\"undefined\"!=typeof module?t():\"function\"==typeof define&&define.amd?define(t):t()})(0,function(){\"use strict\";function e(e){var t=this.constructor;return this.then(function(n){return t.resolve(e()).then(function(){return n})},function(n){return t.resolve(e()).then(function(){return t.reject(n)})})}function t(e){return new this(function(t,n){function r(e,n){if(n&&(\"object\"==typeof n||\"function\"==typeof n)){var f=n.then;if(\"function\"==typeof f)return void f.call(n,function(t){r(e,t)},function(n){o[e]={status:\"rejected\",reason:n},0==--i&&t(o)})}o[e]={status:\"fulfilled\",value:n},0==--i&&t(o)}if(!e||\"undefined\"==typeof e.length)return n(new TypeError(typeof e+\" \"+e+\" is not iterable(cannot read property Symbol(Symbol.iterator))\"));var o=Array.prototype.slice.call(e);if(0===o.length)return t([]);for(var i=o.length,f=0;o.length>f;f++)r(f,o[f])})}function n(e,t){this.name=\"AggregateError\",this.errors=e,this.message=t||\"\"}function r(e){var t=this;return new t(function(r,o){if(!e||\"undefined\"==typeof e.length)return o(new TypeError(\"Promise.any accepts an array\"));var i=Array.prototype.slice.call(e);if(0===i.length)return o();for(var f=[],u=0;i.length>u;u++)try{t.resolve(i[u]).then(r)[\"catch\"](function(e){f.push(e),f.length===i.length&&o(new n(f,\"All promises were rejected\"))})}catch(c){o(c)}})}function o(e){return!(!e||\"undefined\"==typeof e.length)}function i(){}function f(e){if(!(this instanceof f))throw new TypeError(\"Promises must be constructed via new\");if(\"function\"!=typeof e)throw new TypeError(\"not a function\");this._state=0,this._handled=!1,this._value=undefined,this._deferreds=[],s(e,this)}function u(e,t){for(;3===e._state;)e=e._value;0!==e._state?(e._handled=!0,f._immediateFn(function(){var n=1===e._state?t.onFulfilled:t.onRejected;if(null!==n){var r;try{r=n(e._value)}catch(o){return void a(t.promise,o)}c(t.promise,r)}else(1===e._state?c:a)(t.promise,e._value)})):e._deferreds.push(t)}function c(e,t){try{if(t===e)throw new TypeError(\"A promise cannot be resolved with itself.\");if(t&&(\"object\"==typeof t||\"function\"==typeof t)){var n=t.then;if(t instanceof f)return e._state=3,e._value=t,void l(e);if(\"function\"==typeof n)return void s(function(e,t){return function(){e.apply(t,arguments)}}(n,t),e)}e._state=1,e._value=t,l(e)}catch(r){a(e,r)}}function a(e,t){e._state=2,e._value=t,l(e)}function l(e){2===e._state&&0===e._deferreds.length&&f._immediateFn(function(){e._handled||f._unhandledRejectionFn(e._value)});for(var t=0,n=e._deferreds.length;n>t;t++)u(e,e._deferreds[t]);e._deferreds=null}function s(e,t){var n=!1;try{e(function(e){n||(n=!0,c(t,e))},function(e){n||(n=!0,a(t,e))})}catch(r){if(n)return;n=!0,a(t,r)}}n.prototype=Error.prototype;var d=setTimeout;f.prototype[\"catch\"]=function(e){return this.then(null,e)},f.prototype.then=function(e,t){var n=new this.constructor(i);return u(this,new function(e,t,n){this.onFulfilled=\"function\"==typeof e?e:null,this.onRejected=\"function\"==typeof t?t:null,this.promise=n}(e,t,n)),n},f.prototype[\"finally\"]=e,f.all=function(e){return new f(function(t,n){function r(e,o){try{if(o&&(\"object\"==typeof o||\"function\"==typeof o)){var u=o.then;if(\"function\"==typeof u)return void u.call(o,function(t){r(e,t)},n)}i[e]=o,0==--f&&t(i)}catch(c){n(c)}}if(!o(e))return n(new TypeError(\"Promise.all accepts an array\"));var i=Array.prototype.slice.call(e);if(0===i.length)return t([]);for(var f=i.length,u=0;i.length>u;u++)r(u,i[u])})},f.any=r,f.allSettled=t,f.resolve=function(e){return e&&\"object\"==typeof e&&e.constructor===f?e:new f(function(t){t(e)})},f.reject=function(e){return new f(function(t,n){n(e)})},f.race=function(e){return new f(function(t,n){if(!o(e))return n(new TypeError(\"Promise.race accepts an array\"));for(var r=0,i=e.length;i>r;r++)f.resolve(e[r]).then(t,n)})},f._immediateFn=\"function\"==typeof setImmediate&&function(e){setImmediate(e)}||function(e){d(e,0)},f._unhandledRejectionFn=function(e){void 0!==console&&console&&console.warn(\"Possible Unhandled Promise Rejection:\",e)};var p=function(){if(\"undefined\"!=typeof self)return self;if(\"undefined\"!=typeof window)return window;if(\"undefined\"!=typeof global)return global;throw Error(\"unable to locate global object\")}();\"function\"!=typeof p.Promise?p.Promise=f:(p.Promise.prototype[\"finally\"]||(p.Promise.prototype[\"finally\"]=e),p.Promise.allSettled||(p.Promise.allSettled=t),p.Promise.any||(p.Promise.any=r))});",
         0, (uint32_t)PROMISE_PF},
@@ -2829,6 +2829,11 @@ static int contains_lexical_this(TSNode node)
 }
 // ============== handlers ==============
 
+/* Counter for synthetic destructure-temp names (`_TrN_dp<N>`).
+   Shared between rewrite_function_rest (rest-target destructure, NDE.10)
+   and rewrite_function_destructuring_params. */
+static unsigned _dp_counter = 0;
+
 // Rewrite JS rest parameters:  function f(x,y,...a){ ... }
 // -> function f(x,y){ var a = Object.values(arguments).slice(2); ... }
 static int rewrite_function_rest(EditList *edits, const char *src, TSNode func_node, RangeList *claimed, int overlaps)
@@ -2861,18 +2866,25 @@ static int rewrite_function_rest(EditList *edits, const char *src, TSNode func_n
     // Count non-rest params before the rest (slice start)
     uint32_t before_count = rest_index;
 
-    // Name of the rest identifier
+    // Rest target: identifier, or array/object_pattern (NDE.10).
     nparams = ts_node_named_child_count(rest);
     TSNode rest_pat = {{0}};
+    int rest_target_is_destr = 0;
 
-    for (int i = 0; i < nparams; i++)
+    for (uint32_t i = 0; i < nparams; i++)
     {
         TSNode ch = ts_node_named_child(rest, i);
-        if (strcmp(ts_node_type(ch), "identifier") == 0)
+        const char *cht = ts_node_type(ch);
+        if (strcmp(cht, "identifier") == 0)
         {
             rest_pat = ch;
-            rest_index = i;
-            found = true;
+            break;
+        }
+        if (strcmp(cht, "array_pattern") == 0 ||
+            strcmp(cht, "object_pattern") == 0)
+        {
+            rest_pat = ch;
+            rest_target_is_destr = 1;
             break;
         }
     }
@@ -2927,32 +2939,54 @@ static int rewrite_function_rest(EditList *edits, const char *src, TSNode func_n
     while (insert_at < body_e && is_ws(src[insert_at]))
         insert_at++;
 
-    char numbuf[32];
-    snprintf(numbuf, sizeof(numbuf), "%u", (unsigned)before_count);
+    rp_string *shim = rp_string_new(64);
+    if (rest_target_is_destr)
+    {
+        /* function (...[a, b]) / function (...{x, y}): bind a temp,
+           then destructure into the named locals. (NDE.10) */
+        char tmpname[32];
+        snprintf(tmpname, sizeof(tmpname), "_TrN_dp%u", _dp_counter++);
+        rp_string_appendf(shim, "var %s = Object.values(arguments).slice(%u); ",
+                          tmpname, (unsigned)before_count);
+        Bindings binds;
+        binds_init(&binds);
+        if (collect_flat_destructure_bindings(rest_pat, src, tmpname, &binds) && binds.len > 0)
+        {
+            rp_string_puts(shim, "var ");
+            for (size_t bi = 0; bi < binds.len; bi++)
+            {
+                if (bi > 0)
+                    rp_string_puts(shim, ", ");
+                rp_string_puts(shim, binds.a[bi].name);
+                rp_string_puts(shim, " = ");
+                if (binds.a[bi].defval)
+                {
+                    rp_string_puts(shim, binds.a[bi].repl);
+                    rp_string_puts(shim, " !== undefined ? ");
+                    rp_string_puts(shim, binds.a[bi].repl);
+                    rp_string_puts(shim, " : ");
+                    rp_string_puts(shim, binds.a[bi].defval);
+                }
+                else
+                {
+                    rp_string_puts(shim, binds.a[bi].repl);
+                }
+            }
+            rp_string_puts(shim, "; ");
+        }
+        binds_free(&binds);
+    }
+    else
+    {
+        size_t name_len = name_e - name_s;
+        rp_string_puts(shim, "var ");
+        rp_string_putsn(shim, src + name_s, name_len);
+        rp_string_appendf(shim, " = Object.values(arguments).slice(%u); ",
+                          (unsigned)before_count);
+    }
 
-    const char *p1 = "var ";
-    const char *p2 = " = Object.values(arguments).slice(";
-    const char *p3 = "); ";
-    size_t name_len = name_e - name_s;
-    size_t repl_len = strlen(p1) + name_len + strlen(p2) + strlen(numbuf) + strlen(p3);
-    char *repl = NULL;
-    size_t k = 0;
-
-    REMALLOC(repl, repl_len + 1);
-
-    memcpy(repl + k, p1, strlen(p1));
-    k += strlen(p1);
-    memcpy(repl + k, src + name_s, name_len);
-    k += name_len;
-    memcpy(repl + k, p2, strlen(p2));
-    k += strlen(p2);
-    memcpy(repl + k, numbuf, strlen(numbuf));
-    k += strlen(numbuf);
-    memcpy(repl + k, p3, strlen(p3));
-    k += strlen(p3);
-    repl[k] = '\0';
-
-    add_edit_take_ownership(edits, insert_at, insert_at, repl, claimed);
+    add_edit_take_ownership(edits, insert_at, insert_at, rp_string_steal(shim), claimed);
+    shim = rp_string_free(shim);
     // rl_add(claimed, params_s, params_e);
     // rl_add(claimed, body_s, body_e);
     return 1;
@@ -2963,7 +2997,6 @@ static int rewrite_function_rest(EditList *edits, const char *src, TSNode func_n
  *   → function f(_dp0, a) { var x = _dp0.x, y = _dp0.y; ... }
  * Also handles: function f({x = 1} = {}) { ... }
  */
-static unsigned _dp_counter = 0;
 static int rewrite_function_destructuring_params(EditList *edits, const char *src, TSNode func_node,
                                                   RangeList *claimed, int overlaps)
 {
@@ -4738,6 +4771,41 @@ static int rewrite_array_spread(EditList *edits, const char *src, TSNode arr, in
     int nshort = 0;
     int nspread = 0;
 
+    /* NDE.13: `{__proto__: <expr>, ...}` would lower to a chain that
+       starts with `._concat({__proto__: <expr>})`, which under duktape's
+       __proto__-as-own-key behavior severs `this`'s prototype chain and
+       breaks subsequent `._addchain`/`._concat` calls.  Detect a literal
+       `__proto__` PAIR child and hoist it out of the chain: emit the
+       chain as normal (without that pair) and wrap the whole expression
+       with `Object.setPrototypeOf(<chain>, <expr>)` so the user's
+       prototype intent applies at the very end.  Only applies to the
+       object form. */
+    size_t proto_val_start = 0, proto_val_end = 0;
+    int has_proto_pair = 0;
+    uint32_t proto_pair_kid_idx = (uint32_t)-1;
+    if (isObject)
+    {
+        for (uint32_t pi = 0; pi < cnt1; pi++)
+        {
+            TSNode kid = ts_node_child(arr, pi);
+            if (strcmp(ts_node_type(kid), "pair") != 0) continue;
+            TSNode key = ts_node_child_by_field_name(kid, "key", 3);
+            TSNode val = ts_node_child_by_field_name(kid, "value", 5);
+            if (ts_node_is_null(key) || ts_node_is_null(val)) continue;
+            const char *kt = ts_node_type(key);
+            if (strcmp(kt, "property_identifier") != 0 &&
+                strcmp(kt, "identifier") != 0) continue;
+            size_t ks = ts_node_start_byte(key), ke = ts_node_end_byte(key);
+            if (ke - ks != 9) continue;
+            if (memcmp(src + ks, "__proto__", 9) != 0) continue;
+            has_proto_pair = 1;
+            proto_pair_kid_idx = pi;
+            proto_val_start = ts_node_start_byte(val);
+            proto_val_end = ts_node_end_byte(val);
+            break;  /* a second __proto__ would be invalid JS */
+        }
+    }
+
     for (i = 0; i < cnt1; i++)
     {
         TSNode kid = ts_node_child(arr, i);
@@ -4751,6 +4819,8 @@ static int rewrite_array_spread(EditList *edits, const char *src, TSNode arr, in
            later properties). */
         if (strcmp(_kt, "comment") == 0)
             continue;
+        if (has_proto_pair && i == proto_pair_kid_idx)
+            continue;  /* NDE.13: __proto__ pair hoisted to setPrototypeOf wrapper */
         if (strcmp(_kt, "spread_element") == 0)
         {
             cnt2 = ts_node_child_count(kid);
@@ -4856,6 +4926,8 @@ static int rewrite_array_spread(EditList *edits, const char *src, TSNode arr, in
         /* Skip comments — see size-pass note. */
         if (strcmp(_kt2, "comment") == 0)
             continue;
+        if (has_proto_pair && i == proto_pair_kid_idx)
+            continue;  /* NDE.13: hoisted to setPrototypeOf wrapper */
 
         /* Count source newlines between previous kid end (or the
            opening `{`/`[` for the first kid) and this kid start so we
@@ -4938,6 +5010,30 @@ static int rewrite_array_spread(EditList *edits, const char *src, TSNode arr, in
 #undef newarrsz
     // printf("strlen=%d, alloc'ed=%d + 1\n", strlen(out), (int)needed-1);
     // printf("edit is '%s' at %u\n", out, ts_node_start_byte(arr) );
+    if (has_proto_pair)
+    {
+        /* NDE.13: wrap chain with Object.setPrototypeOf(<chain>, <proto-val>).
+           The proto value is copied verbatim from source so identifier
+           lookups / expressions in the proto position resolve in the
+           caller's scope. */
+        size_t proto_len = proto_val_end - proto_val_start;
+        size_t chain_len = strlen(out);
+        const char *pre = "Object.setPrototypeOf(";
+        const char *mid = ", ";
+        const char *post = ")";
+        size_t wlen = strlen(pre) + chain_len + strlen(mid) + proto_len + strlen(post);
+        char *wrapped = NULL;
+        REMALLOC(wrapped, wlen + 1);
+        size_t wp = 0;
+        memcpy(wrapped + wp, pre, strlen(pre)); wp += strlen(pre);
+        memcpy(wrapped + wp, out, chain_len);  wp += chain_len;
+        memcpy(wrapped + wp, mid, strlen(mid)); wp += strlen(mid);
+        memcpy(wrapped + wp, src + proto_val_start, proto_len); wp += proto_len;
+        memcpy(wrapped + wp, post, strlen(post)); wp += strlen(post);
+        wrapped[wp] = '\0';
+        free(out);
+        out = wrapped;
+    }
     uint32_t ns = ts_node_start_byte(arr), ne = ts_node_end_byte(arr);
     add_edit_take_ownership(edits, ns, ne, out, claimed);
     *polysneeded |= SPREAD_PF;
@@ -11306,6 +11402,88 @@ static void _emit_with_priv_subst(rp_string *out, const char *src, size_t ss, si
     _bs_nv_free(&privs);
 }
 
+/* NDE.15: post-process a regenerator-runtime-wrapped body string,
+   substituting `#name` → `_TrN_priv<class_id>_name` outside of string
+   literals, comments, and template-literal text.  The regenerator
+   body emitters copy `src` bytes verbatim, so private field/method
+   accesses inside an async/generator class method survive unmangled
+   and trip duktape with `SyntaxError: invalid token`.
+
+   Strings/line comments/block comments are tracked so embedded source
+   captures (e.g. the `_TrN_Sp._fs(fn, "...source...")` srcArg, which
+   intentionally preserves the original `#name` text) are left alone.
+   Template literals are treated as opaque (their `${expr}` parts are
+   not re-scanned — uncommon in lowered async/gen state machines and
+   left as a known limitation). Returns a malloc'd C string. */
+static char *_priv_subst_in_emitted(const char *s, unsigned class_id)
+{
+    if (!s) return NULL;
+    size_t len = strlen(s);
+    rp_string *out = rp_string_new(len + 32);
+    int in_str = 0;
+    char str_ch = 0;
+    int in_line_cmt = 0, in_blk_cmt = 0, in_tmpl = 0;
+    for (size_t i = 0; i < len; i++)
+    {
+        char c = s[i];
+        if (in_line_cmt)
+        {
+            rp_string_putc(out, c);
+            if (c == '\n') in_line_cmt = 0;
+            continue;
+        }
+        if (in_blk_cmt)
+        {
+            rp_string_putc(out, c);
+            if (c == '*' && i + 1 < len && s[i+1] == '/')
+            { rp_string_putc(out, '/'); i++; in_blk_cmt = 0; }
+            continue;
+        }
+        if (in_str)
+        {
+            rp_string_putc(out, c);
+            if (c == '\\' && i + 1 < len)
+            { rp_string_putc(out, s[i+1]); i++; continue; }
+            if (c == str_ch) in_str = 0;
+            continue;
+        }
+        if (in_tmpl)
+        {
+            rp_string_putc(out, c);
+            if (c == '\\' && i + 1 < len)
+            { rp_string_putc(out, s[i+1]); i++; continue; }
+            if (c == '`') in_tmpl = 0;
+            continue;
+        }
+        if (c == '/' && i + 1 < len)
+        {
+            if (s[i+1] == '/')
+            { rp_string_putc(out, c); rp_string_putc(out, s[i+1]); i++; in_line_cmt = 1; continue; }
+            if (s[i+1] == '*')
+            { rp_string_putc(out, c); rp_string_putc(out, s[i+1]); i++; in_blk_cmt = 1; continue; }
+        }
+        if (c == '"' || c == '\'')
+        { rp_string_putc(out, c); in_str = 1; str_ch = c; continue; }
+        if (c == '`')
+        { rp_string_putc(out, c); in_tmpl = 1; continue; }
+        if (c == '#' && i + 1 < len)
+        {
+            unsigned char nc = (unsigned char)s[i+1];
+            if (nc == '_' || nc == '$' ||
+                (nc >= 'a' && nc <= 'z') ||
+                (nc >= 'A' && nc <= 'Z'))
+            {
+                rp_string_appendf(out, "_TrN_priv%u_", class_id);
+                continue;  /* eat the '#'; identifier follows on next iteration */
+            }
+        }
+        rp_string_putc(out, c);
+    }
+    char *ret = rp_string_steal(out);
+    out = rp_string_free(out);
+    return ret;
+}
+
 /* Emit the params node's text into `out`, stripping comment children.
    Used by the class method emitter (which copies params verbatim).
    If the source has comments BETWEEN params (common in wide method
@@ -11462,14 +11640,18 @@ static void es5_emit_class_core(rp_string *out, const char *src, const char *cna
         *fpcur = fline;
         size_t pre_field_len = dest->len;
 
+        /* NDE.14: computed-key fields (`[Expr] = value`) must use bracket
+           notation, not member-access dot.  The property text already
+           includes the surrounding `[...]`, so skip the `.` for those. */
+        int is_computed_field = (strcmp(ts_node_type(fprop), "computed_property_name") == 0);
         if (is_static_field)
         {
             rp_string_putsn(dest, cname, cname_len);
-            rp_string_puts(dest, ".");
+            if (!is_computed_field) rp_string_puts(dest, ".");
         }
         else
         {
-            rp_string_puts(dest, "this.");
+            rp_string_puts(dest, is_computed_field ? "this" : "this.");
         }
         if (is_private_field)
         {
@@ -11549,7 +11731,8 @@ static void es5_emit_class_core(rp_string *out, const char *src, const char *cna
         int is_getter = 0;
         int is_setter = 0;
         int is_async = 0;
-        // detect "static", "get", "set", "async" modifiers
+        int is_generator = 0;
+        // detect "static", "get", "set", "async", "*" modifiers
         for (uint32_t j = 0, cn = ts_node_child_count(mth); j < cn; j++)
         {
             TSNode ch = ts_node_child(mth, j);
@@ -11565,6 +11748,8 @@ static void es5_emit_class_core(rp_string *out, const char *src, const char *cna
                 is_setter = 1;
             else if (slen == 5 && strncmp(src + ss, "async", 5) == 0)
                 is_async = 1;
+            else if (slen == 1 && src[ss] == '*')
+                is_generator = 1;
         }
 
         if (is_ctor)
@@ -11638,12 +11823,22 @@ static void es5_emit_class_core(rp_string *out, const char *src, const char *cna
         if (is_getter) desc_field = "get";
         else if (is_setter) desc_field = "set";
 
+        /* Generator (non-async) class methods wrap the inner function in
+           _TrN_Sp.regeneratorRuntime.mark(...) so yield gets lowered by the
+           same path as standalone `function* gen()`. Async-generator methods
+           (`async *name()`) need __asyncGenerator wrapping and aren't covered
+           here yet — they still emit as plain functions and fail at runtime.
+           (NDE.12) */
+        int wrap_with_regen = (is_generator && !is_async);
+        const char *value_func_prefix =
+            wrap_with_regen ? "_TrN_Sp.regeneratorRuntime.mark(function " : "function ";
+
         if (is_computed)
         {
             // {key:<expr>,value:function(){...}}  or get/set variant
             rp_string_puts(bucket, "{key:");
             rp_string_putsn(bucket, src + ks, ke - ks);
-            rp_string_appendf(bucket, ",%s:function ", desc_field);
+            rp_string_appendf(bucket, ",%s:%s", desc_field, value_func_prefix);
         }
         else
         {
@@ -11664,7 +11859,7 @@ static void es5_emit_class_core(rp_string *out, const char *src, const char *cna
             if (is_private_method)
                 rp_string_appendf(bucket, "_TrN_priv%u_", class_priv_id);
             rp_string_putsn(bucket, src + ks, ke - ks);
-            rp_string_appendf(bucket, "',%s:function ", desc_field);
+            rp_string_appendf(bucket, "',%s:%s", desc_field, value_func_prefix);
         }
         /* Check for rest parameter in method params */
         const char *rest_name = NULL;
@@ -11749,10 +11944,37 @@ static void es5_emit_class_core(rp_string *out, const char *src, const char *cna
             char *_wrap = _build_regenerator_switch_body(src, mb);
             if (_wrap)
             {
-                rp_string_puts(bucket, _wrap);
+                /* NDE.15: re-mangle `#name` inside the lowered body
+                   so private field/method access survives the regen
+                   transform.  No-op when the class has no privates. */
+                char *_mangled = _priv_subst_in_emitted(_wrap, class_priv_id);
+                rp_string_puts(bucket, _mangled ? _mangled : _wrap);
                 free(_wrap);
+                if (_mangled) free(_mangled);
             }
             rp_string_puts(bucket, "})).apply(this, arguments);}");
+        }
+        else if (wrap_with_regen && bs && be)
+        {
+            /* Generator class method (NDE.12):
+                 value: _TrN_Sp.regeneratorRuntime.mark(function (params) { <switch> })
+               `function ` was already emitted above; we just need params,
+               the regenerator-switch body, and a closing `)` to balance the
+               `mark(` paren added by value_func_prefix. */
+            rp_string_puts(bucket, "{");
+            char *_wrap = _build_regenerator_switch_body_for_yield(src, mb);
+            if (_wrap)
+            {
+                /* NDE.15: re-mangle `#name` inside the lowered body
+                   so private field/method access survives the regen
+                   transform.  No-op when the class has no privates. */
+                char *_mangled = _priv_subst_in_emitted(_wrap, class_priv_id);
+                rp_string_puts(bucket, _mangled ? _mangled : _wrap);
+                free(_wrap);
+                if (_mangled) free(_mangled);
+            }
+            rp_string_puts(bucket, "})");
+            if (polysneeded) *polysneeded |= ASYNC_PF;
         }
         else if (bs && be)
         {

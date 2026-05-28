@@ -1573,6 +1573,7 @@ CURL_OPTS curl_options[] = {
     {"no-keepalive", CURLOPT_TCP_KEEPALIVE, -1, &copt_boolplus},
     {"no-npn", CURLOPT_SSL_ENABLE_NPN, -1, &copt_boolplus},
     {"no-sessionid", CURLOPT_SSL_SESSIONID_CACHE, -1, &copt_boolplus},
+    {"nobody", CURLOPT_NOBODY, 0, &copt_bool},
     {"noproxy", CURLOPT_NOPROXY, 0, &copt_string},
     {"ntlm", CURLOPT_HTTPAUTH, 5, &copt_auth},
     {"ntlm-wb", CURLOPT_HTTPAUTH, 6, &copt_auth},

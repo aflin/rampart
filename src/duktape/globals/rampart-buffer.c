@@ -1316,6 +1316,51 @@ void duk_rp_buffer_init(duk_context *ctx)
     duk_rp_set_enum_false(ctx, -1, "subarray");
     duk_rp_set_enum_false(ctx, -1, "inspect");
 
+    /* Node's encoding-specific slice helpers: latin1Slice / asciiSlice /
+       utf8Slice / hexSlice / base64Slice / ucs2Slice / utf16leSlice.
+       Documented as "internal" on node's Buffer but widely used by
+       streaming parsers (e.g. busboy's HeaderParser does
+       chunk.latin1Slice(start, end) to extract header names/values
+       byte-by-byte without intermediate buffers).  Each is just a
+       fixed-encoding wrapper around toString(encoding, start, end). */
+    duk_eval_string(ctx,
+        "(function(proto) {"
+        "  function _make(enc) {"
+        "    return function(start, end) { return this.toString(enc, start, end); };"
+        "  }"
+        "  ['latin1','ascii','utf8','hex','base64','ucs2','utf16le','base64url']"
+        "  .forEach(function(e) {"
+        "    var name = e + 'Slice';"
+        "    if (typeof proto[name] !== 'function') {"
+        "      Object.defineProperty(proto, name, {"
+        "        value: _make(e), writable: true, configurable: true, enumerable: false"
+        "      });"
+        "    }"
+        "  });"
+        "  /* Mirror set: latin1Write / asciiWrite / utf8Write / hexWrite /"
+        "     base64Write / ucs2Write / utf16leWrite.  Each takes (string, start, end)"
+        "     and writes using the fixed encoding via write(string, start, length, enc). */"
+        "  function _mw(enc) {"
+        "    return function(string, start, end) {"
+        "      start = start | 0;"
+        "      var len = (end === undefined ? undefined : (end | 0) - start);"
+        "      return this.write(string, start, len, enc);"
+        "    };"
+        "  }"
+        "  ['latin1','ascii','utf8','hex','base64','ucs2','utf16le','base64url']"
+        "  .forEach(function(e) {"
+        "    var name = e + 'Write';"
+        "    if (typeof proto[name] !== 'function') {"
+        "      Object.defineProperty(proto, name, {"
+        "        value: _mw(e), writable: true, configurable: true, enumerable: false"
+        "      });"
+        "    }"
+        "  });"
+        "})");
+    duk_dup(ctx, -2);  /* push prototype as arg */
+    duk_call(ctx, 1);
+    duk_pop(ctx);      /* call result */
+
     duk_pop(ctx);  /* prototype */
 
     /* Buffer.copyBytesFrom(view[, offset[, length]]) — node 18+ */

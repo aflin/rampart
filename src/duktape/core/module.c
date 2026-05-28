@@ -11,11 +11,240 @@
 #include <dlfcn.h>
 #include <pthread.h>
 #include <libgen.h>
+#include <string.h>
 #include "duktape.h"
 #include "module.h"
 #include "rampart.h"
 #include "rp_zip.h"
 #include "rp_transpile.h"
+
+/* ====================================================================
+ * RAMPART_NODE_COMPAT_RESOLVE
+ *
+ * When 1: enable node.js-style require resolution behaviors, scoped to
+ * callers whose file path contains "/node_modules/" (i.e., code that
+ * came out of an `npm install`).  Two behaviors:
+ *
+ *   1. `node:` prefix stripping — require('node:events') resolves the
+ *      same as require('events').  Stripped unconditionally; harmless
+ *      for non-npm callers since rampart names never start with "node:".
+ *
+ *   2. For npm-located callers (caller path under `node_modules/`):
+ *      (a) Bare requires (no leading `.` or `/`) try rampart builtins
+ *          BEFORE the caller's own directory — fixes the case where
+ *          npm packages have an internal file with the same name as a
+ *          builtin (e.g. readable-stream/lib/internal/streams/stream.js
+ *          doing `require('stream')` and getting itself).
+ *      (b) After builtins, walk node_modules chains up from the
+ *          caller's directory: try caller_dir/node_modules/X, then
+ *          caller_dir/../node_modules/X, etc.  Standard node algorithm.
+ *
+ * Out-of-node_modules callers (your own scripts, rampart-internal
+ * modules, js_modules/X.js re-exports installed in rampart's install
+ * dir) hit none of the new logic — their resolution is byte-for-byte
+ * identical to the pre-flag behavior.
+ *
+ * Set to 0 to disable both behaviors and revert to classic rampart
+ * resolution everywhere.
+ * ==================================================================== */
+#define RAMPART_NODE_COMPAT_RESOLVE 1
+
+#if RAMPART_NODE_COMPAT_RESOLVE
+
+/* True if path contains the literal substring "/node_modules/".  Used
+   to detect that the calling module is itself an npm package. */
+static int is_under_node_modules(const char *path)
+{
+    return path && strstr(path, "/node_modules/") != NULL;
+}
+
+/* Try to resolve `name` via node_modules walk-up from `start_dir`.
+   Tries, for each ancestor dir of start_dir:
+     <ancestor>/node_modules/<name>             (as direct file w/ ext)
+     <ancestor>/node_modules/<name>/index.js    (dir + index.js)
+     <ancestor>/node_modules/<name>/<pkg.main>  (dir + package.json main)
+   The .js / .so extension is handled by the caller's loop; here we
+   just check each candidate as-is and via dir+index.js.  Returns an
+   RPPATH on hit (path[0] != '\0'); empty path on miss.
+   `ext` is ".js" or ".so" (passed in so we can also try the dir-with-
+   index.js fallback under the right loader). */
+/* Try to satisfy a directory match via package.json#main.  Returns 1 on
+   success (rppath populated with a real file path); 0 if no valid main.
+   Naive JSON scan — good enough for well-formed package.json files. */
+static int try_pkg_main(const char *dir, RPPATH *out)
+{
+    char pkgpath[PATH_MAX];
+    if (snprintf(pkgpath, sizeof(pkgpath), "%s/package.json", dir) >= (int)sizeof(pkgpath))
+        return 0;
+    struct stat pkgst;
+    if (stat(pkgpath, &pkgst) != 0 || pkgst.st_size <= 0 || pkgst.st_size >= 65536)
+        return 0;
+    FILE *fp = fopen(pkgpath, "r");
+    if (!fp) return 0;
+    char buf[65536];
+    size_t br = fread(buf, 1, sizeof(buf) - 1, fp);
+    fclose(fp);
+    buf[br] = '\0';
+    const char *m = strstr(buf, "\"main\"");
+    if (!m) return 0;
+    m += 6;
+    while (*m && *m != '"') m++;
+    if (*m != '"') return 0;
+    m++;
+    const char *end = m;
+    while (*end && *end != '"') end++;
+    if (*end != '"' || (end - m) >= 200) return 0;
+    char mainpath[PATH_MAX];
+    if (snprintf(mainpath, sizeof(mainpath), "%s/%.*s", dir, (int)(end - m), m)
+        >= (int)sizeof(mainpath))
+        return 0;
+    struct stat mst;
+    if (stat(mainpath, &mst) == 0 && !S_ISDIR(mst.st_mode)) {
+        out->stat = mst;
+        if (!realpath(mainpath, out->path))
+            strncpy(out->path, mainpath, sizeof(out->path) - 1);
+        return 1;
+    }
+    /* Common npm shorthand: "main":"lib/foo" (no extension). */
+    char mainjs[PATH_MAX];
+    if (snprintf(mainjs, sizeof(mainjs), "%s.js", mainpath) >= (int)sizeof(mainjs))
+        return 0;
+    if (stat(mainjs, &mst) == 0 && !S_ISDIR(mst.st_mode)) {
+        out->stat = mst;
+        if (!realpath(mainjs, out->path))
+            strncpy(out->path, mainjs, sizeof(out->path) - 1);
+        return 1;
+    }
+    return 0;
+}
+
+static RPPATH walk_node_modules(const char *name, const char *start_dir, const char *ext)
+{
+    RPPATH ret = {{0}};
+    if (!name || !start_dir || !*name || !*start_dir) return ret;
+
+    char dir[PATH_MAX];
+    size_t n = strlen(start_dir);
+    if (n >= sizeof(dir)) return ret;
+    memcpy(dir, start_dir, n + 1);
+
+    /* Strip trailing slash. */
+    while (n > 1 && dir[n-1] == '/') dir[--n] = '\0';
+
+    while (1) {
+        char cand[PATH_MAX];
+        struct stat sb;
+
+        /* Try <dir>/node_modules/<name> as a file with the extension
+           the caller is currently looking for. */
+        if (snprintf(cand, sizeof(cand), "%s/node_modules/%s%s", dir, name, ext)
+            < (int)sizeof(cand))
+        {
+            if (stat(cand, &sb) == 0 && !S_ISDIR(sb.st_mode)) {
+                ret.stat = sb;
+                if (!realpath(cand, ret.path))
+                    strncpy(ret.path, cand, sizeof(ret.path) - 1);
+                return ret;
+            }
+        }
+
+        /* Try <dir>/node_modules/<name>/ as a directory.  Caller does
+           the index.js fallback for directories, so just return the
+           directory path here. */
+        if (snprintf(cand, sizeof(cand), "%s/node_modules/%s", dir, name)
+            < (int)sizeof(cand))
+        {
+            if (stat(cand, &sb) == 0 && S_ISDIR(sb.st_mode)) {
+                /* If a package.json exists, try its "main" field first.
+                   Minimal parser: just look for "main":"<path>" via
+                   simple substring scan — good enough for typical
+                   packages (json5/comments not supported, intentional).
+                   On parse failure, fall through to directory return
+                   and let the caller's index.js path apply. */
+                char pkgpath[PATH_MAX];
+                if (snprintf(pkgpath, sizeof(pkgpath), "%s/package.json", cand)
+                    < (int)sizeof(pkgpath))
+                {
+                    struct stat pkgst;
+                    if (stat(pkgpath, &pkgst) == 0 && pkgst.st_size > 0
+                        && pkgst.st_size < 65536)
+                    {
+                        FILE *fp = fopen(pkgpath, "r");
+                        if (fp) {
+                            char buf[65536];
+                            size_t br = fread(buf, 1, sizeof(buf) - 1, fp);
+                            fclose(fp);
+                            buf[br] = '\0';
+                            /* Find "main" key — naive but works for
+                               well-formed package.json files. */
+                            const char *m = strstr(buf, "\"main\"");
+                            if (m) {
+                                m += 6;
+                                while (*m && *m != '"') m++;
+                                if (*m == '"') {
+                                    m++;
+                                    const char *end = m;
+                                    while (*end && *end != '"') end++;
+                                    if (*end == '"' && (end - m) < 200) {
+                                        char mainpath[PATH_MAX];
+                                        if (snprintf(mainpath, sizeof(mainpath),
+                                                     "%s/%.*s", cand,
+                                                     (int)(end - m), m)
+                                            < (int)sizeof(mainpath))
+                                        {
+                                            struct stat mst;
+                                            if (stat(mainpath, &mst) == 0
+                                                && !S_ISDIR(mst.st_mode))
+                                            {
+                                                ret.stat = mst;
+                                                if (!realpath(mainpath, ret.path))
+                                                    strncpy(ret.path, mainpath,
+                                                            sizeof(ret.path) - 1);
+                                                return ret;
+                                            }
+                                            /* main pointed at a missing
+                                               file or a directory — try
+                                               adding .js (common npm
+                                               shorthand: "main":"lib/foo"
+                                               with no ext). */
+                                            char mainjs[PATH_MAX];
+                                            if (snprintf(mainjs, sizeof(mainjs),
+                                                         "%s.js", mainpath)
+                                                < (int)sizeof(mainjs)
+                                                && stat(mainjs, &mst) == 0
+                                                && !S_ISDIR(mst.st_mode))
+                                            {
+                                                ret.stat = mst;
+                                                if (!realpath(mainjs, ret.path))
+                                                    strncpy(ret.path, mainjs,
+                                                            sizeof(ret.path) - 1);
+                                                return ret;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                /* No package.json#main hit — return the directory and let
+                   the caller's index.js fallback handle it. */
+                ret.stat = sb;
+                if (!realpath(cand, ret.path))
+                    strncpy(ret.path, cand, sizeof(ret.path) - 1);
+                return ret;
+            }
+        }
+
+        /* Walk up one directory.  Stop at filesystem root. */
+        char *slash = strrchr(dir, '/');
+        if (!slash || slash == dir) break;
+        *slash = '\0';
+    }
+    return ret;
+}
+
+#endif /* RAMPART_NODE_COMPAT_RESOLVE */
 
 duk_ret_t duk_rp_push_current_module(duk_context *ctx)
 {
@@ -574,8 +803,17 @@ static RPPATH resolve_id(duk_context *ctx, const char *request_id)
     size_t extlen=0;
     const char *modpath=NULL;
 
-    if(!request_id)	
+    if(!request_id)
         return rppath;
+
+#if RAMPART_NODE_COMPAT_RESOLVE
+    /* node: builtin prefix — Node 16+ canonical spelling.
+       Strip it so the request resolves through the same path
+       as the bare name (e.g. "node:events" → "events" → js_modules/events.js). */
+    if (request_id[0] == 'n' && request_id[1] == 'o' && request_id[2] == 'd' &&
+        request_id[3] == 'e' && request_id[4] == ':')
+        request_id += 5;
+#endif
 
     if(duk_rp_push_current_module(ctx))
     {
@@ -584,6 +822,86 @@ static RPPATH resolve_id(duk_context *ctx, const char *request_id)
         duk_pop(ctx);
     }
     duk_pop(ctx);
+
+#if RAMPART_NODE_COMPAT_RESOLVE
+    /* Node-compat resolution scoped to npm-located callers.
+       When the calling module's file lives under a node_modules/ tree:
+         (a) for bare names (no leading `.` or `/`), try rampart's
+             builtin/standard locations BEFORE the caller's own
+             directory.  Fixes self-shadowing internal files (e.g.
+             readable-stream/lib/internal/streams/stream.js calling
+             require('stream') and getting itself).
+         (b) if still not found, walk node_modules chains up from the
+             caller's directory (standard Node algorithm) with
+             package.json#main support.
+       Out-of-node_modules callers fall through to the existing
+       resolution path unchanged. */
+    if (modpath && is_under_node_modules(modpath) &&
+        request_id[0] != '.' && request_id[0] != '/')
+    {
+        /* Phase (a): try builtins/standard locations WITHOUT the
+           caller's modpath.  rp_find_path/_zip with the same args
+           but NULL modpath skips the caller-dir check that would
+           otherwise grab the sibling file. */
+        for (module_loader_idx = 0;
+             module_loader_idx < (int)(sizeof(module_loaders) / sizeof(struct module_loader));
+             module_loader_idx++)
+        {
+            const char *ext = module_loaders[module_loader_idx].ext;
+            extlen = strlen(ext);
+            const char *fext = request_id + (strlen(request_id) - extlen);
+
+            if (extlen && !strcmp(fext, ext)) {
+                if (rp_has_zip_payload)
+                    rppath = rp_find_zip_path((char*)request_id, "modules/", "lib/rampart_modules/");
+                if (!strlen(rppath.path))
+                    rppath = rp_find_path((char*)request_id, "modules/", "lib/rampart_modules/");
+            } else {
+                duk_push_string(ctx, request_id);
+                duk_push_string(ctx, ext);
+                duk_concat(ctx, 2);
+                if (rp_has_zip_payload)
+                    rppath = rp_find_zip_path((char*)duk_get_string(ctx, -1), "modules/", "lib/rampart_modules/");
+                if (!strlen(rppath.path))
+                    rppath = rp_find_path((char*)duk_get_string(ctx, -1), "modules/", "lib/rampart_modules/");
+                duk_pop(ctx);
+            }
+            if (strlen(rppath.path)) { id = rppath.path; break; }
+        }
+
+        /* Phase (b): walk node_modules chains.  Try each loader's
+           extension in turn so .js and .so both work. */
+        if (!id) {
+            /* Get caller directory from modpath (modpath is the file). */
+            char dir[PATH_MAX];
+            size_t dlen = strlen(modpath);
+            if (dlen < sizeof(dir)) {
+                memcpy(dir, modpath, dlen + 1);
+                char *slash = strrchr(dir, '/');
+                if (slash && slash != dir) {
+                    *slash = '\0';
+                    for (module_loader_idx = 0;
+                         module_loader_idx < (int)(sizeof(module_loaders) / sizeof(struct module_loader));
+                         module_loader_idx++)
+                    {
+                        const char *ext = module_loaders[module_loader_idx].ext;
+                        rppath = walk_node_modules(request_id, dir, ext);
+                        if (strlen(rppath.path)) {
+                            /* If walk returned a directory, the existing
+                               post-loop index.js fallback below will
+                               handle it; just record the loader. */
+                            id = rppath.path;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        /* If found via either phase, skip the legacy resolution loop. */
+        if (id) goto resolved;
+    }
+#endif /* RAMPART_NODE_COMPAT_RESOLVE */
 
     for (module_loader_idx = 0; module_loader_idx < sizeof(module_loaders) / sizeof(struct module_loader); module_loader_idx++)
     {
@@ -625,35 +943,47 @@ static RPPATH resolve_id(duk_context *ctx, const char *request_id)
         return rppath;
     }
 
-    /* Directory → index.js fallback for the JS loader path only.
-       CommonJS proper doesn't require this, but Node's resolution
-       algorithm does — and most npm packages (ajv, marked submodules,
-       etc.) `require("./subdir")` expecting `./subdir/index.js` to be
-       found. Restricted to the JS loaders (extension ".js" or empty);
-       the .so loader is left untouched. Only the literal `index.js`
-       file inside the directory is tried (no package.json#main
-       resolution — keeping the rule minimal and predictable). */
+#if RAMPART_NODE_COMPAT_RESOLVE
+resolved:
+#endif
+
+    /* Directory → package.json#main, then index.js fallback for the JS
+       loader path only.  CommonJS proper doesn't require this, but
+       Node's resolution algorithm does — and most npm packages
+       (xtend → "main":"immutable", various scoped pkgs, etc.) use
+       package.json#main with no index.js at all.  Restricted to the
+       JS loaders (extension ".js" or empty); the .so loader is left
+       untouched. */
     if (S_ISDIR(rppath.stat.st_mode) &&
         module_loaders[module_loader_idx].loader == &load_js_module)
     {
-        char idxpath[PATH_MAX];
-        int n = snprintf(idxpath, sizeof(idxpath), "%s/index.js", rppath.path);
-        struct stat sb;
-        if (n > 0 && n < (int)sizeof(idxpath) && stat(idxpath, &sb) == 0 && !S_ISDIR(sb.st_mode))
-        {
-            strncpy(rppath.path, idxpath, sizeof(rppath.path) - 1);
-            rppath.path[sizeof(rppath.path) - 1] = '\0';
-            rppath.stat = sb;
+        RPPATH viamain = {{0}};
+        if (try_pkg_main(rppath.path, &viamain)) {
+            rppath = viamain;
             id = rppath.path;
         }
         else
         {
-            /* Directory resolved but no index.js inside — fail
-               resolution so the caller's error message is the usual
-               "Could not resolve module id" rather than the misleading
-               "Is a directory" from fread. */
-            rppath.path[0] = '\0';
-            return rppath;
+            char idxpath[PATH_MAX];
+            int n = snprintf(idxpath, sizeof(idxpath), "%s/index.js", rppath.path);
+            struct stat sb;
+            if (n > 0 && n < (int)sizeof(idxpath) && stat(idxpath, &sb) == 0 && !S_ISDIR(sb.st_mode))
+            {
+                strncpy(rppath.path, idxpath, sizeof(rppath.path) - 1);
+                rppath.path[sizeof(rppath.path) - 1] = '\0';
+                rppath.stat = sb;
+                id = rppath.path;
+            }
+            else
+            {
+                /* Directory resolved but no package.json#main and no
+                   index.js inside — fail resolution so the caller's
+                   error message is the usual "Could not resolve module
+                   id" rather than the misleading "Is a directory" from
+                   fread. */
+                rppath.path[0] = '\0';
+                return rppath;
+            }
         }
     }
 

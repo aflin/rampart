@@ -1279,6 +1279,301 @@ testFeature("for await over iter with direct .next() returning Promise", functio
     });
 });
 
+/* NDE.10 — rest parameter with inline destructuring target:
+   `function (...[a, b])` and `function (...{0: x, 1: y})`.
+   Previously dropped through both rewrite_function_rest (looking for
+   identifier only) and rewrite_function_destructuring_params (looking
+   at top-level params only), so the destructuring pattern survived to
+   duktape and tripped `SyntaxError: expected identifier`. */
+
+testFeature("NDE.10 - rest with array destructure (function expr)", function() {
+    var out = ['ab','cd'].map(function (...[item, idx]) {
+        return idx + ':' + item;
+    });
+    return out.join('|') === '0:ab|1:cd';
+});
+
+testFeature("NDE.10 - rest with array destructure + defaults", function() {
+    var f = function (...[a, b = 99]) { return [a, b]; };
+    return f(1)[1] === 99 && f(1, 2)[1] === 2;
+});
+
+testFeature("NDE.10 - rest with array destructure after positional", function() {
+    var f = function (head, ...[x, y]) { return [head, x, y]; };
+    var r = f('h', 'a', 'b');
+    return r[0] === 'h' && r[1] === 'a' && r[2] === 'b';
+});
+
+testFeature("NDE.10 - rest with nested rest inside destructure", function() {
+    var f = function (...[first, ...rest]) {
+        return first + ':' + rest.join(',');
+    };
+    return f(1, 2, 3, 4) === '1:2,3,4';
+});
+
+testFeature("NDE.10 - rest with array destructure (arrow)", function() {
+    var f = (...[a, b]) => [a, b];
+    var r = f(7, 8);
+    return r[0] === 7 && r[1] === 8;
+});
+
+testFeature("NDE.10 - rest with array destructure (class method)", function() {
+    class C {
+        take(...[u, v]) { return u + '/' + v; }
+    }
+    return new C().take('p', 'q') === 'p/q';
+});
+
+/* NDE.11 — Polyfill preamble must not break when user code declares
+   `var Promise = ...` in the same function scope.  Hoisting puts the
+   local `Promise = undefined` in scope before the preamble runs and
+   caches `Promise.allSettled` etc., so a bare `Promise.allSettled`
+   lookup would throw `cannot read property 'allSettled' of undefined`.
+   Real-world surfacing: readable-stream's operators.js destructures
+   `Promise` from a primordials module.
+
+   The polyfill now captures the real global object inside its IIFE
+   (`_TrN_Sp._gp = p`) and routes the cache + reinstaller through
+   `_TrN_Sp._gp.Promise`, so bare-Promise lookup is bypassed. */
+
+testFeature("NDE.11 - polyfill survives hoisted var Promise shadow", function() {
+    /* require()ing the fixture exercises the bug — preamble runs INSIDE
+       the CJS wrapper scope where `var Promise` has hoisted to undefined,
+       so a pre-fix transpiler throws at module load. */
+    var m;
+    try { m = require('./nde11-fixture.js'); }
+    catch (_e) { return false; }
+    return m.loaded === true && m.promiseIsFunction && m.noopIsFunction;
+});
+
+testFeature("NDE.11 - shadowed module's async fn still resolves", function() {
+    return new Promise(function(resolve){
+        var m = require('./nde11-fixture.js');
+        m.noop().then(function(v){ resolve(v === 42); },
+                      function(){ resolve(false); });
+    });
+});
+
+/* NDE.12 — Class-body generator methods (`*name() { yield ... }` and
+   the computed-key form `*[Expr]() { yield ... }`) used to be emitted
+   as non-generator function expressions with the `yield` left in place,
+   so duktape rejected the body at parse time with
+   `SyntaxError: unterminated statement`.
+   Real-world surfacing: readable-stream's buffer_list.js uses
+   `*[SymbolIterator]() { ... }` to install iteration on BufferList. */
+
+testFeature("NDE.12 - class generator method (plain *name)", function() {
+    class C {
+        constructor() { this.items = [1, 2, 3]; }
+        *gen() {
+            for (var i = 0; i < this.items.length; i++) yield this.items[i];
+        }
+    }
+    var out = [];
+    for (var v of (new C()).gen()) out.push(v);
+    return out.join(',') === '1,2,3';
+});
+
+testFeature("NDE.12 - class generator method (computed key *[Symbol.iterator])", function() {
+    class Holder {
+        constructor() { this.items = ['a', 'b', 'c']; }
+        *[Symbol.iterator]() {
+            for (var i = 0; i < this.items.length; i++) yield this.items[i];
+        }
+    }
+    var out = [];
+    for (var v of new Holder()) out.push(v);
+    return out.join(',') === 'a,b,c';
+});
+
+testFeature("NDE.12 - static class generator method", function() {
+    class K {
+        static *seq() { yield 10; yield 20; yield 30; }
+    }
+    var out = [];
+    for (var n of K.seq()) out.push(n);
+    return out.join(',') === '10,20,30';
+});
+
+testFeature("NDE.12 - class generator method with this-capture", function() {
+    /* Confirms regenerator-switch lowering still binds `this` correctly. */
+    class Counter {
+        constructor() { this.n = 0; }
+        *up(to) {
+            while (this.n < to) {
+                this.n++;
+                yield this.n;
+            }
+        }
+    }
+    var c = new Counter();
+    var out = [];
+    for (var v of c.up(3)) out.push(v);
+    return out.join(',') === '1,2,3' && c.n === 3;
+});
+
+/* NDE.13 — `{__proto__: null, ...src}` lowered to a chained-builder
+   shape whose `._concat({__proto__: null})` step severed `this`'s
+   prototype chain (duktape exposes __proto__ as an enumerable own key
+   on object literals, so Object.assign copies it via the accessor),
+   breaking subsequent `._addchain` lookups.  Fix hoists the __proto__
+   pair out of the chain and wraps with `Object.setPrototypeOf`.
+   Real-world surfacing: readable-stream's duplex/readable/writable
+   `ObjectDefineProperties({ writable: {__proto__:null, ...desc}, ... })`. */
+
+testFeature("NDE.13 - object spread + __proto__:null builds correctly", function() {
+    var src = { foo: 1, bar: 2 };
+    var d = { __proto__: null, ...src };
+    return d.foo === 1 && d.bar === 2 &&
+           Object.getPrototypeOf(d) === null;
+});
+
+testFeature("NDE.13 - __proto__:null mixed with other keys + spread", function() {
+    var src = { foo: 1, bar: 2 };
+    var d = { a: 0, __proto__: null, ...src, b: 99 };
+    return d.a === 0 && d.foo === 1 && d.bar === 2 && d.b === 99 &&
+           Object.getPrototypeOf(d) === null;
+});
+
+testFeature("NDE.13 - __proto__ to a real object + spread", function() {
+    var base = { greet: function(){ return 'hi'; } };
+    var src = { foo: 1 };
+    var d = { __proto__: base, ...src };
+    return d.foo === 1 && Object.getPrototypeOf(d) === base &&
+           d.greet() === 'hi';
+});
+
+testFeature("NDE.13 - chain stays intact when proto:null is first", function() {
+    /* The exact readable-stream/buffer_list pattern: spread of an
+       existing descriptor, prefixed with __proto__:null. */
+    function getDesc() { return { value: 42, writable: true, configurable: true }; }
+    var d = { __proto__: null, ...getDesc() };
+    return d.value === 42 && d.writable === true && d.configurable === true &&
+           Object.getPrototypeOf(d) === null;
+});
+
+/* NDE.14 — class fields with a computed key (`[Expr] = value`) used to
+   lower to `this.[Expr] = value` (stray `.`), tripping
+   `SyntaxError: expected identifier`.  Fix: detect computed_property_name
+   on the field's property node and emit bracket notation without dot.
+   Real-world surfacing: lru-cache's `[Symbol.toStringTag] = 'LRUCache'`. */
+
+testFeature("NDE.14 - class field with computed key (well-known symbol)", function() {
+    class C {
+        [Symbol.toStringTag] = 'MyTag';
+        constructor() { this.x = 1; }
+    }
+    var c = new C();
+    return Object.prototype.toString.call(c) === '[object MyTag]' && c.x === 1;
+});
+
+testFeature("NDE.14 - static field with computed key", function() {
+    var key = 'dynKey';
+    class C {
+        static [key] = 42;
+    }
+    return C.dynKey === 42;
+});
+
+testFeature("NDE.14 - mixed plain + computed + private + static fields", function() {
+    class C {
+        plain = 10;
+        [Symbol.iterator] = function*(){ yield 1; yield 2; };
+        #priv = 99;
+        static label = 'cls';
+        static [Symbol.toStringTag] = 'CTag';
+        getPriv() { return this.#priv; }
+    }
+    var c = new C();
+    var iter = [];
+    for (var v of c[Symbol.iterator]()) iter.push(v);
+    return c.plain === 10 && iter.join(',') === '1,2' &&
+           c.getPriv() === 99 && C.label === 'cls' &&
+           C[Symbol.toStringTag] === 'CTag';
+});
+
+testFeature("NDE.14 - computed key expression captures outer scope", function() {
+    var idx = 7;
+    class C {
+        [`field_${idx}`] = 'seven';
+    }
+    return new C().field_7 === 'seven';
+});
+
+/* NDE.15 — Private class fields (`#name`) are mangled to
+   `_TrN_priv<id>_name` by the class-body emitter, but the
+   regenerator-runtime body transform (used for async + generator
+   methods) copied source bytes verbatim, so `this.#name` survived
+   inside the lowered switch body and tripped duktape with
+   `SyntaxError: invalid token`.
+   Fix: post-process the regen output with a strings-aware walker that
+   re-mangles `#name` → `_TrN_priv<class_id>_name` outside string
+   literals, comments, and template literals.
+   Real-world surfacing: lru-cache (transitive of mqtt) uses #-fields
+   heavily and has many generator/async accessors. */
+
+testFeature("NDE.15 - generator method reads private field", function() {
+    class C {
+        #size = 3;
+        *gen() {
+            if (this.#size) yield 'has-size';
+            yield 'always';
+        }
+    }
+    var out = [];
+    for (var v of new C().gen()) out.push(v);
+    return out.join('|') === 'has-size|always';
+});
+
+testFeature("NDE.15 - async method reads private field", function() {
+    class A {
+        #x = 10;
+        async getX() { return this.#x + 1; }
+    }
+    return new A().getX().then(function(v){ return v === 11; });
+});
+
+testFeature("NDE.15 - generator calls a private method with args", function() {
+    class C {
+        #scale(n) { return n * 100; }
+        *scaled(arr) {
+            for (var i = 0; i < arr.length; i++) yield this.#scale(arr[i]);
+        }
+    }
+    var out = [];
+    for (var v of new C().scaled([1, 2, 3])) out.push(v);
+    return out.join(',') === '100,200,300';
+});
+
+testFeature("NDE.15 - string content containing '#name' is preserved", function() {
+    /* The regen-body re-mangler must not touch '#size' inside string
+       literals — otherwise the function's stored source (via _fs) and
+       any user string would be silently corrupted. */
+    class D {
+        #size = 5;
+        *probe() {
+            var label = "#size literal";
+            yield label;
+            yield this.#size;
+        }
+    }
+    var out = [];
+    for (var v of new D().probe()) out.push(v);
+    return out[0] === '#size literal' && out[1] === 5;
+});
+
+testFeature("NDE.15 - two classes with same #name get distinct ids", function() {
+    /* The class-priv counter assigns each class its own id; the regen
+       re-mangler uses that id, so identically-named privates in two
+       classes don't collide. */
+    class E1 { #v = 100; *one() { yield this.#v; } }
+    class E2 { #v = 200; *two() { yield this.#v; } }
+    var a = [], b = [];
+    for (var v of new E1().one()) a.push(v);
+    for (var v of new E2().two()) b.push(v);
+    return a[0] === 100 && b[0] === 200;
+});
+
 /* Collision-resistance: user-defined locals named `_e`, `_da1`, `_fk0`,
    `_ofdiscard`, `_x`, `_bsf0`, `_r`, `_it` etc. used to be silently
    overwritten by the transpiler's emitted temporaries. They've all been

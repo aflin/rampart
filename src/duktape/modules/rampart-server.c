@@ -611,19 +611,34 @@ static void duk_rp_json_safe_encode(duk_context *ctx, duk_idx_t idx)
 }
 
 
+/* Internal helper: format a time_t as an HTTP-date string into buf. */
+static void format_http_date(time_t secs, char *buf, size_t buflen)
+{
+    struct tm tm_buf;
+    struct tm *ptm = gmtime_r(&secs, &tm_buf);
+    /* Thu, 21 May 2020 01:41:20 GMT */
+    strftime(buf, buflen, "%a, %d %b %Y %T GMT", ptm);
+}
+
 static void setdate_header(evhtp_request_t *req, time_t secs)
 {
     if(!secs)
         secs=time(NULL);
     if(secs != -1)
     {
-        // bug fix: changed gmtime to gmtime_r for thread safety - 2026-02-27
-        struct tm tm_buf;
-        struct tm *ptm = gmtime_r(&secs, &tm_buf);
         char buf[128];
-        /* Thu, 21 May 2020 01:41:20 GMT */
-        strftime(buf, 128, "%a, %d %b %Y %T GMT", ptm);
+        format_http_date(secs, buf, sizeof(buf));
         evhtp_headers_add_header(req->headers_out, evhtp_header_new("Date", buf, 0, 1));
+    }
+}
+
+static void setlastmodified_header(evhtp_request_t *req, time_t secs)
+{
+    if(secs > 0)
+    {
+        char buf[128];
+        format_http_date(secs, buf, sizeof(buf));
+        evhtp_headers_add_header(req->headers_out, evhtp_header_new("Last-Modified", buf, 0, 1));
     }
 }
 
@@ -2766,7 +2781,12 @@ static void rp_sendfile(evhtp_request_t *req, char *fn, int haveCT, struct stat 
 
     filesize=(ev_off_t) sb->st_size;
 
-    setdate_header(req, sb->st_mtime);
+    /* File responses get a Last-Modified header from the file's mtime,
+       not a Date (which is set elsewhere from the current time).  This
+       was a long-standing bug: the prior call was setdate_header(req,
+       sb->st_mtime) — it labeled the mtime as "Date", producing two
+       Date headers and breaking strict HTTP parsers. */
+    setlastmodified_header(req, sb->st_mtime);
 
     if (!haveCT)
     {
@@ -4920,6 +4940,18 @@ static duk_ret_t rp_post_defer(duk_context *ctx)
     if(!dhs)
         return 0;
 
+    /* Refresh dhs->ctx — the worker thread that registered this dhs
+       may have had its ctx replaced via redo_ctx (script timeout),
+       leaving dhs->ctx dangling.  The finalizer ctx is current. */
+    dhs->ctx = ctx;
+
+    /* Null the hidden symbol BEFORE freeing dhs (same UAF guard as
+       defer_reply — obj_to_buffer can trigger GC which can re-enter
+       this finalizer for an unrelated object that happened to alias
+       this dhs in glibc's tcache). */
+    duk_push_pointer(ctx, NULL);
+    duk_put_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("defer_dhs"));
+
     //we never replied and var req is out of scope
     duk_push_object(ctx);
     duk_push_null(ctx);
@@ -4932,11 +4964,6 @@ static duk_ret_t rp_post_defer(duk_context *ctx)
     if(dhs->auxbuf)
         free(dhs->auxbuf);
     free(dhs);
-
-    dhs=NULL;
-
-    duk_push_pointer(ctx, dhs);
-    duk_put_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("defer_dhs") );
 
     return 0;
 
@@ -4985,6 +5012,18 @@ static duk_ret_t defer_reply(duk_context *ctx)
     if(!dhs)
         RP_THROW(ctx, "request is no longer valid (was reply already sent?)");
 
+    /* Null the hidden symbol on the JS req object BEFORE freeing dhs.
+       obj_to_buffer below does many duktape API calls (duk_enum,
+       duk_get_prop_string, etc.) that can trigger mark-and-sweep.
+       If GC processes the finalize list mid-way and a finalizer
+       (rp_post_defer) reads this hidden symbol after the free has
+       happened, it would dereference a freed pointer.  Nulling first
+       eliminates the UAF window.  Stack at this point: [reply_obj, this]
+       — `this` is at -1. */
+    duk_push_pointer(ctx, NULL);
+    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("defer_dhs"));
+    duk_pop(ctx);  /* pop `this` so the stack matches the original layout */
+
     deferp = (DEFERPTR*)dhs->aux;
 
     if(deferp)
@@ -5003,11 +5042,6 @@ static duk_ret_t defer_reply(duk_context *ctx)
     if(dhs->auxbuf)
         free(dhs->auxbuf);
     free(dhs);
-
-    dhs=NULL;
-
-    duk_push_pointer(ctx, dhs);
-    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("defer_dhs") );
 
     return 0;
 }

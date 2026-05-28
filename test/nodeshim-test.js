@@ -168,19 +168,22 @@ testModule("console (global enhancements)", function() {
 testModule("console (Console class)", function() {
     var Console = require('console').Console;
     must(typeof Console === 'function', "Console exported");
-    /* Our Console accepts minimal {write:fn} streams; node's Console
-       requires real Writable streams (with .on/.removeListener for
-       error/finish wiring).  Don't enforce real-stream semantics
-       under node — that's not the parity goal for our Console. */
-    if (!_isRampart) return;
+    /* Real stream.Writable in both runtimes: node requires it; rampart's
+       Writable now dispatches _writeImpl synchronously so the buffer
+       fills before we assert. */
+    var stream = require('stream');
     var buf = '';
-    var stream = {write: function(s) { buf += s; }};
-    var c = new Console({stdout: stream, stderr: stream});
+    var sink = new stream.Writable({
+        write: function(chunk, enc, cb) {
+            buf += Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk);
+            cb();
+        }
+    });
+    var c = new Console({stdout: sink, stderr: sink});
     c.log('hi');
-    must(buf.indexOf('hi') >= 0, "log writes to stdout stream");
-    /* Positional form */
+    must(buf.indexOf('hi') >= 0, "log writes to stdout sink");
     buf = '';
-    var c2 = new Console(stream, stream);
+    var c2 = new Console(sink, sink);
     c2.log('pos');
     must(buf.indexOf('pos') >= 0, "positional constructor");
 });
@@ -1478,12 +1481,18 @@ asyncQ.push(asyncBlock("zlib", function(done) {
     if (typeof z.adler32 === 'function') {
         mustEq(z.adler32(Buffer.from('hello')), 0x062c0215, "adler32 hello");
     }
-    /* Stream classes throw ENOSYS pending stream module.  Under node
-       they're real and don't throw — skip the assertion there. */
-    if (_isRampart) {
-        mustThrow(function() { z.createGzip(); }, "createGzip ENOSYS");
-        mustThrow(function() { z.createGunzip(); }, "createGunzip ENOSYS");
-    }
+    /* Stream classes — real Transform streams backed by WHATWG
+       CompressionStream / DecompressionStream.  Surface checks only;
+       full round-trip exercised elsewhere. */
+    var gz1 = z.createGzip();
+    must(gz1 && typeof gz1.pipe === 'function' && typeof gz1.write === 'function',
+         "createGzip returns a stream");
+    var gu1 = z.createGunzip();
+    must(gu1 && typeof gu1.pipe === 'function' && typeof gu1.write === 'function',
+         "createGunzip returns a stream");
+    /* Don't end them so they don't fire async events while we move on */
+    try { gz1.destroy(); } catch (_) {}
+    try { gu1.destroy(); } catch (_) {}
     /* Async callback path */
     z.gzip(input, function(err, result) {
         try {
@@ -1578,18 +1587,16 @@ asyncQ.push(asyncBlock("worker_threads", function(done) {
                     mustEq(got2b, 'reply', "MessageChannel port2->port1");
                     mc.port1.close();
                     mc.port2.close();
-                    /* BroadcastChannel — our impl uses Node-style EE
-                       (.on/.emit); node's BC is WHATWG (extends
-                       EventTarget, uses addEventListener + MessageEvent).
-                       Different APIs; skip this subsection under node. */
-                    if (!_isRampart) { done(); return; }
+                    /* BroadcastChannel — use WHATWG addEventListener
+                       API which works under both node (native) and
+                       rampart-whatwg's dual-shape BC. */
                     var bcA = new wt.BroadcastChannel('test-chan');
                     var bcB = new wt.BroadcastChannel('test-chan');
                     var bcC = new wt.BroadcastChannel('test-chan');
                     var aGot = [], bGot = [], cGot = [];
-                    bcA.on('message', function(m) { aGot.push(m); });
-                    bcB.on('message', function(m) { bGot.push(m); });
-                    bcC.on('message', function(m) { cGot.push(m); });
+                    bcA.addEventListener('message', function(e) { aGot.push(e.data); });
+                    bcB.addEventListener('message', function(e) { bGot.push(e.data); });
+                    bcC.addEventListener('message', function(e) { cGot.push(e.data); });
                     bcA.postMessage('from-A');
                     setTimeout(function() {
                         try {
