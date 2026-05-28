@@ -1259,7 +1259,7 @@ int rpthr_copy_obj(duk_context *ctx, duk_context *tctx, int objid, int skiprefcn
 {
     const char *s;
     int is_global=0, has_ref=0, do_finalizer=0;
-
+    duk_idx_t src_obj_idx;
     /* for debugging *
     const char *lastvar="global";
     if(duk_is_string(ctx, -2) )
@@ -1349,7 +1349,7 @@ int rpthr_copy_obj(duk_context *ctx, duk_context *tctx, int objid, int skiprefcn
     /*  get keys,vals inside ctx object on top of the stack
         and copy to the tctx object on top of the stack     */
 
-    duk_idx_t src_obj_idx = duk_normalize_index(ctx, -1);
+    src_obj_idx = duk_normalize_index(ctx, -1);
 
     duk_enum(ctx, src_obj_idx, DUK_ENUM_INCLUDE_HIDDEN|DUK_ENUM_INCLUDE_SYMBOLS|DUK_ENUM_SORT_ARRAY_INDICES);
     while (duk_next(ctx, -1, 0))   /* key only - value fetched explicitly below */
