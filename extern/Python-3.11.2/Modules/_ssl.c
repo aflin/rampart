@@ -1567,8 +1567,11 @@ _get_crl_dp(X509 *certificate) {
                 continue;
             }
             uri = gn->d.uniformResourceIdentifier;
-            ouri = PyUnicode_FromStringAndSize((char *)uri->data,
-                                               uri->length);
+            /* ASN1_STRING / ASN1_IA5STRING is opaque in OpenSSL 3.0+;
+             * use the accessor functions (available since 1.1.0). */
+            ouri = PyUnicode_FromStringAndSize(
+                (const char *)ASN1_STRING_get0_data(uri),
+                ASN1_STRING_length(uri));
             if (ouri == NULL)
                 goto done;
 
@@ -3041,7 +3044,7 @@ _ssl__SSLContext_impl(PyTypeObject *type, int proto_version)
     }
 
     switch(proto_version) {
-#if defined(SSL3_VERSION) && !defined(OPENSSL_NO_SSL3)
+#if defined(SSL3_VERSION) && !defined(OPENSSL_NO_SSL3) && !defined(OPENSSL_NO_SSL3_METHOD)
     case PY_SSL_VERSION_SSL3:
         PY_SSL_DEPRECATED("ssl.PROTOCOL_SSLv3 is deprecated", 2, NULL);
         method = SSLv3_method();
