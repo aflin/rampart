@@ -6,8 +6,8 @@
  *  comments.  Other parts of the header are Duktape internal and related to
  *  e.g. platform/compiler/feature detection.
  *
- *  Git commit 03d4d728f8365021de6955c649e6dcd05dcca99f (v2.7.0-dirty).
- *  Git branch HEAD.
+ *  Git commit c52f51f39f691b44dfebb4ec4f8abeb87528b2d9 (v2.7.0-1-gc52f51f3-dirty).
+ *  Git branch v2.7-rampart.
  *
  *  See Duktape AUTHORS.rst and LICENSE.txt for copyright and
  *  licensing information.
@@ -189,9 +189,9 @@
  * which Duktape snapshot was used.  Not available in the ECMAScript
  * environment.
  */
-#define DUK_GIT_COMMIT                    "03d4d728f8365021de6955c649e6dcd05dcca99f"
-#define DUK_GIT_DESCRIBE                  "v2.7.0-dirty"
-#define DUK_GIT_BRANCH                    "HEAD"
+#define DUK_GIT_COMMIT                    "c52f51f39f691b44dfebb4ec4f8abeb87528b2d9"
+#define DUK_GIT_DESCRIBE                  "v2.7.0-1-gc52f51f3-dirty"
+#define DUK_GIT_BRANCH                    "v2.7-rampart"
 
 /* External duk_config.h provides platform/compiler/OS dependent
  * typedefs and macros, and DUK_USE_xxx config options so that
@@ -1459,6 +1459,16 @@ DUK_EXTERNAL_DECL const void * const duk_rom_compressed_pointers[];
 #define DUK_RP_SCOPE_WITH    2
 #define DUK_RP_SCOPE_GLOBAL  3
 DUK_EXTERNAL_DECL void duk_rp_get_scope_vars(duk_context *ctx, duk_int_t call_stack_level, int type, const char *varname);
+/* Inject the enumerable own properties of `obj_idx` into the
+ * declarative environment of the call-stack frame at `call_stack_level`,
+ * making them visible as if they were local variables for any name
+ * not already register-bound (i.e. not declared with `var`).  If
+ * `filter_arr_idx` is an Array, only those names are injected; pass
+ * any non-Array index to inject all enumerable own properties.
+ * `ignore_conflicts` controls whether to silently skip
+ * already-register-bound names (true) or throw (false).
+ * Used by rampart.globalize(). */
+DUK_EXTERNAL_DECL void duk_rp_localize(duk_context *ctx, duk_int_t call_stack_level, duk_idx_t obj_idx, duk_idx_t filter_arr_idx, duk_bool_t ignore_conflicts);
 #endif
 
 #if defined(DUK_RP_USE_FORCE_INTERRUPT)
