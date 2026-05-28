@@ -19,10 +19,13 @@ extern "C"
   void duk_event_init(duk_context *ctx);
   void duk_vector_init(duk_context *ctx);
   void duk_thread_init(duk_context *ctx);
-  void duk_map_set_init(duk_context *ctx);
-  /* Mark a property non-enumerable. Defined in register.c; consumed by
-     rampart-buffer.c (and others) — without a prototype, macOS clang
-     hard-fails on the implicit declaration. */
+  /* duk_map_set_init: moved into duktape fork (DUK_RP_USE_MAP_SET);
+     no external decl needed. */
+  /* Mark a property non-enumerable. Defined in register.c; consumed
+     historically by rampart-buffer.c etc.  Kept here for any remaining
+     external callers — Buffer/Blob/etc. ported into the duktape fork
+     now use the in-amalgamation static `duk_rp_set_enum_false` from
+     duk_rp_internal.h instead. */
   void duk_rp_set_enum_false(duk_context *ctx, duk_idx_t objidx, const char *propname);
 #if defined(__cplusplus)
 }

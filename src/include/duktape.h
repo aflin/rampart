@@ -6,8 +6,8 @@
  *  comments.  Other parts of the header are Duktape internal and related to
  *  e.g. platform/compiler/feature detection.
  *
- *  Git commit external (external).
- *  Git branch external.
+ *  Git commit 03d4d728f8365021de6955c649e6dcd05dcca99f (v2.7.0-dirty).
+ *  Git branch HEAD.
  *
  *  See Duktape AUTHORS.rst and LICENSE.txt for copyright and
  *  licensing information.
@@ -189,9 +189,9 @@
  * which Duktape snapshot was used.  Not available in the ECMAScript
  * environment.
  */
-#define DUK_GIT_COMMIT                    "external"
-#define DUK_GIT_DESCRIBE                  "v2.7.0"
-#define DUK_GIT_BRANCH                    "external"
+#define DUK_GIT_COMMIT                    "03d4d728f8365021de6955c649e6dcd05dcca99f"
+#define DUK_GIT_DESCRIBE                  "v2.7.0-dirty"
+#define DUK_GIT_BRANCH                    "HEAD"
 
 /* External duk_config.h provides platform/compiler/OS dependent
  * typedefs and macros, and DUK_USE_xxx config options so that
@@ -542,10 +542,6 @@ DUK_API_NORETURN(DUK_EXTERNAL_DECL void duk_throw_raw(duk_context *ctx));
 DUK_API_NORETURN(DUK_EXTERNAL_DECL void duk_fatal_raw(duk_context *ctx, const char *err_msg));
 #define duk_fatal(ctx,err_msg) \
 	(duk_fatal_raw((ctx), (err_msg)), (duk_ret_t) 0)
-
-/* rampart: force the bytecode-interrupt to fire on the next executed
-   instruction (only defined when DUK_USE_INTERRUPT_COUNTER is enabled). */
-DUK_EXTERNAL_DECL void duk_force_interrupt(duk_context *ctx);
 DUK_API_NORETURN(DUK_EXTERNAL_DECL void duk_error_raw(duk_context *ctx, duk_errcode_t err_code, const char *filename, duk_int_t line, const char *fmt, ...));
 
 #if defined(DUK_API_VARIADIC_MACROS)
@@ -1120,15 +1116,6 @@ DUK_EXTERNAL_DECL duk_bool_t duk_has_prop_heapptr(duk_context *ctx, duk_idx_t ob
 DUK_EXTERNAL_DECL void duk_get_prop_desc(duk_context *ctx, duk_idx_t obj_idx, duk_uint_t flags);
 DUK_EXTERNAL_DECL void duk_def_prop(duk_context *ctx, duk_idx_t obj_idx, duk_uint_t flags);
 
-/* -ajf 2026-05-27: lightweight own-property attribute query without
-   allocating a descriptor object.  See duktape.c definition.
-   Output flags bits match the DUK_PROPATTR_* constants below.       */
-#define DUK_PROPATTR_WRITABLE     (1U << 0)
-#define DUK_PROPATTR_ENUMERABLE   (1U << 1)
-#define DUK_PROPATTR_CONFIGURABLE (1U << 2)
-#define DUK_PROPATTR_ACCESSOR     (1U << 3)
-DUK_EXTERNAL_DECL duk_int_t duk_get_prop_attrs(duk_context *ctx, duk_idx_t obj_idx, duk_uint_t *out_flags);
-
 DUK_EXTERNAL_DECL duk_bool_t duk_get_global_string(duk_context *ctx, const char *key);
 DUK_EXTERNAL_DECL duk_bool_t duk_get_global_lstring(duk_context *ctx, const char *key, duk_size_t key_len);
 #if defined(DUK_USE_PREFER_SIZE)
@@ -1456,6 +1443,76 @@ DUK_EXTERNAL_DECL const void * const duk_rom_compressed_pointers[];
 /*
  *  C++ name mangling
  */
+
+/*
+ *  Rampart contributions (post duktape 2.7.0).  Each block is guarded
+ *  by its own DUK_RP_USE_* flag declared in duk_config.h (via the
+ *  fixup-file util/rp_config.h).  When the flag is undefined the
+ *  declaration disappears and the matching C body (in
+ *  src-input/duk_rp_*.c) compiles to nothing, so the public ABI is
+ *  identical to upstream duktape 2.7.0.
+ */
+
+#if defined(DUK_RP_USE_SCOPE_VARS)
+#define DUK_RP_SCOPE_LOCAL   0
+#define DUK_RP_SCOPE_CLOSURE 1
+#define DUK_RP_SCOPE_WITH    2
+#define DUK_RP_SCOPE_GLOBAL  3
+DUK_EXTERNAL_DECL void duk_rp_get_scope_vars(duk_context *ctx, duk_int_t call_stack_level, int type, const char *varname);
+#endif
+
+#if defined(DUK_RP_USE_FORCE_INTERRUPT)
+/* Force the bytecode-interrupt to fire on the next executed
+ * instruction.  Safe to call from any thread on its own duk_context.
+ * Only effective when DUK_USE_INTERRUPT_COUNTER is enabled at build
+ * time.  See duk_api_stack.c. */
+DUK_EXTERNAL_DECL void duk_force_interrupt(duk_context *ctx);
+#endif
+
+#if defined(DUK_RP_USE_OWN_PROP_INFO)
+/* Lightweight "is the key at stack top an own property of obj_idx,
+ * and what are its attribute flags?" check.  Returns 1 on hit, 0
+ * otherwise.  On a hit, *out_flags receives a bitmask of the
+ * DUK_PROPATTR_* constants below.  The key is popped (matches
+ * duk_get_prop_desc's stack effect). */
+#define DUK_PROPATTR_WRITABLE     (1U << 0)
+#define DUK_PROPATTR_ENUMERABLE   (1U << 1)
+#define DUK_PROPATTR_CONFIGURABLE (1U << 2)
+#define DUK_PROPATTR_ACCESSOR     (1U << 3)
+DUK_EXTERNAL_DECL duk_int_t duk_get_prop_attrs(duk_context *ctx, duk_idx_t obj_idx, duk_uint_t *out_flags);
+#endif
+
+#if defined(DUK_RP_USE_BIGINT)
+/* BigInt construction / inspection from C.
+ *
+ * is_bigint(ctx, idx) -> 1 if value at idx is a BigInt, 0 otherwise.
+ * Does not pop or modify the stack.
+ *
+ * push_bigint_from_i64 / _from_double / _from_string: construct a
+ * BigInt from a primitive and push it.  _from_double throws if the
+ * argument isn't a finite integer in i64 range.  _from_string
+ * accepts an optional sign + decimal/hex/octal/binary prefix
+ * (0x, 0o, 0b); pass radix=0 to auto-detect, or 2..36 to force.
+ * Throws SyntaxError on bad input.
+ *
+ * bigint_to_double(ctx, idx) -> Number value via mp_get_double
+ * (round-to-nearest).  Distinct from ToNumber(BigInt) which throws;
+ * this is the engine-internal conversion the Number() builtin
+ * uses.  Returns 0.0 if idx doesn't hold a BigInt.
+ *
+ * push_bigint_to_string(ctx, idx, radix): push the decimal/hex/etc.
+ * string form of the BigInt at idx.  Bypasses user-overridable
+ * BigInt.prototype.toString; uses the engine-internal stringifier
+ * (libtommath mp_to_radix) per spec ToString.  Lowercase digits
+ * for radix 11..36.
+ */
+DUK_EXTERNAL_DECL duk_bool_t duk_rp_is_bigint(duk_context *ctx, duk_idx_t idx);
+DUK_EXTERNAL_DECL void       duk_rp_push_bigint_from_i64(duk_context *ctx, duk_int64_t v);
+DUK_EXTERNAL_DECL void       duk_rp_push_bigint_from_double(duk_context *ctx, double v);
+DUK_EXTERNAL_DECL void       duk_rp_push_bigint_from_string(duk_context *ctx, const char *s, int radix);
+DUK_EXTERNAL_DECL double     duk_rp_bigint_to_double(duk_context *ctx, duk_idx_t idx);
+DUK_EXTERNAL_DECL void       duk_rp_push_bigint_to_string(duk_context *ctx, duk_idx_t idx, int radix);
+#endif
 
 #if defined(__cplusplus)
 /* end 'extern "C"' wrapper */

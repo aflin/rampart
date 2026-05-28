@@ -27,9 +27,10 @@
 #include <sys/utsname.h>
 #endif
 
-/* Blob/File live in rampart-blob.c — compiled into THIS .so (no longer
- * eager in the rampart binary). */
-void duk_rp_blob_init(duk_context *ctx);
+/* Blob/File are now provided by the duktape fork (DUK_RP_USE_BLOB)
+ * and auto-installed at heap-create.  The previous forward decl +
+ * duk_rp_blob_init() call below have been removed; nothing here
+ * needs to install Blob anymore. */
 
 /* Vendored web-streams-polyfill v4.3.0 (MIT) — embedded as a single
  * escaped JS string literal.  See extern/web-streams-polyfill/. */
@@ -7072,8 +7073,9 @@ static const char *webcrypto_js =
 /* duk_open_module: the entry point require('rampart-whatwg') hits. */
 duk_ret_t duk_open_module(duk_context *ctx)
 {
-    /* 1. Install Blob and File (native C — see rampart-blob.c). */
-    duk_rp_blob_init(ctx);
+    /* 1. Blob/File: now provided by the duktape fork (DUK_RP_USE_BLOB)
+     *    and auto-installed at heap-create.  No-op step kept for
+     *    chronological clarity. */
 
     /* 2. Build the Web Crypto singleton and install it as
           globalThis.crypto.  Done BEFORE the install JS so subsequent

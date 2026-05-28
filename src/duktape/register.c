@@ -1439,7 +1439,18 @@ void duk_init_context(duk_context *ctx)
     duk_put_global_string(ctx,"global");
 
 
-    duk_console_init(ctx, DUK_CONSOLE_FLUSH); /* register console.log, console.error etc. */
+    /* Many former init calls have moved into the duktape fork and are
+     * auto-installed at heap-create when DUK_RP_USE_* (DUK_RP_ALL) is
+     * defined.  Removed from this function:
+     *   duk_console_init, add_object_values, add_array_funcs,
+     *   add_string_funcs, add_extra_object_funcs, duk_rp_buffer_init,
+     *   duk_rp_textencoding_init, duk_rp_console_init,
+     *   install_proxy_revocable, install_modern_polyfills,
+     *   install_array_iter, install_string_iter,
+     *   install_async_iterator_symbol, duk_rp_promise_init,
+     *   duk_map_set_init.
+     * The C-handler bodies for those installs (duk_rp_array_includes
+     * etc.) are also dead and could be deleted in a follow-up cleanup. */
     duk_module_init(ctx);                     /* register require() function */
     duk_printf_init(ctx);                     /* register the printf and sprintf functions from printf.c */
     duk_misc_init(ctx);                       /* register functions in rampart-utils.c */
@@ -1452,21 +1463,8 @@ void duk_init_context(duk_context *ctx)
     duk_rp_push_rampart_version(ctx);         /* rampart version info */
     fix_json_parse(ctx);
     fix_eval(ctx);
-    add_object_values(ctx);
-    add_array_funcs(ctx);
-    add_string_funcs(ctx);
-    add_extra_object_funcs(ctx);
-    duk_rp_buffer_init(ctx);
-    duk_rp_textencoding_init(ctx);
-    duk_rp_console_init(ctx);
     new_function_transpile(ctx);
-    install_proxy_revocable(ctx);
-    install_modern_polyfills(ctx);
-    install_array_iter(ctx);
-    install_string_iter(ctx);
-    install_async_iterator_symbol(ctx);
     install_transpile_err_trim(ctx);
-    duk_rp_promise_init(ctx);
     /* WHATWG / W3C Web platform standards live in rampart-whatwg.so
      * (Blob, File, URL, URLSearchParams, Event, EventTarget,
      * CustomEvent, AbortController, AbortSignal, structuredClone,
@@ -1486,7 +1484,11 @@ void duk_init_context(duk_context *ctx)
              happens at whatwg load time (the PNAMES block below
              installs lazy getters on the existing performance object
              for the W3C extras). */
-        "  var NAMES = ['Blob','File','FileReader','URL','URLSearchParams','URLPattern',"
+        /* Blob/File now provided by the duktape fork (DUK_RP_USE_BLOB),
+           auto-installed at heap-create.  Excluded from the lazy-loader
+           NAMES list below so the auto-installed values aren't shadowed
+           by a getter. */
+        "  var NAMES = ['FileReader','URL','URLSearchParams','URLPattern',"
         "               'Event','EventTarget','CustomEvent',"
         "               'MessageEvent','CloseEvent','ErrorEvent',"
         "               'ProgressEvent','PromiseRejectionEvent',"
@@ -1601,5 +1603,5 @@ void duk_init_context(duk_context *ctx)
         "    return globalThis.Intl;"
         "  }"
         "});");
-    duk_map_set_init(ctx);
+    /* duk_map_set_init: moved into duktape fork as DUK_RP_USE_MAP_SET. */
 }

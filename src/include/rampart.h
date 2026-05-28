@@ -928,9 +928,11 @@ int clock_gettime(clockid_t type, struct timespec *rettime);
 
 #endif //debug_pipe
 
-//duk_console.h -- code is now in rampart-utils.c
-void duk_console_init(duk_context *ctx, duk_uint_t flags);
-/* Use a proxy wrapper to make undefined methods (console.foo()) no-ops. */
+/* duk_console_init: provided by the duktape fork as
+ * duk_rp_install_console_extended (auto-installed at heap-create when
+ * DUK_RP_USE_CONSOLE_EXTENDED is on).  The DUK_CONSOLE_* flag constants
+ * below remain available for legacy callers, but the install function
+ * itself is no longer declared here. */
 #define DUK_CONSOLE_PROXY_WRAPPER (1U << 0)
 
 /* Flush output after every call. */

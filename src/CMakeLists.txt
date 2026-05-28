@@ -35,6 +35,7 @@ set(LIBEVHTP_TARGET_DIR ${CMAKE_BINARY_DIR}/extern/libevhtp_ws)
 
 add_definitions(
     -DRP_USING_DUKTAPE
+    -DDUK_RP_ALL              # enable all rampart contributions in the duktape fork
     -D_XOPEN_SOURCE
     -D_GNU_SOURCE
     -D_LARGEFILE_SOURCE
@@ -96,14 +97,16 @@ add_executable(rampart
     ${PROJECT_SOURCE_DIR}/extern/texis/texisapi/npmp.c
     duktape/globals/rampart-utils.c
     duktape/globals/rampart-url.cpp
-    duktape/globals/rampart-buffer.c
-    duktape/globals/rampart-textencoding.c
-    duktape/globals/rampart-console.c
-    duktape/globals/rampart-promise.c
+    # Ported into duktape fork (src-input/duk_rp_*.c) — see DUK_RP_USE_* flags.
+    # Files left in tree for reference; not compiled.
+    #duktape/globals/rampart-buffer.c
+    #duktape/globals/rampart-textencoding.c
+    #duktape/globals/rampart-console.c
+    #duktape/globals/rampart-promise.c
     duktape/globals/colorspace.c
     duktape/globals/jcolor.c
     duktape/globals/rampart-event.c
-    duktape/globals/rampart-map.c
+    #duktape/globals/rampart-map.c
     duktape/globals/rampart-import.c
     duktape/globals/rampart-thread.c
     ${PROJECT_SOURCE_DIR}/extern/SimSIMD/c/lib.c
@@ -482,7 +485,10 @@ set_target_properties(rampart-intl PROPERTIES
 ###WHATWG###
 add_library(rampart-whatwg SHARED
     duktape/modules/rampart-whatwg.c
-    duktape/globals/rampart-blob.c
+    # rampart-blob.c ported into duktape fork (DUK_RP_USE_BLOB).
+    # Blob is auto-installed at heap-create; no longer needs to be a
+    # rampart-whatwg.so source.
+    #duktape/globals/rampart-blob.c
 )
 # zlib (libz.so.1) — dynamically linked.  Provides the streaming
 # (de)flate state machine used by WHATWG CompressionStream /
