@@ -1573,7 +1573,7 @@ duk_ret_t duk_gen_csr(duk_context *ctx)
 
     req = X509_REQ_new();
 
-    x509_name = X509_REQ_get_subject_name(req);
+    x509_name = (X509_NAME *)X509_REQ_get_subject_name(req);
 
     if (obj_idx>-1)
     {
@@ -1913,7 +1913,7 @@ static duk_ret_t duk_gen_cert(duk_context *ctx)
         CERT_SSL_ERR(ctx);
 
     /* set subject name */
-    subject = X509_get_subject_name(x509);
+    subject = (X509_NAME *)X509_get_subject_name(x509);
 
     if(subj_str)
     {
@@ -2299,7 +2299,7 @@ if(BIO_reset(btmp)!=1){\
 } while(0)
 
     {
-        X509_PUBKEY *xpkey = X509_get_X509_PUBKEY(x);
+        X509_PUBKEY *xpkey = (X509_PUBKEY *)X509_get_X509_PUBKEY(x);
         ASN1_OBJECT *xpoid;
         X509_PUBKEY_get0_param(&xpoid, NULL, NULL, NULL, xpkey);
         if (i2a_ASN1_OBJECT(btmp, xpoid) > -1)
@@ -2354,7 +2354,7 @@ if(BIO_reset(btmp)!=1){\
             ASN1_OBJECT *obj;
             X509_EXTENSION *ex;
             ex = sk_X509_EXTENSION_value(exts, i);
-            obj = X509_EXTENSION_get_object(ex);
+            obj = (ASN1_OBJECT *)X509_EXTENSION_get_object(ex);
             i2a_ASN1_OBJECT(btmp, obj);
             pushbio;
 
@@ -5063,9 +5063,11 @@ static duk_ret_t duk_kmac(duk_context *ctx)
         duk_pop(ctx);
     }
 
-    /* Map variant → KMAC algorithm name + default output length. */
-    const char *algo;
-    int default_len;
+    /* Map variant → KMAC algorithm name + default output length.
+     * Initialized to silence -Wmaybe-uninitialized; the else branch
+     * RP_THROWs (longjmp) but the compiler can't see that. */
+    const char *algo = NULL;
+    int default_len = 0;
     if (!strcmp(variant, "kmac-128") || !strcmp(variant, "KMAC-128") ||
         !strcmp(variant, "kmac128")  || !strcmp(variant, "KMAC128"))
         { algo = "KMAC-128"; default_len = 32; }
@@ -5264,7 +5266,7 @@ static int rc_get_opt_bytes(duk_context *ctx, duk_idx_t obj_idx,
  * (presents to JS as Uint8Array — same convention as
  * rsa_pub_encrypt / encrypt / rand etc.).  Callers wanting a Node
  * Buffer wrap can do `Buffer.from(x)` in JS. */
-static void rc_push_pkey_spki(duk_context *ctx, EVP_PKEY *pkey)
+static __attribute__((unused)) void rc_push_pkey_spki(duk_context *ctx, EVP_PKEY *pkey)
 {
     int spki_len = i2d_PUBKEY(pkey, NULL);
     if (spki_len <= 0) DUK_OPENSSL_ERROR(ctx);
@@ -5274,7 +5276,7 @@ static void rc_push_pkey_spki(duk_context *ctx, EVP_PKEY *pkey)
 }
 
 /* Same — PKCS#8 DER of pkey's private part. */
-static void rc_push_pkey_pkcs8(duk_context *ctx, EVP_PKEY *pkey)
+static __attribute__((unused)) void rc_push_pkey_pkcs8(duk_context *ctx, EVP_PKEY *pkey)
 {
     PKCS8_PRIV_KEY_INFO *p8 = EVP_PKEY2PKCS8(pkey);
     if (!p8) DUK_OPENSSL_ERROR(ctx);
@@ -5287,14 +5289,14 @@ static void rc_push_pkey_pkcs8(duk_context *ctx, EVP_PKEY *pkey)
 }
 
 /* Decode SPKI DER → EVP_PKEY*.  Caller frees. */
-static EVP_PKEY *rc_pkey_from_spki(const unsigned char *spki, duk_size_t spki_len)
+static __attribute__((unused)) EVP_PKEY *rc_pkey_from_spki(const unsigned char *spki, duk_size_t spki_len)
 {
     const unsigned char *p = spki;
     return d2i_PUBKEY(NULL, &p, (long)spki_len);
 }
 
 /* Decode PKCS#8 DER → EVP_PKEY*.  Caller frees. */
-static EVP_PKEY *rc_pkey_from_pkcs8(const unsigned char *p8, duk_size_t p8_len)
+static __attribute__((unused)) EVP_PKEY *rc_pkey_from_pkcs8(const unsigned char *p8, duk_size_t p8_len)
 {
     const unsigned char *p = p8;
     PKCS8_PRIV_KEY_INFO *info = d2i_PKCS8_PRIV_KEY_INFO(NULL, &p, (long)p8_len);
@@ -6855,7 +6857,7 @@ static duk_ret_t duk_scrypt(duk_context *ctx)
 {
     const void *pass = NULL, *salt = NULL;
     duk_size_t passlen = 0, saltlen = 0;
-    unsigned int N = 0, r = 0, p = 0;
+    unsigned int r = 0, p = 0;
     int length = 0;
     EVP_KDF *kdf = NULL;
     EVP_KDF_CTX *kctx = NULL;
@@ -6877,7 +6879,6 @@ static duk_ret_t duk_scrypt(duk_context *ctx)
     duk_pop(ctx);
     if (Nv < 2 || (Nv & (Nv - 1)) != 0)
         RP_THROW(ctx, "crypto.scrypt: 'N' must be a power of two ≥ 2");
-    N = (unsigned int)Nv;
 
     if (!duk_get_prop_string(ctx, 0, "r"))
         RP_THROW(ctx, "crypto.scrypt: option 'r' is required (Number, block size)");

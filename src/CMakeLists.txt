@@ -682,6 +682,11 @@ add_library(rampart-crypto SHARED
   duktape/modules/rampart-crypto.c
   duktape/modules/rampart-crypto-passwd.c
 )
+# The legacy RSA*/PEM_*_RSA* paths are deprecated in OpenSSL 3.0+ but
+# we still rely on them; silence -Wdeprecated-declarations for this target.
+if (NOT MSVC)
+  target_compile_options(rampart-crypto PRIVATE -Wno-deprecated-declarations)
+endif()
 if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
 
 target_link_libraries(rampart-crypto PRIVATE
@@ -1393,7 +1398,6 @@ endif()
 file(GLOB TEST_FILES
     "${CMAKE_SOURCE_DIR}/test/*.js"
     "${CMAKE_SOURCE_DIR}/test/wiki_00"
-    "${CMAKE_SOURCE_DIR}/js_modules/*.js"
     "${CMAKE_SOURCE_DIR}/src/run_tests.sh"
 )
 foreach(TEST_FILE ${TEST_FILES})
@@ -1401,6 +1405,15 @@ file(COPY ${TEST_FILE} DESTINATION ${CMAKE_BINARY_DIR}/src)
 endforeach()
 file(COPY "${CMAKE_SOURCE_DIR}/test/convtest" DESTINATION ${CMAKE_BINARY_DIR}/src)
 file(COPY "${CMAKE_SOURCE_DIR}/test/treesitter-tests" DESTINATION ${CMAKE_BINARY_DIR}/src)
+
+## Mirror js_modules/ into build/src/ preserving subdirectory structure so
+## require('fs/promises'), require('path/posix'), require('util/types'),
+## etc. resolve at test time the same way they do from the installed
+## /usr/local/rampart/modules/ location (see install(DIRECTORY ...
+## js_modules/ ...) rule at the bottom of this file).
+file(COPY "${CMAKE_SOURCE_DIR}/js_modules/"
+     DESTINATION "${CMAKE_BINARY_DIR}/src/"
+     FILES_MATCHING PATTERN "*.js")
 
 
 
