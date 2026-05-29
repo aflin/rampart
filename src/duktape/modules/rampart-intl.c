@@ -41,6 +41,7 @@
 #include <unicode/unumberrangeformatter.h>
 #include <unicode/ucol.h>
 #include <unicode/ufieldpositer.h>
+#include <unicode/unorm2.h>
 #include <unicode/uenum.h>
 #include <unicode/upluralrules.h>
 #include <unicode/ureldatefmt.h>
@@ -5073,6 +5074,117 @@ set_proto_constructor(duk_context *ctx)
     duk_put_prop_string(ctx, -2, "constructor");
 }
 
+/* ---------------- String.prototype.normalize (ES2015 21.1.3.12) ----------------
+ *
+ * Backed by ICU's UNormalizer2.  Replaces the lazy-load stub that
+ * duktape's DUK_RP_USE_STRING_EXTRAS installs at heap-create time.
+ * When the user calls "x".normalize() before rampart-intl is loaded,
+ * the stub does require('rampart-intl') which triggers install_intl()
+ * which calls install_string_normalize() below to replace the stub.
+ * On every subsequent call the user goes straight to this real impl.
+ *
+ * Form: "NFC" (default), "NFD", "NFKC", "NFKD".  RangeError for any
+ * other string per spec. */
+static const UNormalizer2 *rp_get_normalizer2(const char *form, UErrorCode *err)
+{
+    if (form == NULL || strcmp(form, "NFC") == 0) {
+        return unorm2_getNFCInstance(err);
+    } else if (strcmp(form, "NFD") == 0) {
+        return unorm2_getNFDInstance(err);
+    } else if (strcmp(form, "NFKC") == 0) {
+        return unorm2_getNFKCInstance(err);
+    } else if (strcmp(form, "NFKD") == 0) {
+        return unorm2_getNFKDInstance(err);
+    }
+    return NULL;
+}
+
+static duk_ret_t rp_string_normalize(duk_context *ctx)
+{
+    duk_push_this(ctx);
+    duk_to_string(ctx, -1);  /* ToString(this) per spec step 1 */
+    duk_size_t in_bytes;
+    const char *in_cesu = duk_get_lstring(ctx, -1, &in_bytes);
+
+    const char *form = NULL;
+    if (duk_get_top(ctx) >= 2 && !duk_is_undefined(ctx, 0)) {
+        form = duk_to_string(ctx, 0);
+    }
+
+    UErrorCode err = U_ZERO_ERROR;
+    const UNormalizer2 *n2 = rp_get_normalizer2(form, &err);
+    if (n2 == NULL || U_FAILURE(err)) {
+        return duk_range_error(ctx,
+            "String.prototype.normalize: invalid form (must be NFC, NFD, NFKC, or NFKD)");
+    }
+
+    int32_t in_ulen = 0;
+    UChar *in_u = utf8_to_uchar(in_cesu, (int32_t) in_bytes, &in_ulen);
+    if (in_u == NULL) {
+        return duk_error(ctx, DUK_ERR_ERROR,
+            "String.prototype.normalize: out of memory");
+    }
+
+    /* Normalize.  Try a buffer the size of the input first; grow once
+     * if ICU reports overflow.  In practice the NF* output is within a
+     * small factor of the input size. */
+    int32_t cap = in_ulen + 16;
+    UChar *out_u = (UChar *) malloc(sizeof(UChar) * (size_t)(cap + 1));
+    if (out_u == NULL) {
+        free(in_u);
+        return duk_error(ctx, DUK_ERR_ERROR,
+            "String.prototype.normalize: out of memory");
+    }
+
+    err = U_ZERO_ERROR;
+    int32_t out_ulen = unorm2_normalize(n2, in_u, in_ulen,
+                                         out_u, cap, &err);
+    if (err == U_BUFFER_OVERFLOW_ERROR) {
+        free(out_u);
+        cap = out_ulen + 16;
+        out_u = (UChar *) malloc(sizeof(UChar) * (size_t)(cap + 1));
+        if (out_u == NULL) {
+            free(in_u);
+            return duk_error(ctx, DUK_ERR_ERROR,
+                "String.prototype.normalize: out of memory");
+        }
+        err = U_ZERO_ERROR;
+        out_ulen = unorm2_normalize(n2, in_u, in_ulen,
+                                      out_u, cap, &err);
+    }
+    free(in_u);
+
+    if (U_FAILURE(err)) {
+        free(out_u);
+        return duk_error(ctx, DUK_ERR_ERROR,
+            "String.prototype.normalize: ICU error %s", u_errorName(err));
+    }
+
+    uchar_push_utf8(ctx, out_u, out_ulen);
+    free(out_u);
+    return 1;
+}
+
+/* Replaces the lazy-load stub on String.prototype.normalize with the
+ * real ICU-backed implementation.  Idempotent: re-loading rampart-intl
+ * just rewrites the slot with a fresh function value pointing at the
+ * same C function.  Called from install_intl().  Descriptor matches
+ * spec: writable, non-enumerable, configurable. */
+static void install_string_normalize(duk_context *ctx)
+{
+    duk_get_global_string(ctx, "String");
+    duk_get_prop_string(ctx, -1, "prototype");
+    duk_push_string(ctx, "normalize");
+    duk_push_c_function(ctx, rp_string_normalize, DUK_VARARGS);
+    duk_def_prop(ctx, -3,
+        DUK_DEFPROP_HAVE_VALUE |
+        DUK_DEFPROP_HAVE_WRITABLE     | DUK_DEFPROP_WRITABLE |
+        DUK_DEFPROP_HAVE_ENUMERABLE   /* enumerable: false (no flag set) */ |
+        DUK_DEFPROP_HAVE_CONFIGURABLE | DUK_DEFPROP_CONFIGURABLE |
+        DUK_DEFPROP_FORCE);
+    duk_pop_2(ctx);  /* prototype + String */
+}
+
 /* ---------------- Init / install ---------------- */
 
 /* Build the Intl object and install it on globalThis.  Idempotent. */
@@ -5309,6 +5421,14 @@ static void install_intl(duk_context *ctx)
     /* Install on globalThis. */
     duk_put_prop_string(ctx, -2, "Intl");
     duk_pop(ctx); /* global */
+
+    /* Also replace duktape's lazy-load stub on String.prototype.normalize
+     * with the real ICU-backed implementation.  Doing this here means
+     * any code that does `'café'.normalize('NFC')` without first
+     * requiring rampart-intl will trigger the load via the stub, which
+     * then comes here, and the call re-dispatches to the real method.
+     * Subsequent calls go straight to the real method. */
+    install_string_normalize(ctx);
 }
 
 /* Module entry: idempotent install of Intl; also returns the Intl

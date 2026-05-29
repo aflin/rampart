@@ -39,6 +39,29 @@
 
 #include <sys/statvfs.h>
 
+/* Portable accessors for struct stat's sub-second mtime/atime/ctime.
+ *
+ *   POSIX.1-2008 / Linux:   st_atim / st_mtim / st_ctim  (timespec)
+ *   macOS / FreeBSD legacy: st_atimespec / st_mtimespec / st_ctimespec
+ *
+ * Modern macOS (10.12+) and FreeBSD also expose the POSIX `st_atim`
+ * names, but we prefer the `*spec` form there to stay compatible with
+ * older SDKs that ship without _DARWIN_C_SOURCE / POSIX 2008 feature
+ * macros enabled. */
+#if defined(__APPLE__) || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)
+  #define RP_STAT_ATIME_NSEC(st) ((long)((st)->st_atimespec.tv_nsec))
+  #define RP_STAT_MTIME_NSEC(st) ((long)((st)->st_mtimespec.tv_nsec))
+  #define RP_STAT_CTIME_NSEC(st) ((long)((st)->st_ctimespec.tv_nsec))
+#elif defined(__linux__)
+  #define RP_STAT_ATIME_NSEC(st) ((long)((st)->st_atim.tv_nsec))
+  #define RP_STAT_MTIME_NSEC(st) ((long)((st)->st_mtim.tv_nsec))
+  #define RP_STAT_CTIME_NSEC(st) ((long)((st)->st_ctim.tv_nsec))
+#else
+  #define RP_STAT_ATIME_NSEC(st) 0L
+  #define RP_STAT_MTIME_NSEC(st) 0L
+  #define RP_STAT_CTIME_NSEC(st) 0L
+#endif
+
 /* ==========================================================================
  * Section 1 — Path-based primitives
  * ========================================================================== */
@@ -458,10 +481,14 @@ static void rp_push_stat_object(duk_context *ctx, const struct stat *st)
     DUK_PUT_NUMBER(ctx, "blksize", st->st_blksize, -2);
     DUK_PUT_NUMBER(ctx, "blocks",  st->st_blocks,  -2);
 
-    /* atime / mtime / ctime as Date */
-    int64_t atms = (int64_t)st->st_atime * 1000;
-    int64_t mtms = (int64_t)st->st_mtime * 1000;
-    int64_t ctms = (int64_t)st->st_ctime * 1000;
+    /* atime / mtime / ctime as Date — include sub-second precision.
+       Without this, polling watchers that compare mtimeMs only see
+       second-level changes — chokidar's setFsWatchFileListener gates
+       its listener on `currmtime > prev.mtimeMs`, which fails when a
+       write lands in the same wall-second as the install. */
+    int64_t atms = (int64_t)st->st_atime * 1000 + (int64_t)(RP_STAT_ATIME_NSEC(st) / 1000000);
+    int64_t mtms = (int64_t)st->st_mtime * 1000 + (int64_t)(RP_STAT_MTIME_NSEC(st) / 1000000);
+    int64_t ctms = (int64_t)st->st_ctime * 1000 + (int64_t)(RP_STAT_CTIME_NSEC(st) / 1000000);
     (void)duk_get_global_string(ctx, "Date");
     duk_push_number(ctx, atms); duk_new(ctx, 1);
     duk_put_prop_string(ctx, -2, "atime");
@@ -1687,6 +1714,7 @@ typedef struct rp_watcher_s {
     int           poll_ms;
     int           last_existed;
     time_t        last_mtime;
+    long          last_mtime_nsec;
     off_t         last_size;
     ino_t         last_ino;
     /* For clearTimeout-style cancel of the inserted interval — we
@@ -1698,6 +1726,16 @@ typedef struct rp_watcher_s {
     int           wd;
     struct event *e;
     int           is_dir;
+
+    /* UAF guard.  The poll/inotify callbacks invoke JS via
+       rp_watcher_fire(), and JS can trigger process.exit() (or any GC
+       path) which runs the watcher's finalizer and frees `w` while we're
+       mid-callback.  in_callback is set on entry to the C callback and
+       cleared on exit; the finalizer defers the free via free_deferred
+       if in_callback is set, and the callback frees w on exit if both
+       are set. */
+    int           in_callback;
+    int           free_deferred;
 } rp_watcher;
 
 /* Forward decl */
@@ -1757,6 +1795,10 @@ static int rp_watcher_poll_cb(void *arg, int after)
     if (after) return w->closed ? 0 : 1;   /* repeat unless closed */
     if (w->closed) return 0;
 
+    /* Mark in_callback so the finalizer defers free if JS triggers
+       GC during rp_watcher_fire(). */
+    w->in_callback = 1;
+
     struct stat st;
     int exists = (stat(w->path, &st) == 0);
     int stop = 0;
@@ -1771,27 +1813,43 @@ static int rp_watcher_poll_cb(void *arg, int after)
         stop = rp_watcher_fire(w, "create", w->path, S_ISDIR(st.st_mode));
         w->last_existed = 1;
         w->last_mtime = st.st_mtime;
+        w->last_mtime_nsec = RP_STAT_MTIME_NSEC(&st);
         w->last_size  = st.st_size;
         w->last_ino   = st.st_ino;
     }
     else if (exists && w->last_existed)
     {
+        /* Sub-second mtime comparison — a write within the same wall-second
+           as install must still register as a change. */
+        long curr_nsec = RP_STAT_MTIME_NSEC(&st);
         if (st.st_ino != w->last_ino)
         {
             stop = rp_watcher_fire(w, "rename", w->path, S_ISDIR(st.st_mode));
             w->last_ino = st.st_ino;
             w->last_mtime = st.st_mtime;
+            w->last_mtime_nsec = curr_nsec;
             w->last_size  = st.st_size;
         }
-        else if (st.st_mtime != w->last_mtime || st.st_size != w->last_size)
+        else if (st.st_mtime != w->last_mtime
+              || curr_nsec    != w->last_mtime_nsec
+              || st.st_size   != w->last_size)
         {
             stop = rp_watcher_fire(w, "change", w->path, S_ISDIR(st.st_mode));
             w->last_mtime = st.st_mtime;
+            w->last_mtime_nsec = curr_nsec;
             w->last_size  = st.st_size;
         }
     }
 
     if (stop) rp_watcher_do_close(w);
+
+    /* Clear in_callback; honour any deferred free queued by the
+       finalizer while JS was running. */
+    w->in_callback = 0;
+    if (w->free_deferred) {
+        free(w->path);
+        free(w);
+    }
     return 0;   /* skip the (nonexistent) pinned JS callback */
 }
 
@@ -1802,6 +1860,9 @@ static void rp_watcher_inotify_cb(evutil_socket_t fd, short events, void *arg)
 {
     rp_watcher *w = (rp_watcher *)arg;
     if (w->closed) return;
+
+    /* See poll_cb for the in_callback / free_deferred contract. */
+    w->in_callback = 1;
 
     char buf[4096] __attribute__((aligned(8)));
     ssize_t n;
@@ -1836,7 +1897,12 @@ static void rp_watcher_inotify_cb(evutil_socket_t fd, short events, void *arg)
             }
 
             int stop = rp_watcher_fire(w, type, evt_path, is_dir);
-            if (stop) { rp_watcher_do_close(w); return; }
+            if (stop) {
+                rp_watcher_do_close(w);
+                w->in_callback = 0;
+                if (w->free_deferred) { free(w->path); free(w); }
+                return;
+            }
             if (ie->mask & (IN_DELETE_SELF | IN_MOVE_SELF | IN_IGNORED))
             {
                 /* The watched object went away.  Subsequent events
@@ -1846,6 +1912,9 @@ static void rp_watcher_inotify_cb(evutil_socket_t fd, short events, void *arg)
             p += sizeof(struct inotify_event) + ie->len;
         }
     }
+
+    w->in_callback = 0;
+    if (w->free_deferred) { free(w->path); free(w); }
 }
 #endif
 
@@ -1923,8 +1992,16 @@ static duk_ret_t duk_rp_watcher_finalizer(duk_context *ctx)
     if (w && !w->closed) rp_watcher_do_close(w);
     if (w)
     {
-        free(w->path);
-        free(w);
+        /* If a C poll/inotify callback is on the stack (rp_watcher_fire
+           was called from poll_cb / inotify_cb and re-entered JS via
+           process.exit or another GC trigger), defer the free.  The
+           callback will free w when it unwinds. */
+        if (w->in_callback) {
+            w->free_deferred = 1;
+        } else {
+            free(w->path);
+            free(w);
+        }
     }
     return 0;
 }
@@ -2007,6 +2084,7 @@ static duk_ret_t duk_rp_watch(duk_context *ctx)
     w->poll_ms      = poll_ms;
     w->last_existed = 1;
     w->last_mtime   = st.st_mtime;
+    w->last_mtime_nsec = RP_STAT_MTIME_NSEC(&st);
     w->last_size    = st.st_size;
     w->last_ino     = st.st_ino;
     w->is_dir       = S_ISDIR(st.st_mode);

@@ -13,6 +13,12 @@ extern "C"
 
 #include "rampart.h"
   extern void duk_init_context(duk_context *ctx);
+  /* Minimal init for "bare" threads (vm sandbox).  Installs ECMAScript
+     primordials (via duk_create_heap_default), language fixes (json/eval/
+     transpile), the rampart-events backbone, and rampart.thread surface
+     (put/get/waitfor/onGet/exec).  Does NOT install rampart.utils,
+     process, require, vector, version, or any WHATWG/Intl lazy getters. */
+  extern void duk_init_context_bare(duk_context *ctx);
   void duk_rp_url_init(duk_context *ctx);     /* defined in C++: rampart-url.cpp */
   void duk_process_init(duk_context *ctx);
   void duk_import_init(duk_context *ctx);

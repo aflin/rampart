@@ -6,7 +6,7 @@
  *  comments.  Other parts of the header are Duktape internal and related to
  *  e.g. platform/compiler/feature detection.
  *
- *  Git commit c52f51f39f691b44dfebb4ec4f8abeb87528b2d9 (v2.7.0-1-gc52f51f3-dirty).
+ *  Git commit 2c00263835ad0fa139885484a61823a458aba3ba (v2.7.0-9-g2c002638-dirty).
  *  Git branch v2.7-rampart.
  *
  *  See Duktape AUTHORS.rst and LICENSE.txt for copyright and
@@ -189,8 +189,8 @@
  * which Duktape snapshot was used.  Not available in the ECMAScript
  * environment.
  */
-#define DUK_GIT_COMMIT                    "c52f51f39f691b44dfebb4ec4f8abeb87528b2d9"
-#define DUK_GIT_DESCRIBE                  "v2.7.0-1-gc52f51f3-dirty"
+#define DUK_GIT_COMMIT                    "2c00263835ad0fa139885484a61823a458aba3ba"
+#define DUK_GIT_DESCRIBE                  "v2.7.0-9-g2c002638-dirty"
 #define DUK_GIT_BRANCH                    "v2.7-rampart"
 
 /* External duk_config.h provides platform/compiler/OS dependent
@@ -1522,6 +1522,49 @@ DUK_EXTERNAL_DECL void       duk_rp_push_bigint_from_double(duk_context *ctx, do
 DUK_EXTERNAL_DECL void       duk_rp_push_bigint_from_string(duk_context *ctx, const char *s, int radix);
 DUK_EXTERNAL_DECL double     duk_rp_bigint_to_double(duk_context *ctx, duk_idx_t idx);
 DUK_EXTERNAL_DECL void       duk_rp_push_bigint_to_string(duk_context *ctx, duk_idx_t idx, int radix);
+#endif
+
+#if defined(DUK_RP_USE_PROMISE_NATIVE)
+/* Native Promise: microtask queue drainer and notifier.  Same pattern
+ * as the weak-ref family below; the rampart embedder typically wires
+ * the same libevent event_active hook to drain both queues.
+ *
+ * duk_rp_microtask_drain(ctx) -- run all queued microtasks (Promise
+ *   reactions and thenable adoption jobs) until the queue is empty.
+ *   Idempotent; safe to call when empty.
+ *
+ * duk_rp_microtask_set_notifier(ctx, cb, udata) -- register a one-call
+ *   notifier that fires on the empty -> non-empty transition of the
+ *   queue.  Typical use: cb does event_active(drain_ev, 0, 0). */
+DUK_EXTERNAL_DECL void duk_rp_microtask_drain(duk_context *ctx);
+DUK_EXTERNAL_DECL void duk_rp_microtask_set_notifier(
+    duk_context *ctx,
+    void (*cb)(void *udata),
+    void *udata);
+#endif
+
+#if defined(DUK_RP_USE_WEAK_REFS)
+/* WeakRef / WeakMap / WeakSet / FinalizationRegistry — embedder hooks.
+ *
+ * drain_pending_finalizers(thr): fire all queued FinReg callbacks
+ *   with their held values, then dequeue.  Idempotent; safe to call
+ *   when the queue is empty.  Errors thrown inside callbacks are
+ *   swallowed so a bad callback can't abort the drain.  Typical use:
+ *   the embedder's libevent drain_cb calls this.
+ *
+ * set_pending_notifier(ctx, cb, udata): register a one-call notifier
+ *   that fires on the empty->non-empty transition of the pending
+ *   queue.  cb(udata) is invoked exactly once per drain cycle.
+ *   Typical use: register a callback that does
+ *     event_active(drain_ev, 0, 0)
+ *   so the drain runs at the end of the current event-loop batch.
+ *   Pass cb=NULL to unregister.
+ */
+DUK_EXTERNAL_DECL void duk_rp_weak_drain_pending_finalizers(duk_context *ctx);
+DUK_EXTERNAL_DECL void duk_rp_weak_set_pending_notifier(
+    duk_context *ctx,
+    void (*cb)(void *udata),
+    void *udata);
 #endif
 
 #if defined(__cplusplus)

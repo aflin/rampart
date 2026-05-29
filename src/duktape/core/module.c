@@ -118,6 +118,155 @@ static int try_pkg_main(const char *dir, RPPATH *out)
     return 0;
 }
 
+/* NDE.35: resolve a `pkg/subpath` request via the package's
+   `exports` field in package.json.
+   - Splits request_id at first `/` (or second for `@scope/pkg/subpath`).
+   - Walks node_modules chains up from start_dir.
+   - For the first <dir>/node_modules/<pkg>/package.json found, parses
+     the exports map via duktape's JSON parser and looks up `./subpath`.
+   - String value: use directly.
+   - Object value: try keys `require` → `node` → `default` (CJS pref),
+     recursing into nested conditional exports.
+   - Resolved relative path is joined to the package dir; existence-
+     checked via stat.
+   Returns empty RPPATH if no match. */
+static duk_ret_t _safe_json_decode(duk_context *ctx, void *udata)
+{
+    (void)udata;
+    duk_json_decode(ctx, -1);
+    return 1;
+}
+
+/* On entry: value to resolve is at stack top.  On success: replaces it
+   with a string and returns 1.  On no match: pops, returns 0. */
+static int _resolve_conditional_export(duk_context *ctx)
+{
+    if (duk_is_string(ctx, -1))
+        return 1;
+    if (!duk_is_object(ctx, -1)) {
+        duk_pop(ctx);
+        return 0;
+    }
+    /* Prefer require / node / default for CJS context. */
+    static const char *keys[] = { "require", "node", "default" };
+    for (size_t i = 0; i < sizeof(keys)/sizeof(keys[0]); i++) {
+        if (duk_get_prop_string(ctx, -1, keys[i])) {
+            if (_resolve_conditional_export(ctx)) {
+                duk_remove(ctx, -2); /* drop the parent object */
+                return 1;
+            }
+        } else {
+            duk_pop(ctx); /* the undefined we just got */
+        }
+    }
+    duk_pop(ctx);
+    return 0;
+}
+
+static RPPATH try_node_modules_exports(duk_context *ctx, const char *request_id,
+                                       const char *start_dir)
+{
+    RPPATH ret = {{0}};
+    if (!ctx || !request_id || !start_dir || !*request_id || !*start_dir)
+        return ret;
+
+    /* Split request_id into <pkg> + <slash>+rest.  Skip leading
+       `@scope/` for scoped packages. */
+    const char *slash;
+    if (request_id[0] == '@') {
+        slash = strchr(request_id + 1, '/');
+        if (!slash) return ret;
+        slash = strchr(slash + 1, '/');
+    } else {
+        slash = strchr(request_id, '/');
+    }
+    if (!slash) return ret;
+
+    char pkg[256];
+    size_t pkglen = (size_t)(slash - request_id);
+    if (pkglen >= sizeof(pkg)) return ret;
+    memcpy(pkg, request_id, pkglen);
+    pkg[pkglen] = '\0';
+
+    char subpath[256];
+    if (snprintf(subpath, sizeof(subpath), ".%s", slash) >= (int)sizeof(subpath))
+        return ret;
+
+    char dir[PATH_MAX];
+    size_t n = strlen(start_dir);
+    if (n >= sizeof(dir)) return ret;
+    memcpy(dir, start_dir, n + 1);
+    while (n > 1 && dir[n-1] == '/') dir[--n] = '\0';
+
+    while (1) {
+        char pkgdir[PATH_MAX];
+        char pkgpath[PATH_MAX];
+        if (snprintf(pkgdir, sizeof(pkgdir), "%s/node_modules/%s", dir, pkg)
+            >= (int)sizeof(pkgdir))
+            return ret;
+        if (snprintf(pkgpath, sizeof(pkgpath), "%s/package.json", pkgdir)
+            >= (int)sizeof(pkgpath))
+            goto next_dir;
+
+        struct stat sb;
+        if (stat(pkgpath, &sb) == 0 && sb.st_size > 0 && sb.st_size < 1048576) {
+            FILE *fp = fopen(pkgpath, "r");
+            if (fp) {
+                char *buf = malloc((size_t)sb.st_size + 1);
+                if (buf) {
+                    size_t br = fread(buf, 1, (size_t)sb.st_size, fp);
+                    fclose(fp);
+                    buf[br] = '\0';
+
+                    duk_idx_t top = duk_get_top(ctx);
+                    duk_push_string(ctx, buf);
+                    free(buf);
+                    if (duk_safe_call(ctx, _safe_json_decode, NULL, 1, 1)
+                        == DUK_EXEC_SUCCESS && duk_is_object(ctx, -1)) {
+                        if (duk_get_prop_string(ctx, -1, "exports")
+                            && duk_is_object(ctx, -1)
+                            && duk_get_prop_string(ctx, -1, subpath))
+                        {
+                            if (_resolve_conditional_export(ctx)) {
+                                const char *rel = duk_get_string(ctx, -1);
+                                if (rel) {
+                                    const char *r = rel;
+                                    if (r[0] == '.' && r[1] == '/') r += 2;
+                                    char fullpath[PATH_MAX];
+                                    if (snprintf(fullpath, sizeof(fullpath),
+                                                 "%s/%s", pkgdir, r)
+                                        < (int)sizeof(fullpath))
+                                    {
+                                        struct stat mst;
+                                        if (stat(fullpath, &mst) == 0
+                                            && !S_ISDIR(mst.st_mode))
+                                        {
+                                            ret.stat = mst;
+                                            if (!realpath(fullpath, ret.path))
+                                                strncpy(ret.path, fullpath,
+                                                        sizeof(ret.path) - 1);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    duk_set_top(ctx, top);
+                    if (strlen(ret.path)) return ret;
+                } else {
+                    fclose(fp);
+                }
+            }
+        }
+
+    next_dir:;
+        char *slashp = strrchr(dir, '/');
+        if (!slashp || slashp == dir) break;
+        *slashp = '\0';
+    }
+    return ret;
+}
+
 static RPPATH walk_node_modules(const char *name, const char *start_dir, const char *ext)
 {
     RPPATH ret = {{0}};
@@ -880,6 +1029,17 @@ static RPPATH resolve_id(duk_context *ctx, const char *request_id)
                 char *slash = strrchr(dir, '/');
                 if (slash && slash != dir) {
                     *slash = '\0';
+                    /* NDE.35: for `pkg/subpath` requests, first try the
+                       package's `exports` map.  Falls through to the
+                       extension walk below on miss. */
+                    rppath = try_node_modules_exports(ctx, request_id, dir);
+                    if (strlen(rppath.path)) {
+                        /* Use 0 as the loader index (js).  .so via
+                           exports is not handled here. */
+                        module_loader_idx = 0;
+                        id = rppath.path;
+                    }
+                    if (!id) {
                     for (module_loader_idx = 0;
                          module_loader_idx < (int)(sizeof(module_loaders) / sizeof(struct module_loader));
                          module_loader_idx++)
@@ -893,6 +1053,7 @@ static RPPATH resolve_id(duk_context *ctx, const char *request_id)
                             id = rppath.path;
                             break;
                         }
+                    }
                     }
                 }
             }

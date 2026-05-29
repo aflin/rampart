@@ -25,6 +25,8 @@
 #include <sys/resource.h>
 #include <sys/utsname.h>
 #include <sys/types.h>
+#include <sys/wait.h>        /* waitpid(2), WIFEXITED, WEXITSTATUS, WIFSIGNALED, WTERMSIG */
+#include <fcntl.h>           /* O_CLOEXEC, fcntl */
 #include <netdb.h>
 #include <time.h>
 
@@ -63,6 +65,23 @@
 #  define NS_ARCH "unknown"
 #endif
 
+#ifdef __APPLE__
+
+#include <util.h>
+#include <sys/ioctl.h>
+// execvpe polyfill
+int execvpe(const char *program, char **argv, char **envp)
+{
+    char **saved = environ;
+    int rc;
+    environ = envp;
+    rc = execvp(program, argv);
+    environ = saved;
+    return rc;
+}
+
+#endif
+
 /* Per-submodule init prototypes. Each pushes a fully-built object onto
    the stack and returns. Stubs below; real implementations land in
    their own commits. */
@@ -91,6 +110,10 @@ static void nodeshim_init_http(duk_context *ctx);
 static void nodeshim_init_https(duk_context *ctx);
 static void nodeshim_init_net(duk_context *ctx);
 static void nodeshim_init_tls(duk_context *ctx);
+static void nodeshim_init_readline(duk_context *ctx);
+static void nodeshim_init_child_process(duk_context *ctx);
+static void nodeshim_init_vm(duk_context *ctx);
+static void nodeshim_init_repl(duk_context *ctx);
 
 /* ============================================================
  * path
@@ -3155,7 +3178,13 @@ static const char *fs_js =
 "     them one-at-a-time via .read() / for-await. */\n"
 "  function Dir(path, entries) {\n"
 "    this.path = path;\n"
-"    this._entries = entries.map(function(n) { return new Dirent(n, path); });\n"
+"    /* Node's fs.opendir filters out '.' and '..' (POSIX readdir\n"
+"       returns them; the Node wrapper skips them).  fs-extra and\n"
+"       other libraries iterate dirents without checking — copying\n"
+"       `..` would recurse into the parent directory.  Filter here\n"
+"       so Dir.readSync()/read()/asyncIterator all skip them. */\n"
+"    this._entries = entries.filter(function(n) { return n !== '.' && n !== '..'; })\n"
+"                           .map(function(n) { return new Dirent(n, path); });\n"
 "    this._closed = false;\n"
 "    this._idx = 0;\n"
 "  }\n"
@@ -4843,6 +4872,27 @@ static duk_ret_t proc_hrtime(duk_context *ctx)
     return 1;
 }
 
+/* process.hrtime.bigint() — current monotonic time in nanoseconds, as a
+   BigInt.  Node's docs: no `prev` argument; do diffs by subtraction.
+   We assemble the digit string manually (tv_sec * 1e9 + tv_nsec) so we
+   never go through a double — losing precision around bit 53 would
+   defeat the point of a nanosecond clock.  Then hand the string to the
+   JS BigInt constructor (duktape fork's v1 BigInt). */
+static duk_ret_t proc_hrtime_bigint(duk_context *ctx)
+{
+    struct timespec ts;
+    if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0)
+        RP_THROW(ctx, "process.hrtime.bigint: clock_gettime failed: %s", strerror(errno));
+    /* tv_nsec is 0..999_999_999, exactly 9 decimal digits when zero-padded. */
+    char buf[40];
+    snprintf(buf, sizeof(buf), "%lld%09ld",
+        (long long)ts.tv_sec, (long)ts.tv_nsec);
+    duk_get_global_string(ctx, "BigInt");
+    duk_push_string(ctx, buf);
+    duk_call(ctx, 1);
+    return 1;
+}
+
 /* process.memoryUsage() — returns { rss, heapTotal, heapUsed, external, arrayBuffers } */
 static duk_ret_t proc_memory_usage(duk_context *ctx)
 {
@@ -5108,6 +5158,8 @@ static const char *process_js =
 "  p.cwd = natives.cwd;\n"
 "  p.chdir = natives.chdir;\n"
 "  p.hrtime = natives.hrtime;\n"
+"  /* node-compat: process.hrtime.bigint() returns a BigInt of nanoseconds. */\n"
+"  try { p.hrtime.bigint = natives.hrtimeBigint; } catch (_) {}\n"
 "  p.memoryUsage = natives.memoryUsage;\n"
 "  p.uptime = natives.uptime;\n"
 "  p.umask = natives.umask;\n"
@@ -5222,6 +5274,7 @@ static void nodeshim_init_process(duk_context *ctx)
     duk_push_c_function(ctx, proc_chdir,        1); duk_put_prop_string(ctx, -2, "chdir");
     duk_push_c_function(ctx, proc_kill,         2); duk_put_prop_string(ctx, -2, "kill");
     duk_push_c_function(ctx, proc_hrtime,       1); duk_put_prop_string(ctx, -2, "hrtime");
+    duk_push_c_function(ctx, proc_hrtime_bigint,0); duk_put_prop_string(ctx, -2, "hrtimeBigint");
     duk_push_c_function(ctx, proc_memory_usage, 0); duk_put_prop_string(ctx, -2, "memoryUsage");
     duk_push_c_function(ctx, proc_uptime,       0); duk_put_prop_string(ctx, -2, "uptime");
     duk_push_c_function(ctx, proc_umask,        1); duk_put_prop_string(ctx, -2, "umask");
@@ -7691,15 +7744,17 @@ static const char *stream_js =
 "      highWaterMark: opts.highWaterMark || 16384\n"
 "    };\n"
 "    self.readable = true;\n"
-"    self._readImpl = (typeof opts.read === 'function') ? opts.read : null;\n"
+"    if (typeof opts.read === 'function') self._read = opts.read;\n"
 "    /* Build underlying WHATWG stream — controller exposes enqueue/close/error\n"
 "       which we hand off via the .push() Node API. */\n"
 "    self._web = new W_RS({\n"
 "      start: function (ctrl) { self._wctrl = ctrl; },\n"
 "      pull: function () {\n"
-"        if (self._readImpl && !self._readableState.reading) {\n"
+"        /* Node API: subclasses define `_read` on the instance (either via\n"
+"           opts.read or by post-construction assignment). */\n"
+"        if (typeof self._read === 'function' && !self._readableState.reading) {\n"
 "          self._readableState.reading = true;\n"
-"          try { self._readImpl.call(self, self._readableState.highWaterMark); }\n"
+"          try { self._read.call(self, self._readableState.highWaterMark); }\n"
 "          catch (e) { self.destroy(e); }\n"
 "          self._readableState.reading = false;\n"
 "        }\n"
@@ -7787,11 +7842,20 @@ static const char *stream_js =
 "          self.emit('close');\n"
 "          return;\n"
 "        }\n"
-"        self.emit('data', r.value);\n"
+"        var v = r.value;\n"
+"        if (self._encoding && v && (Buffer.isBuffer(v) || v instanceof Uint8Array)) {\n"
+"          try { v = Buffer.isBuffer(v) ? v.toString(self._encoding) : Buffer.from(v).toString(self._encoding); }\n"
+"          catch (_e) {}\n"
+"        }\n"
+"        self.emit('data', v);\n"
 "        loop();\n"
 "      }, function (e) { self.destroy(e); });\n"
 "    }\n"
 "    loop();\n"
+"    return this;\n"
+"  };\n"
+"  Readable.prototype.setEncoding = function (enc) {\n"
+"    this._encoding = enc;\n"
 "    return this;\n"
 "  };\n"
 "  Readable.prototype.pause = function () {\n"
@@ -9444,6 +9508,1692 @@ static void nodeshim_init_tty(duk_context *ctx)
 }
 
 /* ============================================================
+ * readline — node-compat line-by-line reading + interactive editor.
+ *
+ * Tier 1 (programmatic mode): subscribe to input's 'data' event, buffer
+ * incoming bytes, split on \r?\n, emit 'line' for each complete line.
+ * Pure JS over the stream API.
+ *
+ * Tier 2 (terminal mode): when opts.terminal===true OR auto-detected
+ * (input.isTTY && output.isTTY), enter raw mode on input and run an
+ * in-process line editor with arrow-key navigation, history, tab
+ * completion, and prompt redraw.  Still pure JS — uses the existing
+ * tty.setRawMode + WriteStream escape helpers.
+ *
+ * Out of scope: async iterator (no `for await (const line of rl)` —
+ * blocked on duktape's lack of async iterators), readline.promises
+ * submodule (Promise-returning variants).  Sync iteration via
+ * `.on('line', cb)` covers every npm consumer we've seen.
+ * ============================================================ */
+static const char *readline_js =
+"function(EventEmitter) {\n"
+"  'use strict';\n"
+"\n"
+"  /* VT100 / xterm key sequence parser.  Takes a byte buffer (Buffer or\n"
+"     string), returns {key, consumed} where key is {name, ctrl, meta,\n"
+"     shift, sequence} and consumed is the number of bytes that formed\n"
+"     this key event.  Returns {key:null, consumed:0} when more bytes\n"
+"     are needed (partial escape sequence at the end of input). */\n"
+"  function _parseKey(buf, i) {\n"
+"    /* buf is a Buffer; i is starting index. */\n"
+"    if (i >= buf.length) return { key: null, consumed: 0 };\n"
+"    var b = buf[i];\n"
+"\n"
+"    /* Single-byte controls and printables. */\n"
+"    if (b !== 0x1b) {\n"
+"      var seq = buf.slice(i, i + 1);\n"
+"      var name = null, ch = String.fromCharCode(b);\n"
+"      var ctrl = false, shift = false, meta = false;\n"
+"      if      (b === 0x0d) { name = 'return'; ch = ''; }\n"
+"      else if (b === 0x0a) { name = 'enter'; ch = ''; }\n"
+"      else if (b === 0x09) { name = 'tab'; ch = ''; }\n"
+"      else if (b === 0x7f || b === 0x08) { name = 'backspace'; ch = ''; }\n"
+"      else if (b === 0x03) { name = 'c'; ctrl = true; ch = ''; }\n"
+"      else if (b === 0x04) { name = 'd'; ctrl = true; ch = ''; }\n"
+"      else if (b === 0x0c) { name = 'l'; ctrl = true; ch = ''; }\n"
+"      else if (b === 0x01) { name = 'a'; ctrl = true; ch = ''; }\n"
+"      else if (b === 0x05) { name = 'e'; ctrl = true; ch = ''; }\n"
+"      else if (b === 0x0b) { name = 'k'; ctrl = true; ch = ''; }\n"
+"      else if (b === 0x15) { name = 'u'; ctrl = true; ch = ''; }\n"
+"      else if (b === 0x17) { name = 'w'; ctrl = true; ch = ''; }\n"
+"      else if (b >= 0x20 && b < 0x7f) { name = ch; }\n"
+"      else if (b >= 0x80) { /* let UTF-8 multibyte pass as raw text */\n"
+"        /* Decode a minimal UTF-8 sequence — 2/3/4 byte. */\n"
+"        var need = (b & 0xe0) === 0xc0 ? 2 : (b & 0xf0) === 0xe0 ? 3 :\n"
+"                   (b & 0xf8) === 0xf0 ? 4 : 1;\n"
+"        if (i + need > buf.length) return { key: null, consumed: 0 };\n"
+"        seq = buf.slice(i, i + need);\n"
+"        ch  = seq.toString('utf8');\n"
+"        name = ch;\n"
+"        return { key: {sequence: ch, name: name, ctrl: false, meta: false, shift: false}, consumed: need };\n"
+"      }\n"
+"      return { key: {sequence: ch, name: name, ctrl: ctrl, meta: meta, shift: shift}, consumed: 1 };\n"
+"    }\n"
+"\n"
+"    /* ESC starts a possibly-multi-byte sequence.  Need at least 2 bytes\n"
+"       to disambiguate.  Bare ESC at end of buffer → wait for more. */\n"
+"    if (i + 1 >= buf.length) return { key: null, consumed: 0 };\n"
+"    var b1 = buf[i + 1];\n"
+"\n"
+"    /* ESC <alpha>  — meta+char (Alt-X) */\n"
+"    if (b1 !== 0x5b && b1 !== 0x4f) {\n"
+"      /* Bare ESC by itself, or ESC followed by a non-bracket — treat\n"
+"         as Alt-prefix if printable, else just escape. */\n"
+"      if (b1 >= 0x20 && b1 < 0x7f) {\n"
+"        return { key: { sequence: '\\x1b' + String.fromCharCode(b1),\n"
+"                        name: String.fromCharCode(b1), ctrl: false,\n"
+"                        meta: true, shift: false }, consumed: 2 };\n"
+"      }\n"
+"      return { key: { sequence: '\\x1b', name: 'escape', ctrl: false,\n"
+"                      meta: false, shift: false }, consumed: 1 };\n"
+"    }\n"
+"\n"
+"    /* CSI sequence: ESC [ ... <final-byte>  OR  ESC O <letter> */\n"
+"    /* Find the terminator. */\n"
+"    var j = i + 2;\n"
+"    if (b1 === 0x4f) {\n"
+"      /* ESC O <letter>: 3 bytes total, terminator is letter at j. */\n"
+"      if (j >= buf.length) return { key: null, consumed: 0 };\n"
+"      var t = buf[j];\n"
+"      var name1 = null;\n"
+"      if (t === 0x41) name1 = 'up';\n"
+"      else if (t === 0x42) name1 = 'down';\n"
+"      else if (t === 0x43) name1 = 'right';\n"
+"      else if (t === 0x44) name1 = 'left';\n"
+"      else if (t === 0x46) name1 = 'end';\n"
+"      else if (t === 0x48) name1 = 'home';\n"
+"      else if (t >= 0x50 && t <= 0x53) name1 = 'f' + (t - 0x4f);\n"
+"      return { key: { sequence: buf.slice(i, j+1).toString('utf8'),\n"
+"                      name: name1, ctrl: false, meta: false, shift: false }, consumed: 3 };\n"
+"    }\n"
+"    /* CSI: ESC [ <params> <intermediate?> <final>  where final is 0x40..0x7e\n"
+"       We accumulate digits and ; separators. */\n"
+"    while (j < buf.length) {\n"
+"      var c = buf[j];\n"
+"      if (c >= 0x40 && c <= 0x7e) break;  /* final byte */\n"
+"      j++;\n"
+"    }\n"
+"    if (j >= buf.length) return { key: null, consumed: 0 };\n"
+"    var final = buf[j];\n"
+"    var params = buf.slice(i + 2, j).toString('utf8');\n"
+"    var consumed = (j - i) + 1;\n"
+"    var name2 = null;\n"
+"    var shiftK = false;\n"
+"    /* params may include shift modifier as ';2' suffix. */\n"
+"    if (/;2$/.test(params)) shiftK = true;\n"
+"    if      (final === 0x41) name2 = 'up';\n"
+"    else if (final === 0x42) name2 = 'down';\n"
+"    else if (final === 0x43) name2 = 'right';\n"
+"    else if (final === 0x44) name2 = 'left';\n"
+"    else if (final === 0x46) name2 = 'end';\n"
+"    else if (final === 0x48) name2 = 'home';\n"
+"    else if (final === 0x5a) { name2 = 'tab'; shiftK = true; }  /* CSI Z = shift-tab */\n"
+"    else if (final === 0x7e) {\n"
+"      /* Function key style: CSI <num> ~ */\n"
+"      var n = parseInt(params.split(';')[0], 10) || 0;\n"
+"      if      (n === 1 || n === 7) name2 = 'home';\n"
+"      else if (n === 4 || n === 8) name2 = 'end';\n"
+"      else if (n === 3) name2 = 'delete';\n"
+"      else if (n === 2) name2 = 'insert';\n"
+"      else if (n === 5) name2 = 'pageup';\n"
+"      else if (n === 6) name2 = 'pagedown';\n"
+"      else if (n === 15) name2 = 'f5';\n"
+"      else if (n === 17) name2 = 'f6';\n"
+"      else if (n === 18) name2 = 'f7';\n"
+"      else if (n === 19) name2 = 'f8';\n"
+"      else if (n === 20) name2 = 'f9';\n"
+"      else if (n === 21) name2 = 'f10';\n"
+"      else if (n === 23) name2 = 'f11';\n"
+"      else if (n === 24) name2 = 'f12';\n"
+"    }\n"
+"    return { key: { sequence: buf.slice(i, j+1).toString('utf8'),\n"
+"                    name: name2, ctrl: false, meta: false, shift: shiftK },\n"
+"             consumed: consumed };\n"
+"  }\n"
+"\n"
+"  /* Install a 'keypress' event source on a Readable stream.  Each key\n"
+"     emits ('keypress', char, keyInfo) per node's surface. */\n"
+"  function emitKeypressEvents(stream, iface) {\n"
+"    if (stream._keypressDecoder) return;\n"
+"    stream._keypressDecoder = true;\n"
+"    var pending = Buffer.alloc(0);\n"
+"    stream.on('data', function(chunk) {\n"
+"      var buf = Buffer.isBuffer(chunk) ? chunk\n"
+"              : (chunk instanceof Uint8Array)\n"
+"                  ? Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength)\n"
+"                  : Buffer.from(String(chunk), 'utf8');\n"
+"      pending = Buffer.concat([pending, buf]);\n"
+"      var i = 0;\n"
+"      while (i < pending.length) {\n"
+"        var r = _parseKey(pending, i);\n"
+"        if (r.consumed === 0) break;  /* need more bytes */\n"
+"        i += r.consumed;\n"
+"        if (r.key) stream.emit('keypress', r.key.sequence, r.key);\n"
+"      }\n"
+"      pending = pending.slice(i);\n"
+"    });\n"
+"  }\n"
+"\n"
+"  /* Interface — the readline workhorse.  Subclass of EventEmitter. */\n"
+"  function Interface(opts) {\n"
+"    if (!(this instanceof Interface)) return new Interface(opts);\n"
+"    EventEmitter.call(this);\n"
+"    opts = opts || {};\n"
+"    var self = this;\n"
+"    self.input        = opts.input;\n"
+"    self.output       = opts.output;\n"
+"    self.completer    = (typeof opts.completer === 'function') ? opts.completer : null;\n"
+"    self._prompt      = (opts.prompt != null) ? String(opts.prompt) : '> ';\n"
+"    self._closed      = false;\n"
+"    self.terminal     = (opts.terminal !== undefined)\n"
+"      ? !!opts.terminal\n"
+"      : !!(self.input && self.input.isTTY && self.output && self.output.isTTY);\n"
+"    self._historySize = (typeof opts.historySize === 'number') ? opts.historySize : 30;\n"
+"    self.history      = Array.isArray(opts.history) ? opts.history.slice() : [];\n"
+"    self._histIdx     = -1;            /* -1 = current line, 0+ = history offset */\n"
+"    self._savedLine   = '';            /* original line when scrolling history */\n"
+"    self._line        = '';\n"
+"    self._cursor      = 0;\n"
+"    if (!self.input) throw new TypeError('readline: opts.input is required');\n"
+"\n"
+"    if (self.terminal) {\n"
+"      self._installTerminal();\n"
+"    } else {\n"
+"      self._installLineMode();\n"
+"    }\n"
+"\n"
+"    self.input.on('end', function() {\n"
+"      /* Flush any pending partial line (without trailing newline). */\n"
+"      if (!self.terminal && self._lineBuf && self._lineBuf.length > 0) {\n"
+"        self.emit('line', self._lineBuf);\n"
+"        self._lineBuf = '';\n"
+"      }\n"
+"      self.close();\n"
+"    });\n"
+"  }\n"
+"  Interface.prototype = Object.create(EventEmitter.prototype);\n"
+"  Interface.prototype.constructor = Interface;\n"
+"\n"
+"  /* Tier 1: programmatic line-by-line reading. */\n"
+"  Interface.prototype._installLineMode = function() {\n"
+"    var self = this;\n"
+"    self._lineBuf = '';\n"
+"    self.input.on('data', function(chunk) {\n"
+"      if (self._closed) return;\n"
+"      var s;\n"
+"      if (typeof chunk === 'string') s = chunk;\n"
+"      else if (Buffer.isBuffer(chunk)) s = chunk.toString('utf8');\n"
+"      else if (chunk instanceof Uint8Array)\n"
+"           s = Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength).toString('utf8');\n"
+"      else s = String(chunk);\n"
+"      self._lineBuf += s;\n"
+"      var idx;\n"
+"      while ((idx = self._lineBuf.indexOf('\\n')) !== -1) {\n"
+"        var line = self._lineBuf.substring(0, idx);\n"
+"        self._lineBuf = self._lineBuf.substring(idx + 1);\n"
+"        /* strip trailing \\r for \\r\\n line endings */\n"
+"        if (line.charAt(line.length - 1) === '\\r') line = line.substring(0, line.length - 1);\n"
+"        self.emit('line', line);\n"
+"      }\n"
+"    });\n"
+"  };\n"
+"\n"
+"  /* Tier 2: full interactive editor over a TTY. */\n"
+"  Interface.prototype._installTerminal = function() {\n"
+"    var self = this;\n"
+"    /* Enter raw mode if the input is a tty.ReadStream. */\n"
+"    if (self.input && typeof self.input.setRawMode === 'function') {\n"
+"      self.input.setRawMode(true);\n"
+"    }\n"
+"    emitKeypressEvents(self.input, self);\n"
+"    self.input.on('keypress', function(s, key) {\n"
+"      if (self._closed) return;\n"
+"      self._onKeypress(s, key);\n"
+"    });\n"
+"  };\n"
+"\n"
+"  Interface.prototype._write = function(s) {\n"
+"    if (this.output && typeof this.output.write === 'function') this.output.write(s);\n"
+"  };\n"
+"  Interface.prototype._redraw = function() {\n"
+"    /* Erase current line, write prompt + buffer, move cursor to spot. */\n"
+"    var prompt = this._prompt || '';\n"
+"    this._write('\\x1b[2K\\r' + prompt + this._line);\n"
+"    var col = prompt.length + this._cursor;\n"
+"    this._write('\\r\\x1b[' + (col + 1) + 'G');\n"
+"  };\n"
+"  Interface.prototype.setPrompt = function(p) { this._prompt = String(p); };\n"
+"  Interface.prototype.getPrompt = function()  { return this._prompt; };\n"
+"  Interface.prototype.prompt    = function(preserveCursor) {\n"
+"    if (this._closed) return;\n"
+"    if (!preserveCursor) this._cursor = this._line.length;\n"
+"    this._redraw();\n"
+"  };\n"
+"  Interface.prototype.write     = function(d, key) {\n"
+"    if (this._closed) return;\n"
+"    if (this.terminal && key) { this._onKeypress(d || '', key); return; }\n"
+"    if (typeof d === 'string') {\n"
+"      this._line = this._line.slice(0, this._cursor) + d + this._line.slice(this._cursor);\n"
+"      this._cursor += d.length;\n"
+"      if (this.terminal) this._redraw();\n"
+"    }\n"
+"  };\n"
+"  Interface.prototype.pause     = function() { if (this.input.pause) this.input.pause(); this.emit('pause'); return this; };\n"
+"  Interface.prototype.resume    = function() { if (this.input.resume) this.input.resume(); this.emit('resume'); return this; };\n"
+"  Interface.prototype.close     = function() {\n"
+"    if (this._closed) return;\n"
+"    this._closed = true;\n"
+"    if (this.terminal && this.input && typeof this.input.setRawMode === 'function') {\n"
+"      this.input.setRawMode(false);\n"
+"    }\n"
+"    this.emit('close');\n"
+"  };\n"
+"\n"
+"  Interface.prototype._onKeypress = function(s, key) {\n"
+"    if (!key) return;\n"
+"    var self = this, n = key.name;\n"
+"    /* Ctrl-C: SIGINT, then close. */\n"
+"    if (key.ctrl && n === 'c') {\n"
+"      if (self.listenerCount && self.listenerCount('SIGINT') > 0) {\n"
+"        self.emit('SIGINT');\n"
+"      } else {\n"
+"        self._write('\\n');\n"
+"        self.close();\n"
+"      }\n"
+"      return;\n"
+"    }\n"
+"    /* Ctrl-D: EOF on empty line, else delete-forward. */\n"
+"    if (key.ctrl && n === 'd') {\n"
+"      if (self._line.length === 0) { self.close(); return; }\n"
+"      if (self._cursor < self._line.length) {\n"
+"        self._line = self._line.slice(0, self._cursor) + self._line.slice(self._cursor + 1);\n"
+"        self._redraw();\n"
+"      }\n"
+"      return;\n"
+"    }\n"
+"    if (key.ctrl && n === 'l') {\n"
+"      self._write('\\x1b[2J\\x1b[H');  /* clear screen + home */\n"
+"      self._redraw();\n"
+"      return;\n"
+"    }\n"
+"    if (key.ctrl && n === 'a') { self._cursor = 0; self._redraw(); return; }\n"
+"    if (key.ctrl && n === 'e') { self._cursor = self._line.length; self._redraw(); return; }\n"
+"    if (key.ctrl && n === 'k') {\n"
+"      self._line = self._line.slice(0, self._cursor); self._redraw(); return;\n"
+"    }\n"
+"    if (key.ctrl && n === 'u') {\n"
+"      self._line = self._line.slice(self._cursor); self._cursor = 0; self._redraw(); return;\n"
+"    }\n"
+"    if (key.ctrl && n === 'w') {\n"
+"      /* delete previous word */\n"
+"      var start = self._cursor;\n"
+"      while (start > 0 && self._line.charAt(start - 1) === ' ') start--;\n"
+"      while (start > 0 && self._line.charAt(start - 1) !== ' ') start--;\n"
+"      self._line = self._line.slice(0, start) + self._line.slice(self._cursor);\n"
+"      self._cursor = start;\n"
+"      self._redraw();\n"
+"      return;\n"
+"    }\n"
+"    if (n === 'return' || n === 'enter') {\n"
+"      self._write('\\n');\n"
+"      var line = self._line;\n"
+"      self._line = ''; self._cursor = 0; self._histIdx = -1;\n"
+"      if (line.length > 0 && (self.history.length === 0 || self.history[0] !== line)) {\n"
+"        self.history.unshift(line);\n"
+"        if (self.history.length > self._historySize) self.history.pop();\n"
+"        self.emit('history', self.history);\n"
+"      }\n"
+"      self.emit('line', line);\n"
+"      return;\n"
+"    }\n"
+"    if (n === 'backspace') {\n"
+"      if (self._cursor > 0) {\n"
+"        self._line = self._line.slice(0, self._cursor - 1) + self._line.slice(self._cursor);\n"
+"        self._cursor--;\n"
+"        self._redraw();\n"
+"      }\n"
+"      return;\n"
+"    }\n"
+"    if (n === 'delete') {\n"
+"      if (self._cursor < self._line.length) {\n"
+"        self._line = self._line.slice(0, self._cursor) + self._line.slice(self._cursor + 1);\n"
+"        self._redraw();\n"
+"      }\n"
+"      return;\n"
+"    }\n"
+"    if (n === 'left')  { if (self._cursor > 0)               { self._cursor--; self._redraw(); } return; }\n"
+"    if (n === 'right') { if (self._cursor < self._line.length){ self._cursor++; self._redraw(); } return; }\n"
+"    if (n === 'home')  { self._cursor = 0;               self._redraw(); return; }\n"
+"    if (n === 'end')   { self._cursor = self._line.length; self._redraw(); return; }\n"
+"    if (n === 'up') {\n"
+"      if (self._histIdx === -1) self._savedLine = self._line;\n"
+"      if (self._histIdx + 1 < self.history.length) {\n"
+"        self._histIdx++;\n"
+"        self._line = self.history[self._histIdx];\n"
+"        self._cursor = self._line.length;\n"
+"        self._redraw();\n"
+"      }\n"
+"      return;\n"
+"    }\n"
+"    if (n === 'down') {\n"
+"      if (self._histIdx > 0) {\n"
+"        self._histIdx--;\n"
+"        self._line = self.history[self._histIdx];\n"
+"        self._cursor = self._line.length;\n"
+"      } else if (self._histIdx === 0) {\n"
+"        self._histIdx = -1;\n"
+"        self._line = self._savedLine || '';\n"
+"        self._cursor = self._line.length;\n"
+"      } else { return; }\n"
+"      self._redraw();\n"
+"      return;\n"
+"    }\n"
+"    if (n === 'tab') {\n"
+"      if (typeof self.completer === 'function') {\n"
+"        var beforeCursor = self._line.slice(0, self._cursor);\n"
+"        try {\n"
+"          self.completer(beforeCursor, function(err, result) {\n"
+"            if (err || !result) return;\n"
+"            var completions = result[0], substr = result[1];\n"
+"            if (completions && completions.length === 1) {\n"
+"              var rest = completions[0].slice(substr.length);\n"
+"              self._line = beforeCursor + rest + self._line.slice(self._cursor);\n"
+"              self._cursor += rest.length;\n"
+"              self._redraw();\n"
+"            } else if (completions && completions.length > 1) {\n"
+"              self._write('\\n' + completions.join('  ') + '\\n');\n"
+"              self._redraw();\n"
+"            }\n"
+"          });\n"
+"        } catch(_) {}\n"
+"      }\n"
+"      return;\n"
+"    }\n"
+"    /* Printable input: insert at cursor. */\n"
+"    if (s && s.length > 0 && (key.sequence ? key.sequence.charCodeAt(0) >= 0x20 : true)) {\n"
+"      self._line = self._line.slice(0, self._cursor) + s + self._line.slice(self._cursor);\n"
+"      self._cursor += s.length;\n"
+"      self._redraw();\n"
+"    }\n"
+"  };\n"
+"\n"
+"  function createInterface(opts) { return new Interface(opts); }\n"
+"\n"
+"  /* Static helpers — write VT100 escapes to a stream.  Some npm code\n"
+"     uses these for line-drawing UIs. */\n"
+"  function cursorTo(stream, x, y, cb) {\n"
+"    if (stream && typeof stream.cursorTo === 'function') return stream.cursorTo(x, y, cb);\n"
+"    var s = (typeof y === 'number') ? '\\x1b[' + (y+1) + ';' + (x+1) + 'H'\n"
+"                                    : '\\x1b[' + (x+1) + 'G';\n"
+"    if (stream && stream.write) stream.write(s);\n"
+"    if (typeof cb === 'function') cb();\n"
+"    return true;\n"
+"  }\n"
+"  function moveCursor(stream, dx, dy, cb) {\n"
+"    if (stream && typeof stream.moveCursor === 'function') return stream.moveCursor(dx, dy, cb);\n"
+"    var s = '';\n"
+"    if (dy < 0) s += '\\x1b[' + (-dy) + 'A';\n"
+"    else if (dy > 0) s += '\\x1b[' + dy + 'B';\n"
+"    if (dx > 0) s += '\\x1b[' + dx + 'C';\n"
+"    else if (dx < 0) s += '\\x1b[' + (-dx) + 'D';\n"
+"    if (s && stream && stream.write) stream.write(s);\n"
+"    if (typeof cb === 'function') cb();\n"
+"    return true;\n"
+"  }\n"
+"  function clearLine(stream, dir, cb) {\n"
+"    if (stream && typeof stream.clearLine === 'function') return stream.clearLine(dir, cb);\n"
+"    var code = (dir < 0) ? '1K' : (dir > 0 ? '0K' : '2K');\n"
+"    if (stream && stream.write) stream.write('\\x1b[' + code);\n"
+"    if (typeof cb === 'function') cb();\n"
+"    return true;\n"
+"  }\n"
+"  function clearScreenDown(stream, cb) {\n"
+"    if (stream && typeof stream.clearScreenDown === 'function') return stream.clearScreenDown(cb);\n"
+"    if (stream && stream.write) stream.write('\\x1b[0J');\n"
+"    if (typeof cb === 'function') cb();\n"
+"    return true;\n"
+"  }\n"
+"\n"
+"  return {\n"
+"    Interface:           Interface,\n"
+"    createInterface:     createInterface,\n"
+"    emitKeypressEvents:  emitKeypressEvents,\n"
+"    cursorTo:            cursorTo,\n"
+"    moveCursor:          moveCursor,\n"
+"    clearLine:           clearLine,\n"
+"    clearScreenDown:     clearScreenDown\n"
+"  };\n"
+"}";
+
+static void nodeshim_init_readline(duk_context *ctx)
+{
+    /* Pass EventEmitter (same pattern as net_js / http_js).  Slot order
+       guarantees `events` is set before `readline`. */
+    duk_push_string(ctx, "rampart-nodeshim.c:readline_js");
+    duk_compile_string_filename(ctx, DUK_COMPILE_FUNCTION, readline_js);
+    duk_get_prop_string(ctx, -2, "events");
+    duk_get_prop_string(ctx, -1, "EventEmitter");
+    duk_remove(ctx, -2);
+    duk_call(ctx, 1);
+}
+
+/* ============================================================
+ * child_process — fresh-C implementation (not wrapping rampart.utils.exec).
+ *
+ * Three native primitives back the JS surface:
+ *   cp_spawn_native(opts)  → {pid, stdinFd, stdoutFd, stderrFd}
+ *   cp_waitpid_native(pid) → null (still running) or {exitCode, signalCode}
+ *   cp_kill_native(pid, sig) → bool
+ *
+ * The pipe-fd reads + waitpid polling happen in JS via setTimeout, mirroring
+ * the existing fs.ReadStream pump pattern.  Avoids the SIGCHLD coordination
+ * complexity with rampart-sql / rampart-utils.exec (which has its own
+ * exec_sigchld_lock save/restore mutex) at the cost of ~25ms reap latency.
+ * Acceptable for v1; can upgrade to libevent SIGCHLD watcher later.
+ *
+ * fork() in a multi-threaded process is safe as long as the child only
+ * calls async-signal-safe functions before execve.  Our child path is
+ * exactly that: close(), dup2(), execvp(), _exit() — all on the
+ * async-signal-safe list.
+ * ============================================================ */
+
+/* Set O_CLOEXEC on a file descriptor. */
+static int _cp_set_cloexec(int fd)
+{
+    int flags = fcntl(fd, F_GETFD);
+    if (flags == -1) return -1;
+    return fcntl(fd, F_SETFD, flags | FD_CLOEXEC);
+}
+
+static int _cp_set_nonblock(int fd)
+{
+    int flags = fcntl(fd, F_GETFL);
+    if (flags == -1) return -1;
+    return fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+}
+
+/* Free a char ** array previously built from JS (terminating-NULL convention). */
+static void _cp_free_strv(char **v)
+{
+    if (!v) return;
+    for (char **p = v; *p; p++) free(*p);
+    free(v);
+}
+
+/* Build a NULL-terminated char ** from a JS array of strings on the stack at idx.
+   Caller frees with _cp_free_strv(). */
+static char **_cp_build_strv(duk_context *ctx, duk_idx_t idx)
+{
+    if (!duk_is_array(ctx, idx)) return NULL;
+    duk_size_t n = duk_get_length(ctx, idx);
+    char **v = (char **)calloc(n + 1, sizeof(char *));
+    if (!v) return NULL;
+    for (duk_size_t i = 0; i < n; i++) {
+        duk_get_prop_index(ctx, idx, (duk_uarridx_t)i);
+        const char *s = duk_safe_to_string(ctx, -1);
+        v[i] = s ? strdup(s) : strdup("");
+        duk_pop(ctx);
+        if (!v[i]) { _cp_free_strv(v); return NULL; }
+    }
+    return v;
+}
+
+/* spawn(opts).  opts = { file, args, cwd, env, stdio_pipe: bool x3 }.
+   Returns { pid, stdinFd, stdoutFd, stderrFd } where any of the *Fds may
+   be -1 if that stdio slot wasn't 'pipe'. */
+static duk_ret_t nodeshim_cp_spawn_native(duk_context *ctx)
+{
+    if (!duk_is_object(ctx, 0))
+        RP_THROW(ctx, "child_process spawn: opts object required");
+
+    /* file */
+    duk_get_prop_string(ctx, 0, "file");
+    const char *file = duk_require_string(ctx, -1);
+    char *file_copy = strdup(file);
+    duk_pop(ctx);
+
+    /* args[] — strv */
+    duk_get_prop_string(ctx, 0, "args");
+    char **args = _cp_build_strv(ctx, -1);
+    duk_pop(ctx);
+
+    /* env[] — strv of "K=V" strings, or null to inherit */
+    duk_get_prop_string(ctx, 0, "env");
+    char **envv = duk_is_array(ctx, -1) ? _cp_build_strv(ctx, -1) : NULL;
+    duk_pop(ctx);
+
+    /* cwd */
+    duk_get_prop_string(ctx, 0, "cwd");
+    const char *cwd = duk_is_string(ctx, -1) ? duk_get_string(ctx, -1) : NULL;
+    char *cwd_copy = cwd ? strdup(cwd) : NULL;
+    duk_pop(ctx);
+
+    /* Which stdio slots get pipes (vs inherit parent's). */
+    duk_get_prop_string(ctx, 0, "stdinPipe");
+    int pipe_stdin = duk_to_boolean(ctx, -1); duk_pop(ctx);
+    duk_get_prop_string(ctx, 0, "stdoutPipe");
+    int pipe_stdout = duk_to_boolean(ctx, -1); duk_pop(ctx);
+    duk_get_prop_string(ctx, 0, "stderrPipe");
+    int pipe_stderr = duk_to_boolean(ctx, -1); duk_pop(ctx);
+
+    int in_fds[2] = {-1, -1}, out_fds[2] = {-1, -1}, err_fds[2] = {-1, -1};
+
+    if (pipe_stdin  && pipe(in_fds)  != 0) goto err_pipe;
+    if (pipe_stdout && pipe(out_fds) != 0) goto err_pipe;
+    if (pipe_stderr && pipe(err_fds) != 0) goto err_pipe;
+
+    pid_t pid = fork();
+    if (pid == -1) {
+        int e = errno;
+        if (pipe_stdin)  { close(in_fds[0]);  close(in_fds[1]);  }
+        if (pipe_stdout) { close(out_fds[0]); close(out_fds[1]); }
+        if (pipe_stderr) { close(err_fds[0]); close(err_fds[1]); }
+        free(file_copy); free(cwd_copy);
+        _cp_free_strv(args); _cp_free_strv(envv);
+        RP_THROW(ctx, "child_process spawn: fork failed: %s", strerror(e));
+    }
+
+    if (pid == 0) {
+        /* Child.  ONLY async-signal-safe calls between here and execvp. */
+        if (pipe_stdin)  { dup2(in_fds[0],  STDIN_FILENO);  close(in_fds[0]);  close(in_fds[1]);  }
+        if (pipe_stdout) { dup2(out_fds[1], STDOUT_FILENO); close(out_fds[0]); close(out_fds[1]); }
+        if (pipe_stderr) { dup2(err_fds[1], STDERR_FILENO); close(err_fds[0]); close(err_fds[1]); }
+        if (cwd_copy && chdir(cwd_copy) != 0) _exit(127);
+        if (envv) execvpe(file_copy, args ? args : (char *[]){ file_copy, NULL }, envv);
+        else      execvp (file_copy, args ? args : (char *[]){ file_copy, NULL });
+        _exit(127);
+    }
+
+    /* Parent: close child-end fds, mark our ends CLOEXEC + non-blocking
+       (so JS-side u.read() returns EAGAIN immediately instead of stalling
+       the rampart event loop until the child writes or exits). */
+    if (pipe_stdin)  { close(in_fds[0]);  _cp_set_cloexec(in_fds[1]);  _cp_set_nonblock(in_fds[1]);  }
+    if (pipe_stdout) { close(out_fds[1]); _cp_set_cloexec(out_fds[0]); _cp_set_nonblock(out_fds[0]); }
+    if (pipe_stderr) { close(err_fds[1]); _cp_set_cloexec(err_fds[0]); _cp_set_nonblock(err_fds[0]); }
+
+    free(file_copy); free(cwd_copy);
+    _cp_free_strv(args); _cp_free_strv(envv);
+
+    duk_push_object(ctx);
+    duk_push_int(ctx, (duk_int_t)pid);                 duk_put_prop_string(ctx, -2, "pid");
+    duk_push_int(ctx, pipe_stdin  ? in_fds[1]  : -1);  duk_put_prop_string(ctx, -2, "stdinFd");
+    duk_push_int(ctx, pipe_stdout ? out_fds[0] : -1);  duk_put_prop_string(ctx, -2, "stdoutFd");
+    duk_push_int(ctx, pipe_stderr ? err_fds[0] : -1);  duk_put_prop_string(ctx, -2, "stderrFd");
+    return 1;
+
+err_pipe: {
+    int e = errno;
+    if (in_fds[0]  != -1) close(in_fds[0]);
+    if (in_fds[1]  != -1) close(in_fds[1]);
+    if (out_fds[0] != -1) close(out_fds[0]);
+    if (out_fds[1] != -1) close(out_fds[1]);
+    if (err_fds[0] != -1) close(err_fds[0]);
+    if (err_fds[1] != -1) close(err_fds[1]);
+    free(file_copy); free(cwd_copy);
+    _cp_free_strv(args); _cp_free_strv(envv);
+    RP_THROW(ctx, "child_process spawn: pipe failed: %s", strerror(e));
+} }
+
+/* waitpid_native(pid) — non-blocking reap.  Returns null if still running,
+   or {exitCode: N|null, signalCode: "SIGTERM"|null}. */
+static duk_ret_t nodeshim_cp_waitpid_native(duk_context *ctx)
+{
+    duk_int_t pid_in = duk_require_int(ctx, 0);
+    pid_t pid = (pid_t)pid_in;
+    int status = 0;
+    pid_t r = waitpid(pid, &status, WNOHANG);
+    if (r == 0) { duk_push_null(ctx); return 1; }
+    if (r == -1) {
+        /* ECHILD = already reaped or never was our child; treat as exited
+           with no info rather than throw. */
+        duk_push_object(ctx);
+        duk_push_null(ctx); duk_put_prop_string(ctx, -2, "exitCode");
+        duk_push_null(ctx); duk_put_prop_string(ctx, -2, "signalCode");
+        return 1;
+    }
+    duk_push_object(ctx);
+    if (WIFEXITED(status)) {
+        duk_push_int(ctx, WEXITSTATUS(status));
+        duk_put_prop_string(ctx, -2, "exitCode");
+        duk_push_null(ctx); duk_put_prop_string(ctx, -2, "signalCode");
+    } else if (WIFSIGNALED(status)) {
+        duk_push_null(ctx); duk_put_prop_string(ctx, -2, "exitCode");
+        /* Map signal number to a "SIG*" name string per node's convention. */
+        int sig = WTERMSIG(status);
+        const char *name = NULL;
+        switch (sig) {
+            case SIGHUP:  name = "SIGHUP";  break;
+            case SIGINT:  name = "SIGINT";  break;
+            case SIGQUIT: name = "SIGQUIT"; break;
+            case SIGILL:  name = "SIGILL";  break;
+            case SIGTRAP: name = "SIGTRAP"; break;
+            case SIGABRT: name = "SIGABRT"; break;
+            case SIGFPE:  name = "SIGFPE";  break;
+            case SIGKILL: name = "SIGKILL"; break;
+            case SIGBUS:  name = "SIGBUS";  break;
+            case SIGSEGV: name = "SIGSEGV"; break;
+            case SIGPIPE: name = "SIGPIPE"; break;
+            case SIGALRM: name = "SIGALRM"; break;
+            case SIGTERM: name = "SIGTERM"; break;
+            case SIGUSR1: name = "SIGUSR1"; break;
+            case SIGUSR2: name = "SIGUSR2"; break;
+            default: break;
+        }
+        if (name) duk_push_string(ctx, name);
+        else      duk_push_sprintf(ctx, "SIG_%d", sig);
+        duk_put_prop_string(ctx, -2, "signalCode");
+    } else {
+        /* Stopped / continued — uncommon for our usage; treat as still running. */
+        duk_pop(ctx);
+        duk_push_null(ctx);
+    }
+    return 1;
+}
+
+/* kill_native(pid, sig)  — sig may be number or "SIG*" string.  Returns bool. */
+static duk_ret_t nodeshim_cp_kill_native(duk_context *ctx)
+{
+    pid_t pid = (pid_t)duk_require_int(ctx, 0);
+    int sig = SIGTERM;
+    if (duk_is_number(ctx, 1)) {
+        sig = duk_get_int(ctx, 1);
+    } else if (duk_is_string(ctx, 1)) {
+        const char *s = duk_get_string(ctx, 1);
+        /* Allow "SIGINT" or "INT". */
+        if (strncmp(s, "SIG", 3) == 0) s += 3;
+        if      (!strcmp(s, "HUP"))  sig = SIGHUP;
+        else if (!strcmp(s, "INT"))  sig = SIGINT;
+        else if (!strcmp(s, "QUIT")) sig = SIGQUIT;
+        else if (!strcmp(s, "KILL")) sig = SIGKILL;
+        else if (!strcmp(s, "USR1")) sig = SIGUSR1;
+        else if (!strcmp(s, "USR2")) sig = SIGUSR2;
+        else if (!strcmp(s, "PIPE")) sig = SIGPIPE;
+        else if (!strcmp(s, "TERM")) sig = SIGTERM;
+        else if (!strcmp(s, "STOP")) sig = SIGSTOP;
+        else if (!strcmp(s, "CONT")) sig = SIGCONT;
+        else { duk_push_boolean(ctx, 0); return 1; }
+    }
+    int r = kill(pid, sig);
+    duk_push_boolean(ctx, r == 0 ? 1 : 0);
+    return 1;
+}
+
+static const char *child_process_js =
+"function(EventEmitter, natives) {\n"
+"  'use strict';\n"
+"  var u = rampart.utils;\n"
+"\n"
+"  /* Map a file descriptor → polling Readable that emits 'data'/'end'. */\n"
+"  function _fdReadable(fd) {\n"
+"    if (fd < 0) return null;\n"
+"    var em = new EventEmitter();\n"
+"    em.fd = fd;\n"
+"    em.readable = true;\n"
+"    em._closed = false;\n"
+"    em._paused = false;\n"
+"    em._encoding = null;\n"
+"    em.bytesRead = 0;\n"
+"    em.setEncoding = function(enc) { em._encoding = enc; return em; };\n"
+"    em.pause  = function() { em._paused = true;  return em; };\n"
+"    em.resume = function() { em._paused = false; return em; };\n"
+"    em.destroy = function() {\n"
+"      if (em._closed) return em;\n"
+"      em._closed = true;\n"
+"      try { u.close(fd); } catch(_){}\n"
+"      em.emit('close');\n"
+"      return em;\n"
+"    };\n"
+"    /* pipe(dest) — wire 'data' → dest.write, 'end' → dest.end. */\n"
+"    em.pipe = function(dest, opts) {\n"
+"      opts = opts || {};\n"
+"      em.on('data', function(c) { if (dest.write) dest.write(c); });\n"
+"      em.on('end',  function()  { if (opts.end !== false && dest.end) dest.end(); });\n"
+"      return dest;\n"
+"    };\n"
+"    /* setTimeout-based pump.  Same pattern as fs.ReadStream. */\n"
+"    function pump() {\n"
+"      if (em._closed) return;\n"
+"      if (em._paused) { setTimeout(pump, 25); return; }\n"
+"      var b;\n"
+"      try { b = u.read(fd, 65536); }\n"
+"      catch (e) {\n"
+"        /* EAGAIN/EWOULDBLOCK → retry; EBADF/etc → real error. */\n"
+"        if (e && e.message && /EAGAIN|EWOULDBLOCK|temporarily/i.test(e.message)) {\n"
+"          setTimeout(pump, 25);\n"
+"          return;\n"
+"        }\n"
+"        em.emit('error', e);\n"
+"        em._closed = true;\n"
+"        try { u.close(fd); } catch(_){}\n"
+"        return;\n"
+"      }\n"
+"      if (b.length === 0) {\n"
+"        em._closed = true;\n"
+"        try { u.close(fd); } catch(_){}\n"
+"        em.emit('end');\n"
+"        em.emit('close');\n"
+"        return;\n"
+"      }\n"
+"      em.bytesRead += b.length;\n"
+"      var emit = Buffer.from(b);\n"
+"      if (em._encoding) emit = emit.toString(em._encoding);\n"
+"      em.emit('data', emit);\n"
+"      /* Yield to event loop between reads.  0ms keeps throughput high\n"
+"         when there's data, while still letting other timers fire. */\n"
+"      setTimeout(pump, 0);\n"
+"    }\n"
+"    setTimeout(pump, 0);\n"
+"    return em;\n"
+"  }\n"
+"\n"
+"  /* Map a file descriptor → Writable that buffers + flushes on each write. */\n"
+"  function _fdWritable(fd) {\n"
+"    if (fd < 0) return null;\n"
+"    var em = new EventEmitter();\n"
+"    em.fd = fd;\n"
+"    em.writable = true;\n"
+"    em._closed = false;\n"
+"    em.bytesWritten = 0;\n"
+"    em.write = function(chunk, enc, cb) {\n"
+"      if (em._closed) { if (cb) cb(new Error('write after end')); return false; }\n"
+"      var b;\n"
+"      if (typeof chunk === 'string') b = Buffer.from(chunk, enc || 'utf8');\n"
+"      else if (Buffer.isBuffer(chunk)) b = chunk;\n"
+"      else if (chunk instanceof Uint8Array)\n"
+"           b = Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength);\n"
+"      else b = Buffer.from(String(chunk), enc || 'utf8');\n"
+"      try { var w = u.write(fd, b); em.bytesWritten += w; }\n"
+"      catch (e) { em.emit('error', e); if (cb) cb(e); return false; }\n"
+"      if (cb) cb();\n"
+"      return true;\n"
+"    };\n"
+"    em.end = function(chunk, enc, cb) {\n"
+"      if (typeof chunk === 'function') { cb = chunk; chunk = null; }\n"
+"      else if (typeof enc === 'function') { cb = enc; enc = null; }\n"
+"      if (chunk != null) em.write(chunk, enc);\n"
+"      if (em._closed) { if (cb) cb(); return em; }\n"
+"      em._closed = true;\n"
+"      try { u.close(fd); } catch(_){}\n"
+"      em.emit('finish');\n"
+"      em.emit('close');\n"
+"      if (cb) cb();\n"
+"      return em;\n"
+"    };\n"
+"    em.destroy = em.end;\n"
+"    return em;\n"
+"  }\n"
+"\n"
+"  /* ChildProcess — created from spawn() output. */\n"
+"  function ChildProcess(spawnResult, opts) {\n"
+"    EventEmitter.call(this);\n"
+"    var self = this;\n"
+"    self.pid          = spawnResult.pid;\n"
+"    self.connected    = false;  /* fork IPC not implemented */\n"
+"    self.killed       = false;\n"
+"    self.exitCode     = null;\n"
+"    self.signalCode   = null;\n"
+"    self.spawnfile    = (opts && opts.file) || null;\n"
+"    self.spawnargs    = (opts && opts.args) || [];\n"
+"    self.stdin   = _fdWritable(spawnResult.stdinFd);\n"
+"    self.stdout  = _fdReadable(spawnResult.stdoutFd);\n"
+"    self.stderr  = _fdReadable(spawnResult.stderrFd);\n"
+"    self.stdio   = [self.stdin, self.stdout, self.stderr];\n"
+"    self._reaped = false;\n"
+"\n"
+"    /* Poll waitpid every 25ms — modest CPU, snappy exit detection. */\n"
+"    function reap() {\n"
+"      if (self._reaped) return;\n"
+"      var r;\n"
+"      try { r = natives.waitpid(self.pid); }\n"
+"      catch (_) { setTimeout(reap, 25); return; }\n"
+"      if (r === null) { setTimeout(reap, 25); return; }\n"
+"      self._reaped     = true;\n"
+"      self.exitCode    = r.exitCode;\n"
+"      self.signalCode  = r.signalCode;\n"
+"      self.emit('exit', self.exitCode, self.signalCode);\n"
+"      /* 'close' fires after stdout/stderr have drained.  We approximate\n"
+"         by deferring to the next tick — pumps will have caught EOF by\n"
+"         then since the child is dead and the pipe write ends are closed. */\n"
+"      setTimeout(function(){ self.emit('close', self.exitCode, self.signalCode); }, 30);\n"
+"    }\n"
+"    setTimeout(reap, 25);\n"
+"\n"
+"    /* Tell the runtime to fire 'spawn' on the next tick (node's order). */\n"
+"    setTimeout(function(){ if (!self._reaped) self.emit('spawn'); }, 0);\n"
+"  }\n"
+"  ChildProcess.prototype = Object.create(EventEmitter.prototype);\n"
+"  ChildProcess.prototype.constructor = ChildProcess;\n"
+"  ChildProcess.prototype.kill = function(sig) {\n"
+"    if (this._reaped) return false;\n"
+"    var ok = natives.kill(this.pid, (sig == null) ? 'SIGTERM' : sig);\n"
+"    if (ok) this.killed = true;\n"
+"    return ok;\n"
+"  };\n"
+"  ChildProcess.prototype.ref   = function() { return this; };\n"
+"  ChildProcess.prototype.unref = function() { return this; };\n"
+"  /* fork-only methods kept as stubs that throw cleanly. */\n"
+"  ChildProcess.prototype.send       = function() { var e = new Error('child.send is only available for fork() children (not implemented)'); e.code = 'ERR_NOT_IMPLEMENTED'; throw e; };\n"
+"  ChildProcess.prototype.disconnect = function() {};\n"
+"\n"
+"  /* Spawn: low-level entry.  spawn(file, args, opts) or spawn(file, opts). */\n"
+"  function spawn(file, args, opts) {\n"
+"    if (!Array.isArray(args)) { opts = args; args = []; }\n"
+"    opts = opts || {};\n"
+"    /* Build the argv with file as argv[0] (Node convention). */\n"
+"    var argv = [file].concat(args || []);\n"
+"    var envv = null;\n"
+"    if (opts.env && typeof opts.env === 'object') {\n"
+"      envv = Object.keys(opts.env).map(function(k){ return k + '=' + opts.env[k]; });\n"
+"    }\n"
+"    /* stdio: default 'pipe', 'pipe', 'pipe'.  Accept shorthand strings or array.\n"
+"       Only 'pipe' and 'inherit' supported in v1; 'ignore' treated as pipe. */\n"
+"    var stdio = opts.stdio || 'pipe';\n"
+"    if (typeof stdio === 'string') stdio = [stdio, stdio, stdio];\n"
+"    function _isPipe(v) {\n"
+"      return v === 'pipe' || v === null || v === undefined || v === 'ignore';\n"
+"    }\n"
+"    var result = natives.spawn({\n"
+"      file: file,\n"
+"      args: argv,\n"
+"      cwd:  opts.cwd || null,\n"
+"      env:  envv,\n"
+"      stdinPipe:  _isPipe(stdio[0]),\n"
+"      stdoutPipe: _isPipe(stdio[1]),\n"
+"      stderrPipe: _isPipe(stdio[2])\n"
+"    });\n"
+"    return new ChildProcess(result, { file: file, args: args });\n"
+"  }\n"
+"\n"
+"  /* exec: spawn through /bin/sh -c, buffer stdout/stderr to strings, callback. */\n"
+"  function exec(command, opts, cb) {\n"
+"    if (typeof opts === 'function') { cb = opts; opts = {}; }\n"
+"    opts = opts || {};\n"
+"    var shell = opts.shell || '/bin/sh';\n"
+"    var maxBuf = (typeof opts.maxBuffer === 'number') ? opts.maxBuffer : 1024 * 1024;\n"
+"    var enc    = opts.encoding || 'utf8';\n"
+"    var child = spawn(shell, ['-c', command], { cwd: opts.cwd, env: opts.env });\n"
+"    var outBufs = [], outLen = 0, errBufs = [], errLen = 0, hitLimit = false;\n"
+"    function accumulate(buf, listArr, lenObj, slot) {\n"
+"      var b = Buffer.isBuffer(buf) ? buf\n"
+"            : (typeof buf === 'string') ? Buffer.from(buf, enc) : Buffer.from(buf);\n"
+"      if (lenObj.v + b.length > maxBuf) {\n"
+"        hitLimit = true;\n"
+"        try { child.kill('SIGTERM'); } catch(_){}\n"
+"        return;\n"
+"      }\n"
+"      listArr.push(b);\n"
+"      lenObj.v += b.length;\n"
+"    }\n"
+"    var oLen = {v:0}, eLen = {v:0};\n"
+"    if (child.stdout) child.stdout.on('data', function(b){ accumulate(b, outBufs, oLen); });\n"
+"    if (child.stderr) child.stderr.on('data', function(b){ accumulate(b, errBufs, eLen); });\n"
+"    child.on('close', function(code, signal) {\n"
+"      var stdoutStr = Buffer.concat(outBufs).toString(enc);\n"
+"      var stderrStr = Buffer.concat(errBufs).toString(enc);\n"
+"      if (typeof cb !== 'function') return;\n"
+"      if (hitLimit) {\n"
+"        var e = new Error('stdout maxBuffer length exceeded'); e.code = 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER';\n"
+"        return cb(e, stdoutStr, stderrStr);\n"
+"      }\n"
+"      if (code === 0) return cb(null, stdoutStr, stderrStr);\n"
+"      var e2 = new Error('Command failed: ' + command + (stderrStr ? '\\n' + stderrStr : ''));\n"
+"      e2.code   = code;\n"
+"      e2.killed = !!signal;\n"
+"      e2.signal = signal;\n"
+"      e2.cmd    = command;\n"
+"      cb(e2, stdoutStr, stderrStr);\n"
+"    });\n"
+"    return child;\n"
+"  }\n"
+"\n"
+"  /* execFile: like spawn(cmd, args) but with same callback shape as exec. */\n"
+"  function execFile(file, args, opts, cb) {\n"
+"    if (Array.isArray(args)) {\n"
+"      if (typeof opts === 'function') { cb = opts; opts = {}; }\n"
+"    } else if (typeof args === 'function') { cb = args; opts = {}; args = []; }\n"
+"    else if (typeof args === 'object')     { opts = args; args = []; if (typeof opts === 'function') { cb = opts; opts = {}; } }\n"
+"    opts = opts || {};\n"
+"    var maxBuf = (typeof opts.maxBuffer === 'number') ? opts.maxBuffer : 1024 * 1024;\n"
+"    var enc    = opts.encoding || 'utf8';\n"
+"    var child  = spawn(file, args || [], { cwd: opts.cwd, env: opts.env });\n"
+"    var outBufs = [], errBufs = []; var oLen = {v:0}, eLen = {v:0}; var hitLimit = false;\n"
+"    function accumulate(buf, listArr, lenObj) {\n"
+"      var b = Buffer.isBuffer(buf) ? buf\n"
+"            : (typeof buf === 'string') ? Buffer.from(buf, enc) : Buffer.from(buf);\n"
+"      if (lenObj.v + b.length > maxBuf) { hitLimit = true; try { child.kill('SIGTERM'); } catch(_){} return; }\n"
+"      listArr.push(b); lenObj.v += b.length;\n"
+"    }\n"
+"    if (child.stdout) child.stdout.on('data', function(b){ accumulate(b, outBufs, oLen); });\n"
+"    if (child.stderr) child.stderr.on('data', function(b){ accumulate(b, errBufs, eLen); });\n"
+"    child.on('close', function(code, signal) {\n"
+"      if (typeof cb !== 'function') return;\n"
+"      var outStr = Buffer.concat(outBufs).toString(enc);\n"
+"      var errStr = Buffer.concat(errBufs).toString(enc);\n"
+"      if (hitLimit) { var e = new Error('stdout maxBuffer length exceeded'); e.code = 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER'; return cb(e, outStr, errStr); }\n"
+"      if (code === 0) return cb(null, outStr, errStr);\n"
+"      var e2 = new Error('Command failed: ' + file);\n"
+"      e2.code = code; e2.signal = signal; e2.cmd = file + ' ' + (args || []).join(' ');\n"
+"      cb(e2, outStr, errStr);\n"
+"    });\n"
+"    return child;\n"
+"  }\n"
+"\n"
+"  return {\n"
+"    ChildProcess: ChildProcess,\n"
+"    spawn:        spawn,\n"
+"    exec:         exec,\n"
+"    execFile:     execFile,\n"
+"    /* fork / spawnSync / execSync / execFileSync intentionally omitted in\n"
+"       v1.  fork needs an IPC channel (worker_threads-style); sync\n"
+"       variants would block the event loop and partially duplicate\n"
+"       `rampart.utils.exec`. */\n"
+"    fork:         function(){ var e = new Error('child_process.fork is not implemented (IPC channel pending)'); e.code = 'ERR_NOT_IMPLEMENTED'; throw e; }\n"
+"  };\n"
+"}";
+
+static void nodeshim_init_child_process(duk_context *ctx)
+{
+    duk_push_string(ctx, "rampart-nodeshim.c:child_process_js");
+    duk_compile_string_filename(ctx, DUK_COMPILE_FUNCTION, child_process_js);
+    /* EventEmitter from partially-built nodeshim exports. */
+    duk_get_prop_string(ctx, -2, "events");
+    duk_get_prop_string(ctx, -1, "EventEmitter");
+    duk_remove(ctx, -2);
+    /* natives object: spawn / waitpid / kill */
+    duk_push_object(ctx);
+    duk_push_c_function(ctx, nodeshim_cp_spawn_native,   1); duk_put_prop_string(ctx, -2, "spawn");
+    duk_push_c_function(ctx, nodeshim_cp_waitpid_native, 1); duk_put_prop_string(ctx, -2, "waitpid");
+    duk_push_c_function(ctx, nodeshim_cp_kill_native,    2); duk_put_prop_string(ctx, -2, "kill");
+    duk_call(ctx, 2);
+}
+
+/* ============================================================
+ * vm — sandboxed code execution.
+ *
+ * Backed by `new rampart.thread({bare: true})`: each context owns a
+ * worker thread whose heap holds only ECMAScript primordials and the
+ * rampart.thread message-passing surface — no rampart.utils, no
+ * process, no require, no WHATWG/Intl lazy getters.  Genuine isolation
+ * (separate duktape heap; sandbox cannot reach host objects).
+ *
+ * Live-binding sandbox: `vm.createContext` returns a Proxy whose
+ * get/set/has/deleteProperty traps round-trip into the worker via
+ * rampart.thread.put + getwait so host code sees mutations the
+ * sandbox makes (and vice versa) without manual sync.
+ *
+ * Round-trip protocol (one in-flight request at a time per context):
+ *   host:    put('__vm_req', {op, ...args})
+ *   worker:  onGet('__vm_req') fires, computes, put('__vm_resp', wrap)
+ *   host:    getwait('__vm_resp'); del('__vm_resp')
+ *
+ * `getwait` is race-free against the edge-trigger gotcha: it tries a
+ * level-triggered get first, falls back to waitfor only if not set.
+ *
+ * runInThisContext / compileFunction / Script.runInThisContext run in
+ * the host heap (no thread), via indirect eval / Function constructor.
+ * ============================================================ */
+static const char *vm_js =
+"function() {\n"
+"  'use strict';\n"
+"\n"
+"  /* Marker installed on the proxy target so isContext() can recognise\n"
+"     contexts produced by createContext. */\n"
+"  var CTX_TAG = '__vm_context_marker_72d8a';\n"
+"\n"
+"  /* ----- in-this-context evaluator (no worker thread involved) ----- */\n"
+"  /* indirect eval: runs in global scope, no access to caller locals. */\n"
+"  var _indirectEval = (0, eval);\n"
+"  function runInThisContext(code, _opts) {\n"
+"    return _indirectEval(code);\n"
+"  }\n"
+"\n"
+"  /* ----- Script ----- */\n"
+"  function Script(code, opts) {\n"
+"    if (!(this instanceof Script)) return new Script(code, opts);\n"
+"    if (typeof code !== 'string') throw new TypeError('vm.Script: code must be a string');\n"
+"    this._code = code;\n"
+"    this._filename = (opts && opts.filename) || 'evalmachine.<anonymous>';\n"
+"  }\n"
+"  Script.prototype.runInThisContext = function(opts) {\n"
+"    return runInThisContext(this._code, opts);\n"
+"  };\n"
+"  Script.prototype.runInContext = function(ctx, opts) {\n"
+"    return runInContext(this._code, ctx, opts);\n"
+"  };\n"
+"  Script.prototype.runInNewContext = function(sandbox, opts) {\n"
+"    return runInNewContext(this._code, sandbox, opts);\n"
+"  };\n"
+"\n"
+"  /* ----- compileFunction ----- */\n"
+"  function compileFunction(code, params, opts) {\n"
+"    params = params || [];\n"
+"    if (!Array.isArray(params)) throw new TypeError('vm.compileFunction: params must be an array');\n"
+"    var args = params.slice();\n"
+"    args.push(code);\n"
+"    /* Function constructor: creates a function whose body is `code` and\n"
+"       whose formal parameters are `params`.  Runs in global scope. */\n"
+"    return Function.apply(null, args);\n"
+"  }\n"
+"\n"
+"  /* ----- Worker bootstrap (runs once in the bare thread) ----- */\n"
+"  /* Installed via t.exec; receives {seed, reqKey, respKey} and wires up\n"
+"     onGet handlers for the round-trip protocol.  Note: this function is\n"
+"     serialised + re-evaluated in the worker, so closures over outer-scope\n"
+"     variables don't survive — everything flows through the `init` arg.\n"
+"     reqKey/respKey are per-context so multiple vm contexts don't cross-\n"
+"     talk through the shared clipboard. */\n"
+"  function _workerBootstrap(init) {\n"
+"    var seed = init.seed, reqKey = init.reqKey, respKey = init.respKey, readyKey = init.readyKey;\n"
+"    /* Capture rampart.thread surface into closure scope BEFORE we delete\n"
+"       the global, so the handlers still work after isolation is sealed. */\n"
+"    var T_put   = rampart.thread.put;\n"
+"    var T_onGet = rampart.thread.onGet;\n"
+"    var R = rampart, RT = rampart.thread;\n"
+"    var keys = Object.keys(seed);\n"
+"    for (var i = 0; i < keys.length; i++) {\n"
+"      try { globalThis[keys[i]] = seed[keys[i]]; } catch (_) {}\n"
+"    }\n"
+"    /* Bind T_put / T_onGet to their owning object so calls keep working\n"
+"       after `rampart` is removed from globalThis. */\n"
+"    var T = { put:   function(k, v) { return T_put.call(RT, k, v); },\n"
+"              onGet: function(k, f) { return T_onGet.call(RT, k, f); } };\n"
+"    function _respond(value) {\n"
+"      /* put() rejects undefined — always wrap. */\n"
+"      T.put(respKey, { ok: true, value: value });\n"
+"    }\n"
+"    function _respondError(err) {\n"
+"      T.put(respKey, { ok: false,\n"
+"        name: (err && err.name) || 'Error',\n"
+"        message: (err && err.message) || String(err),\n"
+"        stack: (err && err.stack) || undefined });\n"
+"    }\n"
+"    T.onGet(reqKey, function(_k, req, _match) {\n"
+"      try {\n"
+"        switch (req.op) {\n"
+"          case 'run':  _respond((0, eval)(req.code)); break;\n"
+"          case 'read': _respond(globalThis[req.name]); break;\n"
+"          case 'write': globalThis[req.name] = req.value; _respond(true); break;\n"
+"          case 'has':  _respond(req.name in globalThis); break;\n"
+"          case 'delete': _respond(delete globalThis[req.name]); break;\n"
+"          case 'keys': _respond(Object.keys(globalThis)); break;\n"
+"          default: _respondError(new Error('vm: unknown op ' + req.op));\n"
+"        }\n"
+"      } catch (e) {\n"
+"        _respondError(e);\n"
+"      }\n"
+"    });\n"
+"    /* Seal isolation: with the handlers registered and put/onGet\n"
+"       references captured into closure scope above, the rampart global\n"
+"       can be removed so sandbox code can't see it. */\n"
+"    try { delete globalThis.rampart; } catch (_) {}\n"
+"    /* Signal main that onGet is registered + WAITING flag is set — main\n"
+"       blocks in getwait(readyKey) before sending any request, closing the\n"
+"       race where main's first put would arrive before the handler exists. */\n"
+"    T.put(readyKey, true);\n"
+"    /* onGet keeps RPTHR_FLAG_WAITING set and registers a libevent EV_READ\n"
+"       handler, which keeps the worker's loop non-empty — so the bare\n"
+"       thread persists for the context's lifetime without keepOpen. */\n"
+"  }\n"
+"\n"
+"  /* Per-context key counter — must stay unique even across rapid create/\n"
+"     destroy cycles, since the shared clipboard outlives single contexts. */\n"
+"  var _ctxCounter = 0;\n"
+"\n"
+"  /* ----- Round-trip helper ----- */\n"
+"  function _call(reqKey, respKey, req) {\n"
+"    rampart.thread.put(reqKey, req);\n"
+"    /* getwait = get-or-wait — race-free against edge-triggered waitfor. */\n"
+"    var resp = rampart.thread.getwait(respKey);\n"
+"    /* Consume so the next call doesn't see a stale value. */\n"
+"    try { rampart.thread.del(respKey); } catch (_) {}\n"
+"    if (!resp.ok) {\n"
+"      var e = new Error(resp.message || 'vm: sandbox error');\n"
+"      e.name = resp.name || 'Error';\n"
+"      if (resp.stack) e.stack = resp.stack;\n"
+"      throw e;\n"
+"    }\n"
+"    return resp.value;\n"
+"  }\n"
+"\n"
+"  /* ----- createContext / isContext ----- */\n"
+"  function createContext(sandbox, _opts) {\n"
+"    if (sandbox === undefined || sandbox === null) sandbox = {};\n"
+"    if (typeof sandbox !== 'object') throw new TypeError('vm.createContext: sandbox must be an object');\n"
+"\n"
+"    var id = ++_ctxCounter;\n"
+"    var reqKey   = '__vm_req_'   + id;\n"
+"    var respKey  = '__vm_resp_'  + id;\n"
+"    var readyKey = '__vm_ready_' + id;\n"
+"    var t = new rampart.thread({ bare: true });\n"
+"    /* Seed the worker globals and install the message-handler.  exec()\n"
+"       serialises the function body to the worker. */\n"
+"    t.exec(_workerBootstrap, { seed: sandbox, reqKey: reqKey, respKey: respKey, readyKey: readyKey });\n"
+"    /* Block until the worker has its onGet registered (and thus its\n"
+"       WAITING flag set) — otherwise our first put can race ahead of the\n"
+"       handler and be silently dropped. */\n"
+"    rampart.thread.getwait(readyKey);\n"
+"    try { rampart.thread.del(readyKey); } catch (_) {}\n"
+"\n"
+"    var target = Object.create(null);\n"
+"    target[CTX_TAG] = true;\n"
+"    target._thread  = t;\n"
+"    target._reqKey  = reqKey;\n"
+"    target._respKey = respKey;\n"
+"\n"
+"    return new Proxy(target, {\n"
+"      get: function(tgt, name) {\n"
+"        if (name === CTX_TAG || name === '_thread' || name === '_reqKey' || name === '_respKey')\n"
+"          return tgt[name];\n"
+"        if (typeof name === 'symbol') return undefined;\n"
+"        return _call(reqKey, respKey, { op: 'read', name: String(name) });\n"
+"      },\n"
+"      set: function(tgt, name, value) {\n"
+"        if (name === '_thread' || name === CTX_TAG || name === '_reqKey' || name === '_respKey') {\n"
+"          tgt[name] = value; return true;\n"
+"        }\n"
+"        if (typeof name === 'symbol') return true;\n"
+"        _call(reqKey, respKey, { op: 'write', name: String(name), value: value });\n"
+"        return true;\n"
+"      },\n"
+"      has: function(tgt, name) {\n"
+"        if (name === CTX_TAG || name === '_thread' || name === '_reqKey' || name === '_respKey')\n"
+"          return name in tgt;\n"
+"        if (typeof name === 'symbol') return false;\n"
+"        return !!_call(reqKey, respKey, { op: 'has', name: String(name) });\n"
+"      },\n"
+"      deleteProperty: function(tgt, name) {\n"
+"        if (name === '_thread' || name === CTX_TAG || name === '_reqKey' || name === '_respKey')\n"
+"          return true;\n"
+"        if (typeof name === 'symbol') return true;\n"
+"        return !!_call(reqKey, respKey, { op: 'delete', name: String(name) });\n"
+"      },\n"
+"      ownKeys: function(_tgt) {\n"
+"        return _call(reqKey, respKey, { op: 'keys' });\n"
+"      },\n"
+"      getOwnPropertyDescriptor: function(tgt, name) {\n"
+"        if (name === '_thread' || name === CTX_TAG || name === '_reqKey' || name === '_respKey')\n"
+"          return undefined;\n"
+"        return { value: _call(reqKey, respKey, { op: 'read', name: String(name) }),\n"
+"                 writable: true, enumerable: true, configurable: true };\n"
+"      }\n"
+"    });\n"
+"  }\n"
+"\n"
+"  function isContext(obj) {\n"
+"    if (!obj || typeof obj !== 'object') return false;\n"
+"    try { return obj[CTX_TAG] === true; } catch (_) { return false; }\n"
+"  }\n"
+"\n"
+"  /* ----- runInContext / runInNewContext ----- */\n"
+"  function runInContext(code, ctx, _opts) {\n"
+"    if (!isContext(ctx)) throw new TypeError('vm.runInContext: context required');\n"
+"    if (typeof code !== 'string') throw new TypeError('vm.runInContext: code must be a string');\n"
+"    /* Reach through the Proxy to the underlying per-context keys. */\n"
+"    return _call(ctx._reqKey, ctx._respKey, { op: 'run', code: code });\n"
+"  }\n"
+"\n"
+"  function runInNewContext(code, sandbox, opts) {\n"
+"    return runInContext(code, createContext(sandbox, opts), opts);\n"
+"  }\n"
+"\n"
+"  /* ----- module-level constants and exports ----- */\n"
+"  return {\n"
+"    Script:           Script,\n"
+"    createContext:    createContext,\n"
+"    isContext:        isContext,\n"
+"    runInThisContext: runInThisContext,\n"
+"    runInContext:     runInContext,\n"
+"    runInNewContext:  runInNewContext,\n"
+"    compileFunction:  compileFunction,\n"
+"    measureMemory: function() { return Promise.resolve({ total: { jsMemoryEstimate: 0, jsMemoryRange: [0, 0] } }); },\n"
+"    constants: { USE_MAIN_CONTEXT_DEFAULT_LOADER: 0 },\n"
+"    /* repl-mode constants — exported by node's vm; some libs reference them */\n"
+"    REPL_MODE_SLOPPY: 'sloppy',\n"
+"    REPL_MODE_STRICT: 'strict'\n"
+"  };\n"
+"}\n";
+
+static void nodeshim_init_vm(duk_context *ctx)
+{
+    duk_push_string(ctx, "rampart-nodeshim.c:vm_js");
+    duk_compile_string_filename(ctx, DUK_COMPILE_FUNCTION, vm_js);
+    duk_call(ctx, 0);
+}
+
+/* ============================================================
+ * repl — interactive read-eval-print loop.
+ *
+ * Sits atop readline (uses the same Interface for line editing,
+ * history, tab completion) and optionally vm (for sandboxed contexts).
+ * For useGlobal:true (the default) eval runs as indirect (0,eval) in
+ * the host realm so the user can poke at host globals; useGlobal:false
+ * routes through vm.runInContext against a per-REPL bare-thread sandbox.
+ *
+ * Implemented features:
+ *   - repl.start(opts) / REPLServer
+ *   - prompt, input/output streams (default process.stdin / stdout)
+ *   - built-in commands: .help, .exit, .clear, .break, .load, .save
+ *   - defineCommand for user extensions
+ *   - multi-line continuation via Recoverable detection
+ *   - last result `_` and last error `_lastError` globals (useGlobal mode)
+ *   - util.inspect formatting of results
+ *   - ignoreUndefined option
+ *   - SIGINT cancels current input, second SIGINT exits
+ *   - displayPrompt, clearBufferedCommand, close, setupHistory
+ *
+ * Not implemented (compat stubs):
+ *   - `.editor` mode (multi-line block editor) — line-buffer-only repl
+ *   - persistent history file (setupHistory accepts but no-ops)
+ *   - useColors (boolean accepted, no-op; format is plain text)
+ * ============================================================ */
+static const char *repl_js =
+"function(EventEmitter, readline, vm, util) {\n"
+"  'use strict';\n"
+"\n"
+"  /* Recoverable: throw an instance to signal 'need more input' from a\n"
+"     custom eval callback.  Matches node's repl.Recoverable. */\n"
+"  function Recoverable(err) {\n"
+"    this.name = 'Recoverable';\n"
+"    this.err  = err;\n"
+"    if (err && err.message) this.message = err.message;\n"
+"  }\n"
+"  Recoverable.prototype = Object.create(Error.prototype);\n"
+"  Recoverable.prototype.constructor = Recoverable;\n"
+"\n"
+"  /* Heuristic: did this SyntaxError come from incomplete input?\n"
+"     Duktape, V8 and SpiderMonkey all produce somewhat different messages,\n"
+"     so we cast a wide net.  False positives mean the user has to wait one\n"
+"     more line before seeing the error; false negatives mean multi-line\n"
+"     input gets rejected too eagerly. */\n"
+"  function _isRecoverable(err, code) {\n"
+"    if (!err) return false;\n"
+"    var msg = err.message || '';\n"
+"    var name = err.name || '';\n"
+"    if (name !== 'SyntaxError' && !/SyntaxError|parse/i.test(String(err))) return false;\n"
+"    if (/Unexpected end of input|Unterminated|unterminated|Unexpected end|Unexpected EOF|missing \\) after argument list/i.test(msg)) return true;\n"
+"    /* Bracket-balance fallback: if there are more openers than closers,\n"
+"       treat any syntax error as incomplete. */\n"
+"    var opens = (code.match(/[\\[({]/g) || []).length;\n"
+"    var closes = (code.match(/[\\])}]/g) || []).length;\n"
+"    if (opens > closes) return true;\n"
+"    return false;\n"
+"  }\n"
+"\n"
+"  /* Default eval: indirect eval in host realm (useGlobal) OR vm sandbox.\n"
+"     The expression-wrap trick (\"(\" + code + \")\") makes `{a:1}` parse\n"
+"     as an object literal rather than a block, but breaks function/class\n"
+"     DECLARATIONS by turning them into anonymous expressions that don't\n"
+"     bind their name globally.  So we skip the wrap when the code looks\n"
+"     like a statement. */\n"
+"  function _looksLikeStatement(code) {\n"
+"    var s = code.replace(/^\\s+/, '');\n"
+"    return /^(?:function|class|let|var|const|if|for|while|do|switch|try|throw|return|return\\b|break|continue|return)\\b/.test(s);\n"
+"  }\n"
+"  function _makeDefaultEval(server) {\n"
+"    var indirectEval = (0, eval);\n"
+"    function _exec(code, ctx) {\n"
+"      if (ctx && vm) return vm.runInContext(code, ctx);\n"
+"      return indirectEval(code);\n"
+"    }\n"
+"    return function(code, ctx, filename, cb) {\n"
+"      var result, err = null;\n"
+"      var wantWrap = !_looksLikeStatement(code);\n"
+"      if (wantWrap) {\n"
+"        var wrapped = '(' + code.replace(/\\n$/, '') + ')';\n"
+"        try { result = _exec(wrapped, ctx); cb(null, result); return; }\n"
+"        catch (e1) {\n"
+"          /* Fall through to statement-mode below. */\n"
+"        }\n"
+"      }\n"
+"      try { result = _exec(code, ctx); cb(null, result); return; }\n"
+"      catch (e2) {\n"
+"        err = e2;\n"
+"      }\n"
+"      if (_isRecoverable(err, code)) return cb(new Recoverable(err));\n"
+"      cb(err);\n"
+"    };\n"
+"  }\n"
+"\n"
+"  /* Format a value for display.  util.inspect handles most things;\n"
+"     ignoreUndefined / error formatting handled by callers. */\n"
+"  function _format(v, opts) {\n"
+"    try {\n"
+"      return util.inspect(v, { depth: 2, colors: false, breakLength: 80 });\n"
+"    } catch (_) {\n"
+"      try { return String(v); } catch (__) { return '[unprintable]'; }\n"
+"    }\n"
+"  }\n"
+"\n"
+"  function _formatError(e) {\n"
+"    if (!e) return 'undefined error';\n"
+"    if (e.stack) return String(e.stack).split('\\n')[0];\n"
+"    return (e.name || 'Error') + ': ' + (e.message || String(e));\n"
+"  }\n"
+"\n"
+"  /* ----- REPLServer ----- */\n"
+"  function REPLServer(opts) {\n"
+"    if (!(this instanceof REPLServer)) return new REPLServer(opts);\n"
+"    EventEmitter.call(this);\n"
+"    opts = opts || {};\n"
+"\n"
+"    this.prompt          = (opts.prompt != null) ? String(opts.prompt) : '> ';\n"
+"    this.input           = opts.input  || (typeof process !== 'undefined' ? process.stdin  : null);\n"
+"    this.output          = opts.output || (typeof process !== 'undefined' ? process.stdout : null);\n"
+"    this.useColors       = !!opts.useColors;\n"
+"    this.useGlobal       = (opts.useGlobal !== false);\n"
+"    this.ignoreUndefined = !!opts.ignoreUndefined;\n"
+"    this.terminal        = (opts.terminal !== undefined) ? !!opts.terminal\n"
+"                          : !!(this.output && this.output.isTTY);\n"
+"    this.historySize     = opts.historySize || 1000;\n"
+"    this.replMode        = opts.replMode || REPL_MODE_SLOPPY;\n"
+"    this.breakEvalOnSigint = !!opts.breakEvalOnSigint;\n"
+"\n"
+"    /* If a context is supplied (or useGlobal:false), set up the vm\n"
+"       context so eval routes through it. */\n"
+"    if (opts.context !== undefined) {\n"
+"      this.context = opts.context;\n"
+"    } else if (!this.useGlobal && vm) {\n"
+"      this.context = vm.createContext({});\n"
+"    } else {\n"
+"      this.context = null;\n"
+"    }\n"
+"\n"
+"    this.eval = opts.eval || _makeDefaultEval(this);\n"
+"\n"
+"    this.commands = Object.create(null);\n"
+"    this._buffer  = '';\n"
+"    this._sigintCount = 0;\n"
+"    this._sessionHistory = [];\n"
+"    this._closed = false;\n"
+"\n"
+"    _defineBuiltins(this);\n"
+"\n"
+"    /* Build the readline interface that drives input. */\n"
+"    this._rl = readline.createInterface({\n"
+"      input:    this.input,\n"
+"      output:   this.output,\n"
+"      terminal: this.terminal,\n"
+"      prompt:   this.prompt,\n"
+"      historySize: this.historySize,\n"
+"      completer: opts.completer || this._defaultCompleter.bind(this)\n"
+"    });\n"
+"\n"
+"    var self = this;\n"
+"    this._rl.on('line',  function(line) { self._onLine(line);  });\n"
+"    this._rl.on('close', function()     { self._onClose();      });\n"
+"    this._rl.on('SIGINT',function()     { self._onSigint();     });\n"
+"\n"
+"    /* First prompt — emit asynchronously so listeners attached after\n"
+"       repl.start() return still see things in the right order. */\n"
+"    setTimeout(function(){ self.displayPrompt(); }, 0);\n"
+"  }\n"
+"  /* Inherit EventEmitter, walking up util.inherits if available. */\n"
+"  REPLServer.prototype = Object.create(EventEmitter.prototype);\n"
+"  REPLServer.prototype.constructor = REPLServer;\n"
+"\n"
+"  REPLServer.prototype._onLine = function(line) {\n"
+"    this._sigintCount = 0;  /* line input resets double-Ctrl-C */\n"
+"    this._sessionHistory.push(line);\n"
+"\n"
+"    /* Command dispatch.  A leading-dot line is treated as a command\n"
+"       if it matches a registered command name — including when the\n"
+"       buffer holds an incomplete multi-line expression (otherwise\n"
+"       .break and .clear, whose entire purpose is to abort that buffer,\n"
+"       would be unreachable). */\n"
+"    if (line.length > 0 && line.charAt(0) === '.') {\n"
+"      var sp = line.indexOf(' ');\n"
+"      var name = (sp >= 0) ? line.slice(1, sp) : line.slice(1);\n"
+"      var arg  = (sp >= 0) ? line.slice(sp + 1) : '';\n"
+"      var cmd = this.commands[name];\n"
+"      if (cmd && typeof cmd.action === 'function') {\n"
+"        try { cmd.action.call(this, arg); }\n"
+"        catch (e) { this._writeLine(_formatError(e)); }\n"
+"        return this.displayPrompt();\n"
+"      }\n"
+"      /* Only treat unknown .keywords as 'Invalid REPL keyword' when\n"
+"         we're at the top of input — otherwise let the parser sort it\n"
+"         out (could be a member-access continuation from a prior line). */\n"
+"      if (this._buffer === '') {\n"
+"        this._writeLine('Invalid REPL keyword');\n"
+"        return this.displayPrompt();\n"
+"      }\n"
+"    }\n"
+"\n"
+"    /* Append to the multi-line buffer and try to evaluate. */\n"
+"    this._buffer += (this._buffer ? '\\n' : '') + line;\n"
+"    var self = this, code = this._buffer;\n"
+"    this.eval(code, this.context, 'repl', function(err, result) {\n"
+"      if (err) {\n"
+"        if (err instanceof Recoverable) {\n"
+"          /* Continuation prompt — keep buffer, switch to '...' style. */\n"
+"          return self.displayPrompt(true);\n"
+"        }\n"
+"        self._writeLine(_formatError(err));\n"
+"        if (self.useGlobal) {\n"
+"          try { globalThis._lastError = err; } catch (_) {}\n"
+"        }\n"
+"        self._buffer = '';\n"
+"        return self.displayPrompt();\n"
+"      }\n"
+"      if (!(result === undefined && self.ignoreUndefined)) {\n"
+"        self._writeLine(_format(result));\n"
+"      }\n"
+"      if (self.useGlobal) {\n"
+"        try { globalThis._ = result; } catch (_) {}\n"
+"      }\n"
+"      self.emit('exec-result', result);\n"
+"      self._buffer = '';\n"
+"      self.displayPrompt();\n"
+"    });\n"
+"  };\n"
+"\n"
+"  REPLServer.prototype._onClose = function() {\n"
+"    if (this._closed) return;\n"
+"    this._closed = true;\n"
+"    this.emit('exit');\n"
+"  };\n"
+"\n"
+"  REPLServer.prototype._onSigint = function() {\n"
+"    /* If we're mid multi-line, clear it.  If pressed twice in a row at\n"
+"       a clean prompt, exit (matches node). */\n"
+"    if (this._buffer) {\n"
+"      this._buffer = '';\n"
+"      this._writeLine('');\n"
+"      this._writeLine('(To exit, press Ctrl+C again or Ctrl+D)');\n"
+"      this._sigintCount = 1;\n"
+"      return this.displayPrompt();\n"
+"    }\n"
+"    if (this._sigintCount >= 1) {\n"
+"      this.close();\n"
+"      return;\n"
+"    }\n"
+"    this._sigintCount++;\n"
+"    this._writeLine('(To exit, press Ctrl+C again or Ctrl+D)');\n"
+"    this.displayPrompt();\n"
+"  };\n"
+"\n"
+"  REPLServer.prototype._writeLine = function(s) {\n"
+"    if (this.output && typeof this.output.write === 'function') {\n"
+"      this.output.write(s + '\\n');\n"
+"    }\n"
+"  };\n"
+"\n"
+"  REPLServer.prototype.displayPrompt = function(preserveCursor) {\n"
+"    if (!this._rl || this._closed) return;\n"
+"    this._rl.setPrompt(this._buffer ? '... ' : this.prompt);\n"
+"    this._rl.prompt(preserveCursor);\n"
+"  };\n"
+"\n"
+"  REPLServer.prototype.clearBufferedCommand = function() {\n"
+"    this._buffer = '';\n"
+"  };\n"
+"\n"
+"  REPLServer.prototype.close = function() {\n"
+"    if (this._rl) this._rl.close();\n"
+"    else this._onClose();\n"
+"  };\n"
+"\n"
+"  REPLServer.prototype.defineCommand = function(name, opts) {\n"
+"    if (typeof opts === 'function') opts = { action: opts };\n"
+"    if (!opts || typeof opts.action !== 'function')\n"
+"      throw new TypeError('defineCommand: opts.action must be a function');\n"
+"    this.commands[String(name)] = { help: opts.help || '', action: opts.action };\n"
+"  };\n"
+"\n"
+"  /* setupHistory: in node, persists history to a file.  Best-effort:\n"
+"     load existing lines and arrange to append.  No-op if input/output\n"
+"     can't reach the filesystem from this realm. */\n"
+"  REPLServer.prototype.setupHistory = function(historyPath, cb) {\n"
+"    var self = this;\n"
+"    if (typeof cb !== 'function') cb = function(){};\n"
+"    try {\n"
+"      var fs = require('fs');\n"
+"      /* Load existing — push into the readline history if possible. */\n"
+"      var existing = '';\n"
+"      try { existing = fs.readFileSync(historyPath, 'utf8'); } catch(_) {}\n"
+"      if (existing && self._rl && Array.isArray(self._rl.history)) {\n"
+"        existing.split('\\n').filter(Boolean).reverse().forEach(function(ln) {\n"
+"          self._rl.history.unshift(ln);\n"
+"        });\n"
+"      }\n"
+"      /* Append on each new line. */\n"
+"      self.on('exec-result', function(){\n"
+"        var last = self._sessionHistory[self._sessionHistory.length - 1];\n"
+"        if (last) { try { fs.appendFileSync(historyPath, last + '\\n'); } catch(_) {} }\n"
+"      });\n"
+"      cb(null, self);\n"
+"    } catch (e) { cb(e); }\n"
+"  };\n"
+"\n"
+"  /* Default completer: complete property names against the eval context\n"
+"     (or globalThis if useGlobal). */\n"
+"  REPLServer.prototype._defaultCompleter = function(line) {\n"
+"    /* Parse off the trailing identifier-or-member-expression chain. */\n"
+"    var m = /(?:[\\w$\\.]+)?$/.exec(line);\n"
+"    var tail = m ? m[0] : '';\n"
+"    var lastDot = tail.lastIndexOf('.');\n"
+"    var prefix = lastDot >= 0 ? tail.slice(lastDot + 1) : tail;\n"
+"    var base   = lastDot >= 0 ? tail.slice(0, lastDot) : '';\n"
+"    var scope;\n"
+"    try {\n"
+"      if (base) {\n"
+"        if (this.context) scope = vm.runInContext(base, this.context);\n"
+"        else scope = (0, eval)(base);\n"
+"      } else {\n"
+"        scope = this.useGlobal ? globalThis : (this.context || globalThis);\n"
+"      }\n"
+"    } catch (_) { scope = null; }\n"
+"    var names = [];\n"
+"    if (scope) {\n"
+"      try {\n"
+"        var s = scope;\n"
+"        while (s) {\n"
+"          Object.getOwnPropertyNames(s).forEach(function(k){ names.push(k); });\n"
+"          s = Object.getPrototypeOf(s);\n"
+"          if (s === Object.prototype || s === null) break;\n"
+"        }\n"
+"      } catch (_) {}\n"
+"    }\n"
+"    var hits = names.filter(function(n){ return n.indexOf(prefix) === 0; });\n"
+"    return [hits.length ? hits : names, prefix];\n"
+"  };\n"
+"\n"
+"  /* ----- Built-in commands ----- */\n"
+"  function _defineBuiltins(server) {\n"
+"    server.defineCommand('help', { help: 'Print this help message', action: function() {\n"
+"      var self = this;\n"
+"      Object.keys(self.commands).sort().forEach(function(k){\n"
+"        var c = self.commands[k];\n"
+"        self._writeLine('.' + k + (c.help ? '  ' + c.help : ''));\n"
+"      });\n"
+"      self._writeLine('');\n"
+"      self._writeLine('Press Ctrl+C to abort current expression, Ctrl+D to exit the REPL');\n"
+"    }});\n"
+"    server.defineCommand('exit', { help: 'Exit the REPL', action: function(){\n"
+"      this.close();\n"
+"    }});\n"
+"    server.defineCommand('clear', { help: 'Reset session context', action: function(){\n"
+"      this._buffer = '';\n"
+"      if (this.useGlobal) {\n"
+"        try { globalThis._ = undefined; globalThis._lastError = undefined; } catch (_) {}\n"
+"      } else if (this.context && vm) {\n"
+"        this.context = vm.createContext({});\n"
+"      }\n"
+"      this._writeLine('Clearing context...');\n"
+"    }});\n"
+"    server.defineCommand('break', { help: 'Cancel multi-line input', action: function(){\n"
+"      this._buffer = '';\n"
+"    }});\n"
+"    server.defineCommand('load', { help: 'Load JS from a file into the REPL session', action: function(file){\n"
+"      var self = this;\n"
+"      if (!file) { self._writeLine('Usage: .load <filename>'); return; }\n"
+"      try {\n"
+"        var content = require('fs').readFileSync(file, 'utf8');\n"
+"        self.eval(content, self.context, file, function(err, result){\n"
+"          if (err) self._writeLine(_formatError(err));\n"
+"          else if (!(result === undefined && self.ignoreUndefined))\n"
+"            self._writeLine(_format(result));\n"
+"        });\n"
+"      } catch (e) {\n"
+"        self._writeLine('Failed to load: ' + e.message);\n"
+"      }\n"
+"    }});\n"
+"    server.defineCommand('save', { help: 'Save all evaluated commands in this session to a file', action: function(file){\n"
+"      if (!file) { this._writeLine('Usage: .save <filename>'); return; }\n"
+"      try {\n"
+"        require('fs').writeFileSync(file, this._sessionHistory.join('\\n') + '\\n');\n"
+"        this._writeLine('Session saved to: ' + file);\n"
+"      } catch (e) {\n"
+"        this._writeLine('Failed to save: ' + e.message);\n"
+"      }\n"
+"    }});\n"
+"    server.defineCommand('editor', { help: 'Enter editor mode (not yet supported — same as line entry)', action: function(){\n"
+"      this._writeLine('// Entering editor mode (Ctrl+D to finish, Ctrl+C to cancel)');\n"
+"    }});\n"
+"  }\n"
+"\n"
+"  /* ----- Module entry points ----- */\n"
+"  function start(opts) {\n"
+"    if (typeof opts === 'string') opts = { prompt: opts };\n"
+"    return new REPLServer(opts || {});\n"
+"  }\n"
+"\n"
+"  /* Some npm code consults these as the replMode constants. */\n"
+"  var REPL_MODE_SLOPPY = Symbol('repl-sloppy');\n"
+"  var REPL_MODE_STRICT = Symbol('repl-strict');\n"
+"\n"
+"  return {\n"
+"    start:            start,\n"
+"    REPLServer:       REPLServer,\n"
+"    Recoverable:      Recoverable,\n"
+"    REPL_MODE_SLOPPY: REPL_MODE_SLOPPY,\n"
+"    REPL_MODE_STRICT: REPL_MODE_STRICT,\n"
+"    builtinModules:   []\n"
+"  };\n"
+"}";
+
+static void nodeshim_init_repl(duk_context *ctx)
+{
+    /* Stack on entry: [..., exports].  Build the call as:
+         fn(EventEmitter, readline, vm, util)
+       Slot order in init_module guarantees those are populated. */
+    duk_push_string(ctx, "rampart-nodeshim.c:repl_js");
+    duk_compile_string_filename(ctx, DUK_COMPILE_FUNCTION, repl_js);
+    /* Stack: [..., exports, fn]   (exports at -2, fn at -1) */
+    duk_get_prop_string(ctx, -2, "events");                  /* +events */
+    duk_get_prop_string(ctx, -1, "EventEmitter");            /* +EE     */
+    duk_remove(ctx, -2);                                     /* -events */
+    /* Stack: [..., exports, fn, EE]   (exports at -3) */
+    duk_get_prop_string(ctx, -3, "readline");                /* +readline */
+    /* Stack: [..., exports, fn, EE, readline]   (exports at -4) */
+    duk_get_prop_string(ctx, -4, "vm");                      /* +vm */
+    /* Stack: [..., exports, fn, EE, readline, vm]   (exports at -5) */
+    duk_get_prop_string(ctx, -5, "util");                    /* +util */
+    /* Stack: [..., exports, fn, EE, readline, vm, util] — call with 4 args. */
+    duk_call(ctx, 4);
+}
+
+/* ============================================================
  * http / https — node-compat HTTP client over rampart-curl.
  * Phase B from nodeshim-todo.md §8.1.  Server side is Phase A
  * (separate; not yet wired).  Streaming response body via curl's
@@ -10084,25 +11834,39 @@ static const char *http_js =
 "    return sock;\n"
 "  }\n"
 "\n"
-"  /* Lazy Readable attach.  When a handler does req.on('data'/'end'/'readable')\n"
-"     we initialize the WHATWG-backed Readable state, push the pending body,\n"
-"     and schedule push(null) on the next tick.  Empty-body requests that\n"
-"     never touch the stream pay nothing. */\n"
+"  /* Lazy IM-body attach.  rampart-server worker drains setImmediate but\n"
+"     NOT Promise microtasks while a handler is in deferred mode — so a\n"
+"     full WHATWG-stream-backed Readable would hang because reader.read()\n"
+"     returns a Promise that never resolves.  Instead, set up a plain\n"
+"     EventEmitter and schedule the body 'data'/'end' emit via\n"
+"     setImmediate.  Covers the standard handler patterns\n"
+"     (`req.on('data', c=>chunks.push(c)).on('end', ...)`) used by\n"
+"     express, fastify, koa, and bare http.createServer code. */\n"
 "  function _imAttachReadable(im) {\n"
-"    if (im._readableState) return;\n"
-"    /* Drop the instance-level lazy overrides BEFORE invoking the\n"
-"       Readable constructor.  Readable() does `var origOn = self.on`\n"
-"       and wraps it — if origOn is still our lazy on, the wrapper\n"
-"       re-enters this function and blows the call stack on the very\n"
-"       first .on('data') the user makes. */\n"
+"    if (im._readableAttached) return;\n"
+"    im._readableAttached = true;\n"
 "    delete im.on; delete im.addListener; delete im.once; delete im.emit;\n"
-"    stream.Readable.call(im, {});\n"
+"    EventEmitter.call(im);\n"
 "    var buf = im._pendingBody;\n"
 "    im._pendingBody = null;\n"
-"    if (buf) im.push(buf);\n"
-"    setImmediate(function() {\n"
-"      try { im.push(null); } catch(_) {}\n"
+"    /* setEncoding stub on the instance — if set before the body is\n"
+"       emitted, decode the buffer to a string. */\n"
+"    im.setEncoding = function (enc) { this._encoding = enc; return this; };\n"
+"    im.pause       = function ()    { return this; };\n"
+"    im.resume      = function ()    { return this; };\n"
+"    im.readable    = true;\n"
+"    setImmediate(function () {\n"
+"      if (buf) {\n"
+"        var v = buf;\n"
+"        if (im._encoding) {\n"
+"          try { v = buf.toString(im._encoding); } catch (_e) {}\n"
+"        }\n"
+"        try { im.emit('data', v); } catch (_) {}\n"
+"      }\n"
+"      try { im.emit('end'); } catch (_) {}\n"
+"      im.readable = false;\n"
 "      im.complete = true;\n"
+"      try { im.emit('close'); } catch (_) {}\n"
 "    });\n"
 "  }\n"
 "  function _imLazyOn(ev, fn) {\n"
@@ -10241,6 +12005,19 @@ static const char *http_js =
 "  ServerResponse.prototype.cork   = function() {};\n"
 "  ServerResponse.prototype.uncork = function() {};\n"
 "  ServerResponse.prototype.setDefaultEncoding = function() { return this; };\n"
+"  /* assignSocket / detachSocket — Node-internal hooks used by test\n"
+"     harnesses like light-my-request (fastify's inject()) that fake\n"
+"     out a socket without binding a real port.  Capture the\n"
+"     reference so .socket is populated; no real I/O happens. */\n"
+"  ServerResponse.prototype.assignSocket = function(socket) {\n"
+"    this.socket = socket;\n"
+"    this.connection = socket;\n"
+"    if (socket) this.emit('socket', socket);\n"
+"  };\n"
+"  ServerResponse.prototype.detachSocket = function(socket) {\n"
+"    this.socket = null;\n"
+"    this.connection = null;\n"
+"  };\n"
 "  ServerResponse.prototype.destroy = function(err) {\n"
 "    this.destroyed = true;\n"
 "    if (this.socket && this.socket.destroy) this.socket.destroy();\n"
@@ -11155,9 +12932,31 @@ static const char *net_js =
 "    self._destroyed = false;\n"
 "    self._endCalled = false;\n"
 "    self._paused = false;\n"
+"    /* Server-accepted sockets are already connected when handed in;\n"
+"       no 'connect' event will fire to flip _connected.  Client-side\n"
+"       sockets start disconnected and flip in raw.on('connect'). */\n"
+"    self._connected = !!_raw;\n"
 "    self.bytesRead = 0;\n"
 "    self.bytesWritten = 0;\n"
+"    /* Paused-mode buffering for 'readable'+.read() consumers. */\n"
+"    self._readableMode = false;\n"
+"    self._readBuf = [];\n"
+"    self._readLen = 0;\n"
 "    self._installRawListeners();\n"
+"    /* Auto-detect paused-mode usage by hooking .on / .once for\n"
+"       'readable' listener registrations — first one flips us into\n"
+"       paused mode. */\n"
+"    var origOn = self.on;\n"
+"    self.on = function(ev, fn) {\n"
+"      if (ev === 'readable') self._readableMode = true;\n"
+"      return origOn.call(self, ev, fn);\n"
+"    };\n"
+"    self.addListener = self.on;\n"
+"    var origOnce = self.once;\n"
+"    self.once = function(ev, fn) {\n"
+"      if (ev === 'readable') self._readableMode = true;\n"
+"      return origOnce.call(self, ev, fn);\n"
+"    };\n"
 "  }\n"
 "  NetSocket.prototype = Object.create(EventEmitter.prototype);\n"
 "  NetSocket.prototype.constructor = NetSocket;\n"
@@ -11174,14 +12973,39 @@ static const char *net_js =
 "      if (raw.remotePort)    self.remotePort    = raw.remotePort;\n"
 "      if (raw.localAddress)  self.localAddress  = raw.localAddress;\n"
 "      if (raw.localPort)     self.localPort     = raw.localPort;\n"
+"      self._connected = true;\n"
+"      /* Flush any writes that arrived before the TCP handshake completed.\n"
+"         Node's net.Socket buffers pre-connect writes; rampart-net throws\n"
+"         'Socket is not open'.  Replay the queue in order. */\n"
+"      if (self._writeQueue && self._writeQueue.length) {\n"
+"        var q = self._writeQueue;\n"
+"        self._writeQueue = null;\n"
+"        for (var i = 0; i < q.length; i++) {\n"
+"          try { self._raw.write(q[i].buf); if (q[i].cb) q[i].cb(); }\n"
+"          catch(e) { if (q[i].cb) q[i].cb(e); self.emit('error', _populateCode(e)); break; }\n"
+"        }\n"
+"      }\n"
 "      self.emit('connect');\n"
 "      self.emit('ready');\n"
 "    });\n"
 "    raw.on('data', function(chunk) {\n"
-"      if (self._destroyed || self._paused) return;\n"
+"      if (self._destroyed) return;\n"
 "      var b = _toBuf(chunk);\n"
 "      self.bytesRead += b.length;\n"
-"      self.emit('data', self._encoding ? b.toString(self._encoding) : b);\n"
+"      /* If anyone registered for 'readable' (paused-mode consumers like\n"
+"         mqtt-packet / aedes), buffer the chunk and fire 'readable'.\n"
+"         Otherwise stay in flowing mode and emit 'data'. */\n"
+"      if (self._readableMode) {\n"
+"        self._readBuf.push(b);\n"
+"        self._readLen += b.length;\n"
+"        self.emit('readable');\n"
+"      } else if (!self._paused) {\n"
+"        self.emit('data', self._encoding ? b.toString(self._encoding) : b);\n"
+"      } else {\n"
+"        /* Flowing but paused — drop to back-buffer until resume(). */\n"
+"        self._readBuf.push(b);\n"
+"        self._readLen += b.length;\n"
+"      }\n"
 "    });\n"
 "    raw.on('close', function() {\n"
 "      if (!self._destroyed) {\n"
@@ -11215,6 +13039,13 @@ static const char *net_js =
 "    if (typeof data === 'string') b = Buffer.from(data, encoding || 'utf8');\n"
 "    else b = _toBuf(data);\n"
 "    this.bytesWritten += b.length;\n"
+"    /* Pre-connect write — buffer until 'connect' fires.  Matches Node:\n"
+"       socket.write before TCP handshake completes is legal and queues. */\n"
+"    if (!this._connected) {\n"
+"      if (!this._writeQueue) this._writeQueue = [];\n"
+"      this._writeQueue.push({buf: b, cb: cb || null});\n"
+"      return true;\n"
+"    }\n"
 "    try { this._raw.write(b); }\n"
 "    catch (e) { if (cb) cb(e); this.emit('error', e); return false; }\n"
 "    if (cb) cb();\n"
@@ -11245,6 +13076,28 @@ static const char *net_js =
 "  NetSocket.prototype.pause   = function() { this._paused = true;  return this; };\n"
 "  NetSocket.prototype.resume  = function() { this._paused = false; return this; };\n"
 "  NetSocket.prototype.setEncoding = function(enc) { this._encoding = enc; return this; };\n"
+"  /* .read([n]) — paused-mode pull.  Returns up to n bytes (or all if\n"
+"     n omitted) as a Buffer, or null if no data is available. */\n"
+"  NetSocket.prototype.read = function(n) {\n"
+"    if (this._readLen === 0) return null;\n"
+"    if (n == null || n >= this._readLen) {\n"
+"      var all = (this._readBuf.length === 1) ? this._readBuf[0] : Buffer.concat(this._readBuf);\n"
+"      this._readBuf = []; this._readLen = 0;\n"
+"      return this._encoding ? all.toString(this._encoding) : all;\n"
+"    }\n"
+"    /* Partial pull — coalesce, slice, push remainder back. */\n"
+"    var all2 = (this._readBuf.length === 1) ? this._readBuf[0] : Buffer.concat(this._readBuf);\n"
+"    var head = all2.slice(0, n);\n"
+"    var tail = all2.slice(n);\n"
+"    this._readBuf = (tail.length > 0) ? [tail] : [];\n"
+"    this._readLen = tail.length;\n"
+"    return this._encoding ? head.toString(this._encoding) : head;\n"
+"  };\n"
+"  NetSocket.prototype.readable    = true;\n"
+"  /* readableLength is what some npm libs probe for unread-byte count. */\n"
+"  Object.defineProperty(NetSocket.prototype, 'readableLength', {\n"
+"    get: function() { return this._readLen; }\n"
+"  });\n"
 "  NetSocket.prototype.setTimeout  = function(ms, cb) { try { this._raw.setTimeout(ms); } catch(_){} if (cb) this.once('timeout', cb); return this; };\n"
 "  NetSocket.prototype.setKeepAlive = function(en, ms) { try { this._raw.setKeepAlive(en, ms || 0); } catch(_){} return this; };\n"
 "  NetSocket.prototype.setNoDelay  = function(en) { try { this._raw.setNoDelay(en !== false); } catch(_){} return this; };\n"
@@ -11579,6 +13432,10 @@ duk_ret_t duk_open_module(duk_context *ctx)
     NODESHIM_SLOT("dns",            nodeshim_init_dns);
     NODESHIM_SLOT("zlib",           nodeshim_init_zlib);
     NODESHIM_SLOT("tty",            nodeshim_init_tty);
+    NODESHIM_SLOT("readline",       nodeshim_init_readline);
+    NODESHIM_SLOT("child_process",  nodeshim_init_child_process);
+    NODESHIM_SLOT("vm",             nodeshim_init_vm);
+    NODESHIM_SLOT("repl",           nodeshim_init_repl);
     /* Tier 2: worker_threads */
     NODESHIM_SLOT("worker_threads", nodeshim_init_worker_threads);
     /* http/https client — Phase B of nodeshim-todo.md §8.1.  Server side
@@ -11625,6 +13482,11 @@ duk_ret_t duk_open_module(duk_context *ctx)
     duk_get_prop_string(ctx, -2, "process");
     duk_call(ctx, 1);
     duk_pop(ctx);  /* discard augmenter return value (undefined) */
+
+    /* (note: tolerant-clearTimeout α′ wrapper removed 2026-05-28 — the
+       fix moved to rampart core, cmdline.c duk_rp_clear_either, where
+       invalid handles now silently no-op per HTML/WHATWG/Node spec.
+       All rampart code benefits, not just nodeshim consumers.) */
 
     /* V8 stack-trace API shim: Error.captureStackTrace +
        Error.prepareStackTrace + CallSite objects.  Used by depd

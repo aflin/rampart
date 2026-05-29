@@ -274,29 +274,40 @@ async function redisTests(rcl) {
    =================================================================== */
 
 async function main() {
-    printf("=== curl async/await tests ===\n");
-    await curlTests();
-
-    printf("\n=== redis async/await tests ===\n");
-    var redis = require("rampart-redis");
-    var rcl;
-
     try {
-        rcl = new redis.init(13287);
-    } catch(e) {
-        if (!start_redis(13287)) {
-            fprintf(stderr, "SKIPPING REDIS ASYNC TESTS\n");
-            cleanup();
-            return;
+        printf("=== curl async/await tests ===\n");
+        await curlTests();
+
+        printf("\n=== redis async/await tests ===\n");
+        var redis = require("rampart-redis");
+        var rcl;
+
+        try {
+            rcl = new redis.init(13287);
+        } catch(e) {
+            if (!start_redis(13287)) {
+                fprintf(stderr, "SKIPPING REDIS ASYNC TESTS\n");
+                return;
+            }
+            rcl = new redis.init(13287);
         }
-        rcl = new redis.init(13287);
+
+        rcl.flushall();
+        await redisTests(rcl);
+    } finally {
+        /* Always run cleanup so test-spawned redis-server processes
+           are reaped — even on uncaught error / SIGINT.  Without
+           this, an aborted run leaves a redis-server bound to
+           13287 (PPID reparents to init), and the next test run
+           connects to that orphan instead of spawning fresh.  The
+           orphan's `--dir` points at a since-deleted tmpdir, so
+           bgsave fails, `stop-writes-on-bgsave-error` engages, and
+           every SET/GET/PING returns -MISCONF. */
+        cleanup();
+        testFeature.exit();
     }
-
-    rcl.flushall();
-    await redisTests(rcl);
-
-    cleanup();
-    testFeature.exit();
 }
 
-main();
+main()['catch'](function(e) {
+    fprintf(stderr, "main() rejected: %s\n", e && (e.stack || e.message || String(e)));
+});

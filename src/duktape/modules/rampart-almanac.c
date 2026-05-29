@@ -322,8 +322,21 @@ duk_ret_t weather_err(duk_context *ctx)
 /* **************************************************
    Initialize module
    ************************************************** */
+static void rp_almanac_cleanup_atexit(void *arg)
+{
+    (void)arg;
+    Astronomy_Reset();
+}
+
 duk_ret_t duk_open_module(duk_context *ctx)
 {
+    static int registered = 0;
+    if (!registered)
+    {
+        add_exit_func(rp_almanac_cleanup_atexit, NULL);
+        registered = 1;
+    }
+
     duk_push_object(ctx);
     duk_push_c_function(ctx, get_seasons, 1);
     duk_put_prop_string(ctx, -2, "seasons");

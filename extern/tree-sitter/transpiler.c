@@ -213,13 +213,13 @@ static size_t _tp_polyfill_prefix_len = 0;
 polyfills allpolys[] = {
     // stolen from babel.  Babel, like this prog is MIT licensed - see https://github.com/babel/babel/blob/main/LICENSE
     {
-        "_TrN_Sp.__spreadO = function(target) {function ownKeys(object, enumerableOnly){var keys = Object.keys(object);if (Object.getOwnPropertySymbols){var symbols = Object.getOwnPropertySymbols(object);if (enumerableOnly)symbols = symbols.filter(function(sym) {return Object.getOwnPropertyDescriptor(object, sym).enumerable;});keys.push.apply(keys, symbols);}return keys;}function _defineProperty(obj, key, value){if (key in obj){Object.defineProperty(obj, key, {value : value, enumerable : true, configurable : true, writable : true});}else{obj[key] = value;}return obj;}for (var i = 1; i < arguments.length; i++){var source = arguments[i] != null ? arguments[i] : {};if (i % 2){ownKeys(Object(source), true).forEach(function(key) {_defineProperty(target, key, source[key]);});}else if (Object.getOwnPropertyDescriptors){Object.defineProperties(target, Object.getOwnPropertyDescriptors(source));}else{ownKeys(Object(source)).forEach(function(key) {Object.defineProperty(target, key, Object.getOwnPropertyDescriptor(source, key));});}}return target;};_TrN_Sp.__spreadA = function(target, arr) {if (arr instanceof Array)return target.concat(arr);function _nonIterableSpread(){throw new TypeError(\"Invalid attempt to spread non-iterable instance. In order to be iterable, non-array objects must have a [Symbol.iterator]() method.\");}function _unsupportedIterableToArray(o, minLen){if (!o)return;if (typeof o === \"string\")return _arrayLikeToArray(o, minLen);var n = Object.prototype.toString.call(o).slice(8, -1);if (n === \"Object\" && o.constructor);n = o.constructor.name;if (n === \"Map\" || n === \"Set\")return Array.from(o);if (n === \"Arguments\" || /^(?:Ui|I)nt(?:8|16|32)(?:Clamped)?Array$/.test(n))return target.concat(_arrayLikeToArray(o, minLen));}function _iterableToArray(iter){if (typeof Symbol !== \"undefined\" && Symbol.iterator in Object(iter)){var _it=iter[Symbol.iterator](),_a=[],_s;while(!(_s=_it.next()).done)_a.push(_s.value);return target.concat(_a);}}function _arrayLikeToArray(arr, len){if (len == null || len > arr.length)len = arr.length;for (var i = 0, arr2 = new Array(len); i < len; i++){arr2[i] = arr[i];}return target.concat(arr2);}function _arrayWithoutHoles(arr){if (Array.isArray(arr))return target.concat(_arrayLikeToArray(arr));}return _arrayWithoutHoles(arr) || _iterableToArray(arr) || _unsupportedIterableToArray(arr) || _nonIterableSpread();};_TrN_Sp._arrayConcat = function(items){var self = this;items.forEach(function(item) {self.push(item);});return this;};_TrN_Sp._newArray = function() {Object.defineProperty(Array.prototype, '_addchain', {value: _TrN_Sp._arrayConcat,writable: true,configurable: true,enumerable: false});Object.defineProperty(Array.prototype, '_concat', {value: Array.prototype._addchain,writable: true,configurable: true,enumerable: false});return [];};_TrN_Sp._objectAddchain = function(key, value) {if (typeof key == 'object'){Object.assign(this, key)}else{this[key] = value;}return this;};_TrN_Sp._newObject = function() {Object.defineProperty(Object.prototype, '_addchain', {value: _TrN_Sp._objectAddchain,writable: true,configurable: true,enumerable: false});Object.defineProperty(Object.prototype, '_concat', {value: _TrN_Sp._objectAddchain,writable: true,configurable: true,enumerable: false});return {};};",
+        "_TrN_Sp.__spreadO = function(target) {function ownKeys(object, enumerableOnly){var keys = Object.keys(object);if (Object.getOwnPropertySymbols){var symbols = Object.getOwnPropertySymbols(object);if (enumerableOnly)symbols = symbols.filter(function(sym) {return Object.getOwnPropertyDescriptor(object, sym).enumerable;});keys.push.apply(keys, symbols);}/* NDE.25: duktape's `{__proto__: x}` literal handling currently leaves `__proto__` as an own data property (instead of just setting the prototype like the spec requires).  When that object is spread (`{...obj}`), copying `__proto__` to the target via defineProperty/Object.assign severs the target's prototype chain, which then breaks the `_addchain`/`_concat` lookups that depend on Object.prototype.  Filter `__proto__` out here, matching what a spec-compliant engine would have produced (no `__proto__` own key from the literal in the first place). */keys = keys.filter(function(k) { return k !== '__proto__'; });return keys;}function _defineProperty(obj, key, value){if (key in obj){Object.defineProperty(obj, key, {value : value, enumerable : true, configurable : true, writable : true});}else{obj[key] = value;}return obj;}for (var i = 1; i < arguments.length; i++){var source = arguments[i] != null ? arguments[i] : {};if (i % 2){ownKeys(Object(source), true).forEach(function(key) {_defineProperty(target, key, source[key]);});}else if (Object.getOwnPropertyDescriptors){var __d = Object.getOwnPropertyDescriptors(source);delete __d.__proto__;Object.defineProperties(target, __d);}else{ownKeys(Object(source)).forEach(function(key) {Object.defineProperty(target, key, Object.getOwnPropertyDescriptor(source, key));});}}return target;};_TrN_Sp.__spreadA = function(target, arr) {if (arr instanceof Array)return target.concat(arr);function _nonIterableSpread(){throw new TypeError(\"Invalid attempt to spread non-iterable instance. In order to be iterable, non-array objects must have a [Symbol.iterator]() method.\");}function _unsupportedIterableToArray(o, minLen){if (!o)return;if (typeof o === \"string\")return _arrayLikeToArray(o, minLen);var n = Object.prototype.toString.call(o).slice(8, -1);if (n === \"Object\" && o.constructor);n = o.constructor.name;if (n === \"Map\" || n === \"Set\")return Array.from(o);if (n === \"Arguments\" || /^(?:Ui|I)nt(?:8|16|32)(?:Clamped)?Array$/.test(n))return target.concat(_arrayLikeToArray(o, minLen));}function _iterableToArray(iter){if (typeof Symbol !== \"undefined\" && Symbol.iterator in Object(iter)){var _it=iter[Symbol.iterator](),_a=[],_s;while(!(_s=_it.next()).done)_a.push(_s.value);return target.concat(_a);}}function _arrayLikeToArray(arr, len){if (len == null || len > arr.length)len = arr.length;for (var i = 0, arr2 = new Array(len); i < len; i++){arr2[i] = arr[i];}return target.concat(arr2);}function _arrayWithoutHoles(arr){if (Array.isArray(arr))return target.concat(_arrayLikeToArray(arr));}return _arrayWithoutHoles(arr) || _iterableToArray(arr) || _unsupportedIterableToArray(arr) || _nonIterableSpread();};_TrN_Sp._arrayConcat = function(items){var self = this;items.forEach(function(item) {self.push(item);});return this;};_TrN_Sp._newArray = function() {Object.defineProperty(Array.prototype, '_addchain', {value: _TrN_Sp._arrayConcat,writable: true,configurable: true,enumerable: false});Object.defineProperty(Array.prototype, '_concat', {value: Array.prototype._addchain,writable: true,configurable: true,enumerable: false});return [];};_TrN_Sp._objectAddchain = function(key, value) {if (typeof key == 'object'){Object.assign(this, key)}else{this[key] = value;}return this;};_TrN_Sp._newObject = function() {Object.defineProperty(Object.prototype, '_addchain', {value: _TrN_Sp._objectAddchain,writable: true,configurable: true,enumerable: false});Object.defineProperty(Object.prototype, '_concat', {value: _TrN_Sp._objectAddchain,writable: true,configurable: true,enumerable: false});return {};};",
         0, (uint32_t)SPREAD_PF },
     {
         "_TrN_Sp._typeof=function(obj) {\"@babel/helpers - typeof\";if (typeof Symbol === \"function\" && typeof Symbol.iterator === \"symbol\") {_TrN_Sp._typeof = function(obj) {return typeof obj;};} else {_TrN_Sp._typeof = function(obj) {return obj && typeof Symbol === \"function\" && obj.constructor === Symbol && obj !== Symbol.prototype ? \"symbol\" : typeof obj;};}return _TrN_Sp._typeof(obj);};_TrN_Sp._getRequireWildcardCache=function() {if (typeof WeakMap !== \"function\") return null;var cache = new WeakMap();_TrN_Sp._getRequireWildcardCache=function(){return cache;};return cache;};_TrN_Sp._interopRequireWildcard=function(obj) {if (obj && obj.__esModule) {return obj;}if (obj === null || _TrN_Sp._typeof(obj) !== \"object\" && typeof obj !== \"function\") {return { \"default\": obj };}var cache = _TrN_Sp._getRequireWildcardCache();if (cache && cache.has(obj)) {return cache.get(obj);}var newObj = {};var hasPropertyDescriptor = Object.defineProperty && Object.getOwnPropertyDescriptor;for (var key in obj) {if (Object.prototype.hasOwnProperty.call(obj, key)) {var desc = hasPropertyDescriptor ? Object.getOwnPropertyDescriptor(obj, key) : null;if (desc && (desc.get || desc.set)) {Object.defineProperty(newObj, key, desc);} else {newObj[key] = obj[key];}}}newObj[\"default\"] = obj;if (cache) {cache.set(obj, newObj);}return newObj;};_TrN_Sp._interopDefault=function(m){if(typeof m =='object' && m.__esModule){return m.default}return m;};",
         0, (uint32_t)IMPORT_PF },
     {
-        "_TrN_Sp.typeof =function(obj) {'@babel/helpers - typeof';if (typeof Symbol === 'function' && typeof Symbol.iterator === 'symbol') {_typeof = function _typeof(obj) {return typeof obj;};} else {_typeof = function _typeof(obj) {return obj && typeof Symbol === 'function' &&obj.constructor === Symbol && obj !== Symbol.prototype ?'symbol' :typeof obj;};}return _typeof(obj);}; _TrN_Sp.inherits =function(subClass, superClass) {if (typeof superClass !== 'function' && superClass !== null) {throw new TypeError('Super expression must either be null or a function');}subClass.prototype = Object.create(superClass && superClass.prototype,{constructor: {value: subClass, writable: true, configurable: true}});if (superClass) _TrN_Sp.setPrototypeOf(subClass, superClass);}; _TrN_Sp.setPrototypeOf =function(o, p) {_setPrototypeOf = Object.setPrototypeOf || function _setPrototypeOf(o, p) {o.__proto__ = p;return o;};return _setPrototypeOf(o, p);}; _TrN_Sp.createSuper =function(Derived) {var hasNativeReflectConstruct = _TrN_Sp.isNativeReflectConstruct();return function _createSuperInternal() {var Super = _TrN_Sp.getPrototypeOf(Derived), result;result = Super.apply(this, arguments);return _TrN_Sp.possibleConstructorReturn(this, result);};}; _TrN_Sp.possibleConstructorReturn =function(self, call) {if (call && (typeof call === 'object' || typeof call === 'function')) {return call;}return _TrN_Sp.assertThisInitialized(self);}; _TrN_Sp.assertThisInitialized =function(self) {if (self === void 0) {throw new ReferenceError('this hasn\\'t been initialised - super() hasn\\'t been called');}return self;}; _TrN_Sp.isNativeReflectConstruct =function() {if (typeof Reflect === 'undefined' || !Reflect.construct) return false;if (Reflect.construct.sham) return false;if (typeof Proxy === 'function') return true;try {Date.prototype.toString.call(Reflect.construct(Date, [], function() {}));return true;} catch (e) {return false;}}; _TrN_Sp.getPrototypeOf =function(o) {_getPrototypeOf = Object.setPrototypeOf ?Object.getPrototypeOf :function _getPrototypeOf(o) {return o.__proto__ || Object.getPrototypeOf(o);};return _getPrototypeOf(o);}; _TrN_Sp.classCallCheck =function(instance, Constructor) {if (!(instance instanceof Constructor)) {throw new TypeError('Cannot call a class as a function');}}; _TrN_Sp.defineProperties =function(target, props) {for (var i = 0; i < props.length; i++) {var descriptor = props[i];if (descriptor.src && _TrN_Sp._fs) {if (typeof descriptor.value === 'function') _TrN_Sp._fs(descriptor.value, descriptor.src);if (typeof descriptor.get === 'function') _TrN_Sp._fs(descriptor.get, descriptor.src);if (typeof descriptor.set === 'function') _TrN_Sp._fs(descriptor.set, descriptor.src);delete descriptor.src;}descriptor.enumerable = descriptor.enumerable || false;descriptor.configurable = true;if ('value' in descriptor) descriptor.writable = true;Object.defineProperty(target, descriptor.key, descriptor);}}; _TrN_Sp.createClass =function(Constructor, A, B, swapOrder) {var protoProps = swapOrder ? B : A;var staticProps = swapOrder ? A : B;if (protoProps) _TrN_Sp.defineProperties(Constructor.prototype, protoProps);if (staticProps) _TrN_Sp.defineProperties(Constructor, staticProps);return Constructor;}; _TrN_Sp._superGet =function(target, prop, recv) {while (target) {var desc = Object.getOwnPropertyDescriptor(target, prop);if (desc) {if (desc.get) return desc.get.call(recv);return desc.value;}target = Object.getPrototypeOf(target);}return undefined;};",
+        "_TrN_Sp.typeof =function(obj) {'@babel/helpers - typeof';if (typeof Symbol === 'function' && typeof Symbol.iterator === 'symbol') {_typeof = function _typeof(obj) {return typeof obj;};} else {_typeof = function _typeof(obj) {return obj && typeof Symbol === 'function' &&obj.constructor === Symbol && obj !== Symbol.prototype ?'symbol' :typeof obj;};}return _typeof(obj);}; _TrN_Sp.inherits =function(subClass, superClass) {if (typeof superClass !== 'function' && superClass !== null) {throw new TypeError('Super expression must either be null or a function');}subClass.prototype = Object.create(superClass && superClass.prototype,{constructor: {value: subClass, writable: true, configurable: true}});if (superClass) _TrN_Sp.setPrototypeOf(subClass, superClass);}; _TrN_Sp.setPrototypeOf =function(o, p) {_setPrototypeOf = Object.setPrototypeOf || function _setPrototypeOf(o, p) {o.__proto__ = p;return o;};return _setPrototypeOf(o, p);}; _TrN_Sp.createSuper =function(Derived) {return function _createSuperInternal() {var Super = _TrN_Sp.getPrototypeOf(Derived), result;result = Super.apply(this, arguments);if (result && typeof result === 'object' && result !== this) {var names = Object.getOwnPropertyNames(result);for (var _i = 0; _i < names.length; _i++) {var _k = names[_i];try {var _d = Object.getOwnPropertyDescriptor(result, _k);Object.defineProperty(this, _k, _d);} catch (_e) {try {this[_k] = result[_k];} catch (_) {}}}result = this;}return _TrN_Sp.possibleConstructorReturn(this, result);};}; _TrN_Sp.possibleConstructorReturn =function(self, call) {if (call && (typeof call === 'object' || typeof call === 'function')) {return call;}return _TrN_Sp.assertThisInitialized(self);}; _TrN_Sp.assertThisInitialized =function(self) {if (self === void 0) {throw new ReferenceError('this hasn\\'t been initialised - super() hasn\\'t been called');}return self;}; _TrN_Sp.isNativeReflectConstruct =function() {if (typeof Reflect === 'undefined' || !Reflect.construct) return false;if (Reflect.construct.sham) return false;if (typeof Proxy === 'function') return true;try {Date.prototype.toString.call(Reflect.construct(Date, [], function() {}));return true;} catch (e) {return false;}}; _TrN_Sp.getPrototypeOf =function(o) {_getPrototypeOf = Object.setPrototypeOf ?Object.getPrototypeOf :function _getPrototypeOf(o) {return o.__proto__ || Object.getPrototypeOf(o);};return _getPrototypeOf(o);}; _TrN_Sp.classCallCheck =function(instance, Constructor) {if (!(instance instanceof Constructor)) {throw new TypeError('Cannot call a class as a function');}}; _TrN_Sp.defineProperties =function(target, props) {for (var i = 0; i < props.length; i++) {var descriptor = props[i];if (descriptor.src && _TrN_Sp._fs) {if (typeof descriptor.value === 'function') _TrN_Sp._fs(descriptor.value, descriptor.src);if (typeof descriptor.get === 'function') _TrN_Sp._fs(descriptor.get, descriptor.src);if (typeof descriptor.set === 'function') _TrN_Sp._fs(descriptor.set, descriptor.src);delete descriptor.src;}descriptor.enumerable = descriptor.enumerable || false;descriptor.configurable = true;if ('value' in descriptor) descriptor.writable = true;Object.defineProperty(target, descriptor.key, descriptor);}}; _TrN_Sp.createClass =function(Constructor, A, B, swapOrder) {var protoProps = swapOrder ? B : A;var staticProps = swapOrder ? A : B;if (protoProps) _TrN_Sp.defineProperties(Constructor.prototype, protoProps);if (staticProps) _TrN_Sp.defineProperties(Constructor, staticProps);return Constructor;}; _TrN_Sp._superGet =function(target, prop, recv) {while (target) {var desc = Object.getOwnPropertyDescriptor(target, prop);if (desc) {if (desc.get) return desc.get.call(recv);return desc.value;}target = Object.getPrototypeOf(target);}return undefined;};",
         0, (uint32_t)CLASS_PF  },
     {
         "_TrN_Sp.slicedToArray=function (arr, i) {return _TrN_Sp.arrayWithHoles(arr) || _TrN_Sp.iterableToArrayLimit(arr, i) || _TrN_Sp.unsupportedIterableToArray(arr, i) || _TrN_Sp.nonIterableRest();};_TrN_Sp.nonIterableRest=function(){throw new TypeError(\"Invalid attempt to destructure non-iterable instance.\\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method.\");};_TrN_Sp.unsupportedIterableToArray=function(o, minLen) {if (!o) return;if (typeof o === \"string\") return _TrN_Sp.arrayLikeToArray(o, minLen);var n = Object.prototype.toString.call(o).slice(8, -1);if (n === \"Object\" && o.constructor) n = o.constructor.name;if (n === \"Map\" || n === \"Set\") return Array.from(o);if (n === \"Arguments\" || /^(?:Ui|I)nt(?:8|16|32)(?:Clamped)?Array$/.test(n)) return _TrN_Sp.arrayLikeToArray(o, minLen);};_TrN_Sp.arrayLikeToArray=function(arr, len) {if (len == null || len > arr.length) len = arr.length;for (var i = 0, arr2 = new Array(len); i < len; i++) {arr2[i] = arr[i];}return arr2;};_TrN_Sp.iterableToArrayLimit=function(arr, i){if (typeof Symbol === \"undefined\" || !(Symbol.iterator in Object(arr))) return;var _arr = [];var _n = true;var _d = false;var _e = undefined;try {for (var _i = arr[Symbol.iterator](), _s; !(_n = (_s = _i.next()).done); _n = true) {_arr.push(_s.value);if (i && _arr.length === i) break;}} catch (err) {_d = true;_e = err;} finally {try {if (!_n && _i[\"return\"] != null) _i[\"return\"]();} finally {if (_d) throw _e;}}return _arr;};_TrN_Sp.arrayWithHoles=function(arr) {if (Array.isArray(arr)) return arr;};",
@@ -233,12 +233,20 @@ polyfills allpolys[] = {
         //"_TrN_Sp.asyncGeneratorStep = function(gen, resolve, reject, _next, _throw, key, arg) {try{var info = gen[key](arg);var value = info.value;}catch (error){reject(error);return;}if (info.done){resolve(value);}else{Promise.resolve(value).then(_next, _throw);}};_TrN_Sp.asyncToGenerator = function(fn) {return function() {var self = this, args = arguments;return new Promise(function(resolve, reject) {var gen = fn.apply(self, args);function _next(value){_TrN_Sp.asyncGeneratorStep(gen, resolve, reject, _next, _throw, \"next\", value);}function _throw(err){_TrN_Sp.asyncGeneratorStep(gen, resolve, reject, _next, _throw, \"throw\", err);}_next(undefined);});};};_TrN_Sp.regeneratorRuntime = (function () {function mark(genFn) { return genFn; }function wrap(innerFn) {var context = {prev: 0,next: 0,sent: void 0,done: false,rval: void 0,stop: function () { this.done = true; return this.rval; }};return {next: function (arg) {var prevNext = context.next;context.sent = arg;var value = innerFn(context);if (context.done || context.next === \"end\") {return { value: context.rval, done: true };}if (context.next === prevNext) {context.done = true;context.rval = value;return { value: context.rval, done: true };}return { value: value, done: false };},throw: function (err) { throw err; }};}return { mark: mark, wrap: wrap };})();",
         0, (uint32_t)ASYNC_PF  },
 
-    // from https://www.npmjs.com/package/promise-polyfill MIT license included in this dir.
-    // the delete global.Promise is for rampart.thread reload.
+    /* Promise polyfill dropped 2026-05-29: rampart has native Promise
+       (with allSettled/any/finally) in all contexts including bare
+       threads and vm.createContext sandboxes.  All references to the
+       previous `f` class and its helpers (`e/t/n/r/o/i/u/c/a/l/s/d/p`,
+       `f.prototype.then/catch/finally`, `f._immediateFn`,
+       `f._unhandledRejectionFn`, `_pAS/_pAn/_pF`) were dead code.
+
+       Kept `_TrN_Sp._gp` because it's referenced by post-import
+       `_pP()` guard sites and by any user code that may have
+       captured it.  Removed `_TrN_Sp._pAS/_pAn/_pF/_pP`; the emit
+       sites that call them are already wrapped in
+       `if(_TrN_Sp._pP) _TrN_Sp._pP()` so they no-op cleanly. */
     {
-        // set rampart.warnUnhandledPromise=false to silence the
-        // "Possible Unhandled Promise Rejection" console warning.
-        "delete global.Promise;(function(e, t) {'object' == typeof exports && 'undefined' != typeof module ? t() :'function' == typeof define && define.amd              ? define(t) :t()})(0, function() {'use strict';function e(e) {var t = this.constructor;return this.then(function(n) {return t.resolve(e()).then(function() {return n})},function(n) {return t.resolve(e()).then(function() {return t.reject(n)})})}function t(e) {return new this(function(t, n) {function r(e, n) {if (n && ('object' == typeof n || 'function' == typeof n)) {var f = n.then;if ('function' == typeof f)return void f.call(n,function(t) {r(e, t)},function(n) {o[e] = {status: 'rejected', reason: n}, 0 == --i && t(o)})}o[e] = {status: 'fulfilled', value: n}, 0 == --i && t(o)}if (!e || 'undefined' == typeof e.length)return n(new TypeError(typeof e + ' ' + e +' is not iterable(cannot read property Symbol(Symbol.iterator))'));var o = Array.prototype.slice.call(e);if (0 === o.length) return t([]);for (var i = o.length, f = 0; o.length > f; f++) r(f, o[f])})}function n(e, t) {this.name = 'AggregateError', this.errors = e, this.message = t || ''}function r(e) {var t = this;return new t(function(r, o) {if (!e || 'undefined' == typeof e.length)return o(new TypeError('Promise.any accepts an array'));var i = Array.prototype.slice.call(e);if (0 === i.length) return o(new n([],'All promises were rejected'));for (var f = [], u = 0; i.length > u; u++) try {t.resolve(i[u]).then(r)['catch'](function(e) {f.push(e),f.length === i.length && o(new n(f, 'All promises were rejected'))})} catch (c) {o(c)}})}function o(e) {return !(!e || 'undefined' == typeof e.length)}function i() {}function f(e) {if (!(this instanceof f))throw new TypeError('Promises must be constructed via new');if ('function' != typeof e) throw new TypeError('not a function');this._state = 0, this._handled = !1, this._value = undefined,this._deferreds = [], s(e, this)}function u(e, t) {for (; 3 === e._state;) e = e._value;0 !== e._state ? (e._handled = !0, f._immediateFn(function() {var n = 1 === e._state ? t.onFulfilled : t.onRejected;if (null !== n) {var r;try {r = n(e._value)} catch (o) {return void a(t.promise, o)}c(t.promise, r)} else(1 === e._state ? c : a)(t.promise, e._value)})) :e._deferreds.push(t)}function c(e, t) {try {if (t === e)throw new TypeError('A promise cannot be resolved with itself.');if (t && ('object' == typeof t || 'function' == typeof t)) {var n = t.then;if (t instanceof f) return e._state = 3, e._value = t, void l(e);if ('function' == typeof n)return void s(function(e, t) {return function() {e.apply(t, arguments)}}(n, t), e)}e._state = 1, e._value = t, l(e)} catch (r) {a(e, r)}}function a(e, t) {e._state = 2, e._value = t, l(e)}function l(e) {2 === e._state && 0 === e._deferreds.length && f._immediateFn(function() {e._handled || f._unhandledRejectionFn(e._value)});for (var t = 0, n = e._deferreds.length; n > t; t++) u(e, e._deferreds[t]);e._deferreds = null}function s(e, t) {var n = !1;try {e(function(e) {n || (n = !0, c(t, e))},function(e) {n || (n = !0, a(t, e))})} catch (r) {if (n) return;n = !0, a(t, r)}}n.prototype = Error.prototype;var d = setTimeout;f.prototype['catch'] = function(e) {return this.then(null, e)}, f.prototype.then = function(e, t) {var n = new this.constructor(i);return u(this, new function(e, t, n) {this.onFulfilled = 'function' == typeof e ? e : null,this.onRejected = 'function' == typeof t ? t : null, this.promise = n}(e, t, n)), n}, f.prototype['finally'] = e, f.all = function(e) {return new f(function(t, n) {function r(e, o) {try {if (o && ('object' == typeof o || 'function' == typeof o)) {var u = o.then;if ('function' == typeof u)return void u.call(o, function(t) {r(e, t)}, n)}i[e] = o, 0 == --f && t(i)} catch (c) {n(c)}}if (!o(e)) return n(new TypeError('Promise.all accepts an array'));var i = Array.prototype.slice.call(e);if (0 === i.length) return t([]);for (var f = i.length, u = 0; i.length > u; u++) r(u, i[u])})}, f.any = r, f.allSettled = t, f.resolve = function(e) {return e && 'object' == typeof e && e.constructor === f ? e :new f(function(t) {t(e)})}, f.reject = function(e) {return new f(function(t, n) {n(e)})}, f.race = function(e) {return new f(function(t, n) {if (!o(e)) return n(new TypeError('Promise.race accepts an array'));for (var r = 0, i = e.length; i > r; r++) f.resolve(e[r]).then(t, n)})}, f._immediateFn = (function(){var q=[],s=false;function fl(){var c=q;q=[];s=false;for(var j=0;j<c.length;j++)c[j]();}return function(e){q.push(e);if(!s){s=true;d(fl,0);}};})(), f._unhandledRejectionFn = function(e) {if (typeof console === 'undefined' || !console) return;var warn = (typeof rampart === 'undefined') ? true : (rampart.warnUnhandledPromise !== false);if (warn) console.warn('Possible Unhandled Promise Rejection:', e);};var p = function() {if ('undefined' != typeof self) return self;if ('undefined' != typeof window) return window;if ('undefined' != typeof global) return global;throw Error('unable to locate global object')}();'function' != typeof p.Promise ?p.Promise = f :(p.Promise.prototype['finally'] || (p.Promise.prototype['finally'] = e),p.Promise.allSettled || (p.Promise.allSettled = t),p.Promise.any || (p.Promise.any = r));_TrN_Sp._gp=p});_TrN_Sp._pAS=_TrN_Sp._gp.Promise.allSettled;_TrN_Sp._pAn=_TrN_Sp._gp.Promise.any;_TrN_Sp._pF=_TrN_Sp._gp.Promise.prototype['finally'];_TrN_Sp._pP=function(){var _P=_TrN_Sp._gp&&_TrN_Sp._gp.Promise;if(typeof _P==='function'){if(!_P.allSettled&&_TrN_Sp._pAS)_P.allSettled=_TrN_Sp._pAS;if(!_P.any&&_TrN_Sp._pAn)_P.any=_TrN_Sp._pAn;if(_P.prototype&&!_P.prototype['finally']&&_TrN_Sp._pF)_P.prototype['finally']=_TrN_Sp._pF;}};",
+        "_TrN_Sp._gp=(function(){if('undefined'!=typeof self)return self;if('undefined'!=typeof window)return window;if('undefined'!=typeof global)return global;throw Error('unable to locate global object')})();",
         // oldver
         //"delete global.Promise;(function(e,t){\"object\"==typeof exports&&\"undefined\"!=typeof module?t():\"function\"==typeof define&&define.amd?define(t):t()})(0,function(){\"use strict\";function e(e){var t=this.constructor;return this.then(function(n){return t.resolve(e()).then(function(){return n})},function(n){return t.resolve(e()).then(function(){return t.reject(n)})})}function t(e){return new this(function(t,n){function r(e,n){if(n&&(\"object\"==typeof n||\"function\"==typeof n)){var f=n.then;if(\"function\"==typeof f)return void f.call(n,function(t){r(e,t)},function(n){o[e]={status:\"rejected\",reason:n},0==--i&&t(o)})}o[e]={status:\"fulfilled\",value:n},0==--i&&t(o)}if(!e||\"undefined\"==typeof e.length)return n(new TypeError(typeof e+\" \"+e+\" is not iterable(cannot read property Symbol(Symbol.iterator))\"));var o=Array.prototype.slice.call(e);if(0===o.length)return t([]);for(var i=o.length,f=0;o.length>f;f++)r(f,o[f])})}function n(e,t){this.name=\"AggregateError\",this.errors=e,this.message=t||\"\"}function r(e){var t=this;return new t(function(r,o){if(!e||\"undefined\"==typeof e.length)return o(new TypeError(\"Promise.any accepts an array\"));var i=Array.prototype.slice.call(e);if(0===i.length)return o();for(var f=[],u=0;i.length>u;u++)try{t.resolve(i[u]).then(r)[\"catch\"](function(e){f.push(e),f.length===i.length&&o(new n(f,\"All promises were rejected\"))})}catch(c){o(c)}})}function o(e){return!(!e||\"undefined\"==typeof e.length)}function i(){}function f(e){if(!(this instanceof f))throw new TypeError(\"Promises must be constructed via new\");if(\"function\"!=typeof e)throw new TypeError(\"not a function\");this._state=0,this._handled=!1,this._value=undefined,this._deferreds=[],s(e,this)}function u(e,t){for(;3===e._state;)e=e._value;0!==e._state?(e._handled=!0,f._immediateFn(function(){var n=1===e._state?t.onFulfilled:t.onRejected;if(null!==n){var r;try{r=n(e._value)}catch(o){return void a(t.promise,o)}c(t.promise,r)}else(1===e._state?c:a)(t.promise,e._value)})):e._deferreds.push(t)}function c(e,t){try{if(t===e)throw new TypeError(\"A promise cannot be resolved with itself.\");if(t&&(\"object\"==typeof t||\"function\"==typeof t)){var n=t.then;if(t instanceof f)return e._state=3,e._value=t,void l(e);if(\"function\"==typeof n)return void s(function(e,t){return function(){e.apply(t,arguments)}}(n,t),e)}e._state=1,e._value=t,l(e)}catch(r){a(e,r)}}function a(e,t){e._state=2,e._value=t,l(e)}function l(e){2===e._state&&0===e._deferreds.length&&f._immediateFn(function(){e._handled||f._unhandledRejectionFn(e._value)});for(var t=0,n=e._deferreds.length;n>t;t++)u(e,e._deferreds[t]);e._deferreds=null}function s(e,t){var n=!1;try{e(function(e){n||(n=!0,c(t,e))},function(e){n||(n=!0,a(t,e))})}catch(r){if(n)return;n=!0,a(t,r)}}n.prototype=Error.prototype;var d=setTimeout;f.prototype[\"catch\"]=function(e){return this.then(null,e)},f.prototype.then=function(e,t){var n=new this.constructor(i);return u(this,new function(e,t,n){this.onFulfilled=\"function\"==typeof e?e:null,this.onRejected=\"function\"==typeof t?t:null,this.promise=n}(e,t,n)),n},f.prototype[\"finally\"]=e,f.all=function(e){return new f(function(t,n){function r(e,o){try{if(o&&(\"object\"==typeof o||\"function\"==typeof o)){var u=o.then;if(\"function\"==typeof u)return void u.call(o,function(t){r(e,t)},n)}i[e]=o,0==--f&&t(i)}catch(c){n(c)}}if(!o(e))return n(new TypeError(\"Promise.all accepts an array\"));var i=Array.prototype.slice.call(e);if(0===i.length)return t([]);for(var f=i.length,u=0;i.length>u;u++)r(u,i[u])})},f.any=r,f.allSettled=t,f.resolve=function(e){return e&&\"object\"==typeof e&&e.constructor===f?e:new f(function(t){t(e)})},f.reject=function(e){return new f(function(t,n){n(e)})},f.race=function(e){return new f(function(t,n){if(!o(e))return n(new TypeError(\"Promise.race accepts an array\"));for(var r=0,i=e.length;i>r;r++)f.resolve(e[r]).then(t,n)})},f._immediateFn=\"function\"==typeof setImmediate&&function(e){setImmediate(e)}||function(e){d(e,0)},f._unhandledRejectionFn=function(e){void 0!==console&&console&&console.warn(\"Possible Unhandled Promise Rejection:\",e)};var p=function(){if(\"undefined\"!=typeof self)return self;if(\"undefined\"!=typeof window)return window;if(\"undefined\"!=typeof global)return global;throw Error(\"unable to locate global object\")}();\"function\"!=typeof p.Promise?p.Promise=f:(p.Promise.prototype[\"finally\"]||(p.Promise.prototype[\"finally\"]=e),p.Promise.allSettled||(p.Promise.allSettled=t),p.Promise.any||(p.Promise.any=r))});",
         0, (uint32_t)PROMISE_PF},
@@ -280,7 +288,7 @@ polyfills allpolys[] = {
            through to rampart's native require (which checks
            process.modulesPath). The cache (_c) memoises spec→absPath
            lookups so repeated require()s of the same spec are O(1). */
-        "_TrN_Sp._req=function(m,s){var c=_TrN_Sp._req._c||(_TrN_Sp._req._c={});var d=(m&&m.path)?m.path:(typeof process!=='undefined'&&process.scriptPath?process.scriptPath:'');var k=d+'|'+s;if(k in c)return require(c[k]);var st=rampart.utils.stat,rf=rampart.utils.readFile;var exts=['','.js','.cjs','.mjs','.json'];while(d&&d.length>1){var pd=d+'/node_modules/'+s;var sp=st(pd);if(sp&&sp.isFile){c[k]=pd;return require(pd);}if(sp&&sp.isDirectory){var pj=pd+'/package.json';var mn=null;if(st(pj)){try{var meta=JSON.parse(rf(pj,{returnString:true}));mn=meta.main||'index.js';}catch(e){mn='index.js';}var p=pd+'/'+mn;if(st(p)){c[k]=p;return require(p);}}var idx=pd+'/index.js';if(st(idx)){c[k]=idx;return require(idx);}var idxc=pd+'/index.cjs';if(st(idxc)){c[k]=idxc;return require(idxc);}}else{for(var ei=1;ei<exts.length;ei++){var pde=pd+exts[ei];if(st(pde)){c[k]=pde;return require(pde);}}}var n=d.lastIndexOf('/');if(n<=0)break;d=d.substring(0,n);}return require(s);};",
+        "if(!_TrN_Sp._req)_TrN_Sp._req=function(m,s){var c=_TrN_Sp._req._c||(_TrN_Sp._req._c={});var d=(m&&m.path)?m.path:(typeof process!=='undefined'&&process.scriptPath?process.scriptPath:'');var k=d+'|'+s;if(k in c){var cv=c[k];return (typeof cv==='string')?require(cv):cv;}/* NDE.17: try native require first so rampart's built-in shims (js_modules/<name>.js) win over a same-named npm package, matching Node's bare-spec precedence.  Cache the resolved EXPORTS object so subsequent cache hits don't re-resolve a bare specifier whose lookup may shift with the active CJS-wrapper context.  Only fall through on \"Could not resolve\" so genuine load errors from a built-in still surface. */try{var r=require(s);c[k]=r;return r;}catch(_e){if(!_e||typeof _e.message!=='string'||_e.message.indexOf('Could not resolve')<0)throw _e;}var st=rampart.utils.stat,rf=rampart.utils.readFile;var exts=['','.js','.cjs','.mjs','.json'];while(d&&d.length>1){/* NDE.35: honour package.json `exports` for pkg/subpath specifiers (csv-parse/sync, zod/v3, lodash/fp, ...).  Walks conditional exports (require>node>default) so CJS callers get the .cjs entry. */var _ps=s.charAt(0)==='@'?s.indexOf('/',s.indexOf('/')+1):s.indexOf('/');if(_ps>0){var _pn=s.substring(0,_ps),_sk='.'+s.substring(_ps);var _ppj=d+'/node_modules/'+_pn+'/package.json';if(st(_ppj)){try{var _pm=JSON.parse(rf(_ppj,{returnString:true}));var _rc=function(v){if(typeof v==='string')return v;if(v&&typeof v==='object'){var _ks=['require','node','default'];for(var _ki=0;_ki<3;_ki++){if(v[_ks[_ki]]!=null){var _rv=_rc(v[_ks[_ki]]);if(_rv)return _rv;}}}return null;};if(_pm.exports&&_pm.exports[_sk]!=null){var _rl=_rc(_pm.exports[_sk]);if(_rl){var _r2=(_rl.charAt(0)==='.'&&_rl.charAt(1)==='/')?_rl.substring(2):_rl;var _ab=d+'/node_modules/'+_pn+'/'+_r2;if(st(_ab)){c[k]=_ab;return require(_ab);}}}}catch(_){}}}var pd=d+'/node_modules/'+s;var sp=st(pd);if(sp&&sp.isFile){c[k]=pd;return require(pd);}if(sp&&sp.isDirectory){var pj=pd+'/package.json';var mn=null;if(st(pj)){try{var meta=JSON.parse(rf(pj,{returnString:true}));mn=meta.main||'index.js';}catch(e){mn='index.js';}var p=pd+'/'+mn;var spp=st(p);/* NDE.24: extension fallback for extension-less main fields (form-data's package.json has \"main\":\"./lib/form_data\" with no .js, which used to fail and walk past). */if(spp&&spp.isFile){c[k]=p;return require(p);}for(var mi=1;mi<exts.length;mi++){var pe=p+exts[mi];if(st(pe)){c[k]=pe;return require(pe);}}/* main points to a directory — try its index.js/index.cjs */if(spp&&spp.isDirectory){var pidx=p+'/index.js';if(st(pidx)){c[k]=pidx;return require(pidx);}var pidxc=p+'/index.cjs';if(st(pidxc)){c[k]=pidxc;return require(pidxc);}}}var idx=pd+'/index.js';if(st(idx)){c[k]=idx;return require(idx);}var idxc=pd+'/index.cjs';if(st(idxc)){c[k]=idxc;return require(idxc);}}else{for(var ei=1;ei<exts.length;ei++){var pde=pd+exts[ei];if(st(pde)){c[k]=pde;return require(pde);}}}var n=d.lastIndexOf('/');if(n<=0)break;d=d.substring(0,n);}return require(s);};",
         0, (uint32_t)BARE_REQ_PF },
     {
         /* JSON require: rampart's loader treats every spec as JS, so
@@ -1285,6 +1293,25 @@ static int collect_flat_destructure_bindings(TSNode pattern, const char *src, co
                     rp_string_puts(extracted_keys, "\"");
                     rp_string_putsn(extracted_keys, src + ks, klen);
                     rp_string_puts(extracted_keys, "\"");
+                    nkeys++;
+                }
+                else if (strcmp(keytype, "string") == 0 ||
+                         strcmp(keytype, "number") == 0)
+                {
+                    /* NDE.19: {"~standard": _, ...} / {0: a, 1: b} — string- or
+                       number-literal key.  Use bracket access for the binding
+                       (`base["~standard"]`) and emit the key verbatim into the
+                       rest-exclusion list (string keys already carry their own
+                       quotes; numeric keys we wrap in quotes for the
+                       __objectWithoutProperties-style helper). */
+                    REMALLOC(nested_base, strlen(base) + 1 + klen + 2);
+                    sprintf(nested_base, "%s[%.*s]", base, (int)klen, src + ks);
+                    if (nkeys > 0) rp_string_puts(extracted_keys, ", ");
+                    if (strcmp(keytype, "number") == 0)
+                        rp_string_puts(extracted_keys, "\"");
+                    rp_string_putsn(extracted_keys, src + ks, klen);
+                    if (strcmp(keytype, "number") == 0)
+                        rp_string_puts(extracted_keys, "\"");
                     nkeys++;
                 }
                 else
@@ -2843,28 +2870,33 @@ static int rewrite_function_rest(EditList *edits, const char *src, TSNode func_n
     if (ts_node_is_null(params) || ts_node_is_null(body))
         return 0;
 
-    // Find a rest_parameter
+    // Find a rest_parameter.  NDE.26: skip `comment` named children
+    // when counting the rest's position — `arguments` at runtime has
+    // no entry for source comments, so the slice index must reflect
+    // only real params.
     uint32_t nparams = ts_node_named_child_count(params);
     TSNode rest = {0};
-    uint32_t rest_index = 0;
+    uint32_t rest_real_index = 0;
     bool found = false;
 
     for (uint32_t i = 0; i < nparams; i++)
     {
         TSNode ch = ts_node_named_child(params, i);
-        if (strcmp(ts_node_type(ch), "rest_pattern") == 0)
+        const char *ct = ts_node_type(ch);
+        if (strcmp(ct, "comment") == 0) continue;
+        if (strcmp(ct, "rest_pattern") == 0)
         {
             rest = ch;
-            rest_index = i;
             found = true;
             break;
         }
+        rest_real_index++;
     }
     if (!found)
         return 0;
 
     // Count non-rest params before the rest (slice start)
-    uint32_t before_count = rest_index;
+    uint32_t before_count = rest_real_index;
 
     // Rest target: identifier, or array/object_pattern (NDE.10).
     nparams = ts_node_named_child_count(rest);
@@ -3045,13 +3077,19 @@ static int rewrite_function_destructuring_params(EditList *edits, const char *sr
     rp_string *body_inj = rp_string_new(128);
 
     rp_string_puts(new_params, "(");
+    int real_param_count = 0;
     for (uint32_t i = 0; i < np; i++)
     {
-        if (i > 0)
-            rp_string_puts(new_params, ", ");
-
         TSNode p = ts_node_named_child(params, i);
         const char *pt = ts_node_type(p);
+        /* NDE.26: skip `comment` named children — same as the arrow-
+           function multi-param destructure path.  Without this, the
+           emitted param list would have comma-comment-comma patterns
+           that collapse to invalid empty-slot syntax. */
+        if (strcmp(pt, "comment") == 0) continue;
+        if (real_param_count > 0)
+            rp_string_puts(new_params, ", ");
+        real_param_count++;
         size_t pps = ts_node_start_byte(p), ppe = ts_node_end_byte(p);
 
         TSNode destr_pat = {{0}};
@@ -3321,7 +3359,7 @@ static int do_named_imports(EditList *edits, const char *src, TSNode snode, TSNo
 
     rp_string_appendf(out, "var %s=", buf);
     _emit_require_call(out, src + mod_s, mod_e - mod_s, NULL);
-    rp_string_puts(out, ";if(_TrN_Sp._pP)_TrN_Sp._pP();");
+    rp_string_puts(out, ";");
 
     /* Locate the enclosing program so we can rewrite refs across the
        whole module (closures included). */
@@ -3408,7 +3446,7 @@ static int do_namespace_import(EditList *edits, const char *src, TSNode snode, T
     rp_string_appendf(out, "var %.*s=_TrN_Sp._interopRequireWildcard(",
                       (id_end - id_start), src + id_start);
     _emit_require_call(out, src + mod_name_start, mod_name_end - mod_name_start, polysneeded);
-    rp_string_puts(out, ");if(_TrN_Sp._pP)_TrN_Sp._pP();");
+    rp_string_puts(out, ");");
 
     add_edit_take_ownership(edits, start, end, rp_string_steal(out), claimed);
 
@@ -3431,7 +3469,7 @@ static int do_default_import(EditList *edits, const char *src, TSNode snode, TSN
     rp_string_appendf(out, "var %.*s=_TrN_Sp._interopDefault(",
                       (int)(id_e - id_s), src + id_s);
     _emit_require_call(out, src + mod_s, mod_e - mod_s, NULL);
-    rp_string_puts(out, ");if(_TrN_Sp._pP)_TrN_Sp._pP();");
+    rp_string_puts(out, ");");
 
     add_edit_take_ownership(edits, start, end, rp_string_steal(out), claimed);
 
@@ -3455,7 +3493,7 @@ static int do_default_and_named_imports(EditList *edits, const char *src, TSNode
     rp_string *out=rp_string_new(512);
     rp_string_appendf(out, "var %s=", tbuf);
     _emit_require_call(out, src + mod_s, mod_e - mod_s, NULL);
-    rp_string_puts(out, ";if(_TrN_Sp._pP)_TrN_Sp._pP();");
+    rp_string_puts(out, ";");
 
     /* bind default: var def = __tmp.default;  Default values can be
        eager-bound because interopDefault freezes the value at require
@@ -3587,7 +3625,7 @@ static int rewrite_import_node(EditList *edits, const char *src, TSNode snode, R
        Bare spec needs the helper form so the node_modules walk runs. */
     rp_string *side = rp_string_new(64);
     _emit_require_call(side, src + sstart, slen, NULL);
-    rp_string_puts(side, ";if(_TrN_Sp._pP)_TrN_Sp._pP();");
+    rp_string_puts(side, ";");
     add_edit_take_ownership(edits, ns, ne, rp_string_steal(side), claimed);
     rp_string_free(side);
     return 1;
@@ -3633,7 +3671,7 @@ static int rewrite_dynamic_import(EditList *edits, const char *src, TSNode snode
     rp_string *out = rp_string_new(128);
     rp_string_puts(out, "(new Promise(function(_TrN_r){var _TrN_m=_TrN_Sp._interopRequireWildcard(require(");
     rp_string_putsn(out, src + ss, se - ss);
-    rp_string_puts(out, "));if(_TrN_Sp._pP)_TrN_Sp._pP();_TrN_r(_TrN_m);}))");
+    rp_string_puts(out, "));_TrN_r(_TrN_m);}))");
     char *rep = rp_string_steal(out);
     out = rp_string_free(out);
     add_edit_take_ownership(edits, ns, ne, rep, claimed);
@@ -4263,11 +4301,23 @@ static int rewrite_arrow_function_node(EditList *edits, const char *src, TSNode 
             multi_inj = rp_string_new(128);
             rp_string_putc(multi_params, '(');
             unsigned arr_n = 0, obj_n = 0;
+            int real_param_count = 0;
             for (uint32_t i = 0; i < np; i++)
             {
-                if (i > 0) rp_string_puts(multi_params, ", ");
                 TSNode p = ts_node_named_child(params, i);
                 const char *pt = ts_node_type(p);
+                /* NDE.26: skip `comment` named children — they're not
+                   parameters and shouldn't be comma-separated.  Tree-
+                   sitter exposes line/block comments inside the param
+                   list as named siblings of the actual params (common
+                   when the source spans multiple lines with inline
+                   doc / eslint directives).  Pre-fix, the loop emitted
+                   `(path, comment, comment, _TrN_obj1)` which collapses
+                   to `(path, , , _TrN_obj1)` — empty param slots are
+                   invalid JS in every engine. */
+                if (strcmp(pt, "comment") == 0) continue;
+                if (real_param_count > 0) rp_string_puts(multi_params, ", ");
+                real_param_count++;
                 size_t pps = ts_node_start_byte(p), ppe = ts_node_end_byte(p);
 
                 TSNode destr_pat = (TSNode){{0}};
@@ -4757,10 +4807,15 @@ static int rewrite_array_spread(EditList *edits, const char *src, TSNode arr, in
 #define addcsize 12
 #define isplain 0
 #define isspread 1
-#define newobj "_TrN_Sp._newObject()"
-#define newobjsz 20
-#define newarr "_TrN_Sp._newArray()"
-#define newarrsz 19
+/* NDE.37: leading space avoids fusing with a preceding identifier-
+   character keyword like `return[...]` / `typeof[...]` / `void[...]`
+   etc.  Minifiers emit `return[` / `return{` constantly (no space
+   required by grammar), and the in-place spread rewrite would
+   otherwise produce `return_TrN_Sp._newArray()...`. */
+#define newobj " _TrN_Sp._newObject()"
+#define newobjsz 21
+#define newarr " _TrN_Sp._newArray()"
+#define newarrsz 20
 
     size_t needed = 1 + newobjsz; // for "_TrN_Sp._newObject()" and '\0'
     /* Reserve headroom for newlines injected between children so the
@@ -5375,7 +5430,21 @@ static char *_emit_value_awaits_lower(rp_string *dst, const char *src, TSNode va
     {
         TSNode aw = av.a[k];
         TSNode arg = ts_node_child_by_field_name(aw, "argument", 8);
-        if (ts_node_is_null(arg)) arg = ts_node_named_child(aw, 0);
+        /* NDE.22: skip `comment` named children — e.g. a JSDoc cast
+           between `await` and its expression — so the actual expression
+           is picked as the argument, not the comment. */
+        if (ts_node_is_null(arg) || strcmp(ts_node_type(arg), "comment") == 0)
+        {
+            uint32_t anc = ts_node_named_child_count(aw);
+            TSNode picked = {0};
+            for (uint32_t ai = 0; ai < anc; ai++)
+            {
+                TSNode c = ts_node_named_child(aw, ai);
+                if (strcmp(ts_node_type(c), "comment") != 0)
+                { picked = c; break; }
+            }
+            if (!ts_node_is_null(picked)) arg = picked;
+        }
 
         /* Recurse into the argument FIRST so any nested awaits (e.g.
            `await fn(await g())`) emit their state-machine cases to `dst`
@@ -5729,8 +5798,20 @@ _emit_stmt_async_lower(rp_string *dst, const char *src, size_t ss, size_t se, TS
     {
         TSNode aw = av.a[k];
         TSNode arg = ts_node_child_by_field_name(aw, "argument", 8);
-        if (ts_node_is_null(arg))
-            arg = ts_node_named_child(aw, 0);
+        /* NDE.22: skip `comment` named children — e.g. JSDoc cast
+           between `await` and its expression. */
+        if (ts_node_is_null(arg) || strcmp(ts_node_type(arg), "comment") == 0)
+        {
+            uint32_t anc = ts_node_named_child_count(aw);
+            TSNode picked = {0};
+            for (uint32_t ai = 0; ai < anc; ai++)
+            {
+                TSNode c = ts_node_named_child(aw, ai);
+                if (strcmp(ts_node_type(c), "comment") != 0)
+                { picked = c; break; }
+            }
+            if (!ts_node_is_null(picked)) arg = picked;
+        }
         *p_next_label += 3;
         char tmp[24];
         snprintf(tmp, sizeof(tmp), "%d", *p_next_label);
@@ -5950,6 +6031,23 @@ static char *_emit_async_expr_replacement(const char *src, TSNode node)
     if (ts_node_is_null(body))
         return NULL;
 
+    /* NDE.39: an `async (args) => body` arrow function should inherit
+       `this` from its lexical enclosing scope.  The previous emit
+       wrapped the body in a non-arrow `function(){...}` which gets a
+       fresh `this` at each call site.  When the arrow is passed to
+       `Array.prototype.map` (which calls callbacks with `this ===
+       undefined` by default), the body sees `this === undefined`
+       instead of the lexical `this`.
+
+       Fix: when the node is an arrow_function, invoke the outer IIFE
+       with `.call(this)` and `.bind(this)` the returned callable, so
+       the lexical `this` threads through asyncToGenerator's
+       `fn.apply(self, args)` chain.
+
+       Non-arrow async function expressions retain the standard
+       "this from call site" semantics. */
+    int is_arrow = strcmp(ts_node_type(node), "arrow_function") == 0;
+
     rp_string *out = rp_string_new(768);
     rp_string_puts(out, "(function(){var _TrN_ref = _TrN_Sp.asyncToGenerator(_TrN_Sp.regeneratorRuntime.mark(function _TrN_callee");
     _append_params_sig(out, src, node);
@@ -5962,7 +6060,10 @@ static char *_emit_async_expr_replacement(const char *src, TSNode node)
     }
     rp_string_puts(out, wrap);
     free(wrap);
-    rp_string_puts(out, "})); return function(){ return _TrN_ref.apply(this, arguments); };})()");
+    if (is_arrow)
+        rp_string_puts(out, "})); return function(){ return _TrN_ref.apply(this, arguments); }.bind(this);}).call(this)");
+    else
+        rp_string_puts(out, "})); return function(){ return _TrN_ref.apply(this, arguments); };})()");
 
     char *ret = rp_string_steal(out);
     out = rp_string_free(out);
@@ -5989,14 +6090,20 @@ static char *_emit_async_method_replacement(const char *src, TSNode node)
     const char *nt = ts_node_type(nname);
     int named = (strcmp(nt, "property_identifier") == 0 || strcmp(nt, "identifier") == 0);
 
+    /* NDE.41: the inner `mark(function NAME(args){...})` callback
+       must be named `_TrN_callee` to match the literal `_TrN_callee`
+       passed as the third arg of `regeneratorRuntime.wrap(..., _TrN_callee, this)`
+       emitted by `_build_regenerator_switch_body`.  Using the method's
+       own name (`function _handleDir(...){...}`) leaves the wrap call's
+       `_TrN_callee` reference unbound — ReferenceError at runtime.
+       (The `named` parameter could instead be threaded into the wrap
+       emitter; simpler to always emit `_TrN_callee` here.) */
     if (in_class_body)
     {
         /* Class method form: name(params){ var _TrN_ref = ...; return _TrN_ref.apply(this, arguments); } */
         rp_string_putsn(out, src+ns, ne-ns);
         _append_params_sig(out, src, node);
-        rp_string_puts(out, " { var _TrN_ref = _TrN_Sp.asyncToGenerator(_TrN_Sp.regeneratorRuntime.mark(function ");
-        if (named) rp_string_putsn(out, src+ns, ne-ns);
-        else       rp_string_puts(out, "_TrN_callee");
+        rp_string_puts(out, " { var _TrN_ref = _TrN_Sp.asyncToGenerator(_TrN_Sp.regeneratorRuntime.mark(function _TrN_callee");
         _append_params_sig(out, src, node);
         rp_string_puts(out, " {");
         char *wrap = _build_regenerator_switch_body(src, body);
@@ -6007,12 +6114,13 @@ static char *_emit_async_method_replacement(const char *src, TSNode node)
     }
     else
     {
-        /* Object-property form: name: (function(){ ... })() */
+        /* Object-property form: name: (function(){ ... })()
+           The OUTER returned callable keeps the method's name (used
+           only for Function.prototype.name / toString); only the
+           inner mark()-callback name needs to be `_TrN_callee`. */
         rp_string_putsn(out, src+ns, ne-ns);
         rp_string_puts(out, ": ");
-        rp_string_puts(out, "(function(){var _TrN_ref = _TrN_Sp.asyncToGenerator(_TrN_Sp.regeneratorRuntime.mark(function ");
-        if (named) rp_string_putsn(out, src+ns, ne-ns);
-        else       rp_string_puts(out, "_TrN_callee");
+        rp_string_puts(out, "(function(){var _TrN_ref = _TrN_Sp.asyncToGenerator(_TrN_Sp.regeneratorRuntime.mark(function _TrN_callee");
         _append_params_sig(out, src, node);
         rp_string_puts(out, " {");
         char *wrap = _build_regenerator_switch_body(src, body);
@@ -6325,8 +6433,21 @@ static char *_lower_range_with_yields(rp_string *dst, const char *src,
             /* Recurse into the arg FIRST so any nested yields emit their
                cases to `dst` BEFORE this yield's case (i.e. innermost gets
                the lower case number). The recursion returns the substituted
-               arg text. */
-            TSNode arg = ts_node_named_child(yw, 0);
+               arg text.
+               NDE.22: skip `comment` named children — e.g. a JSDoc cast
+               between `await` and its expression (`await /JSDOC/ (expr)`)
+               or between `yield` and its expression — so the actual expr
+               is picked as the argument, not the comment. */
+            TSNode arg = {0};
+            {
+                uint32_t ync = ts_node_named_child_count(yw);
+                for (uint32_t yi = 0; yi < ync; yi++)
+                {
+                    TSNode c = ts_node_named_child(yw, yi);
+                    if (strcmp(ts_node_type(c), "comment") != 0)
+                    { arg = c; break; }
+                }
+            }
             char *arg_lowered = NULL;
             if (!ts_node_is_null(arg))
             {
@@ -6725,6 +6846,20 @@ static void _emit_yield_body_range(rp_string *out, const char *src, TSNode block
         /* Back up whitespace for line-number preservation */
         while (ss > 0 && isspace(*(src + ss - 1)))
             ss--;
+
+        /* NDE.23: when we unwrapped a labeled_statement above and the body
+           has no yield/await (so the LoopCtx-based break/continue routing
+           won't fire), the label bytes were lost from the byte-verbatim
+           emit and `break <label>;` inside ends up with no target.  Emit
+           the label prefix here so `break <label>;` resolves to the inner
+           plain for/while.  When has_yield is true, the LoopCtx machinery
+           handles the label and we should NOT also emit it as a plain
+           label — that would create a duplicate / conflicting target. */
+        if (pending_label && pending_label_len > 0 && !has_yield)
+        {
+            rp_string_putsn(out, pending_label, pending_label_len);
+            rp_string_putc(out, ':');
+        }
 
         /* Pre-filter: multi-declarator destructure-await like
            `const a = 1, {b} = await X;` — the generic strip-keyword +
@@ -7520,15 +7655,28 @@ static void _emit_yield_body_range(rp_string *out, const char *src, TSNode block
                    both covered.  Pre-fix, `for await` over a plain
                    object with only Symbol.asyncIterator fell to the
                    length-based _iter fallback and infinite-looped on
-                   `length === undefined`. */
+                   `length === undefined`.
+                   NDE.18: the iterable expression may itself contain
+                   awaits/yields (`for (const x of await fn()) ...`).
+                   Lower those through _lower_range_with_yields so they
+                   become state-machine transitions instead of surviving
+                   verbatim inside `_TrN_Sp._iter(await …)` — duktape
+                   rejects `await` in a non-async function context. */
+                char *right_lowered = NULL;
+                if (!ts_node_is_null(right))
+                {
+                    size_t rs = ts_node_start_byte(right), re = ts_node_end_byte(right);
+                    right_lowered = _lower_range_with_yields(out, src, rs, re, right,
+                                                             ctx, fctx, p_next_label);
+                }
                 rp_string_puts(out, coll_name);
                 rp_string_puts(out, is_await_of
                                       ? "=_TrN_Sp._asyncIter("
                                       : "=_TrN_Sp._iter(");
-                if (!ts_node_is_null(right))
+                if (right_lowered)
                 {
-                    size_t rs = ts_node_start_byte(right), re = ts_node_end_byte(right);
-                    rp_string_putsn(out, src + rs, re - rs);
+                    rp_string_puts(out, right_lowered);
+                    free(right_lowered);
                 }
                 rp_string_puts(out, ");");
             }
@@ -7536,12 +7684,19 @@ static void _emit_yield_body_range(rp_string *out, const char *src, TSNode block
             {
                 /* For-in: collect keys upfront via an inline (non-yielding)
                    for-in.  `_TrN_context._fxN` here is the keys ARRAY. */
-                rp_string_appendf(out, "%s=[];", coll_name);
-                rp_string_appendf(out, "for(var _TrN_fk%d in (", test_label);
+                char *right_lowered_in = NULL;
                 if (!ts_node_is_null(right))
                 {
                     size_t rs = ts_node_start_byte(right), re = ts_node_end_byte(right);
-                    rp_string_putsn(out, src + rs, re - rs);
+                    right_lowered_in = _lower_range_with_yields(out, src, rs, re, right,
+                                                                ctx, fctx, p_next_label);
+                }
+                rp_string_appendf(out, "%s=[];", coll_name);
+                rp_string_appendf(out, "for(var _TrN_fk%d in (", test_label);
+                if (right_lowered_in)
+                {
+                    rp_string_puts(out, right_lowered_in);
+                    free(right_lowered_in);
                 }
                 rp_string_appendf(out, "))%s.push(_TrN_fk%d);", coll_name, test_label);
                 rp_string_appendf(out, "%s=0;", idx_name);
@@ -7736,6 +7891,19 @@ static void _emit_yield_body_range(rp_string *out, const char *src, TSNode block
             rp_string_puts(out, "case ");
             rp_string_puts(out, etmp);
             rp_string_puts(out, ":");
+        }
+        else if (strcmp(stmt_type, "statement_block") == 0 && has_yield)
+        {
+            /* NDE.36: a bare `{ ... }` block-statement at this level
+               (e.g. a switch case body, or any standalone block in a
+               function body) with yields inside needs structural
+               lowering so nested if-statements gate their yield setup.
+               Without this, the block goes to flat `_emit_stmt_yield_lower`
+               which hoists every yield's iter-setup out of any
+               surrounding conditional, firing them unconditionally. */
+            size_t stmt_s = ts_node_start_byte(stmt);
+            if (ss < stmt_s) rp_string_putsn(out, src + ss, stmt_s - ss);
+            _emit_yield_body(out, src, stmt, ctx, fctx, p_next_label);
         }
         else if (has_yield)
         {
@@ -10271,8 +10439,33 @@ static int rewrite_for_of_destructuring(EditList *edits, const char *src, TSNode
     if (strcmp(pt, "array_pattern") != 0 && strcmp(pt, "object_pattern") != 0)
         return 0;
 
-    /* Object pattern: use collect_flat_destructure_bindings approach */
-    if (strcmp(pt, "object_pattern") == 0)
+    /* NDE.18: detect nested patterns inside the array_pattern.  Examples:
+         for (let [b, [w, v, E]] of map.entries()) ...
+         for (let [k, {x, y}] of pairs) ...
+       The flat ArrBind collection below only handles identifier/assign/rest
+       children; nested array_pattern / object_pattern children make it bail
+       with return 0, after which the `let`→`var` keyword swap still fires
+       and leaves `for (var [b, [w, v, E]] of …)` for duktape to reject.
+       Route those through the same `collect_flat_destructure_bindings`-
+       based emit that object_pattern uses (it already handles nested
+       patterns recursively, producing paths like `TMP[1][0]`). */
+    int has_nested_in_array = 0;
+    if (strcmp(pt, "array_pattern") == 0)
+    {
+        uint32_t cn = ts_node_child_count(pattern);
+        for (uint32_t i = 0; i < cn; i++)
+        {
+            TSNode ch = ts_node_child(pattern, i);
+            if (!ts_node_is_named(ch)) continue;
+            const char *ct = ts_node_type(ch);
+            if (strcmp(ct, "array_pattern") == 0 ||
+                strcmp(ct, "object_pattern") == 0)
+            { has_nested_in_array = 1; break; }
+        }
+    }
+
+    /* Object pattern OR nested-array pattern: use collect_flat_destructure_bindings. */
+    if (strcmp(pt, "object_pattern") == 0 || has_nested_in_array)
     {
         if (overlaps)
             return 1;
@@ -10295,9 +10488,14 @@ static int rewrite_for_of_destructuring(EditList *edits, const char *src, TSNode
         int is_block = (strcmp(ts_node_type(body), "statement_block") == 0);
 
         rp_string *out = rp_string_new(256);
-        /* Emit: var _TrN_x = <right>, _TrN_it = ...; while (...) { var TMP = ...; body }
-           Prefixes with `_TrN_` to avoid colliding with user-declared locals. */
-        rp_string_puts(out, "var _TrN_x = ");
+        /* Emit: { var _TrN_x = <right>, _TrN_it = ...; while (...) { var TMP = ...; body } }
+           Outer `{...}` wrap mirrors NDE.23 for `rewrite_for_of_simple` —
+           without it, when this lowering replaces a brace-less single-
+           statement context (`if (cond) for (const {a,b} of x) ...`),
+           the multi-statement output splits and the `while` runs
+           unconditionally.  NDE.34: yaml Document.toJS had exactly this
+           shape inside `if (typeof onAnchor === 'function')`. */
+        rp_string_puts(out, "{var _TrN_x = ");
         rp_string_putsn(out, src + rs, re - rs);
         rp_string_puts(out, ", _TrN_it = (typeof Symbol!=='undefined'&&typeof _TrN_x[Symbol.iterator]==='function')?_TrN_x[Symbol.iterator]():null, _TrN_i = 0, _TrN_r; while(_TrN_it?!(_TrN_r=_TrN_it.next()).done:_TrN_i<_TrN_x.length) { var ");
         rp_string_puts(out, tmpvar);
@@ -10325,7 +10523,7 @@ static int rewrite_for_of_destructuring(EditList *edits, const char *src, TSNode
             rp_string_putsn(out, src + bs + 1, (be - 1) - (bs + 1));
         else
             rp_string_putsn(out, src + bs, be - bs);
-        rp_string_puts(out, " }");
+        rp_string_puts(out, " }}"); /* close while, then outer NDE.34 wrap */
 
         binds_free(&binds);
         add_edit_take_ownership(edits, fs, fe, rp_string_steal(out), claimed);
@@ -10493,6 +10691,11 @@ static int rewrite_for_of_destructuring(EditList *edits, const char *src, TSNode
 
     rp_string *out = rp_string_new(256);
 
+    /* NDE.34 also-fix: outer `{...}` wrap so the multi-statement
+       lowering (var _loopN = …; var _xN = …; for (…){…}) doesn't
+       split when used as the body of a brace-less `if (cond)` etc. */
+    rp_string_puts(out, "{");
+
     // _loop declaration
     rp_string_puts(out, "var ");
     rp_string_puts(out, nm_loop);
@@ -10648,6 +10851,7 @@ static int rewrite_for_of_destructuring(EditList *edits, const char *src, TSNode
            (sloppy), breaking ajv-style code like `this.opts.es5`. */
         rp_string_puts(out, ".call(this); }");
     }
+    rp_string_puts(out, "}"); /* close NDE.34 outer wrap */
 
     free_edits(&sent_edits);
     _bs_lbl_free(&fc.break_labels);
@@ -11484,6 +11688,255 @@ static char *_priv_subst_in_emitted(const char *s, unsigned class_id)
     return ret;
 }
 
+#if 0  /* removed: line-comment converter reverted — see commit log */
+static int _is_value_end_char(char c)
+{
+    return (c >= 'a' && c <= 'z') ||
+           (c >= 'A' && c <= 'Z') ||
+           (c >= '0' && c <= '9') ||
+           c == '_' || c == '$' ||
+           c == ')' || c == ']';
+}
+
+/* JS keywords after which a `/` introduces a regex literal (not
+   division).  e.g. `return /pat/g`, `typeof /pat/g`.  Identifier-like
+   value tokens (variable names) are handled separately via the value-
+   end-char check; this is for the keyword exceptions. */
+static int _kw_takes_regex_after(const char *src, size_t end, size_t *kw_start)
+{
+    static const char *KWS[] = {
+        "return", "typeof", "instanceof", "in", "of", "delete", "void",
+        "new", "throw", "yield", "await", "case", "do", "else", NULL
+    };
+    /* Walk back to identifier start. */
+    size_t s = end;
+    while (s > 0)
+    {
+        char c = src[s-1];
+        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+            (c >= '0' && c <= '9') || c == '_' || c == '$') s--;
+        else break;
+    }
+    if (s == end) return 0;
+    /* Boundary check: char before identifier should not be identifier
+       continuation either. */
+    if (s > 0)
+    {
+        char pc = src[s-1];
+        if ((pc >= 'a' && pc <= 'z') || (pc >= 'A' && pc <= 'Z') ||
+            (pc >= '0' && pc <= '9') || pc == '_' || pc == '$') return 0;
+    }
+    size_t len = end - s;
+    for (size_t k = 0; KWS[k]; k++)
+    {
+        size_t kl = strlen(KWS[k]);
+        if (kl == len && memcmp(src + s, KWS[k], len) == 0)
+        { if (kw_start) *kw_start = s; return 1; }
+    }
+    return 0;
+}
+
+static char *_convert_line_comments_to_block(const char *src, size_t src_len, size_t *out_len)
+{
+    rp_string *out = rp_string_new(src_len + 64);
+    size_t i = 0;
+
+    /* Skip hashbang line so it survives unchanged.  `#!/usr/bin/env node`
+       is syntactically a hashbang (not a JS comment) and node/duktape
+       both tolerate it on line 1 — converting it would break parsing. */
+    if (src_len >= 2 && src[0] == '#' && src[1] == '!')
+    {
+        while (i < src_len && src[i] != '\n') { rp_string_putc(out, src[i]); i++; }
+    }
+
+    int in_str = 0;
+    char str_ch = 0;
+    int in_line_cmt = 0;
+    int in_blk_cmt = 0;
+    int in_tmpl = 0;
+    int in_regex = 0;
+    int in_charclass = 0;
+    /* `last_was_value` distinguishes division `a / b` from regex
+       literal start.  Updated on each emitted byte in normal state.  A
+       `/` preceded by a value (identifier/number/`)`/`]`) is division;
+       otherwise it's a regex literal. */
+    int last_was_value = 0;
+
+    for (; i < src_len; i++)
+    {
+        char c = src[i];
+
+        if (in_regex)
+        {
+            rp_string_putc(out, c);
+            if (c == '\\' && i + 1 < src_len)
+            { rp_string_putc(out, src[i+1]); i++; continue; }
+            if (c == '[') in_charclass = 1;
+            else if (c == ']') in_charclass = 0;
+            else if (c == '/' && !in_charclass)
+            {
+                in_regex = 0;
+                /* Consume flags. */
+                while (i + 1 < src_len)
+                {
+                    char fc = src[i+1];
+                    if ((fc >= 'a' && fc <= 'z') || (fc >= 'A' && fc <= 'Z'))
+                    { rp_string_putc(out, fc); i++; }
+                    else break;
+                }
+                last_was_value = 1;
+            }
+            continue;
+        }
+
+        if (in_line_cmt)
+        {
+            if (c == '\n')
+            {
+                rp_string_puts(out, "*/");
+                rp_string_putc(out, '\n');
+                in_line_cmt = 0;
+                continue;
+            }
+            /* Escape internal block-comment-closer so it doesn't
+               terminate the converted block comment early. */
+            if (c == '*' && i + 1 < src_len && src[i+1] == '/')
+            {
+                rp_string_puts(out, "* /");
+                i++;
+                continue;
+            }
+            rp_string_putc(out, c);
+            continue;
+        }
+
+        if (in_blk_cmt)
+        {
+            rp_string_putc(out, c);
+            if (c == '*' && i + 1 < src_len && src[i+1] == '/')
+            {
+                rp_string_putc(out, '/');
+                i++;
+                in_blk_cmt = 0;
+            }
+            continue;
+        }
+
+        if (in_str)
+        {
+            rp_string_putc(out, c);
+            if (c == '\\' && i + 1 < src_len)
+            {
+                rp_string_putc(out, src[i+1]);
+                i++;
+                continue;
+            }
+            if (c == str_ch) { in_str = 0; last_was_value = 1; }
+            continue;
+        }
+
+        if (in_tmpl)
+        {
+            rp_string_putc(out, c);
+            if (c == '\\' && i + 1 < src_len)
+            {
+                rp_string_putc(out, src[i+1]);
+                i++;
+                continue;
+            }
+            if (c == '`') { in_tmpl = 0; last_was_value = 1; }
+            continue;
+        }
+
+        /* Normal state. */
+        if (c == '/' && i + 1 < src_len)
+        {
+            if (src[i+1] == '/')
+            {
+                /* Convert two slashes to slash-star and enter line-
+                   cmt-in-progress; the matching closer is emitted when
+                   we hit the newline. */
+                rp_string_puts(out, "/*");
+                i++;
+                in_line_cmt = 1;
+                continue;
+            }
+            if (src[i+1] == '*')
+            {
+                rp_string_putc(out, c);
+                rp_string_putc(out, src[i+1]);
+                i++;
+                in_blk_cmt = 1;
+                continue;
+            }
+            /* Lone `/`: regex literal or division.  Heuristic: if the
+               previous non-whitespace/non-comment token was a "value"
+               (identifier/number/`)`/`]`), this is division.  Otherwise
+               it starts a regex literal.  Keyword exceptions handled
+               via `_kw_takes_regex_after`. */
+            if (last_was_value)
+            {
+                /* If the value-end was actually a keyword like `return`
+                   or `typeof`, override to regex. */
+                if (_kw_takes_regex_after(src, i, NULL))
+                {
+                    rp_string_putc(out, c);
+                    in_regex = 1;
+                    last_was_value = 0;
+                    continue;
+                }
+                /* Division. */
+                rp_string_putc(out, c);
+                last_was_value = 0;
+                continue;
+            }
+            /* Regex literal. */
+            rp_string_putc(out, c);
+            in_regex = 1;
+            continue;
+        }
+        if (c == '"' || c == '\'')
+        {
+            rp_string_putc(out, c);
+            in_str = 1;
+            str_ch = c;
+            continue;
+        }
+        if (c == '`')
+        {
+            rp_string_putc(out, c);
+            in_tmpl = 1;
+            continue;
+        }
+
+        rp_string_putc(out, c);
+        /* Update last_was_value for the next iteration. */
+        if (c == ' ' || c == '\t' || c == '\n' || c == '\r')
+        {
+            /* Whitespace doesn't change the value-state. */
+        }
+        else if (_is_value_end_char(c))
+        {
+            last_was_value = 1;
+        }
+        else
+        {
+            /* Punctuation/operator — resets value-state. */
+            last_was_value = 0;
+        }
+    }
+
+    /* If src ends mid-line-comment (no trailing newline), close it. */
+    if (in_line_cmt)
+        rp_string_puts(out, "*/");
+
+    if (out_len) *out_len = out->len;
+    char *ret = rp_string_steal(out);
+    out = rp_string_free(out);
+    return ret;
+}
+#endif  /* end of reverted line-comment converter */
+
 /* Emit the params node's text into `out`, stripping comment children.
    Used by the class method emitter (which copies params verbatim).
    If the source has comments BETWEEN params (common in wide method
@@ -11948,7 +12401,25 @@ static void es5_emit_class_core(rp_string *out, const char *src, const char *cna
                    so private field/method access survives the regen
                    transform.  No-op when the class has no privates. */
                 char *_mangled = _priv_subst_in_emitted(_wrap, class_priv_id);
-                rp_string_puts(bucket, _mangled ? _mangled : _wrap);
+                const char *_str = _mangled ? _mangled : _wrap;
+                size_t _slen = strlen(_str);
+                /* NDE.29: also rewrite `super.X(...)` references inside
+                   the regen body — the source bytes embedded in the
+                   regen-switch state machine still contain raw
+                   `super.X()` calls.  The sync class-method emit path
+                   runs `copy_body_replace_super`; do the same for the
+                   async path so duktape's parser doesn't choke on
+                   `super` inside the non-class-method
+                   `_TrN_callee$(_TrN_context)`. */
+                if (has_super)
+                {
+                    rp_string *_sup = rp_string_new(_slen + 32);
+                    copy_body_replace_super(_sup, _str, _slen, is_static);
+                    rp_string_puts(bucket, _sup->str);
+                    _sup = rp_string_free(_sup);
+                }
+                else
+                    rp_string_puts(bucket, _str);
                 free(_wrap);
                 if (_mangled) free(_mangled);
             }
@@ -12160,45 +12631,37 @@ static void es5_emit_class_core(rp_string *out, const char *src, const char *cna
 
     if (has_super)
     {
-        // In the simple/most common case, `super(args)` is the first statement.
-        // Textually grab constructor body and rewrite a single leading "super(" call.
+        // Rewrite each `super(args)` call in the constructor body to
+        // `(_TrN_this = _TrN_super.call(this, args), _TrN_this)`.  NDE.30
+        // surfaced a multi-call shape (early-return `if (cond) {super(a);
+        // return;} super(b);`) — pre-fix only the FIRST call was
+        // rewritten, leaving bare `super(b)` as a syntax error.
         if (ctor_found && !ts_node_is_null(ctor_body))
         {
             size_t bs = ts_node_start_byte(ctor_body), be = ts_node_end_byte(ctor_body);
             /* ts 'body' includes the surrounding braces; slice to just the contents */
             const char *b = src + bs + 1;
             size_t blen = (be > bs + 1) ? (be - bs - 2) : 0; /* drop leading '{' and trailing '}' */
-            // naive rewrite: look for "super(" at top-level of body text once
-            const char *open = strstr(b, "super(");
-            if (open)
+            /* Scan for the first standalone `super(` — if none, fall
+               through to NO_SUPER_REWRITE. */
+            size_t first_pos = blen;
             {
-                /* Find '(' right after 'super' and its matching ')' */
-                const char *lp = strchr(open, '(');
-                if (!lp)
-                    goto NO_SUPER_REWRITE;
-
-                size_t args_s = (size_t)(lp + 1 - b); /* first char inside '(' */
-                int depth = 1;
-                size_t i = args_s;
-                size_t call_rp = blen; /* fallback */
-                for (; i < blen; i++)
+                size_t scan = 0;
+                while (scan + 6 <= blen)
                 {
-                    char c = b[i];
-                    if (c == '(')
-                        depth++;
-                    else if (c == ')')
+                    if (strncmp(b + scan, "super(", 6) == 0)
                     {
-                        depth--;
-                        if (depth == 0)
-                        {
-                            call_rp = i;
-                            break;
-                        }
+                        if (scan > 0 && (isalnum((unsigned char)b[scan-1]) || b[scan-1] == '_' || b[scan-1] == '$'))
+                        { scan++; continue; }
+                        first_pos = scan;
+                        break;
                     }
+                    scan++;
                 }
-                if (depth != 0)
-                    goto NO_SUPER_REWRITE;
+            }
 
+            if (first_pos < blen)
+            {
                 /* Emit prelude (var _TrN_this; classCallCheck) */
                 rp_string_puts(out, "var _TrN_this;_TrN_Sp.classCallCheck(this, ");
                 rp_string_putsn(out, cname, cname_len);
@@ -12211,74 +12674,118 @@ static void es5_emit_class_core(rp_string *out, const char *src, const char *cna
                 if (field_inits->len)
                     rp_string_puts(out, field_inits->str);
 
-                /* Copy body bytes [0..super_call_start) verbatim — these
-                   are the structural context surrounding `super(...)`,
-                   e.g. `if(`, `try{`, control-flow leading up to the
-                   call.  Pre-fix, the rewriter dropped this prefix and
-                   assumed super was the first statement, which broke
-                   patterns like `constructor(){ if(super(x),y) throw }`. */
-                size_t super_kw_pos = (size_t)(open - b);
-                if (super_kw_pos > 0)
+                /* Loop over every standalone `super(` in the body, emitting
+                   pre-segments through copy_body_replace_super (so super.X
+                   gets rewritten too) and replacing each super-call with
+                   the assign-expression form. */
+                size_t cursor = 0;
+                int any_rewrite_failed = 0;
+                while (cursor < blen)
                 {
-                    rp_string *pre = rp_string_new(64);
-                    _emit_with_priv_subst(pre, src,
-                                          ts_node_start_byte(ctor_body) + 1,
-                                          ts_node_start_byte(ctor_body) + 1 + super_kw_pos,
-                                          ctor_body, class_priv_id);
-                    copy_body_replace_super(out, pre->str, pre->len, 0);
-                    pre = rp_string_free(pre);
+                    /* find next standalone super( from cursor */
+                    size_t spos = blen;
+                    {
+                        size_t s = cursor;
+                        while (s + 6 <= blen)
+                        {
+                            if (strncmp(b + s, "super(", 6) == 0)
+                            {
+                                if (s > 0 && (isalnum((unsigned char)b[s-1]) || b[s-1] == '_' || b[s-1] == '$'))
+                                { s++; continue; }
+                                spos = s;
+                                break;
+                            }
+                            s++;
+                        }
+                    }
+
+                    if (spos == blen)
+                    {
+                        /* no more supers — emit the rest through super.X
+                           rewriter + priv-subst, then stop. */
+                        if (cursor < blen)
+                        {
+                            rp_string *tail = rp_string_new(64);
+                            _emit_with_priv_subst(tail, src,
+                                                  ts_node_start_byte(ctor_body) + 1 + cursor,
+                                                  ts_node_start_byte(ctor_body) + 1 + blen,
+                                                  ctor_body, class_priv_id);
+                            copy_body_replace_super(out, tail->str, tail->len, 0);
+                            tail = rp_string_free(tail);
+                        }
+                        break;
+                    }
+
+                    /* find matching close paren for this super( */
+                    size_t args_s = spos + 6; /* first char inside '(' */
+                    int depth = 1;
+                    size_t i = args_s;
+                    size_t call_rp = blen; /* fallback */
+                    for (; i < blen; i++)
+                    {
+                        char c = b[i];
+                        if (c == '(') depth++;
+                        else if (c == ')')
+                        {
+                            depth--;
+                            if (depth == 0) { call_rp = i; break; }
+                        }
+                    }
+                    if (depth != 0)
+                    {
+                        any_rewrite_failed = 1;
+                        break;
+                    }
+
+                    /* Emit bytes [cursor..spos) verbatim (with super.X
+                       rewrites and priv-subst).  This is the structural
+                       context leading up to the super call — `if (` /
+                       `} ` / etc. */
+                    if (spos > cursor)
+                    {
+                        rp_string *pre = rp_string_new(64);
+                        _emit_with_priv_subst(pre, src,
+                                              ts_node_start_byte(ctor_body) + 1 + cursor,
+                                              ts_node_start_byte(ctor_body) + 1 + spos,
+                                              ctor_body, class_priv_id);
+                        copy_body_replace_super(out, pre->str, pre->len, 0);
+                        pre = rp_string_free(pre);
+                    }
+
+                    /* Emit `(_TrN_this = _TrN_super.call(this, args), _TrN_this)` */
+                    rp_string_puts(out, "(_TrN_this = ");
+                    {
+                        const char *atext = b + args_s;
+                        size_t alen = call_rp - args_s;
+                        while (alen > 0 && (*atext == ' ' || *atext == '\t' || *atext == '\n' || *atext == '\r'))
+                        { atext++; alen--; }
+                        while (alen > 0 && (atext[alen-1] == ' ' || atext[alen-1] == '\t' || atext[alen-1] == '\n' || atext[alen-1] == '\r'))
+                            alen--;
+                        if (alen > 3 && atext[0] == '.' && atext[1] == '.' && atext[2] == '.'
+                            && memchr(atext + 3, ',', alen - 3) == NULL)
+                        {
+                            rp_string_puts(out, "_TrN_super.apply(this,");
+                            rp_string_putsn(out, atext + 3, alen - 3);
+                            rp_string_puts(out, ")");
+                        }
+                        else if (alen > 0)
+                        {
+                            rp_string_puts(out, "_TrN_super.call(this, ");
+                            rp_string_putsn(out, atext, alen);
+                            rp_string_puts(out, ")");
+                        }
+                        else
+                        {
+                            rp_string_puts(out, "_TrN_super.call(this)");
+                        }
+                    }
+                    rp_string_puts(out, ", _TrN_this)");
+
+                    cursor = call_rp + 1;
                 }
 
-                /* Replace `super(args)` with an EXPRESSION that assigns
-                   to _TrN_this and evaluates to that value:
-                     (_TrN_this = _TrN_super.call(this, args), _TrN_this)
-                   This form fits inside any expression position (an
-                   `if`-condition, a comma sequence, a logical op, etc.)
-                   without disturbing the surrounding parens. */
-                rp_string_puts(out, "(_TrN_this = ");
-                {
-                    const char *atext = b + args_s;
-                    size_t alen = call_rp - args_s;
-                    while (alen > 0 && (*atext == ' ' || *atext == '\t' || *atext == '\n' || *atext == '\r'))
-                    { atext++; alen--; }
-                    while (alen > 0 && (atext[alen-1] == ' ' || atext[alen-1] == '\t' || atext[alen-1] == '\n' || atext[alen-1] == '\r'))
-                        alen--;
-                    if (alen > 3 && atext[0] == '.' && atext[1] == '.' && atext[2] == '.'
-                        && memchr(atext + 3, ',', alen - 3) == NULL)
-                    {
-                        /* single spread: super(...expr) -> _super.apply(this, expr) */
-                        rp_string_puts(out, "_TrN_super.apply(this,");
-                        rp_string_putsn(out, atext + 3, alen - 3);
-                        rp_string_puts(out, ")");
-                    }
-                    else if (alen > 0)
-                    {
-                        rp_string_puts(out, "_TrN_super.call(this, ");
-                        rp_string_putsn(out, atext, alen);
-                        rp_string_puts(out, ")");
-                    }
-                    else
-                    {
-                        rp_string_puts(out, "_TrN_super.call(this)");
-                    }
-                }
-                rp_string_puts(out, ", _TrN_this)");
-
-                /* Copy bytes AFTER `super(...)` — i.e. from byte after
-                   the closing ')' to the end of body.  Preserves any
-                   wrapping context (`if(super(),x) body`'s closing `)`,
-                   `try{super();...}catch`, etc.). */
-                size_t after = call_rp + 1; /* position after ')' */
-                if (after < blen)
-                {
-                    rp_string *subbed = rp_string_new(64);
-                    _emit_with_priv_subst(subbed, src,
-                                          ts_node_start_byte(ctor_body) + 1 + after,
-                                          ts_node_start_byte(ctor_body) + 1 + blen,
-                                          ctor_body, class_priv_id);
-                    copy_body_replace_super(out, subbed->str, subbed->len, 0);
-                    subbed = rp_string_free(subbed);
-                }
+                if (any_rewrite_failed)
+                    goto NO_SUPER_REWRITE;
 
                 /* Ensure the constructor returns _TrN_this.  Lead with `;`
                    so we don't concatenate `=3return` when the body's last
@@ -13081,6 +13588,32 @@ static int rewrite_for_of_simple(EditList *edits, const char *src, TSNode forof,
     size_t ns = ts_node_start_byte(name);
     size_t ne = ts_node_end_byte(name);
 
+    /* NDE.28: detect a `labeled_statement` parent.  When the for-of has
+       a label prefix like `OUTER: for (const x of …) { … continue OUTER; … }`,
+       the label gets attached to the outer `{…}` wrap that NDE.23 emits
+       — but `continue OUTER` only works on loops, not labeled blocks.
+       Fix: extend the edit range up to include the source's `<label>:`
+       prefix and re-emit the label INSIDE the wrap, on the actual
+       `while` loop.  Then `continue OUTER` resolves to the while
+       loop's outer iteration. */
+    const char *outer_label = NULL;
+    size_t outer_label_len = 0;
+    size_t replace_start = ts_node_start_byte(forof);
+    {
+        TSNode parent = ts_node_parent(forof);
+        if (!ts_node_is_null(parent) &&
+            strcmp(ts_node_type(parent), "labeled_statement") == 0)
+        {
+            TSNode lbl = ts_node_child_by_field_name(parent, "label", 5);
+            if (!ts_node_is_null(lbl))
+            {
+                outer_label = src + ts_node_start_byte(lbl);
+                outer_label_len = ts_node_end_byte(lbl) - ts_node_start_byte(lbl);
+                replace_start = ts_node_start_byte(parent);
+            }
+        }
+    }
+
     // Fresh temps
 #define TPSMALLBUFSZ 32
     char ibuf[TPSMALLBUFSZ], xbuf[TPSMALLBUFSZ], itbuf[TPSMALLBUFSZ+1], rbuf[TPSMALLBUFSZ];
@@ -13099,13 +13632,28 @@ static int rewrite_for_of_simple(EditList *edits, const char *src, TSNode forof,
     //          while(_it?!(_r=_it.next()).done:_i<_x.length){<assign> <body>}
     rp_string *out = rp_string_new(256);
 
-    rp_string_appendf(out, "var %s = ", xbuf);
+    /* NDE.23: wrap the entire emit in `{…}` so when the for-of replaces a
+       brace-less single-statement context (`if (cond) for (const it of x)
+       body;`) the resulting `var _x=…; while(…){…}` doesn't split into two
+       statements and orphan the `else`/leave the while as a sibling of the
+       if-consequent.  Inside an existing block (or as a top-level
+       statement) the extra braces are harmless. */
+    rp_string_appendf(out, "{var %s = ", xbuf);
     rp_string_putsn(out, src + rs, re - rs);
     rp_string_appendf(out,
-        ", %s = (typeof Symbol!=='undefined'&&typeof %s[Symbol.iterator]==='function')?%s[Symbol.iterator]():null, %s = 0, %s; "
+        ", %s = (typeof Symbol!=='undefined'&&typeof %s[Symbol.iterator]==='function')?%s[Symbol.iterator]():null, %s = 0, %s; ",
+        itbuf, xbuf, xbuf, ibuf, rbuf);
+    /* NDE.28: emit the outer label INSIDE the wrap so `continue <LBL>`
+       inside the body resolves to the while loop (and not the dropped
+       outer label that used to apply to the brace-wrapped block). */
+    if (outer_label)
+    {
+        rp_string_putsn(out, outer_label, outer_label_len);
+        rp_string_putc(out, ':');
+    }
+    rp_string_appendf(out,
         "while(%s?!(%s=%s.next()).done:%s<%s.length) {",
-        itbuf, xbuf, xbuf, ibuf, rbuf,       /* var line */
-        itbuf, rbuf, itbuf, ibuf, xbuf);      /* while condition */
+        itbuf, rbuf, itbuf, ibuf, xbuf);
 
     // Assignment inside loop body
     if (is_decl)
@@ -13142,12 +13690,13 @@ static int rewrite_for_of_simple(EditList *edits, const char *src, TSNode forof,
         rp_string_putsn(out, src + ns, ne - ns);
         rp_string_puts(out, ");");
     }
-    rp_string_puts(out, "}");
+    rp_string_puts(out, "}}");  /* close while + NDE.23 outer wrap */
 
-    // Replace the whole for-of node
-    size_t fs = ts_node_start_byte(forof);
+    // Replace the for-of node (or the wrapping labeled_statement, when
+    // present — NDE.28 swallows the `<label>:` prefix so it's not left
+    // on the now-block-wrapped emit).
     size_t fe = ts_node_end_byte(forof);
-    add_edit_take_ownership(edits, fs, fe, rp_string_steal(out), claimed);
+    add_edit_take_ownership(edits, replace_start, fe, rp_string_steal(out), claimed);
     out = rp_string_free(out);
     return 1;
 }
@@ -13201,9 +13750,20 @@ static int rewrite_call_spread(EditList *edits, const char *src, TSNode node,
 
     size_t cs = ts_node_start_byte(callee), ce = ts_node_end_byte(callee);
 
-    /* For call_expression: determine context for .apply() */
+    /* For call_expression: determine context for .apply().
+       NDE.40: subscript_expression (`obj[key]`) needs the same
+       receiver-preserving treatment as member_expression (`obj.key`).
+       Pre-fix, `obj[m](...args)` lowered to `obj[m].apply(void 0,
+       args)` — losing the receiver and breaking method-on-bracket
+       dispatch.  Surfaced by light-my-request's
+       `Chain.prototype[method] = function(...args) { return
+       this._promise[method](...args); }` — the chain's .then
+       delegate had `this = undefined`, native Promise.then with
+       undefined receiver yielded a Promise that resolved with
+       globalThis. */
     const char *callee_type = ts_node_type(callee);
-    int is_member = (strcmp(callee_type, "member_expression") == 0);
+    int is_member = (strcmp(callee_type, "member_expression") == 0
+                  || strcmp(callee_type, "subscript_expression") == 0);
 
     /* Build the args array expression */
     rp_string *argsexpr = rp_string_new(64);
@@ -13240,6 +13800,13 @@ static int rewrite_call_spread(EditList *edits, const char *src, TSNode node,
         for (uint32_t i = 0; i < nargs; i++)
         {
             TSNode arg = ts_node_named_child(args_node, i);
+            /* NDE.21: skip `comment` named children — line/block comments
+               between args are named children of `arguments` in tree-sitter
+               JS, and copying their bytes into the rewritten array literal
+               left them inside `[…]` where the subsequent line collapse
+               made `// comment` eat the closing `]`. */
+            if (strcmp(ts_node_type(arg), "comment") == 0)
+                continue;
             size_t as = ts_node_start_byte(arg), ae = ts_node_end_byte(arg);
 
             if (strcmp(ts_node_type(arg), "spread_element") == 0)
@@ -13388,14 +13955,36 @@ static int rewrite_nullish_coalescing(EditList *edits, const char *src, TSNode n
     }
     else
     {
-        /* (_nc = left, _nc != null ? _nc : right) */
+        /* NDE.38: original emit was `(_TrN_nc<N> = left, _TrN_nc<N> !=
+           null ? _TrN_nc<N> : right)` but `_TrN_nc<N>` was never
+           declared anywhere — strict-mode writes throw ReferenceError
+           (glob 13's minified bundle is strict).  Use an IIFE arrow so
+           the temp is a parameter and gets a proper binding.
+
+           Caveat: an arrow body can't contain `yield`/`await` from the
+           enclosing generator/async function — in that rare case fall
+           back to the bare-temp comma form, which still works in
+           non-strict contexts (most callers). */
         char tvar[32];
         snprintf(tvar, sizeof(tvar), "_TrN_nc%u", _nc_counter++);
-        rp_string_appendf(out, "(%s = ", tvar);
-        rp_string_putsn(out, src + ls, le - ls);
-        rp_string_appendf(out, ", %s != null ? %s : ", tvar, tvar);
-        rp_string_putsn(out, src + rs, re - rs);
-        rp_string_puts(out, ")");
+        int right_has_yield = _text_has_yield(src, rs, re);
+        if (right_has_yield)
+        {
+            rp_string_appendf(out, "(%s = ", tvar);
+            rp_string_putsn(out, src + ls, le - ls);
+            rp_string_appendf(out, ", %s != null ? %s : ", tvar, tvar);
+            rp_string_putsn(out, src + rs, re - rs);
+            rp_string_puts(out, ")");
+        }
+        else
+        {
+            rp_string_appendf(out, "(function(%s){return %s != null ? %s : ",
+                              tvar, tvar, tvar);
+            rp_string_putsn(out, src + rs, re - rs);
+            rp_string_puts(out, ";})(");
+            rp_string_putsn(out, src + ls, le - ls);
+            rp_string_puts(out, ")");
+        }
     }
 
     add_edit_take_ownership(edits, es, ee, rp_string_steal(out), claimed);
@@ -13742,8 +14331,14 @@ static int rewrite_plain_method_shorthand(EditList *edits, const char *src, TSNo
        plain identifier params is left alone — Duktape handles it. */
     int is_get_or_set = ((namelen == 3 && strncmp(src + ns, "get", 3) == 0) ||
                         (namelen == 3 && strncmp(src + ns, "set", 3) == 0));
+    /* NDE.19 follow-up: reserved-word method names (`default(d){…}`,
+       `catch(p){…}`, etc.) used as object-literal shorthand methods
+       parse as keyword tokens to duktape.  Same rewrite as get/set:
+       insert `: function` after the name so it becomes a regular
+       property whose key is a string and value is a function. */
+    int is_reserved_name = _name_is_reserved(src + ns, namelen);
     int needs_param_rewrite = 0;
-    if (!is_get_or_set)
+    if (!is_get_or_set && !is_reserved_name)
     {
         TSNode params = ts_node_child_by_field_name(node, "parameters", 10);
         if (!ts_node_is_null(params))
@@ -13764,7 +14359,7 @@ static int rewrite_plain_method_shorthand(EditList *edits, const char *src, TSNo
             }
         }
     }
-    if (!is_get_or_set && !needs_param_rewrite)
+    if (!is_get_or_set && !is_reserved_name && !needs_param_rewrite)
         return 0;
     if (overlaps)
     {
@@ -14536,6 +15131,12 @@ RP_ParseRes transpiler_rewrite_pass(EditList *edits, const char *src, size_t src
                    that defineProperties wires up via `_TrN_Sp._fs` for
                    per-method Function.prototype.toString. */
                 if (_tp_fn_sources) *polysneeded |= FN_SOURCE_PF;
+                /* NDE.29 (peer of NDE.27): the class wholesale-replace
+                   may embed method bodies that still contain ES2015+
+                   syntax (optional chain, super calls inside async
+                   bodies, etc).  Force a re-pass so the corresponding
+                   rewriters can fire on the emitted output. */
+                *unresolved = 1;
             }
         }
 
@@ -14546,6 +15147,8 @@ RP_ParseRes transpiler_rewrite_pass(EditList *edits, const char *src, size_t src
             {
                 *polysneeded |= CLASS_PF;
                 if (_tp_fn_sources) *polysneeded |= FN_SOURCE_PF;
+                /* NDE.29 (peer): see class_declaration above. */
+                *unresolved = 1;
             }
         }
 
@@ -14614,7 +15217,17 @@ RP_ParseRes transpiler_rewrite_pass(EditList *edits, const char *src, size_t src
         {
             handled = rewrite_async_await_to_regenerator(edits, src, n, &claimed, overlaps);
             if (handled)
+            {
                 *polysneeded |= ASYNC_PF | PROMISE_PF;
+                /* NDE.27: the async wholesale-replace embeds the original
+                   function's params verbatim inside the inner _TrN_callee
+                   function expression.  If those params contain ES2015+
+                   syntax (defaults `b = 'x'`, rest `...args`, destructure)
+                   the inner _TrN_callee survives unlowered and duktape
+                   rejects.  Force a re-pass so the function-param
+                   rewriters fire on the emitted _TrN_callee. */
+                *unresolved = 1;
+            }
         }
 
         if (!handled && (strcmp(nt, "generator_function_declaration") == 0 ||
@@ -14624,7 +15237,12 @@ RP_ParseRes transpiler_rewrite_pass(EditList *edits, const char *src, size_t src
         {
             handled = rewrite_generator_to_regenerator(edits, src, n, &claimed, overlaps);
             if (handled)
+            {
                 *polysneeded |= ASYNC_PF;
+                /* NDE.27 (peer of async path): generator wholesale-
+                   replace also embeds original params verbatim. */
+                *unresolved = 1;
+            }
         }
 
         if (!handled && strcmp(nt, "method_definition") == 0)
@@ -14812,13 +15430,32 @@ RP_ParseRes transpiler_rewrite_pass(EditList *edits, const char *src, size_t src
            enclosing arrow rewrite has wholesale-replaced this byte range —
            it preserves the comma verbatim in its output, and our stripper
            edit would collide with the wider replace in apply_edits and
-           corrupt the surrounding bytes). */
+           corrupt the surrounding bytes).
+           NDE.20: line / block comments inside an arguments list (commander's
+           `Math.min(d[...]+1, // deletion\n ..., // substitution\n)`) are
+           named children too, so picking the LAST named child without
+           skipping comments aimed the scan past the real trailing comma.
+           Walk back past any trailing `comment` children to land on the last
+           actual argument before scanning. */
         if (strcmp(nt, "formal_parameters") == 0 || strcmp(nt, "arguments") == 0)
         {
             uint32_t nc = ts_node_named_child_count(n);
-            if (nc > 0)
+            uint32_t li = nc;
+            TSNode last = {0};
+            int found_last = 0;
+            while (li > 0)
             {
-                TSNode last = ts_node_named_child(n, nc - 1);
+                li--;
+                TSNode cand = ts_node_named_child(n, li);
+                if (strcmp(ts_node_type(cand), "comment") != 0)
+                {
+                    last = cand;
+                    found_last = 1;
+                    break;
+                }
+            }
+            if (found_last)
+            {
                 size_t after = ts_node_end_byte(last);
                 size_t paren = ne - 1; /* position of ')' */
                 for (size_t j = after; j < paren; j++)

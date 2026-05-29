@@ -8,6 +8,11 @@
 #include "cmark-gfm.h"
 #include "cmark-gfm-core-extensions.h"
 
+/* From cmark-gfm/src/registry.h — not in the public install set, but the
+   symbol is exported.  Frees the per-process syntax_extensions list that
+   cmark_gfm_core_extensions_ensure_registered() populates. */
+extern void cmark_release_plugins(void);
+
 #define checkflag(name,flag) do{\
     if(duk_get_prop_string(ctx, obj_idx, name)){\
         if(REQUIRE_BOOL(ctx, -1, "cmark.toHtml - option %s requires a boolean",name))\
@@ -93,8 +98,21 @@ static duk_ret_t to_html(duk_context *ctx)
 /* **************************************************
    Initialize module
    ************************************************** */
+static void rp_cmark_cleanup_atexit(void *arg)
+{
+  (void)arg;
+  cmark_release_plugins();
+}
+
 duk_ret_t duk_open_module(duk_context *ctx)
 {
+  static int registered = 0;
+  if (!registered)
+  {
+    add_exit_func(rp_cmark_cleanup_atexit, NULL);
+    registered = 1;
+  }
+
   cmark_gfm_core_extensions_ensure_registered();
   duk_push_object(ctx);
   duk_push_c_function(ctx, to_html, 2);

@@ -130,6 +130,119 @@ function runTests(label) {
         return gMap.has("name") && gMap.has("age") && !gMap.has("missing");
     });
 
+    /* ---- Constructor from arbitrary iterables ----
+       Spec says new Map(iter) / new Set(iter) walks the Symbol.iterator
+       protocol; arrays are just one case.  Pre-fix the constructors
+       only handled arrays and silently produced an empty result for
+       Maps, Sets, generator-style iterators, etc. */
+
+    testFeature(label + " - new Map(otherMap) copies entries", function() {
+        var src = new Map([["a", 1], ["b", 2], ["c", 3]]);
+        var copy = new Map(src);
+        return copy.size === 3 && copy.get("a") === 1 && copy.get("c") === 3;
+    });
+
+    testFeature(label + " - new Map(otherMap) is a shallow copy", function() {
+        var src = new Map([["k", 1]]);
+        var copy = new Map(src);
+        src.set("k", 99);          /* mutate original */
+        return copy.get("k") === 1;
+    });
+
+    testFeature(label + " - new Set(otherSet) copies elements", function() {
+        var src = new Set([10, 20, 30]);
+        var copy = new Set(src);
+        return copy.size === 3 && copy.has(10) && copy.has(20) && copy.has(30);
+    });
+
+    testFeature(label + " - new Set(otherSet) is a shallow copy", function() {
+        var src = new Set([1, 2, 3]);
+        var copy = new Set(src);
+        src.add(99);
+        return copy.size === 3 && !copy.has(99);
+    });
+
+    testFeature(label + " - new Map(map.entries()) walks iterator", function() {
+        var src = new Map([["a", 1], ["b", 2]]);
+        var copy = new Map(src.entries());
+        return copy.size === 2 && copy.get("b") === 2;
+    });
+
+    testFeature(label + " - new Set(set.values()) walks iterator", function() {
+        var src = new Set([100, 200, 300]);
+        var copy = new Set(src.values());
+        return copy.size === 3 && copy.has(200);
+    });
+
+    testFeature(label + " - new Map(set) treats Set entries as [k,v]", function() {
+        /* Spec: Map walks the iterable; each value must be an entry
+           object whose [0] is the key and [1] is the value.  A Set's
+           iterator yields plain values, NOT [k,v] entries, so this
+           should throw TypeError. */
+        try {
+            new Map(new Set([1, 2, 3]));
+            return false;
+        } catch (e) {
+            return e.name === "TypeError" || /must be an entry|iterator/.test(e.message);
+        }
+    });
+
+    testFeature(label + " - new Map() and new Map(null/undef) are empty", function() {
+        return new Map().size === 0
+            && new Map(undefined).size === 0
+            && new Map(null).size === 0;
+    });
+
+    testFeature(label + " - new Set() and new Set(null/undef) are empty", function() {
+        return new Set().size === 0
+            && new Set(undefined).size === 0
+            && new Set(null).size === 0;
+    });
+
+    testFeature(label + " - new Map(non-iterable) throws TypeError", function() {
+        try { new Map(42);          return false; } catch (e) { if (e.name !== "TypeError") return false; }
+        try { new Map({a: 1});      return false; } catch (e) { if (e.name !== "TypeError") return false; }
+        try { new Map(true);        return false; } catch (e) { if (e.name !== "TypeError") return false; }
+        return true;
+    });
+
+    testFeature(label + " - new Set(non-iterable) throws TypeError", function() {
+        try { new Set(42);          return false; } catch (e) { if (e.name !== "TypeError") return false; }
+        try { new Set({a: 1});      return false; } catch (e) { if (e.name !== "TypeError") return false; }
+        return true;
+    });
+
+    testFeature(label + " - new Map(string) iterates code-units as entries", function() {
+        /* Strings are iterable; each yielded value is a single character
+           string, which is NOT a valid [k,v] entry, so Map must throw. */
+        try {
+            new Map("abc");
+            return false;
+        } catch (e) {
+            return e.name === "TypeError";
+        }
+    });
+
+    testFeature(label + " - new Set(string) populates with code units", function() {
+        /* Strings ARE iterable for Set -- each char becomes an element. */
+        var s = new Set("hello");
+        return s.size === 4 /* h e l o (dedup) */
+            && s.has("h") && s.has("e") && s.has("l") && s.has("o");
+    });
+
+    testFeature(label + " - new Map(other.entries()) round-trips deeply", function() {
+        /* Sanity: copy a 5-entry map through entries() and verify all
+           keys, values, and insertion order are preserved. */
+        var src = new Map([
+            ["a", 1], ["b", 2], ["c", 3], ["d", 4], ["e", 5]
+        ]);
+        var copy = new Map(src.entries());
+        if (copy.size !== 5) return false;
+        var keys = [];
+        copy.forEach(function(_v, k) { keys.push(k); });
+        return JSON.stringify(keys) === '["a","b","c","d","e"]';
+    });
+
     /* ---- Map with object key ---- */
 
     testFeature(label + " - Map object key size", function() {

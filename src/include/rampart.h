@@ -417,6 +417,7 @@ void rp_jsev_sweep_thread(RPTHR *thr);
 #define RPTHR_FLAG_WAITING    0x80  // flag that we are waiting in thread.waitfor()
 #define RPTHR_FLAG_KEEP_OPEN  0x100 //  do not autoclose when thread event base is empty
 #define RPTHR_FLAG_TERMINATING 0x200 // thr.terminate() requested forcible shutdown
+#define RPTHR_FLAG_BARE       0x400 // minimal-globals thread: skip rpthr_copy_global + skip non-essential rampart surface (for vm sandbox)
 
 
 #define RP_USE_LOCKLOCKS
@@ -856,6 +857,14 @@ EVARGS {
     timeout_callback *cb;
     void *cbarg;
     SLIST_ENTRY(ev_args) entries;
+    /* UAF guard.  rp_el_doevent sets `dispatching` while the timer
+       callback chain (C and/or JS) is on the stack.  If clearTimeout
+       fires during that window, it sets `clear_pending` and returns
+       without freeing — rp_el_doevent performs the deferred cleanup
+       when it unwinds, so post-callback code in rp_el_doevent never
+       touches a freed EVARGS. */
+    int dispatching;
+    int clear_pending;
 };
 
 extern pthread_mutex_t slistlock;

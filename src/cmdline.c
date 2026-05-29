@@ -78,6 +78,83 @@ int clock_gettime(clockid_t type, struct timespec *rettime)
 #define ENODATA 8088
 #endif
 
+#if defined(DUK_RP_USE_WEAK_REFS)
+/*
+ *  FinalizationRegistry auto-drain wiring
+ *
+ *  When a target registered with a FinReg dies, duktape queues a
+ *  pending callback.  Without our hook the queue grows until JS code
+ *  calls cleanupSome() explicitly.  We register a "notifier" with
+ *  duktape that fires on the empty -> non-empty transition; the
+ *  notifier marks our drain event active.  Libevent then runs the
+ *  drain at the end of the current event-loop batch -- spec-compliant
+ *  async-callback timing without per-iteration polling.
+ *
+ *  The drain event is never event_add'd, so it doesn't keep the loop
+ *  alive on its own.  When idle (no FinReg deaths), the loop sleeps
+ *  on epoll exactly as before; the drain machinery is dormant.
+ */
+static struct event *rp_weak_drain_ev = NULL;
+static duk_context *rp_weak_drain_ctx = NULL;
+
+static void rp_weak_drain_cb(evutil_socket_t fd, short flags, void *arg)
+{
+    (void) fd; (void) flags; (void) arg;
+    if (rp_weak_drain_ctx != NULL)
+        duk_rp_weak_drain_pending_finalizers(rp_weak_drain_ctx);
+}
+
+static void rp_weak_notify_pending(void *udata)
+{
+    (void) udata;
+    if (rp_weak_drain_ev != NULL)
+        event_active(rp_weak_drain_ev, 0, 0);
+}
+
+static void rp_weak_install_drain(duk_context *ctx, struct event_base *base)
+{
+    if (rp_weak_drain_ev != NULL) return;  /* already installed */
+    rp_weak_drain_ev = event_new(base, -1, 0, rp_weak_drain_cb, NULL);
+    rp_weak_drain_ctx = ctx;
+    duk_rp_weak_set_pending_notifier(ctx, rp_weak_notify_pending, NULL);
+}
+#endif  /* DUK_RP_USE_WEAK_REFS */
+
+#if defined(DUK_RP_USE_PROMISE_NATIVE)
+/*
+ *  Native Promise microtask drain wiring (mirrors the FinReg pattern).
+ *
+ *  When a Promise reaction or thenable-adoption job is enqueued, the
+ *  notifier marks our drain event active.  Libevent runs the drain at
+ *  the end of the current event-loop iteration -- same timing as
+ *  spec'd microtask checkpoints.  The drain event is never event_add'd,
+ *  so it doesn't keep the loop alive on its own. */
+static struct event *rp_mt_drain_ev = NULL;
+static duk_context *rp_mt_drain_ctx = NULL;
+
+static void rp_mt_drain_cb(evutil_socket_t fd, short flags, void *arg)
+{
+    (void) fd; (void) flags; (void) arg;
+    if (rp_mt_drain_ctx != NULL)
+        duk_rp_microtask_drain(rp_mt_drain_ctx);
+}
+
+static void rp_mt_notify(void *udata)
+{
+    (void) udata;
+    if (rp_mt_drain_ev != NULL)
+        event_active(rp_mt_drain_ev, 0, 0);
+}
+
+static void rp_mt_install_drain(duk_context *ctx, struct event_base *base)
+{
+    if (rp_mt_drain_ev != NULL) return;
+    rp_mt_drain_ev = event_new(base, -1, 0, rp_mt_drain_cb, NULL);
+    rp_mt_drain_ctx = ctx;
+    duk_rp_microtask_set_notifier(ctx, rp_mt_notify, NULL);
+}
+#endif  /* DUK_RP_USE_PROMISE_NATIVE */
+
 int RP_TX_isforked=0;  //set to one in fork so we know not to lock sql db;
 int totnthreads=0;
 int exit_to_repl=0;
@@ -2476,6 +2553,11 @@ static void rp_el_doevent(evutil_socket_t fd, short events, void* arg)
     int cbret=1, do_js_cb=0;
     const char *fname = "setTimeout/setInterval";
 
+    /* Mark as dispatching: clearTimeout called from within the C or JS
+       callback will set clear_pending instead of freeing.  We perform
+       the deferred cleanup at to_doevent_end. */
+    evargs->dispatching = 1;
+
     duk_set_top(ctx, 0);
 
     duk_push_global_stash(ctx);
@@ -2569,11 +2651,16 @@ static void rp_el_doevent(evutil_socket_t fd, short events, void* arg)
     //discard return
     duk_pop(ctx);
 
-    /* evargs may have been freed if clearInterval was called from within the function */
-    /* if so, function stored in ev_callback_object[key] will have been deleted */
+    /* Defensive: handle the pathological case where user JS directly
+       deleted ev_callback_object[key] (not via clearTimeout — that path
+       now defers via dispatching/clear_pending and leaves the prop in
+       place).  We can't safely access evargs in the cleanup tail (it
+       may be in an inconsistent state), so bail.  Reset the dispatch
+       flag first so a future libevent fire on this slot starts clean. */
     duk_push_number(ctx, key);
     if(!duk_has_prop(ctx, 1) )
     {
+        evargs->dispatching = 0;
         duk_set_top(ctx, 0);
         return;
     }
@@ -2586,6 +2673,30 @@ static void rp_el_doevent(evutil_socket_t fd, short events, void* arg)
 
 
     to_doevent_end:
+    /* Clear the dispatch guard.  If clearTimeout was called from any
+       callback (C or JS) during this dispatch, it set clear_pending
+       and skipped its own free path; do the deferred cleanup here so
+       there is no leak.  Same shape as the one-shot (repeat==0) path:
+       SLIST_REMOVE, event_del/event_free, del all three JS bookkeeping
+       props, free(evargs). */
+    evargs->dispatching = 0;
+    if(evargs->clear_pending)
+    {
+        SLISTLOCK;
+        SLIST_REMOVE(&tohead, evargs, ev_args, entries);
+        SLISTUNLOCK;
+        event_del(evargs->e);
+        event_free(evargs->e);
+        duk_push_number(ctx, key);
+        duk_del_prop(ctx, 1);
+        duk_push_number(ctx, key+0.2);
+        duk_del_prop(ctx, 1);
+        duk_push_number(ctx, key+0.3);
+        duk_del_prop(ctx, 1);
+        free(evargs);
+        duk_set_top(ctx, 0);
+        return;
+    }
     //setTimeout
     if(evargs->repeat==0)
     {
@@ -2697,6 +2808,7 @@ duk_ret_t duk_rp_insert_timeout(duk_context *ctx, int repeat, const char *fname,
 
     /* set up struct to be passed to callback */
     REMALLOC(evargs,sizeof(EVARGS));
+    memset(evargs, 0, sizeof(EVARGS));
     evargs->key = (double)ev_id++;
     evargs->ctx=ctx;
     evargs->repeat=repeat;
@@ -2805,11 +2917,18 @@ duk_ret_t duk_rp_clear_either(duk_context *ctx)
     EVARGS *evargs=NULL, *p;
     int found=0;
 
+    /* Per HTML / WHATWG / Node: clearTimeout / clearInterval /
+       clearImmediate silently no-op when the argument doesn't identify
+       a live timer.  That covers undefined, null, numbers, plain
+       objects, already-cleared handles — anything not a recognizable
+       handle is ignored.  Idiomatic JS routinely calls
+       `clearTimeout(this.t)` before assigning `this.t = setTimeout(...)`,
+       where `this.t` may be undefined on the first call. */
     if(!duk_is_object(ctx,0))
-        RP_THROW(ctx, "clearTimeout()/clearInteral() requires variable returned from setTimeout()/setInterval()");
+        return 0;
 
     if( !duk_get_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("eventargs") ) )
-        RP_THROW(ctx, "clearTimeout()/clearInteral() requires variable returned from setTimeout()/setInterval()");
+        return 0;
 
     evargs=(EVARGS *)duk_get_pointer(ctx, 1);
 
@@ -2826,24 +2945,48 @@ duk_ret_t duk_rp_clear_either(duk_context *ctx)
             break;
         }
     }
-    if(found)
-        SLIST_REMOVE(&tohead, evargs, ev_args, entries);
     SLISTUNLOCK;
 
     if(!found)
         return 0;
 
+    /* If rp_el_doevent is currently dispatching this timer, defer the
+       free.  Otherwise we'd UAF when control returns to rp_el_doevent's
+       post-callback cleanup.  rp_el_doevent observes clear_pending at
+       to_doevent_end and does the SLIST_REMOVE / event_del / event_free
+       / JS-prop cleanup / free(evargs) itself.  We must NOT pull
+       evargs out of `tohead` here: the deferred path is the one that
+       will, and a double SLIST_REMOVE walks past the head and faults. */
+    if(evargs->dispatching)
+    {
+        evargs->clear_pending = 1;
+        return 0;
+    }
+
+    SLISTLOCK;
+    SLIST_REMOVE(&tohead, evargs, ev_args, entries);
+    SLISTUNLOCK;
+
     event_del(evargs->e);
     event_free(evargs->e);
+
+    /* Delete all three companion properties on ev_callback_object —
+       the function at `key`, the args array at `key+0.2`, and the
+       name string at `key+0.3`.  The original impl only deleted the
+       function prop, leaking the args and name forever on every
+       cleared setInterval. */
+    double key = evargs->key;
     free(evargs);
 
     duk_push_global_stash(ctx);
     if( !duk_get_prop_string(ctx, -1, "ev_callback_object") )
         RP_THROW(ctx, "internal error in rp_el_doevent()");
 
-    if( !duk_get_prop_string(ctx, 0, "eventId" ) )
-        RP_THROW(ctx, "clearTimeout()/clearInteral() requires variable returned from setTimeout()/setInterval()");
-
+    duk_push_number(ctx, key);
+    duk_del_prop(ctx, -2);
+    duk_push_number(ctx, key + 0.2);
+    duk_del_prop(ctx, -2);
+    duk_push_number(ctx, key + 0.3);
     duk_del_prop(ctx, -2);
 
     return 0;
@@ -4588,6 +4731,12 @@ int main(int argc, char *argv[])
             /* set up main event base */
             mainthr->base = event_base_new();
             RPTHR_SET(mainthr, RPTHR_FLAG_BASE);
+#if defined(DUK_RP_USE_WEAK_REFS)
+            rp_weak_install_drain(ctx, mainthr->base);
+#endif
+#if defined(DUK_RP_USE_PROMISE_NATIVE)
+            rp_mt_install_drain(ctx, mainthr->base);
+#endif
 
             dnsbase = evdns_base_new(mainthr->base,
                 EVDNS_BASE_DISABLE_WHEN_INACTIVE);
@@ -4698,6 +4847,12 @@ int main(int argc, char *argv[])
             /* set up main event base */
             mainthr->base = event_base_new();
             RPTHR_SET(mainthr, RPTHR_FLAG_BASE);
+#if defined(DUK_RP_USE_WEAK_REFS)
+            rp_weak_install_drain(ctx, mainthr->base);
+#endif
+#if defined(DUK_RP_USE_PROMISE_NATIVE)
+            rp_mt_install_drain(ctx, mainthr->base);
+#endif
 
             /* push babelized source to stack if available */
             if (! (babel_source_filename=duk_rp_babelize(ctx, fn, file_src, entry_file_stat.st_mtime, babel_setting_none, NULL)) )

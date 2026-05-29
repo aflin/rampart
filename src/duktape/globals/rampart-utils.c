@@ -4297,9 +4297,23 @@ duk_ret_t duk_rp_stat_lstat(duk_context *ctx, int islstat)
 
     int64_t atime, mtime, ctime;
 
+    /* Sub-second precision in atime/mtime/ctime — without it, polling
+       watchers (chokidar's setFsWatchFileListener gates on
+       `currmtime > prev.mtimeMs`) miss changes that land in the same
+       wall-second as the install. */
+#if defined(__APPLE__) || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)
+    atime = (int64_t)path_stat.st_atimespec.tv_sec * 1000 + (int64_t)(path_stat.st_atimespec.tv_nsec / 1000000);
+    mtime = (int64_t)path_stat.st_mtimespec.tv_sec * 1000 + (int64_t)(path_stat.st_mtimespec.tv_nsec / 1000000);
+    ctime = (int64_t)path_stat.st_ctimespec.tv_sec * 1000 + (int64_t)(path_stat.st_ctimespec.tv_nsec / 1000000);
+#elif defined(__linux__)
+    atime = (int64_t)path_stat.st_atim.tv_sec * 1000 + (int64_t)(path_stat.st_atim.tv_nsec / 1000000);
+    mtime = (int64_t)path_stat.st_mtim.tv_sec * 1000 + (int64_t)(path_stat.st_mtim.tv_nsec / 1000000);
+    ctime = (int64_t)path_stat.st_ctim.tv_sec * 1000 + (int64_t)(path_stat.st_ctim.tv_nsec / 1000000);
+#else
     atime = (int64_t)path_stat.st_atime * 1000;
     mtime = (int64_t)path_stat.st_mtime * 1000;
     ctime = (int64_t)path_stat.st_ctime * 1000;
+#endif
 
     // atime
     (void)duk_get_global_string(ctx, "Date");

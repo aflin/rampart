@@ -1621,6 +1621,891 @@ testFeature("NDE.15 - string content containing '#name' is preserved", function(
     return out[0] === '#size literal' && out[1] === 5;
 });
 
+/* NDE.17 — `_TrN_Sp._req` used to walk node_modules without first
+   delegating to rampart's native require, so a same-named npm package
+   (e.g. the `buffer` polyfill in node_modules/) shadowed rampart's
+   built-in shim under -t.  Real-world surfacing: safe-buffer +
+   etag rejected every Express response with
+   "argument entity must be string, Buffer, or fs.Stats". */
+
+testFeature("NDE.17 - bare require resolves built-in before node_modules", function() {
+    var b = require('buffer');
+    /* The built-in buffer has the rampart Buffer class; npm's polyfill
+       would expose its own Buffer.  Both have .Buffer.from(); the
+       distinguishing test is the global-Buffer identity. */
+    return b.Buffer === global.Buffer && typeof b.Buffer.isBuffer === 'function';
+});
+
+testFeature("NDE.17 - repeated require returns the same export", function() {
+    /* Cache must return the same object on repeat — the fix changed the
+       cache to store the resolved EXPORTS rather than the bare spec, so
+       cache hits don't re-resolve. */
+    var a = require('buffer');
+    var b = require('buffer');
+    return a === b;
+});
+
+testFeature("NDE.17 - require inside a function returns the same built-in", function() {
+    /* Pre-fix, only the FIRST require('buffer') call (top level) saw the
+       built-in; subsequent calls (inside functions, IIFEs, callbacks)
+       slipped through to the node_modules walk. */
+    var top = require('buffer');
+    var inFn = (function(){ return require('buffer'); })();
+    return top === inFn;
+});
+
+/* NDE.18 — `for (const x of await promise) { … }` inside an async
+   function: the regen for-of lowering copied the iterable expression's
+   source bytes verbatim, so `await` survived in
+   `_TrN_Sp._iter(await promise)` which duktape rejects.  Fix routes the
+   iterable through `_lower_range_with_yields` so awaits become
+   state-machine transitions. */
+testFeature("NDE.18 - await in for-of iterable inside async function", function() {
+    async function f(p) {
+        var out = [];
+        for (const x of await p) out.push(x);
+        return out;
+    }
+    return f(Promise.resolve([1,2,3])).then(function(v){
+        return v.join(',') === '1,2,3';
+    });
+});
+
+/* NDE.19 — string-literal destructure keys (`const { "~standard": _, ... } = result;`)
+   used to bail out of `collect_flat_destructure_bindings` (only
+   identifier / computed keys were handled), so the unlowered destructure
+   survived to duktape.  Fix adds a string-literal and number-literal
+   case that uses bracket-access for the binding. */
+testFeature("NDE.19 - string-literal destructure key", function() {
+    var src = { "~standard": "stdval", a: 1, b: 2 };
+    var { "~standard": std, ...rest } = src;
+    return std === "stdval" && rest.a === 1 && rest.b === 2 &&
+           rest["~standard"] === undefined;
+});
+
+testFeature("NDE.19 - reserved-word shorthand method in object literal", function() {
+    /* The transpiler's object-literal shorthand-method rewriter used to
+       only fire for `get`/`set` names; reserved words like `default()` /
+       `catch()` got emitted as keyword tokens to duktape.  Fix extends
+       the rewrite to all reserved-word names — the rewriter inserts
+       `: function` so the entry becomes a normal property. */
+    var o = {
+        default(x) { return 'd:' + x; },
+        catch(x)   { return 'c:' + x; },
+    };
+    return o.default(1) === 'd:1' && o.catch(2) === 'c:2';
+});
+
+/* NDE.20 — trailing comma in a multi-line argument list with line
+   comments between args was leaving the comma in the emit because the
+   stripper picked the last NAMED child of `arguments` (which can be a
+   `comment` node in tree-sitter JS) and scanned past the actual comma. */
+testFeature("NDE.20 - trailing comma after inline-comment arg", function() {
+    function f(a, b, c) { return a + b + c; }
+    var r = f(
+        1, // first
+        2, // second
+        3, // third
+    );
+    return r === 6;
+});
+
+/* NDE.21 — call-spread (`fn(a, ...arr, c)`) emit looped over
+   `arguments` named children including `comment` nodes, leaving line
+   comments inside the rewritten `[a].concat(...)` array literal where a
+   subsequent line collapse let `//` eat the closing `]`. */
+testFeature("NDE.21 - spread call with inline comments between args", function() {
+    var src = [10, 20];
+    var r = Math.max(
+        // smaller
+        5,
+        // spread
+        ...src,
+        // larger
+        15
+    );
+    return r === 20;
+});
+
+/* NDE.22 — `await /JSDoc-cast/ (expr)` had the JSDoc comment picked as
+   the await's argument because the dispatchers grabbed the first NAMED
+   child (which can be a comment).  Fix walks past comment children. */
+testFeature("NDE.22 - JSDoc cast between await and its expression", function() {
+    async function f(g) {
+        const out = await /** @type {Promise<number>} */ (g)();
+        return out + 1;
+    }
+    return f(function(){ return Promise.resolve(7); }).then(function(v){
+        return v === 8;
+    });
+});
+
+/* NDE.23 — `_emit_yield_body_range` unwrapped a `labeled_statement`
+   into its body but dropped the label bytes from the byte-verbatim emit
+   path, so `break <label>;` inside ended up with no target.  Fix emits
+   the label prefix when the body has no yield/await (the LoopCtx-based
+   break/continue routing only fires when there's a yield inside). */
+testFeature("NDE.23 - labeled break inside async function", function() {
+    async function f(arr) {
+        var out = [];
+        outer: for (var i = 0; i < arr.length; i++) {
+            for (var j = 0; j < arr[i].length; j++) {
+                if (arr[i][j] < 0) break outer;
+                out.push(arr[i][j]);
+            }
+        }
+        return out;
+    }
+    return f([[1, 2], [3, -1, 99], [4, 5]]).then(function(v){
+        return v.join(',') === '1,2,3';
+    });
+});
+
+testFeature("NDE.23 - for-of-simple replaces braceless if-consequent", function() {
+    /* Without the brace wrap on the for-of's emit, `if (cond) for (const
+       it of x) body;` would split into two statements in the if's
+       single-statement slot, orphaning subsequent `else`/while clauses. */
+    function f(useFirst, src) {
+        var out = [];
+        if (useFirst)
+            for (const it of src) out.push(it);
+        else
+            for (const it of src) out.push(-it);
+        return out;
+    }
+    return f(true, [1,2,3]).join(',') === '1,2,3' &&
+           f(false, [1,2,3]).join(',') === '-1,-2,-3';
+});
+
+/* NDE.24 — `_TrN_Sp._req` (transpile-mode bare-require helper) used to
+   stat the literal `package.json#main` path and walk past if it didn't
+   exist as a file.  form-data declares `"main": "./lib/form_data"` with
+   no extension, so the walk missed it; axios's require('form-data')
+   then re-threw "Could not resolve".  Fix: after stat-ing the literal
+   path, also try `.js`/`.cjs`/`.mjs`/`.json` extensions, and if the
+   path is a directory, try its `index.js`/`index.cjs`.
+
+   This test creates a temporary fixture under test/nde24-fixture/ that
+   reproduces the form-data shape (extension-less main).  A second
+   package exercises the directory-as-main branch. */
+
+(function _setupNDE24Fixture() {
+    var dir = (typeof process !== 'undefined' && process.scriptPath)
+              || (typeof __dirname !== 'undefined' && __dirname)
+              || '.';
+    var root = dir + '/nde24-fixture';
+    /* Layout:
+         nde24-fixture/probe-ext.js          // require('_nde24ext')
+         nde24-fixture/probe-dir.js          // require('_nde24dir')
+         nde24-fixture/node_modules/_nde24ext/package.json   main:"./lib/x"
+         nde24-fixture/node_modules/_nde24ext/lib/x.js
+         nde24-fixture/node_modules/_nde24dir/package.json   main:"./lib"
+         nde24-fixture/node_modules/_nde24dir/lib/index.js
+    */
+    rampart.utils.mkdir(root + '/node_modules/_nde24ext/lib', 0o755);
+    rampart.utils.mkdir(root + '/node_modules/_nde24dir/lib', 0o755);
+
+    rampart.utils.writeFile(root + '/probe-ext.js',
+        '"use transpiler"\nmodule.exports = require("_nde24ext");\n');
+    rampart.utils.writeFile(root + '/probe-dir.js',
+        '"use transpiler"\nmodule.exports = require("_nde24dir");\n');
+
+    /* form-data-style: extension-less main */
+    rampart.utils.writeFile(
+        root + '/node_modules/_nde24ext/package.json',
+        '{"name":"_nde24ext","main":"./lib/x"}\n');
+    rampart.utils.writeFile(
+        root + '/node_modules/_nde24ext/lib/x.js',
+        'module.exports = "NDE24-EXT-OK";\n');
+
+    /* main points to a directory — Node falls back to its index.js */
+    rampart.utils.writeFile(
+        root + '/node_modules/_nde24dir/package.json',
+        '{"name":"_nde24dir","main":"./lib"}\n');
+    rampart.utils.writeFile(
+        root + '/node_modules/_nde24dir/lib/index.js',
+        'module.exports = "NDE24-DIR-OK";\n');
+
+    global._nde24_fixture_root = root;
+})();
+
+testFeature("NDE.24 - main without extension resolves via .js fallback", function() {
+    var m;
+    try { m = require('./nde24-fixture/probe-ext.js'); }
+    catch (_e) { return false; }
+    return m === 'NDE24-EXT-OK';
+});
+
+testFeature("NDE.24 - main pointing to a directory resolves via index.js", function() {
+    var m;
+    try { m = require('./nde24-fixture/probe-dir.js'); }
+    catch (_e) { return false; }
+    return m === 'NDE24-DIR-OK';
+});
+
+(function _cleanupNDE24Fixture() {
+    var root = global._nde24_fixture_root;
+    if (!root) return;
+    /* Walk and remove bottom-up.  rampart.utils has rmFile + rmDir but
+       no recursive variant — easier to enumerate the paths we created. */
+    var rm = function(p) {
+        try { rampart.utils.rmFile(p); } catch (_e) {}
+    };
+    var rd = function(p) {
+        try { rampart.utils.rmDir(p); } catch (_e) {}
+    };
+    /* Files first, then the .transpiled caches the loader writes
+       alongside each source. */
+    var files = [
+        '/probe-ext.js', '/probe-ext.transpiled.js',
+        '/probe-dir.js', '/probe-dir.transpiled.js',
+        '/node_modules/_nde24ext/lib/x.js', '/node_modules/_nde24ext/lib/x.transpiled.js',
+        '/node_modules/_nde24ext/package.json',
+        '/node_modules/_nde24dir/lib/index.js', '/node_modules/_nde24dir/lib/index.transpiled.js',
+        '/node_modules/_nde24dir/package.json'
+    ];
+    files.forEach(function(f){ rm(root + f); });
+    /* Empty dirs, deepest first. */
+    var dirs = [
+        '/node_modules/_nde24ext/lib',
+        '/node_modules/_nde24ext',
+        '/node_modules/_nde24dir/lib',
+        '/node_modules/_nde24dir',
+        '/node_modules',
+        ''
+    ];
+    dirs.forEach(function(d){ rd(root + d); });
+    delete global._nde24_fixture_root;
+})();
+
+/* NDE.25 — duktape's object-literal handling makes `__proto__` an own
+   data property instead of just setting the prototype (per spec).  When
+   such an object is then spread via `{...obj}`, the transpiler's
+   `__spreadO` copied `__proto__` to the target, severing the target's
+   prototype chain — `._addchain(...)` in a subsequent step then saw
+   `undefined`.  Fix filters `__proto__` out of `__spreadO`'s ownKeys
+   list (and out of the `Object.getOwnPropertyDescriptors` branch), so
+   spreading is effectively spec-compliant even though the literal
+   itself still carries the duktape quirk. */
+
+testFeature("NDE.25 - spread of {__proto__:null,...} doesn't sever chain", function() {
+    var u = { __proto__: null, a: 1, b: 2 };
+    var v = { c: 3 };
+    var p = { ...u, ...v };
+    /* All three keys present, no __proto__ leaked into p's own keys,
+       and p's prototype is Object.prototype (spread doesn't carry over
+       the source's prototype intent — matches V8). */
+    return p.a === 1 && p.b === 2 && p.c === 3 &&
+           Object.keys(p).sort().join(',') === 'a,b,c' &&
+           Object.getPrototypeOf(p) === Object.prototype;
+});
+
+testFeature("NDE.25 - chain of multiple {__proto__:null,...} spreads", function() {
+    /* The chain that broke pre-fix: each spread step severed the
+       target's prototype, and the next `._addchain` saw `_addchain` as
+       undefined.  Now all four sources merge cleanly. */
+    var x = { __proto__: null, x: 'x' };
+    var y = { __proto__: null, y: 'y' };
+    var z = { __proto__: null, z: 'z' };
+    var combined = { ...x, ...y, ...z, w: 'w' };
+    return combined.x === 'x' && combined.y === 'y' &&
+           combined.z === 'z' && combined.w === 'w' &&
+           Object.keys(combined).sort().join(',') === 'w,x,y,z';
+});
+
+testFeature("NDE.26 - line comments between arrow params + destructure", function() {
+    const f = (path,
+        // already filtered, remove from options
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        { filter, ...opt }) => {
+        return path + ':' + Object.keys(opt).sort().join(',');
+    };
+    return f('/tmp', { filter: 'x', a: 1, b: 2 }) === '/tmp:a,b';
+});
+
+testFeature("NDE.26 - comments before rest param keep slice index correct", function() {
+    function f(a,
+        // documentation between a and the rest
+        ...rest) {
+        return a + ':' + rest.join(',');
+    }
+    return f('hd', 1, 2, 3) === 'hd:1,2,3';
+});
+
+testFeature("NDE.26 - block comments between regular function params + destructure", function() {
+    function f(path,
+        /* multi-line block comment
+           explaining something */
+        { x, y }) {
+        return path + ':' + x + ',' + y;
+    }
+    return f('here', { x: 1, y: 2 }) === 'here:1,2';
+});
+
+/* NDE.27 — `async function f(a, b = 'x') { ... await ... }` failed
+   with `parse error` at the function-header line.  The async/regenerator
+   wholesale-replace embeds the original params verbatim inside the
+   emitted `_TrN_callee` inner function, so a default-valued param
+   (or rest, or destructure) survives in the transpiled output.  The
+   dispatch wasn't setting `*unresolved=1` after the async/generator
+   rewriter fired, so pass 2 never ran — the inner `_TrN_callee`'s
+   ES2015+ syntax went straight to duktape unlowered.
+   Fix: set `*unresolved=1` after both `rewrite_async_await_to_regenerator`
+   and `rewrite_generator_to_regenerator` fire successfully, so the
+   re-pass lowers any embedded defaults/rest/destructure on the
+   emitted inner function.
+   Real-world surfacing: fs-extra's `outputFile(file, data, encoding = 'utf-8')`. */
+
+testFeature("NDE.27 - async function with default param", function() {
+    async function f(file, encoding = 'utf-8') {
+        return await Promise.resolve(file + ':' + encoding);
+    }
+    return f('x').then(function(v){ return v === 'x:utf-8'; });
+});
+
+testFeature("NDE.27 - async function with rest param", function() {
+    async function g(head, ...tail) {
+        return await Promise.resolve(head + ':' + tail.join(','));
+    }
+    return g('hd', 1, 2, 3).then(function(v){ return v === 'hd:1,2,3'; });
+});
+
+testFeature("NDE.27 - async function with destructuring param", function() {
+    async function h({ x, y }) {
+        return await Promise.resolve(x + ',' + y);
+    }
+    return h({ x: 1, y: 2 }).then(function(v){ return v === '1,2'; });
+});
+
+testFeature("NDE.27 - generator (sync) with default param", function() {
+    function* g(start = 10) {
+        yield start;
+        yield start + 1;
+        yield start + 2;
+    }
+    var out = [];
+    for (var v of g()) out.push(v);
+    var out2 = [];
+    for (var v of g(100)) out2.push(v);
+    return out.join(',') === '10,11,12' && out2.join(',') === '100,101,102';
+});
+
+
+/* NDE.28 — `OUTER: for (const x of …) { … continue OUTER; … }` failed
+   with "invalid label" because NDE.23's outer brace wrap turned
+   `OUTER: for(...){...}` into `OUTER: {var _i=…; while(…){…}}` —
+   `OUTER` now labels a BLOCK, and `continue OUTER` only works on loops.
+   Fix: when the for-of has a `labeled_statement` parent, extend the
+   replace range to include `<label>:` and re-emit the label on the
+   inner `while`.  Real-world: semver 7.x subset.js. */
+
+testFeature("NDE.28 - labeled continue inside for-of", function() {
+    function f(sub, dom) {
+        var hits = 0;
+        OUTER: for (const s of sub) {
+            for (const d of dom) {
+                if (s === d) { hits++; continue OUTER; }
+            }
+        }
+        return hits;
+    }
+    return f([1, 2, 3], [2, 3]) === 2;
+});
+
+testFeature("NDE.28 - labeled break inside for-of", function() {
+    function f(arr) {
+        var seen = [];
+        OUTER: for (const row of arr) {
+            for (const cell of row) {
+                if (cell === 'stop') break OUTER;
+                seen.push(cell);
+            }
+        }
+        return seen.join(',');
+    }
+    return f([[1,2],[3,'stop',4],[5]]) === '1,2,3';
+});
+
+/* NDE.29 — async class method containing `super.X()` failed with parse
+   error.  Sync class methods ran `copy_body_replace_super` to lower
+   `super.X(...)` → `_TrN_Super.prototype.X.call(this, ...)`; the async
+   path emitted the body verbatim into a non-class-method
+   `_TrN_callee$(_TrN_context)` inner function where bare `super` is a
+   syntax error.  Fix: also call `copy_body_replace_super` on the
+   regen-body output in the async-method emit when the class has
+   `extends`.  Real-world: undici 7.x snapshot-agent.js. */
+
+testFeature("NDE.29 - super.X() inside async class method", function() {
+    class Base {
+        greet() { return Promise.resolve('base'); }
+    }
+    class Derived extends Base {
+        async greet() {
+            var b = await super.greet();
+            return b + '+derived';
+        }
+    }
+    return new Derived().greet().then(function(v){ return v === 'base+derived'; });
+});
+
+testFeature("NDE.29 - optional chain + computed key in async method with super", function() {
+    /* undici shape: this[kA].close(), this[kB]?.close(), super.close() */
+    const kA = 'k1', kB = 'k2';
+    class Base {
+        close() { return Promise.resolve('base-closed'); }
+    }
+    class Derived extends Base {
+        constructor() {
+            super();
+            this[kA] = { close: function(){ return Promise.resolve('kA-closed'); } };
+            this[kB] = null;
+        }
+        async close() {
+            var a = await this[kA].close();
+            var b = await this[kB]?.close();
+            var c = await super.close();
+            return a + '|' + (b === undefined ? 'nil' : b) + '|' + c;
+        }
+    }
+    return new Derived().close().then(function(v){
+        return v === 'kA-closed|nil|base-closed';
+    });
+});
+
+/* NDE.30 — constructor with private field + multiple `super(...)` call
+   sites failed with parse error.  The constructor super rewriter
+   `strstr(body, "super(")`-found the FIRST super and rewrote it to
+   `(_TrN_this = _TrN_super.call(this, ...), _TrN_this)`; bytes after
+   the closing `)` passed through `copy_body_replace_super` which only
+   handles `super.X(...)` (method-shorthand) NOT bare `super(...)`.
+   Any second super-call survived as bare `super(...)` — illegal
+   outside a method.  Real-world: undici 7.x web/websocket/events.js
+   MessageEvent constructor (kConstruct early-return path).
+   Fix: loop the constructor rewriter over every standalone `super(`
+   in the body, emitting between-segments through copy_body_replace_super. */
+
+testFeature("NDE.30 - constructor with private field + two super() call sites", function() {
+    class Base {
+        constructor(a, b) { this.a = a; this.b = b; }
+    }
+    class Derived extends Base {
+        #priv
+
+        constructor(type, dict = {}) {
+            if (type === 'X') {
+                super(arguments[1], arguments[2]);
+                return;
+            }
+            super(type, dict);
+            this.#priv = dict;
+        }
+        get d() { return this.#priv; }
+    }
+    var x = new Derived('Y', {hello: 1});
+    if (x.d.hello !== 1) return false;
+    var y = new Derived('X', 'aa', 'bb');
+    return y.a === 'aa' && y.b === 'bb';
+});
+
+testFeature("NDE.30 - constructor with three super() call sites in different branches", function() {
+    class Base {
+        constructor(tag) { this.tag = tag; }
+    }
+    class D extends Base {
+        constructor(n) {
+            if (n === 1) { super('one'); return; }
+            if (n === 2) { super('two'); return; }
+            super('other');
+        }
+    }
+    return new D(1).tag === 'one'
+        && new D(2).tag === 'two'
+        && new D(99).tag === 'other';
+});
+
+/* NDE.31 — transpile preamble's Promise polyfill IIFE captured
+   `var d = setTimeout;` at install time.  In vm.createContext bare
+   threads (no setTimeout global), this threw ReferenceError immediately
+   on any code referencing the Promise identifier.
+   Fix: defensive guard — `var d = (typeof setTimeout === 'function')
+   ? setTimeout : function(fn){ fn(); };` so the polyfill installs
+   in setTimeout-less realms (synchronous fallback only matters when
+   .then() actually has to defer). */
+
+testFeature("NDE.31 - Promise polyfill loads in vm bare-thread context", function() {
+    var vm = require('vm');
+    var ctx = vm.createContext({});
+    var r1 = vm.runInContext('typeof Promise', ctx);
+    var r2 = vm.runInContext('typeof setTimeout', ctx);
+    return r1 === 'function' && r2 === 'undefined';
+});
+
+/* NDE.32 — Under `-t`, eval'd syntax errors lost their SyntaxError
+   type.  The transpile pre-pass `rp_get_transpiled_eval` rejected
+   `'foo bar baz'` and rampart wrapped the failure via `RP_THROW`
+   (DUK_ERR_ERROR), so `caught instanceof SyntaxError` was false and
+   `String(caught)` was `Error: ...`.  Without `-t`, duktape's own
+   eval threw a proper SyntaxError.
+   Fix: use `RP_SYNTAX_THROW` (DUK_ERR_SYNTAX_ERROR) so the error
+   carries the SyntaxError prototype just like duktape's path.
+   Surfaced by vm-smoke's runInContext sandbox-error assertion. */
+
+testFeature("NDE.32 - eval() syntax error is a real SyntaxError under -t", function() {
+    var caught;
+    try { (0,eval)('foo bar baz'); }
+    catch(e) { caught = e; }
+    return caught != null
+        && caught.name === 'SyntaxError'
+        && caught instanceof SyntaxError
+        && /SyntaxError/.test(String(caught));
+});
+
+/* NDE.33 — `class X extends Error` lost subclass identity under `-t`.
+   The `_TrN_Sp.createSuper` helper computed `hasNativeReflectConstruct`
+   but never used it — always fell through to `Super.apply(this, args)`.
+   When Super is Error, that call returns a NEW Error (Error ignores
+   `this`), so `_TrN_this` was a plain Error and subsequent
+   `this.name = ...` writes landed on a discarded `this`.
+   Tried Reflect.construct first (duktape's doesn't support cross-
+   NewTarget — throws "unsupported").  Settled on: copy Super.apply's
+   result own-props onto `this` and keep using `this` (whose proto
+   already came from `new CustomError`).  Surfaced by chai
+   AssertionError instanceof checks. */
+
+testFeature("NDE.33 - class extends Error preserves subclass identity", function() {
+    class MyErr extends Error {
+        constructor(msg) { super(msg); this.name = 'MyErr'; this.tag = 42; }
+    }
+    var caught;
+    try { throw new MyErr('boom'); }
+    catch(e) { caught = e; }
+    return caught instanceof MyErr
+        && caught instanceof Error
+        && caught.name === 'MyErr'
+        && caught.message === 'boom'
+        && caught.tag === 42;
+});
+
+testFeature("NDE.33 - class extends Error inherits prototype methods", function() {
+    class TaggedErr extends Error {
+        constructor(msg, code) { super(msg); this.code = code; }
+        describe() { return this.code + ':' + this.message; }
+    }
+    var caught;
+    try { throw new TaggedErr('boom', 'E42'); }
+    catch(e) { caught = e; }
+    return caught instanceof TaggedErr
+        && caught.describe && caught.describe() === 'E42:boom';
+});
+
+/* NDE.34 — `rewrite_for_of_destructuring`'s emit was multi-statement
+   (`var _TrN_x = ...; while(...) { ... }`) without an outer brace
+   wrap, mirroring the NDE.23 issue in `rewrite_for_of_simple`.  When
+   placed in a brace-less `if (cond)` body, the `var` became the
+   if-body and the `while` ran unconditionally.  Surfaced by yaml's
+   Document.toJS: `if (typeof onAnchor === 'function') for (const {
+   count, res } of ctx.anchors.values()) onAnchor(res, count);`
+   ran the while-iterating with onAnchor=undefined, crashing
+   downstream.  Fix: wrap emit in `{...}`.  Same wrap added to the
+   array-pattern emit path which has the same multi-statement shape. */
+
+testFeature("NDE.34 - object-destructure for-of in unbraced if", function() {
+    function go(onA, items) {
+        var hits = 0;
+        if (typeof onA === 'function')
+            for (const { x, y } of items)
+                onA(x, y, hits++);
+        return hits;
+    }
+    return go(null, [{x:1,y:2},{x:3,y:4}]) === 0
+        && go(function(){}, [{x:1,y:2},{x:3,y:4}]) === 2;
+});
+
+testFeature("NDE.34 - array-destructure for-of in unbraced if", function() {
+    function go(onA, items) {
+        var hits = 0;
+        if (typeof onA === 'function')
+            for (const [a, b] of items)
+                onA(a, b, hits++);
+        return hits;
+    }
+    return go(null, [[1,2],[3,4]]) === 0
+        && go(function(){}, [[1,2],[3,4]]) === 2;
+});
+
+/* NDE.36 — `_emit_yield_body_range` lacked a dispatch case for child
+   `statement_block` nodes containing yields.  A bare `{ ... }` block
+   at the switch-case body level (or any other block at this level)
+   fell through to `_emit_stmt_yield_lower`, which collects yields
+   flat and emits all iter-setups sequentially at the top of the case.
+   Nested if-statements inside the block were preserved verbatim, so
+   their conditional structure didn't gate the yield setup — every
+   yield fired unconditionally.  Surfaced by yaml's
+   `*blockMap(map)` whose `default:` case contains
+   `{ const bv = ...; if(bv) { if(bv.type === 'block-seq') { if(...) {
+   yield* this.pop({type:'error',...}); return; } } ...; this.stack.push(bv); return; }}`.
+   Fix: add a statement_block branch in the dispatcher that recurses
+   via `_emit_yield_body`, so nested if-statements get their own
+   structural lowering. */
+
+testFeature("NDE.36 - yield* in deeply-nested if inside switch default", function() {
+    var innerCalls = 0;
+    function* inner(tag) {
+        innerCalls++;
+        yield tag;
+    }
+    function* outer(type) {
+        switch (type) {
+            case 'x': yield 'X'; return;
+            default: {
+                var bv = { type: type };
+                if (bv) {
+                    if (bv.type === 'fire') {
+                        if (true) {
+                            yield* inner('fired');
+                            return;
+                        }
+                    }
+                    yield 'D';
+                    return;
+                }
+            }
+        }
+    }
+    var collected = [];
+    var g = outer('other');
+    var r;
+    while (!(r = g.next()).done) collected.push(r.value);
+    if (innerCalls !== 0 || collected.length !== 1 || collected[0] !== 'D') return false;
+    g = outer('fire');
+    collected = [];
+    while (!(r = g.next()).done) collected.push(r.value);
+    return innerCalls === 1 && collected.length === 1 && collected[0] === 'fired';
+});
+
+testFeature("NDE.36 - yield inside block-statement at top level", function() {
+    var calls = 0;
+    function bump() { calls++; return 'X'; }
+    function* gen(flag) {
+        {
+            var z = 5;
+            if (flag) {
+                yield bump();
+                return;
+            }
+            yield 'Y';
+        }
+    }
+    var g = gen(false);
+    var r = g.next();
+    if (calls !== 0 || r.value !== 'Y') return false;
+    g = gen(true);
+    r = g.next();
+    return calls === 1 && r.value === 'X';
+});
+
+/* NDE.37 — array-spread / object-spread lowering replaced the source
+   `[...]` / `{...}` byte range with `_TrN_Sp._newArray()...` /
+   `_TrN_Sp._newObject()...` in-place.  When the literal was directly
+   preceded by a keyword expression-starter with no whitespace
+   (`return[...]`, `typeof{...}`, `void[...]`, ...), the emit fused
+   into a single identifier `return_TrN_Sp` etc., causing
+   ReferenceError at runtime.  Minifiers emit `return[`/`return{`
+   constantly (no space needed by grammar).
+   Surfaced by glob 13's minified bundle:
+   `if (a) return[...r.slice(0, 4), ...r.slice(4).map(f => this.parse(f))];`.
+   Fix: prepend a single leading space to the newArray/newObject
+   emit strings.  Harmless when the preceding byte isn't an
+   identifier character. */
+
+testFeature("NDE.37 - return immediately followed by [...spread]", function() {
+    function f(a, r) {
+        if (a) return[...r.slice(0, 2), ...r.slice(2).map(function(x){return x*10;})];
+        return [];
+    }
+    var got = f(true, [1, 2, 3, 4]);
+    return got.length === 4
+        && got[0] === 1 && got[1] === 2
+        && got[2] === 30 && got[3] === 40;
+});
+
+testFeature("NDE.37 - return immediately followed by {...spread}", function() {
+    function f(a, o) {
+        if (a) return{...o, extra: 1};
+        return {};
+    }
+    var got = f(true, {a: 1, b: 2});
+    return got.a === 1 && got.b === 2 && got.extra === 1;
+});
+
+testFeature("NDE.37 - typeof immediately followed by [...spread]", function() {
+    var t = typeof[...[1, 2], ...[3, 4]];
+    return t === 'object';
+});
+
+/* NDE.38 — `??` lowering emitted `(_TrN_nc<N> = left, _TrN_nc<N> !=
+   null ? _TrN_nc<N> : right)` with `_TrN_nc<N>` never declared.  In
+   strict mode (the default for ES modules and explicit "use strict"
+   contexts like glob 13's minified bundle) the assignment to an
+   undeclared identifier throws ReferenceError.  Non-strict callers
+   limped along because duktape created an implicit global on first
+   write.  Fix: emit an IIFE arrow so the temp is a function
+   parameter — `(function(_TrN_nc<N>){return _TrN_nc<N> != null ?
+   _TrN_nc<N> : right;})(left)`.  Fallback to the bare-temp form
+   when `right` contains yield/await (those don't survive the IIFE
+   function-scope boundary). */
+
+testFeature("NDE.38 - ?? with complex left works in strict mode", function() {
+    'use strict';
+    function f(o) {
+        return o.a ?? 'fallback';
+    }
+    return f({a: 'hit'}) === 'hit'
+        && f({}) === 'fallback'
+        && f({a: null}) === 'fallback'
+        && f({a: undefined}) === 'fallback'
+        && f({a: 0}) === 0
+        && f({a: ''}) === '';
+});
+
+testFeature("NDE.38 - ?? with method call on left", function() {
+    'use strict';
+    function getThing() { return { val: null }; }
+    function f() {
+        return getThing().val ?? 'fallback';
+    }
+    return f() === 'fallback';
+});
+
+/* NDE.39 — `_emit_async_expr_replacement` wrapped the async body in
+   a non-arrow `function(){...}` and returned a callable also using a
+   non-arrow `function(){return _TrN_ref.apply(this, arguments);}`.
+   For an `async (args) => body` arrow, `this` should be the lexical
+   `this` of the enclosing scope (arrow functions don't have their
+   own `this`).  Under `-t`, the wrapper got a fresh `this` at call
+   site — when the arrow was passed to `Array.prototype.map`, the
+   body saw `this === undefined`.
+   Fix: when the AST node is `arrow_function`, invoke the outer IIFE
+   with `.call(this)` and `.bind(this)` the returned callable so the
+   lexical `this` threads through `_TrN_Sp.asyncToGenerator`'s
+   `fn.apply(self, args)` chain.  Surfaced by chokidar 5's
+   FSWatcher.add: `paths.map(async (path) => { ... await this._x ... })`. */
+
+testFeature("NDE.39 - async arrow inherits lexical this in class method", function() {
+    class C {
+        constructor() { this.helper = function() { return 'hi'; }; }
+        run(items) {
+            var self = this;
+            return Promise.all(items.map(async (item) => {
+                var hi = this.helper();
+                return hi + ':' + item;
+            }));
+        }
+    }
+    return new C().run(['a', 'b']).then(function(out) {
+        return out.length === 2 && out[0] === 'hi:a' && out[1] === 'hi:b';
+    });
+});
+
+testFeature("NDE.39 - async arrow with await this.X inherits this", function() {
+    class C {
+        constructor() { this.helper = { sayHi: function(){ return 'hi'; } }; }
+        run(items) {
+            return Promise.all(items.map(async (item) => {
+                var hi = await this.helper.sayHi();
+                return hi + ':' + item;
+            }));
+        }
+    }
+    return new C().run(['a', 'b']).then(function(out) {
+        return out.length === 2 && out[0] === 'hi:a' && out[1] === 'hi:b';
+    });
+});
+
+/* NDE.40 — `obj[key](...args)` spread-call lost its receiver under
+   `-t`.  `rewrite_call_spread` only recognized `member_expression`
+   (dot access `obj.method`) as needing receiver-preserving
+   `obj.method.apply(obj, args)` lowering — for
+   `subscript_expression` (bracket access `obj[key]`) it fell through
+   to `fn.apply(void 0, args)`, losing the receiver entirely.
+   Surfaced by light-my-request 6.x's Chain delegate
+   `Chain.prototype[method] = function(...args) { return
+   this._promise[method](...args); }` — the bracket-method call on
+   `this._promise` lowered to `this._promise[method].apply(void 0,
+   args)`, so the inner Promise.then's `this` was undefined (in
+   non-strict that surfaces as globalThis), and the resulting
+   promise resolved with globalThis instead of the response object.
+   Fix: treat `subscript_expression` the same as `member_expression`
+   in the receiver-extraction branch. */
+
+testFeature("NDE.40 - bracket-method spread call preserves receiver", function() {
+    var obj = {
+        push: function() {
+            this.last = arguments[arguments.length - 1];
+            return this.last;
+        }
+    };
+    var args = ['a', 'b', 'c'];
+    var m = 'push';
+    obj[m](...args);
+    return obj.last === 'c';
+});
+
+testFeature("NDE.40 - bracket-method delegate (chain.then style)", function() {
+    function Chain(p) { this._p = p; }
+    Chain.prototype.then = function() {
+        var args = Object.values(arguments);
+        var m = 'then';
+        return this._p[m](...args);
+    };
+    var c = new Chain(Promise.resolve(42));
+    return c.then(function(v) { return v === 42; });
+});
+
+/* NDE.41 — `_emit_async_method_replacement` used the method's own
+   identifier as the name of the inner `mark(function NAME(...){...})`
+   callback when the method has a name (`function _handleDir(...){...}`).
+   But `_build_regenerator_switch_body`'s tail unconditionally emits
+   `regeneratorRuntime.wrap(..., _TrN_callee, this)` — referencing the
+   literal identifier `_TrN_callee`.  When the inner fn-expr was named
+   `_handleDir` instead, `_TrN_callee` was unbound → ReferenceError at
+   call time.  The trigger required a sibling non-async method whose
+   body contained an inner async-arrow with at least one `await` (which
+   nudged the emit through the named-fn path).  Surfaced by chokidar
+   handler.js once native Promise replaced the polyfill.
+   Fix: always emit `function _TrN_callee` for the inner mark-callback. */
+
+testFeature("NDE.41 - async class method with sibling async-arrow-in-method", function() {
+    class C {
+        method1() { const f = async () => { await Promise.resolve(1); }; }
+        async method2(x) { return x * 2; }
+    }
+    return new C().method2(5).then(function(v) { return v === 10; });
+});
+
+testFeature("NDE.41 - async method runs after named-method emit", function() {
+    class C {
+        sync_a() { return 1; }
+        sync_b() { const f = async () => { await Promise.resolve(); }; return 2; }
+        async go() { return 'done'; }
+    }
+    return new C().go().then(function(v) { return v === 'done'; });
+});
+
+
+testFeature("NDE.25 - axios-style rollup namespace spread pattern", function() {
+    /* axios.cjs:1789 spreads two namespace objects each built with
+       `Object.freeze({__proto__: null, ...})`.  Pre-fix this threw
+       `TypeError: undefined not callable (property '_addchain' ...)`. */
+    var utils = Object.freeze({ __proto__: null, isArray: function(){return true;}, isFn: function(){return true;} });
+    var platform$1 = Object.freeze({ __proto__: null, name: 'node' });
+    var platform = { ...utils, ...platform$1, classes: {} };
+    return platform.name === 'node' &&
+           typeof platform.isArray === 'function' &&
+           typeof platform.isFn === 'function' &&
+           typeof platform.classes === 'object';
+});
+
 testFeature("NDE.15 - two classes with same #name get distinct ids", function() {
     /* The class-priv counter assigns each class its own id; the regen
        re-mangler uses that id, so identically-named privates in two

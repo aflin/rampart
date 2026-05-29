@@ -796,6 +796,44 @@ static void add_string_funcs(duk_context *ctx)
     duk_pop_2(ctx); /* pop prototype and String */
 }
 
+/* String.prototype.normalize lazy-load stub.
+ *
+ * The real Unicode normalization implementation lives in
+ * rampart-intl.so because it needs ICU's normalization tables.  To
+ * avoid forcing every script that calls .normalize() to first
+ * require('rampart-intl') by hand, we install a small JS stub at
+ * startup.  The stub on first call does the require itself (which
+ * triggers the dlopen + Intl install path), and that install path
+ * replaces this stub on String.prototype with the real ICU-backed
+ * method.  The stub then re-dispatches so the current call returns
+ * the right value.
+ *
+ * Net effect: code that does `'café'.normalize('NFC')` Just Works,
+ * rampart-intl stays unloaded until first use, and once loaded
+ * subsequent .normalize() calls have zero stub overhead. */
+static const char duk_rp_string_normalize_stub_src[] =
+    "(function normalize(form) {"
+    "  require('rampart-intl');"
+    "  /* rampart-intl's installer replaced String.prototype.normalize"
+    "   * with the real one.  If for some reason it didn't, prevent"
+    "   * an infinite stub->stub loop. */"
+    "  if (String.prototype.normalize === normalize) {"
+    "    throw new TypeError("
+    "      'String.prototype.normalize requires rampart-intl to be available');"
+    "  }"
+    "  return String.prototype.normalize.call(this, form);"
+    "})";
+
+static void install_string_normalize_stub(duk_context *ctx)
+{
+    duk_get_global_string(ctx, "String");
+    duk_get_prop_string(ctx, -1, "prototype");
+    duk_eval_string(ctx, duk_rp_string_normalize_stub_src);
+    duk_put_prop_string(ctx, -2, "normalize");
+    duk_rp_set_enum_false(ctx, -1, "normalize");
+    duk_pop_2(ctx); /* prototype + String */
+}
+
 static void add_extra_object_funcs(duk_context *ctx)
 {
     duk_get_global_string(ctx, "Object");
@@ -926,11 +964,19 @@ static duk_ret_t rp_eval_js(duk_context *ctx)
 
         if (res.err)
         {
-            const char *emsg = res.errmsg ? res.errmsg : "Syntax error: parse error in eval";
+            const char *emsg = res.errmsg ? res.errmsg : "parse error in eval";
             char *emcopy = emsg ? strdup(emsg) : NULL;
             freeParseRes(&res);
-            RP_THROW(ctx, "%s", emcopy ? emcopy : "Syntax error: parse error in eval");
-            if (emcopy) free(emcopy);
+            /* NDE.32: throw a proper SyntaxError so `instanceof
+               SyntaxError` and `e.name === 'SyntaxError'` work the
+               same under `-t` as without it.  RP_SYNTAX_THROW is
+               unrolled here so emcopy can be freed between
+               duk_push_error_object (which copies the message into
+               the duktape heap) and duk_throw (which longjmps). */
+            duk_push_error_object(ctx, DUK_ERR_SYNTAX_ERROR, "%s",
+                                  emcopy ? emcopy : "parse error in eval");
+            free(emcopy);
+            (void) duk_throw(ctx);
         }
 
         if(res.transpiled)
@@ -1413,6 +1459,24 @@ static void new_function_transpile(duk_context *ctx) {
 }
 
 
+/* Minimal heap init for "bare" threads (vm sandbox backing).
+ * Keeps the heap free of rampart utilities, process, require, and the
+ * WHATWG/Intl lazy global getters; installs only what the worker needs
+ * to drive itself (the rampart.thread message-passing surface) plus the
+ * baseline language fixes that the rest of rampart code assumes. */
+void duk_init_context_bare(duk_context *ctx)
+{
+    duk_push_global_object(ctx);
+    duk_put_global_string(ctx, "global");
+    fix_json_parse(ctx);
+    fix_eval(ctx);
+    new_function_transpile(ctx);
+    install_transpile_err_trim(ctx);
+    install_string_normalize_stub(ctx);  /* triggers rampart-intl load on first .normalize() call */
+    duk_event_init(ctx);
+    duk_thread_init(ctx);
+}
+
 void duk_init_context(duk_context *ctx)
 {
     /* https://wiki.duktape.org/howtoglobalobjectreference */
@@ -1465,6 +1529,7 @@ void duk_init_context(duk_context *ctx)
     fix_eval(ctx);
     new_function_transpile(ctx);
     install_transpile_err_trim(ctx);
+    install_string_normalize_stub(ctx);  /* triggers rampart-intl load on first .normalize() call */
     /* WHATWG / W3C Web platform standards live in rampart-whatwg.so
      * (Blob, File, URL, URLSearchParams, Event, EventTarget,
      * CustomEvent, AbortController, AbortSignal, structuredClone,

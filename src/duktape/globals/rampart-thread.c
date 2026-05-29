@@ -2278,8 +2278,12 @@ static duk_context *new_context(RPTHR *thr)
 {
     duk_context *pctx=NULL, *tctx = duk_create_heap(NULL, NULL, NULL, NULL, duk_rp_fatal);
     int thrno = get_thread_num();
+    int bare = RPTHR_TEST(thr, RPTHR_FLAG_BARE);
 
-    duk_init_context(tctx);  //fresh copy of all the rampart extra goodies
+    if (bare)
+        duk_init_context_bare(tctx);
+    else
+        duk_init_context(tctx);  //fresh copy of all the rampart extra goodies
 
     //creating a thread inside another thread that is not the main thread.  proceed with caution.
     // we definitely don't want to use main_ctx, cuz no amount of locking will help.
@@ -2290,10 +2294,16 @@ static duk_context *new_context(RPTHR *thr)
     else if (main_ctx)
         pctx=main_ctx;
 
-    if(pctx)
+    if(pctx && !bare)
     {
         rpthr_copy_global(pctx, tctx);
         // we don't want copied rampart events
+        duk_push_object(tctx);
+        duk_put_global_string(tctx, DUK_HIDDEN_SYMBOL("jsevents"));
+    }
+    else if (bare)
+    {
+        /* Still need the jsevents hidden symbol for the events backbone. */
         duk_push_object(tctx);
         duk_put_global_string(tctx, DUK_HIDDEN_SYMBOL("jsevents"));
     }
@@ -3507,16 +3517,42 @@ static duk_ret_t new_js_thread(duk_context *ctx)
     RPTHR *thr;
     pthread_attr_t attr;
     int keepopen=0;
+    int bare=0;
 
+    /* Accept either a legacy boolean (keepOpen) or an options object:
+     *   new rampart.thread()
+     *   new rampart.thread(true)                       // keepOpen
+     *   new rampart.thread({keepOpen: true})
+     *   new rampart.thread({bare: true})               // minimal globals
+     *   new rampart.thread({keepOpen: true, bare: true})
+     */
     if(!duk_is_undefined(ctx,0))
-        keepopen=REQUIRE_BOOL(ctx, 0, "new rampart.thread - arugment must be a boolean (keepOpen)");
+    {
+        if (duk_is_boolean(ctx, 0))
+        {
+            keepopen = duk_get_boolean(ctx, 0);
+        }
+        else if (duk_is_object(ctx, 0) && !duk_is_function(ctx, 0) && !duk_is_array(ctx, 0))
+        {
+            if (duk_get_prop_string(ctx, 0, "keepOpen"))
+                keepopen = duk_to_boolean(ctx, -1);
+            duk_pop(ctx);
+            if (duk_get_prop_string(ctx, 0, "bare"))
+                bare = duk_to_boolean(ctx, -1);
+            duk_pop(ctx);
+        }
+        else
+        {
+            RP_THROW(ctx, "new rampart.thread - argument must be a boolean (keepOpen) or an options object {keepOpen, bare}");
+        }
+    }
 
     if (!duk_is_constructor_call(ctx))
     {
         return DUK_RET_TYPE_ERROR;
     }
 
-    thr = rp_new_thread(0,NULL);
+    thr = rp_new_thread(bare ? RPTHR_FLAG_BARE : 0, NULL);
     if(!thr)
         RP_THROW(ctx, "rampart.thread.new: error creating new thread");
 
