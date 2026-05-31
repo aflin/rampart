@@ -1357,6 +1357,22 @@ static void clean_txn(duk_context *ctx, MDB_txn *txn, int commit)
     }
     duk_pop(ctx);
 
+    /* Free the cursors, if any.
+       This MUST happen before mdb_txn_commit/abort below: for a read/write
+       transaction LMDB frees the txn's cursors automatically on commit/abort,
+       so closing them afterward double-frees the same pointers (heap abort).
+       Closing them here, while the txn is still live, unlinks each cursor from
+       the txn so commit/abort won't touch them. Safe for read-only txns too. */
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("cursors"));
+    duk_enum(ctx, -1, 0);
+    while(duk_next(ctx, -1, 1))
+    {
+        cursor = (MDB_cursor *)duk_get_pointer(ctx, -1);
+        mdb_cursor_close(cursor);
+        duk_pop_2(ctx);
+    }
+    duk_pop_2(ctx);
+
     lenv = get_env(ctx);
 
     if(commit)
@@ -1380,17 +1396,6 @@ static void clean_txn(duk_context *ctx, MDB_txn *txn, int commit)
     /* txn is complete and invalid. Mark it as such. */
     duk_push_pointer(ctx, (void*)NULL);
     duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("txn"));
-
-    /* free the cursors, if any */
-    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("cursors"));
-    duk_enum(ctx, -1, 0);
-    while(duk_next(ctx, -1, 1))
-    {
-        cursor = (MDB_cursor *)duk_get_pointer(ctx, -1);
-        mdb_cursor_close(cursor);
-        duk_pop_2(ctx);
-    }
-    duk_pop_2(ctx);
 
     if(rc)
         RP_THROW(ctx, "transaction.commit - error committing data: (%d) %s\n", rc, mdb_strerror(rc));
