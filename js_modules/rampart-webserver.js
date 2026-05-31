@@ -288,8 +288,14 @@ function firstChecks(serverConf)
         if( serverConf.sslKeyFile || serverConf.sslCertFile )
             return serr( "when selfSigned is true, sslKeyFile and sslCertFile must be unset" );
 
-        var cert = process.scriptPath+'/selfSign-cert.pem';
-        var key = process.scriptPath+'/selfSign-key.pem';
+        // Generated cert lives under serverConf.serverRoot — process.scriptPath
+        // would point at ':zip:' inside a single-file bundle, which is read-only.
+        // _writableWd() resolves ':zip:' to the directory next to the bundle binary
+        // so a bare-default config still works; for any user-supplied serverRoot
+        // it returns the path unchanged.
+        var certDir = _writableWd(serverConf.serverRoot || process.scriptPath);
+        var cert = certDir+'/selfSign-cert.pem';
+        var key = certDir+'/selfSign-key.pem';
 
         if(
             !(stat(cert) &&
