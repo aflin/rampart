@@ -342,6 +342,20 @@ extern char modules_dir[PATH_MAX];           // where modules live
 extern int  rp_has_zip_payload;              // 1 if SFX-style zip is appended to rampart_exec
 extern off_t rp_zip_eocd_off;                // absolute offset of EOCD within rampart_exec
 extern duk_context *main_ctx;                // the context if/when single threaded
+
+/* fd 0 (stdin) ownership.  Set when linenoise puts the terminal into
+   raw mode for a prompt and cleared when it returns to cooked mode.
+   Cleared on the way out.  nodeshim's process.stdin event-driven
+   data pump consults this before installing its libevent EV_READ
+   reader, and throws if a REPL session currently owns the fd —
+   they're mutually exclusive (vanilla rampart linenoise vs.
+   node-style stdin events).  Symmetric: nodeshim sets it to
+   RP_STDIN_NODESHIM when its pump is active, and the REPL entry
+   points throw if they find that. */
+#define RP_STDIN_NONE      0
+#define RP_STDIN_REPL      1
+#define RP_STDIN_NODESHIM  2
+extern int rp_stdin_owner;
 extern struct event_base **thread_base;      // each thread (or pair or ctxs) gets an event loop
 extern int totnthreads;                      // when threading in server - number of ctx contexts
 extern struct evdns_base **thread_dnsbase;   // list of dns resolvers in event loops

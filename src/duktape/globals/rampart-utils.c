@@ -7927,6 +7927,16 @@ static duk_ret_t rp_repl(duk_context *ctx) {
     int redraw_on_resume=1;
     int object_mode=0;
 
+    /* Refuse to start if nodeshim's process.stdin pump currently
+       owns fd 0.  They're mutually exclusive — vanilla rampart REPL
+       vs. node-style stdin events.  linenoise sets/clears the flag
+       internally on raw-mode toggle; we just check it here. */
+    if (rp_stdin_owner == RP_STDIN_NODESHIM)
+        RP_THROW(ctx, "rampart.utils.repl: cannot start while "
+                      "process.stdin event-driven mode is active. "
+                      "Remove all 'data'/'readable' listeners from "
+                      "process.stdin first.");
+
     if(duk_is_object(ctx, 0))
     {
         if(duk_get_prop_string(ctx, 0, "history"))

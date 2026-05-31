@@ -228,7 +228,24 @@ polyfills allpolys[] = {
         // Debug controls: pending warnings (ON by default, turn off with _TrN_Sp.warnOnLongPending=false)
         // do not warn for merely pending promises.
         // Enable only for debugging "long-pending" promises.
-        "_TrN_Sp._wrapLongPending = function(p, label) {if (!_TrN_Sp.warnOnLongPending) return p;try {var id = setTimeout(function () {if (typeof console !== 'undefined' && console && console.warn) {console.warn('Promise still pending after', _TrN_Sp.pendingWarnMs, 'ms', label ? '(' + label + ')' : '');}}, _TrN_Sp.pendingWarnMs);if (p && typeof p['finally'] === 'function') {p['finally'](function () { clearTimeout(id); });} else if (p && typeof p.then === 'function') {p.then(function(){ clearTimeout(id); }, function(){ clearTimeout(id); });}} catch (_e) {}return p;};_TrN_Sp.asyncGeneratorStep = function(gen, resolve, reject, _next, _throw, key, arg) {try {var info = gen[key](arg);var value = info.value;} catch (error) {reject(error);return;}if (info.done) {resolve(value);} else {Promise.resolve(value).then(_next, _throw);}};_TrN_Sp.asyncToGenerator = function(fn) {return function() {var self = this, args = arguments;var __p = new Promise(function(resolve, reject) {var gen = fn.apply(self, args);function _next(value) {_TrN_Sp.asyncGeneratorStep(gen, resolve, reject, _next, _throw, 'next', value);}function _throw(err) {_TrN_Sp.asyncGeneratorStep(gen, resolve, reject, _next, _throw, 'throw', err);}_next(undefined);});return _TrN_Sp._wrapLongPending(__p, fn && fn.name ? fn.name : 'async');};_TrN_Sp.warnOnLongPending = (_TrN_Sp.warnOnLongPending === undefined ? true: _TrN_Sp.warnOnLongPending);_TrN_Sp.pendingWarnMs = (typeof _TrN_Sp.pendingWarnMs === 'number' && _TrN_Sp.pendingWarnMs >= 0) ? _TrN_Sp.pendingWarnMs : 2000;};_TrN_Sp.regeneratorRuntime = (function() {function mark(genFn) {return genFn;}function wrap(innerFn, outerFn, outerThis) {var _s=void 0,_t=false,_te;var context = {prev: 0,next: 0,done: false,rval: void 0,_ts:null,stop: function() {this.done = true;return this.rval;}};Object.defineProperty(context,'sent',{get:function(){if(_t){_t=false;var e=_te;_te=void 0;throw e;}return _s;},set:function(v){_s=v;},configurable:true});var _iter={next: function(arg) {if (context.done) return {value: undefined, done: true};context.sent = arg;context._y=false;var value;while(true){try{value = innerFn.call(outerThis, context);break;}catch(_e){if(context._catch){context._caught=_e;context.next=context._catch;context._catch=0;continue;}context.done=true;throw _e;}}if (context.done || context.next === 'end') {return {value: context.rval, done: true};}if (!context._y) {context.done = true;context.rval = value;return {value: context.rval, done: true};}return {value: value, done: false};},'throw': function(err) {_t=true;_te=err;return this.next(err);},'return': function(v) {if (context.done) return {value: v, done: true};if (context._ts && context._ts.length) {context.rval = v;context._rret = true;context.next = context._ts[context._ts.length - 1];return this.next();}context.done = true;return {value: v, done: true};}};if(typeof Symbol!=='undefined'&&Symbol.iterator)_iter[Symbol.iterator]=function(){return this;};return _iter;}return {mark: mark, wrap: wrap};})();if(typeof Symbol!=='undefined'&&Symbol.asyncIterator===undefined){try{Symbol.asyncIterator=Symbol('Symbol.asyncIterator');}catch(_e){}}_TrN_Sp._iter=function(x){if(x==null)throw new TypeError('not iterable');if(typeof x.next==='function')return x;if(typeof Symbol!=='undefined'&&Symbol.iterator&&typeof x[Symbol.iterator]==='function')return x[Symbol.iterator]();var i=0;return{next:function(){if(i>=x.length)return{value:undefined,done:true};return{value:x[i++],done:false};}};};_TrN_Sp._asyncIter=function(x){if(x==null)throw new TypeError('not iterable');if(typeof Symbol!=='undefined'&&Symbol.asyncIterator&&typeof x[Symbol.asyncIterator]==='function')return x[Symbol.asyncIterator]();return _TrN_Sp._iter(x);};_TrN_Sp.__await=function(v){return{__await:true,value:v};};_TrN_Sp.__asyncGenerator=function(thisArg,_args,fn){if(!fn||typeof fn.apply!=='function')throw new TypeError('async generator body must be a function');var iter=fn.apply(thisArg,_args||[]);var q=[],running=false;function step(){if(q.length===0){running=false;return;}running=true;var cur=q[0];var r;try{r=iter[cur.key](cur.arg);}catch(e){q.shift();cur.reject(e);return step();}if(r.done){q.shift();cur.resolve({value:r.value,done:true});return step();}var v=r.value;if(v&&v.__await){Promise.resolve(v.value).then(function(rv){q[0]={key:'next',arg:rv,resolve:cur.resolve,reject:cur.reject};step();},function(re){q[0]={key:'throw',arg:re,resolve:cur.resolve,reject:cur.reject};step();});}else{Promise.resolve(v).then(function(rv){q.shift();cur.resolve({value:rv,done:false});step();},function(re){q.shift();cur.reject(re);step();});}}function enqueue(key,arg){return new Promise(function(resolve,reject){q.push({key:key,arg:arg,resolve:resolve,reject:reject});if(!running)step();});}var aiter={next:function(v){return enqueue('next',v);},'throw':function(e){return enqueue('throw',e);},'return':function(v){return enqueue('return',v);}};if(typeof Symbol!=='undefined'&&Symbol.asyncIterator)aiter[Symbol.asyncIterator]=function(){return this;};return aiter;};",
+        "_TrN_Sp._wrapLongPending = function(p, label) {if (!_TrN_Sp.warnOnLongPending) return p;try {var id = setTimeout(function () {if (typeof console !== 'undefined' && console && console.warn) {console.warn('Promise still pending after', _TrN_Sp.pendingWarnMs, 'ms', label ? '(' + label + ')' : '');}}, _TrN_Sp.pendingWarnMs);if (p && typeof p['finally'] === 'function') {p['finally'](function () { clearTimeout(id); });} else if (p && typeof p.then === 'function') {p.then(function(){ clearTimeout(id); }, function(){ clearTimeout(id); });}} catch (_e) {}return p;};_TrN_Sp.asyncGeneratorStep = function(gen, resolve, reject, _next, _throw, key, arg) {try {var info = gen[key](arg);var value = info.value;} catch (error) {reject(error);return;}if (info.done) {resolve(value);} else {Promise.resolve(value).then(_next, _throw);}};_TrN_Sp.asyncToGenerator = function(fn) {return function() {var self = this, args = arguments;var __p = new Promise(function(resolve, reject) {var gen = fn.apply(self, args);function _next(value) {_TrN_Sp.asyncGeneratorStep(gen, resolve, reject, _next, _throw, 'next', value);}function _throw(err) {_TrN_Sp.asyncGeneratorStep(gen, resolve, reject, _next, _throw, 'throw', err);}_next(undefined);});return _TrN_Sp._wrapLongPending(__p, fn && fn.name ? fn.name : 'async');};_TrN_Sp.warnOnLongPending = (_TrN_Sp.warnOnLongPending === undefined ? true: _TrN_Sp.warnOnLongPending);_TrN_Sp.pendingWarnMs = (typeof _TrN_Sp.pendingWarnMs === 'number' && _TrN_Sp.pendingWarnMs >= 0) ? _TrN_Sp.pendingWarnMs : 2000;};_TrN_Sp.regeneratorRuntime = (function() {function mark(genFn) {return genFn;}function wrap(innerFn, outerFn, outerThis) {var _s=void 0,_t=false,_te;var context = {prev: 0,next: 0,done: false,rval: void 0,_ts:null,stop: function() {this.done = true;return this.rval;}};Object.defineProperty(context,'sent',{get:function(){if(_t){_t=false;var e=_te;_te=void 0;throw e;}return _s;},set:function(v){_s=v;},configurable:true});var _iter={next: function(arg) {if (context.done) return {value: undefined, done: true};context.sent = arg;context._y=false;var value;while(true){try{value = innerFn.call(outerThis, context);break;}catch(_e){if(context._catch){context._caught=_e;context.next=context._catch;context._catch=0;continue;}context.done=true;throw _e;}}if (context.done || context.next === 'end') {return {value: context.rval, done: true};}if (!context._y) {context.done = true;context.rval = value;return {value: context.rval, done: true};}return {value: value, done: false};},'throw': function(err) {_t=true;_te=err;return this.next(err);},'return': function(v) {if (context.done) return {value: v, done: true};if (context._ts && context._ts.length) {context.rval = v;context._rret = true;context.next = context._ts[context._ts.length - 1];return this.next();}context.done = true;return {value: v, done: true};}};if(typeof Symbol!=='undefined'&&Symbol.iterator)_iter[Symbol.iterator]=function(){return this;};return _iter;}return {mark: mark, wrap: wrap};})();if(typeof Symbol!=='undefined'&&Symbol.asyncIterator===undefined){try{Symbol.asyncIterator=Symbol('Symbol.asyncIterator');}catch(_e){}}_TrN_Sp._iter=function(x){if(x==null)throw new TypeError('not iterable');if(typeof x.next==='function')return x;if(typeof Symbol!=='undefined'&&Symbol.iterator&&typeof x[Symbol.iterator]==='function')return x[Symbol.iterator]();var i=0;return{next:function(){if(i>=x.length)return{value:undefined,done:true};return{value:x[i++],done:false};}};};_TrN_Sp._asyncIter=function(x){if(x==null)throw new TypeError('not iterable');if(typeof Symbol!=='undefined'&&Symbol.asyncIterator&&typeof x[Symbol.asyncIterator]==='function')return x[Symbol.asyncIterator]();return _TrN_Sp._iter(x);};_TrN_Sp.__await=function(v){return{__await:true,value:v};};_TrN_Sp.__asyncGenerator=function(thisArg,_args,fn){if(!fn||typeof fn.apply!=='function')throw new TypeError('async generator body must be a function');var iter=fn.apply(thisArg,_args||[]);var q=[],running=false;function step(){if(q.length===0){running=false;return;}running=true;var cur=q[0];var r;try{r=iter[cur.key](cur.arg);}catch(e){q.shift();cur.reject(e);return step();}if(r.done){q.shift();cur.resolve({value:r.value,done:true});return step();}var v=r.value;if(v&&v.__await){Promise.resolve(v.value).then(function(rv){q[0]={key:'next',arg:rv,resolve:cur.resolve,reject:cur.reject};step();},function(re){q[0]={key:'throw',arg:re,resolve:cur.resolve,reject:cur.reject};step();});}else{Promise.resolve(v).then(function(rv){q.shift();cur.resolve({value:rv,done:false});step();},function(re){q.shift();cur.reject(re);step();});}}function enqueue(key,arg){return new Promise(function(resolve,reject){q.push({key:key,arg:arg,resolve:resolve,reject:reject});if(!running)step();});}var aiter={next:function(v){return enqueue('next',v);},'throw':function(e){return enqueue('throw',e);},'return':function(v){return enqueue('return',v);}};if(typeof Symbol!=='undefined'&&Symbol.asyncIterator)aiter[Symbol.asyncIterator]=function(){return this;};return aiter;};"
+        /* AsyncFunction / AsyncGeneratorFunction tag constructors. The
+           transpile lowers `async function` and `async function *` to
+           plain functions, so user code that distinguishes them via
+           `fn instanceof (async function * () {}).constructor`
+           (e.g. through2 v5's fnKind) would otherwise see every
+           function as both kinds.  These tag-only constructors are
+           returned by the `.constructor` of tagged functions, and
+           their `[Symbol.hasInstance]` checks the `__TrN_kind` marker
+           the transpiler attaches at emit time. */
+        "_TrN_Sp.AsyncFunction = function _AsyncFunctionTag() {throw new TypeError('AsyncFunction constructor not supported under -t');};"
+        "_TrN_Sp.AsyncGeneratorFunction = function _AsyncGeneratorFunctionTag() {throw new TypeError('AsyncGeneratorFunction constructor not supported under -t');};"
+        "if(typeof Symbol!=='undefined'&&Symbol.hasInstance){"
+        "try{Object.defineProperty(_TrN_Sp.AsyncFunction,Symbol.hasInstance,{value:function(f){return typeof f==='function'&&f.__TrN_kind==='async';}});}catch(_e){}"
+        "try{Object.defineProperty(_TrN_Sp.AsyncGeneratorFunction,Symbol.hasInstance,{value:function(f){return typeof f==='function'&&f.__TrN_kind==='asyncgen';}});}catch(_e){}"
+        "}"
+        "_TrN_Sp._tagAsync=function(fn){if(typeof fn==='function'){try{Object.defineProperty(fn,'__TrN_kind',{value:'async',configurable:true});}catch(_e){}try{Object.defineProperty(fn,'constructor',{value:_TrN_Sp.AsyncFunction,configurable:true});}catch(_e){}}return fn;};"
+        "_TrN_Sp._tagAsyncGen=function(fn){if(typeof fn==='function'){try{Object.defineProperty(fn,'__TrN_kind',{value:'asyncgen',configurable:true});}catch(_e){}try{Object.defineProperty(fn,'constructor',{value:_TrN_Sp.AsyncGeneratorFunction,configurable:true});}catch(_e){}}return fn;};",
         // old overly verbose version:
         //"_TrN_Sp.asyncGeneratorStep = function(gen, resolve, reject, _next, _throw, key, arg) {try{var info = gen[key](arg);var value = info.value;}catch (error){reject(error);return;}if (info.done){resolve(value);}else{Promise.resolve(value).then(_next, _throw);}};_TrN_Sp.asyncToGenerator = function(fn) {return function() {var self = this, args = arguments;return new Promise(function(resolve, reject) {var gen = fn.apply(self, args);function _next(value){_TrN_Sp.asyncGeneratorStep(gen, resolve, reject, _next, _throw, \"next\", value);}function _throw(err){_TrN_Sp.asyncGeneratorStep(gen, resolve, reject, _next, _throw, \"throw\", err);}_next(undefined);});};};_TrN_Sp.regeneratorRuntime = (function () {function mark(genFn) { return genFn; }function wrap(innerFn) {var context = {prev: 0,next: 0,sent: void 0,done: false,rval: void 0,stop: function () { this.done = true; return this.rval; }};return {next: function (arg) {var prevNext = context.next;context.sent = arg;var value = innerFn(context);if (context.done || context.next === \"end\") {return { value: context.rval, done: true };}if (context.next === prevNext) {context.done = true;context.rval = value;return { value: context.rval, done: true };}return { value: value, done: false };},throw: function (err) { throw err; }};}return { mark: mark, wrap: wrap };})();",
         0, (uint32_t)ASYNC_PF  },
@@ -5243,6 +5260,40 @@ static void _collect_var_names_recursive(const char *src, TSNode node, rp_string
         return;
     }
 
+    /* NDE.50: hoist the catch parameter to the function-level temp so the
+       caught-error binding survives the state-machine suspend/resume when
+       the catch body contains an await/yield.  The catch emit (try_statement
+       arm) assigns it with a plain `e = _TrN_context._caught;` in the CATCH
+       case; without hoisting, that binding would be re-declared and reset to
+       undefined on each re-entry, so any reference to `e` after an await in
+       the catch sees undefined.  Identifier params only — destructure-pattern
+       catch params route through the pattern collector. */
+    if (strcmp(t, "catch_clause") == 0)
+    {
+        TSNode cp = ts_node_child_by_field_name(node, "parameter", 9);
+        if (!ts_node_is_null(cp))
+        {
+            const char *cpt = ts_node_type(cp);
+            if (strcmp(cpt, "identifier") == 0)
+            {
+                size_t ns = ts_node_start_byte(cp), ne = ts_node_end_byte(cp);
+                if (!_bs_name_already_in(names, src + ns, ne - ns))
+                {
+                    if (!*first)
+                        rp_string_puts(names, ", ");
+                    rp_string_putsn(names, src + ns, ne - ns);
+                    *first = 0;
+                }
+            }
+            else if (strcmp(cpt, "array_pattern") == 0 ||
+                     strcmp(cpt, "object_pattern") == 0)
+            {
+                _collect_pattern_names(src, cp, names, first);
+            }
+        }
+        /* fall through to recurse into the catch body for nested vars */
+    }
+
     uint32_t cc = ts_node_child_count(node);
     for (uint32_t i = 0; i < cc; i++)
         _collect_var_names_recursive(src, ts_node_child(node, i), names, first);
@@ -6020,6 +6071,14 @@ static char *_emit_async_decl_replacement(const char *src, TSNode node)
     else
         rp_string_puts(out, fallback);
     rp_string_puts(out, ".apply(this, arguments);}");
+    /* Tag the user-visible thunk so `instanceof (async function(){}).constructor`
+       picks it up (through2 v5 etc.). */
+    rp_string_puts(out, ";_TrN_Sp._tagAsync(");
+    if (!ts_node_is_null(name))
+        rp_string_putsn(out, src+ns, ne-ns);
+    else
+        rp_string_puts(out, fallback);
+    rp_string_puts(out, ");");
 
     char *ret = rp_string_steal(out);
     out = rp_string_free(out);
@@ -6049,7 +6108,11 @@ static char *_emit_async_expr_replacement(const char *src, TSNode node)
     int is_arrow = strcmp(ts_node_type(node), "arrow_function") == 0;
 
     rp_string *out = rp_string_new(768);
-    rp_string_puts(out, "(function(){var _TrN_ref = _TrN_Sp.asyncToGenerator(_TrN_Sp.regeneratorRuntime.mark(function _TrN_callee");
+    /* Wrap with _TrN_Sp._tagAsync so the returned function's
+       `.constructor` is the tagged AsyncFunction — needed for code
+       that distinguishes via `inst instanceof (async function(){}).constructor`
+       (through2 v5's fnKind, etc.). */
+    rp_string_puts(out, "_TrN_Sp._tagAsync((function(){var _TrN_ref = _TrN_Sp.asyncToGenerator(_TrN_Sp.regeneratorRuntime.mark(function _TrN_callee");
     _append_params_sig(out, src, node);
     rp_string_puts(out, " {");
     char *wrap = _build_regenerator_switch_body(src, body);
@@ -6061,9 +6124,9 @@ static char *_emit_async_expr_replacement(const char *src, TSNode node)
     rp_string_puts(out, wrap);
     free(wrap);
     if (is_arrow)
-        rp_string_puts(out, "})); return function(){ return _TrN_ref.apply(this, arguments); }.bind(this);}).call(this)");
+        rp_string_puts(out, "})); return function(){ return _TrN_ref.apply(this, arguments); }.bind(this);}).call(this))");
     else
-        rp_string_puts(out, "})); return function(){ return _TrN_ref.apply(this, arguments); };})()");
+        rp_string_puts(out, "})); return function(){ return _TrN_ref.apply(this, arguments); };})())");
 
     char *ret = rp_string_steal(out);
     out = rp_string_free(out);
@@ -6117,10 +6180,11 @@ static char *_emit_async_method_replacement(const char *src, TSNode node)
         /* Object-property form: name: (function(){ ... })()
            The OUTER returned callable keeps the method's name (used
            only for Function.prototype.name / toString); only the
-           inner mark()-callback name needs to be `_TrN_callee`. */
+           inner mark()-callback name needs to be `_TrN_callee`.
+           Wrap with _TrN_Sp._tagAsync for `instanceof AsyncFunction`. */
         rp_string_putsn(out, src+ns, ne-ns);
         rp_string_puts(out, ": ");
-        rp_string_puts(out, "(function(){var _TrN_ref = _TrN_Sp.asyncToGenerator(_TrN_Sp.regeneratorRuntime.mark(function _TrN_callee");
+        rp_string_puts(out, "_TrN_Sp._tagAsync((function(){var _TrN_ref = _TrN_Sp.asyncToGenerator(_TrN_Sp.regeneratorRuntime.mark(function _TrN_callee");
         _append_params_sig(out, src, node);
         rp_string_puts(out, " {");
         char *wrap = _build_regenerator_switch_body(src, body);
@@ -6131,7 +6195,7 @@ static char *_emit_async_method_replacement(const char *src, TSNode node)
         if (named) rp_string_putsn(out, src+ns, ne-ns);
         else       rp_string_puts(out, "_TrN_callee");
         _append_params_sig(out, src, node);
-        rp_string_puts(out, " { return _TrN_ref.apply(this, arguments); };})()");
+        rp_string_puts(out, " { return _TrN_ref.apply(this, arguments); };})())");
     }
 
     char *ret = rp_string_steal(out);
@@ -6154,10 +6218,24 @@ static int _is_async_function_like(TSNode node)
     }
     return 0;
 }
+/* Forward decl: _is_async_generator_function_like is defined alongside
+   the generator pass below. Needed here for NDE.46 dispatcher gating. */
+static int _is_async_generator_function_like(const char *src, TSNode node);
 static int rewrite_async_await_to_regenerator(EditList *edits, const char *src, TSNode node, RangeList *claimed,
                                               int overlaps)
 {
     if (!_is_async_function_like(node))
+        return 0;
+    /* NDE.46: tree-sitter parses `async function * () {}` (function
+       expression / declaration) as a `generator_function*` node type
+       that this rewriter doesn't match, so those nodes naturally fall
+       through to `rewrite_generator_to_regenerator`, which routes them
+       to the asyncgen emit. But `async * NAME() {}` method shorthand
+       is parsed as `method_definition` (no separate generator node
+       type), so it matches both rewriters. Skip async-generator
+       method_definitions here so the generator rewriter can claim
+       them and dispatch to `_emit_async_gen_method_replacement`. */
+    if (_is_async_generator_function_like(src, node))
         return 0;
     size_t ns = ts_node_start_byte(node), ne = ts_node_end_byte(node);
     const char *t = ts_node_type(node);
@@ -6308,6 +6386,28 @@ static int _text_has_yield(const char *src, size_t ss, size_t se)
     return 0;
 }
 
+/* Like _text_has_yield, but scans only for the `await` keyword (with
+   identifier-boundary checks so `awaiting`/`myawait` don't match).  Used by
+   the short-circuit/ternary await-preservation lowering so it only fires
+   when a conditionally-evaluated operand actually awaits. */
+static int _text_has_await(const char *src, size_t ss, size_t se)
+{
+    for (size_t i = ss; i + 5 <= se; i++)
+    {
+        if (src[i] == 'a' && src[i + 1] == 'w' && src[i + 2] == 'a' &&
+            src[i + 3] == 'i' && src[i + 4] == 't')
+        {
+            int prev_ok = (i == ss) || !(isalnum((unsigned char)src[i - 1]) ||
+                                         src[i - 1] == '_' || src[i - 1] == '$');
+            int next_ok = (i + 5 >= se) || !(isalnum((unsigned char)src[i + 5]) ||
+                                             src[i + 5] == '_' || src[i + 5] == '$');
+            if (prev_ok && next_ok)
+                return 1;
+        }
+    }
+    return 0;
+}
+
 /* Helper: lower yields in src range [ss..se] (with `container` as the
    tree-sitter subtree covering it). Emits each yield's state-machine
    transition into `dst`. Returns a malloc'd string that is the original
@@ -6327,10 +6427,404 @@ static int _text_has_yield(const char *src, size_t ss, size_t se)
 static char *_lower_range_with_yields(rp_string *dst, const char *src,
                                       size_t ss, size_t se, TSNode container,
                                       LoopCtx *ctx, FinCtx *fctx,
+                                      int *p_next_label);
+
+/* Counter for short-circuit/ternary temp slots (`_TrN_context._scN`). */
+static unsigned _sc_counter = 0;
+
+/* Unwrap a `parenthesized_expression` down to its inner expression.
+   Takes/returns by pointer to avoid any TSNode-by-value surprises. */
+static void _sc_unwrap_parens(TSNode *np)
+{
+    while (!ts_node_is_null(*np) &&
+           strcmp(ts_node_type(*np), "parenthesized_expression") == 0)
+    {
+        TSNode inner = {0};
+        uint32_t cc = ts_node_named_child_count(*np);
+        for (uint32_t i = 0; i < cc; i++)
+        {
+            TSNode c = ts_node_named_child(*np, i);
+            if (strcmp(ts_node_type(c), "comment") != 0) { inner = c; break; }
+        }
+        if (ts_node_is_null(inner)) break;
+        *np = inner;
+    }
+}
+
+/* Short-circuit / ternary await preservation.
+ *
+ * The generic await lowering below hoists EVERY await in a range to an
+ * unconditional state-machine `return`, which is wrong when the await sits
+ * in a conditionally-evaluated operand of `&&` / `||` / `?:` — JS must only
+ * evaluate it on the branch that is actually taken.  When `container`
+ * (after unwrapping parens) is such an expression and the conditionally-
+ * evaluated operand contains an await, lower it Babel/regenerator-style:
+ *
+ *   a && (await b)  ->  _scN = <a>; if(_scN){_scN = <await b>}    value: _scN
+ *   a || (await b)  ->  _scN = <a>; if(!_scN){_scN = <await b>}   value: _scN
+ *   a ? X : Y       ->  _scN = <a>; if(_scN){_scN=<X>}else{_scN=<Y>} value: _scN
+ *
+ * Each operand is lowered recursively through _lower_range_with_yields, so
+ * nested awaits / nested short-circuits compose correctly, and the awaited
+ * operand's transitions are emitted only inside the taken branch's `case`.
+ *
+ * Returns a malloc'd substituted-expression string (the temp slot) and
+ * emits the dispatch + branch transitions to `dst`, OR returns NULL when
+ * `container` is not an applicable short-circuit/ternary (caller falls
+ * through to the generic path).  Only fires when a conditionally-evaluated
+ * operand actually contains an await — `a && b` with no await, or with the
+ * await only on the always-evaluated LHS, is left to the generic path so
+ * there is no codegen/perf regression. */
+static char *_try_lower_shortcircuit_await(rp_string *dst, const char *src,
+                                           TSNode container, LoopCtx *ctx,
+                                           FinCtx *fctx, int *p_next_label)
+{
+    TSNode node = container;
+    _sc_unwrap_parens(&node);
+    if (ts_node_is_null(node))
+        return NULL;
+    const char *nt = ts_node_type(node);
+
+    /* Statement wrappers: `return <expr>;`, `<expr>;` (expression_statement),
+       and `var/let/const x = <expr>;`.  When the wrapped expression is an
+       applicable short-circuit/ternary, lower THAT expression and splice the
+       slot back into the statement text.  This catches the common
+       `return o.fn ? (await o.fn()) : x;` and `var y = a && (await b);`
+       shapes that don't arrive here as a bare expression.  `return` inside a
+       try/finally (fctx != NULL) is handled by the generic kind==3 path, so
+       skip the wrapper there to avoid double-handling. */
+    if ((strcmp(nt, "return_statement") == 0 && fctx == NULL) ||
+        strcmp(nt, "expression_statement") == 0 ||
+        strcmp(nt, "variable_declaration") == 0 ||
+        strcmp(nt, "lexical_declaration") == 0)
+    {
+        TSNode inner = {0};
+        size_t prefix_s = 0, prefix_e = 0;  /* text kept before the expr */
+        size_t suffix_s = 0, suffix_e = 0;  /* text kept after the expr */
+        if (strcmp(nt, "return_statement") == 0 ||
+            strcmp(nt, "expression_statement") == 0)
+        {
+            /* single named expression child (skip comments) */
+            uint32_t cc = ts_node_named_child_count(node);
+            for (uint32_t i = 0; i < cc; i++)
+            {
+                TSNode c = ts_node_named_child(node, i);
+                if (strcmp(ts_node_type(c), "comment") != 0) { inner = c; break; }
+            }
+            if (ts_node_is_null(inner))
+                return NULL;
+            prefix_s = ts_node_start_byte(node);
+            prefix_e = ts_node_start_byte(inner);
+            suffix_s = ts_node_end_byte(inner);
+            suffix_e = ts_node_end_byte(node);
+        }
+        else  /* variable/lexical declaration with a single declarator */
+        {
+            if (ts_node_named_child_count(node) != 1)
+                return NULL;
+            TSNode decl = ts_node_named_child(node, 0);
+            if (strcmp(ts_node_type(decl), "variable_declarator") != 0)
+                return NULL;
+            TSNode name = ts_node_child_by_field_name(decl, "name", 4);
+            TSNode val  = ts_node_child_by_field_name(decl, "value", 5);
+            /* Only plain-identifier targets — patterns route elsewhere. */
+            if (ts_node_is_null(name) || ts_node_is_null(val) ||
+                strcmp(ts_node_type(name), "identifier") != 0)
+                return NULL;
+            inner = val;
+            prefix_s = ts_node_start_byte(node);
+            prefix_e = ts_node_start_byte(inner);
+            suffix_s = ts_node_end_byte(inner);
+            suffix_e = ts_node_end_byte(node);
+        }
+
+        /* Recurse on the inner expression. */
+        char *expr_slot = _try_lower_shortcircuit_await(dst, src, inner, ctx,
+                                                        fctx, p_next_label);
+        if (!expr_slot)
+            return NULL;
+
+        /* Rebuild the statement text: prefix + slot + suffix.  For a
+           declaration, the keyword (`var`/`let`/`const`) is replaced by `var`
+           so the binding survives across state-machine re-entry; names are
+           hoisted at the top of _callee. */
+        rp_string *res = rp_string_new(64);
+        if (strcmp(nt, "variable_declaration") == 0 ||
+            strcmp(nt, "lexical_declaration") == 0)
+        {
+            /* emit `<name> = (slot)<suffix>` — drop the keyword entirely so
+               it's a plain assignment to the hoisted binding. */
+            TSNode decl = ts_node_named_child(node, 0);
+            TSNode name = ts_node_child_by_field_name(decl, "name", 4);
+            size_t ns2 = ts_node_start_byte(name), ne2 = ts_node_end_byte(name);
+            rp_string_putsn(res, src + ns2, ne2 - ns2);
+            rp_string_puts(res, " = ");
+            rp_string_puts(res, expr_slot);
+            rp_string_putsn(res, src + suffix_s, suffix_e - suffix_s);
+        }
+        else
+        {
+            rp_string_putsn(res, src + prefix_s, prefix_e - prefix_s);
+            rp_string_puts(res, expr_slot);
+            rp_string_putsn(res, src + suffix_s, suffix_e - suffix_s);
+        }
+        free(expr_slot);
+        return rp_string_steal(res);
+    }
+
+    int is_binary  = (strcmp(nt, "binary_expression") == 0);
+    int is_ternary = (strcmp(nt, "ternary_expression") == 0 ||
+                      strcmp(nt, "conditional_expression") == 0);
+    if (!is_binary && !is_ternary)
+        return NULL;
+
+    if (is_binary)
+    {
+        TSNode op = ts_node_child_by_field_name(node, "operator", 8);
+        if (ts_node_is_null(op))
+            return NULL;
+        size_t ops = ts_node_start_byte(op), ope = ts_node_end_byte(op);
+        int is_and = (ope - ops == 2 && src[ops] == '&' && src[ops + 1] == '&');
+        int is_or  = (ope - ops == 2 && src[ops] == '|' && src[ops + 1] == '|');
+        int is_nullish = (ope - ops == 2 && src[ops] == '?' && src[ops + 1] == '?');
+        if (!is_and && !is_or && !is_nullish)
+            return NULL;  /* arithmetic, comparison etc. — not us */
+
+        TSNode left  = ts_node_child_by_field_name(node, "left", 4);
+        TSNode right = ts_node_child_by_field_name(node, "right", 5);
+        if (ts_node_is_null(left) || ts_node_is_null(right))
+            return NULL;
+        size_t ls = ts_node_start_byte(left),  le = ts_node_end_byte(left);
+        size_t rs = ts_node_start_byte(right), re = ts_node_end_byte(right);
+
+        /* Only kick in when the conditionally-evaluated RHS contains an
+           await. (If only the always-evaluated LHS awaits, the generic
+           hoist is already correct.) */
+        if (!_text_has_await(src, rs, re))
+            return NULL;
+
+        unsigned slot_id = ++_sc_counter;
+        char slot[32];
+        snprintf(slot, sizeof(slot), "_TrN_context._sc%u", slot_id);
+
+        /* Lower the LHS (it may itself contain awaits / short-circuits)
+           and store its value in the slot. */
+        char *lhs_low = _lower_range_with_yields(dst, src, ls, le, left,
+                                                 ctx, fctx, p_next_label);
+        if (dst->len)
+        {
+            char *p = dst->str + dst->len - 1;
+            while (p > dst->str && isspace((unsigned char)*p)) p--;
+            if (*p != ';' && *p != ':' && *p != '{') rp_string_putc(dst, ';');
+        }
+        rp_string_appendf(dst, "%s=(%s);", slot, lhs_low ? lhs_low : "undefined");
+        if (lhs_low) free(lhs_low);
+
+        *p_next_label += 3;
+        int rhs_case = *p_next_label;
+        *p_next_label += 3;
+        int after_case = *p_next_label;
+
+        /* if (<should-eval-RHS>) goto RHS; else goto AFTER (slot keeps LHS) */
+        if (is_and)
+            rp_string_appendf(dst, "if(%s){_TrN_context.next=%d;break;}", slot, rhs_case);
+        else if (is_or)
+            rp_string_appendf(dst, "if(!(%s)){_TrN_context.next=%d;break;}", slot, rhs_case);
+        else /* is_nullish: evaluate RHS only when LHS is null/undefined */
+            rp_string_appendf(dst, "if(%s==null){_TrN_context.next=%d;break;}", slot, rhs_case);
+        rp_string_appendf(dst, "_TrN_context.next=%d;break;", after_case);
+
+        /* case RHS: slot = <await-bearing RHS>; goto AFTER */
+        rp_string_appendf(dst, "case %d:", rhs_case);
+        char *rhs_low = _lower_range_with_yields(dst, src, rs, re, right,
+                                                 ctx, fctx, p_next_label);
+        if (dst->len && dst->str[dst->len - 1] != ';' && dst->str[dst->len - 1] != ':')
+            rp_string_putc(dst, ';');
+        rp_string_appendf(dst, "%s=(%s);_TrN_context.next=%d;break;",
+                          slot, rhs_low ? rhs_low : "undefined", after_case);
+        if (rhs_low) free(rhs_low);
+
+        rp_string_appendf(dst, "case %d:", after_case);
+
+        /* Parenthesize — see note at the ternary return below. */
+        {
+            char *pslot = NULL;
+            REMALLOC(pslot, strlen(slot) + 3);
+            sprintf(pslot, "(%s)", slot);
+            return pslot;
+        }
+    }
+    else /* ternary */
+    {
+        TSNode cond = ts_node_child_by_field_name(node, "condition",   9);
+        TSNode cons = ts_node_child_by_field_name(node, "consequence", 11);
+        TSNode alt  = ts_node_child_by_field_name(node, "alternative", 11);
+        if (ts_node_is_null(cond) || ts_node_is_null(cons) || ts_node_is_null(alt))
+            return NULL;
+        size_t qs = ts_node_start_byte(cond), qe = ts_node_end_byte(cond);
+        size_t cs = ts_node_start_byte(cons), ce = ts_node_end_byte(cons);
+        size_t as = ts_node_start_byte(alt),  ae = ts_node_end_byte(alt);
+
+        /* Only kick in when a conditionally-evaluated branch contains an
+           await. (await only in the always-evaluated condition is fine for
+           the generic hoist.) */
+        if (!_text_has_await(src, cs, ce) && !_text_has_await(src, as, ae))
+            return NULL;
+
+        unsigned slot_id = ++_sc_counter;
+        char slot[32];
+        snprintf(slot, sizeof(slot), "_TrN_context._sc%u", slot_id);
+
+        /* Lower the condition (may contain awaits / short-circuits). */
+        char *cond_low = _lower_range_with_yields(dst, src, qs, qe, cond,
+                                                  ctx, fctx, p_next_label);
+
+        *p_next_label += 3;
+        int then_case = *p_next_label;
+        *p_next_label += 3;
+        int else_case = *p_next_label;
+        *p_next_label += 3;
+        int after_case = *p_next_label;
+
+        if (dst->len)
+        {
+            char *p = dst->str + dst->len - 1;
+            while (p > dst->str && isspace((unsigned char)*p)) p--;
+            if (*p != ';' && *p != ':' && *p != '{') rp_string_putc(dst, ';');
+        }
+        rp_string_appendf(dst, "if(%s){_TrN_context.next=%d;break;}",
+                          cond_low ? cond_low : "false", then_case);
+        rp_string_appendf(dst, "_TrN_context.next=%d;break;", else_case);
+        if (cond_low) free(cond_low);
+
+        /* case THEN: slot = <consequence>; goto AFTER */
+        rp_string_appendf(dst, "case %d:", then_case);
+        char *cons_low = _lower_range_with_yields(dst, src, cs, ce, cons,
+                                                  ctx, fctx, p_next_label);
+        if (dst->len && dst->str[dst->len - 1] != ';' && dst->str[dst->len - 1] != ':')
+            rp_string_putc(dst, ';');
+        rp_string_appendf(dst, "%s=(%s);_TrN_context.next=%d;break;",
+                          slot, cons_low ? cons_low : "undefined", after_case);
+        if (cons_low) free(cons_low);
+
+        /* case ELSE: slot = <alternative>; goto AFTER */
+        rp_string_appendf(dst, "case %d:", else_case);
+        char *alt_low = _lower_range_with_yields(dst, src, as, ae, alt,
+                                                 ctx, fctx, p_next_label);
+        if (dst->len && dst->str[dst->len - 1] != ';' && dst->str[dst->len - 1] != ':')
+            rp_string_putc(dst, ';');
+        rp_string_appendf(dst, "%s=(%s);_TrN_context.next=%d;break;",
+                          slot, alt_low ? alt_low : "undefined", after_case);
+        if (alt_low) free(alt_low);
+
+        rp_string_appendf(dst, "case %d:", after_case);
+
+        /* Return parenthesized so callers that splice the value directly
+           after a keyword (`if<cond>{...}` in _emit_if_with_yield) produce
+           valid `if(<slot>){...}` rather than `if<slot>{...}`. */
+        {
+            char *pslot = NULL;
+            REMALLOC(pslot, strlen(slot) + 3);
+            sprintf(pslot, "(%s)", slot);
+            return pslot;
+        }
+    }
+}
+
+/* NDE.49: does `node` qualify for short-circuit await lowering on its
+   own?  i.e. is it a `&&`/`||`/`??` binary or a `?:` ternary whose
+   conditionally-evaluated operand contains an await.  Mirrors the
+   acceptance conditions inside _try_lower_shortcircuit_await so the
+   collector below and the lowering agree on what fires. */
+static int _sc_node_qualifies(const char *src, TSNode node)
+{
+    const char *nt = ts_node_type(node);
+    if (strcmp(nt, "binary_expression") == 0)
+    {
+        TSNode op = ts_node_child_by_field_name(node, "operator", 8);
+        if (ts_node_is_null(op)) return 0;
+        size_t ops = ts_node_start_byte(op), ope = ts_node_end_byte(op);
+        int ok = (ope - ops == 2 &&
+                  ((src[ops] == '&' && src[ops + 1] == '&') ||
+                   (src[ops] == '|' && src[ops + 1] == '|') ||
+                   (src[ops] == '?' && src[ops + 1] == '?')));
+        if (!ok) return 0;
+        TSNode right = ts_node_child_by_field_name(node, "right", 5);
+        if (ts_node_is_null(right)) return 0;
+        return _text_has_await(src, ts_node_start_byte(right), ts_node_end_byte(right));
+    }
+    if (strcmp(nt, "ternary_expression") == 0 ||
+        strcmp(nt, "conditional_expression") == 0)
+    {
+        TSNode cons = ts_node_child_by_field_name(node, "consequence", 11);
+        TSNode alt  = ts_node_child_by_field_name(node, "alternative", 11);
+        if (ts_node_is_null(cons) || ts_node_is_null(alt)) return 0;
+        return _text_has_await(src, ts_node_start_byte(cons), ts_node_end_byte(cons)) ||
+               _text_has_await(src, ts_node_start_byte(alt),  ts_node_end_byte(alt));
+    }
+    return 0;
+}
+
+/* NDE.49: collect the OUTERMOST short-circuit/ternary subexpressions
+   (below `node`, not crossing function boundaries) that qualify per
+   _sc_node_qualifies.  These are nested inside a larger expression
+   (array element, call arg, etc.) where the generic per-await hoist
+   would evaluate the conditional await unconditionally — they must be
+   lowered as a unit by _try_lower_shortcircuit_await so the await fires
+   only on the taken branch.  Outermost-only: once a qualifying node is
+   found we stop descending, since the lowering recurses into the
+   operands itself (handling any nested short-circuits). */
+static void _collect_shortcircuit_subexprs(const char *src, TSNode node,
+                                           _AsyncNodeVec *out)
+{
+    const char *t = ts_node_type(node);
+    if (strstr(t, "function") || strcmp(t, "arrow_function") == 0 ||
+        strstr(t, "class") || strstr(t, "method") != NULL)
+        return;
+    if (_sc_node_qualifies(src, node))
+    {
+        _anv_push(out, node);
+        return;
+    }
+    uint32_t c = ts_node_child_count(node);
+    for (uint32_t i = 0; i < c; i++)
+        _collect_shortcircuit_subexprs(src, ts_node_child(node, i), out);
+}
+
+static char *_lower_range_with_yields(rp_string *dst, const char *src,
+                                      size_t ss, size_t se, TSNode container,
+                                      LoopCtx *ctx, FinCtx *fctx,
                                       int *p_next_label)
 {
     _AsyncNodeVec av = {0};
     _collect_yields_shallow(container, &av);
+
+    /* Short-circuit / ternary await preservation: when this range is a
+       `&&` / `||` / `??` / `?:` whose conditionally-evaluated operand
+       contains an await, lower it so the await only fires on the taken
+       branch (JS short-circuit semantics).  Only async awaits (not
+       generator yields) need this — and only when a conditional operand
+       actually awaits, so there's no effect on plain expressions.  See
+       _try_lower_shortcircuit_await. */
+    if (av.len > 0 && _g_in_async_gen == 0)
+    {
+        char *sc = _try_lower_shortcircuit_await(dst, src, container, ctx,
+                                                 fctx, p_next_label);
+        if (sc)
+        {
+            if (av.a) free(av.a);
+            return sc;
+        }
+    }
+
+    /* NDE.49: the container itself wasn't a bare short-circuit, but it
+       may CONTAIN short-circuit subexpressions with conditional awaits
+       (e.g. `[ a && (await b), c ]`).  Collect the outermost ones; they
+       are spliced into the substitution stream below as kind-4 items so
+       their await only fires on the taken branch. */
+    _AsyncNodeVec scv = {0};
+    if (_g_in_async_gen == 0)
+        _collect_shortcircuit_subexprs(src, container, &scv);
 
     /* If a loop ctx is in scope, also collect unlabelled break/continue.
        If a finally ctx is in scope, also collect return statements. */
@@ -6339,7 +6833,7 @@ static char *_lower_range_with_yields(rp_string *dst, const char *src,
         _collect_control(container, ctx ? &brks : NULL, ctx ? &conts : NULL,
                          fctx ? &rets : NULL);
 
-    if (av.len == 0 && brks.len == 0 && conts.len == 0 && rets.len == 0)
+    if (av.len == 0 && brks.len == 0 && conts.len == 0 && rets.len == 0 && scv.len == 0)
     {
         size_t len = se - ss;
         char *out = NULL;
@@ -6350,6 +6844,7 @@ static char *_lower_range_with_yields(rp_string *dst, const char *src,
         if (brks.a) free(brks.a);
         if (conts.a) free(conts.a);
         if (rets.a) free(rets.a);
+        if (scv.a) free(scv.a);
         return out;
     }
 
@@ -6381,8 +6876,9 @@ static char *_lower_range_with_yields(rp_string *dst, const char *src,
        leaves the outer iteration to skip the inner yield (its start
        byte falls inside the already-advanced cursor). */
     typedef struct { TSNode n; int kind; } SubItem;
-    /* kind: 0 = yield, 1 = break, 2 = continue, 3 = return */
-    size_t total = av.len + brks.len + conts.len + rets.len;
+    /* kind: 0 = yield, 1 = break, 2 = continue, 3 = return,
+             4 = short-circuit/ternary subexpr with conditional await (NDE.49) */
+    size_t total = av.len + brks.len + conts.len + rets.len + scv.len;
     SubItem *items = NULL;
     REMALLOC(items, sizeof(SubItem) * (total + 1));
     size_t ik = 0;
@@ -6390,12 +6886,23 @@ static char *_lower_range_with_yields(rp_string *dst, const char *src,
     for (size_t i = 0; i < brks.len; i++)  { items[ik].n = brks.a[i];  items[ik].kind = 1; ik++; }
     for (size_t i = 0; i < conts.len; i++) { items[ik].n = conts.a[i]; items[ik].kind = 2; ik++; }
     for (size_t i = 0; i < rets.len; i++)  { items[ik].n = rets.a[i];  items[ik].kind = 3; ik++; }
+    for (size_t i = 0; i < scv.len; i++)   { items[ik].n = scv.a[i];   items[ik].kind = 4; ik++; }
+    /* Sort by start byte ascending; on a tie, the short-circuit subexpr
+       (kind 4) must come BEFORE a bare await (kind 0) nested inside it so
+       the await is consumed by the short-circuit lowering and skipped by
+       the cursor.  In practice a kind-4 node's start (its LHS/condition)
+       precedes any await it contains, so ties are not expected, but the
+       tie-break keeps the invariant explicit. */
     for (size_t i = 0; i + 1 < total; i++)
         for (size_t j = i + 1; j < total; j++)
-            if (ts_node_start_byte(items[j].n) < ts_node_start_byte(items[i].n))
+        {
+            size_t si = ts_node_start_byte(items[i].n);
+            size_t sj = ts_node_start_byte(items[j].n);
+            if (sj < si || (sj == si && items[j].kind == 4 && items[i].kind != 4))
             {
                 SubItem t = items[i]; items[i] = items[j]; items[j] = t;
             }
+        }
 
     rp_string *acc = rp_string_new(64);
     size_t cursor = ss;
@@ -6416,7 +6923,31 @@ static char *_lower_range_with_yields(rp_string *dst, const char *src,
             rp_string_putsn(acc, src + cursor, ns - cursor);
         cursor = ne;
 
-        if (items[k].kind == 0)
+        if (items[k].kind == 4)
+        {
+            /* NDE.49: short-circuit/ternary subexpr with a conditional
+               await, nested inside this larger expression.  Lower it as a
+               unit so the await fires only on the taken branch.  The
+               dispatch is emitted to `dst`; the returned slot replaces the
+               whole subexpression in the accumulator.  Any bare awaits the
+               collector left in `av` that fall inside this range are
+               skipped below by the `ns < cursor` guard (cursor is now past
+               this subexpression's end). */
+            char *sc_slot = _try_lower_shortcircuit_await(dst, src, node, ctx,
+                                                          fctx, p_next_label);
+            if (sc_slot)
+            {
+                rp_string_puts(acc, sc_slot);
+                free(sc_slot);
+            }
+            else
+            {
+                /* Shouldn't happen — collector applied the same predicate.
+                   Fall back to raw text to stay safe. */
+                rp_string_putsn(acc, src + ns, ne - ns);
+            }
+        }
+        else if (items[k].kind == 0)
         {
             /* yield_expression */
             TSNode yw = node;
@@ -6687,6 +7218,7 @@ static char *_lower_range_with_yields(rp_string *dst, const char *src,
     if (brks.a) free(brks.a);
     if (conts.a) free(conts.a);
     if (rets.a) free(rets.a);
+    if (scv.a) free(scv.a);
     return result;
 }
 
@@ -7077,9 +7609,20 @@ static void _emit_yield_body_range(rp_string *out, const char *src, TSNode block
                     if (!ts_node_is_null(first_decl))
                         is2 = ts_node_start_byte(first_decl);
                 }
-                rp_string_putsn(out, src + is2, ie2 - is2);
-                if (src[ie2 - 1] != ';')
-                    rp_string_putc(out, ';');
+                /* NDE.48: lower any awaits/yields in the init clause into
+                   their own state steps before the loop's condition case.
+                   Previously the init was emitted verbatim, so a bare
+                   `await` in the init survived into the switch body and
+                   duktape's parser rejected it ("unterminated statement").
+                   When the init has no await/yield, _lower_range_with_yields
+                   returns the raw text unchanged. */
+                while (ie2 > is2 && (src[ie2 - 1] == ';' || isspace((unsigned char)src[ie2 - 1])))
+                    ie2--;
+                char *init_lowered = _lower_range_with_yields(out, src, is2, ie2, init,
+                                                              NULL, NULL, p_next_label);
+                rp_string_puts(out, init_lowered);
+                free(init_lowered);
+                rp_string_putc(out, ';');
             }
 
             *p_next_label += 3;
@@ -7147,7 +7690,15 @@ static void _emit_yield_body_range(rp_string *out, const char *src, TSNode block
             if (!ts_node_is_null(incr))
             {
                 size_t is2 = ts_node_start_byte(incr), ie2 = ts_node_end_byte(incr);
-                rp_string_putsn(out, src + is2, ie2 - is2);
+                /* NDE.48: lower awaits/yields in the update clause too, so
+                   `for(...; ...; k = k + (await p()))` advances via a real
+                   state step instead of leaving a bare `await` keyword. */
+                while (ie2 > is2 && (src[ie2 - 1] == ';' || isspace((unsigned char)src[ie2 - 1])))
+                    ie2--;
+                char *incr_lowered = _lower_range_with_yields(out, src, is2, ie2, incr,
+                                                              NULL, NULL, p_next_label);
+                rp_string_puts(out, incr_lowered);
+                free(incr_lowered);
                 rp_string_putc(out, ';');
             }
 
@@ -7322,16 +7873,32 @@ static void _emit_yield_body_range(rp_string *out, const char *src, TSNode block
                 else
                     rp_string_appendf(out, "case %d:_TrN_context._catch=%s;",
                                       catch_label, save_slot);
-                if (!ts_node_is_null(catch_param) &&
-                    strcmp(ts_node_type(catch_param), "identifier") == 0)
+                if (!ts_node_is_null(catch_param))
                 {
+                    const char *cpt = ts_node_type(catch_param);
                     size_t cps = ts_node_start_byte(catch_param),
                            cpe = ts_node_end_byte(catch_param);
-                    /* Declare with var so the binding sticks for the
-                       catch body even though we're inside a switch. */
-                    rp_string_puts(out, "var ");
-                    rp_string_putsn(out, src + cps, cpe - cps);
-                    rp_string_puts(out, "=_TrN_context._caught;");
+                    /* NDE.50: plain assignment to the hoisted binding(s) (the
+                       names are declared at the top of _TrN_callee via
+                       _collect_body_var_names).  A `var e = …` here would
+                       create a fresh per-step local in _TrN_callee$ that
+                       resets to undefined on every resume, losing the caught
+                       error across an await inside the catch body. */
+                    if (strcmp(cpt, "identifier") == 0)
+                    {
+                        rp_string_putsn(out, src + cps, cpe - cps);
+                        rp_string_puts(out, "=_TrN_context._caught;");
+                    }
+                    else if (strcmp(cpt, "object_pattern") == 0 ||
+                             strcmp(cpt, "array_pattern") == 0)
+                    {
+                        /* Destructuring assignment to the hoisted bindings.
+                           Parenthesize so a leading `{` isn't parsed as a
+                           block; a later pass lowers the destructure. */
+                        rp_string_putc(out, '(');
+                        rp_string_putsn(out, src + cps, cpe - cps);
+                        rp_string_puts(out, "=_TrN_context._caught);");
+                    }
                 }
                 if (!ts_node_is_null(catch_body) &&
                     strcmp(ts_node_type(catch_body), "statement_block") == 0)
@@ -8232,6 +8799,14 @@ static char *_emit_async_gen_decl_replacement(const char *src, TSNode node)
     rp_string_puts(out, wrap);
     free(wrap);
     rp_string_puts(out, "}));}");
+    /* Tag the just-defined function with __TrN_kind so user code that
+       checks `inst instanceof (async function * () {}).constructor`
+       (e.g. through2 v5) can correctly distinguish it from classic
+       functions and async (non-generator) functions. */
+    rp_string_puts(out, ";_TrN_Sp._tagAsyncGen(");
+    if (!ts_node_is_null(name)) rp_string_putsn(out, src+ns, ne-ns);
+    else rp_string_puts(out, "_TrN_asyncGen");
+    rp_string_puts(out, ");");
 
     char *ret = rp_string_steal(out);
     out = rp_string_free(out);
@@ -8246,7 +8821,9 @@ static char *_emit_async_gen_expr_replacement(const char *src, TSNode node)
         return NULL;
 
     rp_string *out = rp_string_new(256);
-    rp_string_puts(out, "function ");
+    /* Wrap with _TrN_Sp._tagAsyncGen so the result satisfies
+       `fn instanceof (async function * () {}).constructor`. */
+    rp_string_puts(out, "_TrN_Sp._tagAsyncGen(function ");
     if (!ts_node_is_null(name))
     {
         size_t ns = ts_node_start_byte(name), ne = ts_node_end_byte(name);
@@ -8266,7 +8843,7 @@ static char *_emit_async_gen_expr_replacement(const char *src, TSNode node)
     }
     rp_string_puts(out, wrap);
     free(wrap);
-    rp_string_puts(out, "}));}");
+    rp_string_puts(out, "}));})");
 
     char *ret = rp_string_steal(out);
     out = rp_string_free(out);
@@ -8285,7 +8862,7 @@ static char *_emit_async_gen_method_replacement(const char *src, TSNode node)
 
     rp_string *out = rp_string_new(512);
     rp_string_putsn(out, src+ns, ne-ns);
-    rp_string_puts(out, ": function ");
+    rp_string_puts(out, ": _TrN_Sp._tagAsyncGen(function ");
     if (named) rp_string_putsn(out, src+ns, ne-ns);
     _append_params_sig(out, src, node);
     rp_string_puts(out, "{return _TrN_Sp.__asyncGenerator(this,arguments,_TrN_Sp.regeneratorRuntime.mark(function _TrN_callee");
@@ -8301,7 +8878,7 @@ static char *_emit_async_gen_method_replacement(const char *src, TSNode node)
     }
     rp_string_puts(out, wrap);
     free(wrap);
-    rp_string_puts(out, "}));}");
+    rp_string_puts(out, "}));})");
 
     char *ret = rp_string_steal(out);
     out = rp_string_free(out);
@@ -13978,10 +14555,13 @@ static int rewrite_nullish_coalescing(EditList *edits, const char *src, TSNode n
         }
         else
         {
+            /* NDE.42: use .call(this, ...) so a `this` reference in the
+               RHS (e.g. `this.#privateMethod()`) resolves to the
+               enclosing method's `this`, not the IIFE's. */
             rp_string_appendf(out, "(function(%s){return %s != null ? %s : ",
                               tvar, tvar, tvar);
             rp_string_putsn(out, src + rs, re - rs);
-            rp_string_puts(out, ";})(");
+            rp_string_puts(out, ";}).call(this, ");
             rp_string_putsn(out, src + ls, le - ls);
             rp_string_puts(out, ")");
         }
@@ -15314,23 +15894,128 @@ RP_ParseRes transpiler_rewrite_pass(EditList *edits, const char *src, size_t src
             {
                 handled = rewrite_for_of_simple(edits, src, n, &claimed, polysneeded, overlaps);
             }
-            // Handle let/const in plain for...in: just replace the keyword with var
+            // Handle let/const in plain for...in: replace the keyword with var
+            // and (NDE.43) IIFE-wrap the body so closures capture a fresh
+            // binding per iteration, matching ES2015 semantics.
             if (!handled)
             {
                 TSNode kind = ts_node_child_by_field_name(n, "kind", 4);
                 if (!ts_node_is_null(kind))
                 {
                     size_t ks = ts_node_start_byte(kind), ke = ts_node_end_byte(kind);
-                    if ((ke - ks == 3 && strncmp(src + ks, "let", 3) == 0))
+                    int is_let = (ke - ks == 3 && strncmp(src + ks, "let", 3) == 0);
+                    int is_const = (ke - ks == 5 && strncmp(src + ks, "const", 5) == 0);
+                    if (is_let || is_const)
                     {
                         if (!overlaps)
-                            add_edit(edits, ks, ke, "var", &claimed);
-                        handled = 1;
-                    }
-                    else if ((ke - ks == 5 && strncmp(src + ks, "const", 5) == 0))
-                    {
-                        if (!overlaps)
-                            add_edit(edits, ks, ke, "var  ", &claimed);
+                        {
+                            add_edit(edits, ks, ke, is_let ? "var" : "var  ", &claimed);
+
+                            /* NDE.43: for-in with let/const needs a fresh
+                               binding per iteration. Without the IIFE wrap,
+                               closures inside the body capture one
+                               function-scoped slot — last iteration's value
+                               for everyone. Matches the for(;;) and for-of
+                               wrap pattern. */
+                            TSNode left = ts_node_child_by_field_name(n, "left", 4);
+                            TSNode body = ts_node_child_by_field_name(n, "body", 4);
+                            if (!ts_node_is_null(left) && !ts_node_is_null(body) &&
+                                strcmp(ts_node_type(left), "identifier") == 0)
+                            {
+                                size_t ns = ts_node_start_byte(left);
+                                size_t ne = ts_node_end_byte(left);
+
+                                _BS_NameSet names_set;
+                                _bs_ns_init(&names_set);
+                                _bs_ns_add(&names_set, src + ns, ne - ns);
+
+                                _BS_NodeVec body_lex_decls;
+                                _bs_nv_init(&body_lex_decls);
+                                _bs_collect_lexical_decls(body, src, &names_set,
+                                                          &body_lex_decls, 1);
+                                _bs_nv_free(&body_lex_decls);
+
+                                int has_captures = _bs_for_has_capture(body, src,
+                                                                       &names_set, 0);
+                                _bs_ns_free(&names_set);
+
+                                if (has_captures)
+                                {
+                                    /* Pre-scan body for flow-control we can't
+                                       cross with a bare IIFE. If any, skip the
+                                       wrap (closures will see var-like
+                                       semantics — an accepted limitation,
+                                       matching the for(;;) fallback). */
+                                    _BS_ForCtx ctx;
+                                    memset(&ctx, 0, sizeof(ctx));
+                                    EditList sent_edits;
+                                    init_edits(&sent_edits);
+                                    ctx.edits = &sent_edits;
+                                    ctx.body  = body;
+
+                                    int is_block = (strcmp(ts_node_type(body),
+                                                           "statement_block") == 0);
+                                    if (is_block)
+                                    {
+                                        uint32_t bcc = ts_node_child_count(body);
+                                        for (uint32_t i = 0; i < bcc && !ctx.giveup; i++)
+                                            _bs_for_walk(ts_node_child(body, i),
+                                                         src, &ctx, 0, 0, 0);
+                                    }
+                                    else
+                                    {
+                                        _bs_for_walk(body, src, &ctx, 0, 0, 0);
+                                    }
+
+                                    int has_flow = (sent_edits.len > 0) ||
+                                                   ctx.break_labels.len > 0 ||
+                                                   ctx.continue_labels.len > 0 ||
+                                                   ctx.has_return ||
+                                                   ctx.has_bare_break ||
+                                                   ctx.has_bare_continue ||
+                                                   ctx.args_positions.len > 0;
+
+                                    if (!ctx.giveup && !has_flow)
+                                    {
+                                        size_t bs = ts_node_start_byte(body);
+                                        size_t be = ts_node_end_byte(body);
+
+                                        rp_string *pref = rp_string_new(64);
+                                        rp_string *suff = rp_string_new(64);
+
+                                        rp_string_puts(pref, "(function(");
+                                        rp_string_putsn(pref, src + ns, ne - ns);
+                                        rp_string_puts(pref, "){ ");
+
+                                        rp_string_puts(suff, " }).call(this, ");
+                                        rp_string_putsn(suff, src + ns, ne - ns);
+                                        rp_string_puts(suff, ");");
+
+                                        if (is_block)
+                                        {
+                                            add_edit_take_ownership(edits, bs + 1,
+                                                bs + 1, rp_string_steal(pref), &claimed);
+                                            add_edit_take_ownership(edits, be - 1,
+                                                be - 1, rp_string_steal(suff), &claimed);
+                                        }
+                                        else
+                                        {
+                                            add_edit_take_ownership(edits, bs, bs,
+                                                rp_string_steal(pref), &claimed);
+                                            add_edit_take_ownership(edits, be, be,
+                                                rp_string_steal(suff), &claimed);
+                                        }
+                                        pref = rp_string_free(pref);
+                                        suff = rp_string_free(suff);
+                                    }
+
+                                    free_edits(&sent_edits);
+                                    _bs_lbl_free(&ctx.break_labels);
+                                    _bs_lbl_free(&ctx.continue_labels);
+                                    _bs_sv_free(&ctx.args_positions);
+                                }
+                            }
+                        }
                         handled = 1;
                     }
                 }

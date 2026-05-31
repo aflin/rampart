@@ -131,6 +131,16 @@
 #include <unistd.h>
 #include "linenoise.h"
 
+/* Coordinate fd-0 ownership with nodeshim's process.stdin event-driven
+   data pump.  See include/rampart.h for the constants and contract.
+   We touch this from enableRawMode (acquire) and disableRawMode
+   (release).  Declared extern here so linenoise.c stays free of
+   rampart.h includes. */
+extern int rp_stdin_owner;
+#define RP_STDIN_NONE_     0
+#define RP_STDIN_REPL_     1
+#define RP_STDIN_NODESHIM_ 2
+
 #define LINENOISE_DEFAULT_HISTORY_MAX_LEN 100
 #define LINENOISE_ADD_OVERHEAD 256 // -ajf - wiggle room for additional edited text
 #define LINENOISE_MAX_LINE 4096
@@ -381,10 +391,21 @@ static int enableRawMode(int fd)
     raw.c_cc[VMIN] = 1;
     raw.c_cc[VTIME] = 0; /* 1 byte, no timer */
 
+    /* Refuse to enter raw mode if nodeshim's process.stdin pump
+       currently owns fd 0.  The REPL entry points in cmdline.c
+       (repl_thr) and rampart-utils.c (rp_repl) check this up front
+       and throw a clearer JS-level error before we get here, so
+       reaching this branch implies the user attached a stdin pump
+       AFTER the REPL was already running.  We can't throw from
+       linenoise so just fail like ENOTTY. */
+    if (rp_stdin_owner == RP_STDIN_NODESHIM_)
+        goto fatal;
+
     /* put terminal in raw mode after flushing */
     if (tcsetattr(fd, TCSAFLUSH, &raw) < 0)
         goto fatal;
     rawmode = 1;
+    rp_stdin_owner = RP_STDIN_REPL_;
     return 0;
 
 fatal:
@@ -397,6 +418,10 @@ static void disableRawMode(int fd)
     /* Don't even check the return value as it's too late. */
     if (rawmode && tcsetattr(fd, TCSAFLUSH, &orig_termios) != -1)
         rawmode = 0;
+    /* Release fd 0 if we were the owner.  Don't stomp NODESHIM
+       ownership if somehow it's set (shouldn't be reachable). */
+    if (rp_stdin_owner == RP_STDIN_REPL_)
+        rp_stdin_owner = RP_STDIN_NONE_;
 }
 
 /* Clear the screen. Used to handle ctrl+l */

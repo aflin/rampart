@@ -2492,6 +2492,496 @@ testFeature("NDE.41 - async method runs after named-method emit", function() {
     return new C().go().then(function(v) { return v === 'done'; });
 });
 
+/* NDE.42 — `expr ?? this.#privateMethod(args)` lost its receiver when
+   the LHS was complex enough to trigger the IIFE form of the lowering.
+   The IIFE used `function(_TrN_nc<N>){...}` and was called as `(...)(lhs)`,
+   so inside the body `this` was global, making `this._TrN_privN_x()` a
+   lookup on global.  Fix: emit `.call(this, lhs)` so the RHS inherits
+   the outer method's `this`.  Surfaced in undici (cheerio's default
+   entry pulls it) at lib/util/runtime-features.js:95. */
+
+testFeature("NDE.42 - ?? with private method on RHS preserves this", function() {
+    class C {
+        constructor() { this.val = null; }
+        has() { return this.val ?? this.#detect(); }
+        #detect() { return 'detect-result'; }
+    }
+    return new C().has() === 'detect-result';
+});
+
+testFeature("NDE.42 - ?? with this.method on RHS preserves this", function() {
+    /* same shape, but non-private method — already worked, regression guard. */
+    class C {
+        constructor() { this.val = null; this.tag = 'T'; }
+        ask() { return this.val ?? this.makeIt(); }
+        makeIt() { return this.tag + '!'; }
+    }
+    return new C().ask() === 'T!';
+});
+
+/* NDE.43 — `for (let|const key in obj)` didn't create a per-iteration
+   binding; closures in the body all closed over one function-scoped
+   slot — last iteration's value for every closure. Only for-in was
+   broken; for-of and C-style for(;;) already wrap. Fix: IIFE-wrap the
+   body when there are captures, matching the for(;;) pattern.
+   Surfaced in zod v4's _installLazyMethods (every lazy-installed
+   method on the proto closes over the SAME `fn`). */
+
+testFeature("NDE.43 - for-in const per-iteration binding", function() {
+    var methods = { a: 'A', b: 'B', c: 'C' };
+    var getters = {};
+    for (const key in methods) {
+        const fn = methods[key];
+        Object.defineProperty(getters, key, { get: function () { return key + ':' + fn; } });
+    }
+    return getters.a === 'a:A' && getters.b === 'b:B' && getters.c === 'c:C';
+});
+
+testFeature("NDE.43 - for-in let per-iteration binding", function() {
+    var methods = { x: 1, y: 2, z: 3 };
+    var getters = {};
+    for (let key in methods) {
+        let v = methods[key];
+        Object.defineProperty(getters, key, { get: function () { return key + ':' + v; } });
+    }
+    return getters.x === 'x:1' && getters.y === 'y:2' && getters.z === 'z:3';
+});
+
+testFeature("NDE.43 - for-in no-capture body still works", function() {
+    /* without captures, no wrap is emitted — verify the loop still runs
+       correctly (regression guard against breaking the simple case). */
+    var keys = [];
+    for (const k in {a:1, b:2, c:3}) keys.push(k);
+    return keys.length === 3 && keys.indexOf('a') >= 0 &&
+           keys.indexOf('b') >= 0 && keys.indexOf('c') >= 0;
+});
+
+/* NDE.44 — `new Function(body)` under `-t` rejected arrow-with-spread
+   combos. Root cause: multi-pass transpilation stacks consecutive
+   `;_TrN_Sp.load();` preambles; the new-Function shim only stripped
+   the first, leaving the trailing no-op preamble as a leading
+   statement that DUK_COMPILE_FUNCTION refused. Fix: walk and strip
+   ALL consecutive preambles (same loop as transpile_code). Surfaced
+   in zod v4 JIT-compiled object parsers. */
+
+testFeature("NDE.44 - new Function: arrow + array spread", function() {
+    var f = new Function("return (x => [...x])([1,2,3]).length;");
+    return f() === 3;
+});
+
+testFeature("NDE.44 - new Function: arrow + object spread", function() {
+    var f = new Function("return (x => ({...x, b:2}))({a:1}).b;");
+    return f() === 2;
+});
+
+testFeature("NDE.44 - new Function: block-body arrow + spread", function() {
+    var f = new Function("return ((x) => { return [...x]; })([1,2]).length;");
+    return f() === 2;
+});
+
+testFeature("NDE.44 - new Function: zod-shape map + spread", function() {
+    var f = new Function(
+        "var items = [{a:1},{a:2}];" +
+        "var out = items.map(i => ({...i, p: ['x']}));" +
+        "return out.length;"
+    );
+    return f() === 2;
+});
+
+/* NDE.45 — `(async function(){}).constructor`,
+   `(async function*(){}).constructor`, and a classic function's
+   constructor all aliased to the global `Function` because the
+   transpiler lowered async/asyncgen to plain ES5 functions, leaving
+   nothing at runtime to distinguish them by identity. through2 v5's
+   `fnKind` dispatch (via `instanceof AsyncGeneratorFunction`)
+   therefore routed every classic transform through the async-gen
+   path and crashed. Fix: ASYNC_PF preamble defines distinct
+   `_TrN_Sp.AsyncFunction` / `_TrN_Sp.AsyncGeneratorFunction` tag
+   constructors with `Symbol.hasInstance` traps that read
+   `fn.__TrN_kind`; 6 emit sites (decl/expr/method × async/asyncgen)
+   wrap their callable with `_tagAsync` / `_tagAsyncGen`. The
+   regressions below cover all three emit sites — class methods are
+   a documented known gap and intentionally not tested. */
+
+testFeature("NDE.45 - AsyncFunction !== AsyncGeneratorFunction", function() {
+    var AF  = async function () {}.constructor;
+    var AGF = async function * () {}.constructor;
+    return AF !== AGF;
+});
+
+testFeature("NDE.45 - async function expr: instanceof tag", function() {
+    var AF  = async function () {}.constructor;
+    var AGF = async function * () {}.constructor;
+    var classic = function () {};
+    var asy     = async function () { return 1; };
+    return asy instanceof AF && !(asy instanceof AGF) &&
+           !(classic instanceof AF) && !(classic instanceof AGF);
+});
+
+testFeature("NDE.45 - async generator expr: instanceof tag", function() {
+    var AF  = async function () {}.constructor;
+    var AGF = async function * () {}.constructor;
+    var agen = async function * () { yield 1; };
+    return agen instanceof AGF && !(agen instanceof AF);
+});
+
+testFeature("NDE.45 - async function decl: instanceof tag", function() {
+    var AF  = async function () {}.constructor;
+    var AGF = async function * () {}.constructor;
+    async function asyDecl() { return 1; }
+    return asyDecl instanceof AF && !(asyDecl instanceof AGF);
+});
+
+testFeature("NDE.45 - async generator decl: instanceof tag", function() {
+    var AF  = async function () {}.constructor;
+    var AGF = async function * () {}.constructor;
+    async function * agenDecl() { yield 1; }
+    return agenDecl instanceof AGF && !(agenDecl instanceof AF);
+});
+
+testFeature("NDE.45 - object-literal async method shorthand: instanceof tag", function() {
+    /* `async NAME() {}` and `async * NAME() {}` method shorthand both
+       route correctly (asyncgen-shorthand was fixed in NDE.46). The
+       `key: async function*(){}` form (function-expression value) is
+       a separate path through `_emit_async_expr_replacement`. */
+    var AF  = async function () {}.constructor;
+    var AGF = async function * () {}.constructor;
+    var o = {
+        plain()           { return 1; },
+        async asy()       { return 1; },
+        async * agen()    { yield 1; }
+    };
+    return o.asy instanceof AF && !(o.asy instanceof AGF) &&
+           o.agen instanceof AGF && !(o.agen instanceof AF) &&
+           !(o.plain instanceof AF) && !(o.plain instanceof AGF);
+});
+
+/* NDE.46 — `async * NAME()` method shorthand in object literals was
+   misrouted through `_emit_async_method_replacement` (the async-only
+   path) instead of `_emit_async_gen_method_replacement`. Two visible
+   effects: (1) the function was tagged with `__TrN_kind: 'async'`
+   instead of `'asyncgen'`, so `instanceof AsyncGeneratorFunction`
+   returned false; (2) the body was lowered via `asyncToGenerator`
+   instead of `__asyncGenerator`, so calling it produced a Promise
+   instead of an async iterable — `for await (const x of o.agen())`
+   would throw "not iterable".
+
+   Root cause: dispatcher consults `_is_async_function_like` first,
+   which matches anything with the `async` keyword (incl. `async *`).
+   The function-expression cases were unaffected because tree-sitter
+   parses `async function * () {}` as a `generator_function*` node
+   type that the async dispatcher doesn't match, leaving it to the
+   generator pass. Method shorthand has no separate node type — it's
+   always `method_definition`. Fix: gate the async rewriter on
+   `!_is_async_generator_function_like(node)` so async-gen methods
+   fall through to the generator pass, which correctly routes them
+   to `_emit_async_gen_method_replacement`. */
+
+testFeature("NDE.46 - object-literal async-gen method shorthand: __TrN_kind", function() {
+    var o = { async * agen() { yield 1; } };
+    return o.agen.__TrN_kind === 'asyncgen';
+});
+
+testFeature("NDE.46 - object-literal async-gen method shorthand: returns async iterable", function() {
+    var o = { async * agen() { yield 1; yield 2; } };
+    var it = o.agen();
+    /* an async iterable has both .next and Symbol.asyncIterator */
+    return typeof it.next === 'function' &&
+           typeof Symbol !== 'undefined' &&
+           typeof it[Symbol.asyncIterator] === 'function';
+});
+
+testFeature("NDE.46 - object-literal async-gen method body actually iterates", function() {
+    var o = { async * agen() { yield 'a'; yield 'b'; yield 'c'; } };
+    var it = o.agen();
+    return it.next().then(function(r) {
+        if (r.value !== 'a' || r.done) return false;
+        return it.next().then(function(r2) {
+            if (r2.value !== 'b' || r2.done) return false;
+            return it.next().then(function(r3) {
+                return r3.value === 'c' && !r3.done;
+            });
+        });
+    });
+});
+
+testFeature("NDE.46 - async method shorthand unaffected", function() {
+    /* Make sure the gating didn't accidentally break plain `async NAME()`. */
+    var AF = async function () {}.constructor;
+    var o = { async asy() { return 42; } };
+    return o.asy instanceof AF &&
+           o.asy.__TrN_kind === 'async';
+});
+
+/* NDE.47 — `await` on the conditionally-evaluated operand of `&&`,
+   `||`, or `?:` was hoisted out of the short-circuit by the async→
+   regenerator lowering and evaluated UNCONDITIONALLY (the temp +
+   `yield` was emitted before the guard). rimraf 6.x's
+   `opt.filter && (await opt.filter())` therefore called `undefined`
+   when no filter was set. Fix: `_try_lower_shortcircuit_await`
+   rewrites a conditionally-awaiting operand Babel-style into a
+   guarded temp (`L && (t = await R(), t)`), gated to fire only when
+   a conditionally-evaluated operand awaits. The tests below count
+   side-effect invocations to prove the skipped branch never runs. */
+
+testFeature("NDE.47 - && skips RHS await when LHS falsy", function() {
+    return (async function() {
+        var calls = 0;
+        async function maybe() { calls++; return calls; }
+        var opt = {};                                  // opt.filter undefined
+        var r = opt.filter && (await maybe());
+        return r === undefined && calls === 0;
+    })();
+});
+
+testFeature("NDE.47 - && runs RHS await when LHS truthy", function() {
+    return (async function() {
+        var calls = 0;
+        async function maybe() { calls++; return calls; }
+        var r = "go" && (await maybe());
+        return r === 1 && calls === 1;
+    })();
+});
+
+testFeature("NDE.47 - || skips RHS await when LHS truthy", function() {
+    return (async function() {
+        var calls = 0;
+        async function maybe() { calls++; return calls; }
+        var r = "truthy" || (await maybe());
+        return r === "truthy" && calls === 0;
+    })();
+});
+
+testFeature("NDE.47 - ?: evaluates only the selected branch's await", function() {
+    return (async function() {
+        var calls = 0;
+        async function maybe() { calls++; return calls; }
+        var r = false ? (await maybe()) : "else";
+        return r === "else" && calls === 0;
+    })();
+});
+
+testFeature("NDE.47 - await on LHS/condition still always runs", function() {
+    return (async function() {
+        var calls = 0;
+        async function maybe() { calls++; return calls; }
+        var r = (await maybe()) && "after";            // LHS await always evaluates
+        return r === "after" && calls === 1;
+    })();
+});
+
+/* NDE.48 — `await` in the init or update clause of a C-style for(;;)
+   loop failed to PARSE under -t ("unterminated statement" / "parse
+   error"). The async→regenerator state-machine builder emitted the
+   init and increment clauses verbatim, so a bare `await` keyword
+   survived into the switch body. Body and condition clauses already
+   routed through `_lower_range_with_yields`. Fix: route init and
+   update through the same lowering so their awaits become real state
+   steps. */
+
+testFeature("NDE.48 - await in for-init clause", function() {
+    return (async function() {
+        async function p(v) { return v; }
+        var a = [];
+        for (let k = await p(0); k < 3; k++) a.push(k);
+        return a.length === 3 && a[0] === 0 && a[1] === 1 && a[2] === 2;
+    })();
+});
+
+testFeature("NDE.48 - await in for-update clause", function() {
+    return (async function() {
+        async function p(v) { return v; }
+        var a = [];
+        for (let k = 0; k < 3; k = k + (await p(1))) a.push(k);
+        return a.length === 3 && a[0] === 0 && a[1] === 1 && a[2] === 2;
+    })();
+});
+
+testFeature("NDE.48 - await in for-condition clause (regression guard)", function() {
+    return (async function() {
+        async function p(v) { return v; }
+        var a = [];
+        for (let k = 0; k < (await p(3)); k++) a.push(k);
+        return a.length === 3 && a[2] === 2;
+    })();
+});
+
+testFeature("NDE.48 - await in all four for clauses", function() {
+    return (async function() {
+        async function p(v) { return v; }
+        var a = [];
+        for (let k = await p(0); k < (await p(3)); k = k + (await p(1))) a.push(await p(k));
+        return a.length === 3 && a[0] === 0 && a[1] === 1 && a[2] === 2;
+    })();
+});
+
+/* NDE.49 — NDE.47's short-circuit await fix only fired in statement
+   position (if-cond, return, var-init). When a `&&`/`||`/`??`/`?:`
+   with a conditionally-evaluated await is nested inside a LARGER
+   expression (array element, call arg), the generic per-await hoist
+   evaluated it UNCONDITIONALLY, breaking short-circuit; the
+   optional-chaining ternary form even threw. Fix: collect the
+   outermost qualifying short-circuit/ternary subexpressions and lower
+   each as a unit (`_collect_shortcircuit_subexprs` + kind-4 SubItem),
+   and extend `_try_lower_shortcircuit_await` to also cover `??`. The
+   tests count side-effects to prove the skipped branch never awaits. */
+
+testFeature("NDE.49 - && skip nested in array literal", function() {
+    return (async function() {
+        var ran = [];
+        async function am(n) { ran.push(n); return n; }
+        var x = [ (0) && (await am('a')), ran.join(',') ];
+        return x[0] === 0 && x[1] === '';            // await must NOT have run
+    })();
+});
+
+testFeature("NDE.49 - || skip nested in array literal", function() {
+    return (async function() {
+        var ran = [];
+        async function am(n) { ran.push(n); return n; }
+        var x = [ ('x') || (await am('c')), ran.join(',') ];
+        return x[0] === 'x' && x[1] === '';
+    })();
+});
+
+testFeature("NDE.49 - ?? skip nested in array literal", function() {
+    return (async function() {
+        var ran = [];
+        async function am(n) { ran.push(n); return n; }
+        var x = [ (5) ?? (await am('n')), ran.join(',') ];
+        return x[0] === 5 && x[1] === '';
+    })();
+});
+
+testFeature("NDE.49 - optional-chain ternary with awaited branch (skipped)", function() {
+    return (async function() {
+        var obj = null;
+        var r = (obj?.fn) ? (await obj.fn()) : 'short';
+        return r === 'short';                         // must not throw
+    })();
+});
+
+testFeature("NDE.49 - && taken nested in array literal still awaits", function() {
+    return (async function() {
+        var ran = [];
+        async function am(n) { ran.push(n); return n; }
+        var x = [ (1) && (await am('a')), ran.join(',') ];
+        return x[0] === 'a' && x[1] === 'a';          // taken branch DID await
+    })();
+});
+
+testFeature("NDE.49 - ?? taken nested in array literal still awaits", function() {
+    return (async function() {
+        var ran = [];
+        async function am(n) { ran.push(n); return n; }
+        var x = [ (null) ?? (await am('n')), ran.join(',') ];
+        return x[0] === 'n' && x[1] === 'n';
+    })();
+});
+
+testFeature("NDE.49 - short-circuit await nested in call argument", function() {
+    return (async function() {
+        var ran = [];
+        async function am(n) { ran.push(n); return n; }
+        function tag(v) { return 'tag:' + v; }
+        var r = tag( (0) && (await am('q')) );
+        return r === 'tag:0' && ran.join(',') === '';
+    })();
+});
+
+/* NDE.50 — a `catch (e)` binding was lost across an `await` inside the
+   catch block. The state-machine builder emitted `var e = _caught;`
+   inside the inner per-step function `_TrN_callee$`, which is
+   re-invoked on every resume — so after a suspend the binding reset to
+   undefined and a reference to `e` past the await threw. Fix: hoist the
+   catch parameter to the outer `_TrN_callee` closure (via
+   `_collect_var_names_recursive`) and emit a plain assignment in the
+   CATCH case. Destructure catch params (`catch ({message})`) are also
+   handled (hoisted + parenthesized destructuring assignment). */
+
+testFeature("NDE.50 - catch binding ref after await (same stmt)", function() {
+    return (async function() {
+        function pf(e) { return Promise.reject(e); }
+        function p(v) { return Promise.resolve(v); }
+        var r;
+        try { await pf(new Error('boom')); }
+        catch (e) { r = e.message + '-' + (await p('B')); }
+        return r === 'boom-B';
+    })();
+});
+
+testFeature("NDE.50 - catch binding ref after await (separate stmt)", function() {
+    return (async function() {
+        function pf(e) { return Promise.reject(e); }
+        function p(v) { return Promise.resolve(v); }
+        var r;
+        try { await pf(new Error('boom')); }
+        catch (e) { var w = await p('B'); r = e.message + '-' + w; }
+        return r === 'boom-B';
+    })();
+});
+
+testFeature("NDE.50 - catch binding ref before await still works", function() {
+    return (async function() {
+        function pf(e) { return Promise.reject(e); }
+        function p(v) { return Promise.resolve(v); }
+        var msg, w;
+        try { await pf(new Error('boom')); }
+        catch (e) { msg = e.message; w = await p('B'); }
+        return msg === 'boom' && w === 'B';
+    })();
+});
+
+testFeature("NDE.50 - nested catch bindings across awaits", function() {
+    return (async function() {
+        function pf(e) { return Promise.reject(e); }
+        function p(v) { return Promise.resolve(v); }
+        var r;
+        try { await pf(new Error('outer')); }
+        catch (e1) {
+            try { await pf(new Error('inner')); }
+            catch (e2) { r = e1.message + '/' + (await p('X')) + '/' + e2.message; }
+        }
+        return r === 'outer/X/inner';
+    })();
+});
+
+testFeature("NDE.50 - catch binding across await with finally", function() {
+    return (async function() {
+        function pf(e) { return Promise.reject(e); }
+        function p(v) { return Promise.resolve(v); }
+        var r, fin = '';
+        try { await pf(new Error('cf')); }
+        catch (e) { r = e.message + '-' + (await p('Z')); }
+        finally { fin = await p('fin'); }
+        return r === 'cf-Z' && fin === 'fin';
+    })();
+});
+
+testFeature("NDE.50 - rethrow after await preserves binding", function() {
+    return (async function() {
+        function pf(e) { return Promise.reject(e); }
+        function p(v) { return Promise.resolve(v); }
+        var r;
+        try {
+            try { await pf(new Error('rt')); }
+            catch (e) { await p('w'); throw new Error('re:' + e.message); }
+        } catch (e2) { r = e2.message; }
+        return r === 're:rt';
+    })();
+});
+
+testFeature("NDE.50 - destructure catch param across await", function() {
+    return (async function() {
+        function pf(e) { return Promise.reject(e); }
+        function p(v) { return Promise.resolve(v); }
+        var r;
+        try { await pf(new Error('dmsg')); }
+        catch ({ message }) { r = (await p('D')) + ':' + message; }
+        return r === 'D:dmsg';
+    })();
+});
+
 
 testFeature("NDE.25 - axios-style rollup namespace spread pattern", function() {
     /* axios.cjs:1789 spreads two namespace objects each built with

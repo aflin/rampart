@@ -166,6 +166,11 @@ char *RP_script=NULL;
 duk_context *main_ctx;
 RPTHR *mainthr=NULL;
 
+/* fd 0 (stdin) ownership marker — see rampart.h for the contract.
+   Single-writer per side (linenoise vs nodeshim pump); both paths
+   are JS-single-threaded so no atomics needed. */
+int rp_stdin_owner = RP_STDIN_NONE;
+
 struct event_base **thread_base=NULL;
 
 struct evdns_base **thread_dnsbase=NULL;
@@ -1233,6 +1238,19 @@ static void *repl_thr(void *arg)
     if (!rp_quiet)
     {
         printf(RP_REPL_GREETING, blue, reset);
+    }
+
+    /* Refuse to start if nodeshim's process.stdin pump currently
+       owns fd 0.  Practically this would only happen if a startup
+       script (loaded before the bare-REPL launches) attached a
+       stdin listener — vanishingly rare for `rampart` with no
+       args, but mirror the symmetry with `rampart.utils.repl`. */
+    if (rp_stdin_owner == RP_STDIN_NODESHIM)
+    {
+        fprintf(stderr,
+                "rampart REPL: cannot start while process.stdin "
+                "event-driven mode is active.\n");
+        return NULL;
     }
 
     linenoiseSetCompletionCallback(completion);

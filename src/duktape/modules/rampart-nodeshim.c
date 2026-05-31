@@ -90,6 +90,16 @@ static void nodeshim_init_fs(duk_context *ctx);
 static void nodeshim_init_crypto(duk_context *ctx);
 static void nodeshim_init_os(duk_context *ctx);
 static void nodeshim_init_process(duk_context *ctx);
+/* Forward decls for tty natives so the process init can share them
+   (process.stdin needs setRawMode + isTTY without requiring tty). */
+static duk_ret_t tty_isatty_c(duk_context *ctx);
+static duk_ret_t tty_set_raw_mode_c(duk_context *ctx);
+static duk_ret_t tty_get_window_size_c(duk_context *ctx);
+/* Forward decls for the stdin event-driven data pump.  Wired into
+   the process natives so makeStream() can call them when 'data'
+   listeners come and go on process.stdin. */
+static duk_ret_t ns_stdin_install_c(duk_context *ctx);
+static duk_ret_t ns_stdin_uninstall_c(duk_context *ctx);
 static void nodeshim_init_buffer(duk_context *ctx);
 static void nodeshim_init_events(duk_context *ctx);
 static void nodeshim_init_util(duk_context *ctx);
@@ -5244,20 +5254,124 @@ static const char *process_js =
 "\n"
 "  /* Minimal stdout/stderr/stdin streams.  .write is fputs to the\n"
 "     respective fd via the native writers in `natives` (no Error:\n"
-"     prefix or stack-trace decoration that console.error would add). */\n"
+"     prefix or stack-trace decoration that console.error would add).\n"
+"     isTTY / columns / rows / setRawMode come from the shared tty\n"
+"     natives — process.stdin can now satisfy `setRawMode(true)`\n"
+"     without going through `require('tty')`.  (Data does not yet\n"
+"     flow into 'data' events on fd 0; that's a separate step.) */\n"
+"  function _isatty(fd) {\n"
+"    return (typeof natives.isatty === 'function') && !!natives.isatty(fd|0);\n"
+"  }\n"
+"  function _winsize(fd) {\n"
+"    if (typeof natives.getWindowSize !== 'function') return [80, 24];\n"
+"    var ws = natives.getWindowSize(fd|0);\n"
+"    return Array.isArray(ws) ? ws : [80, 24];\n"
+"  }\n"
 "  function makeStream(fd, writer) {\n"
 "    var s = new EventEmitter();\n"
 "    s.write = writer\n"
 "      ? function(chunk) { writer(typeof chunk === 'string' ? chunk : String(chunk)); return true; }\n"
 "      : function() { return true; };\n"
 "    s.end = function() {};\n"
-"    s.isTTY = false;\n"
 "    s.fd = fd;\n"
+"    var tty = _isatty(fd);\n"
+"    s.isTTY = tty;\n"
+"    if (tty) {\n"
+"      Object.defineProperty(s, 'columns', {get: function(){return _winsize(s.fd)[0];}, configurable: true});\n"
+"      Object.defineProperty(s, 'rows',    {get: function(){return _winsize(s.fd)[1];}, configurable: true});\n"
+"      s.getWindowSize = function() { return _winsize(s.fd); };\n"
+"    }\n"
+"    /* setRawMode is meaningful only on stdin (fd 0), but node exposes\n"
+"       it on any tty.ReadStream.  We attach it to whichever fd is a\n"
+"       tty, and return `this` for chainability. */\n"
+"    if (tty && typeof natives.setRawMode === 'function') {\n"
+"      s.isRaw = false;\n"
+"      s.setRawMode = function(mode) {\n"
+"        var m = !!mode;\n"
+"        if (natives.setRawMode(s.fd|0, m)) s.isRaw = m;\n"
+"        return s;\n"
+"      };\n"
+"    }\n"
 "    return s;\n"
 "  }\n"
 "  p.stdout = makeStream(1, natives.stdoutWrite);\n"
 "  p.stderr = makeStream(2, natives.stderrWrite);\n"
 "  p.stdin  = makeStream(0, null);\n"
+"\n"
+"  /* Wire the event-driven stdin data pump to process.stdin's\n"
+"     listener add/remove transitions.  The native pump is\n"
+"     installed when the first 'data' (or 'readable') listener\n"
+"     comes in, and uninstalled when the last one goes away.\n"
+"     Wrap the EE methods only on stdin (not stdout/stderr).\n"
+"     The install call throws if the rampart REPL currently\n"
+"     owns fd 0 (mutually exclusive). */\n"
+"  if (typeof natives.stdinPumpInstall === 'function') {\n"
+"    var _si = p.stdin;\n"
+"    var _origOn      = _si.on;\n"
+"    var _origAdd     = _si.addListener;\n"
+"    var _origOnce    = _si.once;\n"
+"    var _origRemove  = _si.removeListener;\n"
+"    var _origOff     = _si.off;\n"
+"    var _origRemAll  = _si.removeAllListeners;\n"
+"    function _pumpRelevant(ev) { return ev === 'data' || ev === 'readable'; }\n"
+"    function _pumpCount() {\n"
+"      var ev = (_si._events) || {};\n"
+"      function n(name) {\n"
+"        var v = ev[name];\n"
+"        if (!v) return 0;\n"
+"        return Array.isArray(v) ? v.length : 1;\n"
+"      }\n"
+"      return n('data') + n('readable');\n"
+"    }\n"
+"    function _pumpSync() {\n"
+"      var c = _pumpCount();\n"
+"      if (c > 0 && !_si._pumpInstalled) {\n"
+"        natives.stdinPumpInstall(_si);\n"
+"        _si._pumpInstalled = true;\n"
+"      } else if (c === 0 && _si._pumpInstalled) {\n"
+"        natives.stdinPumpUninstall();\n"
+"        _si._pumpInstalled = false;\n"
+"      }\n"
+"    }\n"
+"    _si.on = _si.addListener = function (ev, fn) {\n"
+"      var r = _origAdd.call(this, ev, fn);\n"
+"      if (_pumpRelevant(ev)) _pumpSync();\n"
+"      return r;\n"
+"    };\n"
+"    _si.once = function (ev, fn) {\n"
+"      var r = _origOnce.call(this, ev, fn);\n"
+"      if (_pumpRelevant(ev)) _pumpSync();\n"
+"      return r;\n"
+"    };\n"
+"    _si.removeListener = _si.off = function (ev, fn) {\n"
+"      var r = _origRemove.call(this, ev, fn);\n"
+"      if (_pumpRelevant(ev)) _pumpSync();\n"
+"      return r;\n"
+"    };\n"
+"    _si.removeAllListeners = function (ev) {\n"
+"      var r = _origRemAll.call(this, ev);\n"
+"      if (ev == null || _pumpRelevant(ev)) _pumpSync();\n"
+"      return r;\n"
+"    };\n"
+"    /* node convention: stdin pause/resume control flow.\n"
+"       resume() should kick the pump even without a 'data'\n"
+"       listener; pause() should suspend it.  Provide minimal\n"
+"       shims that toggle the pump explicitly. */\n"
+"    _si.resume = function () {\n"
+"      if (!_si._pumpInstalled) {\n"
+"        natives.stdinPumpInstall(_si);\n"
+"        _si._pumpInstalled = true;\n"
+"      }\n"
+"      return _si;\n"
+"    };\n"
+"    _si.pause = function () {\n"
+"      if (_si._pumpInstalled && _pumpCount() === 0) {\n"
+"        natives.stdinPumpUninstall();\n"
+"        _si._pumpInstalled = false;\n"
+"      }\n"
+"      return _si;\n"
+"    };\n"
+"  }\n"
 "\n"
 "  return p;\n"
 "}";
@@ -5288,6 +5402,17 @@ static void nodeshim_init_process(duk_context *ctx)
     duk_push_c_function(ctx, proc_setgroups,    1); duk_put_prop_string(ctx, -2, "setgroups");
     duk_push_c_function(ctx, proc_stdout_write, 1); duk_put_prop_string(ctx, -2, "stdoutWrite");
     duk_push_c_function(ctx, proc_stderr_write, 1); duk_put_prop_string(ctx, -2, "stderrWrite");
+    /* TTY natives — shared with the tty module so that
+       process.stdin can expose setRawMode/isTTY/getWindowSize
+       without going through `require('tty')`.  Both functions live
+       at the top of the TTY block (search for tty_isatty_c /
+       tty_set_raw_mode_c). */
+    duk_push_c_function(ctx, tty_isatty_c,        1); duk_put_prop_string(ctx, -2, "isatty");
+    duk_push_c_function(ctx, tty_set_raw_mode_c,  2); duk_put_prop_string(ctx, -2, "setRawMode");
+    duk_push_c_function(ctx, tty_get_window_size_c, 1); duk_put_prop_string(ctx, -2, "getWindowSize");
+    /* stdin event-driven data pump (process.stdin.on('data', ...)). */
+    duk_push_c_function(ctx, ns_stdin_install_c,   1); duk_put_prop_string(ctx, -2, "stdinPumpInstall");
+    duk_push_c_function(ctx, ns_stdin_uninstall_c, 0); duk_put_prop_string(ctx, -2, "stdinPumpUninstall");
     duk_push_string(ctx, NS_PLATFORM); duk_put_prop_string(ctx, -2, "platform");
     duk_push_string(ctx, NS_ARCH);     duk_put_prop_string(ctx, -2, "arch");
 
@@ -7771,8 +7896,11 @@ static const char *stream_js =
 "      if (event === 'data' && self._readableState.flowing !== false) {\n"
 "        self.resume();\n"
 "      }\n"
-"      if (event === 'readable' && self._readableState.flowing === null) {\n"
-"        self._readableState.flowing = false;  /* don't auto-flow */\n"
+"      if (event === 'readable') {\n"
+"        if (self._readableState.flowing === null)\n"
+"          self._readableState.flowing = false;  /* don't auto-flow */\n"
+"        /* NSH.3: start the paused-mode pump so 'readable' actually fires. */\n"
+"        if (self._startReadablePump) self._startReadablePump();\n"
 "      }\n"
 "      return r;\n"
 "    };\n"
@@ -7793,27 +7921,65 @@ static const char *stream_js =
 "    catch (e) { this.destroy(e); return false; }\n"
 "    return true;\n"
 "  };\n"
-"  /* .read([n]) — paused-mode pull.  Returns next chunk or null. */\n"
+"  /* NSH.3: paused-mode ('readable' + read()) support.  The pump drains\n"
+"     the underlying WHATWG reader into s.buffer, emitting 'readable' as\n"
+"     chunks arrive; the consumer drains via repeated .read() until null;\n"
+"     'end' fires once the buffer is empty AND the reader is done.  It is\n"
+"     started when a 'readable' listener is attached (see the .on wrapper\n"
+"     in the constructor) or lazily on the first .read(). */\n"
+"  Readable.prototype._maybeEnd = function () {\n"
+"    var s = this._readableState;\n"
+"    /* Guard on _endEmitted, NOT s.ended: push(null) sets s.ended\n"
+"       synchronously to mean 'input closed', long before the readable\n"
+"       side has drained, so reusing it here would suppress 'end'. */\n"
+"    if (!s || s._endEmitted || !s._readerDone || s.buffer.length > 0) return;\n"
+"    s._endEmitted = true;\n"
+"    s.ended = true;\n"
+"    this.emit('end');\n"
+"    this.readableEnded = true;\n"
+"    this.emit('close');\n"
+"  };\n"
+"  Readable.prototype._startReadablePump = function () {\n"
+"    var self = this, s = this._readableState;\n"
+"    if (!s || s.flowing === true) return;   /* flowing mode owns the reader */\n"
+"    if (s._pausedPumping || s._readerDone) return;\n"
+"    s._pausedPumping = true;\n"
+"    if (!self._reader) self._reader = self._web.getReader();\n"
+"    function loop() {\n"
+"      if (s.destroyed) return;\n"
+"      self._reader.read().then(function (r) {\n"
+"        if (r.done) {\n"
+"          s._readerDone = true;\n"
+"          if (s.buffer.length > 0) self.emit('readable');\n"
+"          self._maybeEnd();\n"
+"          return;\n"
+"        }\n"
+"        var v = r.value;\n"
+"        if (self._encoding && v && (Buffer.isBuffer(v) || v instanceof Uint8Array)) {\n"
+"          try { v = Buffer.isBuffer(v) ? v.toString(self._encoding) : Buffer.from(v).toString(self._encoding); }\n"
+"          catch (_e) {}\n"
+"        }\n"
+"        s.buffer.push(v);\n"
+"        self.emit('readable');\n"
+"        loop();\n"
+"      }, function (e) { self.destroy(e); });\n"
+"    }\n"
+"    loop();\n"
+"  };\n"
+"  /* .read([n]) — paused-mode pull.  Returns next buffered chunk or null. */\n"
 "  Readable.prototype.read = function () {\n"
 "    var s = this._readableState;\n"
-"    if (!this._reader) this._reader = this._web.getReader();\n"
-"    /* In paused mode we read async but expose a sync interface; for\n"
-"       simplicity, .read() returns null and emits 'readable' when chunks\n"
-"       are available.  Most callers use .on('data') instead. */\n"
-"    var self = this;\n"
-"    if (s.buffer.length > 0) return s.buffer.shift();\n"
-"    if (s.ended) return null;\n"
-"    this._reader.read().then(function (r) {\n"
-"      if (r.done) {\n"
-"        s.ended = true;\n"
-"        self.emit('end');\n"
-"        self.readableEnded = true;\n"
-"        self.emit('close');\n"
-"      } else {\n"
-"        s.buffer.push(r.value);\n"
-"        self.emit('readable');\n"
+"    if (!s) return null;\n"
+"    if (s.buffer.length > 0) {\n"
+"      var chunk = s.buffer.shift();\n"
+"      if (s.buffer.length === 0 && s._readerDone) {\n"
+"        var self = this;\n"
+"        setImmediate(function () { self._maybeEnd(); });\n"
 "      }\n"
-"    }, function (e) { self.destroy(e); });\n"
+"      return chunk;\n"
+"    }\n"
+"    if (s._readerDone || s.ended) { this._maybeEnd(); return null; }\n"
+"    this._startReadablePump();\n"
 "    return null;\n"
 "  };\n"
 "  /* Flowing mode: drain reader, emit 'data' for each chunk. */\n"
@@ -7875,6 +8041,67 @@ static const char *stream_js =
 "    this.emit('close');\n"
 "    return this;\n"
 "  };\n"
+"  /* NSH.1: async iteration — `for await (const chunk of readable)`.\n"
+"     Event-based bridge over 'data'/'end'/'error' so it works for every\n"
+"     Readable subtype (plain Readable, Transform, Duplex, PassThrough,\n"
+"     IncomingMessage, fd-readables) regardless of how each produces data.\n"
+"     Guarded on Symbol.asyncIterator so vanilla duktape (no -t/-b, where\n"
+"     the well-known symbol isn't installed) doesn't error at load. */\n"
+"  if (typeof Symbol !== 'undefined' && Symbol.asyncIterator) {\n"
+"    var _mkAsyncIter = function (self) {\n"
+"      var P = (typeof Promise !== 'undefined') ? Promise : (typeof global !== 'undefined' && global.Promise);\n"
+"      var chunks = [], waiting = null, ended = false, errored = null, started = false;\n"
+"      function onData(c) {\n"
+"        if (waiting) { var w = waiting; waiting = null; w.resolve({ value: c, done: false }); }\n"
+"        else chunks.push(c);\n"
+"      }\n"
+"      function onEnd() {\n"
+"        ended = true;\n"
+"        if (waiting) { var w = waiting; waiting = null; w.resolve({ value: undefined, done: true }); }\n"
+"      }\n"
+"      function onErr(e) {\n"
+"        errored = e;\n"
+"        if (waiting) { var w = waiting; waiting = null; w.reject(e); }\n"
+"      }\n"
+"      function start() {\n"
+"        if (started) return;\n"
+"        started = true;\n"
+"        /* .on('data') flips the stream to flowing mode (see wrapped on). */\n"
+"        self.on('data', onData);\n"
+"        self.on('end', onEnd);\n"
+"        self.on('error', onErr);\n"
+"      }\n"
+"      function cleanup() {\n"
+"        if (self.removeListener) {\n"
+"          self.removeListener('data', onData);\n"
+"          self.removeListener('end', onEnd);\n"
+"          self.removeListener('error', onErr);\n"
+"        }\n"
+"      }\n"
+"      return {\n"
+"        next: function () {\n"
+"          start();\n"
+"          if (chunks.length) return P.resolve({ value: chunks.shift(), done: false });\n"
+"          if (errored) { var e = errored; errored = null; cleanup(); return P.reject(e); }\n"
+"          if (ended) { cleanup(); return P.resolve({ value: undefined, done: true }); }\n"
+"          return new P(function (resolve, reject) { waiting = { resolve: resolve, reject: reject }; });\n"
+"        },\n"
+"        'return': function (v) {\n"
+"          cleanup();\n"
+"          try { if (self.destroy) self.destroy(); } catch (_) {}\n"
+"          return P.resolve({ value: v, done: true });\n"
+"        },\n"
+"        'throw': function (e) {\n"
+"          cleanup();\n"
+"          try { if (self.destroy) self.destroy(e); } catch (_) {}\n"
+"          return P.reject(e);\n"
+"        }\n"
+"      };\n"
+"    };\n"
+"    Readable.prototype[Symbol.asyncIterator] = function () { return _mkAsyncIter(this); };\n"
+"    /* node alias: readable.iterator() returns the same async iterator */\n"
+"    Readable.prototype.iterator = function () { return _mkAsyncIter(this); };\n"
+"  }\n"
 "  /* .pipe(dest) — wire 'data' / 'end' / 'error' → dest.write/.end. */\n"
 "  Readable.prototype.pipe = function (dest, opts) {\n"
 "    opts = opts || {};\n"
@@ -7993,6 +8220,16 @@ static const char *stream_js =
 "  }\n"
 "  function _dispatchWrite(self, chunk, enc, cb) {\n"
 "    var st = self._writableState;\n"
+"    /* Node default decodeStrings:true — a string chunk written to a\n"
+"       non-objectMode stream is decoded to a Buffer before _write/\n"
+"       _transform sees it. Libraries that do byte-level work (csv-parse,\n"
+"       busboy, etc.) rely on receiving a Buffer; without this they get a\n"
+"       string and silently produce nothing. objectMode streams pass the\n"
+"       value through untouched. */\n"
+"    if (!st.objectMode && typeof chunk === 'string') {\n"
+"      try { chunk = Buffer.from(chunk, (enc && enc !== 'buffer') ? enc : 'utf8'); }\n"
+"      catch (_e) {}\n"
+"    }\n"
 "    st.writing = true;\n"
 "    var settled = false;\n"
 "    /* The user-supplied write cb and downstream events fire on the\n"
@@ -8313,6 +8550,14 @@ static const char *stream_js =
 "  Stream.PassThrough = PassThrough;\n"
 "  Stream.pipeline    = pipeline;\n"
 "  Stream.finished    = finished;\n"
+"  /* Make Readable/Writable instances pass `body instanceof Stream`\n"
+"     checks (node-fetch, many other stream-shape sniffers do this).\n"
+"     Stream.prototype is itself Object.create(EventEmitter.prototype),\n"
+"     so the EE methods stay reachable; we're just splicing Stream into\n"
+"     the chain.  Duplex/Transform inherit from Readable.prototype and\n"
+"     pick up the new chain for free. */\n"
+"  Object.setPrototypeOf(Readable.prototype, Stream.prototype);\n"
+"  Object.setPrototypeOf(Writable.prototype, Stream.prototype);\n"
 "  Stream.promises = {\n"
 "    pipeline: function () {\n"
 "      var args = Array.prototype.slice.call(arguments);\n"
@@ -9380,6 +9625,251 @@ static duk_ret_t tty_set_raw_mode_c(duk_context *ctx)
     return 1;
 }
 
+#include "event.h"
+
+/* ============================================================
+ * process.stdin event-driven data pump.
+ *
+ * When the user attaches a 'data' (or 'readable') listener to
+ * process.stdin, we register a libevent EV_READ on fd 0 and
+ * non-blocking-read in the handler.  Each chunk is emitted as
+ * a 'data' event on process.stdin.  EOF emits 'end' and tears
+ * the pump down.
+ *
+ * Mutually exclusive with rampart's linenoise REPL.  We consult
+ * `rp_stdin_owner` from <rampart.h>:
+ *   - if already RP_STDIN_REPL → throw
+ *   - else set it to RP_STDIN_NODESHIM, set fd 0 non-blocking,
+ *     event_add, store heapptr of process.stdin for the callback
+ *
+ * Uninstall: event_del/event_free, restore fd 0 blocking mode,
+ * clear rp_stdin_owner.
+ * ============================================================ */
+typedef struct {
+    duk_context  *ctx;
+    void         *stream_heapptr;   /* process.stdin */
+    struct event *ev;
+    int           orig_flags;       /* fd 0 flags before O_NONBLOCK */
+    int           installed;
+    int           in_callback;      /* for UAF guard (see fs-extras pattern) */
+    int           free_pending;
+} ns_stdin_pump_t;
+
+static ns_stdin_pump_t _ns_stdin_pump = {NULL, NULL, NULL, 0, 0, 0, 0};
+
+/* Emit ('data', Buffer) on process.stdin.  Best-effort — swallow
+   any thrown error since we're a libevent callback. */
+static void ns_stdin_emit_data(duk_context *ctx, void *streamptr,
+                                const unsigned char *bytes, size_t n)
+{
+    duk_idx_t top = duk_get_top(ctx);
+    duk_push_heapptr(ctx, streamptr);                          /* [stream] */
+    if (!duk_get_prop_string(ctx, -1, "emit"))                 /* [stream, emit?] */
+    { duk_set_top(ctx, top); return; }
+    if (!duk_is_function(ctx, -1))
+    { duk_set_top(ctx, top); return; }
+    duk_dup(ctx, -2);                                          /* [stream, emit, this] */
+    duk_push_string(ctx, "data");                              /* [..., 'data'] */
+    /* Build a Buffer via global Buffer.from(arrayBuffer) for safe
+       copy out of our local stack buffer. */
+    void *bufmem = duk_push_buffer(ctx, n, 0);
+    memcpy(bufmem, bytes, n);
+    duk_get_global_string(ctx, "Buffer");                      /* [..., buf, Buffer] */
+    if (!duk_is_function(ctx, -1) ||
+        !duk_get_prop_string(ctx, -1, "from") ||
+        !duk_is_function(ctx, -1))
+    {
+        /* Fallback: pass the raw buffer (consumers expecting a
+           Node Buffer should still get Buffer-like behavior). */
+        duk_set_top(ctx, top + 4);   /* [stream, emit, this, 'data', buf] */
+        if (duk_pcall_method(ctx, 2) != 0) {
+            fprintf(stderr, "process.stdin 'data' emit error: %s\n",
+                    duk_safe_to_string(ctx, -1));
+        }
+        duk_set_top(ctx, top);
+        return;
+    }
+    /* [..., buf, Buffer, Buffer.from] */
+    duk_dup(ctx, -2);                                          /* this = Buffer */
+    duk_dup(ctx, -4);                                          /* arg = the raw buffer */
+    if (duk_pcall_method(ctx, 1) != 0)
+    {
+        fprintf(stderr, "process.stdin Buffer.from error: %s\n",
+                duk_safe_to_string(ctx, -1));
+        duk_set_top(ctx, top); return;
+    }
+    /* Stack now: [stream, emit, this, 'data', rawBuf, Buffer, nodeBuf]
+       Drop Buffer (at -2) then rawBuf (at -2 after the first remove). */
+    duk_remove(ctx, -2);   /* remove Buffer */
+    duk_remove(ctx, -2);   /* remove rawBuf */
+    /* [stream, emit, this, 'data', nodeBuf] */
+    if (duk_pcall_method(ctx, 2) != 0) {
+        fprintf(stderr, "process.stdin 'data' emit error: %s\n",
+                duk_safe_to_string(ctx, -1));
+    }
+    duk_set_top(ctx, top);
+}
+
+static void ns_stdin_emit_simple(duk_context *ctx, void *streamptr, const char *event)
+{
+    duk_idx_t top = duk_get_top(ctx);
+    duk_push_heapptr(ctx, streamptr);
+    if (!duk_get_prop_string(ctx, -1, "emit"))
+    { duk_set_top(ctx, top); return; }
+    if (!duk_is_function(ctx, -1))
+    { duk_set_top(ctx, top); return; }
+    duk_dup(ctx, -2);
+    duk_push_string(ctx, event);
+    if (duk_pcall_method(ctx, 1) != 0) {
+        fprintf(stderr, "process.stdin '%s' emit error: %s\n", event,
+                duk_safe_to_string(ctx, -1));
+    }
+    duk_set_top(ctx, top);
+}
+
+static void ns_stdin_pump_teardown_locked(ns_stdin_pump_t *p);
+
+static void ns_stdin_read_cb(evutil_socket_t fd, short events, void *arg)
+{
+    ns_stdin_pump_t *p = (ns_stdin_pump_t *)arg;
+    (void)events;
+    if (!p || !p->installed) return;
+    p->in_callback = 1;
+
+    unsigned char buf[4096];
+    for (;;) {
+        ssize_t n = read(fd, buf, sizeof(buf));
+        if (n > 0) {
+            ns_stdin_emit_data(p->ctx, p->stream_heapptr, buf, (size_t)n);
+            /* Continue the loop — another non-blocking read may
+               drain a multi-chunk burst.  We bail on EAGAIN. */
+            continue;
+        }
+        if (n == 0) {
+            /* EOF — emit 'end' and tear down. */
+            ns_stdin_emit_simple(p->ctx, p->stream_heapptr, "end");
+            ns_stdin_pump_teardown_locked(p);
+            break;
+        }
+        if (errno == EINTR) continue;
+        if (errno == EAGAIN || errno == EWOULDBLOCK) break;
+        /* Hard error — emit 'error' and tear down. */
+        {
+            duk_context *ctx = p->ctx;
+            duk_idx_t top = duk_get_top(ctx);
+            duk_push_heapptr(ctx, p->stream_heapptr);
+            if (duk_get_prop_string(ctx, -1, "emit") && duk_is_function(ctx, -1)) {
+                duk_dup(ctx, -2);
+                duk_push_string(ctx, "error");
+                duk_push_error_object(ctx, DUK_ERR_ERROR,
+                                      "process.stdin read failed: %s",
+                                      strerror(errno));
+                (void)duk_pcall_method(ctx, 2);
+            }
+            duk_set_top(ctx, top);
+        }
+        ns_stdin_pump_teardown_locked(p);
+        break;
+    }
+
+    p->in_callback = 0;
+    if (p->free_pending) {
+        /* Deferred uninstall during the callback — finalize now. */
+        ns_stdin_pump_teardown_locked(p);
+    }
+}
+
+/* Internal teardown.  Idempotent; releases fd-0 ownership. */
+static void ns_stdin_pump_teardown_locked(ns_stdin_pump_t *p)
+{
+    if (!p->installed) return;
+    if (p->in_callback) {
+        /* Defer until the callback returns.  See fs-extras pattern. */
+        p->free_pending = 1;
+        return;
+    }
+    if (p->ev) {
+        event_del(p->ev);
+        event_free(p->ev);
+        p->ev = NULL;
+    }
+    /* Restore original fd 0 flags (drop O_NONBLOCK). */
+    if (p->orig_flags >= 0) {
+        fcntl(0, F_SETFL, p->orig_flags);
+        p->orig_flags = -1;
+    }
+    p->installed = 0;
+    p->free_pending = 0;
+    /* Release ownership.  Use a guarded clear in case the REPL
+       somehow grabbed in between (shouldn't be reachable). */
+    if (rp_stdin_owner == RP_STDIN_NODESHIM)
+        rp_stdin_owner = RP_STDIN_NONE;
+    /* Note: we deliberately do NOT clear stream_heapptr until
+       the next install — keeps the slot stable if a reinstall
+       targets the same stream (the common case). */
+}
+
+/* JS-callable: nodeshim_stdin_install(stream) — throws on conflict
+   with REPL ownership.  Returns true on success. */
+static duk_ret_t ns_stdin_install_c(duk_context *ctx)
+{
+    if (rp_stdin_owner == RP_STDIN_REPL) {
+        return duk_error(ctx, DUK_ERR_ERROR,
+                         "process.stdin event-driven mode cannot be "
+                         "enabled while rampart REPL (linenoise) is "
+                         "active");
+    }
+    if (_ns_stdin_pump.installed) {
+        /* Already installed.  No-op; success. */
+        duk_push_boolean(ctx, 1);
+        return 1;
+    }
+    if (!duk_is_object(ctx, 0)) {
+        return duk_error(ctx, DUK_ERR_TYPE_ERROR,
+                         "nodeshim_stdin_install: stream object required");
+    }
+    RPTHR *thr = get_current_thread();
+    if (!thr || !thr->base) {
+        return duk_error(ctx, DUK_ERR_ERROR,
+                         "nodeshim_stdin_install: no event base");
+    }
+    _ns_stdin_pump.ctx = ctx;
+    _ns_stdin_pump.stream_heapptr = duk_get_heapptr(ctx, 0);
+    _ns_stdin_pump.orig_flags = fcntl(0, F_GETFL, 0);
+    if (_ns_stdin_pump.orig_flags >= 0) {
+        if (fcntl(0, F_SETFL, _ns_stdin_pump.orig_flags | O_NONBLOCK) < 0) {
+            _ns_stdin_pump.orig_flags = -1;
+            return duk_error(ctx, DUK_ERR_ERROR,
+                             "nodeshim_stdin_install: O_NONBLOCK: %s",
+                             strerror(errno));
+        }
+    }
+    _ns_stdin_pump.ev = event_new(thr->base, 0, EV_READ | EV_PERSIST,
+                                   ns_stdin_read_cb, &_ns_stdin_pump);
+    if (!_ns_stdin_pump.ev) {
+        if (_ns_stdin_pump.orig_flags >= 0) {
+            fcntl(0, F_SETFL, _ns_stdin_pump.orig_flags);
+            _ns_stdin_pump.orig_flags = -1;
+        }
+        return duk_error(ctx, DUK_ERR_ERROR,
+                         "nodeshim_stdin_install: event_new failed");
+    }
+    event_add(_ns_stdin_pump.ev, NULL);
+    _ns_stdin_pump.installed = 1;
+    rp_stdin_owner = RP_STDIN_NODESHIM;
+    duk_push_boolean(ctx, 1);
+    return 1;
+}
+
+/* JS-callable: nodeshim_stdin_uninstall() — idempotent. */
+static duk_ret_t ns_stdin_uninstall_c(duk_context *ctx)
+{
+    (void)ctx;
+    ns_stdin_pump_teardown_locked(&_ns_stdin_pump);
+    duk_push_boolean(ctx, 1);
+    return 1;
+}
+
 static const char *tty_js =
 "function(natives) {\n"
 "  'use strict';\n"
@@ -9764,6 +10254,36 @@ static const char *readline_js =
 "  };\n"
 "  Interface.prototype.setPrompt = function(p) { this._prompt = String(p); };\n"
 "  Interface.prototype.getPrompt = function()  { return this._prompt; };\n"
+"  /* Node exposes the current input buffer as `rl.line` and the\n"
+"     cursor position as `rl._getCursorPos()`.  inquirer's screen-\n"
+"     manager (and other libraries built on readline) reads these\n"
+"     to compute prompt rendering.  Single-line interfaces have\n"
+"     rows = 0; cols = prompt-length + cursor offset within line.\n"
+"     The cursorPos field is undocumented but used in practice. */\n"
+"  Object.defineProperty(Interface.prototype, 'line', {\n"
+"    get: function() { return this._line || ''; },\n"
+"    set: function(v) { this._line = String(v == null ? '' : v); },\n"
+"    configurable: true, enumerable: true\n"
+"  });\n"
+"  Object.defineProperty(Interface.prototype, 'cursor', {\n"
+"    get: function() { return this._cursor | 0; },\n"
+"    set: function(v) { this._cursor = (v | 0); },\n"
+"    configurable: true, enumerable: true\n"
+"  });\n"
+"  Interface.prototype._getCursorPos = function() {\n"
+"    var prompt = this._prompt || '';\n"
+"    var promptLen = prompt.length;\n"
+"    /* Strip ANSI escapes from the visible prompt length count. */\n"
+"    promptLen = prompt.replace(/\\x1b\\[[0-9;]*[A-Za-z]/g, '').length;\n"
+"    var cursor = this._cursor | 0;\n"
+"    var cols = (this.output && this.output.columns) ? this.output.columns : 0;\n"
+"    if (cols > 0) {\n"
+"      var total = promptLen + cursor;\n"
+"      return { rows: Math.floor(total / cols), cols: total % cols };\n"
+"    }\n"
+"    return { rows: 0, cols: promptLen + cursor };\n"
+"  };\n"
+"  Interface.prototype.getCursorPos = Interface.prototype._getCursorPos;\n"
 "  Interface.prototype.prompt    = function(preserveCursor) {\n"
 "    if (this._closed) return;\n"
 "    if (!preserveCursor) this._cursor = this._line.length;\n"
@@ -11327,7 +11847,14 @@ static const char *http_js =
 "\n"
 "    if (opts.headers) {\n"
 "      var hkeys = Object.keys(opts.headers);\n"
-"      for (var i = 0; i < hkeys.length; i++) self.setHeader(hkeys[i], opts.headers[hkeys[i]]);\n"
+"      for (var i = 0; i < hkeys.length; i++) {\n"
+"        var hk = hkeys[i];\n"
+"        /* node-fetch and others ship headers as `{ __proto__: null, ...}`.\n"
+"           Duktape exposes `__proto__` as an own-property key in that\n"
+"           literal (project_duktape_proto_literal.md); filter it. */\n"
+"        if (hk === '__proto__') continue;\n"
+"        self.setHeader(hk, opts.headers[hk]);\n"
+"      }\n"
 "    }\n"
 "\n"
 "    if (typeof cb === 'function') self.once('response', cb);\n"
@@ -11419,12 +11946,16 @@ static const char *http_js =
 "       never arrives (server sends Content-Length but no payload). */\n"
 "    if (self.method === 'HEAD') copts.nobody = true;\n"
 "\n"
-"    /* Add Host header if user didn't supply one (node auto-adds it) */\n"
+"    /* Add Host header if user didn't supply one (node auto-adds it).\n"
+"       opts.host may already contain ':port' (node-fetch et al pass it\n"
+"       that way); only append the port when host is bare. */\n"
 "    if (!('host' in self._headers) && (self._reqOpts.host || self._reqOpts.hostname)) {\n"
 "      var hhost = self._reqOpts.host || self._reqOpts.hostname;\n"
 "      var hp = self._reqOpts.port;\n"
 "      var defaultPort = (self._defaultProtocol === 'https:') ? 443 : 80;\n"
-"      if (hp && Number(hp) !== defaultPort) hhost = hhost + ':' + hp;\n"
+"      if (hp && Number(hp) !== defaultPort && String(hhost).indexOf(':') < 0) {\n"
+"        hhost = hhost + ':' + hp;\n"
+"      }\n"
 "      self._headers['host'] = hhost;\n"
 "      self._headerNames['host'] = 'Host';\n"
 "    }\n"
@@ -11592,10 +12123,19 @@ static const char *http_js =
 "  }\n"
 "  function _normalize(arg1, arg2, arg3, defaultProtocol) {\n"
 "    var opts, cb, urlStr;\n"
-"    /* Accept (url, cb), (url, opts, cb), (url, opts), (opts, cb), (opts) */\n"
-"    if (typeof arg1 === 'string'\n"
-"        || (arg1 && typeof arg1 === 'object' && typeof arg1.href === 'string'\n"
-"            && typeof arg1.protocol === 'string')) {\n"
+"    /* Accept (url, cb), (url, opts, cb), (url, opts), (opts, cb), (opts).\n"
+"       Only treat arg1 as a URL when it's a string OR a genuine URL\n"
+"       instance (has `searchParams` — both whatwg URL and our shim).\n"
+"       node-fetch builds a plain options object that ALSO carries `.href`\n"
+"       and `.protocol`; the old test on those fields alone misclassified\n"
+"       it as URL-only and dropped headers/method/body. */\n"
+"    var arg1IsUrl =\n"
+"      (typeof arg1 === 'string') ||\n"
+"      (arg1 && typeof arg1 === 'object' && typeof arg1.href === 'string'\n"
+"            && typeof arg1.protocol === 'string'\n"
+"            && (arg1 instanceof URL || (arg1.searchParams && typeof arg1.searchParams === 'object')\n"
+"                                    || arg1[Symbol.toStringTag] === 'URL'));\n"
+"    if (arg1IsUrl) {\n"
 "      var u;\n"
 "      if (typeof arg1 === 'string') {\n"
 "        urlStr = arg1;\n"
@@ -13477,6 +14017,25 @@ duk_ret_t duk_open_module(duk_context *ctx)
         "      value: nsProc[k], writable: true, configurable: true, enumerable: true"
         "    });"
         "  });"
+        "  /* Also copy EventEmitter methods from the prototype chain so"
+        "     `process.on('exit', fn)` etc. work.  Object.keys above only"
+        "     enumerates own props; nsProc is an EE instance with on/emit/"
+        "     once/... on its prototype, and node code uniformly assumes"
+        "     process is an EventEmitter.  Walk every proto up to but not"
+        "     including Object.prototype and copy any callable that dst"
+        "     doesn't already have. */"
+        "  var proto = Object.getPrototypeOf(nsProc);"
+        "  while (proto && proto !== Object.prototype) {"
+        "    Object.getOwnPropertyNames(proto).forEach(function(k){"
+        "      if (k === 'constructor' || k in dst) return;"
+        "      var v = proto[k];"
+        "      if (typeof v !== 'function') return;"
+        "      Object.defineProperty(dst, k, {"
+        "        value: v.bind(nsProc), writable: true, configurable: true, enumerable: false"
+        "      });"
+        "    });"
+        "    proto = Object.getPrototypeOf(proto);"
+        "  }"
         "})");
     /* Stack: [exports, augmenter_fn].  Push exports.process as arg. */
     duk_get_prop_string(ctx, -2, "process");
