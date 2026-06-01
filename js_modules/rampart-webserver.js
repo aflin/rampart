@@ -222,12 +222,43 @@ function killPid(name, sig) {
     }
     try {
         ret.success=kill(ret.pid, sig, true);
+
+        /* Wait for the process to actually exit before returning.  The
+           daemon is double-forked, so its parent is init — kill()'s
+           internal waitpid() loop is a no-op on a non-child PID, which
+           means a freshly-stopped daemon can still hold its listening
+           socket when the caller (e.g. restart) immediately turns around
+           and tries to bind.  Poll kill(pid, 0) (signal 0 = existence
+           check) instead.  If the process is still alive after the soft
+           timeout, escalate to SIGKILL and poll a little longer. */
+        if (ret.success && sig !== 0 && sig !== 'SIGKILL' && sig !== 9) {
+            var SOFT_TIMEOUT_MS = 5000;
+            var HARD_TIMEOUT_MS = 2000;
+            var STEP_MS = 50;
+            var waited = 0;
+            while (waited < SOFT_TIMEOUT_MS) {
+                if (!kill(ret.pid, 0)) break;
+                sleep(STEP_MS / 1000);
+                waited += STEP_MS;
+            }
+            if (kill(ret.pid, 0)) {
+                /* Still alive — escalate. */
+                try { kill(ret.pid, 'SIGKILL'); } catch(_) {}
+                waited = 0;
+                while (waited < HARD_TIMEOUT_MS) {
+                    if (!kill(ret.pid, 0)) break;
+                    sleep(STEP_MS / 1000);
+                    waited += STEP_MS;
+                }
+            }
+        }
+
         utils.rmFile(ret.pidfile);
     } catch (e) {
         ret.success=false;
         ret.error=sprintf('%s',e.message);
     }
-    
+
     return ret;
 }
 
