@@ -1,3 +1,33 @@
+v0.7.0
+    -rampart                duktape is now a fork at
+                            https://github.com/aflin/duktape
+                            Added BigInt, Promise, Map, Set,
+                            Blob and WeakRef/Map/Set. Enhanced
+                            Buffer, TextEncoder and others.
+                            Many, many transpiler fixes.
+                            Babel update.
+                            Bundler.
+
+    -rampart-utils          POSIX filedescripter I/O funcs.
+                            Filewatching with watch().
+
+    -rampart-intl           Initial Intl module, lazy loaded from rampart
+                            global.Intl.
+
+    -rampart-whatwg         Initial WHATWG functions module, also lazy loaded.
+
+    -rampart-nodeshim       Initial. Module and accompanying loader scripts.
+
+    -rampart-crypto         Upgrade to openssl 4.0.0.  More functions.
+
+    -rampart-treesitter     Initial.
+
+    -rampart-sql            Built in vector indexes with faiss and usearch.
+
+    -rampart-auth           Initial.
+
+    -rampart-cmark          Upgrade to cmark-gfm
+
 v0.6.2
     - rampart
                             Installer fixes.
