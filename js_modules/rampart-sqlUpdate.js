@@ -472,7 +472,24 @@ function launchUpdater(npsql) {
     if(epid>0 && rampart.utils.kill(epid, 0)){
         return false;
     }
-    var res=rampart.utils.exec(process.installPathExec, process.modulesPath + '/rampart-sqlUpdate.js', npsql.db);
+    /* Pick the script the daemon subprocess will run.  When a zip payload is
+       attached, prefer ":zip:/rampart-sqlUpdate.js" so the daemon runs the
+       copy that ships with the bundle (avoids version skew with a separately
+       installed rampart, and works on systems with no rampart install).
+       Fall back to the on-disk modulesPath copy if the bundle doesn't carry
+       this script.  payloadGet() takes a bare entry name (no ":zip:/" prefix)
+       and throws on miss; treat the throw as "not in bundle". */
+    var updaterScript = null;
+    if (rampart.utils.payloadGet) {
+        try {
+            rampart.utils.payloadGet('rampart-sqlUpdate.js');
+            updaterScript = ':zip:/rampart-sqlUpdate.js';
+        } catch(e) { /* not in bundle */ }
+    }
+    if (!updaterScript) {
+        updaterScript = process.modulesPath + '/rampart-sqlUpdate.js';
+    }
+    var res=rampart.utils.exec(process.installPathExec, updaterScript, npsql.db);
 
     if(res.exitStatus) {
         npsql.errMsg=res.stderr;

@@ -2943,6 +2943,27 @@ void duk_process_init(duk_context *ctx)
             s[0]='\0';
             strcpy(modules_dir, rp.path);
         }
+        else if (rp_has_zip_payload && rp_zip_init() == 0)
+        {
+            /* No on-disk module found, but we have a bundle.  Check the
+               appended zip for any of the same module names; if found,
+               expose ":zip:" as modulesPath so idioms like
+                   process.modulesPath + "/rampart-foo.js"
+               (notably rampart-sqlUpdate.js's launchUpdater) resolve into
+               the bundle instead of falling through to a nonexistent
+               on-disk path. */
+            i=0;
+            modules_dir[0]='\0';
+            while (module_name[i])
+            {
+                if (rp_zip_find_basename(module_name[i]) != NULL)
+                {
+                    strcpy(modules_dir, ":zip:");
+                    break;
+                }
+                i++;
+            }
+        }
         else
             modules_dir[0]='\0';
 
