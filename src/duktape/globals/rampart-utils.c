@@ -2951,12 +2951,13 @@ void duk_process_init(duk_context *ctx)
                    process.modulesPath + "/rampart-foo.js"
                (notably rampart-sqlUpdate.js's launchUpdater) resolve into
                the bundle instead of falling through to a nonexistent
-               on-disk path. */
+               on-disk path.  Modules ship at the zip root, so a direct
+               resolve by bare name works. */
             i=0;
             modules_dir[0]='\0';
             while (module_name[i])
             {
-                if (rp_zip_find_basename(module_name[i]) != NULL)
+                if (rp_zip_resolve(module_name[i]) != NULL)
                 {
                     strcpy(modules_dir, ":zip:");
                     break;
