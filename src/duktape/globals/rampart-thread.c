@@ -1320,8 +1320,24 @@ int rpthr_copy_obj(duk_context *ctx, duk_context *tctx, int objid, int skiprefcn
        If it is an array, we need to deal with it on the tctx stack only */
     if(!duk_is_array(ctx, -1))
     {
+        /* Use duk_def_prop with DUK_DEFPROP_FORCE so the tag write
+           succeeds even when the source is Object.freeze()d (or
+           Object.preventExtensions()'d).  Frozen sources are reachable
+           from globals via e.g. tough-cookie's `exports.PrefixSecurityEnum
+           = Object.freeze({...})`, and the plain put_prop_string used to
+           throw "not extensible" mid-copy and abort `new rampart.thread`.
+           The tag is a hidden symbol (filtered out unless callers pass
+           DUK_ENUM_INCLUDE_HIDDEN), and rpthr_clean_obj removes it at the
+           end of the copy, so adding it temporarily to a frozen source is
+           invisible to user code. */
+        duk_push_string(ctx, DUK_HIDDEN_SYMBOL("objRefId"));
         duk_push_int(ctx, objid);
-        duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("objRefId"));
+        duk_def_prop(ctx, -3,
+            DUK_DEFPROP_HAVE_VALUE
+          | DUK_DEFPROP_HAVE_WRITABLE     | DUK_DEFPROP_WRITABLE
+          | DUK_DEFPROP_HAVE_CONFIGURABLE | DUK_DEFPROP_CONFIGURABLE
+          | DUK_DEFPROP_HAVE_ENUMERABLE   /* not enumerable */
+          | DUK_DEFPROP_FORCE);
     }
 
     /* in tctx, put it where we can find it later */

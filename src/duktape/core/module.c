@@ -516,7 +516,11 @@ static int load_js_module(duk_context *ctx, const char *file, duk_idx_t module_i
         //    buffer++;  -- don't mess up line numbering -ajf 8/5/2025
     }
 
-    duk_push_string(ctx, "(function (module, exports) { ");
+    /* NDE.53: `require` is a wrapper parameter (Node model) so module code
+       can rebind it locally (`require = lazyCache(require)`, rewire, etc.)
+       without mutating the read-only global — and without affecting other
+       modules. */
+    duk_push_string(ctx, "(function (module, exports, require) { ");
 
     /* check for babel and push src to stack */
     if (! (bfn=duk_rp_babelize(ctx, (char *)file, buffer, sb.st_mtime, babel_setting_none, NULL)) )
@@ -605,14 +609,15 @@ static int load_js_module(duk_context *ctx, const char *file, duk_idx_t module_i
 
     duk_dup(ctx, module_idx);
     duk_get_prop_string(ctx, -1, "exports");
+    duk_get_global_string(ctx, "require");   /* NDE.53: 3rd arg — per-module require */
 
     if(is_server)
     {
-        if (duk_pcall(ctx, 2) == DUK_EXEC_ERROR)
+        if (duk_pcall(ctx, 3) == DUK_EXEC_ERROR)
             return 0;
     }
     else
-        duk_call(ctx, 2);
+        duk_call(ctx, 3);
 
     duk_pop(ctx);
     return 1;
@@ -1201,6 +1206,44 @@ static RPPATH resolve_id(duk_context *ctx, const char *request_id)
             break;
         }
     }
+
+#if RAMPART_NODE_COMPAT_RESOLVE
+    /* NDE.52: conservative node fallback.  Only when rampart's own search
+       above found NOTHING and the id is a bare name (not `.`/`/`/`:`):
+       walk node_modules up from the calling module's directory (the
+       standard Node algorithm).  Purely additive — anything rampart
+       already resolved is untouched; this only rescues ids that would
+       otherwise be "Could not resolve".  Because it keys off the calling
+       module value (via modpath) rather than the call-site syntax, it
+       fixes bare-name requires reached through any indirection (aliased /
+       `.bind` / passed-through `require`), and regardless of whether the
+       caller is itself under node_modules.  The gated phase (a)/(b) block
+       above is left untouched, so self-shadow handling for npm-resident
+       callers is unchanged. */
+    if (id == NULL &&
+        request_id[0] != '.' && request_id[0] != '/' && request_id[0] != ':')
+    {
+        /* Base dir to walk up from: the calling module's directory
+           (module.path) when there is one, else the main script's
+           directory (the top-level script isn't in module_id_map, so
+           `modpath` is NULL there). */
+        const char *base = modpath ? modpath : RP_script_path;
+        for (module_loader_idx = 0;
+             base &&
+             module_loader_idx < (int)(sizeof(module_loaders) / sizeof(struct module_loader));
+             module_loader_idx++)
+        {
+            rppath = walk_node_modules(request_id, base,
+                                       module_loaders[module_loader_idx].ext);
+            if (strlen(rppath.path)) { id = rppath.path; break; }
+        }
+        /* Pick the loader from the resolved file's extension (a directory
+           result yields the JS loader, which is what the index.{js,json,so}
+           fallback below expects). */
+        if (id)
+            module_loader_idx = loader_idx_for_path(rppath.path);
+    }
+#endif
 
     if (id == NULL)
     {

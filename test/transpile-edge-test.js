@@ -2982,6 +2982,180 @@ testFeature("NDE.50 - destructure catch param across await", function() {
     })();
 });
 
+/* NDE.54 — inside a transpiled `async function`/generator, `arguments`
+   read the regenerator innerFn's frame (`[_TrN_context]`) instead of the
+   function's own call args. Fix: alias `arguments` (9 chars) to the
+   same-length `_TrN_args`, captured in the _TrN_callee scope where the
+   real args live. Surfaced in puppeteer-extra-plugin-stealth's sourceurl
+   evasion (`const [method, paramArgs] = arguments`). */
+
+testFeature("NDE.54 - async fn arguments.length + index", function() {
+    return (async function() {
+        async function f() { return arguments.length + ':' + arguments[0] + ',' + arguments[1]; }
+        return await f('hello', 'world') === '2:hello,world';
+    })();
+});
+
+testFeature("NDE.54 - async fn arguments destructure (stealth shape)", function() {
+    return (async function() {
+        async function send() {
+            var a = arguments;
+            var method = a[0], paramArg = a[1];
+            return method + ':' + paramArg.userAgent;
+        }
+        return await send('Network.setUserAgentOverride', { userAgent: 'X' })
+               === 'Network.setUserAgentOverride:X';
+    })();
+});
+
+testFeature("NDE.54 - arrow inside async fn inherits arguments", function() {
+    return (async function() {
+        async function f() {
+            var get = function() { return arguments.length; };   // own arguments (regular fn)
+            var arrow = () => arguments.length + ':' + arguments[0];  // inherits f's arguments
+            return arrow() + '|' + get(9, 9, 9);
+        }
+        return await f('p', 'q') === '2:p|3';
+    })();
+});
+
+testFeature("NDE.54 - arguments survives an await", function() {
+    return (async function() {
+        async function f() {
+            await Promise.resolve();
+            return arguments.length + ':' + arguments[0];
+        }
+        return await f('only') === '1:only';
+    })();
+});
+
+testFeature("NDE.54 - nested regular function keeps its own arguments", function() {
+    return (async function() {
+        async function outer() {
+            function inner() { return arguments.length; }
+            return inner(1, 2, 3, 4) + ':' + arguments.length;
+        }
+        return await outer('a', 'b') === '4:2';
+    })();
+});
+
+testFeature("NDE.54 - async generator arguments", function() {
+    return (async function() {
+        async function* ag() {
+            for (var i = 0; i < arguments.length; i++) yield await Promise.resolve(arguments[i]);
+        }
+        var out = [];
+        for await (var v of ag('x', 'y', 'z')) out.push(v);
+        return out.join(',') === 'x,y,z';
+    })();
+});
+
+testFeature("NDE.54 - sync generator arguments", function() {
+    function* sg() { for (var i = 0; i < arguments.length; i++) yield arguments[i] * 2; }
+    var r = [], it = sg(1, 2, 3), s;
+    while (!(s = it.next()).done) r.push(s.value);
+    return r.join(',') === '2,4,6';
+});
+
+testFeature("NDE.54 - async fn toString still shows arguments (alias is internal)", function() {
+    async function f(a) { return arguments.length; }
+    return ('' + f).indexOf('arguments') >= 0 && ('' + f).indexOf('_TrN_args') < 0;
+});
+
+/* NDE.55 — `for-of` / `for await…of` must call `iter.return()` on abrupt
+   completion (break / return / throw) so iterators with side effects
+   (subscriptions, fds, locks) clean up. The transpiler emitted a plain
+   loop that just exited. Fix: wrap the desugared loop in try/finally that
+   calls iter.return() when completion was abrupt (sync paths + the async
+   state machine route break/return through a cleanup case). Plain-array
+   iteration has no iterator so return() is never attempted there.
+   Known limitation: an uncaught throw out of a `for await` body does not
+   call return() (it routes through the regenerator _catch). */
+
+function _nde55mk() {  // sync iterator that records return()
+    var i = 0, st = { returned: false };
+    var it = {
+        next: function () { return { value: i++, done: i > 100 }; },
+        "return": function (v) { st.returned = true; return { value: v, done: true }; }
+    };
+    if (typeof Symbol !== 'undefined' && Symbol.iterator) it[Symbol.iterator] = function () { return this; };
+    return { it: it, st: st };
+}
+
+testFeature("NDE.55 - for-of break calls iter.return()", function() {
+    var m = _nde55mk();
+    for (var x of m.it) { if (x >= 3) break; }
+    return m.st.returned === true;
+});
+
+testFeature("NDE.55 - for-of return calls iter.return()", function() {
+    var m = _nde55mk();
+    (function () { for (var x of m.it) { if (x >= 3) return; } })();
+    return m.st.returned === true;
+});
+
+testFeature("NDE.55 - for-of throw calls iter.return()", function() {
+    var m = _nde55mk();
+    try { for (var x of m.it) { if (x >= 3) throw new Error('e'); } } catch (_) {}
+    return m.st.returned === true;
+});
+
+testFeature("NDE.55 - for-of natural end does NOT call return()", function() {
+    var i = 0, st = { returned: false };
+    var it = { next: function () { return { value: i++, done: i > 3 }; },
+               "return": function (v) { st.returned = true; return { value: v, done: true }; } };
+    if (typeof Symbol !== 'undefined' && Symbol.iterator) it[Symbol.iterator] = function () { return this; };
+    var sum = 0; for (var x of it) sum += x;
+    return st.returned === false && sum === 3;   // 0+1+2
+});
+
+testFeature("NDE.55 - plain array for-of break: no return attempted", function() {
+    var sum = 0; for (var v of [10, 20, 30]) { sum += v; if (v >= 20) break; }
+    return sum === 30;   // doesn't throw; arrays have no custom return()
+});
+
+testFeature("NDE.55 - destructure for-of break calls return()", function() {
+    var i = 0, data = [[1, 'a'], [2, 'b'], [3, 'c']], st = { returned: false };
+    var it = { next: function () { return i >= data.length ? { value: undefined, done: true } : { value: data[i++], done: false }; },
+               "return": function (v) { st.returned = true; return { value: v, done: true }; } };
+    if (typeof Symbol !== 'undefined' && Symbol.iterator) it[Symbol.iterator] = function () { return this; };
+    for (var [n, s] of it) { if (n >= 2) break; }
+    return st.returned === true;
+});
+
+testFeature("NDE.55 - for-await-of break calls iter.return()", function() {
+    return (async function () {
+        var i = 0, st = { returned: false };
+        var it = { next: function () { var v = i++; return Promise.resolve({ value: v, done: v >= 100 }); },
+                   "return": function (v) { st.returned = true; return Promise.resolve({ value: v, done: true }); } };
+        if (typeof Symbol !== 'undefined' && Symbol.asyncIterator) it[Symbol.asyncIterator] = function () { return this; };
+        for await (var x of it) { if (x >= 3) break; }
+        return st.returned === true;
+    })();
+});
+
+testFeature("NDE.55 - for-await-of return calls iter.return() and propagates value", function() {
+    return (async function () {
+        var i = 0, st = { returned: false };
+        var it = { next: function () { var v = i++; return Promise.resolve({ value: v, done: v >= 100 }); },
+                   "return": function (v) { st.returned = true; return Promise.resolve({ value: v, done: true }); } };
+        if (typeof Symbol !== 'undefined' && Symbol.asyncIterator) it[Symbol.asyncIterator] = function () { return this; };
+        var r = await (async function () { for await (var x of it) { if (x >= 3) return 'E' + x; } return 'nat'; })();
+        return st.returned === true && r === 'E3';
+    })();
+});
+
+testFeature("NDE.55 - for-await-of natural end does NOT call return()", function() {
+    return (async function () {
+        var i = 0, st = { returned: false };
+        var it = { next: function () { var v = i++; return Promise.resolve({ value: v, done: v >= 3 }); },
+                   "return": function (v) { st.returned = true; return Promise.resolve({ value: v, done: true }); } };
+        if (typeof Symbol !== 'undefined' && Symbol.asyncIterator) it[Symbol.asyncIterator] = function () { return this; };
+        var got = []; for await (var x of it) got.push(x);
+        return st.returned === false && got.join(',') === '0,1,2';
+    })();
+});
+
 
 testFeature("NDE.25 - axios-style rollup namespace spread pattern", function() {
     /* axios.cjs:1789 spreads two namespace objects each built with

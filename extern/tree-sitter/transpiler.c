@@ -210,6 +210,14 @@ static int _tp_pass_idx = 0;
    offset in src at the top of each pass and stores it here. */
 static size_t _tp_polyfill_prefix_len = 0;
 
+/* NDE.53: set per-pass when the module reassigns `require` (`require = …`
+   or `var/let/const require = …`).  In that case the `require("name")` →
+   `_TrN_Sp._req(module,"name")` rewrite is suppressed for the whole module
+   so user interception (lazy-cache / rewire / hooked require) is honoured.
+   Safe since NDE.52: native require now resolves bare names on its own, so
+   an un-rewritten `require("name")` still works. */
+static int _tp_skip_require_rewrite = 0;
+
 
 polyfills allpolys[] = {
     // stolen from babel.  Babel, like this prog is MIT licensed - see https://github.com/babel/babel/blob/main/LICENSE
@@ -5893,6 +5901,82 @@ _emit_stmt_async_lower(rp_string *dst, const char *src, size_t ss, size_t se, TS
         free(av.a);
 }
 
+/* NDE.54: `arguments` (9 chars) aliased to the same-length `_TrN_args`. */
+static int _is_arguments_ident(const char *src, TSNode n)
+{
+    if (strcmp(ts_node_type(n), "identifier") != 0) return 0;
+    size_t s = ts_node_start_byte(n), e = ts_node_end_byte(n);
+    return (e - s == 9 && strncmp(src + s, "arguments", 9) == 0);
+}
+
+/* Collect references to the enclosing function's own `arguments`: descend
+   into arrow functions (which inherit `arguments`) but stop at regular
+   function / generator / method / class boundaries (which have their own).
+   Skips `arguments` used as a member property (`x.arguments`) or an object
+   key (`{arguments: …}`). */
+static void _collect_arguments_shallow(TSNode node, const char *src, _AsyncNodeVec *out)
+{
+    const char *t = ts_node_type(node);
+    if ((strstr(t, "function") != NULL && strcmp(t, "arrow_function") != 0) ||
+        strstr(t, "class") != NULL || strstr(t, "method") != NULL)
+        return;
+
+    if (_is_arguments_ident(src, node))
+    {
+        TSNode parent = ts_node_parent(node);
+        int skip = 0;
+        if (!ts_node_is_null(parent))
+        {
+            const char *pt = ts_node_type(parent);
+            if (strcmp(pt, "member_expression") == 0)
+            {
+                TSNode prop = ts_node_child_by_field_name(parent, "property", 8);
+                if (!ts_node_is_null(prop) && ts_node_eq(prop, node)) skip = 1;
+            }
+            else if (strcmp(pt, "pair") == 0 || strcmp(pt, "pair_pattern") == 0)
+            {
+                TSNode key = ts_node_child_by_field_name(parent, "key", 3);
+                if (!ts_node_is_null(key) && ts_node_eq(key, node)) skip = 1;
+            }
+        }
+        if (!skip) _anv_push(out, node);
+        return;
+    }
+
+    uint32_t cc = ts_node_child_count(node);
+    for (uint32_t i = 0; i < cc; i++)
+        _collect_arguments_shallow(ts_node_child(node, i), src, out);
+}
+
+/* NDE.54: if `body` references the function's own `arguments`, return a
+   malloc'd copy of src[0..body_end] with each reference overwritten by the
+   same-length alias `_TrN_args`, and set *needs_capture.  The same length
+   keeps every AST byte-offset valid, so the regenerator body emit reads the
+   alias (a closure var captured in _TrN_callee, where `arguments` is the
+   real call args) instead of the innerFn's `[_TrN_context]` frame.  Returns
+   NULL with *needs_capture=0 when there are no references (caller keeps the
+   original src). */
+static char *_arguments_alias_src(const char *src, TSNode body, int *needs_capture)
+{
+    *needs_capture = 0;
+    _AsyncNodeVec av = {0};
+    _collect_arguments_shallow(body, src, &av);
+    if (av.len == 0) { if (av.a) free(av.a); return NULL; }
+
+    size_t body_end = ts_node_end_byte(body);
+    char *copy = malloc(body_end + 1);
+    memcpy(copy, src, body_end);
+    copy[body_end] = '\0';
+    for (size_t i = 0; i < av.len; i++)
+    {
+        size_t p = ts_node_start_byte(av.a[i]);
+        memcpy(copy + p, "_TrN_args", 9);   /* same length as "arguments" */
+    }
+    if (av.a) free(av.a);
+    *needs_capture = 1;
+    return copy;
+}
+
 // Build the body: return _TrN_Sp.regeneratorRuntime.wrap(function
 // _TrN_callee$(_context){while(1){switch(_TrN_context.prev=_TrN_context.next){case 0: ... }} , _callee);
 static char *_build_regenerator_switch_body(const char *src, TSNode body)
@@ -5900,6 +5984,12 @@ static char *_build_regenerator_switch_body(const char *src, TSNode body)
     rp_string *out = rp_string_new(384);
 
     int next_label = 0;
+
+    /* NDE.54: alias the function's own `arguments` to `_TrN_args` so body
+       references don't read the regenerator innerFn's frame. */
+    int args_capture = 0;
+    char *args_src = _arguments_alias_src(src, body, &args_capture);
+    if (args_src) src = args_src;
 
     // Hoist var/let/const declarations so they persist across _TrN_callee$ invocations via closure
     char *hoisted = _collect_body_var_names(src, body);
@@ -5910,6 +6000,11 @@ static char *_build_regenerator_switch_body(const char *src, TSNode body)
         rp_string_puts(out, ";");
         free(hoisted);
     }
+
+    /* Capture in _TrN_callee scope (where `arguments` is the real call
+       args); the body reads the `_TrN_args` closure alias. */
+    if (args_capture)
+        rp_string_puts(out, "var _TrN_args = arguments;");
 
     rp_string_puts(
         out,
@@ -5986,6 +6081,7 @@ static char *_build_regenerator_switch_body(const char *src, TSNode body)
     rp_string_puts(out, ":case \"end\":return _TrN_context.stop();}}}, _TrN_callee, this);");
     char *ret = rp_string_steal(out);
     out=rp_string_free(out);
+    if (args_src) free(args_src);
     return ret;
 }
 static void _append_params_sig(rp_string *out, const char *src, TSNode func_like)
@@ -8190,6 +8286,21 @@ static void _emit_yield_body_range(rp_string *out, const char *src, TSNode block
             int incr_label = *p_next_label;
             *p_next_label += 3;
             int exit_label = *p_next_label;
+            /* NDE.55: for-of / for-await-of route `break` through a cleanup
+               case that calls iter.return() (the spec contract on abrupt
+               completion).  Natural completion (iterator done) jumps
+               straight to EXIT and skips it.  for-in needs no cleanup. */
+            int cleanup_label = 0, cleanup_after_label = 0;
+            if (is_of)
+            {
+                *p_next_label += 3;
+                cleanup_label = *p_next_label;
+                if (is_await_of)
+                {
+                    *p_next_label += 3;
+                    cleanup_after_label = *p_next_label;
+                }
+            }
 
             char coll_name[48], idx_name[48];
             snprintf(coll_name, sizeof(coll_name), "_TrN_context._fx%d", test_label);
@@ -8345,16 +8456,31 @@ static void _emit_yield_body_range(rp_string *out, const char *src, TSNode block
                 }
             }
 
-            LoopCtx forctx = { incr_label, exit_label, pending_label, pending_label_len, ctx };
+            /* NDE.55: `break` (forctx.exit_case) routes through the cleanup
+               case for for-of/for-await-of so iter.return() is called. */
+            LoopCtx forctx = { incr_label, (is_of ? cleanup_label : exit_label),
+                               pending_label, pending_label_len, ctx };
+            /* NDE.55: route `return` from inside a for-of/for-await-of body
+               through the cleanup case too (so iter.return() runs first),
+               then continue to the enclosing finally / actual return.  Done
+               by handing the body a FinCtx whose finally_case is cleanup. */
+            FinCtx forfin;
+            FinCtx *body_fctx = fctx;
+            if (is_of)
+            {
+                forfin.finally_case = cleanup_label;
+                forfin.outer = fctx;
+                body_fctx = &forfin;
+            }
             rp_string *fbuf = rp_string_new(256);
             if (!ts_node_is_null(fbody))
             {
                 if (strcmp(ts_node_type(fbody), "statement_block") == 0)
-                    _emit_yield_body(fbuf, src, fbody, &forctx, fctx, p_next_label);
+                    _emit_yield_body(fbuf, src, fbody, &forctx, body_fctx, p_next_label);
                 else
                 {
                     size_t bs = ts_node_start_byte(fbody), be = ts_node_end_byte(fbody);
-                    _emit_stmt_yield_lower(fbuf, src, bs, be, fbody, &forctx, fctx, p_next_label);
+                    _emit_stmt_yield_lower(fbuf, src, bs, be, fbody, &forctx, body_fctx, p_next_label);
                 }
             }
             rp_string_puts(out, fbuf->str);
@@ -8370,6 +8496,41 @@ static void _emit_yield_body_range(rp_string *out, const char *src, TSNode block
             else
                 rp_string_appendf(out, "case %d:%s++;_TrN_context.next=%d;break;",
                                   incr_label, idx_name, test_label);
+            /* NDE.55 case CLEANUP: `break` out of a for-of / for-await-of
+               lands here.  Call iter.return() when the iterator exposes one
+               (a plain-array `_iter` shim has none, so it's a no-op there);
+               for-await-of awaits it.  Then fall through to EXIT.  (Natural
+               completion jumps straight to EXIT and skips this.) */
+            /* `ret_cont` continues a `return` that flowed into cleanup
+               (_rret set): route to the enclosing finally if there is one,
+               else perform the actual return.  A `break` (no _rret) skips it
+               and falls to EXIT. */
+            char ret_cont[160];
+            if (fctx)
+                snprintf(ret_cont, sizeof(ret_cont),
+                    "if(_TrN_context._rret){_TrN_context.next=%d;break;}",
+                    fctx->finally_case);
+            else
+                snprintf(ret_cont, sizeof(ret_cont),
+                    "if(_TrN_context._rret){_TrN_context._rret=false;return _TrN_context.rval;}");
+
+            if (is_of && is_await_of)
+            {
+                const char *aw_open  = _g_in_async_gen ? "_TrN_Sp.__await(" : "";
+                const char *aw_close = _g_in_async_gen ? ")"                : "";
+                rp_string_appendf(out,
+                    "case %d:if(%s&&%s['return']!=null){_TrN_context._y=true;_TrN_context.next=%d;return %s%s['return']()%s;}_TrN_context.next=%d;break;",
+                    cleanup_label, coll_name, coll_name, cleanup_after_label,
+                    aw_open, coll_name, aw_close, cleanup_after_label);
+                rp_string_appendf(out, "case %d:%s_TrN_context.next=%d;break;",
+                                  cleanup_after_label, ret_cont, exit_label);
+            }
+            else if (is_of)
+            {
+                rp_string_appendf(out,
+                    "case %d:if(%s&&%s['return']!=null)%s['return']();%s_TrN_context.next=%d;break;",
+                    cleanup_label, coll_name, coll_name, coll_name, ret_cont, exit_label);
+            }
             /* case EXIT */
             rp_string_appendf(out, "case %d:", exit_label);
         }
@@ -8521,6 +8682,11 @@ static char *_build_regenerator_switch_body_for_yield(const char *src, TSNode bo
 
     int next_label = 0;
 
+    /* NDE.54: alias the function's own `arguments` (see async variant). */
+    int args_capture = 0;
+    char *args_src = _arguments_alias_src(src, body, &args_capture);
+    if (args_src) src = args_src;
+
     // Hoist var/let/const declarations so they persist across _TrN_callee$ invocations via closure
     char *hoisted = _collect_body_var_names(src, body);
     if (hoisted)
@@ -8530,6 +8696,9 @@ static char *_build_regenerator_switch_body_for_yield(const char *src, TSNode bo
         rp_string_puts(out, ";");
         free(hoisted);
     }
+
+    if (args_capture)
+        rp_string_puts(out, "var _TrN_args = arguments;");
 
     rp_string_puts(
         out,
@@ -8594,6 +8763,7 @@ static char *_build_regenerator_switch_body_for_yield(const char *src, TSNode bo
     rp_string_puts(out, ":case \"end\":return _TrN_context.stop();}}}, null, this);");
     char *ret = rp_string_steal(out);
     out=rp_string_free(out);
+    if (args_src) free(args_src);
     return ret;
 }
 
@@ -11067,7 +11237,11 @@ static int rewrite_for_of_destructuring(EditList *edits, const char *src, TSNode
            shape inside `if (typeof onAnchor === 'function')`. */
         rp_string_puts(out, "{var _TrN_x = ");
         rp_string_putsn(out, src + rs, re - rs);
-        rp_string_puts(out, ", _TrN_it = (typeof Symbol!=='undefined'&&typeof _TrN_x[Symbol.iterator]==='function')?_TrN_x[Symbol.iterator]():null, _TrN_i = 0, _TrN_r; while(_TrN_it?!(_TrN_r=_TrN_it.next()).done:_TrN_i<_TrN_x.length) { var ");
+        /* NDE.55: completion tracking for iter.return() (see
+           rewrite_for_of_simple).  `_TrN_dof*` prefix is distinct from the
+           simple path's `_TrN_ofn*` so a simple for-of nested in a
+           destructuring one (or vice versa) doesn't clash. */
+        rp_string_puts(out, ", _TrN_it = (typeof Symbol!=='undefined'&&typeof _TrN_x[Symbol.iterator]==='function')?_TrN_x[Symbol.iterator]():null, _TrN_i = 0, _TrN_r, _TrN_dofn = true, _TrN_dofe = false, _TrN_dofv; try {while(_TrN_it?!(_TrN_dofn=(_TrN_r=_TrN_it.next()).done):_TrN_i<_TrN_x.length) { var ");
         rp_string_puts(out, tmpvar);
         rp_string_puts(out, " = _TrN_it?_TrN_r.value:_TrN_x[_TrN_i++]; ");
 
@@ -11093,7 +11267,10 @@ static int rewrite_for_of_destructuring(EditList *edits, const char *src, TSNode
             rp_string_putsn(out, src + bs + 1, (be - 1) - (bs + 1));
         else
             rp_string_putsn(out, src + bs, be - bs);
-        rp_string_puts(out, " }}"); /* close while, then outer NDE.34 wrap */
+        /* NDE.55: mark normal completion, close while + try, then
+           catch/finally that calls iter.return() on abrupt completion. */
+        rp_string_puts(out,
+            " _TrN_dofn = true;}} catch (_TrN_dofc) { _TrN_dofe = true; _TrN_dofv = _TrN_dofc; } finally { try { if (_TrN_it && !_TrN_dofn && _TrN_it['return'] != null) _TrN_it['return'](); } finally { if (_TrN_dofe) throw _TrN_dofv; } }}"); /* close NDE.34 outer wrap */
 
         binds_free(&binds);
         add_edit_take_ownership(edits, fs, fe, rp_string_steal(out), claimed);
@@ -11349,9 +11526,15 @@ static int rewrite_for_of_destructuring(EditList *edits, const char *src, TSNode
        advanced lazily; mutations during the body can affect later
        steps because `_it.next()` runs after the body returns. */
     char nm_x[32], nm_it[32], nm_r[32];
+    /* NDE.55: completion tracking for iter.return() on abrupt completion. */
+    char nm_norm[32], nm_err[32], nm_ev[32], nm_cat[32];
     snprintf(nm_x,  sizeof(nm_x),  "_TrN_x%u",  ctr);
     snprintf(nm_it, sizeof(nm_it), "_TrN_it%u", ctr);
     snprintf(nm_r,  sizeof(nm_r),  "_TrN_r%u",  ctr);
+    snprintf(nm_norm, sizeof(nm_norm), "_TrN_aofn%u", ctr);
+    snprintf(nm_err,  sizeof(nm_err),  "_TrN_aofe%u", ctr);
+    snprintf(nm_ev,   sizeof(nm_ev),   "_TrN_aofv%u", ctr);
+    snprintf(nm_cat,  sizeof(nm_cat),  "_TrN_aofc%u", ctr);
 
     rp_string_puts(out, "var ");
     rp_string_puts(out, nm_x);
@@ -11359,8 +11542,13 @@ static int rewrite_for_of_destructuring(EditList *edits, const char *src, TSNode
     rp_string_putsn(out, src + rs, re - rs);
     rp_string_appendf(out,
         ", %s = (typeof Symbol!=='undefined'&&%s!=null&&typeof %s[Symbol.iterator]==='function')"
-        "?%s[Symbol.iterator]():null, %s = [], %s; ",
-        nm_it, nm_x, nm_x, nm_x, nm_pairs, nm_r);
+        "?%s[Symbol.iterator]():null, %s = [], %s, %s = false, %s = false, %s; ",
+        nm_it, nm_x, nm_x, nm_x, nm_pairs, nm_r, nm_norm, nm_err, nm_ev);
+
+    /* NDE.55: wrap the loop so iter.return() fires on abrupt completion.
+       The natural-done breaks below set %s_norm=true first; any other exit
+       (user break / return sentinel / throw) leaves it false → return(). */
+    rp_string_puts(out, "try {");
 
     /* Lazy loop header: advance iterator (or check array length) BEFORE
        the body runs, then dispatch _loopN.call(this).  Break out when
@@ -11371,10 +11559,10 @@ static int rewrite_for_of_destructuring(EditList *edits, const char *src, TSNode
     rp_string_puts(out, nm_i);
     rp_string_puts(out, "++) { ");
     rp_string_appendf(out,
-        "if (%s) { %s = %s.next(); if (%s.done) break; %s[%s] = %s.value; } "
-        "else { if (%s >= %s.length) break; %s[%s] = %s[%s]; } ",
-        nm_it, nm_r, nm_it, nm_r, nm_pairs, nm_i, nm_r,
-        nm_i, nm_x, nm_pairs, nm_i, nm_x, nm_i);
+        "if (%s) { %s = %s.next(); if (%s.done) { %s = true; break; } %s[%s] = %s.value; } "
+        "else { if (%s >= %s.length) { %s = true; break; } %s[%s] = %s[%s]; } ",
+        nm_it, nm_r, nm_it, nm_r, nm_norm, nm_pairs, nm_i, nm_r,
+        nm_i, nm_x, nm_norm, nm_pairs, nm_i, nm_x, nm_i);
     if (use_sentinels) {
         /* Capture the wrap's return value and dispatch.  `.call(this)`
            still propagates `this` for class-method bodies. */
@@ -11421,6 +11609,11 @@ static int rewrite_for_of_destructuring(EditList *edits, const char *src, TSNode
            (sloppy), breaking ajv-style code like `this.opts.es5`. */
         rp_string_puts(out, ".call(this); }");
     }
+    /* NDE.55: close try; catch a thrown body error and a finally that calls
+       iter.return() on abrupt completion before re-propagating. */
+    rp_string_appendf(out,
+        "} catch (%s) { %s = true; %s = %s; } finally { try { if (%s && !%s && %s['return'] != null) %s['return'](); } finally { if (%s) throw %s; } }",
+        nm_cat, nm_err, nm_ev, nm_cat, nm_it, nm_norm, nm_it, nm_it, nm_err, nm_ev);
     rp_string_puts(out, "}"); /* close NDE.34 outer wrap */
 
     free_edits(&sent_edits);
@@ -14187,6 +14380,8 @@ static int rewrite_for_of_simple(EditList *edits, const char *src, TSNode forof,
     // Fresh temps
 #define TPSMALLBUFSZ 32
     char ibuf[TPSMALLBUFSZ], xbuf[TPSMALLBUFSZ], itbuf[TPSMALLBUFSZ+1], rbuf[TPSMALLBUFSZ];
+    /* NDE.55: completion-tracking temps for the spec `iter.return()` call. */
+    char normbuf[TPSMALLBUFSZ], errbuf[TPSMALLBUFSZ], evbuf[TPSMALLBUFSZ+1], cbuf[TPSMALLBUFSZ+1];
     make_fresh_forof_names(ibuf, sizeof ibuf, xbuf, sizeof xbuf);
     // derive iterator and result names from the same counter suffix
     {
@@ -14195,6 +14390,10 @@ static int rewrite_for_of_simple(EditList *edits, const char *src, TSNode forof,
         const char *suffix = ibuf + 6;
         snprintf(itbuf, TPSMALLBUFSZ+1, "_TrN_it%s", suffix);
         snprintf(rbuf, TPSMALLBUFSZ, "_TrN_r%s", suffix);
+        snprintf(normbuf, TPSMALLBUFSZ, "_TrN_ofn%s", suffix);
+        snprintf(errbuf,  TPSMALLBUFSZ, "_TrN_ofe%s", suffix);
+        snprintf(evbuf,   TPSMALLBUFSZ+1, "_TrN_ofv%s", suffix);
+        snprintf(cbuf,    TPSMALLBUFSZ+1, "_TrN_ofc%s", suffix);
     }
 
     // Build replacement — supports both arrays and iterables (Symbol.iterator)
@@ -14213,6 +14412,14 @@ static int rewrite_for_of_simple(EditList *edits, const char *src, TSNode forof,
     rp_string_appendf(out,
         ", %s = (typeof Symbol!=='undefined'&&typeof %s[Symbol.iterator]==='function')?%s[Symbol.iterator]():null, %s = 0, %s; ",
         itbuf, xbuf, xbuf, ibuf, rbuf);
+    /* NDE.55: track normal vs abrupt completion so the spec-mandated
+       `iter.return()` fires on break / return / throw.  `%s_norm` starts
+       true; the while condition sets it to the iterator step's `.done`
+       (false while a body runs).  The trailing `%s_norm = true;` after a
+       normal body pass means a subsequent `next()` throwing won't trigger
+       return().  Array (length-based) iteration leaves `_norm` true and
+       `_it` null, so return() is never attempted there. */
+    rp_string_appendf(out, "var %s = true, %s = false, %s; try {", normbuf, errbuf, evbuf);
     /* NDE.28: emit the outer label INSIDE the wrap so `continue <LBL>`
        inside the body resolves to the while loop (and not the dropped
        outer label that used to apply to the brace-wrapped block). */
@@ -14222,8 +14429,8 @@ static int rewrite_for_of_simple(EditList *edits, const char *src, TSNode forof,
         rp_string_putc(out, ':');
     }
     rp_string_appendf(out,
-        "while(%s?!(%s=%s.next()).done:%s<%s.length) {",
-        itbuf, rbuf, itbuf, ibuf, xbuf);
+        "while(%s?!(%s=(%s=%s.next()).done):%s<%s.length) {",
+        itbuf, normbuf, rbuf, itbuf, ibuf, xbuf);
 
     // Assignment inside loop body
     if (is_decl)
@@ -14260,7 +14467,15 @@ static int rewrite_for_of_simple(EditList *edits, const char *src, TSNode forof,
         rp_string_putsn(out, src + ns, ne - ns);
         rp_string_puts(out, ");");
     }
-    rp_string_puts(out, "}}");  /* close while + NDE.23 outer wrap */
+    /* NDE.55: normal body fall-through marks the iteration complete. */
+    rp_string_appendf(out, " %s = true;", normbuf);
+    /* close while (`}`) and try (`}`); then catch a thrown body error, and
+       a finally that calls iter.return() on abrupt completion before
+       re-propagating any caught error. */
+    rp_string_appendf(out,
+        "}} catch (%s) { %s = true; %s = %s; } finally { try { if (%s && !%s && %s['return'] != null) %s['return'](); } finally { if (%s) throw %s; } }",
+        cbuf, errbuf, evbuf, cbuf, itbuf, normbuf, itbuf, itbuf, errbuf, evbuf);
+    rp_string_puts(out, "}");  /* close NDE.23 outer wrap */
 
     // Replace the for-of node (or the wrapping labeled_statement, when
     // present — NDE.28 swallows the `<label>:` prefix so it's not left
@@ -15198,11 +15413,54 @@ static int _detect_require_str_call(const char *src, TSNode call_expr,
     return *spec_len_out > 0;
 }
 
+/* NDE.53: true if `n` is the bare identifier `require`. */
+static int _is_require_identifier(const char *src, TSNode n)
+{
+    if (strcmp(ts_node_type(n), "identifier") != 0) return 0;
+    size_t s = ts_node_start_byte(n), e = ts_node_end_byte(n);
+    return (e - s == 7 && strncmp(src + s, "require", 7) == 0);
+}
+
+/* NDE.53: does this module reassign `require` anywhere — `require = …`
+   (assignment to the bare identifier) or `var/let/const require = …`?
+   When it does, the `require("name")` → `_TrN_Sp._req(...)` rewrite is
+   suppressed module-wide so the user's rebound require is what actually
+   runs (lazy-cache / rewire / instrumentation patterns).  Member targets
+   (`obj.require = …`) and property keys are excluded by requiring a bare
+   identifier on the LHS. */
+static int _module_reassigns_require(TSNode node, const char *src)
+{
+    const char *t = ts_node_type(node);
+    if (strcmp(t, "assignment_expression") == 0)
+    {
+        TSNode left = ts_node_child_by_field_name(node, "left", 4);
+        if (!ts_node_is_null(left) && _is_require_identifier(src, left))
+            return 1;
+    }
+    else if (strcmp(t, "variable_declarator") == 0)
+    {
+        TSNode name = ts_node_child_by_field_name(node, "name", 4);
+        if (!ts_node_is_null(name) && _is_require_identifier(src, name))
+            return 1;
+    }
+    uint32_t cc = ts_node_child_count(node);
+    for (uint32_t i = 0; i < cc; i++)
+        if (_module_reassigns_require(ts_node_child(node, i), src))
+            return 1;
+    return 0;
+}
+
 static int rewrite_bare_require(EditList *edits, const char *src, TSNode call_expr,
                                 RangeList *claimed, uint32_t *polysneeded, int overlaps)
 {
     size_t fs, a_s, spec_len;
     const char *spec;
+
+    /* NDE.53: leave `require(...)` calls alone in a module that rebinds
+       `require`, so the rebound value is what runs. */
+    if (_tp_skip_require_rewrite)
+        return 0;
+
     if (!_detect_require_str_call(src, call_expr, &fs, &a_s, &spec, &spec_len))
         return 0;
 
@@ -15584,6 +15842,10 @@ RP_ParseRes transpiler_rewrite_pass(EditList *edits, const char *src, size_t src
     ret.transpiled = NULL;
 
     *unresolved = 0;
+
+    /* NDE.53: decide once per pass whether to suppress the require rewrite
+       for this module (it rebinds `require`). */
+    _tp_skip_require_rewrite = _module_reassigns_require(root, src);
 
     rl_init(&claimed);
     cur = ts_tree_cursor_new(root);

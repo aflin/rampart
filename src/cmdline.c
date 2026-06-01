@@ -1944,14 +1944,84 @@ static int parse_bool_opt(const char *opts, const char *name, int *out)
    set per the source's "functionSources" option (defaults to 1).
    On transpile path, *opts_consumed is set to 1 and the caller need not
    re-parse opts.  Internal helper; the public entry points below use it. */
+/* NDE.56: the `functionSources` option carried by a
+   "use transpilerGlobally: {…}" directive, so it applies to the whole
+   transpiled closure (every required module that lacks its own
+   directive), not just the file that declared it.  Defaults to 1 (and
+   stays 1 for the bare `-t` flag, which carries no options). */
+static int duk_rp_global_fn_sources = 1;
+
+/* The marker the transpiler/babel emit at the head of their cache output
+   (`.transpiled.js` / `.babel.js`).  A file carrying it has already been
+   processed and must NOT be run through a second pass — e.g. a renamed
+   `.transpiled.js` require()d from a script under `-t` /
+   "use transpilerGlobally". */
+#define RP_NOTRANSPILE_MARKER "\"noTranspile\";"
+
+/* Non-destructive: does `src` carry a `"noTranspile"` directive?  Follows
+   the directive-prologue rules — it must appear (as a bare string-literal
+   statement, in any order among other leading directives like
+   "use strict") after an optional `#!` line and any leading comments,
+   before the first non-directive statement. */
+static int has_notranspile_marker(const char *src)
+{
+    const char *s = src;
+    if (!s) return 0;
+    if (s[0] == '#' && s[1] == '!')
+    {
+        const char *nl = strchr(s, '\n');
+        if (!nl) return 0;
+        s = nl + 1;
+    }
+    for (;;)
+    {
+        while (isspace((unsigned char)*s)) s++;
+        if (s[0] == '/' && s[1] == '/')
+        {
+            while (*s && *s != '\n') s++;
+            continue;
+        }
+        if (s[0] == '/' && s[1] == '*')
+        {
+            const char *e = strstr(s, "*/");
+            if (!e) return 0;
+            s = e + 2;
+            continue;
+        }
+        char q = *s;
+        if (q != '"' && q != '\'') return 0;  /* not a string directive → done */
+        const char *p = s + 1;
+        while (*p && *p != q) p++;
+        if (*p != q) return 0;
+        if ((size_t)(p - (s + 1)) == 11 && strncmp(s + 1, "noTranspile", 11) == 0)
+            return 1;
+        s = p + 1;                      /* past the closing quote */
+        while (isspace((unsigned char)*s)) s++;
+        if (*s == ';') s++;             /* optional statement terminator */
+    }
+}
+
 static int _decide_transpile(char *src, int *fn_sources_out)
 {
     char *opts = NULL;
     int fn_sources = 1;
 
+    /* Already-processed output (carries the noTranspile marker) — never
+       run it through a second pass, regardless of -t / global directive. */
+    if (has_notranspile_marker(src))
+        return 0;
+
     if (duk_rp_globaltranspile)
     {
-        *fn_sources_out = fn_sources;
+        /* NDE.56: global transpile is already on (set by `-t` or by an
+           earlier file's "use transpilerGlobally").  Inherit the option the
+           global directive carried (`duk_rp_global_fn_sources`) so it
+           applies to the whole closure — every required module.  Previously
+           this early return ignored options and defaulted to 1, so
+           "use transpilerGlobally: {functionSources:false}" was a no-op. */
+        *fn_sources_out = duk_rp_global_fn_sources;
+        (void)fn_sources;
+        (void)opts;
         return 1;
     }
 
@@ -1962,7 +2032,13 @@ static int _decide_transpile(char *src, int *fn_sources_out)
         return 0;
     }
     if (strcasecmp("transpilerGlobally", use) == 0)
+    {
         duk_rp_globaltranspile = 1;
+        /* Remember the global directive's option for the rest of the
+           closure (modules that carry no directive of their own). */
+        if (opts)
+            parse_bool_opt(opts, "functionSources", &duk_rp_global_fn_sources);
+    }
     else if (strcmp("transpiler", use) != 0)
     {
         free(use);
@@ -1993,6 +2069,22 @@ RP_ParseRes rp_get_transpiled(char *src, int *is_tickified)
     ret = transpile((const char *)src, src_sz, 0);
     if(is_tickified)
         *is_tickified=0;
+    /* Prefix the output with the noTranspile marker (no newline, so source
+       line numbers are preserved) so a renamed `.transpiled.js` won't be
+       re-transpiled.  It's a no-op string-literal directive at runtime. */
+    if (ret.transpiled && !ret.err)
+    {
+        size_t mlen = strlen(RP_NOTRANSPILE_MARKER);
+        size_t tlen = strlen(ret.transpiled);
+        char *marked = malloc(mlen + tlen + 1);
+        if (marked)
+        {
+            memcpy(marked, RP_NOTRANSPILE_MARKER, mlen);
+            memcpy(marked + mlen, ret.transpiled, tlen + 1);
+            free(ret.transpiled);
+            ret.transpiled = marked;
+        }
+    }
     return ret;
 
     do_tickify:
@@ -2320,6 +2412,11 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
 
     babelsrc[0]='\0';
 
+    /* noTranspile marker: this source is already processed output (e.g. a
+       renamed `.babel.js` / `.transpiled.js`).  Don't babelize it again. */
+    if (has_notranspile_marker(src))
+        return NULL;
+
     if(duk_rp_globalbabel)
     {
         char *isbabel = strstr(fn, "/babel.js");
@@ -2476,9 +2573,14 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
         }
         else
         {
-            size_t wrote;
-            wrote=fwrite(babelcode,1,(size_t)bsz,f);
-            if(wrote!=(size_t)bsz)
+            /* Prefix the cache with the noTranspile marker so a renamed
+               `.babel.js` isn't re-processed.  The eval-only 13-byte skip
+               (`"use strict";`) doesn't apply on this module/main path, so
+               prefixing here is safe; the marker is a no-op directive. */
+            size_t wrote, mlen = strlen(RP_NOTRANSPILE_MARKER);
+            wrote  = fwrite(RP_NOTRANSPILE_MARKER, 1, mlen, f);
+            wrote += fwrite(babelcode, 1, (size_t)bsz, f);
+            if(wrote!=(size_t)bsz + mlen)
             {
                 fprintf(stderr,"error fwrite(): error writing file '%s'\n",babelsrc);
                 if(wrote>0 && unlink(babelsrc))
