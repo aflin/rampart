@@ -793,12 +793,107 @@ static int load_so_module(duk_context *ctx, const char *file, duk_idx_t module_i
     return 1;
 }
 
+/* Load a `.json` module: read the file, JSON.parse it, and set the
+   result as module.exports — matching Node's built-in `.json` loader.
+   Without this, require()ing a JSON file compiled it as JavaScript and
+   threw a parse error.  Honours :zip:/ entries like load_js_module. */
+static int load_json_module(duk_context *ctx, const char *file, duk_idx_t module_idx, int is_server)
+{
+    struct stat sb={0};
+    char *buffer = NULL;
+    char *freebuffer = NULL;
+    size_t len = 0;
+    FILE *f = NULL;
+
+    if (strncmp(file, ":zip:/", 6) == 0)
+    {
+        const rp_zip_entry *e = rp_zip_resolve(file + 6);
+        if (!e)
+            MOD_THROW(ctx, DUK_ERR_ERROR, "Could not load zip module %s: not in archive\n", file);
+        unsigned char *zbuf = NULL;
+        size_t zlen = 0;
+        if (rp_zip_read(e, &zbuf, &zlen) != 0)
+            MOD_THROW(ctx, DUK_ERR_ERROR, "Could not read zip module %s\n", file);
+        buffer = (char *)zbuf;
+        freebuffer = buffer;
+        len = zlen;
+        sb.st_size  = (off_t)zlen;
+        sb.st_mtime = 1;
+        sb.st_atime = 1;
+    }
+    else
+    {
+        if (stat(file, &sb))
+            MOD_THROW(ctx, DUK_ERR_ERROR, "Could not open %s: %s\n", file, strerror(errno));
+
+        f = fopen(file, "r");
+        if (!f)
+            MOD_THROW(ctx, DUK_ERR_ERROR, "Could not open %s: %s\n", file, strerror(errno));
+
+        buffer = malloc(sb.st_size + 1);
+        freebuffer = buffer;
+
+        len = fread(buffer, 1, sb.st_size, f);
+        if (sb.st_size != (off_t)len)
+        {
+            fclose(f);
+            free(buffer);
+            MOD_THROW(ctx, DUK_ERR_ERROR, "Error loading file %s: %s\n", file, strerror(errno));
+        }
+    }
+    buffer[sb.st_size] = '\0';
+
+    duk_push_number(ctx, sb.st_mtime);
+    duk_put_prop_string(ctx, module_idx, "mtime");
+    duk_push_number(ctx, sb.st_atime);
+    duk_put_prop_string(ctx, module_idx, "atime");
+
+    /* Copy into the duktape heap, free our buffer, then parse. */
+    duk_push_lstring(ctx, buffer, len);
+    if (f) fclose(f);
+    free(freebuffer);
+
+    if (duk_safe_call(ctx, _safe_json_decode, NULL, 1, 1) != 0)
+    {
+        char emcopy[256];
+        snprintf(emcopy, sizeof(emcopy), "%s", duk_safe_to_string(ctx, -1));
+        duk_pop(ctx);
+        MOD_THROW(ctx, DUK_ERR_SYNTAX_ERROR, "Could not parse JSON module %s: %s\n", file, emcopy);
+    }
+
+    /* Parsed value is on top — make it module.exports. */
+    duk_put_prop_string(ctx, module_idx, "exports");
+    return 1;
+}
+
 struct module_loader module_loaders[] = {
-    {".js", &load_js_module},
-    {".so", &load_so_module},
+    {".js",   &load_js_module},
+    /* Node resolves extensionless requires as .js, then .json, then
+       .node (.so here); keep that precedence order. */
+    {".json", &load_json_module},
+    {".so",   &load_so_module},
     // if not known file extension assume javascript
-    {"",    &load_js_module}
+    {"",      &load_js_module}
 };
+
+/* Pick the module_loaders[] index whose extension matches the tail of
+   `path`.  Used after directory resolution settles on a concrete file
+   (index.js/json/so, or a package.json#main target) so the right loader
+   runs.  Falls back to the JS loader (the empty-ext entry) when nothing
+   matches — mirroring "unknown extension => javascript". */
+static int loader_idx_for_path(const char *path)
+{
+    int js_idx = 0;
+    size_t plen = strlen(path);
+    for (int i = 0; i < (int)(sizeof(module_loaders) / sizeof(struct module_loader)); i++)
+    {
+        size_t elen = strlen(module_loaders[i].ext);
+        if (elen == 0) { js_idx = i; continue; }   /* the "" fallback */
+        if (plen >= elen && strcmp(path + plen - elen, module_loaders[i].ext) == 0)
+            return i;
+    }
+    return js_idx;
+}
 
 /* ===== Module dependency tracking =====
    Tracks which files a module depends on (via require()) so that
@@ -998,9 +1093,13 @@ static RPPATH resolve_id(duk_context *ctx, const char *request_id)
         {
             const char *ext = module_loaders[module_loader_idx].ext;
             extlen = strlen(ext);
-            const char *fext = request_id + (strlen(request_id) - extlen);
+            size_t rlen = strlen(request_id);
+            /* Guard the suffix compare: a request shorter than the
+               extension can't end with it, and `rlen - extlen` would
+               underflow (size_t) into a wild pointer. */
+            const char *fext = (rlen >= extlen) ? request_id + (rlen - extlen) : request_id;
 
-            if (extlen && !strcmp(fext, ext)) {
+            if (extlen && rlen >= extlen && !strcmp(fext, ext)) {
                 if (rp_has_zip_payload)
                     rppath = rp_find_zip_path((char*)request_id, "modules/", "lib/rampart_modules/");
                 if (!strlen(rppath.path))
@@ -1067,12 +1166,16 @@ static RPPATH resolve_id(duk_context *ctx, const char *request_id)
     for (module_loader_idx = 0; module_loader_idx < sizeof(module_loaders) / sizeof(struct module_loader); module_loader_idx++)
     {
         const char *fext;
+        size_t rlen;
 
         extlen=strlen(module_loaders[module_loader_idx].ext);
-        fext=request_id + ( strlen(request_id) - extlen  );
+        rlen=strlen(request_id);
+        /* Guard against size_t underflow when the request is shorter
+           than the extension (a short id can't end with it anyway). */
+        fext = (rlen >= extlen) ? request_id + (rlen - extlen) : request_id;
 
         // we have a ".so" or a '.js'
-        if( extlen && !strcmp(fext,module_loaders[module_loader_idx].ext) )
+        if( extlen && rlen >= extlen && !strcmp(fext,module_loaders[module_loader_idx].ext) )
         {
             if (rp_has_zip_payload)
                 rppath = rp_find_zip_path((char*)request_id, "modules/", "lib/rampart_modules/", modpath);
@@ -1108,44 +1211,61 @@ static RPPATH resolve_id(duk_context *ctx, const char *request_id)
 resolved:
 #endif
 
-    /* Directory → package.json#main, then index.js fallback for the JS
-       loader path only.  CommonJS proper doesn't require this, but
-       Node's resolution algorithm does — and most npm packages
-       (xtend → "main":"immutable", various scoped pkgs, etc.) use
-       package.json#main with no index.js at all.  Restricted to the
+    /* Directory → package.json#main, then index.{js,json,so} fallback
+       for the JS loader path only.  CommonJS proper doesn't require
+       this, but Node's resolution algorithm does — and most npm
+       packages (xtend → "main":"immutable", various scoped pkgs, etc.)
+       use package.json#main with no index.js at all.  Restricted to the
        JS loaders (extension ".js" or empty); the .so loader is left
-       untouched. */
+       untouched.  Node's directory index order is index.js, index.json,
+       index.node — we mirror that as index.js, index.json, index.so. */
     if (S_ISDIR(rppath.stat.st_mode) &&
         module_loaders[module_loader_idx].loader == &load_js_module)
     {
         RPPATH viamain = {{0}};
+        int resolved_dir = 0;
         if (try_pkg_main(rppath.path, &viamain)) {
             rppath = viamain;
             id = rppath.path;
+            resolved_dir = 1;
         }
         else
         {
-            char idxpath[PATH_MAX];
-            int n = snprintf(idxpath, sizeof(idxpath), "%s/index.js", rppath.path);
-            struct stat sb;
-            if (n > 0 && n < (int)sizeof(idxpath) && stat(idxpath, &sb) == 0 && !S_ISDIR(sb.st_mode))
+            static const char *idx_suffixes[] = {
+                "/index.js", "/index.json", "/index.so"
+            };
+            for (size_t ci = 0; ci < sizeof(idx_suffixes) / sizeof(idx_suffixes[0]); ci++)
             {
-                strncpy(rppath.path, idxpath, sizeof(rppath.path) - 1);
-                rppath.path[sizeof(rppath.path) - 1] = '\0';
-                rppath.stat = sb;
-                id = rppath.path;
-            }
-            else
-            {
-                /* Directory resolved but no package.json#main and no
-                   index.js inside — fail resolution so the caller's
-                   error message is the usual "Could not resolve module
-                   id" rather than the misleading "Is a directory" from
-                   fread. */
-                rppath.path[0] = '\0';
-                return rppath;
+                char idxpath[PATH_MAX];
+                int n = snprintf(idxpath, sizeof(idxpath), "%s%s",
+                                 rppath.path, idx_suffixes[ci]);
+                struct stat sb;
+                if (n > 0 && n < (int)sizeof(idxpath) &&
+                    stat(idxpath, &sb) == 0 && !S_ISDIR(sb.st_mode))
+                {
+                    strncpy(rppath.path, idxpath, sizeof(rppath.path) - 1);
+                    rppath.path[sizeof(rppath.path) - 1] = '\0';
+                    rppath.stat = sb;
+                    id = rppath.path;
+                    resolved_dir = 1;
+                    break;
+                }
             }
         }
+        if (!resolved_dir)
+        {
+            /* Directory resolved but no package.json#main and no
+               index.{js,json,so} inside — fail resolution so the
+               caller's error message is the usual "Could not resolve
+               module id" rather than the misleading "Is a directory"
+               from fread. */
+            rppath.path[0] = '\0';
+            return rppath;
+        }
+        /* Re-derive the loader from the resolved file's extension so an
+           index.json/index.so (or a package.json#main pointing at one)
+           is handled by the right loader, not always the JS loader. */
+        module_loader_idx = loader_idx_for_path(rppath.path);
     }
 
     duk_push_string(ctx, id);

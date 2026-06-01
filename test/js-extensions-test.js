@@ -990,6 +990,70 @@ testJS("console extras", function() {
 });
 
 
+testJS("require: .json files + directory index resolution", function() {
+    /* Node's CommonJS loader reads `.json` files via JSON.parse and, for
+       a directory, resolves index.js then index.json then index.node;
+       rampart's native loader mirrors that as index.js / index.json /
+       index.so.  rampart-specific (uses rampart file I/O + the native
+       require resolver), so node skips this. */
+    if (!_isRampart) return;
+
+    var u = rampart.utils;
+    var scratch = process.scriptPath + '/tmp-test';
+    if (!u.stat(scratch)) u.mkdir(scratch);
+    var base = scratch + '/jsext_require';
+    u.shell("rm -rf " + base);
+    u.mkdir(base);
+
+    try {
+        /* require('<file>.json') -> parsed object */
+        u.fprintf(base + '/data.json', '%s', '{"who":"data.json","nums":[1,2,3]}');
+        var d = require(base + '/data.json');
+        mustEq(d.who, 'data.json', "require .json returns parsed object");
+        mustEq(d.nums.length, 3, "require .json nested array length");
+        mustEq(d.nums[0] + d.nums[1] + d.nums[2], 6, "require .json values usable");
+
+        /* extensionless require resolves .json (after .js misses) */
+        u.fprintf(base + '/only.json', '%s', '{"who":"only.json"}');
+        mustEq(require(base + '/only').who, 'only.json',
+               "extensionless require falls back to .json");
+
+        /* directory with only index.json (with and without trailing slash) */
+        u.mkdir(base + '/dirjson');
+        u.fprintf(base + '/dirjson/index.json', '%s', '{"who":"index.json"}');
+        mustEq(require(base + '/dirjson').who, 'index.json',
+               "directory resolves index.json");
+        mustEq(require(base + '/dirjson/').who, 'index.json',
+               "directory (trailing slash) resolves index.json");
+
+        /* directory with only index.js */
+        u.mkdir(base + '/dirjs');
+        u.fprintf(base + '/dirjs/index.js', '%s', 'module.exports={who:"index.js"};');
+        mustEq(require(base + '/dirjs').who, 'index.js',
+               "directory resolves index.js");
+
+        /* index.js wins over index.json (Node order: .js, .json, .node) */
+        u.mkdir(base + '/dirboth');
+        u.fprintf(base + '/dirboth/index.js', '%s', 'module.exports={who:"index.js"};');
+        u.fprintf(base + '/dirboth/index.json', '%s', '{"who":"index.json"}');
+        mustEq(require(base + '/dirboth').who, 'index.js',
+               "index.js takes precedence over index.json");
+
+        /* malformed JSON throws (clean error, not compiled as JS) */
+        u.fprintf(base + '/bad.json', '%s', '{ not: valid json,, }');
+        mustThrow(function(){ require(base + '/bad.json'); },
+                  "malformed .json throws");
+
+        /* require caches: second require returns the same object */
+        var a = require(base + '/data.json');
+        var b = require(base + '/data.json');
+        must(a === b, "require .json is cached (identity stable)");
+    } finally {
+        u.shell("rm -rf " + base);
+    }
+});
+
+
 
 /* ============================================================
  * WHATWG / W3C Web platform globals are tested in whatwg-test.js

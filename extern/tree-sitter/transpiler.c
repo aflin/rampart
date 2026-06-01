@@ -193,7 +193,8 @@ typedef struct {
 #define FN_SOURCE_PF (1<<9) // _TrN_Sp._fs + Function.prototype.toString override
 #define REGEXP_U_PF  (1<<10) // RegExp constructor wrapper that strips `u` flag
 #define BARE_REQ_PF  (1<<11) // _TrN_Sp._req — node_modules walk for bare-spec require()
-#define JSON_REQ_PF  (1<<12) // _TrN_Sp._reqJson — read+JSON.parse for .json require()
+/* (1<<12) was JSON_REQ_PF (_TrN_Sp._reqJson) — removed once rampart's
+   native require() learned to load .json files directly. */
 #define DECORATORS_PF (1<<13) // _TrN_Sp._applyDecoratedDescriptor — TC39 Stage 1 legacy decorators
 
 /* toggled from outside via transpile_set_fn_sources(); default on */
@@ -307,14 +308,6 @@ polyfills allpolys[] = {
            lookups so repeated require()s of the same spec are O(1). */
         "if(!_TrN_Sp._req)_TrN_Sp._req=function(m,s){var c=_TrN_Sp._req._c||(_TrN_Sp._req._c={});var d=(m&&m.path)?m.path:(typeof process!=='undefined'&&process.scriptPath?process.scriptPath:'');var k=d+'|'+s;if(k in c){var cv=c[k];return (typeof cv==='string')?require(cv):cv;}/* NDE.17: try native require first so rampart's built-in shims (js_modules/<name>.js) win over a same-named npm package, matching Node's bare-spec precedence.  Cache the resolved EXPORTS object so subsequent cache hits don't re-resolve a bare specifier whose lookup may shift with the active CJS-wrapper context.  Only fall through on \"Could not resolve\" so genuine load errors from a built-in still surface. */try{var r=require(s);c[k]=r;return r;}catch(_e){if(!_e||typeof _e.message!=='string'||_e.message.indexOf('Could not resolve')<0)throw _e;}var st=rampart.utils.stat,rf=rampart.utils.readFile;var exts=['','.js','.cjs','.mjs','.json'];while(d&&d.length>1){/* NDE.35: honour package.json `exports` for pkg/subpath specifiers (csv-parse/sync, zod/v3, lodash/fp, ...).  Walks conditional exports (require>node>default) so CJS callers get the .cjs entry. */var _ps=s.charAt(0)==='@'?s.indexOf('/',s.indexOf('/')+1):s.indexOf('/');if(_ps>0){var _pn=s.substring(0,_ps),_sk='.'+s.substring(_ps);var _ppj=d+'/node_modules/'+_pn+'/package.json';if(st(_ppj)){try{var _pm=JSON.parse(rf(_ppj,{returnString:true}));var _rc=function(v){if(typeof v==='string')return v;if(v&&typeof v==='object'){var _ks=['require','node','default'];for(var _ki=0;_ki<3;_ki++){if(v[_ks[_ki]]!=null){var _rv=_rc(v[_ks[_ki]]);if(_rv)return _rv;}}}return null;};if(_pm.exports&&_pm.exports[_sk]!=null){var _rl=_rc(_pm.exports[_sk]);if(_rl){var _r2=(_rl.charAt(0)==='.'&&_rl.charAt(1)==='/')?_rl.substring(2):_rl;var _ab=d+'/node_modules/'+_pn+'/'+_r2;if(st(_ab)){c[k]=_ab;return require(_ab);}}}}catch(_){}}}var pd=d+'/node_modules/'+s;var sp=st(pd);if(sp&&sp.isFile){c[k]=pd;return require(pd);}if(sp&&sp.isDirectory){var pj=pd+'/package.json';var mn=null;if(st(pj)){try{var meta=JSON.parse(rf(pj,{returnString:true}));mn=meta.main||'index.js';}catch(e){mn='index.js';}var p=pd+'/'+mn;var spp=st(p);/* NDE.24: extension fallback for extension-less main fields (form-data's package.json has \"main\":\"./lib/form_data\" with no .js, which used to fail and walk past). */if(spp&&spp.isFile){c[k]=p;return require(p);}for(var mi=1;mi<exts.length;mi++){var pe=p+exts[mi];if(st(pe)){c[k]=pe;return require(pe);}}/* main points to a directory — try its index.js/index.cjs */if(spp&&spp.isDirectory){var pidx=p+'/index.js';if(st(pidx)){c[k]=pidx;return require(pidx);}var pidxc=p+'/index.cjs';if(st(pidxc)){c[k]=pidxc;return require(pidxc);}}}var idx=pd+'/index.js';if(st(idx)){c[k]=idx;return require(idx);}var idxc=pd+'/index.cjs';if(st(idxc)){c[k]=idxc;return require(idxc);}}else{for(var ei=1;ei<exts.length;ei++){var pde=pd+exts[ei];if(st(pde)){c[k]=pde;return require(pde);}}}var n=d.lastIndexOf('/');if(n<=0)break;d=d.substring(0,n);}return require(s);};",
         0, (uint32_t)BARE_REQ_PF },
-    {
-        /* JSON require: rampart's loader treats every spec as JS, so
-           `require('./foo.json')` parses the JSON file as JavaScript and
-           fails. Resolve the path (relative against module.path, or via
-           node_modules walk for bare specs), then JSON.parse the file.
-           Results are memoised in _c. */
-        "_TrN_Sp._reqJson=function(m,s){var c=_TrN_Sp._reqJson._c||(_TrN_Sp._reqJson._c={});var base=(m&&m.path)?m.path:(typeof process!=='undefined'&&process.scriptPath?process.scriptPath:'');var k=base+'|'+s;if(k in c)return c[k];var st=rampart.utils.stat,rf=rampart.utils.readFile;var p=null;if(s.charAt(0)==='/'){p=s;}else if(s.charAt(0)==='.'){var t=s,b=base;while(t.indexOf('../')===0){t=t.substring(3);var n=b.lastIndexOf('/');if(n<=0)break;b=b.substring(0,n);}if(t.indexOf('./')===0)t=t.substring(2);p=b+'/'+t;}else{var d=base;while(d&&d.length>1){var cand=d+'/node_modules/'+s;if(st(cand)){p=cand;break;}var n=d.lastIndexOf('/');if(n<=0)break;d=d.substring(0,n);}}if(!p||!st(p))throw new Error('JSON module not found: '+s);var v=JSON.parse(rf(p,{returnString:true}));c[k]=v;return v;};",
-        0, (uint32_t)JSON_REQ_PF },
     {
         /* TC39 Stage 1 / TypeScript experimentalDecorators / babel legacy
            decorator runtime.  Applies a list of decorators to a method,
@@ -15205,34 +15198,6 @@ static int _detect_require_str_call(const char *src, TSNode call_expr,
     return *spec_len_out > 0;
 }
 
-/* Rewrite `require("X.json")` to `_TrN_Sp._reqJson(module,"X.json")`.
-   Rampart's loader treats every spec as JS source; without this, doing
-   `require("./refs/data.json")` parses the JSON file as JavaScript and
-   fails. */
-static int rewrite_json_require(EditList *edits, const char *src, TSNode call_expr,
-                                RangeList *claimed, uint32_t *polysneeded, int overlaps)
-{
-    size_t fs, a_s, spec_len;
-    const char *spec;
-    if (!_detect_require_str_call(src, call_expr, &fs, &a_s, &spec, &spec_len))
-        return 0;
-    if (spec_len < 5 || strncmp(spec + spec_len - 5, ".json", 5) != 0)
-        return 0;
-
-    if (overlaps)
-        return 1;
-
-    char *rep = NULL;
-    const char *repl = "_TrN_Sp._reqJson(module,";
-    size_t rl = strlen(repl);
-    REMALLOC(rep, rl + 1);
-    memcpy(rep, repl, rl);
-    rep[rl] = '\0';
-    add_edit_take_ownership(edits, fs, a_s, rep, claimed);
-    *polysneeded |= JSON_REQ_PF;
-    return 1;
-}
-
 static int rewrite_bare_require(EditList *edits, const char *src, TSNode call_expr,
                                 RangeList *claimed, uint32_t *polysneeded, int overlaps)
 {
@@ -15245,10 +15210,12 @@ static int rewrite_bare_require(EditList *edits, const char *src, TSNode call_ex
     char c0 = spec[0];
     if (c0 == '.' || c0 == '/' || c0 == ':') return 0;
 
-    /* `.json` is handled by rewrite_json_require so it can resolve via
-       its own helper (returns parsed JSON, not a require result). */
-    if (spec_len >= 5 && strncmp(spec + spec_len - 5, ".json", 5) == 0)
-        return 0;
+    /* Bare `.json` specs (e.g. `require("pkg/data.json")`) flow through
+       _req like any other bare spec: its node_modules walk finds the
+       file and hands the absolute path to native require(), which loads
+       .json directly.  (Native require's own bare-spec resolution is
+       gated on the caller being under node_modules, so _req is still
+       needed for top-level callers.) */
 
     if (overlaps)
         return 1;
@@ -15670,11 +15637,6 @@ RP_ParseRes transpiler_rewrite_pass(EditList *edits, const char *src, size_t src
         if (!handled && (strcmp(nt, "call_expression") == 0))
         {
             handled = rewrite_string_raw(edits, src, n, &claimed, overlaps);
-        }
-
-        if (!handled && (strcmp(nt, "call_expression") == 0))
-        {
-            handled = rewrite_json_require(edits, src, n, &claimed, polysneeded, overlaps);
         }
 
         if (!handled && (strcmp(nt, "call_expression") == 0))
