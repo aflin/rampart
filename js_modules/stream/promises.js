@@ -1,3 +1,4 @@
+"noTranspile";
 /* node-compat re-export: require('stream/promises').
    Wraps stream.pipeline / stream.finished in Promise-returning form
    (the underlying impls live on require('stream')). */

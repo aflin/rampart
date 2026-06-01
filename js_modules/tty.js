@@ -1,3 +1,4 @@
+"noTranspile";
 /* node-compat re-export: makes `require('tty')` work.
    v1 covers isatty + ReadStream/WriteStream query/control surface
    (setRawMode, getWindowSize, columns/rows, cursorTo, moveCursor,

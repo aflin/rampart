@@ -1,3 +1,4 @@
+"noTranspile";
 /*
     rampart-open-meteo.js - Weather data module using Open-Meteo API
 

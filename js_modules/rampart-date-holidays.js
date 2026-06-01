@@ -1,3 +1,4 @@
+"noTranspile";
 /* 
     This is the date-holidays node module (v3.26.11), bundled with esbuild
     and transpiled for duktape using the rampart transpiler.

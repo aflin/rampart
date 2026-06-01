@@ -1,3 +1,4 @@
+"noTranspile";
 /* node-compat re-export: makes `require('http')` work.
    Client side (request/get/Agent) is real and wraps rampart-curl.
    Server side (createServer) currently throws ERR_NOT_IMPLEMENTED;

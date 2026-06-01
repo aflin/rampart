@@ -1,3 +1,4 @@
+"noTranspile";
 /*! https://mths.be/punycode v2.3.1 by @mathias */
 /*
  * punycode.js -- Punycode (RFC 3492) implementation for JavaScript.

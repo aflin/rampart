@@ -1,3 +1,4 @@
+"noTranspile";
 rampart.globalize(rampart.utils);
 
 var curl = require("rampart-curl.so");

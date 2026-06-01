@@ -1,3 +1,4 @@
+"noTranspile";
 /* When running from a single-file bundle (process.scriptPath === ':zip:'),
    writable defaults (logs, dataRoot, runtime pid files) cannot live inside
    the zip.  Substitute the directory next to the bundle binary so the user's

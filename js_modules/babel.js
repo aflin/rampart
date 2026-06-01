@@ -1,3 +1,4 @@
+"noTranspile";
 /* https://babeljs.io/ - MIT licensed - babel-standalone v7.12.17 - patched for duktape:
    1) for-of aliases loop in expandAliases wrapped in try/catch
       (Object.keys may include __proto__ on duktape, then FLIPPED_ALIAS_KEYS[__proto__]

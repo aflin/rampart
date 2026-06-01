@@ -1,3 +1,4 @@
+"noTranspile";
 /* node-compat: require('timers/promises').
    Promise-returning variants of the standard timers.  setInterval is
    intentionally omitted — node's setInterval returns an AsyncIterable

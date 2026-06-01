@@ -1,3 +1,4 @@
+"noTranspile";
 /*
     rampart-email.js - Send email via SMTP using rampart-curl
 

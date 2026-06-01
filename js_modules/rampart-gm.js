@@ -1,3 +1,4 @@
+"noTranspile";
 try {
     module.exports = require("rampart-graphicsmagick");
 } catch (e) {

@@ -1,4 +1,5 @@
 //first line
+"noTranspile"
 /* Shared test harness for rampart's test/*-test.js files.
  *
  * Usage:

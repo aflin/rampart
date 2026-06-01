@@ -1,3 +1,4 @@
+"noTranspile";
 /* node-compat stub for `require('http2')`.
  *
  * rampart-nodeshim doesn't implement HTTP/2.  This stub exists so that

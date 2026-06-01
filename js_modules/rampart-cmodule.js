@@ -1,3 +1,4 @@
+"noTranspile";
 
 var topfmt = `/* **************** Rampart C Module: %s%*s******************* *\\
 

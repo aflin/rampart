@@ -1,3 +1,4 @@
+"noTranspile";
 /* Internal — does the actual scheduling work.  `actionVerb` is
  * 'optimize' or 'rebuild'; it ends up in SYSUPDATE.PARAMS as a JSON
  * field the daemon reads to decide which ALTER INDEX statement to

@@ -1,3 +1,4 @@
+"noTranspile";
 /* usage:
     var urlutils = require('rampart-url');
 
