@@ -4311,6 +4311,26 @@ TBSPEC *tbspec;
 			void *embed_ud = NULL;
 			TXembedFunc embed_fn = TXgetEmbedFunc(&embed_ud);
 			int col_type = fld->type & DDTYPEBITS;
+			/* For varbyte columns the dtype isn't in the column
+			 * type — it's in the vec index's PARAMS.  Walk
+			 * indexinfo (already populated from ddgetindex above
+			 * with this column's indexes) and lift dtype out of
+			 * the first INDEX_VEC entry. */
+			if (col_type == FTN_BYTE) {
+				int ii;
+				for (ii = 0; ii < indexinfo.numIndexes; ii++) {
+					const char *params =
+						indexinfo.sysindexParamsVals[ii];
+					if (!params || !strstr(params, "type=vec"))
+						continue;
+					TXvecParams vp;
+					if (TXvecParamsParse(&vp, params) == 0 &&
+					    vp.dtype != 0) {
+						col_type = vp.dtype;
+						break;
+					}
+				}
+			}
 			if (embed_fn && FTN_IS_VEC(col_type))
 			{
 				size_t text_len = 0;
