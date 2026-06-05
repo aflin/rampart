@@ -3059,6 +3059,7 @@ int TXpow(FLD *f1, FLD *f2);
 int TXsqlFunc_basename(FLD *f1);
 int TXfld_canonpath(FLD *f1, FLD *f2);
 int TXsqlFunc_dirname(FLD *f1);
+int TXsqlFunc_embed(FLD *out, FLD *intext);
 int TXsqlFunc_fileext(FLD *f1);
 int TXsqlFunc_fromfile(FLD *f1, FLD *f2, FLD *f3);
 int TXsqlFunc_fromfiletext(FLD *f1, FLD *f2, FLD *f3);

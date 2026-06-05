@@ -97,6 +97,8 @@ static FLDFUNC TXdbfldfuncsUnsorted[] =
     { FTN_DOUBLE, FTN_DOUBLE, FTN_DOUBLE, FTN_DOUBLE, 0 } },
   { "dms2dec", F(TXfunc_dms2dec), 1, 1, FTN_DOUBLE,
     { FTN_DOUBLE, 0, 0, 0, 0 } },
+  { "embed", F(TXsqlFunc_embed), 1, 2, FTN_VEC_F16 | DDVARBIT,
+    { FTN_CHAR | DDVARBIT, FTN_CHAR | DDVARBIT, 0, 0, 0 } },
   { "exec", F(doshell), 1, 5, FTN_CHAR | DDVARBIT, {0, 0, 0, 0, 0 } },
   { "exp", F(TXexp), 1, 1, FTN_DOUBLE, {FTN_DOUBLE, 0, 0, 0, 0 } },
   { "fabs", F(TXfabs), 1, 1, FTN_DOUBLE, {FTN_DOUBLE, 0, 0, 0, 0 } },

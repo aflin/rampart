@@ -60,6 +60,9 @@ extern void rpvec_f32_to_i8(const float *src, int8_t *dst, size_t n,
                             float scale, int zp);
 extern void rpvec_f32_to_u8(const float *src, uint8_t *dst, size_t n,
                             float scale, int zp);
+/* f32 → reduced-precision float */
+extern void rpvec_f32_to_f16(const float *src, uint16_t *dst, size_t n);
+extern void rpvec_f32_to_bf16(const float *src, uint16_t *dst, size_t n);
 
 /* Suffix used for the on-disk usearch file.  Distinct from the previous
  * Vamana backend's `.vec' so the two backends never confuse each other's
@@ -1865,6 +1868,162 @@ TXvecRegisterExitHook(DDIC *ddic)
     vec_exit_hook_ddic = ddic;
 }
 
+/* ---- Embed callback registry --------------------------------------
+ *
+ * Process-globals; see vecindex_internal.h for contract.  Each forked
+ * helper process has its own copy.  Not thread-safe by design: the SQL
+ * layer ensures sql.set({llamaEmbed:...}) is the only registrar and
+ * helper-child registration happens once at open or first exec. */
+
+static TXembedFunc g_embed_fn = NULL;
+static void       *g_embed_ud = NULL;
+
+void
+TXregisterEmbedFunc(TXembedFunc fn, void *user_data)
+{
+    g_embed_fn = fn;
+    g_embed_ud = user_data;
+}
+
+TXembedFunc
+TXgetEmbedFunc(void **user_data_out)
+{
+    if (user_data_out) *user_data_out = g_embed_ud;
+    return g_embed_fn;
+}
+
+void
+TXclearEmbedFunc(void)
+{
+    g_embed_fn = NULL;
+    g_embed_ud = NULL;
+}
+
+/* ---- embed() SQL scalar function -------------------------------------
+ *
+ *   embed(text)              -> varbyte (f16 bytes, default)
+ *   embed(text, 'f16')       -> varbyte with f16 bytes
+ *   embed(text, 'f32')       -> varbyte with f32 bytes
+ *   embed(text, 'bf16')      -> varbyte with bf16 bytes
+ *   embed(text, 'f64')       -> varbyte with f64 bytes
+ *
+ * Returns a varbyte FLD (declared FTN_BYTE | DDVARBIT) so it works with
+ * any vec column type via fobyby's byte→vec assignment: fobyby reads
+ * the column's elsz, recomputes n = bytes/elsz, and stores the bytes
+ * unmodified.  This means the caller must pick an embed() dtype that
+ * matches the destination column dtype (e.g., use 'f32' for varvecF32,
+ * leave default for varvecF16 or varbyte storage).
+ *
+ * f16 default chosen for storage efficiency — 2× smaller than f32 with
+ * negligible cosine-similarity loss on L2-normalized embedding vectors.
+ *
+ * No callback registered → MERR + error return.
+ */
+int
+TXsqlFunc_embed(FLD *f1, FLD *f2)
+{
+    void        *ud = NULL;
+    TXembedFunc  fn = TXgetEmbedFunc(&ud);
+    float       *vec_f32 = NULL;
+    size_t       dim;
+    char        *src;
+    size_t       slen;
+    int          dtype = FTN_VEC_F16;   /* default */
+
+    if (!fn)
+    {
+        putmsg(MERR + UGE, "embed",
+               "No embed function registered; set llamaEmbed first");
+        return FOP_EINVAL;
+    }
+
+    /* Optional 2nd arg: dtype string. */
+    if (f2 != FLDPN && !TXfldIsNull(f2))
+    {
+        const char *dt = (const char *)getfld(f2, NULL);
+        if (dt)
+        {
+            if      (!strcasecmp(dt, "f16"))  dtype = FTN_VEC_F16;
+            else if (!strcasecmp(dt, "f32"))  dtype = FTN_VEC_F32;
+            else if (!strcasecmp(dt, "f64"))  dtype = FTN_VEC_F64;
+            else if (!strcasecmp(dt, "bf16")) dtype = FTN_VEC_BF16;
+            else {
+                putmsg(MERR + UGE, "embed",
+                       "Unknown dtype `%s' — expected one of "
+                       "'f16', 'f32', 'f64', 'bf16'", dt);
+                return FOP_EINVAL;
+            }
+        }
+    }
+
+    if (TXfldIsNull(f1))
+    {
+        TXfldSetNull(f1);
+        return FOP_EOK;
+    }
+    src = (char *)getfld(f1, &slen);
+    if (!src || slen == 0)
+    {
+        TXfldSetNull(f1);
+        return FOP_EOK;
+    }
+
+    dim = fn(ud, src, slen, &vec_f32);
+    if (dim == 0 || !vec_f32)
+    {
+        putmsg(MERR + FRE, "embed", "embed callback returned no vector");
+        if (vec_f32) free(vec_f32);
+        return FOP_EINVAL;
+    }
+
+    /* Convert f32 callback output to the requested dtype's bytes.  Output
+     * goes into a fresh malloc — vec_f32 is freed after the convert. */
+    size_t out_elsz =
+        (dtype == FTN_VEC_F16  || dtype == FTN_VEC_BF16) ? 2 :
+        (dtype == FTN_VEC_F32) ? 4 :
+        (dtype == FTN_VEC_F64) ? 8 : 4;
+    size_t out_bytes = dim * out_elsz;
+    void *bytes = malloc(out_bytes);
+    if (!bytes) {
+        free(vec_f32);
+        putmsg(MERR + MAE, "embed", "out of memory");
+        return FOP_ENOMEM;
+    }
+
+    switch (dtype) {
+    case FTN_VEC_F32:
+        memcpy(bytes, vec_f32, out_bytes);
+        break;
+    case FTN_VEC_F16:
+        rpvec_f32_to_f16(vec_f32, (uint16_t *)bytes, dim);
+        break;
+    case FTN_VEC_BF16:
+        rpvec_f32_to_bf16(vec_f32, (uint16_t *)bytes, dim);
+        break;
+    case FTN_VEC_F64: {
+        double *d = (double *)bytes;
+        for (size_t i = 0; i < dim; i++) d[i] = (double)vec_f32[i];
+        break;
+    }
+    default:
+        free(vec_f32); free(bytes);
+        return FOP_EINVAL;
+    }
+    free(vec_f32);
+
+    /* Emit as varvec*<dtype> so `select embed(?)` returns a typed vec
+     * with .dim and .toNumbers().  Assignment to a same-dtype column
+     * is a no-op identity copy; mismatched-dtype column assignments
+     * fail fast (texis's vec→vec ASN only handles matching dtypes).
+     * Callers wanting cross-dtype storage should pick the right dtype
+     * arg up-front. */
+    freeflddata(f1);
+    f1->type = dtype | DDVARBIT;
+    f1->elsz = out_elsz;
+    setfldandsize(f1, bytes, out_bytes + 1, FLD_FORCE_NORMAL);
+    return FOP_EOK;
+}
+
 DDIC *
 TXvecGetExitHookDDIC(void)
 {
@@ -1907,44 +2066,76 @@ TXvecIxVecIndex(const char *iname, const char *sysindexParams,
     if (!infld || !iname) goto err;
     if (TXfldIsNull(infld)) goto err;
 
-    int t = infld->type & DDTYPEBITS;
-    if (!FTN_IS_VEC_OR_BYTE(t)) goto err;
-
+    /* Open the vec handle first — we need hb->dim for both the
+     * normal vec/byte path AND the auto-embed path below. */
     TXvecHandle *h_ = TXvecOpen(dbtbl ? dbtbl->ddic : NULL, iname,
                                 sysindexParams);
     if (!h_) goto err;
     struct TXvecHandleBase *hb = (struct TXvecHandleBase *)h_;
 
+    int t = infld->type & DDTYPEBITS;
+
+    /* If we get a string RHS here it means predopt's auto-embed
+     * pre-rewrite didn't fire (e.g. embed callback was registered
+     * after prep).  Fall back: embed inline.  Note this only fixes
+     * the index path — per-row post-process will still see the
+     * original string and reject everything, so the result will be
+     * empty.  The proper fix is predopt's pre-rewrite (below). */
+    if (!FTN_IS_VEC_OR_BYTE(t)) {
+        if (t == FTN_CHAR) {
+            void *embed_ud = NULL;
+            TXembedFunc embed_fn = TXgetEmbedFunc(&embed_ud);
+            if (embed_fn) {
+                size_t text_len = 0;
+                const char *text = (const char *)getfld(infld, &text_len);
+                if (text && text_len > 0) {
+                    float *evec = NULL;
+                    size_t edim = embed_fn(embed_ud, text, text_len, &evec);
+                    if (edim == (size_t)hb->dim && evec) {
+                        qbuf = evec;
+                        goto have_qbuf;
+                    }
+                    if (evec) free(evec);
+                }
+            }
+        }
+        goto err;
+    }
+
     /* Extract + convert query to f32.  Backend-agnostic: TXvecSearch
      * dispatches to the right backend, and each backend's search slot
      * handles its own internal quantization (HNSW: query → i8/u8 if
      * index is quantized; IVFPQ: f32 throughout). */
-    size_t qn = 0;
-    void *qraw = getfld(infld, &qn);
-    if (!qraw || qn == 0) goto err;
+    {
+        size_t qn = 0;
+        void *qraw = getfld(infld, &qn);
+        if (!qraw || qn == 0) goto err;
 
-    int qDtype = FTN_IS_VEC(t) ? t : hb->dtype;
-    size_t qCells = qn;
-    if (t == FTN_BYTE) {
-        size_t elsz = vec_dtype_elsz(qDtype);
-        if (elsz == 0 || (qn % elsz) != 0) goto err;
-        qCells = qn / elsz;
-    }
-    if ((int)qCells != hb->dim) {
-        if (TXverbosity > 0)
-            putmsg(MINFO, fn,
-                "INDEX_VEC dim=%d but query dim=%lu; falling back to brute force",
-                hb->dim, (unsigned long)qCells);
-        goto err;
+        int qDtype = FTN_IS_VEC(t) ? t : hb->dtype;
+        size_t qCells = qn;
+        if (t == FTN_BYTE) {
+            size_t elsz = vec_dtype_elsz(qDtype);
+            if (elsz == 0 || (qn % elsz) != 0) goto err;
+            qCells = qn / elsz;
+        }
+        if ((int)qCells != hb->dim) {
+            if (TXverbosity > 0)
+                putmsg(MINFO, fn,
+                    "INDEX_VEC dim=%d but query dim=%lu; falling back to brute force",
+                    hb->dim, (unsigned long)qCells);
+            goto err;
+        }
+
+        qbuf = (float *)malloc((size_t)hb->dim * sizeof(float));
+        if (!qbuf) goto err;
+        /* For HNSW i8/u8 indexes the search slot quantizes internally
+         * with its own quant_scale/quant_zp; pass 0/0 here since the
+         * caller side doesn't have those (and shouldn't need to). */
+        if (vec_convert_to_f32(qDtype, qraw, qCells, hb->dim,
+                               0.0f, 0, qbuf) < 0) goto err;
     }
 
-    qbuf = (float *)malloc((size_t)hb->dim * sizeof(float));
-    if (!qbuf) goto err;
-    /* For HNSW i8/u8 indexes the search slot quantizes internally
-     * with its own quant_scale/quant_zp; pass 0/0 here since the
-     * caller side doesn't have those (and shouldn't need to). */
-    if (vec_convert_to_f32(qDtype, qraw, qCells, hb->dim,
-                           0.0f, 0, qbuf) < 0) goto err;
+have_qbuf:
 
     /* Top-K search via the dispatcher.  Pool size from likevRows;
      * per-query expansion (ef for HNSW, nprobe for IVFPQ) from
@@ -1957,22 +2148,89 @@ TXvecIxVecIndex(const char *iname, const char *sysindexParams,
     size_t got = TXvecSearch(h_, dbtbl, fname, qbuf, k, ef, res);
     if (got == SIZE_MAX) { free(res); goto err; }
 
-    /* Materialize into in-memory btree, recid as btloc, sequence number
-     * as key (best-first iteration since search returns sorted).
+    /* Materialize into in-memory btree, recid as btloc, exact-rank
+     * key so btree iteration order = ORDER BY $rank DESC.
+     *
+     * For each candidate we fetch the stored vec, compute the dot
+     * product against the query at the column's stored precision
+     * (matching FOP_MMV's per-row scoring exactly), scale to
+     * [-100000, 100000] like FOP_MMV does, and use
+     * (100000 - scaled) as the btree key — so the BT_UNSIGNED
+     * ASC iteration delivers best-first.  Same shape as LIKEP's
+     * rank-keyed btree (3dbindex.c:2034).
+     *
+     * Cost: one row fetch + one dot product per candidate at
+     * dispatcher time — same work FOP_MMV does later during WHERE
+     * eval, so it's a duplicated computation (a few ms at most for
+     * the default likevRows=1000 candidate pool).  In exchange:
+     * row order matches `ORDER BY $rank DESC` without the user
+     * having to write it.
      */
     bt = openbtree(NULL, BTFSIZE, 20, BT_FIXED | BT_UNSIGNED,
                    O_RDWR | O_CREAT);
     if (!bt) { free(res); goto err; }
 
-    for (size_t i = 0; i < got; i++) {
-        /* DOT metric: score is the inner product (or 1-cos for HNSW
-         * cosine).  Filter zero-or-negative correlation. */
-        if (hb->metric == VEC_METRIC_DOT && res[i].score <= 0.0f) continue;
-        BTLOC bl;
-        TXsetrecid(&bl, (EPI_OFF_T)(uint64_t)res[i].id);
-        EPI_OFF_T key = (EPI_OFF_T)i;
-        btinsert(bt, &bl, sizeof(key), &key);
-        cnt++;
+    {
+        FLD *colFld = (dbtbl && fname) ? dbnametofld(dbtbl, (char *)fname) : NULL;
+        int colT = colFld ? (colFld->type & DDTYPEBITS) : 0;
+        int column_dtype = (colT == FTN_BYTE) ? hb->dtype : colT;
+        size_t col_elsz = vec_dtype_elsz(column_dtype);
+        /* Scratch buffer for the converted-to-f32 stored vec.  Pattern
+         * matches the newrec scan loop above (line ~1691). */
+        float *sbuf = NULL;
+        if (colFld && col_elsz > 0)
+            sbuf = (float *)malloc((size_t)hb->dim * sizeof(float));
+
+        for (size_t i = 0; i < got; i++) {
+            /* DOT metric: filter zero-or-negative correlation
+             * (matches the legacy backend-score filter — keeps
+             * cnt accounting unchanged for callers that rely on it). */
+            if (hb->metric == VEC_METRIC_DOT && res[i].score <= 0.0f)
+                continue;
+
+            /* Default to the backend's score if anything goes wrong
+             * fetching/converting the stored vec. */
+            double exact_score = (double)res[i].score;
+            if (sbuf) {
+                BTLOC bl_fetch;
+                memset(&bl_fetch, 0, sizeof(bl_fetch));
+                bl_fetch.off = (EPI_OFF_T)(uint64_t)res[i].id;
+                RECID *rrc = gettblrow(dbtbl->tbl, &bl_fetch);
+                if (rrc && TXrecidvalid(rrc)) {
+                    size_t n_bytes = 0;
+                    void *raw = getfld(colFld, &n_bytes);
+                    size_t cells = n_bytes;
+                    if (raw && n_bytes > 0 && colT == FTN_BYTE) {
+                        if (col_elsz > 0 && (n_bytes % col_elsz) == 0)
+                            cells = n_bytes / col_elsz;
+                        else
+                            raw = NULL;
+                    }
+                    if (raw && (int)cells == hb->dim &&
+                        vec_convert_to_f32(column_dtype, raw, cells,
+                                           hb->dim, 0.0f, 0, sbuf) == 0) {
+                        double s = 0.0;
+                        for (int j = 0; j < hb->dim; j++)
+                            s += (double)qbuf[j] * (double)sbuf[j];
+                        exact_score = s;
+                    }
+                }
+            }
+            /* Clamp + scale exactly like FOP_MMV (fldops.c:799-801). */
+            if (exact_score >  1.0) exact_score =  1.0;
+            if (exact_score < -1.0) exact_score = -1.0;
+            int32_t scaled = (int32_t)(exact_score * 100000.0);
+
+            BTLOC bl;
+            TXsetrecid(&bl, (EPI_OFF_T)(uint64_t)res[i].id);
+            /* ASC-iteration ⇒ DESC-by-score: smaller key = higher
+             * score.  Map [-100000, 100000] → [0, 200000] by
+             * inverting: key = 100000 - scaled. */
+            EPI_OFF_T key = (EPI_OFF_T)(100000 - scaled);
+            btinsert(bt, &bl, sizeof(key), &key);
+            cnt++;
+        }
+        if (sbuf) free(sbuf);
     }
 
     rewindbtree(bt);

@@ -92,6 +92,37 @@ extern int fld2flov ARGS((FLD *f,ft_long val));/* set fld to long type set to va
   I(FTN_VEC_BF16,       FTN_BYTE,       fobyby) \
   I(FTN_VEC_I8,         FTN_BYTE,       fobyby) \
   I(FTN_VEC_U8,         FTN_BYTE,       fobyby) \
+  /* Cross-vec-dtype routes through fobyby's FOP_ASN real value-converter */ \
+  I(FTN_VEC_F64,        FTN_VEC_F32,    fobyby) \
+  I(FTN_VEC_F64,        FTN_VEC_F16,    fobyby) \
+  I(FTN_VEC_F64,        FTN_VEC_BF16,   fobyby) \
+  I(FTN_VEC_F64,        FTN_VEC_I8,     fobyby) \
+  I(FTN_VEC_F64,        FTN_VEC_U8,     fobyby) \
+  I(FTN_VEC_F32,        FTN_VEC_F64,    fobyby) \
+  I(FTN_VEC_F32,        FTN_VEC_F16,    fobyby) \
+  I(FTN_VEC_F32,        FTN_VEC_BF16,   fobyby) \
+  I(FTN_VEC_F32,        FTN_VEC_I8,     fobyby) \
+  I(FTN_VEC_F32,        FTN_VEC_U8,     fobyby) \
+  I(FTN_VEC_F16,        FTN_VEC_F64,    fobyby) \
+  I(FTN_VEC_F16,        FTN_VEC_F32,    fobyby) \
+  I(FTN_VEC_F16,        FTN_VEC_BF16,   fobyby) \
+  I(FTN_VEC_F16,        FTN_VEC_I8,     fobyby) \
+  I(FTN_VEC_F16,        FTN_VEC_U8,     fobyby) \
+  I(FTN_VEC_BF16,       FTN_VEC_F64,    fobyby) \
+  I(FTN_VEC_BF16,       FTN_VEC_F32,    fobyby) \
+  I(FTN_VEC_BF16,       FTN_VEC_F16,    fobyby) \
+  I(FTN_VEC_BF16,       FTN_VEC_I8,     fobyby) \
+  I(FTN_VEC_BF16,       FTN_VEC_U8,     fobyby) \
+  I(FTN_VEC_I8,         FTN_VEC_F64,    fobyby) \
+  I(FTN_VEC_I8,         FTN_VEC_F32,    fobyby) \
+  I(FTN_VEC_I8,         FTN_VEC_F16,    fobyby) \
+  I(FTN_VEC_I8,         FTN_VEC_BF16,   fobyby) \
+  I(FTN_VEC_I8,         FTN_VEC_U8,     fobyby) \
+  I(FTN_VEC_U8,         FTN_VEC_F64,    fobyby) \
+  I(FTN_VEC_U8,         FTN_VEC_F32,    fobyby) \
+  I(FTN_VEC_U8,         FTN_VEC_F16,    fobyby) \
+  I(FTN_VEC_U8,         FTN_VEC_BF16,   fobyby) \
+  I(FTN_VEC_U8,         FTN_VEC_I8,     fobyby) \
   I(FTN_BYTE,           FTN_CHAR,       fobych) \
   I(FTN_BYTE,           FTN_COUNTERI,   fobyci) \
   I(FTN_BYTE,           FTN_COUNTER,    fobyco) \

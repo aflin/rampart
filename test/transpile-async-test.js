@@ -9,6 +9,14 @@ if (!stat(tmpdir)) mkdir(tmpdir);
 var rpids = [];
 var _hasShell = !!stat('/bin/bash');
 
+/* Local echo server for the curl async tests.  The curl tests used to
+   hit https://httpbin.org, which 503s/rate-limits intermittently and
+   made the suite flap (non-200 -> spurious FAILED).  A self-hosted
+   endpoint makes them deterministic and tests the async lowering, not
+   the internet.  Plain HTTP on loopback — no cert needed. */
+var CURL_BASE = 'http://127.0.0.1:18287';
+var serverPid = 0;
+
 /* ===================================================================
    Test harness
    =================================================================== */
@@ -49,6 +57,32 @@ function _drainTests() {
     });
 }
 testFeature.exit = function() { _baseTestFeature.exit(); };
+
+/* ===================================================================
+   Local echo server (for curl async tests)
+   =================================================================== */
+
+function start_echo_server() {
+    var server = require("rampart-server");
+    var pid = server.start({
+        bind: "127.0.0.1:18287",
+        daemon: true,        /* returns the detached server's pid */
+        useThreads: true,
+        map: {
+            /* Returns 200 with a non-empty body, so res.status === 200
+               and (with returnText) res.text is truthy.  Query strings
+               are ignored — the tests vary them only to be distinct. */
+            "/get": function(req) { return {text: "ok"}; }
+        }
+    });
+    sleep(0.2);              /* let the forked server bind */
+    if (!kill(pid, 0)) {
+        fprintf(stderr, "Failed to start echo server\n");
+        return false;
+    }
+    serverPid = pid;
+    return true;
+}
 
 /* ===================================================================
    Redis server management
@@ -103,6 +137,7 @@ function kill_server(pid) {
 }
 
 function cleanup() {
+    kill_server(serverPid);
     rpids.forEach(function(rpid) {
         kill_server(rpid);
     });
@@ -128,11 +163,11 @@ var curl = require('rampart-curl');
 
 async function curlTests() {
     // Single URL, no callback — returns Promise
-    var res = await curl.fetchAsync('https://httpbin.org/get?test=1');
+    var res = await curl.fetchAsync(CURL_BASE + '/get?test=1');
     testFeature("curl - await fetchAsync", res.status === 200);
 
     // With options
-    var res2 = await curl.fetchAsync('https://httpbin.org/get?test=2', {returnText: true});
+    var res2 = await curl.fetchAsync(CURL_BASE + '/get?test=2', {returnText: true});
     testFeature("curl - await fetchAsync with options", res2.status === 200 && !!res2.text);
 
     // Error handling
@@ -146,9 +181,9 @@ async function curlTests() {
 
     // Promise.all with multiple fetches
     var results = await Promise.all([
-        curl.fetchAsync('https://httpbin.org/get?p=1'),
-        curl.fetchAsync('https://httpbin.org/get?p=2'),
-        curl.fetchAsync('https://httpbin.org/get?p=3')
+        curl.fetchAsync(CURL_BASE + '/get?p=1'),
+        curl.fetchAsync(CURL_BASE + '/get?p=2'),
+        curl.fetchAsync(CURL_BASE + '/get?p=3')
     ]);
     testFeature("curl - Promise.all fetchAsync",
         results.length === 3 &&
@@ -158,9 +193,9 @@ async function curlTests() {
 
     // Multiple URLs with callback — await waits for all
     var urls = [
-        'https://httpbin.org/get?m=1',
-        'https://httpbin.org/get?m=2',
-        'https://httpbin.org/get?m=3'
+        CURL_BASE + '/get?m=1',
+        CURL_BASE + '/get?m=2',
+        CURL_BASE + '/get?m=3'
     ];
     var collected = [];
     await curl.fetchAsync(urls, function(res) {
@@ -171,12 +206,12 @@ async function curlTests() {
         collected[0] === 200 && collected[1] === 200 && collected[2] === 200);
 
     // submitAsync single, no callback
-    var res3 = await curl.submitAsync({url: 'https://httpbin.org/get?s=1'});
+    var res3 = await curl.submitAsync({url: CURL_BASE + '/get?s=1'});
     testFeature("curl - await submitAsync", res3.status === 200);
 
     // Old callback style still works
     var cbResult = await new Promise(function(resolve) {
-        curl.fetchAsync('https://httpbin.org/get?old=1', function(res) {
+        curl.fetchAsync(CURL_BASE + '/get?old=1', function(res) {
             resolve(res.status === 200);
         });
     });
@@ -276,7 +311,10 @@ async function redisTests(rcl) {
 async function main() {
     try {
         printf("=== curl async/await tests ===\n");
-        await curlTests();
+        if (start_echo_server())
+            await curlTests();
+        else
+            fprintf(stderr, "SKIPPING CURL ASYNC TESTS\n");
 
         printf("\n=== redis async/await tests ===\n");
         var redis = require("rampart-redis");

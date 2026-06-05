@@ -16,10 +16,40 @@ int __cdecl sscanf(const char *, const char *, ...);
 #     define off_t long
 #  endif
 #endif
+#include <stdint.h>
 #include "dbquery.h"
 #include "texint.h"
 #include "fldops.h"
 #include "cgi.h"		/* for htsnpf() */
+
+/* vec dtype converters; defined in src/duktape/globals/vector-distance.c
+ * (linked into the texis engine), declared in src/include/rampart.h.
+ * Externed here so fobyby's FOP_ASN can do real cross-dtype vec→vec
+ * value conversion instead of byte-reinterpretation. */
+extern void rpvec_f16_to_f32(const uint16_t *src, float *dst, size_t n);
+extern void rpvec_bf16_to_f32(const uint16_t *src, float *dst, size_t n);
+extern void rpvec_i8_to_f32(const int8_t *src, float *dst, size_t n,
+                            float scale, int zp);
+extern void rpvec_u8_to_f32(const uint8_t *src, float *dst, size_t n,
+                            float scale, int zp);
+extern void rpvec_f64_to_f32(const double *src, float *dst, size_t n);
+extern void rpvec_f32_to_f16(const float *src, uint16_t *dst, size_t n);
+extern void rpvec_f32_to_bf16(const float *src, uint16_t *dst, size_t n);
+extern void rpvec_f32_to_i8(const float *src, int8_t *dst, size_t n,
+                            float scale, int zp);
+extern void rpvec_f32_to_u8(const float *src, uint8_t *dst, size_t n,
+                            float scale, int zp);
+
+static size_t vec_elsz_for(FTN t)
+{
+    switch (t & DDTYPEBITS) {
+    case FTN_VEC_F64:                          return 8;
+    case FTN_VEC_F32:                          return 4;
+    case FTN_VEC_F16:  case FTN_VEC_BF16:      return 2;
+    case FTN_VEC_I8:   case FTN_VEC_U8:        return 1;
+    default:                                   return 0;
+    }
+}
 
 /* Vector distance via simsimd; defined in src/duktape/globals/vector-distance.c.
  * Used by FOP_MMV (LIKEV operator).  See also vecdist() in aufunx.c.
@@ -501,6 +531,125 @@ int op;
 			if (var1)
 			{
 				size_t	new_elsz;
+				FTN	src_t = TXfldType(f2) & DDTYPEBITS;
+				FTN	dst_t = TXfldType(f1) & DDTYPEBITS;
+
+				/* Cross-dtype vec→vec: real value conversion via
+				 * f32 intermediate.  Only fires when both sides
+				 * are vec types AND dtypes differ AND src has
+				 * data (dim > 0).  Falls through to the existing
+				 * reinterpret-bytes path for byte↔vec, same-dtype
+				 * vec↔vec, and empty/dummy probes used by
+				 * predtype()'s type-inference machinery. */
+				if (FTN_IS_VEC(src_t) && FTN_IS_VEC(dst_t) &&
+				    src_t != dst_t)
+				{
+					size_t  src_elsz = vec_elsz_for(src_t);
+					size_t  dst_elsz = vec_elsz_for(dst_t);
+					void   *src_bytes = getfld(f2, NULL);
+					size_t  src_size = f2->size;
+					if (src_bytes && src_elsz > 0 &&
+					    dst_elsz > 0 &&
+					    src_size >= src_elsz &&
+					    (src_size % src_elsz) == 0)
+					{
+						size_t  dim = src_size / src_elsz;
+						float  *fbuf = (float *)malloc(dim * sizeof(float));
+						void   *dst_bytes = malloc(dim * dst_elsz + 1);
+						int     ok = 0;
+						if (fbuf && dst_bytes)
+						{
+							/* src → f32 */
+							switch (src_t)
+							{
+							case FTN_VEC_F32:
+								memcpy(fbuf, src_bytes, dim * sizeof(float)); ok=1; break;
+							case FTN_VEC_F64:
+								rpvec_f64_to_f32((const double*)src_bytes, fbuf, dim); ok=1; break;
+							case FTN_VEC_F16:
+								rpvec_f16_to_f32((const uint16_t*)src_bytes, fbuf, dim); ok=1; break;
+							case FTN_VEC_BF16:
+								rpvec_bf16_to_f32((const uint16_t*)src_bytes, fbuf, dim); ok=1; break;
+							case FTN_VEC_I8:
+								rpvec_i8_to_f32((const int8_t*)src_bytes, fbuf, dim, 1.0f/127.0f, 0); ok=1; break;
+							case FTN_VEC_U8:
+								rpvec_u8_to_f32((const uint8_t*)src_bytes, fbuf, dim, 1.0f/127.0f, 128); ok=1; break;
+							}
+							if (ok)
+							{
+								/* f32 → dst */
+								switch (dst_t)
+								{
+								case FTN_VEC_F32:
+									memcpy(dst_bytes, fbuf, dim * sizeof(float)); break;
+								case FTN_VEC_F64: {
+									double *d = (double *)dst_bytes;
+									for (size_t i = 0; i < dim; i++) d[i] = (double)fbuf[i];
+									break;
+								}
+								case FTN_VEC_F16:
+									rpvec_f32_to_f16(fbuf, (uint16_t *)dst_bytes, dim); break;
+								case FTN_VEC_BF16:
+									rpvec_f32_to_bf16(fbuf, (uint16_t *)dst_bytes, dim); break;
+								case FTN_VEC_I8:
+									rpvec_f32_to_i8(fbuf, (int8_t *)dst_bytes, dim, 1.0f/127.0f, 0); break;
+								case FTN_VEC_U8:
+									rpvec_f32_to_u8(fbuf, (uint8_t *)dst_bytes, dim, 1.0f/127.0f, 128); break;
+								default: ok = 0; break;
+								}
+							}
+						}
+						if (fbuf) free(fbuf);
+						if (ok && dst_bytes)
+						{
+							freeflddata(f3);
+							f3->type = f1->type;
+							f3->elsz = dst_elsz;
+							setfldandsize(f3, dst_bytes,
+								dim * dst_elsz + 1, FLD_FORCE_NORMAL);
+							rc = 0;
+							break;
+						}
+						if (dst_bytes) free(dst_bytes);
+						/* fall through to existing path on alloc failure */
+					}
+				}
+
+				/* varbyte → vec_X: pure byte reinterpret with
+				 * strict size check.  We treat the source bytes
+				 * AS IS as the destination vec dtype's storage,
+				 * so byte_len must be evenly divisible by the
+				 * destination element size.  Anything else is a
+				 * user error (mis-sized source, wrong assumed
+				 * source dtype) and we refuse rather than
+				 * silently truncate.
+				 *
+				 * NOTE: this only fires for non-empty sources;
+				 * the elsz=0 / empty-source case below is the
+				 * predtype()/retoptype() type-inference probe
+				 * path and must succeed.
+				 */
+				if (FTN_IS_VEC(dst_t) && src_t == FTN_BYTE &&
+				    f2->size > 0)
+				{
+					size_t  dst_elsz = vec_elsz_for(dst_t);
+					if (dst_elsz > 0 &&
+					    f2->size % dst_elsz != 0)
+					{
+						putmsg(MERR + UGE, "fobyby",
+						   "cannot convert varbyte (%lu bytes) to %s: byte length is not a multiple of element size %lu",
+						   (unsigned long)f2->size,
+						   (dst_t == FTN_VEC_F16 ? "varvecF16" :
+						    dst_t == FTN_VEC_BF16 ? "varvecBF16" :
+						    dst_t == FTN_VEC_F32 ? "varvecF32" :
+						    dst_t == FTN_VEC_F64 ? "varvecF64" :
+						    dst_t == FTN_VEC_I8 ? "varvecI8" :
+						    dst_t == FTN_VEC_U8 ? "varvecU8" : "vec"),
+						   (unsigned long)dst_elsz);
+						rc = -1;
+						break;
+					}
+				}
 
 				copyfld(f3, f2);	/* f3 = f2 */
 				f3->type = f1->type;	/* save f1 var bit */
@@ -518,15 +667,6 @@ int op;
 				if ((ssize_t)new_elsz > 0 &&
 				    new_elsz != f3->elsz)
 				{
-					if (new_elsz != 0 &&
-					    f3->size % new_elsz != 0)
-					{
-						putmsg(MWARN, "fobyby",
-						   "byte length %lu not a multiple of element size %lu for type 0x%x; truncating",
-						   (unsigned long)f3->size,
-						   (unsigned long)new_elsz,
-						   (unsigned)(f1->type & DDTYPEBITS));
-					}
 					f3->elsz = new_elsz;
 					f3->n = f3->size / new_elsz;
 				}

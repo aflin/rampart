@@ -137,6 +137,17 @@ FLDOP	*fo;
 		++i
 	)
 	{
+		FTN	savedType = 0;
+		int	vecDisplayedAsByte = 0;
+
+		/* varvec → display as hex bytes, like varbyte. */
+		if (FTN_IS_VEC(f1->type & DDTYPEBITS))
+		{
+			savedType = f1->type;
+			f1->type = (f1->type & ~DDTYPEBITS) | FTN_BYTE;
+			vecDisplayedAsByte = 1;
+		}
+
 		f->type = FTN_CHAR + DDVARBIT;
 		freeflddata(f);
 		fopush(fo, f1);
@@ -145,6 +156,10 @@ FLDOP	*fo;
 			putmsg(MERR, NULL, "Could not display %s", fname);
 		closefld(f);
 		f = fopop(fo);
+
+		if (vecDisplayedAsByte)
+			f1->type = savedType;
+
 		if (!strstr(fname, ".$recid")) {
 		if (width == -1)
 			printf("%s: ", fname);
@@ -275,6 +290,17 @@ FLDOP	*fo;
 		++i
 	)
 	{
+		FTN	savedType = 0;
+		int	vecDisplayedAsByte = 0;
+
+		/* varvec → display as hex bytes, like varbyte. */
+		if (FTN_IS_VEC(f1->type & DDTYPEBITS))
+		{
+			savedType = f1->type;
+			f1->type = (f1->type & ~DDTYPEBITS) | FTN_BYTE;
+			vecDisplayedAsByte = 1;
+		}
+
 		f->type = FTN_CHAR + DDVARBIT;
 		freeflddata(f);
 		fopush(fo, f1);
@@ -283,6 +309,10 @@ FLDOP	*fo;
 			putmsg(MERR, NULL, "Could not display %s", fname);
 		closefld(f);
 		f = fopop(fo);
+
+		if (vecDisplayedAsByte)
+			f1->type = savedType;
+
 		if (!strstr(fname, ".$recid")) {
                 if(i>0)
                      putchar(delim);

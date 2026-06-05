@@ -686,10 +686,31 @@ FLDOP *fo;
 					fopush(fo, p->left);
 				break;
 			case 'P' :
+				/* Reuse cached result for a constant sub-expression
+				 * (e.g., embed(?) with the param bound; the function
+				 * call yields the same FLD every row). */
+				if (p->lat == FIELD_OP && p->altleft)
+				{
+					fopush(fo, p->altleft);
+					break;
+				}
 				if (pred_eval(tup, p->left, fo) == -1)
 				{
 					retval = -1;
 					goto done;
+				}
+				/* Cache the result if the sub-tree references no
+				 * columns — args are all literals / bound params,
+				 * so re-eval would give the same value. */
+				if (!p->altleft &&
+				    TXpredGetFirstUsedColumnName((PRED *)p->left) == NULL)
+				{
+					FLD *cr = fopeek(fo);
+					if (cr)
+					{
+						p->altleft = dupfld(cr);
+						p->lat = FIELD_OP;
+					}
 				}
 				break;
 			case NAME_OP :
@@ -942,10 +963,27 @@ FLDOP *fo;
 				fopush(fo, p->right);
 			break;
 		case 'P' :
+			/* Reuse cached result for a constant sub-expression
+			 * (e.g., embed(?) on the RHS of LIKEV). */
+			if (p->rat == FIELD_OP && p->altright)
+			{
+				fopush(fo, p->altright);
+				break;
+			}
 			if(pred_eval(tup, p->right, fo)==-1)
 			{
 				retval = -1;
 				goto done;
+			}
+			if (!p->altright &&
+			    TXpredGetFirstUsedColumnName((PRED *)p->right) == NULL)
+			{
+				FLD *cr = fopeek(fo);
+				if (cr)
+				{
+					p->altright = dupfld(cr);
+					p->rat = FIELD_OP;
+				}
 			}
 			break;
 		case NAME_OP :

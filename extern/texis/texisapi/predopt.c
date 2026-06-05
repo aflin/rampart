@@ -4,6 +4,17 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
+/* f32 → reduced-precision vec converters; defined in rampart's
+ * vector-distance.c (linked into the engine).  Declared here so the
+ * LIKEV auto-coerce can synthesize a byte FLD that matches the
+ * destination vec column's element type. */
+extern void rpvec_f32_to_f16(const float *src, uint16_t *dst, size_t n);
+extern void rpvec_f32_to_bf16(const float *src, uint16_t *dst, size_t n);
+extern void rpvec_f32_to_i8(const float *src, int8_t *dst, size_t n,
+                            float scale, int zp);
+extern void rpvec_f32_to_u8(const float *src, uint8_t *dst, size_t n,
+                            float scale, int zp);
 #ifdef EPI_HAVE_UNISTD_H
 #  include <unistd.h>
 #endif /* EPI_HAVE_UNISTD_H */
@@ -4279,6 +4290,96 @@ TBSPEC *tbspec;
 	case FOP_MMV:				/* LIKEV (vector ANN) */
 		if (rev != 0)
 			goto err;
+
+		/* Auto-embed: if RHS arrived as a string and an embed
+		 * callback is registered, embed it and cache as a varbyte
+		 * FLD on the pred's altright/altleft.  Both TXvecIxVecIndex
+		 * (called via TXchooseindex below) AND the per-row
+		 * post-process in pred_eval pick up this byte FLD via
+		 * TXgetinfld's lat/rat==FIELD_OP check.
+		 *
+		 * The bytes are the COLUMN's dtype-converted f32 — fobyby's
+		 * vec/byte FOP_MMV path enforces matching byte_count for the
+		 * scan, so the converted-to-column-dtype bytes must match the
+		 * column's vec width exactly.  fld is the column FLD set
+		 * above at L3848; its type gives the vec dtype. */
+		if (infld &&
+		    (infld->type & DDTYPEBITS) == FTN_CHAR &&
+		    fld &&
+		    !(lookright ? p->altright : p->altleft))
+		{
+			void *embed_ud = NULL;
+			TXembedFunc embed_fn = TXgetEmbedFunc(&embed_ud);
+			int col_type = fld->type & DDTYPEBITS;
+			if (embed_fn && FTN_IS_VEC(col_type))
+			{
+				size_t text_len = 0;
+				const char *text = (const char *)getfld(infld, &text_len);
+				if (text && text_len > 0)
+				{
+					float *evec = NULL;
+					size_t edim = embed_fn(embed_ud, text, text_len, &evec);
+					if (edim > 0 && evec)
+					{
+						size_t out_elsz =
+							(col_type == FTN_VEC_F16 || col_type == FTN_VEC_BF16) ? 2 :
+							(col_type == FTN_VEC_F32) ? 4 :
+							(col_type == FTN_VEC_F64) ? 8 :
+							(col_type == FTN_VEC_I8 || col_type == FTN_VEC_U8) ? 1 : 4;
+						size_t out_bytes = edim * out_elsz;
+						void *cbytes = malloc(out_bytes);
+						int ok = 0;
+						if (cbytes) {
+							switch (col_type) {
+							case FTN_VEC_F32:
+								memcpy(cbytes, evec, out_bytes); ok = 1; break;
+							case FTN_VEC_F16:
+								rpvec_f32_to_f16(evec, (uint16_t*)cbytes, edim); ok = 1; break;
+							case FTN_VEC_BF16:
+								rpvec_f32_to_bf16(evec, (uint16_t*)cbytes, edim); ok = 1; break;
+							case FTN_VEC_F64: {
+								double *d = (double*)cbytes;
+								for (size_t i = 0; i < edim; i++) d[i] = (double)evec[i];
+								ok = 1;
+								break;
+							}
+							case FTN_VEC_I8:
+								rpvec_f32_to_i8(evec, (int8_t*)cbytes, edim, 1.0f/127.0f, 0); ok = 1; break;
+							case FTN_VEC_U8:
+								rpvec_f32_to_u8(evec, (uint8_t*)cbytes, edim, 1.0f/127.0f, 128); ok = 1; break;
+							}
+						}
+						free(evec);
+						if (ok) {
+							/* Build a typed vec FLD matching the column's
+							 * dtype.  fobyby's vec/vec FOP_MMV requires
+							 * matching types, so this lets the per-row
+							 * post-process succeed. */
+							FLD *vfld = createfld("byte", 1, 0);
+							if (vfld) {
+								vfld->type = col_type | DDVARBIT;
+								vfld->elsz = out_elsz;
+								setfldandsize(vfld, cbytes,
+									out_bytes + 1, FLD_FORCE_NORMAL);
+								if (lookright) {
+									p->altright = vfld;
+									p->rat = FIELD_OP;
+								} else {
+									p->altleft = vfld;
+									p->lat = FIELD_OP;
+								}
+								infld = vfld;
+							} else if (cbytes) {
+								free(cbytes);
+							}
+						} else if (cbytes) {
+							free(cbytes);
+						}
+					}
+				}
+			}
+		}
+
 		for (j = TXchooseindex(&indexinfo, tb, p->op, infld,
 				       lookright);
 		     j >= 0; j = TXchooseindex(&indexinfo, tb, p->op, infld,

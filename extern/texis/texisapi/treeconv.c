@@ -86,6 +86,21 @@ PRED *pred;
 
 	if (pred == (PRED *)NULL)
 		return pred;
+	/* Free runtime-cached FLDs from constant-subexpression caching
+	 * (see pred_eval 'P' case in tup_eval.c).  When the sub-pred was
+	 * found constant we stashed its result in altleft/altright with
+	 * lat/rat=FIELD_OP, but lt/rt stays 'P', so the regular FIELD_OP
+	 * cleanup paths below don't fire.  Handle here. */
+	if (pred->lt == 'P' && pred->lat == FIELD_OP && pred->altleft) {
+		closefld(pred->altleft);
+		pred->altleft = NULL;
+		pred->lat = 0;
+	}
+	if (pred->rt == 'P' && pred->rat == FIELD_OP && pred->altright) {
+		closefld(pred->altright);
+		pred->altright = NULL;
+		pred->rat = 0;
+	}
 	if (pred->lt == 'P')
 		closepred(pred->left);
 	if (pred->rt == 'P')

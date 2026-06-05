@@ -86,6 +86,207 @@ FMINFO
 
 int thisfork =0; //set after forking.
 
+/* ============================================================
+ * Embed integration with rampart-llamacpp.
+ *
+ * Symbols are looked up lazily on the first sql.set({llamaEmbed:...}).
+ * `require("rampart-llamacpp")` triggers a dlopen with RTLD_GLOBAL
+ * (core/module.c), so dlsym(RTLD_DEFAULT, "rp_embed_load") finds them.
+ *
+ * One model per process; the rp_embed_load cache is keyed by path.
+ *
+ * In main and in any RPTHR_FLAG_THR_SAFE thread we register a callback
+ * that calls rp_embed_text directly.  In a helper child, the callback
+ * writes 'B' + text up the pipe and reads back the vec (Step 4).
+ * ============================================================ */
+
+static void  *(*g_rp_embed_load)(const char *, char *, size_t)            = NULL;
+static size_t (*g_rp_embed_text)(void *, const char *, size_t, float **)  = NULL;
+static int    (*g_rp_embed_dim)(void *)                                   = NULL;
+static void   (*g_rp_embed_set_per_thread)(int)                           = NULL;
+static void  *g_embed_handle = NULL;   /* one per process; first sql.set wins */
+
+/* --- LRU embed cache (Step 5) ---------------------------------------
+ *
+ * Process-global, byte-exact key (no normalization).  Sized via
+ * sql.set({llamaCache:N}).  N=0 disables.
+ *
+ * Threading: each parent worker thread has its own thread-local mmap
+ * (`finfo->mapinfo->mem`), so concurrent writes to the mmap do NOT
+ * contend.  Only the cache data structure itself is shared — guarded
+ * by g_lru.mtx.  Critical section is sub-μs (lookup + memcpy of vec
+ * into the thread-local mmap; the long-poles — model call, pipe
+ * write — happen outside the lock). */
+
+typedef struct embed_lru_node_s {
+    char     *text;
+    size_t    text_len;
+    float    *vec;
+    int       dim;
+    uint64_t  text_hash;
+    /* hash chain — singly linked, pointer-to-pointer prev for O(1) unlink */
+    struct embed_lru_node_s  *hash_next;
+    struct embed_lru_node_s **hash_pprev;
+    /* recency list — doubly linked */
+    struct embed_lru_node_s  *lru_prev;
+    struct embed_lru_node_s  *lru_next;
+} embed_lru_node_t;
+
+static struct {
+    embed_lru_node_t **buckets;
+    size_t             n_buckets;     /* power of 2 */
+    embed_lru_node_t  *lru_head;      /* most recently used */
+    embed_lru_node_t  *lru_tail;      /* eviction candidate */
+    size_t             n_entries;
+    size_t             capacity;      /* 0 → disabled */
+    pthread_mutex_t    mtx;
+    int                initialized;
+} g_lru = {0};
+static pthread_mutex_t g_lru_init_mtx = PTHREAD_MUTEX_INITIALIZER;
+
+static uint64_t embed_lru_fnv1a(const char *data, size_t len)
+{
+    uint64_t h = 14695981039346656037ULL;  /* FNV offset basis */
+    for (size_t i = 0; i < len; i++)
+        h = (h ^ (uint8_t)data[i]) * 1099511628211ULL;  /* FNV prime */
+    return h;
+}
+
+/* must be called under g_lru.mtx */
+static embed_lru_node_t *
+embed_lru_find_locked(uint64_t h, const char *text, size_t tlen)
+{
+    embed_lru_node_t *n = g_lru.buckets[h & (g_lru.n_buckets - 1)];
+    while (n) {
+        if (n->text_hash == h && n->text_len == tlen &&
+            memcmp(n->text, text, tlen) == 0)
+            return n;
+        n = n->hash_next;
+    }
+    return NULL;
+}
+
+/* must be called under g_lru.mtx */
+static void embed_lru_list_unlink_locked(embed_lru_node_t *n)
+{
+    if (n->lru_prev) n->lru_prev->lru_next = n->lru_next;
+    else             g_lru.lru_head = n->lru_next;
+    if (n->lru_next) n->lru_next->lru_prev = n->lru_prev;
+    else             g_lru.lru_tail = n->lru_prev;
+}
+
+static void embed_lru_list_push_head_locked(embed_lru_node_t *n)
+{
+    n->lru_prev = NULL;
+    n->lru_next = g_lru.lru_head;
+    if (g_lru.lru_head) g_lru.lru_head->lru_prev = n;
+    else                g_lru.lru_tail = n;
+    g_lru.lru_head = n;
+}
+
+static void embed_lru_promote_locked(embed_lru_node_t *n)
+{
+    if (g_lru.lru_head == n) return;
+    embed_lru_list_unlink_locked(n);
+    embed_lru_list_push_head_locked(n);
+}
+
+static void embed_lru_evict_one_locked(void)
+{
+    embed_lru_node_t *e = g_lru.lru_tail;
+    if (!e) return;
+    embed_lru_list_unlink_locked(e);
+    /* unlink from hash chain */
+    if (e->hash_next) e->hash_next->hash_pprev = e->hash_pprev;
+    *(e->hash_pprev) = e->hash_next;
+    free(e->text);
+    free(e->vec);
+    free(e);
+    g_lru.n_entries--;
+}
+
+/* must be called under g_lru.mtx; copies text + vec into a new node */
+static void
+embed_lru_put_locked(uint64_t h, const char *text, size_t tlen,
+                     const float *vec, int dim)
+{
+    /* Dedup: two threads might miss in parallel and both call put.
+     * If already present, just promote and return. */
+    embed_lru_node_t *existing = embed_lru_find_locked(h, text, tlen);
+    if (existing) {
+        embed_lru_promote_locked(existing);
+        return;
+    }
+    if (g_lru.n_entries >= g_lru.capacity)
+        embed_lru_evict_one_locked();
+
+    embed_lru_node_t *n = (embed_lru_node_t *)calloc(1, sizeof *n);
+    if (!n) return;
+    n->text = (char *)malloc(tlen);
+    if (!n->text) { free(n); return; }
+    memcpy(n->text, text, tlen);
+    n->text_len  = tlen;
+    n->text_hash = h;
+    n->dim       = dim;
+    n->vec       = (float *)malloc((size_t)dim * sizeof(float));
+    if (!n->vec) { free(n->text); free(n); return; }
+    memcpy(n->vec, vec, (size_t)dim * sizeof(float));
+
+    size_t bk = h & (g_lru.n_buckets - 1);
+    n->hash_next  = g_lru.buckets[bk];
+    n->hash_pprev = &g_lru.buckets[bk];
+    if (n->hash_next) n->hash_next->hash_pprev = &n->hash_next;
+    g_lru.buckets[bk] = n;
+
+    embed_lru_list_push_head_locked(n);
+    g_lru.n_entries++;
+}
+
+/* Set capacity (creates structure on first call, no-op on resize for v1). */
+static int embed_lru_set_capacity(size_t capacity)
+{
+    pthread_mutex_lock(&g_lru_init_mtx);
+    if (g_lru.initialized) {
+        /* For v1, ignore capacity changes after first set.  Future:
+         * could grow/shrink in place under g_lru.mtx. */
+        pthread_mutex_unlock(&g_lru_init_mtx);
+        return 0;
+    }
+    if (capacity == 0) {
+        g_lru.capacity = 0;  /* disabled */
+        pthread_mutex_unlock(&g_lru_init_mtx);
+        return 0;
+    }
+    size_t nb = 1;
+    while (nb < capacity * 2) nb <<= 1;  /* power of 2, ~2× capacity */
+    g_lru.buckets = (embed_lru_node_t **)calloc(nb, sizeof(embed_lru_node_t *));
+    if (!g_lru.buckets) {
+        pthread_mutex_unlock(&g_lru_init_mtx);
+        return -1;
+    }
+    g_lru.n_buckets = nb;
+    g_lru.capacity  = capacity;
+    g_lru.n_entries = 0;
+    g_lru.lru_head  = g_lru.lru_tail = NULL;
+    pthread_mutex_init(&g_lru.mtx, NULL);
+    g_lru.initialized = 1;
+    pthread_mutex_unlock(&g_lru_init_mtx);
+    return 0;
+}
+
+/* Forward decls so fork_exec / h_set / sql_set can call these before
+ * their definitions later in the file.  DB_HANDLE-using decls move
+ * down after the struct definition. */
+static void   parent_service_embed(void);
+static void   setup_llamacpp_callback(void);
+static int    setup_llamacpp_main(duk_context *ctx, const char *path,
+                                  char *errbuf, size_t errbuflen);
+static int    peek_llamaembed_setting(duk_context *ctx, const char **path);
+static int    peek_llamacache_setting(duk_context *ctx, int *cap);
+static int    peek_llamaembed_perthread_setting(duk_context *ctx, int *on);
+static int    embed_lru_set_capacity(size_t capacity);
+static int    fork_drain_embed_callbacks(void);
+
 /* shared mem for logging errors */
 //char **errmap=NULL;
 
@@ -141,6 +342,8 @@ DB_HANDLE
     uint16_t forknum;           // convenience. Same as the threadnum from rampart-threads. So forknum == threadnum
     char flags;                 // bit 0 - if the texis handle is in the corresponding fork
                                 // bit 1 - if handle is available (not in use);
+                                // bit 2 - embed enabled (sql.set({llamaEmbed:...}))
+                                // bit 3 - embed callback registered in helper child
 };
 
 // if the handle corresponds to a *tx handle in a forked child
@@ -148,6 +351,13 @@ DB_HANDLE
 // if the handle is currently in use (on the main db_handle_head list)
 // if not in use, it is on the thread local db_handle_available_head list.
 #define DB_FLAG_IN_USE 2
+// embed enabled (sql.set({llamaEmbed:...}) succeeded; rp_embed_handle valid)
+#define DB_FLAG_EMBED_ENABLED 4
+// embed callback registered in this connection's helper child
+#define DB_FLAG_EMBED_CHILD_REGISTERED 8
+
+/* Forward decl for the V-registration helper; needs DB_HANDLE. */
+static int fork_maybe_register_embed(DB_HANDLE *h);
 
 #define DB_HANDLE_SET(h,flag)   do { (h)->flags |=  (flag);  } while (0)
 #define DB_HANDLE_CLEAR(h,flag) do { (h)->flags &= ~(flag); } while (0)
@@ -1109,6 +1319,8 @@ static FLDLST * fork_fetch(DB_HANDLE *h,  int stringsFrom)
     if(!finfo)
         return NULL;
 
+    if (fork_maybe_register_embed(h) != 0) return NULL;
+
     if(forkwrite("f", sizeof(char)) == -1)
         return NULL;
 
@@ -1117,6 +1329,10 @@ static FLDLST * fork_fetch(DB_HANDLE *h,  int stringsFrom)
 
     if(forkwrite(&(stringsFrom), sizeof(int)) == -1)
         return NULL;
+
+    /* 'B' callbacks may interleave (scalar embed() in SELECT list
+     * fires during texis_fetch).  Drain them before reading retsize. */
+    if (fork_drain_embed_callbacks() != 0) return NULL;
 
     if(forkread(&retsize, sizeof(int)) == -1)
         return NULL;
@@ -1306,15 +1522,18 @@ static int child_fetch()
     int ret=-1;
     FLDLST *fl;
     TEXIS *tx=NULL;
+    char atag = 'A';
 
     /* idx */
     if (forkread(&tx, sizeof(TEXIS *) )  == -1)
     {
+        forkwrite(&atag, 1);
         forkwrite(&ret, sizeof(int));
         return 0;
     }
     if(!tx)
     {
+        forkwrite(&atag, 1);
         forkwrite(&ret, sizeof(int));
         return 0;
     }
@@ -1322,20 +1541,26 @@ static int child_fetch()
     /* stringFrom */
     if (forkread(&stringFrom, sizeof(int))  == -1)
     {
+        forkwrite(&atag, 1);
         forkwrite(&ret, sizeof(int));
         return 0;
     }
     if(stringFrom == -9999)
     {
+        forkwrite(&atag, 1);
         forkwrite(&ret, sizeof(int));
         return 0;
     }
 
+    /* texis_fetch may invoke the registered TXembedFunc
+     * (child_embed_callback) for SELECT-list embed() calls; those
+     * emit 'B' interleaved with this response.  Final tag is 'A'. */
     fl = texis_fetch(tx, stringFrom);
 
     if(fl)
         ret = serialize_fl(finfo,fl);
 
+    if (forkwrite(&atag, 1) == -1) return 0;
     if(forkwrite(&ret, sizeof(int)) == -1)
         return 0;
 
@@ -1463,6 +1688,23 @@ static int child_param()
 
 
 
+/* Maybe-send 'V' to register the embed callback in the helper.
+ * Idempotent: only fires if the handle is embed-enabled but the
+ * helper hasn't been told yet (i.e. sql.set arrived after open).
+ * Returns 0 on success/skip, -1 on pipe error. */
+static int fork_maybe_register_embed(DB_HANDLE *h)
+{
+    if (!DB_HANDLE_IS(h, DB_FLAG_EMBED_ENABLED) ||
+         DB_HANDLE_IS(h, DB_FLAG_EMBED_CHILD_REGISTERED))
+        return 0;
+    char ack = 0;
+    if (forkwrite("V", 1) == -1) return -1;
+    if (forkread(&ack, 1) == -1) return -1;
+    if (ack == 'K')
+        DB_HANDLE_SET(h, DB_FLAG_EMBED_CHILD_REGISTERED);
+    return 0;
+}
+
 static int fork_exec(DB_HANDLE *h)
 {
     int ret=0;
@@ -1472,15 +1714,17 @@ static int fork_exec(DB_HANDLE *h)
     if(!finfo)
         return 0;
 
+    if (fork_maybe_register_embed(h) != 0) return 0;
+
     if(forkwrite("e", sizeof(char)) == -1)
         return ret;
 
     if(forkwrite(&(h->tx), sizeof(TEXIS *)) == -1)
         return ret;
 
-    if(forkread(&ret, sizeof(int)) == -1)
-        return 0;
-
+    /* 'B' callbacks may interleave before the final 'A' + int. */
+    if (fork_drain_embed_callbacks() != 0) return 0;
+    if (forkread(&ret, sizeof(int)) == -1) return 0;
     return ret;
 }
 
@@ -1488,22 +1732,28 @@ static int child_exec()
 {
     TEXIS *tx=NULL;
     int ret=0;
+    char atag = 'A';
 
     if (forkread(&tx, sizeof(TEXIS *))  == -1)
     {
+        forkwrite(&atag, 1);
         forkwrite(&ret, sizeof(int));
         return 0;
     }
 
     if(!tx)
     {
+        forkwrite(&atag, 1);
         forkwrite(&ret, sizeof(int));
         return 0;
     }
 
+    /* texis_execute may invoke the registered TXembedFunc
+     * (LIKEV with string RHS), emitting 'B' callbacks before 'A'. */
     ret = texis_execute(tx);
-    if (forkwrite(&ret, sizeof(int))  == -1)
-        return 0;
+
+    if (forkwrite(&atag, 1) == -1) return 0;
+    if (forkwrite(&ret, sizeof(int)) == -1) return 0;
 
     return ret;
 }
@@ -1563,6 +1813,170 @@ static int child_prep()
     return ret;
 }
 
+/* ============================================================
+ * Embed callback wire protocol (Step 4)
+ *
+ * Helper child → parent:   'B' + size_t tlen + bytes[tlen] text
+ * Parent → helper:         size_t veclen_bytes + bytes[veclen_bytes] vec
+ *                          (veclen_bytes == 0 signals failure)
+ *
+ * The 'B' tag arrives interleaved with the helper's final response
+ * to fork_exec.  The parent's fork_exec response loop sees 'B' →
+ * services the callback → reads next tag.  'A' tag means the final
+ * int result is next on the wire.
+ *
+ * The fork_exec / child_exec protocol is the only command that ever
+ * sees embed callbacks (embeds fire inside texis_execute, see plan).
+ *
+ * Pre-Step-4 fork_exec response was a bare int.  Now it's '<tag>'
+ * with 'A' meaning "int result follows".  Other fork_/child_ pairs
+ * are unchanged.
+ * ============================================================ */
+
+/* Helper-side: writes 'B' tag + text-length over the pipe; the actual
+ * text body goes through the thread-local shared mmap, as does the
+ * vector reply.  Mmap is unused during exec/fetch's embed-callback
+ * window (child_exec / child_fetch don't touch mmap until after the
+ * texis call returns), so reusing it for the bulk-data transfer is
+ * safe and avoids a pipe round-trip per kilobyte. */
+static size_t child_embed_callback(void *ud,
+                                   const char *text, size_t tlen,
+                                   float **out_vec)
+{
+    (void)ud;
+    *out_vec = NULL;
+    if (!finfo) return 0;
+    if (tlen == 0 || tlen > FORKMAPSIZE) return 0;
+
+    /* text → mmap (no other writer at this point). */
+    memcpy(finfo->mapinfo->mem, text, tlen);
+
+    char tag = 'B';
+    if (forkwrite(&tag, 1) == -1) return 0;
+    if (forkwrite((char *)&tlen, sizeof tlen) == -1) return 0;
+
+    /* Parent embeds and writes the vec back into our mmap before
+     * sending the size byte through the pipe. */
+    size_t veclen_bytes = 0;
+    if (forkread(&veclen_bytes, sizeof veclen_bytes) == -1) return 0;
+    if (veclen_bytes == 0) return 0;
+    if (veclen_bytes > FORKMAPSIZE) return 0;
+    if (veclen_bytes % sizeof(float) != 0) return 0;
+
+    float *vec = (float *)malloc(veclen_bytes);
+    if (!vec) return 0;
+    memcpy(vec, finfo->mapinfo->mem, veclen_bytes);
+    *out_vec = vec;
+    return veclen_bytes / sizeof(float);
+}
+
+/* Registered once by child when it learns embed is enabled — either
+ * via 'O' from fork_open or 'V' from fork_exec.  Idempotent. */
+static void setup_llamacpp_callback(void)
+{
+    TXregisterEmbedFunc(child_embed_callback, NULL);
+}
+
+/* Parent-side helper: consume any 'B' (embed) callbacks, return when
+ * the helper sends 'A' (= "real response payload follows").  Returns 0
+ * on success, -1 on pipe error. */
+static int fork_drain_embed_callbacks(void)
+{
+    for (;;) {
+        char tag;
+        if (forkread(&tag, 1) == -1) return -1;
+        if (tag == 'B') {
+            parent_service_embed();
+            continue;
+        }
+        if (tag == 'A') return 0;
+        fprintf(stderr,
+                "rampart-sql: protocol error, unknown tag '%c' (0x%02x)\n",
+                tag, (unsigned char)tag);
+        return -1;
+    }
+}
+
+/* Parent-side: called by fork_exec when it sees 'B' on the wire.
+ * Reads (tlen, text), embeds via main's rp_embed_text, writes
+ * (veclen_bytes, vec).  On any failure writes veclen_bytes=0. */
+/* Parent-side: called when the response-loop sees 'B'.  Reads tlen
+ * from the pipe; text is already in mmap.  Tries the LRU first, then
+ * embeds on miss.  Result goes into the (thread-local) mmap; size goes
+ * down the pipe.  No locks held during the model call or pipe write. */
+static void parent_service_embed(void)
+{
+    size_t tlen = 0, fail = 0;
+    size_t veclen_bytes = 0;
+
+    if (forkread(&tlen, sizeof tlen) == -1) return;
+    if (tlen == 0 || tlen > FORKMAPSIZE) {
+        forkwrite((char *)&fail, sizeof fail);
+        return;
+    }
+    const char *text = (const char *)finfo->mapinfo->mem;
+
+    /* --- LRU lookup ----------------------------------------------- */
+    int  hit_dim = 0;
+    if (g_lru.initialized && g_lru.capacity > 0) {
+        uint64_t h = embed_lru_fnv1a(text, tlen);
+        pthread_mutex_lock(&g_lru.mtx);
+        embed_lru_node_t *n = embed_lru_find_locked(h, text, tlen);
+        if (n) {
+            hit_dim = n->dim;
+            /* memcpy from cache → mmap while holding lock.  We read
+             * n->vec (cache memory, not mmap) and write mmap.  The
+             * write overwrites text, but we're done with text. */
+            memcpy(finfo->mapinfo->mem, n->vec, (size_t)n->dim * sizeof(float));
+            embed_lru_promote_locked(n);
+        }
+        pthread_mutex_unlock(&g_lru.mtx);
+    }
+
+    if (hit_dim > 0) {
+        /* Test-only instrumentation: presence of /tmp/.embed_trace_on
+         * enables hit/miss logging to /tmp/embed_trace.log.  Used by
+         * smoke_embed_cache.js; harmless to leave in (one access() per
+         * embed call; the file rarely exists in production). */
+        if (access("/tmp/.embed_trace_on", F_OK) == 0) {
+            FILE *f = fopen("/tmp/embed_trace.log", "a");
+            if (f) { fputs("hit\n", f); fclose(f); }
+        }
+        veclen_bytes = (size_t)hit_dim * sizeof(float);
+        forkwrite((char *)&veclen_bytes, sizeof veclen_bytes);
+        return;
+    }
+
+    /* --- MISS: embed (no lock) ----------------------------------- */
+    if (access("/tmp/.embed_trace_on", F_OK) == 0) {
+        FILE *f = fopen("/tmp/embed_trace.log", "a");
+        if (f) { fputs("miss\n", f); fclose(f); }
+    }
+    float *vec = NULL;
+    int    dim = 0;
+    if (g_rp_embed_text && g_embed_handle)
+        dim = g_rp_embed_text(g_embed_handle, text, tlen, &vec);
+    if (dim == 0 || !vec) {
+        if (vec) free(vec);
+        forkwrite((char *)&fail, sizeof fail);
+        return;
+    }
+
+    /* Cache it before overwriting mmap (lru_put copies text + vec into
+     * a fresh node; lock briefly). */
+    if (g_lru.initialized && g_lru.capacity > 0) {
+        uint64_t h = embed_lru_fnv1a(text, tlen);
+        pthread_mutex_lock(&g_lru.mtx);
+        embed_lru_put_locked(h, text, tlen, vec, dim);
+        pthread_mutex_unlock(&g_lru.mtx);
+    }
+
+    veclen_bytes = (size_t)dim * sizeof(float);
+    memcpy(finfo->mapinfo->mem, vec, veclen_bytes);
+    forkwrite((char *)&veclen_bytes, sizeof veclen_bytes);
+    free(vec);
+}
+
 // return 0 on pipe/fork error
 // h->tx set otherwise.
 static int fork_open(DB_HANDLE *h, const char *user, const char *pass)
@@ -1577,14 +1991,19 @@ static int fork_open(DB_HANDLE *h, const char *user, const char *pass)
         if(needed > FORKMAPSIZE) return 0;
         sprintf(finfo->mapinfo->mem, "%s%c%s%c%s", h->db, 0, user, 0, pass);
 
-        /* write o for open and the string db is in memmap */
-        if(forkwrite("o", sizeof(char)) == -1)
+        /* 'O' = open + register embed callback (fall-through to 'o').
+         * 'o' = plain open.  Mirror the flag set on parent's handle so
+         * subsequent fork_exec's skip the lazy registration step. */
+        char open_cmd = DB_HANDLE_IS(h, DB_FLAG_EMBED_ENABLED) ? 'O' : 'o';
+        if(forkwrite(&open_cmd, sizeof(char)) == -1)
             return 0;
 
         if(forkread(&(h->tx), sizeof(TEXIS *)) == -1)
         {
             return 0;
         }
+        if (open_cmd == 'O')
+            DB_HANDLE_SET(h, DB_FLAG_EMBED_CHILD_REGISTERED);
     }
 
     return 1;
@@ -1922,6 +2341,38 @@ static int fork_sql_set(duk_context *ctx, DB_HANDLE *h, char *errbuf)
     if(!finfo)
         return 0;
 
+    /* If llamaEmbed is in the settings, load the model in main BEFORE
+     * shipping; the helper only knows how to register the wire callback. */
+    const char *embed_path = NULL;
+    int wants_embed = peek_llamaembed_setting(ctx, &embed_path);
+    if (wants_embed) {
+        char eerr[256] = {0};
+        if (setup_llamacpp_main(ctx, embed_path, eerr, sizeof eerr) != 0) {
+            snprintf(errbuf, msgbufsz, "%s", eerr);
+            return -1;
+        }
+    }
+
+    /* llamaCache lives in main only (parent_service_embed is where the
+     * LRU lookup happens).  Apply here in the parent. */
+    int cache_cap = 0;
+    if (peek_llamacache_setting(ctx, &cache_cap)) {
+        if (cache_cap < 0) cache_cap = 0;
+        if (embed_lru_set_capacity((size_t)cache_cap) != 0) {
+            snprintf(errbuf, msgbufsz,
+                     "sql.set: llamaCache: failed to allocate cache");
+            return -1;
+        }
+    }
+
+    /* llamaEmbedPerThread also lives in main (rp_embed_text checks it).
+     * Apply in parent so the helper never wastes time forwarding. */
+    int per_thread = 1;
+    if (peek_llamaembed_perthread_setting(ctx, &per_thread)) {
+        if (g_rp_embed_set_per_thread)
+            g_rp_embed_set_per_thread(per_thread);
+    }
+
     duk_cbor_encode(ctx, -1, 0);
     p=duk_get_buffer_data(ctx, -1, &sz);
     memcpy(finfo->mapinfo->mem, p, (size_t)sz);
@@ -1951,6 +2402,11 @@ static int fork_sql_set(duk_context *ctx, DB_HANDLE *h, char *errbuf)
     else if (ret < 0)
     {
         strncpy(errbuf, finfo->mapinfo->mem, msgbufsz);
+    }
+
+    if (ret >= 0 && wants_embed) {
+        DB_HANDLE_SET(h, DB_FLAG_EMBED_ENABLED);
+        DB_HANDLE_CLEAR(h, DB_FLAG_EMBED_CHILD_REGISTERED);
     }
 
     return ret;
@@ -2053,8 +2509,21 @@ static void do_child_loop(SFI *finfo)
 
         switch(command)
         {
+            case 'O':
+                /* open + register embed callback */
+                setup_llamacpp_callback();
+                /* fall through */
             case 'o':
                 ret = child_open();
+                break;
+            case 'V':
+                /* lazy embed-callback registration (sql.set arrived
+                 * after the connection was opened with 'o') */
+                setup_llamacpp_callback();
+                {
+                    char ack = 'K';  /* arbitrary ack byte; not in tag stream */
+                    forkwrite(&ack, 1);
+                }
                 break;
             case 'c':
                 ret = child_close();
@@ -2118,11 +2587,81 @@ static int h_end_transaction(DB_HANDLE *h)
     return 1;
 }
 
+/* Peek the settings object at top-of-stack for the llamaembed key
+ * (keys are lowercased by sql_normalize_prop, so use lowercase here).
+ * Returns 1 if present, 0 otherwise; sets *path on success. */
+static int peek_llamaembed_setting(duk_context *ctx, const char **path)
+{
+    int found = 0;
+    if (duk_get_prop_string(ctx, -1, "llamaembed")) {
+        if (duk_is_string(ctx, -1)) {
+            found = 1;
+            if (path) *path = duk_get_string(ctx, -1);
+        }
+    }
+    duk_pop(ctx);
+    return found;
+}
+
+/* Likewise for llamaCache.  Returns 1 if present, sets *cap. */
+static int peek_llamacache_setting(duk_context *ctx, int *cap)
+{
+    int found = 0;
+    if (duk_get_prop_string(ctx, -1, "llamacache")) {
+        if (duk_is_number(ctx, -1)) {
+            found = 1; if (cap) *cap = duk_get_int(ctx, -1);
+        } else if (duk_is_string(ctx, -1)) {
+            found = 1; if (cap) *cap = atoi(duk_get_string(ctx, -1));
+        }
+    }
+    duk_pop(ctx);
+    return found;
+}
+
+/* And llamaEmbedPerThread (bool).  Returns 1 if present, sets *on. */
+static int peek_llamaembed_perthread_setting(duk_context *ctx, int *on)
+{
+    int found = 0;
+    if (duk_get_prop_string(ctx, -1, "llamaembedperthread")) {
+        if (duk_is_boolean(ctx, -1)) {
+            found = 1; if (on) *on = duk_get_boolean(ctx, -1) ? 1 : 0;
+        } else if (duk_is_number(ctx, -1)) {
+            found = 1; if (on) *on = duk_get_int(ctx, -1) ? 1 : 0;
+        }
+    }
+    duk_pop(ctx);
+    return found;
+}
+
 static int h_set(duk_context *ctx, DB_HANDLE *h, char *errbuf)
 {
+    const char *embed_path = NULL;
+    int wants_embed = peek_llamaembed_setting(ctx, &embed_path);
+
+    if (wants_embed && DB_HANDLE_IS(h, DB_FLAG_FORK)) {
+        /* Forked path: load model in main before shipping settings.
+         * setup_llamacpp_main is idempotent (cached by path). */
+        char eerr[256] = {0};
+        if (setup_llamacpp_main(ctx, embed_path, eerr, sizeof eerr) != 0) {
+            snprintf(errbuf, msgbufsz, "%s", eerr);
+            return -1;
+        }
+    }
+
+    int ret;
     if(DB_HANDLE_IS(h,DB_FLAG_FORK))
-        return fork_sql_set(ctx, h, errbuf);
-    return sql_set(ctx, h->tx, errbuf);
+        ret = fork_sql_set(ctx, h, errbuf);
+    else
+        ret = sql_set(ctx, h->tx, errbuf);
+
+    if (ret >= 0 && wants_embed) {
+        DB_HANDLE_SET(h, DB_FLAG_EMBED_ENABLED);
+        /* Clear CHILD_REGISTERED so the next fork_exec triggers 'V'
+         * even if the connection was opened with 'o'. */
+        DB_HANDLE_CLEAR(h, DB_FLAG_EMBED_CHILD_REGISTERED);
+    }
+
+    return ret;
 }
 
 static int h_flush(DB_HANDLE *h)
@@ -5190,6 +5729,120 @@ static int sql_defaults(duk_context *ctx, TEXIS *tx, char *errbuf)
     return 0;
 }
 
+/* ============================================================
+ * Embed plumbing (Step 3 v1: main-side fast path only)
+ *
+ * sql.set({llamaEmbed:"/path/..."}) flow:
+ *   1. require("rampart-llamacpp")     — load the .so via rampart's
+ *                                        module resolver (RTLD_GLOBAL)
+ *   2. dlsym the rp_embed_* C exports (once per process)
+ *   3. rp_embed_load(path)              — gives opaque handle; cached
+ *                                         by path inside rampart-llamacpp
+ *   4. TXregisterEmbedFunc(main_embed_callback, g_embed_handle)
+ *      so the SQL `embed()` builtin will call into rampart-llamacpp.
+ *   5. Attach the JS embed module to the Sql object as a hidden symbol
+ *      so it stays GC-rooted for the connection's lifetime.
+ *
+ * The "main fast path" is everything that runs texis in-process (no
+ * helper).  Step 4 will add the helper round-trip protocol.
+ * ============================================================ */
+
+#include <dlfcn.h>
+
+static size_t main_embed_callback(void *ud,
+                                  const char *text, size_t tlen,
+                                  float **out_vec)
+{
+    if (!g_rp_embed_text || !ud) return 0;
+    return g_rp_embed_text(ud, text, tlen, out_vec);
+}
+
+/* Try several require() ids in turn until one resolves.  Order:
+ * the canonical "rampart-llamacpp" name first (which on a system with
+ * a single installed variant is the build that variant ships under),
+ * then the CUDA build, then the CPU build.  require() handles path
+ * resolution; no absolute paths needed here. */
+static int try_require_llamacpp(duk_context *ctx)
+{
+    static const char *candidates[] = {
+        "rampart-llamacpp",
+        "rampart-llamacpp_cuda",
+        "rampart-llamacpp_cpu",
+        NULL
+    };
+    for (int i = 0; candidates[i]; ++i) {
+        duk_push_global_object(ctx);
+        duk_get_prop_string(ctx, -1, "require");
+        duk_remove(ctx, -2);
+        duk_push_string(ctx, candidates[i]);
+        if (duk_pcall(ctx, 1) == 0) return 0;     /* module on stack */
+        duk_pop(ctx);                              /* drop the error */
+    }
+    return -1;
+}
+
+/* Returns 0 on success, fills errbuf and returns -1 on failure.
+ * Resolves rp_embed_* via dlsym, attempting require() if not yet loaded. */
+static int setup_llamacpp_main(duk_context *ctx, const char *path,
+                               char *errbuf, size_t errbuflen)
+{
+    /* Resolve symbols once per process. */
+    if (!g_rp_embed_load) {
+        /* If the user (or a prior sql.set) already loaded the module,
+         * the symbols are already in RTLD_DEFAULT — skip require(). */
+        g_rp_embed_load = dlsym(RTLD_DEFAULT, "rp_embed_load");
+
+        if (!g_rp_embed_load) {
+            if (try_require_llamacpp(ctx) != 0) {
+                snprintf(errbuf, errbuflen,
+                         "sql.set llamaEmbed: cannot load rampart-llamacpp "
+                         "(tried require(\"rampart-llamacpp\"), "
+                         "\"rampart-llamacpp_cuda\", and "
+                         "\"rampart-llamacpp_cpu\")");
+                return -1;
+            }
+            /* Stash the module object on the Sql `this` so its .so
+             * refcount stays alive for the Sql's lifetime. */
+            duk_push_this(ctx);
+            duk_dup(ctx, -2);
+            duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("llamacpp_module"));
+            duk_pop_2(ctx);  /* this, module */
+
+            g_rp_embed_load = dlsym(RTLD_DEFAULT, "rp_embed_load");
+        }
+
+        g_rp_embed_text = dlsym(RTLD_DEFAULT, "rp_embed_text");
+        g_rp_embed_dim  = dlsym(RTLD_DEFAULT, "rp_embed_dim");
+        g_rp_embed_set_per_thread = dlsym(RTLD_DEFAULT, "rp_embed_set_per_thread");
+        /* set_per_thread is optional (older .so may lack it); ignore if NULL. */
+        if (!g_rp_embed_load || !g_rp_embed_text || !g_rp_embed_dim) {
+            snprintf(errbuf, errbuflen,
+                     "sql.set llamaEmbed: rampart-llamacpp loaded but "
+                     "rp_embed_* C symbols are missing (version mismatch?)");
+            g_rp_embed_load = NULL;
+            g_rp_embed_text = NULL;
+            g_rp_embed_dim  = NULL;
+            return -1;
+        }
+    }
+
+    /* Load model.  rp_embed_load caches by path; repeat with same path
+     * just bumps refcount. */
+    char loaderr[256] = {0};
+    void *h = g_rp_embed_load(path, loaderr, sizeof loaderr);
+    if (!h) {
+        snprintf(errbuf, errbuflen,
+                 "sql.set llamaEmbed: model load failed: %s",
+                 loaderr[0] ? loaderr : "unknown");
+        return -1;
+    }
+    g_embed_handle = h;
+
+    /* Register the callback so texis's embed() builtin will fire. */
+    TXregisterEmbedFunc(main_embed_callback, g_embed_handle);
+    return 0;
+}
+
 // returns -1 for bad option, -2 for setprop error, 0 for ok, 1 for ok with return value
 static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
 {
@@ -5377,6 +6030,80 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
                 sprintf(errbuf, "sql.set: couldn't find %s in %s", eqfile, eqpath);
                 goto return_neg_two;
             }
+            goto propnext;
+        }
+
+        /* llamaEmbedPerThread — process-global flag.  Default = true.
+         * When true, each calling parent worker thread gets its own
+         * llama_context lazily; when false, one shared context with a
+         * mutex.  Helper-child ignores. */
+        if (!strcasecmp(prop, "llamaEmbedPerThread"))
+        {
+            if (thisfork) goto propnext;
+            int on = 1;
+            if (duk_is_boolean(ctx, -1)) on = duk_get_boolean(ctx, -1) ? 1 : 0;
+            else if (duk_is_number(ctx, -1)) on = duk_get_int(ctx, -1) ? 1 : 0;
+            else {
+                snprintf(errbuf, msgbufsz,
+                         "sql.set: llamaEmbedPerThread must be a Boolean");
+                goto return_neg_one;
+            }
+            if (g_rp_embed_set_per_thread)
+                g_rp_embed_set_per_thread(on);
+            /* If the rp_embed_set_per_thread symbol isn't present in
+             * the loaded rampart-llamacpp (older .so), silently fall
+             * through — the flag has no effect. */
+            goto propnext;
+        }
+
+        /* llamaCache — number of entries in the process-wide embed
+         * LRU cache.  0 (default) disables.  Helper-child ignores
+         * this — the cache lives in main only.  Idempotent for v1
+         * (subsequent calls with a different N are silently no-op
+         * after the first). */
+        if (!strcasecmp(prop, "llamaCache"))
+        {
+            if (thisfork) goto propnext;  /* helper: nothing to do */
+            int n = 0;
+            if (duk_is_number(ctx, -1))      n = duk_get_int(ctx, -1);
+            else if (duk_is_string(ctx, -1)) n = atoi(duk_get_string(ctx, -1));
+            else {
+                snprintf(errbuf, msgbufsz,
+                         "sql.set: llamaCache must be a Number");
+                goto return_neg_one;
+            }
+            if (n < 0) n = 0;
+            if (embed_lru_set_capacity((size_t)n) != 0) {
+                snprintf(errbuf, msgbufsz,
+                         "sql.set: llamaCache: failed to allocate cache");
+                goto return_neg_one;
+            }
+            goto propnext;
+        }
+
+        /* llamaEmbed — main loads the model + registers main callback,
+         * helper-child only registers the wire callback (writes 'B'
+         * up the pipe).  thisfork tells us which side we're on. */
+        if (!strcasecmp(prop, "llamaEmbed"))
+        {
+            if (!duk_is_string(ctx, -1)) {
+                snprintf(errbuf, msgbufsz,
+                         "sql.set: llamaEmbed must be a string path");
+                goto return_neg_one;
+            }
+            if (thisfork) {
+                /* Helper child: just register the wire callback. */
+                setup_llamacpp_callback();
+                goto propnext;
+            }
+            const char *path = duk_get_string(ctx, -1);
+            char eerr[256] = {0};
+            if (setup_llamacpp_main(ctx, path, eerr, sizeof eerr) != 0) {
+                snprintf(errbuf, msgbufsz, "%s", eerr);
+                goto return_neg_one;
+            }
+            /* DB_HANDLE flag setting happens in h_set / fork_sql_set
+             * after this returns successfully. */
             goto propnext;
         }
 

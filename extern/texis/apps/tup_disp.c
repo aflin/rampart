@@ -215,6 +215,20 @@ tup_disp(DBTBL *tup, int width, FLDOP *fo)
 		++i
 	)
 	{
+		FTN	savedType = 0;
+		int	vecDisplayedAsByte = 0;
+
+		/* varvec types have no native varchar conversion; show
+		 * them as hex bytes like varbyte.  Temporarily retype
+		 * f1 to varbyte for the duration of the convert; the
+		 * byte content is unchanged, only the type tag. */
+		if (FTN_IS_VEC(f1->type & DDTYPEBITS))
+		{
+			savedType = f1->type;
+			f1->type = (f1->type & ~DDTYPEBITS) | FTN_BYTE;
+			vecDisplayedAsByte = 1;
+		}
+
 		f->type = FTN_CHAR + DDVARBIT;
 		freeflddata(f);
 		fopush(fo, f1);
@@ -223,6 +237,9 @@ tup_disp(DBTBL *tup, int width, FLDOP *fo)
 			putmsg(MERR, NULL, "Could not display %s", fname);
 		closefld(f);
 		f = fopop(fo);
+
+		if (vecDisplayedAsByte)
+			f1->type = savedType;
 		if (!strstr(fname, ".$recid"))
 		switch (f->type & FTN_VarBaseTypeMask)
 		{

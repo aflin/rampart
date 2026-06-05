@@ -458,6 +458,33 @@ int	*nn;
 				TXstrncpy(type, typeVal, sizeof(type));
 				return(type);
 			}
+			/* Two-arg embed(text, dtype) has a dynamic return
+			 * type named by its 2nd arg.  One-arg embed(text)
+			 * falls through to the static varvecF16 default.
+			 * Map the dtype name to a texis vec type name. */
+			if (strcmp((char *)p->left, "embed") == 0 &&
+			    p->rt == 'P' &&
+			    rightPred &&
+			    rightPred->op == LIST_OP &&
+			    rightPred->rt == FIELD_OP &&
+			    (typeFld = (FLD *)rightPred->right) != FLDPN &&
+			    (typeFld->type & DDTYPEBITS) == FTN_CHAR &&
+			    (typeVal = getfld(typeFld, &typeN)) != CHARPN)
+			{
+				const char *vecName = NULL;
+				if      (!strcasecmp(typeVal, "f16"))  vecName = "varvecF16";
+				else if (!strcasecmp(typeVal, "f32"))  vecName = "varvecF32";
+				else if (!strcasecmp(typeVal, "f64"))  vecName = "varvecF64";
+				else if (!strcasecmp(typeVal, "bf16")) vecName = "varvecBf16";
+				if (vecName)
+				{
+					TXstrncpy(type, vecName, sizeof(type));
+					return(type);
+				}
+				/* unknown dtype: fall through to static
+				 * default; the run-time embed call will
+				 * error with a clear message. */
+			}
 			/* lookup() has a dynamic return type: */
 			switch (TXgetLookupFuncReturnType(t, fo, p,
 				       &funcRetType, &fldLen, &isNotNullable))

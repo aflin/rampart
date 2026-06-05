@@ -215,6 +215,8 @@ void  TXvecBtreeWalkRecids  (const char *base_path,
 int   TXvecBtreeTruncate    (const char *base_path);
 void  TXvecBtreeUnlink      (const char *base_path);
 
+/* Embed callback registry is declared in vecindex.h (public). */
+
 #ifdef __cplusplus
 } /* extern "C" */
 #endif

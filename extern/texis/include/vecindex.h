@@ -323,6 +323,23 @@ IINDEX *TXvecIxVecIndex(const char *iname,
                         FLD *infld, const char *fname,
                         DBTBL *dbtbl, int op, int *cop);
 
+/* ----- Embed callback registry (public API) -------------------------
+ *
+ * The SQL layer registers a callback that turns text into a vector.
+ * Used by the `embed()` SQL scalar function (in vecindex.c).
+ *
+ * Signature: takes utf-8 text, returns the L2-normalized average vector
+ * ("avgVec") of dim = model's embedding dim.  Caller frees *out_vec.
+ * Returns dim on success, 0 on failure. */
+
+typedef size_t (*TXembedFunc)(void *user_data,
+                              const char *text, size_t text_len,
+                              float **out_vec);
+
+void        TXregisterEmbedFunc(TXembedFunc fn, void *user_data);
+TXembedFunc TXgetEmbedFunc(void **user_data_out);
+void        TXclearEmbedFunc(void);
+
 #ifdef __cplusplus
 }
 #endif
