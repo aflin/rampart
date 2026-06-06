@@ -6075,17 +6075,20 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
                 if(setprop(ddic, "eqprefix", rp.path )==-1)
                 {
                     sprintf(errbuf, "sql.set: %s", finfo->errmap);
+                    setprop(ddic, "eqprefix", "" ); //reset if fail
                     goto return_neg_two;
                 }
 
                 if(setprop(ddic, "alequivs", "1" )==-1)
                 {
                     sprintf(errbuf, "sql.set: %s", finfo->errmap);
+                    setprop(ddic, "eqprefix", "" ); //reset if fail
                     goto return_neg_two;
                 }
                 if(setprop(ddic, "keepeqvs", "1" )==-1)
                 {
                     sprintf(errbuf, "sql.set: %s", finfo->errmap);
+                    setprop(ddic, "eqprefix", "" ); //reset if fail
                     goto return_neg_two;
                 }
 
