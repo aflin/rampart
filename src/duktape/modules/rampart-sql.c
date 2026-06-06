@@ -123,6 +123,7 @@ typedef struct embed_lru_node_s {
     size_t    text_len;
     float    *vec;
     int       dim;
+    void     *model;          /* which embed model produced vec (per-connection) */
     uint64_t  text_hash;
     /* hash chain — singly linked, pointer-to-pointer prev for O(1) unlink */
     struct embed_lru_node_s  *hash_next;
@@ -144,21 +145,28 @@ static struct {
 } g_lru = {0};
 static pthread_mutex_t g_lru_init_mtx = PTHREAD_MUTEX_INITIALIZER;
 
-static uint64_t embed_lru_fnv1a(const char *data, size_t len)
+/* Key folds the model pointer in with the text, so the same query string
+ * embedded by two different models (e.g. MiniLM vs bge-m3 serving different
+ * language DBs in one process) gets distinct cache entries. */
+static uint64_t embed_lru_key(const void *model, const char *data, size_t len)
 {
-    uint64_t h = 14695981039346656037ULL;  /* FNV offset basis */
-    for (size_t i = 0; i < len; i++)
+    uint64_t  h = 14695981039346656037ULL;  /* FNV offset basis */
+    uintptr_t m = (uintptr_t)model;
+    size_t    i;
+    for (i = 0; i < sizeof m; i++)
+        h = (h ^ (uint8_t)(m >> (i * 8))) * 1099511628211ULL;
+    for (i = 0; i < len; i++)
         h = (h ^ (uint8_t)data[i]) * 1099511628211ULL;  /* FNV prime */
     return h;
 }
 
 /* must be called under g_lru.mtx */
 static embed_lru_node_t *
-embed_lru_find_locked(uint64_t h, const char *text, size_t tlen)
+embed_lru_find_locked(uint64_t h, const void *model, const char *text, size_t tlen)
 {
     embed_lru_node_t *n = g_lru.buckets[h & (g_lru.n_buckets - 1)];
     while (n) {
-        if (n->text_hash == h && n->text_len == tlen &&
+        if (n->text_hash == h && n->model == model && n->text_len == tlen &&
             memcmp(n->text, text, tlen) == 0)
             return n;
         n = n->hash_next;
@@ -207,12 +215,12 @@ static void embed_lru_evict_one_locked(void)
 
 /* must be called under g_lru.mtx; copies text + vec into a new node */
 static void
-embed_lru_put_locked(uint64_t h, const char *text, size_t tlen,
+embed_lru_put_locked(uint64_t h, const void *model, const char *text, size_t tlen,
                      const float *vec, int dim)
 {
     /* Dedup: two threads might miss in parallel and both call put.
      * If already present, just promote and return. */
-    embed_lru_node_t *existing = embed_lru_find_locked(h, text, tlen);
+    embed_lru_node_t *existing = embed_lru_find_locked(h, model, text, tlen);
     if (existing) {
         embed_lru_promote_locked(existing);
         return;
@@ -228,6 +236,7 @@ embed_lru_put_locked(uint64_t h, const char *text, size_t tlen,
     n->text_len  = tlen;
     n->text_hash = h;
     n->dim       = dim;
+    n->model     = (void *)model;
     n->vec       = (float *)malloc((size_t)dim * sizeof(float));
     if (!n->vec) { free(n->text); free(n); return; }
     memcpy(n->vec, vec, (size_t)dim * sizeof(float));
@@ -321,6 +330,19 @@ __thread SFI *finfo = NULL;
 // address from duk_get_heapptr of the last sql to have its settings applied
 __thread void *last_sql_set = NULL;
 
+/* Per-connection embed model support.
+ *  g_last_loaded_embed_handle: the model handle just loaded by setup_llamacpp_main
+ *      on THIS thread; captured by h_set() onto the connection's DB_HANDLE.
+ *      Thread-local so concurrent sql.set({llamaEmbed}) on different threads with
+ *      different models don't race (the old process-global g_embed_handle did).
+ *  g_active_embed_handle: the model for the query currently executing on this
+ *      thread; set per-exec from the handle, read by main_embed_callback (the
+ *      in-process embed() path) and parent_service_embed (the helper-parent path).
+ *      This is what makes embed() resolve per SQL connection instead of "first
+ *      sql.set wins". */
+__thread void *g_last_loaded_embed_handle = NULL;
+__thread void *g_active_embed_handle      = NULL;
+
 // some string functions don't fork.  We need an error map for them
 char *errmap0;
 
@@ -340,6 +362,7 @@ DB_HANDLE
     DB_HANDLE *next;            // linked list
     DB_HANDLE *prev;            // doublylinked list
     uint16_t forknum;           // convenience. Same as the threadnum from rampart-threads. So forknum == threadnum
+    void *embed_handle;         // per-connection embed model (rp_embed_load handle), or NULL
     char flags;                 // bit 0 - if the texis handle is in the corresponding fork
                                 // bit 1 - if handle is available (not in use);
                                 // bit 2 - embed enabled (sql.set({llamaEmbed:...}))
@@ -392,6 +415,7 @@ static DB_HANDLE *new_handle(const char *db, const char *user, const char *pass)
 
     h->db=strdup(db);
     h->tx=NULL;
+    h->embed_handle=NULL;
     h->forknum = (uint16_t)get_thread_num();
     h->next = h->prev = NULL;
     h->user=strdup(user);
@@ -1919,9 +1943,9 @@ static void parent_service_embed(void)
     /* --- LRU lookup ----------------------------------------------- */
     int  hit_dim = 0;
     if (g_lru.initialized && g_lru.capacity > 0) {
-        uint64_t h = embed_lru_fnv1a(text, tlen);
+        uint64_t h = embed_lru_key(g_active_embed_handle, text, tlen);
         pthread_mutex_lock(&g_lru.mtx);
-        embed_lru_node_t *n = embed_lru_find_locked(h, text, tlen);
+        embed_lru_node_t *n = embed_lru_find_locked(h, g_active_embed_handle, text, tlen);
         if (n) {
             hit_dim = n->dim;
             /* memcpy from cache → mmap while holding lock.  We read
@@ -1954,8 +1978,11 @@ static void parent_service_embed(void)
     }
     float *vec = NULL;
     int    dim = 0;
-    if (g_rp_embed_text && g_embed_handle)
-        dim = g_rp_embed_text(g_embed_handle, text, tlen, &vec);
+    /* Use the model of the connection whose query we're servicing on this thread
+     * (set by rp_sql_exec_query before fork_exec drove us here), so the forked
+     * path is per-connection too -- not the old "first sql.set wins" global. */
+    if (g_rp_embed_text && g_active_embed_handle)
+        dim = g_rp_embed_text(g_active_embed_handle, text, tlen, &vec);
     if (dim == 0 || !vec) {
         if (vec) free(vec);
         forkwrite((char *)&fail, sizeof fail);
@@ -1965,9 +1992,9 @@ static void parent_service_embed(void)
     /* Cache it before overwriting mmap (lru_put copies text + vec into
      * a fresh node; lock briefly). */
     if (g_lru.initialized && g_lru.capacity > 0) {
-        uint64_t h = embed_lru_fnv1a(text, tlen);
+        uint64_t h = embed_lru_key(g_active_embed_handle, text, tlen);
         pthread_mutex_lock(&g_lru.mtx);
-        embed_lru_put_locked(h, text, tlen, vec, dim);
+        embed_lru_put_locked(h, g_active_embed_handle, text, tlen, vec, dim);
         pthread_mutex_unlock(&g_lru.mtx);
     }
 
@@ -2656,6 +2683,12 @@ static int h_set(duk_context *ctx, DB_HANDLE *h, char *errbuf)
 
     if (ret >= 0 && wants_embed) {
         DB_HANDLE_SET(h, DB_FLAG_EMBED_ENABLED);
+        /* Attach the just-loaded model to THIS connection's handle (the model
+         * is process-global / refcounted-by-path; we only store the pointer).
+         * setup_llamacpp_main ran for this thread on both the fork path (above)
+         * and the non-fork path (inside sql_set), so g_last_loaded_embed_handle
+         * holds this connection's model. */
+        h->embed_handle = g_last_loaded_embed_handle;
         /* Clear CHILD_REGISTERED so the next fork_exec triggers 'V'
          * even if the connection was opened with 'o'. */
         DB_HANDLE_CLEAR(h, DB_FLAG_EMBED_CHILD_REGISTERED);
@@ -5167,6 +5200,32 @@ static duk_ret_t rp_sql_exec_query(duk_context *ctx, int isquery)
     }
     h_reset_tx_default(ctx, h, this_idx, IF_CHANGED);
 
+    /* Activate THIS connection's embed model for the prep+exec below.  embed()
+     * (in-process: main_embed_callback; forked: parent_service_embed) reads this
+     * thread-local, so the model resolves per SQL connection.  Normally h_set has
+     * cached the model on the handle; but the last_sql_set fast-path in
+     * h_reset_tx_default can skip re-applying settings to a freshly-opened handle
+     * (notably the very first query right after sql.set), leaving embed_handle
+     * NULL.  In that case resolve it from the connection's saved settings and
+     * cache it on the handle (g_rp_embed_load is cached by path, so this loads at
+     * most once per handle). */
+    if (!h->embed_handle && g_rp_embed_load) {
+        duk_get_prop_string(ctx, this_idx, DUK_HIDDEN_SYMBOL("sql_settings"));
+        if (duk_is_object(ctx, -1)) {
+            const char *epath = NULL;
+            if (peek_llamaembed_setting(ctx, &epath) && epath) {
+                char eerr[256] = {0};
+                void *mh = g_rp_embed_load(epath, eerr, sizeof eerr);
+                if (mh) {
+                    h->embed_handle = mh;
+                    DB_HANDLE_SET(h, DB_FLAG_EMBED_ENABLED);
+                }
+            }
+        }
+        duk_pop(ctx);
+    }
+    g_active_embed_handle = h->embed_handle;
+
 //  messes up the count for arg_idx, so just leave it
 //    duk_remove(ctx, this_idx); //no longer needed
 
@@ -5753,8 +5812,9 @@ static size_t main_embed_callback(void *ud,
                                   const char *text, size_t tlen,
                                   float **out_vec)
 {
-    if (!g_rp_embed_text || !ud) return 0;
-    return g_rp_embed_text(ud, text, tlen, out_vec);
+    (void)ud;   /* model is the per-connection active handle, not the reg-time ud */
+    if (!g_rp_embed_text || !g_active_embed_handle) return 0;
+    return g_rp_embed_text(g_active_embed_handle, text, tlen, out_vec);
 }
 
 /* Try several require() ids in turn until one resolves.  Order:
@@ -5837,8 +5897,13 @@ static int setup_llamacpp_main(duk_context *ctx, const char *path,
         return -1;
     }
     g_embed_handle = h;
+    /* Thread-local capture of the just-loaded model, so h_set() can attach it to
+     * THIS connection's handle without racing other threads' sql.set calls. */
+    g_last_loaded_embed_handle = h;
 
-    /* Register the callback so texis's embed() builtin will fire. */
+    /* Register the callback so texis's embed() builtin will fire.  The ud is
+     * ignored now (main_embed_callback reads the per-connection g_active_embed_handle);
+     * registration just installs the parent-process callback once. */
     TXregisterEmbedFunc(main_embed_callback, g_embed_handle);
     return 0;
 }
