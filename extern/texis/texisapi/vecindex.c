@@ -152,14 +152,31 @@ vec_params_apply_pq_defaults(TXvecParams *p, int dim, size_t current_rows)
         p->pq_nlist = (int)nl;
     }
     if (p->pq_m == 0 && dim > 0) {
-        /* Aim for dsub = dim/M ≈ 8.  Round M to a multiple of 4 so
-         * future FastScan compatibility is preserved.  Clamp to
-         * [8, 96]. */
-        int target_m = dim / 8;
-        if (target_m < 8)  target_m = 8;
-        if (target_m > 96) target_m = 96;
-        target_m = round_to_mult(target_m, 4);
-        p->pq_m = target_m;
+        /* FAISS IVFPQ requires dim % M == 0, so M MUST divide dim.  Aim for a
+         * per-subquantizer subspace dsub = dim/M ~= 8 (prefer 8..16), with M a
+         * multiple of 4 (FastScan-friendly).  Search the divisors of dim and
+         * pick the one closest to that target.  This works for any embedding
+         * width (384, 768, 1024, ...) instead of clamping to a value that may
+         * not divide dim (e.g. old code picked 96 for dim=1024, and 1024 % 96
+         * != 0 -> FAISS set_derived_values() aborts). */
+        int best = 0, best_score = 0x7fffffff, M;
+        for (M = 4; M <= dim && M <= 256; M += 4) {
+            int dsub, score;
+            if (dim % M != 0) continue;          /* must divide dim */
+            dsub = dim / M;
+            if (dsub < 4) break;                 /* too fine */
+            score = (dsub > 8 ? dsub - 8 : 8 - dsub)
+                  + (dsub > 16 ? 1000 : 0);      /* prefer dsub in [8,16], ~8 */
+            if (score < best_score) { best_score = score; best = M; }
+        }
+        if (best == 0) {
+            /* Odd/prime-ish dim with no multiple-of-4 divisor: fall back to the
+             * largest plain divisor giving dsub >= 4 (PQ works; FastScan won't). */
+            for (M = (dim < 256 ? dim : 256); M >= 1; M--)
+                if (dim % M == 0 && dim / M >= 4) { best = M; break; }
+            if (best == 0) best = 1;
+        }
+        p->pq_m = best;
     }
     if (p->pq_nbits == 0) {
         p->pq_nbits = 8;            /* v1: hardcoded; FastScan = 4 in phase 4 */
