@@ -618,31 +618,75 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
 
 elseif(CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
 
+    # FreeBSD bundle build.  Mirrors the Linux branch below: do NOT add
+    # `${FAISS_IVFPQ_LIB}` as a target dep, which would propagate
+    # libopenblas.so.0 (port openblas) and libgfortran.so.5 / libquadmath.so.0
+    # (port gcc14, transitive) into rampart-sql.so's DT_NEEDED — breaking
+    # vanilla FreeBSD installs where the openblas package isn't installed.
+    # libomp.so is FreeBSD base (LLVM is the system toolchain) so it stays
+    # in DT_NEEDED naturally and needs no special handling.
+    #
+    # See vec_blas_probe.h for the runtime dlopen strategy that recovers
+    # the BLAS chain on first IVFPQ use.
     target_link_libraries(rampart-sql
         ${PROJECT_BINARY_DIR}/extern/texis/texisapi/libtexisapi.a
         ${FAISS_IVFPQ_LINK}
-        ${FAISS_IVFPQ_LIB}          # transitive deps: openblas, openmp, threads
         z
         re2
         pthread
         m
         kvm
+        omp                         # FreeBSD base /usr/lib/libomp.so —
+                                    # always present, link explicitly
+                                    # (we dropped ${FAISS_IVFPQ_LIB} so
+                                    # the OpenMP::OpenMP_CXX target's
+                                    # PUBLIC interface no longer drags it).
         ${PROJECT_BINARY_DIR}/extern/texis/jansson-2.12/src/jansson-2.12-build/lib/libjansson.a
     )
 
+    # ${FAISS_IVFPQ_LINK} is a file-path reference; explicit build-order
+    # dep so faiss_ivfpq.a exists before rampart-sql links.
+    if(NOT RP_NO_FAISS)
+        add_dependencies(rampart-sql faiss_ivfpq)
+    endif()
+
 else()
 
+    # Linux bundle build.  We do NOT add `${FAISS_IVFPQ_LIB}` as a target
+    # dependency here: that would propagate faiss_ivfpq's PUBLIC link
+    # interface (libopenblas.so.0, libgomp.so.1, libgfortran.so.5,
+    # libquadmath.so.0 — see extern/faiss/CMakeLists.txt) into rampart-sql.so's
+    # DT_NEEDED, which would break on a vanilla Debian/Ubuntu install where
+    # those libraries aren't `Priority: required`.
+    #
+    # Instead, link the .a file directly via ${FAISS_IVFPQ_LINK} (which is
+    # `-Wl,--whole-archive <file> -Wl,--no-whole-archive`).  The BLAS / OpenMP
+    # / Fortran symbol references inside the .a remain unresolved at link
+    # time; the runtime loader leaves them unresolved when rampart-sql.so
+    # is dlopen'd (default behavior for shared objects).  On first IVFPQ
+    # touch, vec_blas_probe() in texisapi dlopens libopenblas+libgomp+
+    # libgfortran with RTLD_GLOBAL, after which lazy binding resolves the
+    # references.  On a vanilla install the probe fails fast with a clear
+    # "install libopenblas..." SQL error; HNSW (usearch) never touches
+    # the probe and works without the libs.
     target_link_libraries(rampart-sql LINK_PUBLIC
         ${PROJECT_BINARY_DIR}/extern/texis/texisapi/libtexisapi.a
         ${FAISS_IVFPQ_LINK}
-        ${FAISS_IVFPQ_LIB}          # transitive deps: openblas, openmp, threads
         z
         re2
         pthread
         m
         rt
+        dl                          # vec_blas_probe needs libdl
         ${PROJECT_BINARY_DIR}/extern/texis/jansson-2.12/src/jansson-2.12-build/lib/libjansson.a
     )
+
+    # ${FAISS_IVFPQ_LINK} is a file-path reference, not a target dep, so
+    # we still need an explicit build-order dep to ensure faiss_ivfpq.a
+    # exists before rampart-sql links.
+    if(NOT RP_NO_FAISS)
+        add_dependencies(rampart-sql faiss_ivfpq)
+    endif()
 
 endif()
 
@@ -1472,6 +1516,25 @@ install(CODE "execute_process( \
     )"
 )
 
+# Single-file installer bundler: build-installer.sh + its entry_script
+# driver land at the install prefix so the normal workflow is:
+#     make install
+#     cd /usr/local/rampart && ./build-installer.sh
+# Using install(PROGRAMS)/install(FILES) so mode bits are always 755/644
+# at the destination regardless of the source perms or invoking umask.
+install(PROGRAMS
+    "${PROJECT_SOURCE_DIR}/build-installer.sh"
+    DESTINATION "${CMAKE_INSTALL_PREFIX}"
+)
+install(FILES
+    "${PROJECT_SOURCE_DIR}/install/entry_script.js"
+    "${PROJECT_SOURCE_DIR}/install/uninstall.js"
+    "${PROJECT_SOURCE_DIR}/install/rampart-install.js"
+    "${PROJECT_SOURCE_DIR}/install/packages.js"
+    "${PROJECT_SOURCE_DIR}/install/build-packages.js"
+    DESTINATION "${CMAKE_INSTALL_PREFIX}/install"
+)
+
 if(CYGWIN)
     install(CODE "execute_process( \
         COMMAND ${CMAKE_COMMAND} -E copy \
@@ -1562,18 +1625,19 @@ install(CODE "execute_process( \
     )"
 )
 
-#tsql etc
-install(CODE "execute_process( \
-   COMMAND ${CMAKE_COMMAND} -E copy \
-    \"${PROJECT_BINARY_DIR}/extern/texis/apps/tsql\" \
-    \"${PROJECT_BINARY_DIR}/extern/texis/apps/metamorph\" \
-    \"${PROJECT_BINARY_DIR}/extern/texis/apps/rex\" \
-    \"${PROJECT_BINARY_DIR}/extern/texis/apps/addtable\" \
-    \"${PROJECT_BINARY_DIR}/extern/texis/apps/kdbfchk\" \
-    \"${PROJECT_BINARY_DIR}/extern/texis/apps/texislockd\" \
-    \"${PROJECT_BINARY_DIR}/extern/texis/apps/backref\" \
-    \"${CMAKE_INSTALL_PREFIX}/bin\"   \
-    )"
+# tsql etc.  Use install(PROGRAMS) rather than `cmake -E copy` so the
+# installed mode bits are 755 regardless of the source's perms or the
+# invoking shell's umask -- otherwise a build run from a session with
+# umask 077 produces 700-root-owned binaries that nothing else can read.
+install(PROGRAMS
+    "${PROJECT_BINARY_DIR}/extern/texis/apps/tsql"
+    "${PROJECT_BINARY_DIR}/extern/texis/apps/metamorph"
+    "${PROJECT_BINARY_DIR}/extern/texis/apps/rex"
+    "${PROJECT_BINARY_DIR}/extern/texis/apps/addtable"
+    "${PROJECT_BINARY_DIR}/extern/texis/apps/kdbfchk"
+    "${PROJECT_BINARY_DIR}/extern/texis/apps/texislockd"
+    "${PROJECT_BINARY_DIR}/extern/texis/apps/backref"
+    DESTINATION "${CMAKE_INSTALL_PREFIX}/bin"
 )
 
 # example dirs
@@ -1734,32 +1798,33 @@ if (CMAKE_UID EQUAL 0)
     )
 endif()
 
-install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-cmark.so\")")
-install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-curl.so\")")
-install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-crypto.so\")")
-install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-html.so\")")
-install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-lmdb.so\")")
-install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-net.so\")")
-install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-python.so\")")
-install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-redis.so\")")
-install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-robots.so\")")
-install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-server.so\")")
-install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-sql.so\")")
-install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-almanac.so\")")
-install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-totext.so\")")
-install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-treesitter.so\")")
-install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-nodeshim.so\")")
-install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-whatwg.so\")")
-install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-intl.so\")")
-install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-graphicsmagick.so\")")
-install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/bin/rampart\")")
-install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/bin/tsql\")")
-install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/bin/addtable\")")
-install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/bin/kdbfchk\")")
-install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/bin/metamorph\")")
-install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/bin/rex\")")
-install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/bin/texislockd\")")
-install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/python/bin/python3\")")
+install(CODE "execute_process(COMMAND strip \"${CMAKE_INSTALL_PREFIX}/modules/rampart-cmark.so\")")
+install(CODE "execute_process(COMMAND strip \"${CMAKE_INSTALL_PREFIX}/modules/rampart-curl.so\")")
+install(CODE "execute_process(COMMAND strip \"${CMAKE_INSTALL_PREFIX}/modules/rampart-crypto.so\")")
+install(CODE "execute_process(COMMAND strip \"${CMAKE_INSTALL_PREFIX}/modules/rampart-html.so\")")
+install(CODE "execute_process(COMMAND strip \"${CMAKE_INSTALL_PREFIX}/modules/rampart-lmdb.so\")")
+install(CODE "execute_process(COMMAND strip \"${CMAKE_INSTALL_PREFIX}/modules/rampart-net.so\")")
+install(CODE "execute_process(COMMAND strip \"${CMAKE_INSTALL_PREFIX}/modules/rampart-python.so\")")
+install(CODE "execute_process(COMMAND strip \"${CMAKE_INSTALL_PREFIX}/modules/rampart-redis.so\")")
+install(CODE "execute_process(COMMAND strip \"${CMAKE_INSTALL_PREFIX}/modules/rampart-robots.so\")")
+install(CODE "execute_process(COMMAND strip \"${CMAKE_INSTALL_PREFIX}/modules/rampart-server.so\")")
+install(CODE "execute_process(COMMAND strip \"${CMAKE_INSTALL_PREFIX}/modules/rampart-sql.so\")")
+install(CODE "execute_process(COMMAND strip \"${CMAKE_INSTALL_PREFIX}/modules/rampart-almanac.so\")")
+install(CODE "execute_process(COMMAND strip \"${CMAKE_INSTALL_PREFIX}/modules/rampart-totext.so\")")
+install(CODE "execute_process(COMMAND strip \"${CMAKE_INSTALL_PREFIX}/modules/rampart-treesitter.so\")")
+install(CODE "execute_process(COMMAND strip \"${CMAKE_INSTALL_PREFIX}/modules/rampart-nodeshim.so\")")
+install(CODE "execute_process(COMMAND strip \"${CMAKE_INSTALL_PREFIX}/modules/rampart-whatwg.so\")")
+install(CODE "execute_process(COMMAND strip \"${CMAKE_INSTALL_PREFIX}/modules/rampart-intl.so\")")
+install(CODE "execute_process(COMMAND strip \"${CMAKE_INSTALL_PREFIX}/modules/rampart-graphicsmagick.so\")")
+install(CODE "execute_process(COMMAND strip \"${CMAKE_INSTALL_PREFIX}/bin/rampart\")")
+install(CODE "execute_process(COMMAND strip \"${CMAKE_INSTALL_PREFIX}/bin/tsql\")")
+install(CODE "execute_process(COMMAND strip \"${CMAKE_INSTALL_PREFIX}/bin/addtable\")")
+install(CODE "execute_process(COMMAND strip \"${CMAKE_INSTALL_PREFIX}/bin/kdbfchk\")")
+install(CODE "execute_process(COMMAND strip \"${CMAKE_INSTALL_PREFIX}/bin/metamorph\")")
+install(CODE "execute_process(COMMAND strip \"${CMAKE_INSTALL_PREFIX}/bin/rex\")")
+install(CODE "execute_process(COMMAND strip \"${CMAKE_INSTALL_PREFIX}/bin/texislockd\")")
+install(CODE "execute_process(COMMAND strip \"${CMAKE_INSTALL_PREFIX}/bin/backref\")")
+install(CODE "execute_process(COMMAND strip \"${CMAKE_INSTALL_PREFIX}/modules/python/bin/python3\")")
 
 # Bundle MSYS2 runtime DLLs for standalone Windows operation
 if(CYGWIN)

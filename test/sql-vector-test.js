@@ -444,14 +444,56 @@ function vec_unique(id, dim) {
  * IVFPQ-only test cases and the IVFPQ side of the multi-process
  * tests below. */
 var _ivfpqAvailable = true;
+var _ivfpqSkipReason = null;
 try {
     var _arch = (_hasShell ? shell("uname -m").stdout : "").trim();
-    if (/^arm(v[567]l?|hf)?$/.test(_arch))
+    if (/^arm(v[567]l?|hf)?$/.test(_arch)) {
         _ivfpqAvailable = false;
+        _ivfpqSkipReason = "32-bit ARM (FAISS unsupported upstream)";
+    }
 } catch (e) {}
 
+/* Plan B runtime BLAS probe: rampart-sql.so is linked without DT_NEEDED on
+ * libopenblas (and, on Linux, libgomp/libgfortran).  The IVFPQ backend
+ * dlopens them on first use.  If they're not installed on this system
+ * (e.g. CI containers, vanilla Debian/Ubuntu/FreeBSD), the dispatcher gate
+ * in vecindex.c returns "INDEX_VEC backend=ivfpq requires lib*..." with
+ * an apt/pkg install hint.  Probe by attempting CREATE on an empty table;
+ * the BLAS probe runs before FAISS training so we get the BLAS error here
+ * even on an empty table.  BLAS present → a different error fires
+ * (insufficient training rows) or success — either way, fall through. */
+if (_ivfpqAvailable) {
+    try { sql.exec("drop table blasprobe;"); } catch (e) {}
+    sql.exec("create table blasprobe (v varvecF32);");
+    try {
+        sql.exec("create vector index blasprobe_idx on blasprobe (v) " +
+                 "with backend 'ivfpq' vec_pq_min_points_per_centroid 1;");
+    } catch (e) {
+        var _msg = String(e);
+        if (/INDEX_VEC backend=ivfpq requires lib(openblas|gomp|gfortran)/.test(_msg)) {
+            _ivfpqAvailable = false;
+            _ivfpqSkipReason = "BLAS chain not installed on this system";
+        }
+    }
+    try { sql.exec("drop index blasprobe_idx;"); } catch (e) {}
+    try { sql.exec("drop table blasprobe;"); } catch (e) {}
+}
+
 if (!_ivfpqAvailable) {
-    printf("Skipping IVFPQ test cases on 32-bit ARM (FAISS unsupported upstream)\n");
+    printf("Skipping IVFPQ test cases — %s\n", _ivfpqSkipReason);
+    if (_ivfpqSkipReason === "BLAS chain not installed on this system") {
+        printf("  rampart-sql is built without a DT_NEEDED link on libopenblas\n");
+        printf("  (and, on Linux, libgomp / libgfortran); the IVFPQ backend dlopens\n");
+        printf("  them on first use.  To enable IVFPQ on this machine, install the\n");
+        printf("  runtime libs:\n");
+        printf("\n");
+        printf("    Debian/Ubuntu:   sudo apt install libopenblas0-pthread libgomp1 libgfortran5\n");
+        printf("    Fedora/RHEL:     sudo dnf install openblas libgomp libgfortran\n");
+        printf("    Arch:            sudo pacman -S openblas gcc-libs gcc-fortran\n");
+        printf("    FreeBSD:         sudo pkg install openblas\n");
+        printf("\n");
+        printf("  HNSW (backend='hnsw') needs none of these and works as-is.\n");
+    }
     testFeature.exit();
 }
 

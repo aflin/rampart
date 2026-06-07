@@ -36,6 +36,7 @@
 
 #include "vecindex.h"
 #include "vecindex_internal.h" /* TXvecHandleBase, TXvecBackend, vec_backend_for */
+#include "vec_blas_probe.h"    /* texis_vec_blas_probe — runtime BLAS check */
 #include "sysupdate.h"
 
 #include "usearch.h"           /* usearch C API */
@@ -774,6 +775,22 @@ TXvecCreateIndex(DDIC *ddic, DBTBL *dbtbl,
             "(FAISS upstream does not support this platform); use "
             "backend=hnsw");
         return -1;
+    }
+#elif defined(__linux__) || defined(__FreeBSD__)
+    /* IVFPQ uses faiss which uses BLAS + OpenMP + (on Linux) gfortran.
+     * Linux: libopenblas / libgomp / libgfortran / libquadmath are NOT
+     *   Priority: required on Debian/Ubuntu; bundle ships without DT_NEEDED
+     *   on them, dlopen on first IVFPQ use.
+     * FreeBSD: libomp is base, but libopenblas + (transitively) libgfortran
+     *   come from the openblas package and aren't present on a vanilla install.
+     *   Same probe pattern, single dlopen target.
+     * Not needed on macOS — FAISS uses Accelerate.framework (always present). */
+    if (vp.backend == VEC_BACKEND_IVFPQ) {
+        const char *blas_err = NULL;
+        if (!texis_vec_blas_probe(&blas_err)) {
+            putmsg(MERR + UGE, fn, "%s", blas_err);
+            return -1;
+        }
     }
 #endif
     return vec_backend_for(vp.backend)->create(ddic, dbtbl, field, indname,
@@ -1523,6 +1540,15 @@ TXvecOpen(DDIC *ddic, const char *indfile, const char *params_in)
             "INDEX_VEC `%s' is backend=ivfpq, which is not supported on "
             "32-bit ARM (FAISS unavailable on this platform)", indfile);
         return NULL;
+    }
+#elif defined(__linux__) || defined(__FreeBSD__)
+    /* BLAS probe — see parallel comment in TXvecCreateIndex. */
+    if (vp.backend == VEC_BACKEND_IVFPQ) {
+        const char *blas_err = NULL;
+        if (!texis_vec_blas_probe(&blas_err)) {
+            putmsg(MERR + UGE, "TXvecOpen", "%s", blas_err);
+            return NULL;
+        }
     }
 #endif
 

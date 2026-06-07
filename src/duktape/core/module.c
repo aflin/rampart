@@ -721,7 +721,13 @@ static int load_so_module(duk_context *ctx, const char *file, duk_idx_t module_i
     }
 
     pthread_mutex_lock(&modlock);
-    void *lib = zip_aware_dlopen(file, RTLD_GLOBAL|RTLD_NOW); // --RTLD_GLOBAL is necessary for python to load .so modules properly
+    /* RTLD_GLOBAL is necessary for python to load .so modules properly.
+     * RTLD_LAZY (not _NOW) lets modules with intentionally-unresolved
+     * symbol references defer to runtime — rampart-sql.so relies on
+     * this to defer libopenblas/libgomp/libgfortran resolution until
+     * vec_blas_probe() dlopens them on first IVFPQ touch.  See
+     * extern/texis/texisapi/vec_blas_probe.h. */
+    void *lib = zip_aware_dlopen(file, RTLD_GLOBAL|RTLD_LAZY);
 
     if (lib == NULL)
     {
@@ -756,11 +762,11 @@ static int load_so_module(duk_context *ctx, const char *file, duk_idx_t module_i
             }
             else
             {
-                void *lib2 = zip_aware_dlopen(rp.path, RTLD_GLOBAL|RTLD_NOW);
+                void *lib2 = zip_aware_dlopen(rp.path, RTLD_GLOBAL|RTLD_LAZY);
                 if (lib2)
                 {
                     addhandle_to_close(lib2);
-                    lib = zip_aware_dlopen(file, RTLD_NOW);
+                    lib = zip_aware_dlopen(file, RTLD_LAZY);
                     if (lib)
                         goto libload_success;
                     else

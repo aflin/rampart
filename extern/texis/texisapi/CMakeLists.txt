@@ -464,6 +464,9 @@ IF(PARSERS_FOUND)
     ${CMAKE_SOURCE_DIR}/extern/texis/thirdparty/usearch/c/lib.cpp
     # Auxiliary _T.btr / _del.btr helpers shared by both backends.
     vecindex_aux_btree.c
+    # Runtime BLAS/OpenMP/gfortran probe — see vec_blas_probe.h.  Used
+    # only by the IVFPQ dispatcher gate; HNSW path never touches it.
+    vec_blas_probe.c
 
     # SYSUPDATE table maintenance (auto-create, progress reporting,
     # DROP cleanup) for both fulltext and vec index operations.
