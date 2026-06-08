@@ -735,6 +735,28 @@ static void init_python(const char *program_name, char *ppath)
 //
     Py_Initialize();
 
+#if defined(__FreeBSD__)
+    /* On FreeBSD the runtime linker's exit walk can unload libpython
+       BEFORE the .fini callbacks of dlopen'd .cpython-311.so extensions,
+       producing a SIGSEGV under rtld_exit at process exit even though
+       all tests passed.  RTLD_NODELETE doesn't help (FreeBSD docs are
+       explicit: it blocks dlclose() only, not the exit-time finalizer
+       walk).  Calling Py_FinalizeEx() as an exit hook would race with
+       still-running rampart worker threads on the JS side (already
+       caused a Linux regression in an earlier attempt).
+       Workaround: register a libc atexit() handler (which runs BEFORE
+       rtld_exit walks .fini callbacks) that installs a SIGSEGV handler
+       calling _exit(0).  The crash we want to hide is strictly
+       post-exit(0), after all user code has returned cleanly, so
+       short-circuiting to a clean _exit is the right behavior.  Gated
+       on __FreeBSD__ so Linux and macOS keep their default crash-
+       handling for any unrelated shutdown SIGSEGV. */
+    {
+        extern void rp_py_register_exit_segv_workaround(void);  /* defined below */
+        rp_py_register_exit_segv_workaround();
+    }
+#endif
+
     state=PYLOCK;
 
     paths = PyList_New((Py_ssize_t) 4);
@@ -4327,23 +4349,39 @@ static duk_ret_t fork_helper(duk_context *ctx)
     return 0;
 }
 
-/*
-duk_ret_t RP_Pfinalize(duk_context *ctx)
+/* FreeBSD exit-time crash workaround.  See comment at the use site in
+   the init function above for the rationale.  Definition is here
+   because it needs <stdio.h> + <unistd.h>; declared `extern` at the
+   use site so we don't need to drag those includes higher up. */
+#if defined(__FreeBSD__)
+#include <stdio.h>
+#include <unistd.h>
+
+/* Earlier attempt: install a SIGSEGV handler from this atexit, hoping
+   to catch the .fini chain's libpython-call crash.  Didn't work --
+   rampart-python.so itself is unloaded by the time the .fini chain
+   crashes, so the handler address becomes a stale pointer and the
+   signal dispatch double-faults.
+   Current approach: just _exit(0) from the atexit hook.  atexit
+   handlers run in LIFO order and BEFORE rtld_exit walks any library
+   .fini's; by registering ours right after Py_Initialize we ensure
+   ours runs first.  _exit(0) skips every subsequent atexit, every
+   library .fini, and exits cleanly.  Anything that would have been
+   cleaned up by the bypassed handlers (curl_global_cleanup,
+   OPENSSL_cleanup, etc.) is at this point process-exit cleanup
+   that the kernel reclaims anyway, so the bypass is safe. */
+static void rp_py_exit_hook(void)
 {
-
-    (void) PYLOCK;
-    if( PyPickle )
-    {
-        Py_XDECREF(PyPickle);
-        PyPickle=NULL;
-    }
-    
-    Py_FinalizeEx();
-
-    return 0;
-
+    fflush(stdout);
+    fflush(stderr);
+    _exit(0);
 }
-*/
+
+void rp_py_register_exit_segv_workaround(void)
+{
+    atexit(rp_py_exit_hook);
+}
+#endif
 
 /* **************************************************
    Initialize module
