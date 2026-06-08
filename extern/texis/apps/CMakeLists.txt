@@ -45,15 +45,30 @@ add_executable(tsql
 	)
 set(TSQL_EXE  ${TEXIS_BINARY_DIR}/apps/tsql PARENT_SCOPE)
 
-target_link_libraries(rex LINK_PUBLIC texisapi)
-target_link_libraries(metamorph LINK_PUBLIC texisapi)
-target_link_libraries(backref LINK_PUBLIC texisapi)
-target_link_libraries(tsql PUBLIC Threads::Threads)
-target_link_libraries(tsql LINK_PUBLIC texisapi)
-target_link_libraries(addtable PUBLIC Threads::Threads)
-target_link_libraries(addtable LINK_PUBLIC texisapi)
-target_link_libraries(kdbfchk PUBLIC Threads::Threads)
-target_link_libraries(kdbfchk LINK_PUBLIC texisapi)
+# Tools that don't run SQL / don't actually call vec dispatch link the
+# lean `texisbuild` (no vec sources, no faiss, no openblas / libgomp /
+# libgfortran chain in DT_NEEDED).  See extern/texis/texisapi/CMakeLists.txt
+# for the BUILD_SRCS/VEC_SRCS split and txdummyver.c for the vec stubs
+# that make the lean link succeed.
+target_link_libraries(rex       LINK_PUBLIC texisbuild)
+target_link_libraries(metamorph LINK_PUBLIC texisbuild)
+target_link_libraries(backref   LINK_PUBLIC texisbuild)
+
+# tsql can `CREATE VECTOR INDEX backend='ivfpq'` — needs the real vec
+# code paths.  Links the full texisapi.
+target_link_libraries(tsql      PUBLIC Threads::Threads)
+target_link_libraries(tsql      LINK_PUBLIC texisapi)
+
+# addtable (adds an existing table to the catalog) and kdbfchk (DB
+# file integrity check) predate vector indexes by decades.  Even
+# though their pulled SQL plan code has strong refs to vec dispatch
+# symbols, those code paths aren't actually exercised at runtime — the
+# stubs in txdummyver.c cover them harmlessly.  Switching to texisbuild
+# drops the openblas/libgomp/libgfortran chain from their DT_NEEDED.
+target_link_libraries(addtable  PUBLIC Threads::Threads)
+target_link_libraries(addtable  LINK_PUBLIC texisbuild)
+target_link_libraries(kdbfchk   PUBLIC Threads::Threads)
+target_link_libraries(kdbfchk   LINK_PUBLIC texisbuild)
 
 if(${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION} VERSION_LESS 3.14)
   install(TARGETS rex tsql RUNTIME DESTINATION bin)
@@ -66,7 +81,9 @@ add_executable(texislockd
   lockd_main.c
 )
 target_link_libraries(texislockd LINK_PUBLIC event_core)
-target_link_libraries(texislockd LINK_PUBLIC texisapi)
+# texislockd is a lock daemon — links the lean texisbuild (no vec,
+# no faiss).  Loads on a vanilla install with no scientific libs.
+target_link_libraries(texislockd LINK_PUBLIC texisbuild)
 set(LOCKD_EXE  ${TEXIS_BINARY_DIR}/apps/texislockd PARENT_SCOPE)
 
 #if(${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION} VERSION_LESS 3.14)

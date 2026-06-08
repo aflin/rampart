@@ -459,14 +459,12 @@ IF(PARSERS_FOUND)
     ${CMAKE_SOURCE_DIR}/extern/SimSIMD/c/lib.c
     ${CMAKE_SOURCE_DIR}/src/duktape/globals/vector-distance.c
 
-    # ANN vector index (usearch HNSW backend)
-    vecindex.c
-    ${CMAKE_SOURCE_DIR}/extern/texis/thirdparty/usearch/c/lib.cpp
-    # Auxiliary _T.btr / _del.btr helpers shared by both backends.
-    vecindex_aux_btree.c
-    # Runtime BLAS/OpenMP/gfortran probe — see vec_blas_probe.h.  Used
-    # only by the IVFPQ dispatcher gate; HNSW path never touches it.
-    vec_blas_probe.c
+    # NOTE: vec sources (vecindex.c, vecindex_aux_btree.c,
+    # vec_blas_probe.c, plus the usearch HNSW backend lib.cpp) live in
+    # VEC_SRCS below, added only to texisapi.  Keeping them out of
+    # BUILD_SRCS lets the lean `texisbuild` lib avoid pulling vec code
+    # (and the entire faiss/openblas/libgomp/libgfortran chain) into
+    # tools that don't need it.
 
     # SYSUPDATE table maintenance (auto-create, progress reporting,
     # DROP cleanup) for both fulltext and vec index operations.
@@ -620,25 +618,57 @@ IF(PARSERS_FOUND)
     list(APPEND BUILD_SRCS shell.c)
   endif()
 
+  # ----- Shared compilation of common (non-vec) texis sources --------
+  # An OBJECT library compiles each ${BUILD_SRCS} file once; the
+  # resulting .o files are then linked into BOTH static libs below via
+  # $<TARGET_OBJECTS:texis_common_objs>.  Before this refactor, every
+  # file in BUILD_SRCS compiled twice (once per static lib), which made
+  # clean builds noticeably slower and produced byte-identical .o files
+  # in two locations.
+  add_library(texis_common_objs OBJECT ${BUILD_SRCS})
+  target_include_directories(texis_common_objs PUBLIC
+      ${TEXISAPI_BINARY_DIR}
+      ${CMAKE_SOURCE_DIR}/extern/SimSIMD/include)
+
+  # ----- Vec sources (texisapi only) ---------------------------------
+  # Pulled OUT of BUILD_SRCS so they don't end up in texisbuild.
+  # texisbuild then has no symbols referencing TXvecIvfpqBackend /
+  # faiss::* — lean tools linking against texisbuild won't drag faiss
+  # or its libopenblas/libgomp/libgfortran transitive deps into
+  # DT_NEEDED.  See architectural notes at top of file.
+  set(VEC_SRCS
+      vecindex.c
+      vecindex_aux_btree.c
+      vec_blas_probe.c
+      ${CMAKE_SOURCE_DIR}/extern/texis/thirdparty/usearch/c/lib.cpp)
+
+  # ----- texisbuild: lean -------------------------------------------
+  # Common .o's + dummy aux (which since this refactor reports the
+  # vendored snapshot version, NOT a literal "Dummy version" string).
+  # No vec, no faiss.  Used by tools that don't run SQL / vec dispatch.
   add_library(texisbuild
-    ${BUILD_SRCS}
+    $<TARGET_OBJECTS:texis_common_objs>
     langNgramsDummy.c
     txdummyver.c
   )
 
+  # ----- texisapi: full ---------------------------------------------
+  # Common .o's + real build-stamped aux files + vec sources + (when
+  # FAISS is built) the IVFPQ backend.  Used by tools that need SQL +
+  # vec dispatch (tsql, addtable, kdbfchk) and by rampart-sql.so.
   add_library(texisapi
-    ${BUILD_SRCS}
+    $<TARGET_OBJECTS:texis_common_objs>
     ${TEXISAPI_BINARY_DIR}/langNgrams.c
     ${TEXISAPI_SOURCE_DIR}/texisapi.c
     ${TEXISAPI_BINARY_DIR}/texver.c
+    ${VEC_SRCS}
   )
 
   # Add the FAISS IVFPQ backend source only when FAISS is built —
   # i.e., not on 32-bit ARM (see top-of-file RP_NO_FAISS detection).
+  # Only texisapi gets it (texisbuild stays faiss-free).
   if(NOT RP_NO_FAISS)
       target_sources(texisapi PRIVATE
-          ${TEXISAPI_SOURCE_DIR}/vecindex_ivfpq.cpp)
-      target_sources(texisbuild PRIVATE
           ${TEXISAPI_SOURCE_DIR}/vecindex_ivfpq.cpp)
   endif()
 
@@ -929,16 +959,14 @@ target_include_directories(
 
 target_link_options(texisbuild PUBLIC -L${JANSSON_RELEASE_DIR})
 
-if(RP_NO_FAISS)
-    set(_FAISS_LINK "")
-else()
-    set(_FAISS_LINK faiss_ivfpq)
-endif()
-
+# texisbuild is lean — no vec sources, so it has no symbol references
+# to faiss::* and doesn't need faiss_ivfpq linked.  Skipping faiss here
+# is what keeps libopenblas/libgomp/libgfortran out of texisbuild
+# consumers' DT_NEEDED.
 if(CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
-    target_link_libraries(texisbuild LINK_PUBLIC m z kvm Threads::Threads ${JANSSON_LIBS} ${_FAISS_LINK})
+    target_link_libraries(texisbuild LINK_PUBLIC m z kvm Threads::Threads ${JANSSON_LIBS})
 else()
-    target_link_libraries(texisbuild LINK_PUBLIC m z Threads::Threads ${JANSSON_LIBS} ${_FAISS_LINK})
+    target_link_libraries(texisbuild LINK_PUBLIC m z Threads::Threads ${JANSSON_LIBS})
 endif()
 
 #
@@ -963,20 +991,31 @@ target_link_options(texisapi PUBLIC -L${JANSSON_RELEASE_DIR})
 # "undefined symbol: _ZTIN5faiss14FaissExceptionE" because the linker
 # drops the .o whose symbols are only referenced weakly by external
 # try/catch blocks.  GNU ld and Apple ld spell this differently.
+#
+# Note: this PUBLIC propagation drags libopenblas/libgomp/libgfortran
+# into every texisapi consumer's DT_NEEDED.  For consumers that DON'T
+# need vec dispatch (texislockd specifically) there's a separate
+# override in extern/texis/apps/CMakeLists.txt that links libtexisapi.a
+# via $<TARGET_FILE:...> file-ref instead of the target, dropping the
+# PUBLIC interface to keep DT_NEEDED minimal.
 if(RP_NO_FAISS)
     target_link_libraries(texisapi PUBLIC m z ${JANSSON_LIBS})
-elseif(APPLE)
-    # force_load is a raw flag, so it doesn't carry faiss_ivfpq's
-    # transitive deps (OpenMP, Accelerate).  List the target as a
-    # regular dep too so its PUBLIC interface propagates; the archive
-    # shows up twice on the link line but the second pass is a no-op
-    # since force_load already pulled every .o.
-    target_link_libraries(texisapi PUBLIC m z ${JANSSON_LIBS}
-        "-Wl,-force_load,$<TARGET_FILE:faiss_ivfpq>"
-        faiss_ivfpq)
 else()
+    # faiss_ivfpq is propagated as a *plain* target dep — NOT
+    # whole-archive'd.  Plain on-demand archive semantics means consumers
+    # only pull faiss .o files for symbols their code actually
+    # references; tools like addtable / kdbfchk / texislockd that
+    # never call into vec dispatch don't end up with faiss code in
+    # their binary (and so don't drag libopenblas / libgomp /
+    # libgfortran into DT_NEEDED).
+    #
+    # rampart-sql.so DOES need --whole-archive — without it the linker
+    # drops FaissException.cpp.o whose `_ZTIN5faiss14FaissExceptionE`
+    # typeinfo is only weakly referenced by external try/catch.  That
+    # whole-archive directive lives at the rampart-sql.so link site
+    # (FAISS_IVFPQ_LINK in src/CMakeLists.txt) rather than here.
     target_link_libraries(texisapi PUBLIC m z ${JANSSON_LIBS}
-        -Wl,--whole-archive faiss_ivfpq -Wl,--no-whole-archive)
+        faiss_ivfpq)
 endif()
 
 #target_include_directories(PUBLIC, $(TEXISAPI_SOURCE_DIR))
