@@ -1414,6 +1414,22 @@ static duk_ret_t duk_rp_payload_get(duk_context *ctx)
     return 1;
 }
 
+/* rampart.utils.payloadOffset() -- byte offset where the appended zip
+   begins.  Equal to the size of the bare (zip-free) rampart binary;
+   useful for an installer that wants to slice the executable apart. */
+static duk_ret_t duk_rp_payload_offset(duk_context *ctx)
+{
+    if (!rp_has_zip_payload)
+        RP_THROW(ctx, "payloadOffset: this rampart has no zip payload");
+    if (rp_zip_init() != 0)
+        RP_THROW(ctx, "payloadOffset: zip payload could not be initialized");
+    off_t off = rp_zip_payload_offset();
+    if (off < 0)
+        RP_THROW(ctx, "payloadOffset: payload not initialized");
+    duk_push_number(ctx, (double)off);
+    return 1;
+}
+
 /* ============================================================
  * Generic zip utilities -- operate on any zip file on disk.
  * Mirror payloadList / payloadGet / payloadExtract semantics.
@@ -7331,6 +7347,8 @@ void duk_rampart_init(duk_context *ctx)
         duk_put_prop_string(ctx, -2, "payloadGet");
         duk_push_c_function(ctx, duk_rp_payload_extract, 2);
         duk_put_prop_string(ctx, -2, "payloadExtract");
+        duk_push_c_function(ctx, duk_rp_payload_offset, 0);
+        duk_put_prop_string(ctx, -2, "payloadOffset");
     }
     /* Generic zip utilities -- always available, work on any zip on disk. */
     duk_push_c_function(ctx, duk_rp_zip_list, 1);

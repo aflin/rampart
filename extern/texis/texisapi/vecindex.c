@@ -2178,17 +2178,22 @@ TXvecIxVecIndex(const char *iname, const char *sysindexParams,
                                0.0f, 0, qbuf) < 0) goto err;
     }
 
-have_qbuf:
+have_qbuf: ;
 
     /* Top-K search via the dispatcher.  Pool size from likevRows;
      * per-query expansion (ef for HNSW, nprobe for IVFPQ) from
-     * likevEf — backend interprets in its own units. */
+     * likevEf — backend interprets in its own units.
+     *
+     * The empty statement after the label is required: this TU compiles
+     * under -std=c89-ish strictness on some hosts, where a label must
+     * be followed by a statement (not a declaration). */
     size_t k = (TXnlikevhits > 0) ? (size_t)TXnlikevhits : 1000;
     size_t ef = (TXlikevef > 0) ? (size_t)TXlikevef : 0;
+    size_t got;
     res = (vec_search_result_t *)
         malloc(k * sizeof(vec_search_result_t));
     if (!res) goto err;
-    size_t got = TXvecSearch(h_, dbtbl, fname, qbuf, k, ef, res);
+    got = TXvecSearch(h_, dbtbl, fname, qbuf, k, ef, res);
     if (got == SIZE_MAX) { free(res); goto err; }
 
     /* Materialize into in-memory btree, recid as btloc, exact-rank

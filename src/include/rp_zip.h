@@ -98,6 +98,9 @@ int                  rp_zip_read(const rp_zip_entry *e,
                                  unsigned char **out, size_t *out_len);
 int                  rp_zip_raw_ptr(const rp_zip_entry *e,
                                     const unsigned char **out, size_t *out_size);
+/* Byte offset at which the appended zip begins (= size of the bare rampart
+   binary).  Returns -1 if the singleton handle is not initialized. */
+off_t                rp_zip_payload_offset(void);
 
 /* ============== Filesystem shims (zip-aware drop-in wrappers) ==============
  *

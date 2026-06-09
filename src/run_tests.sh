@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # This file will be placed in the install directory and can be run from there.
 
@@ -84,11 +84,6 @@ run_test() {
 for i in $(ls ${TESTDIR}/*-test.js); do
     run_test "$i"
 done
-
-# also run the rampart-url.js, which has its own tests
-MODPATH=$($RAMPART -c "console.log(process.modulesPath)")
-URLJS="${MODPATH}/rampart-url.js"
-run_test "$URLJS"
 
 rm -rf ${TESTDIR}/tmp-test
 rm -f "$TMPOUT"

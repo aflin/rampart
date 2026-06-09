@@ -504,6 +504,14 @@ size_t rp_zip_count(void)
     return rp_zip_h_count(g_payload);
 }
 
+/* Byte offset within rampart_exec where the appended zip begins, equal to
+   the size of the bare (zip-free) executable.  Useful for installers that
+   want to slice off the original rampart binary. */
+off_t rp_zip_payload_offset(void)
+{
+    return g_payload ? g_payload->sfx_shift : (off_t)-1;
+}
+
 const rp_zip_entry *rp_zip_at(size_t i)
 {
     return rp_zip_h_at(g_payload, i);

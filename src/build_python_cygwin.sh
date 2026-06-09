@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Helper script for building Python on Cygwin/MSYS.
 # On Cygwin with --disable-shared, shared extension modules (.so) can't be
 # built because the PE linker needs all symbols resolved at link time, and

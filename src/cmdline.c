@@ -4186,6 +4186,9 @@ static void print_help(char *argv0)
         --quickserver                      - run rampart-server with alternate configuration\n\
         --[quick]server --help             - show help for built-in server\n\
         --spew-server-script               - print the internal server script to stdout and exit\n\
+        --install <pkg> [<pkg> ...]        - install one or more rampart modules (official builds only)\n\
+        --install all                      - install all installable modules\n\
+        --install --list                   - list available modules\n\
         --                                 - do not process any arguments following (but pass to script)\n\
         -h, --help, -?, --?                - this help message\n\n\
     \"file_name\" or \"script\" may be '-' for stdin\n\n\
@@ -4289,6 +4292,47 @@ char *rp_cygwin_to_posixpath(const char *posixpath, char *buf, size_t bufsz)
     return buf;
 }
 #endif
+
+/* rampart --install gate.  Official builds embed a "NAME;..." prefix in
+   RAMPART_BUILD_PLATFORM (the NAME comes from /usr/local/rampart-build at
+   cmake configure time on the build host).  Unofficial builds have a
+   raw `uname -s ...` string instead, no semicolon.  We refuse --install
+   in the unofficial case so a self-built rampart doesn't fetch
+   distribution packages that may be ABI-incompatible with it.  Same
+   gate as rampart-install.js applies, just early. */
+static int rp_is_official_build(void)
+{
+    const char *p = RAMPART_BUILD_PLATFORM;
+    const char *semi;
+    int i;
+    static const struct { const char *name; int len; } sysnames[] = {
+        { "Linux",   5 },
+        { "Darwin",  6 },
+        { "FreeBSD", 7 },
+    };
+
+    if (!p || !*p) return 0;
+    semi = strchr(p, ';');
+    if (!semi) return 0;
+    /* trim leading whitespace before the semicolon */
+    while (p < semi && isspace((unsigned char)*p)) p++;
+    if (p == semi) return 0;
+
+    /* If the part before the semicolon starts with a `uname -s` word
+       *followed by whitespace*, that's raw uname output (e.g.
+       "FreeBSD 14.3-RELEASE ...") and the build is unofficial.
+       Official platform names like "FreeBSD-14" or
+       "raspberry_pi_os-bullseye-aarch64" happen to share the leading
+       word; the next character (a dash or letter) tells them apart. */
+    for (i = 0; i < (int)(sizeof sysnames / sizeof *sysnames); i++) {
+        if (!strncmp(p, sysnames[i].name, sysnames[i].len)) {
+            char next = p[sysnames[i].len];
+            if (next == ' ' || next == '\t' || next == '\n' || next == '\0')
+                return 0;
+        }
+    }
+    return 1;
+}
 
 int main(int argc, char *argv[])
 {
@@ -4442,7 +4486,9 @@ int main(int argc, char *argv[])
             }
             else if(!strcmp(opt,"--help") || !strcmp(opt,"--?") )
             {
-                if (!server)
+                /* Bundles: let the entry_script handle --help.  Server mode
+                   already had its own suppression. */
+                if (!server && !rp_has_zip_payload)
                     print_help(argv0);
             }
             else if(!strcmp(opt,"--version"))
@@ -4488,6 +4534,63 @@ int main(int argc, char *argv[])
                 }
                 scriptarg=argi;
             }
+            else if(!strcmp(opt,"--install"))
+            {
+                /* `rampart --install <pkg> [...flags...]` is equivalent to
+                   `rampart <prefix>/bin/rampart-install.js <pkg> [...]`.
+                   We splice the script path into argv at index 1 (same
+                   pattern as the SFX entry_script splice below) and let
+                   the rest of cmdline.c proceed as if the user typed the
+                   long form themselves.  Refuse on unofficial builds. */
+                static char rp_install_path[PATH_MAX];
+
+                if (!rp_is_official_build())
+                {
+                    fprintf(stderr,
+                        "rampart --install only works on official builds.\n"
+                        "rampart.buildPlatform: '%s'\n"
+                        "Unofficial builds may ship a binary that is incompatible\n"
+                        "with the distribution packages, so package installs are\n"
+                        "refused early.\n",
+                        RAMPART_BUILD_PLATFORM);
+                    exit(1);
+                }
+
+                snprintf(rp_install_path, sizeof rp_install_path,
+                         "%s/bin/rampart-install.js", rampart_dir);
+                if (access(rp_install_path, R_OK) != 0)
+                {
+                    fprintf(stderr,
+                        "rampart --install: cannot read installer script\n"
+                        "  %s\n"
+                        "  (was the rampart install completed via the bundle\n"
+                        "  or an older rampart that did not stage this file?)\n",
+                        rp_install_path);
+                    exit(1);
+                }
+
+                {
+                    /* New argv: [program, rp_install_path, <args after --install>] */
+                    char **new_argv = (char **)malloc(
+                        sizeof(char *) * (argc - argi + 2));
+                    int k, n = 0;
+
+                    new_argv[n++] = rampart_argv[0];
+                    new_argv[n++] = rp_install_path;
+                    for (k = argi + 1; k < argc; k++)
+                        new_argv[n++] = argv[k];
+
+                    rampart_argv = new_argv;
+                    rampart_argc = n;
+                    /* Mirror the "skip past process name" step done before
+                       this loop started -- the rest of main() works with
+                       the post-shift argv/argc. */
+                    argv      = new_argv + 1;
+                    argc      = n - 1;
+                    scriptarg = 0;        /* argv[0] is rp_install_path */
+                }
+                break;                    /* exit the option-parse loop */
+            }
         }
         else if (*(opt+1) == '\0')
             /* option is just '-' */
@@ -4525,7 +4628,8 @@ int main(int argc, char *argv[])
                         break;
                     case '?':
                     case 'h':
-                        if(!server)
+                        /* Bundles: let the entry_script handle -h/-?. */
+                        if(!server && !rp_has_zip_payload)
                             print_help(argv0);
                         break;
                     case 'C':

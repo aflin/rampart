@@ -102,10 +102,15 @@ var slow_ok = false;
 var proxy_during_slow_ok = false;
 var js_during_slow_blocked = true;
 
-/* Use exec to fire the slow request in a subprocess */
-var slow_proc = exec("curl", { background: true, timeout: 10000 },
-    "-s", "-o", "/dev/null", "-w", "%{http_code}",
-    "http://127.0.0.1:8103/slow");
+/* Fire the slow request in a rampart thread so we don't depend on
+   a system curl(1) being installed.  thr.exec is fire-and-forget;
+   the child thread runs curl.fetch synchronously and blocks for the
+   3-second /slow handler. */
+var slow_thr = new rampart.thread();
+slow_thr.exec(function() {
+    var curl = require("rampart-curl");
+    curl.fetch({"max-time": 10}, "http://127.0.0.1:8103/slow");
+});
 
 /* Give the slow request a moment to reach the server and start sleeping */
 sleep(0.5);
@@ -131,6 +136,8 @@ testFeature("JS route blocks while thread is busy", function() {
        "fast done", the thread wasn't actually blocked. */
     if (res.status == 200 && res.text == "fast done" && elapsed < 0.5) {
         /* responded instantly - thread was NOT blocked */
+        printf("\nfast returned instantly: status=%d text='%s' elapsed=%.3f\n",
+               res.status, res.text, elapsed);
         return false;
     }
     /* either timed out or took a long time - thread was blocked */

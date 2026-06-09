@@ -51,18 +51,29 @@ if (RP_SANITIZE)
     link_libraries("-fsanitize=address")
 endif (RP_SANITIZE)
 
-execute_process(
-    COMMAND bash -c "if [ -e /usr/local/rampart-build ]; then cat /usr/local/rampart-build ; else uname -a; fi"
-    OUTPUT_VARIABLE BUILD_PLATFORM
-    OUTPUT_STRIP_TRAILING_WHITESPACE
-)
 #https://stackoverflow.com/questions/24292898/compile-date-and-time-using-cmake
 make_directory(${CMAKE_BINARY_DIR}/include)
 FILE (WRITE ${CMAKE_BINARY_DIR}/include/timestamp.cmake "STRING(TIMESTAMP TIMEZ UTC)\n")
+# Read /usr/local/rampart-build at *build* time (not configure time) so that
+# editing the marker file and re-running `make` updates rampart.buildPlatform
+# without needing a full `cmake .` re-configure.  Bracket-arg syntax [[ ... ]]
+# embeds the block verbatim (no ${} expansion at configure time).
+FILE (APPEND ${CMAKE_BINARY_DIR}/include/timestamp.cmake [[
+if(EXISTS "/usr/local/rampart-build")
+    file(READ "/usr/local/rampart-build" BUILD_PLATFORM)
+    string(STRIP "${BUILD_PLATFORM}" BUILD_PLATFORM)
+else()
+    execute_process(COMMAND uname -a
+        OUTPUT_VARIABLE BUILD_PLATFORM
+        OUTPUT_STRIP_TRAILING_WHITESPACE)
+endif()
+]])
 FILE (APPEND ${CMAKE_BINARY_DIR}/include/timestamp.cmake "FILE(WRITE ${CMAKE_BINARY_DIR}/include/rampart_timestamp.h \"#ifndef TIMESTAMP_H\\n\")\n")
 FILE (APPEND ${CMAKE_BINARY_DIR}/include/timestamp.cmake "FILE(APPEND ${CMAKE_BINARY_DIR}/include/rampart_timestamp.h \"#define TIMESTAMP_H\\n\\n\")\n")
 FILE (APPEND ${CMAKE_BINARY_DIR}/include/timestamp.cmake "FILE(APPEND ${CMAKE_BINARY_DIR}/include/rampart_timestamp.h \"#define RAMPART_VERSION_TIMESTAMP \\\"\${TIMEZ}\\\"\\n\\n\")\n")
-FILE (APPEND ${CMAKE_BINARY_DIR}/include/timestamp.cmake "FILE(APPEND ${CMAKE_BINARY_DIR}/include/rampart_timestamp.h \"#define RAMPART_BUILD_PLATFORM \\\"${BUILD_PLATFORM}\\\"\\n\\n\")\n")
+# \${BUILD_PLATFORM} (escaped $) so the placeholder lands literally in the
+# generated timestamp.cmake; it expands at build time from the file(READ) above.
+FILE (APPEND ${CMAKE_BINARY_DIR}/include/timestamp.cmake "FILE(APPEND ${CMAKE_BINARY_DIR}/include/rampart_timestamp.h \"#define RAMPART_BUILD_PLATFORM \\\"\${BUILD_PLATFORM}\\\"\\n\\n\")\n")
 if(CYGWIN)
     execute_process(
         COMMAND cygpath -m "${CMAKE_C_COMPILER}"
@@ -711,8 +722,17 @@ endif()
 add_dependencies(rampart-sql texisapi)
 
 
-# libre2 needs to be linked by c++
-set_target_properties(rampart-sql PROPERTIES LINKER_LANGUAGE CXX )
+# libre2 needs to be linked by c++.
+# RPATH "$ORIGIN/../lib" lets vec_blas_probe()'s runtime dlopen find the
+# bundled libopenblas/libgomp/libgfortran/libquadmath when the user
+# installs from the rampart-install bundle (which extracts them to
+# <prefix>/lib/).  When those bundled copies are absent the dlopen
+# falls back to the system loader cache as before.
+set_target_properties(rampart-sql PROPERTIES
+    LINKER_LANGUAGE CXX
+    INSTALL_RPATH   "\$ORIGIN/../lib"
+    BUILD_RPATH     "\$ORIGIN/../lib"
+)
 
 ###REDIS###
 add_library(rampart-redis SHARED
@@ -1196,6 +1216,21 @@ if(NOT "${GM_CONFIG}" STREQUAL "")
     target_compile_options(rampart-graphicsmagick PRIVATE ${GM_CPPFLAGS_LIST})
     target_link_libraries(rampart-graphicsmagick ${GM_LDFLAGS_LIST})
 
+    # RPATH so the rampart-graphicsmagick package can ship
+    # libGraphicsMagickWand + its transitive deps in <prefix>/lib/ and
+    # rampart-graphicsmagick.so finds them there on a vanilla install.
+    # On macOS the loader-relative token is @loader_path; on ELF
+    # platforms it's $ORIGIN.
+    if(APPLE)
+        set(GM_RPATH "@loader_path/../lib")
+    else()
+        set(GM_RPATH "\$ORIGIN/../lib")
+    endif()
+    set_target_properties(rampart-graphicsmagick PROPERTIES
+        INSTALL_RPATH "${GM_RPATH}"
+        BUILD_RPATH   "${GM_RPATH}"
+    )
+
     if(CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
           string(REGEX REPLACE "^-I" "" GM_INCLUDE_DIR "${GM_CPPFLAGS}")
           target_include_directories(rampart-graphicsmagick PRIVATE
@@ -1535,6 +1570,17 @@ install(FILES
     DESTINATION "${CMAKE_INSTALL_PREFIX}/install"
 )
 
+# Mirror the bundle install layout: entry_script.js stages
+# rampart-install.js + packages.js at <prefix>/bin/ so the rampart
+# binary's `--install` flag can find them.  We do the same on dev
+# installs so the source tree's `make install` produces the same
+# runtime layout the bundle does.
+install(FILES
+    "${PROJECT_SOURCE_DIR}/install/rampart-install.js"
+    "${PROJECT_SOURCE_DIR}/install/packages.js"
+    DESTINATION "${CMAKE_INSTALL_PREFIX}/bin"
+)
+
 if(CYGWIN)
     install(CODE "execute_process( \
         COMMAND ${CMAKE_COMMAND} -E copy \
@@ -1798,33 +1844,46 @@ if (CMAKE_UID EQUAL 0)
     )
 endif()
 
-install(CODE "execute_process(COMMAND strip \"${CMAKE_INSTALL_PREFIX}/modules/rampart-cmark.so\")")
-install(CODE "execute_process(COMMAND strip \"${CMAKE_INSTALL_PREFIX}/modules/rampart-curl.so\")")
-install(CODE "execute_process(COMMAND strip \"${CMAKE_INSTALL_PREFIX}/modules/rampart-crypto.so\")")
-install(CODE "execute_process(COMMAND strip \"${CMAKE_INSTALL_PREFIX}/modules/rampart-html.so\")")
-install(CODE "execute_process(COMMAND strip \"${CMAKE_INSTALL_PREFIX}/modules/rampart-lmdb.so\")")
-install(CODE "execute_process(COMMAND strip \"${CMAKE_INSTALL_PREFIX}/modules/rampart-net.so\")")
-install(CODE "execute_process(COMMAND strip \"${CMAKE_INSTALL_PREFIX}/modules/rampart-python.so\")")
-install(CODE "execute_process(COMMAND strip \"${CMAKE_INSTALL_PREFIX}/modules/rampart-redis.so\")")
-install(CODE "execute_process(COMMAND strip \"${CMAKE_INSTALL_PREFIX}/modules/rampart-robots.so\")")
-install(CODE "execute_process(COMMAND strip \"${CMAKE_INSTALL_PREFIX}/modules/rampart-server.so\")")
-install(CODE "execute_process(COMMAND strip \"${CMAKE_INSTALL_PREFIX}/modules/rampart-sql.so\")")
-install(CODE "execute_process(COMMAND strip \"${CMAKE_INSTALL_PREFIX}/modules/rampart-almanac.so\")")
-install(CODE "execute_process(COMMAND strip \"${CMAKE_INSTALL_PREFIX}/modules/rampart-totext.so\")")
-install(CODE "execute_process(COMMAND strip \"${CMAKE_INSTALL_PREFIX}/modules/rampart-treesitter.so\")")
-install(CODE "execute_process(COMMAND strip \"${CMAKE_INSTALL_PREFIX}/modules/rampart-nodeshim.so\")")
-install(CODE "execute_process(COMMAND strip \"${CMAKE_INSTALL_PREFIX}/modules/rampart-whatwg.so\")")
-install(CODE "execute_process(COMMAND strip \"${CMAKE_INSTALL_PREFIX}/modules/rampart-intl.so\")")
-install(CODE "execute_process(COMMAND strip \"${CMAKE_INSTALL_PREFIX}/modules/rampart-graphicsmagick.so\")")
-install(CODE "execute_process(COMMAND strip \"${CMAKE_INSTALL_PREFIX}/bin/rampart\")")
-install(CODE "execute_process(COMMAND strip \"${CMAKE_INSTALL_PREFIX}/bin/tsql\")")
-install(CODE "execute_process(COMMAND strip \"${CMAKE_INSTALL_PREFIX}/bin/addtable\")")
-install(CODE "execute_process(COMMAND strip \"${CMAKE_INSTALL_PREFIX}/bin/kdbfchk\")")
-install(CODE "execute_process(COMMAND strip \"${CMAKE_INSTALL_PREFIX}/bin/metamorph\")")
-install(CODE "execute_process(COMMAND strip \"${CMAKE_INSTALL_PREFIX}/bin/rex\")")
-install(CODE "execute_process(COMMAND strip \"${CMAKE_INSTALL_PREFIX}/bin/texislockd\")")
-install(CODE "execute_process(COMMAND strip \"${CMAKE_INSTALL_PREFIX}/bin/backref\")")
-install(CODE "execute_process(COMMAND strip \"${CMAKE_INSTALL_PREFIX}/modules/python/bin/python3\")")
+# Platform-appropriate strip flags.  macOS's strip(1) defaults are too
+# aggressive for .so/.dylib loaded via dlopen -- it tries to remove
+# globals referenced by the indirect symbol table and fails with
+# "symbols referenced by indirect symbol table entries that can't be
+# stripped".  `-x` strips local symbols only; `-S` strips debug info.
+# On Linux/FreeBSD plain `strip` is fine (default --strip-all keeps
+# the dynamic-linker symbols by design for shared objects).
+if(APPLE)
+    set(RP_STRIP "strip -x -S")
+else()
+    set(RP_STRIP "strip")
+endif()
+
+install(CODE "execute_process(COMMAND ${RP_STRIP} \"${CMAKE_INSTALL_PREFIX}/modules/rampart-cmark.so\")")
+install(CODE "execute_process(COMMAND ${RP_STRIP} \"${CMAKE_INSTALL_PREFIX}/modules/rampart-curl.so\")")
+install(CODE "execute_process(COMMAND ${RP_STRIP} \"${CMAKE_INSTALL_PREFIX}/modules/rampart-crypto.so\")")
+install(CODE "execute_process(COMMAND ${RP_STRIP} \"${CMAKE_INSTALL_PREFIX}/modules/rampart-html.so\")")
+install(CODE "execute_process(COMMAND ${RP_STRIP} \"${CMAKE_INSTALL_PREFIX}/modules/rampart-lmdb.so\")")
+install(CODE "execute_process(COMMAND ${RP_STRIP} \"${CMAKE_INSTALL_PREFIX}/modules/rampart-net.so\")")
+install(CODE "execute_process(COMMAND ${RP_STRIP} \"${CMAKE_INSTALL_PREFIX}/modules/rampart-python.so\")")
+install(CODE "execute_process(COMMAND ${RP_STRIP} \"${CMAKE_INSTALL_PREFIX}/modules/rampart-redis.so\")")
+install(CODE "execute_process(COMMAND ${RP_STRIP} \"${CMAKE_INSTALL_PREFIX}/modules/rampart-robots.so\")")
+install(CODE "execute_process(COMMAND ${RP_STRIP} \"${CMAKE_INSTALL_PREFIX}/modules/rampart-server.so\")")
+install(CODE "execute_process(COMMAND ${RP_STRIP} \"${CMAKE_INSTALL_PREFIX}/modules/rampart-sql.so\")")
+install(CODE "execute_process(COMMAND ${RP_STRIP} \"${CMAKE_INSTALL_PREFIX}/modules/rampart-almanac.so\")")
+install(CODE "execute_process(COMMAND ${RP_STRIP} \"${CMAKE_INSTALL_PREFIX}/modules/rampart-totext.so\")")
+install(CODE "execute_process(COMMAND ${RP_STRIP} \"${CMAKE_INSTALL_PREFIX}/modules/rampart-treesitter.so\")")
+install(CODE "execute_process(COMMAND ${RP_STRIP} \"${CMAKE_INSTALL_PREFIX}/modules/rampart-nodeshim.so\")")
+install(CODE "execute_process(COMMAND ${RP_STRIP} \"${CMAKE_INSTALL_PREFIX}/modules/rampart-whatwg.so\")")
+install(CODE "execute_process(COMMAND ${RP_STRIP} \"${CMAKE_INSTALL_PREFIX}/modules/rampart-intl.so\")")
+install(CODE "execute_process(COMMAND ${RP_STRIP} \"${CMAKE_INSTALL_PREFIX}/modules/rampart-graphicsmagick.so\")")
+install(CODE "execute_process(COMMAND ${RP_STRIP} \"${CMAKE_INSTALL_PREFIX}/bin/rampart\")")
+install(CODE "execute_process(COMMAND ${RP_STRIP} \"${CMAKE_INSTALL_PREFIX}/bin/tsql\")")
+install(CODE "execute_process(COMMAND ${RP_STRIP} \"${CMAKE_INSTALL_PREFIX}/bin/addtable\")")
+install(CODE "execute_process(COMMAND ${RP_STRIP} \"${CMAKE_INSTALL_PREFIX}/bin/kdbfchk\")")
+install(CODE "execute_process(COMMAND ${RP_STRIP} \"${CMAKE_INSTALL_PREFIX}/bin/metamorph\")")
+install(CODE "execute_process(COMMAND ${RP_STRIP} \"${CMAKE_INSTALL_PREFIX}/bin/rex\")")
+install(CODE "execute_process(COMMAND ${RP_STRIP} \"${CMAKE_INSTALL_PREFIX}/bin/texislockd\")")
+install(CODE "execute_process(COMMAND ${RP_STRIP} \"${CMAKE_INSTALL_PREFIX}/bin/backref\")")
+install(CODE "execute_process(COMMAND ${RP_STRIP} \"${CMAKE_INSTALL_PREFIX}/modules/python/bin/python3\")")
 
 # Bundle MSYS2 runtime DLLs for standalone Windows operation
 if(CYGWIN)

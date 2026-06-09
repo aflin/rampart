@@ -899,12 +899,39 @@ add_custom_command(OUTPUT ${TEXIS_BINARY_DIR}/ftinternalsyms.h
   DEPENDS ftinternal.syms ${FTINTENAL_EXT_SYMS}
 )
 
-add_custom_target(ftinternalsyms-h ${TEXIS_BINARY_DIR}/ftinternalsyms.h)
+# DEPENDS keyword required -- without it the path is interpreted as a
+# COMMAND to execute, producing "ftinternalsyms.h: not found" when
+# anything actually invokes this target.  (Latent before because
+# nothing did, and the file was generated as a side effect of being
+# listed in genFldFuncsSorted's source list.)
+add_custom_target(ftinternalsyms-h DEPENDS ${TEXIS_BINARY_DIR}/ftinternalsyms.h)
+
+# Every .c file that pulls in dd.h transitively needs ftinternalsyms.h
+# to be generated first.  Without these add_dependencies the link-time
+# targets race against the custom_command under `make -j` and can compile
+# dd.h before the header exists, producing
+#   "fatal error: ftinternalsyms.h: No such file or directory".
+# texis_common_objs is the OBJECT library where the dd.h-including .c
+# files actually compile; texisapi + texisbuild aggregate it.  Wiring
+# all three ensures every downstream consumer (rampart-sql, tsql,
+# texislockd, etc.) blocks on the header until it exists.
+add_dependencies(texis_common_objs ftinternalsyms-h)
+add_dependencies(texisapi          ftinternalsyms-h)
+add_dependencies(texisbuild        ftinternalsyms-h)
 
 #
 # Sort fldFuncs.c
 #
-add_executable(genFldFuncsSorted fldFuncs.c ${TEXIS_BINARY_DIR}/ftinternalsyms.h)
+# NOTE: ftinternalsyms.h is NOT listed as a source here.  Listing it
+# creates a second cmake-resolved file dependency that, under -j,
+# can race with the texis_common_objs -> ftinternalsyms-h chain and
+# fire genftinternalsyms.sh twice concurrently -- the script's `>`
+# followed by `>>` is not atomic, so the two runs interleave and the
+# file ends up with duplicated content.  Modeling the dep purely via
+# the custom_target (add_dependencies just below) gives cmake one
+# unique producer path.
+add_executable(genFldFuncsSorted fldFuncs.c)
+add_dependencies(genFldFuncsSorted ftinternalsyms-h)
 add_custom_command(TARGET genFldFuncsSorted POST_BUILD
 		BYPRODUCTS ${TEXISAPI_BINARY_DIR}/fldFuncsSorted.c
 		COMMAND genFldFuncsSorted ${TEXISAPI_BINARY_DIR}/fldFuncsSorted.c

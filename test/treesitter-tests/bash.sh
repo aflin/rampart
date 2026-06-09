@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # bash sample for rampart-treesitter tests.
 # Covers: function_definition in both forms ('function foo' and 'foo()').
 

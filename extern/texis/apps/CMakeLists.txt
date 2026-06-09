@@ -84,6 +84,15 @@ target_link_libraries(texislockd LINK_PUBLIC event_core)
 # texislockd is a lock daemon — links the lean texisbuild (no vec,
 # no faiss).  Loads on a vanilla install with no scientific libs.
 target_link_libraries(texislockd LINK_PUBLIC texisbuild)
+# RPATH $ORIGIN/../lib lets texislockd find the bundled libopenblas /
+# libgomp / libgfortran / libquadmath when installed via the
+# rampart-install bundle (which extracts them at <prefix>/lib/),
+# while still falling back to the system loader cache for non-bundle
+# installs.
+set_target_properties(texislockd PROPERTIES
+    INSTALL_RPATH "\$ORIGIN/../lib"
+    BUILD_RPATH   "\$ORIGIN/../lib"
+)
 set(LOCKD_EXE  ${TEXIS_BINARY_DIR}/apps/texislockd PARENT_SCOPE)
 
 #if(${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION} VERSION_LESS 3.14)

@@ -27,10 +27,42 @@
 
 #include <dlfcn.h>
 #include <stddef.h>
+#include <stdio.h>
+#include <limits.h>
+
+/* rampart's main binary tracks its own install prefix (e.g.
+   "/home/aaron/.rampart").  Defined in src/cmdline.c.  We try to dlopen
+   from <rampart_dir>/lib/ BEFORE falling back to a bare-SONAME dlopen,
+   because some rtld variants (notably FreeBSD's) don't propagate a
+   calling .so's DT_RUNPATH to dlopen calls -- so even though
+   rampart-sql.so has RPATH "$ORIGIN/../lib", a bare dlopen() from
+   inside it won't find the bundled libs.
+   __attribute__((weak)) so that texis-side CLI tools (tsql, texislockd,
+   rbtest, etc.) that link libtexisapi.a but NOT cmdline.o still link
+   cleanly: the weak symbol resolves to NULL and probe_dlopen falls
+   straight through to the bare-SONAME path. */
+__attribute__((weak)) extern char rampart_dir[];
 
 static int        g_probed = 0;
 static int        g_ok     = 0;
 static const char *g_err   = NULL;
+
+static void *probe_dlopen(const char *soname)
+{
+    char path[PATH_MAX];
+    void *h;
+    /* Test the symbol's address against NULL (weak-undefined sentinel)
+       before reading rampart_dir[0] -- otherwise tsql/texislockd would
+       segfault here. */
+    if (&rampart_dir[0] && rampart_dir[0]) {
+        snprintf(path, sizeof path, "%s/lib/%s", rampart_dir, soname);
+        h = dlopen(path, RTLD_NOW | RTLD_GLOBAL);
+        if (h) return h;
+    }
+    /* Fall back to bare SONAME so that a system-installed copy still
+       satisfies the probe even if <prefix>/lib/ doesn't have it. */
+    return dlopen(soname, RTLD_NOW | RTLD_GLOBAL);
+}
 
 int texis_vec_blas_probe(const char **err_out)
 {
@@ -38,18 +70,18 @@ int texis_vec_blas_probe(const char **err_out)
         g_probed = 1;
 
 #if defined(__linux__)
-        if (!dlopen("libgomp.so.1",     RTLD_NOW | RTLD_GLOBAL)) {
+        if (!probe_dlopen("libgomp.so.1")) {
             g_err = "INDEX_VEC backend=ivfpq requires libgomp.so.1 "
                     "(OpenMP runtime).  Debian/Ubuntu: "
                     "sudo apt install libgomp1";
             goto done;
         }
-        if (!dlopen("libgfortran.so.5", RTLD_NOW | RTLD_GLOBAL)) {
+        if (!probe_dlopen("libgfortran.so.5")) {
             g_err = "INDEX_VEC backend=ivfpq requires libgfortran.so.5.  "
                     "Debian/Ubuntu: sudo apt install libgfortran5";
             goto done;
         }
-        if (!dlopen("libopenblas.so.0", RTLD_NOW | RTLD_GLOBAL)) {
+        if (!probe_dlopen("libopenblas.so.0")) {
             g_err = "INDEX_VEC backend=ivfpq requires libopenblas.so.0.  "
                     "Debian/Ubuntu: sudo apt install libopenblas0-pthread";
             goto done;
@@ -57,7 +89,7 @@ int texis_vec_blas_probe(const char **err_out)
 #elif defined(__FreeBSD__)
         /* libomp.so is base; libgfortran+libquadmath ride in via
          * libopenblas's own DT_NEEDED chain. */
-        if (!dlopen("libopenblas.so.0", RTLD_NOW | RTLD_GLOBAL)) {
+        if (!probe_dlopen("libopenblas.so.0")) {
             g_err = "INDEX_VEC backend=ivfpq requires libopenblas.so.0.  "
                     "FreeBSD: sudo pkg install openblas";
             goto done;
