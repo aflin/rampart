@@ -114,6 +114,7 @@
 #include <ctype.h>
 #include "rampart.h"
 #include <wand/magick_wand.h>
+#include <magick/list.h>
 
 
 
@@ -610,17 +611,71 @@ static void push_file_names(duk_context *ctx, duk_idx_t files_idx, const char *f
     duk_pop(ctx);
 }
 
-static unsigned int addbuffer(duk_context *ctx, MagickWand *wand, 
+/* Append every image in the source wand 'add' onto the end of 'wand', in
+   order.  The source list is deep-cloned, so 'add' (and any caller that owns
+   it) is left intact and may be safely destroyed afterward.
+
+   We operate on the image lists directly rather than going through
+   MagickAddImage()/MagickNextImage(): the wand iterator dance produced a
+   reversed/inconsistent list order (see rampart-graphicsmagick-todo.md).
+   'wand'/'add' are really rpMW* (a mirror of GraphicsMagick's _MagickWand),
+   so we can reach the underlying Image lists. */
+static unsigned int append_wand(MagickWand *wand, MagickWand *add)
+{
+    rpMW *w = (rpMW *)wand, *a = (rpMW *)add;
+    Image *clone;
+
+    if(!a->images)
+        return 0;
+
+    clone = CloneImageList(a->images, &w->exception);
+    if(!clone)
+        return 0;
+
+    if(!w->images)
+        w->images = clone;
+    else
+    {
+        Image *p = w->images;
+        while(p->next)
+            p = p->next;
+        p->next = clone;
+        clone->previous = p;
+    }
+
+    // leave the current image at index 0; callers use select() to move
+    MagickSetImageIndex(wand, 0);
+
+    return 1;
+}
+
+static unsigned int addbuffer(duk_context *ctx, MagickWand *wand,
     duk_idx_t buff_idx, duk_idx_t files_idx)
 {
     duk_size_t sz;
-    unsigned char *blob = duk_get_buffer_data(ctx, 0, &sz);
-    unsigned int cur,
-        prev=getcount(wand),
-        res = MagickReadImageBlob(wand, blob, (size_t)sz);
+    unsigned char *blob = duk_get_buffer_data(ctx, buff_idx, &sz);
+    unsigned int cur, prev=getcount(wand), res;
 
-    if(!res)
-        return res;
+    /* First image goes straight into the (empty) target wand; subsequent
+       images are read into a fresh wand and appended, because reading a
+       second time into a non-empty wand replaces rather than appends. */
+    if(prev == 0)
+    {
+        res = MagickReadImageBlob(wand, blob, (size_t)sz);
+        if(!res)
+            return res;
+    }
+    else
+    {
+        MagickWand *fresh = NewMagickWand();
+        res = MagickReadImageBlob(fresh, blob, (size_t)sz);
+        if(!res)
+            throw_exception(ctx, fresh, 1); //destroys fresh and throws
+        res = append_wand(wand, fresh);
+        DestroyMagickWand(fresh);
+        if(!res)
+            return res;
+    }
 
     cur = getcount(wand);
     push_file_names(ctx, files_idx, "[buffer]", cur-prev);
@@ -628,16 +683,30 @@ static unsigned int addbuffer(duk_context *ctx, MagickWand *wand,
     return res;
 }
 
-static unsigned int addfilename(duk_context *ctx, MagickWand *wand, 
+static unsigned int addfilename(duk_context *ctx, MagickWand *wand,
     const char *file, duk_idx_t files_idx)
 {
-    unsigned int cur,
-        prev=getcount(wand),
-        res = MagickReadImage(wand, file);
+    unsigned int cur, prev=getcount(wand), res;
     char *rpath;
 
-    if(!res)
-        return res;
+    /* see addbuffer: direct read for the first image, fresh-wand append after */
+    if(prev == 0)
+    {
+        res = MagickReadImage(wand, file);
+        if(!res)
+            return res;
+    }
+    else
+    {
+        MagickWand *fresh = NewMagickWand();
+        res = MagickReadImage(fresh, file);
+        if(!res)
+            throw_exception(ctx, fresh, 1); //destroys fresh and throws
+        res = append_wand(wand, fresh);
+        DestroyMagickWand(fresh);
+        if(!res)
+            return res;
+    }
 
     cur = getcount(wand);
 
@@ -656,8 +725,10 @@ static unsigned int addfilename(duk_context *ctx, MagickWand *wand,
 static unsigned int addhandle(duk_context *ctx, MagickWand *wand, duk_idx_t idx, duk_idx_t files_idx)
 {
     MagickWand *add;
-    unsigned int save, wsave, res;
+    unsigned int res;
     duk_uarridx_t len, flen, i=0;
+
+    idx = duk_normalize_index(ctx, idx);
 
     if(!duk_get_prop_string(ctx, idx, DUK_HIDDEN_SYMBOL("wand")))
         RP_THROW(ctx, "gm.add/gm.open - argument must be an image opened with gm.open");
@@ -668,26 +739,12 @@ static unsigned int addhandle(duk_context *ctx, MagickWand *wand, duk_idx_t idx,
     if(!add)
         RP_THROW(ctx, "gm.add - cannot add, image has been closed");
 
-    save = MagickGetImageIndex(add);
-    MagickSetImageIndex(add,0);
-    wsave = MagickGetImageIndex(wand);
+    res = append_wand(wand, add);
+    if(!res)
+        return res;
 
-    while(MagickNextImage(wand)); //this advances one past the last, presumably to the end of a list where there's a NULL
-
-    // copy all images in add, append to wand
-    do {
-        res = MagickAddImage(wand, add); //this doesn't add an image, it replaces the one at the current index.
-        if(!res)
-            return res;
-        MagickNextImage(wand);
-    } while(MagickNextImage(add));
-
-    // reset image positions
-    MagickSetImageIndex(add, save);
-    MagickSetImageIndex(wand, wsave);
-
-    // copy filenames
-    duk_get_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("files"));
+    // copy filenames from the source image object (idx), not arg 0
+    duk_get_prop_string(ctx, idx, DUK_HIDDEN_SYMBOL("files"));
     len=duk_get_length(ctx, -1);
     flen=duk_get_length(ctx, files_idx);
     while (i<len)
@@ -1741,7 +1798,7 @@ static duk_ret_t identify(duk_context *ctx)
     if(!rwand)
         RP_THROW(ctx, "gm - error using a closed image handle");
 
-    rp_describe_image(ctx, rwand->images, verbose?1:0 );
+    rp_describe_image(ctx, rwand->image, verbose?1:0 );
     return 1;
 
     /*
