@@ -543,10 +543,20 @@ midnightlocal.setMilliseconds(0);
 //printf("midnight=%s\n", midnight);
 //printf("midnightlocal=%s\n", midnightlocal);
 
+// autoScanDate parses in the C locale, where %x is %m/%d/%y.  If the current
+// locale formats %x differently (e.g. dd/mm/yy in en_GB), the round-trip is
+// ambiguous and cannot work.
+var localeXisUS = dateFmt("%x", nowgmt) == dateFmt("%m/%d/%y", nowgmt);
+
 for (var i=0; i<asdfmts.length; i++)
 {
     var cfmt = asdfmts[i];
     var res=false, diff=0;
+
+    if(!localeXisUS && cfmt.indexOf("%x") != -1) {
+        testFeature('autoScanDate "' + cfmt +'"', "skipping (locale %x is not %m/%d/%y)");
+        continue;
+    }
 
     var df = dateFmt(cfmt, nowgmt);
     //printf("doing %s %s\n", df, cfmt);
