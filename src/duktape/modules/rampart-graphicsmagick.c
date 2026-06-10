@@ -1974,6 +1974,24 @@ duk_ret_t duk_open_module(duk_context *ctx)
 
     /* initialize once */
     if(!is_init) {
+        /* GraphicsMagick reads .mgk config files (delegates.mgk, type.mgk,
+           etc.) from a compile-time-baked path on the build host (e.g.
+           /usr/lib/GraphicsMagick-1.3.40/config/).  On a vanilla install
+           target that path is absent, so Magick* APIs fail with
+           "Unable to access configuration file (delegates.mgk)".
+           If <prefix>/share/graphicsmagick exists (bundled by
+           install/build-packages.js for the rampart-graphicsmagick
+           package), point MAGICK_CONFIGURE_PATH at it.
+           setenv overwrite=0 so a caller-supplied env var still wins;
+           if the bundled dir is absent (build-tree run, or system-GM
+           install) we fall through to GM's compiled-in path. */
+        if (rampart_dir[0]) {
+            char mgkpath[PATH_MAX];
+            struct stat st;
+            snprintf(mgkpath, sizeof mgkpath, "%s/share/graphicsmagick", rampart_dir);
+            if (stat(mgkpath, &st) == 0 && S_ISDIR(st.st_mode))
+                setenv("MAGICK_CONFIGURE_PATH", mgkpath, 0);
+        }
         InitializeMagick(NULL);
         is_init=1;
     }

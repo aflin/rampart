@@ -380,6 +380,63 @@ function buildTarball(name, entry) {
         }
     }
 
+    /* bundle_gm_config: copy GraphicsMagick's .mgk config files
+       (delegates.mgk, type.mgk, etc.) into share/graphicsmagick so
+       rampart-graphicsmagick.so's init step can point
+       MAGICK_CONFIGURE_PATH at <prefix>/share/graphicsmagick and the
+       Wand APIs work on a vanilla install that doesn't have system
+       GraphicsMagick at the build-host-baked path. */
+    if (entry.bundle_gm_config) {
+        var mgkSrc = null;
+        /* GraphicsMagickWand-config --exec-prefix reports the install
+           prefix (e.g. /usr, /opt/homebrew/opt/graphicsmagick).
+           The config files live at <prefix>/lib/GraphicsMagick-<ver>/config/.
+           Glob to find the version-suffixed dir. */
+        var gmconf = ["GraphicsMagickWand-config", "GraphicsMagick-config"];
+        var prefix = "";
+        for (var ci = 0; ci < gmconf.length && !prefix; ci++) {
+            try {
+                var r = exec(gmconf[ci], "--exec-prefix");
+                if (r && r.exitStatus === 0)
+                    prefix = (r.stdout || "").replace(/\s+$/, "");
+            } catch (e) {}
+        }
+        var candidates = [];
+        if (prefix) candidates.push(prefix + "/lib/GraphicsMagick-*");
+        candidates.push("/usr/lib/GraphicsMagick-*",
+                        "/usr/local/lib/GraphicsMagick-*",
+                        "/opt/homebrew/opt/graphicsmagick/lib/GraphicsMagick-*");
+        for (var di = 0; di < candidates.length && !mgkSrc; di++) {
+            try {
+                var hit = exec("sh", "-c",
+                               "ls -d " + candidates[di] + "/config 2>/dev/null | head -1");
+                if (hit && hit.exitStatus === 0) {
+                    var p = (hit.stdout || "").replace(/\s+$/, "");
+                    if (p && fileExists(p + "/delegates.mgk")) mgkSrc = p;
+                }
+            } catch (e) {}
+        }
+        if (!mgkSrc) {
+            fail("bundle_gm_config: could not locate GraphicsMagick config dir " +
+                 "(no */lib/GraphicsMagick-*/config/delegates.mgk on disk).  " +
+                 "Install GraphicsMagick on the build host first.");
+        }
+        run("mkdir", ["-p", stage + "/share/graphicsmagick"]);
+        run("sh", ["-c", "cp " + mgkSrc + "/*.mgk " + stage + "/share/graphicsmagick/"]);
+        /* List what got copied so the manifest knows.  Same dedupe path
+           the rest of staged uses. */
+        try {
+            var listed = exec("sh", "-c",
+                              "cd " + stage + " && ls share/graphicsmagick/*.mgk");
+            if (listed && listed.exitStatus === 0) {
+                (listed.stdout || "").split(/\n+/).forEach(function (f) {
+                    if (f) staged.push(f);
+                });
+            }
+        } catch (e) {}
+        info("  bundled GraphicsMagick config from " + mgkSrc);
+    }
+
     var tarball = OUTDIR + "/" + suffixedName(name, "tar.gz",
                                               entry.arch === "dep", "tar.gz");
     /* dedupe paths so tar doesn't warn about double-archive */

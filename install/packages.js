@@ -190,6 +190,12 @@ module.exports = {
            "$ORIGIN/../lib", users with no system graphicsmagick can
            still load the module. */
         bundle_so_deps: true,
+        /* bundle_gm_config: also ship GraphicsMagick's .mgk config files
+           (delegates.mgk, type.mgk, etc.) at share/graphicsmagick/ so
+           the module's init can point MAGICK_CONFIGURE_PATH there.
+           Without this, calls fail on a vanilla install with
+           "Unable to access configuration file (delegates.mgk)". */
+        bundle_gm_config: true,
         notes: "Image processing (GraphicsMagick Wand API)"
     },
 
