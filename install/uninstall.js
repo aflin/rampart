@@ -40,6 +40,34 @@ function isSubpath(p, parent) {
     return p === parent || p.indexOf(parent + "/") === 0;
 }
 
+/* Refuse to uninstall from a system directory.  Mirrors entry_script.js's
+   validatePrefix -- if a manifest's recorded prefix is "/" or "/usr" or
+   any other top-level system path, every "owned" entry would pass
+   isSubpath and we'd cheerfully rm system files.  Both files are kept
+   in lockstep; if one list grows the other should too. */
+var UNSAFE_PREFIXES = {
+    "/": 1,
+    "/usr": 1, "/usr/local": 1, "/usr/bin": 1, "/usr/sbin": 1, "/usr/lib": 1,
+    "/usr/include": 1, "/usr/share": 1, "/usr/libexec": 1,
+    "/etc": 1, "/var": 1, "/bin": 1, "/sbin": 1, "/lib": 1, "/opt": 1,
+    "/tmp": 1, "/root": 1, "/dev": 1, "/proc": 1, "/sys": 1, "/boot": 1,
+    "/Users": 1, "/home": 1, "/mnt": 1, "/media": 1,
+    "/Applications": 1, "/System": 1, "/Library": 1,
+    "/private": 1, "/Volumes": 1, "/Network": 1
+};
+function validatePrefix(p) {
+    if (typeof p !== "string" || p === "") return "empty prefix";
+    if (p.charAt(0) !== "/") return "prefix not absolute: " + p;
+    if (p.indexOf("/..") >= 0 || p.indexOf("/./") >= 0 || /\/\.$/.test(p))
+        return "prefix has '.' or '..' segment: " + p;
+    var norm = p;
+    while (norm.length > 1 && norm.charAt(norm.length-1) === "/")
+        norm = norm.slice(0, -1);
+    if (UNSAFE_PREFIXES[norm])
+        return norm + " is a system directory; refusing to uninstall";
+    return null;
+}
+
 /* ---------- locate manifest ----------
  * uninstall.js lives at <prefix>/bin/rampart-uninstall.js.  process.scriptPath
  * is the script's own directory.  The install prefix is one level up.
@@ -63,6 +91,20 @@ catch (e) { printf("ERROR: could not parse %s: %s\n", manifestPath, e.message); 
 /* manifest.prefix is authoritative; ignore process.scriptPath if they disagree */
 if (manifest.prefix) prefix = manifest.prefix;
 
+/* HARD BAIL on a manifest that records a system-directory prefix.
+   Without this, owned-files iteration plus isSubpath would happily
+   accept rm of /etc/passwd because it's "under prefix /".  This is the
+   load-bearing final guard against a tampered or corrupted manifest. */
+var prefixErr = validatePrefix(prefix);
+if (prefixErr) {
+    printf("ABORT: %s.\n", prefixErr);
+    printf("       Manifest at %s records this prefix and is therefore\n", manifestPath);
+    printf("       unsafe to act on.  No files will be removed.\n");
+    printf("       Inspect the manifest manually, then delete files\n");
+    printf("       by hand if you really mean to.\n");
+    process.exit(1);
+}
+
 printf("\nThis will uninstall rampart from %s\n", prefix);
 if (manifest.installed_at)
     printf("(installed %s, profile %s)\n", manifest.installed_at, manifest.profile || "unknown");
@@ -72,29 +114,77 @@ var ans = askKey("n");
 if (ans !== "y") { printf("Cancelled.\n"); process.exit(0); }
 printf("\n");
 
-/* ---------- 1) remove installer-owned files ---------- */
+/* ---------- 1) remove installer-owned files ----------
+ * Schema v2: manifest.packages[pkg].files entries are absolute paths.
+ *   A trailing "/" marks a directory entry that we rm -rf (used for
+ *   rampart-python -- the embedded Python tree has ~10k files we don't
+ *   enumerate individually).
+ * Schema v1 (legacy): entries are relative to manifest.prefix.  We
+ *   convert on the fly so old installs uninstall correctly too.
+ *
+ * Safety rail: rm -rf only fires if (a) the entry has a trailing "/"
+ *   AND (b) the resolved path is under our recorded prefix.  Anything
+ *   else -- including paths that escape the prefix -- gets skipped
+ *   with a WARN.  The directory removal can't escape upward. */
+var schemaV2 = (manifest.schema === 2);
 
 var owned = {};
+var ownedDirs = {};
 var packages = manifest.packages || {};
 for (var pkg in packages) {
     var pf = packages[pkg].files || [];
-    for (var i = 0; i < pf.length; i++) owned[pf[i]] = true;
+    for (var i = 0; i < pf.length; i++) {
+        var entry = pf[i];
+        var abs = (entry.charAt(0) === "/") ? entry : (prefix + "/" + entry);
+        if (entry.charAt(entry.length-1) === "/") {
+            /* dir marker -- rm -rf'd in a separate pass below */
+            ownedDirs[abs] = true;
+        } else {
+            owned[abs] = true;
+        }
+    }
 }
 
-/* Per-file unlink via rampart.utils.rm -- in-process, no fork.  Python
-   installs have ~10k files in modules/python/... ; the previous
-   exec("rm","-f",p) cost ~2ms per file (fork + exec), so ~20s total.
-   The in-process path is ~10x faster. */
-var removed = 0, missing = 0;
-for (var rel in owned) {
-    var p = prefix + "/" + rel;
+/* Files: per-path rm via rampart.utils.rm -- in-process, no fork. */
+var removed = 0, missing = 0, refusedOutsidePrefix = 0;
+for (var p in owned) {
+    if (!isSubpath(p, prefix)) {
+        printf("  WARN: refusing to remove %s (outside prefix %s)\n", p, prefix);
+        refusedOutsidePrefix++;
+        continue;
+    }
     try { rampart.utils.rm(p); removed++; }
     catch (e) {
         if (/No such file/.test(e.message)) { missing++; }
         else { printf("  WARN: could not remove %s: %s\n", p, e.message); }
     }
 }
-printf("Removed %d installed file(s) (%d already missing).\n", removed, missing);
+
+/* Directory entries: rm -rf as a whole.  Guarded by the same isSubpath
+ * safety check so a malformed manifest can't escape the prefix. */
+var dirsRemoved = 0, dirsRefused = 0;
+for (var d in ownedDirs) {
+    if (!isSubpath(d, prefix)) {
+        printf("  WARN: refusing to rm -rf %s (outside prefix %s)\n", d, prefix);
+        dirsRefused++;
+        continue;
+    }
+    if (!fileExists(d)) { continue; }   /* already gone */
+    try {
+        exec("rm", "-rf", d);
+        dirsRemoved++;
+        printf("  removed dir tree: %s\n", d);
+    } catch (e) {
+        printf("  WARN: could not remove dir %s: %s\n", d, e.message);
+    }
+}
+
+printf("Removed %d file(s) (%d already missing)%s%s.\n",
+       removed, missing,
+       dirsRemoved ? ", " + dirsRemoved + " dir tree(s)" : "",
+       refusedOutsidePrefix || dirsRefused
+           ? ", " + (refusedOutsidePrefix + dirsRefused) + " entries refused (outside prefix)"
+           : "");
 
 /* ---------- 2) strip guarded blocks from rc files ---------- */
 

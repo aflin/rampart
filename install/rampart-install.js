@@ -278,6 +278,10 @@ function installOne(name) {
     mkdir(PREFIX + "/modules", true);
     mkdir(PREFIX + "/bin", true);
 
+    /* installedFiles holds ABSOLUTE paths (schema v2).  A trailing slash
+       marks a directory entry that uninstall rm -rf's as a whole -- used
+       for rampart-python, where the tree has ~10k files we don't need
+       to enumerate individually.  Anything else is a regular file. */
     var installedFiles = [];
 
     if (entry.kind === "so" || entry.kind === "js") {
@@ -286,15 +290,27 @@ function installOne(name) {
         var basenameOut = name + ext;
         var dst = PREFIX + "/modules/" + basenameOut;
         run("cp", ["-p", localArtifact, dst]);
-        installedFiles.push("modules/" + basenameOut);
+        installedFiles.push(dst);
         info("  installed: " + dst);
     } else {
         /* tar.gz -> extract under PREFIX, list extracted entries */
         var listOut = run("tar", ["-tzf", localArtifact]).stdout;
         var entries = listOut.split("\n").filter(function (s) { return s.length; });
         run("tar", ["-xzf", localArtifact, "-C", PREFIX]);
-        installedFiles = entries.filter(function (e) { return e.charAt(e.length-1) !== "/"; });
-        info("  extracted " + installedFiles.length + " files into " + PREFIX);
+        if (name === "rampart-python") {
+            /* Special case: the embedded Python 3.11 tree has thousands
+               of files (stdlib, site-packages, headers, share/, etc.).
+               Tracking them all bloats installed.json by ~250KB.  Record
+               the modules/python directory as a single bulk entry --
+               uninstall will rm -rf it. */
+            installedFiles.push(PREFIX + "/modules/python/");
+            info("  extracted Python tree into " + PREFIX + "/modules/python/");
+        } else {
+            installedFiles = entries
+                .filter(function (e) { return e.charAt(e.length-1) !== "/"; })
+                .map(function (rel) { return PREFIX + "/" + rel; });
+            info("  extracted " + installedFiles.length + " files into " + PREFIX);
+        }
     }
 
     /* update installed.json */
@@ -305,7 +321,7 @@ function installOne(name) {
         catch (e) { fail("could not parse " + manifestPath + ": " + e.message); }
     } else {
         live = {
-            schema:          1,
+            schema:          2,
             rampart_version: rampart.version,
             installed_at:    new Date().toISOString(),
             prefix:          PREFIX,
@@ -315,6 +331,11 @@ function installOne(name) {
             symlinks:        []
         };
     }
+    /* Upgrade existing v1 manifest in place on next write -- future
+       packages get tracked with absolute paths.  Old v1 entries stay
+       relative until they're re-installed, which is fine: uninstall.js
+       handles both forms. */
+    if (live.schema !== 2) live.schema = 2;
 
     live.packages = live.packages || {};
     live.packages[name] = {

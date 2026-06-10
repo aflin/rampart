@@ -85,6 +85,39 @@ function fileExists(path) {
     return !!st;
 }
 
+/* Refuse to install into (and later, uninstall from) a path that's a
+   system top-level directory.  Returns null on OK, or an error string.
+   Defense in depth: even with the rampart-uninstall.sh marker check and
+   uninstall.js's isSubpath guard, a hostile or fat-fingered custom
+   prefix like "/usr" would propagate through both layers and lead to
+   rm -rf on system files.  This block catches it at the source. */
+var UNSAFE_PREFIXES = {
+    "/": 1,
+    "/usr": 1, "/usr/local": 1, "/usr/bin": 1, "/usr/sbin": 1, "/usr/lib": 1,
+    "/usr/include": 1, "/usr/share": 1, "/usr/libexec": 1,
+    "/etc": 1, "/var": 1, "/bin": 1, "/sbin": 1, "/lib": 1, "/opt": 1,
+    "/tmp": 1, "/root": 1, "/dev": 1, "/proc": 1, "/sys": 1, "/boot": 1,
+    "/Users": 1, "/home": 1, "/mnt": 1, "/media": 1,
+    "/Applications": 1, "/System": 1, "/Library": 1,
+    "/private": 1, "/Volumes": 1, "/Network": 1
+};
+function validatePrefix(prefix) {
+    if (typeof prefix !== "string" || prefix === "")
+        return "empty prefix";
+    if (prefix.charAt(0) !== "/")
+        return "prefix must be an absolute path (start with /): " + prefix;
+    if (prefix.indexOf("/..") >= 0 || prefix.indexOf("/./") >= 0 ||
+        /\/\.$/.test(prefix))
+        return "prefix may not contain '.' or '..' segments: " + prefix;
+    /* normalize trailing slash for the blacklist check */
+    var norm = prefix;
+    while (norm.length > 1 && norm.charAt(norm.length-1) === "/")
+        norm = norm.slice(0, -1);
+    if (UNSAFE_PREFIXES[norm])
+        return norm + " is a system directory; refusing to use as a rampart install prefix";
+    return null;
+}
+
 /* who am I, really -- if running under sudo we want the invoking user
    so the rc-file edits land in the invoking user's home, not root's. */
 function homeOf(user) {
@@ -262,9 +295,16 @@ function chooseProfile() {
 
 function customize(sysAvailable) {
     var defaultPrefix = sysAvailable ? SYSTEM_PREFIX : USER_PREFIX;
-    printf("Install prefix [%s]: ", defaultPrefix);
-    stdout.fflush();
-    var prefix = askLine(defaultPrefix);
+    var prefix;
+    while (true) {
+        printf("Install prefix [%s]: ", defaultPrefix);
+        stdout.fflush();
+        prefix = askLine(defaultPrefix);
+        var err = validatePrefix(prefix);
+        if (!err) break;
+        printf("  %s\n", err);
+        printf("  Pick a different path (or Ctrl-C to cancel).\n");
+    }
 
     /* if their custom prefix is under /usr/local, treat as system-style
        install -- they own it and want links.  otherwise user-style. */
@@ -489,37 +529,52 @@ function makeSymlinks(prefix) {
 /* ============== installed.json manifest ============== */
 
 function buildManifest(prefix, isSystem, rcFilesTouched, symlinksMade) {
-    /* the list of files the installer is responsible for at this prefix.
-       used by uninstall.js to know what to delete vs. what's user data. */
-    var coreFiles = ["bin/rampart"];
+    /* Schema v2: every file is stored by its ABSOLUTE path -- the
+       uninstaller iterates `files` and rm's each entry, with no
+       prefix-derivation, no walking, no guessing.  A trailing slash on
+       an entry signals "this is a directory; rm -rf it as a whole"
+       (used for modules/python -- thousands of files we don't track
+       individually).  See uninstall.js for the matching iteration. */
+
+    /* Hard guard: refuse to build a manifest whose recorded prefix is a
+       system directory.  Even though chooseProfile() and customize()
+       already validate, a future caller path could miss the check;
+       getting it wrong here is unsafe so we re-check unconditionally. */
+    var err = validatePrefix(prefix);
+    if (err) {
+        printf("FATAL: %s\n", err);
+        process.exit(1);
+    }
+
+    var coreFiles = [prefix + "/bin/rampart"];
 
     /* every bin extra + every module we extracted from the payload */
     var pl = payloadList();
     for (var name in pl) {
         if (name.charAt(name.length-1) === "/") continue;  /* dir markers */
         if (name === "entry_script.js" || name === "uninstall.js") continue;
-        coreFiles.push(name);
+        coreFiles.push(prefix + "/" + name);
     }
 
     /* generated metadata */
-    coreFiles.push("installed.json");
-    coreFiles.push("bin/rampart-uninstall.sh");
-    coreFiles.push("bin/rampart-uninstall.js");
-    coreFiles.push("bin/rampart-install.js");
-    coreFiles.push("bin/packages.js");
+    coreFiles.push(prefix + "/installed.json");
+    coreFiles.push(prefix + "/bin/rampart-uninstall.sh");
+    coreFiles.push(prefix + "/bin/rampart-uninstall.js");
+    coreFiles.push(prefix + "/bin/rampart-install.js");
+    coreFiles.push(prefix + "/bin/packages.js");
 
     /* env files only for user installs */
     if (!isSystem) {
-        coreFiles.push("env");
-        coreFiles.push("env.csh");
-        coreFiles.push("env.fish");
+        coreFiles.push(prefix + "/env");
+        coreFiles.push(prefix + "/env.csh");
+        coreFiles.push(prefix + "/env.fish");
     }
 
     coreFiles.sort();
 
     var nowIso = new Date().toISOString();
     return {
-        schema:          1,
+        schema:          2,
         rampart_version: rampart.version,
         installed_at:    nowIso,
         prefix:          prefix,
@@ -565,21 +620,41 @@ function writeUninstallScripts(prefix) {
     fwrite(prefix + "/bin/packages.js",          payloadGet("packages.js"));
     chmod(prefix + "/bin/packages.js",           "644");
 
+    /* Single-quote the prefix for embedding in /bin/sh.  Single-quoted
+       strings can't contain a single quote, so split-and-rejoin any
+       embedded ones with the '"'"' idiom. */
+    var prefixSh = "'" + prefix.replace(/'/g, "'\"'\"'") + "'";
+
     var sh =
 "#!/bin/sh\n"+
-"# rampart uninstall shim -- delegates to rampart-uninstall.js for the\n"+
-"# smart cleanup, with a manual rm -rf fallback if rampart is missing.\n"+
-"# Self-locating so it works correctly when called via a /usr/local/bin\n"+
-"# symlink.\n"+
-"SELF=$(readlink -f \"$0\" 2>/dev/null || echo \"$0\")\n"+
-"BIN=$(cd \"$(dirname \"$SELF\")\" && pwd)\n"+
-"PREFIX=$(cd \"$BIN/..\" && pwd)\n"+
+"# rampart uninstall shim.  The prefix is BAKED IN at install time --\n"+
+"# do NOT try to derive it from $0 / readlink.  Earlier versions used\n"+
+"# `readlink -f`, which doesn't exist on macOS BSD readlink; the\n"+
+"# fallback to \"$0\" then resolved the wrong directory when this shim\n"+
+"# was invoked through a /usr/local/bin symlink, and the fallback\n"+
+"# branch would offer to rm -rf /usr/local.  Never again.\n"+
+"PREFIX=" + prefixSh + "\n"+
+"BIN=\"$PREFIX/bin\"\n"+
 "\n"+
 "if [ -x \"$BIN/rampart\" ] && [ -f \"$BIN/rampart-uninstall.js\" ]; then\n"+
 "    exec \"$BIN/rampart\" \"$BIN/rampart-uninstall.js\"\n"+
 "fi\n"+
 "\n"+
-"# Fallback: rampart binary or rampart-uninstall.js missing.  Offer a wipe.\n"+
+"# Fallback: rampart binary or rampart-uninstall.js missing.  Even with\n"+
+"# the prefix baked in correctly, refuse to delete anything that\n"+
+"# doesn't look like a rampart install.  Belt and suspenders.\n"+
+"if [ ! -d \"$PREFIX\" ]; then\n"+
+"    echo \"$PREFIX no longer exists.\"\n"+
+"    exit 0\n"+
+"fi\n"+
+"if [ ! -f \"$PREFIX/installed.json\" ] \\\n"+
+"   && [ ! -f \"$PREFIX/bin/rampart-uninstall.sh\" ]; then\n"+
+"    echo \"$PREFIX exists but does not look like a rampart install:\" >&2\n"+
+"    echo \"    no installed.json, no bin/rampart-uninstall.sh.\" >&2\n"+
+"    echo \"Refusing to rm.  Inspect the directory and delete manually\" >&2\n"+
+"    echo \"if you really mean to.\" >&2\n"+
+"    exit 1\n"+
+"fi\n"+
 "printf 'rampart appears damaged at %s.\\nRemove the entire directory? [y/N] ' \"$PREFIX\"\n"+
 "read ans\n"+
 "case \"$ans\" in\n"+
