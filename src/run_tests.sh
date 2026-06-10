@@ -2,8 +2,14 @@
 
 # This file will be placed in the install directory and can be run from there.
 
-SSOURCE=$(readlink -f "${BASH_SOURCE[0]}")
-SDIR=$(dirname "${SSOURCE}")
+# resolve symlinks portably (macOS readlink lacks -f before 12.3)
+SSOURCE="${BASH_SOURCE[0]}"
+while [ -L "$SSOURCE" ]; do
+    SDIR=$(cd -P "$(dirname "$SSOURCE")" >/dev/null 2>&1 && pwd)
+    SSOURCE=$(readlink "$SSOURCE")
+    [[ $SSOURCE != /* ]] && SSOURCE="${SDIR}/${SSOURCE}"
+done
+SDIR=$(cd -P "$(dirname "$SSOURCE")" >/dev/null 2>&1 && pwd)
 
 if [ -e ${SDIR}/babel-test.js ]; then
    TESTDIR="${SDIR}"
