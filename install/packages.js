@@ -188,7 +188,7 @@ module.exports = {
            stage every other non-base dep into lib/ inside the tarball.
            Combined with rampart-graphicsmagick.so's RPATH
            "$ORIGIN/../lib", users with no system graphicsmagick can
-           still load the module -- no system_packages hint needed. */
+           still load the module. */
         bundle_so_deps: true,
         notes: "Image processing (GraphicsMagick Wand API)"
     },
@@ -295,22 +295,6 @@ module.exports = {
             "modules/rampart-faiss.so":    "rampart-faiss_cpu.so",
             "modules/rampart-llamacpp.so": "rampart-llamacpp_cpu.so"
         },
-        system_packages: {
-            /* rampart-faiss_cpu.so links libgfortran5 + libomp5 +
-               libquadmath0.  rampart-llamacpp_cpu.so and
-               rampart-sentencepiece.so are clean.
-               macOS: the langtools build (separate from rampart-sql's
-               vendored extern/libomp) links brew's libomp.dylib at
-               build time, so `brew install libomp` is still required
-               at runtime even though rampart-sql itself is libomp-
-               independent on macOS.
-               FreeBSD: libomp ships in the base clang toolchain, so
-               only openblas needs to be installed via pkg. */
-            apt:  "libomp5 libgfortran5 libquadmath0",
-            dnf:  "libgomp libgfortran libquadmath",
-            brew: "libomp",
-            pkg:  "openblas"
-        },
         notes: "Local LLM + vector search (llamacpp, faiss)"
     },
 
@@ -323,19 +307,6 @@ module.exports = {
         symlinks: {
             "modules/rampart-faiss.so":    "rampart-faiss_cuda.so",
             "modules/rampart-llamacpp.so": "rampart-llamacpp_cuda.so"
-        },
-        system_packages: {
-            /* Same OpenMP / fortran / quadmath as the cpu variant, plus
-               the CUDA runtime libraries (libcudart, libcublas,
-               libcublasLt).  nvidia-cuda-toolkit pulls them all in but
-               is ~1GB; users with NVIDIA's own CUDA repo can install
-               just the runtime libs (libcudart11, libcublas11). */
-            apt:  "libomp5 libgfortran5 libquadmath0 nvidia-cuda-toolkit",
-            dnf:  "libgomp libgfortran libquadmath cuda-toolkit",
-            notes_extra:
-                "CUDA toolkit is ~1GB.  See NVIDIA's CUDA install guide" +
-                " for distro-specific options if you'd rather install" +
-                " only the runtime libraries."
         },
         notes: "CUDA-accelerated langtools (debian12-x86_64+ only)"
     },

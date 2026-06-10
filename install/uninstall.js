@@ -113,22 +113,63 @@ for (var j = 0; j < rcFiles.length; j++) {
 }
 if (stripped) printf("Stripped rampart block from %d rc file(s).\n", stripped);
 
-/* ---------- 3) remove symlinks ---------- */
+/* ---------- 3) remove symlinks ----------
+ * Use lstat (not stat) so broken symlinks still get detected.
+ * Check `rm`'s exitStatus rather than relying on exec throwing -- rm
+ * exits non-zero on permission denied but doesn't raise, and `-f`
+ * silences its stderr.  Differentiate "permission denied" failures
+ * (the user just needs sudo) from other failures and report both at
+ * the end so the user knows whether the install is fully gone. */
+
+function lexists(p) { try { return !!lstat(p); } catch (e) { return false; } }
 
 var links = manifest.symlinks || [];
 var linksRemoved = 0;
+var linksPermDenied = [];
+var linksOtherFail = [];
 for (var k = 0; k < links.length; k++) {
     var ln = links[k];
-    if (!fileExists(ln)) continue;
+    if (!lexists(ln)) continue;
     /* only remove if it still points inside our prefix */
     var target = null;
     try { target = _trim(exec("readlink", ln).stdout); } catch (e) {}
-    if (target && isSubpath(target, prefix)) {
-        try { exec("rm","-f",ln); linksRemoved++; }
-        catch (e) { printf("  WARN: could not remove symlink %s: %s\n", ln, e.message); }
+    if (!(target && isSubpath(target, prefix))) continue;
+    var rmRes;
+    try { rmRes = exec("rm","-f",ln); }
+    catch (e) { linksOtherFail.push({path: ln, why: e.message}); continue; }
+    if (rmRes && rmRes.exitStatus === 0 && !lexists(ln)) {
+        linksRemoved++;
+    } else {
+        var stderr = (rmRes && _trim(rmRes.stderr)) || "";
+        if (/permission denied|not permitted/i.test(stderr)) {
+            linksPermDenied.push(ln);
+        } else {
+            linksOtherFail.push({path: ln, why: stderr || "rm exited "+(rmRes && rmRes.exitStatus)});
+        }
     }
 }
 if (linksRemoved) printf("Removed %d symlink(s).\n", linksRemoved);
+
+function reportLinkFailures() {
+    if (!linksPermDenied.length && !linksOtherFail.length) return;
+    printf("\n");
+    if (linksPermDenied.length) {
+        printf("Could not remove %d symlink(s) -- permission denied:\n",
+               linksPermDenied.length);
+        for (var i = 0; i < linksPermDenied.length; i++)
+            printf("    %s\n", linksPermDenied[i]);
+        printf("Re-run with sudo to remove them, e.g.:\n");
+        printf("    sudo rm -f");
+        for (var j = 0; j < linksPermDenied.length; j++)
+            printf(" %s", linksPermDenied[j]);
+        printf("\n");
+    }
+    if (linksOtherFail.length) {
+        printf("Could not remove %d symlink(s):\n", linksOtherFail.length);
+        for (var f = 0; f < linksOtherFail.length; f++)
+            printf("    %s  (%s)\n", linksOtherFail[f].path, linksOtherFail[f].why);
+    }
+}
 
 /* ---------- 4) walk prefix; find leftovers ---------- */
 
@@ -178,6 +219,7 @@ if (leftover.length === 0) {
     try { exec("rmdir", prefix + "/bin"); } catch (e) {}
     try { exec("rmdir", prefix); } catch (e) {}
     printf("\nDone.  %s removed cleanly.\n", prefix);
+    reportLinkFailures();
     process.exit(0);
 }
 
@@ -203,3 +245,4 @@ if (c === "2") {
     try { exec("rmdir", prefix + "/bin"); } catch (e) {}
     printf("Kept %s (%d user file(s) preserved).\n", prefix, leftover.length);
 }
+reportLinkFailures();

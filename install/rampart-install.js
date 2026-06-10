@@ -89,11 +89,23 @@ if (!LIST && !TARGETS.length)
          "       rampart --install all\n" +
          "       rampart --install --list");
 
-/* default prefix */
+/* default prefix: install into the same tree this rampart binary lives
+   in.  process.installPath is the binary's directory minus the trailing
+   /bin (set in src/duktape/globals/rampart-utils.c).  This means
+   `rampart --install pkg` always lands packages alongside the rampart
+   that's running it -- whether that's /usr/local/rampart (root or a
+   user who owns the prefix), $HOME/.rampart (user install),
+   /opt/rampart, or anywhere else.  Fall back to the old uid-based
+   default if installPath isn't usable (e.g. running from a checkout
+   build/src/ with no /bin in the path). */
 if (PREFIX == null) {
-    var uid = parseInt(_trim((exec("id","-u") || {stdout:"-1"}).stdout), 10);
-    PREFIX = (uid === 0) ? "/usr/local/rampart"
-                         : (process.env.HOME + "/.rampart");
+    if (process.installPath && stat(process.installPath + "/bin/rampart")) {
+        PREFIX = process.installPath;
+    } else {
+        var uid = parseInt(_trim((exec("id","-u") || {stdout:"-1"}).stdout), 10);
+        PREFIX = (uid === 0) ? "/usr/local/rampart"
+                             : (process.env.HOME + "/.rampart");
+    }
 }
 
 /* ---------- official-build gate ---------- */
@@ -319,22 +331,6 @@ function installOne(name) {
 
     /* clean staged downloads */
     try { run("rm", ["-rf", tmpdir]); } catch (e) {}
-
-    /* If the package has external (system) library deps, print the
-       apt/dnf/brew/pkg commands the user needs to run to satisfy them.
-       Same idea as the "this package soft-requires X" notes, but for
-       OS-level packages that aren't rampart's to install. */
-    if (entry.system_packages) {
-        var sp = entry.system_packages;
-        info("");
-        info("  This package needs additional system libraries that are NOT");
-        info("  bundled with rampart.  Install them with one of:");
-        if (sp.apt)  info("    Debian/Ubuntu : sudo apt install "  + sp.apt);
-        if (sp.dnf)  info("    Fedora/RHEL   : sudo dnf install "  + sp.dnf);
-        if (sp.brew) info("    macOS (brew)  : brew install "       + sp.brew);
-        if (sp.pkg)  info("    FreeBSD       : sudo pkg install "   + sp.pkg);
-        if (sp.notes_extra) info("  " + sp.notes_extra);
-    }
 
     return installedFiles;
 }

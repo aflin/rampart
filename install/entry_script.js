@@ -87,19 +87,29 @@ function fileExists(path) {
 
 /* who am I, really -- if running under sudo we want the invoking user
    so the rc-file edits land in the invoking user's home, not root's. */
+function homeOf(user) {
+    /* Portable: parse /etc/passwd via awk.  getent exists on Linux only;
+       macOS's directory service stores accounts in dscl, but admin/local
+       users still land in /etc/passwd, so this works for the install-time
+       common case across Linux/FreeBSD/macOS. */
+    var line = shellOK("awk", "-F:", "$1==\""+user+"\"{print $6;exit}",
+                       "/etc/passwd");
+    if (line) return line;
+    /* Last-ditch fallback so we still return *something* sensible. */
+    return "/home/" + user;
+}
 function effectiveUser() {
     if (process.env.SUDO_USER && process.env.SUDO_USER !== "root")
         return {
             name: process.env.SUDO_USER,
             uid:  parseInt(shellOK("id","-u",process.env.SUDO_USER) || "-1", 10),
-            home: shellOK("getent","passwd",process.env.SUDO_USER).split(":")[5]
-                  || ("/home/" + process.env.SUDO_USER)
+            home: homeOf(process.env.SUDO_USER)
         };
     var name = shellOK("whoami") || "unknown";
     return {
         name: name,
         uid:  parseInt(shellOK("id","-u") || "-1", 10),
-        home: process.env.HOME || ("/home/" + name)
+        home: process.env.HOME || homeOf(name)
     };
 }
 
@@ -155,6 +165,13 @@ var EUID = parseInt(shellOK("id","-u") || "-1", 10);
 function canSystemInstall() {
     if (EUID === 0) return true;
     if (me.uid === 0) return true;
+    /* Non-root and the system prefix already exists owned by us -- common
+       case: a prior `sudo chown $USER /usr/local/rampart` (or the chown
+       this installer does on a sudo install) means the user can write to
+       /usr/local/rampart even though /usr/local itself is root-owned (as
+       on macOS).  We can re-install in place; only the /usr/local/bin
+       symlink step will need to be skipped if /usr/local/bin isn't ours. */
+    if (fileExists(SYSTEM_PREFIX) && uidOf(SYSTEM_PREFIX) === me.uid) return true;
     return uidOf("/usr/local") === me.uid
         && (uidOf("/usr/local/bin") === me.uid || !fileExists("/usr/local/bin"));
 }
@@ -417,9 +434,14 @@ function modifyRcFiles(prefix, homedir) {
         catch (e) { printf("  WARN: could not update %s: %s\n", f.path, e.message); }
     }
 
-    /* chown back to invoking user if we ran via sudo */
+    /* chown back to invoking user if we ran via sudo.  `chown user:` (trailing
+       colon, no group name) tells BSD/GNU chown to use the user's primary
+       group from /etc/passwd -- portable across Linux (where the personal
+       per-user group convention makes "name:name" work too) and macOS/BSD
+       (where regular accounts use the shared `staff` group and no per-user
+       group exists). */
     if (me.name && process.env.SUDO_USER) {
-        try { for (var j = 0; j < touched.length; j++) exec("chown", me.name+":"+me.name, touched[j]); } catch(e) {}
+        try { for (var j = 0; j < touched.length; j++) exec("chown", me.name+":", touched[j]); } catch(e) {}
     }
 
     return touched;
@@ -431,7 +453,26 @@ var BIN_NAMES = ["rampart","addtable","backref","kdbfchk","metamorph",
                  "rex","texislockd","tsql","rampart-uninstall.sh"];
 
 function makeSymlinks(prefix) {
-    if (!fileExists("/usr/local/bin")) ensureDir("/usr/local/bin");
+    /* If /usr/local/bin doesn't exist yet, try to create it.  We can only
+       do that if we own /usr/local, which the new canSystemInstall()
+       path (user owns prefix but not /usr/local) won't have -- so the
+       ensureDir would fail.  Wrap in try and skip cleanly. */
+    if (!fileExists("/usr/local/bin")) {
+        try { ensureDir("/usr/local/bin"); }
+        catch (e) {
+            printf("  cannot create /usr/local/bin (%s); skipping symlink step.\n",
+                   e.message);
+            return [];
+        }
+    }
+    /* Even if it exists, we still need write access.  EUID 0 always has it;
+       a non-root user installing into a previously-chowned prefix usually
+       doesn't.  Skip with a hint rather than spam a WARN per binary. */
+    if (EUID !== 0 && uidOf("/usr/local/bin") !== me.uid) {
+        printf("  /usr/local/bin is not writable; skipping symlink step.\n");
+        printf("  (sudo re-install if you want /usr/local/bin/rampart shims.)\n");
+        return [];
+    }
     var made = [];
     for (var i = 0; i < BIN_NAMES.length; i++) {
         var name = BIN_NAMES[i];
@@ -587,8 +628,19 @@ function backupExistingInstall(prefix) {
 /* ============== root check ============== */
 
 function ensurePermsForPrefix(prefix) {
-    /* If the prefix is /usr/local-anything, we need to be root. */
-    if (/^\/usr\//.test(prefix) && me.uid !== 0) {
+    /* If the prefix is /usr/local-anything, we need write access there.
+       Test the actual process EUID, not me.uid -- the latter is the
+       SUDO_USER (the *invoking* user) so a real root shell with
+       SUDO_USER inherited from its sudo parent would otherwise be
+       rejected.
+       Exception: the user already owns the exact prefix dir (e.g. a
+       previous sudo install that we chown'd, or a manual chown to
+       reclaim ownership).  In that case the installer can write its
+       payload there without root -- only the /usr/local/bin symlink
+       step needs root, and makeSymlinks() already skips cleanly when
+       /usr/local/bin isn't ours. */
+    if (/^\/usr\//.test(prefix) && EUID !== 0) {
+        if (fileExists(prefix) && uidOf(prefix) === me.uid) return;
         printf("ERROR: installing to %s requires root.  Run with sudo.\n", prefix);
         process.exit(1);
     }
@@ -647,6 +699,23 @@ function ensurePermsForPrefix(prefix) {
 
     writeUninstallScripts(choice.prefix);
     writeManifest(choice.prefix, buildManifest(choice.prefix, choice.isSystem, rcTouched, linksMade));
+
+    /* If we ran under sudo, the install tree is currently owned by root.
+       That makes routine maintenance (re-install over the top, edits
+       under prefix/etc/, log rotation, etc.) require sudo forever after.
+       Chown the whole install tree to the invoking user so they own
+       what they just installed.  Trailing `:` keeps this portable
+       across Linux (per-user group convention) and macOS/BSD (shared
+       primary group). */
+    if (EUID === 0 && me.name && process.env.SUDO_USER) {
+        try {
+            exec("chown", "-R", me.name + ":", choice.prefix);
+            printf("  chown -R %s: %s\n", me.name, choice.prefix);
+        } catch (e) {
+            printf("  WARN: could not chown %s to %s: %s\n",
+                   choice.prefix, me.name, e.message);
+        }
+    }
 
     printf("\nDone.\n");
     if (moved.length) {

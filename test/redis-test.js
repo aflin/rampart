@@ -38,7 +38,13 @@ function start_redis(port){
         process.exit(0);
     }
 
-    var ret = exec(rdexec, {background: true}, "--port", port, "--dbfilename", `${port}-dump.rdb`, "--dir", tmpdir);
+    /* --save "" + --appendonly no: disable both RDB snapshots and AOF.
+       Otherwise valkey's default save policy fires bgsave; if bgsave
+       fails (e.g. an orphaned server whose --dir was cleaned up by a
+       prior test run), stop-writes-on-bgsave-error blocks all writes
+       and tests fail with MISCONF.  We don't need persistence for
+       transient test data anyway. */
+    var ret = exec(rdexec, {background: true}, "--port", port, "--dbfilename", `${port}-dump.rdb`, "--dir", tmpdir, "--save", "", "--appendonly", "no");
 
     sleep(0.5);
 
