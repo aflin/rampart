@@ -385,7 +385,11 @@ function buildTarball(name, entry) {
        rampart-graphicsmagick.so's init step can point
        MAGICK_CONFIGURE_PATH at <prefix>/share/graphicsmagick and the
        Wand APIs work on a vanilla install that doesn't have system
-       GraphicsMagick at the build-host-baked path. */
+       GraphicsMagick at the build-host-baked path.
+       Also covers macOS Homebrew's modules-Q16/{coders,filters} plugin
+       layout -- Debian's GM statically links codecs but brew uses
+       --with-modules.  Without bundling the plugins, "No decode delegate
+       for this image format" on the target. */
     if (entry.bundle_gm_config) {
         var mgkSrc = null;
         /* GraphicsMagickWand-config --exec-prefix reports the install
@@ -401,11 +405,20 @@ function buildTarball(name, entry) {
                     prefix = (r.stdout || "").replace(/\s+$/, "");
             } catch (e) {}
         }
+        /* Two layouts to cover:
+             Linux/FreeBSD: <prefix>/lib/GraphicsMagick-<ver>/config/
+             macOS brew:    <prefix>/lib/GraphicsMagick/config/
+                            (the version suffix lives on Cellar/.../<ver>/,
+                            not on the GraphicsMagick dir). */
         var candidates = [];
-        if (prefix) candidates.push(prefix + "/lib/GraphicsMagick-*");
+        if (prefix) {
+            candidates.push(prefix + "/lib/GraphicsMagick-*");
+            candidates.push(prefix + "/lib/GraphicsMagick");
+        }
         candidates.push("/usr/lib/GraphicsMagick-*",
                         "/usr/local/lib/GraphicsMagick-*",
-                        "/opt/homebrew/opt/graphicsmagick/lib/GraphicsMagick-*");
+                        "/opt/homebrew/opt/graphicsmagick/lib/GraphicsMagick-*",
+                        "/opt/homebrew/opt/graphicsmagick/lib/GraphicsMagick");
         for (var di = 0; di < candidates.length && !mgkSrc; di++) {
             try {
                 var hit = exec("sh", "-c",
@@ -423,11 +436,64 @@ function buildTarball(name, entry) {
         }
         run("mkdir", ["-p", stage + "/share/graphicsmagick"]);
         run("sh", ["-c", "cp " + mgkSrc + "/*.mgk " + stage + "/share/graphicsmagick/"]);
+
+        /* If GM was built with dynamic codec/filter modules (brew's
+           default on macOS; some Linux distros do too), the plugin .so
+           files live in a sibling modules-Q16/ next to config/.  Bundle
+           the whole subtree so GM can dlopen png.so, jpeg.so, etc. */
+        var modulesSrc = mgkSrc.replace(/\/config$/, "/modules-Q16");
+        var hasModules = false;
+        try {
+            var ms = stat(modulesSrc);
+            hasModules = !!(ms && ms.isDirectory);
+        } catch (e) {}
+        if (hasModules) {
+            run("cp", ["-R", modulesSrc, stage + "/share/graphicsmagick/"]);
+            info("  bundled GraphicsMagick modules-Q16/ (codec+filter plugins)");
+
+            /* On macOS, each plugin .so links libGraphicsMagick-Q16.dylib
+               by absolute /opt/homebrew/... path.  Rewrite those refs to
+               @rpath/<soname> and add an LC_RPATH pointing back at the
+               bundled lib/ dir so dlopen-loaded plugins find the bundled
+               libGraphicsMagick instead of the build host's brew copy.
+               Same machinery bundle_so_deps already uses on .dylibs. */
+            if (isMacOS() && entry.bundle_so_deps) {
+                var bundledSet = {};
+                try {
+                    var libDir = stage + "/lib";
+                    var libs = readdir(libDir);
+                    if (libs) libs.forEach(function (n) {
+                        if (n !== "." && n !== "..") bundledSet[n] = true;
+                    });
+                } catch (e) {}
+                /* Each plugin is at share/graphicsmagick/modules-Q16/<sub>/<name>.so;
+                   relative to the plugin's dir, the bundled lib/ is
+                   ../../../../lib (share→graphicsmagick→modules-Q16→<sub>→up
+                   four levels to <prefix>, then into lib).  Add that as
+                   an extra LC_RPATH on each plugin. */
+                var pluginsList = exec("sh", "-c",
+                    "find " + stage + "/share/graphicsmagick/modules-Q16 " +
+                    "-type f -name '*.so'");
+                if (pluginsList && pluginsList.exitStatus === 0) {
+                    (pluginsList.stdout || "").split(/\n+/).forEach(function (p) {
+                        if (!p) return;
+                        try { macRewriteForBundle(p, bundledSet, false); } catch (e) {}
+                        try {
+                            run("install_name_tool", ["-add_rpath",
+                                "@loader_path/../../../../lib", p]);
+                        } catch (e) {}
+                        try { run("codesign", ["--force", "-s", "-", p]); } catch (e) {}
+                    });
+                }
+            }
+        }
+
         /* List what got copied so the manifest knows.  Same dedupe path
-           the rest of staged uses. */
+           the rest of staged uses.  Includes both *.mgk and every file
+           under modules-Q16/ if present. */
         try {
             var listed = exec("sh", "-c",
-                              "cd " + stage + " && ls share/graphicsmagick/*.mgk");
+                              "cd " + stage + " && find share/graphicsmagick -type f");
             if (listed && listed.exitStatus === 0) {
                 (listed.stdout || "").split(/\n+/).forEach(function (f) {
                     if (f) staged.push(f);

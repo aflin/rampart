@@ -1986,15 +1986,35 @@ duk_ret_t duk_open_module(duk_context *ctx)
            if the bundled dir is absent (build-tree run, or system-GM
            install) we fall through to GM's compiled-in path. */
         if (rampart_dir[0]) {
-            char mgkpath[PATH_MAX];
+            char path[PATH_MAX];
             struct stat st;
-            snprintf(mgkpath, sizeof mgkpath, "%s/share/graphicsmagick", rampart_dir);
-            if (stat(mgkpath, &st) == 0 && S_ISDIR(st.st_mode))
-                setenv("MAGICK_CONFIGURE_PATH", mgkpath, 0);
+            /* Config dir (delegates.mgk, type.mgk, etc.). */
+            snprintf(path, sizeof path, "%s/share/graphicsmagick", rampart_dir);
+            if (stat(path, &st) == 0 && S_ISDIR(st.st_mode))
+                setenv("MAGICK_CONFIGURE_PATH", path, 0);
+            /* Codec plugin dir -- only present when GM was built
+               --with-modules (brew default on macOS).  Path is
+               share/graphicsmagick/modules-Q16/coders/. */
+            snprintf(path, sizeof path,
+                     "%s/share/graphicsmagick/modules-Q16/coders", rampart_dir);
+            if (stat(path, &st) == 0 && S_ISDIR(st.st_mode))
+                setenv("MAGICK_CODER_MODULE_PATH", path, 0);
+            /* Filter plugin dir -- ditto. */
+            snprintf(path, sizeof path,
+                     "%s/share/graphicsmagick/modules-Q16/filters", rampart_dir);
+            if (stat(path, &st) == 0 && S_ISDIR(st.st_mode))
+                setenv("MAGICK_FILTER_MODULE_PATH", path, 0);
         }
         InitializeMagick(NULL);
         is_init=1;
     }
+
+    /* GraphicsMagick (built --with-modules, e.g. macOS/brew) dlopens coder
+       and filter plugins via ltdl and leaves atexit/.fini teardown wired up.
+       If rampart dlclose's this module at shutdown, that teardown unmaps
+       before exit() invokes it -> segfault during process exit.  Pin the
+       module so its mapping (and GraphicsMagick's) survives to real exit. */
+    rp_module_no_unload();
 
     /* js function is mod.mogrify and it calls mogrify */
     duk_push_c_function(ctx, open, 1);

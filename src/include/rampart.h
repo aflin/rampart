@@ -756,6 +756,14 @@ RPPATH rp_find_path_zip_vari(char *file, ...);
 int rp_mkdir_parent(const char *path, mode_t mode);
 RPPATH rp_get_home_path(char *file, char *subdir);
 
+/* Call from a native module's duk_open_module() to keep that module (and
+   the libraries it links/dlopens) mapped for the life of the process --
+   i.e. skip the dlclose() of its handle during shutdown.  Needed when the
+   module or a dependency registers atexit()/.fini callbacks that would
+   otherwise be invoked after the mapping is torn down (segfault at exit).
+   No-op if called outside module load. */
+void rp_module_no_unload(void);
+
 
 /* ****************** babelize in cmdline.c **************** */
 extern char *main_babel_opt;

@@ -835,6 +835,7 @@ static void free_dns(void)
 //these are for unloading modules
 extern void **rp_opened_mods;
 extern size_t rp_n_opened_mods;
+extern unsigned char *rp_opened_mods_noclose; /* 1 => keep mapped, skip dlclose */
 static int repl(duk_context *ctx);
 
 /* Set while the main thread is dispatching inside event_base_loop on
@@ -1019,11 +1020,14 @@ void duk_rp_exit(duk_context *ctx, int ec)
     free(RP_script_path);
     free(RP_script);
 
-    // close opened modules AFTER exit_funcs
+    // close opened modules AFTER exit_funcs.  Skip any a module pinned via
+    // rp_module_no_unload() -- unmapping those before exit() runs their
+    // atexit/.fini callbacks would jump into freed code (e.g. GraphicsMagick
+    // with ltdl coder modules).  The OS reclaims the mapping at exit anyway.
     for (i=0; i<rp_n_opened_mods;i++)
     {
         void *h = rp_opened_mods[i];
-        if(h)
+        if(h && !rp_opened_mods_noclose[i])
             (void)dlclose(h);
     }
 

@@ -625,12 +625,44 @@ static int load_js_module(duk_context *ctx, const char *file, duk_idx_t module_i
 
 void **rp_opened_mods=NULL;
 size_t rp_n_opened_mods=0;
+/* Parallel to rp_opened_mods: 1 => do NOT dlclose this handle at exit.
+   Set via rp_module_no_unload() from inside a module's duk_open_module
+   when that module (or a library it dlopens, e.g. GraphicsMagick's ltdl
+   coder plugins) registers atexit/.fini callbacks.  Unmapping such a
+   module before exit() runs those callbacks jumps into freed code and
+   segfaults during teardown -- pinning the mapping avoids it (the OS
+   reclaims it at process exit anyway). */
+unsigned char *rp_opened_mods_noclose=NULL;
 
-#define addhandle_to_close(mod) do{                                     \
-    REMALLOC(rp_opened_mods, (1 + rp_n_opened_mods) * sizeof(void *));  \
-    rp_opened_mods[rp_n_opened_mods]=mod;                               \
-    rp_n_opened_mods++;                                                 \
+/* Handle of the module whose duk_open_module is currently executing on
+   this thread, so rp_module_no_unload() knows which entry to pin.
+   Thread-local because modules can be required concurrently from worker
+   threads. */
+static __thread void *rp_module_loading=NULL;
+
+#define addhandle_to_close(mod) do{                                                  \
+    REMALLOC(rp_opened_mods, (1 + rp_n_opened_mods) * sizeof(void *));               \
+    REMALLOC(rp_opened_mods_noclose, (1 + rp_n_opened_mods) * sizeof(unsigned char));\
+    rp_opened_mods[rp_n_opened_mods]=mod;                                            \
+    rp_opened_mods_noclose[rp_n_opened_mods]=0;                                      \
+    rp_n_opened_mods++;                                                              \
 }while(0)
+
+/* Public: called from a module's duk_open_module to keep that module (and
+   its dependency libraries) mapped for the life of the process.  Marks
+   every rp_opened_mods entry for the currently-loading handle so none of
+   them are dlclose'd during shutdown.  See rp_opened_mods_noclose. */
+void rp_module_no_unload(void)
+{
+    size_t i;
+    if (!rp_module_loading)
+        return;
+    pthread_mutex_lock(&modlock);
+    for (i = 0; i < rp_n_opened_mods; i++)
+        if (rp_opened_mods[i] == rp_module_loading)
+            rp_opened_mods_noclose[i] = 1;
+    pthread_mutex_unlock(&modlock);
+}
 
 /* Process-wide cache of dlopen handles for bundled .so's.  Each thread's
    require() of e.g. "rampart-auth" triggers an independent mkstemp +
@@ -793,8 +825,14 @@ static int load_so_module(duk_context *ctx, const char *file, duk_idx_t module_i
     pthread_mutex_unlock(&modlock);
     if (init != NULL)
     {
+        int rc;
+        /* expose the loading handle so the module can pin itself via
+           rp_module_no_unload() during duk_open_module */
+        rp_module_loading = lib;
         duk_push_c_function(ctx, init, 0);
-        if (duk_pcall(ctx, 0) == DUK_EXEC_ERROR)
+        rc = duk_pcall(ctx, 0);
+        rp_module_loading = NULL;
+        if (rc == DUK_EXEC_ERROR)
         {
             RP_THROW(ctx, "Error loading module '%s' - %s", file, duk_to_string(ctx, -1));
             return 0;
