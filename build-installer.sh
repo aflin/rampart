@@ -103,8 +103,28 @@ INSTALLED=${INSTALLED:-/usr/local/rampart}
 OUT=$REPO/rampart-install
 DRIVER=$REPO/install/entry_script.js
 UNINST=$REPO/install/uninstall.js
-INSTPK=$REPO/install/rampart-install.js
+# INSTPK can be overridden by env (mkrp uses this to inject a
+# channel-substituted copy of rampart-install.js before bundling).
+INSTPK=${INSTPK:-$REPO/install/rampart-install.js}
 PKGMAN=$REPO/install/packages.js
+
+# The rampart-install.js source ships with an @@FROM_URL@@ placeholder
+# that names the channel-specific package download URL.  mkrp resolves
+# it (per channel: production -> downloads/rampart-<ver>, testing ->
+# downloads/testing) and points $INSTPK at the substituted copy before
+# invoking us.  If we still see the placeholder here, refuse to build a
+# bundle that would later fail at `rampart --install pkg` with a bogus
+# fetch URL.
+if grep -q '@@FROM_URL@@' "$INSTPK" 2>/dev/null; then
+    echo "build-installer: $INSTPK still contains @@FROM_URL@@ placeholder." >&2
+    echo "                 The produced bundle would ship with an unresolved" >&2
+    echo "                 package URL.  Run via mkrp (which substitutes per" >&2
+    echo "                 channel), or pre-substitute and pass INSTPK env, e.g.:" >&2
+    echo "" >&2
+    echo "    sed 's|@@FROM_URL@@|<your-url>|g' install/rampart-install.js > /tmp/inst.js" >&2
+    echo "    INSTPK=/tmp/inst.js ./build-installer.sh" >&2
+    exit 1
+fi
 
 # Pick source for the rampart binary, .so files, JS modules, and the
 # texis-derived extra binaries (addtable / metamorph / tsql / ...).

@@ -125,15 +125,14 @@ if (platStr === "" || /^(Linux|Darwin|FreeBSD)(\s|$)/.test(platStr)) {
 var PLAT = platStr;
 
 /* ---------- defaults ---------- */
-/* TEMPORARY -- pull from the testing channel until we cut a real
- * 0.7.0 release.  Flip the URL below back to
- *   https://rampart.dev/downloads/rampart-" + rampart.version + "/" + PLAT + "/packages
- * to switch back to the per-version production layout.
+/* FROM is a build-time placeholder substituted by mkrp at bundle time:
+ *   production bundle -> https://rampart.dev/downloads/rampart-<ver>/<plat>/packages
+ *   testing bundle    -> https://rampart.dev/downloads/testing/<plat>/packages
+ * Override per-invocation with --from <url-or-dir>.
  */
 
 if (FROM == null) {
-    FROM = "https://rampart.dev/downloads/testing/" + PLAT + "/packages";
-    if (!LIST) info("(testing channel) source: " + FROM);
+    FROM = "@@FROM_URL@@";
 }
 
 /* ---------- load manifest ---------- */
