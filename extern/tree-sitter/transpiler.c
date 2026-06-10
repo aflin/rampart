@@ -3919,7 +3919,7 @@ static int rewrite_template_node(EditList *edits, const char *src, TSNode tpl_no
         char *out = NULL;
 
         for (size_t i = 0; i < nl; i++)
-            cap += 2 * (lits[i].end - lits[i].start) + 4;
+            cap += 3 * (lits[i].end - lits[i].start) + 4; /* F2: js_quote_literal emits up to 2 bytes/char AND the caller re-emits one '\n' per source newline -> 3 bytes/char worst case */
         for (size_t i = 0; i < neP; i++)
             cap += (exprs[i].end - exprs[i].start) + 8;
 
@@ -4027,7 +4027,7 @@ static int rewrite_template_node(EditList *edits, const char *src, TSNode tpl_no
         if (pieces[i].is_expr)
             cap += 4 + (pieces[i].end - pieces[i].start);
         else
-            cap += 2 * (pieces[i].end - pieces[i].start) + 8;
+            cap += 3 * (pieces[i].end - pieces[i].start) + 8; /* F2: see tagged path — 3 bytes/char worst case (quote-escape + re-emitted newline) */
         if (i || need_leading_empty)
             cap += 3;
     }

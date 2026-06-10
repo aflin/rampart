@@ -319,6 +319,29 @@ faiss::IndexIVFPQ *load_ivfpq_head(faiss::IOReader *f,
         READVECTOR(idx->pq.centroids);
         idx->code_size   = (size_t)pq_code_sz;
 
+        /* V2: pq.M/ksub/dsub/code_size and the centroids vector all come
+         * straight off disk and overwrite the ctor-computed values.
+         * precompute_table() below iterates M*ksub sub-centroids reading
+         * dsub floats each via get_centroids(), so a short/inconsistent
+         * centroids buffer → OOB read.  Cross-check the geometry that
+         * bounds that iteration (mirror the coarse-codes check above)
+         * before trusting it.  Valid indexes always satisfy these. */
+        if (idx->pq.M == 0 || idx->pq.ksub == 0 || idx->pq.dsub == 0 ||
+            idx->pq.d != (size_t)d ||
+            idx->pq.dsub * idx->pq.M != idx->pq.d ||
+            idx->pq.ksub != ((size_t)1 << idx->pq.nbits) ||
+            idx->pq.centroids.size() !=
+                idx->pq.M * idx->pq.ksub * idx->pq.dsub) {
+            std::fprintf(stderr,
+                "load_ivfpq_head: PQ geometry inconsistent "
+                "(d=%d pq.d=%zu M=%zu nbits=%zu ksub=%zu dsub=%zu "
+                "centroids=%zu — expected M*ksub*dsub; index needs REBUILD)\n",
+                d, idx->pq.d, idx->pq.M, idx->pq.nbits, idx->pq.ksub,
+                idx->pq.dsub, idx->pq.centroids.size());
+            delete idx;
+            return nullptr;
+        }
+
         /* Refresh PQ-derived caches (e.g., decompositions used by ADC). */
         idx->precompute_table();
 
@@ -343,10 +366,66 @@ faiss::IndexIVFPQ *load_ivfpq_head(faiss::IOReader *f,
         if (!ils) { delete idx; return nullptr; }
         (void)invl_path_for_open;            /* SAME_DIR derives from f */
 
+        /* V1: the OnDiskInvertedLists metadata (totsize + per-list
+         * offset/size/capacity) is read straight off the _H.idxpq head
+         * with no validation against the real _I.idxpq file.  A torn or
+         * corrupt _I.idxpq (e.g. a crash mid-OPTIMIZE byte-copy) can
+         * leave totsize > the real file size, or a list whose reserved
+         * byte-range runs past totsize.  FAISS mmaps totsize bytes
+         * MAP_SHARED and dereferences these ranges — including from
+         * background prefetch threads, which no try/catch on the search
+         * path can intercept → SIGBUS / OOB read.  Validate the geometry
+         * here, at load, before the index is ever used.  Each list is
+         * codes[capacity*code_size] followed by ids[capacity], so its
+         * reserved span is capacity*(code_size+sizeof(idx_t)) bytes from
+         * offset (see OnDiskInvertedLists.h).  Valid indexes always pass. */
+        if (faiss::OnDiskInvertedLists *od =
+                dynamic_cast<faiss::OnDiskInvertedLists *>(ils)) {
+            const size_t entry = od->code_size + sizeof(faiss::idx_t);
+            bool ok = true;
+            struct stat st;
+            if (od->filename.empty() ||
+                stat(od->filename.c_str(), &st) != 0) {
+                std::fprintf(stderr, "load_ivfpq_head: cannot stat invlist "
+                             "file '%s'\n", od->filename.c_str());
+                ok = false;
+            } else if (od->totsize > (size_t)st.st_size) {
+                std::fprintf(stderr, "load_ivfpq_head: invlist totsize %zu > "
+                             "file size %lld (torn/corrupt _I.idxpq — "
+                             "REBUILD)\n",
+                             od->totsize, (long long)st.st_size);
+                ok = false;
+            }
+            /* Each list's reserved byte-range must fit inside totsize.
+             * Checks are ordered so the capacity*entry product and the
+             * totsize-offset subtraction never overflow/underflow. */
+            for (size_t i = 0; ok && i < od->lists.size(); i++) {
+                const faiss::OnDiskOneList &L = od->lists[i];
+                if (L.size > L.capacity ||
+                    (entry && L.capacity > od->totsize / entry) ||
+                    L.offset > od->totsize ||
+                    L.capacity * entry > od->totsize - L.offset) {
+                    std::fprintf(stderr, "load_ivfpq_head: invlist %zu geometry "
+                                 "out of range (off=%zu cap=%zu size=%zu "
+                                 "entry=%zu totsize=%zu — corrupt _I.idxpq; "
+                                 "REBUILD)\n",
+                                 i, L.offset, L.capacity, L.size, entry,
+                                 od->totsize);
+                    ok = false;
+                }
+            }
+            if (!ok) { delete ils; delete idx; return nullptr; }
+        }
+
         idx->replace_invlists(ils, /*own=*/true);
         return idx;
     } catch (const faiss::FaissException &e) {
         std::fprintf(stderr, "load_ivfpq_head: %s\n", e.what());
+        return nullptr;
+    } catch (...) {
+        /* V3: std::bad_alloc / length_error from the std:: container ops
+         * (READVECTOR resize, etc.) must not unwind into the C caller. */
+        std::fprintf(stderr, "load_ivfpq_head: non-FAISS C++ exception\n");
         return nullptr;
     }
 }
@@ -1322,9 +1401,34 @@ int ivfpq_is_stale_impl(TXvecHandle *h_)
  * side (IVFPQ's analogue of HNSW's expansion_search).  It's also
  * forwarded to the delta's HNSW search slot for symmetry.
  */
+/* V3: C-boundary guard.  The body below uses std:: container ops
+ * (unordered_set / vector reserve+insert+push_back+sort) outside the one
+ * narrow inner try around faiss::search; a std::bad_alloc or
+ * std::length_error must not unwind past this function into the C
+ * dispatcher (UB / std::terminate, engine state left un-cleaned).  Keep
+ * the body intact and wrap it. */
+static size_t ivfpq_search_impl_body(TXvecHandle *h_, DBTBL *dbtbl,
+                         const char *field, const float *query,
+                         size_t k, size_t ef, vec_search_result_t *results);
+
 size_t ivfpq_search_impl(TXvecHandle *h_, DBTBL *dbtbl, const char *field,
                          const float *query, size_t k, size_t ef,
                          vec_search_result_t *results)
+{
+    try {
+        return ivfpq_search_impl_body(h_, dbtbl, field, query, k, ef, results);
+    } catch (const faiss::FaissException &e) {
+        std::fprintf(stderr, "ivfpq_search: %s\n", e.what());
+        return SIZE_MAX;
+    } catch (...) {
+        std::fprintf(stderr, "ivfpq_search: non-FAISS C++ exception\n");
+        return SIZE_MAX;
+    }
+}
+
+static size_t ivfpq_search_impl_body(TXvecHandle *h_, DBTBL *dbtbl,
+                         const char *field, const float *query,
+                         size_t k, size_t ef, vec_search_result_t *results)
 {
     TXvecIvfpqHandle *h = (TXvecIvfpqHandle *)h_;
     if (!h || !h->idx || !query || !results || k == 0) return SIZE_MAX;
@@ -1546,7 +1650,36 @@ int ivfpq_del_row_impl(DDIC *ddic, TXvecHandle *h_, DBTBL *dbtbl,
  * Mirrors the texis fulltext OPTIMIZE pattern (`updindex.c:wtix_getnewlist`):
  * walk newrec, fold into the main index, then empty newrec.
  */
+/* V3: C-boundary guard.  Like search, the optimize body uses std::
+ * container ops outside its narrow inner trys; a std::bad_alloc /
+ * length_error must not unwind into the C dispatcher.  *out_absorbed is
+ * only assigned at the very end (right before the success return), so on
+ * any exception it is still null — resetting it here introduces no leak
+ * or double-free and keeps the -1 contract (caller frees nothing). */
+static int ivfpq_optimize_impl_body(DDIC *ddic, TXvecHandle *h_, DBTBL *dbtbl,
+                        const char *field, const char *tempBase,
+                        TXindOpts *options,
+                        int64_t **out_absorbed, size_t *out_n_absorbed);
+
 int ivfpq_optimize_impl(DDIC *ddic, TXvecHandle *h_, DBTBL *dbtbl,
+                        const char *field, const char *tempBase,
+                        TXindOpts *options,
+                        int64_t **out_absorbed, size_t *out_n_absorbed)
+{
+    try {
+        return ivfpq_optimize_impl_body(ddic, h_, dbtbl, field, tempBase,
+                                        options, out_absorbed, out_n_absorbed);
+    } catch (const faiss::FaissException &e) {
+        std::fprintf(stderr, "ivfpq_optimize: %s\n", e.what());
+    } catch (...) {
+        std::fprintf(stderr, "ivfpq_optimize: non-FAISS C++ exception\n");
+    }
+    if (out_absorbed)   *out_absorbed = nullptr;
+    if (out_n_absorbed) *out_n_absorbed = 0;
+    return -1;
+}
+
+static int ivfpq_optimize_impl_body(DDIC *ddic, TXvecHandle *h_, DBTBL *dbtbl,
                         const char *field, const char *tempBase,
                         TXindOpts *options,
                         int64_t **out_absorbed, size_t *out_n_absorbed)

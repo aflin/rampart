@@ -914,7 +914,10 @@ static duk_ret_t duk_rp_crypt(duk_context *ctx, int decrypt)
         {
             /* check for magic and salt, skip past*/
             size_t m_len=strlen(magic);
-            if( in_len>m_len && !memcmp(in_buffer,magic,m_len) )
+            /* SECURITY (F4): require the full magic + salt to be present before
+               stripping; otherwise the memcpy below over-reads and in_len
+               underflows (size_t) on a 9..15 byte "Salted__X" ciphertext. */
+            if( in_len >= m_len + PKCS5_SALT_LEN && !memcmp(in_buffer,magic,m_len) )
             {
                 in_buffer+=m_len;
                 in_len-=m_len;
@@ -1027,7 +1030,10 @@ static duk_ret_t duk_rp_crypt(duk_context *ctx, int decrypt)
         {
             /* check for magic and salt, skip past*/
             size_t m_len=strlen(magic);
-            if( in_len>m_len && !memcmp(in_buffer,magic,m_len) )
+            /* SECURITY (F4): require the full magic + salt to be present before
+               stripping; otherwise the memcpy below over-reads and in_len
+               underflows (size_t) on a 9..15 byte "Salted__X" ciphertext. */
+            if( in_len >= m_len + PKCS5_SALT_LEN && !memcmp(in_buffer,magic,m_len) )
             {
                 in_buffer+=m_len;
                 in_len-=m_len;

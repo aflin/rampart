@@ -3205,6 +3205,15 @@ static duk_ret_t socket_startTls(duk_context *ctx)
         RP_THROW(ctx, "socket.startTls: failed to set SNI hostname");
     }
 
+    /* SECURITY (F12): bind the expected hostname so the certificate's SAN/CN is
+       verified, not merely that it chains to a trusted CA (CWE-297).  SNI
+       (above) is only a routing hint, not verification. */
+    if (!insecure && hostname && !SSL_set1_host(sinfo->ssl, hostname)) {
+        SSL_free(sinfo->ssl);
+        sinfo->ssl = NULL;
+        RP_THROW(ctx, "socket.startTls: failed to set verify hostname");
+    }
+
     /* Extract the raw fd from the current plaintext bev, detach it so the
        old bev can be freed without closing the socket, then rebuild the
        bev as a TLS one wrapping the same fd. This uses the same code path
@@ -3966,6 +3975,15 @@ static int make_sock_conn(void *arg, int after)
                 if (!SSL_set_tlsext_host_name(sinfo->ssl, hostname))
                 {
                     ssl_err_str="failed to set hostname for ssl verification";
+                    break;
+                }
+
+                /* SECURITY (F12): verify the cert matches hostname (SAN/CN),
+                   not just that it chains to a trusted CA (CWE-297). SNI above
+                   is only a routing hint. */
+                if (!insecure && hostname && !SSL_set1_host(sinfo->ssl, hostname))
+                {
+                    ssl_err_str="failed to set verify hostname";
                     break;
                 }
                 sinfo->bev = bufferevent_openssl_socket_new(

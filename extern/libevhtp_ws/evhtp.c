@@ -1307,6 +1307,14 @@ htp__request_free_(evhtp_request_t * request)
         evhtp_safe_free(request->buffer_out, evbuffer_free);
     }
 
+    /* SECURITY (F16): a centralized ws_parser/pingev teardown was tried here as a
+       safety net, but it double-frees: evhtp_ws_do_disconnect() already frees the
+       ws_parser+pingev and then calls evhtp_connection_free() -> htp__request_free_,
+       and the connection's request can alias the same (now-freed) ws_parser/pingev.
+       The existing per-site teardowns (htp__connection_{read,write,event}cb_ and
+       evhtp_ws_do_disconnect, all now NULL ws_parser after free) are the correct
+       owners; this function intentionally does NOT touch ws_parser. */
+
     evhtp_safe_free(request->hooks, htp__free_);
     evhtp_safe_free(request, htp__free_);
 }
@@ -2634,6 +2642,7 @@ restart:
                 event_free(req->ws_parser->pingev);
             }
             free(req->ws_parser);
+            req->ws_parser = NULL; /* F16: NULL so htp__request_free_ can't double-free */
         }
         evhtp_safe_free(c, evhtp_connection_free);
 

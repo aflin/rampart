@@ -639,7 +639,11 @@ duk_ret_t duk_rp_lmdb_list_dbs(duk_context *ctx)
 
         if( val.mv_size == 48)
         {
-            duk_push_string(ctx, (char *)key.mv_data);
+            /* F-low: LMDB keys are length-delimited, not guaranteed NUL-terminated.
+               Use mv_size; strip a single trailing NUL if the name includes one. */
+            size_t klen = key.mv_size;
+            if(klen && ((char *)key.mv_data)[klen-1] == '\0') klen--;
+            duk_push_lstring(ctx, (char *)key.mv_data, klen);
             duk_put_prop_index(ctx, -2, i++);
         }
     }

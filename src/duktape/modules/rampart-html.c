@@ -1336,10 +1336,11 @@ TidyBuffer *dumpText(TidyDoc doc, TidyNode start, TidyBuffer *buf, int listno, i
                                 if(cont)
                                 {
                                     int len = strlen(cont)+16;
+                                    if(len > 1048576) len = 1048576; /* F18: bound stack VLA */
                                     char lbuf[len];
                                     char *tname = (metaType==1) ? "description: " : "keywords: ";
 
-                                    sprintf(lbuf, "%s%s\n", tname, cont);
+                                    snprintf(lbuf, len, "%s%s\n", tname, cont);
                                     tidyBufAppend(buf, lbuf, strlen(lbuf));
                                 }
 
@@ -1356,10 +1357,11 @@ TidyBuffer *dumpText(TidyDoc doc, TidyNode start, TidyBuffer *buf, int listno, i
                         if(alttext &&  testOpt(optAltText))
                         {
                             int len = strlen(alttext)+3;
+                            if(len > 1048576) len = 1048576; /* F18: bound stack VLA */
                             char lbuf[len];
                             char *space = testOpt(optImgLinks)? "" : " ";
 
-                            sprintf(lbuf, "%s%s%s", space,alttext,space);
+                            snprintf(lbuf, len, "%s%s%s", space,alttext,space);
                             tidyBufAppend(buf, lbuf, len-1 - (testOpt(optImgLinks)? 2:0));
                         }
                     }
@@ -1386,9 +1388,10 @@ TidyBuffer *dumpText(TidyDoc doc, TidyNode start, TidyBuffer *buf, int listno, i
                             if(title)
                             {
                                 int len = strlen(title)+2;
+                                if(len > 1048576) len = 1048576; /* F18: bound stack VLA */
                                 char lbuf[len];
 
-                                sprintf(lbuf, "%s\n", title);
+                                snprintf(lbuf, len, "%s\n", title);
                                 tidyBufAppend(buf, lbuf, len-1);
                             }
                         }
@@ -1424,25 +1427,28 @@ TidyBuffer *dumpText(TidyDoc doc, TidyNode start, TidyBuffer *buf, int listno, i
                                 if(title)
                                 {
                                     len += strlen(title)+3;
+                                    if(len > 1048576) len = 1048576; /* F18: bound stack VLA */
                                     char lbuf[len];
 
-                                    sprintf(lbuf, "(%s \"%s\")", src,title);
+                                    snprintf(lbuf, len, "(%s \"%s\")", src,title);
                                     tidyBufAppend(buf, lbuf, len-1);
                                 }
                                 else
                                 {
+                                    if(len > 1048576) len = 1048576; /* F18: bound stack VLA */
                                     char lbuf[len];
 
-                                    sprintf(lbuf, "(%s)", src);
+                                    snprintf(lbuf, len, "(%s)", src);
                                     tidyBufAppend(buf, lbuf, len-1);
                                 }
                             }
                             else
                             {
                                 int len = strlen(src)+3;
+                                if(len > 1048576) len = 1048576; /* F18: bound stack VLA */
                                 char lbuf[len];
 
-                                sprintf(lbuf, "(%s)", src);
+                                snprintf(lbuf, len, "(%s)", src);
                                 tidyBufAppend(buf, lbuf, len-1);
                             }
                         }
@@ -1464,25 +1470,28 @@ TidyBuffer *dumpText(TidyDoc doc, TidyNode start, TidyBuffer *buf, int listno, i
                                 if(title)
                                 {
                                     len += strlen(title)+3;
+                                    if(len > 1048576) len = 1048576; /* F18: bound stack VLA */
                                     char lbuf[len];
 
-                                    sprintf(lbuf, "(%s \"%s\")", href, title);
+                                    snprintf(lbuf, len, "(%s \"%s\")", href, title);
                                     tidyBufAppend(buf, lbuf, len-1);
                                 }
                                 else
                                 {
+                                    if(len > 1048576) len = 1048576; /* F18: bound stack VLA */
                                     char lbuf[len];
 
-                                    sprintf(lbuf, "(%s)", href);
+                                    snprintf(lbuf, len, "(%s)", href);
                                     tidyBufAppend(buf, lbuf, len-1);
                                 }
                             }
                             else
                             {
                                 int len = strlen(href)+3;
+                                if(len > 1048576) len = 1048576; /* F18: bound stack VLA */
                                 char lbuf[len];
 
-                                sprintf(lbuf, "(%s)", href);
+                                snprintf(lbuf, len, "(%s)", href);
                                 tidyBufAppend(buf, lbuf, len-1);
                             }
                         }
@@ -3430,7 +3439,7 @@ static char * fixkey(const char *key)
     char *ret = NULL;
     int i=0;
 
-    REMALLOC(ret, strlen(key) * 2);
+    REMALLOC(ret, strlen(key) * 2 + 1); /* F-low: +1 so the NUL fits even for an empty key */
     while(*key)
     {
         if(i && isupper(*key))

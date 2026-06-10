@@ -200,7 +200,9 @@ static inline void _out_fct(char character, void *buffer, size_t idx, size_t max
 static inline unsigned int _strnlen_s(const char *str, size_t maxsize)
 {
     const char *s;
-    for (s = str; *s && maxsize--; ++s)
+    /* SECURITY (F17): test maxsize BEFORE dereferencing so a buffer that fills
+       maxsize with no NUL terminator is not read one byte past its end. */
+    for (s = str; maxsize-- && *s; ++s)
         ;
     return (unsigned int)(s - str);
 }
@@ -634,6 +636,12 @@ static size_t _ftoa(out_fct_type out, char *buffer, size_t idx, size_t maxlen, d
     if(width >= FLOAT_MAX_BUF)
         width = FLOAT_MAX_BUF - 1;
 
+    /* SECURITY (F9): bound precision like width.  Output can never exceed the
+       buffer, so an unbounded prec (e.g. %.600f or %.*f with a hostile arg)
+       only serves to make snprintf's return exceed FLOAT_MAX_BUF. */
+    if(prec >= FLOAT_MAX_BUF)
+        prec = FLOAT_MAX_BUF - 1;
+
     if(flags & FLAGS_FFORMAT)
         formatflag='f';
     else if (flags & FLAGS_ADAPT_EXP)
@@ -670,6 +678,14 @@ static size_t _ftoa(out_fct_type out, char *buffer, size_t idx, size_t maxlen, d
             );
         len=snprintf(buf, FLOAT_MAX_BUF, fmt, width, value);
     }
+
+    /* SECURITY (F9): snprintf returns the length it WOULD have written, which
+       can exceed FLOAT_MAX_BUF.  Clamp to what actually landed in buf[] so the
+       loops below never read or write past the buffer. */
+    if(len < 0)
+        len = 0;
+    else if(len >= FLOAT_MAX_BUF)
+        len = FLOAT_MAX_BUF - 1;
 
     if(flags & FLAGS_BANG)
     {
@@ -711,6 +727,11 @@ static size_t _ftoa(out_fct_type out, char *buffer, size_t idx, size_t maxlen, d
         {
             if( isdigit(buf[i-1]) )
             {
+                /* SECURITY (F9): each comma insertion shifts content right and
+                   grows len; the memmove's highest write index is buf[len], so
+                   stop before it could exceed buf[FLOAT_MAX_BUF-1]. */
+                if(len >= FLOAT_MAX_BUF)
+                    break;
                 memmove(buf+i+1, buf+i, len-i);
                 *(buf+i)=',';
                 len++;
@@ -724,7 +745,9 @@ static size_t _ftoa(out_fct_type out, char *buffer, size_t idx, size_t maxlen, d
             s++;
         while(*s == ' ' && nshifts)
         {
-            memmove(s, s+1, len);
+            /* SECURITY (F9): move only the bytes remaining after s, never read
+               past buf[len-1] (len can now reach the buffer cap). */
+            memmove(s, s+1, (size_t)(buf + len - (s + 1)));
             len--;
             nshifts--;
         }
@@ -976,6 +999,17 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
                 format++;
             }
         }
+
+        /* SECURITY (F18): bound width/precision so a hostile value (a literal
+           like %2000000000d or a '*' arg) can't drive a multi-gigabyte buffer
+           growth or a billions-of-iterations padding loop. 1MB is far beyond
+           any legitimate field width. */
+        #define PF_MAX_FIELD (1U << 20)
+        if (width > PF_MAX_FIELD)
+            width = PF_MAX_FIELD;
+        if (precision > PF_MAX_FIELD)
+            precision = PF_MAX_FIELD;
+
         // evaluate length field
         switch (*format)
         {
@@ -1703,7 +1737,10 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
                 {
                     u_p=NULL;
                     CALLOC(u_p, len + 1);
-                    strcpy(u_p, p);
+                    /* SECURITY (F17): p may be a duktape buffer with no NUL
+                       terminator; copy exactly len bytes (CALLOC already
+                       zeroed u_p[len]) instead of strcpy reading past it. */
+                    memcpy(u_p, p, len);
                     free_p=u_p;
                 }
 
@@ -1765,7 +1802,9 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
                     }
                 }
 
-                while ((*p != 0) && i<len && (!(flags & FLAGS_PRECISION) || precision--))
+                /* SECURITY (F17): test i<len BEFORE dereferencing *p so a
+                   non-NUL-terminated buffer isn't read one byte past its end. */
+                while (i<len && (*p != 0) && (!(flags & FLAGS_PRECISION) || precision--))
                 {
                     switch(*p)
                     {

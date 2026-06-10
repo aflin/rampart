@@ -127,7 +127,7 @@
     if( (description == NULL) || (strlen(description) == 0) ) \
         duk_push_error_object(ctx, DUK_ERR_ERROR, "unknown error");\
     else\
-        duk_push_error_object(ctx, DUK_ERR_ERROR, description);\
+        duk_push_error_object(ctx, DUK_ERR_ERROR, "%s", description);\
 \
     if(description)\
         free(description);\
@@ -149,18 +149,15 @@ static int push_mog_exception(duk_context *ctx, const ExceptionInfo *exception)
         return 0;
     }
 
-    if (strstr(exception->reason,"%s") && exception->description)
-    {
-        duk_push_sprintf(ctx, exception->reason, exception->description);
-    }
+    /* SECURITY (F11): reason/description come from a possibly-hostile image and
+       must never be used as a printf format.  Always pass them as %s arguments.
+       (Previously a reason containing "%s" was used as the format with
+       description as its vararg — a format-string vulnerability.) */
+    if(exception->description)
+        duk_push_sprintf(ctx, "%s (%s)", exception->reason, exception->description);
     else
-    {
-        if(exception->description)
-            duk_push_sprintf(ctx, "%s (%s)", exception->reason, exception->description);    
-        else
-            duk_push_string(ctx, exception->reason);
-    }
-    duk_push_error_object(ctx, DUK_ERR_ERROR, duk_get_string(ctx, -1));
+        duk_push_string(ctx, exception->reason);
+    duk_push_error_object(ctx, DUK_ERR_ERROR, "%s", duk_get_string(ctx, -1));
 
     return 1;
 }
@@ -556,6 +553,9 @@ static duk_ret_t tobuffer(duk_context *ctx)
     }
     else
         buf = MagickWriteImageBlob(wand, &len);        
+
+    if(!buf) /* F19: MagickWriteImageBlob returns NULL on encode failure */
+        RP_THROW(ctx, "graphicsmagick: failed to encode/write image blob");
 
     dukbuf = duk_push_fixed_buffer(ctx, (duk_size_t)len);
     memcpy(dukbuf,buf,len);

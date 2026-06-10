@@ -806,10 +806,10 @@ static void make_standard_locs()
     standard_locs[0].loc=RP_script_path;
     standard_locs[0].subpath=PLUS_SUB;
 
-    if(home_dir)
+    /* F27: bounded — a $HOME longer than PATH_MAX would overflow homewsub */
+    if(home_dir &&
+       (size_t)snprintf(homewsub, sizeof(homewsub), "%s%s", home_dir, HOMESUBDIR) < sizeof(homewsub))
     {
-        strcpy(homewsub, home_dir);
-        strcat(homewsub, HOMESUBDIR);
         standard_locs[1].loc=homewsub;
     }
     else
@@ -858,7 +858,7 @@ RPPATH rp_find_path_vari(char *file, ...)
         {
             ret.stat=sb;
             if(!realpath(file,ret.path))
-                strcpy(ret.path,file);
+                snprintf(ret.path, sizeof(ret.path), "%s", file); /* F26: bounded */
 #ifdef __CYGWIN__
             else if(rp_cygwin_to_posixpath(ret.path, _cyg_convpath, sizeof(_cyg_convpath)))
                 strcpy(ret.path, _cyg_convpath);
@@ -877,15 +877,13 @@ RPPATH rp_find_path_vari(char *file, ...)
     {
         if(arg && *arg == '/')
         {
-            strcpy(path,arg);
-            strcat(path,"/");
-            strcat(path,file);
-            //printf("%d: checking %s\n", n++, path);
-            if (stat(path, &sb) != -1)
+            /* F26: bounded join; skip this candidate if it would overflow path[] */
+            if (snprintf(path, sizeof(path), "%s/%s", arg, file) < (int)sizeof(path) &&
+                stat(path, &sb) != -1)
             {
                 ret.stat=sb;
                 if(!realpath(path,ret.path))
-                    strcpy(ret.path,file);
+                    snprintf(ret.path, sizeof(ret.path), "%s", file); /* F26: bounded */
 #ifdef __CYGWIN__
                 else if(rp_cygwin_to_posixpath(ret.path, _cyg_convpath, sizeof(_cyg_convpath)))
                     strcpy(ret.path, _cyg_convpath);
@@ -904,17 +902,13 @@ RPPATH rp_find_path_vari(char *file, ...)
         // check /standard_loc/file
         if(standard_locs[i].subpath==NO_SUB || standard_locs[i].subpath==PLUS_SUB)
         {
-            strcpy(path, standard_locs[i].loc);
-            strcat(path,"/");
-            strcat(path,file);
-
-            //printf("%d: checking %s\n", n++, path);
-
-            if (stat(path, &sb) != -1)
+            /* F26: bounded join */
+            if (snprintf(path, sizeof(path), "%s/%s", standard_locs[i].loc, file) < (int)sizeof(path) &&
+                stat(path, &sb) != -1)
             {
                 ret.stat=sb;
                 if(!realpath(path,ret.path))
-                    strcpy(ret.path,file);
+                    snprintf(ret.path, sizeof(ret.path), "%s", file); /* F26: bounded */
 #ifdef __CYGWIN__
                 else if(rp_cygwin_to_posixpath(ret.path, _cyg_convpath, sizeof(_cyg_convpath)))
                     strcpy(ret.path, _cyg_convpath);
@@ -934,22 +928,18 @@ RPPATH rp_find_path_vari(char *file, ...)
         {
             if(*arg != '/') //relative paths
             {
-                // check length here
-
-                strcpy(path, standard_locs[i].loc);
-                strcat(path,"/");
-                strcat(path, arg);
+                /* F26: bounded join (replaces the never-implemented "check length here") */
+                int _plen;
                 if(arg[strlen(arg)-1] != '/')
-                    strcat(path,"/");
-                strcat(path,file);
+                    _plen = snprintf(path, sizeof(path), "%s/%s/%s", standard_locs[i].loc, arg, file);
+                else
+                    _plen = snprintf(path, sizeof(path), "%s/%s%s", standard_locs[i].loc, arg, file);
 
-                //printf("%d: checking %s\n", n++, path);
-
-                if (stat(path, &sb) != -1)
+                if (_plen < (int)sizeof(path) && stat(path, &sb) != -1)
                 {
                     ret.stat=sb;
                     if(!realpath(path,ret.path))
-                        strcpy(ret.path,file);
+                        snprintf(ret.path, sizeof(ret.path), "%s", file); /* F26: bounded */
 #ifdef __CYGWIN__
                     else if(rp_cygwin_to_posixpath(ret.path, _cyg_convpath, sizeof(_cyg_convpath)))
                         strcpy(ret.path, _cyg_convpath);
@@ -1746,7 +1736,11 @@ RPPATH rp_get_home_path(char *file, char *subdir)
     if( !home || rp_access(home, W_OK)==-1 )
     {
          home="/tmp";
-         mode=0777;
+         /* SECURITY (F24): must be owner-only.  This dir can hold the compiled
+            bytecode cache that the next run loads via duk_load_function (which
+            is memory-unsafe on tampered input); a world-writable 0777 dir under
+            shared /tmp is a local cache-poisoning -> code-execution vector. */
+         mode=0700;
     }
 
     plen = strlen(home)+strlen(HOMESUBDIR)+strlen(sd)+strlen(file)+1;
@@ -5616,7 +5610,7 @@ duk_ret_t duk_rp_copyFile(duk_context *ctx, char *fname)
            if src is truncated during copy, dest could be smaller.
            However user should be informed, so still throw error           */
         if(dest_stat.st_size < src_stat.st_size)
-            RP_THROW(ctx, "%s: error copying file (partial copy) '%d' bytes copied", (int) dest_stat.st_size);
+            RP_THROW(ctx, "%s: error copying file (partial copy) '%d' bytes copied", fname, (int) dest_stat.st_size); /* F-low: was missing the %s arg */
     }
     return 0;
 }

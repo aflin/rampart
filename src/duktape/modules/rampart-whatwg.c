@@ -167,6 +167,12 @@ static duk_ret_t rp_zs_push(duk_context *ctx)
     do {
         if (written == cap) {
             size_t ncap = cap * 2;
+            /* SECURITY (F18): bound a single push's output so a decompression
+               bomb (tiny input, enormous output) can't exhaust memory. */
+            if (ncap > ((size_t)256 << 20)) {
+                free(out);
+                RP_THROW(ctx, "_zsPush: decompressed output exceeds 256MB limit");
+            }
             unsigned char *no = (unsigned char *)realloc(out, ncap);
             if (!no) { free(out); RP_THROW(ctx, "_zsPush: out of memory"); }
             out = no; cap = ncap;

@@ -4383,6 +4383,8 @@ int main(int argc, char *argv[])
 
     // find our executable and fill in some global vars from it
     len = wai_getExecutablePath(NULL, 0, NULL);
+    if(len < 0) len = 0;
+    if(len >= (int)sizeof(rampart_exec)) len = sizeof(rampart_exec) - 1; /* F27: clamp to buffer */
     wai_getExecutablePath(rampart_exec, len, &dirlen);
     rampart_exec[len]='\0';
 

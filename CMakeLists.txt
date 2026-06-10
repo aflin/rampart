@@ -3,8 +3,11 @@
 
 ## to build with -fsanitize=address
 #   cmake -DRP_SANITIZE=1 ../
-# and maybe export ASAN_OPTIONS=fast_unwind_on_malloc=false
-# if stack traces are incomplete.
+# Run with ASAN_OPTIONS=detect_leaks=0:detect_odr_violation=0 —
+# rampart intentionally skips some frees at exit, and the dlopen'd
+# modules embed duplicate copies of some src/ globals (e.g.
+# rp_runtime_caps_is_init), which the ODR checker would flag.
+# Add fast_unwind_on_malloc=false if stack traces are incomplete.
 # and if python export PYTHONMALLOC=malloc
 # or pymalloc will be used and asan will miss massive amounts of frees
 
@@ -29,17 +32,22 @@ option(SILENCE_VENDORED_WARNINGS "Silence warnings on vendored upstream librarie
 # Set OFF to re-surface them if something new breaks.  Anything not in
 # the list below will still warn.
 option(TEXIS_SILENCE_AUDITED_WARNINGS "Silence the audited texis warnings" ON)
+# All audited occurrences are in the legacy C sources, so each flag is
+# gated to C compiles ($<COMPILE_LANGUAGE:C>).  The few C++ files in these
+# targets (e.g. vecindex_ivfpq.cpp) compile clean without them, and passing
+# the list to a C++ compile makes GCC's cc1plus warn about the C-only /
+# clang-only spellings (-Wno-pointer-to-int-cast, -Wno-unsequenced, ...).
 set(TEXIS_AUDITED_WARNING_FLAGS
-    -Wno-unsequenced                   # 147x: macros mutate shared state across one expr
-    -Wno-enum-compare                  #  39x: intentional cross-enum compares (op codes)
-    -Wno-return-type                   #   8x: unreachable fall-through paths
-    -Wno-switch                        #   6x: enum switch doesn't cover every value
-    -Wno-dangling-else                 #   4x: stylistic if-else nesting
-    -Wno-unused-value                  #   2x: comma-op macro fragments
-    -Wno-string-plus-int               #   2x: intentional pointer-into-string arithmetic
-    -Wno-tautological-constant-compare #   1x: constant-shift always-true
-    -Wno-pointer-to-int-cast           #   1x: pthread_t truncation for logging only
-    -Wno-extern-c-compat               #   1x: empty union size differs C vs C++
+    $<$<COMPILE_LANGUAGE:C>:-Wno-unsequenced>                   # 147x: macros mutate shared state across one expr
+    $<$<COMPILE_LANGUAGE:C>:-Wno-enum-compare>                  #  39x: intentional cross-enum compares (op codes)
+    $<$<COMPILE_LANGUAGE:C>:-Wno-return-type>                   #   8x: unreachable fall-through paths
+    $<$<COMPILE_LANGUAGE:C>:-Wno-switch>                        #   6x: enum switch doesn't cover every value
+    $<$<COMPILE_LANGUAGE:C>:-Wno-dangling-else>                 #   4x: stylistic if-else nesting
+    $<$<COMPILE_LANGUAGE:C>:-Wno-unused-value>                  #   2x: comma-op macro fragments
+    $<$<COMPILE_LANGUAGE:C>:-Wno-string-plus-int>               #   2x: intentional pointer-into-string arithmetic
+    $<$<COMPILE_LANGUAGE:C>:-Wno-tautological-constant-compare> #   1x: constant-shift always-true
+    $<$<COMPILE_LANGUAGE:C>:-Wno-pointer-to-int-cast>           #   1x: pthread_t truncation for logging only
+    $<$<COMPILE_LANGUAGE:C>:-Wno-extern-c-compat>               #   1x: empty union size differs C vs C++
 )
 
 # Always ship debug info from the build tree; `strip -S` on install removes
@@ -113,6 +121,32 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
     endif (MACOS_UNIVERSAL)
 
 endif(CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
+
+# -DRP_SANITIZE=1 builds the ENTIRE in-tree CMake build with AddressSanitizer,
+# not just src/.  Folding the flags into CMAKE_*_FLAGS here (before any
+# add_subdirectory / include(extern.cmake)) makes every native target inherit
+# them: src/ and its loadable modules, plus the vendored add_subdirectory deps
+# (faiss, texis, oniguruma, curl, libevent, libevhtp_ws, tidy, cmark, robotstxt,
+# upa).  Linker flags cover executables, shared libs, and the .so modules.
+# Using CMAKE_*_FLAGS (vs add_compile_options) also instruments try_compile
+# feature checks and any sub-build that forwards CMAKE_*_FLAGS, and the vendored
+# `-w` save/restore in extern.cmake preserves these since they're already in
+# CMAKE_C_FLAGS at save time.
+#
+# NOTE: the autotools ExternalProjects (Python, ICU, OpenSSL) run their own
+# configure/make and do NOT inherit these; they build uninstrumented, which is
+# fine — the ASan runtime is linked into the final binary and mixed
+# instrumented/uninstrumented code is supported.  See the header comment for
+# the runtime knobs (ASAN_OPTIONS, PYTHONMALLOC=malloc).
+if (RP_SANITIZE)
+    set(RP_ASAN_FLAGS "-fsanitize=address -fno-omit-frame-pointer")
+    set(CMAKE_C_FLAGS             "${CMAKE_C_FLAGS} ${RP_ASAN_FLAGS}")
+    set(CMAKE_CXX_FLAGS           "${CMAKE_CXX_FLAGS} ${RP_ASAN_FLAGS}")
+    set(CMAKE_EXE_LINKER_FLAGS    "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=address")
+    set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fsanitize=address")
+    set(CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} -fsanitize=address")
+    message("###### RP_SANITIZE: AddressSanitizer enabled for the entire in-tree build ######")
+endif (RP_SANITIZE)
 
 message("###### CONFIGURING DEPENDENCIES ######")
 

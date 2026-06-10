@@ -4347,7 +4347,7 @@ TBSPEC *tbspec;
 							(col_type == FTN_VEC_F64) ? 8 :
 							(col_type == FTN_VEC_I8 || col_type == FTN_VEC_U8) ? 1 : 4;
 						size_t out_bytes = edim * out_elsz;
-						void *cbytes = malloc(out_bytes);
+						void *cbytes = malloc(out_bytes + 1); /* V4: match setfldandsize's alloced=out_bytes+1 */
 						int ok = 0;
 						if (cbytes) {
 							switch (col_type) {

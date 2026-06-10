@@ -1341,7 +1341,12 @@ vec_sysindex_get_params(DDIC *ddic, const char *indfile, char **outParams)
     rewindtbl(tb);
     while (TXrecidvalid(at = gettblrow(tb, NULL))) {
         const char *fn_ = (const char *)getfld(fnameFld, NULL);
-        int t = fn_ ? (int)(*(char *)getfld(typeFld, NULL)) : 0;
+        /* V5: defensively NULL-check the TYPE field before deref.  SYSINDEX
+         * TYPE is a fixed-width non-nullable catalog column so it is never
+         * NULL in practice, but guarding avoids a crash if getfld ever
+         * returns NULL (e.g. a short/corrupt catalog row). */
+        const char *ty_ = fn_ ? (const char *)getfld(typeFld, NULL) : NULL;
+        int t = ty_ ? (int)(*ty_) : 0;
         if (fn_ && t == INDEX_VEC && vec_fname_matches(fn_, indfile)) {
             const char *p = (const char *)getfld(paramsFld, NULL);
             *outParams = p ? strdup(p) : strdup("");
@@ -2026,7 +2031,11 @@ TXsqlFunc_embed(FLD *f1, FLD *f2)
         (dtype == FTN_VEC_F32) ? 4 :
         (dtype == FTN_VEC_F64) ? 8 : 4;
     size_t out_bytes = dim * out_elsz;
-    void *bytes = malloc(out_bytes);
+    /* V4: setfldandsize below records f->alloced = out_bytes + 1, so the
+     * buffer must be at least that long or alloced overstates it by one
+     * (latent 1-byte heap overflow for any future code that NUL-terminates
+     * at f->data[alloced-1]).  Match the +1 here, like the fobyby path. */
+    void *bytes = malloc(out_bytes + 1);
     if (!bytes) {
         free(vec_f32);
         putmsg(MERR + MAE, "embed", "out of memory");

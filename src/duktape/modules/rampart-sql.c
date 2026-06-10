@@ -3600,7 +3600,11 @@ static void rp_pushfield(duk_context *ctx, FLDLST *fl, int i, int rawvec)
     case FTN_CHAR:
     {
         char *v=fl->data[i];
-        if(v[0]=='\xff' && v[1] > '\xf9' )
+        /* SECURITY (F5): the typed-value-in-varchar encoding reads v[1] and,
+           for some subtypes, more bytes; require ndata>=2 before touching v[1]
+           so a corrupt 1-byte field can't be over-read, and so the ndata-2
+           length below cannot underflow the size_t. */
+        if(fl->ndata[i] >= 2 && v[0]=='\xff' && v[1] > '\xf9' )
         {
             switch(v[1])
             {
@@ -3608,7 +3612,11 @@ static void rp_pushfield(duk_context *ctx, FLDLST *fl, int i, int rawvec)
                     duk_push_lstring(ctx, v+2, (duk_size_t)fl->ndata[i] -2);
                     break;
                 case '\xfe':
-                    duk_push_number(ctx, ((double*)v)[1]);
+                    /* F5: reads the double at byte offset 8 -> needs 16 bytes */
+                    if(fl->ndata[i] >= 2 * sizeof(double))
+                        duk_push_number(ctx, ((double*)v)[1]);
+                    else
+                        duk_push_null(ctx);
                     break;
                 case '\xfd':
                     duk_push_true(ctx);
@@ -4099,6 +4107,17 @@ static duk_ret_t rp_sql_import(duk_context *ctx, int isfile)
 
     if(strlen(dcsv.tbname)<1)
         RP_THROW(ctx, "%s(): option tableName is required", func_name);
+
+    /* SECURITY (F14): tableName is interpolated into SQL (the SYSCOLUMNS lookup
+       and the INSERT statement) and an identifier cannot be bound as a
+       parameter, so restrict it to a safe identifier charset.  This prevents
+       SQL injection when tableName is derived from request data. */
+    {
+        const unsigned char *tn = (const unsigned char *)dcsv.tbname;
+        for(; *tn; tn++)
+            if(!(isalnum(*tn) || *tn=='_'))
+                RP_THROW(ctx, "%s(): tableName must contain only letters, digits and underscore", func_name);
+    }
 
     const char *db;
     struct sigaction sa = { {0} };
@@ -5931,7 +5950,7 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
             ddic = lpstmt->dbc->ddic;
     else
     {
-        sprintf(errbuf,"sql.set open: %s", finfo->errmap);
+        snprintf(errbuf, msgbufsz, "sql.set open: %s", finfo->errmap); /* F13 */
         goto return_neg_two;
     }
 
@@ -5952,7 +5971,7 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
             clearmsgbuf();
             if(setprop(ddic, "addindextmp", (char*)val )==-1)
             {
-                sprintf(errbuf, "sql.set: %s", finfo->errmap);
+                snprintf(errbuf, msgbufsz, "sql.set: %s", finfo->errmap); /* F13: errmap can be ~4095 bytes */
                 goto return_neg_two;
             }
             duk_pop(ctx);
@@ -5969,7 +5988,7 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
         clearmsgbuf();
         if(setprop(ddic, "delexp", "0" )==-1)
         {
-            sprintf(errbuf, "sql.set: %s", finfo->errmap);
+            snprintf(errbuf, msgbufsz, "sql.set: %s", finfo->errmap); /* F13: errmap can be ~4095 bytes */
             goto return_neg_two;
         }
         for (i=0;i<len;i++)
@@ -5979,7 +5998,7 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
             clearmsgbuf();
             if(setprop(ddic, "addexp", (char*)val )==-1)
             {
-                sprintf(errbuf, "sql.set: %s", finfo->errmap);
+                snprintf(errbuf, msgbufsz, "sql.set: %s", finfo->errmap); /* F13: errmap can be ~4095 bytes */
                 goto return_neg_two;
             }
             duk_pop(ctx);
@@ -6031,17 +6050,17 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
             {
                 if(setprop(ddic, "eqprefix", "builtin" )==-1)
                 {
-                    sprintf(errbuf, "sql.set: %s", finfo->errmap);
+                    snprintf(errbuf, msgbufsz, "sql.set: %s", finfo->errmap); /* F13: errmap can be ~4095 bytes */
                     goto return_neg_two;
                 }
                 if(setprop(ddic, "alequivs", "0" )==-1)
                 {
-                    sprintf(errbuf, "sql.set: %s", finfo->errmap);
+                    snprintf(errbuf, msgbufsz, "sql.set: %s", finfo->errmap); /* F13: errmap can be ~4095 bytes */
                     goto return_neg_two;
                 }
                 if(setprop(ddic, "keepeqvs", "0" )==-1)
                 {
-                    sprintf(errbuf, "sql.set: %s", finfo->errmap);
+                    snprintf(errbuf, msgbufsz, "sql.set: %s", finfo->errmap); /* F13: errmap can be ~4095 bytes */
                     goto return_neg_two;
                 }
                 goto propnext;
@@ -6074,20 +6093,20 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
                 //printf("setting equiv file: '%s'\n", rp.path);
                 if(setprop(ddic, "eqprefix", rp.path )==-1)
                 {
-                    sprintf(errbuf, "sql.set: %s", finfo->errmap);
+                    snprintf(errbuf, msgbufsz, "sql.set: %s", finfo->errmap); /* F13: errmap can be ~4095 bytes */
                     setprop(ddic, "eqprefix", "" ); //reset if fail
                     goto return_neg_two;
                 }
 
                 if(setprop(ddic, "alequivs", "1" )==-1)
                 {
-                    sprintf(errbuf, "sql.set: %s", finfo->errmap);
+                    snprintf(errbuf, msgbufsz, "sql.set: %s", finfo->errmap); /* F13: errmap can be ~4095 bytes */
                     setprop(ddic, "eqprefix", "" ); //reset if fail
                     goto return_neg_two;
                 }
                 if(setprop(ddic, "keepeqvs", "1" )==-1)
                 {
-                    sprintf(errbuf, "sql.set: %s", finfo->errmap);
+                    snprintf(errbuf, msgbufsz, "sql.set: %s", finfo->errmap); /* F13: errmap can be ~4095 bytes */
                     setprop(ddic, "eqprefix", "" ); //reset if fail
                     goto return_neg_two;
                 }
@@ -6095,7 +6114,7 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
             }
             else
             {
-                sprintf(errbuf, "sql.set: couldn't find %s in %s", eqfile, eqpath);
+                snprintf(errbuf, msgbufsz, "sql.set: couldn't find %s in %s", eqfile, eqpath); /* F13 */
                 goto return_neg_two;
             }
             goto propnext;
@@ -6423,7 +6442,7 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
                 clearmsgbuf();
                 if(setprop(ddic, (char*)prop, (char*)aval )==-1)
                 {
-                    sprintf(errbuf, "sql.set: %s", finfo->errmap);
+                    snprintf(errbuf, msgbufsz, "sql.set: %s", finfo->errmap); /* F13: errmap can be ~4095 bytes */
                     goto return_neg_two;
                 }
                 duk_pop_2(ctx);
@@ -6469,7 +6488,7 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
             //printf("setprop(%s, %s)\n", prop, val);
             if(setprop(ddic, (char*)prop, (char*)val )==-1)
             {
-                sprintf(errbuf, "sql.set: %s", finfo->errmap);
+                snprintf(errbuf, msgbufsz, "sql.set: %s", finfo->errmap); /* F13: errmap can be ~4095 bytes */
                 goto return_neg_two;
             }
         }
@@ -6515,12 +6534,12 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
     {
         if(setprop(ddic, "useequiv", "1" )==-1)
         {
-            sprintf(errbuf, "sql.set: %s", finfo->errmap);
+            snprintf(errbuf, msgbufsz, "sql.set: %s", finfo->errmap); /* F13: errmap can be ~4095 bytes */
             goto return_neg_two;
         }
         if(setprop(ddic, "minwordlen", "5" )==-1)
         {
-            sprintf(errbuf, "sql.set: %s", finfo->errmap);
+            snprintf(errbuf, msgbufsz, "sql.set: %s", finfo->errmap); /* F13: errmap can be ~4095 bytes */
             goto return_neg_two;
         }
     }

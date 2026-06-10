@@ -141,12 +141,12 @@ static void procstring(duk_context *ctx, RESPITEM *item, int retbuf)
     if( *s == 'e' && s++ && (*s=='-'||*s=='+') && isdigit(*(s+1)) && isdigit(*(s+2)) )
     {
       double d;
-      char *e, t[item->length +1];
-      strncpy(t,(char*)item->loc,item->length);
-      t[item->length]='\0';
+      char *e;
+      /* SECURITY (F7): item->loc is NUL-terminated at item->length by the RESP
+         parser, so strtod runs in place — no network-length-sized stack VLA. */
       errno=0;
-      d=strtod(t, &e);
-      if(!errno && e != t)
+      d=strtod((char*)item->loc, &e);
+      if(!errno && e != (char*)item->loc)
       {
         duk_push_number(ctx,d);
         return;
@@ -163,12 +163,10 @@ static void procstring(duk_context *ctx, RESPITEM *item, int retbuf)
     while (s<e && isdigit(*s))s++;
     if(s==e)
     {
-      char t[item->length +1];
-      strncpy(t,(char*)item->loc,item->length);
-      t[item->length]='\0';
+      /* SECURITY (F7): in place — item->loc is NUL-terminated at item->length. */
       errno=0;
-      long int l = strtol(t, &e, 10);
-      if(!errno && e != t)
+      long int l = strtol((char*)item->loc, &e, 10);
+      if(!errno && e != (char*)item->loc)
       {
         duk_push_number(ctx,(double)l);
         return;

@@ -758,11 +758,13 @@ collapseEscapements(CSV *csv,byte *s)
             {
                   doubleQuoteEsc=0;
                    *s=*(++t);
+                   if(!*t) break; /* F-low: consumed the NUL terminator; stop before ++t runs past it */
             }
             else
             {
                *s=*(++t);
-               
+               if(!*t) break; /* F-low: same — don't step t past the terminator */
+
                if(*t=='"' && csv->doubleQuoteEscape) // this is the case where "" means a single "
                {
                   doubleQuoteEsc=1;

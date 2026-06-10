@@ -46,10 +46,10 @@ add_definitions(
 
 add_compile_options(-Wall -g -O2)
 
-if (RP_SANITIZE)
-    add_compile_options(-fsanitize=address -fno-omit-frame-pointer)
-    link_libraries("-fsanitize=address")
-endif (RP_SANITIZE)
+# RP_SANITIZE is handled once at the root CMakeLists.txt (folded into
+# CMAKE_*_FLAGS before any add_subdirectory), so it now covers the entire
+# in-tree build — src/ and the vendored deps — not just this directory.
+# Don't re-add -fsanitize=address here or it would be passed twice.
 
 #https://stackoverflow.com/questions/24292898/compile-date-and-time-using-cmake
 make_directory(${CMAKE_BINARY_DIR}/include)
@@ -960,7 +960,13 @@ add_custom_target(cp_python
 )
 
 
-set(PYFLAGS "-I/usr/local/include -fPIC ${CMAKE_C_FLAGS}")
+# Python (autotools, PGO) must stay uninstrumented under RP_SANITIZE: pymalloc
+# defeats ASan anyway, and configure bakes these CFLAGS into CONFIGURE_CFLAGS
+# in its generated Makefile, applied to every compile (and to host tools like
+# _freeze_module, whose link then fails on __asan_*).  Strip sanitizer flags
+# from everything forwarded to the Python build.
+string(REGEX REPLACE "-fsanitize=[a-z,_-]+ ?" "" PYTHON_SAFE_C_FLAGS "${CMAKE_C_FLAGS}")
+set(PYFLAGS "-I/usr/local/include -fPIC ${PYTHON_SAFE_C_FLAGS}")
 set(PYLDFLAGS "-L /usr/local/lib")
 set(PYPKG "")
 
@@ -1017,7 +1023,8 @@ if(CYGWIN)
   set(PYTHON_CONFIGURE_OPTS "--disable-shared --prefix=\"${PROJECT_BINARY_DIR}/extern/${PYTHON_DIR_NAME}/build\"")
 else()
   set(PYTHON_EXTRA_ENV "")
-  set(PYTHON_MAKE_FLAGS "CFLAGS=${CMAKE_C_FLAGS}")
+  # PYTHON_SAFE_C_FLAGS: CMAKE_C_FLAGS minus sanitizers — see PYFLAGS above.
+  set(PYTHON_MAKE_FLAGS "CFLAGS=${PYTHON_SAFE_C_FLAGS}")
   set(PYTHON_CONFIGURE_OPTS "--enable-optimizations --prefix=\"${PROJECT_BINARY_DIR}/extern/${PYTHON_DIR_NAME}/build\"")
 endif()
 

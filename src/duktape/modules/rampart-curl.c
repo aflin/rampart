@@ -2322,6 +2322,16 @@ WriteCallback(void *contents, size_t size, size_t nmemb, void *userp)
                                 }
                                 goto chunk_cleanup;
                             }
+                            /* SECURITY (F8): bound the server-declared chunk
+                               size.  Unbounded, chunksize+2 wraps (defeating the
+                               completeness test at the loop below) and the
+                               REMALLOC/memcpy of cdat->chunksize then overflow. */
+                            if(sz > MAX_CHUNK_BUFFER_SIZE)
+                            {
+                                chunkerr=1;
+                                duk_push_sprintf(ctx, "rampart-curl: chunk size exceeds MAX_CHUNK_BUFFER_SIZE (%d)", MAX_CHUNK_BUFFER_SIZE);
+                                goto chunk_cleanup;
+                            }
                             cdat->chunksize=sz;
                             break;
                         }

@@ -1070,7 +1070,12 @@ void push_multipart(duk_context *ctx, char *bound, void *buf, duk_size_t bsz)
                 if(*((char*)n)=='-')n--;
                 if(*((char*)n)=='\n')n--;
                 if(*((char*)n)=='\r')n--;
-                sz=(n-begin)+1;
+                /* SECURITY: a degenerate/empty part can walk n back past begin;
+                   clamp so sz doesn't underflow the duk_size_t (huge buffer). */
+                if((char*)n < (char*)begin)
+                    sz = 0;
+                else
+                    sz=(n-begin)+1;
                 /* share the memory, and the love */
                 duk_push_external_buffer(ctx);
                 duk_config_buffer(ctx, -1, begin, sz);
@@ -3602,6 +3607,17 @@ static void fileserver(evhtp_request_t *req, void *arg)
         strcpy(fn, map->val);
         s=duk_rp_url_decode( path->full, &len );
 
+        /* SECURITY (F1): safepath() above ran on the *un-decoded* path, so a
+           percent-encoded "%2e%2e" survived the traversal check and would
+           escape the docroot once decoded here.  Re-normalize the decoded
+           path and reject any escape before it is joined to map->val. */
+        if( safepath(s) == -1 )
+        {
+            free(s);
+            send400(req);
+            return;
+        }
+
         /* redirect /mappeddir to /mappeddir/ */
         if ( !strcmp (s, map->key))
         {
@@ -5858,6 +5874,18 @@ static int getmod_path(DHS *dhs)
 
 
         strcpy(subpath, (path->full) + dhs->pathlen -1);
+
+        /* SECURITY (F3): subpath is the attacker-controlled URL tail that gets
+           concatenated into a module path and handed to duk_rp_resolve(),
+           which realpath-collapses "..".  This route never ran safepath(), so
+           a literal "../" escaped modulePath and executed an out-of-tree
+           module.  Normalize and reject traversal here. */
+        if( *subpath && safepath(subpath) == -1 )
+        {
+            send400(dhs->req);
+            ret = 0;
+            goto getmod_path_done;
+        }
 
         //printf("1 subpath=%s\n", (path->full) + dhs->pathlen -1);
 

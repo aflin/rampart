@@ -26,6 +26,8 @@
 #include <ctype.h>
 #include <float.h>
 #include <math.h>
+#include <errno.h>
+#include <stdint.h>
 #include "rampart-redis.h"
 #include "resp_protocol.h"
 #ifndef NEWCOMMAND
@@ -89,16 +91,25 @@ parseRespNumber(RESPROTO *rp, byte *s, double *pfloat, int64_t *pint)
   byte *endOfFloat = NULL;
   byte *end;
 
+  errno = 0;
   *pint = (int64_t)strtoll((char *)p, (char **)&endOfInt, 10); // cast because of long long def
 
-  if (endOfInt == NULL || endOfInt == p) // the int part should have parsed even if it was a floating pt val
+  if (endOfInt == NULL || endOfInt == p || errno == ERANGE) // F23: must parse AND fit
   {
     *pfloat = NAN;
-    rp->errorMsg = ("RESP unreconizable integer in numeric field");
+    rp->errorMsg = ("RESP unreconizable or out-of-range integer in numeric field");
     return (NULL);
   }
 
+  errno = 0;
   *pfloat = strtod((char *)p, (char **)&endOfFloat);
+
+  if (errno == ERANGE) // F23: reject an out-of-range floating point value
+  {
+    *pfloat = NAN;
+    rp->errorMsg = "RESP out-of-range numeric value in field";
+    return (NULL);
+  }
 
   if (endOfFloat == endOfInt) // a floating point string encoding the same value must be longer
   {
@@ -230,8 +241,24 @@ respBufRealloc(RESPROTO *rp, byte *oldBuffer, size_t newSize)
 
     // now we have to make all the already parsed pointers valid again
     for (i = 0; i < rp->nItems; i++)
-      if (rp->items[i].respType == RESPISSTR || rp->items[i].respType == RESPISBULKSTR || rp->items[i].respType == RESPISPLAINTXT)
-        rp->items[i].loc = newBuffer + (rp->items[i].loc - oldBuffer);
+      /* SECURITY (F21): rebase loc for EVERY item type whose loc points into
+         the buffer.  RESPISERRORMSG was omitted, leaving a dangling pointer
+         (use-after-free) when an error reply straddled a buffer realloc.
+         INT/FLOAT loc are not dereferenced downstream but are rebased too. */
+      switch (rp->items[i].respType)
+      {
+        case RESPISSTR:
+        case RESPISBULKSTR:
+        case RESPISPLAINTXT:
+        case RESPISERRORMSG:
+        case RESPISINT:
+        case RESPISFLOAT:
+          if (rp->items[i].loc)
+            rp->items[i].loc = newBuffer + (rp->items[i].loc - oldBuffer);
+          break;
+        default:
+          break;
+      }
   }
   // bug fix: guard error message to only trigger on alloc failure, not same-pointer realloc - 2026-02-27
   else if (!newBuffer)
@@ -490,6 +517,11 @@ int parseResProto(RESPROTO *rpp, byte *buf, size_t bufLen, int newBuffer)
         thisItem->length=0;
         thisItem->respType=RESPISNULL;
       }
+      /* SECURITY (F22): bound the element count so the uint32_t arrayNest store
+         below and the (int) casts in the JS-facing consumer cannot truncate or
+         sign-flip a hostile 64-bit count. */
+      else if(integer > INT32_MAX)
+        return(respParseError(rpp,"RESP array length exceeds maximum"));
 
       if(thisItem->length!=0) // if it's not the 0 length array
       {
@@ -553,25 +585,38 @@ int parseResProto(RESPROTO *rpp, byte *buf, size_t bufLen, int newBuffer)
         break;
       }
 
+      /* SECURITY (F6): any negative length other than -1 (NULL) is invalid; it
+         would be stored into the size_t length and underflow downstream. */
+      if (integer < 0)
+        return (respParseError(rpp, "RESP invalid negative bulk string length"));
+
       thisItem->length = integer;
       thisItem->respType = RESPISBULKSTR;
 
-      if (nextItem + integer < end)
       {
-        byte *testEol = isThereEOL(nextItem + integer, end);
-        if (!testEol)
+        /* nextItem (from isThereEOL) is always <= end */
+        size_t avail = (size_t)(end - nextItem);
+
+        /* need the declared data plus its trailing CRLF.  Compare in 64-bit so a
+           huge declared length can't overflow; if the bytes aren't all here yet,
+           ask for more rather than indexing past the buffer (F20/F6). */
+        if ((uint64_t)integer + 2 > (uint64_t)avail)
           return (RESP_PARSE_INCOMPLETE);
-        else
-        {
-          thisItem->loc = nextItem;
-          nextItem = testEol;
-          decrementArray(rpp);
-          ++rpp->nItems;
-          break;
-        }
+
+        /* SECURITY (F20): the terminator must be EXACTLY at nextItem+integer.
+           isThereEOL() merely scans forward for the next CRLF, so a declared
+           length shorter/longer than the real data would otherwise be accepted,
+           leaving loc/length describing bytes past the actual payload. */
+        if (!(nextItem[integer] == '\r' && nextItem[integer + 1] == '\n'))
+          return (respParseError(rpp, "RESP bulk string length does not match data"));
+
+        thisItem->loc = nextItem;
+        nextItem[integer] = '\0';            // terminate at the CR, like isThereEOL
+        nextItem = nextItem + integer + 2;   // consume data + CRLF
+        decrementArray(rpp);
+        ++rpp->nItems;
+        break;
       }
-      else
-        return (RESP_PARSE_INCOMPLETE);
     }
     default: // could be an ascii command string for the server
     {

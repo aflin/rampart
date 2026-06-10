@@ -1941,6 +1941,16 @@ hdrline_start:
                         break;
                     }
 
+                    /* SECURITY (F15): avoid reading data[++i] past the buffer on
+                       a partial read that ends mid-header-value.  Advance i to
+                       len (matching the original's post-loop byte accounting,
+                       which the plain `break` used by sibling states does NOT
+                       preserve here) but WITHOUT the out-of-bounds read. */
+                    if (evhtp_unlikely(i + 1 >= len)) {
+                        i++;
+                        break;
+                    }
+
                     ch = data[++i];
                 } while (i < len);
 

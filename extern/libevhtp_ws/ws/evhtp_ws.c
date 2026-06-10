@@ -579,6 +579,7 @@ void evhtp_ws_do_disconnect(evhtp_request_t  * req)
             event_free(req->ws_parser->pingev);
         }
         free(req->ws_parser);
+        req->ws_parser = NULL; /* F16: NULL before evhtp_connection_free -> htp__request_free_ would otherwise double-free */
     }
     evhtp_safe_free(c, evhtp_connection_free);
 }

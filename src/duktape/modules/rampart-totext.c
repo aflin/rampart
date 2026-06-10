@@ -168,6 +168,10 @@ static filetype_t identify_zip_subtype(const unsigned char *buf, size_t len)
             unsigned int cs = buf[pos+18] | (buf[pos+19] << 8) | (buf[pos+20] << 16) | (buf[pos+21] << 24);
             const char *fn = (const char *)buf + pos + 30;
 
+            /* SECURITY (F10): the memcmps below read up to fl bytes of fn; the
+               loop guard only bounds the fixed header, so bound fn here too. */
+            if(pos + 30 + (size_t)fl > len) break;
+
             if(fl >= 4 && !memcmp(fn, "ppt/", 4)) return FT_PPTX;
             if(fl >= 3 && !memcmp(fn, "xl/", 3))  return FT_XLSX;
             if(fl >= 5 && !memcmp(fn, "word/", 5)) return FT_DOCX;
@@ -391,6 +395,10 @@ static unsigned char *gunzip(const unsigned char *buf, size_t len, size_t *out_l
         alloc_size = len * 4;
     if(alloc_size < 4096)
         alloc_size = 4096;
+    /* SECURITY (F18): absolute ceiling so a tiny gzip declaring a huge trailer
+       size cannot drive a multi-GB allocation (decompression bomb). */
+    if(alloc_size > ((size_t)512 << 20))
+        alloc_size = (size_t)512 << 20;
 
     for(int tries = 0; tries < 4; tries++)
     {
@@ -414,6 +422,8 @@ static unsigned char *gunzip(const unsigned char *buf, size_t len, size_t *out_l
             break;
 
         alloc_size *= 4;
+        if(alloc_size > ((size_t)512 << 20)) /* F18: keep the growth bounded */
+            alloc_size = (size_t)512 << 20;
     }
 
     libdeflate_free_decompressor(d);
@@ -1746,15 +1756,22 @@ static unsigned char *zip_extract(const unsigned char *zip, size_t zip_len,
         unsigned comment_len= ZIP_READ16(zip + pos + 32);
         unsigned local_off  = ZIP_READ32(zip + pos + 42);
 
+        /* SECURITY (F10): bound the variable-length fields before reading the
+           filename at pos+46 (and before advancing pos by them below). */
+        if(pos + 46 + (size_t)fname_len + extra_len + comment_len > cdir_end)
+            break;
+
         const char *fname = (const char *)(zip + pos + 46);
 
         if(fname_len == target_len && !memcmp(fname, target_name, target_len))
         {
-            /* found it - read from local header to get actual data offset */
-            if(local_off + 30 > zip_len) return NULL;
+            /* found it - read from local header to get actual data offset.
+               SECURITY (F10): compute offsets in size_t so a ~4GB local_off
+               cannot wrap the 32-bit add and bypass the bounds checks. */
+            if((size_t)local_off + 30 > zip_len) return NULL;
             unsigned local_fname_len = ZIP_READ16(zip + local_off + 26);
             unsigned local_extra_len = ZIP_READ16(zip + local_off + 28);
-            size_t data_offset = local_off + 30 + local_fname_len + local_extra_len;
+            size_t data_offset = (size_t)local_off + 30 + local_fname_len + local_extra_len;
 
             if(data_offset + comp_size > zip_len) return NULL;
             const unsigned char *comp_data = zip + data_offset;
@@ -1831,6 +1848,12 @@ static void zip_iterate(const unsigned char *zip, size_t zip_len, zip_iter_cb cb
         unsigned fname_len   = ZIP_READ16(zip + pos + 28);
         unsigned extra_len   = ZIP_READ16(zip + pos + 30);
         unsigned comment_len = ZIP_READ16(zip + pos + 32);
+
+        /* SECURITY (F10): bound the variable-length fields before the callback
+           reads fname[0..fname_len). */
+        if(pos + 46 + (size_t)fname_len + extra_len + comment_len > cdir_end)
+            break;
+
         const char *fname    = (const char *)(zip + pos + 46);
 
         cb(fname, fname_len, zip, zip_len, ud);

@@ -1001,7 +1001,7 @@ static PyObject * epochms_to_pytime(int64_t ts, duk_context *ctx)
         PyDateTime_IMPORT;
         if(!PyDateTimeAPI){
             char buf[MAX_EXCEPTION_LENGTH];
-            RP_THROW(ctx, get_exception(buf) );
+            RP_THROW(ctx, "%s", get_exception(buf) ); /* F11: exception text is data, not a format */
         }
     }
 
@@ -1433,7 +1433,7 @@ static void push_ptype(duk_context *ctx, PyObject * pyvar)
             PyDateTime_IMPORT;
             if(!PyDateTimeAPI){
                 char buf[MAX_EXCEPTION_LENGTH];
-                RP_THROW(ctx, get_exception(buf) );
+                RP_THROW(ctx, "%s", get_exception(buf) ); /* F11: exception text is data, not a format */
             }
         }
         if( PyDate_Check(pyvar) )
