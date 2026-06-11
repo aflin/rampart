@@ -181,15 +181,25 @@ for (var d in ownedDirs) {
     }
     /* Even after rm returns, double-check the dir is actually gone --
        on macOS some root-owned subtrees yield exitStatus 0 yet leave
-       contents behind under specific permission shapes. */
+       contents behind under specific permission shapes, and jetsam can
+       SIGKILL /bin/rm midway through (exit 137) leaving most of the
+       tree intact. */
     if (rmRes && rmRes.exitStatus === 0 && !fileExists(d)) {
         dirsRemoved++;
         printf("  removed dir tree: %s\n", d);
+        continue;
+    }
+    /* Fallback: in-process recursive walk via rampart.utils.rm.  Slower
+       but immune to whatever just killed /bin/rm. */
+    var why = (rmRes && _trim(rmRes.stderr)) ||
+              ("rm exited " + (rmRes ? rmRes.exitStatus : "?"));
+    if (fileExists(d)) why += " (dir still present)";
+    printf("  %s rm failed (%s); falling back to in-process walk...\n", d, why);
+    if (rmTreeInProc(d)) {
+        dirsRemoved++;
+        printf("  removed dir tree (in-process): %s\n", d);
     } else {
-        var why = (rmRes && _trim(rmRes.stderr)) ||
-                  ("rm exited " + (rmRes ? rmRes.exitStatus : "?"));
-        if (fileExists(d)) why += " (dir still present)";
-        dirsFailed.push({path: d, why: why});
+        dirsFailed.push({path: d, why: why + "; in-process fallback also failed"});
     }
 }
 if (dirsFailed.length) {
@@ -233,6 +243,19 @@ if (stripped) printf("Stripped rampart block from %d rc file(s).\n", stripped);
  * the end so the user knows whether the install is fully gone. */
 
 function lexists(p) { try { return !!lstat(p); } catch (e) { return false; } }
+
+/* In-process recursive remove.  rampart.utils.rm with {recursive:true,
+   force:true} walks the tree natively in C -- no fork, no subprocess,
+   immune to whatever's killing /bin/rm with SIGKILL on this host
+   (jetsam under memory pressure being the prime suspect).  Returns
+   true if the dir is gone after the call, false otherwise.  We don't
+   try to enumerate failures here -- the post-call existence check
+   is the only thing that matters for the uninstall flow. */
+function rmTreeInProc(dir) {
+    try { rampart.utils.rm(dir, {recursive: true, force: true}); }
+    catch (e) { /* fall through to existence check */ }
+    return !fileExists(dir);
+}
 
 var links = manifest.symlinks || [];
 var linksRemoved = 0;
@@ -348,8 +371,32 @@ stdout.fflush();
 var c = askKey("1");
 printf("\n");
 if (c === "2") {
-    try { exec("rm","-rf",prefix); printf("Removed %s.\n", prefix); }
-    catch (e) { printf("ERROR: could not remove %s: %s\n", prefix, e.message); process.exit(1); }
+    /* Same defense-in-depth as the dir-tree branch above: check
+       exitStatus + verify the dir is actually gone + fall back to
+       in-process rmTree if /bin/rm got SIGKILL'd or returned non-zero.
+       The previous version blindly printed "Removed ..." regardless. */
+    var wipeRes;
+    try { wipeRes = exec("rm","-rf",prefix); }
+    catch (e) {
+        printf("  exec rm threw (%s); using in-process walk\n", e.message);
+        wipeRes = null;
+    }
+    if (wipeRes && wipeRes.exitStatus === 0 && !fileExists(prefix)) {
+        printf("Removed %s.\n", prefix);
+    } else {
+        var wreason = (wipeRes && _trim(wipeRes.stderr)) ||
+                      ("rm exited " + (wipeRes ? wipeRes.exitStatus : "?"));
+        if (fileExists(prefix)) wreason += " (dir still present)";
+        printf("  rm -rf %s failed (%s); falling back to in-process walk...\n",
+               prefix, wreason);
+        if (rmTreeInProc(prefix)) {
+            printf("Removed %s (in-process).\n", prefix);
+        } else {
+            printf("ERROR: %s NOT fully removed.\n", prefix);
+            printf("       Try:  sudo rm -rf %s\n", prefix);
+            process.exit(1);
+        }
+    }
 } else {
     /* preserve user files; drop install scaffolding only */
     for (var sk2 in SCAFFOLD) try { exec("rm","-f",prefix+"/"+sk2); } catch (e) {}

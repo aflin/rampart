@@ -4416,6 +4416,45 @@ duk_ret_t duk_rp_trim(duk_context *ctx)
     return 0;
 }
 
+/* rampart.utils.setenv(name, value[, overwrite=true])
+   Thin POSIX setenv(3) wrapper.  Wanted by JS code that needs to inject
+   an env var BEFORE require()-triggered dlopen of a native module reads
+   it (e.g. rampart-gm.js sets MAGICK_CONFIGURE_PATH before loading
+   rampart-graphicsmagick.so so libGraphicsMagick's constructor sees it
+   on macOS 12+ dyld 4, where the constructor fires earlier than older
+   dyld 3 versions and beats a setenv done from inside duk_open_module).
+   Pair with rampart.utils.getenv. */
+duk_ret_t duk_rp_setenv(duk_context *ctx)
+{
+    const char *name = duk_require_string(ctx, 0);
+    const char *value = duk_require_string(ctx, 1);
+    int overwrite = duk_is_undefined(ctx, 2) ? 1 : duk_to_boolean(ctx, 2);
+    if (!*name || strchr(name, '='))
+        RP_THROW(ctx, "setenv(): name must be non-empty and contain no '='");
+    if (setenv(name, value, overwrite) != 0)
+        RP_THROW(ctx, "setenv(): %s", strerror(errno));
+    return 0;
+}
+
+duk_ret_t duk_rp_getenv(duk_context *ctx)
+{
+    const char *name = duk_require_string(ctx, 0);
+    const char *value = getenv(name);
+    if (value) duk_push_string(ctx, value);
+    else duk_push_undefined(ctx);
+    return 1;
+}
+
+duk_ret_t duk_rp_unsetenv(duk_context *ctx)
+{
+    const char *name = duk_require_string(ctx, 0);
+    if (!*name || strchr(name, '='))
+        RP_THROW(ctx, "unsetenv(): name must be non-empty and contain no '='");
+    if (unsetenv(name) != 0)
+        RP_THROW(ctx, "unsetenv(): %s", strerror(errno));
+    return 0;
+}
+
 duk_ret_t duk_rp_minify(duk_context *ctx)
 {
     duk_size_t src_len;
@@ -7361,6 +7400,12 @@ void duk_rampart_init(duk_context *ctx)
     duk_put_prop_string(ctx, -2, "lstat");
     duk_push_c_function(ctx, duk_rp_trim, 1);
     duk_put_prop_string(ctx, -2, "trim");
+    duk_push_c_function(ctx, duk_rp_setenv, 3);
+    duk_put_prop_string(ctx, -2, "setenv");
+    duk_push_c_function(ctx, duk_rp_getenv, 1);
+    duk_put_prop_string(ctx, -2, "getenv");
+    duk_push_c_function(ctx, duk_rp_unsetenv, 1);
+    duk_put_prop_string(ctx, -2, "unsetenv");
     duk_push_c_function(ctx, duk_rp_minify, 1);
     duk_put_prop_string(ctx, -2, "minify");
     duk_push_c_function(ctx, duk_rp_exec_raw, 1);
