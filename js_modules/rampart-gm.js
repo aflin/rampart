@@ -33,10 +33,9 @@ try {
     } else {
         install =
             "  macOS    : brew install graphicsmagick\n" +
-            "  Debian   : sudo apt install libgraphicsmagick3 libgraphicsmagickwand-q16-2\n" +
+            "  Debian   : sudo apt install graphicsmagick\n" +
             "  Fedora   : sudo dnf install GraphicsMagick\n" +
-            "  FreeBSD  : sudo pkg install graphicsmagick\n" +
-            "  Alpine   : sudo apk add graphicsmagick\n";
+            "  FreeBSD  : sudo pkg install graphicsmagick\n";
     }
     throw new Error(
         e.message + "\n\n" +
