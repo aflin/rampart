@@ -183,20 +183,16 @@ module.exports = {
         arch:  "dep",
         files: ["modules/rampart-graphicsmagick.so",
                 "modules/rampart-gm.js"],
-        /* bundle_so_deps tells build-packages.js to ldd-scan the .so
-           files in `files` above, filter out the OS base libs, and
-           stage every other non-base dep into lib/ inside the tarball.
-           Combined with rampart-graphicsmagick.so's RPATH
-           "$ORIGIN/../lib", users with no system graphicsmagick can
-           still load the module. */
-        bundle_so_deps: true,
-        /* bundle_gm_config: also ship GraphicsMagick's .mgk config files
-           (delegates.mgk, type.mgk, etc.) at share/graphicsmagick/ so
-           the module's init can point MAGICK_CONFIGURE_PATH there.
-           Without this, calls fail on a vanilla install with
-           "Unable to access configuration file (delegates.mgk)". */
-        bundle_gm_config: true,
-        notes: "Image processing (GraphicsMagick Wand API)"
+        /* No bundle_so_deps / bundle_gm_config: requires a system
+           GraphicsMagick (brew/apt/pkg).  Bundling libGraphicsMagick
+           transitively dragged in libheif -> libx265 (GPL-2-or-later),
+           which can't be redistributed alongside the proprietary
+           rampart-sql in good conscience.  Until that's resolved
+           (Apple ImageIO shim, libheif-without-x265 rebuild, etc.),
+           rampart-gm.js prints platform-specific install instructions
+           on dlopen failure.  See claude-work/rampart-gm-bundling-backup/
+           for the bundling code we removed. */
+        notes: "Image processing (GraphicsMagick Wand API; requires system GraphicsMagick)"
     },
 
     "rampart-iroh": {

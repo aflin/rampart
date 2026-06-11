@@ -437,6 +437,47 @@ function buildTarball(name, entry) {
         run("mkdir", ["-p", stage + "/share/graphicsmagick"]);
         run("sh", ["-c", "cp " + mgkSrc + "/*.mgk " + stage + "/share/graphicsmagick/"]);
 
+        /* GraphicsMagick splits .mgk config files across TWO dirs on
+           Homebrew (and the upstream layout):
+             <prefix>/lib/GraphicsMagick/config/   -> delegates.mgk, type.mgk
+             <prefix>/share/GraphicsMagick/config/ -> colors.mgk, log.mgk, modules.mgk
+           Without modules.mgk, GM doesn't know which coder module handles
+           PNG/JPEG/etc, and dies with "No decode delegate for this image
+           format" even though the .so plugins are present.  Sniff for the
+           share/ sibling and merge it in.  mgkSrc came from the lib/
+           location (we required delegates.mgk to be there); compute the
+           share/ peer from the GM exec-prefix the same way. */
+        var shareCandidates = [];
+        if (prefix) {
+            shareCandidates.push(prefix + "/share/GraphicsMagick-*/config");
+            shareCandidates.push(prefix + "/share/GraphicsMagick/config");
+        }
+        shareCandidates.push(
+            "/usr/share/GraphicsMagick-*/config",
+            "/usr/local/share/GraphicsMagick-*/config",
+            "/opt/homebrew/opt/graphicsmagick/share/GraphicsMagick/config",
+            "/opt/homebrew/opt/graphicsmagick/share/GraphicsMagick-*/config"
+        );
+        var mgkShareSrc = null;
+        for (var sci = 0; sci < shareCandidates.length && !mgkShareSrc; sci++) {
+            try {
+                var sh = exec("sh", "-c",
+                              "ls -d " + shareCandidates[sci] + " 2>/dev/null | head -1");
+                if (sh && sh.exitStatus === 0) {
+                    var sp = (sh.stdout || "").replace(/\s+$/, "");
+                    if (sp && fileExists(sp)) mgkShareSrc = sp;
+                }
+            } catch (e) {}
+        }
+        if (mgkShareSrc) {
+            /* cp -n so we don't clobber any .mgk that also exists in
+               mgkSrc (lib config wins if there's overlap -- unlikely
+               but defensive). */
+            run("sh", ["-c", "cp -n " + mgkShareSrc + "/*.mgk " +
+                             stage + "/share/graphicsmagick/ 2>/dev/null || true"]);
+            info("  merged GM share-config from " + mgkShareSrc);
+        }
+
         /* If GM was built with dynamic codec/filter modules (brew's
            default on macOS; some Linux distros do too), the plugin .so
            files live in a sibling modules-Q16/ next to config/.  Bundle
@@ -449,42 +490,91 @@ function buildTarball(name, entry) {
         } catch (e) {}
         if (hasModules) {
             run("cp", ["-R", modulesSrc, stage + "/share/graphicsmagick/"]);
-            info("  bundled GraphicsMagick modules-Q16/ (codec+filter plugins)");
+            /* Strip libtool .la descriptor files.  Each .la has the
+               build host's libdir hardcoded (e.g. /opt/homebrew/Cellar/
+               graphicsmagick/1.3.46/lib/GraphicsMagick/modules-Q16/
+               coders) which obviously doesn't exist on the target.
+               libltdl tries to load <hardcoded-libdir>/<dlname>.so,
+               fails, and reports "png.la: file not found" -- referring
+               to the .la metadata path it was processing, not the .la
+               file existence.  ltdl falls back to dlopen'ing the .so
+               directly when no .la is present, which is what we want.
+               Every major distro strips .la files for this reason. */
+            run("sh", ["-c",
+                "find " + stage + "/share/graphicsmagick/modules-Q16 " +
+                "-name '*.la' -delete"]);
+            info("  bundled GraphicsMagick modules-Q16/ (codec+filter plugins, .la stripped)");
 
             /* On macOS, each plugin .so links libGraphicsMagick-Q16.dylib
-               by absolute /opt/homebrew/... path.  Rewrite those refs to
-               @rpath/<soname> and add an LC_RPATH pointing back at the
-               bundled lib/ dir so dlopen-loaded plugins find the bundled
-               libGraphicsMagick instead of the build host's brew copy.
-               Same machinery bundle_so_deps already uses on .dylibs. */
+               + various format libs (libpng, libjpeg, libtiff, libwebp,
+               etc.) by absolute /opt/homebrew/... path.  Two-step fix:
+               (1) walk plugin deps so the format libs only used by
+                   plugins (and not by the main libGraphicsMagick) get
+                   bundled into lib/.  Without this, libjpeg lives nowhere
+                   on the target and png.so fails to dlopen -> GM reports
+                   "No decode delegate" for the format that plugin handles.
+               (2) Rewrite each plugin .so to point at @rpath/<soname>
+                   for the bundled libs, and add an LC_RPATH back to the
+                   bundled lib/ dir so dlopen resolution finds them.
+               Run errors NOT caught silently any more -- a swallowed
+               install_name_tool failure cost us a full day's debugging. */
             if (isMacOS() && entry.bundle_so_deps) {
-                var bundledSet = {};
-                try {
-                    var libDir = stage + "/lib";
-                    var libs = readdir(libDir);
-                    if (libs) libs.forEach(function (n) {
-                        if (n !== "." && n !== "..") bundledSet[n] = true;
-                    });
-                } catch (e) {}
-                /* Each plugin is at share/graphicsmagick/modules-Q16/<sub>/<name>.so;
-                   relative to the plugin's dir, the bundled lib/ is
-                   ../../../../lib (share→graphicsmagick→modules-Q16→<sub>→up
-                   four levels to <prefix>, then into lib).  Add that as
-                   an extra LC_RPATH on each plugin. */
+                /* Get the list of plugin .so paths (stage-relative for
+                   collectSoDeps). */
                 var pluginsList = exec("sh", "-c",
-                    "find " + stage + "/share/graphicsmagick/modules-Q16 " +
+                    "cd " + stage + " && find share/graphicsmagick/modules-Q16 " +
                     "-type f -name '*.so'");
+                var pluginPaths = [];
                 if (pluginsList && pluginsList.exitStatus === 0) {
                     (pluginsList.stdout || "").split(/\n+/).forEach(function (p) {
-                        if (!p) return;
-                        try { macRewriteForBundle(p, bundledSet, false); } catch (e) {}
-                        try {
-                            run("install_name_tool", ["-add_rpath",
-                                "@loader_path/../../../../lib", p]);
-                        } catch (e) {}
-                        try { run("codesign", ["--force", "-s", "-", p]); } catch (e) {}
+                        if (p) pluginPaths.push(p);
                     });
                 }
+
+                /* Step 1: collect plugin transitive deps.  Same machinery
+                   as main bundle_so_deps; new sonames get cp + rewritten +
+                   re-signed.  Skip anything already in stage/lib. */
+                var alreadyBundled = {};
+                try {
+                    var libs0 = readdir(stage + "/lib");
+                    if (libs0) libs0.forEach(function (n) {
+                        if (n !== "." && n !== "..") alreadyBundled[n] = true;
+                    });
+                } catch (e) {}
+                var pluginDeps = collectSoDeps(stage, pluginPaths);
+                var bundledSet = {};
+                Object.keys(alreadyBundled).forEach(function (n) { bundledSet[n] = true; });
+                pluginDeps.forEach(function (d) {
+                    if (alreadyBundled[d.soname]) return;   /* main pass already got it */
+                    var dst = stage + "/lib/" + d.soname;
+                    run("cp", ["-L", d.path, dst]);
+                    bundledSet[d.soname] = true;
+                    staged.push("lib/" + d.soname);   /* tar command reads staged[] */
+                    info("    extra plugin dep bundled: " + d.soname);
+                });
+                /* Rewrite each newly-bundled lib's own refs to match the
+                   updated bundledSet. */
+                pluginDeps.forEach(function (d) {
+                    if (alreadyBundled[d.soname]) return;
+                    macRewriteForBundle(stage + "/lib/" + d.soname, bundledSet, true);
+                });
+                /* Step 2: now rewrite every plugin against the full
+                   bundledSet.  Errors NOT swallowed -- we want to see
+                   install_name_tool / codesign failures. */
+                pluginPaths.forEach(function (rel) {
+                    var p = stage + "/" + rel;
+                    macRewriteForBundle(p, bundledSet, false);
+                    /* Each plugin is at share/graphicsmagick/modules-Q16/<sub>/<name>.so;
+                       relative to the plugin's dir, the bundled lib/ is
+                       ../../../../lib (share→graphicsmagick→modules-Q16→<sub>→up
+                       four levels to <prefix>, then into lib). */
+                    run("install_name_tool",
+                        ["-add_rpath", "@loader_path/../../../../lib", p]);
+                    run("codesign", ["--force", "-s", "-", p]);
+                });
+                info("  rewrote " + pluginPaths.length + " plugins, bundled " +
+                     pluginDeps.filter(function (d) { return !alreadyBundled[d.soname]; }).length +
+                     " plugin-only libs");
             }
         }
 

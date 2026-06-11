@@ -322,6 +322,43 @@ function installOne(name) {
             installedFiles = entries
                 .filter(function (e) { return e.charAt(e.length-1) !== "/"; })
                 .map(function (rel) { return PREFIX + "/" + rel; });
+            /* rampart-graphicsmagick ships codec/filter modules at
+               share/graphicsmagick/modules-Q16/{coders,filters}/<name>.so .
+               GraphicsMagick's module loader uses libltdl, which loads
+               <name>.la (NOT <name>.so directly).  libltdl's .la parser
+               requires single-quoted values; without a .la file (or with
+               one that has the wrong libdir baked in from the build host)
+               it fails silently with "(null)" as the dlerror.  Generate a
+               stub .la for each .so at install time, with libdir set to
+               the actual directory the .so lives in -- works for both
+               system installs (/usr/local/rampart) and user installs
+               ($HOME/.rampart) without any placeholders to substitute. */
+            if (name === "rampart-graphicsmagick") {
+                var ut = rampart.utils;
+                ["coders","filters"].forEach(function (sub) {
+                    var dir = PREFIX + "/share/graphicsmagick/modules-Q16/" + sub;
+                    var ents;
+                    try { ents = ut.readdir(dir) || []; } catch (e) { return; }
+                    var count = 0;
+                    ents.forEach(function (f) {
+                        if (!/\.so$/.test(f)) return;
+                        var base = f.replace(/\.so$/, "");
+                        var la =
+                            "dlname='" + base + ".so'\n" +
+                            "library_names='" + base + ".so'\n" +
+                            "old_library=''\n" +
+                            "libdir='" + dir + "'\n" +
+                            "installed=yes\n" +
+                            "shouldnotlink=no\n";
+                        var laPath = dir + "/" + base + ".la";
+                        ut.writeFile(laPath, la);
+                        installedFiles.push(laPath);
+                        count++;
+                    });
+                    if (count) info("  wrote " + count + " .la stubs in " +
+                                    "share/graphicsmagick/modules-Q16/" + sub + "/");
+                });
+            }
             info("  extracted " + installedFiles.length + " files into " + PREFIX);
         }
     }

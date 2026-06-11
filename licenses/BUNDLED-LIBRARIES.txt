@@ -59,73 +59,6 @@ years following the distribution of the bundle in question.  Contact
 information is at https://rampart.dev/.
 
 
-rampart-graphicsmagick package
-==============================
-
-When installed via `rampart --install rampart-graphicsmagick`, this
-package ships GraphicsMagick + its full transitive closure of native
-image-codec dependencies in <prefix>/lib/ so that the module loads on
-a vanilla install without an `apt install` of GraphicsMagick and its
-codec ecosystem.
-
-rampart-graphicsmagick.so is built with RPATH "$ORIGIN/../lib" and each
-bundled library is patched at build time with RPATH "$ORIGIN" so they
-find each other in the same directory regardless of where the build
-host originally pointed them.
-
-Bundled libraries and their licenses:
-
-  libGraphicsMagickWand-Q16, libGraphicsMagick-Q16   MIT-style (GraphicsMagick Group)
-  libjbig                                            BSD-style (jbigkit)
-  libwebp, libwebpmux                                BSD-3-Clause (Google)
-  libheif                                            LGPL-3-or-later
-  liblcms2                                           MIT
-  libtiff                                            libtiff (BSD-style)
-  libfreetype                                        FreeType / GPL-2 dual
-  libjpeg                                            IJG (BSD-style)
-  libjxl, libjxl_threads                             BSD-3-Clause + patent grant
-  libpng16                                           libpng (BSD-style)
-  libwmflite-0.2                                     LGPL-2-or-later
-  libXext, libX11, libXau, libXdmcp                  MIT (X.Org)
-  libbz2                                             BSD-style (bzip2)
-  libxml2                                            MIT
-  libzstd                                            BSD-3-Clause OR GPL-2 (user choice)
-  libx265                                            *** GPL-2-or-later OR commercial ***
-  libde265                                           LGPL-3-or-later
-  libdav1d                                           BSD-2-Clause
-  libaom                                             BSD-2-Clause + patent grant (Alliance for Open Media)
-  liblzma                                            Public Domain (XZ Utils)
-  libLerc                                            Apache-2.0
-  libdeflate                                         MIT
-  libbrotlidec, libbrotlienc, libbrotlicommon        MIT
-  libhwy                                             Apache-2.0
-  libxcb                                             MIT
-  libicuuc, libicudata                               Unicode Data Files & Software (Unicode-DFS)
-  libnuma                                            LGPL-2.1-or-later
-  libbsd                                             BSD-3-Clause (mostly; small ISC/BSD-2 pieces)
-  libmd                                              BSD-3-Clause
-
-NOTE on libx265: libx265 is the only strict-GPL library in this set
-(GPL-2-or-later, dual-licensed with a separate commercial offering from
-MulticoreWare).  Dynamic linking with offer-of-source is GPL-compliant,
-but redistribution of a non-GPL combined work requires either the
-commercial license or a rebuild of GraphicsMagick without HEIF/x265
-support.  Sources for x265 are available at https://bitbucket.org/multicoreware/x265_git.
-
-NOTE on the LGPL libraries (libheif, libwmflite, libde265, libnuma):
-dynamic linking satisfies the LGPL's relinking requirement; users
-retain the right to substitute their own builds of these libraries
-in <prefix>/lib/.
-
-Source code for each library is freely available from its upstream
-project (Debian apt-source and FreeBSD ports are the easiest routes
-on most systems).  In accordance with GPL-2 Section 3 / LGPL Section 6,
-copies of the source corresponding to the binaries shipped in any
-specific rampart-graphicsmagick package are available on request from
-the rampart distributor for a period of three years.  Contact
-information is at https://rampart.dev/.
-
-
 rampart-langtools package
 =========================
 
@@ -140,3 +73,30 @@ The rampart-langtools-cuda variant additionally links against NVIDIA's
 proprietary libcudart / libcublas / libcublasLt at runtime.  Those are
 NOT redistributed by us; users must install the NVIDIA CUDA toolkit
 themselves under NVIDIA's CUDA EULA.
+
+
+rampart-graphicsmagick package
+==============================
+
+rampart-graphicsmagick.so requires a SYSTEM-installed GraphicsMagick
+to be present at runtime; the package ships only the rampart binding
+(rampart-graphicsmagick.so) and the JS wrapper (rampart-gm.js), not
+any of GraphicsMagick's codec / format dependencies.
+
+This separation keeps the distribution license-compatible with the
+proprietary rampart-sql in the same install: the standard distro
+builds of GraphicsMagick pull in libheif which transitively links
+libx265 (GPL-2-or-later), and redistributing GPL-2 code in a bundle
+alongside proprietary code can't be reconciled cleanly.  By relying
+on the user's system GraphicsMagick install we leave the GPL
+distribution choice to the user's OS package manager (apt, brew,
+pkg, etc.) rather than making it ourselves.
+
+Install instructions are printed by rampart-gm.js when the require
+fails on a system without GraphicsMagick:
+
+  macOS    : brew install graphicsmagick
+  Debian   : sudo apt install libgraphicsmagick3 libgraphicsmagickwand-q16-2
+  Fedora   : sudo dnf install GraphicsMagick
+  FreeBSD  : sudo pkg install graphicsmagick
+  Alpine   : sudo apk add graphicsmagick

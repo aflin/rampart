@@ -17,7 +17,19 @@ var testFeature = new (require('./test-feature.js'))({
 
 rampart.globalize(rampart.utils);
 
-var gm = require("rampart-gm");
+/* rampart-graphicsmagick requires a system GraphicsMagick install
+   (we don't bundle libGraphicsMagick + its codec dependencies any
+   more -- libheif/libx265's GPL clashes with the proprietary
+   rampart-sql).  If the require fails, the system GM isn't present;
+   skip the test set rather than failing run_tests.sh. */
+var gm;
+try { gm = require("rampart-gm"); }
+catch (e) {
+    fprintf(stderr,
+        "Could not load rampart-gm: %s\nSKIPPING GM TESTS\n",
+        e.message);
+    process.exit(0);
+}
 
 /* --- temp workspace ----------------------------------------------- */
 var TMPDIR = "/tmp/rampart-gm-test-" + process.getpid();
