@@ -23,7 +23,7 @@ try {
             "  sudo pkg install graphicsmagick\n";
     } else if (/debian|ubuntu|raspberry|raspbian/.test(platform)) {
         install =
-            "  sudo apt install libgraphicsmagick3 libgraphicsmagickwand-q16-2\n";
+            "  sudo apt install graphicsmagick\n";
     } else if (/fedora|rhel|centos|rocky|alma/.test(platform)) {
         install =
             "  sudo dnf install GraphicsMagick\n";
