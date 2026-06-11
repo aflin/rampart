@@ -160,9 +160,12 @@ for (var p in owned) {
     }
 }
 
-/* Directory entries: rm -rf as a whole.  Guarded by the same isSubpath
- * safety check so a malformed manifest can't escape the prefix. */
-var dirsRemoved = 0, dirsRefused = 0;
+/* Directory entries: rm -rf as a whole.  Guarded by isSubpath so a
+ * malformed manifest can't escape the prefix, AND we check exitStatus
+ * (exec doesn't throw on rm's non-zero exit -- a permission-denied
+ * rm -rf returns a result object with exitStatus != 0 that we'd
+ * otherwise treat as success). */
+var dirsRemoved = 0, dirsRefused = 0, dirsFailed = [];
 for (var d in ownedDirs) {
     if (!isSubpath(d, prefix)) {
         printf("  WARN: refusing to rm -rf %s (outside prefix %s)\n", d, prefix);
@@ -170,13 +173,31 @@ for (var d in ownedDirs) {
         continue;
     }
     if (!fileExists(d)) { continue; }   /* already gone */
-    try {
-        exec("rm", "-rf", d);
+    var rmRes;
+    try { rmRes = exec("rm", "-rf", d); }
+    catch (e) {
+        dirsFailed.push({path: d, why: e.message});
+        continue;
+    }
+    /* Even after rm returns, double-check the dir is actually gone --
+       on macOS some root-owned subtrees yield exitStatus 0 yet leave
+       contents behind under specific permission shapes. */
+    if (rmRes && rmRes.exitStatus === 0 && !fileExists(d)) {
         dirsRemoved++;
         printf("  removed dir tree: %s\n", d);
-    } catch (e) {
-        printf("  WARN: could not remove dir %s: %s\n", d, e.message);
+    } else {
+        var why = (rmRes && _trim(rmRes.stderr)) ||
+                  ("rm exited " + (rmRes ? rmRes.exitStatus : "?"));
+        if (fileExists(d)) why += " (dir still present)";
+        dirsFailed.push({path: d, why: why});
     }
+}
+if (dirsFailed.length) {
+    printf("Could NOT remove %d dir tree(s):\n", dirsFailed.length);
+    for (var df = 0; df < dirsFailed.length; df++)
+        printf("    %s  (%s)\n", dirsFailed[df].path, dirsFailed[df].why);
+    printf("  Likely cause: file ownership.  Re-run with sudo, e.g.:\n");
+    printf("    sudo %s\n", prefix + "/bin/rampart-uninstall.sh");
 }
 
 printf("Removed %d file(s) (%d already missing)%s%s.\n",

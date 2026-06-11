@@ -298,13 +298,26 @@ function installOne(name) {
         var entries = listOut.split("\n").filter(function (s) { return s.length; });
         run("tar", ["-xzf", localArtifact, "-C", PREFIX]);
         if (name === "rampart-python") {
-            /* Special case: the embedded Python 3.11 tree has thousands
-               of files (stdlib, site-packages, headers, share/, etc.).
-               Tracking them all bloats installed.json by ~250KB.  Record
-               the modules/python directory as a single bulk entry --
-               uninstall will rm -rf it. */
-            installedFiles.push(PREFIX + "/modules/python/");
-            info("  extracted Python tree into " + PREFIX + "/modules/python/");
+            /* Special case: the embedded Python 3.11 tree under
+               modules/python/ has thousands of files (stdlib,
+               site-packages, headers, share/, etc.).  Tracking each
+               bloats installed.json by ~250KB.  Record the directory
+               itself as one bulk entry (uninstall rm -rf's it).
+               BUT -- the rampart-python tarball also ships top-level
+               shims like bin/python3r and bin/pip3r that live OUTSIDE
+               modules/python/.  Those need to be tracked individually
+               or uninstall leaves them stranded.  So we collapse only
+               the modules/python/ subtree; everything else stays
+               per-file. */
+            var outside = entries
+                .filter(function (e) {
+                    if (e.charAt(e.length-1) === "/") return false;
+                    return !/^modules\/python\//.test(e);
+                })
+                .map(function (rel) { return PREFIX + "/" + rel; });
+            installedFiles = outside.concat([PREFIX + "/modules/python/"]);
+            info("  extracted Python tree into " + PREFIX + "/modules/python/" +
+                 " (" + outside.length + " extra files outside the tree)");
         } else {
             installedFiles = entries
                 .filter(function (e) { return e.charAt(e.length-1) !== "/"; })
