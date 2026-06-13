@@ -2303,46 +2303,83 @@ static void refcb(const void *data, size_t datalen, void *val)
         duk_free(ctx, (void *)data);
 }
 
-static int rp_evbuffer_add_file(struct evbuffer *outbuf, int fd, ev_off_t offset, ev_off_t length)
+/* sendfile threshold (bytes). Initialised once in duk_open_module from
+   RAMPART_SENDFILE_THRESHOLD env var if present, otherwise 32 KB. */
+static int sendfile_threshold = 32 * 1024;
+
+static int rp_evbuffer_add_file(evhtp_request_t *req, int fd, ev_off_t offset, ev_off_t length)
 {
-    // you'd think that evbuffer_add_file would be faster, but it ain't
+    struct evbuffer *outbuf = req->buffer_out;
 
-    /* if not ssl, or if size of file is "big", use evbuffer_add_file */
-    // if( !rp_using_ssl || length-offset > 5242880 )
-    //    return evbuffer_add_file(outbuf, fd, offset, length);
+    /* Non-SSL + body >= sendfile_threshold: mark outbuf as fd-bound so
+       libevent installs the chain with EVBUFFER_SENDFILE → zero-copy
+       sendfile(2) at write time. Works on Linux/FreeBSD/macOS via
+       libevent's per-OS sendfile dispatch; on no-sendfile platforms
+       libevent gracefully falls back to mmap-materialise.
+       TCP_NODELAY (set via EVHTP_FLAG_ENABLE_NODELAY at htp create
+       time) defeats the Nagle/delayed-ACK interaction that would
+       otherwise make small-body sendfile pay a 40 ms stall — evhtp
+       emits [headers chain][file chain] and libevent's writev stops
+       at the sendfile chain (buffer.c:2449), so headers go out in one
+       syscall and the body in a second after the next epoll cycle.
+       Below sendfile_threshold the two-syscall cost still loses to
+       read+memcpy's single writev. Crossover is hardware-dependent —
+       N ≈ c_sys / c_mem (extra-syscall fixed cost / memcpy per-byte
+       cost) — and grows on newer CPUs because memcpy throughput has
+       improved faster than syscall throughput. 32 KB shipped as a
+       defensible compromise across hardware generations. Override
+       with RAMPART_SENDFILE_THRESHOLD env var (bytes) for per-host
+       tuning; read once at module load. See benchmarks.md §1.1. */
+    if (req->conn->ssl == NULL && (length - offset) >= sendfile_threshold) {
+        evbuffer_set_flags(outbuf, EVBUFFER_FLAG_DRAINS_TO_FD);
+        return evbuffer_add_file(outbuf, fd, offset, length);
+    }
 
-    // Not sure, what the speed issue above was (many years have past)
-    // but we probably don't want to risk putting gigabytes into memory
-    // --ajf 2026-03-05
-    if(length-offset > 5242880 )
+    /* Small body or SSL: read+memcpy. Above 5 MB hand to libevent
+       regardless (avoids putting gigabytes in memory). The 5 MB cutoff
+       is unreachable on the non-SSL path since SENDFILE_THRESHOLD is
+       smaller; it applies only to the SSL path. */
+    if (length - offset > 5242880)
         return evbuffer_add_file(outbuf, fd, offset, length);
 
     {
-        size_t off=0;
-        ssize_t nbytes=0;
-        char *buf=NULL;
-        if(offset)
+        size_t off = 0;
+        ssize_t nbytes = 0;
+        char *buf = NULL;
+        if (offset)
         {
-            if (lseek(fd, offset, SEEK_SET)==-1)
+            if (lseek(fd, offset, SEEK_SET) == -1)
             {
                 close(fd);
                 return -1;
             }
         }
 
-        REMALLOC(buf,length);
+        REMALLOC(buf, length);
 
         while ((nbytes = read(fd, buf + off, length - off)) != 0)
         {
             off += nbytes;
         }
         close(fd);
-        if (nbytes==-1)
+        if (nbytes == -1) {
+            free(buf);
             return -1;
-        // no diference in speed for these two options. Dunno why.
-        //evbuffer_add_reference(outbuf, buf, (size_t)length, frefcb, NULL);
-        evbuffer_add(outbuf, buf, (size_t)length);
-        free(buf);
+        }
+        /* Hand buf to libevent as a referenced chain instead of
+           evbuffer_add (which would memcpy length bytes into a fresh
+           evbuffer chain). frefcb frees buf when the chain drains.
+           This saves one length-sized memcpy on every SSL response
+           (the encrypt-and-send path can read directly from buf).
+           A historical comment claimed "no difference in speed"
+           between add and add_reference here; that observation
+           predated the libevhtp pullup workaround being understood —
+           when pullup was unconditional, the body was always copied
+           anyway and upstream copies were free. With pullup now
+           conditional (libevhtp_ws/evhtp.c htp__create_reply_), large
+           SSL bodies are never copied during reply build, so saving
+           this one matters. */
+        evbuffer_add_reference(outbuf, buf, (size_t)length, frefcb, NULL);
     }
     return 0;
 }
@@ -2879,7 +2916,7 @@ static void rp_sendfile(evhtp_request_t *req, char *fn, int haveCT, struct stat 
             //don't compress, just return
             snprintf(slen, 64, "%" PRIu64, (uint64_t)len);
             evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Length", slen, 0, 1));
-            rp_evbuffer_add_file(req->buffer_out, fd, beg, len);
+            rp_evbuffer_add_file(req, fd, beg, len);
             sendresp(req, rescode, 0);
             return;
         }
@@ -2960,7 +2997,7 @@ static void rp_sendfile(evhtp_request_t *req, char *fn, int haveCT, struct stat 
                             evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Encoding", "gzip", 0, 0));
                             snprintf(slen, 64, "%" PRIu64, (uint64_t)len);
                             evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Length", slen, 0, 1));
-                            rp_evbuffer_add_file(req->buffer_out, cfd, 0, len);
+                            rp_evbuffer_add_file(req, cfd, 0, len);
                             sendresp(req, rescode, 0);
                             close(fd);
                             return;
@@ -2975,7 +3012,7 @@ static void rp_sendfile(evhtp_request_t *req, char *fn, int haveCT, struct stat 
             /* the actual compression */
             {
                 void *buf=NULL;
-                rp_evbuffer_add_file(req->buffer_out, fd, beg, len);
+                rp_evbuffer_add_file(req, fd, beg, len);
                 int tlen = compress_resp(req, compress_level, &buf);
                 if(tlen)
                 {
@@ -3002,10 +3039,10 @@ static void rp_sendfile(evhtp_request_t *req, char *fn, int haveCT, struct stat 
             }
         }
         else
-            rp_evbuffer_add_file(req->buffer_out, fd, beg, len);
+            rp_evbuffer_add_file(req, fd, beg, len);
     }
     else
-        rp_evbuffer_add_file(req->buffer_out, fd, beg, len);
+        rp_evbuffer_add_file(req, fd, beg, len);
 
     snprintf(slen, 64, "%" PRIu64, (uint64_t)len);
     evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Length", slen, 0, 1));
@@ -3732,7 +3769,7 @@ static int attachfile(evhtp_request_t *req, char *fn)
 
     filesize=(ev_off_t) sb->st_size;
 
-    rp_evbuffer_add_file(req->buffer_out, fd, 0, filesize);
+    rp_evbuffer_add_file(req, fd, 0, filesize);
     return 1;
 }
 
@@ -8783,6 +8820,12 @@ duk_ret_t duk_server_start(duk_context *ctx)
     htp = evhtp_new(mainthr->base, NULL);
     main_htp = htp;
 
+    /* TCP_NODELAY on every accepted socket. Disables Nagle so headers
+       go out immediately and don't wait 40+ ms for the body's first
+       segment. Critical for sub-MSS responses; benign for large ones.
+       Same pattern as nginx, Apache, every modern HTTP server. */
+    htp->flags |= EVHTP_FLAG_ENABLE_NODELAY;
+
     evhtp_set_max_keepalive_requests(htp, 128);
     evhtp_set_max_body_size(htp, max_body_size);
 
@@ -8803,6 +8846,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
             listen_htps[b] = evhtp_new(mainthr->base, NULL);
             if (!listen_htps[b])
                 RP_THROW(ctx, "server.start: listen[%d]: evhtp_new failed", b);
+            listen_htps[b]->flags |= EVHTP_FLAG_ENABLE_NODELAY;
             evhtp_set_max_keepalive_requests(listen_htps[b], 128);
             evhtp_set_max_body_size(listen_htps[b], max_body_size);
         }
@@ -10335,6 +10379,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
         rhtp = evhtp_new(mainthr->base, NULL);
         if (!rhtp)
             RP_THROW(ctx, "server.start: httpRedirect: evhtp_new failed");
+        rhtp->flags |= EVHTP_FLAG_ENABLE_NODELAY;
         evhtp_set_max_keepalive_requests(rhtp, 128);
         evhtp_set_max_body_size(rhtp, max_body_size);
         if (ctimeout.tv_sec != RP_TIME_T_FOREVER)
@@ -10993,6 +11038,16 @@ static const duk_number_list_entry utils_consts[] = {
 
 duk_ret_t duk_open_module(duk_context *ctx)
 {
+    /* Read RAMPART_SENDFILE_THRESHOLD once at module load. Cached in
+       the sendfile_threshold file-static. See rp_evbuffer_add_file. */
+    {
+        const char *e = getenv("RAMPART_SENDFILE_THRESHOLD");
+        if (e) {
+            int v = atoi(e);
+            if (v >= 0) sendfile_threshold = v;
+        }
+    }
+
     duk_push_object(ctx);
     duk_put_function_list(ctx, -1, utils_funcs);
     duk_put_number_list(ctx, -1, utils_consts);

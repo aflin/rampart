@@ -2325,12 +2325,16 @@ check_proto:
         size_t len=evbuffer_get_length(request->buffer_out);
         if (len) {
             evbuffer_add_buffer(buf, request->buffer_out);
-            /* a compromise for whatever bug causes the major slowdown if
-                we are using ssl and the buffer is not contiguous
-                https://github.com/criticalstack/libevhtp/issues/160
-                --ajf
-            */
-            if (request->conn->htp->ssl_ctx != NULL && len <= 5242880)
+            /* SSL responses with small bodies benefit from pulling up
+               to one contiguous chain — OpenSSL is otherwise called
+               once per chain (status line, each header, body), and
+               the SSL_write per-call cost dominates at small body
+               sizes. For large bodies the cost of the memcpy
+               (proportional to len) exceeds the per-call savings.
+               Crossover is around the SENDFILE_THRESHOLD in spirit;
+               16 KB is the same value used on the non-SSL path.
+               https://github.com/criticalstack/libevhtp/issues/160 */
+            if (request->conn->htp->ssl_ctx != NULL && len <= (16 * 1024))
                 evbuffer_pullup(buf,-1);
         }
     }
