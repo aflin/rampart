@@ -115,6 +115,7 @@
 #define FLAGS_COMMA (1U << 19U)
 
 #include <float.h>
+#include <limits.h>
 // wrapper (used as buffer) for output function type
 typedef struct
 {
@@ -260,49 +261,39 @@ static size_t _out_rev(out_fct_type out, char *buffer, size_t idx, size_t maxlen
 // internal itoa format
 static size_t _ntoa_format(out_fct_type out, char *buffer, size_t idx, size_t maxlen, char *buf, size_t len, bool negative, unsigned int base, unsigned int prec, unsigned int width, uint32_t flags)
 {
-    // pad leading zeros
-    if (!(flags & FLAGS_LEFT))
+    // pad to precision (minimum digit count); applies regardless of justification
+    while ((len < prec) && (len < PRINTF_NTOA_BUFFER_SIZE))
     {
-        if (width && (flags & FLAGS_ZEROPAD) && (negative || (flags & (FLAGS_PLUS | FLAGS_SPACE))))
-        {
-            width--;
-        }
-        while ((len < prec) && (len < PRINTF_NTOA_BUFFER_SIZE))
-        {
-            buf[len++] = '0';
-        }
-        while ((flags & FLAGS_ZEROPAD) && (len < width) && (len < PRINTF_NTOA_BUFFER_SIZE))
+        buf[len++] = '0';
+    }
+    // octal '#': force a leading zero digit, but only if one isn't there already
+    // (buf holds the digits least-significant first, so the MSD is at buf[len-1])
+    if ((flags & FLAGS_HASH) && base == 8U && (len == 0 || buf[len - 1] != '0') && (len < PRINTF_NTOA_BUFFER_SIZE))
+    {
+        buf[len++] = '0';
+    }
+    // pad leading zeros to the field width (only when right-justified), reserving
+    // room for the sign and for the hex/binary "0x"/"0b" prefix
+    if (!(flags & FLAGS_LEFT) && (flags & FLAGS_ZEROPAD))
+    {
+        unsigned int reserve = 0, w;
+        if (negative || (flags & (FLAGS_PLUS | FLAGS_SPACE))) reserve += 1;
+        if ((flags & FLAGS_HASH) && (base == 16U || base == 2U)) reserve += 2;
+        w = (width > reserve) ? width - reserve : 0;
+        while ((len < w) && (len < PRINTF_NTOA_BUFFER_SIZE))
         {
             buf[len++] = '0';
         }
     }
-    // handle hash
+    // hex/binary "0x"/"0b" prefix (HASH is already cleared upstream for value 0)
     if (flags & FLAGS_HASH)
     {
-        if (!(flags & FLAGS_PRECISION) && len && ((len == prec) || (len == width)))
-        {
-            len--;
-            if (len && (base == 16U))
-            {
-                len--;
-            }
-        }
-        if ((base == 16U) && !(flags & FLAGS_UPPERCASE) && (len < PRINTF_NTOA_BUFFER_SIZE))
-        {
-            buf[len++] = 'x';
-        }
-        else if ((base == 16U) && (flags & FLAGS_UPPERCASE) && (len < PRINTF_NTOA_BUFFER_SIZE))
-        {
-            buf[len++] = 'X';
-        }
+        if ((base == 16U) && (len < PRINTF_NTOA_BUFFER_SIZE))
+            buf[len++] = (flags & FLAGS_UPPERCASE) ? 'X' : 'x';
         else if ((base == 2U) && (len < PRINTF_NTOA_BUFFER_SIZE))
-        {
             buf[len++] = 'b';
-        }
-        if (len < PRINTF_NTOA_BUFFER_SIZE)
-        {
+        if ((base == 16U || base == 2U) && (len < PRINTF_NTOA_BUFFER_SIZE))
             buf[len++] = '0';
-        }
     }
     if (len < PRINTF_NTOA_BUFFER_SIZE)
     {
@@ -369,6 +360,123 @@ static size_t _ntoa_long_long(out_fct_type out, char *buffer, size_t idx, size_t
         } while (value && (len < PRINTF_NTOA_BUFFER_SIZE));
     }
     return _ntoa_format(out, buffer, idx, maxlen, buf, len, negative, (unsigned int)base, prec, width, flags);
+}
+// Resolve the base-10 thousands separator implied by the flags, for the BigInt
+// paths.  ',' (FLAGS_COMMA) is always a literal comma, locale-independent.  '''
+// (FLAGS_SQUOTE) uses the locale's separator, read straight out of snprintf so
+// it is exactly what libc's '%'d' would use (and empty -- no grouping -- under
+// the "C" locale).  `probe` is caller-owned scratch the returned pointer may
+// reference.  Returns the separator length (0 = do not group).
+static size_t _group_sep(uint32_t flags, unsigned int base, char *probe, size_t probesz, const char **sep_out)
+{
+    *sep_out = NULL;
+    if (base != 10U)
+        return 0;
+    if (flags & FLAGS_COMMA) { *sep_out = ","; return 1; }
+    if (flags & FLAGS_SQUOTE)
+    {
+        // '%'d' of 1000 is always "1" + separator + "000"; the separator (which
+        // may be multibyte) is the run between, and is absent in the C locale.
+        int plen = snprintf(probe, probesz, "%'d", 1000);
+        if (plen > 4) { *sep_out = probe + 1; return (size_t)plen - 4; }
+    }
+    return 0;
+}
+// Output an arbitrary-precision BigInt (at stack index bidx) in the given base.
+// The magnitude is unbounded so a heap buffer is used rather than the fixed
+// PRINTF_NTOA_BUFFER_SIZE stack buffer.  Honors width, left/zero padding, sign
+// (+/space), '#' prefix, uppercase (for radix > 10) and the ','/''' grouping
+// flags (base 10 only).  Grouping and precision follow libc: only the
+// significant digits are grouped, and precision counts the grouped width,
+// padding with ungrouped leading zeros.  Leaves the stack as found.
+static size_t _bigint_to_out(out_fct_type out, char *buffer, size_t idx, size_t maxlen,
+                             duk_context *ctx, duk_idx_t bidx, unsigned int base,
+                             unsigned int prec, unsigned int width, uint32_t flags)
+{
+    duk_rp_push_bigint_to_string(ctx, bidx, (int)base);
+    const char *s = duk_get_string(ctx, -1);
+    bool negative = false;
+    if (*s == '-') { negative = true; s++; }
+    size_t ndig = strlen(s);
+    bool is_zero = (ndig == 0) || (ndig == 1 && s[0] == '0');
+
+    const char *sep = NULL;
+    char probe[32];
+    size_t seplen = _group_sep(flags, base, probe, sizeof probe, &sep);
+
+    // octal '#' forces a leading zero digit (part of the significant run)
+    size_t ohash = ((flags & FLAGS_HASH) && base == 8U && !is_zero && s[0] != '0') ? 1 : 0;
+    size_t rlen = ndig + ohash;                         // significant digit count
+    // C rule: precision 0 applied to value 0 prints no digits at all
+    if ((flags & FLAGS_PRECISION) && prec == 0 && is_zero) rlen = 0;
+
+    size_t ncommas = (seplen && rlen > 0) ? (rlen - 1) / 3 : 0;
+    size_t glen = rlen + ncommas * seplen;              // grouped width
+    // precision counts the grouped width; pad with UNGROUPED leading zeros
+    size_t zpad = ((flags & FLAGS_PRECISION) && (size_t)prec > glen) ? (size_t)prec - glen : 0;
+
+    // sign / radix prefix
+    char prefix[4];
+    int plen = 0;
+    if (negative)                 prefix[plen++] = '-';
+    else if (flags & FLAGS_PLUS)  prefix[plen++] = '+';
+    else if (flags & FLAGS_SPACE) prefix[plen++] = ' ';
+    // '#' prefix -- suppressed for value 0, matching libc (octal's leading 0 is
+    // handled via ohash above)
+    if ((flags & FLAGS_HASH) && base == 16U && !is_zero) { prefix[plen++] = '0'; prefix[plen++] = (flags & FLAGS_UPPERCASE) ? 'X' : 'x'; }
+    else if ((flags & FLAGS_HASH) && base == 2U && !is_zero) { prefix[plen++] = '0'; prefix[plen++] = 'b'; }
+
+    size_t body = zpad + glen;
+    size_t content = (size_t)plen + body;
+
+    // assemble the body (forward order) on the heap
+    char *dbuf = (char *) malloc(body ? body : 1);
+    if (!dbuf) { duk_pop(ctx); return idx; }
+    {
+        char *rs = (char *) malloc(rlen ? rlen : 1);
+        size_t di = 0, pos = 0, k, grp;
+        if (!rs) { free(dbuf); duk_pop(ctx); return idx; }
+        if (ohash && rlen) rs[di++] = '0';
+        for (k = 0; k < ndig && di < rlen; k++) {
+            char c = s[k];
+            if ((flags & FLAGS_UPPERCASE) && c >= 'a' && c <= 'z') c = (char)(c - 32);
+            rs[di++] = c;
+        }
+        // leading ungrouped zero padding (precision)
+        for (k = 0; k < zpad; k++) dbuf[pos++] = '0';
+        // grouped significant digits: leading group holds remainder, then 3s
+        grp = rlen ? rlen - (ncommas * 3) : 0;
+        for (k = 0; k < rlen; k++) {
+            if (grp == 0) { size_t j; for (j = 0; j < seplen; j++) dbuf[pos++] = sep[j]; grp = 3; }
+            dbuf[pos++] = rs[k];
+            grp--;
+        }
+        free(rs);
+    }
+
+    // emit: [leading spaces] prefix [zero pad] body [trailing spaces].
+    // Exactly one of the three pad branches runs, so each sees the full count.
+    bool zeropad = (flags & FLAGS_ZEROPAD) && !(flags & FLAGS_LEFT) && !(flags & FLAGS_PRECISION);
+    size_t pad = (width > content) ? width - content : 0;
+
+    if (!(flags & FLAGS_LEFT) && !zeropad)
+        while (pad--) out(' ', buffer, idx++, maxlen);
+    {
+        int pi;
+        for (pi = 0; pi < plen; pi++) out(prefix[pi], buffer, idx++, maxlen);
+    }
+    if (zeropad)
+        while (pad--) out('0', buffer, idx++, maxlen);
+    {
+        size_t bi;
+        for (bi = 0; bi < body; bi++) out(dbuf[bi], buffer, idx++, maxlen);
+    }
+    if (flags & FLAGS_LEFT)
+        while (pad--) out(' ', buffer, idx++, maxlen);
+
+    free(dbuf);
+    duk_pop(ctx);
+    return idx;
 }
 /*  Scrapped - new version below
 // forward declaration so that _ftoa can switch to exp notation for values > PRINTF_MAX_FLOAT
@@ -642,6 +750,14 @@ static size_t _ftoa(out_fct_type out, char *buffer, size_t idx, size_t maxlen, d
     if(prec >= FLOAT_MAX_BUF)
         prec = FLOAT_MAX_BUF - 1;
 
+    /* glibc pads with UNGROUPED zeros placed after the sign when the '0' and
+       ',' flags combine.  snprintf would instead group the padding zeros, so
+       when both are set we let snprintf space-pad and convert that pad to
+       zeros after grouping (see below). */
+    int group_zeropad = (flags & FLAGS_COMMA) && (flags & FLAGS_ZEROPAD) && !(flags & FLAGS_LEFT);
+    if(group_zeropad)
+        flags &= ~FLAGS_ZEROPAD;
+
     if(flags & FLAGS_FFORMAT)
         formatflag='f';
     else if (flags & FLAGS_ADAPT_EXP)
@@ -710,20 +826,18 @@ static size_t _ftoa(out_fct_type out, char *buffer, size_t idx, size_t maxlen, d
     }
     if(flags & FLAGS_COMMA)
     {
-        size_t end=len;
-        while (end > 0)
-        {
-            if(buf[end]=='.')
-            {
-                end--;
-                break;
-            }
-            end--;
-        }
-        if(!end) end=len;
-        else end++;
+        /* Group only the leading run of integer digits -- never the fraction,
+           the exponent, or trailing left-justify padding.  `end` is the index
+           just past the last integer digit (skip any leading sign/pad first).
+           A backward scan instead mis-handles a single-digit integer part
+           (grouping the fraction, e.g. "0.500,000" or "5.0,000,00e+00"). */
+        size_t end=0;
+        while (end < (size_t)len && !isdigit((unsigned char)buf[end]))
+            end++;
+        while (end < (size_t)len && isdigit((unsigned char)buf[end]))
+            end++;
         int nshifts=0;
-        for (i=end-3; i>0; i-=3)
+        for (i=(int)end-3; i>0; i-=3)
         {
             if( isdigit(buf[i-1]) )
             {
@@ -738,18 +852,54 @@ static size_t _ftoa(out_fct_type out, char *buffer, size_t idx, size_t maxlen, d
                 nshifts++;
             }
         }
-        char *s = buf;
-        if(end == len)  // one less for the '.'
-            nshifts--;
-        if(flags & FLAGS_SPACE) //one less if ' ' flag
-            s++;
-        while(*s == ' ' && nshifts)
+        /* Inserting commas widened the field; trim that many pad spaces so an
+           explicit field width is preserved -- trailing spaces when left
+           justified, otherwise leading spaces. */
+        if(flags & FLAGS_LEFT)
         {
-            /* SECURITY (F9): move only the bytes remaining after s, never read
-               past buf[len-1] (len can now reach the buffer cap). */
-            memmove(s, s+1, (size_t)(buf + len - (s + 1)));
-            len--;
-            nshifts--;
+            while(len > 0 && buf[len-1] == ' ' && nshifts > 0)
+            {
+                len--;
+                nshifts--;
+            }
+        }
+        else
+        {
+            char *s = buf;
+            if(flags & FLAGS_SPACE) //one less if ' ' flag
+                s++;
+            while(*s == ' ' && nshifts > 0)
+            {
+                /* SECURITY (F9): move only the bytes remaining after s, never
+                   read past buf[len-1] (len can now reach the buffer cap). */
+                memmove(s, s+1, (size_t)(buf + len - (s + 1)));
+                len--;
+                nshifts--;
+            }
+        }
+    }
+    if(group_zeropad)
+    {
+        /* The field is now the right width but space-padded; convert the
+           leading pad to ungrouped zeros, kept after any sign. */
+        size_t sp = 0;
+        while (sp < (size_t)len && buf[sp] == ' ') sp++;
+        if (sp > 0)
+        {
+            if (sp < (size_t)len && (buf[sp] == '+' || buf[sp] == '-'))
+            {
+                buf[0] = buf[sp];
+                memset(buf + 1, '0', sp);
+            }
+            else if (flags & FLAGS_SPACE)
+            {
+                buf[0] = ' ';
+                memset(buf + 1, '0', sp - 1);
+            }
+            else
+            {
+                memset(buf, '0', sp);
+            }
         }
     }
 
@@ -757,6 +907,270 @@ static size_t _ftoa(out_fct_type out, char *buffer, size_t idx, size_t maxlen, d
     while (i<len)
         out(buf[i++], buffer, idx++, maxlen);
 
+    return idx;
+}
+
+// %'d / %'i / %'u: locale-dependent thousands grouping, delegated to the C
+// library's snprintf (the hand-rolled integer path otherwise ignores the '
+// flag).  Base 10 only -- non-decimal bases don't group, matching standard
+// printf.  Grouping happens only if the active locale defines a separator, so
+// under the "C" locale this prints ungrouped, exactly like libc.
+static size_t _ntoa_squote(out_fct_type out, char *buffer, size_t idx, size_t maxlen,
+                           double value, int is_signed, unsigned int prec, unsigned int width, uint32_t flags)
+{
+    char buf[FLOAT_MAX_BUF], fmt[32];
+    int len, i = 0;
+    char conv = is_signed ? 'd' : 'u';
+
+    if (width >= FLOAT_MAX_BUF) width = FLOAT_MAX_BUF - 1;
+    if (prec  >= FLOAT_MAX_BUF) prec  = FLOAT_MAX_BUF - 1;
+
+    snprintf(fmt, sizeof fmt, "%%%s%s%s%s'*%sll%c",
+        (flags & FLAGS_LEFT)    ? "-" : "",
+        (flags & FLAGS_SPACE)   ? " " : "",
+        (flags & FLAGS_PLUS)    ? "+" : "",
+        (flags & FLAGS_ZEROPAD) ? "0" : "",
+        (flags & FLAGS_PRECISION) ? ".*" : "",
+        conv);
+
+    if (is_signed)
+    {
+        long long v = (long long) value;
+        len = (flags & FLAGS_PRECISION)
+            ? snprintf(buf, FLOAT_MAX_BUF, fmt, width, prec, v)
+            : snprintf(buf, FLOAT_MAX_BUF, fmt, width, v);
+    }
+    else
+    {
+        unsigned long long v = (unsigned long long) value;
+        len = (flags & FLAGS_PRECISION)
+            ? snprintf(buf, FLOAT_MAX_BUF, fmt, width, prec, v)
+            : snprintf(buf, FLOAT_MAX_BUF, fmt, width, v);
+    }
+    if (len < 0) len = 0;
+    else if (len >= FLOAT_MAX_BUF) len = FLOAT_MAX_BUF - 1;
+    while (i < len) out(buf[i++], buffer, idx++, maxlen);
+    return idx;
+}
+
+// ---- exact BigInt floating/exponential formatting (no double, no precision loss) ----
+// Append integer digit string D (length L) to body[blen..], inserting the
+// separator `sep` (length seplen, 0 = no grouping) every three digits.
+// Returns the new length.
+static size_t _bn_append_grouped(char *body, size_t blen, const char *D, size_t L,
+                                 const char *sep, size_t seplen)
+{
+    size_t k, first;
+    if (!seplen || L == 0)
+    {
+        memcpy(body + blen, D, L);
+        return blen + L;
+    }
+    first = L % 3;
+    if (first == 0) first = 3;
+    for (k = 0; k < L; k++)
+    {
+        // k and first are unsigned, so guard k >= first before subtracting
+        if (k >= first && ((k - first) % 3 == 0))
+        {
+            size_t j;
+            for (j = 0; j < seplen; j++) body[blen++] = sep[j];
+        }
+        body[blen++] = D[k];
+    }
+    return blen;
+}
+// Round integer digit-string D (length L, no sign/leading zeros) to `sig`
+// significant digits, ties-to-even.  Writes exactly `sig` digits to S (NUL
+// terminated) and sets *expo to the decimal exponent of S[0].
+static void _bn_round_sig(const char *D, size_t L, int sig, char *S, int *expo)
+{
+    int e = (int)L - 1;
+    if (sig < 1) sig = 1;
+    if ((size_t)sig >= L)
+    {
+        memcpy(S, D, L);
+        memset(S + L, '0', (size_t)sig - L);
+        S[sig] = 0;
+        *expo = e;
+        return;
+    }
+    memcpy(S, D, (size_t)sig);
+    S[sig] = 0;
+    {
+        int roundup;
+        char first = D[sig];
+        if (first > '5') roundup = 1;
+        else if (first < '5') roundup = 0;
+        else
+        {
+            size_t k;
+            int rest_nonzero = 0;
+            for (k = (size_t)sig + 1; k < L; k++) if (D[k] != '0') { rest_nonzero = 1; break; }
+            roundup = rest_nonzero ? 1 : ((S[sig - 1] - '0') & 1);
+        }
+        if (roundup)
+        {
+            int i = sig - 1;
+            while (i >= 0 && S[i] == '9') { S[i] = '0'; i--; }
+            if (i < 0) { S[0] = '1'; e += 1; }   // 999..->1000.., keep sig digits, bump exp
+            else S[i]++;
+        }
+    }
+    *expo = e;
+}
+// Append the exponent suffix ("e+NN", at least two exponent digits) to body.
+static size_t _bn_append_exp(char *body, size_t blen, int expo, char ec)
+{
+    int a = expo < 0 ? -expo : expo;
+    char tmp[8];
+    int t = 0;
+    body[blen++] = ec;
+    body[blen++] = (expo < 0) ? '-' : '+';
+    do { tmp[t++] = (char)('0' + (a % 10)); a /= 10; } while (a);
+    while (t < 2) tmp[t++] = '0';
+    while (t) body[blen++] = tmp[--t];
+    return blen;
+}
+// Format a BigInt (at stack index bidx) with a floating/exponential format
+// (%f/%F, %e/%E, %g/%G) directly from its exact decimal digits.  A BigInt is
+// always an integer, so %f never rounds and %e/%g simply round the digit
+// string and place the decimal point -- there is no precision loss at any
+// requested precision.  Honors width, left/zero padding and the sign flags.
+static size_t _bigint_float_to_out(out_fct_type out, char *buffer, size_t idx, size_t maxlen,
+                                   duk_context *ctx, duk_idx_t bidx,
+                                   unsigned int prec, unsigned int width, uint32_t flags)
+{
+    const char *str, *D;
+    size_t L, blen = 0, cap;
+    bool negative = false;
+    char ec = (flags & FLAGS_UPPERCASE) ? 'E' : 'e';
+    int mode; // 0 = %f, 1 = %e, 2 = %g
+    char *body;
+    char prefix[2];
+    int plen = 0;
+    bool zeropad;
+    size_t content, pad;
+    const char *sep = NULL;
+    char probe[32];
+    size_t seplen;
+
+    duk_rp_push_bigint_to_string(ctx, bidx, 10);
+    str = duk_get_string(ctx, -1);
+    D = str;
+    if (*D == '-') { negative = true; D++; }
+    L = strlen(D);
+
+    if (!(flags & FLAGS_PRECISION))
+        prec = PRINTF_DEFAULT_FLOAT_PRECISION;
+    if (prec >= FLOAT_MAX_BUF)            // bound output like _ftoa does
+        prec = FLOAT_MAX_BUF - 1;
+
+    if (flags & FLAGS_FFORMAT)       mode = 0;
+    else if (flags & FLAGS_ADAPT_EXP) mode = 2;
+    else                              mode = 1;
+
+    // grouping separator for the integer part of %f / %g-fixed (base 10)
+    seplen = _group_sep(flags, 10U, probe, sizeof probe, &sep);
+
+    cap = L + (size_t)prec + (L / 3 + 1) * 4 + 32;
+    body = (char *) malloc(cap);
+    if (!body) { duk_pop(ctx); return idx; }
+
+    if (mode == 0)
+    {
+        // %f -- exact integer, then '.' and prec zeros
+        blen = _bn_append_grouped(body, blen, D, L, sep, seplen);
+        if (prec > 0 || (flags & FLAGS_HASH))
+        {
+            unsigned int z;
+            body[blen++] = '.';
+            for (z = 0; z < prec; z++) body[blen++] = '0';
+        }
+    }
+    else if (mode == 1)
+    {
+        // %e -- prec+1 significant digits
+        int sig = (int)prec + 1, expo;
+        char *S = (char *) malloc((size_t)sig + 2);
+        if (!S) { free(body); duk_pop(ctx); return idx; }
+        _bn_round_sig(D, L, sig, S, &expo);
+        body[blen++] = S[0];
+        if (prec > 0 || (flags & FLAGS_HASH))
+        {
+            body[blen++] = '.';
+            memcpy(body + blen, S + 1, prec);
+            blen += prec;
+        }
+        blen = _bn_append_exp(body, blen, expo, ec);
+        free(S);
+    }
+    else
+    {
+        // %g -- P significant figures; choose %e or %f style per C rules
+        int P = (int)prec, X;
+        char *S;
+        if (P == 0) P = 1;
+        S = (char *) malloc((size_t)P + 2);
+        if (!S) { free(body); duk_pop(ctx); return idx; }
+        _bn_round_sig(D, L, P, S, &X);
+        if (X < P)
+        {
+            // fixed style: P >= L here, so D prints exactly
+            blen = _bn_append_grouped(body, blen, D, L, sep, seplen);
+            if (flags & FLAGS_HASH)
+            {
+                int fz = P - 1 - X;
+                if (fz < 0) fz = 0;
+                body[blen++] = '.';
+                while (fz-- > 0) body[blen++] = '0';
+            }
+        }
+        else
+        {
+            // exponential style with P-1 fractional digits, strip trailing zeros
+            int fraclen = P - 1;
+            if (!(flags & FLAGS_HASH))
+                while (fraclen > 0 && S[fraclen] == '0') fraclen--;
+            body[blen++] = S[0];
+            if (fraclen > 0 || (flags & FLAGS_HASH))
+            {
+                body[blen++] = '.';
+                memcpy(body + blen, S + 1, (size_t)fraclen);
+                blen += (size_t)fraclen;
+            }
+            blen = _bn_append_exp(body, blen, X, ec);
+        }
+        free(S);
+    }
+
+    // sign / prefix
+    if (negative)                 prefix[plen++] = '-';
+    else if (flags & FLAGS_PLUS)  prefix[plen++] = '+';
+    else if (flags & FLAGS_SPACE) prefix[plen++] = ' ';
+
+    // emit: [leading spaces] prefix [zero pad] body [trailing spaces]
+    zeropad = (flags & FLAGS_ZEROPAD) && !(flags & FLAGS_LEFT);
+    content = (size_t)plen + blen;
+    pad = (width > content) ? width - content : 0;
+
+    if (!(flags & FLAGS_LEFT) && !zeropad)
+        while (pad--) out(' ', buffer, idx++, maxlen);
+    {
+        int pi;
+        for (pi = 0; pi < plen; pi++) out(prefix[pi], buffer, idx++, maxlen);
+    }
+    if (zeropad)
+        while (pad--) out('0', buffer, idx++, maxlen);
+    {
+        size_t bi;
+        for (bi = 0; bi < blen; bi++) out(body[bi], buffer, idx++, maxlen);
+    }
+    if (flags & FLAGS_LEFT)
+        while (pad--) out(' ', buffer, idx++, maxlen);
+
+    free(body);
+    duk_pop(ctx);
     return idx;
 }
 #define pushjsonsafe do{\
@@ -1127,6 +1541,23 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
             {
                 flags &= ~FLAGS_ZEROPAD;
             }
+            // BigInt: print the full-precision value as a string (honors ',').
+            if (duk_rp_is_bigint(ctx, fidx))
+            {
+                idx = _bigint_to_out(out, buffer, idx, maxlen, ctx, fidx++, base, precision, width, flags);
+                format++;
+                break;
+            }
+            // %'d / %'i / %'u: locale-dependent grouping via libc (base 10 only)
+            if ((flags & FLAGS_SQUOTE) && base == 10)
+            {
+                idx = _ntoa_squote(out, buffer, idx, maxlen,
+                                   PF_REQUIRE_NUMBER(ctx, fidx++),
+                                   (*format == 'i') || (*format == 'd'),
+                                   precision, width, flags);
+                format++;
+                break;
+            }
             // convert the integer
             if ((*format == 'i') || (*format == 'd'))
             {
@@ -1141,10 +1572,25 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
                     const long value = (long)PF_REQUIRE_NUMBER(ctx, fidx++);
                     idx = _ntoa_long(out, buffer, idx, maxlen, (unsigned long)(value > 0 ? value : 0 - value), value < 0, base, precision, width, flags);
                 }
+                else if (flags & (FLAGS_CHAR | FLAGS_SHORT))
+                {
+                    const int value = (flags & FLAGS_CHAR) ? (char)PF_REQUIRE_INT(ctx, fidx++) : (short int)PF_REQUIRE_INT(ctx, fidx++);
+                    idx = _ntoa_long(out, buffer, idx, maxlen, (unsigned int)(value > 0 ? value : 0 - value), value < 0, base, precision, width, flags);
+                }
                 else
                 {
-                    const int value = (flags & FLAGS_CHAR) ? (char)PF_REQUIRE_INT(ctx, fidx++) : (flags & FLAGS_SHORT) ? (short int)PF_REQUIRE_INT(ctx, fidx++) : PF_REQUIRE_INT(ctx, fidx++);
-                    idx = _ntoa_long(out, buffer, idx, maxlen, (unsigned int)(value > 0 ? value : 0 - value), value < 0, base, precision, width, flags);
+                    // auto-upgrade to long long when the value overflows a 32-bit int
+                    const double dv = PF_REQUIRE_NUMBER(ctx, fidx++);
+                    if (dv > (double)INT_MAX || dv < (double)INT_MIN)
+                    {
+                        const long long value = (long long)dv;
+                        idx = _ntoa_long_long(out, buffer, idx, maxlen, (unsigned long long)(value > 0 ? value : 0 - value), value < 0, base, precision, width, flags);
+                    }
+                    else
+                    {
+                        const int value = (int)dv;
+                        idx = _ntoa_long(out, buffer, idx, maxlen, (unsigned int)(value > 0 ? value : 0 - value), value < 0, base, precision, width, flags);
+                    }
                 }
             }
             else
@@ -1158,10 +1604,19 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
                 {
                     idx = _ntoa_long(out, buffer, idx, maxlen, (unsigned long)PF_REQUIRE_NUMBER(ctx, fidx++), false, base, precision, width, flags);
                 }
+                else if (flags & (FLAGS_CHAR | FLAGS_SHORT))
+                {
+                    const unsigned int value = (flags & FLAGS_CHAR) ? (unsigned char)PF_REQUIRE_NUMBER(ctx, fidx++) : (unsigned short int)PF_REQUIRE_NUMBER(ctx, fidx++);
+                    idx = _ntoa_long(out, buffer, idx, maxlen, value, false, base, precision, width, flags);
+                }
                 else
                 {
-                    const unsigned int value = (flags & FLAGS_CHAR) ? (unsigned char)PF_REQUIRE_NUMBER(ctx, fidx++) : (flags & FLAGS_SHORT) ? (unsigned short int)PF_REQUIRE_NUMBER(ctx, fidx++) : (unsigned int)PF_REQUIRE_NUMBER(ctx, fidx++);
-                    idx = _ntoa_long(out, buffer, idx, maxlen, value, false, base, precision, width, flags);
+                    // auto-upgrade to long long when the value overflows a 32-bit unsigned int
+                    const double dv = PF_REQUIRE_NUMBER(ctx, fidx++);
+                    if (dv > (double)UINT_MAX)
+                        idx = _ntoa_long_long(out, buffer, idx, maxlen, (unsigned long long)dv, false, base, precision, width, flags);
+                    else
+                        idx = _ntoa_long(out, buffer, idx, maxlen, (unsigned int)dv, false, base, precision, width, flags);
                 }
             }
             format++;
@@ -1172,7 +1627,10 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
             flags |= FLAGS_FFORMAT;
             if (*format == 'F')
                 flags |= FLAGS_UPPERCASE;
-            idx = _ftoa(out, buffer, idx, maxlen, PF_REQUIRE_NUMBER(ctx, fidx++), precision, width, flags);
+            if (duk_rp_is_bigint(ctx, fidx))
+                idx = _bigint_float_to_out(out, buffer, idx, maxlen, ctx, fidx++, precision, width, flags);
+            else
+                idx = _ftoa(out, buffer, idx, maxlen, PF_REQUIRE_NUMBER(ctx, fidx++), precision, width, flags);
             format++;
             break;
         case 'e':
@@ -1183,8 +1641,11 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
                 flags |= FLAGS_ADAPT_EXP;
             if ((*format == 'E') || (*format == 'G'))
                 flags |= FLAGS_UPPERCASE;
-            //idx = _etoa(out, buffer, idx, maxlen, PF_REQUIRE_NUMBER(ctx, fidx++), precision, width, flags);
-            idx = _ftoa(out, buffer, idx, maxlen, PF_REQUIRE_NUMBER(ctx, fidx++), precision, width, flags);
+            if (duk_rp_is_bigint(ctx, fidx))
+                idx = _bigint_float_to_out(out, buffer, idx, maxlen, ctx, fidx++, precision, width, flags);
+            else
+                //idx = _etoa(out, buffer, idx, maxlen, PF_REQUIRE_NUMBER(ctx, fidx++), precision, width, flags);
+                idx = _ftoa(out, buffer, idx, maxlen, PF_REQUIRE_NUMBER(ctx, fidx++), precision, width, flags);
             format++;
             break;
         case 'c':
@@ -1879,8 +2340,16 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
             char *freeme=NULL;
             unsigned int l, max=-1;
             int isbuf = 0;
+            /* BigInt: print its decimal string rather than JSON ('{}') */
+            if (duk_rp_is_bigint(ctx, fidx))
+            {
+                duk_rp_push_bigint_to_string(ctx, fidx, 10);
+                duk_replace(ctx, fidx);
+                p = duk_get_string(ctx, fidx++);
+                l = _strnlen_s(p, precision ? precision : (size_t)-1);
+            }
             /* convert buffers and print as is */
-            if (duk_is_buffer_data(ctx, fidx))
+            else if (duk_is_buffer_data(ctx, fidx))
             {
                 duk_size_t ln;
                 p = duk_get_buffer_data(ctx, fidx++, &ln);
