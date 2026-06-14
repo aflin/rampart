@@ -3,30 +3,82 @@ v0.7.0
                             https://github.com/aflin/duktape
                             Added BigInt, Promise, Map, Set,
                             Blob and WeakRef/Map/Set. Enhanced
-                            Buffer, TextEncoder and others.
-                            Many, many transpiler fixes.
+                            Buffer, TextEncoder, iterators and others.
+                            Many, many transpiler fixes (decorators,
+                            async/await, generators, fn.toString,
+                            export/import edge cases).
                             Babel update.
-                            Bundler.
+                            Bundler (zip self-contained app bundles).
+
+    -installer              New bundled/live installer with package
+                            selection (install/*.js). uninstall script.
+                            Distro packaging (apt/deb) and proper license
+                            files.
 
     -rampart-utils          POSIX filedescripter I/O funcs.
                             Filewatching with watch().
+                            minify() - JavaScript minifier.
+                            getScopeVars() and rampart.localize().
+                            printf: BigInt support; locale-independent ','
+                            and locale-aware ''' grouping for integers,
+                            floats and BigInt; '#'/0x and auto 64-bit
+                            promotion fixes.
+                            REPL: interrupt, objectMode, history,
+                            redrawOnResume.
 
     -rampart-intl           Initial Intl module, lazy loaded from rampart
                             global.Intl.
 
     -rampart-whatwg         Initial WHATWG functions module, also lazy loaded.
 
-    -rampart-nodeshim       Initial. Module and accompanying loader scripts.
+    -rampart-nodeshim       Initial. Module and loader scripts providing
+                            many Node.js core-module shims (fs, http(s),
+                            http2, net, tls, stream, zlib, crypto, vm,
+                            worker_threads, events, util, os, path, ...).
 
     -rampart-crypto         Upgrade to openssl 4.0.0.  More functions.
 
-    -rampart-treesitter     Initial.
+    -rampart-treesitter     Initial. Backs the transpiler and minifier;
+                            multi-language parsing.
 
-    -rampart-sql            Built in vector indexes with faiss and usearch.
+    -rampart-sql            Built-in vector indexes with faiss (IVFPQ) and
+                            usearch (HNSW), i8/u8 quantization, auto nprobe
+                            and default params, incremental updates and a
+                            build progress meter.
+                            embed() for generating vectors via
+                            rampart-llamacpp.
+                            CREATE TABLE / DROP [IF [NOT] EXISTS], Sql.list(),
+                            ORDER BY alias.
+                            openblas/faiss libs resolved at runtime so the
+                            base install has no hard dependency.
 
-    -rampart-auth           Initial.
+    -rampart-langtools      Upgraded llamacpp. Gpu build with wider cuda
+                            support. Integration into rampart-sql.
 
-    -rampart-cmark          Upgrade to cmark-gfm
+    -rampart-chromeview     Initial. Puppeteer-style headless Chrome control
+                            via the Chrome DevTools Protocol.
+
+    -rampart-webview        Separate repo. Now included in binary distro.
+
+    -rampart-email          Initial.
+
+    -rampart-auth           Initial. OAuth login plugins (generic, google,
+                            facebook).
+
+    -rampart-cmark          Upgrade to cmark-gfm.
+
+    -rampart-server         HTTP performance improvements. defaultCharset
+                            (utf-8).  listen blocks in server.start().
+                            proxy header fixes.
+
+    -rampart-net            socket.startTls() to upgrade an existing
+                            connection (STARTTLS). Node Buffer send fixes.
+
+    -rampart-thread         Map/Set and getter/setter aware thread copy.
+                            Thread stack size matches main. event drain on
+                            thread close. bare/sandbox option.
+
+    -rampart-lmdb           growOnPut dbi reopen. close-transaction fix.
 
 v0.6.2
     - rampart
