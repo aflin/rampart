@@ -576,6 +576,21 @@ TXpredGetFirstUsedColumnName(PRED *pred)
 	}
 }
 
+static int
+TXpredIsEmbedCall(PRED *pred)
+/* Returns nonzero iff `pred' is a call to the SQL embed() function.
+ * Used to restrict constant-subexpression caching (see pred_eval()'s
+ * 'P' cases) to embed() ONLY -- a general constant cache mis-handles
+ * multi-field constant arg lists and perturbs other texis behavior.
+ */
+{
+	return (pred != (PRED *)NULL &&
+		pred->op == REG_FUN_OP &&
+		pred->lt == NAME_OP &&
+		pred->left != NULL &&
+		strcmp((char *)pred->left, "embed") == 0);
+}
+
 /******************************************************************/
 
 int
@@ -686,31 +701,47 @@ FLDOP *fo;
 					fopush(fo, p->left);
 				break;
 			case 'P' :
-				/* Reuse cached result for a constant sub-expression
-				 * (e.g., embed(?) with the param bound; the function
-				 * call yields the same FLD every row). */
-				if (p->lat == FIELD_OP && p->altleft)
+				/* embed() result caching: a constant embed(?)
+				 * call returns the same FLD every row, so cache
+				 * it.  Gated on embed() ONLY -- every other sub-
+				 * expression falls through to the exact pre-embed
+				 * code path below (plain pred_eval), leaving non-
+				 * embed behavior unchanged.  (A general constant
+				 * cache mis-handles multi-field constant arg lists,
+				 * e.g. DISTLATLON's two leading literal args, and
+				 * texis sub-expr eval has other subtleties best
+				 * left untouched.) */
+				if (TXpredIsEmbedCall((PRED *)p->left))
 				{
-					fopush(fo, p->altleft);
+					if (p->lat == FIELD_OP && p->altleft)
+					{			/* cached embed result */
+						fopush(fo, p->altleft);
+						break;
+					}
+					if (pred_eval(tup, p->left, fo) == -1)
+					{
+						retval = -1;
+						goto done;
+					}
+					/* Cache iff column-free (embed(?) with a
+					 * bound param; embed(col) varies per row
+					 * and must not be cached). */
+					if (!p->altleft &&
+					    TXpredGetFirstUsedColumnName((PRED *)p->left) == NULL)
+					{
+						FLD *cr = fopeek(fo);
+						if (cr)
+						{
+							p->altleft = dupfld(cr);
+							p->lat = FIELD_OP;
+						}
+					}
 					break;
 				}
 				if (pred_eval(tup, p->left, fo) == -1)
 				{
 					retval = -1;
 					goto done;
-				}
-				/* Cache the result if the sub-tree references no
-				 * columns — args are all literals / bound params,
-				 * so re-eval would give the same value. */
-				if (!p->altleft &&
-				    TXpredGetFirstUsedColumnName((PRED *)p->left) == NULL)
-				{
-					FLD *cr = fopeek(fo);
-					if (cr)
-					{
-						p->altleft = dupfld(cr);
-						p->lat = FIELD_OP;
-					}
 				}
 				break;
 			case NAME_OP :
@@ -963,27 +994,38 @@ FLDOP *fo;
 				fopush(fo, p->right);
 			break;
 		case 'P' :
-			/* Reuse cached result for a constant sub-expression
-			 * (e.g., embed(?) on the RHS of LIKEV). */
-			if (p->rat == FIELD_OP && p->altright)
+			/* embed() result caching, gated on embed() ONLY (see
+			 * matching note in the left 'P' case); every other
+			 * sub-expression falls through to the exact pre-embed
+			 * code path below. */
+			if (TXpredIsEmbedCall((PRED *)p->right))
 			{
-				fopush(fo, p->altright);
+				if (p->rat == FIELD_OP && p->altright)
+				{			/* cached embed result */
+					fopush(fo, p->altright);
+					break;
+				}
+				if(pred_eval(tup, p->right, fo)==-1)
+				{
+					retval = -1;
+					goto done;
+				}
+				if (!p->altright &&
+				    TXpredGetFirstUsedColumnName((PRED *)p->right) == NULL)
+				{
+					FLD *cr = fopeek(fo);
+					if (cr)
+					{
+						p->altright = dupfld(cr);
+						p->rat = FIELD_OP;
+					}
+				}
 				break;
 			}
 			if(pred_eval(tup, p->right, fo)==-1)
 			{
 				retval = -1;
 				goto done;
-			}
-			if (!p->altright &&
-			    TXpredGetFirstUsedColumnName((PRED *)p->right) == NULL)
-			{
-				FLD *cr = fopeek(fo);
-				if (cr)
-				{
-					p->altright = dupfld(cr);
-					p->rat = FIELD_OP;
-				}
 			}
 			break;
 		case NAME_OP :
