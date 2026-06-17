@@ -285,8 +285,13 @@ static duk_ret_t rp_eval_js(duk_context *ctx)
     // get orig eval from DUK_HIDDEN_SYMBOL("buildin_eval")
     duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("buildin_eval"));
 
-    // main_babel_opt is non null if this script was previously babelized.
-    if ( !main_babel_opt || ! (bfn=duk_rp_babelize(ctx, "eval_code", (char*)source, tsnow.tv_sec, babel_setting_nostrict, main_babel_opt)) )
+    /* Babelize the eval'd code if global babel is active (main_babel_opt set),
+       OR if the eval'd source itself carries a "use babel" directive — when
+       opt is NULL, duk_rp_babelize runs checkbabel() on the source.  A plain
+       per-eval "use babel" is isolated (restored below) so it does not persist
+       into later evals, mirroring how a per-eval "use transpiler" works. */
+    char *saved_babel_opt = main_babel_opt;
+    if ( ! (bfn=duk_rp_babelize(ctx, "eval_code", (char*)source, tsnow.tv_sec, babel_setting_nostrict, main_babel_opt)) )
     {
         /*
         int err=0, lineno=0;
@@ -333,6 +338,14 @@ static duk_ret_t rp_eval_js(duk_context *ctx)
 
         freeParseRes(&res);
 
+    }
+    /* A plain per-eval "use babel" set main_babel_opt via checkbabel; don't
+       let it leak into subsequent evals.  ("use babelGlobally" sets
+       duk_rp_globalbabel, which is intentionally left on.) */
+    if (!saved_babel_opt && !duk_rp_globalbabel && main_babel_opt)
+    {
+        free(main_babel_opt);
+        main_babel_opt = NULL;
     }
     if(bfn)
         free((char*)bfn);

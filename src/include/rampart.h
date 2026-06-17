@@ -767,6 +767,7 @@ void rp_module_no_unload(void);
 
 /* ****************** babelize in cmdline.c **************** */
 extern char *main_babel_opt;
+extern int duk_rp_globalbabel;
 // no options
 #define babel_setting_none 0
 // remove use strict
@@ -995,7 +996,8 @@ typedef enum {
     rp_vec_f16,
     rp_vec_bf16,
     rp_vec_i8,
-    rp_vec_u8
+    rp_vec_u8,
+    rp_vec_b8   /* packed 1-bit-per-dimension (binary) vector */
 } rp_vec_type;
 
 /* push new native vector type given a buffer (at idx), a type and dim (dim is metadata: sz/elsz) */

@@ -7,6 +7,7 @@
 #include <ctype.h>
 #include <errno.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
@@ -427,8 +428,10 @@ static int parse_metric(const char *metric, simsimd_metric_kind_t *out) {
         *out = simsimd_metric_vdot_k;
     else if (!strcasecmp(metric, "cos") || !strcasecmp(metric, "cosine"))
         *out = simsimd_metric_cos_k;
-    else if (!strcasecmp(metric, "l2") || !strcasecmp(metric, "l2sq") || !strcasecmp(metric, "euclidean"))
-        *out = simsimd_metric_l2sq_k;
+    else if (!strcasecmp(metric, "l2") || !strcasecmp(metric, "euclidean"))
+        *out = simsimd_metric_l2_k;       /* true Euclidean distance (sqrt of sum of squares) */
+    else if (!strcasecmp(metric, "l2sq") || !strcasecmp(metric, "sqeuclidean"))
+        *out = simsimd_metric_l2sq_k;     /* squared Euclidean distance */
     else if (!strcasecmp(metric, "hamming"))
         *out = simsimd_metric_hamming_k;
     else if (!strcasecmp(metric, "jaccard"))
@@ -628,13 +631,62 @@ double rp_vector_distance(void *a, void *b, size_t bytesize, const char *metric,
         return NAN;
     }
 
+    /* For integer-quantized vectors (i8/u8), a literal 'dot' inner product is a
+       large, scale-dependent integer rather than the -1..1 similarity that
+       'dot' yields for (L2-normalized) float vectors.  A unit-length vector
+       cannot be represented in i8/u8, so instead compute the scale-invariant
+       cosine similarity, giving 'dot' the same meaning and range across all
+       types (dot_similarity == 1 - cosine_distance). */
+    int dot_as_cosine = 0;
+    if (mk == simsimd_metric_dot_k &&
+        (dt == simsimd_datatype_i8_k || dt == simsimd_datatype_u8_k))
+    {
+        mk = simsimd_metric_cos_k;
+        dot_as_cosine = 1;
+    }
+
+    /* u8 vectors carry an implicit zeroPoint; the simsimd kernels read the
+       bytes as plain unsigned, which corrupts angle-based metrics (cosine,
+       and the 'dot' we route to cosine above) -- all-positive components
+       make every pair look nearly parallel.  Rebase u8 -> i8 by subtracting
+       the symmetric u8 zeroPoint 128 (which maps [0,255] bijectively onto
+       i8 [-128,127]) and run the i8 kernel, so u8 compares the same as i8.
+       L2/l2sq are translation-invariant (|(a-z)-(b-z)| == |a-b|), so they
+       need no rebase and keep using the native u8 kernel. */
+    int8_t *rebase_a = NULL, *rebase_b = NULL;
+    if (dt == simsimd_datatype_u8_k && mk == simsimd_metric_cos_k)
+    {
+        const uint8_t *ua = (const uint8_t *)a, *ub = (const uint8_t *)b;
+        size_t i;
+        rebase_a = (int8_t *)malloc(dim ? dim : 1);
+        rebase_b = (int8_t *)malloc(dim ? dim : 1);
+        if (!rebase_a || !rebase_b)
+        {
+            free(rebase_a);
+            free(rebase_b);
+            *err="Out of memory rebasing u8 vector";
+            return NAN;
+        }
+        for (i = 0; i < dim; i++)
+        {
+            rebase_a[i] = (int8_t)((int)ua[i] - 128);
+            rebase_b[i] = (int8_t)((int)ub[i] - 128);
+        }
+        a = rebase_a;
+        b = rebase_b;
+        dt = simsimd_datatype_i8_k;
+    }
+
     int res = compute_distance(mk, dt, dim, a, b, &distance);
+
+    free(rebase_a);
+    free(rebase_b);
 
     switch(res)
     {
         case 0:
             *err=NULL;
-            return (double)distance;
+            return dot_as_cosine ? (1.0 - (double)distance) : (double)distance;
         case 1:
             *err="Invalid Parameter";
             return NAN;

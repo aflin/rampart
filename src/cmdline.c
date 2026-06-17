@@ -1889,8 +1889,19 @@ static char *checkuse(char *src, char **opt_out)
             }
         }
 
-        /* replace "use xxx" line with spaces, to preserve line nums */
-        while (*uline && *uline!='\n') *uline++ = ' ';
+        /* Blank out just the directive string literal (through its closing
+           quote), not the rest of the line.  Blanking only the literal still
+           preserves line numbers, and -- crucially for eval one-liners like
+           `"use transpiler"; code...` that have no trailing newline -- leaves
+           any code following on the same line intact instead of erasing it. */
+        {
+            char *uend = uline + 1;
+            while (*uend && *uend != '"' && *uend != '\n') uend++;
+            if (*uend == '"')
+                while (uline <= uend) *uline++ = ' ';
+            else /* malformed (no closing quote on line): old line-blank */
+                while (*uline && *uline != '\n') *uline++ = ' ';
+        }
         return(ret);
     }
     return NULL;
@@ -2060,22 +2071,23 @@ static int _decide_transpile(char *src, int *fn_sources_out)
     return 1;
 }
 
-RP_ParseRes rp_get_transpiled(char *src, int *is_tickified)
+/* Transpile source whose transpile decision (and fn_sources) the caller has
+   ALREADY made via _decide_transpile.  Does NOT re-consult the directive:
+   _decide_transpile/checkuse blanks the "use transpiler" directive out of
+   `src` in place, so deciding a second time on the same buffer would wrongly
+   fall back to tickify.  Prefixes the output with the noTranspile marker (no
+   newline, so source line numbers are preserved) so a renamed
+   `.transpiled.js` won't be re-transpiled — it's a no-op string-literal
+   directive at runtime. */
+static RP_ParseRes _do_transpile_marked(char *src, int fn_sources, int *is_tickified)
 {
     RP_ParseRes ret = {0};
-    int fn_sources = 1;
     size_t src_sz = strlen(src);
-
-    if (!_decide_transpile(src, &fn_sources))
-        goto do_tickify;
 
     transpile_set_fn_sources(fn_sources);
     ret = transpile((const char *)src, src_sz, 0);
     if(is_tickified)
         *is_tickified=0;
-    /* Prefix the output with the noTranspile marker (no newline, so source
-       line numbers are preserved) so a renamed `.transpiled.js` won't be
-       re-transpiled.  It's a no-op string-literal directive at runtime. */
     if (ret.transpiled && !ret.err)
     {
         size_t mlen = strlen(RP_NOTRANSPILE_MARKER);
@@ -2090,6 +2102,18 @@ RP_ParseRes rp_get_transpiled(char *src, int *is_tickified)
         }
     }
     return ret;
+}
+
+RP_ParseRes rp_get_transpiled(char *src, int *is_tickified)
+{
+    RP_ParseRes ret = {0};
+    int fn_sources = 1;
+    size_t src_sz = strlen(src);
+
+    if (!_decide_transpile(src, &fn_sources))
+        goto do_tickify;
+
+    return _do_transpile_marked(src, fn_sources, is_tickified);
 
     do_tickify:
 
@@ -2187,6 +2211,7 @@ RP_ParseRes rp_get_transpiled_cached(char *fn, char *src, time_t src_mtime, int 
     char *cachefile = NULL;
     struct stat cstat;
     int is_zip_src = 0;
+    int fn_sources = 1;
 
     /* Cached .transpiled.js files are *transpiler output* — they may
        reference `_TrN_Sp.*` polyfills that only exist when the
@@ -2198,11 +2223,8 @@ RP_ParseRes rp_get_transpiled_cached(char *fn, char *src, time_t src_mtime, int 
        duk_rp_globaltranspile if the source carries
        "use transpilerGlobally", which is the same side effect the
        cache-hit branch below used to apply manually. */
-    {
-        int fn_sources_unused = 1;
-        if (!_decide_transpile(src, &fn_sources_unused))
-            return rp_get_transpiled(src, is_tickified);
-    }
+    if (!_decide_transpile(src, &fn_sources))
+        return rp_get_transpiled(src, is_tickified);
 
     /* Build cache filename: file.js -> file.transpiled.js */
     if (fn && strcmp(fn, "stdin") != 0 && strcmp(fn, "eval_code") != 0
@@ -2280,8 +2302,11 @@ RP_ParseRes rp_get_transpiled_cached(char *fn, char *src, time_t src_mtime, int 
         }
     }
 
-    /* No cache or stale — transpile */
-    res = rp_get_transpiled(src, is_tickified);
+    /* No cache or stale — transpile.  The decision was already made above
+       (and the directive consumed from `src`), so transpile directly with
+       the captured fn_sources rather than re-deciding via rp_get_transpiled
+       (which would see the blanked directive and fall back to tickify). */
+    res = _do_transpile_marked(src, fn_sources, is_tickified);
 
     /* Write cache only if actually transpiled (not just tickified).  Skip
        writes for zip-origin sources: the bundle author is expected to ship
@@ -2391,8 +2416,17 @@ static char *checkbabel(char *src)
                 //file_src=(char *)duk_rp_babelize(ctx, argv[0], file_src, NULL, entry_file_stat.st_mtime);
                 ret=strdup (BABEL_DEFAULT_OPTS);
             }
-            /* replace "use babel" line with spaces, to preserve line nums */
-            while (*bline && *bline!='\n') *bline++ = ' ';
+            /* Blank only the directive string literal (through its closing
+               quote), not the rest of the line -- preserves line numbers and
+               leaves any same-line code (e.g. eval one-liners) intact. */
+            {
+                char *bend = bline + 1;
+                while (*bend && *bend != '"' && *bend != '\n') bend++;
+                if (*bend == '"')
+                    while (bline <= bend) *bline++ = ' ';
+                else /* malformed (no closing quote on line): old line-blank */
+                    while (*bline && *bline != '\n') *bline++ = ' ';
+            }
             return(ret);
         }
         return NULL;
@@ -2463,7 +2497,8 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
     if(err) /* for babel_setting_eval */
         return err;
 
-    if(strcmp("stdin",fn) != 0  && strcmp("eval_code",fn) != 0)
+    if(strcmp("stdin",fn) != 0  && strcmp("eval_code",fn) != 0
+       && strcmp("command_line_script",fn) != 0 && strcmp("built_in_server",fn) != 0)
     {
         /* Detect zip-origin sources.  Two shapes reach us:
              - require() path:        fn = ":zip:/<entry>"
@@ -2568,7 +2603,9 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
        build-time cache.  Writing here would either fail on a read-only
        filesystem or pollute the user's cwd with a file the read path
        above can never re-find. */
-    if(strcmp("stdin",fn) != 0  && strcmp("eval_code",fn) != 0 && !is_zip_src)
+    if(strcmp("stdin",fn) != 0  && strcmp("eval_code",fn) != 0
+       && strcmp("command_line_script",fn) != 0 && strcmp("built_in_server",fn) != 0
+       && !is_zip_src)
     {
         f=fopen(babelsrc,"w");
         if(f==NULL)

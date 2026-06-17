@@ -61,6 +61,7 @@
 #include "event.h"
 #include "event2/thread.h"
 #include "rampart.h"
+#include "rp_transpile.h"
 #include "rp_zip.h"
 #include "../linenoise.h"
 #include "../core/module.h"
@@ -3950,10 +3951,9 @@ static duk_ret_t readline_next(duk_context *ctx)
             }\
         } else {\
             f = rp_fopen(filename, "r");\
-            if (f == NULL){\
+            if (f == NULL)\
                 RP_THROW(ctx, "%s: error opening '%s': %s", fname, filename, strerror(errno));\
-                type=RTYPE_FILE;\
-            }\
+            type=RTYPE_FILE;\
         }\
     }\
     f;\
@@ -5834,7 +5834,10 @@ duk_ret_t duk_rp_touch(duk_context *ctx)
         if( duk_is_boolean(ctx, -1))
         {
             setaccess = duk_get_boolean_default(ctx, -1, 1);
-            duk_pop(ctx);
+            /* no pop here: the trailing duk_pop() after this if/else chain
+               balances all branches.  Popping here too removed an extra
+               stack entry (the options object at index 0), breaking the
+               following setmodify lookup -> "invalid stack index 0". */
         }
         else if (duk_is_number(ctx, -1)) {
             setaccess = 2;
@@ -5856,7 +5859,8 @@ duk_ret_t duk_rp_touch(duk_context *ctx)
         if( duk_is_boolean(ctx, -1))
         {
             setmodify = duk_get_boolean_default(ctx, -1, 1);
-            duk_pop(ctx);
+            /* no pop here: balanced by the trailing duk_pop() below (see
+               the matching note in the setaccess block above). */
         }
         else if (duk_is_number(ctx, -1)) {
             setmodify = 2;
@@ -6146,33 +6150,36 @@ static duk_ret_t include_js(duk_context *ctx)
 
     if (! (bfn=duk_rp_babelize(ctx, rp.path, buffer, rp.stat.st_mtime, babel_setting_nostrict, NULL)) )
     {
-        /* No babel, normal compile */
-        int err, lineno;
+        /* No babel: run through the transpiler -- handles "use transpiler",
+           -t / "use transpilerGlobally", and falls back to tickify (template
+           literals) when not transpiling, just like require()d modules and
+           the main script. */
         char *isbabel = strstr(rp.path, "/babel.js");
-        /* don't tickify actual babel.js source */
+        /* don't transpile actual babel.js source */
         if ( !(isbabel && isbabel == rp.path + strlen(rp.path) - 9) )
         {
-            char *tickified = tickify(buffer, rp.stat.st_size, &err, &lineno);
-            free(buffer);
-            buffer = tickified;
-            if (err)
-            {
-                char *msg="";
-                switch (err) {
-                    case ST_BT:
-                        msg="unterminated or illegal template literal"; break;
-                    case ST_SQ:
-                        msg="unterminated string"; break;
-                    case ST_DQ:
-                        msg="unterminated string"; break;
-                    case ST_BS:
-                        msg="invalid escape"; break;
-                }
-                RP_THROW(ctx, "SyntaxError: %s (line %d)\n    at %s:%d", msg, lineno, rp.path, lineno);
-            }
-        }
+            int is_tickified=0;
+            RP_ParseRes res = rp_get_transpiled_cached(rp.path, buffer, rp.stat.st_mtime, &is_tickified);
 
-        duk_push_string(ctx, buffer);
+            if (res.err && res.transpiled)
+            {
+                int err_line = res.line_num;
+                duk_push_string(ctx, res.errmsg ? res.errmsg : "parse error");
+                const char *out = duk_get_string(ctx, -1);
+                freeParseRes(&res);
+                rp_fclose(f);
+                free(buffer);
+                RP_THROW(ctx, "SyntaxError:\n%s\n    at %s:%d", out, rp.path, err_line);
+            }
+
+            if (res.transpiled)
+                duk_push_string(ctx, res.transpiled);
+            else
+                duk_push_string(ctx, buffer);
+            freeParseRes(&res);
+        }
+        else
+            duk_push_string(ctx, buffer);
     }
 
     rp_fclose(f);
@@ -7725,8 +7732,9 @@ duk_ret_t duk_rp_fread(duk_context *ctx)
 
     f=getreadfile(ctx, 0, "fread", filename, type);//type is reset
 
-    //assume true if set
-    if(duk_has_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("nonblock")) )
+    //assume true if set (only handles carry this; has_prop on a String base
+    //throws "invalid base value", so guard for the filename form)
+    if(duk_is_object(ctx, 0) && duk_has_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("nonblock")) )
         nonblock=1;
 
     /* check for boolean in idx 1,2 or 3 */

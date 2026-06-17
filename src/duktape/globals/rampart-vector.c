@@ -1021,28 +1021,35 @@ static void do_l2_norm(duk_context *ctx, duk_idx_t idx, int type)
     }
 }
 
+/* The l2Normalize* functions normalize in place; they also return the
+   (now-normalized) input vector/buffer for convenience and to match the
+   documented "transforms the input and returns it" contract. */
 static duk_ret_t l2norm_f64(duk_context *ctx)
 {
     do_l2_norm(ctx, 0, L2NORM_F64);
-    return 0;
+    duk_dup(ctx, 0);
+    return 1;
 }
 
 static duk_ret_t l2norm_f32(duk_context *ctx)
 {
     do_l2_norm(ctx, 0, L2NORM_F32);
-    return 0;
+    duk_dup(ctx, 0);
+    return 1;
 }
 
 static duk_ret_t l2norm_f16(duk_context *ctx)
 {
     do_l2_norm(ctx, 0, L2NORM_F16);
-    return 0;
+    duk_dup(ctx, 0);
+    return 1;
 }
 
 static duk_ret_t l2norm_num(duk_context *ctx)
 {
     do_l2_norm(ctx, 0, L2NORM_NUM);
-    return 0;
+    duk_dup(ctx, 0);
+    return 1;
 }
 // end js l2 normalization
 
@@ -1102,7 +1109,7 @@ static const rp_conversion_func rp_conversions[7][7] = {
 /* u8   */   { NULL,   rp_u8_to_f64,     rp_u8_to_f32,     rp_u8_to_f16,    NULL,             NULL,            NULL         }
 };
 
-static const size_t rp_elsz[7] = {1,8,4,2,2,1,1};
+static const size_t rp_elsz[8] = {1,8,4,2,2,1,1,0}; /* b8 (index 7) has no fixed per-element byte size */
 
 static void push_vec_methods(duk_context *ctx, rp_vec_type type);
 static duk_ret_t new_vector(duk_context *ctx);
@@ -1199,6 +1206,27 @@ static duk_ret_t v2num(duk_context *ctx)
     duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("vectype"));
     type = duk_get_int(ctx, -1);
     duk_pop(ctx);
+
+    /* b8: unpack the packed bits into an Array of 0/1, honoring the stored
+       (bit) dim so trailing padding bits are not emitted. */
+    if (type == rp_vec_b8)
+    {
+        uint8_t *bits;
+        duk_uarridx_t i;
+        duk_get_prop_string(ctx, -1, "dim");
+        dim = duk_get_int(ctx, -1);
+        duk_pop(ctx);
+        duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("rpvec"));
+        bits = duk_get_buffer_data(ctx, -1, NULL);
+        duk_pop(ctx);
+        duk_push_array(ctx);
+        for (i = 0; i < (duk_uarridx_t)dim; i++)
+        {
+            duk_push_int(ctx, (bits[i >> 3] >> (i & 7)) & 1);
+            duk_put_prop_index(ctx, -2, i);
+        }
+        return 1;
+    }
 
     duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("rpvec"));
     duk_insert(ctx, 0); // the raw buffer to idx 0
@@ -1307,7 +1335,11 @@ static duk_ret_t v2copy(duk_context *ctx)
     type = duk_get_int(ctx, -1);
     duk_pop(ctx);
 
-    dim = blen / rp_elsz[type];
+    /* use the stored dim (correct for all types, incl. b8 whose dim is a bit
+       count, not blen/elsz) */
+    duk_get_prop_string(ctx, -1, "dim");
+    dim = (duk_size_t)duk_get_int(ctx, -1);
+    duk_pop(ctx);
 
     newv = duk_push_fixed_buffer(ctx, blen);
     memcpy(newv, v, blen);
@@ -1364,6 +1396,10 @@ static duk_ret_t v2dist(duk_context *ctx)
     if(atype != btype)
         RP_THROW(ctx, "vector.distance() - vectors must be the same type, convert one first");
 
+    /* binary vectors default to hamming (dot/cosine/euclidean have no b8 kernel) */
+    if (atype == rp_vec_b8)
+        metric = "hamming";
+
     if (!duk_is_undefined(ctx, 1))
         metric = REQUIRE_STRING(ctx, 1, "vector.distance() - Second argument, if present, must be a metric (default: 'dot')");
 
@@ -1379,6 +1415,7 @@ static duk_ret_t v2dist(duk_context *ctx)
         case rp_vec_bf16: datatype="bf16"; break;
         case rp_vec_i8: datatype="i8";     break;
         case rp_vec_u8: datatype="u8";     break;
+        case rp_vec_b8: datatype="b8";     break;
         default:     break; //won't happen, silence warnings
     }
 
@@ -1393,8 +1430,326 @@ static duk_ret_t v2dist(duk_context *ctx)
 }
 
 
+/* =========================================================================
+   Binary quantization: pack a vector into a b8 (1-bit-per-dimension) vector.
+   bit i = 1 if element i > cutoff.  Default cutoff is 0 (sign bit) for the
+   signed/float types and 128 (the symmetric u8 zeroPoint) for u8.  For i8/u8
+   the comparison is against the raw stored integer value.
+   ========================================================================= */
+
+static double rp_bit_default_cutoff(rp_vec_type type)
+{
+    return (type == rp_vec_u8) ? 128.0 : 0.0;
+}
+
+/* Read `dim` elements of `type` from `buf`, push a zeroed fixed buffer of
+   ceil(dim/8) bytes with bit i set when element i > cutoff. */
+static void rp_binarize_push(duk_context *ctx, const void *buf, rp_vec_type type, size_t dim, double cutoff)
+{
+    float *tmp = NULL;
+    size_t nbytes = (dim + 7) >> 3, i;
+    uint8_t *out;
+
+    if (type == rp_vec_f16 || type == rp_vec_bf16)
+    {
+        REMALLOC(tmp, dim * sizeof(float));
+        if (type == rp_vec_f16) rpvec_f16_to_f32((uint16_t *)buf, tmp, dim);
+        else                    rpvec_bf16_to_f32((uint16_t *)buf, tmp, dim);
+    }
+
+    out = duk_push_fixed_buffer(ctx, nbytes); /* fixed buffers are zero-filled */
+
+    for (i = 0; i < dim; i++)
+    {
+        double v;
+        switch (type)
+        {
+            case rp_vec_f64:  v = ((const double *)buf)[i];  break;
+            case rp_vec_f32:  v = ((const float  *)buf)[i];  break;
+            case rp_vec_f16:
+            case rp_vec_bf16: v = tmp[i];                    break;
+            case rp_vec_i8:   v = ((const int8_t *)buf)[i];  break;
+            case rp_vec_u8:   v = ((const uint8_t *)buf)[i]; break;
+            default:          v = 0;                         break;
+        }
+        if (v > cutoff)
+            out[i >> 3] |= (uint8_t)(1u << (i & 7));
+    }
+
+    if (tmp) free(tmp);
+}
+
+/* numbersToBit(array[, cutoff]) */
+static duk_ret_t rp_num_to_bit(duk_context *ctx)
+{
+    duk_uarridx_t i, dim;
+    double cutoff = 0.0;
+    size_t nbytes;
+    uint8_t *out;
+
+    REQUIRE_ARRAY(ctx, 0, "vector.numbersToBit - first argument must be an Array of Numbers");
+    dim = (duk_uarridx_t)duk_get_length(ctx, 0);
+    if (!duk_is_undefined(ctx, 1))
+        cutoff = REQUIRE_NUMBER(ctx, 1, "vector.numbersToBit - second argument, if present, must be a Number (cutoff)");
+
+    nbytes = ((size_t)dim + 7) >> 3;
+    out = duk_push_fixed_buffer(ctx, nbytes);
+    for (i = 0; i < dim; i++)
+    {
+        double v;
+        duk_get_prop_index(ctx, 0, i);
+        v = duk_get_number(ctx, -1);
+        duk_pop(ctx);
+        if (v > cutoff)
+            out[i >> 3] |= (uint8_t)(1u << (i & 7));
+    }
+    return 1;
+}
+
+/* shared buffer->bit for the raw <type>ToBit functions */
+static duk_ret_t do_buf_to_bit(duk_context *ctx, rp_vec_type type)
+{
+    duk_size_t sz;
+    void *buf = REQUIRE_BUFFER_DATA(ctx, 0, &sz, "vector.<type>ToBit - first argument must be a Buffer (vector)");
+    size_t elsz = rp_elsz[type], dim;
+    double cutoff = rp_bit_default_cutoff(type);
+
+    if (!elsz || (sz % elsz))
+        RP_THROW(ctx, "vector.toBit - buffer length is not a multiple of vector element size");
+    dim = sz / elsz;
+
+    if (!duk_is_undefined(ctx, 1))
+        cutoff = REQUIRE_NUMBER(ctx, 1, "vector.toBit - second argument, if present, must be a Number (cutoff)");
+
+    rp_binarize_push(ctx, buf, type, dim, cutoff);
+    return 1;
+}
+
+static duk_ret_t rp_f64_to_bit (duk_context *ctx){ return do_buf_to_bit(ctx, rp_vec_f64);  }
+static duk_ret_t rp_f32_to_bit (duk_context *ctx){ return do_buf_to_bit(ctx, rp_vec_f32);  }
+static duk_ret_t rp_f16_to_bit (duk_context *ctx){ return do_buf_to_bit(ctx, rp_vec_f16);  }
+static duk_ret_t rp_bf16_to_bit(duk_context *ctx){ return do_buf_to_bit(ctx, rp_vec_bf16); }
+static duk_ret_t rp_i8_to_bit  (duk_context *ctx){ return do_buf_to_bit(ctx, rp_vec_i8);   }
+static duk_ret_t rp_u8_to_bit  (duk_context *ctx){ return do_buf_to_bit(ctx, rp_vec_u8);   }
+
+/* Vector Object method: vec.toBit([cutoff]) -> new b8 Vector Object */
+static duk_ret_t v2bit(duk_context *ctx)
+{
+    rp_vec_type type;
+    int dim, have_cut;
+    double cut_arg = 0.0, cutoff;
+    duk_size_t sz;
+    void *buf;
+
+    have_cut = !duk_is_undefined(ctx, 0);
+    if (have_cut)
+        cut_arg = REQUIRE_NUMBER(ctx, 0, "vector.toBit() - argument, if present, must be a Number (cutoff)");
+
+    duk_push_this(ctx);
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("vectype"));
+    type = duk_get_int(ctx, -1);
+    duk_pop(ctx);
+    duk_get_prop_string(ctx, -1, "dim");
+    dim = duk_get_int(ctx, -1);
+    duk_pop(ctx);
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("rpvec"));
+    buf = duk_get_buffer_data(ctx, -1, &sz);
+    duk_pop(ctx);
+
+    cutoff = have_cut ? cut_arg : rp_bit_default_cutoff(type);
+
+    rp_binarize_push(ctx, buf, type, (size_t)dim, cutoff);     /* out buffer on top */
+    rp_push_new_vector(ctx, rp_vec_b8, (size_t)dim, -1);       /* build b8 vector from it */
+    return 1;
+}
+
+/* =========================================================================
+   Reconstruct a b8 (binary) vector to a wider type.  Each bit expands to a
+   sign value: the L2-normalized +/-1/sqrt(dim) for the float targets, and the
+   full-range sign +/-127 (offset by zeroPoint) for the integer targets.  Used
+   for "asymmetric" scoring (full-precision query vs binary doc).
+   NOTE: an integer reconstruction with a non-zero zeroPoint does NOT compare
+   correctly under the simsimd dot/cosine kernels (they ignore the zeroPoint);
+   rebase to i8 (u8ToI8) before comparing, or use a float / i8@0 target. */
+static void rp_bit_reconstruct_push(duk_context *ctx, const uint8_t *bits,
+                                    size_t dim, rp_vec_type totype, double zeroPoint)
+{
+    size_t i;
+    double inv = (dim > 0) ? 1.0 / sqrt((double)dim) : 0.0;
+#define RP_BIT(i) (((bits)[(i) >> 3] >> ((i) & 7)) & 1)
+
+    switch (totype)
+    {
+        case rp_vec_f64: {
+            double *out = duk_push_fixed_buffer(ctx, dim * sizeof(double));
+            for (i = 0; i < dim; i++) out[i] = RP_BIT(i) ? inv : -inv;
+            break;
+        }
+        case rp_vec_f32: {
+            float *out = duk_push_fixed_buffer(ctx, dim * sizeof(float));
+            for (i = 0; i < dim; i++) out[i] = (float)(RP_BIT(i) ? inv : -inv);
+            break;
+        }
+        case rp_vec_f16:
+        case rp_vec_bf16: {
+            float *tmp = NULL;
+            uint16_t *out;
+            REMALLOC(tmp, dim * sizeof(float));
+            for (i = 0; i < dim; i++) tmp[i] = (float)(RP_BIT(i) ? inv : -inv);
+            out = duk_push_fixed_buffer(ctx, dim * sizeof(uint16_t));
+            if (totype == rp_vec_f16) rpvec_f32_to_f16(tmp, out, dim);
+            else                      rpvec_f32_to_bf16(tmp, out, dim);
+            free(tmp);
+            break;
+        }
+        case rp_vec_i8: {
+            int8_t *out = duk_push_fixed_buffer(ctx, dim);
+            long zp = (long)zeroPoint;
+            for (i = 0; i < dim; i++) { long v = (RP_BIT(i) ? 127 : -127) + zp; if (v < -128) v = -128; if (v > 127) v = 127; out[i] = (int8_t)v; }
+            break;
+        }
+        case rp_vec_u8: {
+            uint8_t *out = duk_push_fixed_buffer(ctx, dim);
+            long zp = (long)zeroPoint;
+            for (i = 0; i < dim; i++) { long v = (RP_BIT(i) ? 127 : -127) + zp; if (v < 0) v = 0; if (v > 255) v = 255; out[i] = (uint8_t)v; }
+            break;
+        }
+        default:
+            duk_push_fixed_buffer(ctx, 0);
+            break;
+    }
+#undef RP_BIT
+}
+
+/* default reconstruction zeroPoint for integer targets (0 for i8, 127 for u8) */
+static double rp_bit_recon_zp_default(rp_vec_type totype)
+{
+    return (totype == rp_vec_u8) ? 127.0 : 0.0;
+}
+
+/* raw: rampart.vector.raw.bitTo<X>(buf[, zeroPoint]) ; dim = byteLength * 8 */
+static duk_ret_t do_bit_to(duk_context *ctx, rp_vec_type totype)
+{
+    duk_size_t sz;
+    const uint8_t *bits = REQUIRE_BUFFER_DATA(ctx, 0, &sz, "vector.bitTo<type> - first argument must be a Buffer (b8 vector)");
+    size_t dim = (size_t)sz * 8;
+    double zp = rp_bit_recon_zp_default(totype);
+    if ((totype == rp_vec_i8 || totype == rp_vec_u8) && !duk_is_undefined(ctx, 1))
+        zp = REQUIRE_NUMBER(ctx, 1, "vector.bitTo<type> - second argument, if present, must be a Number (zeroPoint)");
+    rp_bit_reconstruct_push(ctx, bits, dim, totype, zp);
+    return 1;
+}
+static duk_ret_t rp_bit_to_f64 (duk_context *ctx){ return do_bit_to(ctx, rp_vec_f64);  }
+static duk_ret_t rp_bit_to_f32 (duk_context *ctx){ return do_bit_to(ctx, rp_vec_f32);  }
+static duk_ret_t rp_bit_to_f16 (duk_context *ctx){ return do_bit_to(ctx, rp_vec_f16);  }
+static duk_ret_t rp_bit_to_bf16(duk_context *ctx){ return do_bit_to(ctx, rp_vec_bf16); }
+static duk_ret_t rp_bit_to_i8  (duk_context *ctx){ return do_bit_to(ctx, rp_vec_i8);   }
+static duk_ret_t rp_bit_to_u8  (duk_context *ctx){ return do_bit_to(ctx, rp_vec_u8);   }
+
+/* rebase signed u8 into the centered i8 domain: i8 = clamp(u8 - zeroPoint) */
+static void rp_u8_i8_rebase(const uint8_t *in, int8_t *out, size_t n, long zp)
+{
+    size_t i;
+    for (i = 0; i < n; i++) { long v = (long)in[i] - zp; if (v < -128) v = -128; if (v > 127) v = 127; out[i] = (int8_t)v; }
+}
+
+/* raw: rampart.vector.raw.u8ToI8(buf[, zeroPoint])  (zeroPoint default 127) */
+static duk_ret_t rp_u8_to_i8(duk_context *ctx)
+{
+    duk_size_t sz;
+    const uint8_t *in = REQUIRE_BUFFER_DATA(ctx, 0, &sz, "vector.u8ToI8 - first argument must be a Buffer (u8 vector)");
+    long zp = 127;
+    int8_t *out;
+    if (!duk_is_undefined(ctx, 1))
+        zp = (long)REQUIRE_NUMBER(ctx, 1, "vector.u8ToI8 - second argument, if present, must be a Number (zeroPoint)");
+    out = duk_push_fixed_buffer(ctx, sz);
+    rp_u8_i8_rebase(in, out, (size_t)sz, zp);
+    return 1;
+}
+
+/* typed b8 method: vec.to<X>([zeroPoint]) -> reconstructed Vector Object */
+static duk_ret_t v2_bit_recon(duk_context *ctx, rp_vec_type totype)
+{
+    int dim;
+    double zp = rp_bit_recon_zp_default(totype);
+    duk_size_t sz;
+    const uint8_t *bits;
+
+    if ((totype == rp_vec_i8 || totype == rp_vec_u8) && !duk_is_undefined(ctx, 0))
+        zp = REQUIRE_NUMBER(ctx, 0, "vector.to<type>() - argument, if present, must be a Number (zeroPoint)");
+
+    duk_push_this(ctx);
+    duk_get_prop_string(ctx, -1, "dim");
+    dim = duk_get_int(ctx, -1);
+    duk_pop(ctx);
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("rpvec"));
+    bits = duk_get_buffer_data(ctx, -1, &sz);
+    duk_pop(ctx);
+
+    rp_bit_reconstruct_push(ctx, bits, (size_t)dim, totype, zp);
+    rp_push_new_vector(ctx, totype, (size_t)dim, -1);
+    return 1;
+}
+static duk_ret_t v2bit_f64 (duk_context *ctx){ return v2_bit_recon(ctx, rp_vec_f64);  }
+static duk_ret_t v2bit_f32 (duk_context *ctx){ return v2_bit_recon(ctx, rp_vec_f32);  }
+static duk_ret_t v2bit_f16 (duk_context *ctx){ return v2_bit_recon(ctx, rp_vec_f16);  }
+static duk_ret_t v2bit_bf16(duk_context *ctx){ return v2_bit_recon(ctx, rp_vec_bf16); }
+static duk_ret_t v2bit_i8  (duk_context *ctx){ return v2_bit_recon(ctx, rp_vec_i8);   }
+static duk_ret_t v2bit_u8  (duk_context *ctx){ return v2_bit_recon(ctx, rp_vec_u8);   }
+
+/* typed u8 method: vec.toI8([zeroPoint]) -> rebased i8 Vector Object */
+static duk_ret_t v2u8_to_i8(duk_context *ctx)
+{
+    int dim;
+    long zp = 127;
+    duk_size_t sz;
+    const uint8_t *in;
+    int8_t *out;
+
+    if (!duk_is_undefined(ctx, 0))
+        zp = (long)REQUIRE_NUMBER(ctx, 0, "vector.toI8() - argument, if present, must be a Number (zeroPoint)");
+
+    duk_push_this(ctx);
+    duk_get_prop_string(ctx, -1, "dim");
+    dim = duk_get_int(ctx, -1);
+    duk_pop(ctx);
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("rpvec"));
+    in = duk_get_buffer_data(ctx, -1, &sz);
+    duk_pop(ctx);
+
+    out = duk_push_fixed_buffer(ctx, sz);
+    rp_u8_i8_rebase(in, out, (size_t)sz, zp);
+    rp_push_new_vector(ctx, rp_vec_i8, (size_t)dim, -1);
+    return 1;
+}
+
 static void push_vec_methods(duk_context *ctx, rp_vec_type type)
 {
+    /* b8 (binary) vectors have a reduced method set: no float/int conversions
+       (a bit vector can't be un-binarized), no l2Normalize. */
+    if (type == rp_vec_b8)
+    {
+        duk_push_c_function(ctx, v2num, 2);
+        duk_put_prop_string(ctx, -2, "toNumbers");   /* -> Array of 0/1 */
+        duk_push_c_function(ctx, v2raw, 0);
+        duk_put_prop_string(ctx, -2, "toRaw");
+        duk_push_c_function(ctx, v2vlen, 0);
+        duk_put_prop_string(ctx, -2, "byteLength");
+        duk_push_c_function(ctx, v2copy, 1);
+        duk_put_prop_string(ctx, -2, "copy");
+        duk_push_c_function(ctx, v2dist, 2);
+        duk_put_prop_string(ctx, -2, "distance");
+        /* reconstruction to wider types (asymmetric scoring): float targets
+           give +/-1/sqrt(dim); i8/u8 take an optional zeroPoint (0 / 127). */
+        duk_push_c_function(ctx, v2bit_f64, 0);  duk_put_prop_string(ctx, -2, "toF64");
+        duk_push_c_function(ctx, v2bit_f32, 0);  duk_put_prop_string(ctx, -2, "toF32");
+        duk_push_c_function(ctx, v2bit_f16, 0);  duk_put_prop_string(ctx, -2, "toF16");
+        duk_push_c_function(ctx, v2bit_bf16, 0); duk_put_prop_string(ctx, -2, "toBf16");
+        duk_push_c_function(ctx, v2bit_i8, 1);   duk_put_prop_string(ctx, -2, "toI8");
+        duk_push_c_function(ctx, v2bit_u8, 1);   duk_put_prop_string(ctx, -2, "toU8");
+        return;
+    }
+
 
     // every type supported
     duk_push_c_function(ctx, v2f64, 2);
@@ -1411,8 +1766,8 @@ static void push_vec_methods(duk_context *ctx, rp_vec_type type)
         duk_put_prop_string(ctx, -2, "toF16");
     }
 
-    /* only f64 or f32 to bf16 */
-    if( type == rp_vec_f64 || type == rp_vec_f32)
+    /* f64/f32 -> bf16; bf16 -> bf16 is a self null-op (returns the same object) */
+    if( type == rp_vec_f64 || type == rp_vec_f32 || type == rp_vec_bf16)
     {
         duk_push_c_function(ctx, v2bf16, 2);
         duk_put_prop_string(ctx, -2, "toBf16");
@@ -1432,9 +1787,22 @@ static void push_vec_methods(duk_context *ctx, rp_vec_type type)
         duk_put_prop_string(ctx, -2, "toU8");
     }
 
+    /* u8 -> i8 is a zeroPoint rebase (i8 = u8 - zeroPoint, default 127), which
+       moves signed-u8 data into the centered domain where dot/cosine compare
+       correctly (the kernels ignore the zeroPoint otherwise). */
+    if( type == rp_vec_u8)
+    {
+        duk_push_c_function(ctx, v2u8_to_i8, 1);
+        duk_put_prop_string(ctx, -2, "toI8");
+    }
+
     // make array of numbers
     duk_push_c_function(ctx, v2num, 2);
     duk_put_prop_string(ctx, -2, "toNumbers");
+
+    // binarize to a b8 (1-bit-per-dim) vector; optional cutoff
+    duk_push_c_function(ctx, v2bit, 1);
+    duk_put_prop_string(ctx, -2, "toBit");
 
     // normalize for f64, f32 and f16 only
     if(type == rp_vec_f64 || type == rp_vec_f32 || type == rp_vec_f16)
@@ -1476,6 +1844,7 @@ void rp_push_new_vector(duk_context *ctx, rp_vec_type type, size_t dim, duk_idx_
         case rp_vec_bf16: stype="bf16"; break;
         case rp_vec_i8:   stype="i8";   break;
         case rp_vec_u8:   stype="u8";   break;
+        case rp_vec_b8:   stype="b8";   break;
         default:     break; //won't happen, silence warnings
     }
 
@@ -1529,16 +1898,22 @@ static duk_ret_t new_vector(duk_context *ctx)
         type  = rp_vec_i8;
     else if( ! strcasecmp(itype, "u8") )
         type  = rp_vec_u8;
+    else if( ! strcasecmp(itype, "b8") || ! strcasecmp(itype, "bit") )
+        type  = rp_vec_b8;
     else
         RP_THROW(ctx, "new rampart.vector() - invalid type '%s'", itype);
 
-    elsz = rp_elsz[type];
+    if(type != rp_vec_b8)
+        elsz = rp_elsz[type];
 
     /* push the appropriate buffer to stack */
     if(duk_is_number(ctx, 1))
     {
         dim = REQUIRE_INT(ctx, 1, "new rampart.vector() - second argument must be an integer (vec dim)");
-        duk_push_fixed_buffer(ctx, dim*elsz);
+        if(type == rp_vec_b8)
+            duk_push_fixed_buffer(ctx, (dim + 7) >> 3); /* 1 bit per dim */
+        else
+            duk_push_fixed_buffer(ctx, dim*elsz);
         //buffer is at -1
     }
     else if(duk_is_array(ctx, 1))
@@ -1555,6 +1930,7 @@ static duk_ret_t new_vector(duk_context *ctx)
             case rp_vec_bf16: num_to_bf16(ctx);break;
             case rp_vec_i8:   rp_num_to_i8(ctx);break;
             case rp_vec_u8:   rp_num_to_u8(ctx);break;
+            case rp_vec_b8:   rp_num_to_bit(ctx);break; /* binarize (array@0, cutoff@1) */
             default:     break; //won't happen, silence warnings
         }
 
@@ -1565,10 +1941,17 @@ static duk_ret_t new_vector(duk_context *ctx)
         duk_size_t sz;
         (void)REQUIRE_BUFFER_DATA(ctx, 1,  &sz, "new rampart.vector() - second argument, if present, must be a buffer (vector)");
 
-        if(sz % elsz)
-            RP_THROW(ctx,  "new rampart.vector(%s, %lu, buf) - buf length(%lu) is not a multiple of vec type size(%lu)",
-                itype, dim, sz, elsz);
-        dim = sz/elsz;
+        if(type == rp_vec_b8)
+        {
+            dim = sz * 8; /* 8 bits per byte */
+        }
+        else
+        {
+            if(sz % elsz)
+                RP_THROW(ctx,  "new rampart.vector(%s, %lu, buf) - buf length(%lu) is not a multiple of vec type size(%lu)",
+                    itype, dim, sz, elsz);
+            dim = sz/elsz;
+        }
         duk_pull(ctx, 1);
         //buffer is at -1
     }
@@ -1681,6 +2064,38 @@ void duk_vector_init(duk_context *ctx)
 
     duk_push_c_function(ctx, rp_bf16_to_f32, 1);
     duk_put_prop_string(ctx, -2, "bf16ToF32");
+
+    /* binary quantization: <type>ToBit(vec[, cutoff]) -> packed b8 buffer */
+    duk_push_c_function(ctx, rp_num_to_bit, 2);
+    duk_put_prop_string(ctx, -2, "numbersToBit");
+    duk_push_c_function(ctx, rp_f64_to_bit, 2);
+    duk_put_prop_string(ctx, -2, "f64ToBit");
+    duk_push_c_function(ctx, rp_f32_to_bit, 2);
+    duk_put_prop_string(ctx, -2, "f32ToBit");
+    duk_push_c_function(ctx, rp_f16_to_bit, 2);
+    duk_put_prop_string(ctx, -2, "f16ToBit");
+    duk_push_c_function(ctx, rp_bf16_to_bit, 2);
+    duk_put_prop_string(ctx, -2, "bf16ToBit");
+    duk_push_c_function(ctx, rp_i8_to_bit, 2);
+    duk_put_prop_string(ctx, -2, "i8ToBit");
+    duk_push_c_function(ctx, rp_u8_to_bit, 2);
+    duk_put_prop_string(ctx, -2, "u8ToBit");
+
+    /* b8 reconstruction (asymmetric): bitTo<X>(buf[, zeroPoint]); + u8->i8 rebase */
+    duk_push_c_function(ctx, rp_bit_to_f64, 2);
+    duk_put_prop_string(ctx, -2, "bitToF64");
+    duk_push_c_function(ctx, rp_bit_to_f32, 2);
+    duk_put_prop_string(ctx, -2, "bitToF32");
+    duk_push_c_function(ctx, rp_bit_to_f16, 2);
+    duk_put_prop_string(ctx, -2, "bitToF16");
+    duk_push_c_function(ctx, rp_bit_to_bf16, 2);
+    duk_put_prop_string(ctx, -2, "bitToBf16");
+    duk_push_c_function(ctx, rp_bit_to_i8, 2);
+    duk_put_prop_string(ctx, -2, "bitToI8");
+    duk_push_c_function(ctx, rp_bit_to_u8, 2);
+    duk_put_prop_string(ctx, -2, "bitToU8");
+    duk_push_c_function(ctx, rp_u8_to_i8, 2);
+    duk_put_prop_string(ctx, -2, "u8ToI8");
 
     duk_push_c_function(ctx, num_to_f64, 1);
     duk_put_prop_string(ctx, -2, "numbersToF64");
