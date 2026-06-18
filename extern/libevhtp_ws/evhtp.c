@@ -4639,6 +4639,105 @@ evhtp_bind_socket(evhtp_t * htp, const char * baddr, uint16_t port, int backlog)
     return evhtp_bind_sockaddr(htp, sa, sin_len, backlog);
 }         /* evhtp_bind_socket */
 
+/* rampart: bind a listening socket WITHOUT attaching it to an evhtp_t.
+ * This is the privileged half of evhtp_bind_sockaddr() (socket + sockopts +
+ * bind) split out so the bind can happen up front -- e.g. while still root,
+ * before privileges are dropped -- and the resulting fd handed to
+ * evhtp_accept_socket() later (which does the listen()/evconnlistener and
+ * needs no privilege). Returns the bound fd, or -1 on error. Socket options
+ * mirror htp__serv_setsockopts_() but take no evhtp_t, so a socket can be
+ * bound before any htp exists. */
+evutil_socket_t
+evhtp_prebind_sockaddr(struct sockaddr * sa, size_t sin_len)
+{
+    evutil_socket_t fd = -1;
+    int             on = 1;
+
+    if (sa == NULL) {
+        return -1;
+    }
+
+#ifndef WIN32
+    signal(SIGPIPE, SIG_IGN);
+#endif
+
+    if ((fd = socket(sa->sa_family, SOCK_STREAM, 0)) == -1) {
+        log_error("couldn't create socket");
+        return -1;
+    }
+
+    evutil_make_socket_closeonexec(fd);
+    evutil_make_socket_nonblocking(fd);
+
+    /* mirror htp__serv_setsockopts_'s DEFAULTS (KEEPALIVE + REUSEADDR). NOT
+       SO_REUSEPORT: stock evhtp only sets it behind EVHTP_FLAG_ENABLE_REUSEPORT
+       (off by default), and enabling it here lets a second process bind the
+       same port and steal connections. */
+    setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, (void *)&on, sizeof(on));
+    setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, (void *)&on, sizeof(on));
+
+    if (sa->sa_family == AF_INET6) {
+        if (setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, (void *)&on, sizeof(on)) == -1) {
+            evutil_closesocket(fd);
+            return -1;
+        }
+    }
+
+    if (bind(fd, sa, sin_len) == -1) {
+        evutil_closesocket(fd);
+        return -1;
+    }
+
+    return fd;
+}         /* evhtp_prebind_sockaddr */
+
+/* rampart: address-string form of evhtp_prebind_sockaddr (mirrors
+ * evhtp_bind_socket's "ipv6:"/"unix:"/"ipv4:"/bare resolution). */
+evutil_socket_t
+evhtp_prebind_socket(const char * baddr, uint16_t port)
+{
+#ifndef NO_SYS_UN
+    struct sockaddr_un  sockun = { 0 };
+#endif
+    struct sockaddr   * sa;
+    struct sockaddr_in6 sin6   = { 0 };
+    struct sockaddr_in  sin    = { 0 };
+    size_t              sin_len;
+
+    if (!strncmp(baddr, "ipv6:", 5)) {
+        baddr           += 5;
+        sin_len          = sizeof(struct sockaddr_in6);
+        sin6.sin6_port   = htons(port);
+        sin6.sin6_family = AF_INET6;
+        evutil_inet_pton(AF_INET6, baddr, &sin6.sin6_addr);
+        sa = (struct sockaddr *)&sin6;
+    } else if (!strncmp(baddr, "unix:", 5)) {
+#ifndef NO_SYS_UN
+        baddr += 5;
+        if (strlen(baddr) >= sizeof(sockun.sun_path)) {
+            return -1;
+        }
+        sin_len           = sizeof(struct sockaddr_un);
+        sockun.sun_family = AF_UNIX;
+        strncpy(sockun.sun_path, baddr, strlen(baddr));
+        sa = (struct sockaddr *)&sockun;
+#else
+        return -1;
+#endif
+    } else {
+        if (!strncmp(baddr, "ipv4:", 5)) {
+            baddr += 5;
+        }
+        sin_len             = sizeof(struct sockaddr_in);
+        sin.sin_family      = AF_INET;
+        sin.sin_port        = htons(port);
+        sin.sin_addr.s_addr = inet_addr(baddr);
+        sa = (struct sockaddr *)&sin;
+    }
+
+    return evhtp_prebind_sockaddr(sa, sin_len);
+}         /* evhtp_prebind_socket */
+
 void
 evhtp_callbacks_free(evhtp_callbacks_t * callbacks)
 {
@@ -5309,7 +5408,7 @@ evhtp_ssl_init(evhtp_t * htp, evhtp_ssl_cfg_t * cfg)
     long          cache_mode;
     unsigned char c;
 
-    if (cfg == NULL || htp == NULL || cfg->pemfile == NULL) {
+    if (cfg == NULL || htp == NULL || (cfg->pemfile == NULL && cfg->cert_buf == NULL)) {
         return -1;
     }
 
@@ -5444,11 +5543,51 @@ evhtp_ssl_init(evhtp_t * htp, evhtp_ssl_cfg_t * cfg)
             break;
     }         /* switch */
 
-    SSL_CTX_use_certificate_chain_file(htp->ssl_ctx, cfg->pemfile);
+    /* rampart: in-memory cert chain (mirrors SSL_CTX_use_certificate_chain_file:
+       leaf via X509_AUX, then any remaining certs as the chain) */
+    if (cfg->cert_buf != NULL) {
+        BIO  * cbio = BIO_new_mem_buf(cfg->cert_buf, -1);
+        X509 * leaf = cbio ? PEM_read_bio_X509_AUX(cbio, NULL, NULL, NULL) : NULL;
+
+        if (leaf == NULL) {
+            if (cbio) BIO_free(cbio);
+            return -1;
+        }
+        SSL_CTX_use_certificate(htp->ssl_ctx, leaf);
+        X509_free(leaf);
+
+        SSL_CTX_clear_chain_certs(htp->ssl_ctx);
+        {
+            X509 * ca;
+            while ((ca = PEM_read_bio_X509(cbio, NULL, NULL, NULL)) != NULL) {
+                /* add0: takes ownership, do not free */
+                SSL_CTX_add0_chain_cert(htp->ssl_ctx, ca);
+            }
+        }
+        BIO_free(cbio);
+        /* the leaf is loaded; reaching EOF while reading optional chain certs
+           queues a benign PEM "no start line" error (same as
+           SSL_CTX_use_certificate_chain_file does internally) -- clear it so
+           the caller's error-queue check does not treat it as a failure */
+        ERR_clear_error();
+    } else {
+        SSL_CTX_use_certificate_chain_file(htp->ssl_ctx, cfg->pemfile);
+    }
 
     char * const key = cfg->privfile ?  cfg->privfile : cfg->pemfile;
 
-    if (cfg->decrypt_cb != NULL) {
+    if (cfg->key_buf != NULL) {
+        /* rampart: in-memory private key */
+        BIO      * kbio = BIO_new_mem_buf(cfg->key_buf, -1);
+        EVP_PKEY * pk   = kbio ? PEM_read_bio_PrivateKey(kbio, NULL, NULL, NULL) : NULL;
+
+        if (kbio) BIO_free(kbio);
+        if (pk == NULL) {
+            return -1;
+        }
+        SSL_CTX_use_PrivateKey(htp->ssl_ctx, pk);
+        EVP_PKEY_free(pk);
+    } else if (cfg->decrypt_cb != NULL) {
         EVP_PKEY * pkey = cfg->decrypt_cb(key);
 
         if (pkey == NULL) {

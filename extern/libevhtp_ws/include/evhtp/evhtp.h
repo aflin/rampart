@@ -572,6 +572,13 @@ struct evhtp_ssl_cfg {
     evhtp_ssl_scache_get    scache_get;
     evhtp_ssl_scache_del    scache_del;
     void                  * args;
+    /* rampart: in-memory PEM cert chain / private key (NUL-terminated). When
+       set, evhtp_ssl_init loads from these instead of pemfile/privfile, so the
+       cert/key are never read from disk by the server -- e.g. letsencrypt keys
+       behind a 0700 dir, read as root and passed via the sslCert/sslKey
+       options, or to drop privileges before any key file would be opened. */
+    char                  * cert_buf;
+    char                  * key_buf;
 };
 #endif
 
@@ -893,6 +900,11 @@ EVHTP_EXPORT void evhtp_unbind_sockets(evhtp_t * htp);
  * @return 0 on success, -1 on error (check errno)
  */
 EVHTP_EXPORT int evhtp_accept_socket(evhtp_t * htp, evutil_socket_t sock, int backlog);
+
+/* rampart: bind a listening socket up front (while privileged), to be handed
+ * to evhtp_accept_socket() later. See evhtp.c. Return bound fd or -1. */
+EVHTP_EXPORT evutil_socket_t evhtp_prebind_socket(const char * baddr, uint16_t port);
+EVHTP_EXPORT evutil_socket_t evhtp_prebind_sockaddr(struct sockaddr * sa, size_t sin_len);
 
 /**
  * @brief bind to an already allocated sockaddr.

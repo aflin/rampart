@@ -399,8 +399,9 @@ function firstChecks(serverConf)
             return serr(`could not stat server root "${wd}"`);
         if((st.mode & 7) != 7) { //if not world read/write/exec
             if(st.owner != unprivUser)
-                return serr(`${wd} should be owned by '${unprivUser}' instead of '${st.owner}'`);
-        } 
+                return serr(`server root "${wd}" is owned by '${st.owner}', but the server drops privileges to user '${unprivUser}'.\n` +
+                            `       Either set  user: '${st.owner}'  in the config, or change ownership of "${wd}" (and its contents) to '${unprivUser}'.`);
+        }
     }
 
     return serverConf;

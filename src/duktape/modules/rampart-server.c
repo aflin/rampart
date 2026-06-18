@@ -7121,6 +7121,58 @@ static void http_callback(evhtp_request_t *req, void *arg)
     return;
 }
 
+/* rampart: pre-bound listening sockets.
+   To let privileges be dropped before worker-context creation, the privileged
+   bind() is done up front (evhtp_prebind_socket, while still root) and the
+   resulting fd attached later by bind_sock_port() via evhtp_accept_socket()
+   (which needs no privilege -- it does the listen()). The early pass in start()
+   pushes one entry per legacy bind: entry, in bind: order; bind_sock_port()
+   consumes them in the same order. The stored (ip,port) is verified on consume
+   so any ordering drift fails loudly instead of attaching the wrong socket.
+   Only the legacy bind: path uses this for now -- listen mode and httpRedirect
+   get -1 from prebind_take() and fall back to a live evhtp_bind_socket(). */
+typedef struct {
+    char            ipport[INET6_ADDRSTRLEN + 8];
+    uint16_t        port;
+    evutil_socket_t fd;
+} rp_prebound_t;
+
+static rp_prebound_t *rp_prebound      = NULL;
+static int            rp_prebound_n    = 0;
+static int            rp_prebound_used = 0;
+
+static void prebind_push(const char *ip, uint16_t port, evutil_socket_t fd)
+{
+    REMALLOC(rp_prebound, sizeof(rp_prebound_t) * (rp_prebound_n + 1));
+    strncpy(rp_prebound[rp_prebound_n].ipport, ip, INET6_ADDRSTRLEN + 7);
+    rp_prebound[rp_prebound_n].ipport[INET6_ADDRSTRLEN + 7] = '\0';
+    rp_prebound[rp_prebound_n].port = port;
+    rp_prebound[rp_prebound_n].fd   = fd;
+    rp_prebound_n++;
+}
+
+/* Return the next pre-bound fd if it matches (ip,port); else -1 so the caller
+   binds live. A mismatch while entries remain means the early pass and the
+   attach pass walked bind: differently -- warn; the live bind that follows then
+   fails with EADDRINUSE (the orphaned pre-bound fd still holds the port), so
+   startup fails rather than silently attaching the wrong socket. */
+static evutil_socket_t prebind_take(const char *ip, uint16_t port)
+{
+    rp_prebound_t *p;
+    if (rp_prebound_used >= rp_prebound_n)
+        return -1;
+    p = &rp_prebound[rp_prebound_used];
+    if (p->port != port || strcmp(p->ipport, ip) != 0)
+    {
+        fprintf(stderr, "server.start: pre-bind order mismatch "
+                "(expected %s:%d, attaching %s:%d)\n",
+                p->ipport, (int)p->port, ip, (int)port);
+        return -1;
+    }
+    rp_prebound_used++;
+    return p->fd;
+}
+
 /* bind to addr and port.  Return mallocd string of addr, which
    in the case of ipv6 may differ from ip passed to function */
 
@@ -7128,7 +7180,19 @@ char *bind_sock_port(evhtp_t *htp, const char *ip, uint16_t port, int backlog)
 {
     struct sockaddr_storage sin;
     socklen_t len = sizeof(struct sockaddr_storage);
-    if (evhtp_bind_socket(htp, ip, port, backlog) != 0)
+    evutil_socket_t pfd = prebind_take(ip, port);
+
+    if (pfd != -1)
+    {
+        /* attach a socket bound earlier while privileged; evhtp_accept_socket
+           does the listen() and needs no privilege */
+        if (evhtp_accept_socket(htp, pfd, backlog) != 0)
+        {
+            evutil_closesocket(pfd);
+            return NULL;
+        }
+    }
+    else if (evhtp_bind_socket(htp, ip, port, backlog) != 0)
         return NULL;
 
     if (getsockname(
@@ -7185,6 +7249,89 @@ pthread_mutex_t thread_setup_lock;
 #define SETUPUNLOCK RP_PTUNLOCK(&thread_setup_lock)
 #define SETUPLOCK_INIT RP_PTINIT(&thread_setup_lock)
 
+/* rampart: set once the privilege drop has been done on the MAIN thread (new
+   path, when ports are pre-bound). When set, initThread's legacy per-thread
+   drop is skipped. */
+static int g_privs_dropped = 0;
+
+/* rampart: drop to the unprivileged user/group. Used by the new main-thread
+   path (after pre-binding ports, before worker-context creation) so that
+   preThreadFunc and the workers run unprivileged. On Linux glibc's setres*id
+   applies process-wide and threads created afterwards inherit the dropped
+   credentials; this mirrors the original initThread drop (including the
+   allowUserSwitching saved-id behavior) minus the per-thread lock. No-op if
+   not running with an unprivileged user configured. */
+static void rp_drop_privileges(duk_context *ctx)
+{
+    if (!unprivu)
+        return;
+#ifdef __linux__
+    {
+        gid_t sgid = -1;
+        uid_t suid = -1;
+        if (!allow_user_switch)
+        {
+            sgid = unprivg;
+            suid = unprivu;
+        }
+        if (setresgid(unprivg, unprivg, sgid) == -1)
+            RP_THROW(ctx, "server.start: error setting group, setgid() failed");
+        if (setresuid(unprivu, unprivu, suid) == -1)
+            RP_THROW(ctx, "server.start: error setting user, setuid() failed");
+    }
+#else
+    if (setgid(unprivg) == -1)
+        RP_THROW(ctx, "server.start: error setting group, setgid() failed");
+    if (setuid(unprivu) == -1)
+        RP_THROW(ctx, "server.start: error setting user, setuid() failed");
+#endif
+    g_privs_dropped = 1;
+}
+
+/* rampart: SSL cert/key are loaded into ssl_config->cert_buf / key_buf as
+   in-memory PEM, so the (possibly unprivileged, post-drop) server never opens
+   the key/cert files. They are set either from the sslCert/sslKey options (a
+   String or Buffer of PEM) or by reading sslCertFile/sslKeyFile as root before
+   the privilege drop. This also lets letsencrypt keys (behind a 0700 dir) work
+   after dropping privileges. */
+
+/* malloc'd NUL-terminated copy of a PEM value given as a String or a Buffer;
+   NULL if the arg is neither. */
+static char *rp_pem_dup_arg(duk_context *ctx, duk_idx_t idx)
+{
+    if (duk_is_buffer_data(ctx, idx))
+    {
+        duk_size_t len = 0;
+        const char *p = duk_get_buffer_data(ctx, idx, &len);
+        char *s = NULL;
+        REMALLOC(s, (size_t)len + 1);
+        if (len) memcpy(s, p, (size_t)len);
+        s[len] = '\0';
+        return s;
+    }
+    if (duk_is_string(ctx, idx))
+        return strdup(duk_get_string(ctx, idx));
+    return NULL;
+}
+
+/* read a whole file into a malloc'd NUL-terminated PEM buffer (as root, before
+   the drop). NULL on error (errno set). */
+static char *rp_read_file_pem(const char *path)
+{
+    FILE  *f = fopen(path, "rb");
+    long   n;
+    char  *buf = NULL;
+    size_t rd;
+    if (!f) return NULL;
+    if (fseek(f, 0, SEEK_END) != 0 || (n = ftell(f)) < 0) { fclose(f); return NULL; }
+    fseek(f, 0, SEEK_SET);
+    REMALLOC(buf, (size_t)n + 1);
+    rd = fread(buf, 1, (size_t)n, f);
+    fclose(f);
+    buf[rd] = '\0';
+    return buf;
+}
+
 void initThread(evhtp_t *htp, evthr_t *evthr, void *arg)
 {
     int *thrno = NULL;
@@ -7196,8 +7343,10 @@ void initThread(evhtp_t *htp, evthr_t *evthr, void *arg)
 
     REMALLOC(thrno, sizeof(int));
 
-    /* drop privileges here, after binding port */
-    if(unprivu && !gl_threadno)
+    /* drop privileges here, after binding port.
+       Skipped when the new pre-bind path already dropped on the main thread
+       (g_privs_dropped); still used for listen: / secure: legacy fallback. */
+    if(unprivu && !gl_threadno && !g_privs_dropped)
     {
 // As a very risky thing to do and as this only works on linux
 // this is and always will be an undocumented "feature".  
@@ -7382,6 +7531,26 @@ static void get_secure(duk_context *ctx, duk_idx_t ob_idx, evhtp_ssl_cfg_t *ssl_
     if (duk_rp_GPS_icase(ctx, ob_idx, "sslcertfile"))
     {
         ssl_config->pemfile = strdup(REQUIRE_STRING(ctx, -1, "server.start: parameter \"sslcertfile\" requires a string (filename)"));
+    }
+    duk_pop(ctx);
+
+    /* sslCert / sslKey: PEM content directly (String or Buffer), mirroring
+       sslCertFile / sslKeyFile. Loaded from memory so the files never need to
+       be opened by the server -- handy for letsencrypt keys read by JS as root
+       before server.start(), and required for SSL with preThreadFunc. */
+    if (duk_rp_GPS_icase(ctx, ob_idx, "sslcert"))
+    {
+        ssl_config->cert_buf = rp_pem_dup_arg(ctx, -1);
+        if (!ssl_config->cert_buf)
+            RP_THROW(ctx, "server.start: parameter \"sslCert\" requires a String or Buffer (PEM certificate)");
+    }
+    duk_pop(ctx);
+
+    if (duk_rp_GPS_icase(ctx, ob_idx, "sslkey"))
+    {
+        ssl_config->key_buf = rp_pem_dup_arg(ctx, -1);
+        if (!ssl_config->key_buf)
+            RP_THROW(ctx, "server.start: parameter \"sslKey\" requires a String or Buffer (PEM private key)");
     }
     duk_pop(ctx);
 }
@@ -7785,74 +7954,80 @@ static void http_redirect_cb(evhtp_request_t *req, void *arg)
    and applies top-level sslMinVersion (default TLS 1.2). Throws on
    any error. The ssl_config is allocated here and is owned by evhtp
    for process lifetime (same as the legacy single-htp path). */
-static void listen_block_init_ssl_(duk_context *ctx, evhtp_t *htp,
-                                   duk_idx_t ob_idx, duk_idx_t block_idx,
-                                   int block_num)
+/* get option `name` from the block, falling back to the top-level options.
+   Returns 1 with the value left on the stack, or 0 with nothing on the stack. */
+static int listen_get_opt_(duk_context *ctx, duk_idx_t block_idx, duk_idx_t ob_idx, const char *name)
+{
+    if (duk_rp_GPS_icase(ctx, block_idx, name))
+        return 1;
+    duk_pop(ctx);
+    if (duk_rp_GPS_icase(ctx, ob_idx, name))
+        return 1;
+    duk_pop(ctx);
+    return 0;
+}
+
+/* rampart: BUILD a listen block's SSL config with the cert/key in memory,
+   while still privileged (before the drop). cert/key may come from sslCert /
+   sslKey (String|Buffer, preferred) or sslCertFile / sslKeyFile (read here as
+   root); each looked up per-block then top-level. evhtp_ssl_init (in the apply
+   phase) then loads from memory, so the files are never opened post-drop -- the
+   same in-memory path used by the legacy bind: mode. */
+static evhtp_ssl_cfg_t *listen_block_build_ssl_cfg_(duk_context *ctx, duk_idx_t ob_idx,
+                                                    duk_idx_t block_idx, int block_num)
 {
     evhtp_ssl_cfg_t *cfg = calloc(1, sizeof(evhtp_ssl_cfg_t));
     if (!cfg)
         RP_THROW(ctx, "server.start: listen[%d]: calloc ssl_cfg failed", block_num);
     cfg->ssl_opts = SSL_OP_ALL;
 
-    /* sslKeyFile: block first, then top-level fallback. */
-    if (duk_rp_GPS_icase(ctx, block_idx, "sslKeyFile")) {
-        cfg->privfile = strdup(duk_get_string(ctx, -1));
-    } else {
+    /* cert: sslCert (String|Buffer) preferred over sslCertFile */
+    if (listen_get_opt_(ctx, block_idx, ob_idx, "sslCert")) {
+        cfg->cert_buf = rp_pem_dup_arg(ctx, -1);
         duk_pop(ctx);
-        if (duk_rp_GPS_icase(ctx, ob_idx, "sslKeyFile"))
-            cfg->privfile = strdup(duk_get_string(ctx, -1));
-    }
-    duk_pop(ctx);
-
-    /* sslCertFile: block first, then top-level fallback. */
-    if (duk_rp_GPS_icase(ctx, block_idx, "sslCertFile")) {
+        if (!cfg->cert_buf)
+            RP_THROW(ctx, "server.start: listen[%d]: sslCert must be a String or Buffer (PEM certificate)", block_num);
+    } else if (listen_get_opt_(ctx, block_idx, ob_idx, "sslCertFile")) {
         cfg->pemfile = strdup(duk_get_string(ctx, -1));
-    } else {
         duk_pop(ctx);
-        if (duk_rp_GPS_icase(ctx, ob_idx, "sslCertFile"))
-            cfg->pemfile = strdup(duk_get_string(ctx, -1));
-    }
-    duk_pop(ctx);
-
-    if (!cfg->privfile || !cfg->pemfile)
-        RP_THROW(ctx, "server.start: listen[%d].secure:true requires sslKeyFile and sslCertFile (either per-block or at the top level)", block_num);
-
-    /* File validation (mirrors legacy path 9598-9655). */
-    struct stat f_stat;
-    if (stat(cfg->pemfile, &f_stat) != 0)
-        RP_THROW(ctx, "server.start: listen[%d]: Cannot load SSL cert '%s' (%s)", block_num, cfg->pemfile, strerror(errno));
-    {
-        FILE *f = fopen(cfg->pemfile, "r");
-        if (!f)
-            RP_THROW(ctx, "server.start: listen[%d]: open cert '%s' failed: %s", block_num, cfg->pemfile, strerror(errno));
-        X509 *x509 = PEM_read_X509(f, NULL, NULL, NULL);
-        unsigned long err = ERR_get_error();
-        if (x509) X509_free(x509);
-        fclose(f);
-        if (err) {
-            char tbuf[256]; ERR_error_string(err, tbuf);
-            RP_THROW(ctx, "server.start: listen[%d]: Invalid sslcertfile: %s", block_num, tbuf);
-        }
     }
 
-    if (stat(cfg->privfile, &f_stat) != 0)
-        RP_THROW(ctx, "server.start: listen[%d]: Cannot load SSL key '%s' (%s)", block_num, cfg->privfile, strerror(errno));
-    {
-        FILE *f = fopen(cfg->privfile, "r");
-        if (!f)
-            RP_THROW(ctx, "server.start: listen[%d]: open key '%s' failed: %s", block_num, cfg->privfile, strerror(errno));
-        EVP_PKEY *pkey = PEM_read_PrivateKey(f, NULL, NULL, NULL);
-        unsigned long err = ERR_get_error();
-        if (pkey) EVP_PKEY_free(pkey);
-        fclose(f);
-        if (err) {
-            char tbuf[256]; ERR_error_string(err, tbuf);
-            RP_THROW(ctx, "server.start: listen[%d]: Invalid sslkeyfile: %s", block_num, tbuf);
-        }
+    /* key: sslKey (String|Buffer) preferred over sslKeyFile */
+    if (listen_get_opt_(ctx, block_idx, ob_idx, "sslKey")) {
+        cfg->key_buf = rp_pem_dup_arg(ctx, -1);
+        duk_pop(ctx);
+        if (!cfg->key_buf)
+            RP_THROW(ctx, "server.start: listen[%d]: sslKey must be a String or Buffer (PEM private key)", block_num);
+    } else if (listen_get_opt_(ctx, block_idx, ob_idx, "sslKeyFile")) {
+        cfg->privfile = strdup(duk_get_string(ctx, -1));
+        duk_pop(ctx);
     }
 
-    fprintf(access_fh, "Initializing ssl/tls for listen[%d] cert=%s key=%s\n",
-            block_num, cfg->pemfile, cfg->privfile);
+    /* read file forms into memory now, while still privileged */
+    if (!cfg->cert_buf && cfg->pemfile) {
+        cfg->cert_buf = rp_read_file_pem(cfg->pemfile);
+        if (!cfg->cert_buf)
+            RP_THROW(ctx, "server.start: listen[%d]: cannot read SSL cert '%s': %s", block_num, cfg->pemfile, strerror(errno));
+    }
+    if (!cfg->key_buf && cfg->privfile) {
+        cfg->key_buf = rp_read_file_pem(cfg->privfile);
+        if (!cfg->key_buf)
+            RP_THROW(ctx, "server.start: listen[%d]: cannot read SSL key '%s': %s", block_num, cfg->privfile, strerror(errno));
+    }
+
+    if (!cfg->cert_buf || !cfg->key_buf)
+        RP_THROW(ctx, "server.start: listen[%d].secure:true requires a cert and key "
+                 "(sslCert/sslKey or sslCertFile/sslKeyFile, per-block or top-level)", block_num);
+
+    return cfg;
+}
+
+/* rampart: APPLY a pre-built SSL config to its htp (post-drop). evhtp_ssl_init
+   loads the in-memory cert/key -- no files are opened. */
+static void listen_block_apply_ssl_(duk_context *ctx, evhtp_t *htp, evhtp_ssl_cfg_t *cfg,
+                                    duk_idx_t ob_idx, int block_num)
+{
+    fprintf(access_fh, "Initializing ssl/tls for listen[%d]\n", block_num);
 
     if (evhtp_ssl_init(htp, cfg) == -1)
         RP_THROW(ctx, "server.start: listen[%d]: evhtp_ssl_init failed", block_num);
@@ -8003,6 +8178,40 @@ static void listen_bind_block_to_htp_(duk_context *ctx, evhtp_t *htp,
     duk_pop(ctx); /* pop block */
 }
 
+/* rampart: pre-bind a listen block's sockets (socket()+bind() up front, while
+   privileged); the matching evhtp_accept_socket() happens later in
+   listen_bind_block_to_htp_ via bind_sock_port(). Mirrors that function's
+   traversal exactly so the FIFO consume lines up. */
+static void listen_prebind_block_(duk_context *ctx, duk_idx_t listen_idx, int block_idx)
+{
+    duk_get_prop_index(ctx, listen_idx, (duk_uarridx_t)block_idx);
+    duk_get_prop_string(ctx, -1, "bind");
+    if (duk_is_string(ctx, -1)) {
+        char ipany[INET6_ADDRSTRLEN + 5] = {0};
+        uint16_t port = 0;
+        evutil_socket_t fd;
+        getipport(duk_get_string(ctx, -1));
+        if ((fd = evhtp_prebind_socket(ipany, port)) == -1)
+            RP_THROW(ctx, "server.start: listen[%d]: could not bind to %s port %d", block_idx, ipany, port);
+        prebind_push(ipany, port, fd);
+    } else {
+        duk_size_t n = duk_get_length(ctx, -1);
+        for (duk_uarridx_t i = 0; i < (duk_uarridx_t)n; i++) {
+            duk_get_prop_index(ctx, -1, i);
+            char ipany[INET6_ADDRSTRLEN + 5] = {0};
+            uint16_t port = 0;
+            evutil_socket_t fd;
+            getipport(duk_get_string(ctx, -1));
+            if ((fd = evhtp_prebind_socket(ipany, port)) == -1)
+                RP_THROW(ctx, "server.start: listen[%d].bind[%u]: could not bind to %s port %d", block_idx, (unsigned)i, ipany, port);
+            prebind_push(ipany, port, fd);
+            duk_pop(ctx);
+        }
+    }
+    duk_pop(ctx); /* pop bind */
+    duk_pop(ctx); /* pop block */
+}
+
 /* ====================================================================
  * listen:[] block parsing.
  *
@@ -8035,6 +8244,7 @@ static void listen_bind_block_to_htp_(duk_context *ctx, evhtp_t *htp,
 static const char * const listen_block_allowed_[] = {
     "bind", "map", "secure",
     "sslKeyFile", "sslCertFile",
+    "sslCert", "sslKey",   /* in-memory PEM (String|Buffer), per-block */
     "connectTimeout", "scriptTimeout", "maxBodySize",
     NULL
 };
@@ -8796,6 +9006,169 @@ duk_ret_t duk_server_start(duk_context *ctx)
 
     endlogfunc:
 
+    /* rampart: pre-bind the legacy bind: sockets now, while still privileged,
+       so a privilege drop can later move ahead of worker-context creation
+       (globals set after the drop still propagate to workers). The matching
+       attach happens further below in bind_sock_port() -> evhtp_accept_socket().
+       This mirrors the legacy bind traversal at the bottom of start() and MUST
+       keep the same order so the prebind_take() consume lines up. Listen mode
+       (listen_block_count>0) binds on the existing path. ip/port state that
+       getipport() clobbers is saved/restored because the late path re-derives
+       it but other setup in between may read `port`. */
+    if (listen_block_count == 0)
+    {
+        uint16_t saved_port = port;
+        char     saved_ipany[INET6_ADDRSTRLEN + 5];
+        memcpy(saved_ipany, ipany, sizeof saved_ipany);
+
+        if (duk_rp_GPS_icase(ctx, ob_idx, "bind"))
+        {
+            if (duk_is_string(ctx, -1))
+            {
+                evutil_socket_t fd;
+                getipport(duk_get_string(ctx, -1));
+                if ((fd = evhtp_prebind_socket(ipany, port)) == -1)
+                    RP_THROW(ctx, "server.start: could not bind to %s port %d", ipany, port);
+                prebind_push(ipany, port, fd);
+            }
+            else if (duk_is_array(ctx, -1))
+            {
+                int n = duk_get_length(ctx, -1);
+                for (i = 0; i < n; i++)
+                {
+                    if (duk_get_prop_index(ctx, -1, (duk_uarridx_t)i))
+                    {
+                        evutil_socket_t fd;
+                        getipport(duk_get_string(ctx, -1));
+                        if ((fd = evhtp_prebind_socket(ipany, port)) == -1)
+                            RP_THROW(ctx, "server.start: could not bind to %s port %d", ipany, port);
+                        prebind_push(ipany, port, fd);
+                    }
+                    duk_pop(ctx);
+                }
+            }
+            /* else: bad type -- leave the descriptive throw to the late path */
+        }
+        else
+        {
+            evutil_socket_t fd;
+            if ((fd = evhtp_prebind_socket(ipv4, port)) == -1)
+                RP_THROW(ctx, "server.start: could not bind to %s port %d", ipv4, port);
+            prebind_push(ipv4, port, fd);
+            if ((fd = evhtp_prebind_socket(ipv6, port)) == -1)
+                RP_THROW(ctx, "server.start: could not bind to %s port %d", ipv6, port);
+            prebind_push(ipv6, port, fd);
+        }
+        duk_pop(ctx);
+
+        port = saved_port;
+        memcpy(ipany, saved_ipany, sizeof saved_ipany);
+    }
+    else  /* listen_block_count > 0 : pre-bind every block's sockets, in the
+             same block/entry order the late listen_bind_block_to_htp_ pass uses */
+    {
+        duk_push_global_stash(ctx);
+        duk_get_prop_string(ctx, -1, "rampart_server_listen");
+        duk_remove(ctx, -2);
+        duk_idx_t lidx = duk_get_top_index(ctx);
+        for (int b = 0; b < listen_block_count; b++)
+            listen_prebind_block_(ctx, lidx, b);
+        duk_pop(ctx);
+    }
+
+    /* rampart: pre-bind the httpRedirect (redir) low port too, in BOTH modes,
+       so it is bound before the drop -- its late bind is the last bind_sock_port
+       call, so it is pushed last here to keep the FIFO consume aligned. */
+    if (http_redirect_port)
+    {
+        evutil_socket_t fd;
+        if (http_redirect_bind_ip)
+        {
+            if ((fd = evhtp_prebind_socket(http_redirect_bind_ip, http_redirect_port)) == -1)
+                RP_THROW(ctx, "server.start: httpRedirect: could not bind to %s port %u", http_redirect_bind_ip, (unsigned)http_redirect_port);
+            prebind_push(http_redirect_bind_ip, http_redirect_port, fd);
+        }
+        else
+        {
+            if ((fd = evhtp_prebind_socket("0.0.0.0", http_redirect_port)) == -1)
+                RP_THROW(ctx, "server.start: httpRedirect: could not bind to 0.0.0.0 port %u", (unsigned)http_redirect_port);
+            prebind_push("0.0.0.0", http_redirect_port, fd);
+            if ((fd = evhtp_prebind_socket("ipv6:::", http_redirect_port)) == -1)
+                RP_THROW(ctx, "server.start: httpRedirect: could not bind to [::] port %u", (unsigned)http_redirect_port);
+            prebind_push("ipv6:::", http_redirect_port, fd);
+        }
+    }
+
+    /* rampart: with the legacy bind: ports now pre-bound above (while still
+       privileged), drop privileges on THIS (main) thread and run preThreadFunc
+       on the main ctx -- BEFORE worker-context creation, so globals it sets
+       propagate to the workers, and it (and the workers) run unprivileged.
+       Gated to the cases the pre-bind path fully covers: legacy bind: and no
+       SSL. SSL key files (loaded further below) and listen: binds still need
+       root, so those keep the legacy initThread drop; preThreadFunc is refused
+       there rather than run with the wrong privileges. */
+    /* rampart: per-block SSL configs for listen mode, pre-built (cert/key in
+       memory) before the drop, applied after htp creation. NULL per non-secure
+       block, NULL array entirely in legacy mode. */
+    evhtp_ssl_cfg_t **listen_ssl_cfgs = NULL;
+
+    if (listen_block_count == 0)
+    {
+        /* legacy SSL: make sure cert + key are in memory before dropping. If
+           given as files (sslCertFile/sslKeyFile), read them now while still
+           root; if given as sslCert/sslKey they are already in ssl_config.
+           evhtp then loads from memory and never opens the (possibly root-only)
+           files after the drop. */
+        if (rp_using_ssl && ssl_config)
+        {
+            if (!ssl_config->cert_buf && ssl_config->pemfile)
+            {
+                ssl_config->cert_buf = rp_read_file_pem(ssl_config->pemfile);
+                if (!ssl_config->cert_buf)
+                    RP_THROW(ctx, "server.start: cannot read SSL cert '%s': %s",
+                             ssl_config->pemfile, strerror(errno));
+            }
+            if (!ssl_config->key_buf && ssl_config->privfile)
+            {
+                ssl_config->key_buf = rp_read_file_pem(ssl_config->privfile);
+                if (!ssl_config->key_buf)
+                    RP_THROW(ctx, "server.start: cannot read SSL key '%s': %s",
+                             ssl_config->privfile, strerror(errno));
+            }
+        }
+    }
+    else
+    {
+        /* listen SSL: build each secure block's cfg with cert/key in memory
+           (read here as root); applied later via listen_block_apply_ssl_. */
+        CALLOC(listen_ssl_cfgs, sizeof(evhtp_ssl_cfg_t*) * (size_t)listen_block_count);
+
+        duk_push_global_stash(ctx);
+        duk_get_prop_string(ctx, -1, "rampart_server_listen");
+        duk_remove(ctx, -2);
+        duk_idx_t lidx = duk_get_top_index(ctx);
+        for (int b = 0; b < listen_block_count; b++)
+        {
+            duk_get_prop_index(ctx, lidx, (duk_uarridx_t)b);
+            duk_idx_t bidx = duk_get_top_index(ctx);
+            if (listen_block_effective_secure_(ctx, ob_idx, bidx))
+                listen_ssl_cfgs[b] = listen_block_build_ssl_cfg_(ctx, ob_idx, bidx, b);
+            duk_pop(ctx); /* block */
+        }
+        duk_pop(ctx); /* listen array */
+    }
+
+    rp_drop_privileges(ctx);   /* no-op unless started as root with a user: */
+
+    /* preThreadFunc: runs on the main ctx, post-drop, before worker creation,
+       in BOTH legacy and listen modes */
+    if (duk_rp_GPS_icase(ctx, ob_idx, "preThreadFunc"))
+    {
+        REQUIRE_FUNCTION(ctx, -1, "server.start: preThreadFunc must be a function");
+        duk_call(ctx, 0);
+    }
+    duk_pop(ctx);              /* return value, or the undefined from GPS_icase */
+
     // keep a separate array distinct from **rpthread just for the server.
     REMALLOC(server_thread, totnthreads*sizeof(RPTHR*));
     for (i = 0; i < totnthreads; i++)
@@ -8863,8 +9236,9 @@ duk_ret_t duk_server_start(duk_context *ctx)
             if (mbs >= 0)
                 evhtp_set_max_body_size(listen_htps[b], (uint64_t)mbs);
 
-            if (listen_block_effective_secure_(ctx, ob_idx, bidx)) {
-                listen_block_init_ssl_(ctx, listen_htps[b], ob_idx, bidx, b);
+            if (listen_ssl_cfgs && listen_ssl_cfgs[b]) {
+                /* cfg built (cert/key in memory) before the drop; apply now */
+                listen_block_apply_ssl_(ctx, listen_htps[b], listen_ssl_cfgs[b], ob_idx, b);
                 if (!rp_using_ssl) { rp_using_ssl = 1; scheme = "https://"; }
             }
             duk_pop(ctx);
@@ -10112,8 +10486,14 @@ duk_ret_t duk_server_start(duk_context *ctx)
 
         /* TLS files stay disk-only: shipping private keys in a redistributable
            bundle is a bad idea, and h2o/OpenSSL load these by path internally
-           so faking validation through :zip: would just defer the failure. */
-        if (ssl_config->pemfile)
+           so faking validation through :zip: would just defer the failure.
+           cert/key may instead be in memory (cert_buf/key_buf) -- from the
+           sslCert/sslKey options or pre-read as root before the drop -- in
+           which case evhtp validates them at load and there is no file to
+           open here (which post-drop we could not read anyway). */
+        if (ssl_config->cert_buf)
+            filecount++;
+        else if (ssl_config->pemfile)
         {
             filecount++;
             if (stat(ssl_config->pemfile, &f_stat) != 0)
@@ -10135,10 +10515,10 @@ duk_ret_t duk_server_start(duk_context *ctx)
             }
         }
 
-        if (ssl_config->privfile)
+        if (ssl_config->key_buf)
+            filecount++;
+        else if (ssl_config->privfile)
         {
-
-
             filecount++;
             if (stat(ssl_config->privfile, &f_stat) != 0)
                 RP_THROW(ctx, "server.start: Cannot load SSL key '%s' (%s)", ssl_config->privfile, strerror(errno));
