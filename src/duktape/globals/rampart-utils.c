@@ -11397,7 +11397,15 @@ duk_ret_t rp_auto_scandate(duk_context *ctx)
         free(fmt);
 
         //printf("%d vs %d\n", dttmp.tm_year, dt_p->tm_year);
-        if(dttmp.tm_year < 0 && dt_p->tm_year>-1)
+        // For pre-1900 dates, some strptime() implementations (e.g. FreeBSD) normalize
+        // the tm through the tz database when %z is present, folding the zone's historical
+        // LMT into both tm_gmtoff and the time fields (America/Los_Angeles 1826:
+        // 19:07:47/-0800 becomes 19:14:49/-07:52:58).  glibc leaves the fields untouched.
+        // The offset is recovered separately into tzoff from the raw string below, so
+        // whenever the result is pre-1900 prefer the un-mangled fields from the %z-stripped
+        // parse.  (This also subsumes the original case: %z parse failed to set a pre-1900
+        // year while the stripped parse got it right.)
+        if(dttmp.tm_year < 0)
         {
             memcpy(dt_p, &dttmp, sizeof(struct tm));
         }
