@@ -222,7 +222,8 @@ pid = server.start({
         "/apps/":         {modulePath: appsdir}
     }
 });
-sleep(0.5);
+
+testFeature.waitServer(base + "/index.html");
 
 /* ---- helper ---- */
 function GET(path, cookie) {
@@ -607,7 +608,7 @@ pid2 = server.start({
     }
 });
 
-sleep(0.5);
+testFeature.waitServer(base2 + "/index.html");
 
 function GET2(path, token) {
     var opts = {};

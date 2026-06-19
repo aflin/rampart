@@ -99,7 +99,7 @@ server_pid = server.start({
     map: ws_map
 });
 
-sleep(0.5);
+testFeature.waitServer("http://127.0.0.1:8110/");
 testFeature("server is running", kill(server_pid, 0));
 
 /* *** Generate self-signed certificate for SSL server *** */
@@ -138,7 +138,7 @@ ssl_server_pid = server.start({
     map: ws_map
 });
 
-sleep(0.3);
+testFeature.waitServer("https://127.0.0.1:8111/");
 testFeature("SSL server is running", kill(ssl_server_pid, 0));
 
 /* *** Async test infrastructure *** */

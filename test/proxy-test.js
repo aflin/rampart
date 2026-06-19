@@ -91,7 +91,7 @@ upstream_pid = server.start({
     }
 });
 
-sleep(.5);
+testFeature.waitServer("http://127.0.0.1:8060/hello");
 testFeature("upstream server is running", kill(upstream_pid, 0));
 
 /* verify upstream directly */
@@ -130,7 +130,7 @@ proxy_pid = server.start({
     }
 });
 
-sleep(0.5);
+testFeature.waitServer("http://127.0.0.1:8061/api/hello");
 testFeature("proxy server is running", kill(proxy_pid, 0));
 
 /* Test basic proxy GET */

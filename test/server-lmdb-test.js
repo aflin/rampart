@@ -154,8 +154,8 @@ var pid=server.start(
 // if daemon==true then we get the pid of the detached process
 // otherwise server.start() doesn't start until end of script.
 
-/* give the forked server a chance to print its info*/
-sleep(1);
+/* wait until the forked server is actually accepting connections */
+testFeature.waitServer("http://127.0.0.1:8286/ltest");
 
 testFeature("server is running", rampart.utils.kill(pid,0) );
 

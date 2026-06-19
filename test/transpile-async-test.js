@@ -75,7 +75,7 @@ function start_echo_server() {
             "/get": function(req) { return {text: "ok"}; }
         }
     });
-    sleep(0.2);              /* let the forked server bind */
+    _baseTestFeature.waitServer("http://127.0.0.1:18287/get");   /* wait until it accepts connections */
     if (!kill(pid, 0)) {
         fprintf(stderr, "Failed to start echo server\n");
         return false;

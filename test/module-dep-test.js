@@ -150,7 +150,7 @@ server_pid = server.start({
     }
 });
 
-sleep(0.5);
+testFeature.waitServer("http://127.0.0.1:8119/test/srv_main");
 testFeature("server is running", kill(server_pid, 0));
 
 testFeature("server returns initial value", function() {

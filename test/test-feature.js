@@ -129,6 +129,42 @@ testFeature.mustContain = function(haystack, needle, lbl) {
         throw new Error(lbl + ': "' + haystack + '" missing "' + needle + '"');
 };
 
+/* ----- server readiness helper -----
+   server.start({daemon:true}) returns the (double-forked) child pid as soon
+   as it is known, which is BEFORE the grandchild process finishes bind()ing
+   and listen()ing.  A fixed sleep after start() is therefore racy: on slower
+   hosts first-accept can take well over a second.  Poll the port instead.
+
+       testFeature.waitServer("http://127.0.0.1:8295/");      // up to 10s
+       testFeature.waitServer("https://127.0.0.1:8287/x", 10);// explicit secs
+
+   testFeature carries this into thread.exec() workers via the globals copy
+   (the attached property survives), so `testFeature.waitServer(...)` works
+   inside a worker too.  It is also exposed on the constructor as
+   `require('./test-feature.js').waitServer(...)` for callers that have no
+   instance handy.
+
+   Any HTTP response (even 404/403/502) means the listener is up, so the URL
+   path need not exist.  insecure:true lets it probe https self-signed servers
+   and is harmless for http.  Returns true once answered, false on timeout.
+   Rampart-only (uses rampart-curl); required lazily so test-feature.js still
+   loads under node for dual-mode tests that never call this. */
+function _waitServer(url, seconds) {
+    if (seconds === undefined) seconds = 10;
+    var curl  = require("rampart-curl");
+    var sleep = rampart.utils.sleep;
+    var tries = Math.round(seconds / 0.1);
+    for (var i = 0; i < tries; i++) {
+        var r = curl.fetch({maxTime: 1, location: false, insecure: true}, url);
+        if (r.status !== 0) return true;     /* connected: any HTTP status */
+        sleep(0.1);
+    }
+    rampart.utils.fprintf(rampart.utils.stderr,
+        "testFeature.waitServer: '%s' did not start listening within %d s\n", url, seconds);
+    return false;
+}
+testFeature.waitServer = _waitServer;
+
 testFeature.exit = function() {
     if (typeof process !== 'undefined' && process.exit) process.exit(0);
 };
@@ -214,6 +250,10 @@ function TestFeature(opts) {
     testFeature.width     = width;
     return testFeature;
 }
+
+/* Also expose on the constructor so `require('./test-feature.js').waitServer(...)`
+   works for callers that have no testFeature instance handy. */
+TestFeature.waitServer = _waitServer;
 
 module.exports = TestFeature;
 //lastline

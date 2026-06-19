@@ -218,8 +218,8 @@ pid=server.start(
 // if daemon==true then we get the pid of the detached process
 // otherwise server.start() never returns
 
-/* give the forked server a chance to print its info*/
-rampart.utils.sleep(0.2);
+/* wait until the forked server is actually accepting connections */
+testFeature.waitServer("https://127.0.0.1:8287/sample");
 
 testFeature("server is running", rampart.utils.kill(pid,0) );
 

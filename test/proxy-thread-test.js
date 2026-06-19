@@ -54,7 +54,7 @@ upstream_pid = server.start({
     }
 });
 
-sleep(0.5);
+testFeature.waitServer("http://127.0.0.1:8102/hello");
 testFeature("upstream server is running", kill(upstream_pid, 0));
 
 /* *** Proxy server on port 8103 with only 1 JS thread *** */
@@ -79,7 +79,7 @@ proxy_pid = server.start({
     }
 });
 
-sleep(0.5);
+testFeature.waitServer("http://127.0.0.1:8103/fast");
 testFeature("proxy server is running", kill(proxy_pid, 0));
 
 /* Sanity: both routes work when idle */

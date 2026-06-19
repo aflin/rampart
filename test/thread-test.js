@@ -380,6 +380,10 @@ thr5.exec(function(){
 
 thr5.exec(function(){
         var pid = thread.get("server_pid",1000);
+        /* server.start() returns before the forked server is listening; wait
+           for it to actually accept a connection (required inside the worker
+           since closures/top-level vars don't carry into thread.exec). */
+        testFeature.waitServer("http://127.0.0.1:8284/threadtest.txt");
         testFeature("thread - server with thread and defer", function(){
             var res=curl.fetch("http://localhost:8284/threadtest.txt?myvar=123abc");
             if (res.text == '123abc')
