@@ -4116,6 +4116,18 @@ static const duk_number_list_entry curl_consts[] = {
 
 duk_ret_t duk_open_module(duk_context *ctx)
 {
+    /* Keep rampart-curl.so (and the libcurl it links) mapped for the life
+       of the process.  libcurl's threaded DNS resolver (asyn-thread.c)
+       spawns a DETACHED pthread per lookup; on cleanup libcurl detaches
+       rather than joins it, so a slow/in-flight getaddrinfo() can still be
+       running inside libcurl code at exit.  If duk_rp_exit's shutdown
+       dlclose()s this module first, FreeBSD's rtld eagerly unmaps it and
+       the resolver thread returns into freed code -> SIGSEGV during exit.
+       Pinning avoids the unmap; the OS reclaims the mapping at exit anyway.
+       (Linux glibc usually doesn't physically unmap on dlclose, which is
+       why this only bit on FreeBSD.) */
+    rp_module_no_unload();
+
     duk_push_object(ctx);
 
     // if the default is not there
