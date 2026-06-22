@@ -11,7 +11,7 @@ Compiled versions for several platforms can be found [here](https://rampart.dev/
 You will need to install the following dependencies:
 
 ```
-brew install libidn2 gawk python3
+brew install libidn2 gawk python3 graphicsmagick openblas
 ```
 
 For a more complete build of the rampart-python module:
@@ -32,11 +32,12 @@ make install
 
 ## Compiling on Linux (including raspberry pi) ##
 ```
-apt install flex bison libidn2-dev libldap2-dev python3 zlib1g-dev
+apt install flex bison perl patchelf gfortran libidn2-dev libldap2-dev python3 zlib1g-dev libopenblas-dev libgraphicsmagick1-dev
 ```
 or
 ```
-yum install libidn2-devel openldap-devel flex bison python3 zlib-devel
+yum install epel-release
+yum install libidn2-devel openldap-devel flex bison perl patchelf gcc-gfortran python3 zlib-devel openblas-devel GraphicsMagick-devel
 ```
 
 For a more complete build of the rampart-python module:
@@ -46,7 +47,7 @@ apt install libsqlite3-dev uuid-dev tcl-dev tk-dev libgdbm-dev libbz2-dev liblzm
 ```
 or
 ```
-yum install sqlite-devel tcl-devel tk-devel libuuid-devel readline-dev ncurses-devel bzip2-devel gdbm-devel xz-devel
+yum install sqlite-devel tcl-devel tk-devel libuuid-devel readline-devel ncurses-devel bzip2-devel gdbm-devel xz-devel libffi-devel
 ```
 
 Then, after cloning, you can do the following to build:
