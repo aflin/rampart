@@ -261,7 +261,7 @@ elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64|AMD64|i686|i386)")
 
     if(HAVE_HASWELL AND HAVE_SKYLAKE)
         # Test Ice Lake (AVX512VNNI, AVX512VBMI2, AVX512BITALG)
-        set(CMAKE_REQUIRED_FLAGS "-mavx2 -mfma -mf16c -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vnni -mavx512vbmi2 -mavx512bitalg -mavx512vp2in")
+        set(CMAKE_REQUIRED_FLAGS "-mavx2 -mfma -mf16c -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vnni -mavx512vbmi2 -mavx512bitalg -mavx512vp2intersect")
         check_c_source_compiles("
             #include <immintrin.h>
             int main() {
