@@ -1,0 +1,55 @@
+# Rampart "build oven" -- manylinux_2_28 variant (AlmaLinux 8 / glibc 2.28).
+# Higher floor than the manylinux2014 oven (2.17), but a much newer gcc-toolset,
+# which matters on ARM (modern SVE2/i8mm/bf16 SimSIMD kernels gcc 10 can't emit)
+# and is the base for the GPU tier.  Used via: docker/build.sh -b 2_28 ...
+#
+# Mirror of docker/Dockerfile, ported to rhel8 package names.  NOTE: the rhel8
+# package set + CRB/EPEL repo enables are UNVERIFIED here -- expect to adjust a
+# name or two on first build (same kind of archaeology as the langtools 2_28).
+ARG ARCH=x86_64
+FROM quay.io/pypa/manylinux_2_28_${ARCH}
+
+SHELL ["/bin/bash", "-c"]
+
+# -devel packages live in CRB/PowerTools; GraphicsMagick + patchelf in EPEL.
+# gcc-toolset is pre-installed (default 14) and build-in-oven uses the newest for
+# the rampart compile (AVX-512 / SVE2).  But OpenBLAS 0.3.21 + gcc 14 errors on
+# implicit-function-declaration, so also install gcc-toolset-13 to build OpenBLAS
+# (+ libidn2) with below.
+RUN (dnf -y config-manager --set-enabled powertools || dnf -y config-manager --set-enabled crb || true) && \
+    yum install -y epel-release && \
+    yum install -y \
+        gcc-toolset-13-gcc gcc-toolset-13-gcc-c++ gcc-toolset-13-gcc-gfortran \
+        flex bison perl perl-core perl-IPC-Cmd python3 patchelf \
+        zlib-devel libidn2-devel openldap-devel \
+        sqlite-devel libuuid-devel tcl-devel tk-devel \
+        gdbm-devel bzip2-devel xz-devel libffi-devel \
+        ncurses-devel readline-devel GraphicsMagick-devel && \
+    yum clean all
+
+# OpenBLAS from source (gcc-toolset-13; gcc 14 errors on 0.3.21).  DYNAMIC_ARCH
+# => runtime CPU dispatch; libgfortran from gcc-toolset matches FAISS's ABI.
+ARG OPENBLAS_VERSION=0.3.21
+RUN source /opt/rh/gcc-toolset-13/enable && \
+    curl -fsSL -o /tmp/openblas.tar.gz \
+      "https://github.com/OpenMathLib/OpenBLAS/releases/download/v${OPENBLAS_VERSION}/OpenBLAS-${OPENBLAS_VERSION}.tar.gz" && \
+    tar -xzf /tmp/openblas.tar.gz -C /tmp && \
+    make -C "/tmp/OpenBLAS-${OPENBLAS_VERSION}" -j"$(nproc)" \
+        DYNAMIC_ARCH=1 NUM_THREADS=64 USE_OPENMP=1 && \
+    make -C "/tmp/OpenBLAS-${OPENBLAS_VERSION}" PREFIX=/usr/local install && \
+    rm -rf /tmp/OpenBLAS-* /tmp/openblas.tar.gz && \
+    echo /usr/local/lib > /etc/ld.so.conf.d/openblas.conf && ldconfig
+
+# static libidn2 (vendored curl links libidn2.a; rhel strips static -> build it).
+ARG LIBIDN2_VERSION=2.3.7
+RUN source /opt/rh/gcc-toolset-13/enable && \
+    curl -fsSL -o /tmp/libidn2.tar.gz \
+      "https://ftp.gnu.org/gnu/libidn/libidn2-${LIBIDN2_VERSION}.tar.gz" && \
+    tar -xzf /tmp/libidn2.tar.gz -C /tmp && \
+    cd "/tmp/libidn2-${LIBIDN2_VERSION}" && \
+    ./configure --prefix=/usr/local --enable-static --disable-shared \
+        --disable-doc --disable-gtk-doc --with-included-libunistring && \
+    make -j"$(nproc)" && make install && \
+    rm -rf /tmp/libidn2-* /tmp/libidn2.tar.gz
+
+# No ENTRYPOINT: docker/build.sh invokes docker/build-in-oven.sh explicitly.

@@ -268,6 +268,12 @@ done
 # them by SONAME at runtime via their $ORIGIN/../lib RPATH.
 resolve_syslib() {
     _name=$1
+    # 0) Prefer libs pre-staged into the install tree's lib/.  The docker oven's
+    #    install stage drops the glibc<=2.17 BLAS chain there so a host-side
+    #    bundle ships THOSE, not the host's newer (e.g. glibc 2.34) system copies.
+    if [ -n "${INSTALLED:-}" ] && [ -e "$INSTALLED/lib/$_name" ]; then
+        echo "$INSTALLED/lib/$_name"; return 0
+    fi
     # 1) Directory walk -- ordered so port/multiarch dirs come first
     #    (Linux multiarch + FreeBSD ports), then the more generic /lib
     #    and /usr/lib.  Includes gcc14/13/12 subdirs where FreeBSD's
