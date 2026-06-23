@@ -1,3 +1,7 @@
+v0.7.1
+    -rampart and installer
+                            Docker builds for all.  langtools gpu build
+                            on arm.
 v0.7.0
     -rampart                duktape is now a fork at
                             https://github.com/aflin/duktape
