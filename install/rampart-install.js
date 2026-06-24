@@ -140,20 +140,24 @@ if (FROM == null) {
 var manifest = require(process.scriptPath + "/packages.js");
 
 /* ---------- alias / variant resolution ----------
- * On debian12-x86_64 the langtools tarball ships in two flavours
- * (rampart-langtools = cpu, rampart-langtools-cuda = cuda).  Users
- * who type 'rampart --install rampart-llamacpp' (or rampart-faiss)
- * don't necessarily know which one they want; ask.  On other
- * platforms there's only one variant, so just remap silently.
+ * On linux-*-x86_64 (any glibc tier) the langtools tarball ships in
+ * four flavours: cpu plus cu11/cu12/cu13.  Users who type
+ * 'rampart --install rampart-llamacpp' (or rampart-faiss) don't
+ * necessarily know which one they want; ask.  On linux-*-arm64,
+ * mac, freebsd and the pi only the cpu variant exists, so we remap
+ * silently.
  */
 function resolveLangtoolsAlias(name) {
     var langAliases = { "rampart-llamacpp": 1, "rampart-faiss": 1, "rampart-sentencepiece": 1 };
     if (!langAliases[name]) return name;
 
-    if (PLAT === "debian12-x86_64") {
+    /* Tiered linux x86_64 -- cpu + per-CUDA-runtime variants. */
+    if (/^linux-[^-]+-x86_64$/.test(PLAT)) {
         printf("\n%s is part of the langtools bundle.  Which variant?\n", name);
-        printf("  1) cpu  (rampart-langtools)\n");
-        printf("  2) cuda (rampart-langtools-cuda)\n");
+        printf("  1) cpu      (rampart-langtools)\n");
+        printf("  2) cuda 11  (rampart-langtools-cu11)\n");
+        printf("  3) cuda 12  (rampart-langtools-cu12)\n");
+        printf("  4) cuda 13  (rampart-langtools-cu13)\n");
         printf("[1] > ");
         stdout.fflush();
         var c;
@@ -162,11 +166,98 @@ function resolveLangtoolsAlias(name) {
             printf("\nCancelled.\n"); process.exit(0);
         }
         printf("\n");
-        if (c === "2") return "rampart-langtools-cuda";
+        switch (c) {
+            case "2": return "rampart-langtools-cu11";
+            case "3": return "rampart-langtools-cu12";
+            case "4": return "rampart-langtools-cu13";
+        }
         return "rampart-langtools";   /* default / "1" / Enter */
     }
-    /* single-variant platforms: just install rampart-langtools */
+    /* single-variant platforms (linux-*-arm64, mac, freebsd, pi):
+       just install rampart-langtools */
     return "rampart-langtools";
+}
+
+/* ---------- pre-extract cleanup for langtools variants ----------
+ * Every langtools tarball (cpu / cu11 / cu12 / cu13) ships the
+ * unsuffixed symlinks modules/rampart-llamacpp.so and
+ * modules/rampart-faiss.so pointing at its own variant-specific
+ * .so.  Before extracting a new variant we need to clear those
+ * unsuffixed names so the tarball's symlinks land cleanly:
+ *
+ *   - symlink present  -> rm it (it was ours from a prior install)
+ *   - regular file     -> mv to <name>.so.bak (preserve in case the
+ *                         user hand-installed something there; not
+ *                         our place to delete it)
+ *
+ * We do NOT touch the suffixed .so files (rampart-faiss_cpu.so,
+ * rampart-llamacpp_cu11.so, etc.) -- those belong to whichever
+ * variant installed them and stay put so the user can switch back
+ * without re-downloading.  Likewise rampart-sentencepiece.so is
+ * shared and never removed here.
+ *
+ * Manifest hygiene: any *other* rampart-langtools{,-cuNN} entry in
+ * installed.json may still list the unsuffixed paths as its own.
+ * Strip those paths from its file list so uninstalling that entry
+ * later doesn't rm the live symlinks out from under the variant
+ * we're about to install.  Suffixed-file ownership is left intact.
+ *
+ * No-op for non-langtools packages. */
+function langtoolsPreExtract(name) {
+    if (!/^rampart-langtools(-cu[0-9]+)?$/.test(name)) return;
+    var ut = rampart.utils;
+
+    var unsuffixed = ["rampart-llamacpp.so", "rampart-faiss.so"];
+
+    /* clear or back up the unsuffixed names in the live tree */
+    unsuffixed.forEach(function (fn) {
+        var p = PREFIX + "/modules/" + fn;
+        var st;
+        try { st = ut.lstat(p); } catch (e) { st = null; }
+        if (!st) return;
+        if (st.isSymbolicLink) {
+            run("rm", ["-f", p]);
+            info("  cleared stale symlink: modules/" + fn);
+            return;
+        }
+        var bak = p + ".bak";
+        var n = 1;
+        while (fileExists(bak)) { n++; bak = p + ".bak." + n; }
+        run("mv", [p, bak]);
+        info("  preserved existing file: modules/" + fn +
+             " -> " + basename(bak));
+    });
+
+    /* manifest hygiene: drop the unsuffixed paths from any other
+       langtools variant's file list (don't touch its suffixed files
+       or remove the entry) */
+    var manifestPath = PREFIX + "/installed.json";
+    if (!fileExists(manifestPath)) return;
+    var live;
+    try { live = JSON.parse(readFile(manifestPath, true)); }
+    catch (e) { return; }
+    if (!live || !live.packages) return;
+
+    var rmPaths = {};
+    unsuffixed.forEach(function (fn) {
+        rmPaths[PREFIX + "/modules/" + fn] = 1;   /* v2 absolute */
+        rmPaths["modules/" + fn]            = 1;  /* v1 relative */
+    });
+
+    var dirty = false;
+    Object.keys(live.packages).forEach(function (k) {
+        if (k === name) return;
+        if (!/^rampart-langtools(-cu[0-9]+)?$/.test(k)) return;
+        var pkg = live.packages[k];
+        if (!pkg || !pkg.files) return;
+        var before = pkg.files.length;
+        pkg.files = pkg.files.filter(function (f) { return !rmPaths[f]; });
+        if (pkg.files.length !== before) {
+            dirty = true;
+            info("  released unsuffixed symlinks from prior variant: " + k);
+        }
+    });
+    if (dirty) fwrite(manifestPath, JSON.stringify(live, null, 2) + "\n");
 }
 
 /* ---------- artifact-name helpers ---------- */
@@ -296,6 +387,9 @@ function installOne(name) {
         /* tar.gz -> extract under PREFIX, list extracted entries */
         var listOut = run("tar", ["-tzf", localArtifact]).stdout;
         var entries = listOut.split("\n").filter(function (s) { return s.length; });
+        /* clear stale langtools symlinks / preserve hand-installed
+           files before extraction (no-op for non-langtools packages) */
+        langtoolsPreExtract(name);
         run("tar", ["-xzf", localArtifact, "-C", PREFIX]);
         if (name === "rampart-python") {
             /* Special case: the embedded Python 3.11 tree under
@@ -486,16 +580,16 @@ if (LIST) {
 }
 
 /* "all" expands to every installable package (skips in_bundle entries
-   and skips rampart-langtools-cuda since it would overwrite the
-   rampart-langtools symlinks -- install the CUDA variant explicitly
-   when you want it).  Targets are de-duped so `--install all rampart-redis`
-   still does the right thing. */
+   and skips the cuda langtools variants since they'd overwrite the
+   rampart-langtools cpu symlinks -- install the CUDA variant
+   explicitly when you want it).  Targets are de-duped so
+   `--install all rampart-redis` still does the right thing. */
 if (TARGETS.indexOf("all") !== -1) {
     var _all = [];
     Object.keys(manifest).sort().forEach(function (n) {
         var e = manifest[n];
         if (e.in_bundle) return;
-        if (n === "rampart-langtools-cuda") return;
+        if (/^rampart-langtools-cu[0-9]+$/.test(n)) return;
         if (n === "test") return;             /* test ships rampart's
                                                  own test suite; not
                                                  part of `--install all` */

@@ -281,13 +281,13 @@ module.exports = {
     "rampart-langtools": {
         kind:  "tar.gz",
         arch:  "dep",
-        /* Both suffixed and plain names are listed so the build picks
-           up whichever the platform actually produced -- debian12-x86_64
-           builds the _cpu variants alongside _cuda, every other
-           platform builds the plain rampart-llamacpp.so /
-           rampart-faiss.so directly.  build-packages.js skips files
-           that aren't present, and (since 2026-06) skips symlinks
-           whose target wasn't staged, so the union is safe. */
+        /* CPU (universal) langtools.  Tiered linux builds ship the
+           _cpu variants; mac/freebsd/pi build the plain
+           rampart-llamacpp.so / rampart-faiss.so directly.  Both
+           naming forms are listed so build-packages.js can pick up
+           whichever the platform actually produced (missing files
+           are skipped; symlinks whose target wasn't staged are
+           skipped). */
         files: ["modules/rampart-faiss_cpu.so",
                 "modules/rampart-faiss.so",
                 "modules/rampart-llamacpp_cpu.so",
@@ -297,20 +297,50 @@ module.exports = {
             "modules/rampart-faiss.so":    "rampart-faiss_cpu.so",
             "modules/rampart-llamacpp.so": "rampart-llamacpp_cpu.so"
         },
-        notes: "Local LLM + vector search (llamacpp, faiss)"
+        notes: "Local LLM + vector search (llamacpp, faiss); CPU build"
     },
 
-    "rampart-langtools-cuda": {
+    /* CUDA-accelerated langtools.  Three per-runtime variants -- pick
+       the one matching the libcudart.so.<N> already on the host.
+       Built only for linux-*-x86_64 tiers; install-side resolver
+       refuses these on other platforms. */
+    "rampart-langtools-cu11": {
         kind:  "tar.gz",
         arch:  "dep",
-        files: ["modules/rampart-faiss_cuda.so",
-                "modules/rampart-llamacpp_cuda.so",
+        files: ["modules/rampart-faiss_cu11.so",
+                "modules/rampart-llamacpp_cu11.so",
                 "modules/rampart-sentencepiece.so"],
         symlinks: {
-            "modules/rampart-faiss.so":    "rampart-faiss_cuda.so",
-            "modules/rampart-llamacpp.so": "rampart-llamacpp_cuda.so"
+            "modules/rampart-faiss.so":    "rampart-faiss_cu11.so",
+            "modules/rampart-llamacpp.so": "rampart-llamacpp_cu11.so"
         },
-        notes: "CUDA-accelerated langtools (debian12-x86_64+ only)"
+        notes: "Langtools, CUDA 11 (linux-*-x86_64 only)"
+    },
+
+    "rampart-langtools-cu12": {
+        kind:  "tar.gz",
+        arch:  "dep",
+        files: ["modules/rampart-faiss_cu12.so",
+                "modules/rampart-llamacpp_cu12.so",
+                "modules/rampart-sentencepiece.so"],
+        symlinks: {
+            "modules/rampart-faiss.so":    "rampart-faiss_cu12.so",
+            "modules/rampart-llamacpp.so": "rampart-llamacpp_cu12.so"
+        },
+        notes: "Langtools, CUDA 12 (linux-*-x86_64 only)"
+    },
+
+    "rampart-langtools-cu13": {
+        kind:  "tar.gz",
+        arch:  "dep",
+        files: ["modules/rampart-faiss_cu13.so",
+                "modules/rampart-llamacpp_cu13.so",
+                "modules/rampart-sentencepiece.so"],
+        symlinks: {
+            "modules/rampart-faiss.so":    "rampart-faiss_cu13.so",
+            "modules/rampart-llamacpp.so": "rampart-llamacpp_cu13.so"
+        },
+        notes: "Langtools, CUDA 13 (linux-*-x86_64 only)"
     },
 
     /* =============================================================

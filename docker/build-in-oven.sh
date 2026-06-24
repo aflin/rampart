@@ -94,9 +94,11 @@ case "$STAGE" in
         echo "re-run 'build' with the same -b/-d, then 'install'." >&2
         exit 1
     fi
-    echo "==> installing into $PREFIX (replacing existing contents)"
+    # Overlay install: overwrite rampart's OWN files in place; do NOT wipe the tree,
+    # so modules installed by sibling projects (langtools/iroh/webview) survive a
+    # rampart-core reinstall.  cmake --install overwrites each file it owns.
+    echo "==> installing into $PREFIX (updating rampart's files in place; other modules kept)"
     mkdir -p "$PREFIX"
-    rm -rf "${PREFIX:?}/"*
     "$CMAKE" --install "$BUILD"
 
     # Stage the oven's glibc<=2.17 BLAS chain into <prefix>/lib so a host-side

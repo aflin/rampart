@@ -111,7 +111,7 @@ do_test() {
 do_install() {
     ensure_image
     if [ "${ASSUME_YES:-0}" -ne 1 ]; then
-        printf "This REPLACES %s with the build.  Continue? [y/N] " "$PREFIX_DIR"
+        printf "Install/update rampart in %s? (overwrites rampart's own files; other modules kept) [y/N] " "$PREFIX_DIR"
         read ans
         case "$ans" in [yY]*) ;; *) echo "Aborted."; exit 1 ;; esac
     fi
