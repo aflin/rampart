@@ -699,6 +699,24 @@ else()
         add_dependencies(rampart-sql faiss_ivfpq)
     endif()
 
+    # CMake 3.16 (Buster Pi) doesn't propagate OpenMP / BLAS /
+    # LAPACK from faiss_ivfpq's INTERFACE_LINK_LIBRARIES through to
+    # rampart-sql via the static-archive chain (faiss_ivfpq ->
+    # texisapi -> rampart-sql), so the link drops -lgomp / -lopenblas
+    # entirely and the .so fails to link with undefined GOMP_/omp_/
+    # cblas_ refs.  Wire them directly on the armhf+GCC<9 workaround
+    # path; modern CMake on Linux/FreeBSD/macOS carries them
+    # transitively without this block.
+    if(RP_ARMHF_GCC8_FAISS_WORKAROUND)
+        find_package(OpenMP)
+        if(OpenMP_CXX_FOUND)
+            find_package(BLAS REQUIRED)
+            find_package(LAPACK)
+            target_link_libraries(rampart-sql PRIVATE
+                OpenMP::OpenMP_CXX ${BLAS_LIBRARIES} ${LAPACK_LIBRARIES})
+        endif()
+    endif()
+
 endif()
 
 add_custom_command(

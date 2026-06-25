@@ -13,7 +13,7 @@
 #                        Linux: libopenblas-dev or libblas-dev (apt)
 #   OpenMP               compiler-bundled (gcc/clang)
 
-cmake_minimum_required(VERSION 3.18)
+cmake_minimum_required(VERSION 3.16)
 
 # C++17 — FAISS requires it; matches existing usearch in texisapi.
 set(CMAKE_CXX_STANDARD 17)
@@ -56,8 +56,16 @@ set(FAISS_IVFPQ_SOURCES
     faiss/utils/sorting.cpp
     faiss/utils/utils.cpp
 )
-
 add_library(faiss_ivfpq STATIC ${FAISS_IVFPQ_SOURCES})
+
+# Buster-Pi (armhf + GCC < 9) std::string SSO miscompile workaround.
+# See top of extern/extern.cmake for the detection block and context.
+# The same flag is applied to extern/texis/texisapi/vecindex_ivfpq.cpp
+# so symbol mangling stays consistent across the faiss <-> texisapi
+# seam.  Inert on every other platform.
+if(RP_ARMHF_GCC8_FAISS_WORKAROUND)
+    target_compile_definitions(faiss_ivfpq PRIVATE _GLIBCXX_USE_CXX11_ABI=0)
+endif()
 
 # Vendored sources `#include <faiss/...>` — make this dir the include root.
 target_include_directories(faiss_ivfpq

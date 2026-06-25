@@ -15,7 +15,13 @@ add_definitions(-DFORMMAPI -DEPI_NO_VERSION_FUNCTIONS)
 # vecindex_ivfpq.cpp out of the source list and skips the faiss_ivfpq
 # link below.  See extern/extern.cmake for the rationale.
 if(CMAKE_SIZEOF_VOID_P EQUAL 4 AND CMAKE_SYSTEM_PROCESSOR MATCHES "^arm" AND NOT DEFINED RP_NO_FAISS)
-    set(RP_NO_FAISS ON CACHE INTERNAL "FAISS unsupported on 32-bit ARM")
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU"
+       AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 9)
+        set(RP_ARMHF_GCC8_FAISS_WORKAROUND ON CACHE INTERNAL
+            "Build FAISS on armhf with pre-CXX11 std::string ABI")
+    else()
+        set(RP_NO_FAISS ON CACHE INTERNAL "FAISS unsupported on 32-bit ARM")
+    endif()
 endif()
 if(RP_NO_FAISS)
     add_definitions(-DRP_NO_FAISS)
@@ -670,6 +676,18 @@ IF(PARSERS_FOUND)
   if(NOT RP_NO_FAISS)
       target_sources(texisapi PRIVATE
           ${TEXISAPI_SOURCE_DIR}/vecindex_ivfpq.cpp)
+      if(RP_ARMHF_GCC8_FAISS_WORKAROUND)
+          # faiss_ivfpq is built with -D_GLIBCXX_USE_CXX11_ABI=0 on
+          # this target (see extern/faiss/CMakeLists.txt).  Match it
+          # here so std::string-typed faiss:: symbols (FaissException
+          # ctor, etc.) referenced from vecindex_ivfpq.cpp resolve.
+          # No other file in libtexisapi.a touches faiss:: directly
+          # (they all go through C wrappers), so the ABI flag is
+          # scoped to this one source.
+          set_source_files_properties(
+              ${TEXISAPI_SOURCE_DIR}/vecindex_ivfpq.cpp
+              PROPERTIES COMPILE_FLAGS "-D_GLIBCXX_USE_CXX11_ABI=0")
+      endif()
   endif()
 
   string(ASCII 27 ESC)

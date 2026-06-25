@@ -59,6 +59,24 @@ target_link_libraries(backref   LINK_PUBLIC texisbuild)
 target_link_libraries(tsql      PUBLIC Threads::Threads)
 target_link_libraries(tsql      LINK_PUBLIC texisapi)
 
+# CMake 3.16 (the Buster Pi's cmake) doesn't propagate texisapi's
+# PUBLIC link to faiss_ivfpq + OpenMP + BLAS through to tsql via
+# INTERFACE_LINK_LIBRARIES, so tsql ends up with undefined faiss/
+# GOMP/cblas references at link time.  Wire them directly on the
+# armhf+GCC<9 workaround path.  Modern CMake on every other platform
+# carries them transitively without this block.
+if(RP_ARMHF_GCC8_FAISS_WORKAROUND)
+    find_package(OpenMP REQUIRED)
+    if(OpenMP_CXX_FOUND)
+        find_package(BLAS REQUIRED)
+        find_package(LAPACK)
+        target_link_libraries(tsql PRIVATE
+            -Wl,--whole-archive $<TARGET_FILE:faiss_ivfpq> -Wl,--no-whole-archive
+            OpenMP::OpenMP_CXX ${BLAS_LIBRARIES} ${LAPACK_LIBRARIES})
+        add_dependencies(tsql faiss_ivfpq)
+    endif()
+endif()
+
 # addtable (adds an existing table to the catalog) and kdbfchk (DB
 # file integrity check) predate vector indexes by decades.  Even
 # though their pulled SQL plan code has strong refs to vec dispatch

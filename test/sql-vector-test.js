@@ -437,47 +437,42 @@ function vec_unique(id, dim) {
     return new rampart.vector('f32', arr);
 }
 
-/* IVFPQ uses FAISS, which upstream does not support 32-bit ARM
- * (issues #1071, #2281, #2955, #3292 — all closed without fix or
- * unanswered).  On 32-bit ARM rampart builds without FAISS and any
- * `with backend 'ivfpq'` CREATE returns a clear error.  Skip the
- * IVFPQ-only test cases and the IVFPQ side of the multi-process
- * tests below. */
+/* IVFPQ availability is probed at runtime by attempting CREATE on an
+ * empty table.  Two known reasons for unavailability:
+ *
+ *   1. RP_NO_FAISS — FAISS isn't compiled into this rampart-sql.
+ *      Currently only 32-bit ARM with GCC >= 9 hits this path; armhf
+ *      + GCC < 9 builds FAISS with a CXX11-ABI workaround (see
+ *      extern/extern.cmake's RP_ARMHF_GCC8_FAISS_WORKAROUND).  Error
+ *      message: "INDEX_VEC backend=ivfpq is not supported ...".
+ *
+ *   2. BLAS chain not installed — rampart-sql.so dlopens libopenblas
+ *      (and on Linux libgomp/libgfortran) lazily; if they're absent
+ *      the dispatcher returns "INDEX_VEC backend=ivfpq requires
+ *      lib*..." with an apt/pkg hint.
+ *
+ * The probe runs before FAISS training, so an empty table is enough.
+ * BLAS+FAISS present -> a different error fires (insufficient
+ * training rows) or success -> fall through and run the full suite. */
 var _ivfpqAvailable = true;
 var _ivfpqSkipReason = null;
+try { sql.exec("drop table blasprobe;"); } catch (e) {}
+sql.exec("create table blasprobe (v varvecF32);");
 try {
-    var _arch = (_hasShell ? shell("uname -m").stdout : "").trim();
-    if (/^arm(v[567]l?|hf)?$/.test(_arch)) {
+    sql.exec("create vector index blasprobe_idx on blasprobe (v) " +
+             "with backend 'ivfpq' vec_pq_min_points_per_centroid 1;");
+} catch (e) {
+    var _msg = String(e);
+    if (/INDEX_VEC backend=ivfpq requires lib(openblas|gomp|gfortran)/.test(_msg)) {
         _ivfpqAvailable = false;
-        _ivfpqSkipReason = "32-bit ARM (FAISS unsupported upstream)";
+        _ivfpqSkipReason = "BLAS chain not installed on this system";
+    } else if (/INDEX_VEC backend=ivfpq is not supported/.test(_msg)) {
+        _ivfpqAvailable = false;
+        _ivfpqSkipReason = "FAISS not built (RP_NO_FAISS)";
     }
-} catch (e) {}
-
-/* Plan B runtime BLAS probe: rampart-sql.so is linked without DT_NEEDED on
- * libopenblas (and, on Linux, libgomp/libgfortran).  The IVFPQ backend
- * dlopens them on first use.  If they're not installed on this system
- * (e.g. CI containers, vanilla Debian/Ubuntu/FreeBSD), the dispatcher gate
- * in vecindex.c returns "INDEX_VEC backend=ivfpq requires lib*..." with
- * an apt/pkg install hint.  Probe by attempting CREATE on an empty table;
- * the BLAS probe runs before FAISS training so we get the BLAS error here
- * even on an empty table.  BLAS present → a different error fires
- * (insufficient training rows) or success — either way, fall through. */
-if (_ivfpqAvailable) {
-    try { sql.exec("drop table blasprobe;"); } catch (e) {}
-    sql.exec("create table blasprobe (v varvecF32);");
-    try {
-        sql.exec("create vector index blasprobe_idx on blasprobe (v) " +
-                 "with backend 'ivfpq' vec_pq_min_points_per_centroid 1;");
-    } catch (e) {
-        var _msg = String(e);
-        if (/INDEX_VEC backend=ivfpq requires lib(openblas|gomp|gfortran)/.test(_msg)) {
-            _ivfpqAvailable = false;
-            _ivfpqSkipReason = "BLAS chain not installed on this system";
-        }
-    }
-    try { sql.exec("drop index blasprobe_idx;"); } catch (e) {}
-    try { sql.exec("drop table blasprobe;"); } catch (e) {}
 }
+try { sql.exec("drop index blasprobe_idx;"); } catch (e) {}
+try { sql.exec("drop table blasprobe;"); } catch (e) {}
 
 if (!_ivfpqAvailable) {
     printf("Skipping IVFPQ test cases — %s\n", _ivfpqSkipReason);

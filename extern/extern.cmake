@@ -25,23 +25,50 @@ if(APPLE)
 endif()
 
 
-# FAISS doesn't support 32-bit ARM upstream — it builds, but
-# OnDiskInvertedLists hits a libstdc++/gcc-8 std::string destructor
-# bug on armhf that corrupts heap memory.  See FAISS issues #1071,
-# #2281, #2955, #3292 — all 32-bit-ARM reports closed without fix or
-# unanswered.  Skip FAISS on this target so a generic-Buster Pi
-# binary still builds; HNSW (which uses usearch, not FAISS) works
-# fine and CREATE INDEX with backend=ivfpq returns a clear error.
+# 32-bit ARM FAISS support is conditional:
+#
+#   armhf + GCC < 9 (Buster Pi):
+#     A libstdc++ std::string SSO miscompile in the FAISS
+#     OnDiskInvertedLists destructor corrupts the heap (FAISS issues
+#     #1071, #2281, #2955, #3292 — all 32-bit-ARM reports closed
+#     without fix or unanswered).  Workaround: build FAISS and the
+#     one .cpp in libtexisapi.a that touches faiss:: with
+#     -D_GLIBCXX_USE_CXX11_ABI=0 (no SSO -> no miscompile).  The flag
+#     also applies to the faiss-consuming link sites because CMake
+#     3.16 (the Pi's cmake) doesn't propagate INTERFACE_LINK_LIBRARIES
+#     reliably through static-archive chains.
+#
+#   armhf + GCC >= 9:
+#     Not currently a user build; conservatively keep skipping FAISS
+#     until validated.
+#
+#   Anything not 32-bit ARM: untouched.
+set(RP_ARMHF_GCC8_FAISS_WORKAROUND OFF)
 if(CMAKE_SIZEOF_VOID_P EQUAL 4 AND CMAKE_SYSTEM_PROCESSOR MATCHES "^arm")
-    set(RP_NO_FAISS ON CACHE INTERNAL "FAISS unsupported on 32-bit ARM")
-    message(STATUS "32-bit ARM detected — skipping FAISS (IVFPQ backend unavailable)")
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU"
+       AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 9)
+        set(RP_ARMHF_GCC8_FAISS_WORKAROUND ON CACHE INTERNAL
+            "Build FAISS on armhf with pre-CXX11 std::string ABI")
+        message(STATUS "32-bit ARM + GCC<9: enabling FAISS with CXX11-ABI workaround")
+    else()
+        set(RP_NO_FAISS ON CACHE INTERNAL "FAISS unsupported on 32-bit ARM")
+        message(STATUS "32-bit ARM detected — skipping FAISS (IVFPQ backend unavailable)")
+    endif()
 endif()
 
 # FAISS (pruned subset, IVFPQ-only) — must be declared before texis
 # so the `faiss_ivfpq` target exists when texisapi links against it.
 # See extern/faiss/NOTICE.md for what's vendored.
+#
+# EXCLUDE_FROM_ALL relies on CMake propagating the static-archive
+# dependency from texisapi to actually build faiss; CMake 3.16 (Pi)
+# doesn't, so on the workaround path we put faiss in "all" instead.
 if(NOT RP_NO_FAISS)
-    add_subdirectory(${EXTERN_DIR}/faiss EXCLUDE_FROM_ALL)
+    if(RP_ARMHF_GCC8_FAISS_WORKAROUND)
+        add_subdirectory(${EXTERN_DIR}/faiss)
+    else()
+        add_subdirectory(${EXTERN_DIR}/faiss EXCLUDE_FROM_ALL)
+    endif()
 endif()
 
 add_subdirectory(${EXTERN_DIR}/texis)
