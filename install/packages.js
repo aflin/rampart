@@ -281,16 +281,21 @@ module.exports = {
     "rampart-langtools": {
         kind:  "tar.gz",
         arch:  "dep",
-        /* CPU (universal) langtools.  Tiered linux builds ship the
-           _cpu variants; mac/freebsd/pi build the plain
-           rampart-llamacpp.so / rampart-faiss.so directly.  Both
-           naming forms are listed so build-packages.js can pick up
-           whichever the platform actually produced (missing files
-           are skipped; symlinks whose target wasn't staged are
-           skipped). */
+        /* CPU (universal) langtools.  Per-platform naming:
+             tiered linux (x86_64/arm64): _cpu suffix
+             linux-2_28-armv7l:           _arm6 (default symlink target)
+                                          and _arm8a (faster on Pi 3+);
+                                          faiss/sentencepiece stay
+                                          single unsuffixed
+             mac/freebsd/raspi (legacy):  plain unsuffixed
+           build-packages.js skips files that aren't present and skips
+           symlinks whose target wasn't staged, so the union of every
+           naming form is safe here. */
         files: ["modules/rampart-faiss_cpu.so",
                 "modules/rampart-faiss.so",
                 "modules/rampart-llamacpp_cpu.so",
+                "modules/rampart-llamacpp_arm6.so",
+                "modules/rampart-llamacpp_arm8a.so",
                 "modules/rampart-llamacpp.so",
                 "modules/rampart-sentencepiece.so"],
         symlinks: {
