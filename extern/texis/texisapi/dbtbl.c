@@ -46,6 +46,7 @@
 #include "fdbi.h"
 #include "bitfuncs.h"
 #include "inetfuncs.h"
+#include "vecindex.h"	/* TXlikevGetLastChunk / TXgetChunkSpansFunc (abstract vec mode) */
 #include "txlic.h"
 #include "http.h"
 #ifdef LIBXML2API
@@ -3386,6 +3387,8 @@ FLD *f5;
 	DBTBL *tbl;
 	size_t sz;
 	TXPMBUF	*pmbuf = TXPMBUFPN;
+	FLD	*vecFld = FLDPN;
+	size_t	spanStart = 0, spanEnd = 0;
 
 	if (!f1 || !(text = getfld(f1, NULL)))
 	{
@@ -3414,16 +3417,77 @@ FLD *f5;
 
 	if (f5)
 	{
-		tbl = getfld(f5, NULL);
+		/* f5 is EITHER the DBTBL blob tup_eval auto-injects when
+		 * abstract() was called with exactly 4 user args (a varbyte
+		 * of exactly sizeof(DBTBL) -- see tup_eval.c), OR a vec
+		 * column value the user passed as a 5th arg — the
+		 * vec-snippet mode.  FLD type + size disambiguate
+		 * (fldFuncs declares arg 5 as don't-care so no promotion
+		 * happens).  Anything else (e.g. a plain varbyte column)
+		 * must NOT be dereferenced as a DBTBL. */
+		if (FTN_IS_VEC(f5->type))
+		{
+			vecFld = f5;
+			tbl = NULL;	/* 5 user args: no injected DBTBL */
+		}
+		else if (f5->size == sizeof(DBTBL))
+			tbl = getfld(f5, NULL);
+		else
+		{
+			putmsg(MWARN + UGE, __FUNCTION__,
+			       "abstract(): 5th argument is not a vector column; ignored");
+			tbl = NULL;
+		}
 	}
 	else
 		tbl = NULL;
+
+	/* Vec-snippet mode: LIKEV's per-row scorer (FOP_MMV) recorded
+	 * which chunk of this row's multi-chunk vector won.  Ask the
+	 * registered chunk-spans callback (tokenize + chunk, no model
+	 * run) for the byte spans chunkembed() would produce for this
+	 * text, and hand the winning chunk's span to the loci pipeline.
+	 * Falls back to a plain abstract when there's no LIKEV chunk
+	 * state (e.g. no LIKEV in the WHERE, or a single-chunk row). */
+	if (vecFld != FLDPN)
+	{
+		int	cix = -1, ccnt = 0;
+		void	*spansUd = NULL;
+		TXchunkSpansFunc spansFn = TXgetChunkSpansFunc(&spansUd);
+
+		TXlikevGetLastChunk(&cix, &ccnt);
+		if (cix >= 0 && spansFn)
+		{
+			TXchunkSpan	*spans = NULL;
+			size_t		k;
+
+			k = spansFn(spansUd, text, strlen(text), &spans);
+			if (k > 0 && spans)
+			{
+				/* ccnt (FOP_MMV's chunk count for the ROW
+				 * VECTOR) must equal k (the chunker's span
+				 * count for THIS text): they only agree when
+				 * the scratch is from this row's LIKEV score
+				 * and the text/vec columns belong together.
+				 * A stale scratch (earlier statement) or a
+				 * mismatched text arg fails this and falls
+				 * back to a plain abstract. */
+				if ((size_t)cix < k && (size_t)ccnt == k)
+				{
+					spanStart = spans[cix].start;
+					spanEnd   = spans[cix].end;
+				}
+				free(spans);
+			}
+		}
+	}
 
 	/* wtf cannot get index exprs/locale args due to FLD math limit of 5,
 	 * but they may be set already in DDMMAPI of `tbl', which
 	 * findrankabs() will drill out:
 	 */
-	rc = abstract(text, maxsz, style, query, tbl, CHARPPN, CHARPN);
+	rc = TXabstractSpan(text, maxsz, style, query, tbl, CHARPPN, CHARPN,
+			    spanStart, spanEnd);
 dupRc:
 	sz = strlen(rc);
 	setfldandsize(f1, rc, sz + 1, FLD_FORCE_NORMAL);

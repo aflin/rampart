@@ -118,8 +118,11 @@ I(stringcomparemode)    \
 I(textsearchmode)       \
 I(vec_alpha)            \
 I(vec_calibrate)        \
+I(vec_dim)              \
 I(vec_dtype)            \
 I(vec_efc)              \
+I(vec_encode_batch)     \
+I(vec_encode_gpu)       \
 I(vec_m)                \
 I(vec_metric)           \
 I(vec_pq_m)             \
@@ -3060,6 +3063,9 @@ int TXsqlFunc_basename(FLD *f1);
 int TXfld_canonpath(FLD *f1, FLD *f2);
 int TXsqlFunc_dirname(FLD *f1);
 int TXsqlFunc_embed(FLD *out, FLD *intext);
+int TXsqlFunc_chunkembed(FLD *out, FLD *dtype, FLD *prefix);
+int TXsqlFunc_chunkavg(FLD *out, FLD *dtype, FLD *prefix);
+int TXsqlFunc_chunkcoherence(FLD *out, FLD *prefix);
 int TXsqlFunc_fileext(FLD *f1);
 int TXsqlFunc_fromfile(FLD *f1, FLD *f2, FLD *f3);
 int TXsqlFunc_fromfiletext(FLD *f1, FLD *f2, FLD *f3);

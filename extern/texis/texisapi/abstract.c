@@ -1116,6 +1116,25 @@ char	*locale;	/* (in, opt.) locale to use w/"" instead of global */
 /* Thread-unsafe (static vars).
  */
 {
+	return TXabstractSpan(text, maxsz, absstyle, query, table,
+			      idxExprs, locale, (size_t)0, (size_t)0);
+}
+
+char *
+TXabstractSpan(text, maxsz, absstyle, query, table, idxExprs, locale,
+	       spanStart, spanEnd)
+char *text;		/* (in) text to make an abstract for */
+int maxsz;		/* (in, opt.) max size in bytes of abstract */
+int absstyle;		/* (in) TXABS_STYLE_... value */
+char *query;		/* (in, opt.) query for TXABS_STYLE_QUERY... styles */
+DBTBL *table;
+char	**idxExprs;	/* (in, opt.) index exprs to use instead of global */
+char	*locale;	/* (in, opt.) locale to use w/"" instead of global */
+size_t	spanStart;	/* (in, opt.) pre-located hit span (byte offsets); */
+size_t	spanEnd;	/*            spanEnd == 0 => none                  */
+/* Thread-unsafe (static vars).
+ */
+{
 	static CONST char	fn[] = "abstract";
 	static CONST char	missingByteOffsets[] =
 		"Internal error: Missing byte offsets";
@@ -1178,8 +1197,30 @@ char	*locale;	/* (in, opt.) locale to use w/"" instead of global */
 		break;
 	}
 
+	/* Clamp the (optional) pre-located vec span to the text: */
+	if (spanEnd > (size_t)(textEnd - text))
+		spanEnd = (size_t)(textEnd - text);
+	if (spanStart >= spanEnd)
+		spanStart = spanEnd = 0;	/* no/invalid span */
+
 	/* Now get abstract loci into `hits' array, according to style: */
-	switch (absstyle)
+	if (spanEnd > spanStart && query == CHARPN)
+	{
+		/* Vec-only: one locus on the pre-located span (LIKEV's
+		 * best-matching chunk); no keyword seeding.  Same shape
+		 * as TXABS_STYLE_QUERYSINGLE's fake locus, but the hit
+		 * covers the chunk, so the whole passage is favored
+		 * (the too-big-hit trim below cuts it to size). */
+		memset(singleLocus, 0, sizeof(singleLocus));
+		loci = singleLocus;
+		loci->nSets = loci->nSetHits = 1;
+		loci->hitStart = text + spanStart;
+		loci->hitEnd = text + spanEnd;
+		loci->hitAlignment = HAL_CENTER;
+		nLoci = 1;
+		lociSrcEnd = loci + nLoci;
+	}
+	else switch (absstyle)
 	{
 	case TXABS_STYLE_QUERYMULTIPLE:		/* N chunks from N sets */
 		/* A query is required; if none, fall back to dumb mode,
@@ -1322,6 +1363,27 @@ char	*locale;	/* (in, opt.) locale to use w/"" instead of global */
 		nLoci = 1;
 		lociSrcEnd = loci + nLoci;
 		break;
+	}
+
+	/* Hybrid: a keyword query seeded loci above AND a vec span was
+	 * supplied — append one more locus for the span.  The merge
+	 * pass below collapses it with any overlapping keyword locus. */
+	if (spanEnd > spanStart && query != CHARPN)
+	{
+		size_t	nNew = nLoci + 1;
+		LOCUS	*nl = (LOCUS *)TXcalloc(pmbuf, fn, 3*nNew,
+						sizeof(LOCUS));
+
+		if (nl == LOCUSPN) goto err;
+		if (nLoci) memcpy(nl, loci, nLoci*sizeof(LOCUS));
+		nl[nLoci].hitStart = text + spanStart;
+		nl[nLoci].hitEnd = text + spanEnd;
+		nl[nLoci].nSets = nl[nLoci].nSetHits = 1;
+		nl[nLoci].hitAlignment = HAL_CENTER;
+		if (loci != LOCUSPN && loci != singleLocus) free(loci);
+		loci = nl;
+		nLoci = nNew;
+		lociSrcEnd = loci + nLoci;
 	}
 
 	/* Dup the loci array before mods or deletions, for later use: */

@@ -511,7 +511,10 @@ testFeature("ivfpq setup: load " + IV32_N + " dim=32 rows into iv32", function (
 });
 
 testFeature("ivfpq CREATE on too-small table is rejected", function () {
-    /* 5 rows is well under the floor even at min_ppc=1 (need ≥ ksub=256). */
+    /* 5 rows is well under the floor even at min_ppc=1 (need ≥ ksub=256).
+     * Since multi-chunk (chunkembed) support, the row-count pre-check is
+     * soft — a row can hold several chunk vectors — so rejection happens
+     * after the sampling pass, reporting the ACTUAL vector count. */
     sql.exec("create table iv_tiny (id int, v varvecF32(8));");
     for (var i = 0; i < 5; i++)
         sql.exec("insert into iv_tiny values(?, ?)", [i, vec_for(i, 8)]);
@@ -522,7 +525,7 @@ testFeature("ivfpq CREATE on too-small table is rejected", function () {
     } catch (e) { msg = String(e); }
     sql.exec("drop table iv_tiny;");
     return msg !== null &&
-           /requires.*training rows.*table has/.test(msg);
+           /training sample produced.*valid vectors.*needs/.test(msg);
 });
 
 testFeature("ivfpq CREATE INDEX with explicit nlist=64 m=8", function () {

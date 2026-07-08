@@ -125,7 +125,31 @@ typedef struct {
      * idx->cp.min_points_per_centroid and idx->pq.cp.min_points_per_centroid
      * so coarse and PQ k-means use the same threshold. */
     int                pq_min_points_per_centroid;
+    /* Encode batch size: vectors accumulated per add_with_ids() call in
+     * the encode stages (CREATE / OPTIMIZE-absorb / REBUILD).  FAISS
+     * BLAS-blocks the coarse assignment and OpenMP-fans the PQ encode
+     * across a batch, so per-vector adds are catastrophically slower.
+     * 0 = auto: scale with the index-build memory budget (indexmem —
+     * sql.set({indexMem:N}) or WITH indexmem) — see
+     * vec_encode_batch_size().  Transient like calibrate_mode: a
+     * build-performance knob only, NOT persisted in PARAMS (an unknown
+     * PARAMS key would be rejected by older binaries). */
+    int                pq_encode_batch;
+    /* GPU coarse assignment during encode (vec_encode_gpu 'auto'|'on'|
+     * 'off').  auto: use a rampart-faiss GPU module found beside this
+     * library when a device answers, loudly falling back to CPU
+     * otherwise; on: fail the build if the GPU can't be used; off:
+     * never try.  Transient, like pq_encode_batch. */
+    int                pq_encode_gpu;
+#define TX_VEC_ENCODE_GPU_AUTO 0
+#define TX_VEC_ENCODE_GPU_ON   1
+#define TX_VEC_ENCODE_GPU_OFF  2
 } TXvecParams;
+
+/* Encode-batch fallback when no indexmem budget is known: 65536 vectors
+ * = dim*4*65536 bytes of buffer (~96MB at dim 384) — big enough for
+ * full BLAS/OpenMP efficiency, small next to the index itself. */
+#define TX_VEC_ENCODE_BATCH_DEFAULT 65536
 
 /* Parse a SYSINDEX.PARAMS string of the form
  *   "type=vec;metric=dot;dim=768;M=64;efc=200;alpha=1.2;..."
@@ -339,6 +363,60 @@ typedef size_t (*TXembedFunc)(void *user_data,
 void        TXregisterEmbedFunc(TXembedFunc fn, void *user_data);
 TXembedFunc TXgetEmbedFunc(void **user_data_out);
 void        TXclearEmbedFunc(void);
+
+/* ----- Doc (chunked) embed callback registry -------------------------
+ *
+ * One model run of a document yields everything chunkembed() /
+ * chunkavg() / chunkcoherence() need, so the callback returns all of it
+ * and each scalar takes its slice:
+ *   *out_vecs = PER-CHUNK unit vectors, concatenated row-major (k*dim
+ *               floats)  [chunkembed]              -- caller frees
+ *   *out_k    = chunk count k (>= 1)
+ *   *out_avg  = combined document vector, dim floats (L2-normalized mean
+ *               of the unit chunk vecs)  [chunkavg] -- caller frees
+ *   *out_coh  = coherence in [0,1] (avg pairwise cosine of chunk vecs;
+ *               1.0 when k==1)  [chunkcoherence]
+ * Any out pointer may be NULL.  The embedder caches the full result by
+ * text, so calls for different slices of the same text share one run.
+ * Returns dim on success, 0 on failure. */
+
+typedef size_t (*TXembedDocFunc)(void *user_data,
+                                 const char *text, size_t text_len,
+                                 const char *prefix, size_t prefix_len,
+                                 float **out_vecs, size_t *out_k,
+                                 float **out_avg, float *out_coh);
+
+void           TXregisterEmbedDocFunc(TXembedDocFunc fn, void *user_data);
+TXembedDocFunc TXgetEmbedDocFunc(void **user_data_out);
+
+/* ----- Chunk-spans callback ------------------------------------------
+ *
+ * Returns the byte spans the doc-embed chunker would produce for
+ * `text` WITHOUT running the model (tokenize + chunk only — cheap).
+ * Deterministic: same text + same registered model => same spans as
+ * the chunkembed() that stored the row.  Used by abstract() to locate
+ * the best-matching chunk's text.  Caller frees *out_spans.
+ * Returns the span count k (>= 1) on success, 0 on failure. */
+
+typedef struct TXchunkSpan_tag { size_t start, end; } TXchunkSpan;
+
+typedef size_t (*TXchunkSpansFunc)(void *user_data,
+                                   const char *text, size_t text_len,
+                                   TXchunkSpan **out_spans);
+
+void             TXregisterChunkSpansFunc(TXchunkSpansFunc fn, void *user_data);
+TXchunkSpansFunc TXgetChunkSpansFunc(void **user_data_out);
+
+/* ----- LIKEV last-match chunk scratch --------------------------------
+ *
+ * FOP_MMV (the per-row LIKEV scorer) records which chunk of a
+ * multi-chunk row vector won (argmax of the per-chunk dot products)
+ * and how many chunks the row had.  abstract() reads this during the
+ * SAME row's projection pass to seed a snippet locus.  Thread-local;
+ * ix = -1 when the last LIKEV row was single-chunk (or no LIKEV ran). */
+
+void TXlikevSetLastChunk(int ix, int cnt);   /* fldops.c writes */
+void TXlikevGetLastChunk(int *ix, int *cnt); /* abstract path reads */
 
 #ifdef __cplusplus
 }

@@ -458,16 +458,39 @@ int	*nn;
 				TXstrncpy(type, typeVal, sizeof(type));
 				return(type);
 			}
-			/* Two-arg embed(text, dtype) has a dynamic return
-			 * type named by its 2nd arg.  One-arg embed(text)
-			 * falls through to the static varvecF16 default.
-			 * Map the dtype name to a texis vec type name. */
-			if (strcmp((char *)p->left, "embed") == 0 &&
+			/* embed()/chunkembed()/chunkavg() have a dynamic
+			 * return type named by their 2nd (dtype) arg.
+			 * One-arg calls fall through to the static
+			 * varvecF16 default; ''/'auto' dtypes also fall
+			 * through (same default).  The dtype arg's tree
+			 * position depends on the arg count:
+			 *   2 args (text, dtype):          rightPred->right
+			 *   3 args (text, dtype, prefix):  rightPred->left->right
+			 * (the 3-arg shape matches convert()'s above). */
+			typeFld = FLDPN;
+			if ((strcmp((char *)p->left, "embed") == 0 ||
+			     strcmp((char *)p->left, "chunkembed") == 0 ||
+			     strcmp((char *)p->left, "chunkavg") == 0) &&
 			    p->rt == 'P' &&
 			    rightPred &&
-			    rightPred->op == LIST_OP &&
-			    rightPred->rt == FIELD_OP &&
-			    (typeFld = (FLD *)rightPred->right) != FLDPN &&
+			    rightPred->op == LIST_OP)
+			{
+				/* 3 args iff the left child is itself a
+				 * LIST_OP arg pair holding the dtype; any
+				 * other left shape -- a plain field, or an
+				 * EXPRESSION text arg (lt == 'P' with a
+				 * non-LIST sub-pred, e.g. embed(lower(x),
+				 * 'f32')) -- is the 2-arg call, dtype at
+				 * rightPred->right. */
+				if (rightPred->lt == 'P' &&
+				    rightPred->left &&
+				    ((PRED *)rightPred->left)->op == LIST_OP &&
+				    ((PRED *)rightPred->left)->rt == FIELD_OP)
+					typeFld = (FLD *)((PRED *)rightPred->left)->right;
+				else if (rightPred->rt == FIELD_OP)
+					typeFld = (FLD *)rightPred->right;
+			}
+			if (typeFld != FLDPN &&
 			    (typeFld->type & DDTYPEBITS) == FTN_CHAR &&
 			    (typeVal = getfld(typeFld, &typeN)) != CHARPN)
 			{

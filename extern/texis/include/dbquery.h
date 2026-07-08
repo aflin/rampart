@@ -763,6 +763,15 @@ int     TXstrToAbs ARGS((CONST char *s));
 char	*abstract ARGS((char *, int, int, char *, DBTBL *, char **idxExprs,
 			char *locale));
 
+/* abstract() with an additional pre-located hit span (byte offsets into
+ * `text') — used by the vec-seeded snippet path: LIKEV's best-matching
+ * chunk (or a top-scoring chunk found by cosine) becomes a locus.
+ * spanEnd == 0 means "no span" (plain abstract()).  With a query too,
+ * keyword loci and the span locus merge (hybrid snippet). */
+char	*TXabstractSpan ARGS((char *, int, int, char *, DBTBL *,
+			char **idxExprs, char *locale,
+			size_t spanStart, size_t spanEnd));
+
 int	TXgetcachedindexdata ARGS((byte **data, size_t *recsz, size_t *count));
 int	TXclosecachedindexdata ARGS((void));
 

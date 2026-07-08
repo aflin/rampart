@@ -26,6 +26,7 @@
 
 #include <algorithm>
 #include <cerrno>
+#include <cfloat>     /* FLT_MAX (multi-chunk best-score init) */
 #include <climits>
 #include <cmath>
 #include <cstdio>
@@ -41,6 +42,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <dlfcn.h>    /* dlopen/dlsym/dladdr: optional GPU coarse assign */
 
 extern "C" {
 #include "txcoreconfig.h"
@@ -108,6 +110,203 @@ struct TXvecIvfpqHandle {
 inline size_t auto_nprobe(size_t nlist) {
     size_t n = nlist >> 7;          /* nlist / 128 */
     return n < 8 ? 8 : n;
+}
+
+/* ---- optional GPU coarse assignment --------------------------------------
+ * The encode stage is ~99% nearest-centroid assignment (nlist x dim
+ * multiply-adds per vector).  A rampart-faiss GPU module (the langtools
+ * rampart-faiss_cuNN.so, installed beside rampart-sql.so in modules/)
+ * exports a tiny C API — rp_fgpu_assigner_create / rp_fgpu_assign /
+ * rp_fgpu_assigner_destroy — that uploads the centroids once and runs
+ * each batch's assignment on the GPU; the labels feed
+ * IndexIVF::add_core(precomputed_idx) so the CPU keeps the (cheap) PQ
+ * encode + on-disk list appends.  Everything degrades loudly to the
+ * batched-CPU path: no module, no device, or a mid-build failure. */
+typedef void *(*rp_fgpu_create_t)(const float *, size_t, size_t, int,
+                                  char *, size_t);
+typedef int   (*rp_fgpu_assign_t)(void *, size_t, const float *, int64_t *,
+                                  char *, size_t);
+typedef void  (*rp_fgpu_destroy_t)(void *);
+struct TXvecGpuApi {
+    rp_fgpu_create_t  create;
+    rp_fgpu_assign_t  assign;
+    rp_fgpu_destroy_t destroy;
+    const char       *modname;   /* which module answered (for putmsg) */
+};
+
+/* Resolve (once per process) a rampart-faiss module with a usable GPU.
+ * Returns NULL when there is none.  RAMPART_VEC_GPU=0 disables.
+ * Candidate module handles are deliberately never dlclose'd: the CUDA
+ * runtime registers process-lifetime state, and a stray dlclose after
+ * cuInit is riskier than a few mmap'd (lazily paged) module files. */
+static const TXvecGpuApi *vec_gpu_api(void)
+{
+    static TXvecGpuApi api;
+    static int resolved = 0, ok = 0;   /* texis: one thread per process */
+    if (resolved) return ok ? &api : NULL;
+    resolved = 1;
+    {
+        const char *kill = getenv("RAMPART_VEC_GPU");
+        if (kill && *kill && strcmp(kill, "0") == 0) return NULL;
+    }
+    Dl_info di;
+    if (!dladdr((void *)(intptr_t)&vec_gpu_api, &di) || !di.dli_fname)
+        return NULL;
+    char dir[PATH_MAX];
+    if (strlen(di.dli_fname) >= sizeof(dir)) return NULL;
+    strcpy(dir, di.dli_fname);
+    char *slash = strrchr(dir, '/');
+    if (!slash) return NULL;
+    *slash = '\0';
+    static const char *cands[] = {
+        "rampart-faiss.so", "rampart-faiss_cu13.so",
+        "rampart-faiss_cu12.so", "rampart-faiss_cu11.so", NULL };
+    for (int i = 0; cands[i]; i++) {
+        char p[PATH_MAX];
+        if (snprintf(p, sizeof p, "%s/%s", dir, cands[i]) >= (int)sizeof p)
+            continue;
+        void *m = dlopen(p, RTLD_LAZY | RTLD_LOCAL);
+        if (!m) continue;
+        int (*avail)(void) = (int (*)(void))dlsym(m, "rp_fgpu_available");
+        api.create  = (rp_fgpu_create_t)dlsym(m, "rp_fgpu_assigner_create");
+        api.assign  = (rp_fgpu_assign_t)dlsym(m, "rp_fgpu_assign");
+        api.destroy = (rp_fgpu_destroy_t)dlsym(m, "rp_fgpu_assigner_destroy");
+        if (avail && api.create && api.assign && api.destroy && avail() > 0) {
+            api.modname = cands[i];
+            ok = 1;
+            return &api;
+        }
+        /* wrong flavor (CPU build, stale module, driver mismatch):
+         * leave the handle open (see above) and try the next */
+    }
+    return NULL;
+}
+
+/* ---- batched add feeder ------------------------------------------------
+ * FAISS's IVF add pipeline BLAS-blocks the coarse assignment and
+ * OpenMP-fans the PQ encode across each add_with_ids() call, so
+ * one-vector-at-a-time adds forfeit nearly all of the machine
+ * (measured on a wikipedia-scale build: weeks vs hours).  Callers
+ * convert each chunk into slot(), then commit(id); flush() sends the
+ * accumulated batch and propagates FaissException like add_with_ids
+ * itself.
+ *
+ * setup_gpu() optionally routes each flush's coarse assignment through
+ * the GPU (see vec_gpu_api above); any GPU failure falls back to the
+ * CPU path for the rest of the build with one warning. */
+struct TXvecEncodeBatch {
+    faiss::IndexIVFPQ        *idx;
+    size_t                    dim, cap, n;
+    std::vector<float>        buf;
+    std::vector<faiss::idx_t> ids;
+    const TXvecGpuApi        *gapi;
+    void                     *gh;      /* GPU assigner handle (or NULL) */
+    std::vector<faiss::idx_t> lists;   /* GPU-assigned list numbers */
+    const char               *fn;      /* caller name for putmsg */
+    TXvecEncodeBatch(faiss::IndexIVFPQ *i, size_t d, size_t c)
+        : idx(i), dim(d), cap(c), n(0), buf(d * c), ids(c),
+          gapi(NULL), gh(NULL), fn("vecEncodeBatch") {}
+    ~TXvecEncodeBatch() { if (gh && gapi) gapi->destroy(gh); }
+
+    /* mode: TX_VEC_ENCODE_GPU_AUTO / _ON / _OFF.  est_vectors is the
+     * caller's (row-count) estimate of how many vectors will be
+     * encoded; in AUTO mode small jobs skip the GPU — its one-time
+     * cost (CUDA context + cuBLAS init + centroid upload, ~10s
+     * measured) outweighs assigning a small delta, so e.g. a routine
+     * ALTER INDEX OPTIMIZE over a few thousand INSERTs stays on the
+     * (fast, batched) CPU.  The gate compares estimated assign FLOPs
+     * (n * nlist * dim * 2) against ~20s of batched-CPU sgemm; the
+     * row-count estimate undercounts chunked rows, which only errs
+     * toward CPU.  'on' bypasses the gate.  Returns 0 on success or
+     * accepted CPU fallback; -1 only when mode == ON and the GPU is
+     * unusable (caller fails the build). */
+    int setup_gpu(int mode, const char *caller, size_t est_vectors)
+    {
+        char gerr[256] = {0};
+        fn = caller;
+        if (mode == TX_VEC_ENCODE_GPU_OFF) return 0;
+        if (mode == TX_VEC_ENCODE_GPU_AUTO) {
+            /* ~20s of CPU sgemm at ~0.4 TFLOPS effective */
+            const double TX_VEC_GPU_MIN_FLOPS = 8e12;
+            double work = (double)est_vectors * (double)idx->nlist *
+                          (double)dim * 2.0;
+            if (work < TX_VEC_GPU_MIN_FLOPS)
+                return 0;   /* small job: CPU wins, silently */
+        }
+        gapi = vec_gpu_api();
+        if (!gapi) {
+            if (mode == TX_VEC_ENCODE_GPU_ON) {
+                putmsg(MERR + UGE, fn, "vec_encode_gpu 'on': no usable "
+                       "rampart-faiss GPU module/device found");
+                return -1;
+            }
+            return 0;   /* auto: silent CPU (the normal case everywhere) */
+        }
+        faiss::IndexFlat *fl =
+            dynamic_cast<faiss::IndexFlat *>(idx->quantizer);
+        const float *cent = fl ? fl->get_xb() : NULL;
+        if (!cent || fl->ntotal <= 0) {
+            if (mode == TX_VEC_ENCODE_GPU_ON) {
+                putmsg(MERR + UGE, fn, "vec_encode_gpu 'on': coarse "
+                       "quantizer is not a flat centroid table");
+                return -1;
+            }
+            gapi = NULL;
+            return 0;
+        }
+        gh = gapi->create(cent, (size_t)fl->ntotal, dim,
+                          idx->metric_type == faiss::METRIC_INNER_PRODUCT,
+                          gerr, sizeof gerr);
+        if (!gh) {
+            putmsg(mode == TX_VEC_ENCODE_GPU_ON ? MERR + UGE : MWARN, fn,
+                   "GPU coarse assignment unavailable (%s)%s", gerr,
+                   mode == TX_VEC_ENCODE_GPU_ON ? "" : "; using CPU");
+            gapi = NULL;
+            return mode == TX_VEC_ENCODE_GPU_ON ? -1 : 0;
+        }
+        lists.resize(cap);
+        putmsg(MINFO, fn, "coarse assignment on GPU (%s, %lld centroids)",
+               gapi->modname, (long long)fl->ntotal);
+        return 0;
+    }
+
+    float *slot() { return buf.data() + n * dim; }
+    void commit(faiss::idx_t id) { ids[n] = id; if (++n == cap) flush(); }
+    void flush() {
+        if (!n) return;
+        if (gh) {
+            char gerr[256] = {0};
+            if (gapi->assign(gh, n, buf.data(), (int64_t *)lists.data(),
+                             gerr, sizeof gerr) == 0) {
+                idx->add_core((faiss::idx_t)n, buf.data(), ids.data(),
+                              lists.data());
+                n = 0;
+                return;
+            }
+            putmsg(MWARN, fn, "GPU assignment failed mid-build (%s); "
+                   "falling back to CPU for the remainder", gerr);
+            gapi->destroy(gh);
+            gh = NULL;
+        }
+        idx->add_with_ids((faiss::idx_t)n, buf.data(), ids.data());
+        n = 0;
+    }
+};
+
+/* Batch size: vec_encode_batch WITH-option wins; else auto-scale with
+ * the index-build memory budget (indexmem, already resolved to bytes),
+ * spending at most 1/16th of it on the accumulation buffer.  Gains
+ * saturate long before the cap; the floor keeps tiny-memory builds
+ * efficient enough. */
+inline size_t vec_encode_batch_size(const TXvecParams *vp, size_t dim,
+                                    size_t indexmem_bytes)
+{
+    if (vp && vp->pq_encode_batch > 0) return (size_t)vp->pq_encode_batch;
+    if (indexmem_bytes == 0 || dim == 0) return TX_VEC_ENCODE_BATCH_DEFAULT;
+    size_t b = indexmem_bytes / 16 / (dim * sizeof(float));
+    if (b < 16384)  b = 16384;
+    if (b > 262144) b = 262144;
+    return b;
 }
 
 /* C++ wrapper around the shared C `TXvecBtreeWalkRecids` callback API
@@ -401,6 +600,20 @@ faiss::IndexIVFPQ *load_ivfpq_head(faiss::IOReader *f,
              * totsize-offset subtraction never overflow/underflow. */
             for (size_t i = 0; ok && i < od->lists.size(); i++) {
                 const faiss::OnDiskOneList &L = od->lists[i];
+                /* A list k-means never routed any vector to stays
+                 * capacity == 0 with offset untouched ((size_t)-1 in
+                 * FAISS) — legitimate, not corruption.  Happens when
+                 * distinct-vector count < nlist (e.g. small or highly
+                 * repetitive corpora). */
+                if (L.capacity == 0) {
+                    if (L.size != 0) {
+                        std::fprintf(stderr, "load_ivfpq_head: invlist %zu "
+                                     "size %zu > capacity 0 (corrupt "
+                                     "_I.idxpq; REBUILD)\n", i, L.size);
+                        ok = false;
+                    }
+                    continue;
+                }
                 if (L.size > L.capacity ||
                     (entry && L.capacity > od->totsize / entry) ||
                     L.offset > od->totsize ||
@@ -678,29 +891,40 @@ size_t reservoir_sample_to_file(DBTBL *dbtbl, FLD *fld, int column_dtype,
             if (elsz == 0 || (n_elems % elsz) != 0) continue;
             cell_count = n_elems / elsz;
         }
-        if ((int)cell_count != dim) continue;
+        /* Multi-chunk rows (chunkembed(): cell_count = kChunks*dim):
+         * each chunk is an independent training sample — chunks are
+         * the unit the index stores and searches. */
+        if (cell_count == 0 || (cell_count % (size_t)dim) != 0) continue;
+        {
+            size_t kChunks = cell_count / (size_t)dim;
+            size_t col_elsz = vec_dtype_elsz(column_dtype);
+            for (size_t ci = 0; ci < kChunks; ci++) {
+                const void *chunk_raw =
+                    (const char *)raw + ci * (size_t)dim * col_elsz;
+                if (vec_convert_to_f32(column_dtype, chunk_raw, (size_t)dim,
+                                       dim, quant_scale, quant_zp,
+                                       qbuf.data()) != 0)
+                    continue;
 
-        if (vec_convert_to_f32(column_dtype, raw, cell_count, dim,
-                               quant_scale, quant_zp, qbuf.data()) != 0)
-            continue;
-
-        size_t slot = (size_t)-1;
-        if (kept < k_max) {
-            slot = kept++;
-        } else {
-            std::uniform_int_distribution<size_t> d(0, seen);
-            size_t r = d(rng);
-            if (r < k_max) slot = r;
-        }
-        if (slot != (size_t)-1) {
-            if (std::fseek(fp, (long)(slot * row_bytes), SEEK_SET) != 0 ||
-                std::fwrite(qbuf.data(), row_bytes, 1, fp) != 1) {
-                std::fclose(fp);
-                ::unlink(train_path);
-                return 0;
+                size_t slot = (size_t)-1;
+                if (kept < k_max) {
+                    slot = kept++;
+                } else {
+                    std::uniform_int_distribution<size_t> d(0, seen);
+                    size_t r = d(rng);
+                    if (r < k_max) slot = r;
+                }
+                if (slot != (size_t)-1) {
+                    if (std::fseek(fp, (long)(slot * row_bytes), SEEK_SET) != 0 ||
+                        std::fwrite(qbuf.data(), row_bytes, 1, fp) != 1) {
+                        std::fclose(fp);
+                        ::unlink(train_path);
+                        return 0;
+                    }
+                }
+                seen++;
             }
         }
-        seen++;
     }
     std::fflush(fp);
     std::fclose(fp);
@@ -788,8 +1012,17 @@ int ivfpq_create_impl(DDIC *ddic, DBTBL *dbtbl,
     /* 3a. Tiny first-row walk to detect dim.  preLoadBlobs is
      * required (gettblrow checks the flag at row-fetch time, before
      * returning), so we keep the user's setting and bail out as soon
-     * as we have a non-null vector. */
-    {
+     * as we have a non-null vector.
+     *
+     * An explicit `with vec_dim N` skips the walk — REQUIRED for
+     * multi-chunk columns (chunkembed(), k*dim cells per row) whose
+     * first row would otherwise lock dim at k*dim.  Note the
+     * training floor below checks ROW count, which underestimates the
+     * vector count for chunked tables (conservative: rows that pass
+     * imply chunks pass). */
+    if (vp.graph.dim > 0)
+        dim = vp.graph.dim;
+    else {
         RECID *recid;
         TXrewinddbtbl(dbtbl);
         while ((recid = getdbtblrow(dbtbl)) != RECIDPN && TXrecidvalid(recid)) {
@@ -859,13 +1092,17 @@ int ivfpq_create_impl(DDIC *ddic, DBTBL *dbtbl,
                 ? vp.pq_min_points_per_centroid : 39;
     size_t need_train = (size_t)min_ppc * k_for_train;
     if (row_count < need_train) {
-        putmsg(MERR + UGE, fn,
-            "INDEX_VEC backend=ivfpq with nlist=%d (ksub=%zu, "
-            "min_ppc=%d) requires at least %zu training rows; table has "
-            "%zu.  Insert more data, lower vec_pq_min_points_per_centroid, "
-            "lower vec_pq_nlist / vec_pq_target_rows, or use backend=hnsw.",
-            vp.pq_nlist, ksub, min_ppc, need_train, row_count);
-        return -1;
+        /* Not necessarily fatal: a multi-chunk column (chunkembed())
+         * holds several training vectors per row, so the true vector
+         * count is only known after the sampling pass.  Proceed; the
+         * post-sampling check (got < need_train) rejects with the
+         * actual count if the chunks don't cover it either.  Tables
+         * this small make the extra walk trivial. */
+        putmsg(MINFO, fn,
+            "INDEX_VEC backend=ivfpq: table has %zu rows, below the "
+            "%zu-vector training floor (nlist=%d, ksub=%zu, min_ppc=%d); "
+            "relying on the sampling pass's per-chunk vector count",
+            row_count, need_train, vp.pq_nlist, ksub, min_ppc);
     }
 
     /* 6. Build skeleton: IndexIVFPQ + OnDiskInvertedLists from start. */
@@ -917,14 +1154,17 @@ int ivfpq_create_impl(DDIC *ddic, DBTBL *dbtbl,
          * rows the reservoir skips.  TXvecPqMaxTrainSamples acts as a
          * soft *floor*, not a ceiling: when nlist is small we
          * oversample to it for centroid quality, but when nlist
-         * demands more we honor that.  Capped at row_count.
+         * demands more we honor that.
          */
         size_t n_train = need_train + need_train / 50;     /* +2% */
         const size_t train_floor = (TXvecPqMaxTrainSamples > 0)
                                    ? (size_t)TXvecPqMaxTrainSamples
                                    : 1000000u;
         if (n_train < train_floor) n_train = train_floor;
-        if (n_train > row_count) n_train = row_count;
+        /* No row_count cap: multi-chunk rows deliver several vectors
+         * each, so row_count under-counts.  The reservoir file only
+         * grows to min(actual vectors, n_train) slots, so an
+         * over-large n_train costs nothing. */
 
         std::string train_path_s = std::string(indfile) + ".train.tmp";
         const char *train_path = train_path_s.c_str();
@@ -1149,7 +1389,11 @@ int ivfpq_create_impl(DDIC *ddic, DBTBL *dbtbl,
                 encode3_total_bytes = (EPI_OFF_T)st.st_size;
         }
         {
-            std::vector<float> qbuf((size_t)dim);
+            TXvecEncodeBatch batch(idx, (size_t)dim,
+                vec_encode_batch_size(&vp, (size_t)dim,
+                    options ? options->indexmem : 0));
+            if (batch.setup_gpu(vp.pq_encode_gpu, fn, row_count) != 0)
+                goto build_err;
             EPI_HUGEINT meter3_done = 0;
             RECID *recid;
             int column_dtype = FTN_IS_VEC(t) ? t : vp.dtype;
@@ -1177,13 +1421,26 @@ int ivfpq_create_impl(DDIC *ddic, DBTBL *dbtbl,
                     if (elsz == 0 || (n_elems % elsz) != 0) continue;
                     cells = n_elems / elsz;
                 }
-                if ((int)cells != dim) continue;
-                if (vec_convert_to_f32(column_dtype, raw, cells, dim,
-                                       vp.quant_scale, vp.quant_zp,
-                                       qbuf.data()) != 0) continue;
-                faiss::idx_t fid = (faiss::idx_t)(uint64_t)row_off;
-                idx->add_with_ids(1, qbuf.data(), &fid);
+                /* Multi-chunk rows: each chunk is added under the
+                 * row's recid (duplicate faiss ids are fine — they're
+                 * labels; SEARCH dedups by id keeping the best). */
+                if (cells == 0 || (cells % (size_t)dim) != 0) continue;
+                {
+                    size_t kChunks = cells / (size_t)dim;
+                    size_t col_elsz = vec_dtype_elsz(column_dtype);
+                    faiss::idx_t fid = (faiss::idx_t)(uint64_t)row_off;
+                    for (size_t ci = 0; ci < kChunks; ci++) {
+                        const void *chunk_raw =
+                            (const char *)raw + ci * (size_t)dim * col_elsz;
+                        if (vec_convert_to_f32(column_dtype, chunk_raw,
+                                               (size_t)dim, dim,
+                                               vp.quant_scale, vp.quant_zp,
+                                               batch.slot()) != 0) continue;
+                        batch.commit(fid);
+                    }
+                }
             }
+            batch.flush();
         }
         if (meter3) { meter_end(meter3); closemeter(meter3); }
 
@@ -1524,10 +1781,11 @@ static size_t ivfpq_search_impl_body(TXvecHandle *h_, DBTBL *dbtbl,
                     if (elsz == 0 || (n_elems % elsz) != 0) continue;
                     cells = n_elems / elsz;
                 }
-                if ((int)cells != h->base.dim) continue;
-                if (vec_convert_to_f32(column_dtype, raw, cells, h->base.dim,
-                                       /*scale*/0.0f, /*zp*/0,
-                                       qbuf.data()) != 0) continue;
+                /* Multi-chunk rows (cells = kChunks*dim): row score =
+                 * best chunk (max dot / min L2) — matches the HNSW
+                 * delta scan and FOP_MMV's per-row semantics. */
+                if (cells == 0 || (cells % (size_t)h->base.dim) != 0)
+                    continue;
                 /* Newrec entries are authoritative: if the recid is in
                  * newrec, the row at that recid is the current state
                  * (fetched fresh from storage above).  Even if the same
@@ -1535,25 +1793,43 @@ static size_t ivfpq_search_impl_body(TXvecHandle *h_, DBTBL *dbtbl,
                  * recid: DELETE adds tomb, INSERT adds newrec), newrec
                  * wins.  The tomb filter only applies to sealed-side
                  * candidates, which carry stale PQ codes. */
-                float score = 0.0f;
-                if (use_dot) {
-                    for (int j = 0; j < h->base.dim; j++)
-                        score += query[j] * qbuf[j];
-                } else {
-                    for (int j = 0; j < h->base.dim; j++) {
-                        float d = query[j] - qbuf[j];
-                        score += d * d;
+                {
+                    size_t kChunks = cells / (size_t)h->base.dim;
+                    size_t col_elsz = vec_dtype_elsz(column_dtype);
+                    float best = use_dot ? -FLT_MAX : FLT_MAX;
+                    bool  have = false;
+                    for (size_t ci = 0; ci < kChunks; ci++) {
+                        const void *chunk_raw = (const char *)raw
+                            + ci * (size_t)h->base.dim * col_elsz;
+                        if (vec_convert_to_f32(column_dtype, chunk_raw,
+                                (size_t)h->base.dim, h->base.dim,
+                                /*scale*/0.0f, /*zp*/0,
+                                qbuf.data()) != 0) continue;
+                        float score = 0.0f;
+                        if (use_dot) {
+                            for (int j = 0; j < h->base.dim; j++)
+                                score += query[j] * qbuf[j];
+                            if (!have || score > best) best = score;
+                        } else {
+                            for (int j = 0; j < h->base.dim; j++) {
+                                float d = query[j] - qbuf[j];
+                                score += d * d;
+                            }
+                            if (!have || score < best) best = score;
+                        }
+                        have = true;
                     }
+                    if (!have) continue;
+                    vec_search_result_t r;
+                    r.id    = (vec_id_t)(uint64_t)recid_off;
+                    r.score = best;
+                    delta_hits.push_back(r);
                 }
-                vec_search_result_t r;
-                r.id    = (vec_id_t)(uint64_t)recid_off;
-                r.score = score;
-                delta_hits.push_back(r);
             }
         }
     }
 
-    /* === Merge sealed + delta, sort, trim to k ======================= */
+    /* === Merge sealed + delta, sort, dedup, trim to k ================= */
     std::vector<vec_search_result_t> merged;
     merged.reserve(sealed_hits.size() + delta_hits.size());
     for (const auto &r : sealed_hits) merged.push_back(r);
@@ -1566,8 +1842,20 @@ static size_t ivfpq_search_impl_body(TXvecHandle *h_, DBTBL *dbtbl,
                   return ascending ? (a.score < b.score) : (a.score > b.score);
               });
 
-    size_t got = merged.size() < k ? merged.size() : k;
-    for (size_t i = 0; i < got; i++) results[i] = merged[i];
+    /* Best-first copy-out with id dedup: a multi-chunk row's chunks
+     * share one faiss id, so the sealed probe can return the same id
+     * several times; the first (= best-scoring) occurrence wins.
+     * NB: duplicates consumed probe slots, so the result can hold
+     * FEWER than k unique rows.  Accepted for v1 — LIKEV over-fetches
+     * candidates (likevRows) ahead of the exact rescore, which absorbs
+     * the shortfall in practice (same tradeoff as the HNSW backend). */
+    size_t got = 0;
+    std::unordered_set<int64_t> seen_ids;
+    for (const auto &r : merged) {
+        if (got >= k) break;
+        if (!seen_ids.insert((int64_t)r.id).second) continue;
+        results[got++] = r;
+    }
     return got;
 }
 
@@ -1812,7 +2100,6 @@ static int ivfpq_optimize_impl_body(DDIC *ddic, TXvecHandle *h_, DBTBL *dbtbl,
     int64_t  new_max  = temp_max;
     std::vector<int64_t> absorbed;
     absorbed.reserve(newrec_recids.size());
-    std::vector<float> qbuf((size_t)dim);
 
     /* Walk the table sequentially.  For recids in newrec_set, encode
      * the row vector and add to temp_idx.  Track new_max for
@@ -1846,6 +2133,13 @@ static int ivfpq_optimize_impl_body(DDIC *ddic, TXvecHandle *h_, DBTBL *dbtbl,
         if (EPI_FSTAT(getdbffh(dbtbl->tbl->df), &st) == 0)
             encode_total_bytes = (EPI_OFF_T)st.st_size;
     }
+    /* vp isn't parsed on this path; NULL = auto batch from indexmem,
+     * GPU mode auto. */
+    TXvecEncodeBatch batch(temp_idx, (size_t)dim,
+        vec_encode_batch_size(NULL, (size_t)dim,
+            options ? options->indexmem : 0));
+    (void)batch.setup_gpu(TX_VEC_ENCODE_GPU_AUTO, fn,   /* auto never fails */
+                          newrec_recids.size());
     RECID *recid;
     TXrewinddbtbl(dbtbl);
     while ((recid = getdbtblrow(dbtbl)) != RECIDPN && TXrecidvalid(recid)) {
@@ -1870,24 +2164,48 @@ static int ivfpq_optimize_impl_body(DDIC *ddic, TXvecHandle *h_, DBTBL *dbtbl,
             if (elsz == 0 || (n_elems % elsz) != 0) continue;
             cells = n_elems / elsz;
         }
-        if ((int)cells != dim) continue;
-        if (vec_convert_to_f32(column_dtype, raw, cells, dim,
-                               /*scale*/0.0f, /*zp*/0, qbuf.data()) != 0)
-            continue;
-        faiss::idx_t fid = (faiss::idx_t)r;
-        try {
-            temp_idx->add_with_ids(1, qbuf.data(), &fid);
-        } catch (const faiss::FaissException &e) {
-            if (encode_meter) { meter_end(encode_meter); closemeter(encode_meter); }
-            putmsg(MERR + UGE, fn,
-                "FAISS add_with_ids for recid %lld: %s",
-                (long long)r, e.what());
-            delete temp_idx;
-            ::unlink(temp_head); ::unlink(temp_invl);
-            std::free(temp_head); std::free(temp_invl);
-            return -1;
+        /* Multi-chunk rows: absorb every chunk under the row's recid. */
+        if (cells == 0 || (cells % (size_t)dim) != 0) continue;
+        {
+            size_t kChunks = cells / (size_t)dim;
+            size_t col_elsz = vec_dtype_elsz(column_dtype);
+            size_t added_ci = 0;
+            faiss::idx_t fid = (faiss::idx_t)r;
+            for (size_t ci = 0; ci < kChunks; ci++) {
+                const void *chunk_raw =
+                    (const char *)raw + ci * (size_t)dim * col_elsz;
+                if (vec_convert_to_f32(column_dtype, chunk_raw, (size_t)dim,
+                                       dim, /*scale*/0.0f, /*zp*/0,
+                                       batch.slot()) != 0)
+                    continue;
+                try {
+                    batch.commit(fid);
+                } catch (const faiss::FaissException &e) {
+                    if (encode_meter) { meter_end(encode_meter); closemeter(encode_meter); }
+                    putmsg(MERR + UGE, fn,
+                        "FAISS add_with_ids for recid %lld: %s",
+                        (long long)r, e.what());
+                    delete temp_idx;
+                    ::unlink(temp_head); ::unlink(temp_invl);
+                    std::free(temp_head); std::free(temp_invl);
+                    return -1;
+                }
+                added_ci++;
+            }
+            if (added_ci == 0) continue;
         }
         absorbed.push_back(r);
+    }
+    try {
+        batch.flush();
+    } catch (const faiss::FaissException &e) {
+        if (encode_meter) { meter_end(encode_meter); closemeter(encode_meter); }
+        putmsg(MERR + UGE, fn, "FAISS add_with_ids (final batch): %s",
+               e.what());
+        delete temp_idx;
+        ::unlink(temp_head); ::unlink(temp_invl);
+        std::free(temp_head); std::free(temp_invl);
+        return -1;
     }
     if (encode_meter) { meter_end(encode_meter); closemeter(encode_meter); }
 
@@ -2099,11 +2417,13 @@ int ivfpq_rebuild_impl(DDIC *ddic, TXvecHandle *h_, DBTBL *dbtbl,
                 ? vp.pq_min_points_per_centroid : 39;
     size_t need_train = (size_t)min_ppc * k_for_train;
     if (row_count < need_train) {
-        putmsg(MERR + UGE, fn,
-            "INDEX_VEC REBUILD requires at least %zu training rows; "
-            "table has %zu", need_train, row_count);
-        std::free(temp_head); std::free(temp_invl);
-        return -1;
+        /* Soft: multi-chunk rows may still cover the floor — the
+         * post-sampling check (got < need_train) is authoritative.
+         * Mirrors the CREATE path. */
+        putmsg(MINFO, fn,
+            "INDEX_VEC REBUILD: table has %zu rows, below the "
+            "%zu-vector training floor; relying on the sampling "
+            "pass's per-chunk vector count", row_count, need_train);
     }
 
     faiss::IndexIVFPQ *idx = nullptr;
@@ -2133,7 +2453,10 @@ int ivfpq_rebuild_impl(DDIC *ddic, TXvecHandle *h_, DBTBL *dbtbl,
                                    ? (size_t)TXvecPqMaxTrainSamples
                                    : 1000000u;
         if (n_train < train_floor) n_train = train_floor;
-        if (n_train > row_count) n_train = row_count;
+        /* No row_count cap: multi-chunk rows deliver several vectors
+         * each, so row_count under-counts.  The reservoir file only
+         * grows to min(actual vectors, n_train) slots, so an
+         * over-large n_train costs nothing. */
 
         std::string train_path_s = std::string(tempBase) + ".train.tmp";
         const char *train_path = train_path_s.c_str();
@@ -2323,7 +2646,11 @@ int ivfpq_rebuild_impl(DDIC *ddic, TXvecHandle *h_, DBTBL *dbtbl,
                 if (EPI_FSTAT(getdbffh(dbtbl->tbl->df), &st) == 0)
                     encode3_total_bytes = (EPI_OFF_T)st.st_size;
             }
-            std::vector<float> qbuf((size_t)dim);
+            TXvecEncodeBatch batch(idx, (size_t)dim,
+                vec_encode_batch_size(&vp, (size_t)dim,
+                    options ? options->indexmem : 0));
+            if (batch.setup_gpu(vp.pq_encode_gpu, fn, row_count) != 0)
+                goto rebuild_err;
             RECID *recid;
             int column_dtype = FTN_IS_VEC(t) ? t : vp.dtype;
             TXrewinddbtbl(dbtbl);
@@ -2340,19 +2667,33 @@ int ivfpq_rebuild_impl(DDIC *ddic, TXvecHandle *h_, DBTBL *dbtbl,
                     if (elsz == 0 || (n_elems % elsz) != 0) continue;
                     cells = n_elems / elsz;
                 }
-                if ((int)cells != dim) continue;
-                if (vec_convert_to_f32(column_dtype, raw, cells, dim,
-                                       vp.quant_scale, vp.quant_zp,
-                                       qbuf.data()) != 0) continue;
-                faiss::idx_t fid = (faiss::idx_t)(uint64_t)off;
-                idx->add_with_ids(1, qbuf.data(), &fid);
-                abs_arr[abs_n++] = (int64_t)fid;
+                /* Multi-chunk rows: every chunk under the row's recid. */
+                if (cells == 0 || (cells % (size_t)dim) != 0) continue;
+                {
+                    size_t kChunks = cells / (size_t)dim;
+                    size_t col_elsz = vec_dtype_elsz(column_dtype);
+                    size_t added_ci = 0;
+                    faiss::idx_t fid = (faiss::idx_t)(uint64_t)off;
+                    for (size_t ci = 0; ci < kChunks; ci++) {
+                        const void *chunk_raw =
+                            (const char *)raw + ci * (size_t)dim * col_elsz;
+                        if (vec_convert_to_f32(column_dtype, chunk_raw,
+                                               (size_t)dim, dim,
+                                               vp.quant_scale, vp.quant_zp,
+                                               batch.slot()) != 0) continue;
+                        batch.commit(fid);
+                        added_ci++;
+                    }
+                    if (added_ci == 0) continue;
+                    abs_arr[abs_n++] = (int64_t)fid;
+                }
                 if (meter3)
                     METER_UPDATEDONE(meter3, (EPI_HUGEINT)off);
                 if (encode3_total_bytes > 0)
                     TXsysupdateProgress((TXsysupdateSink *)ddic->sysupdSink,
                         (double)off / (double)encode3_total_bytes);
             }
+            batch.flush();
             if (meter3) { meter_end(meter3); closemeter(meter3); }
         }
 

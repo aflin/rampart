@@ -186,3 +186,59 @@ TXsqlFunc_embed(FLD *f1, FLD *f2)
     (void)f1; (void)f2;
     return -1;
 }
+
+TXembedDocFunc
+TXgetEmbedDocFunc(void **user_data_out)
+{
+    if (user_data_out) *user_data_out = NULL;
+    return NULL;
+}
+
+int
+TXsqlFunc_chunkembed(FLD *f1, FLD *f2, FLD *f3)
+{
+    (void)f1; (void)f2; (void)f3;
+    return -1;
+}
+
+int
+TXsqlFunc_chunkavg(FLD *f1, FLD *f2, FLD *f3)
+{
+    (void)f1; (void)f2; (void)f3;
+    return -1;
+}
+
+int
+TXsqlFunc_chunkcoherence(FLD *f1, FLD *f2)
+{
+    (void)f1; (void)f2;
+    return -1;
+}
+
+TXchunkSpansFunc
+TXgetChunkSpansFunc(void **user_data_out)
+{
+    if (user_data_out) *user_data_out = NULL;
+    return NULL;
+}
+
+/* LIKEV chunk scratch — fldops.c (shared with lean tools) writes it;
+ * dbtbl.c's abstract() reads it, but the read is inert in the lean
+ * tools: the chunk-spans callback stub below returns none, so the
+ * vec-snippet mode always falls back to a plain abstract. */
+static __thread int tx_likev_last_chunk_ix_dummy  = -1;
+static __thread int tx_likev_last_chunk_cnt_dummy = 0;
+
+void
+TXlikevSetLastChunk(int ix, int cnt)
+{
+    tx_likev_last_chunk_ix_dummy  = ix;
+    tx_likev_last_chunk_cnt_dummy = cnt;
+}
+
+void
+TXlikevGetLastChunk(int *ix, int *cnt)
+{
+    if (ix)  *ix  = tx_likev_last_chunk_ix_dummy;
+    if (cnt) *cnt = tx_likev_last_chunk_cnt_dummy;
+}

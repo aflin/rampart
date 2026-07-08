@@ -108,6 +108,8 @@ vec_params_init(TXvecParams *p)
     p->pq_nbits = 0;
     p->pq_target_rows = 0;
     p->pq_min_points_per_centroid = 0;   /* 0 = use FAISS default (39) */
+    p->pq_encode_batch = 0;   /* 0 = TX_VEC_ENCODE_BATCH_DEFAULT; transient */
+    p->pq_encode_gpu = TX_VEC_ENCODE_GPU_AUTO;   /* transient */
 }
 
 /* Round x up to the next power of 2.  `x` must be > 0. */
@@ -282,6 +284,20 @@ TXvecParamsFromOptions(TXvecParams *out, TXindOpts *options)
 #endif
     }
 
+    /* vec_dim: explicit per-vector dimension.  Normally the CREATE
+     * build locks dim from the first row's cell count; multi-chunk
+     * columns (chunkembed() output, cell count = k*dim per row) need
+     * it stated up front so the chunk boundaries are unambiguous. */
+    if ((s = vec_opt_get(options, TXindOpt_vec_dim)) != NULL) {
+        li = strtol(s, &e, 10);
+        if (e == s || *e || li < 1 || li > 65536) {
+            putmsg(MERR + UGE, fn,
+                "vec_dim must be an integer in [1, 65536]; got `%s'", s);
+            return -1;
+        }
+        out->graph.dim = (int)li;
+    }
+
     if ((s = vec_opt_get(options, TXindOpt_vec_m)) != NULL) {
         li = strtol(s, &e, 10);
         if (e == s || *e || li < 4 || li > 1024) {
@@ -351,6 +367,30 @@ TXvecParamsFromOptions(TXvecParams *out, TXindOpts *options)
             return -1;
         }
         out->pq_nlist = (int)li;
+    }
+    if ((s = vec_opt_get(options, TXindOpt_vec_encode_batch)) != NULL) {
+        errno = 0;
+        li = strtol(s, &e, 10);
+        if (e == s || *e || errno == ERANGE || li < 1 || li > 1048576) {
+            putmsg(MERR + UGE, fn,
+                "vec_encode_batch must be an integer 1 .. 1048576; got `%s'",
+                s);
+            return -1;
+        }
+        out->pq_encode_batch = (int)li;
+    }
+    if ((s = vec_opt_get(options, TXindOpt_vec_encode_gpu)) != NULL) {
+        if (!strcasecmp(s, "auto"))
+            out->pq_encode_gpu = TX_VEC_ENCODE_GPU_AUTO;
+        else if (!strcasecmp(s, "on") || !strcasecmp(s, "true"))
+            out->pq_encode_gpu = TX_VEC_ENCODE_GPU_ON;
+        else if (!strcasecmp(s, "off") || !strcasecmp(s, "false"))
+            out->pq_encode_gpu = TX_VEC_ENCODE_GPU_OFF;
+        else {
+            putmsg(MERR + UGE, fn,
+                "vec_encode_gpu must be 'auto', 'on' or 'off'; got `%s'", s);
+            return -1;
+        }
     }
     if ((s = vec_opt_get(options, TXindOpt_vec_pq_nbits)) != NULL) {
         li = strtol(s, &e, 10);
@@ -808,6 +848,7 @@ hnsw_create_impl(DDIC *ddic, DBTBL *dbtbl,
     int rc = -1;
     int dim = 0;
     size_t n_added = 0, skipped = 0;
+    size_t reserved_n = 0;     /* current usearch reserve; grows for chunked rows */
     float *qbuf = NULL;        /* per-row f32 work buffer */
     void  *qbuf_idx = NULL;    /* per-row index-dtype buffer (i8/u8) when needed */
     char *vecpath = NULL;
@@ -941,24 +982,31 @@ hnsw_create_impl(DDIC *ddic, DBTBL *dbtbl,
                 if (elsz == 0 || (cn % elsz) != 0) continue;
                 cells = cn / elsz;
             }
-            if (calib_dim == 0) {
-                calib_dim = (int)cells;
-                calib_buf = (float *)malloc((size_t)calib_dim * sizeof(float));
-                if (!calib_buf) {
+            /* The range scan is GLOBAL (one min/max over every cell),
+             * so per-row cell counts may vary freely — chunked rows
+             * carry k*dim cells with k differing per document.
+             * calib_dim is only the conversion buffer's capacity:
+             * grow it as needed instead of skipping mismatched rows
+             * (a skip would bias the range toward one chunk count). */
+            if ((int)cells > calib_dim) {
+                float *nb = (float *)realloc(calib_buf,
+                                             cells * sizeof(float));
+                if (!nb) {
                     putmsg(MERR + MAE, fn, "alloc calib_buf");
+                    free(calib_buf);
                     if (cmeter) cmeter = closemeter(cmeter);
                     goto err;
                 }
-            } else if ((int)cells != calib_dim) {
-                continue;       /* mismatch: skip; main build will warn */
+                calib_buf = nb;
+                calib_dim = (int)cells;
             }
             /* For calibration we only need native column values —
              * pass scale=1, zp=0 (i8/u8 native sources rarely matter
              * here since calibrating them is unusual). */
-            if (vec_convert_to_f32(cdtype, crow, cells, calib_dim,
+            if (vec_convert_to_f32(cdtype, crow, cells, (int)cells,
                                1.0f, 0, calib_buf) < 0)
                 continue;
-            for (int i = 0; i < calib_dim; i++) {
+            for (int i = 0; i < (int)cells; i++) {
                 float v = calib_buf[i];
                 if (v < gmin) gmin = v;
                 if (v > gmax) gmax = v;
@@ -1060,8 +1108,12 @@ hnsw_create_impl(DDIC *ddic, DBTBL *dbtbl,
         }
 
         if (dim == 0) {
-            /* First row: lock dim and initialize the index. */
-            dim = (int)cell_count;
+            /* First row: lock dim and initialize the index.
+             *
+             * An explicit `with vec_dim N` wins (required for multi-
+             * chunk columns whose first row may hold k*N cells);
+             * otherwise lock from this row's cell count (legacy). */
+            dim = (vp.graph.dim > 0) ? vp.graph.dim : (int)cell_count;
 
             /* Index storage is f32 by default; for i8/u8 indexes use the
              * matching usearch scalar kind so on-disk size shrinks 4x. */
@@ -1078,7 +1130,10 @@ hnsw_create_impl(DDIC *ddic, DBTBL *dbtbl,
             uo.connectivity  = (size_t)vp.graph.M;
             uo.expansion_add = (size_t)vp.graph.ef_construction;
             uo.expansion_search = (size_t)vp.graph.ef_construction;
-            uo.multi         = false;
+            /* multi: several vectors may share one key — a multi-chunk
+             * row (chunkembed()) indexes each chunk under its recid.
+             * Harmless for single-vec rows. */
+            uo.multi         = true;
 
             idx = usearch_init(&uo, &uerr);
             if (!idx || uerr) {
@@ -1092,8 +1147,8 @@ hnsw_create_impl(DDIC *ddic, DBTBL *dbtbl,
              * Reserve also allocates the per-thread context pool that
              * usearch_add() requires.
              */
-            size_t reserve_n = row_estimate > 0 ? row_estimate : 16;
-            usearch_reserve(idx, reserve_n, &uerr);
+            reserved_n = row_estimate > 0 ? row_estimate : 16;
+            usearch_reserve(idx, reserved_n, &uerr);
             if (uerr) {
                 putmsg(MERR + UGE, fn, "usearch_reserve: %s", uerr);
                 goto err;
@@ -1109,25 +1164,66 @@ hnsw_create_impl(DDIC *ddic, DBTBL *dbtbl,
             }
         }
 
-        if ((int)cell_count != dim) {
+        /* Multi-chunk rows: cell_count = k*dim (chunkembed()).  Add
+         * each chunk under the row's recid (uo.multi = true).  k == 1
+         * is the plain single-vec case. */
+        if ((int)cell_count % dim != 0) {
             putmsg(MWARN, fn,
-                "INDEX_VEC: skipping row: vector dim %lu != index dim %d",
+                "INDEX_VEC: skipping row: vector dim %lu not a multiple "
+                "of index dim %d",
                 (unsigned long)cell_count, dim);
             skipped++;
             continue;
         }
-        if (vec_add_one(idx, (usearch_key_t)(uint64_t)row_off, dim,
-                        vp.dtype, vp.quant_scale, vp.quant_zp,
-                        column_dtype, raw, cell_count,
-                        qbuf, qbuf_idx, &uerr) < 0) {
-            if (uerr) {
-                putmsg(MERR + UGE, fn, "usearch_add: %s", uerr);
-                goto err;
+        {
+            size_t kChunks = cell_count / (size_t)dim;
+            size_t col_elsz = vec_dtype_elsz(column_dtype);
+            size_t ci;
+            int    addFailed = 0;
+
+            /* usearch_reserve doesn't auto-grow and the pre-pass counted
+             * ROWS, not chunks — grow when chunked rows outrun it. */
+            if (n_added + kChunks > reserved_n) {
+                size_t want = reserved_n * 2;
+                if (want < n_added + kChunks) want = n_added + kChunks + 1024;
+                usearch_reserve(idx, want, &uerr);
+                if (uerr) {
+                    putmsg(MERR + UGE, fn, "usearch_reserve: %s", uerr);
+                    goto err;
+                }
+                reserved_n = want;
             }
-            skipped++;
-            continue;
+
+            for (ci = 0; ci < kChunks; ci++) {
+                const void *chunk_raw =
+                    (const char *)raw + ci * (size_t)dim * col_elsz;
+                if (vec_add_one(idx, (usearch_key_t)(uint64_t)row_off, dim,
+                                vp.dtype, vp.quant_scale, vp.quant_zp,
+                                column_dtype, chunk_raw, (size_t)dim,
+                                qbuf, qbuf_idx, &uerr) < 0) {
+                    if (uerr) {
+                        putmsg(MERR + UGE, fn, "usearch_add: %s", uerr);
+                        goto err;
+                    }
+                    skipped++;
+                    addFailed = 1;
+                    break;
+                }
+                n_added++;
+            }
+            if (addFailed) {
+                /* Roll back the row's already-added chunks so a skipped
+                 * row is fully absent, not half-indexed (multi mode:
+                 * remove-by-key drops ALL entries under the key). */
+                if (ci > 0) {
+                    usearch_remove(idx, (usearch_key_t)(uint64_t)row_off,
+                                   &uerr);
+                    uerr = NULL;
+                    n_added -= ci;
+                }
+                continue;
+            }
         }
-        n_added++;
     }
 
     if (meter) {
@@ -1755,23 +1851,40 @@ hnsw_search_impl(TXvecHandle *h_, DBTBL *dbtbl, const char *field,
                         if (elsz == 0 || (n_elems % elsz) != 0) continue;
                         cells = n_elems / elsz;
                     }
-                    if ((int)cells != h->base.dim) continue;
-                    if (vec_convert_to_f32(column_dtype, raw, cells, h->base.dim,
-                                           /*scale*/0.0f, /*zp*/0, qbuf) != 0)
+                    /* Multi-chunk rows: cells = kChunks*dim; row score =
+                     * best chunk (max dot / min L2). */
+                    if (cells == 0 || (cells % (size_t)h->base.dim) != 0)
                         continue;
-                    float score = 0.0f;
-                    if (use_dot) {
-                        for (int j = 0; j < h->base.dim; j++)
-                            score += query[j] * qbuf[j];
-                    } else {
-                        for (int j = 0; j < h->base.dim; j++) {
-                            float d = query[j] - qbuf[j];
-                            score += d * d;
+                    {
+                        size_t kChunks = cells / (size_t)h->base.dim;
+                        size_t col_elsz = vec_dtype_elsz(column_dtype);
+                        float best = use_dot ? -2.0f : FLT_MAX;
+                        size_t ci;
+                        for (ci = 0; ci < kChunks; ci++) {
+                            const void *chunk_raw = (const char *)raw
+                                + ci * (size_t)h->base.dim * col_elsz;
+                            if (vec_convert_to_f32(column_dtype, chunk_raw,
+                                    (size_t)h->base.dim, h->base.dim,
+                                    /*scale*/0.0f, /*zp*/0, qbuf) != 0)
+                                continue;
+                            float score = 0.0f;
+                            if (use_dot) {
+                                for (int j = 0; j < h->base.dim; j++)
+                                    score += query[j] * qbuf[j];
+                                if (score > best) best = score;
+                            } else {
+                                for (int j = 0; j < h->base.dim; j++) {
+                                    float d = query[j] - qbuf[j];
+                                    score += d * d;
+                                }
+                                if (score < best) best = score;
+                            }
                         }
+                        if (best == (use_dot ? -2.0f : FLT_MAX)) continue;
+                        merged[mlen].id = (vec_id_t)(uint64_t)r;
+                        merged[mlen].score = best;
+                        mlen++;
                     }
-                    merged[mlen].id = (vec_id_t)(uint64_t)r;
-                    merged[mlen].score = score;
-                    mlen++;
                 }
                 free(qbuf);
             }
@@ -1787,8 +1900,23 @@ hnsw_search_impl(TXvecHandle *h_, DBTBL *dbtbl, const char *field,
               ascending ? vec_search_cmp_asc_ : vec_search_cmp_desc_);
     }
 
-    size_t out = mlen < k ? mlen : k;
-    for (size_t i = 0; i < out; i++) results[i] = merged[i];
+    /* Copy best-first into the caller's buffer, deduping ids: with
+     * uo.multi = true a multi-chunk row can appear several times in the
+     * sealed hits; the first (= best-scoring) occurrence wins. */
+    /* NB: with multi=true a row's chunks each consumed one of the k
+     * sealed-search slots above, so after this best-first dedup the
+     * result can hold FEWER than k unique rows (top documents with many
+     * near-query chunks crowd the slot budget).  Accepted for v1: LIKEV
+     * over-fetches candidates (likevRows) ahead of the exact rescore,
+     * which absorbs the shortfall in practice. */
+    size_t out = 0;
+    for (size_t i = 0; i < mlen && out < k; i++) {
+        size_t j;
+        for (j = 0; j < out; j++)
+            if (results[j].id == merged[i].id) break;
+        if (j < out) continue;   /* duplicate row */
+        results[out++] = merged[i];
+    }
 
     free(merged);
     free(tomb_v.data);
@@ -1947,6 +2075,69 @@ TXclearEmbedFunc(void)
     g_embed_ud = NULL;
 }
 
+/* ---- Doc (chunked) embed + chunk-spans registries -------------------
+ *
+ * Same contract as the single-vec registry above; registered by the
+ * SQL layer alongside it.  The doc callback powers chunkembed(); the
+ * spans callback powers abstract()'s vec-seeded snippet mode. */
+
+static TXembedDocFunc   g_embed_doc_fn   = NULL;
+static void            *g_embed_doc_ud   = NULL;
+static TXchunkSpansFunc g_chunk_spans_fn = NULL;
+static void            *g_chunk_spans_ud = NULL;
+
+void
+TXregisterEmbedDocFunc(TXembedDocFunc fn, void *user_data)
+{
+    g_embed_doc_fn = fn;
+    g_embed_doc_ud = user_data;
+}
+
+TXembedDocFunc
+TXgetEmbedDocFunc(void **user_data_out)
+{
+    if (user_data_out) *user_data_out = g_embed_doc_ud;
+    return g_embed_doc_fn;
+}
+
+void
+TXregisterChunkSpansFunc(TXchunkSpansFunc fn, void *user_data)
+{
+    g_chunk_spans_fn = fn;
+    g_chunk_spans_ud = user_data;
+}
+
+TXchunkSpansFunc
+TXgetChunkSpansFunc(void **user_data_out)
+{
+    if (user_data_out) *user_data_out = g_chunk_spans_ud;
+    return g_chunk_spans_fn;
+}
+
+/* ---- LIKEV last-match chunk scratch ---------------------------------
+ *
+ * Thread-local: rampart runs texis from the main thread and from
+ * THR_SAFE worker threads concurrently; per-thread scratch keeps a
+ * LIKEV on one connection from stomping another's abstract() lookup.
+ * Forked helpers each have their own copy trivially. */
+
+static __thread int tx_likev_last_chunk_ix  = -1;
+static __thread int tx_likev_last_chunk_cnt = 0;
+
+void
+TXlikevSetLastChunk(int ix, int cnt)
+{
+    tx_likev_last_chunk_ix  = ix;
+    tx_likev_last_chunk_cnt = cnt;
+}
+
+void
+TXlikevGetLastChunk(int *ix, int *cnt)
+{
+    if (ix)  *ix  = tx_likev_last_chunk_ix;
+    if (cnt) *cnt = tx_likev_last_chunk_cnt;
+}
+
 /* ---- embed() SQL scalar function -------------------------------------
  *
  *   embed(text)              -> varbyte (f16 bytes, default)
@@ -1989,8 +2180,9 @@ TXsqlFunc_embed(FLD *f1, FLD *f2)
     if (f2 != FLDPN && !TXfldIsNull(f2))
     {
         const char *dt = (const char *)getfld(f2, NULL);
-        if (dt)
-        {
+        if (dt && dt[0] && strcasecmp(dt, "auto") != 0)
+        {   /* '' and 'auto' mean the default (f16) -- placeholders so the
+             * 3rd (prefix) argument is reachable without naming a dtype */
             if      (!strcasecmp(dt, "f16"))  dtype = FTN_VEC_F16;
             else if (!strcasecmp(dt, "f32"))  dtype = FTN_VEC_F32;
             else if (!strcasecmp(dt, "f64"))  dtype = FTN_VEC_F64;
@@ -2062,6 +2254,7 @@ TXsqlFunc_embed(FLD *f1, FLD *f2)
         return FOP_EINVAL;
     }
     free(vec_f32);
+    ((char *)bytes)[out_bytes] = '\0';   /* the +1 guard byte -- keep it initialized */
 
     /* Emit as varvec*<dtype> so `select embed(?)` returns a typed vec
      * with .dim and .toNumbers().  Assignment to a same-dtype column
@@ -2073,6 +2266,295 @@ TXsqlFunc_embed(FLD *f1, FLD *f2)
     f1->type = dtype | DDVARBIT;
     f1->elsz = out_elsz;
     setfldandsize(f1, bytes, out_bytes + 1, FLD_FORCE_NORMAL);
+    return FOP_EOK;
+}
+
+/* ---- chunkembed() SQL scalar function --------------------------------
+ *
+ *   chunkembed(text)          -> varvecF16, k*dim cells (k chunk vecs)
+ *   chunkembed(text, 'f32')   -> varvecF32, k*dim cells   (etc.)
+ *
+ * Like embed(), but emits the document's PER-CHUNK unit vectors
+ * concatenated back-to-back instead of the single combined avgVec.
+ * The embedder does the chunking (structure-aware paragraphs +
+ * model-window sub-splits — see rp-chunker in rampart-langtools), so
+ * a short text comes back as k=1 and is byte-identical to a plain
+ * chunk vector.
+ *
+ * Multi-chunk values ride the EXISTING varvec column types: a
+ * varvecF16 column holding k*384 cells.  FOP_MMV and the vec index
+ * treat any row whose cell count is a k-multiple of the query/index
+ * dim as k chunks (max-over-chunks scoring; each chunk indexed under
+ * the row's recid). */
+int
+TXsqlFunc_chunkembed(FLD *f1, FLD *f2, FLD *f3)
+{
+    void           *ud = NULL;
+    TXembedDocFunc  fn = TXgetEmbedDocFunc(&ud);
+    float          *vecs_f32 = NULL;
+    size_t          dim, k = 0;
+    char           *src;
+    size_t          slen;
+    int             dtype = FTN_VEC_F16;   /* default, matches embed() */
+
+    if (!fn)
+    {
+        putmsg(MERR + UGE, "chunkembed",
+               "No document-embed function registered; set llamaEmbed "
+               "or onnxEmbed first");
+        return FOP_EINVAL;
+    }
+
+    /* Optional 2nd arg: dtype string (same values as embed()). */
+    if (f2 != FLDPN && !TXfldIsNull(f2))
+    {
+        const char *dt = (const char *)getfld(f2, NULL);
+        if (dt && dt[0] && strcasecmp(dt, "auto") != 0)
+        {   /* '' and 'auto' mean the default (f16) -- placeholders so the
+             * 3rd (prefix) argument is reachable without naming a dtype */
+            if      (!strcasecmp(dt, "f16"))  dtype = FTN_VEC_F16;
+            else if (!strcasecmp(dt, "f32"))  dtype = FTN_VEC_F32;
+            else if (!strcasecmp(dt, "f64"))  dtype = FTN_VEC_F64;
+            else if (!strcasecmp(dt, "bf16")) dtype = FTN_VEC_BF16;
+            else {
+                putmsg(MERR + UGE, "chunkembed",
+                       "Unknown dtype `%s' — expected one of "
+                       "'f16', 'f32', 'f64', 'bf16'", dt);
+                return FOP_EINVAL;
+            }
+        }
+    }
+
+    if (TXfldIsNull(f1))
+    {
+        TXfldSetNull(f1);
+        return FOP_EOK;
+    }
+    src = (char *)getfld(f1, &slen);
+    if (!src || slen == 0)
+    {
+        TXfldSetNull(f1);
+        return FOP_EOK;
+    }
+
+    /* optional 3rd arg: per-chunk prefix (e.g. the document title) --
+     * prepended to every chunk's EMBEDDING input; chunk boundaries,
+     * spans and k are unaffected (see the engine's seq-inject). */
+    {
+        const char *p = NULL;
+        size_t      pl = 0;
+        if (f3 != FLDPN && !TXfldIsNull(f3))
+            p = (const char *)getfld(f3, &pl);
+        if (p && pl == 0) p = NULL;
+        dim = fn(ud, src, slen, p, p ? pl : 0, &vecs_f32, &k, NULL, NULL);
+    }
+    if (dim == 0 || k == 0 || !vecs_f32)
+    {
+        putmsg(MERR + FRE, "chunkembed",
+               "doc-embed callback returned no vectors");
+        if (vecs_f32) free(vecs_f32);
+        return FOP_EINVAL;
+    }
+
+    /* Convert the k*dim f32 block to the requested dtype's bytes.
+     * Same emit shape as embed() (see comments there re: the +1). */
+    size_t total = k * dim;
+    size_t out_elsz =
+        (dtype == FTN_VEC_F16  || dtype == FTN_VEC_BF16) ? 2 :
+        (dtype == FTN_VEC_F32) ? 4 :
+        (dtype == FTN_VEC_F64) ? 8 : 4;
+    size_t out_bytes = total * out_elsz;
+    void *bytes = malloc(out_bytes + 1);
+    if (!bytes) {
+        free(vecs_f32);
+        putmsg(MERR + MAE, "chunkembed", "out of memory");
+        return FOP_ENOMEM;
+    }
+
+    switch (dtype) {
+    case FTN_VEC_F32:
+        memcpy(bytes, vecs_f32, out_bytes);
+        break;
+    case FTN_VEC_F16:
+        rpvec_f32_to_f16(vecs_f32, (uint16_t *)bytes, total);
+        break;
+    case FTN_VEC_BF16:
+        rpvec_f32_to_bf16(vecs_f32, (uint16_t *)bytes, total);
+        break;
+    case FTN_VEC_F64: {
+        double *d = (double *)bytes;
+        for (size_t i = 0; i < total; i++) d[i] = (double)vecs_f32[i];
+        break;
+    }
+    default:
+        free(vecs_f32); free(bytes);
+        return FOP_EINVAL;
+    }
+    free(vecs_f32);
+    ((char *)bytes)[out_bytes] = '\0';   /* the +1 guard byte -- keep it initialized */
+
+    freeflddata(f1);
+    f1->type = dtype | DDVARBIT;
+    f1->elsz = out_elsz;
+    setfldandsize(f1, bytes, out_bytes + 1, FLD_FORCE_NORMAL);
+    return FOP_EOK;
+}
+
+/* ---- chunkavg() SQL scalar function ----------------------------------
+ *
+ *   chunkavg(text)          -> varvecF16 (dim cells), default
+ *   chunkavg(text, 'f32')   -> varvecF32 (dim cells)   (etc.)
+ *
+ * The document's combined vector: the L2-normalized mean of its
+ * per-chunk unit vectors.  This is exactly what embed() returns, but
+ * exposed as its own scalar so a table can store BOTH the chunk array
+ * (chunkembed(), for fine reranking) and the avgVec (chunkavg(), for a
+ * coarse first-stage / sharding address) from ONE model run: the
+ * embedder caches the doc result by text, so
+ *   insert into t values (chunkavg(?text), chunkembed(?text))
+ * embeds the text once regardless of the two calls' order. */
+int
+TXsqlFunc_chunkavg(FLD *f1, FLD *f2, FLD *f3)
+{
+    void           *ud = NULL;
+    TXembedDocFunc  fn = TXgetEmbedDocFunc(&ud);
+    float          *avg_f32 = NULL;
+    size_t          dim;
+    char           *src;
+    size_t          slen;
+    int             dtype = FTN_VEC_F16;
+
+    if (!fn) {
+        putmsg(MERR + UGE, "chunkavg",
+               "No document-embed function registered; set llamaEmbed "
+               "or onnxEmbed first");
+        return FOP_EINVAL;
+    }
+    if (f2 != FLDPN && !TXfldIsNull(f2)) {
+        const char *dt = (const char *)getfld(f2, NULL);
+        if (dt && dt[0] && strcasecmp(dt, "auto") != 0) {
+            /* '' / 'auto' = default f16 (placeholder before the prefix arg) */
+            if      (!strcasecmp(dt, "f16"))  dtype = FTN_VEC_F16;
+            else if (!strcasecmp(dt, "f32"))  dtype = FTN_VEC_F32;
+            else if (!strcasecmp(dt, "f64"))  dtype = FTN_VEC_F64;
+            else if (!strcasecmp(dt, "bf16")) dtype = FTN_VEC_BF16;
+            else {
+                putmsg(MERR + UGE, "chunkavg",
+                       "Unknown dtype `%s' — expected 'f16','f32','f64','bf16'", dt);
+                return FOP_EINVAL;
+            }
+        }
+    }
+    if (TXfldIsNull(f1)) { TXfldSetNull(f1); return FOP_EOK; }
+    src = (char *)getfld(f1, &slen);
+    if (!src || slen == 0) { TXfldSetNull(f1); return FOP_EOK; }
+
+    {   /* optional 3rd arg: per-chunk prefix, as in chunkembed() --
+         * MUST match chunkembed's for the shared cache + consistent avg */
+        const char *p = NULL;
+        size_t      pl = 0;
+        if (f3 != FLDPN && !TXfldIsNull(f3))
+            p = (const char *)getfld(f3, &pl);
+        if (p && pl == 0) p = NULL;
+        dim = fn(ud, src, slen, p, p ? pl : 0, NULL, NULL, &avg_f32, NULL);
+    }
+    if (dim == 0 || !avg_f32) {
+        putmsg(MERR + FRE, "chunkavg", "doc-embed callback returned no vector");
+        free(avg_f32);
+        return FOP_EINVAL;
+    }
+
+    size_t out_elsz =
+        (dtype == FTN_VEC_F16  || dtype == FTN_VEC_BF16) ? 2 :
+        (dtype == FTN_VEC_F32) ? 4 :
+        (dtype == FTN_VEC_F64) ? 8 : 4;
+    size_t out_bytes = dim * out_elsz;
+    void *bytes = malloc(out_bytes + 1);
+    if (!bytes) { free(avg_f32); putmsg(MERR + MAE, "chunkavg", "oom"); return FOP_ENOMEM; }
+
+    switch (dtype) {
+    case FTN_VEC_F32: memcpy(bytes, avg_f32, out_bytes); break;
+    case FTN_VEC_F16: rpvec_f32_to_f16(avg_f32, (uint16_t *)bytes, dim); break;
+    case FTN_VEC_BF16: rpvec_f32_to_bf16(avg_f32, (uint16_t *)bytes, dim); break;
+    case FTN_VEC_F64: { double *d = (double *)bytes;
+        for (size_t i = 0; i < dim; i++) d[i] = (double)avg_f32[i]; break; }
+    default: free(avg_f32); free(bytes); return FOP_EINVAL;
+    }
+    free(avg_f32);
+    ((char *)bytes)[out_bytes] = '\0';   /* the +1 guard byte -- keep it initialized */
+
+    freeflddata(f1);
+    f1->type = dtype | DDVARBIT;
+    f1->elsz = out_elsz;
+    setfldandsize(f1, bytes, out_bytes + 1, FLD_FORCE_NORMAL);
+    return FOP_EOK;
+}
+
+/* ---- chunkcoherence() SQL scalar function ----------------------------
+ *
+ *   chunkcoherence(text)  -> double in [0,1]
+ *
+ * Average pairwise cosine between the document's unit chunk vectors
+ * (k-independent; 1.0 for a single-chunk doc).  ~1 = topically tight
+ * (avgVec is a faithful summary); ~0 = diffuse (prefer the chunk array
+ * for search).  Shares the same cached doc run as chunkembed/chunkavg. */
+int
+TXsqlFunc_chunkcoherence(FLD *f1, FLD *f2)
+{
+    void           *ud = NULL;
+    TXembedDocFunc  fn = TXgetEmbedDocFunc(&ud);
+    size_t          dim;
+    float           coh = 0.0f;
+    char           *src;
+    size_t          slen;
+
+    if (!fn) {
+        putmsg(MERR + UGE, "chunkcoherence",
+               "No document-embed function registered; set llamaEmbed "
+               "or onnxEmbed first");
+        return FOP_EINVAL;
+    }
+    if (TXfldIsNull(f1)) { TXfldSetNull(f1); return FOP_EOK; }
+    src = (char *)getfld(f1, &slen);
+    if (!src || slen == 0) { TXfldSetNull(f1); return FOP_EOK; }
+
+    {   /* optional 2nd arg: per-chunk prefix (no dtype arg here) */
+        const char *p = NULL;
+        size_t      pl = 0;
+        if (f2 != FLDPN && !TXfldIsNull(f2))
+            p = (const char *)getfld(f2, &pl);
+        if (p && pl == 0) p = NULL;
+        dim = fn(ud, src, slen, p, p ? pl : 0, NULL, NULL, NULL, &coh);
+    }
+    if (dim == 0) {
+        putmsg(MERR + FRE, "chunkcoherence", "doc-embed callback failed");
+        return FOP_EINVAL;
+    }
+
+    /* Retype f1 (a varchar input) to a fixed FTN_DOUBLE result, mirroring
+     * fld2finv's fixed-int pattern (fldops.c): reuse f1's buffer if it's
+     * large enough, else alloc; set the fixed-length fields; write the
+     * value; putfld.  NOT DDVARBIT — this is a scalar double, and the
+     * fldFuncs rettype is FTN_DOUBLE. */
+    {
+        size_t elsz = sizeof(ft_double);
+        void  *p = getfld(f1, NULL);
+        if (f1->alloced < elsz + 1 || !p) {
+            if ((p = malloc(elsz + 1)) == NULL) {
+                putmsg(MERR + MAE, "chunkcoherence", "oom");
+                return FOP_ENOMEM;
+            }
+            *((char *)p + elsz) = '\0';
+            setfld(f1, p, elsz + 1);
+        }
+        f1->kind = TX_FLD_NORMAL;
+        f1->type = FTN_DOUBLE;
+        f1->n    = 1;
+        f1->elsz = elsz;
+        f1->size = elsz;
+        *(ft_double *)p = (ft_double)coh;
+        putfld(f1, p, 1);
+    }
     return FOP_EOK;
 }
 
@@ -2263,13 +2745,27 @@ have_qbuf: ;
                         else
                             raw = NULL;
                     }
-                    if (raw && (int)cells == hb->dim &&
-                        vec_convert_to_f32(column_dtype, raw, cells,
-                                           hb->dim, 0.0f, 0, sbuf) == 0) {
-                        double s = 0.0;
-                        for (int j = 0; j < hb->dim; j++)
-                            s += (double)qbuf[j] * (double)sbuf[j];
-                        exact_score = s;
+                    /* Multi-chunk rows (cells = k*dim): exact score =
+                     * best chunk's dot — matches FOP_MMV's per-row
+                     * max-over-chunks so $rank and row order agree. */
+                    if (raw && cells > 0 &&
+                        (cells % (size_t)hb->dim) == 0) {
+                        size_t kChunks = cells / (size_t)hb->dim;
+                        double bestS = -2.0;
+                        size_t ci;
+                        for (ci = 0; ci < kChunks; ci++) {
+                            const void *chunk_raw = (const char *)raw
+                                + ci * (size_t)hb->dim * col_elsz;
+                            if (vec_convert_to_f32(column_dtype, chunk_raw,
+                                    (size_t)hb->dim, hb->dim,
+                                    0.0f, 0, sbuf) != 0)
+                                continue;
+                            double s = 0.0;
+                            for (int j = 0; j < hb->dim; j++)
+                                s += (double)qbuf[j] * (double)sbuf[j];
+                            if (s > bestS) bestS = s;
+                        }
+                        if (bestS > -2.0) exact_score = bestS;
                     }
                 }
             }
@@ -2527,21 +3023,64 @@ hnsw_optimize_impl(DDIC *ddic, TXvecHandle *h_, DBTBL *dbtbl,
                 if (elsz == 0 || (n_elems % elsz) != 0) continue;
                 cells = n_elems / elsz;
             }
-            if ((int)cells != h->base.dim) continue;
+            /* Multi-chunk rows: cells = kChunks * dim.  usearch_remove
+             * drops ALL entries under the key (multi=true), so an
+             * update replaces every old chunk. */
+            if (cells == 0 || (cells % (size_t)h->base.dim) != 0) continue;
             if (usearch_contains(fresh, (usearch_key_t)(uint64_t)r, &uerr)) {
                 usearch_remove(fresh, (usearch_key_t)(uint64_t)r, &uerr);
                 uerr = NULL;
             }
-            if (vec_add_one(fresh, (usearch_key_t)(uint64_t)r, h->base.dim,
-                            h->base.dtype, h->quant_scale, h->quant_zp,
-                            column_dtype, raw, cells,
-                            qbuf, qbuf_idx, &uerr) < 0) {
-                if (uerr) {
-                    putmsg(MWARN, fn, "usearch_add for recid %lld: %s",
-                           (long long)r, uerr);
-                    uerr = NULL;
+            {
+                size_t kChunks = cells / (size_t)h->base.dim;
+                size_t col_elsz = vec_dtype_elsz(column_dtype);
+                size_t ci, added_ci = 0;
+
+                /* Chunked rows can outgrow the rows-based reserve. */
+                {
+                    size_t cur2 = usearch_size(fresh, &uerr);     uerr = NULL;
+                    size_t cap2 = usearch_capacity(fresh, &uerr); uerr = NULL;
+                    if (cur2 + kChunks > cap2) {
+                        size_t want2 = cap2 * 2;
+                        if (want2 < cur2 + kChunks) want2 = cur2 + kChunks + 1024;
+                        usearch_reserve(fresh, want2, &uerr);
+                        if (uerr) {
+                            putmsg(MWARN, fn, "usearch_reserve: %s", uerr);
+                            uerr = NULL;
+                            continue;
+                        }
+                    }
                 }
-                continue;
+                for (ci = 0; ci < kChunks; ci++) {
+                    const void *chunk_raw = (const char *)raw
+                        + ci * (size_t)h->base.dim * col_elsz;
+                    if (vec_add_one(fresh, (usearch_key_t)(uint64_t)r,
+                                    h->base.dim,
+                                    h->base.dtype, h->quant_scale, h->quant_zp,
+                                    column_dtype, chunk_raw,
+                                    (size_t)h->base.dim,
+                                    qbuf, qbuf_idx, &uerr) < 0) {
+                        if (uerr) {
+                            putmsg(MWARN, fn, "usearch_add for recid %lld: %s",
+                                   (long long)r, uerr);
+                            uerr = NULL;
+                        }
+                        break;
+                    }
+                    added_ci++;
+                }
+                if (added_ci < kChunks) {
+                    /* Partial rows must NOT be absorbed: roll back what
+                     * was added (multi mode: remove-by-key drops all of
+                     * the key's entries) and leave the recid in _T.btr
+                     * so a later OPTIMIZE/REBUILD retries the whole row. */
+                    if (added_ci > 0) {
+                        usearch_remove(fresh, (usearch_key_t)(uint64_t)r,
+                                       &uerr);
+                        uerr = NULL;
+                    }
+                    continue;
+                }
             }
             absorbed[absorbed_n++] = r;
         }
@@ -2643,6 +3182,11 @@ hnsw_rebuild_impl(DDIC *ddic, TXvecHandle *h_, DBTBL *dbtbl,
         putmsg(MERR + UGE, fn, "usearch_metadata: %s", uerr);
         return -1;
     }
+    /* REBUILD re-encodes the whole table from scratch (metadata above
+     * is only borrowed for dim/M/efc/metric), so force multi-key
+     * support on: this is the migration path that lets a pre-chunking
+     * index accept chunkembed() rows. */
+    opts.multi = true;
     usearch_index_t fresh = usearch_init(&opts, &uerr);
     if (!fresh || uerr) {
         putmsg(MERR + UGE, fn, "usearch_init: %s", uerr ? uerr : "(null)");
@@ -2731,27 +3275,54 @@ hnsw_rebuild_impl(DDIC *ddic, TXvecHandle *h_, DBTBL *dbtbl,
             if (elsz == 0 || (n_elems % elsz) != 0) continue;
             cells = n_elems / elsz;
         }
-        if ((int)cells != h->base.dim) continue;
-        /* Double reservation if we're about to exceed it. */
-        if (absorbed_n + 1 >= reserved) {
-            reserved *= 2;
-            usearch_reserve(fresh, reserved, &uerr);
-            if (uerr) {
-                putmsg(MWARN, fn, "usearch_reserve(grow %zu): %s",
-                       reserved, uerr);
-                uerr = NULL;
+        /* Multi-chunk rows: cells = kChunks * dim (see chunkembed()). */
+        if (cells == 0 || (cells % (size_t)h->base.dim) != 0) continue;
+        {
+            size_t kChunks = cells / (size_t)h->base.dim;
+            size_t col_elsz = vec_dtype_elsz(column_dtype);
+            size_t cur2 = usearch_size(fresh, &uerr);
+            size_t ci, added_ci = 0;
+            uerr = NULL;
+
+            /* Grow reservation if this row's chunks would exceed it. */
+            if (cur2 + kChunks >= reserved) {
+                size_t want2 = reserved * 2;
+                if (want2 < cur2 + kChunks) want2 = cur2 + kChunks + 1024;
+                reserved = want2;
+                usearch_reserve(fresh, reserved, &uerr);
+                if (uerr) {
+                    putmsg(MWARN, fn, "usearch_reserve(grow %zu): %s",
+                           reserved, uerr);
+                    uerr = NULL;
+                }
             }
-        }
-        if (vec_add_one(fresh, (usearch_key_t)(uint64_t)r, h->base.dim,
-                        h->base.dtype, h->quant_scale, h->quant_zp,
-                        column_dtype, raw, cells,
-                        qbuf, qbuf_idx, &uerr) < 0) {
-            if (uerr) {
-                putmsg(MWARN, fn, "usearch_add for recid %lld: %s",
-                       (long long)r, uerr);
-                uerr = NULL;
+            for (ci = 0; ci < kChunks; ci++) {
+                const void *chunk_raw = (const char *)raw
+                    + ci * (size_t)h->base.dim * col_elsz;
+                if (vec_add_one(fresh, (usearch_key_t)(uint64_t)r,
+                                h->base.dim,
+                                h->base.dtype, h->quant_scale, h->quant_zp,
+                                column_dtype, chunk_raw, (size_t)h->base.dim,
+                                qbuf, qbuf_idx, &uerr) < 0) {
+                    if (uerr) {
+                        putmsg(MWARN, fn, "usearch_add for recid %lld: %s",
+                               (long long)r, uerr);
+                        uerr = NULL;
+                    }
+                    break;
+                }
+                added_ci++;
             }
-            continue;
+            if (added_ci < kChunks) {
+                /* Partial row: roll back the added chunks (multi mode:
+                 * remove-by-key drops all of the key's entries) so the
+                 * rebuilt index never holds a half-indexed row. */
+                if (added_ci > 0) {
+                    usearch_remove(fresh, (usearch_key_t)(uint64_t)r, &uerr);
+                    uerr = NULL;
+                }
+                continue;
+            }
         }
         if (absorbed_n == absorbed_cap) {
             size_t newcap = absorbed_cap * 2;

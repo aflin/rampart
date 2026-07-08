@@ -662,6 +662,86 @@ function dotests(main) {
             text   : sprintf("(l2Err=%.2e l2sqErr=%.2e)", errL2, errL2sq)
         };
     });
+
+    /* ---- split(): recover the k individual vectors from a multi-vector
+       value (k*dim cells, e.g. a chunkembed() column) ---- */
+
+    testFeature(pref + "split f32 multi-vector into k parts", function(){
+        var flat = [];
+        for (var i=0;i<24;i++) flat.push(rampart.utils.rand(-5.0,5.0));
+        var v = new rampart.vector('f32', flat);
+        var parts = v.split(8);
+        if (!Array.isArray(parts) || parts.length != 3) return false;
+        var src = v.toNumbers();          // f32-rounded reference
+        for (var c=0;c<3;c++) {
+            if (parts[c].type !== 'f32' || parts[c].dim !== 8) return false;
+            var pn = parts[c].toNumbers();
+            for (var i=0;i<8;i++)
+                if (pn[i] !== src[c*8+i]) return false;
+        }
+        return true;
+    });
+
+    testFeature(pref + "split f16 parts match flat toNumbers slices", function(){
+        var flat = [];
+        for (var i=0;i<32;i++) flat.push(rampart.utils.rand(-1.0,1.0));
+        var v = new rampart.vector('f16', flat);
+        var parts = v.split(16);
+        var src = v.toNumbers();
+        for (var c=0;c<2;c++) {
+            var pn = parts[c].toNumbers();
+            for (var i=0;i<16;i++)
+                if (pn[i] !== src[c*16+i]) return false;
+        }
+        return true;
+    });
+
+    testFeature(pref + "split with dim == this.dim returns [copy]", function(){
+        var v = new rampart.vector('f32', [1,2,3,4]);
+        var parts = v.split(4);
+        if (parts.length !== 1 || parts[0].dim !== 4) return false;
+        var pn = parts[0].toNumbers();
+        return pn[0] === 1 && pn[3] === 4;
+    });
+
+    testFeature(pref + "split parts are full vectors (distance works)", function(){
+        var flat = [];
+        for (var i=0;i<128;i++) flat.push(rampart.utils.rand(-1.0,1.0));
+        var v = new rampart.vector('f32', flat);
+        var parts = v.split(64);
+        var dSelf = parts[0].distance(parts[0], 'l2');
+        var dOther = parts[0].distance(parts[1], 'l2');
+        return Math.abs(dSelf) < 1e-6 && dOther > 0;
+    });
+
+    testFeature(pref + "split bad args throw (0, negative, non-divisor)", function(){
+        var v = new rampart.vector('f16', 96);   // 96 cells
+        var threw = 0;
+        try { v.split(0);   } catch(e) { threw++; }
+        try { v.split(-8);  } catch(e) { threw++; }
+        try { v.split(31);  } catch(e) { threw++; }  // 96 % 31 != 0
+        try { v.split(192); } catch(e) { threw++; }  // > dim
+        return threw === 4;
+    });
+
+    testFeature(pref + "split b8 on byte-aligned dims (and rejects unaligned)", function(){
+        var flat = [];
+        for (var i=0;i<32;i++) flat.push(i % 3 ? 1.0 : -1.0);
+        var b = new rampart.vector('f32', flat).toBit();   // 32-bit b8 vec
+        var parts = b.split(16);
+        if (parts.length !== 2 || parts[0].type !== 'b8' || parts[0].dim !== 16)
+            return false;
+        /* parts' bits must equal the flat vector's bit slices */
+        var src = b.toNumbers();
+        for (var c=0;c<2;c++) {
+            var pn = parts[c].toNumbers();
+            for (var i=0;i<16;i++)
+                if (pn[i] !== src[c*16+i]) return false;
+        }
+        var threw = 0;
+        try { b.split(12); } catch(e) { threw++; }   // not byte-aligned
+        return threw === 1;
+    });
 }
 
 var rawvec = rampart.vector.raw;

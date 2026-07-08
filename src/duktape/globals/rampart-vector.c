@@ -1358,6 +1358,59 @@ static duk_ret_t v2raw(duk_context *ctx)
     return 1;
 }
 
+/* vec.split(dim) -> Array of (this.dim / dim) new vectors of `dim` cells
+   each.  For multi-vector values -- e.g. a chunkembed() column holding k
+   concatenated chunk vectors as k*dim cells -- this recovers the
+   individual vectors:  var chunks = row.Vec.split(384);
+   this.dim must be an exact multiple of dim (a single-vector value with
+   this.dim == dim returns a 1-element array).  Each element is an
+   independent vector (own copy) of the same dtype.  b8 vectors: dim is a
+   bit count and must be byte-aligned (a multiple of 8). */
+static duk_ret_t v2split(duk_context *ctx)
+{
+    size_t blen;
+    duk_size_t subdim = (duk_size_t) REQUIRE_POSINT(ctx, 0,
+        "vector.split() - argument must be a positive integer (per-vector dim)");
+    duk_size_t fulldim, k, c, subbytes;
+    void *v;
+    rp_vec_type type;
+
+    duk_push_this(ctx);
+
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("rpvec"));
+    v = duk_get_buffer_data(ctx, -1, &blen);
+    duk_pop(ctx);
+
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("vectype"));
+    type = duk_get_int(ctx, -1);
+    duk_pop(ctx);
+
+    /* stored dim (correct for all types, incl. b8 whose dim is a bit
+       count, not blen/elsz) */
+    duk_get_prop_string(ctx, -1, "dim");
+    fulldim = (duk_size_t)duk_get_int(ctx, -1);
+    duk_pop(ctx);
+
+    if (subdim == 0 || subdim > fulldim || (fulldim % subdim) != 0)
+        RP_THROW(ctx, "vector.split() - vector dim (%d) is not a multiple of %d",
+                 (int)fulldim, (int)subdim);
+    if (type == rp_vec_b8 && (subdim % 8) != 0)
+        RP_THROW(ctx, "vector.split() - b8 vectors split on byte-aligned dims (multiples of 8)");
+
+    k = fulldim / subdim;
+    subbytes = blen / k;   /* uniform for all types: blen == k * subbytes */
+
+    duk_push_array(ctx);
+    for (c = 0; c < k; c++)
+    {
+        void *nv = duk_push_fixed_buffer(ctx, subbytes);
+        memcpy(nv, (char *)v + c * subbytes, subbytes);
+        rp_push_new_vector(ctx, type, subdim, -1);
+        duk_put_prop_index(ctx, -2, (duk_uarridx_t)c);
+    }
+    return 1;
+}
+
 // simsimd distance calcs
 static duk_ret_t v2dist(duk_context *ctx)
 {
@@ -1737,6 +1790,8 @@ static void push_vec_methods(duk_context *ctx, rp_vec_type type)
         duk_put_prop_string(ctx, -2, "byteLength");
         duk_push_c_function(ctx, v2copy, 1);
         duk_put_prop_string(ctx, -2, "copy");
+        duk_push_c_function(ctx, v2split, 1);
+        duk_put_prop_string(ctx, -2, "split");
         duk_push_c_function(ctx, v2dist, 2);
         duk_put_prop_string(ctx, -2, "distance");
         /* reconstruction to wider types (asymmetric scoring): float targets
@@ -1826,6 +1881,10 @@ static void push_vec_methods(duk_context *ctx, rp_vec_type type)
     // copy to vector of same length.
     duk_push_c_function(ctx, v2copy, 1);
     duk_put_prop_string(ctx, -2, "copy");
+
+    // split a k*dim multi-vector value into an Array of k dim-cell vectors
+    duk_push_c_function(ctx, v2split, 1);
+    duk_put_prop_string(ctx, -2, "split");
 
     // calc distance (vec, metric)
     duk_push_c_function(ctx, v2dist, 2);

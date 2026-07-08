@@ -21,9 +21,14 @@
  */
 static FLDFUNC TXdbfldfuncsUnsorted[] =
  {
+  /* arg 5 type is 0 (don't-care): it is EITHER the DBTBL blob that
+   * tup_eval auto-injects (exactly-4-user-arg calls, arrives as
+   * varbyte) OR a user-passed vec column value (5-user-arg vec-snippet
+   * mode, arrives as FTN_VEC_*).  A declared type would AUTOPROMOTE
+   * the vec to varbyte and erase the distinction. */
   { "abstract", F(TXsqlFuncs_abstract), 1, 5, (FTN_CHAR | DDVARBIT),
     { FTN_CHAR | DDVARBIT, FTN_LONG, (FTN_CHAR | DDVARBIT),
-      (FTN_CHAR | DDVARBIT), (FTN_BYTE | DDVARBIT) } },
+      (FTN_CHAR | DDVARBIT), 0 } },
   { "acos", F(TXacos), 1, 1, FTN_DOUBLE, {FTN_DOUBLE, 0, 0, 0, 0}},
   { "asin", F(TXasin), 1, 1, FTN_DOUBLE, {FTN_DOUBLE, 0, 0, 0, 0}},
   { "atan", F(TXatan), 1, 1, FTN_DOUBLE, {FTN_DOUBLE, 0, 0, 0, 0}},
@@ -97,6 +102,12 @@ static FLDFUNC TXdbfldfuncsUnsorted[] =
     { FTN_DOUBLE, FTN_DOUBLE, FTN_DOUBLE, FTN_DOUBLE, 0 } },
   { "dms2dec", F(TXfunc_dms2dec), 1, 1, FTN_DOUBLE,
     { FTN_DOUBLE, 0, 0, 0, 0 } },
+  { "chunkembed", F(TXsqlFunc_chunkembed), 1, 3, FTN_VEC_F16 | DDVARBIT,
+    { FTN_CHAR | DDVARBIT, FTN_CHAR | DDVARBIT, FTN_CHAR | DDVARBIT, 0, 0 } },
+  { "chunkavg", F(TXsqlFunc_chunkavg), 1, 3, FTN_VEC_F16 | DDVARBIT,
+    { FTN_CHAR | DDVARBIT, FTN_CHAR | DDVARBIT, FTN_CHAR | DDVARBIT, 0, 0 } },
+  { "chunkcoherence", F(TXsqlFunc_chunkcoherence), 1, 2, FTN_DOUBLE,
+    { FTN_CHAR | DDVARBIT, FTN_CHAR | DDVARBIT, 0, 0, 0 } },
   { "embed", F(TXsqlFunc_embed), 1, 2, FTN_VEC_F16 | DDVARBIT,
     { FTN_CHAR | DDVARBIT, FTN_CHAR | DDVARBIT, 0, 0, 0 } },
   { "exec", F(doshell), 1, 5, FTN_CHAR | DDVARBIT, {0, 0, 0, 0, 0 } },

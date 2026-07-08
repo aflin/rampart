@@ -297,12 +297,21 @@ module.exports = {
                 "modules/rampart-llamacpp_arm6.so",
                 "modules/rampart-llamacpp_arm8a.so",
                 "modules/rampart-llamacpp.so",
-                "modules/rampart-sentencepiece.so"],
+                "modules/rampart-sentencepiece.so",
+                /* rampart-onnx: ONE CPU-floor module (static ONNX
+                   Runtime) + its JS model catalog.  Not variant-
+                   specific -- ships in every langtools package.  GPU
+                   acceleration comes from the sibling onnx-cuNN/ dirs
+                   added to the cu12/cu13 packages, which rampart-onnx.so
+                   auto-discovers by its own location.  Not built on the
+                   2_17 tier or armv7; skip-missing drops it there. */
+                "modules/rampart-onnx.so",
+                "modules/rampart-models.js"],
         symlinks: {
             "modules/rampart-faiss.so":    "rampart-faiss_cpu.so",
             "modules/rampart-llamacpp.so": "rampart-llamacpp_cpu.so"
         },
-        notes: "Local LLM + vector search (llamacpp, faiss); CPU build"
+        notes: "Local LLM + vector search + ONNX embeddings (CPU build)"
     },
 
     /* CUDA-accelerated langtools.  Three per-runtime variants -- pick
@@ -312,40 +321,60 @@ module.exports = {
     "rampart-langtools-cu11": {
         kind:  "tar.gz",
         arch:  "dep",
+        /* onnx has no cu11 GPU runtime -- cu11 carries the CPU-floor
+           rampart-onnx.so (+ models.js) so a lone --install of this
+           variant is self-contained; onnx just runs on CPU here. */
         files: ["modules/rampart-faiss_cu11.so",
                 "modules/rampart-llamacpp_cu11.so",
-                "modules/rampart-sentencepiece.so"],
+                "modules/rampart-sentencepiece.so",
+                "modules/rampart-onnx.so",
+                "modules/rampart-models.js"],
         symlinks: {
             "modules/rampart-faiss.so":    "rampart-faiss_cu11.so",
             "modules/rampart-llamacpp.so": "rampart-llamacpp_cu11.so"
         },
-        notes: "Langtools, CUDA 11 (linux-*-x86_64 only)"
+        notes: "Langtools, CUDA 11 faiss/llamacpp; onnx CPU (linux-*-x86_64 only)"
     },
 
     "rampart-langtools-cu12": {
         kind:  "tar.gz",
         arch:  "dep",
+        /* GPU onnx: the sibling modules/onnx-cu12/ runtime dir ships
+           verbatim (ORT libs + sm.list + internal symlinks; trailing
+           slash -> cp -a).  rampart-onnx.so auto-discovers it.  NO
+           NVIDIA-authored CUDA libs are bundled -- GPU onnx requires a
+           system CUDA 12 toolkit + cuDNN 9.  Skip-missing drops the dir
+           on tiers that didn't build it. */
         files: ["modules/rampart-faiss_cu12.so",
                 "modules/rampart-llamacpp_cu12.so",
-                "modules/rampart-sentencepiece.so"],
+                "modules/rampart-sentencepiece.so",
+                "modules/rampart-onnx.so",
+                "modules/rampart-models.js",
+                "modules/onnx-cu12/"],
         symlinks: {
             "modules/rampart-faiss.so":    "rampart-faiss_cu12.so",
             "modules/rampart-llamacpp.so": "rampart-llamacpp_cu12.so"
         },
-        notes: "Langtools, CUDA 12 (linux-*-x86_64 only)"
+        notes: "Langtools, CUDA 12 (faiss/llamacpp + onnx GPU) (linux-*-x86_64 only)"
     },
 
     "rampart-langtools-cu13": {
         kind:  "tar.gz",
         arch:  "dep",
+        /* GPU onnx: sibling modules/onnx-cu13/ dir ships verbatim; no
+           NVIDIA CUDA libs bundled (needs system CUDA 13 + cuDNN 9).
+           See the cu12 entry. */
         files: ["modules/rampart-faiss_cu13.so",
                 "modules/rampart-llamacpp_cu13.so",
-                "modules/rampart-sentencepiece.so"],
+                "modules/rampart-sentencepiece.so",
+                "modules/rampart-onnx.so",
+                "modules/rampart-models.js",
+                "modules/onnx-cu13/"],
         symlinks: {
             "modules/rampart-faiss.so":    "rampart-faiss_cu13.so",
             "modules/rampart-llamacpp.so": "rampart-llamacpp_cu13.so"
         },
-        notes: "Langtools, CUDA 13 (linux-*-x86_64 only)"
+        notes: "Langtools, CUDA 13 (faiss/llamacpp + onnx GPU) (linux-*-x86_64 only)"
     },
 
     /* =============================================================

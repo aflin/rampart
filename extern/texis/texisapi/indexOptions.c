@@ -663,8 +663,11 @@ int             forUpdate;      /* (in) nonzero: index update not create */
         case TXindOpt_backend:
         case TXindOpt_vec_alpha:
         case TXindOpt_vec_calibrate:
+        case TXindOpt_vec_dim:
         case TXindOpt_vec_dtype:
         case TXindOpt_vec_efc:
+        case TXindOpt_vec_encode_batch:
+        case TXindOpt_vec_encode_gpu:
         case TXindOpt_vec_m:
         case TXindOpt_vec_metric:
         case TXindOpt_vec_pq_m:

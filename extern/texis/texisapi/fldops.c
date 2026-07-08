@@ -21,6 +21,7 @@ int __cdecl sscanf(const char *, const char *, ...);
 #include "texint.h"
 #include "fldops.h"
 #include "cgi.h"		/* for htsnpf() */
+#include "vecindex.h"		/* TXlikevSetLastChunk (FOP_MMV chunk argmax) */
 
 /* vec dtype converters; defined in src/duktape/globals/vector-distance.c
  * (linked into the texis engine), declared in src/include/rampart.h.
@@ -758,10 +759,20 @@ int op;
 					rc = FOP_EINVAL;
 					break;
 				}
-				if (f1->size != f2->size)
+				/* Multi-chunk rows: a column value holding k
+				 * concatenated chunk vectors (chunkembed())
+				 * has size = k * query-size.  Score every
+				 * chunk, keep the max (best-passage
+				 * semantics), and record the argmax for
+				 * abstract()'s snippet seeding.  k == 1 is
+				 * the plain single-vec case. */
+				if (f1->size == 0 || f2->size == 0 ||
+				    (f1->size >= f2->size
+				         ? (f1->size % f2->size)
+				         : (f2->size % f1->size)) != 0)
 				{
 					putmsg(MERR + UGE, "LIKEV",
-					       "operand byte lengths differ (%lu vs %lu)",
+					       "operand byte lengths incompatible (%lu vs %lu)",
 					       (unsigned long)f1->size,
 					       (unsigned long)f2->size);
 					rc = FOP_EINVAL;
@@ -788,13 +799,59 @@ int op;
 					rc = FOP_EINVAL;
 					break;
 				}
-				score = rp_vector_distance(vp1, vp2, f1->size,
-							   "dot", dtype, &err_msg);
-				if (err_msg)
 				{
-					putmsg(MERR + UGE, "LIKEV", "%s", err_msg);
-					rc = FOP_EINVAL;
-					break;
+					/* Which side carries the chunks. */
+					byte  *big   = vp1, *small = vp2;
+					size_t bigSz = f1->size, smallSz = f2->size;
+					size_t kChunks, ci;
+					int    bestIx = 0;
+
+					if (f2->size > f1->size)
+					{
+						big = vp2; small = vp1;
+						bigSz = f2->size; smallSz = f1->size;
+					}
+					kChunks = bigSz / smallSz;
+
+					score = -2.0;	/* below any cosine */
+					for (ci = 0; ci < kChunks; ci++)
+					{
+						double	cs;
+
+						cs = rp_vector_distance(
+							big + ci * smallSz,
+							small, smallSz,
+							"dot", dtype, &err_msg);
+						if (err_msg) break;
+						if (cs > score)
+						{
+							score = cs;
+							bestIx = (int)ci;
+						}
+					}
+					if (err_msg)
+					{
+						putmsg(MERR + UGE, "LIKEV",
+						       "%s", err_msg);
+						rc = FOP_EINVAL;
+						break;
+					}
+					/* Publish argmax for abstract();
+					 * -1 when single-chunk so readers can
+					 * tell "no chunking" from "chunk 0".
+					 * Only meaningful when the chunked
+					 * side is f1 (the column operand in
+					 * the LIKEV / rescore flow): a
+					 * multi-chunk RIGHT operand would
+					 * yield an argmax over query chunks,
+					 * which abstract() must not map onto
+					 * the row text's spans. */
+					if (big == vp1)
+						TXlikevSetLastChunk(
+							kChunks > 1 ? bestIx : -1,
+							(int)kChunks);
+					else
+						TXlikevSetLastChunk(-1, 0);
 				}
 				if (score >  1.0) score =  1.0;
 				if (score < -1.0) score = -1.0;

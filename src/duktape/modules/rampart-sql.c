@@ -106,6 +106,80 @@ static int    (*g_rp_embed_dim)(void *)                                   = NULL
 static void   (*g_rp_embed_set_per_thread)(int)                           = NULL;
 static void  *g_embed_handle = NULL;   /* one per process; first sql.set wins */
 
+/* Chunk-level doc embed + chunk spans (2026-07 langtools rework).
+ * Span struct is layout-identical across both engines. */
+typedef struct { size_t start, end, n_tokens; } rp_embed_span_t;
+static size_t (*g_rp_embed_doc)(void *, const char *, size_t,
+                                const char *, size_t,
+                                float **, size_t *, float **, float *,
+                                rp_embed_span_t **)                       = NULL;
+static size_t (*g_rp_embed_spans)(void *, const char *, size_t,
+                                  rp_embed_span_t **)                     = NULL;
+static void   (*g_rp_embed_set_cache_cap)(void *, size_t)                = NULL;
+
+/* --- ONNX embed backend (dlsym'd from rampart-onnx.so on first use) ------
+ *
+ * Same shape as the llamacpp integration above: `rp_onnx_embed_*` C exports
+ * are looked up lazily on the first sql.set({onnxEmbed:...}).  This struct
+ * MUST match rampart-langtools/rampart-onnx.c's declaration field for
+ * field; the RP_ONNX_EMBED_ABI sentinel makes accidental drift a loud
+ * load-time error instead of silent corruption (a shorter struct here
+ * feeds the langtools side stack garbage -- and since the opts are the
+ * model-handle dedup key, a non-deterministic key that splits the
+ * per-model doc cache).  ANY change to the struct must bump the define
+ * in BOTH files. */
+#define RP_ONNX_EMBED_ABI 3
+typedef struct {
+    int         abi_version;      /* must be RP_ONNX_EMBED_ABI */
+    const char *tokenizer_path;   /* file-mode only: tokenizer path (a
+                                   * *vocab.txt or a dir with tokenizer.json);
+                                   * NULL/empty in directory mode, which
+                                   * self-discovers the tokenizer */
+    int         bos_id;
+    int         eos_id;
+    int         id_offset;
+    int         pad_id;
+    int         max_tokens;
+    int         pooling;          /* 0 = auto, 1 = mean, 2 = cls */
+    int         normalize;
+    const char *query_prefix;
+    const char *passage_prefix;
+    int         max_chunk_batch;  /* 0 = default 64 */
+    int         split_mode;       /* 0 auto / 1 window / 2 para */
+    int         min_split_tokens; /* 0 = default 32, -1 = off */
+    int         pack_paragraphs;  /* 1 = pack paragraphs to the window */
+} rp_onnx_embed_opts;
+
+static void  *(*g_rp_onnx_embed_load)(const char *,
+                                      const rp_onnx_embed_opts *,
+                                      char *, size_t)                    = NULL;
+static size_t (*g_rp_onnx_embed_text)(void *, const char *, size_t,
+                                      float **)                          = NULL;
+static int    (*g_rp_onnx_embed_dim)(void *)                             = NULL;
+static void   (*g_rp_onnx_embed_release)(void *)                         = NULL;
+static size_t (*g_rp_onnx_embed_doc)(void *, const char *, size_t,
+                                     const char *, size_t,
+                                     float **, size_t *, float **, float *,
+                                     rp_embed_span_t **)                 = NULL;
+static size_t (*g_rp_onnx_embed_spans)(void *, const char *, size_t,
+                                       rp_embed_span_t **)               = NULL;
+static void   (*g_rp_onnx_embed_set_cache_cap)(void *, size_t)          = NULL;
+
+/* likevCache: requested doc-result cache capacity for the connection's
+ * embed handle (−1 = not set this session -> leave the default of 10).
+ * Applied to the active handle when both it and this value are known,
+ * regardless of the order the sql.set keys are processed. */
+__thread int g_doccache_cap_pending = -1;
+
+/* Which backend the currently-executing query on this thread should
+ * route embed() calls to.  Set from h->embed_engine per-exec, alongside
+ * g_active_embed_handle. */
+typedef enum {
+    EMBED_ENGINE_NONE     = 0,
+    EMBED_ENGINE_LLAMACPP = 1,
+    EMBED_ENGINE_ONNX     = 2,
+} embed_engine_t;
+
 /* --- LRU embed cache (Step 5) ---------------------------------------
  *
  * Process-global, byte-exact key (no normalization).  Sized via
@@ -287,12 +361,28 @@ static int embed_lru_set_capacity(size_t capacity)
  * their definitions later in the file.  DB_HANDLE-using decls move
  * down after the struct definition. */
 static void   parent_service_embed(void);
+static void   parent_service_embed_doc(void);
+static void   parent_service_chunk_spans(void);
+static size_t main_embed_doc_callback(void *ud, const char *text,
+                                      size_t tlen, const char *prefix,
+                                      size_t plen, float **out_vecs,
+                                      size_t *out_k, float **out_avg,
+                                      float *out_coh);
+static size_t main_chunk_spans_callback(void *ud, const char *text,
+                                        size_t tlen, TXchunkSpan **out_spans);
 static void   setup_llamacpp_callback(void);
 static int    setup_llamacpp_main(duk_context *ctx, const char *path,
                                   char *errbuf, size_t errbuflen);
 static int    peek_llamaembed_setting(duk_context *ctx, const char **path);
 static int    peek_llamacache_setting(duk_context *ctx, int *cap);
+static int    peek_likevcache_setting(duk_context *ctx, int *cap);
 static int    peek_llamaembed_perthread_setting(duk_context *ctx, int *on);
+static int    peek_onnxembed_setting(duk_context *ctx,
+                                     const char **model_path_out,
+                                     rp_onnx_embed_opts *out);
+static int    setup_onnx_main(duk_context *ctx, const char *model_path,
+                              const rp_onnx_embed_opts *opts,
+                              char *errbuf, size_t errbuflen);
 static int    embed_lru_set_capacity(size_t capacity);
 static int    fork_drain_embed_callbacks(void);
 
@@ -343,6 +433,17 @@ __thread void *last_sql_set = NULL;
 __thread void *g_last_loaded_embed_handle = NULL;
 __thread void *g_active_embed_handle      = NULL;
 
+/* Which engine owns g_active_embed_handle for this query.  Set alongside
+ * g_active_embed_handle in rp_sql_exec_query so main_embed_callback and
+ * parent_service_embed know whether to call rp_embed_text (llamacpp) or
+ * rp_onnx_embed_text (onnx). */
+__thread embed_engine_t g_active_embed_engine = EMBED_ENGINE_NONE;
+
+/* Thread-local mirror of the just-loaded onnx model, same role as
+ * g_last_loaded_embed_handle for llamacpp: h_set() reads this to
+ * attach the model to THIS connection's DB_HANDLE. */
+__thread void *g_last_loaded_onnx_handle = NULL;
+
 // some string functions don't fork.  We need an error map for them
 char *errmap0;
 
@@ -362,10 +463,11 @@ DB_HANDLE
     DB_HANDLE *next;            // linked list
     DB_HANDLE *prev;            // doublylinked list
     uint16_t forknum;           // convenience. Same as the threadnum from rampart-threads. So forknum == threadnum
-    void *embed_handle;         // per-connection embed model (rp_embed_load handle), or NULL
+    void *embed_handle;         // per-connection embed model (rp_embed_load handle or rp_onnx_embed_load handle), or NULL
+    embed_engine_t embed_engine;// which backend owns embed_handle; 0 (NONE) if none
     char flags;                 // bit 0 - if the texis handle is in the corresponding fork
                                 // bit 1 - if handle is available (not in use);
-                                // bit 2 - embed enabled (sql.set({llamaEmbed:...}))
+                                // bit 2 - embed enabled (sql.set({llamaEmbed:...} OR {onnxEmbed:...}))
                                 // bit 3 - embed callback registered in helper child
 };
 
@@ -416,6 +518,7 @@ static DB_HANDLE *new_handle(const char *db, const char *user, const char *pass)
     h->db=strdup(db);
     h->tx=NULL;
     h->embed_handle=NULL;
+    h->embed_engine=EMBED_ENGINE_NONE;
     h->forknum = (uint16_t)get_thread_num();
     h->next = h->prev = NULL;
     h->user=strdup(user);
@@ -803,6 +906,7 @@ static const char *get_exp(duk_context *ctx, duk_idx_t idx)
 
 #define forkwrite(b,c) ({\
     int r=0,ir=0;\
+    errno=0;\
     while( (r += (ir=write(finfo->writer, (b)+r, (c)-r))) < (c) ) if(ir<1)break;\
     if(ir<1) {\
         fprintf(stderr, "rampart-sql helper: write failed: '%s' at %d, fd:%d\n",strerror(errno),__LINE__,finfo->writer);\
@@ -813,6 +917,7 @@ static const char *get_exp(duk_context *ctx, duk_idx_t idx)
 
 #define forkread(b,c) ({\
     int r=0,ir=0;\
+    errno=0;\
     while( (r += (ir=read(finfo->reader, (b)+r, (c)-r))) < (c) ) if(ir<1)break;\
     if(ir==-1) {\
         fprintf(stderr, "rampart-sql helper: read failed from %d: '%s' at %d\n",finfo->reader,strerror(errno),__LINE__);\
@@ -1894,23 +1999,132 @@ static size_t child_embed_callback(void *ud,
     return veclen_bytes / sizeof(float);
 }
 
+/* Helper-side doc (chunked) embed: 'D' tag.  Same mmap discipline as
+ * 'B'.  Reply: total byte length down the pipe (0 = failure), then
+ * (size_t k) followed by k*dim floats in the mmap. */
+static size_t child_embed_doc_callback(void *ud,
+                                       const char *text, size_t tlen,
+                                       const char *prefix, size_t plen,
+                                       float **out_vecs, size_t *out_k,
+                                       float **out_avg, float *out_coh)
+{
+    (void)ud;
+    if (out_vecs) *out_vecs = NULL;
+    if (out_k) *out_k = 0;
+    if (out_avg) *out_avg = NULL;
+    if (out_coh) *out_coh = 0.0f;
+    if (!finfo) return 0;
+    if (!prefix) plen = 0;
+    if (tlen == 0 || tlen > FORKMAPSIZE || plen > FORKMAPSIZE ||
+        tlen + plen > FORKMAPSIZE) return 0;
+
+    /* mmap layout: [text][prefix]; lengths go down the pipe */
+    memcpy(finfo->mapinfo->mem, text, tlen);
+    if (plen) memcpy((char *)finfo->mapinfo->mem + tlen, prefix, plen);
+
+    char tag = 'D';
+    if (forkwrite(&tag, 1) == -1) return 0;
+    if (forkwrite((char *)&tlen, sizeof tlen) == -1) return 0;
+    if (forkwrite((char *)&plen, sizeof plen) == -1) return 0;
+
+    /* Parent replies: dim (0 = fail), k, coh; then the mmap holds
+     * [vecs: k*dim floats][avg: dim floats] — the full result, so the
+     * child can serve chunkembed / chunkavg / chunkcoherence from one
+     * round-trip. */
+    int    dim = 0;
+    size_t k = 0;
+    float  coh = 0.0f;
+    if (forkread(&dim, sizeof dim) == -1) return 0;
+    if (dim <= 0) return 0;
+    if (forkread(&k, sizeof k) == -1) return 0;
+    if (forkread(&coh, sizeof coh) == -1) return 0;
+    if (k == 0) return 0;
+    /* clamp each factor before multiplying: a desynced/corrupt pipe could
+     * deliver values whose product wraps size_t and slips past the
+     * total_bytes check below */
+    if ((size_t)dim > FORKMAPSIZE / sizeof(float) || k > FORKMAPSIZE / sizeof(float))
+        return 0;
+    size_t vecs_floats = k * (size_t)dim;
+    size_t total_bytes = (vecs_floats + (size_t)dim) * sizeof(float);
+    if (total_bytes > FORKMAPSIZE) return 0;
+
+    const float *mem = (const float *)finfo->mapinfo->mem;
+    if (out_vecs) {
+        float *v = (float *)malloc(vecs_floats * sizeof(float));
+        if (!v) return 0;
+        memcpy(v, mem, vecs_floats * sizeof(float));
+        *out_vecs = v;
+    }
+    if (out_avg) {
+        float *a = (float *)malloc((size_t)dim * sizeof(float));
+        if (!a) { if (out_vecs) { free(*out_vecs); *out_vecs = NULL; } return 0; }
+        memcpy(a, mem + vecs_floats, (size_t)dim * sizeof(float));
+        *out_avg = a;
+    }
+    if (out_k) *out_k = k;
+    if (out_coh) *out_coh = coh;
+    return (size_t)dim;
+}
+
+/* Helper-side chunk spans: 'S' tag.  Reply: span count k down the pipe
+ * (0 = failure), then k TXchunkSpan structs in the mmap. */
+static size_t child_chunk_spans_callback(void *ud,
+                                         const char *text, size_t tlen,
+                                         TXchunkSpan **out_spans)
+{
+    (void)ud;
+    if (out_spans) *out_spans = NULL;
+    if (!finfo || !out_spans) return 0;
+    if (tlen == 0 || tlen > FORKMAPSIZE) return 0;
+
+    memcpy(finfo->mapinfo->mem, text, tlen);
+
+    char tag = 'S';
+    if (forkwrite(&tag, 1) == -1) return 0;
+    if (forkwrite((char *)&tlen, sizeof tlen) == -1) return 0;
+
+    size_t k = 0;
+    if (forkread(&k, sizeof k) == -1) return 0;
+    if (k == 0 || k * sizeof(TXchunkSpan) > FORKMAPSIZE) return 0;
+
+    TXchunkSpan *spans = (TXchunkSpan *)malloc(k * sizeof(TXchunkSpan));
+    if (!spans) return 0;
+    memcpy(spans, finfo->mapinfo->mem, k * sizeof(TXchunkSpan));
+    *out_spans = spans;
+    return k;
+}
+
 /* Registered once by child when it learns embed is enabled — either
  * via 'O' from fork_open or 'V' from fork_exec.  Idempotent. */
 static void setup_llamacpp_callback(void)
 {
     TXregisterEmbedFunc(child_embed_callback, NULL);
+    TXregisterEmbedDocFunc(child_embed_doc_callback, NULL);
+    TXregisterChunkSpansFunc(child_chunk_spans_callback, NULL);
 }
 
-/* Parent-side helper: consume any 'B' (embed) callbacks, return when
- * the helper sends 'A' (= "real response payload follows").  Returns 0
- * on success, -1 on pipe error. */
+/* Parent-side helper: consume any 'B' (embed) / 'D' (doc embed) /
+ * 'S' (chunk spans) callbacks, return when the helper sends 'A'
+ * (= "real response payload follows").  Returns 0 on success, -1 on
+ * pipe error. */
 static int fork_drain_embed_callbacks(void)
 {
     for (;;) {
-        char tag;
-        if (forkread(&tag, 1) == -1) return -1;
+        char tag = 0;
+        /* != 1 (not == -1): EOF returns 0, and a dead helper must end
+         * this loop -- otherwise the stale tag is re-dispatched forever
+         * (the Ctrl-C "thousands of Broken pipe messages" spin). */
+        if (forkread(&tag, 1) != 1) return -1;
         if (tag == 'B') {
             parent_service_embed();
+            continue;
+        }
+        if (tag == 'D') {
+            parent_service_embed_doc();
+            continue;
+        }
+        if (tag == 'S') {
+            parent_service_chunk_spans();
             continue;
         }
         if (tag == 'A') return 0;
@@ -1933,7 +2147,7 @@ static void parent_service_embed(void)
     size_t tlen = 0, fail = 0;
     size_t veclen_bytes = 0;
 
-    if (forkread(&tlen, sizeof tlen) == -1) return;
+    if (forkread(&tlen, sizeof tlen) != (int)sizeof(tlen)) return;
     if (tlen == 0 || tlen > FORKMAPSIZE) {
         forkwrite((char *)&fail, sizeof fail);
         return;
@@ -1980,9 +2194,21 @@ static void parent_service_embed(void)
     int    dim = 0;
     /* Use the model of the connection whose query we're servicing on this thread
      * (set by rp_sql_exec_query before fork_exec drove us here), so the forked
-     * path is per-connection too -- not the old "first sql.set wins" global. */
-    if (g_rp_embed_text && g_active_embed_handle)
-        dim = g_rp_embed_text(g_active_embed_handle, text, tlen, &vec);
+     * path is per-connection too -- not the old "first sql.set wins" global.
+     * Dispatch by engine tag so onnxEmbed and llamaEmbed connections coexist. */
+    if (g_active_embed_handle) {
+        switch (g_active_embed_engine) {
+        case EMBED_ENGINE_LLAMACPP:
+            if (g_rp_embed_text)
+                dim = g_rp_embed_text(g_active_embed_handle, text, tlen, &vec);
+            break;
+        case EMBED_ENGINE_ONNX:
+            if (g_rp_onnx_embed_text)
+                dim = g_rp_onnx_embed_text(g_active_embed_handle, text, tlen, &vec);
+            break;
+        default: break;
+        }
+    }
     if (dim == 0 || !vec) {
         if (vec) free(vec);
         forkwrite((char *)&fail, sizeof fail);
@@ -2002,6 +2228,78 @@ static void parent_service_embed(void)
     memcpy(finfo->mapinfo->mem, vec, veclen_bytes);
     forkwrite((char *)&veclen_bytes, sizeof veclen_bytes);
     free(vec);
+}
+
+/* Parent-side 'D' (doc embed) service: reads tlen (text in mmap), runs
+ * the doc embed requesting the FULL result (vecs + avg + coh) so the
+ * child can serve any of chunkembed/chunkavg/chunkcoherence from one
+ * round-trip, and lays [vecs: k*dim][avg: dim] in the mmap.  Reply:
+ * int dim (0 = failure), size_t k, float coh.  The parent's langtools
+ * doc cache means repeated 'D' for the same text runs the model once. */
+static void parent_service_embed_doc(void)
+{
+    size_t tlen = 0, plen = 0;
+    int    faildim = 0;
+
+    if (forkread(&tlen, sizeof tlen) != (int)sizeof(tlen)) return;
+    if (forkread(&plen, sizeof plen) != (int)sizeof(plen)) return;
+    /* check each length alone first: garbage-huge values from a desynced
+     * pipe could wrap tlen + plen past the combined check */
+    if (tlen == 0 || tlen > FORKMAPSIZE || plen > FORKMAPSIZE ||
+        tlen + plen > FORKMAPSIZE) {
+        forkwrite((char *)&faildim, sizeof faildim);
+        return;
+    }
+    const char *text = (const char *)finfo->mapinfo->mem;
+    const char *pfx  = plen ? text + tlen : NULL;
+
+    float *vecs = NULL, *avg = NULL, coh = 0.0f;
+    size_t k = 0;
+    size_t dim = main_embed_doc_callback(NULL, text, tlen, pfx, plen,
+                                         &vecs, &k, &avg, &coh);
+    size_t vecs_floats = k * dim;
+    size_t total_bytes = (vecs_floats + dim) * sizeof(float);
+    if (dim == 0 || k == 0 || !vecs || !avg || total_bytes > FORKMAPSIZE) {
+        free(vecs); free(avg);
+        forkwrite((char *)&faildim, sizeof faildim);
+        return;
+    }
+    /* text in mmap is no longer needed — overwrite with the reply. */
+    float *mem = (float *)finfo->mapinfo->mem;
+    memcpy(mem, vecs, vecs_floats * sizeof(float));
+    memcpy(mem + vecs_floats, avg, dim * sizeof(float));
+    free(vecs); free(avg);
+
+    int idim = (int)dim;
+    forkwrite((char *)&idim, sizeof idim);
+    forkwrite((char *)&k, sizeof k);
+    forkwrite((char *)&coh, sizeof coh);
+}
+
+/* Parent-side 'S' (chunk spans) service: reads tlen (text in mmap),
+ * computes the spans (tokenize + chunk, no model), replies k down the
+ * pipe with k TXchunkSpan structs in the mmap.  k = 0 = failure. */
+static void parent_service_chunk_spans(void)
+{
+    size_t tlen = 0, fail = 0;
+
+    if (forkread(&tlen, sizeof tlen) != (int)sizeof(tlen)) return;
+    if (tlen == 0 || tlen > FORKMAPSIZE) {
+        forkwrite((char *)&fail, sizeof fail);
+        return;
+    }
+    const char *text = (const char *)finfo->mapinfo->mem;
+
+    TXchunkSpan *spans = NULL;
+    size_t k = main_chunk_spans_callback(NULL, text, tlen, &spans);
+    if (k == 0 || !spans || k * sizeof(TXchunkSpan) > FORKMAPSIZE) {
+        if (spans) free(spans);
+        forkwrite((char *)&fail, sizeof fail);
+        return;
+    }
+    memcpy(finfo->mapinfo->mem, spans, k * sizeof(TXchunkSpan));
+    free(spans);
+    forkwrite((char *)&k, sizeof k);
 }
 
 // return 0 on pipe/fork error
@@ -2365,6 +2663,10 @@ static int fork_sql_set(duk_context *ctx, DB_HANDLE *h, char *errbuf)
 
     int ret=0;
 
+    /* Same likevCache scoping as sql_set: the peek below re-arms it if
+     * this (merged) settings object carries the key. */
+    g_doccache_cap_pending = -1;
+
     if(!finfo)
         return 0;
 
@@ -2375,6 +2677,19 @@ static int fork_sql_set(duk_context *ctx, DB_HANDLE *h, char *errbuf)
     if (wants_embed) {
         char eerr[256] = {0};
         if (setup_llamacpp_main(ctx, embed_path, eerr, sizeof eerr) != 0) {
+            snprintf(errbuf, msgbufsz, "%s", eerr);
+            return -1;
+        }
+    }
+
+    /* Same drill for onnxEmbed.  Only one backend per set() call:
+     * llamaEmbed wins if both are present (matches h_set). */
+    const char *onnx_model = NULL;
+    rp_onnx_embed_opts onnx_opts;
+    int wants_onnx = wants_embed ? 0 : peek_onnxembed_setting(ctx, &onnx_model, &onnx_opts);
+    if (wants_onnx) {
+        char eerr[256] = {0};
+        if (setup_onnx_main(ctx, onnx_model, &onnx_opts, eerr, sizeof eerr) != 0) {
             snprintf(errbuf, msgbufsz, "%s", eerr);
             return -1;
         }
@@ -2398,6 +2713,21 @@ static int fork_sql_set(duk_context *ctx, DB_HANDLE *h, char *errbuf)
     if (peek_llamaembed_perthread_setting(ctx, &per_thread)) {
         if (g_rp_embed_set_per_thread)
             g_rp_embed_set_per_thread(per_thread);
+    }
+
+    /* likevCache: size the shared per-model doc cache.  The parent owns the
+     * cache (it services the child's 'D' doc-embed requests), and the
+     * fork path never runs sql_set's property loop -- so peek it here and
+     * arm the thread-local.  Our caller applies it after we return --
+     * h_set to THIS connection's h->embed_handle, or rp_texis_set (the
+     * sql.set path) to the engine named in the same merged settings;
+     * applying to the g_last_loaded_* thread-locals HERE would risk
+     * capping a DIFFERENT connection's model when likevCache is set
+     * without an embed key. */
+    int likev_cap = -1;
+    if (peek_likevcache_setting(ctx, &likev_cap)) {
+        if (likev_cap < 0) likev_cap = 0;
+        g_doccache_cap_pending = likev_cap;
     }
 
     duk_cbor_encode(ctx, -1, 0);
@@ -2431,7 +2761,7 @@ static int fork_sql_set(duk_context *ctx, DB_HANDLE *h, char *errbuf)
         strncpy(errbuf, finfo->mapinfo->mem, msgbufsz);
     }
 
-    if (ret >= 0 && wants_embed) {
+    if (ret >= 0 && (wants_embed || wants_onnx)) {
         DB_HANDLE_SET(h, DB_FLAG_EMBED_ENABLED);
         DB_HANDLE_CLEAR(h, DB_FLAG_EMBED_CHILD_REGISTERED);
     }
@@ -2645,6 +2975,25 @@ static int peek_llamacache_setting(duk_context *ctx, int *cap)
     return found;
 }
 
+/* likevCache / likevCacheSize: doc-result cache capacity.  Stored keys are
+ * lowercased, so match both spellings in lowercase.  Returns 1 if present. */
+static int peek_likevcache_setting(duk_context *ctx, int *cap)
+{
+    int found = 0;
+    const char *keys[2] = { "likevcache", "likevcachesize" };
+    for (int i = 0; i < 2 && !found; i++) {
+        if (duk_get_prop_string(ctx, -1, keys[i])) {
+            if (duk_is_number(ctx, -1)) {
+                found = 1; if (cap) *cap = duk_get_int(ctx, -1);
+            } else if (duk_is_string(ctx, -1)) {
+                found = 1; if (cap) *cap = atoi(duk_get_string(ctx, -1));
+            }
+        }
+        duk_pop(ctx);
+    }
+    return found;
+}
+
 /* And llamaEmbedPerThread (bool).  Returns 1 if present, sets *on. */
 static int peek_llamaembed_perthread_setting(duk_context *ctx, int *on)
 {
@@ -2660,16 +3009,167 @@ static int peek_llamaembed_perthread_setting(duk_context *ctx, int *on)
     return found;
 }
 
+/* Parse the onnxEmbed object at top-of-stack settings.  Fills *out with
+ * pointers borrowed from the settings object (caller must keep the
+ * settings alive until rp_onnx_embed_load returns; string owners are
+ * strdup'd inside rp_onnx_embed_load itself).  Returns 1 if the setting
+ * is present and valid, 0 otherwise; *model_path_out points at the
+ * borrowed model path.
+ *
+ * As of the 2026-07 rampart-onnx rework, `model` is normally a model
+ * directory (HuggingFace/sentence-transformers layout: `onnx/model.onnx`
+ * + `tokenizer.json` or `vocab.txt` + optional `1_Pooling/config.json`).
+ * In that "directory mode" the tokenizer, bos/eos, id_offset, pooling
+ * (if present) and normalize are auto-discovered -- only `pooling`,
+ * `maxTokens`, and `passagePrefix` are honored as overrides.
+ *
+ * "Legacy file mode" is still supported: pass a bare `.onnx` for
+ * `model` and a `*vocab.txt` (WordPiece) or directory containing
+ * `tokenizer.json` (SentencePiece/BPE) for `tokenizer`, and set
+ * `bosId` / `eosId` / `idOffset` / `pooling` yourself.
+ *
+ * Accepted shape:
+ *   sql.set({onnxEmbed:{
+ *       model:         '/home/u/.rampart/models/embed/bge-m3',  // required
+ *       tokenizer:     '/path/vocab.txt' | '/dir/with/tokenizer.json',  // optional (file mode)
+ *       // overrides honored in BOTH modes:
+ *       pooling:       'auto' | 'mean' | 'cls',
+ *       maxTokens:     512,
+ *       passagePrefix: 'passage: ',
+ *       // overrides honored ONLY in file mode (ignored in directory mode):
+ *       bosId: 0, eosId: 2, idOffset: 0, padId: 1, normalize: true,
+ *       queryPrefix: 'query: ',    // unused on the SQL path (SQL is passage-side)
+ *   }})
+ */
+static int peek_onnxembed_setting(duk_context *ctx,
+                                  const char **model_path_out,
+                                  rp_onnx_embed_opts *out)
+{
+    int found = 0;
+    if (!duk_get_prop_string(ctx, -1, "onnxembed")) {
+        duk_pop(ctx);
+        return 0;
+    }
+    if (!duk_is_object(ctx, -1) || duk_is_array(ctx, -1)) {
+        duk_pop(ctx);
+        return 0;
+    }
+    memset(out, 0, sizeof *out);
+    out->abi_version = RP_ONNX_EMBED_ABI;
+    out->bos_id      = 0;
+    out->eos_id      = 2;
+    out->id_offset   = 0;
+    out->pad_id      = 1;
+    out->max_tokens  = 0;    /* 0 => use model's n_ctx */
+    out->pooling     = 0;    /* auto */
+    out->normalize   = 1;    /* default true */
+
+    /* model is required.  tokenizer is optional (only used in file mode). */
+    const char *model = NULL, *tok = NULL;
+    if (duk_get_prop_string(ctx, -1, "model") && duk_is_string(ctx, -1))
+        model = duk_get_string(ctx, -1);
+    duk_pop(ctx);
+    if (duk_get_prop_string(ctx, -1, "tokenizer") && duk_is_string(ctx, -1))
+        tok = duk_get_string(ctx, -1);
+    duk_pop(ctx);
+    if (!model || !model[0]) {
+        duk_pop(ctx);
+        return 0;
+    }
+    /* Empty string tokenizer -> NULL (i.e., pure directory mode). */
+    out->tokenizer_path = (tok && tok[0]) ? tok : NULL;
+    *model_path_out     = model;
+    found = 1;
+
+    /* Optional numeric knobs.  The inner object's keys are stored
+     * verbatim (sql_normalize_prop only lowercases the OUTER
+     * `onnxembed` key), so we look up the exact camelCase names the
+     * user typed -- e.g. `bosId`, not `bosid`.  This matches the JS
+     * `initEmbed` opts surface documented in rampart-onnx.md. */
+    #define _NUM(prop, field) do {                                           \
+        if (duk_get_prop_string(ctx, -1, prop) && duk_is_number(ctx, -1))    \
+            out->field = duk_get_int(ctx, -1);                               \
+        duk_pop(ctx);                                                        \
+    } while (0)
+    _NUM("bosId",      bos_id);
+    _NUM("eosId",      eos_id);
+    _NUM("idOffset",   id_offset);
+    _NUM("padId",      pad_id);
+    _NUM("maxTokens",  max_tokens);
+    _NUM("maxChunkBatch", max_chunk_batch);   /* chunks per model run (default 64);
+                                               * lower = smaller GPU memory peak */
+    #undef _NUM
+
+    /* pooling: string 'auto'|'mean'|'cls'. */
+    if (duk_get_prop_string(ctx, -1, "pooling") && duk_is_string(ctx, -1)) {
+        const char *s = duk_get_string(ctx, -1);
+        if      (!strcasecmp(s, "mean")) out->pooling = 1;
+        else if (!strcasecmp(s, "cls"))  out->pooling = 2;
+        else                             out->pooling = 0; /* auto */
+    }
+    duk_pop(ctx);
+
+    /* normalize: boolean. */
+    if (duk_get_prop_string(ctx, -1, "normalize")) {
+        if (duk_is_boolean(ctx, -1))
+            out->normalize = duk_get_boolean(ctx, -1) ? 1 : 0;
+        else if (duk_is_number(ctx, -1))
+            out->normalize = duk_get_int(ctx, -1) ? 1 : 0;
+    }
+    duk_pop(ctx);
+
+    /* Optional prefix strings.  camelCase per above. */
+    if (duk_get_prop_string(ctx, -1, "queryPrefix") && duk_is_string(ctx, -1))
+        out->query_prefix = duk_get_string(ctx, -1);
+    duk_pop(ctx);
+    if (duk_get_prop_string(ctx, -1, "passagePrefix") && duk_is_string(ctx, -1))
+        out->passage_prefix = duk_get_string(ctx, -1);
+    duk_pop(ctx);
+
+    duk_pop(ctx);   /* the onnxembed object itself */
+    return found;
+}
+
+/* Apply the pending likevCache size (if any) to `handle` — the actual
+ * per-connection embed handle.  Called wherever h->embed_handle is
+ * established (h_set + the per-exec lazy-load), because that handle isn't
+ * necessarily the one setup_*_main loaded (the lazy-load can produce a
+ * distinct handle for the same model).  Cap == 0 disables; the setter is
+ * idempotent, so calling this per-connection is cheap. */
+static void apply_pending_doccache_cap(void *handle, embed_engine_t engine)
+{
+    if (g_doccache_cap_pending < 0 || !handle) return;
+    size_t cap = (size_t)g_doccache_cap_pending;
+    if (engine == EMBED_ENGINE_ONNX && g_rp_onnx_embed_set_cache_cap)
+        g_rp_onnx_embed_set_cache_cap(handle, cap);
+    else if (engine == EMBED_ENGINE_LLAMACPP && g_rp_embed_set_cache_cap)
+        g_rp_embed_set_cache_cap(handle, cap);
+}
+
 static int h_set(duk_context *ctx, DB_HANDLE *h, char *errbuf)
 {
     const char *embed_path = NULL;
     int wants_embed = peek_llamaembed_setting(ctx, &embed_path);
+
+    /* Only one embed backend per sql.set() call.  If both llamaEmbed and
+     * onnxEmbed appear in the same object, llamaEmbed wins for backwards
+     * compatibility; if only onnxEmbed appears we route through it. */
+    const char *onnx_model = NULL;
+    rp_onnx_embed_opts onnx_opts;
+    int wants_onnx = wants_embed ? 0 : peek_onnxembed_setting(ctx, &onnx_model, &onnx_opts);
 
     if (wants_embed && DB_HANDLE_IS(h, DB_FLAG_FORK)) {
         /* Forked path: load model in main before shipping settings.
          * setup_llamacpp_main is idempotent (cached by path). */
         char eerr[256] = {0};
         if (setup_llamacpp_main(ctx, embed_path, eerr, sizeof eerr) != 0) {
+            snprintf(errbuf, msgbufsz, "%s", eerr);
+            return -1;
+        }
+    }
+    if (wants_onnx && DB_HANDLE_IS(h, DB_FLAG_FORK)) {
+        char eerr[256] = {0};
+        if (setup_onnx_main(ctx, onnx_model, &onnx_opts, eerr, sizeof eerr) != 0) {
             snprintf(errbuf, msgbufsz, "%s", eerr);
             return -1;
         }
@@ -2681,17 +3181,32 @@ static int h_set(duk_context *ctx, DB_HANDLE *h, char *errbuf)
     else
         ret = sql_set(ctx, h->tx, errbuf);
 
-    if (ret >= 0 && wants_embed) {
+    if (ret >= 0 && (wants_embed || wants_onnx)) {
         DB_HANDLE_SET(h, DB_FLAG_EMBED_ENABLED);
         /* Attach the just-loaded model to THIS connection's handle (the model
          * is process-global / refcounted-by-path; we only store the pointer).
-         * setup_llamacpp_main ran for this thread on both the fork path (above)
-         * and the non-fork path (inside sql_set), so g_last_loaded_embed_handle
+         * setup_*_main ran for this thread on both the fork path (above)
+         * and the non-fork path (inside sql_set), so g_last_loaded_*_handle
          * holds this connection's model. */
-        h->embed_handle = g_last_loaded_embed_handle;
+        if (wants_embed) {
+            h->embed_handle = g_last_loaded_embed_handle;
+            h->embed_engine = EMBED_ENGINE_LLAMACPP;
+        } else {
+            h->embed_handle = g_last_loaded_onnx_handle;
+            h->embed_engine = EMBED_ENGINE_ONNX;
+        }
+        apply_pending_doccache_cap(h->embed_handle, h->embed_engine);
         /* Clear CHILD_REGISTERED so the next fork_exec triggers 'V'
          * even if the connection was opened with 'o'. */
         DB_HANDLE_CLEAR(h, DB_FLAG_EMBED_CHILD_REGISTERED);
+    }
+    else if (ret >= 0 && h->embed_handle) {
+        /* sql.set({likevCache:N}) without an embed key, on a connection
+         * whose model is already bound: apply to that model now.  (The
+         * per-connection h->embed_handle is authoritative -- NOT the
+         * g_last_loaded_* thread-locals, which may point at a different
+         * connection's model.) */
+        apply_pending_doccache_cap(h->embed_handle, h->embed_engine);
     }
 
     return ret;
@@ -3425,6 +3940,28 @@ void *check_for_vector_type(duk_context *ctx, long *olen, int *in, int *out)
 #define push_sql_param do{\
     switch (duk_get_type(ctx, -1))\
     {\
+        /* JS null -> empty varchar.  Historically the DEFAULT branch\
+           below coerced null to the string "null" via duk_to_string,\
+           which surprised callers expecting SQL-shaped semantics.  Two\
+           options considered: (a) bind with plen=SQL_NULL_DATA so\
+           texis's prepare.c takes its NULL path, and (b) bind as an\
+           empty string.  (a) requires texis-side plumbing to actually\
+           mark the FLD as NULL (prepare.c currently does not) and\
+           patching that broke parameter-FLD reuse across prepared-stmt\
+           re-executions.  (b) works entirely inside rampart-sql:\
+           TXsqlFunc_embed's `slen==0 -> TXfldSetNull` short-circuit\
+           returns SQL NULL for `select embed(?)`, and rp_pushfield\
+           already reads an empty varchar column back to JS null.  So\
+           null round-trips as null through embed() and through varchar\
+           column INSERT/SELECT with zero texis-core edits. */\
+        case DUK_TYPE_NULL:\
+        {\
+            v = (char *)"";\
+            plen = 0;\
+            in = SQL_C_CHAR;\
+            out = SQL_VARCHAR;\
+            break;\
+        }\
         case DUK_TYPE_NUMBER:\
         {\
             double floord;\
@@ -3490,9 +4027,10 @@ void *check_for_vector_type(duk_context *ctx, long *olen, int *in, int *out)
             out = SQL_BINARY;\
             break;\
         }\
-        /* default for strings (not converted)and\
-           booleans, null and undefined (converted to \
-           true/false, "null" and "undefined" respectively */\
+        /* default for strings (not converted) and\
+           booleans and undefined (converted to \
+           true/false and "undefined"); null has its\
+           own case above (bound as empty varchar) */\
         default:\
         {\
             v = (char *)duk_to_string(ctx, -1);\
@@ -5228,22 +5766,45 @@ static duk_ret_t rp_sql_exec_query(duk_context *ctx, int isquery)
      * NULL.  In that case resolve it from the connection's saved settings and
      * cache it on the handle (g_rp_embed_load is cached by path, so this loads at
      * most once per handle). */
-    if (!h->embed_handle && g_rp_embed_load) {
+    if (!h->embed_handle) {
         duk_get_prop_string(ctx, this_idx, DUK_HIDDEN_SYMBOL("sql_settings"));
         if (duk_is_object(ctx, -1)) {
             const char *epath = NULL;
-            if (peek_llamaembed_setting(ctx, &epath) && epath) {
+            int lcap = -1;   /* likevCache from THIS connection's stored
+                              * settings (on stack top) -- not the
+                              * thread-local, which may hold another
+                              * connection's cap at exec time. */
+            if (peek_likevcache_setting(ctx, &lcap) && lcap < 0) lcap = 0;
+            if (g_rp_embed_load && peek_llamaembed_setting(ctx, &epath) && epath) {
                 char eerr[256] = {0};
                 void *mh = g_rp_embed_load(epath, eerr, sizeof eerr);
                 if (mh) {
                     h->embed_handle = mh;
+                    h->embed_engine = EMBED_ENGINE_LLAMACPP;
+                    if (lcap >= 0 && g_rp_embed_set_cache_cap)
+                        g_rp_embed_set_cache_cap(mh, (size_t)lcap);
                     DB_HANDLE_SET(h, DB_FLAG_EMBED_ENABLED);
+                }
+            } else if (g_rp_onnx_embed_load) {
+                const char *omodel = NULL;
+                rp_onnx_embed_opts oopts;
+                if (peek_onnxembed_setting(ctx, &omodel, &oopts) && omodel) {
+                    char eerr[256] = {0};
+                    void *mh = g_rp_onnx_embed_load(omodel, &oopts, eerr, sizeof eerr);
+                    if (mh) {
+                        h->embed_handle = mh;
+                        h->embed_engine = EMBED_ENGINE_ONNX;
+                        if (lcap >= 0 && g_rp_onnx_embed_set_cache_cap)
+                            g_rp_onnx_embed_set_cache_cap(mh, (size_t)lcap);
+                        DB_HANDLE_SET(h, DB_FLAG_EMBED_ENABLED);
+                    }
                 }
             }
         }
         duk_pop(ctx);
     }
     g_active_embed_handle = h->embed_handle;
+    g_active_embed_engine = h->embed_engine;
 
 //  messes up the count for arg_idx, so just leave it
 //    duk_remove(ctx, this_idx); //no longer needed
@@ -5832,8 +6393,80 @@ static size_t main_embed_callback(void *ud,
                                   float **out_vec)
 {
     (void)ud;   /* model is the per-connection active handle, not the reg-time ud */
-    if (!g_rp_embed_text || !g_active_embed_handle) return 0;
-    return g_rp_embed_text(g_active_embed_handle, text, tlen, out_vec);
+    if (!g_active_embed_handle) return 0;
+    switch (g_active_embed_engine) {
+    case EMBED_ENGINE_LLAMACPP:
+        if (!g_rp_embed_text) return 0;
+        return g_rp_embed_text(g_active_embed_handle, text, tlen, out_vec);
+    case EMBED_ENGINE_ONNX:
+        if (!g_rp_onnx_embed_text) return 0;
+        return g_rp_onnx_embed_text(g_active_embed_handle, text, tlen, out_vec);
+    default:
+        return 0;
+    }
+}
+
+/* Doc-level (chunked) variant: powers texis's chunkembed() / chunkavg()
+ * / chunkcoherence() scalars.  Requests whichever of vecs / avg / coh
+ * the scalar wants; the langtools embedder computes them in one run and
+ * caches by text, so different scalars on the same text share it.  spans
+ * stay NULL (abstract() recomputes those via the spans callback). */
+static size_t main_embed_doc_callback(void *ud,
+                                      const char *text, size_t tlen,
+                                      const char *prefix, size_t plen,
+                                      float **out_vecs, size_t *out_k,
+                                      float **out_avg, float *out_coh)
+{
+    (void)ud;
+    if (!g_active_embed_handle) return 0;
+    switch (g_active_embed_engine) {
+    case EMBED_ENGINE_LLAMACPP:
+        if (!g_rp_embed_doc) return 0;
+        return g_rp_embed_doc(g_active_embed_handle, text, tlen, prefix, plen,
+                              out_vecs, out_k, out_avg, out_coh, NULL);
+    case EMBED_ENGINE_ONNX:
+        if (!g_rp_onnx_embed_doc) return 0;
+        return g_rp_onnx_embed_doc(g_active_embed_handle, text, tlen, prefix, plen,
+                                   out_vecs, out_k, out_avg, out_coh, NULL);
+    default:
+        return 0;
+    }
+}
+
+/* Chunk-spans variant: powers abstract()'s vec-seeded snippet mode.
+ * Tokenize + chunk only (no model run) — µs-cheap per row.  Converts
+ * the engine's {start,end,n_tokens} spans to texis's {start,end}. */
+static size_t main_chunk_spans_callback(void *ud,
+                                        const char *text, size_t tlen,
+                                        TXchunkSpan **out_spans)
+{
+    rp_embed_span_t *es = NULL;
+    size_t k = 0;
+    (void)ud;
+    if (out_spans) *out_spans = NULL;
+    if (!g_active_embed_handle || !out_spans) return 0;
+    switch (g_active_embed_engine) {
+    case EMBED_ENGINE_LLAMACPP:
+        if (!g_rp_embed_spans) return 0;
+        k = g_rp_embed_spans(g_active_embed_handle, text, tlen, &es);
+        break;
+    case EMBED_ENGINE_ONNX:
+        if (!g_rp_onnx_embed_spans) return 0;
+        k = g_rp_onnx_embed_spans(g_active_embed_handle, text, tlen, &es);
+        break;
+    default:
+        return 0;
+    }
+    if (k == 0 || !es) { free(es); return 0; }
+    TXchunkSpan *ts = (TXchunkSpan *)malloc(k * sizeof(TXchunkSpan));
+    if (!ts) { free(es); return 0; }
+    for (size_t i = 0; i < k; i++) {
+        ts[i].start = es[i].start;
+        ts[i].end   = es[i].end;
+    }
+    free(es);
+    *out_spans = ts;
+    return k;
 }
 
 /* Try several require() ids in turn until one resolves.  Order:
@@ -5893,14 +6526,29 @@ static int setup_llamacpp_main(duk_context *ctx, const char *path,
         g_rp_embed_text = dlsym(RTLD_DEFAULT, "rp_embed_text");
         g_rp_embed_dim  = dlsym(RTLD_DEFAULT, "rp_embed_dim");
         g_rp_embed_set_per_thread = dlsym(RTLD_DEFAULT, "rp_embed_set_per_thread");
-        /* set_per_thread is optional (older .so may lack it); ignore if NULL. */
-        if (!g_rp_embed_load || !g_rp_embed_text || !g_rp_embed_dim) {
+        g_rp_embed_doc   = dlsym(RTLD_DEFAULT, "rp_embed_doc");
+        g_rp_embed_spans = dlsym(RTLD_DEFAULT, "rp_embed_spans");
+        g_rp_embed_set_cache_cap = dlsym(RTLD_DEFAULT, "rp_embed_set_cache_cap");
+        /* iface marker: present only in modules whose rp_embed_doc has
+         * the v3 (per-doc prefix) signature -- a stale .so must fail
+         * HERE, loudly, not crash on a signature mismatch. */
+        void *iface_v3 = dlsym(RTLD_DEFAULT, "rp_embed_iface_v3");
+        if (!g_rp_embed_load || !g_rp_embed_text || !g_rp_embed_dim ||
+            !g_rp_embed_set_per_thread || !g_rp_embed_doc ||
+            !g_rp_embed_spans || !g_rp_embed_set_cache_cap || !iface_v3) {
             snprintf(errbuf, errbuflen,
                      "sql.set llamaEmbed: rampart-llamacpp loaded but "
                      "rp_embed_* C symbols are missing (version mismatch?)");
+            /* NULL every pointer: a partial set would let later calls
+             * (e.g. sql.set({llamaEmbedPerThread}) gating on
+             * g_rp_embed_set_per_thread) reach into the rejected .so */
             g_rp_embed_load = NULL;
             g_rp_embed_text = NULL;
             g_rp_embed_dim  = NULL;
+            g_rp_embed_set_per_thread = NULL;
+            g_rp_embed_doc   = NULL;
+            g_rp_embed_spans = NULL;
+            g_rp_embed_set_cache_cap = NULL;
             return -1;
         }
     }
@@ -5924,6 +6572,115 @@ static int setup_llamacpp_main(duk_context *ctx, const char *path,
      * ignored now (main_embed_callback reads the per-connection g_active_embed_handle);
      * registration just installs the parent-process callback once. */
     TXregisterEmbedFunc(main_embed_callback, g_embed_handle);
+    TXregisterEmbedDocFunc(main_embed_doc_callback, NULL);
+    TXregisterChunkSpansFunc(main_chunk_spans_callback, NULL);
+    return 0;
+}
+
+/* ============================================================
+ * ONNX embed plumbing — parallel to setup_llamacpp_main.
+ * ============================================================ */
+
+static int try_require_onnx(duk_context *ctx)
+{
+    /* Same order as try_require_llamacpp: the bare name first (which
+     * on a system with a single installed variant is a symlink to that
+     * variant), then CUDA, then CPU. */
+    static const char *candidates[] = {
+        "rampart-onnx",
+        "rampart-onnx_cuda",
+        "rampart-onnx_cpu",
+        NULL
+    };
+    for (int i = 0; candidates[i]; ++i) {
+        duk_push_global_object(ctx);
+        duk_get_prop_string(ctx, -1, "require");
+        duk_remove(ctx, -2);
+        duk_push_string(ctx, candidates[i]);
+        if (duk_pcall(ctx, 1) == 0) return 0;     /* module on stack */
+        duk_pop(ctx);                              /* drop the error */
+    }
+    return -1;
+}
+
+/* rampart-onnx's rp_onnx_embed_load takes a rich opts struct, unlike
+ * llamacpp which takes just a path.  Callers pass model path + fully-
+ * populated opts (parsed from the sql.set({onnxEmbed:{...}}) object).
+ * Returns 0 on success, fills errbuf and returns -1 on failure. */
+static int setup_onnx_main(duk_context *ctx,
+                           const char *model_path,
+                           const rp_onnx_embed_opts *opts,
+                           char *errbuf, size_t errbuflen)
+{
+    /* Resolve symbols once per process. */
+    if (!g_rp_onnx_embed_load) {
+        g_rp_onnx_embed_load = dlsym(RTLD_DEFAULT, "rp_onnx_embed_load");
+        if (!g_rp_onnx_embed_load) {
+            if (try_require_onnx(ctx) != 0) {
+                snprintf(errbuf, errbuflen,
+                         "sql.set onnxEmbed: cannot load rampart-onnx "
+                         "(tried require(\"rampart-onnx\"), "
+                         "\"rampart-onnx_cuda\", and "
+                         "\"rampart-onnx_cpu\")");
+                return -1;
+            }
+            /* Stash the JS module handle on `this` so the .so stays refcounted. */
+            duk_push_this(ctx);
+            duk_dup(ctx, -2);
+            duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("onnx_module"));
+            duk_pop_2(ctx);  /* this, module */
+            g_rp_onnx_embed_load = dlsym(RTLD_DEFAULT, "rp_onnx_embed_load");
+        }
+        g_rp_onnx_embed_text    = dlsym(RTLD_DEFAULT, "rp_onnx_embed_text");
+        /* _dim and _release are resolved and REQUIRED below but never
+         * called from this file: they complete the version probe (a module
+         * missing any of the set is stale) -- _dim mirrors the unused
+         * llama g_rp_embed_dim; onnx handles are process-lifetime so
+         * _release has no call site by design. */
+        g_rp_onnx_embed_dim     = dlsym(RTLD_DEFAULT, "rp_onnx_embed_dim");
+        g_rp_onnx_embed_release = dlsym(RTLD_DEFAULT, "rp_onnx_embed_release");
+        g_rp_onnx_embed_doc     = dlsym(RTLD_DEFAULT, "rp_onnx_embed_doc");
+        g_rp_onnx_embed_spans   = dlsym(RTLD_DEFAULT, "rp_onnx_embed_spans");
+        g_rp_onnx_embed_set_cache_cap = dlsym(RTLD_DEFAULT, "rp_onnx_embed_set_cache_cap");
+        if (!g_rp_onnx_embed_load || !g_rp_onnx_embed_text
+            || !g_rp_onnx_embed_dim  || !g_rp_onnx_embed_release
+            || !g_rp_onnx_embed_doc  || !g_rp_onnx_embed_spans
+            || !g_rp_onnx_embed_set_cache_cap) {
+            snprintf(errbuf, errbuflen,
+                     "sql.set onnxEmbed: rampart-onnx loaded but "
+                     "rp_onnx_embed_* C symbols are missing (version mismatch?)");
+            /* NULL every pointer (see the llama twin above) */
+            g_rp_onnx_embed_load    = NULL;
+            g_rp_onnx_embed_text    = NULL;
+            g_rp_onnx_embed_dim     = NULL;
+            g_rp_onnx_embed_release = NULL;
+            g_rp_onnx_embed_doc     = NULL;
+            g_rp_onnx_embed_spans   = NULL;
+            g_rp_onnx_embed_set_cache_cap = NULL;
+            return -1;
+        }
+    }
+
+    /* rampart-onnx used to dlsym rampart-sentencepiece for the C
+     * embed path; that dependency was removed in the 2026-07 rework
+     * (tokenizers now come from bundled onnxruntime-extensions), so
+     * we don't require SP here anymore. */
+
+    char loaderr[256] = {0};
+    void *h = g_rp_onnx_embed_load(model_path, opts, loaderr, sizeof loaderr);
+    if (!h) {
+        snprintf(errbuf, errbuflen,
+                 "sql.set onnxEmbed: load failed: %s",
+                 loaderr[0] ? loaderr : "unknown");
+        return -1;
+    }
+    g_last_loaded_onnx_handle = h;
+
+    /* Same callback registration as llamacpp; the dispatcher inside
+     * main_embed_callback picks the engine based on g_active_embed_engine. */
+    TXregisterEmbedFunc(main_embed_callback, NULL);
+    TXregisterEmbedDocFunc(main_embed_doc_callback, NULL);
+    TXregisterChunkSpansFunc(main_chunk_spans_callback, NULL);
     return 0;
 }
 
@@ -5935,6 +6692,14 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
     const char *val="";
     int added_ret_obj=0, ret=0;
     char *rlsts[]={"noiseList","suffixList","suffixEquivsList","prefixList"};
+
+    /* likevCache is scoped to one settings-processing run: the object we
+     * are about to walk is the connection's MERGED settings, so if it
+     * carries likevCache the property handler below re-arms this; if not,
+     * a stale cap from another connection's set() on this thread must not
+     * leak into this one.  Applied after we return (rp_texis_set /
+     * h_set), against the engine key present in the same merged object. */
+    g_doccache_cap_pending = -1;
 
     clearmsgbuf();
 
@@ -6137,9 +6902,6 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
             }
             if (g_rp_embed_set_per_thread)
                 g_rp_embed_set_per_thread(on);
-            /* If the rp_embed_set_per_thread symbol isn't present in
-             * the loaded rampart-llamacpp (older .so), silently fall
-             * through — the flag has no effect. */
             goto propnext;
         }
 
@@ -6168,6 +6930,39 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
             goto propnext;
         }
 
+        /* likevCache / likevCacheSize — number of documents in the
+         * per-model doc-result cache (the one that lets repeated
+         * `likev ?` searches, and chunkembed()+chunkavg()+embed() of the
+         * same text, share one model run).  Default 10; 0 disables.
+         * Applies to this connection's embed model handle; recorded in a
+         * thread-local so it works whether it appears before or after
+         * onnxEmbed/llamaEmbed in the same sql.set object, and applied
+         * immediately if the handle is already loaded.  Helper-child
+         * ignores it — the cache lives in the parent where the model
+         * runs. */
+        if (!strcasecmp(prop, "likevCache") ||
+            !strcasecmp(prop, "likevCacheSize"))
+        {
+            if (thisfork) goto propnext;
+            int n = 0;
+            if (duk_is_number(ctx, -1))      n = duk_get_int(ctx, -1);
+            else if (duk_is_string(ctx, -1)) n = atoi(duk_get_string(ctx, -1));
+            else {
+                snprintf(errbuf, msgbufsz,
+                         "sql.set: likevCache must be a Number");
+                goto return_neg_one;
+            }
+            if (n < 0) n = 0;
+            /* Record it; the cap is applied to the connection's actual
+             * embed handle wherever h->embed_handle is established
+             * (h_set + the per-exec lazy-load), via
+             * apply_pending_doccache_cap().  Storing rather than
+             * applying here is deliberate: the handle used for embeds
+             * isn't necessarily the one setup_*_main loaded. */
+            g_doccache_cap_pending = n;
+            goto propnext;
+        }
+
         /* llamaEmbed — main loads the model + registers main callback,
          * helper-child only registers the wire callback (writes 'B'
          * up the pipe).  thisfork tells us which side we're on. */
@@ -6191,6 +6986,50 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
             }
             /* DB_HANDLE flag setting happens in h_set / fork_sql_set
              * after this returns successfully. */
+            goto propnext;
+        }
+
+        /* onnxEmbed — ONNX-backed embed via rampart-onnx.  Accepts an
+         * object with at minimum `{model:'<dir>'}`; the model directory
+         * self-configures (tokenizer, pooling, bos/eos, normalize) via
+         * rampart-onnx's directory mode.  Legacy file mode also works
+         * -- pass a bare .onnx as `model` plus a `tokenizer` string.
+         * Parsed by peek_onnxembed_setting.  Same fork-vs-main split as
+         * llamaEmbed: child registers the wire callback, main loads +
+         * registers the dispatcher. */
+        if (!strcasecmp(prop, "onnxEmbed"))
+        {
+            if (!duk_is_object(ctx, -1) || duk_is_array(ctx, -1)) {
+                snprintf(errbuf, msgbufsz,
+                         "sql.set: onnxEmbed must be an object "
+                         "{model:'<dir-or-.onnx>', ...opts}");
+                goto return_neg_one;
+            }
+            if (thisfork) {
+                setup_llamacpp_callback();   /* wire callback is engine-agnostic */
+                goto propnext;
+            }
+            /* peek_onnxembed_setting expects the settings object at
+             * top-of-stack; feed it the property-value object directly by
+             * wrapping it in a temp object with prop "onnxembed". */
+            duk_push_object(ctx);
+            duk_dup(ctx, -2);
+            duk_put_prop_string(ctx, -2, "onnxembed");
+            const char *model = NULL;
+            rp_onnx_embed_opts opts;
+            int ok = peek_onnxembed_setting(ctx, &model, &opts);
+            duk_pop(ctx);    /* temp wrapper */
+            if (!ok) {
+                snprintf(errbuf, msgbufsz,
+                         "sql.set: onnxEmbed requires .model (a model directory, "
+                         "or a bare .onnx with a .tokenizer path)");
+                goto return_neg_one;
+            }
+            char eerr[256] = {0};
+            if (setup_onnx_main(ctx, model, &opts, eerr, sizeof eerr) != 0) {
+                snprintf(errbuf, msgbufsz, "%s", eerr);
+                goto return_neg_one;
+            }
             goto propnext;
         }
 
@@ -6604,6 +7443,7 @@ static duk_ret_t rp_texis_set(duk_context *ctx)
     const char *db, *user="PUBLIC", *pass="";
     DB_HANDLE *h = NULL;
     int ret = 0;
+    int set_wants_llama = 0, set_wants_onnx = 0;   /* for the likevCache apply */
     char errbuf[msgbufsz];
     char propa[64], *prop=&propa[0];
 
@@ -6681,6 +7521,18 @@ static duk_ret_t rp_texis_set(duk_context *ctx)
       DUK_HIDDEN_SYMBOL("sql_settings"));     // [ this, combined_settings ]
     duk_remove(ctx, 0);                       // [ combined_settings ]
 
+    /* Capture which embed key the merged settings carry BEFORE the
+     * processing calls below: fork_sql_set cbor-encodes the object in
+     * place, so it cannot be peeked afterwards.  Used for the
+     * likevCache apply after processing. */
+    {
+        const char *ep_ = NULL, *om_ = NULL;
+        rp_onnx_embed_opts oo_;
+        set_wants_llama = peek_llamaembed_setting(ctx, &ep_);
+        set_wants_onnx  = set_wants_llama ? 0
+                        : peek_onnxembed_setting(ctx, &om_, &oo_);
+    }
+
     /* going to a child proc */
     if(DB_HANDLE_IS(h, DB_FLAG_FORK))
     {
@@ -6727,6 +7579,22 @@ static duk_ret_t rp_texis_set(duk_context *ctx)
         ret = sql_set(ctx, h->tx, errbuf);
     }
 
+    /* likevCache: the processing run above re-armed the pending cap iff
+     * the merged settings carry the key; the embed key's setup (also run
+     * above, or on an earlier set() -- the settings are merged) left this
+     * connection's model in g_last_loaded_*.  Apply here, AFTER the whole
+     * object was walked, so the outcome does not depend on the relative
+     * order of the likevCache and embed keys. */
+    if (ret >= 0 && g_doccache_cap_pending >= 0) {
+        if (set_wants_llama)
+            apply_pending_doccache_cap(g_last_loaded_embed_handle,
+                                       EMBED_ENGINE_LLAMACPP);
+        else if (set_wants_onnx)
+            apply_pending_doccache_cap(g_last_loaded_onnx_handle,
+                                       EMBED_ENGINE_ONNX);
+        else if (h->embed_handle)   /* no embed key ever set()?  be safe */
+            apply_pending_doccache_cap(h->embed_handle, h->embed_engine);
+    }
 
     if(ret == -1)
     {
