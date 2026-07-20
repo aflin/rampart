@@ -20,6 +20,7 @@
 #include <time.h>
 #include "dbquery.h"
 #include "texint.h"
+#include "vecvalue.h"   /* self-describing chunked-vector values */
 #include "texisapi.h"
 #include "vecindex.h"
 #include "cgi.h"
@@ -128,7 +129,7 @@ static void   (*g_rp_embed_set_cache_cap)(void *, size_t)                = NULL;
  * model-handle dedup key, a non-deterministic key that splits the
  * per-model doc cache).  ANY change to the struct must bump the define
  * in BOTH files. */
-#define RP_ONNX_EMBED_ABI 3
+#define RP_ONNX_EMBED_ABI 4   /* v4: + sentence_split */
 typedef struct {
     int         abi_version;      /* must be RP_ONNX_EMBED_ABI */
     const char *tokenizer_path;   /* file-mode only: tokenizer path (a
@@ -148,6 +149,7 @@ typedef struct {
     int         split_mode;       /* 0 auto / 1 window / 2 para */
     int         min_split_tokens; /* 0 = default 32, -1 = off */
     int         pack_paragraphs;  /* 1 = pack paragraphs to the window */
+    int         sentence_split;   /* 1 = sentence-pack oversized pieces */
 } rp_onnx_embed_opts;
 
 static void  *(*g_rp_onnx_embed_load)(const char *,
@@ -444,6 +446,132 @@ __thread embed_engine_t g_active_embed_engine = EMBED_ENGINE_NONE;
  * attach the model to THIS connection's DB_HANDLE. */
 __thread void *g_last_loaded_onnx_handle = NULL;
 
+/* --- Retrieval prompt prefixes (asymmetric embed models) --------------
+ *
+ * Malloc'd strings resolved when an embed model is bound to a connection
+ * (sidecar file next to the model, or explicit sql.set keys) and owned by
+ * the DB_HANDLE.  The g_last_loaded_* trio is the same handoff pattern as
+ * g_last_loaded_embed_handle: filled by resolve_embed_prompts() on this
+ * thread, transferred to the handle by attach_prompts_to_handle().  The
+ * g_active_* trio is the per-exec mirror read by embed_compose_text()
+ * (borrowed pointers into the executing connection's handle; valid for
+ * the duration of the exec, like g_active_embed_handle). */
+__thread char *g_last_loaded_prompt_query     = NULL;
+__thread char *g_last_loaded_prompt_document  = NULL;
+__thread char *g_last_loaded_prompt_doc_title = NULL;
+__thread const char *g_active_prompt_query     = NULL;
+__thread const char *g_active_prompt_document  = NULL;
+__thread const char *g_active_prompt_doc_title = NULL;
+
+/* Compose the active model's DOCUMENT prefix, folding in an optional
+ * per-document title:
+ *   - doc-title template + title:  template with "{title}" replaced
+ *   - document prompt (+ title):   prompt, then the title
+ *   - no prompts, title only:      the title (nl_after_title callers only)
+ * nl_after_title: append '\n' after an appended title -- used when the
+ * result is string-prepended to the text (embed()); the chunkembed path
+ * passes 0 because the engine token-injects the prefix per window and
+ * needs no separator (title-only there returns NULL = pass through
+ * unchanged).  Returns NULL when nothing applies (caller keeps its
+ * original prefix); else a malloc'd string, *outlen = length. */
+static char *embed_compose_doc_prefix(const char *title, size_t title_len,
+                                      int nl_after_title, size_t *outlen)
+{
+    const char *tp = g_active_prompt_doc_title;
+    const char *dp = g_active_prompt_document;
+    char *out = NULL;
+    size_t n = 0;
+
+    if (title && title_len == 0) title = NULL;
+    if (title && tp) {
+        const char *slot = strstr(tp, "{title}");
+        size_t tplen = strlen(tp);
+        if (slot) {
+            size_t pre = (size_t)(slot - tp), post = tplen - pre - 7;
+            n = tplen - 7 + title_len;
+            out = malloc(n + 1);
+            if (!out) return NULL;
+            memcpy(out, tp, pre);
+            memcpy(out + pre, title, title_len);
+            memcpy(out + pre + title_len, slot + 7, post);
+        } else {           /* slotless template: use as prefix, title after */
+            n = tplen + title_len + (nl_after_title ? 1 : 0);
+            out = malloc(n + 1);
+            if (!out) return NULL;
+            memcpy(out, tp, tplen);
+            memcpy(out + tplen, title, title_len);
+            if (nl_after_title) out[tplen + title_len] = '\n';
+        }
+        out[n] = '\0';
+        if (outlen) *outlen = n;
+        return out;
+    }
+    if (dp) {
+        size_t dplen = strlen(dp);
+        n = dplen + (title ? title_len : 0) +
+            ((title && nl_after_title) ? 1 : 0);
+        out = malloc(n + 1);
+        if (!out) return NULL;
+        memcpy(out, dp, dplen);
+        if (title) {
+            memcpy(out + dplen, title, title_len);
+            if (nl_after_title) out[dplen + title_len] = '\n';
+        }
+        out[n] = '\0';
+        if (outlen) *outlen = n;
+        return out;
+    }
+    if (title && nl_after_title) {
+        out = malloc(title_len + 2);
+        if (!out) return NULL;
+        memcpy(out, title, title_len);
+        out[title_len] = '\n';
+        out[title_len + 1] = '\0';
+        if (outlen) *outlen = title_len + 1;
+        return out;
+    }
+    return NULL;
+}
+
+/* Compose the active model's retrieval prompt around `text` per the
+ * embed kind (TXEMBED_*).  Returns NULL when no composition applies
+ * (caller embeds text verbatim -- the no-prompts fast path); else a
+ * malloc'd NUL-terminated buffer, *outlen = length.  Composition
+ * happens HERE, before any cache, so every cache along the way
+ * (parent LRU, engine text/doc caches) keys on the exact bytes the
+ * model saw. */
+static char *embed_compose_text(int kind, const char *title, size_t title_len,
+                                const char *text, size_t tlen, size_t *outlen)
+{
+    const char *pfxp = NULL;
+    char *pfx = NULL;      /* malloc'd document prefix, when composed */
+    size_t pfxlen = 0;
+    char *out;
+
+    switch (kind) {
+    case TXEMBED_QUERY:
+        pfxp = g_active_prompt_query;
+        if (!pfxp) return NULL;
+        pfxlen = strlen(pfxp);
+        break;
+    case TXEMBED_DOCUMENT:
+        pfx = embed_compose_doc_prefix(title, title_len, 1, &pfxlen);
+        if (!pfx) return NULL;
+        pfxp = pfx;
+        break;
+    default:               /* TXEMBED_RAW */
+        return NULL;
+    }
+    out = malloc(pfxlen + tlen + 1);
+    if (!out) { free(pfx); return NULL; }
+    memcpy(out, pfxp, pfxlen);
+    memcpy(out + pfxlen, text, tlen);
+    out[pfxlen + tlen] = '\0';
+    free(pfx);
+    if (outlen) *outlen = pfxlen + tlen;
+    return out;
+}
+
 // some string functions don't fork.  We need an error map for them
 char *errmap0;
 
@@ -465,6 +593,14 @@ DB_HANDLE
     uint16_t forknum;           // convenience. Same as the threadnum from rampart-threads. So forknum == threadnum
     void *embed_handle;         // per-connection embed model (rp_embed_load handle or rp_onnx_embed_load handle), or NULL
     embed_engine_t embed_engine;// which backend owns embed_handle; 0 (NONE) if none
+    /* Retrieval prompt strings for embed_handle's model (malloc'd, owned by
+     * the handle; NULL = none).  From the model's .prompts.json sidecar /
+     * config_sentence_transformers.json, or explicit sql.set keys.  Applied
+     * around query/document text before the model runs (see
+     * embed_compose_text). */
+    char *embed_prompt_query;      // query prompt (plain prefix)
+    char *embed_prompt_document;   // document prompt, no-title form
+    char *embed_prompt_doc_title;  // document template with a {title} slot
     char flags;                 // bit 0 - if the texis handle is in the corresponding fork
                                 // bit 1 - if handle is available (not in use);
                                 // bit 2 - embed enabled (sql.set({llamaEmbed:...} OR {onnxEmbed:...}))
@@ -519,6 +655,9 @@ static DB_HANDLE *new_handle(const char *db, const char *user, const char *pass)
     h->tx=NULL;
     h->embed_handle=NULL;
     h->embed_engine=EMBED_ENGINE_NONE;
+    h->embed_prompt_query=NULL;
+    h->embed_prompt_document=NULL;
+    h->embed_prompt_doc_title=NULL;
     h->forknum = (uint16_t)get_thread_num();
     h->next = h->prev = NULL;
     h->user=strdup(user);
@@ -652,6 +791,9 @@ static DB_HANDLE * free_handle(DB_HANDLE *h)
         free(h->user);
     if(h->pass)
         free(h->pass);
+    free(h->embed_prompt_query);
+    free(h->embed_prompt_document);
+    free(h->embed_prompt_doc_title);
     free(h);
     return NULL;
 }
@@ -1225,6 +1367,14 @@ static SFI *check_fork(DB_HANDLE *h, int create)
 
             close(child2par[0]);
             close(par2child[1]);
+
+            /* rp_pipe() makes both ends close-on-exec so they never leak
+             * into unrelated subprocesses.  These two are handed to the
+             * helper BY NUMBER in the script text below, so they must
+             * survive our execl -- clear the flag here, in the child
+             * only: doing it in the parent would leak them again. */
+            rp_fd_keep_on_exec(par2child[0]);
+            rp_fd_keep_on_exec(child2par[1]);
 
             sprintf(script, scr_txt, par2child[0], child2par[1], h->forknum);
             execl(rampart_exec, rampart_exec, "-c", script, NULL);
@@ -1962,27 +2112,36 @@ static int child_prep()
  * are unchanged.
  * ============================================================ */
 
-/* Helper-side: writes 'B' tag + text-length over the pipe; the actual
- * text body goes through the thread-local shared mmap, as does the
- * vector reply.  Mmap is unused during exec/fetch's embed-callback
- * window (child_exec / child_fetch don't touch mmap until after the
- * texis call returns), so reusing it for the bulk-data transfer is
- * safe and avoids a pipe round-trip per kilobyte. */
+/* Helper-side: writes 'B' tag + text-length + prompt kind + title-length
+ * over the pipe; the actual text (and title, for document-kind embeds)
+ * goes through the thread-local shared mmap, as does the vector reply.
+ * The kind travels with each call because the PARENT owns the model's
+ * prompt strings (read once at sql.set) -- the helper never sees them.
+ * Mmap is unused during exec/fetch's embed-callback window (child_exec /
+ * child_fetch don't touch mmap until after the texis call returns), so
+ * reusing it for the bulk-data transfer is safe and avoids a pipe
+ * round-trip per kilobyte. */
 static size_t child_embed_callback(void *ud,
                                    const char *text, size_t tlen,
+                                   int kind, const char *title, size_t title_len,
                                    float **out_vec)
 {
     (void)ud;
     *out_vec = NULL;
     if (!finfo) return 0;
-    if (tlen == 0 || tlen > FORKMAPSIZE) return 0;
+    if (!title) title_len = 0;
+    if (tlen == 0 || tlen > FORKMAPSIZE || title_len > FORKMAPSIZE ||
+        tlen + title_len > FORKMAPSIZE) return 0;
 
-    /* text → mmap (no other writer at this point). */
+    /* [text][title] → mmap (no other writer at this point). */
     memcpy(finfo->mapinfo->mem, text, tlen);
+    if (title_len) memcpy((char *)finfo->mapinfo->mem + tlen, title, title_len);
 
     char tag = 'B';
     if (forkwrite(&tag, 1) == -1) return 0;
     if (forkwrite((char *)&tlen, sizeof tlen) == -1) return 0;
+    if (forkwrite((char *)&kind, sizeof kind) == -1) return 0;
+    if (forkwrite((char *)&title_len, sizeof title_len) == -1) return 0;
 
     /* Parent embeds and writes the vec back into our mmap before
      * sending the size byte through the pipe. */
@@ -2144,15 +2303,30 @@ static int fork_drain_embed_callbacks(void)
  * down the pipe.  No locks held during the model call or pipe write. */
 static void parent_service_embed(void)
 {
-    size_t tlen = 0, fail = 0;
+    size_t tlen = 0, title_len = 0, fail = 0;
+    int    kind = 0;
     size_t veclen_bytes = 0;
+    char  *composed = NULL;
 
     if (forkread(&tlen, sizeof tlen) != (int)sizeof(tlen)) return;
-    if (tlen == 0 || tlen > FORKMAPSIZE) {
+    if (forkread(&kind, sizeof kind) != (int)sizeof(kind)) return;
+    if (forkread(&title_len, sizeof title_len) != (int)sizeof(title_len)) return;
+    if (tlen == 0 || tlen > FORKMAPSIZE || title_len > FORKMAPSIZE ||
+        tlen + title_len > FORKMAPSIZE) {
         forkwrite((char *)&fail, sizeof fail);
         return;
     }
-    const char *text = (const char *)finfo->mapinfo->mem;
+    const char *text  = (const char *)finfo->mapinfo->mem;
+    const char *title = title_len ? text + tlen : NULL;
+
+    /* Compose the model's retrieval prompt around the text FIRST (it
+     * copies out of the mmap), so the LRU and the engine both key on
+     * the exact bytes the model sees. */
+    {
+        size_t clen = 0;
+        composed = embed_compose_text(kind, title, title_len, text, tlen, &clen);
+        if (composed) { text = composed; tlen = clen; }
+    }
 
     /* --- LRU lookup ----------------------------------------------- */
     int  hit_dim = 0;
@@ -2182,6 +2356,7 @@ static void parent_service_embed(void)
         }
         veclen_bytes = (size_t)hit_dim * sizeof(float);
         forkwrite((char *)&veclen_bytes, sizeof veclen_bytes);
+        free(composed);
         return;
     }
 
@@ -2212,6 +2387,7 @@ static void parent_service_embed(void)
     if (dim == 0 || !vec) {
         if (vec) free(vec);
         forkwrite((char *)&fail, sizeof fail);
+        free(composed);
         return;
     }
 
@@ -2228,6 +2404,7 @@ static void parent_service_embed(void)
     memcpy(finfo->mapinfo->mem, vec, veclen_bytes);
     forkwrite((char *)&veclen_bytes, sizeof veclen_bytes);
     free(vec);
+    free(composed);
 }
 
 /* Parent-side 'D' (doc embed) service: reads tlen (text in mmap), runs
@@ -2955,6 +3132,17 @@ static int peek_llamaembed_setting(duk_context *ctx, const char **path)
             found = 1;
             if (path) *path = duk_get_string(ctx, -1);
         }
+        else if (duk_is_object(ctx, -1) && !duk_is_array(ctx, -1) &&
+                 !duk_is_function(ctx, -1)) {
+            /* object form: { model: '/path.gguf', queryPrompt: ...,
+             * documentPrompt: ..., documentTitlePrompt: ..., prompts: false }
+             * -- the prompt keys are read by resolve_embed_prompts(). */
+            if (duk_get_prop_string(ctx, -1, "model") && duk_is_string(ctx, -1)) {
+                found = 1;
+                if (path) *path = duk_get_string(ctx, -1);
+            }
+            duk_pop(ctx);
+        }
     }
     duk_pop(ctx);
     return found;
@@ -3126,8 +3314,211 @@ static int peek_onnxembed_setting(duk_context *ctx,
         out->passage_prefix = duk_get_string(ctx, -1);
     duk_pop(ctx);
 
+    /* Chunker options, mirroring initEmbed: split 'auto'|'window',
+     * minTokens (fragment floor; -1 disables merging), packParagraphs,
+     * sentenceSplit (sentence-pack oversized pieces).  NOTE for chunked
+     * tables: these change chunk boundaries -- build and any HEADERLESS
+     * serving must agree (header-bearing values carry their own spans). */
+    if (duk_get_prop_string(ctx, -1, "split") && duk_is_string(ctx, -1)) {
+        if (!strcasecmp(duk_get_string(ctx, -1), "window"))
+            out->split_mode = 1;
+    }
+    duk_pop(ctx);
+    if (duk_get_prop_string(ctx, -1, "minTokens") && duk_is_number(ctx, -1))
+        out->min_split_tokens = duk_get_int(ctx, -1);
+    duk_pop(ctx);
+    if (duk_get_prop_string(ctx, -1, "packParagraphs"))
+        out->pack_paragraphs = duk_to_boolean(ctx, -1) ? 1 : 0;
+    duk_pop(ctx);
+    if (duk_get_prop_string(ctx, -1, "sentenceSplit"))
+        out->sentence_split = duk_to_boolean(ctx, -1) ? 1 : 0;
+    duk_pop(ctx);
+
     duk_pop(ctx);   /* the onnxembed object itself */
     return found;
+}
+
+/* ---- Retrieval prompt resolution ------------------------------------
+ *
+ * Asymmetric embed models (nomic, bge, e5, ...) need a prompt prefixed
+ * to queries and/or documents.  rampart-models.js writes them as a
+ * sidecar next to downloaded model files; resolve_embed_prompts() reads
+ * that ONCE when a model is bound to a connection and the strings live
+ * in memory from then on (composition per embed call is a strcat --
+ * never file I/O on the query path). */
+
+static void clear_last_loaded_prompts(void)
+{
+    free(g_last_loaded_prompt_query);     g_last_loaded_prompt_query = NULL;
+    free(g_last_loaded_prompt_document);  g_last_loaded_prompt_document = NULL;
+    free(g_last_loaded_prompt_doc_title); g_last_loaded_prompt_doc_title = NULL;
+}
+
+static duk_ret_t prompts_json_decode_raw(duk_context *ctx, void *udata)
+{
+    (void)udata;
+    duk_json_decode(ctx, -1);
+    return 1;
+}
+
+/* Parse {"prompts":{query, document|passage, documentWithTitle}} into the
+ * g_last_loaded_prompt_* trio (first non-empty value per slot wins; the
+ * same format as the .prompts.json sidecar AND HuggingFace's
+ * config_sentence_transformers.json).  Returns 1 if any prompt loaded. */
+static int parse_prompts_json(duk_context *ctx, const char *json, size_t jlen)
+{
+    int found = 0;
+    static const struct { const char *key; int slot; } K[] = {
+        { "query", 0 }, { "document", 1 }, { "passage", 1 },
+        { "documentWithTitle", 2 }
+    };
+    char **slots[3] = { &g_last_loaded_prompt_query,
+                        &g_last_loaded_prompt_document,
+                        &g_last_loaded_prompt_doc_title };
+
+    duk_push_lstring(ctx, json, jlen);
+    if (duk_safe_call(ctx, prompts_json_decode_raw, NULL, 1, 1) != DUK_EXEC_SUCCESS ||
+        !duk_is_object(ctx, -1)) {
+        duk_pop(ctx);
+        return 0;
+    }
+    if (duk_get_prop_string(ctx, -1, "prompts") && duk_is_object(ctx, -1)) {
+        for (size_t i = 0; i < sizeof(K) / sizeof(K[0]); i++) {
+            if (duk_get_prop_string(ctx, -1, K[i].key) && duk_is_string(ctx, -1)) {
+                const char *v = duk_get_string(ctx, -1);
+                if (v && v[0] && !*slots[K[i].slot]) {
+                    *slots[K[i].slot] = strdup(v);
+                    found = 1;
+                }
+            }
+            duk_pop(ctx);
+        }
+    }
+    duk_pop_2(ctx);   /* prompts (or non-object), decoded root */
+    return found;
+}
+
+/* Read + parse one prompts file.  Returns 1 if prompts were loaded. */
+static int load_prompts_file(duk_context *ctx, const char *path)
+{
+    FILE *f = fopen(path, "rb");
+    char *buf;
+    size_t got;
+    int found = 0;
+
+    if (!f) return 0;
+    buf = malloc(65536);
+    if (!buf) { fclose(f); return 0; }
+    got = fread(buf, 1, 65535, f);
+    fclose(f);
+    if (got > 0) found = parse_prompts_json(ctx, buf, got);
+    free(buf);
+    return found;
+}
+
+/* Locate the model's prompts on disk:
+ *   1. <model_path>.prompts.json                      (rampart-models sidecar)
+ *   2. model dir:  <dir>/config_sentence_transformers.json   (HF standard)
+ *   3. model file: same, in its directory, then its parent (onnx/model.onnx
+ *      layouts keep the config one level up). */
+static void load_prompt_sidecar(duk_context *ctx, const char *model_path)
+{
+    char pbuf[PATH_MAX];
+    struct stat st;
+
+    if (!model_path || !model_path[0]) return;
+    if (snprintf(pbuf, sizeof pbuf, "%s.prompts.json", model_path) >= (int)sizeof pbuf)
+        return;
+    if (load_prompts_file(ctx, pbuf)) return;
+
+    if (stat(model_path, &st) != 0) return;
+    if (S_ISDIR(st.st_mode)) {
+        if (snprintf(pbuf, sizeof pbuf, "%s/config_sentence_transformers.json",
+                     model_path) < (int)sizeof pbuf)
+            load_prompts_file(ctx, pbuf);
+        return;
+    }
+    /* plain file: its dir, then the parent dir */
+    snprintf(pbuf, sizeof pbuf, "%s", model_path);
+    for (int up = 0; up < 2; up++) {
+        char *slash = strrchr(pbuf, '/');
+        if (!slash || slash == pbuf) return;
+        *slash = '\0';
+        char cbuf[PATH_MAX];
+        if (snprintf(cbuf, sizeof cbuf, "%s/config_sentence_transformers.json",
+                     pbuf) >= (int)sizeof cbuf)
+            return;
+        if (load_prompts_file(ctx, cbuf)) return;
+    }
+}
+
+/* Fill g_last_loaded_prompt_* for the embed model being bound.  Expects
+ * the (lowercased-key) settings object at stack top.  Explicit keys in
+ * the engine's object win WHOLESALE over the sidecar:
+ *   queryPrompt / documentPrompt / documentTitlePrompt  (both engines)
+ *   prompts: false                          (disable, embed verbatim)
+ *   queryPrefix / passagePrefix              (onnx legacy, engine-side:
+ *                                            their presence skips the
+ *                                            sidecar so prompts never
+ *                                            stack on top of them) */
+static void resolve_embed_prompts(duk_context *ctx, const char *engine_key,
+                                  const char *model_path)
+{
+    int explicit_keys = 0;
+
+    clear_last_loaded_prompts();
+    if (duk_get_prop_string(ctx, -1, engine_key) &&
+        duk_is_object(ctx, -1) && !duk_is_array(ctx, -1) &&
+        !duk_is_function(ctx, -1)) {
+        if (duk_get_prop_string(ctx, -1, "prompts") &&
+            duk_is_boolean(ctx, -1) && !duk_get_boolean(ctx, -1)) {
+            duk_pop_2(ctx);   /* prompts, engine object */
+            return;           /* prompts:false -- embed verbatim */
+        }
+        duk_pop(ctx);
+
+        static const char *pkeys[3] =
+            { "queryPrompt", "documentPrompt", "documentTitlePrompt" };
+        char **slots[3] = { &g_last_loaded_prompt_query,
+                            &g_last_loaded_prompt_document,
+                            &g_last_loaded_prompt_doc_title };
+        for (int i = 0; i < 3; i++) {
+            if (duk_get_prop_string(ctx, -1, pkeys[i]) && duk_is_string(ctx, -1)) {
+                const char *v = duk_get_string(ctx, -1);
+                explicit_keys = 1;
+                if (v && v[0]) *slots[i] = strdup(v);
+            }
+            duk_pop(ctx);
+        }
+        if (!explicit_keys) {
+            static const char *ekeys[2] = { "queryPrefix", "passagePrefix" };
+            for (int i = 0; i < 2 && !explicit_keys; i++) {
+                if (duk_get_prop_string(ctx, -1, ekeys[i]) &&
+                    duk_is_string(ctx, -1) && duk_get_string(ctx, -1)[0])
+                    explicit_keys = 1;
+                duk_pop(ctx);
+            }
+        }
+    }
+    duk_pop(ctx);   /* engine key value (or undefined) */
+
+    if (!explicit_keys)
+        load_prompt_sidecar(ctx, model_path);
+}
+
+/* Transfer the just-resolved prompts to the connection's handle (the
+ * same handoff moment as h->embed_handle = g_last_loaded_*_handle). */
+static void attach_prompts_to_handle(DB_HANDLE *h)
+{
+    free(h->embed_prompt_query);
+    free(h->embed_prompt_document);
+    free(h->embed_prompt_doc_title);
+    h->embed_prompt_query     = g_last_loaded_prompt_query;
+    h->embed_prompt_document  = g_last_loaded_prompt_document;
+    h->embed_prompt_doc_title = g_last_loaded_prompt_doc_title;
+    g_last_loaded_prompt_query = NULL;
+    g_last_loaded_prompt_document = NULL;
+    g_last_loaded_prompt_doc_title = NULL;
 }
 
 /* Apply the pending likevCache size (if any) to `handle` — the actual
@@ -3157,6 +3548,13 @@ static int h_set(duk_context *ctx, DB_HANDLE *h, char *errbuf)
     const char *onnx_model = NULL;
     rp_onnx_embed_opts onnx_opts;
     int wants_onnx = wants_embed ? 0 : peek_onnxembed_setting(ctx, &onnx_model, &onnx_opts);
+
+    /* Resolve the model's retrieval prompts NOW, while the settings object
+     * is at stack top (fork_sql_set / sql_set may leave a response there). */
+    if (wants_embed)
+        resolve_embed_prompts(ctx, "llamaembed", embed_path);
+    else if (wants_onnx)
+        resolve_embed_prompts(ctx, "onnxembed", onnx_model);
 
     if (wants_embed && DB_HANDLE_IS(h, DB_FLAG_FORK)) {
         /* Forked path: load model in main before shipping settings.
@@ -3195,6 +3593,7 @@ static int h_set(duk_context *ctx, DB_HANDLE *h, char *errbuf)
             h->embed_handle = g_last_loaded_onnx_handle;
             h->embed_engine = EMBED_ENGINE_ONNX;
         }
+        attach_prompts_to_handle(h);
         apply_pending_doccache_cap(h->embed_handle, h->embed_engine);
         /* Clear CHILD_REGISTERED so the next fork_exec triggers 'V'
          * even if the connection was opened with 'o'. */
@@ -4123,6 +4522,44 @@ static int rp_add_named_parameters(
 /* **************************************************
   push a single field from a row of the sql results
    ************************************************** */
+/* chunkembed() values may carry a self-describing header (vecvalue.h):
+ * strip it for the JS-facing cells and surface its spans (when present)
+ * as a .chunkSpans property on the rampart.vector object. */
+static void *rp_vec_col_cells(void *data, size_t *cells, size_t elsz,
+                              const EPI_UINT32 **spans, size_t *nspans)
+{
+    TXvecValInfo vvi;
+
+    *spans = NULL;
+    *nspans = 0;
+    if (data && TXvecValDecode(data, *cells * elsz, elsz, &vvi))
+    {
+        *cells -= vvi.hdrBytes / elsz;
+        if (vvi.spans) { *spans = vvi.spans; *nspans = vvi.k; }
+        return (void *)vvi.cells;
+    }
+    return data;
+}
+
+static void rp_vec_attach_spans(duk_context *ctx, const EPI_UINT32 *spans,
+                                size_t k)
+{
+    size_t i;
+
+    if (!spans) return;
+    duk_push_array(ctx);
+    for (i = 0; i < k; i++)
+    {
+        duk_push_object(ctx);
+        duk_push_uint(ctx, (duk_uint_t)spans[i * 2]);
+        duk_put_prop_string(ctx, -2, "start");
+        duk_push_uint(ctx, (duk_uint_t)spans[i * 2 + 1]);
+        duk_put_prop_string(ctx, -2, "end");
+        duk_put_prop_index(ctx, -2, (duk_uarridx_t)i);
+    }
+    duk_put_prop_string(ctx, -2, "chunkSpans");
+}
+
 static void rp_pushfield(duk_context *ctx, FLDLST *fl, int i, int rawvec)
 {
     char type = fl->type[i] & 0x3f;
@@ -4300,60 +4737,103 @@ static void rp_pushfield(duk_context *ctx, FLDLST *fl, int i, int rawvec)
     case FTN_VEC_F64:
     {
         double *p;
-        p = (double *) duk_push_fixed_buffer(ctx, fl->ndata[i] *sizeof(double));
-        memcpy(p, fl->data[i], fl->ndata[i]*sizeof(double));
+        size_t cells_ = (size_t)fl->ndata[i], nspans_;
+        const EPI_UINT32 *spans_;
+        void *src_ = rp_vec_col_cells(fl->data[i], &cells_,
+                                      sizeof(double), &spans_, &nspans_);
+
+        p = (double *) duk_push_fixed_buffer(ctx, cells_ * sizeof(double));
+        memcpy(p, src_, cells_ * sizeof(double));
         if(!rawvec)
-            rp_push_new_vector(ctx, rp_vec_f64, (size_t)fl->ndata[i], -1);
+        {
+            rp_push_new_vector(ctx, rp_vec_f64, cells_, -1);
+            rp_vec_attach_spans(ctx, spans_, nspans_);
+        }
         break;
     }
     case FTN_VEC_F32:
     {
         float *p;
+        size_t cells_ = (size_t)fl->ndata[i], nspans_;
+        const EPI_UINT32 *spans_;
+        void *src_ = rp_vec_col_cells(fl->data[i], &cells_,
+                                      sizeof(float), &spans_, &nspans_);
 
-        p = (float *) duk_push_fixed_buffer(ctx, fl->ndata[i] *sizeof(float));
-        memcpy(p, fl->data[i], fl->ndata[i]*sizeof(float));
+        p = (float *) duk_push_fixed_buffer(ctx, cells_ * sizeof(float));
+        memcpy(p, src_, cells_ * sizeof(float));
         if(!rawvec)
-            rp_push_new_vector(ctx, rp_vec_f32, (size_t)fl->ndata[i], -1);
+        {
+            rp_push_new_vector(ctx, rp_vec_f32, cells_, -1);
+            rp_vec_attach_spans(ctx, spans_, nspans_);
+        }
         break;
     }
     case FTN_VEC_F16:
     {
         uint16_t *p;
+        size_t cells_ = (size_t)fl->ndata[i], nspans_;
+        const EPI_UINT32 *spans_;
+        void *src_ = rp_vec_col_cells(fl->data[i], &cells_,
+                                      sizeof(uint16_t), &spans_, &nspans_);
 
-        p = (uint16_t *) duk_push_fixed_buffer(ctx, fl->ndata[i] *sizeof(uint16_t));
-        memcpy(p, fl->data[i], fl->ndata[i]*sizeof(uint16_t));
+        p = (uint16_t *) duk_push_fixed_buffer(ctx, cells_ * sizeof(uint16_t));
+        memcpy(p, src_, cells_ * sizeof(uint16_t));
         if(!rawvec)
-            rp_push_new_vector(ctx, rp_vec_f16, (size_t)fl->ndata[i], -1);
+        {
+            rp_push_new_vector(ctx, rp_vec_f16, cells_, -1);
+            rp_vec_attach_spans(ctx, spans_, nspans_);
+        }
         break;
     }
     case FTN_VEC_BF16:
     {
         uint16_t *p;
+        size_t cells_ = (size_t)fl->ndata[i], nspans_;
+        const EPI_UINT32 *spans_;
+        void *src_ = rp_vec_col_cells(fl->data[i], &cells_,
+                                      sizeof(uint16_t), &spans_, &nspans_);
 
-        p = (uint16_t *) duk_push_fixed_buffer(ctx, fl->ndata[i] *sizeof(uint16_t));
-        memcpy(p, fl->data[i], fl->ndata[i]*sizeof(uint16_t));
+        p = (uint16_t *) duk_push_fixed_buffer(ctx, cells_ * sizeof(uint16_t));
+        memcpy(p, src_, cells_ * sizeof(uint16_t));
         if(!rawvec)
-            rp_push_new_vector(ctx, rp_vec_bf16, (size_t)fl->ndata[i], -1);
+        {
+            rp_push_new_vector(ctx, rp_vec_bf16, cells_, -1);
+            rp_vec_attach_spans(ctx, spans_, nspans_);
+        }
         break;
     }
     case FTN_VEC_I8:
     {
         int8_t *p;
+        size_t cells_ = (size_t)fl->ndata[i], nspans_;
+        const EPI_UINT32 *spans_;
+        void *src_ = rp_vec_col_cells(fl->data[i], &cells_,
+                                      sizeof(int8_t), &spans_, &nspans_);
 
-        p = (int8_t *) duk_push_fixed_buffer(ctx, fl->ndata[i] *sizeof(int8_t));
-        memcpy(p, fl->data[i], fl->ndata[i]*sizeof(int8_t));
+        p = (int8_t *) duk_push_fixed_buffer(ctx, cells_ * sizeof(int8_t));
+        memcpy(p, src_, cells_ * sizeof(int8_t));
         if(!rawvec)
-            rp_push_new_vector(ctx, rp_vec_i8, (size_t)fl->ndata[i], -1);
+        {
+            rp_push_new_vector(ctx, rp_vec_i8, cells_, -1);
+            rp_vec_attach_spans(ctx, spans_, nspans_);
+        }
         break;
     }
     case FTN_VEC_U8:
     {
         uint8_t *p;
+        size_t cells_ = (size_t)fl->ndata[i], nspans_;
+        const EPI_UINT32 *spans_;
+        void *src_ = rp_vec_col_cells(fl->data[i], &cells_,
+                                      sizeof(uint8_t), &spans_, &nspans_);
 
-        p = (uint8_t *) duk_push_fixed_buffer(ctx, fl->ndata[i] *sizeof(uint8_t));
-        memcpy(p, fl->data[i], fl->ndata[i]*sizeof(uint8_t));
+        p = (uint8_t *) duk_push_fixed_buffer(ctx, cells_ * sizeof(uint8_t));
+        memcpy(p, src_, cells_ * sizeof(uint8_t));
         if(!rawvec)
-            rp_push_new_vector(ctx, rp_vec_u8, (size_t)fl->ndata[i], -1);
+        {
+            rp_push_new_vector(ctx, rp_vec_u8, cells_, -1);
+            rp_vec_attach_spans(ctx, spans_, nspans_);
+        }
         break;
     }
     case FTN_BYTE:
@@ -5781,6 +6261,8 @@ static duk_ret_t rp_sql_exec_query(duk_context *ctx, int isquery)
                 if (mh) {
                     h->embed_handle = mh;
                     h->embed_engine = EMBED_ENGINE_LLAMACPP;
+                    resolve_embed_prompts(ctx, "llamaembed", epath);
+                    attach_prompts_to_handle(h);
                     if (lcap >= 0 && g_rp_embed_set_cache_cap)
                         g_rp_embed_set_cache_cap(mh, (size_t)lcap);
                     DB_HANDLE_SET(h, DB_FLAG_EMBED_ENABLED);
@@ -5794,6 +6276,8 @@ static duk_ret_t rp_sql_exec_query(duk_context *ctx, int isquery)
                     if (mh) {
                         h->embed_handle = mh;
                         h->embed_engine = EMBED_ENGINE_ONNX;
+                        resolve_embed_prompts(ctx, "onnxembed", omodel);
+                        attach_prompts_to_handle(h);
                         if (lcap >= 0 && g_rp_onnx_embed_set_cache_cap)
                             g_rp_onnx_embed_set_cache_cap(mh, (size_t)lcap);
                         DB_HANDLE_SET(h, DB_FLAG_EMBED_ENABLED);
@@ -5805,6 +6289,9 @@ static duk_ret_t rp_sql_exec_query(duk_context *ctx, int isquery)
     }
     g_active_embed_handle = h->embed_handle;
     g_active_embed_engine = h->embed_engine;
+    g_active_prompt_query     = h->embed_prompt_query;
+    g_active_prompt_document  = h->embed_prompt_document;
+    g_active_prompt_doc_title = h->embed_prompt_doc_title;
 
 //  messes up the count for arg_idx, so just leave it
 //    duk_remove(ctx, this_idx); //no longer needed
@@ -6390,20 +6877,37 @@ static int sql_defaults(duk_context *ctx, TEXIS *tx, char *errbuf)
 
 static size_t main_embed_callback(void *ud,
                                   const char *text, size_t tlen,
+                                  int kind, const char *title, size_t title_len,
                                   float **out_vec)
 {
+    size_t r = 0;
+    size_t clen = 0;
+    char *composed;
+
     (void)ud;   /* model is the per-connection active handle, not the reg-time ud */
     if (!g_active_embed_handle) return 0;
+
+    /* Apply the model's retrieval prompt per the caller's kind (query /
+     * document / raw).  NULL = nothing to apply, embed verbatim -- so a
+     * model without prompts is byte-identical to older releases.  The
+     * engine's text cache keys on the composed bytes. */
+    composed = embed_compose_text(kind, title, title_len, text, tlen, &clen);
+    if (composed) { text = composed; tlen = clen; }
+
     switch (g_active_embed_engine) {
     case EMBED_ENGINE_LLAMACPP:
-        if (!g_rp_embed_text) return 0;
-        return g_rp_embed_text(g_active_embed_handle, text, tlen, out_vec);
+        if (g_rp_embed_text)
+            r = g_rp_embed_text(g_active_embed_handle, text, tlen, out_vec);
+        break;
     case EMBED_ENGINE_ONNX:
-        if (!g_rp_onnx_embed_text) return 0;
-        return g_rp_onnx_embed_text(g_active_embed_handle, text, tlen, out_vec);
+        if (g_rp_onnx_embed_text)
+            r = g_rp_onnx_embed_text(g_active_embed_handle, text, tlen, out_vec);
+        break;
     default:
-        return 0;
+        break;
     }
+    free(composed);
+    return r;
 }
 
 /* Doc-level (chunked) variant: powers texis's chunkembed() / chunkavg()
@@ -6417,20 +6921,37 @@ static size_t main_embed_doc_callback(void *ud,
                                       float **out_vecs, size_t *out_k,
                                       float **out_avg, float *out_coh)
 {
+    size_t r = 0;
+    size_t cplen = 0;
+    char *cpfx;
+
     (void)ud;
     if (!g_active_embed_handle) return 0;
+
+    /* chunkembed()'s prefix arg is the per-document TITLE.  Fold the
+     * model's document prompt around it (template {title} slot, or
+     * prompt-then-title); NULL = no prompts, the title passes through
+     * exactly as before.  The engine token-injects the result into each
+     * chunk window, and its doc cache keys on (text, composed prefix). */
+    cpfx = embed_compose_doc_prefix(prefix, plen, 0, &cplen);
+    if (cpfx) { prefix = cpfx; plen = cplen; }
+
     switch (g_active_embed_engine) {
     case EMBED_ENGINE_LLAMACPP:
-        if (!g_rp_embed_doc) return 0;
-        return g_rp_embed_doc(g_active_embed_handle, text, tlen, prefix, plen,
-                              out_vecs, out_k, out_avg, out_coh, NULL);
+        if (g_rp_embed_doc)
+            r = g_rp_embed_doc(g_active_embed_handle, text, tlen, prefix, plen,
+                               out_vecs, out_k, out_avg, out_coh, NULL);
+        break;
     case EMBED_ENGINE_ONNX:
-        if (!g_rp_onnx_embed_doc) return 0;
-        return g_rp_onnx_embed_doc(g_active_embed_handle, text, tlen, prefix, plen,
-                                   out_vecs, out_k, out_avg, out_coh, NULL);
+        if (g_rp_onnx_embed_doc)
+            r = g_rp_onnx_embed_doc(g_active_embed_handle, text, tlen, prefix, plen,
+                                    out_vecs, out_k, out_avg, out_coh, NULL);
+        break;
     default:
-        return 0;
+        break;
     }
+    free(cpfx);
+    return r;
 }
 
 /* Chunk-spans variant: powers abstract()'s vec-seeded snippet mode.
@@ -6722,13 +7243,36 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
     if((ret=sql_defaults(ctx, tx, errbuf)))
         return ret;
 
-    /**** Reapply indextmplst and explst if it was modified */
+    /**** Reapply indextmplst and explst if it was modified.
+     *
+     * The texis expression/indextmp lists are PROCESS-GLOBAL, so the
+     * saved list must REPLACE the global list, not append to it: clear
+     * the global list first, then re-add the saved entries.  (The old
+     * append-without-clear here compounded per set() call -- each call
+     * re-added the whole list on top of itself, geometrically -- and
+     * the corrupted global list was then snapshotted back as the new
+     * saved list.  See also rp_texis_set(): add/del ops are stripped
+     * from the persistent settings after application, since list STATE
+     * lives in these snapshots, not in replayed operations.) */
     duk_push_this(ctx);
     if(duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("indlist")))
     {
         int i=0, len = duk_get_length(ctx, -1);
         const char *val;
+        char **glst;
 
+        /* clear the global indextmp list (delete index 0 until empty;
+           exp_del warns+fails on an empty list, so check first) */
+        while( (glst=TXgetglobalindextmp()) != NULL &&
+               glst[0] && strlen(glst[0]) )
+        {
+            clearmsgbuf();
+            if(setprop(ddic, "delindextmp", "0")==-1)
+            {
+                snprintf(errbuf, msgbufsz, "sql.set: %s", finfo->errmap); /* F13 */
+                goto return_neg_two;
+            }
+        }
         for (i=0;i<len;i++)
         {
             duk_get_prop_index(ctx, -1, (duk_uarridx_t)i);
@@ -6748,13 +7292,19 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
     {
         int i=0, len = duk_get_length(ctx, -1);
         const char *val;
+        char **glst;
 
-        /* delete first entry for an empty list */
-        clearmsgbuf();
-        if(setprop(ddic, "delexp", "0" )==-1)
+        /* clear the global expression list (the old single delexp "0"
+           removed exactly one entry, leaving the rest to duplicate) */
+        while( (glst=TXgetglobalexp()) != NULL &&
+               glst[0] && strlen(glst[0]) )
         {
-            snprintf(errbuf, msgbufsz, "sql.set: %s", finfo->errmap); /* F13: errmap can be ~4095 bytes */
-            goto return_neg_two;
+            clearmsgbuf();
+            if(setprop(ddic, "delexp", "0" )==-1)
+            {
+                snprintf(errbuf, msgbufsz, "sql.set: %s", finfo->errmap); /* F13 */
+                goto return_neg_two;
+            }
         }
         for (i=0;i<len;i++)
         {
@@ -6968,9 +7518,23 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
          * up the pipe).  thisfork tells us which side we're on. */
         if (!strcasecmp(prop, "llamaEmbed"))
         {
-            if (!duk_is_string(ctx, -1)) {
+            const char *path = NULL;
+            if (duk_is_string(ctx, -1))
+                path = duk_get_string(ctx, -1);
+            else if (duk_is_object(ctx, -1) && !duk_is_array(ctx, -1) &&
+                     !duk_is_function(ctx, -1)) {
+                /* object form: { model:'/path.gguf', queryPrompt: ...,
+                 * documentPrompt: ..., documentTitlePrompt: ...,
+                 * prompts:false } -- prompt keys are handled by
+                 * resolve_embed_prompts() at the h_set attach point. */
+                if (duk_get_prop_string(ctx, -1, "model") && duk_is_string(ctx, -1))
+                    path = duk_get_string(ctx, -1);
+                duk_pop(ctx);
+            }
+            if (!path || !path[0]) {
                 snprintf(errbuf, msgbufsz,
-                         "sql.set: llamaEmbed must be a string path");
+                         "sql.set: llamaEmbed must be a string path or "
+                         "{model:'<path.gguf>', ...prompt opts}");
                 goto return_neg_one;
             }
             if (thisfork) {
@@ -6978,7 +7542,6 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
                 setup_llamacpp_callback();
                 goto propnext;
             }
-            const char *path = duk_get_string(ctx, -1);
             char eerr[256] = {0};
             if (setup_llamacpp_main(ctx, path, eerr, sizeof eerr) != 0) {
                 snprintf(errbuf, msgbufsz, "%s", eerr);
@@ -7443,7 +8006,6 @@ static duk_ret_t rp_texis_set(duk_context *ctx)
     const char *db, *user="PUBLIC", *pass="";
     DB_HANDLE *h = NULL;
     int ret = 0;
-    int set_wants_llama = 0, set_wants_onnx = 0;   /* for the likevCache apply */
     char errbuf[msgbufsz];
     char propa[64], *prop=&propa[0];
 
@@ -7521,19 +8083,8 @@ static duk_ret_t rp_texis_set(duk_context *ctx)
       DUK_HIDDEN_SYMBOL("sql_settings"));     // [ this, combined_settings ]
     duk_remove(ctx, 0);                       // [ combined_settings ]
 
-    /* Capture which embed key the merged settings carry BEFORE the
-     * processing calls below: fork_sql_set cbor-encodes the object in
-     * place, so it cannot be peeked afterwards.  Used for the
-     * likevCache apply after processing. */
-    {
-        const char *ep_ = NULL, *om_ = NULL;
-        rp_onnx_embed_opts oo_;
-        set_wants_llama = peek_llamaembed_setting(ctx, &ep_);
-        set_wants_onnx  = set_wants_llama ? 0
-                        : peek_onnxembed_setting(ctx, &om_, &oo_);
-    }
-
-    /* going to a child proc */
+    /* going to a child proc: regular expressions in addexp don't
+     * survive cbor, so fix them up before h_set ships the settings */
     if(DB_HANDLE_IS(h, DB_FLAG_FORK))
     {
         // regular expressions in addexp don't survive cbor,
@@ -7572,29 +8123,18 @@ static duk_ret_t rp_texis_set(duk_context *ctx)
             duk_pop_2(ctx);
         }
         duk_pop(ctx);
-        ret = fork_sql_set(ctx, h, errbuf);
-    }
-    else // handled by this proc
-    {
-        ret = sql_set(ctx, h->tx, errbuf);
     }
 
-    /* likevCache: the processing run above re-armed the pending cap iff
-     * the merged settings carry the key; the embed key's setup (also run
-     * above, or on an earlier set() -- the settings are merged) left this
-     * connection's model in g_last_loaded_*.  Apply here, AFTER the whole
-     * object was walked, so the outcome does not depend on the relative
-     * order of the likevCache and embed keys. */
-    if (ret >= 0 && g_doccache_cap_pending >= 0) {
-        if (set_wants_llama)
-            apply_pending_doccache_cap(g_last_loaded_embed_handle,
-                                       EMBED_ENGINE_LLAMACPP);
-        else if (set_wants_onnx)
-            apply_pending_doccache_cap(g_last_loaded_onnx_handle,
-                                       EMBED_ENGINE_ONNX);
-        else if (h->embed_handle)   /* no embed key ever set()?  be safe */
-            apply_pending_doccache_cap(h->embed_handle, h->embed_engine);
-    }
+    /* Apply through h_set -- the same path exec-time re-application
+     * uses -- so an embed key attaches the model AND its retrieval
+     * prompts to the handle on EVERY set() that carries one.  (set()
+     * merges into the SAME stored settings object, so the exec-time
+     * last_sql_set fast-path never re-applies on a re-set; the old
+     * direct fork_sql_set/sql_set calls here left a live handle's
+     * prompts -- e.g. a prompts:false toggle -- and embed handle
+     * stale.)  h_set also applies a pending likevCache cap, with or
+     * without an embed key in this set(). */
+    ret = h_set(ctx, h, errbuf);
 
     if(ret == -1)
     {
@@ -7609,6 +8149,23 @@ static duk_ret_t rp_texis_set(duk_context *ctx)
     }
 
     h_end_transaction(h);
+
+    /* add/del list OPERATIONS must not persist in the saved settings:
+     * the resulting list STATE was just snapshotted into the hidden
+     * indlist/explist arrays by h_set, and those are what the replay
+     * path applies.  Leaving e.g. addexp in sql_settings made every
+     * later set() (or handle-switch replay) re-apply the op on top of
+     * the replayed list -- the "delete in a separate set() call
+     * corrupts the list" bug. */
+    duk_push_this(ctx);
+    if(duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("sql_settings")))
+    {
+        duk_del_prop_string(ctx, -1, "addexp");
+        duk_del_prop_string(ctx, -1, "delexp");
+        duk_del_prop_string(ctx, -1, "addindextmp");
+        duk_del_prop_string(ctx, -1, "delindextmp");
+    }
+    duk_pop_2(ctx);
 
     clean_settings(ctx);
     return (duk_ret_t) ret;

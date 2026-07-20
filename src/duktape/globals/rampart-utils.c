@@ -86,6 +86,39 @@ FILE *error_fh;
 int rp_print_simplified_errors=0;
 int rp_print_error_lines=0;
 
+/* Close-on-exec pipes -- see the long comment at rp_pipe() in rampart.h.
+   Keeps pipes from leaking into unrelated subprocesses spawned by other
+   threads (which once left exec() blocked in read() forever, waiting for
+   an EOF a long-lived sql_helper was holding open). */
+int rp_pipe_cloexec(int *fds)
+{
+#if defined(O_CLOEXEC) && (defined(__linux__) || defined(__FreeBSD__) || \
+                           defined(__NetBSD__) || defined(__OpenBSD__))
+    /* atomic: no window in which another thread's fork+exec could
+       inherit a not-yet-flagged fd */
+    return pipe2(fds, O_CLOEXEC);
+#else
+    {   /* macOS and anything without pipe2(): flag both ends right after */
+        int r = pipe(fds), i;
+        if (r == -1) return -1;
+        for (i = 0; i < 2; i++)
+        {
+            int fl = fcntl(fds[i], F_GETFD);
+            if (fl != -1) (void)fcntl(fds[i], F_SETFD, fl | FD_CLOEXEC);
+        }
+        return 0;
+    }
+#endif
+}
+
+/* Undo it for ONE fd, in the child between fork() and exec(), when the
+   exec'd program is handed that fd by number. */
+void rp_fd_keep_on_exec(int fd)
+{
+    int fl = fcntl(fd, F_GETFD);
+    if (fl != -1) (void)fcntl(fd, F_SETFD, fl & ~FD_CLOEXEC);
+}
+
 //static int z_format_broken=0; // set if strftime %z is not correct (macos)
 
 static time_t system_standard_time_offset=0;
@@ -3643,16 +3676,36 @@ duk_ret_t duk_rp_read_file(duk_context *ctx)
 
     if(retstring)
     {
-        unsigned char *s = (unsigned char *)buf, *e=(unsigned char *)buf+off-1;
+        unsigned char *s = (unsigned char *)buf,
+                      *end = (unsigned char *)buf + off, *e;
 
-        //find first valid utf-8 char
-        while(*s>127 && *s < 192)
+        /* empty read (empty file, or zero-size stat e.g. procfs):
+         * nothing to trim -- the code below indexed buf[-1] and walked
+         * uninitialized bytes here (ASan heap-buffer-overflow) */
+        if (off == 0)
+        {
+            duk_push_lstring(ctx, "", 0);
+            free(buf);
+            return 1;
+        }
+
+        //find first valid utf-8 char (bounded: a file of nothing but
+        //continuation bytes must not walk past the buffer)
+        while(s < end && *s>127 && *s < 192)
             s++;
 
-        //find last complete utf-8 char
+        if (s == end)                   /* no valid start byte at all */
+        {
+            duk_push_lstring(ctx, "", 0);
+            free(buf);
+            return 1;
+        }
+
+        //find last complete utf-8 char (bounded below by s)
+        e = end - 1;
         if(*e>127)
         {
-            while(*e > 127 && *e < 192)
+            while(e > s && *e > 127 && *e < 192)
                 e--;
                 //printf("*e=%d, offset=%d\n", (int)*e, (int)( (uint64_t)(buf+off) - (uint64_t)e));
             if( ! (
@@ -6031,11 +6084,12 @@ duk_ret_t duk_rp_chown(duk_context *ctx)
             gid=1;
             group_name = duk_get_string(ctx, -1);
         }
-        else
+        else if(duk_is_number(ctx,-1))
         {
             gid=duk_get_int(ctx, -1);
             group_id=(gid_t)gid;
         }
+        /* absent/null: gid stays -1 -> group left unchanged */
         duk_pop(ctx);
 
         duk_get_prop_string(ctx, obj_idx, "user");
@@ -6044,11 +6098,12 @@ duk_ret_t duk_rp_chown(duk_context *ctx)
             uid=1;
             user_name = duk_get_string(ctx, -1);
         }
-        else
+        else if(duk_is_number(ctx,-1))
         {
-            uid=duk_get_int(ctx,i);
+            uid=duk_get_int(ctx,-1);
             user_id=(uid_t)uid;
         }
+        /* absent/null: uid stays -1 -> owner left unchanged */
         duk_pop(ctx);
     }
 

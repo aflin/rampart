@@ -800,10 +800,14 @@ t("exec - appendEnv true augments process.env", function(){
 });
 
 t("exec - changeDirectory / cd option", function(){
+    /* /bin/pwd reports the PHYSICAL cwd (it calls getcwd()), so compare
+     * against the resolved path: on macOS /tmp is a symlink to
+     * /private/tmp, and chdir("/tmp") lands the process there. */
+    var want = rampart.utils.realPath("/tmp");
     var ret = rampart.utils.exec("/bin/pwd", {changeDirectory: "/tmp"});
-    t.mustEq(ret.stdout, "/tmp\n", "changeDirectory works");
+    t.mustEq(rampart.utils.trim(ret.stdout), want, "changeDirectory works");
     var ret2 = rampart.utils.exec("/bin/pwd", {cd: "/tmp"});
-    t.mustEq(ret2.stdout, "/tmp\n", "cd alias works");
+    t.mustEq(rampart.utils.trim(ret2.stdout), want, "cd alias works");
     return true;
 });
 
@@ -1832,14 +1836,31 @@ t("lchmod - falls through to chmod for non-symlink (Linux)", function(){
     rampart.utils.rmFile(f);
 });
 
-t("lchmod - throws on actual symlink (Linux ENOSYS)", function(){
+t("lchmod - on an actual symlink, per platform", function(){
     var s = TMP + "/lchm_src";
     var l = TMP + "/lchm_lnk";
     try { rampart.utils.rmFile(l); } catch(e){}
     rampart.utils.fprintf(s, "x\n");
     rampart.utils.symlink(s, l);
-    t.mustThrow(function(){ rampart.utils.lchmod(l, "640"); }, "lchmod on real symlink throws on Linux");
+
+    /* Linux has no syscall to change a symlink's mode (the bits are
+     * unused there), so lchmod() throws ENOSYS for a real symlink.
+     * macOS/BSD implement lchmod(2), so it succeeds and the LINK's mode
+     * changes while the target's is left alone.  Detect which applies
+     * rather than assuming, so this passes on either. */
+    var threw = false;
+    try { rampart.utils.lchmod(l, "640"); } catch(e) { threw = true; }
+
+    if (threw) {
+        /* unsupported here: the target must be untouched */
+        t.mustEq((rampart.utils.stat(s).mode & 0777) !== 0, true,
+                 "target still has a mode after failed lchmod");
+    } else {
+        var lmode = rampart.utils.lstat(l).mode & 0777;
+        t.mustEq(lmode, 0640, "lchmod set the link's own mode");
+    }
     rampart.utils.rmFile(l); rampart.utils.rmFile(s);
+    return true;
 });
 
 /* ===================== lUtimes ===================== */

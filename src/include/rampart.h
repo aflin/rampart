@@ -956,9 +956,35 @@ int clock_gettime(clockid_t type, struct timespec *rettime);
     close((x)[(i)]);\
 })
 
-#define rp_pipe(x) pipe((x))
+#define rp_pipe(x) rp_pipe_cloexec((x))
 
 #endif //debug_pipe
+
+/* Create a pipe whose ends are CLOSED ON exec().
+ *
+ * Without this, every pipe leaks into every process the engine spawns
+ * afterwards, from any thread.  The failure that motivated it: exec()
+ * ("which cc", from cmodule) was blocked in read() waiting for EOF on
+ * its child's pipe, while an unrelated thread launched a long-lived
+ * sql_helper that had inherited that pipe's WRITE end -- so EOF never
+ * came and exec() hung forever, holding exec_sigchld_lock and stalling
+ * every other thread behind it.
+ *
+ * CLOEXEC does NOT affect fork(): a forked child still inherits these
+ * normally, so rampart.utils.fork()/newPipe() are unaffected.  It also
+ * does not affect fds moved with dup2() (dup2 clears FD_CLOEXEC), so
+ * exec()'s own stdin/stdout/stderr redirection keeps working.
+ *
+ * Callers that must hand a raw fd NUMBER to an exec'd program (the
+ * rampart-sql and rampart-python helpers do: they pass fd ints in the
+ * -c script text) must clear FD_CLOEXEC on those fds IN THE CHILD after
+ * fork() and before exec() -- see rp_fd_keep_on_exec().  Clearing in
+ * the parent would re-open the leak for every other subprocess.
+ *
+ * Defined in rampart-utils.c (not inline here: rampart.h must not pull
+ * in fcntl.h -- rampart-graphicsmagick.c defines its own open()). */
+int  rp_pipe_cloexec(int *fds);
+void rp_fd_keep_on_exec(int fd);
 
 /* duk_console_init: provided by the duktape fork as
  * duk_rp_install_console_extended (auto-installed at heap-create when

@@ -92,6 +92,13 @@ extern int fld2flov ARGS((FLD *f,ft_long val));/* set fld to long type set to va
   I(FTN_VEC_BF16,       FTN_BYTE,       fobyby) \
   I(FTN_VEC_I8,         FTN_BYTE,       fobyby) \
   I(FTN_VEC_U8,         FTN_BYTE,       fobyby) \
+  /* char -> vec: SQL NULL/empty only (NULL vec value); else refused */ \
+  I(FTN_VEC_F64,        FTN_CHAR,       fovxch) \
+  I(FTN_VEC_F32,        FTN_CHAR,       fovxch) \
+  I(FTN_VEC_F16,        FTN_CHAR,       fovxch) \
+  I(FTN_VEC_BF16,       FTN_CHAR,       fovxch) \
+  I(FTN_VEC_I8,         FTN_CHAR,       fovxch) \
+  I(FTN_VEC_U8,         FTN_CHAR,       fovxch) \
   /* Cross-vec-dtype routes through fobyby's FOP_ASN real value-converter */ \
   I(FTN_VEC_F64,        FTN_VEC_F32,    fobyby) \
   I(FTN_VEC_F64,        FTN_VEC_F16,    fobyby) \

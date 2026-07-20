@@ -134,9 +134,11 @@ testFeature("indexed top-1 == brute-force top-1", function () {
         "select id, $rank from emb where v likev ? order by 2 desc;",
         [vec_for(13)], 1).rows[0].id;
     sql.exec("drop index emb_vec;");
+    sql.set({allinear: 1});   /* index-less likev is refused without it */
     var bruteHit = sql.exec(
         "select id, $rank from emb where v likev ? order by 2 desc;",
         [vec_for(13)], 1).rows[0].id;
+    sql.set({allinear: 0});
     sql.exec("create vector index emb_vec on emb (v) with backend 'hnsw';");   /* rebuild for next tests */
     return idxHit === bruteHit;
 });

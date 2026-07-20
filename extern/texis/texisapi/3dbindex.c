@@ -1054,7 +1054,10 @@ A3DBI	*dbi;	/* (in) object to get params from */
 	 */
 	if (dbi->textsearchmode != TXCFF_TEXTSEARCHMODE_DEFAULT_OLD)
 	{
-		strcpy(tmp, textSearchModeStr);
+		/* NOTE: textSearchModeStr is sized WITHOUT a nul terminator
+		 * (TX_TEXTSEARCHMODESTR_SZ == strlen): bounded copy, not
+		 * strcpy (which read past the global; caught by ASan) */
+		memcpy(tmp, textSearchModeStr, TX_TEXTSEARCHMODESTR_SZ);
 		tmp[TX_TEXTSEARCHMODESTR_SZ] = '=';
 		sz = TXtxcffToStr(tmp + TX_TEXTSEARCHMODESTR_SZ + 1,
 				  sizeof(tmp) - (TX_TEXTSEARCHMODESTR_SZ + 1),

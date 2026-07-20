@@ -74,7 +74,9 @@ FILE (APPEND ${CMAKE_BINARY_DIR}/include/timestamp.cmake "FILE(APPEND ${CMAKE_BI
 # \${BUILD_PLATFORM} (escaped $) so the placeholder lands literally in the
 # generated timestamp.cmake; it expands at build time from the file(READ) above.
 FILE (APPEND ${CMAKE_BINARY_DIR}/include/timestamp.cmake "FILE(APPEND ${CMAKE_BINARY_DIR}/include/rampart_timestamp.h \"#define RAMPART_BUILD_PLATFORM \\\"\${BUILD_PLATFORM}\\\"\\n\\n\")\n")
-if(CYGWIN)
+if(DEFINED BUILD_CC_PATH_OVERRIDE)
+    set(BUILD_CC_PATH "${BUILD_CC_PATH_OVERRIDE}")
+elseif(CYGWIN)
     execute_process(
         COMMAND cygpath -m "${CMAKE_C_COMPILER}"
         OUTPUT_VARIABLE BUILD_CC_PATH
@@ -82,6 +84,12 @@ if(CYGWIN)
     )
 elseif(APPLE AND EXISTS "/usr/bin/cc")
     # Use the Apple shim which automatically sets the SDK sysroot
+    set(BUILD_CC_PATH "/usr/bin/cc")
+elseif(CMAKE_C_COMPILER MATCHES "^/opt/rh/")
+    # Software-Collections toolchains (gcc-toolset/devtoolset) only exist
+    # inside the RHEL-family build container (the manylinux "oven"); bake
+    # the standard path instead so distributed binaries record a compiler
+    # that can exist on the machines they run on.
     set(BUILD_CC_PATH "/usr/bin/cc")
 else()
     set(BUILD_CC_PATH "${CMAKE_C_COMPILER}")
@@ -1796,18 +1804,6 @@ if(CYGWIN)
         '${CMAKE_INSTALL_PREFIX}/modules/python3-lib' \"\
         )"
     )
-    install(CODE "execute_process( \
-        COMMAND bash -c \"cp \
-        '${CMAKE_INSTALL_PREFIX}/modules/python/bin/python3' \
-        '${CMAKE_INSTALL_PREFIX}/bin/python3r' \"\
-        )"
-    )
-    install(CODE "execute_process( \
-        COMMAND bash -c \"cp \
-        '${CMAKE_INSTALL_PREFIX}/modules/python/bin/pip3' \
-        '${CMAKE_INSTALL_PREFIX}/bin/pip3r' \"\
-        )"
-    )
 else()
     install(CODE "execute_process( \
         COMMAND bash -c \"ln -s \
@@ -1815,19 +1811,19 @@ else()
         '${CMAKE_INSTALL_PREFIX}/modules/python3-lib' \"\
         )"
     )
-    install(CODE "execute_process( \
-        COMMAND bash -c \"ln -s \
-        ../modules/python/bin/python3 \
-        '${CMAKE_INSTALL_PREFIX}/bin/python3r' \"\
-        )"
-    )
-    install(CODE "execute_process( \
-        COMMAND bash -c \"ln -s \
-        ../modules/python/bin/pip3 \
-        '${CMAKE_INSTALL_PREFIX}/bin/pip3r' \"\
-        )"
-    )
 endif()
+
+# pip3r/python3r are static, self-locating wrapper scripts (they find the
+# rampart binary and ask it for process.modulesPath), so the same file works
+# on every platform, from any prefix, and in both the legacy tarball and
+# packages.js installs.  They also default PYTHONUSERBASE to
+# ~/.rampart/modules/python3-lib so non-root pip installs land there
+# (searched by rampart-python.c).
+install(PROGRAMS
+    "${PROJECT_SOURCE_DIR}/src/pip3r"
+    "${PROJECT_SOURCE_DIR}/src/python3r"
+    DESTINATION bin
+)
 
 
 install(CODE "execute_process( \

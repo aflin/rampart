@@ -624,6 +624,11 @@ IF(PARSERS_FOUND)
     list(APPEND BUILD_SRCS shell.c)
   endif()
 
+  # Self-describing vector-value header decode/encode (vecvalue.h).
+  # Pure byte inspection, no vec/faiss deps -- shared by texisapi AND
+  # the lean texisbuild (fldops.c's cell readers call it everywhere).
+  list(APPEND BUILD_SRCS vec_value.c)
+
   # ----- Shared compilation of common (non-vec) texis sources --------
   # An OBJECT library compiles each ${BUILD_SRCS} file once; the
   # resulting .o files are then linked into BOTH static libs below via

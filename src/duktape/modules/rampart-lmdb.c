@@ -448,6 +448,23 @@ duk_ret_t duk_rp_lmdb_put(duk_context *ctx)
         {
             mdb_txn_abort(txn);
             write_unlock;
+            /* a large value can hit MAP_FULL at put time, before the
+               commit-time grow handler below ever runs */
+            if(rc == MDB_MAP_FULL && lenv->rp_flags & GROW_ON_PUT)
+            {
+                lenv->mapsize = (lenv->mapsize *15)/10;
+                duk_push_this(ctx);
+                lenv=redo_env(ctx, lenv);
+                duk_set_top(ctx,top);
+
+                if(convtype == RP_LMDB_JSON)
+                    duk_json_decode(ctx, 2);
+                else if(convtype == RP_LMDB_CBOR)
+                    duk_cbor_decode(ctx, 2, 0);
+
+                redo_flag = FLAG_GET_DBI_REDO;
+                goto redo_txn;
+            }
             RP_THROW(ctx, "lmdb.put failed - %s", mdb_strerror(rc));
         }
 
@@ -541,18 +558,13 @@ duk_ret_t duk_rp_lmdb_put(duk_context *ctx)
         key.mv_size=strlen(s);
 
         rc = mdb_put(txn, dbi, &key, &val, 0);
-        if(rc)
-        {
-            mdb_txn_abort(txn);
-            write_unlock;
-            RP_THROW(ctx, "lmdb.put failed - %s", mdb_strerror(rc));
-        }
-
+        /* NOTE: this used to be preceded by an unconditional throw-on-rc
+           block that made the MAP_FULL grow handler below unreachable */
         if(rc)
         {
                 mdb_txn_abort(txn);
                 write_unlock;
-                // I think this might not happen until commit, but here for good measure
+                // large values can hit MAP_FULL here, before commit
                 if(rc == MDB_MAP_FULL && lenv->rp_flags & GROW_ON_PUT)
                 {
                     lenv->mapsize = (lenv->mapsize *15)/10;

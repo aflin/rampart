@@ -90,6 +90,37 @@ TXvecDelRow(DDIC *ddic, DBTBL *dbtbl,
     return -1;
 }
 
+int
+TXvecAddRowDelta(const char *indfile, DBTBL *dbtbl,
+                 const char *field, RECID *recid)
+{
+    (void)indfile; (void)dbtbl; (void)field; (void)recid;
+    return -1;
+}
+
+int
+TXvecDelRowDelta(const char *indfile, RECID *recid)
+{
+    (void)indfile; (void)recid;
+    return -1;
+}
+
+int
+TXvecCreateDeltaBtrees(const char *indfile)
+{
+    (void)indfile;
+    return -1;
+}
+
+int
+TXvecAbstractBestChunk(const char *query, void *vecData, size_t vecBytes,
+                       int colType, int *cixOut, int *ccntOut)
+{
+    (void)query; (void)vecData; (void)vecBytes; (void)colType;
+    (void)cixOut; (void)ccntOut;
+    return -1;
+}
+
 void
 TXvecDropAux(DDIC *ddic, const char *indfile)
 {
@@ -170,6 +201,13 @@ TXvecIxVecIndex(const char *iname, const char *sysindexParams,
     return NULL;
 }
 
+IINDEX *
+TXvecLinearVecIndex(DBTBL *dbtbl, const char *fname, FLD *infld)
+{
+    (void)dbtbl; (void)fname; (void)infld;
+    return NULL;            /* lean tools: plain per-row LIKEV path */
+}
+
 /* Embed callback registry — lean tools don't run the embed() SQL
  * function, but dbtbl.c's SQL-func table has a slot referencing it. */
 
@@ -181,9 +219,9 @@ TXgetEmbedFunc(void **user_data_out)
 }
 
 int
-TXsqlFunc_embed(FLD *f1, FLD *f2)
+TXsqlFunc_embed(FLD *f1, FLD *f2, FLD *f3, FLD *f4)
 {
-    (void)f1; (void)f2;
+    (void)f1; (void)f2; (void)f3; (void)f4;
     return -1;
 }
 
@@ -195,7 +233,7 @@ TXgetEmbedDocFunc(void **user_data_out)
 }
 
 int
-TXsqlFunc_chunkembed(FLD *f1, FLD *f2, FLD *f3)
+TXsqlFunc_chunkembed(FLD *f1, FLD *f2, FLD *f3, FLD *f4)
 {
     (void)f1; (void)f2; (void)f3;
     return -1;

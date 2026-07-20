@@ -30,7 +30,12 @@ typedef enum TX_FLD_KIND
 {
    TX_FLD_NORMAL,
    TX_FLD_VIRTUAL,
-   TX_FLD_COMPUTED_JSON
+   TX_FLD_COMPUTED_JSON,
+   TX_FLD_INTERNAL_DBTBL	/* tup_eval-injected DBTBL arg for
+				   abstract(); NEVER user data.  Guards
+				   against a user varbyte value of
+				   sizeof(DBTBL) bytes being dereferenced
+				   as a live DBTBL (see dbtbl.c abstract) */
 } TX_FLD_KIND;
 
 struct db_field_struct
@@ -45,6 +50,14 @@ struct db_field_struct
  size_t elsz;    /* size of a single element */
  int	frees;   /* Should closefld free shadow */
  TX_FLD_KIND kind; /* What kind of field is it */
+ char	jsonType; /* TX_FLD_COMPUTED_JSON only: per-row JSON subtype of the
+                     current value in v.  0 = none/unknown; otherwise the
+                     second tag byte of the rampart typed-value encoding
+                     ('\xff' string, '\xfe' number, '\xfd' true, '\xfc'
+                     false, '\xfb' null, '\xfa' object/array).  Stamped by
+                     TXmkComputedJson(); consumed at projection time by
+                     tup_project() when TX_is_rampart (see
+                     TXtagComputedJsonValue()). */
  int	vfc;	 /* Count of virtual fields */
  FLD	**fldlist;/* List of virtual fields */
 #ifndef NO_HAVE_DDBF

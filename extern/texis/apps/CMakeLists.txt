@@ -77,6 +77,17 @@ if(RP_ARMHF_GCC8_FAISS_WORKAROUND)
     endif()
 endif()
 
+# RPATH $ORIGIN/../lib lets tsql's hard DT_NEEDED on the BLAS chain
+# (libopenblas/libgomp/libgfortran — an EXECUTABLE cannot leave those
+# unresolved for vec_blas_probe() the way rampart-sql.so does) be
+# satisfied by the bundled copies at <prefix>/lib/.  Crucial for the
+# docker/oven installs onto vanilla systems (no system openblas);
+# harmless elsewhere (system loader cache is the fallback).
+set_target_properties(tsql PROPERTIES
+    INSTALL_RPATH "\$ORIGIN/../lib"
+    BUILD_RPATH   "\$ORIGIN/../lib"
+)
+
 # addtable (adds an existing table to the catalog) and kdbfchk (DB
 # file integrity check) predate vector indexes by decades.  Even
 # though their pulled SQL plan code has strong refs to vec dispatch

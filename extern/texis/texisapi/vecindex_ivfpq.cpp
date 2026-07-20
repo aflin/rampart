@@ -50,6 +50,7 @@ extern "C" {
 #include "texint.h"
 #include "meter.h"
 #include "vecindex.h"
+#include "vecvalue.h"
 #include "vecindex_internal.h"
 #include "sysupdate.h"
 }
@@ -65,6 +66,34 @@ extern "C" void openblas_set_num_threads(int) __attribute__((weak));
 /* qsort comparator defined in vecindex.c — used by both backends to
  * sort the absorbed-recid array we hand back to the dispatcher. */
 extern "C" int vec_int64_cmp_(const void *a, const void *b);
+
+/* Batched table R_LCK for CREATE build scans (non-blocking create):
+ * hold the lock while reading rows, yield every TX_VEC_SCAN_BATCH rows
+ * so queued writers get through — their adds/deletes land in the live
+ * `_T.btr'/`_del.btr' via the INDEX_VECCR row hooks.  Reentrant-safe
+ * under the OPTIMIZE/REBUILD dispatchers' own R_LCK (counting locks):
+ * there the yield only drops OUR reference, writers stay blocked
+ * (their behavior is unchanged).  RAII unlock covers every error/
+ * exception path.  Call yield() BEFORE each row read so the row and
+ * any lazy blob payload load under the same lock batch. */
+#define TX_VEC_SCAN_BATCH 4096
+struct TxVecScanLock {
+    DBTBL *tb;
+    bool   locked;
+    size_t tick;
+    explicit TxVecScanLock(DBTBL *t) : tb(t), locked(false), tick(0) {
+        locked = (TXlocktable(tb, R_LCK) == 0);
+    }
+    bool ok() const { return locked; }
+    bool yield() {
+        if (!locked) return false;
+        if (++tick % TX_VEC_SCAN_BATCH != 0) return true;
+        TXunlocktable(tb, R_LCK);
+        locked = (TXlocktable(tb, R_LCK) == 0);
+        return locked;
+    }
+    ~TxVecScanLock() { if (locked) TXunlocktable(tb, R_LCK); }
+};
 
 namespace {
 void faiss_init_once_impl()
@@ -873,8 +902,25 @@ size_t reservoir_sample_to_file(DBTBL *dbtbl, FLD *fld, int column_dtype,
     }
 
     RECID *recid;
+    TxVecScanLock slock(dbtbl);
+    if (!slock.ok()) {
+        putmsg(MERR + UGE, "reservoir_sample_to_file",
+               "INDEX_VEC: could not R_LCK table");
+        std::fclose(fp);
+        ::unlink(train_path);
+        return 0;
+    }
     TXrewinddbtbl(dbtbl);
-    while ((recid = getdbtblrow(dbtbl)) != RECIDPN && TXrecidvalid(recid)) {
+    for (;;) {
+        if (!slock.yield()) {
+            putmsg(MERR + UGE, "reservoir_sample_to_file",
+                   "INDEX_VEC: could not re-lock table mid-scan");
+            std::fclose(fp);
+            ::unlink(train_path);
+            return 0;
+        }
+        recid = getdbtblrow(dbtbl);
+        if (recid == RECIDPN || !TXrecidvalid(recid)) break;
         meter_done += (EPI_HUGEINT)dbtbl->tbl->irecsz;
         if (meter) METER_UPDATEDONE(meter, meter_done);
         if (total_bytes > 0)
@@ -890,6 +936,15 @@ size_t reservoir_sample_to_file(DBTBL *dbtbl, FLD *fld, int column_dtype,
             size_t elsz = vec_dtype_elsz(column_dtype);
             if (elsz == 0 || (n_elems % elsz) != 0) continue;
             cell_count = n_elems / elsz;
+        }
+        {
+            /* header-dim disagreement: quiet skip here (the encode
+             * pass warns per row); keeps wrong-model rows from being
+             * mis-sliced into the training sample when their total
+             * happens to be a multiple of dim */
+            size_t hd = TXvecRowDecodeDim(&raw, &cell_count,
+                                          vec_dtype_elsz(column_dtype));
+            if (hd > 0 && (int)hd != dim) continue;
         }
         /* Multi-chunk rows (chunkembed(): cell_count = kChunks*dim):
          * each chunk is an independent training sample — chunks are
@@ -1024,8 +1079,20 @@ int ivfpq_create_impl(DDIC *ddic, DBTBL *dbtbl,
         dim = vp.graph.dim;
     else {
         RECID *recid;
+        TxVecScanLock dlock(dbtbl);
+        if (!dlock.ok()) {
+            putmsg(MERR + UGE, fn, "INDEX_VEC: could not R_LCK table");
+            return -1;
+        }
         TXrewinddbtbl(dbtbl);
-        while ((recid = getdbtblrow(dbtbl)) != RECIDPN && TXrecidvalid(recid)) {
+        for (;;) {
+            if (!dlock.yield()) {
+                putmsg(MERR + UGE, fn,
+                       "INDEX_VEC: could not re-lock table mid-scan");
+                return -1;
+            }
+            recid = getdbtblrow(dbtbl);
+            if (recid == RECIDPN || !TXrecidvalid(recid)) break;
             size_t n_elems = 0;
             void *raw = getfld(fld, &n_elems);
             if (!raw || n_elems == 0) continue;
@@ -1035,7 +1102,14 @@ int ivfpq_create_impl(DDIC *ddic, DBTBL *dbtbl,
                 if (elsz == 0 || (n_elems % elsz) != 0) continue;
                 cells = n_elems / elsz;
             }
-            dim = (int)cells;
+            {
+                /* header dim (chunkembed values are self-describing)
+                 * beats the raw cell count, which is k*dim for chunked
+                 * rows */
+                size_t hd = TXvecRowDecodeDim(&raw, &cells,
+                                              vec_dtype_elsz(vp.dtype));
+                dim = (hd > 0) ? (int)hd : (int)cells;
+            }
             break;
         }
     }
@@ -1055,8 +1129,24 @@ int ivfpq_create_impl(DDIC *ddic, DBTBL *dbtbl,
     if (TXApp) TXApp->preLoadBlobs = 0;
     {
         RECID *recid;
+        TxVecScanLock clock_(dbtbl);
+        if (!clock_.ok()) {
+            putmsg(MERR + UGE, fn, "INDEX_VEC: could not R_LCK table");
+            if (TXApp) TXApp->preLoadBlobs = saved_preLoad;
+            if (prepass_meter) { meter_end(prepass_meter); closemeter(prepass_meter); }
+            return -1;
+        }
         TXrewinddbtbl(dbtbl);
-        while ((recid = getdbtblrow(dbtbl)) != RECIDPN && TXrecidvalid(recid)) {
+        for (;;) {
+            if (!clock_.yield()) {
+                putmsg(MERR + UGE, fn,
+                       "INDEX_VEC: could not re-lock table mid-scan");
+                if (TXApp) TXApp->preLoadBlobs = saved_preLoad;
+                if (prepass_meter) { meter_end(prepass_meter); closemeter(prepass_meter); }
+                return -1;
+            }
+            recid = getdbtblrow(dbtbl);
+            if (recid == RECIDPN || !TXrecidvalid(recid)) break;
             EPI_OFF_T off = TXgetoff(recid);
             row_count++;
             if ((int64_t)(uint64_t)off > max_recid_at_create)
@@ -1115,20 +1205,24 @@ int ivfpq_create_impl(DDIC *ddic, DBTBL *dbtbl,
         std::free(tomb_base); std::free(newrec_base);
         putmsg(MERR + MAE, fn, "alloc path"); return -1;
     }
-    /* Erase any prior leftovers — DROP INDEX should have done this but
-     * be defensive. */
+    /* Erase any prior SEALED leftovers — DROP INDEX should have done
+     * this but be defensive.  The `_T.btr'/`_del.btr' delta btrees are
+     * NOT ours to touch: index.c created them (TXvecCreateDeltaBtrees)
+     * before the 'n' SYSINDEX entry went live, and concurrent writers
+     * are recording adds/deletes into them right now (non-blocking
+     * create). */
     ::unlink(head_path); ::unlink(invl_path);
-    {
-        std::string tomb_btr   = std::string(tomb_base) + ".btr";
-        std::string newrec_btr = std::string(newrec_base) + ".btr";
-        ::unlink(tomb_btr.c_str());
-        ::unlink(newrec_btr.c_str());
-    }
 
     faiss::IndexIVFPQ *idx = nullptr;
     faiss::IndexFlat   *coarse = nullptr;
     faiss::OnDiskInvertedLists *invlists = nullptr;
     int rc_overall = -1;
+    /* hoisted so build_err (reached from the outer catches too) can
+     * reclaim the multi-GB training scratch on ANY failure -- a
+     * bad_alloc mid-train otherwise orphaned the .train.tmp file and
+     * leaked its mapping */
+    void  *train_addr_o = nullptr;
+    size_t train_bytes_o = 0;
 
     try {
         coarse = new faiss::IndexFlatL2(dim);
@@ -1273,6 +1367,8 @@ int ivfpq_create_impl(DDIC *ddic, DBTBL *dbtbl,
             ::unlink(train_path);
             goto build_err;
         }
+        train_addr_o  = train_addr;   /* for build_err cleanup */
+        train_bytes_o = train_bytes;
 
         /* FAISS verbose stays off — its stderr/stdout iteration spam
          * was pre-_T.btr era and only useful when there was no other
@@ -1331,6 +1427,7 @@ int ivfpq_create_impl(DDIC *ddic, DBTBL *dbtbl,
             if (pq_cb.meter)     { meter_end(pq_cb.meter);     closemeter(pq_cb.meter); }
             putmsg(MERR + UGE, fn, "FAISS train: %s", e.what());
             ::munmap(train_addr, train_bytes);
+            train_addr_o = nullptr;
             ::unlink(train_path);
             goto build_err;
         }
@@ -1355,6 +1452,7 @@ int ivfpq_create_impl(DDIC *ddic, DBTBL *dbtbl,
         putmsg(MINFO, fn,
             "INDEX_VEC ivfpq stage 3/5: training done in %.1fs", train_secs);
         ::munmap(train_addr, train_bytes);
+        train_addr_o = nullptr;
         ::unlink(train_path);
 
         /* === STAGE 5/5: encode all rows ================================
@@ -1397,9 +1495,20 @@ int ivfpq_create_impl(DDIC *ddic, DBTBL *dbtbl,
             EPI_HUGEINT meter3_done = 0;
             RECID *recid;
             int column_dtype = FTN_IS_VEC(t) ? t : vp.dtype;
+            TxVecScanLock elock(dbtbl);
+            if (!elock.ok()) {
+                putmsg(MERR + UGE, fn, "INDEX_VEC: could not R_LCK table");
+                goto build_err;
+            }
             TXrewinddbtbl(dbtbl);
-            while ((recid = getdbtblrow(dbtbl)) != RECIDPN &&
-                   TXrecidvalid(recid)) {
+            for (;;) {
+                if (!elock.yield()) {
+                    putmsg(MERR + UGE, fn,
+                           "INDEX_VEC: could not re-lock table mid-scan");
+                    goto build_err;
+                }
+                recid = getdbtblrow(dbtbl);
+                if (recid == RECIDPN || !TXrecidvalid(recid)) break;
                 /* gettblrow returns a pointer to a process-static RECID;
                  * any internal SQL (e.g. TXsysupdateProgress' UPDATE on
                  * SYSUPDATE) can stomp it.  Snapshot the offset before
@@ -1420,6 +1529,20 @@ int ivfpq_create_impl(DDIC *ddic, DBTBL *dbtbl,
                     size_t elsz = vec_dtype_elsz(column_dtype);
                     if (elsz == 0 || (n_elems % elsz) != 0) continue;
                     cells = n_elems / elsz;
+                }
+                {
+                    size_t hd = TXvecRowDecodeDim(&raw, &cells,
+                                         vec_dtype_elsz(column_dtype));
+                    if (hd > 0 && (int)hd != dim) {
+                        /* definitive wrong-model/corrupt row; catches
+                         * even multiple-of-dim totals */
+                        putmsg(MWARN, fn,
+                            "INDEX_VEC: skipping row: value header dim "
+                            "%lu != index dim %d (embedding model "
+                            "mismatch?)",
+                            (unsigned long)hd, dim);
+                        continue;
+                    }
                 }
                 /* Multi-chunk rows: each chunk is added under the
                  * row's recid (duplicate faiss ids are fine — they're
@@ -1457,24 +1580,13 @@ int ivfpq_create_impl(DDIC *ddic, DBTBL *dbtbl,
             }
         }
 
-        /* 10. Create empty `_T.btr` and `_del.btr`.  All post-CREATE
-         *     INSERTs accumulate as recids in `_T.btr`; DELETEs of
-         *     sealed-resident rows accumulate as recids in `_del.btr`;
-         *     SEARCH unions sealed + delta + applies tombstone filter;
-         *     ALTER INDEX OPTIMIZE folds them back into sealed.
-         *     Mirrors texis fulltext's pattern from `index.c:1180,1187`. */
-        if (TXvecBtreeCreateEmpty(tomb_base) != 0) {
-            putmsg(MERR + UGE, fn,
-                "INDEX_VEC: failed to create tombstone btree `%s.btr'",
-                tomb_base);
-            goto build_err;
-        }
-        if (TXvecBtreeCreateEmpty(newrec_base) != 0) {
-            putmsg(MERR + UGE, fn,
-                "INDEX_VEC: failed to create newrec btree `%s.btr'",
-                newrec_base);
-            goto build_err;
-        }
+        /* 10. `_T.btr` and `_del.btr` are LIVE already: index.c created
+         *     them before the 'n' SYSINDEX entry went visible, and
+         *     concurrent writers have been recording adds/deletes into
+         *     them throughout this build (non-blocking create).  Do NOT
+         *     touch them here.  SEARCH unions sealed + delta + applies
+         *     the tombstone filter; ALTER INDEX OPTIMIZE folds them
+         *     back into sealed. */
 
         /* 11. Hand parsed params back to caller (for SYSINDEX.PARAMS
          *     emission via TXvecParamsToText). */
@@ -1496,11 +1608,17 @@ build_err:
     rc_overall = -1;
     ::unlink(head_path);
     ::unlink(invl_path);
+    /* delta btrees are index.c's to clean up (it deletes the 'n'
+     * SYSINDEX entry FIRST so writers stop hooking, THEN unlinks) */
+    /* multi-GB training scratch: reclaim on exception paths too (the
+     * try-scope locals are invisible here; see hoisted trackers) */
+    if (train_addr_o) {
+        ::munmap(train_addr_o, train_bytes_o);
+        train_addr_o = nullptr;
+    }
     {
-        std::string tomb_btr   = std::string(tomb_base) + ".btr";
-        std::string newrec_btr = std::string(newrec_base) + ".btr";
-        ::unlink(tomb_btr.c_str());
-        ::unlink(newrec_btr.c_str());
+        std::string train_tmp = std::string(indfile) + ".train.tmp";
+        ::unlink(train_tmp.c_str());
     }
 
 cleanup:
@@ -1551,6 +1669,8 @@ TXvecHandle *ivfpq_open_impl(DDIC *ddic, const char *indfile,
     h->base.metric  = (idx->metric_type == faiss::METRIC_L2)
                       ? VEC_METRIC_L2 : VEC_METRIC_DOT;
     h->base.dtype   = vp->dtype ? vp->dtype : FTN_VEC_F32;
+    h->base.quant_scale = vp->quant_scale;
+    h->base.quant_zp    = vp->quant_zp;
     h->head_path    = head_path;
     h->invl_path    = invl_path;
     h->tomb_base    = TXvecMakeBtreeBasePath(indfile, "_del");
@@ -1712,11 +1832,18 @@ static size_t ivfpq_search_impl_body(TXvecHandle *h_, DBTBL *dbtbl,
     newrec_set.reserve(newrec_recids.size() * 2 + 1);
     for (int64_t r : newrec_recids) newrec_set.insert((uint64_t)r);
 
-    /* === Sealed (IVFPQ) — PQ-ADC search ============================== */
+    /* === Sealed (IVFPQ) — PQ-ADC search ==============================
+     * Wrapped in a ROW-level widening loop (see hnsw_search_impl): the
+     * probe returns CHUNK hits sharing row ids, so k chunk-slots can
+     * dedup to far fewer than k unique rows, silently dropping
+     * documents a linear scan finds.  Re-probe wider until the deduped
+     * row count satisfies k or the whole index has been fetched. */
     size_t k_over_sealed = k_over;
     if (h->idx->ntotal > 0 && k_over_sealed > (size_t)h->idx->ntotal)
         k_over_sealed = (size_t)h->idx->ntotal;
 
+    size_t got = 0;
+    for (;;) {
     std::vector<vec_search_result_t> sealed_hits;
     if (k_over_sealed > 0) {
         faiss::SearchParametersIVF params;
@@ -1781,6 +1908,8 @@ static size_t ivfpq_search_impl_body(TXvecHandle *h_, DBTBL *dbtbl,
                     if (elsz == 0 || (n_elems % elsz) != 0) continue;
                     cells = n_elems / elsz;
                 }
+                TXvecValSkipHdrCells(&raw, &cells,
+                                     vec_dtype_elsz(column_dtype));
                 /* Multi-chunk rows (cells = kChunks*dim): row score =
                  * best chunk (max dot / min L2) — matches the HNSW
                  * delta scan and FOP_MMV's per-row semantics. */
@@ -1803,7 +1932,7 @@ static size_t ivfpq_search_impl_body(TXvecHandle *h_, DBTBL *dbtbl,
                             + ci * (size_t)h->base.dim * col_elsz;
                         if (vec_convert_to_f32(column_dtype, chunk_raw,
                                 (size_t)h->base.dim, h->base.dim,
-                                /*scale*/0.0f, /*zp*/0,
+                                h->base.quant_scale, h->base.quant_zp,
                                 qbuf.data()) != 0) continue;
                         float score = 0.0f;
                         if (use_dot) {
@@ -1844,18 +1973,25 @@ static size_t ivfpq_search_impl_body(TXvecHandle *h_, DBTBL *dbtbl,
 
     /* Best-first copy-out with id dedup: a multi-chunk row's chunks
      * share one faiss id, so the sealed probe can return the same id
-     * several times; the first (= best-scoring) occurrence wins.
-     * NB: duplicates consumed probe slots, so the result can hold
-     * FEWER than k unique rows.  Accepted for v1 — LIKEV over-fetches
-     * candidates (likevRows) ahead of the exact rescore, which absorbs
-     * the shortfall in practice (same tradeoff as the HNSW backend). */
-    size_t got = 0;
-    std::unordered_set<int64_t> seen_ids;
-    for (const auto &r : merged) {
-        if (got >= k) break;
-        if (!seen_ids.insert((int64_t)r.id).second) continue;
-        results[got++] = r;
+     * several times; the first (= best-scoring) occurrence wins. */
+    got = 0;
+    {
+        std::unordered_set<int64_t> seen_ids;
+        for (const auto &r : merged) {
+            if (got >= k) break;
+            if (!seen_ids.insert((int64_t)r.id).second) continue;
+            results[got++] = r;
+        }
     }
+
+    if (got >= k) break;                     /* row budget satisfied */
+    if (h->idx->ntotal <= 0 ||
+        k_over_sealed >= (size_t)h->idx->ntotal)
+        break;                               /* fetched the whole index */
+    k_over_sealed *= 4;
+    if (k_over_sealed > (size_t)h->idx->ntotal)
+        k_over_sealed = (size_t)h->idx->ntotal;
+    }                                        /* widening loop */
     return got;
 }
 
@@ -2164,6 +2300,7 @@ static int ivfpq_optimize_impl_body(DDIC *ddic, TXvecHandle *h_, DBTBL *dbtbl,
             if (elsz == 0 || (n_elems % elsz) != 0) continue;
             cells = n_elems / elsz;
         }
+        TXvecValSkipHdrCells(&raw, &cells, vec_dtype_elsz(column_dtype));
         /* Multi-chunk rows: absorb every chunk under the row's recid. */
         if (cells == 0 || (cells % (size_t)dim) != 0) continue;
         {
@@ -2175,7 +2312,7 @@ static int ivfpq_optimize_impl_body(DDIC *ddic, TXvecHandle *h_, DBTBL *dbtbl,
                 const void *chunk_raw =
                     (const char *)raw + ci * (size_t)dim * col_elsz;
                 if (vec_convert_to_f32(column_dtype, chunk_raw, (size_t)dim,
-                                       dim, /*scale*/0.0f, /*zp*/0,
+                                       dim, h_->quant_scale, h_->quant_zp,
                                        batch.slot()) != 0)
                     continue;
                 try {
@@ -2430,6 +2567,10 @@ int ivfpq_rebuild_impl(DDIC *ddic, TXvecHandle *h_, DBTBL *dbtbl,
     int64_t *abs_arr = nullptr;
     size_t abs_n = 0;
     int rc_overall = -1;
+    /* see the CREATE path: hoisted so rebuild_err (reached from the
+     * catches too) can reclaim the training scratch on any failure */
+    void  *train_addr_o = nullptr;
+    size_t train_bytes_o = 0;
     try {
         auto *coarse = new faiss::IndexFlatL2(dim);
         idx = new faiss::IndexIVFPQ(coarse, dim,
@@ -2548,6 +2689,8 @@ int ivfpq_rebuild_impl(DDIC *ddic, TXvecHandle *h_, DBTBL *dbtbl,
                 ::unlink(train_path);
                 goto rebuild_err;
             }
+            train_addr_o  = train_addr;   /* for rebuild_err cleanup */
+            train_bytes_o = train_bytes;
 
             EPI_HUGEUINT coarse_iters =
                 (EPI_HUGEUINT)idx->cp.niter * idx->cp.nredo;
@@ -2594,6 +2737,7 @@ int ivfpq_rebuild_impl(DDIC *ddic, TXvecHandle *h_, DBTBL *dbtbl,
                 if (pq_cb.meter)     { meter_end(pq_cb.meter);     closemeter(pq_cb.meter); }
                 putmsg(MERR + UGE, fn, "FAISS train: %s", e.what());
                 ::munmap(train_addr, train_bytes);
+                train_addr_o = nullptr;
                 ::unlink(train_path);
                 goto rebuild_err;
             }
@@ -2610,6 +2754,7 @@ int ivfpq_rebuild_impl(DDIC *ddic, TXvecHandle *h_, DBTBL *dbtbl,
                 closemeter(pq_cb.meter);
             }
             ::munmap(train_addr, train_bytes);
+            train_addr_o = nullptr;
             ::unlink(train_path);
         }
 
@@ -2666,6 +2811,18 @@ int ivfpq_rebuild_impl(DDIC *ddic, TXvecHandle *h_, DBTBL *dbtbl,
                     size_t elsz = vec_dtype_elsz(column_dtype);
                     if (elsz == 0 || (n_elems % elsz) != 0) continue;
                     cells = n_elems / elsz;
+                }
+                {
+                    size_t hd = TXvecRowDecodeDim(&raw, &cells,
+                                         vec_dtype_elsz(column_dtype));
+                    if (hd > 0 && (int)hd != dim) {
+                        putmsg(MWARN, fn,
+                            "INDEX_VEC: skipping row: value header dim "
+                            "%lu != index dim %d (embedding model "
+                            "mismatch?)",
+                            (unsigned long)hd, dim);
+                        continue;
+                    }
                 }
                 /* Multi-chunk rows: every chunk under the row's recid. */
                 if (cells == 0 || (cells % (size_t)dim) != 0) continue;
@@ -2743,6 +2900,15 @@ rebuild_err:
     std::free(abs_arr);
     ::unlink(temp_head); ::unlink(temp_invl);
     std::free(temp_head); std::free(temp_invl);
+    /* training scratch: reclaim on exception paths too */
+    if (train_addr_o) {
+        ::munmap(train_addr_o, train_bytes_o);
+        train_addr_o = nullptr;
+    }
+    {
+        std::string train_tmp = std::string(tempBase) + ".train.tmp";
+        ::unlink(train_tmp.c_str());
+    }
     putmsg(MERR + UGE, fn,
         "INDEX_VEC REBUILD failed; live `%s' is unchanged.", indfile);
     return -1;

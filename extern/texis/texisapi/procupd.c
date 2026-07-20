@@ -204,8 +204,16 @@ DBTBL *tb;
         for (i = 0; i < tb->nfdbi; i++)
           delfromfdbi(tb, tb->fdbies[i], &btloc);
 	for (i = 0; i < tb->nvecidx; i++)
-		TXvecDelRow(tb->ddic, tb, tb->vecIndexFiles[i],
-			    tb->vecIndexFldNames[i], &btloc);
+	{
+		/* Index being created (INDEX_VECCR): no sealed file to open
+		 * a handle on yet — tombstone straight into the live
+		 * `_del.btr' the creator installed before its build scan. */
+		if (tb->vecIndexCreating && tb->vecIndexCreating[i])
+			TXvecDelRowDelta(tb->vecIndexFiles[i], &btloc);
+		else
+			TXvecDelRow(tb->ddic, tb, tb->vecIndexFiles[i],
+				    tb->vecIndexFldNames[i], &btloc);
+	}
 	tb->ddic->messages[MESSAGES_FAILED_DELETE] = tm;
 
 	TXbtreelog_dbtbl = savtbl;		/* for btreelog debug */
@@ -266,8 +274,18 @@ DBTBL *db;
 		addtofdbi(db, db->fdbies[i], &pos);
 
 	for (i = 0; i < db->nvecidx; i++)
-		TXvecAddRow(db->ddic, db, db->vecIndexFiles[i],
-			    db->vecIndexFldNames[i], &pos);
+	{
+		/* Index being created (INDEX_VECCR): record the recid in the
+		 * live `_T.btr' directly — the build's sealed file doesn't
+		 * exist yet, and search's newrec-override makes a row that
+		 * both the build scan AND the hook saw come out correct. */
+		if (db->vecIndexCreating && db->vecIndexCreating[i])
+			TXvecAddRowDelta(db->vecIndexFiles[i], db,
+					 db->vecIndexFldNames[i], &pos);
+		else
+			TXvecAddRow(db->ddic, db, db->vecIndexFiles[i],
+				    db->vecIndexFldNames[i], &pos);
+	}
 
 	ret = 0;				/* ok */
 	goto done;

@@ -47,6 +47,7 @@
 #include "bitfuncs.h"
 #include "inetfuncs.h"
 #include "vecindex.h"	/* TXlikevGetLastChunk / TXgetChunkSpansFunc (abstract vec mode) */
+#include "vecvalue.h"	/* self-describing chunked-vector values */
 #include "txlic.h"
 #include "http.h"
 #ifdef LIBXML2API
@@ -3430,7 +3431,8 @@ FLD *f5;
 			vecFld = f5;
 			tbl = NULL;	/* 5 user args: no injected DBTBL */
 		}
-		else if (f5->size == sizeof(DBTBL))
+		else if (f5->kind == TX_FLD_INTERNAL_DBTBL &&
+			 f5->size == sizeof(DBTBL))
 			tbl = getfld(f5, NULL);
 		else
 		{
@@ -3443,41 +3445,91 @@ FLD *f5;
 		tbl = NULL;
 
 	/* Vec-snippet mode: LIKEV's per-row scorer (FOP_MMV) recorded
-	 * which chunk of this row's multi-chunk vector won.  Ask the
-	 * registered chunk-spans callback (tokenize + chunk, no model
-	 * run) for the byte spans chunkembed() would produce for this
-	 * text, and hand the winning chunk's span to the loci pipeline.
-	 * Falls back to a plain abstract when there's no LIKEV chunk
-	 * state (e.g. no LIKEV in the WHERE, or a single-chunk row). */
+	 * which chunk of this row's multi-chunk vector won.  Get the
+	 * winning chunk's byte span, preferring the SELF-DESCRIBING
+	 * VALUE HEADER (vec_value.c) that chunkembed() writes into the
+	 * vec value itself -- no re-chunk, no serve-side chunker/model
+	 * agreement, and it works for caller-supplied (custom) chunkings
+	 * too.  Headerless (older) values fall back to the chunk-spans
+	 * callback (tokenize + chunk, no model run), whose span count
+	 * must match FOP_MMV's chunk count.  No usable span state at all
+	 * falls back to a plain abstract. */
 	if (vecFld != FLDPN)
 	{
 		int	cix = -1, ccnt = 0;
-		void	*spansUd = NULL;
-		TXchunkSpansFunc spansFn = TXgetChunkSpansFunc(&spansUd);
+		TXvecValInfo	vvi;
+		void	*vecData;
+		size_t	vecSz;
 
-		TXlikevGetLastChunk(&cix, &ccnt);
-		if (cix >= 0 && spansFn)
+		vecData = getfld(vecFld, NULL);
+		vecSz = vecFld->size;
+
+		/* Preferred: score THIS row's chunks against the query
+		 * text directly (embed is cached; same scorer as
+		 * FOP_MMV).  Deterministic per row — works in fused
+		 * (LIKEP OR LIKEV) queries whose fast path skips the
+		 * per-row FOP_MMV eval, and immune to stale scratch
+		 * state from another row.  Falls back to the FOP_MMV
+		 * scratch state (single-LIKEV / AND paths with no
+		 * embedder or an empty query), then plain abstract. */
+		if (query == CHARPN || *query == '\0' || vecData == NULL ||
+		    TXvecAbstractBestChunk(query, vecData, vecSz,
+					   (int)vecFld->type,
+					   &cix, &ccnt) != 0)
+			TXlikevGetLastChunk(&cix, &ccnt);
+		if (cix >= 0 &&
+		    TXvecValDecode(vecData, vecSz, 0, &vvi) &&
+		    vvi.spans != NULL)
 		{
-			TXchunkSpan	*spans = NULL;
-			size_t		k;
-
-			k = spansFn(spansUd, text, strlen(text), &spans);
-			if (k > 0 && spans)
+			/* header spans: trust the value's own geometry --
+			 * FOP_MMV's count (from the same value's cells)
+			 * must agree by construction, but verify anyway.
+			 * Spans may be CALLER-supplied (chunkembed 4th
+			 * arg), i.e. untrusted: clamp to the text and
+			 * ignore empty/inverted ranges (plain abstract). */
+			if ((size_t)cix < vvi.k && (size_t)ccnt == vvi.k)
 			{
-				/* ccnt (FOP_MMV's chunk count for the ROW
-				 * VECTOR) must equal k (the chunker's span
-				 * count for THIS text): they only agree when
-				 * the scratch is from this row's LIKEV score
-				 * and the text/vec columns belong together.
-				 * A stale scratch (earlier statement) or a
-				 * mismatched text arg fails this and falls
-				 * back to a plain abstract. */
-				if ((size_t)cix < k && (size_t)ccnt == k)
+				size_t	tlen = strlen(text);
+				size_t	s = (size_t)vvi.spans[cix * 2];
+				size_t	e = (size_t)vvi.spans[cix * 2 + 1];
+
+				if (e > tlen) e = tlen;
+				if (s < e)
 				{
-					spanStart = spans[cix].start;
-					spanEnd   = spans[cix].end;
+					spanStart = s;
+					spanEnd   = e;
 				}
-				free(spans);
+			}
+		}
+		else if (cix >= 0)
+		{
+			void	*spansUd = NULL;
+			TXchunkSpansFunc spansFn = TXgetChunkSpansFunc(&spansUd);
+
+			if (spansFn)
+			{
+				TXchunkSpan	*spans = NULL;
+				size_t		k;
+
+				k = spansFn(spansUd, text, strlen(text), &spans);
+				if (k > 0 && spans)
+				{
+					/* ccnt (FOP_MMV's chunk count for the
+					 * ROW VECTOR) must equal k (the
+					 * chunker's span count for THIS text):
+					 * they only agree when the scratch is
+					 * from this row's LIKEV score and the
+					 * text/vec columns belong together.
+					 * A stale scratch (earlier statement)
+					 * or a mismatched text arg fails this
+					 * and falls back to a plain abstract. */
+					if ((size_t)cix < k && (size_t)ccnt == k)
+					{
+						spanStart = spans[cix].start;
+						spanEnd   = spans[cix].end;
+					}
+					free(spans);
+				}
 			}
 		}
 	}

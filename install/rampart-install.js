@@ -203,7 +203,7 @@ function resolveLangtoolsAlias(name) {
  * we're about to install.  Suffixed-file ownership is left intact.
  *
  * No-op for non-langtools packages. */
-function langtoolsPreExtract(name) {
+function langtoolsPreExtract(name, newEntries) {
     if (!/^rampart-langtools(-cu[0-9]+)?$/.test(name)) return;
     var ut = rampart.utils;
 
@@ -228,9 +228,18 @@ function langtoolsPreExtract(name) {
              " -> " + basename(bak));
     });
 
-    /* manifest hygiene: drop the unsuffixed paths from any other
-       langtools variant's file list (don't touch its suffixed files
-       or remove the entry) */
+    /* Manifest hygiene: this install OWNS every path it ships.  Strip
+       those paths from any OTHER langtools variant's file list so two
+       entries never claim the same file.
+       Several files are shipped by EVERY langtools variant --
+       rampart-sentencepiece.so, rampart-onnx.so, rampart-models.js,
+       plus the unsuffixed faiss/llamacpp symlinks.  Without this,
+       `--install all` (cpu) followed by `--install rampart-langtools-cu12`
+       leaves both entries claiming them, and a later uninstall of one
+       would rm the files out from under the other.
+       The old entry keeps its UNIQUE files (its own _cuNN.so binaries),
+       so it still uninstalls cleanly and you can switch back to it
+       without re-downloading. */
     var manifestPath = PREFIX + "/installed.json";
     if (!fileExists(manifestPath)) return;
     var live;
@@ -239,10 +248,17 @@ function langtoolsPreExtract(name) {
     if (!live || !live.packages) return;
 
     var rmPaths = {};
-    unsuffixed.forEach(function (fn) {
-        rmPaths[PREFIX + "/modules/" + fn] = 1;   /* v2 absolute */
-        rmPaths["modules/" + fn]            = 1;  /* v1 relative */
+    function claim(rel) {
+        rmPaths[PREFIX + "/" + rel] = 1;   /* v2 absolute */
+        rmPaths[rel]                = 1;   /* v1 relative */
+    }
+    /* every file the incoming tarball ships */
+    (newEntries || []).forEach(function (e) {
+        if (e.charAt(e.length - 1) === "/") return;   /* skip dir entries */
+        claim(e);
     });
+    /* plus the unsuffixed symlinks (the tarball may or may not carry them) */
+    unsuffixed.forEach(function (fn) { claim("modules/" + fn); });
 
     var dirty = false;
     Object.keys(live.packages).forEach(function (k) {
@@ -254,7 +270,8 @@ function langtoolsPreExtract(name) {
         pkg.files = pkg.files.filter(function (f) { return !rmPaths[f]; });
         if (pkg.files.length !== before) {
             dirty = true;
-            info("  released unsuffixed symlinks from prior variant: " + k);
+            info("  released " + (before - pkg.files.length) +
+                 " shared file(s) from prior variant: " + k);
         }
     });
     if (dirty) fwrite(manifestPath, JSON.stringify(live, null, 2) + "\n");
@@ -388,8 +405,9 @@ function installOne(name) {
         var listOut = run("tar", ["-tzf", localArtifact]).stdout;
         var entries = listOut.split("\n").filter(function (s) { return s.length; });
         /* clear stale langtools symlinks / preserve hand-installed
-           files before extraction (no-op for non-langtools packages) */
-        langtoolsPreExtract(name);
+           files, and hand ownership of shared files to this install
+           (no-op for non-langtools packages) */
+        langtoolsPreExtract(name, entries);
         run("tar", ["-xzf", localArtifact, "-C", PREFIX]);
         if (name === "rampart-python") {
             /* Special case: the embedded Python 3.11 tree under

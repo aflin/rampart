@@ -1712,6 +1712,22 @@ TXcompactTable(DDIC *ddic, QUERY *q, int overwrite)
   /* See also ALTER_OP perms in ipreparetree(): */
   TXgetindexes(ct->dbtbl, (PM_ALTER | PM_SELECT | PM_UPDATE), NULL, 1);
 
+  /*   Vector (ANN) indexes store recids in their sealed index files;
+   * compaction moves recids, and unlike the Metamorph token-file
+   * translation below there is no INDEX_VEC translation step.  Refuse
+   * loudly rather than let the index silently serve wrong/missing
+   * rows.  (ALTER INDEX ... REBUILD after the fact would recover, but
+   * IVFPQ can hit its training floor on a shrunken table, so require
+   * the user to DROP first.)
+   */
+  if (ct->dbtbl->nvecidx > 0)
+    {
+      putmsg(MERR + UGE, fn,
+             "Cannot compact table `%s': it has %d vector index(es); DROP the vector index(es) before COMPACT and re-CREATE after",
+             tblRealName, (int)ct->dbtbl->nvecidx);
+      goto err;
+    }
+
   /*   If a Metamorph index is out-of-date, it would be difficult for
    * TXchangeLocInIndices() to update it during compaction: deleted
    * tokens would still remain in the .dat file, so a deleted recid of

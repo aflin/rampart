@@ -717,6 +717,14 @@ int inv;
 
 	result->nrank = a->nrank + b->nrank;
 	result->orank = a->orank + b->orank;
+	/* RRF-fused hybrid OR under an AND (e.g. `(kw LIKEP ? OR v LIKEV ?)
+	 * AND date > ?'): the fused side is the only ranked side, so its
+	 * keys pass through this intersection unchanged and remain the
+	 * rows' final $rank.  Propagate the marker so tup_read keeps
+	 * treating them as final.  (If BOTH sides carry ranks the result
+	 * is a blend, not a pure fused rank -- leave the flag off.) */
+	result->rankIsFused = ((a->rankIsFused && b->nrank == 0) ||
+			       (b->rankIsFused && a->nrank == 0));
 	if (aIsInverted && inv)
 	{
 		result = indexandavv(a, b, result, linearmerge);
@@ -1023,6 +1031,242 @@ done:
 	}
 	return(result);
 #undef GETNEXT
+}
+
+/******************************************************************/
+
+/* ---------------- Reciprocal Rank Fusion OR-merge ----------------
+ *
+ * TXindexrrf(): union-merge a keyword (LIKEP/LIKE) IINDEX and a vector
+ * (LIKEV) IINDEX by RRF instead of indexor()'s min-rank.  The two
+ * sides' rank scales are incomparable (metamorph 0-1000 proximity vs
+ * scaled cosine), so the merge uses each list's rank ORDER only:
+ *
+ *     fused(recid) = sum over lists  SCALE / (K + position)
+ *
+ * K = 60 (the literature constant: damps the top of each list so one
+ * retriever's #1 cannot dominate), SCALE = 1e6 (integer resolution at
+ * deep positions).  A row in both lists gets additive credit -- the
+ * cross-retriever agreement signal min-rank threw away.
+ *
+ * The fused value is stored as the merged orig's key (same shape as
+ * indexor's output) and IS the row's final $rank: the result IINDEX is
+ * marked rankIsFused, which tup_read passes to DBTBL.fusedRank, and
+ * $rank projection/TXcalcrank use it as-is (the per-row post-process
+ * only verifies the OR match).
+ *
+ * Rank extraction per side (non-NEW_I; this build):
+ *   keyword: inv payload / nrank = user-scale rank, BIGGER = better.
+ *   vector:  nrank is 0 by design (plain LIKEV ranks per-row via
+ *            FOP_MMV); its orig keys -- inv payloads after
+ *            TXindexinv() -- are (100000 - scaled_cosine), so
+ *            SMALLER = better.  `bDescending' handles the direction.
+ * A side without rank data at all (no inv) makes fusion impossible;
+ * the caller falls back to indexor().
+ */
+#define TX_RRF_K	60
+#define TX_RRF_SCALE	1000000.0
+
+typedef struct TXrrfEnt_tag
+{
+	EPI_OFF_T	recid;
+	EPI_OFF_T	score;	/* side-local rank payload */
+	size_t		pos;	/* 1-based position within its list */
+}
+TXrrfEnt;
+
+static int
+txRrfCmpScoreAsc(const void *pa, const void *pb)
+{
+	const TXrrfEnt	*a = (const TXrrfEnt *)pa, *b = (const TXrrfEnt *)pb;
+
+	if (a->score < b->score) return(-1);
+	if (a->score > b->score) return(1);
+	/* stable-ish tiebreak so equal scores order deterministically: */
+	if (a->recid < b->recid) return(-1);
+	if (a->recid > b->recid) return(1);
+	return(0);
+}
+
+static int
+txRrfCmpScoreDesc(const void *pa, const void *pb)
+{
+	return(txRrfCmpScoreAsc(pb, pa));
+}
+
+static int
+txRrfCmpRecid(const void *pa, const void *pb)
+{
+	const TXrrfEnt	*a = (const TXrrfEnt *)pa, *b = (const TXrrfEnt *)pb;
+
+	if (a->recid < b->recid) return(-1);
+	if (a->recid > b->recid) return(1);
+	return(0);
+}
+
+/* Load (recid, rank-payload) pairs from `ix's inverted tree.
+ * Sets `*okOut' nonzero if the side's rank data is usable -- including
+ * a legitimately EMPTY list (a retriever that matched nothing still
+ * fuses: the other side's positions carry the ranking).  `*okOut' 0
+ * (no inverted tree at all) means fusion is impossible.  Returns the
+ * alloc'd array (caller frees; NULL when empty/unusable) and count.
+ * `descending': sort best-first by payload descending (keyword ranks)
+ * vs ascending (vector inverted keys); on return each entry's .pos is
+ * its 1-based best-first position. */
+static TXrrfEnt *
+txRrfLoad(IINDEX *ix, int descending, size_t *nOut, int *okOut)
+{
+	BTREE	*bt;
+	TXrrfEnt	*ents = NULL;
+	size_t	n = 0, alloced = 0, i;
+	BTLOC	bl;
+	size_t	len;
+	EPI_OFF_T	key;
+	int	nrank;
+
+	*nOut = 0;
+	*okOut = 0;
+	if (TXindexinv(ix) == -1 || !ix->inv)
+		return(NULL);			/* no rank data: cannot fuse */
+	bt = ix->inv;
+	nrank = (ix->nrank > 0) ? ix->nrank : 1;
+	rewindbtree(bt);
+	for (;;)
+	{
+		len = sizeof(key);
+		bl = btgetnext(bt, &len, &key, NULL);
+		if (!TXrecidvalid(&bl)) break;
+		if (n == alloced)
+		{
+			size_t	nc = alloced ? alloced * 2 : 64;
+			TXrrfEnt	*ne = (TXrrfEnt *)TXrealloc(TXPMBUFPN,
+					__FUNCTION__, ents, nc * sizeof(*ne));
+			if (!ne) { ents = TXfree(ents); return(NULL); }
+			ents = ne;
+			alloced = nc;
+		}
+		ents[n].recid = key;
+		ents[n].score = TXgetoff(&bl) / nrank;
+		n++;
+	}
+	*okOut = 1;
+	if (!n) { ents = TXfree(ents); return(NULL); }
+	qsort(ents, n, sizeof(*ents),
+	      descending ? txRrfCmpScoreDesc : txRrfCmpScoreAsc);
+	for (i = 0; i < n; i++) ents[i].pos = i + 1;
+	*nOut = n;
+	return(ents);
+}
+
+IINDEX *
+TXindexrrf(kw, vec, inv)
+IINDEX	*kw;	/* keyword (LIKEP/LIKE) side */
+IINDEX	*vec;	/* vector (LIKEV) side */
+int	inv;
+{
+	static CONST char	Fn[] = "TXindexrrf";
+	IINDEX	*c = NULL;
+	BTREE	*cb;
+	TXrrfEnt	*ka = NULL, *va = NULL;
+	size_t	kn = 0, vn = 0, ki, vi;
+	int	kOk = 0, vOk = 0;
+
+	ka = txRrfLoad(kw, 1, &kn, &kOk);	/* bigger payload = better */
+	va = txRrfLoad(vec, 0, &vn, &vOk);	/* smaller payload = better */
+	if (!kOk || !vOk)
+	{
+		/* a side without rank data: plain OR semantics */
+		ka = TXfree(ka);
+		va = TXfree(va);
+		return(indexor(kw, vec, inv));
+	}
+
+	/* `inv' (e.g. this OR is an AND child, to be intersected by
+	 * indexand): build the INVERTED tree — key = recid, payload =
+	 * fused rank — exactly as indexor does, so the intersection
+	 * carries the fused ranks through.  Otherwise build the orig
+	 * tree keyed by fused rank. */
+	c = openiindex();
+	if (!c) goto err;
+	c->orig = openbtree(NULL, BTFSIZE, 20,
+			    inv ? (BT_FIXED | BT_UNSIGNED) : BT_FIXED,
+			    O_RDWR | O_CREAT);
+	if (!c->orig)
+	{
+		putmsg(MERR + FOE, Fn, "Could not create index file");
+		goto err;
+	}
+	BTPARAM_INIT_TO_PROCESS_DEFAULTS(&c->orig->params, DDICPN);
+	cb = c->orig;
+
+	/* union-merge by recid */
+	qsort(ka, kn, sizeof(*ka), txRrfCmpRecid);
+	qsort(va, vn, sizeof(*va), txRrfCmpRecid);
+	ki = vi = 0;
+	while (ki < kn || vi < vn)
+	{
+		double	fused = 0.0;
+		EPI_OFF_T	recid, key;
+		BTLOC	loc;
+
+		if (vi >= vn || (ki < kn && ka[ki].recid < va[vi].recid))
+		{
+			recid = ka[ki].recid;
+			fused = TX_RRF_SCALE / (double)(TX_RRF_K + ka[ki].pos);
+			ki++;
+		}
+		else if (ki >= kn || va[vi].recid < ka[ki].recid)
+		{
+			recid = va[vi].recid;
+			fused = TX_RRF_SCALE / (double)(TX_RRF_K + va[vi].pos);
+			vi++;
+		}
+		else				/* in BOTH lists */
+		{
+			recid = ka[ki].recid;
+			fused = TX_RRF_SCALE / (double)(TX_RRF_K + ka[ki].pos)
+			      + TX_RRF_SCALE / (double)(TX_RRF_K + va[vi].pos);
+			ki++;
+			vi++;
+		}
+		key = (EPI_OFF_T)(fused + 0.5);
+		if (key < 1) key = 1;		/* 0 reads as "no rank" */
+		if (inv)
+		{
+			/* inverted: btree key = recid, payload = rank */
+			TXsetrecid(&loc, key);
+			btspinsert(cb, &loc, sizeof(recid), &recid, 90);
+		}
+		else
+		{
+			/* original: btree key = rank, payload = recid */
+			TXsetrecid(&loc, recid);
+			btspinsert(cb, &loc, sizeof(key), &key, 90);
+		}
+		c->cntorig++;
+	}
+	c->nrank = 1;
+	c->rankIsFused = 1;
+	if (inv)
+	{
+		c->inv = c->orig;
+		c->orig = NULL;
+	}
+	goto done;
+
+err:
+	c = closeiindex(c);
+done:
+	ka = TXfree(ka);
+	va = TXfree(va);
+	if (TXtraceIndexBits & 0x10000)
+		putmsg(MINFO, Fn,
+		       "RRF-fused %s IINDEX %p (%wd rows) and %s IINDEX %p (%wd rows) creating %s IINDEX %p (%wd rows)",
+		       TXiindexTypeName(kw), kw, (EPI_HUGEINT)kw->cntorig,
+		       TXiindexTypeName(vec), vec, (EPI_HUGEINT)vec->cntorig,
+		       (c ? TXiindexTypeName(c) : "failed"), c,
+		       (c ? (EPI_HUGEINT)c->cntorig : (EPI_HUGEINT)0));
+	return(c);
 }
 
 /******************************************************************/

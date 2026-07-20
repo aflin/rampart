@@ -4,6 +4,7 @@
 #include "dbquery.h"
 
 #include "texint.h"   /* must define FLD, FLDFUNC, FLDOP, getfld(), putfld(), foaddfuncs(), etc. */
+#include "vecvalue.h"  /* self-describing chunked-vector values */
 #include "fld.h"
 #include <stdint.h>
 #include <stddef.h>
@@ -37,8 +38,19 @@ static int vecdist(FLD *f1, FLD *f2, FLD *f3, FLD *f4) // todo: add scale and zp
       return(FOP_EINVAL);
     }
 
+    /* decode possible chunkembed() value headers so the size check and
+     * the distance both see CELLS only (a chunked value's FIRST chunk
+     * is compared when sizes then match; full best-chunk semantics
+     * belong to LIKEV) */
+    TXvecValInfo vv1_, vv2_;
+    size_t sz1_ = f1->size, sz2_ = f2->size;
+    TXvecValDecode(getfld(f1, NULL), sz1_, 0, &vv1_);
+    TXvecValDecode(getfld(f2, NULL), sz2_, 0, &vv2_);
+    sz1_ -= vv1_.hdrBytes;
+    sz2_ -= vv2_.hdrBytes;
+
     // compare byte size. must be equal.
-    if(f1->size != f2->size)
+    if(sz1_ != sz2_)
     {
           putmsg(MERR + UGE, "vecdist", "vector fields must be the same size");
           return(FOP_EINVAL);
@@ -55,7 +67,7 @@ static int vecdist(FLD *f1, FLD *f2, FLD *f3, FLD *f4) // todo: add scale and zp
     }
 
     t1 = f1->type&DDTYPEBITS;
-    t2 = f1->type&DDTYPEBITS;
+    t2 = f2->type&DDTYPEBITS;
 
     if( ! FTN_IS_VEC_OR_BYTE(t1) && ! FTN_IS_VEC_OR_BYTE(t2) )
     {
@@ -106,14 +118,17 @@ static int vecdist(FLD *f1, FLD *f2, FLD *f3, FLD *f4) // todo: add scale and zp
         case FTN_VEC_U8:   dtype="u8";   break;
     }
 
-    // get actual buffers and do distance function
-    void *a = getfld(f1, &len0);
-    void *b = getfld(f2, &len1);
+    // get actual buffers (past any value header) and do distance function
+    void *a = (void *)vv1_.cells;
+    void *b = (void *)vv2_.cells;
 
     ft_double *dist = malloc(sizeof(ft_double));
     const char *err=NULL;
 
-    *dist = rp_vector_distance(a, b, f1->size, metric, dtype, &err);
+    if(!dist)
+        return(FOP_ENOMEM);
+
+    *dist = rp_vector_distance(a, b, sz1_, metric, dtype, &err);
 
     if(err)
     {

@@ -2865,15 +2865,20 @@ static void thread_doevent(evutil_socket_t fd, short events, void* arg)
 
     rp_debug_printf("inserting event for parent callback for thread %d\n",info->parent_thr->index);
     info->e=event_new(info->parent_thr->base, -1, 0, do_parent_callback, info);
+    /* ev_add PUBLISHES `info' to the parent's event loop: with the
+     * immediate timeout, do_parent_callback can run (and clean_info()
+     * free `info') on the parent thread before we return.  `info' must
+     * not be touched after this line (was a use-after-free reading
+     * info->index below; ASan-caught). */
     ev_add(info->e, &immediate);
-
+    event_free(tev);
+    RP_EMPTY_STACK(ctx);
+    return;
 
     end:
-    // if not doing parent callback
-    if(info->index==-1)
-        info=clean_info(info); //includes event_free((tev|info->e));
-    else
-        event_free(tev);
+    // goto sites above only jump here when there is NO parent callback
+    // (info->index == -1): free everything ourselves.
+    info=clean_info(info); //includes event_free((tev|info->e));
 
     RP_EMPTY_STACK(ctx);
 }

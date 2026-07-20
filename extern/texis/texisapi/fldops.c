@@ -22,6 +22,7 @@ int __cdecl sscanf(const char *, const char *, ...);
 #include "fldops.h"
 #include "cgi.h"		/* for htsnpf() */
 #include "vecindex.h"		/* TXlikevSetLastChunk (FOP_MMV chunk argmax) */
+#include "vecvalue.h"		/* self-describing chunked-vector values */
 
 /* vec dtype converters; defined in src/duktape/globals/vector-distance.c
  * (linked into the texis engine), declared in src/include/rampart.h.
@@ -500,6 +501,42 @@ FLD *f1, *f2;
 #undef foxxxx
 #undef ft_xx
 /* Included here to do comparisons */
+/* vec_X <- char assignment: accepts ONLY SQL NULL / empty string,
+ * yielding an EMPTY vec value -- 0 cells -- ("insert into t values
+ * (..., NULL)" on a varvec column; the "keep the row, no vector"
+ * pattern of the bulk build scripts).  Texis stores empty, not NULL:
+ * valuestotbl() requires every field to hold data, so a NULL FLD here
+ * would fail the whole INSERT with "Insufficient values".  An empty
+ * vec never matches LIKEV (quiet no-match in FOP_MMV) and reads back
+ * to JS as an empty value.  A non-empty string is refused --
+ * assignment does not auto-embed; use embed()/chunkembed(). */
+int
+fovxch(FLD *f1, FLD *f2, FLD *f3, int op)
+{
+	switch (op)
+	{
+	case FOP_ASN:
+		if (TXfldIsNull(f2) || f2->size == 0 ||
+		    getfld(f2, NULL) == NULL)
+		{
+			void	*mem = calloc(1, 1);	/* guard byte only */
+
+			if (!mem) return(FOP_ENOMEM);
+			freeflddata(f3);
+			f3->type = f1->type;
+			f3->elsz = vec_elsz_for(TXfldType(f1) & DDTYPEBITS);
+			if (f3->elsz == 0) f3->elsz = 1;
+			setfldandsize(f3, mem, 1, FLD_FORCE_NORMAL);
+			return(0);
+		}
+		putmsg(MERR + UGE, "fovxch",
+		       "Cannot assign non-empty string to a vector column (use embed()/chunkembed())");
+		return(FOP_EINVAL);
+	default:
+		return(FOP_EINVAL);
+	}
+}
+
 int
 fobyby(f1, f2, f3, op)
 FLD *f1;
@@ -549,6 +586,18 @@ int op;
 					size_t  dst_elsz = vec_elsz_for(dst_t);
 					void   *src_bytes = getfld(f2, NULL);
 					size_t  src_size = f2->size;
+					/* a chunkembed() value header, if present, is
+					 * STRIPPED here: this path transforms cells,
+					 * and the header follows exact bytes only. */
+					{
+						TXvecValInfo vvi;
+						if (TXvecValDecode(src_bytes, src_size,
+								   src_elsz, &vvi))
+						{
+							src_bytes = (void *)vvi.cells;
+							src_size -= vvi.hdrBytes;
+						}
+					}
 					if (src_bytes && src_elsz > 0 &&
 					    dst_elsz > 0 &&
 					    src_size >= src_elsz &&
@@ -766,15 +815,36 @@ int op;
 				 * semantics), and record the argmax for
 				 * abstract()'s snippet seeding.  k == 1 is
 				 * the plain single-vec case. */
-				if (f1->size == 0 || f2->size == 0 ||
-				    (f1->size >= f2->size
-				         ? (f1->size % f2->size)
-				         : (f2->size % f1->size)) != 0)
+				/* Values may carry a self-describing header
+				 * (vec_value.c): decode both sides so all size
+				 * math sees CELLS only. */
+				TXvecValInfo vv1, vv2;
+				size_t sz1, sz2;
+				TXvecValDecode(vp1, f1->size, 0, &vv1);
+				TXvecValDecode(vp2, f2->size, 0, &vv2);
+				vp1 = (ft_byte *)vv1.cells;
+				vp2 = (ft_byte *)vv2.cells;
+				sz1 = f1->size - vv1.hdrBytes;
+				sz2 = f2->size - vv2.hdrBytes;
+				/* An EMPTY operand is a row with no vector
+				 * (NULL-inserted Vec, empty-doc rows): a
+				 * quiet no-match, not an error -- a likev
+				 * scan over a mixed table must not putmsg
+				 * per empty row. */
+				if (sz1 == 0 || sz2 == 0)
+				{
+					TXlikevSetLastChunk(-1, 0);
+					rc = fld2finv(f3, (ft_int)0);
+					break;
+				}
+				if ((sz1 >= sz2
+				         ? (sz1 % sz2)
+				         : (sz2 % sz1)) != 0)
 				{
 					putmsg(MERR + UGE, "LIKEV",
 					       "operand byte lengths incompatible (%lu vs %lu)",
-					       (unsigned long)f1->size,
-					       (unsigned long)f2->size);
+					       (unsigned long)sz1,
+					       (unsigned long)sz2);
 					rc = FOP_EINVAL;
 					break;
 				}
@@ -791,7 +861,30 @@ int op;
 				else if (FTN_IS_VEC(t2))
 					dtype = TXvecFtnToSimsimdDtype(t2);
 				else
-					dtype = "f16";	/* both byte */
+				{
+					/* both varbyte: a chunkembed value
+					 * header declares its dtype in-band
+					 * -- trust it over the f16 default
+					 * (either operand; they were already
+					 * size-matched above) */
+					int hd = vv1.dtype ? vv1.dtype :
+						 vv2.dtype;
+					switch (hd)
+					{
+					case TXVEC_HDR_DT_BF16:
+						dtype = "bf16"; break;
+					case TXVEC_HDR_DT_F32:
+						dtype = "f32"; break;
+					case TXVEC_HDR_DT_F64:
+						dtype = "f64"; break;
+					case TXVEC_HDR_DT_I8:
+						dtype = "i8"; break;
+					case TXVEC_HDR_DT_U8:
+						dtype = "u8"; break;
+					default:
+						dtype = "f16"; break;
+					}
+				}
 				if (!dtype)	/* shouldn't happen given checks above */
 				{
 					putmsg(MERR + UGE, "LIKEV",
@@ -802,14 +895,14 @@ int op;
 				{
 					/* Which side carries the chunks. */
 					byte  *big   = vp1, *small = vp2;
-					size_t bigSz = f1->size, smallSz = f2->size;
+					size_t bigSz = sz1, smallSz = sz2;
 					size_t kChunks, ci;
 					int    bestIx = 0;
 
-					if (f2->size > f1->size)
+					if (sz2 > sz1)
 					{
 						big = vp2; small = vp1;
-						bigSz = f2->size; smallSz = f1->size;
+						bigSz = sz2; smallSz = sz1;
 					}
 					kChunks = bigSz / smallSz;
 

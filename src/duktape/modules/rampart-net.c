@@ -4039,6 +4039,14 @@ static int make_sock_conn(void *arg, int after)
         struct sockaddr remote;
         socklen_t len = sizeof(struct sockaddr_in6);
 
+        /* populate remoteAddress/remotePort/remoteFamily BEFORE any
+           connect event fires: the non-ssl path below dispatches
+           BEV_EVENT_CONNECTED synchronously, and the server's
+           connection callback used to see remoteAddress undefined */
+        errno=0;
+        if( !getpeername(sinfo->fd, &remote, &len) )
+            push_remote(ctx, &remote, -2);
+
         //behavior differs with ssl. sock_eventcb with BEV_EVENT_CONNECTED is called after this.
         if(sinfo->ssl)
         {
@@ -4052,9 +4060,6 @@ static int make_sock_conn(void *arg, int after)
             //so we need to call it manually.
             sock_eventcb(sinfo->bev, BEV_EVENT_CONNECTED, (void *)sinfo);
         }
-        errno=0;
-        if( !getpeername(sinfo->fd, &remote, &len) )
-            push_remote(ctx, &remote, -2);
         /*
             not sure we should kill the connection just because we couldn't get the peer ip
             and not when/how that would happen anyway. Some research is needed.
@@ -4617,6 +4622,12 @@ static void listener_callback(struct evconnlistener *listener, int fd,
     //copy server's tls value to new socket
     duk_get_prop_string(ctx, -2, "tls");
     duk_put_prop_string(ctx, -2, "tls");
+
+    /* libevent gave us the peer address on accept: set
+       remoteAddress/remotePort/remoteFamily on the new socket NOW so
+       the 'connection' callback below can read them (they used to be
+       populated later, in make_sock_conn, and read as undefined here) */
+    push_remote(ctx, addr, -2);
 
     // run server's 'connection' callback
     duk_pull(ctx, -2);// Server 'this'

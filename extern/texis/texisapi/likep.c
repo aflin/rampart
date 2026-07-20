@@ -62,6 +62,16 @@ FLDOP *fo;
 			ret = (lrank && rrank ? lrank + rrank : 0);
 			break;
 		case FOP_OR: /* Take Max rank */
+			/* RRF-fused hybrid OR (TXindexrrf): the merged
+			 * index already computed the final fused rank
+			 * (stashed by tup_read); the sides' own ranks are
+			 * on incomparable scales and must not be MAXed: */
+			if (tbl && tbl->fusedRank > 0)
+			{
+				*nrank = 1;
+				ret = tbl->fusedRank;
+				break;
+			}
 			lrank = TXcalcrank(tbl, pred->left, &nleft, fo);
 			rrank = TXcalcrank(tbl, pred->right, &nright, fo);
 			/* Bug 4207: If a PRED refers to $rank and

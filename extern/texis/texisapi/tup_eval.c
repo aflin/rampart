@@ -18,6 +18,11 @@ static ft_int mone = -1;
 static ft_int pone = 1;
 static ft_int pzero = 0;
 
+/* rampart typed-json: subtype of the computed-json FLD that produced the
+ * value of the most recent evalpred() call (0 = not a bare computed-json
+ * column).  Consumed by tup_project() to tag the output copy. */
+char TXlastEvalpredJsonType = 0;
+
 /****************************************************************************/
 
 static int forev ARGS((FLDOP *));
@@ -71,6 +76,8 @@ int	full;	/* (in) nonzero: full clear (all cached info) */
 			closefld(p->altleft);
 		p->lat = 0;
 		p->altleft = NULL;
+		p->mmvEmbedTried = 0;	/* LIKEV auto-embed: re-embed with
+					   the new parameter values */
 	}
 	if(p->lt == 'P')
 		TXpredClear(p->left, full);
@@ -659,6 +666,21 @@ FLDOP *fo;
 		retval = 1;
 		goto done;
 	}
+	/* LIKEV string auto-embed for predicates that never went through
+	 * index selection: a LIKEV demoted to a per-row filter (the
+	 * non-indexed side of an AND satisfied from the other side's
+	 * index) reaches here with its string parameter unembedded, and
+	 * `varvec LIKEV varchar' is FOP_EINVAL.  Embed it now (cached on
+	 * the pred: once per statement, not per row; `mmvEmbedTried'
+	 * negative-caches failures so those don't retry per row): */
+	if (p->op == FLDMATH_MMV && tup != DBTBLPN && !p->mmvEmbedTried &&
+	    !(p->rat == FIELD_OP && p->altright) &&
+	    !(p->lat == FIELD_OP && p->altleft))
+	{
+		p->mmvEmbedTried = 1;
+		TXpredMMVAutoEmbed(tup, p);
+	}
+
 	if (p->op == AGG_FUN_OP)
 	{
 		if (tup == DBTBLPN) goto missingDbtbl;
@@ -768,6 +790,17 @@ FLDOP *fo;
 					if (TXisRankName(p->left))
 					{
 #ifndef NEVER
+						/* RRF-fused hybrid OR: the
+						 * merged index key is the
+						 * final rank -- authoritative
+						 * over both TXcalcrank() and
+						 * any rank a sub-predicate
+						 * saved during the post-
+						 * process match:
+						 */
+						if(tup->fusedRank > 0)
+							tup->rank =
+							    tup->fusedRank;
 						/* NOTE: see TXcalcrank()
 						 * comments on how we avoid
 						 * infinite recursion with
@@ -775,7 +808,7 @@ FLDOP *fo;
 						 * (only call here if
 						 * `tup->rank' is 0):
 						 */
-						if(tup->rank == 0)
+						else if(tup->rank == 0)
 						{
 							int nrank = 0;
 
@@ -1432,6 +1465,10 @@ FLDOP *fo;
 					}
 					ft = createfld("varbyte", 1, 0);
 					putfld(ft, tup, sizeof(DBTBL));
+					/* mark as the internal DBTBL arg so
+					 * abstract() cannot confuse a user
+					 * varbyte of the same size with it */
+					ft->kind = TX_FLD_INTERNAL_DBTBL;
 					fopush(fo, ft);
 					closefld(ft);
 				}
@@ -1620,6 +1657,8 @@ FTN	*type;	/* (out, opt.) type of returned data */
 	int pe;
 	int needdisc = 0;
 
+	TXlastEvalpredJsonType = 0;
+
 	if(p->op == 0 && p->rt == 0)
 	{
 		if(p->lat == FIELD_OP)
@@ -1655,6 +1694,14 @@ FTN	*type;	/* (out, opt.) type of returned data */
 		else
 		{
 			v = getfld(r, sz);
+			/* rampart typed-json: getfld() just (re)computed the
+			 * value if `r' is a computed-json field, stamping
+			 * r->jsonType.  Export it so tup_project() can tag
+			 * the output copy of a bare column reference; for
+			 * expression results `r' is a fldop copy with
+			 * default kind, leaving this 0. */
+			if (r->kind == TX_FLD_COMPUTED_JSON)
+				TXlastEvalpredJsonType = r->jsonType;
 			if (type) *type = r->type;
 			if(!v)
 				return rc;

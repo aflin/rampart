@@ -342,6 +342,10 @@ IINDEX {
 	int	orank;		/* Order by rank.  There are cases
 	                           where you want to keep a rank value,
 				   but not order by it. */
+	int	rankIsFused;	/* nonzero: `orig' keys are RRF-fused hybrid
+				   ranks (TXindexrrf); they are FINAL -- the
+				   per-row post-process must not recompute
+				   $rank for these rows */
 	IINDEX	*piand;		/* Index it is already anded with */
 };
 #define IINDEXPN        ((IINDEX *)NULL)
@@ -1875,6 +1879,8 @@ IINDEX *closeiindex ARGS((IINDEX *));
 IINDEX *openiindex ARGS((void));
 IINDEX *indexand ARGS((IINDEX *, IINDEX *, int));
 IINDEX *indexor ARGS((IINDEX *, IINDEX *, int));
+IINDEX *TXindexrrf ARGS((IINDEX *kw, IINDEX *vec, int inv));
+int	TXpredMMVAutoEmbed ARGS((DBTBL *tb, PRED *p));
 int     indinv ARGS((IINDEX *));
 int     _indrev ARGS((IINDEX *));
 int     indexmirror ARGS((IINDEX *));
@@ -3062,8 +3068,8 @@ int TXpow(FLD *f1, FLD *f2);
 int TXsqlFunc_basename(FLD *f1);
 int TXfld_canonpath(FLD *f1, FLD *f2);
 int TXsqlFunc_dirname(FLD *f1);
-int TXsqlFunc_embed(FLD *out, FLD *intext);
-int TXsqlFunc_chunkembed(FLD *out, FLD *dtype, FLD *prefix);
+int TXsqlFunc_embed(FLD *out, FLD *arg2, FLD *arg3, FLD *arg4);
+int TXsqlFunc_chunkembed(FLD *out, FLD *dtype, FLD *prefix, FLD *spans);
 int TXsqlFunc_chunkavg(FLD *out, FLD *dtype, FLD *prefix);
 int TXsqlFunc_chunkcoherence(FLD *out, FLD *prefix);
 int TXsqlFunc_fileext(FLD *f1);
@@ -3533,6 +3539,8 @@ int      txfunc_json_modify (FLD *f1, FLD *f2, FLD *f3);
 int      txfunc_json_merge_patch (FLD *f1, FLD *f2);
 int      txfunc_json_merge_preserve (FLD *f1, FLD *f2);
 int      TXmkComputedJson(FLD *f);
+char    *TXtagComputedJsonValue(char subtype, char *v, size_t n, size_t *outN);
+extern char TXlastEvalpredJsonType;  /* tup_eval.c; see tup_project() */
 
 json_t  *TXjsonPath(json_t *j, char *path, char **unfoundpath);
 

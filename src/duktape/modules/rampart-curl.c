@@ -2540,20 +2540,30 @@ void duk_curl_setopts(duk_context *ctx, CURL *curl, int idx, CURLREQ *req)
         if(len > 31)
             RP_THROW(ctx, "curl - option '%s': unknown option", s);
 
-        /* convert from camelCase and '_' to '.' */
-        while(*s)
+        /* convert from camelCase and '_' to '.' -- except single-char
+           names, which are curl short options (H, A, X, ...) looked up
+           verbatim; converting 'H' to '-h' made them unfindable */
+        if(len == 1)
         {
-            if(isupper(*s))
-                *(d++)='-';
-            else if(*s == '_')
-            {
-                *(d++)='.';
-                s++;
-                continue;
-            }
-            *(d++)=tolower(*(s++));
+            op[0] = *s;
+            op[1] = '\0';
         }
-        *d='\0';
+        else
+        {
+            while(*s)
+            {
+                if(isupper(*s))
+                    *(d++)='-';
+                else if(*s == '_')
+                {
+                    *(d++)='.';
+                    s++;
+                    continue;
+                }
+                *(d++)=tolower(*(s++));
+            }
+            *d='\0';
+        }
 
         // these are handled elsewhere
         if( !strcmp(op,"url")  || !strcmp(op,"callback") || !strcmp(sop,"chunkCallback") ||
@@ -3731,6 +3741,11 @@ static duk_ret_t duk_curl_fetch_sync_async(duk_context *ctx, int async)
                 RP_THROW(ctx, "curl failed with code %d\n", mc);
             }
             (void)check_multi_info(cm);
+            /* completion callbacks may have added handles via
+               this.addurl(); still_alive is stale from before those
+               callbacks ran, so re-check or the new urls never fetch */
+            if(!still_alive)
+                curl_multi_perform(cm, &still_alive);
         } while (still_alive); /* do */
 
         curl_multi_cleanup(cm);
@@ -4001,6 +4016,10 @@ static duk_ret_t duk_curl_submit_sync_async(duk_context *ctx, int async)
 
             /* if no data was retrieved, wait .05 secs */
             if(!gotdata) usleep(50000);
+            /* re-check after callbacks: this.addurl() may have added
+               handles after still_alive was computed */
+            if(!still_alive)
+                curl_multi_perform(cm, &still_alive);
         } while (still_alive); /* do */
 
         //clean_req(req); /* free the original */

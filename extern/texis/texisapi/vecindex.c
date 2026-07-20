@@ -35,6 +35,7 @@
 #include "meter.h"
 
 #include "vecindex.h"
+#include "vecvalue.h"
 #include "vecindex_internal.h" /* TXvecHandleBase, TXvecBackend, vec_backend_for */
 #include "vec_blas_probe.h"    /* texis_vec_blas_probe — runtime BLAS check */
 #include "sysupdate.h"
@@ -70,6 +71,12 @@ extern void rpvec_f32_to_bf16(const float *src, uint16_t *dst, size_t n);
  * files; if a user is migrating, they ALTER INDEX REBUILD once.
  */
 #define VECIDX_FILE_SUFFIX ".vec"
+
+/* Non-blocking CREATE: build scans hold the table R_LCK only in
+ * batches of this many rows, yielding between batches so queued
+ * writers get through.  One lock round-trip per batch keeps the
+ * texislockd chatter negligible (~11k cycles on a 46M-row table). */
+#define TX_VEC_SCAN_BATCH 4096
 
 /* Forward decls — definitions are after the handle/SYSINDEX helpers
  * section since they need TXvecHandle and vec_sysindex_lookup_*. */
@@ -699,6 +706,15 @@ vec_convert_to_f32(int t, const void *raw, size_t n_elems, int dim,
                    float scale, int zp, float *dst)
 {
     if ((int)n_elems != dim) return -1;
+    /* Defensive: a caller without the index PARAMS at hand may pass
+     * scale 0 -- which would dequantize EVERY i8/u8 element to 0.0
+     * (all-zero vectors: scoring/encoding silently destroyed).  Fall
+     * back to the documented default calibration instead (matches
+     * TXvecParamsApplyDefaults). */
+    if (scale <= 0.0f && (t == FTN_VEC_I8 || t == FTN_VEC_U8)) {
+        scale = 1.0f / 127.0f;
+        if (t == FTN_VEC_U8 && zp == 0) zp = 128;
+    }
     switch (t) {
     case FTN_VEC_F32:
         memcpy(dst, raw, (size_t)dim * sizeof(float));
@@ -858,8 +874,27 @@ hnsw_create_impl(DDIC *ddic, DBTBL *dbtbl,
     usearch_index_t idx = NULL;
     const char *uerr = NULL;
     RECID *recid;
+    int tblLocked = 0;         /* build scans: batched R_LCK held? */
+    size_t scanTick = 0;       /* rows since last lock yield */
+    int preLoadSaved = 0;      /* pre-pass TXApp->preLoadBlobs save active? */
+    int saved_preLoad_scan = 0;
 
     (void)indname;
+
+    /* Yield the batched table R_LCK so queued writers get through
+     * (non-blocking create).  Use at the top of each scan-loop body. */
+#define VEC_SCAN_YIELD()                                                \
+    do {                                                                \
+        if (++scanTick % TX_VEC_SCAN_BATCH == 0) {                      \
+            TXunlocktable(dbtbl, R_LCK);                                \
+            if (TXlocktable(dbtbl, R_LCK) != 0) {                       \
+                putmsg(MERR + UGE, fn,                                  \
+                       "INDEX_VEC: could not re-lock table mid-scan");  \
+                tblLocked = 0;                                          \
+                goto err;                                               \
+            }                                                           \
+        }                                                               \
+    } while (0)
 
     /* SYSUPDATE: stage 1 of 3 (init + scan).  Stage 2 (encode) takes
      * over once the index is initialized on the first row; stage 3
@@ -920,17 +955,31 @@ hnsw_create_impl(DDIC *ddic, DBTBL *dbtbl,
         if (EPI_FSTAT(getdbffh(dbtbl->tbl->df), &st) == 0)
             scan_total_bytes = (EPI_OFF_T)st.st_size;
     }
-    int saved_preLoad_scan = (TXApp != NULL) ? TXApp->preLoadBlobs : 0;
+    saved_preLoad_scan = (TXApp != NULL) ? TXApp->preLoadBlobs : 0;
+    preLoadSaved = 1;
     if (TXApp) TXApp->preLoadBlobs = 0;
+    if (TXlocktable(dbtbl, R_LCK) != 0) {
+        putmsg(MERR + UGE, fn, "INDEX_VEC: could not R_LCK table");
+        goto err;
+    }
+    tblLocked = 1;
     TXrewinddbtbl(dbtbl);
-    while ((recid = getdbtblrow(dbtbl)) != RECIDPN && TXrecidvalid(recid)) {
+    for (;;) {
+        /* yield BEFORE reading the next row so the row and any lazy
+         * blob payload are always read under the same R_LCK batch */
+        VEC_SCAN_YIELD();
+        recid = getdbtblrow(dbtbl);
+        if (recid == RECIDPN || !TXrecidvalid(recid)) break;
         EPI_OFF_T off = TXgetoff(recid);
         row_estimate++;
         if (scan_total_bytes > 0)
             TXsysupdateProgress((TXsysupdateSink *)ddic->sysupdSink,
                 (double)off / (double)scan_total_bytes);
     }
+    TXunlocktable(dbtbl, R_LCK);
+    tblLocked = 0;
     if (TXApp) TXApp->preLoadBlobs = saved_preLoad_scan;
+    preLoadSaved = 0;
 
     /* Optional second pre-pass: vec_calibrate 'auto' on a quantized
      * index runs through the table once to find global min/max, then
@@ -962,8 +1011,31 @@ hnsw_create_impl(DDIC *ddic, DBTBL *dbtbl,
             if (EPI_FSTAT(getdbffh(dbtbl->tbl->df), &st2) == 0)
                 calib_total_bytes = (EPI_OFF_T)st2.st_size;
         }
+        if (TXlocktable(dbtbl, R_LCK) != 0) {
+            putmsg(MERR + UGE, fn, "INDEX_VEC: could not R_LCK table");
+            free(calib_buf);
+            if (cmeter) cmeter = closemeter(cmeter);
+            goto err;
+        }
+        tblLocked = 1;
         TXrewinddbtbl(dbtbl);
-        while ((recid = getdbtblrow(dbtbl)) != RECIDPN && TXrecidvalid(recid)) {
+        for (;;) {
+            if (++scanTick % TX_VEC_SCAN_BATCH == 0) {
+                /* yield to queued writers (non-blocking create);
+                 * BEFORE the row read so row + lazy blob payload are
+                 * always read under the same R_LCK batch */
+                TXunlocktable(dbtbl, R_LCK);
+                if (TXlocktable(dbtbl, R_LCK) != 0) {
+                    putmsg(MERR + UGE, fn,
+                           "INDEX_VEC: could not re-lock table mid-scan");
+                    tblLocked = 0;
+                    free(calib_buf);
+                    if (cmeter) cmeter = closemeter(cmeter);
+                    goto err;
+                }
+            }
+            recid = getdbtblrow(dbtbl);
+            if (recid == RECIDPN || !TXrecidvalid(recid)) break;
             EPI_OFF_T calib_off = TXgetoff(recid);
             if (cmeter) {
                 cmeterDone += (EPI_HUGEINT)dbtbl->tbl->irecsz;
@@ -982,6 +1054,8 @@ hnsw_create_impl(DDIC *ddic, DBTBL *dbtbl,
                 if (elsz == 0 || (cn % elsz) != 0) continue;
                 cells = cn / elsz;
             }
+            /* skip a chunkembed() value header, if present */
+            TXvecValSkipHdrCells(&crow, &cells, vec_dtype_elsz(cdtype));
             /* The range scan is GLOBAL (one min/max over every cell),
              * so per-row cell counts may vary freely — chunked rows
              * carry k*dim cells with k differing per document.
@@ -1012,6 +1086,8 @@ hnsw_create_impl(DDIC *ddic, DBTBL *dbtbl,
                 if (v > gmax) gmax = v;
             }
         }
+        TXunlocktable(dbtbl, R_LCK);
+        tblLocked = 0;
         free(calib_buf);
         if (cmeter) {
             EPI_STAT_S st;
@@ -1066,8 +1142,18 @@ hnsw_create_impl(DDIC *ddic, DBTBL *dbtbl,
             meterTotal = (EPI_OFF_T)st.st_size;
     }
 
+    if (TXlocktable(dbtbl, R_LCK) != 0) {
+        putmsg(MERR + UGE, fn, "INDEX_VEC: could not R_LCK table");
+        goto err;
+    }
+    tblLocked = 1;
     TXrewinddbtbl(dbtbl);
-    while ((recid = getdbtblrow(dbtbl)) != RECIDPN && TXrecidvalid(recid)) {
+    for (;;) {
+        /* yield BEFORE reading the next row so the row and any lazy
+         * blob payload are always read under the same R_LCK batch */
+        VEC_SCAN_YIELD();
+        recid = getdbtblrow(dbtbl);
+        if (recid == RECIDPN || !TXrecidvalid(recid)) break;
         /* gettblrow returns a pointer to a process-static RECID; any
          * call that runs internal SQL (e.g. TXsysupdateProgress' UPDATE
          * on SYSUPDATE) walks that table and stomps the static.  Snapshot
@@ -1106,14 +1192,20 @@ hnsw_create_impl(DDIC *ddic, DBTBL *dbtbl,
             }
             cell_count = n_elems / elsz;
         }
+        /* Decode the value: strips any chunkembed() header AND reveals
+         * the header's own per-chunk dim — the authoritative dimension
+         * for chunked values (a bare k*dim cell count cannot be split
+         * without it). */
+        size_t rowHdrDim = TXvecRowDecodeDim(&raw, &cell_count,
+                                     vec_dtype_elsz(column_dtype));
 
         if (dim == 0) {
-            /* First row: lock dim and initialize the index.
-             *
-             * An explicit `with vec_dim N` wins (required for multi-
-             * chunk columns whose first row may hold k*N cells);
-             * otherwise lock from this row's cell count (legacy). */
-            dim = (vp.graph.dim > 0) ? vp.graph.dim : (int)cell_count;
+            /* First usable row locks dim: an explicit `with vec_dim N`
+             * wins; else the value header's dim (chunkembed values are
+             * self-describing); else — headerless legacy — this row's
+             * cell count. */
+            dim = (vp.graph.dim > 0) ? vp.graph.dim
+                : (rowHdrDim > 0 ? (int)rowHdrDim : (int)cell_count);
 
             /* Index storage is f32 by default; for i8/u8 indexes use the
              * matching usearch scalar kind so on-disk size shrinks 4x. */
@@ -1164,6 +1256,18 @@ hnsw_create_impl(DDIC *ddic, DBTBL *dbtbl,
             }
         }
 
+        /* Header dim disagreement is DEFINITIVE (wrong embedding model
+         * / corrupt row) — catches even values whose total cell count
+         * happens to be a multiple of the index dim, which the modulo
+         * check below cannot.  First row won; this row is skipped. */
+        if (rowHdrDim > 0 && (int)rowHdrDim != dim) {
+            putmsg(MWARN, fn,
+                "INDEX_VEC: skipping row: value header dim %lu != index "
+                "dim %d (embedding model mismatch?)",
+                (unsigned long)rowHdrDim, dim);
+            skipped++;
+            continue;
+        }
         /* Multi-chunk rows: cell_count = k*dim (chunkembed()).  Add
          * each chunk under the row's recid (uo.multi = true).  k == 1
          * is the plain single-vec case. */
@@ -1225,15 +1329,64 @@ hnsw_create_impl(DDIC *ddic, DBTBL *dbtbl,
             }
         }
     }
+    TXunlocktable(dbtbl, R_LCK);
+    tblLocked = 0;
 
     if (meter) {
         meter_updatedone(meter, (EPI_HUGEINT)meterTotal);
         meter_end(meter);
     }
 
-    if (n_added == 0 || !idx) {
+    int emptyCreate = 0;
+    if (!idx && vp.graph.dim > 0) {
+        /* Empty table (or no usable vectors): create an EMPTY sealed
+         * index — fulltext CREATE INDEX allows this, and the delta
+         * tier makes it correct: rows inserted afterwards land in
+         * `_T.btr` and are searchable immediately; OPTIMIZE folds
+         * them in later.  Requires an explicit `with vec_dim N'
+         * since there is no row to infer dim from. */
+        usearch_scalar_kind_t store_kind = usearch_scalar_f32_k;
+        if (vp.dtype == FTN_VEC_I8) store_kind = usearch_scalar_i8_k;
+        else if (vp.dtype == FTN_VEC_U8) store_kind = usearch_scalar_u8_k;
+        usearch_init_options_t uo;
+        memset(&uo, 0, sizeof(uo));
+        uo.metric_kind      = metric_to_usearch(vp.graph.metric);
+        uo.metric           = NULL;
+        uo.quantization     = store_kind;
+        uo.dimensions       = (size_t)vp.graph.dim;
+        uo.connectivity     = (size_t)vp.graph.M;
+        uo.expansion_add    = (size_t)vp.graph.ef_construction;
+        uo.expansion_search = (size_t)vp.graph.ef_construction;
+        uo.multi            = true;
+        idx = usearch_init(&uo, &uerr);
+        if (!idx || uerr) {
+            putmsg(MERR + UGE, fn,
+                "usearch_init (empty index): %s", uerr ? uerr : "(null)");
+            goto err;
+        }
+        usearch_reserve(idx, 16, &uerr);
+        if (uerr) {
+            putmsg(MERR + UGE, fn, "usearch_reserve: %s", uerr);
+            goto err;
+        }
+        dim = vp.graph.dim;
+        emptyCreate = 1;
+        putmsg(MWARN, fn,
+            "INDEX_VEC: creating empty vector index (no usable vectors "
+            "in table, skipped=%lu); rows added later are tracked",
+            (unsigned long)skipped);
+    }
+    if (!idx) {
         putmsg(MERR + UGE, fn,
-            "INDEX_VEC: no usable vectors in table (skipped=%lu)",
+            "INDEX_VEC: no usable vectors in table (skipped=%lu); "
+            "give `with vec_dim N' to create an empty index",
+            (unsigned long)skipped);
+        goto err;
+    }
+    if (!emptyCreate && n_added == 0) {
+        /* rows were seen (dim inferred) but every add failed */
+        putmsg(MERR + UGE, fn,
+            "INDEX_VEC: no vectors added (skipped=%lu)",
             (unsigned long)skipped);
         goto err;
     }
@@ -1257,33 +1410,16 @@ hnsw_create_impl(DDIC *ddic, DBTBL *dbtbl,
         outParams->dtype = vp.dtype;
     }
 
-    /* Create empty `_T.btr` (newrec) and `_del.btr` (tombstone)
-     * alongside the .vec.  All post-CREATE INSERTs accumulate in
-     * `_T.btr`; deletes accumulate in `_del.btr`; SEARCH unions
-     * sealed (.vec) + linear-scanned newrec rows + applies the
-     * tombstone filter; ALTER INDEX OPTIMIZE folds them back into
-     * the .vec via usearch_add + a single save_atomic.  Mirrors
-     * texis fulltext's pattern (texis-internals.md §8.5). */
-    {
-        char *tomb_base   = TXvecMakeBtreeBasePath(indfile, "_del");
-        char *newrec_base = TXvecMakeBtreeBasePath(indfile, "_T");
-        if (!tomb_base || !newrec_base) {
-            free(tomb_base); free(newrec_base);
-            putmsg(MERR + MAE, fn, "alloc aux btree paths");
-            goto err;
-        }
-        /* Defensive: erase prior leftovers from a re-created index. */
-        TXvecBtreeUnlink(tomb_base);
-        TXvecBtreeUnlink(newrec_base);
-        int rc_t = TXvecBtreeCreateEmpty(tomb_base);
-        int rc_n = TXvecBtreeCreateEmpty(newrec_base);
-        free(tomb_base); free(newrec_base);
-        if (rc_t != 0 || rc_n != 0) {
-            putmsg(MERR + UGE, fn,
-                "INDEX_VEC: could not create auxiliary btrees");
-            goto err;
-        }
-    }
+    /* `_T.btr` (newrec) and `_del.btr` (tombstone) are LIVE already:
+     * index.c created them (TXvecCreateDeltaBtrees) before the 'n'
+     * SYSINDEX entry went visible, so concurrent writers have been
+     * recording adds/deletes into them THROUGHOUT this build (the
+     * non-blocking create).  Do NOT touch them here — recreating or
+     * unlinking would drop those tracked rows.  SEARCH unions sealed
+     * (.vec) + linear-scanned newrec rows + applies the tombstone
+     * filter; ALTER INDEX OPTIMIZE folds them into the .vec.  Mirrors
+     * texis fulltext's pattern (texis-internals.md §8.5) minus its
+     * mid-CREATE blind spot. */
 
     rc = (skipped > 0) ? 0 : 1;
     goto cleanup;
@@ -1291,6 +1427,8 @@ hnsw_create_impl(DDIC *ddic, DBTBL *dbtbl,
 err:
     rc = -1;
 cleanup:
+    if (tblLocked) { TXunlocktable(dbtbl, R_LCK); tblLocked = 0; }
+    if (preLoadSaved && TXApp) TXApp->preLoadBlobs = saved_preLoad_scan;
     if (meter) meter = closemeter(meter);
     if (idx) usearch_free(idx, &uerr);
     free(qbuf);
@@ -1298,6 +1436,7 @@ cleanup:
     free(vecpath);
     return rc;
 }
+#undef VEC_SCAN_YIELD
 
 /* ----- Search-side handle cache ------------------------------------- */
 
@@ -1574,6 +1713,8 @@ hnsw_open_impl(DDIC *ddic, const char *indfile, const TXvecParams *vp)
     h->base.dtype       = vp->dtype ? vp->dtype : FTN_VEC_F32;
     h->quant_scale = vp->quant_scale;
     h->quant_zp    = vp->quant_zp;
+    h->base.quant_scale = vp->quant_scale;
+    h->base.quant_zp    = vp->quant_zp;
 
     /* Capture file identity for cross-process change detection.  Done
      * AFTER usearch_load returns so the inode/mtime reflect what we
@@ -1723,52 +1864,19 @@ hnsw_search_impl(TXvecHandle *h_, DBTBL *dbtbl, const char *field,
     (void)dbtbl; (void)field;     /* HNSW doesn't need a delta-scan path */
     struct TXvecHnswHandle *h = (struct TXvecHnswHandle *)h_;
     if (!h || !h->index) return SIZE_MAX;
-    /* Per-query ef.  Caller's `ef` arg wins if non-zero; otherwise fall
-     * back to the global TXlikevef set via sql.set/SET; 0 means leave
-     * the index's existing expansion_search alone. */
-    {
-        size_t want_ef = (ef > 0) ? ef
-                       : (TXlikevef > 0 ? (size_t)TXlikevef : 0);
-        if (want_ef > 0) {
-            const char *uerr2 = NULL;
-            usearch_change_expansion_search(h->index, want_ef, &uerr2);
-            if (uerr2) {
-                putmsg(MWARN, fn, "usearch_change_expansion_search: %s",
-                       uerr2);
-            }
-        }
-    }
-
-    usearch_key_t *keys = (usearch_key_t *)
-        malloc(k * sizeof(usearch_key_t));
-    usearch_distance_t *dists = (usearch_distance_t *)
-        malloc(k * sizeof(usearch_distance_t));
-    if (!keys || !dists) {
-        free(keys); free(dists);
-        return SIZE_MAX;
-    }
-
     /* For i8/u8 indexes, quantize the query before searching so it lands
      * in the same coordinate space as the stored vectors. */
     const void *uquery = query;
     usearch_scalar_kind_t ukind = usearch_scalar_f32_k;
     if (h->base.dtype == FTN_VEC_I8 || h->base.dtype == FTN_VEC_U8) {
         qbuf_idx = malloc((size_t)h->base.dim * vec_dtype_elsz(h->base.dtype));
-        if (!qbuf_idx) { free(keys); free(dists); return SIZE_MAX; }
+        if (!qbuf_idx) return SIZE_MAX;
         if (quantize_from_f32(h->base.dtype, query, h->base.dim,
                               h->quant_scale, h->quant_zp, qbuf_idx) < 0) {
-            free(keys); free(dists); free(qbuf_idx); return SIZE_MAX;
+            free(qbuf_idx); return SIZE_MAX;
         }
         uquery = qbuf_idx;
         ukind = dtype_to_usearch_scalar(h->base.dtype);
-    }
-
-    size_t got = usearch_search(h->index, uquery, ukind,
-                                k, keys, dists, &uerr);
-    if (uerr) {
-        putmsg(MERR + UGE, fn, "usearch_search: %s", uerr);
-        free(keys); free(dists); free(qbuf_idx);
-        return SIZE_MAX;
     }
 
     /* Walk auxiliary btrees: tombstones (recids whose .vec entry is
@@ -1778,58 +1886,33 @@ hnsw_search_impl(TXvecHandle *h_, DBTBL *dbtbl, const char *field,
     struct vec_recid_vec { int64_t *data; size_t len; size_t cap; };
     struct vec_recid_vec tomb_v   = {NULL, 0, 0};
     struct vec_recid_vec newrec_v = {NULL, 0, 0};
-    /* Local closure: append to a vec_recid_vec. */
-    /* (TXvecBtreeWalkRecids takes a C function pointer; use a static
-     * helper at file scope — see vec_recid_vec_push above.) */
     extern void vec_recid_vec_push_(int64_t r, void *user);
     TXvecBtreeWalkRecids(h->tomb_base,   vec_recid_vec_push_, &tomb_v);
     TXvecBtreeWalkRecids(h->newrec_base, vec_recid_vec_push_, &newrec_v);
+    if (tomb_v.cap == (size_t)-1 || newrec_v.cap == (size_t)-1) {
+        /* incomplete delta snapshot (OOM): an incomplete TOMBSTONE set
+         * would resurrect deleted rows -- fail the search instead */
+        putmsg(MERR + MAE, __FUNCTION__,
+               "out of memory snapshotting delta btrees");
+        free(tomb_v.data); free(newrec_v.data); free(qbuf_idx);
+        return SIZE_MAX;
+    }
 
     extern int vec_int64_cmp_(const void *a, const void *b);
     if (tomb_v.len)   qsort(tomb_v.data,   tomb_v.len,   sizeof(int64_t), vec_int64_cmp_);
     if (newrec_v.len) qsort(newrec_v.data, newrec_v.len, sizeof(int64_t), vec_int64_cmp_);
 
-    /* Build the merged candidate set: sealed hits (.vec) minus
-     * tombstones and newrec-overrides, plus a full linear scan of
-     * newrec.  Sort by metric-natural score and trim to k.  Mirrors
-     * the IVFPQ search path so HNSW recall is also unbiased by
-     * delta-set fraction.  See vecindex_ivfpq.cpp's search_impl. */
     int ascending = (h->base.metric == VEC_METRIC_L2);
-    size_t cap = (size_t)got + newrec_v.len;
-    vec_search_result_t *merged = (cap > 0)
-        ? (vec_search_result_t *)malloc(cap * sizeof(vec_search_result_t))
-        : NULL;
-    size_t mlen = 0;
-    if (cap > 0 && !merged) {
-        free(tomb_v.data); free(newrec_v.data);
-        free(keys); free(dists); free(qbuf_idx);
-        return SIZE_MAX;
-    }
 
-    /* Pack sealed (.vec) hits, dropping any whose recid is tombstoned
-     * or has a newrec override (in which case the newrec scan below
-     * carries the current vector). */
-    for (size_t i = 0; i < got; i++) {
-        int64_t id = (int64_t)(uint64_t)keys[i];
-        if (tomb_v.len &&
-            bsearch(&id, tomb_v.data, tomb_v.len, sizeof(int64_t), vec_int64_cmp_))
-            continue;
-        if (newrec_v.len &&
-            bsearch(&id, newrec_v.data, newrec_v.len, sizeof(int64_t), vec_int64_cmp_))
-            continue;
-        merged[mlen].id = (vec_id_t)keys[i];
-        merged[mlen].score = (h->base.metric == VEC_METRIC_L2)
-                             ? (float)dists[i]
-                             : 1.0f - (float)dists[i];
-        mlen++;
-    }
-
-    /* Linear scan newrec: fetch each row, compute exact distance.
-     * Always scan the whole delta (not capped at k) so the merged
-     * top-k is correct regardless of delta size. */
+    /* Delta hits — computed ONCE (row-level, no chunk crowding):
+     * linear scan of newrec rows, best-chunk score per row. */
+    vec_search_result_t *delta = NULL;
+    size_t dlen = 0;
     if (newrec_v.len > 0 && dbtbl && field) {
         FLD *fld = dbnametofld(dbtbl, (char *)field);
-        if (fld) {
+        delta = (vec_search_result_t *)
+            malloc(newrec_v.len * sizeof(vec_search_result_t));
+        if (fld && delta) {
             int t = fld->type & DDTYPEBITS;
             int column_dtype = (t == FTN_BYTE) ? h->base.dtype : t;
             float *qbuf = (float *)malloc((size_t)h->base.dim * sizeof(float));
@@ -1851,8 +1934,8 @@ hnsw_search_impl(TXvecHandle *h_, DBTBL *dbtbl, const char *field,
                         if (elsz == 0 || (n_elems % elsz) != 0) continue;
                         cells = n_elems / elsz;
                     }
-                    /* Multi-chunk rows: cells = kChunks*dim; row score =
-                     * best chunk (max dot / min L2). */
+                    TXvecValSkipHdrCells(&raw, &cells,
+                                         vec_dtype_elsz(column_dtype));
                     if (cells == 0 || (cells % (size_t)h->base.dim) != 0)
                         continue;
                     {
@@ -1865,7 +1948,8 @@ hnsw_search_impl(TXvecHandle *h_, DBTBL *dbtbl, const char *field,
                                 + ci * (size_t)h->base.dim * col_elsz;
                             if (vec_convert_to_f32(column_dtype, chunk_raw,
                                     (size_t)h->base.dim, h->base.dim,
-                                    /*scale*/0.0f, /*zp*/0, qbuf) != 0)
+                                    h->quant_scale, h->quant_zp,
+                                    qbuf) != 0)
                                 continue;
                             float score = 0.0f;
                             if (use_dot) {
@@ -1881,9 +1965,9 @@ hnsw_search_impl(TXvecHandle *h_, DBTBL *dbtbl, const char *field,
                             }
                         }
                         if (best == (use_dot ? -2.0f : FLT_MAX)) continue;
-                        merged[mlen].id = (vec_id_t)(uint64_t)r;
-                        merged[mlen].score = best;
-                        mlen++;
+                        delta[dlen].id = (vec_id_t)(uint64_t)r;
+                        delta[dlen].score = best;
+                        dlen++;
                     }
                 }
                 free(qbuf);
@@ -1891,37 +1975,113 @@ hnsw_search_impl(TXvecHandle *h_, DBTBL *dbtbl, const char *field,
         }
     }
 
-    /* Sort merged by metric-natural score, then copy first k into
-     * the caller's results buffer. */
-    if (mlen > 1) {
-        extern int vec_search_cmp_asc_(const void *, const void *);
-        extern int vec_search_cmp_desc_(const void *, const void *);
-        qsort(merged, mlen, sizeof(*merged),
-              ascending ? vec_search_cmp_asc_ : vec_search_cmp_desc_);
-    }
-
-    /* Copy best-first into the caller's buffer, deduping ids: with
-     * uo.multi = true a multi-chunk row can appear several times in the
-     * sealed hits; the first (= best-scoring) occurrence wins. */
-    /* NB: with multi=true a row's chunks each consumed one of the k
-     * sealed-search slots above, so after this best-first dedup the
-     * result can hold FEWER than k unique rows (top documents with many
-     * near-query chunks crowd the slot budget).  Accepted for v1: LIKEV
-     * over-fetches candidates (likevRows) ahead of the exact rescore,
-     * which absorbs the shortfall in practice. */
+    /* Sealed fetch with ROW-level widening: the sealed search returns
+     * CHUNK hits, and a multi-chunk row's chunks each consume a slot,
+     * so k chunk-slots can dedup to far fewer than k unique rows —
+     * silently dropping documents a linear scan finds (heavily-chunked
+     * corpora made indexed results differ from linear).  Re-search with
+     * a wider k until the deduped ROW count satisfies the caller's k,
+     * or the whole index has been fetched.  The search expansion (ef)
+     * is floored at the per-round k: HNSW can only return as many
+     * results as its expansion visits (the usearch default of ~64 made
+     * likevRows > 64 a silent no-op). */
     size_t out = 0;
-    for (size_t i = 0; i < mlen && out < k; i++) {
-        size_t j;
-        for (j = 0; j < out; j++)
-            if (results[j].id == merged[i].id) break;
-        if (j < out) continue;   /* duplicate row */
-        results[out++] = merged[i];
+    {
+        size_t idx_n = usearch_size(h->index, &uerr);
+        size_t k_try = k;
+        if (uerr) { uerr = NULL; idx_n = 0; }
+        if (idx_n > 0 && k_try > idx_n) k_try = idx_n;
+        for (;;) {
+            usearch_key_t *keys = (usearch_key_t *)
+                malloc(k_try * sizeof(usearch_key_t));
+            usearch_distance_t *dists = (usearch_distance_t *)
+                malloc(k_try * sizeof(usearch_distance_t));
+            vec_search_result_t *merged = NULL;
+            size_t got = 0, mlen = 0, cap;
+
+            if (!keys || !dists) {
+                free(keys); free(dists);
+                out = SIZE_MAX; break;
+            }
+            {
+                size_t want_ef = (ef > 0) ? ef
+                               : (TXlikevef > 0 ? (size_t)TXlikevef : 0);
+                if (want_ef < k_try) want_ef = k_try;
+                {
+                    const char *uerr2 = NULL;
+                    usearch_change_expansion_search(h->index, want_ef,
+                                                    &uerr2);
+                    if (uerr2)
+                        putmsg(MWARN, fn,
+                               "usearch_change_expansion_search: %s", uerr2);
+                }
+            }
+            got = usearch_search(h->index, uquery, ukind,
+                                 k_try, keys, dists, &uerr);
+            if (uerr) {
+                putmsg(MERR + UGE, fn, "usearch_search: %s", uerr);
+                free(keys); free(dists);
+                out = SIZE_MAX; break;
+            }
+            cap = got + dlen;
+            merged = (cap > 0)
+                ? (vec_search_result_t *)malloc(cap * sizeof(*merged))
+                : NULL;
+            if (cap > 0 && !merged) {
+                free(keys); free(dists);
+                out = SIZE_MAX; break;
+            }
+            /* Pack sealed hits, dropping tombstoned / newrec-overridden
+             * recids (newrec carries the current vector via `delta'). */
+            for (size_t i = 0; i < got; i++) {
+                int64_t id = (int64_t)(uint64_t)keys[i];
+                if (tomb_v.len &&
+                    bsearch(&id, tomb_v.data, tomb_v.len, sizeof(int64_t),
+                            vec_int64_cmp_))
+                    continue;
+                if (newrec_v.len &&
+                    bsearch(&id, newrec_v.data, newrec_v.len, sizeof(int64_t),
+                            vec_int64_cmp_))
+                    continue;
+                merged[mlen].id = (vec_id_t)keys[i];
+                merged[mlen].score = (h->base.metric == VEC_METRIC_L2)
+                                     ? (float)dists[i]
+                                     : 1.0f - (float)dists[i];
+                mlen++;
+            }
+            for (size_t i = 0; i < dlen; i++)
+                merged[mlen++] = delta[i];
+
+            if (mlen > 1) {
+                extern int vec_search_cmp_asc_(const void *, const void *);
+                extern int vec_search_cmp_desc_(const void *, const void *);
+                qsort(merged, mlen, sizeof(*merged),
+                      ascending ? vec_search_cmp_asc_ : vec_search_cmp_desc_);
+            }
+            /* best-first row dedup into the caller's buffer */
+            out = 0;
+            for (size_t i = 0; i < mlen && out < k; i++) {
+                size_t j;
+                for (j = 0; j < out; j++)
+                    if (results[j].id == merged[i].id) break;
+                if (j < out) continue;
+                results[out++] = merged[i];
+            }
+            free(merged);
+            free(keys); free(dists);
+
+            if (out >= k) break;             /* row budget satisfied */
+            if (idx_n == 0 || k_try >= idx_n) break;   /* fetched all */
+            if (got < k_try) break;          /* index exhausted early */
+            k_try *= 4;
+            if (k_try > idx_n) k_try = idx_n;
+        }
     }
 
-    free(merged);
+    free(delta);
     free(tomb_v.data);
     free(newrec_v.data);
-    free(keys); free(dists); free(qbuf_idx);
+    free(qbuf_idx);
     return out;
 }
 
@@ -1931,10 +2091,18 @@ hnsw_search_impl(TXvecHandle *h_, DBTBL *dbtbl, const char *field,
 void vec_recid_vec_push_(int64_t r, void *user)
 {
     struct { int64_t *data; size_t len; size_t cap; } *v = user;
+    if (v->cap == (size_t)-1) return;   /* already failed */
     if (v->len == v->cap) {
         size_t nc = v->cap ? v->cap * 2 : 16;
         int64_t *nd = (int64_t *)realloc(v->data, nc * sizeof(int64_t));
-        if (!nd) return;     /* on failure, drop the entry */
+        if (!nd) {
+            /* Mark the collection INCOMPLETE (cap = -1) instead of
+             * silently dropping: a dropped TOMBSTONE would resurrect
+             * a deleted row with zero diagnostics.  Callers that
+             * cannot tolerate an incomplete set must check. */
+            v->cap = (size_t)-1;
+            return;
+        }
         v->data = nd; v->cap = nc;
     }
     v->data[v->len++] = r;
@@ -2146,6 +2314,21 @@ TXlikevGetLastChunk(int *ix, int *cnt)
  *   embed(text, 'bf16')      -> varbyte with bf16 bytes
  *   embed(text, 'f64')       -> varbyte with f64 bytes
  *
+ * Prompt kind (asymmetric retrieval models -- nomic, bge, e5, ...):
+ *
+ *   embed(text, 'query')            -> embed with the model's query prompt
+ *   embed(text, 'document')         -> ... document prompt (no title)
+ *   embed(text, 'document', title)  -> ... document prompt with title
+ *   embed(text, 'raw')              -> verbatim (same as omitting; explicit)
+ *   embed(text, dtype, kind[, title])  -> dtype and kind combined
+ *
+ * The kind travels to the SQL layer, which owns the model's prompt
+ * strings (from the model's .prompts.json sidecar or explicit sql.set
+ * prefixes) and composes them around the text; with no prompts
+ * configured every kind embeds verbatim.  Plain embed(text) stays
+ * byte-identical to older releases.  A title is only valid with
+ * 'document'.
+ *
  * Returns a varbyte FLD (declared FTN_BYTE | DDVARBIT) so it works with
  * any vec column type via fobyby's byte→vec assignment: fobyby reads
  * the column's elsz, recomputes n = bytes/elsz, and stores the bytes
@@ -2158,8 +2341,30 @@ TXlikevGetLastChunk(int *ix, int *cnt)
  *
  * No callback registered → MERR + error return.
  */
+/* arg word classifiers for TXsqlFunc_embed */
+static int
+tx_embed_dtype_word(const char *s, int *dtypeOut)
+{
+    if      (!strcasecmp(s, "f16"))  *dtypeOut = FTN_VEC_F16;
+    else if (!strcasecmp(s, "f32"))  *dtypeOut = FTN_VEC_F32;
+    else if (!strcasecmp(s, "f64"))  *dtypeOut = FTN_VEC_F64;
+    else if (!strcasecmp(s, "bf16")) *dtypeOut = FTN_VEC_BF16;
+    else return 0;
+    return 1;
+}
+
+static int
+tx_embed_kind_word(const char *s, int *kindOut)
+{
+    if      (!strcasecmp(s, "query"))    *kindOut = TXEMBED_QUERY;
+    else if (!strcasecmp(s, "document")) *kindOut = TXEMBED_DOCUMENT;
+    else if (!strcasecmp(s, "raw"))      *kindOut = TXEMBED_RAW;
+    else return 0;
+    return 1;
+}
+
 int
-TXsqlFunc_embed(FLD *f1, FLD *f2)
+TXsqlFunc_embed(FLD *f1, FLD *f2, FLD *f3, FLD *f4)
 {
     void        *ud = NULL;
     TXembedFunc  fn = TXgetEmbedFunc(&ud);
@@ -2168,6 +2373,10 @@ TXsqlFunc_embed(FLD *f1, FLD *f2)
     char        *src;
     size_t       slen;
     int          dtype = FTN_VEC_F16;   /* default */
+    int          kind = TXEMBED_RAW;
+    int          haveKind = 0;
+    const char  *title = NULL;
+    size_t       titleLen = 0;
 
     if (!fn)
     {
@@ -2176,24 +2385,65 @@ TXsqlFunc_embed(FLD *f1, FLD *f2)
         return FOP_EINVAL;
     }
 
-    /* Optional 2nd arg: dtype string. */
-    if (f2 != FLDPN && !TXfldIsNull(f2))
+    /* Optional args after the text:
+     *   arg2: dtype ('f16'...) OR prompt kind ('query'|'document'|'raw')
+     *   arg3: prompt kind (when arg2 was a dtype) OR title (when arg2
+     *         was 'document')
+     *   arg4: title (only after dtype + 'document')
+     * '' and 'auto' in the dtype slot mean the default (f16) --
+     * placeholders so later args are reachable without naming a dtype. */
     {
-        const char *dt = (const char *)getfld(f2, NULL);
-        if (dt && dt[0] && strcasecmp(dt, "auto") != 0)
-        {   /* '' and 'auto' mean the default (f16) -- placeholders so the
-             * 3rd (prefix) argument is reachable without naming a dtype */
-            if      (!strcasecmp(dt, "f16"))  dtype = FTN_VEC_F16;
-            else if (!strcasecmp(dt, "f32"))  dtype = FTN_VEC_F32;
-            else if (!strcasecmp(dt, "f64"))  dtype = FTN_VEC_F64;
-            else if (!strcasecmp(dt, "bf16")) dtype = FTN_VEC_BF16;
+        FLD *args[2];
+        args[0] = f3; args[1] = f4;
+        if (f2 != FLDPN && !TXfldIsNull(f2))
+        {
+            const char *dt = (const char *)getfld(f2, NULL);
+            if (dt && dt[0] && strcasecmp(dt, "auto") != 0)
+            {
+                if (!tx_embed_dtype_word(dt, &dtype) &&
+                    !(haveKind = tx_embed_kind_word(dt, &kind))) {
+                    putmsg(MERR + UGE, "embed",
+                           "Unknown arg `%s' — expected a dtype "
+                           "('f16', 'f32', 'f64', 'bf16') or a prompt kind "
+                           "('query', 'document', 'raw')", dt);
+                    return FOP_EINVAL;
+                }
+            }
+        }
+        for (int ai = 0; ai < 2; ai++)
+        {
+            FLD *fa = args[ai];
+            const char *s;
+            if (fa == FLDPN || TXfldIsNull(fa)) continue;
+            s = (const char *)getfld(fa, &titleLen);
+            if (!s) continue;
+            if (!haveKind)
+            {   /* kind slot */
+                titleLen = 0;
+                if (!s[0]) continue;         /* '' placeholder */
+                if (!(haveKind = tx_embed_kind_word(s, &kind))) {
+                    putmsg(MERR + UGE, "embed",
+                           "Unknown prompt kind `%s' — expected "
+                           "'query', 'document' or 'raw'", s);
+                    return FOP_EINVAL;
+                }
+            }
+            else if (!title)
+            {   /* title slot (titleLen set by getfld above) */
+                if (kind != TXEMBED_DOCUMENT) {
+                    putmsg(MERR + UGE, "embed",
+                           "A title is only valid with the 'document' "
+                           "prompt kind");
+                    return FOP_EINVAL;
+                }
+                title = s;
+            }
             else {
-                putmsg(MERR + UGE, "embed",
-                       "Unknown dtype `%s' — expected one of "
-                       "'f16', 'f32', 'f64', 'bf16'", dt);
+                putmsg(MERR + UGE, "embed", "Too many arguments");
                 return FOP_EINVAL;
             }
         }
+        if (title && titleLen == 0) title = NULL;
     }
 
     if (TXfldIsNull(f1))
@@ -2208,7 +2458,7 @@ TXsqlFunc_embed(FLD *f1, FLD *f2)
         return FOP_EOK;
     }
 
-    dim = fn(ud, src, slen, &vec_f32);
+    dim = fn(ud, src, slen, kind, title, titleLen, &vec_f32);
     if (dim == 0 || !vec_f32)
     {
         putmsg(MERR + FRE, "embed", "embed callback returned no vector");
@@ -2286,8 +2536,19 @@ TXsqlFunc_embed(FLD *f1, FLD *f2)
  * treat any row whose cell count is a k-multiple of the query/index
  * dim as k chunks (max-over-chunks scoring; each chunk indexed under
  * the row's recid). */
+
+/* caller-supplied span offset (double) -> uint32, clamped: raw casts
+ * of negative/NaN/>=2^32 doubles to unsigned are undefined behavior */
+static EPI_UINT32
+txVecSpanU32(double v)
+{
+    if (!(v > 0.0)) return 0;                    /* NaN and <= 0 */
+    if (v >= 4294967295.0) return (EPI_UINT32)4294967295u;
+    return (EPI_UINT32)v;
+}
+
 int
-TXsqlFunc_chunkembed(FLD *f1, FLD *f2, FLD *f3)
+TXsqlFunc_chunkembed(FLD *f1, FLD *f2, FLD *f3, FLD *f4)
 {
     void           *ud = NULL;
     TXembedDocFunc  fn = TXgetEmbedDocFunc(&ud);
@@ -2296,6 +2557,7 @@ TXsqlFunc_chunkembed(FLD *f1, FLD *f2, FLD *f3)
     char           *src;
     size_t          slen;
     int             dtype = FTN_VEC_F16;   /* default, matches embed() */
+    EPI_UINT32     *spanPairs = NULL;      /* k {start,end} pairs for the header */
 
     if (!fn)
     {
@@ -2330,30 +2592,186 @@ TXsqlFunc_chunkembed(FLD *f1, FLD *f2, FLD *f3)
         TXfldSetNull(f1);
         return FOP_EOK;
     }
-    src = (char *)getfld(f1, &slen);
-    if (!src || slen == 0)
-    {
-        TXfldSetNull(f1);
-        return FOP_EOK;
-    }
 
     /* optional 3rd arg: per-chunk prefix (e.g. the document title) --
      * prepended to every chunk's EMBEDDING input; chunk boundaries,
      * spans and k are unaffected (see the engine's seq-inject). */
+    const char *pfx = NULL;
+    size_t      pfxlen = 0;
+    if (f3 != FLDPN && !TXfldIsNull(f3))
+        pfx = (const char *)getfld(f3, &pfxlen);
+    if (pfx && pfxlen == 0) pfx = NULL;
+
+    if ((f1->type & DDTYPEBITS) == FTN_STRLST)
     {
-        const char *p = NULL;
-        size_t      pl = 0;
-        if (f3 != FLDPN && !TXfldIsNull(f3))
-            p = (const char *)getfld(f3, &pl);
-        if (p && pl == 0) p = NULL;
-        dim = fn(ud, src, slen, p, p ? pl : 0, &vecs_f32, &k, NULL, NULL);
+        /* chunkembed(strlst[, dtype[, prefix]]): CALLER-SUPPLIED chunks --
+         * e.g. a JS Array parameter (rampart-sql binds it as strlst; use
+         * Sql.list()), the same array a custom initEmbed split:function()
+         * would return.  ONE VECTOR PER ELEMENT, always: the list is a
+         * manual override, so N elements in means N vectors out (the
+         * caller's own chunk bookkeeping stays positional).  An element
+         * that fits the model window gets its exact vector; an oversized
+         * element gets its embed()-style COMBINED vector (the normalized
+         * mean over its sub-window vectors) rather than extra vectors or
+         * a truncation.  Empty elements are skipped.  NOTE: the array IS
+         * the chunking, so the 5-arg vec abstract()'s span recomputation
+         * (built-in chunker) won't match such rows -- it falls back to a
+         * plain snippet there.  LIKEV ranking is unaffected. */
+        ft_strlst *sl = (ft_strlst *)getfld(f1, &slen);
+        char      *s, *lim;
+        size_t     ktot = 0, eord = 0;
+
+        /* optional 4th arg: caller-supplied {start,end} byte spans into
+         * the SOURCE document, one pair per list element in order (pairs
+         * for skipped empty elements are dropped alongside them).  From
+         * rampart: Sql.list(numberArray) with 2 numbers per element.
+         * With spans in the value's header, the 5-arg vec abstract()
+         * seeds best-chunk snippets for custom chunkings too. */
+        double    *spanVals = NULL;
+        size_t     nSpanVals = 0;
+        if (f4 != FLDPN && !TXfldIsNull(f4))
+        {
+            int f4base = (int)(f4->type & DDTYPEBITS);
+            if (f4base == FTN_DOUBLE)
+                spanVals = (double *)getfld(f4, &nSpanVals);
+            else
+                putmsg(MWARN + UGE, "chunkembed",
+                       "spans argument must be a numeric list "
+                       "(Sql.list of {start,end} pairs) -- ignored");
+        }
+
+        if (!sl || sl->nb <= 1)
+        {
+            TXfldSetNull(f1);
+            return FOP_EOK;
+        }
+        dim = 0;
+        lim = sl->buf + sl->nb - 1;          /* nb includes final NUL */
+        for (s = sl->buf; s < lim; s += strlen(s) + 1, eord++)
+        {
+            size_t elen = strlen(s);
+            float *avg1 = NULL;
+            size_t d;
+
+            if (elen == 0) continue;         /* skip empty elements */
+            if (spanVals && (eord + 1) * 2 <= nSpanVals)
+            {
+                EPI_UINT32 *np = (EPI_UINT32 *)TXrealloc(TXPMBUFPN,
+                        __FUNCTION__, spanPairs,
+                        (ktot + 1) * 2 * sizeof(EPI_UINT32));
+                if (!np) { free(vecs_f32); free(spanPairs); return FOP_ENOMEM; }
+                spanPairs = np;
+                /* caller-supplied doubles: clamp to the uint32 domain
+                 * first (a raw out-of-range/NaN double->unsigned cast
+                 * is undefined behavior, not modular) */
+                spanPairs[ktot * 2]     = txVecSpanU32(spanVals[eord * 2]);
+                spanPairs[ktot * 2 + 1] = txVecSpanU32(spanVals[eord * 2 + 1]);
+            }
+            d = fn(ud, s, elen, pfx, pfx ? pfxlen : 0, NULL, NULL, &avg1, NULL);
+            if (d == 0 || !avg1)
+            {
+                if (avg1) free(avg1);
+                if (vecs_f32) free(vecs_f32);
+                if (spanPairs) free(spanPairs);
+                putmsg(MERR + FRE, "chunkembed",
+                       "doc-embed callback returned no vector (element)");
+                return FOP_EINVAL;
+            }
+            if (dim == 0)
+                dim = d;
+            else if (d != dim)
+            {
+                free(avg1);
+                free(vecs_f32);
+                if (spanPairs) free(spanPairs);
+                putmsg(MERR + UGE, "chunkembed",
+                       "embedder dimension changed mid-list (%d vs %d)",
+                       (int)d, (int)dim);
+                return FOP_EINVAL;
+            }
+            {
+                float *nv = (float *)TXrealloc(TXPMBUFPN, __FUNCTION__,
+                                               vecs_f32,
+                                               (ktot + 1) * dim * sizeof(float));
+                if (!nv)
+                {
+                    free(avg1);
+                    free(vecs_f32);
+                    if (spanPairs) free(spanPairs);
+                    return FOP_ENOMEM;
+                }
+                vecs_f32 = nv;
+            }
+            memcpy(vecs_f32 + ktot * dim, avg1, dim * sizeof(float));
+            ktot++;
+            free(avg1);
+        }
+        if (ktot == 0)                        /* all elements empty */
+        {
+            if (vecs_f32) free(vecs_f32);
+            if (spanPairs) free(spanPairs);
+            TXfldSetNull(f1);
+            return FOP_EOK;
+        }
+        if (spanVals && nSpanVals != eord * 2)
+        {
+            putmsg(MWARN + UGE, "chunkembed",
+                   "spans argument has %d values for %d list elements "
+                   "(expected %d) -- spans dropped",
+                   (int)nSpanVals, (int)eord, (int)(eord * 2));
+            free(spanPairs);
+            spanPairs = NULL;
+        }
+        k = ktot;
     }
-    if (dim == 0 || k == 0 || !vecs_f32)
+    else
     {
-        putmsg(MERR + FRE, "chunkembed",
-               "doc-embed callback returned no vectors");
-        if (vecs_f32) free(vecs_f32);
-        return FOP_EINVAL;
+        src = (char *)getfld(f1, &slen);
+        if (!src || slen == 0)
+        {
+            TXfldSetNull(f1);
+            return FOP_EOK;
+        }
+        dim = fn(ud, src, slen, pfx, pfx ? pfxlen : 0, &vecs_f32, &k, NULL, NULL);
+        if (dim == 0 || k == 0 || !vecs_f32)
+        {
+            putmsg(MERR + FRE, "chunkembed",
+                   "doc-embed callback returned no vectors");
+            if (vecs_f32) free(vecs_f32);
+            return FOP_EINVAL;
+        }
+
+        /* Built-in chunking: record the chunk spans in the value header
+         * so abstract() can seed best-chunk snippets from the VALUE --
+         * no query-time re-chunk, no serve-side model requirement.  The
+         * spans callback is the same tokenize-only pass abstract() used
+         * at query time (shared doc cache with the embed above). */
+        {
+            void             *spansUd = NULL;
+            TXchunkSpansFunc  spansFn = TXgetChunkSpansFunc(&spansUd);
+            TXchunkSpan      *spans = NULL;
+            size_t            k2;
+
+            if (spansFn &&
+                (k2 = spansFn(spansUd, src, slen, &spans)) > 0 && spans)
+            {
+                if (k2 == k && spans[k2 - 1].end <= (size_t)0xFFFFFFFFu)
+                {
+                    spanPairs = (EPI_UINT32 *)TXmalloc(TXPMBUFPN,
+                            __FUNCTION__, k * 2 * sizeof(EPI_UINT32));
+                    if (spanPairs)
+                    {
+                        size_t si;
+                        for (si = 0; si < k; si++)
+                        {
+                            spanPairs[si * 2]     = (EPI_UINT32)spans[si].start;
+                            spanPairs[si * 2 + 1] = (EPI_UINT32)spans[si].end;
+                        }
+                    }
+                }
+                free(spans);
+            }
+        }
     }
 
     /* Convert the k*dim f32 block to the requested dtype's bytes.
@@ -2363,26 +2781,40 @@ TXsqlFunc_chunkembed(FLD *f1, FLD *f2, FLD *f3)
         (dtype == FTN_VEC_F16  || dtype == FTN_VEC_BF16) ? 2 :
         (dtype == FTN_VEC_F32) ? 4 :
         (dtype == FTN_VEC_F64) ? 8 : 4;
+    int hdrDtype =
+        (dtype == FTN_VEC_F16)  ? TXVEC_HDR_DT_F16  :
+        (dtype == FTN_VEC_BF16) ? TXVEC_HDR_DT_BF16 :
+        (dtype == FTN_VEC_F32)  ? TXVEC_HDR_DT_F32  : TXVEC_HDR_DT_F64;
+    size_t hdr_bytes = TXvecHdrSize(k, spanPairs != NULL);
     size_t out_bytes = total * out_elsz;
-    void *bytes = malloc(out_bytes + 1);
+    void *bytes = malloc(hdr_bytes + out_bytes + 1);
+    void *cells;
     if (!bytes) {
         free(vecs_f32);
+        free(spanPairs);
         putmsg(MERR + MAE, "chunkembed", "out of memory");
         return FOP_ENOMEM;
     }
+    /* the self-describing value header (see vec_value.c): every
+     * chunkembed() value carries {k, dim, dtype} + the chunk spans when
+     * known.  Readers treat it as optional, so headerless (pre-header /
+     * embed()/user-built) values keep working unchanged. */
+    TXvecHdrWrite(bytes, k, dim, hdrDtype, spanPairs);
+    free(spanPairs);
+    cells = (char *)bytes + hdr_bytes;
 
     switch (dtype) {
     case FTN_VEC_F32:
-        memcpy(bytes, vecs_f32, out_bytes);
+        memcpy(cells, vecs_f32, out_bytes);
         break;
     case FTN_VEC_F16:
-        rpvec_f32_to_f16(vecs_f32, (uint16_t *)bytes, total);
+        rpvec_f32_to_f16(vecs_f32, (uint16_t *)cells, total);
         break;
     case FTN_VEC_BF16:
-        rpvec_f32_to_bf16(vecs_f32, (uint16_t *)bytes, total);
+        rpvec_f32_to_bf16(vecs_f32, (uint16_t *)cells, total);
         break;
     case FTN_VEC_F64: {
-        double *d = (double *)bytes;
+        double *d = (double *)cells;
         for (size_t i = 0; i < total; i++) d[i] = (double)vecs_f32[i];
         break;
     }
@@ -2391,12 +2823,12 @@ TXsqlFunc_chunkembed(FLD *f1, FLD *f2, FLD *f3)
         return FOP_EINVAL;
     }
     free(vecs_f32);
-    ((char *)bytes)[out_bytes] = '\0';   /* the +1 guard byte -- keep it initialized */
+    ((char *)bytes)[hdr_bytes + out_bytes] = '\0';   /* the +1 guard byte */
 
     freeflddata(f1);
     f1->type = dtype | DDVARBIT;
     f1->elsz = out_elsz;
-    setfldandsize(f1, bytes, out_bytes + 1, FLD_FORCE_NORMAL);
+    setfldandsize(f1, bytes, hdr_bytes + out_bytes + 1, FLD_FORCE_NORMAL);
     return FOP_EOK;
 }
 
@@ -2578,6 +3010,196 @@ TXvecScoreIndex(const char *sysindexFields, const char *sysindexParams,
 
 /* ----- Access function: ixvecindex --------------------------------- */
 
+/* ---- shared exact LIKEV row scorer -------------------------------
+ * One arithmetic for the whole system: the indexed candidate rescore
+ * (TXvecIxVecIndex), the linear builder (TXvecLinearVecIndex) and the
+ * per-row FOP_MMV post-process must all score a row IDENTICALLY --
+ * same function (rp_vector_distance), same dtype selection, same
+ * chunked max -- or near-zero rows land on different sides of the
+ * match boundary and indexed results differ from linear ones. */
+
+extern double rp_vector_distance(void *a, void *b, size_t bytesize,
+                                 const char *metric, const char *datatype,
+                                 const char **err);
+
+static const char *
+vec_linear_dtype_str(FTN t)
+{
+    switch (t & DDTYPEBITS) {
+    case FTN_VEC_F64:  return "f64";
+    case FTN_VEC_F32:  return "f32";
+    case FTN_VEC_F16:  return "f16";
+    case FTN_VEC_BF16: return "bf16";
+    case FTN_VEC_I8:   return "i8";
+    case FTN_VEC_U8:   return "u8";
+    default:           return NULL;
+    }
+}
+
+static const char *
+vec_linear_hdr_dtype_str(int hdrDtype)
+{
+    switch (hdrDtype) {
+    case TXVEC_HDR_DT_F64:  return "f64";
+    case TXVEC_HDR_DT_F32:  return "f32";
+    case TXVEC_HDR_DT_F16:  return "f16";
+    case TXVEC_HDR_DT_BF16: return "bf16";
+    case TXVEC_HDR_DT_I8:   return "i8";
+    case TXVEC_HDR_DT_U8:   return "u8";
+    default:                return NULL;
+    }
+}
+
+/* Score one stored row against the query exactly as FOP_MMV will in
+ * the per-row post-process.  `rowRaw/rowSz' = the row's column bytes
+ * INCLUDING any value header (skipped here); `qraw/qsz' = the query
+ * FLD's bytes AFTER header skip; `fixedDt' = dtype from the typed
+ * column/param (NULL when both are bare varbyte); `qHdrDt' = dtype
+ * from the query value's header, if any.  On success stores FOP_MMV's
+ * scaled rank ([-100000,100000]) and returns 0; returns -1 for
+ * rows FOP_MMV would not rank (empty, size-incompatible, unsupported
+ * dtype).  Match filtering (scaled <= 0 = no match) is the caller's
+ * choice. */
+static int
+vec_fopmmv_row_rank(void *rowRaw, size_t rowSz,
+                    const void *qraw, size_t qsz,
+                    const char *fixedDt, const char *qHdrDt,
+                    int32_t *scaledOut)
+{
+    TXvecValInfo vv;
+    const char *dt;
+    byte *big, *small;
+    size_t bigSz, smallSz, kChunks, ci;
+    double best;
+    const char *err_msg = NULL;
+
+    if (!rowRaw || rowSz == 0 || !qraw || qsz == 0)
+        return -1;
+    TXvecValDecode(rowRaw, rowSz, 0, &vv);
+    rowRaw = (void *)vv.cells;
+    rowSz -= vv.hdrBytes;
+    if (rowSz == 0)
+        return -1;
+    if ((rowSz >= qsz ? (rowSz % qsz) : (qsz % rowSz)) != 0)
+        return -1;
+
+    dt = fixedDt;
+    if (!dt) dt = vec_linear_hdr_dtype_str(vv.dtype);
+    if (!dt) dt = qHdrDt;
+    if (!dt) dt = "f16";                    /* both bare byte */
+
+    big = (byte *)rowRaw; small = (byte *)qraw;
+    bigSz = rowSz; smallSz = qsz;
+    if (qsz > rowSz) {
+        big = (byte *)qraw; small = (byte *)rowRaw;
+        bigSz = qsz; smallSz = rowSz;
+    }
+    kChunks = bigSz / smallSz;
+    best = -2.0;
+    for (ci = 0; ci < kChunks; ci++) {
+        double cs = rp_vector_distance(big + ci * smallSz, small,
+                                       smallSz, "dot", dt, &err_msg);
+        if (err_msg) return -1;
+        if (cs > best) best = cs;
+    }
+    if (best >  1.0) best =  1.0;
+    if (best < -1.0) best = -1.0;
+    *scaledOut = (int32_t)(best * 100000.0);
+    return 0;
+}
+
+/* See vecindex_internal.h.  Shared by both backends' build/insert
+ * paths; pure byte inspection. */
+size_t
+TXvecRowDecodeDim(void **rawPtr, size_t *cellsPtr, size_t elsz)
+{
+    TXvecValInfo vvi;
+
+    if (!rawPtr || !*rawPtr || !cellsPtr || elsz == 0) return 0;
+    if (!TXvecValDecode(*rawPtr, *cellsPtr * elsz, elsz, &vvi)) return 0;
+    *rawPtr = (void *)vvi.cells;
+    *cellsPtr -= vvi.hdrBytes / elsz;
+    return vvi.dim;
+}
+
+/* Best chunk of a stored multi-chunk vector value vs a TEXT query,
+ * scored exactly like FOP_MMV would (same rp_vector_distance "dot",
+ * same f32 conversion) — for abstract()'s vec-snippet mode.  Embeds
+ * `query' via the registered embed callback; the embedder caches by
+ * text, so per-row calls after a LIKEV on the same query cost nothing.
+ * This makes best-chunk seeding DETERMINISTIC and self-contained: no
+ * reliance on a per-row FOP_MMV evaluation having just run (the
+ * fused-OR fast path skips those), no stale cross-row scratch state.
+ *
+ * `colType' must be a typed vec FTN (abstract rejects varbyte 5th
+ * args).  Works with or without a value header: k is derived from
+ * cells/dim, so custom chunkings and headerless legacy rows both
+ * resolve.  Returns 0 with *cixOut / *ccntOut set; -1 when it cannot
+ * score (no embedder registered, embed failure, dim mismatch) — the
+ * caller falls back to the FOP_MMV scratch state, then plain
+ * abstract. */
+int
+TXvecAbstractBestChunk(const char *query, void *vecData, size_t vecBytes,
+                       int colType, int *cixOut, int *ccntOut)
+{
+    TXvecValInfo vv;
+    void *ud = NULL;
+    TXembedFunc efn;
+    float *qv = NULL, *cbuf = NULL;
+    size_t qdim, elsz, dataBytes, cells, kChunks, ci;
+    const void *cellsPtr;
+    const char *err_msg = NULL;
+    double best;
+    size_t besti;
+    int rc = -1;
+
+    if (!query || !*query || !vecData || vecBytes == 0 ||
+        !cixOut || !ccntOut)
+        return -1;
+    elsz = vec_dtype_elsz(colType & DDTYPEBITS);
+    if (elsz == 0) return -1;
+    efn = TXgetEmbedFunc(&ud);
+    if (!efn) return -1;
+
+    TXvecValDecode(vecData, vecBytes, elsz, &vv);
+    cellsPtr = vv.cells;
+    dataBytes = vecBytes - vv.hdrBytes;
+    if (dataBytes == 0 || (dataBytes % elsz) != 0) return -1;
+    cells = dataBytes / elsz;
+
+    qdim = efn(ud, query, strlen(query), TXEMBED_QUERY, NULL, 0, &qv);
+    if (qdim == 0 || !qv) return -1;
+    if ((cells % qdim) != 0) goto done;
+    kChunks = cells / qdim;
+
+    cbuf = (float *)TXmalloc(TXPMBUFPN, __FUNCTION__,
+                             qdim * sizeof(float));
+    if (!cbuf) goto done;
+    best = -2.0;
+    besti = 0;
+    for (ci = 0; ci < kChunks; ci++) {
+        double cs;
+
+        /* scale 0: defensive i8/u8 default (1/127); a uniform scale
+         * cannot change the argmax */
+        if (vec_convert_to_f32(colType & DDTYPEBITS,
+                               (const char *)cellsPtr + ci * qdim * elsz,
+                               qdim, (int)qdim, 0.0f, 0, cbuf) != 0)
+            goto done;
+        cs = rp_vector_distance(cbuf, qv, qdim * sizeof(float),
+                                "dot", "f32", &err_msg);
+        if (err_msg) goto done;
+        if (cs > best) { best = cs; besti = ci; }
+    }
+    *cixOut = (int)besti;
+    *ccntOut = (int)kChunks;
+    rc = 0;
+done:
+    free(qv);
+    cbuf = TXfree(cbuf);
+    return rc;
+}
+
 IINDEX *
 TXvecIxVecIndex(const char *iname, const char *sysindexParams,
                 FLD *infld, const char *fname, DBTBL *dbtbl,
@@ -2592,6 +3214,7 @@ TXvecIxVecIndex(const char *iname, const char *sysindexParams,
                                          * does its own quantization */
     vec_search_result_t *res = NULL;
     EPI_HUGEUINT cnt = 0;
+    int locked = 0;
 
     (void)sysindexParams; (void)fname;
     if (cop) *cop = 0;
@@ -2599,6 +3222,20 @@ TXvecIxVecIndex(const char *iname, const char *sysindexParams,
     if (op != FOP_MMV) goto err;
     if (!infld || !iname) goto err;
     if (TXfldIsNull(infld)) goto err;
+
+    /* Hold the table READ lock across the whole ensemble read: handle
+     * staleness check, backend search (which walks the live _T.btr /
+     * _del.btr delta btrees and fetches rows), and the exact-rescore
+     * row fetches below.  OPTIMIZE/REBUILD's commit swaps the multi-
+     * file artifact set under the table WRITE lock assuming searchers
+     * hold this; without it a search racing a commit can merge an old
+     * in-RAM sealed graph with the new (post-absorb) delta btrees —
+     * silently missing every just-absorbed row — or pair mid-rename
+     * files.  R_LCK is shared and counting (nested per-row locks are
+     * fine); a search only ever waits during a commit's brief swap
+     * window. */
+    if (dbtbl && TXlocktable(dbtbl, R_LCK) == 0)
+        locked = 1;
 
     /* Open the vec handle first — we need hb->dim for both the
      * normal vec/byte path AND the auto-embed path below. */
@@ -2624,11 +3261,18 @@ TXvecIxVecIndex(const char *iname, const char *sysindexParams,
                 const char *text = (const char *)getfld(infld, &text_len);
                 if (text && text_len > 0) {
                     float *evec = NULL;
-                    size_t edim = embed_fn(embed_ud, text, text_len, &evec);
+                    size_t edim = embed_fn(embed_ud, text, text_len,
+                                           TXEMBED_QUERY, NULL, 0, &evec);
                     if (edim == (size_t)hb->dim && evec) {
                         qbuf = evec;
                         goto have_qbuf;
                     }
+                    if (edim > 0 && edim != (size_t)hb->dim)
+                        putmsg(MWARN, fn,
+                            "INDEX_VEC `%s': embedded query vector has "
+                            "%lu cells but the index dim is %d -- "
+                            "embedding model mismatch for this table?",
+                            iname, (unsigned long)edim, hb->dim);
                     if (evec) free(evec);
                 }
             }
@@ -2652,11 +3296,23 @@ TXvecIxVecIndex(const char *iname, const char *sysindexParams,
             if (elsz == 0 || (qn % elsz) != 0) goto err;
             qCells = qn / elsz;
         }
+        /* A query VALUE may itself carry a chunkembed() header (e.g. a
+         * stored value used as the query).  Skip it before the dim
+         * check — the linear path and the per-row scorer both decode
+         * it, and indexed results must match linear exactly. */
+        TXvecRowDecodeDim(&qraw, &qCells, vec_dtype_elsz(qDtype));
         if ((int)qCells != hb->dim) {
-            if (TXverbosity > 0)
-                putmsg(MINFO, fn,
-                    "INDEX_VEC dim=%d but query dim=%lu; falling back to brute force",
-                    hb->dim, (unsigned long)qCells);
+            /* Almost always a WRONG EMBEDDING MODEL for this table
+             * (e.g. a 1024-dim multilingual model against a 384-dim
+             * index).  Warn unconditionally — without this the only
+             * visible symptom is the downstream "would require linear
+             * search" refusal (index can't serve the query), which
+             * points at indexes/allinear instead of the model. */
+            putmsg(MWARN, fn,
+                "INDEX_VEC `%s': query vector has %lu cells but the "
+                "index dim is %d -- embedding model mismatch for this "
+                "table?",
+                iname, (unsigned long)qCells, hb->dim);
             goto err;
         }
 
@@ -2714,65 +3370,105 @@ have_qbuf: ;
         int colT = colFld ? (colFld->type & DDTYPEBITS) : 0;
         int column_dtype = (colT == FTN_BYTE) ? hb->dtype : colT;
         size_t col_elsz = vec_dtype_elsz(column_dtype);
-        /* Scratch buffer for the converted-to-f32 stored vec.  Pattern
-         * matches the newrec scan loop above (line ~1691). */
+        /* Scratch buffer for the converted-to-f32 stored vec (fallback
+         * scoring path only). */
         float *sbuf = NULL;
-        if (colFld && col_elsz > 0)
+        /* exact-scoring operands: the QUERY FLD's own bytes (header-
+         * skipped) + FOP_MMV's dtype-selection inputs, so the rescore
+         * is bit-identical to the per-row post-process and to a linear
+         * search (vec_fopmmv_row_rank).  Unavailable only on the rare
+         * inline-embed path (string param, no predopt pre-rewrite). */
+        const void *qxRaw = NULL;
+        size_t qxSz = 0;
+        const char *qxFixedDt = NULL, *qxHdrDt = NULL;
+        if (colFld && FTN_IS_VEC_OR_BYTE(t)) {
+            TXvecValInfo qvv;
+            void *qb = getfld(infld, NULL);
+            qxSz = infld->size;
+            TXvecValDecode(qb, qxSz, 0, &qvv);
+            qxRaw = qvv.cells;
+            qxSz -= qvv.hdrBytes;
+            qxHdrDt = vec_linear_hdr_dtype_str(qvv.dtype);
+            if (FTN_IS_VEC(colT))
+                qxFixedDt = vec_linear_dtype_str((FTN)colT);
+            else if (FTN_IS_VEC(t))
+                qxFixedDt = vec_linear_dtype_str((FTN)t);
+            if (qxSz == 0) qxRaw = NULL;
+        }
+        if (colFld && col_elsz > 0 && !qxRaw)
             sbuf = (float *)malloc((size_t)hb->dim * sizeof(float));
 
         for (size_t i = 0; i < got; i++) {
-            /* DOT metric: filter zero-or-negative correlation
-             * (matches the legacy backend-score filter — keeps
-             * cnt accounting unchanged for callers that rely on it). */
-            if (hb->metric == VEC_METRIC_DOT && res[i].score <= 0.0f)
-                continue;
+            int32_t scaled;
+            int haveExact = 0;
 
             /* Default to the backend's score if anything goes wrong
              * fetching/converting the stored vec. */
             double exact_score = (double)res[i].score;
-            if (sbuf) {
+            {
                 BTLOC bl_fetch;
                 memset(&bl_fetch, 0, sizeof(bl_fetch));
                 bl_fetch.off = (EPI_OFF_T)(uint64_t)res[i].id;
-                RECID *rrc = gettblrow(dbtbl->tbl, &bl_fetch);
+                RECID *rrc = colFld ? gettblrow(dbtbl->tbl, &bl_fetch)
+                                    : NULL;
                 if (rrc && TXrecidvalid(rrc)) {
-                    size_t n_bytes = 0;
-                    void *raw = getfld(colFld, &n_bytes);
-                    size_t cells = n_bytes;
-                    if (raw && n_bytes > 0 && colT == FTN_BYTE) {
-                        if (col_elsz > 0 && (n_bytes % col_elsz) == 0)
-                            cells = n_bytes / col_elsz;
+                    size_t n_elems = 0;
+                    void *raw = getfld(colFld, &n_elems);
+                    if (qxRaw) {
+                        /* EXACT path: same bytes + same function as
+                         * FOP_MMV -- rowSz in BYTES */
+                        if (raw &&
+                            vec_fopmmv_row_rank(raw, colFld->size,
+                                                qxRaw, qxSz,
+                                                qxFixedDt, qxHdrDt,
+                                                &scaled) == 0)
+                            haveExact = 1;
                         else
-                            raw = NULL;
-                    }
-                    /* Multi-chunk rows (cells = k*dim): exact score =
-                     * best chunk's dot — matches FOP_MMV's per-row
-                     * max-over-chunks so $rank and row order agree. */
-                    if (raw && cells > 0 &&
-                        (cells % (size_t)hb->dim) == 0) {
-                        size_t kChunks = cells / (size_t)hb->dim;
-                        double bestS = -2.0;
-                        size_t ci;
-                        for (ci = 0; ci < kChunks; ci++) {
-                            const void *chunk_raw = (const char *)raw
-                                + ci * (size_t)hb->dim * col_elsz;
-                            if (vec_convert_to_f32(column_dtype, chunk_raw,
-                                    (size_t)hb->dim, hb->dim,
-                                    0.0f, 0, sbuf) != 0)
-                                continue;
-                            double s = 0.0;
-                            for (int j = 0; j < hb->dim; j++)
-                                s += (double)qbuf[j] * (double)sbuf[j];
-                            if (s > bestS) bestS = s;
+                            continue;   /* FOP_MMV would not rank it */
+                    } else if (sbuf) {
+                        /* fallback: converted-f32 scoring */
+                        size_t cells = n_elems;
+                        if (raw && n_elems > 0 && colT == FTN_BYTE) {
+                            if (col_elsz > 0 && (n_elems % col_elsz) == 0)
+                                cells = n_elems / col_elsz;
+                            else
+                                raw = NULL;
                         }
-                        if (bestS > -2.0) exact_score = bestS;
+                        if (raw && cells > 0)
+                            TXvecValSkipHdrCells(&raw, &cells, col_elsz);
+                        if (raw && cells > 0 &&
+                            (cells % (size_t)hb->dim) == 0) {
+                            size_t kChunks = cells / (size_t)hb->dim;
+                            double bestS = -2.0;
+                            size_t ci;
+                            for (ci = 0; ci < kChunks; ci++) {
+                                const void *chunk_raw = (const char *)raw
+                                    + ci * (size_t)hb->dim * col_elsz;
+                                if (vec_convert_to_f32(column_dtype, chunk_raw,
+                                        (size_t)hb->dim, hb->dim,
+                                        hb->quant_scale, hb->quant_zp,
+                                        sbuf) != 0)
+                                    continue;
+                                double sd = 0.0;
+                                for (int j = 0; j < hb->dim; j++)
+                                    sd += (double)qbuf[j] * (double)sbuf[j];
+                                if (sd > bestS) bestS = sd;
+                            }
+                            if (bestS > -2.0) exact_score = bestS;
+                        }
                     }
                 }
             }
-            /* Clamp + scale exactly like FOP_MMV (fldops.c:799-801). */
-            if (exact_score >  1.0) exact_score =  1.0;
-            if (exact_score < -1.0) exact_score = -1.0;
-            int32_t scaled = (int32_t)(exact_score * 100000.0);
+            if (!haveExact) {
+                /* Clamp + scale exactly like FOP_MMV (fldops.c). */
+                if (exact_score >  1.0) exact_score =  1.0;
+                if (exact_score < -1.0) exact_score = -1.0;
+                scaled = (int32_t)(exact_score * 100000.0);
+            }
+            /* FOP_MMV truthiness: rank <= 0 = no match.  Filter on the
+             * EXACT score -- never the backend approximation. */
+            if (scaled <= 0)
+                continue;
 
             BTLOC bl;
             TXsetrecid(&bl, (EPI_OFF_T)(uint64_t)res[i].id);
@@ -2803,10 +3499,174 @@ have_qbuf: ;
 err:
     if (ix) ix = closeiindex(ix);
 cleanup:
+    if (locked)
+        TXunlocktable(dbtbl, R_LCK);
     if (bt) bt = closebtree(bt);
     free(qbuf);
     free(qbuf_idx);
     free(res);
+    return ix;
+}
+
+/* --------------------------------------------------------------------
+ * Linear (index-less) LIKEV candidate builder.
+ *
+ * Principle: a linear vector search must be IDENTICAL to an indexed
+ * one except for speed — same rank ordering (no ORDER BY needed, like
+ * LIKEP), same likevRows candidate cap, same quiet skipping of
+ * empty/mis-sized rows.  A user should only ever notice that it is
+ * slow enough to warrant CREATE VECTOR INDEX.
+ *
+ * Called from predopt's FOP_MMV case when no usable vector index
+ * produced an IINDEX.  Scans the table once, scores every row with
+ * EXACTLY FOP_MMV's math (rp_vector_distance dot, same dtype
+ * selection incl. per-row value-header dtype for varbyte, chunked
+ * max-over-chunks), keeps the top-likevRows rows in a min-heap, and
+ * returns the same rank-keyed in-memory btree TXvecIxVecIndex builds
+ * — so all downstream machinery (post-process $rank, abstract()
+ * chunk seeding, RRF fusion of a hybrid OR) behaves identically.
+ *
+ * Returns NULL when linear scoring is impossible (query is a string
+ * that could not auto-embed, mismatched typed dtypes) — the caller
+ * then leaves the old per-row path to report the problem.
+ * -------------------------------------------------------------------- */
+
+
+/* min-heap of the K best (scaled score, recid) — root is the worst
+ * kept entry, replaced when a better row arrives */
+typedef struct { int32_t score; EPI_OFF_T recid; } vecLinEnt;
+
+static void
+vec_lin_heap_sift_down(vecLinEnt *h, size_t n, size_t i)
+{
+    for (;;) {
+        size_t l = 2 * i + 1, r = l + 1, m = i;
+        if (l < n && h[l].score < h[m].score) m = l;
+        if (r < n && h[r].score < h[m].score) m = r;
+        if (m == i) break;
+        vecLinEnt t = h[i]; h[i] = h[m]; h[m] = t;
+        i = m;
+    }
+}
+
+IINDEX *
+TXvecLinearVecIndex(DBTBL *dbtbl, const char *fname, FLD *infld)
+{
+    static const char fn[] = "TXvecLinearVecIndex";
+    IINDEX *ix = NULL;
+    BTREE *bt = NULL;
+    FLD *colFld;
+    FTN qt, colT;
+    const char *fixedDt = NULL, *qHdrDt = NULL;
+    TXvecValInfo qvv;
+    void *qraw;
+    size_t qsz;
+    vecLinEnt *heap = NULL;
+    size_t K, heapN = 0, i;
+    int locked = 0;
+    RECID *recid;
+
+    (void)fn;
+    if (!dbtbl || !dbtbl->tbl || !fname || !infld) return NULL;
+    colFld = dbnametofld(dbtbl, (char *)fname);
+    if (!colFld) return NULL;
+
+    qt   = (FTN)(infld->type & DDTYPEBITS);
+    colT = (FTN)(colFld->type & DDTYPEBITS);
+    if (!FTN_IS_VEC_OR_BYTE(qt))
+        return NULL;            /* un-embedded string etc: old path yaps */
+    if (FTN_IS_VEC(qt) && FTN_IS_VEC(colT) && qt != colT)
+        return NULL;            /* dtype mismatch: old path yaps */
+
+    /* dtype selection — identical to FOP_MMV (fldops.c) */
+    if (FTN_IS_VEC(colT))     fixedDt = vec_linear_dtype_str(colT);
+    else if (FTN_IS_VEC(qt))  fixedDt = vec_linear_dtype_str(qt);
+
+    /* query bytes past any value header */
+    qraw = getfld(infld, NULL);
+    qsz  = infld->size;
+    TXvecValDecode(qraw, qsz, 0, &qvv);
+    qraw = (void *)qvv.cells;
+    qsz -= qvv.hdrBytes;
+    qHdrDt = vec_linear_hdr_dtype_str(qvv.dtype);
+
+    K = (TXnlikevhits > 0) ? (size_t)TXnlikevhits : 1000;
+    heap = (vecLinEnt *)malloc(K * sizeof(*heap));
+    if (!heap) return NULL;
+
+    /* same ensemble read-lock rule as the indexed path */
+    if (TXlocktable(dbtbl, R_LCK) == 0)
+        locked = 1;
+
+    size_t nRows = 0, nUnrankable = 0;
+    if (qsz > 0) {
+        TXrewinddbtbl(dbtbl);
+        while ((recid = getdbtblrow(dbtbl)) != RECIDPN &&
+               TXrecidvalid(recid)) {
+            void *raw = getfld(colFld, NULL);
+            int32_t scaled;
+
+            nRows++;
+            /* one shared exact scorer for linear, indexed rescore and
+             * the FOP_MMV post-process -- see vec_fopmmv_row_rank */
+            if (!raw ||
+                vec_fopmmv_row_rank(raw, colFld->size, qraw, qsz,
+                                    fixedDt, qHdrDt, &scaled) != 0)
+            {
+                nUnrankable++;
+                continue;                       /* quiet skip */
+            }
+            if (scaled <= 0) continue;          /* truthiness: no match */
+
+            if (heapN < K) {
+                heap[heapN].score = scaled;
+                heap[heapN].recid = TXgetoff(recid);
+                heapN++;
+                if (heapN == K)                 /* heapify once full */
+                    for (i = K / 2; i-- > 0; )
+                        vec_lin_heap_sift_down(heap, K, i);
+            } else if (scaled > heap[0].score) {
+                heap[0].score = scaled;
+                heap[0].recid = TXgetoff(recid);
+                vec_lin_heap_sift_down(heap, K, 0);
+            }
+        }
+    }
+
+    if (locked)
+        TXunlocktable(dbtbl, R_LCK);
+
+    /* Zero candidates because NO row could even be scored (every one
+     * failed vec_fopmmv_row_rank's size-compatibility check, i.e. no
+     * row's cell count is a multiple of the query's): almost always a
+     * WRONG EMBEDDING MODEL — the query vector's dimension doesn't
+     * belong to this table.  A genuine "nothing matched" leaves this
+     * quiet (rows scored, all <= 0), as does a mixed/partial table
+     * (some rows scored). */
+    if (heapN == 0 && nRows > 0 && nUnrankable == nRows)
+        putmsg(MWARN, fn,
+            "linear LIKEV on `%s': query vector (%lu bytes) is "
+            "size-incompatible with every row scanned (%lu) -- "
+            "embedding model mismatch for this table?",
+            fname, (unsigned long)qsz, (unsigned long)nRows);
+
+    /* identical result structure to TXvecIxVecIndex: rank-keyed
+     * in-memory btree; ASC iteration = best-first */
+    bt = openbtree(NULL, BTFSIZE, 20, BT_FIXED | BT_UNSIGNED,
+                   O_RDWR | O_CREAT);
+    if (!bt) { free(heap); return NULL; }
+    for (i = 0; i < heapN; i++) {
+        BTLOC bl;
+        EPI_OFF_T key = (EPI_OFF_T)(100000 - heap[i].score);
+        TXsetrecid(&bl, heap[i].recid);
+        btinsert(bt, &bl, sizeof(key), &key);
+    }
+    free(heap);
+
+    ix = openiindex();
+    if (!ix) { closebtree(bt); return NULL; }
+    ix->orig = bt;
+    ix->cntorig = heapN;
     return ix;
 }
 
@@ -3023,6 +3883,7 @@ hnsw_optimize_impl(DDIC *ddic, TXvecHandle *h_, DBTBL *dbtbl,
                 if (elsz == 0 || (n_elems % elsz) != 0) continue;
                 cells = n_elems / elsz;
             }
+            TXvecValSkipHdrCells(&raw, &cells, vec_dtype_elsz(column_dtype));
             /* Multi-chunk rows: cells = kChunks * dim.  usearch_remove
              * drops ALL entries under the key (multi=true), so an
              * update replaces every old chunk. */
@@ -3275,6 +4136,17 @@ hnsw_rebuild_impl(DDIC *ddic, TXvecHandle *h_, DBTBL *dbtbl,
             if (elsz == 0 || (n_elems % elsz) != 0) continue;
             cells = n_elems / elsz;
         }
+        {
+            size_t hd = TXvecRowDecodeDim(&raw, &cells,
+                                          vec_dtype_elsz(column_dtype));
+            if (hd > 0 && (int)hd != h->base.dim) {
+                putmsg(MWARN, fn,
+                    "INDEX_VEC: skipping row: value header dim %lu != "
+                    "index dim %d (embedding model mismatch?)",
+                    (unsigned long)hd, h->base.dim);
+                continue;
+            }
+        }
         /* Multi-chunk rows: cells = kChunks * dim (see chunkembed()). */
         if (cells == 0 || (cells % (size_t)h->base.dim) != 0) continue;
         {
@@ -3391,10 +4263,74 @@ int
 TXvecAddRow(DDIC *ddic, DBTBL *dbtbl,
             const char *indfile, const char *field, RECID *recid)
 {
+    static const char fn[] = "TXvecAddRow";
     if (!dbtbl || !indfile || !field || !recid) return -1;
     TXvecHandle *h = TXvecOpen(ddic, indfile, NULL);
     if (!h) return -1;
     struct TXvecHandleBase *hb = (struct TXvecHandleBase *)h;
+
+    /* Cheap write-time dim sanity (the row is already positioned and
+     * loaded — the caller just wrote it; this is one getfld + integer
+     * arithmetic).  A vector whose cell count isn't a multiple of the
+     * index dim can never be served by this index: every reader
+     * (build scan, delta scan, absorb, rescore) validates and skips
+     * it.  Warn HERE — the only place the mistake is visible at write
+     * time — and do NOT track the recid: an untracked hopeless recid
+     * would otherwise ride `_T.btr' forever, wedging OPTIMIZE's
+     * nothing-to-absorb short-circuit into a full copy every time.
+     * NULL/empty vectors are skipped QUIETLY for the same no-track
+     * reason — an empty value is legal (fovxch) and never a match.
+     * The INSERT itself always stands, mirroring fulltext (the table
+     * accepts anything; the index indexes what it can). */
+    if (hb->dim > 0) {
+        FLD *fld = dbnametofld(dbtbl, (char *)field);
+        if (fld) {
+            size_t n_elems = 0;
+            void *raw = getfld(fld, &n_elems);
+            if (!raw || n_elems == 0)
+                return 0;               /* empty value: quiet no-track */
+            int t = fld->type & DDTYPEBITS;
+            int column_dtype = (t == FTN_BYTE) ? hb->dtype : t;
+            size_t cells = n_elems;
+            int bad = 0, isBytes = 0;
+            if (t == FTN_BYTE) {
+                size_t elsz = vec_dtype_elsz(column_dtype);
+                if (elsz == 0 || (n_elems % elsz) != 0) {
+                    bad = 1;
+                    isBytes = 1;
+                } else
+                    cells = n_elems / elsz;
+            }
+            if (!bad) {
+                size_t hd = TXvecRowDecodeDim(&raw, &cells,
+                                     vec_dtype_elsz(column_dtype));
+                if (hd > 0 && (int)hd != hb->dim) {
+                    /* header dim disagreement: definitive, and catches
+                     * even totals that ARE a multiple of the index dim
+                     * (e.g. 3 x 512-dim chunks into a 384-dim index) */
+                    putmsg(MWARN, fn,
+                        "INDEX_VEC `%s': inserted value's header dim %lu "
+                        "!= index dim %d (embedding model mismatch?); "
+                        "the row is stored but will not be searchable "
+                        "via LIKEV",
+                        indfile, (unsigned long)hd, hb->dim);
+                    return 0;           /* insert stands; not indexed */
+                }
+                if (cells == 0 || (cells % (size_t)hb->dim) != 0)
+                    bad = 1;
+            }
+            if (bad) {
+                putmsg(MWARN, fn,
+                    "INDEX_VEC `%s': inserted vector has %lu %s, not a "
+                    "multiple of the index dim %d; the row is stored but "
+                    "will not be searchable via LIKEV",
+                    indfile,
+                    (unsigned long)(isBytes ? n_elems : cells),
+                    isBytes ? "bytes" : "cells", hb->dim);
+                return 0;               /* insert stands; not indexed */
+            }
+        }
+    }
     return vec_backend_for(hb->backend)->add_row(ddic, h, dbtbl, field, recid);
 }
 
@@ -3407,6 +4343,104 @@ TXvecDelRow(DDIC *ddic, DBTBL *dbtbl,
     if (!h) return -1;
     struct TXvecHandleBase *hb = (struct TXvecHandleBase *)h;
     return vec_backend_for(hb->backend)->del_row(ddic, h, dbtbl, field, recid);
+}
+
+/* Delta-only row hooks for an index BEING CREATED (INDEX_VECCR).
+ *
+ * During a non-blocking CREATE VECTOR INDEX there is no sealed file
+ * yet, so TXvecOpen (and thus TXvecAddRow/TXvecDelRow) cannot work.
+ * The creator installs live `_T.btr'/`_del.btr' BEFORE its build scan;
+ * concurrent writers just record recids straight into those btrees —
+ * backend-agnostic, no handle.  Correctness at search time:
+ *   - row seen by the build scan AND hooked: newrec-override drops the
+ *     sealed hit, the delta scan serves the row's current value;
+ *   - row hooked only: served by the delta scan;
+ *   - row deleted mid-build: tombstone filters any sealed hit.
+ * Mirrors fulltext's non-blocking create, WITHOUT its blind spot
+ * (fulltext misses rows inserted mid-CREATE until the next OPTIMIZE). */
+int
+TXvecAddRowDelta(const char *indfile, DBTBL *dbtbl, const char *field,
+                 RECID *recid)
+{
+    static const char fn[] = "TXvecAddRowDelta";
+    if (!indfile || !recid) return -1;
+    /* Quiet no-track for NULL/empty vectors (legal value, never a
+     * match) so they can't wedge OPTIMIZE's no-op short-circuit.  The
+     * index dim isn't knowable here (mid-CREATE, no handle), so the
+     * dim-multiple check can't run — the build scan warns for rows it
+     * reaches; a non-multiple row inserted behind the scan cursor is
+     * skipped at search/absorb like any other unusable value. */
+    if (dbtbl && field) {
+        FLD *fld = dbnametofld(dbtbl, (char *)field);
+        if (fld) {
+            size_t n_elems = 0;
+            void *raw = getfld(fld, &n_elems);
+            if (!raw || n_elems == 0) return 0;
+        }
+    }
+    char *base = TXvecMakeBtreeBasePath(indfile, "_T");
+    if (!base) return -1;
+    int rc = TXvecBtreeInsertRecid(base, (int64_t)(uint64_t)recid->off);
+    if (rc != 0)
+        putmsg(MERR + UGE, fn,
+            "INDEX_VEC: btinsert into `%s.btr' failed for recid %lld "
+            "(row will be missing from the index being created)",
+            base, (long long)(uint64_t)recid->off);
+    free(base);
+    return rc;
+}
+
+int
+TXvecDelRowDelta(const char *indfile, RECID *recid)
+{
+    static const char fn[] = "TXvecDelRowDelta";
+    if (!indfile || !recid) return -1;
+    char *newrec_base = TXvecMakeBtreeBasePath(indfile, "_T");
+    char *tomb_base   = TXvecMakeBtreeBasePath(indfile, "_del");
+    if (!newrec_base || !tomb_base) {
+        free(newrec_base); free(tomb_base);
+        return -1;
+    }
+    int64_t r = (int64_t)(uint64_t)recid->off;
+    /* no-op if the recid wasn't a tracked insert */
+    TXvecBtreeDeleteRecid(newrec_base, r);
+    /* always tombstone: the build scan may already have absorbed it */
+    int rc = TXvecBtreeInsertRecid(tomb_base, r);
+    if (rc != 0)
+        putmsg(MERR + UGE, fn,
+            "INDEX_VEC: tombstone insert into `%s.btr' failed for recid "
+            "%lld (deleted row may resurface in the index being created)",
+            tomb_base, (long long)r);
+    free(newrec_base); free(tomb_base);
+    return rc;
+}
+
+/* Install the live delta btrees for a CREATE about to start (called by
+ * index.c BEFORE the 'n' SYSINDEX entry goes live, under table R_LCK).
+ * Unlinks leftovers from a prior abandoned create first — nothing can
+ * be hooking them yet since the 'n' entry isn't visible. */
+int
+TXvecCreateDeltaBtrees(const char *indfile)
+{
+    static const char fn[] = "TXvecCreateDeltaBtrees";
+    char *tomb_base   = TXvecMakeBtreeBasePath(indfile, "_del");
+    char *newrec_base = TXvecMakeBtreeBasePath(indfile, "_T");
+    int rc = -1;
+    if (tomb_base && newrec_base) {
+        TXvecBtreeUnlink(tomb_base);
+        TXvecBtreeUnlink(newrec_base);
+        if (TXvecBtreeCreateEmpty(tomb_base) == 0 &&
+            TXvecBtreeCreateEmpty(newrec_base) == 0)
+            rc = 0;
+        else
+            putmsg(MERR + UGE, fn,
+                "INDEX_VEC: could not create auxiliary btrees for `%s'",
+                indfile);
+    } else
+        putmsg(MERR + MAE, fn, "alloc aux btree paths");
+    free(tomb_base);
+    free(newrec_base);
+    return rc;
 }
 
 size_t
@@ -3528,15 +4562,24 @@ vec_alloc_temp_base(DDIC *ddic, const char *indname,
     return 0;
 }
 
-/* Walk a btree at `liveBase` and copy each recid that's NOT in the
- * sorted `absorbed` array into the btree at `tempBase`.  Used during
- * commit to carry forward concurrent INSERTs (live `_T.btr`) and
- * concurrent DELETEs (live `_del.btr`) that arrived during the build
- * phase, while filtering out recids the backend already absorbed into
- * sealed (so we don't carry them as delta).  Returns 0 on success. */
+/* Walk a btree at `liveBase` and copy entries into the btree at
+ * `tempBase`.  Used during commit to carry forward concurrent INSERTs
+ * (live `_T.btr`) and concurrent DELETEs (live `_del.btr`).
+ *
+ * The absorbed-filter is only valid for entries that existed when the
+ * build SNAPSHOTTED the table (those recids' vectors went into the new
+ * sealed file, superseding their delta entries).  An entry added AFTER
+ * the snapshot -- writers queued behind the build's R_LCK run exactly
+ * in the R_LCK->W_LCK commit gap -- must be carried UNCONDITIONALLY:
+ * e.g. a DELETE of an absorbed row in that gap adds a tombstone that
+ * the absorbed-filter would wrongly drop, permanently resurrecting the
+ * deleted row from the sealed data.  `snap` (sorted) is the btree's
+ * content at snapshot time, taken by the dispatcher under the build
+ * R_LCK.  Returns 0 on success. */
 static int
 vec_carry_forward_recids(const char *liveBase, const char *tempBase,
-                         const int64_t *absorbed, size_t n_absorbed)
+                         const int64_t *absorbed, size_t n_absorbed,
+                         const int64_t *snap, size_t n_snap)
 {
     /* Snapshot live recids first so we can iterate and insert into
      * tempBase without conflicting btree open semantics. */
@@ -3547,10 +4590,14 @@ vec_carry_forward_recids(const char *liveBase, const char *tempBase,
     int rc = 0;
     for (size_t i = 0; i < live_v.len; i++) {
         int64_t r = live_v.data[i];
-        if (n_absorbed > 0 &&
+        int preSnapshot = (n_snap > 0 &&
+            bsearch(&r, snap, n_snap, sizeof(int64_t),
+                    vec_int64_cmp_) != NULL);
+        if (preSnapshot &&
+            n_absorbed > 0 &&
             bsearch(&r, absorbed, n_absorbed, sizeof(int64_t),
                     vec_int64_cmp_))
-            continue;       /* absorbed → don't carry as delta */
+            continue;       /* absorbed at snapshot → not delta */
         if (TXvecBtreeInsertRecid(tempBase, r) != 0) {
             rc = -1;
             break;
@@ -3558,6 +4605,31 @@ vec_carry_forward_recids(const char *liveBase, const char *tempBase,
     }
     free(live_v.data);
     return rc;
+}
+
+/* Snapshot the recids of `<indfile><suffix>.btr` into a sorted array.
+ * Called by the OPTIMIZE/REBUILD dispatchers under the build R_LCK so
+ * commit can tell pre-snapshot delta entries from ones that arrived in
+ * the R_LCK->W_LCK gap. */
+static void
+vec_snapshot_btree_recids(const char *indfile, const char *suffix,
+                          int64_t **out, size_t *n_out)
+{
+    extern int vec_int64_cmp_(const void *a, const void *b);
+    extern void vec_recid_vec_push_(int64_t r, void *user);
+    struct { int64_t *data; size_t len; size_t cap; } v = {NULL, 0, 0};
+    char base[PATH_MAX];
+
+    *out = NULL;
+    *n_out = 0;
+    if (snprintf(base, sizeof(base), "%s%s", indfile, suffix) >=
+        (int)sizeof(base))
+        return;
+    TXvecBtreeWalkRecids(base, vec_recid_vec_push_, &v);
+    if (v.len > 1)
+        qsort(v.data, v.len, sizeof(int64_t), vec_int64_cmp_);
+    *out = v.data;
+    *n_out = v.len;
 }
 
 /* Atomic-ish swap of vec artifacts.  Caller holds no locks; this
@@ -3570,7 +4642,9 @@ vec_carry_forward_recids(const char *liveBase, const char *tempBase,
 static int
 vec_commit_temp_swap(DDIC *ddic, DBTBL *dbtbl, const char *indfile,
                      const char *tempBase, RECID tempRow,
-                     const int64_t *absorbed, size_t n_absorbed)
+                     const int64_t *absorbed, size_t n_absorbed,
+                     const int64_t *snapT, size_t n_snapT,
+                     const int64_t *snapD, size_t n_snapD)
 {
     static const char fn[] = "vec_commit_temp_swap";
     int rc = -1;
@@ -3597,14 +4671,16 @@ vec_commit_temp_swap(DDIC *ddic, DBTBL *dbtbl, const char *indfile,
         if (snprintf(liveT, sizeof(liveT), "%s_T", indfile) < (int)sizeof(liveT) &&
             snprintf(tempT, sizeof(tempT), "%s_T", tempBase) < (int)sizeof(tempT)) {
             if (vec_carry_forward_recids(liveT, tempT,
-                                         absorbed, n_absorbed) != 0) {
+                                         absorbed, n_absorbed,
+                                         snapT, n_snapT) != 0) {
                 putmsg(MWARN, fn, "carry-forward `_T.btr' failed");
             }
         }
         if (snprintf(liveD, sizeof(liveD), "%s_del", indfile) < (int)sizeof(liveD) &&
             snprintf(tempD, sizeof(tempD), "%s_del", tempBase) < (int)sizeof(tempD)) {
             if (vec_carry_forward_recids(liveD, tempD,
-                                         absorbed, n_absorbed) != 0) {
+                                         absorbed, n_absorbed,
+                                         snapD, n_snapD) != 0) {
                 putmsg(MWARN, fn, "carry-forward `_del.btr' failed");
             }
         }
@@ -3757,26 +4833,38 @@ TXvecOptimize(DDIC *ddic, const char *indname, const char *indfile,
         return -1;
     }
 
-    int64_t *absorbed = NULL;
-    size_t n_absorbed = 0;
+    int64_t *absorbed = NULL, *snapT = NULL, *snapD = NULL;
+    size_t n_absorbed = 0, n_snapT = 0, n_snapD = 0;
+    /* Snapshot the delta btrees under the build R_LCK: commit must
+     * distinguish entries that existed now (absorbed-filterable) from
+     * ones added in the R_LCK->W_LCK gap (must carry unconditionally). */
+    vec_snapshot_btree_recids(indfile, "_T", &snapT, &n_snapT);
+    vec_snapshot_btree_recids(indfile, "_del", &snapD, &n_snapD);
     int rc = vec_backend_for(hb->backend)->optimize(
         ddic, h, dbtbl, field, tempBase, options, &absorbed, &n_absorbed);
     /* Release R_LCK before commit acquires W_LCK on the same dbtbl. */
     TXunlocktable(dbtbl, R_LCK);
     if (rc != 0) {
         free(absorbed);
+        free(snapT); free(snapD);
         vec_abort_temp_build(ddic, tempBase, tempRow);
         free(tempBase);
         closedbtbl(dbtbl);
+        /* see the rebuild error path: evict the cached handle in case
+         * the backend left it in a partial state; files are unchanged
+         * so the next open reloads cleanly. */
+        TXvecInvalidateHandle(indfile);
         return -1;
     }
 
     rc = vec_commit_temp_swap(ddic, dbtbl, indfile, tempBase, tempRow,
-                              absorbed, n_absorbed);
+                              absorbed, n_absorbed,
+                              snapT, n_snapT, snapD, n_snapD);
     if (rc != 0)
         vec_abort_temp_build(ddic, tempBase, tempRow);
 
     free(absorbed);
+    free(snapT); free(snapD);
     free(tempBase);
     closedbtbl(dbtbl);
     return rc;
@@ -3844,26 +4932,39 @@ TXvecRebuild(DDIC *ddic, const char *indname, const char *indfile,
         return -1;
     }
 
-    int64_t *absorbed = NULL;
-    size_t n_absorbed = 0;
+    int64_t *absorbed = NULL, *snapT = NULL, *snapD = NULL;
+    size_t n_absorbed = 0, n_snapT = 0, n_snapD = 0;
+    /* see TXvecOptimize: snapshot delta btrees under the build R_LCK */
+    vec_snapshot_btree_recids(indfile, "_T", &snapT, &n_snapT);
+    vec_snapshot_btree_recids(indfile, "_del", &snapD, &n_snapD);
     int rc = vec_backend_for(hb->backend)->rebuild(
         ddic, h, dbtbl, field, &vp, tempBase, options, &absorbed, &n_absorbed);
     /* Release R_LCK before commit acquires W_LCK on the same dbtbl. */
     TXunlocktable(dbtbl, R_LCK);
     if (rc != 0) {
         free(absorbed);
+        free(snapT); free(snapD);
         vec_abort_temp_build(ddic, tempBase, tempRow);
         free(tempBase);
         closedbtbl(dbtbl);
+        /* The backend may have gutted the cached handle up front
+         * (IVFPQ rebuild deletes h->idx before training to free
+         * RAM/mmap).  The on-disk files are unchanged, so is_stale
+         * will never fire: evict so the next open reloads from the
+         * still-valid files instead of serving a dead handle (which
+         * silently degrades every LIKEV to a linear scan). */
+        TXvecInvalidateHandle(indfile);
         return -1;
     }
 
     rc = vec_commit_temp_swap(ddic, dbtbl, indfile, tempBase, tempRow,
-                              absorbed, n_absorbed);
+                              absorbed, n_absorbed,
+                              snapT, n_snapT, snapD, n_snapD);
     if (rc != 0)
         vec_abort_temp_build(ddic, tempBase, tempRow);
 
     free(absorbed);
+    free(snapT); free(snapD);
     free(tempBase);
     closedbtbl(dbtbl);
     return rc;

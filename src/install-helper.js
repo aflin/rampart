@@ -387,60 +387,9 @@ function do_install(prefix, map, makelinks){
         }
     }
 
-    // make a more movable version of pip3r and python3r
-    var pip3r_fn = realPath(prefix) + map.bin + '/pip3r';
-    var python3r_fn = realPath(prefix) + map.bin + '/python3r';
-
-    rmFile(pip3r_fn);
-    rmFile(python3r_fn);
-
-    fprintf(pip3r_fn, '%s', `#!/bin/bash
-
-RAMPART=\$(which rampart)
-
-if [ "\$RAMPART" == "" ]; then
-        CURSRC=\$(readlink -f \${BASH_SOURCE[0]})
-        CURDIR=\$(dirname \${CURSRC})
-        RP="\${CURDIR}/rampart"
-        if [ -e \$RP ]; then
-                RAMPART="\$RP"
-        else
-                echo "could not find the rampart executable"
-                exit 1;
-        fi
-fi
-
-RP_DIR=\$(\$RAMPART -c "rampart.utils.printf('%s/python/bin/', process.modulesPath)");
-
-python3_exec="\${RP_DIR}/python3"
-
-pip3_exec="\${RP_DIR}/pip3"
-
-\$python3_exec \$pip3_exec "\$@"
-`   );
-
-    fprintf(python3r_fn, "%s", `#!/bin/bash
-RAMPART=\$(which rampart)
-
-if [ "\$RAMPART" == "" ]; then
-        CURSRC=\$(readlink -f \${BASH_SOURCE[0]})
-        CURDIR=\$(dirname \${CURSRC})
-        RP="\${CURDIR}/rampart"
-        if [ -e \$RP ]; then
-                RAMPART="\$RP"
-        else
-                echo "could not find the rampart executable"
-                exit 1;
-        fi
-fi
-
-python3_exec=\$(\$RAMPART -c "rampart.utils.printf('%s/python/bin/python3', process.modulesPath)");
-
-\$python3_exec "\$@"
-`   );
-
-    chmod(pip3r_fn, "755");
-    chmod(python3r_fn, "755");
+    /* bin/pip3r and bin/python3r are static, self-locating wrapper scripts
+       shipped in the tarball (installed from src/pip3r and src/python3r by
+       CMake).  They used to be generated here; now nothing to do. */
 
     installPrefix = realPath(prefix);
     installMap = map;

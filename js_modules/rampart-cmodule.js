@@ -245,6 +245,43 @@ function findCallerDir() {
     throw new Error("cmodule - cannot find a writable directory for compiled module");
 }
 
+/* Which C compiler?  rampart.buildCC records the compiler that built
+ * rampart itself, but rampart rarely runs on the machine it was built on
+ * (distribution builds come from a container whose toolchain path exists
+ * nowhere else).  Prefer THIS machine's environment: $CC if set, then cc
+ * from the PATH, and only then the build-time compiler, if it actually
+ * exists here.
+ *
+ * PATH is scanned with stat() rather than shelling out to which(1):
+ * this runs on every cmodule load, and a fork/exec here deadlocks when
+ * another thread is opening a rampart-sql connection (that path flips
+ * SIGCHLD to SIG_IGN process-wide, so exec()'s child is reaped out from
+ * under its read()/waitpid and it never returns).  Nothing below forks.
+ * Resolved once per interpreter -- the answer cannot change at runtime. */
+var _compiler = null;
+function findCompiler() {
+    if (_compiler) return _compiler;
+    var stat = rampart.utils.stat;
+
+    if (process.env.CC)
+        return (_compiler = process.env.CC);
+
+    /* cc from PATH, resolved to a full path -- the MSYS2 bash selection
+     * in wrapCommand() wants the compiler's directory */
+    var path = process.env.PATH || "";
+    var dirs = path.split(process.platform === 'windows' ? ';' : ':');
+    for (var i = 0; i < dirs.length; i++) {
+        if (!dirs[i].length) continue;
+        var cand = dirs[i].replace(/\/+$/, '') + '/cc';
+        var st = stat(cand);
+        if (st && !st.isDirectory)
+            return (_compiler = cand);
+    }
+    if (rampart.buildCC && stat(rampart.buildCC))
+        return (_compiler = rampart.buildCC);
+    return (_compiler = 'cc');  /* nothing found: let the compile error name it */
+}
+
 function makeCModule(name, prog, support, flags, libs, rpHeaderLoc) {
     var stat=rampart.utils.stat, sprintf=rampart.utils.sprintf,
         exec=rampart.utils.exec, getType=rampart.utils.getType;
@@ -333,7 +370,7 @@ function makeCModule(name, prog, support, flags, libs, rpHeaderLoc) {
     if(iscygwin)
         libs = "-L'" + process.installPathBin + "' -lrampart" + (libs ? ' ' + libs : '');
 
-    var compiler = rampart.buildCC || 'cc';
+    var compiler = findCompiler();
     var eline = sprintf("%s -o '%s' %s '%s' %s", compiler, sofile, allflags, cfile, libs);
 
     var barecfile = cfile.split('/').pop();

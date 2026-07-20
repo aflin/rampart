@@ -388,6 +388,10 @@ typedef struct PRED_tag
 	TXOF	orderFlags;		/* OF_DESCENDING, OF_IGN_CASE */
 #endif /* TX_USE_ORDERING_SPEC_NODE */
 	byte	didPostProcLinearMsg;
+	byte	mmvEmbedTried;	/* LIKEV auto-embed attempted (negative-cache
+				   so a failed embed isn't retried per row);
+				   cleared with the alt FLDs (TXpredClear
+				   full) so new param values re-embed */
 }
 PRED;
 #define PREDPN  ((PRED *)NULL)
@@ -734,6 +738,7 @@ typedef struct DBIDX_tag
 	/* indexdbtbl: DBTBL for the index's data, when `indexdataonly': */
 	DBTBL	*indexdbtbl;/* JMT 2000-06-18 */
 	byte	deDupRecids;	/* nonzero: de-dup adjacent recids */
+	int	rankIsFused;	/* see IINDEX.rankIsFused (texint.h) */
 } DBIDX ;
 #define DBIDXPN	((DBIDX *)NULL)
 
@@ -793,6 +798,11 @@ struct DBTBL_tag {
 	int	wlock;		       /* Number of write locks we hold */
 	EPI_HUGEUINT	indcnt;			  /* Index record count */
 	ft_int	rank;			/* somebody points a fld at this */
+	ft_int	fusedRank;	/* current row's RRF-fused hybrid rank from
+				   the merged index (TXindexrrf), or 0.  When
+				   set it is FINAL: $rank projection and
+				   TXcalcrank() use it as-is instead of
+				   recomputing from the predicate tree */
 	int	nireadl;	                 /* Type of index locks */
 	int	niwrite;	                 /* Type of index locks */
 	ft_counter	ireadc;			/* Last index read time */
@@ -817,6 +827,9 @@ struct DBTBL_tag {
 	int	nfdbi;                         /* Number of fdb indexes */
 	char	**vecIndexFiles;		/* INDEX_VEC index file paths */
 	char	**vecIndexFldNames;		/* parallel field name per index */
+	char	*vecIndexCreating;		/* parallel flag: 1 = INDEX_VECCR
+						 * (being created; delta-btree-only
+						 * row hooks, no sealed file yet) */
 	int	nvecidx;			/* Number of INDEX_VEC entries */
 	int	nfldstatcountonly;
 	FLD	**projfldcache;

@@ -122,7 +122,8 @@ int	mmViaFdbi;	/* (in) nonzero: open MM as FDBI objects */
 				case INDEX_3CR:
 				case INDEX_3DB: n3++; break;
 				case INDEX_INV: nv++; break;
-				case INDEX_VEC: nx++; break;
+				case INDEX_VEC:
+				case INDEX_VECCR: nx++; break;
 			}
 		}
 	}
@@ -188,11 +189,14 @@ int	mmViaFdbi;	/* (in) nonzero: open MM as FDBI objects */
 							sizeof(char *));
 		t->vecIndexFldNames = (char **)TXcalloc(TXPMBUFPN, Fn, nx,
 							sizeof(char *));
+		t->vecIndexCreating = (char *)TXcalloc(TXPMBUFPN, Fn, nx,
+							sizeof(char));
 	}
 	else
 	{
 		t->vecIndexFiles    = CHARPPN;
 		t->vecIndexFldNames = CHARPPN;
+		t->vecIndexCreating = CHARPN;
 	}
 	t->nindex = nb;
 	t->ndbi = n3;
@@ -343,11 +347,22 @@ int	mmViaFdbi;	/* (in) nonzero: open MM as FDBI objects */
 				}
 				break;
 			case INDEX_VEC:
+			case INDEX_VECCR:
 				/* INDEX_VEC has no in-process handle to keep
 				 * open for mods — just remember the file path
 				 * so addtoindices/delfromindices can mark it
 				 * stale.  The graph (if loaded for searching)
 				 * lives in the per-process TXvecOpen cache.
+				 *
+				 * INDEX_VECCR (being created): unlike btree
+				 * INDEX_CR, a concurrent CREATE VECTOR INDEX
+				 * does NOT block writers — its live `_T.btr'/
+				 * `_del.btr' delta btrees exist from before
+				 * the build scan, so mods are tracked via the
+				 * delta-only row hooks (TXvecAddRowDelta) and
+				 * nothing is missed.  Flag it so procupd.c
+				 * skips the sealed-handle path (no sealed
+				 * file exists yet).
 				 */
 				t->vecIndexFiles[nx]    = TXstrdup(TXPMBUFPN, Fn,
 								   iname[i]);
@@ -358,6 +373,8 @@ int	mmViaFdbi;	/* (in) nonzero: open MM as FDBI objects */
 					rc = -1;
 					goto cleanup;
 				}
+				t->vecIndexCreating[nx] =
+					(itype[i] == INDEX_VECCR);
 				nx++;
 				break;
 			case INDEX_DEL:		/* Windows: to be deleted */
@@ -633,6 +650,7 @@ DBTBL *db;
 	if (db->vecIndexFldNames)
 		db->vecIndexFldNames = TXfreeStrList(db->vecIndexFldNames,
 						     db->nvecidx);
+	db->vecIndexCreating = TXfree(db->vecIndexCreating);
 	db->nvecidx = 0;
 
 	TXbtreelog_dbtbl = savtbl;		/* for btreelog debug */

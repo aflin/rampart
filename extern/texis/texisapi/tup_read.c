@@ -520,8 +520,18 @@ TXCOUNTINFO	*countInfo;	/* (in/out, opt.) row count stats */
 		}
 
 #ifndef NO_NEW_RANK
+		t->fusedRank = 0;	/* per-row; set below for RRF rows */
 		if(t->index.nrank)
+		{
 			t->rank = TX_RANK_INTERNAL_TO_USER(TXApp, *(EPI_OFF_T *)tempbuf/t->index.nrank);
+			/* RRF-fused hybrid OR (TXindexrrf): the index key
+			 * IS the final $rank; stash it where the $rank
+			 * projection and TXcalcrank() take it as-is (the
+			 * per-row post-process below only verifies the
+			 * match, whatever ranks its sub-preds compute). */
+			if (t->index.rankIsFused)
+				t->fusedRank = t->rank;
+		}
 		else if (t->rankindex.nrank && t->rankindex.btree)
 			{
 				BTLOC btloc1;

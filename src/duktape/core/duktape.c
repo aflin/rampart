@@ -107105,7 +107105,7 @@ static const char *duk__rp_console_extras_js =
 "       from node's util.inspect-table fallback. */\n"
 "    if (Array.isArray(data) && data.length > 0 && typeof data[0] === 'object') {\n"
 "      var keys = columns || Object.keys(data[0]);\n"
-"      _emit('log', ['(index)'].concat(keys).join('\\t'));\n"
+"      _emit('log', [['(index)'].concat(keys).join('\\t')]);\n"
 "      for (var i = 0; i < data.length; i++) {\n"
 "        var row = [String(i)];\n"
 "        for (var k = 0; k < keys.length; k++) {\n"

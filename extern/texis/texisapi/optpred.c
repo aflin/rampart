@@ -87,6 +87,8 @@ PRED *p;
 	n->dff = 0;
 	n->resultfld = 0;
 	n->fldmathfunc = NULL;
+	n->mmvEmbedTried = 0;	/* alts cleared above: LIKEV auto-embed
+				   must run again on the copy */
 	return n;
 }
 

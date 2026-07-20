@@ -14,6 +14,8 @@
 #include "texint.h"
 #include "fldcmp.h"
 
+extern int TX_is_rampart;   /* api3.c; gates rampart typed-json output tagging */
+
 #define NEW_AGG_TYPE
 
 /******************************************************************/
@@ -461,12 +463,18 @@ int	*nn;
 			/* embed()/chunkembed()/chunkavg() have a dynamic
 			 * return type named by their 2nd (dtype) arg.
 			 * One-arg calls fall through to the static
-			 * varvecF16 default; ''/'auto' dtypes also fall
-			 * through (same default).  The dtype arg's tree
-			 * position depends on the arg count:
-			 *   2 args (text, dtype):          rightPred->right
-			 *   3 args (text, dtype, prefix):  rightPred->left->right
-			 * (the 3-arg shape matches convert()'s above). */
+			 * varvecF16 default; ''/'auto' dtypes -- and
+			 * embed()'s prompt-kind words ('query' etc.) in
+			 * the same slot -- also fall through (same
+			 * default).  The arg list is a LEFT-nested
+			 * LIST_OP chain (((a1,a2),a3),a4), so the dtype
+			 * (a2) is the right child of the DEEPEST pair:
+			 * descend left while the left child is another
+			 * LIST_OP arg pair; a non-LIST left shape -- a
+			 * plain field, or an EXPRESSION text arg (lt ==
+			 * 'P' with a non-LIST sub-pred, e.g.
+			 * embed(lower(x), 'f32')) -- ends the walk with
+			 * dtype at that pair's right. */
 			typeFld = FLDPN;
 			if ((strcmp((char *)p->left, "embed") == 0 ||
 			     strcmp((char *)p->left, "chunkembed") == 0 ||
@@ -475,20 +483,13 @@ int	*nn;
 			    rightPred &&
 			    rightPred->op == LIST_OP)
 			{
-				/* 3 args iff the left child is itself a
-				 * LIST_OP arg pair holding the dtype; any
-				 * other left shape -- a plain field, or an
-				 * EXPRESSION text arg (lt == 'P' with a
-				 * non-LIST sub-pred, e.g. embed(lower(x),
-				 * 'f32')) -- is the 2-arg call, dtype at
-				 * rightPred->right. */
-				if (rightPred->lt == 'P' &&
-				    rightPred->left &&
-				    ((PRED *)rightPred->left)->op == LIST_OP &&
-				    ((PRED *)rightPred->left)->rt == FIELD_OP)
-					typeFld = (FLD *)((PRED *)rightPred->left)->right;
-				else if (rightPred->rt == FIELD_OP)
-					typeFld = (FLD *)rightPred->right;
+				PRED	*pair = rightPred;
+				while (pair->lt == 'P' &&
+				       pair->left &&
+				       ((PRED *)pair->left)->op == LIST_OP)
+					pair = (PRED *)pair->left;
+				if (pair->rt == FIELD_OP)
+					typeFld = (FLD *)pair->right;
 			}
 			if (typeFld != FLDPN &&
 			    (typeFld->type & DDTYPEBITS) == FTN_CHAR &&
@@ -1742,6 +1743,33 @@ FLDOP *fo;
 		   "Result column #%d result type %s is not expected type %s",
 					       (i + 1), ddfttypename(vType),
 					       TXfldtypestr(fout));
+				/* rampart typed-json: a bare computed-json
+				 * select item gets its OUTPUT copy tag-encoded
+				 * so rampart-sql.c can type the JS value.  The
+				 * source FLD (and hence every in-SQL consumer:
+				 * convert(), WHERE, sort by name) keeps the
+				 * plain text produced by TXmkComputedJson().
+				 * TXlastEvalpredJsonType is set by the
+				 * evalpred() call just above ONLY when the
+				 * item's value came straight from a
+				 * computed-json FLD's getfld(); expression
+				 * results (convert() etc.) leave it 0. */
+				if (TX_is_rampart && TXlastEvalpredJsonType &&
+				    v != NULL)
+				{
+					size_t	taggedN = 0;
+					char	*tagged =
+					  TXtagComputedJsonValue(
+						TXlastEvalpredJsonType,
+						(char *)v, sz, &taggedN);
+
+					if (tagged)
+					{
+						v = TXfree(v);
+						v = tagged;
+						sz = taggedN;
+					}
+				}
 #ifndef NEVER /* WTF - Need to get size right */
 				setfldandsize(fout, v, sz * fout->elsz + 1, FLD_FORCE_NORMAL);
 #else

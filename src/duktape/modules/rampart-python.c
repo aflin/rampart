@@ -714,11 +714,15 @@ PyMODINIT_FUNC PyInit_rampart(void)
 }
 //
 
+static char pyuserbase[PATH_MAX] = {0};  // PYTHONUSERBASE, default ~/.rampart/modules/python3-lib
+static char pyusersite[PATH_MAX] = {0};  // <pyuserbase>/lib/pythonX.Y/site-packages
+
 static void init_python(const char *program_name, char *ppath)
 {
 
     PyGILState_STATE state;
     PyObject *paths = NULL;
+    Py_ssize_t npath;
     int maxp = 3*PATH_MAX+4;
     char tpath[maxp];
 
@@ -726,6 +730,8 @@ static void init_python(const char *program_name, char *ppath)
     snprintf(tpath, maxp, "%s:%s/site-packages:%s/lib-dynload", ppath,ppath,ppath);
     setenv("PYTHONPATH", tpath, 0);
     setenv("PYTHONHOME", ppath, 0);
+    if(*pyuserbase)
+        setenv("PYTHONUSERBASE", pyuserbase, 0);
 
 //
     if (PyImport_AppendInittab("rampart", PyInit_rampart) == -1) {
@@ -759,13 +765,17 @@ static void init_python(const char *program_name, char *ppath)
 
     state=PYLOCK;
 
-    paths = PyList_New((Py_ssize_t) 4);
-    PyList_SetItem(paths, (Py_ssize_t) 0, PyUnicode_FromString( "./"  ));
-    PyList_SetItem(paths, (Py_ssize_t) 1, PyUnicode_FromString( ppath  ));
+    paths = PyList_New((Py_ssize_t) (*pyusersite ? 5 : 4));
+    npath=0;
+    PyList_SetItem(paths, npath++, PyUnicode_FromString( "./"  ));
+    PyList_SetItem(paths, npath++, PyUnicode_FromString( ppath  ));
+    // user site precedes the system site-packages, as in stock python
+    if(*pyusersite)
+        PyList_SetItem(paths, npath++, PyUnicode_FromString( pyusersite ));
     snprintf(tpath, PATH_MAX, "%s/site-packages", ppath);
-    PyList_SetItem(paths, (Py_ssize_t) 2, PyUnicode_FromString( tpath  ));
+    PyList_SetItem(paths, npath++, PyUnicode_FromString( tpath  ));
     snprintf(tpath, PATH_MAX, "%s/lib-dynload", ppath);
-    PyList_SetItem(paths, (Py_ssize_t) 3, PyUnicode_FromString( tpath  ));
+    PyList_SetItem(paths, npath++, PyUnicode_FromString( tpath  ));
 
     PySys_SetObject("path", paths);
 
@@ -784,11 +794,40 @@ static duk_ret_t rp_duk_python_init(duk_context *ctx)
     RPYLOCK;
     if(!python_is_init)
     {
+        const char *userbase = getenv("PYTHONUSERBASE");
+
         // default is modules_dir/python3-lib, leave space for subdirs as well
         if ( strlen(modules_dir) + 27 > PATH_MAX)
             RP_THROW(ctx, "python.init(): Total path length of '%s/python3-lib' is too long", modules_dir);
         strcpy(ppath,modules_dir);
         strcat(ppath,"/python3-lib");
+
+        /* user packages: $PYTHONUSERBASE, or ~/.rampart/modules/python3-lib.
+           The pip3r wrapper defaults PYTHONUSERBASE the same way, and pip
+           falls back to a user install there when the system site-packages
+           isn't writable.  No /tmp-style fallback when $HOME is unusable: a
+           guessable world-writable dir in sys.path would be a code-injection
+           vector for daemons running without a home. */
+        if(userbase && *userbase)
+            snprintf(pyuserbase, sizeof(pyuserbase), "%s", userbase);
+        else
+        {
+            char *home = getenv("HOME");
+#ifdef __CYGWIN__
+            char _home_convpath[PATH_MAX];
+            if (home && rp_cygwin_to_posixpath(home, _home_convpath, sizeof(_home_convpath)))
+                home = _home_convpath;
+#endif
+            if(home && *home == '/' && access(home, R_OK) == 0)
+                snprintf(pyuserbase, sizeof(pyuserbase), "%s/.rampart/modules/python3-lib", home);
+        }
+        if(*pyuserbase &&
+           (size_t)snprintf(pyusersite, sizeof(pyusersite), "%s/lib/python%d.%d/site-packages",
+                pyuserbase, PY_MAJOR_VERSION, PY_MINOR_VERSION) >= sizeof(pyusersite))
+        {
+            pyuserbase[0]='\0';
+            pyusersite[0]='\0';
+        }
 
         init_python(rampart_exec, ppath);
         python_is_init=1;
@@ -995,7 +1034,10 @@ static PyObject * epochms_to_pytime(int64_t ts, duk_context *ctx)
 
     struct tm lt, *local_time = &lt;
 
-    localtime_r(&t,&lt);
+    /* dates cross the JS/python boundary as naive UTC datetimes.  The
+       reverse conversion reads naive datetimes as UTC, so using localtime
+       here shifted a round trip by the host's UTC offset. */
+    gmtime_r(&t,&lt);
 
     if (!PyDateTimeAPI) {
         PyDateTime_IMPORT;
@@ -1218,8 +1260,12 @@ static PyObject * type_to_pytype(duk_context *ctx, duk_idx_t idx)
             return buf_to_pybytes(ctx, idx);
         case DUK_TYPE_OBJECT:
         //why?    if (duk_is_function(ctx, -1) || duk_is_c_function(ctx, -1) )
-        if (duk_is_function(ctx, -1))
+        if (duk_is_function(ctx, idx))
                 Py_RETURN_NONE;
+            /* typed arrays, ArrayBuffers and DataViews -> bytes
+               (plain buffers are DUK_TYPE_BUFFER above) */
+            if (duk_is_buffer_data(ctx, idx))
+                return buf_to_pybytes(ctx, idx);
             return obj_to_pytype(ctx, idx);
         case DUK_TYPE_UNDEFINED:
         case DUK_TYPE_NULL:
@@ -1454,6 +1500,24 @@ static void push_ptype(duk_context *ctx, PyObject * pyvar)
             gmtime_r(&time, &gtm);
             gtime=mktime(&gtm);
             time64 = time * 1000 + ms/1000 - (gtime-time)*1000;
+
+            /* naive datetimes are read as UTC (above).  An aware datetime's
+               fields are wall-clock in its own zone: subtract its utcoffset.
+               Plain dates have no utcoffset() -- clear the AttributeError. */
+            {
+                PyObject *off = PyObject_CallMethod(pyvar, "utcoffset", NULL);
+                if(off && off != Py_None)
+                {
+                    PyObject *secs = PyObject_CallMethod(off, "total_seconds", NULL);
+                    if(secs)
+                    {
+                        time64 -= (int64_t)(PyFloat_AsDouble(secs) * 1000.0);
+                        RP_Py_XDECREF(secs);
+                    }
+                }
+                RP_Py_XDECREF(off);
+                PyErr_Clear();
+            }
 
             duk_get_global_string(ctx, "Date");
             duk_push_number(ctx, (duk_double_t)time64);
@@ -1698,17 +1762,65 @@ static duk_ret_t _get_pref_val(duk_context *ctx)
 
 static duk_ret_t _get_pref_str(duk_context *ctx)
 {
-//    duk_push_this(ctx);
+    PyObject *pval=NULL, *owned=NULL, *pStr=NULL;
+    const char *str="(python value)";
+    PyGILState_STATE state;
+    int have_aname;
+
     duk_push_current_function(ctx);
-    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("prefstr"));
+    if(duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("prefstr")))
+        return 1;   /* supplied at wrap time (fork path) or cached below */
+    duk_pop_2(ctx);
+
+    /* lazy: str() of a big object (model, tokenizer, huge dict) is
+       expensive, so it is deferred until toString/toValue is called.
+       The wrapper being stringified is 'this'. */
+    duk_push_this(ctx);
+    if(duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("pvalue")))
+        pval=duk_get_pointer(ctx, -1);
+    duk_pop(ctx);
+
+    state=PYLOCK;
+
+    /* unresolved method proxy: pvalue is the parent; look up the attr
+       without resolving/mutating the wrapper */
+    have_aname=duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("attr_fname"));
+    if(pval && have_aname)
+    {
+        owned=PyObject_GetAttrString(pval, duk_get_string(ctx, -1));
+        if(!owned)
+            PyErr_Clear();
+        pval=owned;
+    }
+    duk_pop(ctx);
+
+    if(pval)
+    {
+        pStr=PyObject_Str(pval);
+        if(pStr)
+            str=PyUnicode_AsUTF8(pStr);
+        if(!str)
+        {
+            PyErr_Clear();
+            str="(unknown pytype)";
+        }
+    }
+    duk_push_string(ctx, str);
+    RP_Py_XDECREF(pStr);
+    RP_Py_XDECREF(owned);
+    PYUNLOCK(state);
+
+    /* cache on this toString/toValue/valueOf function */
+    duk_push_current_function(ctx);
+    duk_dup(ctx, -2);
+    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("prefstr"));
+    duk_pop(ctx);
+
     return 1;
 }
 
 static void put_func_attributes(duk_context *ctx, PyObject *pValue, PyObject *pRef, const char *attr_fname, const char *pstring)
 {
-    PyObject *pStr=NULL;
-    PyGILState_STATE state;
-
     // save our calling thread
     duk_push_int(ctx, get_thread_num() );
     duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("thrno"));
@@ -1733,19 +1845,10 @@ static void put_func_attributes(duk_context *ctx, PyObject *pValue, PyObject *pR
         duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("pref"));
     }
 
-    state=PYLOCK;
-
-    if(pValue && !pstring)
-    {
-        pStr=PyObject_Str(pValue);
-        if(pStr)
-            pstring = PyUnicode_AsUTF8(pStr);
-        else
-            pstring = "(unknown pytype)";
-    }
     //printf("PUTTING attributes on %s (%p)\n", pstring, pValue);
     if(pstring)
     {
+        /* fork path: the string was computed in the child and sent over */
         duk_push_c_function(ctx, _get_pref_str, 0);
         duk_push_string(ctx, pstring);
         duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("prefstr"));
@@ -1760,10 +1863,20 @@ static void put_func_attributes(duk_context *ctx, PyObject *pValue, PyObject *pR
         duk_push_string(ctx, pstring);
         duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("prefstr"));
         duk_put_prop_string(ctx, -2, "valueOf");
-
     }
-    RP_Py_XDECREF(pStr);
-    PYUNLOCK(state);
+    else
+    {
+        /* in-process: no prefstr stored -- _get_pref_str computes str()
+           of the wrapper's python value on first call and caches it */
+        duk_push_c_function(ctx, _get_pref_str, 0);
+        duk_put_prop_string(ctx, -2, "toString");
+
+        duk_push_c_function(ctx, _get_pref_str, 0);
+        duk_put_prop_string(ctx, -2, "toValue");
+
+        duk_push_c_function(ctx, _get_pref_str, 0);
+        duk_put_prop_string(ctx, -2, "valueOf");
+    }
 }
 
 static void push_python_function_as_method(duk_context *ctx, const char *attr_fname, PyObject *pParent, char *refstr)
@@ -1842,7 +1955,9 @@ static inline void make_pyval(duk_context *ctx, PyObject *pValue, duk_c_function
     duk_idx_t _idx=duk_normalize_index(ctx, idx);\
     duk_push_string(ctx, propname);\
     duk_pull(ctx, -2);\
-    duk_def_prop(ctx, _idx, DUK_DEFPROP_HAVE_VALUE);\
+    /* FORCE: a python attr may collide with a non-configurable function
+       property ('name', 'length'), which would otherwise throw */\
+    duk_def_prop(ctx, _idx, DUK_DEFPROP_HAVE_VALUE|DUK_DEFPROP_FORCE);\
 }while(0)
 
 /* here *pModule is invalid in this process.  Use strings sent from child */
@@ -2943,9 +3058,11 @@ static PyObject *py_call_in_child(char *fname, PyObject *pModule, PyObject *pArg
         goto end;
     }
 
-    if(PyCallable_Check(pValue)) //same as in make_pyfunc; too many refs
-        Py_XDECREF(pValue);
-        
+    /* NOTE: callable results were decref'd here ("too many refs", as in
+       make_pyfunc) -- but a freshly constructed callable has only the one
+       reference from tp_call, and this child-side pointer is the handle the
+       parent will use for later calls/finalization.  Keep the reference. */
+
     end:
 
     rp_debug_printf(4,"end: pValue=%p\n",pValue);
@@ -3507,6 +3624,12 @@ static PFI *check_fork()
 #endif
 
             // what a surprise, you can pass the pipe ints to the exec'd process, and it works.
+            /* ...as long as they survive the exec: on the rp_pipe() build
+             * (no socketpair) both ends are close-on-exec, so clear the
+             * flag here -- in the child only, after fork, so the fds are
+             * not leaked into every other subprocess. */
+            rp_fd_keep_on_exec(par2child[0]);
+            rp_fd_keep_on_exec(child2par[1]);
             sprintf(script, scr_txt, par2child[0], child2par[1], get_thread_num());
             rp_debug_printf(4,"executing %s -c %s\n", rampart_exec, script);
 
@@ -3701,22 +3824,14 @@ static void put_attributes(duk_context *ctx, PyObject *pValue)
             {
                 rp_debug_printf(4,"push as method, name=%s\n", fname);
 
-                PyObject *Str = PyObject_Str(pProp);
-                char *str=NULL;
-
-                if(Str)
-                    str=(char*)PyUnicode_AsUTF8(Str);
-                else
-                    str="(unknown pytype)";
-
-                push_python_function_as_method(ctx, fname, pValue, str);
+                /* str() of the method is deferred (lazy prefstr) */
+                push_python_function_as_method(ctx, fname, pValue, NULL);
                 if(parent_is_callable)
                     // cannot directly set property "name" or "length" on a function in duktape JS
                     put_prop_string_on_function(ctx, -2, fname);
                 else
                     duk_put_prop_string(ctx, -2, fname);
 
-                RP_Py_XDECREF(Str);
                 RP_Py_XDECREF(pProp);
             }
             else if(parent_is_callable) // if parent is a function and not an object, we cannot use a proxy object for look up. So populate it now.
@@ -3794,17 +3909,26 @@ static void get_pyval_and_push(duk_context *ctx, duk_idx_t idx, const char *key,
             // TODO: return error instead of undefined?  Javascript returns undefined if index out of bounds.
             if(!pValue)
                 PyErr_Clear();
+            // borrowed ref; the wrapper's finalizer decrefs, so take ownership
+            Py_XINCREF(pValue);
         }
         else if(PyList_Check(parentValue))
         {
             pValue = PyList_GetItem(parentValue, (Py_ssize_t)index);
             if(!pValue)
                 PyErr_Clear();
+            // borrowed ref; the wrapper's finalizer decrefs, so take ownership
+            Py_XINCREF(pValue);
         }
         else
         {
-            PYUNLOCK(state);
-            RP_THROW(ctx, "python: trying to access index %d of a %s (should be a tuple/list)", index, Py_TYPE(parentValue)->tp_name);
+            /* anything else with __getitem__: torch tensors, numpy arrays,
+               BatchEncoding, ...  PyObject_GetItem returns a new reference. */
+            PyObject *pIdx = PyLong_FromLong((long)index);
+            pValue = PyObject_GetItem(parentValue, pIdx);
+            Py_XDECREF(pIdx);
+            if(!pValue)
+                PyErr_Clear();
         }
     }
     else
@@ -3917,8 +4041,17 @@ static void make_pyfunc(duk_context *ctx, PyObject *pFunc)
 
     state=PYLOCK;
     put_attributes(ctx, pFunc);
-    RP_Py_XDECREF(pFunc);  //it has too many because it exists in script as well.
     PYUNLOCK(state);
+
+    /* pFunc is a new reference returned by the call.  A module-level
+       function also referenced by its script survives an immediate decref,
+       but a freshly constructed callable (class instance with __call__,
+       bound method, functools.partial) has refcount 1 and would be freed
+       while this wrapper and its method proxies still point at it
+       (use-after-free, e.g. transformers tokenizers).  Own the reference
+       and release it when the JS function object is collected. */
+    duk_push_c_function(ctx, pvalue_finalizer, 1);
+    duk_set_finalizer(ctx, -2);
 }
 
 static duk_ret_t _py_call(duk_context *ctx, int is_method)
@@ -4388,7 +4521,17 @@ void rp_py_register_exit_segv_workaround(void)
    ************************************************** */
 duk_ret_t duk_open_module(duk_context *ctx)
 {
-    rp_rpy_lock = RP_MINIT(&rpy_lock);
+    /* duk_open_module runs again for every thread that require()s this
+       module.  Init the lock only once: re-running pthread_mutex_init on a
+       mutex another thread may hold resets it and lets two threads race
+       into Py_Initialize (segfault). */
+    static int isinit=0;
+
+    if(!isinit)
+    {
+        rp_rpy_lock = RP_MINIT(&rpy_lock);
+        isinit=1;
+    }
 
     duk_push_object(ctx);
 

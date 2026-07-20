@@ -267,8 +267,8 @@ module.exports = {
         arch:  "dep",
         files: ["modules/rampart-python.so",
                 "modules/python/",        /* entire Python 3.11 runtime */
-                "bin/pip3r",              /* symlink to python/bin/pip3 */
-                "bin/python3r"],          /* symlink to python/bin/python3 */
+                "bin/pip3r",              /* self-locating wrapper script (src/pip3r) */
+                "bin/python3r"],          /* self-locating wrapper script (src/python3r) */
         symlinks: {
             /* rampart-python.c hard-codes PYTHONHOME=<modules_dir>/python3-lib;
                on the build host that's a symlink into python/lib/python3.11.

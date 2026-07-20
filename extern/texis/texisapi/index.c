@@ -2229,20 +2229,56 @@ TXindOpts	*options;	/* (in/out) options, opt. w/`WITH ...' */
 			goto err;
 		}
 
-		if (TXlocktable(dbtb, R_LCK) != 0) goto err;
-		uberlock++;
-
 		dbLen = strlen(ddic->pname);
 		if (TXpathcmp(indfile, dbLen, ddic->pname, dbLen) == 0)
 			sysindexFname = indfile + dbLen;
 		else
 			sysindexFname = indfile;
 
+		/* NON-BLOCKING CREATE.  Install the LIVE `_T.btr'/`_del.btr'
+		 * delta btrees and the in-progress ('n') SYSINDEX entry
+		 * BEFORE the build; the build itself runs WITHOUT the table
+		 * lock (its scans re-lock in TX_VEC_SCAN_BATCH-row batches),
+		 * so concurrent writers get through and record their
+		 * adds/deletes into the live delta btrees via the
+		 * INDEX_VECCR row hooks (procupd.c -> TXvecAddRowDelta).
+		 * Search never uses 'n' entries (TXchooseindex filters by
+		 * type), and rows seen by BOTH the build scan and the hooks
+		 * come out correct via the search's newrec-override.
+		 * Unlike fulltext's non-blocking CREATE, nothing is missed:
+		 * fulltext's mid-create rows stay unsearchable until the
+		 * next OPTIMIZE. */
+		if (TXlocktable(dbtb, R_LCK) != 0) goto err;
+		uberlock++;
+		if (TXvecCreateDeltaBtrees(indfile) != 0)
+			goto err;	/* done: releases the R_LCK */
+
 		/* In-progress SYSINDEX entry (dim=0, will be overwritten). */
 		TXsetrecid(&vecCrRecid, -1);
 		TXaddindexrec(ddic, indname, table, sysindexFname, ' ',
 			      unique, field, INDEX_VECCR, sysindexParams,
 			      &vecCrRecid);
+		TXunlocktable(dbtb, R_LCK);
+		uberlock--;
+
+		/* Bump the per-table index-mod counter so long-open writers'
+		 * INDEX_VERIFY re-reads the index list (and sees the 'n'
+		 * entry) on their next write.  This acquisition is also the
+		 * BARRIER for the race window: a writer that verified
+		 * against the OLD list holds INDEX_WRITE until its row
+		 * write completes, so once we get the lock here every
+		 * stale-list write is already in the table — the build scan
+		 * below covers it.  Writers that verify after this see the
+		 * 'n' entry and hook.  MUST be done while we hold no table
+		 * lock: queued writers hold INDEX_WRITE while waiting for
+		 * W_LCK (deadlock otherwise). */
+		if (TXlockindex(dbtb, INDEX_WRITE, NULL) == 0)
+			TXunlockindex(dbtb, INDEX_WRITE, NULL);
+		else
+			putmsg(MWARN, Fn,
+			       "Could not bump index counter for `%s'; "
+			       "long-open writers may not track the index "
+			       "being created", table);
 
 		vrc = TXvecCreateIndex(ddic, dbtb, field, indname, indfile,
 				       options, &vpFinal);
@@ -2270,13 +2306,29 @@ TXindOpts	*options;	/* (in/out) options, opt. w/`WITH ...' */
 			TXaddindexrec(ddic, indname, table, sysindexFname, ' ',
 				      unique, field, INDEX_VEC,
 				      sysindexParams, RECIDPN);
+			TXdeleteSysindexEntry(ddic, table, indname,
+					      INDEX_VECCR);
 		} else {
 		vecAfterFinalParams:
+			/* Failure order matters: retire the 'n' entry and
+			 * bump the counter FIRST so writers stop hooking,
+			 * THEN remove the files.  TXdelindex only covers
+			 * the .vec family; TXvecDropAux removes the delta
+			 * btrees (live since before the build) and any
+			 * IVFPQ artifacts. */
+			TXdeleteSysindexEntry(ddic, table, indname,
+					      INDEX_VECCR);
+			if (TXlockindex(dbtb, INDEX_WRITE, NULL) == 0)
+				TXunlockindex(dbtb, INDEX_WRITE, NULL);
 			TXdelindex(indfile, INDEX_VEC);
+			TXvecDropAux(ddic, indfile);
 		}
-		TXdeleteSysindexEntry(ddic, table, indname, INDEX_VECCR);
 
 		if (success) {
+			/* Bump again: writers swap their 'n' hook entry for
+			 * the normal INDEX_VEC path on their next write. */
+			if (TXlockindex(dbtb, INDEX_WRITE, NULL) == 0)
+				TXunlockindex(dbtb, INDEX_WRITE, NULL);
 			TXgetindexes(dbtb, PM_ALLPERMS, NULL, 0);
 			setindexperms(dbtb);
 		}

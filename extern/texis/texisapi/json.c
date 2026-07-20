@@ -1310,6 +1310,7 @@ TXmkComputedJson(FLD *f)
 #endif
 
    if (!f) return -1; /* Fail */
+   f->jsonType = 0;  /* don't let a prior row's subtype survive an error path */
    switch(TXfldbasetype(f))
    {
       case FTN_STRLST:
@@ -1441,151 +1442,85 @@ TXmkComputedJson(FLD *f)
    {
       char *res;
       json_t *jres;
-      double *dres=NULL;
       size_t ressz=0;
 
       if((jres = TXjsonPath(j, getfld(f->fldlist[1], NULL), NULL))) {
 
-         //-AJF 20250101 - need to distinguish between varchar and json data in rampart
-         // Hack by adding \xff\xf- to beginning of string to mark json type.  Decoded in rampart-sql.c
+         /* -AJF 20250101/20260717 - rampart needs to distinguish JSON
+          * value types at its row boundary.  The value here is always
+          * PLAIN text (SQL consumers -- convert(), comparisons, sort --
+          * must see ordinary varchar; see issue: tagged values broke
+          * convert() et al from 0.5.1).  When TX_is_rampart we stamp
+          * f->jsonType with the subtype; tup_project() re-encodes the
+          * OUTPUT copy with the \xff\xf? tag for rampart-sql.c to
+          * decode.  Reals print as %.17g so the text round-trips the
+          * double exactly. */
 
+         f->jsonType = 0;
          switch(json_typeof(jres)) {
             case JSON_STRING:
-               if(TX_is_rampart)
-               {
-#ifdef __GNUC__
-                   if(asprintf(&res, "\xff\xff%s", json_string_value(jres)) == -1) res = NULL;
-#else
-                   printed = snprintf(tmpbuf, TMPBUFSZ, "\xff\xff%s",json_string_value(jres) );
-                   if(printed < (TMPBUFSZ-1))
-                      res = strdup(tmpbuf);
-                   else
-                      res = NULL;
-#endif
-               }
-               else
-                   res = strdup(json_string_value(jres));
-               ressz=strlen(res)+1;
+               res = strdup(json_string_value(jres));
+               f->jsonType = '\xff';
                break;
             case JSON_INTEGER:
-               if(TX_is_rampart)
-               {
-                   ressz = 2*sizeof(double)+1;
-                   dres = (double *)TXcalloc(TXPMBUFPN, __FUNCTION__, 1, ressz);
-                   res=(char*)dres;
-                   dres[1]=(double) json_integer_value(jres);
-                   res[0]='\xff';
-                   res[1]='\xfe';
-               }
-               else
-               {
 #ifdef __GNUC__
-                   if(asprintf(&res, "%" JSON_INTEGER_FORMAT, json_integer_value(jres)) == -1) res = NULL;
+               if(asprintf(&res, "%" JSON_INTEGER_FORMAT, json_integer_value(jres)) == -1) res = NULL;
 #else
-                   printed = snprintf(tmpbuf, TMPBUFSZ, "%" JSON_INTEGER_FORMAT, json_integer_value(jres));
-                   if(printed < (TMPBUFSZ-1))
-                      res = strdup(tmpbuf);
-                   else
-                      res = NULL;
+               printed = snprintf(tmpbuf, TMPBUFSZ, "%" JSON_INTEGER_FORMAT, json_integer_value(jres));
+               if(printed < (TMPBUFSZ-1))
+                  res = strdup(tmpbuf);
+               else
+                  res = NULL;
 #endif
-               }
+               f->jsonType = '\xfe';
                break;
             case JSON_REAL:
-               if(TX_is_rampart)
-               {
-                   ressz = 2*sizeof(double)+1;
-                   dres = (double *)TXcalloc(TXPMBUFPN, __FUNCTION__, 1, ressz);
-                   res=(char*)dres;
-                   dres[1]=json_real_value(jres);
-                   res[0]='\xff';
-                   res[1]='\xfe';
-               }
-               else
-               {
 #ifdef __GNUC__
-                   if(asprintf(&res, "%f", json_real_value(jres)) == -1) res = NULL;
+               if(asprintf(&res, "%.17g", json_real_value(jres)) == -1) res = NULL;
 #else
-                   printed = snprintf(tmpbuf, TMPBUFSZ, "%f", json_real_value(jres));
-                   if(printed < (TMPBUFSZ-1))
-                      res = strdup(tmpbuf);
-                   else
-                      res = NULL;
+               printed = snprintf(tmpbuf, TMPBUFSZ, "%.17g", json_real_value(jres));
+               if(printed < (TMPBUFSZ-1))
+                  res = strdup(tmpbuf);
+               else
+                  res = NULL;
 #endif
-               }
+               f->jsonType = '\xfe';
                break;
             case JSON_TRUE:
-               if(TX_is_rampart)
-               {
-                   res = strdup("\xff\xfd");
-                   ressz=3;
-               }
-               else
-               {
-                   res = strdup("true");
-                   ressz=5;
-               }
+               res = strdup("true");
+               f->jsonType = '\xfd';
                break;
             case JSON_FALSE:
-               if(TX_is_rampart)
-               {
-                   res = strdup("\xff\xfc");
-                   ressz=3;
-               }
-               else
-               {
-                   res = strdup("false");
-                   ressz=6;
-               }
+               res = strdup("false");
+               f->jsonType = '\xfc';
                break;
             case JSON_OBJECT:
             case JSON_ARRAY:
-              res = json_dumps(jres, TXjsonFlags);
-              if(TX_is_rampart)
-              {
-                  char *res2;
-#ifdef __GNUC__
-                   if(asprintf(&res2, "\xff\xfa%s", res) == -1) res = NULL;
-#else
-                   printed = snprintf(tmpbuf, TMPBUFSZ, "\xff\xfa%s", res);
-                   if(printed < (TMPBUFSZ-1))
-                   {
-                      res2 = strdup(tmpbuf);
-                   }
-                   else
-                      res2 = NULL;
-#endif
-                  ressz = strlen(res) +3;
-                  free(res);
-                  res=res2;
-              }
-              break;
+               res = json_dumps(jres, TXjsonFlags);
+               f->jsonType = '\xfa';
+               break;
             case JSON_NULL:
-               if(TX_is_rampart)
-               {
-                   res = strdup("\xff\xfb");
-                   ressz=3;
-               }
-               else
-               {
-                   res = strdup("null");
-                   ressz=5;
-               }
-              break;
+               res = strdup("null");
+               f->jsonType = '\xfb';
+               break;
             default:
                res = strdup("WTF: Fix mkComputedJson");
 
          }
 
+         if(!TX_is_rampart)
+            f->jsonType = 0;
+
          if(res)
          {
-            if(!TX_is_rampart)
-                ressz=strlen(res)+1;
+            ressz=strlen(res)+1;
             setfldandsize(f, res, ressz, FLD_KEEP_KIND);
          }
          else
             setfldandsize(f, res, 0, FLD_KEEP_KIND);
       }
       else {
+         f->jsonType = 0;
          setfldandsize(f, NULL, 0, FLD_KEEP_KIND);
       }
       json_decref(j);
@@ -1594,6 +1529,60 @@ TXmkComputedJson(FLD *f)
       return -1;
    }
    return 0;
+}
+/************************************************************************/
+
+/* Re-encode a PLAIN computed-json value (as produced by
+ * TXmkComputedJson()) into the rampart typed-value tag encoding, for
+ * the row-output copy only.  Decoded in rampart-sql.c rp_pushfield().
+ *
+ *   subtype: FLD.jsonType ('\xff' string, '\xfe' number, '\xfd' true,
+ *            '\xfc' false, '\xfb' null, '\xfa' object/array)
+ *   v/n:     plain value bytes / element count (varchar semantics)
+ *   outN:    (out) element count of returned buffer
+ *
+ * Returns an alloc'd buffer (caller owns), or NULL if subtype is
+ * unknown or allocation fails.
+ */
+char *
+TXtagComputedJsonValue(char subtype, char *v, size_t n, size_t *outN)
+{
+   char *res = NULL;
+
+   switch(subtype)
+   {
+      case '\xff':                         /* string: \xff\xff + text */
+      case '\xfa':                         /* object/array: \xff\xfa + json */
+         res = TXmalloc(TXPMBUFPN, __FUNCTION__, n + 3);
+         if(!res) return NULL;
+         res[0] = '\xff';
+         res[1] = subtype;
+         if(n && v) memcpy(res + 2, v, n);
+         res[n + 2] = '\0';
+         *outN = n + 2;
+         break;
+      case '\xfe':                         /* number: \xff\xfe pad, then double */
+         res = TXcalloc(TXPMBUFPN, __FUNCTION__, 1, 2 * sizeof(double) + 1);
+         if(!res) return NULL;
+         res[0] = '\xff';
+         res[1] = '\xfe';
+         ((double *)res)[1] = (v && n) ? strtod(v, NULL) : 0.0;
+         *outN = 2 * sizeof(double);
+         break;
+      case '\xfd':                         /* true  */
+      case '\xfc':                         /* false */
+      case '\xfb':                         /* null  */
+         res = TXmalloc(TXPMBUFPN, __FUNCTION__, 3);
+         if(!res) return NULL;
+         res[0] = '\xff';
+         res[1] = subtype;
+         res[2] = '\0';
+         *outN = 2;
+         break;
+      default:
+         return NULL;
+   }
+   return res;
 }
 /************************************************************************/
 

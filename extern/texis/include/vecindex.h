@@ -215,6 +215,21 @@ int  TXvecDelRow(DDIC *ddic, DBTBL *dbtbl,
                  const char *indfile, const char *field,
                  RECID *recid);
 
+/* Delta-only row hooks for an index BEING CREATED (INDEX_VECCR): no
+ * sealed file exists yet, so record the recid straight into the live
+ * `_T.btr'/`_del.btr' the creator installed before its build scan.
+ * Called from procupd.c when dbtbl->vecIndexCreating[i] is set.
+ */
+int  TXvecAddRowDelta(const char *indfile, DBTBL *dbtbl,
+                      const char *field, RECID *recid);
+int  TXvecDelRowDelta(const char *indfile, RECID *recid);
+
+/* Install the live delta btrees for a CREATE about to start (called by
+ * index.c BEFORE the 'n' SYSINDEX entry goes visible).  Unlinks
+ * leftovers from a prior abandoned create first.
+ */
+int  TXvecCreateDeltaBtrees(const char *indfile);
+
 /* ----- Search-side --------------------------------------------------- */
 
 /* Per-process cached index handle.  Opaque to callers; the concrete
@@ -347,6 +362,15 @@ IINDEX *TXvecIxVecIndex(const char *iname,
                         FLD *infld, const char *fname,
                         DBTBL *dbtbl, int op, int *cop);
 
+/* Linear (index-less) LIKEV: brute-force scan building the same
+ * rank-keyed candidate IINDEX as TXvecIxVecIndex, so linear search is
+ * identical to indexed search except for speed (rank-ordered rows,
+ * likevRows cap, quiet skip of empty/mis-sized rows).  Returns NULL
+ * when linear scoring is impossible (query not a vector, typed-dtype
+ * mismatch) — caller falls back to the plain per-row path, which
+ * reports the problem. */
+IINDEX *TXvecLinearVecIndex(DBTBL *dbtbl, const char *fname, FLD *infld);
+
 /* ----- Embed callback registry (public API) -------------------------
  *
  * The SQL layer registers a callback that turns text into a vector.
@@ -354,15 +378,37 @@ IINDEX *TXvecIxVecIndex(const char *iname,
  *
  * Signature: takes utf-8 text, returns the L2-normalized average vector
  * ("avgVec") of dim = model's embedding dim.  Caller frees *out_vec.
- * Returns dim on success, 0 on failure. */
+ * Returns dim on success, 0 on failure.
+ *
+ * `kind` tells the SQL layer WHAT the text is, so it can apply the
+ * embedding model's asymmetric retrieval prompts (e.g. nomic's
+ * "search_query: " / "search_document: ") before the model runs.
+ * Texis itself never sees the prompt strings -- the layer that owns
+ * the model owns them.  RAW means embed verbatim (no prompt).
+ * `title`/`title_len` are only meaningful with TXEMBED_DOCUMENT
+ * (the document prompt of some models has a title slot); pass
+ * NULL/0 otherwise. */
+
+#define TXEMBED_RAW      0
+#define TXEMBED_QUERY    1
+#define TXEMBED_DOCUMENT 2
 
 typedef size_t (*TXembedFunc)(void *user_data,
                               const char *text, size_t text_len,
+                              int kind,
+                              const char *title, size_t title_len,
                               float **out_vec);
 
 void        TXregisterEmbedFunc(TXembedFunc fn, void *user_data);
 TXembedFunc TXgetEmbedFunc(void **user_data_out);
 void        TXclearEmbedFunc(void);
+
+/* abstract() vec-snippet mode: self-contained best-chunk selection —
+ * embeds `query' (cached by the embedder) and scores the row's chunks
+ * like FOP_MMV; no dependence on per-row eval order.  0 on success. */
+int TXvecAbstractBestChunk(const char *query, void *vecData,
+                           size_t vecBytes, int colType,
+                           int *cixOut, int *ccntOut);
 
 /* ----- Doc (chunked) embed callback registry -------------------------
  *

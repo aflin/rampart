@@ -1579,8 +1579,10 @@ static int rex (
     if ((rl=openrlexadd(nexp)) == RLEXPN)
         RP_THROW(ctx,"re%c: error opening lexer", ((type==TXrexSyntax_Re2)?'2':'x'));
 
-    /* add expression */
-    if (nexp==1)
+    /* add expression.  Branch on array-ness, not nexp: a single-element
+       array used to fall into this branch with exp still NULL (never
+       fetched from the array) and segfault in rlex_addexp().           */
+    if (!duk_is_array(ctx,0))
     {
         if(!rlex_addexp(rl, 0, exp, type))
         {
@@ -1589,9 +1591,15 @@ static int rex (
         }
     }
     else
-    /* add multiple expressions */
+    /* add expressions from array */
     {
         int eno=0;
+
+        if(nexp < 1)
+        {
+            closerlex(rl);
+            RP_THROW(ctx,"re%c: expression array (arg 1) is empty", ((type==TXrexSyntax_Re2)?'2':'x'));
+        }
         duk_enum(ctx,0,DUK_ENUM_ARRAY_INDICES_ONLY);
         while (duk_next(ctx, -1, 1)) {
 

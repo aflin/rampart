@@ -3473,13 +3473,42 @@ int inv;
 
 /******************************************************************/
 
-static IINDEX *orindices ARGS((DBTBL *, IINODE *, int));
+static IINDEX *orindices ARGS((DBTBL *, IINODE *, int, PRED *));
+
+/* Fused (RRF) OR fast path: mark the LIKEV child handled so the
+ * generic index post-process is skipped.  realwork always sets the
+ * MMV pred handled=0 ("per-row computes $rank and re-filters"), which
+ * drops indguar and makes tup_read re-evaluate the whole OR predicate
+ * for EVERY fused candidate — a full metamorph eval of each document
+ * (measured ~2.8s flat on 7M-article wikipedia for likeprows=100 +
+ * likevRows=300, regardless of maxRows).  For the fused index both
+ * halves of that work are already done: membership is the union of
+ * the two index lists (each side's own membership rules), and $rank
+ * is the fusedRank stashed at tup_read (TXcalcrank FOP_OR returns it
+ * without touching the sides).
+ *
+ * The one thing the skipped per-row FOP_MMV eval provided was the
+ * last-chunk state that a 5-arg abstract() IN THE SAME SELECT seeds
+ * from.  Clear it so such an abstract takes its plain-abstract
+ * fallback deterministically (a stale chunk index from the rescore
+ * phase could pass the chunk-count guard and highlight the wrong
+ * chunk).  Best-chunk snippets on fused queries use the documented
+ * two-phase pattern (fetch ids, then per-Id `LIKEV ? AND Id = ?`
+ * abstracts). */
+static void
+txRrfMarkHandled(PRED *p, PRED *vecChild)
+{
+	vecChild->handled = 1;
+	(void)p;
+	TXlikevSetLastChunk(-1, 0);
+}
 
 static IINDEX *
-orindices(tb, in, inv)
+orindices(tb, in, inv, p)
 DBTBL *tb;
 IINODE *in;
 int inv;
+PRED *p;	/* (in, opt.) the OR predicate, for hybrid-shape detection */
 {
 	static CONST char	fn[] = "orindices";
 	IINDEX *ix;
@@ -3504,6 +3533,42 @@ int inv;
 		return NULL;
 	if ((in->right == NULL) || in->right->index == (IINDEX *) NULL)
 		return NULL;
+	/* Hybrid keyword-OR-vector: the two sides' rank scales are
+	 * incomparable (metamorph proximity vs scaled cosine), so merge
+	 * by Reciprocal Rank Fusion (position-based) instead of
+	 * indexor()'s min-rank.  The fused key is the row's final $rank
+	 * (IINDEX.rankIsFused).  Shape: one side LIKEP/LIKE/LIKEIN, the
+	 * other LIKEV, both index-resolved (we are here, so they are). */
+	if (p && p->lt == 'P' && p->rt == 'P')
+	{
+		PRED	*lp = (PRED *)p->left, *rp = (PRED *)p->right;
+		int	lKw, rKw, lVec, rVec;
+
+		lKw = (lp->op == FLDMATH_PROXIM || lp->op == FLDMATH_MM ||
+		       lp->op == FLDMATH_MMIN);
+		rKw = (rp->op == FLDMATH_PROXIM || rp->op == FLDMATH_MM ||
+		       rp->op == FLDMATH_MMIN);
+		lVec = (lp->op == FLDMATH_MMV);
+		rVec = (rp->op == FLDMATH_MMV);
+		if (lKw && rVec)
+		{
+			ix = TXindexrrf(in->left->index, in->right->index,
+					inv);
+			if (ix != IINDEXPN)
+				txRrfMarkHandled(p, rp);
+			tb->order = closeproj(tb->order);
+			return ix;
+		}
+		if (lVec && rKw)
+		{
+			ix = TXindexrrf(in->right->index, in->left->index,
+					inv);
+			if (ix != IINDEXPN)
+				txRrfMarkHandled(p, lp);
+			tb->order = closeproj(tb->order);
+			return ix;
+		}
+	}
 	ix = indexor(in->left->index, in->right->index, inv);
 	tb->order = closeproj(tb->order);
 	return ix;
@@ -3549,6 +3614,160 @@ txMakeEmptyIindex()
 
 /******************************************************************/
 
+/* LIKEV string->vector auto-embed.
+ *
+ * If `p' is a LIKEV predicate whose parameter side is a string and an
+ * embed callback is registered, embed the string once and cache the
+ * result as a typed vec FLD on the pred's altright/altleft, where BOTH
+ * TXvecIxVecIndex (index search) and the per-row post-process in
+ * pred_eval pick it up via TXgetinfld's lat/rat==FIELD_OP check.
+ *
+ * Callable from realwork() (index selection) AND from pred_eval(): a
+ * LIKEV demoted to a per-row filter (e.g. the non-indexed side of an
+ * AND that was satisfied from the other side's index) never passes
+ * through realwork(), so the embed must be available at eval time too
+ * -- auto-embed is a property of the predicate, not of index use.
+ *
+ * The bytes are the COLUMN's dtype-converted f32 — fobyby's vec/byte
+ * FOP_MMV path enforces matching byte_count, so the converted bytes
+ * must match the column's vec width exactly.  For varbyte columns the
+ * dtype isn't in the column type — it's in the vec index's PARAMS
+ * (SYSINDEX lookup; an unindexed varbyte column cannot auto-embed).
+ *
+ * Returns nonzero if an embedded FLD is now cached on the pred (newly
+ * made or already present), 0 if not applicable/possible.
+ */
+int
+TXpredMMVAutoEmbed(DBTBL *tb, PRED *p)
+{
+	FLD	*infld, *fld;
+	int	lookright = 0;
+	char	*fname = NULL, *dname;
+	int	col_type;
+	void	*embed_ud = NULL;
+	TXembedFunc	embed_fn;
+	size_t	text_len = 0;
+	const char	*text;
+	float	*evec = NULL;
+	size_t	edim;
+
+	if (!tb || !p || p->op != FOP_MMV)
+		return(0);
+	infld = TXpredGetColumnAndField(p, &lookright, &fname);
+	if (!infld || !fname)
+		return(0);
+	if (lookright ? (p->rat == FIELD_OP && p->altright) :
+			(p->lat == FIELD_OP && p->altleft))
+		return(1);			/* already embedded */
+	if ((infld->type & DDTYPEBITS) != FTN_CHAR)
+		return(0);			/* param already a vector */
+	dname = dbnametoname(tb, fname, FTNPN, INTPN);
+	if (!dname)
+		return(0);
+	fld = dbnametofld(tb, dname);
+	if (!fld)
+		return(0);
+	embed_fn = TXgetEmbedFunc(&embed_ud);
+	if (!embed_fn)
+		return(0);
+	col_type = fld->type & DDTYPEBITS;
+	if (col_type == FTN_BYTE)
+	{
+		/* dtype lives in the vec index's PARAMS: */
+		INDEXINFO	indexinfo;
+		int	ii;
+
+		resetindexinfo(&indexinfo);
+		indexinfo.numIndexes =
+			ddgetindex(tb->ddic, tb->rname, dname,
+				   &indexinfo.itypes, &indexinfo.paths,
+				   &indexinfo.fields,
+				   &indexinfo.sysindexParamsVals);
+		for (ii = 0; ii < indexinfo.numIndexes; ii++) {
+			const char *params =
+				indexinfo.sysindexParamsVals[ii];
+			if (!params || !strstr(params, "type=vec"))
+				continue;
+			TXvecParams vp;
+			if (TXvecParamsParse(&vp, params) == 0 &&
+			    vp.dtype != 0) {
+				col_type = vp.dtype;
+				break;
+			}
+		}
+		closeindexinfo(&indexinfo);
+	}
+	if (!FTN_IS_VEC(col_type))
+		return(0);
+	text = (const char *)getfld(infld, &text_len);
+	if (!text || text_len == 0)
+		return(0);
+	edim = embed_fn(embed_ud, text, text_len, TXEMBED_QUERY, NULL, 0,
+			&evec);
+	if (edim > 0 && evec)
+	{
+		size_t out_elsz =
+			(col_type == FTN_VEC_F16 || col_type == FTN_VEC_BF16) ? 2 :
+			(col_type == FTN_VEC_F32) ? 4 :
+			(col_type == FTN_VEC_F64) ? 8 :
+			(col_type == FTN_VEC_I8 || col_type == FTN_VEC_U8) ? 1 : 4;
+		size_t out_bytes = edim * out_elsz;
+		void *cbytes = malloc(out_bytes + 1); /* V4: match setfldandsize's alloced=out_bytes+1 */
+		int ok = 0;
+		if (cbytes) {
+			switch (col_type) {
+			case FTN_VEC_F32:
+				memcpy(cbytes, evec, out_bytes); ok = 1; break;
+			case FTN_VEC_F16:
+				rpvec_f32_to_f16(evec, (uint16_t*)cbytes, edim); ok = 1; break;
+			case FTN_VEC_BF16:
+				rpvec_f32_to_bf16(evec, (uint16_t*)cbytes, edim); ok = 1; break;
+			case FTN_VEC_F64: {
+				double *d = (double*)cbytes;
+				for (size_t i = 0; i < edim; i++) d[i] = (double)evec[i];
+				ok = 1;
+				break;
+			}
+			case FTN_VEC_I8:
+				rpvec_f32_to_i8(evec, (int8_t*)cbytes, edim, 1.0f/127.0f, 0); ok = 1; break;
+			case FTN_VEC_U8:
+				rpvec_f32_to_u8(evec, (uint8_t*)cbytes, edim, 1.0f/127.0f, 128); ok = 1; break;
+			}
+		}
+		free(evec);
+		if (ok) {
+			/* Build a typed vec FLD matching the column's
+			 * dtype.  fobyby's vec/vec FOP_MMV requires
+			 * matching types, so this lets the per-row
+			 * post-process succeed. */
+			FLD *vfld = createfld("byte", 1, 0);
+			if (vfld) {
+				vfld->type = col_type | DDVARBIT;
+				vfld->elsz = out_elsz;
+				setfldandsize(vfld, cbytes,
+					out_bytes + 1, FLD_FORCE_NORMAL);
+				if (lookright) {
+					p->altright = vfld;
+					p->rat = FIELD_OP;
+				} else {
+					p->altleft = vfld;
+					p->lat = FIELD_OP;
+				}
+				return(1);
+			} else if (cbytes) {
+				free(cbytes);
+			}
+		} else if (cbytes) {
+			free(cbytes);
+		}
+	}
+	else if (evec)
+		free(evec);
+	return(0);
+}
+
+/******************************************************************/
+
 static IINDEX *realwork(DBTBL *tb, IINODE *in, PRED *p, FLDOP *fo, int asc,
 			int inv, TBSPEC *tbspec);
 static IINDEX *getiinindex(DBTBL *tb, IINODE *in, PRED *p, FLDOP *fo, int asc,
@@ -3574,7 +3793,7 @@ TBSPEC *tbspec;
 	if (p->op == FOP_AND)
 		return andindices(tb, in, inv);
 	if (p->op == FOP_OR)
-		return orindices(tb, in, inv);
+		return orindices(tb, in, inv, p);
 	if (p->op == NOT_OP)	/* Indexes useless here. */
 	{
 		if (in->left && in->left->index)
@@ -3921,6 +4140,16 @@ TBSPEC *tbspec;
 		if (indexinfo.numIndexes <= 0)
 		{
 			closeindexinfo(&indexinfo);
+			/* LIKEV: the string->vec auto-embed (case FOP_MMV
+			 * below) must run even when the column has no index
+			 * at all, so the linear scan's per-row scorer
+			 * (pred_eval) gets a vec operand exactly as if the
+			 * caller had passed a vector.  Continue with an
+			 * empty index list: TXchooseindex finds nothing and
+			 * NULL is returned as before, leaving the scan to
+			 * pred_eval. */
+			if (p->op == FOP_MMV)
+				goto noIndexOk;
 			/* Make LIKE3 do LIKE !!! WTF */
 			if (p->op == FLDMATH_NMM)
 				p->op = FLDMATH_MM;
@@ -3945,6 +4174,7 @@ TBSPEC *tbspec;
 		DBGMSG(9, (999, NULL, "We found ourselves a reversed index"));
 #endif
 	}
+noIndexOk:
 	ix = NULL;
 
 	/* If predicate is `{$param|literal} OP column' (!lookright)
@@ -4291,114 +4521,11 @@ TBSPEC *tbspec;
 		if (rev != 0)
 			goto err;
 
-		/* Auto-embed: if RHS arrived as a string and an embed
-		 * callback is registered, embed it and cache as a varbyte
-		 * FLD on the pred's altright/altleft.  Both TXvecIxVecIndex
-		 * (called via TXchooseindex below) AND the per-row
-		 * post-process in pred_eval pick up this byte FLD via
-		 * TXgetinfld's lat/rat==FIELD_OP check.
-		 *
-		 * The bytes are the COLUMN's dtype-converted f32 — fobyby's
-		 * vec/byte FOP_MMV path enforces matching byte_count for the
-		 * scan, so the converted-to-column-dtype bytes must match the
-		 * column's vec width exactly.  fld is the column FLD set
-		 * above at L3848; its type gives the vec dtype. */
-		if (infld &&
-		    (infld->type & DDTYPEBITS) == FTN_CHAR &&
-		    fld &&
-		    !(lookright ? p->altright : p->altleft))
-		{
-			void *embed_ud = NULL;
-			TXembedFunc embed_fn = TXgetEmbedFunc(&embed_ud);
-			int col_type = fld->type & DDTYPEBITS;
-			/* For varbyte columns the dtype isn't in the column
-			 * type — it's in the vec index's PARAMS.  Walk
-			 * indexinfo (already populated from ddgetindex above
-			 * with this column's indexes) and lift dtype out of
-			 * the first INDEX_VEC entry. */
-			if (col_type == FTN_BYTE) {
-				int ii;
-				for (ii = 0; ii < indexinfo.numIndexes; ii++) {
-					const char *params =
-						indexinfo.sysindexParamsVals[ii];
-					if (!params || !strstr(params, "type=vec"))
-						continue;
-					TXvecParams vp;
-					if (TXvecParamsParse(&vp, params) == 0 &&
-					    vp.dtype != 0) {
-						col_type = vp.dtype;
-						break;
-					}
-				}
-			}
-			if (embed_fn && FTN_IS_VEC(col_type))
-			{
-				size_t text_len = 0;
-				const char *text = (const char *)getfld(infld, &text_len);
-				if (text && text_len > 0)
-				{
-					float *evec = NULL;
-					size_t edim = embed_fn(embed_ud, text, text_len, &evec);
-					if (edim > 0 && evec)
-					{
-						size_t out_elsz =
-							(col_type == FTN_VEC_F16 || col_type == FTN_VEC_BF16) ? 2 :
-							(col_type == FTN_VEC_F32) ? 4 :
-							(col_type == FTN_VEC_F64) ? 8 :
-							(col_type == FTN_VEC_I8 || col_type == FTN_VEC_U8) ? 1 : 4;
-						size_t out_bytes = edim * out_elsz;
-						void *cbytes = malloc(out_bytes + 1); /* V4: match setfldandsize's alloced=out_bytes+1 */
-						int ok = 0;
-						if (cbytes) {
-							switch (col_type) {
-							case FTN_VEC_F32:
-								memcpy(cbytes, evec, out_bytes); ok = 1; break;
-							case FTN_VEC_F16:
-								rpvec_f32_to_f16(evec, (uint16_t*)cbytes, edim); ok = 1; break;
-							case FTN_VEC_BF16:
-								rpvec_f32_to_bf16(evec, (uint16_t*)cbytes, edim); ok = 1; break;
-							case FTN_VEC_F64: {
-								double *d = (double*)cbytes;
-								for (size_t i = 0; i < edim; i++) d[i] = (double)evec[i];
-								ok = 1;
-								break;
-							}
-							case FTN_VEC_I8:
-								rpvec_f32_to_i8(evec, (int8_t*)cbytes, edim, 1.0f/127.0f, 0); ok = 1; break;
-							case FTN_VEC_U8:
-								rpvec_f32_to_u8(evec, (uint8_t*)cbytes, edim, 1.0f/127.0f, 128); ok = 1; break;
-							}
-						}
-						free(evec);
-						if (ok) {
-							/* Build a typed vec FLD matching the column's
-							 * dtype.  fobyby's vec/vec FOP_MMV requires
-							 * matching types, so this lets the per-row
-							 * post-process succeed. */
-							FLD *vfld = createfld("byte", 1, 0);
-							if (vfld) {
-								vfld->type = col_type | DDVARBIT;
-								vfld->elsz = out_elsz;
-								setfldandsize(vfld, cbytes,
-									out_bytes + 1, FLD_FORCE_NORMAL);
-								if (lookright) {
-									p->altright = vfld;
-									p->rat = FIELD_OP;
-								} else {
-									p->altleft = vfld;
-									p->lat = FIELD_OP;
-								}
-								infld = vfld;
-							} else if (cbytes) {
-								free(cbytes);
-							}
-						} else if (cbytes) {
-							free(cbytes);
-						}
-					}
-				}
-			}
-		}
+		/* Auto-embed a string parameter (see TXpredMMVAutoEmbed):
+		 * TXvecIxVecIndex below needs the query vector, and the
+		 * per-row post-process picks the cached FLD up too. */
+		if (TXpredMMVAutoEmbed(tb, p))
+			infld = (lookright ? p->altright : p->altleft);
 
 		for (j = TXchooseindex(&indexinfo, tb, p->op, infld,
 				       lookright);
@@ -4417,6 +4544,48 @@ TBSPEC *tbspec;
 			p->handled = 0;
 			if (!ix) continue;
 			break;
+		}
+		/* No usable vector index (none exists, or all failed to
+		 * serve the query): build the SAME rank-keyed candidate
+		 * list by brute force, so a linear LIKEV is identical to
+		 * an indexed one except for speed — rank-ordered rows (no
+		 * ORDER BY needed, like LIKEP), likevRows cap, and the
+		 * hybrid OR can still rank-fuse.  NULL here (query not a
+		 * vector at all, typed-dtype mismatch) leaves the plain
+		 * per-row path to report the problem.
+		 *
+		 * Mirrors LIKEP (see the allinear branch in predtoiinode):
+		 * without `allinear' set the table scan is refused — yap
+		 * per denymode and fake 0 hits from the "index".  Delta
+		 * rows of an EXISTING index are unaffected: those are
+		 * scanned inside TXvecIxVecIndex above, which is an
+		 * indexed search. */
+		if (ix == IINDEXPN)
+		{
+			TXget_globalcp();
+			if (globalcp && !globalcp->allinear)
+			{
+				switch (globalcp->denymode)
+				{
+				case API3DENYWARNING:
+					putmsg(MWARN + UGE, CHARPN,
+					       "Query on `%s' would require linear search",
+					       dname);
+					/* fall through */
+				case API3DENYSILENT:
+					break;
+				case API3DENYERROR:
+					putmsg(MERR + UGE, CHARPN,
+					       "Query on `%s' would require linear search",
+					       dname);
+					break;
+				}
+				ix = txMakeEmptyIindex();
+			}
+			else
+				ix = TXvecLinearVecIndex(tb, dname,
+							 (FLD *)infld);
+			p->handled = 0;
 		}
 		closeindexinfo(&indexinfo);
 		goto done;
@@ -5073,6 +5242,35 @@ int inv;			/* Get index ready for AND */
 		}
 		p->assumetrue--;
 	}
+	/* Hybrid keyword-OR-vector (the RRF shape orindices fuses): the
+	 * keyword side's list is merged POSITIONALLY and only its top
+	 * `likeprows' entries matter (the documented RRF pool).  Mark it
+	 * `lonely' BEFORE its index is built so setf3dbi uses the same
+	 * top-N rank heap + early-stop that a solitary LIKEP gets.
+	 * Without it fdbi precisely ranks and materializes EVERY matching
+	 * row — measured 10x slower (3s vs 0.3s) for common-word queries
+	 * against 7M docs.  OR-union means nothing else restricts this
+	 * side's list, so the truncation is exactly the RRF pool cap. */
+	if (p->op == FOP_OR && p->lt == 'P' && p->rt == 'P')
+	{
+		PRED	*lp2 = (PRED *)p->left, *rp2 = (PRED *)p->right;
+		PRED	*kwp = NULL;
+
+		if ((lp2->op == FLDMATH_PROXIM || lp2->op == FLDMATH_MM ||
+		     lp2->op == FLDMATH_MMIN) && rp2->op == FLDMATH_MMV)
+			kwp = lp2;
+		else if ((rp2->op == FLDMATH_PROXIM || rp2->op == FLDMATH_MM ||
+			  rp2->op == FLDMATH_MMIN) && lp2->op == FLDMATH_MMV)
+			kwp = rp2;
+		if (kwp && kwp->rt == FIELD_OP)
+		{
+			DDMMAPI	*ddmm = (DDMMAPI *)getfld(kwp->right, NULL);
+
+			if (ddmm)
+				ddmm->lonely = 1;
+		}
+	}
+
 	if (!iin->index)
 	{
 		if (p->lt == 'P')
@@ -5298,6 +5496,7 @@ donoindx(DBTBL * tb, TBSPEC * tbspec, FLDOP * fo, int allowbubble)
 		DBGMSG(1, (999, NULL, "NRANK = %d", iinode->index->nrank));
 #ifndef NO_NEW_RANK
 		tb->index.nrank = iinode->index->nrank;
+		tb->index.rankIsFused = iinode->index->rankIsFused;
 #endif
 		if (iinode->index->orig)
 		{

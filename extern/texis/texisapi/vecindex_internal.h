@@ -47,6 +47,14 @@ struct TXvecHandleBase {
     int                       dim;
     vec_metric_t              metric;
     int                       dtype;
+    /* i8/u8 dequantization calibration from PARAMS (quant_scale /
+     * quant_zp; defaults applied).  Meaningful only when dtype is
+     * I8/U8; every site that converts stored column bytes to f32
+     * (delta scans, exact rescore, OPTIMIZE re-encode) must pass
+     * these to vec_convert_to_f32 -- scale 0 dequantizes everything
+     * to zero. */
+    float                     quant_scale;
+    int                       quant_zp;
     /* File-identity for cross-process staleness detection.  Captured at
      * open time on the *primary* on-disk artifact (HNSW: .vec; IVFPQ:
      * _H.idxpq).  Cache hit re-stats and evicts on mismatch. */
@@ -172,6 +180,17 @@ void TXvecFaissInitOnce(void);
 int  vec_convert_to_f32(int t, const void *raw, size_t n_elems, int dim,
                         float scale, int zp, float *dst);
 size_t vec_dtype_elsz(int dtype);
+
+/* Decode one row's value for an index scan: strips any chunkembed()
+ * header (advancing *rawPtr / reducing *cellsPtr past it, exactly like
+ * TXvecValSkipHdrCells) and returns the header's per-chunk dim — the
+ * authoritative dimension for chunked values.  Returns 0 for
+ * headerless values (or bad args).  Callers use the returned dim to
+ * (a) lock the index dim at CREATE when `vec_dim' wasn't given, and
+ * (b) reject rows whose header dim disagrees with the index dim —
+ * definitive wrong-model/corrupt-row detection that the cells%dim
+ * check cannot provide when the total happens to be a multiple. */
+size_t TXvecRowDecodeDim(void **rawPtr, size_t *cellsPtr, size_t elsz);
 
 /* Auto-pick IVFPQ params (nlist, M, nbits) from row count + target hint
  * for any field the user didn't supply explicitly.  See plan §4.

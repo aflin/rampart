@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+
+# python3r -- run rampart's embedded python.
+# Installed verbatim into <prefix>/bin (see src/CMakeLists.txt); the script
+# locates the rampart executable and asks it where the modules live, so the
+# same file works from any install prefix.
+
+# Prefer the rampart next to this script: with several installs present
+# (e.g. tiered /usr/local/rampart-2_17 and -2_28), the one in PATH may
+# belong to a different install and would point us at its python.
+CURSRC=$(readlink -f "${BASH_SOURCE[0]}")
+CURDIR=$(dirname "$CURSRC")
+RAMPART="${CURDIR}/rampart"
+
+if [ ! -x "$RAMPART" ]; then
+        RAMPART=$(which rampart 2>/dev/null)
+        if [ -z "$RAMPART" ]; then
+                echo "could not find the rampart executable"
+                exit 1
+        fi
+fi
+
+# Same user-package location that pip3r installs to and that rampart-python
+# puts on the embedded interpreter's search path.
+if [ -z "$PYTHONUSERBASE" ] && [ -n "$HOME" ]; then
+        export PYTHONUSERBASE="$HOME/.rampart/modules/python3-lib"
+fi
+
+RP_DIR=$("$RAMPART" -c "rampart.utils.printf('%s/python/bin', process.modulesPath)")
+
+"${RP_DIR}/python3" "$@"
