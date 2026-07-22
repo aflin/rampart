@@ -2359,6 +2359,15 @@ tx_embed_kind_word(const char *s, int *kindOut)
     if      (!strcasecmp(s, "query"))    *kindOut = TXEMBED_QUERY;
     else if (!strcasecmp(s, "document")) *kindOut = TXEMBED_DOCUMENT;
     else if (!strcasecmp(s, "raw"))      *kindOut = TXEMBED_RAW;
+    /* 'text' is an explicit synonym for 'raw': text content, no prompt.
+     * It exists so the modality reads symmetrically against 'image' in
+     * a schema, and is accepted by every engine (not just image-capable
+     * ones) so a statement does not stop parsing when the connection's
+     * embed engine changes. */
+    else if (!strcasecmp(s, "text"))     *kindOut = TXEMBED_RAW;
+    /* 'image': the value is an image file PATH, routed to an image
+     * encoder.  Engines without one fail -- see TXEMBED_IMAGE. */
+    else if (!strcasecmp(s, "image"))    *kindOut = TXEMBED_IMAGE;
     else return 0;
     return 1;
 }
@@ -2404,8 +2413,8 @@ TXsqlFunc_embed(FLD *f1, FLD *f2, FLD *f3, FLD *f4)
                     !(haveKind = tx_embed_kind_word(dt, &kind))) {
                     putmsg(MERR + UGE, "embed",
                            "Unknown arg `%s' — expected a dtype "
-                           "('f16', 'f32', 'f64', 'bf16') or a prompt kind "
-                           "('query', 'document', 'raw')", dt);
+                           "('f16', 'f32', 'f64', 'bf16') or a kind "
+                           "('query', 'document', 'raw', 'text', 'image')", dt);
                     return FOP_EINVAL;
                 }
             }
@@ -2423,8 +2432,8 @@ TXsqlFunc_embed(FLD *f1, FLD *f2, FLD *f3, FLD *f4)
                 if (!s[0]) continue;         /* '' placeholder */
                 if (!(haveKind = tx_embed_kind_word(s, &kind))) {
                     putmsg(MERR + UGE, "embed",
-                           "Unknown prompt kind `%s' — expected "
-                           "'query', 'document' or 'raw'", s);
+                           "Unknown kind `%s' — expected 'query', "
+                           "'document', 'raw', 'text' or 'image'", s);
                     return FOP_EINVAL;
                 }
             }

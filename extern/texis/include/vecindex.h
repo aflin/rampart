@@ -387,11 +387,18 @@ IINDEX *TXvecLinearVecIndex(DBTBL *dbtbl, const char *fname, FLD *infld);
  * the model owns them.  RAW means embed verbatim (no prompt).
  * `title`/`title_len` are only meaningful with TXEMBED_DOCUMENT
  * (the document prompt of some models has a title slot); pass
- * NULL/0 otherwise. */
+ * NULL/0 otherwise.
+ *
+ * TXEMBED_IMAGE names a different MODALITY rather than a prompt: the
+ * "text" is an image file path, and the SQL layer routes it to an
+ * image encoder (rampart-sql's clipEmbed).  An engine with no image
+ * encoder must FAIL on it -- never fall back to embedding the path as
+ * text, which would silently store a plausible, meaningless vector. */
 
 #define TXEMBED_RAW      0
 #define TXEMBED_QUERY    1
 #define TXEMBED_DOCUMENT 2
+#define TXEMBED_IMAGE    3
 
 typedef size_t (*TXembedFunc)(void *user_data,
                               const char *text, size_t text_len,

@@ -297,6 +297,8 @@ module.exports = {
                 "modules/rampart-llamacpp_arm6.so",
                 "modules/rampart-llamacpp_arm8a.so",
                 "modules/rampart-llamacpp.so",
+                "modules/rampart-clip_cpu.so",
+                "modules/rampart-clip.so",
                 "modules/rampart-sentencepiece.so",
                 /* rampart-onnx: ONE CPU-floor module (static ONNX
                    Runtime) + its JS model catalog.  Not variant-
@@ -306,12 +308,20 @@ module.exports = {
                    auto-discovers by its own location.  Not built on the
                    2_17 tier or armv7; skip-missing drops it there. */
                 "modules/rampart-onnx.so",
-                "modules/rampart-models.js"],
+                "modules/rampart-models.js",
+                /* rampart-clip's test + its Public-Domain photo corpus.
+                   Shipped in EVERY langtools variant (same rule as
+                   sentencepiece/onnx) so a lone --install of any one
+                   variant is self-contained and the test is runnable.
+                   Skip-missing drops them where clip isn't built. */
+                "test/clip-test.js",
+                "test/test_images/"],
         symlinks: {
             "modules/rampart-faiss.so":    "rampart-faiss_cpu.so",
-            "modules/rampart-llamacpp.so": "rampart-llamacpp_cpu.so"
+            "modules/rampart-llamacpp.so": "rampart-llamacpp_cpu.so",
+            "modules/rampart-clip.so":     "rampart-clip_cpu.so"
         },
-        notes: "Local LLM + vector search + ONNX embeddings (CPU build)"
+        notes: "Local LLM + vector search + CLIP + ONNX embeddings (CPU build)"
     },
 
     /* CUDA-accelerated langtools.  Three per-runtime variants -- pick
@@ -326,14 +336,18 @@ module.exports = {
            variant is self-contained; onnx just runs on CPU here. */
         files: ["modules/rampart-faiss_cu11.so",
                 "modules/rampart-llamacpp_cu11.so",
+                "modules/rampart-clip_cu11.so",
                 "modules/rampart-sentencepiece.so",
                 "modules/rampart-onnx.so",
-                "modules/rampart-models.js"],
+                "modules/rampart-models.js",
+                "test/clip-test.js",
+                "test/test_images/"],
         symlinks: {
             "modules/rampart-faiss.so":    "rampart-faiss_cu11.so",
-            "modules/rampart-llamacpp.so": "rampart-llamacpp_cu11.so"
+            "modules/rampart-llamacpp.so": "rampart-llamacpp_cu11.so",
+            "modules/rampart-clip.so":     "rampart-clip_cu11.so"
         },
-        notes: "Langtools, CUDA 11 faiss/llamacpp; onnx CPU (linux-*-x86_64 only)"
+        notes: "Langtools, CUDA 11 faiss/llamacpp/clip; onnx CPU (linux-*-x86_64 only)"
     },
 
     "rampart-langtools-cu12": {
@@ -347,15 +361,19 @@ module.exports = {
            on tiers that didn't build it. */
         files: ["modules/rampart-faiss_cu12.so",
                 "modules/rampart-llamacpp_cu12.so",
+                "modules/rampart-clip_cu12.so",
                 "modules/rampart-sentencepiece.so",
                 "modules/rampart-onnx.so",
                 "modules/rampart-models.js",
-                "modules/onnx-cu12/"],
+                "modules/onnx-cu12/",
+                "test/clip-test.js",
+                "test/test_images/"],
         symlinks: {
             "modules/rampart-faiss.so":    "rampart-faiss_cu12.so",
-            "modules/rampart-llamacpp.so": "rampart-llamacpp_cu12.so"
+            "modules/rampart-llamacpp.so": "rampart-llamacpp_cu12.so",
+            "modules/rampart-clip.so":     "rampart-clip_cu12.so"
         },
-        notes: "Langtools, CUDA 12 (faiss/llamacpp + onnx GPU) (linux-*-x86_64 only)"
+        notes: "Langtools, CUDA 12 (faiss/llamacpp/clip + onnx GPU) (linux-*-x86_64 only)"
     },
 
     "rampart-langtools-cu13": {
@@ -366,15 +384,19 @@ module.exports = {
            See the cu12 entry. */
         files: ["modules/rampart-faiss_cu13.so",
                 "modules/rampart-llamacpp_cu13.so",
+                "modules/rampart-clip_cu13.so",
                 "modules/rampart-sentencepiece.so",
                 "modules/rampart-onnx.so",
                 "modules/rampart-models.js",
-                "modules/onnx-cu13/"],
+                "modules/onnx-cu13/",
+                "test/clip-test.js",
+                "test/test_images/"],
         symlinks: {
             "modules/rampart-faiss.so":    "rampart-faiss_cu13.so",
-            "modules/rampart-llamacpp.so": "rampart-llamacpp_cu13.so"
+            "modules/rampart-llamacpp.so": "rampart-llamacpp_cu13.so",
+            "modules/rampart-clip.so":     "rampart-clip_cu13.so"
         },
-        notes: "Langtools, CUDA 13 (faiss/llamacpp + onnx GPU) (linux-*-x86_64 only)"
+        notes: "Langtools, CUDA 13 (faiss/llamacpp/clip + onnx GPU) (linux-*-x86_64 only)"
     },
 
     /* =============================================================

@@ -4,6 +4,7 @@
  * see rsal.txt for details
  */
 #include "txcoreconfig.h"
+#include <stdarg.h>
 #include <limits.h>
 #include <stdlib.h>
 #include <pthread.h>
@@ -167,6 +168,28 @@ static size_t (*g_rp_onnx_embed_spans)(void *, const char *, size_t,
                                        rp_embed_span_t **)               = NULL;
 static void   (*g_rp_onnx_embed_set_cache_cap)(void *, size_t)          = NULL;
 
+/* --- rampart-clip (CLIP: image + text encoders in ONE shared space) ---
+ * Same C-ABI shape as the onnx pointers above (allocate *out_vec, return
+ * the dim, 0 on failure).  There is no _doc / _spans pair: CLIP has no
+ * chunking -- an image is one vector and its text tower is ~77 tokens --
+ * so chunkembed()/abstract-with-Vec are rejected for a clip connection
+ * rather than silently doing something else. */
+static int    (*g_rp_clip_iface_v1)(void)                                = NULL;
+static void  *(*g_rp_clip_embed_load)(const char *, char *, size_t)      = NULL;
+static size_t (*g_rp_clip_embed_text)(void *, const char *, size_t,
+                                      float **)                          = NULL;
+static size_t (*g_rp_clip_embed_image_path)(void *, const char *,
+                                            float **)                    = NULL;
+/* image BYTES -- used only by the parameter substitution below, which
+ * embeds in the parent where the bytes already are (they never cross to
+ * the helper and back). */
+static size_t (*g_rp_clip_embed_image)(void *, const void *, size_t,
+                                       float **)                         = NULL;
+static int    (*g_rp_clip_embed_dim)(void *)                             = NULL;
+static int    (*g_rp_clip_has_text)(void *)                              = NULL;
+static int    (*g_rp_clip_has_vision)(void *)                            = NULL;
+static void   (*g_rp_clip_embed_release)(void *)                         = NULL;
+
 /* likevCache: requested doc-result cache capacity for the connection's
  * embed handle (−1 = not set this session -> leave the default of 10).
  * Applied to the active handle when both it and this value are known,
@@ -180,7 +203,19 @@ typedef enum {
     EMBED_ENGINE_NONE     = 0,
     EMBED_ENGINE_LLAMACPP = 1,
     EMBED_ENGINE_ONNX     = 2,
+    EMBED_ENGINE_CLIP     = 3,
 } embed_engine_t;
+
+/* Name for error messages, so a failure says which engine refused. */
+static const char *embed_engine_name(embed_engine_t e)
+{
+    switch (e) {
+        case EMBED_ENGINE_LLAMACPP: return "llamacpp";
+        case EMBED_ENGINE_ONNX:     return "onnx";
+        case EMBED_ENGINE_CLIP:     return "clip";
+        default:                    return "none";
+    }
+}
 
 /* --- LRU embed cache (Step 5) ---------------------------------------
  *
@@ -385,6 +420,10 @@ static int    peek_onnxembed_setting(duk_context *ctx,
 static int    setup_onnx_main(duk_context *ctx, const char *model_path,
                               const rp_onnx_embed_opts *opts,
                               char *errbuf, size_t errbuflen);
+static int    peek_clipembed_setting(duk_context *ctx,
+                                     const char **model_path_out);
+static int    setup_clip_main(duk_context *ctx, const char *model_path,
+                              char *errbuf, size_t errbuflen);
 static int    embed_lru_set_capacity(size_t capacity);
 static int    fork_drain_embed_callbacks(void);
 
@@ -445,6 +484,35 @@ __thread embed_engine_t g_active_embed_engine = EMBED_ENGINE_NONE;
  * g_last_loaded_embed_handle for llamacpp: h_set() reads this to
  * attach the model to THIS connection's DB_HANDLE. */
 __thread void *g_last_loaded_onnx_handle = NULL;
+
+/* Same, for a CLIP model bound by setup_clip_main. */
+__thread void *g_last_loaded_clip_handle = NULL;
+
+/* --- embed failure latch ---------------------------------------------
+ * An embed() / chunkembed() that FAILS makes texis substitute a NULL
+ * field and carry on, so a bare SELECT would hand back a null vector
+ * with only sql.errMsg to say why.  A long ingest run driven by a script
+ * that never reads errMsg would silently produce vector-less rows.  So
+ * the callbacks latch a real failure here, and rp_sql_exec_query turns
+ * it into a throw -- for exec() only; query() keeps its documented
+ * never-throw behaviour.
+ *
+ * IMPORTANT: only set for a GENUINE failure -- an empty input legitimately
+ * yields a null vector (chunkembed('') is null by design, and the wiki
+ * builders rely on it to keep empty articles searchable by keyword), so
+ * callers must not latch when there was nothing to embed. */
+__thread int  g_embed_failed = 0;
+__thread char g_embed_failmsg[256] = {0};
+
+static void embed_fail_latch(const char *fmt, ...)
+{
+    va_list ap;
+    if (g_embed_failed) return;          /* keep the FIRST failure */
+    g_embed_failed = 1;
+    va_start(ap, fmt);
+    vsnprintf(g_embed_failmsg, sizeof g_embed_failmsg, fmt, ap);
+    va_end(ap);
+}
 
 /* --- Retrieval prompt prefixes (asymmetric embed models) --------------
  *
@@ -2328,9 +2396,13 @@ static void parent_service_embed(void)
         if (composed) { text = composed; tlen = clen; }
     }
 
-    /* --- LRU lookup ----------------------------------------------- */
+    /* --- LRU lookup -----------------------------------------------
+     * Skipped for TXEMBED_IMAGE: the key would be the image's PATH, so
+     * a file edited in place would serve its old vector forever.  Images
+     * are normally embedded once at insert time, so there is little to
+     * cache anyway. */
     int  hit_dim = 0;
-    if (g_lru.initialized && g_lru.capacity > 0) {
+    if (kind != TXEMBED_IMAGE && g_lru.initialized && g_lru.capacity > 0) {
         uint64_t h = embed_lru_key(g_active_embed_handle, text, tlen);
         pthread_mutex_lock(&g_lru.mtx);
         embed_lru_node_t *n = embed_lru_find_locked(h, g_active_embed_handle, text, tlen);
@@ -2372,6 +2444,34 @@ static void parent_service_embed(void)
      * path is per-connection too -- not the old "first sql.set wins" global.
      * Dispatch by engine tag so onnxEmbed and llamaEmbed connections coexist. */
     if (g_active_embed_handle) {
+        if (kind == TXEMBED_IMAGE) {
+            /* image path -> image encoder; see main_embed_callback for why
+             * a non-image engine must fail rather than embed the path. */
+            if (g_active_embed_engine == EMBED_ENGINE_CLIP &&
+                g_rp_clip_embed_image_path)
+            {
+                /* `text` may point into the mmap and is not guaranteed
+                 * NUL-terminated there; embed_compose_text() has already
+                 * copied it out when it composed, but for IMAGE nothing
+                 * composes -- so make a bounded copy for the path ABI. */
+                char *p = (char *)malloc(tlen + 1);
+                if (p) {
+                    memcpy(p, text, tlen);
+                    p[tlen] = '\0';
+                    dim = g_rp_clip_embed_image_path(g_active_embed_handle, p, &vec);
+                    free(p);
+                }
+            } else {
+                putmsg(MERR + UGE, "embed",
+                       "embed(..., 'image') needs an image encoder, but this "
+                       "connection's embed engine is %s -- use sql.set({clipEmbed:...})",
+                       embed_engine_name(g_active_embed_engine));
+                embed_fail_latch("embed(..., 'image') needs an image encoder, but "
+                                 "this connection's embed engine is %s -- use "
+                                 "sql.set({clipEmbed:...})",
+                                 embed_engine_name(g_active_embed_engine));
+            }
+        } else
         switch (g_active_embed_engine) {
         case EMBED_ENGINE_LLAMACPP:
             if (g_rp_embed_text)
@@ -2381,19 +2481,29 @@ static void parent_service_embed(void)
             if (g_rp_onnx_embed_text)
                 dim = g_rp_onnx_embed_text(g_active_embed_handle, text, tlen, &vec);
             break;
+        case EMBED_ENGINE_CLIP:
+            if (g_rp_clip_embed_text)
+                dim = g_rp_clip_embed_text(g_active_embed_handle, text, tlen, &vec);
+            break;
         default: break;
         }
     }
     if (dim == 0 || !vec) {
         if (vec) free(vec);
+        /* same rule as the in-process path: only a non-empty input that
+         * produced nothing is a failure */
+        if (tlen)
+            embed_fail_latch("embed(): the %s embed model returned no vector",
+                             embed_engine_name(g_active_embed_engine));
         forkwrite((char *)&fail, sizeof fail);
         free(composed);
         return;
     }
 
     /* Cache it before overwriting mmap (lru_put copies text + vec into
-     * a fresh node; lock briefly). */
-    if (g_lru.initialized && g_lru.capacity > 0) {
+     * a fresh node; lock briefly).  Images are not cached -- see the
+     * lookup side above. */
+    if (kind != TXEMBED_IMAGE && g_lru.initialized && g_lru.capacity > 0) {
         uint64_t h = embed_lru_key(g_active_embed_handle, text, tlen);
         pthread_mutex_lock(&g_lru.mtx);
         embed_lru_put_locked(h, g_active_embed_handle, text, tlen, vec, dim);
@@ -3549,12 +3659,21 @@ static int h_set(duk_context *ctx, DB_HANDLE *h, char *errbuf)
     rp_onnx_embed_opts onnx_opts;
     int wants_onnx = wants_embed ? 0 : peek_onnxembed_setting(ctx, &onnx_model, &onnx_opts);
 
+    /* clipEmbed is third in the same precedence chain. */
+    const char *clip_model = NULL;
+    int wants_clip = (wants_embed || wants_onnx)
+                   ? 0 : peek_clipembed_setting(ctx, &clip_model);
+
     /* Resolve the model's retrieval prompts NOW, while the settings object
-     * is at stack top (fork_sql_set / sql_set may leave a response there). */
+     * is at stack top (fork_sql_set / sql_set may leave a response there).
+     * CLIP participates too: its text tower can carry a query prompt
+     * (zero-shot CLIP conventionally wraps queries as "a photo of a ..."). */
     if (wants_embed)
         resolve_embed_prompts(ctx, "llamaembed", embed_path);
     else if (wants_onnx)
         resolve_embed_prompts(ctx, "onnxembed", onnx_model);
+    else if (wants_clip)
+        resolve_embed_prompts(ctx, "clipembed", clip_model);
 
     if (wants_embed && DB_HANDLE_IS(h, DB_FLAG_FORK)) {
         /* Forked path: load model in main before shipping settings.
@@ -3572,6 +3691,13 @@ static int h_set(duk_context *ctx, DB_HANDLE *h, char *errbuf)
             return -1;
         }
     }
+    if (wants_clip && DB_HANDLE_IS(h, DB_FLAG_FORK)) {
+        char eerr[256] = {0};
+        if (setup_clip_main(ctx, clip_model, eerr, sizeof eerr) != 0) {
+            snprintf(errbuf, msgbufsz, "%s", eerr);
+            return -1;
+        }
+    }
 
     int ret;
     if(DB_HANDLE_IS(h,DB_FLAG_FORK))
@@ -3579,7 +3705,7 @@ static int h_set(duk_context *ctx, DB_HANDLE *h, char *errbuf)
     else
         ret = sql_set(ctx, h->tx, errbuf);
 
-    if (ret >= 0 && (wants_embed || wants_onnx)) {
+    if (ret >= 0 && (wants_embed || wants_onnx || wants_clip)) {
         DB_HANDLE_SET(h, DB_FLAG_EMBED_ENABLED);
         /* Attach the just-loaded model to THIS connection's handle (the model
          * is process-global / refcounted-by-path; we only store the pointer).
@@ -3589,9 +3715,12 @@ static int h_set(duk_context *ctx, DB_HANDLE *h, char *errbuf)
         if (wants_embed) {
             h->embed_handle = g_last_loaded_embed_handle;
             h->embed_engine = EMBED_ENGINE_LLAMACPP;
-        } else {
+        } else if (wants_onnx) {
             h->embed_handle = g_last_loaded_onnx_handle;
             h->embed_engine = EMBED_ENGINE_ONNX;
+        } else {
+            h->embed_handle = g_last_loaded_clip_handle;
+            h->embed_engine = EMBED_ENGINE_CLIP;
         }
         attach_prompts_to_handle(h);
         apply_pending_doccache_cap(h->embed_handle, h->embed_engine);
@@ -6088,6 +6217,216 @@ static duk_idx_t load_list(duk_context *ctx)
 }
 #endif // LIKEP_PARAM_SUBSTITUTIONS
 
+/* ---- clipEmbed: image-BUFFER parameter substitution -----------------
+ *
+ *   insert into t values (?, embed(?, 'image'));   -- ? is a Buffer
+ *
+ * A buffer parameter is already in THIS process, and this process owns
+ * the model -- but SQL runs in the helper, so the plain path would ship
+ * the bytes to the helper and straight back again (and the 'B' wire is
+ * capped at FORKMAPSIZE).  Instead: embed here, rewrite that
+ * `embed(...)` span to a bare `?`, and bind the resulting VECTOR in
+ * place of the bytes.  Same statement, same stored vector, but the
+ * image never crosses a process boundary.  A String parameter (a path)
+ * is left completely alone -- it flows through the normal path.
+ *
+ * Rewriting `embed(?, 'image')` -> `?` keeps the number of `?` in the
+ * statement identical, so every parameter index is unchanged.
+ *
+ * Deliberately conservative: the span must match exactly
+ * `embed ( ? [, '<dtype>'] , 'image' )` (whitespace anywhere, any case).
+ * ANY deviation -- a named param, a non-buffer value, extra arguments,
+ * no clip engine bound -- leaves the statement byte-for-byte untouched
+ * and the old path handles it.  A miss therefore degrades to current
+ * behaviour, never to a wrong vector.
+ */
+/* dtype word -> bytes per cell + the texis type name for the cast the
+ * substitution emits.  The cast is what keeps the rewritten expression
+ * the SAME TYPE as embed() would have produced -- without it, `select
+ * embed(?,'image')` would come back as a raw byte buffer rather than a
+ * vector.  NOTE the type names are case-SENSITIVE in texis ('varvecf16'
+ * is rejected as an unknown type; 'varvecF16' is right). */
+static int clip_dtype_word(const char *s, size_t n, int *cellbytes,
+                           const char **vtype)
+{
+    if      (n == 3 && !strncasecmp(s, "f16",  3)) { *cellbytes = 2; *vtype = "varvecF16"; return 1; }
+    else if (n == 3 && !strncasecmp(s, "f32",  3)) { *cellbytes = 4; *vtype = "varvecF32"; return 1; }
+    else if (n == 3 && !strncasecmp(s, "f64",  3)) { *cellbytes = 8; *vtype = "varvecF64"; return 1; }
+    else if (n == 4 && !strncasecmp(s, "auto", 4)) { *cellbytes = 2; *vtype = "varvecF16"; return 1; }
+    return 0;    /* bf16 (and anything else): leave the statement alone */
+}
+
+/* Push a JS buffer holding `vec` in the dtype the statement asked for.
+ * cellbytes: 2=f16 (default), 4=f32, 8=f64.  bf16 is not produced here
+ * -- callers requesting it fall back to leaving the span alone. */
+static void clip_push_vec_buffer(duk_context *ctx, const float *vec,
+                                 size_t dim, int cellbytes)
+{
+    if (cellbytes == 4) {
+        void *b = duk_push_fixed_buffer(ctx, dim * sizeof(float));
+        memcpy(b, vec, dim * sizeof(float));
+    } else if (cellbytes == 8) {
+        double *b = (double *)duk_push_fixed_buffer(ctx, dim * sizeof(double));
+        for (size_t i = 0; i < dim; i++) b[i] = (double)vec[i];
+    } else {
+        void *b = duk_push_fixed_buffer(ctx, dim * sizeof(uint16_t));
+        rpvec_f32_to_f16((float *)vec, (uint16_t *)b, dim);
+    }
+}
+
+/* Returns a malloc'd rewritten statement, or NULL when nothing matched
+ * (in which case the caller keeps its original sql untouched). */
+#define CLIP_SUB_MAX 8            /* image params substituted per statement */
+#define CLIP_SUB_NAMELEN 24
+static char *clip_sub_image_params(duk_context *ctx, DB_HANDLE *h,
+                                   const char *sql, duk_idx_t obj_idx,
+                                   char **pnames, int npnames,
+                                   char subnames[][CLIP_SUB_NAMELEN], int *nsub,
+                                   char *errbuf, size_t errlen)
+{
+    const char *s = sql;
+    char *out = NULL, *o;
+    int   qidx = 0, changed = 0;
+
+    if (!h || h->embed_engine != EMBED_ENGINE_CLIP || !h->embed_handle ||
+        !g_rp_clip_embed_image || obj_idx < 0 || !pnames)
+        return NULL;
+    /* cheap pre-test: no 'image' anywhere means nothing to do */
+    {
+        const char *p; int found = 0;
+        for (p = sql; *p; p++)
+            if ((*p=='i'||*p=='I') && !strncasecmp(p, "image", 5)) { found = 1; break; }
+        if (!found) return NULL;
+    }
+
+    /* the replacement `convert(?, 'varvecF16')` can be longer than the
+     * span it replaces (e.g. `embed(?,'image')`), so allow room */
+    out = (char *)malloc(strlen(sql) + 64);
+    if (!out) return NULL;
+    o = out;
+
+    while (*s) {
+        /* copy quoted strings verbatim so a '?' inside one is not counted */
+        if (*s == '\'' || *s == '"') {
+            char q = *s;
+            *o++ = *s++;
+            while (*s && *s != q) {
+                if (*s == '\\' && s[1]) *o++ = *s++;
+                *o++ = *s++;
+            }
+            if (*s) *o++ = *s++;
+            continue;
+        }
+        if (*s == '?') { qidx++; *o++ = *s++; continue; }
+
+        /* `embed` as a whole word, not preceded by an identifier char */
+        if ((*s == 'e' || *s == 'E') && !strncasecmp(s, "embed", 5) &&
+            (s == sql || (!isalnum((unsigned char)s[-1]) && s[-1] != '_')) &&
+            !isalnum((unsigned char)s[5]) && s[5] != '_')
+        {
+            const char *p = s + 5;
+            while (isspace((unsigned char)*p)) p++;
+            if (*p == '(') {
+                const char *span = s;          /* for verbatim fallback */
+                int    cellbytes = 2;          /* f16 default */
+                const char *vtype = "varvecF16";
+                int    sawImage = 0, ok = 1, nargs = 0;
+                p++;                           /* past '(' */
+                while (isspace((unsigned char)*p)) p++;
+                if (*p != '?') ok = 0;         /* first arg must be a bare ? */
+                else {
+                    p++;
+                    nargs = 1;
+                    while (ok) {
+                        while (isspace((unsigned char)*p)) p++;
+                        if (*p == ')') { p++; break; }
+                        if (*p != ',') { ok = 0; break; }
+                        p++;
+                        while (isspace((unsigned char)*p)) p++;
+                        if (*p != '\'' && *p != '"') { ok = 0; break; }
+                        {   /* a quoted arg: dtype word or kind word */
+                            char q = *p++;
+                            const char *a = p;
+                            while (*p && *p != q) p++;
+                            if (!*p) { ok = 0; break; }
+                            size_t alen = (size_t)(p - a);
+                            p++;               /* past closing quote */
+                            nargs++;
+                            if (alen == 5 && !strncasecmp(a, "image", 5))
+                                sawImage = 1;
+                            else if (!clip_dtype_word(a, alen, &cellbytes, &vtype))
+                                ok = 0;        /* title/bf16/other: leave alone */
+                        }
+                        if (nargs > 3) { ok = 0; break; }
+                    }
+                }
+                if (ok && sawImage && qidx < npnames && pnames[qidx] &&
+                    *nsub < CLIP_SUB_MAX)
+                {
+                    /* The parameter this `?` refers to.  parse_sql_parameters
+                     * has already turned both `?` and `?name` into positional
+                     * `?` with pnames[] holding the key each one reads, so a
+                     * single lookup covers both forms. */
+                    duk_get_prop_string(ctx, obj_idx, pnames[qidx]);
+                    if (duk_is_buffer_data(ctx, -1)) {
+                        duk_size_t blen = 0;
+                        void *b = duk_get_buffer_data(ctx, -1, &blen);
+                        float *vec = NULL;
+                        size_t dim = blen ? g_rp_clip_embed_image(h->embed_handle,
+                                                                  b, (size_t)blen, &vec)
+                                          : 0;
+                        if (dim && vec) {
+                            /* Bind the vector under a FRESH key rather than
+                             * overwriting pnames[qidx]: the same name may be
+                             * used by another `?` in the statement -- e.g.
+                             *   insert into t values (?p, embed(?p,'image'))
+                             * -- and that one must still see the caller's
+                             * original value.  Skip any name already present
+                             * so a caller's own property is never shadowed. */
+                            char nm[CLIP_SUB_NAMELEN];
+                            int  k = 0;
+                            do {
+                                snprintf(nm, sizeof nm, "__clipvec%d", k++);
+                            } while (k < 1000 && duk_has_prop_string(ctx, obj_idx, nm));
+                            clip_push_vec_buffer(ctx, vec, dim, cellbytes);
+                            duk_put_prop_string(ctx, obj_idx, nm);
+                            /* point THIS `?` at the new key */
+                            free(pnames[qidx]);
+                            pnames[qidx] = strdup(nm);
+                            /* remember it so the caller can delete it again */
+                            snprintf(subnames[*nsub], CLIP_SUB_NAMELEN, "%s", nm);
+                            (*nsub)++;
+                            free(vec);
+                            duk_pop(ctx);              /* the original buffer */
+                            /* cast keeps the expression's TYPE identical to
+                             * what embed() would have returned */
+                            o += sprintf(o, "convert(?, '%s')", vtype);
+                            qidx++;
+                            s = p;                      /* past the whole span */
+                            changed = 1;
+                            continue;
+                        }
+                        free(vec);
+                        duk_pop(ctx);
+                        snprintf(errbuf, errlen,
+                                 "embed(?, 'image'): could not embed the image "
+                                 "buffer given for parameter %d", qidx);
+                        free(out);
+                        return NULL;            /* caller throws errbuf */
+                    }
+                    duk_pop(ctx);               /* not a buffer: leave alone */
+                }
+                (void)span;
+            }
+            /* no match: fall through and copy 'embed' verbatim */
+        }
+        *o++ = *s++;
+    }
+    *o = '\0';
+    if (!changed) { free(out); return NULL; }
+    return out;
+}
+
 /* **************************************************
    Sql.prototype.exec
    ************************************************** */
@@ -6108,6 +6447,12 @@ static duk_ret_t rp_sql_exec_query(duk_context *ctx, int isquery)
 
     int nParams=0;
     char *newSql=NULL, **namedSqlParams=NULL;
+    /* temporary parameter keys added by clip_sub_image_params(); removed
+     * again as soon as they are bound, so the caller's parameter object
+     * is never observably changed (it may be an object the script is
+     * using elsewhere, and exec's row callback can see it). */
+    char clipSubNames[CLIP_SUB_MAX][CLIP_SUB_NAMELEN];
+    int  nClipSub = 0;
     //  signal(SIGUSR2, die_nicely);
 
     SET_THREAD_UNSAFE(ctx);
@@ -6283,6 +6628,20 @@ static duk_ret_t rp_sql_exec_query(duk_context *ctx, int isquery)
                         DB_HANDLE_SET(h, DB_FLAG_EMBED_ENABLED);
                     }
                 }
+            } else if (g_rp_clip_embed_load) {
+                const char *cmodel = NULL;
+                if (peek_clipembed_setting(ctx, &cmodel) && cmodel) {
+                    char eerr[256] = {0};
+                    void *mh = g_rp_clip_embed_load(cmodel, eerr, sizeof eerr);
+                    if (mh) {
+                        h->embed_handle = mh;
+                        h->embed_engine = EMBED_ENGINE_CLIP;
+                        resolve_embed_prompts(ctx, "clipembed", cmodel);
+                        attach_prompts_to_handle(h);
+                        /* no doc cache: CLIP has no chunked doc path */
+                        DB_HANDLE_SET(h, DB_FLAG_EMBED_ENABLED);
+                    }
+                }
             }
         }
         duk_pop(ctx);
@@ -6293,6 +6652,10 @@ static duk_ret_t rp_sql_exec_query(duk_context *ctx, int isquery)
     g_active_prompt_document  = h->embed_prompt_document;
     g_active_prompt_doc_title = h->embed_prompt_doc_title;
 
+    /* arm the embed failure latch for THIS statement (see g_embed_failed) */
+    g_embed_failed = 0;
+    g_embed_failmsg[0] = '\0';
+
 //  messes up the count for arg_idx, so just leave it
 //    duk_remove(ctx, this_idx); //no longer needed
 
@@ -6302,9 +6665,41 @@ static duk_ret_t rp_sql_exec_query(duk_context *ctx, int isquery)
         namedSqlParams=freenames(namedSqlParams, nParams);
         throw_tx_or_log_error(ctx, "open sql", finfo->errmap);
     }
+
+    /* clipEmbed: turn `embed(?, 'image')` over a BUFFER parameter into a
+     * bare `?` bound to the vector, embedded here in the parent.  Done
+     * after the model is active (just above) and before PREP so the
+     * helper only ever sees the rewritten statement.  Returns NULL when
+     * nothing matched -- the overwhelmingly common case, and cheap. */
+    {
+        char cerr[256] = {0};
+        char *csql = clip_sub_image_params(ctx, h, q->sql, q->obj_idx,
+                                           namedSqlParams, nParams,
+                                           clipSubNames, &nClipSub,
+                                           cerr, sizeof cerr);
+        if (csql) {
+            /* park it on the stack like newSql above, so its lifetime is
+             * the duktape value stack's problem, not every exit path's */
+            duk_push_string(ctx, csql);
+            free(csql);
+            duk_replace(ctx, q->str_idx);
+            q->sql = duk_get_string(ctx, q->str_idx);
+        } else if (cerr[0]) {
+            /* an earlier image in the same statement may already have been
+             * substituted -- take those keys back off before throwing */
+            while (nClipSub > 0)
+                duk_del_prop_string(ctx, q->obj_idx, clipSubNames[--nClipSub]);
+            namedSqlParams=freenames(namedSqlParams, nParams);
+            h_close(h);
+            RP_THROW(ctx, "sql exec: %s", cerr);
+        }
+    }
+
     /* PREP */
     if (!h_prep(h, (char *)q->sql))
     {
+        while (nClipSub > 0)
+            duk_del_prop_string(ctx, q->obj_idx, clipSubNames[--nClipSub]);
         namedSqlParams=freenames(namedSqlParams, nParams);
         throw_tx_or_log_error_close(ctx, "sql prep", finfo->errmap, h);
     }
@@ -6322,7 +6717,16 @@ static duk_ret_t rp_sql_exec_query(duk_context *ctx, int isquery)
             throw_or_log_error("sql.exec - parameters specified in sql statement, but no corresponding object or array");
         }
 
-        if (!rp_add_named_parameters(ctx, h, q->obj_idx, namedSqlParams, nParams))
+        int addok = rp_add_named_parameters(ctx, h, q->obj_idx, namedSqlParams, nParams);
+
+        /* Remove the temporary __clipvecN keys the moment they are bound --
+         * before the failure path below, and before h_exec can call back
+         * into JS -- so the caller's parameter object is byte-for-byte what
+         * it was.  texis already holds its own copy of each bound value. */
+        while (nClipSub > 0)
+            duk_del_prop_string(ctx, q->obj_idx, clipSubNames[--nClipSub]);
+
+        if (!addok)
         {
             namedSqlParams=freenames(namedSqlParams, nParams);
             throw_tx_or_log_error_close(ctx, "sql add parameters", finfo->errmap, h);
@@ -6374,6 +6778,16 @@ static duk_ret_t rp_sql_exec_query(duk_context *ctx, int isquery)
     end:
     rp_log_error(ctx);
     h_end_transaction(h);
+
+    /* An embed()/chunkembed() that failed mid-statement leaves a NULL
+     * field behind rather than stopping texis, so raise it here where it
+     * cannot be missed.  exec() throws; query() keeps its documented
+     * never-throw contract and the reason stays in errMsg. */
+    if (g_embed_failed) {
+        g_embed_failed = 0;
+        if (!isquery)
+            RP_THROW(ctx, "sql exec error: %s", g_embed_failmsg);
+    }
 
     return 1; /* returning outer array */
 
@@ -6891,6 +7305,33 @@ static size_t main_embed_callback(void *ud,
      * document / raw).  NULL = nothing to apply, embed verbatim -- so a
      * model without prompts is byte-identical to older releases.  The
      * engine's text cache keys on the composed bytes. */
+    /* TXEMBED_IMAGE is a MODALITY, not a prompt: `text` is an image file
+     * path for an image encoder.  Only CLIP has one -- every other engine
+     * must fail here, because embedding the path STRING would store a
+     * perfectly plausible, meaningless vector and silently poison the
+     * column. */
+    if (kind == TXEMBED_IMAGE) {
+        if (g_active_embed_engine != EMBED_ENGINE_CLIP) {
+            putmsg(MERR + UGE, "embed",
+                   "embed(..., 'image') needs an image encoder, but this "
+                   "connection's embed engine is %s -- use sql.set({clipEmbed:...})",
+                   embed_engine_name(g_active_embed_engine));
+            embed_fail_latch("embed(..., 'image') needs an image encoder, but "
+                             "this connection's embed engine is %s -- use "
+                             "sql.set({clipEmbed:...})",
+                             embed_engine_name(g_active_embed_engine));
+            return 0;
+        }
+        if (!g_rp_clip_embed_image_path) return 0;
+        /* text is NUL-terminated here (texis hands a C string); the ABI
+         * takes a path, not a length. */
+        r = g_rp_clip_embed_image_path(g_active_embed_handle, text, out_vec);
+        if (!r && tlen)
+            embed_fail_latch("embed(..., 'image'): could not read or decode "
+                             "the image '%.*s'", (int)(tlen > 120 ? 120 : tlen), text);
+        return r;
+    }
+
     composed = embed_compose_text(kind, title, title_len, text, tlen, &clen);
     if (composed) { text = composed; tlen = clen; }
 
@@ -6903,10 +7344,20 @@ static size_t main_embed_callback(void *ud,
         if (g_rp_onnx_embed_text)
             r = g_rp_onnx_embed_text(g_active_embed_handle, text, tlen, out_vec);
         break;
+    case EMBED_ENGINE_CLIP:
+        /* text tower -- shares the vector space with the image tower */
+        if (g_rp_clip_embed_text)
+            r = g_rp_clip_embed_text(g_active_embed_handle, text, tlen, out_vec);
+        break;
     default:
         break;
     }
     free(composed);
+    /* Latch only when there WAS something to embed: an empty input
+     * legitimately produces a null vector (see g_embed_failed). */
+    if (!r && tlen)
+        embed_fail_latch("embed(): the %s embed model returned no vector",
+                         embed_engine_name(g_active_embed_engine));
     return r;
 }
 
@@ -6927,6 +7378,20 @@ static size_t main_embed_doc_callback(void *ud,
 
     (void)ud;
     if (!g_active_embed_handle) return 0;
+
+    /* CLIP has no chunking: an image is one vector and its text tower is
+     * ~77 tokens, so there is nothing to split.  Fail loudly instead of
+     * letting chunkembed()/chunkavg()/chunkcoherence() appear to work. */
+    if (g_active_embed_engine == EMBED_ENGINE_CLIP) {
+        putmsg(MERR + UGE, "chunkembed",
+               "chunkembed()/chunkavg()/chunkcoherence() are not supported "
+               "with clipEmbed: CLIP produces one vector per image or short "
+               "text and has no chunking.  Use embed(...) instead");
+        embed_fail_latch("chunkembed()/chunkavg()/chunkcoherence() are not "
+                         "supported with clipEmbed: CLIP has no chunking.  "
+                         "Use embed(...) instead");
+        return 0;
+    }
 
     /* chunkembed()'s prefix arg is the per-document TITLE.  Fold the
      * model's document prompt around it (template {title} slot, or
@@ -6990,27 +7455,21 @@ static size_t main_chunk_spans_callback(void *ud,
     return k;
 }
 
-/* Try several require() ids in turn until one resolves.  Order:
- * the canonical "rampart-llamacpp" name first (which on a system with
- * a single installed variant is the build that variant ships under),
- * then the CUDA build, then the CPU build.  require() handles path
- * resolution; no absolute paths needed here. */
-static int try_require_llamacpp(duk_context *ctx)
+/* require() a langtools engine module by its CANONICAL name --
+ * "rampart-llamacpp", "rampart-onnx", "rampart-clip".  Only the plain
+ * name is ever tried: the packager/installer symlinks it to whichever
+ * variant is installed (cpu / cu11 / cu12 / cu13), so guessing at
+ * variant-suffixed names here would just be a stale second source of
+ * truth.  require() handles path resolution; no absolute paths needed.
+ * Leaves the module object on the stack on success. */
+static int try_require_engine(duk_context *ctx, const char *name)
 {
-    static const char *candidates[] = {
-        "rampart-llamacpp",
-        "rampart-llamacpp_cuda",
-        "rampart-llamacpp_cpu",
-        NULL
-    };
-    for (int i = 0; candidates[i]; ++i) {
-        duk_push_global_object(ctx);
-        duk_get_prop_string(ctx, -1, "require");
-        duk_remove(ctx, -2);
-        duk_push_string(ctx, candidates[i]);
-        if (duk_pcall(ctx, 1) == 0) return 0;     /* module on stack */
-        duk_pop(ctx);                              /* drop the error */
-    }
+    duk_push_global_object(ctx);
+    duk_get_prop_string(ctx, -1, "require");
+    duk_remove(ctx, -2);
+    duk_push_string(ctx, name);
+    if (duk_pcall(ctx, 1) == 0) return 0;     /* module on stack */
+    duk_pop(ctx);                              /* drop the error */
     return -1;
 }
 
@@ -7026,12 +7485,11 @@ static int setup_llamacpp_main(duk_context *ctx, const char *path,
         g_rp_embed_load = dlsym(RTLD_DEFAULT, "rp_embed_load");
 
         if (!g_rp_embed_load) {
-            if (try_require_llamacpp(ctx) != 0) {
+            if (try_require_engine(ctx, "rampart-llamacpp") != 0) {
                 snprintf(errbuf, errbuflen,
                          "sql.set llamaEmbed: cannot load rampart-llamacpp "
-                         "(tried require(\"rampart-llamacpp\"), "
-                         "\"rampart-llamacpp_cuda\", and "
-                         "\"rampart-llamacpp_cpu\")");
+                         "(require(\"rampart-llamacpp\") failed -- is "
+                         "rampart-langtools installed?)");
                 return -1;
             }
             /* Stash the module object on the Sql `this` so its .so
@@ -7102,28 +7560,6 @@ static int setup_llamacpp_main(duk_context *ctx, const char *path,
  * ONNX embed plumbing — parallel to setup_llamacpp_main.
  * ============================================================ */
 
-static int try_require_onnx(duk_context *ctx)
-{
-    /* Same order as try_require_llamacpp: the bare name first (which
-     * on a system with a single installed variant is a symlink to that
-     * variant), then CUDA, then CPU. */
-    static const char *candidates[] = {
-        "rampart-onnx",
-        "rampart-onnx_cuda",
-        "rampart-onnx_cpu",
-        NULL
-    };
-    for (int i = 0; candidates[i]; ++i) {
-        duk_push_global_object(ctx);
-        duk_get_prop_string(ctx, -1, "require");
-        duk_remove(ctx, -2);
-        duk_push_string(ctx, candidates[i]);
-        if (duk_pcall(ctx, 1) == 0) return 0;     /* module on stack */
-        duk_pop(ctx);                              /* drop the error */
-    }
-    return -1;
-}
-
 /* rampart-onnx's rp_onnx_embed_load takes a rich opts struct, unlike
  * llamacpp which takes just a path.  Callers pass model path + fully-
  * populated opts (parsed from the sql.set({onnxEmbed:{...}}) object).
@@ -7137,12 +7573,11 @@ static int setup_onnx_main(duk_context *ctx,
     if (!g_rp_onnx_embed_load) {
         g_rp_onnx_embed_load = dlsym(RTLD_DEFAULT, "rp_onnx_embed_load");
         if (!g_rp_onnx_embed_load) {
-            if (try_require_onnx(ctx) != 0) {
+            if (try_require_engine(ctx, "rampart-onnx") != 0) {
                 snprintf(errbuf, errbuflen,
                          "sql.set onnxEmbed: cannot load rampart-onnx "
-                         "(tried require(\"rampart-onnx\"), "
-                         "\"rampart-onnx_cuda\", and "
-                         "\"rampart-onnx_cpu\")");
+                         "(require(\"rampart-onnx\") failed -- is "
+                         "rampart-langtools installed?)");
                 return -1;
             }
             /* Stash the JS module handle on `this` so the .so stays refcounted. */
@@ -7202,6 +7637,133 @@ static int setup_onnx_main(duk_context *ctx,
     TXregisterEmbedFunc(main_embed_callback, NULL);
     TXregisterEmbedDocFunc(main_embed_doc_callback, NULL);
     TXregisterChunkSpansFunc(main_chunk_spans_callback, NULL);
+    return 0;
+}
+
+/* ------------------------- clipEmbed --------------------------------
+ * sql.set({clipEmbed: "/path/model.gguf"}) or {clipEmbed:{model:"..."}}.
+ * CLIP puts images and text in ONE vector space, so a table of image
+ * vectors is searched with a text query:
+ *
+ *   insert into images values (?, ?, embed(?, 'image'));  -- ? = a PATH
+ *   select Path from images where Vec likev 'a dog on a beach';
+ *
+ * Only the string forms cross the SQL/helper boundary (a query, or a
+ * path) -- both tiny.  Image BYTES are deliberately not accepted: the
+ * bytes would travel helper->parent through the FORKMAPSIZE-capped wire
+ * (1MB) after already having been sent parent->helper as a parameter.
+ * The langtools side has rp_clip_embed_image() ready for that when the
+ * wire grows a large-payload path; embed the bytes in JS and bind the
+ * vector directly until then. */
+static int peek_clipembed_setting(duk_context *ctx, const char **model_path_out)
+{
+    const char *p = NULL;
+
+    if (!duk_get_prop_string(ctx, -1, "clipembed")) {
+        duk_pop(ctx);
+        return 0;
+    }
+    if (duk_is_string(ctx, -1)) {
+        p = duk_get_string(ctx, -1);
+    } else if (duk_is_object(ctx, -1) && !duk_is_array(ctx, -1) &&
+               !duk_is_function(ctx, -1)) {
+        /* object form, for parity with llamaEmbed/onnxEmbed */
+        if (duk_get_prop_string(ctx, -1, "model") && duk_is_string(ctx, -1))
+            p = duk_get_string(ctx, -1);
+        duk_pop(ctx);
+    }
+    duk_pop(ctx);
+    if (!p || !p[0]) return 0;
+    *model_path_out = p;
+    return 1;
+}
+
+static int setup_clip_main(duk_context *ctx, const char *model_path,
+                           char *errbuf, size_t errbuflen)
+{
+    /* Resolve symbols once per process (mirrors setup_onnx_main). */
+    if (!g_rp_clip_embed_load) {
+        g_rp_clip_embed_load = dlsym(RTLD_DEFAULT, "rp_clip_embed_load");
+        if (!g_rp_clip_embed_load) {
+            if (try_require_engine(ctx, "rampart-clip") != 0) {
+                snprintf(errbuf, errbuflen,
+                         "sql.set clipEmbed: cannot load rampart-clip "
+                         "(require(\"rampart-clip\") failed -- is "
+                         "rampart-langtools installed?)");
+                return -1;
+            }
+            /* Stash the JS module handle on `this` so the .so stays refcounted. */
+            duk_push_this(ctx);
+            duk_dup(ctx, -2);
+            duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("clip_module"));
+            duk_pop_2(ctx);  /* this, module */
+            g_rp_clip_embed_load = dlsym(RTLD_DEFAULT, "rp_clip_embed_load");
+        }
+        g_rp_clip_iface_v1         = dlsym(RTLD_DEFAULT, "rp_clip_iface_v1");
+        g_rp_clip_embed_text       = dlsym(RTLD_DEFAULT, "rp_clip_embed_text");
+        g_rp_clip_embed_image_path = dlsym(RTLD_DEFAULT, "rp_clip_embed_image_path");
+        g_rp_clip_embed_image      = dlsym(RTLD_DEFAULT, "rp_clip_embed_image");
+        g_rp_clip_embed_dim        = dlsym(RTLD_DEFAULT, "rp_clip_embed_dim");
+        g_rp_clip_has_text         = dlsym(RTLD_DEFAULT, "rp_clip_has_text");
+        g_rp_clip_has_vision       = dlsym(RTLD_DEFAULT, "rp_clip_has_vision");
+        g_rp_clip_embed_release    = dlsym(RTLD_DEFAULT, "rp_clip_embed_release");
+        if (!g_rp_clip_embed_load  || !g_rp_clip_iface_v1
+            || !g_rp_clip_embed_text || !g_rp_clip_embed_image_path
+            || !g_rp_clip_embed_image
+            || !g_rp_clip_embed_dim  || !g_rp_clip_has_text
+            || !g_rp_clip_has_vision || !g_rp_clip_embed_release) {
+            snprintf(errbuf, errbuflen,
+                     "sql.set clipEmbed: rampart-clip loaded but "
+                     "rp_clip_* C symbols are missing (version mismatch?)");
+            g_rp_clip_embed_load       = NULL;
+            g_rp_clip_iface_v1         = NULL;
+            g_rp_clip_embed_text       = NULL;
+            g_rp_clip_embed_image_path = NULL;
+            g_rp_clip_embed_dim        = NULL;
+            g_rp_clip_has_text         = NULL;
+            g_rp_clip_has_vision       = NULL;
+            g_rp_clip_embed_release    = NULL;
+            return -1;
+        }
+        if (g_rp_clip_iface_v1() != 1) {
+            snprintf(errbuf, errbuflen,
+                     "sql.set clipEmbed: rampart-clip ABI version %d, "
+                     "expected 1 (rebuild rampart-langtools)",
+                     g_rp_clip_iface_v1());
+            g_rp_clip_embed_load = NULL;
+            return -1;
+        }
+    }
+
+    char loaderr[256] = {0};
+    void *h = g_rp_clip_embed_load(model_path, loaderr, sizeof loaderr);
+    if (!h) {
+        snprintf(errbuf, errbuflen, "sql.set clipEmbed: %s",
+                 loaderr[0] ? loaderr : "unknown");
+        return -1;
+    }
+    /* A vision-only model (a llava-style mmproj) cannot serve
+     * `likev '<text>'` at all -- say so now rather than at first query. */
+    if (!g_rp_clip_has_text(h)) {
+        snprintf(errbuf, errbuflen,
+                 "sql.set clipEmbed: '%s' has no text encoder, so text "
+                 "queries (likev '<string>') cannot work with it",
+                 model_path);
+        g_rp_clip_embed_release(h);
+        return -1;
+    }
+    if (!g_rp_clip_has_vision(h))
+        snprintf(errbuf, errbuflen,        /* warning only: text still works */
+                 "sql.set clipEmbed: note: '%s' has no image encoder; "
+                 "embed(?, 'image') will fail", model_path);
+    g_last_loaded_clip_handle = h;
+
+    TXregisterEmbedFunc(main_embed_callback, NULL);
+    /* Deliberately NOT registering the doc/spans callbacks: CLIP has no
+     * chunking, so chunkembed()/chunkavg()/abstract(...,Vec) must fail
+     * rather than silently produce something.  If another engine on this
+     * process registered them, main_embed_doc_callback rejects a clip
+     * connection explicitly. */
     return 0;
 }
 
@@ -7590,6 +8152,37 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
             }
             char eerr[256] = {0};
             if (setup_onnx_main(ctx, model, &opts, eerr, sizeof eerr) != 0) {
+                snprintf(errbuf, msgbufsz, "%s", eerr);
+                goto return_neg_one;
+            }
+            goto propnext;
+        }
+
+        /* clipEmbed — CLIP (image + text in one vector space) via
+         * rampart-clip.  Accepts a bare path String or {model:'...'}.
+         * Same fork-vs-main split as the two above. */
+        if (!strcasecmp(prop, "clipEmbed"))
+        {
+            const char *cpath = NULL;
+            if (duk_is_string(ctx, -1)) {
+                cpath = duk_get_string(ctx, -1);
+            } else if (duk_is_object(ctx, -1) && !duk_is_array(ctx, -1)) {
+                if (duk_get_prop_string(ctx, -1, "model") && duk_is_string(ctx, -1))
+                    cpath = duk_get_string(ctx, -1);
+                duk_pop(ctx);
+            }
+            if (!cpath || !cpath[0]) {
+                snprintf(errbuf, msgbufsz,
+                         "sql.set: clipEmbed must be a String path to a CLIP "
+                         ".gguf, or an object {model:'<path>'}");
+                goto return_neg_one;
+            }
+            if (thisfork) {
+                setup_llamacpp_callback();   /* wire callback is engine-agnostic */
+                goto propnext;
+            }
+            char eerr[256] = {0};
+            if (setup_clip_main(ctx, cpath, eerr, sizeof eerr) != 0) {
                 snprintf(errbuf, msgbufsz, "%s", eerr);
                 goto return_neg_one;
             }
