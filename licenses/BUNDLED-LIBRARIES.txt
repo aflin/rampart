@@ -63,15 +63,73 @@ rampart-langtools package
 =========================
 
 rampart-langtools (and its rampart-langtools-cuda variant) ships
-rampart-faiss.so + rampart-llamacpp.so + rampart-sentencepiece.so.
+rampart-faiss.so + rampart-llamacpp.so + rampart-sentencepiece.so
++ rampart-clip.so.
 These .so's are built with RPATH "$ORIGIN/../lib" so they pick up
 the install bundle's libopenblas / libgfortran / libgomp / libquadmath
 (see the first section of this file for their licenses).  No additional
 runtime libraries are bundled inside the langtools package itself.
 
+rampart-clip.so statically compiles in two additional third-party
+sources (neither adds a runtime .so of its own):
+
+  clip.cpp    the CLIP model definition, its two transformer towers,
+              the CLIP BPE tokenizer and the bicubic image
+              preprocessing -- ported onto the same ggml that
+              rampart-llamacpp links, so ggml is NOT a second copy
+                                        -> clip.cpp-license.txt  (MIT)
+
+  stb_image   the single-header image decoder used to read JPEG / PNG /
+              BMP / GIF / TGA / PSD / HDR / PIC / PNM, from a file or
+              from a memory buffer      -> stb_image-license.txt
+                                           (MIT or public domain --
+                                            the user may choose either)
+
 The rampart-langtools-cuda variant additionally links against NVIDIA's
 proprietary libcudart / libcublas / libcublasLt at runtime.  Those are
 NOT redistributed by us; users must install the NVIDIA CUDA toolkit
+themselves under NVIDIA's CUDA EULA.
+
+
+rampart-onnx (part of the rampart-langtools package)
+====================================================
+
+rampart-onnx.so is a single, CPU+GPU module.  ONNX Runtime and
+onnxruntime-extensions are compiled INTO it statically:
+
+  ONNX Runtime            the inference engine
+                          -> onnxruntime-license.txt  (MIT, Microsoft)
+                          -> onnxruntime-third-party-notices.txt
+
+  onnxruntime-extensions  the native tokenizers (WordPiece via
+                          BertTokenizer, SentencePiece / BPE via the
+                          Ortx C API)
+                          -> onnxruntime-extensions-license.txt
+                             (MIT, Microsoft)
+                          -> onnxruntime-extensions-third-party-notices.txt
+
+Both upstreams vendor a substantial number of further third-party
+components (protobuf, abseil, flatbuffers, ONNX, Eigen, and others).
+Those are NOT enumerated here -- each upstream's own
+ThirdPartyNotices file, copied verbatim above, is the authoritative
+list and carries the required notices.
+
+GPU builds additionally REDISTRIBUTE ONNX Runtime shared libraries.
+A cuNN build installs a runtime directory beside the module:
+
+  <prefix>/modules/onnx-cu12/    (and/or onnx-cu13/)
+      libonnxruntime.so.1.27.0   + the .so.1 / .so symlinks
+      libonnxruntime_providers_shared.so
+      libonnxruntime_providers_cuda.so
+
+These are builds of ONNX Runtime itself and are covered by the same
+onnxruntime-license.txt / onnxruntime-third-party-notices.txt above.
+The module dlopen's whichever directory matches the host's CUDA driver;
+if none does, it falls back to the CPU engine built into the module.
+
+As with rampart-langtools-cuda, NVIDIA's proprietary libcudart /
+libcublas / libcublasLt (and, for the CUDA execution provider, cuDNN)
+are NOT redistributed by us -- users install the NVIDIA CUDA toolkit
 themselves under NVIDIA's CUDA EULA.
 
 
