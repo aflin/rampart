@@ -240,6 +240,73 @@ testFeature("parse: throws without source arg", function() {
     catch (e) { return true; }
 });
 
+/* ========== extract() ========== */
+
+/* First index of a symbol with the given name (findIndex is ES6 —
+ * avoid it for older-engine safety, matching the rest of this file). */
+function idxByName(syms, name) {
+    for (var i = 0; i < syms.length; i++)
+        if (syms[i].name === name) return i;
+    return -1;
+}
+
+testFeature("extract: method present, retained source stays hidden", function() {
+    var r = ts.extractSymbols('function foo() { return 1; }', 'javascript');
+    /* the retained source is a hidden symbol — it must not surface in
+     * Object.keys; only symbols/hasErrors/extract are visible. */
+    var keys = Object.keys(r).sort();
+    return typeof r.extract === 'function'
+        && JSON.stringify(keys) === '["extract","hasErrors","symbols"]';
+});
+
+testFeature("extract: by index returns the symbol's source slice", function() {
+    var src = 'function add(a, b) { return a + b; }';
+    var r = ts.extractSymbols(src, 'javascript');
+    var s = r.symbols[0];
+    var got = r.extract(0);
+    return got === src.substring(s.startByte, s.endByte)   /* ASCII: char==byte */
+        && got.indexOf('function add') === 0
+        && got.charAt(got.length - 1) === '}';
+});
+
+testFeature("extract: by name matches extract by index", function() {
+    var r = ts.extractSymbols(readSample('javascript.js'), 'javascript');
+    var idx = idxByName(r.symbols, 'add');
+    return idx >= 0 && r.extract('add') === r.extract(idx);
+});
+
+testFeature("extract: slice equals a byte-range readFile of the source", function() {
+    /* The intended use: identical bytes to readFile(path, start, len).
+     * Proves the offsets index the same buffer with no drift. */
+    var r = ts.extractSymbols(readSample('javascript.js'), 'javascript');
+    var idx = idxByName(r.symbols, 'topLevelLast');
+    var s = r.symbols[idx];
+    var fromFile = readFile(SAMPLES_DIR + '/javascript.js',
+                            s.startByte, s.endByte - s.startByte, true);
+    return r.extract(idx) === fromFile
+        && r.extract('topLevelLast') === fromFile;
+});
+
+testFeature("extract: by name returns the first match on duplicates", function() {
+    /* javascript.js has two 'constructor' method_definitions (Greeter
+     * line 13, FancyGreeter line 25); the name form returns the first. */
+    var r = ts.extractSymbols(readSample('javascript.js'), 'javascript');
+    var first = idxByName(r.symbols, 'constructor');
+    return first >= 0 && r.extract('constructor') === r.extract(first);
+});
+
+testFeature("extract: throws on out-of-range index", function() {
+    var r = ts.extractSymbols('function foo() {}', 'javascript');
+    try { r.extract(999); return false; }
+    catch (e) { return /no symbol at index/i.test(e.message); }
+});
+
+testFeature("extract: throws on unknown name", function() {
+    var r = ts.extractSymbols('function foo() {}', 'javascript');
+    try { r.extract('nope'); return false; }
+    catch (e) { return /no symbol named/i.test(e.message); }
+});
+
 /* ========== expected baselines (inline; generated from samples) ========== */
 
 var expected_javascript = [

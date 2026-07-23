@@ -8,8 +8,18 @@
  * v1 surface — JavaScript only, proving the build wiring and shape:
  *   var ts = require('rampart-treesitter');
  *   ts.languages                     -> ['javascript']
- *   ts.extractSymbols(src, lang)     -> array of
- *      {name, kind, line, column, signature, startByte, endByte}
+ *   ts.extractSymbols(src, lang)     -> {symbols:[...], hasErrors, extract()}
+ *      each symbol: {name, kind, line, column, signature, startByte, endByte}
+ *
+ * Source extraction: extractSymbols retains a reference to `src` (a
+ * hidden-symbol property on the result — duktape strings are
+ * refcounted+interned, so this is a reference, not a copy), enabling
+ * on-demand slicing without re-reading:
+ *   result.extract(199)              -> src bytes [startByte,endByte) of symbol 199
+ *   result.extract('toISOString')    -> same, for the first symbol so named
+ * The slice is byte-exact by construction: it indexes the very buffer
+ * tree-sitter parsed, so there is no UTF-8/CESU-8 offset drift and no
+ * dependence on the file still existing or being unchanged on disk.
  *
  * Symbol-resolution model: the main rampart binary already links the
  * tree-sitter runtime and the JS grammar (for the transpiler). This
@@ -710,6 +720,91 @@ static duk_ret_t es_parse(duk_context *ctx)
     return 1;
 }
 
+/* Hidden-symbol property under which extractSymbols retains the source
+ * string on the result, so extract() can slice it later. Hidden symbols
+ * are invisible + non-writable from JS and are carried across
+ * rampart-thread object copies (the copy enumerator includes hidden
+ * symbols). */
+#define TS_SRC_SYM DUK_HIDDEN_SYMBOL("ts_src")
+
+/* Push src[startByte, endByte) as a string, reading the byte offsets
+ * from the symbol object at `sym_idx`. Bounds-checked against src_sz —
+ * an out-of-range slice means the retained source and the offsets have
+ * gotten out of sync, which cannot happen for an untouched result. */
+static void push_symbol_slice(duk_context *ctx, const char *src,
+                              duk_size_t src_sz, duk_idx_t sym_idx)
+{
+    if (!duk_is_object(ctx, sym_idx))
+        RP_THROW(ctx, "extract: resolved value is not a symbol object");
+
+    duk_get_prop_string(ctx, sym_idx, "startByte");
+    if (!duk_is_number(ctx, -1))
+        RP_THROW(ctx, "extract: symbol has no startByte");
+    duk_uint_t s = duk_get_uint(ctx, -1);
+    duk_pop(ctx);
+
+    duk_get_prop_string(ctx, sym_idx, "endByte");
+    if (!duk_is_number(ctx, -1))
+        RP_THROW(ctx, "extract: symbol has no endByte");
+    duk_uint_t e = duk_get_uint(ctx, -1);
+    duk_pop(ctx);
+
+    if (e < s || (duk_size_t)e > src_sz)
+        RP_THROW(ctx,
+            "extract: byte range [%u,%u) out of bounds for retained "
+            "source (%zu bytes)", (unsigned)s, (unsigned)e, (size_t)src_sz);
+
+    duk_push_lstring(ctx, src + s, (duk_size_t)(e - s));
+}
+
+/* result.extract(indexOrName) -> the source substring for that symbol.
+ * Number: index into result.symbols. String: first symbol whose name
+ * matches. Slices the source stashed on the result at TS_SRC_SYM. */
+static duk_ret_t es_extract(duk_context *ctx)
+{
+    duk_push_this(ctx);
+    duk_idx_t this_idx = duk_normalize_index(ctx, -1);
+
+    if (!duk_get_prop_string(ctx, this_idx, TS_SRC_SYM))
+        RP_THROW(ctx, "extract: no source retained on this result "
+                      "(was it produced by extractSymbols?)");
+    duk_size_t src_sz;
+    /* The result object owns this string, so the pointer stays valid
+     * for the life of the call even though it is only a stack temp. */
+    const char *src = duk_get_lstring(ctx, -1, &src_sz);
+
+    duk_get_prop_string(ctx, this_idx, "symbols");
+    duk_idx_t syms_idx = duk_normalize_index(ctx, -1);
+
+    if (duk_is_number(ctx, 0)) {
+        duk_uarridx_t i = (duk_uarridx_t)duk_get_uint(ctx, 0);
+        duk_get_prop_index(ctx, syms_idx, i);
+        if (!duk_is_object(ctx, -1))
+            RP_THROW(ctx, "extract: no symbol at index %u", (unsigned)i);
+    } else {
+        const char *want = REQUIRE_STRING(ctx, 0,
+            "extract: argument must be a symbol index (number) or "
+            "name (string)");
+        duk_size_t n = duk_get_length(ctx, syms_idx);
+        duk_size_t i;
+        int found = 0;
+        for (i = 0; i < n; i++) {
+            duk_get_prop_index(ctx, syms_idx, (duk_uarridx_t)i);
+            duk_get_prop_string(ctx, -1, "name");
+            const char *nm = duk_get_string(ctx, -1);
+            duk_pop(ctx);                 /* name */
+            if (nm && strcmp(nm, want) == 0) { found = 1; break; }
+            duk_pop(ctx);                 /* symbol */
+        }
+        if (!found)
+            RP_THROW(ctx, "extract: no symbol named '%s'", want);
+    }
+
+    /* resolved symbol is on the stack top */
+    push_symbol_slice(ctx, src, src_sz, duk_get_top_index(ctx));
+    return 1;
+}
+
 static duk_ret_t es_extractSymbols(duk_context *ctx)
 {
     duk_size_t src_sz;
@@ -778,6 +873,19 @@ static duk_ret_t es_extractSymbols(duk_context *ctx)
 
     duk_push_boolean(ctx, has_error);
     duk_put_prop_string(ctx, obj_idx, "hasErrors");
+
+    /* Retain the source (by reference — refcounted interned string) so
+     * extract() can slice it on demand. Hidden symbol: invisible and
+     * non-writable from JS, and carried across thread copies. */
+    duk_dup(ctx, 0);
+    duk_put_prop_string(ctx, obj_idx, TS_SRC_SYM);
+
+    /* extract(indexOrName) method. Left enumerable on purpose: the
+     * rampart-thread copy enumerator skips non-enumerable, non-hidden
+     * properties, so a non-enumerable method would be lost on .exec;
+     * enumerable, its c-function pointer is carried by copy_any. */
+    duk_push_c_function(ctx, es_extract, 1);
+    duk_put_prop_string(ctx, obj_idx, "extract");
 
     ts_tree_delete(tree);
     ts_parser_delete(parser);
