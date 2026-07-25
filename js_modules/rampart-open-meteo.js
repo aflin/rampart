@@ -77,6 +77,36 @@ var _db = null;
 var _cacheDisabled = false;
 var _cacheInitialized = false;
 
+// Resolve the default cache directory.  Prefer ~/.rampart/ (where rampart
+// keeps everything now); fall back to a writable tmp dir when there is no
+// usable home directory.
+function defaultCacheDir() {
+    var env = (typeof process !== 'undefined' && process.env) ? process.env : null;
+
+    // Preferred: ~/.rampart/open-meteo-cache
+    var home = env && env.HOME;
+    if (home) {
+        try {
+            var hst = rampart.utils.stat(home);
+            if (hst && hst.isDirectory)
+                return home + '/.rampart/open-meteo-cache';
+        } catch(e) {}
+    }
+
+    // Fallback: a writable tmp directory
+    var candidates = ['/tmp', '/var/tmp'];
+    if (env && env.TMPDIR)
+        candidates.unshift(env.TMPDIR);
+    for (var i = 0; i < candidates.length; i++) {
+        try {
+            var st = rampart.utils.stat(candidates[i]);
+            if (st && st.isDirectory)
+                return candidates[i] + '/rampart-open-meteo-cache';
+        } catch(e) {}
+    }
+    return null;
+}
+
 function getDb() {
     if (_cacheDisabled) return null;
     if (_db) return _db;
@@ -84,23 +114,8 @@ function getDb() {
 
     _cacheInitialized = true;
 
-    var dir = _config.cacheDir;
-    if (!dir) {
-        // auto-detect a writable tmp directory
-        var candidates = ['/tmp', '/var/tmp'];
-        if (typeof process !== 'undefined' && process.env && process.env.TMPDIR)
-            candidates.unshift(process.env.TMPDIR);
-        for (var i = 0; i < candidates.length; i++) {
-            try {
-                var st = rampart.utils.stat(candidates[i]);
-                if (st && st.isDirectory) {
-                    dir = candidates[i] + '/rampart-open-meteo-cache';
-                    break;
-                }
-            } catch(e) {}
-        }
-        if (!dir) return null; // no writable tmp found
-    }
+    var dir = _config.cacheDir || defaultCacheDir();
+    if (!dir) return null; // no writable location found
 
     try {
         var st = rampart.utils.stat(dir);
@@ -787,11 +802,8 @@ function clearCache() {
     if (_cacheDisabled) return;
     _db = null;
     _cacheInitialized = false;
-    var dir = _config.cacheDir;
-    if (!dir) {
-        var tmpdir = (typeof process !== 'undefined' && process.env && process.env.TMPDIR) || '/tmp';
-        dir = tmpdir + '/rampart-open-meteo-cache';
-    }
+    var dir = _config.cacheDir || defaultCacheDir();
+    if (!dir) return;
     try {
         rampart.utils.rmFile(dir + '/data.mdb');
         rampart.utils.rmFile(dir + '/lock.mdb');

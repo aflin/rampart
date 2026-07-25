@@ -173,7 +173,14 @@ module.exports = {
         arch:  "dep",
         files: ["modules/rampart-almanac.so",
                 "modules/rampart-date-holidays.js",
-                "modules/rampart-open-meteo.js"],
+                "modules/rampart-open-meteo.js",
+                /* Maintenance tool: rebuilds rampart-date-holidays.js
+                   from the latest npm `date-holidays`.  A NODE script
+                   (needs npm + esbuild), so it is NOT a rampart module
+                   and never gets require()d -- it ships here so almanac
+                   users can refresh holiday data themselves, and is
+                   excluded from the core tarball. */
+                "modules/node-update-date-holidays.js"],
         deps:  ["rampart-curl", "rampart-lmdb"],
         notes: "Sun/moon/planet, holidays, Open-Meteo weather"
     },
