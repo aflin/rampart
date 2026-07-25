@@ -75219,6 +75219,7 @@ DUK_LOCAL void duk__parse_switch_stmt(duk_compiler_ctx *comp_ctx, duk_ivalue *re
 			num_stmts++;
 			duk__parse_stmt(comp_ctx, res, 0 /*allow_source_elem*/);
 		}
+		DUK_UNREF(num_stmts); /* counted but not currently consumed */
 
 		/* fall-through jump to next code of next case (backpatched) */
 		pc_prevstmt = duk__emit_jump_empty(comp_ctx);
@@ -101817,7 +101818,10 @@ void mp_set(mp_int *a, mp_digit b)
 /* LibTomMath, multiple-precision integer library -- Tom St Denis */
 /* SPDX-License-Identifier: Unlicense */
 
-#if defined(__STDC_IEC_559__) || defined(__GCC_IEC_559)
+/* __APPLE__: AppleClang defines neither IEC 559 macro, but every Apple
+   target is IEEE754 — without it mp_set_double compiles out and the
+   #warning below fires on every macOS build. */
+#if defined(__STDC_IEC_559__) || defined(__GCC_IEC_559) || defined(__APPLE__)
 mp_err mp_set_double(mp_int *a, double b)
 {
    uint64_t frac;

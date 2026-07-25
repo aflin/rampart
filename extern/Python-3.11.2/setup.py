@@ -1112,7 +1112,11 @@ class PyBuildExt(build_ext):
                                                      'termcap'):
                 readline_libs.append('termcap')
             self.add(Extension('readline', ['readline.c'],
-                               library_dirs=['/usr/lib/termcap'],
+                               # only pass the ancient termcap dir where it
+                               # exists; blindly passing it makes macOS ld
+                               # warn "search path not found"
+                               library_dirs=[d for d in ['/usr/lib/termcap']
+                                             if os.path.isdir(d)],
                                libraries=readline_libs))
         else:
             self.missing.append('readline')

@@ -2126,7 +2126,9 @@ static duk_ret_t duk_rp_watch(duk_context *ctx)
     duk_pop_2(ctx);
 
     /* Backend selection */
-#ifdef RP_HAS_INOTIFY
+#ifndef RP_HAS_INOTIFY
+    (void)force_poll; /* polling is the only backend here; opt is a no-op */
+#else
     if (!force_poll)
     {
         w->ifd = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);

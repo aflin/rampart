@@ -72,6 +72,20 @@ include_directories(thirdparty/re2)
 include_directories(thirdparty/cre2/src)
 include_directories(thirdparty/abseil-cpp)
 
+# Some abseil stub libraries (e.g. absl_flags) contain no global symbols;
+# Xcode's ranlib (and libtool) warn "table of contents is empty" for each,
+# UNCONDITIONALLY — current (llvm-cctools) versions ignore
+# -no_warning_for_no_symbols for the whole-archive case (verified on
+# Xcode 16 / macOS 15.6).  llvm-ar already writes the symbol index during
+# archive creation, so the ranlib finish step is redundant: skip it.
+# Scoped to the vendored subdirs below; restored after re2.
+if(APPLE)
+    set(_TEXIS_TP_SAVED_C_ARCHIVE_FINISH   "${CMAKE_C_ARCHIVE_FINISH}")
+    set(_TEXIS_TP_SAVED_CXX_ARCHIVE_FINISH "${CMAKE_CXX_ARCHIVE_FINISH}")
+    set(CMAKE_C_ARCHIVE_FINISH   "")
+    set(CMAKE_CXX_ARCHIVE_FINISH "")
+endif()
+
 add_subdirectory(thirdparty/abseil-cpp)
 
 if(WIN32 OR CYGWIN)
@@ -82,6 +96,10 @@ add_subdirectory(thirdparty/re2)
 if(SILENCE_VENDORED_WARNINGS)
     set(CMAKE_C_FLAGS   "${_TEXIS_TP_SAVED_C_FLAGS}")
     set(CMAKE_CXX_FLAGS "${_TEXIS_TP_SAVED_CXX_FLAGS}")
+endif()
+if(APPLE)
+    set(CMAKE_C_ARCHIVE_FINISH   "${_TEXIS_TP_SAVED_C_ARCHIVE_FINISH}")
+    set(CMAKE_CXX_ARCHIVE_FINISH "${_TEXIS_TP_SAVED_CXX_ARCHIVE_FINISH}")
 endif()
 
 #endif(HAVE_RE2)

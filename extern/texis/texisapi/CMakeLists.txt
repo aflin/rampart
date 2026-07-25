@@ -640,6 +640,40 @@ IF(PARSERS_FOUND)
         COMPILE_OPTIONS "-Wno-return-local-addr")
   endif()
 
+  # Clang (macOS AppleClang) fires a different set on the same proven
+  # old-style C. Guarded because several of these flag names are
+  # clang-only and gcc would reject them.
+  #   fldops.c/xtree.c    ITEM1/ITEM2 comma-macro scratch vars (-Wunsequenced);
+  #                       fldop1.c is #included ~12x by fldops.c (texis
+  #                       template-by-inclusion), so the flag must be on
+  #                       the fldops.c TU, not on fldop1.c
+  #   cp.c                K&R functions falling off end / dangling else
+  #   vecindex_ivfpq.cpp  dbstruct.h's empty `union {} extra` in QNODE has
+  #                       size 0 in C / 1 in C++; member unused and QNODE
+  #                       never crosses the C/C++ boundary
+  if(CMAKE_C_COMPILER_ID MATCHES "Clang")
+    set_source_files_properties(xtree.c PROPERTIES
+        COMPILE_OPTIONS "-Wno-unsequenced")
+    set_source_files_properties(fldops.c PROPERTIES
+        COMPILE_OPTIONS "-Wno-switch;-Wno-unsequenced")
+    set_source_files_properties(cp.c PROPERTIES
+        COMPILE_OPTIONS "-Wno-return-type;-Wno-dangling-else")
+    set_source_files_properties(salloc.c PROPERTIES
+        COMPILE_OPTIONS "-Wno-unused-value")
+    set_source_files_properties(predopt.c treeconv.c disppred.c dreason.c doq.c
+        PROPERTIES COMPILE_OPTIONS "-Wno-enum-compare")
+    set_source_files_properties(qnode.c lockd_lock.c lockrequest.c
+        node_buffer.c PROPERTIES COMPILE_OPTIONS "-Wno-switch")
+    set_source_files_properties(htprintf.c PROPERTIES
+        COMPILE_OPTIONS "-Wno-string-plus-int")
+    set_source_files_properties(abend.c PROPERTIES
+        COMPILE_OPTIONS "-Wno-pointer-to-int-cast")
+    set_source_files_properties(sysdep.c PROPERTIES
+        COMPILE_OPTIONS "-Wno-tautological-constant-compare")
+    set_source_files_properties(vecindex_ivfpq.cpp PROPERTIES
+        COMPILE_OPTIONS "-Wno-extern-c-compat")
+  endif()
+
   if(LOCK_SERVER)
     list(APPEND BUILD_SRCS
         lockclient.c
@@ -1127,6 +1161,33 @@ add_custom_command(OUTPUT ${TEXIS_BINARY_DIR}/texisapi.h
   DEPENDS ${TEXISAPI_H_FILES}
 )
 target_sources(genFldFuncsSorted PRIVATE ${TEXIS_BINARY_DIR}/texisapi.h)
+
+# texisapi.h is included by nearly every texis TU (dbquery.h:33), but the
+# only build edge to its generator used to be genFldFuncsSorted's
+# target_sources above.  texisapi/texisbuild are covered transitively
+# (they depend on genFldFuncsSorted), but texis_common_objs — an OBJECT
+# library, which does NOT inherit those target-level deps — could start
+# compiling before texisapi.h existed ("texisapi.h file not found" on the
+# first `make -j` pass; seen on macOS 2026-07-25 where genFldFuncsSorted
+# was delayed behind the jansson ExternalProject).  Same race class and
+# same fix pattern as ftinternalsyms-h above.
+add_custom_target(texisapi-h DEPENDS ${TEXIS_BINARY_DIR}/texisapi.h)
+add_dependencies(texis_common_objs texisapi-h)
+
+# Two more edges of the same race, all hit when compiling common objs on a
+# fresh tree with high -j:
+#   texint.h -> lockrequest.h -> jansson.h  (jansson ExternalProject's
+#     install tree; only genFldFuncsSorted had this dep)
+#   dbtbl.c:4068 #include "fldFuncsSorted.c"  (POST_BUILD product of
+#     genFldFuncsSorted)
+# genFldFuncsSorted transitively implies jansson + texisapi.h, but keep
+# the explicit edges: they document real include-level deps and survive
+# any future reshuffle of genFldFuncsSorted's own deps.
+# (genNgrams needs the same headers but is already ordered by its
+# texisbuild link dependency.  No cycle here: genFldFuncsSorted builds
+# from fldFuncs.c alone and links no texis lib.)
+add_dependencies(texis_common_objs ${JANSSON_PREFIX})
+add_dependencies(texis_common_objs genFldFuncsSorted)
 
 #install(FILES ${TEXISAPI_BINARY_DIR}/ftinternalsyms.h;${TEXIS_BINARY_DIR}/texisapi.h DESTINATION include/texis)
 

@@ -45,6 +45,16 @@ add_executable(tsql
 	)
 set(TSQL_EXE  ${TEXIS_BINARY_DIR}/apps/tsql PARENT_SCOPE)
 
+# These apps' own TUs include texint.h -> dbquery.h -> generated
+# texisapi.h, and texint.h -> lockrequest.h -> jansson.h (ExternalProject
+# install tree).  Linking texisapi/texisbuild orders only the link step,
+# not these compiles, so give them explicit generation edges (see
+# texisapi-h in ../texisapi/CMakeLists.txt).  metamorph, rex, backref and
+# texislockd's own TUs include neither.
+add_dependencies(addtable texisapi-h ${JANSSON_PREFIX})
+add_dependencies(kdbfchk  texisapi-h ${JANSSON_PREFIX})
+add_dependencies(tsql     texisapi-h ${JANSSON_PREFIX})
+
 # Tools that don't run SQL / don't actually call vec dispatch link the
 # lean `texisbuild` (no vec sources, no faiss, no openblas / libgomp /
 # libgfortran chain in DT_NEEDED).  See extern/texis/texisapi/CMakeLists.txt

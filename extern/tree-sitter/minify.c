@@ -738,12 +738,6 @@ static CharClass char_class_of(char c)
     return CC_NONE;
 }
 
-/* Check if a char can start an identifier continuation */
-static inline int is_id_char(char c)
-{
-    return isalnum((unsigned char)c) || c == '_' || c == '$';
-}
-
 /* We need to handle:
    - ASI (automatic semicolon insertion): we add semicolons explicitly
    - regex vs division ambiguity: we don't transform, just preserve source
