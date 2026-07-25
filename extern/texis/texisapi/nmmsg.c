@@ -26,7 +26,10 @@ extern int epilocmsg ARGS((int f));
 #define MMSGFNAMESZ 256
 #define NOFILE (FILE *)NULL
 #define DEFFILE stderr
-FILE *mmsgfh=NOFILE;
+/* Thread-local to match mmsg.h's extern (this file compiles into the
+ * archive but is never pulled; mmsg.c's definition is the one that
+ * links). */
+__thread FILE *mmsgfh=NOFILE;
 char *mmsgfname=(char *)NULL;
 
 /**********************************************************************/

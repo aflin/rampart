@@ -49,7 +49,9 @@
 #endif
 #define MMSGFNAMESZ 128
 
-FILE *mmsgfh=FPNULL;
+/* Thread-local: see mmsg.h.  (This is the definition that links; the
+ * redundant one in nmmsg.c is never pulled from the archive.) */
+__thread FILE *mmsgfh=FPNULL;
 char *mmsgfname=CPNULL;
 static int shownum=1, showfunc=1, enabled=1, datamsgok=0;
 /**********************************************************************/

@@ -169,6 +169,160 @@ var wd;
 var iam = trim(exec('whoami').stdout);
 var unprivUser;
 
+/* ---------------- macOS launchd-mediated daemonization ----------------
+ *
+ * Classic fork()+setsid() daemons on macOS cannot use launchd XPC
+ * services: launchd refuses per-process service lookups (e.g.
+ * com.apple.MTLCompilerService) for fork-orphaned processes, which
+ * breaks Metal shader compilation -- GPU model loads in a daemonized
+ * server fail whenever the OS shader caches can't serve a request.
+ * There is no way to repair a forked process's launchd identity short
+ * of exec, and launchd is the system's sanctioned daemon parent.
+ *
+ * So on macOS, daemon:true starts the server THROUGH launchd while
+ * keeping the exact unix look and feel: write a throwaway plist,
+ * `launchctl bootstrap` it (system domain when root, user domain
+ * otherwise), delete the plist, and let launchd exec this same conf
+ * script with RAMPART_LAUNCHD_CHILD set.  The child runs the normal
+ * foreground path (bind as root, read certs, drop privileges, start
+ * threads) with a clean XPC identity.  start/stop/status/restart and
+ * the pidfile behave identically to every other platform, nothing
+ * persists across reboot, and the user never touches launchctl. */
+
+var isDarwin = trim(exec('uname').stdout) == 'Darwin';
+
+/* Job label: serverRoot slug + port.  Keying on directory+port matches
+ * Linux semantics: two confs in the same directory CAN run side by side
+ * (discouraged -- they still clobber each other's pidfile, exactly as
+ * on Linux), while stop's bootout still targets the right server by
+ * port even when the pidfile was overwritten.  Caveat: with
+ * monitor:true (KeepAlive), editing the port in a conf and THEN running
+ * stop misses the old-port label -- launchd would relaunch the killed
+ * server on the old port.  Stop before changing ports. */
+function launchdLabel(serverConf) {
+    return 'com.rampart.ws.' +
+        ('' + serverConf.serverRoot).replace(/[^A-Za-z0-9]+/g, '-')
+                                    .replace(/^-+|-+$/g, '') +
+        '.p' + serverConf.ipPort;
+}
+
+/* Candidate launchd domains, in order.  root -> the system domain.
+ * Otherwise the per-user gui domain (present whenever the user has a
+ * login session, the common case on a Mac) with the background user
+ * domain as fallback. */
+function launchdDomains() {
+    if (iam == 'root') return ['system'];
+    var uid = trim(exec('id', '-u').stdout);
+    return ['gui/' + uid, 'user/' + uid];
+}
+
+function plistEscape(s) {
+    return ('' + s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/* Deregister this conf's launchd job, if any (this also terminates the
+ * job's process).  Returns true if a job was actually removed.  Best
+ * effort: harmless when the label isn't loaded (or on a fresh boot). */
+function launchdBootout(serverConf) {
+    var doms = launchdDomains(), i, removed = false;
+    for (i = 0; i < doms.length; i++) {
+        var b = exec('launchctl', 'bootout', doms[i] + '/' + launchdLabel(serverConf));
+        if (b.exitStatus == 0) removed = true;
+    }
+    return removed;
+}
+
+function launchdStart(serverConf) {
+    var label  = launchdLabel(serverConf);
+    var doms   = launchdDomains();
+    var domain = doms[0];
+    var isZip  = (process.scriptPath == ':zip:');
+    var progArgs = isZip ? [ realPath(process.argv0), 'start' ]
+                         : [ process.installPathExec, process.script, 'start' ];
+    var lelog  = (serverConf.logRoot ? serverConf.logRoot : wd) + '/launchd.log';
+
+    /* launchd provides a minimal environment (system domain: root's).
+     * The conf and the model store resolve through $HOME, so pin HOME
+     * to the identity the server will RUN as after the privilege drop. */
+    var homeUser = (iam == 'root' && serverConf.user) ? serverConf.user : iam;
+    homeUser = ('' + homeUser).replace(/[^A-Za-z0-9_.-]/g, '');
+    var home = trim(exec('sh', '-c', 'echo ~' + homeUser).stdout);
+
+    var i, plist =
+        '<?xml version="1.0" encoding="UTF-8"?>\n' +
+        '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n' +
+        '<plist version="1.0">\n<dict>\n' +
+        '    <key>Label</key><string>' + plistEscape(label) + '</string>\n' +
+        '    <key>ProgramArguments</key>\n    <array>\n';
+    for (i = 0; i < progArgs.length; i++)
+        plist += '        <string>' + plistEscape(progArgs[i]) + '</string>\n';
+    plist +=
+        '    </array>\n' +
+        '    <key>WorkingDirectory</key><string>' + plistEscape(wd) + '</string>\n' +
+        '    <key>EnvironmentVariables</key>\n    <dict>\n' +
+        '        <key>RAMPART_LAUNCHD_CHILD</key><string>1</string>\n' +
+        '        <key>HOME</key><string>' + plistEscape(home) + '</string>\n' +
+        '        <key>PATH</key><string>' + plistEscape(utils.getenv('PATH') || '/usr/local/bin:/usr/bin:/bin') + '</string>\n' +
+        '    </dict>\n' +
+        /* monitor:true folds into launchd: KeepAlive relaunches the
+         * server if it dies.  The JS monitor daemon still runs for log
+         * rotation and the http health check, but on macOS it only
+         * KILLS a dead/hung server -- launchd does the relaunching
+         * (a fork-daemonized monitor cannot call launchctl: broken
+         * XPC).  Without monitor, death is final, as on Linux. */
+        '    <key>RunAtLoad</key><true/>\n' +
+        '    <key>KeepAlive</key>' + (serverConf.monitor ? '<true/>' : '<false/>') + '\n' +
+        '    <key>StandardOutPath</key><string>' + plistEscape(lelog) + '</string>\n' +
+        '    <key>StandardErrorPath</key><string>' + plistEscape(lelog) + '</string>\n' +
+        '</dict>\n</plist>\n';
+
+    /* the system domain requires a root-owned plist in a root-owned
+     * directory; the user domain accepts a user-owned file. */
+    var plistPath = (domain == 'system')
+        ? '/Library/LaunchDaemons/' + label + '.plist'
+        : wd + '/.' + label + '.plist';
+    try {
+        fprintf(plistPath, '%s', plist);
+        utils.chmod(plistPath, '0644');
+    } catch(e) {
+        return serr('launchd start: could not write ' + plistPath + ' - ' + e.message);
+    }
+
+    launchdBootout(serverConf);            /* clear any stale job */
+    exec('rm', '-f', wd + '/server.pid');  /* don't confuse the poll below
+                                              with a stale pidfile */
+    var b, di;
+    for (di = 0; di < doms.length; di++) {
+        domain = doms[di];
+        b = exec('launchctl', 'bootstrap', domain, plistPath);
+        if (b.exitStatus == 0) break;
+    }
+    exec('rm', '-f', plistPath);           /* job def now lives in launchd */
+    if (b.exitStatus != 0)
+        return serr('launchd bootstrap failed: ' + trim(b.stderr || b.stdout || ('exit ' + b.exitStatus)));
+
+    /* Wait for the child to write the pidfile and come up.  Model
+     * warm-up in preThreadFunc can take a while, so be patient. */
+    var pid = 0;
+    for (i = 0; i < 240; i++) {            /* up to 60s */
+        sleep(0.25);
+        pid = getPid('server', true);
+        if (pid && kill(pid, 0)) break;
+        pid = 0;
+    }
+    if (!pid) {
+        launchdBootout(serverConf);
+        var tail = '';
+        try { tail = readFile(lelog, {returnString:true}).slice(-600); } catch(e) {}
+        return serr('Server failed to start under launchd.' +
+                    (tail ? '\n--- launchd log tail ---\n' + tail : ''));
+    }
+    var ret = smsg('Server has been started.');
+    ret.pid = pid;
+    return ret;
+}
+/* -------------- end macOS launchd-mediated daemonization -------------- */
+
 function writePid(name, pid) {
     var pidfile = wd + '/' + name + '.pid';
     try{
@@ -598,6 +752,11 @@ function status(serverConf){
 function start(serverConf, dump) {
     var server=require('rampart-server');
 
+    /* launchd child (macOS daemon:true): launchd already daemonized us
+     * by exec -- run the normal foreground path. */
+    if (utils.getenv('RAMPART_LAUNCHD_CHILD'))
+        serverConf.daemon = false;
+
     wd = _writableWd(serverConf.serverRoot);
     if(!wd)
         serverConf.serverRoot=wd=utils.realPath('.');
@@ -699,9 +858,16 @@ function start(serverConf, dump) {
         unprivUser=serverConf.user;
 
     if(serverConf.shutdown || serverConf.stop) {
+        /* macOS: bootout FIRST -- with monitor/KeepAlive, killing the
+         * pid would just make launchd relaunch it.  bootout removes the
+         * job and terminates its process; killPid below then mops up
+         * and keeps the pidfile bookkeeping identical to other
+         * platforms. */
+        var launchdRemoved = isDarwin ? launchdBootout(serverConf) : false;
+
         var res = killPid('server');
         var msg = 'Server has been stopped';
-        if(!res.success)
+        if(!res.success && !launchdRemoved)
             msg = 'Server is not running or pid file is invalid';
 
         res=killPid('monitor');
@@ -719,7 +885,14 @@ function start(serverConf, dump) {
         return {message:msg};
     }
 
-    if(iam != 'root') {
+    /* macOS 10.14+ does not restrict ports <1024 to root, and rampart
+     * supports macOS 11+, so the pre-flight root check only applies
+     * elsewhere.  (A non-root macOS start on port 443 must still be
+     * able to read its TLS key/cert files, e.g. letsencrypt keys are
+     * root-owned by default -- that failure surfaces on its own with a
+     * clear message.)  rampart-server.c has no port gate of its own:
+     * bind() simply reports the OS's answer. */
+    if(iam != 'root' && !isDarwin) {
         if(serverConf.ipPort < 1024)
             return serr('Error: script must be started as root to bind to IPv4 port ' + serverConf.ipPort);
         if(serverConf.ipv6Port < 1024)
@@ -792,6 +965,14 @@ function start(serverConf, dump) {
 
         if(!serverConf.launchServer)
             return {};
+
+        /* macOS daemon:true: daemonize through launchd (see the
+         * launchd block above) instead of fork+setsid, so the server
+         * keeps a working XPC identity (Metal/GPU compiles).  The
+         * launchd child re-enters with RAMPART_LAUNCHD_CHILD set and
+         * daemon forced false, so it takes the normal path below. */
+        if (isDarwin && serverConf.daemon && !utils.getenv('RAMPART_LAUNCHD_CHILD'))
+            return launchdStart(serverConf);
 
         //set global serverConf for app/*.js and wsapp/*.js scripts
         global.serverConf=serverConf;
@@ -1101,6 +1282,14 @@ function start(serverConf, dump) {
                     return;
                 if(!kill(serverpid,0))
                 {
+                    /* macOS: the server runs as a launchd job with
+                       KeepAlive -- launchd relaunches it; this forked
+                       monitor cannot (launchctl needs a working XPC
+                       identity, which fork-daemons lack). */
+                    if(isDarwin) {
+                        fprintf(serverConf.errorLog, true, '%s - monitor: server died; launchd will relaunch it\n', dateFmt('%Y-%m-%d-%H-%M-%S'));
+                        return;
+                    }
                     fprintf(serverConf.errorLog, true, '%s - monitor: restarting server\n', dateFmt('%Y-%m-%d-%H-%M-%S'));
                     var res=start_server(true);
                     if(res.error) {

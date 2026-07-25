@@ -5,9 +5,13 @@
  * see /LICENSE-rsal.txt for details
  */
 
+/* mmsgfh + rp_errmap are thread-local (see rp_msg_init() in
+ * rampart-sql.c): init this thread's capture buffer if needed, then
+ * clear it. */
 #define clearmsgbuf0() do {       \
+    rp_msg_init();                \
     fseek(mmsgfh, 0, SEEK_SET);   \
-    *errmap0='\0';                \
+    *rp_errmap='\0';              \
 } while(0)
 
 
@@ -31,6 +35,33 @@ RPSFD;
 static CONST char       Whitespace[] = " \t\r\n\v\f";
 
 /* ------------------------------------------------------------------------ */
+
+/* Per-thread FLDOP for stringFormat() argument casts.  The texis-global
+ * TXgetFldopFromCache()/TXreleaseFldopToCache() free-list
+ * (TXApp->fldopCache) is unlocked and therefore unsafe from rampart's
+ * server worker threads (concurrent pops can hand two threads the same
+ * FLDOP, or underflow the size_t count).  Rather than touch texis, keep
+ * one FLDOP per thread here and reuse it: no global cache traffic at
+ * all, and faster than the per-argument pop/push it replaces.  Creation
+ * goes through dbgetfo(), which writes the o_<func> op-lookup globals
+ * via fosetop() -- serialize it so first-use races between threads
+ * cannot interleave those writes.  One FLDOP is retained per thread
+ * that ever casts a stringFormat() argument; leaked at thread exit
+ * (small, bounded by thread count). */
+static pthread_mutex_t  rp_fo_create_lock = PTHREAD_MUTEX_INITIALIZER;
+static __thread FLDOP  *rp_thread_fo = FLDOPPN;
+
+static FLDOP *
+rp_get_fldop(void)
+{
+  if (rp_thread_fo == FLDOPPN)
+    {
+      pthread_mutex_lock(&rp_fo_create_lock);
+      rp_thread_fo = dbgetfo();
+      pthread_mutex_unlock(&rp_fo_create_lock);
+    }
+  return rp_thread_fo;
+}
 
 static void
 RPstringformatResetArgs(RPSFD *info)
@@ -438,7 +469,7 @@ RPstringformatArgCb(HTPFT type, HTPFW what, void *data, char **fmterr,
       /* Put any value into field.  Not used, but fldmath cores if NULL: */
       putfld(wantFld, "", 0);                /* wtf if error? */
       if (fo == FLDOPPN &&
-          (fo = TXgetFldopFromCache()) == FLDOPPN)
+          (fo = rp_get_fldop()) == FLDOPPN)
         goto err;
       if (fopush(fo, userArgFld) != 0 ||
           fopush(fo, wantFld) != 0)
@@ -528,7 +559,15 @@ err:
 done:
   if (res != FLDPN) closefld(res);
   if (wantFld != FLDPN) closefld(wantFld);
-  if (fo != FLDOPPN) fo = TXreleaseFldopToCache(fo);
+  /* fo is the per-thread FLDOP (rp_get_fldop): don't release it to the
+   * texis global cache -- just drain any leftover operand stack (as
+   * TXgetFldopFromCache() would on next pop) so state never carries
+   * over between arguments/calls. */
+  if (fo != FLDOPPN)
+    {
+      while (fodisc(fo) == 0);
+      fo = FLDOPPN;
+    }
 #ifdef CATCH_FPE
   VXfpe = -1;                   /* ie. next SIGFPE causes abend */
 #endif
@@ -706,8 +745,8 @@ RPfunc_stringformat(duk_context *ctx)
                    "Too many arguments in the function: stringFormat()");
 
   /* catch errors from RPstringformatArgCb */
-  if(*(errmap0)!='\0')
-      RP_THROW(ctx, "%s", errmap0 + 4);
+  if(*(rp_errmap)!='\0')   /* this thread's buffer; set by clearmsgbuf0 above */
+      RP_THROW(ctx, "%s", rp_errmap + 4);
 
   /* Copy the output to the field: - - - - - - - - - - - - - - - - - - - - */
   if (!htbuf_write(outBuf, "", 0)) goto noMem;  /* ensure non-NULL outData */
@@ -893,7 +932,9 @@ duk_ret_t dosearchfile(duk_context *ctx, const char *search, const char *file, A
     long bufbase;
     FILE *fh;
     char *fname;
-    
+
+    rp_msg_init();  /* capture openmmapi() messages on this thread */
+
     if(mem_idx > -1)
     {
         fname="searchText";
@@ -911,7 +952,7 @@ duk_ret_t dosearchfile(duk_context *ctx, const char *search, const char *file, A
     {
         rp_fclose(fh);
         closeapicp(cp);                  /* cleanup the control parameters */
-        RP_THROW(ctx, "%s: Unable to open API (bad query or other fault):\n%s", fname, errmap0);
+        RP_THROW(ctx, "%s: Unable to open API (bad query or other fault):\n%s", fname, rp_msg_init());
     }
 
 

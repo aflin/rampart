@@ -89,7 +89,12 @@ static CONST char	Ellipsis[] = "...";
 
 /******************************************************************/
 
-static FFS *abrex = (FFS *) NULL;
+/* Thread-local: the compiled sentence-finding rex carries in-flight
+ * matcher state across getrex() calls, so it cannot be shared between
+ * threads (multiple threads may run abstract() concurrently, e.g. via
+ * rampart's module-level Sql.abstract()).  Per-thread copy; leaked at
+ * thread exit (small, bounded by thread count). */
+static __thread FFS *abrex = (FFS *) NULL;
 
 /******************************************************************/
 
@@ -187,11 +192,20 @@ int	*nHitsP;	/* (out, opt.) length of `*hits' */
 	size_t sz = strlen(text), off, median = (size_t)(-1);
 	RPF	oldFlags = (RPF)0;
 	RPPM	*r = RPPMPN;
-	static RPPM *lastRppm = RPPMPN;
-	static MMAPI *mmapi = NULL;
-	static APICP *cp = NULL;
-	static MMQL *mq = NULL;
-	static char *lquery = NULL;
+	/* Thread-local last-query cache: these five are one unit (lquery is
+	 * the key; cp/mmapi/mq/lastRppm are rebuilt together on query change,
+	 * and lastRppm references mmapi+mq).  As process-globals a thread
+	 * with a new query would closeapicp()/closemmapi() the objects
+	 * another thread was actively ranking with (use-after-free; seen as
+	 * SEGV in rppm_searchbuf/initsuffix under concurrent abstract()).
+	 * dupapicp() deep-copies all list fields, so per-thread sets are
+	 * self-contained.  One set retained per thread that calls the
+	 * no-index abstract() path; leaked at thread exit (small, bounded). */
+	static __thread RPPM *lastRppm = RPPMPN;
+	static __thread MMAPI *mmapi = NULL;
+	static __thread APICP *cp = NULL;
+	static __thread MMQL *mq = NULL;
+	static __thread char *lquery = NULL;
 
 	if (hits) *hits = FDBIHIPPN;
 	if (nHitsP) *nHitsP = 0;

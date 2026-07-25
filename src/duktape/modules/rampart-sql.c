@@ -641,7 +641,8 @@ static char *embed_compose_text(int kind, const char *title, size_t title_len,
 }
 
 // some string functions don't fork.  We need an error map for them
-char *errmap0;
+/* errmap0 removed: per-thread capture buffer rp_errmap (see
+ * rp_msg_init()) replaced the single process-global buffer. */
 
 extern int RP_TX_isforked;
 
@@ -1015,6 +1016,31 @@ pid_t parent_pid = 0;
 
 #define msgbufsz 4096
 
+/* Per-thread texis message capture.  mmsgfh (texis mmsg.c) is
+ * thread-local, so each thread that runs texis in-process gets its own
+ * capture buffer here: rp_msg_init() allocates the buffer and points
+ * this thread's mmsgfh at it via fmemopen.  finfo (also __thread)
+ * carries the same pointer in finfo->errmap, so every existing error-
+ * reading path works per-thread.  Without this, a thread that never
+ * called rp_msg_init() would have mmsgfh==NULL and texis would fall
+ * back to stderr.  Helper children overwrite their (single) thread's
+ * mmsgfh with an fmemopen over the shared memfd map (do_child_loop),
+ * exactly as before -- the parent reads that map as plain memory, so
+ * the parent/child error protocol is unaffected.  One buffer per
+ * thread, retained for the thread's life. */
+__thread char *rp_errmap = NULL;
+
+char *rp_msg_init(void)
+{
+    if (rp_errmap == NULL)
+    {
+        REMALLOC(rp_errmap, msgbufsz);
+        rp_errmap[0] = '\0';
+        mmsgfh = fmemopen(rp_errmap, msgbufsz, "w+");
+    }
+    return rp_errmap;
+}
+
 #define throw_tx_error(ctx,pref) do{\
     duk_push_string(ctx, finfo->errmap);\
     rp_log_error(ctx);\
@@ -1030,6 +1056,7 @@ pid_t parent_pid = 0;
 
 
 #define clearmsgbuf() do {                \
+    if(mmsgfh == NULL) rp_msg_init();     \
     fseek(mmsgfh, 0, SEEK_SET);           \
     if(finfo && finfo->errmap)            \
         finfo->errmap[0]='\0';            \
@@ -1554,12 +1581,14 @@ static DB_HANDLE *h_open(const char *db, const char *user, const char *pass)
         }
         else
         {
+            rp_msg_init(); /* per-thread capture buffer (mmsgfh is
+                              thread-local) BEFORE texis_open can putmsg */
             h->tx=texis_open((char *)(db), (char*)user, (char*)pass);
             // if not using forked child, make sure we have a place to log errors in this proc
             if(!finfo)
             {
                 REMALLOC(finfo, sizeof(SFI));
-                finfo->errmap=errmap0;
+                finfo->errmap=rp_errmap;
             }
         }
 
@@ -9404,9 +9433,8 @@ duk_ret_t duk_open_module(duk_context *ctx)
             CTXUNLOCK;
             RP_THROW(ctx, "Failed to initialize rampart-sql in TXinitapp");
         }
-        errmap0=NULL;
-        REMALLOC(errmap0, msgbufsz);
-        mmsgfh = fmemopen(errmap0, msgbufsz, "w+");
+        rp_msg_init();  /* this thread's capture buffer; other threads
+                           get theirs lazily (mmsgfh is thread-local) */
         db_is_init = 1;
     }
     CTXUNLOCK;

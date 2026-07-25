@@ -180,9 +180,14 @@ XXX filename block_offset block_size [hit_offset1 hit_size1] [...]\n
 ** if mmsgfh is (FILE *)NULL and mmsgfname is (char *)NULL
 **    or opening mmsgfname fails
 **    mmsgfh will be set to stderr.
+** THREAD-LOCAL: each thread's putmsg() output goes to its own handle so
+**    embedders (rampart) can capture messages per-thread.  Single-
+**    threaded programs see only the main thread's copy = legacy
+**    behavior.  A thread that never sets it falls back to stderr via
+**    fixmmsgfh().
 */
 #ifndef EPI_NO_MMSGFH_EXTERN
-extern FILE FAR * FAR mmsgfh;
+extern __thread FILE FAR * FAR mmsgfh;
 #endif /* !EPI_NO_MMSGFH_EXTERN */
 /*
 ** set mmsgfname to the filename to send messages to
