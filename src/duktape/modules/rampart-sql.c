@@ -8020,7 +8020,7 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
             }
             else
             {
-                snprintf(errbuf, msgbufsz, "sql.set: couldn't find %s in %s", eqfile, eqpath); /* F13 */
+                snprintf(errbuf, msgbufsz, "sql.set: couldn't find %.1024s in %.1024s", eqfile, eqpath); /* F13 */
                 goto return_neg_two;
             }
             goto propnext;

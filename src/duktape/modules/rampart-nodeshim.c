@@ -223,8 +223,7 @@ static duk_ret_t ns_throw_invalid_arg_type(duk_context *ctx, const char *argname
     duk_push_string(ctx, "ERR_INVALID_ARG_TYPE");
     duk_put_prop_string(ctx, -2, "code");
     duk_remove(ctx, -2); /* remove suffix string under the error */
-    duk_throw(ctx);
-    return 0; /* unreachable */
+    return duk_throw(ctx);
 }
 
 static const char *ns_require_string(duk_context *ctx, duk_idx_t idx,
@@ -5052,6 +5051,7 @@ static int _resolve_uid(duk_context *ctx, duk_idx_t idx)
         return (int)pw->pw_uid;
     }
     RP_THROW(ctx, "uid must be a number or user name");
+    return 0; /* unreachable: RP_THROW longjmps */
 }
 static int _resolve_gid(duk_context *ctx, duk_idx_t idx)
 {
@@ -5062,6 +5062,7 @@ static int _resolve_gid(duk_context *ctx, duk_idx_t idx)
         return (int)gr->gr_gid;
     }
     RP_THROW(ctx, "gid must be a number or group name");
+    return 0; /* unreachable: RP_THROW longjmps */
 }
 
 static duk_ret_t proc_setuid(duk_context *ctx)
@@ -10656,6 +10657,7 @@ err_pipe: {
     free(file_copy); free(cwd_copy);
     _cp_free_strv(args); _cp_free_strv(envv);
     RP_THROW(ctx, "child_process spawn: pipe failed: %s", strerror(e));
+    return 0; /* unreachable: RP_THROW longjmps */
 } }
 
 /* waitpid_native(pid) — non-blocking reap.  Returns null if still running,

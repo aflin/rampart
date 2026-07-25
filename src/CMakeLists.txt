@@ -577,7 +577,9 @@ endif()
 
 add_custom_command(
     OUTPUT ${PROJECT_BINARY_DIR}/extern/lmdb/liblmdb.a
-    COMMAND ${MAKE} "XCFLAGS=${LMDB_XCFLAGS}"
+    # literal $(MAKE) (not ${MAKE}) so the sub-make inherits the parent
+    # jobserver — avoids "jobserver unavailable: using -j1" and serial builds
+    COMMAND $(MAKE) "XCFLAGS=${LMDB_XCFLAGS}"
     WORKING_DIRECTORY ${PROJECT_BINARY_DIR}/extern/lmdb/
 )
 
@@ -855,7 +857,8 @@ add_custom_target(cp_libdeflate
 
 add_custom_command(
     OUTPUT ${PROJECT_BINARY_DIR}/extern/libdeflate/libdeflate.a
-    COMMAND ${MAKE} "CFLAGS=${CMAKE_C_FLAGS} -g" "CPPFLAGS=${CMAKE_CXX_FLAGS} -g" "LDFLAGS=${CMAKE_C_FLAGS}"
+    # literal $(MAKE): see liblmdb note above
+    COMMAND $(MAKE) "CFLAGS=${CMAKE_C_FLAGS} -g" "CPPFLAGS=${CMAKE_CXX_FLAGS} -g" "LDFLAGS=${CMAKE_C_FLAGS}"
     WORKING_DIRECTORY ${PROJECT_BINARY_DIR}/extern/libdeflate/
 )
 
@@ -1387,6 +1390,15 @@ target_include_directories(rampart-treesitter PRIVATE
 set_target_properties(rampart-treesitter PROPERTIES
     C_STANDARD 11
     C_STANDARD_REQUIRED ON
+)
+# The vendored/generated grammar sources (parser.c/scanner.c) trip a few
+# -Wunused-* warnings we won't fix upstream. Silence them on those sources
+# only, so rampart-treesitter.c keeps full warnings. All three flags are
+# accepted by both gcc and clang.
+get_target_property(_ts_grammar_srcs rampart-treesitter SOURCES)
+list(FILTER _ts_grammar_srcs INCLUDE REGEX "extern/tree-sitter/tree-sitter-")
+set_source_files_properties(${_ts_grammar_srcs} PROPERTIES
+    COMPILE_OPTIONS "-Wno-unused-value;-Wno-unused-function;-Wno-unused-but-set-variable"
 )
 
 

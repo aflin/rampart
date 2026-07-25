@@ -1986,7 +1986,9 @@ duk_ret_t duk_open_module(duk_context *ctx)
            if the bundled dir is absent (build-tree run, or system-GM
            install) we fall through to GM's compiled-in path. */
         if (rampart_dir[0]) {
-            char path[PATH_MAX];
+            /* +64: rampart_dir can approach PATH_MAX; leave room for the
+               fixed "/share/graphicsmagick/..." suffixes below. */
+            char path[PATH_MAX + 64];
             struct stat st;
             /* Config dir (delegates.mgk, type.mgk, etc.). */
             snprintf(path, sizeof path, "%s/share/graphicsmagick", rampart_dir);

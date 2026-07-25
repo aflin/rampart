@@ -232,36 +232,61 @@ byte *
 respBufRealloc(RESPROTO *rp, byte *oldBuffer, size_t newSize)
 {
   int i;
-  byte *newBuffer = rp_redisRealloc(oldBuffer, newSize);
-  if (newBuffer && newBuffer != oldBuffer) // the latter clause is because realloc may return same region
-  {
-    rp->currPointer = newBuffer + (rp->currPointer - oldBuffer);
-    rp->bufEnd = (newBuffer) + (rp->bufEnd - oldBuffer);
-    rp->buf = newBuffer;
+  /* All interior pointers are converted to offsets BEFORE the realloc and
+     back after: pointer arithmetic against oldBuffer once realloc has freed
+     it is undefined behavior (-Wuse-after-free).  Offsets are stored +1 so
+     that a loc at offset 0 stays distinguishable from a NULL loc. */
+  size_t currOff = (size_t)(rp->currPointer - oldBuffer);
+  size_t endOff = (size_t)(rp->bufEnd - oldBuffer);
+  byte *newBuffer, *base;
 
-    // now we have to make all the already parsed pointers valid again
-    for (i = 0; i < rp->nItems; i++)
-      /* SECURITY (F21): rebase loc for EVERY item type whose loc points into
-         the buffer.  RESPISERRORMSG was omitted, leaving a dangling pointer
-         (use-after-free) when an error reply straddled a buffer realloc.
-         INT/FLOAT loc are not dereferenced downstream but are rebased too. */
-      switch (rp->items[i].respType)
-      {
-        case RESPISSTR:
-        case RESPISBULKSTR:
-        case RESPISPLAINTXT:
-        case RESPISERRORMSG:
-        case RESPISINT:
-        case RESPISFLOAT:
-          if (rp->items[i].loc)
-            rp->items[i].loc = newBuffer + (rp->items[i].loc - oldBuffer);
-          break;
-        default:
-          break;
-      }
+  /* SECURITY (F21): rebase loc for EVERY item type whose loc points into
+     the buffer.  RESPISERRORMSG was omitted, leaving a dangling pointer
+     (use-after-free) when an error reply straddled a buffer realloc.
+     INT/FLOAT loc are not dereferenced downstream but are rebased too. */
+  for (i = 0; i < rp->nItems; i++)
+    switch (rp->items[i].respType)
+    {
+      case RESPISSTR:
+      case RESPISBULKSTR:
+      case RESPISPLAINTXT:
+      case RESPISERRORMSG:
+      case RESPISINT:
+      case RESPISFLOAT:
+        if (rp->items[i].loc)
+          rp->items[i].loc = (byte *)((uintptr_t)(rp->items[i].loc - oldBuffer) + 1);
+        break;
+      default:
+        break;
+    }
+
+  newBuffer = rp_redisRealloc(oldBuffer, newSize);
+  base = newBuffer ? newBuffer : oldBuffer; // failed realloc leaves the old block intact
+
+  for (i = 0; i < rp->nItems; i++)
+    switch (rp->items[i].respType)
+    {
+      case RESPISSTR:
+      case RESPISBULKSTR:
+      case RESPISPLAINTXT:
+      case RESPISERRORMSG:
+      case RESPISINT:
+      case RESPISFLOAT:
+        if (rp->items[i].loc)
+          rp->items[i].loc = base + ((uintptr_t)rp->items[i].loc - 1);
+        break;
+      default:
+        break;
+    }
+
+  if (newBuffer)
+  {
+    rp->currPointer = newBuffer + currOff;
+    rp->bufEnd = newBuffer + endOff;
+    rp->buf = newBuffer;
   }
   // bug fix: guard error message to only trigger on alloc failure, not same-pointer realloc - 2026-02-27
-  else if (!newBuffer)
+  else
     rp->errorMsg = "Failed attempt to grow recieve buffer size in respBufRealloc()";
 
   return (newBuffer);

@@ -101,8 +101,10 @@ static int try_pkg_main(const char *dir, RPPATH *out)
     struct stat mst;
     if (stat(mainpath, &mst) == 0 && !S_ISDIR(mst.st_mode)) {
         out->stat = mst;
-        if (!realpath(mainpath, out->path))
+        if (!realpath(mainpath, out->path)) {
             strncpy(out->path, mainpath, sizeof(out->path) - 1);
+            out->path[sizeof(out->path) - 1] = '\0';
+        }
         return 1;
     }
     /* Common npm shorthand: "main":"lib/foo" (no extension). */
@@ -111,8 +113,10 @@ static int try_pkg_main(const char *dir, RPPATH *out)
         return 0;
     if (stat(mainjs, &mst) == 0 && !S_ISDIR(mst.st_mode)) {
         out->stat = mst;
-        if (!realpath(mainjs, out->path))
+        if (!realpath(mainjs, out->path)) {
             strncpy(out->path, mainjs, sizeof(out->path) - 1);
+            out->path[sizeof(out->path) - 1] = '\0';
+        }
         return 1;
     }
     return 0;
@@ -242,9 +246,11 @@ static RPPATH try_node_modules_exports(duk_context *ctx, const char *request_id,
                                             && !S_ISDIR(mst.st_mode))
                                         {
                                             ret.stat = mst;
-                                            if (!realpath(fullpath, ret.path))
+                                            if (!realpath(fullpath, ret.path)) {
                                                 strncpy(ret.path, fullpath,
                                                         sizeof(ret.path) - 1);
+                                                ret.path[sizeof(ret.path) - 1] = '\0';
+                                            }
                                         }
                                     }
                                 }
@@ -291,8 +297,10 @@ static RPPATH walk_node_modules(const char *name, const char *start_dir, const c
         {
             if (stat(cand, &sb) == 0 && !S_ISDIR(sb.st_mode)) {
                 ret.stat = sb;
-                if (!realpath(cand, ret.path))
+                if (!realpath(cand, ret.path)) {
                     strncpy(ret.path, cand, sizeof(ret.path) - 1);
+                    ret.path[sizeof(ret.path) - 1] = '\0';
+                }
                 return ret;
             }
         }
@@ -346,9 +354,11 @@ static RPPATH walk_node_modules(const char *name, const char *start_dir, const c
                                                 && !S_ISDIR(mst.st_mode))
                                             {
                                                 ret.stat = mst;
-                                                if (!realpath(mainpath, ret.path))
+                                                if (!realpath(mainpath, ret.path)) {
                                                     strncpy(ret.path, mainpath,
                                                             sizeof(ret.path) - 1);
+                                                    ret.path[sizeof(ret.path) - 1] = '\0';
+                                                }
                                                 return ret;
                                             }
                                             /* main pointed at a missing
@@ -364,9 +374,11 @@ static RPPATH walk_node_modules(const char *name, const char *start_dir, const c
                                                 && !S_ISDIR(mst.st_mode))
                                             {
                                                 ret.stat = mst;
-                                                if (!realpath(mainjs, ret.path))
+                                                if (!realpath(mainjs, ret.path)) {
                                                     strncpy(ret.path, mainjs,
                                                             sizeof(ret.path) - 1);
+                                                    ret.path[sizeof(ret.path) - 1] = '\0';
+                                                }
                                                 return ret;
                                             }
                                         }
@@ -379,8 +391,10 @@ static RPPATH walk_node_modules(const char *name, const char *start_dir, const c
                 /* No package.json#main hit — return the directory and let
                    the caller's index.js fallback handle it. */
                 ret.stat = sb;
-                if (!realpath(cand, ret.path))
+                if (!realpath(cand, ret.path)) {
                     strncpy(ret.path, cand, sizeof(ret.path) - 1);
+                    ret.path[sizeof(ret.path) - 1] = '\0';
+                }
                 return ret;
             }
         }

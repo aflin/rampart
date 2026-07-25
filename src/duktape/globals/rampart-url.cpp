@@ -441,6 +441,7 @@ duk_ret_t rp_urlpat_new(duk_context *ctx) {
     } catch (const std::exception &e) {
         RP_THROW(ctx, "URLPattern: %s", e.what());
     }
+    return 0; /* unreachable: RP_THROW longjmps */
 }
 
 /* _urlPatternTest(handle, input, baseURL?) → boolean */

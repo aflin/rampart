@@ -55,15 +55,7 @@
 
 /* ECMA-402 mandates specific error subtypes (TypeError for receiver
    / brand-check violations, RangeError for out-of-range options).
-   RP_THROW emits a generic Error — provide subtype variants. */
-#define RP_TYPE_THROW(ctx, ...) do { \
-    duk_push_error_object(ctx, DUK_ERR_TYPE_ERROR, __VA_ARGS__); \
-    (void)duk_throw(ctx); \
-} while (0)
-#define RP_RANGE_THROW(ctx, ...) do { \
-    duk_push_error_object(ctx, DUK_ERR_RANGE_ERROR, __VA_ARGS__); \
-    (void)duk_throw(ctx); \
-} while (0)
+   RP_TYPE_THROW / RP_RANGE_THROW now come from rampart.h. */
 
 /* CLDR alias maps ICU doesn't apply.  Each entry rewrites the BCP 47
    tag's relevant subtag to its canonical replacement. */
@@ -1104,7 +1096,7 @@ static duk_ret_t dtf_format_to_parts(duk_context *ctx)
    Throws RangeError on NaN per ECMA-402 §11.5.5. */
 static UDate dtf_arg_to_udate(duk_context *ctx, duk_idx_t idx, const char *which)
 {
-    double t;
+    double t = 0; /* else branch throws; init quiets -Wmaybe-uninitialized */
     if (duk_is_number(ctx, idx)) {
         t = duk_get_number(ctx, idx);
     } else if (duk_is_object(ctx, idx)) {
@@ -1584,7 +1576,7 @@ static duk_ret_t nf_construct(duk_context *ctx)
     } else if (!strcmp(style, "unit")) {
         const char *un = have_opts ? opt_get_string(ctx, opts_idx, "unit") : NULL;
         if (un) {
-            char part[96];
+            char part[160];
             /* ECMA-402 allows compound "per" units like "meter-per-second";
                skeleton uses "measure-unit/<u> per-measure-unit/<u>". */
             const char *per = strstr(un, "-per-");
@@ -1754,10 +1746,10 @@ static duk_ret_t nf_construct(duk_context *ctx)
         duk_get_prop_string(ctx, opts_idx, "minimumIntegerDigits");
         if (duk_is_number(ctx, -1)) {
             int mi = (int)duk_get_int(ctx, -1);
-            char buf[24];
-            snprintf(buf, sizeof(buf), "integer-width/*%.*s",
-                     mi, "0000000000000000");
-            /* the *N notation in skeletons is "at least N integer digits" — use "+0…" */
+            /* skeleton "integer-width/+0…0" — "at least N integer digits".
+               ECMA-402 allows up to 21 digits, so buf must hold
+               "integer-width/" + "+" + 21 zeros. */
+            char buf[48];
             char buf2[32];
             int n2 = 0;
             buf2[n2++] = '+';
@@ -1847,7 +1839,7 @@ static duk_ret_t nf_construct(duk_context *ctx)
                     char tmp[64];
                     snprintf(tmp, sizeof(tmp), "%.*s.%s",
                              n - mxfd_eff, buf, buf + (n - mxfd_eff));
-                    char prefix[64];
+                    char prefix[96];
                     snprintf(prefix, sizeof(prefix), "precision-increment/%s", tmp);
                     strncpy(buf, prefix, sizeof(buf) - 1); buf[sizeof(buf) - 1] = 0;
                 }

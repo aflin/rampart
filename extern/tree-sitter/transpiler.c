@@ -14379,21 +14379,23 @@ static int rewrite_for_of_simple(EditList *edits, const char *src, TSNode forof,
 
     // Fresh temps
 #define TPSMALLBUFSZ 32
-    char ibuf[TPSMALLBUFSZ], xbuf[TPSMALLBUFSZ], itbuf[TPSMALLBUFSZ+1], rbuf[TPSMALLBUFSZ];
+    /* +2 on derived-name bufs: longest prefix ("_TrN_ofn") is 8 chars + the
+       numeric suffix from ibuf (up to TPSMALLBUFSZ-7 chars) + NUL. */
+    char ibuf[TPSMALLBUFSZ], xbuf[TPSMALLBUFSZ], itbuf[TPSMALLBUFSZ+2], rbuf[TPSMALLBUFSZ+2];
     /* NDE.55: completion-tracking temps for the spec `iter.return()` call. */
-    char normbuf[TPSMALLBUFSZ], errbuf[TPSMALLBUFSZ], evbuf[TPSMALLBUFSZ+1], cbuf[TPSMALLBUFSZ+1];
+    char normbuf[TPSMALLBUFSZ+2], errbuf[TPSMALLBUFSZ+2], evbuf[TPSMALLBUFSZ+2], cbuf[TPSMALLBUFSZ+2];
     make_fresh_forof_names(ibuf, sizeof ibuf, xbuf, sizeof xbuf);
     // derive iterator and result names from the same counter suffix
     {
         /* ibuf is "_TrN_i" or "_TrN_iN"; skip the "_TrN_i" (6 chars) to
            get the numeric suffix portion (empty for counter==1). */
         const char *suffix = ibuf + 6;
-        snprintf(itbuf, TPSMALLBUFSZ+1, "_TrN_it%s", suffix);
-        snprintf(rbuf, TPSMALLBUFSZ, "_TrN_r%s", suffix);
-        snprintf(normbuf, TPSMALLBUFSZ, "_TrN_ofn%s", suffix);
-        snprintf(errbuf,  TPSMALLBUFSZ, "_TrN_ofe%s", suffix);
-        snprintf(evbuf,   TPSMALLBUFSZ+1, "_TrN_ofv%s", suffix);
-        snprintf(cbuf,    TPSMALLBUFSZ+1, "_TrN_ofc%s", suffix);
+        snprintf(itbuf, sizeof itbuf, "_TrN_it%s", suffix);
+        snprintf(rbuf, sizeof rbuf, "_TrN_r%s", suffix);
+        snprintf(normbuf, sizeof normbuf, "_TrN_ofn%s", suffix);
+        snprintf(errbuf,  sizeof errbuf, "_TrN_ofe%s", suffix);
+        snprintf(evbuf,   sizeof evbuf, "_TrN_ofv%s", suffix);
+        snprintf(cbuf,    sizeof cbuf, "_TrN_ofc%s", suffix);
     }
 
     // Build replacement — supports both arrays and iterables (Symbol.iterator)

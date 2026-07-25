@@ -279,7 +279,22 @@ add_custom_target(txcoreconfig.h)
 
 IF(PARSERS_FOUND)
 
-    GENERATE_BISON_FLEX_SOURCES(${TEXISAPI_SOURCE_DIR}/sql1.y ""
+    # sql1.y's 23 shift/reduce and 38 reduce/reduce conflicts are
+    # longstanding and expected; quiet bison's conflict warnings where
+    # supported (-Wno-conflicts-* needs bison >= 2.6; macOS /usr/bin/bison
+    # is 2.3 and would reject the flags).
+    SET(SQL1_BISON_ARGS "")
+    IF(BISON_EXECUTABLE)
+        EXECUTE_PROCESS(COMMAND ${BISON_EXECUTABLE} --version
+                        OUTPUT_VARIABLE _bison_version_out ERROR_QUIET)
+        IF(_bison_version_out MATCHES "([0-9]+\\.[0-9]+)")
+            IF(NOT CMAKE_MATCH_1 VERSION_LESS 2.6)
+                SET(SQL1_BISON_ARGS -Wno-conflicts-sr -Wno-conflicts-rr)
+            ENDIF()
+        ENDIF()
+    ENDIF()
+
+    GENERATE_BISON_FLEX_SOURCES(${TEXISAPI_SOURCE_DIR}/sql1.y "${SQL1_BISON_ARGS}"
        ${TEXISAPI_SOURCE_DIR}/scn1.l   "")
 
     INCLUDE_DIRECTORIES(${TEXIS_BINARY_DIR})
@@ -607,6 +622,23 @@ IF(PARSERS_FOUND)
     #WTF    xsltapi.c
     zlibutil.c
   )
+
+  # Texis intentionally keeps its proven old-style C; a few files trip
+  # modern gcc analyzers with false positives. Suppress per-file rather
+  # than touch the code. All three flags are gcc-only (clang/AppleClang
+  # reject them with "unknown warning option"), hence the GNU guard.
+  #   ppm.c:172      -Walloc-size-larger-than  (signed/unsigned range analysis)
+  #   kdbfchk.c:1770 -Wstringop-overflow       (old-style buffer math)
+  #   sregex.c:295   -Wreturn-local-addr       (two-pass compile always
+  #                    callocs before returning; local tmp[] cannot escape)
+  if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
+    set_source_files_properties(ppm.c PROPERTIES
+        COMPILE_OPTIONS "-Wno-alloc-size-larger-than")
+    set_source_files_properties(kdbfchk.c PROPERTIES
+        COMPILE_OPTIONS "-Wno-stringop-overflow")
+    set_source_files_properties(sregex.c PROPERTIES
+        COMPILE_OPTIONS "-Wno-return-local-addr")
+  endif()
 
   if(LOCK_SERVER)
     list(APPEND BUILD_SRCS

@@ -77,20 +77,15 @@ if(APPLE)
     list(APPEND _OPENSSL_CONFIGURE_ARGS -mmacosx-version-min=11.0)
 endif()
 
-include(ProcessorCount)
-ProcessorCount(_NPROC)
-if(_NPROC EQUAL 0)
-    set(_NPROC 2)
-endif()
-
 # Use $(MAKE) instead of ${CMAKE_MAKE_PROGRAM} for the build step.
 # CMake passes $(MAKE) through unescaped (it only expands ${}); the
 # generated Makefile then contains a literal $(MAKE) recipe line.
 # gmake gives $(MAKE) implicit jobserver-passthrough semantics, so the
-# parent make's -jN is inherited.  -j${_NPROC} is kept as a fallback
-# for standalone invocations (cmake --build . --target openssl) where
-# there's no parent jobserver; when the jobserver IS present, gmake
-# uses it and ignores -j${_NPROC}.
+# parent make's -jN is inherited.  Do NOT add an explicit -jN here:
+# modern gmake does not ignore it in favor of the jobserver — it
+# disconnects from the jobserver ("warning: -jN forced in submake:
+# resetting jobserver mode") and oversubscribes.  A standalone serial
+# `make openssl` builds serially, as asked.
 
 # Step 1: copy source tree to the build dir (once).
 add_custom_command(
@@ -122,7 +117,7 @@ add_custom_command(
     OUTPUT  ${OPENSSL_LIB_SSL} ${OPENSSL_LIB_CRYPTO}
             ${OPENSSL_BUILD_DIR}/ssl/libssl.a
             ${OPENSSL_BUILD_DIR}/crypto/libcrypto.a
-    COMMAND $(MAKE) -j${_NPROC} build_libs
+    COMMAND $(MAKE) build_libs
     COMMAND ${CMAKE_COMMAND} -E make_directory ${OPENSSL_BUILD_DIR}/ssl
     COMMAND ${CMAKE_COMMAND} -E make_directory ${OPENSSL_BUILD_DIR}/crypto
     COMMAND ${CMAKE_COMMAND} -E create_symlink ../libssl.a    ${OPENSSL_BUILD_DIR}/ssl/libssl.a

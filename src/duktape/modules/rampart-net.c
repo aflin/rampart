@@ -3207,8 +3207,13 @@ static duk_ret_t socket_startTls(duk_context *ctx)
 
     /* SECURITY (F12): bind the expected hostname so the certificate's SAN/CN is
        verified, not merely that it chains to a trusted CA (CWE-297).  SNI
-       (above) is only a routing hint, not verification. */
+       (above) is only a routing hint, not verification.
+       SSL_set1_host is deprecated in OpenSSL 4.0 but still the correct API
+       for 1.1/3.x; quiet the warning until OpenSSL 4 is our floor. */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
     if (!insecure && hostname && !SSL_set1_host(sinfo->ssl, hostname)) {
+#pragma GCC diagnostic pop
         SSL_free(sinfo->ssl);
         sinfo->ssl = NULL;
         RP_THROW(ctx, "socket.startTls: failed to set verify hostname");
@@ -3980,9 +3985,14 @@ static int make_sock_conn(void *arg, int after)
 
                 /* SECURITY (F12): verify the cert matches hostname (SAN/CN),
                    not just that it chains to a trusted CA (CWE-297). SNI above
-                   is only a routing hint. */
+                   is only a routing hint.
+                   SSL_set1_host: deprecated in OpenSSL 4.0, see note at the
+                   other call site. */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
                 if (!insecure && hostname && !SSL_set1_host(sinfo->ssl, hostname))
                 {
+#pragma GCC diagnostic pop
                     ssl_err_str="failed to set verify hostname";
                     break;
                 }

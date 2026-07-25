@@ -103,6 +103,12 @@ target_compile_options(faiss_ivfpq PRIVATE
     -Wno-unused-variable
     -Wno-unused-but-set-variable
 )
+# gcc-only flag (clang/AppleClang reject it with "unknown warning option"):
+# hamming_distance/generic-inl.h's [[fallthrough]] after a return trips
+# -Wswitch-unreachable on gcc.
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    target_compile_options(faiss_ivfpq PRIVATE -Wno-switch-unreachable)
+endif()
 
 # OpenMP — FAISS uses #pragma omp throughout (training, search, etc.).
 find_package(OpenMP REQUIRED)
