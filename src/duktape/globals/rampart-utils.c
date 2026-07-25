@@ -829,10 +829,10 @@ char *home_dir=NULL, homewsub[PATH_MAX], *rampart_path=NULL;
 
 standard_locs_t standard_locs[nstandard_locs]={{0}};
 
+static int have_standard_locs=0;
+
 static void make_standard_locs()
 {
-    static int have_standard_locs=0;
-
     if(have_standard_locs)
         return;
 
@@ -859,6 +859,36 @@ static void make_standard_locs()
                                        // from another directory/folder
 
     have_standard_locs=1;
+}
+
+/* Point rampart at a different home directory at runtime.
+ *
+ * home_dir is captured once from $HOME at startup, but setuid() does NOT
+ * change the environment: a server started as root and switched to an
+ * unprivileged user would keep root's $HOME, so ~/.rampart lookups (module
+ * search path, rampart-models' model store, etc.) would resolve to
+ * /root/.rampart -- unreadable/unwritable for the user actually running.
+ * rampart-server calls this right after dropping privileges.
+ *
+ * Sets $HOME too, so getenv("HOME") (utils.homedir(), scripts, child
+ * processes) agrees, and rebuilds the module search paths that embed it.
+ * Call before starting threads.  Returns 0 on success, -1 on bad input. */
+int rp_set_home_dir(const char *newhome)
+{
+    static char home_buf[PATH_MAX];
+
+    if(!newhome || !*newhome || strlen(newhome) >= sizeof(home_buf))
+        return -1;
+
+    strcpy(home_buf, newhome);
+    home_dir = home_buf;
+    setenv("HOME", home_buf, 1);
+
+    /* recompute standard_locs[1] (== homewsub == $HOME + HOMESUBDIR) */
+    have_standard_locs=0;
+    make_standard_locs();
+
+    return 0;
 }
 
 //#define rp_find_path(file, ...) rp_find_path_vari(file, __VA_ARGS__, NULL) - in rampart.h
@@ -5406,7 +5436,7 @@ duk_ret_t duk_rp_mkdir(duk_context *ctx)
         mode=(mode_t)duk_get_int(ctx,1);
 
     if(rp_mkdir_parent(path,mode)==-1)
-        RP_THROW(ctx, "mkdir(): error creating directory: %s", strerror(errno));
+        RP_THROW(ctx, "mkdir(): error creating directory '%s': %s", path, strerror(errno));
 
     return 0;
 }

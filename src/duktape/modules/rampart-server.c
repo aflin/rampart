@@ -69,6 +69,11 @@ extern char *RP_script_path;
 extern int rp_has_zip_payload;
 uid_t unprivu=0;
 gid_t unprivg=0;
+/* home dir and name of the unprivileged `user:', copied from its passwd
+   entry while we are still root; applied to $HOME at the privilege drop
+   (setuid() does not change the environment). */
+static char unprivhome[PATH_MAX]="";
+static char unprivname[256]="";
 #ifdef __linux__
 int   allow_user_switch=0;
 #endif
@@ -7285,6 +7290,19 @@ static void rp_drop_privileges(duk_context *ctx)
     if (setuid(unprivu) == -1)
         RP_THROW(ctx, "server.start: error setting user, setuid() failed");
 #endif
+    /* setuid() does not touch the environment, so without this the server
+       would keep root's $HOME after the drop and every ~/.rampart lookup
+       (module search path, rampart-models' ~/.rampart/models store, ...)
+       would resolve into /root -- unreadable and unwritable for the user
+       we just became.  Set it to the passwd entry of `user:', the way
+       login/su do.  Runs before any threads exist. */
+    if (*unprivhome)
+        rp_set_home_dir(unprivhome);
+    if (*unprivname)
+    {
+        setenv("USER", unprivname, 1);
+        setenv("LOGNAME", unprivname, 1);
+    }
     g_privs_dropped = 1;
 }
 
@@ -8708,6 +8726,11 @@ duk_ret_t duk_server_start(duk_context *ctx)
                     fprintf(access_fh,"setting unprivileged user '%s'\n",user);
                 unprivu=pwd->pw_uid;
                 unprivg=pwd->pw_gid;
+                /* remember for the $HOME fixup in rp_drop_privileges() */
+                *unprivhome='\0';
+                if(pwd->pw_dir && *pwd->pw_dir && strlen(pwd->pw_dir) < sizeof(unprivhome))
+                    strcpy(unprivhome, pwd->pw_dir);
+                snprintf(unprivname, sizeof(unprivname), "%s", user);
             }
             else
                 RP_THROW(ctx, "server.start: starting as root requires you name a {user:'unpriv_user_name'} in start()");

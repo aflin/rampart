@@ -986,6 +986,12 @@ int clock_gettime(clockid_t type, struct timespec *rettime);
 int  rp_pipe_cloexec(int *fds);
 void rp_fd_keep_on_exec(int fd);
 
+/* Re-point rampart's cached home directory (and $HOME) -- see
+   rampart-utils.c.  Used after a privilege drop, since setuid() leaves
+   the environment (and therefore ~/.rampart lookups) pointing at the
+   original user's home. */
+int rp_set_home_dir(const char *newhome);
+
 /* duk_console_init: provided by the duktape fork as
  * duk_rp_install_console_extended (auto-installed at heap-create when
  * DUK_RP_USE_CONSOLE_EXTENDED is on).  The DUK_CONSOLE_* flag constants
