@@ -3271,6 +3271,9 @@ setf3dbi(DBI_SEARCH *dbisearch)
 	char *fname;
 	TBSPEC *tbspec;		/* Prior Index to AND with (if non-NULL) */
 	int	haveOrderByNotRankDesc;
+	int	rrfTrimRankCutoff = -1;	/* user-scale Nth-best-rank cutoff for
+					 * the PBF_INVTREE (hybrid kw-OR-vec)
+					 * likeprows trim; -1 = no filtering */
 
 	if(!dbisearch)
 		return -1;
@@ -4011,6 +4014,14 @@ setf3dbi(DBI_SEARCH *dbisearch)
 	/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
 
 	/* KNG 20060124 moved exs->fc clear to `trimcont' below */
+	/* Hybrid keyword-OR-vector (PBF_INVTREE + lonely): the results
+	 * B-tree is in RECID order, so the likeprows trim below cannot
+	 * use tree order to find the top hits.  The rank heap holds
+	 * exactly the top `likeprows' ranks seen; its minimum is the
+	 * Nth-best rank.  Capture it before the heap is closed: */
+	if ((pbt->flags & PBF_INVTREE) && pbt->fh != FHEAPPN &&
+	    TXnlikephits > 0 && fheap_num((FHEAP *)pbt->fh) >= (size_t)TXnlikephits)
+		rrfTrimRankCutoff = (int)(EPI_VOIDPTR_INT)fheap_top((FHEAP *)pbt->fh);
 	pbt->fh = closefheap(pbt->fh);
 	rewindbtree(rc);
 	if ((pbt->flags & (PBF_RECIDORDER | PBF_INVTREE)) == PBF_RECIDORDER)
@@ -4151,7 +4162,7 @@ setf3dbi(DBI_SEARCH *dbisearch)
 		 */
 		for (i = 0, iindex->rowsReturned = 0;
 		     i < TXnlikephits;
-		     i++, iindex->rowsReturned++)
+		     /* incremented below, only on kept rows */)
 		{
 			sz = auxbufsz;
 			/* auxbuf is rank or fields */
@@ -4161,7 +4172,18 @@ setf3dbi(DBI_SEARCH *dbisearch)
 			/* prevResultsTree is already sorted, we can
 			 * use linear mode to save an extra sort:
 			 */
+			/* Recid-keyed tree (PBF_INVTREE, hybrid kw-OR-vec):
+			 * tree order is recid order, so the first N entries
+			 * are an arbitrary N -- keep only rows at or above
+			 * the Nth-best rank instead (loc is the internal
+			 * rank here; recid order is preserved for the merge):
+			 */
+			if (rrfTrimRankCutoff >= 0 &&
+			    (int)TX_RANK_INTERNAL_TO_USER(TXApp, TXgetoff(&btloc)) <
+			    rrfTrimRankCutoff)
+				continue;
 			btappend(rc, &btloc, sz, auxbuf, 100, BTBMPN);
+			i++, iindex->rowsReturned++;
 		}
 	}
       trimcont:

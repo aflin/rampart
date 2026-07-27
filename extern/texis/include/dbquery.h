@@ -365,6 +365,8 @@ RECID  *putdbtblrow  ARGS((DBTBL *, RECID *));
 int	renametbl    ARGS((DBTBL *, char *));
 FLD    *dbnametofld  ARGS((DBTBL *, char *));
 int     TXisRankName(const char *name);
+int     TXisKRankName(const char *name);
+int     TXisVRankName(const char *name);
 char   *dbnametoname ARGS((DBTBL *d, char *s, FTN *type, int *ddIdx));
 int	getindexes   ARGS((DBTBL *));
 DBTBL  *dostats      ARGS((DBTBL *, FLDOP *));

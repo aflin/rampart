@@ -82,6 +82,10 @@ IINDEX *index;
 		if (!index->kv && index->rev)
 			closebtree(index->rev);
 #endif
+		if (index->rrfKwRankTree)
+			closebtree(index->rrfKwRankTree);
+		if (index->rrfVecScoreTree)
+			closebtree(index->rrfVecScoreTree);
 		free(index);
 	}
 	return (IINDEX *)NULL;
@@ -1208,11 +1212,13 @@ int	inv;
 		double	fused = 0.0;
 		EPI_OFF_T	recid, key;
 		BTLOC	loc;
+		int	kwContrib = 0;
 
 		if (vi >= vn || (ki < kn && ka[ki].recid < va[vi].recid))
 		{
 			recid = ka[ki].recid;
 			fused = TX_RRF_SCALE / (double)(TX_RRF_K + ka[ki].pos);
+			kwContrib = 1;
 			ki++;
 		}
 		else if (ki >= kn || va[vi].recid < ka[ki].recid)
@@ -1226,11 +1232,27 @@ int	inv;
 			recid = ka[ki].recid;
 			fused = TX_RRF_SCALE / (double)(TX_RRF_K + ka[ki].pos)
 			      + TX_RRF_SCALE / (double)(TX_RRF_K + va[vi].pos);
+			kwContrib = 1;
 			ki++;
 			vi++;
 		}
 		key = (EPI_OFF_T)(fused + 0.5);
 		if (key < 1) key = 1;		/* 0 reads as "no rank" */
+		/* Tie-break, riding the key itself: the merged tree orders
+		 * duplicate keys by BTLOC (recid) -- see fbtree.c binary
+		 * search, locn as secondary key -- so equal fused scores
+		 * would order by table position, i.e. arbitrarily.  And the
+		 * positional zipper makes exact ties routine: the kw and vec
+		 * rows at the same list position fuse equal unless a row is
+		 * in both lists.  Policy: on equal positional evidence the
+		 * literal-term match outranks the semantic-only one, so
+		 * keyword-contributing rows get +1 -- the integer resolution
+		 * of the fused scale.  Adjacent positions differ by >= ~7 at
+		 * sane pool depths, so this cannot reorder genuinely
+		 * distinct positions; consensus rows all carry a keyword
+		 * contribution, so their relative order is unchanged too. */
+		if (kwContrib)
+			key++;
 		if (inv)
 		{
 			/* inverted: btree key = recid, payload = rank */
@@ -1244,6 +1266,47 @@ int	inv;
 			btspinsert(cb, &loc, sizeof(key), &key, 90);
 		}
 		c->cntorig++;
+	}
+	/* Side-score lookup trees for the $krank / $vrank projections:
+	 * recid -> kw rppm rank (user scale, what a solitary LIKEP's $rank
+	 * shows) and recid -> vector similarity (100000 - inv payload, what
+	 * a solitary LIKEV's $rank shows).  Ownership moves to the DBIDX at
+	 * the predopt.c index handoff; closeiindex() frees them if it
+	 * doesn't happen.  Small: <= likeprows / likevRows entries. */
+	c->rrfKwRankTree = openbtree(NULL, BTFSIZE, 20,
+				     BT_FIXED | BT_UNSIGNED, O_RDWR | O_CREAT);
+	c->rrfVecScoreTree = openbtree(NULL, BTFSIZE, 20,
+				       BT_FIXED | BT_UNSIGNED, O_RDWR | O_CREAT);
+	if (c->rrfKwRankTree && c->rrfVecScoreTree)
+	{
+		size_t		j;
+		BTLOC		sloc;
+		EPI_OFF_T	srecid, sval;
+
+		for (j = 0; j < kn; j++)
+		{
+			srecid = ka[j].recid;
+			sval = (EPI_OFF_T)TX_RANK_INTERNAL_TO_USER(TXApp,
+							ka[j].score);
+			if (sval < 1) sval = 1;
+			TXsetrecid(&sloc, sval);
+			btspinsert(c->rrfKwRankTree, &sloc,
+				   sizeof(srecid), &srecid, 90);
+		}
+		for (j = 0; j < vn; j++)
+		{
+			srecid = va[j].recid;
+			sval = (EPI_OFF_T)100000 - va[j].score;
+			if (sval < 1) sval = 1;
+			TXsetrecid(&sloc, sval);
+			btspinsert(c->rrfVecScoreTree, &sloc,
+				   sizeof(srecid), &srecid, 90);
+		}
+	}
+	else				/* oom: $krank/$vrank just read 0 */
+	{
+		c->rrfKwRankTree = closebtree(c->rrfKwRankTree);
+		c->rrfVecScoreTree = closebtree(c->rrfVecScoreTree);
 	}
 	c->nrank = 1;
 	c->rankIsFused = 1;

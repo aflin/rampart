@@ -521,6 +521,7 @@ TXCOUNTINFO	*countInfo;	/* (in/out, opt.) row count stats */
 
 #ifndef NO_NEW_RANK
 		t->fusedRank = 0;	/* per-row; set below for RRF rows */
+		t->rrfKwRank = t->rrfVecScore = 0;
 		if(t->index.nrank)
 		{
 			t->rank = TX_RANK_INTERNAL_TO_USER(TXApp, *(EPI_OFF_T *)tempbuf/t->index.nrank);
@@ -530,7 +531,34 @@ TXCOUNTINFO	*countInfo;	/* (in/out, opt.) row count stats */
 			 * per-row post-process below only verifies the
 			 * match, whatever ranks its sub-preds compute). */
 			if (t->index.rankIsFused)
+			{
 				t->fusedRank = t->rank;
+				/* Per-side scores for $krank / $vrank, from
+				 * the side trees TXindexrrf() built (moved
+				 * onto this DBIDX at the predopt handoff): */
+				if (t->index.rrfKwRankTree ||
+				    t->index.rrfVecScoreTree)
+				{
+					BTLOC		sl;
+					EPI_OFF_T	srecid;
+
+					srecid = TXgetoff2(&btloc);
+					if (t->index.rrfKwRankTree)
+					{
+						sl = btsearch(t->index.rrfKwRankTree,
+							      sizeof(srecid), &srecid);
+						if (TXrecidvalid2(&sl))
+							t->rrfKwRank = (ft_int)TXgetoff2(&sl);
+					}
+					if (t->index.rrfVecScoreTree)
+					{
+						sl = btsearch(t->index.rrfVecScoreTree,
+							      sizeof(srecid), &srecid);
+						if (TXrecidvalid2(&sl))
+							t->rrfVecScore = (ft_int)TXgetoff2(&sl);
+					}
+				}
+			}
 		}
 		else if (t->rankindex.nrank && t->rankindex.btree)
 			{

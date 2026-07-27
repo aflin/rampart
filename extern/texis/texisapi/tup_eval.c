@@ -825,6 +825,22 @@ FLDOP *fo;
 						fopush(fo, tf1);
 						break;
 					}
+					if (TXisKRankName(p->left) ||
+					    TXisVRankName(p->left))
+					{
+						/* RRF-fused hybrid per-side
+						 * scores, stashed per row in
+						 * tup_read() (0 = row absent
+						 * from that side's pool, or
+						 * not a fused query): */
+						tf1 = createfld((char *)TXrankColumnTypeStr, 1, 0);
+						putfld(tf1,
+						       (TXisKRankName(p->left) ?
+							&tup->rrfKwRank :
+							&tup->rrfVecScore), 1);
+						fopush(fo, tf1);
+						break;
+					}
 #ifdef NEVER
 					if(!strcmp(p->left, "$recid"))
 					{

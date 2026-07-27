@@ -346,6 +346,12 @@ IINDEX {
 				   ranks (TXindexrrf); they are FINAL -- the
 				   per-row post-process must not recompute
 				   $rank for these rows */
+	BTREE	*rrfKwRankTree;	/* RRF hybrid only: recid -> kw rppm rank
+				   (user scale), for the $krank projection.
+				   Ownership moves to DBIDX at the predopt
+				   index handoff; closeiindex() frees if not */
+	BTREE	*rrfVecScoreTree;/* likewise recid -> vector similarity
+				   (100000 - inv payload), for $vrank */
 	IINDEX	*piand;		/* Index it is already anded with */
 };
 #define IINDEXPN        ((IINDEX *)NULL)

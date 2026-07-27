@@ -5497,6 +5497,16 @@ donoindx(DBTBL * tb, TBSPEC * tbspec, FLDOP * fo, int allowbubble)
 #ifndef NO_NEW_RANK
 		tb->index.nrank = iinode->index->nrank;
 		tb->index.rankIsFused = iinode->index->rankIsFused;
+		/* $krank / $vrank side trees: close any leftovers from a
+		 * prior query on this handle, then take ownership: */
+		tb->index.rrfKwRankTree =
+			closebtree(tb->index.rrfKwRankTree);
+		tb->index.rrfVecScoreTree =
+			closebtree(tb->index.rrfVecScoreTree);
+		tb->index.rrfKwRankTree = iinode->index->rrfKwRankTree;
+		tb->index.rrfVecScoreTree = iinode->index->rrfVecScoreTree;
+		iinode->index->rrfKwRankTree = NULL;	/* moved */
+		iinode->index->rrfVecScoreTree = NULL;
 #endif
 		if (iinode->index->orig)
 		{

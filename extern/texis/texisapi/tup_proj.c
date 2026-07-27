@@ -421,7 +421,8 @@ int	*nn;
 		else
 		{
 #ifndef NO_RANK_FIELD
-			if (TXisRankName(p->left))
+			if (TXisRankName(p->left) || TXisKRankName(p->left) ||
+			    TXisVRankName(p->left))
 				return((char *)TXrankColumnTypeStr);
 #endif
 			putmsg(MWARN+UGE,NULL,"Field `%s' non-existent",p->left);
@@ -618,7 +619,8 @@ int	*nn;
 		else
 		{
 #ifndef NO_RANK_FIELD
-			if (TXisRankName(p->left))
+			if (TXisRankName(p->left) || TXisKRankName(p->left) ||
+			    TXisVRankName(p->left))
 			{
 				strcpy(ltype, TXrankColumnTypeStr);
 				lsz = 1;
@@ -660,7 +662,8 @@ int	*nn;
 		else
 		{
 #ifndef NO_RANK_FIELD
-			if (TXisRankName(p->right))
+			if (TXisRankName(p->right) || TXisKRankName(p->right) ||
+			    TXisVRankName(p->right))
 			{
 				strcpy(rtype, TXrankColumnTypeStr);
 				rsz = 1;

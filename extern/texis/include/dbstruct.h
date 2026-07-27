@@ -739,6 +739,9 @@ typedef struct DBIDX_tag
 	DBTBL	*indexdbtbl;/* JMT 2000-06-18 */
 	byte	deDupRecids;	/* nonzero: de-dup adjacent recids */
 	int	rankIsFused;	/* see IINDEX.rankIsFused (texint.h) */
+	BTREE	*rrfKwRankTree;	/* see IINDEX.rrfKwRankTree; owned here after
+				   the predopt handoff */
+	BTREE	*rrfVecScoreTree;
 } DBIDX ;
 #define DBIDXPN	((DBIDX *)NULL)
 
@@ -803,6 +806,11 @@ struct DBTBL_tag {
 				   set it is FINAL: $rank projection and
 				   TXcalcrank() use it as-is instead of
 				   recomputing from the predicate tree */
+	ft_int	rrfKwRank;	/* current row's kw-side rppm rank (as a
+				   solitary LIKEP's $rank; 0 = not in kw pool
+				   or not a fused query) -- $krank points here */
+	ft_int	rrfVecScore;	/* current row's vec-side similarity (as a
+				   solitary LIKEV's $rank) -- $vrank */
 	int	nireadl;	                 /* Type of index locks */
 	int	niwrite;	                 /* Type of index locks */
 	ft_counter	ireadc;			/* Last index read time */

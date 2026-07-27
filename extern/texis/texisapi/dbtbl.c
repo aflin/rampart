@@ -183,6 +183,10 @@ char *name;			/* Name of the table to open */
 				db->index.btree->usr =
 					closefldcmp(db->index.btree->usr);
 			db->index.btree = closebtree(db->index.btree);
+			db->index.rrfKwRankTree =
+				closebtree(db->index.rrfKwRankTree);
+			db->index.rrfVecScoreTree =
+				closebtree(db->index.rrfVecScoreTree);
 #endif
 		}
 		if (db->order != (PROJ *) NULL)
@@ -264,6 +268,10 @@ char *name;			/* Name of the table to open */
 		    bttexttoparam(db->index.btree,
 				  db->indexAsTableSysindexParams) < 0)
 			db->index.btree = closebtree(db->index.btree);
+			db->index.rrfKwRankTree =
+				closebtree(db->index.rrfKwRankTree);
+			db->index.rrfVecScoreTree =
+				closebtree(db->index.rrfVecScoreTree);
 #ifndef NO_BUBBLE_INDEX
 		db->index.type = DBIDX_NATIVE;
 #endif
@@ -466,6 +474,10 @@ DBTBL *db;			/* The table to close */
 				db->index.btree->usr =
 					closefldcmp(db->index.btree->usr);
 			db->index.btree = closebtree(db->index.btree);
+			db->index.rrfKwRankTree =
+				closebtree(db->index.rrfKwRankTree);
+			db->index.rrfVecScoreTree =
+				closebtree(db->index.rrfVecScoreTree);
 #endif
 		}
 		if (db->order != (PROJ *) NULL)
@@ -1530,6 +1542,34 @@ TXisRankName(const char *name)
 	return(0);
 }
 
+/* $krank / $vrank: the RRF-fused hybrid's per-side scores (see
+ * DBTBL.rrfKwRank/rrfVecScore).  Same DESC/NOCASE suffix tolerance as
+ * TXisRankName():
+ */
+static int
+TXisNamedRankCol(const char *name, const char *col, size_t colLen)
+{
+	const char	*e;
+
+	e = name + strlen(name);
+	if (e > name && e[-1] == '^') e--;	/* NOCASE/IGNCASE */
+	if (e > name && e[-1] == '-') e--;	/* DESC */
+	return((size_t)(e - name) == colLen &&
+	       strncmp(name, col, colLen) == 0);
+}
+
+int
+TXisKRankName(const char *name)
+{
+	return(TXisNamedRankCol(name, "$krank", 6));
+}
+
+int
+TXisVRankName(const char *name)
+{
+	return(TXisNamedRankCol(name, "$vrank", 6));
+}
+
 /********************************************************************/
 /*
    Converts a field name to the name actually used in the table.
@@ -1561,6 +1601,12 @@ int	*ddIdx;	/* (out, opt.) `d->tbl->dd->fd' index, if applicable (or -1)*/
 	{
 		strcpy(fqs, s);
 		if (type) *type = TX_RECID_COLUMN_TYPE_FTN;
+		return fqs;
+	}
+	if (TXisKRankName(s) || TXisVRankName(s))
+	{			/* RRF hybrid per-side scores */
+		strcpy(fqs, s);
+		if (type) *type = TX_RANK_COLUMN_TYPE_FTN;
 		return fqs;
 	}
 	if (d->lname && (lnameLen = strlen(d->lname)) + 1 +
