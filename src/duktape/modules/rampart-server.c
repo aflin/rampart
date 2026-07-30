@@ -7277,6 +7277,14 @@ static void rp_drop_privileges(duk_context *ctx)
 {
     if (!unprivu)
         return;
+
+    /* setgid()/setuid() do not touch the supplementary groups: give the
+       process the group list login/su would, instead of leaving it with
+       root's.  Needs root, so it runs before the drop below. */
+    if (*unprivname && initgroups(unprivname, unprivg) == -1)
+        RP_THROW(ctx, "server.start: error setting supplementary groups for user '%s', initgroups() failed: %s",
+                 unprivname, strerror(errno));
+
 #ifdef __linux__
     {
         gid_t sgid = -1;
