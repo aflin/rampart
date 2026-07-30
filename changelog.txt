@@ -1,7 +1,45 @@
 v0.7.1
     -rampart and installer
                             Docker builds for all.  langtools gpu build
-                            on arm.
+                            on arm.  Install fixes.  AlmaLinux 8, FreeBSD
+                            and 32-bit Raspberry Pi build fixes.
+
+    -rampart-sql            Fused keyword + vector search --
+                            "doc LIKEP ? OR v LIKEV ?" -- with reciprocal
+                            rank fusion, plus $krank and $vrank for the
+                            per-side scores.
+                            chunkembed() for chunked, multi-vector rows.
+                            onnxEmbed and clipEmbed join llamaEmbed as
+                            per-connection embedding backends; clipEmbed
+                            enables text-to-image search.
+                            Much faster faiss IVFPQ index builds, with
+                            gpu assist where available.
+
+    -rampart-server         preThreadFunc.  sslKey/sslCert accept
+                            in-memory PEM per listen block.  Reworked
+                            startup to bind privileged ports before
+                            dropping permissions, and to reset the home
+                            directory afterwards.
+                            macOS thread/fork fixes when using llamacpp.
+
+    -rampart-langtools      New rampart-onnx and rampart-clip modules,
+                            with internal chunking.  macOS x86 fixes;
+                            a cuda version mismatch is now reported
+                            rather than crashing.
+
+    -rampart-vector         b8 ("bit") binary vectors, with hamming as
+                            the default metric.
+
+    -rampart-treesitter     extract() to retrieve the source text of a
+                            named function.  tree-sitter array.h fix.
+
+    -rampart-python         pip3r and python3r wrappers, installing to a
+                            per-user module directory when the rampart
+                            install is not writable.
+
+    -rampart-date-holidays
+                            Node-based update script.
+
 v0.7.0
     -rampart                duktape is now a fork at
                             https://github.com/aflin/duktape

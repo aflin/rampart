@@ -109679,9 +109679,21 @@ static const char *duk__rp_proxy_revocable_js =
                     "if(revoked)throw new TypeError(\"Cannot perform '\"+t+\"' on a proxy that has been revoked\");"
                     "var fn=handler[t];"
                     "if(typeof fn==='function')return fn.apply(handler,arguments);"
-                    "if(typeof Reflect!=='undefined'&&typeof Reflect[t]==='function')"
-                        "return Reflect[t].apply(Reflect,arguments);"
                     "var a=arguments;"
+                    /* Duktape invokes the get trap as (target,key,receiver) and the
+                       set trap as (target,key,value,receiver), but its Reflect.get /
+                       Reflect.set raise DUK_ERROR_UNSUPPORTED for a receiver that is
+                       not the target ("[[Get]] receiver currently unsupported").  For
+                       a proxy the receiver is always the proxy, so forwarding
+                       `arguments` verbatim made every trapless Proxy.revocable() throw
+                       "Error: unsupported" on first property access.  Pass only the
+                       arguments duktape implements; the receiver matters solely for
+                       accessors that reference `this`. */
+                    "if(typeof Reflect!=='undefined'&&typeof Reflect[t]==='function'){"
+                        "if(t==='get')return Reflect.get(a[0],a[1]);"
+                        "if(t==='set')return Reflect.set(a[0],a[1],a[2]);"
+                        "return Reflect[t].apply(Reflect,arguments);"
+                    "}"
                     "if(t==='get')return a[0][a[1]];"
                     "if(t==='set'){a[0][a[1]]=a[2];return true;}"
                     "if(t==='has')return a[1] in a[0];"

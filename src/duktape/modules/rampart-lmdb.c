@@ -885,7 +885,10 @@ static duk_ret_t get_del(duk_context *ctx, int del, int retvals)
         else if (rc)
             errexit;
 
-        if(del)
+        /* When not returning values there is nothing to preserve, so delete
+           straight away.  When returning them, the delete must wait until
+           after pushkey/pushval below -- see the comment there. */
+        if(del && !retvals)
         {
             rc = mdb_cursor_del(cursor, 0);
             if(rc)
@@ -925,8 +928,18 @@ static duk_ret_t get_del(duk_context *ctx, int del, int retvals)
 
         // implicit if (retvals)
         duk_push_object(ctx);
+        /* pushkey/pushval dereference key.mv_data / data.mv_data, which point
+           into the b-tree page.  mdb_cursor_del() rewrites that page and
+           repositions the cursor, so both must be copied onto the duktape
+           stack (which takes its own copy) BEFORE the record is deleted. */
         pushkey;
         pushval;
+        if(del)
+        {
+            rc = mdb_cursor_del(cursor, 0);
+            if(rc)
+                errexit;
+        }
         duk_put_prop(ctx, -3);
 
         while(1)
@@ -944,14 +957,15 @@ static duk_ret_t get_del(duk_context *ctx, int del, int retvals)
                 errexit;
             if(strncmp(s, key.mv_data, len))
                 break;
+            /* copy before deleting -- mdb_cursor_del() invalidates key/data */
+            pushkey;
+            pushval;
             if(del)
             {
                 rc = mdb_cursor_del(cursor, 0);
                 if(rc)
                     errexit;
             }
-            pushkey;
-            pushval;
             duk_put_prop(ctx, -3);
         }
 
@@ -987,6 +1001,18 @@ static duk_ret_t get_del(duk_context *ctx, int del, int retvals)
     else if (rc)
         errexit;
 
+    /* Copy this record out before deleting it.  pushkey/pushval dereference
+       key.mv_data / data.mv_data, which point into the b-tree page;
+       mdb_cursor_del() rewrites that page and moves the cursor on, so reading
+       them afterwards yields whatever record slid into the freed slot.  The
+       duktape stack takes its own copy, so pushing first is the snapshot. */
+    if(retvals)
+    {
+        pushkey;
+        pushval;
+        /* stack: [.., key, val] */
+    }
+
     if(del)
     {
         /* found and delete requested, so delete */
@@ -998,8 +1024,6 @@ static duk_ret_t get_del(duk_context *ctx, int del, int retvals)
     /* now check for an end string or a range number */
     if(retvals)
     {
-        pushval;
-
         if(items)
         {
             int i=1, flag=MDB_NEXT;
@@ -1009,7 +1033,8 @@ static duk_ret_t get_del(duk_context *ctx, int del, int retvals)
                 items *= -1;
             }
             duk_push_object(ctx);
-            pushkey;
+            /* [.., key, val, obj] -> [.., obj, key, val] */
+            duk_pull(ctx, -3);
             duk_pull(ctx, -3);
             duk_put_prop(ctx, -3);
             while(i<items)
@@ -1019,14 +1044,15 @@ static duk_ret_t get_del(duk_context *ctx, int del, int retvals)
                     break;
                 else if(rc)
                     errexit;
+                /* copy before deleting -- mdb_cursor_del() invalidates key/data */
+                pushkey;
+                pushval;
                 if(del)
                 {
                     rc = mdb_cursor_del(cursor, 0);
                     if(rc)
                         errexit;
                 }
-                pushkey;
-                pushval;
                 duk_put_prop(ctx, -3);
                 i++;
             }
@@ -1036,7 +1062,8 @@ static duk_ret_t get_del(duk_context *ctx, int del, int retvals)
             int flag=MDB_NEXT, direction=0;
 
             duk_push_object(ctx);
-            pushkey;
+            /* [.., key, val, obj] -> [.., obj, key, val] */
+            duk_pull(ctx, -3);
             duk_pull(ctx, -3);
             duk_put_prop(ctx, -3);
             direction = strcmp(endstr,s);
@@ -1059,16 +1086,23 @@ static duk_ret_t get_del(duk_context *ctx, int del, int retvals)
 
                 if(direction * strncmp(endstr, key.mv_data, key.mv_size) < 0)
                     break;
+                /* copy before deleting -- mdb_cursor_del() invalidates key/data */
+                pushkey;
+                pushval;
                 if(del)
                 {
                     rc = mdb_cursor_del(cursor, 0);
                     if(rc)
                         errexit;
                 }
-                pushkey;
-                pushval;
                 duk_put_prop(ctx, -3);
             }
+        }
+        else
+        {
+            /* single key: only the value is returned, so drop the key copied
+               above -- stack [.., key, val] -> [.., val] */
+            duk_remove(ctx, -2);
         }
     }
     else

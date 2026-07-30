@@ -46,10 +46,22 @@ static int rc_get_key_any(duk_context *ctx, duk_idx_t pos_idx,
 
 
 #define OPENSSL_ERR_STRING_MAX_SIZE 1024
+/* OpenSSL's error queue is per-thread and cumulative, and ERR_get_error()
+   returns the OLDEST entry.  An operation that failed earlier without draining
+   the queue -- including one that raised its own rampart-level error rather
+   than going through this macro -- therefore got reported in place of the real
+   failure: a bad cshake functionName surfaced as "asn1 encoding routines::
+   nested asn1 error" left behind by an unrelated failed key import.
+   The failing operation's own entries are always the most recent, so drain the
+   queue and report the last one.  Draining also stops this failure from
+   poisoning whatever runs next. */
 #define DUK_OPENSSL_ERROR(ctx)                                                     \
     {                                                                              \
         void *err_buf = duk_push_fixed_buffer(ctx, OPENSSL_ERR_STRING_MAX_SIZE);   \
-        ERR_error_string_n(ERR_get_error(), err_buf, OPENSSL_ERR_STRING_MAX_SIZE); \
+        unsigned long rp_ossl_e, rp_ossl_last = 0;                                 \
+        while ((rp_ossl_e = ERR_get_error()) != 0) rp_ossl_last = rp_ossl_e;       \
+        ERR_error_string_n(rp_ossl_last, err_buf, OPENSSL_ERR_STRING_MAX_SIZE);    \
+        ERR_clear_error();                                                         \
         (void)duk_error(ctx, DUK_ERR_ERROR, "OpenSSL Error (%d): %s", __LINE__,err_buf);        \
     }
 

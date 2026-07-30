@@ -2538,6 +2538,7 @@ htp__connection_readcb_(struct bufferevent * bev, void * arg)
 {
     evhtp_connection_t * c = arg;
     evhtp_request_t *req = c->request;
+    evhtp_request_t *creq;
     void               * buf;
     size_t               nread;
     size_t               avail, postavail;
@@ -2613,10 +2614,16 @@ restart:
     }
     log_debug("nread = %zu", nread);
 
-    /* check for body-too-large BEFORE the ownership check, since threaded
-       dispatch clears EVHTP_CONN_FLAG_OWNER and would skip this otherwise */
+    /* Check for body-too-large BEFORE the ownership check below, so the 413
+       is still sent on a connection whose ownership has been handed off.
+       (EVHTP_CONN_FLAG_OWNER is cleared only by
+       evhtp_connection_take_ownership(); threaded dispatch does not clear
+       it, contrary to what this comment used to say.) */
     if (c->request && c->cr_status == EVHTP_RES_DATA_TOO_LONG) {
-        if(req->websock)
+        /* NB: use c->request, not the local `req`.  `req` is captured at
+           function entry, before htparser_run() below creates the request,
+           so on a fresh connection it is still NULL here. */
+        if(c->request->websock)
         {
             evhtp_ws_do_disconnect(c->request);
             return;
@@ -2624,9 +2631,18 @@ restart:
         /* 2026-04-01: Send a proper HTTP 413 response when the request
            body exceeds maxBodySize, instead of silently dropping the
            connection. The client receives a clean status code rather
-           than a connection reset. */
+           than a connection reset.
+
+           evhtp_send_reply() only queues the reply onto the bufferevent;
+           freeing the connection here would destroy the bev before it
+           flushed, so the client saw an empty reply.  Instead: discard the
+           oversized body we have, stop reading any more of it, turn off
+           keepalive, and let htp__connection_writecb_() free the connection
+           once the reply has actually gone out. */
+        evbuffer_drain(bufferevent_get_input(bev), avail);
+        bufferevent_disable(bev, EV_READ);
+        HTP_FLAG_OFF(c->request, EVHTP_REQ_FLAG_KEEPALIVE);
         evhtp_send_reply(c->request, EVHTP_RES_ENTOOLARGE);
-        evhtp_safe_free(c, evhtp_connection_free);
         return;
     }
 
@@ -2638,15 +2654,20 @@ restart:
 
         log_debug("EVHTP_CONN_FLAG_OWNER not set, removing contexts");
         evbuffer_drain(bufferevent_get_input(bev), nread);
-        if (req->ws_parser)
+        /* Re-read c->request rather than trusting the local `req`: `req` was
+           captured before htparser_run() above, so it is stale (NULL) whenever
+           this read created the request.  Reaching here with a NULL c->request
+           is also legal, hence the guard. */
+        creq = c->request;
+        if (creq && creq->ws_parser)
         {
-            if(req->ws_parser->pingev)
+            if(creq->ws_parser->pingev)
             {
-                event_del(req->ws_parser->pingev);
-                event_free(req->ws_parser->pingev);
+                event_del(creq->ws_parser->pingev);
+                event_free(creq->ws_parser->pingev);
             }
-            free(req->ws_parser);
-            req->ws_parser = NULL; /* F16: NULL so htp__request_free_ can't double-free */
+            free(creq->ws_parser);
+            creq->ws_parser = NULL; /* F16: NULL so htp__request_free_ can't double-free */
         }
         evhtp_safe_free(c, evhtp_connection_free);
 

@@ -16,8 +16,10 @@
  *   - isNull/ifNull on a true NULL         : texis fixed columns default to 0/'',
  *                                            not NULL, so a real NULL is hard to make
  *                                            (non-NULL paths ARE tested below)
- *   - hexifyBytes, nullOutputString        : only affect tsql text output, not the
+ *   - nullOutputString                     : only affects tsql text output, not the
  *                                            JS object/array return values
+ *                                            (hexifyBytes DOES affect JS returns via
+ *                                            convert(byteCol,'varchar') -- tested below)
  *   - lookup()                             : range/name setup did not resolve in probes
  *   - perf/buffer/index tuning settings    : no readback path (btreeCacheSize, ramRows,
  *     (indexMem, indexMmap, *BufSz, etc.)    indexMem, etc.) — settable but unobservable
@@ -443,6 +445,21 @@ t("set - noiseList set then read back", function(){
     return JSON.stringify(r.noiseList) === '["zzx","zzy"]';
 });
 
+t("set - hexifyBytes affects byte columns in JS returns", function(){
+    sql.query("drop table hexb");
+    sql.exec("create table hexb (h varbyte(16))");
+    sql.exec("insert into hexb values(?)", [rampart.utils.dehexify("48656c6c6f")]);
+
+    var plain = sql.one("select convert(h,'varchar') r from hexb").r;
+    sql.set({hexifyBytes:true});
+    var hexed = sql.one("select convert(h,'varchar') r from hexb").r;
+    sql.reset();
+    var back  = sql.one("select convert(h,'varchar') r from hexb").r;
+
+    sql.query("drop table hexb");
+    return plain === "Hello" && hexed === "48656c6c6f" && back === "Hello";
+});
+
 t("set - addExpressions appears in listExpressions", function(){
     var r = sql.set({addExpressions:["[\\digit]{3,5}"], listExpressions:true});
     sql.reset();
@@ -544,7 +561,7 @@ t.skip("random() / seq()",                "non-deterministic / stateful");
 t.skip("exec() SQL function",             "runs external commands");
 t.skip("fromfile / toind / canonpath",    "filesystem-path specific");
 t.skip("isNull/ifNull true-NULL path",    "texis fixed cols default to 0/'' not NULL");
-t.skip("hexifyBytes / nullOutputString",  "tsql text-output only, not JS returns");
+t.skip("nullOutputString",                "tsql text-output only, not JS returns");
 t.skip("lookup()",                        "range/name setup unresolved");
 t.skip("perf/buffer/index tuning sets",   "no readback path");
 

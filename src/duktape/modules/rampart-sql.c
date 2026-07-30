@@ -4641,6 +4641,25 @@ static int rp_add_named_parameters(
         }
         else
         {
+            /* sql.set({paramChk:false}) maps to
+               TXsetDiscardUnsetParameterClauses(true) (setprop.c:1049), which
+               tells texis to DROP the clause whose parameter was never
+               supplied -- the documented "give one complex query, supply only
+               the parameters whose clauses should take effect" behaviour
+               (sql-set.rst paramChk).  Leaving the parameter unbound here is
+               precisely what lets texis do that.  Erroring unconditionally
+               made the setting unreachable from rampart JS, because this check
+               runs long before texis ever sees the statement.
+
+               Skipping is positionally safe: h_param() above indexes by i+1
+               from the loop counter, not by a running count of bound
+               parameters, so an unbound slot does not shift the others. */
+            if(TXgetDiscardUnsetParameterClauses())
+            {
+                duk_pop(ctx);
+                continue;
+            }
+
             /* TODO: get rid of this and the rest of the LIKEP_PARAM_SUBSTITUTIONS stuff.
             if(*key==LIKEP_MOD_CHAR &&
                  (
@@ -8669,6 +8688,31 @@ static duk_ret_t rp_texis_set(duk_context *ctx)
         duk_push_object(ctx); // [ settings_obj, this, new_empty_old_settings ]
     }
                                               // [ settings_obj, this, old_settings ]
+
+    /* Snapshot the saved settings before merging, so a failed apply can be
+       rolled back.  The merge below writes every incoming key into the SAME
+       stored object BEFORE anything is applied, so without this a key that
+       h_set rejects stays behind and is replayed by every subsequent set() --
+       which then re-throws the original error even for a perfectly valid
+       call, until reset() clears the object.  (Compare the add/del list
+       operations stripped after a successful apply further down: same
+       "stale entry replayed forever" hazard.) */
+    {
+        duk_idx_t bidx;
+
+        duk_push_object(ctx);
+        bidx = duk_get_top_index(ctx);
+        duk_enum(ctx, 2, 0);
+        while (duk_next(ctx, -1, 1))
+        {
+            const char *bk = duk_get_string(ctx, -2);
+            duk_put_prop_string(ctx, bidx, bk);   /* consumes the value */
+            duk_pop(ctx);                         /* pop the key         */
+        }
+        duk_pop(ctx);                             /* pop the enum        */
+        duk_put_prop_string(ctx, 1, DUK_HIDDEN_SYMBOL("sql_settings_backup"));
+    }
+                                              // [ settings_obj, this, old_settings ]
     /* copy properties, renamed as lowercase, into saved old settings */
     duk_enum(ctx, 0, 0);                      // [ settings_obj, this, old_settings, enum_obj ]
     while (duk_next(ctx, -1, 1))
@@ -8758,15 +8802,23 @@ static duk_ret_t rp_texis_set(duk_context *ctx)
      * without an embed key in this set(). */
     ret = h_set(ctx, h, errbuf);
 
-    if(ret == -1)
+    if(ret == -1 || ret == -2)
     {
-        h_close(h);
-        RP_THROW(ctx, "%s", errbuf);
-    }
+        /* Roll the saved settings back to their pre-call state so the key
+           that just failed is not replayed by every later set(). */
+        duk_push_this(ctx);
+        if(duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("sql_settings_backup")))
+            duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("sql_settings"));
+        else
+            duk_pop(ctx);
+        duk_del_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("sql_settings_backup"));
+        duk_pop(ctx);
 
-    else if (ret ==-2)
-    {
-         h_close(h);
+        h_close(h);
+
+        if(ret == -1)
+            RP_THROW(ctx, "%s", errbuf);
+
         throw_tx_error(ctx, errbuf);
     }
 
@@ -8780,6 +8832,8 @@ static duk_ret_t rp_texis_set(duk_context *ctx)
      * the replayed list -- the "delete in a separate set() call
      * corrupts the list" bug. */
     duk_push_this(ctx);
+    /* applied cleanly -- the rollback snapshot is no longer needed */
+    duk_del_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("sql_settings_backup"));
     if(duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("sql_settings")))
     {
         duk_del_prop_string(ctx, -1, "addexp");

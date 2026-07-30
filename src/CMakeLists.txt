@@ -817,6 +817,12 @@ target_link_libraries(rampart-server
     ${ONIGURUMA_TARGET_DIR}/libonig.a
 )
 
+# libevhtp_ws.a is linked by path above, which gives no target-level ordering.
+# Without this, a parallel build can link rampart-server.so against a stale
+# archive (the link step racing ahead of the evhtp_ws build), silently
+# producing a .so that lacks any just-made evhtp.c change.
+add_dependencies(rampart-server evhtp_ws)
+
 set_property(TARGET rampart-server PROPERTY IMPORTED_LOCATION "./rampart-crypto.so")
 
 target_include_directories(rampart-server PRIVATE

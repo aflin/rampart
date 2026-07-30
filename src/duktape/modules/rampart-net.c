@@ -4579,8 +4579,11 @@ static duk_ret_t duk_rp_net_max_connections(duk_context *ctx)
     }
     duk_pop(ctx);
 
-    duk_push_number(ctx, maxconn);
-    duk_put_prop_string(ctx, -2, "maxConnections");
+    /* NB: do not cache maxconn back onto this.maxConnections -- that would
+       replace the method itself with a Number, so a second call threw
+       "1200 not callable".  rampart-net.rst documents this as a setter that
+       "can be called at any time"; the authoritative value lives in
+       sinfo->max_conn. */
 
     return 0;
 }

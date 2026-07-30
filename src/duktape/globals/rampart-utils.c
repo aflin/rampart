@@ -861,6 +861,71 @@ static void make_standard_locs()
     have_standard_locs=1;
 }
 
+/* Subdirectories searched under the "+sub" standard locations when
+   resolving a module.  These are what module.c passes to rp_find_path();
+   kept here beside standard_locs[] so the diagnostic below cannot drift
+   from the search that actually runs. */
+static const char *module_subdirs[] = { "modules/", "lib/rampart_modules/" };
+
+/* Append one "\n    <a>[/<b>]" entry, bounded.  Returns the new length. */
+static size_t _sp_append(char *buf, size_t sz, size_t l,
+                         const char *a, const char *b)
+{
+    int n;
+
+    if(l >= sz)
+        return l;
+    if(b)
+        n = snprintf(buf + l, sz - l, "\n    %s%s%s",
+                     a, (a[strlen(a)-1] == '/') ? "" : "/", b);
+    else
+        n = snprintf(buf + l, sz - l, "\n    %s", a);
+    if(n < 0)
+        return l;
+    if((size_t)n >= sz - l)
+        return sz - 1;      /* truncated */
+    return l + (size_t)n;
+}
+
+/* Render the module search path, in the order it is actually walked, for
+   use in "could not resolve" diagnostics.  `modpath` is the calling
+   module's directory (module.path) or NULL at top level.  Returns buf. */
+char *rp_module_search_path_str(char *buf, size_t sz, const char *modpath)
+{
+    size_t l = 0;
+    int i, j;
+
+    if(!buf || !sz)
+        return buf;
+    buf[0] = '\0';
+
+    make_standard_locs();
+
+    /* An absolute vararg (the caller's own directory) is checked before
+       the standard locations -- see rp_find_path_vari(). */
+    if(modpath && *modpath == '/')
+        l = _sp_append(buf, sz, l, modpath, NULL);
+
+    for(i=0; i<nstandard_locs; i++)
+    {
+        const char *loc = standard_locs[i].loc;
+
+        if(!loc || !*loc)
+            continue;
+
+        if(standard_locs[i].subpath==NO_SUB || standard_locs[i].subpath==PLUS_SUB)
+            l = _sp_append(buf, sz, l, loc, NULL);
+
+        if(standard_locs[i].subpath==NO_SUB)
+            continue;
+
+        for(j=0; j<(int)(sizeof(module_subdirs)/sizeof(module_subdirs[0])); j++)
+            l = _sp_append(buf, sz, l, loc, module_subdirs[j]);
+    }
+
+    return buf;
+}
+
 /* Point rampart at a different home directory at runtime.
  *
  * home_dir is captured once from $HOME at startup, but setuid() does NOT
@@ -2231,6 +2296,28 @@ duk_ret_t duk_rp_strToBuf(duk_context *ctx)
     duk_size_t sz;
     const char *opt = duk_to_string(ctx, 1);
 
+    /* Same trap as duk_rp_toHex(): a buffer *object* (Uint8Array, ArrayBuffer,
+       node Buffer) is string-coerced by duk_to_*_buffer(), yielding the text
+       "[object Uint8Array]" or throwing "cannot string coerce Symbol" on a
+       leading 0x80-0x82/0xff.  Copy its bytes into the requested buffer type
+       instead.  Plain buffers and strings still take the path below, where
+       duk_to_*_buffer() converts between fixed/dynamic correctly. */
+    if (duk_is_buffer_data(ctx, 0) && !duk_is_buffer(ctx, 0))
+    {
+        void *src = duk_get_buffer_data(ctx, 0, &sz);
+        void *dst;
+
+        if (!strcmp(opt, "dynamic"))
+            dst = duk_push_dynamic_buffer(ctx, sz);
+        else
+            dst = duk_push_fixed_buffer(ctx, sz);
+
+        if (sz && src)
+            memcpy(dst, src, (size_t)sz);
+
+        return 1;
+    }
+
     if (!strcmp(opt, "dynamic"))
         duk_to_dynamic_buffer(ctx, 0, &sz);
     else if (!strcmp(opt, "fixed"))
@@ -2357,21 +2444,64 @@ static double _get_system_uptime_secs(void)
 /* --------------- process uptime --------------- */
 /* Seconds since *this* rampart process started.  Matches node's
    `process.uptime()` contract: every other JS runtime (node, deno,
-   bun, browsers) means "process lifetime" by this name.  The origin
-   is set on the first call across any context; subsequent calls use
-   the same origin so workers see the parent-process lifetime (which
-   matches node's behavior — node's workers also report the parent's
-   uptime via process.uptime()).  Inaccuracy = time between process
-   start and the first process.uptime() call; for typical scripts
-   that's a few ms at most. */
+   bun, browsers) means "process lifetime" by this name.
+
+   The origin is stamped once, from rp_process_uptime_init() below,
+   which duk_process_init() calls when the first duktape context is
+   built at startup.  It must NOT be stamped lazily on first use: the
+   normal way to call process.uptime() is late in a script, to find
+   out how long you have been running, and a lazy origin makes that
+   first call return 0 and silently discards everything before it.
+
+   The origin is process-wide, not per-context.  duk_init_context()
+   runs again for every thread, but the _proc_start_set guard keeps
+   the startup value, so threads report the parent-process lifetime
+   -- matching node, whose worker_threads also see the parent's
+   uptime via process.uptime().
+
+   fork() is the other direction: a forked child is a new OS process,
+   and node's process-spawning APIs (child_process.fork, cluster)
+   each start a fresh process whose uptime begins at its own start.
+   The pthread_atfork child handler below re-stamps to match, so a
+   child reports its own age rather than inheriting the parent's. */
 static struct timespec _proc_start_ts;
 static int             _proc_start_set = 0;
+
+/* async-signal-safe: clock_gettime() is on the POSIX AS-safe list, which
+   is what a pthread_atfork child handler is limited to. */
+static void _proc_uptime_atfork_child(void)
+{
+    struct timespec ts;
+    if (clock_gettime(CLOCK_MONOTONIC, &ts) == 0)
+    {
+        _proc_start_ts  = ts;
+        _proc_start_set = 1;
+    }
+}
+
+static void rp_process_uptime_init(void)
+{
+    struct timespec ts;
+
+    if (_proc_start_set)
+        return;                 /* already stamped; later contexts/threads no-op */
+
+    if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0)
+        return;                 /* leave unset; the lazy fallback below still applies */
+
+    _proc_start_ts  = ts;
+    _proc_start_set = 1;
+
+    pthread_atfork(NULL, NULL, _proc_uptime_atfork_child);
+}
 
 static double _get_process_uptime_secs(void)
 {
     struct timespec ts;
     if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0)
         return 0.0;
+    /* Fallback only: reached if rp_process_uptime_init() never ran or its
+       clock_gettime() failed.  Poor (first call reads 0) but not garbage. */
     if (!_proc_start_set) {
         _proc_start_ts = ts;
         _proc_start_set = 1;
@@ -2748,7 +2878,16 @@ void duk_rp_toHex(duk_context *ctx, duk_idx_t idx, int ucase)
         ucase=39;
 
     idx=duk_normalize_index(ctx, idx);
-    duk_to_buffer(ctx,idx,&sz);
+
+    /* A Uint8Array, ArrayBuffer or node Buffer is a buffer *object*, not a
+       plain buffer.  duk_to_buffer() string-coerces such objects, so hexify()
+       used to return the hex of the literal text "[object Uint8Array]" -- a
+       silently wrong answer -- and threw "cannot string coerce Symbol" when the
+       first byte happened to look like a duktape symbol marker (0x80-0x82,
+       0xff).  Take the bytes directly whenever the value already has buffer
+       data; only genuine strings/numbers need coercing. */
+    if(!duk_is_buffer_data(ctx, idx))
+        duk_to_buffer(ctx,idx,&sz);
 
     buf=(unsigned char *)duk_get_buffer_data(ctx,idx,&sz);
 
@@ -2845,6 +2984,11 @@ void duk_process_init(duk_context *ctx)
 {
     int i=0;
     char *env;
+
+    /* Stamp the process.uptime() origin.  Guarded internally so only the
+       first context (built at startup) sets it; per-thread contexts and
+       forked children are handled there. */
+    rp_process_uptime_init();
 
     home_dir=getenv("HOME");
 #ifdef __CYGWIN__
@@ -9445,6 +9589,8 @@ PTYARGS {
     duk_context *ctx;
     struct event *e;
     void *thisptr;
+    int did_read;   /* set by duk_rp_forkpty_read(); reset per dispatch */
+    int paused;     /* event_del()ed because a dispatch drained nothing */
 };
 
 void duk_rp_forkpty_doclose(duk_context *ctx, void *thisptr) {
@@ -9477,6 +9623,12 @@ void duk_rp_forkpty_doclose(duk_context *ctx, void *thisptr) {
         }
     }
     duk_pop(ctx);
+
+    /* NULL the stored pointer so rp_forkpty_doevent(), which re-reads it after
+       running the callbacks, can tell that one of them closed the pty and must
+       not dereference the freed PTYARGS. */
+    duk_push_pointer(ctx, NULL);
+    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("pargs"));
 
     //remove 'this' from global stash, where it was kept in order to avoid garbage collection.
     duk_push_global_stash(ctx);
@@ -9529,7 +9681,10 @@ void duk_rp_forkpty_doclose(duk_context *ctx, void *thisptr) {
 //        printf("waitpid err: %s\n", strerror(errno));
 
     // run .on("close") callback
-    if( duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("onclose")) )
+    /* duk_get_prop_string() returns true for a property that exists but holds
+       undefined, so check callability too rather than trusting the property. */
+    if( duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("onclose")) &&
+        duk_is_function(ctx, -1) )
     {
         //exec with 'this'
         duk_dup(ctx, -2);
@@ -9606,6 +9761,26 @@ duk_ret_t duk_rp_forkpty_read(duk_context *ctx)
     fd=duk_get_int(ctx, -1);
     duk_pop(ctx);
 
+    /* Tell rp_forkpty_doevent() this dispatch made progress, and un-pause the
+       data event if a previous dispatch had ignored its data.  Re-arming here
+       (rather than only when drained) keeps partial reads working: the event is
+       level triggered, so if bytes remain it simply fires again. */
+    if( duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("pargs")) )
+    {
+        PTYARGS *pa = (PTYARGS *) duk_get_pointer(ctx, -1);
+
+        if(pa)
+        {
+            pa->did_read = 1;
+            if(pa->paused)
+            {
+                event_add(pa->e, NULL);
+                pa->paused = 0;
+            }
+        }
+    }
+    duk_pop(ctx);
+
     /* check for boolean in idx 0,1 or 2 */
     if(duk_is_boolean(ctx, idx) || duk_is_boolean(ctx, ++idx) || duk_is_boolean(ctx, ++idx))
     {
@@ -9676,8 +9851,12 @@ void rp_forkpty_doevent(evutil_socket_t fd, short events, void* arg)
     //switch event in curthr just in case we use it anywhere else in rampart.
     curthr->ctx=ctx;
 
-    duk_push_heapptr(ctx, pargs->thisptr); //this
+    duk_push_heapptr(ctx, pargs->thisptr); //this  -- absolute index otop
     //printf("end  : pargs=%p, ctx=%p, this=%p\n", pargs, ctx, pargs->thisptr);
+
+    /* cleared here, set by duk_rp_forkpty_read() if any callback drains the pty */
+    pargs->did_read = 0;
+
     if(!duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("dataev")))
         RP_THROW(ctx, "forkpty callback setup: Internal error getting event data");
 
@@ -9695,7 +9874,19 @@ void rp_forkpty_doevent(evutil_socket_t fd, short events, void* arg)
         duk_get_prop_index(ctx, -3, 1); //user param
         // [ .., enum, val_arr, callback_func, this, arg]
 
-        duk_call_method(ctx, 1);
+        /* Protected: this runs from a libevent callback with no enclosing
+           duktape frame, so an unprotected throw here longjmps straight to
+           duk_fatal() and abort()s the process.  Report it the way the main
+           event loop reports errors from timer/event callbacks and carry on. */
+        if(duk_pcall_method(ctx, 1) != 0)
+        {
+            const char *errmsg;
+
+            fprintf(stderr, "Error in forkpty 'data' callback:\n  ");
+            errmsg = rp_push_error(ctx, -1, NULL, rp_print_error_lines);
+            fprintf(stderr, "%s\n", errmsg);
+            duk_pop(ctx);
+        }
         // [ .., enum, val_arr, ret_val ]
         cont=duk_get_boolean_default(ctx, -1, 1); // 0 only if === false
 
@@ -9704,6 +9895,31 @@ void rp_forkpty_doevent(evutil_socket_t fd, short events, void* arg)
         if(!cont)
             break; //break if returns false
 
+    }
+
+    /* The event is level triggered (EV_READ|EV_PERSIST), so if no callback read
+       anything the data is still sitting in the pty and libevent re-arms us
+       immediately -- a busy loop at ~117k dispatches/sec that starves the whole
+       event loop.  Pause the event in that case; duk_rp_forkpty_read() re-adds
+       it as soon as the caller asks for data again.  Nothing is discarded: the
+       bytes stay in the fd until read.
+
+       pargs must be re-read from 'this' rather than reused: a callback may have
+       called pty.close(), or read() may have hit EOF, either of which runs
+       duk_rp_forkpty_doclose() and free()s it.  doclose() NULLs the stored
+       pointer, so a NULL here means "closed, nothing left to pause". */
+    {
+        PTYARGS *live = NULL;
+
+        if( duk_get_prop_string(ctx, otop, DUK_HIDDEN_SYMBOL("pargs")) )
+            live = (PTYARGS *) duk_get_pointer(ctx, -1);
+        duk_pop(ctx);
+
+        if( live && !live->did_read && !live->paused )
+        {
+            event_del(live->e);
+            live->paused = 1;
+        }
     }
 
     duk_set_top(ctx, otop);
@@ -9737,7 +9953,13 @@ duk_ret_t duk_rp_forkpty_on(duk_context *ctx)
 
     if (strcmp(evname,"close")==0)
     {
-        duk_pull(ctx, -2);
+        /* The callback is at absolute index 2 (REQUIRE_FUNCTION above checks it
+           there), exactly as the 'data' branch below reads it.  This used to be
+           duk_pull(ctx, -2), which -- with 'this' pushed on top and nargs=4 --
+           picked up index 3, the unused user param.  onclose was therefore
+           stored as undefined, and doclose() later tried to call it, aborting
+           the process with "undefined not callable". */
+        duk_dup(ctx, 2);
         duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("onclose") );
     }
     else if (strcmp(evname,"data")==0)
@@ -9805,6 +10027,8 @@ duk_ret_t duk_rp_forkpty_on(duk_context *ctx)
         pargs->ctx = ctx;
         // save 'this' pointer
         pargs->thisptr=p;
+        pargs->did_read = 0;
+        pargs->paused   = 0;
         //make new event
         pargs->e=event_new(curthr->base, fd, EV_READ|EV_PERSIST, rp_forkpty_doevent, pargs);
 

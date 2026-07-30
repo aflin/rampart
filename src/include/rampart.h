@@ -753,6 +753,10 @@ RPPATH rp_find_path_vari(char *file, ...);
 RPPATH rp_find_path_zip_vari(char *file, ...);
 #define rp_find_zip_path(file, ...) rp_find_path_zip_vari(file, __VA_ARGS__, NULL)
 
+/* Render the module search path (in walk order) into buf for diagnostics.
+   modpath == the calling module's directory, or NULL at top level. */
+char *rp_module_search_path_str(char *buf, size_t sz, const char *modpath);
+
 int rp_mkdir_parent(const char *path, mode_t mode);
 RPPATH rp_get_home_path(char *file, char *subdir);
 

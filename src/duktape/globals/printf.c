@@ -2067,7 +2067,14 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
         case 'J':
             json:
             {
-                if( !ccodes && ( (flags & FLAGS_COLOR && isterm) || flags & FLAGS_COLOR_FORCE) )
+                /* The palette number is part of the %aJ form whether or not
+                   color is actually emitted, so it must be consumed either
+                   way.  It used to be consumed only when color was active,
+                   so on a non-terminal the palette itself was formatted as
+                   the value and the object that followed was silently
+                   dropped -- printf("%a3J\n", 0, obj) printed "  0".
+                   Off-terminal %aJ now prints exactly what %J would. */
+                if( flags & (FLAGS_COLOR | FLAGS_COLOR_FORCE) )
                 {
                     jpal_idx=0;
                     if(duk_is_number(ctx, fidx))
@@ -2081,7 +2088,10 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
 
                     if(fidx > duk_get_top_index(ctx))
                         PF_THROW(ctx, "printf: - expecting argument for conversion specifier (variable required at position %d)", fidx);
+                }
 
+                if( !ccodes && ( (flags & FLAGS_COLOR && isterm) || flags & FLAGS_COLOR_FORCE) )
+                {
                     switch( rp_gettype(ctx, fidx) ){
                         case RP_TYPE_ARRAY:
                         case RP_TYPE_OBJECT:

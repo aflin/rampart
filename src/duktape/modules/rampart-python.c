@@ -733,6 +733,16 @@ static void init_python(const char *program_name, char *ppath)
     if(*pyuserbase)
         setenv("PYTHONUSERBASE", pyuserbase, 0);
 
+    /* Python block-buffers sys.stdout whenever it is not a tty, and rampart
+       deliberately never calls Py_FinalizeEx() (it would race with running
+       worker threads), so nothing ever flushed that buffer: output from an
+       embedded print() was simply lost.  Both print() examples in
+       rampart-python.rst produced no output at all.  Ask Python for unbuffered
+       stdio so print() lands immediately and in order with rampart's own
+       printf.  overwrite=0, so an explicit PYTHONUNBUFFERED in the environment
+       still wins. */
+    setenv("PYTHONUNBUFFERED", "1", 0);
+
 //
     if (PyImport_AppendInittab("rampart", PyInit_rampart) == -1) {
         fprintf(stderr, "Error: could not extend in-built modules table\n");

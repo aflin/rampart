@@ -2316,9 +2316,67 @@ static duk_ret_t duk_rp_proxyobj(duk_context *ctx)
 {
   if (!duk_is_constructor_call(ctx))
     return DUK_RET_TYPE_ERROR;
-  
-  duk_push_this(ctx);
+
   (void)REQUIRE_STRING(ctx, 0, "proxyObj(name) requires a String (name)");
+
+  /* A Proxy Object keeps CBOR-encoded values in a Redis Hash, so a key that
+     already exists as some other type can never work: reads used to come back
+     as undefined with no indication of why.  Refuse it up front, as
+     rampart-redis.rst has always said we do.  An existing HASH is fine and is
+     the documented way for a second script to attach to shared data. */
+  {
+    RESPCLIENT *rcp = NULL;
+    RESPROTO   *response;
+    char       *nmcopy;
+
+    duk_push_current_function(ctx);
+    if( duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("respclient")) )
+    {
+      duk_get_prop_string(ctx, -1, "client_p");
+      rcp = (RESPCLIENT *)duk_get_pointer(ctx, -1);
+      duk_pop(ctx);
+    }
+    duk_pop_2(ctx);
+
+    if(rcp)
+    {
+      nmcopy = strdup(duk_get_string(ctx, 0));
+      if(!nmcopy)
+        RP_THROW(ctx, "proxyObj: out of memory");
+
+      /* rc_send() reads its format from stack index 0 and its arguments from
+         the slots above it, so the check needs the stack to itself. */
+      duk_set_top(ctx, 0);
+      duk_push_string(ctx, "TYPE %s");
+      duk_push_string(ctx, nmcopy);
+
+      response = rc_send(ctx, rcp);
+
+      if(response && rd_push_response(ctx, response, "proxyObj", 1, rcp))
+      {
+        const char *t = duk_safe_to_string(ctx, -1);
+
+        if(t && strcmp(t, "none") && strcmp(t, "hash"))
+        {
+          char msg[512];
+
+          /* format before touching the stack: t points into it */
+          snprintf(msg, sizeof(msg),
+              "proxyObj('%s'): key already exists as type '%s'; "
+              "a Proxy Object requires a Redis Hash", nmcopy, t);
+          free(nmcopy);
+          RP_THROW(ctx, "%s", msg);
+        }
+      }
+
+      /* restore the constructor's argument */
+      duk_set_top(ctx, 0);
+      duk_push_string(ctx, nmcopy);
+      free(nmcopy);
+    }
+  }
+
+  duk_push_this(ctx);
 
   /* copy over the client pointer */
   duk_push_current_function(ctx);

@@ -1421,7 +1421,38 @@ static duk_ret_t _duk_resolve(duk_context *ctx, const char *name)
     if(!strlen(rppath.path))
     {
         if(!name)
-            RP_THROW(ctx, "Could not resolve module id %s: %s\n", duk_get_string(ctx, 0), errno? strerror(errno):"");
+        {
+            /* Say where we looked.  Without this, the most common failure --
+               standing in a directory that visibly contains the file -- gives
+               no hint that the current directory is not on the search path
+               (only the *script's* directory is).  The list is rendered from
+               the same standard_locs[] table the search walks. */
+            char sp[4096], mp[PATH_MAX];
+
+            mp[0] = '\0';
+            if(duk_rp_push_current_module(ctx))
+            {
+                const char *m;
+                duk_get_prop_string(ctx, -1, "path");
+                m = duk_get_string(ctx, -1);
+                if(m)
+                {
+                    strncpy(mp, m, sizeof(mp)-1);
+                    mp[sizeof(mp)-1] = '\0';
+                }
+                duk_pop(ctx);
+            }
+            duk_pop(ctx);
+
+            RP_THROW(ctx,
+                "Could not resolve module id %s: %s\n"
+                "  searched:%s\n"
+                "  note: the current working directory is not searched unless it is\n"
+                "        also the script's directory; set RAMPART_PATH to add one.\n",
+                duk_get_string(ctx, 0),
+                errno ? strerror(errno) : "not found",
+                rp_module_search_path_str(sp, sizeof(sp), mp[0] ? mp : NULL));
+        }
         else
             return 0;
     }

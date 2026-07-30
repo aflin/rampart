@@ -2371,13 +2371,21 @@ static void new_ret_object(duk_context *ctx, duk_idx_t arr_idx)
     duk_get_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("errbuf"));
     duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("errbuf"));
 
-    duk_push_number(ctx, (double) duk_get_length(ctx, arr_idx));
-    duk_put_prop_string(ctx, -2, "length");
-
     pushfuncs(ctx);
 
 //    duk_pull(ctx, arr_idx);
     uniq_array_nodes(ctx, arr_idx);
+
+    /* `length` must be counted AFTER de-duplication.  uniq_array_nodes() leaves
+       a NEW array holding only the unique nodes on the stack, and that array --
+       not arr_idx -- is what gets stored as "nodes" just below.  Taking the
+       length from arr_idx beforehand counted duplicates, so a selection like
+       parent() reported .length == 4 while toHtml() and getElement() returned
+       the 1 node it actually held.
+       Stack here is [ this, obj, uniq_arr ], so the object is at -3. */
+    duk_push_number(ctx, (double) duk_get_length(ctx, -1));
+    duk_put_prop_string(ctx, -3, "length");
+
     duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("nodes"));
 
 
@@ -3698,8 +3706,6 @@ duk_ret_t duk_rp_htmlparse(duk_context *ctx)
     {
         _obj_to_html(ctx, html_idx);
         html = duk_get_string(ctx, -1);
-        printf("stridx=%d\n", (int)html_idx);
-        safeprintstack(ctx);
     }
     else if (!duk_is_undefined(ctx, html_idx))
         RP_THROW(ctx, "html.newDocument: first argument must be a string, buffer or object produced by html.toObj() (i.e., the text/html)");

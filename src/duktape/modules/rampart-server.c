@@ -2835,18 +2835,25 @@ static void rp_sendfile(evhtp_request_t *req, char *fn, int haveCT, struct stat 
        Date headers and breaking strict HTTP parsers. */
     setlastmodified_header(req, sb->st_mtime);
 
+    /* The extension is needed twice: for the Content-Type lookup just below,
+       and for the compressible-type check further down.  It must be computed
+       regardless of haveCT.  A script returning {txt:"@/path/file.txt"} calls
+       in with haveCT=1, which used to skip this entirely and leave ext NULL —
+       then strcmp(*comps, ext) against `compressibles` segfaulted whenever the
+       client sent an Accept-Encoding of gzip. */
+    ext = strrchr(fn, '.');
+    if (ext)
+        ext++; /* skip the '.'; `compressibles` entries carry no leading dot */
+
     if (!haveCT)
     {
         RP_MTYPES m;
         RP_MTYPES *mres, *m_p = &m;
 
-        ext = strrchr(fn, '.');
-
         if (!ext) /* || strchr(ext, '/')) shouldn't happen */
             evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Type", "application/octet-stream", 0, 0));
         else
         {
-            ext++;
             m.ext = ext;
             /* look for proper mime type listed in mime.h */
             mres = bsearch(m_p, allmimes, n_allmimes, sizeof(RP_MTYPES), compare_mtypes);
@@ -2942,7 +2949,7 @@ static void rp_sendfile(evhtp_request_t *req, char *fn, int haveCT, struct stat 
     }
 
     accept = evhtp_kv_find(req->headers_in,"Accept-Encoding");
-    if (compressibles && accept && strcasestr(accept, "gzip"))
+    if (compressibles && accept && ext && strcasestr(accept, "gzip"))
     {
         char **comps = compressibles;
         while( *comps && strcmp(*comps, ext) )
