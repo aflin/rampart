@@ -185,16 +185,29 @@ function buildUrl(base, params) {
     return base + '?' + parts.join('&');
 }
 
+/* curl hands back a Buffer for the body; '' + buffer yields
+   "[object Uint8Array]", so decode before reporting it. */
+function bodyText(body) {
+    if (typeof body === 'string') return body;
+    try { return rampart.utils.bufferToString(body); }
+    catch(e) { return ''; }
+}
+
 function parseResponse(res) {
     if (!res || res.status !== 200) {
         var msg = 'HTTP error';
         if (res && res.status) msg += ' ' + res.status;
+        /* status 0 means curl itself failed -- timeout, DNS, TLS.  The
+           reason is in errMsg and there is no body to report. */
+        if (res && !res.status && res.errMsg)
+            return { error: msg + ': ' + res.errMsg };
         if (res && res.body) {
+            var body = bodyText(res.body);
             try {
-                var err = JSON.parse(res.body);
+                var err = JSON.parse(body);
                 if (err.reason) msg += ': ' + err.reason;
             } catch(e) {
-                msg += ': ' + ('' + res.body).substring(0, 200);
+                msg += ': ' + body.substring(0, 200);
             }
         }
         return { error: msg };

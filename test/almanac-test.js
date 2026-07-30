@@ -304,17 +304,48 @@ if(!hasWeather) {
     fprintf(stderr, "almanac.weather not available, skipping weather tests\n");
 } else {
 
-// Check connectivity to open-meteo before running tests
-var weatherOnline = false;
+/* Check connectivity to open-meteo before running tests.
+ *
+ * Every host the tests use is probed, not just geocoding-api: they are
+ * separate servers and one can be unreachable while the others are fine.
+ * (Seen on a jumbo-MTU host: the v6 path to archive-api black-holed the
+ * TLS ClientHello while api.open-meteo.com had no v6 and fell back to v4,
+ * so a geocoding-only probe passed and every history() test then burned
+ * its full retry budget.)
+ *
+ * The short max-time matters as much as the probe: rampart-open-meteo
+ * retries twice at 10s, so each unguarded call costs ~31s -- roughly 19
+ * minutes across the weather tests, which looks like a hang.
+ */
+var weatherOnline = false, weatherOfflineWhy = '';
 try {
     var curl = require('rampart-curl');
-    var res = curl.fetch('https://geocoding-api.open-meteo.com/v1/search?name=Test&count=1');
-    if(Array.isArray(res)) res = res[0];
-    weatherOnline = (res && res.status === 200);
-} catch(e) {}
+    var probes = [
+        'https://geocoding-api.open-meteo.com/v1/search?name=Test&count=1',
+        'https://api.open-meteo.com/v1/forecast?latitude=0&longitude=0&current=temperature_2m',
+        'https://archive-api.open-meteo.com/v1/archive?latitude=0&longitude=0&start_date=2024-01-01&end_date=2024-01-01&daily=temperature_2m_max',
+        'https://air-quality-api.open-meteo.com/v1/air-quality?latitude=0&longitude=0&hourly=pm10',
+        'https://marine-api.open-meteo.com/v1/marine?latitude=54&longitude=8&hourly=wave_height'
+    ];
+    weatherOnline = true;
+    for (var pi = 0; pi < probes.length; pi++) {
+        var res = curl.fetch(probes[pi], {'max-time': 8});
+        if(Array.isArray(res)) res = res[0];
+        if(!res || res.status !== 200) {
+            weatherOnline = false;
+            weatherOfflineWhy = probes[pi].split('/')[2] + ': ' +
+                ((res && res.errMsg) ? res.errMsg :
+                 'HTTP ' + ((res && res.status) || '?'));
+            break;
+        }
+    }
+} catch(e) {
+    weatherOfflineWhy = e.message;
+}
 
 if(!weatherOnline) {
-    fprintf(stderr, "WARNING: open-meteo.com not reachable, skipping weather tests\n");
+    fprintf(stderr, "WARNING: open-meteo not reachable (%s), skipping weather tests\n",
+            weatherOfflineWhy);
 } else {
 
 // Use a known location for consistent testing
