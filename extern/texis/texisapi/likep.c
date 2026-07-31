@@ -456,6 +456,11 @@ FLDOP *fo;
 	nrowsReturned = nrowsMatched;
 	needTrim = (!noSort &&			/* Bug 4166 */
 		    TXnlikephits &&
+		    /* RRF-fused hybrid OR: `likeprows' is each SIDE's pool
+		     * depth, already applied when the child indexes were
+		     * built -- do not also truncate the fused UNION (up to
+		     * likeprows + likevRows rows) to likeprows here: */
+		    !(q->in1 && q->in1->index.rankIsFused) &&
 		    TXbtreeGetNumItemsDelta(btree) > TXnlikephits);
 
 	if (TXtraceIndexBits & 0x30000)

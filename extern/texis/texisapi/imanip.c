@@ -1079,6 +1079,13 @@ typedef struct TXrrfEnt_tag
 }
 TXrrfEnt;
 
+/* Both comparators tiebreak equal scores by recid ASCENDING -- the same
+ * order _recidcmp() gives duplicate keys in every results B-tree (fbtree
+ * compares locn raw, even under a reversed key cmp) -- so a side's pool
+ * positions at tied ranks match the solitary query's own output order.
+ * (An earlier blanket reversal of the Asc comparator reversed the recid
+ * tiebreak too, permuting tied keyword rows' positions vs solitary LIKEP.)
+ */
 static int
 txRrfCmpScoreAsc(const void *pa, const void *pb)
 {
@@ -1086,7 +1093,6 @@ txRrfCmpScoreAsc(const void *pa, const void *pb)
 
 	if (a->score < b->score) return(-1);
 	if (a->score > b->score) return(1);
-	/* stable-ish tiebreak so equal scores order deterministically: */
 	if (a->recid < b->recid) return(-1);
 	if (a->recid > b->recid) return(1);
 	return(0);
@@ -1095,7 +1101,13 @@ txRrfCmpScoreAsc(const void *pa, const void *pb)
 static int
 txRrfCmpScoreDesc(const void *pa, const void *pb)
 {
-	return(txRrfCmpScoreAsc(pb, pa));
+	const TXrrfEnt	*a = (const TXrrfEnt *)pa, *b = (const TXrrfEnt *)pb;
+
+	if (a->score < b->score) return(1);
+	if (a->score > b->score) return(-1);
+	if (a->recid < b->recid) return(-1);
+	if (a->recid > b->recid) return(1);
+	return(0);
 }
 
 static int
@@ -1150,7 +1162,16 @@ txRrfLoad(IINDEX *ix, int descending, size_t *nOut, int *okOut)
 			alloced = nc;
 		}
 		ents[n].recid = key;
-		ents[n].score = TXgetoff(&bl) / nrank;
+		/* Keyword payloads (`descending' side) are INTERNAL ranks:
+		 * convert to user scale so the best-first sort below is
+		 * correct under legacyVersion7OrderByRank too (internal is
+		 * the negated rank there; identity otherwise), and so
+		 * consumers ($krank side tree) can use the value as-is: */
+		if (descending)
+			ents[n].score = TX_RANK_INTERNAL_TO_USER(TXApp,
+						TXgetoff(&bl)) / nrank;
+		else
+			ents[n].score = TXgetoff(&bl) / nrank;
 		n++;
 	}
 	*okOut = 1;
@@ -1286,8 +1307,8 @@ int	inv;
 		for (j = 0; j < kn; j++)
 		{
 			srecid = ka[j].recid;
-			sval = (EPI_OFF_T)TX_RANK_INTERNAL_TO_USER(TXApp,
-							ka[j].score);
+			sval = (EPI_OFF_T)ka[j].score;	/* user scale: txRrfLoad
+							 * converted at load */
 			if (sval < 1) sval = 1;
 			TXsetrecid(&sloc, sval);
 			btspinsert(c->rrfKwRankTree, &sloc,
