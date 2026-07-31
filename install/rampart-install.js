@@ -139,51 +139,76 @@ if (FROM == null) {
 
 var manifest = require(process.scriptPath + "/packages.js");
 
+/* An entry may carry `platforms: /regex/` -- a test against PLAT naming
+   the ONLY platforms it is built for (the cuNN variants are x86_64-only,
+   arm8a is armv7-only).  Entries without the field are universal.  Used
+   to keep --list honest and to refuse a wrong-platform install with a
+   real message instead of a 404 from the download. */
+function platformOK(entry) {
+    return !entry || !entry.platforms || entry.platforms.test(PLAT);
+}
+
+/* Every langtools flavour: the default package plus the opt-in variants
+   that re-point the unsuffixed module symlinks at their own builds
+   (cuNN on linux x86_64/arm64, arm8a on armv7). */
+var LANGTOOLS_VARIANT_RE = /^rampart-langtools(-cu[0-9]+|-arm8a)?$/;
+var LANGTOOLS_OPTIN_RE   = /^rampart-langtools(-cu[0-9]+|-arm8a)$/;
+
+/* The opt-in langtools variants BUILT FOR THIS PLATFORM, in manifest
+   order.  Derived from the manifest rather than hard-coded, so adding a
+   variant (or changing which platforms it is built for) needs no change
+   here -- just its `platforms` regex in packages.js. */
+function langtoolsOptins() {
+    return Object.keys(manifest).sort().filter(function (k) {
+        return LANGTOOLS_OPTIN_RE.test(k) && platformOK(manifest[k]);
+    });
+}
+
 /* ---------- alias / variant resolution ----------
- * On linux-*-x86_64 (any glibc tier) the langtools tarball ships in
- * four flavours: cpu plus cu11/cu12/cu13.  Users who type
- * 'rampart --install rampart-llamacpp' (or rampart-faiss) don't
- * necessarily know which one they want; ask.  On linux-*-arm64,
- * mac, freebsd and the pi only the cpu variant exists, so we remap
- * silently.
+ * The langtools modules do not ship as individual packages: they come in
+ * one tarball that exists in several flavours (cpu/cuNN on linux x86_64
+ * and arm64; armv6/armv8-a on armv7).  Someone typing
+ * 'rampart --install rampart-llamacpp' does not necessarily know which
+ * one they want, so offer the choice wherever there IS one, and remap
+ * silently where the platform has only the default build (mac, freebsd,
+ * legacy raspi).
  */
 function resolveLangtoolsAlias(name) {
-    var langAliases = { "rampart-llamacpp": 1, "rampart-faiss": 1, "rampart-sentencepiece": 1 };
+    var langAliases = { "rampart-llamacpp": 1, "rampart-faiss": 1,
+                        "rampart-sentencepiece": 1, "rampart-clip": 1,
+                        "rampart-onnx": 1 };
     if (!langAliases[name]) return name;
 
-    /* Tiered linux x86_64 -- cpu + per-CUDA-runtime variants. */
-    if (/^linux-[^-]+-x86_64$/.test(PLAT)) {
-        printf("\n%s is part of the langtools bundle.  Which variant?\n", name);
-        printf("  1) cpu      (rampart-langtools)\n");
-        printf("  2) cuda 11  (rampart-langtools-cu11)\n");
-        printf("  3) cuda 12  (rampart-langtools-cu12)\n");
-        printf("  4) cuda 13  (rampart-langtools-cu13)\n");
-        printf("[1] > ");
-        stdout.fflush();
-        var c;
-        try { c = stdin.getchar(1); } catch (e) { c = null; }
-        if (c === null || c === undefined || c === false || c === "") {
-            printf("\nCancelled.\n"); process.exit(0);
-        }
-        printf("\n");
-        switch (c) {
-            case "2": return "rampart-langtools-cu11";
-            case "3": return "rampart-langtools-cu12";
-            case "4": return "rampart-langtools-cu13";
-        }
-        return "rampart-langtools";   /* default / "1" / Enter */
+    var optins = langtoolsOptins();
+    if (!optins.length) return "rampart-langtools";   /* nothing to choose */
+
+    printf("\n%s is part of the langtools bundle.  Which variant?\n", name);
+    printf("  1) %-26s %s\n", "rampart-langtools",
+           "the default build for this platform");
+    /* single-keystroke menu, so never offer more than 1..9 */
+    var shown = (optins.length > 8) ? 8 : optins.length;
+    for (var i = 0; i < shown; i++)
+        printf("  %d) %-26s %s\n", i + 2, optins[i],
+               (manifest[optins[i]] || {}).notes || "");
+    printf("[1] > ");
+    stdout.fflush();
+    var c;
+    try { c = stdin.getchar(1); } catch (e) { c = null; }
+    if (c === null || c === undefined || c === false || c === "") {
+        printf("\nCancelled.\n"); process.exit(0);
     }
-    /* single-variant platforms (linux-*-arm64, mac, freebsd, pi):
-       just install rampart-langtools */
-    return "rampart-langtools";
+    printf("\n");
+    var pick = parseInt(c, 10);
+    if (pick >= 2 && pick <= shown + 1) return optins[pick - 2];
+    return "rampart-langtools";   /* default / "1" / Enter / anything else */
 }
 
 /* ---------- pre-extract cleanup for langtools variants ----------
- * Every langtools tarball (cpu / cu11 / cu12 / cu13) ships the
- * unsuffixed symlinks modules/rampart-llamacpp.so and
- * modules/rampart-faiss.so pointing at its own variant-specific
- * .so.  Before extracting a new variant we need to clear those
- * unsuffixed names so the tarball's symlinks land cleanly:
+ * Every langtools tarball (cpu / cu11 / cu12 / cu13 / arm8a) ships the
+ * unsuffixed symlinks modules/rampart-llamacpp.so,
+ * modules/rampart-faiss.so and modules/rampart-clip.so pointing at its
+ * own variant-specific .so.  Before extracting a new variant we need to
+ * clear those unsuffixed names so the tarball's symlinks land cleanly:
  *
  *   - symlink present  -> rm it (it was ours from a prior install)
  *   - regular file     -> mv to <name>.so.bak (preserve in case the
@@ -196,18 +221,19 @@ function resolveLangtoolsAlias(name) {
  * without re-downloading.  Likewise rampart-sentencepiece.so is
  * shared and never removed here.
  *
- * Manifest hygiene: any *other* rampart-langtools{,-cuNN} entry in
- * installed.json may still list the unsuffixed paths as its own.
+ * Manifest hygiene: any *other* rampart-langtools{,-cuNN,-arm8a} entry
+ * in installed.json may still list the unsuffixed paths as its own.
  * Strip those paths from its file list so uninstalling that entry
  * later doesn't rm the live symlinks out from under the variant
  * we're about to install.  Suffixed-file ownership is left intact.
  *
  * No-op for non-langtools packages. */
 function langtoolsPreExtract(name, newEntries) {
-    if (!/^rampart-langtools(-cu[0-9]+)?$/.test(name)) return;
+    if (!LANGTOOLS_VARIANT_RE.test(name)) return;
     var ut = rampart.utils;
 
-    var unsuffixed = ["rampart-llamacpp.so", "rampart-faiss.so"];
+    var unsuffixed = ["rampart-llamacpp.so", "rampart-faiss.so",
+                      "rampart-clip.so"];
 
     /* clear or back up the unsuffixed names in the live tree */
     unsuffixed.forEach(function (fn) {
@@ -263,7 +289,7 @@ function langtoolsPreExtract(name, newEntries) {
     var dirty = false;
     Object.keys(live.packages).forEach(function (k) {
         if (k === name) return;
-        if (!/^rampart-langtools(-cu[0-9]+)?$/.test(k)) return;
+        if (!LANGTOOLS_VARIANT_RE.test(k)) return;
         var pkg = live.packages[k];
         if (!pkg || !pkg.files) return;
         var before = pkg.files.length;
@@ -317,6 +343,10 @@ function installOne(name) {
 
     var entry = manifest[name];
     if (!entry) fail("unknown package: " + name);
+
+    if (!platformOK(entry))
+        fail(name + " is not built for this platform (" + PLAT + ").  " +
+             "See `rampart --install --list` for what is available here.");
 
     if (entry.in_bundle) {
         info("[" + name + "] already installed via the rampart-install bundle, skipping");
@@ -534,10 +564,14 @@ function showList() {
         } catch (e) { /* missing/corrupt -> show nothing as installed */ }
     }
 
-    /* Partition manifest into installable vs bundled. */
+    /* Partition manifest into installable vs bundled, dropping anything
+       not built for THIS platform (the cuNN langtools variants off
+       x86_64, the arm8a one off armv7) -- listing a package whose
+       download does not exist here is worse than not listing it. */
     var bundled = [], avail = [];
     Object.keys(manifest).sort().forEach(function (name) {
         var e = manifest[name];
+        if (!platformOK(e)) return;
         (e.in_bundle ? bundled : avail).push({name: name, entry: e});
     });
 
@@ -582,7 +616,8 @@ function showList() {
 
     info("");
     info("Aliases (auto-resolve to rampart-langtools):");
-    info("  rampart-llamacpp, rampart-faiss, rampart-sentencepiece");
+    info("  rampart-llamacpp, rampart-faiss, rampart-sentencepiece," +
+         " rampart-clip, rampart-onnx");
     info("");
     info("Install:          rampart --install <name> [<name>...]");
     info("Install all:      rampart --install all   (everything except `test`)");
@@ -598,16 +633,19 @@ if (LIST) {
 }
 
 /* "all" expands to every installable package (skips in_bundle entries
-   and skips the cuda langtools variants since they'd overwrite the
-   rampart-langtools cpu symlinks -- install the CUDA variant
-   explicitly when you want it).  Targets are de-duped so
-   `--install all rampart-redis` still does the right thing. */
+   and skips the opt-in langtools variants -- cuda, and arm8a on armv7 --
+   since they'd overwrite the default rampart-langtools symlinks.  The
+   default is the one that runs everywhere on the platform (cpu; armv6 on
+   armv7), so `all` can never leave a machine with modules its CPU cannot
+   execute; install the faster variant explicitly when you want it).
+   Targets are de-duped so `--install all rampart-redis` still does the
+   right thing. */
 if (TARGETS.indexOf("all") !== -1) {
     var _all = [];
     Object.keys(manifest).sort().forEach(function (n) {
         var e = manifest[n];
         if (e.in_bundle) return;
-        if (/^rampart-langtools-cu[0-9]+$/.test(n)) return;
+        if (LANGTOOLS_OPTIN_RE.test(n)) return;
         if (n === "test") return;             /* test ships rampart's
                                                  own test suite; not
                                                  part of `--install all` */
@@ -627,7 +665,9 @@ if (TARGETS.indexOf("all") !== -1) {
     TARGETS = _expanded;
     info("Expanding 'all' to " + _all.length + " packages:");
     info("  " + _all.join(", "));
-    info("(skipping rampart-langtools-cuda; install it separately for CUDA.)");
+    info("(skipping the opt-in langtools variants -- install " +
+         "rampart-langtools-cuNN for CUDA, or rampart-langtools-arm8a " +
+         "on a Pi 3+.)");
     info("");
 }
 

@@ -290,21 +290,31 @@ module.exports = {
         arch:  "dep",
         /* CPU (universal) langtools.  Per-platform naming:
              tiered linux (x86_64/arm64): _cpu suffix
-             linux-2_28-armv7l:           _arm6 (default symlink target)
-                                          and _arm8a (faster on Pi 3+);
-                                          faiss/sentencepiece stay
-                                          single unsuffixed
+             linux-2_28-armv7l:           _arm6 -- the ARMv6 build is the
+                                          default here because ONE armv7
+                                          package serves every 32-bit Pi,
+                                          and only armv6 runs on all of
+                                          them (Pi Zero/1 = armv6, Pi 2 =
+                                          armv7-a, Pi 3+ = armv8).  The
+                                          faster armv8-a build ships as
+                                          the separate
+                                          `rampart-langtools-arm8a`
+                                          variant, exactly like the cuNN
+                                          variants: install it explicitly
+                                          and it re-points the symlinks.
              mac/freebsd/raspi (legacy):  plain unsuffixed
-           build-packages.js skips files that aren't present and skips
-           symlinks whose target wasn't staged, so the union of every
-           naming form is safe here. */
+           build-packages.js skips files that aren't present, and a
+           symlink value may be an ARRAY of candidate targets (first one
+           staged wins) -- so the union of every naming form is safe
+           here and one entry serves all platforms. */
         files: ["modules/rampart-faiss_cpu.so",
+                "modules/rampart-faiss_arm6.so",
                 "modules/rampart-faiss.so",
                 "modules/rampart-llamacpp_cpu.so",
                 "modules/rampart-llamacpp_arm6.so",
-                "modules/rampart-llamacpp_arm8a.so",
                 "modules/rampart-llamacpp.so",
                 "modules/rampart-clip_cpu.so",
+                "modules/rampart-clip_arm6.so",
                 "modules/rampart-clip.so",
                 "modules/rampart-sentencepiece.so",
                 /* rampart-onnx: ONE CPU-floor module (static ONNX
@@ -323,18 +333,54 @@ module.exports = {
                    Skip-missing drops them where clip isn't built. */
                 "test/clip-test.js",
                 "test/test_images/"],
+        /* first candidate that got staged wins: _cpu on the tiered linux
+           builds, _arm6 on armv7, and neither on mac/freebsd/legacy-raspi
+           (where the plain unsuffixed file stays canonical). */
         symlinks: {
-            "modules/rampart-faiss.so":    "rampart-faiss_cpu.so",
-            "modules/rampart-llamacpp.so": "rampart-llamacpp_cpu.so",
-            "modules/rampart-clip.so":     "rampart-clip_cpu.so"
+            "modules/rampart-faiss.so":    ["rampart-faiss_cpu.so",
+                                            "rampart-faiss_arm6.so"],
+            "modules/rampart-llamacpp.so": ["rampart-llamacpp_cpu.so",
+                                            "rampart-llamacpp_arm6.so"],
+            "modules/rampart-clip.so":     ["rampart-clip_cpu.so",
+                                            "rampart-clip_arm6.so"]
         },
         notes: "Local LLM + vector search + CLIP + ONNX embeddings (CPU build)"
     },
 
+    /* armv8-a langtools for 32-bit ARM -- the opt-in speed upgrade over
+       the armv6 build the default package installs.  Same shape as the
+       cuNN variants: it ships its own suffixed .so files plus symlinks
+       that re-point the unsuffixed names at them, and `--install all`
+       skips it so the safe default is never silently replaced.
+       ONLY for a Pi 3 or newer (Cortex-A53/A72/A76 -- `grep Features
+       /proc/cpuinfo` shows `crc32`).  On a Pi Zero/1 (armv6) or a Pi 2
+       (Cortex-A7, armv7-a) these modules will die with SIGILL/"Illegal
+       instruction" the first time a kernel runs.  Built only on the
+       armv7 platform, so `--install` on any other platform simply finds
+       no such package. */
+    "rampart-langtools-arm8a": {
+        kind:  "tar.gz",
+        arch:  "dep",
+        files: ["modules/rampart-faiss_arm8a.so",
+                "modules/rampart-llamacpp_arm8a.so",
+                "modules/rampart-clip_arm8a.so",
+                "modules/rampart-sentencepiece.so",
+                "modules/rampart-models.js",
+                "test/clip-test.js",
+                "test/test_images/"],
+        platforms: /^linux-[^-]+-armv7l$/,
+        symlinks: {
+            "modules/rampart-faiss.so":    "rampart-faiss_arm8a.so",
+            "modules/rampart-llamacpp.so": "rampart-llamacpp_arm8a.so",
+            "modules/rampart-clip.so":     "rampart-clip_arm8a.so"
+        },
+        notes: "Langtools built for armv8-a (Pi 3+ only; default package is armv6)"
+    },
+
     /* CUDA-accelerated langtools.  Three per-runtime variants -- pick
        the one matching the libcudart.so.<N> already on the host.
-       Built only for linux-*-x86_64 tiers; install-side resolver
-       refuses these on other platforms. */
+       Built only for linux-*-x86_64 tiers; the `platforms` regex on each
+       keeps them out of --list and refuses them on other platforms. */
     "rampart-langtools-cu11": {
         kind:  "tar.gz",
         arch:  "dep",
@@ -349,6 +395,13 @@ module.exports = {
                 "modules/rampart-models.js",
                 "test/clip-test.js",
                 "test/test_images/"],
+        /* x86_64 ONLY -- unlike cu12/cu13 there is no ARM cu11.  The ARM
+           CUDA-11 build would bake SASS for sm_72/sm_87 (Xavier/Orin --
+           Jetson iGPUs) while being compiled against CUDA 11.8, and no
+           JetPack ever shipped 11.8 (JP4=10.2, JP5=11.4, JP6=12.6 ->
+           cu12, JP7=13 -> cu13), so its driver floor can never be met on
+           the only hardware it targets.  ARM GPU boxes use cu12/cu13. */
+        platforms: /^linux-[^-]+-x86_64$/,
         symlinks: {
             "modules/rampart-faiss.so":    "rampart-faiss_cu11.so",
             "modules/rampart-llamacpp.so": "rampart-llamacpp_cu11.so",
@@ -375,6 +428,7 @@ module.exports = {
                 "modules/onnx-cu12/",
                 "test/clip-test.js",
                 "test/test_images/"],
+        platforms: /^linux-[^-]+-(x86_64|arm64)$/,
         symlinks: {
             "modules/rampart-faiss.so":    "rampart-faiss_cu12.so",
             "modules/rampart-llamacpp.so": "rampart-llamacpp_cu12.so",
@@ -398,6 +452,7 @@ module.exports = {
                 "modules/onnx-cu13/",
                 "test/clip-test.js",
                 "test/test_images/"],
+        platforms: /^linux-[^-]+-(x86_64|arm64)$/,
         symlinks: {
             "modules/rampart-faiss.so":    "rampart-faiss_cu13.so",
             "modules/rampart-llamacpp.so": "rampart-llamacpp_cu13.so",

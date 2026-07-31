@@ -293,24 +293,37 @@ function buildTarball(name, entry) {
 
     /* symlinks
      *
-     * Skip a symlink if the target it points to wasn't staged.  This
-     * matters on platforms where a *_cpu / *_cuda suffixed variant
-     * isn't built (FreeBSD, macOS, raspi) -- the langtools manifest
-     * tries to point rampart-llamacpp.so -> rampart-llamacpp_cpu.so,
-     * but on those platforms only the plain rampart-llamacpp.so is
-     * built, so the symlink would dangle.  Skipping it leaves the
-     * plain file (staged above) as the canonical target. */
+     * A value is either a target name or an ARRAY of candidate targets
+     * tried in order -- the first one that was actually staged wins.
+     * That is how ONE manifest entry serves platforms with different
+     * variant naming: rampart-llamacpp.so -> _cpu.so on the tiered
+     * linux builds, -> _arm6.so on armv7 (where no _cpu is built, and
+     * armv6 is the safe default for every Pi).
+     *
+     * Skip the symlink entirely if NO candidate was staged.  That is
+     * the case on platforms where only the plain unsuffixed module is
+     * built (FreeBSD, macOS, legacy raspi) -- the symlink would dangle,
+     * and skipping it leaves the plain file (staged above) as the
+     * canonical target.  Note the symlink is created AFTER the files
+     * loop with `ln -sfn`, so on a platform that has both a plain
+     * unsuffixed file and a suffixed variant, the link replaces the
+     * staged plain file -- deliberately, so the chosen variant wins. */
     if (entry.symlinks) {
         for (var lpath in entry.symlinks) {
-            var target = entry.symlinks[lpath];
+            var cands = entry.symlinks[lpath];
+            if (typeof cands === "string") cands = [cands];
             var dst = stage + "/" + lpath;
             var lastSlash = dst.lastIndexOf("/");
             var parent = (lastSlash > 0) ? dst.substring(0, lastSlash) : stage;
-            /* target is relative to the symlink's directory; resolve
+            /* a candidate is relative to the symlink's directory; resolve
                it to a stage-absolute path for the existence check. */
-            var resolved = parent + "/" + target;
-            if (!fileExists(resolved)) {
-                info("    skip symlink (target absent): " + lpath + " -> " + target);
+            var target = null;
+            for (var ci = 0; ci < cands.length; ci++) {
+                if (fileExists(parent + "/" + cands[ci])) { target = cands[ci]; break; }
+            }
+            if (target === null) {
+                info("    skip symlink (no candidate staged): " + lpath +
+                     " -> " + cands.join(" | "));
                 continue;
             }
             run("mkdir", ["-p", parent]);
