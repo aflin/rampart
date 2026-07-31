@@ -3271,6 +3271,8 @@ setf3dbi(DBI_SEARCH *dbisearch)
 	char *fname;
 	TBSPEC *tbspec;		/* Prior Index to AND with (if non-NULL) */
 	int	haveOrderByNotRankDesc;
+	EPI_HUGEINT	rrfTrimTiesLeft = 0;	/* slots left for rows tying at
+					 * rrfTrimRankCutoff (see the trim) */
 	int	rrfTrimRankCutoff = -1;	/* user-scale Nth-best-rank cutoff for
 					 * the PBF_INVTREE (hybrid kw-OR-vec)
 					 * likeprows trim; -1 = no filtering */
@@ -4160,10 +4162,38 @@ setf3dbi(DBI_SEARCH *dbisearch)
 		 * set `iindex->rowsReturned' since it will differ
 		 * from `dbisearch->nhits':
 		 */
+		/* Recid-keyed tree (PBF_INVTREE, hybrid kw-OR-vec): tree order
+		 * is recid order, so the first `likeprows' entries are an
+		 * arbitrary subset.  `rrfTrimRankCutoff' is the Nth-best rank,
+		 * but rows can TIE at it -- more than N may qualify, and
+		 * stopping at the first N in recid order would again drop
+		 * top-ranked rows.  So admit every row ABOVE the cutoff first,
+		 * then fill the remaining slots from the ties.  Two cheap
+		 * passes over an in-memory tree; recid order is preserved. */
+		if (rrfTrimRankCutoff >= 0)
+		{
+			EPI_HUGEINT	nAbove = 0;
+
+			while (1)
+			{
+				sz = auxbufsz;
+				btloc = btgetnext(prevResultsTree, &sz, auxbuf, NULL);
+				if (!TXrecidvalid(&btloc)) break;
+				if ((int)TX_RANK_INTERNAL_TO_USER(TXApp,
+				     TXgetoff(&btloc)) > rrfTrimRankCutoff)
+					nAbove++;
+			}
+			rewindbtree(prevResultsTree);
+			/* slots left for rows exactly AT the cutoff */
+			rrfTrimTiesLeft = (nAbove < (EPI_HUGEINT)TXnlikephits ?
+					   (EPI_HUGEINT)TXnlikephits - nAbove : 0);
+		}
 		for (i = 0, iindex->rowsReturned = 0;
 		     i < TXnlikephits;
 		     /* incremented below, only on kept rows */)
 		{
+			int	urank;
+
 			sz = auxbufsz;
 			/* auxbuf is rank or fields */
 			btloc = btgetnext(prevResultsTree, &sz, auxbuf, NULL);
@@ -4172,16 +4202,19 @@ setf3dbi(DBI_SEARCH *dbisearch)
 			/* prevResultsTree is already sorted, we can
 			 * use linear mode to save an extra sort:
 			 */
-			/* Recid-keyed tree (PBF_INVTREE, hybrid kw-OR-vec):
-			 * tree order is recid order, so the first N entries
-			 * are an arbitrary N -- keep only rows at or above
-			 * the Nth-best rank instead (loc is the internal
-			 * rank here; recid order is preserved for the merge):
-			 */
-			if (rrfTrimRankCutoff >= 0 &&
-			    (int)TX_RANK_INTERNAL_TO_USER(TXApp, TXgetoff(&btloc)) <
-			    rrfTrimRankCutoff)
-				continue;
+			if (rrfTrimRankCutoff >= 0)
+			{
+				urank = (int)TX_RANK_INTERNAL_TO_USER(TXApp,
+						TXgetoff(&btloc));
+				if (urank < rrfTrimRankCutoff)
+					continue;	/* below the pool */
+				if (urank == rrfTrimRankCutoff)
+				{		/* tie: only while slots remain */
+					if (rrfTrimTiesLeft <= 0)
+						continue;
+					rrfTrimTiesLeft--;
+				}
+			}
 			btappend(rc, &btloc, sz, auxbuf, 100, BTBMPN);
 			i++, iindex->rowsReturned++;
 		}
