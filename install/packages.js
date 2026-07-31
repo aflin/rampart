@@ -428,7 +428,15 @@ module.exports = {
                 "modules/onnx-cu12/",
                 "test/clip-test.js",
                 "test/test_images/"],
-        platforms: /^linux-[^-]+-(x86_64|arm64)$/,
+        /* 2_28 ONLY.  `[^-]+` would also match the 2_17 tier, which
+           never builds cu12/cu13 -- and because sentencepiece/models.js/
+           the clip test fixtures DO exist there, build-packages.js's
+           any-file-present check would happily emit a ~600 KB tarball
+           with no CUDA modules in it at all.  Installing that would
+           strip the unsuffixed langtools symlinks (preExtract removes
+           them; the tarball has none to restore) and leave a working
+           CPU install broken.  On arm64 every CUDA variant is 2_28-only. */
+        platforms: /^linux-2_28-(x86_64|arm64)$/,
         symlinks: {
             "modules/rampart-faiss.so":    "rampart-faiss_cu12.so",
             "modules/rampart-llamacpp.so": "rampart-llamacpp_cu12.so",
@@ -452,7 +460,8 @@ module.exports = {
                 "modules/onnx-cu13/",
                 "test/clip-test.js",
                 "test/test_images/"],
-        platforms: /^linux-[^-]+-(x86_64|arm64)$/,
+        /* 2_28 ONLY -- see the cu12 entry for why `[^-]+` is wrong here. */
+        platforms: /^linux-2_28-(x86_64|arm64)$/,
         symlinks: {
             "modules/rampart-faiss.so":    "rampart-faiss_cu13.so",
             "modules/rampart-llamacpp.so": "rampart-llamacpp_cu13.so",

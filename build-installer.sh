@@ -237,13 +237,44 @@ cp "$UNINST" "$STAGE/uninstall.js"
 cp "$INSTPK" "$STAGE/rampart-install.js"
 cp "$PKGMAN" "$STAGE/packages.js"
 
-# Optional release notes -- if the build host has $INSTALLED/release-notes.txt,
-# bake it into the bundle so entry_script.js can print it as part of the
-# install completion.  Not in git; per-build artifact.
+# Optional release notes -- baked into the bundle so entry_script.js can
+# print them when the install finishes.  Not in git; a per-machine file.
+#
+# Preferred location is /usr/local/rampart-release-notes.txt, i.e.
+# OUTSIDE the install prefix, sitting next to the /usr/local/rampart-build
+# platform marker.  Two reasons:
+#   - wiping and rebuilding <prefix> (or `rm -rf`ing it to start clean)
+#     doesn't take the notes with it;
+#   - one file serves every prefix on the machine, so the tiered Linux
+#     hosts get the same notes into both the rampart-2_17 and the
+#     rampart-2_28 bundles without keeping two copies in sync.
+# The old in-prefix path still works as a fallback.
+#
+# A tiered Linux host builds TWO platforms from one machine, and they
+# differ in what they ship (the 2_17 tier has no rampart-onnx and only
+# CUDA 11; 2_28 has onnx and cu11/12/13).  So the per-platform name is
+# checked first, falling back to the machine-wide one where the
+# platforms have nothing different to say:
+#
+#   /usr/local/rampart-release-notes-<buildPlatform>.txt   e.g.
+#   /usr/local/rampart-release-notes-linux-2_28-x86_64.txt
+#   /usr/local/rampart-release-notes.txt
+#   $INSTALLED/release-notes.txt                           (legacy)
 HAVE_RELEASE_NOTES=0
-if [ -f "$INSTALLED/release-notes.txt" ]; then
-    cp "$INSTALLED/release-notes.txt" "$STAGE/release-notes.txt"
+RELEASE_NOTES_SRC=""
+# buildPlatform is baked into the binary; take the part before the ';'
+RN_OS=$("$INSTALLED/bin/rampart" -c 'console.log(rampart.buildPlatform)' 2>/dev/null | sed 's/;.*//' | tr -d '[:space:]')
+if [ -n "$RN_OS" ] && [ -f "/usr/local/rampart-release-notes-${RN_OS}.txt" ]; then
+    RELEASE_NOTES_SRC="/usr/local/rampart-release-notes-${RN_OS}.txt"
+elif [ -f /usr/local/rampart-release-notes.txt ]; then
+    RELEASE_NOTES_SRC=/usr/local/rampart-release-notes.txt
+elif [ -f "$INSTALLED/release-notes.txt" ]; then
+    RELEASE_NOTES_SRC="$INSTALLED/release-notes.txt"
+fi
+if [ -n "$RELEASE_NOTES_SRC" ]; then
+    cp "$RELEASE_NOTES_SRC" "$STAGE/release-notes.txt"
     HAVE_RELEASE_NOTES=1
+    echo "build-installer: release notes from $RELEASE_NOTES_SRC"
 fi
 
 # Bundle the assembled per-component licenses so the install lands them
