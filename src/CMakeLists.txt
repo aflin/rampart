@@ -391,6 +391,33 @@ target_link_libraries(rampart LINK_PUBLIC
     m dl pthread
 )
 
+elseif (CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
+
+# FreeBSD: link libutil STATICALLY.
+#
+# forkpty() lives in libutil (see rampart-utils.c), but FreeBSD bumps
+# the base libutil soname across major releases -- 14 ships
+# libutil.so.9, 15 ships a newer one.  A dynamically linked 14 build
+# therefore dies at exec on a FreeBSD 15 host with:
+#
+#   ld-elf.so.1: Shared object "libutil.so.9" not found
+#
+# and since install-testing.sh routes every FreeBSD >= 14 to the
+# FreeBSD-14 bundle, that hits every 15 user.  Pulling in the archive
+# drops the soname dependency so one FreeBSD build serves 14 and 15.
+# libutil is BSD-licensed base code, so there is no static-linking
+# licence concern here (unlike libstdc++/libgcc, which must stay
+# dynamic).
+target_link_libraries(rampart LINK_PUBLIC
+    -Wl,--whole-archive
+    ${LIBEVENT_TARGET_DIR}/lib/libevent_core.a
+    ${LIBEVENT_TARGET_DIR}/lib/libevent_pthreads.a
+    ${LIBEVENT_TARGET_DIR}/lib/libevent_extra.a
+    -Wl,--no-whole-archive
+    m dl pthread
+    -Wl,--whole-archive /usr/lib/libutil.a -Wl,--no-whole-archive
+)
+
 else()
 
 target_link_libraries(rampart LINK_PUBLIC
@@ -1135,9 +1162,22 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
         message( FATAL_ERROR "gettext library not found. Try 'pkg install gettext'")
     endif()
 
+    # NOTE: deliberately NO -lutil here.
+    #
+    # It cannot be linked statically -- FreeBSD's base /usr/lib/libutil.a
+    # is not built -fPIC, so pulling it into a shared object fails with
+    #   relocation R_X86_64_PC32 cannot be used against '__stack_chk_guard'
+    # And linking it dynamically would put libutil.so.9 in this module's
+    # DT_NEEDED, which is exactly the thing that breaks on FreeBSD 15.
+    #
+    # Instead the main rampart executable links the WHOLE libutil archive
+    # (see the FreeBSD branch of the `rampart` link above) and exports its
+    # symbols -- the target has ENABLE_EXPORTS set.  openpty/forkpty/
+    # login_tty therefore resolve out of the executable when this module
+    # is dlopen'd, with no libutil soname recorded anywhere.
     target_link_libraries(rampart-python PRIVATE
         ${PYTHON_BIN_DIR}/libpython3.${PYTHON_MINOR}.a
-        pthread dl util m
+        pthread dl m
         /usr/local/lib/libintl.so
         "-Wl,-z,notext"
     )
