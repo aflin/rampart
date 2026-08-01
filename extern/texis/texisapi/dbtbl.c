@@ -3595,6 +3595,514 @@ dupRc:
 
 /******************************************************************/
 
+/* excerpt() helpers */
+
+typedef struct TXexcerptCand_tag
+{
+	double	score;
+	size_t	cix;
+}
+TXexcerptCand;
+
+static int
+txExcerptCandCmp(const void *pa, const void *pb)
+{
+	const TXexcerptCand	*a = (const TXexcerptCand *)pa;
+	const TXexcerptCand	*b = (const TXexcerptCand *)pb;
+
+	if (a->score < b->score) return(1);
+	if (a->score > b->score) return(-1);
+	if (a->cix < b->cix) return(-1);
+	if (a->cix > b->cix) return(1);
+	return(0);
+}
+
+#define TX_EXCERPT_IS_WS(c)	((c) == ' ' || (c) == '\t' || \
+				 (c) == '\n' || (c) == '\r')
+
+/* Back exclusive cut point `end' up to a clean spot in text[start..end):
+ * before the last whitespace that leaves a non-empty result, else to a
+ * UTF-8 sequence boundary (never mid-sequence). */
+static size_t
+txExcerptCleanCut(const char *text, size_t start, size_t end)
+{
+	size_t	i;
+
+	for (i = end; i > start + 1; i--)
+		if (TX_EXCERPT_IS_WS(text[i - 1]))
+			return(i - 1);
+	while (end > start &&
+	       (((const unsigned char *)text)[end] & 0xC0) == 0x80)
+		end--;
+	return(end);
+}
+
+/* Merge the selected chunks' spans, walked in document order, into
+ * contiguous runs.  Overlapping/adjacent spans coalesce, as do spans
+ * whose gap is pure whitespace (chunkers usually exclude the
+ * paragraph separators from spans; the gap text is emitted verbatim
+ * so neighboring chunks read as contiguous prose).  Returns the run
+ * count. */
+static size_t
+txExcerptRuns(const char *text, const size_t *docOrder, size_t k,
+	      const size_t *spanS, const size_t *spanE, const char *sel,
+	      size_t *runS, size_t *runE)
+{
+	size_t	d, i, g, nr = 0;
+	int	merge;
+
+	for (d = 0; d < k; d++)
+	{
+		i = docOrder[d];
+		if (!sel[i]) continue;
+		merge = (nr > 0);
+		if (merge && spanS[i] > runE[nr - 1])
+			for (g = runE[nr - 1]; g < spanS[i]; g++)
+				if (!TX_EXCERPT_IS_WS(text[g]))
+				{
+					merge = 0;
+					break;
+				}
+		if (merge)
+		{
+			if (spanE[i] > runE[nr - 1]) runE[nr - 1] = spanE[i];
+		}
+		else
+		{
+			runS[nr] = spanS[i];
+			runE[nr] = spanE[i];
+			nr++;
+		}
+	}
+	return(nr);
+}
+
+#define TX_EXCERPT_SEP		"\n...\n"
+#define TX_EXCERPT_SEP_LEN	(sizeof(TX_EXCERPT_SEP) - 1)
+
+/* excerpt() settings from arg 5 */
+typedef struct TXexcerptOpts_tag
+{
+	long	window;		/* neighbor chunks per side */
+	int	kwHit;		/* guarantee the best keyword-hit chunk */
+	int	lead;		/* guarantee the document's first chunk */
+	int	minSimSet;
+	double	minSim;		/* score floor for score-driven picks */
+}
+TXexcerptOpts;
+
+/* excerpt() arg 5: a numeric value is the neighbor window (a selected
+ * chunk brings `window' chunks per side along with it); a varchar is
+ * an options string, e.g. `window=1, kw_hit=1, lead=1, minsim=0.30'.
+ * Keys are case-insensitive and underscores in them are ignored, so
+ * kw_hit/kwhit and min_sim/minsim are equivalent. */
+static void
+txExcerptOptions(FLD *f5, TXexcerptOpts *o)
+{
+	static const char	fn[] = "excerpt";
+	void	*p;
+
+	memset(o, 0, sizeof(*o));
+	if (!f5 || !(p = getfld(f5, NULL))) return;
+	switch (f5->type & DDTYPEBITS)
+	{
+	case FTN_SHORT:		o->window = (long)*(ft_short *)p;    break;
+	case FTN_SMALLINT:	o->window = (long)*(ft_smallint *)p; break;
+	case FTN_INT:		o->window = (long)*(ft_int *)p;	     break;
+	case FTN_INTEGER:	o->window = (long)*(ft_integer *)p;  break;
+	case FTN_LONG:		o->window = (long)*(ft_long *)p;     break;
+	case FTN_INT64:		o->window = (long)*(ft_int64 *)p;    break;
+	case FTN_FLOAT:		o->window = (long)*(ft_float *)p;    break;
+	case FTN_DOUBLE:	o->window = (long)*(ft_double *)p;   break;
+	case FTN_CHAR:
+	{
+		const char	*s = (const char *)p;
+
+		while (*s)
+		{
+			const char	*ks;
+			char		kbuf[33];
+			size_t		klen, kn, ki;
+
+			while (*s && (TX_EXCERPT_IS_WS(*s) || *s == ',' ||
+				      *s == ';'))
+				s++;
+			if (!*s) break;
+			ks = s;
+			while (*s && *s != '=' && *s != ',' && *s != ';' &&
+			       !TX_EXCERPT_IS_WS(*s))
+				s++;
+			klen = (size_t)(s - ks);
+			/* normalized key: underscores dropped */
+			for (ki = kn = 0; ki < klen && kn < sizeof(kbuf) - 1;
+			     ki++)
+				if (ks[ki] != '_') kbuf[kn++] = ks[ki];
+			kbuf[kn] = '\0';
+			while (TX_EXCERPT_IS_WS(*s)) s++;
+			if (*s == '=')
+			{
+				s++;
+				while (TX_EXCERPT_IS_WS(*s)) s++;
+			}
+			if (strcmpi(kbuf, "window") == 0)
+				o->window = strtol(s, (char **)&s, 10);
+			else if (strcmpi(kbuf, "kwhit") == 0)
+				o->kwHit = (strtol(s, (char **)&s, 10) != 0);
+			else if (strcmpi(kbuf, "lead") == 0)
+				o->lead = (strtol(s, (char **)&s, 10) != 0);
+			else if (strcmpi(kbuf, "minsim") == 0)
+			{
+				o->minSim = strtod(s, (char **)&s);
+				o->minSimSet = 1;
+			}
+			else
+			{
+				putmsg(MWARN + UGE, fn,
+				  "excerpt(): unknown option `%s' ignored",
+				       kbuf);
+				while (*s && *s != ',' && *s != ';' &&
+				       !TX_EXCERPT_IS_WS(*s))
+					s++;
+			}
+		}
+		break;
+	}
+	default:
+		putmsg(MWARN + UGE, fn,
+		       "excerpt(): 5th argument must be a chunk window count or options string; ignored");
+		break;
+	}
+	if (o->window < 0) o->window = 0;
+}
+
+/* excerpt(Doc, maxsize, query, Vec[, window]): the retrieval-side
+ * companion to abstract().  Scores every chunk of the row's vector
+ * value against the query embedding (same scorer as LIKEV), then
+ * returns the best-scoring chunks VERBATIM, assembled in document
+ * order within `maxsize' bytes; discontiguous passages are joined
+ * with "\n...\n".  A selected chunk brings `window' neighbor chunks
+ * per side along with it, and the best chunk (plus neighbors) is
+ * always included, truncated if it alone exceeds `maxsize'.
+ * maxsize <= 0 means unlimited.  Chunk byte ranges come from the vec
+ * value's own header spans (chunkembed()), falling back to the
+ * registered chunk-spans callback; when chunks cannot be scored or
+ * located, the document's prefix is returned instead. */
+int
+TXsqlFuncs_excerpt(f1, f2, f3, f4, f5)
+FLD *f1;
+FLD *f2;
+FLD *f3;
+FLD *f4;
+FLD *f5;
+{
+	static const char	fn[] = "excerpt";
+	ft_char	*text, *rc = CHARPN, *query = CHARPN;
+	ft_long	*pmaxsz;
+	size_t	maxsz = 0;			/* 0 = unlimited */
+	size_t	window;
+	TXexcerptOpts	opts;
+	void	*vecData = NULL;
+	size_t	vecSz = 0, tlen = 0, k = 0, outLen;
+	double	*scores = NULL;
+	byte	*arena = NULL;
+	size_t	*spanS, *spanE, *runS, *runE, *docOrder, *newIdx, *seq;
+	char	*valid, *sel, *exempt;
+	TXexcerptCand	*cands;
+	size_t	i, c, nsel = 0, nr;
+	TXPMBUF	*pmbuf = TXPMBUFPN;
+
+	if (!f1 || !(text = getfld(f1, NULL)))
+	{
+		rc = TXstrdup(pmbuf, __FUNCTION__,
+			      TXfldGetNullOutputString());
+		goto setRet;
+	}
+	tlen = strlen(text);
+
+	if (f2 && (pmaxsz = getfld(f2, NULL)) != NULL && *pmaxsz > 0)
+		maxsz = (size_t)*pmaxsz;
+
+	if (f3) query = (ft_char *)getfld(f3, NULL);
+
+	if (f4 && FTN_IS_VEC(f4->type))
+	{
+		vecData = getfld(f4, NULL);
+		vecSz = f4->size;
+	}
+	else if (f4)
+		putmsg(MWARN + UGE, fn,
+		       "excerpt(): 4th argument is not a vector column; returning document prefix");
+
+	txExcerptOptions(f5, &opts);
+	window = (size_t)opts.window;
+
+	if (!vecData || !query || !*query ||
+	    TXvecExcerptChunkScores(query, vecData, vecSz, (int)f4->type,
+				    &scores, &k) != 0 || k == 0)
+		goto prefix;
+
+	/* one arena for the bookkeeping arrays; cands (doubles) first so
+	 * its alignment holds on 32-bit platforms too.  seq/exempt hold
+	 * the pick order: up to 3 guaranteed entries ahead of the k
+	 * score-sorted candidates. */
+	arena = (byte *)TXmalloc(pmbuf, __FUNCTION__,
+				 k * sizeof(TXexcerptCand) +
+				 (7 * k + 3) * sizeof(size_t) +
+				 3 * k + 3);
+	if (!arena) goto prefix;
+	cands    = (TXexcerptCand *)arena;
+	spanS    = (size_t *)(cands + k);
+	spanE    = spanS + k;
+	runS     = spanE + k;
+	runE     = runS + k;
+	docOrder = runE + k;
+	newIdx   = docOrder + k;
+	seq      = newIdx + k;
+	valid    = (char *)(seq + k + 3);
+	sel      = valid + k;
+	exempt   = sel + k;
+	memset(sel, 0, k);
+
+	/* chunk byte ranges: value-header spans first (chunkembed() wrote
+	 * the geometry into the value itself; caller-supplied spans are
+	 * untrusted, so clamp to the text and drop empty/inverted ones),
+	 * else re-derive via the chunk-spans callback, whose span count
+	 * must match the vector's chunk count or the text and vector do
+	 * not belong together */
+	{
+		TXvecValInfo	vvi;
+		int		got = 0;
+
+		if (TXvecValDecode(vecData, vecSz, 0, &vvi) &&
+		    vvi.spans != NULL && vvi.k == k)
+		{
+			for (i = 0; i < k; i++)
+			{
+				size_t	s = (size_t)vvi.spans[i * 2];
+				size_t	e = (size_t)vvi.spans[i * 2 + 1];
+
+				if (e > tlen) e = tlen;
+				spanS[i] = s;
+				spanE[i] = e;
+				valid[i] = (s < e);
+			}
+			got = 1;
+		}
+		else
+		{
+			void	*spansUd = NULL;
+			TXchunkSpansFunc spansFn =
+				TXgetChunkSpansFunc(&spansUd);
+
+			if (spansFn)
+			{
+				TXchunkSpan	*spans = NULL;
+				size_t		k2;
+
+				k2 = spansFn(spansUd, text, tlen, &spans);
+				if (k2 == k && spans)
+				{
+					for (i = 0; i < k; i++)
+					{
+						size_t	s = spans[i].start;
+						size_t	e = spans[i].end;
+
+						if (e > tlen) e = tlen;
+						spanS[i] = s;
+						spanE[i] = e;
+						valid[i] = (s < e);
+					}
+					got = 1;
+				}
+				free(spans);
+			}
+		}
+		if (!got) goto prefix;
+	}
+
+	/* document-order walk of the chunk indices (header spans may be
+	 * caller-supplied, i.e. in any order): stable insertion sort by
+	 * span start -- k is small */
+	for (i = 0; i < k; i++) docOrder[i] = i;
+	for (i = 1; i < k; i++)
+	{
+		size_t	j = i, t = docOrder[i];
+
+		while (j > 0 && spanS[docOrder[j - 1]] > spanS[t])
+		{
+			docOrder[j] = docOrder[j - 1];
+			j--;
+		}
+		docOrder[j] = t;
+	}
+
+	/* Pick order: the best-scoring chunk, then the guaranteed picks
+	 * (kw_hit's best-keyword-hit chunk, the lead chunk), then the
+	 * rest best-first.  minsim filters the score-driven picks only:
+	 * the guarantees are exempt, having been asked for explicitly.
+	 * Each accepted pick brings `window' neighbors per side; the
+	 * FIRST accepted pick is unconditional (truncated at assembly if
+	 * oversize), later picks must fit whole. */
+	for (i = 0; i < k; i++)
+	{
+		cands[i].score = scores[i];
+		cands[i].cix = i;
+	}
+	qsort(cands, k, sizeof(TXexcerptCand), txExcerptCandCmp);
+	{
+		size_t	nseq = 0;
+
+		for (c = 0; c < k; c++)
+		{
+			i = cands[c].cix;
+			if (valid[i] &&
+			    (!opts.minSimSet || scores[i] >= opts.minSim))
+			{
+				seq[nseq] = i;
+				exempt[nseq++] = 0;
+				break;
+			}
+		}
+		if (opts.kwHit && query != CHARPN && *query)
+		{
+			size_t	hitOff = TXabstractBestHitOffset(text,
+								 query);
+
+			if (hitOff != (size_t)(-1))
+				for (c = 0; c < k; c++)
+				{
+					i = docOrder[c];
+					if (valid[i] && hitOff >= spanS[i] &&
+					    hitOff < spanE[i])
+					{
+						seq[nseq] = i;
+						exempt[nseq++] = 1;
+						break;
+					}
+				}
+		}
+		if (opts.lead)
+			for (c = 0; c < k; c++)
+			{
+				i = docOrder[c];
+				if (valid[i])
+				{
+					seq[nseq] = i;
+					exempt[nseq++] = 1;
+					break;
+				}
+			}
+		for (c = 0; c < k; c++)
+		{
+			seq[nseq] = cands[c].cix;
+			exempt[nseq++] = 0;
+		}
+
+		for (c = 0; c < nseq; c++)
+		{
+			size_t	ci = seq[c], lo, hi, nNew = 0, sz;
+
+			if (!valid[ci] || sel[ci]) continue;
+			if (!exempt[c] && opts.minSimSet &&
+			    scores[ci] < opts.minSim)
+				continue;
+			lo = (ci > window) ? ci - window : 0;
+			hi = ci + window;
+			if (hi >= k) hi = k - 1;
+			for (i = lo; i <= hi; i++)
+				if (valid[i] && !sel[i])
+				{
+					sel[i] = 1;
+					newIdx[nNew++] = i;
+				}
+			if (nNew == 0) continue;
+			if (nsel > 0 && maxsz != 0)
+			{
+				nr = txExcerptRuns(text, docOrder, k, spanS,
+						   spanE, sel, runS, runE);
+				sz = (nr > 0 ?
+				      (nr - 1) * TX_EXCERPT_SEP_LEN : 0);
+				for (i = 0; i < nr; i++)
+					sz += runE[i] - runS[i];
+				if (sz > maxsz)
+				{
+					for (i = 0; i < nNew; i++)
+						sel[newIdx[i]] = 0;
+					continue;
+				}
+			}
+			nsel++;
+		}
+	}
+	if (nsel == 0)
+	{
+		/* a minsim floor nothing cleared: the empty string is the
+		 * signal (the one deliberate empty-output case) */
+		if (opts.minSimSet)
+		{
+			rc = TXstrdup(pmbuf, __FUNCTION__, "");
+			goto setRet;
+		}
+		goto prefix;
+	}
+
+	/* assemble: merged runs in document order, whitespace-trimmed */
+	nr = txExcerptRuns(text, docOrder, k, spanS, spanE, sel, runS, runE);
+	outLen = (nr > 0 ? (nr - 1) * TX_EXCERPT_SEP_LEN : 0);
+	for (i = 0; i < nr; i++) outLen += runE[i] - runS[i];
+	rc = (ft_char *)TXmalloc(pmbuf, __FUNCTION__, outLen + 1);
+	if (!rc) goto setRet;
+	{
+		char	*p = rc;
+		int	any = 0;
+
+		for (i = 0; i < nr; i++)
+		{
+			size_t	s = runS[i], e = runE[i];
+
+			while (s < e && TX_EXCERPT_IS_WS(text[s])) s++;
+			while (e > s && TX_EXCERPT_IS_WS(text[e - 1])) e--;
+			if (s >= e) continue;
+			if (any)
+			{
+				memcpy(p, TX_EXCERPT_SEP,
+				       TX_EXCERPT_SEP_LEN);
+				p += TX_EXCERPT_SEP_LEN;
+			}
+			memcpy(p, text + s, e - s);
+			p += e - s;
+			any = 1;
+		}
+		*p = '\0';
+		/* only the unconditional first pick can be over budget */
+		if (maxsz != 0 && (size_t)(p - rc) > maxsz)
+			rc[txExcerptCleanCut(rc, 0, maxsz)] = '\0';
+	}
+	goto setRet;
+
+prefix:
+	/* no scorable/locatable chunks: the document's own prefix is the
+	 * predictable degradation */
+	outLen = tlen;
+	if (maxsz != 0 && outLen > maxsz)
+		outLen = txExcerptCleanCut(text, 0, maxsz);
+	rc = (ft_char *)TXmalloc(pmbuf, __FUNCTION__, outLen + 1);
+	if (rc)
+	{
+		memcpy(rc, text, outLen);
+		rc[outLen] = '\0';
+	}
+
+setRet:
+	scores = TXfree(scores);
+	arena = TXfree(arena);
+	if (!rc) return(FOP_ENOMEM);
+	setfldandsize(f1, rc, strlen(rc) + 1, FLD_FORCE_NORMAL);
+	return(FOP_EOK);
+}
+
+/******************************************************************/
+
 static int txFuncDoStrFold ARGS((FLD *f1, FLD *f2, TXCFF defCaseStyle));
 static int
 txFuncDoStrFold(f1, f2, defCaseStyle)

@@ -118,6 +118,12 @@ static FLDFUNC TXdbfldfuncsUnsorted[] =
     { FTN_CHAR | DDVARBIT, FTN_CHAR | DDVARBIT, FTN_CHAR | DDVARBIT,
       FTN_CHAR | DDVARBIT, 0 } },
   { "exec", F(doshell), 1, 5, FTN_CHAR | DDVARBIT, {0, 0, 0, 0, 0 } },
+  /* excerpt args 4 and 5 are declared 0 (don't-care): arg 4 is a vec
+   * column value (a declared type would AUTOPROMOTE it to varbyte);
+   * arg 5 is EITHER a numeric neighbor-window count OR a varchar
+   * options string, disambiguated by FLD type. */
+  { "excerpt", F(TXsqlFuncs_excerpt), 4, 5, (FTN_CHAR | DDVARBIT),
+    { FTN_CHAR | DDVARBIT, FTN_LONG, (FTN_CHAR | DDVARBIT), 0, 0 } },
   { "exp", F(TXexp), 1, 1, FTN_DOUBLE, {FTN_DOUBLE, 0, 0, 0, 0 } },
   { "fabs", F(TXfabs), 1, 1, FTN_DOUBLE, {FTN_DOUBLE, 0, 0, 0, 0 } },
   { "fileext", F(TXsqlFunc_fileext), 1, 1, (DDVARBIT | FTN_CHAR),

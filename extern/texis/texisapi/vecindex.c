@@ -3131,39 +3131,38 @@ TXvecRowDecodeDim(void **rawPtr, size_t *cellsPtr, size_t elsz)
     return vvi.dim;
 }
 
-/* Best chunk of a stored multi-chunk vector value vs a TEXT query,
- * scored exactly like FOP_MMV would (same rp_vector_distance "dot",
- * same f32 conversion) — for abstract()'s vec-snippet mode.  Embeds
- * `query' via the registered embed callback; the embedder caches by
- * text, so per-row calls after a LIKEV on the same query cost nothing.
- * This makes best-chunk seeding DETERMINISTIC and self-contained: no
- * reliance on a per-row FOP_MMV evaluation having just run (the
- * fused-OR fast path skips those), no stale cross-row scratch state.
+/* Per-chunk scores of a stored multi-chunk vector value vs a TEXT
+ * query, scored exactly like FOP_MMV would (same rp_vector_distance
+ * "dot", same f32 conversion) — for abstract()'s vec-snippet mode and
+ * excerpt().  Embeds `query' via the registered embed callback; the
+ * embedder caches by text, so per-row calls after a LIKEV on the same
+ * query cost nothing.  This makes chunk scoring DETERMINISTIC and
+ * self-contained: no reliance on a per-row FOP_MMV evaluation having
+ * just run (the fused-OR fast path skips those), no stale cross-row
+ * scratch state.
  *
- * `colType' must be a typed vec FTN (abstract rejects varbyte 5th
- * args).  Works with or without a value header: k is derived from
- * cells/dim, so custom chunkings and headerless legacy rows both
- * resolve.  Returns 0 with *cixOut / *ccntOut set; -1 when it cannot
- * score (no embedder registered, embed failure, dim mismatch) — the
- * caller falls back to the FOP_MMV scratch state, then plain
- * abstract. */
+ * `colType' must be a typed vec FTN.  Works with or without a value
+ * header: k is derived from cells/dim, so custom chunkings and
+ * headerless legacy rows both resolve.  Returns 0 with *scoresOut set
+ * to a TXmalloc'd array of *kOut per-chunk scores (caller TXfree()s);
+ * -1 when it cannot score (no embedder registered, embed failure, dim
+ * mismatch). */
 int
-TXvecAbstractBestChunk(const char *query, void *vecData, size_t vecBytes,
-                       int colType, int *cixOut, int *ccntOut)
+TXvecExcerptChunkScores(const char *query, void *vecData, size_t vecBytes,
+                        int colType, double **scoresOut, size_t *kOut)
 {
     TXvecValInfo vv;
     void *ud = NULL;
     TXembedFunc efn;
     float *qv = NULL, *cbuf = NULL;
+    double *scores = NULL;
     size_t qdim, elsz, dataBytes, cells, kChunks, ci;
     const void *cellsPtr;
     const char *err_msg = NULL;
-    double best;
-    size_t besti;
     int rc = -1;
 
     if (!query || !*query || !vecData || vecBytes == 0 ||
-        !cixOut || !ccntOut)
+        !scoresOut || !kOut)
         return -1;
     elsz = vec_dtype_elsz(colType & DDTYPEBITS);
     if (elsz == 0) return -1;
@@ -3183,14 +3182,14 @@ TXvecAbstractBestChunk(const char *query, void *vecData, size_t vecBytes,
 
     cbuf = (float *)TXmalloc(TXPMBUFPN, __FUNCTION__,
                              qdim * sizeof(float));
-    if (!cbuf) goto done;
-    best = -2.0;
-    besti = 0;
+    scores = (double *)TXmalloc(TXPMBUFPN, __FUNCTION__,
+                                kChunks * sizeof(double));
+    if (!cbuf || !scores) goto done;
     for (ci = 0; ci < kChunks; ci++) {
         double cs;
 
         /* scale 0: defensive i8/u8 default (1/127); a uniform scale
-         * cannot change the argmax */
+         * cannot change the ranking */
         if (vec_convert_to_f32(colType & DDTYPEBITS,
                                (const char *)cellsPtr + ci * qdim * elsz,
                                qdim, (int)qdim, 0.0f, 0, cbuf) != 0)
@@ -3198,15 +3197,42 @@ TXvecAbstractBestChunk(const char *query, void *vecData, size_t vecBytes,
         cs = rp_vector_distance(cbuf, qv, qdim * sizeof(float),
                                 "dot", "f32", &err_msg);
         if (err_msg) goto done;
-        if (cs > best) { best = cs; besti = ci; }
+        scores[ci] = cs;
     }
-    *cixOut = (int)besti;
-    *ccntOut = (int)kChunks;
+    *scoresOut = scores;
+    scores = NULL;
+    *kOut = kChunks;
     rc = 0;
 done:
     free(qv);
     cbuf = TXfree(cbuf);
+    scores = TXfree(scores);
     return rc;
+}
+
+/* Best chunk of a stored multi-chunk vector value vs a TEXT query —
+ * argmax over TXvecExcerptChunkScores(), for abstract()'s vec-snippet
+ * mode.  Returns 0 with *cixOut / *ccntOut set; -1 when it cannot
+ * score — the caller falls back to the FOP_MMV scratch state, then
+ * plain abstract. */
+int
+TXvecAbstractBestChunk(const char *query, void *vecData, size_t vecBytes,
+                       int colType, int *cixOut, int *ccntOut)
+{
+    double *scores = NULL;
+    size_t k, ci, besti;
+
+    if (!cixOut || !ccntOut) return -1;
+    if (TXvecExcerptChunkScores(query, vecData, vecBytes, colType,
+                                &scores, &k) != 0)
+        return -1;
+    besti = 0;
+    for (ci = 1; ci < k; ci++)
+        if (scores[ci] > scores[besti]) besti = ci;
+    *cixOut = (int)besti;
+    *ccntOut = (int)k;
+    scores = TXfree(scores);
+    return 0;
 }
 
 IINDEX *

@@ -313,6 +313,23 @@ int	*nHitsP;	/* (out, opt.) length of `*hits' */
 	return NULL;
 }
 
+/* Byte offset of the center of the best `query' hit region in `text'
+ * (same rank-based engine as abstract()'s query modes, LIKEP partial-
+ * match semantics), or (size_t)-1 when the query has no hit.  For
+ * excerpt()'s kw_hit chunk guarantee; the per-thread query cache above
+ * makes per-row calls with an unchanged query cheap. */
+size_t
+TXabstractBestHitOffset(const char *text, const char *query)
+{
+	byte	*at;
+
+	if (!text || !query || !*query) return((size_t)(-1));
+	at = findrankabs((char *)text, (char *)query, DBTBLPN, CHARPPN,
+			 CHARPN, (FDBIHI ***)NULL, (int *)NULL);
+	if (!at) return((size_t)(-1));
+	return((size_t)(at - (byte *)text));
+}
+
 /* ------------------------------------------------------------------------ */
 
 static size_t

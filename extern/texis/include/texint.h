@@ -3052,6 +3052,8 @@ int TXclosemminfo(void);
 /* ------------------------------------------------------------------------ */
 
 int TXsqlFuncs_abstract(FLD *f1, FLD *f2, FLD *f3, FLD *f4, FLD *f5);
+int TXsqlFuncs_excerpt(FLD *f1, FLD *f2, FLD *f3, FLD *f4, FLD *f5);
+size_t TXabstractBestHitOffset(const char *text, const char *query);
 int TXacos(FLD *f1);
 int TXasin(FLD *f1);
 int TXatan(FLD *f1);

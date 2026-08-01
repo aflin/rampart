@@ -410,9 +410,14 @@ void        TXregisterEmbedFunc(TXembedFunc fn, void *user_data);
 TXembedFunc TXgetEmbedFunc(void **user_data_out);
 void        TXclearEmbedFunc(void);
 
-/* abstract() vec-snippet mode: self-contained best-chunk selection —
- * embeds `query' (cached by the embedder) and scores the row's chunks
- * like FOP_MMV; no dependence on per-row eval order.  0 on success. */
+/* Self-contained chunk scoring — embeds `query' (cached by the
+ * embedder) and scores the row's chunks like FOP_MMV; no dependence
+ * on per-row eval order.  0 on success.  ChunkScores returns ALL k
+ * scores (TXmalloc'd, caller frees) for excerpt(); BestChunk is its
+ * argmax, for abstract()'s vec-snippet mode. */
+int TXvecExcerptChunkScores(const char *query, void *vecData,
+                            size_t vecBytes, int colType,
+                            double **scoresOut, size_t *kOut);
 int TXvecAbstractBestChunk(const char *query, void *vecData,
                            size_t vecBytes, int colType,
                            int *cixOut, int *ccntOut);

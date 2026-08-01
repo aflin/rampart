@@ -121,6 +121,15 @@ TXvecAbstractBestChunk(const char *query, void *vecData, size_t vecBytes,
     return -1;
 }
 
+int
+TXvecExcerptChunkScores(const char *query, void *vecData, size_t vecBytes,
+                        int colType, double **scoresOut, size_t *kOut)
+{
+    (void)query; (void)vecData; (void)vecBytes; (void)colType;
+    (void)scoresOut; (void)kOut;
+    return -1;
+}
+
 void
 TXvecDropAux(DDIC *ddic, const char *indfile)
 {
