@@ -4761,7 +4761,9 @@ static void rp_pushfield(duk_context *ctx, FLDLST *fl, int i, int rawvec)
             switch(v[1])
             {
                 case '\xff':
-                    duk_push_lstring(ctx, v+2, (duk_size_t)fl->ndata[i] -2);
+                    /* field text is foreign bytes: sanitize so no JS
+                       string op can throw on invalid sequences */
+                    duk_rp_push_lstring_safe(ctx, v+2, (duk_size_t)fl->ndata[i] -2);
                     break;
                 case '\xfe':
                     /* F5: reads the double at byte offset 8 -> needs 16 bytes */
@@ -4780,11 +4782,11 @@ static void rp_pushfield(duk_context *ctx, FLDLST *fl, int i, int rawvec)
                     duk_push_null(ctx);
                     break;
                 case '\xfa':
-                    duk_push_string(ctx, v+2);
+                    duk_rp_push_lstring_safe(ctx, v+2, strlen(v+2));
                     duk_json_decode(ctx, -1);
                     break;
                 default:
-                    duk_push_string(ctx,v);
+                    duk_rp_push_lstring_safe(ctx, v, strlen(v));
                     break;
             }
 
@@ -4798,7 +4800,7 @@ static void rp_pushfield(duk_context *ctx, FLDLST *fl, int i, int rawvec)
 
         if(sz > fl->ndata[i])
             sz = fl->ndata[i];
-        duk_push_lstring(ctx, (char *)fl->data[i], sz );
+        duk_rp_push_lstring_safe(ctx, (char *)fl->data[i], sz );
         break;
     }
     case FTN_STRLST:
@@ -4812,7 +4814,7 @@ static void rp_pushfield(duk_context *ctx, FLDLST *fl, int i, int rawvec)
         duk_push_array(ctx);
         while (s < end)
         {
-            duk_push_string(ctx, s);
+            duk_rp_push_lstring_safe(ctx, s, l);
             duk_put_prop_index(ctx, -2, j++);
             s += l;
             while (s < end && *s == '\0')

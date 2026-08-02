@@ -686,6 +686,15 @@ char *duk_rp_url_encode(char *str, int len);
 char *duk_rp_url_decode(char *str, int *len);
 void duk_rp_toHex(duk_context *ctx, duk_idx_t idx, int ucase);
 int duk_rp_get_int_default(duk_context *ctx, duk_idx_t i, int def);
+/* byte offset of the first sequence duktape's string walker would
+   reject (bare continuation lead, 0xff lead, truncated tail), -1 if
+   safe */
+ssize_t duk_rp_utf8_invalid_at(const char *s, duk_size_t len);
+/* duk_push_lstring, but bytes that would make JS string ops throw are
+   replaced with U+FFFD; no copy when the input is already safe.  For
+   text crossing a boundary rampart does not control (SQL fields, file
+   reads, network bodies). */
+const char *duk_rp_push_lstring_safe(duk_context *ctx, const char *s, duk_size_t len);
 char *to_utf8(const char *in_str);
 duk_ret_t duk_rp_values_from_object(duk_context *ctx, duk_idx_t idx);
 duk_ret_t duk_rp_read_file(duk_context *ctx);// rampart.utils.readFile()

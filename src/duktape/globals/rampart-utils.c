@@ -2867,6 +2867,117 @@ duk_ret_t duk_rp_realpath(duk_context *ctx)
 }
 
 
+/* Byte offset of the first sequence in s[0..len) that duktape's string
+   walker (duk_unicode_decode_xutf8) would reject, or -1 if the bytes are
+   safe.  Duktape accepts "extended UTF-8" and consumes continuation
+   bytes WITHOUT validating them, so only three shapes ever fail: a bare
+   continuation byte (0x80-0xBF) in lead position, 0xFF as a lead, and a
+   lead whose sequence runs past the end of the string.  This check
+   mirrors those rules exactly -- no more, no less -- so a string that
+   passes can never make a JS string operation throw, and a string that
+   duktape tolerates is never altered. */
+ssize_t duk_rp_utf8_invalid_at(const char *s, duk_size_t len)
+{
+    const unsigned char *p = (const unsigned char *)s;
+    duk_size_t i = 0;
+
+    while (i < len)
+    {
+        unsigned char c = p[i];
+
+        if (c < 0x80)
+        {
+            /* ascii fast path: word-at-a-time (memcpy handles alignment) */
+            while (i + sizeof(size_t) <= len)
+            {
+                size_t w;
+                memcpy(&w, p + i, sizeof(size_t));
+                if (w & ((size_t)0x8080808080808080ULL))
+                    break;
+                i += sizeof(size_t);
+            }
+            if (i < len && p[i] < 0x80)
+                i++;
+        }
+        else if (c < 0xc0 || c == 0xff)
+            return (ssize_t)i;              /* bare continuation / 0xff lead */
+        else
+        {
+            /* lead byte: 0xC0-0xFE, 1-6 continuation bytes (duktape
+               consumes them blindly; we do the same) */
+            int n = (c < 0xe0) ? 1 : (c < 0xf0) ? 2 : (c < 0xf8) ? 3 :
+                    (c < 0xfc) ? 4 : (c < 0xfe) ? 5 : 6;
+            if (i + 1 + (duk_size_t)n > len)
+                return (ssize_t)i;          /* truncated at end */
+            i += 1 + (duk_size_t)n;
+        }
+    }
+    return -1;
+}
+
+/* Push s[0..len) as a JS string.  When the bytes pass
+   duk_rp_utf8_invalid_at() -- the overwhelmingly common case -- this is
+   exactly duk_push_lstring: no copy, no allocation.  Otherwise a
+   sanitized copy is pushed in which each offending byte (or truncated
+   trailing sequence) becomes U+FFFD, so the result is always safe for
+   every JS string operation.  For text crossing a boundary rampart does
+   not control: SQL fields, file reads, network bodies. */
+const char *duk_rp_push_lstring_safe(duk_context *ctx, const char *s, duk_size_t len)
+{
+    ssize_t bad;
+    const unsigned char *p;
+    char *out = NULL, *o;
+    duk_size_t i;
+    const char *ret;
+
+    if (!s || !len)
+        return duk_push_lstring(ctx, s ? s : "", 0);
+
+    bad = duk_rp_utf8_invalid_at(s, len);
+    if (bad < 0)
+        return duk_push_lstring(ctx, s, len);
+
+    /* worst case every byte becomes 3-byte U+FFFD */
+    REMALLOC(out, len * 3);
+    memcpy(out, s, (size_t)bad);
+    o = out + bad;
+    p = (const unsigned char *)s;
+    i = (duk_size_t)bad;
+    while (i < len)
+    {
+        unsigned char c = p[i];
+
+        if (c < 0x80)
+            *o++ = (char)c, i++;
+        else if (c < 0xc0 || c == 0xff)
+        {
+            memcpy(o, "\xef\xbf\xbd", 3);       /* U+FFFD */
+            o += 3;
+            i++;
+        }
+        else
+        {
+            int n = (c < 0xe0) ? 1 : (c < 0xf0) ? 2 : (c < 0xf8) ? 3 :
+                    (c < 0xfc) ? 4 : (c < 0xfe) ? 5 : 6;
+            if (i + 1 + (duk_size_t)n > len)
+            {
+                memcpy(o, "\xef\xbf\xbd", 3);   /* truncated tail */
+                o += 3;
+                i = len;
+            }
+            else
+            {
+                memcpy(o, p + i, (size_t)(1 + n));
+                o += 1 + n;
+                i += 1 + (duk_size_t)n;
+            }
+        }
+    }
+    ret = duk_push_lstring(ctx, out, (duk_size_t)(o - out));
+    free(out);
+    return ret;
+}
+
 void duk_rp_toHex(duk_context *ctx, duk_idx_t idx, int ucase)
 {
     unsigned char *buf,*end;
