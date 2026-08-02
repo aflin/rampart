@@ -695,6 +695,13 @@ ssize_t duk_rp_utf8_invalid_at(const char *s, duk_size_t len);
    text crossing a boundary rampart does not control (SQL fields, file
    reads, network bodies). */
 const char *duk_rp_push_lstring_safe(duk_context *ctx, const char *s, duk_size_t len);
+/* recombine duktape's CESU-8 surrogate pairs (astral chars from JS
+   strings) into standard 4-byte UTF-8.  NULL when src has none (use
+   src as is), else a malloc'd nul-terminated copy, *outLen set when
+   non-NULL.  For JS strings crossing OUT of duktape (SQL parameters,
+   HTTP bodies, files, terminals). */
+char *duk_rp_cesu8_to_utf8(const char *src, size_t len, size_t *outLen);
+/* nul-terminated form of the above; always returns a malloc'd copy */
 char *to_utf8(const char *in_str);
 duk_ret_t duk_rp_values_from_object(duk_context *ctx, duk_idx_t idx);
 duk_ret_t duk_rp_read_file(duk_context *ctx);// rampart.utils.readFile()

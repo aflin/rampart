@@ -1766,7 +1766,8 @@ typedef enum TXindexWithinFlag
   TXindexWithinFlag_Chars         = 0x01, /* use index for within-chars */
   TXindexWithinFlag_Words         = 0x02, /* use index for within-words */
   /* ...OptimizeChars: Optimize within-chars window.  Currently
-   * applies iff index exprs are only `\alnum{2,99}':
+   * applies iff index exprs are only the default `[\uword]{2,99}'
+   * (or the older default `\alnum{2,99}'):
    */
   TXindexWithinFlag_OptimizeChars = 0x04,
   /* ...AssumeOneHitInter: Narrow window by assuming that intervening

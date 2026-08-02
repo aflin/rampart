@@ -5113,15 +5113,18 @@ TXfdbiInitWithinN(FDBI *fi, FDBIS **sets, int numSets, int withinCount,
       if (fi->dbi->explist)
         {
           /* Optimization: if the index expression is just the default
-           * \alnum{2,99}, then we know each index word covers at least
-           * 3 original text characters: minimum 2 for the word, plus an
-           * intervening non-alnum byte.  (There might not be a non-alnum
-           * byte if the index word is 99 bytes, but then clearly we're
-           * already over 3 bytes.)  This lets us scale our window down:
+           * ([\uword]{2,99}, or \alnum{2,99} in older indexes), then we
+           * know each index word covers at least 3 original text bytes:
+           * minimum 2 for the word (2 chars is at least 2 bytes), plus
+           * an intervening non-word byte.  (There might not be a
+           * non-word byte if the index word is 99 bytes, but then
+           * clearly we're already over 3 bytes.)  This lets us scale
+           * our window down:
            */
           if ((TXindexWithin & TXindexWithinFlag_OptimizeChars) &&
               numIndexExprs == 1 &&
-              strcmp(*fi->dbi->explist, "\\alnum{2,99}") == 0)
+              (strcmp(*fi->dbi->explist, "\\alnum{2,99}") == 0 ||
+               strcmp(*fi->dbi->explist, "[\\uword]{2,99}") == 0))
             {
               *maxwithindiff = (*maxwithindiff + 2)/3;
               withinScaleType = wst_optimizeChars;

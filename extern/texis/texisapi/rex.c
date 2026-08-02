@@ -76,6 +76,16 @@
 #include "txtypes.h"
 #include "pm.h"
 #include "mmsg.h"
+#include "rexuni.h"     /* \u character classes: codepoint tables + decode */
+
+/* Each setlist row is DYNABYTE byte-membership flags plus ONE trailing
+ * metadata byte: row[DYNABYTE] is a TXREXUNI_* class-bit mask.  A zero
+ * mask (every pre-existing expression) means the row is a plain byte
+ * set and all matching takes the original byte-table paths.  A nonzero
+ * mask marks a \u class: its ASCII members are ALSO set in the byte
+ * flags (so the byte fast paths handle ASCII), and codepoints >= 0x80
+ * are matched by decoding UTF-8 and testing the rexuni.h tables. */
+#define REX_SETSZ       (DYNABYTE + 1)
 #ifdef USELICENSE
 #include "license.h"
 #endif
@@ -691,6 +701,12 @@ static char *msg[]={
 "       Note that the definition of these classes may be affected by\n"
 "       the current locale.\n",
 "\n",
+"    o  The Unicode classes ualpha, udigit, ualnum, umark, uspace,\n",
+"       upunct and uword match whole UTF-8 characters, with repetition\n",
+"       counted in characters; e.g. '[\\uword]+' matches a word in any\n",
+"       script.  A Unicode class must be a sub-expression of its own\n",
+"       (no inversion, subtraction, '!' or '{x*}').\n",
+"\n",
 "    o  A \'\\\' followed by one of the following special characters\n",
 "       will assume the following meaning: n=newline, t=tab,\n",
 "       v=vertical tab, b=backspace, r=carriage return,\n",
@@ -1050,6 +1066,24 @@ byte *a;        /* (out) corresponding setlist[i] */
      {for(i=0;i<DYNABYTE;i++) if(iscntrl(i)) *(a+i)=1;}
  else if((len=strn1cmp((byte *)"ascii",p)))
      {for(i=0;i<DYNABYTE;i++) if(isascii(i)) *(a+i)=1;}
+ /* Unicode classes (\ualpha etc.): ASCII members go in the byte flags
+  * (locale-independent: ASCII range only); multibyte membership is the
+  * class-bit mask in a[DYNABYTE], tested against the rexuni.h tables
+  * after UTF-8 decode.  \ualnum and \uword are combined masks. */
+ else if((len=strn1cmp((byte *)"ualpha",p)))
+     {for(i=0;i<128;i++) if(isalpha(i)) *(a+i)=1; a[DYNABYTE]|=TXREXUNI_UALPHA;}
+ else if((len=strn1cmp((byte *)"ualnum",p)))
+     {for(i=0;i<128;i++) if(isalnum(i)) *(a+i)=1; a[DYNABYTE]|=TXREXUNI_UALNUM;}
+ else if((len=strn1cmp((byte *)"udigit",p)))
+     {for(i=0;i<128;i++) if(isdigit(i)) *(a+i)=1; a[DYNABYTE]|=TXREXUNI_UDIGIT;}
+ else if((len=strn1cmp((byte *)"umark",p)))
+     {a[DYNABYTE]|=TXREXUNI_UMARK;}              /* no ASCII members */
+ else if((len=strn1cmp((byte *)"uspace",p)))
+     {for(i=0;i<128;i++) if(isspace(i)) *(a+i)=1; a[DYNABYTE]|=TXREXUNI_USPACE;}
+ else if((len=strn1cmp((byte *)"upunct",p)))
+     {for(i=0;i<128;i++) if(ispunct(i)) *(a+i)=1; a[DYNABYTE]|=TXREXUNI_UPUNCT;}
+ else if((len=strn1cmp((byte *)"uword",p)))
+     {for(i=0;i<128;i++) if(isalnum(i)) *(a+i)=1; a[DYNABYTE]|=TXREXUNI_UWORD;}
  else if(tolower(*p)=='x')                               /* hex check */
     {
      static const byte hex[]="0123456789abcdef";
@@ -1183,7 +1217,7 @@ byte *a;        /* (out) corresponding setlist[i] for expression */
   *   C `--' A `-' A == C `--' (A `-' A)
   */
  /* `sublist' is temp setlist for subtraction: right-side of subtract: */
- byte   sublist[DYNABYTE];
+ byte   sublist[REX_SETSZ];
  /* `isprevaset' is nonzero if previous item is a set (definition S above): */
  int    isprevaset = 0;
 #endif /* EPI_REX_SET_SUBTRACT */
@@ -1211,6 +1245,15 @@ byte *a;        /* (out) corresponding setlist[i] for expression */
                *s= ++p;                            /* rset s past the ] */
                if(invert)         /* i reuse p for a different job here */
                  {
+                   /* Inverting a \u class would need codepoint-complement
+                    * semantics (and a policy for invalid bytes); not
+                    * supported: */
+                   if (a[DYNABYTE])
+                     {
+                       putmsg(MERR + UGE, "dorange",
+                     "REX: `^' inversion of \\u classes is not supported");
+                       return(-1);
+                     }
                    for(c=0,p=a;c<DYNABYTE;c++,p++)    /* [^ ] inversion */
                         if(*p) *p=(byte)0;
                         else   *p=(byte)1;
@@ -1226,7 +1269,7 @@ byte *a;        /* (out) corresponding setlist[i] for expression */
                  {
                    if (!isprevaset) return(-1); /* LHS must be a set */
                    ++p;                         /* skip subtract operator */
-                   memset(sublist, 0, DYNABYTE);/* init RHS of subtract */
+                   memset(sublist, 0, REX_SETSZ);/* init RHS of subtract */
                    /* The RHS of a subtract may be a range, class-escape
                     * or single character.  To resolve precedence issues,
                     * we re-code range/class op here; it's easier than
@@ -1239,6 +1282,14 @@ byte *a;        /* (out) corresponding setlist[i] for expression */
                        case -2:                 /* invalid escape */
                          return(-1);
                        case -1:                 /* class */
+                         /* Subtracting a \u class would need codepoint
+                          * set-difference; not supported: */
+                         if (sublist[DYNABYTE])
+                           {
+                             putmsg(MERR + UGE, "dorange",
+                       "REX: `--' subtraction of \\u classes is not supported");
+                             return(-1);
+                           }
                          /* Class definitely binds to the subtraction;
                           * apply it and we're done:
                           */
@@ -1497,9 +1548,9 @@ FFS *fs;
     }
 
  fs->from=1;fs->to=1;fs->n=0;                      /* set repeat values */
- for(am=0,ta[am]=(byte *)calloc(DYNABYTE,sizeof(byte));
+ for(am=0,ta[am]=(byte *)calloc(REX_SETSZ,sizeof(byte));
       ta[am]!=BPNULL;
-      ta[++am]=(byte *)calloc(DYNABYTE,sizeof(byte))
+      ta[++am]=(byte *)calloc(REX_SETSZ,sizeof(byte))
     )
     {
      /* KNG 970910  check that we do not waltz past end of setlist: */
@@ -1547,6 +1598,38 @@ FFS *fs;
               {
                free(ta[am]);                    /* get rid of remainder */
                ta[am]=BPNULL;
+               /* \u classes are variable-width, so they are only
+                * supported as a single-set subexpression (which is the
+                * tokenizer shape, e.g. `[\uword]{1,99}'); the fixed-
+                * stride multi-set matchers cannot mix widths.  `!'
+                * (not) needs codepoint-complement semantics and is also
+                * not supported: */
+               {
+                 int uniAm, uniMask = 0;
+                 for (uniAm = 0; uniAm < am; uniAm++)
+                   uniMask |= ta[uniAm][DYNABYTE];
+                 if (uniMask && am != 1)
+                   {
+                     putmsg(MERR + UGE, Fn,
+  "REX: a \\u class must be a subexpression by itself (e.g. `[\\uword]+'); use a repetition operator to separate it at offset %d",
+                            (int)sOff);
+                     goto err;
+                   }
+                 if (uniMask && fs->is_not)
+                   {
+                     putmsg(MERR + UGE, Fn,
+              "REX: `!' (not) with \\u classes is not supported at offset %d",
+                            (int)sOff);
+                     goto err;
+                   }
+                 if (uniMask && fs->from < 0)
+                   {
+                     putmsg(MERR + UGE, Fn,
+            "REX: `{x*}' repetition with \\u classes is not supported at offset %d",
+                            (int)sOff);
+                     goto err;
+                   }
+               }
                /* KNG 040413 dup the list now that we know its size: */
                fs->setlist = (byte **)calloc(am + 1, sizeof(byte *));
                if (fs->setlist == (byte **)NULL)
@@ -1555,6 +1638,7 @@ FFS *fs;
                    goto err;
                  }
                memcpy(fs->setlist, ta, (am + 1)*sizeof(byte *));
+               fs->hasUni = (am > 0 && fs->setlist[0][DYNABYTE] != 0);
                *sp = fs->expEnd = s;
                return(am);            /* end of pattern return the size */
               }
@@ -1608,7 +1692,7 @@ FFS *fs;
           case EBOL :                           /* `^' */
           case '$'  :
               {
-               ta[am+1]=(byte *)calloc(DYNABYTE,sizeof(byte));
+               ta[am+1]=(byte *)calloc(REX_SETSZ,sizeof(byte));
                if(ta[am+1]==BPNULL) break;
                *(ta[am]+0x0d)=(byte)1;
                *(ta[am+1]+0x0a)=(byte)1;
@@ -1657,6 +1741,9 @@ FFS *fs;
                   && !RexSaveMem
                   /* and make sure it fits in array: */
                   && (am*fs->from)<FFS_MAX_PAT_LEN
+                  /* \u classes are variable-width: cannot unroll a
+                   * fixed repeat into a fixed-stride pattern: */
+                  && !ta[0][DYNABYTE]
                  )
                    {
                     int i,j,k;
@@ -1944,6 +2031,100 @@ FFS *fs;
 
 /************************************************************************/
 
+static int
+repeatpmUni(FFS *fs)  /* repeatpm for a subexpression with a \u class */
+{
+ /* The parser guarantees: patsize==1 (single-set subexpression),
+  * from>=0 (`{x*}' rejected), !is_not.  One repetition consumes one
+  * *character*: an ASCII byte via the normal byte set, or a valid
+  * multibyte UTF-8 sequence whose codepoint is in the class mask.
+  * A high byte explicitly listed in the set (e.g. `[\uword\xA0]')
+  * matches as a single byte when it does not start a member sequence.
+  * Invalid/truncated UTF-8 is never a member, so dirty data just
+  * breaks the repetition there.
+  */
+ byte *set = fs->setlist[0];
+ unsigned int mask = set[DYNABYTE];
+ byte *p;
+ unsigned int cp;
+ int len;
+
+ if (fs->backwards)
+   {
+    fs->hit = fs->end;
+    for (p = fs->end; fs->n < fs->to && p > fs->start; )
+       {
+        byte c = *(p - 1);
+        if (c < 0x80)
+          {
+           if (!set[c]) break;
+           p--;
+           fs->n++;
+           fs->hitsize++;
+          }
+        else
+          {
+           /* back over up to 3 continuation bytes to a would-be lead */
+           byte *q = p - 1;
+           int back;
+           for (back = 0; back < 3 && q > fs->start &&
+                          (*q & 0xC0) == 0x80; back++)
+             q--;
+           if (mask && (len = TXrexUniDecode(q, fs->end, &cp)) != 0 &&
+               q + len == p && TXrexUniMember(mask, cp))
+             {
+              p = q;
+              fs->n++;
+              fs->hitsize += len;
+             }
+           else if (set[c])                     /* explicit byte member */
+             {
+              p--;
+              fs->n++;
+              fs->hitsize++;
+             }
+           else
+             break;
+          }
+        fs->hit = p;
+       }
+    return(fs->n);
+   }
+ else
+   {
+    fs->hit = fs->start;
+    for (p = fs->start; fs->n < fs->to && p < fs->end; )
+       {
+        byte c = *p;
+        if (c < 0x80)
+          {
+           if (!set[c]) break;
+           p++;
+           fs->n++;
+           fs->hitsize++;
+          }
+        else if (mask && (len = TXrexUniDecode(p, fs->end, &cp)) != 0 &&
+                 TXrexUniMember(mask, cp))
+          {
+           p += len;
+           fs->n++;
+           fs->hitsize += len;
+          }
+        else if (set[c])                        /* explicit byte member */
+          {
+           p++;
+           fs->n++;
+           fs->hitsize++;
+          }
+        else
+          break;
+       }
+    return(fs->n);
+   }
+}
+
+/************************************************************************/
+
 int
 repeatpm(fs)                      /* gets repeated pattern count from p */
 register FFS *fs;
@@ -1958,6 +2139,8 @@ register FFS *fs;
  register unsigned int i;
 
  ERR_IF_RE2(fs, return(0));
+
+ if(fs->hasUni) return(repeatpmUni(fs));    /* \u class: char-counted */
 
  if(fs->backwards)
    {
@@ -2755,6 +2938,93 @@ finally:
            "Copyright 1985,1986,1987,1988 P. Barton Richards";
 /************************************************************************/
 
+static int
+fastpmUni(FFS *fs)      /* fastpm for a subexpression with a \u class */
+{
+ /* Parser guarantees patsize==1 (so no skip table: the byte fast paths
+  * this mirrors are plain linear scans too), from>=1 (from==0 is
+  * handled by fastpm() before the gate; `{x*}' i.e. from<0 is
+  * rejected), !is_not.  A candidate hit at bufptr is one *character*:
+  * an ASCII/explicit byte member, or a valid multibyte sequence whose
+  * codepoint is in the class mask.  Mid-sequence restart positions
+  * fail naturally (continuation bytes are neither members nor leads).
+  */
+ byte *set = fs->setlist[0];
+ unsigned int mask = set[DYNABYTE];
+ byte *bufptr, *endptr;
+ unsigned int cp;
+ int len, clen;
+
+ if (fs->backwards)
+   {
+    /* mirrors byte fastpm: backward scan examines *fs->end first, so
+     * the last examinable byte is fs->end itself; a member sequence
+     * must fit entirely within [bufptr, fs->end+1) */
+    byte *dend = fs->end + 1;
+    endptr = fs->start;
+    for (bufptr = fs->end; bufptr >= endptr; bufptr--)
+       {
+        byte c = *bufptr;
+        clen = 0;
+        if (set[c]) clen = 1;
+        else if (c >= 0xC2 && mask &&
+                 (len = TXrexUniDecode(bufptr, dend, &cp)) != 0 &&
+                 TXrexUniMember(mask, cp))
+          clen = len;
+        if (!clen) continue;
+        fs->n = 1;
+        fs->hitsize = clen;
+        if (fs->to == 1)
+          {
+           fs->hit = bufptr;
+           return(1);
+          }
+        fs->end = bufptr;
+        if (repeatpmUni(fs) >= fs->from)
+           return(1);          /* hit/hitsize left as repeatpmUni set */
+       }
+   }
+ else
+   {
+    endptr = fs->end;
+    for (bufptr = fs->start; bufptr < endptr; )
+       {
+        byte c = *bufptr;
+        clen = 0;
+        if (set[c]) clen = 1;
+        else if (c >= 0xC2 && mask &&
+                 (len = TXrexUniDecode(bufptr, endptr, &cp)) != 0 &&
+                 TXrexUniMember(mask, cp))
+          clen = len;
+        if (!clen)
+          {
+           bufptr++;
+           continue;
+          }
+        fs->n = 1;
+        fs->hitsize = clen;
+        if (fs->to == 1)
+          {
+           fs->hit = bufptr;
+           return(1);
+          }
+        fs->start = bufptr + clen;
+        if (repeatpmUni(fs) >= fs->from)
+          {
+           fs->hit = bufptr;
+           return(1);
+          }
+        bufptr += clen;   /* a match can't start inside the failed char */
+       }
+   }
+ fs->hit = BPNULL;                                            /* no hit */
+ fs->n = 0;
+ fs->hitsize = 0;
+ return(0);
+}
+
+/************************************************************************/
+
 int
 fastpm(fs)
 FFS *fs;
@@ -2786,6 +3056,8 @@ FFS *fs;
      repeatpm(fs);
      return(1);
     }
+
+ if(fs->hasUni) return(fastpmUni(fs));   /* \u class: char-wise scan */
 
  fs->hitsize=fs->patsize;                             /* init the sizes */
  fs->n=1;

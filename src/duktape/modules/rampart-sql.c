@@ -4584,14 +4584,26 @@ void *check_for_vector_type(duk_context *ctx, long *olen, int *in, int *out)
             out = SQL_BINARY;\
             break;\
         }\
-        /* default for strings (not converted) and\
-           booleans and undefined (converted to \
-           true/false and "undefined"); null has its\
-           own case above (bound as empty varchar) */\
+        /* default for strings and booleans/undefined (converted to\
+           true/false and "undefined"); null has its own case above\
+           (bound as empty varchar).  Duktape hands astral-plane\
+           characters to C as CESU-8 surrogate pairs -- invalid UTF-8\
+           that would be stored verbatim and mangled by fulltext term\
+           folding; recombine to standard UTF-8 at the boundary (the\
+           object/JSON case above already does, via\
+           str_rp_to_json_safe) */\
         default:\
         {\
+            size_t ulen;\
+            char *u;\
             v = (char *)duk_to_string(ctx, -1);\
             plen = strlen(v);\
+            u = duk_rp_cesu8_to_utf8((const char *)v, (size_t)plen, &ulen);\
+            if (u)\
+            {\
+                vfree = v = u;\
+                plen = (long)ulen;\
+            }\
             in = SQL_C_CHAR;\
             out = SQL_VARCHAR;\
         }\

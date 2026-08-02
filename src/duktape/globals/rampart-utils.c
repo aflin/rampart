@@ -7840,41 +7840,89 @@ void duk_misc_init(duk_context *ctx)
 
 /************  PRINT/READ/WRITE FUNCTIONS ***************/
 
-char *to_utf8(const char *in_str)
-{
-    unsigned char *out, *buf = NULL;
-    size_t len = strlen(in_str) + 1;
-    unsigned const char
-            *in = (unsigned const char*) in_str,
-            *five_before_end = in+len-5;
+/* Recombine CESU-8 surrogate-pair sextets (ED A0-AF 80-BF ED B0-BF
+   80-BF) in src[0..len) into standard 4-byte UTF-8 codepoints.
+   Duktape stores astral-plane characters this way internally, so any
+   duk_get_(l)string of such a string yields CESU-8, which is invalid
+   UTF-8 for downstream consumers (SQL storage, fulltext word parsing,
+   HTTP bodies, terminals).  Duktape master fixed this by switching to
+   WTF-8 internally (svaarala/duktape#2447, unreleased 3.0); this is
+   the same recombination applied at the boundary.
+   Length-based and safe for embedded NULs.  Returns NULL when src
+   contains no surrogate pairs -- the overwhelmingly common case;
+   caller keeps using src -- else a malloc'd converted copy, always
+   nul-terminated and never longer than src (*outLen set when
+   non-NULL).  Lone surrogates and all other bytes copy through
+   unchanged.
+   Bit math per
+   https://github.com/svaarala/duktape-wiki/pull/137/commits/3e653e3e45be930924cd4167788b1f65b414a2ac
+   -- adding 1 to in[1] adds the 0x10000 subtracted for UTF-16. */
 
-    REMALLOC(buf,len);
-    out=buf;
-    /* https://github.com/svaarala/duktape-wiki/pull/137/commits/3e653e3e45be930924cd4167788b1f65b414a2ac */
-    while (*in) {
-        // next six bytes represent a codepoint encoded as UTF-16 surrogate pair
-        if ( in < five_before_end
-            && (in[0] == 0xED)
-            && (in[1] & 0xF0) == 0xA0
-            && (in[2] & 0xC0) == 0x80
-            && (in[3] == 0xED)
-            && (in[4] & 0xF0) == 0xB0
-            && (in[5] & 0xC0) == 0x80)
+#define RP_IS_CESU8_PAIR(in) (       \
+       (in)[0] == 0xED               \
+    && ((in)[1] & 0xF0) == 0xA0      \
+    && ((in)[2] & 0xC0) == 0x80      \
+    && (in)[3] == 0xED               \
+    && ((in)[4] & 0xF0) == 0xB0      \
+    && ((in)[5] & 0xC0) == 0x80 )
+
+char *duk_rp_cesu8_to_utf8(const char *src, size_t len, size_t *outLen)
+{
+    const unsigned char *in = (const unsigned char *)src,
+                        *end = in + len, *scan;
+    unsigned char *out, *buf = NULL;
+
+    /* fast path: find the first actual surrogate pair, or bail.
+       (0xED also leads valid UTF-8 for U+D000-U+D7FF, e.g. some
+       Hangul, so finding the byte alone is not enough.) */
+    scan = len >= 6 ? memchr(in, 0xED, len - 5) : NULL;
+    while (scan && !RP_IS_CESU8_PAIR(scan))
+    {
+        scan++;
+        scan = (size_t)(end - scan) >= 6
+               ? memchr(scan, 0xED, (size_t)(end - scan) - 5) : NULL;
+    }
+    if (!scan)
+        return NULL;
+
+    REMALLOC(buf, len + 1);
+    memcpy(buf, in, (size_t)(scan - in));
+    out = buf + (scan - in);
+    in = scan;
+    while (in < end) {
+        if ((size_t)(end - in) >= 6 && RP_IS_CESU8_PAIR(in))
         {
-          // push coding parts of 6 bytes of UTF-16 surrogate pair into a 4 byte UTF-8 codepoint
-          // adding 1 to in[1] adds 0x10000 to code-point that was subtracted for UTF-16 encoding
           out[0] = 0xF0 | ((in[1]+1) & 0x1C) >> 2;
           out[1] = 0x80 | ((in[1]+1) & 0x03) << 4 | (in[2] & 0x3C) >> 2;
           out[2] = 0x80 | (in[2] & 0x03) << 4 | (in[4] & 0x0F);
           out[3] = in[5];
           in += 6; out += 4;
         } else {
-          // copy anything else as is
           *out++ = *in++;
-      }
+        }
     }
     *out = '\0';
+    if (outLen)
+        *outLen = (size_t)(out - buf);
     return (char *)buf;
+}
+
+/* Historical nul-terminated form: always returns a malloc'd copy,
+   converted if needed.  Prefer duk_rp_cesu8_to_utf8() (zero-copy when
+   there is nothing to convert) in new code. */
+char *to_utf8(const char *in_str)
+{
+    size_t len = strlen(in_str);
+    char *ret = duk_rp_cesu8_to_utf8(in_str, len, NULL);
+
+    if (!ret)
+    {
+        char *buf = NULL;
+        REMALLOC(buf, len + 1);
+        memcpy(buf, in_str, len + 1);
+        ret = buf;
+    }
+    return ret;
 }
 
 #define TO_UTF8(s) ({\

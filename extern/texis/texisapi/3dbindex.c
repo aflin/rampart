@@ -52,7 +52,7 @@ int TxUniqNewList = 0;		/* see also setprop.c */
 /* JMT - 960927 changed 4096 to 99.  No point in indexing huge string
    of characters.
  */
-static char *expressions[MAX_INDEX_EXPS] = { "\\alnum{2,99}", "" };
+static char *expressions[MAX_INDEX_EXPS] = { "[\\uword]{2,99}", "" };
 static int freeexpr[MAX_INDEX_EXPS] = { 0, 0, 0 };
 
 static char *IndexTmp[MAX_INDEX_EXPS] = { "" };
@@ -136,7 +136,7 @@ int
 TXresetexpressions()
 {
 	exp_freelist(expressions, freeexpr);
-	expressions[0] = "\\alnum{2,99}";
+	expressions[0] = "[\\uword]{2,99}";
 	expressions[1] = "";
 	freeexpr[0] = 0;
 	freeexpr[1] = 0;

@@ -95,6 +95,7 @@ struct FFS_tag
  byte backwards;                                   /* is this backwards */
  byte root;                                 /* is this the root pattern */
  byte is_not;                                          /* is this a not */
+ byte hasUni;    /* setlist[0][DYNABYTE] has a \u class mask (patsize==1) */
 };
 #define FFSHIT(a) ((a)->hit)
 #define FFSSIZE(a) ((a)->hitsize)
