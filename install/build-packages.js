@@ -643,6 +643,26 @@ for (var name in packages) {
         continue;
     }
 
+    /* `platforms` names the ONLY platforms an entry is built for (the
+       cuNN langtools variants, arm8a).  It must be honoured HERE, not
+       just by rampart-install.js on the install side, because the
+       any-file-present test in buildTarball() is far too weak to reject
+       a wrong-platform variant on its own: every langtools variant also
+       lists rampart-sentencepiece.so, rampart-models.js, clip-test.js
+       and test_images/, and those exist on every platform.  So without
+       this check an x86_64 run happily emits a ~600 KB
+       rampart-langtools-arm8a package holding no arm8a binaries at all
+       -- and a 2_17 run does the same for cu12/cu13.  Publishing one is
+       worse than useless: installing it strips the unsuffixed langtools
+       symlinks (preExtract removes them, and the tarball has none to
+       restore) and breaks a working install. */
+    if (entry.platforms && !entry.platforms.test(OS)) {
+        info("[" + name + "]");
+        info("  SKIP (not built for " + OS + ")");
+        counts.skip++;
+        continue;
+    }
+
     info("[" + name + "]");
     var artifact = null;
 

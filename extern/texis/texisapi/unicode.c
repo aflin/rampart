@@ -36063,11 +36063,12 @@ TXunicodeUtf8StrRev(char *s)
 
   sLen = strlen(s);
   /* Must use a scratch buffer: attempting swap-in-place might end up
-   * trying to swap characters of different byte lengths:
+   * trying to swap characters of different byte lengths.  Buffer is
+   * sLen + 1 so the nul can be copied back with the data:
    */
-  if (sLen > sizeof(tmpBuf) && (tmp = (char *)malloc(sLen)) == CHARPN)
+  if (sLen >= sizeof(tmpBuf) && (tmp = (char *)malloc(sLen + 1)) == CHARPN)
     {
-      putmsg(MERR + MAE, fn, CannotAlloc, (long)(sLen), strerror(errno));
+      putmsg(MERR + MAE, fn, CannotAlloc, (long)(sLen + 1), strerror(errno));
       return(0);
     }
 
@@ -36086,7 +36087,8 @@ TXunicodeUtf8StrRev(char *s)
         }
     }
   
-  memcpy(s, tmp, sLen);                         /* copy back to original */
+  *d = '\0';
+  memcpy(s, tmp, sLen + 1);                     /* copy back to original */
   if (tmp != tmpBuf) free(tmp);
   return(1);
 }
