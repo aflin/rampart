@@ -1888,6 +1888,7 @@ IINDEX *indexand ARGS((IINDEX *, IINDEX *, int));
 IINDEX *indexor ARGS((IINDEX *, IINDEX *, int));
 IINDEX *TXindexrrf ARGS((IINDEX *kw, IINDEX *vec, int inv));
 int	TXpredMMVAutoEmbed ARGS((DBTBL *tb, PRED *p));
+int	TXpredMMVFoldConstEmbed ARGS((DBTBL *tb, PRED *p, FLDOP *fo));
 int     indinv ARGS((IINDEX *));
 int     _indrev ARGS((IINDEX *));
 int     indexmirror ARGS((IINDEX *));

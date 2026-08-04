@@ -417,6 +417,7 @@ int     TXnode_info_exec (QNODE *query, FLDOP *fo, int direction, int offset, in
 void	TXpredClear ARGS((PRED *pred, int full));
 int	TXpredNumFunctionArgs ARGS((PRED *pred));
 char    *TXpredGetFirstUsedColumnName(PRED *p);
+int	TXpredIsEmbedCall(PRED *p);
 int	pred_eval ARGS((DBTBL *, PRED *, FLDOP *));
 void	*evalpred ARGS((DBTBL *t, PRED *p, FLDOP *fo, size_t *sz, FTN *type));
 void   *evalstats ARGS((DBTBL *, PRED *, FLDOP *, size_t *));

@@ -244,7 +244,7 @@ TXgetEmbedDocFunc(void **user_data_out)
 int
 TXsqlFunc_chunkembed(FLD *f1, FLD *f2, FLD *f3, FLD *f4)
 {
-    (void)f1; (void)f2; (void)f3;
+    (void)f1; (void)f2; (void)f3; (void)f4;
     return -1;
 }
 

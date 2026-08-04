@@ -2665,8 +2665,10 @@ TXsqlFunc_chunkembed(FLD *f1, FLD *f2, FLD *f3, FLD *f4)
             if (elen == 0) continue;         /* skip empty elements */
             if (spanVals && (eord + 1) * 2 <= nSpanVals)
             {
-                EPI_UINT32 *np = (EPI_UINT32 *)TXrealloc(TXPMBUFPN,
-                        __FUNCTION__, spanPairs,
+                /* plain realloc/malloc/free throughout this function --
+                 * every release site here is free(), and TXmalloc'd
+                 * memory must be TXfree'd (they diverge under MEMDEBUG) */
+                EPI_UINT32 *np = (EPI_UINT32 *)realloc(spanPairs,
                         (ktot + 1) * 2 * sizeof(EPI_UINT32));
                 if (!np) { free(vecs_f32); free(spanPairs); return FOP_ENOMEM; }
                 spanPairs = np;
@@ -2676,7 +2678,8 @@ TXsqlFunc_chunkembed(FLD *f1, FLD *f2, FLD *f3, FLD *f4)
                 spanPairs[ktot * 2]     = txVecSpanU32(spanVals[eord * 2]);
                 spanPairs[ktot * 2 + 1] = txVecSpanU32(spanVals[eord * 2 + 1]);
             }
-            d = fn(ud, s, elen, pfx, pfx ? pfxlen : 0, NULL, NULL, &avg1, NULL);
+            d = fn(ud, s, elen, pfx, pfx ? pfxlen : 0, NULL, NULL, &avg1, NULL,
+                   NULL);
             if (d == 0 || !avg1)
             {
                 if (avg1) free(avg1);
@@ -2699,9 +2702,8 @@ TXsqlFunc_chunkembed(FLD *f1, FLD *f2, FLD *f3, FLD *f4)
                 return FOP_EINVAL;
             }
             {
-                float *nv = (float *)TXrealloc(TXPMBUFPN, __FUNCTION__,
-                                               vecs_f32,
-                                               (ktot + 1) * dim * sizeof(float));
+                float *nv = (float *)realloc(vecs_f32,
+                                             (ktot + 1) * dim * sizeof(float));
                 if (!nv)
                 {
                     free(avg1);
@@ -2715,13 +2717,8 @@ TXsqlFunc_chunkembed(FLD *f1, FLD *f2, FLD *f3, FLD *f4)
             ktot++;
             free(avg1);
         }
-        if (ktot == 0)                        /* all elements empty */
-        {
-            if (vecs_f32) free(vecs_f32);
-            if (spanPairs) free(spanPairs);
-            TXfldSetNull(f1);
-            return FOP_EOK;
-        }
+        /* Warn about a malformed spans argument BEFORE the all-empty
+         * early return, so a bad argument is never silently ignored. */
         if (spanVals && nSpanVals != eord * 2)
         {
             putmsg(MWARN + UGE, "chunkembed",
@@ -2731,56 +2728,82 @@ TXsqlFunc_chunkembed(FLD *f1, FLD *f2, FLD *f3, FLD *f4)
             free(spanPairs);
             spanPairs = NULL;
         }
+        if (ktot == 0)                        /* all elements empty */
+        {
+            if (vecs_f32) free(vecs_f32);
+            if (spanPairs) free(spanPairs);
+            TXfldSetNull(f1);
+            return FOP_EOK;
+        }
         k = ktot;
     }
     else
     {
+        TXchunkSpan *spans = NULL;
+
         src = (char *)getfld(f1, &slen);
         if (!src || slen == 0)
         {
             TXfldSetNull(f1);
             return FOP_EOK;
         }
-        dim = fn(ud, src, slen, pfx, pfx ? pfxlen : 0, &vecs_f32, &k, NULL, NULL);
+        /* Built-in chunking: the embed pass returns the chunk spans
+         * alongside the vectors (one chunker walk produces both, so
+         * their counts can never disagree).  They go into the value
+         * header so abstract() can seed best-chunk snippets from the
+         * VALUE -- no query-time re-chunk, no serve-side model
+         * requirement. */
+        dim = fn(ud, src, slen, pfx, pfx ? pfxlen : 0, &vecs_f32, &k, NULL, NULL,
+                 &spans);
         if (dim == 0 || k == 0 || !vecs_f32)
         {
             putmsg(MERR + FRE, "chunkembed",
                    "doc-embed callback returned no vectors");
             if (vecs_f32) free(vecs_f32);
+            if (spans) free(spans);
             return FOP_EINVAL;
         }
-
-        /* Built-in chunking: record the chunk spans in the value header
-         * so abstract() can seed best-chunk snippets from the VALUE --
-         * no query-time re-chunk, no serve-side model requirement.  The
-         * spans callback is the same tokenize-only pass abstract() used
-         * at query time (shared doc cache with the embed above). */
+        if (spans)
         {
-            void             *spansUd = NULL;
-            TXchunkSpansFunc  spansFn = TXgetChunkSpansFunc(&spansUd);
-            TXchunkSpan      *spans = NULL;
-            size_t            k2;
+            /* The header stores spans as EPI_UINT32 pairs: check EVERY
+             * offset, not just the last -- a truncating cast would put a
+             * plausible-but-wrong range in the header, which is worse
+             * than storing no spans at all. */
+            size_t si;
+            int    fits = 1;
 
-            if (spansFn &&
-                (k2 = spansFn(spansUd, src, slen, &spans)) > 0 && spans)
-            {
-                if (k2 == k && spans[k2 - 1].end <= (size_t)0xFFFFFFFFu)
+            for (si = 0; si < k; si++)
+                if (spans[si].start > (size_t)0xFFFFFFFFu ||
+                    spans[si].end   > (size_t)0xFFFFFFFFu)
                 {
-                    spanPairs = (EPI_UINT32 *)TXmalloc(TXPMBUFPN,
-                            __FUNCTION__, k * 2 * sizeof(EPI_UINT32));
-                    if (spanPairs)
-                    {
-                        size_t si;
-                        for (si = 0; si < k; si++)
-                        {
-                            spanPairs[si * 2]     = (EPI_UINT32)spans[si].start;
-                            spanPairs[si * 2 + 1] = (EPI_UINT32)spans[si].end;
-                        }
-                    }
+                    fits = 0;
+                    break;
                 }
-                free(spans);
+            if (fits)
+            {
+                spanPairs = (EPI_UINT32 *)malloc(k * 2 * sizeof(EPI_UINT32));
+                if (!spanPairs)
+                {
+                    free(spans);
+                    free(vecs_f32);
+                    return FOP_ENOMEM;
+                }
+                for (si = 0; si < k; si++)
+                {
+                    spanPairs[si * 2]     = (EPI_UINT32)spans[si].start;
+                    spanPairs[si * 2 + 1] = (EPI_UINT32)spans[si].end;
+                }
             }
+            else                     /* uint32 pairs: a real format limit */
+                putmsg(MWARN + UGE, "chunkembed",
+                       "chunk spans exceed the 4GB value-header limit -- "
+                       "value stored without spans");
+            free(spans);
         }
+        else
+            putmsg(MWARN + UGE, "chunkembed",
+                   "doc-embed callback returned no chunk spans -- "
+                   "value stored without spans");
     }
 
     /* Convert the k*dim f32 block to the requested dtype's bytes.
@@ -2897,7 +2920,7 @@ TXsqlFunc_chunkavg(FLD *f1, FLD *f2, FLD *f3)
         if (f3 != FLDPN && !TXfldIsNull(f3))
             p = (const char *)getfld(f3, &pl);
         if (p && pl == 0) p = NULL;
-        dim = fn(ud, src, slen, p, p ? pl : 0, NULL, NULL, &avg_f32, NULL);
+        dim = fn(ud, src, slen, p, p ? pl : 0, NULL, NULL, &avg_f32, NULL, NULL);
     }
     if (dim == 0 || !avg_f32) {
         putmsg(MERR + FRE, "chunkavg", "doc-embed callback returned no vector");
@@ -2965,7 +2988,7 @@ TXsqlFunc_chunkcoherence(FLD *f1, FLD *f2)
         if (f2 != FLDPN && !TXfldIsNull(f2))
             p = (const char *)getfld(f2, &pl);
         if (p && pl == 0) p = NULL;
-        dim = fn(ud, src, slen, p, p ? pl : 0, NULL, NULL, NULL, &coh);
+        dim = fn(ud, src, slen, p, p ? pl : 0, NULL, NULL, NULL, &coh, NULL);
     }
     if (dim == 0) {
         putmsg(MERR + FRE, "chunkcoherence", "doc-embed callback failed");

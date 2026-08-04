@@ -4,6 +4,10 @@
 #include <sys/types.h>
 #include <stdlib.h>
 #include <string.h>
+#ifndef _WIN32
+#  include <sys/time.h>
+#  include <sys/resource.h>
+#endif
 #ifdef USE_EPI
 #  include "os.h"
 #endif /* USE_EPI */
@@ -262,6 +266,51 @@ walknaddstr(QNODE *q, char *v, FLD *f, byte *byteUsed)
 
 /******************************************************************/
 
+/* Maximum number of items in a literal list (IN/SUBSET/INTERSECT/TWIXT).
+ *
+ * The list walkers below (walknadd, walknaddstr, walknadd<type>) recurse
+ * once per item -- a comma-list parses into a tree of DEPTH N, not a
+ * balanced one -- so a long enough list exhausts the stack and the
+ * process dies with no diagnostic.  Measured cost is ~35 bytes of stack
+ * per item, so the default 8MB stack fails somewhere past a quarter
+ * million items (sooner on arm64, whose frames are larger).
+ *
+ * Derive the cap from the ACTUAL stack limit rather than hardcoding one,
+ * so a process started with a small `ulimit -s' is protected too: allow
+ * a list to use at most a quarter of the stack, budgeting 64 bytes per
+ * item (measured ~35, doubled for headroom and for the other walkers
+ * that traverse the same tree).
+ *
+ * Callers that legitimately have this many values should bind a
+ * parameter or join against a table instead of inlining them. */
+static size_t
+TXmaxListItems(void)
+{
+	static size_t	cached = 0;
+
+	if (cached == 0)
+	{
+		size_t	stack = 8u * 1024u * 1024u;	/* assume 8MB */
+#ifndef _WIN32
+		struct rlimit	rl;
+
+		if (getrlimit(RLIMIT_STACK, &rl) == 0 &&
+		    rl.rlim_cur != RLIM_INFINITY && rl.rlim_cur > 0)
+			stack = (size_t)rl.rlim_cur;
+#endif
+		/* Budget: at most HALF the stack, 80 bytes per item.
+		 * Measured cost is ~35 bytes/item on x86-64 and up to
+		 * ~80 on arm64 (larger frames), so 80 is the worst case
+		 * and the half-stack cap leaves ~2x margin on top.  On a
+		 * default 8MB stack that allows ~52k items -- far more
+		 * than any sane inline list, and well under the ~100k
+		 * where arm64 actually dies. */
+		cached = (stack / 2) / 80;
+		if (cached < 1000) cached = 1000;	/* always allow a sane list */
+	}
+	return cached;
+}
+
 static QNODE *
 convlisttovarfld(QNODE *q, DDIC *ddic, FLDOP *fo)
 {
@@ -277,6 +326,16 @@ convlisttovarfld(QNODE *q, DDIC *ddic, FLDOP *fo)
 	if(q->op != LIST_OP)
 		return q;
 	n = countfields(q);
+	/* Refuse a list too long to walk without exhausting the stack --
+	 * countfields() itself is iterative, so this check is reached
+	 * safely.  Erroring here beats dying with no message later. */
+	if(n > 0 && (size_t)n > TXmaxListItems())
+	{
+		putmsg(MERR + UGE, fn,
+		       "List has %d items; the maximum for an inline list is %d (each item costs stack in the list walk, so a longer list would overflow it).  Bind a parameter or join against a table instead",
+		       n, (int)TXmaxListItems());
+		return q;
+	}
 	if(counttypes(q, &nChar, &nLong, &nDouble, &nOther) > 1)
 	{
 		convertfields(q, fo);
@@ -444,6 +503,8 @@ ireadlstnode(DDIC *ddic, TX_READ_TOKEN *toke, int depth, QNODE *pq, FLDOP *fo)
 	int x;
 	QNODE *this, *next;
 
+	size_t	nitems = 0, maxitems = TXmaxListItems();
+
 	this = pq;
 	x = readtoken(toke);
 #if DEBUG
@@ -452,6 +513,21 @@ ireadlstnode(DDIC *ddic, TX_READ_TOKEN *toke, int depth, QNODE *pq, FLDOP *fo)
 #endif
 	while(x == LIST_OP)
 	{
+		/* A comma-list becomes a LEFT-DEEP chain, and several
+		 * walkers over it recurse once per node (walknadd() here,
+		 * TXqnode_traverse() in node_buffer.c, ...).  A long
+		 * enough list therefore exhausts the stack and kills the
+		 * process with no diagnostic.  Cap it HERE, where the
+		 * chain is built iteratively, so the deep tree never
+		 * exists and every downstream walker is safe -- capping
+		 * any single walker just moves the crash to the next one. */
+		if (++nitems > maxitems)
+		{
+			putmsg(MERR + UGE, __FUNCTION__,
+			       "List has more than %d items; that is the most that can be walked without overflowing the stack.  Bind a parameter or join against a table instead of inlining this many values",
+			       (int)maxitems);
+			return 1;
+		}
 		next = openqnode(x);
 		next->op = x;
 		next->parentqn = this;
@@ -614,7 +690,13 @@ ireadnode(DDIC *ddic, TX_READ_TOKEN *toke, int depth, QNODE *pq, QTOKEN x, FLDOP
 #endif
 			break;
 		case LIST_OP :
-			ireadlstnode(ddic, toke, depth, this, fo);
+			if (ireadlstnode(ddic, toke, depth, this, fo) != 0)
+			{
+				/* over the item cap: fail the parse rather
+				 * than build a tree we cannot walk */
+				this = closeqnode(this);
+				return QNODEPN;
+			}
 			break;
 #if DEBUG
 			if (dq)

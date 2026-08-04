@@ -583,12 +583,13 @@ TXpredGetFirstUsedColumnName(PRED *pred)
 	}
 }
 
-static int
+int
 TXpredIsEmbedCall(PRED *pred)
 /* Returns nonzero iff `pred' is a call to the SQL embed() function.
  * Used to restrict constant-subexpression caching (see pred_eval()'s
  * 'P' cases) to embed() ONLY -- a general constant cache mis-handles
  * multi-field constant arg lists and perturbs other texis behavior.
+ * Also used by predopt.c's LIKEV constant-embed fold.
  */
 {
 	return (pred != (PRED *)NULL &&

@@ -422,18 +422,26 @@ int TXvecAbstractBestChunk(const char *query, void *vecData,
                            size_t vecBytes, int colType,
                            int *cixOut, int *ccntOut);
 
+/* Byte span of one chunk in the source document (shared by the two
+ * callback registries below). */
+typedef struct TXchunkSpan_tag { size_t start, end; } TXchunkSpan;
+
 /* ----- Doc (chunked) embed callback registry -------------------------
  *
  * One model run of a document yields everything chunkembed() /
  * chunkavg() / chunkcoherence() need, so the callback returns all of it
  * and each scalar takes its slice:
- *   *out_vecs = PER-CHUNK unit vectors, concatenated row-major (k*dim
- *               floats)  [chunkembed]              -- caller frees
- *   *out_k    = chunk count k (>= 1)
- *   *out_avg  = combined document vector, dim floats (L2-normalized mean
- *               of the unit chunk vecs)  [chunkavg] -- caller frees
- *   *out_coh  = coherence in [0,1] (avg pairwise cosine of chunk vecs;
- *               1.0 when k==1)  [chunkcoherence]
+ *   *out_vecs  = PER-CHUNK unit vectors, concatenated row-major (k*dim
+ *                floats)  [chunkembed]              -- caller frees
+ *   *out_k     = chunk count k (>= 1)
+ *   *out_avg   = combined document vector, dim floats (L2-normalized mean
+ *                of the unit chunk vecs)  [chunkavg] -- caller frees
+ *   *out_coh   = coherence in [0,1] (avg pairwise cosine of chunk vecs;
+ *                1.0 when k==1)  [chunkcoherence]
+ *   *out_spans = the k chunks' byte spans in `text` (window sub-chunks
+ *                of an oversized region share its span; count is *out_k,
+ *                so out_spans requires out_k)  [chunkembed] -- caller
+ *                frees
  * Any out pointer may be NULL.  The embedder caches the full result by
  * text, so calls for different slices of the same text share one run.
  * Returns dim on success, 0 on failure. */
@@ -442,7 +450,8 @@ typedef size_t (*TXembedDocFunc)(void *user_data,
                                  const char *text, size_t text_len,
                                  const char *prefix, size_t prefix_len,
                                  float **out_vecs, size_t *out_k,
-                                 float **out_avg, float *out_coh);
+                                 float **out_avg, float *out_coh,
+                                 TXchunkSpan **out_spans);
 
 void           TXregisterEmbedDocFunc(TXembedDocFunc fn, void *user_data);
 TXembedDocFunc TXgetEmbedDocFunc(void **user_data_out);
@@ -453,10 +462,10 @@ TXembedDocFunc TXgetEmbedDocFunc(void **user_data_out);
  * `text` WITHOUT running the model (tokenize + chunk only — cheap).
  * Deterministic: same text + same registered model => same spans as
  * the chunkembed() that stored the row.  Used by abstract() to locate
- * the best-matching chunk's text.  Caller frees *out_spans.
+ * the best-matching chunk's text when the stored value predates the
+ * span header (chunkembed() itself stores spans from its embed pass).
+ * Caller frees *out_spans.
  * Returns the span count k (>= 1) on success, 0 on failure. */
-
-typedef struct TXchunkSpan_tag { size_t start, end; } TXchunkSpan;
 
 typedef size_t (*TXchunkSpansFunc)(void *user_data,
                                    const char *text, size_t text_len,

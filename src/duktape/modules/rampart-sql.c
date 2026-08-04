@@ -83,8 +83,47 @@ FMINFO
 };
 
 #define mmap_used ((size_t)(mapinfo->pos - mapinfo->mem))
-#define mmap_rem (FORKMAPSIZE - mmap_used)
+#define mmap_rem (finfo->mapsize - mmap_used)
+
+/* Default shared-segment reservation.
+ *
+ * The reservation itself is virtual: pages are allocated on FIRST TOUCH,
+ * verified on Linux and on macOS 11 and 15 (a 4GB reservation costs 0 kB
+ * RSS until written).  So reserving generously is free -- right up until
+ * something touches it.
+ *
+ * That matters because on macOS and FreeBSD touched pages can NEVER be
+ * returned: there is no MADV_REMOVE or hole-punch for POSIX shm, and
+ * ftruncate cannot shrink such an object.  The reservation is therefore
+ * also the worst-case PERMANENT footprint of a long-lived helper, so it
+ * is deliberately modest rather than generous.  8MB keeps a Doc plus a
+ * k*dim*4 Vec row on the zero-copy path; 7 helpers on an 8-core box is
+ * 56MB worst case.  32-bit keeps the classic 1MB: address space is the
+ * scarce resource there and every thread holds its own segment.
+ *
+ * MUST be a multiple of 8: cwrite_aligned() aligns within the map while
+ * the receiver aligns within the reassembled stream, so the two agree
+ * only if every chunk boundary is itself aligned.  setMapSize() rounds
+ * to whole pages, which guarantees it. */
+#if defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ >= 8
+#define RP_FORKMAP_DEFAULT (8u * 1024u * 1024u)
+#else
+#define RP_FORKMAP_DEFAULT (1024u * 1024u)
+#endif
+
+/* Smallest segment Sql.setMapSize() will accept: one page.  Small sizes
+ * are genuinely useful -- they force nearly every message to chunk, so
+ * the multi-chunk paths get exercised by the ordinary test suites -- but
+ * the size must stay a multiple of 8 for the alignment reason above, and
+ * a page is the natural floor that guarantees it. */
+#define RP_FORKMAP_MIN 4096u
 #define mmap_reset do{ mapinfo->pos = mapinfo->mem;} while (0)
+
+/* Sanity ceiling for counts that arrive over the pipe (vector dim, chunk
+ * count).  Payloads themselves are unbounded -- they chunk -- so this is
+ * not a transfer limit: it exists so a desynced pipe delivering garbage
+ * cannot make us compute an absurd size or wrap a multiply on 32-bit. */
+#define RP_MSG_SANE_FLOATS (64u * 1024u * 1024u)
 
 int thisfork =0; //set after forking.
 
@@ -404,7 +443,8 @@ static size_t main_embed_doc_callback(void *ud, const char *text,
                                       size_t tlen, const char *prefix,
                                       size_t plen, float **out_vecs,
                                       size_t *out_k, float **out_avg,
-                                      float *out_coh);
+                                      float *out_coh,
+                                      TXchunkSpan **out_spans);
 static size_t main_chunk_spans_callback(void *ud, const char *text,
                                         size_t tlen, TXchunkSpan **out_spans);
 static void   setup_llamacpp_callback(void);
@@ -439,6 +479,10 @@ static int    fork_drain_embed_callbacks(void);
    all operations will be non forking.
 */
 
+/* Reassembly buffer for a payload too large for the shared map (see
+ * get_chunks()). */
+typedef struct { char *b; size_t sz; } XFERBUF;
+
 #define SFI struct sql_fork_info_s
 SFI
 {
@@ -453,10 +497,24 @@ SFI
     void *auxpos;
     size_t auxsz;
     FLDLST *fl;         // modified FLDLST for parent pointing to areas in mapinfo
+    int mapwrapped;     // set when a message chunked, i.e. touched the WHOLE
+                        // segment: the trigger for handing pages back
+    size_t mapsize;     // ACTUAL bytes of mapinfo->mem for THIS helper.  Not a
+                        // constant: the reservation is best-effort (it can fall
+                        // back) and Sql.setMapSize() can change it for helpers
+                        // launched later, so helpers may differ.  The child
+                        // learns it by fstat()ing the inherited fd.
 };
 
 // info for thread/fork pairing as a thread local
 __thread SFI *finfo = NULL;
+
+/* Requested shared-segment size for helpers launched from here on.
+ * PROCESS-WIDE, deliberately not __thread: Sql.setMapSize() is called
+ * once (typically in a server's conf, on the main thread) and must apply
+ * to worker threads that fork their helpers later.  Each helper records
+ * what it actually got in finfo->mapsize. */
+static size_t g_forkmap_size = RP_FORKMAP_DEFAULT;
 
 // address from duk_get_heapptr of the last sql to have its settings applied
 __thread void *last_sql_set = NULL;
@@ -840,8 +898,13 @@ static DB_HANDLE *find_available_handle(const char *db, const char *user, const 
 {
     DB_HANDLE *h=db_handle_available_head;
 
-    //while not at end of list, and no match
-    while(h && ( strcmp(h->db, db)!=0 || strcmp(h->user, user)!=0 || strcmp(h->pass, pass)!=0) )
+    /* h->tx == NULL means the helper that owned it died (see
+     * invalidate_thread_handles): the pointer belonged to that process,
+     * so this handle can never be used again -- skip it and let the
+     * caller open a fresh one against the replacement helper.  Handing
+     * it back would send a stale TEXIS* to the new child, which
+     * dereferences it and dies with SIGSEGV. */
+    while(h && ( !h->tx || strcmp(h->db, db)!=0 || strcmp(h->user, user)!=0 || strcmp(h->pass, pass)!=0) )
         h=h->next;
 
     if(h && in_use)
@@ -1141,32 +1204,72 @@ static const char *get_exp(duk_context *ctx, duk_idx_t idx)
     return ret;
 }
 
-#define forkwrite(b,c) ({\
-    int r=0,ir=0;\
-    errno=0;\
-    while( (r += (ir=write(finfo->writer, (b)+r, (c)-r))) < (c) ) if(ir<1)break;\
-    if(ir<1) {\
-        fprintf(stderr, "rampart-sql helper: write failed: '%s' at %d, fd:%d\n",strerror(errno),__LINE__,finfo->writer);\
-        if(thisfork) {fprintf(stderr, "child proc exiting\n");exit(0);}\
-    };\
-    r;\
-})
+/* Parent<->helper pipe I/O.
+ *
+ * These MUST NOT report a partial transfer as anything a caller can
+ * mistake for success: callers test `== -1' or `!= sizeof(x)', so a
+ * short count that is neither would be read as "fine" and the caller
+ * would act on a half-filled object -- which desynchronizes the
+ * protocol, the one failure that is silent and unrecoverable.  So the
+ * rule here is all-or-nothing: the full count, or -1.
+ *
+ * Also: retry on EINTR (a signal arriving mid-transfer is not an
+ * error), and walk the buffer as char * -- the previous macros did
+ * `(b)+r' on the caller's own pointer type, so a resumed transfer of,
+ * say, an int * would continue at b + r*sizeof(int), past the object.
+ *
+ * A failure in the helper child is fatal, as before: it has no one to
+ * report to but the pipe that just died. */
+static int fork_write_all(const void *buf, size_t sz, int line)
+{
+    const char *p = (const char *)buf;
+    size_t off = 0;
 
-#define forkread(b,c) ({\
-    int r=0,ir=0;\
-    errno=0;\
-    while( (r += (ir=read(finfo->reader, (b)+r, (c)-r))) < (c) ) if(ir<1)break;\
-    if(ir==-1) {\
-        fprintf(stderr, "rampart-sql helper: read failed from %d: '%s' at %d\n",finfo->reader,strerror(errno),__LINE__);\
-        if(thisfork) {fprintf(stderr, "child proc exiting\n");exit(0);}\
-    };\
-    if(r!=(int)c) {\
-        if(errno) \
-            fprintf(stderr, "rampart-sql helper: r=%d, read failed from %d: '%s' at %d\n",r,finfo->reader, strerror(errno),__LINE__);\
-        if(thisfork) {if(errno) fprintf(stderr, "child proc exiting\n");exit(0);}\
-    };\
-    r;\
-})
+    if (sz > (size_t)INT_MAX) return -1;
+    while (off < sz)
+    {
+        ssize_t r = write(finfo->writer, p + off, sz - off);
+
+        if (r > 0) { off += (size_t)r; continue; }
+        if (r < 0 && errno == EINTR) continue;
+        fprintf(stderr,
+                "rampart-sql helper: write failed: '%s' at %d, fd:%d\n",
+                strerror(errno), line, finfo->writer);
+        if (thisfork) { fprintf(stderr, "child proc exiting\n"); exit(0); }
+        return -1;
+    }
+    return (int)sz;
+}
+
+static int fork_read_all(void *buf, size_t sz, int line)
+{
+    char *p = (char *)buf;
+    size_t off = 0;
+
+    if (sz > (size_t)INT_MAX) return -1;
+    while (off < sz)
+    {
+        ssize_t r = read(finfo->reader, p + off, sz - off);
+
+        if (r > 0) { off += (size_t)r; continue; }
+        if (r < 0 && errno == EINTR) continue;
+        if (r == 0)                     /* EOF: the peer is gone */
+            fprintf(stderr,
+                    "rampart-sql helper: read got EOF from %d at %d (peer exited)\n",
+                    finfo->reader, line);
+        else
+            fprintf(stderr,
+                    "rampart-sql helper: read failed from %d: '%s' at %d\n",
+                    finfo->reader, strerror(errno), line);
+        if (thisfork) { fprintf(stderr, "child proc exiting\n"); exit(0); }
+        return -1;
+    }
+    return (int)sz;
+}
+
+#define forkwrite(b,c) fork_write_all((b),(c),__LINE__)
+#define forkread(b,c)  fork_read_all((b),(c),__LINE__)
+
 
 /*
 static size_t mmwrite(FMINFO *mapinfo, void *data, size_t size)
@@ -1228,7 +1331,7 @@ static void clean_thread(void *arg)
         {
             if(finfo->mapinfo->mem)
             {
-                if(munmap(finfo->mapinfo->mem, FORKMAPSIZE) != 0)
+                if(munmap(finfo->mapinfo->mem, finfo->mapsize) != 0)
                     fprintf(stderr, "error unmapping mapinfo->mem at %s:%d - %s\n", __FILE__,__LINE__,strerror(errno));
             }
             free(finfo->mapinfo);
@@ -1302,6 +1405,14 @@ static void do_child_loop(SFI *finfo);
 static int fork_setmem();
 static int fork_seterr();
 
+/* payload messaging (defined below, next to cwrite) */
+static void  msg_begin(SFI *finfo);
+static int   msg_append(SFI *finfo, const void *data, size_t sz);
+static int   msg_append_aligned(SFI *finfo, const void *data, size_t sz, size_t tsz);
+static int   msg_end(SFI *finfo);
+static void *msg_recv(SFI *finfo, int *sizep);
+static void  msg_release_above(SFI *finfo, size_t keep);
+
 #define Create 1
 #define NoCreate 0
 
@@ -1309,6 +1420,34 @@ static int fork_seterr();
 #define ERRMAP 1
 
 static char *scr_txt = "var S=require('rampart-sql.so');S.__helper(%d,%d,%d);\n";
+
+/* A helper died: every TEXIS* we cached for it points into a process
+ * that no longer exists.  Mark them all unusable so nothing hands one to
+ * the replacement, and drop the settings fast-path cache so sql.set() is
+ * re-applied to the new child (h_reset_tx_default skips re-applying when
+ * `last_sql_set' still matches the connection object -- against a fresh
+ * helper that would silently run with default settings). */
+static void invalidate_thread_handles(uint16_t forknum)
+{
+    DB_HANDLE *p;
+
+    HLOCK
+    for (p = db_handle_head; p; p = p->next)
+        if (p->forknum == forknum)
+        {
+            p->tx = NULL;
+            DB_HANDLE_CLEAR(p, DB_FLAG_EMBED_CHILD_REGISTERED);
+        }
+    for (p = db_handle_available_head; p; p = p->next)
+        if (p->forknum == forknum)
+        {
+            p->tx = NULL;
+            DB_HANDLE_CLEAR(p, DB_FLAG_EMBED_CHILD_REGISTERED);
+        }
+    HUNLOCK
+
+    last_sql_set = NULL;
+}
 
 static SFI *check_fork(DB_HANDLE *h, int create)
 {
@@ -1323,6 +1462,7 @@ static SFI *check_fork(DB_HANDLE *h, int create)
         else
         {
             REMALLOC(finfo, sizeof(SFI));
+            memset(finfo, 0, sizeof(SFI));
             finfo->reader=-1;
             finfo->writer=-1;
             finfo->childpid=0;
@@ -1336,18 +1476,45 @@ static SFI *check_fork(DB_HANDLE *h, int create)
             finfo->auxpos=NULL;
             REMALLOC(finfo->mapinfo, sizeof(FMINFO));
 
-            finfo->mapfd=rp_memfd_create(FORKMAPSIZE, MEMMAP);
-            if(finfo->mapfd == -1)
+            /* Best-effort reservation: ask for the configured size, and
+             * if the kernel refuses (an older/stricter POSIX shm limit,
+             * a tight sandbox) quietly fall back to the classic 1MB.  A
+             * refusal then costs performance -- more messages chunk --
+             * never correctness, because every payload chunks anyway. */
             {
-                fprintf(stderr, "mmap failed (%d): %s\n",__LINE__, strerror(errno));
-                exit(1);
-            }
+                size_t want = g_forkmap_size;
 
-            finfo->mapinfo->mem = mmap(NULL, FORKMAPSIZE, PROT_READ|PROT_WRITE, MAP_SHARED, finfo->mapfd, 0);
-            if(finfo->mapinfo->mem == MAP_FAILED)
-            {
-                fprintf(stderr, "mmap failed (%d): %s\n",__LINE__, strerror(errno));
-                exit(1);
+                if (want < RP_FORKMAP_MIN) want = RP_FORKMAP_MIN;
+                finfo->mapfd = rp_memfd_create(want, MEMMAP);
+                if (finfo->mapfd == -1 && want > FORKMAPSIZE)
+                {
+                    want = FORKMAPSIZE;
+                    finfo->mapfd = rp_memfd_create(want, MEMMAP);
+                }
+                if(finfo->mapfd == -1)
+                {
+                    fprintf(stderr, "mmap failed (%d): %s\n",__LINE__, strerror(errno));
+                    exit(1);
+                }
+
+                finfo->mapinfo->mem = mmap(NULL, want, PROT_READ|PROT_WRITE,
+                                           MAP_SHARED, finfo->mapfd, 0);
+                if(finfo->mapinfo->mem == MAP_FAILED && want > FORKMAPSIZE)
+                {
+                    close(finfo->mapfd);
+                    want = FORKMAPSIZE;
+                    finfo->mapfd = rp_memfd_create(want, MEMMAP);
+                    if(finfo->mapfd != -1)
+                        finfo->mapinfo->mem = mmap(NULL, want,
+                                                   PROT_READ|PROT_WRITE,
+                                                   MAP_SHARED, finfo->mapfd, 0);
+                }
+                if(finfo->mapfd == -1 || finfo->mapinfo->mem == MAP_FAILED)
+                {
+                    fprintf(stderr, "mmap failed (%d): %s\n",__LINE__, strerror(errno));
+                    exit(1);
+                }
+                finfo->mapsize = want;
             }
             finfo->mapinfo->pos = finfo->mapinfo->mem;
 
@@ -1377,6 +1544,10 @@ static SFI *check_fork(DB_HANDLE *h, int create)
     {
         if (!create)
             return NULL;
+
+        /* Respawning: anything cached from the previous helper is stale. */
+        if (finfo->childpid)
+            invalidate_thread_handles(h->forknum);
 
         int child2par[2], par2child[2];
         //signal(SIGPIPE, SIG_IGN); //macos
@@ -1588,6 +1759,9 @@ static DB_HANDLE *h_open(const char *db, const char *user, const char *pass)
             if(!finfo)
             {
                 REMALLOC(finfo, sizeof(SFI));
+                memset(finfo, 0, sizeof(SFI));
+                finfo->reader=-1;
+                finfo->writer=-1;
                 finfo->errmap=rp_errmap;
             }
         }
@@ -1639,11 +1813,12 @@ static int child_create()
 static int get_chunks(int size)
 {
     int pos=0;
+    finfo->mapwrapped = 1;
     size *= -1;
 
-    if(finfo->auxsz < FORKMAPSIZE * 2)
+    if(finfo->auxsz < finfo->mapsize * 2)
     {
-        finfo->auxsz = FORKMAPSIZE * 2;
+        finfo->auxsz = finfo->mapsize * 2;
         REMALLOC(finfo->aux, finfo->auxsz);
     }
 
@@ -1666,7 +1841,11 @@ static int get_chunks(int size)
             finfo->auxpos = finfo->aux + pos;
             memcpy(finfo->auxpos, finfo->mapinfo->mem, size);
 
-            return (int)size; //size of final chunk
+            /* TOTAL reassembled bytes, not just this last chunk: callers
+             * that must know the payload length (e.g. sizing a CBOR
+             * buffer) otherwise get the tail only and silently decode a
+             * truncated message. */
+            return pos + (int)size;
         }
         size *=-1;
         if (size + pos > finfo->auxsz)
@@ -1710,12 +1889,11 @@ static FLDLST * fork_fetch(DB_HANDLE *h,  int stringsFrom)
      * fires during texis_fetch).  Drain them before reading retsize. */
     if (fork_drain_embed_callbacks() != 0) return NULL;
 
-    if(forkread(&retsize, sizeof(int)) == -1)
-        return NULL;
-
-    if(retsize==-1)
+    /* NULL here means the pipe failed OR the helper sent its -1 "no more
+     * rows / error" sentinel; both end the fetch. */
+    buf = msg_recv(finfo, &retsize);
+    if(!buf)
     {
-        // -1 means error or no more rows
         if(finfo->aux)
         {
             free(finfo->aux);
@@ -1724,12 +1902,6 @@ static FLDLST * fork_fetch(DB_HANDLE *h,  int stringsFrom)
             finfo->auxpos=NULL;
         }
         return NULL;
-    }
-    else if (retsize<-1)
-    {
-        //not enough space in memmap for entire response
-        retsize=get_chunks(retsize);
-        buf = finfo->aux;
     }
 
     /* unserialize results and make a new fieldlist */
@@ -1794,10 +1966,11 @@ static int cwrite(SFI *finfo, void *data, size_t sz)
     FMINFO *mapinfo = finfo->mapinfo;
     size_t rem = mmap_rem; //space available in mmap
     char c;
-    int used = -1 * FORKMAPSIZE;
+    int used = -1 * (int)finfo->mapsize;
 
     while (rem < sz)
     {
+        finfo->mapwrapped = 1;
         memcpy(mapinfo->pos, data, rem);
         /* send negative to signal chunk */
         if( forkwrite(&used,sizeof(int)) == -1)
@@ -1809,7 +1982,7 @@ static int cwrite(SFI *finfo, void *data, size_t sz)
         mapinfo->pos=mapinfo->mem;
         data += rem;
         sz -= rem;
-        rem = FORKMAPSIZE;
+        rem = finfo->mapsize;
     }
 
     memcpy(mapinfo->pos, data, sz);
@@ -1834,21 +2007,132 @@ static int cwrite_aligned(SFI *finfo, void *data, size_t sz, size_t tsz)
 
 }
 
+/* ---------------- payload messaging ----------------
+ *
+ * Thin wrappers over cwrite()/get_chunks() -- the SAME wire protocol,
+ * not a new one.  They exist so that every message body is sent and
+ * received the same way, instead of each call site open-coding
+ * mmap_reset, the trailing size write and the negative-chunk decode:
+ *
+ *   sender      msg_begin();  msg_append(...)...;  msg_end();
+ *   receiver    p = msg_recv(&sz);
+ *
+ * A payload of any size works: cwrite() fills the map, signals a full
+ * map with a NEGATIVE int, waits for the peer's "C", and repeats;
+ * msg_end() writes the final (positive) byte count.  msg_recv()
+ * reassembles into finfo->aux when it sees a negative first size.
+ *
+ * ORDERING TRAP: a message's tag and any fixed header values must be
+ * fully exchanged BEFORE msg_begin(), because a chunk signal is
+ * indistinguishable from a tag byte to a peer sitting in a different
+ * read loop.  (That is exactly the bug fixed in child_fetch(): its 'A'
+ * tag was written after serialize_fl(), so the parent's callback-drain
+ * loop consumed the chunk signal's low byte as a tag.)
+ */
+static void msg_begin(SFI *finfo)
+{
+    FMINFO *mapinfo = finfo->mapinfo;
+    finfo->mapwrapped = 0;
+    mmap_reset;
+}
+
+static int msg_append(SFI *finfo, const void *data, size_t sz)
+{
+    return cwrite(finfo, (void *)data, sz);
+}
+
+/* For data the receiver reads IN PLACE out of the map: keeps each datum
+ * on its natural boundary so ARM does not fault on an unaligned load. */
+static int msg_append_aligned(SFI *finfo, const void *data, size_t sz,
+                              size_t tsz)
+{
+    return cwrite_aligned(finfo, (void *)data, sz, tsz);
+}
+
+/* Close the message: the final chunk's byte count, always >= 0. */
+static int msg_end(SFI *finfo)
+{
+    FMINFO *mapinfo = finfo->mapinfo;
+    int used = (int)mmap_used;
+    int rc = forkwrite(&used, sizeof(int)) == -1 ? -1 : 0;
+
+    /* This message spilled past the segment, so every page of it is now
+     * resident.  Give back everything above the classic 1MB: a one-off
+     * huge row should not inflate a long-lived helper for good.  Only
+     * fires for chunked messages, so a steady stream of ordinary ones
+     * never pays the re-fault cost. */
+    if (finfo->mapwrapped)
+    {
+        msg_release_above(finfo, FORKMAPSIZE);
+        finfo->mapwrapped = 0;
+    }
+    return rc;
+}
+
+/* Hand back the pages an unusually large message touched.
+ *
+ * Only Linux can do this: MADV_REMOVE / FALLOC_FL_PUNCH_HOLE actually
+ * free a shm object's backing store.  macOS and FreeBSD have neither --
+ * MADV_DONTNEED is a no-op for a shared mapping and ftruncate cannot
+ * shrink a POSIX shm object -- so there the high-water mark is simply
+ * permanent for the life of the helper, which is why the reservation is
+ * kept modest.  A no-op elsewhere, never an error. */
+static void msg_release_above(SFI *finfo, size_t keep)
+{
+#if defined(__linux__) && defined(FALLOC_FL_PUNCH_HOLE) && defined(FALLOC_FL_KEEP_SIZE)
+    if (finfo->mapfd >= 0 && finfo->mapsize > keep)
+        (void)fallocate(finfo->mapfd,
+                        FALLOC_FL_PUNCH_HOLE | FALLOC_FL_KEEP_SIZE,
+                        (off_t)keep, (off_t)(finfo->mapsize - keep));
+#else
+    (void)finfo; (void)keep;
+#endif
+}
+
+/* Receive a payload.  Returns the data (the map itself when it arrived
+ * in one piece -- no copy -- or finfo->aux when it was reassembled),
+ * with *sizep set to the TOTAL payload length.  Returns NULL and
+ * *sizep == -1 for a pipe error or the sender's "nothing here"
+ * sentinel; callers that use -1 as a sentinel (fork_fetch: no more
+ * rows) check *sizep themselves. */
+static void *msg_recv(SFI *finfo, int *sizep)
+{
+    int size = 0;
+
+    if (forkread(&size, sizeof(int)) == -1) { *sizep = -1; return NULL; }
+    *sizep = size;
+    if (size == -1) return NULL;                /* sender's sentinel */
+    if (size < -1)                              /* multi-chunk */
+    {
+        *sizep = size = get_chunks(size);
+        if (finfo->mapwrapped)
+        {
+            msg_release_above(finfo, FORKMAPSIZE);
+            finfo->mapwrapped = 0;
+        }
+        return finfo->aux;
+    }
+    return finfo->mapinfo->mem;
+}
+
+/* Serialize ONE row.  Caller must have completed the tag/header exchange
+ * first (see msg_begin): chunk signals emitted from here would otherwise
+ * be read as tags by a peer in another loop. */
 static int serialize_fl(SFI *finfo, FLDLST *fl)
 {
     FMINFO *mapinfo = finfo->mapinfo;
     int i=0;
-    mmap_reset;
+    msg_begin(finfo);
 
     /* single int = fl->n */
-    if(!cwrite(finfo, &(fl->n), sizeof(int)))
+    if(!msg_append(finfo, &(fl->n), sizeof(int)))
         return -1;
 
     /* array of ints for type*/
     for (i = 0; i < fl->n; i++)
     {
         int type =  fl->type[i];
-        if(!cwrite(finfo, &type, sizeof(int)))
+        if(!msg_append(finfo, &type, sizeof(int)))
             return -1;
     }
 
@@ -1862,7 +2146,7 @@ static int serialize_fl(SFI *finfo, FLDLST *fl)
         if(fl->data[i] == NULL)
             ndata=0;
 
-        if(!cwrite(finfo, &ndata, sizeof(int)))
+        if(!msg_append(finfo, &ndata, sizeof(int)))
             return -1;
     }
 
@@ -1871,7 +2155,7 @@ static int serialize_fl(SFI *finfo, FLDLST *fl)
     {
         char *name =  fl->name[i];
         size_t l = strlen(name)+1; //include the \0
-        if(!cwrite(finfo, name, l))
+        if(!msg_append(finfo, name, l))
             return -1;
     }
     /* data in seq - length of each determined by sizeof(type) * ndata */
@@ -1883,7 +2167,7 @@ static int serialize_fl(SFI *finfo, FLDLST *fl)
         if(size !=0 && fl->data[i] != NULL)
         {
             // align ints, etc for arm
-            if(!cwrite_aligned(finfo, fl->data[i], size, type_size))
+            if(!msg_append_aligned(finfo, fl->data[i], size, type_size))
                 return -1;
         }
     }
@@ -1933,10 +2217,24 @@ static int child_fetch()
      * emit 'B' interleaved with this response.  Final tag is 'A'. */
     fl = texis_fetch(tx, stringFrom);
 
+    /* 'A' must be written HERE -- after the last callback texis_fetch
+     * could emit, but BEFORE serialize_fl().
+     *
+     * The parent sits in fork_drain_embed_callbacks() reading one byte
+     * at a time until it sees 'A'.  serialize_fl() sends a row larger
+     * than the map in chunks, and cwrite() signals each one with a
+     * NEGATIVE int -- whose first byte, little-endian, is 0x00
+     * (-1048576 = 00 00 f0 ff).  With 'A' written afterwards the drain
+     * loop consumed that 0x00 as a tag and the pipe desynchronized, so
+     * ANY query returning a row bigger than the map failed in a forked
+     * helper.  Writing 'A' first hands the chunk signals to
+     * fork_fetch's retsize/get_chunks logic, which is what expects
+     * them. */
+    if (forkwrite(&atag, 1) == -1) return 0;
+
     if(fl)
         ret = serialize_fl(finfo,fl);
 
-    if (forkwrite(&atag, 1) == -1) return 0;
     if(forkwrite(&ret, sizeof(int)) == -1)
         return 0;
 
@@ -1964,31 +2262,32 @@ static int fork_param(
         return 0;
 
     mapinfo = finfo->mapinfo;
-    mmap_reset;
+    (void)mapinfo;
+
+    /* tag + fixed header FIRST, then the payload (see msg_begin) */
     if(forkwrite("P", sizeof(char)) == -1)
         return ret;
 
     if(forkwrite(&(h->tx), sizeof(TEXIS *)) == -1)
         return 0;
 
-    if(!cwrite(finfo, &ipar, sizeof(int)))
+    msg_begin(finfo);
+    if(!msg_append(finfo, &ipar, sizeof(int)))
         return 0;
 
-    if(!cwrite(finfo, &ctype, sizeof(int)))
+    if(!msg_append(finfo, &ctype, sizeof(int)))
         return 0;
 
-    if(!cwrite(finfo, &sqltype, sizeof(int)))
+    if(!msg_append(finfo, &sqltype, sizeof(int)))
         return 0;
 
-    if(!cwrite(finfo, len, sizeof(long)))
+    if(!msg_append(finfo, len, sizeof(long)))
         return 0;
 
-    if(!cwrite(finfo, buf, (size_t)*len))
+    if(!msg_append(finfo, buf, (size_t)*len))
         return 0;
 
-    ret = (int)mmap_used;
-
-    if(forkwrite(&ret, sizeof(int)) == -1)
+    if(msg_end(finfo) == -1)
         return 0;
 
     if(forkread(&ret, sizeof(int)) == -1)
@@ -2019,15 +2318,9 @@ static int child_param()
         return 0;
     }
 
-    if(forkread(&retsize, sizeof(int)) == -1)
+    buf = msg_recv(finfo, &retsize);
+    if (!buf)
         return 0;
-
-    if (retsize<0)
-    {
-        //not enough space in memmap for entire response
-        retsize=get_chunks(retsize);
-        buf = finfo->aux;
-    }
 
     ip = buf;
     ipar = *ip;
@@ -2143,15 +2436,19 @@ static int fork_prep(DB_HANDLE *h, char *sql)
     if(!finfo)
         return 0;
 
-    /* write sql statement to start of mmap */
-
-    // bug fix: changed sprintf to snprintf with FORKMAPSIZE to prevent buffer overflow - 2026-02-27
-    snprintf(finfo->mapinfo->mem, FORKMAPSIZE, "%s", sql);
-
     if(forkwrite("p", sizeof(char)) == -1)
         return 0;
 
     if(forkwrite(&(h->tx), sizeof(TEXIS *)) == -1)
+        return 0;
+
+    /* The statement used to be snprintf'd straight into the map, which
+     * silently TRUNCATED anything past FORKMAPSIZE and then executed the
+     * fragment.  Sent as a payload it can be any length. */
+    msg_begin(finfo);
+    if(!msg_append(finfo, sql, strlen(sql) + 1))    /* include the NUL */
+        return 0;
+    if(msg_end(finfo) == -1)
         return 0;
 
     // get the result back
@@ -2166,10 +2463,17 @@ static int fork_prep(DB_HANDLE *h, char *sql)
 static int child_prep()
 {
     TEXIS *tx=NULL;
-    int ret=0;
-    char *sql=finfo->mapinfo->mem;
+    int ret=0, sqlsz=0;
+    char *sql;
 
     if (forkread(&tx, sizeof(TEXIS *))  == -1)
+    {
+        forkwrite(&ret, sizeof(int));
+        return 0;
+    }
+
+    sql = (char *)msg_recv(finfo, &sqlsz);
+    if(!sql)
     {
         forkwrite(&ret, sizeof(int));
         return 0;
@@ -2227,30 +2531,33 @@ static size_t child_embed_callback(void *ud,
     *out_vec = NULL;
     if (!finfo) return 0;
     if (!title) title_len = 0;
-    if (tlen == 0 || tlen > FORKMAPSIZE || title_len > FORKMAPSIZE ||
-        tlen + title_len > FORKMAPSIZE) return 0;
+    if (tlen == 0) return 0;
 
-    /* [text][title] → mmap (no other writer at this point). */
-    memcpy(finfo->mapinfo->mem, text, tlen);
-    if (title_len) memcpy((char *)finfo->mapinfo->mem + tlen, title, title_len);
-
+    /* tag + fixed header first, then [text][title] as one payload */
     char tag = 'B';
     if (forkwrite(&tag, 1) == -1) return 0;
     if (forkwrite((char *)&tlen, sizeof tlen) == -1) return 0;
     if (forkwrite((char *)&kind, sizeof kind) == -1) return 0;
     if (forkwrite((char *)&title_len, sizeof title_len) == -1) return 0;
 
-    /* Parent embeds and writes the vec back into our mmap before
-     * sending the size byte through the pipe. */
+    msg_begin(finfo);
+    if (!msg_append(finfo, text, tlen)) return 0;
+    if (title_len && !msg_append(finfo, title, title_len)) return 0;
+    if (msg_end(finfo) == -1) return 0;
+
     size_t veclen_bytes = 0;
     if (forkread(&veclen_bytes, sizeof veclen_bytes) == -1) return 0;
     if (veclen_bytes == 0) return 0;
-    if (veclen_bytes > FORKMAPSIZE) return 0;
     if (veclen_bytes % sizeof(float) != 0) return 0;
+    if (veclen_bytes / sizeof(float) > RP_MSG_SANE_FLOATS) return 0;
+
+    int   rsz = 0;
+    void *rbuf = msg_recv(finfo, &rsz);
+    if (!rbuf || rsz < 0 || (size_t)rsz < veclen_bytes) return 0;
 
     float *vec = (float *)malloc(veclen_bytes);
     if (!vec) return 0;
-    memcpy(vec, finfo->mapinfo->mem, veclen_bytes);
+    memcpy(vec, rbuf, veclen_bytes);
     *out_vec = vec;
     return veclen_bytes / sizeof(float);
 }
@@ -2262,31 +2569,40 @@ static size_t child_embed_doc_callback(void *ud,
                                        const char *text, size_t tlen,
                                        const char *prefix, size_t plen,
                                        float **out_vecs, size_t *out_k,
-                                       float **out_avg, float *out_coh)
+                                       float **out_avg, float *out_coh,
+                                       TXchunkSpan **out_spans)
 {
     (void)ud;
     if (out_vecs) *out_vecs = NULL;
     if (out_k) *out_k = 0;
     if (out_avg) *out_avg = NULL;
     if (out_coh) *out_coh = 0.0f;
+    if (out_spans) *out_spans = NULL;
     if (!finfo) return 0;
     if (!prefix) plen = 0;
-    if (tlen == 0 || tlen > FORKMAPSIZE || plen > FORKMAPSIZE ||
-        tlen + plen > FORKMAPSIZE) return 0;
+    if (tlen == 0) return 0;
 
-    /* mmap layout: [text][prefix]; lengths go down the pipe */
-    memcpy(finfo->mapinfo->mem, text, tlen);
-    if (plen) memcpy((char *)finfo->mapinfo->mem + tlen, prefix, plen);
+    /* Only chunkembed() wants spans.  Tell the parent, so chunkavg() and
+     * chunkcoherence() do not inherit chunkembed's "no spans = hard
+     * failure" rule. */
+    char wantSpans = (out_spans != NULL);
 
+    /* tag + fixed header first, then [text][prefix] as one payload */
     char tag = 'D';
     if (forkwrite(&tag, 1) == -1) return 0;
     if (forkwrite((char *)&tlen, sizeof tlen) == -1) return 0;
     if (forkwrite((char *)&plen, sizeof plen) == -1) return 0;
+    if (forkwrite(&wantSpans, 1) == -1) return 0;
+
+    msg_begin(finfo);
+    if (!msg_append(finfo, text, tlen)) return 0;
+    if (plen && !msg_append(finfo, prefix, plen)) return 0;
+    if (msg_end(finfo) == -1) return 0;
 
     /* Parent replies: dim (0 = fail), k, coh; then the mmap holds
-     * [vecs: k*dim floats][avg: dim floats] — the full result, so the
-     * child can serve chunkembed / chunkavg / chunkcoherence from one
-     * round-trip. */
+     * [vecs: k*dim floats][avg: dim floats][spans: k TXchunkSpans, only
+     * when asked] — the full result, so the child can serve chunkembed /
+     * chunkavg / chunkcoherence from one round-trip. */
     int    dim = 0;
     size_t k = 0;
     float  coh = 0.0f;
@@ -2295,16 +2611,22 @@ static size_t child_embed_doc_callback(void *ud,
     if (forkread(&k, sizeof k) == -1) return 0;
     if (forkread(&coh, sizeof coh) == -1) return 0;
     if (k == 0) return 0;
-    /* clamp each factor before multiplying: a desynced/corrupt pipe could
-     * deliver values whose product wraps size_t and slips past the
-     * total_bytes check below */
-    if ((size_t)dim > FORKMAPSIZE / sizeof(float) || k > FORKMAPSIZE / sizeof(float))
-        return 0;
+    /* Bound by DIVIDING, never by multiplying: a desynced/corrupt pipe
+     * could deliver a (k, dim) pair whose product wraps size_t -- which
+     * on a 32-bit build slips past a product-based check.  The payload
+     * itself is unbounded (it chunks), so this is purely a sanity gate
+     * on values that arrived over the wire. */
+    if ((size_t)dim > RP_MSG_SANE_FLOATS) return 0;
+    if (k > RP_MSG_SANE_FLOATS / (size_t)dim) return 0;
     size_t vecs_floats = k * (size_t)dim;
-    size_t total_bytes = (vecs_floats + (size_t)dim) * sizeof(float);
-    if (total_bytes > FORKMAPSIZE) return 0;
+    size_t total_bytes = (vecs_floats + (size_t)dim) * sizeof(float)
+                         + (wantSpans ? k * sizeof(TXchunkSpan) : 0);
 
-    const float *mem = (const float *)finfo->mapinfo->mem;
+    int    rsz = 0;
+    void  *rbuf = msg_recv(finfo, &rsz);
+    if (!rbuf || rsz < 0 || (size_t)rsz < total_bytes) return 0;
+
+    const float *mem = (const float *)rbuf;
     if (out_vecs) {
         float *v = (float *)malloc(vecs_floats * sizeof(float));
         if (!v) return 0;
@@ -2316,6 +2638,18 @@ static size_t child_embed_doc_callback(void *ud,
         if (!a) { if (out_vecs) { free(*out_vecs); *out_vecs = NULL; } return 0; }
         memcpy(a, mem + vecs_floats, (size_t)dim * sizeof(float));
         *out_avg = a;
+    }
+    if (out_spans) {
+        TXchunkSpan *s = (TXchunkSpan *)malloc(k * sizeof(TXchunkSpan));
+        if (!s) {
+            if (out_vecs) { free(*out_vecs); *out_vecs = NULL; }
+            if (out_avg)  { free(*out_avg);  *out_avg  = NULL; }
+            return 0;
+        }
+        memcpy(s, (const char *)rbuf
+                  + (vecs_floats + (size_t)dim) * sizeof(float),
+               k * sizeof(TXchunkSpan));
+        *out_spans = s;
     }
     if (out_k) *out_k = k;
     if (out_coh) *out_coh = coh;
@@ -2331,21 +2665,30 @@ static size_t child_chunk_spans_callback(void *ud,
     (void)ud;
     if (out_spans) *out_spans = NULL;
     if (!finfo || !out_spans) return 0;
-    if (tlen == 0 || tlen > FORKMAPSIZE) return 0;
+    if (tlen == 0) return 0;
 
-    memcpy(finfo->mapinfo->mem, text, tlen);
-
+    /* tag + fixed header, THEN the payload (see msg_begin): a chunk
+     * signal emitted before the header would be read as a tag. */
     char tag = 'S';
     if (forkwrite(&tag, 1) == -1) return 0;
     if (forkwrite((char *)&tlen, sizeof tlen) == -1) return 0;
 
+    msg_begin(finfo);
+    if (!msg_append(finfo, text, tlen)) return 0;
+    if (msg_end(finfo) == -1) return 0;
+
     size_t k = 0;
+    int    sz = 0;
+    void  *sp;
+
     if (forkread(&k, sizeof k) == -1) return 0;
-    if (k == 0 || k * sizeof(TXchunkSpan) > FORKMAPSIZE) return 0;
+    sp = msg_recv(finfo, &sz);          /* always sent, empty when k == 0 */
+    if (k == 0 || !sp) return 0;
+    if (sz < 0 || (size_t)sz < k * sizeof(TXchunkSpan)) return 0;
 
     TXchunkSpan *spans = (TXchunkSpan *)malloc(k * sizeof(TXchunkSpan));
     if (!spans) return 0;
-    memcpy(spans, finfo->mapinfo->mem, k * sizeof(TXchunkSpan));
+    memcpy(spans, sp, k * sizeof(TXchunkSpan));
     *out_spans = spans;
     return k;
 }
@@ -2408,12 +2751,13 @@ static void parent_service_embed(void)
     if (forkread(&tlen, sizeof tlen) != (int)sizeof(tlen)) return;
     if (forkread(&kind, sizeof kind) != (int)sizeof(kind)) return;
     if (forkread(&title_len, sizeof title_len) != (int)sizeof(title_len)) return;
-    if (tlen == 0 || tlen > FORKMAPSIZE || title_len > FORKMAPSIZE ||
-        tlen + title_len > FORKMAPSIZE) {
+    int   insz = 0;
+    void *inbuf = msg_recv(finfo, &insz);
+    if (tlen == 0 || !inbuf || insz < 0 || (size_t)insz < tlen + title_len) {
         forkwrite((char *)&fail, sizeof fail);
         return;
     }
-    const char *text  = (const char *)finfo->mapinfo->mem;
+    const char *text  = (const char *)inbuf;
     const char *title = title_len ? text + tlen : NULL;
 
     /* Compose the model's retrieval prompt around the text FIRST (it
@@ -2430,7 +2774,8 @@ static void parent_service_embed(void)
      * a file edited in place would serve its old vector forever.  Images
      * are normally embedded once at insert time, so there is little to
      * cache anyway. */
-    int  hit_dim = 0;
+    int    hit_dim = 0;
+    float *hitvec  = NULL;
     if (kind != TXEMBED_IMAGE && g_lru.initialized && g_lru.capacity > 0) {
         uint64_t h = embed_lru_key(g_active_embed_handle, text, tlen);
         pthread_mutex_lock(&g_lru.mtx);
@@ -2440,7 +2785,11 @@ static void parent_service_embed(void)
             /* memcpy from cache → mmap while holding lock.  We read
              * n->vec (cache memory, not mmap) and write mmap.  The
              * write overwrites text, but we're done with text. */
-            memcpy(finfo->mapinfo->mem, n->vec, (size_t)n->dim * sizeof(float));
+            hitvec = (float *)malloc((size_t)n->dim * sizeof(float));
+            if (hitvec)
+                memcpy(hitvec, n->vec, (size_t)n->dim * sizeof(float));
+            else
+                hit_dim = 0;
             embed_lru_promote_locked(n);
         }
         pthread_mutex_unlock(&g_lru.mtx);
@@ -2457,6 +2806,10 @@ static void parent_service_embed(void)
         }
         veclen_bytes = (size_t)hit_dim * sizeof(float);
         forkwrite((char *)&veclen_bytes, sizeof veclen_bytes);
+        msg_begin(finfo);
+        msg_append(finfo, hitvec, veclen_bytes);
+        msg_end(finfo);
+        free(hitvec);
         free(composed);
         return;
     }
@@ -2540,56 +2893,69 @@ static void parent_service_embed(void)
     }
 
     veclen_bytes = (size_t)dim * sizeof(float);
-    memcpy(finfo->mapinfo->mem, vec, veclen_bytes);
     forkwrite((char *)&veclen_bytes, sizeof veclen_bytes);
+    msg_begin(finfo);
+    msg_append(finfo, vec, veclen_bytes);
+    msg_end(finfo);
     free(vec);
     free(composed);
 }
 
 /* Parent-side 'D' (doc embed) service: reads tlen (text in mmap), runs
- * the doc embed requesting the FULL result (vecs + avg + coh) so the
- * child can serve any of chunkembed/chunkavg/chunkcoherence from one
- * round-trip, and lays [vecs: k*dim][avg: dim] in the mmap.  Reply:
- * int dim (0 = failure), size_t k, float coh.  The parent's langtools
- * doc cache means repeated 'D' for the same text runs the model once. */
+ * the doc embed requesting the FULL result (vecs + avg + coh + spans)
+ * so the child can serve any of chunkembed/chunkavg/chunkcoherence from
+ * one round-trip, and lays [vecs: k*dim][avg: dim][spans: k] in the
+ * mmap.  Reply: int dim (0 = failure), size_t k, float coh.  The
+ * parent's langtools doc cache means repeated 'D' for the same text
+ * runs the model once. */
 static void parent_service_embed_doc(void)
 {
     size_t tlen = 0, plen = 0;
     int    faildim = 0;
+    char   wantSpans = 0;
 
     if (forkread(&tlen, sizeof tlen) != (int)sizeof(tlen)) return;
     if (forkread(&plen, sizeof plen) != (int)sizeof(plen)) return;
-    /* check each length alone first: garbage-huge values from a desynced
-     * pipe could wrap tlen + plen past the combined check */
-    if (tlen == 0 || tlen > FORKMAPSIZE || plen > FORKMAPSIZE ||
-        tlen + plen > FORKMAPSIZE) {
+    if (forkread(&wantSpans, 1) != 1) return;
+
+    int   insz = 0;
+    void *inbuf = msg_recv(finfo, &insz);
+    if (tlen == 0 || !inbuf || insz < 0 || (size_t)insz < tlen + plen) {
         forkwrite((char *)&faildim, sizeof faildim);
         return;
     }
-    const char *text = (const char *)finfo->mapinfo->mem;
+    const char *text = (const char *)inbuf;
     const char *pfx  = plen ? text + tlen : NULL;
 
     float *vecs = NULL, *avg = NULL, coh = 0.0f;
+    TXchunkSpan *spans = NULL;
     size_t k = 0;
     size_t dim = main_embed_doc_callback(NULL, text, tlen, pfx, plen,
-                                         &vecs, &k, &avg, &coh);
+                                         &vecs, &k, &avg, &coh,
+                                         wantSpans ? &spans : NULL);
     size_t vecs_floats = k * dim;
-    size_t total_bytes = (vecs_floats + dim) * sizeof(float);
-    if (dim == 0 || k == 0 || !vecs || !avg || total_bytes > FORKMAPSIZE) {
-        free(vecs); free(avg);
+    if (dim == 0 || k == 0 || !vecs || !avg || (wantSpans && !spans)) {
+        free(vecs); free(avg); free(spans);
         forkwrite((char *)&faildim, sizeof faildim);
         return;
     }
-    /* text in mmap is no longer needed — overwrite with the reply. */
-    float *mem = (float *)finfo->mapinfo->mem;
-    memcpy(mem, vecs, vecs_floats * sizeof(float));
-    memcpy(mem + vecs_floats, avg, dim * sizeof(float));
-    free(vecs); free(avg);
 
     int idim = (int)dim;
     forkwrite((char *)&idim, sizeof idim);
     forkwrite((char *)&k, sizeof k);
     forkwrite((char *)&coh, sizeof coh);
+
+    /* [vecs][avg][spans] as one payload -- any size, chunked as needed */
+    msg_begin(finfo);
+    if (!msg_append(finfo, vecs, vecs_floats * sizeof(float)) ||
+        !msg_append(finfo, avg, dim * sizeof(float)) ||
+        (wantSpans && !msg_append(finfo, spans, k * sizeof(TXchunkSpan))))
+    {
+        free(vecs); free(avg); free(spans);
+        return;
+    }
+    free(vecs); free(avg); free(spans);
+    msg_end(finfo);
 }
 
 /* Parent-side 'S' (chunk spans) service: reads tlen (text in mmap),
@@ -2598,24 +2964,30 @@ static void parent_service_embed_doc(void)
 static void parent_service_chunk_spans(void)
 {
     size_t tlen = 0, fail = 0;
+    int    insz = 0;
+    void  *text;
 
     if (forkread(&tlen, sizeof tlen) != (int)sizeof(tlen)) return;
-    if (tlen == 0 || tlen > FORKMAPSIZE) {
+    text = msg_recv(finfo, &insz);
+    if (tlen == 0 || !text) {
         forkwrite((char *)&fail, sizeof fail);
+        msg_begin(finfo); msg_end(finfo);       /* keep the shapes paired */
         return;
     }
-    const char *text = (const char *)finfo->mapinfo->mem;
 
     TXchunkSpan *spans = NULL;
-    size_t k = main_chunk_spans_callback(NULL, text, tlen, &spans);
-    if (k == 0 || !spans || k * sizeof(TXchunkSpan) > FORKMAPSIZE) {
+    size_t k = main_chunk_spans_callback(NULL, (const char *)text, tlen, &spans);
+    if (k == 0 || !spans) {
         if (spans) free(spans);
         forkwrite((char *)&fail, sizeof fail);
+        msg_begin(finfo); msg_end(finfo);
         return;
     }
-    memcpy(finfo->mapinfo->mem, spans, k * sizeof(TXchunkSpan));
-    free(spans);
     forkwrite((char *)&k, sizeof k);
+    msg_begin(finfo);
+    if (!msg_append(finfo, spans, k * sizeof(TXchunkSpan))) { free(spans); return; }
+    free(spans);
+    msg_end(finfo);
 }
 
 // return 0 on pipe/fork error
@@ -2626,17 +2998,23 @@ static int fork_open(DB_HANDLE *h, const char *user, const char *pass)
 
     if(finfo->childpid)
     {
-        /* write db string to map */
-        // bug fix: added bounds check before sprintf in fork_open - 2026-02-27
-        size_t needed = strlen(h->db) + strlen(user) + strlen(pass) + 3;
-        if(needed > FORKMAPSIZE) return 0;
-        sprintf(finfo->mapinfo->mem, "%s%c%s%c%s", h->db, 0, user, 0, pass);
-
         /* 'O' = open + register embed callback (fall-through to 'o').
          * 'o' = plain open.  Mirror the flag set on parent's handle so
          * subsequent fork_exec's skip the lazy registration step. */
         char open_cmd = DB_HANDLE_IS(h, DB_FLAG_EMBED_ENABLED) ? 'O' : 'o';
+        size_t dlen = strlen(h->db) + 1, ulen = strlen(user) + 1,
+               plen = strlen(pass) + 1;
+
         if(forkwrite(&open_cmd, sizeof(char)) == -1)
+            return 0;
+
+        /* db\0user\0pass as a payload -- no length gate needed */
+        msg_begin(finfo);
+        if(!msg_append(finfo, h->db, dlen) ||
+           !msg_append(finfo, user, ulen)  ||
+           !msg_append(finfo, pass, plen))
+            return 0;
+        if(msg_end(finfo) == -1)
             return 0;
 
         if(forkread(&(h->tx), sizeof(TEXIS *)) == -1)
@@ -2652,8 +3030,16 @@ static int fork_open(DB_HANDLE *h, const char *user, const char *pass)
 
 static int child_open()
 {
-    char *db = finfo->mapinfo->mem, *user, *pass;
+    char *db, *user, *pass;
     TEXIS *tx=NULL;
+    int sz=0;
+
+    db = (char *)msg_recv(finfo, &sz);
+    if(!db)
+    {
+        forkwrite(&tx, sizeof(TEXIS *));    /* NULL: open failed */
+        return 0;
+    }
 
     user = db + strlen(db) + 1;
     pass = user + strlen(user) + 1;
@@ -2686,9 +3072,21 @@ static int fork_setmem()
 
 static int child_setmem()
 {
+    struct stat st;
+
     if(forkread(&(finfo->mapfd), sizeof(int)) ==-1)
         return 0;
-    finfo->mapinfo->mem = mmap(NULL, FORKMAPSIZE, PROT_READ|PROT_WRITE, MAP_SHARED, finfo->mapfd, 0);
+
+    /* The fd is the ONLY authority on the size: the parent's reservation
+     * is best-effort, so asking the fd is the one way parent and child
+     * cannot disagree (a mismatch would mean one side chunking at a
+     * different boundary than the other). */
+    if(fstat(finfo->mapfd, &st) == 0 && st.st_size > 0)
+        finfo->mapsize = (size_t)st.st_size;
+    else
+        finfo->mapsize = FORKMAPSIZE;
+
+    finfo->mapinfo->mem = mmap(NULL, finfo->mapsize, PROT_READ|PROT_WRITE, MAP_SHARED, finfo->mapfd, 0);
     if(finfo->mapinfo->mem == MAP_FAILED)
     {
         fprintf(stderr, "mmap failed: %s\n",strerror(errno));
@@ -3048,7 +3446,6 @@ static int fork_sql_set(duk_context *ctx, DB_HANDLE *h, char *errbuf)
 
     duk_cbor_encode(ctx, -1, 0);
     p=duk_get_buffer_data(ctx, -1, &sz);
-    memcpy(finfo->mapinfo->mem, p, (size_t)sz);
 
     if(forkwrite("S", sizeof(char)) == -1)
         return 0;
@@ -3056,25 +3453,36 @@ static int fork_sql_set(duk_context *ctx, DB_HANDLE *h, char *errbuf)
     if(forkwrite(&(h->tx), sizeof(TEXIS *)) == -1)
         return 0;
 
-    size = (int)sz;
-    if(forkwrite(&size, sizeof(int)) == -1) {
+    /* The CBOR of the caller's settings object was memcpy'd into the map
+     * with NO bounds check -- sql.set({anything: <a big string>}) wrote
+     * straight past the mapping.  As a payload it is both bounded and
+     * unlimited: any size, chunked as needed. */
+    msg_begin(finfo);
+    if(!msg_append(finfo, p, (size_t)sz))
         return 0;
-    }
+    if(msg_end(finfo) == -1)
+        return 0;
+
     if(forkread(&ret, sizeof(int)) == -1)
         return 0;
 
-    if(ret > 0)
+    /* The helper always answers with a payload: the CBOR result when
+     * ret > 0, the error text when ret < 0, empty otherwise. */
     {
-        if(forkread(&size, sizeof(int)) == -1)
-            return 0;
+        void *rbuf = msg_recv(finfo, &size);
 
-        duk_push_external_buffer(ctx);
-        duk_config_buffer(ctx, -1, finfo->mapinfo->mem, (duk_size_t)size);
-        duk_cbor_decode(ctx, -1, 0);
-    }
-    else if (ret < 0)
-    {
-        strncpy(errbuf, finfo->mapinfo->mem, msgbufsz);
+        if(ret > 0)
+        {
+            if(!rbuf) return 0;
+            duk_push_external_buffer(ctx);
+            duk_config_buffer(ctx, -1, rbuf, (duk_size_t)size);
+            duk_cbor_decode(ctx, -1, 0);
+        }
+        else if (ret < 0 && rbuf)
+        {
+            strncpy(errbuf, (char *)rbuf, msgbufsz);
+            errbuf[msgbufsz-1] = '\0';
+        }
     }
 
     if (ret >= 0 && (wants_embed || wants_onnx)) {
@@ -3088,10 +3496,15 @@ static int fork_sql_set(duk_context *ctx, DB_HANDLE *h, char *errbuf)
 static int child_set()
 {
     int ret=0, bufsz=0;
-    int size=-1;
     RPTHR *thr=get_current_thread();
     duk_context *ctx=thr->ctx;
     TEXIS *tx=NULL;
+    char errbuf[msgbufsz];
+    void *cbor=NULL;
+    duk_size_t cborsz=0;
+    void *inbuf;
+
+    errbuf[0]='\0';
 
     if (forkread(&tx, sizeof(TEXIS*))  == -1)
     {
@@ -3099,7 +3512,9 @@ static int child_set()
         return 0;
     }
 
-    if (forkread(&bufsz, sizeof(int))  == -1)
+    /* the caller's settings object, CBOR encoded -- any size */
+    inbuf = msg_recv(finfo, &bufsz);
+    if (!inbuf)
     {
         forkwrite(&ret, sizeof(int));
         return 0;
@@ -3107,37 +3522,20 @@ static int child_set()
 
     if(tx)
     {
-        char errbuf[msgbufsz];
-        void *p;
-
-        errbuf[0]='\0';
-
         /* get js object needed for sql_set to do its stuff */
         duk_push_external_buffer(ctx);
-        duk_config_buffer(ctx, -1, finfo->mapinfo->mem, (duk_size_t)bufsz);
+        duk_config_buffer(ctx, -1, inbuf, (duk_size_t)bufsz);
         duk_cbor_decode(ctx, -1, 0);
 
         /* do the set in this child */
         ret = sql_set(ctx, tx, errbuf);
 
-        ((char*)finfo->mapinfo->mem)[0] = '\0';//abundance of caution.
-
-        /* this is only filled if ret < 0
-           and is error text to be sent back to JS  */
-        if( ret < 0 )
-            memcpy(finfo->mapinfo->mem, errbuf, msgbufsz);
-
-        /*there's some JS data in an object that needs to be sent back */
-        else if (ret > 0 )
+        /* ret > 0: JS data to send back, CBOR encoded */
+        if (ret > 0)
         {
-            duk_size_t sz;
-
             duk_cbor_encode(ctx, -1, 0);
-            p=duk_get_buffer_data(ctx, -1, &sz);
-            memcpy(finfo->mapinfo->mem, p, (size_t)sz);
-            size = (int)sz;
+            cbor = duk_get_buffer_data(ctx, -1, &cborsz);
         }
-        /* else == 0 -- all is ok, just no data to send back */
     }
     else
         ret=-1;
@@ -3145,11 +3543,19 @@ static int child_set()
     if (forkwrite(&ret, sizeof(int))  == -1)
         return 0;
 
-    if(size > -1)
+    /* Always answer with a payload so the parent has one shape to read:
+     * the CBOR result (ret > 0), the error text (ret < 0), or nothing. */
+    msg_begin(finfo);
+    if (ret > 0 && cbor)
     {
-        if (forkwrite(&size, sizeof(int))  == -1)
-            return 0;
+        if(!msg_append(finfo, cbor, (size_t)cborsz)) return 0;
     }
+    else if (ret < 0)
+    {
+        if(!msg_append(finfo, errbuf, strlen(errbuf) + 1)) return 0;
+    }
+    if (msg_end(finfo) == -1)
+        return 0;
 
     return 1; // close will always happen
 }
@@ -4739,10 +5145,20 @@ static void rp_vec_attach_spans(duk_context *ctx, const EPI_UINT32 *spans,
     duk_push_array(ctx);
     for (i = 0; i < k; i++)
     {
+        /* memcpy, don't dereference: the span array starts at header
+           byte 24, and the field data itself is only aligned to the
+           column's element size (2 for the default f16), so a direct
+           EPI_UINT32 load can be unaligned -- UB, and a fault on
+           strict-alignment targets.  TXvecValDecode reads its own
+           header fields the same way. */
+        EPI_UINT32 s, e;
+
+        memcpy(&s, &spans[i * 2],     sizeof(s));
+        memcpy(&e, &spans[i * 2 + 1], sizeof(e));
         duk_push_object(ctx);
-        duk_push_uint(ctx, (duk_uint_t)spans[i * 2]);
+        duk_push_uint(ctx, (duk_uint_t)s);
         duk_put_prop_string(ctx, -2, "start");
-        duk_push_uint(ctx, (duk_uint_t)spans[i * 2 + 1]);
+        duk_push_uint(ctx, (duk_uint_t)e);
         duk_put_prop_string(ctx, -2, "end");
         duk_put_prop_index(ctx, -2, (duk_uarridx_t)i);
     }
@@ -6285,8 +6701,9 @@ static duk_idx_t load_list(duk_context *ctx)
  *
  * A buffer parameter is already in THIS process, and this process owns
  * the model -- but SQL runs in the helper, so the plain path would ship
- * the bytes to the helper and straight back again (and the 'B' wire is
- * capped at FORKMAPSIZE).  Instead: embed here, rewrite that
+ * the bytes to the helper and straight back again.  (The wire itself no
+ * longer caps this -- payloads chunk -- but a pointless round trip of
+ * the whole image is still worth avoiding.)  Instead: embed here, rewrite that
  * `embed(...)` span to a bare `?`, and bind the resulting VECTOR in
  * place of the bytes.  Same statement, same stored vector, but the
  * image never crosses a process boundary.  A String parameter (a path)
@@ -7424,21 +7841,27 @@ static size_t main_embed_callback(void *ud,
 }
 
 /* Doc-level (chunked) variant: powers texis's chunkembed() / chunkavg()
- * / chunkcoherence() scalars.  Requests whichever of vecs / avg / coh
- * the scalar wants; the langtools embedder computes them in one run and
- * caches by text, so different scalars on the same text share it.  spans
- * stay NULL (abstract() recomputes those via the spans callback). */
+ * / chunkcoherence() scalars.  Requests whichever of vecs / avg / coh /
+ * spans the scalar wants; the langtools embedder computes them in one
+ * run and caches by text, so different scalars on the same text share
+ * it.  The engine's {start,end,n_tokens} spans convert to texis's
+ * {start,end}; a spans request that can't be satisfied fails the whole
+ * call (chunkembed() must never silently store without spans). */
 static size_t main_embed_doc_callback(void *ud,
                                       const char *text, size_t tlen,
                                       const char *prefix, size_t plen,
                                       float **out_vecs, size_t *out_k,
-                                      float **out_avg, float *out_coh)
+                                      float **out_avg, float *out_coh,
+                                      TXchunkSpan **out_spans)
 {
     size_t r = 0;
+    size_t k = 0;
     size_t cplen = 0;
     char *cpfx;
+    rp_embed_span_t *es = NULL;
 
     (void)ud;
+    if (out_spans) *out_spans = NULL;
     if (!g_active_embed_handle) return 0;
 
     /* CLIP has no chunking: an image is one vector and its text tower is
@@ -7467,17 +7890,47 @@ static size_t main_embed_doc_callback(void *ud,
     case EMBED_ENGINE_LLAMACPP:
         if (g_rp_embed_doc)
             r = g_rp_embed_doc(g_active_embed_handle, text, tlen, prefix, plen,
-                               out_vecs, out_k, out_avg, out_coh, NULL);
+                               out_vecs, &k, out_avg, out_coh,
+                               out_spans ? &es : NULL);
         break;
     case EMBED_ENGINE_ONNX:
         if (g_rp_onnx_embed_doc)
             r = g_rp_onnx_embed_doc(g_active_embed_handle, text, tlen, prefix, plen,
-                                    out_vecs, out_k, out_avg, out_coh, NULL);
+                                    out_vecs, &k, out_avg, out_coh,
+                                    out_spans ? &es : NULL);
         break;
     default:
         break;
     }
     free(cpfx);
+    if (out_k) *out_k = k;
+    if (r && out_spans) {
+        TXchunkSpan *ts = NULL;
+        size_t i;
+        if (es && k && (ts = (TXchunkSpan *)malloc(k * sizeof(TXchunkSpan)))) {
+            for (i = 0; i < k; i++) {
+                ts[i].start = es[i].start;
+                ts[i].end   = es[i].end;
+            }
+            *out_spans = ts;
+        } else {
+            /* engine gave no spans, or oom converting: fail the whole
+             * call rather than let the caller store a spanless value.
+             * Latch it -- texis turns a failed scalar into a NULL field
+             * and carries on, so without this an ingest run would store
+             * vector-less rows and never throw (see the latch above). */
+            const char *why = (es && k) ? "out of memory converting chunk spans"
+                                        : "embed engine returned vectors but "
+                                          "no chunk spans";
+            putmsg(MERR + FRE, "chunkembed", "%s", why);
+            embed_fail_latch("chunkembed(): %s", why);
+            if (out_vecs && *out_vecs) { free(*out_vecs); *out_vecs = NULL; }
+            if (out_avg  && *out_avg)  { free(*out_avg);  *out_avg  = NULL; }
+            if (out_k) *out_k = 0;
+            r = 0;
+        }
+    }
+    free(es);
     return r;
 }
 
@@ -7711,12 +8164,13 @@ static int setup_onnx_main(duk_context *ctx,
  *   select Path from images where Vec likev 'a dog on a beach';
  *
  * Only the string forms cross the SQL/helper boundary (a query, or a
- * path) -- both tiny.  Image BYTES are deliberately not accepted: the
- * bytes would travel helper->parent through the FORKMAPSIZE-capped wire
- * (1MB) after already having been sent parent->helper as a parameter.
- * The langtools side has rp_clip_embed_image() ready for that when the
- * wire grows a large-payload path; embed the bytes in JS and bind the
- * vector directly until then. */
+ * path) -- both tiny.  Image BYTES are still not accepted here, but the
+ * reason is no longer the wire: payloads now chunk, so size is not a
+ * limit.  What remains is that the bytes would travel parent->helper as
+ * a parameter and then straight back helper->parent to reach the model,
+ * for no gain.  rp_clip_embed_image() is ready on the langtools side if
+ * that round trip is ever worth accepting; until then embed the bytes
+ * in JS and bind the vector directly. */
 static int peek_clipembed_setting(duk_context *ctx, const char **model_path_out)
 {
     const char *p = NULL;
@@ -9321,6 +9775,48 @@ safeprintstack(ctx);
 */
 
 
+/* Sql.setMapSize(bytes) -- size of the shared segment used by helpers
+ * launched AFTER this call.
+ *
+ * Process-wide, and it cannot resize an existing helper: a POSIX shm
+ * object cannot be shrunk on macOS at all, and re-mapping a live one
+ * would invalidate the row pointers the parent hands to JS.  So this is
+ * a "set it before the helpers start" knob -- in a server, at the top of
+ * the conf, since workers fork their helpers lazily on first use.
+ *
+ * Returns the value actually adopted (rounded up to whole pages, floored
+ * at one page), which may differ from what was asked for.  A helper may
+ * still end up smaller if the kernel refuses the reservation; that is
+ * per-helper and recorded in finfo->mapsize. */
+static duk_ret_t rp_sql_set_map_size(duk_context *ctx)
+{
+    double  d = duk_get_number_default(ctx, 0, -1.0);
+    size_t  pagesz, want;
+
+    if (!(d >= 0.0))
+        RP_THROW(ctx, "Sql.setMapSize: a size in bytes is required");
+
+#ifdef _SC_PAGESIZE
+    {
+        long ps = sysconf(_SC_PAGESIZE);
+        pagesz = (ps > 0) ? (size_t)ps : RP_FORKMAP_MIN;
+    }
+#else
+    pagesz = RP_FORKMAP_MIN;
+#endif
+    if (pagesz < 8) pagesz = RP_FORKMAP_MIN;   /* paranoia: keep 8-aligned */
+
+    want = (size_t)d;
+    if (want < RP_FORKMAP_MIN) want = RP_FORKMAP_MIN;
+    /* round UP to whole pages: keeps every chunk boundary 8-aligned,
+     * which is what lets sender and receiver agree on alignment */
+    if (want % pagesz) want += pagesz - (want % pagesz);
+
+    g_forkmap_size = want;
+    duk_push_number(ctx, (double)want);
+    return 1;
+}
+
 static duk_ret_t fork_helper(duk_context *ctx)
 {
     SFI finfo_d = {0};
@@ -9658,6 +10154,9 @@ duk_ret_t duk_open_module(duk_context *ctx)
 
     duk_push_c_function(ctx, searchtext, 3);
     duk_put_prop_string(ctx, -2, "searchText");
+
+    duk_push_c_function(ctx, rp_sql_set_map_size, 1);
+    duk_put_prop_string(ctx, -2, "setMapSize");
 
     /* used when forking/execing */
     duk_push_string(ctx, "__helper");

@@ -3768,6 +3768,84 @@ TXpredMMVAutoEmbed(DBTBL *tb, PRED *p)
 
 /******************************************************************/
 
+/* LIKEV constant-embed fold.
+ *
+ * `col LIKEV ?' is the shape realwork()'s TXpredGetColumnAndField()
+ * test understands (`column OP {param|literal}'), so it gets index
+ * selection, the linear-search (`allinear') gate, and -- when no index
+ * serves -- the rank-keyed brute-force candidate list.  `col LIKEV
+ * embed(?)' is `column OP <sub-expression>', which that test rejects,
+ * so it skipped all of the above and fell through to a bare per-row
+ * pred_eval: a linear scan that ran even with `allinear' off, returning
+ * rows in TABLE order rather than rank order.
+ *
+ * The argument is constant (no column references), so evaluate it once
+ * here and cache it on altright/altleft as a FIELD_OP -- exactly the
+ * shape TXpredMMVAutoEmbed leaves behind for the string form.  From
+ * that point on both spellings take the same path.  closepred() already
+ * frees a cached FLD whose lt/rt is 'P' with lat/rat FIELD_OP.
+ *
+ * Gated on embed() calls specifically, matching the constant-result
+ * caching in pred_eval()'s 'P' cases: a general constant folder
+ * mis-handles multi-field constant argument lists.
+ *
+ * NOTE `LIKEV ?' embeds with the model's QUERY prompt, so the exact
+ * equivalent spelling is `LIKEV embed(?, 'query')'; a bare `embed(?)'
+ * is the raw/document-side vector and legitimately ranks differently.
+ *
+ * Returns nonzero if a folded/embedded FLD is now cached on the pred.
+ */
+int
+TXpredMMVFoldConstEmbed(DBTBL *tb, PRED *p, FLDOP *fo)
+{
+	PRED	*sub;
+	FLD	*res, *cached;
+	int	right;
+
+	if (!tb || !p || !fo || p->op != FOP_MMV)
+		return(0);
+	if ((p->rat == FIELD_OP && p->altright) ||
+	    (p->lat == FIELD_OP && p->altleft))
+		return(1);			/* already folded/embedded */
+	if (p->lt == NAME_OP && p->rt == 'P')
+	{
+		sub = (PRED *)p->right;
+		right = 1;
+	}
+	else if (p->rt == NAME_OP && p->lt == 'P')
+	{
+		sub = (PRED *)p->left;
+		right = 0;
+	}
+	else
+		return(0);
+	if (!TXpredIsEmbedCall(sub))
+		return(0);
+	/* embed(column) varies per row: it must stay a per-row evaluation */
+	if (TXpredGetFirstUsedColumnName(sub) != NULL)
+		return(0);
+	if (pred_eval(tb, sub, fo) == -1)
+		return(0);
+	res = fopeek(fo);
+	cached = (res != FLDPN ? dupfld(res) : FLDPN);
+	fodisc(fo);				/* drop the evaluated result */
+	if (cached == FLDPN)
+		return(0);
+	if (right)
+	{
+		p->altright = cached;
+		p->rat = FIELD_OP;
+	}
+	else
+	{
+		p->altleft = cached;
+		p->lat = FIELD_OP;
+	}
+	return(1);
+}
+
+/******************************************************************/
+
 static IINDEX *realwork(DBTBL *tb, IINODE *in, PRED *p, FLDOP *fo, int asc,
 			int inv, TBSPEC *tbspec);
 static IINDEX *getiinindex(DBTBL *tb, IINODE *in, PRED *p, FLDOP *fo, int asc,
@@ -4068,6 +4146,13 @@ TBSPEC *tbspec;
 
 	DBGMSG(1, (999, NULL, "In realwork"));
 	resetindexinfo(&indexinfo);
+	/* LIKEV with a constant embed() argument: fold it to a cached FLD
+	 * first, so `col LIKEV embed(?)' presents the same shape as
+	 * `col LIKEV ?' and takes the same path from here on (index
+	 * selection, `allinear' gate, rank-keyed candidate list).  Inert
+	 * for every other operator and for embed(column). */
+	if (p->op == FOP_MMV)
+		TXpredMMVFoldConstEmbed(tb, p, fo);
 	infld = TXpredGetColumnAndField(p, &lookright, &fname);
 	if (!infld)
 		goto err;
