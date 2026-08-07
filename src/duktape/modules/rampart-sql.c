@@ -5317,6 +5317,22 @@ static void rp_pushfield(duk_context *ctx, FLDLST *fl, int i, int rawvec)
         duk_new(ctx, 1);
         break;
     }
+    case FTN_UDATE:
+    {
+        /* udate is microseconds; a JS Date holds integral MILLISECONDS,
+         * so this is lossy by design -- no warning, no rounding-up.
+         * floor() rather than C truncation so that pre-1970 (negative)
+         * values round toward the past like modern ones do; ECMAScript
+         * TimeClip truncates toward zero, which would split the
+         * behaviour either side of the epoch.
+         * For exact microseconds use convert(col,'int64').
+         */
+        ft_udate us = *((ft_udate *)fl->data[i]);
+        (void)duk_get_global_string(ctx, "Date");
+        duk_push_number(ctx, floor((duk_double_t)us / 1000.0));
+        duk_new(ctx, 1);
+        break;
+    }
     case FTN_COUNTER:
     {
         char s[33];

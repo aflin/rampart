@@ -347,6 +347,7 @@ IF(PARSERS_FOUND)
     inetutil.c
     json.c
     spectype.c
+    udateops.c
     sqlfuncutils.c
     strcmp.c
     strfmt.c

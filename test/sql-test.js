@@ -357,6 +357,206 @@ testFeature("Sql.list - bare-array (deprecated) still works", function() {
     return JSON.stringify(ids) === "[1,3,5]";
 });
 
+/* ------------------------------------------------------------------ *
+ * udate — signed int64 microseconds since 1970-01-01 UTC
+ * ------------------------------------------------------------------ */
+
+var sqlu = Sql.connect(tmpdir+"/udatedb", true);
+var US   = 1786117587123456;          /* 2026-08-07 ...  .123456 */
+
+testFeature("udate - create column", function(){
+    sqlu.exec("create table ut ( id int, u udate );");
+    var r = sqlu.exec("select NAME,TYPE from SYSCOLUMNS where TBNAME='ut' and NAME='u'");
+    return r.rows.length == 1 && r.rows[0].TYPE == 'udate';
+});
+
+testFeature("udate - a javascript Number means SECONDS", function(){
+    /* Both integral and fractional Numbers mean seconds.  rampart-sql
+       binds integral values as int64 and fractional ones as double, so
+       if the two disagreed on units the same instant would land in
+       different centuries depending on whether a fraction was present. */
+    sqlu.exec("insert into ut values(1,?);", [US/1e6]);
+    var r = sqlu.exec("select convert(u,'int64') v from ut where id=1");
+    return Number(r.rows[0].v) === US;
+});
+
+testFeature("udate - integral and fractional Numbers agree on units", function(){
+    var secs = 1786117587;
+    sqlu.exec("insert into ut values(90,?);", [secs]);       /* -> int64  */
+    sqlu.exec("insert into ut values(91,?);", [secs + 0.5]); /* -> double */
+    var a = Number(sqlu.exec("select convert(u,'int64') v from ut where id=90").rows[0].v);
+    var b = Number(sqlu.exec("select convert(u,'int64') v from ut where id=91").rows[0].v);
+    return a === secs*1000000 && b === secs*1000000 + 500000;
+});
+
+testFeature("udate - out-of-range seconds warns instead of overflowing", function(){
+    /* passing microseconds where seconds are meant would overflow int64;
+       it must not wrap into a bogus year */
+    sqlu.exec("insert into ut values(92,?);", [US]);
+    var v = Number(sqlu.exec("select convert(u,'int64') v from ut where id=92").rows[0].v);
+    return v === 0;
+});
+
+testFeature("udate - convert to double gives SECONDS (round-trips)", function(){
+    var v = sqlu.exec("select convert(u,'double') v from ut where id=1").rows[0].v;
+    if (Math.abs(v - US/1e6) > 1e-6 || Math.round(v*1e6) !== US) return false;
+    /* seconds out, seconds in: a double round-trips through the column */
+    sqlu.exec("insert into ut values(93,?);", [v]);
+    return Number(sqlu.exec("select convert(u,'int64') v from ut where id=93").rows[0].v) === US;
+});
+
+testFeature("udate - convert to date floors to the second", function(){
+    var v = sqlu.exec("select convert(u,'date') v from ut where id=1").rows[0].v;
+    return (v instanceof Date) &&
+           Math.floor(v.getTime()/1000) === Math.floor(US/1e6);
+});
+
+testFeature("udate - convert to char keeps 6 fractional digits", function(){
+    var v = sqlu.exec("select convert(u,'char') v from ut where id=1").rows[0].v;
+    return typeof v === 'string' && /\.123456$/.test(v);
+});
+
+testFeature("udate - accepts a date string with fractional seconds", function(){
+    sqlu.exec("insert into ut values(2,?);", ["2026-08-07 14:23:45.123456"]);
+    var v = sqlu.exec("select convert(u,'int64') v from ut where id=2").rows[0].v;
+    return String(v).slice(-6) === '123456';
+});
+
+testFeature("udate - accepts a javascript Date exactly", function(){
+    var d = new Date(Date.UTC(2026,7,7,14,23,45,789));
+    sqlu.exec("insert into ut values(3,?);", [d]);
+    var v = sqlu.exec("select convert(u,'int64') v from ut where id=3").rows[0].v;
+    return Number(v) === d.getTime() * 1000;
+});
+
+testFeature("udate - reads back into javascript as a Date (lossy ms)", function(){
+    var v = sqlu.exec("select u from ut where id=1").rows[0].u;
+    return (v instanceof Date) && v.getTime() === Math.floor(US/1000);
+});
+
+testFeature("udate - negative (pre-1970) stored exactly", function(){
+    /* -1.5 SECONDS = 1969-12-31 23:59:58.5 */
+    sqlu.exec("insert into ut values(4,?);", [-1.5]);
+    var v = sqlu.exec("select convert(u,'int64') v from ut where id=4").rows[0].v;
+    return Number(v) === -1500000;
+});
+
+testFeature("udate - narrowing floors toward the past, not toward zero", function(){
+    /* -1500000us is 1969-12-31 23:59:58.5; the second CONTAINING it is
+       -2, not -1.  C truncation would give -1 and split behaviour
+       either side of the epoch. */
+    var v = sqlu.exec("select convert(u,'date') v from ut where id=4").rows[0].v;
+    return Math.floor(v.getTime()/1000) === -2;
+});
+
+testFeature("udate - ordering and comparison are exact", function(){
+    sqlu.exec("create table ut2 ( id int, u udate );");
+    for (var i=0; i<50; i++)
+        sqlu.exec("insert into ut2 values(?,?);", [i, 1700000000 + i]);   /* seconds */
+    /* bind the pivot in the same units it was written in: 'double' is the
+       seconds view, and the one that round-trips */
+    var pivot = sqlu.exec("select convert(u,'double') v from ut2 where id=25").rows[0].v;
+
+    /* maxRows defaults to 10 -- without this the 50-row set is
+       truncated and the membership check below fails */
+    var gt = sqlu.exec("select id from ut2 where u > ? order by id",
+                       [pivot], {maxRows:-1}).rows.map(function(r){return r.id});
+    var desc = sqlu.exec("select id from ut2 order by u desc",
+                         {maxRows:-1}).rows.map(function(r){return r.id});
+
+    /* membership, not just count: a wrong comparator can return the
+       right number of rows */
+    if (gt.length !== 24) return false;
+    for (var i=0; i<gt.length; i++) if (gt[i] !== 26+i) return false;
+    return desc[0] === 49 && desc[desc.length-1] === 0;
+});
+
+testFeature("udate - 'now' has microsecond resolution", function(){
+    /* parsetime() returns a time_t, so 'now' routed through it would
+       always land on a whole second and defeat the point of the type.
+       Five samples: at least one must carry a sub-second part. */
+    sqlu.exec("create table ut3 ( id int, u udate );");
+    for (var i=0; i<5; i++) sqlu.exec("insert into ut3 values(?,'now');", [i]);
+    var frac = 0, res = sqlu.exec("select convert(u,'int64') v from ut3",
+                                  {maxRows:-1});
+    res.rows.forEach(function(r){ if (Number(r.v) % 1000000) frac++; });
+    return res.rows.length === 5 && frac > 0;
+});
+
+testFeature("udate - 'now' is the actual current time", function(){
+    var v = Number(sqlu.exec("select convert(u,'int64') v from ut3",
+                             {maxRows:1}).rows[0].v);
+    return Math.abs(v/1e6 - Date.now()/1000) < 300;   /* within 5 minutes */
+});
+
+testFeature("udate - 'now' works in UPDATE", function(){
+    sqlu.exec("insert into ut3 values(99,'2001-01-01 00:00:00');");
+    var before = Number(sqlu.exec("select convert(u,'int64') v from ut3 where id=99")
+                        .rows[0].v);
+    sqlu.exec("update ut3 set u='now' where id=99;");
+    var after = Number(sqlu.exec("select convert(u,'int64') v from ut3 where id=99")
+                       .rows[0].v);
+    return after > before && Math.abs(after/1e6 - Date.now()/1000) < 300;
+});
+
+testFeature("udate - convert(?,'udate') parses javascript date strings", function(){
+    /* the tz-offset form a rampart Date prints, plus ISO-8601 */
+    var forms = ["2026-08-07 11:11:27.472-07:00",
+                 "2026-08-07T18:11:27.472Z",
+                 "2026-08-07 18:11:27.472 UTC"];
+    var want = Date.UTC(2026,7,7,18,11,27,472) * 1000;   /* microseconds */
+    for (var i=0; i<forms.length; i++) {
+        var r = sqlu.exec("select convert(convert(?,'udate'),'int64') v;",
+                          [forms[i]]);
+        if (!r.rows.length || Number(r.rows[0].v) !== want) return false;
+    }
+    return true;
+});
+
+testFeature("udate - a printed Date re-parses to the same instant", function(){
+    sqlu.exec("insert into ut3 values(98,?);", [new Date()]);
+    var printed = String(sqlu.exec("select u from ut3 where id=98").rows[0].u);
+    sqlu.exec("insert into ut3 values(97,?);", [printed]);
+    var a = Number(sqlu.exec("select convert(u,'int64') v from ut3 where id=98").rows[0].v);
+    var b = Number(sqlu.exec("select convert(u,'int64') v from ut3 where id=97").rows[0].v);
+    /* the printed form carries milliseconds, so they agree to the ms */
+    return Math.floor(a/1000) === Math.floor(b/1000);
+});
+
+testFeature("udate - convert to uint64 gives microseconds", function(){
+    var r = sqlu.exec("select convert(u,'uint64') a, convert(u,'int64') b " +
+                      "from ut where id=1").rows[0];
+    return Number(r.a) === US && String(r.a) === String(r.b);
+});
+
+testFeature("udate - uint64 in means SECONDS, like int64", function(){
+    /* the two 64-bit integer types must not disagree on units */
+    var secs = 1786117587;
+    sqlu.exec("insert into ut values(80,convert(convert(?,'uint64'),'udate'));",
+              [secs]);
+    return Number(sqlu.exec("select convert(u,'int64') v from ut where id=80")
+                  .rows[0].v) === secs*1000000;
+});
+
+testFeature("udate - uint64 out-of-range seconds warns, stores 0", function(){
+    sqlu.exec("insert into ut values(81,convert(convert(?,'uint64'),'udate'));",
+              [US]);
+    return Number(sqlu.exec("select convert(u,'int64') v from ut where id=81")
+                  .rows[0].v) === 0;
+});
+
+testFeature("udate - pre-1970 cannot be a uint64, warns and gives 0", function(){
+    /* id=4 holds -1.5s; int64 keeps it, uint64 cannot represent it */
+    var r = sqlu.exec("select convert(u,'int64') a, convert(u,'uint64') b " +
+                      "from ut where id=4").rows[0];
+    return Number(r.a) === -1500000 && Number(r.b) === 0;
+});
+
+testFeature("udate - btree index", function(){
+    sqlu.exec("create index ut2_u_x on ut2(u);");
+    return sqlu.exec("select NAME from SYSINDEX where NAME='ut2_u_x'").rows.length == 1;
+});
+
 rm_rf_dir(tmpdir);
 
 testFeature.exit();

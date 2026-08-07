@@ -255,6 +255,28 @@ extern int fld2flov ARGS((FLD *f,ft_long val));/* set fld to long type set to va
   I(FTN_INT64,          FTN_STRLST,     foi6sl) \
   I(FTN_INT64,          FTN_SMALLINT,   foi6sm) \
   I(FTN_INT64,          FTN_UINT64,     foi6u6) \
+  /* udate: ft_udate IS EPI_INT64, so the int64 functions operate on an \
+   * identical layout -- same reuse pattern as the vec types sharing \
+   * fobyby above.  ONLY the integer-identity pairs are reused. \
+   * \
+   * char<->udate and double<->udate are deliberately ABSENT: reusing \
+   * fochi6 silently parsed "2026-08-07 14:23:45" as the integer 2026 \
+   * and stored it as a microsecond count (measured).  A wrong value is \
+   * worse than a refused assignment, so those pairs stay unsupported \
+   * until real parse/format functions exist.  Likewise double, which \
+   * must mean SECONDS per the design, not raw microseconds. */ \
+  I(FTN_UDATE,          FTN_UDATE,      foi6i6) \
+  I(FTN_UDATE,          FTN_INT64,      foudi6) \
+  I(FTN_INT64,          FTN_UDATE,      foi6ud) \
+  I(FTN_UDATE,          FTN_UINT64,     foudu6) \
+  I(FTN_UINT64,         FTN_UDATE,      fou6ud) \
+  /* semantic conversions -- udateops.c */ \
+  I(FTN_UDATE,          FTN_DATE,       foudda) \
+  I(FTN_DATE,           FTN_UDATE,      fodaud) \
+  I(FTN_UDATE,          FTN_DOUBLE,     fouddo) \
+  I(FTN_DOUBLE,         FTN_UDATE,      fodoud) \
+  I(FTN_UDATE,          FTN_CHAR,       foudch) \
+  I(FTN_CHAR,           FTN_UDATE,      fochud) \
   I(FTN_INT64,          FTN_WORD,       foi6wo) \
   I(FTN_INDIRECT,       FTN_CHAR,       foidch) \
   I(FTN_INTERNAL,       FTN_CHAR,       foilch) \

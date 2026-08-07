@@ -82,7 +82,8 @@ I(VEC_F32,      "vecF32",    sizeof(ft_float),     0,          0)               
 I(VEC_F16,      "vecF16",    sizeof(uint16_t),     0,          0)                                  /* 32 */ \
 I(VEC_BF16,     "vecBf16",   sizeof(uint16_t),     0,          0)                                  /* 33 */ \
 I(VEC_I8,       "vecI8",     sizeof(ft_byte),      0,          0)                                  /* 34 */ \
-I(VEC_U8,       "vecU8",     sizeof(ft_byte),      0,          0)                                  /* 35 */
+I(VEC_U8,       "vecU8",     sizeof(ft_byte),      0,          0)                                  /* 35 */                              \
+I(UDATE,        "udate",     sizeof(ft_udate),     0,          TXFTNF_INTEGRAL|TXFTNF_SIGNED)      /* 36 */
 
 #define FTN_VEC_START 30
 #define FTN_VEC_END 35
@@ -416,6 +417,15 @@ ft_internal_uber;
 
 typedef EPI_INT64       ft_int64;
 #define ft_int64PN      ((ft_int64 *)NULL)
+
+/* udate: absolute timestamp, signed microseconds since 1970-01-01 UTC.
+ * Deliberately EPI_INT64 and never time_t -- fixed 8 bytes on every
+ * platform, so unlike ft_date/ft_counter it cannot change width between
+ * 32- and 64-bit builds.  Range +/-292,000 years at 1us resolution.
+ * Backed by int64 so it inherits integer comparison, max(), ORDER BY and
+ * index behaviour with no type-specific code. */
+typedef EPI_INT64       ft_udate;
+#define ft_udatePN      ((ft_udate *)NULL)
 typedef EPI_UINT64      ft_uint64;
 #define ft_uint64PN     ((ft_uint64 *)NULL)
 
