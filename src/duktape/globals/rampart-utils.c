@@ -8159,15 +8159,22 @@ duk_ret_t duk_rp_fread(duk_context *ctx)
 
     while (1)
     {
+        size_t want = sz;
+
+        /* stop AT max: never consume bytes past it (a handle's position
+         * must land exactly on what was returned, so sequential
+         * fread(fh, chunk) calls read a file in pieces) */
+        if (want > max - read)
+            want = max - read;
         errno=0;
-        r=fread(buf+read,1,sz,f);
+        r=fread(buf+read,1,want,f);
         if(ferror(f))
         {
             if( errno != EAGAIN || !nonblock)
                 RP_THROW(ctx, "error fread(): error reading file. %s", strerror(errno));
         }
         read+=r;
-        if (r != sz || r > max ) break;
+        if (r != want || read >= max) break;
         buf = duk_resize_buffer(ctx, -1, read+sz);
     }
 
@@ -8177,7 +8184,6 @@ duk_ret_t duk_rp_fread(duk_context *ctx)
             RP_THROW(ctx, "error fread(): could not release read lock");
     }
 
-    if(read > max) read=max;
     duk_resize_buffer(ctx, -1, read);
 
     if(retstr)

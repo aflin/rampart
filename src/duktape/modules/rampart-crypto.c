@@ -1325,6 +1325,197 @@ DUK_SHA_FUNC(shake128,"shake128")
 DUK_SHA_FUNC(shake256,"shake256")
 DUK_SHA_FUNC(sm3,"sm3")
 
+/* ------------------------------------------------------------------ *
+ * new crypto.HashStream([algo]) -- incremental hashing.
+ *   h.update(data)  -> h        (string or buffer, any number of times)
+ *   h.final([opt])  -> digest   (same opt conventions as crypto.hash:
+ *                                default hex, true = raw, {returnType:...})
+ * final() is non-destructive: it finalizes a snapshot of the running
+ * context, so update() may continue and a later final() returns the
+ * digest of everything seen so far.
+ * State is a refcounted C struct on the handle: thread copies share it
+ * (objOnCopyCallback bumps the refcount; every copy's finalizer derefs)
+ * and the mutex keeps cross-thread update/final memory-safe --
+ * interleaved updates from two threads are well-defined but
+ * order-dependent.  Plain userspace memory: fork-safe.
+ * ------------------------------------------------------------------ */
+
+#define HASHSTREAM_SYM DUK_HIDDEN_SYMBOL("hashstream")
+
+typedef struct {
+    EVP_MD_CTX     *mdctx;
+    const EVP_MD   *md;
+    pthread_mutex_t lock;
+    int             refs;
+} RPHASHSTREAM;
+
+static RPHASHSTREAM *get_hashstream(duk_context *ctx, const char *fname)
+{
+    RPHASHSTREAM *h = NULL;
+
+    /* `this` must be on top of the stack */
+    if(duk_get_prop_string(ctx, -1, HASHSTREAM_SYM))
+        h = (RPHASHSTREAM *) duk_get_pointer(ctx, -1);
+    duk_pop(ctx);
+    if(!h)
+        RP_THROW(ctx, "%s - not a HashStream handle", fname);
+    return h;
+}
+
+static duk_ret_t duk_rp_hashstream_update(duk_context *ctx)
+{
+    duk_size_t in_len;
+    void *in = REQUIRE_STR_TO_BUF(ctx, 0, &in_len,
+        "HashStream.update - argument must be a string or buffer");
+    RPHASHSTREAM *h;
+    int ok;
+
+    duk_push_this(ctx);
+    h = get_hashstream(ctx, "HashStream.update");
+
+    pthread_mutex_lock(&h->lock);
+    ok = EVP_DigestUpdate(h->mdctx, in, (size_t)in_len);
+    pthread_mutex_unlock(&h->lock);
+    if(!ok)
+        DUK_OPENSSL_ERROR(ctx);
+
+    return 1;   /* `this` on top: chainable */
+}
+
+static duk_ret_t duk_rp_hashstream_final(duk_context *ctx)
+{
+    RPHASHSTREAM *h;
+    EVP_MD_CTX *snap;
+    unsigned char *md_value;
+    unsigned int md_len;
+    int ok;
+
+    duk_push_this(ctx);
+    h = get_hashstream(ctx, "HashStream.final");
+
+    /* allocate before taking the lock: duktape may error-longjmp */
+    md_value = duk_push_dynamic_buffer(ctx, EVP_MAX_MD_SIZE);
+
+    snap = EVP_MD_CTX_new();
+    if(!snap)
+        RP_THROW(ctx, "HashStream.final - EVP_MD_CTX_new failed");
+
+    /* snapshot the running context; the live one keeps streaming */
+    pthread_mutex_lock(&h->lock);
+    ok = EVP_MD_CTX_copy_ex(snap, h->mdctx);
+    pthread_mutex_unlock(&h->lock);
+    if(!ok)
+    {
+        EVP_MD_CTX_free(snap);
+        DUK_OPENSSL_ERROR(ctx);
+    }
+
+    /* XOFs (shake/cshake) need FinalXOF -- same handling as crypto.hash */
+    if(EVP_MD_get_flags(h->md) & EVP_MD_FLAG_XOF)
+    {
+        md_len = (unsigned int)EVP_MD_get_size(h->md);
+        ok = EVP_DigestFinalXOF(snap, md_value, (size_t)md_len);
+    }
+    else
+        ok = EVP_DigestFinal_ex(snap, md_value, &md_len);
+    EVP_MD_CTX_free(snap);
+    if(!ok)
+        DUK_OPENSSL_ERROR(ctx);
+
+    duk_resize_buffer(ctx, -1, (duk_size_t)md_len);
+    rc_finalize_buffer(ctx, 0);
+    return 1;
+}
+
+static duk_ret_t duk_rp_hashstream_finalizer(duk_context *ctx)
+{
+    RPHASHSTREAM *h = NULL;
+    int refs;
+
+    if(duk_get_prop_string(ctx, 0, HASHSTREAM_SYM))
+        h = (RPHASHSTREAM *) duk_get_pointer(ctx, -1);
+    duk_pop(ctx);
+    if(!h)
+        return 0;
+
+    pthread_mutex_lock(&h->lock);
+    refs = --h->refs;
+    pthread_mutex_unlock(&h->lock);
+    if(!refs)
+    {
+        pthread_mutex_destroy(&h->lock);
+        EVP_MD_CTX_free(h->mdctx);
+        free(h);
+    }
+    return 0;
+}
+
+static duk_ret_t duk_rp_hashstream_copy_callback(duk_context *ctx)
+{
+    RPHASHSTREAM *h = NULL;
+
+    if(duk_get_prop_string(ctx, 0, HASHSTREAM_SYM))
+        h = (RPHASHSTREAM *) duk_get_pointer(ctx, -1);
+    duk_pop(ctx);
+    if(!h)
+        RP_THROW(ctx, "error in copy of HashStream handle to new thread");
+
+    pthread_mutex_lock(&h->lock);
+    h->refs++;
+    pthread_mutex_unlock(&h->lock);
+    return 0;
+}
+
+static duk_ret_t duk_rp_hashstream(duk_context *ctx)
+{
+    const char *algo = "sha256";
+    const EVP_MD *md;
+    EVP_MD_CTX *mdctx;
+    RPHASHSTREAM *h = NULL;
+
+    if(!duk_is_undefined(ctx, 0) && !duk_is_null(ctx, 0))
+        algo = REQUIRE_STRING(ctx, 0,
+            "crypto.HashStream - argument (hash type) must be a string");
+
+    md = EVP_get_digestbyname(algo);
+    if(!md)
+        RP_THROW(ctx, "crypto.HashStream - \"%s\" is not a valid hash function", algo);
+
+    mdctx = EVP_MD_CTX_new();
+    if(!mdctx)
+        RP_THROW(ctx, "crypto.HashStream (%s) - EVP_MD_CTX_new failed", algo);
+    if(!EVP_DigestInit_ex(mdctx, md, NULL))
+    {
+        EVP_MD_CTX_free(mdctx);
+        DUK_OPENSSL_ERROR(ctx);
+    }
+
+    REMALLOC(h, sizeof(RPHASHSTREAM));
+    h->mdctx = mdctx;
+    h->md    = md;
+    h->refs  = 1;
+    pthread_mutex_init(&h->lock, NULL);
+
+    /* return our own self-contained object (replaces the default instance
+     * under `new`; also works as a plain call).  Methods live ON the
+     * object, not a prototype, so thread copies stay whole. */
+    duk_push_object(ctx);
+    duk_push_pointer(ctx, h);
+    duk_put_prop_string(ctx, -2, HASHSTREAM_SYM);
+    duk_push_string(ctx, algo);
+    duk_put_prop_string(ctx, -2, "type");
+    duk_push_c_function(ctx, duk_rp_hashstream_update, 1);
+    duk_put_prop_string(ctx, -2, "update");
+    duk_push_c_function(ctx, duk_rp_hashstream_final, 1);
+    duk_put_prop_string(ctx, -2, "final");
+    duk_push_c_function(ctx, duk_rp_hashstream_copy_callback, 1);
+    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("objOnCopyCallback"));
+    duk_push_c_function(ctx, duk_rp_hashstream_finalizer, 1);
+    duk_set_finalizer(ctx, -2);
+
+    return 1;
+}
+
 /**
  * Uses RAND_bytes to fill a buffer with random data.
  * @param {uint} the output length of the buffer to be returned
@@ -6980,6 +7171,7 @@ const duk_function_list_entry crypto_funcs[] = {
     {"seed", duk_seed_rand, 1},
     {"hmac", duk_hmac, 4},
     {"hash", duk_hash, 3},
+    {"HashStream", duk_rp_hashstream, 1},
     {"rsa_pub_encrypt", duk_rsa_pub_encrypt, 3},
     {"rsa_priv_decrypt", duk_rsa_priv_decrypt, 4},
     {"rsa_sign", duk_rsa_sign, 3},

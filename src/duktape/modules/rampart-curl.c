@@ -2151,24 +2151,40 @@ WriteCallback(void *contents, size_t size, size_t nmemb, void *userp)
 
 
     /*
-         If both not doing skipFinalRes and not doing a chunk callback (see CURLOPT_HTTP_TRANSFER_DECODING in new_request())
-           or if in header
-           or if server is not sending chunked encoding
-         Then grow and fill buffer.
+         Grow and fill the result buffer when:
+           - this is a header (always kept: the final result needs them,
+             and they are small), OR
+           - the caller did NOT ask for skipFinalRes, and either there is
+             no chunkCallback (an ordinary fetch, the body IS the result)
+             or the server is not chunk-framing (so there is nothing to
+             parse below and the bytes are handed over as they arrive).
 
-         Otherwise if we have chunk encoding that we need to handle manually below
-         (because server has encoding:chunked set, and we have a chunkCallback)
+         skipFinalRes DOMINATES.  It used to be one disjunct among three,
+         so `!GOTCHUNKED' alone could satisfy the condition -- and
+         GOTCHUNKED is set only for `Transfer-Encoding: chunked'.  Every
+         server that sends Content-Length instead (which is every large
+         file download: CDNs, HuggingFace, a plain static file server)
+         left it clear, so the whole body accumulated despite the caller
+         explicitly asking that it not be.  Downloading ~100GB of models
+         in one process reached 81.7GB resident and was OOM-killed.
+
+         chunkCallback works either way and must keep working either way:
+         the delivery paths below handle both the framed and unframed
+         cases.  Whether the body is ALSO retained for a final result is a
+         separate question, and that is what skipFinalRes answers.
     */
     if(
-        (
-          !CHECK_BIT(req->flags,CURLREQ_F_PROGRESS_ONLY)
-            &&
-          !req->chunkfuncptr
-        )
-          ||
         mem->isheader
           ||
-        !CHECK_BIT(req->flags, CURLREQ_F_GOTCHUNKED)
+        (
+          !CHECK_BIT(req->flags, CURLREQ_F_PROGRESS_ONLY)
+            &&
+          (
+            !req->chunkfuncptr
+              ||
+            !CHECK_BIT(req->flags, CURLREQ_F_GOTCHUNKED)
+          )
+        )
     ){
         REMALLOC(mem->text, (mem->size + realsize + 1));
         memcpy(&(mem->text[mem->size]), contents, realsize);

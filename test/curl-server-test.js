@@ -313,6 +313,55 @@ testFeature("server/curl chunking", function(){
     return ( hash1 == hash2 && hash2==hash3 && lastprogsz == res1.length && shortsizes==1);
 });
 
+/* skipFinalRes must suppress the retained body -- and must do so whether
+   or not the server chunk-frames the response.
+
+   It was honoured only for `Transfer-Encoding: chunked'.  Every server
+   that sends Content-Length instead (any large file download) accumulated
+   the whole body anyway, so a process fetching many large files grew by
+   one byte per byte transferred.  The test above cannot catch it: it has
+   `skipFinalRes' commented out, so the option had no coverage at all.
+
+   chunkCallback must keep delivering every byte in both cases; what
+   skipFinalRes governs is only whether a second copy is kept. */
+testFeature("curl skipFinalRes suppresses the body (chunked response)", function() {
+    var got=0, body=-1;
+    curl.fetch('https://localhost:8287/chunk.txt', {
+        insecure:true,
+        skipFinalRes: true,
+        chunkCallback: function(res){ got += res.body.length; },
+        callback: function(res){
+            body = (res.body === undefined || res.body === null) ? 0 : res.body.length;
+        }
+    });
+    return (got == stat(ctestfile).size && body === 0);
+});
+
+testFeature("curl skipFinalRes suppresses the body (Content-Length response)", function() {
+    /* /sample is served with a Content-Length, so GOTCHUNKED stays clear --
+       the case that used to accumulate regardless of the flag. */
+    var got=0, body=-1;
+    curl.fetch('https://localhost:8287/sample', {
+        insecure:true,
+        skipFinalRes: true,
+        chunkCallback: function(res){ got += res.body.length; },
+        callback: function(res){
+            body = (res.body === undefined || res.body === null) ? 0 : res.body.length;
+        }
+    });
+    return (got > 0 && body === 0);
+});
+
+testFeature("curl without skipFinalRes still returns the body", function() {
+    var got=0, body=-1;
+    curl.fetch('https://localhost:8287/sample', {
+        insecure:true,
+        chunkCallback: function(res){ got += res.body.length; },
+        callback: function(res){ body = res.body ? res.body.length : 0; }
+    });
+    return (got > 0 && body === got);
+});
+
 
 /* On MSYS/Cygwin, SSL handshakes are slower and prior keepalive connections
    occupy server threads, so async transfers need longer timeouts. */
