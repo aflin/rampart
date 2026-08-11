@@ -3183,14 +3183,45 @@ TXvecExcerptChunkScores(const char *query, void *vecData, size_t vecBytes,
     const void *cellsPtr;
     const char *err_msg = NULL;
     int rc = -1;
+    /* Per-thread latch shared by both "embedding unavailable" exits
+     * below; see the comment at the first of them. */
+    static __thread int warnedNoEmbed = 0;
 
     if (!query || !*query || !vecData || vecBytes == 0 ||
         !scoresOut || !kOut)
         return -1;
     elsz = vec_dtype_elsz(colType & DDTYPEBITS);
     if (elsz == 0) return -1;
+    /* LATCHED, unlike the LIKEV sites: this function is called PER ROW
+     * (see the header comment -- the embedder caches by text so repeat
+     * calls are cheap), so an unguarded putmsg would emit once per row
+     * and overrun the 4 KB message buffer.  One message per episode of
+     * "embedding unavailable", per thread; the latch clears on the first
+     * success, so a later genuine failure is still reported.
+     *
+     * Reachable independently of the LIKEV paths: excerpt() with a query
+     * string but no likev in the statement never goes through predopt's
+     * auto-embed, and would otherwise return no scores with nothing
+     * said.
+     *
+     * TWO conditions, one latch, because they mean the same thing to the
+     * caller.  No callback at all is the fresh-process case; a callback
+     * that returns zero cells is the commoner one, since
+     * TXregisterEmbedFunc keeps a file-static global -- once ANY
+     * connection sets llamaEmbed the callback is registered process-wide
+     * while the model stays per-connection. */
     efn = TXgetEmbedFunc(&ud);
-    if (!efn) return -1;
+    if (!efn)
+    {
+        if (!warnedNoEmbed)
+        {
+            warnedNoEmbed = 1;
+            putmsg(MWARN, "excerpt",
+                   "Chunk scoring needs to embed the query text but no "
+                   "embedding function is registered -- set llamaEmbed");
+        }
+        return -1;
+    }
 
     TXvecValDecode(vecData, vecBytes, elsz, &vv);
     cellsPtr = vv.cells;
@@ -3199,7 +3230,19 @@ TXvecExcerptChunkScores(const char *query, void *vecData, size_t vecBytes,
     cells = dataBytes / elsz;
 
     qdim = efn(ud, query, strlen(query), TXEMBED_QUERY, NULL, 0, &qv);
-    if (qdim == 0 || !qv) return -1;
+    if (qdim == 0 || !qv)
+    {
+        /* Callback present, no vector back: same latch, same meaning. */
+        if (!warnedNoEmbed)
+        {
+            warnedNoEmbed = 1;
+            putmsg(MWARN, "excerpt",
+                   "Chunk scoring: the embedding callback returned no "
+                   "vector -- is llamaEmbed set for this connection?");
+        }
+        return -1;
+    }
+    warnedNoEmbed = 0;
     if ((cells % qdim) != 0) goto done;
     kChunks = cells / qdim;
 
@@ -3314,6 +3357,18 @@ TXvecIxVecIndex(const char *iname, const char *sysindexParams,
         if (t == FTN_CHAR) {
             void *embed_ud = NULL;
             TXembedFunc embed_fn = TXgetEmbedFunc(&embed_ud);
+            if (!embed_fn)
+                /* Text RHS and no embedder, so the parameter can never
+                 * become a vector.  Say so: the caller's only other
+                 * signal is the generic "would require linear search"
+                 * refusal, which describes an INDEXING problem and
+                 * sends the reader to `allinear' instead of to the
+                 * missing model.  Index selection runs once per
+                 * statement, so this does not repeat per row. */
+                putmsg(MWARN, fn,
+                    "INDEX_VEC `%s': query is text but no embedding "
+                    "function is registered -- set llamaEmbed (or pass "
+                    "a vector parameter)", iname);
             if (embed_fn) {
                 size_t text_len = 0;
                 const char *text = (const char *)getfld(infld, &text_len);

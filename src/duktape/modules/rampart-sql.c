@@ -1104,13 +1104,20 @@ char *rp_msg_init(void)
     return rp_errmap;
 }
 
+static void rp_msg_finalize(void);   /* defined below, used by the macros */
+
+/* rp_msg_finalize() first in each of these: the Error text is taken
+ * straight from finfo->errmap, and must be the same bytes rp_log_error()
+ * puts in this.errMsg. */
 #define throw_tx_error(ctx,pref) do{\
+    rp_msg_finalize();\
     duk_push_string(ctx, finfo->errmap);\
     rp_log_error(ctx);\
     RP_THROW(ctx, "%s error: %s",pref, duk_get_string(ctx,-1));\
 }while(0)
 
 #define throw_tx_error_close(ctx,pref,h) do{\
+    rp_msg_finalize();\
     duk_push_string(ctx, finfo->errmap);\
     rp_log_error(ctx);\
     h_close(h);\
@@ -1118,15 +1125,33 @@ char *rp_msg_init(void)
 }while(0)
 
 
+/* True when this thread's mmsgfh is the stream that writes the buffer we
+ * are about to read.  For a forked connection finfo->errmap is instead the
+ * shared map the helper child writes, and mmsgfh refers to an unrelated
+ * per-thread buffer, so its position says nothing about the map. */
+#define rp_msgbuf_is_ours() \
+    (mmsgfh != NULL && finfo != NULL && finfo->errmap != NULL && finfo->errmap == rp_errmap)
+
+/* Reset the capture buffer to a known-empty state.
+ *
+ * The WHOLE buffer is zeroed, not just the first byte.  texis writes
+ * through mmsgfh, an fmemopen() stream, and fmemopen only writes its own
+ * NUL when a write extends past the buffer's previous high-water mark.
+ * A message shorter than the one before it therefore leaves the older
+ * message's tail in place -- and every reader here uses strlen(), so it
+ * would report the new message with the old one's tail still attached.
+ * Zeroing makes any subsequent write self-terminating, identically on the
+ * in-process and helper-child paths. */
 #define clearmsgbuf() do {                \
     if(mmsgfh == NULL) rp_msg_init();     \
-    fseek(mmsgfh, 0, SEEK_SET);           \
-    if(finfo && finfo->errmap)            \
-        finfo->errmap[0]='\0';            \
-    else {                                \
-        fwrite("\0", 1, 1, mmsgfh);       \
+    if(mmsgfh) {                          \
+        fflush(mmsgfh);                   \
         fseek(mmsgfh, 0, SEEK_SET);       \
     }                                     \
+    if(finfo && finfo->errmap)            \
+        memset(finfo->errmap, 0, msgbufsz);\
+    else if(rp_errmap)                    \
+        memset(rp_errmap, 0, msgbufsz);   \
 } while(0)
 
 
@@ -1135,6 +1160,16 @@ char *rp_msg_init(void)
    **************************************************   */
 static void rp_log_copy_to_errMsg(duk_context *ctx, char *msg)
 {
+    /* Nothing to add.  Without this, appending an empty message to an
+     * existing errMsg still runs the "%s\n%s" join below and tacks on a
+     * bare newline -- and rp_log_error() is called several times per
+     * statement (after params, after exec, at end/end_query), so a
+     * message logged early picked up a trailing newline from every
+     * later no-op call.  That is what made query() and exec() report
+     * different text for one identical failure. */
+    if(!msg || !*msg)
+        return;
+
     duk_push_this(ctx);
     if(duk_get_prop_string(ctx, -1, "errMsg"))
     {
@@ -1156,31 +1191,78 @@ static void rp_log_copy_to_errMsg(duk_context *ctx, char *msg)
     duk_pop(ctx);
 }
 
+/* Terminate the capture buffer at the stream's write position.
+ *
+ * ftell() is the authority on where the current message ends; strlen() is
+ * not, because fmemopen leaves the previous (longer) message's tail in
+ * place behind a shorter one.  Only ever terminates when the stream has
+ * actually been written to this round: pos == 0 means nothing came through
+ * mmsgfh, and the buffer may hold a message written directly with
+ * snprintf() (rp_add_named_parameters does exactly that), which must not
+ * be truncated away.  Terminating at a position past a directly-written
+ * message is harmless -- strlen() stops at its NUL first. */
+static void rp_msg_terminate(void)
+{
+    long pos;
+
+    if(!mmsgfh || !finfo || !finfo->errmap)
+        return;
+
+    fflush(mmsgfh);
+    pos = ftell(mmsgfh);
+    if(pos <= 0)
+        return;
+    if(pos > msgbufsz - 1)
+        pos = msgbufsz - 1;
+    finfo->errmap[pos] = '\0';
+}
+
+/* Bring the buffer to its final, readable form: terminated at the end of
+ * the current message, with one trailing newline removed.  Idempotent.
+ *
+ * Everything that reads the buffer must go through this, including the
+ * throw macros -- they format the Error text straight out of
+ * finfo->errmap, so if only rp_log_error() finalized it the thrown
+ * message and this.errMsg would differ by a trailing newline for the
+ * same failure. */
+static void rp_msg_finalize(void)
+{
+    int pos;
+
+    if(!finfo || !finfo->errmap)
+        return;
+
+    /* In the helper child the buffer is always the one our own mmsgfh
+     * wrote; in the parent only when the connection is in-process. */
+    if(RP_TX_isforked || rp_msgbuf_is_ours())
+        rp_msg_terminate();
+
+    pos = (int) strlen(finfo->errmap);
+    if(pos && finfo->errmap[pos-1]=='\n')
+        finfo->errmap[pos-1]='\0';
+}
+
 static int rp_log_error(duk_context *ctx)
 {
-    if(RP_TX_isforked)
-    {
-        int pos=ftell(mmsgfh);
-        if(pos>msgbufsz-1)
-            pos=msgbufsz-1;
+    if(!finfo || !finfo->errmap)
+        return 0;
 
-        if(pos && finfo->errmap[pos-1]=='\n')
-            pos--;
-        finfo->errmap[pos]='\0';
-            return 0;
-    }
-    else
-    {
-        int pos = strlen(finfo->errmap);
-        if(pos && finfo->errmap[pos-1]=='\n')
-            finfo->errmap[pos-1]='\0';
-    }
+    rp_msg_finalize();
+
+    /* Helper child: no JS `this` to log to.  Finalizing the shared map is
+     * the whole job -- the parent reads it with strlen(). */
+    if(RP_TX_isforked)
+        return 0;
 
     int ret = (int) !!(finfo->errmap[0]); //simple !!strlen()
 
     rp_log_copy_to_errMsg(ctx, finfo->errmap);
-    finfo->errmap[0]='\0';
-    if(RPTHR_TEST(get_current_thread(), RPTHR_FLAG_THR_SAFE))
+
+    /* Full clear + rewind, not just errmap[0]='\0': a later, shorter
+     * message in this same statement would otherwise be read with this
+     * one's tail attached.  See clearmsgbuf(). */
+    memset(finfo->errmap, 0, msgbufsz);
+    if(rp_msgbuf_is_ours())
         rewind(mmsgfh);
 
     return ret;
@@ -5786,6 +5868,12 @@ static duk_ret_t rp_sql_import(duk_context *ctx, int isfile)
     /* clear the sql.errMsg string */
     duk_del_prop_string(ctx,-1,"errMsg");
 
+    /* ...and the capture buffer behind it, as exec() does at its entry.
+     * Without this an unread message left by an earlier statement is
+     * still in the buffer, and the first rp_log_error() here reports it
+     * as though this import had produced it. */
+    clearmsgbuf();
+
     if (!duk_get_prop_string(ctx, -1, "db"))
     {
         closecsv;
@@ -6640,17 +6728,27 @@ void check_parse(char *sql,char *new_sql,char **names,int n_names)
 }
 */
 
+/* Note the ordering: the error object is FORMATTED first (it reads msg,
+ * which is normally finfo->errmap), then rp_log_error() copies the same
+ * text to this.errMsg and clears the buffer, and only then do we throw.
+ * RP_THROW() does not return, so doing it first -- as this macro used to
+ * -- left rp_log_error() unreachable for exec(), and exec() failures here
+ * silently never reached errMsg while the identical failure through
+ * throw_tx_or_log_error_close() did.  Same shape as that macro now. */
 #define throw_tx_or_log_error(ctx,pref,msg) do{\
+    rp_msg_finalize();\
     if(!isquery) \
-        RP_THROW(ctx, "%s error: %s",pref, msg);\
+        duk_push_error_object(ctx, DUK_ERR_ERROR, "%s error: %s",pref, msg);\
     else\
         duk_push_null(ctx);\
     rp_log_error(ctx);\
+    if(!isquery) (void) duk_throw(ctx);\
     goto end_query;\
 }while(0)
 
 // close resets finfo->errmap
 #define throw_tx_or_log_error_close(ctx,pref,msg,h) do{\
+    rp_msg_finalize();\
     if(!isquery) \
         duk_push_error_object(ctx, DUK_ERR_ERROR, "%s error: %s",pref, msg);\
     else\
@@ -9143,6 +9241,12 @@ static duk_ret_t rp_texis_set(duk_context *ctx)
     if(duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("pass")))
         pass=duk_get_string(ctx, -1);
     duk_pop(ctx);
+
+    /* clear the sql.errMsg string, as exec() and the importers do.
+     * rp_log_copy_to_errMsg() APPENDS, so without this a warning raised
+     * by sql.set() is joined onto whatever error the previous statement
+     * left behind, and errMsg grows across unrelated calls. */
+    duk_del_prop_string(ctx,-1,"errMsg");
 
     if (!duk_get_prop_string(ctx, -1, "db"))
         RP_THROW(ctx, "no database is open");

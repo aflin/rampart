@@ -3669,7 +3669,26 @@ TXpredMMVAutoEmbed(DBTBL *tb, PRED *p)
 		return(0);
 	embed_fn = TXgetEmbedFunc(&embed_ud);
 	if (!embed_fn)
+	{
+		/* The RHS is text (checked above) and there is no embed
+		 * function, so the parameter can never become a vector.
+		 * Say so HERE: the downstream symptom is the generic
+		 * "would require linear search" refusal, which describes
+		 * an indexing problem and sends the reader to `allinear'
+		 * instead of to the missing model.  The per-row reporter
+		 * in fldops.c (FOP_MMV, "operands must be vector or byte
+		 * types") never runs, because that refusal happens first.
+		 *
+		 * A vector or byte parameter needs no model and returned
+		 * above, so this cannot fire for the normal indexed form.
+		 * Called at most twice per statement -- once from
+		 * predopt, once from tup_eval under `mmvEmbedTried' --
+		 * so it does not repeat per row. */
+		putmsg(MERR + UGE, "LIKEV",
+		       "Query on `%s' is text but no embedding function is registered: set llamaEmbed (or pass a vector parameter)",
+		       dname);
 		return(0);
+	}
 	col_type = fld->type & DDTYPEBITS;
 	if (col_type == FTN_BYTE)
 	{
@@ -3761,8 +3780,30 @@ TXpredMMVAutoEmbed(DBTBL *tb, PRED *p)
 			free(cbytes);
 		}
 	}
-	else if (evec)
-		free(evec);
+	else
+	{
+		/* The callback IS registered but produced nothing.  This is
+		 * the common shape in a long-running process: TXregisterEmbed
+		 * Func stores a file-static global (vecindex.c g_embed_fn),
+		 * so once ANY connection sets llamaEmbed the callback stays
+		 * registered process-wide -- while the model itself is
+		 * per-connection.  A connection that never set llamaEmbed
+		 * therefore sails past the !embed_fn check above and lands
+		 * here with zero cells.
+		 *
+		 * embed() and chunkembed() already report this ("embed
+		 * callback returned no vector"); without this LIKEV stayed
+		 * silent and left only the generic "would require linear
+		 * search" refusal, which points at `allinear' instead.
+		 *
+		 * Called at most twice per statement -- once from predopt,
+		 * once from tup_eval under `mmvEmbedTried' -- not per row. */
+		putmsg(MERR + UGE, "LIKEV",
+		       "Query on `%s': the embedding callback returned no vector -- is llamaEmbed set for this connection?",
+		       dname);
+		if (evec)
+			free(evec);
+	}
 	return(0);
 }
 
