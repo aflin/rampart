@@ -60,6 +60,7 @@ add_dependencies(tsql     texisapi-h ${JANSSON_PREFIX})
 # libgfortran chain in DT_NEEDED).  See extern/texis/texisapi/CMakeLists.txt
 # for the BUILD_SRCS/VEC_SRCS split and txdummyver.c for the vec stubs
 # that make the lean link succeed.
+
 target_link_libraries(rex       LINK_PUBLIC texisbuild)
 target_link_libraries(metamorph LINK_PUBLIC texisbuild)
 target_link_libraries(backref   LINK_PUBLIC texisbuild)

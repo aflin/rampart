@@ -477,9 +477,16 @@ IF(PARSERS_FOUND)
     #DBTBL Database Tables
     aufunx.c
 
-    #for vdist used in aufunx.c/sql-userfunc.c - ajf 2025-10-25
-    ${CMAKE_SOURCE_DIR}/extern/SimSIMD/c/lib.c
-    ${CMAKE_SOURCE_DIR}/src/duktape/globals/vector-distance.c
+    # vdist (used by aufunx.c/fldops.c/vecindex.c - ajf 2025-10-25) is NOT
+    # here: SimSIMD/c/lib.c + vector-distance.c now build once into the
+    # `rp_vecdist` static library below, which the rampart binary and the
+    # texis apps link.  They used to be compiled into BOTH the rampart
+    # executable and this library, so rampart-sql.so and the executable each
+    # carried a definition of rp_vector_distance/rp_runtime_caps -- an ODR
+    # violation ASAN aborts on, and one where the executable's copy silently
+    # won for everybody via ELF interposition.  rampart-sql.so now carries an
+    # undefined reference instead, resolved from the rampart binary (which
+    # sets ENABLE_EXPORTS for exactly this, cf. libdeflate).
 
     # NOTE: vec sources (vecindex.c, vecindex_aux_btree.c,
     # vec_blas_probe.c, plus the usearch HNSW backend lib.cpp) live in
@@ -941,6 +948,41 @@ IF(PARSERS_FOUND)
     PROPERTIES
       COMPILE_FLAGS "${SIMSIMD_WARN} ${SIMSIMD_FLAGS}"
   )
+
+  # ----- rp_vecdist: ONE definition of the simsimd distance layer --------
+  # Built here (not in BUILD_SRCS) so it lands in exactly one image per
+  # process.  Linked by the `rampart` executable and by the texis apps that
+  # reference rp_vector_distance (tsql, addtable, kdbfchk).  Deliberately
+  # NOT linked into rampart-sql.so: that module resolves the symbol from the
+  # rampart binary at dlopen, which is what already happened in practice via
+  # ELF interposition -- the difference is that it is now the only
+  # definition, rather than a second one shadowed by the first.
+  #
+  # Being a STATIC library, adding it to an app that does not reference it
+  # costs nothing: the linker simply never pulls the members in.
+  add_library(rp_vecdist STATIC
+    ${CMAKE_SOURCE_DIR}/extern/SimSIMD/c/lib.c
+    ${CMAKE_SOURCE_DIR}/src/duktape/globals/vector-distance.c
+  )
+  target_include_directories(rp_vecdist PUBLIC
+    ${CMAKE_SOURCE_DIR}/extern/SimSIMD/include)
+  # PIC so a future shared-library consumer can link it without a rebuild.
+  set_target_properties(rp_vecdist PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
+  # Attach it to both libraries so EVERY executable linking them inherits
+  # it -- fldops.c, aufunx.c, predopt.c and vecindex.c all reference
+  # rp_vector_distance()/rpvec_*, so the test tools and build helpers need
+  # it just as much as tsql does.
+  #
+  # This deliberately does NOT reach rampart-sql.so: that target links
+  # libtexisapi.a by FILE PATH (see src/CMakeLists.txt), not as a CMake
+  # target, so INTERFACE_LINK_LIBRARIES is not propagated to it and the
+  # module keeps the undefined reference it resolves from the rampart
+  # binary.  If rampart-sql is ever switched to link the `texisapi` target
+  # by name, it will start pulling rp_vecdist in and the duplicate
+  # definition -- and the ODR violation -- comes back.
+  target_link_libraries(texisbuild PUBLIC rp_vecdist)
+  target_link_libraries(texisapi   PUBLIC rp_vecdist)
 
 ELSE(PARSERS_FOUND)
 

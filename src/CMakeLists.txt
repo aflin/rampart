@@ -128,9 +128,13 @@ add_executable(rampart
     #duktape/globals/rampart-map.c
     duktape/globals/rampart-import.c
     duktape/globals/rampart-thread.c
-    ${PROJECT_SOURCE_DIR}/extern/SimSIMD/c/lib.c
+    # SimSIMD/c/lib.c + vector-distance.c are NOT compiled here: they build
+    # once into the rp_vecdist static library (extern/texis/texisapi/
+    # CMakeLists.txt), which this target links below.  Compiling them here
+    # as well put a second copy of rp_vector_distance/rp_runtime_caps in
+    # rampart-sql.so -- an ODR violation, with the executable's copy
+    # silently winning for both images via ELF interposition.
     duktape/globals/rampart-vector.c
-    duktape/globals/vector-distance.c
     duktape/globals/rp_tz.c
     duktape/globals/csv_parser.c
     duktape/globals/hash_random/cityhash.c
@@ -346,20 +350,10 @@ message("-- ${GREEN}lib.c enable flags: ${SIMSIMD_ENABLE_TARGETS}${RESET}")
 # flags so the wrapper functions outside the pragma blocks stay plain
 # x86_64.  The kernel bodies still emit AVX inside their `#pragma GCC
 # target(...)` blocks.
-set_source_files_properties(
-  ${CMAKE_SOURCE_DIR}/extern/SimSIMD/c/lib.c
-  PROPERTIES
-    COMPILE_FLAGS "-O3 ${SIMSIMD_WARN} ${SIMSIMD_FLAGS} ${SIMSIMD_ENABLE_TARGETS}"
-)
 # Consumers: SIMSIMD_DYNAMIC_DISPATCH=1 routes simsimd_capabilities and
 # simsimd_find_kernel_punned through lib.c's runtime dispatcher rather than
 # inlining a serial-only fallback.  This is what makes vector.distance() and
 # vecdist() actually use AVX kernels at runtime when the host CPU has them.
-set_source_files_properties(
-  ${CMAKE_SOURCE_DIR}/src/duktape/globals/vector-distance.c
-  PROPERTIES
-    COMPILE_FLAGS "-O3 ${SIMSIMD_WARN} ${SIMSIMD_FLAGS}"
-)
 
 set_source_files_properties(
   ${CMAKE_SOURCE_DIR}/src/duktape/globals/rampart-vector.c
@@ -367,17 +361,7 @@ set_source_files_properties(
     COMPILE_FLAGS "-O3 ${SIMSIMD_WARN} ${SIMSIMD_FLAGS}"
 )
 
-set_source_files_properties(
-  ${PROJECT_SOURCE_DIR}/extern/SimSIMD/c/lib.c
-  PROPERTIES
-    COMPILE_FLAGS "-O3 ${SIMSIMD_WARN} ${SIMSIMD_FLAGS} ${SIMSIMD_ENABLE_TARGETS}"
-)
 
-set_source_files_properties(
-  duktape/globals/vector-distance.c
-  PROPERTIES
-    COMPILE_FLAGS "-O3 ${SIMSIMD_WARN} ${SIMSIMD_FLAGS}"
-)
 
 add_dependencies(rampart texisapi timestamp)
 
@@ -789,6 +773,17 @@ set_target_properties(rampart-sql PROPERTIES
     BUILD_RPATH     "\$ORIGIN/../lib"
 )
 
+# rampart-sql.so does NOT link rp_vecdist: rp_vector_distance() resolves
+# from the rampart binary at dlopen (ENABLE_EXPORTS), so there is exactly
+# one copy per process instead of one here and one in the executable.
+# macOS will not link a shared library with an unresolved symbol unless
+# told to look it up at load time -- the same flag every other rampart
+# module already carries (see the block near the end of this file).
+if (APPLE)
+    set_property(TARGET rampart-sql APPEND_STRING
+        PROPERTY LINK_FLAGS " -undefined dynamic_lookup")
+endif()
+
 ###REDIS###
 add_library(rampart-redis SHARED
     duktape/modules/rampart-redis.c
@@ -917,6 +912,26 @@ target_include_directories(rampart PRIVATE
     ${PROJECT_BINARY_DIR}/extern/libdeflate/
 )
 add_dependencies(rampart libdeflate)
+
+# rp_vecdist: the ONE copy of the simsimd distance layer (SimSIMD/c/lib.c +
+# vector-distance.c), defined in extern/texis/texisapi/CMakeLists.txt.
+# rampart-vector.c here and aufunx.c/fldops.c/vecindex.c inside texis both
+# call into it.  --whole-archive because ENABLE_EXPORTS is what lets
+# rampart-sql.so resolve rp_vector_distance from this binary at dlopen:
+# without it the linker would drop any member this binary does not itself
+# reference, and the module would fail to load.  Same reasoning as
+# LIBDEFLATE_LINK just above.
+if (APPLE)
+    target_link_libraries(rampart LINK_PUBLIC
+        -Wl,-force_load,$<TARGET_FILE:rp_vecdist>)
+else()
+    target_link_libraries(rampart LINK_PUBLIC
+        -Wl,--whole-archive $<TARGET_FILE:rp_vecdist> -Wl,--no-whole-archive)
+endif()
+add_dependencies(rampart rp_vecdist)
+target_include_directories(rampart PRIVATE
+    ${CMAKE_SOURCE_DIR}/extern/SimSIMD/include
+)
 
 # upa-url static lib (WHATWG URL parser + UTS #46 IDN). C++17.
 # Linking it into the rampart binary requires CXX linker driver so

@@ -1154,6 +1154,21 @@ static void rp_msg_finalize(void);   /* defined below, used by the macros */
         memset(rp_errmap, 0, msgbufsz);   \
 } while(0)
 
+/* Move whatever is already in the buffer to this.errMsg, THEN start
+ * clean.  Use this wherever the buffer is being emptied to isolate the
+ * next operation's message -- a bare clearmsgbuf() there silently drops
+ * whatever the previous operation had to say.  sql.set() applies many
+ * properties in a loop and clears before each setprop(), so without this
+ * only the last property's warning could ever reach errMsg.
+ *
+ * rp_log_error() alone is not enough: in the helper child it finalizes
+ * the shared map for the parent and returns without clearing, so the
+ * clearmsgbuf() must follow it on both sides. */
+#define logandclearmsgbuf(ctx) do {       \
+    rp_log_error(ctx);                    \
+    clearmsgbuf();                        \
+} while(0)
+
 
 /* **************************************************
      store an error string in this.errMsg
@@ -7814,7 +7829,7 @@ static int sql_defaults(duk_context *ctx, TEXIS *tx, char *errbuf)
     int i=0;
     char **props;
 
-    clearmsgbuf();
+    logandclearmsgbuf(ctx);
 
     lpstmt = tx->hstmt;
     if(lpstmt && lpstmt->dbc && lpstmt->dbc->ddic)
@@ -8398,6 +8413,115 @@ static int setup_clip_main(duk_context *ctx, const char *model_path,
 }
 
 // returns -1 for bad option, -2 for setprop error, 0 for ok, 1 for ok with return value
+/* Compile an index word expression the way the indexer will, so a bad one
+ * is rejected by sql.set() instead of being stored and only failing (or
+ * silently never matching) when an index is later built.  setprop()
+ * stores the expression list verbatim; it is openrlex()/rlex_addexp() that
+ * compiles it, with TXrexSyntax_Rex -- which is what openrex() is given
+ * here, so this accepts and rejects exactly what the indexer would.
+ *
+ * Two prefixed forms are passed through unchecked:
+ *   \<re2\>...   an RE2 expression.  Rare in practice, and whether it can
+ *                be compiled at all depends on whether RE2 was built in,
+ *                so judging it is deliberately left to texis.
+ *   \<nomatch\>  meaningful only alongside other expressions, i.e. exactly
+ *                the rexlex context these end up in; openrex() rejects it
+ *                standalone by design, so compiling it here would reject a
+ *                legal value.
+ *
+ * Returns 1 if the expression is usable, 0 if not. */
+static int expr_compiles(const char *expr)
+{
+    FFS *fs;
+
+    if(!expr)
+        return 0;
+
+    if(expr[0]=='\\' && expr[1]=='<')
+    {
+        if(!strncmp(expr+2, "re2\\>",     5)) return 1;
+        if(!strncmp(expr+2, "nomatch\\>", 9)) return 1;
+    }
+
+    if( !(fs = openrex((byte *)expr, TXrexSyntax_Rex)) )
+        return 0;
+
+    closerex(fs);
+    return 1;
+}
+
+/* setprop() properties whose value texis converts with atoi(), atol(),
+ * atof(), strtol() or strtod() without checking that anything was
+ * consumed -- so a non-numeric string silently becomes 0 and the setting
+ * is quietly wrong (`sql.set({qmaxsets:"ten"})` set it to zero and
+ * reported success).  Swept from extern/texis/texisapi/setprop.c.
+ *
+ * Deliberately NOT listed, because each also accepts a keyword or boolean
+ * form that a numeric test would wrongly reject -- setprop() tests them
+ * with strcmpi(value,...) or TXgetBooleanOrInt():
+ *
+ *     exactphrase          also "ignorewordposition", true/false
+ *     likepobeyintersects  also boolean
+ *     phrasewordproc       also boolean
+ *     querysettings        also "defaults" / "texis5defaults"
+ *
+ * MUST remain sorted: searched with bsearch(). */
+static const char * const numeric_props[] = {
+    "allineardict", "btreecachesize", "btreedump", "btreeoptimizeoff",
+    "btreeoptimizeon", "btreethreshold", "cleanupwait", "dbcleanupverbose",
+    "debugmalloc", "dedupmultiitemresults", "dropwordmode", "eastpositive",
+    "enablesubsetintersect", "findselloopcheck", "fldmathverbosemaxvaluesize",
+    "indexappend", "indexblock", "indexbtreeexclusive", "indexchunk",
+    "indexdump", "indexmaxsingle", "indexminsublen", "indexmmap",
+    "indexslurp", "indextrace", "indexversion", "indexwritesplit",
+    "infpercent", "infthresh", "kdbfiostats", "kdbfoptimizeoff",
+    "kdbfoptimizeon", "kdbfverify", "likepmode", "likeprows", "likeptime",
+    "likerpercent", "likerrows", "likevef", "likevpqnprobe", "likevrows",
+    "lockbatchrows", "lockbatchtime", "locksleepdecrement",
+    "locksleepincrement", "locksleepmaxtime", "locksleepmethod",
+    "locksleeptime", "matchmode", "maxindextext", "maxlinearrows",
+    "maxrows", "mdparmodifyterms", "mergeflush", "minwordlen",
+    "predopttype", "qmaxsets", "qmaxsetwords", "qmaxterms", "qmaxwords",
+    "qminprelen", "qminwordlen", "ramlimit", "ramrows",
+    "strlstrelopvarcharpromoteviacreate", "traceddcache", "traceidx",
+    "traceindex", "tracekdbf", "tracemetamorph", "tracerppm",
+    "triggermode", "uniqnewlist", "usestringcomparemodeforstrlst",
+    "vecpqmaxtrainsamples", "vecpqoverfetchpad", "verbose", "verifysingle",
+    "wildoneword", "wildsingle", "wildsufmatch"
+};
+
+static int cmp_str_ptr(const void *a, const void *b)
+{
+    return strcmp(*(const char * const *)a, *(const char * const *)b);
+}
+
+static int prop_is_numeric(const char *prop)
+{
+    if(!prop) return 0;
+    return bsearch(&prop, numeric_props,
+                   sizeof(numeric_props)/sizeof(numeric_props[0]),
+                   sizeof(numeric_props[0]), cmp_str_ptr) != NULL;
+}
+
+/* Whether `s' is entirely a number.  JS Numbers and Booleans have already
+ * been stringified ("10", "10.5", "1", "0") by the time we get here, so
+ * this only ever rejects a string the script actually wrote. */
+static int is_numeric_string(const char *s)
+{
+    char *end;
+
+    if(!s || !*s)
+        return 0;
+
+    (void) strtod(s, &end);
+    if(end == s)
+        return 0;
+    while(*end && isspace((unsigned char)*end))
+        end++;
+
+    return *end == '\0';
+}
+
 static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
 {
     LPSTMT lpstmt;
@@ -8414,7 +8538,7 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
      * h_set), against the engine key present in the same merged object. */
     g_doccache_cap_pending = -1;
 
-    clearmsgbuf();
+    logandclearmsgbuf(ctx);
 
     if(!tx)
     {
@@ -8458,7 +8582,7 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
         while( (glst=TXgetglobalindextmp()) != NULL &&
                glst[0] && strlen(glst[0]) )
         {
-            clearmsgbuf();
+            logandclearmsgbuf(ctx);
             if(setprop(ddic, "delindextmp", "0")==-1)
             {
                 snprintf(errbuf, msgbufsz, "sql.set: %s", finfo->errmap); /* F13 */
@@ -8469,7 +8593,7 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
         {
             duk_get_prop_index(ctx, -1, (duk_uarridx_t)i);
             val = duk_get_string(ctx, -1);
-            clearmsgbuf();
+            logandclearmsgbuf(ctx);
             if(setprop(ddic, "addindextmp", (char*)val )==-1)
             {
                 snprintf(errbuf, msgbufsz, "sql.set: %s", finfo->errmap); /* F13: errmap can be ~4095 bytes */
@@ -8491,7 +8615,7 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
         while( (glst=TXgetglobalexp()) != NULL &&
                glst[0] && strlen(glst[0]) )
         {
-            clearmsgbuf();
+            logandclearmsgbuf(ctx);
             if(setprop(ddic, "delexp", "0" )==-1)
             {
                 snprintf(errbuf, msgbufsz, "sql.set: %s", finfo->errmap); /* F13 */
@@ -8502,7 +8626,7 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
         {
             duk_get_prop_index(ctx, -1, (duk_uarridx_t)i);
             val = duk_get_string(ctx, -1);
-            clearmsgbuf();
+            logandclearmsgbuf(ctx);
             if(setprop(ddic, "addexp", (char*)val )==-1)
             {
                 snprintf(errbuf, msgbufsz, "sql.set: %s", finfo->errmap); /* F13: errmap can be ~4095 bytes */
@@ -9053,6 +9177,15 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
                         sprintf(errbuf, "sql.set: addExpressions - array must be an array of strings or expressions\n");
                         goto return_neg_one;
                     }
+
+                    if(!expr_compiles(aval))
+                    {
+                        rp_msg_finalize();
+                        snprintf(errbuf, msgbufsz,
+                                 "sql.set: addExpressions - invalid expression '%s'%s%s",
+                                 aval, finfo->errmap[0] ? ": " : "", finfo->errmap);
+                        goto return_neg_one;
+                    }
                 }
                 else
                 {
@@ -9064,7 +9197,7 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
                     aval=duk_get_string(ctx, -1);
                 }
 
-                clearmsgbuf();
+                logandclearmsgbuf(ctx);
                 if(setprop(ddic, (char*)prop, (char*)aval )==-1)
                 {
                     snprintf(errbuf, msgbufsz, "sql.set: %s", finfo->errmap); /* F13: errmap can be ~4095 bytes */
@@ -9109,7 +9242,31 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
             }
            */
 
-            clearmsgbuf();
+            /* texis converts these with atoi()/strtod() and never checks,
+             * so a typo would silently set the property to 0. */
+            if(prop_is_numeric(prop) && !is_numeric_string(val))
+            {
+                snprintf(errbuf, msgbufsz,
+                         "sql.set: %s must be a Number, got '%s'", prop, val);
+                goto return_neg_one;
+            }
+
+            /* the single-value form of addExpressions; the array form is
+             * checked per element above */
+            if(!strcmp(prop, "addexp"))
+            {
+                logandclearmsgbuf(ctx);
+                if(!expr_compiles(val))
+                {
+                    rp_msg_finalize();
+                    snprintf(errbuf, msgbufsz,
+                             "sql.set: addExpressions - invalid expression '%s'%s%s",
+                             val, finfo->errmap[0] ? ": " : "", finfo->errmap);
+                    goto return_neg_one;
+                }
+            }
+
+            logandclearmsgbuf(ctx);
             //printf("setprop(%s, %s)\n", prop, val);
             if(setprop(ddic, (char*)prop, (char*)val )==-1)
             {
@@ -9224,6 +9381,76 @@ static void clean_settings(duk_context *ctx)
     duk_pop(ctx);//the settings list object
 }
 
+/* Normalize the expression settings in the object on top of the stack:
+ * a RegExp becomes its .source, whether it is an array element or the
+ * bare single value.  Validates nothing and never throws.
+ *
+ * This used to live inside an `if (DB_HANDLE_IS(h, DB_FLAG_FORK))` block.
+ * The CBOR rationale for it is fork-only -- a RegExp does not survive the
+ * trip to the helper -- but the conversion itself is needed on both
+ * paths: in-process a single RegExp reached setprop() stringified as
+ * "/pat/flags" and came back "invalid value".
+ *
+ * It also REQUIRED an array and threw otherwise, which rejected the
+ * documented single-value form ("a single additional, or an array of
+ * additional REX expression", and likewise for delExp) -- but only on the
+ * forked path, so `sql.set({addexp: "[\\alnum]+"})` worked in-process and
+ * failed through a helper.  Worse, it threw AFTER the new settings had
+ * been merged into sql_settings and BEFORE h_set, i.e. past the only
+ * place that rolls them back, so the rejected value stayed in the stored
+ * settings and was replayed -- and re-thrown -- by every later set() on
+ * that connection.
+ *
+ * Nothing is validated here on purpose.  Bad values are rejected by
+ * sql_set()/setprop() below, which is the same code in-process and in the
+ * helper child, so both paths reject exactly the same things. */
+static void normalize_exp_settings(duk_context *ctx)
+{
+    duk_enum(ctx, -1, 0);
+    while (duk_next(ctx, -1, 1))
+    {
+        const char *k = duk_get_string(ctx, -2);
+
+        if( k &&
+            (
+                !strcasecmp("addexp",k)           ||
+                !strcasecmp("addexpressions",k)   ||
+                !strcmp("delexpressions", k)      ||
+                !strcmp("deleteexpressions", k)   ||
+                !strcasecmp("delexp",k)
+            )
+        )
+        {
+            if(duk_is_array(ctx, -1))
+            {
+                duk_uarridx_t ix=0, len=duk_get_length(ctx, -1);
+
+                while (ix < len)
+                {
+                    duk_get_prop_index(ctx, -1, ix);
+                    if(duk_is_object(ctx,-1) && duk_has_prop_string(ctx,-1,"source") )
+                    {
+                        duk_get_prop_string(ctx, -1,"source");
+                        duk_put_prop_index(ctx, -3, ix);
+                    }
+                    duk_pop(ctx);
+                    ix++;
+                }
+            }
+            else if(duk_is_object(ctx,-1) && duk_has_prop_string(ctx,-1,"source"))
+            {
+                /* the single-value form, given as a RegExp.  stack is
+                   [ settings, enum, key, value ]; settings is at -5 once
+                   the source string is pushed. */
+                duk_get_prop_string(ctx, -1, "source");
+                duk_put_prop_string(ctx, -5, k);
+            }
+        }
+        duk_pop_2(ctx);
+    }
+    duk_pop(ctx);
+}
+
 static duk_ret_t rp_texis_set(duk_context *ctx)
 {
     const char *db, *user="PUBLIC", *pass="";
@@ -9231,6 +9458,15 @@ static duk_ret_t rp_texis_set(duk_context *ctx)
     int ret = 0;
     char errbuf[msgbufsz];
     char propa[64], *prop=&propa[0];
+
+    /* Same entry sequence as rp_sql_exec_query() and rp_sql_import():
+     * empty the capture buffer FIRST, so nothing this call reports can be
+     * a leftover from an earlier one -- and, just as important, so that
+     * everything from here on (h_open, h_reset_tx_default, and the
+     * per-property work below) is reported rather than discarded.  This
+     * used to sit after h_open/h_reset_tx_default, which threw away any
+     * message they produced. */
+    clearmsgbuf();
 
     duk_push_this(ctx); //idx == 1
 
@@ -9262,8 +9498,6 @@ static duk_ret_t rp_texis_set(duk_context *ctx)
     }
 
     h_reset_tx_default(ctx, h, -1, FORCE_RESET);
-
-    clearmsgbuf();
 
     if(!duk_is_object(ctx, 0) || duk_is_array(ctx, 0) || duk_is_function(ctx, 0) )
         RP_THROW(ctx, "sql.set() - object with {prop:value} expected as parameter - got '%s'",duk_safe_to_string(ctx, 0));
@@ -9337,47 +9571,9 @@ static duk_ret_t rp_texis_set(duk_context *ctx)
       DUK_HIDDEN_SYMBOL("sql_settings"));     // [ this, combined_settings ]
     duk_remove(ctx, 0);                       // [ combined_settings ]
 
-    /* going to a child proc: regular expressions in addexp don't
-     * survive cbor, so fix them up before h_set ships the settings */
-    if(DB_HANDLE_IS(h, DB_FLAG_FORK))
-    {
-        // regular expressions in addexp don't survive cbor,
-        // so get the source expression and replace in array
-        // before sending to child
-        duk_enum(ctx, -1, 0);
-        while (duk_next(ctx, -1, 1))
-        {
-            const char *k = duk_get_string(ctx, -2);
-            if(
-                !strcasecmp("addexp",k)           ||
-                !strcasecmp("addexpressions",k)   ||
-                !strcmp("delexpressions", k)      ||
-                !strcmp("deleteexpressions", k)   ||
-                !strcasecmp("delexp",k)
-            )
-            {
-                duk_uarridx_t ix=0, len;
-
-                if(!duk_is_array(ctx, -1))
-                    RP_THROW(ctx, "sql.set: %s - array must be an array of strings or expressions\n", k);
-
-                len=duk_get_length(ctx, -1);
-                while (ix < len)
-                {
-                    duk_get_prop_index(ctx, -1, ix);
-                    if(duk_is_object(ctx,-1) && duk_has_prop_string(ctx,-1,"source") )
-                    {
-                        duk_get_prop_string(ctx, -1,"source");
-                        duk_put_prop_index(ctx, -3, ix);
-                    }
-                    duk_pop(ctx);
-                    ix++;
-                }
-            }
-            duk_pop_2(ctx);
-        }
-        duk_pop(ctx);
-    }
+    /* Replace any RegExp in the expression settings with its source text,
+     * on BOTH paths -- see normalize_exp_settings(). */
+    normalize_exp_settings(ctx);
 
     /* Apply through h_set -- the same path exec-time re-application
      * uses -- so an embed key attaches the model AND its retrieval
@@ -9404,10 +9600,25 @@ static duk_ret_t rp_texis_set(duk_context *ctx)
 
         h_close(h);
 
-        if(ret == -1)
-            RP_THROW(ctx, "%s", errbuf);
+        /* Report identically however the failure got here.
+         *
+         * errbuf is the text to report in BOTH cases: in-process sql_set()
+         * built it as "sql.set: <errmap>", and through a helper the child
+         * built the same string and sent it up the wire.  It was not being
+         * logged on the forked path -- the message lives in errbuf, not in
+         * the parent's view of the error map -- so an identical failure set
+         * errMsg in-process and left it undefined through a helper.
+         *
+         * ret == -2 also used to go through throw_tx_error(ctx, errbuf),
+         * which formats "%s error: %s" with errbuf as the PREFIX and the
+         * error map as the suffix -- and since errbuf already embedded the
+         * map's text, every -2 failure was thrown with its message printed
+         * twice.  One RP_THROW of errbuf covers both returns. */
+        rp_msg_finalize();
+        rp_log_copy_to_errMsg(ctx, errbuf);
+        clearmsgbuf();
 
-        throw_tx_error(ctx, errbuf);
+        RP_THROW(ctx, "%s", errbuf);
     }
 
     h_end_transaction(h);
