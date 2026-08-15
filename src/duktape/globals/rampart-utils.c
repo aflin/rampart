@@ -2329,11 +2329,543 @@ duk_ret_t duk_rp_strToBuf(duk_context *ctx)
     return 1;
 }
 
+/* ================================================================== *
+ * charset detection and conversion to UTF-8
+ * ------------------------------------------------------------------ *
+ *
+ * See rampart.h for why this lives in the core binary rather than in a
+ * module.  The short version: TextDecoder (in the duktape fork),
+ * rampart-totext.so, and JS callers holding an HTTP charset all need
+ * it, and none of them can depend on the others.
+ *
+ * THE LADDER.  Detection is not one technique, it is four in order of
+ * how much it can be trusted, and the cheap certain ones come first:
+ *
+ *   1. BOM             decisive, three byte comparisons
+ *   2. declared        the caller was told by a header or a markup
+ *                      declaration; believe it
+ *   3. valid UTF-8     a full scan that also answers "is it ASCII";
+ *                      valid text is passed through untouched, which is
+ *                      the overwhelmingly common case
+ *   4. windows-1252    the fallback, and deliberately not a guess
+ *                      between Latin encodings
+ *
+ * WHY 1252 RATHER THAN ANY DETECTOR.  Statistical detection was
+ * measured before this was written (claude-work/rfc/detect-test.py):
+ * it is reliable for multi-byte and Cyrillic text -- 0.99 confidence,
+ * correct -- and unreliable for exactly the Latin family we fall back
+ * on, calling both cp1252 and ISO-8859-1 German text "ISO-8859-9" at
+ * 0.63, and a short line "ISO-8859-7" at 0.31.  Those encodings share
+ * byte ranges and differ only in which letter each maps to, so no
+ * amount of statistics separates them from a paragraph.
+ *
+ * windows-1252 is the right fallback because it is a SUPERSET of
+ * ISO-8859-1 across the printable range: decoding Latin-1 as 1252 is
+ * lossless, while decoding 1252 as Latin-1 turns curly quotes into C1
+ * control characters -- the exact corruption that started this work
+ * (RFC 2166, 18 stray bytes in 75 KB of ASCII).
+ *
+ * A caller that knows better passes `declared'.  That is why the
+ * declaration rung exists and why HTTP headers and <meta charset> are
+ * worth plumbing through: they beat any guess we could make here.
+ * ================================================================== */
+
+#include <iconv.h>
+
+/* windows-1252, 0x80-0x9F only.  The rest of the range is identical to
+ * ISO-8859-1, i.e. the byte IS the codepoint, so only the C1 window
+ * needs a table.  Used when iconv is unavailable -- glibc loads its
+ * converters from /usr/lib/gconv, and a stripped container can have
+ * none, which must degrade rather than fail. */
+static const unsigned short rp_cp1252_c1[32] = {
+    0x20AC, 0x0081, 0x201A, 0x0192, 0x201E, 0x2026, 0x2020, 0x2021,
+    0x02C6, 0x2030, 0x0160, 0x2039, 0x0152, 0x008D, 0x017D, 0x008F,
+    0x0090, 0x2018, 0x2019, 0x201C, 0x201D, 0x2022, 0x2013, 0x2014,
+    0x02DC, 0x2122, 0x0161, 0x203A, 0x0153, 0x009D, 0x017E, 0x0178
+};
+
+/* WHATWG Encoding Standard labels -> names iconv knows.  Not the whole
+ * table: the encodings the standard actually defines, by their common
+ * labels.  TextDecoder needs this to be conformant; totext gets it for
+ * free.  NULL return means "not an encoding the standard defines",
+ * which is what makes TextDecoder throw a RangeError. */
+static const struct { const char *label; const char *iconv_name; }
+rp_charset_labels[] = {
+    { "utf-8", "UTF-8" }, { "utf8", "UTF-8" }, { "unicode-1-1-utf-8", "UTF-8" },
+    { "utf-16le", "UTF-16LE" }, { "utf-16", "UTF-16LE" },
+    { "utf-16be", "UTF-16BE" },
+    { "windows-1252", "WINDOWS-1252" }, { "cp1252", "WINDOWS-1252" },
+    { "ansi_x3.4-1968", "WINDOWS-1252" }, { "ascii", "WINDOWS-1252" },
+    { "us-ascii", "WINDOWS-1252" }, { "iso-8859-1", "WINDOWS-1252" },
+    { "iso8859-1", "WINDOWS-1252" }, { "latin1", "WINDOWS-1252" },
+    { "l1", "WINDOWS-1252" }, { "cp819", "WINDOWS-1252" },
+    /* the standard maps iso-8859-1 to windows-1252 deliberately; so do we */
+    { "iso-8859-2", "ISO-8859-2" }, { "latin2", "ISO-8859-2" },
+    { "iso-8859-3", "ISO-8859-3" }, { "iso-8859-4", "ISO-8859-4" },
+    { "iso-8859-5", "ISO-8859-5" }, { "cyrillic", "ISO-8859-5" },
+    { "iso-8859-6", "ISO-8859-6" }, { "arabic", "ISO-8859-6" },
+    { "iso-8859-7", "ISO-8859-7" }, { "greek", "ISO-8859-7" },
+    { "iso-8859-8", "ISO-8859-8" }, { "hebrew", "ISO-8859-8" },
+    { "iso-8859-10", "ISO-8859-10" }, { "iso-8859-13", "ISO-8859-13" },
+    { "iso-8859-14", "ISO-8859-14" },
+    { "iso-8859-15", "ISO-8859-15" }, { "latin9", "ISO-8859-15" },
+    { "iso-8859-16", "ISO-8859-16" },
+    { "windows-1250", "WINDOWS-1250" }, { "cp1250", "WINDOWS-1250" },
+    { "windows-1251", "WINDOWS-1251" }, { "cp1251", "WINDOWS-1251" },
+    { "windows-1253", "WINDOWS-1253" }, { "windows-1254", "WINDOWS-1254" },
+    { "windows-1255", "WINDOWS-1255" }, { "windows-1256", "WINDOWS-1256" },
+    { "windows-1257", "WINDOWS-1257" }, { "windows-1258", "WINDOWS-1258" },
+    { "koi8-r", "KOI8-R" }, { "koi8r", "KOI8-R" },
+    { "koi8-u", "KOI8-U" }, { "koi8-ru", "KOI8-RU" },
+    { "macintosh", "MACINTOSH" }, { "x-mac-cyrillic", "MAC-CYRILLIC" },
+    { "shift_jis", "SHIFT_JIS" }, { "shift-jis", "SHIFT_JIS" },
+    { "sjis", "SHIFT_JIS" }, { "windows-31j", "CP932" }, { "ms932", "CP932" },
+    { "euc-jp", "EUC-JP" }, { "iso-2022-jp", "ISO-2022-JP" },
+    { "euc-kr", "EUC-KR" }, { "windows-949", "CP949" },
+    { "gbk", "GBK" }, { "gb18030", "GB18030" }, { "gb2312", "GBK" },
+    { "big5", "BIG5" }, { "big5-hkscs", "BIG5-HKSCS" },
+    { NULL, NULL }
+};
+
+const char *rp_charset_from_label(const char *label)
+{
+    char norm[64];
+    size_t i, n = 0;
+
+    if(!label) return NULL;
+    /* the standard strips leading/trailing whitespace and lowercases */
+    while(*label == ' ' || *label == '\t' || *label == '\n' ||
+          *label == '\r' || *label == '\f') label++;
+    for(i = 0; label[i] && n < sizeof(norm) - 1; i++)
+    {
+        char c = label[i];
+        if(c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f')
+            continue;
+        norm[n++] = (c >= 'A' && c <= 'Z') ? (char)(c + 32) : c;
+    }
+    norm[n] = 0;
+
+    for(i = 0; rp_charset_labels[i].label; i++)
+        if(!strcmp(norm, rp_charset_labels[i].label))
+            return rp_charset_labels[i].iconv_name;
+    return NULL;
+}
+
+/* Bytes in a valid UTF-8 sequence starting at buf[0], or 0 if the
+ * sequence is invalid.  Rejects overlong forms, surrogates and values
+ * past U+10FFFF: a decoder that accepts those is how invalid text gets
+ * as far as a duktape string. */
+static int rp_utf8_seq_len(const unsigned char *buf, size_t remaining)
+{
+    unsigned char b = buf[0];
+    unsigned long cp;
+    int len, k;
+
+    if(b < 0x80) return 1;
+    if(b < 0xC2) return 0;                 /* continuation, or overlong */
+    else if(b < 0xE0) { len = 2; cp = b & 0x1F; }
+    else if(b < 0xF0) { len = 3; cp = b & 0x0F; }
+    else if(b < 0xF5) { len = 4; cp = b & 0x07; }
+    else return 0;
+
+    if(remaining < (size_t)len) return -len;   /* incomplete, not invalid */
+
+    for(k = 1; k < len; k++)
+    {
+        if((buf[k] & 0xC0) != 0x80) return 0;
+        cp = (cp << 6) | (unsigned long)(buf[k] & 0x3F);
+    }
+    if(len == 3 && cp < 0x800) return 0;                    /* overlong */
+    if(len == 4 && (cp < 0x10000 || cp > 0x10FFFF)) return 0;
+    if(cp >= 0xD800 && cp <= 0xDFFF) return 0;              /* surrogate */
+    return len;
+}
+
+void rp_charset_detect(const unsigned char *buf, size_t len,
+                       const char *declared, rp_charset_info *out)
+{
+    size_t i = 0;
+    int ascii = 1;
+
+    out->is_ascii = 0;
+    out->tail_at  = len;
+
+    if(len >= 3 && buf[0] == 0xEF && buf[1] == 0xBB && buf[2] == 0xBF)
+    { out->charset = "UTF-8";    out->source = RP_CS_SRC_BOM; return; }
+    if(len >= 2 && buf[0] == 0xFF && buf[1] == 0xFE)
+    { out->charset = "UTF-16LE"; out->source = RP_CS_SRC_BOM; return; }
+    if(len >= 2 && buf[0] == 0xFE && buf[1] == 0xFF)
+    { out->charset = "UTF-16BE"; out->source = RP_CS_SRC_BOM; return; }
+
+    if(declared && *declared)
+    {
+        const char *nm = rp_charset_from_label(declared);
+        if(nm) { out->charset = nm; out->source = RP_CS_SRC_DECLARED; return; }
+        /* an unrecognised label is not a reason to mangle the text;
+         * fall through and look at the bytes */
+    }
+
+    while(i < len)
+    {
+        int n;
+        if(buf[i] < 0x80) { i++; continue; }
+        ascii = 0;
+        n = rp_utf8_seq_len(buf + i, len - i);
+        if(n <= 0)
+        {
+            /* A truncated sequence at the very end is not evidence of a
+             * different encoding -- it is a chunk boundary.  It is also
+             * NOT something the caller may be handed: a string ending
+             * mid-character throws from the first operation that touches
+             * it, which is the whole failure this code exists to stop.
+             * Record where it starts and let the conversion decide --
+             * replaced with U+FFFD, or kept as `tail' when streaming. */
+            if(n < 0 && (i + (size_t)(-n)) >= len) { out->tail_at = i; break; }
+            out->charset = "WINDOWS-1252";
+            out->source  = RP_CS_SRC_ASSUMED;
+            return;
+        }
+        i += (size_t)n;
+    }
+
+    out->charset  = "UTF-8";
+    out->source   = RP_CS_SRC_VALID_UTF8;
+    out->is_ascii = ascii;
+}
+
+/* windows-1252 -> UTF-8 without iconv.  Only used when iconv_open()
+ * fails, which on glibc means the gconv modules are missing. */
+static int rp_cp1252_to_utf8(const unsigned char *buf, size_t len,
+                             rp_charset_result *out)
+{
+    size_t i, n = 0, cap = len * 3 + 1;
+    char *o = malloc(cap);
+
+    if(!o) return -1;
+    for(i = 0; i < len; i++)
+    {
+        unsigned long cp = buf[i];
+        if(cp >= 0x80 && cp <= 0x9F) cp = rp_cp1252_c1[cp - 0x80];
+        if(cp < 0x80) o[n++] = (char)cp;
+        else if(cp < 0x800)
+        {
+            o[n++] = (char)(0xC0 | (cp >> 6));
+            o[n++] = (char)(0x80 | (cp & 0x3F));
+        }
+        else
+        {
+            o[n++] = (char)(0xE0 | (cp >> 12));
+            o[n++] = (char)(0x80 | ((cp >> 6) & 0x3F));
+            o[n++] = (char)(0x80 | (cp & 0x3F));
+        }
+    }
+    o[n] = 0;
+    out->text = o;
+    out->len  = n;
+    return 0;
+}
+
+int rp_charset_to_utf8(const unsigned char *buf, size_t len,
+                       const char *from, int flags,
+                       rp_charset_result *out, const char **err)
+{
+    rp_charset_info info;
+    iconv_t cd;
+    char *obuf, *op;
+    const char *ip;
+    size_t ileft, oleft, ocap;
+
+    memset(out, 0, sizeof(*out));
+    if(err) *err = NULL;
+
+    rp_charset_detect(buf, len, from, &info);
+    out->charset = info.charset;
+    out->source  = info.source;
+
+    /* Already UTF-8 and valid: hand back a copy and touch nothing.  The
+     * common case, and the one that must stay cheap. */
+    if(info.source == RP_CS_SRC_VALID_UTF8 ||
+       (info.source == RP_CS_SRC_BOM && !strcmp(info.charset, "UTF-8")))
+    {
+        size_t skip = (info.source == RP_CS_SRC_BOM) ? 3 : 0;
+        size_t good = (info.tail_at < len) ? info.tail_at : len;
+        size_t keep, extra = 0;
+
+        if(skip > good) skip = good;
+        keep = good - skip;
+
+        /* an incomplete final sequence: kept for the next chunk when
+         * streaming, otherwise replaced, exactly as iconv's EINVAL is
+         * handled on the converting path below */
+        if(info.tail_at < len && !(flags & RP_CS_STREAM))
+        {
+            if(flags & RP_CS_FATAL)
+            { if(err) *err = "incomplete sequence at end of input"; return -1; }
+            extra = 3;
+        }
+
+        out->text = malloc(keep + extra + 1);
+        if(!out->text) { if(err) *err = "out of memory"; return -1; }
+        memcpy(out->text, buf + skip, keep);
+        if(extra)
+        {
+            out->text[keep]     = (char)0xEF;
+            out->text[keep + 1] = (char)0xBF;
+            out->text[keep + 2] = (char)0xBD;
+            out->repairs = 1;
+        }
+        else if(info.tail_at < len)
+            out->tail = len - info.tail_at;
+        out->text[keep + extra] = 0;
+        out->len = keep + extra;
+        return 0;
+    }
+
+    cd = iconv_open("UTF-8", info.charset);
+    if(cd == (iconv_t)-1)
+    {
+        /* No converter.  windows-1252 we can still do ourselves, which
+         * covers the case this was written for. */
+        if(!strcmp(info.charset, "WINDOWS-1252"))
+        {
+            if(rp_cp1252_to_utf8(buf, len, out) < 0)
+            { if(err) *err = "out of memory"; return -1; }
+            return 0;
+        }
+        if(err) *err = "no converter for this charset";
+        return -1;
+    }
+
+    ocap  = len * 2 + 16;
+    obuf  = malloc(ocap);
+    if(!obuf) { iconv_close(cd); if(err) *err = "out of memory"; return -1; }
+    op    = obuf;
+    oleft = ocap;
+    ip    = (const char *)buf;
+    ileft = len;
+
+    while(ileft)
+    {
+        size_t r = iconv(cd, (char **)&ip, &ileft, &op, &oleft);
+        if(r != (size_t)-1) break;
+
+        if(errno == E2BIG)
+        {
+            size_t used = (size_t)(op - obuf);
+            char *bigger;
+            ocap *= 2;
+            bigger = realloc(obuf, ocap);
+            if(!bigger)
+            { free(obuf); iconv_close(cd); if(err) *err = "out of memory"; return -1; }
+            obuf  = bigger;
+            op    = obuf + used;
+            oleft = ocap - used;
+            continue;
+        }
+        if(errno == EINVAL)
+        {
+            /* An incomplete sequence at the end.  A streaming caller
+             * must keep these bytes for the next chunk; anyone else
+             * gets them replaced. */
+            if(flags & RP_CS_STREAM) { out->tail = ileft; break; }
+            errno = EILSEQ;
+        }
+        if(errno == EILSEQ)
+        {
+            if(flags & RP_CS_FATAL)
+            {
+                free(obuf); iconv_close(cd);
+                if(err) *err = "undecodable byte in input";
+                return -1;
+            }
+            /* U+FFFD, as the Encoding Standard requires */
+            if(oleft < 4)
+            {
+                size_t used = (size_t)(op - obuf);
+                char *bigger;
+                ocap *= 2;
+                bigger = realloc(obuf, ocap);
+                if(!bigger)
+                { free(obuf); iconv_close(cd); if(err) *err = "out of memory"; return -1; }
+                obuf = bigger; op = obuf + used; oleft = ocap - used;
+            }
+            *op++ = (char)0xEF; *op++ = (char)0xBF; *op++ = (char)0xBD;
+            oleft -= 3;
+            ip++; ileft--;
+            out->repairs++;
+            continue;
+        }
+        free(obuf); iconv_close(cd);
+        if(err) *err = "conversion failed";
+        return -1;
+    }
+
+    iconv_close(cd);
+    if(oleft < 1)
+    {
+        size_t used = (size_t)(op - obuf);
+        char *bigger = realloc(obuf, ocap + 1);
+        if(!bigger) { free(obuf); if(err) *err = "out of memory"; return -1; }
+        obuf = bigger; op = obuf + used;
+    }
+    *op = 0;
+    out->text = obuf;
+    out->len  = (size_t)(op - obuf);
+    return 0;
+}
+
+void rp_charset_result_free(rp_charset_result *r)
+{
+    if(r && r->text) { free(r->text); r->text = NULL; r->len = 0; }
+}
+
+/* ------------------------------------------------------------------ *
+ * JS bindings
+ * ------------------------------------------------------------------ */
+
+static const char *rp_charset_source_name(rp_charset_source s)
+{
+    switch(s)
+    {
+        case RP_CS_SRC_BOM:        return "bom";
+        case RP_CS_SRC_DECLARED:   return "declared";
+        case RP_CS_SRC_VALID_UTF8: return "utf-8";
+        case RP_CS_SRC_ASSUMED:    return "assumed";
+        default:                   return "unknown";
+    }
+}
+
+/* bytes from a buffer or a string argument at idx */
+static const unsigned char *rp_charset_arg(duk_context *ctx, duk_idx_t idx,
+                                           size_t *len)
+{
+    if(duk_is_buffer_data(ctx, idx))
+        return (const unsigned char *)duk_get_buffer_data(ctx, idx, len);
+    if(duk_is_string(ctx, idx))
+        return (const unsigned char *)duk_get_lstring(ctx, idx, len);
+    return NULL;
+}
+
+/* utils.detectCharset(buffer|string [, declaredLabel])
+ *   -> {charset, source, ascii} */
+static duk_ret_t duk_rp_detect_charset(duk_context *ctx)
+{
+    size_t len = 0;
+    const unsigned char *buf = rp_charset_arg(ctx, 0, &len);
+    const char *declared = duk_is_string(ctx, 1) ? duk_get_string(ctx, 1) : NULL;
+    rp_charset_info info;
+
+    if(!buf) RP_THROW(ctx, "detectCharset: a buffer or string is required");
+
+    rp_charset_detect(buf, len, declared, &info);
+    duk_push_object(ctx);
+    duk_push_string(ctx, info.charset);
+    duk_put_prop_string(ctx, -2, "charset");
+    duk_push_string(ctx, rp_charset_source_name(info.source));
+    duk_put_prop_string(ctx, -2, "source");
+    duk_push_boolean(ctx, info.is_ascii);
+    duk_put_prop_string(ctx, -2, "ascii");
+    return 1;
+}
+
+/* utils.toUtf8(buffer|string [, {charset, fatal, stream, details}])
+ *   -> string, or {text, charset, source, repairs, tail} with details */
+static duk_ret_t duk_rp_to_utf8(duk_context *ctx)
+{
+    size_t len = 0;
+    const unsigned char *buf = rp_charset_arg(ctx, 0, &len);
+    const char *from = NULL, *err = NULL;
+    int flags = 0, details = 0;
+    rp_charset_result res;
+
+    if(!buf) RP_THROW(ctx, "toUtf8: a buffer or string is required");
+
+    if(duk_is_object(ctx, 1) && !duk_is_null(ctx, 1))
+    {
+        if(duk_get_prop_string(ctx, 1, "charset"), duk_is_string(ctx, -1))
+            from = duk_get_string(ctx, -1);
+        duk_pop(ctx);
+        if(duk_get_prop_string(ctx, 1, "fatal"), duk_to_boolean(ctx, -1))
+            flags |= RP_CS_FATAL;
+        duk_pop(ctx);
+        if(duk_get_prop_string(ctx, 1, "stream"), duk_to_boolean(ctx, -1))
+            flags |= RP_CS_STREAM;
+        duk_pop(ctx);
+        if(duk_get_prop_string(ctx, 1, "details"), duk_to_boolean(ctx, -1))
+            details = 1;
+        duk_pop(ctx);
+    }
+    else if(duk_is_string(ctx, 1))
+        from = duk_get_string(ctx, 1);
+
+    if(rp_charset_to_utf8(buf, len, from, flags, &res, &err) < 0)
+        RP_THROW(ctx, "toUtf8: %s", err ? err : "conversion failed");
+
+    if(!details)
+    {
+        duk_push_lstring(ctx, res.text, res.len);
+        rp_charset_result_free(&res);
+        return 1;
+    }
+
+    duk_push_object(ctx);
+    duk_push_lstring(ctx, res.text, res.len);
+    duk_put_prop_string(ctx, -2, "text");
+    duk_push_string(ctx, res.charset);
+    duk_put_prop_string(ctx, -2, "charset");
+    duk_push_string(ctx, rp_charset_source_name(res.source));
+    duk_put_prop_string(ctx, -2, "source");
+    duk_push_number(ctx, (double)res.repairs);
+    duk_put_prop_string(ctx, -2, "repairs");
+    duk_push_number(ctx, (double)res.tail);
+    duk_put_prop_string(ctx, -2, "tail");
+    rp_charset_result_free(&res);
+    return 1;
+}
+
+/* bufferToString(buffer [, {charset}|"charset"])
+ *
+ * THE FOOTGUN THIS FIXES.  duk_buffer_to_string() hands back whatever
+ * bytes it was given, and a duktape string holding invalid UTF-8 throws
+ * a bare "internal error" from the first String.replace() that touches
+ * it -- naming neither the cause nor the input.  That is a landmine
+ * handed to the caller by the function they naturally reach for.
+ *
+ * With no second argument the bytes are checked and, if they are not
+ * valid UTF-8, decoded as windows-1252 (see rp_charset_detect).  Valid
+ * UTF-8 and pure ASCII are passed through untouched, which is the
+ * common case and stays a single scan. */
 duk_ret_t duk_rp_bufToStr(duk_context *ctx)
 {
+    size_t len = 0;
+    const unsigned char *buf = NULL;
+    const char *from = NULL, *err = NULL;
+    rp_charset_result res;
 
-    duk_buffer_to_string(ctx, 0);
+    if(duk_is_buffer_data(ctx, 0))
+        buf = (const unsigned char *)duk_get_buffer_data(ctx, 0, &len);
 
+    if(!buf)
+    {
+        /* not a buffer: preserve the old behaviour exactly */
+        duk_buffer_to_string(ctx, 0);
+        return 1;
+    }
+
+    if(duk_is_string(ctx, 1))
+        from = duk_get_string(ctx, 1);
+    else if(duk_is_object(ctx, 1) && !duk_is_null(ctx, 1))
+    {
+        duk_get_prop_string(ctx, 1, "charset");
+        if(duk_is_string(ctx, -1)) from = duk_get_string(ctx, -1);
+        duk_pop(ctx);
+    }
+
+    if(rp_charset_to_utf8(buf, len, from, 0, &res, &err) < 0)
+        RP_THROW(ctx, "bufferToString: %s", err ? err : "conversion failed");
+
+    duk_push_lstring(ctx, res.text, res.len);
+    rp_charset_result_free(&res);
     return 1;
 }
 
@@ -7709,8 +8241,12 @@ void duk_rampart_init(duk_context *ctx)
     duk_put_prop_string(ctx, -2, "dehexify");
     duk_push_c_function(ctx, duk_rp_strToBuf, 2);
     duk_put_prop_string(ctx, -2, "stringToBuffer");
-    duk_push_c_function(ctx, duk_rp_bufToStr, 1);
+    duk_push_c_function(ctx, duk_rp_bufToStr, 2);
     duk_put_prop_string(ctx, -2, "bufferToString");
+    duk_push_c_function(ctx, duk_rp_to_utf8, 2);
+    duk_put_prop_string(ctx, -2, "toUtf8");
+    duk_push_c_function(ctx, duk_rp_detect_charset, 2);
+    duk_put_prop_string(ctx, -2, "detectCharset");
     duk_push_c_function(ctx, duk_rp_object2q, 2);
     duk_put_prop_string(ctx, -2, "objectToQuery");
     duk_push_c_function(ctx, duk_rp_query2o, 1);

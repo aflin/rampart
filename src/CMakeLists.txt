@@ -913,6 +913,16 @@ target_include_directories(rampart PRIVATE
 )
 add_dependencies(rampart libdeflate)
 
+# iconv, for the charset conversion in rampart-utils.c (rp_charset_*).
+# In libc on Linux (glibc since 2.2.5 -- verified on the manylinux 2_17
+# floor) and on FreeBSD (verified on 14.3), so nothing to link there.
+# macOS needs the system libiconv explicitly -- verified on the 11.7
+# floor, where the link fails on _iconv / _iconv_close without it.
+# DYNAMIC ONLY: that libiconv is LGPL.
+if (APPLE)
+    target_link_libraries(rampart LINK_PUBLIC iconv)
+endif()
+
 # rp_vecdist: the ONE copy of the simsimd distance layer (SimSIMD/c/lib.c +
 # vector-distance.c), defined in extern/texis/texisapi/CMakeLists.txt.
 # rampart-vector.c here and aufunx.c/fldops.c/vecindex.c inside texis both

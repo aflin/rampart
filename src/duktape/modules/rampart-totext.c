@@ -2132,20 +2132,130 @@ static const char *filetype_mimes[] = {
     "application/vnd.oasis.opendocument.spreadsheet",   /* FT_ODS */
 };
 
+/* ================================================================
+   CHARSET: file bytes -> UTF-8 before any converter touches them
+   ================================================================
+
+   WHY HERE.  convert_text() and convert_plaintext() copied file bytes
+   straight into a duktape string, and the HTML and markdown paths push
+   the raw buffer into JS.  A duktape string may only hold valid UTF-8;
+   one that does not throws a bare "internal error" from the first
+   String.replace() that touches it, naming neither the cause nor the
+   document.  Found on a corpus of RFCs, where a single file carrying 18
+   Windows-1252 quotes in 75 KB of ASCII killed a 599-document ingest at
+   number 71.
+
+   WHY NOT AT THE OUTPUT.  Because the declaration is here.  HTML says
+   what it is in a <meta charset>, XML in its declaration, and only the
+   code holding the raw bytes can read them.  A declaration beats any
+   guess, so it has to be consulted before conversion, not after.
+
+   Formats whose text comes from an extractor rather than from the file
+   are left alone: pdftotext is invoked with -enc UTF-8, and the
+   zip-based formats hold XML that carries its own declaration.  Passing
+   their bytes through here would be transcoding a zip archive.
+*/
+
+/* Look for a charset declaration in the first 2 KB: HTML's
+   <meta charset="..."> or <meta http-equiv content="...; charset=...">,
+   and XML's <?xml ... encoding="..."?>.  Returns a static buffer or
+   NULL. */
+static const char *sniff_declared_charset(const unsigned char *buf, size_t len,
+                                          filetype_t ft)
+{
+    static char found[64];
+    size_t n = len < 2048 ? len : 2048, i;
+    const char *needle = (ft == FT_XML) ? "encoding" : "charset";
+    size_t nlen = strlen(needle);
+
+    if(ft != FT_HTML && ft != FT_XML) return NULL;
+
+    for(i = 0; i + nlen + 2 < n; i++)
+    {
+        size_t j = 0, k;
+        /* case-insensitive match of the keyword */
+        while(j < nlen && tolower(buf[i + j]) == needle[j]) j++;
+        if(j < nlen) continue;
+
+        k = i + nlen;
+        while(k < n && (buf[k] == ' ' || buf[k] == '\t')) k++;
+        if(k >= n || buf[k] != '=') continue;
+        k++;
+        while(k < n && (buf[k] == ' ' || buf[k] == '\t' ||
+                        buf[k] == '"'  || buf[k] == '\'')) k++;
+
+        j = 0;
+        while(k < n && j < sizeof(found) - 1 &&
+              (isalnum(buf[k]) || buf[k] == '-' || buf[k] == '_'))
+            found[j++] = (char)buf[k++];
+        found[j] = 0;
+        if(j) return found;
+    }
+    return NULL;
+}
+
+/* Which formats take their text from the file's own bytes. */
+static int filetype_is_text_bytes(filetype_t ft)
+{
+    switch(ft)
+    {
+        case FT_TEXT: case FT_PLAINTEXT: case FT_HTML: case FT_XML:
+        case FT_MARKDOWN: case FT_LATEX: case FT_MAN: case FT_RTF:
+            return 1;
+        default:
+            return 0;
+    }
+}
+
 /* do_convert: pushes result string onto the duktape stack.
    If filename is non-NULL, PDF/DOC use file-based external tools.
    If filename is NULL (buffer mode), PDF/DOC use stdin-based tools. */
 static void do_convert(const unsigned char *buf, size_t len,
                        filetype_t ft, duk_context *ctx,
-                       const char *filename)
+                       const char *filename, const char **charset_out,
+                       const char **charset_src_out)
 {
     rp_string *result = NULL;
+    rp_charset_result cs;
+    int cs_used = 0;
+
+    if(charset_out)     *charset_out = NULL;
+    if(charset_src_out) *charset_src_out = NULL;
+
+    /* Bytes from the file itself: decode to UTF-8 first, so that every
+       converter below -- and every duktape string built from them --
+       sees valid text. */
+    if(filetype_is_text_bytes(ft) && len)
+    {
+        const char *declared = sniff_declared_charset(buf, len, ft);
+        const char *cserr = NULL;
+        if(rp_charset_to_utf8(buf, len, declared, 0, &cs, &cserr) == 0)
+        {
+            buf = (const unsigned char *)cs.text;
+            len = cs.len;
+            cs_used = 1;
+            if(charset_out) *charset_out = cs.charset;
+            if(charset_src_out)
+            {
+                switch(cs.source)
+                {
+                    case RP_CS_SRC_BOM:        *charset_src_out = "bom"; break;
+                    case RP_CS_SRC_DECLARED:   *charset_src_out = "declared"; break;
+                    case RP_CS_SRC_VALID_UTF8: *charset_src_out = "utf-8"; break;
+                    case RP_CS_SRC_ASSUMED:    *charset_src_out = "assumed"; break;
+                    default:                   *charset_src_out = "unknown"; break;
+                }
+            }
+        }
+        /* a failure here is not fatal: fall through with the original
+           bytes and let the converter do what it always did */
+    }
 
     switch(ft)
     {
         case FT_HTML:
             call_js_converter(ctx, html_convert_js, "html", buf, len);
-            return;
+            goto cleanup;
 
         case FT_MARKDOWN:
         {
@@ -2153,7 +2263,7 @@ static void do_convert(const unsigned char *buf, size_t len,
             call_js_converter(ctx, md_convert_js, "markdown",
                               (const unsigned char *)cleaned->str, cleaned->len);
             rp_string_free(cleaned);
-            return;
+            goto cleanup;
         }
 
         case FT_TEXT:      result = convert_text(buf, len);      break;
@@ -2193,21 +2303,21 @@ static void do_convert(const unsigned char *buf, size_t len,
 
         case FT_EPUB:
             convert_epub(ctx, buf, len);
-            return;
+            goto cleanup;
 
         case FT_PDF:
             if(filename)
                 call_js_with_string(ctx, pdf_convert_file_js, "pdf", filename, strlen(filename));
             else
                 call_js_converter_buf(ctx, pdf_convert_buf_js, "pdf", buf, len);
-            return;
+            goto cleanup;
 
         case FT_DOC:
             if(filename)
                 call_js_with_string(ctx, doc_convert_file_js, "doc", filename, strlen(filename));
             else
                 call_js_converter_buf(ctx, doc_convert_buf_js, "doc", buf, len);
-            return;
+            goto cleanup;
 
         case FT_UNKNOWN:
         default:
@@ -2222,8 +2332,12 @@ static void do_convert(const unsigned char *buf, size_t len,
     }
     else
         duk_push_undefined(ctx);
-}
 
+cleanup:
+    /* the decoded copy, if one was made.  `buf' pointed into it, so
+       nothing may touch buf after this. */
+    if(cs_used) rp_charset_result_free(&cs);
+}
 /* check if arg at idx is a "details" request:
    true, or {details:true} */
 static int want_details(duk_context *ctx, duk_idx_t idx)
@@ -2244,7 +2358,8 @@ static int want_details(duk_context *ctx, duk_idx_t idx)
 
 /* wrap the text result (on top of stack) in a details object if requested.
    Replaces the top-of-stack string with {text:"...", mimeType:"..."} */
-static void push_details(duk_context *ctx, filetype_t ft)
+static void push_details(duk_context *ctx, filetype_t ft,
+                         const char *charset, const char *charset_src)
 {
     /* text string is on top of stack */
     duk_push_object(ctx);
@@ -2252,6 +2367,16 @@ static void push_details(duk_context *ctx, filetype_t ft)
     duk_put_prop_string(ctx, -2, "text");
     duk_push_string(ctx, filetype_mimes[ft]);
     duk_put_prop_string(ctx, -2, "mimeType");
+    /* What the bytes were decoded FROM.  Absent for formats whose text
+       comes from an extractor rather than from the file's own bytes --
+       there is no source encoding to report for a PDF. */
+    if(charset)
+    {
+        duk_push_string(ctx, charset);
+        duk_put_prop_string(ctx, -2, "charset");
+        duk_push_string(ctx, charset_src ? charset_src : "unknown");
+        duk_put_prop_string(ctx, -2, "charsetSource");
+    }
 }
 
 /* ================================================================
@@ -2316,6 +2441,7 @@ static duk_ret_t rp_convert(duk_context *ctx)
         "convert: argument 1 must be a string or buffer");
     size_t len = (size_t)sz;
     int details = want_details(ctx, 1);
+    const char *cs_name = NULL, *cs_src = NULL;
 
     /* copy data so we can potentially decompress */
     unsigned char *buf = NULL;
@@ -2338,11 +2464,11 @@ static duk_ret_t rp_convert(duk_context *ctx)
     filetype_t ft = identify_content(buf, len, "");
 
     /* buffer mode: no filename, PDF/DOC use stdin */
-    do_convert(buf, len, ft, ctx, NULL);
+    do_convert(buf, len, ft, ctx, NULL, &cs_name, &cs_src);
     free(buf);
 
     if(details)
-        push_details(ctx, ft);
+        push_details(ctx, ft, cs_name, cs_src);
 
     return 1;
 }
@@ -2358,6 +2484,8 @@ static duk_ret_t rp_convert_file(duk_context *ctx)
     unsigned char *buf = read_file_contents(filename, &len);
     if(!buf)
         RP_THROW(ctx, "convertFile: could not read file '%s'", filename);
+
+    const char *cs_name = NULL, *cs_src = NULL;
 
     /* transparently decompress gzip */
     const char *effective_filename = filename;
@@ -2376,11 +2504,11 @@ static duk_ret_t rp_convert_file(duk_context *ctx)
     filetype_t ft = identify_content(buf, len, effective_filename);
 
     /* file mode: pass filename so PDF/DOC use file-based tools */
-    do_convert(buf, len, ft, ctx, effective_filename);
+    do_convert(buf, len, ft, ctx, effective_filename, &cs_name, &cs_src);
     free(buf);
 
     if(details)
-        push_details(ctx, ft);
+        push_details(ctx, ft, cs_name, cs_src);
 
     return 1;
 }

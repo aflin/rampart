@@ -1094,6 +1094,85 @@ void rpvec_b8_to_u8_bytes(const uint8_t* src_bits, uint8_t* dst_bytes, size_t n)
 void rpvec_i8_to_i4(const int8_t *in, uint8_t *out, size_t dim);
 void rpvec_i4_to_i8(const uint8_t *in, int8_t *out, size_t dim);
 
+
+/* ------------------------------------------------------------------ *
+ * charset detection and conversion to UTF-8   (rampart-utils.c)
+ * ------------------------------------------------------------------ *
+ *
+ * WHY THIS IS IN THE CORE BINARY AND NOT IN A MODULE.  Three callers
+ * need it and they cannot depend on each other:
+ *
+ *   - TextDecoder, which lives in the duktape fork and today rejects
+ *     every label except utf-8, contrary to the WHATWG Encoding
+ *     Standard;
+ *   - rampart-totext.so, whose text converters copy file bytes straight
+ *     into a duktape string -- a string holding invalid UTF-8 throws a
+ *     bare "internal error" from the first String.replace() that
+ *     touches it, naming neither the cause nor the document;
+ *   - JS callers holding bytes and a charset from somewhere this
+ *     library will never see: an HTTP Content-Type header, a MIME part,
+ *     an upload, a database blob.
+ *
+ * Modules resolve these symbols from the rampart process at dlopen
+ * time, the same way rampart-totext.so already resolves libdeflate.
+ *
+ * The conversion itself is iconv(3), which is in libc on Linux (since
+ * glibc 2.2.5, verified on the manylinux 2_17 floor) and on FreeBSD
+ * (verified on 14.3); macOS links the system libiconv with -liconv
+ * (verified on 11.7).  No process is ever spawned.
+ */
+
+typedef enum {
+    RP_CS_SRC_BOM = 0,      /* a byte order mark decided it            */
+    RP_CS_SRC_DECLARED,     /* the caller supplied the charset         */
+    RP_CS_SRC_VALID_UTF8,   /* it already is valid UTF-8 (or ASCII)    */
+    RP_CS_SRC_ASSUMED,      /* not valid UTF-8; assumed windows-1252   */
+    RP_CS_SRC_UNKNOWN
+} rp_charset_source;
+
+typedef struct {
+    const char       *charset;   /* canonical name, static string      */
+    rp_charset_source source;
+    int               is_ascii;  /* 7-bit only: no conversion needed   */
+    size_t            tail_at;   /* offset of an INCOMPLETE final
+                                  * sequence, or len if there is none.
+                                  * Valid UTF-8 that simply stops mid
+                                  * character is still not a string a
+                                  * caller may hold -- see the fast path
+                                  * in rp_charset_to_utf8.              */
+} rp_charset_info;
+
+typedef struct {
+    char   *text;        /* malloc'd UTF-8, NUL terminated; caller frees */
+    size_t  len;
+    size_t  repairs;     /* undecodable bytes replaced with U+FFFD       */
+    size_t  tail;        /* bytes left unconsumed: an incomplete final
+                          * sequence, which a streaming caller must
+                          * carry into the next chunk rather than
+                          * replace                                     */
+    const char *charset; /* what it was decoded AS                      */
+    rp_charset_source source;
+} rp_charset_result;
+
+#define RP_CS_FATAL   1  /* fail on undecodable input instead of U+FFFD */
+#define RP_CS_STREAM  2  /* keep an incomplete final sequence as `tail' */
+
+/* Look at the bytes and decide what they are.  Never fails. */
+void rp_charset_detect(const unsigned char *buf, size_t len,
+                       const char *declared, rp_charset_info *out);
+
+/* Convert to UTF-8.  `from' may be NULL to detect.  Returns 0 on
+ * success, -1 on failure (with *err set to a static message). */
+int rp_charset_to_utf8(const unsigned char *buf, size_t len,
+                       const char *from, int flags,
+                       rp_charset_result *out, const char **err);
+
+void rp_charset_result_free(rp_charset_result *r);
+
+/* WHATWG Encoding Standard label -> a name iconv understands.
+ * Returns NULL for a label the standard does not define. */
+const char *rp_charset_from_label(const char *label);
+
 // calculate distance/score using simsimd
 double rp_vector_distance(void *a, void *b, size_t bytesize, const char *metric, const char *datatype, const char **err);
 

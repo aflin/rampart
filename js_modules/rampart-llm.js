@@ -1074,5 +1074,10 @@ module.exports = {
     anthropic:          anthropic,
     resolveEnv:         resolveEnv,
     claudeCode:         claudeCode,
-    providerFromConfig: providerFromConfig
+    providerFromConfig: providerFromConfig,
+    /* Exported for testing.  The detector is a pure function of the
+     * token stream, so a captured degenerate generation can be replayed
+     * through it offline -- which is the only practical way to test it:
+     * the real failure appeared once in three runs, by luck. */
+    makeCycleDetector:  makeCycleDetector
 };
