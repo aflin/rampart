@@ -23,6 +23,13 @@ v0.7.1
                             tokenize every space-separated script
                             correctly by default (including ZWNJ word
                             breaks for e.g. Persian).
+                            BEHAVIOR CHANGE: hyphenPhrase now defaults to
+                            false.  A hyphen in a query used to be treated
+                            as a space, so 'state-of-the-art' searched for
+                            the phrase "state of the art" and a hyphenated
+                            term indexed as one word could not be searched
+                            for as itself.  Set hyphenPhrase to true for
+                            the old behavior.
                             rex: new '\bound' zero-width word boundary,
                             for tokens that must not begin or end on
                             punctuation, e.g. '\bound[\alnum.\-]+\bound'

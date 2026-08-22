@@ -56,7 +56,10 @@ static int  doinitct=1;
  */
 static int  CmpTabHas8bitCrossing = -1;
 static int  cmptab_locale_serial = -1;
-static int  pmhyeqsp=1;                      /* does hyphen equal space */
+static int  pmhyeqsp=0;                      /* does hyphen equal space */
+/* Was 1: a hyphen in a query was treated as a space, so `6.5-4' searched
+ * for the phrase "6.5 4" and a term indexed as one hyphenated word could
+ * not be searched for as itself.  Set with the `hyphenphrase' property. */
 #define CHARS_MATCH(ct, ch1, ch2)   ((ct)[(byte)(ch1)] == (ct)[(byte)(ch2)])
 /************************************************************************/
 void

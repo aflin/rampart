@@ -7724,7 +7724,11 @@ static char *prop_defaults[][2] = {
    {"suffixProc", "1"},
    {"rebuild", "0"},
    {"intersects", "-1"},
-   {"hyphenPhrase", "1"},
+   /* 0, not texis' 1: a hyphen in a query is otherwise treated as a
+    * space, making `6.5-4' the phrase "6.5 4" -- so a hyphenated term
+    * indexed as one word (e.g. by a `\bound' word expression) could
+    * not be searched for as itself. */
+   {"hyphenPhrase", "0"},
    {"wordc", "[\\alpha\\']"},
    {"langc", "[\\alpha\\'\\-]"},
    {"withinMode", "word span"},
