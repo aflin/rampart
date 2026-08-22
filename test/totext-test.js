@@ -229,4 +229,43 @@ testFeature("convertFile() without details returns string", function(){
     return typeof ret === 'string';
 });
 
+/* ---- a .txt that LOOKS like markdown stays text ----
+ *
+ * The markdown probe is a statistical guess between two kinds of text,
+ * and it used to outrank the extension: five of 9,822 RFCs -- plain
+ * hard-wrapped .txt, full of ASCII box-drawing -- scored as markdown
+ * off their '****' rules and '#' column labels, and cmark then joined
+ * their lines and ate their structural characters.  An explicit text
+ * extension now wins over the guess; a file with NO meaningful
+ * extension still gets it.  Binary signatures (a PDF named .txt) are
+ * unaffected -- those are signatures, not statistics. */
+
+testFeature("md-looking .txt is identified as text", function(){
+    var art = "#  Chart 1\n" +
+              "****************************\n" +
+              "**  boxes  **  and rules  **\n" +
+              "****************************\n" +
+              "#  see ```figure``` above\n";
+    fprintf(testdir + "mdish.txt", "%s", art);
+    var asTxt = totext.identify(testdir + "mdish.txt");
+    /* same bytes, no extension to trust: the sniffer may guess */
+    fprintf(testdir + "mdish.data", "%s", art);
+    var asData = totext.identify(testdir + "mdish.data");
+    rmFile(testdir + "mdish.txt");
+    rmFile(testdir + "mdish.data");
+    if(asTxt !== "text") {
+        printf("\n  .txt identified as '%s'\n", asTxt);
+        return false;
+    }
+    return asData === "markdown";
+});
+
+testFeature("pdf named .txt is still a pdf", function(){
+    var buf = readFile(testdir + "test.pdf");
+    fprintf(testdir + "liar.txt", "%s", buf);
+    var got = totext.identify(testdir + "liar.txt");
+    rmFile(testdir + "liar.txt");
+    return got === "pdf";
+});
+
 testFeature.exit();

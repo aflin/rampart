@@ -90,12 +90,19 @@ struct FFS_tag
   int   re2NumCaptureGroups;
   const char    **re2CaptureHits;               /* alloc'd */
   size_t        *re2CaptureHitSizes;            /* alloc'd */
+ byte *bufBeg;         /* `\bound': true buffer start, set by getrex() */
+ byte *bufEnd;                        /* `\bound': true buffer end */
  byte nralloced;                  /* number in `setlist' really alloced */
  byte patsize;                               /* how many sets there are */
  byte backwards;                                   /* is this backwards */
  byte root;                                 /* is this the root pattern */
  byte is_not;                                          /* is this a not */
  byte hasUni;    /* setlist[0][DYNABYTE] has a \u class mask (patsize==1) */
+ byte boundBefore;                /* `\bound' at start of subexpression */
+ byte boundAfter;                   /* `\bound' at end of subexpression */
+ byte hasBound;                 /* boundBefore|boundAfter: matcher gate */
+ byte chainHasBound;         /* some subexpression in the chain has one */
+ byte boundOnly;      /* parse-time: subexpression was just `\bound' */
 };
 #define FFSHIT(a) ((a)->hit)
 #define FFSSIZE(a) ((a)->hitsize)

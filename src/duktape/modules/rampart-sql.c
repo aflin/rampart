@@ -4395,6 +4395,53 @@ static duk_ret_t rp_sql_close(duk_context *ctx)
 
 
 
+/* defined below, after db_misc.c is included; used there to check the
+ * search expressions given to Sql.sandr() */
+static int expr_compiles(const char *expr);
+
+/* Texis reports *why* an expression is bad through putmsg(), which
+ * rp_msg_init() has pointed at this thread's capture buffer.  The
+ * connection methods read that buffer through finfo->errmap; the
+ * standalone functions in db_misc.c (Sql.rex(), Sql.rexFile(),
+ * Sql.sandr(), ...) have no connection, so they read the thread buffer
+ * directly.  Without this the caller only learns *that* an expression
+ * failed to compile, and has to reproduce it in the `rex' CLI to find
+ * out what was wrong with it.
+ */
+static void rp_msgbuf_reset(void)
+{
+    if(mmsgfh == NULL)
+        rp_msg_init();
+    if(mmsgfh)
+    {
+        fflush(mmsgfh);
+        fseek(mmsgfh, 0, SEEK_SET);
+    }
+    if(rp_errmap)
+        memset(rp_errmap, 0, msgbufsz);
+}
+
+/* Text captured since the last rp_msgbuf_reset(), or NULL if texis had
+ * nothing to say.  Trailing newlines are trimmed: the text is going into
+ * a one-line Error message. */
+static char *rp_msgbuf_text(void)
+{
+    long pos;
+
+    if(mmsgfh == NULL || rp_errmap == NULL)
+        return NULL;
+    fflush(mmsgfh);
+    pos = ftell(mmsgfh);
+    if(pos <= 0)
+        return NULL;
+    if(pos > msgbufsz - 1)
+        pos = msgbufsz - 1;
+    rp_errmap[pos] = '\0';
+    while(pos > 0 && (rp_errmap[pos-1] == '\n' || rp_errmap[pos-1] == '\r'))
+        rp_errmap[--pos] = '\0';
+    return(*rp_errmap ? rp_errmap : NULL);
+}
+
 #include "db_misc.c" /* copied and altered thunderstone code for stringformat and abstract */
 
 /* **************************************************

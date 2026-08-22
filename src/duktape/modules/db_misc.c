@@ -1516,6 +1516,58 @@ static void sandr(duk_context *ctx, int re2)
             else
                 in[0]=(char*)duk_get_string(ctx,2);
 
+            /* A search expression that does not compile must not look
+             * like "nothing matched": VXsandr() swallows the failure and
+             * returns the text untouched, so check each expression the
+             * way sql.set() checks word expressions, and say why.
+             * expr_compiles() passes the `\<re2\>' and `\<nomatch\>'
+             * forms through, exactly as it does there.                  */
+            {
+                int i;
+
+                for(i=0; i<sl; i++)
+                {
+                    int ok;
+
+                    rp_msgbuf_reset();
+                    if(re2)
+                    {
+                        /* unlike a stored word expression, this one is
+                         * compiled here and now, so an RE2 expression can
+                         * be judged too: openrex() reads the `\<re2\>'
+                         * prefix and dispatches, exactly as VXsandr will */
+                        FFS *fs = openrex((byte *)srch[i], TXrexSyntax_Rex);
+
+                        ok = (fs != (FFS *)NULL);
+                        if(fs) closerex(fs);
+                    }
+                    else
+                        ok = expr_compiles(srch[i]);
+
+                    if(!ok)
+                    {
+                        char       *why = rp_msgbuf_text();
+                        const char *e = srch[i] + (re2 ? 7 : 0);/*past \<re2\>*/
+                        char        bad[256];
+
+                        strncpy(bad, e, sizeof(bad)-1);
+                        bad[sizeof(bad)-1] = '\0';
+                        if(re2)
+                        {
+                            int j;
+                            for(j=0; j<sl; j++)
+                                free(srch[j]);
+                        }
+                        if(why)
+                            RP_THROW(ctx,
+                                "sandr: error in search expression '%s': %s",
+                                bad, why);
+                        RP_THROW(ctx,
+                            "sandr: error in search expression '%s'", bad);
+                    }
+                }
+            }
+
             out = VXsandr(srch, repl, in);
 
             if (out && out[0])
@@ -1616,6 +1668,9 @@ static int rex (
     else if (! (exp=get_exp(ctx,0)) )
         RP_THROW(ctx,"re%c: expression (arg 1), must be a string or pattern, or array of strings/patterns", ((type==TXrexSyntax_Re2)?'2':'x'));
 
+    /* capture why, if an expression does not compile */
+    rp_msgbuf_reset();
+
     /* open lexer */
     if ((rl=openrlexadd(nexp)) == RLEXPN)
         RP_THROW(ctx,"re%c: error opening lexer", ((type==TXrexSyntax_Re2)?'2':'x'));
@@ -1627,7 +1682,11 @@ static int rex (
     {
         if(!rlex_addexp(rl, 0, exp, type))
         {
+            char *why = rp_msgbuf_text();
             closerlex(rl);
+            if(why)
+                RP_THROW(ctx,"re%c: error in expression '%s': %s",
+                         ((type==TXrexSyntax_Re2)?'2':'x'), exp, why);
             RP_THROW(ctx,"re%c: error in expression '%s'", ((type==TXrexSyntax_Re2)?'2':'x'), exp);
         }
     }
@@ -1654,7 +1713,11 @@ static int rex (
 
             if(!rlex_addexp(rl, eno, exp, type))
             {
+                char *why = rp_msgbuf_text();
                 closerlex(rl);
+                if(why)
+                    RP_THROW(ctx,"re%c: error in expression '%s': %s",
+                             ((type==TXrexSyntax_Re2)?'2':'x'), exp, why);
                 RP_THROW(ctx,"re%c: error in expression '%s'", ((type==TXrexSyntax_Re2)?'2':'x'), exp);
             }
 

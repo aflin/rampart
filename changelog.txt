@@ -23,6 +23,15 @@ v0.7.1
                             tokenize every space-separated script
                             correctly by default (including ZWNJ word
                             breaks for e.g. Persian).
+                            rex: new '\bound' zero-width word boundary,
+                            for tokens that must not begin or end on
+                            punctuation, e.g. '\bound[\alnum.\-]+\bound'
+                            takes '4.10.3' out of "see section 4.10.3."
+                            without the closing period.  A trailing
+                            '\bound' shortens a repetition until the
+                            boundary is met; the start and end of the
+                            text count as boundaries.  ('\b' by itself
+                            is still a backspace.)
                             Astral-plane characters in JS strings are
                             recombined from duktape's internal CESU-8 to
                             standard utf-8 when bound as sql parameters.

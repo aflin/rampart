@@ -313,6 +313,23 @@ static filetype_t identify_content(const unsigned char *buf, size_t len,
     if(has_latex_signature(buf, len))
         return FT_LATEX;
 
+    /* Everything above this point is a SIGNATURE -- bytes that only one
+       format produces -- and rightly outranks a lying extension: a PDF
+       named .txt is still a PDF.  The markdown probe below is not a
+       signature, it is a statistical guess between two kinds of TEXT,
+       and mistaking prose for markdown is lossy: the "conversion" joins
+       wrapped lines and eats structural characters.  Measured, five of
+       9,822 RFCs -- plain .txt, hard-wrapped, full of ASCII box-drawing
+       -- scored as markdown off their '****' rules and '#' column
+       labels, and their stored text came out as run-on paragraphs.  So
+       when the file EXPLICITLY says it is text, believe it, and keep
+       the guesswork for files that say nothing. */
+    {
+        filetype_t ext = identify_from_extension(filename);
+        if(ext == FT_TEXT || ext == FT_PLAINTEXT)
+            return ext;
+    }
+
     {
         size_t scan = len < 2048 ? len : 2048;
         int md_score = 0;

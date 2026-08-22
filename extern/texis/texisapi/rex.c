@@ -707,6 +707,16 @@ static char *msg[]={
 "       script.  A Unicode class must be a sub-expression of its own\n",
 "       (no inversion, subtraction, '!' or '{x*}').\n",
 "\n",
+"    o  '\\bound' matches a word boundary: the position between a word\n",
+"       character (letter, digit or mark, in any script) and a non-word\n",
+"       character, counting the start and end of the text as boundaries.\n",
+"       It matches no text itself, and goes at the start or the end of a\n",
+"       sub-expression, e.g. '\\bound[\\alnum.\\-]+\\bound' matches\n",
+"       '4.10.3' in 'see section 4.10.3.' without the closing period.\n",
+"       A trailing '\\bound' shortens the match until the boundary is\n",
+"       met, so a repetition never keeps a character that would break it.\n",
+"       Note '\\b' by itself is still a backspace.\n",
+"\n",
 "    o  A \'\\\' followed by one of the following special characters\n",
 "       will assume the following meaning: n=newline, t=tab,\n",
 "       v=vertical tab, b=backspace, r=carriage return,\n",
@@ -1233,6 +1243,16 @@ byte *a;        /* (out) corresponding setlist[i] for expression */
      switch(*p)
          {
           case EESC :                           /* '\\' */
+              /* `\bound' is a zero-width assertion, not a character
+               * class: catch it here, so that `[\bound]' is an error
+               * instead of a backspace followed by `ound':
+               */
+              if(*(p+1)=='b' && strn1cmp((byte *)"bound",p+1))
+                  {
+                   putmsg(MERR + UGE, "dorange",
+       "REX: `\\bound' is a boundary, not a character class; use it outside `[...]'");
+                   return(-1);
+                  }
               if((c=dobslash(&p,a))== -2)       /* invalid escape */
                    return(-1);                  /* error */
               prevch = c;
@@ -1514,6 +1534,7 @@ FFS *fs;
  static const char Fn[]="f3par";
  byte   *ta[FFS_MAX_PAT_LEN];
  int am, i;
+ int    boundAfterAm = -1;             /* `am' when a trailing `\bound' */
  byte   *s = *sp, *sOrg = *sp, *sSave, *e;
 
  fs->exclude=0;
@@ -1630,6 +1651,30 @@ FFS *fs;
                      goto err;
                    }
                }
+               /* `\bound' must sit at the start or end of its
+                * subexpression, and that subexpression has to match at
+                * least once: there is nothing to bound otherwise.  `!'
+                * (not) would need codepoint-complement semantics and is
+                * not supported, same as with the \u classes:
+                */
+               if (fs->boundAfter && boundAfterAm >= 0 && am != boundAfterAm)
+                 {
+                   putmsg(MERR + UGE, Fn,
+   "REX: `\\bound' must be at the start or end of a subexpression at offset %d",
+                          (int)sOff);
+                   goto err;
+                 }
+               if ((fs->boundBefore || fs->boundAfter) &&
+                   (fs->is_not || fs->from < 0 || (fs->from == 0 && am > 0)))
+                 {
+                   putmsg(MERR + UGE, Fn,
+ "REX: `\\bound' with `!' or a zero-minimum repetition is not supported at offset %d",
+                          (int)sOff);
+                   goto err;
+                 }
+               fs->hasBound = (byte)((fs->boundBefore || fs->boundAfter) ?
+                                     1 : 0);
+               fs->boundOnly = (byte)((am == 0 && fs->boundBefore) ? 1 : 0);
                /* KNG 040413 dup the list now that we know its size: */
                fs->setlist = (byte **)calloc(am + 1, sizeof(byte *));
                if (fs->setlist == (byte **)NULL)
@@ -1644,6 +1689,21 @@ FFS *fs;
               }
           case EESC :                           /* '\\'  escape char */
               {
+               int blen;
+               /* `\bound': zero-width word boundary.  Only the whole
+                * keyword is taken; `\b' by itself is still a backspace:
+                */
+               if(*(s+1)=='b' && (blen=strn1cmp((byte *)"bound",s+1)))
+                   {
+                    if(am==0) fs->boundBefore=1;     /* leading boundary */
+                    else
+                        {
+                         fs->boundAfter=1;          /* trailing boundary */
+                         boundAfterAm=am;
+                        }
+                    s+=1+blen;
+                    goto NOALLOC;
+                   }
                switch(*(s+1))
                    {
                     case 'P' : fs->exclude= -1;s+=2; goto NOALLOC;/* PBR 04-24-91 */
@@ -1935,6 +1995,30 @@ casting to byte */
          return(closefpm(fs));
        }
      fs->patsize=(byte)ps;
+     if (fs->boundOnly)     /* `\bound' closing the previous subexpression */
+       {
+         if (prev == (FFS *)NULL || prev->from == 0)
+           {
+             putmsg(MERR + UGE, Fn,
+   "REX: `\\bound' must be attached to a pattern that matches at least once");
+             goto err;
+           }
+         if (prev->is_not)          /* would be silently ignored: notpm() */
+           {
+             putmsg(MERR + UGE, Fn,
+                    "REX: `\\bound' with `!' (not) is not supported");
+             goto err;
+           }
+         prev->boundAfter = 1;
+         prev->hasBound = 1;
+         /* it is not a subexpression of its own, so it must not consume
+          * a subexpression number (`\1' etc. in replacements):
+          */
+         if (state.subExprIndex > 0) state.subExprIndex--;
+         closefpm(fs);
+         fs = prev;            /* so `last' below is still the last node */
+         continue;
+       }
      fs->prev = prev;
      if (prev != (FFS *)NULL) prev->next = fs;
      else first = fs;
@@ -2027,6 +2111,138 @@ FFS *fs;
      fs->hitsize=bp-buf;
     }
  return(fs->n);
+}
+
+/************************************************************************/
+
+/* ------------------------- `\bound' word boundary ---------------------
+ * A position is a boundary when exactly one of the characters on either
+ * side of it is a `\uword' character (letter, digit or mark); the ends
+ * of the buffer count as non-word, so a token at the start or end of the
+ * text is bounded.  Characters are whole UTF-8 sequences, so this works
+ * in any script; invalid UTF-8 is not a word character, which makes
+ * dirty data break a token, same as everywhere else in rex.
+ */
+
+static int
+TXrexWordAt(byte *p, byte *bufEnd)                /* char starting at p */
+{
+ unsigned int cp;
+ int len;
+
+ if(p>=bufEnd) return(0);                       /* end of buffer */
+ if(*p<0x80) return(isalnum(*p) ? 1 : 0);
+ if((len=TXrexUniDecode(p,bufEnd,&cp))==0) return(0);      /* invalid */
+ return(TXrexUniMember(TXREXUNI_UWORD,cp));
+}
+
+static int
+TXrexWordBefore(byte *p, byte *bufBeg, byte *bufEnd)/* char ending at p */
+{
+ byte *q;
+ unsigned int cp;
+ int len,back;
+
+ if(p<=bufBeg) return(0);                     /* start of buffer */
+ if(*(p-1)<0x80) return(isalnum(*(p-1)) ? 1 : 0);
+ /* back over up to 3 continuation bytes to a would-be lead byte, then
+  * decode forwards: the sequence must end exactly at `p':
+  */
+ q=p-1;
+ for(back=0;back<3 && q>bufBeg && (*q & 0xC0)==0x80;back++)
+   q--;
+ if((len=TXrexUniDecode(q,bufEnd,&cp))!=0 && q+len==p)
+   return(TXrexUniMember(TXREXUNI_UWORD,cp));
+ return(0);
+}
+
+static int
+TXrexBoundAt(FFS *fs, byte *p)                 /* is `p' a boundary? */
+{
+ byte *beg=fs->bufBeg, *end=fs->bufEnd;
+
+ /* getrex() sets the true buffer limits; if a caller drove the matcher
+  * directly, fall back to the search area (its ends are then treated
+  * as buffer ends, i.e. as boundaries):
+  */
+ if(beg==BPNULL) beg=fs->start;
+ if(end==BPNULL) end=fs->end;
+ if(p<beg) beg=p;
+ if(p>end) end=p;
+ return(TXrexWordBefore(p,beg,end)!=TXrexWordAt(p,end));
+}
+
+static int
+TXrexBoundOk(FFS *fs)          /* do this match's boundaries hold? */
+{
+ if(fs->boundBefore && !TXrexBoundAt(fs,fs->hit)) return(0);
+ if(fs->boundAfter && !TXrexBoundAt(fs,fs->hit+fs->hitsize)) return(0);
+ return(1);
+}
+
+static int
+TXrexBoundStepBack(FFS *fs)   /* give one repetition back; 0 if cannot */
+{
+ int min=(fs->from>0 ? fs->from : 1);   /* never trim to nothing */
+
+ if(fs->n<=min) return(0);
+ if(fs->hasUni)             /* characters vary in width: re-walk one */
+   {
+    unsigned int cp;
+    byte *e=fs->hit+fs->hitsize;
+    int len;
+
+    if(fs->hitsize==0) return(0);
+    if(fs->backwards)                    /* head floats: drop first char */
+      {
+       len=(*fs->hit<0x80 ? 1 : TXrexUniDecode(fs->hit,e,&cp));
+       if(len<=0 || (unsigned int)len>fs->hitsize) len=1;
+       fs->hit+=len;
+       fs->hitsize-=(unsigned int)len;
+      }
+    else                                  /* tail floats: drop last char */
+      {
+       byte *q=e-1;
+       int back;
+       for(back=0;back<3 && q>fs->hit && (*q & 0xC0)==0x80;back++)
+         q--;
+       len=((*q>=0x80) ? TXrexUniDecode(q,e,&cp) : 0);
+       if(len!=0 && q+len==e) fs->hitsize=(unsigned int)(q-fs->hit);
+       else                   fs->hitsize--;    /* single byte member */
+      }
+   }
+ else
+   {
+    if(fs->hitsize<(unsigned int)fs->patsize) return(0);
+    fs->hitsize-=fs->patsize;
+    if(fs->backwards) fs->hit+=fs->patsize;
+   }
+ fs->n--;
+ return(1);
+}
+
+static int
+TXrexBoundApply(FFS *fs)     /* trim/verify `\bound' on a completed match
+                              * Returns the (possibly reduced) repetition
+                              * count, or -1 if the match cannot satisfy
+                              * its boundaries. */
+{
+ if(fs->backwards)
+   {
+    /* backwards the match end is anchored, so only the head can give */
+    if(fs->boundAfter && !TXrexBoundAt(fs,fs->hit+fs->hitsize))
+      return(-1);
+    while(fs->boundBefore && !TXrexBoundAt(fs,fs->hit))
+      if(!TXrexBoundStepBack(fs)) return(-1);
+   }
+ else
+   {
+    if(fs->boundBefore && !TXrexBoundAt(fs,fs->hit))
+      return(-1);
+    while(fs->boundAfter && !TXrexBoundAt(fs,fs->hit+fs->hitsize))
+      if(!TXrexBoundStepBack(fs)) return(-1);
+   }
+ return((int)fs->n);
 }
 
 /************************************************************************/
@@ -2244,6 +2460,8 @@ byte *beg;
          {
           if(repeatpm(pfs)<pfs->from)
               return(0);
+          if(pfs->hasBound && TXrexBoundApply(pfs)<pfs->from)
+              return(0);
          }
     }
  return(1);
@@ -2273,6 +2491,8 @@ byte *end;
      else
          {
           if(repeatpm(pfs)<pfs->from)
+              return(0);
+          if(pfs->hasBound && TXrexBoundApply(pfs)<pfs->from)
               return(0);
          }
     }
@@ -2503,6 +2723,16 @@ TXPMOP operation;
  if (noEmpties < 0)
    noEmpties = (getenv("TX_NO_REDUNDANT_EMPTY_REX_HITS") != NULL);
 #endif /* !TX_NO_REDUNDANT_EMPTY_REX_HITS */
+
+ if(ffs->chainHasBound)      /* `\bound' tests against the true buf ends */
+    {
+     FFS *tfs;
+     for(tfs=ffs->first;tfs!=(FFS *)NULL;tfs=tfs->next)
+        {
+         tfs->bufBeg=buf;
+         tfs->bufEnd=end;
+        }
+    }
 
  if (ffs->patsize == 0 && !ffs->re2)    /* pbr 5/14/97 added buffer anchors */
     {
@@ -2918,6 +3148,14 @@ openRex:
      else tfs->exclude=exclude;
     }
 
+ /* `\bound' needs the true buffer ends, which only getrex() knows; flag
+  * the whole chain so it only pays for the copy when one is in use: */
+ for(tfs=fs;tfs!=(FFS *)NULL;tfs=tfs->next)
+    if(tfs->hasBound) break;
+ if(tfs!=(FFS *)NULL)
+    for(tfs=fs;tfs!=(FFS *)NULL;tfs=tfs->next)
+       tfs->chainHasBound=1;
+
  fs = best;                                     /* return the root pattern */
  goto finally;
 
@@ -2954,6 +3192,7 @@ fastpmUni(FFS *fs)      /* fastpm for a subexpression with a \u class */
  byte *bufptr, *endptr;
  unsigned int cp;
  int len, clen;
+ int hasB = fs->hasBound;    /* keep the gate out of the candidate loop */
 
  if (fs->backwards)
    {
@@ -2977,11 +3216,15 @@ fastpmUni(FFS *fs)      /* fastpm for a subexpression with a \u class */
         if (fs->to == 1)
           {
            fs->hit = bufptr;
-           return(1);
+           if (!hasB || TXrexBoundOk(fs)) return(1);
           }
-        fs->end = bufptr;
-        if (repeatpmUni(fs) >= fs->from)
-           return(1);          /* hit/hitsize left as repeatpmUni set */
+        else
+          {
+           fs->end = bufptr;
+           if (repeatpmUni(fs) >= fs->from &&
+               (!hasB || TXrexBoundApply(fs) >= fs->from))
+              return(1);       /* hit/hitsize left as repeatpmUni set */
+          }
        }
    }
  else
@@ -3006,13 +3249,17 @@ fastpmUni(FFS *fs)      /* fastpm for a subexpression with a \u class */
         if (fs->to == 1)
           {
            fs->hit = bufptr;
-           return(1);
+           if (!hasB || TXrexBoundOk(fs)) return(1);
           }
-        fs->start = bufptr + clen;
-        if (repeatpmUni(fs) >= fs->from)
+        else
           {
-           fs->hit = bufptr;
-           return(1);
+           fs->start = bufptr + clen;
+           if (repeatpmUni(fs) >= fs->from)
+             {
+              fs->hit = bufptr;
+              if (!hasB || TXrexBoundApply(fs) >= fs->from)
+                return(1);
+             }
           }
         bufptr += clen;   /* a match can't start inside the failed char */
        }
@@ -3042,6 +3289,7 @@ FFS *fs;
  register byte *jmptab;                                   /* jump table */
 
  byte           **sstr = (byte **)NULL;                /* search string */
+ int            hasB;        /* keep the gate out of the candidate loops */
 
 
  ERR_IF_RE2(fs, return(0));
@@ -3061,6 +3309,7 @@ FFS *fs;
 
  fs->hitsize=fs->patsize;                             /* init the sizes */
  fs->n=1;
+ hasB=fs->hasBound;
 
  if(fs->backwards)
     {
@@ -3080,13 +3329,16 @@ FFS *fs;
                     if(fs->to==1)
                         {
                          fs->hit=bufptr;
-                         return(1);
+                         if(!hasB || TXrexBoundOk(fs))
+                             return(1);              /* else keep looking */
                         }
                     else
                         {
                          /*fs->end=bufptr-1;*/        /* MAW 04-13-93 */
                          fs->end=bufptr;              /* MAW 04-13-93 */
-                         if(repeatpm(fs)>=fs->from)
+                         if(repeatpm(fs)>=fs->from &&
+                            (!hasB ||
+                             TXrexBoundApply(fs)>=fs->from))
                              return(1);
                          else
                              {
@@ -3111,13 +3363,16 @@ FFS *fs;
                     if(fs->to==1)
                         {
                          fs->hit=bufptr;
-                         return(1);
+                         if(!hasB || TXrexBoundOk(fs))
+                             return(1);              /* else keep looking */
                         }
                     else
                         {
                          /*fs->end=bufptr-1;*/        /* MAW 04-13-93 */
                          fs->end=bufptr;              /* MAW 04-13-93 */
-                         if(repeatpm(fs)>=fs->from)
+                         if(repeatpm(fs)>=fs->from &&
+                            (!hasB ||
+                             TXrexBoundApply(fs)>=fs->from))
                               return(1);
                          else
                              {
@@ -3148,7 +3403,8 @@ FFS *fs;
                     if(fs->to==1)
                         {
                          fs->hit=bufptr;
-                         return(1);
+                         if(!hasB || TXrexBoundOk(fs))
+                             return(1);              /* else keep looking */
                         }
                     else
                         {
@@ -3156,13 +3412,12 @@ FFS *fs;
                          if(repeatpm(fs)>=fs->from)
                              {
                               fs->hit=bufptr;
-                              return(1);
+                              if(!hasB ||
+                                 TXrexBoundApply(fs)>=fs->from)
+                                  return(1);
                              }
-                         else
-                             {
-                              fs->n=1;
-                              fs->hitsize=1;
-                             }
+                         fs->n=1;
+                         fs->hitsize=1;
                         }
                    }
               }
@@ -3190,7 +3445,8 @@ to be a problem with slen>=8. Occurred with and without -O optimization.
                     fs->start=fs->hit;
                     if(fs->to==1)
                         {
-                         return(1);
+                         if(!hasB || TXrexBoundOk(fs))
+                             return(1);              /* else keep looking */
                         }
                     else
                         {
@@ -3199,13 +3455,12 @@ to be a problem with slen>=8. Occurred with and without -O optimization.
                              {
                               fs->hit=bufptr;
                               fs->hit-=slen;
-                              return(1);
+                              if(!hasB ||
+                                 TXrexBoundApply(fs)>=fs->from)
+                                  return(1);
                              }
-                         else
-                             {
-                              fs->n=1;
-                              fs->hitsize=fs->patsize;
-                             }
+                         fs->n=1;
+                         fs->hitsize=fs->patsize;
                         }
                    }
               }
@@ -3948,6 +4203,7 @@ char *ex;
             continue;
           }
       }
+    if(tfs->boundBefore) printf("a word boundary, then ");
     if (tfs->from == tfs->to)
       printf("%d occurrence%s of: ", tfs->from, (tfs->from == 1 ? " " : "s"));
     else
@@ -3981,6 +4237,7 @@ char *ex;
              }
          putchar(CSET);                         /* ']'  i.e. close-set */
         }
+    if(tfs->boundAfter) printf(", then a word boundary");
    }
  putchar('\n');
  closerex(fs);
