@@ -85,6 +85,25 @@ sources (neither adds a runtime .so of its own):
                                            (MIT or public domain --
                                             the user may choose either)
 
+Embedded data
+-------------
+
+rampart-sql.so (via the texis full-text engine it contains) compiles in
+tables derived from the Unicode Character Database, used by the REX
+\u character classes (\uword, \ualpha, ...) and the default full-text
+index word expression:
+
+  UnicodeData.txt   Unicode 17.0, from
+                    https://www.unicode.org/Public/17.0.0/ucd/UnicodeData.txt
+                    reduced to codepoint-range tables by
+                    extern/texis/texisapi/genrexuni.py (rexuni.h)
+                    Copyright (c) Unicode, Inc.
+                                        -> ICU-license.txt  (Unicode-3.0)
+
+The same Unicode License v3 covers the bundled ICU library
+(extern/icu, ICU 76.1 / Unicode 16.0) behind rampart-intl.so, which is
+why a single copy of the notice, ICU-license.txt, serves both.
+
 The rampart-langtools-cuda variant additionally links against NVIDIA's
 proprietary libcudart / libcublas / libcublasLt at runtime.  Those are
 NOT redistributed by us; users must install the NVIDIA CUDA toolkit
