@@ -106,9 +106,13 @@ def main():
     print("typedef struct { unsigned int lo, hi; } TXrexUniRange;")
     print()
     bits = []
+    bmp = bytearray(0x10000)   # class-bit mask per BMP codepoint
     for i, (cname, cats) in enumerate(CLASSES.items()):
         r = ranges_for(src, cats)
         bits.append((cname, i, len(r)))
+        for lo, hi in r:
+            for cp in range(lo, min(hi, 0xFFFF) + 1):
+                bmp[cp] |= 1 << i
         print("#define TXREXUNI_%s (1 << %d)" % (cname, i))
         print("static const TXrexUniRange TXrexUni_%s[%d] = {" % (cname, len(r)))
         for j in range(0, len(r), 4):
@@ -126,13 +130,28 @@ def main():
     for cname, i, n in bits:
         print("  { TXrexUni_%s, %d }," % (cname, n))
     print("};")
+    print()
+    print("/* Class-bit mask for every Basic Multilingual Plane codepoint, derived")
+    print("   from the range tables above: membership for cp < 0x10000 is one")
+    print("   indexed load instead of a binary search per class.  Entries below")
+    print("   0x80 are 0 (ASCII is handled by the REX byte sets).  64 KB, but a")
+    print("   document in one script touches only that script's few hundred")
+    print("   bytes of it. */")
+    print("static const unsigned char TXrexUniBmp[0x10000] = {")
+    for j in range(0, 0x10000, 32):
+        print("  " + ",".join(str(b) for b in bmp[j:j+32]) +
+              ("," if j + 32 < 0x10000 else ""))
+    print("};")
     print("""
-/* Is codepoint `cp' a member of any class in `mask'?  Binary search per
-   set bit; tables cover only cp >= 0x80 (ASCII is handled by the REX
-   byte sets). */
+/* Is codepoint `cp' a member of any class in `mask'?  BMP codepoints are
+   answered from TXrexUniBmp; the supplementary planes (emoji, historic
+   scripts, rare CJK) fall back to a binary search per set bit.  Tables
+   cover only cp >= 0x80 (ASCII is handled by the REX byte sets). */
 static int TXrexUniMember(unsigned int mask, unsigned int cp)
 {
     int ci;
+    if (cp < 0x10000)
+        return (TXrexUniBmp[cp] & mask) != 0;
     for (ci = 0; mask; ci++, mask >>= 1)
     {
         const TXrexUniRange *r;
