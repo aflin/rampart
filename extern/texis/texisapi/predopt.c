@@ -6253,10 +6253,52 @@ TXsettablepred(QNODE *qnode, DBTBL * tb, PRED * p, PROJ * order, FLDOP * fo,
 				/* If `allHandled', then row count is exact
 				 * (no post-proc):
 				 */
+				/* indexCount is honest for every shape: it
+				 * is what its name says, the number of
+				 * records the index produced -- for a fused
+				 * (LIKEP OR LIKEV, TXindexrrf) search that is
+				 * the merged candidate union, keyword hits +
+				 * up to likevRows vector candidates.  It is
+				 * also the only count that stays true under
+				 * fusion, and it makes the likevRows budget
+				 * visible, so it is set unconditionally.
+				 */
+				countInfo->indexCount = tb->index.nrecs;
+
+				if (TXpred_haslikev(p))
+				{
+					/* A LIKEV has no well-defined match
+					 * count.  Every row has some cosine
+					 * similarity to the query; there is no
+					 * radius, so no set to count -- and
+					 * the index hands back a top-K pool
+					 * capped by likevRows (default 1000),
+					 * which is a retrieval budget, not a
+					 * property of the data.  Reporting the
+					 * pool size as rowsMatchedMax asserted
+					 * a bound that does not exist, and it
+					 * moved with likevRows while the data
+					 * and query stood still.  Say unknown,
+					 * using the -1/-2 convention from
+					 * TX_CLEAR_COUNTINFO() (min != max so
+					 * callers also see "not exact"), and
+					 * let TX_ISVALIDCOUNT() catch it.
+					 */
+					countInfo->rowsMatchedMin =
+						countInfo->rowsReturnedMin =
+						(EPI_HUGEINT)(-1);
+					countInfo->rowsMatchedMax =
+						countInfo->rowsReturnedMax =
+						(EPI_HUGEINT)(-2);
+				}
+				else
+				{
+				/* If `allHandled', then row count is exact
+				 * (no post-proc):
+				 */
 				countInfo->rowsMatchedMin =
 				  (allHandled ? tb->index.nrecs : 0);
 				countInfo->rowsMatchedMax = tb->index.nrecs;
-				countInfo->indexCount = tb->index.nrecs;
 				/* Set rowsMatchedMin/Max, using likeprows
 				 * limit count (if available):
 				 */
@@ -6273,6 +6315,7 @@ TXsettablepred(QNODE *qnode, DBTBL * tb, PRED * p, PROJ * order, FLDOP * fo,
 						countInfo->rowsMatchedMin;
 					countInfo->rowsReturnedMax =
 						countInfo->rowsMatchedMax;
+				}
 				}
 			}
 

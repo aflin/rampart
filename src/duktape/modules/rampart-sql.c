@@ -3378,6 +3378,18 @@ static int fork_skip(DB_HANDLE *h, int nrows)
     if(!finfo)
         return 0;
 
+    /* Skipping is NOT free: child_skip() calls texis_flush_scroll(), which
+     * SQLFetch()es every row it discards -- predicate and select list both.
+     * So a skipped row can need an embedding exactly like a fetched one
+     * (abstract(...,Vec), excerpt(), embed(), chunkembed(), chunkavg(),
+     * chunkcoherence(), or a `likev ?' with a text RHS, which auto-embeds
+     * from tup_eval()).  The child must therefore know embed is available,
+     * and we must service its callbacks -- the same two steps fork_exec()
+     * and fork_fetch() take.  Without them the child's 'B'/'D'/'S' request
+     * is read here as the four bytes of `ret', and the pipe is one message
+     * out of step for the life of the connection. */
+    if (fork_maybe_register_embed(h) != 0) return 0;
+
     if(forkwrite("s", sizeof(char)) == -1)
         return 0;
 
@@ -3386,6 +3398,9 @@ static int fork_skip(DB_HANDLE *h, int nrows)
 
     if(forkwrite(&nrows, sizeof(int)) == -1)
         return 0;
+
+    /* 'B'/'D'/'S' callbacks may interleave before the final 'A' + int. */
+    if (fork_drain_embed_callbacks() != 0) return 0;
 
     if(forkread(&ret, sizeof(int)) == -1)
         return 0;
@@ -3397,23 +3412,33 @@ static int child_skip()
 {
     int ret=0, nrows=0;
     TEXIS *tx=NULL;
+    /* Frame the reply with 'A' on EVERY path, as child_exec() does: the
+     * parent drains 'B'/'D'/'S' callbacks until it sees this tag, so an
+     * untagged reply would be consumed as another callback. */
+    char atag = 'A';
 
     if (forkread(&tx, sizeof(TEXIS *))  == -1)
     {
+        forkwrite(&atag, 1);
         forkwrite(&ret, sizeof(int));
         return 0;
     }
 
     if (forkread(&nrows, sizeof(int))  == -1)
     {
+        forkwrite(&atag, 1);
         forkwrite(&ret, sizeof(int));
         return 0;
     }
 
+    /* evaluates the rows it skips -- may emit callbacks before the tag */
     if(tx)
         ret = texis_flush_scroll(tx, nrows);
     else
         ret=0;
+
+    if (forkwrite(&atag, 1) == -1)
+        return 0;
 
     if (forkwrite(&ret, sizeof(int))  == -1)
         return 0;

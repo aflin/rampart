@@ -711,6 +711,7 @@ int	TXfldnamecmp ARGS((DBTBL *, char *, char *));
 int	TXpredcmp ARGS((PRED *, PRED *));
 int	TXprojcmp ARGS((PROJ *, PROJ *));
 int	TXpred_haslikep ARGS((PRED *));
+int	TXpred_haslikev ARGS((PRED *));
 int	TXpred_countnames ARGS((PRED *));
 int	TXprojIsRankDescOnly(PROJ *proj);
 int	TXpredHasRank(PRED *p);

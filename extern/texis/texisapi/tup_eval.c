@@ -189,6 +189,38 @@ PRED	*p;
 
 /******************************************************************/
 
+/* Does this predicate tree contain a LIKEV (vector) comparison?
+ * Same shape as TXpred_haslikep() below.  Used by the count machinery:
+ * a LIKEV has no well-defined "number of matching rows" -- every row has
+ * some similarity to the query, and the index returns a top-K candidate
+ * pool sized by likevRows, not a match set -- so the rowsMatched/
+ * rowsReturned counts must report "unknown" rather than the pool size.
+ */
+int
+TXpred_haslikev(p)
+PRED	*p;
+{
+	int rc = 0;
+
+	if(!p)
+		return 0;
+	if(p->op == FLDMATH_MMV)
+		return 1;
+	if(p->lt == 'P')
+	{
+		rc = TXpred_haslikev(p->left);
+		if(rc)
+			return rc;
+	}
+	if(p->rt == 'P')
+	{
+		return TXpred_haslikev(p->right);
+	}
+	return rc;
+}
+
+/******************************************************************/
+
 int
 TXpred_haslikep(p)
 PRED	*p;
