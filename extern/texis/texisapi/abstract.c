@@ -786,6 +786,9 @@ CONST char *s;
 	if (strcmpi(s, "querymultiple") == 0 ||
 	    strcmpi(s, "query:multiple") == 0)
 		return TXABS_STYLE_QUERYMULTIPLE;
+	if (strcmpi(s, "querysingleoffset") == 0 ||
+	    strcmpi(s, "query:single:offset") == 0)
+		return TXABS_STYLE_QUERYSINGLEOFFSET;
 	if (strcmpi(s, "querybest") == 0)	/* alias for best mode */
 		return TXABS_STYLE_QUERYBEST;
 	if (*s >= '0' && *s <= '9')
@@ -959,7 +962,8 @@ txAlignAndPrintLoci(LOCUS *loci,		/* (in) loci to print */
 		size_t nOrgLoci,		/* (in) # original loci */
 		CONST char *textStart,		/* (in) overall text start */
 		CONST char *textEnd,		/* (in) overall text end */
-		int absStyle)			/* (in) TXABS_STYLE... */
+		int absStyle,			/* (in) TXABS_STYLE... */
+		int wantOffset)			/* (in) prefix `@start: ' */
 /* Aligns/shifts `loci' to word/sentence boundaries, and prints.
  * Returns alloc'd buffer, or NULL on error.
  */
@@ -998,6 +1002,22 @@ txAlignAndPrintLoci(LOCUS *loci,		/* (in) loci to print */
 
 		/* If locus is now empty, skip it (and any `...' separator):*/
 		if (locus->end <= locus->start) continue;
+
+		/* `@start: ' -- BYTE offset in the source text where this
+		 * abstract begins, written once, ahead of the first locus
+		 * that survives alignment (so it names the text actually
+		 * shown, not a locus that got dropped).  No length: the
+		 * copy below collapses whitespace and repeated-byte runs,
+		 * so the output is not a verbatim substring of the source. */
+		if (wantOffset && htbuf_getdata(buf, CHARPPN, 0) == 0)
+		{
+			char	obuf[32];
+			int	on;
+
+			on = htsnpf(obuf, sizeof(obuf), "@%wd: ",
+				    (EPI_HUGEINT)(locus->start - textStart));
+			if (on > 0) htbuf_write(buf, obuf, on);
+		}
 
 		/* Print a `...' separator, if gap with previous locus: */
 		sz = txDiffTextPtrs(locus->start, prevSrcEnd);
@@ -1196,6 +1216,7 @@ size_t	spanEnd;	/*            spanEnd == 0 => none                  */
 	size_t		nUrlSplitLoci = 0;	/* # of loci split from URLs*/
 	size_t		nAlignRight = 0;	/* # of HAL_RIGHT loci */
 	size_t		maxLoci;		/* max loci allowed */
+	int		wantOffset = 0;		/* TXABS_STYLE_QUERYSINGLEOFFSET */
 	TXPMBUF		*pmbuf = TXPMBUFPN;	/* wtf set someday */
 
 	if (maxsz <= 0) maxsz = TXABS_DEFSZ;
@@ -1209,6 +1230,14 @@ size_t	spanEnd;	/*            spanEnd == 0 => none                  */
 	case TXABS_STYLE_QUERYMULTIPLE:		/* N chunks from N sets */
 		break;
 	case TXABS_STYLE_QUERYSINGLE:		/* 1 chunk centered on query*/
+		break;
+	case TXABS_STYLE_QUERYSINGLEOFFSET:
+		/* Behaves exactly as QUERYSINGLE everywhere below; the
+		 * only difference is the `@start: ' prefix, carried as a
+		 * separate flag so no existing style branch has to know
+		 * about this mode. */
+		wantOffset = 1;
+		absstyle = TXABS_STYLE_QUERYSINGLE;
 		break;
 	case TXABS_STYLE_SMART:			/* "best" chunk of text */
 	case TXABS_STYLE_DUMB:			/* start of text */
@@ -1834,7 +1863,7 @@ size_t	spanEnd;	/*            spanEnd == 0 => none                  */
 
 	/* Now align loci ends (i.e. with word boundaries), and print: */
 	rc = txAlignAndPrintLoci(loci, nLoci, orgLoci, nOrgLoci, text,
-				 textEnd, absstyle);
+				 textEnd, absstyle, wantOffset);
 	goto done;
 
 err:

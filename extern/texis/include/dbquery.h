@@ -756,6 +756,14 @@ char	*keywords ARGS((char *, int, APICP *apicp));
 #define TXABS_STYLE_SMART               1
 #define TXABS_STYLE_QUERYSINGLE         2
 #define TXABS_STYLE_QUERYMULTIPLE       3
+/* Like QUERYSINGLE, but the abstract is prefixed with `@start: ' -- the
+ * BYTE offset in the source text where the abstract begins -- so a caller
+ * can jump to the passage in the original document.  Only the start is
+ * given: abstract() collapses whitespace and repeated-byte runs as it
+ * renders, so its output is NOT a verbatim substring and no length would
+ * let a caller reproduce it.  (excerpt(..., 'offsets=1') emits verbatim
+ * passages with `@start+length: ' when exact spans are needed.) */
+#define TXABS_STYLE_QUERYSINGLEOFFSET   4
 /* alias for best mode available; assumed to require a query: */
 #define TXABS_STYLE_QUERYBEST           TXABS_STYLE_QUERYMULTIPLE
 

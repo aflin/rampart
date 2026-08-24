@@ -3688,8 +3688,13 @@ typedef struct TXexcerptOpts_tag
 	int	lead;		/* guarantee the document's first chunk */
 	int	minSimSet;
 	double	minSim;		/* score floor for score-driven picks */
+	int	offsets;	/* prefix each run with `@start+len: ' */
 }
 TXexcerptOpts;
+
+/* Worst-case bytes for one `@start+len: ' prefix: `@' + 20 digits + `+'
+ * + 20 digits + `: ' -- comfortably over any 64-bit offset pair. */
+#define TX_EXCERPT_OFF_MAX	48
 
 /* excerpt() arg 5: a numeric value is the neighbor window (a selected
  * chunk brings `window' chunks per side along with it); a varchar is
@@ -3755,6 +3760,8 @@ txExcerptOptions(FLD *f5, TXexcerptOpts *o)
 				o->minSim = strtod(s, (char **)&s);
 				o->minSimSet = 1;
 			}
+			else if (strcmpi(kbuf, "offsets") == 0)
+				o->offsets = (strtol(s, (char **)&s, 10) != 0);
 			else
 			{
 				putmsg(MWARN + UGE, fn,
@@ -4050,32 +4057,74 @@ FLD *f5;
 	nr = txExcerptRuns(text, docOrder, k, spanS, spanE, sel, runS, runE);
 	outLen = (nr > 0 ? (nr - 1) * TX_EXCERPT_SEP_LEN : 0);
 	for (i = 0; i < nr; i++) outLen += runE[i] - runS[i];
+	/* `offsets=1' prefixes are OUTSIDE the maxsize budget (maxsize
+	 * bounds the excerpt TEXT), so they need their own room here. */
+	if (opts.offsets) outLen += (size_t)nr * TX_EXCERPT_OFF_MAX;
 	rc = (ft_char *)TXmalloc(pmbuf, __FUNCTION__, outLen + 1);
 	if (!rc) goto setRet;
 	{
 		char	*p = rc;
 		int	any = 0;
+		size_t	used = 0;	/* budgeted bytes: text + separators */
 
 		for (i = 0; i < nr; i++)
 		{
 			size_t	s = runS[i], e = runE[i];
+			size_t	sep = (any ? TX_EXCERPT_SEP_LEN : 0);
 
 			while (s < e && TX_EXCERPT_IS_WS(text[s])) s++;
 			while (e > s && TX_EXCERPT_IS_WS(text[e - 1])) e--;
 			if (s >= e) continue;
+
+			/* With `offsets=1' the run must be clamped to the
+			 * budget HERE, before its prefix is written -- the
+			 * prefix states the length, so it has to be the
+			 * length actually emitted.  (The default path keeps
+			 * its original assemble-then-cut below, so its
+			 * output is byte-identical to before.)  Only the
+			 * unconditional first pick can exceed the budget;
+			 * the clamp is general so nothing can slip past. */
+			if (opts.offsets && maxsz != 0)
+			{
+				size_t	avail;
+
+				if (used + sep >= maxsz) break;
+				avail = maxsz - used - sep;
+				if (e - s > avail)
+				{
+					e = txExcerptCleanCut(text, s,
+							      s + avail);
+					if (e <= s) break;
+				}
+			}
+
 			if (any)
 			{
 				memcpy(p, TX_EXCERPT_SEP,
 				       TX_EXCERPT_SEP_LEN);
 				p += TX_EXCERPT_SEP_LEN;
 			}
+			if (opts.offsets)
+			{
+				/* `@start+len: ' -- BYTE offset into the
+				 * document text and BYTE length, both after
+				 * the trim/clamp above, so they name exactly
+				 * the bytes that follow.  The prefix itself
+				 * is NOT counted against maxsize. */
+				int	n = htsnpf(p, TX_EXCERPT_OFF_MAX,
+						   "@%wd+%wd: ",
+						   (EPI_HUGEINT)s,
+						   (EPI_HUGEINT)(e - s));
+				if (n > 0) p += n;
+			}
 			memcpy(p, text + s, e - s);
 			p += e - s;
+			used += sep + (e - s);
 			any = 1;
 		}
 		*p = '\0';
 		/* only the unconditional first pick can be over budget */
-		if (maxsz != 0 && (size_t)(p - rc) > maxsz)
+		if (!opts.offsets && maxsz != 0 && (size_t)(p - rc) > maxsz)
 			rc[txExcerptCleanCut(rc, 0, maxsz)] = '\0';
 	}
 	goto setRet;
