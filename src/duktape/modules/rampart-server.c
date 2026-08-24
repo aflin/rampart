@@ -7620,10 +7620,8 @@ evhtp_res pre_accept_callback(evhtp_connection_t *conn, void *arg)
 
 const char *access_fn=NULL, *error_fn=NULL;
 
-/* Set once the daemon points fd 2 at the error log (see server.start).
- * Rotation has to redo that, or the descriptor keeps writing into the
- * file that was just rotated away while the FILE * writes to the new
- * one. */
+/* Set when fd 1/2 were pointed at the logs; rotation must redo the dup2
+ * or the descriptor keeps writing to the rotated-away file. */
 static int stderr_follows_errorlog = 0;
 static int stdout_follows_accesslog = 0;
 
@@ -7659,14 +7657,70 @@ void reopen_logs(int sig)
         }
         stderr=error_fh;
         setvbuf(error_fh, NULL, _IOLBF, 0);
-        /* and the descriptor with it, so writes that bypass the FILE *
-         * land in the new file too */
+        /* and the descriptor with it */
         if(stderr_follows_errorlog)
         {
             int efd = fileno(error_fh);
             if(efd >= 0) dup2(efd, STDERR_FILENO);
         }
     }
+}
+
+/* Detach the daemon's std streams.  Runs in the grandchild right after
+ * the double fork: held any longer, a slow-starting daemon is still on
+ * the launcher's terminal when sudo (use_pty) tears it down, and dies.
+ * Needs logging() to have run -- it opens access_fh/error_fh. */
+static void daemonize_stdio(void)
+{
+    int afd = (access_fh && access_fh != stdout) ? fileno(access_fh) : -1;
+    int efd = (error_fh  && error_fh  != stderr) ? fileno(error_fh)  : -1;
+
+    fflush(access_fh);
+    fflush(error_fh);
+
+    close(STDIN_FILENO);
+    if (open("/dev/null",O_RDONLY) == -1) {
+        fprintf(error_fh,"server.start: failed to reopen stdin while daemonising: %s\n", strerror(errno));
+        exit(1);
+    }
+
+    /* fd 1/2 follow the logs, not just the FILE *s: writes straight to
+     * the descriptor (ggml, abort, a child) would otherwise be lost. */
+    if (afd >= 0 && dup2(afd, STDOUT_FILENO) != -1)
+    {
+        stdout_follows_accesslog = 1;
+    }
+    else
+    {
+        close(STDOUT_FILENO);
+        if (open("/dev/null",O_WRONLY) == -1) {
+            fprintf(error_fh,"server.start: failed to reopen stdout while daemonising: %s\n", strerror(errno));
+            exit(1);
+        }
+    }
+
+    if (efd >= 0 && dup2(efd, STDERR_FILENO) != -1)
+    {
+        stderr_follows_errorlog = 1;
+    }
+    else
+    {
+        if (efd >= 0)
+            fprintf(error_fh,
+                    "server.start: could not point stderr at the error log "
+                    "(%s); discarding it instead\n", strerror(errno));
+        close(STDERR_FILENO);
+        if (open("/dev/null",O_RDWR) == -1) {
+            fprintf(error_fh,"server.start: failed to reopen stderr while daemonising: %s\n", strerror(errno));
+            exit(1);
+        }
+    }
+
+    stdout = access_fh;
+    stderr = error_fh;
+    /* line buffered: FILE * and descriptor share a file now */
+    setvbuf(access_fh, NULL, _IOLBF, 0);
+    setvbuf(error_fh,  NULL, _IOLBF, 0);
 }
 
 static inline void logging(duk_context *ctx, duk_idx_t ob_idx)
@@ -8667,6 +8721,9 @@ duk_ret_t duk_server_start(duk_context *ctx)
                                           //this call also does rp_unlock_all_locks(0)
             server_pid=getpid();
             ctx = (get_current_thread())->ctx;
+
+            /* release the launcher's terminal before the slow part */
+            daemonize_stdio();
 
             /* get first port used */
             if (duk_rp_GPS_icase(ctx, ob_idx, "bind"))
@@ -10930,74 +10987,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
 
     if (daemon)
     {
-        close(STDIN_FILENO);
-        close(STDOUT_FILENO);
-        if (open("/dev/null",O_RDONLY) == -1) {
-            fprintf(error_fh,"server.start: failed to reopen stdin while daemonising: %s\n", strerror(errno));
-            exit(1);
-        }
-        /* fd 1 follows the access log for the same reason fd 2 follows
-         * the error log below: `stdout' is reassigned to access_fh, so
-         * printf() already lands there -- this is what makes write(1)
-         * land there too, instead of being the one that vanishes. */
-        {
-            int afd = (access_fh && access_fh != stdout) ? fileno(access_fh) : -1;
-
-            if (afd >= 0 && dup2(afd, STDOUT_FILENO) != -1)
-            {
-                stdout_follows_accesslog = 1;
-            }
-            else if (open("/dev/null",O_WRONLY) == -1) {
-                fprintf(error_fh,"server.start: failed to reopen stdout while daemonising: %s\n", strerror(errno));
-                exit(1);
-            }
-        }
-        /* fd 2 FOLLOWS THE ERROR LOG, and not only the FILE *.
-         *
-         * Reassigning `stderr' below redirects fprintf(stderr, ...) --
-         * but only that.  Everything that writes to the DESCRIPTOR went
-         * to /dev/null and was simply lost: a library writing straight
-         * to fd 2 (llama.cpp/ggml, and ggml's fatal handler in
-         * particular), an assert or abort, and any child process that
-         * inherits it.  A daemon that dies is exactly when those matter,
-         * and the log stayed empty at precisely that moment.
-         *
-         * So point the descriptor at the same file.  dup2() closes fd 2
-         * first, so the caller's terminal is released either way -- a
-         * daemon must not hold it (with `Defaults use_pty' in sudoers,
-         * sudo destroys that pty when the foreground command exits and
-         * takes anything still attached to it with it).
-         *
-         * With no errorLog configured error_fh IS stderr, which is the
-         * terminal, and there is nothing to point at: /dev/null then, as
-         * before.  That is the case the old FIXME asked about. */
-        {
-            int efd = (error_fh && error_fh != stderr) ? fileno(error_fh) : -1;
-
-            if (efd >= 0 && dup2(efd, STDERR_FILENO) != -1)
-            {
-                stderr_follows_errorlog = 1;
-            }
-            else
-            {
-                if (efd >= 0)
-                    fprintf(error_fh,
-                            "server.start: could not point stderr at the error log "
-                            "(%s); discarding it instead\n", strerror(errno));
-                close(STDERR_FILENO);
-                if (open("/dev/null",O_RDWR) == -1) {
-                    fprintf(error_fh,"server.start: failed to reopen stderr while daemonising: %s\n", strerror(errno));
-                    exit(1);
-                }
-            }
-        }
-        stderr=error_fh;
-        stdout=access_fh;
-        /* line buffered: each FILE * and its raw descriptor now share a
-         * file, and a half-written buffered line would interleave with a
-         * write() from a library or a dying child. */
-        setvbuf(error_fh, NULL, _IOLBF, 0);
-        setvbuf(access_fh, NULL, _IOLBF, 0);
+        /* std streams were detached in daemonize_stdio(), after the fork */
         duk_pull(ctx,0);
         duk_put_global_string(ctx, DUK_HIDDEN_SYMBOL("funcstash"));
         // if forking as a daemon, run loop here in child and don't continue with rest of script
