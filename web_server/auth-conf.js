@@ -141,6 +141,20 @@ module.exports = {
                          regardless of sessionRefresh interval.                */
     sessionRefreshUrgent: 3600, // 1 hour
 
+    /* wsRecheckSeconds  Number. How often an OPEN websocket is revalidated,
+                         in seconds. The upgrade itself is always authorised;
+                         this governs how long a session that is revoked or
+                         expires mid-connection may keep using a socket that
+                         is already open.
+                         0 revalidates on every frame the client sends, which
+                         is exact but roughly halves frame throughput (the
+                         whole req object goes through the auth function each
+                         time). The default trades a bounded window for that
+                         cost. An IDLE socket is not revalidated at either
+                         setting -- nothing runs until the client speaks.
+                         (default: 20)                                        */
+    //wsRecheckSeconds: 20,
+
     /* cookieFlags       Object. Flags for the session cookie.
                          httpOnly: true     - not accessible to JavaScript (default: true)
                          sameSite: "Lax"    - CSRF protection level (default: "Lax")

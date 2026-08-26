@@ -92,6 +92,13 @@ struct evhtp_ws_hooks_s {
 };
 
 EVHTP_EXPORT evhtp_ws_parser * evhtp_ws_parser_new(void);
+/* Gate on websocket upgrades: return 1 to allow, anything else to refuse.
+ * Called during header parsing, before the handshake is generated, so a
+ * refusal prevents the 101 rather than closing an open socket. */
+typedef int (*evhtp_ws_auth_cb_t)(evhtp_request_t * req);
+EVHTP_EXPORT void              evhtp_set_ws_auth_cb(evhtp_ws_auth_cb_t cb);
+extern evhtp_ws_auth_cb_t      evhtp_ws_auth_cb;
+
 EVHTP_EXPORT int               evhtp_ws_gen_handshake(evhtp_kvs_t * hdrs_in, evhtp_kvs_t * hdrs_out);
 EVHTP_EXPORT ssize_t           evhtp_ws_parser_run(evhtp_request_t *req, evhtp_ws_hooks * hooks, const char * data, size_t len);
 EVHTP_EXPORT void              evhtp_ws_parser_set_userdata(evhtp_ws_parser * p, void * usrdata);

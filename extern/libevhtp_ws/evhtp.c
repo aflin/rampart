@@ -1493,6 +1493,16 @@ htp__request_parse_args_(htparser * p, const char * data, size_t len)
     return 0;
 } /* htp__request_parse_args_ */
 
+/* Optional gate on websocket upgrades, installed by the host application.
+ * Returns 1 to allow the handshake, anything else to refuse it. */
+evhtp_ws_auth_cb_t evhtp_ws_auth_cb = NULL;
+
+void
+evhtp_set_ws_auth_cb(evhtp_ws_auth_cb_t cb)
+{
+    evhtp_ws_auth_cb = cb;
+}
+
 static int
 htp__request_parse_headers_start_(htparser * p)
 {
@@ -1907,6 +1917,22 @@ htp__request_parse_headers_(htparser * p)
             evhtp_modp_uchartoa(htparser_get_major(p)),
             evhtp_modp_uchartoa(htparser_get_minor(p)));
     }
+    /* Authorise the upgrade BEFORE the handshake.  The 101 is sent from
+     * here, so a check made later (in the request callback) is too late --
+     * the socket is already open by then.  The host application installs
+     * this with evhtp_set_ws_auth_cb(); with none installed, nothing
+     * changes. */
+    if (req->cb && req->cb_has_websock && evhtp_ws_auth_cb) {
+        const char *cv = evhtp_header_find(req->headers_in, "Connection");
+        const char *uv = evhtp_header_find(req->headers_in, "Upgrade");
+        if (cv && uv && strcasestr(cv, "upgrade") && strcasestr(uv, "websocket")
+            && evhtp_ws_auth_cb(req) != 1)
+        {
+            c->cr_status = EVHTP_RES_FORBIDDEN;
+            return -1;
+        }
+    }
+
     if (req->cb && req->cb_has_websock) {
         /* the callback that was set was enabled with websocket support, here we
          * check the value of the Connection header, and if "Upgrade" is the
