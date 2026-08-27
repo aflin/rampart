@@ -37,6 +37,12 @@
 #define AUTH_LMDB_SYM "auth_lmdb_instance"
 
 /* config read at module load time from hidden symbol authModConf */
+/* Parsed once, under this lock: the settings below are process globals
+   and this module is loaded on every context that require()s it.  The
+   lmdb pre-warm further down is per context and still runs each time. */
+static pthread_mutex_t auth_conf_lock = PTHREAD_MUTEX_INITIALIZER;
+static int auth_conf_parsed = 0;
+
 static char *auth_cookie_name = NULL;
 static char *auth_db_path = NULL;
 
@@ -604,6 +610,9 @@ duk_ret_t duk_open_module(duk_context *ctx)
     {                                           /* stack: [ authModConf ] */
         if (duk_is_object(ctx, -1))
         {
+            pthread_mutex_lock(&auth_conf_lock);
+            if (!auth_conf_parsed)
+            {
             /* cookieName */
             if (auth_cookie_name) { free(auth_cookie_name); auth_cookie_name = NULL; }
             if (duk_get_prop_string(ctx, -1, "cookieName"))
@@ -706,6 +715,10 @@ duk_ret_t duk_open_module(duk_context *ctx)
                     auth_session_refresh_urgent = duk_get_int(ctx, -1);
             }
             duk_pop(ctx);                       /* pop sessionRefreshUrgent */
+
+            auth_conf_parsed = 1;
+            }                                   /* end parse-once */
+            pthread_mutex_unlock(&auth_conf_lock);
 
             /* ensure db directory exists */
             {
