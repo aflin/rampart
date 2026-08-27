@@ -209,6 +209,10 @@ static char **auth_redir_exts = NULL;
 static int auth_num_redir_exts = 0;
 
 static int auth_mod_active = 0;
+/* Auth config as CBOR, encoded once on the main thread; each thread
+   decodes its own copy in initThread. */
+static void   *auth_conf_cbor = NULL;
+static duk_size_t auth_conf_cbor_len = 0;
 /* ---- end authMod declarations ---- */
 
 /* forward declarations for rate limiter */
@@ -7465,6 +7469,8 @@ void initThread(evhtp_t *htp, evthr_t *evthr, void *arg)
     /* drop privileges here, after binding port.
        Skipped when the new pre-bind path already dropped on the main thread
        (g_privs_dropped); still used for listen: / secure: legacy fallback. */
+    /* Runs on the first worker thread, so a failure here cannot throw:
+       main_ctx belongs to the main thread, which is still using it. */
     if(unprivu && !gl_threadno && !g_privs_dropped)
     {
 // As a very risky thing to do and as this only works on linux
@@ -7486,24 +7492,32 @@ void initThread(evhtp_t *htp, evthr_t *evthr, void *arg)
             if (setresgid(unprivg, unprivg, sgid) == -1)
             {
                 SETUPUNLOCK;
-                RP_THROW(main_ctx, "error setting group, setgid() failed");
+                fprintf(stderr, "server.start: error setting group, setgid() failed\n");
+                fflush(stderr);
+                _exit(1);
             }
             if (setresuid(unprivu, unprivu, suid) == -1)
             {
                 SETUPUNLOCK;
-                RP_THROW(main_ctx, "error setting user, setuid() failed");
+                fprintf(stderr, "server.start: error setting user, setuid() failed\n");
+                fflush(stderr);
+                _exit(1);
             }
         }
 #else
         if (setgid(unprivg) == -1)
         {
             SETUPUNLOCK;
-            RP_THROW(main_ctx, "error setting group, setgid() failed");
+            fprintf(stderr, "server.start: error setting group, setgid() failed\n");
+            fflush(stderr);
+            _exit(1);
         }
         if (setuid(unprivu) == -1)
         {
             SETUPUNLOCK;
-            RP_THROW(main_ctx, "error setting user, setuid() failed");
+            fprintf(stderr, "server.start: error setting user, setuid() failed\n");
+            fflush(stderr);
+            _exit(1);
         }
 #endif
     }
@@ -7568,19 +7582,13 @@ void initThread(evhtp_t *htp, evthr_t *evthr, void *arg)
     /* authMod: copy the config hidden symbol to this thread's context
        so the auth module can read it when loaded lazily.
        (Inline functions were already copied during config parsing.) */
-    if(auth_mod_active && auth_mod_name_cached)
+    if(auth_mod_active && auth_mod_name_cached && auth_conf_cbor)
     {
-        CTXLOCK;
-        if(duk_get_global_string(main_ctx, DUK_HIDDEN_SYMBOL("authModConf")))
-        {
-            duk_json_encode(main_ctx, -1);
-            const char *json = duk_get_string(main_ctx, -1);
-            duk_push_string(ctx, json);
-            duk_json_decode(ctx, -1);
-            duk_put_global_string(ctx, DUK_HIDDEN_SYMBOL("authModConf"));
-        }
-        duk_pop(main_ctx);
-        CTXUNLOCK;
+        /* this thread's context only */
+        void *b = duk_push_fixed_buffer(ctx, auth_conf_cbor_len);
+        memcpy(b, auth_conf_cbor, (size_t)auth_conf_cbor_len);
+        duk_cbor_decode(ctx, -1, 0);
+        duk_put_global_string(ctx, DUK_HIDDEN_SYMBOL("authModConf"));
     }
 
     SETUPUNLOCK;
@@ -9778,6 +9786,29 @@ duk_ret_t duk_server_start(duk_context *ctx)
                     /* store parsed config in a hidden symbol for the auth module to read */
                     duk_dup(ctx, -1);                           /* stack: [ ... config config ] */
                     duk_put_global_string(ctx, DUK_HIDDEN_SYMBOL("authModConf")); /* stack: [ ... config ] */
+
+                    /* Encoded here, on the main thread: a thread must not do
+                       duktape work on main_ctx, which the main thread is using. */
+                    if (auth_conf_cbor)
+                    {
+                        free(auth_conf_cbor);
+                        auth_conf_cbor = NULL;
+                        auth_conf_cbor_len = 0;
+                    }
+                    duk_dup(ctx, -1);                           /* stack: [ ... config config ] */
+                    duk_cbor_encode(ctx, -1, 0);                /* stack: [ ... config buf ] */
+                    {
+                        duk_size_t sz = 0;
+                        void *b = duk_get_buffer_data(ctx, -1, &sz);
+                        if (b && sz)
+                        {
+                            REMALLOC(auth_conf_cbor, sz);
+                            memcpy(auth_conf_cbor, b, (size_t)sz);
+                            auth_conf_cbor_len = sz;
+                        }
+                    }
+                    duk_pop(ctx);                               /* stack: [ ... config ] */
+
                     duk_pop(ctx);                               /* stack: [ ... ] */
                 }
 
