@@ -683,13 +683,29 @@ static const char md_convert_js[] =
     "  return html.newDocument(h).toText({concatenate:true});"
     "})";
 
+/* How to install a missing converter, in the terms of THIS platform.
+   The build knows which one it is; the message should not tell a mac
+   operator to apt-get.  Commands as documented in rampart-totext.rst. */
+#if defined(__APPLE__)
+#  define TT_PDF_HINT "install it with: brew install poppler"
+#  define TT_DOC_HINT "textutil is built in on macOS -- this should not happen"
+#elif defined(__FreeBSD__)
+#  define TT_PDF_HINT "install it with: pkg install poppler-utils"
+#  define TT_DOC_HINT "install it with: pkg install catdoc"
+#else
+#  define TT_PDF_HINT "install it with: apt install poppler-utils, " \
+                      "or dnf install poppler-utils"
+#  define TT_DOC_HINT "install it with: apt install catdoc, " \
+                      "or dnf install catdoc"
+#endif
+
 /* PDF -> text via pdftotext (takes filename as argument) */
 static const char pdf_convert_file_js[] =
     "(function(filename) {"
     "  var exec = rampart.utils.exec;"
     "  var pdftotext = exec('which', 'pdftotext').stdout.trim();"
     "  if(!pdftotext)"
-    "    throw new Error('convert pdf: pdftotext not found (install poppler-utils or xpdf)');"
+    "    throw new Error('convert pdf: pdftotext not found -- " TT_PDF_HINT "');"
     "  var res = exec(pdftotext, '-enc', 'UTF-8', filename, '-');"
     "  if(res.exitStatus)"
     "    throw new Error('convert pdf: pdftotext failed: ' + res.stderr);"
@@ -703,7 +719,7 @@ static const char pdf_convert_buf_js[] =
     "  var exec = rampart.utils.exec;"
     "  var pdftotext = exec('which', 'pdftotext').stdout.trim();"
     "  if(!pdftotext)"
-    "    throw new Error('convert pdf: pdftotext not found (install poppler-utils or xpdf)');"
+    "    throw new Error('convert pdf: pdftotext not found -- " TT_PDF_HINT "');"
     "  var res = exec(pdftotext, '-enc', 'UTF-8', '-', '-', {stdin:content});"
     "  if(!res.exitStatus)"
     "    return res.stdout;"
@@ -739,7 +755,7 @@ static const char doc_convert_file_js[] =
     "      throw new Error('convert doc: textutil failed: ' + res.stderr);"
     "    return res.stdout;"
     "  }"
-    "  throw new Error('convert doc: neither catdoc nor textutil found');"
+    "  throw new Error('convert doc: neither catdoc nor textutil found -- " TT_DOC_HINT "');"
     "})";
 
 /* DOC -> text via catdoc/textutil from stdin (takes content as argument) */
@@ -760,7 +776,7 @@ static const char doc_convert_buf_js[] =
     "      throw new Error('convert doc: textutil failed: ' + res.stderr);"
     "    return res.stdout;"
     "  }"
-    "  throw new Error('convert doc: neither catdoc nor textutil found');"
+    "  throw new Error('convert doc: neither catdoc nor textutil found -- " TT_DOC_HINT "');"
     "})";
 
 /* ================================================================
