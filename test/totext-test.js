@@ -268,4 +268,93 @@ testFeature("pdf named .txt is still a pdf", function(){
     return got === "pdf";
 });
 
+/* ---- OCR: image files and scanned PDFs through rampart-ocr ----
+ *
+ * rampart-ocr ships in the separate rampart-langtools package, so the tests
+ * that need a reader are skipped, not failed, when it is not installed.
+ * The fixtures (ocr-memo.png, ocr-memo-3pages.tif, ocr-scan.pdf) are the
+ * synthetic page generated for the rampart-ocr test suite from
+ * rampart-langtools/test_docs/mk/memo.ps: original text, base-14 fonts,
+ * no third-party content, public domain. */
+
+/* the recognizer sometimes drops the spaces in this all-caps heading on
+   JPEG-sourced renders (the scan PDF wraps a JPEG), so accept either */
+var ocr_heading = /RAMPART\s*LANGTOOLS\s*TEST\s*DOCUMENT/;
+
+/* identification and the no-reader error need no rampart-ocr at all */
+testFeature("identify image formats", function(){
+    return totext.identify(testdir + "ocr-memo.png") === "png"
+        && totext.identify(testdir + "ocr-memo-3pages.tif") === "tiff"
+        && totext.identify(testdir + "ocr-scan.pdf") === "pdf";
+});
+
+testFeature("image without a reader throws with the setOcr hint", function(){
+    totext.setOcr(false);
+    try { totext.convertFile(testdir + "ocr-memo.png"); }
+    catch(e) { return /setOcr/.test(e.message); }
+    printf("\n  did not throw\n");
+    return false;
+});
+
+var ocr_reader = null, ocr_why = "rampart-ocr not installed";
+try {
+    var ocr_mod = require("rampart-ocr");
+    var ocr_models = require("rampart-models");
+    ocr_why = "rampart-ocr model not available";
+    ocr_reader = ocr_mod.init(ocr_models.ocrGet("ppocr-v5"), {threads: 0});
+} catch(e) {}
+
+function ocrTest(name, fn, needPoppler) {
+    if(!ocr_reader)
+        testFeature.skip(name, ocr_why);
+    else if(needPoppler && !has_pdftoppm)
+        testFeature.skip(name, "pdftoppm not installed");
+    else
+        testFeature(name, fn);
+}
+
+var has_pdftoppm = exec("which", "pdftoppm");
+has_pdftoppm = has_pdftoppm.exitStatus === 0 ? !!has_pdftoppm.stdout : false;
+
+ocrTest("ocr: png via setOcr(reader)", function(){
+    totext.setOcr(ocr_reader);
+    var txt = totext.convertFile(testdir + "ocr-memo.png");
+    if(!ocr_heading.test(txt)) {
+        printf("\n  heading not found; output starts: %.120s\n", txt);
+        return false;
+    }
+    return true;
+});
+
+ocrTest("ocr: multi-page tiff, pages in details", function(){
+    var ret = totext.convertFile(testdir + "ocr-memo-3pages.tif", {details: true});
+    var pages = ret.text.split("\f");
+    if(ret.mimeType !== "image/tiff" || ret.ocr !== true || pages.length !== 3
+       || !ret.pages || ret.pages.length !== 3 || ret.pages[2].page !== 2) {
+        printf("\n  mimeType=%s ocr=%s textPages=%d pages=%d\n",
+               ret.mimeType, ret.ocr, pages.length, ret.pages ? ret.pages.length : -1);
+        return false;
+    }
+    return pages.every(function(p){ return ocr_heading.test(p); });
+});
+
+ocrTest("ocr: scanned pdf is rasterized and read", function(){
+    var ret = totext.convertFile(testdir + "ocr-scan.pdf", true);
+    if(ret.ocr !== true || ret.mimeType !== "application/pdf"
+       || !ret.pages || ret.pages.length !== 1 || ret.pages[0].page !== 0) {
+        printf("\n  ocr=%s mimeType=%s pages=%d\n", ret.ocr, ret.mimeType,
+               ret.pages ? ret.pages.length : -1);
+        return false;
+    }
+    return ocr_heading.test(ret.text);
+}, true);
+
+ocrTest("ocr: per-call {ocr: reader} with none set", function(){
+    totext.setOcr(false);
+    var txt = totext.convertFile(testdir + "ocr-memo.png", {ocr: ocr_reader});
+    return ocr_heading.test(txt);
+});
+
+if(ocr_reader) ocr_reader.destroy();
+
 testFeature.exit();

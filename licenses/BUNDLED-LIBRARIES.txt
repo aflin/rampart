@@ -64,7 +64,7 @@ rampart-langtools package
 
 rampart-langtools (and its rampart-langtools-cuda variant) ships
 rampart-faiss.so + rampart-llamacpp.so + rampart-sentencepiece.so
-+ rampart-clip.so.
++ rampart-clip.so + rampart-ocr.so.
 These .so's are built with RPATH "$ORIGIN/../lib" so they pick up
 the install bundle's libopenblas / libgfortran / libgomp / libquadmath
 (see the first section of this file for their licenses).  No additional
@@ -84,6 +84,48 @@ sources (neither adds a runtime .so of its own):
               from a memory buffer      -> stb_image-license.txt
                                            (MIT or public domain --
                                             the user may choose either)
+
+rampart-ocr.so statically compiles in two third-party sources (neither
+adds a runtime .so of its own).  It contains no inference engine: the
+PP-OCR models run on the ONNX Runtime inside rampart-onnx.so, reached
+through a C ABI, so ORT is not a second copy here.
+
+  stb_image   the same single-header image decoder rampart-clip uses,
+              reading JPEG / PNG / BMP / GIF / TGA / PSD / HDR / PIC /
+              PNM from a file or a memory buffer.  rampart-ocr compiles
+              its own copy, whose symbols are kept private by a linker
+              version script so the two copies cannot bind to each other
+                                        -> stb_image-license.txt
+                                           (MIT or public domain --
+                                            the user may choose either)
+
+  libtiff     TIFF decoding, which stb_image does not provide and which
+              document work needs: multi-page Group 4 TIFF is a standard
+              archive format for scanned material.  Vendored and static
+              because there is usually no system copy to link -- the
+              manylinux build ovens carry none, macOS ships none in
+              /usr/lib (TIFF lives behind the ImageIO framework), and
+              the headers are absent even where the runtime library is
+              present.  Built with every optional third-party codec
+              disabled (no JPEG-in-TIFF, JBIG, LZMA, ZSTD, WebP or
+              LERC).  G3/G4, LZW and PackBits are internal to libtiff.
+              It does link zlib, for Deflate-compressed TIFF.  That
+              makes rampart-ocr the first module in THIS package to
+              reference zlib directly (rampart-clip, -faiss and
+              -llamacpp already load it transitively, via the bundled
+              libgfortran.so.5), but it is no new requirement for the
+              install as a whole: rampart-sql, rampart-curl and
+              rampart-whatwg all link zlib directly already.  It is
+              dynamically linked against the system copy rather than
+              bundled, which is safe on every target -- the manylinux
+              ovens carry libz.so and zlib.h, and macOS provides it
+              through the SDK
+                                        -> libtiff-license.txt
+                                           (BSD-style / MIT-like)
+
+The PP-OCR model files themselves are NOT bundled.  They are downloaded
+on first use by rampart-models into ~/.rampart/models/ and are Apache-2.0
+(PaddlePaddle PP-OCRv5, via an ONNX conversion).
 
 Embedded data
 -------------

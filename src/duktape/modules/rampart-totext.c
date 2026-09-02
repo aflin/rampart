@@ -4,6 +4,8 @@
 #include <string.h>
 #include <ctype.h>
 #include <sys/stat.h>
+#include <unistd.h>
+#include <limits.h>
 
 #define RP_STRING_IMPLEMENTATION
 #include "rampart.h"
@@ -30,6 +32,15 @@ typedef enum {
     FT_XLSX,
     FT_ODP,
     FT_ODS,
+    /* images: text comes from a rampart-ocr reader */
+    FT_PNG,
+    FT_JPEG,
+    FT_TIFF,
+    FT_GIF,
+    FT_BMP,
+    FT_PNM,
+    FT_PSD,
+    FT_HDR,
 } filetype_t;
 
 static const char *filetype_names[] = {
@@ -51,6 +62,14 @@ static const char *filetype_names[] = {
     "xlsx",
     "odp",
     "ods",
+    "png",
+    "jpeg",
+    "tiff",
+    "gif",
+    "bmp",
+    "pnm",
+    "psd",
+    "hdr",
 };
 
 /* ================================================================
@@ -94,6 +113,15 @@ static filetype_t identify_from_extension(const char *filename)
     if(!strcasecmp(dot, "odt"))   return FT_ODT;
     if(!strcasecmp(dot, "epub"))  return FT_EPUB;
     if(!strcasecmp(dot, "doc"))   return FT_DOC;
+    if(!strcasecmp(dot, "png"))   return FT_PNG;
+    if(!strcasecmp(dot, "jpg") || !strcasecmp(dot, "jpeg")) return FT_JPEG;
+    if(!strcasecmp(dot, "tif") || !strcasecmp(dot, "tiff")) return FT_TIFF;
+    if(!strcasecmp(dot, "gif"))   return FT_GIF;
+    if(!strcasecmp(dot, "bmp"))   return FT_BMP;
+    if(!strcasecmp(dot, "pnm") || !strcasecmp(dot, "ppm") ||
+       !strcasecmp(dot, "pgm") || !strcasecmp(dot, "pbm")) return FT_PNM;
+    if(!strcasecmp(dot, "psd"))   return FT_PSD;
+    if(!strcasecmp(dot, "hdr"))   return FT_HDR;
     if(!strcasecmp(dot, "pptx"))  return FT_PPTX;
     if(!strcasecmp(dot, "xlsx"))  return FT_XLSX;
     if(!strcasecmp(dot, "odp"))   return FT_ODP;
@@ -278,6 +306,42 @@ static int has_latex_signature(const unsigned char *buf, size_t len)
     return 0;
 }
 
+/* Image signatures.  All but BMP are unambiguous multi-byte magics; "BM" is
+   two letters any text file could start with, so it is checked against the
+   header's own size fields. */
+static filetype_t identify_image(const unsigned char *buf, size_t len)
+{
+    if(len >= 8 && !memcmp(buf, "\x89PNG\r\n\x1a\n", 8)) return FT_PNG;
+    if(len >= 3 && buf[0] == 0xFF && buf[1] == 0xD8 && buf[2] == 0xFF) return FT_JPEG;
+    if(len >= 6 && (!memcmp(buf, "GIF87a", 6) || !memcmp(buf, "GIF89a", 6))) return FT_GIF;
+    if(len >= 4 && ((buf[0] == 'I' && buf[1] == 'I' && (buf[2] == 42 || buf[2] == 43) && buf[3] == 0) ||
+                    (buf[0] == 'M' && buf[1] == 'M' && buf[2] == 0 && (buf[3] == 42 || buf[3] == 43))))
+        return FT_TIFF;
+    if(len >= 4 && !memcmp(buf, "8BPS", 4)) return FT_PSD;
+    if(len >= 10 && (!memcmp(buf, "#?RADIANCE", 10) || !memcmp(buf, "#?RGBE", 6))) return FT_HDR;
+    if(len >= 4 && buf[0] == 'P' && buf[1] >= '1' && buf[1] <= '6' && isspace(buf[2]))
+    {
+        /* "P3 is a chip" is prose; a real header's next token is the width */
+        size_t i = 2;
+        while(i < len && (isspace(buf[i]) || buf[i] == '#'))
+        {
+            if(buf[i] == '#') while(i < len && buf[i] != '\n') i++;
+            else i++;
+        }
+        if(i < len && isdigit(buf[i])) return FT_PNM;
+    }
+    if(len >= 30 && buf[0] == 'B' && buf[1] == 'M')
+    {
+        uint32_t fsize = buf[2] | (buf[3] << 8) | (buf[4] << 16) | ((uint32_t)buf[5] << 24);
+        uint32_t off   = buf[10] | (buf[11] << 8) | (buf[12] << 16) | ((uint32_t)buf[13] << 24);
+        uint32_t dib   = buf[14] | (buf[15] << 8) | (buf[16] << 16) | ((uint32_t)buf[17] << 24);
+        if((fsize == len || fsize == 0) && off < len &&
+           (dib == 12 || dib == 40 || dib == 52 || dib == 56 || dib == 64 || dib == 108 || dib == 124))
+            return FT_BMP;
+    }
+    return FT_UNKNOWN;
+}
+
 static filetype_t identify_content(const unsigned char *buf, size_t len,
                                    const char *filename)
 {
@@ -286,6 +350,12 @@ static filetype_t identify_content(const unsigned char *buf, size_t len,
 
     if(len >= 5 && !memcmp(buf, "%PDF-", 5))
         return FT_PDF;
+
+    {
+        filetype_t it = identify_image(buf, len);
+        if(it != FT_UNKNOWN)
+            return it;
+    }
 
     if(len >= 4 && buf[0] == 0xD0 && buf[1] == 0xCF && buf[2] == 0x11 && buf[3] == 0xE0)
         return FT_DOC;
@@ -2163,6 +2233,14 @@ static const char *filetype_mimes[] = {
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",         /* FT_XLSX */
     "application/vnd.oasis.opendocument.presentation",  /* FT_ODP */
     "application/vnd.oasis.opendocument.spreadsheet",   /* FT_ODS */
+    "image/png",                  /* FT_PNG */
+    "image/jpeg",                 /* FT_JPEG */
+    "image/tiff",                 /* FT_TIFF */
+    "image/gif",                  /* FT_GIF */
+    "image/bmp",                  /* FT_BMP */
+    "image/x-portable-anymap",    /* FT_PNM */
+    "image/vnd.adobe.photoshop",  /* FT_PSD */
+    "image/vnd.radiance",         /* FT_HDR */
 };
 
 /* ================================================================
@@ -2240,13 +2318,408 @@ static int filetype_is_text_bytes(filetype_t ft)
     }
 }
 
+/* ================================================================
+   OCR: image files, and PDF pages without a text layer, through a
+   rampart-ocr reader.  The reader is a handle from rampart-ocr.init();
+   it is stored on the module object by setOcr(), or passed per call as
+   {ocr: reader}.  rampart-ocr is never loaded unless setOcr(true|opts)
+   asked for a default reader to be built on demand.
+   ================================================================ */
+
+#define TT_OCR_HINT "set one with totext.setOcr(reader) or totext.setOcr(true); " \
+                    "rampart-ocr is part of the rampart-langtools package"
+#define TT_OCR_READER_KEY "\xff" "ocrReader"
+#define TT_OCR_OPTS_KEY   "\xff" "ocrOpts"
+#define TT_OCR_MIN_WORDCHARS 20   /* fewer on a PDF page: no usable text layer */
+#define TT_OCR_DPI "200"
+
+typedef struct {
+    duk_idx_t mod;      /* the module object (`this`) */
+    duk_idx_t reader;   /* rampart-ocr reader on the stack, or -1 */
+    duk_idx_t pages;    /* details: array collecting per-page results, or -1 */
+    int always;         /* ocr:"always": OCR every PDF page */
+    int lazy;           /* build a default reader on first need */
+    int did_ocr;
+} tt_ocr;
+
+typedef struct { char *s; size_t len, cap; } tt_buf;
+
+static void tt_buf_add(tt_buf *b, const char *s, size_t n)
+{
+    if(b->len + n + 1 > b->cap)
+    {
+        size_t c = b->cap ? b->cap * 2 : 4096;
+        while(c < b->len + n + 1) c *= 2;
+        REMALLOC(b->s, c);
+        b->cap = c;
+    }
+    memcpy(b->s + b->len, s, n);
+    b->len += n;
+    b->s[b->len] = 0;
+}
+
+static int is_ocr_reader(duk_context *ctx, duk_idx_t idx)
+{
+    int r;
+    if(!duk_is_object(ctx, idx)) return 0;
+    duk_get_prop_string(ctx, idx, "readText");
+    r = duk_is_function(ctx, -1);
+    duk_pop(ctx);
+    return r;
+}
+
+/* Resolve reader and mode from the options object and the module.  Whatever
+   it finds stays on the stack for the rest of the call. */
+static void tt_ocr_begin(duk_context *ctx, duk_idx_t opts, int details, tt_ocr *oc)
+{
+    memset(oc, 0, sizeof *oc);
+    oc->reader = -1;
+    oc->pages = -1;
+
+    duk_push_this(ctx);
+    oc->mod = duk_get_top_index(ctx);
+
+    if(duk_is_object(ctx, opts) && !duk_is_null(ctx, opts))
+    {
+        duk_get_prop_string(ctx, opts, "ocr");
+        if(is_ocr_reader(ctx, -1))
+            oc->reader = duk_get_top_index(ctx);
+        else
+        {
+            if(duk_is_string(ctx, -1))
+            {
+                const char *m = duk_get_string(ctx, -1);
+                if(!strcmp(m, "always"))     oc->always = 1;
+                else if(strcmp(m, "auto"))
+                    RP_THROW(ctx, "convert: ocr must be \"auto\", \"always\", true, or a rampart-ocr reader");
+            }
+            else if(duk_is_boolean(ctx, -1))
+            {
+                if(duk_get_boolean(ctx, -1)) oc->lazy = 1;
+            }
+            else if(!duk_is_undefined(ctx, -1))
+                RP_THROW(ctx, "convert: ocr must be \"auto\", \"always\", true, or a rampart-ocr reader");
+            duk_pop(ctx);
+        }
+    }
+
+    if(oc->reader < 0 && duk_is_object(ctx, oc->mod))
+    {
+        duk_get_prop_string(ctx, oc->mod, TT_OCR_READER_KEY);
+        if(is_ocr_reader(ctx, -1))
+            oc->reader = duk_get_top_index(ctx);
+        else
+        {
+            duk_pop(ctx);
+            if(duk_has_prop_string(ctx, oc->mod, TT_OCR_OPTS_KEY))
+                oc->lazy = 1;
+        }
+    }
+
+    if(details)
+    {
+        duk_push_array(ctx);
+        oc->pages = duk_get_top_index(ctx);
+    }
+}
+
+/* The reader, building the default one if setOcr(true|opts) allowed it;
+   throws when the input needs OCR and there is nothing to do it with. */
+static duk_idx_t tt_ocr_reader(duk_context *ctx, tt_ocr *oc, const char *what)
+{
+    if(oc->reader >= 0) return oc->reader;
+    if(!oc->lazy)
+        RP_THROW(ctx, "convert %s: this input needs an OCR reader and none is set -- " TT_OCR_HINT, what);
+
+    /* require('rampart-ocr').init(require('rampart-models').ocrGet('ppocr-v5'), opts) */
+    duk_get_global_string(ctx, "require");
+    duk_push_string(ctx, "rampart-models");
+    if(duk_pcall(ctx, 1) != 0)
+        RP_THROW(ctx, "convert %s: cannot load rampart-models (%s) -- " TT_OCR_HINT,
+                 what, duk_safe_to_string(ctx, -1));
+    duk_push_string(ctx, "ocrGet");
+    duk_push_string(ctx, "ppocr-v5");
+    if(duk_pcall_prop(ctx, -3, 1) != 0)
+        RP_THROW(ctx, "convert %s: rampart-models.ocrGet failed: %s", what, duk_safe_to_string(ctx, -1));
+
+    duk_get_global_string(ctx, "require");
+    duk_push_string(ctx, "rampart-ocr");
+    if(duk_pcall(ctx, 1) != 0)
+        RP_THROW(ctx, "convert %s: cannot load rampart-ocr (%s) -- " TT_OCR_HINT,
+                 what, duk_safe_to_string(ctx, -1));
+    duk_push_string(ctx, "init");
+    duk_dup(ctx, -3);
+    if(duk_is_object(ctx, oc->mod)) duk_get_prop_string(ctx, oc->mod, TT_OCR_OPTS_KEY);
+    else duk_push_object(ctx);
+    if(!duk_is_object(ctx, -1)) { duk_pop(ctx); duk_push_object(ctx); }
+    if(duk_pcall_prop(ctx, -4, 2) != 0)
+        RP_THROW(ctx, "convert %s: rampart-ocr.init failed: %s", what, duk_safe_to_string(ctx, -1));
+
+    if(duk_is_object(ctx, oc->mod))
+    {
+        duk_dup(ctx, -1);
+        duk_put_prop_string(ctx, oc->mod, TT_OCR_READER_KEY);   /* reused by later calls */
+    }
+    oc->reader = duk_get_top_index(ctx);
+    return oc->reader;
+}
+
+/* reader.readText(input, {page}) -> leaves the page's text on the stack.
+   doc_page is the page number reported to the caller (a PDF page, or the
+   TIFF directory); npages gets the input's page count. */
+static void tt_ocr_read(duk_context *ctx, tt_ocr *oc, duk_idx_t input,
+                        int page, int doc_page, int *npages)
+{
+    duk_idx_t res;
+
+    duk_push_string(ctx, "readText");
+    duk_dup(ctx, input);
+    duk_push_object(ctx);
+    duk_push_int(ctx, page);
+    duk_put_prop_string(ctx, -2, "page");
+    if(duk_pcall_prop(ctx, oc->reader, 2) != 0)
+        RP_THROW(ctx, "convert: ocr: %s", duk_safe_to_string(ctx, -1));
+    res = duk_get_top_index(ctx);
+
+    duk_get_prop_string(ctx, res, "pages");
+    *npages = duk_is_number(ctx, -1) ? duk_get_int(ctx, -1) : 1;
+    duk_pop(ctx);
+
+    if(oc->pages >= 0)
+    {
+        duk_push_int(ctx, doc_page);
+        duk_put_prop_string(ctx, res, "page");
+        duk_dup(ctx, res);
+        duk_put_prop_index(ctx, oc->pages, (duk_uarridx_t)duk_get_length(ctx, oc->pages));
+    }
+    duk_get_prop_string(ctx, res, "text");
+    if(!duk_is_string(ctx, -1)) { duk_pop(ctx); duk_push_string(ctx, ""); }
+    duk_remove(ctx, res);
+    oc->did_ocr = 1;
+}
+
+/* An image file: every page through the reader, pages separated by \f.  The
+   bytes are handed over as a Buffer, so a gzipped image works like any other. */
+static void tt_ocr_convert_image(duk_context *ctx, tt_ocr *oc,
+                                 const unsigned char *buf, size_t len, filetype_t ft)
+{
+    duk_idx_t input;
+    tt_buf out = {0};
+    int p = 0, npages = 1;
+    void *b;
+
+    tt_ocr_reader(ctx, oc, filetype_names[ft]);
+    b = duk_push_fixed_buffer(ctx, (duk_size_t)len);
+    memcpy(b, buf, len);
+    input = duk_get_top_index(ctx);
+    do
+    {
+        duk_size_t tl;
+        const char *t;
+        tt_ocr_read(ctx, oc, input, p, p, &npages);
+        t = duk_get_lstring(ctx, -1, &tl);
+        if(p) tt_buf_add(&out, "\f", 1);
+        tt_buf_add(&out, t, tl);
+        duk_pop(ctx);
+    } while(++p < npages);
+    duk_remove(ctx, input);
+    duk_push_lstring(ctx, out.s ? out.s : "", (duk_size_t)out.len);
+    free(out.s);
+}
+
+static size_t tt_wordchars(const char *s, size_t n)
+{
+    size_t i, c = 0;
+    for(i = 0; i < n; i++)
+    {
+        unsigned char ch = (unsigned char)s[i];
+        if(isalnum(ch) || ch >= 0x80) c++;
+    }
+    return c;
+}
+
+static int tt_write_tmp(const unsigned char *buf, size_t len, char *path, size_t pathlen)
+{
+    const char *d = getenv("TMPDIR");
+    int fd;
+    if(!d || !*d) d = "/tmp";
+    snprintf(path, pathlen, "%s/_rp_totext_XXXXXX", d);
+    fd = mkstemp(path);
+    if(fd < 0) return -1;
+    if(write(fd, buf, len) != (ssize_t)len) { close(fd); unlink(path); return -1; }
+    close(fd);
+    return 0;
+}
+
+/* One PDF page to a grayscale PGM in memory (pdftoppm writes to stdout when
+   given no output prefix). */
+static const char pdf_raster_js[] =
+    "(function(file, page) {"
+    "  var exec = rampart.utils.exec;"
+    "  var pdftoppm = exec('which', 'pdftoppm').stdout.trim();"
+    "  if(!pdftoppm)"
+    "    throw new Error('pdftoppm not found (needed to rasterize a PDF page for OCR) -- " TT_PDF_HINT "');"
+    "  var res = exec(pdftoppm, '-r', '" TT_OCR_DPI "', '-gray', '-f', page, '-l', page, file, {returnBuffer:true});"
+    "  if(res.exitStatus)"
+    "    throw new Error('pdftoppm failed on page ' + page + ': ' + rampart.utils.bufferToString(res.stderr||''));"
+    "  return res.stdout;"
+    "})";
+
+/* How many raster images a PDF contains; -1 if pdfimages is unavailable. */
+static const char pdf_images_js[] =
+    "(function(file) {"
+    "  var exec = rampart.utils.exec;"
+    "  var pdfimages = exec('which', 'pdfimages').stdout.trim();"
+    "  if(!pdfimages) return -1;"
+    "  var res = exec(pdfimages, '-list', file);"
+    "  if(res.exitStatus) return -1;"
+    "  var n = 0, lines = res.stdout.split('\\n');"
+    "  for(var i = 2; i < lines.length; i++)"
+    "    if(/^\\s*\\d+\\s+\\d+\\s+image\\b/.test(lines[i])) n++;"
+    "  return n;"
+    "})";
+
+static void tt_call_js2(duk_context *ctx, const char *js, const char *file, int page)
+{
+    if(duk_pcompile_string(ctx, DUK_COMPILE_EVAL, js) != 0)
+        RP_THROW(ctx, "convert pdf: compile error: %s", duk_safe_to_string(ctx, -1));
+    if(duk_pcall(ctx, 0) != 0)
+        RP_THROW(ctx, "convert pdf: eval error: %s", duk_safe_to_string(ctx, -1));
+    duk_push_string(ctx, file);
+    duk_push_int(ctx, page);
+    if(duk_pcall(ctx, 2) != 0)
+        RP_THROW(ctx, "convert pdf: %s", duk_safe_to_string(ctx, -1));
+}
+
+/* Runs after pdftotext, whose output is on top of the stack.  pdftotext ends
+   every page with \f.  With a reader: pages with no usable text layer (or
+   all pages, mode "always") are rasterized and read, and the output keeps
+   pdftotext's shape.  Without one: a PDF holding images but no text at all
+   is a scan that cannot be converted, and says so. */
+static void tt_ocr_after_pdf(duk_context *ctx, tt_ocr *oc,
+                             const unsigned char *buf, size_t len, const char *filename)
+{
+    duk_idx_t txt = duk_get_top_index(ctx);
+    duk_size_t tl;
+    const char *text = duk_get_lstring(ctx, txt, &tl);
+    int have = oc->reader >= 0 || oc->lazy;
+    size_t i, start = 0;
+    int page = 0, ocred = 0, have_tmp = 0;
+    char tmp[PATH_MAX];
+    const char *file = filename;
+    struct stat st;
+    tt_buf out = {0};
+
+    if(!text) return;
+
+    if(!have)
+    {
+        if(tt_wordchars(text, tl) == 0)
+        {
+            int nimg;
+            if(!file || stat(file, &st) != 0)
+            {
+                if(tt_write_tmp(buf, len, tmp, sizeof tmp) != 0)
+                    RP_THROW(ctx, "convert pdf: could not create a temp file");
+                file = tmp; have_tmp = 1;
+            }
+            tt_call_js2(ctx, pdf_images_js, file, 0);
+            nimg = duk_get_int(ctx, -1);
+            duk_pop(ctx);
+            if(have_tmp) unlink(tmp);
+            if(nimg != 0)
+                RP_THROW(ctx, "convert pdf: no text layer%s -- this looks like a scanned document "
+                              "and needs an OCR reader -- " TT_OCR_HINT,
+                         nimg > 0 ? " (images only)" : "");
+        }
+        return;
+    }
+
+    for(i = 0; i <= tl; i++)
+    {
+        size_t plen;
+        if(i < tl && text[i] != '\f') continue;
+        plen = i - start;
+        if(i == tl && plen == 0) break;        /* nothing after the last \f */
+
+        if(oc->always || tt_wordchars(text + start, plen) < TT_OCR_MIN_WORDCHARS)
+        {
+            duk_idx_t input;
+            duk_size_t ol;
+            const char *o;
+            int np;
+
+            if(!file || stat(file, &st) != 0)
+            {
+                if(tt_write_tmp(buf, len, tmp, sizeof tmp) != 0)
+                    RP_THROW(ctx, "convert pdf: could not create a temp file");
+                file = tmp; have_tmp = 1;
+            }
+            tt_ocr_reader(ctx, oc, "pdf");
+            tt_call_js2(ctx, pdf_raster_js, file, page + 1);
+            input = duk_get_top_index(ctx);
+            tt_ocr_read(ctx, oc, input, 0, page, &np);
+            o = duk_get_lstring(ctx, -1, &ol);
+            tt_buf_add(&out, o, ol);
+            duk_pop(ctx);
+            duk_remove(ctx, input);
+            ocred = 1;
+        }
+        else
+            tt_buf_add(&out, text + start, plen);
+        tt_buf_add(&out, "\f", 1);
+        start = i + 1;
+        page++;
+    }
+    if(have_tmp) unlink(tmp);
+
+    if(ocred)
+    {
+        duk_push_lstring(ctx, out.s ? out.s : "", (duk_size_t)out.len);
+        duk_replace(ctx, txt);
+    }
+    free(out.s);
+}
+
+/* setOcr(reader | true | opts | false) */
+static duk_ret_t rp_set_ocr(duk_context *ctx)
+{
+    duk_push_this(ctx);
+    if(!duk_is_object(ctx, -1))
+        RP_THROW(ctx, "setOcr: must be called as a method of the rampart-totext module");
+    duk_del_prop_string(ctx, -1, TT_OCR_READER_KEY);
+    duk_del_prop_string(ctx, -1, TT_OCR_OPTS_KEY);
+
+    if(is_ocr_reader(ctx, 0))
+    {
+        duk_dup(ctx, 0);
+        duk_put_prop_string(ctx, -2, TT_OCR_READER_KEY);
+    }
+    else if(duk_is_boolean(ctx, 0))
+    {
+        if(duk_get_boolean(ctx, 0))
+        {
+            duk_push_object(ctx);
+            duk_put_prop_string(ctx, -2, TT_OCR_OPTS_KEY);
+        }
+    }
+    else if(duk_is_object(ctx, 0) && !duk_is_null(ctx, 0) && !duk_is_function(ctx, 0))
+    {
+        duk_dup(ctx, 0);
+        duk_put_prop_string(ctx, -2, TT_OCR_OPTS_KEY);
+    }
+    else if(!duk_is_undefined(ctx, 0) && !duk_is_null(ctx, 0))
+        RP_THROW(ctx, "setOcr: argument must be a rampart-ocr reader, an options object for rampart-ocr.init(), true, or false");
+    return 0;
+}
+
 /* do_convert: pushes result string onto the duktape stack.
    If filename is non-NULL, PDF/DOC use file-based external tools.
    If filename is NULL (buffer mode), PDF/DOC use stdin-based tools. */
 static void do_convert(const unsigned char *buf, size_t len,
                        filetype_t ft, duk_context *ctx,
                        const char *filename, const char **charset_out,
-                       const char **charset_src_out)
+                       const char **charset_src_out, tt_ocr *oc)
 {
     rp_string *result = NULL;
     rp_charset_result cs;
@@ -2343,6 +2816,12 @@ static void do_convert(const unsigned char *buf, size_t len,
                 call_js_with_string(ctx, pdf_convert_file_js, "pdf", filename, strlen(filename));
             else
                 call_js_converter_buf(ctx, pdf_convert_buf_js, "pdf", buf, len);
+            tt_ocr_after_pdf(ctx, oc, buf, len, filename);
+            goto cleanup;
+
+        case FT_PNG: case FT_JPEG: case FT_TIFF: case FT_GIF:
+        case FT_BMP: case FT_PNM:  case FT_PSD:  case FT_HDR:
+            tt_ocr_convert_image(ctx, oc, buf, len, ft);
             goto cleanup;
 
         case FT_DOC:
@@ -2371,6 +2850,17 @@ cleanup:
        nothing may touch buf after this. */
     if(cs_used) rp_charset_result_free(&cs);
 }
+/* Move a malloc'd input buffer onto the value stack.  Every converter below
+   may throw, and a throw unwinds the stack -- a plain malloc would leak. */
+static unsigned char *buf_to_stack(duk_context *ctx, unsigned char *buf, size_t len)
+{
+    unsigned char *db = (unsigned char *)duk_push_fixed_buffer(ctx, (duk_size_t)len + 1);
+    memcpy(db, buf, len);
+    db[len] = 0;
+    free(buf);
+    return db;
+}
+
 /* check if arg at idx is a "details" request:
    true, or {details:true} */
 static int want_details(duk_context *ctx, duk_idx_t idx)
@@ -2392,7 +2882,7 @@ static int want_details(duk_context *ctx, duk_idx_t idx)
 /* wrap the text result (on top of stack) in a details object if requested.
    Replaces the top-of-stack string with {text:"...", mimeType:"..."} */
 static void push_details(duk_context *ctx, filetype_t ft,
-                         const char *charset, const char *charset_src)
+                         const char *charset, const char *charset_src, tt_ocr *oc)
 {
     /* text string is on top of stack */
     duk_push_object(ctx);
@@ -2409,6 +2899,13 @@ static void push_details(duk_context *ctx, filetype_t ft,
         duk_put_prop_string(ctx, -2, "charset");
         duk_push_string(ctx, charset_src ? charset_src : "unknown");
         duk_put_prop_string(ctx, -2, "charsetSource");
+    }
+    duk_push_boolean(ctx, oc->did_ocr);
+    duk_put_prop_string(ctx, -2, "ocr");
+    if(oc->did_ocr && oc->pages >= 0)
+    {
+        duk_dup(ctx, oc->pages);
+        duk_put_prop_string(ctx, -2, "pages");
     }
 }
 
@@ -2494,14 +2991,16 @@ static duk_ret_t rp_convert(duk_context *ctx)
         len = dec_len;
     }
 
+    buf = buf_to_stack(ctx, buf, len);
     filetype_t ft = identify_content(buf, len, "");
+    tt_ocr oc;
+    tt_ocr_begin(ctx, 1, details, &oc);
 
     /* buffer mode: no filename, PDF/DOC use stdin */
-    do_convert(buf, len, ft, ctx, NULL, &cs_name, &cs_src);
-    free(buf);
+    do_convert(buf, len, ft, ctx, NULL, &cs_name, &cs_src, &oc);
 
     if(details)
-        push_details(ctx, ft, cs_name, cs_src);
+        push_details(ctx, ft, cs_name, cs_src, &oc);
 
     return 1;
 }
@@ -2534,14 +3033,19 @@ static duk_ret_t rp_convert_file(duk_context *ctx)
         effective_filename = strip_gz_ext(filename);
     }
 
+    buf = buf_to_stack(ctx, buf, len);
     filetype_t ft = identify_content(buf, len, effective_filename);
+    tt_ocr oc;
+    tt_ocr_begin(ctx, 1, details, &oc);
 
-    /* file mode: pass filename so PDF/DOC use file-based tools */
-    do_convert(buf, len, ft, ctx, effective_filename, &cs_name, &cs_src);
-    free(buf);
+    /* file mode: pass the filename so PDF/DOC use file-based tools -- unless
+       the file was gzipped: the stripped name is not on disk (or, worse, a
+       different file is), so those get the decompressed bytes instead */
+    do_convert(buf, len, ft, ctx, effective_filename != filename ? NULL : filename,
+               &cs_name, &cs_src, &oc);
 
     if(details)
-        push_details(ctx, ft, cs_name, cs_src);
+        push_details(ctx, ft, cs_name, cs_src, &oc);
 
     return 1;
 }
@@ -2561,6 +3065,9 @@ duk_ret_t duk_open_module(duk_context *ctx)
 
     duk_push_c_function(ctx, rp_identify, 1);
     duk_put_prop_string(ctx, -2, "identify");
+
+    duk_push_c_function(ctx, rp_set_ocr, 1);
+    duk_put_prop_string(ctx, -2, "setOcr");
 
     return 1;
 }
