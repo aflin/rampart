@@ -2427,9 +2427,17 @@ static void tt_ocr_begin(duk_context *ctx, duk_idx_t opts, int details, tt_ocr *
    throws when the input needs OCR and there is nothing to do it with. */
 static duk_idx_t tt_ocr_reader(duk_context *ctx, tt_ocr *oc, const char *what)
 {
+    duk_idx_t base;
+
     if(oc->reader >= 0) return oc->reader;
     if(!oc->lazy)
         RP_THROW(ctx, "convert %s: this input needs an OCR reader and none is set -- " TT_OCR_HINT, what);
+
+    /* Building the reader takes several calls, each leaving its result on the
+     * stack.  Collapse them at the end: a caller holding a stack index from
+     * before this ran would otherwise find that scaffolding piled on top, and
+     * the text it expects on top would be an intermediate object instead. */
+    base = duk_get_top(ctx);
 
     /* require('rampart-ocr').init(require('rampart-models').ocrGet('ppocr-v5'), opts) */
     duk_get_global_string(ctx, "require");
@@ -2460,7 +2468,9 @@ static duk_idx_t tt_ocr_reader(duk_context *ctx, tt_ocr *oc, const char *what)
         duk_dup(ctx, -1);
         duk_put_prop_string(ctx, oc->mod, TT_OCR_READER_KEY);   /* reused by later calls */
     }
-    oc->reader = duk_get_top_index(ctx);
+    duk_insert(ctx, base);          /* the reader down to base ... */
+    duk_set_top(ctx, base + 1);     /* ... and drop the scaffolding above it */
+    oc->reader = base;
     return oc->reader;
 }
 
@@ -2503,7 +2513,7 @@ static void tt_ocr_read(duk_context *ctx, tt_ocr *oc, duk_idx_t input,
 static void tt_ocr_convert_image(duk_context *ctx, tt_ocr *oc,
                                  const unsigned char *buf, size_t len, filetype_t ft)
 {
-    duk_idx_t input;
+    duk_idx_t input, base = duk_get_top(ctx);
     tt_buf out = {0};
     int p = 0, npages = 1;
     void *b;
@@ -2524,6 +2534,8 @@ static void tt_ocr_convert_image(duk_context *ctx, tt_ocr *oc,
     } while(++p < npages);
     duk_remove(ctx, input);
     duk_push_lstring(ctx, out.s ? out.s : "", (duk_size_t)out.len);
+    duk_insert(ctx, base);          /* the text is the only thing we leave */
+    duk_set_top(ctx, base + 1);
     free(out.s);
 }
 
@@ -2678,6 +2690,9 @@ static void tt_ocr_after_pdf(duk_context *ctx, tt_ocr *oc,
         duk_push_lstring(ctx, out.s ? out.s : "", (duk_size_t)out.len);
         duk_replace(ctx, txt);
     }
+    /* a reader built on demand above was pushed after txt: drop it so the text
+     * is on top, which is where push_details looks for it */
+    duk_set_top(ctx, txt + 1);
     free(out.s);
 }
 

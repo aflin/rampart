@@ -289,9 +289,17 @@ testFeature("identify image formats", function(){
 });
 
 testFeature("image without a reader throws with the setOcr hint", function(){
+    /* outside the try on purpose: if setOcr is missing (an old rampart-totext),
+       that must fail here, not be caught below and mistaken for the hint --
+       "property 'setOcr' of [object Object]" would match /setOcr/ too */
     totext.setOcr(false);
     try { totext.convertFile(testdir + "ocr-memo.png"); }
-    catch(e) { return /setOcr/.test(e.message); }
+    catch(e) {
+        if(/needs an OCR reader/.test(e.message) && /setOcr/.test(e.message))
+            return true;
+        printf("\n  wrong error: %s\n", e.message.split("\n")[0]);
+        return false;
+    }
     printf("\n  did not throw\n");
     return false;
 });
