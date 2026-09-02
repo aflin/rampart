@@ -240,32 +240,51 @@ testFeature("convertFile() without details returns string", function(){
  * extension still gets it.  Binary signatures (a PDF named .txt) are
  * unaffected -- those are signatures, not statistics. */
 
+/* Scratch space for the two tests below, which have to CREATE a file to name
+   it themselves.  It is deliberately not convtest/: that holds the fixtures
+   and, in an installed tree, belongs to root -- writing there fails for an
+   ordinary user, and dirties the install when it succeeds.  Made here, removed
+   at the end, and every file removed in a `finally` so a test that fails or
+   throws still leaves nothing behind. */
+var scratch = (process.env.TMPDIR || "/tmp") + "/rampart-totext-test-" + process.getpid();
+mkdir(scratch);
+
+function scratchFile(name) { return scratch + "/" + name; }
+function unlinkQuiet(p)    { try { rmFile(p); } catch(e) {} }
+
 testFeature("md-looking .txt is identified as text", function(){
     var art = "#  Chart 1\n" +
               "****************************\n" +
               "**  boxes  **  and rules  **\n" +
               "****************************\n" +
               "#  see ```figure``` above\n";
-    fprintf(testdir + "mdish.txt", "%s", art);
-    var asTxt = totext.identify(testdir + "mdish.txt");
-    /* same bytes, no extension to trust: the sniffer may guess */
-    fprintf(testdir + "mdish.data", "%s", art);
-    var asData = totext.identify(testdir + "mdish.data");
-    rmFile(testdir + "mdish.txt");
-    rmFile(testdir + "mdish.data");
-    if(asTxt !== "text") {
-        printf("\n  .txt identified as '%s'\n", asTxt);
-        return false;
+    var txt  = scratchFile("mdish.txt");
+    var data = scratchFile("mdish.data");
+    try {
+        fprintf(txt, "%s", art);
+        var asTxt = totext.identify(txt);
+        /* same bytes, no extension to trust: the sniffer may guess */
+        fprintf(data, "%s", art);
+        var asData = totext.identify(data);
+        if(asTxt !== "text") {
+            printf("\n  .txt identified as '%s'\n", asTxt);
+            return false;
+        }
+        return asData === "markdown";
+    } finally {
+        unlinkQuiet(txt);
+        unlinkQuiet(data);
     }
-    return asData === "markdown";
 });
 
 testFeature("pdf named .txt is still a pdf", function(){
-    var buf = readFile(testdir + "test.pdf");
-    fprintf(testdir + "liar.txt", "%s", buf);
-    var got = totext.identify(testdir + "liar.txt");
-    rmFile(testdir + "liar.txt");
-    return got === "pdf";
+    var liar = scratchFile("liar.txt");
+    try {
+        fprintf(liar, "%s", readFile(testdir + "test.pdf"));
+        return totext.identify(liar) === "pdf";
+    } finally {
+        unlinkQuiet(liar);
+    }
 });
 
 /* ---- OCR: image files and scanned PDFs through rampart-ocr ----
@@ -364,5 +383,9 @@ ocrTest("ocr: per-call {ocr: reader} with none set", function(){
 });
 
 if(ocr_reader) ocr_reader.destroy();
+
+/* the scratch dir is empty by now (each test unlinks in a finally); remove it
+   whatever happened above, so a failed run leaves nothing in TMPDIR either */
+try { rmdir(scratch); } catch(e) {}
 
 testFeature.exit();
