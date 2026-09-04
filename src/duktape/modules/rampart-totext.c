@@ -2425,9 +2425,25 @@ static void tt_ocr_begin(duk_context *ctx, duk_idx_t opts, int details, tt_ocr *
 
 /* The reader, building the default one if setOcr(true|opts) allowed it;
    throws when the input needs OCR and there is nothing to do it with. */
+/* Should the lazily-built reader load the layout model?  Default yes; the
+ * caller opts out with setOcr({layout:false}) (or per call, {ocr:{...}}). */
+static int want_layout(duk_context *ctx, tt_ocr *oc)
+{
+    int yes = 1;
+    if(!duk_is_object(ctx, oc->mod)) return yes;
+    if(duk_get_prop_string(ctx, oc->mod, TT_OCR_OPTS_KEY))
+    {
+        if(duk_get_prop_string(ctx, -1, "layout"))
+            yes = duk_to_boolean(ctx, -1);
+        duk_pop(ctx);
+    }
+    duk_pop(ctx);
+    return yes;
+}
+
 static duk_idx_t tt_ocr_reader(duk_context *ctx, tt_ocr *oc, const char *what)
 {
-    duk_idx_t base;
+    duk_idx_t base, models_idx;
 
     if(oc->reader >= 0) return oc->reader;
     if(!oc->lazy)
@@ -2449,6 +2465,35 @@ static duk_idx_t tt_ocr_reader(duk_context *ctx, tt_ocr *oc, const char *what)
     duk_push_string(ctx, "ppocr-v5");
     if(duk_pcall_prop(ctx, -3, 1) != 0)
         RP_THROW(ctx, "convert %s: rampart-models.ocrGet failed: %s", what, duk_safe_to_string(ctx, -1));
+    models_idx = duk_get_top_index(ctx) - 1;   /* the models module, below paths */
+
+    /* The layout model comes too, unless the caller opted out with
+     * {layout:false}.  Without it a multi-column page is read ACROSS the
+     * columns instead of down them: measured on OmniDocBench, reading order
+     * over 415 pages scores 0.83 without layout against 0.94 with it, and
+     * three-column pages 0.39 against 0.98.  A module whose job is to take
+     * anything should not get that wrong by default.  The cost is the
+     * download, 21 MB becoming 145 MB, which is what {layout:false} is for
+     * when the caller knows the corpus is single-column. */
+    if(want_layout(ctx, oc))
+    {
+        duk_push_string(ctx, "ocrGet");
+        duk_push_string(ctx, "ppocr-layout");
+        if(duk_pcall_prop(ctx, models_idx, 1) != 0)
+        {
+            /* Not fatal: a failed or declined 124 MB fetch should still leave a
+             * working reader, just one that cannot order columns. */
+            duk_pop(ctx);
+        }
+        else
+        {
+            if(duk_is_object(ctx, -1) && duk_get_prop_string(ctx, -1, "layout"))
+                duk_put_prop_string(ctx, -3, "layout");   /* onto the paths object */
+            else
+                duk_pop(ctx);
+            duk_pop(ctx);
+        }
+    }
 
     duk_get_global_string(ctx, "require");
     duk_push_string(ctx, "rampart-ocr");
@@ -2460,6 +2505,22 @@ static duk_idx_t tt_ocr_reader(duk_context *ctx, tt_ocr *oc, const char *what)
     if(duk_is_object(ctx, oc->mod)) duk_get_prop_string(ctx, oc->mod, TT_OCR_OPTS_KEY);
     else duk_push_object(ctx);
     if(!duk_is_object(ctx, -1)) { duk_pop(ctx); duk_push_object(ctx); }
+    /* ocr.init merges paths and opts and reads `layout` as a PATH; a boolean
+     * left here would overwrite the path set above.  Copy the opts without that
+     * key rather than mutating the object the caller handed to setOcr. */
+    if(duk_has_prop_string(ctx, -1, "layout"))
+    {
+        duk_idx_t src = duk_get_top_index(ctx);
+        duk_push_object(ctx);
+        duk_enum(ctx, src, DUK_ENUM_OWN_PROPERTIES_ONLY);
+        while(duk_next(ctx, -1, 1))
+        {
+            if(!strcmp(duk_get_string(ctx, -2), "layout")) { duk_pop_2(ctx); continue; }
+            duk_put_prop(ctx, -4);
+        }
+        duk_pop(ctx);
+        duk_remove(ctx, src);
+    }
     if(duk_pcall_prop(ctx, -4, 2) != 0)
         RP_THROW(ctx, "convert %s: rampart-ocr.init failed: %s", what, duk_safe_to_string(ctx, -1));
 
