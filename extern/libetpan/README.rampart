@@ -1,0 +1,87 @@
+# libetpan in rampart — a subset, not the upstream tree
+
+This directory is NOT a copy of libetpan. It is the RFC 5322 + MIME parsing
+subset, extracted deliberately, plus one file of ours. If you go looking for
+`libetpan.h`, IMAP, SMTP, POP3, NNTP, SSL, mailstream or the storage drivers,
+they are not here and were never meant to be.
+
+Upstream: https://github.com/dinhvh/libetpan
+License:  BSD 3-Clause — see COPYRIGHT.
+Taken from master at commit dated 2026-08-22.
+
+## Why a subset
+
+rampart-totext needs a MIME parser. libetpan is a mail *framework*: the parser
+is about 26,000 lines of a much larger tree whose remainder is network
+protocols we have no use for. The imf/mime layers turn out to depend on
+nothing but three container types, so the cut is clean — verified by
+compiling these files standalone with no other part of upstream present.
+
+## What is here
+
+    src/mailimf*.c            RFC 5322 header parsing
+    src/mailmime*.c           MIME structure, RFC 2047 encoded-words,
+                              RFC 2231 parameters, Content-Disposition
+    src/chash.c clist.c mmapstring.c
+                              the containers those parsers use
+    include/libetpan/         only the headers the above actually include
+    rp_charconv.c             OURS — see below
+
+## What was deliberately dropped
+
+**The write side.** `mailimf_write_*.c` and `mailmime_write_*.c` build
+messages; we only ever read them. Their headers are still vendored because
+`mailimf.h` includes them, but no writer object is compiled.
+
+**`charconv.c`.** Upstream's charset layer is ~1100 lines of #ifdefs over
+iconv, ICU and CoreFoundation, and with none of them configured it fails
+*silently* — an RFC 2047 Subject comes back as the raw `=?utf-8?b?...?=`
+with no error reported anywhere. rampart already has `rp_charset_to_utf8()`,
+already links iconv, and already has a fallback for when iconv is missing.
+`rp_charconv.c` implements the same three-function interface on top of it, so
+the module has ONE charset stack rather than two that can disagree. It is
+about 60 lines against upstream's 1100.
+
+**`timeutils.c` and `mailimf_types_helper.c`.** The helper is for *building*
+messages, not parsing them, and it is the only thing that pulls in
+`timeutils.c` — which carries BSD **4-clause** code from the Regents of the
+University of California (the advertising clause; rescinded by Berkeley in
+1999, but still a licence we would rather not carry). Dropping the helper
+drops the 4-clause code with it, and parsing is unaffected: verified by
+building and running the parser without either file.
+
+The remaining files were checked for the sendmail / NetBSD / Cyrus IMAP
+attributions the upstream COPYRIGHT mentions. None appear.
+
+## The HAVE_* defines are not optional
+
+Upstream is autoconf'd, and guards a great deal on `HAVE_*` macros that
+`configure` would have supplied. We build without `HAVE_CONFIG_H`, so those
+macros are ours to provide — and when we do not, the guarded code silently
+disappears rather than failing to compile. CMakeLists.txt supplies them.
+Two of them bite in ways worth knowing:
+
+**`HAVE_UNISTD_H`.** `mailmime_types_helper.c` calls `gethostname()` and
+`getpid()`, with `<unistd.h>` behind that guard. Debian's headers pull
+`unistd.h` in transitively, so a local build is perfectly happy; the
+manylinux 2_28 oven's glibc 2.28 headers do not, and the build dies on
+implicit declarations. **A local build passing proves nothing here** — this
+one only appears in the oven.
+
+**`HAVE_PTHREAD_H` + `LIBETPAN_REENTRANT`.** These are what make `MUTEX_LOCK`
+in `mmapstring.c` an actual mutex instead of an empty macro. That lock guards
+a **process-global** reference-count hashtable, and `mmap_string_unref()`
+touches it for every decoded MIME part. Without both defines the lock is a
+no-op, so two rampart server threads converting mail at the same time race on
+a shared hash table. This does not fail to build, does not fail a test, and
+does not show up until it corrupts a heap under load. If you ever find these
+defines removed "because they weren't needed", put them back.
+
+## Updating
+
+This is a subset, so `git pull` is not the update path. Re-extract: take the
+`.c` files listed in CMakeLists.txt from `src/low-level/imf`,
+`src/low-level/mime` and `src/data-types`, recompute the header set from what
+those files include, and keep `rp_charconv.c`. Do not vendor `charconv.c`,
+`timeutils.c` or `mailimf_types_helper.c` without re-reading the two sections
+above.

@@ -545,7 +545,7 @@ testFeature("TextDecoder canonical encoding labels", function() {
 
 testFeature("TextDecoder unknown label throws RangeError", function() {
     var threw = false, isRange = false;
-    try { new TextDecoder('windows-1252'); }
+    try { new TextDecoder('no-such-encoding-xyz'); }
     catch (e) { threw = true; isRange = (e instanceof RangeError); }
     return threw && isRange;
 });

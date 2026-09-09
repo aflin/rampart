@@ -1815,17 +1815,31 @@ duk_ret_t del_from_clipboard(duk_context *ctx, char *key)
     CBLOCKUNLOCK;\
 }while(0)
 
+/* Close the pipe only if onGet is not using it.  waitfor() borrows the
+   same per-thread pipe; tearing it down on exit would clear
+   RPTHR_FLAG_WAITING and leave every onGet subscriber permanently deaf
+   (rp_thread_put only notifies threads with that flag set).
+   onget_remove() uses the bare closepipes: it owns the teardown. */
+#define closepipes_unless_onget do{ if(!getev) closepipes; }while(0)
+
 #define openpipes(_thr, _locked) ({\
     int _fd[2];\
     int _ret=0;\
     if(!_locked)CBLOCKLOCK;\
-    if (rp_pipe(_fd) == -1){\
+    if ((_thr)->reader > -1 && (_thr)->writer > -1) {\
+        /* Already open.  onGet holds a long-lived pipe and created its\
+           event on that exact fd; replacing it here (from waitfor) would\
+           orphan the event and send every later put to a pipe nobody\
+           reads.  Reuse it instead. */\
+        RPTHR_SET((_thr), RPTHR_FLAG_WAITING);\
+        _ret=1;\
+    } else if (rp_pipe(_fd) == -1){\
         fprintf(stderr, "thread pipe creation failed\n");\
         _ret=0;\
     } else {\
-        _thr->reader=_fd[0];\
-        _thr->writer=_fd[1];\
-        RPTHR_SET(thr, RPTHR_FLAG_WAITING);\
+        (_thr)->reader=_fd[0];\
+        (_thr)->writer=_fd[1];\
+        RPTHR_SET((_thr), RPTHR_FLAG_WAITING);\
         _ret=1;\
     }\
     CBLOCKUNLOCK;\
@@ -1837,6 +1851,17 @@ KEYLIST {
     char          *key;
     KEYLIST       *next;
     KEYLIST       *prev;
+
+    /* UAF guard.  A JS onGet callback may call sub.remove() -- e.g.
+       BroadcastChannel.close() from its own onmessage -- which unlinks
+       and frees entries that the onget_event walk still holds pointers
+       to, including the `prev` it captured before the call.  While a
+       walk is active, onget_remove unlinks and marks `dead` instead of
+       freeing, chaining onto onget_dead_list; the walk drains it on the
+       way out.  Deferring also keeps the address reserved, so the "%p"
+       stash keys cannot collide with a newly allocated entry. */
+    int            dead;
+    KEYLIST       *dnext;
 };
 
 #define GETEV struct onget_ev_s
@@ -1847,39 +1872,133 @@ GETEV {
 
 __thread GETEV *getev=NULL;
 
+/* >0 while onget_event() is walking getev->keys.  See KEYLIST.dead. */
+__thread int      onget_walk_depth = 0;
+__thread KEYLIST *onget_dead_list  = NULL;
+
+/* Free entries onget_remove() deferred while a walk was in progress. */
+static void onget_drain_dead(void)
+{
+    KEYLIST *k = onget_dead_list;
+
+    onget_dead_list = NULL;
+    while(k)
+    {
+        KEYLIST *next = k->dnext;
+        free(k->key);
+        free(k);
+        k = next;
+    }
+}
+
+/* Read exactly n bytes from the notification pipe.  Returns 1 on success,
+   0 if nothing was pending, -1 on error or a truncated record.  Callers
+   hold CBLOCK, and rp_thread_put() writes each record under the same lock,
+   so a record is never split across a lock boundary; the loop is here for
+   EINTR and for short reads on a full pipe. */
+static int onget_read_full(RPTHR *thr, void *buf, size_t n)
+{
+    unsigned char *p = (unsigned char *)buf;
+    size_t got = 0;
+
+    while(got < n)
+    {
+        int r;
+
+        if(thr->reader < 0)
+            return got ? -1 : 0;
+
+        r = read(thr->reader, p + got, n - got);
+        if(r > 0)
+        {
+            got += (size_t)r;
+            continue;
+        }
+        if(r == 0)                       /* EOF */
+            return got ? -1 : 0;
+        if(errno == EINTR)
+            continue;
+        return got ? -1 : 0;
+    }
+    return 1;
+}
+
+/* True if the notification pipe has data ready, without blocking. */
+static int onget_pipe_ready(RPTHR *thr)
+{
+    struct pollfd pfd;
+
+    if(thr->reader < 0)
+        return 0;
+    pfd.fd      = thr->reader;
+    pfd.events  = POLLIN;
+    pfd.revents = 0;
+    return poll(&pfd, 1, 0) > 0 && (pfd.revents & POLLIN);
+}
+
 static void onget_event(evutil_socket_t fd, short events, void* arg)
 {
     RPTHR *thr=get_current_thread();
     duk_context *ctx = thr->ctx;
     char *waitkey=NULL;
-    KEYLIST *entry = getev->keys;
-    duk_idx_t cb_idx=-1;
+    KEYLIST *entry;
+    duk_idx_t cb_idx;
     duk_size_t len=0;
 
+    /* Drain every queued notification, not just one.  The pipe is shared
+       by all onGet keys in this thread, so consuming a single record per
+       wakeup lets an unrelated backlog (e.g. notifications whose
+       subscribers have since been removed) delay delivery arbitrarily --
+       messages sat behind it and appeared to be lost.  Held across the
+       whole drain so deferred entry frees are released once at the end. */
+    onget_walk_depth++;
+
+    for(;;)
+    {
     CBLOCKLOCK;
+
+    /* Nothing left: done draining. */
+    if(!onget_pipe_ready(thr))
+    {
+        CBLOCKUNLOCK;
+        break;
+    }
 
     /* On read failure (EPIPE/EBADF during shutdown), abandon this
        wakeup -- pipe was closed underneath us by a teardown race.  */
-    if (thrread(&len, sizeof(duk_size_t)) <= 0)
+    if (onget_read_full(thr, &len, sizeof(duk_size_t)) <= 0)
     {
         CBLOCKUNLOCK;
-        return;
+        break;
     }
 
     REMALLOC(waitkey, len);
 
-    if (thrread(waitkey, len) <= 0)
+    if (onget_read_full(thr, waitkey, len) <= 0)
     {
         CBLOCKUNLOCK;
         free(waitkey);
-        return;
+        waitkey = NULL;
+        break;
     }
 
     CBLOCKUNLOCK;
 
+    entry  = getev ? getev->keys : NULL;
+    cb_idx = -1;
+
     while(entry)
     {
-        char *matchkey = entry->key;
+        char *matchkey;
+
+        /* Unlinked by a callback earlier in this same walk; kept alive
+           only so our pointers stay valid.  Skip it. */
+        if(entry->dead)
+        {
+            entry = entry->next;
+            continue;
+        }
+        matchkey = entry->key;
         duk_size_t mlen = strlen(matchkey);
 
         if(mlen>0 && matchkey[mlen-1]=='*')
@@ -1897,7 +2016,8 @@ static void onget_event(evutil_socket_t fd, short events, void* arg)
                     fprintf(stderr, "internal error getting onGet callback");
                     duk_set_top(ctx, 0);
                     free(waitkey);
-                    return;
+                    waitkey = NULL;
+                    goto drained;
                 }
                 duk_remove(ctx, -2);//stash
                 cb_idx=duk_get_top_index(ctx);
@@ -1933,7 +2053,8 @@ static void onget_event(evutil_socket_t fd, short events, void* arg)
                 if(!getev) //if no entries at all
                 {
                     free(waitkey);
-                    return;
+                    waitkey = NULL;
+                    goto drained;
                 }
                 if(!prev && getev->keys != entry)//if we were the first, and now the first changed
                 {
@@ -1950,10 +2071,27 @@ static void onget_event(evutil_socket_t fd, short events, void* arg)
         entry=entry->next;
     }
     duk_set_top(ctx, 0);
-    // might be nulled in the callback with stopwait_async
+    free(waitkey);
+    waitkey = NULL;
+
+    /* A callback may have torn everything down (stopwait_async, or the
+       last subscriber removed); nothing left to drain into. */
+    if(!getev)
+        break;
+    }
+
+drained:
+
+    free(waitkey);
+    duk_set_top(ctx, 0);
+
+    /* Re-arm on every path.  The event is EV_READ without EV_PERSIST, so
+       any return that skips this permanently deafens the thread to onGet
+       notifications.  getev is NULL only when it was already torn down. */
     if(getev)
         event_add(getev->e,NULL);
-    free(waitkey);
+
+    if(!--onget_walk_depth) onget_drain_dead();
 }
 
 static duk_ret_t onget_remove(duk_context *ctx)
@@ -2021,8 +2159,21 @@ static duk_ret_t onget_remove(duk_context *ctx)
     duk_push_sprintf(ctx, "this_%p", entry);
     duk_del_prop(ctx, -2);
 
-    free(entry->key);
-    free(entry);
+    if(onget_walk_depth)
+    {
+        /* onget_event is mid-walk and may still hold this entry, or hold
+           it as another entry's captured `prev`.  It is unlinked above,
+           so it will not be dispatched again; defer the free until the
+           walk unwinds. */
+        entry->dead  = 1;
+        entry->dnext = onget_dead_list;
+        onget_dead_list = entry;
+    }
+    else
+    {
+        free(entry->key);
+        free(entry);
+    }
 
     duk_push_true(ctx);
     return 1;
@@ -2092,6 +2243,54 @@ static duk_ret_t rp_onget(duk_context *ctx)
     return 1;
 }
 
+/* Notifications waitfor() reads that are not the key it is waiting on.
+   They belong to onGet subscribers, and onget_event() cannot run while
+   waitfor blocks the loop, so dropping them loses the message for good.
+   Collect them and put them back on the pipe on the way out -- collected
+   rather than rewritten immediately, so waitfor does not re-read its own
+   requeued records and spin. */
+typedef struct { char *key; duk_size_t len; } ONGET_STASH;
+
+static void onget_stash_add(ONGET_STASH **a, int *n, int *cap,
+                            const char *key, duk_size_t len)
+{
+    char *copy;
+
+    if(*n == *cap)
+    {
+        *cap = *cap ? *cap * 2 : 8;
+        REMALLOC(*a, (size_t)*cap * sizeof(ONGET_STASH));
+    }
+    copy = malloc(len);
+    if(!copy)
+        return;
+    memcpy(copy, key, len);
+    (*a)[*n].key = copy;
+    (*a)[*n].len = len;
+    (*n)++;
+}
+
+/* Requeue and release.  Caller must not hold CBLOCK. */
+static void onget_stash_flush(RPTHR *thr, ONGET_STASH *a, int n)
+{
+    int i;
+
+    if(!a)
+        return;
+    CBLOCKLOCK;
+    for(i = 0; i < n; i++)
+    {
+        if(getev && thr->writer > -1)
+        {
+            thrwrite(&a[i].len, sizeof(duk_size_t));
+            thrwrite(a[i].key, a[i].len);
+        }
+        free(a[i].key);
+    }
+    CBLOCKUNLOCK;
+    free(a);
+}
+
 static duk_ret_t _thread_waitfor(duk_context *ctx, const char *key, const char *funcname, int del, int locked)
 {
     char *waitkey=NULL;
@@ -2103,6 +2302,8 @@ static duk_ret_t _thread_waitfor(duk_context *ctx, const char *key, const char *
     struct pollfd ufds[1];
     struct timespec ts;
     int pret;
+    ONGET_STASH *stash=NULL;
+    int nstash=0, capstash=0;
 
     if(!duk_is_undefined(ctx, 1))
         to=REQUIRE_POSINT(ctx, 1, "thread.%s: second argument, if provided, must be a positive number (milliseconds)", funcname);
@@ -2131,7 +2332,8 @@ static duk_ret_t _thread_waitfor(duk_context *ctx, const char *key, const char *
         if(pret==0)
         {
             free(waitkey);
-            closepipes;
+            onget_stash_flush(thr, stash, nstash);
+            closepipes_unless_onget;
             return 0;
         }
 
@@ -2144,7 +2346,8 @@ static duk_ret_t _thread_waitfor(duk_context *ctx, const char *key, const char *
         {
             CBLOCKUNLOCK;
             free(waitkey);
-            closepipes;
+            onget_stash_flush(thr, stash, nstash);
+            closepipes_unless_onget;
             return 0;
         }
 
@@ -2155,7 +2358,8 @@ static duk_ret_t _thread_waitfor(duk_context *ctx, const char *key, const char *
         {
             CBLOCKUNLOCK;
             free(waitkey);
-            closepipes;
+            onget_stash_flush(thr, stash, nstash);
+            closepipes_unless_onget;
             return 0;
         }
 
@@ -2163,10 +2367,15 @@ static duk_ret_t _thread_waitfor(duk_context *ctx, const char *key, const char *
 
         if(strcmp(key, waitkey)==0)
         {
-            closepipes;
+            onget_stash_flush(thr, stash, nstash);
+            closepipes_unless_onget;
             free(waitkey);
             return _thread_get_del(ctx, (char *)key, del);
         }
+
+        /* Not ours -- hand it back to onGet rather than dropping it. */
+        onget_stash_add(&stash, &nstash, &capstash, waitkey, len);
+
         clock_gettime(CLOCK_REALTIME, &ts);
         //timespec_get(&ts, TIME_UTC);
         tmcur = ts.tv_sec *1000 + ts.tv_nsec/1000000;

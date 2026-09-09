@@ -159,7 +159,9 @@ function ws_decode_b(bytes, offset) {
     return bytes_to_string(bytes, offset + hdr, plen);
 }
 
-/* Build a masked WebSocket text frame as a binary string for socket.write() */
+/* Build a masked WebSocket text frame.  Returns a buffer, not a string:
+   bufferToString() decodes non-UTF-8 bytes as windows-1252, which mangles
+   frame headers (0x81 -> U+FFFD).  socket.write() takes a buffer directly. */
 function ws_frame(text) {
     var plen = text.length;
     var header = [];
@@ -185,7 +187,7 @@ function ws_frame(text) {
     for (var i = 0; i < plen; i++)
         frame[header.length + i] = text.charCodeAt(i);
 
-    return bufferToString(frame.buffer);
+    return frame.buffer;
 }
 
 /* *** Event-driven WebSocket test *** */

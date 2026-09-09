@@ -138,6 +138,13 @@ add_subdirectory(${EXTERN_DIR}/cmark-gfm)
 
 add_subdirectory(${EXTERN_DIR}/robotstxt)
 
+# libetpan — the RFC 5322 + MIME parsing SUBSET only (BSD-3-Clause), used by
+# rampart-totext.so to read .eml/mbox and to pull attachments back through
+# the ordinary converters.  Not the upstream tree: no IMAP/SMTP/POP/NNTP, no
+# writers, and upstream's charset layer is replaced by rp_charconv.c so the
+# module has one charset stack instead of two.  See extern/libetpan/README.rampart.
+add_subdirectory(${EXTERN_DIR}/libetpan EXCLUDE_FROM_ALL)
+
 # upa-url — vendored WHATWG URL parser + UTS #46 IDN (BSD-2-Clause,
 # pure C++17, ~270KB on ARM32 / ~380KB on x86_64). Replaces the JS
 # regex parser in rampart-nodeshim.c and provides IDN to rampart-utils.

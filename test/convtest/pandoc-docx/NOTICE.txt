@@ -1,0 +1,16 @@
+THIRD-PARTY FILES -- NOT PART OF RAMPART
+
+The 83 .docx documents in this directory come from the test suite of pandoc
+(https://github.com/jgm/pandoc).  They are used here as an independent corpus
+for checking rampart-totext's output against a converter written by someone
+else -- fixtures whose expected results rampart did not choose.
+
+They are test DATA.  No pandoc code is compiled into, linked against, or
+invoked by rampart.
+
+License: GNU General Public License version 2, or (at your option) any later
+version.  The full text, and the copyright holders, are in
+licenses/pandoc-license.txt (installed as <prefix>/licenses/pandoc-license.txt).
+
+Distributing these alongside rampart is the "mere aggregation" contemplated by
+GPL-2 section 2; rampart's own license is unaffected.

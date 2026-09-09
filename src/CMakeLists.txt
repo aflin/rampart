@@ -564,6 +564,12 @@ target_include_directories(rampart-totext PRIVATE
 )
 add_dependencies(rampart-totext libdeflate)
 
+# libetpan's MIME/IMF parser subset, for .eml and mbox.  Static and
+# PIC, so it links straight into the .so; rp_charconv.c inside it calls
+# rp_charset_to_utf8(), which like libdeflate is resolved from the rampart
+# process at dlopen time.
+target_link_libraries(rampart-totext LINK_PUBLIC etpan_mime)
+
 ###LMDB###
 
 add_library(rampart-lmdb SHARED
