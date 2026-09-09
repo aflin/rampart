@@ -4030,13 +4030,48 @@ static int tt_write_tmp(const unsigned char *buf, size_t len, char *path, size_t
 
 /* One PDF page to a grayscale PGM in memory (pdftoppm writes to stdout when
    given no output prefix). */
+/* Rasterize ONE page to a grayscale PGM, via a temporary directory.
+ *
+ * WHY NOT STDOUT.  Poppler's pdftoppm writes the image to stdout when given no
+ * output prefix, which was the original approach and is a page faster.  Xpdf's
+ * pdftoppm -- the other implementation of the same command, and the one that
+ * ships on some macOS installs -- REQUIRES a <PPM-root> argument, has no
+ * -singlefile, and cannot write to stdout at all: handed no prefix it prints
+ * its version banner and exits 0, so the "image" came back as the text
+ * "pdftoppm version 4.05 [www.xpdfreader.com]".
+ *
+ * The two also disagree on the output NAME: Xpdf writes <root>-000001.pgm,
+ * Poppler <root>-1.pgm (padded to the page count).  Rather than guess, give
+ * each call its own directory and read whatever appears in it. */
 static const char pdf_raster_js[] =
     "(function(pdftoppm, file, page) {"
-    "  var res = rampart.utils.exec(pdftoppm, '-r', '" TT_OCR_DPI "', '-gray',"
-    "                               '-f', page, '-l', page, file, {returnBuffer:true});"
-    "  if(res.exitStatus)"
-    "    throw new Error('pdftoppm failed on page ' + page + ': ' + rampart.utils.bufferToString(res.stderr||''));"
-    "  return res.stdout;"
+    "  var u = rampart.utils;"
+    "  var dir = (process.env.TMPDIR || '/tmp') + '/_rp_ppm_' + process.getpid() +"
+    "            '_' + page + '_' + Math.floor(Math.random() * 1000000000);"
+    "  u.mkdir(dir);"
+    "  function sweep() {"
+    "    var n, i;"
+    "    try { n = u.readdir(dir); } catch(e) { return; }"
+    "    for(i = 0; i < n.length; i++) {"
+    "      if(n[i] === '.' || n[i] === '..') continue;"
+    "      try { u.rmFile(dir + '/' + n[i]); } catch(e) {}"
+    "    }"
+    "    try { u.rmdir(dir); } catch(e) {}"
+    "  }"
+    "  try {"
+    "    var res = u.exec(pdftoppm, '-r', '" TT_OCR_DPI "', '-gray',"
+    "                     '-f', page, '-l', page, file, dir + '/p');"
+    "    if(res.exitStatus)"
+    "      throw new Error('pdftoppm failed on page ' + page + ': ' + (res.stderr || ''));"
+    "    var names = u.readdir(dir), buf = null, i;"
+    "    for(i = 0; i < names.length; i++) {"
+    "      if(names[i] === '.' || names[i] === '..') continue;"
+    "      buf = u.readFile(dir + '/' + names[i]);"
+    "      break;"
+    "    }"
+    "    if(!buf) throw new Error('pdftoppm produced no image for page ' + page);"
+    "    return buf;"
+    "  } finally { sweep(); }"
     "})";
 
 /* How many raster images a PDF contains. */
