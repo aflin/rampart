@@ -85,6 +85,13 @@ static LMDB_ENV *redo_env(duk_context *ctx, LMDB_ENV *lenv) {
     if((rc=mdb_env_open(lenv->env, lenv->dbpath, lenv->openflags|MDB_NOTLS, 0644)))
     {
         mdb_env_close(lenv->env);
+        /* NULL it: !lenv->env is the "closed/unusable" sentinel every caller
+           tests (reopen at get_env, throw in lmdb.transaction).  Leaving the
+           freed pointer set made those checks pass and handed a dead env to
+           LMDB -- a reinit that failed after fork (e.g. the server dropping to
+           an unprivileged user that cannot open the db) then segfaulted in
+           mdb_txn_renew0 on the next get(). */
+        lenv->env=NULL;
         RP_THROW(ctx, "lmdb.reinit - failed to open %s %s", lenv->dbpath, mdb_strerror(rc));
     }
     lock_main_ctx;
