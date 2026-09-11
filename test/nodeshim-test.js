@@ -1625,7 +1625,9 @@ asyncQ.push(asyncBlock("worker_threads", function(done) {
                 } catch (e) { done(e); }
             }, 100);
         } catch (e) { done(e); }
-    }, 300);
+    /* 600ms, not 300: spawning the worker and completing one message
+       round-trip measures ~325ms on a 32-bit Pi, so 300 lost the race. */
+    }, 600);
 }));
 
 asyncQ.push(asyncBlock("stream (async — flowing / write / pipeline)", function(done) {

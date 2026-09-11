@@ -153,19 +153,31 @@ vec_count_recid_cb(int64_t recid, void *user)
     (*(size_t *)user)++;
 }
 
-/* Public helper: count entries in the `_T.btr` newrec auxiliary btree
- * for a vec index.  Used by alterIndex.c to populate the COUNT(NewRows)
- * stat for HAVING-clause evaluation.  Returns 0 if the index has no
- * `_T.btr` (treat as "no work to do"). */
+/* Public helper: count pending delta entries for a vec index --
+ * `_T.btr` (newrec) plus `_del.btr` (tombstones).  Used by alterIndex.c
+ * to populate the COUNT(NewRows) stat for HAVING-clause evaluation.
+ *
+ * Deletes count because OPTIMIZE purges them from sealed: a delete-only
+ * workload has real work pending, and gating on inserts alone would let
+ * the tombstone pile grow forever under a scheduled update.  Fulltext
+ * shares this walker but keeps its deletes in `_D.btr', so the second
+ * walk finds nothing there and its count is unchanged.
+ *
+ * Returns 0 if the index has neither btree (treat as "no work to do"). */
 size_t
 TXvecCountNewRows(const char *indfile)
 {
-    if (!indfile) return 0;
-    char *base = TXvecMakeBtreeBasePath(indfile, "_T");
-    if (!base) return 0;
+    static const char *const sfx[2] = { "_T", "_del" };
     size_t count = 0;
-    TXvecBtreeWalkRecids(base, vec_count_recid_cb, &count);
-    free(base);
+    int i;
+
+    if (!indfile) return 0;
+    for (i = 0; i < 2; i++) {
+        char *base = TXvecMakeBtreeBasePath(indfile, sfx[i]);
+        if (!base) continue;
+        TXvecBtreeWalkRecids(base, vec_count_recid_cb, &count);
+        free(base);
+    }
     return count;
 }
 

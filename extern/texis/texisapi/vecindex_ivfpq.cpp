@@ -856,6 +856,58 @@ vec_copy_file_bytes(const char *src, const char *dst, METER *meter)
     return 0;
 }
 
+/* Compact tombstoned entries out of an OnDiskInvertedLists in place.
+ *
+ * Restores the fulltext invariant that maintenance leaves the delete
+ * pile empty: after this the new sealed index holds no entry named by
+ * `tomb`, so the commit can drop every carried-over tombstone.
+ *
+ * Each list is `codes[capacity*code_size]` followed by `ids[capacity]`
+ * (see OnDiskInvertedLists.h), with only the first `size` entries
+ * live.  Survivors slide down over the holes and `size` shrinks;
+ * `capacity` and the slot map are left alone deliberately.  Calling
+ * resize() instead would hand the freed byte range back to the slot
+ * allocator, which counts capacity in *entries* here but in *bytes*
+ * there -- an upstream mismatch that makes a shrink grow the file.
+ * The byte copy this follows is already over-provisioned, so leaving
+ * capacity high costs nothing we weren't already paying.
+ *
+ * Returns 0 on success (with `*out_removed` set), -1 if the lists
+ * cannot be written -- the caller must fail the whole OPTIMIZE then,
+ * since the commit drops the tombstones on the assumption they were
+ * purged here. */
+static int
+ivfpq_purge_tombstoned_entries(faiss::OnDiskInvertedLists *od,
+                               const std::unordered_set<int64_t> &tomb,
+                               size_t *out_removed)
+{
+    *out_removed = 0;
+    if (!od || od->read_only) return -1;
+    if (tomb.empty()) return 0;
+    const size_t cs = od->code_size;
+    size_t nremoved = 0;
+    for (size_t i = 0; i < od->lists.size(); i++) {
+        faiss::OnDiskInvertedLists::List &L = od->lists[i];
+        if (L.size == 0 || L.capacity == 0) continue;
+        uint8_t *codes = od->ptr + L.offset;
+        faiss::idx_t *ids =
+            (faiss::idx_t *)(od->ptr + L.offset + L.capacity * cs);
+        size_t w = 0;
+        for (size_t j = 0; j < L.size; j++) {
+            if (tomb.count((int64_t)ids[j])) continue;
+            if (w != j) {
+                std::memcpy(codes + w * cs, codes + j * cs, cs);
+                ids[w] = ids[j];
+            }
+            w++;
+        }
+        nremoved += L.size - w;
+        L.size = w;
+    }
+    *out_removed = nremoved;
+    return 0;
+}
+
 /* File-backed reservoir-sample of up to `k_max` row vectors from
  * `dbtbl` (column `fld`), converting each to f32 and writing into the
  * file at `train_path` row-major.  Returns the number of samples
@@ -1817,8 +1869,10 @@ static size_t ivfpq_search_impl_body(TXvecHandle *h_, DBTBL *dbtbl,
 
     /* Walk the auxiliary btrees fresh.  Open-and-close-per-op gives
      * cross-process correctness (each open reads fresh root pages from
-     * disk).  Tiny btrees + cheap opens make this comfortable on the
-     * search hot path. */
+     * disk).  Materialised once per query rather than one btsearch() per
+     * candidate as fulltext does (fdbi.c:6070): the widening loop below
+     * re-filters every candidate each round, so candidates-per-query runs
+     * to hundreds and per-candidate descents measured 16% slower here. */
     std::unordered_set<uint64_t> tomb_set;
     std::vector<int64_t>         newrec_recids;
     {
@@ -2229,6 +2283,47 @@ static int ivfpq_optimize_impl_body(DDIC *ddic, TXvecHandle *h_, DBTBL *dbtbl,
         ::unlink(temp_head); ::unlink(temp_invl);
         std::free(temp_head); std::free(temp_invl);
         return -1;
+    }
+
+    /* Purge the tombstoned rows from the fresh sealed copy, BEFORE the
+     * delta encode.  Order matters: RECIDs are file offsets and get
+     * reused, so a recid can be both tombstoned (its old row) and in
+     * `_T.btr' (the new row that took the slot).  Purging first drops
+     * the stale entry and the delta pass then adds the new one; purging
+     * after would throw both away.
+     *
+     * The tombstone set read here is exactly the dispatcher's `snapD'
+     * snapshot -- DELETE mints tombstones under the table W_LCK and
+     * OPTIMIZE holds R_LCK throughout -- so the commit can drop every
+     * pre-snapshot tombstone (gap deletes are still carried). */
+    {
+        std::vector<int64_t> tomb_list;
+        aux_btree_walk_recids(h->tomb_base, &tomb_list);
+        if (!tomb_list.empty()) {
+            std::unordered_set<int64_t> tomb_set;
+            tomb_set.reserve(tomb_list.size() * 2 + 1);
+            for (int64_t r : tomb_list) tomb_set.insert(r);
+            size_t nremoved = 0;
+            if (ivfpq_purge_tombstoned_entries(
+                    static_cast<faiss::OnDiskInvertedLists *>(
+                        temp_idx->invlists),
+                    tomb_set, &nremoved) != 0) {
+                putmsg(MERR + UGE, fn,
+                    "cannot purge deletes from temp inverted lists");
+                delete temp_idx;
+                ::unlink(temp_head); ::unlink(temp_invl);
+                std::free(temp_head); std::free(temp_invl);
+                return -1;
+            }
+            if (nremoved > 0) {
+                temp_idx->ntotal -= (faiss::idx_t)nremoved;
+                if (temp_idx->ntotal < 0) temp_idx->ntotal = 0;
+            }
+            putmsg(MINFO, fn,
+                "INDEX_VEC ivfpq OPTIMIZE: purged %lu deleted entries "
+                "(%lu tombstones) from sealed",
+                (unsigned long)nremoved, (unsigned long)tomb_list.size());
+        }
     }
 
     const int dim = h->base.dim;

@@ -1828,10 +1828,16 @@ hnsw_add_row_impl(DDIC *ddic, TXvecHandle *h_, DBTBL *dbtbl,
 
 /* HNSW vtable slot: del_row.
  *
- * Try to remove from `_T.btr` (no-op if recid wasn't a post-CREATE
- * insert).  Always tombstone via `_del.btr` so SEARCH filters out
- * stale .vec hits.  No usearch_remove on the cached index, no
- * save_atomic — those happen at OPTIMIZE time. */
+ * Remove from `_T.btr` (no-op if recid wasn't a post-CREATE insert), and
+ * tombstone via `_del.btr` ONLY if the sealed graph actually holds the
+ * key.  That test is fulltext's rule -- delfromfdbi() skips the delete
+ * list when the recid isn't in the token file, "saves delete-list-
+ * searching on search" (3dbindex.c:4572) -- and it keeps the filter from
+ * filling with entries for rows the graph never contained.  usearch gives
+ * us an exact answer, so no boundary approximation is needed.
+ *
+ * No usearch_remove on the cached index, no save_atomic — those happen at
+ * OPTIMIZE time. */
 static int
 hnsw_del_row_impl(DDIC *ddic, TXvecHandle *h_, DBTBL *dbtbl,
                   const char *field, RECID *recid)
@@ -1843,7 +1849,18 @@ hnsw_del_row_impl(DDIC *ddic, TXvecHandle *h_, DBTBL *dbtbl,
     if (!h) return 0;
     int64_t r = (int64_t)(uint64_t)recid->off;
     if (h->newrec_base) TXvecBtreeDeleteRecid(h->newrec_base, r);
-    if (h->tomb_base && TXvecBtreeInsertRecid(h->tomb_base, r) != 0) {
+
+    /* Unsure (no loaded graph, or usearch errored) => tombstone: a
+     * needless entry only costs a little filter work, a missing one
+     * resurrects a deleted row. */
+    int inSealed = 1;
+    if (h->index) {
+        const char *uerr = NULL;
+        inSealed = usearch_contains(h->index, (usearch_key_t)r, &uerr) ? 1 : 0;
+        if (uerr) inSealed = 1;
+    }
+    if (inSealed && h->tomb_base &&
+        TXvecBtreeInsertRecid(h->tomb_base, r) != 0) {
         putmsg(MWARN, fn,
             "INDEX_VEC: tombstone insert failed for recid %lld; "
             "subsequent SEARCH may return a stale entry", (long long)r);
@@ -1880,9 +1897,17 @@ hnsw_search_impl(TXvecHandle *h_, DBTBL *dbtbl, const char *field,
     }
 
     /* Walk auxiliary btrees: tombstones (recids whose .vec entry is
-     * stale) and newrec (recids inserted post-CREATE that haven't
-     * been folded yet).  Each is a sorted int64 array we bsearch
-     * for the per-candidate filter. */
+     * stale) and newrec (recids inserted post-CREATE that haven't been
+     * folded yet).  Materialised once per query, then bsearch'd per
+     * candidate -- NOT one btsearch() per candidate as fulltext does
+     * (fdbi.c:6070).  Fulltext filters each candidate once; the widening
+     * loop below re-filters every candidate on each round, so the
+     * candidate count per query runs to hundreds and per-candidate btree
+     * descents measured 16% SLOWER than one walk plus O(1) probes.
+     *
+     * No qsort: btgetnext() returns keys in numeric order already (a
+     * BT_FIXED tree compares with TXfcmp, fbtree.c:183), so the walk is
+     * sorted and bsearch is valid on it as-is. */
     struct vec_recid_vec { int64_t *data; size_t len; size_t cap; };
     struct vec_recid_vec tomb_v   = {NULL, 0, 0};
     struct vec_recid_vec newrec_v = {NULL, 0, 0};
@@ -1897,10 +1922,7 @@ hnsw_search_impl(TXvecHandle *h_, DBTBL *dbtbl, const char *field,
         free(tomb_v.data); free(newrec_v.data); free(qbuf_idx);
         return SIZE_MAX;
     }
-
     extern int vec_int64_cmp_(const void *a, const void *b);
-    if (tomb_v.len)   qsort(tomb_v.data,   tomb_v.len,   sizeof(int64_t), vec_int64_cmp_);
-    if (newrec_v.len) qsort(newrec_v.data, newrec_v.len, sizeof(int64_t), vec_int64_cmp_);
 
     int ascending = (h->base.metric == VEC_METRIC_L2);
 
@@ -3911,6 +3933,52 @@ hnsw_optimize_impl(DDIC *ddic, TXvecHandle *h_, DBTBL *dbtbl,
         return -1;
     }
 
+    /* Purge the tombstoned rows from the fresh graph, BEFORE the delta
+     * encode.  Order matters: RECIDs are file offsets and get reused,
+     * so a recid can be both tombstoned (its old row) and in `_T.btr'
+     * (the new row that took the slot).  Purging first drops the stale
+     * vector and the delta pass then adds the new one; purging after
+     * would throw both away.
+     *
+     * usearch_remove frees the key's slot for reuse by the delta adds,
+     * so a delete/optimize/insert cycle actually reclaims graph space
+     * instead of accreting dead nodes until the next REBUILD.
+     *
+     * The tombstone set read here is exactly the dispatcher's `snapD'
+     * snapshot -- DELETE mints tombstones under the table W_LCK and
+     * OPTIMIZE holds R_LCK throughout -- so the commit can drop every
+     * pre-snapshot tombstone (gap deletes are still carried). */
+    {
+        struct { int64_t *data; size_t len; size_t cap; } tomb_v =
+            {NULL, 0, 0};
+        size_t purged = 0, i;
+        TXvecBtreeWalkRecids(h->tomb_base, vec_recid_vec_push_, &tomb_v);
+        for (i = 0; i < tomb_v.len; i++) {
+            uerr = NULL;
+            usearch_remove(fresh, (usearch_key_t)(uint64_t)tomb_v.data[i],
+                           &uerr);
+            if (uerr) {
+                /* Leaving a tombstoned row in sealed while the commit
+                 * drops its tombstone would resurrect it -- fail the
+                 * whole OPTIMIZE instead. */
+                putmsg(MERR + UGE, fn, "usearch_remove for recid %lld: %s",
+                       (long long)tomb_v.data[i], uerr);
+                uerr = NULL;
+                usearch_free(fresh, &uerr);
+                free(tomb_v.data);
+                free(newrec_v.data);
+                return -1;
+            }
+            purged++;
+        }
+        if (tomb_v.len > 0)
+            putmsg(MINFO, fn,
+                "INDEX_VEC hnsw OPTIMIZE: purged %lu tombstoned rows "
+                "from sealed", (unsigned long)purged);
+        free(tomb_v.data);
+        uerr = NULL;
+    }
+
     /* Reserve capacity for the delta inserts. */
     if (newrec_v.len > 0) {
         size_t cur = usearch_size(fresh, &uerr);     uerr = NULL;
@@ -4116,7 +4184,6 @@ hnsw_rebuild_impl(DDIC *ddic, TXvecHandle *h_, DBTBL *dbtbl,
                   int64_t **out_absorbed, size_t *out_n_absorbed)
 {
     static const char fn[] = "TXvecRebuild(hnsw)";
-    (void)vp;
     struct TXvecHnswHandle *h = (struct TXvecHnswHandle *)h_;
     if (!h || !dbtbl || !field || !tempBase) return -1;
     *out_absorbed = NULL; *out_n_absorbed = 0;
@@ -4145,9 +4212,11 @@ hnsw_rebuild_impl(DDIC *ddic, TXvecHandle *h_, DBTBL *dbtbl,
         return -1;
     }
 
-    /* Mirror the existing handle's usearch params for the fresh
-     * index.  Pull metadata from the live .vec; that's the simplest
-     * way to preserve dim/M/efc/metric without re-deriving from PARAMS. */
+    /* Metadata gives dim/metric/quantization/multi only: usearch_metadata()
+     * zeroes connectivity and expansion_* by design (c/lib.cpp).  Take the
+     * graph shape from the index's own PARAMS instead -- trusting metadata
+     * rebuilt every index at usearch's default connectivity (16) rather
+     * than its configured M (default 64), silently costing recall. */
     const char *uerr = NULL;
     usearch_init_options_t opts;
     memset(&opts, 0, sizeof(opts));
@@ -4155,6 +4224,11 @@ hnsw_rebuild_impl(DDIC *ddic, TXvecHandle *h_, DBTBL *dbtbl,
     if (uerr) {
         putmsg(MERR + UGE, fn, "usearch_metadata: %s", uerr);
         return -1;
+    }
+    if (vp) {
+        opts.connectivity     = (size_t)vp->graph.M;
+        opts.expansion_add    = (size_t)vp->graph.ef_construction;
+        opts.expansion_search = (size_t)vp->graph.ef_construction;
     }
     /* REBUILD re-encodes the whole table from scratch (metadata above
      * is only borrowed for dim/M/efc/metric), so force multi-key
@@ -4692,7 +4766,8 @@ vec_alloc_temp_base(DDIC *ddic, const char *indname,
 static int
 vec_carry_forward_recids(const char *liveBase, const char *tempBase,
                          const int64_t *absorbed, size_t n_absorbed,
-                         const int64_t *snap, size_t n_snap)
+                         const int64_t *snap, size_t n_snap,
+                         int dropPreSnapshot)
 {
     /* Snapshot live recids first so we can iterate and insert into
      * tempBase without conflicting btree open semantics. */
@@ -4706,6 +4781,14 @@ vec_carry_forward_recids(const char *liveBase, const char *tempBase,
         int preSnapshot = (n_snap > 0 &&
             bsearch(&r, snap, n_snap, sizeof(int64_t),
                     vec_int64_cmp_) != NULL);
+        /* Tombstones: anything already present when the build started
+         * is absent from the new sealed index -- REBUILD only walked
+         * live rows, OPTIMIZE purged them from its copy -- so the
+         * tombstone guards nothing.  Entries that arrived DURING the
+         * build (not in `snap') are still carried -- those are the
+         * R_LCK->W_LCK gap deletes the comment above is about. */
+        if (dropPreSnapshot && preSnapshot)
+            continue;
         if (preSnapshot &&
             n_absorbed > 0 &&
             bsearch(&r, absorbed, n_absorbed, sizeof(int64_t),
@@ -4757,7 +4840,8 @@ vec_commit_temp_swap(DDIC *ddic, DBTBL *dbtbl, const char *indfile,
                      const char *tempBase, RECID tempRow,
                      const int64_t *absorbed, size_t n_absorbed,
                      const int64_t *snapT, size_t n_snapT,
-                     const int64_t *snapD, size_t n_snapD)
+                     const int64_t *snapD, size_t n_snapD,
+                     int dropPreSnapshotDeletes)
 {
     static const char fn[] = "vec_commit_temp_swap";
     int rc = -1;
@@ -4785,15 +4869,21 @@ vec_commit_temp_swap(DDIC *ddic, DBTBL *dbtbl, const char *indfile,
             snprintf(tempT, sizeof(tempT), "%s_T", tempBase) < (int)sizeof(tempT)) {
             if (vec_carry_forward_recids(liveT, tempT,
                                          absorbed, n_absorbed,
-                                         snapT, n_snapT) != 0) {
+                                         snapT, n_snapT, 0) != 0) {
                 putmsg(MWARN, fn, "carry-forward `_T.btr' failed");
             }
         }
         if (snprintf(liveD, sizeof(liveD), "%s_del", indfile) < (int)sizeof(liveD) &&
             snprintf(tempD, sizeof(tempD), "%s_del", tempBase) < (int)sizeof(tempD)) {
+            /* Both maintenance paths leave the new sealed index free of
+             * every tombstone that existed at snapshot time: REBUILD
+             * builds from live rows only, OPTIMIZE purges them from its
+             * copy.  So pre-snapshot tombstones guard nothing and are
+             * dropped; gap deletes (not in `snapD') are still carried. */
             if (vec_carry_forward_recids(liveD, tempD,
                                          absorbed, n_absorbed,
-                                         snapD, n_snapD) != 0) {
+                                         snapD, n_snapD,
+                                         dropPreSnapshotDeletes) != 0) {
                 putmsg(MWARN, fn, "carry-forward `_del.btr' failed");
             }
         }
@@ -4882,22 +4972,28 @@ TXvecOptimize(DDIC *ddic, const char *indname, const char *indfile,
     static const char fn[] = "TXvecOptimize";
     if (!ddic || !indname || !indfile || !tableName || !field) return -1;
 
-    /* Short-circuit when there's nothing to absorb.  Walk `_T.btr` to
-     * count newrec entries; if zero, OPTIMIZE has no work to do (no
-     * delta to fold into sealed) and skipping avoids the byte-copy of
-     * `_I.idxpq` which can be many seconds on a large index. */
+    /* Short-circuit when there's nothing to do.  OPTIMIZE has work if
+     * either delta pile is non-empty: `_T.btr` rows to fold into sealed,
+     * or `_del.btr` tombstones to purge from it.  Both empty means
+     * skipping avoids the byte-copy of `_I.idxpq`, which can be many
+     * seconds on a large index. */
     {
-        char *newrec_base = TXvecMakeBtreeBasePath(indfile, "_T");
-        if (newrec_base) {
-            extern void vec_recid_vec_push_(int64_t r, void *user);
+        extern void vec_recid_vec_push_(int64_t r, void *user);
+        size_t nwork = 0;
+        const char *sfx[2];
+        int i;
+        sfx[0] = "_T"; sfx[1] = "_del";
+        for (i = 0; i < 2; i++) {
+            char *base = TXvecMakeBtreeBasePath(indfile, sfx[i]);
             struct { int64_t *data; size_t len; size_t cap; }
                 v = {NULL, 0, 0};
-            TXvecBtreeWalkRecids(newrec_base, vec_recid_vec_push_, &v);
-            free(newrec_base);
-            size_t n = v.len;
+            if (!base) { nwork = 1; break; }    /* can't tell; do the work */
+            TXvecBtreeWalkRecids(base, vec_recid_vec_push_, &v);
+            free(base);
+            nwork += v.len;
             free(v.data);
-            if (n == 0) return 0;
         }
+        if (nwork == 0) return 0;
     }
 
     /* Pull the WITH clause (e.g. `with indexmeter 'on'`) into the
@@ -4972,7 +5068,7 @@ TXvecOptimize(DDIC *ddic, const char *indname, const char *indfile,
 
     rc = vec_commit_temp_swap(ddic, dbtbl, indfile, tempBase, tempRow,
                               absorbed, n_absorbed,
-                              snapT, n_snapT, snapD, n_snapD);
+                              snapT, n_snapT, snapD, n_snapD, 1);
     if (rc != 0)
         vec_abort_temp_build(ddic, tempBase, tempRow);
 
@@ -5072,7 +5168,7 @@ TXvecRebuild(DDIC *ddic, const char *indname, const char *indfile,
 
     rc = vec_commit_temp_swap(ddic, dbtbl, indfile, tempBase, tempRow,
                               absorbed, n_absorbed,
-                              snapT, n_snapT, snapD, n_snapD);
+                              snapT, n_snapT, snapD, n_snapD, 1);
     if (rc != 0)
         vec_abort_temp_build(ddic, tempBase, tempRow);
 

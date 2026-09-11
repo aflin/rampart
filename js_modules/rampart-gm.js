@@ -4,10 +4,7 @@
    (libGraphicsMagickWand) on PATH for the OS's dynamic linker.  We do
    NOT bundle GraphicsMagick or any of its codec dependencies, because
    the typical brew/apt/pkg builds of GraphicsMagick include libheif
-   compiled with libx265 (GPL-2-or-later) -- redistributing that
-   alongside the proprietary rampart-sql in the same project would
-   violate GPL.  See claude-work/rampart-gm-bundling-backup/ for the
-   bundling code we removed, in case the GPL situation changes. */
+   compiled with libx265 (GPL-2-or-later)                           */
 
 try {
     module.exports = require("rampart-graphicsmagick");

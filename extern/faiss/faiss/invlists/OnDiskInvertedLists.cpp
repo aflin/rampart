@@ -446,7 +446,6 @@ void OnDiskInvertedLists::resize_locked(size_t list_no, size_t new_size) {
     // otherwise we release the current slot, and find a new one
 
     locks->lock_2();
-    free_slot(l.offset, l.capacity);
 
     List new_l;
 
@@ -462,7 +461,9 @@ void OnDiskInvertedLists::resize_locked(size_t list_no, size_t new_size) {
                 allocate_slot(new_l.capacity * (sizeof(idx_t) + code_size));
     }
 
-    // copy common data
+    // copy common data.  The old slot is still held at this point: it is
+    // the source of this copy, so it must not be available for
+    // allocate_slot() to hand back above.
     if (l.offset != new_l.offset) {
         size_t n = std::min(new_size, l.size);
         if (n > 0) {
@@ -472,6 +473,12 @@ void OnDiskInvertedLists::resize_locked(size_t list_no, size_t new_size) {
                    n * sizeof(idx_t));
         }
     }
+
+    // Release only now, and in BYTES: `l.capacity' counts entries
+    // (OnDiskInvertedLists.h) whereas a Slot's capacity is bytes, as
+    // allocate_slot() above shows.  Freeing the entry count returned
+    // ~1/entry_size of the range and leaked the rest.
+    free_slot(l.offset, l.capacity * (sizeof(idx_t) + code_size));
 
     lists[list_no] = new_l;
     locks->unlock_2();
