@@ -4,6 +4,16 @@ v0.7.1
                             on arm.  Install fixes.  AlmaLinux 8, FreeBSD
                             and 32-bit Raspberry Pi build fixes.
 
+    -rampart                thread.onGet now drains every queued
+                            notification per wakeup, instead of one --
+                            a message could sit behind unrelated
+                            traffic indefinitely and look lost.
+                            waitfor()/getwait() no longer tear down
+                            onGet subscriptions or discard their
+                            notifications.
+                            Fixed a crash when an onGet callback
+                            removes its own subscription.
+
     -rampart-sql            Fused keyword + vector search --
                             "doc LIKEP ? OR v LIKEV ?" -- with reciprocal
                             rank fusion, plus $krank and $vrank for the
@@ -42,6 +52,14 @@ v0.7.1
                             Astral-plane characters in JS strings are
                             recombined from duktape's internal CESU-8 to
                             standard utf-8 when bound as sql parameters.
+                            abstract() and excerpt() can report byte
+                            offsets into the source text, so a caller
+                            can jump to the passage.
+                            skipRows fixes: skipped rows are still
+                            evaluated, so an embed() in the query runs
+                            for them.
+                            Tombstone fixes for vector indexes, and a
+                            faiss OnDiskInvertedLists resize fix.
 
     -rampart-server         preThreadFunc.  sslKey/sslCert accept
                             in-memory PEM per listen block.  Reworked
@@ -49,6 +67,24 @@ v0.7.1
                             dropping permissions, and to reset the home
                             directory afterwards.
                             macOS thread/fork fixes when using llamacpp.
+                            WebSocket authentication.  The upgrade is
+                            always authorised; wsRecheckSeconds governs
+                            how often an open socket is revalidated
+                            (default 20, 0 for every frame).
+                            stdout and stderr now follow log rotation.
+                            Fixed a throw from the wrong thread.
+
+    -rampart-totext         Email: .eml/.emlx parsing via vendored
+                            libetpan -- headers, MIME parts and
+                            attachments.
+                            OCR for scanned PDFs and images with
+                            setOcr(); the reader comes from rampart-ocr
+                            in the langtools package, and the layout
+                            model is used by default.  New `page`
+                            option.
+                            Per-platform install hints when a helper
+                            converter is missing.  pdftoppm fix for
+                            macOS.
 
     -rampart-langtools      New rampart-onnx and rampart-clip modules,
                             with internal chunking.  macOS x86 fixes;
@@ -64,6 +100,12 @@ v0.7.1
     -rampart-python         pip3r and python3r wrappers, installing to a
                             per-user module directory when the rampart
                             install is not writable.
+
+    -rampart-auth           Fixed unsafe use of a duktape context
+                            across threads.
+
+    -rampart-lmdb           A failed re-open after fork left a dangling
+                            environment pointer, crashing on next use.
 
     -rampart-date-holidays
                             Node-based update script.
