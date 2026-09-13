@@ -610,7 +610,7 @@ testFeature("ooxml runs are joined, not spaced apart", function(){
 });
 
 /* Both of these were found by scoring the corpora against LibreOffice rather
- * than against assertions written here -- see claude-work/totext-audit/diff.
+ * than against assertions written here.
  * The first is the cost of the exemption above: a tag that MEANS whitespace
  * has to be named, or the no-space rule swallows it.  <w:br> was in the block
  * list; its DrawingML twin <a:br> was not, so a pptx line break ran the text

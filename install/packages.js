@@ -2,10 +2,11 @@
  * install/packages.js -- the single source of truth for what rampart
  * distributes.  Consumed by both:
  *
- *   - mkrp              : walks the list, builds the right artifact
+ *   - mkrp               : Internal tool, not distributed. Walks the list,
+                           builds the right artifact
  *                         (single .so / .js / .tar.gz) for each entry,
  *                         sha1sum's it, and uploads to:
- *                           rampart.dev/downloads/rampart-<ver>/<plat>/packages/
+ *                         rampart.dev/downloads/rampart-<ver>/<plat>/packages/
  *
  *   - rampart --install  : reads the entry for the requested package and
  *                         either downloads a single file or downloads +
@@ -190,15 +191,9 @@ module.exports = {
         arch:  "dep",
         files: ["modules/rampart-graphicsmagick.so",
                 "modules/rampart-gm.js"],
-        /* No bundle_so_deps / bundle_gm_config: requires a system
-           GraphicsMagick (brew/apt/pkg).  Bundling libGraphicsMagick
-           transitively dragged in libheif -> libx265 (GPL-2-or-later),
-           which can't be redistributed alongside the proprietary
-           rampart-sql in good conscience.  Until that's resolved
-           (Apple ImageIO shim, libheif-without-x265 rebuild, etc.),
+        /* No GPL code included.  Must be installed separately.
            rampart-gm.js prints platform-specific install instructions
-           on dlopen failure.  See claude-work/rampart-gm-bundling-backup/
-           for the bundling code we removed. */
+           on dlopen failure. */
         notes: "Image processing (GraphicsMagick Wand API; requires system GraphicsMagick)"
     },
 

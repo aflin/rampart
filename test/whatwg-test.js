@@ -4,7 +4,7 @@
    and rampart-specific GC primitives (WeakRef family etc.) live in
    test/js-extensions-test.js instead.
 
-   Architecture rule (claude-work/whatwg-todo.md §2):
+   Architecture rule:
        ECMAScript        → rampart core
        duktape natives extended by rampart → rampart core
        WHATWG / W3C      → rampart-whatwg.so (this test)

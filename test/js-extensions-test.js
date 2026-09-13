@@ -1073,10 +1073,9 @@ testJS("require: .json files + directory index resolution", function() {
  * prints exactly one line per category (pass or fail with
  * the failing subtest name).
  *
- * Sourced from:
- *   - claude-work/weakrefs/weakref-test.js   (57 assertions)
- *   - claude-work/native-promise/promise-test.js (21 assertions)
- *   - claude-work/duktape-symbol-gaps/probe.js (21 assertions)
+ *   - weakref     (57 assertions)
+ *   - promise     (21 assertions)
+ *   - symbol gaps (21 assertions)
  *
  * All three exercise rampart-specific duktape extensions and
  * are skipped under node (node has its own native impls).

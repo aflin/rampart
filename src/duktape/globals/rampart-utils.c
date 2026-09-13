@@ -2350,8 +2350,8 @@ duk_ret_t duk_rp_strToBuf(duk_context *ctx)
  *   4. windows-1252    the fallback, and deliberately not a guess
  *                      between Latin encodings
  *
- * WHY 1252 RATHER THAN ANY DETECTOR.  Statistical detection was
- * measured before this was written (claude-work/rfc/detect-test.py):
+ * WHY 1252 RATHER THAN ANY DETECTOR.
+ * Statistical detection was measured before this was written:
  * it is reliable for multi-byte and Cyrillic text -- 0.99 confidence,
  * correct -- and unreliable for exactly the Latin family we fall back
  * on, calling both cp1252 and ISO-8859-1 German text "ISO-8859-9" at
