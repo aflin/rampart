@@ -1712,6 +1712,11 @@ install(FILES
 # never disagree with the binary shipping beside them.  Read at INSTALL
 # time, not configure, so editing the marker and re-installing picks up
 # the right file without a reconfigure.
+# Bake the source-tree path at CONFIGURE time.  Inside the bracket-quoted
+# install(CODE) below nothing is expanded until install time, where
+# PROJECT_SOURCE_DIR is empty and CMAKE_CURRENT_LIST_DIR points at the
+# BUILD dir -- so the tree path has to be captured here.
+install(CODE "set(RN_TREE \"${PROJECT_SOURCE_DIR}/relnotes\")")
 install(CODE [[
   set(_rn_plat "")
   if(EXISTS "/usr/local/rampart-build")
@@ -1719,7 +1724,7 @@ install(CODE [[
     string(REGEX REPLACE ";.*" "" _rn_plat "${_rn_raw}")
     string(STRIP "${_rn_plat}" _rn_plat)
   endif()
-  set(_rn_src "${CMAKE_CURRENT_LIST_DIR}/../relnotes/${_rn_plat}.txt")
+  set(_rn_src "${RN_TREE}/${_rn_plat}.txt")
   set(_rn_dst "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/release-notes.txt")
   if(_rn_plat AND EXISTS "${_rn_src}")
     file(INSTALL "${_rn_src}" DESTINATION "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}"
