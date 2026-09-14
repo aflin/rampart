@@ -1,0 +1,36 @@
+This is the FreeBSD 14 build.  FreeBSD support is experimental -- it
+passes the test suite, but it sees far less use than the Linux and macOS
+builds.  Please report anything that misbehaves.
+
+Optional packages
+-----------------
+  rampart --install --list      see what is available for this build
+  rampart --install all         install everything
+
+Local LLM / vector search / embeddings (rampart-langtools)
+----------------------------------------------------------
+`rampart --install all` installs it -- llamacpp, faiss, clip and
+rampart-onnx.  There is one build; nothing else to choose.
+
+These run on the CPU.  There is no GPU (CUDA) build for FreeBSD.
+
+rampart-python
+--------------
+The embedded Python is complete, but its sqlite3 support loads the
+system SQLite at run time, which FreeBSD does not install by default:
+
+  sudo pkg install sqlite3
+
+Without it, `import sqlite3` inside rampart-python fails with
+"Shared object libsqlite3.so.0 not found".  Everything else in
+rampart-python works regardless.
+
+rampart-graphicsmagick
+----------------------
+The image module links against a system GraphicsMagick, which is not
+bundled:
+
+  sudo pkg install graphicsmagick
+
+require('rampart-gm') prints this command for you if the library is
+missing.

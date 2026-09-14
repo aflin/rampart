@@ -291,6 +291,21 @@ function buildTarball(name, entry) {
         staged.push(rel);
     }
 
+    /* exclude: paths to prune after staging.  Needed because a `files`
+       entry may be a whole directory -- the `test` package ships all of
+       test/, which would otherwise swallow the langtools tests and their
+       corpora (they live in the same dir but ship with langtools). */
+    if (entry.exclude) {
+        for (var xi = 0; xi < entry.exclude.length; xi++) {
+            var xrel = entry.exclude[xi].replace(/\/+$/, "");
+            var xdst = stage + "/" + xrel;
+            if (!fileExists(xdst)) continue;
+            run("rm", ["-rf", xdst]);
+            info("    excluded: " + xrel);
+            staged = staged.filter(function (s) { return s !== xrel; });
+        }
+    }
+
     /* symlinks
      *
      * A value is either a target name or an ARRAY of candidate targets

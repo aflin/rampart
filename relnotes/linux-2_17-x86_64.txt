@@ -1,0 +1,46 @@
+This is the linux-2_17-x86_64 build, made for older systems (glibc 2.17
+and newer -- CentOS 7 vintage).  It runs anywhere, at the cost of a few
+features that need a newer toolchain:
+
+  * rampart-onnx is NOT included in this build.  Use the embedding and
+    reranking support in rampart-langtools instead.
+  * rampart-ocr is NOT included either -- it runs its models through
+    rampart-onnx, so it needs that module to be present.
+  * Of the GPU builds, only CUDA 11 is available here.
+
+If your system has glibc 2.28 or newer, re-run the installer to get the
+linux-2_28-x86_64 build, which includes rampart-onnx, rampart-ocr, and
+CUDA 12 / 13 as well as CUDA 11.
+
+Optional packages
+-----------------
+  rampart --install --list      see what is available for this build
+  rampart --install all         install everything except the opt-in
+                                langtools variant below
+
+Local LLM / vector search (rampart-langtools)
+---------------------------------------------
+`rampart --install all` installs the CPU build.  It works everywhere and
+needs nothing else.
+
+A CUDA 11 build of llamacpp, faiss and clip is available separately:
+
+  rampart --install rampart-langtools-cu11
+
+Installing it re-points rampart-llamacpp.so, rampart-faiss.so and
+rampart-clip.so at the GPU builds.  Re-install rampart-langtools to go
+back to CPU.
+
+  IMPORTANT: no NVIDIA libraries are bundled.  The GPU package needs a
+  CUDA 11 toolkit and cuDNN 9 already installed on the system.
+
+rampart-graphicsmagick
+----------------------
+The image module links against a system GraphicsMagick, which is not
+bundled:
+
+  sudo yum install GraphicsMagick        (CentOS / RHEL 7)
+  sudo apt install graphicsmagick        (Debian / Ubuntu)
+
+require('rampart-gm') prints the right command for your system if the
+library is missing.

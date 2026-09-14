@@ -1,0 +1,45 @@
+This is the linux-2_28-x86_64 build (glibc 2.28 and newer).
+
+Optional packages
+-----------------
+  rampart --install --list      see what is available for this build
+  rampart --install all         install everything except the opt-in
+                                langtools variants below
+
+Local LLM / vector search / embeddings (rampart-langtools)
+----------------------------------------------------------
+`rampart --install all` installs the CPU build.  It works everywhere and
+needs nothing else.
+
+GPU builds of llamacpp, faiss and clip are available as separate
+packages -- pick the one matching the CUDA runtime already on the
+machine:
+
+  rampart --install rampart-langtools-cu11    CUDA 11
+  rampart --install rampart-langtools-cu12    CUDA 12
+  rampart --install rampart-langtools-cu13    CUDA 13
+
+Installing one re-points rampart-llamacpp.so, rampart-faiss.so and
+rampart-clip.so at its own builds.  You can switch back at any time by
+re-installing a different variant.
+
+  IMPORTANT: no NVIDIA libraries are bundled.  The GPU packages need a
+  CUDA toolkit and cuDNN 9 already installed on the system.  Install
+  them from NVIDIA before using a cuNN package.
+
+The cu12 and cu13 packages also add a GPU runtime for rampart-onnx
+(modules/onnx-cu12/ or onnx-cu13/).  rampart-onnx finds it on its own.
+If loading the CUDA provider fails, set:
+
+  export LD_LIBRARY_PATH=<install-prefix>/modules/onnx-cu12
+
+rampart-graphicsmagick
+----------------------
+The image module links against a system GraphicsMagick, which is not
+bundled:
+
+  sudo apt install graphicsmagick        (Debian / Ubuntu)
+  sudo dnf install GraphicsMagick        (Fedora / RHEL)
+
+require('rampart-gm') prints the right command for your system if the
+library is missing.

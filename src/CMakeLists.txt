@@ -1703,6 +1703,37 @@ install(FILES
     DESTINATION "${CMAKE_INSTALL_PREFIX}/bin"
 )
 
+# Per-platform release notes: relnotes/<buildPlatform>.txt in the source
+# tree -> <prefix>/release-notes.txt, which build-installer.sh bakes into
+# the SFX payload for entry_script.js to print after an install.
+#
+# The platform comes from /usr/local/rampart-build -- the same marker
+# that defines rampart.buildPlatform (read above) -- so the notes can
+# never disagree with the binary shipping beside them.  Read at INSTALL
+# time, not configure, so editing the marker and re-installing picks up
+# the right file without a reconfigure.
+install(CODE [[
+  set(_rn_plat "")
+  if(EXISTS "/usr/local/rampart-build")
+    file(READ "/usr/local/rampart-build" _rn_raw)
+    string(REGEX REPLACE ";.*" "" _rn_plat "${_rn_raw}")
+    string(STRIP "${_rn_plat}" _rn_plat)
+  endif()
+  set(_rn_src "${CMAKE_CURRENT_LIST_DIR}/../relnotes/${_rn_plat}.txt")
+  set(_rn_dst "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/release-notes.txt")
+  if(_rn_plat AND EXISTS "${_rn_src}")
+    file(INSTALL "${_rn_src}" DESTINATION "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}"
+         RENAME "release-notes.txt")
+  else()
+    file(REMOVE "${_rn_dst}")
+    if(NOT _rn_plat)
+      message(WARNING "release notes: no /usr/local/rampart-build marker; none installed")
+    else()
+      message(WARNING "release notes: no relnotes/${_rn_plat}.txt; none installed for this platform")
+    endif()
+  endif()
+]])
+
 if(CYGWIN)
     install(CODE "execute_process( \
         COMMAND ${CMAKE_COMMAND} -E copy \

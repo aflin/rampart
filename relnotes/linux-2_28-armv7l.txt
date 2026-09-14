@@ -1,0 +1,52 @@
+This is the 32-bit ARM build (armv7l) for Raspberry Pi OS / Debian 10
+(Buster) and newer.
+
+Two things are specific to this build:
+
+  * rampart-onnx is NOT included.  Use the embedding and reranking
+    support in rampart-langtools instead.
+  * The langtools modules are compiled for ARMv6, so that one package
+    runs on every 32-bit Pi -- including the Pi Zero and Pi 1.  A faster
+    ARMv8-A build is available as an opt-in (see below).
+
+Optional packages
+-----------------
+  rampart --install --list      see what is available for this build
+  rampart --install all         install everything except the opt-in
+                                langtools variant below
+
+Faster langtools on a Pi 3 or newer
+-----------------------------------
+`rampart --install all` installs the ARMv6 build, which runs on any Pi.
+On a Pi 3, 4, 5 or Zero 2 W you can install the ARMv8-A build instead:
+
+  rampart --install rampart-langtools-arm8a
+
+  WARNING: this will NOT run on a Pi Zero, Pi 1 (ARMv6) or Pi 2
+  (ARMv7-A).  On those it dies with "Illegal instruction" the first
+  time a model runs.  Check first:
+
+      grep -m1 Features /proc/cpuinfo
+
+  If the output includes "crc32" you have an ARMv8 core and the arm8a
+  build is safe.  If it does not, stay on the default.
+
+To go back to the ARMv6 build:
+
+  rampart --install rampart-langtools --force
+
+rampart-webview
+---------------
+Buster's WebKitGTK does not export the whole-cookie-store call, so
+w.getAllCookies() is not available on this build.  w.getCookies([uri])
+works normally.  On Bullseye and newer both are present.
+
+rampart-graphicsmagick
+----------------------
+The image module links against a system GraphicsMagick, which is not
+bundled:
+
+  sudo apt install graphicsmagick
+
+require('rampart-gm') prints this command for you if the library is
+missing.

@@ -321,13 +321,19 @@ module.exports = {
                    2_17 tier or armv7; skip-missing drops it there. */
                 "modules/rampart-onnx.so",
                 "modules/rampart-models.js",
-                /* rampart-clip's test + its Public-Domain photo corpus.
+                /* rampart-ocr: one unsuffixed module like onnx, binding
+                   rampart-onnx at require() time.  Not built on 2_17 or
+                   armv7; skip-missing drops it there. */
+                "modules/rampart-ocr.so",
+                /* clip's and ocr's tests + their document corpora.
                    Shipped in EVERY langtools variant (same rule as
                    sentencepiece/onnx) so a lone --install of any one
-                   variant is self-contained and the test is runnable.
-                   Skip-missing drops them where clip isn't built. */
+                   variant is self-contained and the tests are runnable.
+                   Skip-missing drops them where the module isn't built. */
                 "test/clip-test.js",
-                "test/test_images/"],
+                "test/test_images/",
+                "test/ocr-test.js",
+                "test/test_docs/"],
         /* first candidate that got staged wins: _cpu on the tiered linux
            builds, _arm6 on armv7, and neither on mac/freebsd/legacy-raspi
            (where the plain unsuffixed file stays canonical). */
@@ -388,8 +394,11 @@ module.exports = {
                 "modules/rampart-sentencepiece.so",
                 "modules/rampart-onnx.so",
                 "modules/rampart-models.js",
+                "modules/rampart-ocr.so",
                 "test/clip-test.js",
-                "test/test_images/"],
+                "test/test_images/",
+                "test/ocr-test.js",
+                "test/test_docs/"],
         /* x86_64 ONLY -- unlike cu12/cu13 there is no ARM cu11.  The ARM
            CUDA-11 build would bake SASS for sm_72/sm_87 (Xavier/Orin --
            Jetson iGPUs) while being compiled against CUDA 11.8, and no
@@ -421,8 +430,11 @@ module.exports = {
                 "modules/rampart-onnx.so",
                 "modules/rampart-models.js",
                 "modules/onnx-cu12/",
+                "modules/rampart-ocr.so",
                 "test/clip-test.js",
-                "test/test_images/"],
+                "test/test_images/",
+                "test/ocr-test.js",
+                "test/test_docs/"],
         /* 2_28 ONLY.  `[^-]+` would also match the 2_17 tier, which
            never builds cu12/cu13 -- and because sentencepiece/models.js/
            the clip test fixtures DO exist there, build-packages.js's
@@ -453,8 +465,11 @@ module.exports = {
                 "modules/rampart-onnx.so",
                 "modules/rampart-models.js",
                 "modules/onnx-cu13/",
+                "modules/rampart-ocr.so",
                 "test/clip-test.js",
-                "test/test_images/"],
+                "test/test_images/",
+                "test/ocr-test.js",
+                "test/test_docs/"],
         /* 2_28 ONLY -- see the cu12 entry for why `[^-]+` is wrong here. */
         platforms: /^linux-2_28-(x86_64|arm64)$/,
         symlinks: {
@@ -500,6 +515,20 @@ module.exports = {
         kind:  "tar.gz",
         arch:  "indep",
         files: ["run_tests.sh", "test/"],
+        /* The langtools tests and their corpora live in test/ but are
+           installed BY rampart-langtools and ship with it.  Without
+           these excludes they'd be duplicated here, ~860 KB of corpora
+           included, and would fail for anyone who installed `test`
+           without langtools.  This package is arch-indep -- one tarball
+           for every platform -- so it must not carry files whose
+           presence varies by tier (2_17 has no onnx/ocr). */
+        exclude: ["test/llamacpp-test.js",
+                  "test/faiss-test.js",
+                  "test/clip-test.js",
+                  "test/onnx-test.js",
+                  "test/ocr-test.js",
+                  "test/test_images/",
+                  "test/test_docs/"],
         notes: "rampart self-test suite"
     },
 
