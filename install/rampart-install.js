@@ -632,6 +632,19 @@ if (LIST) {
     process.exit(0);
 }
 
+/* A tarball install carries this file with its @@FROM_URL@@ placeholder
+   intact -- only the SFX bundler substitutes it (mkrp seds the channel
+   URL in at bundle time).  Without a download base there is nothing to
+   install from, so say so plainly rather than failing later with a
+   filesystem error naming the placeholder.
+   NB: the literal is split so mkrp's `sed s|@@FROM_URL@@|...|g` cannot
+   rewrite this comparison too. */
+if (FROM === "@@" + "FROM_URL" + "@@") {
+    fail("rampart was installed from a tarball.  To use the --install " +
+         "feature, please re-install via " +
+         "'curl -fsSL https://get.rampart.dev/ | sh'");
+}
+
 /* "all" expands to every installable package (skips in_bundle entries
    and skips the opt-in langtools variants -- cuda, and arm8a on armv7 --
    since they'd overwrite the default rampart-langtools symlinks.  The
