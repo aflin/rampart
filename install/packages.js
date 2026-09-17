@@ -205,10 +205,20 @@ module.exports = {
         notes: "Iroh p2p: docs, blobs, gossip + iroh-webproxy"
     },
 
+    /* Two shapes, depending on who built it.  The Linux docker ovens ship
+       both WebKitGTK variants plus rampart-webview.js, which picks one at
+       first require() -- the host's WebKit is not known at install time.
+       macOS, FreeBSD and native Linux builds ship a plain .so and no .js.
+       Listing every name is safe: files that are not staged are skipped,
+       and the oven install removes the unsuffixed .so so the picker can
+       never be shadowed. */
     "rampart-webview": {
         kind:  "tar.gz",
         arch:  "dep",
-        files: ["modules/rampart-webview.so"],
+        files: ["modules/rampart-webview.so",
+                "modules/rampart-webview_wk40.so",
+                "modules/rampart-webview_wk41.so",
+                "modules/rampart-webview.js"],
         notes: "Native webview (webview/webview) + JavaScriptCore"
     },
 

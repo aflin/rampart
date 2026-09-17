@@ -320,25 +320,38 @@ function artifactName(name, entry) {
 
 function isURL(s) { return /^https?:\/\//.test(s); }
 
-/* Fetch src into dst on disk.  src can be a local path or an http(s) URL. */
-function fetchTo(src, dst) {
+/* Fetch src into dst on disk.  src can be a local path or an http(s) URL.
+   Returns true on success.  With soft=true a missing/failed fetch returns
+   false instead of exiting, so the caller can decide whether it is fatal.
+   (fail() exits the process -- it does NOT throw -- so callers must use
+   soft mode rather than try/catch.) */
+function fetchTo(src, dst, soft) {
     if (!isURL(src)) {
-        if (!fileExists(src)) fail("artifact not found at " + src);
+        if (!fileExists(src)) {
+            if (soft) return false;
+            fail("artifact not found at " + src);
+        }
         run("cp", ["-p", src, dst]);
-        return;
+        return true;
     }
     var curl = require("rampart-curl");
     var r;
     try { r = curl.fetch(src); }
-    catch (e) { fail("download failed: " + src + " (" + e.message + ")"); }
-    if (!r || r.status !== 200)
+    catch (e) {
+        if (soft) return false;
+        fail("download failed: " + src + " (" + e.message + ")");
+    }
+    if (!r || r.status !== 200) {
+        if (soft) return false;
         fail("download failed: " + src + " (status " + (r && r.status) + ")");
+    }
     fwrite(dst, r.body);
+    return true;
 }
 
 /* ---------- per-package install ---------- */
 
-function installOne(name) {
+function installOne(name, optional) {
     name = resolveLangtoolsAlias(name);
 
     var entry = manifest[name];
@@ -371,9 +384,9 @@ function installOne(name) {
        already records for this package, skip the artifact download
        entirely -- unless --force was passed. */
     var localSha = tmpdir + "/" + aname + ".sha1";
-    var haveSha = true;
-    try { fetchTo(shaSrc, localSha); }
-    catch (e) { haveSha = false; warn("no sha1 file for " + aname); }
+    /* Warn about a missing sha1 only once the artifact itself turns up --
+       when the whole package is absent the skip message says it all. */
+    var haveSha = fetchTo(shaSrc, localSha, true);
 
     var remoteSha = null;
     if (haveSha) {
@@ -398,7 +411,16 @@ function installOne(name) {
 
     var localArtifact = tmpdir + "/" + aname;
     info("  fetching " + src);
-    fetchTo(src, localArtifact);
+    if (!fetchTo(src, localArtifact, optional)) {
+        /* Reached only via `all`: the package is in the manifest but was
+           not published for this platform (a module whose build is not
+           wired up here yet, say).  Naming it explicitly still fails
+           loudly -- silence is only for the sweep. */
+        warn(name + " is not published for " + PLAT + ", skipping");
+        try { run("rm", ["-rf", tmpdir]); } catch (e) {}
+        return null;
+    }
+    if (!haveSha) warn("no sha1 file for " + aname);
 
     if (haveSha) {
         /* In-process SHA-1 via rampart-crypto -- avoids the
@@ -653,6 +675,8 @@ if (FROM === "@@" + "FROM_URL" + "@@") {
    execute; install the faster variant explicitly when you want it).
    Targets are de-duped so `--install all rampart-redis` still does the
    right thing. */
+var FROM_ALL = {};   /* names supplied by the `all` sweep, not by the user */
+
 if (TARGETS.indexOf("all") !== -1) {
     var _all = [];
     Object.keys(manifest).sort().forEach(function (n) {
@@ -669,10 +693,15 @@ if (TARGETS.indexOf("all") !== -1) {
     TARGETS.forEach(function (t) {
         if (t === "all") {
             _all.forEach(function (n) {
-                if (!_seen[n]) { _seen[n] = true; _expanded.push(n); }
+                if (!_seen[n]) {
+                    _seen[n] = true; _expanded.push(n); FROM_ALL[n] = true;
+                }
             });
-        } else if (!_seen[t]) {
-            _seen[t] = true; _expanded.push(t);
+        } else {
+            /* Named explicitly: must be hard-failing even if the sweep
+               already queued it (`--install all rampart-webview`). */
+            delete FROM_ALL[t];
+            if (!_seen[t]) { _seen[t] = true; _expanded.push(t); }
         }
     });
     TARGETS = _expanded;
@@ -691,7 +720,7 @@ info("");
 
 for (var ti = 0; ti < TARGETS.length; ti++) {
     info("Installing " + TARGETS[ti] + "...");
-    installOne(TARGETS[ti]);
+    installOne(TARGETS[ti], !!FROM_ALL[TARGETS[ti]]);
     info("");
 }
 
