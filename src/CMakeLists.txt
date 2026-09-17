@@ -1708,17 +1708,32 @@ install(FILES
 # the SFX payload for entry_script.js to print after an install.
 #
 # The platform comes from /usr/local/rampart-build -- the same marker
-# that defines rampart.buildPlatform (read above) -- so the notes can
-# never disagree with the binary shipping beside them.  Read at INSTALL
-# time, not configure, so editing the marker and re-installing picks up
-# the right file without a reconfigure.
-# Bake the source-tree path at CONFIGURE time.  Inside the bracket-quoted
-# install(CODE) below nothing is expanded until install time, where
-# PROJECT_SOURCE_DIR is empty and CMAKE_CURRENT_LIST_DIR points at the
-# BUILD dir -- so the tree path has to be captured here.
+# that defines rampart.buildPlatform -- so the notes can never disagree
+# with the binary shipping beside them.
+#
+# BOTH values are captured at CONFIGURE time, deliberately:
+#   - PROJECT_SOURCE_DIR is empty at install time and
+#     CMAKE_CURRENT_LIST_DIR then points at the BUILD dir, so the tree
+#     path has to be baked in here.
+#   - the marker is written by docker/build-in-oven.sh in its `build`
+#     stage and is CONTAINER-LOCAL.  The oven's `install` stage is a
+#     separate `docker run`, so at install time the marker does not
+#     exist at all -- reading it there yielded an empty platform and
+#     silently installed no notes.  Configure runs inside the build
+#     container moments after the marker is written, so it is readable
+#     here.  An install-time marker, if one happens to exist (native
+#     builds), still wins.
+if(EXISTS "/usr/local/rampart-build")
+    file(READ "/usr/local/rampart-build" _rn_cfg_raw)
+    string(REGEX REPLACE ";.*" "" RN_PLAT_CFG "${_rn_cfg_raw}")
+    string(STRIP "${RN_PLAT_CFG}" RN_PLAT_CFG)
+else()
+    set(RN_PLAT_CFG "")
+endif()
 install(CODE "set(RN_TREE \"${PROJECT_SOURCE_DIR}/relnotes\")")
+install(CODE "set(RN_PLAT_CFG \"${RN_PLAT_CFG}\")")
 install(CODE [[
-  set(_rn_plat "")
+  set(_rn_plat "${RN_PLAT_CFG}")
   if(EXISTS "/usr/local/rampart-build")
     file(READ "/usr/local/rampart-build" _rn_raw)
     string(REGEX REPLACE ";.*" "" _rn_plat "${_rn_raw}")
