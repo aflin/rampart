@@ -557,6 +557,38 @@ testFeature("udate - btree index", function(){
     return sqlu.exec("select NAME from SYSINDEX where NAME='ut2_u_x'").rows.length == 1;
 });
 
+/* abstract()'s no-index query cache: a query that fails to compile freed
+ * the cached pattern but left the rest of the cache naming it, so the next
+ * call with the previous query ranked with freed memory (segfault in
+ * rppm_searchbuf).  Good, bad, bad, good reuses the freed block. */
+testFeature("abstract - query that fails to compile does not poison the cache", function(){
+    sql.query("drop table abscache;");      /* left by a run that crashed here */
+    sql.exec("create table abscache (Id int, Doc varchar(1024));");
+    var words = ["partnership", "meeting", "finance", "committee", "board", "quarterly",
+                 "review", "hedge", "capital", "approval", "minutes", "calendar"];
+    var seed = 7;
+    function rnd(n) { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed % n; }
+    for (var d = 0; d < 6; d++) {
+        var t = [];
+        for (var w = 0; w < 3000; w++) t.push(words[rnd(words.length)]);
+        sql.exec("insert into abscache values (?, ?);", [d, t.join(" ")]);
+    }
+    var good = ["partnership board approval", "finance committee minutes hedge"];
+    var bad = "partnerships (alpha, beta, gamma), including";
+    var q = "select abstract(Doc, 240, 'querysingleoffset', ?) S from abscache where Id=?;";
+    var ok = 0;
+    for (var i = 0; i < 100; i++) {
+        var g = good[i % 2];
+        sql.one(q, [g, i % 6]);
+        sql.one(q, [bad, (i + 1) % 6]);
+        sql.one(q, [bad, (i + 3) % 6]);
+        var r = sql.one(q, [g, (i + 2) % 6]);
+        if (r && String(r.S).length) ok++;
+    }
+    sql.exec("drop table abscache;");
+    return ok === 100;
+});
+
 rm_rf_dir(tmpdir);
 
 testFeature.exit();

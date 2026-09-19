@@ -254,6 +254,20 @@ int	*nHitsP;	/* (out, opt.) length of `*hits' */
 			mmapi = openmmapi(query, TXbool_False, cp);
 			if(!mmapi)
 			{
+				/* The cache must not outlive the mmapi it was
+				 * built on: lastRppm and mq reference the one just
+				 * closed, and lquery still names its query, so a
+				 * repeat of that query would rank with freed memory.
+				 */
+				if (lastRppm)
+					lastRppm = closerppm(lastRppm);
+				if (mq)
+					mq = TXclosemmql(mq, 0);
+				if (lquery)
+				{
+					free(lquery);
+					lquery = NULL;
+				}
 				return NULL;
 			}
 
