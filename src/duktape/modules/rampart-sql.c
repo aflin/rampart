@@ -1329,6 +1329,8 @@ static int fork_write_all(const void *buf, size_t sz, int line)
 
         if (r > 0) { off += (size_t)r; continue; }
         if (r < 0 && errno == EINTR) continue;
+        /* child: EPIPE means the parent exited -- normal shutdown */
+        if (thisfork && errno == EPIPE) exit(0);
         fprintf(stderr,
                 "rampart-sql helper: write failed: '%s' at %d, fd:%d\n",
                 strerror(errno), line, finfo->writer);
@@ -1350,6 +1352,8 @@ static int fork_read_all(void *buf, size_t sz, int line)
 
         if (r > 0) { off += (size_t)r; continue; }
         if (r < 0 && errno == EINTR) continue;
+        /* child: EOF means the parent exited -- normal shutdown */
+        if (thisfork && r == 0) exit(0);
         if (r == 0)                     /* EOF: the peer is gone */
             fprintf(stderr,
                     "rampart-sql helper: read got EOF from %d at %d (peer exited)\n",

@@ -208,6 +208,8 @@ int debugl=rpydebug;
     rp_debug_printf(5,"%s writing %d bytes\n", is_child?"child":"parent", (int)c);\
     while( (r += (ir=write(finfo->writer, (b)+r, (c)-r))) < (c) ) if(ir<1)break;\
     if(ir<1) {\
+        /* child: EPIPE means the parent exited -- normal shutdown */\
+        if(is_child && errno==EPIPE) exit(0);\
         fprintf(stderr, "rampart-python helper: write failed: '%s' at %d, fd:%d\n",strerror(errno),__LINE__,finfo->writer);\
         if(is_child) {fprintf(stderr, "child proc exiting\n");exit(0);}\
     };\
