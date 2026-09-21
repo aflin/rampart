@@ -73,6 +73,9 @@ void linenoiseClearScreen(void);
 void linenoiseSetMultiLine(int ml);
 void linenoiseMaskModeEnable(void);
 void linenoiseMaskModeDisable(void);
+void linenoiseShutdown(void);                     // -- ajf - flush recorded stdout, restore fd 1
+int  linenoiseRealStdoutFd(void);                 // -- ajf - tty fd while fd 1 is recorded, else -1
+int  linenoiseStdoutIsTTY(void);                  // -- ajf - isatty(stdout), seeing through the recorder
 void linenoise_refresh(void); // -- ajf
 int  linenoiseIsMultiLine(void); // -- ajf - true in force_ml or paste/edit ml mode
 

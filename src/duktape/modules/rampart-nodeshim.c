@@ -9565,16 +9565,26 @@ static ns_termios_save_t *_ns_tty_slot(int fd, int create)
     return NULL;
 }
 
+/* While the REPL records stdout, fd 1 is a pipe and the terminal is on
+   another fd (see linenoise.c).  Questions about "stdout's terminal" must
+   be asked of that one. */
+extern int linenoiseRealStdoutFd(void);
+static int tty_real_fd(int fd)
+{
+    int real = (fd == STDOUT_FILENO) ? linenoiseRealStdoutFd() : -1;
+    return real >= 0 ? real : fd;
+}
+
 static duk_ret_t tty_isatty_c(duk_context *ctx)
 {
-    int fd = duk_to_int(ctx, 0);
+    int fd = tty_real_fd(duk_to_int(ctx, 0));
     duk_push_boolean(ctx, isatty(fd) ? 1 : 0);
     return 1;
 }
 
 static duk_ret_t tty_get_window_size_c(duk_context *ctx)
 {
-    int fd = duk_to_int(ctx, 0);
+    int fd = tty_real_fd(duk_to_int(ctx, 0));
     struct winsize w;
     if (ioctl(fd, TIOCGWINSZ, &w) != 0) {
         duk_push_null(ctx);

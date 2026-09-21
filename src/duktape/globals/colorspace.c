@@ -713,9 +713,10 @@ static int term_colors_and_truecolor(int *colors, int *truecolor)
 
 static void detect_terminal_capabilities(void)
 {
+    extern int linenoiseStdoutIsTTY(void); // true in the REPL even while stdout is recorded
     const char *term = getenv("TERM");
 
-    if (!term || !isatty(STDOUT_FILENO) || !strcmp(term, "dumb"))
+    if (!term || !linenoiseStdoutIsTTY() || !strcmp(term, "dumb"))
     {
         supports_ansi = 0;
         color_count = 0;

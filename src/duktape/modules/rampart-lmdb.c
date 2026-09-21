@@ -766,6 +766,43 @@ duk_ret_t duk_rp_lmdb_get_count(duk_context *ctx)
 } while(0)
 
 
+/* Lexicographic comparison of a NUL-terminated string against a raw LMDB
+   key, matching LMDB's default byte ordering: memcmp over the common
+   length, then the shorter key sorts first.
+
+   strncmp(s, key.mv_data, key.mv_size) is NOT equivalent -- it truncates
+   the comparison to the key's length, so a key that is a proper prefix of
+   s compares equal to it.  LMDB keys are not NUL terminated, so plain
+   strcmp() is not available either. */
+static int rp_lmdb_keycmp(const char *s, MDB_val *key)
+{
+    size_t slen = strlen(s);
+    size_t clen = slen < key->mv_size ? slen : key->mv_size;
+    int rc = clen ? memcmp(s, key->mv_data, clen) : 0;
+
+    if(rc)
+        return rc;
+    if(slen < key->mv_size)
+        return -1;
+    if(slen > key->mv_size)
+        return 1;
+    return 0;
+}
+
+/* Have we walked past endstr and out of the requested range?
+
+   `direction` is strcmp(endstr, startkey): >0 walks forward with
+   MDB_NEXT, <0 walks backward with MDB_PREV, and ==0 means the range is
+   the single start key, which the forward test terminates immediately. */
+static int rp_lmdb_past_end(const char *endstr, MDB_val *key, int direction)
+{
+    int cmp = rp_lmdb_keycmp(endstr, key);
+
+    if(direction < 0)
+        return cmp > 0;   /* reverse: stop once the key sorts before endstr */
+    return cmp < 0;       /* forward: stop once the key sorts after endstr */
+}
+
 static duk_ret_t get_del(duk_context *ctx, int del, int retvals)
 {
     int rc, max=-1, convtype;
@@ -879,6 +916,16 @@ static duk_ret_t get_del(duk_context *ctx, int del, int retvals)
             rc = mdb_cursor_get(cursor, &key, &data, MDB_SET_RANGE);
         else
             rc = mdb_cursor_get(cursor, &key, &data, MDB_FIRST);
+
+        /* MDB_SET_RANGE lands on the first key >= s, which need not carry
+           the prefix.  The strncmp() below only guards keys reached by
+           MDB_NEXT, so without this the first key is returned -- and on
+           the del path deleted -- whenever nothing matches the prefix.
+           Treat a non-matching first key as no match at all. */
+        if(rc == MDB_SUCCESS && len &&
+           ( key.mv_size < (size_t)len || strncmp(s, key.mv_data, len) )
+          )
+            rc = MDB_NOTFOUND;
 
         if(rc == MDB_NOTFOUND)
         {
@@ -1091,7 +1138,7 @@ static duk_ret_t get_del(duk_context *ctx, int del, int retvals)
                 else if(rc)
                     errexit;
 
-                if(direction * strncmp(endstr, key.mv_data, key.mv_size) < 0)
+                if(rp_lmdb_past_end(endstr, &key, direction))
                     break;
                 /* copy before deleting -- mdb_cursor_del() invalidates key/data */
                 pushkey;
@@ -1160,7 +1207,7 @@ static duk_ret_t get_del(duk_context *ctx, int del, int retvals)
                     break;
                 else if(rc)
                     errexit;
-                if(direction * strncmp(endstr, key.mv_data, key.mv_size) < 0)
+                if(rp_lmdb_past_end(endstr, &key, direction))
                     break;
                 if(del)
                 {

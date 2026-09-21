@@ -367,7 +367,7 @@ static void completion(const char *inbuf, linenoiseCompletions *lc) {
     if(s)
     {
         s++;
-        while( isspace(*s) )
+        while( isspace((unsigned char)*s) )
             s++;
         startlen = s - startpos;
         inbuf=s;
@@ -388,9 +388,13 @@ static void completion(const char *inbuf, linenoiseCompletions *lc) {
         s++;
     }
 
-    // Query terminal size
-    if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &wsz) != -1)
-        width = wsz.ws_col -3;
+    // Query terminal size.  While the REPL records stdout, fd 1 is a pipe
+    // and the terminal is on the fd linenoise kept.
+    {
+        int tfd = linenoiseRealStdoutFd();
+        if (ioctl(tfd >= 0 ? tfd : STDOUT_FILENO, TIOCGWINSZ, &wsz) != -1)
+            width = wsz.ws_col -3;
+    }
 
     // filename/path completion
     if(insq || indq)
@@ -993,7 +997,10 @@ void duk_rp_exit(duk_context *ctx, int ec)
            until that call returns; abandon and _exit.  We've already
            run JS exit_funcs above; the OS reclaims the rest.          */
         if (nchildren > 0)
+        {
+            linenoiseShutdown(); /* _exit skips atexit: flush recorded stdout */
             _exit(ec);
+        }
     }
 
     // Run added exit functions BEFORE duk_destroy_heap.  Background
@@ -1094,7 +1101,9 @@ char * cmdline_help =
 "ctrl-u           - delete current line\n"
 "ctrl-w           - delete previous word\n"
 "ctrl-x           - toggle multi-line editing mode\n"
-"ctrl-z           - suspend and drop to shell"
+"ctrl-z           - suspend and drop to shell\n"
+"ctrl-left/right  - move one word (also alt-b / alt-f)\n"
+"alt-backspace    - delete previous word"
 ;
 
 char * tickify(char *src, size_t sz, int *err, int *ln);

@@ -114,11 +114,17 @@
    * changes to completion that made sense for rampart
    * linenoiseState l.buf is now allocated and grows as necessary
    * changes not tested with hints, as rampart doesn't use them
+   * UTF-8 aware: positions are bytes on character boundaries, the screen is
+     in display columns (wide chars, combining marks, tabs, ANSI in prompts)
+   * one input queue; full CSI parsing; bracketed paste; ctrl/alt word moves
+   * terminal resize (SIGWINCH) handled while editing
 */
 
 #include <stddef.h>
+#include <stdint.h>
 #include <ctype.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <poll.h>
 #include <signal.h> //-ajf 2025-10-11
 #include <stdio.h>
@@ -130,6 +136,7 @@
 #include <termios.h>
 #include <unistd.h>
 #include "linenoise.h"
+#include "linenoise_wtab.h"
 
 /* Coordinate fd-0 ownership with nodeshim's process.stdin event-driven
    data pump.  See include/rampart.h for the constants and contract.
@@ -157,6 +164,16 @@ static int atexit_registered = 0;   /* Register atexit just 1 time. */
 static int history_max_len = LINENOISE_DEFAULT_HISTORY_MAX_LEN;
 static int history_len = 0;
 static char **history = NULL;
+
+// stdout recorder state (defined with the recorder, below)
+static int rec_orig_stdout; // the real terminal while fd 1 is the recorder pipe
+static int rec_active;      // fd 1 is currently redirected
+
+// fd that reaches the terminal without passing through the recorder
+static int tty_out_fd(void)
+{
+    return rec_active ? rec_orig_stdout : STDOUT_FILENO;
+}
 
 static int in_ml_paste_or_edit = 0; // -- ajf - 2025-10-10 - whether in the middle of a multi-lined paste/edit
 static int force_ml_edit = 0;       // -- ajf - 2025-10-11 - whether to force multi-line mode
@@ -213,7 +230,9 @@ struct linenoiseState
     char *buf;          /* Edited line buffer. */
     size_t buflen;      /* Edited line buffer size. */
     const char *prompt; /* Prompt to display. */
-    size_t promptlen;
+    size_t promptlen;   /* prompt length in BYTES: only for writing it */
+    size_t promptwidth; /* prompt width in COLUMNS: for all screen arithmetic */
+    int oldrpos;        /* single-line refresh: cursor row (1-based) after the last refresh */
     size_t plen;       /* Prompt length. */
     size_t pos;        /* Current cursor position. */
     size_t oldpos;     /* Previous refresh cursor position. */
@@ -252,6 +271,18 @@ enum KEY_ACTION
 static void linenoiseAtExit(void);
 int linenoiseHistoryAdd(const char *line);
 static void refreshLine(struct linenoiseState *l);
+
+/* Drop the scratch entry linenoiseEdit() keeps at the end of the history
+ * while a line is being edited.  Called on every way out of the editor. */
+static void pop_scratch_history(void)
+{
+    if (history_len > 0)
+    {
+        history_len--;
+        free(history[history_len]);
+        history[history_len] = NULL;
+    }
+}
 
 /* Debugging macro. */
 #if 0
@@ -406,6 +437,8 @@ static int enableRawMode(int fd)
         goto fatal;
     rawmode = 1;
     rp_stdin_owner = RP_STDIN_REPL_;
+    // bracketed paste on: pastes arrive wrapped in ESC[200~ ... ESC[201~
+    (void)write(tty_out_fd(), "\033[?2004h", 8);
     return 0;
 
 fatal:
@@ -416,6 +449,8 @@ fatal:
 static void disableRawMode(int fd)
 {
     /* Don't even check the return value as it's too late. */
+    if (rawmode)
+        (void)write(tty_out_fd(), "\033[?2004l", 8); // bracketed paste off
     if (rawmode && tcsetattr(fd, TCSAFLUSH, &orig_termios) != -1)
         rawmode = 0;
     /* Release fd 0 if we were the owner.  Don't stomp NODESHIM
@@ -441,6 +476,488 @@ static void linenoiseBeep(void)
     fflush(stderr);
 }
 
+/* Make room for `need` bytes plus the NUL.  l->buflen is always the
+ * allocation size minus one.  Returns 0 if out of memory. */
+static int ensure_buf(struct linenoiseState *l, size_t need)
+{
+    if (need <= l->buflen)
+        return 1;
+    size_t alloc = need + 1 + LINENOISE_ADD_OVERHEAD;
+    char *nb = realloc(l->buf, alloc);
+    if (!nb)
+        return 0;
+    l->buf = nb;
+    l->buflen = alloc - 1;
+    return 1;
+}
+
+/* Replace the whole edit buffer with s[0..n). */
+static void set_buf(struct linenoiseState *l, const char *s, size_t n)
+{
+    if (!ensure_buf(l, n))
+        n = l->buflen;
+    memcpy(l->buf, s, n);
+    l->buf[n] = '\0';
+    l->len = l->pos = n;
+}
+
+/* ===================== UTF-8 / display width layer -ajf ====================
+ *
+ * Buffer positions (pos, len) are byte offsets and always sit on a grapheme
+ * cluster boundary.  Everything that talks to the screen is in display
+ * columns.  Width is the sum of the code point widths (the wcwidth
+ * convention used by xterm, tmux and readline); movement and deletion are by
+ * whole cluster.  No locale or libc wcwidth() dependency. */
+
+/* Decode one code point from s[0..n), n >= 1.  Returns bytes consumed;
+ * malformed input consumes one byte and yields U+FFFD. */
+static size_t u8_decode(const char *s, size_t n, uint32_t *cp)
+{
+    const unsigned char *u = (const unsigned char *)s;
+    uint32_t c = u[0], min;
+    size_t need, i;
+
+    if (c < 0x80)
+    {
+        *cp = c;
+        return 1;
+    }
+    if (c >= 0xC2 && c <= 0xDF)
+        need = 1, c &= 0x1F, min = 0x80;
+    else if ((c & 0xF0) == 0xE0)
+        need = 2, c &= 0x0F, min = 0x800;
+    else if (c >= 0xF0 && c <= 0xF4)
+        need = 3, c &= 0x07, min = 0x10000;
+    else
+        goto bad;
+    if (need >= n)
+        goto bad;
+    for (i = 1; i <= need; i++)
+    {
+        if ((u[i] & 0xC0) != 0x80)
+            goto bad;
+        c = (c << 6) | (u[i] & 0x3F);
+    }
+    if (c < min || c > 0x10FFFF || (c >= 0xD800 && c <= 0xDFFF))
+        goto bad;
+    *cp = c;
+    return need + 1;
+bad:
+    *cp = 0xFFFD;
+    return 1;
+}
+
+static int in_table(uint32_t cp, const struct ln_interval *t, size_t n)
+{
+    size_t lo = 0, hi = n;
+    while (lo < hi)
+    {
+        size_t mid = (lo + hi) / 2;
+        if (cp < t[mid].first)
+            hi = mid;
+        else if (cp > t[mid].last)
+            lo = mid + 1;
+        else
+            return 1;
+    }
+    return 0;
+}
+
+/* Columns for one printable code point: 0, 1 or 2. */
+static int cp_width(uint32_t cp)
+{
+    if (cp < 0x300)
+        return 1;
+    if (in_table(cp, ln_zero_width, sizeof(ln_zero_width) / sizeof(ln_zero_width[0])))
+        return 0;
+    if (in_table(cp, ln_wide, sizeof(ln_wide) / sizeof(ln_wide[0])))
+        return 2;
+    return 1;
+}
+
+#define IS_CTRL(cp) ((cp) < 0x20 || (cp) == 0x7f)
+#define IS_RI(cp) ((cp) >= 0x1F1E6 && (cp) <= 0x1F1FF)   /* regional indicator */
+#define IS_EMOD(cp) ((cp) >= 0x1F3FB && (cp) <= 0x1F3FF) /* emoji skin tone */
+
+/* Byte length of the grapheme cluster starting at s[pos], pos < len: a base
+ * code point plus what attaches to it (combining marks, variation selectors,
+ * skin tones, ZWJ + next, the second half of a flag). */
+static size_t gr_next(const char *s, size_t pos, size_t len)
+{
+    uint32_t cp, nx;
+    size_t k, i = pos + u8_decode(s + pos, len - pos, &cp);
+
+    if (IS_CTRL(cp))
+        return i - pos;
+    if (IS_RI(cp) && i < len)
+    {
+        k = u8_decode(s + i, len - i, &nx);
+        if (IS_RI(nx))
+            i += k;
+    }
+    while (i < len)
+    {
+        k = u8_decode(s + i, len - i, &nx);
+        if (nx == 0x200D)
+        {
+            i += k;
+            if (i < len)
+            {
+                k = u8_decode(s + i, len - i, &nx);
+                if (!IS_CTRL(nx))
+                    i += k;
+            }
+            continue;
+        }
+        if (nx >= 0x300 && (IS_EMOD(nx) || cp_width(nx) == 0))
+        {
+            i += k;
+            continue;
+        }
+        break;
+    }
+    return i - pos;
+}
+
+/* Byte length of the cluster that ends at s[pos], pos > 0.  Walks forward
+ * from the start of the line so it always agrees with gr_next(). */
+static size_t gr_prev(const char *s, size_t pos, size_t len)
+{
+    size_t i = pos, k = 1;
+
+    while (i > 0 && s[i - 1] != '\n')
+        i--;
+    if (i == pos)
+        return 1; // the newline itself
+    while (i < pos)
+    {
+        k = gr_next(s, i, len);
+        if (i + k > pos) // pos was inside a cluster
+            return pos - i;
+        i += k;
+    }
+    return k;
+}
+
+/* Cluster at s[i], i < n.  Returns its byte length and sets *w to the
+ * columns it takes when drawn at absolute column abscol.  tabstops > 0:
+ * tabs run to the next multiple of 8.  Otherwise tabs, like other control
+ * characters, are drawn as ^X.  tabstops < 0 is for prompt text, which mask
+ * mode must not hide. */
+static size_t cl_at(const char *s, size_t i, size_t n, int abscol, int tabstops, int *w)
+{
+    unsigned char c = (unsigned char)s[i];
+    size_t g, j;
+    uint32_t cp;
+
+    if (maskmode && tabstops >= 0) // every character shows as one '*'
+    {
+        *w = 1;
+        return gr_next(s, i, n);
+    }
+    if (c == '\t' && tabstops > 0)
+    {
+        *w = 8 - (abscol % 8);
+        return 1;
+    }
+    if (IS_CTRL(c))
+    {
+        *w = 2;
+        return 1;
+    }
+    g = gr_next(s, i, n);
+    *w = 0;
+    for (j = 0; j < g;)
+    {
+        j += u8_decode(s + i + j, g - j, &cp);
+        *w += cp_width(cp);
+    }
+    return g;
+}
+
+/* Columns taken by s[0..n) when it starts at absolute column startcol. */
+static int span_width(const char *s, size_t n, int startcol, int tabstops)
+{
+    size_t i = 0;
+    int col = startcol, w;
+
+    while (i < n)
+    {
+        i += cl_at(s, i, n, col, tabstops, &w);
+        col += w;
+    }
+    return col - startcol;
+}
+
+/* Byte offset in s[0..n) of the cluster covering column `col` (relative to
+ * the start of s); *actual gets the column of that cluster's left edge.
+ * Past the end returns n. */
+static size_t col_to_pos(const char *s, size_t n, int col, int startcol, int tabstops, int *actual)
+{
+    size_t i = 0, k;
+    int c = 0, w;
+
+    while (i < n)
+    {
+        k = cl_at(s, i, n, startcol + c, tabstops, &w);
+        if (c + w > col)
+            break;
+        c += w;
+        i += k;
+    }
+    if (actual)
+        *actual = c;
+    return i;
+}
+
+/* Length of the terminal escape sequence at s[0..n), or 0 if none.  Also
+ * treats readline's \001 and \002 prompt markers as zero-width. */
+static size_t ansi_skip(const char *s, size_t n)
+{
+    size_t i;
+
+    if (n && (s[0] == '\001' || s[0] == '\002'))
+        return 1;
+    if (n < 2 || s[0] != '\x1b')
+        return 0;
+    if (s[1] == '[') // CSI: parameters, intermediates, final byte
+    {
+        for (i = 2; i < n && (unsigned char)s[i] >= 0x20 && (unsigned char)s[i] <= 0x3f; i++)
+            ;
+        return i < n ? i + 1 : i;
+    }
+    if (s[1] == ']') // OSC: ends with BEL or ESC backslash
+    {
+        for (i = 2; i < n; i++)
+        {
+            if (s[i] == '\a')
+                return i + 1;
+            if (s[i] == '\x1b' && i + 1 < n && s[i + 1] == '\\')
+                return i + 2;
+        }
+        return n;
+    }
+    if (strchr("()*+", s[1])) // charset designation
+        return n < 3 ? n : 3;
+    return 2;
+}
+
+/* Display width of a prompt: escape sequences take no columns. */
+static int prompt_width(const char *p, size_t n)
+{
+    size_t i = 0, k;
+    int col = 0, w;
+
+    while (i < n)
+    {
+        if ((k = ansi_skip(p + i, n - i)))
+        {
+            i += k;
+            continue;
+        }
+        i += cl_at(p, i, n, col, -1, &w);
+        col += w;
+    }
+    return col;
+}
+
+/* ============================== Input layer -ajf ===========================
+ *
+ * All terminal input goes through one queue so that bytes read while looking
+ * for something else (a cursor position report, the end of a paste) are kept
+ * and replayed in order. */
+
+#define RK_EOF -1
+#define RK_INTR -2    /* woken by linenoiseInterrupt() */
+#define RK_TIMEOUT -3
+#define RK_RESIZE -4  /* terminal size changed */
+
+static unsigned char *inq = NULL;
+static size_t inq_head = 0, inq_len = 0, inq_cap = 0;
+
+static int inq_room(size_t n)
+{
+    if (inq_head + inq_len + n <= inq_cap)
+        return 1;
+    if (inq_head)
+    {
+        memmove(inq, inq + inq_head, inq_len);
+        inq_head = 0;
+    }
+    if (inq_len + n > inq_cap)
+    {
+        size_t nc = (inq_len + n) * 2 + 64;
+        unsigned char *nb = realloc(inq, nc);
+        if (!nb)
+            return 0;
+        inq = nb;
+        inq_cap = nc;
+    }
+    return 1;
+}
+
+static void inq_append(const unsigned char *s, size_t n)
+{
+    if (!n || !inq_room(n))
+        return;
+    memcpy(inq + inq_head + inq_len, s, n);
+    inq_len += n;
+}
+
+/* put bytes back at the FRONT of the queue */
+static void inq_unread(const unsigned char *s, size_t n)
+{
+    if (!n || !inq_room(n))
+        return;
+    if (inq_head >= n)
+        inq_head -= n;
+    else
+    {
+        memmove(inq + n, inq + inq_head, inq_len);
+        inq_head = 0;
+    }
+    memcpy(inq + inq_head, s, n);
+    inq_len += n;
+}
+
+static void inq_clear(void)
+{
+    inq_head = inq_len = 0;
+}
+
+/* SIGWINCH self-pipe: the handler may run on any thread, so it wakes the
+ * editor's poll() through a pipe rather than relying on EINTR. */
+static int winch_pipe[2] = {-1, -1};
+static struct sigaction winch_old;
+static int winch_installed = 0;
+
+static void on_winch(int sig)
+{
+    int e = errno;
+    if (winch_pipe[1] >= 0)
+        (void)write(winch_pipe[1], "w", 1);
+    if (!(winch_old.sa_flags & SA_SIGINFO) && winch_old.sa_handler != SIG_DFL && winch_old.sa_handler != SIG_IGN
+        && winch_old.sa_handler != on_winch)
+        winch_old.sa_handler(sig);
+    errno = e;
+}
+
+static void winch_install(void)
+{
+    struct sigaction sa;
+    int i;
+
+    if (winch_pipe[0] < 0 && pipe(winch_pipe) == 0)
+        for (i = 0; i < 2; i++)
+        {
+            fcntl(winch_pipe[i], F_SETFL, fcntl(winch_pipe[i], F_GETFL) | O_NONBLOCK);
+            fcntl(winch_pipe[i], F_SETFD, FD_CLOEXEC);
+        }
+    if (winch_pipe[0] < 0 || winch_installed)
+        return;
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_handler = on_winch;
+    sigemptyset(&sa.sa_mask);
+    if (sigaction(SIGWINCH, &sa, &winch_old) == 0)
+        winch_installed = 1;
+}
+
+static void winch_restore(void)
+{
+    if (winch_installed)
+    {
+        sigaction(SIGWINCH, &winch_old, NULL);
+        winch_installed = 0;
+    }
+}
+
+/* Wait for input.  timeout_ms < 0 blocks, and only then do interrupts and
+ * resizes wake us.  Returns 1 when bytes are ready, 0 on timeout, else RK_*. */
+static int in_wait(struct linenoiseState *l, int timeout_ms)
+{
+    struct pollfd p[3];
+    int n = 1, pr, ii = -1, wi = -1;
+
+    if (inq_len)
+        return 1;
+    p[0].fd = l->ifd;
+    p[0].events = POLLIN;
+    if (timeout_ms < 0)
+    {
+        if (linenoise_intr_pipe[0] >= 0)
+            p[ii = n++].fd = linenoise_intr_pipe[0];
+        if (winch_pipe[0] >= 0)
+            p[wi = n++].fd = winch_pipe[0];
+    }
+    for (pr = 1; pr < n; pr++)
+        p[pr].events = POLLIN;
+    for (pr = 0; pr < n; pr++)
+        p[pr].revents = 0;
+    do
+    {
+        pr = poll(p, n, timeout_ms);
+    } while (pr < 0 && errno == EINTR);
+    if (pr < 0)
+        return RK_EOF;
+    if (pr == 0)
+        return 0;
+    if (ii > 0 && (p[ii].revents & POLLIN))
+    {
+        char drainbuf[256];
+        ssize_t dn = read(linenoise_intr_pipe[0], drainbuf, sizeof(drainbuf));
+        if (dn < 0)
+            dn = 0;
+        if (dn == 1 && drainbuf[0] == 0)
+            linenoise_intr_set_last("", 0);
+        else
+            linenoise_intr_set_last(drainbuf, (size_t)dn);
+        return RK_INTR;
+    }
+    if (wi > 0 && (p[wi].revents & POLLIN))
+    {
+        char drainbuf[64];
+        while (read(winch_pipe[0], drainbuf, sizeof(drainbuf)) > 0)
+            ;
+        return RK_RESIZE;
+    }
+    return 1;
+}
+
+/* pull whatever the terminal has into the queue; 0 on EOF/error */
+static int in_fill(struct linenoiseState *l)
+{
+    unsigned char tmp[4096];
+    ssize_t n;
+
+    do
+    {
+        n = read(l->ifd, tmp, sizeof(tmp));
+    } while (n < 0 && errno == EINTR);
+    if (n <= 0)
+        return 0;
+    inq_append(tmp, (size_t)n);
+    return 1;
+}
+
+/* Next input byte (0..255), or RK_*. */
+static int read_key(struct linenoiseState *l, int timeout_ms)
+{
+    if (!inq_len)
+    {
+        int w = in_wait(l, timeout_ms);
+        if (w == 0)
+            return RK_TIMEOUT;
+        if (w < 0)
+            return w;
+        if (!in_fill(l) || !inq_len)
+            return RK_EOF;
+    }
+    int c = inq[inq_head++];
+    if (!--inq_len)
+        inq_head = 0;
+    return c;
+}
+
 /* ============================== Completion ================================ */
 
 /* Free a list of completion option populated by linenoiseAddCompletion(). */
@@ -459,11 +976,12 @@ static void freeCompletions(linenoiseCompletions *lc)
  *
  * The state of the editing is encapsulated into the pointed linenoiseState
  * structure as described in the structure definition. */
+/* Returns the key (0..255) the caller should handle next, 0 for "read
+ * another key", or RK_EOF / RK_INTR. */
 static int completeLine(struct linenoiseState *ls)
 {
     linenoiseCompletions lc = {0, NULL};
-    int nread, nwritten;
-    char c = 0;
+    int c = 0;
 
     completionCallback(ls->buf, &lc);
     if (lc.len == 0)
@@ -477,11 +995,17 @@ static int completeLine(struct linenoiseState *ls)
         // ajf - 2025-10-09 - if there is only one, just use it:
         if (lc.len == 1)
         {
-            char cret = lc.cvec[0][strlen(lc.cvec[0]) - 1];
-            nwritten = snprintf(ls->buf, ls->buflen, "%.*s", (int)strlen(lc.cvec[0]) - 1, lc.cvec[0]);
-            ls->len = ls->pos = nwritten;
+            // Use all but the last character, and queue that one as if it
+            // had been typed so it goes through the normal insert path.
+            size_t clen = strlen(lc.cvec[0]);
+            if (clen)
+            {
+                size_t last = gr_prev(lc.cvec[0], clen, clen);
+                set_buf(ls, lc.cvec[0], clen - last);
+                inq_unread((unsigned char *)lc.cvec[0] + clen - last, last);
+            }
             freeCompletions(&lc);
-            return cret; /* Return last read character */
+            return 0;
         }
 
         while (!stop)
@@ -493,6 +1017,7 @@ static int completeLine(struct linenoiseState *ls)
 
                 ls->len = ls->pos = strlen(lc.cvec[i]);
                 ls->buf = lc.cvec[i];
+                ls->rc.refresh_type = REFRESH_FULL;
                 refreshLine(ls);
                 ls->len = saved.len;
                 ls->pos = saved.pos;
@@ -506,11 +1031,13 @@ static int completeLine(struct linenoiseState *ls)
                 // refreshLine(ls);
             }
 
-            nread = read(ls->ifd, &c, 1);
-            if (nread <= 0)
+            c = read_key(ls, -1);
+            if (c == RK_RESIZE)
+                continue;
+            if (c < 0)
             {
                 freeCompletions(&lc);
-                return -1;
+                return c;
             }
 
             switch (c)
@@ -523,16 +1050,16 @@ static int completeLine(struct linenoiseState *ls)
             case 27: /* escape */
                 /* Re-show original buffer */
                 if (i < lc.len)
+                {
+                    ls->rc.refresh_type = REFRESH_FULL;
                     refreshLine(ls);
+                }
                 stop = 1;
                 break;
             default:
                 /* Update buffer and return */
                 if (i < lc.len)
-                {
-                    nwritten = snprintf(ls->buf, ls->buflen, "%s", lc.cvec[i]);
-                    ls->len = ls->pos = nwritten;
-                }
+                    set_buf(ls, lc.cvec[i], strlen(lc.cvec[i]));
                 stop = 1;
                 break;
             }
@@ -666,21 +1193,23 @@ static void abFree(struct abuf *ab)
     free(ab->b);
 }
 
-/* Helper of refreshSingleLine() and refreshMultiLine() to show hints
- * to the right of the prompt. */
-void refreshShowHints(struct abuf *ab, struct linenoiseState *l, int plen)
+static void ab_cluster(struct abuf *ab, const char *s, size_t k, int w, int tabs);
+
+/* Helper of refreshSingleLine() to show hints to the right of the input.
+ * `used` is the number of columns the prompt and input already take. */
+void refreshShowHints(struct abuf *ab, struct linenoiseState *l, int used)
 {
     char seq[64];
-    if (hintsCallback && plen + l->len < l->cols)
+    if (hintsCallback && used < (int)l->cols)
     {
         int color = -1, bold = 0;
         char *hint = hintsCallback(l->buf, &color, &bold);
         if (hint)
         {
-            int hintlen = strlen(hint);
-            int hintmaxlen = l->cols - (plen + l->len);
-            if (hintlen > hintmaxlen)
-                hintlen = hintmaxlen;
+            size_t hintlen = strlen(hint);
+            int actual;
+            // as much of the hint as fits, cut between characters
+            hintlen = col_to_pos(hint, hintlen, (int)l->cols - used, used, -1, &actual);
             if (bold == 1 && color == -1)
                 color = 37;
             if (color != -1 || bold != 0)
@@ -688,7 +1217,7 @@ void refreshShowHints(struct abuf *ab, struct linenoiseState *l, int plen)
             else
                 seq[0] = '\0';
             abAppend(ab, seq, strlen(seq));
-            abAppend(ab, hint, hintlen);
+            abAppend(ab, hint, (int)hintlen);
             if (color != -1 || bold != 0)
                 abAppend(ab, "\033[0m", 4);
             /* Call the function to free the hint returned. */
@@ -698,22 +1227,50 @@ void refreshShowHints(struct abuf *ab, struct linenoiseState *l, int plen)
     }
 }
 
+/* Where the terminal cursor ends up after the prompt and buf[0..upto) have
+ * been written on a terminal l->cols wide: *row is 0-based from the prompt
+ * row.  *col == cols means the last cell of the row was just filled.  A wide
+ * character that does not fit in the last cell moves whole to the next row,
+ * which is what terminals do. */
+static void wrap_walk(struct linenoiseState *l, size_t upto, int *row, int *col)
+{
+    int cols = (int)l->cols, r = 0, c = (int)l->promptwidth, w;
+    size_t i = 0;
+
+    while (c > cols)
+        c -= cols, r++;
+    while (i < upto)
+    {
+        i += cl_at(l->buf, i, l->len, c, 0, &w);
+        if (c + w > cols)
+            r++, c = 0;
+        c += w;
+    }
+    *row = r;
+    *col = c;
+}
+
 /* Was - Multi line low level line refresh.
  * Now - refreshSingleLine - and old refreshSingleLine removed.
  *
  * Rewrite the currently edited line accordingly to the buffer content,
- * cursor position, and number of columns of the terminal. */
+ * cursor position, and number of columns of the terminal.  All arithmetic
+ * is in display columns. */
 static void refreshSingleLine(struct linenoiseState *l)
 {
     char seq[64];
-    int plen = l->promptlen;
-    int rows = (plen + l->len + l->cols - 1) / l->cols; /* rows used by current buf. */
-    int rpos = (plen + l->oldpos + l->cols) / l->cols;  /* cursor relative row. */
-    int rpos2;                                          /* rpos after refresh. */
-    int col;                                            /* colum position, zero-based. */
+    int cols = (int)l->cols;
+    int rows;               /* rows used by current buf. */
+    int rpos = l->oldrpos;  /* cursor relative row before this refresh. */
+    int rpos2;              /* rpos after refresh. */
+    int col;                /* colum position, zero-based. */
     int old_rows = l->maxrows;
-    int fd = l->ofd, j;
+    int fd = l->ofd, j, er, ec, w;
+    size_t i, k;
     struct abuf ab;
+
+    wrap_walk(l, l->len, &er, &ec);
+    rows = er + 1;
 
     /* Update maxrows if needed. */
     if (rows > (int)l->maxrows)
@@ -744,23 +1301,20 @@ static void refreshSingleLine(struct linenoiseState *l)
 
     /* Write the prompt and the current buffer content */
     abAppend(&ab, l->prompt, l->promptlen);
-    if (maskmode == 1)
+    for (i = 0; i < l->len; i += k)
     {
-        unsigned int i;
-        for (i = 0; i < l->len; i++)
-            abAppend(&ab, "*", 1);
-    }
-    else
-    {
-        abAppend(&ab, l->buf, l->len);
+        k = cl_at(l->buf, i, l->len, 0, 0, &w);
+        ab_cluster(&ab, l->buf + i, k, w, 0);
     }
 
     /* Show hits if any. */
-    refreshShowHints(&ab, l, plen);
+    if (er == 0)
+        refreshShowHints(&ab, l, ec);
 
     /* If we are at the very end of the screen with our prompt, we need to
      * emit a newline and move the prompt to the first column. */
-    if (l->pos && l->pos == l->len && (l->pos + plen) % l->cols == 0)
+    wrap_walk(l, l->pos, &rpos2, &col);
+    if (l->pos && l->pos == l->len && col == cols)
     {
         lndebug("<newline>");
         abAppend(&ab, "\n", 1);
@@ -769,10 +1323,18 @@ static void refreshSingleLine(struct linenoiseState *l)
         rows++;
         if (rows > (int)l->maxrows)
             l->maxrows = rows;
+        rpos2++, col = 0;
+    }
+    else if (l->pos < l->len)
+    {
+        /* the character under the cursor starts the next row */
+        cl_at(l->buf, l->pos, l->len, col, 0, &w);
+        if (col + w > cols)
+            rpos2++, col = 0;
     }
 
     /* Move cursor to right position. */
-    rpos2 = (plen + l->pos + l->cols) / l->cols; /* current cursor relative row. */
+    rpos2++; /* current cursor relative row, 1-based. */
     lndebug("rpos2 %d", rpos2);
 
     /* Go up till we reach the expected positon. */
@@ -784,7 +1346,6 @@ static void refreshSingleLine(struct linenoiseState *l)
     }
 
     /* Set column. */
-    col = (plen + (int)l->pos) % (int)l->cols;
     lndebug("set col %d", 1 + col);
     if (col)
         snprintf(seq, 64, "\r\x1b[%dC", col);
@@ -794,6 +1355,7 @@ static void refreshSingleLine(struct linenoiseState *l)
 
     lndebug("\n");
     l->oldpos = l->pos;
+    l->oldrpos = rpos2;
 
     (void)write(fd, ab.b, ab.len);
     abFree(&ab);
@@ -803,17 +1365,10 @@ static void refreshSingleLine(struct linenoiseState *l)
     // scrolls; the actual prompt moves up but rcp->promptrow stays stale.
     // Subsequent transitions to multi-line mode (e.g. polpaste) then use
     // a stale promptrow and refresh_full leaves a duplicate of the first
-    // line above the fresh render.
+    // line above the fresh render.  `rows` already counts the extra row
+    // written when the cursor sits exactly at a row boundary.
     {
-        int rows_used = ((int)l->promptlen + (int)l->len + (int)l->cols - 1) / (int)l->cols;
-        if (rows_used < 1)
-            rows_used = 1;
-        // refreshSingleLine writes a trailing "\n\r" when the cursor sits
-        // exactly at a row boundary; that extra row counts toward scrolls.
-        if (l->pos > 0 && l->pos == l->len
-            && ((int)l->pos + (int)l->promptlen) % (int)l->cols == 0)
-            rows_used++;
-        int last_row = l->rc.promptrow + rows_used - 1;
+        int last_row = l->rc.promptrow + rows - 1;
         if (last_row > l->rc.screendim_r)
             l->rc.promptrow -= (last_row - l->rc.screendim_r);
     }
@@ -845,156 +1400,133 @@ static int dbcnt = 0;
 #else
 #define DEBUGF(r, c, ...) /* nada */
 #endif
-static char *write_line(
-    struct linenoiseState *l,
-    char *startpos,
-    size_t width,
-    size_t col,
-    // bug fix: changed size_t bufshift to int bufshift - 2026-02-27
-    int bufshift,
-    int writenl
-);
+static size_t line_start(struct linenoiseState *l);
 
-// set position in l->buf based on bufpos_r and bufpos_c
+// absolute column at which buffer row `row` starts: the prompt shares row 0
+#define ROWSTART(l, row) ((row) ? 0 : (int)(l)->promptwidth)
+
+// set position in l->buf based on bufpos_r and bufpos_c (display columns).
+// A column past the end of the row, or inside a wide character, snaps to
+// the nearest character boundary on its left and bufpos_c is updated.
 static void set_pos(struct linenoiseState *l)
 {
-    int row = l->rc.bufpos_r, col = l->rc.bufpos_c;
-    int currow = 0, curcol = 0, i = 0;
-    for (; i < l->len; i++)
-    {
-        if (currow == row && curcol == col)
-        {
-            l->pos = i;
-            return;
-        }
+    int row = l->rc.bufpos_r, currow = 0, actual;
+    size_t ls = 0, le, i;
+
+    for (i = 0; i < l->len && currow < row; i++)
         if (l->buf[i] == '\n')
         {
-            if (currow == row)
-            {
-                l->pos = i;
-                l->rc.bufpos_c = curcol;
-                return;
-            }
-            curcol = 0;
             currow++;
+            ls = i + 1;
         }
-        else
-            curcol++;
-    }
-    if (currow == row)
-    {
-        l->pos = i;
-        l->rc.bufpos_c = curcol;
-    }
+    if (currow != row)
+        return;
+    for (le = ls; le < l->len && l->buf[le] != '\n'; le++)
+        ;
+    l->pos = ls + col_to_pos(l->buf + ls, le - ls, l->rc.bufpos_c, ROWSTART(l, row), 1, &actual);
+    l->rc.bufpos_c = actual;
 }
 
-// counting from the top left, set col/row from l->pos
+// counting from the top left, set col/row from l->pos.  Rows are buffer
+// lines; columns are display columns within the line (prompt not included).
 static void get_bufpos(struct linenoiseState *l)
 {
-    size_t i = 0;
     rowcol *rcp = &(l->rc);
-    int lastn = -1, linelen = 0;
-    rcp->linestart = -1;
-    rcp->eol = 0;
+    size_t ls = 0, i;
+    int row = 0, w, found = 0;
+
     rcp->bufdim_c = 0;
-    rcp->bufdim_r = 0;
-    rcp->bufpos_c = 0;
     rcp->bufpos_r = 0;
-
-    if (!l->buf[0])
+    rcp->linestart = 0;
+    rcp->eol = (int)l->len;
+    for (i = 0; i <= l->len; i++)
     {
-        rcp->linestart = 0;
-        return;
-    }
-
-    rcp->eol = -1;
-    for (; i < l->len; i++)
-    {
-        if (l->buf[i] == '\n')
+        if (i < l->len && l->buf[i] != '\n')
+            continue;
+        w = span_width(l->buf + ls, i - ls, ROWSTART(l, row), 1);
+        if (w > rcp->bufdim_c)
+            rcp->bufdim_c = w;
+        if (!found && i >= l->pos) // first line end at or past pos: our line
         {
-            // if we are past curpos, this is our line
-            if (rcp->linestart == -1 && i >= l->pos)
-            {
-                rcp->eol = (int)i;
-                if (!rcp->bufdim_r)
-                    rcp->linestart = 0;
-                else
-                    rcp->linestart = lastn + 1;
-                rcp->bufpos_r = rcp->bufdim_r;
-            }
-            linelen = i - lastn - 1;
-            if (linelen > rcp->bufdim_c)
-                rcp->bufdim_c = linelen;
-
-            lastn = i;
-            rcp->bufdim_r++;
+            found = 1;
+            rcp->linestart = (int)ls;
+            rcp->eol = (int)i;
+            rcp->bufpos_r = row;
+        }
+        if (i < l->len)
+        {
+            row++;
+            ls = i + 1;
         }
     }
-
-    // either no '\n' in l->buf (lastn==0),
-    // or no '\n' past l->pos (lastn == linestart-1)
-    if (rcp->eol == -1)
-    {
-        rcp->eol = (int)l->len;
-        rcp->linestart = lastn + 1;
-        rcp->bufpos_r = rcp->bufdim_r; // at the last line
-    }
-    rcp->bufpos_c = l->pos - rcp->linestart;
-    // -ajf - the loop above only measures lines bounded by '\n'; the final
-    // line (after the last '\n', or the only line if there are no '\n's at
-    // all) was never compared into bufdim_c. Measure it now.
-    {
-        int last_linelen = (int)l->len - (lastn + 1);
-        if (last_linelen > rcp->bufdim_c)
-            rcp->bufdim_c = last_linelen;
-    }
+    rcp->bufdim_r = row;
+    rcp->bufpos_c =
+        span_width(l->buf + rcp->linestart, l->pos - (size_t)rcp->linestart, ROWSTART(l, rcp->bufpos_r), 1);
 }
 
 // Helper to parse response from ESC [ row ; col R
+// Reads straight from the terminal (the reply is newer than anything already
+// queued).  Bytes that are not part of the reply are user input: they go on
+// the END of the input queue.  Gives up after 200ms of silence.
 static int read_cpr(struct linenoiseState *l, int *row, int *col)
 {
-    char buf[64];
-    size_t len = 0;
+    unsigned char seq[32], ch;
+    size_t n = 0;
+    int st = 0, r = 0, c = 0, budget = 512, pr;
 
-    while (len < sizeof(buf) - 1)
+    while (budget-- > 0)
     {
-        ssize_t n = read(l->ifd, buf + len, 1);
-        if (n <= 0)
-            break;
-        if (buf[len] == 'R')
+        struct pollfd p = {.fd = l->ifd, .events = POLLIN, .revents = 0};
+        do
         {
-            len++;
+            pr = poll(&p, 1, 200);
+        } while (pr < 0 && errno == EINTR);
+        if (pr <= 0 || read(l->ifd, &ch, 1) != 1)
             break;
+    again:
+        switch (st)
+        {
+        case 0: // looking for ESC
+            if (ch == 0x1b)
+                seq[0] = ch, n = 1, st = 1;
+            else
+                inq_append(&ch, 1);
+            continue;
+        case 1:
+            if (ch != '[')
+                break;
+            seq[n++] = ch, st = 2, r = c = 0;
+            continue;
+        case 2: // row digits
+            if (isdigit(ch) && n < sizeof(seq) - 1)
+                seq[n++] = ch, r = r * 10 + (ch - '0');
+            else if (ch == ';' && n > 2)
+                seq[n++] = ch, st = 3;
+            else
+                break;
+            continue;
+        case 3: // col digits
+            if (isdigit(ch) && n < sizeof(seq) - 1)
+                seq[n++] = ch, c = c * 10 + (ch - '0');
+            else if (ch == 'R' && seq[n - 1] != ';')
+            {
+                if (row)
+                    *row = r;
+                if (col)
+                    *col = c;
+                return 0;
+            }
+            else
+                break;
+            continue;
         }
-        len += (size_t)n;
+        // not a position report after all: it was user input
+        inq_append(seq, n);
+        n = 0, st = 0;
+        goto again;
     }
-    buf[len] = '\0';
-
-    // Expected format: ESC [ rows ; cols R
-    char *esc = memchr(buf, '\x1b', len);
-    if (!esc || esc[1] != '[')
-        return -1;
-
-    int r = 0, c = 0;
-    char *p = esc + 2;
-    while (*p && isdigit((unsigned char)*p))
-    {
-        r = r * 10 + (*p++ - '0');
-    }
-    if (*p++ != ';')
-        return -1;
-    while (*p && isdigit((unsigned char)*p))
-    {
-        c = c * 10 + (*p++ - '0');
-    }
-    if (*p != 'R')
-        return -1;
-
-    if (row)
-        *row = r;
-    if (col)
-        *col = c;
-    return 0;
+    inq_append(seq, n);
+    return -1;
 }
 
 static void get_screenpos(struct linenoiseState *l)
@@ -1002,6 +1534,19 @@ static void get_screenpos(struct linenoiseState *l)
     int r = 0, c = 0;
     int tr = 0, tc = 0;
     rowcol *rcp = &(l->rc);
+    static int cpr_broken = 0; // terminal never answers: stop asking
+    static int misses = 0;
+
+    if (cpr_broken)
+    {
+        struct winsize ws;
+        if (ioctl(l->ifd, TIOCGWINSZ, &ws) == 0 && ws.ws_col && ws.ws_row)
+        {
+            rcp->screendim_r = ws.ws_row;
+            rcp->screendim_c = ws.ws_col;
+        }
+        return;
+    }
 
     // -ajf - Save cursor with DECSC (ESC 7) so we can always restore it,
     // even when the CPR read below fails. Previously, when queued user
@@ -1019,6 +1564,18 @@ static void get_screenpos(struct linenoiseState *l)
     {
         rcp->screenpos_r = r;
         rcp->screenpos_c = c;
+        misses = 0;
+    }
+    else
+    {
+        // no answer: size from the tty driver, cursor row stays a guess.
+        // Two misses in a row and we stop asking.
+        (void)write(l->ofd, "\0338", 2);
+        int give_up = ++misses >= 2;
+        cpr_broken = 1;
+        get_screenpos(l);
+        cpr_broken = give_up;
+        return;
     }
 
     // Move to bottom-right, ask again to discover screen dimensions.
@@ -1034,15 +1591,103 @@ static void get_screenpos(struct linenoiseState *l)
     (void)write(l->ofd, "\0338", 2);
 }
 
+static void ab_spaces(struct abuf *ab, int n)
+{
+    while (n-- > 0)
+        abAppend(ab, " ", 1);
+}
+
+// Append one cluster as it should look on screen, w columns wide.  `tabs`
+// must match the tabstops flag its width was measured with.
+static void ab_cluster(struct abuf *ab, const char *s, size_t k, int w, int tabs)
+{
+    unsigned char c = (unsigned char)*s;
+    char ctl[2];
+
+    if (maskmode && tabs >= 0)
+        abAppend(ab, "*", 1);
+    else if (c == '\t' && tabs > 0)
+        ab_spaces(ab, w);
+    else if (IS_CTRL(c))
+    {
+        ctl[0] = '^';
+        ctl[1] = c == 0x7f ? '?' : (char)(c + 0x40);
+        abAppend(ab, ctl, 2);
+    }
+    else
+        abAppend(ab, s, (int)k);
+}
+
+// Append the prompt with its first `skip` columns scrolled off the left
+// edge.  Escape sequences in the hidden part are still sent so the colour
+// state carries over.  In forced multi-line mode the prompt is magenta.
+static void ab_prompt(struct abuf *ab, struct linenoiseState *l, int skip)
+{
+    const char *p = l->prompt;
+    size_t n = l->promptlen, i = 0, k;
+    int col = 0, w;
+
+    if (force_ml_edit)
+        abAppend(ab, "\033[35m", 5);
+    while (i < n)
+    {
+        if ((k = ansi_skip(p + i, n - i)))
+        {
+            if (p[i] == '\x1b')
+                abAppend(ab, p + i, (int)k);
+            if (force_ml_edit) // keep it magenta whatever the prompt sets
+                abAppend(ab, "\033[35m", 5);
+            i += k;
+            continue;
+        }
+        k = cl_at(p, i, n, col, -1, &w);
+        if (col >= skip)
+            ab_cluster(ab, p + i, k, w, -1);
+        else if (col + w > skip) // wide character cut by the edge
+            ab_spaces(ab, col + w - skip);
+        col += w;
+        i += k;
+    }
+    if (force_ml_edit)
+        abAppend(ab, "\033[0m", 4);
+}
+
 static inline void write_prompt(struct linenoiseState *l)
 {
-    if (force_ml_edit)
-        WCODE("35m", 3);
+    struct abuf ab;
 
-    (void)write(l->ofd, l->prompt, l->promptlen);
+    abInit(&ab);
+    ab_prompt(&ab, l, 0);
+    (void)write(l->ofd, ab.b, ab.len);
+    abFree(&ab);
+}
 
-    if (force_ml_edit)
-        WCODE("0m", 2);
+// Draw buffer line s[0..n) from byte `from` on, clipped to the visible
+// window of columns [hshift, hshift + screen width).  The cursor must already
+// be where s[from] belongs (column 1 of the row when from == 0).  A wide
+// character cut by either edge is drawn as spaces.
+static void draw_line(struct linenoiseState *l, struct abuf *ab, int row0, const char *s, size_t n, size_t from)
+{
+    rowcol *rcp = &(l->rc);
+    int pw = (int)l->promptwidth, v = row0 ? pw : 0, w;
+    int lo = rcp->hshift, hi = rcp->hshift + rcp->screendim_c;
+    size_t i = 0, k;
+
+    if (row0 && !from && rcp->hshift < pw)
+        ab_prompt(ab, l, rcp->hshift);
+    while (i < n && v < hi)
+    {
+        k = cl_at(s, i, n, v, 1, &w);
+        if (i >= from)
+        {
+            if (v >= lo && v + w <= hi)
+                ab_cluster(ab, s + i, k, w, 1);
+            else if (v + w > lo)
+                ab_spaces(ab, (v + w < hi ? v + w : hi) - (v > lo ? v : lo));
+        }
+        v += w;
+        i += k;
+    }
 }
 
 static void update_promptrow(struct linenoiseState *l, int rows_added)
@@ -1069,6 +1714,7 @@ static void place_cursor(struct linenoiseState *l);
 static void vert_scroll(struct linenoiseState *l, int up)
 {
     rowcol *rcp = &(l->rc);
+    struct abuf ab;
 
     // -ajf - only scroll if the buf row we just stepped to is actually
     // off-screen. The screen-edge check (screenpos_r at 1 or screendim_r) is
@@ -1076,76 +1722,38 @@ static void vert_scroll(struct linenoiseState *l, int up)
     // target row is already visible, scrolling here causes a spurious
     // terminal scroll that leaves the cursor one row away from the row's
     // display position.
-    if (up && rcp->screenpos_r == 1
-        && rcp->promptrow + rcp->bufpos_r < 1)
+    if (up && rcp->screenpos_r == 1 && rcp->promptrow + rcp->bufpos_r < 1)
     {
         get_bufpos(l);
-        WCODE("H", 1);
-        WCODE("L", 1);
-        // -ajf - mirror write_to_end's prompt + bufshift handling so a
-        // long top buf row doesn't auto-wrap over the rows below
-        // (overwriting them and desyncing the row↔buf-row mapping).
-        size_t curcol = 0;
-        int bufshift = 0;
-        if (!l->rc.bufpos_r)
-        {
-            int visible = (int)l->promptlen - rcp->hshift;
-            if (visible > 0)
-            {
-                if (force_ml_edit)
-                    WCODE("35m", 3);
-                (void)write(l->ofd, l->prompt + rcp->hshift, visible);
-                if (force_ml_edit)
-                    WCODE("0m", 2);
-                curcol = (size_t)visible;
-                bufshift = -rcp->hshift;
-            }
-            else
-            {
-                bufshift = -(int)l->promptlen;
-            }
-        }
-        write_line(l, l->buf + rcp->linestart, rcp->screendim_c, curcol, bufshift, 0);
-        // -ajf - bump promptrow then let place_cursor compute the screen
-        // position from bufpos. The previous code did `screenpos_c +=
-        // promptlen` then a raw WCODEF, which mapped buf col → screen col
-        // wrong on the prompt row (off by promptlen) and left the cursor
-        // visually stuck — typing a char would force a refresh_whole_line
-        // that corrected it.
+        abInit(&ab);
+        abAppend(&ab, "\033[H\033[L", 6); // home, insert a blank row
+        draw_line(l, &ab, !rcp->bufpos_r, l->buf + rcp->linestart, (size_t)(rcp->eol - rcp->linestart), 0);
+        (void)write(l->ofd, ab.b, ab.len);
+        abFree(&ab);
         rcp->promptrow++;
         place_cursor(l);
     }
-    else if (!up && rcp->screenpos_r == rcp->screendim_r
-             && rcp->promptrow + rcp->bufpos_r > rcp->screendim_r)
+    else if (!up && rcp->screenpos_r == rcp->screendim_r && rcp->promptrow + rcp->bufpos_r > rcp->screendim_r)
     {
         get_bufpos(l);
-        WCODE("9999;9999H\n", 11); // newline at bottom
-        write_line(l, l->buf + rcp->linestart, l->rc.screendim_c, 0, 0, 0);
+        abInit(&ab);
+        abAppend(&ab, "\033[9999;9999H\n\r", 14); // newline at bottom
+        draw_line(l, &ab, !rcp->bufpos_r, l->buf + rcp->linestart, (size_t)(rcp->eol - rcp->linestart), 0);
+        (void)write(l->ofd, ab.b, ab.len);
+        abFree(&ab);
         rcp->promptrow--;
         place_cursor(l);
     }
 }
 
+// cursor column on screen, 0-based and before the prompt offset of row 0
 #define bufcolpos (rcp->bufpos_c - rcp->hshift)
 
 static void place_cursor(struct linenoiseState *l)
 {
     rowcol *rcp = &(l->rc);
-    int row = rcp->bufpos_r, col = bufcolpos;
+    int row = rcp->bufpos_r, col = bufcolpos + ROWSTART(l, rcp->bufpos_r);
 
-    if (!row)
-    {
-        int onscreen_promptlen = (int)l->promptlen - rcp->hshift;
-        // -ajf - on the prompt row, when 0 < hshift < promptlen the buffer is
-        // written starting from offset 0 at col `onscreen_promptlen` (because
-        // write_to_end / refresh_whole_line use bufshift=-hshift). So the
-        // cursor column is bufpos_c + onscreen_promptlen, NOT bufcolpos +
-        // onscreen_promptlen. Old formula was off by hshift in this range.
-        if (onscreen_promptlen > 0)
-            col = rcp->bufpos_c + onscreen_promptlen;
-        else
-            col += l->promptlen;
-    }
     row += l->rc.promptrow;
 
     col++; // 0 to 1 based indexing
@@ -1164,111 +1772,45 @@ static void place_cursor(struct linenoiseState *l)
     rcp->screenpos_c = col;
 }
 
-// write line within constraints of screen, return beginning of next line, or NULL
-static char *write_line(
-    struct linenoiseState *l,
-    char *startpos,
-    size_t width,
-    size_t col,
-    // bug fix: changed size_t bufshift to int bufshift - 2026-02-27
-    int bufshift,
-    int writenl
-)
-{
-    char *e = strchr(startpos, '\n');
-    char *bufend = l->buf + l->len; // end of the C-string, NOT end of allocation
-
-    startpos += l->rc.hshift + bufshift;
-
-    if (e && startpos > e)
-    { // shift puts us past newline
-        if (writenl)
-            (void)write(l->ofd, "\n", 1);
-        return e + 1;
-    }
-
-    // -ajf - shift puts us past the end of the final (unterminated) line.
-    // Without this, strlen() below would walk past the '\0' into allocated-but-
-    // unused heap (often stale history bytes after a realloc).
-    if (!e && startpos > bufend)
-        return NULL;
-
-    // defense-in-depth: bound by l->len, not l->buflen
-    if (startpos < l->buf || startpos > bufend)
-    {
-        printf("Startpos (%p) before/after buffer at (%p to %p)\n", startpos, l->buf, bufend);
-        abort();
-    }
-
-    if (!e)
-    {
-        size_t len = strlen(startpos);
-        if (len > width - col)
-            len = width - col;
-        if (len)
-            (void)write(l->ofd, startpos, len);
-
-        return NULL;
-    }
-    else
-    {
-        size_t len = e - startpos;
-        if (len > 0)
-        {
-            if (len > width - col)
-                len = width - col;
-            (void)write(l->ofd, startpos, (size_t)len);
-        }
-        if (writenl)
-            (void)write(l->ofd, "\n", 1);
-    }
-    return e + 1;
-}
-
+// Write the buffer to the screen: everything (full), or from the cursor to
+// the bottom of the screen.  The terminal cursor must already be on the
+// right row; for a partial write, also at the column of l->pos.
 static void write_to_end(struct linenoiseState *l, int full)
 {
     rowcol *rcp = &(l->rc);
     int nlines = full ? -1                                       // write to end of buf
                       : 1 + rcp->screendim_r - rcp->screenpos_r; // write to bottom of screen
-    char *b = l->buf;
-    // starting position
-    size_t curcol = full ? l->promptlen : (size_t)rcp->screenpos_c - 1, screenwidth = (size_t)rcp->screendim_c;
-    // bug fix: changed size_t bufshift to int bufshift - 2026-02-27
-    int bufshift = 0;
+    char *bufend = l->buf + l->len, *line = l->buf, *e;
+    size_t from = 0;
+    int row0 = 1;
+    struct abuf ab;
 
-    if (full) // do the whole buf, don't stop at end of screen
-    {         // this mess is to account for prompt length when horizontally wrapping
-        int visible = l->promptlen - rcp->hshift;
-        // write visible portion of prompt
-        if (visible > 0)
-        {
-            WCODE("1G", 2);
-            if (force_ml_edit)
-                WCODE("35m", 3);
-            (void)write(l->ofd, l->prompt + rcp->hshift, visible);
-            if (force_ml_edit)
-                WCODE("0m", 2);
-            bufshift = -rcp->hshift; // see note ↓
-            curcol = visible;
-        }
-        else
-        {
-            curcol = 0;
-            bufshift = -l->promptlen;
-        }
+    abInit(&ab);
+    if (full)
+        abAppend(&ab, "\r", 1);
+    else
+    {
+        size_t ls = line_start(l);
+        line = l->buf + ls;
+        from = l->pos - ls;
+        row0 = (ls == 0);
     }
-    else // start a pos
-        b += l->pos;
 
     while (nlines)
     {
         nlines--;
-        b = write_line(l, b, screenwidth, curcol, bufshift, nlines);
-        curcol = 0;
-        bufshift = 0;
-        if (!b)
+        e = memchr(line, '\n', (size_t)(bufend - line));
+        draw_line(l, &ab, row0, line, (size_t)((e ? e : bufend) - line), from);
+        if (!e)
             break;
+        if (nlines)
+            abAppend(&ab, "\r\n", 2);
+        line = e + 1;
+        from = 0;
+        row0 = 0;
     }
+    (void)write(l->ofd, ab.b, ab.len);
+    abFree(&ab);
 }
 
 static void refresh_window(struct linenoiseState *l)
@@ -1311,7 +1853,7 @@ static void refresh_window(struct linenoiseState *l)
 static int horiz_scroll(struct linenoiseState *l)
 {
     rowcol *rcp = &(l->rc);
-    int promptadd = rcp->bufpos_r == 0 ? l->promptlen : 0;
+    int promptadd = ROWSTART(l, rcp->bufpos_r);
 
     if (bufcolpos + promptadd >= rcp->screendim_c)
     {
@@ -1350,35 +1892,14 @@ static void refresh_from_pos(struct linenoiseState *l)
 static void refresh_whole_line(struct linenoiseState *l)
 {
     rowcol *rcp = &(l->rc);
+    struct abuf ab;
+
     get_bufpos(l);
-    WCODE("1G", 2); // col 1
-    WCODE("0K", 2); // clear from cursor to end of line
-
-    size_t curcol = 0;
-    int bufshift = 0;
-    // -ajf - mirror write_to_end's prompt/hshift handling so this row honors
-    // horizontal scroll. The old version wrote the full prompt + uncapped buf,
-    // which overflowed past the right edge and left stale content on rows below.
-    if (!rcp->bufpos_r)
-    {
-        int visible = (int)l->promptlen - rcp->hshift;
-        if (visible > 0)
-        {
-            if (force_ml_edit)
-                WCODE("35m", 3);
-            (void)write(l->ofd, l->prompt + rcp->hshift, visible);
-            if (force_ml_edit)
-                WCODE("0m", 2);
-            curcol = (size_t)visible;
-            bufshift = -rcp->hshift;
-        }
-        else
-        {
-            bufshift = -(int)l->promptlen;
-        }
-    }
-
-    write_line(l, l->buf + rcp->linestart, rcp->screendim_c, curcol, bufshift, 0);
+    abInit(&ab);
+    abAppend(&ab, "\r\033[0K", 5); // col 1, clear to end of line
+    draw_line(l, &ab, !rcp->bufpos_r, l->buf + rcp->linestart, (size_t)(rcp->eol - rcp->linestart), 0);
+    (void)write(l->ofd, ab.b, ab.len);
+    abFree(&ab);
 
     place_cursor(l);
 }
@@ -1398,12 +1919,7 @@ static void refresh_full(struct linenoiseState *l)
 
     // did we scroll horiz?
     if (!horiz_scroll(l)) // check scroll will refresh, so don't do it again
-    {
-        // write prompt and buf
-        write_prompt(l);
-        //(void)write(l->ofd, l->buf, l->len);
-        write_to_end(l, 1);
-    }
+        write_to_end(l, 1); // prompt and buf
 
     // did we scroll down?
     if (rcp->bufdim_r + rcp->promptrow > rcp->screendim_r)
@@ -1411,189 +1927,48 @@ static void refresh_full(struct linenoiseState *l)
     place_cursor(l);
 }
 
-static int getlinelen(struct linenoiseState *l, int next)
-{
-    int len = 0;
-    char *b = l->buf, *s = &b[l->pos], *e = &b[l->len];
-    if (*s == '\n')
-    {
-        if (next > 0) // if at \n and next, read next line
-        {
-            s++;
-            while (s < e && *s != '\n')
-                s++, len++;
-            return len;
-        }
-        // else read previous line
-        s--;
-        while (s >= b && *s != '\n')
-            s--, len++;
-        return len;
-    }
-
-    if (next < 0) // length of previous line when not at \n -- not used right now
-    {
-        while (s >= b && *s != '\n')
-            s--;
-        s--;
-        while (s >= b && *s != '\n')
-            s--, len++;
-        return len;
-    }
-
-    // lenth of current line if not at \n
-    while (s < e && *s != '\n') // chars ahead
-        s++, len++;
-
-    s = &b[l->pos]; // reset
-    len--;
-
-    while (s >= b && *s != '\n') // chars behind
-        s--, len++;
-
-    return len;
-}
-
+// Cursor movement only.  For left/right l->pos has already moved by one
+// character; for up/down we pick the new position here.
 static void refresh_reposition(struct linenoiseState *l)
 {
     rowcol *rcp = &(l->rc);
     int dc = rcp->delta_c, dr = rcp->delta_r;
-    int linelen = -1;
 
-    char c = l->buf[l->pos];
-    char prevc = l->pos ? l->buf[l->pos + -1] : '\0';
-
-    // quick paths:
-    if (!dr) // note that pos has already been updated in EditMoveLeft/Right below
+    if (!dr)
     {
-        int basepos = rcp->bufpos_r ? 0 : l->promptlen;
-        // left
-        if (dc == -1)
+        int oldrow = rcp->bufpos_r;
+
+        get_bufpos(l);
+        if (rcp->bufpos_r != oldrow) // crossed a newline
         {
-            if (rcp->savecol)
+            if (dc > 0 && rcp->hshift) // start of the next line: unscroll
             {
-                linelen = getlinelen(l, 1); // get next line if '\n'
-
-                if (rcp->savecol > linelen)
-                {
-                    DEBUGF(17, 5, "DO JUMP BACK savecol = %d >? linelen = %d", rcp->savecol, linelen);
-                    // don't actually change pos, just go to end of line
-                    l->pos++; // undo the -- in EditMoveLeft
-                    rcp->bufpos_c = linelen;
-                    WCODEF(16, "%dG", basepos + linelen + 1); // go to col
-                    rcp->screenpos_c = basepos + linelen + 1;
-                    rcp->savecol = 0;
-                    goto hshift;
-                    // return;
-                }
+                rcp->hshift = 0;
+                refresh_window(l);
             }
-
-            linelen = getlinelen(l, 0);
-
-            if (c == '\n')
-            {
-                rcp->bufpos_c = linelen + 1;
-                rcp->bufpos_r--;
-                basepos = rcp->bufpos_r ? 0 : l->promptlen;
-                WCODEF(16, "%dG", basepos + linelen + 1); // go to col
-                rcp->screenpos_c = basepos + linelen + 1;
-                WCODE("1A", 2);                           // one up
-                if (rcp->screenpos_r > 1) rcp->screenpos_r--;
-                vert_scroll(l, 1);
-            }
-            else
-            {
-                rcp->bufpos_c--;
-                // linelen = getlinelen(l,0);
-                WCODE("1D", 2); // one left
-                if (rcp->screenpos_c > 1) rcp->screenpos_c--;
-            }
+            vert_scroll(l, rcp->bufpos_r < oldrow);
         }
-        // right
-        else if (dc == 1)
-        {
-            if (prevc == '\n')
-            {
-                if (rcp->hshift)
-                {
-                    rcp->hshift = 0;
-                    refresh_window(l); // calls place_cursor → updates screenpos
-                }
-                else
-                {
-                    WCODE("1B", 2);
-                    if (rcp->screenpos_r < rcp->screendim_r) rcp->screenpos_r++;
-                    rcp->bufpos_r++;
-                    rcp->bufpos_c = 0;
-                    WCODE("1G", 2);
-                    rcp->screenpos_c = 1;
-                }
-                vert_scroll(l, 0);
-            }
-            else
-            {
-                WCODE("1C", 2);
-                if (rcp->screenpos_c < rcp->screendim_c) rcp->screenpos_c++;
-                rcp->bufpos_c++;
-            }
-        }
-        rcp->savecol = 0;
-    hshift:
+        place_cursor(l);
         return;
     }
 
     if (!dc && (dr == -1 || dr == 1))
     {
-        // -ajf - removed an early-return guard here that blocked navigation
-        // from bufpos_r==1 to bufpos_r==0 whenever the cursor sat in the
-        // first promptlen columns. The clamp at "if (rcp->bufpos_c < 0)" below
-        // already snaps the cursor to bufpos_c=0 (just after the prompt) when
-        // crossing onto the prompt row from a short/empty row, so the guard
-        // was just preventing the user from reaching the prompt row at all
-        // (e.g. across a "\n\n" gap, or after a screen-scroll has pushed the
-        // prompt off the top).
-
-        if (rcp->savecol) // keep in same col until something other than up/down is pressed
-            rcp->bufpos_c = rcp->savecol;
-
-        // adjust for length of prompt when moving off prompt line
-        if (dr == 1 && rcp->bufpos_r == 0)
-            rcp->bufpos_c += l->promptlen;
+        // Keep the same SCREEN column while moving vertically: savecol holds
+        // it (prompt included) until something other than up/down is pressed.
+        int v = rcp->savecol >= 0 ? rcp->savecol : rcp->bufpos_c + ROWSTART(l, rcp->bufpos_r);
 
         rcp->bufpos_r += dr;
+        rcp->bufpos_c = v - ROWSTART(l, rcp->bufpos_r);
+        if (rcp->bufpos_c < 0) // under the prompt: first character of the row
+            rcp->bufpos_c = 0;
+        rcp->savecol = v;
 
-        // adjust for length of prompt when moving onto the prompt line
-        if (!rcp->bufpos_r)
-            rcp->bufpos_c -= l->promptlen;
+        set_pos(l); // snaps bufpos_c to a real character boundary
 
-        if (rcp->bufpos_c < 0)
-        {
-            if (rcp->bufpos_r)
-            {
-                rcp->bufpos_c = 999; // will be set to end of line in set_pos()
-                rcp->bufpos_r--;
-            }
-            else
-                rcp->bufpos_c = 0;
-        }
-        // -ajf - removed `else if (dc > 0 && rcp->bufpos_c > linelen + 1)`.
-        // That branch was unreachable: it sat inside `if (!dc && ...)` so dc
-        // was always 0, and `linelen` was still -1 from its initializer in
-        // this code path.
-
-        rcp->savecol = rcp->bufpos_c;
-
-        set_pos(l);
-
-        if (dr == -1) // up
-            vert_scroll(l, 1);
-        else // down
-            vert_scroll(l, 0);
+        vert_scroll(l, dr == -1);
         // -ajf - place_cursor computes the correct screen position from
-        // bufpos (including the prompt offset on row 0). Using it here
-        // handles the buf-row-1→buf-row-0 transition correctly (bufpos_c
-        // was snapped, so the cursor needs to jump to col = promptlen+1
-        // rather than just moving up a row at the same col).
+        // bufpos (including the prompt offset on row 0).
         place_cursor(l);
     }
     // if we ever need something other than moving one col or row - do that here:
@@ -1615,6 +1990,10 @@ static void refreshMultiLine(struct linenoiseState *l)
            rcp->refresh_type, l->pos, rcp->promptrow, rcp->screendim_r, rcp->screendim_c, rcp->screenpos_r,
            rcp->screenpos_c, rcp->bufpos_r, rcp->bufpos_c, rcp->bufdim_r, rcp->bufdim_c, rcp->eol - rcp->linestart,
            l->buf[l->pos] == '\n' ? '*' : l->buf[l->pos]);
+
+    // the remembered column only survives consecutive up/down moves
+    if (!(rcp->refresh_type == REFRESH_REPOSITION && rcp->delta_r))
+        rcp->savecol = -1;
 
     switch (rcp->refresh_type)
     {
@@ -1638,6 +2017,8 @@ static void refreshMultiLine(struct linenoiseState *l)
     // not used here: l->oldpos = l->pos;
     rcp->delta_c = 0;
     rcp->delta_r = 0;
+    // a caller that forgets to pick a type redraws everything, not nothing
+    rcp->refresh_type = REFRESH_FULL;
 
     DEBUGF(
         15, 15,
@@ -1678,24 +2059,21 @@ static size_t line_end(struct linenoiseState *l)
 /* Insert the character 'c' at cursor current position.
  *
  * On error writing to the terminal -1 is returned, otherwise 0. */
+static int linenoiseEditInsertN(struct linenoiseState *l, const char *s, size_t n);
+
 int linenoiseEditInsert(struct linenoiseState *l, char c)
 {
-    if (l->len >= l->buflen) //-ajf
-    {
-        size_t len = l->buflen + LINENOISE_ADD_OVERHEAD;
-        char *nb = realloc(l->buf, len);
-        if (!nb)
-            return 0;
+    return linenoiseEditInsertN(l, &c, 1);
+}
 
-        l->buflen = len - 1;
-        l->buf = nb;
-        l->buf[l->buflen] = '\0';
-    }
-    if (l->len < l->buflen)
+/* Insert s[0..n) -- one whole character, or a newline -- at the cursor. */
+static int linenoiseEditInsertN(struct linenoiseState *l, const char *s, size_t n)
+{
+    if (!n || !ensure_buf(l, l->len + n)) //-ajf
+        return 0;
     {
-
         l->rc.refresh_type = REFRESH_LINE;
-        if (c == '\n')
+        if (n == 1 && s[0] == '\n')
         {
             rowcol *rcp = &(l->rc);
             update_promptrow(l, 1);
@@ -1706,31 +2084,12 @@ int linenoiseEditInsert(struct linenoiseState *l, char c)
             rcp->hshift = 0;
         }
 
-        if (l->len == l->pos)
-        {
-            l->buf[l->pos] = c;
-            l->pos++;
-            l->len++;
-            l->buf[l->len] = '\0';
-            /* Not using in rampart, figure this out later
-            if ((!mlmode && l->plen+l->len < l->cols && !hintsCallback)) {
-                // Avoid a full update of the line in the * trivial case.
-                char d = (maskmode==1) ? '*' : c;
-                if (write(l->ofd,&d,1) == -1) return -1;
-            } else {
-            */
-            refreshLine(l);
-            //}
-        }
-        else
-        {
-            memmove(l->buf + l->pos + 1, l->buf + l->pos, l->len - l->pos);
-            l->buf[l->pos] = c;
-            l->len++;
-            l->pos++;
-            l->buf[l->len] = '\0';
-            refreshLine(l);
-        }
+        memmove(l->buf + l->pos + n, l->buf + l->pos, l->len - l->pos);
+        memcpy(l->buf + l->pos, s, n);
+        l->len += n;
+        l->pos += n;
+        l->buf[l->len] = '\0';
+        refreshLine(l);
     }
     return 0;
 }
@@ -1740,7 +2099,7 @@ void linenoiseEditMoveLeft(struct linenoiseState *l)
 {
     if (l->pos > 0)
     {
-        l->pos--;
+        l->pos -= gr_prev(l->buf, l->pos, l->len); // one whole character
         l->rc.delta_c = -1;
         l->rc.refresh_type = REFRESH_REPOSITION;
         refreshLine(l);
@@ -1752,7 +2111,7 @@ void linenoiseEditMoveRight(struct linenoiseState *l)
 {
     if (l->pos != l->len)
     {
-        l->pos++;
+        l->pos += gr_next(l->buf, l->pos, l->len); // one whole character
         l->rc.delta_c = 1;
         l->rc.refresh_type = REFRESH_REPOSITION;
         refreshLine(l);
@@ -1828,21 +2187,7 @@ void linenoiseEditHistoryNext(struct linenoiseState *l, int dir)
             return;
         }
         char *h = history[history_len - 1 - l->history_index];
-        size_t hlen = strlen(h);
-        if (hlen >= l->buflen) // -ajf
-        {
-            size_t llen = hlen + LINENOISE_ADD_OVERHEAD;
-            char *nb = realloc(l->buf, llen);
-            if (nb)
-            {
-                l->buf = nb;
-                l->buflen = llen - 1;
-                l->buf[l->buflen] = '\0';
-            }
-        }
-        strncpy(l->buf, h, l->buflen);
-        l->buf[l->buflen - 1] = '\0';
-        l->len = l->pos = strlen(l->buf);
+        set_buf(l, h, strlen(h)); // -ajf
 
         char *s = l->buf;
         char *e = l->buf + l->pos;
@@ -1856,11 +2201,10 @@ void linenoiseEditHistoryNext(struct linenoiseState *l, int dir)
             }
             s++;
         }
+        l->rc.refresh_type = REFRESH_FULL;
+        l->rc.hshift = 0;
         if (nl || in_ml_paste_or_edit)
-        {
-            l->rc.refresh_type = REFRESH_FULL;
             in_ml_paste_or_edit = 1;
-        }
         refreshLine(l);
     }
 }
@@ -1871,14 +2215,15 @@ void linenoiseEditDelete(struct linenoiseState *l)
 {
     if (l->len > 0 && l->pos < l->len)
     {
+        size_t k = gr_next(l->buf, l->pos, l->len); // one whole character
         l->rc.refresh_type = REFRESH_LINE;
         if (l->buf[l->pos] == '\n')
         {
             l->rc.bufdim_r -= 1;
             l->rc.refresh_type = REFRESH_FROM_POS;
         }
-        memmove(l->buf + l->pos, l->buf + l->pos + 1, l->len - l->pos - 1);
-        l->len--;
+        memmove(l->buf + l->pos, l->buf + l->pos + k, l->len - l->pos - k);
+        l->len -= k;
         l->buf[l->len] = '\0';
         refreshLine(l);
     }
@@ -1891,10 +2236,11 @@ void linenoiseEditBackspace(struct linenoiseState *l)
     {
         rowcol *rcp = &(l->rc);
         char c = l->buf[l->pos - 1]; // the char being deleted
+        size_t k = gr_prev(l->buf, l->pos, l->len); // all of it
         rcp->refresh_type = REFRESH_LINE;
-        memmove(l->buf + l->pos - 1, l->buf + l->pos, l->len - l->pos);
-        l->pos--;
-        l->len--;
+        memmove(l->buf + l->pos - k, l->buf + l->pos, l->len - l->pos);
+        l->pos -= k;
+        l->len -= k;
         l->buf[l->len] = '\0';
         if (c == '\n')
         {
@@ -1922,9 +2268,14 @@ void linenoiseEditDeletePrevWord(struct linenoiseState *l)
 
     while (l->pos > 0 && l->buf[l->pos - 1] == ' ')
         l->pos--;
-    while (l->pos > 0 && l->buf[l->pos - 1] != ' ')
+    while (l->pos > 0 && l->buf[l->pos - 1] != ' ' && l->buf[l->pos - 1] != '\n')
+        l->pos--;
+    // at the start of a line: join it to the previous one
+    if (l->pos == old_pos && l->pos > 0)
         l->pos--;
     diff = old_pos - l->pos;
+    if (!diff)
+        return;
     memmove(l->buf + l->pos, l->buf + old_pos, l->len - old_pos + 1);
     l->len -= diff;
     l->rc.refresh_type = REFRESH_FROM_POS;
@@ -1949,25 +2300,10 @@ int linenoiseIsMultiLine(void)
     return in_ml_paste_or_edit || force_ml_edit;
 }
 
-/* suspend on ctrl-z - ajf 2025-10-11 */
-static struct termios saved_tio;
-static int have_saved = 0;
-
-static void on_sigcont(int sig)
-{
-    (void)sig;
-    if (have_saved)
-    {
-        struct termios raw = saved_tio;
-        raw.c_lflag &= ~(ICANON | ECHO);
-        tcsetattr(STDIN_FILENO, TCSANOW, &raw);
-    }
-    // optionally: redraw UI here
-}
-
+/* suspend on ctrl-z - ajf 2025-10-11
+ * The caller leaves raw mode first and re-enters it after we return. */
 static void suspend_self(void)
 {
-    tcdrain(STDOUT_FILENO);
 
     // ensure default action for SIGTSTP and it isn't blocked
     struct sigaction sa = {0};
@@ -1980,14 +2316,7 @@ static void suspend_self(void)
     sigaddset(&m, SIGTSTP);
     sigprocmask(SIG_UNBLOCK, &m, NULL);
 
-    raise(SIGTSTP); // stops here
-
-    struct sigaction sc = {0};
-    sc.sa_handler = on_sigcont;
-    sigemptyset(&sc.sa_mask);
-    sigaction(SIGCONT, &sc, NULL);
-
-    on_sigcont(SIGCONT);
+    raise(SIGTSTP); // stops here; returns after `fg`
 }
 
 /* ============================ Output recording -ajf ============================
@@ -2007,8 +2336,10 @@ static void suspend_self(void)
 #include <pthread.h>
 
 static int    rec_inited       = 0;
+static int    rec_active       = 0;
 static int    rec_orig_stdout  = -1;
 static int    rec_pipefd[2]    = { -1, -1 };
+static int    rec_wake[2]      = { -1, -1 }; /* tells the thread to drain and stop */
 static pthread_t rec_thread;
 static char  *rec_buf          = NULL;
 static size_t rec_cap          = 0;
@@ -2052,23 +2383,74 @@ static void *recorder_thread_fn(void *unused)
 {
     (void)unused;
     char buf[4096];
+    int stopping = 0, budget = 1024;
     for (;;)
     {
-        ssize_t n = read(rec_pipefd[0], buf, sizeof(buf));
-        // -ajf - SIGCONT delivery on resume from Ctrl-Z can interrupt this
-        // read() with EINTR (suspend_self installs an on_sigcont handler
-        // after the first raise). Without this retry, the thread would
-        // exit on resume and subsequent writes to stdout would pile up in
-        // the pipe with no reader, eventually deadlocking get_screenpos
-        // and freezing the REPL.
-        if (n < 0 && errno == EINTR)
+        struct pollfd p[2] = {{.fd = rec_pipefd[0], .events = POLLIN}, {.fd = rec_wake[0], .events = POLLIN}};
+        // once told to stop, keep going only while data is still waiting
+        int pr = poll(p, 2, stopping ? 0 : -1);
+        if (pr < 0 && errno == EINTR) // signals (SIGCONT after Ctrl-Z) must not end the thread
             continue;
-        if (n <= 0)
+        if (pr < 0 || (stopping && (pr == 0 || --budget <= 0)))
             break;
-        (void)write(rec_orig_stdout, buf, (size_t)n);
-        rec_append(buf, (size_t)n);
+        if (p[1].revents & POLLIN)
+            stopping = 1;
+        if (p[0].revents & POLLIN)
+        {
+            ssize_t n = read(rec_pipefd[0], buf, sizeof(buf));
+            if (n < 0 && errno == EINTR)
+                continue;
+            if (n <= 0)
+                break;
+            (void)write(rec_orig_stdout, buf, (size_t)n);
+            rec_append(buf, (size_t)n);
+        }
+        else if (p[0].revents & (POLLHUP | POLLERR))
+            break;
+        else if (stopping)
+            break;
     }
     return NULL;
+}
+
+/* A forked child has no recorder thread: give it the real terminal back. */
+static void rec_atfork_child(void)
+{
+    if (!rec_active)
+        return;
+    dup2(rec_orig_stdout, STDOUT_FILENO);
+    close(rec_orig_stdout);
+    close(rec_pipefd[0]);
+    close(rec_wake[0]);
+    close(rec_wake[1]);
+    rec_orig_stdout = rec_pipefd[0] = rec_wake[0] = rec_wake[1] = -1;
+    rec_active = 0;
+}
+
+/* Put the terminal back on fd 1 and let the recorder forward what is still
+ * in the pipe.  Runs at exit; harmless to call more than once. */
+void linenoiseShutdown(void)
+{
+    if (!rec_active)
+        return;
+    rec_active = 0;
+    fflush(stdout);
+    dup2(rec_orig_stdout, STDOUT_FILENO);
+    (void)write(rec_wake[1], "q", 1);
+    pthread_join(rec_thread, NULL);
+}
+
+/* The terminal's fd while stdout is redirected through the recorder, else -1.
+ * For isatty()/window-size checks that mean "the user's stdout". */
+int linenoiseRealStdoutFd(void)
+{
+    return rec_active ? rec_orig_stdout : -1;
+}
+
+/* isatty(STDOUT_FILENO) that sees through the recorder. */
+int linenoiseStdoutIsTTY(void)
+{
+    return isatty(tty_out_fd());
 }
 
 static void ensure_recorder(int cols, int rows)
@@ -2102,16 +2484,24 @@ static void ensure_recorder(int cols, int rows)
         free(rec_buf); rec_buf = NULL; rec_inited = 0; return;
     }
 
-    if (dup2(rec_pipefd[1], STDOUT_FILENO) < 0)
+    if (pipe(rec_wake) != 0 || dup2(rec_pipefd[1], STDOUT_FILENO) < 0)
     {
         close(rec_pipefd[0]); close(rec_pipefd[1]);
         rec_pipefd[0] = rec_pipefd[1] = -1;
+        if (rec_wake[0] >= 0) { close(rec_wake[0]); close(rec_wake[1]); }
+        rec_wake[0] = rec_wake[1] = -1;
         close(rec_orig_stdout); rec_orig_stdout = -1;
         pthread_mutex_destroy(&rec_lock);
         free(rec_buf); rec_buf = NULL; rec_inited = 0; return;
     }
     close(rec_pipefd[1]);
     rec_pipefd[1] = -1;
+
+    /* only fd 1 itself should reach exec'd children */
+    fcntl(rec_orig_stdout, F_SETFD, FD_CLOEXEC);
+    fcntl(rec_pipefd[0], F_SETFD, FD_CLOEXEC);
+    fcntl(rec_wake[0], F_SETFD, FD_CLOEXEC);
+    fcntl(rec_wake[1], F_SETFD, FD_CLOEXEC);
 
     /* stdio's line/block buffering would hide writes from us — make printf
      * etc. unbuffered so every byte hits the pipe immediately. */
@@ -2123,14 +2513,24 @@ static void ensure_recorder(int cols, int rows)
         dup2(rec_orig_stdout, STDOUT_FILENO);
         close(rec_orig_stdout); rec_orig_stdout = -1;
         close(rec_pipefd[0]); rec_pipefd[0] = -1;
+        close(rec_wake[0]); close(rec_wake[1]);
+        rec_wake[0] = rec_wake[1] = -1;
         pthread_mutex_destroy(&rec_lock);
         free(rec_buf); rec_buf = NULL; rec_inited = 0; return;
+    }
+    rec_active = 1;
+
+    static int atfork_done = 0;
+    if (!atfork_done)
+    {
+        pthread_atfork(NULL, NULL, rec_atfork_child);
+        atfork_done = 1;
     }
 }
 
 static void replay_recording(void)
 {
-    if (!rec_inited)
+    if (!rec_active)
         return;
     /* clear scrollback + screen + home — bypass the pipe so we don't pollute
      * the recording with our own clears. */
@@ -2216,128 +2616,386 @@ void linenoiseSetRedrawOnResume(int enable)
     rec_redraw_on_resume = enable ? 1 : 0;
 }
 
-/* Check for waiting data w/in 5ms and assume its a paste -ajf */
-static int polpaste(struct linenoiseState *l, char pc)
+/* ================================ Pasting -ajf ============================= */
+
+/* Clean pasted bytes: CR LF and lone CR become LF, NULs are dropped, invalid
+ * UTF-8 becomes U+FFFD.  Returns a malloc'd buffer of *outlen bytes. */
+static char *paste_clean(const unsigned char *in, size_t n, size_t *outlen)
 {
-    unsigned char nextc;
-    ssize_t nread = read(l->ifd, &nextc, 1);
-    if (nread != 1)
-        return 0;
+    char *out = malloc(n * 3 + 1);
+    size_t i = 0, w = 0, k;
+    uint32_t cp;
 
-    // if filled, loop will resume and write more
-    unsigned char buf[16384];
-    int lines_written = 0;
+    *outlen = 0;
+    if (!out)
+        return NULL;
+    while (i < n)
+    {
+        unsigned char c = in[i];
+        if (c == '\r')
+        {
+            out[w++] = '\n';
+            i += (i + 1 < n && in[i + 1] == '\n') ? 2 : 1;
+        }
+        else if (c == 0)
+            i++;
+        else if (c < 0x80)
+            out[w++] = (char)c, i++;
+        else if ((k = u8_decode((const char *)in + i, n - i, &cp)) == 1)
+            memcpy(out + w, "\xEF\xBF\xBD", 3), w += 3, i++;
+        else
+            memcpy(out + w, in + i, k), w += k, i += k;
+    }
+    *outlen = w;
+    return out;
+}
 
-    buf[0] = pc;
-    buf[1] = nextc;
-    size_t len = 2;
+/* Insert pasted text at the cursor.  Newlines or tabs switch the editor to
+ * multi-line mode, which is the renderer that can draw them. */
+static void insert_paste(struct linenoiseState *l, const char *raw, size_t rawlen)
+{
+    size_t n;
+    char *s = paste_clean((const unsigned char *)raw, rawlen, &n);
 
-    /* Paste-drain: read all remaining bytes arriving within ~5ms gaps */
+    if (!s || !n)
+    {
+        free(s);
+        return;
+    }
+    if (memchr(s, '\n', n) || memchr(s, '\t', n))
+        in_ml_paste_or_edit = 1;
+    /* not gonna happen, but if allocation failed — fall back to truncating */
+    if (!ensure_buf(l, l->len + n))
+        n = l->buflen - l->len;
+    memmove(l->buf + l->pos + n, l->buf + l->pos, l->len - l->pos);
+    memcpy(l->buf + l->pos, s, n);
+    l->pos += n;
+    l->len += n;
+    l->buf[l->len] = '\0';
+    free(s);
 
+    // Redraw everything from promptrow rather than echoing the paste: that
+    // stays correct when long pasted lines make the terminal scroll.
+    get_bufpos(l);
+    l->rc.refresh_type = REFRESH_FULL;
+    refreshLine(l);
+}
+
+/* Bytes at the end of s[0..n) that start a UTF-8 sequence but do not finish it. */
+static size_t u8_incomplete_tail(const unsigned char *s, size_t n)
+{
+    size_t k;
+
+    for (k = 1; k <= 3 && k <= n; k++)
+    {
+        unsigned char c = s[n - k];
+        if ((c & 0xC0) == 0x80)
+            continue;
+        if (c < 0xC0)
+            return 0;
+        return (size_t)(c >= 0xF0 ? 4 : c >= 0xE0 ? 3 : 2) > k ? k : 0;
+    }
+    return 0;
+}
+
+/* Timing-based paste, for terminals without bracketed paste: `pre` has been
+ * read already and more input is waiting.  Take everything that arrives with
+ * gaps under 5ms and insert it in one go. */
+static int polpaste(struct linenoiseState *l, const char *pre, size_t pren)
+{
+    struct abuf pb;
+    int extra = 3;
+    size_t tail;
+
+    abInit(&pb);
+    abAppend(&pb, pre, (int)pren);
     for (;;)
     {
-        struct pollfd p = {.fd = l->ifd, .events = POLLIN, .revents = 0};
-        int r = poll(&p, 1, 5);              /* wait <= 5ms for next chunk */
-        if (r <= 0 || !(p.revents & POLLIN)) /* nothing new -> done */
-            break;
-
-        ssize_t n = read(l->ifd, buf + len, sizeof(buf) - len);
-        if (n <= 0)
-            break;
-        len += (size_t)n;
-        if (len == sizeof(buf))
-            break; /* cap safety */
-    }
-
-    /* -ajf - if we ended with a lone '\r' it may just be the first half of a
-     * CRLF that got split across drain cycles (5ms-gap timed out between '\r'
-     * and '\n', or the chunk happened to end right at the '\r'). Try a few
-     * extra short polls so the next '\n' joins this capture and the CRLF
-     * normalizer below can collapse the pair into a single '\n'. Without this
-     * the lone '\r' gets normalized to '\n' here AND the matching '\n' lands
-     * in the buffer separately, producing a spurious extra newline. */
-    {
-        int extra = 3;
-        while (extra-- > 0 && len > 0 && buf[len - 1] == '\r' && len < sizeof(buf))
+        if (!inq_len)
         {
-            struct pollfd p = {.fd = l->ifd, .events = POLLIN, .revents = 0};
-            int r = poll(&p, 1, 5);
-            if (r <= 0 || !(p.revents & POLLIN))
+            if (in_wait(l, 5) != 1)
+            {
+                // a trailing CR may be half of a CR LF split across reads:
+                // give the LF a little longer so the pair becomes one newline
+                if (pb.len && pb.b[pb.len - 1] == '\r' && extra-- > 0)
+                    continue;
                 break;
-            ssize_t n = read(l->ifd, buf + len, sizeof(buf) - len);
-            if (n <= 0)
+            }
+            if (!in_fill(l))
                 break;
-            len += (size_t)n;
         }
+        abAppend(&pb, (const char *)inq + inq_head, (int)inq_len);
+        inq_clear();
     }
-
-    /* Normalize CRLF → LF */
-    size_t w = 0;
-    for (size_t i = 0; i < len;)
+    // a character cut in half by the gap goes back to be read normally
+    tail = u8_incomplete_tail((const unsigned char *)pb.b, (size_t)pb.len);
+    if (tail)
     {
-        if (buf[i] == '\r')
-        {
-            if (i + 1 < len && buf[i + 1] == '\n')
-            {
-                buf[w++] = '\n';
-                i += 2;
-            }
-            else
-            {
-                buf[w++] = '\n';
-                i++;
-            }
-        }
-        else
-            buf[w++] = buf[i++];
-        if (buf[w - 1] == '\n')
-            lines_written++;
+        inq_unread((const unsigned char *)pb.b + pb.len - tail, tail);
+        pb.len -= (int)tail;
     }
-    len = w;
-
-    /* --- Insert into current buffer --- */
-    if (len > 0)
-    {
-        if ((int)(l->len + len + 1) >= l->buflen)
-        {
-            int newlen = l->len + (int)len + 1 + LINENOISE_ADD_OVERHEAD;
-            char *newbuf = realloc(l->buf, newlen);
-            if (!newbuf)
-            {
-                /* not gonna happen, but if allocation failed — fall back to truncating */
-                len = (size_t)(l->buflen - l->len - 1);
-            }
-            else
-            {
-                l->buf = newbuf;
-                l->buflen = newlen;
-            }
-        }
-
-        memmove(l->buf + l->pos + len, l->buf + l->pos, (size_t)(l->len - l->pos));
-        memcpy(l->buf + l->pos, buf, len);
-        l->pos += (int)len;
-        l->len += (int)len;
-        l->buf[l->len] = '\0';
-
-        // -ajf - do NOT write `buf` directly. The previous version did
-        // `write(l->ofd, buf, len)` to give visual feedback while pasting,
-        // then called update_promptrow(l, lines_written) to track scrolls.
-        // But lines_written only counts '\n's in the paste — it misses
-        // scrolls caused by terminal auto-wrap of long pasted lines. The
-        // result was that update_promptrow under-decremented and the
-        // trailing refresh_full cleared below the actual prompt, leaving
-        // a stale copy of the first paragraph above the fresh render.
-        // The refresh_full below redraws everything from promptrow; with
-        // promptrow correctly maintained by refreshSingleLine through
-        // wrap-scrolls, this is sufficient.
-        (void)lines_written;
-        get_bufpos(l);
-        l->rc.refresh_type = REFRESH_FULL;
-        refreshLine(l);
-    }
+    insert_paste(l, pb.b, (size_t)pb.len);
+    abFree(&pb);
     // in_ml_paste_or_edit is set until we get a real ENTER
     return 1;
+}
+
+/* Bracketed paste: ESC[200~ has been read; take everything up to ESC[201~
+ * verbatim.  Returns 0, or RK_EOF. */
+static int bracketed_paste(struct linenoiseState *l)
+{
+    static const char endm[] = "\033[201~";
+    const int endn = 6;
+    struct abuf pb;
+    int from, i, hit = -1, ret = 0;
+
+    abInit(&pb);
+    while (hit < 0)
+    {
+        if (!inq_len)
+        {
+            if (in_wait(l, 2000) != 1) // terminator never came: use what we have
+                break;
+            if (!in_fill(l))
+            {
+                ret = RK_EOF;
+                break;
+            }
+        }
+        from = pb.len - (endn - 1);
+        if (from < 0)
+            from = 0;
+        abAppend(&pb, (const char *)inq + inq_head, (int)inq_len);
+        inq_clear();
+        for (i = from; i + endn <= pb.len; i++)
+            if (!memcmp(pb.b + i, endm, endn))
+            {
+                hit = i;
+                break;
+            }
+    }
+    if (hit >= 0)
+    {
+        inq_unread((const unsigned char *)pb.b + hit + endn, (size_t)(pb.len - hit - endn));
+        pb.len = hit;
+    }
+    insert_paste(l, pb.b, (size_t)pb.len);
+    abFree(&pb);
+    return ret;
+}
+
+/* ============================ Key handling -ajf ============================ */
+
+static int is_wordbyte(unsigned char c)
+{
+    return isalnum(c) || c == '_' || c >= 0x80;
+}
+
+/* Move one word left (dir < 0) or right.  In multi-line mode a word move
+ * stops at the ends of the current line; from there it steps one character,
+ * which takes it across the newline. */
+static void edit_move_word(struct linenoiseState *l, int dir)
+{
+    int ml = in_ml_paste_or_edit || force_ml_edit;
+    size_t lo = ml ? line_start(l) : 0, hi = ml ? line_end(l) : l->len, p = l->pos;
+
+    if (dir < 0)
+    {
+        while (p > lo && !is_wordbyte((unsigned char)l->buf[p - 1]))
+            p--;
+        while (p > lo && is_wordbyte((unsigned char)l->buf[p - 1]))
+            p--;
+    }
+    else
+    {
+        while (p < hi && !is_wordbyte((unsigned char)l->buf[p]))
+            p++;
+        while (p < hi && is_wordbyte((unsigned char)l->buf[p]))
+            p++;
+    }
+    if (p == l->pos)
+    {
+        if (dir < 0)
+            linenoiseEditMoveLeft(l);
+        else
+            linenoiseEditMoveRight(l);
+        return;
+    }
+    l->pos = p;
+    l->rc.refresh_type = REFRESH_LINE;
+    refreshLine(l);
+}
+
+static void edit_up(struct linenoiseState *l)
+{
+    if (force_ml_edit || (in_ml_paste_or_edit && l->len != l->pos))
+    {
+        if (l->rc.bufpos_r)
+        {
+            l->rc.refresh_type = REFRESH_REPOSITION;
+            l->rc.delta_r = -1;
+            refreshLine(l);
+        }
+        return;
+    }
+    linenoiseEditHistoryNext(l, LINENOISE_HISTORY_PREV);
+}
+
+static void edit_down(struct linenoiseState *l)
+{
+    if (force_ml_edit || (in_ml_paste_or_edit && l->len != l->pos))
+    {
+        if (l->rc.bufpos_r < l->rc.bufdim_r)
+        {
+            l->rc.refresh_type = REFRESH_REPOSITION;
+            l->rc.delta_r = 1;
+            refreshLine(l);
+        }
+        return;
+    }
+    linenoiseEditHistoryNext(l, LINENOISE_HISTORY_NEXT);
+}
+
+/* An ESC has been read: parse the rest of the sequence and act on it.
+ * Sequences we do not know are consumed and ignored.  A lone ESC (nothing
+ * follows within 50ms) does nothing.  Returns 0, or RK_EOF. */
+static int handle_escape(struct linenoiseState *l)
+{
+    char par[32];
+    size_t n = 0;
+    int k = read_key(l, 50), f, mod = 0, word;
+    char *semi;
+
+    if (k == RK_TIMEOUT)
+        return 0;
+    if (k < 0)
+        return k;
+
+    if (k == 'O') /* SS3: application-mode cursor keys, Home, End */
+    {
+        if ((f = read_key(l, 50)) < 0)
+            return f == RK_TIMEOUT ? 0 : f;
+    }
+    else if (k == '[') /* CSI: parameter/intermediate bytes, then a final byte */
+    {
+        for (;;)
+        {
+            if ((f = read_key(l, 50)) < 0)
+                return f == RK_TIMEOUT ? 0 : f;
+            if (f < 0x20 || f > 0x3f)
+                break;
+            if (n < sizeof(par) - 1)
+                par[n++] = (char)f;
+        }
+        if (f < 0x40 || f > 0x7e)
+            return 0;
+    }
+    else /* Alt+key */
+    {
+        if (k == 'b')
+            edit_move_word(l, -1);
+        else if (k == 'f')
+            edit_move_word(l, 1);
+        else if (k == BACKSPACE || k == CTRL_H)
+            linenoiseEditDeletePrevWord(l);
+        return 0;
+    }
+    par[n] = '\0';
+    if ((semi = strchr(par, ';')))
+        mod = atoi(semi + 1);
+    word = (mod == 3 || mod == 5); /* Alt or Ctrl held */
+
+    switch (f)
+    {
+    case 'A':
+        edit_up(l);
+        break;
+    case 'B':
+        edit_down(l);
+        break;
+    case 'C':
+        if (word)
+            edit_move_word(l, 1);
+        else
+            linenoiseEditMoveRight(l);
+        break;
+    case 'D':
+        if (word)
+            edit_move_word(l, -1);
+        else
+            linenoiseEditMoveLeft(l);
+        break;
+    case 'H':
+        linenoiseEditMoveHome(l);
+        break;
+    case 'F':
+        linenoiseEditMoveEnd(l);
+        break;
+    case '~':
+        switch (atoi(par))
+        {
+        case 1:
+        case 7:
+            linenoiseEditMoveHome(l);
+            break;
+        case 4:
+        case 8:
+            linenoiseEditMoveEnd(l);
+            break;
+        case 3:
+            linenoiseEditDelete(l);
+            break;
+        case 200:
+            return bracketed_paste(l);
+        }
+        break;
+    }
+    return 0;
+}
+
+/* `seq[0]` is a byte >= 0x80 just read: collect the rest of the UTF-8
+ * sequence.  Anything malformed becomes U+FFFD so the buffer stays valid
+ * UTF-8.  Returns the sequence length. */
+static size_t read_u8_rest(struct linenoiseState *l, char *seq)
+{
+    unsigned char lead = (unsigned char)seq[0];
+    size_t need = lead >= 0xF0 ? 4 : lead >= 0xE0 ? 3 : lead >= 0xC0 ? 2 : 0, i;
+    uint32_t cp;
+
+    for (i = 1; i < need; i++)
+    {
+        int k = read_key(l, 50);
+        if (k < 0)
+            break;
+        if ((k & 0xC0) != 0x80)
+        {
+            unsigned char b = (unsigned char)k;
+            inq_unread(&b, 1);
+            break;
+        }
+        seq[i] = (char)k;
+    }
+    if (need && i == need && u8_decode(seq, need, &cp) == need)
+        return need;
+    memcpy(seq, "\xEF\xBF\xBD", 3);
+    return 3;
+}
+
+/* The terminal changed size: measure it again and redraw. */
+static void handle_resize(struct linenoiseState *l)
+{
+    rowcol *rcp = &(l->rc);
+
+    get_screenpos(l);
+    l->cols = rcp->screendim_c;
+    if (in_ml_paste_or_edit || force_ml_edit)
+    {
+        get_bufpos(l);
+        rcp->promptrow = rcp->screenpos_r - rcp->bufpos_r;
+        rcp->hshift = 0;
+        rcp->refresh_type = REFRESH_FULL;
+    }
+    refreshLine(l);
 }
 
 /* This function is the core of the line editing capability of linenoise.
@@ -2359,6 +3017,8 @@ static char *linenoiseEdit(int stdin_fd, int stdout_fd, size_t buflen, const cha
     l.buflen = buflen;
     l.prompt = prompt;
     l.promptlen = strlen(prompt);
+    l.promptwidth = (size_t)prompt_width(prompt, l.promptlen);
+    l.oldrpos = 1;
     l.plen = strlen(prompt);
     l.oldpos = l.pos = 0;
     l.len = 0;
@@ -2366,6 +3026,10 @@ static char *linenoiseEdit(int stdin_fd, int stdout_fd, size_t buflen, const cha
     l.history_index = 0;
     memset(&(l.rc), 0, sizeof(rowcol));
     rcp = &(l.rc);
+    rcp->savecol = -1; // no remembered column
+    // a previous edit may have ended by interrupt/EOF with these still set
+    in_ml_paste_or_edit = 0;
+    force_ml_edit = 0;
     // -ajf - sane defaults before first get_screenpos. If the initial probe
     // fails for any reason these keep us from operating on zeroed values.
     rcp->screenpos_r = 1;
@@ -2379,13 +3043,16 @@ static char *linenoiseEdit(int stdin_fd, int stdout_fd, size_t buflen, const cha
     /* Buffer starts empty. */
     l.buf[0] = '\0';
     l.buflen--;        /* Make sure there is always space for the nulterm */
+    inq_clear();       // raw mode was entered with TCSAFLUSH: start clean too
     get_screenpos(&l); // initial screen size and cursor pos
     l.cols = l.rc.screendim_c;
     rcp->promptrow = rcp->screenpos_r; // our cursor is on the prompt row at this point
 
     // -ajf - lazy init of the stdout recorder so Ctrl-Z resume can replay
-    // what was on screen. No-op after first call.
-    ensure_recorder(l.rc.screendim_c, l.rc.screendim_r);
+    // what was on screen. No-op after first call.  Only when the replay is
+    // wanted: with redraw-on-resume off, stdout is left completely alone.
+    if (rec_redraw_on_resume)
+        ensure_recorder(l.rc.screendim_c, l.rc.screendim_r);
 
     linenoise_lnstate = &l; //-- ajf
 
@@ -2409,60 +3076,44 @@ static char *linenoiseEdit(int stdin_fd, int stdout_fd, size_t buflen, const cha
     while (1)
     {
         char c;
-        int nread;
-        char seq[3];
+        int k;
 
-        /* Poll stdin and (if armed) the interrupt pipe together. The
-         * interrupt pipe is created above; this branch only stays
-         * disabled if pipe(2) failed (memory exhaustion, fd limit). */
-        if (linenoise_intr_pipe[0] >= 0)
+        /* One key from the input queue / terminal.  The same wait also
+         * watches the interrupt pipe and the resize pipe. */
+        k = read_key(&l, -1);
+        if (k == RK_INTR)
         {
-            struct pollfd pfds[2];
-            int pr;
-            pfds[0].fd = l.ifd;
-            pfds[0].events = POLLIN;
-            pfds[0].revents = 0;
-            pfds[1].fd = linenoise_intr_pipe[0];
-            pfds[1].events = POLLIN;
-            pfds[1].revents = 0;
-            do {
-                pr = poll(pfds, 2, -1);
-            } while (pr < 0 && errno == EINTR);
-            if (pr < 0)
-                return l.buf;
-            if (pfds[1].revents & POLLIN)
-            {
-                char drainbuf[256];
-                ssize_t dn = read(linenoise_intr_pipe[0], drainbuf, sizeof(drainbuf));
-                if (dn < 0) dn = 0;
-                if (dn == 1 && drainbuf[0] == 0)
-                    linenoise_intr_set_last("", 0);
-                else
-                    linenoise_intr_set_last(drainbuf, (size_t)dn);
-                errno = ECANCELED;
-                goto end_fail;
-            }
-            /* stdin readable — fall through to read(2) below */
+            errno = ECANCELED;
+            goto end_fail;
         }
-
-        nread = read(l.ifd, &c, 1);
-        if (nread <= 0)
-            return l.buf;
+        if (k == RK_RESIZE)
+        {
+            handle_resize(&l);
+            continue;
+        }
+        if (k < 0)
+            goto end_eof;
 
         /* Only autocomplete when the callback is set. It returns < 0 when
          * there was an error reading from fd. Otherwise it will return the
          * character that should be handled next. */
         // -- ajf - 2025-10-10 don't try completion if in a multiline paste
-        if (!in_ml_paste_or_edit && c == TAB && completionCallback != NULL)
+        if (!in_ml_paste_or_edit && k == TAB && completionCallback != NULL)
         {
-            c = completeLine(&l);
+            k = completeLine(&l);
+            if (k == RK_INTR)
+            {
+                errno = ECANCELED;
+                goto end_fail;
+            }
             /* Return on errors */
-            if (c < 0)
-                return l.buf;
+            if (k < 0)
+                goto end_eof;
             /* Read next character when 0 */
-            if (c == 0)
+            if (k == 0)
                 continue;
         }
+        c = (char)k;
         switch (c)
         {
         // -- ajf - 2025-10-10 rewrite to handle multiline paste/edit
@@ -2471,12 +3122,10 @@ static char *linenoiseEdit(int stdin_fd, int stdout_fd, size_t buflen, const cha
             if (!force_ml_edit)
             {
                 /* Look ahead briefly: if another byte arrives within 5ms, we assume paste */
-                struct pollfd p = {.fd = l.ifd, .events = POLLIN, .revents = 0};
-                int ready = poll(&p, 1, 5);
-
-                if (ready == 1 && (p.revents & POLLIN))
+                if (in_wait(&l, 5) == 1)
                 {
-                    if (polpaste(&l, '\n'))
+                    // pass the CR itself so "\r\n" collapses to one newline
+                    if (polpaste(&l, "\r", 1))
                     {
                         in_ml_paste_or_edit = 1;
                         break;
@@ -2492,8 +3141,7 @@ static char *linenoiseEdit(int stdin_fd, int stdout_fd, size_t buflen, const cha
             // poll reports no data waiting
             in_ml_paste_or_edit = 0;
 
-            history_len--;
-            free(history[history_len]);
+            pop_scratch_history();
             linenoiseEditMoveEnd(&l);
             if (hintsCallback)
             {
@@ -2530,9 +3178,15 @@ static char *linenoiseEdit(int stdin_fd, int stdout_fd, size_t buflen, const cha
                         line is empty, act as end-of-file. */
             if (in_ml_paste_or_edit | force_ml_edit)
             {
-                history_len--;
-                free(history[history_len]);
-                linenoiseEditMoveEnd(&l);
+                pop_scratch_history();
+                // end of BUFFER (MoveEnd is per-line here) so the caller's
+                // output starts below the last row
+                if (l.pos != l.len)
+                {
+                    l.pos = l.len;
+                    l.rc.refresh_type = REFRESH_FULL;
+                    refreshLine(&l);
+                }
                 force_ml_edit = 0;
                 if (hintsCallback)
                 {
@@ -2553,19 +3207,25 @@ static char *linenoiseEdit(int stdin_fd, int stdout_fd, size_t buflen, const cha
             }
             else
             {
-                history_len--;
-                free(history[history_len]);
                 goto end_fail;
             }
             break;
         case CTRL_T: /* ctrl-t, swaps current character with previous. */
             if (l.pos > 0 && l.pos < l.len)
             {
-                int aux = l.buf[l.pos - 1];
-                l.buf[l.pos - 1] = l.buf[l.pos];
-                l.buf[l.pos] = aux;
-                if (l.pos != l.len - 1)
-                    l.pos++;
+                // swap the whole characters either side of the cursor
+                size_t a = gr_prev(l.buf, l.pos, l.len), b = gr_next(l.buf, l.pos, l.len);
+                char *tmp = malloc(a);
+                if (tmp)
+                {
+                    memcpy(tmp, l.buf + l.pos - a, a);
+                    memmove(l.buf + l.pos - a, l.buf + l.pos, b);
+                    memcpy(l.buf + l.pos - a + b, tmp, a);
+                    free(tmp);
+                    // cursor ends after the pair, except on the last character
+                    l.pos = (l.pos + b != l.len) ? l.pos + b : l.pos - a + b;
+                }
+                l.rc.refresh_type = REFRESH_FULL;
                 refreshLine(&l);
             }
             break;
@@ -2585,6 +3245,9 @@ static char *linenoiseEdit(int stdin_fd, int stdout_fd, size_t buflen, const cha
             if (force_ml_edit)
             {
                 force_ml_edit = 0;
+                // the single-line renderer can't draw newlines; stay multi-line
+                if (memchr(l.buf, '\n', l.len))
+                    in_ml_paste_or_edit = 1;
                 // keep refresh using multiline version
                 int old = in_ml_paste_or_edit;
                 in_ml_paste_or_edit = 1;
@@ -2600,7 +3263,8 @@ static char *linenoiseEdit(int stdin_fd, int stdout_fd, size_t buflen, const cha
         }
         // -ajf 2025-10-11
         case CTRL_Z:
-            suspend_self(); // returns after `fg`
+            disableRawMode(l.ifd); // hand the shell a sane terminal
+            suspend_self();        // returns after `fg`
             // -ajf - must restore raw mode on STDIN (the input fd). The pre-
             // recording version happened to work because l.ofd was the tty
             // and termios is per-tty; once we redirect stdout to a pipe,
@@ -2608,7 +3272,8 @@ static char *linenoiseEdit(int stdin_fd, int stdout_fd, size_t buflen, const cha
             // in the shell's cooked mode — arrow keys and Enter then look
             // broken because the tty driver line-buffers them.
             enableRawMode(l.ifd);
-            if (rec_inited && rec_redraw_on_resume)
+            inq_clear();
+            if (rec_active && rec_redraw_on_resume)
             {
                 // -ajf - replay restores the screen content (prompt history,
                 // previous output rows). The recording's last cursor position
@@ -2648,109 +3313,28 @@ static char *linenoiseEdit(int stdin_fd, int stdout_fd, size_t buflen, const cha
             linenoiseEditHistoryNext(&l, LINENOISE_HISTORY_NEXT);
             break;
         case ESC: /* escape sequence */
-            /* Read the next two bytes representing the escape sequence.
-             * Use two calls to handle slow terminals returning the two
-             * chars at different times. */
-            if (read(l.ifd, seq, 1) == -1)
-                break;
-            if (read(l.ifd, seq + 1, 1) == -1)
-                break;
-
-            /* ESC [ sequences. */
-            if (seq[0] == '[')
-            {
-                if (seq[1] >= '0' && seq[1] <= '9')
-                {
-                    /* Extended escape, read additional byte. */
-                    if (read(l.ifd, seq + 2, 1) == -1)
-                        break;
-                    if (seq[2] == '~')
-                    {
-                        switch (seq[1])
-                        {
-                        case '3': /* Delete key. */
-                            linenoiseEditDelete(&l);
-                            break;
-                        }
-                    }
-                }
-                else
-                {
-                    switch (seq[1])
-                    {
-                    case 'A': /* Up */
-                        if (force_ml_edit || (in_ml_paste_or_edit && l.len != l.pos))
-                        {
-                            if (l.rc.bufpos_r)
-                            {
-                                l.rc.refresh_type = REFRESH_REPOSITION;
-                                l.rc.delta_r = -1;
-                                refreshLine(&l);
-                            }
-                            break;
-                        }
-                        linenoiseEditHistoryNext(&l, LINENOISE_HISTORY_PREV);
-                        break;
-                    case 'B': /* Down */
-                        if (force_ml_edit || (in_ml_paste_or_edit && l.len != l.pos))
-                        {
-                            if (l.rc.bufpos_r < l.rc.bufdim_r)
-                            {
-                                l.rc.refresh_type = REFRESH_REPOSITION;
-                                l.rc.delta_r = 1;
-                                refreshLine(&l);
-                            }
-                            break;
-                        }
-                        linenoiseEditHistoryNext(&l, LINENOISE_HISTORY_NEXT);
-                        break;
-                    case 'C': /* Right */
-                        linenoiseEditMoveRight(&l);
-                        break;
-                    case 'D': /* Left */
-                        linenoiseEditMoveLeft(&l);
-                        break;
-                    case 'H': /* Home */
-                        linenoiseEditMoveHome(&l);
-                        break;
-                    case 'F': /* End*/
-                        linenoiseEditMoveEnd(&l);
-                        break;
-                    }
-                }
-            }
-
-            /* ESC O sequences. */
-            else if (seq[0] == 'O')
-            {
-                switch (seq[1])
-                {
-                case 'H': /* Home */
-                    linenoiseEditMoveHome(&l);
-                    break;
-                case 'F': /* End*/
-                    linenoiseEditMoveEnd(&l);
-                    break;
-                }
-            }
+            if (handle_escape(&l) < 0)
+                goto end_eof;
             break;
         default:
-            if (force_ml_edit)
-            {
-                struct pollfd p = {.fd = l.ifd, .events = POLLIN, .revents = 0};
-                int ready = poll(&p, 1, 5);
+        {
+            char seq[4];
+            size_t sn = 1;
 
-                if (ready == 1 && (p.revents & POLLIN))
-                {
-                    if (polpaste(&l, c))
-                    {
-                        break;
-                    }
-                }
+            seq[0] = c;
+            if ((unsigned char)c < 0x20 && c != TAB)
+                break; /* control key with no binding */
+            if ((unsigned char)c >= 0x80)
+                sn = read_u8_rest(&l, seq); /* whole character, one refresh */
+            if (force_ml_edit && in_wait(&l, 5) == 1)
+            {
+                if (polpaste(&l, seq, sn))
+                    break;
             }
-            if (linenoiseEditInsert(&l, c))
+            if (linenoiseEditInsertN(&l, seq, sn))
                 goto end_fail;
             break;
+        }
         case CTRL_U: /* Ctrl+u, delete the current line (multiline) or whole buffer (single-line). */
             if (in_ml_paste_or_edit || force_ml_edit)
             {
@@ -2800,7 +3384,7 @@ static char *linenoiseEdit(int stdin_fd, int stdout_fd, size_t buflen, const cha
             linenoiseEditMoveEnd(&l);
             break;
         case CTRL_L: /* ctrl+l, clear screen */
-            if (in_ml_paste_or_edit)
+            if (in_ml_paste_or_edit || force_ml_edit)
             {
                 (void)write(l.ofd, "\033[2J\033[1;1H", 10);
                 // -ajf - we just sent \033[1;1H, so the cursor is at (1,1).
@@ -2823,8 +3407,13 @@ static char *linenoiseEdit(int stdin_fd, int stdout_fd, size_t buflen, const cha
 
     return l.buf;
 
+end_eof: // read error or EOF: hand back whatever was typed
+    pop_scratch_history();
+    return l.buf;
+
 end_fail:
 
+    pop_scratch_history();
     if (l.buf)
         free(l.buf);
     return NULL;
@@ -2844,10 +3433,16 @@ static char *linenoiseRaw(size_t buflen, const char *prompt)
 
     if (enableRawMode(STDIN_FILENO) == -1)
         return NULL;
+    winch_install();
     ret = linenoiseEdit(STDIN_FILENO, STDOUT_FILENO, buflen, prompt);
-    linenoise_lnstate = NULL; //-ajf
-    disableRawMode(STDIN_FILENO);
-    printf("\n");
+    {
+        int e = errno; // the caller reads errno to tell ctrl-c/EOF/wake apart
+        winch_restore();
+        linenoise_lnstate = NULL; //-ajf
+        disableRawMode(STDIN_FILENO);
+        printf("\n");
+        errno = e;
+    }
     return ret;
 }
 
@@ -2966,6 +3561,7 @@ static void freeHistory(void)
 static void linenoiseAtExit(void)
 {
     disableRawMode(STDIN_FILENO);
+    linenoiseShutdown();
     freeHistory();
 }
 
@@ -3151,13 +3747,9 @@ int linenoiseHistoryLoad(const char *filename)
 
     while ((nread = getline(&buf, &buflen, fp)) != -1)
     { // --ajf
-        char *p;
-
-        p = strchr(buf, '\r');
-        if (!p)
-            p = strchr(buf, '\n');
-        if (p)
-            *p = '\0';
+        // strip the line ending only: a CR inside the entry is content
+        while (nread > 0 && (buf[nread - 1] == '\n' || buf[nread - 1] == '\r'))
+            buf[--nread] = '\0';
         strchr_rep(buf, PLACEHOLDER_CHAR, '\n'); // -ajf
         lhAdd_to(buf, 1);
         buf = NULL;

@@ -1264,8 +1264,9 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
     // this is only for %M
     if(out == _fout_char && ((FILE*)buffer==stdout || (FILE*)buffer==stderr))
     {
+        extern int linenoiseStdoutIsTTY(void); // true in the REPL even while stdout is recorded
         const char *term = getenv("TERM");
-        isterm = (term && isatty(STDOUT_FILENO) && strcmp(term, "dumb"));
+        isterm = (term && linenoiseStdoutIsTTY() && strcmp(term, "dumb"));
         errno=0; //isatty sets this, and that can mess stuff up later.
     }
     

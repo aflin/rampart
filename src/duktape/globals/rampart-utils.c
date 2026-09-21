@@ -8856,29 +8856,6 @@ static duk_ret_t repl_next(duk_context *ctx) {
         //   else       - Ctrl-D / EOF / error:       status='eof'    (or null)
         int saved_errno = errno;
 
-        // -ajf - linenoiseEdit adds an empty "" placeholder at the start of
-        // every call so up-arrow scrolling has something at position 0. The
-        // ENTER and Ctrl-D paths free it before returning; the Ctrl-C and
-        // read-failure paths return without freeing, leaving a trailing
-        // empty entry visible from getHistory(). Strip it here without
-        // changing linenoise.c's behavior.
-        int n = linenoiseHistoryLen();
-        if (n > 0) {
-            const char *last = linenoiseHistoryGet(n - 1);
-            if (last && last[0] == '\0') {
-                char **keep = (n > 1) ? malloc((n - 1) * sizeof(char *)) : NULL;
-                int i;
-                for (i = 0; i < n - 1; i++)
-                    keep[i] = strdup(linenoiseHistoryGet(i));
-                linenoiseHistoryClear();
-                for (i = 0; i < n - 1; i++) {
-                    linenoiseHistoryAdd(keep[i]);
-                    free(keep[i]);
-                }
-                free(keep);
-            }
-        }
-
         if (saved_errno == EAGAIN) {
             /* Ctrl-C mid-type: linenoise printed "^C" without a newline;
                put one out so the next prompt starts on a fresh line. */
