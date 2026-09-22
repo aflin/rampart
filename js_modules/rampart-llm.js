@@ -75,6 +75,32 @@ function checkIsRunning(url) {
 
 /* ---- SSE parsing helpers ---- */
 
+/* Network chunks do not end on line boundaries: a hosted API over TLS
+   splits one `data:` line across two chunks, and parsing each chunk alone
+   dropped both halves -- losing tokens and tool-call ids.  This returns
+   only whole lines, carrying the tail into the next call; flush=true
+   returns whatever is left when the stream ends.  The carry is BYTES: a
+   chunk can also end inside a UTF-8 character, and a string holding half
+   of one makes duktape string methods throw. */
+function sseLineSplitter() {
+    var carry = null;
+    return function(body, flush) {
+        var b = (typeof body === 'string') ? stringToBuffer(body) : body;
+        if (carry && carry.length) {
+            var joined = new Uint8Array(carry.length + b.length);
+            joined.set(carry, 0);
+            joined.set(b, carry.length);
+            b = joined;
+        }
+        var cut = b.length;
+        if (!flush) {
+            while (cut > 0 && b[cut - 1] !== 10) cut--;
+        }
+        carry = (cut < b.length) ? b.slice(cut) : null;
+        return cut ? bufferToString(b.subarray(0, cut)) : "";
+    };
+}
+
 /* Parse an SSE chunk (possibly containing multiple data: lines)
    into an array of event objects. */
 function parseSSEChunk(btxt) {
@@ -340,6 +366,122 @@ function query(prompt, callback, finalCallback, ep) {
     if(this.apiKey) reqHeaders["Authorization"] = "Bearer " + this.apiKey;
     if(this.headers) Object.assign(reqHeaders, this.headers);
 
+    /* One batch of complete SSE lines: the event loop that used to run on
+       each raw chunk.  Returns what the chunk callback returns. */
+    var sseLines = sseLineSplitter();
+    function handleSSE(btxt, r) {
+        var events = parseSSEChunk(btxt);
+
+        for(var i = 0; i < events.length; i++) {
+            var ev = events[i];
+
+            if(ev.done) return;  /* [DONE] – final callback handles the rest */
+
+            if(ev.error) {
+                self.fetchError = ev.error;
+                chunkcb({error: ev.error, serverResponse: r, token: ""});
+                return false;
+            }
+
+            /* Capture token-usage when the server emits a usage chunk
+             * (final chunk before [DONE] when stream_options.include_usage
+             * is honored). The usage chunk typically has choices=[].
+             * Be defensive — different servers shape this slightly
+             * differently. */
+            if(ev.usage) {
+                self.usage = {
+                    prompt:     ev.usage.prompt_tokens     || 0,
+                    completion: ev.usage.completion_tokens || 0,
+                    total:      ev.usage.total_tokens      ||
+                                ((ev.usage.prompt_tokens || 0) +
+                                 (ev.usage.completion_tokens || 0))
+                };
+            }
+
+            var result = extractToken(ev);
+
+            /* Capture finish_reason as it arrives — only the last
+             * delta has it set, so we just keep overwriting. */
+            if (result.finishReason) lastFinishReason = result.finishReason;
+
+            /* tool_calls deltas: accumulate, do not emit through
+               the token callback — caller reads them from the
+               finalCallback's resp.toolCalls. */
+            if(result.toolCallsDelta) {
+                mergeToolCallDelta(self.toolCallsAcc, result.toolCallsDelta);
+                /* Feed each arg-delta string through cycle detector
+                   to catch model degeneration inside JSON args. */
+                for (var di = 0; di < result.toolCallsDelta.length; di++) {
+                    var dargs = result.toolCallsDelta[di].function &&
+                                result.toolCallsDelta[di].function.arguments;
+                    if (typeof dargs !== 'string' || !dargs.length) continue;
+                    var hit = cycleDetect(dargs);
+                    if (hit) {
+                        rld("CYCLE_DETECTED",
+                            {where:"tool_args", period:hit.period,
+                             cycles:hit.cycles, sample:hit.sample});
+                        self.fetchError =
+                            sprintf("model output cycle detected (period=%d, sample=\"%s\")",
+                                    hit.period, hit.sample);
+                        chunkcb({error: self.fetchError,
+                                 serverResponse: r, token: ""});
+                        return curl.cancel;
+                    }
+                }
+                continue;
+            }
+
+            if(!result.token.length) continue;
+
+            /* Feed text tokens through cycle detector too. */
+            {
+                var hit = cycleDetect(result.token);
+                if (hit) {
+                    rld("CYCLE_DETECTED",
+                        {where:"text", period:hit.period,
+                         cycles:hit.cycles, sample:hit.sample});
+                    self.fetchError =
+                        sprintf("model output cycle detected (period=%d, sample=\"%s\")",
+                                hit.period, hit.sample);
+                    chunkcb({error: self.fetchError,
+                             serverResponse: r, token: ""});
+                    return curl.cancel;
+                }
+            }
+
+            if(result.thinking) {
+                /* reasoning_content from API — already classified,
+                   bypass <think> tag parser and emit directly */
+                thinkingText += result.token;
+                hadThinking = true;
+                self.thinking = true;
+                var ret = chunkcb({
+                    thinking: true,
+                    token: result.token,
+                    serverResponse: r
+                });
+                if(ret === false) {
+                    self.cancel = false;
+                    return curl.cancel;
+                }
+            } else {
+                /* reset thinking state so emitToken doesn't
+                   treat answer tokens as thinking content */
+                if(self.thinking && hadThinking)
+                    self.thinking = false;
+
+                if(finalCallback)
+                    self.tokens.push(result.token);
+
+                var ret = emitToken(result.token, r);
+                if(ret === false) {
+                    self.cancel = false;
+                    return curl.cancel;
+                }
+            }
+        }
+    }
+
     curl.fetchAsync(this.apiBase + endPoint,
         {
             connectTimeout: 10,
@@ -354,121 +496,15 @@ function query(prompt, callback, finalCallback, ep) {
 
                 var btxt   = sprintf('%s', r.body);
                 rld("CHUNK", btxt);
-                var events = parseSSEChunk(btxt);
-
-                for(var i = 0; i < events.length; i++) {
-                    var ev = events[i];
-
-                    if(ev.done) return;  /* [DONE] – final callback handles the rest */
-
-                    if(ev.error) {
-                        self.fetchError = ev.error;
-                        chunkcb({error: ev.error, serverResponse: r, token: ""});
-                        return false;
-                    }
-
-                    /* Capture token-usage when the server emits a usage chunk
-                     * (final chunk before [DONE] when stream_options.include_usage
-                     * is honored). The usage chunk typically has choices=[].
-                     * Be defensive — different servers shape this slightly
-                     * differently. */
-                    if(ev.usage) {
-                        self.usage = {
-                            prompt:     ev.usage.prompt_tokens     || 0,
-                            completion: ev.usage.completion_tokens || 0,
-                            total:      ev.usage.total_tokens      ||
-                                        ((ev.usage.prompt_tokens || 0) +
-                                         (ev.usage.completion_tokens || 0))
-                        };
-                    }
-
-                    var result = extractToken(ev);
-
-                    /* Capture finish_reason as it arrives — only the last
-                     * delta has it set, so we just keep overwriting. */
-                    if (result.finishReason) lastFinishReason = result.finishReason;
-
-                    /* tool_calls deltas: accumulate, do not emit through
-                       the token callback — caller reads them from the
-                       finalCallback's resp.toolCalls. */
-                    if(result.toolCallsDelta) {
-                        mergeToolCallDelta(self.toolCallsAcc, result.toolCallsDelta);
-                        /* Feed each arg-delta string through cycle detector
-                           to catch model degeneration inside JSON args. */
-                        for (var di = 0; di < result.toolCallsDelta.length; di++) {
-                            var dargs = result.toolCallsDelta[di].function &&
-                                        result.toolCallsDelta[di].function.arguments;
-                            if (typeof dargs !== 'string' || !dargs.length) continue;
-                            var hit = cycleDetect(dargs);
-                            if (hit) {
-                                rld("CYCLE_DETECTED",
-                                    {where:"tool_args", period:hit.period,
-                                     cycles:hit.cycles, sample:hit.sample});
-                                self.fetchError =
-                                    sprintf("model output cycle detected (period=%d, sample=\"%s\")",
-                                            hit.period, hit.sample);
-                                chunkcb({error: self.fetchError,
-                                         serverResponse: r, token: ""});
-                                return curl.cancel;
-                            }
-                        }
-                        continue;
-                    }
-
-                    if(!result.token.length) continue;
-
-                    /* Feed text tokens through cycle detector too. */
-                    {
-                        var hit = cycleDetect(result.token);
-                        if (hit) {
-                            rld("CYCLE_DETECTED",
-                                {where:"text", period:hit.period,
-                                 cycles:hit.cycles, sample:hit.sample});
-                            self.fetchError =
-                                sprintf("model output cycle detected (period=%d, sample=\"%s\")",
-                                        hit.period, hit.sample);
-                            chunkcb({error: self.fetchError,
-                                     serverResponse: r, token: ""});
-                            return curl.cancel;
-                        }
-                    }
-
-                    if(result.thinking) {
-                        /* reasoning_content from API — already classified,
-                           bypass <think> tag parser and emit directly */
-                        thinkingText += result.token;
-                        hadThinking = true;
-                        self.thinking = true;
-                        var ret = chunkcb({
-                            thinking: true,
-                            token: result.token,
-                            serverResponse: r
-                        });
-                        if(ret === false) {
-                            self.cancel = false;
-                            return curl.cancel;
-                        }
-                    } else {
-                        /* reset thinking state so emitToken doesn't
-                           treat answer tokens as thinking content */
-                        if(self.thinking && hadThinking)
-                            self.thinking = false;
-
-                        if(finalCallback)
-                            self.tokens.push(result.token);
-
-                        var ret = emitToken(result.token, r);
-                        if(ret === false) {
-                            self.cancel = false;
-                            return curl.cancel;
-                        }
-                    }
-                }
+                return handleSSE(sseLines(r.body), r);
             }
         },
 
         /* final callback – runs after the stream ends */
         function(r) {
+            var rest = sseLines('', true);
+            if(rest.length && !self.fetchError) handleSSE(rest, r);
+
             /* mid-stream SSE error already handled in chunkCallback */
             if(self.fetchError) {
                 chunkcb({done: true, token: '', serverResponse: r});
@@ -883,24 +919,30 @@ function anthropicQuery(prompt, callback, finalCallback) {
         }
     }
 
+    /* Anthropic SSE: pairs of "event: X" + "data: {...}" lines, which can
+       arrive split across chunks like any other stream (sseLineSplitter) */
+    var sseLines = sseLineSplitter();
+    function handleLines(btxt) {
+        btxt.split('\n').forEach(function(line){
+            line = line.trim();
+            if (line.indexOf('data:') !== 0) return;
+            var d = line.substring(5).trim();
+            if (!d) return;
+            try { handleEvent(JSON.parse(d)); }
+            catch(_) {}
+        });
+    }
+
     curl.fetchAsync(self.apiBase + "/messages", {
         connectTimeout: 10,
         postJSON: postObj,
         headers:  headers,
         chunkCallback: function(r) {
             if (self.cancel === true) { self.cancel = false; return curl.cancel; }
-            var btxt = sprintf('%s', r.body);
-            /* Anthropic SSE: pairs of "event: X" + "data: {...}" lines */
-            btxt.split('\n').forEach(function(line){
-                line = line.trim();
-                if (line.indexOf('data:') !== 0) return;
-                var d = line.substring(5).trim();
-                if (!d) return;
-                try { handleEvent(JSON.parse(d)); }
-                catch(_) {}
-            });
+            handleLines(sseLines(r.body));
         }
     }, function(r) {
+        handleLines(sseLines('', true));
         if (!r.status || r.status !== 200) {
             var msg = "anthropic " + (r.status || 0);
             try {
