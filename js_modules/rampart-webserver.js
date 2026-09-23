@@ -168,6 +168,8 @@ var exit=process.exit, utils=rampart.utils, fprintf=utils.fprintf,
 var wd;
 var iam = trim(exec('whoami').stdout);
 var unprivUser;
+/* ports from a `listen' config, empty when the ordinary bind path ran */
+var listenPorts = [];
 
 /* ---------------- macOS launchd-mediated daemonization ----------------
  *
@@ -203,7 +205,9 @@ function launchdLabel(serverConf) {
     return 'com.rampart.ws.' +
         ('' + serverConf.serverRoot).replace(/[^A-Za-z0-9]+/g, '-')
                                     .replace(/^-+|-+$/g, '') +
-        '.p' + serverConf.ipPort;
+        /* with `listen', the wrapper never chose a port: label by the
+           first one the config asked for */
+        '.p' + (listenPorts.length ? listenPorts[0] : serverConf.ipPort);
 }
 
 /* Candidate launchd domains, in order.  root -> the system domain.
@@ -509,23 +513,66 @@ function firstChecks(serverConf)
         serverConf.sslCertFile=cert;
     }
 
-    var bind = [];
-
-    if(serverConf.bindAll) {
-        if(!serverConf.ipPort || !serverConf.ipv6Port)
-            return serr('no ip or ipv6 port specified');
-        bind = ['0.0.0.0:'+serverConf.ipPort, '[::]:'+serverConf.ipv6Port];
+    /* MULTI-LISTENER, PASSED STRAIGHT THROUGH.
+     *
+     * `listen' is rampart-server's own array-of-listeners shape: several
+     * ports in one process, each with its own map and its own optional
+     * TLS -- http on localhost beside https on the world, say.  It and
+     * `bind' are mutually exclusive there, so when a config supplies it
+     * this wrapper stops deciding where to bind and checks only what it
+     * still owns: the privileged-port rule below, and the port a macOS
+     * launchd label is built from.  A config without `listen' takes
+     * exactly the path it always did. */
+    listenPorts = [];
+    if(serverConf.listen !== undefined) {
+        if(getType(serverConf.listen) != 'Array' || !serverConf.listen.length)
+            return serr('listen must be a non-empty Array of listener objects');
+        if(serverConf.bind !== undefined)
+            return serr('bind and listen cannot both be set');
+        /* these rewrite the single bind from ipAddr/ipPort, which `listen'
+           replaces; they have no meaning here.  letsencrypt:'<domain>' is
+           fine -- it only resolves the cert paths, which blocks inherit --
+           but "setup" rebinds the server to serve /.well-known alone. */
+        if(serverConf.letsencrypt == "setup")
+            return serr('letsencrypt:"setup" cannot be used with listen - run the issuance step with a single bind');
+        if(serverConf.irohProxy)
+            return serr('irohProxy cannot be used with listen');
+        if(serverConf.redirPort > 0)
+            return serr('redirPort cannot be used with listen - use httpRedirect or a plain http listen block');
+        for (var li=0; li<serverConf.listen.length; li++) {
+            var lblock = serverConf.listen[li];
+            if(getType(lblock) != 'Object')
+                return serr('listen['+li+'] must be an Object');
+            var lbind = lblock.bind;
+            if(getType(lbind) == 'String') lbind=[lbind];
+            if(getType(lbind) != 'Array' || !lbind.length)
+                return serr('listen['+li+'] requires bind');
+            for (var lj=0; lj<lbind.length; lj++) {
+                var lport = /:(\d+)$/.exec(''+lbind[lj]);
+                if(!lport)
+                    return serr('listen['+li+'].bind "'+lbind[lj]+'" has no port');
+                listenPorts.push(Number(lport[1]));
+            }
+        }
     } else {
-        if(serverConf.ipAddr && serverConf.ipPort)
-            bind.push(serverConf.ipAddr + ':' + serverConf.ipPort);
-        if(serverConf.ipv6Addr && serverConf.ipv6Port)
-            bind.push(serverConf.ipv6Addr + ':' + serverConf.ipv6Port);
+        var bind = [];
+
+        if(serverConf.bindAll) {
+            if(!serverConf.ipPort || !serverConf.ipv6Port)
+                return serr('no ip or ipv6 port specified');
+            bind = ['0.0.0.0:'+serverConf.ipPort, '[::]:'+serverConf.ipv6Port];
+        } else {
+            if(serverConf.ipAddr && serverConf.ipPort)
+                bind.push(serverConf.ipAddr + ':' + serverConf.ipPort);
+            if(serverConf.ipv6Addr && serverConf.ipv6Port)
+                bind.push(serverConf.ipv6Addr + ':' + serverConf.ipv6Port);
+        }
+
+        if(!bind.length)
+            return serr('No ip addr/port specified');
+
+        serverConf.bind=bind;
     }
-
-    if(!bind.length)
-        return serr('No ip addr/port specified');
-
-    serverConf.bind=bind;
 
     unprivUser=serverConf.user;
     if(!serverConf.serverRoot)
@@ -893,10 +940,18 @@ function start(serverConf, dump) {
      * clear message.)  rampart-server.c has no port gate of its own:
      * bind() simply reports the OS's answer. */
     if(iam != 'root' && !isDarwin) {
-        if(serverConf.ipPort < 1024)
-            return serr('Error: script must be started as root to bind to IPv4 port ' + serverConf.ipPort);
-        if(serverConf.ipv6Port < 1024)
-            return serr('Error: script must be started as root to bind to IPv6 port ' + serverConf.ipv6Port);
+        if(listenPorts.length) {
+            /* the wrapper's own ipPort/ipv6Port were never used here */
+            for (var lp=0; lp<listenPorts.length; lp++)
+                if(listenPorts[lp] < 1024)
+                    return serr('Error: script must be started as root to bind to port ' + listenPorts[lp]);
+        }
+        else {
+            if(serverConf.ipPort < 1024)
+                return serr('Error: script must be started as root to bind to IPv4 port ' + serverConf.ipPort);
+            if(serverConf.ipv6Port < 1024)
+                return serr('Error: script must be started as root to bind to IPv6 port ' + serverConf.ipv6Port);
+        }
         if(serverConf.redirPort < 1024 && serverConf.redirPort > 0)
             return serr('Error: script must be started as root to bind the redirect server to port ' + serverConf.redirPort);
     }
@@ -958,7 +1013,20 @@ function start(serverConf, dump) {
         });
     }
 
-    serverConf.map=map;
+    if(listenPorts.length) {
+        /* rampart-server refuses a top-level map beside `listen', where
+         * each listener carries its own routing table.  The map built
+         * above (htmlRoot, /apps/, ws://wsapps/, appendMap, rootScripts)
+         * becomes the default for any block that brought none, so a
+         * config only has to name the extra port. */
+        for (var lmi=0; lmi<serverConf.listen.length; lmi++) {
+            var lmb = serverConf.listen[lmi];
+            if(!lmb.map || getType(lmb.map)!='Object')
+                lmb.map = Object.assign({}, map);
+        }
+        delete serverConf.map;
+    } else
+        serverConf.map=map;
 
     /************ START THE SERVER ***************/
     function start_server(restart){
@@ -1305,7 +1373,16 @@ function start(serverConf, dump) {
             var curl = require("rampart-curl");
             var thisurl = serverConf.secure ? "https://" : "http://";
 
-            if(serverConf.bindAll)
+            if(listenPorts.length)
+            {
+                /* with `listen', check the first listener's first socket */
+                var lb = serverConf.listen[0].bind;
+                thisurl = (serverConf.listen[0].secure === undefined ?
+                              serverConf.secure : serverConf.listen[0].secure)
+                          ? "https://" : "http://";
+                thisurl += (getType(lb)=='Array' ? lb[0] : lb) + '/';
+            }
+            else if(serverConf.bindAll)
             {
                 thisurl += "127.0.0.1:" + serverConf.ipPort + '/';
             } else {
@@ -1368,7 +1445,7 @@ Example:
 function dumpConfig(serverConf) {
     var conf = start(serverConf, true);
     var ret={};
-    var props = ["bind","scriptTimeout","connectTimeout","log",'logRoot', 'dataRoot',"accessLog","errorLog","daemon","useThreads","threads","maxRead","maxWrite","secure","sslKeyFile","sslCertFile","sslMinVersion","notFoundFunc","developerMode","directoryFunc","user","cacheControl","defaultCharset","compressFiles","compressScripts","compressLevel","compressMinSize","mimeMap","map","appendProcTitle"];
+    var props = ["bind","listen","scriptTimeout","connectTimeout","log",'logRoot', 'dataRoot',"accessLog","errorLog","daemon","useThreads","threads","maxRead","maxWrite","secure","sslKeyFile","sslCertFile","sslMinVersion","notFoundFunc","developerMode","directoryFunc","user","cacheControl","defaultCharset","compressFiles","compressScripts","compressLevel","compressMinSize","mimeMap","map","appendProcTitle"];
     for (var i=0; i<props.length; i++)
         ret[props[i]]=conf[props[i]];
     return ret;
