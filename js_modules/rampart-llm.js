@@ -497,6 +497,34 @@ function query(prompt, callback, finalCallback, ep) {
                 var btxt   = sprintf('%s', r.body);
                 rld("CHUNK", btxt);
                 return handleSSE(sseLines(r.body), r);
+            },
+
+            /* CANCEL WHILE NOTHING IS ARRIVING.
+             *
+             * chunkCallback above runs only when bytes come back, so a
+             * cancel set during the server's prefill is not seen until the
+             * first token -- which is the longest wait of the request and
+             * exactly when someone presses stop.  Measured with a 65k-token
+             * payload on a local llama-server: over a minute between the
+             * stop and the request ending.  xferCallback is driven by
+             * libcurl's timer and fires through connection setup, prefill
+             * and stalls, so a cancel is honoured while the socket is
+             * quiet.
+             *
+             * `instance.cancelCheck' is for a caller that cannot set
+             * `cancel' in time: the thread issuing the query is inside
+             * curl until the request ends, so a stop arriving meanwhile
+             * has nobody to set the flag.  A predicate can be asked
+             * instead -- it is polled here, on curl's timer. */
+            xferCallback: function() {
+                if(self.cancel === true ||
+                   (typeof self.cancelCheck == 'function' && self.cancelCheck() === true)) {
+                    self.cancel = false;
+                    /* xferCallback aborts on FALSE -- unlike chunkCallback,
+                       which takes curl.cancel.  Returning curl.cancel here
+                       is truthy and simply continues the transfer. */
+                    return false;
+                }
             }
         },
 
@@ -940,6 +968,15 @@ function anthropicQuery(prompt, callback, finalCallback) {
         chunkCallback: function(r) {
             if (self.cancel === true) { self.cancel = false; return curl.cancel; }
             handleLines(sseLines(r.body));
+        },
+        /* honoured while the socket is quiet too -- see the note on the
+           other endpoint's xferCallback */
+        xferCallback: function() {
+            if (self.cancel === true ||
+                (typeof self.cancelCheck == 'function' && self.cancelCheck() === true)) {
+                self.cancel = false;
+                return false;        /* aborts; see the other endpoint */
+            }
         }
     }, function(r) {
         handleLines(sseLines('', true));
