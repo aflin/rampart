@@ -44,8 +44,12 @@ function _scheduleUpdateImpl(actionVerb, index, date, frequency, thresh, sql) {
                     ['','','one','two','three','four','five','six','seven','eight','nine','ten','eleven','twelve','teen','y'],
                     f);
 
-        var res = rampart.utils.stringToNumber(f,true);
-        if(res.min || res.max) return -1;
+        var res, m = /^\s*(\d+(?:\.\d+)?)\s*(.*)$/.exec(f);
+        if(m)
+            res = {value: parseFloat(m[1]), rem: m[2]};
+        else
+            res = rampart.utils.stringToNumber(f,true);
+        if(res && (res.min || res.max)) return -1;
 
         if(!res || !res.rem) {res={rem:f,value:1};}
         if (res.rem.indexOf('minute') != -1)
@@ -97,10 +101,11 @@ function _scheduleUpdateImpl(actionVerb, index, date, frequency, thresh, sql) {
             var d = rampart.utils.autoScanDate(date);
             if(!d)
                 thr("could not parse date ('"+date+"')");
-            if(d.offset==0){ //assume localtime if no timezone provided
-                d = rampart.utils.autoScanDate(date + ' ' + rampart.utils.dateFmt('%z'));
-            }
-            date=Math.floor(d.date.getTime()/1000);
+            var ms = d.date.getTime();
+            /* no zone in the string: local time, at that date's UTC offset */
+            if(!/%[zZ]/.test(d.matchedFormat || ''))
+                ms += new Date(ms).getTimezoneOffset() * 60000;
+            date=Math.floor(ms/1000);
         }
     }
 
@@ -158,6 +163,18 @@ function _scheduleUpdateImpl(actionVerb, index, date, frequency, thresh, sql) {
      * Schedule semantics: NEXT/INTV/THRESH all = -1 means unscheduled.
      * The daemon's gettimes() filter ignores rows with NEXT < 0.
      */
+    /* texisapi only creates SYSUPDATE on the next CREATE/ALTER INDEX; if it
+       was dropped by hand we would fail here, so create it ourselves with
+       the same 16-column schema (sysupdate.c: fixed forever). */
+    if(!asql.one("select NAME from SYSTABLES where NAME='SYSUPDATE'")) {
+        asql.exec("create table SYSUPDATE (ID counter, NAME varchar(16),"+
+            " TBNAME varchar(16), KIND varchar(16), PREVIOUS int, NEXT int,"+
+            " INTV int, THRESH int, ACTION varchar(16), STAGE int, NSTAGES int,"+
+            " STAGENAME varchar(64), PROGRESS double, STARTED int,"+
+            " COMMENTS varchar(255), PARAMS varchar(64))");
+        asql.exec("grant select on SYSUPDATE to PUBLIC");
+    }
+
     var paramsStr = JSON.stringify(params);
     var oldRow = asql.one("select ID from SYSUPDATE where NAME=?", [index]);
 
@@ -223,6 +240,15 @@ function thrmsg(msg) {
     process.exit(1);
 }
 
+/* true if pid is alive AND is an index updater (guards against pid reuse) */
+function isUpdaterPid(pid) {
+    if (!(pid > 0) || !rampart.utils.kill(pid, 0)) return false;
+    try {
+        var r = rampart.utils.exec('ps', '-o', 'args=', '-p', String(pid));
+        return r.stdout.indexOf('rampart indexUpdater') !== -1;
+    } catch (e) { return true; } /* can't tell: be conservative */
+}
+
 /* Atomically claim the updater slot for a database.  POSIX link(2) is
  * atomic: it succeeds only when the target name doesn't exist.  We
  * write our PID to a private tmp path, then link() it to updater.pid;
@@ -266,7 +292,7 @@ function claimUpdaterSlot(db, mypid) {
         }
 
         if (existingPid > 0 && existingPid !== mypid &&
-            rampart.utils.kill(existingPid, 0)) {
+            isUpdaterPid(existingPid)) {
             /* Another live updater holds the slot. */
             return false;
         }
@@ -373,9 +399,14 @@ function updater(sql) {
             return ''+e;
         }
 
-        if(sql.errMsg.length)
+        /* texis message codes: 000-099 error, 100-199 warning, 200+ info
+           (e.g. "200 INDEX_VEC ... absorbed N rows").  A prepare/exec
+           failure does not throw here, so look at the codes. */
+        if(sql.errMsg && sql.errMsg.length)
         {
-            return sql.errMsg;
+            if(/^[01]\d\d /m.test(sql.errMsg))
+                return sql.errMsg;
+            writemsg(index + ' messages: ' + sql.errMsg.replace(/\n/g, ' | '));
         }
         /* texisapi has already written PREVIOUS=now and reset run-state
          * to idle in its End hook.  We just update NEXT to the next
@@ -470,7 +501,7 @@ function launchUpdater(npsql) {
         epid=-1;
     }
 
-    if(epid>0 && rampart.utils.kill(epid, 0)){
+    if(epid>0 && isUpdaterPid(epid)){
         return false;
     }
     /* Pick the script the daemon subprocess will run.  When a zip payload is
