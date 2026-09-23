@@ -468,6 +468,81 @@ static void send429(evhtp_request_t *req)
     sendresp(req, 429, 0);
 }
 
+/* ---- thread limiter: pin URL prefixes to a subset of the JS threads ---- */
+
+typedef struct tl_set_s {
+    char *group;     /* group name, or NULL for a per-rule set */
+    int   count;     /* threads requested in the config */
+    int   nthreads;  /* threads assigned (count, clamped to what exists) */
+    int  *threads;   /* server thread numbers in this set */
+    char *inset;     /* inset[thrno] != 0 when thread thrno is a member */
+    int   rr;        /* rotating start index so equal loads spread evenly */
+} tl_set;
+
+typedef struct tl_rule_s {
+    char   *path;    /* URL path prefix */
+    int     pathlen;
+    int     setidx;  /* index into tl_sets while parsing */
+    tl_set *set;     /* resolved once tl_sets is final */
+} tl_rule;
+
+static tl_rule *tl_rules = NULL;
+static int      tl_num_rules = 0;
+static tl_set  *tl_sets = NULL;
+static int      tl_num_sets = 0;
+
+/* longest matching prefix wins; NULL when no rule matches */
+static tl_rule *tl_match(const char *path)
+{
+    tl_rule *best = NULL;
+    int i;
+
+    for (i = 0; i < tl_num_rules; i++)
+    {
+        tl_rule *r = &tl_rules[i];
+        if (strncmp(path, r->path, r->pathlen) == 0 &&
+            (best == NULL || r->pathlen > best->pathlen))
+            best = r;
+    }
+    return best;
+}
+
+/* Hand out thread numbers to each set from the top of the JS pool
+   downward, skipping thread 0 so one thread never runs a limited path.
+   accept() prefers the lowest idle thread, so the top threads are the
+   least busy.  When sets ask for more than exist, wrap around and share. */
+static void tl_assign_threads(int njs)
+{
+    int avail = njs - 1;
+    int cursor = njs - 1;
+    int i, j;
+
+    for (i = 0; i < tl_num_sets; i++)
+    {
+        tl_set *s = &tl_sets[i];
+
+        s->nthreads = s->count;
+        if (avail < 1)
+            s->nthreads = 1;            /* single thread: everything runs on 0 */
+        else if (s->nthreads > avail)
+            s->nthreads = avail;
+
+        CALLOC(s->threads, s->nthreads * sizeof(int));
+        CALLOC(s->inset, njs);
+
+        for (j = 0; j < s->nthreads; j++)
+        {
+            if (avail < 1)
+                cursor = 0;
+            else if (cursor < 1)
+                cursor = njs - 1;
+            s->threads[j] = cursor;
+            s->inset[cursor] = 1;
+            cursor--;
+        }
+    }
+}
+
 /* ---- end rate limiter ---- */
 
 static DHS *new_dhs(duk_context *ctx, int idx)
@@ -3633,6 +3708,40 @@ struct proxy_redispatch_s {
     int              is_fileserver; /* 1 if this was a fileserver route */
 };
 
+/* Hand a completed request to another thread.  The connection's openconn
+   moves to the target now, so pickers and accept() see queued work before
+   the target thread gets around to running it.  The bev is detached here,
+   so on failure the connection is unusable and is freed. */
+static void redispatch_request(evhtp_request_t *req, void *cbarg,
+                               evthr_t *from_thr, evthr_t *to_thr, int is_fileserver)
+{
+    struct proxy_redispatch_s *rd = NULL;
+
+    REMALLOC(rd, sizeof(struct proxy_redispatch_s));
+    rd->req = req;
+    rd->cbarg = cbarg;
+    rd->from_thr = from_thr;
+    rd->is_fileserver = is_fileserver;
+
+    __sync_fetch_and_add(&to_thr->openconn, 1);
+    __sync_fetch_and_sub(&from_thr->openconn, 1);
+
+    /* Detach the connection from this thread's event loop so that client
+       disconnect events do not trigger evhtp cleanup while the request sits
+       in the target thread's defer queue.  evhtp_connection_migrate() will
+       create a fresh bufferevent on the target thread's event_base. */
+    bufferevent_setcb(req->conn->bev, NULL, NULL, NULL, NULL);
+    bufferevent_disable(req->conn->bev, EV_READ | EV_WRITE);
+
+    if (evthr_defer(to_thr, redispatch_to_js_thread, rd) != EVTHR_RES_OK)
+    {
+        __sync_fetch_and_sub(&to_thr->openconn, 1);
+        __sync_fetch_and_add(&from_thr->openconn, 1);
+        free(rd);
+        evhtp_connection_free(req->conn);
+    }
+}
+
 static void fileserver(evhtp_request_t *req, void *arg)
 {
     DHMAP *map = (DHMAP *)arg;
@@ -3648,27 +3757,7 @@ static void fileserver(evhtp_request_t *req, void *arg)
     {
         evthr_t *js_thr = pick_js_thread();
         if (js_thr)
-        {
-            struct proxy_redispatch_s *rd = NULL;
-            REMALLOC(rd, sizeof(struct proxy_redispatch_s));
-            rd->req = req;
-            rd->cbarg = arg;
-            rd->from_thr = thread;
-            rd->is_fileserver = 1;
-            /* Detach the connection from this thread's event loop so that
-               client disconnect events do not trigger evhtp cleanup while
-               the request sits in the JS thread's defer queue.
-               evhtp_connection_migrate() will create a fresh bufferevent
-               on the target thread's event_base. */
-            /* Detach bev BEFORE defer to avoid race with JS thread */
-            bufferevent_setcb(req->conn->bev, NULL, NULL, NULL, NULL);
-            bufferevent_disable(req->conn->bev, EV_READ | EV_WRITE);
-            if (evthr_defer(js_thr, redispatch_to_js_thread, rd) != EVTHR_RES_OK)
-            {
-                free(rd);
-                evhtp_connection_free(req->conn);
-            }
-        }
+            redispatch_request(req, arg, thread, js_thr, 1);
         else
         {
             proxy_send_error(req, 503, "Service Unavailable");
@@ -6941,8 +7030,7 @@ static void redispatch_to_js_thread(evthr_t *thr, void *arg, void *shared)
         return;
     }
 
-    thr->openconn++;
-    rd->from_thr->openconn--;
+    /* openconn was moved to this thread by the dispatcher at defer time */
 
     /* invoke the original callback on this JS-capable thread */
     if (rd->is_fileserver)
@@ -6984,6 +7072,52 @@ static evthr_t *pick_js_thread(void)
 
 /* ---- end reverse proxy functions ---- */
 
+/* least-loaded thread within a thread-limit set (idle first) */
+static evthr_t *tl_pick_thread(tl_set *set)
+{
+    evthr_t *min_thread = NULL;
+    int min_openconn = -1;
+    int j, start = __sync_fetch_and_add(&set->rr, 1);
+
+    for (j = 0; j < set->nthreads; j++)
+    {
+        RPTHR *thr = server_thread[set->threads[(start + j) % set->nthreads]];
+        evthr_t *et;
+
+        if (!thr || !thr->evthr)
+            continue;
+
+        et = (evthr_t *)thr->evthr;
+
+        if (et->openconn == 0)
+            return et;
+
+        if (min_thread == NULL || et->openconn < min_openconn)
+        {
+            min_thread = et;
+            min_openconn = et->openconn;
+        }
+    }
+    return min_thread;
+}
+
+/* thread for a JS request that must leave the current thread:
+   the rule's set if the path is limited, otherwise any JS thread */
+static evthr_t *tl_pick_js_thread(evhtp_request_t *req)
+{
+    if (tl_num_rules)
+    {
+        tl_rule *rule = tl_match(req->uri->path->full);
+        if (rule)
+        {
+            evthr_t *et = tl_pick_thread(rule->set);
+            if (et)
+                return et;
+        }
+    }
+    return pick_js_thread();
+}
+
 static void http_callback(evhtp_request_t *req, void *arg)
 {
     DHS newdhs={0}, *dhs = (DHS*)arg;
@@ -6999,29 +7133,32 @@ static void http_callback(evhtp_request_t *req, void *arg)
     /* if this is a proxy-only thread (no Duktape), re-dispatch to a JS thread */
     if (thr->ctx == NULL)
     {
-        evthr_t *js_thr = pick_js_thread();
+        evthr_t *js_thr = tl_pick_js_thread(req);
         if (js_thr)
-        {
-            struct proxy_redispatch_s *rd = NULL;
-            REMALLOC(rd, sizeof(struct proxy_redispatch_s));
-            rd->req = req;
-            rd->cbarg = arg;
-            rd->from_thr = thread;
-            rd->is_fileserver = 0;
-            /* Detach bev BEFORE defer to avoid race with JS thread */
-            bufferevent_setcb(req->conn->bev, NULL, NULL, NULL, NULL);
-            bufferevent_disable(req->conn->bev, EV_READ | EV_WRITE);
-            if (evthr_defer(js_thr, redispatch_to_js_thread, rd) != EVTHR_RES_OK)
-            {
-                free(rd);
-                evhtp_connection_free(req->conn);
-            }
-        }
+            redispatch_request(req, arg, thread, js_thr, 0);
         else
         {
             proxy_send_error(req, 503, "Service Unavailable");
         }
         return;
+    }
+
+    /* thread limiter: a limited path runs only on its assigned threads.
+       Same hand-off as the proxy re-dispatch above; the target thread
+       re-enters http_callback and passes this check. */
+    if (tl_num_rules)
+    {
+        tl_rule *rule = tl_match(req->uri->path->full);
+        if (rule && !rule->set->inset[thrno])
+        {
+            evthr_t *target = tl_pick_thread(rule->set);
+            if (target)
+            {
+                redispatch_request(req, arg, thread, target, 0);
+                return;
+            }
+            /* no member thread is up yet (startup): serve it here */
+        }
     }
 
     ctx = thr->ctx;
@@ -9936,6 +10073,98 @@ duk_ret_t duk_server_start(duk_context *ctx)
             }
             else
                 RP_THROW(ctx, "server.start: rateLimit must be an object");
+        }
+        duk_pop(ctx);
+
+        /* threadLimit */
+        if (duk_rp_GPS_icase(ctx, ob_idx, "threadLimit"))
+        {
+            if (duk_is_object(ctx, -1) && !duk_is_array(ctx, -1))
+            {
+                int j, k;
+
+                duk_enum(ctx, -1, 0);
+                while (duk_next(ctx, -1, 1))
+                {
+                    /* key = path, value = N or {threads: N, group: "name"} */
+                    const char *path = duk_get_string(ctx, -2);
+                    char *group = NULL;
+                    int count = 0, setidx = -1;
+
+                    if (duk_is_number(ctx, -1))
+                        count = duk_get_int(ctx, -1);
+                    else if (duk_is_object(ctx, -1))
+                    {
+                        if (duk_get_prop_string(ctx, -1, "threads"))
+                            count = duk_get_int_default(ctx, -1, 0);
+                        duk_pop(ctx);
+
+                        if (duk_get_prop_string(ctx, -1, "group") && duk_is_string(ctx, -1))
+                            group = strdup(duk_get_string(ctx, -1));
+                        duk_pop(ctx);
+                    }
+
+                    if (count < 1)
+                        RP_THROW(ctx, "server.start: threadLimit[\"%s\"]: threads must be a number greater than 0", path);
+
+                    if (group)
+                    {
+                        for (k = 0; k < tl_num_sets; k++)
+                        {
+                            if (tl_sets[k].group && strcmp(tl_sets[k].group, group) == 0)
+                            {
+                                setidx = k;
+                                if (count > tl_sets[k].count)
+                                    tl_sets[k].count = count;
+                                free(group);
+                                break;
+                            }
+                        }
+                    }
+
+                    if (setidx < 0)
+                    {
+                        REMALLOC(tl_sets, (tl_num_sets + 1) * sizeof(tl_set));
+                        setidx = tl_num_sets++;
+                        memset(&tl_sets[setidx], 0, sizeof(tl_set));
+                        tl_sets[setidx].group = group;
+                        tl_sets[setidx].count = count;
+                    }
+
+                    REMALLOC(tl_rules, (tl_num_rules + 1) * sizeof(tl_rule));
+                    tl_rules[tl_num_rules].path = strdup(path);
+                    tl_rules[tl_num_rules].pathlen = (int)strlen(path);
+                    tl_rules[tl_num_rules].setidx = setidx;
+                    tl_rules[tl_num_rules].set = NULL;
+                    tl_num_rules++;
+
+                    duk_pop_2(ctx); /* key and value */
+                }
+                duk_pop(ctx); /* enum */
+
+                /* tl_sets is final now; resolve rule -> set pointers */
+                for (j = 0; j < tl_num_rules; j++)
+                    tl_rules[j].set = &tl_sets[tl_rules[j].setidx];
+
+                tl_assign_threads(totnthreads);
+
+                for (j = 0; j < tl_num_rules; j++)
+                {
+                    tl_set *s = tl_rules[j].set;
+                    char list[512];
+                    int pos = 0;
+
+                    for (k = 0; k < s->nthreads && pos < (int)sizeof(list) - 8; k++)
+                        pos += snprintf(list + pos, sizeof(list) - pos, "%s%d", k ? "," : "", s->threads[k]);
+
+                    fprintf(access_fh, "threadLimit: %s -> %d thread%s [%s]%s%s%s\n",
+                            tl_rules[j].path, s->nthreads, s->nthreads == 1 ? "" : "s", list,
+                            s->group ? " group=" : "", s->group ? s->group : "",
+                            s->nthreads < s->count ? " (clamped: fewer threads available)" : "");
+                }
+            }
+            else
+                RP_THROW(ctx, "server.start: threadLimit must be an object");
         }
         duk_pop(ctx);
 

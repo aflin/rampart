@@ -3289,7 +3289,7 @@ htp__run_in_thread_(evthr_t * thr, void * arg, void * shared)
     connection->evbase = evthr_get_base(thr);
     connection->thread = thr;
     if (htp->thr_pool != NULL) {
-        thr->openconn++;
+        __sync_fetch_and_add(&thr->openconn, 1);
     }
 
     if (htp__connection_accept_(connection->evbase, connection) < 0) {
@@ -5804,7 +5804,7 @@ evhtp_connection_free(evhtp_connection_t * connection)
 
 #ifndef EVHTP_DISABLE_EVTHR
     if(connection->thread) {
-        connection->thread->openconn--;
+        __sync_fetch_and_sub(&connection->thread->openconn, 1);
     }
 #endif
 
