@@ -114,6 +114,17 @@ int	type;	/* INDEX_... type */
 
 			strcpy(d, "_Y.btr");
 			DELDBF(fname, rc);
+
+			/* A crashed vec OPTIMIZE/REBUILD leaves its Tnnnn
+			 * build at these names (vecindex.c VEC_RENAME_EXTS
+			 * plus the ivfpq training reservoir).  Never present
+			 * for other index types; ENOENT is not an error. */
+			strcpy(d, ".vec");	unlink(fname);
+			strcpy(d, ".vec.new");	unlink(fname);
+			strcpy(d, "_H.idxpq");	unlink(fname);
+			strcpy(d, "_I.idxpq");	unlink(fname);
+			strcpy(d, "_del.btr");	unlink(fname);
+			strcpy(d, ".train.tmp");	unlink(fname);
 			/* fall through */
                 case INDEX_MM:
                 case INDEX_MMCR:
