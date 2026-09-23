@@ -139,21 +139,17 @@ function chunktest(req) {
 
 pid=server.start(
 {
-    bind: "127.0.0.1:8287",
+    /* where this server listens is in `listen' below, not here */
     developerMode: true,
     /* only applies if starting as root */
     user: "nobody",
 
-    scriptTimeout: 1.0, /* max time to spend in JS */
     connectTimeout:20.0, /* how long to wait before client sends a req or server can send a response */
     useThreads: true, /* make server multi-threaded. */
     daemon: true,
     log: true,
     accessLog: tmpdir + '/curl-server-test-alog',
     errorLog:  tmpdir + '/curl-server-test-elog',
-    secure:true,
-    sslKeyFile:  key,
-    sslCertFile: cert,
 
     /* sslMinVersion (ssl3|tls1|tls1.1|tls1.2). "tls1.2" is default*/
     // sslMinVersion: "tls1.2",
@@ -177,10 +173,32 @@ pid=server.start(
         "/casc/":        {rate: 8, window: 10, key: "ip"},
         "/casc/tight/":  {rate: 3, window: 10, key: "ip"}
     },
-    map:
+    /* TWO LISTENERS, ONE PROCESS.
+     *
+     * 8287 is the https server everything below is written against; it
+     * keeps the 1.0s scriptTimeout that "server script timeout" relies
+     * on.  8288 is plain http with a longer one, and exists for a single
+     * case: an async transfer that must be abortable while NOTHING is
+     * arriving.  It has to be a separate listener because the two things
+     * it needs -- no TLS, and a quiet window of seconds -- are both
+     * per-listener, and neither is safe to impose on the tests above.
+     *
+     * Why no TLS: on an https localhost transfer libcurl arms its own
+     * expiries and ticks every few hundred ms regardless, so an abort
+     * there lands at about the same moment whether or not the event loop
+     * drives an idle multi.  Over plain http nothing ticks in the quiet
+     * window unless something makes it, which is what the test checks. */
+    listen: [
     {
+      bind: "127.0.0.1:8287",
+      secure: true,
+      sslKeyFile:  key,
+      sslCertFile: cert,
+      scriptTimeout: 1.0, /* max time to spend in JS */
+      map:
+      {
         /*
-            filesystem mappings are always folders.  
+            filesystem mappings are always folders.
              "/tetris"    becomes  "/tetris/
              "./mPurpose" becomes  "./mPurpose/"
         */
@@ -212,7 +230,21 @@ pid=server.start(
         "/redirect":        function(req) {
                                 return {status: 302, headers: {Location: "/slow"}, text: ""};
                             }
+      }
+    },
+    {
+      /* plain http, and quiet for long enough to tell the two cases
+         apart: the handler sleeps 2.5s, so nothing at all comes back
+         until then */
+      bind: "127.0.0.1:8288",
+      scriptTimeout: 5.0,
+      map:
+      {
+        "/quiet":  function(req) { sleep(2.5); return {text: "quiet"}; },
+        "/ping":   function(req) { return {text: "ping"}; }
+      }
     }
+    ]
 });
 
 // if daemon==true then we get the pid of the detached process
@@ -220,6 +252,8 @@ pid=server.start(
 
 /* wait until the forked server is actually accepting connections */
 testFeature.waitServer("https://127.0.0.1:8287/sample");
+/* the second listener binds separately; wait for it too */
+testFeature.waitServer("http://127.0.0.1:8288/ping");
 
 testFeature("server is running", rampart.utils.kill(pid,0) );
 
@@ -590,13 +624,84 @@ thr.exec(function() {
     }).finally(function(){
         rampart.thread.put("res2",n2);
     });
+
 });
+
+/* ITS OWN THREAD, AND STARTED LATER.
+ *
+ * The transfer below runs for over a second and its endpoint holds a
+ * server thread for 2.5s, while the test above reads its results with
+ * timeouts as short as 500ms.  Run alongside, it made that test flap --
+ * measured: 1 failure in 2 runs, against 0 in 3 without it.  So it is
+ * kicked off only once those results are in; see the setTimeout below. */
+var cancelthr = new rampart.thread();
+
+function startCancelTransfer() {
+cancelthr.exec(function() {
+    /* ABORT AN ASYNC TRANSFER WHILE NOTHING IS ARRIVING.
+     *
+     * The blocking test above covers return-false; this is the same
+     * thing on fetchAsync, where it used to be impossible.  An async
+     * transfer is driven by the event loop, which wakes on socket
+     * activity and on timeouts libcurl asks for -- and one waiting on a
+     * slow server asks for none, so libcurl never reached its progress
+     * tick and the callback was not called until the response arrived.
+     *
+     * The abort is asked for at 1.2s, and over PLAIN HTTP: libcurl ticks
+     * on its own for the first few hundred ms (connect and its early
+     * expiries), and on an https transfer it keeps ticking, so an abort
+     * asked for early -- or asked for over TLS -- lands at the same
+     * moment either way and proves nothing.  Past a second on http,
+     * nothing ticks unless the idle multi is driven; /quiet answers at
+     * 2.5s, so without that the earliest possible abort is 2.5s. */
+    var ct0 = Date.now();
+    curl.fetchAsync({
+        xferCallback: function(info) {
+            if (info.elapsed >= 1.2) return false;   /* abort */
+        },
+        xferCallbackRate: 10
+    }, "http://127.0.0.1:8288/quiet", function(res) {
+        rampart.thread.put("cancelms", Date.now() - ct0);
+        rampart.thread.put("cancelstatus", res.status);
+        rampart.thread.put("cancelmsg",
+            Array.isArray(res.errMsg) ? res.errMsg.join(' ')
+                                      : String(res.errMsg || ''));
+    });
+});
+}
 
 setTimeout( function(){
     testFeature("fetchAsync & submitAsync in thread w/ finally", function (){
         var res=rampart.thread.get("res", asyncTimeout1);
         var res2=rampart.thread.get("res2", asyncTimeout2);
         return res==10 && res2==10;
+    });
+
+    /* those results are in; now the long, quiet one has the box to itself */
+    startCancelTransfer();
+
+    testFeature("xferCallback aborts an async transfer during the quiet window", function (){
+        /* longer than asyncTimeout1: a run that does NOT abort early
+           only finishes at 2.5s, and it should report that rather than
+           fail as a missing value */
+        var ms  = rampart.thread.get("cancelms",     6000);
+        var st  = rampart.thread.get("cancelstatus", 6000);
+        var msg = rampart.thread.get("cancelmsg",    6000);
+        /* /quiet answers at 2.5s; the abort was asked for at 1.2s, so a
+           run that only aborts when the response arrives is unmistakable */
+        if (!(ms < 1900)) {
+            console.log("async abort too late:", ms, "ms status", st, msg);
+            return false;
+        }
+        if (st) {
+            console.log("expected no http status after an abort, got", st);
+            return false;
+        }
+        if (String(msg).indexOf('aborted by an application callback') < 0) {
+            console.log("unexpected errMsg:", msg);
+            return false;
+        }
+        return true;
     });
 
     cleanup();

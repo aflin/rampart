@@ -104,6 +104,23 @@ TIMERINFO
 {
     CURLM *cm;
     struct event ev;
+    /* A REPEATING TICK, so an idle transfer still gets driven.
+     *
+     * `ev' above is armed only when libcurl asks for a timeout, and a
+     * transfer that is merely waiting for a slow server asks for none --
+     * so nothing calls curl_multi_socket_action, libcurl never reaches
+     * its progress tick, and an xferCallback that exists to notice
+     * deadlines or cancellation is never called.  Measured against a
+     * server that accepted a request and sent nothing for 8 s:
+     * curl.fetch ticked 9 times, curl.fetchAsync twice -- once at the
+     * start and once when the data finally arrived.
+     *
+     * So when a request in this multi carries an xferCallback, a
+     * persistent timer drives the multi on its own schedule.  Armed only
+     * in that case: a transfer with no xferCallback keeps exactly the
+     * wakeups it had before. */
+    struct event pump;
+    int have_pump;
     duk_context *ctx;
 };
 
@@ -3290,6 +3307,94 @@ static int check_multi_info(CURLM *cm)
     return gotinfo;
 }
 
+/* How often the pump drives an otherwise idle multi.  100 ms buys a
+   cancel that takes effect in about a tenth of a second, against the
+   minute or more it took when only arriving data could carry one. */
+#define RP_XFER_PUMP_MS 100
+
+/* Drive the multi so libcurl runs its timers -- and so the xferinfo
+   callback, and any cancel it returns, are reached while the socket is
+   quiet.  CURL_SOCKET_TIMEOUT is how an application says "a timeout
+   passed, re-examine"; curl is free to find nothing to do. */
+static void multi_all_done(TIMERINFO *tinfo);
+
+static void pump_cb(int fd, short kind, void *userp)
+{
+    TIMERINFO *tinfo = (TIMERINFO *)userp;
+    int still_running;
+    (void)fd;
+    (void)kind;
+
+    /* curl_multi_perform, not curl_multi_socket_action(CURL_SOCKET_TIMEOUT):
+       socket_action only services handles whose own timer is due, so on an
+       idle transfer it returns having done nothing and libcurl never
+       reaches its progress tick.  Measured against a server that sent
+       nothing for 8 s: socket_action produced 2 xferCallback calls,
+       multi_perform produced 27. */
+    if(curl_multi_perform(tinfo->cm, &still_running))
+        return;                      /* the socket callbacks report errors */
+
+    check_multi_info(tinfo->cm);
+
+    /* a cancel returned by an xferCallback ends the transfer HERE, with
+       no socket event to follow, so completion is handled here too */
+    if(still_running <= 0)
+        multi_all_done(tinfo);
+}
+
+/* Stop the pump before its TIMERINFO goes away.  A persistent event left
+   armed on freed memory is a use-after-free on the next tick. */
+static void pump_stop(TIMERINFO *tinfo)
+{
+    if(tinfo->have_pump) {
+        evtimer_del(&(tinfo->pump));
+        tinfo->have_pump = 0;
+    }
+}
+
+/* THE LAST HANDLE FINISHED: tear the multi down and run `finally'.
+ *
+ * Lifted out of the socket callback because it is no longer the only
+ * place a transfer can end.  The pump can drive a handle to completion
+ * -- a cancel from an xferCallback does exactly that, and with no
+ * further socket event to notice it, the multi was never cleaned up and
+ * the pump ticked on forever, holding the event loop open. */
+static void multi_all_done(TIMERINFO *tinfo)
+{
+    if(evtimer_pending(&(tinfo->ev), NULL))
+        evtimer_del(&(tinfo->ev));
+    pump_stop(tinfo);
+    curl_multi_cleanup(tinfo->cm);
+
+    /* check for a finally callback */
+    {
+        duk_context *ctx = tinfo->ctx;
+        duk_push_global_stash(ctx);
+        duk_push_sprintf(ctx, "curl_finally_%p", tinfo->cm);
+        duk_dup(ctx, -1);
+        // [ ..., stash, "curl_finally_%p", "curl_finally_%p" ]
+        if(duk_get_prop(ctx, -3) )
+        {
+            // [ ..., stash, "curl_finally_%p", "callback" ]
+            duk_pull(ctx, -2);
+            // [ ..., stash, "callback", "curl_finally_%p" ]
+            duk_del_prop(ctx, -3);
+            // [ ..., stash, "callback" ]
+            duk_call(ctx, 0);
+            // [ ..., stash, retval ]
+            duk_pop_2(ctx);
+            // [ ... ]
+        }
+        else
+        {
+            // [ ..., stash, "curl_finally_%p", undefined ]
+            duk_pop_3(ctx);
+        }
+    }
+
+    free(tinfo);
+}
+
 static void timer_cb(int fd, short kind, void *userp)
 {
     TIMERINFO *tinfo = (TIMERINFO *)userp;
@@ -3313,6 +3418,7 @@ static void timer_cb(int fd, short kind, void *userp)
        rather than a socket callback. Handle completion here too. */
     if(still_running <= 0) {
         debugf("TIMER: cm=%p ALL DONE - running finally\n", tinfo->cm);
+        pump_stop(tinfo);
         curl_multi_cleanup(tinfo->cm);
 
         //check for a finally callback
@@ -3358,40 +3464,9 @@ static void mevent_cb(int fd, short kind, void *socketp)
     debugf("CALLBACK: cm=%p end with %d running handles\n", tinfo->cm, running_handles);
     if(running_handles <= 0) {
         debugf("CALLBACK: cm=%p ALL DONE - running finally\n", tinfo->cm);
-        if(evtimer_pending(&(tinfo->ev), NULL)) {
-            evtimer_del(&(tinfo->ev));
-        }
-        curl_multi_cleanup(tinfo->cm);
-
-        //check for a finally callback
-        {
-            duk_context *ctx = tinfo->ctx;
-            duk_push_global_stash(ctx);
-            duk_push_sprintf(ctx, "curl_finally_%p", tinfo->cm);
-            duk_dup(ctx, -1);
-            // [ ..., stash, "curl_finally_%p", "curl_finally_%p" ]
-            if(duk_get_prop(ctx, -3) )
-            {
-                // [ ..., stash, "curl_finally_%p", "callback" ]
-                duk_pull(ctx, -2);
-                // [ ..., stash, "callback", "curl_finally_%p" ]
-                duk_del_prop(ctx, -3);
-                // [ ..., stash, "callback" ]
-                duk_call(ctx, 0);
-                // [ ..., stash, retval ]
-                duk_pop_2(ctx);
-                // [ ... ]
-            }
-            else
-            {
-                // [ ..., stash, "curl_finally_%p", undefined ]
-                duk_pop_3(ctx);
-            }
-        }
-
-        free(tinfo);
+        multi_all_done(tinfo);
+        return;
     }
-
 }
 
 static int handle_socket(CURL *easy, curl_socket_t sock, int action, void *userp, void *socketp)
@@ -3678,6 +3753,8 @@ static duk_ret_t duk_curl_fetch_sync_async(duk_context *ctx, int async)
     {
         CURLM *cm = curl_multi_init();
         int still_alive = 1;
+        TIMERINFO *tinfo = NULL;
+        int want_pump = 0;
 
         if (func_idx == -1)
         {
@@ -3686,14 +3763,16 @@ static duk_ret_t duk_curl_fetch_sync_async(duk_context *ctx, int async)
 
         if(async)
         {
-            TIMERINFO *tinfo = NULL;
             RPTHR *thr = get_current_thread();
 
             REMALLOC(tinfo, sizeof(TIMERINFO));
 
             tinfo->cm=cm;
             tinfo->ctx=ctx;
+            tinfo->have_pump=0;
             evtimer_assign(&(tinfo->ev), thr->base, timer_cb, tinfo);
+            /* EV_PERSIST: the pump re-arms itself until pump_stop() */
+            event_assign(&(tinfo->pump), thr->base, -1, EV_PERSIST, pump_cb, tinfo);
 
             curl_multi_setopt(cm, CURLMOPT_SOCKETFUNCTION, handle_socket);
             curl_multi_setopt(cm, CURLMOPT_SOCKETDATA, tinfo);
@@ -3733,6 +3812,8 @@ static duk_ret_t duk_curl_fetch_sync_async(duk_context *ctx, int async)
                 RP_THROW(ctx, "Failed to get new curl handle while getting %s", u);
 
             setup_xfer_callback(preq, ctx, options_idx);
+            if(preq->xferfuncptr)
+                want_pump = 1;
 
             curl_easy_setopt(preq->curl, CURLOPT_PRIVATE, preq);
             curl_multi_add_handle(cm, preq->curl);
@@ -3741,6 +3822,12 @@ static duk_ret_t duk_curl_fetch_sync_async(duk_context *ctx, int async)
         } /* while */
 
         if(async) {
+            /* only when something asked to be told: see TIMERINFO */
+            if(tinfo && want_pump) {
+                struct timeval pv = { 0, RP_XFER_PUMP_MS * 1000 };
+                tinfo->have_pump = 1;
+                event_add(&(tinfo->pump), &pv);
+            }
             push_finally_async(ctx, cm);
             return 1;
         }
@@ -3937,17 +4024,21 @@ static duk_ret_t duk_curl_submit_sync_async(duk_context *ctx, int async)
     //{
         CURLM *cm = curl_multi_init();
         int still_alive = 1;
+        TIMERINFO *tinfo = NULL;
+        int want_pump = 0;
 
         if(async)
         {
-            TIMERINFO *tinfo = NULL;
             RPTHR *thr = get_current_thread();
 
             REMALLOC(tinfo, sizeof(TIMERINFO));
 
             tinfo->cm=cm;
             tinfo->ctx=ctx;
+            tinfo->have_pump=0;
             evtimer_assign(&(tinfo->ev), thr->base, timer_cb, tinfo);
+            /* EV_PERSIST: the pump re-arms itself until pump_stop() */
+            event_assign(&(tinfo->pump), thr->base, -1, EV_PERSIST, pump_cb, tinfo);
 
             curl_multi_setopt(cm, CURLMOPT_SOCKETFUNCTION, handle_socket);
             curl_multi_setopt(cm, CURLMOPT_SOCKETDATA, tinfo);
@@ -4011,6 +4102,8 @@ static duk_ret_t duk_curl_submit_sync_async(duk_context *ctx, int async)
                 RP_THROW(ctx, "Failed to get new curl handle while getting %s", u);
 
             setup_xfer_callback(preq, ctx, opts_obj_idx);
+            if(preq->xferfuncptr)
+                want_pump = 1;
 
             curl_easy_setopt(preq->curl, CURLOPT_PRIVATE, preq);
             curl_multi_add_handle(cm, preq->curl);
@@ -4021,6 +4114,12 @@ static duk_ret_t duk_curl_submit_sync_async(duk_context *ctx, int async)
         } /* while */
 
         if(async) {
+            /* only when something asked to be told: see TIMERINFO */
+            if(tinfo && want_pump) {
+                struct timeval pv = { 0, RP_XFER_PUMP_MS * 1000 };
+                tinfo->have_pump = 1;
+                event_add(&(tinfo->pump), &pv);
+            }
             push_finally_async(ctx, cm);
             return 1;
         }
