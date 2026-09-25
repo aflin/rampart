@@ -2949,7 +2949,7 @@ static char *parent_py_call(PyObject * pModule, const char *fname)
     if( i<top) //we have arguments
     {
         PyObject **pPtrs = NULL, *kwdict=NULL;
-        int npPtrs=0;
+        int npPtrs=0, kw_kept=0;
 
         state = PYLOCK;
 
@@ -3012,14 +3012,16 @@ static char *parent_py_call(PyObject * pModule, const char *fname)
                 }
                 duk_pop_2(ctx);//enum, pykeyword value
 
-                duk_remove(ctx, i); // pykeyword object
+                /* keep it (and python objects only it references) alive until the call returns */
+                duk_pull(ctx, i);
+                kw_kept = 1;
                 break;// only do this once.
             }
             i++;
         }
 
         i=1;
-        top=duk_get_top(ctx);
+        top=duk_get_top(ctx) - kw_kept;
 
         pArgs = PyTuple_New((int)top); // one less because we are starting at index 1, one extra for kwdict, even if it is empty
 

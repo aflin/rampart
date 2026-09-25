@@ -200,6 +200,16 @@ function tests(inthr){
         return JSON.stringify(r) == JSON.stringify([30, 1030, 2030, 3030]);
     });
 
+    // an object created inline in pyArgs must stay alive until the call runs
+    testFeature(`python - ${inthr}inline python object in pyArgs stays alive`, function(){
+        var m = python.importString(
+            "dels = [0]\nclass Inner:\n    def __del__(self): dels[0] += 1\n" +
+            "class Outer:\n    def __init__(self, inner=None): self.seen = dels[0]; self.inner = inner\n" +
+            "def mk(): return Inner()\n");
+        var o = m.Outer({pyArgs: {inner: m.mk()}});
+        return o.seen.toValue() === 0;
+    });
+
     // Python.h is where sysconfig says (triton, C-extension builds)
     testFeature(`python - ${inthr}Python.h at sysconfig include path`, function(){
         var m = python.importString(
