@@ -1,3 +1,17 @@
+v0.7.2
+    -rampart-python         Python attributes are looked up only when used
+                            (much faster; transformers imports 10x faster).
+                            Subscripts (df.loc['x'], obj['key']), dunder
+                            methods and nested python objects now work from
+                            JavaScript.
+                            rampart.call: JS errors become python
+                            exceptions, and calls from python threads (and
+                            nested calls) are safe, including in threads.
+                            Fixed wrong values from tuple/list elements and
+                            python objects passed as arguments in
+                            rampart.thread, and rampart.call with no
+                            arguments.
+
 v0.7.1
     -rampart and installer
                             Docker builds for all.  langtools gpu build

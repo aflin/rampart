@@ -1063,6 +1063,40 @@ set(PYFLAGS "-I/usr/local/include -fPIC ${PYTHON_SAFE_C_FLAGS}")
 set(PYLDFLAGS "-L /usr/local/lib")
 set(PYPKG "")
 
+# static libffi for _ctypes (a system libffi.so pins a soname); macOS uses the SDK's
+if(NOT APPLE AND NOT CYGWIN)
+    set(LIBFFI_DIR_NAME "libffi-3.4.8")
+    set(LIBFFI_BIN_DIR "${PROJECT_BINARY_DIR}/extern/${LIBFFI_DIR_NAME}")
+    set(LIBFFI_PREFIX "${LIBFFI_BIN_DIR}/build")
+    set(LIBFFI_LIB "${LIBFFI_PREFIX}/lib/libffi.a")
+
+    add_custom_command(
+        OUTPUT ${LIBFFI_LIB}
+        COMMAND mkdir -p ${PROJECT_BINARY_DIR}/extern
+        COMMAND rm -rf ${LIBFFI_BIN_DIR}
+        COMMAND cp -a ${PROJECT_SOURCE_DIR}/extern/${LIBFFI_DIR_NAME} ${PROJECT_BINARY_DIR}/extern
+        COMMAND ${CMAKE_COMMAND} -E chdir ${LIBFFI_BIN_DIR}
+            env "CFLAGS=-O2 -fPIC ${PYTHON_SAFE_C_FLAGS}"
+            ./configure --disable-shared --enable-static --with-pic --disable-docs
+                        --disable-multi-os-directory --prefix=${LIBFFI_PREFIX}
+        COMMAND ${CMAKE_COMMAND} -E chdir ${LIBFFI_BIN_DIR} $(MAKE)
+        COMMAND ${CMAKE_COMMAND} -E chdir ${LIBFFI_BIN_DIR} $(MAKE) install
+    )
+    # rebuild python from extern/ if an existing build uses the system libffi
+    set(PY_CTYPES_GLOB "${PYTHON_BIN_DIR}/build/lib/python3.${PYTHON_MINOR}/lib-dynload/_ctypes.*.so")
+    add_custom_target(libffi_check
+        DEPENDS ${LIBFFI_LIB}
+        COMMAND bash -c "stale=; if [ -e ${PYTHON_BIN_DIR}/Makefile ] && ! grep -q '${LIBFFI_PREFIX}' ${PYTHON_BIN_DIR}/Makefile; then stale=1; fi; for f in ${PY_CTYPES_GLOB}; do if [ -e $f ] && grep -qa 'libffi[.]so[.]' $f; then stale=1; fi; done; if [ -n \"$stale\" ]; then echo 'Python build predates vendored libffi -- rebuilding python from extern/'; rm -rf ${PYTHON_BIN_DIR} && cp -a ${PROJECT_SOURCE_DIR}/extern/${PYTHON_DIR_NAME} ${PROJECT_BINARY_DIR}/extern; fi"
+        VERBATIM
+    )
+    add_dependencies(libffi_check cp_python)
+
+    # ours first, so -lffi finds only libffi.a
+    set(PYFLAGS "-I${LIBFFI_PREFIX}/include ${PYFLAGS}")
+    set(PYLDFLAGS "-L${LIBFFI_PREFIX}/lib ${PYLDFLAGS}")
+    set(PYPKG "${LIBFFI_PREFIX}/lib/pkgconfig")
+endif()
+
 # 32-bit ARM (Raspberry Pi, etc): GCC doesn't auto-link libatomic for
 # 8-byte atomic intrinsics like __atomic_fetch_sub_8 that Python's
 # _hashlib / _ssl etc. pull in transitively.  Without -latomic, those
@@ -1164,7 +1198,13 @@ add_custom_target(libpython
     DEPENDS ${PYTHON_BIN_DIR}/libpython3.${PYTHON_MINOR}.a
     COMMAND bash -c "rm -rf ${PROJECT_BINARY_DIR}/src/python3-lib"
     COMMAND bash -c "ln -s ${PYTHON_BIN_DIR}/build/lib/python3.${PYTHON_MINOR} ${PROJECT_BINARY_DIR}/src/python3-lib"
+    # PYTHONHOME prefix, like the installed modules/python
+    COMMAND bash -c "rm -rf ${PROJECT_BINARY_DIR}/src/python"
+    COMMAND bash -c "ln -s ${PYTHON_BIN_DIR}/build ${PROJECT_BINARY_DIR}/src/python"
 )
+if(TARGET libffi_check)
+    add_dependencies(libpython libffi_check)
+endif()
 
 add_library(rampart-python SHARED
     duktape/modules/rampart-python.c
@@ -1919,7 +1959,7 @@ install(CODE "execute_process( \
         echo 'Python install is up to date -- skipping copy'; \
     else \
         echo 'Copying Python installation...'; \
-        cp -a '${PYTHON_BIN_DIR}/build/bin' '${PYTHON_BIN_DIR}/build/lib' \
+        cp -a '${PYTHON_BIN_DIR}/build/bin' '${PYTHON_BIN_DIR}/build/lib' '${PYTHON_BIN_DIR}/build/include' \
             '${CMAKE_INSTALL_PREFIX}/modules/python/'; \
         bash '${CMAKE_INSTALL_PREFIX}/modules/python/rebase-python.sh'; \
     fi \

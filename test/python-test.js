@@ -74,6 +74,16 @@ function sqlite_insert() {
 
 var thr=new rampart.thread();
 
+// global: called from python via rampart.call
+function pyt_boom(x) { throw new Error("pyt boom " + x); }
+function pyt_double(x) { return x * 2; }
+function pyt_give_third() { return globalThis.pyt_third; }   // set by the test
+function pyt_inner(i) { return i * 10; }
+function pyt_outer(i) {   // calls python, whose pool calls pyt_inner
+    var r = globalThis.pyt_nest_mod.pool('pyt_inner', 3).toValue();
+    return i * 1000 + r[0] + r[1] + r[2];
+}
+
 function tests(inthr){
 
     testFeature(`python - ${inthr}import pathlib and resolve './'`, function(){
@@ -92,7 +102,112 @@ function tests(inthr){
         return res.toValue() == crypto.sha256('hello');
     });
 
-    var iscript = 
+    // _ctypes must load on any distro (libffi is statically linked)
+    testFeature(`python - ${inthr}import ctypes and call libc strlen`, function(){
+        var m = python.importString(
+            "import ctypes\ndef slen(s):\n    return ctypes.CDLL(None).strlen(s.encode())\n");
+        return m.slen("hello").toValue() == 5;
+    });
+
+    // dunder methods, obj['key'] on non-dicts, and tuple/list element refcounts
+    testFeature(`python - ${inthr}__getitem__/__len__ and subscripts on objects`, function(){
+        var m = python.importString(
+            "class C:\n    def __getitem__(self, k): return 'item:' + str(k)\n    def __len__(self): return 7\n" +
+            "def make(): return C()\ndef tup(): return ('a' * 50, 'b' * 50)\n");
+        var c = m.make();
+        if (c.__getitem__('x').toValue() != 'item:x' || c.__len__().toValue() != 7 ||
+            c['y'].toValue() != 'item:y' || c[3].toValue() != 'item:3')
+            return false;
+        var tp = m.tup();
+        for (var i = 0; i < 1000; i++) { var e = tp[i % 2]; e = null; if (i % 100 == 0) Duktape.gc(); }
+        Duktape.gc();
+        return tp[0].toValue() + tp[1].toValue() == 'a'.repeat(50) + 'b'.repeat(50);
+    });
+
+    // rampart.call: JS errors, concurrent callers, late background thread
+    testFeature(`python - ${inthr}rampart.call throws, concurrency, background`, function(){
+        var m = python.importString(
+            "import rampart, threading, time\nfrom concurrent.futures import ThreadPoolExecutor\n" +
+            "def call(f, x):\n    try:\n        return ['ok', rampart.call(f, x)]\n    except Exception as e:\n        return ['raised', str(e)]\n" +
+            "def many(f, n):\n    with ThreadPoolExecutor(8) as ex:\n        return list(ex.map(lambda i: call(f, i), range(int(n))))\n" +
+            "bg = {}\n" +
+            "def start_bg(f):\n    def run():\n        time.sleep(0.1)\n        bg['r'] = call(f, 'late')\n    bg['t'] = threading.Thread(target=run)\n    bg['t'].start()\n" +
+            "def bg_result():\n    bg['t'].join()\n    return bg['r']\n");
+        var r = m.call('pyt_boom', 1).toValue();
+        if (r[0] != 'raised' || !/pyt boom 1/.test(r[1])) return false;
+        var many = m.many('pyt_double', 40).toValue();
+        for (var i = 0; i < 40; i++) if (many[i][0] != 'ok' || many[i][1] != i * 2) return false;
+        m.start_bg('pyt_double');
+        var until = Date.now() + 300; while (Date.now() < until) {}
+        r = m.bg_result().toValue();
+        return r[0] == 'raised' && /not waiting on python/.test(r[1]);
+    });
+
+    // nested python objects, zero-arg rampart.call, JS returning a python object
+    testFeature(`python - ${inthr}nested python objects and zero-arg rampart.call`, function(){
+        var m = python.importString(
+            "import fractions, rampart\ndef mk(n): return fractions.Fraction(1, int(n))\n" +
+            "def total(*a, items=()): return str(sum(a, fractions.Fraction(0)) + sum(items, fractions.Fraction(0)))\n" +
+            "def deep(d): return str(d['a'][0] + d['a'][1]['b'])\n" +
+            "def via_js(): return str(rampart.call('pyt_give_third') + 0)\n");
+        var a = m.mk(2), b = m.mk(3);
+        globalThis.pyt_third = b;
+        for (var i = 0; i < 500; i++) { m.total(a, b); if (i % 100 == 0) Duktape.gc(); }
+        return m.total(a, b, {pyArgs:{items:[a, b]}}).toValue() == '5/3' &&
+               m.deep({a:[a, {b:b}]}).toValue() == '5/6' &&
+               m.via_js().toValue() == '1/3';
+    });
+
+    // callable python objects: subscripts, calls, method attributes (df.loc['x'])
+    testFeature(`python - ${inthr}callable objects: subscript, call, method attrs`, function(){
+        var m = python.importString(
+            "class Ix:\n    def __call__(self, x): return 'called:' + str(x)\n    def __getitem__(self, k): return 'row:' + str(k)\n" +
+            "class F:\n    def __init__(self): self.loc = Ix()\n    def describe(self): return 'd'\n" +
+            "def make(): return F()\n");
+        var f = m.make();
+        return typeof f.loc == 'function' && f.loc['mean'].toValue() == 'row:mean' &&
+               f.loc[2].toValue() == 'row:2' && f.loc('x').toValue() == 'called:x' &&
+               f.describe.__name__.toValue() == 'describe' && f.describe().toValue() == 'd' &&
+               m.make.__name__.toValue() == 'make';
+    });
+
+    // lazy lookup: no reads on wrap, fresh values, python names win, cached callables
+    testFeature(`python - ${inthr}lazy attribute lookup semantics`, function(){
+        var m = python.importString(
+            "hits = [0]\n" +
+            "class C:\n    def __init__(self): self.v = 1\n" +
+            "    @property\n    def watched(self):\n        hits[0] += 1\n        return hits[0]\n" +
+            "    def bump(self): self.v += 1\n" +
+            "class F:\n    name = 'pyname'\n    def __call__(self): return 'called'\n    def apply(self, x): return 'py-apply:' + str(x)\n" +
+            "def make(): return C()\ndef makef(): return F()\ndef nhits(): return hits[0]\n");
+        var c = m.make(), f = m.makef();
+        if (m.nhits().toValue() !== 0) return false;              // wrapping read nothing
+        if (c.watched.toValue() !== 1 || m.nhits().toValue() !== 1) return false;
+        c.bump(); c.bump();
+        if (c.v.toValue() !== 3) return false;                    // fresh value
+        if (c.bump !== c.bump) return false;                      // cached callable
+        return f() .toValue() == 'called' && f.apply('x').toValue() == 'py-apply:x' &&
+               f.name.toValue() == 'pyname' && typeof f.call == 'function';
+    });
+
+    // nested callbacks through python thread pools (used to deadlock)
+    testFeature(`python - ${inthr}nested rampart.call with thread pools`, function(){
+        var m = python.importString(
+            "import rampart\nfrom concurrent.futures import ThreadPoolExecutor\n" +
+            "def pool(f, n):\n    with ThreadPoolExecutor(4) as ex:\n        return list(ex.map(lambda i: rampart.call(f, i), range(int(n))))\n");
+        globalThis.pyt_nest_mod = m;
+        var r = m.pool('pyt_outer', 4).toValue();
+        return JSON.stringify(r) == JSON.stringify([30, 1030, 2030, 3030]);
+    });
+
+    // Python.h is where sysconfig says (triton, C-extension builds)
+    testFeature(`python - ${inthr}Python.h at sysconfig include path`, function(){
+        var m = python.importString(
+            "import os, sysconfig\ndef hdr():\n    return os.path.exists(os.path.join(sysconfig.get_paths()['include'], 'Python.h'))\n");
+        return m.hdr().toValue() === true;
+    });
+
+    var iscript =
 `def retself(s):
     return s
 

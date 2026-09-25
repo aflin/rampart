@@ -4,7 +4,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")" ;
 
 CURDIR=$(pwd -P)
 
-cd - 2&>1 1>/dev/null
+cd - >/dev/null 2>&1
 
 CURPY="$CURDIR/bin/python3"
 
