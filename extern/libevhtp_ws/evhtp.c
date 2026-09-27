@@ -987,6 +987,9 @@ htp__callback_find_(evhtp_callbacks_t * cbs,
                         onig_region_free(region, 1);
                         return callback;
                     }
+                    /* no match: the region was leaked on every request
+                       that passed a regex callback without matching it */
+                    onig_region_free(region, 1);
                 }
                 break;
 #endif
@@ -2756,7 +2759,9 @@ htp__connection_writecb_(struct bufferevent * bev, void * arg)
     if (!(conn->flags & EVHTP_CONN_FLAG_OWNER)) {
         log_debug("EVHTP_CONN_FLAG_OWNER not set, removing contexts");
 
-        if (req->ws_parser)
+        /* req can be NULL here: a finished keep-alive request is freed and
+           conn->request cleared, and any later write flush lands here */
+        if (req && req->ws_parser)
         {
             evhtp_ws_parser * p = req->ws_parser;
             if(p->pingev)
@@ -2772,7 +2777,7 @@ htp__connection_writecb_(struct bufferevent * bev, void * arg)
     }
 
     /* websockets: check for disconnect request -deferred */
-    if(req->websock && req->disconnect && req->flags & EVHTP_REQ_FLAG_WS_DIS_DEFER)
+    if(req && req->websock && req->disconnect && req->flags & EVHTP_REQ_FLAG_WS_DIS_DEFER)
     {
         evhtp_ws_do_disconnect(req);
         return;
