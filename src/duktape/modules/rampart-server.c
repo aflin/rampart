@@ -98,6 +98,17 @@ volatile int gl_threadno = 0;
 int rampart_server_started=0;
 int developer_mode=0;
 __thread int thread_local_server_thread_num=0;
+
+/* Set on threads that have no Duktape context of their own (proxy-only
+   threads).  They never call set_thread_num, so get_current_thread()
+   there resolves to the MAIN thread -- running JS on it would use
+   another thread's heap. */
+__thread int thread_local_no_js=0;
+
+/* Depth guard for the error handlers.  A notFound/500 handler that throws
+   sends another 500, which runs the handler again -- unbounded recursion
+   until the stack ran out.  Nonzero means we are already inside one. */
+__thread int thread_local_in_err_handler=0;
 //extern duk_context **thread_ctx;
 
 RPTHR **server_thread=NULL;
@@ -229,6 +240,13 @@ static void sendresp(evhtp_request_t *request, evhtp_res code, int chunked);
 #error "RP_RATELIMIT_BUCKETS must be a power of 2"
 #endif
 
+/* Cap on tracked keys per bucket.  Keys that never repeat (per-cookie or
+   per-User-Agent limits) would otherwise accumulate forever, since an
+   entry is only reclaimed when its own key comes back. */
+#ifndef RP_RATELIMIT_MAX_PER_BUCKET
+#define RP_RATELIMIT_MAX_PER_BUCKET 512
+#endif
+
 #define RL_KEY_IP          0
 #define RL_KEY_FINGERPRINT 1
 #define RL_KEY_COOKIE      2
@@ -356,8 +374,8 @@ static int rl_check_one(const char *key, rl_rule *rule, double now_time)
 {
     unsigned int bucket_idx = rl_hash(key) & (RP_RATELIMIT_BUCKETS - 1);
     double refill_rate = (double)rule->rate / (double)rule->window;
-    rl_entry *e, **prev;
-    int allowed = 1;
+    rl_entry *e, **prev, *oldest = NULL;
+    int allowed = 1, nentries = 0;
 
     pthread_mutex_lock(&rl_locks[bucket_idx]);
 
@@ -367,14 +385,49 @@ static int rl_check_one(const char *key, rl_rule *rule, double now_time)
     {
         if (strcmp(e->key, key) == 0)
             break;
+        /* remember the stalest entry in case the bucket is full */
+        if (!oldest || e->last_time < oldest->last_time)
+            oldest = e;
+        nentries++;
         prev = &e->next;
         e = e->next;
     }
 
     if (!e)
     {
+        /* Entries live until the same key returns after 2*window, so keys
+           that never repeat (per-cookie, per-User-Agent) grew without
+           bound.  Cap the bucket and recycle its stalest entry. */
+        if (nentries >= RP_RATELIMIT_MAX_PER_BUCKET && oldest)
+        {
+            char *nk = strdup(key);
+
+            if (!nk)              /* out of memory: fail open */
+            {
+                pthread_mutex_unlock(&rl_locks[bucket_idx]);
+                return 1;
+            }
+            free(oldest->key);
+            oldest->key = nk;
+            e = oldest;
+            e->tokens = (double)rule->rate - 1.0;
+            e->last_time = now_time;
+            pthread_mutex_unlock(&rl_locks[bucket_idx]);
+            return 1;
+        }
         e = malloc(sizeof(rl_entry));
+        if (!e)                   /* out of memory: fail open */
+        {
+            pthread_mutex_unlock(&rl_locks[bucket_idx]);
+            return 1;
+        }
         e->key = strdup(key);
+        if (!e->key)
+        {
+            free(e);
+            pthread_mutex_unlock(&rl_locks[bucket_idx]);
+            return 1;
+        }
         e->tokens = (double)rule->rate - 1.0;
         e->last_time = now_time;
         e->next = rl_buckets[bucket_idx];
@@ -441,8 +494,15 @@ static int rl_check(evhtp_request_t *req)
 
         /* build key with rule path prefix */
         {
+            /* snprintf returns what it WOULD have written, so a long
+               configured path made plen exceed the buffer: the offset
+               ran past keybuf and the remaining size underflowed. */
             int plen = snprintf(keybuf, sizeof(keybuf), "%s|", rule->path);
-            rl_build_key(req, rule, keybuf + plen, sizeof(keybuf) - plen);
+            if (plen < 0)
+                plen = 0;
+            if ((size_t)plen >= sizeof(keybuf) - 1)
+                plen = (int)sizeof(keybuf) - 2;
+            rl_build_key(req, rule, keybuf + plen, sizeof(keybuf) - (size_t)plen);
         }
 
         if (!rl_check_one(keybuf, rule, now_time))
@@ -859,7 +919,10 @@ static void writelog(evhtp_request_t *req, int code)
     if( !(ua=evhtp_kv_find(req->headers_in,"User-Agent")) )
         ua="-";
 
-    if(rp_have_log_func)
+    /* A proxy-only thread has no ctx of its own, and get_current_thread()
+       would hand back the main thread's -- running the log function there
+       would use another thread's heap concurrently. */
+    if(rp_have_log_func && !thread_local_no_js)
     {
         RPTHR *thr = get_current_thread();
         duk_context *ctx = thr->ctx;
@@ -981,212 +1044,172 @@ static int putheaders(evhtp_kv_t *kv, void *arg)
     return 0;
 }
 
+/* One multipart part-header line, e.g.
+     Content-Disposition: form-data; name="x"; filename="y"\r\n
+   -> {"Content-Disposition":"form-data", name:"x", filename:"y"}.
+   All scans are bounded by the line; malformed lines are ignored. */
 void parseheadline(duk_context *ctx, char *line, size_t linesz)
 {
-    char *p=line,*e,*prop;
-    size_t sz,rem=linesz,propsz;
+    char *end=line+linesz, *p, *e, *prop;
+    size_t propsz;
 
-    e=(char*)memmem(p,rem,":",1);
+    while(end>line && (end[-1]=='\r' || end[-1]=='\n'))
+        end--;
 
-    sz=e-line;
-    prop=p;
-    propsz=sz;
-//    printf("'%.*s'=",sz,p);
+    e=(char*)memchr(line, ':', (size_t)(end-line));
+    if(!e)
+        return;
+    prop=line;
+    propsz=(size_t)(e-line);
 
-    p=e;
-    p++;rem--;
-    if( rem>0 && isspace(*p) ) p++,rem--;
-
-    while(rem>0 && *e!=';' && *e!='\r' && *e!='\n')
-        e++,rem--;
-    sz=e-p;
-    //printf("'%.*s'\n",sz,p);
-    duk_push_lstring(ctx,p,(duk_size_t)sz);
+    p=e+1;
+    if(p<end && isspace((unsigned char)*p))
+        p++;
+    e=p;
+    while(e<end && *e!=';')
+        e++;
+    duk_push_lstring(ctx,p,(duk_size_t)(e-p));
     duk_put_prop_lstring(ctx,-2,prop,(duk_size_t)propsz);
 
-    if(*e=='\r' || *e=='\n')
-        return;
-
-    p=e;
-    while( rem>0 && isspace(*p) ) p++,rem--;
-    if(*p!=';' || !rem)
-        return;
-    p++;rem--;
-    while( rem>0 && isspace(*p) ) p++,rem--;
-
     // get extra attributes after ';'
-    while(rem>0)
+    p=e;
+    while(p<end && *p==';')
     {
-        e=p;
+        p++;
+        while(p<end && isspace((unsigned char)*p)) p++;
+        if(p>=end)
+            return;
 
-        if (rem)
-            e++,rem--;
+        e=p+1;
+        while(e<end && *e!='=')
+            e++;
+        if(e>=end)
+            return;
+        prop=p;
+        propsz=(size_t)(e-p);
 
-        while(rem>0 && *e!='=')
-            e++,rem--;
-
-        if(*e=='=')
+        p=e+1;
+        if(p>=end)
         {
-            sz=e-p;
-            prop=p;
-            propsz=sz;
-            //printf("'%.*s'=",(int)sz,p);
-        }
-        else return;
-
-        e++;rem--;
-        p=e;
-
-        if(rem)
-        {
-            if(*p=='"')
-            {
-                p++;rem--;
-                e=p;
-                while(rem>0 && *e!='"')
-                    e++,rem--;
-                if(*e=='"')
-                {
-                    sz=e-p;
-                    //printf("'%.*s'\n",(int)sz,p);
-                    duk_push_lstring(ctx,p,(duk_size_t)sz);
-                    duk_put_prop_lstring(ctx,-2,prop,(duk_size_t)propsz);
-                }
-                e++;rem--;
-            }
-            else
-            {
-                 e=p;
-                 while(rem>0 && !isspace(*e) ) e++,rem--;
-                 sz=e-p;
-                 //printf("'%.*s'\n",(int)sz,p);
-                 duk_push_lstring(ctx,p,(duk_size_t)sz);
-                 duk_put_prop_lstring(ctx,-2,prop,(duk_size_t)propsz);
-            }
-        }
-        else
-        {
-            //printf("''\n");
             duk_push_string(ctx,"");
             duk_put_prop_lstring(ctx,-2,prop,(duk_size_t)propsz);
             return;
         }
+        if(*p=='"')
+        {
+            p++;
+            e=p;
+            while(e<end && *e!='"')
+                e++;
+            if(e>=end)
+                return; // unterminated quote
+            duk_push_lstring(ctx,p,(duk_size_t)(e-p));
+            duk_put_prop_lstring(ctx,-2,prop,(duk_size_t)propsz);
+            e++;
+        }
+        else
+        {
+            e=p;
+            while(e<end && !isspace((unsigned char)*e))
+                e++;
+            duk_push_lstring(ctx,p,(duk_size_t)(e-p));
+            duk_put_prop_lstring(ctx,-2,prop,(duk_size_t)propsz);
+        }
 
         p=e;
-        while( rem>0 && isspace(*p) ) p++,rem--;
-        if(*p!=';' || !rem)
-            return;
-        p++;rem--;
-        while( rem>0 && isspace(*p) ) p++,rem--;
+        while(p<end && isspace((unsigned char)*p)) p++;
     }
-
 }
-
 
 void parsehead(duk_context *ctx,void *head, size_t headsz)
 {
-    size_t remaining=headsz;
-    char * line=(char *)head;
-    char * eol = (char*) memmem(line,remaining,"\r\n",2) + 2;
+    char *line=(char *)head, *end=line+headsz;
 
-    while(eol)
+    while(line<end)
     {
-        size_t lsz=eol-line;
+        char *eol=(char*)memmem(line,(size_t)(end-line),"\r\n",2);
 
-        //printf("LINE='%.*s'\n",(int)lsz,line);
-        parseheadline(ctx,line,lsz);
-        remaining=headsz-(eol-(char*)head);
-        line = eol;
-
-        if(remaining)
-            eol=(char*) memmem(line,remaining,"\r\n",2)+2;
-        else
+        if(!eol)
+        {
+            parseheadline(ctx,line,(size_t)(end-line));
             break;
+        }
+        parseheadline(ctx,line,(size_t)(eol+2-line));
+        line=eol+2;
     }
-
-
 }
 
+/* Parse a multipart body into [ {name:..., filename:..., content:Buffer}, ... ].
+   content is an external buffer pointing into buf.  Every read is bounded by
+   buf+bsz; a part without a blank line ending its headers is skipped. */
 void push_multipart(duk_context *ctx, char *bound, void *buf, duk_size_t bsz)
 {
-    size_t remaining=(size_t)bsz, bound_sz=strlen(bound);
-    void *b=buf;
-    //int i=0;
-    //const char *name=NULL;
+    char *start=(char*)buf, *end=start+bsz, *b;
+    size_t bound_sz=strlen(bound);
 
-    b=memmem(b,remaining,bound,bound_sz);
+    if(!bound_sz)
+        return;
+
+    b=(char*)memmem(start,(size_t)bsz,bound,bound_sz);
     while (b)
     {
+        char *begin, *next, *headend, *n;
+        size_t sz;
+
         b+=bound_sz;
-        if (remaining>3)
-        {
-            void *begin;
-            size_t sz;
-
-            if(strncmp(b,"\r\n",2)==0)
-            {
-                //printf("got beginning\n");
-                begin=b+2;
-                remaining=bsz-(b-buf);
-            }
-            else if (strncmp(b,"--\r\n",4)==0)
-            {
-                //printf("done\n");
-                break;
-            }
-            else
-            {
-                //printf("bad data!\n");
-                break;
-            }
-            b=memmem(begin,remaining,bound,bound_sz);
-            if(b)
-            {
-                void *n=b-1;
-                void *headend=memmem(begin,remaining,"\r\n\r\n",4);
-                size_t headsz;
-                //void *pushbuf;
-
-                if(headend)
-                {
-                    duk_push_object(ctx);
-                    headsz=2+headend-begin;
-                    //printf("head=%.*s\n",headsz,begin);
-                    parsehead(ctx,begin,headsz);
-                    begin=headend+4;
-                }
-                else
-                    break;
-
-                if(*((char*)n)=='-')n--;//end delim is "--"+bound
-                if(*((char*)n)=='-')n--;
-                if(*((char*)n)=='\n')n--;
-                if(*((char*)n)=='\r')n--;
-                /* SECURITY: a degenerate/empty part can walk n back past begin;
-                   clamp so sz doesn't underflow the duk_size_t (huge buffer). */
-                if((char*)n < (char*)begin)
-                    sz = 0;
-                else
-                    sz=(n-begin)+1;
-                /* share the memory, and the love */
-                duk_push_external_buffer(ctx);
-                duk_config_buffer(ctx, -1, begin, sz);
-                duk_put_prop_string(ctx,-2,"content");
-                duk_put_prop_index(ctx,-2, (duk_uarridx_t)duk_get_length(ctx, -2));
-            }
-        }
+        /* "--bound\r\n" starts a part; "--bound--" (or anything else) ends */
+        if(end-b >= 2 && b[0]=='\r' && b[1]=='\n')
+            begin=b+2;
         else
             break;
+
+        next=(char*)memmem(begin,(size_t)(end-begin),bound,bound_sz);
+        if(!next)
+            break;
+
+        headend=(char*)memmem(begin,(size_t)(next-begin),"\r\n\r\n",4);
+        if(!headend)
+        {
+            b=next;
+            continue;
+        }
+
+        duk_push_object(ctx);
+        parsehead(ctx,begin,(size_t)(headend+2-begin));
+        begin=headend+4;
+
+        /* the part ends before "\r\n--" + bound */
+        n=next-1;
+        if(n>=begin && *n=='-')n--;//end delim is "--"+bound
+        if(n>=begin && *n=='-')n--;
+        if(n>=begin && *n=='\n')n--;
+        if(n>=begin && *n=='\r')n--;
+        sz = (n>=begin) ? (size_t)(n-begin)+1 : 0;
+
+        /* share the memory, and the love */
+        duk_push_external_buffer(ctx);
+        duk_config_buffer(ctx, -1, begin, sz);
+        duk_put_prop_string(ctx,-2,"content");
+        duk_put_prop_index(ctx,-2, (duk_uarridx_t)duk_get_length(ctx, -2));
+
+        b=next;
     }
 }
 
 static void copy_post_vars(duk_context *ctx)
 {
+    int is_multipart=0;
+
     if (!duk_get_prop_string(ctx, -1, "postData"))
     {
         duk_pop(ctx);
         return;
     }
+
+    /* content is an array for multipart, but also for a JSON array body */
+    if(duk_get_prop_string(ctx, -1, "Content-Type") && duk_is_string(ctx, -1))
+        is_multipart = !strcmp(duk_get_string(ctx, -1), "multipart/form-data");
+    duk_pop(ctx);
 
     if( !duk_get_prop_string(ctx, -1, "content") )
     {
@@ -1196,7 +1219,7 @@ static void copy_post_vars(duk_context *ctx)
     duk_remove(ctx, -2); /* discard postData ref, content is on top */
 
     /* multipart data */
-    if(duk_is_array(ctx, -1))
+    if(is_multipart && duk_is_array(ctx, -1))
     {
         duk_uarridx_t len, i=0;
         char *name=NULL;
@@ -1218,12 +1241,18 @@ static void copy_post_vars(duk_context *ctx)
             }
             duk_pop(ctx);
 
+            /* a part without a name (no Content-Disposition name=) is skipped */
             duk_get_prop_string(ctx, -1, "name");
             name=(char*)duk_get_string(ctx, -1);
             duk_pop(ctx);
+            if(!name)
+            {
+                duk_pop(ctx); // content_member_obj
+                continue;
+            }
 
             namelen=strlen(name);
-            if( *(name + namelen -1) == ']')
+            if( namelen > 1 && *(name + namelen -1) == ']')
             {
                 int doobj=0;
                 // look for Content-Disposition: form-data; name="upload[]" style naming
@@ -1234,15 +1263,16 @@ static void copy_post_vars(duk_context *ctx)
                     *(name + namelen -2) = '\0';
                     doobj=1;
                 }
-                else
+                else if (namelen > 3)
                 {
                     //look for Content-Disposition: form-data; name="upload[somename]" style naming.
                     //TODO: test this.
                     char *p;
-                    
+
                     freename=strdup(name);
-                    p = freename + namelen - 3; //require at least one char between []
-                    while(p!=freename+1 && *p!='[')
+                    /* require at least one char between [] and one before [ */
+                    p = freename + namelen - 3;
+                    while(p > freename+1 && *p!='[')
                         p--;
                     if(*p == '[')
                     {
@@ -1628,6 +1658,10 @@ evhtp_hook ws_dis_cb(evhtp_connection_t * conn, short events, void * arg)
     duk_context *ctx = info->ctx;
     double ws_id = (double)info->ws_id;
 
+    /* Drop the hook before freeing info: the connection survives this
+       callback, and a second event would re-enter with freed info. */
+    if(conn)
+        evhtp_connection_unset_hook(conn, evhtp_hook_on_event);
     free(info);
     duk_push_global_stash(ctx);
 
@@ -2123,7 +2157,8 @@ static int push_req_vars(DHS *dhs)
     /* examine headers for cookies */
     if(duk_get_prop_string(ctx, -1, "Cookie"))
     {
-        const char *c=duk_get_string(ctx,-1), *cend=c,*k=NULL,*v=NULL;
+        /* default "" : a non-string here would otherwise be a NULL deref */
+        const char *c=duk_get_string_default(ctx,-1,""), *cend=c,*k=NULL,*v=NULL;
         int klen=0,vlen=0,inval=0;
 
         duk_pop(ctx);
@@ -2173,7 +2208,7 @@ static int push_req_vars(DHS *dhs)
     /* examine headers for content-type */
     if(duk_get_prop_string(ctx, -1, "Content-Type"))
     {
-        ct=duk_get_string(ctx,-1);
+        ct=duk_get_string_default(ctx,-1,"");
         duk_pop(ctx);
         /* done with headers, move off stack into req. */
         duk_put_prop_string(ctx, -2, "headers");
@@ -2308,10 +2343,12 @@ static void send404(evhtp_request_t *req)
         writelog(req, 404);
         return;
     }
-    if (dhs404)
+    if (dhs404 && !thread_local_in_err_handler)
     {
         dhs404->skip_wrap=1;
+        thread_local_in_err_handler++;
         http_callback(req, (void *) dhs404);
+        thread_local_in_err_handler--;
         return;
     }
     evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Type", "text/html", 0, 0));
@@ -2336,6 +2373,16 @@ static void send500(evhtp_request_t *req, char *msg)
         evbuffer_add_printf(req->buffer_out, msg500, msg);
         sendresp(req, 500, 0);
     }
+    else if(thread_local_in_err_handler)
+    {
+        /* the error handler itself failed: answer plainly rather than
+           calling it again */
+        evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Type", "text/html", 0, 0));
+        evbuffer_add_printf(req->buffer_out, "%s",
+            "<html><head><title>500 Internal Server Error</title></head>"
+            "<body><h1>Internal Server Error</h1></body></html>");
+        sendresp(req, 500, 0);
+    }
     else if(dhs404)
     {
         char *s=NULL;
@@ -2351,7 +2398,9 @@ static void send500(evhtp_request_t *req, char *msg)
         strcat(s, msg);
         newdhs.aux=s;
         newdhs.skip_wrap=1;
+        thread_local_in_err_handler++;
         http_callback(req, &newdhs);
+        thread_local_in_err_handler--;
         free(s);
         dhs404->aux=NULL;
     }
@@ -2422,7 +2471,14 @@ static int rp_evbuffer_add_file(evhtp_request_t *req, int fd, ev_off_t offset, e
        defensible compromise across hardware generations. Override
        with RAMPART_SENDFILE_THRESHOLD env var (bytes) for per-host
        tuning; read once at module load. See benchmarks.md §1.1. */
-    if (req->conn->ssl == NULL && (length - offset) >= sendfile_threshold) {
+    /* length is a byte count (not an end offset) */
+    if (length < 0)
+    {
+        close(fd);
+        return -1;
+    }
+
+    if (req->conn->ssl == NULL && length >= sendfile_threshold) {
         evbuffer_set_flags(outbuf, EVBUFFER_FLAG_DRAINS_TO_FD);
         return evbuffer_add_file(outbuf, fd, offset, length);
     }
@@ -2431,7 +2487,7 @@ static int rp_evbuffer_add_file(evhtp_request_t *req, int fd, ev_off_t offset, e
        regardless (avoids putting gigabytes in memory). The 5 MB cutoff
        is unreachable on the non-SSL path since SENDFILE_THRESHOLD is
        smaller; it applies only to the SSL path. */
-    if (length - offset > 5242880)
+    if (length > 5242880)
         return evbuffer_add_file(outbuf, fd, offset, length);
 
     {
@@ -2447,17 +2503,25 @@ static int rp_evbuffer_add_file(evhtp_request_t *req, int fd, ev_off_t offset, e
             }
         }
 
-        REMALLOC(buf, length);
+        REMALLOC(buf, length ? length : 1);
 
-        while ((nbytes = read(fd, buf + off, length - off)) != 0)
+        while (off < (size_t)length)
         {
-            off += nbytes;
+            nbytes = read(fd, buf + off, (size_t)length - off);
+            if (nbytes == -1 && errno == EINTR)
+                continue;
+            if (nbytes <= 0)
+                break;
+            off += (size_t)nbytes;
         }
         close(fd);
         if (nbytes == -1) {
             free(buf);
             return -1;
         }
+        /* file shrank under us: pad rather than send stale heap bytes */
+        if (off < (size_t)length)
+            memset(buf + off, 0, (size_t)length - off);
         /* Hand buf to libevent as a referenced chain instead of
            evbuffer_add (which would memcpy length bytes into a fresh
            evbuffer chain). frefcb frees buf when the chain drains.
@@ -2730,7 +2794,7 @@ static int rp_sendfile_zip(evhtp_request_t *req, char *fn, int haveCT, uint16_t 
     {
         char *eptr;
         ev_off_t bv = (ev_off_t)strtoll(range + 6, &eptr, 10);
-        if (eptr != range + 6)
+        if (eptr != range + 6 && *eptr == '-')
         {
             ev_off_t endval = (ev_off_t)zlen - 1;
             if (bv < 0 || bv >= (ev_off_t)zlen)
@@ -2796,7 +2860,12 @@ static void rp_sendfile(evhtp_request_t *req, char *fn, int haveCT, struct stat 
     const char *range = NULL, *accept=NULL;
     mode_t mode;
     char *ext=NULL;
-    char gzipfile[ strlen(fn) + strlen(cachedir) + 4 ];
+    /* beginFunc may replace fn with a longer req.fsPath below, so gzipfile
+       must be big enough for either the incoming fn or a full-length
+       fsPath -- it used to be sized from the incoming fn alone. */
+    char fsbuf[PATH_MAX];
+    char gzipfile[ (strlen(fn) > (size_t)PATH_MAX ? strlen(fn) : (size_t)PATH_MAX)
+                   + strlen(cachedir) + 4 ];
     char *p, slen[64];
     DHS *dhs_beginfunc=NULL;
 
@@ -2851,9 +2920,24 @@ static void rp_sendfile(evhtp_request_t *req, char *fn, int haveCT, struct stat 
         }
         // use req.fsPath, which might have been reset in beginFunc.
         duk_get_prop_string(ctx, req_idx, "fsPath");
-        fn = (char *) duk_get_string(ctx, -1);
+        {
+            /* Copy it: RP_EMPTY_STACK below drops the last reference to
+               the duktape string, so using the pointer afterwards was a
+               use-after-free (and a NULL deref if fsPath wasn't a string). */
+            const char *newfn = duk_get_string_default(ctx, -1, "");
+            size_t nl = strlen(newfn);
+
+            if(!nl || nl >= sizeof(fsbuf))
+            {
+                RP_EMPTY_STACK(ctx);
+                send500(req, "invalid req.fsPath set in beginFunc");
+                return;
+            }
+            memcpy(fsbuf, newfn, nl + 1);
+        }
         filestat=NULL;
         RP_EMPTY_STACK(ctx);
+        fn = fsbuf;
     }
 
     cont_file:
@@ -2962,7 +3046,8 @@ static void rp_sendfile(evhtp_request_t *req, char *fn, int haveCT, struct stat 
         char reprange[128];
 
         beg = (ev_off_t)strtoll(range + 6, &eptr, 10);
-        if (eptr != range + 6)
+        /* "bytes=N-" or "bytes=N-M"; anything else is ignored (RFC 9110 14.2) */
+        if (eptr != range + 6 && *eptr == '-')
         {
             ev_off_t endval = filesize - 1;
 
@@ -3020,10 +3105,9 @@ static void rp_sendfile(evhtp_request_t *req, char *fn, int haveCT, struct stat 
             return;
         }
     }
-    else
-    {
-        len=filesize;
-    }
+    /* no Range, or one we ignore: the whole file */
+    beg = 0;
+    len = filesize;
 
     /* HEAD: skip body entirely — just send headers with Content-Length */
     if (evhtp_request_get_method(req) == htp_method_HEAD)
@@ -3531,8 +3615,10 @@ static void auth_ws_deny(evhtp_request_t *req)
         evbuffer_drain(req->buffer_out, evbuffer_get_length(req->buffer_out));
 }
 
+/* dpath: the decoded, normalized request path when the caller has one
+   (file serving); NULL to use the raw path from the request. */
 static int auth_check_request(duk_context *ctx, evhtp_request_t *req,
-                              duk_idx_t req_idx, int thrno)
+                              duk_idx_t req_idx, int thrno, const char *dpath)
 {
     if (!auth_mod_active)
         return -1;
@@ -3541,7 +3627,7 @@ static int auth_check_request(duk_context *ctx, evhtp_request_t *req,
     {
         /* file serving */
         rp_auth_ppath *pp;
-        const char *request_path = req->uri->path->full;
+        const char *request_path = dpath ? dpath : req->uri->path->full;
 
         pp = auth_find_protected_path(request_path);
         if (!pp)
@@ -3793,20 +3879,16 @@ static void fileserver(evhtp_request_t *req, void *arg)
         }
     }
 
-    /* authMod: check auth before serving any file */
-    if(auth_mod_active)
-    {
-        duk_context *actx = server_thread[thrno]->ctx;
-        int auth_result = auth_check_request(actx, req, -1, thrno);
-        if(auth_result == 0)
-            return; /* denied — 403 or redirect already sent */
-        /* auth_result == 1 (allowed) or -1 (not protected): proceed */
-    }
-
     {
         struct stat sb;
-        /* take 2 off of key for the slash and * and add 1 for '\0' and one more for a potential '/' */
-        char *s, fn[strlen(map->val) + strlen(path->full) + 4 - strlen(map->key)];
+        /* fn holds map->val plus the part of the request path after
+           map->key (which is never longer than the path itself), plus
+           room for a '/' and the '\0'.  Sizing it with "- strlen(key)"
+           underflowed whenever the normalized path was shorter than the
+           key (e.g. a path that resolves to "/"), making strcpy(fn,
+           map->val) below overflow the stack. */
+        char *s, fn[strlen(map->val) + strlen(path->full) + 4];
+        size_t keylen = strlen(map->key);
         mode_t mode;
         int i = 0, len = (int) strlen(path->full);
 
@@ -3832,7 +3914,6 @@ static void fileserver(evhtp_request_t *req, void *arg)
         }
 #endif
 
-        strcpy(fn, map->val);
         s=duk_rp_url_decode( path->full, &len );
 
         /* SECURITY (F1): safepath() above ran on the *un-decoded* path, so a
@@ -3846,6 +3927,36 @@ static void fileserver(evhtp_request_t *req, void *arg)
             return;
         }
 
+        /* SECURITY: the request was routed here by prefix-matching the
+           *raw* path, but the file served comes from the decoded and
+           normalized path.  Those can differ ("/x/../y" arrives at the
+           "/x" map but resolves to "/y"), which both skips the authMod
+           check made on the decoded path below and reads s out of bounds
+           when it is shorter than map->key.  Require the real prefix. */
+        if( strncmp(s, map->key, keylen) )
+        {
+            free(s);
+            send404(req);
+            return;
+        }
+
+        /* authMod: check auth before serving any file.  It must see the
+           same decoded path that is served, or an encoded spelling of a
+           protected path would not be recognized as protected. */
+        if(auth_mod_active)
+        {
+            duk_context *actx = server_thread[thrno]->ctx;
+            int auth_result = auth_check_request(actx, req, -1, thrno, s);
+            if(auth_result == 0)
+            {
+                free(s);
+                return; /* denied — 403 or redirect already sent */
+            }
+            /* auth_result == 1 (allowed) or -1 (not protected): proceed */
+        }
+
+        strcpy(fn, map->val);
+
         /* redirect /mappeddir to /mappeddir/ */
         if ( !strcmp (s, map->key))
         {
@@ -3858,13 +3969,13 @@ static void fileserver(evhtp_request_t *req, void *arg)
         /* don't look for /mappeddirEXTRAJUNK
            the next char after /reqdir must be a '/'
          */
-        if( *(s + strlen(map->key)) != '/')
+        if( *(s + keylen) != '/')
         {
             free(s);
             send404(req);
             return;
         }
-        strcpy(&fn[strlen(map->val)], s + strlen(map->key) +1);
+        strcpy(&fn[strlen(map->val)], s + keylen +1);
 
         free(s);
 
@@ -3908,9 +4019,12 @@ static void fileserver(evhtp_request_t *req, void *arg)
 
             if (fn[i] != '/')
             {
-                fn[++i] = '/';
-                fn[++i] = '\0';
-                sendredir(req, &fn[strlen(map->val) - 1]);
+                /* Location is the request path plus '/'.  Stripping
+                   map->val off the filesystem path instead dropped
+                   map->key, so "/static/sub" redirected to "/sub/". */
+                strcpy(fn, path->full);
+                strcat(fn, "/");
+                sendredir(req, fn);
                 return;
             }
             strcpy(fnindex, fn);
@@ -4989,11 +5103,12 @@ int setdhs(void *arg, int is_post)
     if(duk_has_prop_string(ctx, -1, reqobj_tempname))
     {
         dhs = chunkp->dhs;
-        ctx = dhs->ctx;
+        if(dhs)            /* NULL until the first write callback */
+            ctx = dhs->ctx;
     }
     duk_pop(ctx);
 
-    if(!dhs)
+    if(!dhs || !ctx)
         return 0;
 
     if(is_post)//called after the JS callback
@@ -5120,8 +5235,28 @@ static evhtp_res chunk_finalize(struct evhtp_connection *conn, void * arg)
     duk_context *ctx=NULL;
     char reqobj_tempname[24];
 
-    if(!chunkp || !chunkp->dhs || !chunkp->ctx)
-        return EVHTP_RES_500;
+    if(!chunkp || !chunkp->ctx)
+        return EVHTP_RES_OK;
+
+    if(!chunkp->dhs)
+    {
+        /* The client left before the first write, so no dhs was ever
+           attached.  Returning here leaked chunkp and the saved JS req
+           object (whose evreq pointed at this freed request), and left
+           our hooks in place.  Clean up instead. */
+        if(conn)
+        {
+            evhtp_connection_unset_hook(conn, evhtp_hook_on_write);
+            evhtp_connection_unset_hook(conn, evhtp_hook_on_connection_fini);
+            evhtp_connection_unset_hook(conn, evhtp_hook_on_request_fini);
+        }
+        duk_push_global_object(chunkp->ctx);
+        sprintf(reqobj_tempname,"\xFFreq_%p", chunkp);
+        duk_del_prop_string(chunkp->ctx, -1, reqobj_tempname);
+        duk_pop(chunkp->ctx);
+        free(chunkp);
+        return EVHTP_RES_OK;
+    }
 
     dhs = chunkp->dhs;
     ctx = chunkp->ctx;
@@ -5195,6 +5330,16 @@ static duk_ret_t rp_post_defer(duk_context *ctx)
        this dhs in glibc's tcache). */
     duk_push_pointer(ctx, NULL);
     duk_put_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("defer_dhs"));
+
+    /* Tell defer_finalize this dhs is gone, as defer_reply does.  Without
+       it, a req object finalized without a reply (GC, or heap destruction
+       after a script timeout) freed dhs while deferp->dhs still pointed
+       at it, and the later connection-fini hook wrote into freed memory. */
+    {
+        DEFERPTR *deferp = (DEFERPTR*)dhs->aux;
+        if(deferp)
+            deferp->dhs = NULL;
+    }
 
     //we never replied and var req is out of scope
     duk_push_object(ctx);
@@ -5422,7 +5567,7 @@ static void *http_dothread(void *arg)
        For unprotected paths, still call to populate req.userAuth. */
     if(auth_mod_active && !dhs->skip_wrap)
     {
-        int auth_result = auth_check_request(ctx, req, req_idx, dhr->server_thread_num);
+        int auth_result = auth_check_request(ctx, req, req_idx, dhr->server_thread_num, NULL);
         if (auth_result == 0)
             goto end_func; /* denied — 403 or redirect already sent */
     }
@@ -6083,7 +6228,7 @@ static int getmod_path(DHS *dhs)
         if(stat(modpath, &pathstat)== -1)
         {
             send404(dhs->req);
-            ret=0;
+            ret=-1;  /* reply already sent; caller must not send another */
             goto getmod_path_done;
         }
     }
@@ -6111,7 +6256,7 @@ static int getmod_path(DHS *dhs)
         if( *subpath && safepath(subpath) == -1 )
         {
             send400(dhs->req);
-            ret = 0;
+            ret = -1; /* reply already sent; caller must not send another */
             goto getmod_path_done;
         }
 
@@ -6238,6 +6383,16 @@ static int getmod_path(DHS *dhs)
    REVERSE PROXY FUNCTIONS
    ************************************************************ */
 
+/* Remove both client-request hooks that reference our state.  Any path
+   that frees the state must call this with a still-valid request, or a
+   later hook fires with freed state. */
+static void proxy_unhook_client(evhtp_request_t *req)
+{
+    if (!req) return;
+    evhtp_request_unset_hook(req, evhtp_hook_on_error);
+    evhtp_request_unset_hook(req, evhtp_hook_on_request_fini);
+}
+
 static void proxy_cleanup(PROXY_STATE *ps)
 {
     if (!ps) return;
@@ -6249,9 +6404,30 @@ static void proxy_cleanup(PROXY_STATE *ps)
     }
     /* unset client error hook to prevent use-after-free of ps
        during later connection teardown */
-    if (ps->client_req)
-        evhtp_request_unset_hook(ps->client_req, evhtp_hook_on_error);
+    proxy_unhook_client(ps->client_req);
+    /* The upstream connection stays open after its reply, and its request
+       keeps pointing at this callback+ps.  A second response on it (a
+       misbehaving upstream) would re-enter proxy_upstream_cb with freed
+       state, so detach ourselves from it here. */
+    if (ps->upstream_conn && ps->upstream_conn->request)
+    {
+        evhtp_request_unset_hook(ps->upstream_conn->request, evhtp_hook_on_error);
+        ps->upstream_conn->request->cb    = NULL;
+        ps->upstream_conn->request->cbarg = NULL;
+    }
     free(ps);
+}
+
+/* The client request/connection is being freed.  evhtp_connection_free()
+   runs the fini hooks but not on_error, so without this the proxy kept a
+   dangling client_req and wrote into it when the upstream answered. */
+static evhtp_res proxy_client_fini(evhtp_request_t *req, void *arg)
+{
+    PROXY_STATE *ps = (PROXY_STATE *)arg;
+
+    if (ps)
+        ps->client_req = NULL;
+    return EVHTP_RES_OK;
 }
 
 static void proxy_send_error(evhtp_request_t *req, int code, const char *reason)
@@ -6270,7 +6446,13 @@ static void proxy_send_error(evhtp_request_t *req, int code, const char *reason)
 static char *proxy_rewrite_path(evhtp_request_t *client_req, PROXY_CONF *conf)
 {
     const char *client_path = client_req->uri->path->full;
-    const char *suffix = client_path + conf->local_path_len;
+    /* local_path is the map key as configured, which for glob and regex
+       entries is the pattern itself -- longer than the path it matched.
+       Clamp so suffix stays inside client_path. */
+    size_t client_path_len = strlen(client_path);
+    size_t strip = (size_t)conf->local_path_len > client_path_len
+                   ? client_path_len : (size_t)conf->local_path_len;
+    const char *suffix = client_path + strip;
     const unsigned char *query_raw = client_req->uri->query_raw;
     int upstream_path_len = (int)strlen(conf->upstream_path);
     int suffix_len = (int)strlen(suffix);
@@ -6370,9 +6552,9 @@ static void proxy_timeout_cb(evutil_socket_t fd, short events, void *arg)
         evhtp_connection_free(ps->upstream_conn);
         ps->upstream_conn = NULL;
     }
-    /* unset client error hook before freeing ps */
-    if (ps && ps->client_req)
-        evhtp_request_unset_hook(ps->client_req, evhtp_hook_on_error);
+    /* unset client hooks before freeing ps */
+    if (ps)
+        proxy_unhook_client(ps->client_req);
     free(ps);
 }
 
@@ -6387,6 +6569,9 @@ static void proxy_client_error(evhtp_request_t *req,
         return;
 
     ps->finished = 1;
+    /* drop our hooks while req is still valid: nulling client_req first
+       would leave the fini hook pointing at the state we free below */
+    proxy_unhook_client(req ? req : ps->client_req);
     ps->client_req = NULL;
 
     /* cancel the upstream request — no point waiting for a response
@@ -6522,6 +6707,11 @@ static void proxy_callback(evhtp_request_t *req, void *arg)
        while the upstream request is in flight */
     evhtp_request_set_hook(req,
         evhtp_hook_on_error, (evhtp_hook)proxy_client_error, ps);
+    /* on_error does not fire when the connection is freed outright (e.g.
+       the client pipelines or sends junk after the request and the parser
+       tears the connection down), so also learn about it from fini */
+    evhtp_request_set_hook(req,
+        evhtp_hook_on_request_fini, (evhtp_hook)proxy_client_fini, ps);
 
     /* copy client headers, skipping hop-by-hop */
     evhtp_headers_for_each(req->headers_in, proxy_copy_req_header, upstream_req);
@@ -6604,6 +6794,20 @@ static void proxy_callback(evhtp_request_t *req, void *arg)
    WEBSOCKET PROXY - bidirectional byte relay after 101 handshake
    ************************************************************ */
 
+/* Client request/connection freed during the handshake phase: drop our
+   references so the upstream callbacks don't touch freed memory. */
+static evhtp_res ws_proxy_client_fini(evhtp_request_t *req, void *arg)
+{
+    WS_PROXY_STATE *ws = (WS_PROXY_STATE *)arg;
+
+    if (ws && !ws->handshake_done)
+    {
+        ws->client_req  = NULL;
+        ws->client_conn = NULL;
+    }
+    return EVHTP_RES_OK;
+}
+
 static void ws_proxy_cleanup(WS_PROXY_STATE *ws)
 {
     if (!ws) return;
@@ -6615,8 +6819,7 @@ static void ws_proxy_cleanup(WS_PROXY_STATE *ws)
     }
     /* unset client error hook to prevent use-after-free of ws
        during later connection teardown */
-    if (ws->client_req)
-        evhtp_request_unset_hook(ws->client_req, evhtp_hook_on_error);
+    proxy_unhook_client(ws->client_req);
     /* disable both bevs first to deactivate any pending events (e.g.
        an SSL write event already in the active queue) before freeing.
        Without this, bufferevent_finalize_cb_ can free the SSL object
@@ -6724,6 +6927,9 @@ static void ws_proxy_client_error(evhtp_request_t *req,
 
     if (!ws) return;
 
+    /* drop our hooks while req is still valid (see proxy_client_error) */
+    proxy_unhook_client(req ? req : ws->client_req);
+
     /* mark client as gone so no callbacks try to send a reply */
     ws->client_req = NULL;
     ws->client_conn = NULL;
@@ -6759,12 +6965,20 @@ static void ws_upstream_handshake_readcb(struct bufferevent *bev, void *arg)
         return;  /* wait for more data */
     }
 
-    /* check for "101" in the status line */
-    if (len < 12 || !strstr(data, " 101 "))
+    /* check for "101" in the status line.  data from evbuffer_pullup is
+       not NUL-terminated, so the search must be bounded by the headers. */
+    if (len < 12 || !strnstr_local(data, " 101 ", (size_t)(end_of_headers + 4 - data)))
     {
         /* upstream didn't upgrade - forward the error response as-is */
         if (ws->client_req)
             proxy_send_error(ws->client_req, 502, "Bad Gateway");
+        ws_proxy_cleanup(ws);
+        return;
+    }
+
+    /* the client may have gone away while we waited for the upstream */
+    if (!ws->client_req || !ws->client_conn)
+    {
         ws_proxy_cleanup(ws);
         return;
     }
@@ -6782,6 +6996,7 @@ static void ws_upstream_handshake_readcb(struct bufferevent *bev, void *arg)
     /* unset client error hook before taking ownership — after takeover,
        evhtp no longer manages this connection */
     evhtp_request_unset_hook(ws->client_req, evhtp_hook_on_error);
+    evhtp_request_unset_hook(ws->client_req, evhtp_hook_on_request_fini);
 
     /* take ownership of client bufferevent from evhtp */
     ws->client_bev = evhtp_connection_take_ownership(ws->client_conn);
@@ -6887,6 +7102,10 @@ static void proxy_ws_upgrade(evhtp_request_t *req, PROXY_CONF *conf,
        during the handshake phase */
     evhtp_request_set_hook(req,
         evhtp_hook_on_error, (evhtp_hook)ws_proxy_client_error, ws);
+    /* ...and a fini hook, since a connection freed outright never runs
+       on_error and would leave client_req/client_conn dangling */
+    evhtp_request_set_hook(req,
+        evhtp_hook_on_request_fini, (evhtp_hook)ws_proxy_client_fini, ws);
 
     /* connect to upstream */
     if (dnsbase)
@@ -7077,11 +7296,14 @@ static evthr_t *tl_pick_thread(tl_set *set)
 {
     evthr_t *min_thread = NULL;
     int min_openconn = -1;
-    int j, start = __sync_fetch_and_add(&set->rr, 1);
+    /* unsigned: a signed counter goes negative after 2^31 hand-offs, and
+       a negative modulo would index the thread array out of bounds */
+    unsigned int start = (unsigned int)__sync_fetch_and_add(&set->rr, 1);
+    int j;
 
     for (j = 0; j < set->nthreads; j++)
     {
-        RPTHR *thr = server_thread[set->threads[(start + j) % set->nthreads]];
+        RPTHR *thr = server_thread[set->threads[(start + (unsigned int)j) % (unsigned int)set->nthreads]];
         evthr_t *et;
 
         if (!thr || !thr->evthr)
@@ -7675,6 +7897,7 @@ void initThread(evhtp_t *htp, evthr_t *evthr, void *arg)
         if (dnsbase)
             evdns_base_resolv_conf_parse(dnsbase, DNS_OPTIONS_ALL, "/etc/resolv.conf");
         thr->dnsbase = dnsbase;
+        thread_local_no_js = 1;
         SETUPUNLOCK;
         return;
     }
@@ -11425,8 +11648,10 @@ static const char * _get_(rpserv *serv, duk_idx_t req_idx, const char *name, cha
         duk_put_prop_index(ctx, stash_idx, (duk_uarridx_t)len);
     }
 
-    if(duk_get_prop_string(ctx, -1, name))
-        ret=duk_get_string(ctx, -1);
+    /* A leftover second lookup of `name` used to run here, on the value
+       itself: for a string value and a name like "0" it returned a
+       one-character temporary that duk_set_top below then released, and
+       for "length" it returned NULL. */
 
     duk_set_top(ctx,top);
 

@@ -3890,11 +3890,14 @@ char *duk_rp_url_decode(char *str, int *len)
     int i=*len;
     char *pstr = str, *buf = NULL, *pbuf = NULL;
 
-    REMALLOC(buf, strlen(str) * 3 + 1);
-    pbuf = buf;
-
     if (i < 0)
         i = strlen(str);
+
+    /* decoding never lengthens: i bytes in, at most i bytes out.  Sizing
+       from strlen(str) instead overflowed whenever str held a NUL before
+       *len (e.g. an empty query element). */
+    REMALLOC(buf, (size_t)i + 1);
+    pbuf = buf;
 
     *len=0;
     while (i)
@@ -4065,6 +4068,34 @@ void duk_rp_push_lstring_or_jsonob(duk_context *ctx, char *s, size_t l)
     duk_push_lstring(ctx,s,l);
 }
 
+/* Get obj[key] only when it is obj's OWN property, pushing the value and
+   returning 1; otherwise push nothing and return 0.
+   A key naming an inherited property ("__proto__", "toString", ... ) used
+   to resolve up the prototype chain, and the value that came back was then
+   written into -- modifying Object.prototype or another shared object for
+   the whole heap. */
+static duk_bool_t q_get_own(duk_context *ctx, duk_idx_t obj_idx, const char *key, duk_size_t keyl)
+{
+    duk_idx_t oi = duk_normalize_index(ctx, obj_idx);
+
+    duk_push_lstring(ctx, key, keyl);
+    duk_get_prop_desc(ctx, oi, 0);      /* pops key, pushes descriptor|undefined */
+    if(!duk_is_object(ctx, -1))
+    {
+        duk_pop(ctx);
+        return 0;
+    }
+    if(duk_get_prop_string(ctx, -1, "value"))
+    {
+        duk_remove(ctx, -2);            /* drop descriptor, leave value */
+        return 1;
+    }
+    duk_pop_2(ctx);                     /* undefined, descriptor */
+    duk_push_lstring(ctx, key, keyl);   /* accessor: read it normally */
+    duk_get_prop(ctx, oi);
+    return 1;
+}
+
 static void pushqelem(duk_context *ctx, char *s, size_t l)
 {
     char *key, *eq=(char *)memmem(s,l,"=",1);
@@ -4088,11 +4119,8 @@ static void pushqelem(duk_context *ctx, char *s, size_t l)
             keyl-=2;
 
             /* put in array from the beginning */
-            if(!duk_get_prop_lstring(ctx,-1,key,keyl))
-            {
-                duk_pop(ctx);
+            if(!q_get_own(ctx,-1,key,keyl))
                 duk_push_array(ctx);
-            }
 
             arrayi=duk_get_length(ctx,-1);
             duk_rp_push_lstring_or_jsonob(ctx,val,vall);
@@ -4117,11 +4145,8 @@ static void pushqelem(duk_context *ctx, char *s, size_t l)
                 p++;
                 *(key+keyl-1)='\0';
                 //"myvar\0mykey\0=myval - where key="myvar", p="mykey", val="myval"
-                if(!duk_get_prop_string(ctx,-1,key))
-                {
-                    duk_pop(ctx);
+                if(!q_get_own(ctx,-1,key,strlen(key)))
                     duk_push_object(ctx);
-                }
                 //if it was already loaded as an array, conver to object
                 if(duk_is_array(ctx, -1)) {
                     duk_size_t len = duk_get_length(ctx, -1);
@@ -4150,9 +4175,8 @@ static void pushqelem(duk_context *ctx, char *s, size_t l)
         }
 
         /* check if exists already, if so, make array or use array */
-        if(!duk_get_prop_lstring(ctx,-1, key, keyl))
+        if(!q_get_own(ctx,-1, key, keyl))
         {
-            duk_pop(ctx);
             duk_rp_push_lstring_or_jsonob(ctx,val,vall);
         }
         else
@@ -4203,20 +4227,24 @@ static void pushqelem(duk_context *ctx, char *s, size_t l)
 
 void duk_rp_querystring2object(duk_context *ctx, char *q)
 {
-    char *s=q,*e=q;
+    char *s=q;
 
     duk_push_object(ctx);
-    while (e)
+    /* The old loop incremented before testing, so an empty query read
+       past the end of the string (and a leading '&' was taken as data). */
+    if(!q)
+        return;
+    while(*s)
     {
-        e++;
-        if(!*e || *e=='&')
-        {
-            size_t l=e-s;
-            pushqelem(ctx,s,l);
-            if(!*e)
-                break;
-            s=e+1;
-        }
+        char *e=s;
+
+        while(*e && *e!='&')
+            e++;
+        if(e>s)
+            pushqelem(ctx,s,(size_t)(e-s));
+        if(!*e)
+            break;
+        s=e+1;
     }
 }
 
