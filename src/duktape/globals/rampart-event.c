@@ -191,6 +191,28 @@ static RP_EVENT *rp_events=NULL, *rp_last_event=NULL;
     ret;\
 })
 
+/* Every event.on() registration gets the next number.  off()/remove()
+   record the counter when called; their deferred delete only removes
+   registrations numbered below it, so a handler registered after the
+   off()/remove() call (in any thread) survives it. */
+static uint64_t rp_ev_reg_seq=0;
+
+#define rp_ev_seq_next() ({\
+    uint64_t _s;\
+    RP_MLOCK(rp_ev_var_lock);\
+    _s=rp_ev_reg_seq++;\
+    RP_MUNLOCK(rp_ev_var_lock);\
+    _s;\
+})
+
+#define rp_ev_seq_cutoff() ({\
+    uint64_t _s;\
+    RP_MLOCK(rp_ev_var_lock);\
+    _s=rp_ev_reg_seq;\
+    RP_MUNLOCK(rp_ev_var_lock);\
+    _s;\
+})
+
 duk_ret_t duk_scope_to_module(duk_context *ctx)
 {
     rp_event_scope_to_module=1;
@@ -256,6 +278,8 @@ duk_ret_t duk_rp_on_event(duk_context *ctx)
     duk_push_object(ctx);
     duk_dup(ctx, func_idx);    
     duk_put_prop_string(ctx, -2, "cb");
+    duk_push_number(ctx, (duk_double_t)rp_ev_seq_next());
+    duk_put_prop_string(ctx, -2, "seq");
     if(param_idx>-1)
     {
         duk_dup(ctx,param_idx);
@@ -284,8 +308,31 @@ JSEVARGS {
     int      action;
     int      varno;
     int     *refcount;
+    uint64_t cutoff;    /* DELFUNC/DELETE: remove only registrations with seq < cutoff */
     JSEVARGS *next;     /* link in owning thread's pending_jsev_head list */
 };
+
+/* Is the registration object at idx older than cutoff? */
+static int rp_ev_older(duk_context *ctx, duk_idx_t idx, uint64_t cutoff)
+{
+    int ret=1;  /* no seq: treat as old */
+    if(duk_get_prop_string(ctx, idx, "seq"))
+        ret = (uint64_t)duk_get_number(ctx, -1) < cutoff;
+    duk_pop(ctx);
+    return ret;
+}
+
+/* [ ..., {myevent} ] -> 1 if it has no registrations left */
+static int rp_ev_is_empty(duk_context *ctx)
+{
+    int empty;
+    duk_enum(ctx, -1, 0);
+    empty = !duk_next(ctx, -1, 0);
+    if(!empty)
+        duk_pop(ctx);  // key
+    duk_pop(ctx);      // enum
+    return empty;
+}
 
 void rp_jsev_doevent(evutil_socket_t fd, short events, void* arg)
 {
@@ -392,15 +439,19 @@ void rp_jsev_doevent(evutil_socket_t fd, short events, void* arg)
             }
             else
             {
-                //printf("Deleting %s\n", earg->fname);
-                duk_del_prop_string(ctx, -1, earg->fname); //delete the named function in this event
+                /* delete the named function, unless it was registered
+                   after off() was called */
+                int del = duk_get_prop_string(ctx, -1, earg->fname)
+                          && rp_ev_older(ctx, -1, earg->cutoff);
+                duk_pop(ctx);
+                if(del)
+                    duk_del_prop_string(ctx, -1, earg->fname);
                 //check if there are any functions left
-                duk_enum(ctx,-1,0);
-                if(!duk_next(ctx, -1, 0))
+                if(rp_ev_is_empty(ctx))
                 {
                     /* delete this event since there are no functions left*/
-                    //[... jsevents, myevent, enum ]
-                    duk_del_prop_string(ctx, -3, earg->key);
+                    //[... jsevents, myevent ]
+                    duk_del_prop_string(ctx, -2, earg->key);
                     // mark this thread as no longer having this event
                     rp_event_unregister(earg->key);
                 }
@@ -408,9 +459,41 @@ void rp_jsev_doevent(evutil_socket_t fd, short events, void* arg)
         }
         else
         {
-            /* delete this event and all its functions */
-            duk_del_prop_string(ctx, -1, earg->key);
-            rp_event_unregister(earg->key);
+            /* delete this event's functions, except those registered
+               after remove() was called */
+            if(duk_get_prop_string(ctx, -1, earg->key))
+            {
+                duk_uarridx_t j, n=0;
+                //[... jsevents, myevent ]
+                duk_push_array(ctx);
+                duk_enum(ctx, -2, 0);
+                while(duk_next(ctx, -1, 1))
+                {
+                    //[... jsevents, myevent, dels, enum, fname, {obj} ]
+                    if(rp_ev_older(ctx, -1, earg->cutoff))
+                    {
+                        duk_pop(ctx);
+                        duk_put_prop_index(ctx, -3, n++);
+                    }
+                    else
+                        duk_pop_2(ctx);
+                }
+                duk_pop(ctx);//enum
+                for(j=0; j<n; j++)
+                {
+                    duk_get_prop_index(ctx, -1, j);
+                    duk_del_prop_string(ctx, -3, duk_get_string(ctx, -1));
+                    duk_pop(ctx);
+                }
+                duk_pop(ctx);//dels
+                if(rp_ev_is_empty(ctx))
+                {
+                    duk_del_prop_string(ctx, -2, earg->key);
+                    rp_event_unregister(earg->key);
+                }
+            }
+            else
+                rp_event_unregister(earg->key);
         }
 
         bottom:
@@ -563,7 +646,7 @@ void rp_jsev_freevar(evutil_socket_t fd, short events, void* arg)
 }
 
 
-static void evloop_insert(duk_context *ctx, const char *evname, const char *fname, int varno, int action)
+static void evloop_insert(duk_context *ctx, const char *evname, const char *fname, int varno, int action, uint64_t cutoff)
 {
     struct timeval timeout;
     JSEVARGS *args = NULL;
@@ -654,6 +737,7 @@ static void evloop_insert(duk_context *ctx, const char *evname, const char *fnam
 
         args->e = event_new(base, -1, 0, rp_jsev_doevent, args);
         args->varno=varno;
+        args->cutoff=cutoff;
         args->refcount = refcount;
         args->next = NULL;
         /* Under one lock: optionally bump refcount (trigger path only)
@@ -718,7 +802,7 @@ duk_ret_t duk_rp_trigger_event(duk_context *ctx)
         sprintf(varname, "\xff%s%d", evname, varno);
         put_to_clipboard(ctx, 1, varname);
     }
-    evloop_insert(ctx, evname, NULL, varno, JSEVENT_TRIGGER);
+    evloop_insert(ctx, evname, NULL, varno, JSEVENT_TRIGGER, 0);
     return 0;
 }
 
@@ -728,7 +812,7 @@ duk_ret_t duk_rp_off_event(duk_context *ctx)
     const char *evname = REQUIRE_STRING(ctx, 0, "event.off: first parameter must be a string (event name)");
     const char *fname = REQUIRE_STRING(ctx, 1, "event.off: second parameter must be a string (function name)");
 
-    evloop_insert(ctx, evname, fname, -1, JSEVENT_DELFUNC);
+    evloop_insert(ctx, evname, fname, -1, JSEVENT_DELFUNC, rp_ev_seq_cutoff());
     return 0;
 }
 
@@ -737,7 +821,7 @@ duk_ret_t duk_rp_remove_event(duk_context *ctx)
 {
     const char *evname = REQUIRE_STRING(ctx, 0, "event.remove: first parameter must be a string (event name)");
 
-    evloop_insert(ctx, evname, NULL, -1, JSEVENT_DELETE);
+    evloop_insert(ctx, evname, NULL, -1, JSEVENT_DELETE, rp_ev_seq_cutoff());
     return 0;
 }
 
