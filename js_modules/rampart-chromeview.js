@@ -208,9 +208,35 @@ function _workerMain(args)
                 done:      done
             };
         },
-        /* Browser-scope Target.getTargets — used by Browser.pages(). */
+        /* Browser-scope Target.getTargets — used by Browser.pages().
+         * browser.fetch()'s private tabs are left out. */
         listTargets: function(a, done) {
-            cdpCall("Target.getTargets", {}, null, null, null, done);
+            cdpCall("Target.getTargets", {}, null, null, null, function(r, e) {
+                if (r && r.targetInfos && fx.hasTabs)
+                    r.targetInfos = r.targetInfos.filter(function(t) {
+                        return !fxIsOurs(t);
+                    });
+                done(r, e);
+            });
+        },
+        /* browser.fetch() batch.  Results go to thread.put(resKey.N) for
+         * blocking callers, or event.trigger(evName) for async ones. */
+        fetch: function(a, done) {
+            fxStartBatch(a);
+            done(null, null);
+        },
+        /* Caller has consumed every result for this resKey. */
+        fetchEnd: function(a, done) {
+            var k = fx.seqByKey[a.resKey];
+            /* drop results posted but never read */
+            for (var i = a.consumed || 0; k && i < k.n; i++)
+                thread.del(a.resKey + "." + i);
+            if (k && k.out > 0) k.closed = true;   /* stopped early */
+            else delete fx.seqByKey[a.resKey];
+            done(null, null);
+        },
+        fetchClose: function(a, done) {
+            fxClose(done);
         },
         /* Start tracing: init the buffer for this session and call
          * Tracing.start with the supplied config. */
@@ -307,6 +333,498 @@ function _workerMain(args)
         }
     };
 
+    /* ---------------- browser.fetch() engine ----------------
+     * Runs entirely in this worker so it can use CDP events while the
+     * main thread is blocked.  Tabs live in a private browser context
+     * and are hidden from listTargets and Target.* event forwarding.
+     * The main document is intercepted at the response stage: status,
+     * headers and raw bytes are read there, then HTML is let through
+     * to render and anything else is aborted (so it never downloads). */
+    var fx = {
+        ctxId:     null,     /* shared context for pooled tabs */
+        ctxWait:   null,     /* callbacks waiting on its creation */
+        ctxs:      {},       /* every context fetch created */
+        targets:   {},       /* every targetId fetch created */
+        sessions:  {},       /* sessionId -> tab */
+        tabs:      [],       /* pooled tabs */
+        hasTabs:   false,
+        tabWait:   [],       /* jobs waiting for a pooled tab */
+        maxTabs:   8,
+        seqByKey:  {}
+    };
+
+    var fxStatusText = {
+        100:"Continue",101:"Switching Protocols",200:"OK",201:"Created",
+        202:"Accepted",203:"Non-Authoritative Information",204:"No Content",
+        205:"Reset Content",206:"Partial Content",300:"Multiple Choices",
+        301:"Moved Permanently",302:"Found",303:"See Other",304:"Not Modified",
+        307:"Temporary Redirect",308:"Permanent Redirect",400:"Bad Request",
+        401:"Unauthorized",402:"Payment Required",403:"Forbidden",
+        404:"Not Found",405:"Method Not Allowed",406:"Not Acceptable",
+        407:"Proxy Authentication Required",408:"Request Timeout",
+        409:"Conflict",410:"Gone",411:"Length Required",
+        412:"Precondition Failed",413:"Payload Too Large",414:"URI Too Long",
+        415:"Unsupported Media Type",416:"Range Not Satisfiable",
+        417:"Expectation Failed",418:"I'm a teapot",421:"Misdirected Request",
+        422:"Unprocessable Entity",425:"Too Early",426:"Upgrade Required",
+        428:"Precondition Required",429:"Too Many Requests",
+        431:"Request Header Fields Too Large",
+        451:"Unavailable For Legal Reasons",500:"Internal Server Error",
+        501:"Not Implemented",502:"Bad Gateway",503:"Service Unavailable",
+        504:"Gateway Timeout",505:"HTTP Version Not Supported"
+    };
+
+    var fxWaitEvents = {
+        "load":             "load",
+        "domcontentloaded": "DOMContentLoaded",
+        "networkidle0":     "networkIdle",
+        "networkidle2":     "networkAlmostIdle"
+    };
+
+    function fxIsOurs(t) {
+        return !!(t && (fx.ctxs[t.browserContextId] || fx.targets[t.targetId]));
+    }
+
+    /* Browser-level Target.* events about fetch's own tabs. */
+    function fxIsOurTargetEvent(msg) {
+        if (!fx.hasTabs || msg.method.indexOf("Target.") !== 0) return false;
+        var p = msg.params || {};
+        if (p.targetInfo && fxIsOurs(p.targetInfo)) return true;
+        if (p.targetId && fx.targets[p.targetId]) {
+            if (msg.method === "Target.targetDestroyed")
+                delete fx.targets[p.targetId];
+            return true;
+        }
+        if (p.sessionId && fx.sessions[p.sessionId]) return true;
+        return false;
+    }
+
+    function fxEnsureCtx(cb) {
+        if (fx.ctxId) return cb(fx.ctxId, null);
+        if (fx.ctxWait) return fx.ctxWait.push(cb);
+        fx.ctxWait = [cb];
+        cdpCall("Target.createBrowserContext", {}, null, null, null, function(r, e) {
+            var w = fx.ctxWait;
+            fx.ctxWait = null;
+            if (!e) {
+                fx.ctxId = r.browserContextId;
+                fx.ctxs[fx.ctxId] = true;
+                fx.hasTabs = true;
+            }
+            for (var i = 0; i < w.length; i++) w[i](e ? null : fx.ctxId, e);
+        });
+    }
+
+    /* New tab in ctxId with the domains fetch needs enabled. */
+    function fxNewTab(ctxId, cb) {
+        cdpCall("Target.createTarget", {url: "about:blank", browserContextId: ctxId},
+            null, null, null, function(r1, e1) {
+            if (e1) return cb(null, e1);
+            var tab = {targetId: r1.targetId, sessionId: null, mainFrameId: null,
+                       ctxId: ctxId, busy: true, job: null, hdrKey: "", ua: ""};
+            fx.targets[tab.targetId] = true;
+            cdpCall("Target.attachToTarget", {targetId: tab.targetId, flatten: true},
+                null, null, null, function(r2, e2) {
+                if (e2) return cb(null, e2);
+                tab.sessionId = r2.sessionId;
+                fx.sessions[tab.sessionId] = tab;
+                var sid = tab.sessionId, left = 4, err = null;
+                function step(_, e) {
+                    if (e) err = e;
+                    if (--left) return;
+                    if (err) return cb(null, err);
+                    cdpCall("Page.getFrameTree", {}, sid, null, null, function(r3, e3) {
+                        if (e3) return cb(null, e3);
+                        tab.mainFrameId = r3.frameTree.frame.id;
+                        cb(tab, null);
+                    });
+                }
+                cdpCall("Page.enable", {}, sid, null, null, step);
+                cdpCall("Page.setLifecycleEventsEnabled", {enabled: true}, sid, null, null, step);
+                cdpCall("Network.enable", {}, sid, null, null, step);
+                cdpCall("Fetch.enable", {patterns: [{urlPattern: "*",
+                    resourceType: "Document", requestStage: "Response"}]},
+                    sid, null, null, step);
+            });
+        });
+    }
+
+    function fxForget(tab) {
+        delete fx.sessions[tab.sessionId];
+        var i = fx.tabs.indexOf(tab);
+        if (i >= 0) fx.tabs.splice(i, 1);
+    }
+
+    /* A pooled tab, or a fresh context + tab for opts.fresh. */
+    function fxAcquire(job, cb) {
+        if (job.opts.fresh) {
+            cdpCall("Target.createBrowserContext", {}, null, null, null, function(r, e) {
+                if (e) return cb(null, e);
+                fx.ctxs[r.browserContextId] = true;
+                fx.hasTabs = true;
+                fxNewTab(r.browserContextId, function(tab, e2) {
+                    if (e2) {
+                        cdpCall("Target.disposeBrowserContext",
+                            {browserContextId: r.browserContextId}, null, null, null, function(){});
+                        return cb(null, e2);
+                    }
+                    tab.fresh = true;
+                    cb(tab, null);
+                });
+            });
+            return;
+        }
+        for (var i = 0; i < fx.tabs.length; i++) {
+            if (!fx.tabs[i].busy) { fx.tabs[i].busy = true; return cb(fx.tabs[i], null); }
+        }
+        if (fx.tabs.length >= fx.maxTabs) return fx.tabWait.push(cb);
+        var slot = {busy: true, placeholder: true};
+        fx.tabs.push(slot);                       /* reserve against the cap */
+        fxEnsureCtx(function(ctxId, e) {
+            if (e) { fxForget(slot); fxNextWaiter(); return cb(null, e); }
+            fxNewTab(ctxId, function(tab, e2) {
+                var i = fx.tabs.indexOf(slot);
+                if (e2) {
+                    if (i >= 0) fx.tabs.splice(i, 1);
+                    if (tab) fxForget(tab);
+                    fxNextWaiter();
+                    return cb(null, e2);
+                }
+                if (i >= 0) fx.tabs[i] = tab; else fx.tabs.push(tab);
+                cb(tab, null);
+            });
+        });
+    }
+
+    function fxNextWaiter() {
+        if (!fx.tabWait.length) return;
+        var cb = fx.tabWait.shift();
+        fxAcquire({opts: {}}, cb);
+    }
+
+    /* Back to about:blank so nothing from the last page runs on; a tab
+     * that timed out or errored is closed instead of reused. */
+    function fxRelease(tab, discard) {
+        tab.job = null;
+        if (tab.fresh) {
+            delete fx.sessions[tab.sessionId];
+            cdpCall("Target.disposeBrowserContext", {browserContextId: tab.ctxId},
+                null, null, null, function() {});
+            return;
+        }
+        if (discard) {
+            fxForget(tab);
+            cdpCall("Target.closeTarget", {targetId: tab.targetId}, null, null, null, function(){});
+            fxNextWaiter();
+            return;
+        }
+        cdpCall("Page.navigate", {url: "about:blank"}, tab.sessionId, null, null,
+            function(r, e) {
+                if (e) return fxRelease(tab, true);
+                tab.busy = false;
+                if (fx.tabWait.length) { tab.busy = true; fx.tabWait.shift()(tab, null); }
+            });
+    }
+
+    /* Per-tab request headers / user agent, reset when they differ. */
+    function fxPrepTab(tab, opts, cb) {
+        var hdrs = {}, k;
+        var h = opts.headers;
+        if (Array.isArray(h)) {
+            for (var i = 0; i < h.length; i++) {
+                var m = /^\s*([^:]+?)\s*:\s*(.*)$/.exec(String(h[i]));
+                if (m) hdrs[m[1]] = m[2];
+            }
+        } else if (h && typeof h === "object") {
+            for (k in h) hdrs[k] = String(h[k]);
+        }
+        var hk = JSON.stringify(hdrs), ua = opts.userAgent || "";
+        var post = !!opts.postB64;
+        var left = 1;
+        function step() { if (--left === 0) cb(); }
+        /* POSTs also pause the request before it is sent */
+        if (post !== !!tab.reqStage) {
+            left++;
+            tab.reqStage = post;
+            var pats = [{urlPattern: "*", resourceType: "Document", requestStage: "Response"}];
+            if (post) pats.push({urlPattern: "*", resourceType: "Document", requestStage: "Request"});
+            cdpCall("Fetch.enable", {patterns: pats}, tab.sessionId, null, null, step);
+        }
+        if (hk !== tab.hdrKey) {
+            left++;
+            tab.hdrKey = hk;
+            cdpCall("Network.setExtraHTTPHeaders", {headers: hdrs}, tab.sessionId, null, null, step);
+        }
+        if (ua !== tab.ua) {
+            left++;
+            tab.ua = ua;
+            /* empty string restores chrome's own UA */
+            cdpCall("Network.setUserAgentOverride", {userAgent: ua}, tab.sessionId, null, null, step);
+        }
+        step();
+    }
+
+    function fxStartBatch(a) {
+        var b = {a: a, next: 0, running: 0,
+                 conc: Math.max(1, a.opts.concurrency || 4)};
+        if (a.resKey) {
+            var k = fx.seqByKey[a.resKey] || (fx.seqByKey[a.resKey] = {n: 0, out: 0, closed: false});
+            k.out += a.urls.length;
+        }
+        if (b.conc > fx.maxTabs) fx.maxTabs = b.conc;
+        fxPump(b);
+    }
+
+    function fxPump(b) {
+        while (b.running < b.conc && b.next < b.a.urls.length) {
+            b.running++;
+            fxRunOne(b, b.a.urls[b.next], b.next++);
+        }
+    }
+
+    function fxDeliver(b, res) {
+        var k = b.a.resKey && fx.seqByKey[b.a.resKey];
+        if (k) {
+            k.out--;
+            if (!k.closed) thread.put(b.a.resKey + "." + (k.n++), res);
+            else if (k.out <= 0) delete fx.seqByKey[b.a.resKey];
+        }
+        if (b.a.evName) event.trigger(b.a.evName, res);
+        b.running--;
+        fxPump(b);
+    }
+
+    function fxRunOne(b, url, idx) {
+        var opts = b.a.opts;
+        var t0 = Date.now();
+        var res = {url: url, effectiveUrl: url, status: 0, statusText: "",
+                   headers: {}, rawHeader: "", errMsg: "", totalTime: 0,
+                   rendered: false, bodyB64: null, bodyStr: null, text: null};
+        var job = {opts: opts, res: res, t0: t0, done: false, gotDoc: false,
+                   loaderId: null, networkId: null, lc: {}, stage: "nav",
+                   extra: {}, want: fxWaitEvents[opts.waitUntil || "load"] || "load"};
+        var timeout = opts.timeout > 0 ? opts.timeout : 30000;
+
+        function finish(discard) {
+            if (job.done) return;
+            job.done = true;
+            if (job.timer) clearTimeout(job.timer);
+            res.totalTime = (Date.now() - t0) / 1000;
+            if (job.tab) fxRelease(job.tab, discard);
+            fxDeliver(b, res);
+        }
+        job.finish = finish;
+
+        job.timer = setTimeout(function() {
+            if (job.done) return;
+            res.errMsg = "timeout after " + timeout + " ms"
+                       + (job.gotDoc ? " waiting for " + (opts.waitUntil || "load") : "");
+            if (job.gotDoc && job.tab) {
+                /* keep what rendered so far */
+                job.stage = "snap";
+                var guard = setTimeout(function() { finish(true); }, 2000);
+                fxSnapshot(job, function() { clearTimeout(guard); finish(true); });
+            } else finish(true);
+        }, timeout);
+
+        fxAcquire(job, function(tab, err) {
+            if (job.done) { if (tab) fxRelease(tab, false); return; }
+            if (err) { res.errMsg = err.message || String(err); return finish(false); }
+            job.tab = tab;
+            tab.job = job;
+            fxPrepTab(tab, opts, function() {
+                if (job.done) return;
+                var params = {url: url};
+                if (opts.referrer) params.referrer = opts.referrer;
+                cdpCall("Page.navigate", params, tab.sessionId, null, null, function(r, e) {
+                    if (job.done) return;
+                    if (e) { res.errMsg = e.message || String(e); return finish(false); }
+                    job.loaderId = r.loaderId;
+                    if (r.errorText && !job.gotDoc) {
+                        res.errMsg = r.errorText;
+                        return finish(false);
+                    }
+                    fxCheckLoaded(job);
+                });
+            });
+        });
+    }
+
+    function fxHdrObj(arr) {
+        var o = {};
+        for (var i = 0; arr && i < arr.length; i++) o[arr[i].name] = arr[i].value;
+        return o;
+    }
+
+    function fxHdrGet(arr, name) {
+        name = name.toLowerCase();
+        for (var i = 0; arr && i < arr.length; i++)
+            if (arr[i].name.toLowerCase() === name) return arr[i].value;
+        return null;
+    }
+
+    function fxHttpVersion(proto) {
+        if (!proto) return undefined;
+        proto = String(proto).toLowerCase();
+        if (proto === "h2") return 2.0;
+        if (proto === "h3" || proto.indexOf("h3-") === 0) return 3.0;
+        var m = /^http\/(\d\.\d)/.exec(proto);
+        return m ? parseFloat(m[1]) : undefined;
+    }
+
+    function fxSnapshot(job, cb) {
+        cdpCall("Runtime.evaluate", {expression: "document.documentElement.outerHTML",
+            returnByValue: true}, job.tab.sessionId, null, null, function(r, e) {
+            if (!e && r && r.result && typeof r.result.value === "string") {
+                job.res.text = r.result.value;
+                job.res.rendered = true;
+            }
+            cb();
+        });
+    }
+
+    function fxCheckLoaded(job) {
+        /* Page.navigate's reply may trail the lifecycle events */
+        if (job.loaderId && job.lcPending) {
+            for (var i = 0; i < job.lcPending.length; i++)
+                if (job.lcPending[i].loaderId === job.loaderId)
+                    job.lc[job.lcPending[i].name] = true;
+            job.lcPending = null;
+        }
+        if (job.stage !== "render" || !job.loaderId || !job.lc[job.want]) return;
+        job.stage = "snap";
+        fxSnapshot(job, function() { job.finish(false); });
+    }
+
+    function fxNetInfo(job) {
+        var res = job.res;
+        var x = job.networkId && job.extra[job.networkId];
+        if (x && x.headersText && !res.rawHeader) res.rawHeader = x.headersText;
+    }
+
+    /* CDP event on one of fetch's tab sessions. */
+    function fxOnEvent(tab, msg) {
+        var p = msg.params || {};
+        var job = tab.job, sid = tab.sessionId;
+
+        if (msg.method === "Fetch.requestPaused") {
+            var isMain = p.resourceType === "Document" && p.frameId === tab.mainFrameId;
+            if (!isMain) {
+                cdpCall("Fetch.continueRequest", {requestId: p.requestId}, sid, null, null, function(){});
+                return;
+            }
+            /* stray navigation from an idle tab, or a second one (JS
+             * redirect) after we already have our document */
+            if (!job || job.done || job.gotDoc) {
+                cdpCall("Fetch.failRequest", {requestId: p.requestId, errorReason: "Aborted"},
+                        sid, null, null, function(){});
+                return;
+            }
+            /* request stage (POST only): send the first request as a POST;
+             * redirected requests go out as chrome decides */
+            if (p.responseStatusCode === undefined && !p.responseErrorReason) {
+                var cont = {requestId: p.requestId};
+                if (job.opts.postB64 && !job.posted) {
+                    job.posted = true;
+                    var hl = [], rh = (p.request && p.request.headers) || {};
+                    for (var hn in rh)
+                        if (!/^content-(type|length)$/i.test(hn)) hl.push({name: hn, value: rh[hn]});
+                    if (job.opts.postType) hl.push({name: "Content-Type", value: job.opts.postType});
+                    cont.method   = "POST";
+                    cont.postData = job.opts.postB64;
+                    cont.headers  = hl;
+                }
+                cdpCall("Fetch.continueRequest", cont, sid, null, null, function(r, e) {
+                    if (e && !job.done) {
+                        job.res.errMsg = "POST failed: " + (e.message || String(e));
+                        job.finish(false);
+                    }
+                });
+                return;
+            }
+            /* transport failure (dns, refused...): let it through so
+             * Page.navigate reports chrome's net::ERR_* text */
+            if (p.responseErrorReason) {
+                cdpCall("Fetch.continueRequest", {requestId: p.requestId}, sid, null, null, function(){});
+                return;
+            }
+            var code = p.responseStatusCode || 0;
+            var loc  = fxHdrGet(p.responseHeaders, "location");
+            if (code >= 300 && code < 400 && loc && job.opts.location !== false) {
+                cdpCall("Fetch.continueRequest", {requestId: p.requestId}, sid, null, null, function(){});
+                return;
+            }
+            var res = job.res;
+            job.gotDoc = true;
+            job.networkId = p.networkId;
+            res.status = code;
+            res.statusText = p.responseStatusText || fxStatusText[code] || "";
+            res.headers = fxHdrObj(p.responseHeaders);
+            res.effectiveUrl = p.request && p.request.url || res.url;
+            fxNetInfo(job);
+            var ct = fxHdrGet(p.responseHeaders, "content-type") || "";
+            var render = job.opts.render !== false
+                      && /^\s*(text\/html|application\/xhtml\+xml)/i.test(ct)
+                      && !(code >= 300 && code < 400);
+            cdpCall("Fetch.getResponseBody", {requestId: p.requestId}, sid, null, null,
+                function(r, e) {
+                    if (job.done) return;
+                    if (!e && r) {
+                        if (r.base64Encoded) res.bodyB64 = r.body;
+                        else res.bodyStr = r.body;
+                    }
+                    if (render) {
+                        job.stage = "render";
+                        cdpCall("Fetch.continueRequest", {requestId: p.requestId},
+                                sid, null, null, function(){});
+                        fxCheckLoaded(job);
+                    } else {
+                        cdpCall("Fetch.failRequest", {requestId: p.requestId,
+                            errorReason: "Aborted"}, sid, null, null, function() {
+                                job.finish(false);
+                            });
+                    }
+                });
+            return;
+        }
+        if (!job || job.done) return;
+
+        if (msg.method === "Page.lifecycleEvent") {
+            if (p.frameId === tab.mainFrameId && p.loaderId === job.loaderId) {
+                job.lc[p.name] = true;
+                fxCheckLoaded(job);
+            } else if (p.frameId === tab.mainFrameId && !job.loaderId) {
+                /* navigate reply not in yet; remember by loader */
+                (job.lcPending = job.lcPending || []).push(p);
+            }
+        } else if (msg.method === "Network.responseReceived") {
+            if (p.requestId === job.networkId || (p.type === "Document" && p.frameId === tab.mainFrameId)) {
+                var rr = p.response || {};
+                if (rr.remoteIPAddress) job.res.serverIP = rr.remoteIPAddress.replace(/^\[|\]$/g, "");
+                if (rr.remotePort) job.res.serverPort = rr.remotePort;
+                var hv = fxHttpVersion(rr.protocol);
+                if (hv) job.res.httpVersion = hv;
+            }
+        } else if (msg.method === "Network.responseReceivedExtraInfo") {
+            job.extra[p.requestId] = p;
+            if (p.requestId === job.networkId) fxNetInfo(job);
+        }
+    }
+
+    function fxClose(done) {
+        for (var i = 0; i < fx.tabs.length; i++) {
+            if (fx.tabs[i].busy)
+                return done(null, {message: "browser.fetchClose: fetches still in progress"});
+        }
+        var ctxId = fx.ctxId;
+        for (var j = 0; j < fx.tabs.length; j++) delete fx.sessions[fx.tabs[j].sessionId];
+        fx.tabs = [];
+        fx.ctxId = null;
+        if (!ctxId) return done(true, null);
+        cdpCall("Target.disposeBrowserContext", {browserContextId: ctxId},
+                null, null, null, function(r, e) { done(!e, e); });
+    }
+
     /* Compile urlMatch to a predicate function. */
     function _matchUrl(urlMatch, url) {
         if (!url) return false;
@@ -346,6 +864,10 @@ function _workerMain(args)
 
         if (msg.method) {
             var sess = msg.sessionId || "";
+
+            /* browser.fetch()'s tabs: handled here, never forwarded */
+            if (fx.sessions[sess]) return fxOnEvent(fx.sessions[sess], msg);
+            if (!sess && fxIsOurTargetEvent(msg)) return;
 
             /* Tracing accumulation: data events stream while active. */
             if (msg.method === "Tracing.dataCollected" && traceBufs[sess]) {
@@ -478,9 +1000,21 @@ function _workerMain(args)
 
     var shutEv = thread.onGet(ch + ".shutdown", function(key) {
         thread.del(key);
-        try { ws.wsClose(); } catch(e) {}
-        try { reqEv.remove();  } catch(e) {}
-        try { shutEv.remove(); } catch(e) {}
+        function closeWs() {
+            try { ws.wsClose(); } catch(e) {}
+            try { reqEv.remove();  } catch(e) {}
+            try { shutEv.remove(); } catch(e) {}
+        }
+        /* Drop browser.fetch()'s contexts first; matters for connect(),
+         * where chrome outlives us. */
+        var ids = Object.keys(fx.ctxs);
+        if (!ids.length) return closeWs();
+        var left = ids.length, closed = false;
+        function one() { if (--left === 0 && !closed) { closed = true; closeWs(); } }
+        setTimeout(function() { if (!closed) { closed = true; closeWs(); } }, 300);
+        for (var i = 0; i < ids.length; i++)
+            cdpCall("Target.disposeBrowserContext", {browserContextId: ids[i]},
+                    null, null, null, one);
     });
 }
 
@@ -818,6 +1352,326 @@ Browser.prototype.close = function(cb) {
 
 Browser.prototype.wsEndpoint = function() {
     return this._wsEndpoint;
+};
+
+/* ---------------- browser.fetch() / fetchAsync() ----------------
+ * curl.fetch()-shaped retrieval through chrome.  The work happens in
+ * the worker (see fxRunOne); these only marshal arguments and results. */
+
+/* (url|urls [, opts] [, cb]) -> {urls, opts, cb} */
+function _fetchArgs(args, what) {
+    var urls = null, opts = {}, cb = null;
+    for (var i = 0; i < args.length; i++) {
+        var a = args[i];
+        if (typeof a === "string") urls = [a];
+        else if (Array.isArray(a)) urls = a.slice();
+        else if (typeof a === "function") cb = a;
+        else if (a && typeof a === "object") opts = a;
+    }
+    if (!urls || !urls.length)
+        throw new Error(what + ": a url or array of urls is required");
+    for (var j = 0; j < urls.length; j++)
+        if (typeof urls[j] !== "string")
+            throw new Error(what + ": urls must be strings");
+    var o = {};
+    for (var k in opts) o[k] = opts[k];
+    /* curl's maxTime is in seconds */
+    if (o.timeout === undefined && typeof o.maxTime === "number")
+        o.timeout = o.maxTime * 1000;
+    _fetchPostBody(o, what);
+    return {urls: urls, isArray: Array.isArray(args[0]), opts: o, cb: cb};
+}
+
+/* ---- POST bodies, built the way rampart-curl builds them ---- */
+
+function _isBuf(v) {
+    return v instanceof ArrayBuffer || ArrayBuffer.isView(v)
+        || (typeof Buffer !== "undefined" && v instanceof Buffer)
+        || Object.prototype.toString.call(v) === "[object Buffer]";
+}
+
+/* "@path" -> file contents; "\@..." -> literal "@..." */
+function _postFile(s, what) {
+    var b;
+    try { b = utils.readFile(s.slice(1)); } catch (e) { b = null; }
+    if (!b) throw new Error(what + ": cannot read file " + s.slice(1));
+    return b;
+}
+function _postStr(s) { return (s.charAt(0) === "\\" && s.charAt(1) === "@") ? s.slice(1) : s; }
+
+function _toJson(v) {
+    try { return JSON.stringify(v); }
+    catch (e) { return sprintf("%J", v); }    /* cyclic */
+}
+
+/* libcurl's filename -> Content-Type table for multipart parts */
+var _mimeByExt = {gif: "image/gif", jpg: "image/jpeg", jpeg: "image/jpeg",
+    png: "image/png", svg: "image/svg+xml", txt: "text/plain", htm: "text/html",
+    html: "text/html", pdf: "application/pdf", xml: "application/xml"};
+function _mimeFor(fn) {
+    var m = fn && /\.([^.\/]+)$/.exec(fn);
+    return m ? _mimeByExt[m[1].toLowerCase()] : undefined;
+}
+
+/* One multipart part's {data, filename, type} from a curl-style value.
+ * Mirrors duk_curl_set_data + copt_postform in rampart-curl.c. */
+function _formPart(v, what) {
+    var p = {filename: undefined, type: undefined, isFile: false};
+    if (_isBuf(v)) p.data = v;
+    else if (typeof v === "string") {
+        if (v.charAt(0) === "@") {
+            p.data = _postFile(v, what);
+            p.filename = v.slice(1).replace(/^.*\//, "");
+            p.isFile = true;
+        } else p.data = _postStr(v);
+    }
+    else if (v === null || typeof v !== "object") p.data = String(v);
+    else p.data = _toJson(v);
+    return p;
+}
+
+function _multipart(form, what) {
+    var boundary = "------------------------" +
+        sprintf("%08x%08x", Math.floor(Math.random() * 0xffffffff),
+                            Math.floor(Math.random() * 0xffffffff));
+    var body = utils.bprintf("");
+    function add(name, p) {
+        var type = p.type;
+        if (!type) {
+            type = _mimeFor(p.filename);
+            if (!type && p.isFile) type = "application/octet-stream";
+        }
+        body = utils.abprintf(body, "--%s\r\nContent-Disposition: form-data; name=\"%s\"", boundary, name);
+        if (p.filename !== undefined)
+            body = utils.abprintf(body, "; filename=\"%s\"", p.filename);
+        body = utils.abprintf(body, "\r\n");
+        if (type) body = utils.abprintf(body, "Content-Type: %s\r\n", type);
+        body = utils.abprintf(body, "\r\n%s\r\n", p.data);
+    }
+    function addObj(name, o) {
+        var p = _formPart(o.data, what);
+        if (typeof o.filename === "string") p.filename = o.filename;
+        if (typeof o.type === "string") p.type = o.type;
+        add(name, p);
+    }
+    for (var name in form) {
+        var v = form[name];
+        if (Array.isArray(v)) {
+            for (var i = 0; i < v.length; i++) {
+                if (!v[i] || typeof v[i] !== "object" || !("data" in v[i]))
+                    throw new Error(what + ": postform array must contain objects with {data:...}");
+                addObj(name, v[i]);
+            }
+        }
+        else if (v && typeof v === "object" && !_isBuf(v) && ("data" in v)) addObj(name, v);
+        else add(name, _formPart(v, what));
+    }
+    body = utils.abprintf(body, "--%s--\r\n", boundary);
+    return {body: body, type: "multipart/form-data; boundary=" + boundary};
+}
+
+/* Turn post/postJSON/postform into opts.postB64 + opts.postType. */
+function _fetchPostBody(o, what) {
+    var body = null, type = null, v;
+    if (o.postform !== undefined) {
+        v = o.postform;
+        if (!v || typeof v !== "object" || Array.isArray(v) || _isBuf(v))
+            throw new Error(what + ": postform requires an object");
+        var mp = _multipart(v, what);
+        body = mp.body; type = mp.type;
+    }
+    else if (o.postJSON !== undefined || o.postJson !== undefined) {
+        v = o.postJSON !== undefined ? o.postJSON : o.postJson;
+        if (typeof v === "string")  body = v.charAt(0) === "@" ? _postFile(v, what) : _postStr(v);
+        else if (_isBuf(v))         body = v;
+        else                        body = _toJson(v);
+        type = "application/json";
+    }
+    else if (o.post !== undefined) {
+        v = o.post;
+        if (typeof v === "string")  body = v.charAt(0) === "@" ? _postFile(v, what) : _postStr(v);
+        else if (_isBuf(v))         body = v;
+        else if (v && typeof v === "object") body = utils.objectToQuery(v);
+        else throw new Error(what + ": post requires a string, buffer or object");
+        type = "application/x-www-form-urlencoded";
+    }
+    delete o.post; delete o.postJSON; delete o.postJson; delete o.postform;
+    if (body === null) return;
+
+    /* a Content-Type in opts.headers wins, as with curl */
+    var h = o.headers;
+    if (Array.isArray(h)) {
+        o.headers = h.filter(function(s) {
+            var m = /^\s*content-type\s*:\s*(.*)$/i.exec(String(s));
+            if (m) { type = m[1]; return false; }
+            return true;
+        });
+    } else if (h && typeof h === "object") {
+        var nh = {};
+        for (var k in h) {
+            if (/^content-type$/i.test(k)) type = String(h[k]);
+            else nh[k] = h[k];
+        }
+        o.headers = nh;
+    }
+    o.postB64 = sprintf("%B", typeof body === "string" ? utils.bprintf("%s", body) : body);
+    o.postType = type;
+}
+
+/* Worker result -> curl-style result object. */
+function _fetchResult(r, opts) {
+    var body;
+    if (r.bodyB64)                  body = utils.bprintf("%!B", r.bodyB64);
+    else if (r.bodyStr !== null)    body = utils.bprintf("%s", r.bodyStr);
+    else                            body = utils.bprintf("");
+    var res = {
+        body:         body,
+        status:       r.status,
+        statusText:   r.statusText,
+        url:          r.url,
+        effectiveUrl: r.effectiveUrl,
+        headers:      r.headers,
+        rawHeader:    r.rawHeader,
+        totalTime:    r.totalTime,
+        rendered:     r.rendered
+    };
+    if (r.rendered) res.text = r.text;
+    else if (opts.returnText !== false) res.text = utils.bufferToString(body);
+    if (r.serverIP)    res.serverIP = r.serverIP;
+    if (r.serverPort)  res.serverPort = r.serverPort;
+    if (r.httpVersion) res.httpVersion = r.httpVersion;
+    if (r.errMsg)      res.errMsg = r.errMsg;
+    return res;
+}
+
+/* `this` inside fetch callbacks: addurl() queues more urls. */
+function _fetchCbThis(state) {
+    return {
+        addurl: function(u) {
+            if (typeof u !== "string")
+                throw new Error("addurl: url must be a string");
+            state.more.push(u);
+        }
+    };
+}
+
+function _fetchSend(browser, urls, opts, keys) {
+    rampart.thread.put(browser._channel + ".req." + _nextId(), {
+        proc: "fetch",
+        args: {urls: urls, opts: opts, resKey: keys.resKey, evName: keys.evName}
+    });
+}
+
+function _fetchEnd(browser, resKey, consumed) {
+    rampart.thread.put(browser._channel + ".req." + _nextId(),
+        {proc: "fetchEnd", args: {resKey: resKey, consumed: consumed}});
+}
+
+/* Blocking.  Single url, no callback: returns the result.  With a
+ * callback: calls it per result in completion order, returns undefined. */
+Browser.prototype.fetch = function(/* url|urls [, opts] [, cb] */) {
+    var a = _fetchArgs(arguments, "browser.fetch");
+    if (a.isArray && !a.cb)
+        throw new Error("browser.fetch: a callback is required with an array of urls");
+    var self = this;
+    var resKey = self._channel + ".fres." + _nextToken();
+    var waitMs = (a.opts.timeout > 0 ? a.opts.timeout : 30000) + 15000;
+    var state = {more: []};
+    var total = a.urls.length, got = 0, single = null;
+
+    _fetchSend(self, a.urls, a.opts, {resKey: resKey});
+    try {
+        while (got < total) {
+            var r = rampart.thread.del(resKey + "." + got, waitMs);
+            if (r === undefined)
+                throw new Error("browser.fetch: no reply from chrome");
+            got++;
+            var res = _fetchResult(r, a.opts);
+            if (!a.cb) { single = res; continue; }
+            var ret = a.cb.call(_fetchCbThis(state), res);
+            if (state.more.length) {
+                total += state.more.length;
+                _fetchSend(self, state.more, a.opts, {resKey: resKey});
+                state.more = [];
+            }
+            if (ret === false) break;
+        }
+    } finally {
+        _fetchEnd(self, resKey, got);
+    }
+    return a.cb ? undefined : single;
+};
+
+/* Non-blocking.  The callback runs in the event loop once per result.
+ * Returns {finally(fn)}; under the transpiler, a Promise (resolving to
+ * the result for a single url with no callback, else when all are done). */
+Browser.prototype.fetchAsync = function(/* url|urls [, opts] [, cb] */) {
+    var a = _fetchArgs(arguments, "browser.fetchAsync");
+    var self = this;
+
+    if (_isTranspiled()) {
+        if (!a.cb) {
+            if (a.isArray)
+                throw new Error("browser.fetchAsync: a callback is required with an array of urls");
+            return new Promise(function(resolve, reject) {
+                _fetchAsyncCb(self, a.urls, a.opts, function(res) {
+                    if (res.errMsg) reject(new Error(res.errMsg));
+                    else resolve(res);
+                });
+            });
+        }
+        return new Promise(function(resolve) {
+            _fetchAsyncCb(self, a.urls, a.opts, a.cb)["finally"](function() { resolve(); });
+        });
+    }
+    if (!a.cb)
+        throw new Error("browser.fetchAsync: a callback is required");
+    return _fetchAsyncCb(self, a.urls, a.opts, a.cb);
+};
+
+function _fetchAsyncCb(self, urls, opts, cb) {
+    var a = {urls: urls, opts: opts, cb: cb};
+    var tok = _nextToken();
+    var evName = self._channel + ".fev." + tok;
+    var fnName = "fetch-" + tok;
+    var state = {more: []};
+    var total = a.urls.length, got = 0, stopped = false;
+    var finals = [], allDone = false;
+
+    function complete() {
+        allDone = true;
+        rampart.event.off(evName, fnName);
+        for (var i = 0; i < finals.length; i++) finals[i]();
+    }
+
+    rampart.event.on(evName, fnName, function(uv, r) {
+        got++;
+        if (!stopped) {
+            var ret = a.cb.call(_fetchCbThis(state), _fetchResult(r, a.opts));
+            if (ret === false) stopped = true;
+            if (state.more.length && !stopped) {
+                total += state.more.length;
+                _fetchSend(self, state.more, a.opts, {evName: evName});
+            }
+            state.more = [];
+        }
+        if (got >= total) complete();
+    });
+    _fetchSend(self, a.urls, a.opts, {evName: evName});
+
+    return {
+        "finally": function(fn) {
+            if (typeof fn !== "function")
+                throw new Error("finally: argument must be a function");
+            if (allDone) fn(); else finals.push(fn);
+            return this;
+        }
+    };
+}
+
+/* Close fetch's tabs and discard its cookies and cache. */
+Browser.prototype.fetchClose = function(cb) {
+    return _sendProc(this._channel, "fetchClose", {}, cb);
 };
 
 /* ---------------- BrowserContext ---------------- */
