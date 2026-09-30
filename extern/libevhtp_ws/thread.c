@@ -376,6 +376,7 @@ evthr_pool_defer(evthr_pool_t * pool, evthr_cb cb, void * arg)
     evthr_t * thread      = NULL;
     evthr_t * min_thread  = NULL;
     int       min_backlog = 0;
+    evthr_res res;
 
     if (pool == NULL) {
         return EVTHR_RES_FATAL;
@@ -400,7 +401,22 @@ evthr_pool_defer(evthr_pool_t * pool, evthr_cb cb, void * arg)
         }
     }
 
-    return evthr_defer(min_thread, cb, arg);
+    if (min_thread == NULL) {
+        return EVTHR_RES_FATAL;
+    }
+
+    /* Count it here, in the accepting thread.  The worker may not run for
+       a while, and until it does the picker must not still see this thread
+       as idle -- that is what piled whole bursts onto one thread. */
+    __sync_fetch_and_add(&min_thread->openconn, 1);
+
+    res = evthr_defer(min_thread, cb, arg);
+
+    if (res != EVTHR_RES_OK) {
+        __sync_fetch_and_sub(&min_thread->openconn, 1);
+    }
+
+    return res;
 } /* evthr_pool_defer */
 
 static evthr_pool_t *

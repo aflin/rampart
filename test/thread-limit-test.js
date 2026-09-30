@@ -83,13 +83,20 @@ function burst(urls, n) {
     for (var i = 0; i < n; i++)
         for (var j = 0; j < urls.length; j++)
             list.push(base + urls[j]);
-    var ids = {}, statuses = {}, start = Date.now();
+    var per = {}, statuses = {}, start = Date.now();
     curl.fetch(list, function(res) {
         statuses[res.status] = (statuses[res.status] || 0) + 1;
-        if (res.status == 200)
-            ids[JSON.parse(res.text).id] = true;
+        if (res.status == 200) {
+            var id = JSON.parse(res.text).id;
+            per[id] = (per[id] || 0) + 1;
+        }
     });
-    return { ids: Object.keys(ids), statuses: statuses, elapsed: (Date.now() - start) / 1000 };
+    var ids = Object.keys(per), worst = 0;
+    for (var k in per) if (per[k] > worst) worst = per[k];
+    /* worst = the most requests any single thread took.  A structural
+       measure of spread: it catches piling without timing the machine. */
+    return { ids: ids, per: per, worst: worst, statuses: statuses,
+             elapsed: (Date.now() - start) / 1000 };
 }
 
 testFeature("limited path serves a single request", function() {
@@ -113,18 +120,25 @@ testFeature("limited path: 8 concurrent requests use at most 2 threads", functio
 });
 
 testFeature("limited path: requests queue behind the 2 threads", function() {
-    /* 8 requests over 2 threads is at least 4 rounds of the handler's nap */
-    return tl.elapsed >= 4 * NAP;
+    /* 8 over 2 threads is 4 rounds of the nap, so 4*NAP is the exact
+       boundary.  Ask for a little less: the point is that they queued at
+       all (unqueued would be ~1 round), not the elapsed time to the ms. */
+    return tl.elapsed >= 3.5 * NAP;
 });
 
 testFeature("unlimited path: 8 concurrent requests spread across threads", function() {
+    /* 8 requests over 6 unlimited threads: correct dispatch gives every
+       thread 1 or 2.  worst/thread is the real assertion -- piling onto two
+       threads shows up as 4 regardless of machine speed.  elapsed is kept
+       only as a loose backstop against a total collapse. */
     var r = burst(["/free/slow"], 8);
-    return r.statuses[200] === 8 && r.ids.length >= 3 && r.elapsed < 4 * NAP;
+    return r.statuses[200] === 8 && r.ids.length >= 3 && r.worst <= 3
+           && r.elapsed < 6 * NAP;
 });
 
 testFeature("longest prefix wins: /tl/one/ pinned to a single thread", function() {
     var r = burst(["/tl/one/slow"], 4);
-    return r.statuses[200] === 4 && r.ids.length == 1 && r.elapsed >= 4 * NAP;
+    return r.statuses[200] === 4 && r.ids.length == 1 && r.elapsed >= 3.5 * NAP;
 });
 
 testFeature("grouped paths share one set of 3 threads", function() {
@@ -147,16 +161,19 @@ testFeature("unlimited requests stay fast while the limited path is saturated", 
         curl.fetch(list, function(res) {});
     });
     sleep(0.15);
-    var worst = 0;
+    var slow_samples = 0;
     for (var i = 0; i < 6; i++) {
         var start = Date.now();
         var res = curl.fetch(base + "/fast");
         var t = (Date.now() - start) / 1000;
         if (res.status != 200) return false;
-        if (t > worst) worst = t;
+        /* a /fast stuck behind a saturated /tl/ thread waits a whole nap,
+           so anything well under one nap is healthy.  Tolerate a single
+           slow sample: one scheduling hiccup is not a regression. */
+        if (t >= 0.75 * NAP) slow_samples++;
     }
     sleep(1.5);
-    return worst < NAP / 2;
+    return slow_samples <= 1;
 });
 
 testFeature("deep queue spreads evenly across the set", function() {

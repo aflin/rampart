@@ -3293,9 +3293,18 @@ htp__run_in_thread_(evthr_t * thr, void * arg, void * shared)
 
     connection->evbase = evthr_get_base(thr);
     connection->thread = thr;
+#ifdef EVTHR_SHARED_PIPE
+    /* Shared-pipe mode: evthr_pool_defer picks no thread (any free worker
+       takes the command), so it cannot count at defer time and there is no
+       picker to mislead.  Count here, or openconn would only ever be
+       decremented and would go negative. */
     if (htp->thr_pool != NULL) {
         __sync_fetch_and_add(&thr->openconn, 1);
     }
+#else
+    /* openconn was already incremented by evthr_pool_defer in the
+       accepting thread; counting it again here would double it. */
+#endif
 
     if (htp__connection_accept_(connection->evbase, connection) < 0) {
         evhtp_safe_free(connection, evhtp_connection_free);
