@@ -238,6 +238,10 @@ function _workerMain(args)
         fetchClose: function(a, done) {
             fxClose(done);
         },
+        /* browser.download(): let chrome save the file itself. */
+        download: function(a, done) {
+            dlStart(a, done);
+        },
         /* Start tracing: init the buffer for this session and call
          * Tracing.start with the supplied config. */
         traceStart: function(a, done) {
@@ -350,7 +354,15 @@ function _workerMain(args)
         hasTabs:   false,
         tabWait:   [],       /* jobs waiting for a pooled tab */
         maxTabs:   8,
-        seqByKey:  {}
+        seqByKey:  {},
+        /* Above this, read the body as a stream: chrome never answers
+           Fetch.getResponseBody once its base64 reply would reach
+           256 MiB (a body of 192 MiB). */
+        inlineMax: 64 * 1024 * 1024,
+        chunkSize: 8 * 1024 * 1024,
+        /* unfinished fetch jobs, so shutdown can answer them */
+        active:    {},
+        nextId:    0
     };
 
     var fxStatusText = {
@@ -416,7 +428,10 @@ function _workerMain(args)
     }
 
     /* New tab in ctxId with the domains fetch needs enabled. */
-    function fxNewTab(ctxId, cb) {
+    /* plain: no request interception, and not registered as a fetch tab.
+       browser.download() needs that -- interception pauses the document,
+       and an unclaimed pause is aborted, which killed the download. */
+    function fxNewTab(ctxId, cb, plain) {
         cdpCall("Target.createTarget", {url: "about:blank", browserContextId: ctxId},
             null, null, null, function(r1, e1) {
             if (e1) return cb(null, e1);
@@ -427,8 +442,9 @@ function _workerMain(args)
                 null, null, null, function(r2, e2) {
                 if (e2) return cb(null, e2);
                 tab.sessionId = r2.sessionId;
-                fx.sessions[tab.sessionId] = tab;
-                var sid = tab.sessionId, left = 4, err = null;
+                if (!plain)
+                    fx.sessions[tab.sessionId] = tab;
+                var sid = tab.sessionId, left = plain ? 2 : 4, err = null;
                 function step(_, e) {
                     if (e) err = e;
                     if (--left) return;
@@ -440,11 +456,14 @@ function _workerMain(args)
                     });
                 }
                 cdpCall("Page.enable", {}, sid, null, null, step);
-                cdpCall("Page.setLifecycleEventsEnabled", {enabled: true}, sid, null, null, step);
                 cdpCall("Network.enable", {}, sid, null, null, step);
-                cdpCall("Fetch.enable", {patterns: [{urlPattern: "*",
-                    resourceType: "Document", requestStage: "Response"}]},
-                    sid, null, null, step);
+                if (!plain) {
+                    cdpCall("Page.setLifecycleEventsEnabled", {enabled: true},
+                            sid, null, null, step);
+                    cdpCall("Fetch.enable", {patterns: [{urlPattern: "*",
+                        resourceType: "Document", requestStage: "Response"}]},
+                        sid, null, null, step);
+                }
             });
         });
     }
@@ -583,6 +602,12 @@ function _workerMain(args)
     }
 
     function fxDeliver(b, res) {
+        if (b.a.onResult) {      /* internal caller (download fallback) */
+            b.a.onResult(res);
+            b.running--;
+            fxPump(b);
+            return;
+        }
         var k = b.a.resKey && fx.seqByKey[b.a.resKey];
         if (k) {
             k.out--;
@@ -599,33 +624,56 @@ function _workerMain(args)
         var t0 = Date.now();
         var res = {url: url, effectiveUrl: url, status: 0, statusText: "",
                    headers: {}, rawHeader: "", errMsg: "", totalTime: 0,
-                   rendered: false, bodyB64: null, bodyStr: null, text: null};
+                   rendered: false, bodyB64: null, bodyStr: null, text: null,
+                   bodyBuf: null, bodySize: -1, file: null, bodyOmitted: false};
         var job = {opts: opts, res: res, t0: t0, done: false, gotDoc: false,
                    loaderId: null, networkId: null, lc: {}, stage: "nav",
                    extra: {}, want: fxWaitEvents[opts.waitUntil || "load"] || "load"};
-        var timeout = opts.timeout > 0 ? opts.timeout : 30000;
+        /* `timeout` limits how long the fetch may make NO progress, not how
+           long a transfer may take: as a total limit it silently truncated
+           any download slower than 30 s.  `maxTime` (curl's option, in
+           seconds) is the hard cap on the whole fetch when given. */
+        var idle = opts.timeout > 0 ? opts.timeout : 30000;
+        var hard = (typeof opts.maxTime === "number" && opts.maxTime > 0)
+                 ? opts.maxTime * 1000 : 0;
+        job.idle = idle;
 
         function finish(discard) {
             if (job.done) return;
             job.done = true;
+            delete fx.active[job.id];
             if (job.timer) clearTimeout(job.timer);
+            if (job.hardTimer) clearTimeout(job.hardTimer);
             res.totalTime = (Date.now() - t0) / 1000;
-            if (job.tab) fxRelease(job.tab, discard);
+            if (job.tab && !fx.shuttingDown) fxRelease(job.tab, discard);
             fxDeliver(b, res);
         }
         job.finish = finish;
+        job.id = ++fx.nextId;
+        fx.active[job.id] = job;
 
-        job.timer = setTimeout(function() {
+        function expire(why) {
             if (job.done) return;
-            res.errMsg = "timeout after " + timeout + " ms"
-                       + (job.gotDoc ? " waiting for " + (opts.waitUntil || "load") : "");
-            if (job.gotDoc && job.tab) {
+            res.errMsg = why
+                       + (!job.gotDoc ? ""
+                          : job.stage === "render"
+                            ? " waiting for " + (opts.waitUntil || "load")
+                            : " reading the response body");
+            /* hand back what arrived, clearly marked incomplete */
+            if (job.onAbort) job.onAbort();
+            if (!fx.shuttingDown && job.gotDoc && job.tab && job.stage === "render") {
                 /* keep what rendered so far */
                 job.stage = "snap";
                 var guard = setTimeout(function() { finish(true); }, 2000);
                 fxSnapshot(job, function() { clearTimeout(guard); finish(true); });
             } else finish(true);
-        }, timeout);
+        }
+        job.onTimeout = function() { expire("no progress for " + idle + " ms"); };
+        job.timer = setTimeout(job.onTimeout, idle);
+        if (hard)
+            job.hardTimer = setTimeout(function() {
+                expire("maxTime of " + hard + " ms exceeded");
+            }, hard);
 
         fxAcquire(job, function(tab, err) {
             if (job.done) { if (tab) fxRelease(tab, false); return; }
@@ -670,6 +718,152 @@ function _workerMain(args)
         if (proto === "h3" || proto.indexOf("h3-") === 0) return 3.0;
         var m = /^http\/(\d\.\d)/.exec(proto);
         return m ? parseFloat(m[1]) : undefined;
+    }
+
+    /* One-shot body read, for small bodies and for HTML (which must keep
+       its body for the renderer). */
+    function fxReadInline(job, p, render) {
+        var sid = job.tab.sessionId, res = job.res;
+
+        /* responses that carry no body: chrome refuses to read one for them,
+           which is not an error (a redirect returned with location:false,
+           204, 304, Content-Length: 0) */
+        var code = p.responseStatusCode || 0;
+        var nobody = (code >= 100 && code < 200) || code === 204 || code === 205
+                  || code === 304 || (code >= 300 && code < 400) || job.size === 0;
+
+        cdpCall("Fetch.getResponseBody", {requestId: p.requestId}, sid, null, null,
+            function(r, e) {
+                if (job.done) return;
+                /* report a failed read instead of an unexplained empty body */
+                if (e) {
+                    if (!nobody)
+                        res.errMsg = "could not read response body: "
+                                   + (e.message || String(e));
+                }
+                else if (r) {
+                    if (r.base64Encoded) res.bodyB64 = r.body;
+                    else res.bodyStr = r.body;
+                }
+                else if (!nobody)
+                    res.errMsg = "no response body returned by chrome";
+
+                if (render) {
+                    job.stage = "render";
+                    cdpCall("Fetch.continueRequest", {requestId: p.requestId},
+                            sid, null, null, function(){});
+                    fxCheckLoaded(job);
+                } else {
+                    cdpCall("Fetch.failRequest", {requestId: p.requestId,
+                        errorReason: "Aborted"}, sid, null, null, function() {
+                            job.finish(false);
+                        });
+                }
+            });
+    }
+
+    /* Reset the no-progress timer: a long but healthy transfer must not be
+       cut off, while a stalled one still fails. */
+    function fxProgress(job) {
+        if (job.done || !job.onTimeout) return;
+        if (job.timer) clearTimeout(job.timer);
+        job.timer = setTimeout(job.onTimeout, job.idle);
+    }
+
+    /* Read the body in chunks via IO.read.  No size ceiling, and with
+       opts.toFile the bytes go straight to disk so the body never has to
+       fit in memory. */
+    function fxReadStream(job, p) {
+        var sid = job.tab.sessionId, res = job.res;
+        /* IO.read waits until it has the full requested size (counted in
+           base64) or EOF, and chrome sends no progress events for an
+           intercepted request -- so a large read on a slow response shows no
+           progress at all and trips the inactivity timeout.  Start small and
+           double while reads come back full and fast; halve when slow. */
+        var maxChunk = job.opts.chunkSize > 0 ? job.opts.chunkSize : fx.chunkSize;
+        var minChunk = maxChunk < 65536 ? maxChunk : 65536;
+        var chunk = minChunk;
+        var toFile = job.opts.toFile;
+        var body = null, nbytes = 0;
+
+        /* what to report if the fetch is cut short mid-transfer */
+        job.onAbort = function() {
+            res.bodySize = nbytes;
+            if (toFile) { res.file = toFile; res.filePartial = true; }
+            else if (body !== null) { res.bodyBuf = body; res.bodyPartial = true; }
+        };
+
+        function fail(msg) {
+            if (job.done) return;
+            res.errMsg = msg;
+            /* say how much of the file is there, and that it is incomplete */
+            if (toFile) {
+                res.file = toFile;
+                res.filePartial = true;
+            }
+            res.bodySize = nbytes;
+            cdpCall("Fetch.failRequest", {requestId: p.requestId, errorReason: "Aborted"},
+                    sid, null, null, function() { job.finish(false); });
+        }
+
+        if (toFile) {
+            try { rampart.utils.writeFile(toFile, ""); }   /* truncate/create */
+            catch(e) { return fail("cannot write " + toFile + ": " + (e.message || e)); }
+        }
+
+        cdpCall("Fetch.takeResponseBodyAsStream", {requestId: p.requestId}, sid, null, null,
+            function(r, e) {
+                if (job.done) return;
+                if (e || !r || !r.stream)
+                    return fail("could not stream response body: "
+                                + (e ? (e.message || String(e)) : "no stream handle"));
+                read(r.stream);
+            });
+
+        function read(handle) {
+            var started = Date.now();
+            cdpCall("IO.read", {handle: handle, size: chunk}, sid, null, null,
+                function(r, e) {
+                    if (job.done) { close(handle); return; }
+                    if (e || !r)
+                        return fail("error reading response body after " + nbytes
+                                    + " bytes: " + (e ? (e.message || String(e)) : "no data"));
+                    var took = Date.now() - started;
+                    if (r.data && r.data.length >= chunk * 0.9 && took < 250)
+                        chunk = Math.min(chunk * 2, maxChunk);
+                    else if (took > 1000)
+                        chunk = Math.max(Math.floor(chunk / 2), minChunk);
+                    if (r.data && r.data.length) {
+                        var buf = r.base64Encoded === false
+                                ? rampart.utils.bprintf("%s", r.data)
+                                : rampart.utils.bprintf("%!B", r.data);
+                        nbytes += buf.length;
+                        fxProgress(job);         /* transfer is alive */
+                        if (toFile) {
+                            try { rampart.utils.appendFile(toFile, buf); }
+                            catch(ex) { return fail("cannot write " + toFile + ": "
+                                                    + (ex.message || ex)); }
+                        }
+                        else
+                            body = body === null ? buf : rampart.utils.abprintf(body, "%s", buf);
+                    }
+                    if (r.eof) {
+                        close(handle);
+                        res.bodyBuf = toFile ? null : body;
+                        res.bodySize = nbytes;
+                        if (toFile) res.file = toFile;
+                        cdpCall("Fetch.failRequest", {requestId: p.requestId,
+                            errorReason: "Aborted"}, sid, null, null, function() {
+                                job.finish(false);
+                            });
+                        return;
+                    }
+                    read(handle);
+                });
+        }
+        function close(handle) {
+            cdpCall("IO.close", {handle: handle}, sid, null, null, function(){});
+        }
     }
 
     function fxSnapshot(job, cb) {
@@ -756,6 +950,7 @@ function _workerMain(args)
             }
             var res = job.res;
             job.gotDoc = true;
+            fxProgress(job);            /* headers in: fresh window for the body */
             job.networkId = p.networkId;
             res.status = code;
             res.statusText = p.responseStatusText || fxStatusText[code] || "";
@@ -763,33 +958,55 @@ function _workerMain(args)
             res.effectiveUrl = p.request && p.request.url || res.url;
             fxNetInfo(job);
             var ct = fxHdrGet(p.responseHeaders, "content-type") || "";
+            var clen = fxHdrGet(p.responseHeaders, "content-length");
+            var size = (clen === null) ? -1 : parseInt(clen, 10);
+            if (isNaN(size) || size < 0) size = -1;
+            /* Content-Length of an encoded (gzip, br) body is its compressed
+               size; chrome hands back the decoded bytes, which can be far
+               larger, so treat the real size as unknown */
+            if (fxHdrGet(p.responseHeaders, "content-encoding")) size = -1;
+            /* toFile means "save this response", so an HTML body is written
+               to the file rather than rendered -- otherwise toFile was
+               silently ignored for anything chrome could display. */
             var render = job.opts.render !== false
+                      && !job.opts.toFile
                       && /^\s*(text\/html|application\/xhtml\+xml)/i.test(ct)
                       && !(code >= 300 && code < 400);
-            cdpCall("Fetch.getResponseBody", {requestId: p.requestId}, sid, null, null,
-                function(r, e) {
-                    if (job.done) return;
-                    if (!e && r) {
-                        if (r.base64Encoded) res.bodyB64 = r.body;
-                        else res.bodyStr = r.body;
-                    }
-                    if (render) {
-                        job.stage = "render";
-                        cdpCall("Fetch.continueRequest", {requestId: p.requestId},
-                                sid, null, null, function(){});
-                        fxCheckLoaded(job);
-                    } else {
-                        cdpCall("Fetch.failRequest", {requestId: p.requestId,
-                            errorReason: "Aborted"}, sid, null, null, function() {
-                                job.finish(false);
-                            });
-                    }
-                });
+
+            job.size = size;
+            /* Chrome silently never answers Fetch.getResponseBody once the
+             * base64 reply would reach 256 MiB (a body of 192 MiB), so
+             * anything large or of unknown length is read as a stream.
+             * Taking the stream keeps the body from the renderer, so an
+             * HTML page still has to use the one-shot read. */
+            if (render)
+            {
+                if (size > fx.inlineMax)
+                {
+                    /* too big to hand back whole; still render it */
+                    res.bodyOmitted = true;
+                    job.stage = "render";
+                    cdpCall("Fetch.continueRequest", {requestId: p.requestId},
+                            sid, null, null, function(){});
+                    fxCheckLoaded(job);
+                    return;
+                }
+                fxReadInline(job, p, render);
+                return;
+            }
+            if (job.opts.toFile || size < 0 || size > fx.inlineMax)
+                fxReadStream(job, p);
+            else
+                fxReadInline(job, p, render);
             return;
         }
         if (!job || job.done) return;
 
-        if (msg.method === "Page.lifecycleEvent") {
+        if (msg.method === "Network.dataReceived") {
+            fxProgress(job);            /* bytes arriving while a page loads */
+        }
+        else if (msg.method === "Page.lifecycleEvent") {
+            fxProgress(job);
             if (p.frameId === tab.mainFrameId && p.loaderId === job.loaderId) {
                 job.lc[p.name] = true;
                 fxCheckLoaded(job);
@@ -823,6 +1040,316 @@ function _workerMain(args)
         if (!ctxId) return done(true, null);
         cdpCall("Target.disposeBrowserContext", {browserContextId: ctxId},
                 null, null, null, function(r, e) { done(!e, e); });
+    }
+
+    /* ---------------- browser.download() ----------------
+     * Chrome writes the file itself (Browser.setDownloadBehavior +
+     * downloadProgress), so nothing passes through CDP: memory stays flat
+     * and there is no size ceiling.  Each download gets its own browser
+     * context, which isolates it and makes the download id unambiguous.
+     * Chrome names the file after that id, so it lands in the target's own
+     * directory and is renamed into place -- same filesystem, atomic. */
+    var dlJobs = {};        /* guid -> job */
+    var dlPending = [];     /* jobs navigating, before their guid is known */
+    var dlSessions = {};    /* sessionId -> job, for its tab's own events */
+    var dlActive = {};      /* every unfinished download, for shutdown */
+    var dlNextId = 0;
+
+    function dlDirOf(path) {
+        var i = path.lastIndexOf("/");
+        if (i < 0)  return ".";
+        if (i === 0) return "/";
+        return path.slice(0, i);
+    }
+
+    function dlRm(path) {
+        try { if (rampart.utils.stat(path)) rampart.utils.rmFile(path); } catch(e) {}
+    }
+
+    /* The target path only ever receives a complete, successful file: every
+       byte is written under another name in the same directory and renamed
+       into place.  On any failure the target is left exactly as it was --
+       an existing file is not truncated, replaced or deleted. */
+    function dlFinish(job, errMsg) {
+        if (job.done) return;
+        job.done = true;
+        delete dlActive[job.id];
+        if (job.timer)      clearTimeout(job.timer);
+        if (job.hardTimer)  clearTimeout(job.hardTimer);
+        if (job.graceTimer) clearTimeout(job.graceTimer);
+        if (job.guid) delete dlJobs[job.guid];
+        if (job.tab) delete dlSessions[job.tab.sessionId];
+        var i = dlPending.indexOf(job);
+        if (i >= 0) dlPending.splice(i, 1);
+
+        /* stop an unfinished download, and remove chrome's partial file */
+        if (job.guid && !job.completed) {
+            cdpCall("Browser.cancelDownload", {guid: job.guid}, null, null, null, function(){});
+            dlRm(job.dir + "/" + job.guid);
+        }
+        if (job.ctxId)
+            cdpCall("Target.disposeBrowserContext", {browserContextId: job.ctxId},
+                    null, null, null, function(){});
+
+        var res = {
+            ok:        !errMsg,
+            url:       job.url,
+            file:      job.path,
+            bodySize:  job.received,
+            totalTime: (Date.now() - job.t0) / 1000
+        };
+        if (job.status) res.status = job.status;
+        if (errMsg) res.errMsg = errMsg;
+        job.done_cb(res, null);
+    }
+
+    function dlTouch(job) {
+        if (job.done) return;
+        if (job.timer) clearTimeout(job.timer);
+        job.timer = setTimeout(function() {
+            dlFinish(job, "no progress for " + job.idle + " ms");
+        }, job.idle);
+    }
+
+    function dlStart(a, done) {
+        var opts = a.opts || {};
+        var job = {
+            id: ++dlNextId,
+            url: a.url, path: a.path, dir: dlDirOf(a.path || ""),
+            t0: Date.now(), done: false, opts: opts,
+            received: 0, total: -1, guid: null, ctxId: null, tab: null,
+            completed: false, done_cb: done,
+            idle: opts.timeout > 0 ? opts.timeout : 30000
+        };
+
+        if (!a.path)
+            return done({ok: false, url: a.url, errMsg: "download: a local path is required"}, null);
+
+        /* Check the directory is writable without touching the target:
+           creating the target itself left an empty file behind on failure. */
+        var probe = job.dir + "/.rampart-dl-probe-" + job.id + "-" + Date.now();
+        try { rampart.utils.writeFile(probe, ""); dlRm(probe); }
+        catch(e) { return done({ok: false, url: a.url, file: a.path,
+                    errMsg: "cannot write to " + job.dir + ": " + (e.message || e)}, null); }
+
+        dlActive[job.id] = job;
+        if (opts.maxTime > 0)
+            job.hardTimer = setTimeout(function() {
+                dlFinish(job, "maxTime of " + (opts.maxTime * 1000) + " ms exceeded");
+            }, opts.maxTime * 1000);
+        dlTouch(job);
+
+        /* native:false fetches the body to the file instead of letting chrome
+           save it -- slower and bounded by memory, but it needs nothing from
+           chrome's download machinery. */
+        if (opts.native === false)
+            return dlToFetch(job);
+
+        cdpCall("Target.createBrowserContext", {}, null, null, null, function(r, e) {
+            if (job.done) {
+                if (!e) cdpCall("Target.disposeBrowserContext",
+                            {browserContextId: r.browserContextId}, null, null, null, function(){});
+                return;
+            }
+            if (e) return dlFinish(job, e.message || String(e));
+            job.ctxId = r.browserContextId;
+            fx.ctxs[job.ctxId] = true;      /* keep it out of pages()/targets() */
+            fx.hasTabs = true;
+
+            cdpCall("Browser.setDownloadBehavior", {
+                behavior: "allowAndName", downloadPath: job.dir,
+                eventsEnabled: true, browserContextId: job.ctxId
+            }, null, null, null, function(r2, e2) {
+                if (job.done) return;
+                if (e2) return dlFinish(job, "setDownloadBehavior: " + (e2.message || String(e2)));
+                fxNewTab(job.ctxId, function(tab, e3) {
+                    if (job.done) return;
+                    if (e3) return dlFinish(job, e3.message || String(e3));
+                    job.tab = tab;
+                    dlSessions[tab.sessionId] = job;
+                    dlPending.push(job);
+                    dlNavigate(job, opts);
+                }, true);       /* plain tab: no interception */
+            });
+        });
+    }
+
+    function dlNavigate(job, opts) {
+        var params = {url: job.url}, sid = job.tab.sessionId, left = 1;
+
+        function step() { if (--left === 0) go(); }
+        function go() {
+            if (job.done) return;
+            cdpCall("Page.navigate", params, sid, null, null, function(r, e) {
+                if (job.done) return;
+                if (e) return dlFinish(job, e.message || String(e));
+                dlTouch(job);
+                if (!r.errorText) return;   /* rendering; see dlOnSessionEvent */
+                /* A download aborts its own navigation, so ERR_ABORTED is the
+                   normal reply.  Chrome's isDownload flag is not reliable here
+                   (it may be missing or late), so give the download a moment
+                   to announce itself and fall back to fetching the body if
+                   none does.  Any other error is real. */
+                if (r.errorText !== "net::ERR_ABORTED" && !r.isDownload)
+                    return dlFinish(job, r.errorText);
+                job.navError = r.errorText;
+                if (!job.guid)
+                    job.graceTimer = setTimeout(function() {
+                        if (job.done || job.guid || job.viaFetch) return;
+                        dlToFetch(job);
+                    }, 2000);
+            });
+        }
+        if (opts.referrer) params.referrer = opts.referrer;
+        if (opts.userAgent) {
+            left++;
+            cdpCall("Network.setUserAgentOverride", {userAgent: opts.userAgent},
+                    sid, null, null, step);
+        }
+        if (opts.headers) {
+            var hdrs = {}, h = opts.headers;
+            if (Array.isArray(h)) {
+                for (var i = 0; i < h.length; i++) {
+                    var m = /^\s*([^:]+?)\s*:\s*(.*)$/.exec(String(h[i]));
+                    if (m) hdrs[m[1]] = m[2];
+                }
+            } else for (var k in h) hdrs[k] = String(h[k]);
+            left++;
+            cdpCall("Network.setExtraHTTPHeaders", {headers: hdrs}, sid, null, null, step);
+        }
+        step();
+    }
+
+    /* Chrome displays what it can render (html, text, json, images) rather
+       than downloading it, so no download ever begins.  Detect that from
+       the load event and finish the job by fetching the body to the file
+       instead -- download() then works for any url. */
+    function dlOnSessionEvent(job, msg) {
+        if (job.done) return false;
+        /* the main document's status, so an HTTP error is not saved as if
+           it were the file that was asked for */
+        if (msg.method === "Network.responseReceived") {
+            var p = msg.params || {};
+            if (p.type === "Document" && job.tab && p.frameId === job.tab.mainFrameId
+                && p.response) {
+                job.status = p.response.status;
+                job.statusText = p.response.statusText;
+            }
+            return false;
+        }
+        if (job.guid || job.viaFetch) return false;
+        if (msg.method !== "Page.loadEventFired") return false;
+        dlToFetch(job);
+        return true;
+    }
+
+    /* Fetch the body to a temporary file beside the target, then rename it
+       into place -- the fallback for anything chrome will not download. */
+    function dlToFetch(job) {
+        if (job.done || job.viaFetch) return;
+        var opts = job.opts || {};
+        var base = job.path.slice(job.path.lastIndexOf("/") + 1);
+        var tmp = job.dir + "/." + base + ".rampart-dl-" + job.id + "-" + Date.now();
+        var fopts = {toFile: tmp, render: false, timeout: job.idle};
+
+        job.viaFetch = true;
+        /* the fetch applies the time limits from here on */
+        if (job.graceTimer) { clearTimeout(job.graceTimer); job.graceTimer = null; }
+        if (job.timer)      { clearTimeout(job.timer);      job.timer = null; }
+        if (job.hardTimer)  { clearTimeout(job.hardTimer);  job.hardTimer = null; }
+        if (opts.maxTime > 0) {
+            var left = opts.maxTime - (Date.now() - job.t0) / 1000;
+            fopts.maxTime = left > 0.001 ? left : 0.001;
+        }
+        if (opts.headers)   fopts.headers = opts.headers;
+        if (opts.userAgent) fopts.userAgent = opts.userAgent;
+        if (opts.referrer)  fopts.referrer = opts.referrer;
+
+        /* drop the download tab and its context first */
+        if (job.tab) delete dlSessions[job.tab.sessionId];
+        var i = dlPending.indexOf(job);
+        if (i >= 0) dlPending.splice(i, 1);
+        if (job.ctxId) {
+            cdpCall("Target.disposeBrowserContext", {browserContextId: job.ctxId},
+                    null, null, null, function(){});
+            job.ctxId = null;
+        }
+        job.tab = null;
+
+        fxStartBatch({
+            urls: [job.url], opts: fopts, resKey: null, evName: null,
+            onResult: function(r) {
+                if (job.done) { dlRm(tmp); return; }
+                var err = r.errMsg;
+                /* when the navigation had already failed for a real reason,
+                   that is the more useful message */
+                if (err && job.navError && !r.status && job.navError !== "net::ERR_ABORTED")
+                    err = job.navError;
+                if (!err && r.status >= 400)
+                    err = "HTTP " + r.status + (r.statusText ? " " + r.statusText : "");
+                if (r.status) job.status = r.status;
+                job.received = r.bodySize >= 0 ? r.bodySize : 0;
+                if (!err) {
+                    try { rampart.utils.rename(tmp, job.path); }
+                    catch(e) { err = "could not move " + tmp + " to " + job.path
+                                     + ": " + (e.message || e); }
+                }
+                if (err) dlRm(tmp);
+                dlFinish(job, err || null);
+            }
+        });
+    }
+
+    /* Browser.downloadWillBegin / downloadProgress (no session id) */
+    function dlOnEvent(msg) {
+        var p = msg.params || {};
+
+        if (msg.method === "Browser.downloadWillBegin") {
+            /* claim it for the job whose frame started it */
+            for (var i = 0; i < dlPending.length; i++) {
+                var job = dlPending[i];
+                if (job.tab && p.frameId === job.tab.mainFrameId) {
+                    job.guid = p.guid;
+                    dlJobs[p.guid] = job;
+                    dlPending.splice(i, 1);
+                    if (job.graceTimer) { clearTimeout(job.graceTimer); job.graceTimer = null; }
+                    dlTouch(job);
+                    return true;
+                }
+            }
+            return false;       /* not ours (a page's own download) */
+        }
+        if (msg.method === "Browser.downloadProgress") {
+            var j = dlJobs[p.guid];
+            if (!j) return false;
+            if (p.totalBytes)    j.total = p.totalBytes;
+            if (p.receivedBytes) j.received = p.receivedBytes;
+            if (p.state === "inProgress") { dlTouch(j); return true; }
+            if (p.state === "canceled")   { dlFinish(j, "download canceled by chrome"); return true; }
+            if (p.state === "completed") {
+                var src = j.dir + "/" + p.guid;
+                j.completed = true;
+                /* an HTTP error body is not the file asked for */
+                if (j.status >= 400) {
+                    dlRm(src);
+                    dlFinish(j, "HTTP " + j.status + (j.statusText ? " " + j.statusText : ""));
+                    return true;
+                }
+                try {
+                    rampart.utils.rename(src, j.path);
+                } catch(e) {
+                    dlRm(src);
+                    dlFinish(j, "could not move " + src + " to " + j.path
+                                + ": " + (e.message || e));
+                    return true;
+                }
+                var st = rampart.utils.stat(j.path);
+                if (st) j.received = st.size;
+                dlFinish(j, null);
+                return true;
+            }
+        }
+        return false;
     }
 
     /* Compile urlMatch to a predicate function. */
@@ -867,6 +1394,12 @@ function _workerMain(args)
 
             /* browser.fetch()'s tabs: handled here, never forwarded */
             if (fx.sessions[sess]) return fxOnEvent(fx.sessions[sess], msg);
+            /* browser.download()'s own events */
+            if (!sess && msg.method.indexOf("Browser.download") === 0
+                && dlOnEvent(msg))
+                return;
+            if (dlSessions[sess] && dlOnSessionEvent(dlSessions[sess], msg))
+                return;
             if (!sess && fxIsOurTargetEvent(msg)) return;
 
             /* Tracing accumulation: data events stream while active. */
@@ -1000,6 +1533,23 @@ function _workerMain(args)
 
     var shutEv = thread.onGet(ch + ".shutdown", function(key) {
         thread.del(key);
+
+        /* Answer every unfinished fetch and download, so async callers
+           hear back instead of waiting on a callback that never comes. */
+        fx.shuttingDown = true;
+        var aid, aj;
+        for (aid in dlActive) {
+            aj = dlActive[aid];
+            if (aj && !aj.done && !aj.viaFetch) dlFinish(aj, "browser closed");
+        }
+        for (aid in fx.active) {
+            aj = fx.active[aid];
+            if (!aj || aj.done) continue;
+            aj.res.errMsg = "browser closed";
+            if (aj.onAbort) aj.onAbort();
+            aj.finish(true);
+        }
+
         function closeWs() {
             try { ws.wsClose(); } catch(e) {}
             try { reqEv.remove();  } catch(e) {}
@@ -1068,7 +1618,7 @@ function _nextToken() { return ++_tokenSeq; }
  * The sender gets (resolve, reject) where resolve/reject each take one
  * argument.  sender must actually kick off the CDP call.
  */
-function _dispatch(ch, cb, sender) {
+function _dispatch(ch, cb, sender, syncWait) {
     if (typeof cb === "function") {
         var tok = _nextToken();
         var eventName = ch + ".cb." + tok;
@@ -1102,8 +1652,23 @@ function _dispatch(ch, cb, sender) {
 
     /* sync */
     var syncTok = _nextToken();
+    var key = ch + ".res." + syncTok;
     sender(function(){}, function(){}, {syncToken: syncTok});
-    var payload = rampart.thread.del(ch + ".res." + syncTok, 60000);
+    var payload;
+    if (syncWait === "long") {
+        /* No fixed deadline (a download may take as long as it takes):
+           wait in slices for as long as the worker is still there.  The
+           worker always replies -- on success, error or its own timeout. */
+        for (;;) {
+            payload = rampart.thread.del(key, 30000);
+            if (payload !== undefined) break;
+            if (rampart.thread.get(ch + ".closed")
+                || rampart.thread.get(ch + ".fatal"))
+                throw new Error("rampart-chromeview: connection to chrome closed");
+        }
+    }
+    else
+        payload = rampart.thread.del(key, syncWait > 0 ? syncWait : 60000);
     if (payload === undefined)
         throw new Error("rampart-chromeview: timed out waiting for CDP reply");
     if (payload.error) throw _cdpError(payload.error);
@@ -1125,7 +1690,7 @@ function _errToPlain(e) {
 
 /* Send a procedure invocation to the worker.  Returns using whichever
  * calling convention _dispatch picks. */
-function _sendProc(ch, procName, args, cb) {
+function _sendProc(ch, procName, args, cb, syncWait) {
     return _dispatch(ch, cb, function(resolve, reject, opts) {
         var id = _nextId();
         rampart.thread.put(ch + ".req." + id, {
@@ -1134,7 +1699,7 @@ function _sendProc(ch, procName, args, cb) {
             syncToken: opts.syncToken,
             cbToken:   opts.cbToken
         });
-    });
+    }, syncWait);
 }
 
 /* Convenience: a raw single CDP call via the "raw" procedure. */
@@ -1375,9 +1940,9 @@ function _fetchArgs(args, what) {
             throw new Error(what + ": urls must be strings");
     var o = {};
     for (var k in opts) o[k] = opts[k];
-    /* curl's maxTime is in seconds */
-    if (o.timeout === undefined && typeof o.maxTime === "number")
-        o.timeout = o.maxTime * 1000;
+    /* maxTime (curl's option, seconds) is a hard cap on the whole fetch and
+       is enforced separately; timeout bounds inactivity.  maxTime used to be
+       copied into timeout, which made it truncate slow transfers. */
     _fetchPostBody(o, what);
     return {urls: urls, isArray: Array.isArray(args[0]), opts: o, cb: cb};
 }
@@ -1521,7 +2086,29 @@ function _fetchPostBody(o, what) {
 /* Worker result -> curl-style result object. */
 function _fetchResult(r, opts) {
     var body;
-    if (r.bodyB64)                  body = utils.bprintf("%!B", r.bodyB64);
+    if (r.file) {
+        /* written straight to disk: no body in memory */
+        var res = {
+            file:         r.file,
+            bodySize:     r.bodySize,
+            status:       r.status,
+            statusText:   r.statusText,
+            url:          r.url,
+            effectiveUrl: r.effectiveUrl,
+            headers:      r.headers,
+            rawHeader:    r.rawHeader,
+            totalTime:    r.totalTime,
+            rendered:     false
+        };
+        if (r.filePartial) res.filePartial = true;
+        if (r.serverIP)    res.serverIP = r.serverIP;
+        if (r.serverPort)  res.serverPort = r.serverPort;
+        if (r.httpVersion) res.httpVersion = r.httpVersion;
+        if (r.errMsg)      res.errMsg = r.errMsg;
+        return res;
+    }
+    if (r.bodyBuf)                  body = r.bodyBuf;   /* streamed */
+    else if (r.bodyB64)             body = utils.bprintf("%!B", r.bodyB64);
     else if (r.bodyStr !== null)    body = utils.bprintf("%s", r.bodyStr);
     else                            body = utils.bprintf("");
     var res = {
@@ -1535,6 +2122,9 @@ function _fetchResult(r, opts) {
         totalTime:    r.totalTime,
         rendered:     r.rendered
     };
+    if (r.bodyOmitted) res.bodyOmitted = true;
+    if (r.bodyPartial) res.bodyPartial = true;
+    if (r.bodySize >= 0) res.bodySize = r.bodySize;
     if (r.rendered) res.text = r.text;
     else if (opts.returnText !== false) res.text = utils.bufferToString(body);
     if (r.serverIP)    res.serverIP = r.serverIP;
@@ -1574,17 +2164,29 @@ Browser.prototype.fetch = function(/* url|urls [, opts] [, cb] */) {
     if (a.isArray && !a.cb)
         throw new Error("browser.fetch: a callback is required with an array of urls");
     var self = this;
-    var resKey = self._channel + ".fres." + _nextToken();
-    var waitMs = (a.opts.timeout > 0 ? a.opts.timeout : 30000) + 15000;
+    var ch = self._channel;
+    var resKey = ch + ".fres." + _nextToken();
     var state = {more: []};
     var total = a.urls.length, got = 0, single = null;
+
+    /* Wait for the next result for as long as the worker is alive.  The
+       worker always answers each url (on completion, error, inactivity or
+       maxTime), and a healthy transfer may run far longer than `timeout`,
+       which only bounds inactivity -- a fixed wait here would throw while
+       the fetch was still making progress. */
+    function next() {
+        for (;;) {
+            var r = rampart.thread.del(resKey + "." + got, 30000);
+            if (r !== undefined) return r;
+            if (rampart.thread.get(ch + ".closed") || rampart.thread.get(ch + ".fatal"))
+                throw new Error("browser.fetch: connection to chrome closed");
+        }
+    }
 
     _fetchSend(self, a.urls, a.opts, {resKey: resKey});
     try {
         while (got < total) {
-            var r = rampart.thread.del(resKey + "." + got, waitMs);
-            if (r === undefined)
-                throw new Error("browser.fetch: no reply from chrome");
+            var r = next();
             got++;
             var res = _fetchResult(r, a.opts);
             if (!a.cb) { single = res; continue; }
@@ -1646,16 +2248,20 @@ function _fetchAsyncCb(self, urls, opts, cb) {
 
     rampart.event.on(evName, fnName, function(uv, r) {
         got++;
-        if (!stopped) {
-            var ret = a.cb.call(_fetchCbThis(state), _fetchResult(r, a.opts));
-            if (ret === false) stopped = true;
-            if (state.more.length && !stopped) {
-                total += state.more.length;
-                _fetchSend(self, state.more, a.opts, {evName: evName});
+        try {
+            if (!stopped) {
+                var ret = a.cb.call(_fetchCbThis(state), _fetchResult(r, a.opts));
+                if (ret === false) stopped = true;
+                if (state.more.length && !stopped) {
+                    total += state.more.length;
+                    _fetchSend(self, state.more, a.opts, {evName: evName});
+                }
+                state.more = [];
             }
-            state.more = [];
+        } finally {
+            /* a callback that throws must not leave finally() waiting forever */
+            if (got >= total) complete();
         }
-        if (got >= total) complete();
     });
     _fetchSend(self, a.urls, a.opts, {evName: evName});
 
@@ -1672,6 +2278,36 @@ function _fetchAsyncCb(self, urls, opts, cb) {
 /* Close fetch's tabs and discard its cookies and cache. */
 Browser.prototype.fetchClose = function(cb) {
     return _sendProc(this._channel, "fetchClose", {}, cb);
+};
+
+/* Download a url to a local path, letting chrome write the file itself.
+ *    var res = browser.download(url, path [, options]);
+ * Memory stays flat regardless of size and there is no size limit, but
+ * nothing about the response is available beyond its status and size --
+ * use fetch() when the body or the headers are wanted.
+ * Returns {ok, url, file, bodySize, status, totalTime}, plus errMsg on
+ * failure.  The path only ever receives a complete file; on failure it is
+ * left as it was.  Supports the usual three calling conventions. */
+Browser.prototype.download = function(url, path, optsOrCb, cb) {
+    var opts;
+    if (typeof optsOrCb === "function") { cb = optsOrCb; opts = {}; }
+    else opts = optsOrCb || {};
+
+    if (typeof url !== "string" || !url.length)
+        throw new Error("browser.download: a url is required");
+    if (typeof path !== "string" || !path.length)
+        throw new Error("browser.download: a local path is required");
+    if (path.charAt(path.length - 1) === "/")
+        throw new Error("browser.download: path must name a file, not a directory");
+    /* Chrome resolves a relative download directory against its own working
+       directory, not this script's, so make the path absolute here. */
+    if (path.charAt(0) !== "/")
+        path = utils.getcwd() + "/" + path;
+
+    /* "long": a download takes as long as it takes; the worker's own idle
+       timeout and maxTime bound it, so the caller must not give up first */
+    return _sendProc(this._channel, "download",
+                     {url: url, path: path, opts: opts}, cb, "long");
 };
 
 /* ---------------- BrowserContext ---------------- */
