@@ -1048,10 +1048,21 @@ done:
  *
  *     fused(recid) = sum over lists  SCALE / (K + position)
  *
- * K = 60 (the literature constant: damps the top of each list so one
- * retriever's #1 cannot dominate), SCALE = 1e6 (integer resolution at
- * deep positions).  A row in both lists gets additive credit -- the
- * cross-retriever agreement signal min-rank threw away.
+ * K (`rrfk', default 60: the literature constant, damping the top of
+ * each list so one retriever's #1 cannot dominate) and SCALE = 1e6.  A
+ * row in both lists gets additive credit -- the cross-retriever
+ * agreement signal min-rank threw away.
+ *
+ * Both lists are truncated to `rrfrows' entries AFTER being sorted
+ * best-first, so a position means the same thing on either side.  The
+ * vector leg still searches to `likevrows' (ANN recall needs the depth);
+ * only the post-sort list handed to fusion is capped.
+ *
+ * Per-side weights (`rrfkwweight' / `rrfvecweight') scale each term.
+ * The stored key is 1000x the fused value so that the +1 exact-tie
+ * break (`rrftiebreak') cannot outrank a genuine difference even when
+ * weights put two rows within a fraction of a unit; the $rank
+ * projection divides by 1000 to keep the user-visible magnitude.
  *
  * The fused value is stored as the merged orig's key (same shape as
  * indexor's output) and IS the row's final $rank: the result IINDEX is
@@ -1068,8 +1079,11 @@ done:
  * A side without rank data at all (no inv) makes fusion impossible;
  * the caller falls back to indexor().
  */
-#define TX_RRF_K	60
 #define TX_RRF_SCALE	1000000.0
+/* Key resolution multiplier: the stored key is TX_RRF_KEYMULT * fused,
+ * so one key unit (the tie-break bonus) is 1/1000 of a fused unit.
+ * tup_eval's $rank projection divides this back out. */
+#define TX_RRF_KEYMULT	1000.0
 
 typedef struct TXrrfEnt_tag
 {
@@ -1128,7 +1142,13 @@ txRrfCmpRecid(const void *pa, const void *pb)
  * alloc'd array (caller frees; NULL when empty/unusable) and count.
  * `descending': sort best-first by payload descending (keyword ranks)
  * vs ascending (vector inverted keys); on return each entry's .pos is
- * its 1-based best-first position. */
+ * its 1-based best-first position.
+ *
+ * The list is truncated to `rrfrows' AFTER the sort, so both sides hand
+ * fusion the same depth and a position carries the same meaning on
+ * either side.  The vector leg's own search depth (`likevrows') is
+ * untouched: ANN recall needs it, and the candidates the depth exists to
+ * catch sort to the top anyway. */
 static TXrrfEnt *
 txRrfLoad(IINDEX *ix, int descending, size_t *nOut, int *okOut)
 {
@@ -1171,6 +1191,9 @@ txRrfLoad(IINDEX *ix, int descending, size_t *nOut, int *okOut)
 			ents[n].score = TX_RANK_INTERNAL_TO_USER(TXApp,
 						TXgetoff(&bl)) / nrank;
 		else
+			/* Vector side; already filtered by `likevminrank'
+			 * upstream in TXvecIxVecIndex/TXvecLinearVecIndex, so
+			 * the floor is one policy in one place. */
 			ents[n].score = TXgetoff(&bl) / nrank;
 		n++;
 	}
@@ -1178,6 +1201,9 @@ txRrfLoad(IINDEX *ix, int descending, size_t *nOut, int *okOut)
 	if (!n) { ents = TXfree(ents); return(NULL); }
 	qsort(ents, n, sizeof(*ents),
 	      descending ? txRrfCmpScoreDesc : txRrfCmpScoreAsc);
+	/* Equal depth for both sides: truncate post-sort (see above). */
+	if (TXrrfRows > 0 && n > (size_t)TXrrfRows)
+		n = (size_t)TXrrfRows;
 	for (i = 0; i < n; i++) ents[i].pos = i + 1;
 	*nOut = n;
 	return(ents);
@@ -1195,6 +1221,19 @@ int	inv;
 	TXrrfEnt	*ka = NULL, *va = NULL;
 	size_t	kn = 0, vn = 0, ki, vi;
 	int	kOk = 0, vOk = 0;
+	/* Snapshot the knobs once: one query must fuse with one policy even
+	 * if another connection changes a setting mid-merge.  A negative
+	 * value means the same as 0 for every one of these (0 is itself a
+	 * legal setting: rrfk 0 is maximally top-heavy, weight 0 drops a
+	 * side's contribution), so negatives clamp rather than erroring. */
+	int	rrfK = (TXrrfK > 0) ? TXrrfK : 0;
+	double	wKw = (TXrrfKwWeight > 0.0) ? TXrrfKwWeight : 0.0;
+	double	wVec = (TXrrfVecWeight > 0.0) ? TXrrfVecWeight : 0.0;
+	/* Weights at their defaults means the tie-break is the only thing
+	 * that can separate equal positions, which is the common case (the
+	 * positional zipper ties kw pos N against vec pos N constantly). */
+#define kwTerm(p)	(wKw  * TX_RRF_SCALE / (double)(rrfK + (p)))
+#define vecTerm(p)	(wVec * TX_RRF_SCALE / (double)(rrfK + (p)))
 
 	ka = txRrfLoad(kw, 1, &kn, &kOk);	/* bigger payload = better */
 	va = txRrfLoad(vec, 0, &vn, &vOk);	/* smaller payload = better */
@@ -1233,46 +1272,46 @@ int	inv;
 		double	fused = 0.0;
 		EPI_OFF_T	recid, key;
 		BTLOC	loc;
-		int	kwContrib = 0;
+		int	kwContrib = 0, vecContrib = 0;
 
 		if (vi >= vn || (ki < kn && ka[ki].recid < va[vi].recid))
 		{
 			recid = ka[ki].recid;
-			fused = TX_RRF_SCALE / (double)(TX_RRF_K + ka[ki].pos);
+			fused = kwTerm(ka[ki].pos);
 			kwContrib = 1;
 			ki++;
 		}
 		else if (ki >= kn || va[vi].recid < ka[ki].recid)
 		{
 			recid = va[vi].recid;
-			fused = TX_RRF_SCALE / (double)(TX_RRF_K + va[vi].pos);
+			fused = vecTerm(va[vi].pos);
+			vecContrib = 1;
 			vi++;
 		}
 		else				/* in BOTH lists */
 		{
 			recid = ka[ki].recid;
-			fused = TX_RRF_SCALE / (double)(TX_RRF_K + ka[ki].pos)
-			      + TX_RRF_SCALE / (double)(TX_RRF_K + va[vi].pos);
-			kwContrib = 1;
+			fused = kwTerm(ka[ki].pos) + vecTerm(va[vi].pos);
+			kwContrib = vecContrib = 1;
 			ki++;
 			vi++;
 		}
-		key = (EPI_OFF_T)(fused + 0.5);
+		key = (EPI_OFF_T)(TX_RRF_KEYMULT * fused + 0.5);
 		if (key < 1) key = 1;		/* 0 reads as "no rank" */
 		/* Tie-break, riding the key itself: the merged tree orders
 		 * duplicate keys by BTLOC (recid) -- see fbtree.c binary
 		 * search, locn as secondary key -- so equal fused scores
-		 * would order by table position, i.e. arbitrarily.  And the
+		 * would order by table position, i.e. arbitrarily, and not
+		 * even stably (recids are reused file offsets).  And the
 		 * positional zipper makes exact ties routine: the kw and vec
 		 * rows at the same list position fuse equal unless a row is
-		 * in both lists.  Policy: on equal positional evidence the
-		 * literal-term match outranks the semantic-only one, so
-		 * keyword-contributing rows get +1 -- the integer resolution
-		 * of the fused scale.  Adjacent positions differ by >= ~7 at
-		 * sane pool depths, so this cannot reorder genuinely
-		 * distinct positions; consensus rows all carry a keyword
-		 * contribution, so their relative order is unchanged too. */
-		if (kwContrib)
+		 * in both lists.  `rrftiebreak' picks the winner; +1 is one
+		 * unit of the 1000x key grid, i.e. 1/1000 of a fused unit, so
+		 * it can only separate scores that were already equal -- not
+		 * a genuine difference, even a weight-driven fractional one.
+		 * Consensus rows contribute to both sides, so they take the
+		 * bonus either way and their relative order never changes. */
+		if (TXrrfTieVec ? vecContrib : kwContrib)
 			key++;
 		if (inv)
 		{
@@ -1288,6 +1327,8 @@ int	inv;
 		}
 		c->cntorig++;
 	}
+#undef kwTerm
+#undef vecTerm
 	/* Side-score lookup trees for the $krank / $vrank projections:
 	 * recid -> kw rppm rank (user scale, what a solitary LIKEP's $rank
 	 * shows) and recid -> vector similarity (100000 - inv payload, what

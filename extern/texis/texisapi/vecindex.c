@@ -3601,8 +3601,11 @@ have_qbuf: ;
                 scaled = (int32_t)(exact_score * 100000.0);
             }
             /* FOP_MMV truthiness: rank <= 0 = no match.  Filter on the
-             * EXACT score -- never the backend approximation. */
-            if (scaled <= 0)
+             * EXACT score -- never the backend approximation.
+             * `likevminrank' raises that floor: same $vrank units
+             * (similarity * 100000), applied here so solitary LIKEV and
+             * the RRF vector leg share one setting. */
+            if (scaled <= 0 || scaled < TXlikevMinRank)
                 continue;
 
             BTLOC bl;
@@ -3793,6 +3796,8 @@ TXvecLinearVecIndex(DBTBL *dbtbl, const char *fname, FLD *infld)
     for (i = 0; i < heapN; i++) {
         BTLOC bl;
         EPI_OFF_T key = (EPI_OFF_T)(100000 - heap[i].score);
+        if (heap[i].score < TXlikevMinRank)      /* likevminrank floor */
+            continue;
         TXsetrecid(&bl, heap[i].recid);
         btinsert(bt, &bl, sizeof(key), &key);
     }

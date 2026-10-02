@@ -34,6 +34,10 @@
 static pthread_mutex_t tx_handle_lock;
 
 static int defnoise=1, defsuffix=1, defsuffixeq=1, defprefix=1;
+/* same dirty-flag scheme for the expression / indextmp lists: cleared
+   when a handle changes one, so the next sql_defaults() puts the engine
+   default back before the handle's snapshot is replayed over it. */
+static int defexp=1, defindtmp=1;
 
 #define RESMAX_DEFAULT 10 /* default number of sql rows returned for select statements if max is not set */
 
@@ -7724,6 +7728,14 @@ static void sql_normalize_prop(char *prop, const char *dprop)
         strcpy (prop, "suffixeqlst");
     else if (!strcmp ("prefixlist",prop))
         strcpy (prop, "prefixlst");
+    /* Bulk REPLACE forms, mirroring noiseList/suffixList: the whole list
+       in one array, validated before anything is changed.  Distinct from
+       lstexp/lstindextmp (which READ) and addExp/delExp (which mutate one
+       entry at a time). */
+    else if (!strcmp ("expressionslist",prop) || !strcmp ("explist",prop))
+        strcpy (prop, "explst");
+    else if (!strcmp ("indextemplist",prop) || !strcmp ("indextmplist",prop))
+        strcpy (prop, "indextmplst");
 }
 
 
@@ -7745,6 +7757,33 @@ static char *prop_defaults[][2] = {
    {"wildSufMatch", "1"},
    {"alLinearDict", "0"},
    {"alLinear", "0"},
+   /* Rest of the Query Protection family.  These live on `globalcp' and
+    * were already restored collectively by querySettings:"defaults"
+    * (which reinitializes globalcp), so reset() always worked -- but
+    * sql.get() iterates this table, and listing alLinear/alLinearDict/
+    * qMaxWords while omitting their siblings made get() report three
+    * members of two families and hide ten.  Defaults are the built-ins
+    * from txopencp.c; qMaxSets is MAXSELS (mm3e.h:27).
+    *
+    * The al* entries are deliberately NOT in numeric_props: setprop
+    * takes them with TXgetBooleanOrInt(), so "true"/"false" are legal
+    * and a numeric-only check would reject them. */
+   {"alPostProc", "0"},
+   {"alWild", "1"},
+   {"alNot", "1"},
+   {"alWithin", "0"},
+   {"alIntersects", "0"},
+   {"alEquivs", "0"},
+   {"qMinWordLen", "2"},
+   {"qMinPrelen", "2"},
+   {"qMaxSets", "100"},
+   {"qMaxSetWords", "500"},
+   /* What happens when a query uses a feature the al* settings above
+    * have disabled: "silent", "warning" (the built-in default, per
+    * txopencp.c) or "error".  A string enum, so deliberately in none of
+    * the type lists -- setprop's own handler rejects anything but those
+    * three keywords or 0/1/2, with a message naming the valid values. */
+   {"denyMode", "warning"},
    {"indexMinSublen", "2"},
    {"dropWordMode", "0"},
    {"metamorphStrlstMode", "equivlist"},
@@ -7775,6 +7814,26 @@ static char *prop_defaults[][2] = {
    /* INDEX_VEC: cap on the candidate pool returned per LIKEV before
     * SQL-side filtering / vecdist re-ranking.  Default 1000. */
    {"likevRows", "1000"},
+   /* INDEX_VEC: similarity floor for LIKEV candidates, in $vrank units
+    * (similarity * 100000).  0 = off.  No model-agnostic default exists:
+    * unrelated-pair cosine is ~0.6-0.75 on bge/nomic, ~0.1-0.3 on
+    * MiniLM-class embedders. */
+   {"likevMinRank", "0"},
+   /* Hybrid keyword-OR-vector rank fusion (RRF).  rrfRows is the fusion
+    * pool depth for BOTH sides (effective depth is min(likepRows,
+    * rrfRows) / min(likevRows, rrfRows); the vector index still searches
+    * to likevRows and its list is truncated post-sort, so ANN recall is
+    * unaffected).  rrfK damps the top of each list: a row at position p
+    * in both lists ties a single list's #1 when p = rrfK + 2.
+    * rrfTieBreak picks the winner of an exact tie ('keyword' or
+    * 'vector') -- a determinism guarantee, since equal scores otherwise
+    * fall to physical table order.  The weights scale each side's term;
+    * only their ratio matters. */
+   {"rrfRows", "300"},
+   {"rrfK", "60"},
+   {"rrfTieBreak", "keyword"},
+   {"rrfKwWeight", "1.0"},
+   {"rrfVecWeight", "1.0"},
    /* INDEX_VEC: per-query HNSW expansion factor (recall/latency knob).
     * 0 = inherit the index's ef_construction (the build-time setting). */
    {"likevEf", "0"},
@@ -7793,6 +7852,20 @@ static char *prop_defaults[][2] = {
    {"likepAllMatch", "0"},
    {"likepObeyIntersects", "0"},
    {"likepInfThresh", "0"},
+   /* Metamorph "infinity" thresholds -- these decide which rows match at
+    * all, and likepInfThresh above was already restored while its two
+    * siblings were not.  Defaults from TXinfthresh/TXinfpercent
+    * (ripmm.c:832) and setprop's own reset block. */
+   {"infThresh", "-1"},
+   {"infPercent", "-1"},
+   /* LIKEP time budget, in seconds (0 = no limit).  Not in setprop's
+    * reset block either, so without this a budget set once silently
+    * outlived every sql.reset(). */
+   {"likepTime", "0"},
+   /* Takes a size string via tx_parsesz ("64MB", "10%"), so deliberately
+    * NOT in numeric_props: 0 = let texis choose. */
+   {"indexMem", "0"},
+   {"uniqNewList", "0"},
    /* {"likepIndexThresh", "-1"}, ??? */
    /*{"indexSpace", ""},
    {"indexBlock", ""}, */
@@ -7807,6 +7880,11 @@ static char *prop_defaults[][2] = {
    {"maxLinearRows", "1000"},
    {"likerRows", "1000"},
    {"indexAccess", "0"},
+   /* Metamorph index layout: the most locations a single-recid word may
+    * have and still live wholly in the .btr B-tree, saving a .dat read.
+    * Default 8, matching TxFdbiMaxSingleLocs (fdbim.c:392).  Needs index
+    * version >= 2; CREATE INDEX ... WITH ... overrides it per index. */
+   {"indexMaxSingle", "8"},
    {"indexMmap", "1"},
    {"indexReadBufSz", "64KB"},
    {"indexWriteBufSz", "128KB"},
@@ -7947,6 +8025,16 @@ static int sql_defaults(duk_context *ctx, TEXIS *tx, char *errbuf)
     {
         globalcp->suffixeq=(byte**)copylist(suffixEquivsList, nsuffixEquivsList);
         defsuffixeq=1;
+    }
+    if(!defexp)
+    {
+        TXresetexpressions();
+        defexp=1;
+    }
+    if(!defindtmp)
+    {
+        TXresetindextmp();
+        defindtmp=1;
     }
     if(!defprefix)
     {
@@ -8546,28 +8634,53 @@ static int expr_compiles(const char *expr)
  *     querysettings        also "defaults" / "texis5defaults"
  *
  * MUST remain sorted: searched with bsearch(). */
-static const char * const numeric_props[] = {
+/* setprop() properties whose value texis converts with atoi(), atol() or
+ * strtol() without checking that anything was consumed -- so a non-integer
+ * would silently become 0 and the setting would be quietly wrong
+ * (`sql.set({qmaxsets:"ten"})` set it to zero and reported success).
+ *
+ * These require an INTEGER: a Number with no fractional part, or a string
+ * holding exactly one.  `sql.set({minWordLen: 3.5})` is an error rather
+ * than a silent truncation to 3.
+ *
+ * Swept from extern/texis/texisapi/setprop.c.  Settings parsed there with
+ * atof()/strtod() are in real_props instead; settings parsed with
+ * TXgetBooleanOrInt() as a flag are in bool_props.
+ *
+ * MUST remain sorted: searched with bsearch(). */
+static const char * const int_props[] = {
     "allineardict", "btreecachesize", "btreedump", "btreeoptimizeoff",
-    "btreeoptimizeon", "btreethreshold", "cleanupwait", "dbcleanupverbose",
-    "debugmalloc", "dedupmultiitemresults", "dropwordmode", "eastpositive",
-    "enablesubsetintersect", "findselloopcheck", "fldmathverbosemaxvaluesize",
-    "indexappend", "indexblock", "indexbtreeexclusive", "indexchunk",
-    "indexdump", "indexmaxsingle", "indexminsublen", "indexmmap",
-    "indexslurp", "indextrace", "indexversion", "indexwritesplit",
-    "infpercent", "infthresh", "kdbfiostats", "kdbfoptimizeoff",
-    "kdbfoptimizeon", "kdbfverify", "likepmode", "likeprows", "likeptime",
-    "likerpercent", "likerrows", "likevef", "likevpqnprobe", "likevrows",
-    "lockbatchrows", "lockbatchtime", "locksleepdecrement",
-    "locksleepincrement", "locksleepmaxtime", "locksleepmethod",
-    "locksleeptime", "matchmode", "maxindextext", "maxlinearrows",
-    "maxrows", "mdparmodifyterms", "mergeflush", "minwordlen",
-    "predopttype", "qmaxsets", "qmaxsetwords", "qmaxterms", "qmaxwords",
-    "qminprelen", "qminwordlen", "ramlimit", "ramrows",
-    "strlstrelopvarcharpromoteviacreate", "traceddcache", "traceidx",
-    "traceindex", "tracekdbf", "tracemetamorph", "tracerppm",
-    "triggermode", "uniqnewlist", "usestringcomparemodeforstrlst",
-    "vecpqmaxtrainsamples", "vecpqoverfetchpad", "verbose", "verifysingle",
-    "wildoneword", "wildsingle", "wildsufmatch"
+    "btreeoptimizeon", "btreethreshold", "cleanupwait",
+    "dbcleanupverbose", "debugmalloc", "dedupmultiitemresults",
+    "dropwordmode", "eastpositive", "enablesubsetintersect",
+    "findselloopcheck", "fldmathverbosemaxvaluesize", "indexappend",
+    "indexblock", "indexbtreeexclusive", "indexchunk", "indexdump",
+    "indexmaxsingle", "indexminsublen", "indexmmap", "indexslurp",
+    "indextrace", "indexversion", "indexwritesplit", "infpercent",
+    "infthresh", "kdbfiostats", "kdbfoptimizeoff", "kdbfoptimizeon",
+    "kdbfverify", "likepmode", "likeprows", "likerpercent",
+    "likerrows", "likevef", "likevminrank", "likevpqnprobe",
+    "likevrows", "lockbatchrows", "lockbatchtime",
+    "locksleepdecrement", "locksleepincrement", "locksleepmaxtime",
+    "locksleepmethod", "locksleeptime", "matchmode", "maxindextext",
+    "maxlinearrows", "maxrows", "mdparmodifyterms", "mergeflush",
+    "minwordlen", "predopttype", "qmaxsets", "qmaxsetwords",
+    "qmaxterms", "qmaxwords", "qminprelen", "qminwordlen", "ramlimit",
+    "ramrows", "rrfk", "rrfrows", "strlstrelopvarcharpromoteviacreate",
+    "traceddcache", "traceidx", "traceindex", "tracekdbf",
+    "tracemetamorph", "tracerppm", "triggermode", "uniqnewlist",
+    "usestringcomparemodeforstrlst", "vecpqmaxtrainsamples", "verbose",
+    "verifysingle", "wildoneword", "wildsingle", "wildsufmatch"
+};
+
+/* As int_props, but texis parses these with atof()/strtod(), so a
+ * fraction is meaningful and must be allowed: likepTime is a budget in
+ * seconds, rrfKwWeight/rrfVecWeight are ratios, and a fraction is the
+ * whole point of vecPqOverFetchPad (0.10 = 10%).
+ *
+ * MUST remain sorted: searched with bsearch(). */
+static const char * const real_props[] = {
+    "likeptime", "rrfkwweight", "rrfvecweight", "vecpqoverfetchpad"
 };
 
 static int cmp_str_ptr(const void *a, const void *b)
@@ -8575,32 +8688,207 @@ static int cmp_str_ptr(const void *a, const void *b)
     return strcmp(*(const char * const *)a, *(const char * const *)b);
 }
 
-static int prop_is_numeric(const char *prop)
+/* Settings that are genuinely BINARY, so that sql.get() can report real
+ * JavaScript Booleans rather than 0/1 or "0"/"1".
+ *
+ * Membership cannot be derived from prop_defaults: many settings default
+ * to 0 or 1 without being switches.  likepMode is a mode number;
+ * ramRows, ramLimit, likevEf, likevPqNprobe, likevMinRank, likepTime,
+ * infThresh and indexMem are counts, sizes or thresholds where 0 (or -1)
+ * means "auto" or "no limit"; indexMmap is a bitmask whose documentation
+ * lists Bit 0 and Bit 1.  Translating those would both misdescribe them
+ * and make the reported TYPE depend on the value's magnitude -- 1 coming
+ * back as `true' while 2 came back as 2.
+ *
+ * So the list is explicit.  Each member was checked two ways: that
+ * sql-set.rst documents it as a Boolean or as "whether to ...", and that
+ * setprop.c parses it as binary rather than as an int.
+ *
+ * exactPhrase is deliberately NOT here even though it reads like a flag:
+ * it is three-valued, also taking "ignorewordposition"
+ * (API3EXACTPHRASEIGNOREWORDPOSITION == 2, documented in sql-set.rst).
+ * It is validated and reported on its own, below.
+ *
+ * MUST remain sorted: searched with bsearch(). */
+static const char * const bool_props[] = {
+    "alequivs", "alintersects", "allinear", "allineardict", "alnot",
+    "alpostproc", "alwild", "alwithin", "bubble", "defsuffrm",
+    "hexifybytes", "hyphenphrase", "ignorenewlist",
+    "indexaccess", "indexappend", "indexbtreeexclusive", "indexslurp",
+    "indexwritesplit", "likepallmatch", "likepobeyintersects",
+    "mergeflush", "multivaluetomultirow", "paramchk", "rebuild",
+    "suffixproc", "unalignedbufferwarning", "wildoneword", "wildsufmatch"
+};
+
+static int prop_is_bool(const char *prop)
 {
     if(!prop) return 0;
-    return bsearch(&prop, numeric_props,
-                   sizeof(numeric_props)/sizeof(numeric_props[0]),
-                   sizeof(numeric_props[0]), cmp_str_ptr) != NULL;
+    return bsearch(&prop, bool_props,
+                   sizeof(bool_props)/sizeof(bool_props[0]),
+                   sizeof(bool_props[0]), cmp_str_ptr) != NULL;
 }
 
-/* Whether `s' is entirely a number.  JS Numbers and Booleans have already
- * been stringified ("10", "10.5", "1", "0") by the time we get here, so
- * this only ever rejects a string the script actually wrote. */
-static int is_numeric_string(const char *s)
+/* Replace the value at the stack top with a Boolean, for a bool_props
+ * setting.  Recognizes what sql.set() itself accepts by calling the same
+ * parser setprop() uses, so the accepted vocabulary ("on", "yes",
+ * "enabled", ...) cannot drift from it.  A value that is not a
+ * recognized boolean is left exactly as it was, so an unexpected setting
+ * is reported rather than disguised as false. */
+static void sql_bool_normalize(duk_context *ctx)
 {
-    char *end;
+    const char *s;
+    int v;
 
-    if(!s || !*s)
-        return 0;
+    if(duk_is_boolean(ctx, -1))
+        return;
 
-    (void) strtod(s, &end);
-    if(end == s)
-        return 0;
-    while(*end && isspace((unsigned char)*end))
-        end++;
+    if(duk_is_number(ctx, -1))
+    {
+        duk_double_t d = duk_get_number(ctx, -1);
 
-    return *end == '\0';
+        if(d != 0.0 && d != 1.0)
+            return;                     /* not binary: report as-is */
+        duk_pop(ctx);
+        duk_push_boolean(ctx, d != 0.0);
+        return;
+    }
+
+    if(!duk_is_string(ctx, -1))
+        return;
+
+    s = duk_get_string(ctx, -1);
+    /* isbool==3: boolean or int only, -1 if neither.  It yaps on failure,
+     * hence TXPMBUF_SUPPRESS -- get() must not emit messages. */
+    v = TXgetBooleanOrInt(TXPMBUF_SUPPRESS, NULL, NULL, s, NULL, 3);
+    if(v < 0)
+        return;
+    duk_pop(ctx);
+    duk_push_boolean(ctx, v != 0);
 }
+
+/* denyMode is a three-valued enum -- "silent", "warning" or "error",
+ * also written 0, 1 or 2 (api3.h).  Returns the canonical keyword, or
+ * NULL if the value is not one of them.
+ *
+ * This has to be checked here rather than left to setprop(), whose own
+ * check does not catch a misspelled keyword: TXstrtoi("loud") returns 0
+ * with errnum 0, so `case API3DENYSILENT' (which IS 0) matches and the
+ * value falls through as `silent' -- the most permissive setting -- for
+ * any unrecognized word.  A typo must not quietly disable the warning
+ * about a query that protection refused. */
+static const char *sql_denymode_keyword(const char *s)
+{
+    if(!s)                                            return NULL;
+    if(!strcasecmp(s, "silent")  || !strcmp(s, "0"))  return "silent";
+    if(!strcasecmp(s, "warning") || !strcmp(s, "1"))  return "warning";
+    if(!strcasecmp(s, "error")   || !strcmp(s, "2"))  return "error";
+    return NULL;
+}
+
+/* The keyword for the value at `idx', without disturbing it. */
+static const char *sql_denymode_at(duk_context *ctx, duk_idx_t idx)
+{
+    const char *k;
+
+    if(!duk_is_string(ctx, idx) && !duk_is_number(ctx, idx))
+        return NULL;
+    duk_dup(ctx, idx);
+    k = sql_denymode_keyword(duk_safe_to_string(ctx, -1));
+    duk_pop(ctx);
+    return k;
+}
+
+/* Report denyMode as its keyword, whichever form was used to set it. */
+static void sql_denymode_normalize(duk_context *ctx)
+{
+    const char *k = sql_denymode_at(ctx, -1);
+
+    if(!k)
+        return;
+    duk_pop(ctx);
+    duk_push_string(ctx, k);
+}
+
+/* exactPhrase is three-valued, so it reports its own enum rather than a
+ * Boolean: false, true, or "ignorewordposition" (which is 2 internally,
+ * API3EXACTPHRASEIGNOREWORDPOSITION).  Value at the stack top. */
+static void sql_exactphrase_normalize(duk_context *ctx)
+{
+    if(duk_is_string(ctx, -1) &&
+       !strcasecmp(duk_get_string(ctx, -1), "ignorewordposition"))
+        return;                         /* already the keyword form */
+
+    if(duk_is_number(ctx, -1) || duk_is_string(ctx, -1))
+    {
+        const char *s = duk_safe_to_string(ctx, -1);
+
+        if(s && atoi(s) == 2)
+        {
+            duk_pop(ctx);
+            duk_push_string(ctx, "ignorewordposition");
+            return;
+        }
+    }
+    sql_bool_normalize(ctx);            /* 0/1 -> false/true */
+}
+
+static int prop_is_int(const char *prop)
+{
+    if(!prop) return 0;
+    return bsearch(&prop, int_props,
+                   sizeof(int_props)/sizeof(int_props[0]),
+                   sizeof(int_props[0]), cmp_str_ptr) != NULL;
+}
+
+static int prop_is_real(const char *prop)
+{
+    if(!prop) return 0;
+    return bsearch(&prop, real_props,
+                   sizeof(real_props)/sizeof(real_props[0]),
+                   sizeof(real_props[0]), cmp_str_ptr) != NULL;
+}
+
+/* Either kind of number -- what sql.get() reports as a JS Number. */
+static int prop_is_numeric(const char *prop)
+{
+    return prop_is_int(prop) || prop_is_real(prop);
+}
+
+/* The value at `idx' as a double, for a property that must be numeric.
+ * Accepts a Number, or a string that is entirely a number ("100" and
+ * "0.10" yes; "ten", "100x" and "" no).  Returns 0 if it is neither, so
+ * a Boolean is rejected -- true is not a count. */
+static int sql_value_to_number(duk_context *ctx, duk_idx_t idx, double *out)
+{
+    if(duk_is_number(ctx, idx))
+        *out = (double)duk_get_number(ctx, idx);
+    else if(duk_is_string(ctx, idx))
+    {
+        const char *s = duk_get_string(ctx, idx);
+        char *end;
+
+        if(!s || !*s)
+            return 0;
+        *out = strtod(s, &end);
+        if(end == s)
+            return 0;
+        while(*end && isspace((unsigned char)*end))
+            end++;
+        if(*end)
+            return 0;
+    }
+    else
+        return 0;
+
+    /* NaN and the infinities are not settings */
+    if(*out != *out || *out > 1.0e308 || *out < -1.0e308)
+        return 0;
+    return 1;
+}
+
+/* (is_numeric_string() lived here.  It tested the STRINGIFIED value, so
+ * it could not tell 3.5 from 3 or true from 1.  Replaced by
+ * sql_value_to_number() above, which inspects the JavaScript value.) */
 
 static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
 {
@@ -8681,6 +8969,11 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
             }
             duk_pop(ctx);
         }
+        /* the global list differs from the engine default again, so the
+           NEXT sql_defaults() must put the default back before this
+           replay runs over it -- otherwise a later reset(), which drops
+           the snapshot, would leave this handle's list in place. */
+        if(len) defindtmp=0;
     }
     duk_pop(ctx);//list or undef
 
@@ -8714,6 +9007,7 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
             }
             duk_pop(ctx);
         }
+        if(len) defexp=0;       /* see the indextmp replay above */
     }
     duk_pop_2(ctx);// list and this
 
@@ -9190,6 +9484,115 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
         */
         if
         (
+            (!strcmp(prop,"explst") || !strcmp(prop,"indextmplst"))
+        )
+        {
+            int isExp = !strcmp(prop,"explst");
+            const char *lname = isExp ? "expressionsList" : "indexTempList";
+            duk_idx_t vidx = duk_get_top_index(ctx);
+            duk_uarridx_t n, len;
+            char **glst;
+
+            /* null or an empty array clears the list */
+            if(duk_is_null(ctx, vidx) || duk_is_undefined(ctx, vidx))
+            {
+                duk_push_array(ctx);
+                duk_replace(ctx, vidx);
+            }
+            if(!duk_is_array(ctx, vidx))
+            {
+                snprintf(errbuf, msgbufsz,
+                    "sql.set: %s must be an array of strings", lname);
+                goto return_neg_one;
+            }
+            len = (duk_uarridx_t)duk_get_length(ctx, vidx);
+            if(len > (duk_uarridx_t)(MAX_INDEX_EXPS - 1))
+            {
+                snprintf(errbuf, msgbufsz,
+                    "sql.set: %s - too many entries (%lu); the limit is %d",
+                    lname, (unsigned long)len, MAX_INDEX_EXPS - 1);
+                goto return_neg_one;
+            }
+
+            /* Validate EVERY entry before touching the global list: a bad
+               entry halfway through must not leave the list truncated. */
+            for(n=0; n<len; n++)
+            {
+                const char *e;
+
+                duk_get_prop_index(ctx, vidx, n);
+                e = isExp ? get_exp(ctx, -1)
+                          : (duk_is_string(ctx, -1) ? duk_get_string(ctx, -1)
+                                                    : NULL);
+                if(!e)
+                {
+                    snprintf(errbuf, msgbufsz,
+                        "sql.set: %s[%lu] must be a %s", lname,
+                        (unsigned long)n,
+                        isExp ? "string or expression" : "string");
+                    goto return_neg_one;
+                }
+                if(isExp && !expr_compiles(e))
+                {
+                    rp_msg_finalize();
+                    snprintf(errbuf, msgbufsz,
+                        "sql.set: %s[%lu] - invalid expression '%s'%s%s",
+                        lname, (unsigned long)n, e,
+                        finfo->errmap[0] ? ": " : "", finfo->errmap);
+                    goto return_neg_one;
+                }
+                duk_pop(ctx);
+            }
+
+            /* clear, then add -- same calls the snapshot replay uses */
+            while( (glst = isExp ? TXgetglobalexp() : TXgetglobalindextmp())
+                   != NULL && glst[0] && strlen(glst[0]) )
+            {
+                logandclearmsgbuf(ctx);
+                if(setprop(ddic, isExp?"delexp":"delindextmp", "0")==-1)
+                {
+                    snprintf(errbuf, msgbufsz, "sql.set: %s", finfo->errmap);
+                    goto return_neg_two;
+                }
+            }
+            for(n=0; n<len; n++)
+            {
+                const char *e;
+
+                duk_get_prop_index(ctx, vidx, n);
+                e = isExp ? get_exp(ctx, -1) : duk_get_string(ctx, -1);
+                logandclearmsgbuf(ctx);
+                if(setprop(ddic, isExp?"addexp":"addindextmp", (char*)e)==-1)
+                {
+                    snprintf(errbuf, msgbufsz, "sql.set: %s", finfo->errmap);
+                    goto return_neg_two;
+                }
+                duk_pop(ctx);
+            }
+
+            /* snapshot for per-handle replay, as the add/del ops do */
+            {
+                char **lst = isExp ? TXgetglobalexp() : TXgetglobalindextmp();
+                int arryi=0;
+
+                duk_push_this(ctx);
+                duk_push_array(ctx);
+                while (lst && lst[arryi] && strlen(lst[arryi]))
+                {
+                    duk_push_string(ctx, lst[arryi]);
+                    duk_put_prop_index(ctx, -2, (duk_uarridx_t)arryi);
+                    arryi++;
+                }
+                duk_put_prop_string(ctx, -2, isExp
+                    ? DUK_HIDDEN_SYMBOL("explist")
+                    : DUK_HIDDEN_SYMBOL("indlist"));
+                duk_pop(ctx);//this
+                if(isExp) defexp=0; else defindtmp=0;
+            }
+            goto propnext;
+        }
+        else if
+        (
             duk_is_array(ctx, -1) &&
             (
                 !strcmp(prop,"addexp") ||
@@ -9293,6 +9696,87 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
             if(!strcasecmp(prop, "usesuffixpreset"))
                 goto propnext;
 #endif
+            /* Type discipline, applied to the JavaScript value before it
+             * is flattened to a string for setprop().
+             *
+             * texis parses these with atoi()/atof()/TXgetBooleanOrInt(),
+             * none of which report that nothing was consumed, so without
+             * this a typo silently became 0 -- and for a flag like
+             * alWild, which defaults to on, silently turned a query
+             * protection OFF while sql.get() echoed the typo back.
+             *
+             * Booleans take the JavaScript Booleans only.  texis itself
+             * accepts a dozen spellings ("on", "yes", "enabled", "yea",
+             * ...); those remain reachable as a QUOTED SQL value --
+             * sql.exec("set alwild='on';") works, though unquoted does
+             * not, since the parser reads a bare word as a column -- but
+             * in JavaScript they are needless ambiguity. */
+            if(prop_is_bool(prop))
+            {
+                if(!duk_is_boolean(ctx, -1))
+                {
+                    snprintf(errbuf, msgbufsz,
+                        "sql.set: %s requires true or false, got '%s'",
+                        prop, duk_safe_to_string(ctx, -1));
+                    goto return_neg_one;
+                }
+            }
+            else if(prop_is_int(prop) || prop_is_real(prop))
+            {
+                double  d;
+
+                if(!sql_value_to_number(ctx, -1, &d))
+                {
+                    snprintf(errbuf, msgbufsz,
+                        "sql.set: %s requires %s, got '%s'", prop,
+                        prop_is_int(prop) ? "an integer" : "a number",
+                        duk_safe_to_string(ctx, -1));
+                    goto return_neg_one;
+                }
+                /* Integral?  Below 2^53 a cast round-trips exactly; above
+                 * it every double is already integral, so no check is
+                 * needed (and the cast would be undefined). */
+                if(prop_is_int(prop))
+                {
+                    double  mag = (d < 0.0 ? -d : d);
+
+                    if(mag < 9007199254740992.0 &&
+                       d != (double)(long long)d)
+                    {
+                        snprintf(errbuf, msgbufsz,
+                            "sql.set: %s requires an integer, got '%s'",
+                            prop, duk_safe_to_string(ctx, -1));
+                        goto return_neg_one;
+                    }
+                }
+            }
+            else if(!strcmp(prop, "denymode"))
+            {
+                if(!sql_denymode_at(ctx, -1))
+                {
+                    snprintf(errbuf, msgbufsz,
+                        "sql.set: %s requires \"silent\", \"warning\" or "
+                        "\"error\" (or 0, 1, 2), got '%s'",
+                        prop, duk_safe_to_string(ctx, -1));
+                    goto return_neg_one;
+                }
+            }
+            else if(!strcmp(prop, "exactphrase"))
+            {
+                /* three-valued: false, true, or "ignorewordposition" */
+                if(!duk_is_boolean(ctx, -1) &&
+                   !(duk_is_string(ctx, -1) &&
+                     !strcasecmp(duk_get_string(ctx, -1),
+                                 "ignorewordposition")))
+                {
+                    snprintf(errbuf, msgbufsz,
+                        "sql.set: %s requires true, false or "
+                        "\"ignorewordposition\", got '%s'",
+                        prop, duk_safe_to_string(ctx, -1));
+                    goto return_neg_one;
+                }
+            }
+
             if(duk_is_number(ctx, -1))
                 duk_to_string(ctx, -1);
             if(duk_is_boolean(ctx, -1))
@@ -9322,14 +9806,8 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
             }
            */
 
-            /* texis converts these with atoi()/strtod() and never checks,
-             * so a typo would silently set the property to 0. */
-            if(prop_is_numeric(prop) && !is_numeric_string(val))
-            {
-                snprintf(errbuf, msgbufsz,
-                         "sql.set: %s must be a Number, got '%s'", prop, val);
-                goto return_neg_one;
-            }
+            /* (numeric and boolean values were validated above, on the
+             * JavaScript value, before it was stringified) */
 
             /* the single-value form of addExpressions; the array form is
              * checked per element above */
@@ -9378,9 +9856,15 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
                 arryi++;
             }
             if (type == 'e')
+            {
                 duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("explist"));
+                defexp=0;
+            }
             else
+            {
                 duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("indlist"));
+                defindtmp=0;
+            }
 
             duk_pop(ctx);//this
         }
@@ -9442,6 +9926,211 @@ static char *stringLower(const char *str)
 }
 */
 
+/* **************************************************
+   Sql.prototype.get -- read back the settings this handle will apply.
+
+   The effective settings are already fully determined in-process: every
+   documented property with its default (prop_defaults, which is also
+   what sql_defaults() restores) overlaid with this connection's merged
+   sql_settings object -- the same object h_set replays before each
+   statement.  So nothing needs to be read back out of texis, which has
+   no queryable property store anyway (TXsetparm() is compiled out).
+
+   Keys are the documented camelCase names, so sql.set(sql.get()) round
+   trips.  Types are normalized on the way out, so a value reads the same
+   whether it came from a default or from a set(), and whichever accepted
+   form was used to set it:
+     - numeric properties (numeric_props) come back as Numbers rather
+       than the default table's strings.
+     - binary properties (bool_props) come back as true/false, whether
+       they were set as true, 1, "1" or "on", and whether they are
+       reported from the default table or from this handle's settings.
+   Both are accepted by sql.set() in either form, so normalizing here
+   cannot break the round trip.
+
+   The four word LISTS are included, read from their globals exactly as
+   the lstnoise branch of sql.set() does, and keyed by their setter
+   names (noiseList etc.) so they round trip too.
+
+   The expression and indextmp lists are included too, since
+   expressionsList / indexTempList now set them in bulk.
+
+   Deliberately absent, because none of them has a single settable
+   value to report and including one would break sql.set(sql.get()):
+     - the add/del list operations themselves.
+     - querySettings, which is an action: "defaults" reinitializes the
+       APICP, discarding the alWild/qMinWordLen family in the same object.
+     - optimize/nooptimize, message/nomessage, options/nooptions: these
+       take a LIST OF NAMES and set or clear flags in a bitmap
+       (setoptimize() strtok's the value), so they are operations, and
+       two names write the same state.
+
+   sql.get()       -> an object of everything
+   sql.get("name") -> that one value, or undefined if not a known property
+   ************************************************** */
+static duk_ret_t rp_texis_get(duk_context *ctx)
+{
+    const char *want = NULL;
+    char wnorm[64], prop[64];
+    duk_idx_t set_idx, out_idx;
+    int i;
+
+    if(!duk_is_undefined(ctx, 0) && !duk_is_null(ctx, 0))
+    {
+        if(!duk_is_string(ctx, 0))
+            RP_THROW(ctx, "sql.get(): argument must be a property name");
+        want = duk_get_string(ctx, 0);
+        if(strlen(want) > 63)
+            RP_THROW(ctx, "sql.get(): '%s' - unknown/invalid property", want);
+        sql_normalize_prop(wnorm, want);
+    }
+
+    duk_push_this(ctx);
+    if(!duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("sql_settings")))
+    {
+        duk_pop(ctx);           /* undefined */
+        duk_push_object(ctx);   /* nothing set yet: defaults only */
+    }
+    set_idx = duk_get_top_index(ctx);
+
+    duk_push_object(ctx);
+    out_idx = duk_get_top_index(ctx);
+
+    for(i=0; prop_defaults[i][0]; i++)
+    {
+        const char *name = prop_defaults[i][0];
+
+        sql_normalize_prop(prop, name);
+
+        /* querySettings is an ACTION, not a value: setprop's handler for
+         * "defaults" calls TXreinit_globalcp(), which rebuilds the APICP
+         * that the alWild/qMinWordLen family lives on.  It belongs in
+         * prop_defaults -- that is how reset() restores that whole family
+         * -- but reporting it here would put it in the object returned to
+         * the caller, and sql.set(sql.get()) would then reinitialize
+         * globalcp and discard those very settings, depending on which
+         * key the enumeration reached first. */
+        if(!strcmp(prop, "querysettings"))
+            continue;
+
+        if(duk_get_prop_string(ctx, set_idx, prop))
+        {
+            /* this handle set it; normalize the type so that the value
+               reads back the same however it was written -- a binary
+               setting as a Boolean whether it was set as true, 1 or "on",
+               a numeric one as a Number whether set as 40 or "40" */
+            if(prop_is_bool(prop))
+                sql_bool_normalize(ctx);
+            else if(!strcmp(prop, "exactphrase"))
+                sql_exactphrase_normalize(ctx);
+            else if(!strcmp(prop, "denymode"))
+                sql_denymode_normalize(ctx);
+            else if(prop_is_numeric(prop) && !duk_is_number(ctx, -1))
+            {
+                duk_double_t d = duk_to_number(ctx, -1);
+                duk_pop(ctx);
+                duk_push_number(ctx, d);
+            }
+        }
+        else
+        {
+            duk_pop(ctx);       /* undefined */
+            if(prop_is_bool(prop))
+            {
+                duk_push_string(ctx, prop_defaults[i][1]);
+                sql_bool_normalize(ctx);
+            }
+            else if(!strcmp(prop, "exactphrase"))
+            {
+                duk_push_string(ctx, prop_defaults[i][1]);
+                sql_exactphrase_normalize(ctx);
+            }
+            else if(!strcmp(prop, "denymode"))
+            {
+                duk_push_string(ctx, prop_defaults[i][1]);
+                sql_denymode_normalize(ctx);
+            }
+            else if(prop_is_numeric(prop))
+                duk_push_number(ctx,
+                    (duk_double_t)strtod(prop_defaults[i][1], NULL));
+            else
+                duk_push_string(ctx, prop_defaults[i][1]);
+        }
+        duk_put_prop_string(ctx, out_idx, name);
+    }
+
+    /* the four word lists, from the same globals lstnoise reads */
+    {
+        byte **lsts[] = { globalcp->noise, globalcp->suffix,
+                          globalcp->suffixeq, globalcp->prefix };
+        char *rlsts[] = { "noiseList", "suffixList",
+                          "suffixEquivsList", "prefixList" };
+        int li;
+
+        for(li=0; li<4; li++)
+        {
+            byte **lst = lsts[li], *nw;
+            int n=0;
+
+            duk_push_array(ctx);
+            while( lst && (nw=lst[n]) && *nw != '\0' )
+            {
+                duk_push_string(ctx, (const char *)nw);
+                duk_put_prop_index(ctx, -2, (duk_uarridx_t)n);
+                n++;
+            }
+            duk_put_prop_string(ctx, out_idx, rlsts[li]);
+        }
+    }
+
+    /* the expression and indextmp lists: settable in bulk as
+       expressionsList / indexTempList, so they round trip */
+    {
+        char **lst;
+        int n;
+
+        lst = TXgetglobalexp();
+        duk_push_array(ctx);
+        for(n=0; lst && lst[n] && strlen(lst[n]); n++)
+        {
+            duk_push_string(ctx, lst[n]);
+            duk_put_prop_index(ctx, -2, (duk_uarridx_t)n);
+        }
+        duk_put_prop_string(ctx, out_idx, "expressionsList");
+
+        lst = TXgetglobalindextmp();
+        duk_push_array(ctx);
+        for(n=0; lst && lst[n] && strlen(lst[n]); n++)
+        {
+            duk_push_string(ctx, lst[n]);
+            duk_put_prop_index(ctx, -2, (duk_uarridx_t)n);
+        }
+        duk_put_prop_string(ctx, out_idx, "indexTempList");
+    }
+
+    if(!want)
+        return 1;               /* the whole object */
+
+    /* single property: match on the normalized name, so any casing the
+       caller used (and the documented aliases) resolve */
+    duk_enum(ctx, out_idx, 0);
+    while(duk_next(ctx, -1, 0))
+    {
+        char knorm[64];
+        const char *k = duk_get_string(ctx, -1);
+
+        sql_normalize_prop(knorm, k);
+        if(!strcmp(knorm, wnorm))
+        {
+            duk_get_prop_string(ctx, out_idx, k);
+            return 1;
+        }
+        duk_pop(ctx);           /* the key */
+    }
+    duk_push_undefined(ctx);
+    return 1;
+}
+
 // certain settings like lstexp and addexp should not remain in saved settings
 static void clean_settings(duk_context *ctx)
 {
@@ -9458,6 +10147,8 @@ static void clean_settings(duk_context *ctx)
     duk_del_prop_string(ctx, -1, "lstsuffix");
     duk_del_prop_string(ctx, -1, "lstsuffixeqivs");
     duk_del_prop_string(ctx, -1, "lstprefix");
+    duk_del_prop_string(ctx, -1, "explst");
+    duk_del_prop_string(ctx, -1, "indextmplst");
     duk_pop(ctx);//the settings list object
 }
 
@@ -10444,6 +11135,10 @@ duk_ret_t duk_open_module(duk_context *ctx)
     /* set Sql.connection.prototype.set */
     duk_push_c_function(ctx, rp_texis_set, 1 /*nargs*/);   /* [ {}, Sql protoObj-->{exe:fn_exe,...} fn_set ] */
     duk_put_prop_string(ctx, -2, "set");                    /* [ {}, Sql protoObj-->{exe:fn_exe,query:fn_exe,close:fn_close,set:fn_set} ] */
+
+    /* set Sql.connection.prototype.get */
+    duk_push_c_function(ctx, rp_texis_get, 1 /*nargs*/);
+    duk_put_prop_string(ctx, -2, "get");
 
     /* set Sql.connection.prototype.reset */
     duk_push_c_function(ctx, rp_texis_reset, 0);

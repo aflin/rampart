@@ -295,6 +295,67 @@ char	*value;
 		TXnlikevhits = atoi(value);
 		return 0;
 	}
+	if (!strcmp(propi, "likevminrank")) /* docs */
+	{
+		/* Similarity floor for LIKEV candidates, in $vrank units
+		 * (similarity * 100000).  0 = off.  There is no model-agnostic
+		 * default: unrelated-pair cosine runs ~0.6-0.75 on bge/nomic
+		 * but ~0.1-0.3 on MiniLM-class embedders. */
+		TXsetparm(ddic, "likevminrank", value);
+		TXlikevMinRank = atoi(value);
+		return 0;
+	}
+	if (!strcmp(propi, "rrfrows")) /* docs */
+	{
+		/* Hybrid keyword-OR-vector fusion pool depth, both sides.
+		 * Effective depth is min(likeprows, rrfrows) for the keyword
+		 * leg and min(likevrows, rrfrows) for the vector leg; the
+		 * vector index still searches to likevrows and its list is
+		 * truncated post-sort, so ANN recall is unaffected. */
+		TXsetparm(ddic, "rrfrows", value);
+		TXrrfRows = atoi(value);
+		return 0;
+	}
+	if (!strcmp(propi, "rrfk")) /* docs */
+	{
+		/* RRF damping constant: a row at position p in BOTH lists
+		 * ties the #1 hit of a single list when p = rrfk + 2. */
+		TXsetparm(ddic, "rrfk", value);
+		TXrrfK = atoi(value);
+		return 0;
+	}
+	if (!strcmp(propi, "rrftiebreak")) /* docs */
+	{
+		/* Which side wins an exact fused-score tie.  Not a relevance
+		 * lever: without it equal scores fall to recid order, which is
+		 * physical table position and not stable across a rebuild. */
+		if (!strcasecmp(value, "keyword") || !strcasecmp(value, "kw"))
+			TXrrfTieVec = 0;
+		else if (!strcasecmp(value, "vector") ||
+			 !strcasecmp(value, "vec"))
+			TXrrfTieVec = 1;
+		else
+		{
+			putmsg(MERR + UGE, CHARPN,
+			       "rrftiebreak must be 'keyword' or 'vector'; got `%s'",
+			       value);
+			return -1;
+		}
+		TXsetparm(ddic, "rrftiebreak", value);
+		return 0;
+	}
+	if (!strcmp(propi, "rrfkwweight")) /* docs */
+	{
+		TXsetparm(ddic, "rrfkwweight", value);
+		TXrrfKwWeight = strtod(value, NULL);
+		return 0;
+	}
+	if (!strcmp(propi, "rrfvecweight")) /* docs */
+	{
+		TXsetparm(ddic, "rrfvecweight", value);
+		TXrrfVecWeight = strtod(value, NULL);
+		return 0;
+	}
 	if (!strcmp(propi, "likevef")) /* docs */
 	{
 		/* Per-query HNSW expansion factor (recall/latency knob).
@@ -2131,6 +2192,16 @@ DDIC *ddic;
 
 	/* likeprows */
 	TXnlikephits=100;
+
+	/* rrfrows, rrfk, rrftiebreak, rrfkwweight, rrfvecweight */
+	TXrrfRows = 300;
+	TXrrfK = 60;
+	TXrrfTieVec = 0;
+	TXrrfKwWeight = 1.0;
+	TXrrfVecWeight = 1.0;
+
+	/* likevminrank */
+	TXlikevMinRank = 0;
 
 	/* likepallmatch */
         if (!TXapicpSetLikepAllMatch(TXbool_False)) ret = -1;

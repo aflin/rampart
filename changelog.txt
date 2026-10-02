@@ -11,6 +11,59 @@ v0.7.2
                             python objects passed as arguments in
                             rampart.thread, and rampart.call with no
                             arguments.
+                            Python now links libffi statically, fixing
+                            builds and runtime loading on hosts with a
+                            mismatched system libffi.
+
+    -rampart-server         Hardened against malformed requests: fixed
+                            crashes and authentication bypasses reachable
+                            from bad multipart bodies, query strings,
+                            Range headers, and the file server and proxy
+                            paths.
+                            Connection dispatch is now counted when a
+                            connection is handed to a thread rather than
+                            when that thread wakes, so a burst of
+                            simultaneous connections spreads across the
+                            pool instead of piling onto one thread.
+                            New threadLimit option pins chosen URL
+                            prefixes to a subset of the JS threads, so a
+                            slow path cannot starve the rest.
+
+    -rampart-chromeview     New browser.fetch() and browser.fetchAsync()
+                            fetch a URL through the browser and return a
+                            curl-like result, and browser.download()
+                            retrieves files the browser would otherwise
+                            save to disk.
+
+    -rampart-sql            Fixed a use-after-free in abstract() after a
+                            query that failed to compile.
+                            Scheduled index updates: fixed errMsg
+                            reporting, digit-only intervals, DST
+                            boundaries, pid reuse, orphaned temp tables
+                            and SYSUPDATE recreation.
+                            Dropping a table now removes its vector index
+                            files.
+                            Added RRF knobs.
+                            sql.get() - new getter for settings.
+                            sql-set() - normalize and round trippable from
+                                        sql.get()
+
+    -rampart-curl           Fixed cancellation of an in-flight request.
+
+    -rampart                rampart.event: removing an event callback from
+                            a deferred context no longer deletes a later
+                            on() registered under the same name.
+                            REPL and terminal handling fixes.
+                            The SQL and Python helper processes no longer
+                            print a diagnostic when the parent exits
+                            normally.
+
+    -Extras                 rampart-webserver: multi-listener
+                            configuration, so one server can serve several
+                            bind addresses with different settings.
+                            rampart-llm: fixed response chunking for the
+                            Anthropic and OpenAI backends, and cancelling
+                            a request that has gone inactive.
 
 v0.7.1
     -rampart and installer

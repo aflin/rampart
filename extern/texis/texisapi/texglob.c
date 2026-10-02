@@ -142,6 +142,13 @@ TXMDT   TXindexmeter = TXMDT_NONE;    /* show progress meter while indexing */
 TXMDT   TXcompactmeter = TXMDT_NONE;    /* ALTER TABLE ... COMPACT meter */
 int	TXnlikephits = 100;
 int	TXnlikevhits = 1000;        /* INDEX_VEC: candidate pool cap per LIKEV */
+/* Hybrid keyword-OR-vector rank fusion (TXindexrrf, imanip.c). */
+int	TXrrfRows = 300;            /* fusion pool depth, BOTH sides */
+int	TXrrfK = 60;                /* RRF damping constant */
+int	TXrrfTieVec = 0;            /* 0 = keyword wins exact ties, 1 = vector */
+double	TXrrfKwWeight = 1.0;        /* keyword side multiplier */
+double	TXrrfVecWeight = 1.0;       /* vector side multiplier */
+int	TXlikevMinRank = 0;         /* INDEX_VEC: $vrank floor; 0 = off */
 int	TXlikevef    = 0;           /* INDEX_VEC: per-query HNSW expansion;
 				     * 0 = use the index's ef_construction */
 int	TXlikevPqNprobe = 0;            /* INDEX_VEC ivfpq: per-query nprobe;

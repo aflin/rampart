@@ -1746,6 +1746,12 @@ extern long TXlikeptime;
 extern int TXlikepmode;
 extern int TXnlikephits;
 extern int TXnlikevhits;        /* INDEX_VEC: candidate pool cap per LIKEV */
+extern int TXrrfRows;           /* RRF fusion pool depth, both sides */
+extern int TXrrfK;              /* RRF damping constant */
+extern int TXrrfTieVec;         /* RRF exact-tie winner: 0 = keyword, 1 = vector */
+extern double TXrrfKwWeight;    /* RRF keyword side multiplier */
+extern double TXrrfVecWeight;   /* RRF vector side multiplier */
+extern int TXlikevMinRank;      /* INDEX_VEC: $vrank floor; 0 = off */
 extern int TXlikevef;           /* INDEX_VEC: per-query HNSW expansion factor */
 extern int TXlikevPqNprobe;     /* INDEX_VEC ivfpq: per-query nprobe */
 extern int TXvecPqMaxTrainSamples; /* INDEX_VEC ivfpq: training-sample cap at CREATE */

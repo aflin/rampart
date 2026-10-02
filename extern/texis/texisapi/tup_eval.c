@@ -832,8 +832,23 @@ FLDOP *fo;
 						 * process match:
 						 */
 						if(tup->fusedRank > 0)
+							/* The fused key is
+							 * carried at 1000x so
+							 * the tie-break bonus
+							 * is 1/1000 of a fused
+							 * unit (imanip.c
+							 * TX_RRF_KEYMULT);
+							 * report the fused
+							 * value itself.  Note
+							 * TXcalcrank() must
+							 * NOT divide: dolikep()
+							 * rebuilds the rank
+							 * btree from it and
+							 * needs full ordering
+							 * resolution. */
 							tup->rank =
-							    tup->fusedRank;
+							    (tup->fusedRank
+							     + 500) / 1000;
 						/* NOTE: see TXcalcrank()
 						 * comments on how we avoid
 						 * infinite recursion with

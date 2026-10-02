@@ -3481,7 +3481,7 @@ static IINDEX *orindices ARGS((DBTBL *, IINODE *, int, PRED *));
  * drops indguar and makes tup_read re-evaluate the whole OR predicate
  * for EVERY fused candidate — a full metamorph eval of each document
  * (measured ~2.8s flat on 7M-article wikipedia for likeprows=100 +
- * likevRows=300, regardless of maxRows).  For the fused index both
+ * likevRows, default 1000, regardless of maxRows).  For the fused index both
  * halves of that work are already done: membership is the union of
  * the two index lists (each side's own membership rules), and $rank
  * is the fusedRank stashed at tup_read (TXcalcrank FOP_OR returns it
@@ -5372,7 +5372,9 @@ int inv;			/* Get index ready for AND */
 	 * keyword side's list is merged POSITIONALLY and only its top
 	 * `likeprows' entries matter (the documented RRF pool).  Mark it
 	 * `lonely' BEFORE its index is built so setf3dbi uses the same
-	 * top-N rank heap + early-stop that a solitary LIKEP gets.
+	 * top-N rank heap + early-stop that a solitary LIKEP gets.  (The
+	 * heap depth stays `likeprows': `rrfrows' caps both sides in
+	 * txRrfLoad, so effective keyword depth is min of the two.)
 	 * Without it fdbi precisely ranks and materializes EVERY matching
 	 * row — measured 10x slower (3s vs 0.3s) for common-word queries
 	 * against 7M docs.  OR-union means nothing else restricts this
