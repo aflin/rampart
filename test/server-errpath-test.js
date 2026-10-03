@@ -48,21 +48,44 @@ function alive() {
     return curl.fetch(base + "/ok", {maxTime: 5}).status === 200;
 }
 
-/* one request, one response: a second response would show up as extra
-   bytes on the same connection, which curl reports as a protocol error
-   or as a second reply on a reused connection */
+/* bash is named explicitly for /dev/tcp: $SHELL is zsh on macOS, which
+   has no equivalent, and a nested shell would be orphaned by the timeout
+   kill below, which signals only the direct child. */
+function find_bash() {
+    var paths = ["/bin/bash", "/usr/local/bin/bash", "/usr/bin/bash"], i;
+    for (i = 0; i < paths.length; i++)
+        if (stat(paths[i])) return paths[i];
+    return null;
+}
+var bash = find_bash();
+
 /* One request must produce exactly one response.  Reading the whole
-   connection shows a second reply as an extra status line. */
+   connection shows a second reply as an extra status line.
+
+   The read is bounded by exec()'s own timeout rather than by timeout(1),
+   which macOS does not ship.  "exec cat" replaces bash with cat so that
+   the timeout signal reaches the process reading the socket. */
 function oneReply(name, path) {
+    if (!bash) {
+        testFeature(name, "skipping (no bash for /dev/tcp)");
+        return;
+    }
     testFeature(name, function() {
-        var reqf = dir + "/pipe.bin", outf = dir + "/pipe.out";
+        var reqf = dir + "/pipe.bin";
         fprintf(reqf, "GET %s HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n", path);
-        shell(sprintf("bash -c 'exec 3<>/dev/tcp/127.0.0.1/%d; cat %s >&3; "
-                      + "timeout 5 cat <&3 > %s; exec 3<&-' 2>/dev/null",
-                      port, reqf, outf));
-        var out = stat(outf) ? readFile(outf, true) : "";
-        var n = out.split("HTTP/1.").length - 1;
+        var ret = exec(bash, "-c",
+                       sprintf("exec 3<>/dev/tcp/127.0.0.1/%d; cat %s >&3; "
+                               + "exec cat <&3", port, reqf),
+                       {timeout: 5000});
+        var out = ret.stdout ? ret.stdout.toString() : "";
         if (!alive()) return false;
+        /* a helper that never ran must not look like a silent server */
+        if (!out.length) {
+            printf("    read no reply at all (timedOut %s) %s\n",
+                   ret.timedOut, trim(ret.stderr ? ret.stderr.toString() : ""));
+            return false;
+        }
+        var n = out.split("HTTP/1.").length - 1;
         if (n !== 1) printf("    got %d responses for one request\n", n);
         return n === 1;
     });
