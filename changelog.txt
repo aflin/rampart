@@ -1,4 +1,6 @@
 v0.7.2
+    -rampart-langtools      Update llama.cpp.
+
     -rampart-python         Python attributes are looked up only when used
                             (much faster; transformers imports 10x faster).
                             Subscripts (df.loc['x'], obj['key']), dunder
