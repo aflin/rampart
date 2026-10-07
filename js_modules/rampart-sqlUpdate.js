@@ -240,6 +240,40 @@ function thrmsg(msg) {
     process.exit(1);
 }
 
+/* any live process with this pid, whoever owns it (kill(pid,0) is false on EPERM) */
+function pidAlive(pid) {
+    if (!(pid > 0)) return false;
+    try {
+        return rampart.utils.exec('ps', '-o', 'pid=', '-p', String(pid)).stdout.trim() !== '';
+    } catch (e) { return true; }
+}
+
+/* Remove temp index files left by a crashed fulltext OPTIMIZE.  texis
+   names them T<pid><letter><ext>.  Builds that texis tracks (REBUILD,
+   vec) have a T<pid><letter>.PID file and an INDEX_TEMP row, and texis
+   reaps those itself (it refuses to if the .PID file is gone, so leave
+   them alone).  A Unix fulltext OPTIMIZE registers neither, so its
+   leftovers are ours.  Only known temp extensions, only dead pids. */
+var TEMP_EXTS = /^(|\.btr|\.dat|\.tok|_[DTXZC]\.btr|_P\.tbl|\.vec|\.vec\.new|_[HI]\.idxpq|_del\.btr|\.train\.tmp)$/;
+function sweepStaleTemps(db) {
+    var names, alive = {}, tracked = {};
+    try { names = rampart.utils.readDir(db); } catch (e) { return; }
+    for (var i = 0; i < names.length; i++) {
+        var p = /^(T\d+[a-z])\.PID$/.exec(names[i]);
+        if (p) tracked[p[1]] = true;
+    }
+    for (var i = 0; i < names.length; i++) {
+        var m = /^(T(\d+)[a-z])(.*)$/.exec(names[i]);
+        if (!m || !TEMP_EXTS.test(m[3]) || tracked[m[1]]) continue;
+        if (alive[m[2]] === undefined) alive[m[2]] = pidAlive(parseInt(m[2]));
+        if (alive[m[2]]) continue;
+        try {
+            rampart.utils.rmFile(db + '/' + names[i]);
+            writemsg('removed stale temp file ' + names[i]);
+        } catch (e) {}
+    }
+}
+
 /* true if pid is alive AND is an index updater (guards against pid reuse) */
 function isUpdaterPid(pid) {
     if (!(pid > 0) || !rampart.utils.kill(pid, 0)) return false;
@@ -442,6 +476,8 @@ function updater(sql) {
         }
         var i = 0;
         var schline = res.sched[i];
+        if(schline && schline.when < 60)
+            sweepStaleTemps(sql.db);
         while(schline) {
             if(schline.when < 60) do_update(schline, res.now);
             else break;
@@ -593,6 +629,7 @@ else {
         if (!claimUpdaterSlot(db, process.getpid())) {
             process.exit(0);
         }
+        sweepStaleTemps(db);
         updater(sql);
     }
 }
