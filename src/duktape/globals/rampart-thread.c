@@ -3446,6 +3446,12 @@ static duk_ret_t terminate_thread(duk_context *ctx)
     THRLOCK;
     (void)rp_thread_terminate_locked(rpthread[thrno]);
     THRUNLOCK;
+
+    /* The worker frees this slot as it exits and a new thread may reuse it.
+       Drop the index, as close() does, so this wrapper never reaches it again. */
+    duk_push_this(ctx);
+    duk_del_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("thr"));
+    duk_pop(ctx);
     return 0;
 }
 
