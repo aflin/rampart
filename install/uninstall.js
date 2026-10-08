@@ -40,6 +40,17 @@ function isSubpath(p, parent) {
     return p === parent || p.indexOf(parent + "/") === 0;
 }
 
+/* A removal blocked by privilege is recoverable -- re-running under sudo
+   finishes the job -- so those paths are collected here and the install
+   scaffolding (this script included) is KEPT when the list is non-empty.
+   Deleting ourselves on a failed run leaves no second chance. */
+var permFiles = [];   /* recover with: sudo rm -f   */
+var permDirs  = [];   /* recover with: sudo rm -rf  */
+var hardFail  = [];   /* failed for some other reason */
+
+function isPermErr(msg) { return /permission denied|not permitted/i.test("" + msg); }
+function permBlocked()  { return permFiles.length > 0 || permDirs.length > 0; }
+
 /* Refuse to uninstall from a system directory.  Mirrors entry_script.js's
    validatePrefix -- if a manifest's recorded prefix is "/" or "/usr" or
    any other top-level system path, every "owned" entry would pass
@@ -128,6 +139,19 @@ printf("\n");
  *   with a WARN.  The directory removal can't escape upward. */
 var schemaV2 = (manifest.schema === 2);
 
+/* The install scaffolding goes LAST, once everything else is gone.
+   bin/rampart in particular: the shim re-execs it to run this script, so
+   deleting it early would leave a sudo re-run with nothing to run but
+   the shim's "appears damaged" rm -rf fallback. */
+var SCAFFOLD_PATHS = [
+    "installed.json",
+    "bin/rampart-uninstall.sh",
+    "bin/rampart-uninstall.js",
+    "bin/rampart"
+];
+var SCAFFOLD = {};
+for (var sp = 0; sp < SCAFFOLD_PATHS.length; sp++) SCAFFOLD[SCAFFOLD_PATHS[sp]] = 1;
+
 var owned = {};
 var ownedDirs = {};
 var packages = manifest.packages || {};
@@ -140,6 +164,8 @@ for (var pkg in packages) {
             /* dir marker -- rm -rf'd in a separate pass below */
             ownedDirs[abs] = true;
         } else {
+            if (SCAFFOLD[abs.indexOf(prefix + "/") === 0
+                         ? abs.slice(prefix.length + 1) : abs]) continue;
             owned[abs] = true;
         }
     }
@@ -156,9 +182,16 @@ for (var p in owned) {
     try { rampart.utils.rm(p); removed++; }
     catch (e) {
         if (/No such file/.test(e.message)) { missing++; }
-        else { printf("  WARN: could not remove %s: %s\n", p, e.message); }
+        else if (isPermErr(e.message)) { permFiles.push(p); }
+        else {
+            printf("  WARN: could not remove %s: %s\n", p, e.message);
+            hardFail.push({path: p, why: e.message});
+        }
     }
 }
+if (permFiles.length)
+    printf("  %d file(s) could not be removed (permission denied).\n",
+           permFiles.length);
 
 /* Directory entries: rm -rf as a whole.  Guarded by isSubpath so a
  * malformed manifest can't escape the prefix, AND we check exitStatus
@@ -177,6 +210,8 @@ for (var d in ownedDirs) {
     try { rmRes = exec("rm", "-rf", d); }
     catch (e) {
         dirsFailed.push({path: d, why: e.message});
+        if (isPermErr(e.message)) permDirs.push(d);
+        else hardFail.push({path: d, why: e.message});
         continue;
     }
     /* Even after rm returns, double-check the dir is actually gone --
@@ -200,14 +235,14 @@ for (var d in ownedDirs) {
         printf("  removed dir tree (in-process): %s\n", d);
     } else {
         dirsFailed.push({path: d, why: why + "; in-process fallback also failed"});
+        if (isPermErr(why)) permDirs.push(d);
+        else hardFail.push({path: d, why: why});
     }
 }
 if (dirsFailed.length) {
     printf("Could NOT remove %d dir tree(s):\n", dirsFailed.length);
     for (var df = 0; df < dirsFailed.length; df++)
         printf("    %s  (%s)\n", dirsFailed[df].path, dirsFailed[df].why);
-    printf("  Likely cause: file ownership.  Re-run with sudo, e.g.:\n");
-    printf("    sudo %s\n", prefix + "/bin/rampart-uninstall.sh");
 }
 
 printf("Removed %d file(s) (%d already missing)%s%s.\n",
@@ -259,8 +294,6 @@ function rmTreeInProc(dir) {
 
 var links = manifest.symlinks || [];
 var linksRemoved = 0;
-var linksPermDenied = [];
-var linksOtherFail = [];
 for (var k = 0; k < links.length; k++) {
     var ln = links[k];
     if (!lexists(ln)) continue;
@@ -270,39 +303,83 @@ for (var k = 0; k < links.length; k++) {
     if (!(target && isSubpath(target, prefix))) continue;
     var rmRes;
     try { rmRes = exec("rm","-f",ln); }
-    catch (e) { linksOtherFail.push({path: ln, why: e.message}); continue; }
+    catch (e) { hardFail.push({path: ln, why: e.message}); continue; }
     if (rmRes && rmRes.exitStatus === 0 && !lexists(ln)) {
         linksRemoved++;
     } else {
         var stderr = (rmRes && _trim(rmRes.stderr)) || "";
-        if (/permission denied|not permitted/i.test(stderr)) {
-            linksPermDenied.push(ln);
-        } else {
-            linksOtherFail.push({path: ln, why: stderr || "rm exited "+(rmRes && rmRes.exitStatus)});
-        }
+        if (isPermErr(stderr)) permFiles.push(ln);
+        else hardFail.push({path: ln,
+                            why: stderr || "rm exited "+(rmRes && rmRes.exitStatus)});
     }
 }
 if (linksRemoved) printf("Removed %d symlink(s).\n", linksRemoved);
 
-function reportLinkFailures() {
-    if (!linksPermDenied.length && !linksOtherFail.length) return;
+/* Drop the install scaffolding (this script included).  Only ever called
+   once every owned file is gone.  Returns the paths that survived -- the
+   caller must say so rather than claim a clean uninstall. */
+function removeScaffold() {
+    var stuck = [];
+    /* SCAFFOLD_PATHS order, not key order: bin/rampart is last, so the
+       interpreter outlives the files that might fail before it. */
+    for (var s = 0; s < SCAFFOLD_PATHS.length; s++) {
+        var sp = prefix + "/" + SCAFFOLD_PATHS[s];
+        if (!lexists(sp)) continue;
+        try { exec("rm", "-f", sp); } catch (e) {}
+        if (lexists(sp)) stuck.push(sp);
+    }
+    return stuck;
+}
+
+/* Can `sudo rampart-uninstall.sh` still do anything?  The shim re-execs
+   bin/rampart on this script, and the script needs the manifest.  Asked
+   at print time rather than inferred from which branch we are in: an
+   interrupted `rm -rf` can have taken any subset of these. */
+function canRerun() {
+    return lexists(prefix + "/bin/rampart-uninstall.sh") &&
+           lexists(prefix + "/bin/rampart-uninstall.js") &&
+           lexists(prefix + "/bin/rampart") &&
+           lexists(prefix + "/installed.json");
+}
+
+/* The one place recovery instructions are printed. */
+function reportFailures() {
+    if (hardFail.length) {
+        printf("\nCould not remove %d item(s):\n", hardFail.length);
+        for (var f = 0; f < hardFail.length; f++)
+            printf("    %s  (%s)\n", hardFail[f].path, hardFail[f].why);
+    }
+    if (!permBlocked()) return;
+
+    var rerun = canRerun();
+    var n = permFiles.length + permDirs.length;
     printf("\n");
-    if (linksPermDenied.length) {
-        printf("Could not remove %d symlink(s) -- permission denied:\n",
-               linksPermDenied.length);
-        for (var i = 0; i < linksPermDenied.length; i++)
-            printf("    %s\n", linksPermDenied[i]);
-        printf("Re-run with sudo to remove them, e.g.:\n");
-        printf("    sudo rm -f");
-        for (var j = 0; j < linksPermDenied.length; j++)
-            printf(" %s", linksPermDenied[j]);
-        printf("\n");
+    printf("UNINSTALL INCOMPLETE -- %d item(s) could not be removed because\n", n);
+    printf("this user lacks permission.  rampart was most likely installed\n");
+    printf("with sudo, so removing it needs sudo too.\n");
+
+    if (rerun) {
+        printf("\nTo finish, re-run the uninstaller as root:\n");
+        printf("    sudo %s\n", prefix + "/bin/rampart-uninstall.sh");
+        printf("\nOr remove the remaining files by hand:\n");
+    } else {
+        /* The uninstaller is already (partly) gone, so re-running it is
+           not an option.  Hand over the commands instead. */
+        printf("\nFinish as root:\n");
     }
-    if (linksOtherFail.length) {
-        printf("Could not remove %d symlink(s):\n", linksOtherFail.length);
-        for (var f = 0; f < linksOtherFail.length; f++)
-            printf("    %s  (%s)\n", linksOtherFail[f].path, linksOtherFail[f].why);
+
+    var i, listedPrefix = false;
+    for (i = 0; i < permFiles.length; i++)
+        printf("    sudo rm -f %s\n", permFiles[i]);
+    for (i = 0; i < permDirs.length; i++) {
+        printf("    sudo rm -rf %s\n", permDirs[i]);
+        if (permDirs[i] === prefix) listedPrefix = true;
     }
+    /* The sweep-up line, unless it is already above. */
+    if (!listedPrefix) printf("    sudo rm -rf %s\n", prefix);
+
+    if (rerun)
+        printf("\nThe uninstaller has been left in place so it can be re-run.\n");
 }
 
 /* ---------- 4) walk prefix; find leftovers ---------- */
@@ -333,27 +410,47 @@ function walk(dir, base, out) {
 var leftover = [];
 walk(prefix, "", leftover);
 
-/* ignore the install scaffolding -- we'll remove them last (after the
-   user decides on wipe-or-keep). */
-var SCAFFOLD_PATHS = [
-    "installed.json",
-    "bin/rampart-uninstall.sh",
-    "bin/rampart-uninstall.js",
-    "bin/rampart"           /* we just removed it; if it lingered, still ours */
-];
-var SCAFFOLD = {};
-for (var sp = 0; sp < SCAFFOLD_PATHS.length; sp++) SCAFFOLD[SCAFFOLD_PATHS[sp]] = 1;
-leftover = leftover.filter(function (p) { return !SCAFFOLD[p]; });
+/* Ignore the install scaffolding (removed last, after the user decides on
+   wipe-or-keep) and anything we own but could not remove -- those are
+   ours, not the user's, so don't offer them up as "not installed by us". */
+var stuckSet = {};
+for (var si0 = 0; si0 < permFiles.length; si0++) stuckSet[permFiles[si0]] = 1;
+for (var si1 = 0; si1 < hardFail.length; si1++) stuckSet[hardFail[si1].path] = 1;
+
+leftover = leftover.filter(function (p) {
+    if (SCAFFOLD[p]) return false;
+    var abs = prefix + "/" + p;
+    if (owned[abs] || stuckSet[abs]) return false;
+    for (var d in ownedDirs) if (isSubpath(abs, d.replace(/\/$/, ""))) return false;
+    return true;
+});
+
+/* Nothing below this point may delete the scaffolding if a removal was
+   blocked by privilege: the shim and this script are the user's only way
+   to finish the job with sudo. */
+if (permBlocked()) {
+    if (leftover.length)
+        printf("\n%d user file(s) under %s were left untouched.\n",
+               leftover.length, prefix);
+    reportFailures();
+    process.exit(1);
+}
 
 if (leftover.length === 0) {
     /* nothing left except scaffold -- nuke it and the dir.  We can't
        `rm` the very script we're running, but the kernel keeps the
        inode alive until the process exits, so this works on POSIX. */
-    for (var sk in SCAFFOLD) try { exec("rm","-f",prefix+"/"+sk); } catch (e) {}
+    var stuck = removeScaffold();
     try { exec("rmdir", prefix + "/bin"); } catch (e) {}
     try { exec("rmdir", prefix); } catch (e) {}
+    if (stuck.length) {
+        printf("\nAlmost -- %d install file(s) could not be removed:\n", stuck.length);
+        for (var si = 0; si < stuck.length; si++) printf("    %s\n", stuck[si]);
+        printf("\nFinish as root:\n    sudo rm -rf %s\n", prefix);
+        process.exit(1);
+    }
     printf("\nDone.  %s removed cleanly.\n", prefix);
-    reportLinkFailures();
+    reportFailures();
     process.exit(0);
 }
 
@@ -393,14 +490,25 @@ if (c === "2") {
             printf("Removed %s (in-process).\n", prefix);
         } else {
             printf("ERROR: %s NOT fully removed.\n", prefix);
-            printf("       Try:  sudo rm -rf %s\n", prefix);
+            /* If privilege was the problem, route through the standard
+               recovery notice -- the shim survived the failed rm -rf. */
+            if (isPermErr(wreason)) permDirs.push(prefix);
+            else hardFail.push({path: prefix, why: wreason});
+            reportFailures();
+            if (!permBlocked()) printf("       Try:  sudo rm -rf %s\n", prefix);
             process.exit(1);
         }
     }
 } else {
     /* preserve user files; drop install scaffolding only */
-    for (var sk2 in SCAFFOLD) try { exec("rm","-f",prefix+"/"+sk2); } catch (e) {}
+    var stuck2 = removeScaffold();
     try { exec("rmdir", prefix + "/bin"); } catch (e) {}
     printf("Kept %s (%d user file(s) preserved).\n", prefix, leftover.length);
+    if (stuck2.length) {
+        printf("Note: %d install file(s) remain and need root to remove:\n",
+               stuck2.length);
+        for (var sj = 0; sj < stuck2.length; sj++)
+            printf("    sudo rm -f %s\n", stuck2[sj]);
+    }
 }
-reportLinkFailures();
+reportFailures();
