@@ -10912,11 +10912,6 @@ static duk_ret_t rp_fork_daemon(duk_context *ctx, int do_daemon)
     char *fname=do_daemon?"daemon":"fork";
     int child2par[2]={0};
 
-
-
-    if(get_thread_count(NULL)>1) //shopping for sheets?
-        RP_THROW(ctx, "Cannot fork with active threads");
-
     for(i=0;i<top;i++)
     {
         if(!duk_get_prop_string(ctx, i, DUK_HIDDEN_SYMBOL("pipeinfo")))
@@ -10935,10 +10930,37 @@ static duk_ret_t rp_fork_daemon(duk_context *ctx, int do_daemon)
         RP_THROW(ctx, "%s() - error creating pipe while forking: %s", fname, strerror(errno));
     }
 
+    /* Hold every lock across the check and the fork.  A closing thread has
+       already dropped IN_USE but may still hold THRLOCK while its exit
+       callbacks run; forking then hands the child a lock it can never get. */
+    rp_claim_all_locks();
+
+    if(get_thread_count(NULL)>1) //shopping for sheets?
+    {
+        rp_unlock_all_locks(1);
+        if (do_daemon)
+        {
+            close(child2par[0]);
+            close(child2par[1]);
+        }
+        RP_THROW(ctx, "Cannot fork with active threads");
+    }
+
     pid=fork();
 
+    /* Release at once on both sides.  rp_lock() is not recursive and waits on
+       the fork lock, so nothing below may take a lock while these are held. */
+    rp_unlock_all_locks(pid == 0 ? 0 : 1);
+
     if(pid<0)
+    {
+        if (do_daemon)
+        {
+            close(child2par[0]);
+            close(child2par[1]);
+        }
         RP_THROW(ctx, "%s() - error forking: %s", fname, strerror(errno));
+    }
 
     if(pid == 0) //child
     {
@@ -10985,22 +11007,17 @@ static duk_ret_t rp_fork_daemon(duk_context *ctx, int do_daemon)
         if(do_daemon) //get pid of grandchild
         {
             int nread=0;
+            pid_t mid=pid;   // the intermediate child: ours to reap
             close(child2par[1]);
 
             nread = read(child2par[0], &pid, sizeof(pid_t));
-            if(-1 == nread )
-            {
-                close(child2par[0]);
-                RP_THROW(ctx, "daemon() - fork failed");
-            }
-
             close(child2par[0]);
 
-            waitpid(pid, NULL, 0);
+            /* reap the intermediate child, not the grandchild (not our child) */
+            waitpid(mid, NULL, 0);
 
-            if(pid<0)
+            if(nread != sizeof(pid_t) || pid<0)
                 RP_THROW(ctx, "daemon() - fork failed");
-
         }
         for(i=0;i<top;i++)
         {
