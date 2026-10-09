@@ -47,8 +47,11 @@ v0.7.2
                             files.
                             Added RRF knobs.
                             sql.get() - new getter for settings.
-                            sql-set() - normalize and round trippable from
-                                        sql.get()
+                            sql.set() - normalized and round
+                                        trippable from sql.get().
+                            BEHAVIOR CHANGE: sql.set() now requires
+                            JavaScript booleans for boolean settings
+                            and whole numbers for integer settings.
 
     -rampart-curl           Fixed cancellation of an in-flight request.
 
