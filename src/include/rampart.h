@@ -1006,6 +1006,11 @@ int clock_gettime(clockid_t type, struct timespec *rettime);
 int  rp_pipe_cloexec(int *fds);
 void rp_fd_keep_on_exec(int fd);
 
+/* Ask for SIGCHLD auto-reap (SIG_IGN) process-wide.  Use instead of
+   signal(SIGCHLD, SIG_IGN): it is deferred while any utils.exec() is
+   waiting on a child, which needs SIG_DFL to get its exit status. */
+void rp_sigchld_ignore(void);
+
 /* Re-point rampart's cached home directory (and $HOME) -- see
    rampart-utils.c.  Used after a privilege drop, since setuid() leaves
    the environment (and therefore ~/.rampart lookups) pointing at the

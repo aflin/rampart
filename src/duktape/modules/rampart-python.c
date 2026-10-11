@@ -3767,7 +3767,7 @@ static PFI *check_fork()
             set_forked; // we are only going to allow this once, unlike sql where we could fork again with new transaction
 
             signal(SIGPIPE, SIG_IGN); //macos
-            signal(SIGCHLD, SIG_IGN);
+            rp_sigchld_ignore();   // auto-reap; deferred while an exec() waits
             rp_pipe_close(child2par,1);
             rp_pipe_close(par2child,0);
 

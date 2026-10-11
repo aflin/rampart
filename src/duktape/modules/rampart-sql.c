@@ -1757,7 +1757,7 @@ static SFI *check_fork(DB_HANDLE *h, int create)
 
             //parent
             signal(SIGPIPE, SIG_IGN); //macos
-            signal(SIGCHLD, SIG_IGN);
+            rp_sigchld_ignore();   // auto-reap; deferred while an exec() waits
             rp_pipe_close(child2par,1);
             rp_pipe_close(par2child,0);
             finfo->reader = child2par[0];

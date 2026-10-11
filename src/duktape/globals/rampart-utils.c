@@ -78,9 +78,50 @@ pthread_mutex_t loglock;
 pthread_mutex_t errlock;
 pthread_mutex_t pflock;
 pthread_mutex_t pflock_err;
-/* Serializes SIGCHLD save/restore in duk_rp_exec_raw — see comment there.
- * Process-wide because SIGCHLD disposition is process-wide. */
+/* SIGCHLD disposition is process-wide.  Modules (sql, python) want SIG_IGN
+ * so their helpers are auto-reaped; exec() needs SIG_DFL while it waits on
+ * a child.  The lock guards only the count of waiting execs and the wanted
+ * disposition, so concurrent execs overlap.  See duk_rp_exec_raw. */
 static pthread_mutex_t exec_sigchld_lock = PTHREAD_MUTEX_INITIALIZER;
+static int exec_waiters = 0;
+static int sigchld_want_ign = 0;
+
+/* call with exec_sigchld_lock held */
+static void sigchld_apply(void)
+{
+    struct sigaction sa;
+
+    memset(&sa, 0, sizeof(sa));
+    sigemptyset(&sa.sa_mask);
+    sa.sa_handler = (exec_waiters == 0 && sigchld_want_ign) ? SIG_IGN : SIG_DFL;
+    sigaction(SIGCHLD, &sa, NULL);
+}
+
+void rp_sigchld_ignore(void)
+{
+    pthread_mutex_lock(&exec_sigchld_lock);
+    sigchld_want_ign = 1;
+    sigchld_apply();
+    pthread_mutex_unlock(&exec_sigchld_lock);
+}
+
+static void exec_wait_begin(void)
+{
+    pthread_mutex_lock(&exec_sigchld_lock);
+    if (exec_waiters++ == 0)
+        sigchld_apply();
+    pthread_mutex_unlock(&exec_sigchld_lock);
+}
+
+/* last waiter out restores SIG_IGN if wanted (Linux then reaps any
+ * helper zombies left during the window) */
+static void exec_wait_end(void)
+{
+    pthread_mutex_lock(&exec_sigchld_lock);
+    if (--exec_waiters == 0)
+        sigchld_apply();
+    pthread_mutex_unlock(&exec_sigchld_lock);
+}
 FILE *access_fh;
 FILE *error_fh;
 int rp_print_simplified_errors=0;
@@ -5393,6 +5434,13 @@ void *duk_rp_exec_thread_waitpid(void *arg)
     return NULL;
 }
 
+/* foreground exec error exit: stop the timeout thread (its arg is on our
+   stack) and leave the SIGCHLD wait window.  Needs timeout and thread. */
+#define EXEC_FG_ABORT do {                                                                                  \
+        if (timeout > 0) { pthread_cancel(thread); pthread_join(thread, NULL); }                           \
+        exec_wait_end();                                                                                    \
+    } while (0)
+
 #define DUK_UTIL_EXEC_READ_FD(ctx, buf, fildes, nread)                                                      \
     {                                                                                                       \
         int size = BUFREADSZ;                                                                               \
@@ -5408,6 +5456,7 @@ void *duk_rp_exec_thread_waitpid(void *arg)
             }                                                                                               \
         }                                                                                                   \
         if (nbytes < 0){                                                                                    \
+            EXEC_FG_ABORT; /* SIGCHLD restore — read-error path */                                          \
             free(args);                                                                                     \
             if(env) free(env);                                                                              \
             RP_THROW(ctx, "exec(): could not read output buffer: %s", strerror(errno));                     \
@@ -5685,32 +5734,22 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
      * and the caller gets a bogus exit code (we observed first-call=0,
      * rerun=230 for a gcc that should report exit=1).
      *
-     * Fix: serialize across threads with exec_sigchld_lock, save the
-     * current SIGCHLD action, force SIG_DFL for the brief fork+wait
-     * window so waitpid works normally, then restore the saved action
-     * after wait. On Linux, restoring SIG_IGN immediately auto-reaps any
-     * zombies that accumulated during the (microseconds-long) window —
-     * so sql_helper's zombie-prevention contract is preserved.
+     * Fix: exec_wait_begin() counts this exec as waiting and forces
+     * SIG_DFL while any exec waits; modules ask for SIG_IGN through
+     * rp_sigchld_ignore(), which is deferred until the last waiter's
+     * exec_wait_end().  Concurrent execs overlap -- the lock is held
+     * only to update the count, never for the child's lifetime.  On
+     * Linux, going back to SIG_IGN auto-reaps any helper zombies left
+     * during the window.
      *
-     * Restoration happens at every exit path below (background-branch
-     * after blocking waitpid; foreground-branch after the WNOHANG poll
-     * loop; error path after fork failure). Search for "SIGCHLD restore"
-     * to find them. */
-    struct sigaction saved_sigchld_act, dfl_sigchld_act;
-    int sigchld_saved = 0;
-    pthread_mutex_lock(&exec_sigchld_lock);
-    memset(&dfl_sigchld_act, 0, sizeof(dfl_sigchld_act));
-    dfl_sigchld_act.sa_handler = SIG_DFL;
-    sigemptyset(&dfl_sigchld_act.sa_mask);
-    if (sigaction(SIGCHLD, &dfl_sigchld_act, &saved_sigchld_act) == 0)
-        sigchld_saved = 1;
+     * exec_wait_end() is called on every exit path below, including
+     * the throws (search for "SIGCHLD restore"). */
+    exec_wait_begin();
 
     if ((pid = fork()) == -1)
     {
         /* SIGCHLD restore — fork-error path */
-        if (sigchld_saved)
-            sigaction(SIGCHLD, &saved_sigchld_act, NULL);
-        pthread_mutex_unlock(&exec_sigchld_lock);
+        exec_wait_end();
         free(args);
         free_made_env(env);
         RP_THROW(ctx, "exec(): could not fork: %s", strerror(errno));
@@ -5806,9 +5845,7 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
         rp_pipe_close(child2par,1);
         waitpid(pid,&exit_status,0);
         /* SIGCHLD restore — background-branch */
-        if (sigchld_saved)
-            sigaction(SIGCHLD, &saved_sigchld_act, NULL);
-        pthread_mutex_unlock(&exec_sigchld_lock);
+        exec_wait_end();
         if(-1 == read(child2par[0], &pid2, sizeof(pid_t)) )
             RP_THROW(ctx, "exec(): failed to get pid from child");
 
@@ -5861,6 +5898,8 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
                 if(errno != EPIPE)
                 {
                     rp_pipe_close(stdin_pipe,1);
+                    /* SIGCHLD restore — stdin-error path */
+                    EXEC_FG_ABORT;
                     RP_THROW(ctx, "exec(): could not write to stdin of command: %s", strerror(errno));
                 }
             }
@@ -5884,24 +5923,13 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
              * garbage (the historical symptom: exit reported as 0 then 230
              * for the same failing cmd). */
             exit_status = -1;
-            /* Re-assert SIG_DFL right before the wait loop. Our mutex
-             * serializes against other rampart.utils.exec callers, but
-             * rampart-sql.c's signal(SIGCHLD, SIG_IGN) calls (fired from
-             * other threads doing Sql.connection) don't go through that
-             * mutex. If one fires between our initial save+set and the
-             * waitpid, the kernel auto-reaps our child and we'd get
-             * wp=-1 and bogus exit. Re-asserting SIG_DFL right before
-             * the wait closes most of that race window. */
-            sigaction(SIGCHLD, &dfl_sigchld_act, NULL);
             while((wp = waitpid(pid, &exit_status, WNOHANG)) == 0)
                 usleep(1000);
 
             /* SIGCHLD restore — foreground-branch (after waitpid completes,
              * before we decode exit_status). Doing this BEFORE decoding so
              * the disposition is already restored when we return. */
-            if (sigchld_saved)
-                sigaction(SIGCHLD, &saved_sigchld_act, NULL);
-            pthread_mutex_unlock(&exec_sigchld_lock);
+            exec_wait_end();
 
             if (wp > 0) {
                 if(WIFEXITED(exit_status))
