@@ -4534,6 +4534,16 @@ static void copy_cb_func(DHS *dhs, int nt)
             duk_pop(ctx);
         }
 
+        /* use the global name only if it refers to this function
+           (var f = function g(){} is global "f", not "g") */
+        if (name && strlen(name))
+        {
+            duk_get_global_string(ctx, name);
+            if(!duk_strict_equals(ctx, -1, fidx))
+                name = NULL;
+            duk_pop(ctx);
+        }
+
         if (name && strlen(name))
         {
             for (i = 0; i < nt; i++)
@@ -4566,8 +4576,10 @@ static void copy_cb_func(DHS *dhs, int nt)
             duk_remove(ctx,fidx);
             return; /* STOP HERE */
         }
+        /* anonymous (var f = function(){}): no global name, copy as bytecode below */
     }
-    duk_pop(ctx);
+    else
+        duk_pop(ctx); //is_global value
     /* TODO: consolidate all the various bcfunc code here and in rampart-thread.c */
     // in case we have an already copied function and are copying grandchild-thread's stack
     if( duk_has_prop_string(ctx, fidx, DUK_HIDDEN_SYMBOL("bcfunc")) )
