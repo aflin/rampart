@@ -1,0 +1,716 @@
+
+
+<!DOCTYPE html>
+<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
+<!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <title>The rampart-gm module &mdash; Rampart 0.7.2 documentation</title>
+  
+
+  
+  
+
+  
+
+  
+  
+    
+
+  
+
+  
+  
+    <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
+  
+
+  
+    <link rel="stylesheet" href="_static/theme_overrides.css" type="text/css" />
+  
+    <link rel="stylesheet" href="_static/hacks.css" type="text/css" />
+  
+
+  
+        <link rel="index" title="Index"
+              href="genindex.html"/>
+        <link rel="search" title="Search" href="search.html"/>
+    <link rel="top" title="Rampart 0.7.2 documentation" href="index.html"/>
+        <link rel="next" title="The rampart-webview module" href="rampart-webview.html"/>
+        <link rel="prev" title="The rampart-url module" href="rampart-url.html"/> 
+
+  
+  <script src="_static/js/modernizr.min.js"></script>
+
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+   
+  <div class="wy-grid-for-nav">
+
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search">
+          
+
+          
+            <a href="index.html" class="icon icon-home"> Rampart
+          
+
+          
+          </a>
+
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+                <p class="caption"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="rampart-main.html">Rampart JavaScript</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-utils.html">Rampart Utility Functions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-thread.html">Rampart Thread Functions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-vector.html">Rampart Vector Functions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="sqltoc.html">The rampart-sql module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-server.html">The rampart-server module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-auth.html">The rampart-auth module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-net.html">The rampart-net module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-html.html">The rampart-html module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-crypto.html">The rampart-crypto module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-curl.html">The rampart-curl module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-lmdb.html">The rampart-lmdb module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-redis.html">The rampart-redis module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-totext.html">The rampart-totext module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-python.html">The rampart-python module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-robots.html">The rampart-robots module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-cmark.html">The rampart-cmark module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-treesitter.html">The rampart-treesitter module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-langtools.html">The rampart-langtools modules</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-almanac.html">The rampart-almanac module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-url.html">The rampart-url module</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">The rampart-gm module</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#preface">Preface</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#acknowledgment">Acknowledgment</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#license">License</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#what-does-it-do">What does it do?</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#how-does-it-work">How does it work?</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#prerequisites">Prerequisites</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#loading-and-using-the-module">Loading and Using the Module</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#loading">Loading</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#gm-object-functions">gm Object Functions</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#open">open()</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#image-object-methods">Image Object Methods</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#add">add()</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#mogrify">mogrify()</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#save">save()</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#tobuffer">toBuffer()</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#select">select()</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#list">list()</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#getcount">getCount()</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#gm-identify">identify()</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#close">close()</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#example-creating-an-animated-gif">Example: Creating an Animated GIF</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#example-thumbnail-server">Example: Thumbnail Server</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-webview.html">The rampart-webview module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-chromeview.html">The rampart-chromeview module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-extras.html">Extras</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorialtoc.html">Tutorials</a></li>
+<li class="toctree-l1"><a class="reference internal" href="faq.html">FAQ</a></li>
+</ul>
+
+            
+          
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" role="navigation" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">Rampart</a>
+        
+      </nav>
+
+
+      
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="index.html">Docs</a> &raquo;</li>
+        
+      <li>The rampart-gm module</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+            
+            <a href="_sources/rampart-gm.rst.txt" rel="nofollow"> View page source</a>
+          
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <div class="section" id="the-rampart-gm-module">
+<h1>The rampart-gm module<a class="headerlink" href="#the-rampart-gm-module" title="Permalink to this headline">¶</a></h1>
+<div class="section" id="preface">
+<h2>Preface<a class="headerlink" href="#preface" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="acknowledgment">
+<h3>Acknowledgment<a class="headerlink" href="#acknowledgment" title="Permalink to this headline">¶</a></h3>
+<p>The rampart-gm module uses the
+<a class="reference external" href="http://www.graphicsmagick.org/">GraphicsMagick</a> library.
+The authors of Rampart extend our thanks to
+<a class="reference external" href="http://www.graphicsmagick.org/authors.html">the authors and contributors</a>
+of this library.</p>
+</div>
+<div class="section" id="license">
+<h3>License<a class="headerlink" href="#license" title="Permalink to this headline">¶</a></h3>
+<p>The GraphicsMagick library is distributed under the
+<a class="reference external" href="http://www.graphicsmagick.org/Copyright.html">MIT License</a>.</p>
+<p>The rampart-gm module is released under the MIT license.</p>
+</div>
+<div class="section" id="what-does-it-do">
+<h3>What does it do?<a class="headerlink" href="#what-does-it-do" title="Permalink to this headline">¶</a></h3>
+<p>The rampart-gm module provides image processing capabilities using the
+GraphicsMagick library.  It supports opening, manipulating, converting, and
+saving images in a wide variety of formats.  Operations include resizing,
+cropping, blurring, rotating, color adjustments, and many other
+transformations available through GraphicsMagick’s mogrify interface.
+Multiple images may be combined to produce animated GIFs or other
+multi-image documents.</p>
+</div>
+<div class="section" id="how-does-it-work">
+<h3>How does it work?<a class="headerlink" href="#how-does-it-work" title="Permalink to this headline">¶</a></h3>
+<p>The rampart-gm module provides a single <code class="docutils literal notranslate"><span class="pre">open()</span></code> function which returns
+an <em>Image Object</em>.  That object contains methods for manipulating
+images, adding images, selecting images, saving to files or buffers,
+and querying image properties.  All mogrify operations supported by
+GraphicsMagick are available.</p>
+</div>
+<div class="section" id="prerequisites">
+<h3>Prerequisites<a class="headerlink" href="#prerequisites" title="Permalink to this headline">¶</a></h3>
+<p>The GraphicsMagick shared libraries must be installed on the system
+in order to use this module.</p>
+<ul class="simple">
+<li>Debian/Ubuntu: <code class="docutils literal notranslate"><span class="pre">sudo</span> <span class="pre">apt</span> <span class="pre">install</span> <span class="pre">libgraphicsmagick-q16-3</span></code></li>
+<li>macOS: <code class="docutils literal notranslate"><span class="pre">brew</span> <span class="pre">install</span> <span class="pre">graphicsmagick</span></code></li>
+<li>FreeBSD: <code class="docutils literal notranslate"><span class="pre">pkg</span> <span class="pre">install</span> <span class="pre">GraphicsMagick</span></code></li>
+</ul>
+</div>
+</div>
+<div class="section" id="loading-and-using-the-module">
+<h2>Loading and Using the Module<a class="headerlink" href="#loading-and-using-the-module" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="loading">
+<h3>Loading<a class="headerlink" href="#loading" title="Permalink to this headline">¶</a></h3>
+<p>Loading the module is a simple matter of using the <code class="docutils literal notranslate"><span class="pre">require()</span></code> function:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">gm</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-gm&quot;</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>If the GraphicsMagick libraries are not installed, an error will be thrown
+with a message indicating that the libraries are missing.</p>
+</div>
+</div>
+<div class="section" id="gm-object-functions">
+<h2>gm Object Functions<a class="headerlink" href="#gm-object-functions" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="open">
+<h3>open()<a class="headerlink" href="#open" title="Permalink to this headline">¶</a></h3>
+<blockquote>
+<div><p>Open one or more image files and return an <em>Image Object</em>.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">images</span> <span class="o">=</span> <span class="nx">gm</span><span class="p">.</span><span class="nx">open</span><span class="p">(</span><span class="nx">path</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>Where:</p>
+<ul class="simple">
+<li><code class="docutils literal notranslate"><span class="pre">path</span></code> is a <span class="green">String</span> or <span class="green">Array</span> of <span class="green">Strings</span>,
+the path(s) to image file(s) to open.</li>
+</ul>
+<dl class="docutils">
+<dt>Return Value:</dt>
+<dd>An <em>Image Object</em> with the methods described below.</dd>
+</dl>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">gm</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-gm&quot;</span><span class="p">);</span>
+
+<span class="c1">// open a single image</span>
+<span class="kd">var</span> <span class="nx">images</span> <span class="o">=</span> <span class="nx">gm</span><span class="p">.</span><span class="nx">open</span><span class="p">(</span><span class="s2">&quot;/path/to/image.jpg&quot;</span><span class="p">);</span>
+
+<span class="c1">// open multiple images into a single image object</span>
+<span class="kd">var</span> <span class="nx">images</span> <span class="o">=</span> <span class="nx">gm</span><span class="p">.</span><span class="nx">open</span><span class="p">([</span><span class="s2">&quot;/path/to/image1.jpg&quot;</span><span class="p">,</span> <span class="s2">&quot;/path/to/image2.jpg&quot;</span><span class="p">]);</span>
+</pre></div>
+</div>
+</div></blockquote>
+</div>
+</div>
+<div class="section" id="image-object-methods">
+<h2>Image Object Methods<a class="headerlink" href="#image-object-methods" title="Permalink to this headline">¶</a></h2>
+<p>The <em>Image Object</em> returned by <a class="reference internal" href="#open">open()</a> contains the following
+methods.  Unless otherwise noted, methods that do not return a specific
+value return the <em>Image Object</em> itself, allowing calls to be chained.</p>
+<div class="section" id="add">
+<span id="gm-add"></span><h3>add()<a class="headerlink" href="#add" title="Permalink to this headline">¶</a></h3>
+<blockquote>
+<div><p>Add one or more images to the current <em>Image Object</em>.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">images</span><span class="p">.</span><span class="nx">add</span><span class="p">(</span><span class="nx">source</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>Where:</p>
+<ul class="simple">
+<li><code class="docutils literal notranslate"><span class="pre">source</span></code> is a <span class="green">String</span> (file path), an <em>Image Object</em>
+(as returned from <a class="reference internal" href="#open">open()</a>), a <span class="green">Buffer</span> (as returned from
+<a class="reference internal" href="#tobuffer">toBuffer()</a>), or an <span class="green">Array</span> containing any combination of
+the above.</li>
+</ul>
+<dl class="docutils">
+<dt>Return Value:</dt>
+<dd>The <em>Image Object</em> (chainable).</dd>
+</dl>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">gm</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-gm&quot;</span><span class="p">);</span>
+<span class="kd">var</span> <span class="nx">images</span> <span class="o">=</span> <span class="nx">gm</span><span class="p">.</span><span class="nx">open</span><span class="p">(</span><span class="s2">&quot;/path/to/image1.jpg&quot;</span><span class="p">);</span>
+<span class="kd">var</span> <span class="nx">image2</span> <span class="o">=</span> <span class="nx">gm</span><span class="p">.</span><span class="nx">open</span><span class="p">(</span><span class="s2">&quot;/path/to/image2.jpg&quot;</span><span class="p">);</span>
+
+<span class="c1">// add by path</span>
+<span class="nx">images</span><span class="p">.</span><span class="nx">add</span><span class="p">(</span><span class="s2">&quot;/path/to/image3.jpg&quot;</span><span class="p">);</span>
+
+<span class="c1">// add by image object</span>
+<span class="nx">images</span><span class="p">.</span><span class="nx">add</span><span class="p">(</span><span class="nx">image2</span><span class="p">);</span>
+
+<span class="c1">// add by buffer</span>
+<span class="nx">images</span><span class="p">.</span><span class="nx">add</span><span class="p">(</span><span class="nx">image2</span><span class="p">.</span><span class="nx">toBuffer</span><span class="p">(</span><span class="s2">&quot;JPG&quot;</span><span class="p">));</span>
+
+<span class="c1">// add multiple at once</span>
+<span class="nx">images</span><span class="p">.</span><span class="nx">add</span><span class="p">([</span><span class="nx">image2</span><span class="p">,</span> <span class="s2">&quot;/path/to/image4.jpg&quot;</span><span class="p">]);</span>
+</pre></div>
+</div>
+</div></blockquote>
+</div>
+<div class="section" id="mogrify">
+<span id="gm-mogrify"></span><h3>mogrify()<a class="headerlink" href="#mogrify" title="Permalink to this headline">¶</a></h3>
+<blockquote>
+<div><p>Apply one or more GraphicsMagick transformations to all images in the
+<em>Image Object</em>.  See the
+<a class="reference external" href="http://www.graphicsmagick.org/mogrify.html">GraphicsMagick documentation</a>
+for a complete list of available options.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">images</span><span class="p">.</span><span class="nx">mogrify</span><span class="p">(</span><span class="nx">options</span><span class="p">[,</span> <span class="nx">value</span><span class="p">]);</span>
+</pre></div>
+</div>
+<p>The function accepts several calling conventions:</p>
+<ul class="simple">
+<li>A single <span class="green">String</span> containing one or more options and their
+values, separated by spaces.</li>
+<li>Two <span class="green">String</span> arguments: the option name and its value.  The
+leading <code class="docutils literal notranslate"><span class="pre">-</span></code> on the option name is optional.</li>
+<li>An <span class="green">Object</span> where each key is an option name and each value is
+the corresponding option value.  Options that take no value should be
+set to <code class="docutils literal notranslate"><span class="pre">true</span></code>.  Setting an option to <code class="docutils literal notranslate"><span class="pre">false</span></code> causes it to be
+skipped.  Options that use the <code class="docutils literal notranslate"><span class="pre">+</span></code> prefix (to disable a feature)
+should include the <code class="docutils literal notranslate"><span class="pre">+</span></code> in the key name.</li>
+</ul>
+<dl class="docutils">
+<dt>Return Value:</dt>
+<dd>The <em>Image Object</em> (chainable).</dd>
+</dl>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">gm</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-gm&quot;</span><span class="p">);</span>
+<span class="kd">var</span> <span class="nx">images</span> <span class="o">=</span> <span class="nx">gm</span><span class="p">.</span><span class="nx">open</span><span class="p">(</span><span class="s2">&quot;/path/to/image.jpg&quot;</span><span class="p">);</span>
+
+<span class="c1">// single string with options and values</span>
+<span class="nx">images</span><span class="p">.</span><span class="nx">mogrify</span><span class="p">(</span><span class="s2">&quot;-blur 20x30 -auto-orient +contrast&quot;</span><span class="p">);</span>
+
+<span class="c1">// option and value as separate arguments</span>
+<span class="nx">images</span><span class="p">.</span><span class="nx">mogrify</span><span class="p">(</span><span class="s2">&quot;-blur&quot;</span><span class="p">,</span> <span class="s2">&quot;20x30&quot;</span><span class="p">);</span>
+<span class="nx">images</span><span class="p">.</span><span class="nx">mogrify</span><span class="p">(</span><span class="s2">&quot;blur&quot;</span><span class="p">,</span> <span class="s2">&quot;20x30&quot;</span><span class="p">);</span>   <span class="c1">// leading &quot;-&quot; is optional</span>
+
+<span class="c1">// object form</span>
+<span class="nx">images</span><span class="p">.</span><span class="nx">mogrify</span><span class="p">({</span>
+    <span class="nx">blur</span><span class="o">:</span> <span class="s2">&quot;20x30&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;auto-orient&quot;</span><span class="o">:</span> <span class="kc">true</span><span class="p">,</span>
+    <span class="s2">&quot;+contrast&quot;</span><span class="o">:</span> <span class="kc">true</span>
+<span class="p">});</span>
+</pre></div>
+</div>
+</div></blockquote>
+</div>
+<div class="section" id="save">
+<span id="gm-save"></span><h3>save()<a class="headerlink" href="#save" title="Permalink to this headline">¶</a></h3>
+<blockquote>
+<div><p>Save the image(s) to a file.  The output format is determined by the
+file extension.  If the <em>Image Object</em> contains multiple images
+and the output format does not support multi-image documents (such as
+GIF), use <a class="reference internal" href="#select">select()</a> to choose a single image before saving.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">images</span><span class="p">.</span><span class="nx">save</span><span class="p">(</span><span class="nx">path</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>Where:</p>
+<ul class="simple">
+<li><code class="docutils literal notranslate"><span class="pre">path</span></code> is a <span class="green">String</span>, the file path to save the image to.</li>
+</ul>
+<dl class="docutils">
+<dt>Return Value:</dt>
+<dd>The <em>Image Object</em> (chainable).</dd>
+</dl>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">gm</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-gm&quot;</span><span class="p">);</span>
+<span class="kd">var</span> <span class="nx">images</span> <span class="o">=</span> <span class="nx">gm</span><span class="p">.</span><span class="nx">open</span><span class="p">(</span><span class="s2">&quot;/path/to/image.jpg&quot;</span><span class="p">);</span>
+
+<span class="nx">images</span><span class="p">.</span><span class="nx">mogrify</span><span class="p">({</span><span class="nx">blur</span><span class="o">:</span> <span class="s2">&quot;20x30&quot;</span><span class="p">});</span>
+<span class="nx">images</span><span class="p">.</span><span class="nx">save</span><span class="p">(</span><span class="s2">&quot;/path/to/output.png&quot;</span><span class="p">);</span>
+</pre></div>
+</div>
+</div></blockquote>
+</div>
+<div class="section" id="tobuffer">
+<span id="gm-tobuffer"></span><h3>toBuffer()<a class="headerlink" href="#tobuffer" title="Permalink to this headline">¶</a></h3>
+<blockquote>
+<div><p>Convert the image(s) to a <span class="green">Buffer</span> in the specified format.
+This is useful for serving images directly from a web server without
+writing to disk.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">buf</span> <span class="o">=</span> <span class="nx">images</span><span class="p">.</span><span class="nx">toBuffer</span><span class="p">(</span><span class="nx">format</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>Where:</p>
+<ul class="simple">
+<li><code class="docutils literal notranslate"><span class="pre">format</span></code> is a <span class="green">String</span>, the output format (e.g. <code class="docutils literal notranslate"><span class="pre">&quot;JPG&quot;</span></code>,
+<code class="docutils literal notranslate"><span class="pre">&quot;PNG&quot;</span></code>, <code class="docutils literal notranslate"><span class="pre">&quot;GIF&quot;</span></code>).  The format name is case-insensitive.</li>
+</ul>
+<dl class="docutils">
+<dt>Return Value:</dt>
+<dd>A <span class="green">Buffer</span> containing the image data in the specified format.</dd>
+</dl>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">gm</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-gm&quot;</span><span class="p">);</span>
+<span class="kd">var</span> <span class="nx">images</span> <span class="o">=</span> <span class="nx">gm</span><span class="p">.</span><span class="nx">open</span><span class="p">(</span><span class="s2">&quot;/path/to/image.jpg&quot;</span><span class="p">);</span>
+<span class="kd">var</span> <span class="nx">buf</span> <span class="o">=</span> <span class="nx">images</span><span class="p">.</span><span class="nx">toBuffer</span><span class="p">(</span><span class="s2">&quot;PNG&quot;</span><span class="p">);</span>
+
+<span class="c1">// write the buffer to a file</span>
+<span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">fprintf</span><span class="p">(</span><span class="s2">&quot;/path/to/output.png&quot;</span><span class="p">,</span> <span class="s2">&quot;%s&quot;</span><span class="p">,</span> <span class="nx">buf</span><span class="p">);</span>
+
+<span class="c1">// or return from a rampart-server callback</span>
+<span class="k">return</span> <span class="p">{</span><span class="nx">png</span><span class="o">:</span> <span class="nx">buf</span><span class="p">};</span>
+</pre></div>
+</div>
+</div></blockquote>
+</div>
+<div class="section" id="select">
+<span id="gm-select"></span><h3>select()<a class="headerlink" href="#select" title="Permalink to this headline">¶</a></h3>
+<blockquote>
+<div><p>Select a single image from a multi-<em>Image Object</em> by index.
+This is useful when saving to a format that does not support multiple
+images.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">images</span><span class="p">.</span><span class="nx">select</span><span class="p">(</span><span class="nx">index</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>Where:</p>
+<ul class="simple">
+<li><code class="docutils literal notranslate"><span class="pre">index</span></code> is a <span class="green">Number</span>, the zero-based index of the image
+to select.  Negative indices count from the end (e.g. <code class="docutils literal notranslate"><span class="pre">-1</span></code> selects
+the last image).</li>
+</ul>
+<dl class="docutils">
+<dt>Return Value:</dt>
+<dd>The <em>Image Object</em> (chainable).</dd>
+</dl>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">gm</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-gm&quot;</span><span class="p">);</span>
+<span class="kd">var</span> <span class="nx">images</span> <span class="o">=</span> <span class="nx">gm</span><span class="p">.</span><span class="nx">open</span><span class="p">([</span><span class="s2">&quot;/path/to/image1.jpg&quot;</span><span class="p">,</span> <span class="s2">&quot;/path/to/image2.jpg&quot;</span><span class="p">]);</span>
+
+<span class="c1">// select and save the second image</span>
+<span class="nx">images</span><span class="p">.</span><span class="nx">select</span><span class="p">(</span><span class="mi">1</span><span class="p">).</span><span class="nx">save</span><span class="p">(</span><span class="s2">&quot;/path/to/output.jpg&quot;</span><span class="p">);</span>
+
+<span class="c1">// select the last image</span>
+<span class="nx">images</span><span class="p">.</span><span class="nx">select</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">).</span><span class="nx">save</span><span class="p">(</span><span class="s2">&quot;/path/to/last.jpg&quot;</span><span class="p">);</span>
+</pre></div>
+</div>
+</div></blockquote>
+</div>
+<div class="section" id="list">
+<span id="gm-list"></span><h3>list()<a class="headerlink" href="#list" title="Permalink to this headline">¶</a></h3>
+<blockquote>
+<div><p>Return a list of images in the <em>Image Object</em>.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">info</span> <span class="o">=</span> <span class="nx">images</span><span class="p">.</span><span class="nx">list</span><span class="p">();</span>
+</pre></div>
+</div>
+<dl class="docutils">
+<dt>Return Value:</dt>
+<dd>An <span class="green">Array</span> of <span class="green">Strings</span>, the file name of each image in
+the <em>Image Object</em>.  For a full description of an image, see
+<a class="reference internal" href="#gm-identify"><span class="std std-ref">identify()</span></a>.</dd>
+</dl>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">gm</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-gm&quot;</span><span class="p">);</span>
+<span class="kd">var</span> <span class="nx">images</span> <span class="o">=</span> <span class="nx">gm</span><span class="p">.</span><span class="nx">open</span><span class="p">([</span><span class="s2">&quot;/path/to/image1.jpg&quot;</span><span class="p">,</span> <span class="s2">&quot;/path/to/image2.jpg&quot;</span><span class="p">]);</span>
+
+<span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;%3J\n&quot;</span><span class="p">,</span> <span class="nx">images</span><span class="p">.</span><span class="nx">list</span><span class="p">());</span>
+
+<span class="cm">/* expected output:</span>
+<span class="cm">   [</span>
+<span class="cm">      &quot;/path/to/image1.jpg&quot;,</span>
+<span class="cm">      &quot;/path/to/image2.jpg&quot;</span>
+<span class="cm">   ]</span>
+<span class="cm">*/</span>
+</pre></div>
+</div>
+</div></blockquote>
+</div>
+<div class="section" id="getcount">
+<span id="gm-getcount"></span><h3>getCount()<a class="headerlink" href="#getcount" title="Permalink to this headline">¶</a></h3>
+<blockquote>
+<div><p>Return the number of images in the <em>Image Object</em>.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">count</span> <span class="o">=</span> <span class="nx">images</span><span class="p">.</span><span class="nx">getCount</span><span class="p">();</span>
+</pre></div>
+</div>
+<dl class="docutils">
+<dt>Return Value:</dt>
+<dd>A <span class="green">Number</span>, the count of images in the <em>Image Object</em>.</dd>
+</dl>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">gm</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-gm&quot;</span><span class="p">);</span>
+<span class="kd">var</span> <span class="nx">images</span> <span class="o">=</span> <span class="nx">gm</span><span class="p">.</span><span class="nx">open</span><span class="p">([</span><span class="s2">&quot;/path/to/image1.jpg&quot;</span><span class="p">,</span> <span class="s2">&quot;/path/to/image2.jpg&quot;</span><span class="p">]);</span>
+
+<span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;we have %d images\n&quot;</span><span class="p">,</span> <span class="nx">images</span><span class="p">.</span><span class="nx">getCount</span><span class="p">());</span>
+<span class="c1">// output: &quot;we have 2 images&quot;</span>
+</pre></div>
+</div>
+</div></blockquote>
+</div>
+<div class="section" id="gm-identify">
+<span id="identify"></span><h3>identify()<a class="headerlink" href="#gm-identify" title="Permalink to this headline">¶</a></h3>
+<blockquote>
+<div><p>Return descriptive information about the currently selected image,
+similar to the <code class="docutils literal notranslate"><span class="pre">gm</span> <span class="pre">identify</span></code> command-line tool.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">info</span> <span class="o">=</span> <span class="nx">images</span><span class="p">.</span><span class="nx">identify</span><span class="p">([</span><span class="nx">verbose</span><span class="p">]);</span>
+</pre></div>
+</div>
+<p>Where:</p>
+<ul class="simple">
+<li><code class="docutils literal notranslate"><span class="pre">verbose</span></code> is an optional <span class="green">Boolean</span>.  If <code class="docutils literal notranslate"><span class="pre">true</span></code>, return
+detailed information including EXIF data, color profiles, and image
+statistics.  Default is <code class="docutils literal notranslate"><span class="pre">false</span></code>.</li>
+</ul>
+<dl class="docutils">
+<dt>Return Value:</dt>
+<dd><p class="first">An <span class="green">Object</span> containing image properties.  At a minimum, the
+returned <span class="green">Object</span> includes:</p>
+<ul class="simple">
+<li><code class="docutils literal notranslate"><span class="pre">filename</span></code> - a <span class="green">String</span>, the original file name.</li>
+<li><code class="docutils literal notranslate"><span class="pre">magick</span></code> - a <span class="green">String</span>, the image format (e.g. <code class="docutils literal notranslate"><span class="pre">&quot;JPEG&quot;</span></code>).</li>
+<li><code class="docutils literal notranslate"><span class="pre">width</span></code> - a <span class="green">Number</span>, the image width in pixels.</li>
+<li><code class="docutils literal notranslate"><span class="pre">height</span></code> - a <span class="green">Number</span>, the image height in pixels.</li>
+</ul>
+<p class="last">When <code class="docutils literal notranslate"><span class="pre">verbose</span></code> is <code class="docutils literal notranslate"><span class="pre">true</span></code>, additional properties are returned
+including color depth, channel statistics, EXIF metadata, IPTC
+profiles, and other format-specific details.</p>
+</dd>
+</dl>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">gm</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-gm&quot;</span><span class="p">);</span>
+<span class="kd">var</span> <span class="nx">images</span> <span class="o">=</span> <span class="nx">gm</span><span class="p">.</span><span class="nx">open</span><span class="p">(</span><span class="s2">&quot;/path/to/photo.jpg&quot;</span><span class="p">);</span>
+
+<span class="c1">// basic info</span>
+<span class="kd">var</span> <span class="nx">info</span> <span class="o">=</span> <span class="nx">images</span><span class="p">.</span><span class="nx">identify</span><span class="p">();</span>
+<span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;Format: %s, Size: %dx%d\n&quot;</span><span class="p">,</span>
+    <span class="nx">info</span><span class="p">.</span><span class="nx">magick</span><span class="p">,</span> <span class="nx">info</span><span class="p">.</span><span class="nx">width</span><span class="p">,</span> <span class="nx">info</span><span class="p">.</span><span class="nx">height</span><span class="p">);</span>
+
+<span class="c1">// verbose info with EXIF data</span>
+<span class="kd">var</span> <span class="nx">detail</span> <span class="o">=</span> <span class="nx">images</span><span class="p">.</span><span class="nx">identify</span><span class="p">(</span><span class="kc">true</span><span class="p">);</span>
+<span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;%3J\n&quot;</span><span class="p">,</span> <span class="nx">detail</span><span class="p">);</span>
+</pre></div>
+</div>
+</div></blockquote>
+</div>
+<div class="section" id="close">
+<span id="gm-close"></span><h3>close()<a class="headerlink" href="#close" title="Permalink to this headline">¶</a></h3>
+<blockquote>
+<div><p>Close the <em>Image Object</em> and free associated resources.  This
+is optional; resources are automatically freed when the variable goes
+out of scope.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">images</span><span class="p">.</span><span class="nx">close</span><span class="p">();</span>
+</pre></div>
+</div>
+</div></blockquote>
+</div>
+</div>
+<div class="section" id="example-creating-an-animated-gif">
+<h2>Example: Creating an Animated GIF<a class="headerlink" href="#example-creating-an-animated-gif" title="Permalink to this headline">¶</a></h2>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">gm</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-gm&quot;</span><span class="p">);</span>
+
+<span class="c1">// open and configure the first frame</span>
+<span class="kd">var</span> <span class="nx">images</span> <span class="o">=</span> <span class="nx">gm</span><span class="p">.</span><span class="nx">open</span><span class="p">(</span><span class="s2">&quot;image1.jpg&quot;</span><span class="p">)</span>
+    <span class="p">.</span><span class="nx">mogrify</span><span class="p">({</span><span class="s2">&quot;auto-orient&quot;</span><span class="o">:</span> <span class="kc">true</span><span class="p">})</span>
+    <span class="p">.</span><span class="nx">mogrify</span><span class="p">({</span><span class="nx">delay</span><span class="o">:</span> <span class="mi">20</span><span class="p">});</span>   <span class="c1">// 200ms per frame</span>
+
+<span class="c1">// open and configure the second frame</span>
+<span class="kd">var</span> <span class="nx">image2</span> <span class="o">=</span> <span class="nx">gm</span><span class="p">.</span><span class="nx">open</span><span class="p">(</span><span class="s2">&quot;image2.jpg&quot;</span><span class="p">)</span>
+    <span class="p">.</span><span class="nx">mogrify</span><span class="p">({</span>
+        <span class="s2">&quot;auto-orient&quot;</span><span class="o">:</span> <span class="kc">true</span><span class="p">,</span>
+        <span class="nx">delay</span><span class="o">:</span> <span class="mi">60</span>            <span class="c1">// 600ms for this frame</span>
+    <span class="p">});</span>
+
+<span class="c1">// combine and save</span>
+<span class="nx">images</span><span class="p">.</span><span class="nx">add</span><span class="p">(</span><span class="nx">image2</span><span class="p">);</span>
+<span class="nx">images</span><span class="p">.</span><span class="nx">mogrify</span><span class="p">({</span><span class="nx">loop</span><span class="o">:</span> <span class="mi">5</span><span class="p">});</span>   <span class="c1">// stop after 5 loops</span>
+<span class="nx">images</span><span class="p">.</span><span class="nx">save</span><span class="p">(</span><span class="s2">&quot;animated.gif&quot;</span><span class="p">);</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="example-thumbnail-server">
+<h2>Example: Thumbnail Server<a class="headerlink" href="#example-thumbnail-server" title="Permalink to this headline">¶</a></h2>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">server</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-server&quot;</span><span class="p">);</span>
+<span class="kd">var</span> <span class="nx">gm</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-gm&quot;</span><span class="p">);</span>
+
+<span class="nx">server</span><span class="p">.</span><span class="nx">start</span><span class="p">({</span>
+    <span class="nx">bind</span><span class="o">:</span> <span class="s2">&quot;0.0.0.0:8080&quot;</span><span class="p">,</span>
+    <span class="nx">map</span><span class="o">:</span> <span class="p">{</span>
+        <span class="s2">&quot;/thumbnail&quot;</span><span class="o">:</span> <span class="kd">function</span><span class="p">(</span><span class="nx">req</span><span class="p">)</span> <span class="p">{</span>
+            <span class="kd">var</span> <span class="nx">images</span> <span class="o">=</span> <span class="nx">gm</span><span class="p">.</span><span class="nx">open</span><span class="p">(</span><span class="s2">&quot;/path/to/photos/&quot;</span> <span class="o">+</span> <span class="nx">req</span><span class="p">.</span><span class="nx">params</span><span class="p">.</span><span class="nx">file</span><span class="p">);</span>
+            <span class="nx">images</span><span class="p">.</span><span class="nx">mogrify</span><span class="p">({</span>
+                <span class="nx">thumbnail</span><span class="o">:</span> <span class="s2">&quot;256x256&quot;</span><span class="p">,</span>
+                <span class="s2">&quot;auto-orient&quot;</span><span class="o">:</span> <span class="kc">true</span><span class="p">,</span>
+                <span class="nx">quality</span><span class="o">:</span> <span class="s2">&quot;80&quot;</span>
+            <span class="p">});</span>
+            <span class="k">return</span> <span class="p">{</span><span class="nx">jpg</span><span class="o">:</span> <span class="nx">images</span><span class="p">.</span><span class="nx">toBuffer</span><span class="p">(</span><span class="s2">&quot;JPG&quot;</span><span class="p">)};</span>
+        <span class="p">}</span>
+    <span class="p">}</span>
+<span class="p">});</span>
+</pre></div>
+</div>
+</div>
+</div>
+
+
+           </div>
+          </div>
+          <footer>
+  
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+      
+        <a href="rampart-webview.html" class="btn btn-neutral float-right" title="The rampart-webview module" accesskey="n">Next <span class="fa fa-arrow-circle-right"></span></a>
+      
+      
+        <a href="rampart-url.html" class="btn btn-neutral" title="The rampart-url module" accesskey="p"><span class="fa fa-arrow-circle-left"></span> Previous</a>
+      
+    </div>
+  
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &copy; Copyright 2026, Moat Crossing Systems.
+
+    </p>
+  </div>
+  Built with <a href="http://sphinx-doc.org/">Sphinx</a> and ❤️  using a custom <a href="https://github.com/LinxiFan/Sphinx-theme">theme</a> based on <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+
+  
+
+    <script type="text/javascript">
+        var DOCUMENTATION_OPTIONS = {
+            URL_ROOT:'./',
+            VERSION:'0.7.2',
+            COLLAPSE_INDEX:false,
+            FILE_SUFFIX:'.html',
+            HAS_SOURCE:  true,
+            SOURCELINK_SUFFIX: '.txt'
+        };
+    </script>
+      <script type="text/javascript" src="_static/jquery.js"></script>
+      <script type="text/javascript" src="_static/underscore.js"></script>
+      <script type="text/javascript" src="_static/doctools.js"></script>
+      <script type="text/javascript" src="_static/language_data.js"></script>
+      <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/latest.js?config=TeX-AMS-MML_HTMLorMML"></script>
+
+  
+
+  
+  
+    <script type="text/javascript" src="_static/js/theme.js"></script>
+  
+
+  
+  
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.StickyNav.enable();
+      });
+  </script>
+   
+
+</body>
+</html>

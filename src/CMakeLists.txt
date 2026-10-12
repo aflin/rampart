@@ -2016,12 +2016,16 @@ install(CODE "execute_process( \
 )
 
 
-# web_server
+# web_server, minus files the Mini IDE generates or keeps at run time: AGENTS.md
+# and CLAUDE.md, the built docs and search index, its settings (password hash)
+# and pid file.  file(COPY) keeps symlinks such as entry_script.js as links.
+set(RP_WS_SRC "${PROJECT_SOURCE_DIR}/web_server")
 install(DIRECTORY DESTINATION "${CMAKE_INSTALL_PREFIX}/web_server")
-install(CODE "execute_process( \
-    COMMAND ${CMAKE_COMMAND} -E copy_directory \
-    \"${PROJECT_SOURCE_DIR}/web_server\" \
-    \"${CMAKE_INSTALL_PREFIX}/web_server\"   \
+install(CODE "file(COPY \"${RP_WS_SRC}/\" DESTINATION \"${CMAKE_INSTALL_PREFIX}/web_server\"
+    REGEX \"^${RP_WS_SRC}/(AGENTS|CLAUDE)\\\\.md$\" EXCLUDE
+    REGEX \"^${RP_WS_SRC}/ide/(data|html)/docs$\" EXCLUDE
+    REGEX \"^${RP_WS_SRC}/ide/data/ide-settings\\\\.json$\" EXCLUDE
+    REGEX \"^${RP_WS_SRC}/ide/[^/]*\\\\.pid$\" EXCLUDE
     )"
 )
 

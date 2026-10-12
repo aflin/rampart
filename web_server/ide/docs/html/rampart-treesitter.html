@@ -1,0 +1,784 @@
+
+
+<!DOCTYPE html>
+<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
+<!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <title>The rampart-treesitter module &mdash; Rampart 0.7.2 documentation</title>
+  
+
+  
+  
+
+  
+
+  
+  
+    
+
+  
+
+  
+  
+    <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
+  
+
+  
+    <link rel="stylesheet" href="_static/theme_overrides.css" type="text/css" />
+  
+    <link rel="stylesheet" href="_static/hacks.css" type="text/css" />
+  
+
+  
+        <link rel="index" title="Index"
+              href="genindex.html"/>
+        <link rel="search" title="Search" href="search.html"/>
+    <link rel="top" title="Rampart 0.7.2 documentation" href="index.html"/>
+        <link rel="next" title="The rampart-langtools modules" href="rampart-langtools.html"/>
+        <link rel="prev" title="The rampart-cmark module" href="rampart-cmark.html"/> 
+
+  
+  <script src="_static/js/modernizr.min.js"></script>
+
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+   
+  <div class="wy-grid-for-nav">
+
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search">
+          
+
+          
+            <a href="index.html" class="icon icon-home"> Rampart
+          
+
+          
+          </a>
+
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+                <p class="caption"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="rampart-main.html">Rampart JavaScript</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-utils.html">Rampart Utility Functions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-thread.html">Rampart Thread Functions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-vector.html">Rampart Vector Functions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="sqltoc.html">The rampart-sql module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-server.html">The rampart-server module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-auth.html">The rampart-auth module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-net.html">The rampart-net module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-html.html">The rampart-html module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-crypto.html">The rampart-crypto module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-curl.html">The rampart-curl module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-lmdb.html">The rampart-lmdb module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-redis.html">The rampart-redis module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-totext.html">The rampart-totext module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-python.html">The rampart-python module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-robots.html">The rampart-robots module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-cmark.html">The rampart-cmark module</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">The rampart-treesitter module</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#preface">Preface</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#acknowledgment">Acknowledgment</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#license">License</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#what-does-it-do">What does it do?</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#how-does-it-work">How does it work?</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#loading-and-using-the-module">Loading and Using the Module</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#loading">Loading</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#properties">Properties</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#languages">languages</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#functions">Functions</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#extractsymbols">extractSymbols</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#parse">parse</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#examples">Examples</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#extracting-symbols">Extracting Symbols</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#extracting-a-symbol-s-source">Extracting a Symbol’s Source</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#inspecting-the-ast">Inspecting the AST</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#handling-parse-errors">Handling Parse Errors</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#parsing-a-configuration-file">Parsing a Configuration File</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-langtools.html">The rampart-langtools modules</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-almanac.html">The rampart-almanac module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-url.html">The rampart-url module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-gm.html">The rampart-gm module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-webview.html">The rampart-webview module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-chromeview.html">The rampart-chromeview module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-extras.html">Extras</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorialtoc.html">Tutorials</a></li>
+<li class="toctree-l1"><a class="reference internal" href="faq.html">FAQ</a></li>
+</ul>
+
+            
+          
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" role="navigation" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">Rampart</a>
+        
+      </nav>
+
+
+      
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="index.html">Docs</a> &raquo;</li>
+        
+      <li>The rampart-treesitter module</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+            
+            <a href="_sources/rampart-treesitter.rst.txt" rel="nofollow"> View page source</a>
+          
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <div class="section" id="the-rampart-treesitter-module">
+<h1>The rampart-treesitter module<a class="headerlink" href="#the-rampart-treesitter-module" title="Permalink to this headline">¶</a></h1>
+<div class="section" id="preface">
+<h2>Preface<a class="headerlink" href="#preface" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="acknowledgment">
+<h3>Acknowledgment<a class="headerlink" href="#acknowledgment" title="Permalink to this headline">¶</a></h3>
+<p>The rampart-treesitter module is built on the
+<a class="reference external" href="https://tree-sitter.github.io/tree-sitter/">Tree-sitter</a> parser
+generator and incremental parsing library, originally created by
+Max Brunsfeld.  The authors of Rampart extend our thanks to the
+Tree-sitter authors and contributors and to the individual
+maintainers of each bundled grammar.</p>
+<p>The module bundles the following language grammars, sourced from
+the official <a class="reference external" href="https://github.com/tree-sitter">tree-sitter</a>
+organization where available and well-maintained community
+repositories otherwise:</p>
+<table border="1" class="colwidths-given docutils">
+<colgroup>
+<col width="20%" />
+<col width="30%" />
+<col width="50%" />
+</colgroup>
+<thead valign="bottom">
+<tr class="row-odd"><th class="head">Language</th>
+<th class="head">Repository</th>
+<th class="head">Notes</th>
+</tr>
+</thead>
+<tbody valign="top">
+<tr class="row-even"><td>JavaScript</td>
+<td>tree-sitter/tree-sitter-javascript</td>
+<td>Also linked into the rampart binary for the transpiler</td>
+</tr>
+<tr class="row-odd"><td>C</td>
+<td>tree-sitter/tree-sitter-c</td>
+<td>&#160;</td>
+</tr>
+<tr class="row-even"><td>C++</td>
+<td>tree-sitter/tree-sitter-cpp</td>
+<td>&#160;</td>
+</tr>
+<tr class="row-odd"><td>Python</td>
+<td>tree-sitter/tree-sitter-python</td>
+<td>&#160;</td>
+</tr>
+<tr class="row-even"><td>Java</td>
+<td>tree-sitter/tree-sitter-java</td>
+<td>&#160;</td>
+</tr>
+<tr class="row-odd"><td>Go</td>
+<td>tree-sitter/tree-sitter-go</td>
+<td>&#160;</td>
+</tr>
+<tr class="row-even"><td>Rust</td>
+<td>tree-sitter/tree-sitter-rust</td>
+<td>&#160;</td>
+</tr>
+<tr class="row-odd"><td>TypeScript / TSX</td>
+<td>tree-sitter/tree-sitter-typescript</td>
+<td>Two grammars in a single repository</td>
+</tr>
+<tr class="row-even"><td>C#</td>
+<td>tree-sitter/tree-sitter-c-sharp</td>
+<td>&#160;</td>
+</tr>
+<tr class="row-odd"><td>Ruby</td>
+<td>tree-sitter/tree-sitter-ruby</td>
+<td>&#160;</td>
+</tr>
+<tr class="row-even"><td>Bash</td>
+<td>tree-sitter/tree-sitter-bash</td>
+<td>&#160;</td>
+</tr>
+<tr class="row-odd"><td>Kotlin</td>
+<td>fwcd/tree-sitter-kotlin</td>
+<td>Community-maintained</td>
+</tr>
+<tr class="row-even"><td>PHP</td>
+<td>tree-sitter/tree-sitter-php</td>
+<td>The <code class="docutils literal notranslate"><span class="pre">php_only</span></code> variant for pure-PHP files</td>
+</tr>
+<tr class="row-odd"><td>Swift</td>
+<td>alex-pinkus/tree-sitter-swift</td>
+<td>Community-maintained</td>
+</tr>
+<tr class="row-even"><td>Lua</td>
+<td>tree-sitter-grammars/tree-sitter-lua</td>
+<td>&#160;</td>
+</tr>
+<tr class="row-odd"><td>Dart</td>
+<td>UserNobody14/tree-sitter-dart</td>
+<td>Community-maintained</td>
+</tr>
+<tr class="row-even"><td>Scala</td>
+<td>tree-sitter/tree-sitter-scala</td>
+<td>&#160;</td>
+</tr>
+<tr class="row-odd"><td>Haskell</td>
+<td>tree-sitter/tree-sitter-haskell</td>
+<td>&#160;</td>
+</tr>
+<tr class="row-even"><td>OCaml</td>
+<td>tree-sitter/tree-sitter-ocaml</td>
+<td>The <code class="docutils literal notranslate"><span class="pre">ocaml</span></code> (<code class="docutils literal notranslate"><span class="pre">.ml</span></code>) implementation grammar</td>
+</tr>
+<tr class="row-odd"><td>CSS</td>
+<td>tree-sitter/tree-sitter-css</td>
+<td>&#160;</td>
+</tr>
+<tr class="row-even"><td>YAML</td>
+<td>ikatyang/tree-sitter-yaml</td>
+<td>Parse-only (no <code class="docutils literal notranslate"><span class="pre">extractSymbols</span></code> support)</td>
+</tr>
+<tr class="row-odd"><td>TOML</td>
+<td>tree-sitter-grammars/tree-sitter-toml</td>
+<td>Parse-only</td>
+</tr>
+<tr class="row-even"><td>Markdown</td>
+<td>tree-sitter-grammars/tree-sitter-markdown</td>
+<td>Parse-only (block + inline sub-grammars)</td>
+</tr>
+<tr class="row-odd"><td>Elixir</td>
+<td>elixir-lang/tree-sitter-elixir</td>
+<td>Parse-only</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="section" id="license">
+<h3>License<a class="headerlink" href="#license" title="Permalink to this headline">¶</a></h3>
+<p>The Tree-sitter library is licensed under the
+<a class="reference external" href="https://github.com/tree-sitter/tree-sitter/blob/master/LICENSE">MIT License</a>.
+Individual grammars are licensed under MIT or comparable permissive
+licenses by their respective authors.  See the <code class="docutils literal notranslate"><span class="pre">LICENSE</span></code> files
+under each <code class="docutils literal notranslate"><span class="pre">extern/tree-sitter/tree-sitter-&lt;lang&gt;/</span></code> directory in
+the Rampart source tree.</p>
+<p>The rampart-treesitter module is released under the MIT license.</p>
+</div>
+<div class="section" id="what-does-it-do">
+<h3>What does it do?<a class="headerlink" href="#what-does-it-do" title="Permalink to this headline">¶</a></h3>
+<p>The rampart-treesitter module exposes language-aware source code
+parsing to Rampart JavaScript.  It supports twenty-six languages
+out of the box and provides two access patterns:</p>
+<ul class="simple">
+<li>A high-level <code class="docutils literal notranslate"><span class="pre">extractSymbols</span></code> function that returns a flat list
+of top-level definitions (functions, classes, structs, type
+declarations, and similar constructs) for a given source file.
+This is the primary tool for building searchable code indexes,
+navigation tooling, and language-aware recall systems.</li>
+<li>A lower-level <code class="docutils literal notranslate"><span class="pre">parse</span></code> function that returns the entire abstract
+syntax tree as a nested JavaScript object.  Callers may walk this
+tree to perform custom static analysis, lint checks, refactoring
+transforms, or any work that does not fit the flat
+symbol-extraction model.</li>
+</ul>
+</div>
+<div class="section" id="how-does-it-work">
+<h3>How does it work?<a class="headerlink" href="#how-does-it-work" title="Permalink to this headline">¶</a></h3>
+<p>Tree-sitter is a parser-generator framework that produces a concrete
+syntax tree from source code.  Unlike line-oriented or
+regex-based parsers, Tree-sitter produces a structured tree that
+preserves the grammatical relationships in the source.  The library
+is fault-tolerant: it returns a usable tree even when the source
+contains syntax errors, marking the affected regions with <code class="docutils literal notranslate"><span class="pre">ERROR</span></code>
+nodes rather than aborting.</p>
+<p>Each supported language is implemented as a compiled grammar that
+Tree-sitter links against its runtime.  The grammars are bundled
+inside <code class="docutils literal notranslate"><span class="pre">rampart-treesitter.so</span></code> itself, so users of the module need
+no external installation.</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">extractSymbols</span></code> function dispatches to a per-language table
+of “definition node types” (for example <code class="docutils literal notranslate"><span class="pre">function_declaration</span></code>,
+<code class="docutils literal notranslate"><span class="pre">class_definition</span></code>, <code class="docutils literal notranslate"><span class="pre">struct_specifier</span></code>) and walks the parsed
+tree, emitting one record for every match.</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">parse</span></code> function performs no such filtering and returns the
+full tree as a nested object.</p>
+</div>
+</div>
+<div class="section" id="loading-and-using-the-module">
+<h2>Loading and Using the Module<a class="headerlink" href="#loading-and-using-the-module" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="loading">
+<h3>Loading<a class="headerlink" href="#loading" title="Permalink to this headline">¶</a></h3>
+<p>Loading the module is a simple matter of using the <code class="docutils literal notranslate"><span class="pre">require()</span></code>
+function:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">ts</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-treesitter&quot;</span><span class="p">);</span>
+</pre></div>
+</div>
+</div>
+</div>
+<div class="section" id="properties">
+<h2>Properties<a class="headerlink" href="#properties" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="languages">
+<h3>languages<a class="headerlink" href="#languages" title="Permalink to this headline">¶</a></h3>
+<blockquote>
+<div><p>A read-only <span class="green">Array</span> of <span class="green">String</span> values listing every
+bundled grammar by name.  Any name in this array may be passed as
+the <code class="docutils literal notranslate"><span class="pre">language</span></code> argument to <code class="docutils literal notranslate"><span class="pre">parse</span></code>.  The subset for which
+<code class="docutils literal notranslate"><span class="pre">extractSymbols</span></code> is supported is documented per grammar in
+the Acknowledgment table above; passing a parse-only name (such
+as <code class="docutils literal notranslate"><span class="pre">&quot;yaml&quot;</span></code>) to <code class="docutils literal notranslate"><span class="pre">extractSymbols</span></code> will throw.</p>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">ts</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-treesitter&quot;</span><span class="p">);</span>
+<span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="nx">ts</span><span class="p">.</span><span class="nx">languages</span><span class="p">);</span>
+<span class="cm">/* [&quot;javascript&quot;, &quot;c&quot;, &quot;cpp&quot;, &quot;python&quot;, &quot;java&quot;, &quot;go&quot;, &quot;rust&quot;,</span>
+<span class="cm">    &quot;typescript&quot;, &quot;tsx&quot;, &quot;csharp&quot;, &quot;ruby&quot;, &quot;bash&quot;, &quot;kotlin&quot;,</span>
+<span class="cm">    &quot;php&quot;, &quot;swift&quot;, &quot;lua&quot;, &quot;dart&quot;, &quot;scala&quot;, &quot;haskell&quot;, &quot;ocaml&quot;,</span>
+<span class="cm">    &quot;css&quot;, &quot;yaml&quot;, &quot;toml&quot;, &quot;markdown&quot;, &quot;markdown_inline&quot;,</span>
+<span class="cm">    &quot;elixir&quot;] */</span>
+</pre></div>
+</div>
+</div></blockquote>
+</div>
+</div>
+<div class="section" id="functions">
+<h2>Functions<a class="headerlink" href="#functions" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="extractsymbols">
+<h3>extractSymbols<a class="headerlink" href="#extractsymbols" title="Permalink to this headline">¶</a></h3>
+<blockquote>
+<div><p>The <code class="docutils literal notranslate"><span class="pre">extractSymbols</span></code> function parses a source string with the
+named grammar and returns a flat list of top-level definitions
+(functions, classes, methods, struct declarations, type aliases,
+and other language-specific constructs).</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">ts</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-treesitter&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">result</span> <span class="o">=</span> <span class="nx">ts</span><span class="p">.</span><span class="nx">extractSymbols</span><span class="p">(</span><span class="nx">source</span><span class="p">,</span> <span class="nx">language</span><span class="p">[,</span> <span class="nx">options</span><span class="p">]);</span>
+</pre></div>
+</div>
+<p>Where:</p>
+<ul class="simple">
+<li><code class="docutils literal notranslate"><span class="pre">source</span></code> is a <span class="green">String</span>, the source code to be parsed.</li>
+<li><code class="docutils literal notranslate"><span class="pre">language</span></code> is a <span class="green">String</span>, one of the supported
+language names returned in <code class="docutils literal notranslate"><span class="pre">ts.languages</span></code>.  Passing a
+grammar that is bundled for <code class="docutils literal notranslate"><span class="pre">parse</span></code> only (<code class="docutils literal notranslate"><span class="pre">&quot;yaml&quot;</span></code>,
+<code class="docutils literal notranslate"><span class="pre">&quot;toml&quot;</span></code>, <code class="docutils literal notranslate"><span class="pre">&quot;markdown&quot;</span></code>, <code class="docutils literal notranslate"><span class="pre">&quot;markdown_inline&quot;</span></code>,
+<code class="docutils literal notranslate"><span class="pre">&quot;elixir&quot;</span></code>) will throw a descriptive error.</li>
+<li><code class="docutils literal notranslate"><span class="pre">options</span></code> is an <span class="green">Object</span> with the following optional
+property:<ul>
+<li><code class="docutils literal notranslate"><span class="pre">strict</span></code> - A <span class="green">Boolean</span>.  When <code class="docutils literal notranslate"><span class="pre">true</span></code>, throws an
+error if the tree contains any <code class="docutils literal notranslate"><span class="pre">ERROR</span></code> node anywhere.
+Default <code class="docutils literal notranslate"><span class="pre">false</span></code>: the function returns whatever symbols
+could be extracted from the partial tree, and the caller
+may inspect the returned <code class="docutils literal notranslate"><span class="pre">hasErrors</span></code> flag to know
+whether the parse was clean.</li>
+</ul>
+</li>
+</ul>
+<dl class="docutils">
+<dt>Return Value:</dt>
+<dd><p class="first">An <span class="green">Object</span> with two properties:</p>
+<ul class="last">
+<li><p class="first"><code class="docutils literal notranslate"><span class="pre">symbols</span></code> - An <span class="green">Array</span> of <span class="green">Object</span> values,
+one per extracted definition.  Each entry has the
+following shape:</p>
+<ul class="simple">
+<li><code class="docutils literal notranslate"><span class="pre">name</span></code> - A <span class="green">String</span>, the identifier of the
+symbol.  Falls back to <code class="docutils literal notranslate"><span class="pre">&quot;(anonymous)&quot;</span></code> when no name
+can be resolved (for example, an anonymous struct in
+a C <code class="docutils literal notranslate"><span class="pre">typedef</span></code>).</li>
+<li><code class="docutils literal notranslate"><span class="pre">kind</span></code> - A <span class="green">String</span>, the Tree-sitter node
+type that produced the match (for example,
+<code class="docutils literal notranslate"><span class="pre">&quot;function_definition&quot;</span></code>, <code class="docutils literal notranslate"><span class="pre">&quot;class_declaration&quot;</span></code>,
+<code class="docutils literal notranslate"><span class="pre">&quot;trait_item&quot;</span></code>).</li>
+<li><code class="docutils literal notranslate"><span class="pre">line</span></code> - A <span class="green">Number</span>, the 1-based line on
+which the symbol begins.</li>
+<li><code class="docutils literal notranslate"><span class="pre">column</span></code> - A <span class="green">Number</span>, the 1-based column.</li>
+<li><code class="docutils literal notranslate"><span class="pre">signature</span></code> - A <span class="green">String</span>, the source text
+covering the symbol’s node.  Nodes of 256 bytes or fewer
+are returned in full; longer nodes are cut at the last
+<code class="docutils literal notranslate"><span class="pre">{</span></code> before the 256-byte limit (or hard-cut at the limit
+if there is none) and suffixed with <code class="docutils literal notranslate"><span class="pre">...</span></code>.
+Suitable for display and for indexing.</li>
+<li><code class="docutils literal notranslate"><span class="pre">startByte</span></code> - A <span class="green">Number</span>, the byte offset
+into <code class="docutils literal notranslate"><span class="pre">source</span></code> where the symbol begins.</li>
+<li><code class="docutils literal notranslate"><span class="pre">endByte</span></code> - A <span class="green">Number</span>, the byte offset
+where the symbol ends.</li>
+</ul>
+</li>
+<li><p class="first"><code class="docutils literal notranslate"><span class="pre">hasErrors</span></code> - A <span class="green">Boolean</span>, <code class="docutils literal notranslate"><span class="pre">true</span></code> if the
+parsed tree contains any <code class="docutils literal notranslate"><span class="pre">ERROR</span></code> node.  When <code class="docutils literal notranslate"><span class="pre">true</span></code>,
+the symbol list may be incomplete; tree-sitter’s
+error-recovery may have skipped sections of the source.</p>
+</li>
+<li><p class="first"><code class="docutils literal notranslate"><span class="pre">extract</span></code> - A <span class="green">Function</span>.  A convenience method
+that returns the source text of a symbol without the
+caller re-slicing <code class="docutils literal notranslate"><span class="pre">source</span></code> by hand.  It is called as
+<code class="docutils literal notranslate"><span class="pre">result.extract(which)</span></code> where <code class="docutils literal notranslate"><span class="pre">which</span></code> is either:</p>
+<ul class="simple">
+<li>A <span class="green">Number</span>, an index into the <code class="docutils literal notranslate"><span class="pre">symbols</span></code> array;
+or</li>
+<li>A <span class="green">String</span>, a symbol name.  The <strong>first</strong> symbol
+with a matching <code class="docutils literal notranslate"><span class="pre">name</span></code> is used.</li>
+</ul>
+<p>It returns a <span class="green">String</span>, the exact bytes
+<code class="docutils literal notranslate"><span class="pre">[startByte,</span> <span class="pre">endByte)</span></code> of the chosen symbol - equivalent
+to
+<code class="docutils literal notranslate"><span class="pre">rampart.utils.readFile(file,</span> <span class="pre">symbol.startByte,</span> <span class="pre">symbol.endByte</span> <span class="pre">-</span> <span class="pre">symbol.startByte,</span> <span class="pre">true)</span></code>
+but sliced directly from the already-parsed source, so it
+does not re-read the file and is immune to source/offset
+drift.  It throws if the index is out of range or no symbol
+has the given name.</p>
+<p>The retained source is held internally by reference (a
+refcounted, interned string - not a copy), and is not an
+enumerable property of the result.</p>
+</li>
+</ul>
+</dd>
+</dl>
+</div></blockquote>
+</div>
+<div class="section" id="parse">
+<h3>parse<a class="headerlink" href="#parse" title="Permalink to this headline">¶</a></h3>
+<blockquote>
+<div><p>The <code class="docutils literal notranslate"><span class="pre">parse</span></code> function returns the entire abstract syntax tree
+for the given source as a nested JavaScript object.  Use this
+for custom analyses that fall outside the flat symbol-extraction
+model.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">ts</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-treesitter&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">tree</span> <span class="o">=</span> <span class="nx">ts</span><span class="p">.</span><span class="nx">parse</span><span class="p">(</span><span class="nx">source</span><span class="p">,</span> <span class="nx">language</span><span class="p">[,</span> <span class="nx">options</span><span class="p">]);</span>
+</pre></div>
+</div>
+<p>Where:</p>
+<ul class="simple">
+<li><code class="docutils literal notranslate"><span class="pre">source</span></code> is a <span class="green">String</span>, the source code to be parsed.</li>
+<li><code class="docutils literal notranslate"><span class="pre">language</span></code> is a <span class="green">String</span>, one of the supported
+language names returned in <code class="docutils literal notranslate"><span class="pre">ts.languages</span></code>.  Unlike
+<code class="docutils literal notranslate"><span class="pre">extractSymbols</span></code>, <code class="docutils literal notranslate"><span class="pre">parse</span></code> accepts every bundled grammar,
+including the parse-only ones.</li>
+<li><code class="docutils literal notranslate"><span class="pre">options</span></code> is an <span class="green">Object</span> with the following optional
+properties:<ul>
+<li><code class="docutils literal notranslate"><span class="pre">strict</span></code> - A <span class="green">Boolean</span>.  When <code class="docutils literal notranslate"><span class="pre">true</span></code>, throws an
+error if the tree contains any <code class="docutils literal notranslate"><span class="pre">ERROR</span></code> node.  Default
+<code class="docutils literal notranslate"><span class="pre">false</span></code>.</li>
+<li><code class="docutils literal notranslate"><span class="pre">includeText</span></code> - A <span class="green">Boolean</span>.  When <code class="docutils literal notranslate"><span class="pre">true</span></code>,
+attaches the source slice spanned by each node as a
+<code class="docutils literal notranslate"><span class="pre">text</span></code> property.  Default <code class="docutils literal notranslate"><span class="pre">false</span></code>: callers may
+reproduce the slice using <code class="docutils literal notranslate"><span class="pre">source.substring(node.startByte,</span>
+<span class="pre">node.endByte)</span></code>.  Omitted by default to keep the result
+compact for large files.</li>
+<li><code class="docutils literal notranslate"><span class="pre">includeUnnamed</span></code> - A <span class="green">Boolean</span>.  When <code class="docutils literal notranslate"><span class="pre">true</span></code>,
+includes anonymous nodes (keywords, punctuation, operators)
+as children.  Default <code class="docutils literal notranslate"><span class="pre">false</span></code>: only named (semantic)
+nodes are returned, which is what most callers want.</li>
+</ul>
+</li>
+</ul>
+<dl class="docutils">
+<dt>Return Value:</dt>
+<dd><p class="first">An <span class="green">Object</span> representing the root node, recursively
+containing its children.  Each node has the following shape:</p>
+<ul class="last simple">
+<li><code class="docutils literal notranslate"><span class="pre">type</span></code> - A <span class="green">String</span>, the Tree-sitter node type
+(for example, <code class="docutils literal notranslate"><span class="pre">&quot;program&quot;</span></code>, <code class="docutils literal notranslate"><span class="pre">&quot;function_definition&quot;</span></code>,
+<code class="docutils literal notranslate"><span class="pre">&quot;identifier&quot;</span></code>).</li>
+<li><code class="docutils literal notranslate"><span class="pre">line</span></code> - A <span class="green">Number</span>, the 1-based starting line.</li>
+<li><code class="docutils literal notranslate"><span class="pre">column</span></code> - A <span class="green">Number</span>, the 1-based starting
+column.</li>
+<li><code class="docutils literal notranslate"><span class="pre">startByte</span></code> - A <span class="green">Number</span>, the byte offset where
+the node begins.</li>
+<li><code class="docutils literal notranslate"><span class="pre">endByte</span></code> - A <span class="green">Number</span>, the byte offset where
+the node ends.</li>
+<li><code class="docutils literal notranslate"><span class="pre">isError</span></code> - A <span class="green">Boolean</span>, <code class="docutils literal notranslate"><span class="pre">true</span></code> if this
+specific node is an <code class="docutils literal notranslate"><span class="pre">ERROR</span></code> node.</li>
+<li><code class="docutils literal notranslate"><span class="pre">hasError</span></code> - A <span class="green">Boolean</span>, <code class="docutils literal notranslate"><span class="pre">true</span></code> if the
+subtree rooted at this node contains any <code class="docutils literal notranslate"><span class="pre">ERROR</span></code> node.</li>
+<li><code class="docutils literal notranslate"><span class="pre">children</span></code> - An <span class="green">Array</span> of node <span class="green">Object</span>
+values, the named children of this node (or all children
+if <code class="docutils literal notranslate"><span class="pre">includeUnnamed</span></code> is set).</li>
+<li><code class="docutils literal notranslate"><span class="pre">text</span></code> - A <span class="green">String</span>, the full source slice
+covering this node.  Present only when <code class="docutils literal notranslate"><span class="pre">includeText</span></code>
+is <code class="docutils literal notranslate"><span class="pre">true</span></code>.</li>
+</ul>
+</dd>
+</dl>
+</div></blockquote>
+</div>
+</div>
+<div class="section" id="examples">
+<h2>Examples<a class="headerlink" href="#examples" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="extracting-symbols">
+<h3>Extracting Symbols<a class="headerlink" href="#extracting-symbols" title="Permalink to this headline">¶</a></h3>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">ts</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-treesitter&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">src</span> <span class="o">=</span>
+    <span class="s2">&quot;function add(a, b) {\n&quot;</span> <span class="o">+</span>
+    <span class="s2">&quot;    return a + b;\n&quot;</span> <span class="o">+</span>
+    <span class="s2">&quot;}\n&quot;</span> <span class="o">+</span>
+    <span class="s2">&quot;class Greeter {\n&quot;</span> <span class="o">+</span>
+    <span class="s2">&quot;    greet(name) { return \&quot;hi \&quot; + name; }\n&quot;</span> <span class="o">+</span>
+    <span class="s2">&quot;}\n&quot;</span><span class="p">;</span>
+
+<span class="kd">var</span> <span class="nx">result</span> <span class="o">=</span> <span class="nx">ts</span><span class="p">.</span><span class="nx">extractSymbols</span><span class="p">(</span><span class="nx">src</span><span class="p">,</span> <span class="s2">&quot;javascript&quot;</span><span class="p">);</span>
+
+<span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="s2">&quot;hasErrors:&quot;</span><span class="p">,</span> <span class="nx">result</span><span class="p">.</span><span class="nx">hasErrors</span><span class="p">);</span>
+<span class="nx">result</span><span class="p">.</span><span class="nx">symbols</span><span class="p">.</span><span class="nx">forEach</span><span class="p">(</span><span class="kd">function</span><span class="p">(</span><span class="nx">s</span><span class="p">)</span> <span class="p">{</span>
+    <span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="nx">s</span><span class="p">.</span><span class="nx">kind</span><span class="p">,</span> <span class="s2">&quot;&#39;&quot;</span> <span class="o">+</span> <span class="nx">s</span><span class="p">.</span><span class="nx">name</span> <span class="o">+</span> <span class="s2">&quot;&#39; at line&quot;</span><span class="p">,</span> <span class="nx">s</span><span class="p">.</span><span class="nx">line</span><span class="p">);</span>
+<span class="p">});</span>
+
+<span class="cm">/* expected output:</span>
+<span class="cm">hasErrors: false</span>
+<span class="cm">function_declaration &#39;add&#39; at line 1</span>
+<span class="cm">class_declaration &#39;Greeter&#39; at line 4</span>
+<span class="cm">method_definition &#39;greet&#39; at line 5</span>
+<span class="cm">*/</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="extracting-a-symbol-s-source">
+<h3>Extracting a Symbol’s Source<a class="headerlink" href="#extracting-a-symbol-s-source" title="Permalink to this headline">¶</a></h3>
+<p>The <code class="docutils literal notranslate"><span class="pre">extract</span></code> method on the result returns the full source text of a
+symbol, selected by index or by name.  This is convenient for pulling a
+function or class body straight out of a large file after locating it:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">ts</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-treesitter&quot;</span><span class="p">);</span>
+<span class="nx">rampart</span><span class="p">.</span><span class="nx">globalize</span><span class="p">(</span><span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">src</span> <span class="o">=</span> <span class="nx">readFile</span><span class="p">(</span><span class="s2">&quot;/path/to/module.js&quot;</span><span class="p">,</span> <span class="kc">true</span><span class="p">);</span>
+<span class="kd">var</span> <span class="nx">result</span> <span class="o">=</span> <span class="nx">ts</span><span class="p">.</span><span class="nx">extractSymbols</span><span class="p">(</span><span class="nx">src</span><span class="p">,</span> <span class="s2">&quot;javascript&quot;</span><span class="p">);</span>
+
+<span class="cm">/* by index */</span>
+<span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="nx">result</span><span class="p">.</span><span class="nx">extract</span><span class="p">(</span><span class="mi">0</span><span class="p">));</span>
+
+<span class="cm">/* by name - returns the first symbol so named */</span>
+<span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="nx">result</span><span class="p">.</span><span class="nx">extract</span><span class="p">(</span><span class="s2">&quot;greet&quot;</span><span class="p">));</span>
+
+<span class="cm">/* equivalent to slicing the source yourself: */</span>
+<span class="kd">var</span> <span class="nx">s</span> <span class="o">=</span> <span class="nx">result</span><span class="p">.</span><span class="nx">symbols</span><span class="p">[</span><span class="mi">0</span><span class="p">];</span>
+<span class="kd">var</span> <span class="nx">same</span> <span class="o">=</span> <span class="nx">result</span><span class="p">.</span><span class="nx">extract</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span> <span class="o">===</span>
+           <span class="nx">src</span><span class="p">.</span><span class="nx">substring</span><span class="p">(</span><span class="nx">s</span><span class="p">.</span><span class="nx">startByte</span><span class="p">,</span> <span class="nx">s</span><span class="p">.</span><span class="nx">endByte</span><span class="p">);</span>   <span class="cm">/* true */</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="inspecting-the-ast">
+<h3>Inspecting the AST<a class="headerlink" href="#inspecting-the-ast" title="Permalink to this headline">¶</a></h3>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">ts</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-treesitter&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">tree</span> <span class="o">=</span> <span class="nx">ts</span><span class="p">.</span><span class="nx">parse</span><span class="p">(</span><span class="s2">&quot;int add(int a, int b) { return a + b; }&quot;</span><span class="p">,</span> <span class="s2">&quot;c&quot;</span><span class="p">);</span>
+
+<span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="s2">&quot;root type:&quot;</span><span class="p">,</span> <span class="nx">tree</span><span class="p">.</span><span class="nx">type</span><span class="p">);</span>
+<span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="s2">&quot;root spans bytes&quot;</span><span class="p">,</span> <span class="nx">tree</span><span class="p">.</span><span class="nx">startByte</span><span class="p">,</span> <span class="s2">&quot;to&quot;</span><span class="p">,</span> <span class="nx">tree</span><span class="p">.</span><span class="nx">endByte</span><span class="p">);</span>
+
+<span class="cm">/* Walk the tree and print every named node */</span>
+<span class="kd">function</span> <span class="nx">walk</span><span class="p">(</span><span class="nx">node</span><span class="p">,</span> <span class="nx">depth</span><span class="p">)</span> <span class="p">{</span>
+    <span class="kd">var</span> <span class="nx">pad</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span><span class="p">;</span>
+    <span class="k">for</span> <span class="p">(</span><span class="kd">var</span> <span class="nx">i</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span> <span class="nx">i</span> <span class="o">&lt;</span> <span class="nx">depth</span><span class="p">;</span> <span class="nx">i</span><span class="o">++</span><span class="p">)</span> <span class="nx">pad</span> <span class="o">+=</span> <span class="s2">&quot;  &quot;</span><span class="p">;</span>
+    <span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="nx">pad</span> <span class="o">+</span> <span class="nx">node</span><span class="p">.</span><span class="nx">type</span> <span class="o">+</span>
+                <span class="s2">&quot; @ &quot;</span> <span class="o">+</span> <span class="nx">node</span><span class="p">.</span><span class="nx">line</span> <span class="o">+</span> <span class="s2">&quot;:&quot;</span> <span class="o">+</span> <span class="nx">node</span><span class="p">.</span><span class="nx">column</span><span class="p">);</span>
+    <span class="nx">node</span><span class="p">.</span><span class="nx">children</span><span class="p">.</span><span class="nx">forEach</span><span class="p">(</span><span class="kd">function</span><span class="p">(</span><span class="nx">c</span><span class="p">)</span> <span class="p">{</span> <span class="nx">walk</span><span class="p">(</span><span class="nx">c</span><span class="p">,</span> <span class="nx">depth</span> <span class="o">+</span> <span class="mi">1</span><span class="p">);</span> <span class="p">});</span>
+<span class="p">}</span>
+<span class="nx">walk</span><span class="p">(</span><span class="nx">tree</span><span class="p">,</span> <span class="mi">0</span><span class="p">);</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="handling-parse-errors">
+<h3>Handling Parse Errors<a class="headerlink" href="#handling-parse-errors" title="Permalink to this headline">¶</a></h3>
+<p>By default, both functions accept broken input and surface what
+they could parse, setting <code class="docutils literal notranslate"><span class="pre">hasErrors</span></code> (or <code class="docutils literal notranslate"><span class="pre">hasError</span></code> on
+<code class="docutils literal notranslate"><span class="pre">parse</span></code>’s root) so the caller can detect the partial result:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">ts</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-treesitter&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">src</span> <span class="o">=</span> <span class="s2">&quot;function foo() { /* missing close brace */&quot;</span><span class="p">;</span>
+<span class="kd">var</span> <span class="nx">result</span> <span class="o">=</span> <span class="nx">ts</span><span class="p">.</span><span class="nx">extractSymbols</span><span class="p">(</span><span class="nx">src</span><span class="p">,</span> <span class="s2">&quot;javascript&quot;</span><span class="p">);</span>
+
+<span class="k">if</span> <span class="p">(</span><span class="nx">result</span><span class="p">.</span><span class="nx">hasErrors</span><span class="p">)</span> <span class="p">{</span>
+    <span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="s2">&quot;warning: source has parse errors; results may be incomplete.&quot;</span><span class="p">);</span>
+<span class="p">}</span>
+<span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="s2">&quot;Got&quot;</span><span class="p">,</span> <span class="nx">result</span><span class="p">.</span><span class="nx">symbols</span><span class="p">.</span><span class="nx">length</span><span class="p">,</span> <span class="s2">&quot;symbols.&quot;</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>Use <code class="docutils literal notranslate"><span class="pre">strict:</span> <span class="pre">true</span></code> when the caller needs to reject malformed
+input rather than continue with a partial parse:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">ts</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-treesitter&quot;</span><span class="p">);</span>
+
+<span class="k">try</span> <span class="p">{</span>
+    <span class="nx">ts</span><span class="p">.</span><span class="nx">extractSymbols</span><span class="p">(</span><span class="s2">&quot;function foo() { /* broken */&quot;</span><span class="p">,</span> <span class="s2">&quot;javascript&quot;</span><span class="p">,</span>
+                      <span class="p">{</span> <span class="nx">strict</span><span class="o">:</span> <span class="kc">true</span> <span class="p">});</span>
+<span class="p">}</span> <span class="k">catch</span> <span class="p">(</span><span class="nx">e</span><span class="p">)</span> <span class="p">{</span>
+    <span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="s2">&quot;caught:&quot;</span><span class="p">,</span> <span class="nx">e</span><span class="p">.</span><span class="nx">message</span><span class="p">);</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="parsing-a-configuration-file">
+<h3>Parsing a Configuration File<a class="headerlink" href="#parsing-a-configuration-file" title="Permalink to this headline">¶</a></h3>
+<p>The parse-only grammars (<code class="docutils literal notranslate"><span class="pre">yaml</span></code>, <code class="docutils literal notranslate"><span class="pre">toml</span></code>, <code class="docutils literal notranslate"><span class="pre">markdown</span></code>,
+<code class="docutils literal notranslate"><span class="pre">markdown_inline</span></code>, <code class="docutils literal notranslate"><span class="pre">elixir</span></code>) are not exposed through
+<code class="docutils literal notranslate"><span class="pre">extractSymbols</span></code> but are fully usable through <code class="docutils literal notranslate"><span class="pre">parse</span></code>.  This
+example extracts the top-level keys of a YAML document:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">ts</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-treesitter&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">doc</span> <span class="o">=</span>
+    <span class="s2">&quot;name: example\n&quot;</span> <span class="o">+</span>
+    <span class="s2">&quot;version: 1.0\n&quot;</span> <span class="o">+</span>
+    <span class="s2">&quot;tags:\n&quot;</span> <span class="o">+</span>
+    <span class="s2">&quot;  - foo\n&quot;</span> <span class="o">+</span>
+    <span class="s2">&quot;  - bar\n&quot;</span><span class="p">;</span>
+
+<span class="kd">var</span> <span class="nx">tree</span> <span class="o">=</span> <span class="nx">ts</span><span class="p">.</span><span class="nx">parse</span><span class="p">(</span><span class="nx">doc</span><span class="p">,</span> <span class="s2">&quot;yaml&quot;</span><span class="p">,</span> <span class="p">{</span> <span class="nx">includeText</span><span class="o">:</span> <span class="kc">true</span> <span class="p">});</span>
+<span class="cm">/* tree.type === &quot;stream&quot; ; walk into block_node → block_mapping</span>
+<span class="cm">   to find the document&#39;s top-level keys */</span>
+</pre></div>
+</div>
+</div>
+</div>
+</div>
+
+
+           </div>
+          </div>
+          <footer>
+  
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+      
+        <a href="rampart-langtools.html" class="btn btn-neutral float-right" title="The rampart-langtools modules" accesskey="n">Next <span class="fa fa-arrow-circle-right"></span></a>
+      
+      
+        <a href="rampart-cmark.html" class="btn btn-neutral" title="The rampart-cmark module" accesskey="p"><span class="fa fa-arrow-circle-left"></span> Previous</a>
+      
+    </div>
+  
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &copy; Copyright 2026, Moat Crossing Systems.
+
+    </p>
+  </div>
+  Built with <a href="http://sphinx-doc.org/">Sphinx</a> and ❤️  using a custom <a href="https://github.com/LinxiFan/Sphinx-theme">theme</a> based on <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+
+  
+
+    <script type="text/javascript">
+        var DOCUMENTATION_OPTIONS = {
+            URL_ROOT:'./',
+            VERSION:'0.7.2',
+            COLLAPSE_INDEX:false,
+            FILE_SUFFIX:'.html',
+            HAS_SOURCE:  true,
+            SOURCELINK_SUFFIX: '.txt'
+        };
+    </script>
+      <script type="text/javascript" src="_static/jquery.js"></script>
+      <script type="text/javascript" src="_static/underscore.js"></script>
+      <script type="text/javascript" src="_static/doctools.js"></script>
+      <script type="text/javascript" src="_static/language_data.js"></script>
+      <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/latest.js?config=TeX-AMS-MML_HTMLorMML"></script>
+
+  
+
+  
+  
+    <script type="text/javascript" src="_static/js/theme.js"></script>
+  
+
+  
+  
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.StickyNav.enable();
+      });
+  </script>
+   
+
+</body>
+</html>

@@ -1,0 +1,932 @@
+
+
+<!DOCTYPE html>
+<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
+<!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <title>The rampart-python module &mdash; Rampart 0.7.2 documentation</title>
+  
+
+  
+  
+
+  
+
+  
+  
+    
+
+  
+
+  
+  
+    <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
+  
+
+  
+    <link rel="stylesheet" href="_static/theme_overrides.css" type="text/css" />
+  
+    <link rel="stylesheet" href="_static/hacks.css" type="text/css" />
+  
+
+  
+        <link rel="index" title="Index"
+              href="genindex.html"/>
+        <link rel="search" title="Search" href="search.html"/>
+    <link rel="top" title="Rampart 0.7.2 documentation" href="index.html"/>
+        <link rel="next" title="The rampart-robots module" href="rampart-robots.html"/>
+        <link rel="prev" title="The rampart-totext module" href="rampart-totext.html"/> 
+
+  
+  <script src="_static/js/modernizr.min.js"></script>
+
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+   
+  <div class="wy-grid-for-nav">
+
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search">
+          
+
+          
+            <a href="index.html" class="icon icon-home"> Rampart
+          
+
+          
+          </a>
+
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+                <p class="caption"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="rampart-main.html">Rampart JavaScript</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-utils.html">Rampart Utility Functions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-thread.html">Rampart Thread Functions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-vector.html">Rampart Vector Functions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="sqltoc.html">The rampart-sql module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-server.html">The rampart-server module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-auth.html">The rampart-auth module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-net.html">The rampart-net module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-html.html">The rampart-html module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-crypto.html">The rampart-crypto module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-curl.html">The rampart-curl module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-lmdb.html">The rampart-lmdb module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-redis.html">The rampart-redis module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-totext.html">The rampart-totext module</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">The rampart-python module</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#preface">Preface</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#license">License</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#what-does-it-do">What does it do?</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#how-does-it-work">How does it work?</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#using-python-in-threads">Using Python in Threads</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#loading-the-javascript-module">Loading the Javascript Module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#python-module-functions">Python Module Functions</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#python-import">python.import()</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#python-importstring">python.importString()</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#python-importfile">python.importFile()</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#pvar-tostring">pvar.toString()</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#pvar-tovalue">pvar.toValue()</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#accessing-attributes-and-items">Accessing Attributes and Items</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#handling-variables">Handling Variables</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#from-javascript-to-python">From Javascript to Python</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#from-python-to-javascript">From Python to JavaScript</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#python-to-python">Python to Python</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#python-named-arguments">Python Named Arguments</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#calling-rampart-from-within-python">Calling rampart from within Python</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#rampart-call">rampart.call</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#rampart-triggerevent">rampart.triggerEvent</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#installing-python-packages">Installing Python Packages</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#example-use-importing-data">Example Use Importing Data</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-robots.html">The rampart-robots module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-cmark.html">The rampart-cmark module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-treesitter.html">The rampart-treesitter module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-langtools.html">The rampart-langtools modules</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-almanac.html">The rampart-almanac module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-url.html">The rampart-url module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-gm.html">The rampart-gm module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-webview.html">The rampart-webview module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-chromeview.html">The rampart-chromeview module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-extras.html">Extras</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorialtoc.html">Tutorials</a></li>
+<li class="toctree-l1"><a class="reference internal" href="faq.html">FAQ</a></li>
+</ul>
+
+            
+          
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" role="navigation" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">Rampart</a>
+        
+      </nav>
+
+
+      
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="index.html">Docs</a> &raquo;</li>
+        
+      <li>The rampart-python module</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+            
+            <a href="_sources/rampart-python.rst.txt" rel="nofollow"> View page source</a>
+          
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <div class="section" id="the-rampart-python-module">
+<h1>The rampart-python module<a class="headerlink" href="#the-rampart-python-module" title="Permalink to this headline">¶</a></h1>
+<div class="section" id="preface">
+<h2>Preface<a class="headerlink" href="#preface" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="license">
+<h3>License<a class="headerlink" href="#license" title="Permalink to this headline">¶</a></h3>
+<p>The Python library is licensed under the <a class="reference external" href="https://docs.python.org/3/license.html#psf-license">PSF LICENSE</a>.</p>
+<p>The rampart-python module is released under the MIT license.</p>
+</div>
+<div class="section" id="what-does-it-do">
+<h3>What does it do?<a class="headerlink" href="#what-does-it-do" title="Permalink to this headline">¶</a></h3>
+<p>The rampart-python module includes functions which import Python modules
+and scripts, executes them and translates variables between Python and
+JavaScript.</p>
+</div>
+<div class="section" id="how-does-it-work">
+<h3>How does it work?<a class="headerlink" href="#how-does-it-work" title="Permalink to this headline">¶</a></h3>
+<p>The module and the embedded Python interpreter are used to load Python
+modules and scripts into the Python environment.  Translation of variables
+between the two languages are handled automatically.  As the Python Library
+does not function in parallel in multiple threads, if run in
+<a class="reference internal" href="rampart-thread.html#rampart-thread-functions"><span class="std std-ref">rampart.threads</span></a> the module
+will run in multiple processes.</p>
+</div>
+<div class="section" id="using-python-in-threads">
+<h3>Using Python in Threads<a class="headerlink" href="#using-python-in-threads" title="Permalink to this headline">¶</a></h3>
+<p>In a <a class="reference internal" href="rampart-thread.html#rampart-thread-functions"><span class="std std-ref">rampart.thread</span></a>, each
+thread uses its own Python process.  As a result:</p>
+<ul class="simple">
+<li>Modules (and models they load) are loaded separately in each thread.</li>
+<li>A Python variable can only be used in the thread that created it.</li>
+<li>Functions called with <a class="reference internal" href="#rampart-call">rampart.call</a> must be global in that thread.</li>
+<li>Each call to Python costs a little more than in the main thread.</li>
+</ul>
+</div>
+</div>
+<div class="section" id="loading-the-javascript-module">
+<h2>Loading the Javascript Module<a class="headerlink" href="#loading-the-javascript-module" title="Permalink to this headline">¶</a></h2>
+<blockquote>
+<div><p>Loading of the python module from within Rampart JavaScript is a simple matter
+of using the <code class="docutils literal notranslate"><span class="pre">require</span></code> statement:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">python</span><span class="o">=</span><span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-python&quot;</span><span class="p">);</span>
+</pre></div>
+</div>
+<dl class="docutils">
+<dt>Return value:</dt>
+<dd>An <span class="green">Object</span> with the functions listed below.</dd>
+</dl>
+</div></blockquote>
+</div>
+<div class="section" id="python-module-functions">
+<h2>Python Module Functions<a class="headerlink" href="#python-module-functions" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="python-import">
+<h3>python.import()<a class="headerlink" href="#python-import" title="Permalink to this headline">¶</a></h3>
+<blockquote>
+<div><p>Import a python module.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">python</span><span class="o">=</span><span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-python&quot;</span><span class="p">);</span>
+
+<span class="cm">/* same as &quot;import mymod&quot; in Python */</span>
+<span class="kd">var</span> <span class="nx">mymod</span><span class="o">=</span><span class="nx">python</span><span class="p">.</span><span class="kr">import</span><span class="p">(</span><span class="s2">&quot;mymod&quot;</span><span class="p">);</span>
+</pre></div>
+</div>
+<dl class="docutils">
+<dt>Return Value:</dt>
+<dd>An <span class="green">Object</span> with callable properties corresponding to the functions of the imported module.</dd>
+</dl>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">python</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-python&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">pathlib</span> <span class="o">=</span> <span class="nx">python</span><span class="p">.</span><span class="kr">import</span><span class="p">(</span><span class="s1">&#39;pathlib&#39;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">pvar</span> <span class="o">=</span> <span class="nx">pathlib</span><span class="p">.</span><span class="nx">PosixPath</span><span class="p">(</span><span class="s1">&#39;./&#39;</span><span class="p">);</span>
+</pre></div>
+</div>
+</div></blockquote>
+</div>
+<div class="section" id="python-importstring">
+<h3>python.importString()<a class="headerlink" href="#python-importstring" title="Permalink to this headline">¶</a></h3>
+<blockquote>
+<div><p>Import a python module or script from a <span class="green">String</span>.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">python</span><span class="o">=</span><span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-python&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">mymod</span> <span class="o">=</span> <span class="nx">python</span><span class="p">.</span><span class="nx">importString</span><span class="p">(</span><span class="nx">pyscript</span><span class="p">[,</span> <span class="nx">scriptName</span><span class="p">]);</span>
+</pre></div>
+</div>
+<p>Where:</p>
+<ul class="simple">
+<li><code class="docutils literal notranslate"><span class="pre">pyscript</span></code> is a <span class="green">String</span>, the python source code</li>
+<li><code class="docutils literal notranslate"><span class="pre">scriptName</span></code> is a <span class="green">String</span>, an optional name for this script for
+error reporting.  Default is <code class="docutils literal notranslate"><span class="pre">&quot;module_from_string&quot;</span></code>.</li>
+</ul>
+<dl class="docutils">
+<dt>Return Value:</dt>
+<dd>An <span class="green">Object</span> with callable properties corresponding to the functions of the imported module.</dd>
+</dl>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">python</span><span class="o">=</span><span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-python&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">pyscript</span><span class="o">=</span><span class="sb">`</span>
+<span class="sb">def makedict(k,v):</span>
+<span class="sb">    return {k:v}</span>
+<span class="sb">`</span><span class="p">;</span>
+
+<span class="kd">var</span> <span class="nx">mymod</span> <span class="o">=</span> <span class="nx">python</span><span class="p">.</span><span class="nx">importString</span><span class="p">(</span><span class="nx">pyscript</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">pvar</span> <span class="o">=</span> <span class="nx">mymod</span><span class="p">.</span><span class="nx">makedict</span><span class="p">(</span><span class="s2">&quot;mykey&quot;</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;val1&quot;</span><span class="p">,</span> <span class="s2">&quot;val2&quot;</span><span class="p">]);</span>
+</pre></div>
+</div>
+</div></blockquote>
+</div>
+<div class="section" id="python-importfile">
+<h3>python.importFile()<a class="headerlink" href="#python-importfile" title="Permalink to this headline">¶</a></h3>
+<blockquote>
+<div><p>Import a python module or script from a file.  Same as
+<a class="reference internal" href="#python-importstring">python.importString()</a> except the source is loaded from
+the named file.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">python</span><span class="o">=</span><span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-python&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">mymod</span> <span class="o">=</span> <span class="nx">python</span><span class="p">.</span><span class="nx">importFile</span><span class="p">(</span><span class="nx">fileName</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>Where:</p>
+<ul class="simple">
+<li><code class="docutils literal notranslate"><span class="pre">fileName</span></code> is a <span class="green">String</span>, the path of the file to be imported.</li>
+</ul>
+<dl class="docutils">
+<dt>Return Value:</dt>
+<dd>An <span class="green">Object</span> with callable properties corresponding to the functions of the imported module.</dd>
+</dl>
+</div></blockquote>
+</div>
+<div class="section" id="pvar-tostring">
+<h3>pvar.toString()<a class="headerlink" href="#pvar-tostring" title="Permalink to this headline">¶</a></h3>
+<blockquote>
+<div><p>Return the string version of the python variable.</p>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">python</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-python&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">pathlib</span> <span class="o">=</span> <span class="nx">python</span><span class="p">.</span><span class="kr">import</span><span class="p">(</span><span class="s1">&#39;pathlib&#39;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">pvar</span> <span class="o">=</span> <span class="nx">pathlib</span><span class="p">.</span><span class="nx">PosixPath</span><span class="p">(</span><span class="s1">&#39;./&#39;</span><span class="p">);</span>
+
+<span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">printf</span><span class="p">(</span> <span class="s2">&quot;pathlib=%s\npvar=%s\npvar.resolve()=%s\n&quot;</span><span class="p">,</span>
+    <span class="nx">pathlib</span><span class="p">.</span><span class="nx">toString</span><span class="p">(),</span> <span class="nx">pvar</span><span class="p">.</span><span class="nx">toString</span><span class="p">(),</span> <span class="nx">pvar</span><span class="p">.</span><span class="nx">resolve</span><span class="p">().</span><span class="nx">toString</span><span class="p">()</span> <span class="p">);</span>
+
+<span class="cm">/* output:</span>
+<span class="cm">    pathlib=&lt;module &#39;pathlib&#39; from &#39;/usr/local/rampart/modules/python3-lib/pathlib.py&#39;&gt;</span>
+<span class="cm">    pvar=.</span>
+<span class="cm">    pvar.resolve()=/path/to/my/current/directory</span>
+<span class="cm">*/</span>
+</pre></div>
+</div>
+<dl class="docutils">
+<dt>Return Value:</dt>
+<dd>A <span class="green">String</span>.</dd>
+</dl>
+</div></blockquote>
+</div>
+<div class="section" id="pvar-tovalue">
+<h3>pvar.toValue()<a class="headerlink" href="#pvar-tovalue" title="Permalink to this headline">¶</a></h3>
+<blockquote>
+<div><p>Translate the python variable referenced in <code class="docutils literal notranslate"><span class="pre">pyvar</span></code> to a JavaScript
+variable.</p>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">python</span><span class="o">=</span><span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-python&quot;</span><span class="p">);</span>
+<span class="kd">var</span> <span class="nx">printf</span> <span class="o">=</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">printf</span><span class="p">;</span>
+
+<span class="kd">var</span> <span class="nx">mymod</span> <span class="o">=</span> <span class="nx">python</span><span class="p">.</span><span class="nx">importFile</span><span class="p">(</span><span class="s2">&quot;/path/to/myscript.py&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">pvar</span> <span class="o">=</span> <span class="nx">mymod</span><span class="p">.</span><span class="nx">makedict</span><span class="p">(</span><span class="s2">&quot;mykey&quot;</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;val1&quot;</span><span class="p">,</span> <span class="s2">&quot;val2&quot;</span><span class="p">]);</span>
+
+<span class="nx">printf</span><span class="p">(</span> <span class="s2">&quot;mykey = %s\nmykey.toValue=%3J\n&quot;</span><span class="p">,</span>
+    <span class="nx">pvar</span><span class="p">.</span><span class="nx">mykey</span><span class="p">.</span><span class="nx">toString</span><span class="p">(),</span> <span class="nx">pvar</span><span class="p">.</span><span class="nx">mykey</span><span class="p">.</span><span class="nx">toValue</span><span class="p">()</span> <span class="p">);</span>
+
+<span class="cm">/* output:</span>
+<span class="cm">    mykey = (&#39;val1&#39;, &#39;val2&#39;)</span>
+<span class="cm">    mykey.toValue=[</span>
+<span class="cm">       &quot;val1&quot;,</span>
+<span class="cm">       &quot;val2&quot;</span>
+<span class="cm">    ]</span>
+<span class="cm">*/</span>
+</pre></div>
+</div>
+</div></blockquote>
+</div>
+</div>
+<div class="section" id="accessing-attributes-and-items">
+<h2>Accessing Attributes and Items<a class="headerlink" href="#accessing-attributes-and-items" title="Permalink to this headline">¶</a></h2>
+<blockquote>
+<div><p>Attributes of a Python variable are looked up when they are accessed,
+and are read fresh each time.  <code class="docutils literal notranslate"><span class="pre">pvar.name</span></code> returns the attribute;
+for dictionaries and other subscriptable objects without such an
+attribute, <code class="docutils literal notranslate"><span class="pre">pvar[&quot;key&quot;]</span></code> and <code class="docutils literal notranslate"><span class="pre">pvar[0]</span></code> return the item (the same
+as <code class="docutils literal notranslate"><span class="pre">pvar[&quot;key&quot;]</span></code> and <code class="docutils literal notranslate"><span class="pre">pvar[0]</span></code> in Python).</p>
+<p>If an item has the same name as an attribute, the attribute is
+returned.  For example, <code class="docutils literal notranslate"><span class="pre">df[&quot;count&quot;]</span></code> on a pandas DataFrame returns
+the <code class="docutils literal notranslate"><span class="pre">count</span></code> method, not a column named “count”.  Use
+<code class="docutils literal notranslate"><span class="pre">pvar.__getitem__(&quot;key&quot;)</span></code> to get the item.</p>
+<p>Because attributes are looked up only when accessed, <code class="docutils literal notranslate"><span class="pre">Object.keys()</span></code>
+and <code class="docutils literal notranslate"><span class="pre">for...in</span></code> do not list them.  To list the attributes of a Python
+variable, use Python’s <code class="docutils literal notranslate"><span class="pre">dir()</span></code>:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">python</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-python&quot;</span><span class="p">);</span>
+<span class="kd">var</span> <span class="nx">builtins</span> <span class="o">=</span> <span class="nx">python</span><span class="p">.</span><span class="kr">import</span><span class="p">(</span><span class="s2">&quot;builtins&quot;</span><span class="p">);</span>
+<span class="kd">var</span> <span class="nx">pathlib</span> <span class="o">=</span> <span class="nx">python</span><span class="p">.</span><span class="kr">import</span><span class="p">(</span><span class="s2">&quot;pathlib&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">names</span> <span class="o">=</span> <span class="nx">builtins</span><span class="p">.</span><span class="nx">dir</span><span class="p">(</span><span class="nx">pathlib</span><span class="p">).</span><span class="nx">toValue</span><span class="p">();</span>  <span class="c1">// an Array of names</span>
+</pre></div>
+</div>
+</div></blockquote>
+</div>
+<div class="section" id="handling-variables">
+<h2>Handling Variables<a class="headerlink" href="#handling-variables" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="from-javascript-to-python">
+<h3>From Javascript to Python<a class="headerlink" href="#from-javascript-to-python" title="Permalink to this headline">¶</a></h3>
+<blockquote>
+<div><p>Variables passed to Python functions are automatically converted as follows:</p>
+<table border="1" class="docutils">
+<colgroup>
+<col width="35%" />
+<col width="65%" />
+</colgroup>
+<thead valign="bottom">
+<tr class="row-odd"><th class="head">JavaScript Type</th>
+<th class="head">Python Type</th>
+</tr>
+</thead>
+<tbody valign="top">
+<tr class="row-even"><td><span class="green">Number</span></td>
+<td>Float</td>
+</tr>
+<tr class="row-odd"><td><span class="green">String</span></td>
+<td>String</td>
+</tr>
+<tr class="row-even"><td><span class="green">Array</span></td>
+<td>Tuple</td>
+</tr>
+<tr class="row-odd"><td><span class="green">Object</span></td>
+<td>Dictionary</td>
+</tr>
+<tr class="row-even"><td><span class="green">Buffer</span></td>
+<td>Bytes Object</td>
+</tr>
+<tr class="row-odd"><td><span class="green">TypedArray</span>,
+<span class="green">ArrayBuffer</span>,
+<span class="green">DataView</span></td>
+<td>Bytes Object (the underlying bytes)</td>
+</tr>
+<tr class="row-even"><td><span class="green">Date</span></td>
+<td>Datetime (naive, in UTC)</td>
+</tr>
+<tr class="row-odd"><td><span class="green">Undefined</span></td>
+<td>None</td>
+</tr>
+<tr class="row-even"><td><span class="green">null</span></td>
+<td>None</td>
+</tr>
+</tbody>
+</table>
+<p>Note that JavaScript <span class="green">Numbers</span> always convert to Python floats.
+When a Python function requires an integer (common in modules such as
+<code class="docutils literal notranslate"><span class="pre">numpy</span></code> and <code class="docutils literal notranslate"><span class="pre">torch</span></code>), pass it explicitly as
+<code class="docutils literal notranslate"><span class="pre">{pyType:</span> <span class="pre">&quot;int&quot;,</span> <span class="pre">value:</span> <span class="pre">n}</span></code>.</p>
+<p>Dates cross the boundary in UTC: a JavaScript <span class="green">Date</span> becomes a
+naive Python datetime holding the UTC time, and a naive datetime
+returned from Python is read as UTC.  Timezone-aware datetimes are
+converted using their own offset.  A round trip returns the original
+time.</p>
+<p>Where possible, translations can be specified by creating an
+<span class="green">Object</span> with <code class="docutils literal notranslate"><span class="pre">pyType</span></code> and <code class="docutils literal notranslate"><span class="pre">value</span></code> properties set.</p>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">python</span><span class="o">=</span><span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-python&quot;</span><span class="p">);</span>
+<span class="kd">var</span> <span class="nx">printf</span> <span class="o">=</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">printf</span><span class="p">;</span>
+
+<span class="kd">var</span> <span class="nx">pyscript</span><span class="o">=</span><span class="sb">`</span>
+<span class="sb">def printvar(v):</span>
+<span class="sb">    print( &quot;%-30s %s&quot; % (type(v), v))</span>
+<span class="sb">`</span><span class="p">;</span>
+
+<span class="kd">var</span> <span class="nx">mymod</span> <span class="o">=</span> <span class="nx">python</span><span class="p">.</span><span class="nx">importString</span><span class="p">(</span><span class="nx">pyscript</span><span class="p">);</span>
+
+<span class="nx">mymod</span><span class="p">.</span><span class="nx">printvar</span><span class="p">({</span><span class="nx">pyType</span><span class="o">:</span> <span class="s2">&quot;date&quot;</span><span class="p">,</span>    <span class="nx">value</span><span class="o">:</span> <span class="mi">946713599999</span><span class="p">});</span>
+<span class="nx">mymod</span><span class="p">.</span><span class="nx">printvar</span><span class="p">({</span><span class="nx">pyType</span><span class="o">:</span> <span class="s2">&quot;int&quot;</span><span class="p">,</span>     <span class="nx">value</span><span class="o">:</span> <span class="s2">&quot;1234567800000000000000000000000000000000000000&quot;</span><span class="p">});</span>
+<span class="nx">mymod</span><span class="p">.</span><span class="nx">printvar</span><span class="p">({</span><span class="nx">pyType</span><span class="o">:</span> <span class="s2">&quot;list&quot;</span><span class="p">,</span>    <span class="nx">value</span><span class="o">:</span> <span class="p">[</span><span class="s2">&quot;a&quot;</span><span class="p">,</span> <span class="s2">&quot;b&quot;</span><span class="p">,</span> <span class="s2">&quot;c&quot;</span><span class="p">]});</span>
+<span class="nx">mymod</span><span class="p">.</span><span class="nx">printvar</span><span class="p">({</span><span class="nx">pyType</span><span class="o">:</span> <span class="s2">&quot;tuple&quot;</span><span class="p">,</span>   <span class="nx">value</span><span class="o">:</span> <span class="s2">&quot;d&quot;</span><span class="p">});</span>
+<span class="nx">mymod</span><span class="p">.</span><span class="nx">printvar</span><span class="p">({</span><span class="nx">pyType</span><span class="o">:</span> <span class="s2">&quot;complex&quot;</span><span class="p">,</span> <span class="nx">value</span><span class="o">:</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span><span class="mi">2</span><span class="p">]});</span>
+<span class="nx">mymod</span><span class="p">.</span><span class="nx">printvar</span><span class="p">({</span><span class="nx">pyType</span><span class="o">:</span> <span class="s2">&quot;dict&quot;</span><span class="p">,</span>    <span class="nx">value</span><span class="o">:</span> <span class="s2">&quot;e&quot;</span><span class="p">});</span>
+
+<span class="cm">/* output:</span>
+<span class="cm">    &lt;class &#39;datetime.datetime&#39;&gt;    2000-01-01 07:59:59.999000</span>
+<span class="cm">    &lt;class &#39;int&#39;&gt;                  1234567800000000000000000000000000000000000000</span>
+<span class="cm">    &lt;class &#39;list&#39;&gt;                 [&#39;a&#39;, &#39;b&#39;, &#39;c&#39;]</span>
+<span class="cm">    &lt;class &#39;tuple&#39;&gt;                (&#39;d&#39;,)</span>
+<span class="cm">    &lt;class &#39;complex&#39;&gt;              (1+2j)</span>
+<span class="cm">    &lt;class &#39;dict&#39;&gt;                 {&#39;0&#39;: &#39;e&#39;}</span>
+<span class="cm">*/</span>
+</pre></div>
+</div>
+</div></blockquote>
+</div>
+<div class="section" id="from-python-to-javascript">
+<h3>From Python to JavaScript<a class="headerlink" href="#from-python-to-javascript" title="Permalink to this headline">¶</a></h3>
+<blockquote>
+<div><p>Translation of return values from Python are automatic when using
+<code class="docutils literal notranslate"><span class="pre">.toValue()</span></code>.  For types which cannot be translated, a string
+representation (same as <code class="docutils literal notranslate"><span class="pre">.toString()</span></code>) will be returned instead.</p>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">python</span><span class="o">=</span><span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-python&quot;</span><span class="p">);</span>
+<span class="kd">var</span> <span class="nx">printf</span> <span class="o">=</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">printf</span><span class="p">;</span>
+
+<span class="kd">var</span> <span class="nx">pyscript</span><span class="o">=</span><span class="sb">`</span>
+<span class="sb">def retvar(v):</span>
+<span class="sb">    return v</span>
+<span class="sb">`</span><span class="p">;</span>
+
+<span class="kd">var</span> <span class="nx">mymod</span> <span class="o">=</span> <span class="nx">python</span><span class="p">.</span><span class="nx">importString</span><span class="p">(</span><span class="nx">pyscript</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">ret</span><span class="p">;</span>
+
+<span class="nx">ret</span><span class="o">=</span><span class="nx">mymod</span><span class="p">.</span><span class="nx">retvar</span><span class="p">({</span><span class="nx">pyType</span><span class="o">:</span><span class="s2">&quot;date&quot;</span><span class="p">,</span> <span class="nx">value</span><span class="o">:</span> <span class="mi">946713599999</span><span class="p">});</span>
+<span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;%J\n&quot;</span><span class="p">,</span> <span class="nx">ret</span><span class="p">.</span><span class="nx">toValue</span><span class="p">());</span>
+
+<span class="nx">ret</span><span class="o">=</span><span class="nx">mymod</span><span class="p">.</span><span class="nx">retvar</span><span class="p">({</span><span class="nx">pyType</span><span class="o">:</span> <span class="s2">&quot;int&quot;</span><span class="p">,</span>     <span class="nx">value</span><span class="o">:</span> <span class="s2">&quot;1234567800000000000000000000000000000000000000&quot;</span><span class="p">});</span>
+<span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;%J\n&quot;</span><span class="p">,</span> <span class="nx">ret</span><span class="p">.</span><span class="nx">toValue</span><span class="p">());</span>
+
+<span class="nx">ret</span><span class="o">=</span><span class="nx">mymod</span><span class="p">.</span><span class="nx">retvar</span><span class="p">({</span><span class="nx">pyType</span><span class="o">:</span> <span class="s2">&quot;list&quot;</span><span class="p">,</span>    <span class="nx">value</span><span class="o">:</span> <span class="p">[</span><span class="s2">&quot;a&quot;</span><span class="p">,</span> <span class="s2">&quot;b&quot;</span><span class="p">,</span> <span class="s2">&quot;c&quot;</span><span class="p">]});</span>
+<span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;%J\n&quot;</span><span class="p">,</span> <span class="nx">ret</span><span class="p">.</span><span class="nx">toValue</span><span class="p">());</span>
+
+<span class="nx">ret</span><span class="o">=</span><span class="nx">mymod</span><span class="p">.</span><span class="nx">retvar</span><span class="p">({</span><span class="nx">pyType</span><span class="o">:</span> <span class="s2">&quot;tuple&quot;</span><span class="p">,</span>   <span class="nx">value</span><span class="o">:</span> <span class="s2">&quot;d&quot;</span><span class="p">});</span>
+<span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;%J\n&quot;</span><span class="p">,</span> <span class="nx">ret</span><span class="p">.</span><span class="nx">toValue</span><span class="p">());</span>
+
+<span class="nx">ret</span><span class="o">=</span><span class="nx">mymod</span><span class="p">.</span><span class="nx">retvar</span><span class="p">({</span><span class="nx">pyType</span><span class="o">:</span> <span class="s2">&quot;complex&quot;</span><span class="p">,</span> <span class="nx">value</span><span class="o">:</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span><span class="mi">2</span><span class="p">]});</span>
+<span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;%J\n&quot;</span><span class="p">,</span> <span class="nx">ret</span><span class="p">.</span><span class="nx">toValue</span><span class="p">());</span>
+
+<span class="nx">ret</span><span class="o">=</span><span class="nx">mymod</span><span class="p">.</span><span class="nx">retvar</span><span class="p">({</span><span class="nx">pyType</span><span class="o">:</span> <span class="s2">&quot;dict&quot;</span><span class="p">,</span>    <span class="nx">value</span><span class="o">:</span> <span class="s2">&quot;e&quot;</span><span class="p">});</span>
+<span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;%J\n&quot;</span><span class="p">,</span> <span class="nx">ret</span><span class="p">.</span><span class="nx">toValue</span><span class="p">());</span>
+
+<span class="nx">ret</span><span class="o">=</span><span class="nx">mymod</span><span class="p">.</span><span class="nx">retvar</span><span class="p">(</span><span class="nx">mymod</span><span class="p">);</span>
+<span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;%J\n&quot;</span><span class="p">,</span> <span class="nx">ret</span><span class="p">.</span><span class="nx">toValue</span><span class="p">());</span>
+
+<span class="cm">/* output:</span>
+<span class="cm">    &quot;2000-01-01T07:59:59.999Z&quot;</span>
+<span class="cm">    1.2345678e+45</span>
+<span class="cm">    [&quot;a&quot;,&quot;b&quot;,&quot;c&quot;]</span>
+<span class="cm">    [&quot;d&quot;]</span>
+<span class="cm">    [1,2]</span>
+<span class="cm">    {&quot;0&quot;:&quot;e&quot;}</span>
+<span class="cm">    &lt;module &#39;module_from_string&#39; from &#39;/home/user/src/mytest.js&#39;&gt;</span>
+<span class="cm">*/</span>
+</pre></div>
+</div>
+</div></blockquote>
+</div>
+<div class="section" id="python-to-python">
+<h3>Python to Python<a class="headerlink" href="#python-to-python" title="Permalink to this headline">¶</a></h3>
+<blockquote>
+<div><p>Variables returned from a Python function can be used as parameters to other Python functions.
+No translation will be performed, including when they are inside an <span class="green">Array</span> or
+<span class="green">Object</span> (e.g. <code class="docutils literal notranslate"><span class="pre">torch.stack([t1,</span> <span class="pre">t2])</span></code>).</p>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span> <span class="kd">var</span> <span class="nx">python</span><span class="o">=</span><span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-python&quot;</span><span class="p">);</span>
+ <span class="kd">var</span> <span class="nx">printf</span> <span class="o">=</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">printf</span><span class="p">;</span>
+
+ <span class="kd">var</span> <span class="nx">pyscript</span><span class="o">=</span><span class="sb">`</span>
+<span class="sb"> def retvar(v):</span>
+<span class="sb">     return v</span>
+
+<span class="sb"> def add(a,b):</span>
+<span class="sb">     return a+b;</span>
+<span class="sb"> `</span><span class="p">;</span>
+
+ <span class="kd">var</span> <span class="nx">mymod</span> <span class="o">=</span> <span class="nx">python</span><span class="p">.</span><span class="nx">importString</span><span class="p">(</span><span class="nx">pyscript</span><span class="p">);</span>
+
+ <span class="kd">var</span> <span class="nx">a</span> <span class="o">=</span> <span class="nx">mymod</span><span class="p">.</span><span class="nx">retvar</span><span class="p">({</span><span class="nx">pyType</span><span class="o">:</span> <span class="s2">&quot;complex&quot;</span><span class="p">,</span> <span class="nx">value</span><span class="o">:</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span><span class="mi">2</span><span class="p">]});</span>
+ <span class="kd">var</span> <span class="nx">b</span> <span class="o">=</span> <span class="nx">mymod</span><span class="p">.</span><span class="nx">retvar</span><span class="p">({</span><span class="nx">pyType</span><span class="o">:</span> <span class="s2">&quot;complex&quot;</span><span class="p">,</span> <span class="nx">value</span><span class="o">:</span> <span class="p">[</span><span class="mi">3</span><span class="p">,</span><span class="mi">4</span><span class="p">]});</span>
+ <span class="kd">var</span> <span class="nx">ret</span> <span class="o">=</span> <span class="nx">mymod</span><span class="p">.</span><span class="nx">add</span><span class="p">(</span><span class="nx">a</span><span class="p">,</span> <span class="nx">b</span><span class="p">);</span>
+ <span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;%J\n&quot;</span><span class="p">,</span> <span class="nx">ret</span><span class="p">.</span><span class="nx">toValue</span><span class="p">());</span>
+
+ <span class="cm">/* output:</span>
+<span class="cm">     [4,6]</span>
+
+<span class="cm">    note that var a and b hold the Python variables and are</span>
+<span class="cm">    not translated when mymod.add(a,b) is called.</span>
+<span class="cm">*/</span>
+</pre></div>
+</div>
+</div></blockquote>
+</div>
+<div class="section" id="python-named-arguments">
+<h3>Python Named Arguments<a class="headerlink" href="#python-named-arguments" title="Permalink to this headline">¶</a></h3>
+<blockquote>
+<div><p>Named arguments to Python functions may be used as shown
+in the following example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">python</span><span class="o">=</span><span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-python&quot;</span><span class="p">);</span>
+<span class="kd">var</span> <span class="nx">printf</span> <span class="o">=</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">printf</span><span class="p">;</span>
+
+<span class="kd">var</span> <span class="nx">pyscript</span><span class="o">=</span><span class="sb">`</span>
+<span class="sb">def retvar(v):</span>
+<span class="sb">    return v</span>
+
+<span class="sb">def add(a,b):</span>
+<span class="sb">    return a+b;</span>
+<span class="sb">`</span><span class="p">;</span>
+
+<span class="kd">var</span> <span class="nx">mymod</span> <span class="o">=</span> <span class="nx">python</span><span class="p">.</span><span class="nx">importString</span><span class="p">(</span><span class="nx">pyscript</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">comp1</span> <span class="o">=</span> <span class="nx">mymod</span><span class="p">.</span><span class="nx">retvar</span><span class="p">({</span><span class="nx">pyType</span><span class="o">:</span> <span class="s2">&quot;complex&quot;</span><span class="p">,</span> <span class="nx">value</span><span class="o">:</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span><span class="mi">2</span><span class="p">]});</span>
+<span class="kd">var</span> <span class="nx">comp2</span> <span class="o">=</span> <span class="nx">mymod</span><span class="p">.</span><span class="nx">retvar</span><span class="p">({</span><span class="nx">pyType</span><span class="o">:</span> <span class="s2">&quot;complex&quot;</span><span class="p">,</span> <span class="nx">value</span><span class="o">:</span> <span class="p">[</span><span class="mi">3</span><span class="p">,</span><span class="mi">4</span><span class="p">]});</span>
+
+<span class="kd">var</span> <span class="nx">myNamedArgs</span> <span class="o">=</span> <span class="p">{</span> <span class="nx">pyArgs</span><span class="o">:</span> <span class="p">{</span><span class="nx">a</span><span class="o">:</span><span class="nx">comp1</span><span class="p">,</span> <span class="nx">b</span><span class="o">:</span><span class="nx">comp2</span><span class="p">}</span> <span class="p">};</span>
+
+<span class="kd">var</span> <span class="nx">ret</span> <span class="o">=</span> <span class="nx">mymod</span><span class="p">.</span><span class="nx">add</span><span class="p">(</span> <span class="nx">myNamedArgs</span> <span class="p">);</span>
+<span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;%J\n&quot;</span><span class="p">,</span> <span class="nx">ret</span><span class="p">.</span><span class="nx">toValue</span><span class="p">());</span>
+
+<span class="cm">/*</span>
+<span class="cm">   calling in JavaScript:</span>
+<span class="cm">       mymod.add( {pyArgs: {a:comp1, b:comp2} } );</span>
+<span class="cm">   is equivalent to calling with named arguments in python:</span>
+<span class="cm">       add(a=comp1, b=comp2);</span>
+<span class="cm">*/</span>
+</pre></div>
+</div>
+</div></blockquote>
+</div>
+</div>
+<div class="section" id="calling-rampart-from-within-python">
+<h2>Calling rampart from within Python<a class="headerlink" href="#calling-rampart-from-within-python" title="Permalink to this headline">¶</a></h2>
+<p>When python scripts are executed from within rampart, the <code class="docutils literal notranslate"><span class="pre">rampart</span></code> module
+is available to python.  It includes two methods: <code class="docutils literal notranslate"><span class="pre">call</span></code> and
+<code class="docutils literal notranslate"><span class="pre">triggerEvent</span></code>.</p>
+<div class="section" id="rampart-call">
+<h3>rampart.call<a class="headerlink" href="#rampart-call" title="Permalink to this headline">¶</a></h3>
+<blockquote>
+<div><p>Call a global rampart function from within python.</p>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">python</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s1">&#39;rampart-python&#39;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">iscript</span> <span class="o">=</span>
+<span class="sb">`</span>
+<span class="sb">#when operating from within rampart, the rampart module is available</span>
+<span class="sb">import rampart</span>
+
+<span class="sb">#call a rampart global func</span>
+<span class="sb">def callRampartFunc(funcName, var1, var2):</span>
+<span class="sb">    res = rampart.call(funcName, var1, var2);</span>
+<span class="sb">    print(res);</span>
+<span class="sb">`</span><span class="p">;</span>
+
+
+<span class="kd">function</span> <span class="nx">add</span><span class="p">(</span><span class="nx">a</span><span class="p">,</span><span class="nx">b</span><span class="p">)</span> <span class="p">{</span>
+    <span class="k">return</span> <span class="p">[</span> <span class="sb">`</span><span class="si">${</span><span class="nx">a</span><span class="si">}</span><span class="sb"> + </span><span class="si">${</span><span class="nx">b</span><span class="si">}</span><span class="sb">`</span><span class="p">,</span> <span class="nx">a</span><span class="o">+</span><span class="nx">b</span> <span class="p">];</span>
+<span class="p">}</span>
+
+<span class="kd">var</span> <span class="nx">r</span><span class="o">=</span><span class="nx">python</span><span class="p">.</span><span class="nx">importString</span><span class="p">(</span><span class="nx">iscript</span><span class="p">);</span>
+
+<span class="nx">r</span><span class="p">.</span><span class="nx">callRampartFunc</span><span class="p">(</span><span class="s2">&quot;add&quot;</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">4</span><span class="p">);</span>
+
+<span class="cm">/* expected results:</span>
+<span class="cm">    (&#39;3 + 4&#39;, 7.0)</span>
+<span class="cm">*/</span>
+</pre></div>
+</div>
+<p>Notes:</p>
+<ul class="simple">
+<li>An exception thrown by the JavaScript function is raised in Python
+as a <code class="docutils literal notranslate"><span class="pre">RuntimeError</span></code> (with the JavaScript error message and stack),
+so it can be caught with <code class="docutils literal notranslate"><span class="pre">try</span></code>/<code class="docutils literal notranslate"><span class="pre">except</span></code>.</li>
+<li><code class="docutils literal notranslate"><span class="pre">rampart.call</span></code> may be used from Python threads, such as the thread
+pools used by LangChain’s <code class="docutils literal notranslate"><span class="pre">batch()</span></code> or by agents running tools, and
+the JavaScript function may itself call Python functions.  JavaScript
+functions called this way run one at a time; however, when one of them
+calls a Python function, others may run until that Python function
+returns (similar to <code class="docutils literal notranslate"><span class="pre">await</span></code> in an async function).</li>
+<li>JavaScript can only be called while it is waiting on a Python function
+to return.  A Python thread that calls <code class="docutils literal notranslate"><span class="pre">rampart.call</span></code> after that
+(e.g. a background thread still running after the function that
+started it returned) gets a <code class="docutils literal notranslate"><span class="pre">RuntimeError</span></code>.</li>
+</ul>
+</div></blockquote>
+</div>
+<div class="section" id="rampart-triggerevent">
+<h3>rampart.triggerEvent<a class="headerlink" href="#rampart-triggerevent" title="Permalink to this headline">¶</a></h3>
+<blockquote>
+<div><p>A registered event in a thread may be triggered from within rampart</p>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">rampart</span><span class="p">.</span><span class="nx">globalize</span><span class="p">(</span><span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">);</span>
+<span class="kd">var</span> <span class="nx">python</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s1">&#39;rampart-python&#39;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">iscript</span> <span class="o">=</span>
+<span class="sb">`</span>
+<span class="sb">#when operating from within rampart, the rampart module is available</span>
+<span class="sb">import rampart</span>
+
+<span class="sb">#trigger a rampart event and pass a &quot;triggerVar&quot; to it</span>
+<span class="sb">def trigger(eventName, triggervar):</span>
+<span class="sb">    rampart.triggerEvent(eventName, triggervar);</span>
+<span class="sb">`</span><span class="p">;</span>
+
+
+<span class="kd">function</span> <span class="nx">pytrigger</span><span class="p">(</span><span class="nx">val</span><span class="p">,</span><span class="nx">err</span><span class="p">){</span>
+    <span class="c1">//check for errors in thrfunc</span>
+    <span class="k">if</span><span class="p">(</span><span class="o">!</span><span class="nx">val</span><span class="p">)</span>
+        <span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="nx">err</span><span class="p">);</span>
+    <span class="c1">// load script into python and return its functions</span>
+    <span class="kd">var</span> <span class="nx">r</span><span class="o">=</span><span class="nx">python</span><span class="p">.</span><span class="nx">importString</span><span class="p">(</span><span class="nx">iscript</span><span class="p">);</span>
+    <span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="s2">&quot;trigger myev&quot;</span><span class="p">);</span>
+    <span class="c1">// execute &quot;trigger&quot; function in python script with a triggervar</span>
+    <span class="nx">r</span><span class="p">.</span><span class="nx">trigger</span><span class="p">(</span><span class="s2">&quot;myev&quot;</span><span class="p">,</span><span class="s2">&quot;Hello from Python&quot;</span><span class="p">);</span>
+<span class="p">}</span>
+
+<span class="c1">// create a new thread in rampart</span>
+<span class="kd">var</span> <span class="nx">thr</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">thread</span><span class="p">();</span>
+
+<span class="c1">// the function which will be run in the rampart.thread.</span>
+<span class="kd">function</span> <span class="nx">thrfunc</span><span class="p">()</span> <span class="p">{</span>
+    <span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="s2">&quot;setup myev&quot;</span><span class="p">);</span>
+    <span class="c1">// register an event in this thread</span>
+    <span class="nx">rampart</span><span class="p">.</span><span class="nx">event</span><span class="p">.</span><span class="nx">on</span><span class="p">(</span>
+        <span class="c1">// the name of the event</span>
+        <span class="s2">&quot;myev&quot;</span><span class="p">,</span>
+        <span class="c1">// the name of the function (required but not used here)</span>
+        <span class="s2">&quot;myfunc&quot;</span><span class="p">,</span>
+        <span class="c1">// the function to be executed when triggered</span>
+        <span class="kd">function</span><span class="p">(</span><span class="nx">uservar</span><span class="p">,</span><span class="nx">triggervar</span><span class="p">){</span>
+            <span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;Uservar=&#39;%s&#39;\nTriggervar=&#39;%s&#39;\n&quot;</span><span class="p">,</span> <span class="nx">uservar</span><span class="p">,</span> <span class="nx">triggervar</span><span class="p">);</span>
+            <span class="c1">//remove the event so thread is empty of events and rampart can exit</span>
+            <span class="nx">rampart</span><span class="p">.</span><span class="nx">event</span><span class="p">.</span><span class="nx">remove</span><span class="p">(</span><span class="s2">&quot;myev&quot;</span><span class="p">);</span>
+        <span class="p">},</span>
+        <span class="c1">//the user variable to be passed upon triggering</span>
+        <span class="s2">&quot;Hello from JS main thread&quot;</span>
+    <span class="p">);</span>
+    <span class="k">return</span> <span class="mi">1</span><span class="p">;</span>
+<span class="p">}</span>
+
+<span class="c1">//execute the function thrfunc in the thread, and then run</span>
+<span class="c1">//pytriggervar in the main thread.</span>
+<span class="nx">thr</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span><span class="nx">thrfunc</span><span class="p">,</span><span class="nx">pytrigger</span><span class="p">);</span>
+
+<span class="cm">/* expected results:</span>
+<span class="cm">    setup myev</span>
+<span class="cm">    trigger myev</span>
+<span class="cm">    Uservar=&#39;Hello from JS main thread&#39;</span>
+<span class="cm">    Triggervar=&#39;Hello from Python&#39;</span>
+<span class="cm">*/</span>
+</pre></div>
+</div>
+</div></blockquote>
+</div>
+</div>
+<div class="section" id="installing-python-packages">
+<h2>Installing Python Packages<a class="headerlink" href="#installing-python-packages" title="Permalink to this headline">¶</a></h2>
+<blockquote>
+<div><p>Rampart ships its own Python runtime along with two helper commands in
+the rampart <code class="docutils literal notranslate"><span class="pre">bin</span></code> directory:</p>
+<ul class="simple">
+<li><code class="docutils literal notranslate"><span class="pre">pip3r</span></code> - the bundled pip.  Use it to install packages for the
+embedded Python (e.g. <code class="docutils literal notranslate"><span class="pre">pip3r</span> <span class="pre">install</span> <span class="pre">numpy</span></code>).</li>
+<li><code class="docutils literal notranslate"><span class="pre">python3r</span></code> - the bundled Python interpreter, with the same module
+search path as <a class="reference internal" href="#python-import">python.import()</a>.</li>
+</ul>
+<p>Where packages are installed depends on whether the rampart
+installation is writable:</p>
+<ul class="simple">
+<li>If the rampart installation is writable (e.g. rampart was installed
+in your home directory, or pip3r is run as root), packages are
+installed system-wide inside the rampart installation.</li>
+<li>Otherwise pip falls back to a per-user installation in
+<code class="docutils literal notranslate"><span class="pre">~/.rampart/modules/python3-lib</span></code>.</li>
+</ul>
+<p>Both locations are automatically included in the module search path of
+the embedded interpreter, with per-user packages taking precedence.
+The per-user location may be overridden by setting the
+<code class="docutils literal notranslate"><span class="pre">PYTHONUSERBASE</span></code> environment variable before running rampart or
+<code class="docutils literal notranslate"><span class="pre">pip3r</span></code>.</p>
+<p>Example, as a normal user with rampart installed in a system location:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>$ pip3r install requests
+Defaulting to user installation because normal site-packages is not writeable
+...
+Successfully installed requests-2.32.3
+</pre></div>
+</div>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">python</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s1">&#39;rampart-python&#39;</span><span class="p">);</span>
+
+<span class="cm">/* finds the package installed under ~/.rampart */</span>
+<span class="kd">var</span> <span class="nx">requests</span> <span class="o">=</span> <span class="nx">python</span><span class="p">.</span><span class="kr">import</span><span class="p">(</span><span class="s1">&#39;requests&#39;</span><span class="p">);</span>
+</pre></div>
+</div>
+</div></blockquote>
+</div>
+<div class="section" id="example-use-importing-data">
+<h2>Example Use Importing Data<a class="headerlink" href="#example-use-importing-data" title="Permalink to this headline">¶</a></h2>
+<blockquote>
+<div><div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">python</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s1">&#39;rampart-python&#39;</span><span class="p">);</span>
+<span class="kd">var</span> <span class="nx">Sql</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s1">&#39;rampart-sql&#39;</span><span class="p">);</span>
+<span class="kd">var</span> <span class="nx">printf</span> <span class="o">=</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">printf</span><span class="p">;</span>
+
+<span class="cm">/* create the rampart sql db*/</span>
+<span class="kd">var</span> <span class="nx">sql</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">Sql</span><span class="p">.</span><span class="nx">init</span><span class="p">(</span><span class="s2">&quot;./pytest-sql&quot;</span><span class="p">,</span> <span class="kc">true</span><span class="p">);</span>
+
+<span class="cm">/* the sqlite db */</span>
+<span class="kd">var</span> <span class="nx">dbfile</span><span class="o">=</span><span class="s2">&quot;./test.db&quot;</span><span class="p">;</span>
+
+<span class="cm">/* use python to create and connect to sqlite db */</span>
+<span class="kd">var</span> <span class="nx">pysql</span> <span class="o">=</span> <span class="nx">python</span><span class="p">.</span><span class="kr">import</span><span class="p">(</span><span class="s1">&#39;sqlite3&#39;</span><span class="p">);</span>
+<span class="kd">var</span> <span class="nx">connection</span> <span class="o">=</span> <span class="nx">pysql</span><span class="p">.</span><span class="nx">connect</span><span class="p">(</span><span class="nx">dbfile</span><span class="p">);</span>
+<span class="kd">var</span> <span class="nx">cursor</span> <span class="o">=</span> <span class="nx">connection</span><span class="p">.</span><span class="nx">cursor</span><span class="p">();</span>
+
+<span class="cm">/* create a test table */</span>
+<span class="nx">cursor</span><span class="p">.</span><span class="nx">execute</span><span class="p">(</span><span class="s2">&quot;create table IF NOT EXISTS test(i int, i2 int);&quot;</span><span class="p">);</span>
+
+<span class="cm">/* insert some test data into the db */</span>
+<span class="k">for</span> <span class="p">(</span><span class="kd">var</span> <span class="nx">i</span><span class="o">=</span><span class="mi">0</span><span class="p">;</span> <span class="nx">i</span><span class="o">&lt;</span><span class="mi">100</span><span class="p">;</span> <span class="nx">i</span><span class="o">+=</span><span class="mi">2</span><span class="p">)</span> <span class="p">{</span>
+    <span class="nx">cursor</span><span class="p">.</span><span class="nx">execute</span><span class="p">(</span><span class="s2">&quot;insert into test values(?,?)&quot;</span><span class="p">,</span> <span class="p">[</span><span class="nx">i</span><span class="p">,</span>   <span class="nx">i</span><span class="o">+</span><span class="mi">1</span><span class="p">]);</span>
+<span class="p">}</span>
+
+<span class="cm">/* print out what we have */</span>
+<span class="nx">cursor</span><span class="p">.</span><span class="nx">execute</span><span class="p">(</span><span class="s2">&quot;select * from test&quot;</span><span class="p">);</span>
+<span class="nx">res</span> <span class="o">=</span> <span class="nx">cursor</span><span class="p">.</span><span class="nx">fetchall</span><span class="p">().</span><span class="nx">toValue</span><span class="p">();</span>
+<span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;Dump of sqlite table:\n%J\n&quot;</span><span class="p">,</span> <span class="nx">res</span><span class="p">);</span>
+
+
+<span class="cm">/* create rampart sql table and copy data from sqlite */</span>
+<span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span><span class="s2">&quot;create table test (i int, i2 int);&quot;</span><span class="p">);</span>
+<span class="k">for</span> <span class="p">(</span><span class="nx">i</span><span class="o">=</span><span class="mi">0</span><span class="p">;</span><span class="nx">i</span><span class="o">&lt;</span><span class="nx">res</span><span class="p">.</span><span class="nx">length</span><span class="p">;</span><span class="nx">i</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
+    <span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span><span class="s2">&quot;insert into test values(?,?);&quot;</span><span class="p">,</span> <span class="nx">res</span><span class="p">[</span><span class="nx">i</span><span class="p">]);</span>
+<span class="p">}</span>
+
+<span class="kd">var</span> <span class="nx">res2</span> <span class="o">=</span> <span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span><span class="s2">&quot;select * from test&quot;</span><span class="p">,</span> <span class="p">{</span><span class="nx">returnType</span><span class="o">:</span><span class="s2">&quot;array&quot;</span><span class="p">,</span> <span class="nx">maxRows</span><span class="o">:-</span><span class="mi">1</span><span class="p">});</span>
+<span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;Dump of rampart sql table:\n%J\n&quot;</span><span class="p">,</span> <span class="nx">res2</span><span class="p">.</span><span class="nx">rows</span><span class="p">);</span>
+
+<span class="cm">/* output:</span>
+<span class="cm">    Dump of sqlite table:</span>
+<span class="cm">    [[0,1],[2,3],[4,5],[6,7],[8,9],[10,11],[12,13],[14,15],[16,17],[18,19],[20,21],[22,23],[24,25],</span>
+<span class="cm">      [26,27],[28,29],[30,31],[32,33],[34,35],[36,37],[38,39],[40,41],[42,43],[44,45],[46,47],[48,49],</span>
+<span class="cm">      [50,51],[52,53],[54,55],[56,57],[58,59],[60,61],[62,63],[64,65],[66,67],[68,69],[70,71],[72,73],</span>
+<span class="cm">      [74,75],[76,77],[78,79],[80,81],[82,83],[84,85],[86,87],[88,89],[90,91],[92,93],[94,95],[96,97],[98,99]]</span>
+<span class="cm">    Dump of rampart sql table:</span>
+<span class="cm">    [[0,1],[2,3],[4,5],[6,7],[8,9],[10,11],[12,13],[14,15],[16,17],[18,19],[20,21],[22,23],[24,25],</span>
+<span class="cm">      [26,27],[28,29],[30,31],[32,33],[34,35],[36,37],[38,39],[40,41],[42,43],[44,45],[46,47],[48,49],</span>
+<span class="cm">      [50,51],[52,53],[54,55],[56,57],[58,59],[60,61],[62,63],[64,65],[66,67],[68,69],[70,71],[72,73],</span>
+<span class="cm">      [74,75],[76,77],[78,79],[80,81],[82,83],[84,85],[86,87],[88,89],[90,91],[92,93],[94,95],[96,97],[98,99]]</span>
+
+<span class="cm">*/</span>
+</pre></div>
+</div>
+</div></blockquote>
+</div>
+</div>
+
+
+           </div>
+          </div>
+          <footer>
+  
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+      
+        <a href="rampart-robots.html" class="btn btn-neutral float-right" title="The rampart-robots module" accesskey="n">Next <span class="fa fa-arrow-circle-right"></span></a>
+      
+      
+        <a href="rampart-totext.html" class="btn btn-neutral" title="The rampart-totext module" accesskey="p"><span class="fa fa-arrow-circle-left"></span> Previous</a>
+      
+    </div>
+  
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &copy; Copyright 2026, Moat Crossing Systems.
+
+    </p>
+  </div>
+  Built with <a href="http://sphinx-doc.org/">Sphinx</a> and ❤️  using a custom <a href="https://github.com/LinxiFan/Sphinx-theme">theme</a> based on <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+
+  
+
+    <script type="text/javascript">
+        var DOCUMENTATION_OPTIONS = {
+            URL_ROOT:'./',
+            VERSION:'0.7.2',
+            COLLAPSE_INDEX:false,
+            FILE_SUFFIX:'.html',
+            HAS_SOURCE:  true,
+            SOURCELINK_SUFFIX: '.txt'
+        };
+    </script>
+      <script type="text/javascript" src="_static/jquery.js"></script>
+      <script type="text/javascript" src="_static/underscore.js"></script>
+      <script type="text/javascript" src="_static/doctools.js"></script>
+      <script type="text/javascript" src="_static/language_data.js"></script>
+      <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/latest.js?config=TeX-AMS-MML_HTMLorMML"></script>
+
+  
+
+  
+  
+    <script type="text/javascript" src="_static/js/theme.js"></script>
+  
+
+  
+  
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.StickyNav.enable();
+      });
+  </script>
+   
+
+</body>
+</html>

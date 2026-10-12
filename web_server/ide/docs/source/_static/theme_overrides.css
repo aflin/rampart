@@ -1,0 +1,20 @@
+/* override table width restrictions */
+@media screen and (min-width: 767px) {
+
+   .wy-table-responsive table td {
+      /* !important prevents the common CSS stylesheets from overriding
+         this as on RTD they are loaded after this stylesheet */
+      white-space: normal !important;
+   }
+
+   .wy-table-responsive {
+      overflow: visible !important;
+   }
+}
+/* new versions of sphinx have problems with bullets.  This fixes it
+   https://github.com/readthedocs/sphinx_rtd_theme/issues/1145#issuecomment-841513877
+*/
+.rst-content section ul li {
+list-style:disc;
+margin-left:24px
+}

@@ -1,0 +1,1517 @@
+
+
+<!DOCTYPE html>
+<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
+<!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <title>The rampart-auth module &mdash; Rampart 0.7.2 documentation</title>
+  
+
+  
+  
+
+  
+
+  
+  
+    
+
+  
+
+  
+  
+    <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
+  
+
+  
+    <link rel="stylesheet" href="_static/theme_overrides.css" type="text/css" />
+  
+    <link rel="stylesheet" href="_static/hacks.css" type="text/css" />
+  
+
+  
+        <link rel="index" title="Index"
+              href="genindex.html"/>
+        <link rel="search" title="Search" href="search.html"/>
+    <link rel="top" title="Rampart 0.7.2 documentation" href="index.html"/>
+        <link rel="next" title="The rampart-net module" href="rampart-net.html"/>
+        <link rel="prev" title="The rampart-server HTTP module" href="rampart-server.html"/> 
+
+  
+  <script src="_static/js/modernizr.min.js"></script>
+
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+   
+  <div class="wy-grid-for-nav">
+
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search">
+          
+
+          
+            <a href="index.html" class="icon icon-home"> Rampart
+          
+
+          
+          </a>
+
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+                <p class="caption"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="rampart-main.html">Rampart JavaScript</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-utils.html">Rampart Utility Functions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-thread.html">Rampart Thread Functions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-vector.html">Rampart Vector Functions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="sqltoc.html">The rampart-sql module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-server.html">The rampart-server module</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">The rampart-auth module</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#preface">Preface</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#license">License</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#what-does-it-do">What does it do?</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#how-does-it-work">How does it work?</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#loading-and-using-the-module">Loading and Using the Module</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#enabling-authentication">Enabling Authentication</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#configuration-file">Configuration File</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#configuration-properties">Configuration Properties</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#protected-paths">Protected Paths</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#the-auth-function-contract">The Auth Function Contract</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#for-file-requests">For file requests</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#for-app-module-requests">For app module requests</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#the-req-userauth-object">The req.userAuth Object</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#csrf-protection">CSRF Protection</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#custom-auth-modules">Custom Auth Modules</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#the-auth-js-administration-module">The auth.js Administration Module</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#cli-administration">CLI Administration</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#http-endpoints">HTTP Endpoints</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#programmatic-api">Programmatic API</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#user-records-vs-session-records">User Records vs Session Records</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#custom-properties-in-endpoint-callbacks">Custom Properties in Endpoint Callbacks</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#session-data-model">Session Data Model</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#theme-support">Theme Support</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#oauth-plugins">OAuth Plugins</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#included-plugins">Included Plugins</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#using-oauth-on-login-pages">Using OAuth on Login Pages</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#oauth-user-records">OAuth User Records</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#writing-a-custom-plugin">Writing a Custom Plugin</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#hooks-for-custom-authentication-flows">Hooks for Custom Authentication Flows</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#security-considerations">Security Considerations</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#quick-start">Quick Start</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-net.html">The rampart-net module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-html.html">The rampart-html module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-crypto.html">The rampart-crypto module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-curl.html">The rampart-curl module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-lmdb.html">The rampart-lmdb module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-redis.html">The rampart-redis module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-totext.html">The rampart-totext module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-python.html">The rampart-python module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-robots.html">The rampart-robots module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-cmark.html">The rampart-cmark module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-treesitter.html">The rampart-treesitter module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-langtools.html">The rampart-langtools modules</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-almanac.html">The rampart-almanac module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-url.html">The rampart-url module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-gm.html">The rampart-gm module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-webview.html">The rampart-webview module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-chromeview.html">The rampart-chromeview module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-extras.html">Extras</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorialtoc.html">Tutorials</a></li>
+<li class="toctree-l1"><a class="reference internal" href="faq.html">FAQ</a></li>
+</ul>
+
+            
+          
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" role="navigation" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">Rampart</a>
+        
+      </nav>
+
+
+      
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="index.html">Docs</a> &raquo;</li>
+        
+      <li>The rampart-auth module</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+            
+            <a href="_sources/rampart-auth.rst.txt" rel="nofollow"> View page source</a>
+          
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <div class="section" id="the-rampart-auth-module">
+<h1>The rampart-auth module<a class="headerlink" href="#the-rampart-auth-module" title="Permalink to this headline">¶</a></h1>
+<div class="section" id="preface">
+<h2>Preface<a class="headerlink" href="#preface" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="license">
+<h3>License<a class="headerlink" href="#license" title="Permalink to this headline">¶</a></h3>
+<p>The rampart-auth module is released under the MIT license.</p>
+</div>
+<div class="section" id="what-does-it-do">
+<h3>What does it do?<a class="headerlink" href="#what-does-it-do" title="Permalink to this headline">¶</a></h3>
+<p>The rampart-auth module provides session-based authentication for the
+rampart-server HTTP module.  It is implemented as a C module
+(<code class="docutils literal notranslate"><span class="pre">rampart-auth.so</span></code>) that runs entirely in native code to validate
+sessions without invoking the JavaScript interpreter.  This means that
+authentication checks — including cookie extraction, LMDB session
+lookup, expiry checking, and privilege level enforcement — happen at
+C speed on every request, with no Duktape overhead.</p>
+<p>The module is accompanied by <code class="docutils literal notranslate"><span class="pre">auth.js</span></code>, a JavaScript module included
+in the <code class="docutils literal notranslate"><span class="pre">web_server/apps/</span></code> directory.  <code class="docutils literal notranslate"><span class="pre">auth.js</span></code> handles the
+operations that do not need to be fast: user creation, login, logout,
+password management, and an administrative web interface.  These
+operations are not in the hot path of normal server functions.</p>
+<p>Together, the C module and the JS module provide:</p>
+<ul class="simple">
+<li>Session-based authentication with cookie tokens</li>
+<li>Privilege levels for path-based access control</li>
+<li>CSRF protection on state-changing requests</li>
+<li>Sliding session expiry with configurable refresh intervals</li>
+<li>Account lockout after failed login attempts</li>
+<li>Password hashing via <code class="docutils literal notranslate"><span class="pre">rampart-crypto</span></code></li>
+<li>A pluggable architecture for custom auth modules</li>
+<li>A CLI administration tool</li>
+<li>An administrative web interface</li>
+<li>OAuth plugin architecture with included Google and Facebook plugins</li>
+<li>Display cookie for showing user info on static pages</li>
+<li>Email-based password reset and verification flows</li>
+</ul>
+</div>
+<div class="section" id="how-does-it-work">
+<h3>How does it work?<a class="headerlink" href="#how-does-it-work" title="Permalink to this headline">¶</a></h3>
+<p>The <code class="docutils literal notranslate"><span class="pre">rampart-auth.so</span></code> C module is loaded by the server when
+<code class="docutils literal notranslate"><span class="pre">authMod</span></code> is set in the server configuration.  On every request, the
+C module:</p>
+<ol class="arabic simple">
+<li>Extracts the session cookie from the HTTP headers.</li>
+<li>Looks up the session in an LMDB database (via the <code class="docutils literal notranslate"><span class="pre">rampart-lmdb</span></code>
+module’s Duktape C API — fast pointer operations, not JS interpretation).</li>
+<li>Checks the session’s expiry timestamp.</li>
+<li>For file requests: returns <code class="docutils literal notranslate"><span class="pre">true</span></code> (serve) or <code class="docutils literal notranslate"><span class="pre">false</span></code> (deny).</li>
+<li>For app module requests: attaches the session data as <code class="docutils literal notranslate"><span class="pre">req.userAuth</span></code>
+so the JavaScript handler can inspect the authenticated user’s
+information.</li>
+</ol>
+<p>Path-based access control is enforced by the server itself: paths listed
+in the configuration with a required privilege level are checked against
+the user’s <code class="docutils literal notranslate"><span class="pre">authLevel</span></code>.  Denied requests receive either a <code class="docutils literal notranslate"><span class="pre">403</span>
+<span class="pre">Forbidden</span></code> or a <code class="docutils literal notranslate"><span class="pre">302</span></code> redirect to a login page, depending on the
+file type and configuration.</p>
+</div>
+</div>
+<div class="section" id="loading-and-using-the-module">
+<h2>Loading and Using the Module<a class="headerlink" href="#loading-and-using-the-module" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="enabling-authentication">
+<h3>Enabling Authentication<a class="headerlink" href="#enabling-authentication" title="Permalink to this headline">¶</a></h3>
+<p>Authentication is enabled in <code class="docutils literal notranslate"><span class="pre">web_server_conf.js</span></code> (or directly in a
+<code class="docutils literal notranslate"><span class="pre">server.start()</span></code> call) by setting two properties:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">serverConf</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="c1">// ... other config ...</span>
+
+    <span class="nx">authMod</span><span class="o">:</span>     <span class="kc">true</span><span class="p">,</span>
+    <span class="nx">authModConf</span><span class="o">:</span> <span class="nx">working_directory</span> <span class="o">+</span> <span class="s1">&#39;/auth-conf.js&#39;</span><span class="p">,</span>
+
+    <span class="c1">// ... rest of config ...</span>
+<span class="p">};</span>
+</pre></div>
+</div>
+<p>Where:</p>
+<blockquote>
+<div><ul class="simple">
+<li><code class="docutils literal notranslate"><span class="pre">authMod</span></code> is a <span class="green">Boolean</span>, <span class="green">String</span>, or
+<span class="green">Function</span>:<ul>
+<li><code class="docutils literal notranslate"><span class="pre">true</span></code> — loads the built-in <code class="docutils literal notranslate"><span class="pre">rampart-auth.so</span></code> module.</li>
+<li>A <span class="green">String</span> — loads a custom auth module by name or path.</li>
+<li>A <span class="green">Function</span> — uses an inline auth function (see
+<a class="reference internal" href="#custom-auth-modules">Custom Auth Modules</a> below).</li>
+<li><code class="docutils literal notranslate"><span class="pre">false</span></code> or omitted — authentication is disabled.</li>
+</ul>
+</li>
+<li><code class="docutils literal notranslate"><span class="pre">authModConf</span></code> is a <span class="green">String</span>, the path to a JavaScript
+module that exports the authentication configuration object.</li>
+</ul>
+</div></blockquote>
+</div>
+<div class="section" id="configuration-file">
+<h3>Configuration File<a class="headerlink" href="#configuration-file" title="Permalink to this headline">¶</a></h3>
+<p>The configuration is a JavaScript module (not JSON) so that comments
+are supported.  It exports an object with the following properties:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="c1">// auth-conf.js</span>
+<span class="nx">module</span><span class="p">.</span><span class="nx">exports</span> <span class="o">=</span> <span class="p">{</span>
+
+    <span class="c1">// Session cookie name (default: &quot;rp_session&quot;)</span>
+    <span class="nx">cookieName</span><span class="o">:</span> <span class="s2">&quot;rp_session&quot;</span><span class="p">,</span>
+
+    <span class="c1">// LMDB database path, relative to server root (default: &quot;data/auth&quot;)</span>
+    <span class="nx">dbPath</span><span class="o">:</span> <span class="s2">&quot;data/auth&quot;</span><span class="p">,</span>
+
+    <span class="c1">// CSRF protection on POST/PUT/DELETE/PATCH (default: true)</span>
+    <span class="nx">csrf</span><span class="o">:</span> <span class="kc">true</span><span class="p">,</span>
+
+    <span class="c1">// Paths exempt from CSRF checking</span>
+    <span class="nx">csrfExemptPaths</span><span class="o">:</span> <span class="p">[</span><span class="s2">&quot;/apps/api/webhook/&quot;</span><span class="p">],</span>
+
+    <span class="c1">// File extensions that trigger 302 redirect instead of 403 on</span>
+    <span class="c1">// denied requests (default: [&quot;&quot;, &quot;.html&quot;, &quot;.htm&quot;, &quot;.txt&quot;])</span>
+    <span class="nx">redirectExtensions</span><span class="o">:</span> <span class="p">[</span><span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="s2">&quot;.html&quot;</span><span class="p">,</span> <span class="s2">&quot;.htm&quot;</span><span class="p">,</span> <span class="s2">&quot;.txt&quot;</span><span class="p">],</span>
+
+    <span class="c1">// Sliding session expiry (in seconds)</span>
+    <span class="nx">sessionExpiry</span><span class="o">:</span> <span class="mi">86400</span><span class="p">,</span>       <span class="c1">// new expiry on refresh (default: 24h)</span>
+    <span class="nx">sessionRefresh</span><span class="o">:</span> <span class="mi">300</span><span class="p">,</span>        <span class="c1">// min interval between refreshes (default: 5min)</span>
+    <span class="nx">sessionRefreshUrgent</span><span class="o">:</span> <span class="mi">3600</span><span class="p">,</span> <span class="c1">// always refresh if &lt; this remaining (default: 1h)</span>
+
+    <span class="c1">// Revalidation of OPEN websockets (default: 20; 0 = every frame)</span>
+    <span class="nx">wsRecheckSeconds</span><span class="o">:</span> <span class="mi">20</span><span class="p">,</span>
+
+    <span class="c1">// Account lockout</span>
+    <span class="nx">lockoutAttempts</span><span class="o">:</span> <span class="mi">5</span><span class="p">,</span>     <span class="c1">// max failed attempts before lockout (default: 5)</span>
+    <span class="nx">lockoutWindow</span><span class="o">:</span>   <span class="mi">300</span><span class="p">,</span>   <span class="c1">// time window in seconds (default: 5 min)</span>
+    <span class="nx">lockoutDuration</span><span class="o">:</span> <span class="mi">900</span><span class="p">,</span>   <span class="c1">// lockout duration in seconds (default: 15 min)</span>
+
+    <span class="c1">// Password policy</span>
+    <span class="nx">minPasswordLength</span><span class="o">:</span> <span class="mi">7</span><span class="p">,</span>   <span class="c1">// minimum password length (default: 7)</span>
+
+    <span class="c1">// Cookie flags</span>
+    <span class="nx">cookieFlags</span><span class="o">:</span> <span class="p">{</span>
+        <span class="nx">httpOnly</span><span class="o">:</span> <span class="kc">true</span><span class="p">,</span>     <span class="c1">// not accessible to JavaScript (default: true)</span>
+        <span class="nx">sameSite</span><span class="o">:</span> <span class="s2">&quot;Lax&quot;</span><span class="p">,</span>    <span class="c1">// CSRF protection level (default: &quot;Lax&quot;)</span>
+        <span class="nx">secure</span><span class="o">:</span>   <span class="kc">true</span><span class="p">,</span>     <span class="c1">// only send over HTTPS (default: true)</span>
+        <span class="nx">path</span><span class="o">:</span>     <span class="s2">&quot;/&quot;</span>       <span class="c1">// cookie path (default: &quot;/&quot;)</span>
+    <span class="p">},</span>
+
+    <span class="c1">// Self-registration</span>
+    <span class="nx">allowRegistration</span><span class="o">:</span> <span class="kc">false</span><span class="p">,</span>       <span class="c1">// enable /apps/auth/register (default: false)</span>
+    <span class="nx">requireEmailVerification</span><span class="o">:</span> <span class="kc">true</span><span class="p">,</span> <span class="c1">// require email verify before login (default: true)</span>
+    <span class="nx">siteUrl</span><span class="o">:</span> <span class="s2">&quot;https://example.com&quot;</span><span class="p">,</span> <span class="c1">// base URL for links in emails</span>
+
+    <span class="c1">// Email configuration (required for verification and password reset emails)</span>
+    <span class="nx">email</span><span class="o">:</span> <span class="p">{</span>
+        <span class="nx">from</span><span class="o">:</span> <span class="s2">&quot;noreply@example.com&quot;</span><span class="p">,</span>
+        <span class="nx">method</span><span class="o">:</span> <span class="s2">&quot;direct&quot;</span><span class="p">,</span>   <span class="c1">// &quot;direct&quot;, &quot;relay&quot;, &quot;smtp&quot;, or &quot;gmailApp&quot;</span>
+        <span class="c1">// For &quot;smtp&quot;:    smtpUrl, user, pass</span>
+        <span class="c1">// For &quot;gmailApp&quot;: user, pass</span>
+        <span class="c1">// For &quot;relay&quot;:    relay, relayPort</span>
+    <span class="p">},</span>
+
+    <span class="c1">// OAuth providers (optional — enables OAuth plugin loading)</span>
+    <span class="nx">oauth</span><span class="o">:</span> <span class="p">{</span>
+        <span class="nx">google</span><span class="o">:</span> <span class="p">{</span>
+            <span class="nx">clientId</span><span class="o">:</span>     <span class="s2">&quot;your-client-id.apps.googleusercontent.com&quot;</span><span class="p">,</span>
+            <span class="nx">clientSecret</span><span class="o">:</span> <span class="s2">&quot;your-client-secret&quot;</span><span class="p">,</span>
+            <span class="nx">callbackUrl</span><span class="o">:</span>  <span class="s2">&quot;https://example.com/apps/auth/oauth/google/callback&quot;</span>
+        <span class="p">},</span>
+        <span class="nx">facebook</span><span class="o">:</span> <span class="p">{</span>
+            <span class="nx">clientId</span><span class="o">:</span>     <span class="s2">&quot;your-app-id&quot;</span><span class="p">,</span>
+            <span class="nx">clientSecret</span><span class="o">:</span> <span class="s2">&quot;your-app-secret&quot;</span><span class="p">,</span>
+            <span class="nx">callbackUrl</span><span class="o">:</span>  <span class="s2">&quot;https://example.com/apps/auth/oauth/facebook/callback&quot;</span><span class="p">,</span>
+            <span class="nx">apiVersion</span><span class="o">:</span>   <span class="s2">&quot;v21.0&quot;</span>  <span class="c1">// optional, defaults to &quot;v21.0&quot;</span>
+        <span class="p">}</span>
+    <span class="p">},</span>
+
+    <span class="c1">// Display cookie (optional — client-readable cookie for static pages)</span>
+    <span class="nx">displayCookie</span><span class="o">:</span> <span class="p">{</span>
+        <span class="nx">cookieName</span><span class="o">:</span> <span class="s2">&quot;rp_user&quot;</span><span class="p">,</span>                <span class="c1">// cookie name (default: &quot;rp_user&quot;)</span>
+        <span class="nx">fields</span><span class="o">:</span>     <span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">,</span> <span class="s2">&quot;picture&quot;</span><span class="p">]</span>        <span class="c1">// session fields to include</span>
+    <span class="p">},</span>
+
+    <span class="c1">// Protected paths</span>
+    <span class="nx">protectedPaths</span><span class="o">:</span> <span class="p">{</span>
+        <span class="s2">&quot;/admin/&quot;</span><span class="o">:</span> <span class="p">{</span>
+            <span class="nx">level</span><span class="o">:</span> <span class="mi">0</span><span class="p">,</span>
+            <span class="nx">redirect</span><span class="o">:</span> <span class="s2">&quot;/apps/auth/login?returnTo=$origin&quot;</span>
+        <span class="p">},</span>
+        <span class="s2">&quot;/private/&quot;</span><span class="o">:</span> <span class="p">{</span>
+            <span class="nx">level</span><span class="o">:</span> <span class="mi">1</span><span class="p">,</span>
+            <span class="nx">redirect</span><span class="o">:</span> <span class="s2">&quot;/apps/auth/login?returnTo=$origin&quot;</span>
+        <span class="p">}</span>
+    <span class="p">}</span>
+<span class="p">};</span>
+</pre></div>
+</div>
+<div class="section" id="configuration-properties">
+<h4>Configuration Properties<a class="headerlink" href="#configuration-properties" title="Permalink to this headline">¶</a></h4>
+<blockquote>
+<div><ul>
+<li><p class="first"><code class="docutils literal notranslate"><span class="pre">cookieName</span></code> — <span class="green">String</span>.  The name of the session cookie
+(default: <code class="docutils literal notranslate"><span class="pre">&quot;rp_session&quot;</span></code>).</p>
+</li>
+<li><p class="first"><code class="docutils literal notranslate"><span class="pre">dbPath</span></code> — <span class="green">String</span>.  Path to the LMDB database directory.
+Relative paths are resolved from the server root
+(default: <code class="docutils literal notranslate"><span class="pre">&quot;data/auth&quot;</span></code>).</p>
+</li>
+<li><p class="first"><code class="docutils literal notranslate"><span class="pre">csrf</span></code> — <span class="green">Boolean</span>.  Enable CSRF protection.  When <code class="docutils literal notranslate"><span class="pre">true</span></code>,
+POST, PUT, DELETE, and PATCH requests from authenticated sessions
+are rejected unless a valid CSRF token is provided in the form body
+(as <code class="docutils literal notranslate"><span class="pre">_csrf</span></code>) or in the <code class="docutils literal notranslate"><span class="pre">X-CSRF-Token</span></code> header.  GET and HEAD
+requests are always exempt (default: <code class="docutils literal notranslate"><span class="pre">true</span></code>).</p>
+</li>
+<li><p class="first"><code class="docutils literal notranslate"><span class="pre">csrfExemptPaths</span></code> — <span class="green">Array</span> of <span class="green">Strings</span>.  Path
+prefixes exempt from CSRF checking.  Useful for webhooks or API
+endpoints that receive external POSTs.</p>
+</li>
+<li><p class="first"><code class="docutils literal notranslate"><span class="pre">redirectExtensions</span></code> — <span class="green">Array</span> of <span class="green">Strings</span>.  File
+extensions that trigger a 302 redirect to the <code class="docutils literal notranslate"><span class="pre">redirect</span></code> URL
+instead of a 403 when access is denied.  Other extensions (images,
+CSS, JS, etc.) receive a plain 403.  An empty string (<code class="docutils literal notranslate"><span class="pre">&quot;&quot;</span></code>)
+matches requests with no extension
+(default: <code class="docutils literal notranslate"><span class="pre">[&quot;&quot;,</span> <span class="pre">&quot;.html&quot;,</span> <span class="pre">&quot;.htm&quot;,</span> <span class="pre">&quot;.txt&quot;]</span></code>).</p>
+</li>
+<li><p class="first"><code class="docutils literal notranslate"><span class="pre">sessionExpiry</span></code> — <span class="green">Number</span>.  Session lifetime in seconds.
+When a session is refreshed, its expiry is set to
+<code class="docutils literal notranslate"><span class="pre">now</span> <span class="pre">+</span> <span class="pre">sessionExpiry</span></code> (default: <code class="docutils literal notranslate"><span class="pre">86400</span></code>).</p>
+</li>
+<li><p class="first"><code class="docutils literal notranslate"><span class="pre">sessionRefresh</span></code> — <span class="green">Number</span>.  Minimum interval between
+session refreshes in seconds.  A session is written back to LMDB
+only if this many seconds have passed since the last refresh.  Set
+to <code class="docutils literal notranslate"><span class="pre">0</span></code> to disable sliding expiry (default: <code class="docutils literal notranslate"><span class="pre">300</span></code>).</p>
+</li>
+<li><p class="first"><code class="docutils literal notranslate"><span class="pre">sessionRefreshUrgent</span></code> — <span class="green">Number</span>.  If fewer than this
+many seconds remain before the session expires, refresh immediately
+regardless of <code class="docutils literal notranslate"><span class="pre">sessionRefresh</span></code> (default: <code class="docutils literal notranslate"><span class="pre">3600</span></code>).</p>
+</li>
+<li><p class="first"><code class="docutils literal notranslate"><span class="pre">wsRecheckSeconds</span></code> — <span class="green">Number</span>.  How often an already-open
+websocket is revalidated, in seconds.  The upgrade itself is always
+authorised against <code class="docutils literal notranslate"><span class="pre">protectedPaths</span></code> before the handshake is
+generated; this setting governs only how long a session that is
+revoked or expires <em>mid-connection</em> may keep using a socket that is
+already open.  A denied frame closes the socket with a websocket
+close frame (status 1008, policy violation) rather than an HTTP
+response, which a peer in framing mode cannot parse.</p>
+<p><code class="docutils literal notranslate"><span class="pre">0</span></code> revalidates on every frame the client sends — exact, but it
+roughly halves frame throughput, because the whole <code class="docutils literal notranslate"><span class="pre">req</span></code> object
+is passed through the auth function each time.  Note that an
+<strong>idle</strong> socket is not revalidated at any setting: nothing runs
+until the client sends data (default: <code class="docutils literal notranslate"><span class="pre">20</span></code>).</p>
+</li>
+<li><p class="first"><code class="docutils literal notranslate"><span class="pre">lockoutAttempts</span></code> — <span class="green">Number</span>.  Maximum failed login
+attempts before the account is temporarily locked.  Set to <code class="docutils literal notranslate"><span class="pre">0</span></code> to
+disable lockout (default: <code class="docutils literal notranslate"><span class="pre">5</span></code>).</p>
+</li>
+<li><p class="first"><code class="docutils literal notranslate"><span class="pre">lockoutWindow</span></code> — <span class="green">Number</span>.  Time window in seconds for
+counting failed attempts (default: <code class="docutils literal notranslate"><span class="pre">300</span></code>).</p>
+</li>
+<li><p class="first"><code class="docutils literal notranslate"><span class="pre">lockoutDuration</span></code> — <span class="green">Number</span>.  Duration of account lockout
+in seconds (default: <code class="docutils literal notranslate"><span class="pre">900</span></code>).</p>
+</li>
+<li><p class="first"><code class="docutils literal notranslate"><span class="pre">minPasswordLength</span></code> — <span class="green">Number</span>.  Minimum password length
+for user creation and password changes (default: <code class="docutils literal notranslate"><span class="pre">7</span></code>).</p>
+</li>
+<li><p class="first"><code class="docutils literal notranslate"><span class="pre">cookieFlags</span></code> — <span class="green">Object</span>.  Flags for the session cookie.
+Properties: <code class="docutils literal notranslate"><span class="pre">httpOnly</span></code> (default: <code class="docutils literal notranslate"><span class="pre">true</span></code>), <code class="docutils literal notranslate"><span class="pre">sameSite</span></code>
+(default: <code class="docutils literal notranslate"><span class="pre">&quot;Lax&quot;</span></code>), <code class="docutils literal notranslate"><span class="pre">secure</span></code> (default: <code class="docutils literal notranslate"><span class="pre">true</span></code>), <code class="docutils literal notranslate"><span class="pre">path</span></code>
+(default: <code class="docutils literal notranslate"><span class="pre">&quot;/&quot;</span></code>).  The <code class="docutils literal notranslate"><span class="pre">secure</span></code> flag defaults to <code class="docutils literal notranslate"><span class="pre">true</span></code>
+meaning cookies are only sent over HTTPS.  Set to <code class="docutils literal notranslate"><span class="pre">false</span></code>
+explicitly if running without HTTPS.  The server cannot
+auto-detect HTTPS because it may be behind a reverse proxy.</p>
+</li>
+<li><p class="first"><code class="docutils literal notranslate"><span class="pre">allowRegistration</span></code> — <span class="green">Boolean</span>.  Enable the
+self-registration form at <code class="docutils literal notranslate"><span class="pre">/apps/auth/register</span></code>.  When enabled,
+users can create their own accounts.  (default: <code class="docutils literal notranslate"><span class="pre">false</span></code>).</p>
+</li>
+<li><p class="first"><code class="docutils literal notranslate"><span class="pre">requireEmailVerification</span></code> — <span class="green">Boolean</span>.  When <code class="docutils literal notranslate"><span class="pre">true</span></code>,
+users created via self-registration must verify their email
+address before they can log in.  Users created via the admin
+panel or CLI have <code class="docutils literal notranslate"><span class="pre">emailVerified:</span> <span class="pre">true</span></code> by default and are
+not affected.  (default: <code class="docutils literal notranslate"><span class="pre">true</span></code>).</p>
+</li>
+<li><p class="first"><code class="docutils literal notranslate"><span class="pre">siteUrl</span></code> — <span class="green">String</span>.  Base URL of the site (e.g.,
+<code class="docutils literal notranslate"><span class="pre">&quot;https://example.com&quot;</span></code>), used to construct full URLs in
+verification and password reset emails.  No trailing slash.</p>
+</li>
+<li><p class="first"><code class="docutils literal notranslate"><span class="pre">email</span></code> — <span class="green">Object</span>.  SMTP configuration for sending
+verification and password reset emails.  If omitted, email-based
+features are disabled.  Uses the <code class="docutils literal notranslate"><span class="pre">rampart-email</span></code> module.</p>
+<p>Properties:</p>
+<ul class="simple">
+<li><code class="docutils literal notranslate"><span class="pre">from</span></code> — sender email address (required).</li>
+<li><code class="docutils literal notranslate"><span class="pre">method</span></code> — delivery method: <code class="docutils literal notranslate"><span class="pre">&quot;direct&quot;</span></code> (default),
+<code class="docutils literal notranslate"><span class="pre">&quot;relay&quot;</span></code>, <code class="docutils literal notranslate"><span class="pre">&quot;smtp&quot;</span></code>, or <code class="docutils literal notranslate"><span class="pre">&quot;gmailApp&quot;</span></code>.</li>
+<li><code class="docutils literal notranslate"><span class="pre">user</span></code>, <code class="docutils literal notranslate"><span class="pre">pass</span></code> — credentials for <code class="docutils literal notranslate"><span class="pre">&quot;smtp&quot;</span></code> and
+<code class="docutils literal notranslate"><span class="pre">&quot;gmailApp&quot;</span></code> methods.</li>
+<li><code class="docutils literal notranslate"><span class="pre">smtpUrl</span></code> — SMTP server URL for the <code class="docutils literal notranslate"><span class="pre">&quot;smtp&quot;</span></code> method.</li>
+<li><code class="docutils literal notranslate"><span class="pre">relay</span></code>, <code class="docutils literal notranslate"><span class="pre">relayPort</span></code> — relay server for the <code class="docutils literal notranslate"><span class="pre">&quot;relay&quot;</span></code>
+method.</li>
+</ul>
+<p>A per-username cooldown (60 seconds) prevents abuse of email
+sending endpoints.</p>
+</li>
+<li><p class="first"><code class="docutils literal notranslate"><span class="pre">oauth</span></code> — <span class="green">Object</span> (optional).  Provider configurations
+for OAuth plugins.  Each key is a provider name matching the plugin
+filename (e.g., <code class="docutils literal notranslate"><span class="pre">google</span></code> for <code class="docutils literal notranslate"><span class="pre">auth-plugins/google.js</span></code>), or a
+name of your choice when using the generic plugin with
+<code class="docutils literal notranslate"><span class="pre">plugin:</span> <span class="pre">&quot;generic&quot;</span></code>.  Each entry may include <code class="docutils literal notranslate"><span class="pre">icon</span></code> (URL to a
+small image for the login button) and <code class="docutils literal notranslate"><span class="pre">label</span></code> (display name).
+See <a class="reference internal" href="#oauth-plugins">OAuth Plugins</a> below.</p>
+</li>
+<li><p class="first"><code class="docutils literal notranslate"><span class="pre">displayCookie</span></code> — <span class="green">Object</span> (optional).  When set, a
+second cookie is created on login containing selected session fields
+in URL-safe base64-encoded JSON.  Unlike the session cookie, this
+cookie is <strong>not</strong> HttpOnly, so client-side JavaScript can read it to
+display the logged-in user’s name, picture, etc. on static pages
+that have no server-side processing.</p>
+<p>Properties:</p>
+<ul class="simple">
+<li><code class="docutils literal notranslate"><span class="pre">cookieName</span></code> — cookie name (default: <code class="docutils literal notranslate"><span class="pre">&quot;rp_user&quot;</span></code>).</li>
+<li><code class="docutils literal notranslate"><span class="pre">fields</span></code> — <span class="green">Array</span> of <span class="green">Strings</span>, the session
+fields to include (default: <code class="docutils literal notranslate"><span class="pre">[&quot;name&quot;,</span> <span class="pre">&quot;picture&quot;]</span></code>).</li>
+</ul>
+<p>The cookie is set alongside the session cookie on login (including
+OAuth logins) and cleared on logout.  The value is URL-safe base64
+(using <code class="docutils literal notranslate"><span class="pre">-</span></code> and <code class="docutils literal notranslate"><span class="pre">_</span></code> instead of <code class="docutils literal notranslate"><span class="pre">+</span></code> and <code class="docutils literal notranslate"><span class="pre">/</span></code>), so client-side
+code must convert before calling <code class="docutils literal notranslate"><span class="pre">atob()</span></code>:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">raw</span> <span class="o">=</span> <span class="nx">cookieValue</span><span class="p">.</span><span class="nx">replace</span><span class="p">(</span><span class="sr">/-/g</span><span class="p">,</span> <span class="s2">&quot;+&quot;</span><span class="p">).</span><span class="nx">replace</span><span class="p">(</span><span class="sr">/_/g</span><span class="p">,</span> <span class="s2">&quot;/&quot;</span><span class="p">);</span>
+<span class="kd">var</span> <span class="nx">info</span> <span class="o">=</span> <span class="nx">JSON</span><span class="p">.</span><span class="nx">parse</span><span class="p">(</span><span class="nx">atob</span><span class="p">(</span><span class="nx">raw</span><span class="p">));</span>
+<span class="c1">// info.name, info.picture, etc.</span>
+</pre></div>
+</div>
+</li>
+<li><p class="first"><code class="docutils literal notranslate"><span class="pre">protectedPaths</span></code> — <span class="green">Object</span>.  Maps URL path prefixes to
+access rules.  See <a class="reference internal" href="#protected-paths">Protected Paths</a> below.</p>
+</li>
+</ul>
+</div></blockquote>
+</div>
+</div>
+<div class="section" id="protected-paths">
+<h3>Protected Paths<a class="headerlink" href="#protected-paths" title="Permalink to this headline">¶</a></h3>
+<p>Paths not listed in <code class="docutils literal notranslate"><span class="pre">protectedPaths</span></code> are public — no authentication is
+required.  For public paths, <code class="docutils literal notranslate"><span class="pre">req.userAuth</span></code> is still populated when a
+valid session exists, enabling personalization on public pages.</p>
+<p>Each entry in <code class="docutils literal notranslate"><span class="pre">protectedPaths</span></code> specifies:</p>
+<blockquote>
+<div><ul class="simple">
+<li><code class="docutils literal notranslate"><span class="pre">level</span></code> — <span class="green">Number</span>.  The required privilege level.  The
+user’s <code class="docutils literal notranslate"><span class="pre">authLevel</span></code> must be less than or equal to this value.
+Lower numbers represent higher privilege (e.g., <code class="docutils literal notranslate"><span class="pre">0</span></code> = admin).</li>
+<li><code class="docutils literal notranslate"><span class="pre">redirect</span></code> — <span class="green">String</span> (optional).  URL template for 302
+redirect on denied page requests.  <code class="docutils literal notranslate"><span class="pre">$origin</span></code> is replaced with
+the URL-encoded originally requested path.  If omitted, denied
+requests receive a plain 403.</li>
+</ul>
+</div></blockquote>
+<p>Path matching uses prefix comparison with full inheritance: a rule for
+<code class="docutils literal notranslate"><span class="pre">&quot;/admin/&quot;</span></code> protects <code class="docutils literal notranslate"><span class="pre">&quot;/admin/reports/quarterly/file.html&quot;</span></code>.  When
+multiple prefixes match, the most specific (longest) match wins.</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">protectedPaths</span><span class="o">:</span> <span class="p">{</span>
+    <span class="s2">&quot;/admin/&quot;</span><span class="o">:</span> <span class="p">{</span>
+        <span class="nx">level</span><span class="o">:</span> <span class="mi">0</span><span class="p">,</span>                                  <span class="c1">// admin only</span>
+        <span class="nx">redirect</span><span class="o">:</span> <span class="s2">&quot;/apps/auth/login?returnTo=$origin&quot;</span>   <span class="c1">// redirect pages</span>
+    <span class="p">},</span>
+    <span class="s2">&quot;/admin/public/&quot;</span><span class="o">:</span> <span class="p">{</span>
+        <span class="nx">level</span><span class="o">:</span> <span class="mi">50</span>                                  <span class="c1">// override: any user</span>
+    <span class="p">},</span>
+    <span class="s2">&quot;/private/&quot;</span><span class="o">:</span> <span class="p">{</span>
+        <span class="nx">level</span><span class="o">:</span> <span class="mi">1</span>                                   <span class="c1">// editors and above</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</div>
+</div>
+<div class="section" id="the-auth-function-contract">
+<h2>The Auth Function Contract<a class="headerlink" href="#the-auth-function-contract" title="Permalink to this headline">¶</a></h2>
+<p>The <code class="docutils literal notranslate"><span class="pre">rampart-auth.so</span></code> module (or any custom auth module) exports a
+single function.  The server calls this function on every request that
+passes through an app module, and on file requests to protected paths.</p>
+<div class="section" id="for-file-requests">
+<h3>For file requests<a class="headerlink" href="#for-file-requests" title="Permalink to this headline">¶</a></h3>
+<p>The function receives a minimal request object:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
+    <span class="nx">ip</span><span class="o">:</span>      <span class="s2">&quot;192.168.1.1&quot;</span><span class="p">,</span>
+    <span class="nx">path</span><span class="o">:</span>    <span class="p">{</span> <span class="nx">path</span><span class="o">:</span> <span class="s2">&quot;/private/page.html&quot;</span> <span class="p">},</span>
+    <span class="nx">query</span><span class="o">:</span>   <span class="p">{</span> <span class="nx">v</span><span class="o">:</span> <span class="s2">&quot;123&quot;</span> <span class="p">},</span>
+    <span class="nx">headers</span><span class="o">:</span> <span class="p">{</span> <span class="s2">&quot;Host&quot;</span><span class="o">:</span> <span class="s2">&quot;example.com&quot;</span><span class="p">,</span> <span class="s2">&quot;Cookie&quot;</span><span class="o">:</span> <span class="s2">&quot;...&quot;</span> <span class="p">},</span>
+    <span class="nx">cookies</span><span class="o">:</span> <span class="p">{</span> <span class="nx">rp_session</span><span class="o">:</span> <span class="s2">&quot;token_value&quot;</span> <span class="p">}</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>Return values:</p>
+<blockquote>
+<div><ul class="simple">
+<li><code class="docutils literal notranslate"><span class="pre">true</span></code> — serve the file.</li>
+<li>Anything else — the server sends 403 (or 302 redirect based on
+<code class="docutils literal notranslate"><span class="pre">redirectExtensions</span></code> and the path’s <code class="docutils literal notranslate"><span class="pre">redirect</span></code> configuration).</li>
+</ul>
+</div></blockquote>
+</div>
+<div class="section" id="for-app-module-requests">
+<h3>For app module requests<a class="headerlink" href="#for-app-module-requests" title="Permalink to this headline">¶</a></h3>
+<p>The function receives the full <code class="docutils literal notranslate"><span class="pre">req</span></code> object (with <code class="docutils literal notranslate"><span class="pre">method</span></code>, <code class="docutils literal notranslate"><span class="pre">body</span></code>,
+<code class="docutils literal notranslate"><span class="pre">postData</span></code>, etc.).  Since <code class="docutils literal notranslate"><span class="pre">req</span></code> is passed by reference, any
+modifications (such as setting <code class="docutils literal notranslate"><span class="pre">req.userAuth</span></code>) are made in-place and
+are visible to the endpoint handler regardless of what the function
+returns.</p>
+<p>Return values:</p>
+<blockquote>
+<div><ul class="simple">
+<li>Any truthy value (<code class="docutils literal notranslate"><span class="pre">true</span></code>, a number, the <code class="docutils literal notranslate"><span class="pre">req</span></code> object, etc.)
+— pass through to the endpoint handler.  The <code class="docutils literal notranslate"><span class="pre">req</span></code> object
+already has any modifications the function made.</li>
+<li><code class="docutils literal notranslate"><span class="pre">false</span></code> — the server sends 403.</li>
+<li><code class="docutils literal notranslate"><span class="pre">{redirect:</span> <span class="pre">&quot;/path&quot;}</span></code> — the server sends a 302 redirect.</li>
+</ul>
+</div></blockquote>
+</div>
+<div class="section" id="the-req-userauth-object">
+<h3>The req.userAuth Object<a class="headerlink" href="#the-req-userauth-object" title="Permalink to this headline">¶</a></h3>
+<p>When a valid session is found, the auth function attaches the session
+data to <code class="docutils literal notranslate"><span class="pre">req.userAuth</span></code>.  This object contains all fields stored in
+the LMDB session record:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">req</span><span class="p">.</span><span class="nx">userAuth</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="nx">username</span><span class="o">:</span>     <span class="s2">&quot;alice&quot;</span><span class="p">,</span>
+    <span class="nx">name</span><span class="o">:</span>         <span class="s2">&quot;Alice Smith&quot;</span><span class="p">,</span>
+    <span class="nx">email</span><span class="o">:</span>        <span class="s2">&quot;alice@example.com&quot;</span><span class="p">,</span>
+    <span class="nx">authLevel</span><span class="o">:</span>    <span class="mi">0</span><span class="p">,</span>
+    <span class="nx">authMethod</span><span class="o">:</span>   <span class="s2">&quot;password&quot;</span><span class="p">,</span>
+    <span class="nx">csrfToken</span><span class="o">:</span>    <span class="s2">&quot;random_token_string&quot;</span><span class="p">,</span>
+    <span class="nx">expires</span><span class="o">:</span>      <span class="mi">1744300800</span><span class="p">,</span>
+    <span class="nx">lastRefresh</span><span class="o">:</span>  <span class="mi">1744214400</span><span class="p">,</span>
+    <span class="nx">created</span><span class="o">:</span>      <span class="mi">1744214400</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>App modules use this to make authorization decisions:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">module</span><span class="p">.</span><span class="nx">exports</span> <span class="o">=</span> <span class="kd">function</span><span class="p">(</span><span class="nx">req</span><span class="p">)</span> <span class="p">{</span>
+    <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="nx">req</span><span class="p">.</span><span class="nx">userAuth</span><span class="p">)</span> <span class="p">{</span>
+        <span class="k">return</span> <span class="p">{</span><span class="nx">status</span><span class="o">:</span> <span class="mi">302</span><span class="p">,</span> <span class="nx">headers</span><span class="o">:</span> <span class="p">{</span><span class="s2">&quot;location&quot;</span><span class="o">:</span> <span class="s2">&quot;/apps/auth/login&quot;</span><span class="p">}};</span>
+    <span class="p">}</span>
+    <span class="k">if</span> <span class="p">(</span><span class="nx">req</span><span class="p">.</span><span class="nx">userAuth</span><span class="p">.</span><span class="nx">authLevel</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">)</span> <span class="p">{</span>
+        <span class="k">return</span> <span class="p">{</span><span class="nx">html</span><span class="o">:</span> <span class="s2">&quot;&lt;h1&gt;Admin access required&lt;/h1&gt;&quot;</span><span class="p">,</span> <span class="nx">status</span><span class="o">:</span> <span class="mi">403</span><span class="p">};</span>
+    <span class="p">}</span>
+    <span class="k">return</span> <span class="p">{</span><span class="nx">html</span><span class="o">:</span> <span class="s2">&quot;&lt;h1&gt;Welcome &quot;</span> <span class="o">+</span> <span class="nx">req</span><span class="p">.</span><span class="nx">userAuth</span><span class="p">.</span><span class="nx">name</span> <span class="o">+</span> <span class="s2">&quot;&lt;/h1&gt;&quot;</span><span class="p">};</span>
+<span class="p">};</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="csrf-protection">
+<h3>CSRF Protection<a class="headerlink" href="#csrf-protection" title="Permalink to this headline">¶</a></h3>
+<p>When <code class="docutils literal notranslate"><span class="pre">csrf</span></code> is enabled (the default), POST, PUT, DELETE, and PATCH
+requests from authenticated sessions must include the CSRF token.  The
+token is available to templates and JavaScript via
+<code class="docutils literal notranslate"><span class="pre">req.userAuth.csrfToken</span></code>.</p>
+<p>In HTML forms:</p>
+<div class="highlight-html notranslate"><div class="highlight"><pre><span></span><span class="p">&lt;</span><span class="nt">form</span> <span class="na">method</span><span class="o">=</span><span class="s">&quot;POST&quot;</span> <span class="na">action</span><span class="o">=</span><span class="s">&quot;/apps/myapp/update&quot;</span><span class="p">&gt;</span>
+    <span class="p">&lt;</span><span class="nt">input</span> <span class="na">type</span><span class="o">=</span><span class="s">&quot;hidden&quot;</span> <span class="na">name</span><span class="o">=</span><span class="s">&quot;_csrf&quot;</span> <span class="na">value</span><span class="o">=</span><span class="s">&quot;&lt;%= req.userAuth.csrfToken %&gt;&quot;</span><span class="p">&gt;</span>
+    <span class="c">&lt;!-- other fields --&gt;</span>
+    <span class="p">&lt;</span><span class="nt">button</span> <span class="na">type</span><span class="o">=</span><span class="s">&quot;submit&quot;</span><span class="p">&gt;</span>Save<span class="p">&lt;/</span><span class="nt">button</span><span class="p">&gt;</span>
+<span class="p">&lt;/</span><span class="nt">form</span><span class="p">&gt;</span>
+</pre></div>
+</div>
+<p>In AJAX requests:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">fetch</span><span class="p">(</span><span class="s2">&quot;/apps/myapp/update&quot;</span><span class="p">,</span> <span class="p">{</span>
+    <span class="nx">method</span><span class="o">:</span> <span class="s2">&quot;POST&quot;</span><span class="p">,</span>
+    <span class="nx">headers</span><span class="o">:</span> <span class="p">{</span>
+        <span class="s2">&quot;Content-Type&quot;</span><span class="o">:</span> <span class="s2">&quot;application/json&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;X-CSRF-Token&quot;</span><span class="o">:</span> <span class="nx">userAuth</span><span class="p">.</span><span class="nx">csrfToken</span>
+    <span class="p">},</span>
+    <span class="nx">body</span><span class="o">:</span> <span class="nx">JSON</span><span class="p">.</span><span class="nx">stringify</span><span class="p">(</span><span class="nx">data</span><span class="p">)</span>
+<span class="p">});</span>
+</pre></div>
+</div>
+<p>Requests without a valid CSRF token receive a 403 response.
+GET and HEAD requests are always exempt.
+Paths listed in <code class="docutils literal notranslate"><span class="pre">csrfExemptPaths</span></code> are also exempt.</p>
+</div>
+</div>
+<div class="section" id="custom-auth-modules">
+<h2>Custom Auth Modules<a class="headerlink" href="#custom-auth-modules" title="Permalink to this headline">¶</a></h2>
+<p>The <code class="docutils literal notranslate"><span class="pre">authMod</span></code> property accepts a <span class="green">Function</span> or
+<span class="green">String</span> for custom authentication logic.  A custom module
+must export a single function with the same contract as described in
+<a class="reference internal" href="#the-auth-function-contract">The Auth Function Contract</a> above.</p>
+<p>Inline function example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">server</span><span class="p">.</span><span class="nx">start</span><span class="p">({</span>
+    <span class="nx">authMod</span><span class="o">:</span> <span class="kd">function</span><span class="p">(</span><span class="nx">req</span><span class="p">)</span> <span class="p">{</span>
+        <span class="c1">// custom auth using a header instead of cookies</span>
+        <span class="kd">var</span> <span class="nx">token</span> <span class="o">=</span> <span class="nx">req</span><span class="p">.</span><span class="nx">headers</span> <span class="o">?</span> <span class="nx">req</span><span class="p">.</span><span class="nx">headers</span><span class="p">[</span><span class="s1">&#39;X-API-Key&#39;</span><span class="p">]</span> <span class="o">:</span> <span class="kc">null</span><span class="p">;</span>
+        <span class="k">if</span> <span class="p">(</span><span class="nx">req</span><span class="p">.</span><span class="nx">method</span><span class="p">)</span> <span class="p">{</span>
+            <span class="c1">// app module request</span>
+            <span class="k">if</span> <span class="p">(</span><span class="nx">token</span> <span class="o">===</span> <span class="s2">&quot;my-secret-key&quot;</span><span class="p">)</span>
+                <span class="nx">req</span><span class="p">.</span><span class="nx">userAuth</span> <span class="o">=</span> <span class="p">{</span><span class="nx">username</span><span class="o">:</span> <span class="s2">&quot;api-user&quot;</span><span class="p">,</span> <span class="nx">authLevel</span><span class="o">:</span> <span class="mi">0</span><span class="p">};</span>
+            <span class="k">return</span> <span class="nx">req</span><span class="p">;</span>
+        <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+            <span class="c1">// file request</span>
+            <span class="k">return</span> <span class="p">(</span><span class="nx">token</span> <span class="o">===</span> <span class="s2">&quot;my-secret-key&quot;</span><span class="p">);</span>
+        <span class="p">}</span>
+    <span class="p">},</span>
+    <span class="nx">authModConf</span><span class="o">:</span> <span class="nx">working_directory</span> <span class="o">+</span> <span class="s1">&#39;/auth-conf.js&#39;</span><span class="p">,</span>
+    <span class="c1">// ...</span>
+<span class="p">});</span>
+</pre></div>
+</div>
+<p>Module example (<code class="docutils literal notranslate"><span class="pre">my-auth.js</span></code>):</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="c1">// my-auth.js</span>
+<span class="kd">var</span> <span class="nx">Lmdb</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-lmdb&quot;</span><span class="p">);</span>
+<span class="kd">var</span> <span class="nx">db</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">Lmdb</span><span class="p">.</span><span class="nx">init</span><span class="p">(</span><span class="s2">&quot;data/my-auth-db&quot;</span><span class="p">,</span> <span class="kc">true</span><span class="p">,</span> <span class="p">{</span><span class="nx">conversion</span><span class="o">:</span> <span class="s2">&quot;json&quot;</span><span class="p">});</span>
+
+<span class="nx">module</span><span class="p">.</span><span class="nx">exports</span> <span class="o">=</span> <span class="kd">function</span><span class="p">(</span><span class="nx">req</span><span class="p">)</span> <span class="p">{</span>
+    <span class="kd">var</span> <span class="nx">token</span> <span class="o">=</span> <span class="nx">req</span><span class="p">.</span><span class="nx">cookies</span> <span class="o">?</span> <span class="nx">req</span><span class="p">.</span><span class="nx">cookies</span><span class="p">.</span><span class="nx">my_session</span> <span class="o">:</span> <span class="kc">null</span><span class="p">;</span>
+    <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="nx">token</span><span class="p">)</span> <span class="k">return</span> <span class="nx">req</span><span class="p">.</span><span class="nx">method</span> <span class="o">?</span> <span class="nx">req</span> <span class="o">:</span> <span class="kc">false</span><span class="p">;</span>
+
+    <span class="kd">var</span> <span class="nx">session</span> <span class="o">=</span> <span class="nx">db</span><span class="p">.</span><span class="nx">get</span><span class="p">(</span><span class="kc">null</span><span class="p">,</span> <span class="nx">token</span><span class="p">);</span>
+    <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="nx">session</span><span class="p">)</span> <span class="k">return</span> <span class="nx">req</span><span class="p">.</span><span class="nx">method</span> <span class="o">?</span> <span class="nx">req</span> <span class="o">:</span> <span class="kc">false</span><span class="p">;</span>
+
+    <span class="k">if</span> <span class="p">(</span><span class="nx">req</span><span class="p">.</span><span class="nx">method</span><span class="p">)</span> <span class="p">{</span>
+        <span class="nx">req</span><span class="p">.</span><span class="nx">userAuth</span> <span class="o">=</span> <span class="nx">session</span><span class="p">;</span>
+        <span class="k">return</span> <span class="nx">req</span><span class="p">;</span>
+    <span class="p">}</span>
+    <span class="k">return</span> <span class="kc">true</span><span class="p">;</span>
+<span class="p">};</span>
+</pre></div>
+</div>
+<p>Then in the server configuration:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">authMod</span><span class="o">:</span> <span class="s2">&quot;my-auth&quot;</span><span class="p">,</span>
+<span class="nx">authModConf</span><span class="o">:</span> <span class="nx">working_directory</span> <span class="o">+</span> <span class="s1">&#39;/auth-conf.js&#39;</span><span class="p">,</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="the-auth-js-administration-module">
+<h2>The auth.js Administration Module<a class="headerlink" href="#the-auth-js-administration-module" title="Permalink to this headline">¶</a></h2>
+<p>The <code class="docutils literal notranslate"><span class="pre">auth.js</span></code> file in <code class="docutils literal notranslate"><span class="pre">web_server/apps/</span></code> serves two purposes:</p>
+<ol class="arabic simple">
+<li><strong>Server module</strong> — when loaded by the web server, it provides HTTP
+endpoints for login, logout, password management, and an
+administrative interface.</li>
+<li><strong>CLI tool</strong> — when run directly with <code class="docutils literal notranslate"><span class="pre">rampart</span> <span class="pre">apps/auth.js</span></code>, it
+provides a command-line administration tool for managing users and
+sessions.</li>
+</ol>
+<p>This module handles all user management operations in JavaScript.
+These operations (login, user creation, password hashing) are not
+performance-critical — they happen infrequently compared to the
+per-request session validation performed by the C module.</p>
+<div class="section" id="cli-administration">
+<h3>CLI Administration<a class="headerlink" href="#cli-administration" title="Permalink to this headline">¶</a></h3>
+<p>Run <code class="docutils literal notranslate"><span class="pre">rampart</span> <span class="pre">apps/auth.js</span></code> with no arguments for interactive initial
+setup, or with a command:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>Usage: rampart apps/auth.js &lt;command&gt; [args]
+
+Commands:
+  add    &lt;username&gt; &lt;password&gt; [level]   Create a new user (default level: 50)
+  del    &lt;username&gt;                      Delete a user and their sessions
+  list                                   List all users
+  passwd &lt;username&gt; &lt;password&gt;            Change password
+  reset  &lt;username&gt; &lt;password&gt;            Reset password (force change on login)
+  level  &lt;username&gt; &lt;level&gt;               Set auth level
+  sessions [username]                     List active sessions
+  revoke &lt;username&gt;                       Revoke all sessions for user
+  cleanup                                 Remove expired sessions and tokens
+  setup                                   Interactive initial setup
+</pre></div>
+</div>
+<p>When run with no users in the database, or with the <code class="docutils literal notranslate"><span class="pre">setup</span></code> command,
+an interactive setup wizard prompts for an admin username and password.</p>
+</div>
+<div class="section" id="http-endpoints">
+<h3>HTTP Endpoints<a class="headerlink" href="#http-endpoints" title="Permalink to this headline">¶</a></h3>
+<p>When the server is running with <code class="docutils literal notranslate"><span class="pre">authMod</span></code> enabled, the following
+endpoints are available:</p>
+<p><strong>Public (no authentication required):</strong></p>
+<blockquote>
+<div><ul class="simple">
+<li><code class="docutils literal notranslate"><span class="pre">POST</span> <span class="pre">/apps/auth/login</span></code> — Accepts <code class="docutils literal notranslate"><span class="pre">username</span></code>, <code class="docutils literal notranslate"><span class="pre">password</span></code>,
+and optional <code class="docutils literal notranslate"><span class="pre">returnTo</span></code> in the POST body.  On success, sets a
+session cookie and redirects.  On failure, redirects to
+<code class="docutils literal notranslate"><span class="pre">/apps/auth/login?error=invalid</span></code>.  Error codes include <code class="docutils literal notranslate"><span class="pre">invalid</span></code>
+(bad credentials), <code class="docutils literal notranslate"><span class="pre">locked</span></code> (account locked out), and
+<code class="docutils literal notranslate"><span class="pre">unverified</span></code> (email not verified).</li>
+<li><code class="docutils literal notranslate"><span class="pre">GET</span> <span class="pre">/apps/auth/logout</span></code> — Clears the session cookie and
+redirects to <code class="docutils literal notranslate"><span class="pre">/</span></code>.</li>
+<li><code class="docutils literal notranslate"><span class="pre">GET|POST</span> <span class="pre">/apps/auth/register</span></code> — Self-registration form.
+Only available when <code class="docutils literal notranslate"><span class="pre">allowRegistration</span></code> is <code class="docutils literal notranslate"><span class="pre">true</span></code>.  Creates
+the account and sends a verification email if
+<code class="docutils literal notranslate"><span class="pre">requireEmailVerification</span></code> is enabled.</li>
+<li><code class="docutils literal notranslate"><span class="pre">GET</span> <span class="pre">/apps/auth/verify-email?token=...</span></code> — Email verification
+link.  Validates the token and marks the account as verified.</li>
+<li><code class="docutils literal notranslate"><span class="pre">GET|POST</span> <span class="pre">/apps/auth/resend-verification</span></code> — Resend the
+verification email for a username.</li>
+<li><code class="docutils literal notranslate"><span class="pre">GET|POST</span> <span class="pre">/apps/auth/request-reset</span></code> — Request a password reset
+via email.  Sends a reset link to the user’s email address.
+Uses a generic response to avoid revealing whether the user
+exists.</li>
+<li><code class="docutils literal notranslate"><span class="pre">GET|POST</span> <span class="pre">/apps/auth/do-reset</span></code> — Token-based password reset
+(for email reset links).</li>
+</ul>
+</div></blockquote>
+<p><strong>Requires authentication:</strong></p>
+<blockquote>
+<div><ul class="simple">
+<li><code class="docutils literal notranslate"><span class="pre">GET|POST</span> <span class="pre">/apps/auth/force-reset</span></code> — Forced password change page,
+shown when <code class="docutils literal notranslate"><span class="pre">mustResetPassword</span></code> is <code class="docutils literal notranslate"><span class="pre">true</span></code> in the session.</li>
+</ul>
+</div></blockquote>
+<p><strong>Admin only (protected at level 0):</strong></p>
+<blockquote>
+<div><ul class="simple">
+<li><code class="docutils literal notranslate"><span class="pre">GET</span> <span class="pre">/apps/auth/admin/</span></code> — User list with edit, reset, and
+delete actions.</li>
+<li><code class="docutils literal notranslate"><span class="pre">GET|POST</span> <span class="pre">/apps/auth/admin/create-user</span></code> — Create user form.</li>
+<li><code class="docutils literal notranslate"><span class="pre">GET|POST</span> <span class="pre">/apps/auth/admin/edit-user</span></code> — Edit user form.</li>
+<li><code class="docutils literal notranslate"><span class="pre">GET|POST</span> <span class="pre">/apps/auth/admin/reset-pw</span></code> — Admin password reset
+with option to force change on next login.</li>
+<li><code class="docutils literal notranslate"><span class="pre">GET|POST</span> <span class="pre">/apps/auth/admin/delete-user</span></code> — Delete user
+confirmation.</li>
+<li><code class="docutils literal notranslate"><span class="pre">GET|POST</span> <span class="pre">/apps/auth/admin/sessions</span></code> — Session list with
+revoke buttons.</li>
+</ul>
+</div></blockquote>
+</div>
+<div class="section" id="programmatic-api">
+<h3>Programmatic API<a class="headerlink" href="#programmatic-api" title="Permalink to this headline">¶</a></h3>
+<p>When loaded via <code class="docutils literal notranslate"><span class="pre">require()</span></code>, the module exports both the HTTP
+endpoints (for server mapping) and a programmatic API:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">auth</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;apps/auth&quot;</span><span class="p">);</span>
+<span class="nx">auth</span><span class="p">.</span><span class="nx">init</span><span class="p">();</span>
+
+<span class="c1">// User management</span>
+<span class="nx">auth</span><span class="p">.</span><span class="nx">createUser</span><span class="p">({</span><span class="nx">username</span><span class="o">:</span> <span class="s2">&quot;alice&quot;</span><span class="p">,</span> <span class="nx">password</span><span class="o">:</span> <span class="s2">&quot;secret&quot;</span><span class="p">,</span> <span class="nx">authLevel</span><span class="o">:</span> <span class="mi">10</span><span class="p">});</span>
+<span class="nx">auth</span><span class="p">.</span><span class="nx">getUser</span><span class="p">(</span><span class="s2">&quot;alice&quot;</span><span class="p">);</span>
+<span class="nx">auth</span><span class="p">.</span><span class="nx">listUsers</span><span class="p">();</span>
+<span class="nx">auth</span><span class="p">.</span><span class="nx">updateUser</span><span class="p">(</span><span class="s2">&quot;alice&quot;</span><span class="p">,</span> <span class="p">{</span><span class="nx">name</span><span class="o">:</span> <span class="s2">&quot;Alice Smith&quot;</span><span class="p">,</span> <span class="nx">email</span><span class="o">:</span> <span class="s2">&quot;alice@example.com&quot;</span><span class="p">});</span>
+<span class="nx">auth</span><span class="p">.</span><span class="nx">deleteUser</span><span class="p">(</span><span class="s2">&quot;alice&quot;</span><span class="p">);</span>
+
+<span class="c1">// Custom user properties</span>
+<span class="nx">auth</span><span class="p">.</span><span class="nx">updateUser</span><span class="p">(</span><span class="s2">&quot;alice&quot;</span><span class="p">,</span> <span class="p">{</span><span class="nx">editor</span><span class="o">:</span> <span class="kc">true</span><span class="p">,</span> <span class="nx">department</span><span class="o">:</span> <span class="s2">&quot;news&quot;</span><span class="p">});</span>
+
+<span class="c1">// Password management</span>
+<span class="nx">auth</span><span class="p">.</span><span class="nx">changePassword</span><span class="p">(</span><span class="s2">&quot;alice&quot;</span><span class="p">,</span> <span class="s2">&quot;old_password&quot;</span><span class="p">,</span> <span class="s2">&quot;new_password&quot;</span><span class="p">);</span>
+<span class="nx">auth</span><span class="p">.</span><span class="nx">adminResetPassword</span><span class="p">(</span><span class="s2">&quot;alice&quot;</span><span class="p">,</span> <span class="s2">&quot;temp_password&quot;</span><span class="p">,</span> <span class="kc">true</span><span class="p">);</span> <span class="c1">// force change</span>
+
+<span class="c1">// Password reset flow (for email integration)</span>
+<span class="kd">var</span> <span class="nx">reset</span> <span class="o">=</span> <span class="nx">auth</span><span class="p">.</span><span class="nx">requestPasswordReset</span><span class="p">(</span><span class="s2">&quot;alice&quot;</span><span class="p">);</span>
+<span class="c1">// reset.resetToken and reset.resetUrl available for email</span>
+<span class="nx">auth</span><span class="p">.</span><span class="nx">completePasswordReset</span><span class="p">(</span><span class="nx">reset</span><span class="p">.</span><span class="nx">resetToken</span><span class="p">,</span> <span class="s2">&quot;new_password&quot;</span><span class="p">);</span>
+
+<span class="c1">// Session management</span>
+<span class="kd">var</span> <span class="nx">result</span> <span class="o">=</span> <span class="nx">auth</span><span class="p">.</span><span class="nx">login</span><span class="p">(</span><span class="s2">&quot;alice&quot;</span><span class="p">,</span> <span class="s2">&quot;secret&quot;</span><span class="p">);</span>
+<span class="c1">// result.token, result.cookie, result.session</span>
+<span class="nx">auth</span><span class="p">.</span><span class="nx">logout</span><span class="p">(</span><span class="nx">result</span><span class="p">.</span><span class="nx">token</span><span class="p">);</span>
+<span class="nx">auth</span><span class="p">.</span><span class="nx">listSessions</span><span class="p">(</span><span class="s2">&quot;alice&quot;</span><span class="p">);</span>
+<span class="nx">auth</span><span class="p">.</span><span class="nx">deleteSession</span><span class="p">(</span><span class="nx">token</span><span class="p">);</span>
+<span class="nx">auth</span><span class="p">.</span><span class="nx">deleteAllSessions</span><span class="p">(</span><span class="s2">&quot;alice&quot;</span><span class="p">);</span>
+<span class="nx">auth</span><span class="p">.</span><span class="nx">refreshSessions</span><span class="p">(</span><span class="s2">&quot;alice&quot;</span><span class="p">);</span>
+
+<span class="c1">// Self-registration and email verification</span>
+<span class="nx">auth</span><span class="p">.</span><span class="nx">register</span><span class="p">({</span><span class="nx">username</span><span class="o">:</span> <span class="s2">&quot;bob&quot;</span><span class="p">,</span> <span class="nx">password</span><span class="o">:</span> <span class="s2">&quot;secret7&quot;</span><span class="p">,</span> <span class="nx">email</span><span class="o">:</span> <span class="s2">&quot;bob@example.com&quot;</span><span class="p">});</span>
+<span class="nx">auth</span><span class="p">.</span><span class="nx">sendVerificationEmail</span><span class="p">(</span><span class="s2">&quot;bob&quot;</span><span class="p">);</span>
+<span class="nx">auth</span><span class="p">.</span><span class="nx">verifyEmail</span><span class="p">(</span><span class="nx">verificationToken</span><span class="p">);</span>
+
+<span class="c1">// Password reset via email</span>
+<span class="nx">auth</span><span class="p">.</span><span class="nx">sendPasswordResetEmail</span><span class="p">(</span><span class="s2">&quot;alice&quot;</span><span class="p">);</span>
+
+<span class="c1">// Expired record cleanup</span>
+<span class="nx">auth</span><span class="p">.</span><span class="nx">cleanupExpired</span><span class="p">();</span>
+
+<span class="c1">// Low-level email sending (for custom flows)</span>
+<span class="nx">auth</span><span class="p">.</span><span class="nx">sendAuthEmail</span><span class="p">(</span><span class="s2">&quot;user@example.com&quot;</span><span class="p">,</span> <span class="s2">&quot;Subject&quot;</span><span class="p">,</span> <span class="s2">&quot;&lt;p&gt;HTML body&lt;/p&gt;&quot;</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>All password changes and resets automatically revoke existing sessions,
+forcing the user to re-authenticate with the new password.</p>
+</div>
+<div class="section" id="user-records-vs-session-records">
+<h3>User Records vs Session Records<a class="headerlink" href="#user-records-vs-session-records" title="Permalink to this headline">¶</a></h3>
+<p>The auth system stores data in two LMDB databases:</p>
+<blockquote>
+<div><ul class="simple">
+<li><strong>User records</strong> — stored in the <code class="docutils literal notranslate"><span class="pre">&quot;users&quot;</span></code> database, keyed by
+username.  These are the canonical source of user information:
+username, email, password hash, auth level, and any custom
+properties added via <code class="docutils literal notranslate"><span class="pre">updateUser()</span></code>.</li>
+<li><strong>Session records</strong> — stored in the <code class="docutils literal notranslate"><span class="pre">&quot;default&quot;</span></code> database, keyed
+by session token.  These are <strong>denormalized copies</strong> of user data,
+created at login time.  The C auth module reads session records on
+every request (a single LMDB lookup) and populates <code class="docutils literal notranslate"><span class="pre">req.userAuth</span></code>
+with their contents.</li>
+</ul>
+</div></blockquote>
+<p>When a user logs in, <code class="docutils literal notranslate"><span class="pre">login()</span></code> copies all properties from the user
+record into the new session record (excluding <code class="docutils literal notranslate"><span class="pre">passwordHash</span></code>).  This
+means the C module needs only one fast LMDB read per request — it never
+touches the user database.</p>
+<p>The tradeoff: if you update a user’s properties (e.g., add
+<code class="docutils literal notranslate"><span class="pre">editor:</span> <span class="pre">true</span></code> or change <code class="docutils literal notranslate"><span class="pre">authLevel</span></code>), existing sessions still have
+the old values.  The user would see the changes only after logging in
+again.  To push changes to active sessions immediately, use
+<code class="docutils literal notranslate"><span class="pre">refreshSessions()</span></code>:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="c1">// add a custom property to the user record</span>
+<span class="nx">auth</span><span class="p">.</span><span class="nx">updateUser</span><span class="p">(</span><span class="s2">&quot;alice&quot;</span><span class="p">,</span> <span class="p">{</span><span class="nx">editor</span><span class="o">:</span> <span class="kc">true</span><span class="p">,</span> <span class="nx">canPublish</span><span class="o">:</span> <span class="kc">false</span><span class="p">});</span>
+
+<span class="c1">// update all of alice&#39;s active sessions with the new properties</span>
+<span class="nx">auth</span><span class="p">.</span><span class="nx">refreshSessions</span><span class="p">(</span><span class="s2">&quot;alice&quot;</span><span class="p">);</span>
+<span class="c1">// returns {ok: true, updated: 2}</span>
+</pre></div>
+</div>
+<p>After <code class="docutils literal notranslate"><span class="pre">refreshSessions()</span></code>, the next request from any of alice’s
+sessions will see <code class="docutils literal notranslate"><span class="pre">req.userAuth.editor</span> <span class="pre">===</span> <span class="pre">true</span></code> — no re-login
+required.</p>
+<div class="section" id="custom-properties-in-endpoint-callbacks">
+<h4>Custom Properties in Endpoint Callbacks<a class="headerlink" href="#custom-properties-in-endpoint-callbacks" title="Permalink to this headline">¶</a></h4>
+<p>Any property stored on a user record appears in <code class="docutils literal notranslate"><span class="pre">req.userAuth</span></code> after
+login (or after <code class="docutils literal notranslate"><span class="pre">refreshSessions()</span></code>).  This enables role-based and
+attribute-based access control in endpoint callbacks:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="c1">// set up roles via custom properties</span>
+<span class="nx">auth</span><span class="p">.</span><span class="nx">updateUser</span><span class="p">(</span><span class="s2">&quot;alice&quot;</span><span class="p">,</span> <span class="p">{</span><span class="nx">editor</span><span class="o">:</span> <span class="kc">true</span><span class="p">,</span> <span class="nx">department</span><span class="o">:</span> <span class="s2">&quot;news&quot;</span><span class="p">});</span>
+<span class="nx">auth</span><span class="p">.</span><span class="nx">updateUser</span><span class="p">(</span><span class="s2">&quot;bob&quot;</span><span class="p">,</span>   <span class="p">{</span><span class="nx">editor</span><span class="o">:</span> <span class="kc">false</span><span class="p">,</span> <span class="nx">department</span><span class="o">:</span> <span class="s2">&quot;sports&quot;</span><span class="p">});</span>
+
+<span class="c1">// in an endpoint callback</span>
+<span class="kd">function</span> <span class="nx">editArticle</span><span class="p">(</span><span class="nx">req</span><span class="p">)</span> <span class="p">{</span>
+    <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="nx">req</span><span class="p">.</span><span class="nx">userAuth</span> <span class="o">||</span> <span class="o">!</span><span class="nx">req</span><span class="p">.</span><span class="nx">userAuth</span><span class="p">.</span><span class="nx">editor</span><span class="p">)</span>
+        <span class="k">return</span> <span class="p">{</span><span class="nx">status</span><span class="o">:</span> <span class="mi">403</span><span class="p">,</span> <span class="nx">html</span><span class="o">:</span> <span class="s2">&quot;Editors only&quot;</span><span class="p">};</span>
+
+    <span class="k">if</span> <span class="p">(</span><span class="nx">req</span><span class="p">.</span><span class="nx">userAuth</span><span class="p">.</span><span class="nx">department</span> <span class="o">!==</span> <span class="nx">article</span><span class="p">.</span><span class="nx">department</span><span class="p">)</span>
+        <span class="k">return</span> <span class="p">{</span><span class="nx">status</span><span class="o">:</span> <span class="mi">403</span><span class="p">,</span> <span class="nx">html</span><span class="o">:</span> <span class="s2">&quot;Wrong department&quot;</span><span class="p">};</span>
+
+    <span class="c1">// proceed with edit...</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</div>
+</div>
+<div class="section" id="session-data-model">
+<h3>Session Data Model<a class="headerlink" href="#session-data-model" title="Permalink to this headline">¶</a></h3>
+<p>Session records are JSON objects containing all user properties
+(except <code class="docutils literal notranslate"><span class="pre">passwordHash</span></code>) plus session-specific fields:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
+    <span class="s2">&quot;username&quot;</span><span class="o">:</span>     <span class="s2">&quot;alice&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;name&quot;</span><span class="o">:</span>         <span class="s2">&quot;Alice Smith&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;email&quot;</span><span class="o">:</span>        <span class="s2">&quot;alice@example.com&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;authLevel&quot;</span><span class="o">:</span>    <span class="mi">0</span><span class="p">,</span>
+    <span class="s2">&quot;authMethod&quot;</span><span class="o">:</span>   <span class="s2">&quot;password&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;editor&quot;</span><span class="o">:</span>       <span class="kc">true</span><span class="p">,</span>
+    <span class="s2">&quot;department&quot;</span><span class="o">:</span>   <span class="s2">&quot;news&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;csrfToken&quot;</span><span class="o">:</span>    <span class="s2">&quot;url_safe_base64_token&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;expires&quot;</span><span class="o">:</span>      <span class="mi">1744300800</span><span class="p">,</span>
+    <span class="s2">&quot;lastRefresh&quot;</span><span class="o">:</span>  <span class="mi">1744214400</span><span class="p">,</span>
+    <span class="s2">&quot;created&quot;</span><span class="o">:</span>      <span class="mi">1744214400</span><span class="p">,</span>
+    <span class="s2">&quot;mustResetPassword&quot;</span><span class="o">:</span> <span class="kc">false</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>The <code class="docutils literal notranslate"><span class="pre">authMethod</span></code> field indicates how the user authenticated:
+<code class="docutils literal notranslate"><span class="pre">&quot;password&quot;</span></code> for email/password login, <code class="docutils literal notranslate"><span class="pre">&quot;google&quot;</span></code> for Google OAuth,
+<code class="docutils literal notranslate"><span class="pre">&quot;facebook&quot;</span></code> for Facebook OAuth, or any custom value from a plugin.
+Custom properties (like <code class="docutils literal notranslate"><span class="pre">editor</span></code> and <code class="docutils literal notranslate"><span class="pre">department</span></code> above) are
+application-defined and can be any JSON-serializable value.</p>
+</div>
+<div class="section" id="theme-support">
+<h3>Theme Support<a class="headerlink" href="#theme-support" title="Permalink to this headline">¶</a></h3>
+<p>The admin interface supports theming via an optional module at
+<code class="docutils literal notranslate"><span class="pre">data/auth/admin-theme.js</span></code>:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">module</span><span class="p">.</span><span class="nx">exports</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="nx">beginHtml</span><span class="o">:</span> <span class="s1">&#39;&lt;!DOCTYPE html&gt;&lt;html&gt;&lt;head&gt;...&lt;link rel=&quot;stylesheet&quot;&#39;</span>
+             <span class="o">+</span> <span class="s1">&#39; href=&quot;/css/site.css&quot;&gt;&lt;/head&gt;&lt;body&gt;&lt;nav&gt;...&lt;/nav&gt;&#39;</span>
+             <span class="o">+</span> <span class="s1">&#39;&lt;div class=&quot;content&quot;&gt;&#39;</span><span class="p">,</span>
+    <span class="nx">endHtml</span><span class="o">:</span>   <span class="s1">&#39;&lt;/div&gt;&lt;footer&gt;...&lt;/footer&gt;&lt;/body&gt;&lt;/html&gt;&#39;</span>
+<span class="p">};</span>
+</pre></div>
+</div>
+<p>If the theme module is not found, the admin pages render with a minimal
+built-in stylesheet.</p>
+</div>
+<div class="section" id="oauth-plugins">
+<h3>OAuth Plugins<a class="headerlink" href="#oauth-plugins" title="Permalink to this headline">¶</a></h3>
+<p>The auth system supports social login via a plugin architecture.
+Plugins are JavaScript files placed in the <code class="docutils literal notranslate"><span class="pre">apps/auth-plugins/</span></code>
+directory.  Three plugins are included: Google, Facebook, and a generic
+OAuth 2.0 plugin that can be configured for any standard provider.</p>
+<p>When the server starts, <code class="docutils literal notranslate"><span class="pre">auth.js</span></code> scans the plugin directory and
+calls each plugin’s <code class="docutils literal notranslate"><span class="pre">init()</span></code> function with the full auth configuration
+and an API object.  If the plugin’s required configuration is present
+(e.g., <code class="docutils literal notranslate"><span class="pre">oauth.google</span></code> in <code class="docutils literal notranslate"><span class="pre">auth-conf.js</span></code>), it activates and
+registers its endpoints.</p>
+<p><strong>How it works:</strong></p>
+<ol class="arabic simple">
+<li>The plugin registers a <em>start</em> endpoint and a <em>callback</em> endpoint.</li>
+<li>The start endpoint generates a random state token (stored in LMDB
+with a 10-minute expiry), then redirects the browser to the
+provider’s authorization page.</li>
+<li>The provider authenticates the user and redirects back to the
+callback URL with an authorization code and state token.</li>
+<li>The callback endpoint validates the state token, exchanges the code
+for an access token, fetches the user’s profile, and returns a
+<code class="docutils literal notranslate"><span class="pre">userData</span></code> object to <code class="docutils literal notranslate"><span class="pre">auth.js</span></code>.</li>
+<li><code class="docutils literal notranslate"><span class="pre">auth.js</span></code> creates or updates the user record and creates a session.
+All cookie handling (session cookie and display cookie) is managed
+by <code class="docutils literal notranslate"><span class="pre">auth.js</span></code>, not the plugin.</li>
+</ol>
+<div class="section" id="included-plugins">
+<h4>Included Plugins<a class="headerlink" href="#included-plugins" title="Permalink to this headline">¶</a></h4>
+<p><strong>Google</strong> (<code class="docutils literal notranslate"><span class="pre">auth-plugins/google.js</span></code>)</p>
+<p>Uses OpenID Connect.  The user’s Google <code class="docutils literal notranslate"><span class="pre">sub</span></code> (subject identifier)
+becomes the username, prefixed with <code class="docutils literal notranslate"><span class="pre">google_</span></code>.</p>
+<p>Configuration:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">oauth</span><span class="o">:</span> <span class="p">{</span>
+    <span class="nx">google</span><span class="o">:</span> <span class="p">{</span>
+        <span class="nx">clientId</span><span class="o">:</span>     <span class="s2">&quot;your-client-id.apps.googleusercontent.com&quot;</span><span class="p">,</span>
+        <span class="nx">clientSecret</span><span class="o">:</span> <span class="s2">&quot;your-client-secret&quot;</span><span class="p">,</span>
+        <span class="nx">callbackUrl</span><span class="o">:</span>  <span class="s2">&quot;https://example.com/apps/auth/oauth/google/callback&quot;</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>Endpoints:</p>
+<blockquote>
+<div><ul class="simple">
+<li><code class="docutils literal notranslate"><span class="pre">GET</span> <span class="pre">/apps/auth/oauth/google</span></code> — starts the OAuth flow.  Accepts
+an optional <code class="docutils literal notranslate"><span class="pre">returnTo</span></code> query parameter.</li>
+<li><code class="docutils literal notranslate"><span class="pre">GET</span> <span class="pre">/apps/auth/oauth/google/callback</span></code> — handles the callback
+from Google.</li>
+</ul>
+</div></blockquote>
+<p>To set up a Google OAuth client:</p>
+<ol class="arabic simple">
+<li>Go to the <a class="reference external" href="https://console.cloud.google.com/">Google Cloud Console</a>.</li>
+<li>Create or select a project.</li>
+<li>Navigate to <strong>APIs &amp; Services &gt; Credentials</strong>.</li>
+<li>Create an <strong>OAuth 2.0 Client ID</strong> (Web application type).</li>
+<li>Add your callback URL to <strong>Authorized redirect URIs</strong>.</li>
+<li>Copy the Client ID and Client Secret into <code class="docutils literal notranslate"><span class="pre">auth-conf.js</span></code>.</li>
+</ol>
+<p><strong>Facebook</strong> (<code class="docutils literal notranslate"><span class="pre">auth-plugins/facebook.js</span></code>)</p>
+<p>Uses the Facebook Graph API.  The user’s Facebook ID becomes the
+username, prefixed with <code class="docutils literal notranslate"><span class="pre">fb_</span></code>.</p>
+<p>Configuration:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">oauth</span><span class="o">:</span> <span class="p">{</span>
+    <span class="nx">facebook</span><span class="o">:</span> <span class="p">{</span>
+        <span class="nx">clientId</span><span class="o">:</span>     <span class="s2">&quot;your-app-id&quot;</span><span class="p">,</span>
+        <span class="nx">clientSecret</span><span class="o">:</span> <span class="s2">&quot;your-app-secret&quot;</span><span class="p">,</span>
+        <span class="nx">callbackUrl</span><span class="o">:</span>  <span class="s2">&quot;https://example.com/apps/auth/oauth/facebook/callback&quot;</span><span class="p">,</span>
+        <span class="nx">apiVersion</span><span class="o">:</span>   <span class="s2">&quot;v21.0&quot;</span>    <span class="c1">// optional, defaults to &quot;v21.0&quot;</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>Endpoints:</p>
+<blockquote>
+<div><ul class="simple">
+<li><code class="docutils literal notranslate"><span class="pre">GET</span> <span class="pre">/apps/auth/oauth/facebook</span></code> — starts the OAuth flow.
+Accepts an optional <code class="docutils literal notranslate"><span class="pre">returnTo</span></code> query parameter.</li>
+<li><code class="docutils literal notranslate"><span class="pre">GET</span> <span class="pre">/apps/auth/oauth/facebook/callback</span></code> — handles the callback
+from Facebook.</li>
+</ul>
+</div></blockquote>
+<p>To set up a Facebook app:</p>
+<ol class="arabic simple">
+<li>Go to <a class="reference external" href="https://developers.facebook.com/">developers.facebook.com</a>.</li>
+<li>Create a new app (Consumer type).</li>
+<li>Add <strong>Facebook Login</strong> to the app.</li>
+<li>Under <strong>Facebook Login &gt; Settings</strong>, add your callback URL to
+<strong>Valid OAuth Redirect URIs</strong>.</li>
+<li>Copy the App ID and App Secret into <code class="docutils literal notranslate"><span class="pre">auth-conf.js</span></code>.</li>
+<li>The app must be in <strong>Live</strong> mode for non-developer users to log in.</li>
+</ol>
+<p><strong>Generic</strong> (<code class="docutils literal notranslate"><span class="pre">auth-plugins/generic.js</span></code>)</p>
+<p>Handles any standard OAuth 2.0 or OpenID Connect provider through
+configuration.  Supports PKCE (Proof Key for Code Exchange) for
+providers that require it (e.g., Twitter/X).  A single plugin file
+can handle multiple providers — each entry in <code class="docutils literal notranslate"><span class="pre">oauth</span></code> with
+<code class="docutils literal notranslate"><span class="pre">plugin:</span> <span class="pre">&quot;generic&quot;</span></code> gets its own pair of endpoints.</p>
+<p>Configuration (GitHub example):</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">oauth</span><span class="o">:</span> <span class="p">{</span>
+    <span class="nx">github</span><span class="o">:</span> <span class="p">{</span>
+        <span class="nx">plugin</span><span class="o">:</span>       <span class="s2">&quot;generic&quot;</span><span class="p">,</span>
+        <span class="nx">authorizeUrl</span><span class="o">:</span> <span class="s2">&quot;https://github.com/login/oauth/authorize&quot;</span><span class="p">,</span>
+        <span class="nx">tokenUrl</span><span class="o">:</span>     <span class="s2">&quot;https://github.com/login/oauth/access_token&quot;</span><span class="p">,</span>
+        <span class="nx">userInfoUrl</span><span class="o">:</span>  <span class="s2">&quot;https://api.github.com/user&quot;</span><span class="p">,</span>
+        <span class="nx">emailUrl</span><span class="o">:</span>     <span class="s2">&quot;https://api.github.com/user/emails&quot;</span><span class="p">,</span>
+        <span class="nx">clientId</span><span class="o">:</span>     <span class="s2">&quot;your-client-id&quot;</span><span class="p">,</span>
+        <span class="nx">clientSecret</span><span class="o">:</span> <span class="s2">&quot;your-client-secret&quot;</span><span class="p">,</span>
+        <span class="nx">callbackUrl</span><span class="o">:</span>  <span class="s2">&quot;https://example.com/apps/auth/oauth/github/callback&quot;</span><span class="p">,</span>
+        <span class="nx">scope</span><span class="o">:</span>        <span class="s2">&quot;user:email&quot;</span><span class="p">,</span>
+        <span class="nx">fieldMap</span><span class="o">:</span> <span class="p">{</span>
+            <span class="nx">id</span><span class="o">:</span>       <span class="s2">&quot;id&quot;</span><span class="p">,</span>
+            <span class="nx">name</span><span class="o">:</span>     <span class="s2">&quot;name&quot;</span><span class="p">,</span>
+            <span class="nx">email</span><span class="o">:</span>    <span class="s2">&quot;email&quot;</span><span class="p">,</span>
+            <span class="nx">picture</span><span class="o">:</span>  <span class="s2">&quot;avatar_url&quot;</span>
+        <span class="p">}</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>Configuration (Twitter/X example with PKCE):</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">oauth</span><span class="o">:</span> <span class="p">{</span>
+    <span class="nx">twitter</span><span class="o">:</span> <span class="p">{</span>
+        <span class="nx">plugin</span><span class="o">:</span>       <span class="s2">&quot;generic&quot;</span><span class="p">,</span>
+        <span class="nx">authorizeUrl</span><span class="o">:</span> <span class="s2">&quot;https://twitter.com/i/oauth2/authorize&quot;</span><span class="p">,</span>
+        <span class="nx">tokenUrl</span><span class="o">:</span>     <span class="s2">&quot;https://api.twitter.com/2/oauth2/token&quot;</span><span class="p">,</span>
+        <span class="nx">userInfoUrl</span><span class="o">:</span>  <span class="s2">&quot;https://api.twitter.com/2/users/me?user.fields=profile_image_url&quot;</span><span class="p">,</span>
+        <span class="nx">clientId</span><span class="o">:</span>     <span class="s2">&quot;your-client-id&quot;</span><span class="p">,</span>
+        <span class="nx">clientSecret</span><span class="o">:</span> <span class="s2">&quot;your-client-secret&quot;</span><span class="p">,</span>
+        <span class="nx">callbackUrl</span><span class="o">:</span>  <span class="s2">&quot;https://example.com/apps/auth/oauth/twitter/callback&quot;</span><span class="p">,</span>
+        <span class="nx">scope</span><span class="o">:</span>        <span class="s2">&quot;users.read tweet.read&quot;</span><span class="p">,</span>
+        <span class="nx">pkce</span><span class="o">:</span>         <span class="kc">true</span><span class="p">,</span>
+        <span class="nx">fieldMap</span><span class="o">:</span> <span class="p">{</span>
+            <span class="nx">id</span><span class="o">:</span>       <span class="s2">&quot;id&quot;</span><span class="p">,</span>
+            <span class="nx">name</span><span class="o">:</span>     <span class="s2">&quot;name&quot;</span><span class="p">,</span>
+            <span class="nx">email</span><span class="o">:</span>    <span class="s2">&quot;email&quot;</span><span class="p">,</span>
+            <span class="nx">picture</span><span class="o">:</span>  <span class="s2">&quot;profile_image_url&quot;</span>
+        <span class="p">}</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>Generic plugin configuration properties:</p>
+<blockquote>
+<div><ul class="simple">
+<li><code class="docutils literal notranslate"><span class="pre">plugin</span></code> — must be <code class="docutils literal notranslate"><span class="pre">&quot;generic&quot;</span></code> to select this plugin.</li>
+<li><code class="docutils literal notranslate"><span class="pre">authorizeUrl</span></code> — the provider’s authorization endpoint.</li>
+<li><code class="docutils literal notranslate"><span class="pre">tokenUrl</span></code> — the provider’s token exchange endpoint.</li>
+<li><code class="docutils literal notranslate"><span class="pre">userInfoUrl</span></code> — the provider’s user info endpoint (optional
+if the provider returns an <code class="docutils literal notranslate"><span class="pre">id_token</span></code> JWT in the token response).</li>
+<li><code class="docutils literal notranslate"><span class="pre">clientId</span></code>, <code class="docutils literal notranslate"><span class="pre">clientSecret</span></code> — OAuth credentials from the provider.</li>
+<li><code class="docutils literal notranslate"><span class="pre">callbackUrl</span></code> — your callback URL, registered with the provider.</li>
+<li><code class="docutils literal notranslate"><span class="pre">scope</span></code> — space-separated scopes (default: <code class="docutils literal notranslate"><span class="pre">&quot;openid</span> <span class="pre">profile</span> <span class="pre">email&quot;</span></code>).</li>
+<li><code class="docutils literal notranslate"><span class="pre">pkce</span></code> — <span class="green">Boolean</span>, enable PKCE with S256 challenge method
+(default: <code class="docutils literal notranslate"><span class="pre">false</span></code>).</li>
+<li><code class="docutils literal notranslate"><span class="pre">emailUrl</span></code> — <span class="green">String</span> (optional).  A separate endpoint to
+fetch the user’s email when the main profile does not include one.
+Some providers (e.g., GitHub) require a separate API call to retrieve
+email addresses.  The response may be an array of objects with
+<code class="docutils literal notranslate"><span class="pre">email</span></code>, <code class="docutils literal notranslate"><span class="pre">primary</span></code>, and <code class="docutils literal notranslate"><span class="pre">verified</span></code> fields (GitHub format), an
+array of strings, or an object with an <code class="docutils literal notranslate"><span class="pre">email</span></code> field.  The plugin
+selects the primary verified email when available.</li>
+<li><code class="docutils literal notranslate"><span class="pre">fieldMap</span></code> — <span class="green">Object</span>, maps standard field names to the
+provider’s field names.  Properties: <code class="docutils literal notranslate"><span class="pre">id</span></code>, <code class="docutils literal notranslate"><span class="pre">name</span></code>, <code class="docutils literal notranslate"><span class="pre">email</span></code>,
+<code class="docutils literal notranslate"><span class="pre">picture</span></code>.  Defaults to OIDC standard names (<code class="docutils literal notranslate"><span class="pre">sub</span></code>, <code class="docutils literal notranslate"><span class="pre">name</span></code>,
+<code class="docutils literal notranslate"><span class="pre">email</span></code>, <code class="docutils literal notranslate"><span class="pre">picture</span></code>).</li>
+</ul>
+</div></blockquote>
+<p>The plugin handles two response formats automatically:</p>
+<blockquote>
+<div><ul class="simple">
+<li><strong>OIDC providers</strong> — the <code class="docutils literal notranslate"><span class="pre">id_token</span></code> JWT in the token response
+is decoded directly; no <code class="docutils literal notranslate"><span class="pre">userInfoUrl</span></code> fetch is needed.</li>
+<li><strong>Plain OAuth 2.0 providers</strong> — the <code class="docutils literal notranslate"><span class="pre">access_token</span></code> is used to
+fetch the user profile from <code class="docutils literal notranslate"><span class="pre">userInfoUrl</span></code> via
+<code class="docutils literal notranslate"><span class="pre">Authorization:</span> <span class="pre">Bearer</span></code> header.</li>
+</ul>
+</div></blockquote>
+<p>If the user info response wraps the profile in a <code class="docutils literal notranslate"><span class="pre">data</span></code> object
+(as Twitter/X does), it is automatically unwrapped.</p>
+</div>
+<div class="section" id="using-oauth-on-login-pages">
+<h4>Using OAuth on Login Pages<a class="headerlink" href="#using-oauth-on-login-pages" title="Permalink to this headline">¶</a></h4>
+<p>When plugins are loaded, the built-in login page at
+<code class="docutils literal notranslate"><span class="pre">/apps/auth/login</span></code> automatically shows a button for each active
+provider with a small icon and label.  Icons are resolved in this
+order:</p>
+<ol class="arabic simple">
+<li>The <code class="docutils literal notranslate"><span class="pre">icon</span></code> property in the provider’s config (a URL to any image).</li>
+<li>The <code class="docutils literal notranslate"><span class="pre">favicon.ico</span></code> from the provider’s website.</li>
+</ol>
+<p>The button label defaults to the capitalized provider name (e.g.,
+<code class="docutils literal notranslate"><span class="pre">github</span></code> becomes <code class="docutils literal notranslate"><span class="pre">Github</span></code>), with correct casing for well-known
+names (<code class="docutils literal notranslate"><span class="pre">GitHub</span></code>, <code class="docutils literal notranslate"><span class="pre">LinkedIn</span></code>, etc.).  Override with the <code class="docutils literal notranslate"><span class="pre">label</span></code>
+property:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">oauth</span><span class="o">:</span> <span class="p">{</span>
+    <span class="nx">github</span><span class="o">:</span> <span class="p">{</span>
+        <span class="nx">plugin</span><span class="o">:</span> <span class="s2">&quot;generic&quot;</span><span class="p">,</span>
+        <span class="nx">label</span><span class="o">:</span>  <span class="s2">&quot;GitHub&quot;</span><span class="p">,</span>           <span class="c1">// custom display name</span>
+        <span class="nx">icon</span><span class="o">:</span>   <span class="s2">&quot;/images/gh.png&quot;</span><span class="p">,</span>   <span class="c1">// custom icon (optional)</span>
+        <span class="c1">// ... other config ...</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>For custom login pages, link to the plugin’s start endpoint
+with an optional <code class="docutils literal notranslate"><span class="pre">returnTo</span></code> parameter:</p>
+<div class="highlight-html notranslate"><div class="highlight"><pre><span></span><span class="p">&lt;</span><span class="nt">a</span> <span class="na">href</span><span class="o">=</span><span class="s">&quot;/apps/auth/oauth/google?returnTo=/dashboard&quot;</span><span class="p">&gt;</span>
+    Sign in with Google
+<span class="p">&lt;/</span><span class="nt">a</span><span class="p">&gt;</span>
+<span class="p">&lt;</span><span class="nt">a</span> <span class="na">href</span><span class="o">=</span><span class="s">&quot;/apps/auth/oauth/facebook?returnTo=/dashboard&quot;</span><span class="p">&gt;</span>
+    Sign in with Facebook
+<span class="p">&lt;/</span><span class="nt">a</span><span class="p">&gt;</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="oauth-user-records">
+<h4>OAuth User Records<a class="headerlink" href="#oauth-user-records" title="Permalink to this headline">¶</a></h4>
+<p>Users created via OAuth have the following properties:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
+    <span class="nx">username</span><span class="o">:</span>      <span class="s2">&quot;google_123456789&quot;</span><span class="p">,</span>  <span class="c1">// or &quot;fb_123456789&quot;</span>
+    <span class="nx">name</span><span class="o">:</span>          <span class="s2">&quot;Alice Smith&quot;</span><span class="p">,</span>
+    <span class="nx">email</span><span class="o">:</span>         <span class="s2">&quot;alice@example.com&quot;</span><span class="p">,</span>
+    <span class="nx">picture</span><span class="o">:</span>       <span class="s2">&quot;https://...&quot;</span><span class="p">,</span>       <span class="c1">// profile picture URL</span>
+    <span class="nx">authMethod</span><span class="o">:</span>    <span class="s2">&quot;google&quot;</span><span class="p">,</span>            <span class="c1">// or &quot;facebook&quot;</span>
+    <span class="nx">oauthProvider</span><span class="o">:</span> <span class="s2">&quot;google&quot;</span><span class="p">,</span>            <span class="c1">// or &quot;facebook&quot;</span>
+    <span class="nx">oauthId</span><span class="o">:</span>       <span class="s2">&quot;google:123456789&quot;</span><span class="p">,</span>  <span class="c1">// or &quot;facebook:123456789&quot;</span>
+    <span class="nx">emailVerified</span><span class="o">:</span> <span class="kc">true</span><span class="p">,</span>
+    <span class="nx">authLevel</span><span class="o">:</span>     <span class="mi">50</span>                   <span class="c1">// default level for new users</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>On subsequent logins, the user’s name, email, picture, and other
+provider data are updated from the provider’s response, keeping the
+local record in sync.</p>
+</div>
+<div class="section" id="writing-a-custom-plugin">
+<h4>Writing a Custom Plugin<a class="headerlink" href="#writing-a-custom-plugin" title="Permalink to this headline">¶</a></h4>
+<p>A plugin is a JavaScript file in <code class="docutils literal notranslate"><span class="pre">apps/auth-plugins/</span></code> that exports
+three properties:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="c1">// apps/auth-plugins/my-provider.js</span>
+
+<span class="nx">exports</span><span class="p">.</span><span class="nx">name</span> <span class="o">=</span> <span class="s2">&quot;my-provider&quot;</span><span class="p">;</span>
+
+<span class="nx">exports</span><span class="p">.</span><span class="nx">init</span> <span class="o">=</span> <span class="kd">function</span><span class="p">(</span><span class="nx">conf</span><span class="p">,</span> <span class="nx">api</span><span class="p">)</span> <span class="p">{</span>
+    <span class="c1">// conf is the full auth-conf.js object.</span>
+    <span class="c1">// api provides: init(), createUser(), getUser(), updateUser(),</span>
+    <span class="c1">//   login(), logout(), generateToken(), getDbPath(),</span>
+    <span class="c1">//   getCookieName(), refreshSessions(), createOAuthSession().</span>
+    <span class="c1">//</span>
+    <span class="c1">// Return true if the plugin should activate, false to skip.</span>
+
+    <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="nx">conf</span><span class="p">.</span><span class="nx">oauth</span> <span class="o">||</span> <span class="o">!</span><span class="nx">conf</span><span class="p">.</span><span class="nx">oauth</span><span class="p">.</span><span class="nx">myProvider</span><span class="p">)</span> <span class="k">return</span> <span class="kc">false</span><span class="p">;</span>
+
+    <span class="c1">// store config, api references for later use</span>
+    <span class="k">return</span> <span class="kc">true</span><span class="p">;</span>
+<span class="p">};</span>
+
+<span class="nx">exports</span><span class="p">.</span><span class="nx">endpoints</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="c1">// Start endpoint — redirect to provider</span>
+    <span class="s2">&quot;/oauth/my-provider&quot;</span><span class="o">:</span> <span class="kd">function</span><span class="p">(</span><span class="nx">req</span><span class="p">)</span> <span class="p">{</span>
+        <span class="kd">var</span> <span class="nx">returnTo</span> <span class="o">=</span> <span class="p">(</span><span class="nx">req</span><span class="p">.</span><span class="nx">query</span> <span class="o">&amp;&amp;</span> <span class="nx">req</span><span class="p">.</span><span class="nx">query</span><span class="p">.</span><span class="nx">returnTo</span><span class="p">)</span>
+                     <span class="o">?</span> <span class="nx">req</span><span class="p">.</span><span class="nx">query</span><span class="p">.</span><span class="nx">returnTo</span> <span class="o">:</span> <span class="s2">&quot;/&quot;</span><span class="p">;</span>
+
+        <span class="c1">// generate state token, store in LMDB, redirect to provider</span>
+        <span class="c1">// ...</span>
+
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="nx">status</span><span class="o">:</span> <span class="mi">302</span><span class="p">,</span>
+            <span class="nx">headers</span><span class="o">:</span> <span class="p">{</span><span class="s2">&quot;location&quot;</span><span class="o">:</span> <span class="nx">providerAuthUrl</span><span class="p">}</span>
+        <span class="p">};</span>
+    <span class="p">},</span>
+
+    <span class="c1">// Callback endpoint — handle provider response</span>
+    <span class="s2">&quot;/oauth/my-provider/callback&quot;</span><span class="o">:</span> <span class="kd">function</span><span class="p">(</span><span class="nx">req</span><span class="p">)</span> <span class="p">{</span>
+        <span class="c1">// validate state, exchange code for token, fetch profile</span>
+        <span class="c1">// ...</span>
+
+        <span class="c1">// return userData — auth.js handles session and cookies</span>
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="nx">ok</span><span class="o">:</span> <span class="kc">true</span><span class="p">,</span>
+            <span class="nx">returnTo</span><span class="o">:</span> <span class="nx">savedReturnTo</span><span class="p">,</span>
+            <span class="nx">userData</span><span class="o">:</span> <span class="p">{</span>
+                <span class="nx">username</span><span class="o">:</span>      <span class="s2">&quot;myprov_&quot;</span> <span class="o">+</span> <span class="nx">uniqueId</span><span class="p">,</span>
+                <span class="nx">name</span><span class="o">:</span>          <span class="s2">&quot;User Name&quot;</span><span class="p">,</span>
+                <span class="nx">email</span><span class="o">:</span>         <span class="s2">&quot;user@example.com&quot;</span><span class="p">,</span>
+                <span class="nx">picture</span><span class="o">:</span>       <span class="s2">&quot;https://...&quot;</span><span class="p">,</span>
+                <span class="nx">authMethod</span><span class="o">:</span>    <span class="s2">&quot;my-provider&quot;</span><span class="p">,</span>
+                <span class="nx">oauthProvider</span><span class="o">:</span> <span class="s2">&quot;my-provider&quot;</span><span class="p">,</span>
+                <span class="nx">oauthId</span><span class="o">:</span>       <span class="s2">&quot;my-provider:&quot;</span> <span class="o">+</span> <span class="nx">uniqueId</span><span class="p">,</span>
+                <span class="nx">emailVerified</span><span class="o">:</span> <span class="kc">true</span>
+            <span class="p">}</span>
+        <span class="p">};</span>
+    <span class="p">}</span>
+<span class="p">};</span>
+</pre></div>
+</div>
+<p>The callback endpoint’s return value is handled by <code class="docutils literal notranslate"><span class="pre">auth.js</span></code>:</p>
+<blockquote>
+<div><ul class="simple">
+<li>If it has a <code class="docutils literal notranslate"><span class="pre">status</span></code> property (e.g., a redirect on error), it is
+passed through as-is.</li>
+<li>If it has <code class="docutils literal notranslate"><span class="pre">ok:</span> <span class="pre">true</span></code> and <code class="docutils literal notranslate"><span class="pre">userData</span></code>, <code class="docutils literal notranslate"><span class="pre">auth.js</span></code> calls
+<code class="docutils literal notranslate"><span class="pre">createOAuthSession(userData)</span></code> to create or update the user,
+create the session, and build all cookies (session cookie and
+display cookie).</li>
+<li>If <code class="docutils literal notranslate"><span class="pre">ok</span></code> is falsy, the user is redirected to the login page with
+an error.</li>
+</ul>
+</div></blockquote>
+<p>The <code class="docutils literal notranslate"><span class="pre">userData</span></code> object can contain any properties.  Standard fields
+(<code class="docutils literal notranslate"><span class="pre">username</span></code>, <code class="docutils literal notranslate"><span class="pre">name</span></code>, <code class="docutils literal notranslate"><span class="pre">email</span></code>, <code class="docutils literal notranslate"><span class="pre">picture</span></code>, <code class="docutils literal notranslate"><span class="pre">authMethod</span></code>,
+<code class="docutils literal notranslate"><span class="pre">oauthProvider</span></code>, <code class="docutils literal notranslate"><span class="pre">oauthId</span></code>, <code class="docutils literal notranslate"><span class="pre">emailVerified</span></code>) are recognized by
+<code class="docutils literal notranslate"><span class="pre">auth.js</span></code>; additional fields are stored on the user record and
+appear in <code class="docutils literal notranslate"><span class="pre">req.userAuth</span></code> after login.</p>
+</div>
+</div>
+<div class="section" id="hooks-for-custom-authentication-flows">
+<h3>Hooks for Custom Authentication Flows<a class="headerlink" href="#hooks-for-custom-authentication-flows" title="Permalink to this headline">¶</a></h3>
+<p>The configuration file supports optional callback hooks for extending
+the authentication flow:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">module</span><span class="p">.</span><span class="nx">exports</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="c1">// ... standard config ...</span>
+
+    <span class="c1">// Called after password verification, before session creation.</span>
+    <span class="c1">// Return true to proceed, {redirect: &quot;/2fa&quot;} for 2FA, false to deny.</span>
+    <span class="nx">onLogin</span><span class="o">:</span> <span class="kd">function</span><span class="p">(</span><span class="nx">user</span><span class="p">,</span> <span class="nx">req</span><span class="p">)</span> <span class="p">{</span>
+        <span class="k">if</span> <span class="p">(</span><span class="nx">user</span><span class="p">.</span><span class="nx">twoFactorEnabled</span><span class="p">)</span>
+            <span class="k">return</span> <span class="p">{</span><span class="nx">redirect</span><span class="o">:</span> <span class="s2">&quot;/apps/auth/2fa?user=&quot;</span> <span class="o">+</span> <span class="nx">user</span><span class="p">.</span><span class="nx">username</span><span class="p">};</span>
+        <span class="k">return</span> <span class="kc">true</span><span class="p">;</span>
+    <span class="p">},</span>
+
+    <span class="c1">// Called after a session is created. Use for audit logging.</span>
+    <span class="nx">onSessionCreated</span><span class="o">:</span> <span class="kd">function</span><span class="p">(</span><span class="nx">user</span><span class="p">,</span> <span class="nx">session</span><span class="p">,</span> <span class="nx">req</span><span class="p">)</span> <span class="p">{</span> <span class="p">},</span>
+
+    <span class="c1">// Called on logout. Use for audit logging.</span>
+    <span class="nx">onLogout</span><span class="o">:</span> <span class="kd">function</span><span class="p">(</span><span class="nx">user</span><span class="p">,</span> <span class="nx">req</span><span class="p">)</span> <span class="p">{</span> <span class="p">}</span>
+<span class="p">};</span>
+</pre></div>
+</div>
+</div>
+</div>
+<div class="section" id="security-considerations">
+<h2>Security Considerations<a class="headerlink" href="#security-considerations" title="Permalink to this headline">¶</a></h2>
+<blockquote>
+<div><ul class="simple">
+<li><strong>Session tokens</strong> are 32 bytes of cryptographically random data,
+URL-safe base64 encoded.</li>
+<li><strong>Passwords</strong> are hashed using <code class="docutils literal notranslate"><span class="pre">crypto.passwd()</span></code> (SHA-512 crypt
+with random salt).</li>
+<li><strong>Session cookies</strong> are set with <code class="docutils literal notranslate"><span class="pre">HttpOnly</span></code>, <code class="docutils literal notranslate"><span class="pre">SameSite=Lax</span></code>,
+and <code class="docutils literal notranslate"><span class="pre">Secure</span></code> flags by default.  The <code class="docutils literal notranslate"><span class="pre">Secure</span></code> flag means
+cookies are only sent over HTTPS.  Set
+<code class="docutils literal notranslate"><span class="pre">cookieFlags:</span> <span class="pre">{secure:</span> <span class="pre">false}</span></code> explicitly if running without
+HTTPS.  The server cannot auto-detect HTTPS because it may be
+behind a reverse proxy.</li>
+<li><strong>CSRF tokens</strong> are checked on all state-changing requests from
+authenticated sessions.</li>
+<li><strong>Account lockout</strong> prevents brute-force password attacks (5
+attempts in 5 minutes, 15-minute lockout, all configurable).</li>
+<li><strong>Password policy</strong> enforces a minimum length (default 7
+characters, configurable via <code class="docutils literal notranslate"><span class="pre">minPasswordLength</span></code>).</li>
+<li><strong>Timing attack protection</strong> — login and registration use a
+constant-time pattern.  When a username does not exist, a dummy
+password hash is computed to match the timing of a real password
+check, preventing user enumeration via response time measurement.</li>
+<li><strong>Session revocation</strong> occurs automatically on password changes
+and password resets.</li>
+<li><strong>Email cooldown</strong> — verification and password reset emails are
+limited to one per username per 60 seconds, preventing email
+bombing regardless of the number of source IPs.</li>
+<li><strong>Expired record cleanup</strong> — expired sessions, reset tokens,
+verification tokens, and lockout records are periodically cleaned
+from LMDB (approximately once per 20 logins).  Manual cleanup
+is also available via <code class="docutils literal notranslate"><span class="pre">rampart</span> <span class="pre">apps/auth.js</span> <span class="pre">cleanup</span></code>.</li>
+<li><strong>LMDB file permissions</strong> are set to <code class="docutils literal notranslate"><span class="pre">0600</span></code> when the server
+starts as root and switches to an unprivileged user.</li>
+<li><strong>Open redirect protection</strong> — the <code class="docutils literal notranslate"><span class="pre">returnTo</span></code> parameter in
+login redirects is validated to be a local path.</li>
+<li><strong>OAuth state tokens</strong> — OAuth flows use a random state token
+stored in LMDB with a 10-minute expiry to prevent CSRF attacks
+during the authorization redirect.  The token is consumed on
+first use.</li>
+<li><strong>Display cookie</strong> — the optional display cookie is <strong>not</strong>
+HttpOnly and is readable by client-side JavaScript.  It should
+contain only non-sensitive display data (name, picture URL).
+It does not grant authentication — the HttpOnly session cookie
+is the sole source of auth.</li>
+<li><strong>Rate limiting</strong> — the server’s <code class="docutils literal notranslate"><span class="pre">rateLimit</span></code> configuration
+(see <a class="reference internal" href="rampart-server.html"><span class="doc">The rampart-server HTTP module</span></a>) can be used to limit requests to
+auth endpoints at the C level, before any JavaScript runs.</li>
+</ul>
+</div></blockquote>
+</div>
+<div class="section" id="quick-start">
+<h2>Quick Start<a class="headerlink" href="#quick-start" title="Permalink to this headline">¶</a></h2>
+<ol class="arabic">
+<li><p class="first">Enable authentication in <code class="docutils literal notranslate"><span class="pre">web_server_conf.js</span></code>:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">authMod</span><span class="o">:</span>     <span class="kc">true</span><span class="p">,</span>
+<span class="nx">authModConf</span><span class="o">:</span> <span class="nx">working_directory</span> <span class="o">+</span> <span class="s1">&#39;/auth-conf.js&#39;</span><span class="p">,</span>
+</pre></div>
+</div>
+</li>
+<li><p class="first">Run initial setup:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>cd web_server
+rampart apps/auth.js
+</pre></div>
+</div>
+<p>Follow the prompts to create an admin user.</p>
+</li>
+<li><p class="first">Start (or restart) the server:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>rampart web_server_conf.js start
+</pre></div>
+</div>
+</li>
+<li><p class="first">Visit <code class="docutils literal notranslate"><span class="pre">http://yourserver/apps/auth/login</span></code> to log in.</p>
+</li>
+<li><p class="first">Visit <code class="docutils literal notranslate"><span class="pre">http://yourserver/apps/auth/admin/</span></code> for the admin panel.</p>
+</li>
+<li><p class="first">If not using HTTPS, set <code class="docutils literal notranslate"><span class="pre">cookieFlags:</span> <span class="pre">{secure:</span> <span class="pre">false}</span></code> in
+<code class="docutils literal notranslate"><span class="pre">auth-conf.js</span></code>.  The <code class="docutils literal notranslate"><span class="pre">Secure</span></code> flag defaults to <code class="docutils literal notranslate"><span class="pre">true</span></code>.</p>
+</li>
+<li><p class="first">Edit <code class="docutils literal notranslate"><span class="pre">auth-conf.js</span></code> to configure protected paths, session
+expiry, CSRF, and lockout settings.</p>
+</li>
+<li><p class="first">To enable OAuth login, add provider credentials to <code class="docutils literal notranslate"><span class="pre">auth-conf.js</span></code>:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">oauth</span><span class="o">:</span> <span class="p">{</span>
+    <span class="nx">google</span><span class="o">:</span> <span class="p">{</span>
+        <span class="nx">clientId</span><span class="o">:</span>     <span class="s2">&quot;...&quot;</span><span class="p">,</span>
+        <span class="nx">clientSecret</span><span class="o">:</span> <span class="s2">&quot;...&quot;</span><span class="p">,</span>
+        <span class="nx">callbackUrl</span><span class="o">:</span>  <span class="s2">&quot;https://yourserver/apps/auth/oauth/google/callback&quot;</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>Place the corresponding plugin file (e.g., <code class="docutils literal notranslate"><span class="pre">google.js</span></code>) in
+<code class="docutils literal notranslate"><span class="pre">apps/auth-plugins/</span></code>.  For other providers, use the generic
+plugin with <code class="docutils literal notranslate"><span class="pre">plugin:</span> <span class="pre">&quot;generic&quot;</span></code> and configure the URLs and
+field mapping for that provider.</p>
+</li>
+<li><p class="first">To show user info on static pages, add a display cookie:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">displayCookie</span><span class="o">:</span> <span class="p">{</span>
+    <span class="nx">cookieName</span><span class="o">:</span> <span class="s2">&quot;rp_user&quot;</span><span class="p">,</span>
+    <span class="nx">fields</span><span class="o">:</span> <span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">,</span> <span class="s2">&quot;picture&quot;</span><span class="p">]</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</li>
+</ol>
+</div>
+</div>
+
+
+           </div>
+          </div>
+          <footer>
+  
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+      
+        <a href="rampart-net.html" class="btn btn-neutral float-right" title="The rampart-net module" accesskey="n">Next <span class="fa fa-arrow-circle-right"></span></a>
+      
+      
+        <a href="rampart-server.html" class="btn btn-neutral" title="The rampart-server HTTP module" accesskey="p"><span class="fa fa-arrow-circle-left"></span> Previous</a>
+      
+    </div>
+  
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &copy; Copyright 2026, Moat Crossing Systems.
+
+    </p>
+  </div>
+  Built with <a href="http://sphinx-doc.org/">Sphinx</a> and ❤️  using a custom <a href="https://github.com/LinxiFan/Sphinx-theme">theme</a> based on <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+
+  
+
+    <script type="text/javascript">
+        var DOCUMENTATION_OPTIONS = {
+            URL_ROOT:'./',
+            VERSION:'0.7.2',
+            COLLAPSE_INDEX:false,
+            FILE_SUFFIX:'.html',
+            HAS_SOURCE:  true,
+            SOURCELINK_SUFFIX: '.txt'
+        };
+    </script>
+      <script type="text/javascript" src="_static/jquery.js"></script>
+      <script type="text/javascript" src="_static/underscore.js"></script>
+      <script type="text/javascript" src="_static/doctools.js"></script>
+      <script type="text/javascript" src="_static/language_data.js"></script>
+      <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/latest.js?config=TeX-AMS-MML_HTMLorMML"></script>
+
+  
+
+  
+  
+    <script type="text/javascript" src="_static/js/theme.js"></script>
+  
+
+  
+  
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.StickyNav.enable();
+      });
+  </script>
+   
+
+</body>
+</html>

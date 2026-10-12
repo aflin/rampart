@@ -2776,8 +2776,10 @@ htp__connection_writecb_(struct bufferevent * bev, void * arg)
         return;
     }
 
-    /* websockets: check for disconnect request -deferred */
-    if(req && req->websock && req->disconnect && req->flags & EVHTP_REQ_FLAG_WS_DIS_DEFER)
+    /* websockets: check for disconnect request.  Deferred ones always land here;
+       immediate ones do too when requested outside the read callback (timers,
+       other events), which evhtp_ws_disconnect() schedules us for. */
+    if(req && req->websock && req->disconnect)
     {
         evhtp_ws_do_disconnect(req);
         return;

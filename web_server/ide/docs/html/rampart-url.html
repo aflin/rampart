@@ -1,0 +1,505 @@
+
+
+<!DOCTYPE html>
+<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
+<!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <title>The rampart-url module &mdash; Rampart 0.7.2 documentation</title>
+  
+
+  
+  
+
+  
+
+  
+  
+    
+
+  
+
+  
+  
+    <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
+  
+
+  
+    <link rel="stylesheet" href="_static/theme_overrides.css" type="text/css" />
+  
+    <link rel="stylesheet" href="_static/hacks.css" type="text/css" />
+  
+
+  
+        <link rel="index" title="Index"
+              href="genindex.html"/>
+        <link rel="search" title="Search" href="search.html"/>
+    <link rel="top" title="Rampart 0.7.2 documentation" href="index.html"/>
+        <link rel="next" title="The rampart-gm module" href="rampart-gm.html"/>
+        <link rel="prev" title="The rampart-almanac module" href="rampart-almanac.html"/> 
+
+  
+  <script src="_static/js/modernizr.min.js"></script>
+
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+   
+  <div class="wy-grid-for-nav">
+
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search">
+          
+
+          
+            <a href="index.html" class="icon icon-home"> Rampart
+          
+
+          
+          </a>
+
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+                <p class="caption"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="rampart-main.html">Rampart JavaScript</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-utils.html">Rampart Utility Functions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-thread.html">Rampart Thread Functions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-vector.html">Rampart Vector Functions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="sqltoc.html">The rampart-sql module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-server.html">The rampart-server module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-auth.html">The rampart-auth module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-net.html">The rampart-net module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-html.html">The rampart-html module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-crypto.html">The rampart-crypto module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-curl.html">The rampart-curl module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-lmdb.html">The rampart-lmdb module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-redis.html">The rampart-redis module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-totext.html">The rampart-totext module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-python.html">The rampart-python module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-robots.html">The rampart-robots module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-cmark.html">The rampart-cmark module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-treesitter.html">The rampart-treesitter module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-langtools.html">The rampart-langtools modules</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-almanac.html">The rampart-almanac module</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">The rampart-url module</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#preface">Preface</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#license">License</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#what-does-it-do">What does it do?</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#how-does-it-work">How does it work?</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#loading-and-using-the-module">Loading and Using the Module</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#loading">Loading</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#url-functions">URL Functions</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#components">components</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#absurl">absUrl</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-gm.html">The rampart-gm module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-webview.html">The rampart-webview module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-chromeview.html">The rampart-chromeview module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-extras.html">Extras</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorialtoc.html">Tutorials</a></li>
+<li class="toctree-l1"><a class="reference internal" href="faq.html">FAQ</a></li>
+</ul>
+
+            
+          
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" role="navigation" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">Rampart</a>
+        
+      </nav>
+
+
+      
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="index.html">Docs</a> &raquo;</li>
+        
+      <li>The rampart-url module</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+            
+            <a href="_sources/rampart-url.rst.txt" rel="nofollow"> View page source</a>
+          
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <div class="section" id="the-rampart-url-module">
+<h1>The rampart-url module<a class="headerlink" href="#the-rampart-url-module" title="Permalink to this headline">¶</a></h1>
+<div class="section" id="preface">
+<h2>Preface<a class="headerlink" href="#preface" title="Permalink to this headline">¶</a></h2>
+<p>NOTE: superseded by <a class="reference internal" href="rampart-utils.html#urlcomponents"><span class="std std-ref">these util functions</span></a>.</p>
+<div class="section" id="license">
+<h3>License<a class="headerlink" href="#license" title="Permalink to this headline">¶</a></h3>
+<p>The rampart-url module is released under the MIT license.</p>
+</div>
+<div class="section" id="what-does-it-do">
+<h3>What does it do?<a class="headerlink" href="#what-does-it-do" title="Permalink to this headline">¶</a></h3>
+<p>The rampart-url module provides utility functions to manipulate URLs</p>
+</div>
+<div class="section" id="how-does-it-work">
+<h3>How does it work?<a class="headerlink" href="#how-does-it-work" title="Permalink to this headline">¶</a></h3>
+<p>The rampart-url module is a JavaScript module that export functions which
+break URLs into their component parts, resolve parent directories
+(<code class="docutils literal notranslate"><span class="pre">../</span></code>) and create absolute URLs given a source location and one or
+more relative URL paths.</p>
+</div>
+</div>
+<div class="section" id="loading-and-using-the-module">
+<h2>Loading and Using the Module<a class="headerlink" href="#loading-and-using-the-module" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="loading">
+<h3>Loading<a class="headerlink" href="#loading" title="Permalink to this headline">¶</a></h3>
+<p>Loading the module is a simple matter of using the <code class="docutils literal notranslate"><span class="pre">require()</span></code> function:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">urlutils</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-url&quot;</span><span class="p">);</span>
+</pre></div>
+</div>
+</div>
+</div>
+<div class="section" id="url-functions">
+<h2>URL Functions<a class="headerlink" href="#url-functions" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="components">
+<h3>components<a class="headerlink" href="#components" title="Permalink to this headline">¶</a></h3>
+<blockquote>
+<div><p>The <code class="docutils literal notranslate"><span class="pre">components</span></code> function takes one or two arguments: The
+URL to be broken into its component parts, and optionally a
+<span class="green">Boolean</span>, which if <code class="docutils literal notranslate"><span class="pre">true</span></code>, signifies that the URL
+is relative.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">urlutils</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-url&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">urlinfo</span> <span class="o">=</span> <span class="nx">urlutils</span><span class="p">.</span><span class="nx">components</span><span class="p">(</span><span class="nx">url</span><span class="p">[,</span> <span class="nx">isRelative</span><span class="p">]);</span>
+</pre></div>
+</div>
+<p>Where:</p>
+<ul class="simple">
+<li><code class="docutils literal notranslate"><span class="pre">url</span></code> is a <span class="green">String</span>, the URL to be broken down.</li>
+<li><code class="docutils literal notranslate"><span class="pre">isRelative</span></code> is an <span class="green">Boolean</span>, set <code class="docutils literal notranslate"><span class="pre">true</span></code> if
+the URL is to be treated as a URL path without the origin.</li>
+</ul>
+<dl class="docutils">
+<dt>Return Value:</dt>
+<dd>A <span class="green">Object</span> containing the components of the URL.  Or returns <code class="docutils literal notranslate"><span class="pre">undefined</span></code>
+if the URL cannot be parsed.</dd>
+</dl>
+</div></blockquote>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">urlutils</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-url&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">urlinfo</span> <span class="o">=</span> <span class="nx">urlutils</span><span class="p">.</span><span class="nx">components</span><span class="p">(</span>
+    <span class="s2">&quot;http://me:mypass@example.com:8088/dir/mypage.html?dir=%2fusr%2flocal%2f#my-spot-on-page&quot;</span>
+<span class="p">);</span>
+<span class="cm">/* urlinfo =</span>
+<span class="cm">    {</span>
+<span class="cm">       &quot;scheme&quot;: &quot;http&quot;,</span>
+<span class="cm">       &quot;username&quot;: &quot;me&quot;,</span>
+<span class="cm">       &quot;password&quot;: &quot;mypass&quot;,</span>
+<span class="cm">       &quot;origin&quot;: &quot;http://me:mypass@example.com:8088&quot;,</span>
+<span class="cm">       &quot;host&quot;: &quot;example.com&quot;,</span>
+<span class="cm">       &quot;authority&quot;: &quot;//me:mypass@example.com:8088&quot;,</span>
+<span class="cm">       &quot;path&quot;: &quot;/dir/&quot;,</span>
+<span class="cm">       &quot;fullPath&quot;: &quot;/dir/mypage.html&quot;,</span>
+<span class="cm">       &quot;queryString&quot;: {</span>
+<span class="cm">          &quot;raw&quot;: &quot;dir=%2fusr%2flocal%2f&quot;,</span>
+<span class="cm">          &quot;components&quot;: {</span>
+<span class="cm">             &quot;dir&quot;: &quot;/usr/local/&quot;</span>
+<span class="cm">          }</span>
+<span class="cm">       },</span>
+<span class="cm">       &quot;hash&quot;: &quot;#my-spot-on-page&quot;,</span>
+<span class="cm">       &quot;url&quot;: &quot;http://me:mypass@example.com:8088/dir/mypage.html?dir=%2fusr%2flocal%2f&quot;,</span>
+<span class="cm">       &quot;href&quot;: &quot;http://me:mypass@example.com:8088/dir/mypage.html?dir=%2fusr%2flocal%2f#my-spot-on-page&quot;,</span>
+<span class="cm">       &quot;portText&quot;: &quot;8088&quot;,</span>
+<span class="cm">       &quot;port&quot;: 8088,</span>
+<span class="cm">       &quot;file&quot;: &quot;mypage.html&quot;</span>
+<span class="cm">    }</span>
+<span class="cm">*/</span>
+
+<span class="nx">urlinfo</span> <span class="o">=</span> <span class="nx">urlutils</span><span class="p">.</span><span class="nx">components</span><span class="p">(</span><span class="s2">&quot;/a/directory/that/doesnt/../exist/mydoc.html&quot;</span><span class="p">,</span> <span class="kc">true</span><span class="p">);</span>
+
+<span class="cm">/* urlinfo =</span>
+<span class="cm">    {</span>
+<span class="cm">       &quot;scheme&quot;: &quot;&quot;,</span>
+<span class="cm">       &quot;username&quot;: &quot;&quot;,</span>
+<span class="cm">       &quot;password&quot;: &quot;&quot;,</span>
+<span class="cm">       &quot;origin&quot;: &quot;&quot;,</span>
+<span class="cm">       &quot;host&quot;: &quot;&quot;,</span>
+<span class="cm">       &quot;authority&quot;: &quot;&quot;,</span>
+<span class="cm">       &quot;path&quot;: &quot;/a/directory/that/exist/&quot;,</span>
+<span class="cm">       &quot;fullPath&quot;: &quot;/a/directory/that/exist/mydoc.html&quot;,</span>
+<span class="cm">       &quot;queryString&quot;: {},</span>
+<span class="cm">       &quot;hash&quot;: &quot;&quot;,</span>
+<span class="cm">       &quot;url&quot;: &quot;&quot;,</span>
+<span class="cm">       &quot;href&quot;: &quot;&quot;,</span>
+<span class="cm">       &quot;file&quot;: &quot;mydoc.html&quot;</span>
+<span class="cm">    }</span>
+
+<span class="cm">*/</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="absurl">
+<h3>absUrl<a class="headerlink" href="#absurl" title="Permalink to this headline">¶</a></h3>
+<blockquote>
+<div><p>The <code class="docutils literal notranslate"><span class="pre">absUrl</span></code> function takes a starting URL and a single URL path or an <span class="green">Array</span>
+of URL paths, and converts them to absolute URLS.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">urlutils</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-url&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">newUrls</span> <span class="o">=</span> <span class="nx">urlutils</span><span class="p">.</span><span class="nx">absUrl</span><span class="p">(</span><span class="nx">source_url</span><span class="p">,</span> <span class="nx">paths</span><span class="p">[,</span> <span class="nx">returnComponents</span><span class="p">]);</span>
+</pre></div>
+</div>
+<p>Where:</p>
+<ul class="simple">
+<li><code class="docutils literal notranslate"><span class="pre">source_url</span></code> is a <span class="green">String</span>, the URL from which the relative
+paths (“hrefs”) were extracted.</li>
+<li><code class="docutils literal notranslate"><span class="pre">paths</span></code> is a <span class="green">String</span>, or an <span class="green">Array</span> of <span class="green">Strings</span>,
+the URL paths to be converted to absolute URLs.</li>
+<li><code class="docutils literal notranslate"><span class="pre">returnComponents</span></code> is an <span class="green">Boolean</span>, set <code class="docutils literal notranslate"><span class="pre">true</span></code> to have
+the return value be an <span class="green">Object</span>, the format of which is the
+same as in <a class="reference internal" href="#components">components</a> above.</li>
+</ul>
+<dl class="docutils">
+<dt>Return Value:</dt>
+<dd><p class="first">A <span class="green">String</span>, or an <span class="green">Array</span> of <span class="green">Strings</span> (if
+paths is an <span class="green">Array</span>).  The single value or an <span class="green">Array</span>
+member will be <code class="docutils literal notranslate"><span class="pre">undefined</span></code> if the URL cannot be parsed.</p>
+<p class="last">If <code class="docutils literal notranslate"><span class="pre">returnComponents</span></code> is <code class="docutils literal notranslate"><span class="pre">true</span></code>, the return value will be a
+<span class="green">Object</span> or an <span class="green">Array</span> of <span class="green">Objects</span> containing
+the components of the URL.</p>
+</dd>
+</dl>
+</div></blockquote>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">urlutils</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-url&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">sourceUrl</span> <span class="o">=</span> <span class="s2">&quot;http://example.com/dir/mypage.html&quot;</span>
+<span class="kd">var</span> <span class="nx">links</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="s2">&quot;../images/me.jpg&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;../index.html&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;/cgi-bin/myapp.app&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;https://www.google.com:443/search&quot;</span>
+<span class="p">]</span>
+
+<span class="kd">var</span> <span class="nx">absurls</span> <span class="o">=</span> <span class="nx">urlutils</span><span class="p">.</span><span class="nx">absUrl</span><span class="p">(</span><span class="nx">sourceUrl</span><span class="p">,</span> <span class="nx">links</span><span class="p">);</span>
+<span class="cm">/* absurls =</span>
+<span class="cm">    [</span>
+<span class="cm">       &quot;http://example.com/images/me.jpg&quot;,</span>
+<span class="cm">       &quot;http://example.com/index.html&quot;,</span>
+<span class="cm">       &quot;http://example.com/cgi-bin/myapp.app&quot;,</span>
+<span class="cm">       &quot;https://www.google.com/search&quot;</span>
+<span class="cm">    ]</span>
+<span class="cm">*/</span>
+
+<span class="nx">absurls</span> <span class="o">=</span> <span class="nx">urlutils</span><span class="p">.</span><span class="nx">absUrl</span><span class="p">(</span><span class="nx">sourceUrl</span><span class="p">,</span> <span class="nx">links</span><span class="p">,</span> <span class="kc">true</span><span class="p">);</span>
+<span class="cm">/* absurls =</span>
+<span class="cm">    [</span>
+<span class="cm">       {</span>
+<span class="cm">          &quot;scheme&quot;: &quot;http&quot;,</span>
+<span class="cm">          &quot;username&quot;: &quot;&quot;,</span>
+<span class="cm">          &quot;password&quot;: &quot;&quot;,</span>
+<span class="cm">          &quot;origin&quot;: &quot;http://example.com&quot;,</span>
+<span class="cm">          &quot;host&quot;: &quot;example.com&quot;,</span>
+<span class="cm">          &quot;authority&quot;: &quot;//example.com&quot;,</span>
+<span class="cm">          &quot;path&quot;: &quot;/images/&quot;,</span>
+<span class="cm">          &quot;fullPath&quot;: &quot;/images/me.jpg&quot;,</span>
+<span class="cm">          &quot;queryString&quot;: {},</span>
+<span class="cm">          &quot;hash&quot;: &quot;&quot;,</span>
+<span class="cm">          &quot;url&quot;: &quot;http://example.com/images/me.jpg&quot;,</span>
+<span class="cm">          &quot;href&quot;: &quot;http://example.com/images/me.jpg&quot;,</span>
+<span class="cm">          &quot;port&quot;: 80,</span>
+<span class="cm">          &quot;file&quot;: &quot;me.jpg&quot;</span>
+<span class="cm">       },</span>
+<span class="cm">       {</span>
+<span class="cm">          &quot;scheme&quot;: &quot;http&quot;,</span>
+<span class="cm">          &quot;username&quot;: &quot;&quot;,</span>
+<span class="cm">          &quot;password&quot;: &quot;&quot;,</span>
+<span class="cm">          &quot;origin&quot;: &quot;http://example.com&quot;,</span>
+<span class="cm">          &quot;host&quot;: &quot;example.com&quot;,</span>
+<span class="cm">          &quot;authority&quot;: &quot;//example.com&quot;,</span>
+<span class="cm">          &quot;path&quot;: &quot;/&quot;,</span>
+<span class="cm">          &quot;fullPath&quot;: &quot;/index.html&quot;,</span>
+<span class="cm">          &quot;queryString&quot;: {},</span>
+<span class="cm">          &quot;hash&quot;: &quot;&quot;,</span>
+<span class="cm">          &quot;url&quot;: &quot;http://example.com/index.html&quot;,</span>
+<span class="cm">          &quot;href&quot;: &quot;http://example.com/index.html&quot;,</span>
+<span class="cm">          &quot;port&quot;: 80,</span>
+<span class="cm">          &quot;file&quot;: &quot;index.html&quot;</span>
+<span class="cm">       },</span>
+<span class="cm">       {</span>
+<span class="cm">          &quot;scheme&quot;: &quot;http&quot;,</span>
+<span class="cm">          &quot;username&quot;: &quot;&quot;,</span>
+<span class="cm">          &quot;password&quot;: &quot;&quot;,</span>
+<span class="cm">          &quot;origin&quot;: &quot;http://example.com&quot;,</span>
+<span class="cm">          &quot;host&quot;: &quot;example.com&quot;,</span>
+<span class="cm">          &quot;authority&quot;: &quot;//example.com&quot;,</span>
+<span class="cm">          &quot;path&quot;: &quot;/cgi-bin/&quot;,</span>
+<span class="cm">          &quot;fullPath&quot;: &quot;/cgi-bin/myapp.app&quot;,</span>
+<span class="cm">          &quot;queryString&quot;: {},</span>
+<span class="cm">          &quot;hash&quot;: &quot;&quot;,</span>
+<span class="cm">          &quot;url&quot;: &quot;http://example.com/cgi-bin/myapp.app&quot;,</span>
+<span class="cm">          &quot;href&quot;: &quot;http://example.com/cgi-bin/myapp.app&quot;,</span>
+<span class="cm">          &quot;port&quot;: 80,</span>
+<span class="cm">          &quot;file&quot;: &quot;myapp.app&quot;</span>
+<span class="cm">       },</span>
+<span class="cm">       {</span>
+<span class="cm">          &quot;scheme&quot;: &quot;https&quot;,</span>
+<span class="cm">          &quot;username&quot;: &quot;&quot;,</span>
+<span class="cm">          &quot;password&quot;: &quot;&quot;,</span>
+<span class="cm">          &quot;origin&quot;: &quot;https://www.google.com&quot;,</span>
+<span class="cm">          &quot;host&quot;: &quot;www.google.com&quot;,</span>
+<span class="cm">          &quot;authority&quot;: &quot;//www.google.com&quot;,</span>
+<span class="cm">          &quot;path&quot;: &quot;/&quot;,</span>
+<span class="cm">          &quot;fullPath&quot;: &quot;/search&quot;,</span>
+<span class="cm">          &quot;queryString&quot;: {},</span>
+<span class="cm">          &quot;hash&quot;: &quot;&quot;,</span>
+<span class="cm">          &quot;url&quot;: &quot;https://www.google.com/search&quot;,</span>
+<span class="cm">          &quot;href&quot;: &quot;https://www.google.com/search&quot;,</span>
+<span class="cm">          &quot;port&quot;: 443,</span>
+<span class="cm">          &quot;file&quot;: &quot;search&quot;</span>
+<span class="cm">       }</span>
+<span class="cm">    ]</span>
+<span class="cm">*/</span>
+</pre></div>
+</div>
+</div>
+</div>
+</div>
+
+
+           </div>
+          </div>
+          <footer>
+  
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+      
+        <a href="rampart-gm.html" class="btn btn-neutral float-right" title="The rampart-gm module" accesskey="n">Next <span class="fa fa-arrow-circle-right"></span></a>
+      
+      
+        <a href="rampart-almanac.html" class="btn btn-neutral" title="The rampart-almanac module" accesskey="p"><span class="fa fa-arrow-circle-left"></span> Previous</a>
+      
+    </div>
+  
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &copy; Copyright 2026, Moat Crossing Systems.
+
+    </p>
+  </div>
+  Built with <a href="http://sphinx-doc.org/">Sphinx</a> and ❤️  using a custom <a href="https://github.com/LinxiFan/Sphinx-theme">theme</a> based on <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+
+  
+
+    <script type="text/javascript">
+        var DOCUMENTATION_OPTIONS = {
+            URL_ROOT:'./',
+            VERSION:'0.7.2',
+            COLLAPSE_INDEX:false,
+            FILE_SUFFIX:'.html',
+            HAS_SOURCE:  true,
+            SOURCELINK_SUFFIX: '.txt'
+        };
+    </script>
+      <script type="text/javascript" src="_static/jquery.js"></script>
+      <script type="text/javascript" src="_static/underscore.js"></script>
+      <script type="text/javascript" src="_static/doctools.js"></script>
+      <script type="text/javascript" src="_static/language_data.js"></script>
+      <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/latest.js?config=TeX-AMS-MML_HTMLorMML"></script>
+
+  
+
+  
+  
+    <script type="text/javascript" src="_static/js/theme.js"></script>
+  
+
+  
+  
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.StickyNav.enable();
+      });
+  </script>
+   
+
+</body>
+</html>

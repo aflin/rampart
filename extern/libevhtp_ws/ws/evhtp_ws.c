@@ -541,9 +541,18 @@ evhtp_ws_parser_get_userdata(evhtp_ws_parser * p) {
 /* set a flag to disconnect after we are done parsing */
 void evhtp_ws_disconnect(evhtp_request_t  * req, int defer)
 {
+    evhtp_connection_t * c = evhtp_request_get_connection(req);
+
     req->disconnect=1;
     if(defer)
         req->flags |= EVHTP_REQ_FLAG_WS_DIS_DEFER;
+
+    /* The flag is acted on by the read callback (immediate) or the write
+       callback once output is flushed.  Called from anywhere else with nothing
+       left to write, neither would run until the client sent more data, so
+       schedule the write callback; it runs after any pending output drains. */
+    if(c && c->bev)
+        bufferevent_trigger(c->bev, EV_WRITE, BEV_TRIG_DEFER_CALLBACKS);
 }
 
 /* the actual disconnect code, done at the appropriate time */

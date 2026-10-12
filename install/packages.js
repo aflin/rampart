@@ -525,6 +525,14 @@ module.exports = {
         kind:  "tar.gz",
         arch:  "indep",
         files: ["web_server/"],
+        /* generated or kept at run time by the Mini IDE, in case it was
+           run in the tree being packaged (settings hold a password hash) */
+        exclude: ["web_server/AGENTS.md",
+                  "web_server/CLAUDE.md",
+                  "web_server/ide/data/docs",
+                  "web_server/ide/html/docs",
+                  "web_server/ide/data/ide-settings.json",
+                  "web_server/ide/server.pid"],
         notes: "Starter scaffolding for serverRoot"
     },
 

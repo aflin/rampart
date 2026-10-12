@@ -2,3 +2,9 @@ build/*
 .vscode
 .DS_Store
 docs/source/_build/*
+# Mini IDE: generated at start, built docs and search index, pid file
+web_server/AGENTS.md
+web_server/CLAUDE.md
+web_server/ide/data/docs/
+web_server/ide/html/docs/
+web_server/ide/server.pid

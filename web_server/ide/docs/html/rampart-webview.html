@@ -1,0 +1,1179 @@
+
+
+<!DOCTYPE html>
+<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
+<!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <title>The rampart-webview module &mdash; Rampart 0.7.2 documentation</title>
+  
+
+  
+  
+
+  
+
+  
+  
+    
+
+  
+
+  
+  
+    <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
+  
+
+  
+    <link rel="stylesheet" href="_static/theme_overrides.css" type="text/css" />
+  
+    <link rel="stylesheet" href="_static/hacks.css" type="text/css" />
+  
+
+  
+        <link rel="index" title="Index"
+              href="genindex.html"/>
+        <link rel="search" title="Search" href="search.html"/>
+    <link rel="top" title="Rampart 0.7.2 documentation" href="index.html"/>
+        <link rel="next" title="The rampart-chromeview module" href="rampart-chromeview.html"/>
+        <link rel="prev" title="The rampart-gm module" href="rampart-gm.html"/> 
+
+  
+  <script src="_static/js/modernizr.min.js"></script>
+
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+   
+  <div class="wy-grid-for-nav">
+
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search">
+          
+
+          
+            <a href="index.html" class="icon icon-home"> Rampart
+          
+
+          
+          </a>
+
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+                <p class="caption"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="rampart-main.html">Rampart JavaScript</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-utils.html">Rampart Utility Functions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-thread.html">Rampart Thread Functions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-vector.html">Rampart Vector Functions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="sqltoc.html">The rampart-sql module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-server.html">The rampart-server module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-auth.html">The rampart-auth module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-net.html">The rampart-net module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-html.html">The rampart-html module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-crypto.html">The rampart-crypto module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-curl.html">The rampart-curl module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-lmdb.html">The rampart-lmdb module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-redis.html">The rampart-redis module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-totext.html">The rampart-totext module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-python.html">The rampart-python module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-robots.html">The rampart-robots module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-cmark.html">The rampart-cmark module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-treesitter.html">The rampart-treesitter module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-langtools.html">The rampart-langtools modules</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-almanac.html">The rampart-almanac module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-url.html">The rampart-url module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-gm.html">The rampart-gm module</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">The rampart-webview module</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#preface">Preface</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#acknowledgment">Acknowledgment</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#license">License</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#what-does-it-do">What does it do?</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#how-does-it-work">How does it work?</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#loading-and-using-the-module">Loading and Using the Module</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#prerequisites">Prerequisites</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#loading">Loading</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#quick-start">Quick Start</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#the-webview-gui">The WebView GUI</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#creating-a-webview">Creating a WebView</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#methods">Methods</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#w-settitle-title"><code class="docutils literal notranslate"><span class="pre">w.setTitle(title)</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#w-setsize-width-height-hint"><code class="docutils literal notranslate"><span class="pre">w.setSize(width,</span> <span class="pre">height</span> <span class="pre">[,</span> <span class="pre">hint])</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#w-navigate-url"><code class="docutils literal notranslate"><span class="pre">w.navigate(url)</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#w-sethtml-html"><code class="docutils literal notranslate"><span class="pre">w.setHtml(html)</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#w-init-js"><code class="docutils literal notranslate"><span class="pre">w.init(js)</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#w-eval-js-callback"><code class="docutils literal notranslate"><span class="pre">w.eval(js</span> <span class="pre">[,</span> <span class="pre">callback])</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#w-getcontents-callback"><code class="docutils literal notranslate"><span class="pre">w.getContents(callback)</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#w-on-event-handler"><code class="docutils literal notranslate"><span class="pre">w.on(event,</span> <span class="pre">handler)</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#w-bind-name-callback"><code class="docutils literal notranslate"><span class="pre">w.bind(name,</span> <span class="pre">callback)</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#w-unbind-name"><code class="docutils literal notranslate"><span class="pre">w.unbind(name)</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#w-run"><code class="docutils literal notranslate"><span class="pre">w.run()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#w-terminate"><code class="docutils literal notranslate"><span class="pre">w.terminate()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#w-destroy"><code class="docutils literal notranslate"><span class="pre">w.destroy()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#w-snapshot-region"><code class="docutils literal notranslate"><span class="pre">w.snapshot([region])</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#w-setcookie-name-value"><code class="docutils literal notranslate"><span class="pre">w.setCookie(name,</span> <span class="pre">value)</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#w-getcookies-uri"><code class="docutils literal notranslate"><span class="pre">w.getCookies([uri])</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#w-getallcookies"><code class="docutils literal notranslate"><span class="pre">w.getAllCookies()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#w-setuseragent-string"><code class="docutils literal notranslate"><span class="pre">w.setUserAgent(string)</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#constants">Constants</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#accessing-local-servers">Accessing Local Servers</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#option-1-serve-the-page-from-the-same-server">Option 1: Serve the page from the same server</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#option-2-add-cors-headers-on-the-server">Option 2: Add CORS headers on the server</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#option-3-use-w-bind-as-a-proxy">Option 3: Use <code class="docutils literal notranslate"><span class="pre">w.bind()</span></code> as a proxy</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#running-without-a-display">Running Without a Display</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#headless-javascriptcore">Headless JavaScriptCore</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#compatibility">Compatibility</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#webview-jscexec-code"><code class="docutils literal notranslate"><span class="pre">webview.jscExec(code)</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#new-webview-jsccontext"><code class="docutils literal notranslate"><span class="pre">new</span> <span class="pre">webview.JSCContext()</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#jsc-eval-code"><code class="docutils literal notranslate"><span class="pre">jsc.eval(code)</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#jsc-loadscript-path"><code class="docutils literal notranslate"><span class="pre">jsc.loadScript(path)</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#jsc-require-path"><code class="docutils literal notranslate"><span class="pre">jsc.require(path)</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#jsc-set-name-value"><code class="docutils literal notranslate"><span class="pre">jsc.set(name,</span> <span class="pre">value)</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#jsc-getglobal-name"><code class="docutils literal notranslate"><span class="pre">jsc.getGlobal(name)</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#jsc-destroy"><code class="docutils literal notranslate"><span class="pre">jsc.destroy()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#working-with-wrapped-jsc-objects">Working with Wrapped JSC Objects</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#tovalue"><code class="docutils literal notranslate"><span class="pre">.toValue()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#tostring"><code class="docutils literal notranslate"><span class="pre">.toString()</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#examples">Examples</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#webview-counter-app">WebView: Counter App</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#jsccontext-fetching-and-using-a-js-library">JSCContext: Fetching and Using a JS Library</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-chromeview.html">The rampart-chromeview module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-extras.html">Extras</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorialtoc.html">Tutorials</a></li>
+<li class="toctree-l1"><a class="reference internal" href="faq.html">FAQ</a></li>
+</ul>
+
+            
+          
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" role="navigation" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">Rampart</a>
+        
+      </nav>
+
+
+      
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="index.html">Docs</a> &raquo;</li>
+        
+      <li>The rampart-webview module</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+            
+            <a href="_sources/rampart-webview.rst.txt" rel="nofollow"> View page source</a>
+          
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <div class="section" id="the-rampart-webview-module">
+<h1>The rampart-webview module<a class="headerlink" href="#the-rampart-webview-module" title="Permalink to this headline">¶</a></h1>
+<div class="section" id="preface">
+<h2>Preface<a class="headerlink" href="#preface" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="acknowledgment">
+<h3>Acknowledgment<a class="headerlink" href="#acknowledgment" title="Permalink to this headline">¶</a></h3>
+<p>The rampart-webview module embeds the
+<a class="reference external" href="https://github.com/webview/webview">webview</a> library, a tiny
+cross-platform abstraction over each operating system’s native
+browser engine.  The authors of Rampart extend their thanks to the
+webview project and to the underlying engine vendors.  The library
+binds to:</p>
+<ul class="simple">
+<li><strong>Linux</strong> — GTK + WebKitGTK</li>
+<li><strong>macOS</strong> — Cocoa + WebKit</li>
+</ul>
+<p>The headless JavaScript features described below are provided by the
+JavaScriptCore (JSC) engine that ships with WebKitGTK on Linux and
+with the system <code class="docutils literal notranslate"><span class="pre">JavaScriptCore.framework</span></code> on macOS.</p>
+</div>
+<div class="section" id="license">
+<h3>License<a class="headerlink" href="#license" title="Permalink to this headline">¶</a></h3>
+<p>The rampart-webview module is released under the MIT license.</p>
+</div>
+<div class="section" id="what-does-it-do">
+<h3>What does it do?<a class="headerlink" href="#what-does-it-do" title="Permalink to this headline">¶</a></h3>
+<p>The rampart-webview module provides two related capabilities:</p>
+<ul class="simple">
+<li><strong>A native webview</strong> — an in-process desktop window backed by the
+operating system’s own browser engine, for building graphical
+applications whose user interface is written in HTML, CSS, and
+JavaScript.  Rampart functions can be bound so that page
+JavaScript calls back into the host, and the host can inject and
+evaluate JavaScript inside the page.</li>
+<li><strong>A headless JavaScript engine</strong> — direct access to the
+JavaScriptCore engine bundled with WebKit, allowing Rampart to run
+modern JavaScript (ES2020+) for libraries that need features beyond
+Duktape’s ES5.1 support.  No window is created; this is a pure
+data-transformation engine.</li>
+</ul>
+<p>The
+<a class="reference internal" href="rampart-chromeview.html#the-rampart-chromeview-module"><span class="std std-ref">rampart-chromeview</span></a>
+module is the complementary tool for the inverse case: instead of
+embedding a browser engine in-process to build a GUI,
+rampart-chromeview drives a separate Chromium process over the
+Chrome DevTools Protocol for automation, scraping, server-side
+rendering, and headless PDF or screenshot generation.</p>
+<p>Typical applications include:</p>
+<ul class="simple">
+<li>Desktop GUI applications with an HTML/CSS/JavaScript front end and
+a Rampart back end.</li>
+<li>Local dashboards and tools that present a rampart-server
+application in a dedicated window.</li>
+<li>Automated screenshot generation and visual testing (combined with
+a virtual display on Linux).</li>
+<li>Running data-transformation libraries that require a modern
+JavaScript engine, without a GUI.</li>
+</ul>
+</div>
+<div class="section" id="how-does-it-work">
+<h3>How does it work?<a class="headerlink" href="#how-does-it-work" title="Permalink to this headline">¶</a></h3>
+<p>The <code class="docutils literal notranslate"><span class="pre">WebView</span></code> constructor creates a native window and wires up a
+bidirectional bridge between Rampart’s Duktape engine and the
+browser’s JavaScript engine.  Values crossing the bridge — both
+arguments to bound functions and results of evaluated expressions —
+are carried by a tagged-JSON protocol that preserves rich types
+(Dates, Buffers, RegExps, Maps, Sets, <code class="docutils literal notranslate"><span class="pre">NaN</span></code>/<code class="docutils literal notranslate"><span class="pre">Infinity</span></code>,
+<code class="docutils literal notranslate"><span class="pre">undefined</span></code>, and cyclic references) in both directions.</p>
+<p><code class="docutils literal notranslate"><span class="pre">w.run()</span></code> enters the platform’s native event loop and <strong>blocks</strong>
+until the window is closed.  All setup — binding functions,
+registering event handlers, loading content — must therefore be done
+before <code class="docutils literal notranslate"><span class="pre">run()</span></code> is called.</p>
+<p>The headless <code class="docutils literal notranslate"><span class="pre">JSCContext</span></code> and <code class="docutils literal notranslate"><span class="pre">jscExec()</span></code> interfaces do not
+create a window and do not enter an event loop; they evaluate code in
+a JavaScriptCore context and return results immediately.</p>
+</div>
+</div>
+<div class="section" id="loading-and-using-the-module">
+<h2>Loading and Using the Module<a class="headerlink" href="#loading-and-using-the-module" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="prerequisites">
+<h3>Prerequisites<a class="headerlink" href="#prerequisites" title="Permalink to this headline">¶</a></h3>
+<p>The module is built against the host’s native browser engine, so the
+appropriate development packages must be present to build it, and the
+corresponding runtime must be present to use it.</p>
+<p><strong>Linux (Debian/Ubuntu):</strong></p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>sudo apt install libgtk-3-dev libwebkit2gtk-4.1-dev
+</pre></div>
+</div>
+<p><strong>macOS:</strong> WebKit ships with the operating system; only the Xcode
+command line tools are required to build.</p>
+</div>
+<div class="section" id="loading">
+<h3>Loading<a class="headerlink" href="#loading" title="Permalink to this headline">¶</a></h3>
+<p>Loading the module is a simple matter of using the <code class="docutils literal notranslate"><span class="pre">require()</span></code>
+function:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">webview</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-webview&quot;</span><span class="p">);</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="quick-start">
+<h3>Quick Start<a class="headerlink" href="#quick-start" title="Permalink to this headline">¶</a></h3>
+<p>A complete script that opens a window, binds a host function the page
+can call, and runs until the window is closed:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">webview</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-webview&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">w</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">webview</span><span class="p">.</span><span class="nx">WebView</span><span class="p">({</span>
+    <span class="nx">title</span><span class="o">:</span>  <span class="s2">&quot;Hello&quot;</span><span class="p">,</span>
+    <span class="nx">width</span><span class="o">:</span>  <span class="mi">480</span><span class="p">,</span>
+    <span class="nx">height</span><span class="o">:</span> <span class="mi">320</span><span class="p">,</span>
+    <span class="nx">html</span><span class="o">:</span>   <span class="s1">&#39;&lt;button onclick=&quot;window.quit()&quot;&gt;Close me&lt;/button&gt;&#39;</span>
+<span class="p">});</span>
+
+<span class="nx">w</span><span class="p">.</span><span class="nx">bind</span><span class="p">(</span><span class="s2">&quot;quit&quot;</span><span class="p">,</span> <span class="kd">function</span><span class="p">()</span> <span class="p">{</span>
+    <span class="nx">w</span><span class="p">.</span><span class="nx">terminate</span><span class="p">();</span>
+<span class="p">});</span>
+
+<span class="nx">w</span><span class="p">.</span><span class="nx">run</span><span class="p">();</span>        <span class="cm">/* blocks until the window closes */</span>
+<span class="nx">w</span><span class="p">.</span><span class="nx">destroy</span><span class="p">();</span>
+</pre></div>
+</div>
+</div>
+</div>
+<div class="section" id="the-webview-gui">
+<h2>The WebView GUI<a class="headerlink" href="#the-webview-gui" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="creating-a-webview">
+<h3>Creating a WebView<a class="headerlink" href="#creating-a-webview" title="Permalink to this headline">¶</a></h3>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">w</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">webview</span><span class="p">.</span><span class="nx">WebView</span><span class="p">({</span>
+    <span class="nx">title</span><span class="o">:</span>  <span class="s2">&quot;My App&quot;</span><span class="p">,</span>          <span class="c1">// window title (default: &quot;Rampart WebView&quot;)</span>
+    <span class="nx">width</span><span class="o">:</span>  <span class="mi">800</span><span class="p">,</span>               <span class="c1">// width in pixels (default: 800)</span>
+    <span class="nx">height</span><span class="o">:</span> <span class="mi">600</span><span class="p">,</span>               <span class="c1">// height in pixels (default: 600)</span>
+    <span class="nx">debug</span><span class="o">:</span>  <span class="kc">true</span><span class="p">,</span>              <span class="c1">// enable browser developer tools (default: false)</span>
+    <span class="nx">html</span><span class="o">:</span>   <span class="s2">&quot;&lt;h1&gt;Hello&lt;/h1&gt;&quot;</span><span class="p">,</span>  <span class="c1">// initial HTML content</span>
+    <span class="c1">// url: &quot;https://example.com&quot;  // OR navigate to a URL</span>
+<span class="p">});</span>
+</pre></div>
+</div>
+<p>All options are optional.  If neither <code class="docutils literal notranslate"><span class="pre">html</span></code> nor <code class="docutils literal notranslate"><span class="pre">url</span></code> is
+supplied, the window opens with a blank page.</p>
+</div>
+<div class="section" id="methods">
+<h3>Methods<a class="headerlink" href="#methods" title="Permalink to this headline">¶</a></h3>
+<div class="section" id="w-settitle-title">
+<h4><code class="docutils literal notranslate"><span class="pre">w.setTitle(title)</span></code><a class="headerlink" href="#w-settitle-title" title="Permalink to this headline">¶</a></h4>
+<p>Update the window title.</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">w</span><span class="p">.</span><span class="nx">setTitle</span><span class="p">(</span><span class="s2">&quot;New Title&quot;</span><span class="p">);</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="w-setsize-width-height-hint">
+<h4><code class="docutils literal notranslate"><span class="pre">w.setSize(width,</span> <span class="pre">height</span> <span class="pre">[,</span> <span class="pre">hint])</span></code><a class="headerlink" href="#w-setsize-width-height-hint" title="Permalink to this headline">¶</a></h4>
+<p>Update the window size.  The optional <code class="docutils literal notranslate"><span class="pre">hint</span></code> controls the sizing
+behavior and may be a string (<code class="docutils literal notranslate"><span class="pre">&quot;none&quot;</span></code>, <code class="docutils literal notranslate"><span class="pre">&quot;min&quot;</span></code>, <code class="docutils literal notranslate"><span class="pre">&quot;max&quot;</span></code>,
+<code class="docutils literal notranslate"><span class="pre">&quot;fixed&quot;</span></code>) or the equivalent constant (see <a class="reference internal" href="#constants">Constants</a>).</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">w</span><span class="p">.</span><span class="nx">setSize</span><span class="p">(</span><span class="mi">1024</span><span class="p">,</span> <span class="mi">768</span><span class="p">);</span>           <span class="c1">// set default size</span>
+<span class="nx">w</span><span class="p">.</span><span class="nx">setSize</span><span class="p">(</span><span class="mi">400</span><span class="p">,</span> <span class="mi">300</span><span class="p">,</span> <span class="s2">&quot;min&quot;</span><span class="p">);</span>     <span class="c1">// set minimum size</span>
+<span class="nx">w</span><span class="p">.</span><span class="nx">setSize</span><span class="p">(</span><span class="mi">1920</span><span class="p">,</span> <span class="mi">1080</span><span class="p">,</span> <span class="s2">&quot;max&quot;</span><span class="p">);</span>   <span class="c1">// set maximum size</span>
+<span class="nx">w</span><span class="p">.</span><span class="nx">setSize</span><span class="p">(</span><span class="mi">640</span><span class="p">,</span> <span class="mi">480</span><span class="p">,</span> <span class="s2">&quot;fixed&quot;</span><span class="p">);</span>   <span class="c1">// fixed (non-resizable) size</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="w-navigate-url">
+<h4><code class="docutils literal notranslate"><span class="pre">w.navigate(url)</span></code><a class="headerlink" href="#w-navigate-url" title="Permalink to this headline">¶</a></h4>
+<p>Navigate to a URL.</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">w</span><span class="p">.</span><span class="nx">navigate</span><span class="p">(</span><span class="s2">&quot;https://example.com&quot;</span><span class="p">);</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="w-sethtml-html">
+<h4><code class="docutils literal notranslate"><span class="pre">w.setHtml(html)</span></code><a class="headerlink" href="#w-sethtml-html" title="Permalink to this headline">¶</a></h4>
+<p>Load HTML content directly.</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">w</span><span class="p">.</span><span class="nx">setHtml</span><span class="p">(</span><span class="s2">&quot;&lt;h1&gt;Hello World&lt;/h1&gt;&quot;</span><span class="p">);</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="w-init-js">
+<h4><code class="docutils literal notranslate"><span class="pre">w.init(js)</span></code><a class="headerlink" href="#w-init-js" title="Permalink to this headline">¶</a></h4>
+<p>Inject JavaScript that runs automatically <strong>before every page
+load</strong>.  Useful for installing global functions or polyfills that
+each page should see.</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">w</span><span class="p">.</span><span class="nx">init</span><span class="p">(</span><span class="s2">&quot;window.myGlobal = &#39;available on every page&#39;;&quot;</span><span class="p">);</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="w-eval-js-callback">
+<h4><code class="docutils literal notranslate"><span class="pre">w.eval(js</span> <span class="pre">[,</span> <span class="pre">callback])</span></code><a class="headerlink" href="#w-eval-js-callback" title="Permalink to this headline">¶</a></h4>
+<p>Evaluate JavaScript inside the webview.  <code class="docutils literal notranslate"><span class="pre">js</span></code> is always a string;
+it executes in the browser’s JavaScript engine, not in Duktape.</p>
+<p>In the fire-and-forget form, no value is returned:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">w</span><span class="p">.</span><span class="nb">eval</span><span class="p">(</span><span class="s2">&quot;document.title = &#39;Changed from Rampart&#39;;&quot;</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>When a callback is supplied, the value of the last expression is
+captured and passed to the callback as <code class="docutils literal notranslate"><span class="pre">(result,</span> <span class="pre">error)</span></code>.  Rich
+types are preserved through the tagged-JSON protocol, and Promises
+are awaited automatically:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">w</span><span class="p">.</span><span class="nb">eval</span><span class="p">(</span><span class="s2">&quot;document.title&quot;</span><span class="p">,</span> <span class="kd">function</span><span class="p">(</span><span class="nx">title</span><span class="p">,</span> <span class="nx">err</span><span class="p">)</span> <span class="p">{</span>
+    <span class="k">if</span> <span class="p">(</span><span class="nx">err</span><span class="p">)</span> <span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="s2">&quot;eval error:&quot;</span><span class="p">,</span> <span class="nx">err</span><span class="p">.</span><span class="nx">message</span><span class="p">);</span>
+    <span class="k">else</span>     <span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="s2">&quot;title:&quot;</span><span class="p">,</span> <span class="nx">title</span><span class="p">);</span>
+<span class="p">});</span>
+
+<span class="cm">/* Promises are awaited automatically */</span>
+<span class="nx">w</span><span class="p">.</span><span class="nb">eval</span><span class="p">(</span><span class="s2">&quot;fetch(&#39;/api/data&#39;).then(r =&gt; r.json())&quot;</span><span class="p">,</span> <span class="kd">function</span><span class="p">(</span><span class="nx">data</span><span class="p">,</span> <span class="nx">err</span><span class="p">)</span> <span class="p">{</span>
+    <span class="c1">// ...</span>
+<span class="p">});</span>
+</pre></div>
+</div>
+<p>Evaluation should be triggered after the page has loaded (see
+<code class="docutils literal notranslate"><span class="pre">w.on(&quot;load&quot;,</span> <span class="pre">...)</span></code> below).  Evaluating before a page is loaded does
+nothing.</p>
+</div>
+<div class="section" id="w-getcontents-callback">
+<h4><code class="docutils literal notranslate"><span class="pre">w.getContents(callback)</span></code><a class="headerlink" href="#w-getcontents-callback" title="Permalink to this headline">¶</a></h4>
+<p>Fetch the current DOM as an HTML string and deliver it to the
+callback.  This is shorthand for
+<code class="docutils literal notranslate"><span class="pre">w.eval(&quot;document.documentElement.outerHTML&quot;,</span> <span class="pre">callback)</span></code>.</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">w</span><span class="p">.</span><span class="nx">on</span><span class="p">(</span><span class="s2">&quot;load&quot;</span><span class="p">,</span> <span class="kd">function</span><span class="p">()</span> <span class="p">{</span>
+    <span class="nx">w</span><span class="p">.</span><span class="nx">getContents</span><span class="p">(</span><span class="kd">function</span><span class="p">(</span><span class="nx">html</span><span class="p">,</span> <span class="nx">err</span><span class="p">)</span> <span class="p">{</span>
+        <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">fprintf</span><span class="p">(</span><span class="s2">&quot;page.html&quot;</span><span class="p">,</span> <span class="s2">&quot;%s&quot;</span><span class="p">,</span> <span class="nx">html</span><span class="p">);</span>
+    <span class="p">});</span>
+<span class="p">});</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="w-on-event-handler">
+<h4><code class="docutils literal notranslate"><span class="pre">w.on(event,</span> <span class="pre">handler)</span></code><a class="headerlink" href="#w-on-event-handler" title="Permalink to this headline">¶</a></h4>
+<p>Subscribe to a webview event.  <code class="docutils literal notranslate"><span class="pre">on()</span></code> must be called before
+<code class="docutils literal notranslate"><span class="pre">run()</span></code> — and before the first <code class="docutils literal notranslate"><span class="pre">setHtml()</span></code>/<code class="docutils literal notranslate"><span class="pre">navigate()</span></code> if you
+want to receive events from the initial page load.  Multiple handlers
+may be registered for the same event; they are called in registration
+order.</p>
+<p>Two events are supported:</p>
+<p><strong>“load”</strong> fires when a page finishes loading.  The handler receives
+the page URL:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">w</span><span class="p">.</span><span class="nx">on</span><span class="p">(</span><span class="s2">&quot;load&quot;</span><span class="p">,</span> <span class="kd">function</span><span class="p">(</span><span class="nx">url</span><span class="p">)</span> <span class="p">{</span>
+    <span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="s2">&quot;page loaded:&quot;</span><span class="p">,</span> <span class="nx">url</span><span class="p">);</span>
+<span class="p">});</span>
+</pre></div>
+</div>
+<p><strong>“console”</strong> fires for every <code class="docutils literal notranslate"><span class="pre">console.log/warn/error/info/debug</span></code>
+call made inside the webview.  The handler receives the level and an
+array of stringified arguments:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">w</span><span class="p">.</span><span class="nx">on</span><span class="p">(</span><span class="s2">&quot;console&quot;</span><span class="p">,</span> <span class="kd">function</span><span class="p">(</span><span class="nx">level</span><span class="p">,</span> <span class="nx">args</span><span class="p">)</span> <span class="p">{</span>
+    <span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="s2">&quot;[page &quot;</span> <span class="o">+</span> <span class="nx">level</span> <span class="o">+</span> <span class="s2">&quot;]&quot;</span><span class="p">,</span> <span class="nx">args</span><span class="p">.</span><span class="nx">join</span><span class="p">(</span><span class="s2">&quot; &quot;</span><span class="p">));</span>
+<span class="p">});</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="w-bind-name-callback">
+<h4><code class="docutils literal notranslate"><span class="pre">w.bind(name,</span> <span class="pre">callback)</span></code><a class="headerlink" href="#w-bind-name-callback" title="Permalink to this headline">¶</a></h4>
+<p>Bind a Rampart (Duktape) function so it can be called from
+JavaScript running inside the webview.  The bound function appears as
+<code class="docutils literal notranslate"><span class="pre">window.&lt;name&gt;()</span></code> in the page and returns a Promise.</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">w</span><span class="p">.</span><span class="nx">bind</span><span class="p">(</span><span class="s2">&quot;add&quot;</span><span class="p">,</span> <span class="kd">function</span><span class="p">(</span><span class="nx">a</span><span class="p">,</span> <span class="nx">b</span><span class="p">)</span> <span class="p">{</span>
+    <span class="k">return</span> <span class="nx">a</span> <span class="o">+</span> <span class="nx">b</span><span class="p">;</span>
+<span class="p">});</span>
+</pre></div>
+</div>
+<p>From within the page:</p>
+<div class="highlight-html notranslate"><div class="highlight"><pre><span></span><span class="p">&lt;</span><span class="nt">script</span><span class="p">&gt;</span>
+<span class="nx">async</span> <span class="kd">function</span> <span class="nx">doAdd</span><span class="p">()</span> <span class="p">{</span>
+    <span class="kd">var</span> <span class="nx">result</span> <span class="o">=</span> <span class="nx">await</span> <span class="nb">window</span><span class="p">.</span><span class="nx">add</span><span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="mi">4</span><span class="p">);</span>
+    <span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="nx">result</span><span class="p">);</span> <span class="c1">// 7</span>
+<span class="p">}</span>
+<span class="p">&lt;/</span><span class="nt">script</span><span class="p">&gt;</span>
+</pre></div>
+</div>
+<p>The callback can accept and return rich types: numbers, strings,
+objects, arrays, booleans, <code class="docutils literal notranslate"><span class="pre">null</span></code>, Dates, Buffers/ArrayBuffers,
+TypedArrays, RegExps, Maps, Sets, <code class="docutils literal notranslate"><span class="pre">NaN</span></code>, <code class="docutils literal notranslate"><span class="pre">Infinity</span></code>, and
+<code class="docutils literal notranslate"><span class="pre">undefined</span></code>.  Cyclic object references are preserved.  If the
+callback throws, the Promise in the page is rejected with the error
+message.</p>
+</div>
+<div class="section" id="w-unbind-name">
+<h4><code class="docutils literal notranslate"><span class="pre">w.unbind(name)</span></code><a class="headerlink" href="#w-unbind-name" title="Permalink to this headline">¶</a></h4>
+<p>Remove a previously bound function.</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">w</span><span class="p">.</span><span class="nx">unbind</span><span class="p">(</span><span class="s2">&quot;add&quot;</span><span class="p">);</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="w-run">
+<h4><code class="docutils literal notranslate"><span class="pre">w.run()</span></code><a class="headerlink" href="#w-run" title="Permalink to this headline">¶</a></h4>
+<p>Start the webview event loop.  <strong>This call blocks</strong> until the window
+is closed, either by the user or by a call to <code class="docutils literal notranslate"><span class="pre">w.terminate()</span></code> from
+a bound callback.  All setup must be completed before <code class="docutils literal notranslate"><span class="pre">run()</span></code> is
+called.</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">w</span><span class="p">.</span><span class="nx">run</span><span class="p">();</span>
+<span class="c1">// Execution resumes here after the window is closed</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="w-terminate">
+<h4><code class="docutils literal notranslate"><span class="pre">w.terminate()</span></code><a class="headerlink" href="#w-terminate" title="Permalink to this headline">¶</a></h4>
+<p>Stop the event loop, causing <code class="docutils literal notranslate"><span class="pre">w.run()</span></code> to return.  Typically called
+from within a bound callback:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">w</span><span class="p">.</span><span class="nx">bind</span><span class="p">(</span><span class="s2">&quot;quit&quot;</span><span class="p">,</span> <span class="kd">function</span><span class="p">()</span> <span class="p">{</span>
+    <span class="nx">w</span><span class="p">.</span><span class="nx">terminate</span><span class="p">();</span>
+<span class="p">});</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="w-destroy">
+<h4><code class="docutils literal notranslate"><span class="pre">w.destroy()</span></code><a class="headerlink" href="#w-destroy" title="Permalink to this headline">¶</a></h4>
+<p>Explicitly destroy the webview instance and free its resources.  This
+is also done automatically by the garbage collector when the object
+goes out of scope.</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">w</span><span class="p">.</span><span class="nx">destroy</span><span class="p">();</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="w-snapshot-region">
+<h4><code class="docutils literal notranslate"><span class="pre">w.snapshot([region])</span></code><a class="headerlink" href="#w-snapshot-region" title="Permalink to this headline">¶</a></h4>
+<p>Capture the webview’s rendered content as a PNG image and return it
+as a <code class="docutils literal notranslate"><span class="pre">Buffer</span></code>.  Available on Linux (via WebKitGTK) and macOS (via
+WKWebView).</p>
+<p>The optional <code class="docutils literal notranslate"><span class="pre">region</span></code> argument may be <code class="docutils literal notranslate"><span class="pre">&quot;full&quot;</span></code> to capture the
+entire document, including content scrolled out of view.  The default
+captures only the visible window region.</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">png</span>     <span class="o">=</span> <span class="nx">w</span><span class="p">.</span><span class="nx">snapshot</span><span class="p">();</span>        <span class="c1">// visible region only</span>
+<span class="kd">var</span> <span class="nx">fullPng</span> <span class="o">=</span> <span class="nx">w</span><span class="p">.</span><span class="nx">snapshot</span><span class="p">(</span><span class="s2">&quot;full&quot;</span><span class="p">);</span>  <span class="c1">// entire document</span>
+<span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">fprintf</span><span class="p">(</span><span class="s2">&quot;page.png&quot;</span><span class="p">,</span> <span class="s2">&quot;%s&quot;</span><span class="p">,</span> <span class="nx">png</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>Snapshots are typically taken inside a bound callback after the page
+has finished loading:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">w</span><span class="p">.</span><span class="nx">bind</span><span class="p">(</span><span class="s2">&quot;ready&quot;</span><span class="p">,</span> <span class="kd">function</span><span class="p">()</span> <span class="p">{</span>
+    <span class="kd">var</span> <span class="nx">png</span> <span class="o">=</span> <span class="nx">w</span><span class="p">.</span><span class="nx">snapshot</span><span class="p">();</span>
+    <span class="c1">// ... save or process png ...</span>
+    <span class="nx">w</span><span class="p">.</span><span class="nx">terminate</span><span class="p">();</span>
+<span class="p">});</span>
+<span class="nx">w</span><span class="p">.</span><span class="nx">setHtml</span><span class="p">(</span><span class="s1">&#39;&lt;body&gt;&lt;h1&gt;Hello&lt;/h1&gt;\</span>
+<span class="s1">    &lt;script&gt;window.addEventListener(&quot;load&quot;,function(){window.ready()})&lt;/script&gt;\</span>
+<span class="s1">    &lt;/body&gt;&#39;</span><span class="p">);</span>
+<span class="nx">w</span><span class="p">.</span><span class="nx">run</span><span class="p">();</span>
+</pre></div>
+</div>
+<p>Combined with the <code class="docutils literal notranslate"><span class="pre">headless.sh</span></code> helper (see <a class="reference internal" href="#running-without-a-display">Running Without a
+Display</a>), this enables automated screenshot generation and visual
+testing without a GUI session.</p>
+</div>
+<div class="section" id="w-setcookie-name-value">
+<h4><code class="docutils literal notranslate"><span class="pre">w.setCookie(name,</span> <span class="pre">value)</span></code><a class="headerlink" href="#w-setcookie-name-value" title="Permalink to this headline">¶</a></h4>
+<p>Set a cookie in the webview’s cookie store for the current page’s
+host.  Available on Linux (WebKitGTK cookie manager) and macOS
+(WKHTTPCookieStore).  The page must be
+loaded over a real URL scheme (<code class="docutils literal notranslate"><span class="pre">http://</span></code>, <code class="docutils literal notranslate"><span class="pre">https://</span></code>); pages at
+<code class="docutils literal notranslate"><span class="pre">about:blank</span></code> or behind <code class="docutils literal notranslate"><span class="pre">data:</span></code> URIs cannot hold cookies.</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">w</span><span class="p">.</span><span class="nx">on</span><span class="p">(</span><span class="s2">&quot;load&quot;</span><span class="p">,</span> <span class="kd">function</span><span class="p">()</span> <span class="p">{</span>
+    <span class="nx">w</span><span class="p">.</span><span class="nx">setCookie</span><span class="p">(</span><span class="s2">&quot;session&quot;</span><span class="p">,</span> <span class="s2">&quot;abc123&quot;</span><span class="p">);</span>
+    <span class="nx">w</span><span class="p">.</span><span class="nx">setCookie</span><span class="p">(</span><span class="s2">&quot;user&quot;</span><span class="p">,</span> <span class="s2">&quot;alice&quot;</span><span class="p">);</span>
+<span class="p">});</span>
+<span class="nx">w</span><span class="p">.</span><span class="nx">navigate</span><span class="p">(</span><span class="s2">&quot;https://example.com/&quot;</span><span class="p">);</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="w-getcookies-uri">
+<h4><code class="docutils literal notranslate"><span class="pre">w.getCookies([uri])</span></code><a class="headerlink" href="#w-getcookies-uri" title="Permalink to this headline">¶</a></h4>
+<p>Return the cookies that would be sent for <code class="docutils literal notranslate"><span class="pre">uri</span></code> — or for the
+current page’s URI when <code class="docutils literal notranslate"><span class="pre">uri</span></code> is omitted — as a plain object of
+<code class="docutils literal notranslate"><span class="pre">{name:</span> <span class="pre">value,</span> <span class="pre">...}</span></code>.  Host-suffix, path-prefix, and secure-flag
+filtering are applied so the result matches what the browser would
+actually attach to a request.</p>
+<p>Available on Linux and macOS.  Throws if no URI is passed and no page
+has been loaded yet.</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">w</span><span class="p">.</span><span class="nx">on</span><span class="p">(</span><span class="s2">&quot;load&quot;</span><span class="p">,</span> <span class="kd">function</span><span class="p">()</span> <span class="p">{</span>
+    <span class="kd">var</span> <span class="nx">cookies</span> <span class="o">=</span> <span class="nx">w</span><span class="p">.</span><span class="nx">getCookies</span><span class="p">();</span>
+    <span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="nx">cookies</span><span class="p">.</span><span class="nx">session</span><span class="p">);</span>   <span class="c1">// &quot;abc123&quot;</span>
+
+    <span class="cm">/* Cookies for a different origin: */</span>
+    <span class="kd">var</span> <span class="nx">other</span> <span class="o">=</span> <span class="nx">w</span><span class="p">.</span><span class="nx">getCookies</span><span class="p">(</span><span class="s2">&quot;https://other.example.com/path&quot;</span><span class="p">);</span>
+<span class="p">});</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="w-getallcookies">
+<h4><code class="docutils literal notranslate"><span class="pre">w.getAllCookies()</span></code><a class="headerlink" href="#w-getallcookies" title="Permalink to this headline">¶</a></h4>
+<p>Return every cookie currently in the webview’s cookie store as a
+plain object of <code class="docutils literal notranslate"><span class="pre">{name:</span> <span class="pre">value,</span> <span class="pre">...}</span></code>, with no host/path/secure
+filtering.  This is useful when the page was loaded via <code class="docutils literal notranslate"><span class="pre">setHtml()</span></code>
+(and so has no resolvable host for <code class="docutils literal notranslate"><span class="pre">getCookies()</span></code> to filter
+against), or when you want to inspect the full store across origins.</p>
+<p>Available on macOS, and on Linux when the underlying WebKitGTK ABI
+exports <code class="docutils literal notranslate"><span class="pre">webkit_cookie_manager_get_all_cookies</span></code> (true on Debian
+Bullseye and newer, and on modern macOS).  On Debian Buster’s stock
+WebKitGTK the property is simply absent from the webview object;
+guard with <code class="docutils literal notranslate"><span class="pre">typeof</span> <span class="pre">w.getAllCookies</span> <span class="pre">===</span> <span class="pre">&quot;function&quot;</span></code> if you need to
+support that platform.</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">w</span><span class="p">.</span><span class="nx">on</span><span class="p">(</span><span class="s2">&quot;load&quot;</span><span class="p">,</span> <span class="kd">function</span><span class="p">()</span> <span class="p">{</span>
+    <span class="k">if</span> <span class="p">(</span><span class="k">typeof</span> <span class="nx">w</span><span class="p">.</span><span class="nx">getAllCookies</span> <span class="o">===</span> <span class="s2">&quot;function&quot;</span><span class="p">)</span> <span class="p">{</span>
+        <span class="kd">var</span> <span class="nx">everything</span> <span class="o">=</span> <span class="nx">w</span><span class="p">.</span><span class="nx">getAllCookies</span><span class="p">();</span>
+        <span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="nb">Object</span><span class="p">.</span><span class="nx">keys</span><span class="p">(</span><span class="nx">everything</span><span class="p">).</span><span class="nx">length</span><span class="p">,</span> <span class="s2">&quot;cookies in store&quot;</span><span class="p">);</span>
+    <span class="p">}</span>
+<span class="p">});</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="w-setuseragent-string">
+<h4><code class="docutils literal notranslate"><span class="pre">w.setUserAgent(string)</span></code><a class="headerlink" href="#w-setuseragent-string" title="Permalink to this headline">¶</a></h4>
+<p>Set the User-Agent string sent with HTTP requests and returned by
+<code class="docutils literal notranslate"><span class="pre">navigator.userAgent</span></code>.  Available on Linux and macOS.  Call before
+<code class="docutils literal notranslate"><span class="pre">navigate()</span></code> to affect the first request.</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">w</span><span class="p">.</span><span class="nx">setUserAgent</span><span class="p">(</span><span class="s2">&quot;MyApp/1.0&quot;</span><span class="p">);</span>
+<span class="nx">w</span><span class="p">.</span><span class="nx">navigate</span><span class="p">(</span><span class="s2">&quot;https://example.com/&quot;</span><span class="p">);</span>
+</pre></div>
+</div>
+</div>
+</div>
+<div class="section" id="constants">
+<h3>Constants<a class="headerlink" href="#constants" title="Permalink to this headline">¶</a></h3>
+<p>The window-sizing hints accepted by <code class="docutils literal notranslate"><span class="pre">setSize()</span></code> are available both
+as strings and as module constants.</p>
+<table border="1" class="colwidths-given docutils">
+<colgroup>
+<col width="30%" />
+<col width="10%" />
+<col width="60%" />
+</colgroup>
+<thead valign="bottom">
+<tr class="row-odd"><th class="head">Constant</th>
+<th class="head">Value</th>
+<th class="head">Description</th>
+</tr>
+</thead>
+<tbody valign="top">
+<tr class="row-even"><td><code class="docutils literal notranslate"><span class="pre">webview.HINT_NONE</span></code></td>
+<td>0</td>
+<td>Default window size</td>
+</tr>
+<tr class="row-odd"><td><code class="docutils literal notranslate"><span class="pre">webview.HINT_MIN</span></code></td>
+<td>1</td>
+<td>Minimum size constraint</td>
+</tr>
+<tr class="row-even"><td><code class="docutils literal notranslate"><span class="pre">webview.HINT_MAX</span></code></td>
+<td>2</td>
+<td>Maximum size constraint</td>
+</tr>
+<tr class="row-odd"><td><code class="docutils literal notranslate"><span class="pre">webview.HINT_FIXED</span></code></td>
+<td>3</td>
+<td>Fixed (non-resizable) size</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="section" id="accessing-local-servers">
+<h3>Accessing Local Servers<a class="headerlink" href="#accessing-local-servers" title="Permalink to this headline">¶</a></h3>
+<p>If a webview page needs to reach a local HTTP server (for example
+<code class="docutils literal notranslate"><span class="pre">http://127.0.0.1:8088/api/data.json</span></code>), the browser’s same-origin
+policy may block the request depending on how the page was loaded.
+Pages loaded via <code class="docutils literal notranslate"><span class="pre">setHtml()</span></code> or a <code class="docutils literal notranslate"><span class="pre">file://</span></code> URL have a <code class="docutils literal notranslate"><span class="pre">null</span></code>
+origin, so <code class="docutils literal notranslate"><span class="pre">fetch</span></code>/<code class="docutils literal notranslate"><span class="pre">XHR</span></code> requests to <code class="docutils literal notranslate"><span class="pre">http://</span></code> URLs are treated
+as cross-origin.  There are three ways to handle this.</p>
+<div class="section" id="option-1-serve-the-page-from-the-same-server">
+<h4>Option 1: Serve the page from the same server<a class="headerlink" href="#option-1-serve-the-page-from-the-same-server" title="Permalink to this headline">¶</a></h4>
+<p>If you are running
+<a class="reference internal" href="rampart-server.html#the-rampart-server-http-module"><span class="std std-ref">rampart-server</span></a>,
+navigate to it directly.  Page and API then share an origin and no
+CORS issue arises:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">w</span><span class="p">.</span><span class="nx">navigate</span><span class="p">(</span><span class="s2">&quot;http://127.0.0.1:8088/myapp/index.html&quot;</span><span class="p">);</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="option-2-add-cors-headers-on-the-server">
+<h4>Option 2: Add CORS headers on the server<a class="headerlink" href="#option-2-add-cors-headers-on-the-server" title="Permalink to this headline">¶</a></h4>
+<p>Configure the local server to send permissive CORS headers, allowing
+pages loaded via <code class="docutils literal notranslate"><span class="pre">setHtml()</span></code> or <code class="docutils literal notranslate"><span class="pre">file://</span></code> to make requests:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="c1">// In your rampart-server route handler:</span>
+<span class="k">return</span> <span class="p">{</span> <span class="nx">json</span><span class="o">:</span> <span class="nx">data</span><span class="p">,</span> <span class="nx">headers</span><span class="o">:</span> <span class="p">{</span><span class="s2">&quot;Access-Control-Allow-Origin&quot;</span><span class="o">:</span> <span class="s2">&quot;*&quot;</span><span class="p">}</span> <span class="p">};</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="option-3-use-w-bind-as-a-proxy">
+<h4>Option 3: Use <code class="docutils literal notranslate"><span class="pre">w.bind()</span></code> as a proxy<a class="headerlink" href="#option-3-use-w-bind-as-a-proxy" title="Permalink to this headline">¶</a></h4>
+<p>Expose a Rampart function that performs the HTTP request on the host
+side, bypassing browser security entirely.  This is the most flexible
+approach and works regardless of how the page was loaded:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="c1">// Rampart side</span>
+<span class="kd">var</span> <span class="nx">curl</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-curl&quot;</span><span class="p">);</span>
+
+<span class="nx">w</span><span class="p">.</span><span class="nx">bind</span><span class="p">(</span><span class="s2">&quot;fetchJson&quot;</span><span class="p">,</span> <span class="kd">function</span><span class="p">(</span><span class="nx">url</span><span class="p">)</span> <span class="p">{</span>
+    <span class="kd">var</span> <span class="nx">res</span> <span class="o">=</span> <span class="nx">curl</span><span class="p">.</span><span class="nx">fetch</span><span class="p">(</span><span class="nx">url</span><span class="p">);</span>
+    <span class="k">return</span> <span class="nx">JSON</span><span class="p">.</span><span class="nx">parse</span><span class="p">(</span><span class="nx">res</span><span class="p">.</span><span class="nx">body</span><span class="p">);</span>
+<span class="p">});</span>
+</pre></div>
+</div>
+<div class="highlight-html notranslate"><div class="highlight"><pre><span></span><span class="c">&lt;!-- Webview side --&gt;</span>
+<span class="p">&lt;</span><span class="nt">script</span><span class="p">&gt;</span>
+<span class="nx">async</span> <span class="kd">function</span> <span class="nx">loadData</span><span class="p">()</span> <span class="p">{</span>
+    <span class="kd">var</span> <span class="nx">data</span> <span class="o">=</span> <span class="nx">await</span> <span class="nb">window</span><span class="p">.</span><span class="nx">fetchJson</span><span class="p">(</span><span class="s2">&quot;http://127.0.0.1:8088/apps/myapp.json&quot;</span><span class="p">);</span>
+    <span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="nx">data</span><span class="p">);</span>
+<span class="p">}</span>
+<span class="p">&lt;/</span><span class="nt">script</span><span class="p">&gt;</span>
+</pre></div>
+</div>
+<p>The request happens in Rampart, free of browser restrictions, and
+the result is returned to the page as a resolved Promise.</p>
+</div>
+</div>
+<div class="section" id="running-without-a-display">
+<h3>Running Without a Display<a class="headerlink" href="#running-without-a-display" title="Permalink to this headline">¶</a></h3>
+<p>The webview requires a display connection (X11 on Linux, the
+WindowServer on macOS).  For automated tasks that do not need a
+visible window — generating screenshots, running bound callbacks — a
+virtual display can be used.</p>
+<p><strong>Linux:</strong> The included <code class="docutils literal notranslate"><span class="pre">headless.sh</span></code> script wraps rampart with
+Xvfb (the X virtual framebuffer).  Install Xvfb first:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>sudo apt install xvfb                    <span class="c1"># Debian/Ubuntu</span>
+sudo dnf install xorg-x11-server-Xvfb    <span class="c1"># Fedora/RHEL</span>
+</pre></div>
+</div>
+<p>Then run any webview script headlessly:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>./headless.sh my_script.js
+./headless.sh --dim 1920x1080 my_script.js
+</pre></div>
+</div>
+<p>The webview renders fully inside the virtual display; <code class="docutils literal notranslate"><span class="pre">snapshot()</span></code>
+and all bound callbacks work normally.</p>
+<p><strong>macOS:</strong> Headless operation is not directly supported, because
+Cocoa applications require an active WindowServer (a login session).
+CI services such as GitHub Actions and CircleCI handle this by
+keeping a user logged in on their macOS runners.</p>
+</div>
+</div>
+<div class="section" id="headless-javascriptcore">
+<h2>Headless JavaScriptCore<a class="headerlink" href="#headless-javascriptcore" title="Permalink to this headline">¶</a></h2>
+<p>In addition to the GUI webview, the module provides direct access to
+the JavaScriptCore (JSC) engine bundled with WebKit, so Rampart can
+execute modern JavaScript (ES2020+) without creating a window.  This
+gives Rampart a full JIT-compiled JS engine for running third-party
+libraries that need features beyond Duktape’s ES5.1 support.</p>
+<p>The JSC features are available on Linux (via WebKitGTK) and macOS
+(via the system <code class="docutils literal notranslate"><span class="pre">JavaScriptCore.framework</span></code>).</p>
+<p>Two interfaces are provided: <code class="docutils literal notranslate"><span class="pre">jscExec()</span></code> for one-shot evaluation,
+and <code class="docutils literal notranslate"><span class="pre">JSCContext</span></code> for a persistent interpreter where you can load
+modules, maintain state, and call methods on JSC objects directly.</p>
+<div class="section" id="compatibility">
+<h3>Compatibility<a class="headerlink" href="#compatibility" title="Permalink to this headline">¶</a></h3>
+<p>The JSC context is a pure JavaScript engine.  It provides ECMAScript
+builtins (<code class="docutils literal notranslate"><span class="pre">Math</span></code>, <code class="docutils literal notranslate"><span class="pre">JSON</span></code>, <code class="docutils literal notranslate"><span class="pre">Date</span></code>, <code class="docutils literal notranslate"><span class="pre">Promise</span></code>, <code class="docutils literal notranslate"><span class="pre">Map</span></code>,
+<code class="docutils literal notranslate"><span class="pre">Set</span></code>, <code class="docutils literal notranslate"><span class="pre">RegExp</span></code>, TypedArrays, etc.) but does <strong>not</strong> include Web
+Platform APIs (<code class="docutils literal notranslate"><span class="pre">fetch</span></code>, <code class="docutils literal notranslate"><span class="pre">setTimeout</span></code>, <code class="docutils literal notranslate"><span class="pre">WebSocket</span></code>,
+<code class="docutils literal notranslate"><span class="pre">localStorage</span></code>, the DOM, etc.) or Node.js APIs (<code class="docutils literal notranslate"><span class="pre">fs</span></code>, <code class="docutils literal notranslate"><span class="pre">http</span></code>,
+<code class="docutils literal notranslate"><span class="pre">require</span></code>, etc.).  Promises and <code class="docutils literal notranslate"><span class="pre">async</span></code>/<code class="docutils literal notranslate"><span class="pre">await</span></code> work correctly;
+the microtask queue drains between calls.</p>
+<p>As a general rule: if a library’s job is <strong>transforming data</strong> rather
+than performing I/O or rendering, it will work.  The following
+libraries have been tested and verified: lodash, mathjs, marked, ajv,
+papaparse, handlebars, js-yaml, fuse.js, and validator.js.  Libraries
+that need network access, timers, a DOM, or Node.js modules will not
+work.  Use Rampart’s own modules (rampart-curl, rampart-server,
+rampart-lmdb, etc.) for I/O, and pass data into JSC via <code class="docutils literal notranslate"><span class="pre">jsc.set()</span></code>
+for processing.</p>
+<p><strong>On callbacks:</strong> Duktape functions cannot be called from within JSC
+— the two are separate engines.  Data values pass freely in both
+directions, but any operation that requires a <em>callback function</em> as
+an argument must be performed inside <code class="docutils literal notranslate"><span class="pre">jsc.eval()</span></code>, where the
+callback is itself a JSC function.  Calling JSC methods with simple
+arguments (strings, numbers, objects, arrays) works directly from
+Rampart.</p>
+</div>
+<div class="section" id="webview-jscexec-code">
+<h3><code class="docutils literal notranslate"><span class="pre">webview.jscExec(code)</span></code><a class="headerlink" href="#webview-jscexec-code" title="Permalink to this headline">¶</a></h3>
+<p>Evaluate JavaScript in a temporary JSC context and return the result.
+A fresh context is created and destroyed on each call.  The return
+value is deep-converted to a native Duktape value using the rich type
+mapping below:</p>
+<table border="1" class="colwidths-given docutils">
+<colgroup>
+<col width="45%" />
+<col width="55%" />
+</colgroup>
+<thead valign="bottom">
+<tr class="row-odd"><th class="head">JSC type</th>
+<th class="head">Duktape result</th>
+</tr>
+</thead>
+<tbody valign="top">
+<tr class="row-even"><td>number, string, boolean, null, undefined</td>
+<td>Native equivalent (including <code class="docutils literal notranslate"><span class="pre">NaN</span></code>, <code class="docutils literal notranslate"><span class="pre">Infinity</span></code>)</td>
+</tr>
+<tr class="row-odd"><td>Date</td>
+<td>Duktape Date (<code class="docutils literal notranslate"><span class="pre">instanceof</span> <span class="pre">Date</span></code> works)</td>
+</tr>
+<tr class="row-even"><td>ArrayBuffer</td>
+<td>Node.js-style Buffer</td>
+</tr>
+<tr class="row-odd"><td>TypedArray (Uint8Array, Float64Array, etc.)</td>
+<td>Matching Duktape TypedArray</td>
+</tr>
+<tr class="row-even"><td>RegExp</td>
+<td>Duktape RegExp (source + flags preserved)</td>
+</tr>
+<tr class="row-odd"><td>Error / TypeError / etc.</td>
+<td>Duktape Error (name + message preserved)</td>
+</tr>
+<tr class="row-even"><td>Map</td>
+<td>Duktape Map (<code class="docutils literal notranslate"><span class="pre">instanceof</span> <span class="pre">Map</span></code>; entries converted recursively)</td>
+</tr>
+<tr class="row-odd"><td>Set</td>
+<td>Duktape Set (<code class="docutils literal notranslate"><span class="pre">instanceof</span> <span class="pre">Set</span></code>; values converted recursively)</td>
+</tr>
+<tr class="row-even"><td>Array, Object</td>
+<td>Recursive deep conversion</td>
+</tr>
+<tr class="row-odd"><td>Function</td>
+<td>Its <code class="docutils literal notranslate"><span class="pre">toString()</span></code> source text</td>
+</tr>
+</tbody>
+</table>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">webview</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-webview&quot;</span><span class="p">);</span>
+
+<span class="nx">webview</span><span class="p">.</span><span class="nx">jscExec</span><span class="p">(</span><span class="s2">&quot;40 + 2&quot;</span><span class="p">);</span>                       <span class="c1">// 42</span>
+<span class="nx">webview</span><span class="p">.</span><span class="nx">jscExec</span><span class="p">(</span><span class="s2">&quot;new Date(&#39;2026-01-01&#39;)&quot;</span><span class="p">);</span>        <span class="c1">// Date object</span>
+<span class="nx">webview</span><span class="p">.</span><span class="nx">jscExec</span><span class="p">(</span><span class="s2">&quot;new Uint8Array([0xCA, 0xFE])&quot;</span><span class="p">);</span>  <span class="c1">// TypedArray</span>
+<span class="nx">webview</span><span class="p">.</span><span class="nx">jscExec</span><span class="p">(</span><span class="s2">&quot;/^hello$/gi&quot;</span><span class="p">);</span>                    <span class="c1">// RegExp</span>
+<span class="nx">webview</span><span class="p">.</span><span class="nx">jscExec</span><span class="p">(</span><span class="s2">&quot;[...new Set([1,2,2,3])]&quot;</span><span class="p">);</span>        <span class="c1">// [1, 2, 3]</span>
+</pre></div>
+</div>
+<p>Thrown exceptions propagate as Duktape errors:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="k">try</span> <span class="p">{</span>
+    <span class="nx">webview</span><span class="p">.</span><span class="nx">jscExec</span><span class="p">(</span><span class="s2">&quot;throw new TypeError(&#39;oops&#39;)&quot;</span><span class="p">);</span>
+<span class="p">}</span> <span class="k">catch</span><span class="p">(</span><span class="nx">e</span><span class="p">)</span> <span class="p">{</span>
+    <span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="nx">e</span><span class="p">.</span><span class="nx">message</span><span class="p">);</span> <span class="c1">// contains &quot;TypeError: oops&quot;</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="new-webview-jsccontext">
+<h3><code class="docutils literal notranslate"><span class="pre">new</span> <span class="pre">webview.JSCContext()</span></code><a class="headerlink" href="#new-webview-jsccontext" title="Permalink to this headline">¶</a></h3>
+<p>Create a persistent JavaScriptCore context.  State is preserved
+across calls, and objects returned from JSC are wrapped in Duktape
+proxies so their properties and methods can be accessed directly.</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">jsc</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">webview</span><span class="p">.</span><span class="nx">JSCContext</span><span class="p">();</span>
+</pre></div>
+</div>
+<div class="section" id="jsc-eval-code">
+<h4><code class="docutils literal notranslate"><span class="pre">jsc.eval(code)</span></code><a class="headerlink" href="#jsc-eval-code" title="Permalink to this headline">¶</a></h4>
+<p>Evaluate code in the persistent context and return the value of the
+last expression.  Primitives, Dates, RegExps, and Buffers are
+auto-converted to native Duktape values; objects and functions are
+returned as live proxies backed by the JSC engine.</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">jsc</span><span class="p">.</span><span class="nb">eval</span><span class="p">(</span><span class="s2">&quot;var x = 10;&quot;</span><span class="p">);</span>
+<span class="nx">jsc</span><span class="p">.</span><span class="nb">eval</span><span class="p">(</span><span class="s2">&quot;x * 4&quot;</span><span class="p">);</span>            <span class="c1">// 40 (state persists)</span>
+
+<span class="kd">var</span> <span class="nx">obj</span> <span class="o">=</span> <span class="nx">jsc</span><span class="p">.</span><span class="nb">eval</span><span class="p">(</span><span class="s2">&quot;({greet: function(n) { return &#39;Hello &#39; + n; }})&quot;</span><span class="p">);</span>
+<span class="nx">obj</span><span class="p">.</span><span class="nx">greet</span><span class="p">(</span><span class="s2">&quot;World&quot;</span><span class="p">);</span>            <span class="c1">// &quot;Hello World&quot;</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="jsc-loadscript-path">
+<h4><code class="docutils literal notranslate"><span class="pre">jsc.loadScript(path)</span></code><a class="headerlink" href="#jsc-loadscript-path" title="Permalink to this headline">¶</a></h4>
+<p>Read a JavaScript file and evaluate it in the persistent context.
+Returns the value of the last expression (usually not meaningful for
+library scripts).  Use <code class="docutils literal notranslate"><span class="pre">getGlobal()</span></code> to reach the globals the
+script defines.</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">jsc</span><span class="p">.</span><span class="nx">loadScript</span><span class="p">(</span><span class="s2">&quot;/path/to/library.js&quot;</span><span class="p">);</span>
+<span class="kd">var</span> <span class="nx">lib</span> <span class="o">=</span> <span class="nx">jsc</span><span class="p">.</span><span class="nx">getGlobal</span><span class="p">(</span><span class="s2">&quot;LibraryName&quot;</span><span class="p">);</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="jsc-require-path">
+<h4><code class="docutils literal notranslate"><span class="pre">jsc.require(path)</span></code><a class="headerlink" href="#jsc-require-path" title="Permalink to this headline">¶</a></h4>
+<p>Load a JavaScript file with a CommonJS-compatible shim.  The file is
+wrapped in a <code class="docutils literal notranslate"><span class="pre">function(module,</span> <span class="pre">exports,</span> <span class="pre">require){</span> <span class="pre">...</span> <span class="pre">}</span></code> closure and
+<code class="docutils literal notranslate"><span class="pre">module.exports</span></code> is returned.  This works with UMD bundles and
+CommonJS modules, which covers most npm packages.  There is also
+limited, experimental support for ES module syntax (<code class="docutils literal notranslate"><span class="pre">export</span>
+<span class="pre">default</span></code>, <code class="docutils literal notranslate"><span class="pre">export</span> <span class="pre">function</span></code>, <code class="docutils literal notranslate"><span class="pre">export</span> <span class="pre">{</span> <span class="pre">...</span> <span class="pre">}</span></code>); if the CommonJS
+shim fails with a <code class="docutils literal notranslate"><span class="pre">SyntaxError</span></code>, <code class="docutils literal notranslate"><span class="pre">require</span></code> will attempt to
+transform <code class="docutils literal notranslate"><span class="pre">export</span></code> statements automatically.</p>
+<p>Both the CommonJS and ESM paths expect <strong>single-file bundles</strong>.
+Multi-file modules with <code class="docutils literal notranslate"><span class="pre">import</span></code> or <code class="docutils literal notranslate"><span class="pre">require</span></code> dependencies between
+files are not resolved — use a bundler (for example
+<code class="docutils literal notranslate"><span class="pre">esbuild</span> <span class="pre">lib.js</span> <span class="pre">--bundle</span> <span class="pre">--format=cjs</span></code>) to produce one file first.</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">math</span> <span class="o">=</span> <span class="nx">jsc</span><span class="p">.</span><span class="nx">require</span><span class="p">(</span><span class="s2">&quot;/path/to/math.js&quot;</span><span class="p">);</span>
+<span class="nx">math</span><span class="p">.</span><span class="nx">add</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">);</span>  <span class="c1">// 5</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="jsc-set-name-value">
+<h4><code class="docutils literal notranslate"><span class="pre">jsc.set(name,</span> <span class="pre">value)</span></code><a class="headerlink" href="#jsc-set-name-value" title="Permalink to this headline">¶</a></h4>
+<p>Set a global variable in the JSC context.  The value is converted
+from Duktape to JSC; numbers, strings, booleans, arrays, objects,
+Buffers, Dates, and already-wrapped JSC values are all supported.</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">jsc</span><span class="p">.</span><span class="nx">set</span><span class="p">(</span><span class="s2">&quot;config&quot;</span><span class="p">,</span> <span class="p">{</span><span class="nx">debug</span><span class="o">:</span> <span class="kc">true</span><span class="p">,</span> <span class="nx">maxRetries</span><span class="o">:</span> <span class="mi">3</span><span class="p">});</span>
+<span class="nx">jsc</span><span class="p">.</span><span class="nb">eval</span><span class="p">(</span><span class="s2">&quot;config.maxRetries&quot;</span><span class="p">);</span>  <span class="c1">// 3</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="jsc-getglobal-name">
+<h4><code class="docutils literal notranslate"><span class="pre">jsc.getGlobal(name)</span></code><a class="headerlink" href="#jsc-getglobal-name" title="Permalink to this headline">¶</a></h4>
+<p>Get a global variable from the JSC context as a wrapped value.</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">jsc</span><span class="p">.</span><span class="nx">loadScript</span><span class="p">(</span><span class="s2">&quot;library.js&quot;</span><span class="p">);</span>
+<span class="kd">var</span> <span class="nx">lib</span> <span class="o">=</span> <span class="nx">jsc</span><span class="p">.</span><span class="nx">getGlobal</span><span class="p">(</span><span class="s2">&quot;Library&quot;</span><span class="p">);</span>
+<span class="nx">lib</span><span class="p">.</span><span class="nx">someMethod</span><span class="p">();</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="jsc-destroy">
+<h4><code class="docutils literal notranslate"><span class="pre">jsc.destroy()</span></code><a class="headerlink" href="#jsc-destroy" title="Permalink to this headline">¶</a></h4>
+<p>Destroy the JSC context and free its resources.  Also done
+automatically by the garbage collector.</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">jsc</span><span class="p">.</span><span class="nx">destroy</span><span class="p">();</span>
+</pre></div>
+</div>
+</div>
+</div>
+<div class="section" id="working-with-wrapped-jsc-objects">
+<h3>Working with Wrapped JSC Objects<a class="headerlink" href="#working-with-wrapped-jsc-objects" title="Permalink to this headline">¶</a></h3>
+<p>Objects returned from <code class="docutils literal notranslate"><span class="pre">eval()</span></code>, <code class="docutils literal notranslate"><span class="pre">require()</span></code>, <code class="docutils literal notranslate"><span class="pre">getGlobal()</span></code>, or
+JSC method calls are Duktape proxies that resolve properties lazily
+from JSC:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">math</span> <span class="o">=</span> <span class="nx">jsc</span><span class="p">.</span><span class="nx">require</span><span class="p">(</span><span class="s2">&quot;math.js&quot;</span><span class="p">);</span>
+
+<span class="c1">// Property access resolves from JSC</span>
+<span class="nx">math</span><span class="p">.</span><span class="nx">pi</span><span class="p">;</span>                       <span class="c1">// 3.141592653589793</span>
+
+<span class="c1">// Method calls marshal arguments to JSC and convert the result</span>
+<span class="nx">math</span><span class="p">.</span><span class="nx">sqrt</span><span class="p">(</span><span class="mi">144</span><span class="p">);</span>                <span class="c1">// 12</span>
+<span class="nx">math</span><span class="p">.</span><span class="nx">add</span><span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="mi">4</span><span class="p">);</span>                <span class="c1">// 7</span>
+
+<span class="c1">// Returned objects are also proxied</span>
+<span class="kd">var</span> <span class="nx">m</span> <span class="o">=</span> <span class="nx">math</span><span class="p">.</span><span class="nx">matrix</span><span class="p">([[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">],</span> <span class="p">[</span><span class="mi">3</span><span class="p">,</span> <span class="mi">4</span><span class="p">]]);</span>
+<span class="nx">math</span><span class="p">.</span><span class="nx">det</span><span class="p">(</span><span class="nx">m</span><span class="p">);</span>                   <span class="c1">// -2</span>
+<span class="nx">math</span><span class="p">.</span><span class="nx">inv</span><span class="p">(</span><span class="nx">m</span><span class="p">).</span><span class="nx">toString</span><span class="p">();</span>        <span class="c1">// &quot;[[-2, 1], [1.5, -0.5]]&quot;</span>
+</pre></div>
+</div>
+<p>JSC objects passed as arguments to other JSC functions are unwrapped
+automatically — no manual conversion is needed:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">c1</span> <span class="o">=</span> <span class="nx">math</span><span class="p">.</span><span class="nx">complex</span><span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="mi">4</span><span class="p">);</span>
+<span class="kd">var</span> <span class="nx">c2</span> <span class="o">=</span> <span class="nx">math</span><span class="p">.</span><span class="nx">complex</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">2</span><span class="p">);</span>
+<span class="nx">math</span><span class="p">.</span><span class="nx">add</span><span class="p">(</span><span class="nx">c1</span><span class="p">,</span> <span class="nx">c2</span><span class="p">).</span><span class="nx">toString</span><span class="p">();</span>   <span class="c1">// &quot;4 + 2i&quot;</span>
+</pre></div>
+</div>
+<div class="section" id="tovalue">
+<h4><code class="docutils literal notranslate"><span class="pre">.toValue()</span></code><a class="headerlink" href="#tovalue" title="Permalink to this headline">¶</a></h4>
+<p>Deep-convert a wrapped JSC object to a plain Duktape value (using the
+same rich type mapping as <code class="docutils literal notranslate"><span class="pre">jscExec()</span></code>).  Useful when you need a
+native object for <code class="docutils literal notranslate"><span class="pre">JSON.stringify()</span></code>, for passing to another
+Rampart module, and so on:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">result</span> <span class="o">=</span> <span class="nx">math</span><span class="p">.</span><span class="nx">evaluate</span><span class="p">(</span><span class="s2">&quot;[1, 2, 3]&quot;</span><span class="p">);</span>
+<span class="kd">var</span> <span class="nx">arr</span> <span class="o">=</span> <span class="nx">result</span><span class="p">.</span><span class="nx">toValue</span><span class="p">();</span>     <span class="c1">// plain Duktape array [1, 2, 3]</span>
+<span class="nx">JSON</span><span class="p">.</span><span class="nx">stringify</span><span class="p">(</span><span class="nx">arr</span><span class="p">);</span>            <span class="c1">// &quot;[1,2,3]&quot;</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="tostring">
+<h4><code class="docutils literal notranslate"><span class="pre">.toString()</span></code><a class="headerlink" href="#tostring" title="Permalink to this headline">¶</a></h4>
+<p>Get the string representation of a wrapped JSC value.</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">math</span><span class="p">.</span><span class="nx">matrix</span><span class="p">([[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">],</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">]]).</span><span class="nx">toString</span><span class="p">();</span>  <span class="c1">// &quot;[[1, 0], [0, 1]]&quot;</span>
+</pre></div>
+</div>
+</div>
+</div>
+</div>
+<div class="section" id="examples">
+<h2>Examples<a class="headerlink" href="#examples" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="webview-counter-app">
+<h3>WebView: Counter App<a class="headerlink" href="#webview-counter-app" title="Permalink to this headline">¶</a></h3>
+<p>A small GUI application.  The page calls a bound host function on each
+click and a second bound function to quit.</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">webview</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-webview&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">w</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">webview</span><span class="p">.</span><span class="nx">WebView</span><span class="p">({</span>
+    <span class="nx">title</span><span class="o">:</span> <span class="s2">&quot;Counter App&quot;</span><span class="p">,</span>
+    <span class="nx">width</span><span class="o">:</span> <span class="mi">400</span><span class="p">,</span>
+    <span class="nx">height</span><span class="o">:</span> <span class="mi">300</span><span class="p">,</span>
+    <span class="nx">debug</span><span class="o">:</span> <span class="kc">false</span><span class="p">,</span>
+    <span class="nx">html</span><span class="o">:</span> <span class="s1">&#39;&lt;html&gt;\</span>
+<span class="s1">&lt;body style=&quot;font-family: sans-serif; text-align: center; padding: 40px;&quot;&gt;\</span>
+<span class="s1">  &lt;h1 id=&quot;count&quot;&gt;0&lt;/h1&gt;\</span>
+<span class="s1">  &lt;button onclick=&quot;increment()&quot;&gt;Increment&lt;/button&gt;\</span>
+<span class="s1">  &lt;button onclick=&quot;window.quit()&quot;&gt;Quit&lt;/button&gt;\</span>
+<span class="s1">  &lt;script&gt;\</span>
+<span class="s1">    var count = 0;\</span>
+<span class="s1">    async function increment() {\</span>
+<span class="s1">      count = await window.addOne(count);\</span>
+<span class="s1">      document.getElementById(&quot;count&quot;).textContent = count;\</span>
+<span class="s1">    }\</span>
+<span class="s1">  &lt;/script&gt;\</span>
+<span class="s1">&lt;/body&gt;\</span>
+<span class="s1">&lt;/html&gt;&#39;</span>
+<span class="p">});</span>
+
+<span class="nx">w</span><span class="p">.</span><span class="nx">bind</span><span class="p">(</span><span class="s2">&quot;addOne&quot;</span><span class="p">,</span> <span class="kd">function</span><span class="p">(</span><span class="nx">n</span><span class="p">)</span> <span class="p">{</span>
+    <span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="s2">&quot;addOne called:&quot;</span><span class="p">,</span> <span class="nx">n</span><span class="p">);</span>
+    <span class="k">return</span> <span class="nx">n</span> <span class="o">+</span> <span class="mi">1</span><span class="p">;</span>
+<span class="p">});</span>
+
+<span class="nx">w</span><span class="p">.</span><span class="nx">bind</span><span class="p">(</span><span class="s2">&quot;quit&quot;</span><span class="p">,</span> <span class="kd">function</span><span class="p">()</span> <span class="p">{</span>
+    <span class="nx">w</span><span class="p">.</span><span class="nx">terminate</span><span class="p">();</span>
+<span class="p">});</span>
+
+<span class="nx">w</span><span class="p">.</span><span class="nx">run</span><span class="p">();</span>
+<span class="nx">w</span><span class="p">.</span><span class="nx">destroy</span><span class="p">();</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="jsccontext-fetching-and-using-a-js-library">
+<h3>JSCContext: Fetching and Using a JS Library<a class="headerlink" href="#jsccontext-fetching-and-using-a-js-library" title="Permalink to this headline">¶</a></h3>
+<p>This example uses
+<a class="reference internal" href="rampart-curl.html#the-rampart-curl-module"><span class="std std-ref">rampart-curl</span></a> to
+download mathjs from a CDN, saves it to a file, then loads it into a
+<code class="docutils literal notranslate"><span class="pre">JSCContext</span></code> and runs several operations:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">rampart</span><span class="p">.</span><span class="nx">globalize</span><span class="p">(</span><span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">);</span>
+<span class="kd">var</span> <span class="nx">curl</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-curl&quot;</span><span class="p">);</span>
+<span class="kd">var</span> <span class="nx">wv</span>   <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-webview&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">url</span>  <span class="o">=</span> <span class="s2">&quot;https://cdn.jsdelivr.net/npm/mathjs@13.2.2/lib/browser/math.js&quot;</span><span class="p">;</span>
+<span class="kd">var</span> <span class="nx">file</span> <span class="o">=</span> <span class="s2">&quot;/tmp/math.js&quot;</span><span class="p">;</span>
+
+<span class="cm">/* Fetch the library */</span>
+<span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;Fetching mathjs from CDN... &quot;</span><span class="p">);</span>
+<span class="kd">var</span> <span class="nx">res</span> <span class="o">=</span> <span class="nx">curl</span><span class="p">.</span><span class="nx">fetch</span><span class="p">({</span><span class="nx">location</span><span class="o">:</span> <span class="kc">true</span><span class="p">},</span> <span class="nx">url</span><span class="p">);</span>
+<span class="k">if</span> <span class="p">(</span><span class="nx">res</span><span class="p">.</span><span class="nx">status</span> <span class="o">!==</span> <span class="mi">200</span><span class="p">)</span> <span class="p">{</span>
+    <span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;FAILED (status %d)\n&quot;</span><span class="p">,</span> <span class="nx">res</span><span class="p">.</span><span class="nx">status</span><span class="p">);</span>
+    <span class="nx">process</span><span class="p">.</span><span class="nx">exit</span><span class="p">(</span><span class="mi">1</span><span class="p">);</span>
+<span class="p">}</span>
+<span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;%d bytes, status %d\n&quot;</span><span class="p">,</span> <span class="nx">res</span><span class="p">.</span><span class="nx">body</span><span class="p">.</span><span class="nx">length</span><span class="p">,</span> <span class="nx">res</span><span class="p">.</span><span class="nx">status</span><span class="p">);</span>
+
+<span class="cm">/* Save to file */</span>
+<span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">fprintf</span><span class="p">(</span><span class="nx">file</span><span class="p">,</span> <span class="s2">&quot;%s&quot;</span><span class="p">,</span> <span class="nx">res</span><span class="p">.</span><span class="nx">body</span><span class="p">);</span>
+<span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;Saved to %s\n\n&quot;</span><span class="p">,</span> <span class="nx">file</span><span class="p">);</span>
+
+<span class="cm">/* Load into JSC and run some tests */</span>
+<span class="kd">var</span> <span class="nx">jsc</span>  <span class="o">=</span> <span class="k">new</span> <span class="nx">wv</span><span class="p">.</span><span class="nx">JSCContext</span><span class="p">();</span>
+<span class="kd">var</span> <span class="nx">math</span> <span class="o">=</span> <span class="nx">jsc</span><span class="p">.</span><span class="nx">require</span><span class="p">(</span><span class="nx">file</span><span class="p">);</span>
+
+<span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;mathjs version: %s\n\n&quot;</span><span class="p">,</span> <span class="nx">math</span><span class="p">.</span><span class="nx">version</span><span class="p">);</span>
+
+<span class="cm">/* Linear algebra */</span>
+<span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;Linear algebra:\n&quot;</span><span class="p">);</span>
+<span class="kd">var</span> <span class="nx">m</span> <span class="o">=</span> <span class="nx">math</span><span class="p">.</span><span class="nx">matrix</span><span class="p">([[</span><span class="mi">2</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">],</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">1</span><span class="p">],</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">]]);</span>
+<span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;  matrix:       %s\n&quot;</span><span class="p">,</span> <span class="nx">m</span><span class="p">.</span><span class="nx">toString</span><span class="p">());</span>
+<span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;  determinant:  %s\n&quot;</span><span class="p">,</span> <span class="nx">math</span><span class="p">.</span><span class="nx">det</span><span class="p">(</span><span class="nx">m</span><span class="p">));</span>
+<span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;  inverse:      %s\n&quot;</span><span class="p">,</span> <span class="nx">math</span><span class="p">.</span><span class="nx">inv</span><span class="p">(</span><span class="nx">m</span><span class="p">).</span><span class="nx">toString</span><span class="p">());</span>
+
+<span class="cm">/* Expression parser */</span>
+<span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;\nExpression parser:\n&quot;</span><span class="p">);</span>
+<span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;  e^(i*pi) + 1 = %s\n&quot;</span><span class="p">,</span> <span class="nx">math</span><span class="p">.</span><span class="nx">evaluate</span><span class="p">(</span><span class="s2">&quot;e^(i*pi) + 1&quot;</span><span class="p">).</span><span class="nx">toString</span><span class="p">());</span>
+<span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;  3 inches in cm = %s\n&quot;</span><span class="p">,</span> <span class="nx">math</span><span class="p">.</span><span class="nx">evaluate</span><span class="p">(</span><span class="s2">&quot;3 inch to cm&quot;</span><span class="p">).</span><span class="nx">toString</span><span class="p">());</span>
+<span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;  derivative of sin(x)*x^2 = %s\n&quot;</span><span class="p">,</span>
+    <span class="nx">math</span><span class="p">.</span><span class="nx">derivative</span><span class="p">(</span><span class="s2">&quot;sin(x)*x^2&quot;</span><span class="p">,</span> <span class="s2">&quot;x&quot;</span><span class="p">).</span><span class="nx">toString</span><span class="p">());</span>
+
+<span class="cm">/* Statistics on data passed from Duktape */</span>
+<span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;\nStatistics (data passed from Duktape to JSC):\n&quot;</span><span class="p">);</span>
+<span class="kd">var</span> <span class="nx">data</span> <span class="o">=</span> <span class="p">[</span><span class="mi">2</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">6</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="mi">10</span><span class="p">,</span> <span class="mi">12</span><span class="p">,</span> <span class="mi">14</span><span class="p">,</span> <span class="mi">16</span><span class="p">,</span> <span class="mi">18</span><span class="p">,</span> <span class="mi">20</span><span class="p">];</span>
+<span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;  data:     %s\n&quot;</span><span class="p">,</span> <span class="nx">JSON</span><span class="p">.</span><span class="nx">stringify</span><span class="p">(</span><span class="nx">data</span><span class="p">));</span>
+<span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;  mean:     %s\n&quot;</span><span class="p">,</span> <span class="nx">math</span><span class="p">.</span><span class="nx">mean</span><span class="p">(</span><span class="nx">data</span><span class="p">));</span>
+<span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;  median:   %s\n&quot;</span><span class="p">,</span> <span class="nx">math</span><span class="p">.</span><span class="nx">median</span><span class="p">(</span><span class="nx">data</span><span class="p">));</span>
+<span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;  std:      %s\n&quot;</span><span class="p">,</span> <span class="nx">math</span><span class="p">.</span><span class="nx">std</span><span class="p">(</span><span class="nx">data</span><span class="p">));</span>
+
+<span class="nx">jsc</span><span class="p">.</span><span class="nx">destroy</span><span class="p">();</span>
+<span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;\nDone.\n&quot;</span><span class="p">);</span>
+</pre></div>
+</div>
+</div>
+</div>
+</div>
+
+
+           </div>
+          </div>
+          <footer>
+  
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+      
+        <a href="rampart-chromeview.html" class="btn btn-neutral float-right" title="The rampart-chromeview module" accesskey="n">Next <span class="fa fa-arrow-circle-right"></span></a>
+      
+      
+        <a href="rampart-gm.html" class="btn btn-neutral" title="The rampart-gm module" accesskey="p"><span class="fa fa-arrow-circle-left"></span> Previous</a>
+      
+    </div>
+  
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &copy; Copyright 2026, Moat Crossing Systems.
+
+    </p>
+  </div>
+  Built with <a href="http://sphinx-doc.org/">Sphinx</a> and ❤️  using a custom <a href="https://github.com/LinxiFan/Sphinx-theme">theme</a> based on <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+
+  
+
+    <script type="text/javascript">
+        var DOCUMENTATION_OPTIONS = {
+            URL_ROOT:'./',
+            VERSION:'0.7.2',
+            COLLAPSE_INDEX:false,
+            FILE_SUFFIX:'.html',
+            HAS_SOURCE:  true,
+            SOURCELINK_SUFFIX: '.txt'
+        };
+    </script>
+      <script type="text/javascript" src="_static/jquery.js"></script>
+      <script type="text/javascript" src="_static/underscore.js"></script>
+      <script type="text/javascript" src="_static/doctools.js"></script>
+      <script type="text/javascript" src="_static/language_data.js"></script>
+      <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/latest.js?config=TeX-AMS-MML_HTMLorMML"></script>
+
+  
+
+  
+  
+    <script type="text/javascript" src="_static/js/theme.js"></script>
+  
+
+  
+  
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.StickyNav.enable();
+      });
+  </script>
+   
+
+</body>
+</html>
