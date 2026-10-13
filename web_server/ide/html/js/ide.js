@@ -184,6 +184,26 @@ const Tree = {
     this.markSelected();
     this.markDirty();
     this.applyFilter();
+    Watch.sync();
+  },
+
+  /* reload one shown directory in place (after a change notice) */
+  async refreshDir(path) {
+    if (!path) return this.refresh();
+    const row = this.rowFor(path);
+    const kids = row && row.nextElementSibling;
+    if (!kids || !kids.classList.contains('children')) return;
+    const el = $('tree'), scroll = el.scrollTop;
+    const box = document.createElement('div');
+    box.className = 'children';
+    await this.buildDir(path, +row.dataset.depth + 1, box);
+    if (row.nextElementSibling !== kids) return;      /* collapsed or rebuilt meanwhile */
+    kids.replaceWith(box);
+    el.scrollTop = scroll;
+    this.markSelected();
+    this.markDirty();
+    this.applyFilter();
+    Watch.sync();
   },
 
   async buildDir(path, depth, parent) {
@@ -253,6 +273,7 @@ const Tree = {
       this.applyFilter();
     }
     this.saveExpanded();
+    Watch.sync();
   },
 
   /* expand every directory leading to path */
@@ -1431,6 +1452,65 @@ const DocSearch = {
 };
 
 /* ------------------------------------------------------------------ *
+ * live file tree: the server watches the directories shown in the tree
+ * (ide/wsapps/watch.js) and says which one changed
+ * ------------------------------------------------------------------ */
+
+const Watch = {
+  ws: null,
+  sent: '',
+  retry: 1000,
+  timer: null,
+
+  start() {
+    if (App.termOnly || this.ws) return;
+    clearTimeout(this.timer);
+    this.retry = 1000;
+    this.connect();
+  },
+
+  connect() {
+    const url = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ide/wsapps/watch.js';
+    let ws;
+    try { ws = new WebSocket(url); } catch (e) { return this.later(); }
+    this.ws = ws;
+    this.sent = '';
+    ws.onopen = () => { this.retry = 1000; this.sync(); };
+    ws.onmessage = (e) => {
+      let m;
+      try { m = JSON.parse(e.data); } catch (x) { return; }
+      if (typeof m.changed === 'string') Tree.refreshDir(m.changed);
+    };
+    ws.onclose = () => { if (this.ws === ws) { this.ws = null; this.later(); } };
+  },
+
+  /* reconnect with backoff, e.g. after a server restart or while signed out */
+  later() {
+    clearTimeout(this.timer);
+    this.timer = setTimeout(() => { this.timer = null; this.connect(); }, this.retry);
+    this.retry = Math.min(this.retry * 2, 30000);
+  },
+
+  /* the root plus every expanded folder whose contents are in the tree */
+  dirs() {
+    const out = [''];
+    for (const row of $('tree').querySelectorAll('.row[data-dir]')) {
+      const n = row.nextElementSibling;
+      if (n && n.classList.contains('children')) out.push(row.dataset.path);
+    }
+    return out;
+  },
+
+  sync() {
+    if (!this.ws || this.ws.readyState !== 1) return;
+    const msg = JSON.stringify({watch: this.dirs()});
+    if (msg === this.sent) return;
+    this.sent = msg;
+    this.ws.send(msg);
+  }
+};
+
+/* ------------------------------------------------------------------ *
  * login and startup
  * ------------------------------------------------------------------ */
 
@@ -1511,7 +1591,7 @@ async function boot() {
   $('root-name').textContent = st.root;
   $('root-name').title = st.rootPath + ' on ' + st.host;
   $('nav-hidden').classList.toggle('on', Tree.hidden);
-  if (App.started) { if (!App.termOnly) await Tree.refresh(); return; }
+  if (App.started) { if (!App.termOnly) { await Tree.refresh(); Watch.start(); } return; }
   App.started = true;
   if (App.termOnly) return startTermOnly();
 
@@ -1521,6 +1601,7 @@ async function boot() {
   const at = Editor.find(store.get('activeTab', ''));
   if (at) Editor.activate(at);
   updateRunButtons();
+  Watch.start();
   loadCM().catch(() => {});
 }
 
