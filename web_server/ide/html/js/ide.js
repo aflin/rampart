@@ -742,10 +742,11 @@ const Terms = {
   create(mode, opts) {
     opts = opts || {};
     if (!App.termOnly) showPanel('debug', true);
-    const s = {id: ++this.seq, mode, path: opts.path || '', running: true};
+    const s = {id: ++this.seq, mode, path: opts.path || '', running: true, bundle: opts.bundle};
     s.title = mode === 'repl' ? 'rampart' : mode === 'run' ? basename(s.path)
+            : mode === 'bundle' ? 'bundle ' + (opts.bundle && opts.bundle.name || '')
             : (s.path ? basename(s.path) : 'Terminal');
-    s.kind = mode === 'repl' ? 'REPL' : mode === 'run' ? 'RUN' : 'SH';
+    s.kind = ({repl: 'REPL', run: 'RUN', bundle: 'BUILD'})[mode] || 'SH';
 
     s.el = document.createElement('div');
     s.el.className = 'term-pane';
@@ -778,6 +779,7 @@ const Terms = {
     const q = new URLSearchParams({mode, cols: s.term.cols, rows: s.term.rows});
     if (s.path) q.set('path', s.path);
     if (opts.args) q.set('args', opts.args);
+    if (opts.bundle) q.set('opts', JSON.stringify(opts.bundle));
     const url = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ide/wsapps/term.js?' + q;
     s.ws = new WebSocket(url);
     s.ws.binaryType = 'arraybuffer';
@@ -803,9 +805,24 @@ const Terms = {
     s.tabEl.classList.add('ended');
     if (!s.closing) s.term.write('\r\n\x1b[2m[' + (s.stopped ? 'stopped' : 'session ended') + ']\x1b[0m\r\n');
     if (s.mode === 'run') setStatus(s.title + (s.stopped ? ' stopped' : ' finished'));
+    if (s.mode === 'bundle' && s.bundle && !s.closing) this.offerDownload(s);
     this.updateActivity();
     updateRunButtons();
     Tree.refresh();     /* the script or shell may have changed files */
+  },
+
+  /* a finished bundle build: link to the file it made (only that file, and
+     only through the IDE's login; see bundle-download.bin in apps/ide.js) */
+  async offerDownload(s) {
+    let r;
+    try { r = await api('bundle-built', {id: s.bundle.id}); } catch (e) { return; }
+    if (!r.ok || !s.el.isConnected) return;
+    const bar = document.createElement('div');
+    bar.className = 'term-download';
+    bar.innerHTML = '<a download href="/ide/apps/ide/bundle-download.bin?id=' + encodeURIComponent(s.bundle.id) + '">' +
+      '<svg viewBox="0 0 16 16"><path d="M8 2v8M4.5 6.5L8 10l3.5-3.5M3 13h10" fill="none" stroke-width="1.5"/></svg>' +
+      'Download ' + esc(r.name) + ' (' + fmtSize(r.size) + ')</a>';
+    s.el.appendChild(bar);
   },
 
   activate(s) {
@@ -1206,6 +1223,8 @@ const MENUS = [
     {label: 'Save All',      enabled: () => Editor.tabs.some((t) => t.dirty), action: () => Editor.saveAll()},
     {label: 'Revert to Saved', enabled: hasView, action: () => Editor.revert(Editor.active)},
     '-',
+    {label: 'Build Bundle...', action: () => Bundle.open()},
+    '-',
     {label: 'Close Tab',     enabled: () => !!Editor.active, action: () => Editor.close(Editor.active)},
     {label: 'Close All Tabs', enabled: () => Editor.tabs.length > 0, action: async () => {
       for (const t of Editor.tabs.slice()) if (!(await Editor.close(t))) break;
@@ -1511,6 +1530,163 @@ const Watch = {
 };
 
 /* ------------------------------------------------------------------ *
+ * Build Bundle dialog (ide/lib/bundle-build.js does the work)
+ * ------------------------------------------------------------------ */
+
+const Bundle = {
+  async open() {
+    let info;
+    try { info = await api('bundle-info'); }
+    catch (e) { return alertBox('Build Bundle', e.message); }
+    if (!info.zip) return alertBox('Build Bundle', "The 'zip' program is needed to build a bundle; it was not found on the server.");
+
+    const back = document.createElement('div');
+    back.className = 'modal-back';
+    const d = info.defaults || {};
+    const hostTxt = d.error ? '(could not read web_server_conf.js: ' + d.error + ')'
+      : (d.bindAll ? 'all interfaces' : [d.ipAddr, d.ipv6Addr].filter(Boolean).join(' and ') || 'localhost') +
+        ', port ' + d.port + (d.secure ? ', https' : ', http') + (d.letsencrypt ? ' (letsencrypt ' + d.letsencrypt + ')' : '');
+    back.innerHTML =
+      '<form class="modal bundle-dlg">' +
+      '<div class="modal-title">Build a Single-File Bundle <span class="bd-badge">Experimental</span></div>' +
+      '<div class="bd-intro">Builds one executable file containing rampart and everything this web site ' +
+        'does now: its pages, apps, websocket apps and the modules they need.  The Mini IDE is not included.  ' +
+        'Copy the file to another ' + esc(info.platform) + ' machine and run it to serve the site; ' +
+        'run it with <code>--help</code> to see its options.</div>' +
+      '<label class="bd-row">Project name <input name="name" value="myproject" spellcheck="false"></label>' +
+      '<label class="bd-row">Output file <input name="output" spellcheck="false"></label>' +
+      (info.parentWritable ? '' : '<div class="bd-note">The folder holding the web server is not writable, so the default is your home folder.</div>') +
+      '<label class="bd-row">Data directory <input name="dataDir" spellcheck="false"></label>' +
+      '<label class="bd-row">Logs directory <input name="logsDir" spellcheck="false"></label>' +
+      (info.authFiles.length || info.auth.needed ?
+      '<div class="bd-note"><b>Login system:</b> ' +
+        (info.auth.needed ? 'included (' + esc(info.auth.reason) + ').'
+                          : 'not used, left out (' + esc(info.auth.reason) + '): ' + esc(info.authFiles.join(', ')) + '.') +
+      '</div>' : '') +
+      '<fieldset><legend>Data shipped with the bundle</legend>' +
+        '<div class="bd-hint bd-para">A bundle cannot write inside itself, so while it runs its databases and other ' +
+          'files live in the data directory above.  Tick the items from this site\'s data/ folder to put inside ' +
+          'the bundle; they are copied into the data directory when the bundle starts.</div>' +
+        '<div class="bd-list" data-list="data"></div>' +
+        '<div class="bd-warn">Everything ticked goes to whoever gets the bundle: user accounts, password hashes, test data, etc.</div>' +
+        '<label class="bd-check"><input type="radio" name="seedPolicy" value="first" checked> ' +
+          '<span>Copy only on the first start, when the data directory does not exist yet.  ' +
+          '<span class="bd-hint">After that the data directory is left alone, even by a newer version of the bundle.</span></span></label>' +
+        '<label class="bd-check"><input type="radio" name="seedPolicy" value="missing"> ' +
+          '<span>Also on every later start, copy shipped files that are missing from the data directory.  ' +
+          '<span class="bd-hint">Useful when a newer version of the bundle adds files.  Files already there are never replaced.</span></span></label>' +
+      '</fieldset>' +
+      '<fieldset><legend>Modules</legend><div class="bd-list bd-mods" data-list="modules"></div>' +
+        '<div class="bd-hint">Ticked: needed by the files being bundled (hover for which).  Tick any others the site loads indirectly.</div></fieldset>' +
+      (info.isMac ? '<label class="bd-check"><input type="checkbox" name="macWrapper" checked> Add the macOS wrapper (clears the download quarantine flag on first run)</label>' : '') +
+      '<div class="bd-note">Starts by default on ' + esc(hostTxt) + ', from web_server_conf.js.  ' +
+        'Override when running with --host, --port, --tls, --letsencrypt, ... (see --help).</div>' +
+      '<div class="bd-error" data-err></div>' +
+      '<div class="modal-buttons"><button type="button" data-cancel>Cancel</button><button type="submit" class="primary">Build</button></div>' +
+      '</form>';
+    document.body.appendChild(back);
+    const f = back.querySelector('form');
+    const el = (n) => f.elements[n];
+
+    /* fields that follow the project name until edited by hand */
+    const follow = {output: true, dataDir: true, logsDir: true};
+    const derive = () => {
+      const n = el('name').value.trim() || 'myproject';
+      if (follow.output) el('output').value = info.outputDir.replace(/\/$/, '') + '/' + n;
+      if (follow.dataDir) el('dataDir').value = '~/.rampart/' + n + '/data';
+      if (follow.logsDir) el('logsDir').value = '~/.rampart/' + n + '/logs';
+    };
+    ['output', 'dataDir', 'logsDir'].forEach((k) => el(k).addEventListener('input', () => { follow[k] = false; }));
+    el('name').addEventListener('input', derive);
+    derive();
+
+    const dataList = f.querySelector('[data-list="data"]');
+    dataList.innerHTML = info.data.length
+      ? info.data.map((x) => '<label class="bd-check"><input type="checkbox" name="data" value="' + esc(x.name) + '" checked> ' +
+                             esc(x.name) + (x.dir ? '/' : '') + '</label>').join('')
+      : '<div class="bd-hint">data/ is empty</div>';
+
+    /* modules: ticked when something being bundled needs them.  A reason
+       "via rampart-x" only counts while rampart-x is ticked, so unticking a
+       module also unticks the ones only it needed.  Boxes changed by hand
+       keep their state.                                                   */
+    const needs = {};
+    const add = (src) => { for (const m in src) needs[m] = (needs[m] || []).concat(src[m]); };
+    add(info.modules);
+    if (info.auth.needed) { add(info.authModules); add({'rampart-auth': ['the login system']}); }
+    const manual = {};
+    const ticked = () => {
+      const on = {};
+      let changed = true;
+      while (changed) {
+        changed = false;
+        for (const m of info.available) {
+          const v = m in manual ? manual[m]
+            : (needs[m] || []).some((r) => !/^via /.test(r) || on[r.substring(4)]);
+          if (!!on[m] !== v) { on[m] = v; changed = true; }
+        }
+      }
+      return on;
+    };
+    const renderMods = () => {
+      const on = ticked();
+      f.querySelector('[data-list="modules"]').innerHTML = info.available.map((m) => {
+        const why = needs[m] ? 'Needed by: ' + needs[m].filter((x, i, a) => a.indexOf(x) === i).join(', ')
+                             : 'Not required by the bundled files';
+        return '<label class="bd-check" title="' + esc(why) + '"><input type="checkbox" name="module" value="' + esc(m) + '"' +
+          (on[m] ? ' checked' : '') + (m === 'rampart-server' || m === 'rampart-webserver' ? ' disabled' : '') +
+          '> ' + esc(m) + '</label>';
+      }).join('');
+    };
+    f.querySelector('[data-list="modules"]').addEventListener('change', (e) => {
+      if (e.target.name !== 'module') return;
+      manual[e.target.value] = e.target.checked;
+      renderMods();
+    });
+    renderMods();
+    /* data/auth holds the login database: shipped only with the login system */
+    const authData = f.querySelector('input[name=data][value="auth"]');
+    if (authData) authData.checked = info.auth.needed;
+
+    const close = () => { back.remove(); document.removeEventListener('keydown', onKey, true); };
+    const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); close(); } };
+    document.addEventListener('keydown', onKey, true);
+    f.querySelector('[data-cancel]').onclick = close;
+    el('name').focus();
+    el('name').select();
+
+    f.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const err = f.querySelector('[data-err]');
+      err.textContent = '';
+      const name = el('name').value.trim();
+      if (!/^[A-Za-z0-9._-]+$/.test(name)) { err.textContent = "Project name: letters, digits, '.', '_' and '-' only."; return; }
+      const o = {
+        name,
+        output: el('output').value.trim(),
+        dataDir: el('dataDir').value.trim(),
+        logsDir: el('logsDir').value.trim(),
+        dataInclude: Array.from(f.querySelectorAll('input[name=data]:checked')).map((x) => x.value),
+        seedPolicy: f.querySelector('input[name=seedPolicy]:checked').value,
+        modules: Array.from(f.querySelectorAll('input[name=module]:checked')).map((x) => x.value),
+        macWrapper: !!(el('macWrapper') && el('macWrapper').checked)
+      };
+      if (!o.dataDir || !o.logsDir) { err.textContent = 'The directories cannot be empty.'; return; }
+      let chk;
+      try { chk = await api('bundle-check', {output: o.output}); }
+      catch (x) { err.textContent = 'Output file: ' + x.message + '.'; return; }
+      if (chk.error) { err.textContent = 'Output file: ' + chk.error + '.'; return; }
+      close();
+      if (chk.exists && !(await confirmBox('Replace ' + basename(o.output) + '?', o.output + ' already exists.', 'Replace', true)))
+        return;
+      /* the build id lets this page download the result, and nothing else */
+      o.id = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('');
+      Terms.create('bundle', {bundle: o});
+    });
+  }
+};
+
+/* ------------------------------------------------------------------ *
  * login and startup
  * ------------------------------------------------------------------ */
 
@@ -1643,6 +1819,7 @@ $('btn-run').onclick = runActive;
 $('btn-stop').onclick = () => Terms.stop(Terms.runningRun());
 $('run-args').addEventListener('keydown', (e) => { if (e.key === 'Enter') runActive(); });
 termButtonMenu($('btn-shell'), 'shell');
+$('btn-bundle').onclick = () => Bundle.open();
 termButtonMenu($('btn-repl'), 'repl');
 $('debug-newshell').onclick = () => Terms.create('shell');
 $('debug-clear').onclick = () => { if (Terms.active) { Terms.active.term.clear(); Terms.active.term.focus(); } };

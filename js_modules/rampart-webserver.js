@@ -1605,9 +1605,272 @@ function web_server_conf(conf) {
     }
 }
 
+/* -------------------- single-file bundles --------------------
+ * bundleSetup(serverConf) is called by web_server_conf.js before starting.
+ * It does nothing unless the server runs from a bundle (an appended zip).
+ *
+ * Bundles built by the Mini IDE carry bundle.json at the zip root:
+ *   {name, dataDir, logsDir, seedPolicy ("first"|"missing"), built, defaults}
+ * Command line options (--host, --port, --tls, ...) are removed from
+ * process.argv and applied to serverConf.  Options given to start or
+ * restart update the saved set, so later commands and the macOS launchd
+ * child (which is started with no options) use the same ones.
+ * ------------------------------------------------------------- */
+
+/* option -> takes a value */
+var bundleFlags = {
+    '--host': 1, '--port': 1, '--cert': 1, '--key': 1, '--letsencrypt': 1,
+    '--redirect-port': 1, '--user': 1, '--data': 1, '--logs': 1,
+    '--tls': 0, '--self-sign': 0, '--foreground': 0, '--defaults': 0,
+    '--background': 0, '--no-tls': 0
+};
+
+/* options that turn others off when saved */
+var bundleUnsets = {
+    'background': ['foreground'],
+    'no-tls': ['tls', 'self-sign', 'cert', 'key', 'letsencrypt', 'redirect-port']
+};
+
+function bundleDie(msg) {
+    fprintf(stderr, "%s\n", msg);
+    process.exit(1);
+}
+
+function bundleHome() {
+    var home = process.env.HOME;
+    if (!home || !stat(home)) home = '/tmp';
+    return home;
+}
+
+function bundleExpand(p) {
+    return String(p).replace(/^~(?=\/|$)/, bundleHome());
+}
+
+function bundleDirname(p) {
+    return p.replace(/\/+$/, '').replace(/\/[^\/]*$/, '') || '/';
+}
+
+function bundleHelp(info) {
+    var me = (process.argv0 || 'bundle').replace(/.*\//, ''), d = info.defaults || {};
+    printf(
+"%s - Rampart web server bundle\n\n" +
+"Usage:\n" +
+"  %s [options] [start|stop|restart|status|letssetup]\n" +
+"\nOptions given to start or restart are remembered, each until it is given\n" +
+"again, so later commands need none of them:\n" +
+"  --host ADDR          all (0.0.0.0 and [::]), localhost, or one IPv4/IPv6 address\n" +
+"  --port N             port to listen on\n" +
+"  --tls                serve https (with --cert/--key, --self-sign or --letsencrypt)\n" +
+"  --no-tls             serve http again (forgets --tls, --cert, --key, --self-sign,\n" +
+"                       --letsencrypt and --redirect-port)\n" +
+"  --cert FILE          TLS certificate file\n" +
+"  --key FILE           TLS private key file\n" +
+"  --self-sign          generate and use a self-signed certificate\n" +
+"  --letsencrypt HOST   use the Let's Encrypt certificate for HOST (port 443)\n" +
+"  --redirect-port N    also redirect http on port N to https\n" +
+"  --user NAME          user to run as when started as root\n" +
+"  --data DIR           data directory (default %s)\n" +
+"  --logs DIR           logs directory (default %s)\n" +
+"  --foreground         do not detach from the terminal\n" +
+"  --background         detach from the terminal again (the default)\n" +
+"  --defaults           forget all remembered options and use the built-in\n" +
+"                       defaults, plus any options given with it\n" +
+"  -h, --help           this message\n\n" +
+"Built-in defaults: host %s, port %s%s.\n",
+        me, me,
+        info.dataDir, info.logsDir,
+        d.bindAll ? 'all' : (d.ipAddr || 'localhost'), d.port, d.secure ? ', https' : '');
+}
+
+/* Copy the entries under `prefix/` of the zip to dest.
+   policy "first":   only when dest does not exist yet
+          "missing": also add files dest does not have; never replace any */
+function bundleSeed(prefix, dest, policy) {
+    var fresh = !stat(dest);
+    if (!fresh && policy == 'first') return 0;
+    var tmp = bundleDirname(dest) + '/.bundle-unpack-' + process.getpid();
+    var n = 0;
+    mkdir(tmp);
+    try {
+        utils.payloadExtract(tmp, [prefix]);
+        var src = tmp + '/' + prefix;
+        if (!stat(src)) return 0;
+        if (fresh) {
+            mkdir(bundleDirname(dest));
+            utils.rename(src, dest);
+            return 1;
+        }
+        (function walk(rel) {
+            var names = utils.readDir(src + rel, true);
+            for (var i = 0; i < names.length; i++) {
+                if (names[i] == '.' || names[i] == '..') continue;
+                var r = rel + '/' + names[i], from = src + r, to = dest + r;
+                if (/(^|\/)\.\.?(\/|$)/.test(r)) continue;       /* never leave src/dest */
+                var st = utils.lstat(from), have = utils.lstat(to);
+                if (st.isDirectory && !st.isSymbolicLink) {
+                    if (!have) mkdir(to);
+                    walk(r);
+                } else if (!have) {
+                    utils.rename(from, to);
+                    n++;
+                }
+            }
+        })('');
+    } finally {
+        shell("rm -rf '" + tmp.replace(/'/g, "'\\''") + "'");
+    }
+    return n;
+}
+
+function bundleApplyOptions(serverConf, o) {
+    if (o.host) {
+        var h = String(o.host).replace(/^\[|\]$/g, '');
+        if (h == 'all' || h == '*' || h == '0.0.0.0' || h == '::') {
+            serverConf.bindAll = true;
+        } else if (h == 'localhost') {
+            serverConf.bindAll = false;
+            serverConf.ipAddr = '127.0.0.1';
+            serverConf.ipv6Addr = '[::1]';
+        } else if (h.indexOf(':') != -1) {
+            serverConf.bindAll = false;
+            serverConf.ipAddr = '';
+            serverConf.ipv6Addr = '[' + h + ']';
+        } else {
+            serverConf.bindAll = false;
+            serverConf.ipAddr = h;
+            serverConf.ipv6Addr = '';
+        }
+    }
+    if (o.port !== undefined) {
+        var p = parseInt(o.port);
+        if (isNaN(p) || p < 1 || p > 65535) bundleDie("--port: invalid port '" + o.port + "'");
+        serverConf.port = serverConf.ipPort = serverConf.ipv6Port = p;
+    }
+    if (o.tls) serverConf.secure = true;
+    if (o.cert) { serverConf.sslCertFile = realPath(bundleExpand(o.cert)) || o.cert; serverConf.secure = true; }
+    if (o.key)  { serverConf.sslKeyFile  = realPath(bundleExpand(o.key))  || o.key;  serverConf.secure = true; }
+    if (o['self-sign']) { serverConf.selfSign = true; serverConf.secure = true; }
+    if (o.letsencrypt) serverConf.letsencrypt = String(o.letsencrypt);
+    if (o['redirect-port'] !== undefined) serverConf.redirPort = parseInt(o['redirect-port']);
+    if (o.user) serverConf.user = String(o.user);
+    if (o.foreground) serverConf.daemon = false;
+}
+
+function bundleSetup(serverConf) {
+    var info = null;
+
+    if (!utils.payloadGet) return serverConf;
+    try {
+        info = JSON.parse(utils.bufferToString(utils.payloadGet('bundle.json')));
+    } catch (e) {
+        info = null;
+    }
+
+    if (!info) {
+        /* a bundle not made by the Mini IDE: writable data and logs in
+           ~/.rampart/web_server_<addr:port>, as before                   */
+        var addrPort = serverConf.bindAll ? "bindAll" : (serverConf.ipAddr || serverConf.ipv6Addr || '127.0.0.1');
+        addrPort += ':' + (serverConf.port || serverConf.ipPort || serverConf.ipv6Port || '8088');
+        var rpdir = (iam == 'root' ? '/tmp' : bundleHome()) + '/.rampart/web_server_' + addrPort;
+        mkdir(rpdir + '/data');
+        mkdir(rpdir + '/logs');
+        serverConf.dataRoot = rpdir + '/data';
+        serverConf.logRoot  = rpdir + '/logs';
+        if (iam == 'root') {
+            try {
+                utils.chown({user: serverConf.user || 'nobody', path: serverConf.dataRoot});
+                utils.chown({user: serverConf.user || 'nobody', path: serverConf.logRoot});
+            } catch (e) { bundleDie(e.message); }
+        }
+        return serverConf;
+    }
+
+    /* split our options from the command (start, stop, ...) */
+    var argv = process.argv, given = {}, cmdArgs = [], any = false;
+    for (var i = 2; i < argv.length; i++) {
+        var a = argv[i], m = /^(--[a-z-]+)=(.*)$/.exec(a), name = m ? m[1] : a, val = m ? m[2] : undefined;
+        if (a == '-h' || a == '--help') { bundleHelp(info); process.exit(0); }
+        if (bundleFlags.hasOwnProperty(name)) {
+            if (bundleFlags[name]) {
+                if (val === undefined) val = argv[++i];
+                if (val === undefined) bundleDie(name + " needs a value");
+            } else {
+                val = true;
+            }
+            given[name.substring(2)] = val;
+            any = true;
+        } else {
+            cmdArgs.push(a);
+        }
+    }
+
+    /* saved options live in a fixed place per bundle name */
+    var stateDir = bundleHome() + '/.rampart/' + info.name;
+    var stateFile = stateDir + '/bundle-options.json';
+    var cmd = cmdArgs[0] || 'start';
+    /* given options update the remembered ones (all of them with --defaults) */
+    var opts = {};
+    if (given.defaults) {
+        try { utils.rmFile(stateFile); } catch (e) {}
+    } else {
+        try { opts = JSON.parse(readFile(stateFile, {returnString: true})); } catch (e) { opts = {}; }
+    }
+    delete given.defaults;
+    for (var g in given) {
+        if (bundleUnsets[g]) {
+            bundleUnsets[g].forEach(function (k) { delete opts[k]; });
+            continue;
+        }
+        opts[g] = given[g];
+    }
+    if (any && /start|restart|letssetup/.test(cmd)) {
+        mkdir(stateDir);
+        fprintf(stateFile, '%3J\n', opts);
+    }
+
+    var dataDir = bundleExpand(opts.data || info.dataDir);
+    var logsDir = bundleExpand(opts.logs || info.logsDir);
+
+    /* process.argv keeps only the command for web_server_conf() */
+    argv.length = 2;
+    for (i = 0; i < cmdArgs.length; i++) argv.push(cmdArgs[i]);
+
+    bundleApplyOptions(serverConf, opts);
+
+    /* site files come from the zip; pid files, certificates, data and logs
+       go in writable directories                                        */
+    var zroot = serverConf.serverRoot || ':zip:';
+    if (!serverConf.htmlRoot)   serverConf.htmlRoot   = zroot + '/html';
+    if (!serverConf.appsRoot)   serverConf.appsRoot   = zroot + '/apps';
+    if (!serverConf.wsappsRoot) serverConf.wsappsRoot = zroot + '/wsapps';
+    mkdir(stateDir);
+    serverConf.serverRoot = stateDir;
+
+    if (cmd == 'start' || cmd == 'restart' || cmd == 'letssetup') {
+        var fresh = !stat(dataDir);
+        var n = bundleSeed('data', dataDir, info.seedPolicy == 'missing' ? 'missing' : 'first');
+        if (fresh)
+            printf("Data directory: %s\n", dataDir);
+        else if (n)
+            printf("Added %d new file%s to %s\n", n, n == 1 ? '' : 's', dataDir);
+        mkdir(dataDir);
+        mkdir(logsDir);
+    }
+    serverConf.dataRoot = dataDir;
+    serverConf.logRoot  = logsDir;
+    if (iam == 'root' && serverConf.user) {
+        try {
+            utils.chown({user: serverConf.user, path: stateDir});
+            shell("chown -R '" + serverConf.user + "' '" + dataDir + "' '" + logsDir + "'");
+        } catch (e) { bundleDie(e.message); }
+    }
+    return serverConf;
+}
+
 if(module && module.exports){
 
     module.exports= {
+        bundleSetup: bundleSetup,
         parseOptions: parseOptions,
         start: start,
         stop:  stop,

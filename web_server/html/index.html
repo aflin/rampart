@@ -44,6 +44,46 @@ ____[|||||||||||||__|||||||||]____
     <p>There are a few more in the <span class="courier">web_server/apps/test-modules/</span>
        directory.</p>
 
+    <h1>Mini IDE</h1>
+    <p>The Mini IDE is a browser-based editor, file browser and terminal for
+       the files in the <span class="courier">web_server/</span> directory, with
+       an interactive rampart session and the searchable Rampart documentation.
+       It serves this same site, so scripts written in it work the same with or
+       without the IDE.</p>
+    <p>To start it, run from the <span class="courier">web_server/</span> directory:</p>
+    <pre>    ./start-mini-ide.sh</pre>
+    <p>The first start asks for a password, whether to listen on all network
+       interfaces, and which port to use (default 8089).  Then open:</p>
+    <pre>    <a id="ide-link" href="http://localhost:8089/ide/">http://localhost:8089/ide/</a></pre>
+    <script>
+      /* point the link at this host: this server if it is the Mini IDE
+         (it answers /ide/), otherwise the default IDE port, 8089 */
+      (function () {
+        var a = document.getElementById('ide-link');
+        function set(url) { a.href = url; a.textContent = url; }
+        set(location.protocol + '//' + location.hostname + ':8089/ide/');
+        if (window.fetch)
+          fetch('/ide/', {method: 'HEAD'}).then(function (r) {
+            if (r.ok) set(location.origin + '/ide/');
+          }).catch(function () {});
+      })();
+    </script>
+    <p>using the port you chose.  Stop it with
+       <span class="courier">./start-mini-ide.sh stop</span>.  Anyone who logs
+       in can run commands as the user running the server, so only listen on
+       all interfaces on a trusted network.</p>
+    <p>Everything the IDE needs, including its copy of the documentation, is kept
+       in <span class="courier">web_server/ide/</span>, apart from your site's
+       <span class="courier">html/</span>, <span class="courier">apps/</span>,
+       <span class="courier">wsapps/</span> and <span class="courier">data/</span>.
+       To turn this directory into a web server you can redistribute without the
+       IDE, stop the IDE and delete it:</p>
+    <pre>    rm -rf ide mini-ide-conf.js start-mini-ide.sh AGENTS.md CLAUDE.md</pre>
+    <p><span class="courier">AGENTS.md</span> and <span class="courier">CLAUDE.md</span>
+       are notes for coding agents, written each time the IDE starts.  The site
+       then runs as usual with
+       <span class="courier">rampart web_server_conf.js start</span>.</p>
+
     <h1>Authentication</h1>
     <p>To enable authentication, set <span class="courier">authMod: true</span>
        in <span class="courier">web_server_conf.js</span> and run initial setup:</p>

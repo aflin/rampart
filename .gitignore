@@ -8,3 +8,4 @@ web_server/CLAUDE.md
 web_server/ide/data/docs/
 web_server/ide/html/docs/
 web_server/ide/server.pid
+web_server/*.pid

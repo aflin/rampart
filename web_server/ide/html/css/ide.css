@@ -656,3 +656,45 @@ body.term-only #split-insp,
 body.term-only .editor-area,
 body.term-only #split-debug { display: none !important; }
 body.term-only .debug { display: flex !important; flex: 1; height: auto !important; }
+
+/* ---------------- Build Bundle dialog ---------------- */
+
+.bundle-dlg { width: 600px; max-height: 86vh; overflow: auto; gap: 8px; font-size: 12.5px; }
+.bundle-dlg .bd-row { display: grid; grid-template-columns: 120px 1fr; align-items: center; gap: 8px; color: var(--fg2); }
+.bundle-dlg .bd-row input {
+  height: 26px; padding: 0 7px; border: 1px solid var(--border); border-radius: 5px;
+  background: var(--input-bg); font: 12px var(--font-mono);
+}
+.bundle-dlg .bd-check { display: flex; align-items: baseline; gap: 6px; }
+.bundle-dlg .bd-check input { margin: 0; }
+.bundle-dlg fieldset { margin: 0; padding: 6px 10px 8px; border: 1px solid var(--border); border-radius: 6px; }
+.bundle-dlg legend { padding: 0 4px; color: var(--fg2); }
+.bundle-dlg .bd-list { display: flex; flex-wrap: wrap; gap: 2px 16px; margin-bottom: 6px; }
+.bundle-dlg .bd-mods { max-height: 130px; overflow: auto; }
+.bundle-dlg .bd-mods .bd-check { width: 180px; }
+.bundle-dlg .bd-note, .bundle-dlg .bd-hint { color: var(--fg2); }
+.bundle-dlg .bd-hint { font-size: 11.5px; }
+.bundle-dlg .bd-warn { color: #c47f00; font-size: 11.5px; margin-bottom: 6px; }
+.bundle-dlg .bd-error { color: var(--danger); min-height: 1em; }
+.bundle-dlg .bd-para { margin-bottom: 6px; }
+.bundle-dlg .bd-check > span { line-height: 1.35; }
+.bundle-dlg fieldset .bd-check + .bd-check { margin-top: 4px; }
+.bundle-dlg .bd-badge {
+  margin-left: 6px; padding: 1px 6px; border-radius: 4px; vertical-align: 1px;
+  background: #c47f00; color: #fff; font-size: 10.5px; font-weight: 600; letter-spacing: .03em; text-transform: uppercase;
+}
+.bundle-dlg .bd-intro { line-height: 1.45; }
+.bundle-dlg .bd-intro code { font: 11.5px var(--font-mono); }
+
+/* download link shown in a finished bundle build tab */
+.term-download {
+  position: absolute; top: 6px; right: 14px; z-index: 5;
+}
+.term-download a {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 12px; border-radius: 6px;
+  background: var(--accent); color: var(--accent-fg); text-decoration: none; font-size: 12px;
+  box-shadow: var(--shadow);
+}
+.term-download a:hover { filter: brightness(1.1); }
+.term-download svg { width: 14px; height: 14px; }

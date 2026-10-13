@@ -2,11 +2,17 @@
      /ide/wsapps/term.js?mode=shell[&path=dir] - login shell in the web server root (or dir)
      /ide/wsapps/term.js?mode=repl             - interactive rampart
      /ide/wsapps/term.js?mode=run&path=a/b.js  - rampart a/b.js, run from its directory
+     /ide/wsapps/term.js?mode=bundle&opts=JSON - build a bundle (ide/lib/bundle-build.js)
    Text messages are keyboard input; binary messages are JSON commands
    ({"resize":{"cols":n,"rows":n}}).                                        */
 
 var u   = rampart.utils;
 var lib = require(module.path + '/../lib/ide-lib.js');
+
+/* rampart parses JSON-looking query values into objects */
+function bundleOpts(o) {
+    return typeof o == 'object' && o ? JSON.stringify(o) : String(o || '');
+}
 
 function startPty(req) {
     var rp  = process.installPathExec;
@@ -34,6 +40,12 @@ function startPty(req) {
             'printf "\\r\\n\\033[2m[%s exited with status %d]\\033[0m\\r\\n" "$f" $s',
             rp, dir, file, String(req.params.args || ''));
     }
+
+    if (mode == 'bundle')
+        return u.forkpty('/bin/sh', opts, '-c',
+            'cd "$1" || exit 1; "$0" ide/lib/bundle-build.js "$2"; s=$?; ' +
+            'printf "\\r\\n\\033[2m[bundle build exited with status %d]\\033[0m\\r\\n" $s',
+            rp, lib.siteRoot, bundleOpts(req.params.opts));
 
     var cwd = req.params.path ? lib.resolve(req.params.path).abs : lib.siteRoot;
     return u.forkpty('/bin/sh', opts, '-c', 'cd "$1" && exec "$SHELL" -l', 'sh', cwd);

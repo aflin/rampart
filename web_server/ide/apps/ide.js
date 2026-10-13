@@ -181,7 +181,42 @@ function del(b) {
     return {json: {ok: true}};
 }
 
+/* Build Bundle dialog: defaults and output path check (ide/lib/bundle-build.js) */
+function bundleInfo() {
+    return {json: require(module.path + '/../lib/bundle-build.js').info()};
+}
+
+function bundleCheck(b) {
+    var out = String(b.output || '');
+    return {json: {error: require(module.path + '/../lib/bundle-build.js').checkOutput(out),
+                   exists: !!(out.charAt(0) == '/' && u.stat(out))}};
+}
+
+/* a bundle built from the IDE, by build id: details, and the file itself */
+function bundleBuilt(b) {
+    var bb = require(module.path + '/../lib/bundle-build.js').builtBundle(b.id);
+    return {json: bb ? {ok: true, name: bb.name, size: bb.size} : {ok: false}};
+}
+
+/* GET /ide/apps/ide/bundle-download.bin?id=ID - only the file recorded for ID,
+   and only while it is unchanged since the build                         */
+function bundleDownload(req) {
+    if (!lib.originOk(req) || !lib.checkSession(req))
+        return {status: 403, txt: "Forbidden"};
+    var bb = require(module.path + '/../lib/bundle-build.js').builtBundle(req.params.id);
+    if (!bb)
+        return {status: 404, txt: "Not found"};
+    return {
+        bin: '@' + bb.path,
+        headers: {'Content-Disposition': 'attachment; filename="' + bb.name.replace(/["\\]/g, '_') + '"'}
+    };
+}
+
 module.exports = {
+    "/bundle-built.json":   api(bundleBuilt),
+    "/bundle-download.bin": bundleDownload,
+    "/bundle-info.json":  api(bundleInfo),
+    "/bundle-check.json": api(bundleCheck),
     "/status.json": api(status, true),
     "/login.json":  api(login, true),
     "/logout.json": api(logout),

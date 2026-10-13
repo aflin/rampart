@@ -90,10 +90,13 @@ if ((!process.argv[2] || /start/.test(process.argv[2])) && u.exec('id', '-u').st
 var ide_map = {
     "/ide/":            ide_directory + '/html',
     "/ide/apps/":       {modulePath: ide_directory + '/apps'},
-    "ws://ide/wsapps/": {modulePath: ide_directory + '/wsapps'},
-    "/docs/":           ide_directory + '/html/docs',
-    "/apps/docs/":      {modulePath: ide_directory + '/apps/docs'}
+    "ws://ide/wsapps/": {modulePath: ide_directory + '/wsapps'}
 };
+/* only once the docs are built (see start-mini-ide.sh) */
+if (u.stat(ide_directory + '/html/docs') && u.stat(ide_directory + '/apps/docs')) {
+    ide_map["/docs/"]      = ide_directory + '/html/docs';
+    ide_map["/apps/docs/"] = {modulePath: ide_directory + '/apps/docs'};
+}
 
 var serverConf = {
 

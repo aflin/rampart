@@ -152,6 +152,31 @@ the site and is not intended to be included in any final product: removing
 server.  Do not write new scripts or files in \`ide/\` unless they are for the
 IDE itself.  Site code goes in \`html/\`, \`apps/\` and \`wsapps/\`.
 
+## Building a single-file bundle (experimental)
+
+A bundle is one executable that contains rampart and this whole site:
+\`html/\`, \`apps/\`, \`wsapps/\`, the configuration and the rampart modules the
+code requires.  The Mini IDE is not included.  Copy it to another machine of
+the same platform and run it to serve the site.  Build it from this directory:
+
+    rampart ide/lib/bundle-build.js --help        # all options
+    rampart ide/lib/bundle-build.js --dry-run     # show what would go in
+    rampart ide/lib/bundle-build.js --name myproject
+
+The IDE's File > Build Bundle does the same.  By default the bundle is written
+next to this directory (or to the home directory if that is not writable) and
+keeps its data and logs in \`~/.rampart/<name>/data\` and \`~/.rampart/<name>/logs\`.
+Run it with \`./myproject --help\`, e.g. \`./myproject --port 8080 --host all start\`
+and later \`./myproject stop\`.
+
+- Inside a bundle, \`html/\`, \`apps/\` and \`wsapps/\` are read-only.  Code must write
+  its files under \`serverConf.dataRoot\`, never beside itself or under
+  \`process.scriptPath\`.
+- Modules are found from \`require("rampart-...")\` calls.  A module loaded any
+  other way must be added with \`--add-module\`.
+- The login system (\`apps/auth.js\` and related files) is bundled only if
+  \`authMod\` is on in \`web_server_conf.js\` or the site requires \`apps/auth.js\`.
+
 ## Documentation
 
 - Rampart documentation source: \`ide/docs/source/\` (reStructuredText, one file
