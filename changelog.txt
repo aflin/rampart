@@ -1,3 +1,24 @@
+v0.7.3
+    -rampart                utils.exec() run from several threads at once no
+                            longer waits for the other threads' commands to
+                            finish; each exec only waits on its own child.
+
+    -rampart-server         Callbacks defined as function expressions
+                            (var f = function(){} or var f = function g(){})
+                            now work in server threads.
+
+                            Websockets: req.wsEnd() called from a timer or
+                            another event now closes the connection right
+                            away, instead of waiting until the client sends
+                            more data.
+
+    -Extras                 Mini IDE: a browser-based editor, file navigator
+                            and terminal for the web_server directory, with
+                            searchable documentation.  Start it with
+                            web_server/start-mini-ide.sh.  Its file tree
+                            updates live as files are added, removed or
+                            renamed.
+
 v0.7.2
     -rampart-langtools      Update llama.cpp.
 
@@ -62,6 +83,10 @@ v0.7.2
                             The SQL and Python helper processes no longer
                             print a diagnostic when the parent exits
                             normally.
+                            utils.fork() and utils.daemon() no longer hang
+                            when another thread holds an internal lock at
+                            the moment of the fork, and daemon() no longer
+                            leaves a zombie process.
 
     -Extras                 rampart-webserver: multi-listener
                             configuration, so one server can serve several
