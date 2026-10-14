@@ -89,6 +89,11 @@ module.exports = {
     "rampart-webserver":  { in_bundle: true },
     "babel":              { in_bundle: true },
     "babel-polyfill":     { in_bundle: true },
+    /* web_server/ (starter site + Mini IDE + docs) ships in the bundle.
+       Kept listed so `rampart --install web-server` still resolves and
+       says "already installed" instead of "unknown package". */
+    "web-server":         { in_bundle: true,
+                            notes: "starter site, Mini IDE and docs" },
 
     /* =============================================================
      * Single-file .so packages (arch-dependent)
@@ -520,25 +525,6 @@ module.exports = {
     /* =============================================================
      * Resource-only packages (no module; just trees of files)
      * ============================================================= */
-
-    "web-server": {
-        kind:  "tar.gz",
-        arch:  "indep",
-        files: ["web_server/"],
-        /* generated or kept at run time by the Mini IDE or the server, in
-           case either ran in the tree being packaged (settings hold a
-           password hash) */
-        exclude: ["web_server/AGENTS.md",
-                  "web_server/CLAUDE.md",
-                  "web_server/ide/data/docs",
-                  "web_server/ide/html/docs",
-                  "web_server/ide/data/ide-settings.json",
-                  "web_server/ide/server.pid",
-                  "web_server/server.pid",
-                  "web_server/monitor.pid",
-                  "web_server/iroh-server.pid"],
-        notes: "Starter scaffolding for serverRoot"
-    },
 
     "unsupported-extras": {
         kind:  "tar.gz",

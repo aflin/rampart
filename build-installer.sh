@@ -107,6 +107,23 @@ UNINST=$REPO/install/uninstall.js
 # channel-substituted copy of rampart-install.js before bundling).
 INSTPK=${INSTPK:-$REPO/install/rampart-install.js}
 PKGMAN=$REPO/install/packages.js
+# The starter site + Mini IDE + bundled documentation.  In "installed" mode
+# $REPO is the prefix (the copy `make install` already pruned); in "build"
+# mode it is the checkout.  WS_PRUNE is re-applied either way.
+SRC_WS_DIR=$REPO/web_server
+
+# Must never reach the bundle, relative to SRC_WS_DIR.  ide/html/docs and
+# ide/data/docs are rebuilt from ide/docs/html on the first
+# start-mini-ide.sh; ide-settings.json holds a password hash.  The pid
+# files and logs, pruned by glob below, belong to whatever server last ran
+# in the source tree.
+WS_PRUNE="
+    AGENTS.md
+    CLAUDE.md
+    ide/html/docs
+    ide/data/docs
+    ide/data/ide-settings.json
+"
 
 # The rampart-install.js source ships with an @@FROM_URL@@ placeholder
 # that names the channel-specific package download URL.  mkrp resolves
@@ -198,6 +215,19 @@ if [ ! -d "$SRC_LICENSES_DIR" ] || \
     echo "build-installer: licenses dir empty or missing at $SRC_LICENSES_DIR" >&2
     exit 1
 fi
+# web_server is part of the distribution, not an add-on, so a bundle built
+# without it is wrong rather than merely lean.  Check the two things the
+# Mini IDE cannot do without: its own tree and the docs it serves.
+if [ ! -f "$SRC_WS_DIR/web_server_conf.js" ]; then
+    echo "build-installer: web_server not found at $SRC_WS_DIR" >&2
+    exit 1
+fi
+if [ ! -d "$SRC_WS_DIR/ide/docs/html" ]; then
+    echo "build-installer: $SRC_WS_DIR/ide/docs/html missing -- the Mini IDE" >&2
+    echo "                 would ship with no documentation.  Populate it with" >&2
+    echo "                 rampart_docs/copy_to_rampart.sh and rebuild." >&2
+    exit 1
+fi
 
 # ----- pre-flight: every listed module must exist ----------------------
 
@@ -258,6 +288,18 @@ fi
 # at <prefix>/licenses/.  cp -a preserves a flat regular-file directory.
 mkdir -p "$STAGE/licenses"
 cp -a "$SRC_LICENSES_DIR"/. "$STAGE/licenses/"
+
+# web_server/: the starter site, the Mini IDE and the docs the IDE serves.
+# Copied with tar rather than cp -a, which keeps modes, mtimes and symlinks
+# without the chown that makes cp -a fail as a non-root user on a root- or
+# nobody-owned <prefix>/web_server.  Then prune what must not ship.
+mkdir -p "$STAGE/web_server"
+( cd "$SRC_WS_DIR" && tar -cf - . ) | ( cd "$STAGE/web_server" && tar -xf - )
+for p in $WS_PRUNE; do
+    rm -rf "$STAGE/web_server/$p"
+done
+rm -f "$STAGE/web_server"/*.pid "$STAGE/web_server/ide"/*.pid
+rm -f "$STAGE/web_server/logs"/*.log*
 
 for b in $BIN_EXTRAS; do
     cp "$(find_bin "$b")" "$STAGE/bin/$b"
@@ -375,14 +417,23 @@ fi
 RELEASE_NOTES_ARG=""
 [ "$HAVE_RELEASE_NOTES" = "1" ] && RELEASE_NOTES_ARG="release-notes.txt"
 ( cd "$STAGE" && zip -qr payload.zip entry_script.js uninstall.js rampart-install.js packages.js bin modules lib licenses $RELEASE_NOTES_ARG )
+filesize() { stat -c '%s' "$1" 2>/dev/null || stat -f '%z' "$1"; }
+corezip=$(filesize "$STAGE/payload.zip")
+
+# web_server goes in as a second pass with -y, which stores symlinks as
+# links rather than following them -- entry_script.js has to stay a link to
+# web_server_conf.js so editing the config is editing the entry script.
+# payloadExtract() recreates symlink entries with symlink(2).
+( cd "$STAGE" && zip -qry payload.zip web_server )
 
 cp "$STAGE/rampart-stub" "$OUT"
 cat "$STAGE/payload.zip" >> "$OUT"
 chmod 0755 "$OUT"
 
 # Size report (BSD vs GNU stat).
-size=$(stat -c '%s' "$OUT" 2>/dev/null || stat -f '%z' "$OUT")
-bare=$(stat -c '%s' "$STAGE/rampart-stub" 2>/dev/null || stat -f '%z' "$STAGE/rampart-stub")
-zipsz=$(stat -c '%s' "$STAGE/payload.zip" 2>/dev/null || stat -f '%z' "$STAGE/payload.zip")
+size=$(filesize "$OUT")
+bare=$(filesize "$STAGE/rampart-stub")
+zipsz=$(filesize "$STAGE/payload.zip")
 echo "Built: $OUT"
 echo "       total  ${size} bytes  (bare rampart ${bare} + payload ${zipsz})"
+echo "       of the payload, web_server is $((zipsz - corezip)) bytes"

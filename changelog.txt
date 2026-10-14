@@ -19,6 +19,13 @@ v0.7.3
                             updates live as files are added, removed or
                             renamed.
 
+    -Install                The starter web server, the Mini IDE and the
+                            documentation now come with every install, so
+                            `rampart --install web-server` is no longer
+                            needed.  Re-installing or upgrading refreshes
+                            the IDE and its documentation but leaves your
+                            own site files and server configuration alone.
+
 v0.7.2
     -rampart-langtools      Update llama.cpp.
 

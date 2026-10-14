@@ -226,9 +226,10 @@ function banner(prefix, isSystem) {
 "the resulting install.  Other components carry their own licenses;\n"+
 "all texts are in the licenses/ directory.\n"+
 "\n"+
-"This installer will copy rampart and a curated set of modules into\n"+
-"the location below.  The whole install lives in a single directory\n"+
-"and can be removed at any time by running rampart-uninstall.sh.\n"+
+"This installer will copy rampart, a curated set of modules and a\n"+
+"starter web server with the Mini IDE and the documentation into the\n"+
+"location below.  The whole install lives in a single directory and\n"+
+"can be removed at any time by running rampart-uninstall.sh.\n"+
 "\n"+
 "  Install location:  %s\n", prefix);
 
@@ -370,6 +371,56 @@ function installBareRampart(prefix) {
 function extractPayload(prefix) {
     payloadExtract(prefix, ["bin/", "modules/", "lib/", "licenses/"]);
     printf("  installed: %s/{bin,modules,lib,licenses}/*\n", prefix);
+}
+
+/* ============== web_server/ ==============
+ * The Mini IDE is a tool we ship, so it is refreshed on every install.
+ * The rest is starter scaffolding for the user's own site, with conf files
+ * meant to be edited, so it is written once and never overwritten --
+ * backupExistingInstall() rotates only bin/ and modules/, so an existing
+ * web_server/ is still in place when we get here.
+ */
+var IDE_PATHS = ["web_server/ide",
+                 "web_server/mini-ide-conf.js",
+                 "web_server/start-mini-ide.sh"];
+
+function installWebServer(prefix) {
+    var pl = payloadList();
+    if (!pl || !pl["web_server/web_server_conf.js"]) {
+        printf("  WARN: this bundle carries no web_server/ -- skipping\n");
+        return false;
+    }
+
+    if (!fileExists(prefix + "/web_server")) {
+        payloadExtract(prefix, ["web_server/"]);
+        printf("  installed: %s/web_server/* (site scaffolding + Mini IDE)\n", prefix);
+        return true;
+    }
+
+    payloadExtract(prefix, IDE_PATHS);
+    printf("  refreshed: %s/web_server/ide/* (+ mini-ide-conf.js, start-mini-ide.sh)\n",
+           prefix);
+    printf("             kept your existing %s/web_server site files\n", prefix);
+
+    /* We just replaced ide/docs/html with this release's docs, but
+       build_docs() in start-mini-ide.sh skips its work while
+       ide/html/docs/index.html exists -- so drop the two trees it
+       generates and the next start rebuilds them from the new source. */
+    var gen = [prefix + "/web_server/ide/html/docs",
+               prefix + "/web_server/ide/data/docs"];
+    var dropped = 0;
+    for (var g = 0; g < gen.length; g++) {
+        if (!fileExists(gen[g])) continue;
+        try { rampart.utils.rm(gen[g], {recursive: true, force: true}); dropped++; }
+        catch (e) {
+            printf("  WARN: could not remove %s: %s\n", gen[g], e.message);
+            printf("        The IDE will keep serving the previous docs until\n");
+            printf("        you remove it and restart start-mini-ide.sh.\n");
+        }
+    }
+    if (dropped)
+        printf("             dropped the built docs; the next start-mini-ide.sh rebuilds them\n");
+    return true;
 }
 
 /* ============== env files ============== */
@@ -528,7 +579,7 @@ function makeSymlinks(prefix) {
 
 /* ============== installed.json manifest ============== */
 
-function buildManifest(prefix, isSystem, rcFilesTouched, symlinksMade) {
+function buildManifest(prefix, isSystem, rcFilesTouched, symlinksMade, haveWs) {
     /* Schema v2: every file is stored by its ABSOLUTE path -- the
        uninstaller iterates `files` and rm's each entry, with no
        prefix-derivation, no walking, no guessing.  A trailing slash on
@@ -553,7 +604,19 @@ function buildManifest(prefix, isSystem, rcFilesTouched, symlinksMade) {
     for (var name in pl) {
         if (name.charAt(name.length-1) === "/") continue;  /* dir markers */
         if (name === "entry_script.js" || name === "uninstall.js") continue;
+        /* web_server/ is handled below -- not file-by-file */
+        if (name.indexOf("web_server/") === 0) continue;
         coreFiles.push(prefix + "/" + name);
+    }
+
+    /* We own the Mini IDE, since we refresh it on every install.  The
+       scaffolding beside it is deliberately NOT recorded: by the time
+       anyone uninstalls, html/ and apps/ may be their web site.  It lands
+       in the "weren't installed by us" report, which asks before removing. */
+    if (haveWs) {
+        coreFiles.push(prefix + "/web_server/ide/");   /* trailing / = rm -rf */
+        coreFiles.push(prefix + "/web_server/mini-ide-conf.js");
+        coreFiles.push(prefix + "/web_server/start-mini-ide.sh");
     }
 
     /* generated metadata */
@@ -757,6 +820,7 @@ function ensurePermsForPrefix(prefix) {
     printf("\nInstalling...\n");
     installBareRampart(choice.prefix);
     extractPayload(choice.prefix);
+    var haveWs = installWebServer(choice.prefix);
 
     var rcTouched = [];
     var linksMade = [];
@@ -773,7 +837,8 @@ function ensurePermsForPrefix(prefix) {
         linksMade = makeSymlinks(choice.prefix);
 
     writeUninstallScripts(choice.prefix);
-    writeManifest(choice.prefix, buildManifest(choice.prefix, choice.isSystem, rcTouched, linksMade));
+    writeManifest(choice.prefix, buildManifest(choice.prefix, choice.isSystem,
+                                               rcTouched, linksMade, haveWs));
 
     /* If we ran under sudo, the install tree is currently owned by root.
        That makes routine maintenance (re-install over the top, edits
@@ -819,6 +884,17 @@ function ensurePermsForPrefix(prefix) {
         postLines.push("");
         postLines.push("[release notes]");
         postLines.push(notesStr.replace(/\n+$/, ""));
+    }
+
+    /* the web server and Mini IDE, now that they ship with every install */
+    if (haveWs) {
+        postLines.push("");
+        postLines.push("A starter web server is at " + choice.prefix + "/web_server:");
+        postLines.push("    cd " + choice.prefix + "/web_server");
+        postLines.push("    ./start-mini-ide.sh          # editor, docs and terminal in a browser");
+        postLines.push("    rampart web_server_conf.js start   # the plain site, no IDE");
+        postLines.push("The first IDE start asks for a password and builds the searchable");
+        postLines.push("documentation, which it then serves at /ide/docs/.");
     }
 
     /* PATH hint (user install) or system-install hint */
