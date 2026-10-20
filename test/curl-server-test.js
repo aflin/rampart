@@ -293,6 +293,21 @@ testFeature("curl parallel fetch", function() {
     return n == 10;
 });
 
+/* connect-to is a curl_slist option: an unresolvable host pinned to
+   127.0.0.1 only connects if the pin reached curl (a bare string crashed) */
+testFeature("curl connect-to pins a host to an address", function() {
+    var res=curl.fetch("http://pinned.invalid:8288/ping",
+                       {"connect-to": "pinned.invalid:8288:127.0.0.1:8288", "max-time": 5});
+    return res.status == 200 && res.text == "ping";
+});
+
+testFeature("curl connect-to accepts an array", function() {
+    var res=curl.fetch("http://pinned.invalid:8288/ping",
+                       {"connect-to": ["other.invalid:80:127.0.0.1:8288",
+                                       "pinned.invalid:8288:127.0.0.1:8288"], "max-time": 5});
+    return res.status == 200 && res.text == "ping";
+});
+
 testFeature("server modpath", function (){
     var res=curl.fetch({insecure:true},"https://localhost:8287/modtest/testmod.txt");
     return res.status == 200 && res.text == "test";

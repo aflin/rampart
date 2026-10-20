@@ -1089,25 +1089,6 @@ int copt_string(CSOS_ARGS)
     return (0);
 }
 
-/* a string, or multiples strings in an array */
-int copt_strings(CSOS_ARGS)
-{
-    if (duk_is_array(ctx, -1))
-    {
-        int i = 0;
-        while (duk_has_prop_index(ctx, -1, i))
-        {
-            duk_get_prop_index(ctx, -1, i);
-            copt_string(ctx, handle, 0, req, sopts, option);
-            duk_pop(ctx);
-            i++;
-        }
-    }
-    else
-        return (copt_string(ctx, handle, 0, req, sopts, option));
-
-    return (0);
-}
 /* turn JS array into curl slist, or if not an array, an slist with one member */
 int copt_array_slist(CSOS_ARGS)
 {
@@ -1518,7 +1499,7 @@ CURL_OPTS curl_options[] = {
     {"compressed", CURLOPT_ACCEPT_ENCODING, 0, &copt_compressed},
     //{"compressed-ssh", CURLOPT_SSH_COMPRESSION, 0, &copt_bool}, // ssh not enabled.
     {"connect-timeout", CURLOPT_CONNECTTIMEOUT, 0, &copt_long},
-    {"connect-to", CURLOPT_CONNECT_TO, 0, &copt_strings},
+    {"connect-to", CURLOPT_CONNECT_TO, 0, &copt_array_slist},
     {"continue-at", CURLOPT_RANGE, 0, &copt_continue},
     {"cookie", CURLOPT_COOKIE, 0, &copt_string},
     {"cookie-jar", CURLOPT_COOKIEJAR, 0, &copt_string},
