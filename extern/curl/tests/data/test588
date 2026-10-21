@@ -1,9 +1,8 @@
+<?xml version="1.0" encoding="US-ASCII"?>
 <testcase>
-#
 # This test is exactly like 525 but the server rejects the EPRT command.
-# Written up to make sure that there's nothing in the multi interface
+# Written up to make sure that there is nothing in the multi interface
 # active connection case that differs between PORT and EPRT use
-#
 <info>
 <keywords>
 FTP
@@ -11,6 +10,7 @@ PORT
 STOR
 multi
 EPRT refused
+libtest
 </keywords>
 </info>
 
@@ -31,13 +31,13 @@ ftp
 <tool>
 lib525
 </tool>
- <name>
-FTP PORT upload using multi interface, EPRT doesn't work
- </name>
- <command>
-ftp://%HOSTIP:%FTPPORT/path/588 log/upload588
+<name>
+FTP PORT upload using multi interface, EPRT does not work
+</name>
+<command>
+ftp://%HOSTIP:%FTPPORT/path/%TESTNUMBER %LOGDIR/upload%TESTNUMBER
 </command>
-<file name="log/upload588">
+<file name="%LOGDIR/upload%TESTNUMBER">
 Moooooooooooo
  upload this
 </file>
@@ -47,10 +47,10 @@ Moooooooooooo
 <verify>
 # Strip off parts of the PORT and EPRT commands that might differ
 <strippart>
-s/^PORT (.*)/PORT/
-s/^EPRT \|1\|(.*)/EPRT \|1\|/
+s/^EPRT \|1\|(\S*)/EPRT \|1\|/
+s/^PORT (\S*)/PORT/
 </strippart>
-<protocol>
+<protocol crlf="yes">
 USER anonymous
 PASS ftp@example.com
 PWD
@@ -58,7 +58,7 @@ CWD path
 EPRT |1|
 PORT
 TYPE I
-STOR 588
+STOR %TESTNUMBER
 QUIT
 </protocol>
 <upload>

@@ -1,8 +1,10 @@
+<?xml version="1.0" encoding="US-ASCII"?>
 <testcase>
 <info>
 <keywords>
 curl_easy_getinfo
 CURLINFO_PROTOCOL
+libtest
 </keywords>
 </info>
 
@@ -10,28 +12,21 @@ CURLINFO_PROTOCOL
 </reply>
 
 <client>
-<server>
-none
-</server>
 <features>
 file
 </features>
-<tool>
-lib1558
-</tool>
 
 <name>
 CURLINFO_PROTOCOL for file:// transfer
 </name>
 <command>
-file://%FILE_PWD/log/data1558
+file://%FILE_PWD/%LOGDIR/data%TESTNUMBER
 </command>
-<file name="log/data1558">
+<file name="%LOGDIR/data%TESTNUMBER">
 hello
 </file>
 </client>
 
-#
 # Verify that the test runs to completion without crashing
 <verify>
 <errorcode>

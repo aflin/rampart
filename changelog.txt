@@ -1,3 +1,18 @@
+v0.7.4
+    -rampart-curl           Updated libcurl from 7.73 to 8.23.0, bringing
+                            several years of security and bug fixes.
+                            Added HTTP/2 support: https requests use HTTP/2
+                            when the server supports it (set "http1.1" to
+                            keep HTTP 1.1).
+                            The "proto-redir" option now works; previously
+                            any value made every redirect fail.
+                            Fixed a crash when the "connect-to" option was
+                            given as a string.
+                            Options libcurl no longer supports ("no-npn",
+                            "ntlm-wb", "random-file", "tlsuser",
+                            "tlspassword" and their "proxy-" equivalents)
+                            are still accepted but have no effect.
+
 v0.7.3
     -rampart                utils.exec() run from several threads at once no
                             longer waits for the other threads' commands to

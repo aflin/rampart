@@ -1,8 +1,10 @@
+<?xml version="1.0" encoding="US-ASCII"?>
 <testcase>
 <info>
 <keywords>
 multi
 wakeup
+libtest
 </keywords>
 </info>
 
@@ -12,17 +14,12 @@ wakeup
 
 # Client-side
 <client>
-<server>
-none
-</server>
-<tool>
-lib1564
-</tool>
+<features>
+wakeup
+</features>
 <name>
 wakeup before poll with no easy handles
 </name>
-<command>
-</command>
 </client>
 
 # Verify data after the test has been "shot"

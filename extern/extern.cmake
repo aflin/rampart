@@ -118,13 +118,8 @@ if(CYGWIN)
   set(SEND_QUAL_ARG2 "const" CACHE INTERNAL "")
   set(HAVE_SEND 1 CACHE INTERNAL "")
 endif()
-# HTTP content-encoding in libcurl: gzip only, via the vendored zlib.
-# libz is ubiquitous (every supported platform has it; texis already
-# links it).  Brotli and zstd would require non-base libraries on
-# macOS/FreeBSD/minimal Linux — keep rampart-curl free of those.
-# Real-world impact: servers fall back to gzip when br/zstd aren't
-# advertised; decoded bodies are identical to the application.
-add_subdirectory(${EXTERN_DIR}/curl)
+# libcurl + nghttp2 (HTTP/2) for rampart-curl; build settings in curl.cmake.
+include(${EXTERN_DIR}/curl.cmake)
 
 include_directories(${CMAKE_BINARY_DIR}/extern/oniguruma/include)
 

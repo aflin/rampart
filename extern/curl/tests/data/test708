@@ -1,3 +1,4 @@
+<?xml version="1.0" encoding="US-ASCII"?>
 <testcase>
 <info>
 <keywords>
@@ -7,12 +8,11 @@ SOCKS4
 </keywords>
 </info>
 
-#
 # Server-side
 <reply>
 <data>
 HTTP/1.1 200 OK
-Date: Thu, 09 Nov 2010 14:49:00 GMT
+Date: Tue, 09 Nov 2010 14:49:00 GMT
 Server: test-server/fake
 Last-Modified: Tue, 13 Jun 2000 12:10:00 GMT
 ETag: "21025-dc7-39462498"
@@ -26,9 +26,11 @@ Funny-head: yesyes
 </data>
 </reply>
 
-#
 # Client-side
 <client>
+<features>
+proxy
+</features>
 <server>
 http
 socks4
@@ -36,23 +38,20 @@ socks4
 <setenv>
 all_proxy=socks4://%HOSTIP:%SOCKSPORT
 </setenv>
- <name>
-HTTP GET via SOCKS4 proxy
- </name>
- <command>
-http://%HOSTIP:%HTTPPORT/708
+<name>
+HTTP GET via SOCKS4 all_proxy
+</name>
+<command>
+http://%HOSTIP:%HTTPPORT/%TESTNUMBER
 </command>
 </client>
 
-#
 # Verify data after the test has been "shot"
 <verify>
-<strip>
-^User-Agent:.*
-</strip>
-<protocol>
-GET /708 HTTP/1.1
+<protocol crlf="headers">
+GET /%TESTNUMBER HTTP/1.1
 Host: %HOSTIP:%HTTPPORT
+User-Agent: curl/%VERSION
 Accept: */*
 
 </protocol>

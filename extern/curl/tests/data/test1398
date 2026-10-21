@@ -1,23 +1,17 @@
+<?xml version="1.0" encoding="US-ASCII"?>
 <testcase>
 <info>
 <keywords>
-unittest
 curl_msnprintf
+libtest
 </keywords>
 </info>
 
-#
 # Client-side
 <client>
-<server>
-none
-</server>
-<features>
-unittest
-</features>
- <name>
-curl_msnprintf unit tests
- </name>
+<name>
+curl_msnprintf tests
+</name>
 </client>
 
 </testcase>

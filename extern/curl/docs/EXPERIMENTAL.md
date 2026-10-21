@@ -1,3 +1,9 @@
+<!--
+Copyright (C) Daniel Stenberg, <daniel@haxx.se>, et al.
+
+SPDX-License-Identifier: curl
+-->
+
 # Experimental
 
 Some features and functionality in curl and libcurl are considered
@@ -8,16 +14,124 @@ Experimental support in curl means:
 1. Experimental features are provided to allow users to try them out and
    provide feedback on functionality and API etc before they ship and get
    "carved in stone".
-2. You must enable the feature when invoking configure as otherwise curl will
-   not be built with the feature present.
-3. We strongly advice against using this feature in production.
+2. You must enable the feature when invoking configure as otherwise curl is
+   not built with the feature present.
+3. We strongly advise against using this feature in production.
 4. **We reserve the right to change behavior** of the feature without sticking
    to our API/ABI rules as we do for regular features, as long as it is marked
    experimental.
 5. Experimental features are clearly marked so in documentation. Beware.
+6. Vulnerabilities in experimental features are not considered security
+   problems; please report them as regular bugs/feedback instead.
 
-## Experimental features right now
+## Graduation
 
- - HTTP/3 support and options
- - alt-svc support and options
- - CURLSSLOPT_NATIVE_CA (No configure option, feature built in when supported)
+1. Each experimental feature should have a set of documented requirements of
+   what is needed for that feature to graduate. Graduation means being removed
+   from the list of experiments.
+2. An experiment should NOT graduate if it needs test cases to be disabled,
+   unless they are for minor features that are clearly documented as not
+   provided by the experiment and then the disabling should be managed inside
+   each affected test case.
+
+## The quiche QUIC and HTTP/3 backend
+
+Graduation requirements:
+
+- The library should be considered out-of-beta
+
+- a reasonable expectation of a stable API going forward
+
+- HTTP/3 with the given build should perform without risking busy-loops
+
+## HTTP/3 proxy and CONNECT-UDP support
+
+Support for HTTP/3 proxy and CONNECT-UDP tunneling is experimental and
+requires an explicit build-time opt-in (`--enable-proxy-http3` for
+autotools, `-DUSE_PROXY_HTTP3=ON` for CMake).
+
+Graduation requirements:
+
+- implementation stability over time with no known severe regressions
+
+## The Rustls TLS backend
+
+Graduation requirements:
+
+- a reasonable expectation of a stable API going forward.
+
+## ECH
+
+Use of the HTTPS resource record and Encrypted Client Hello (ECH) when using
+DoH
+
+Graduation requirements:
+
+- ECH support exists in at least one widely used TLS library apart from
+  BoringSSL and wolfSSL.
+
+- feedback from users saying that ECH works for their use cases
+
+- it has been given time to mature, so no earlier than April 2025 (twelve
+  months after being added here)
+
+## SSL session import/export
+
+Import/Export of SSL sessions tickets in libcurl and curl command line
+option '--ssl-session <filename>' for faster TLS handshakes and use
+of TLSv1.3/QUIC Early Data (0-RTT).
+
+Graduation requirements:
+
+- the implementation is considered safe
+
+- feedback from users saying that session export works for their use cases
+
+## HTTPS RR
+
+HTTPS records support is a requirement for ECH but is provided as a
+stand-alone feature that is itself considered EXPERIMENTAL.
+
+Graduation requirements:
+
+- HTTPS records work for DoH, c-ares and the threaded resolver
+
+- HTTPS records can control ALPN and port number, at least
+
+- There are options to control HTTPS use
+
+## HTTP Message Signatures (RFC 9421)
+
+Sign outgoing HTTP requests according to RFC 9421 using the
+`--httpsig-algo`, `--httpsig-key`, `--httpsig-keyid` and
+`--httpsig-headers` command line options, or the corresponding
+`CURLOPT_HTTPSIG_*` libcurl options. Built only when configured with
+`--enable-httpsig`.
+
+Graduation requirements:
+
+- the option set (names, arguments, defaults) is settled
+
+- interoperability has been verified against at least two independent
+  RFC 9421 implementations
+
+- no test cases are disabled for the feature
+
+- feedback from users saying the API works for their use cases
+
+## Apple fast UDP
+
+There are undocumented system calls available in Apple operating systems that
+when used allow for faster sending and receiving of UDP messages.
+
+The undocumented and thus unsupported-by-Apple nature of these functions
+brings a risk that they are removed in a future OS update, or perhaps worse:
+marginally modified to instead cause subtle and hard-to-spot bugs.
+
+Graduation requirements:
+
+- testimonials from users that these work reliably
+
+- measurements that show they make a measurable performance impact
+
+- an easy way to (re-)build curl to not use these functions

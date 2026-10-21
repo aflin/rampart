@@ -1,7 +1,9 @@
+<?xml version="1.0" encoding="US-ASCII"?>
 <testcase>
 <info>
 <keywords>
 CURLINFO_EFFECTIVE_URL
+libtest
 </keywords>
 </info>
 
@@ -9,7 +11,7 @@ CURLINFO_EFFECTIVE_URL
 <reply>
 <data nocheck="yes">
 HTTP/1.1 200 OK
-Date: Thu, 09 Nov 2010 14:49:00 GMT
+Date: Tue, 09 Nov 2010 14:49:00 GMT
 Server: test-server/fake
 Content-Type: text/html
 Funny-head: yesyes swsclose
@@ -23,31 +25,25 @@ Content-Length: 0
 <server>
 http
 </server>
- <name>
+<name>
 CURLINFO_EFFECTIVE_URL with non-scheme URL
- </name>
-<tool>
-lib1907
-</tool>
+</name>
 
 <command>
-%HOSTIP:%HTTPPORT/hello/../1907
+%HOSTIP:%HTTPPORT/hello/../%TESTNUMBER
 </command>
 </client>
 
 # Verify data after the test has been "shot"
 <verify>
-<strip>
-^User-Agent:.*
-</strip>
-<protocol>
-GET /1907 HTTP/1.1
+<protocol crlf="headers">
+GET /%TESTNUMBER HTTP/1.1
 Host: %HOSTIP:%HTTPPORT
 Accept: */*
 
 </protocol>
 <stdout>
-Effective URL: http://%HOSTIP:%HTTPPORT/1907
+Effective URL: http://%HOSTIP:%HTTPPORT/%TESTNUMBER
 </stdout>
 </verify>
 </testcase>

@@ -1,21 +1,18 @@
+<?xml version="1.0" encoding="US-ASCII"?>
 <testcase>
 <info>
 <keywords>
-unittest
+tunittest
 </keywords>
 </info>
 
-#
 # Client-side
 <client>
-<server>
-none
-</server>
 <features>
 unittest
 </features>
- <name>
-Test WIN32/MSDOS filename sanitization
- </name>
+<name>
+Test Windows/MS-DOS filename sanitization
+</name>
 </client>
 </testcase>

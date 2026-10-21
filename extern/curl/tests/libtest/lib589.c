@@ -5,11 +5,11 @@
  *                            | (__| |_| |  _ <| |___
  *                             \___|\___/|_| \_\_____|
  *
- * Copyright (C) 1998 - 2017, Daniel Stenberg, <daniel@haxx.se>, et al.
+ * Copyright (C) Daniel Stenberg, <daniel@haxx.se>, et al.
  *
  * This software is licensed as described in the file COPYING, which
  * you should have received as part of this distribution. The terms
- * are also available at https://curl.haxx.se/docs/copyright.html.
+ * are also available at https://curl.se/docs/copyright.html.
  *
  * You may opt to use, copy, modify, merge, publish, distribute and/or sell
  * copies of the Software, and permit persons to whom the Software is
@@ -18,42 +18,59 @@
  * This software is distributed on an "AS IS" basis, WITHOUT WARRANTY OF ANY
  * KIND, either express or implied.
  *
+ * SPDX-License-Identifier: curl
+ *
  ***************************************************************************/
-#include "test.h"
+#include "first.h"
 
-#include "memdebug.h"
-
-int test(char *URL)
+static CURLcode test_lib589(const char *URL)
 {
   CURL *curl;
-  CURLcode res = CURLE_OK;
+  CURLcode result = CURLE_OK;
+  curl_mime *mime = NULL;
+  curl_mimepart *part;
 
   if(curl_global_init(CURL_GLOBAL_ALL) != CURLE_OK) {
-    fprintf(stderr, "curl_global_init() failed\n");
+    curl_mfprintf(stderr, "curl_global_init() failed\n");
     return TEST_ERR_MAJOR_BAD;
   }
 
   curl = curl_easy_init();
   if(!curl) {
-    fprintf(stderr, "curl_easy_init() failed\n");
+    curl_mfprintf(stderr, "curl_easy_init() failed\n");
     curl_global_cleanup();
     return TEST_ERR_MAJOR_BAD;
   }
 
   /* First set the URL that is about to receive our POST. */
-  test_setopt(curl, CURLOPT_URL, URL);
-  test_setopt(curl, CURLOPT_MIMEPOST, NULL);
-  test_setopt(curl, CURLOPT_VERBOSE, 1L); /* show verbose for debug */
-  test_setopt(curl, CURLOPT_HEADER, 1L); /* include header */
+  easy_setopt(curl, CURLOPT_URL, URL);
+  easy_setopt(curl, CURLOPT_VERBOSE, 1L); /* show verbose for debug */
+  easy_setopt(curl, CURLOPT_HEADER, 1L); /* include header */
+
+  if(testnum == 584) {
+    mime = curl_mime_init(curl);
+    part = curl_mime_addpart(mime);
+    if(mime && part) {
+      curl_mime_name(part, "fake");
+      curl_mime_data(part, "party", 5);
+      easy_setopt(curl, CURLOPT_MIMEPOST, mime);
+      result = curl_easy_perform(curl);
+    }
+    if(result)
+      goto test_cleanup;
+  }
+
+  easy_setopt(curl, CURLOPT_MIMEPOST, NULL);
 
   /* Now, we should be making a zero byte POST request */
-  res = curl_easy_perform(curl);
+  result = curl_easy_perform(curl);
 
 test_cleanup:
 
   /* always cleanup */
+  curl_mime_free(mime);
   curl_easy_cleanup(curl);
   curl_global_cleanup();
 
-  return (int)res;
+  return result;
 }

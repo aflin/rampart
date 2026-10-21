@@ -1,3 +1,4 @@
+<?xml version="1.0" encoding="US-ASCII"?>
 <testcase>
 <info>
 <keywords>
@@ -6,7 +7,6 @@ HTTP GET
 HTTP proxy
 </keywords>
 </info>
-#
 # Server-side
 <reply>
 <data>
@@ -25,7 +25,6 @@ wrong
 </data1>
 </reply>
 
-#
 # Client-side
 <client>
 <server>
@@ -39,23 +38,20 @@ proxy
 HTTP GET same URL - different proxy ports
 </name>
 <command>
-http://%HOSTIP:%HTTPPORT/1244 -x %HOSTIP:%HTTPPORT --next http://%HOSTIP:%HTTPPORT/124400001 -x %HOSTIP:%HTTPSPORT
+http://%HOSTIP:%HTTPPORT/%TESTNUMBER -x %HOSTIP:%HTTPPORT --next http://%HOSTIP:%HTTPPORT/%TESTNUMBER00001 -x %HOSTIP:%HTTPSPORT
 </command>
 </client>
 
-#
 # Verify data after the test has been "shot"
 <verify>
 # the second request meant to fail
 <errorcode>
 56
 </errorcode>
-<strip>
-^User-Agent:.*
-</strip>
-<protocol>
-GET http://%HOSTIP:%HTTPPORT/1244 HTTP/1.1
+<protocol crlf="headers">
+GET http://%HOSTIP:%HTTPPORT/%TESTNUMBER HTTP/1.1
 Host: %HOSTIP:%HTTPPORT
+User-Agent: curl/%VERSION
 Accept: */*
 Proxy-Connection: Keep-Alive
 

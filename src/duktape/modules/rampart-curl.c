@@ -1089,6 +1089,12 @@ int copt_string(CSOS_ARGS)
     return (0);
 }
 
+/* options libcurl no longer implements: still accepted, do nothing */
+int copt_noop(CSOS_ARGS)
+{
+    return (0);
+}
+
 /* turn JS array into curl slist, or if not an array, an slist with one member */
 int copt_array_slist(CSOS_ARGS)
 {
@@ -1569,7 +1575,11 @@ CURL_OPTS curl_options[] = {
     {"netrc-optional", CURLOPT_NETRC, 1, &copt_netrc},
     {"no-alpn", CURLOPT_SSL_ENABLE_ALPN, -1, &copt_boolplus},
     {"no-keepalive", CURLOPT_TCP_KEEPALIVE, -1, &copt_boolplus},
+#if LIBCURL_VERSION_NUM >= 0x075600
+    {"no-npn", 0, /* NPN removed in 7.86 */ 0, &copt_noop},
+#else
     {"no-npn", CURLOPT_SSL_ENABLE_NPN, -1, &copt_boolplus},
+#endif
     {"no-sessionid", CURLOPT_SSL_SESSIONID_CACHE, -1, &copt_boolplus},
     {"nobody", CURLOPT_NOBODY, 0, &copt_bool},
     {"noproxy", CURLOPT_NOPROXY, 0, &copt_string},
@@ -1589,7 +1599,11 @@ CURL_OPTS curl_options[] = {
     {"preproxy", CURLOPT_PRE_PROXY, 0, &copt_string},
     //{"proto", CURLOPT_PROTOCOLS, 0, &copt_proto}, no need to limit protocols in scripting that I can see.
     {"proto-default", CURLOPT_DEFAULT_PROTOCOL, 0, &copt_string},
+#if LIBCURL_VERSION_NUM >= 0x075500
+    {"proto-redir", CURLOPT_REDIR_PROTOCOLS_STR, 0, &copt_string},
+#else
     {"proto-redir", CURLOPT_REDIR_PROTOCOLS, 0, &copt_string},
+#endif
     {"proxy", CURLOPT_PROXY, 0, &copt_string},
     {"proxy-anyauth", CURLOPT_PROXYAUTH, 7, &copt_auth},
     {"proxy-basic", CURLOPT_PROXYAUTH, 0, &copt_auth},
@@ -1612,8 +1626,13 @@ CURL_OPTS curl_options[] = {
     {"proxy-service-name", CURLOPT_PROXY_SERVICE_NAME, 0, &copt_string},
     {"proxy-ssl-allow-beast", CURLOPT_PROXY_SSL_OPTIONS, 0, &copt_sslopt},
     //{"proxy-ssl-no-revoke", CURLOPT_PROXY_SSL_OPTIONS, 1, &copt_sslopt},
+#if LIBCURL_VERSION_NUM >= 0x081600
+    {"proxy-tlspassword", 0, /* TLS-SRP removed in 8.22 */ 0, &copt_noop},
+    {"proxy-tlsuser", 0, 0, &copt_noop},
+#else
     {"proxy-tlspassword", CURLOPT_PROXY_TLSAUTH_PASSWORD, 0, &copt_string},
     {"proxy-tlsuser", CURLOPT_PROXY_TLSAUTH_USERNAME, 0, &copt_string},
+#endif
     {"proxy-tlsv1", CURLOPT_PROXY_SSLVERSION, 1, &copt_sslver},
     {"proxy-user", CURLOPT_PROXYUSERPWD, 0, &copt_string},
     {"proxy1.0", CURLOPT_PROXY, 2, &copt_proxytype},
@@ -1621,7 +1640,11 @@ CURL_OPTS curl_options[] = {
     {"pubkey", CURLOPT_SSH_PUBLIC_KEYFILE, 0, &copt_string},
     {"quote", CURLOPT_QUOTE, 0, &copt_array_slist},
     {"r", CURLOPT_RANGE, 0, &copt_string},
+#if LIBCURL_VERSION_NUM >= 0x075400
+    {"random-file", 0, /* no function since 7.84 */ 0, &copt_noop},
+#else
     {"random-file", CURLOPT_RANDOM_FILE, 0, &copt_string},
+#endif
     {"range", CURLOPT_RANGE, 0, &copt_string},
     {"referer", CURLOPT_REFERER, 0, &copt_string},
     {"request", CURLOPT_CUSTOMREQUEST, 0, &copt_string},
@@ -1635,7 +1658,7 @@ CURL_OPTS curl_options[] = {
     {"socks5-basic", CURLOPT_SOCKS5_AUTH, 1, &copt_socks5auth},
     {"socks5-gssapi", CURLOPT_SOCKS5_AUTH, 2, &copt_socks5auth},
     {"socks5-gssapi-nec", CURLOPT_SOCKS5_GSSAPI_NEC, 0, &copt_bool},
-    {"socks5-gssapi-service", CURLOPT_SOCKS5_GSSAPI_SERVICE, 0, &copt_string},
+    {"socks5-gssapi-service", CURLOPT_PROXY_SERVICE_NAME, 0, &copt_string},
     {"socks5-hostname", CURLOPT_PROXY, 6, &copt_proxytype},
     {"speed-limit", CURLOPT_LOW_SPEED_LIMIT, 0, &copt_long},
     {"speed-time", CURLOPT_LOW_SPEED_TIME, 0, &copt_long},
@@ -1654,8 +1677,13 @@ CURL_OPTS curl_options[] = {
     {"tftp-no-options", CURLOPT_TFTP_NO_OPTIONS, 0, &copt_bool},
     {"time-cond", CURLOPT_TIMECONDITION, 0, &copt_timecond},
     {"tls-max", CURLOPT_SSLVERSION, 0, &copt_tlsmax},
+#if LIBCURL_VERSION_NUM >= 0x081600
+    {"tlspassword", 0, /* TLS-SRP removed in 8.22 */ 0, &copt_noop},
+    {"tlsuser", 0, 0, &copt_noop},
+#else
     {"tlspassword", CURLOPT_TLSAUTH_PASSWORD, 0, &copt_string},
     {"tlsuser", CURLOPT_TLSAUTH_USERNAME, 0, &copt_string},
+#endif
     {"tlsv1", CURLOPT_SSLVERSION, 1, &copt_sslver},
     {"tlsv1.0", CURLOPT_SSLVERSION, 4, &copt_sslver},
     {"tlsv1.1", CURLOPT_SSLVERSION, 5, &copt_sslver},
@@ -2779,12 +2807,13 @@ static int xferinfo_cb(void *clientp,
         duk_push_number(ctx, dval);
         duk_put_prop_string(ctx, -2, "elapsed");
     }
-    if (curl_easy_getinfo(req->curl, CURLINFO_SPEED_DOWNLOAD, &dval) == CURLE_OK) {
-        duk_push_number(ctx, dval);
+    curl_off_t oval;
+    if (curl_easy_getinfo(req->curl, CURLINFO_SPEED_DOWNLOAD_T, &oval) == CURLE_OK) {
+        duk_push_number(ctx, (double)oval);
         duk_put_prop_string(ctx, -2, "speedDl");
     }
-    if (curl_easy_getinfo(req->curl, CURLINFO_SPEED_UPLOAD, &dval) == CURLE_OK) {
-        duk_push_number(ctx, dval);
+    if (curl_easy_getinfo(req->curl, CURLINFO_SPEED_UPLOAD_T, &oval) == CURLE_OK) {
+        duk_push_number(ctx, (double)oval);
         duk_put_prop_string(ctx, -2, "speedUl");
     }
     if (curl_easy_getinfo(req->curl, CURLINFO_CONNECT_TIME, &dval) == CURLE_OK) {
@@ -3164,7 +3193,7 @@ CURLREQ *new_request(char *url, CURLREQ *cloner, duk_context *ctx, duk_idx_t opt
          * users (incl. WPT content-encoding tests) need decompression. */
         curl_easy_setopt(req->curl, CURLOPT_ACCEPT_ENCODING, "");
 
-        curl_easy_setopt(req->curl, CURLOPT_BUFFERSIZE, 100*1024);
+        curl_easy_setopt(req->curl, CURLOPT_BUFFERSIZE, 100*1024L);
         /* send all body data to this function  */
         curl_easy_setopt(req->curl, CURLOPT_WRITEFUNCTION, WriteCallback);
         /* we pass our RETTXT struct to the callback function */

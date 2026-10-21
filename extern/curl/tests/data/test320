@@ -1,80 +1,59 @@
+<?xml version="1.0" encoding="US-ASCII"?>
 <testcase>
 <info>
 <keywords>
-HTTPS
-HTTP GET
-TLS-SRP
+HTTP
+cookies
 </keywords>
 </info>
 
 # Server-side
 <reply>
-<data nocheck="yes">
-HTTP/1.0 200 OK
-Content-type: text/html
+<data crlf="headers">
+HTTP/1.1 200 OK
+Date: Tue, 09 Nov 2010 14:49:00 GMT
+Server: test-server/fake
+Last-Modified: Tue, 13 Jun 2000 12:10:00 GMT
+ETag: "21025-dc7-39462498"
+Accept-Ranges: bytes
+Content-Length: 6
+Connection: something-close, close-something, close
+Content-Type: text/html
+Funny-head: yesyes
 
-
-<HTML><BODY>
-<CENTER><H1>This is <a href="http://www.gnu.org/software/gnutls">GnuTLS</a></H1></CENTER>
-
-
-<p>Session ID: <i>003030000100000001000000000000000030330001000000B062410001000000</i></p>
-<h5>If your browser supports session resuming, then you should see the same session ID, when you press the <b>reload</b> button.</h5>
-<p>Connected as user 'jsmith'.</p>
-<P>
-<TABLE border=1><TR><TD>Protocol version:</TD><TD>TLS1.2</TD></TR>
-<TR><TD>Key Exchange:</TD><TD>SRP</TD></TR>
-<TR><TD>Compression</TD><TD>NULL</TD></TR>
-<TR><TD>Cipher</TD><TD>AES-NNN-CBC</TD></TR>
-<TR><TD>MAC</TD><TD>SHA1</TD></TR>
-<TR><TD>Ciphersuite</TD><TD>SRP_SHA_AES_NNN_CBC_SHA1</TD></TR></p></TABLE>
-<hr><P>Your HTTP header was:<PRE>Host: localhost:9011
-User-Agent: curl-test-suite
-Accept: */*
-
-</PRE></P>
-</BODY></HTML>
-
+-foo-
 </data>
 </reply>
 
 # Client-side
 <client>
-<server>
-httptls+srp
-</server>
 <features>
-TLS-SRP
+cookies
+PSL
 </features>
- <name>
-simple TLS-SRP HTTPS GET, check user in response
- </name>
+<server>
+http
+</server>
+<name>
+Load cookies from file for localhost
+</name>
 <command>
---insecure --tlsauthtype SRP --tlsuser jsmith --tlspassword abc -A curl-test-suite https://%HOSTIP:%HTTPTLSPORT
+http://localhost:%HTTPPORT/%TESTNUMBER -b %LOGDIR/cookies.txt --resolve localhost:%HTTPPORT:%HOSTIP
 </command>
+<file name="%LOGDIR/cookies.txt">
+localhost%TABTRUE%TAB/%TABFALSE%TAB0%TABgood%TABallowed
+</file>
 </client>
 
 # Verify data after the test has been "shot"
 <verify>
-<protocol>
-</protocol>
-<file name="log/curl320.out">
-HTTP/1.0 200 OK
-Content-type: text/html
-
-FINE
-User-Agent: curl-test-suite
+<protocol crlf="headers">
+GET /%TESTNUMBER HTTP/1.1
+Host: localhost:%HTTPPORT
+User-Agent: curl/%VERSION
 Accept: */*
+Cookie: good=allowed
 
-</file>
-<stripfile>
-s/^<p>Connected as user 'jsmith'.*/FINE/
-s/Protocol version:.*[0-9]//
-s/GNUTLS/GnuTLS/
-s/(AES[-_])\d\d\d([-_]CBC)/$1NNN$2/
-s/^<.*\n//
-s/^\n//
-</stripfile>
+</protocol>
 </verify>
-
 </testcase>

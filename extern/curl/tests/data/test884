@@ -1,3 +1,4 @@
+<?xml version="1.0" encoding="US-ASCII"?>
 <testcase>
 <info>
 <keywords>
@@ -10,15 +11,14 @@ RFC5034
 </keywords>
 </info>
 
-#
 # Server-side
 <reply>
 <servercmd>
 AUTH EXTERNAL
 REPLY AUTH +
-REPLY = +OK Login successful
+REPLY  +OK Login successful
 </servercmd>
-<data>
+<data crlf="yes">
 From: me@somewhere
 To: fake@nowhere
 
@@ -29,28 +29,26 @@ body
 </data>
 </reply>
 
-#
 # Client-side
 <client>
 <server>
 pop3
 </server>
- <name>
+<name>
 POP3 external authentication without credentials
- </name>
- <command>
-'pop3://;AUTH=EXTERNAL@%HOSTIP:%POP3PORT/884'
+</name>
+<command>
+'pop3://;AUTH=EXTERNAL@%HOSTIP:%POP3PORT/%TESTNUMBER'
 </command>
 </client>
 
-#
 # Verify data after the test has been "shot"
 <verify>
-<protocol>
+<protocol crlf="yes">
 CAPA
 AUTH EXTERNAL
-=
-RETR 884
+
+RETR %TESTNUMBER
 QUIT
 </protocol>
 </verify>

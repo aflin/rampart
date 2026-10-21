@@ -1,5 +1,4 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
+#!/usr/bin/env python3
 #***************************************************************************
 #                                  _   _ ____  _
 #  Project                     ___| | | |  _ \| |
@@ -7,11 +6,11 @@
 #                            | (__| |_| |  _ <| |___
 #                             \___|\___/|_| \_\_____|
 #
-# Copyright (C) 2008 - 2020, Daniel Stenberg, <daniel@haxx.se>, et al.
+# Copyright (C) Daniel Stenberg, <daniel@haxx.se>, et al.
 #
 # This software is licensed as described in the file COPYING, which
 # you should have received as part of this distribution. The terms
-# are also available at https://curl.haxx.se/docs/copyright.html.
+# are also available at https://curl.se/docs/copyright.html.
 #
 # You may opt to use, copy, modify, merge, publish, distribute and/or sell
 # copies of the Software, and permit persons to whom the Software is
@@ -20,18 +19,21 @@
 # This software is distributed on an "AS IS" basis, WITHOUT WARRANTY OF ANY
 # KIND, either express or implied.
 #
+# SPDX-License-Identifier: curl
+#
 ###########################################################################
 #
-""" DICT server """
+"""DICT server."""
 
-from __future__ import (absolute_import, division, print_function,
-                        unicode_literals)
 import argparse
+import logging
 import os
 import sys
-import logging
+
+from util import ClosingFileHandler
+
 try:  # Python 2
-    import SocketServer as socketserver
+    import SocketServer as socketserver  # type: ignore
 except ImportError:  # Python 3
     import socketserver
 
@@ -45,15 +47,12 @@ VERIFIED_RSP = "WE ROOLZ: {pid}"
 
 
 def dictserver(options):
-    """
-    Starts up a TCP server with a DICT handler and serves DICT requests
-    forever.
-    """
+    """Start up a TCP server with a DICT handler and serve DICT requests forever."""
     if options.pidfile:
         pid = os.getpid()
         # see tests/server/util.c function write_pidfile
         if os.name == "nt":
-            pid += 65536
+            pid += 4194304
         with open(options.pidfile, "w") as f:
             f.write(str(pid))
 
@@ -69,13 +68,10 @@ def dictserver(options):
 
 
 class DictHandler(socketserver.BaseRequestHandler):
-    """Handler class for DICT connections.
+    """Handler class for DICT connections."""
 
-    """
     def handle(self):
-        """
-        Simple function which responds to all queries with a 552.
-        """
+        """Respond to all queries with a 552."""
         try:
             # First, send a response to allow the server to continue.
             rsp = "220 dictserver <xnooptions> <msgid@msgid>\n"
@@ -91,19 +87,19 @@ class DictHandler(socketserver.BaseRequestHandler):
                 pid = os.getpid()
                 # see tests/server/util.c function write_pidfile
                 if os.name == "nt":
-                    pid += 65536
+                    pid += 4194304
                 response_data = VERIFIED_RSP.format(pid=pid)
             else:
                 log.debug("[DICT] Received normal request")
                 response_data = "No matches"
 
             # Send back a failure to find.
-            response = "552 {0}\n".format(response_data)
+            response = f"552 {response_data}\n"
             log.debug("[DICT] Responding with %r", response)
             self.request.sendall(response.encode("utf-8"))
 
-        except IOError:
-            log.exception("[DICT] IOError hit during request")
+        except OSError:
+            log.exception("[DICT] OSError hit during request")
 
 
 def get_options():
@@ -116,9 +112,9 @@ def get_options():
     parser.add_argument("--verbose", action="store", type=int, default=0,
                         help="verbose output")
     parser.add_argument("--pidfile", action="store",
-                        help="file name for the PID")
+                        help="filename for the PID")
     parser.add_argument("--logfile", action="store",
-                        help="file name for the log")
+                        help="filename for the log")
     parser.add_argument("--srcdir", action="store", help="test directory")
     parser.add_argument("--id", action="store", help="server ID")
     parser.add_argument("--ipv4", action="store_true", default=0,
@@ -128,9 +124,7 @@ def get_options():
 
 
 def setup_logging(options):
-    """
-    Set up logging from the command line options
-    """
+    """Set up logging from the command line options."""
     root_logger = logging.getLogger()
     add_stdout = False
 
@@ -138,12 +132,12 @@ def setup_logging(options):
 
     # Write out to a logfile
     if options.logfile:
-        handler = logging.FileHandler(options.logfile, mode="w")
+        handler = ClosingFileHandler(options.logfile)
         handler.setFormatter(formatter)
         handler.setLevel(logging.DEBUG)
         root_logger.addHandler(handler)
     else:
-        # The logfile wasn't specified. Add a stdout logger.
+        # The logfile was not specified. Add a stdout logger.
         add_stdout = True
 
     if options.verbose:
@@ -160,15 +154,12 @@ def setup_logging(options):
         root_logger.addHandler(stdout_handler)
 
 
-class ScriptRC(object):
-    """Enum for script return codes"""
+class ScriptRC:
+    """Enum for script return codes."""
+
     SUCCESS = 0
     FAILURE = 1
     EXCEPTION = 2
-
-
-class ScriptException(Exception):
-    pass
 
 
 if __name__ == '__main__':
@@ -181,9 +172,12 @@ if __name__ == '__main__':
     # Run main script.
     try:
         rc = dictserver(options)
-    except Exception as e:
-        log.exception(e)
+    except Exception:
+        log.exception('Error running server')
         rc = ScriptRC.EXCEPTION
+
+    if options.pidfile and os.path.isfile(options.pidfile):
+        os.unlink(options.pidfile)
 
     log.info("[DICT] Returning %d", rc)
     sys.exit(rc)

@@ -1,3 +1,4 @@
+<?xml version="1.0" encoding="US-ASCII"?>
 <testcase>
 <info>
 <keywords>
@@ -11,12 +12,12 @@ Content-Encoding
 <reply>
 <data>
 HTTP/1.1 200 OK
-Date: Thu, 09 Nov 2010 14:49:00 GMT
+Date: Tue, 09 Nov 2010 14:49:00 GMT
 Content-Type: text/html
 Content-Encoding: none
 Content-Length: 38
 
-Q: What did 0 say to 8? A: Nice Belt!
+Q- What did 0 say to 8? A- Nice Belt!
 </data>
 </reply>
 
@@ -26,28 +27,28 @@ Q: What did 0 say to 8? A: Nice Belt!
 http
 </server>
 
-# we're actually more interested in any compression support but this is the
+# we are actually more interested in any compression support but this is the
 # best we can do right now
 <features>
 libz
 </features>
- <name>
+<name>
 HTTP with "Content-Encoding: none
- </name>
- <command>
-http://%HOSTIP:%HTTPPORT/hello/328 --compressed
+</name>
+<command>
+http://%HOSTIP:%HTTPPORT/hello/%TESTNUMBER --compressed
 </command>
 </client>
 
 # Verify data after the test has been "shot"
 <verify>
 <strip>
-^User-Agent:.*
 ^Accept-Encoding:.*
 </strip>
-<protocol>
-GET /hello/328 HTTP/1.1
+<protocol crlf="headers">
+GET /hello/%TESTNUMBER HTTP/1.1
 Host: %HOSTIP:%HTTPPORT
+User-Agent: curl/%VERSION
 Accept: */*
 
 </protocol>

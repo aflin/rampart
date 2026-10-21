@@ -124,6 +124,18 @@ function sendchunk(req){
         req.chunkEnd(chunk);
 }
 
+/* /drip: 20 small chunks 50ms apart (~1s), so libcurl's progress callback
+   is driven by arriving data rather than its idle-wait timers */
+function sendchunk_drip(req){
+    if(req.chunkIndex < 19)
+        req.chunkSend("drip ");
+    else
+        req.chunkEnd("drip");
+}
+function driptest(req) {
+    return {"txt": sendchunk_drip, chunk: true, chunkDelay: 50};
+}
+
 var ctestfile = process.scriptPath + "/wiki_00";
 
 function chunktest(req) {
@@ -211,6 +223,7 @@ pid=server.start(
                                 return("done");
                             },
         "/chunk.txt":       chunktest,
+        "/drip":            driptest,
         "/limited":         function(req) { return {text: "ok"}; },
         "/fp-limited":      function(req) { return {text: "ok"}; },
         "/ck-limited":      function(req) { return {text: "ok"}; },
@@ -564,14 +577,17 @@ testFeature("xferCallback abort on return-false ends transfer", function() {
 });
 
 testFeature("xferCallback rate=10 fires more than rate=2", function() {
-    /* Same endpoint, two rates; higher rate must produce more calls. */
+    /* Same endpoint, two rates; higher rate must produce more calls.
+     * /drip trickles data for ~1s: libcurl only promises about one
+     * progress call per second while a transfer is idle, so a stalled
+     * endpoint cannot tell the two rates apart. */
     var n2 = 0, n10 = 0;
-    curl.fetch("https://localhost:8287/slow", {
+    curl.fetch("https://localhost:8287/drip", {
         insecure: true,
         xferCallback:     function(){ n2++; },
         xferCallbackRate: 2
     });
-    curl.fetch("https://localhost:8287/slow", {
+    curl.fetch("https://localhost:8287/drip", {
         insecure: true,
         xferCallback:     function(){ n10++; },
         xferCallbackRate: 10

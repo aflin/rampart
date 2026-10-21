@@ -1,9 +1,11 @@
+<?xml version="1.0" encoding="US-ASCII"?>
 <testcase>
 <info>
 <keywords>
 HTTP
 HTTP GET
 shared connections
+libtest
 </keywords>
 </info>
 
@@ -11,7 +13,7 @@ shared connections
 <reply>
 <data>
 HTTP/1.1 200 OK
-Date: Thu, 09 Nov 2010 14:49:00 GMT
+Date: Tue, 09 Nov 2010 14:49:00 GMT
 Server: test-server/fake
 Content-Type: text/html
 Content-Length: 29
@@ -19,67 +21,45 @@ Content-Length: 29
 run 1: foobar and so on fun!
 </data>
 <datacheck>
--> Mutex lock
-<- Mutex unlock
--> Mutex lock
-<- Mutex unlock
--> Mutex lock
-<- Mutex unlock
--> Mutex lock
-<- Mutex unlock
--> Mutex lock
-<- Mutex unlock
--> Mutex lock
-<- Mutex unlock
--> Mutex lock
-<- Mutex unlock
--> Mutex lock
-<- Mutex unlock
+-] Mutex lock SHARE
+[- Mutex unlock SHARE
+-] Mutex lock CONNECT
+[- Mutex unlock CONNECT
+-] Mutex lock CONNECT
+[- Mutex unlock CONNECT
+-] Mutex lock CONNECT
+[- Mutex unlock CONNECT
 run 1: foobar and so on fun!
--> Mutex lock
-<- Mutex unlock
--> Mutex lock
-<- Mutex unlock
--> Mutex lock
-<- Mutex unlock
--> Mutex lock
-<- Mutex unlock
--> Mutex lock
-<- Mutex unlock
--> Mutex lock
-<- Mutex unlock
--> Mutex lock
-<- Mutex unlock
--> Mutex lock
-<- Mutex unlock
+-] Mutex lock CONNECT
+[- Mutex unlock CONNECT
+-] Mutex lock SHARE
+[- Mutex unlock SHARE
+-] Mutex lock SHARE
+[- Mutex unlock SHARE
+-] Mutex lock CONNECT
+[- Mutex unlock CONNECT
+-] Mutex lock CONNECT
+[- Mutex unlock CONNECT
 run 1: foobar and so on fun!
--> Mutex lock
-<- Mutex unlock
--> Mutex lock
-<- Mutex unlock
--> Mutex lock
-<- Mutex unlock
--> Mutex lock
-<- Mutex unlock
--> Mutex lock
-<- Mutex unlock
--> Mutex lock
-<- Mutex unlock
--> Mutex lock
-<- Mutex unlock
--> Mutex lock
-<- Mutex unlock
+-] Mutex lock CONNECT
+[- Mutex unlock CONNECT
+-] Mutex lock SHARE
+[- Mutex unlock SHARE
+-] Mutex lock SHARE
+[- Mutex unlock SHARE
+-] Mutex lock CONNECT
+[- Mutex unlock CONNECT
+-] Mutex lock CONNECT
+[- Mutex unlock CONNECT
 run 1: foobar and so on fun!
--> Mutex lock
-<- Mutex unlock
--> Mutex lock
-<- Mutex unlock
--> Mutex lock
-<- Mutex unlock
--> Mutex lock
-<- Mutex unlock
--> Mutex lock
-<- Mutex unlock
+-] Mutex lock CONNECT
+[- Mutex unlock CONNECT
+-] Mutex lock SHARE
+[- Mutex unlock SHARE
+-] Mutex lock SHARE
+[- Mutex unlock SHARE
+-] Mutex lock CONNECT
+[- Mutex unlock CONNECT
 </datacheck>
 </reply>
 
@@ -91,11 +71,8 @@ http
 <name>
 HTTP with shared connection cache
 </name>
-<tool>
-lib1554
-</tool>
 <command>
-http://%HOSTIP:%HTTPPORT/1554
+http://%HOSTIP:%HTTPPORT/%TESTNUMBER
 </command>
 </client>
 

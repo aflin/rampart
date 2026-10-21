@@ -1,3 +1,4 @@
+<?xml version="1.0" encoding="US-ASCII"?>
 <testcase>
 <info>
 <keywords>
@@ -6,12 +7,11 @@ HTTP PUT
 followlocation
 </keywords>
 </info>
-#
 # Server-side
 <reply>
 <data>
 HTTP/1.1 303 OK swsclose
-Location: moo.html&testcase=/15240002
+Location: moo.html%AMPtestcase=/%TESTNUMBER0002
 Connection: close
 
 </data>
@@ -24,7 +24,7 @@ body
 </data2>
 <datacheck>
 HTTP/1.1 303 OK swsclose
-Location: moo.html&testcase=/15240002
+Location: moo.html%AMPtestcase=/%TESTNUMBER0002
 Connection: close
 
 HTTP/1.1 200 OK swsclose
@@ -35,40 +35,35 @@ body
 </datacheck>
 </reply>
 
-#
 # Client-side
 <client>
 <server>
 http
 </server>
- <name>
+<name>
 HTTP PUT with 303 redirect
- </name>
- <command>
-http://%HOSTIP:%HTTPPORT/blah/1524 -L -T log/upload1524.txt
+</name>
+<command>
+http://%HOSTIP:%HTTPPORT/blah/%TESTNUMBER -L -T %LOGDIR/upload%TESTNUMBER.txt
 </command>
-<file name="log/upload1524.txt">
+<file name="%LOGDIR/upload%TESTNUMBER.txt">
 moo
 </file>
 </client>
 
-#
 # Verify data after the test has been "shot"
 <verify>
-<strip>
-^User-Agent:.*
-</strip>
-<protocol nonewline="yes">
-PUT /blah/1524 HTTP/1.1
+<protocol crlf="headers" nonewline="yes">
+PUT /blah/%TESTNUMBER HTTP/1.1
 Host: %HOSTIP:%HTTPPORT
+User-Agent: curl/%VERSION
 Accept: */*
 Content-Length: 4
-Expect: 100-continue
 
 moo
-GET /blah/moo.html&testcase=/15240002 HTTP/1.1
-User-Agent: this should be ignored
+GET /blah/moo.html%AMPtestcase=/%TESTNUMBER0002 HTTP/1.1
 Host: %HOSTIP:%HTTPPORT
+User-Agent: curl/%VERSION
 Accept: */*
 
 

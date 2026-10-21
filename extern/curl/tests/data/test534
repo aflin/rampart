@@ -1,3 +1,4 @@
+<?xml version="1.0" encoding="US-ASCII"?>
 <testcase>
 <info>
 <keywords>
@@ -6,6 +7,7 @@ PASV
 RETR
 multi
 non-existing host
+libtest
 </keywords>
 </info>
 
@@ -16,7 +18,7 @@ non-existing host
 
 <servercmd>
 REPLY RETR 550 the file doesn't exist
-REPLY SIZE 550 Can't check for file existence
+REPLY SIZE 500 Can't check for file existence
 </servercmd>
 </reply>
 
@@ -28,25 +30,25 @@ ftp
 <tool>
 lib533
 </tool>
- <name>
+<name>
 FTP RETR twice using multi: non-existing host and non-existing file
- </name>
- <command>
-ftp://non-existing-host.haxx.se/path/534 ftp://%HOSTIP:%FTPPORT/path/534
+</name>
+<command>
+ftp://non-existing-host.haxx.se/path/%TESTNUMBER ftp://%HOSTIP:%FTPPORT/path/%TESTNUMBER
 </command>
 </client>
 
 # Verify data after the test has been "shot"
 <verify>
-<protocol>
+<protocol crlf="yes">
 USER anonymous
 PASS ftp@example.com
 PWD
 CWD path
 EPSV
 TYPE I
-SIZE 534
-RETR 534
+SIZE %TESTNUMBER
+RETR %TESTNUMBER
 QUIT
 </protocol>
 </verify>

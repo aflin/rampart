@@ -5,11 +5,11 @@
  *                            | (__| |_| |  _ <| |___
  *                             \___|\___/|_| \_\_____|
  *
- * Copyright (C) 1998 - 2019, Daniel Stenberg, <daniel@haxx.se>, et al.
+ * Copyright (C) Daniel Stenberg, <daniel@haxx.se>, et al.
  *
  * This software is licensed as described in the file COPYING, which
  * you should have received as part of this distribution. The terms
- * are also available at https://curl.haxx.se/docs/copyright.html.
+ * are also available at https://curl.se/docs/copyright.html.
  *
  * You may opt to use, copy, modify, merge, publish, distribute and/or sell
  * copies of the Software, and permit persons to whom the Software is
@@ -18,85 +18,95 @@
  * This software is distributed on an "AS IS" basis, WITHOUT WARRANTY OF ANY
  * KIND, either express or implied.
  *
+ * SPDX-License-Identifier: curl
+ *
  ***************************************************************************/
-#include "test.h"
+#include "first.h"
 
-#include "warnless.h"
-#include "memdebug.h"
-
-/* For Windows, mainly (may be moved in a config file?) */
-#ifndef STDIN_FILENO
-  #define STDIN_FILENO 0
-#endif
-#ifndef STDOUT_FILENO
-  #define STDOUT_FILENO 1
-#endif
-#ifndef STDERR_FILENO
-  #define STDERR_FILENO 2
-#endif
-
-int test(char *URL)
+static CURLcode test_lib556(const char *URL)
 {
-  CURLcode res;
+  CURLcode result;
   CURL *curl;
+  size_t ncheck = 0;
+  int transfers = 0;
 
   if(curl_global_init(CURL_GLOBAL_ALL) != CURLE_OK) {
-    fprintf(stderr, "curl_global_init() failed\n");
+    curl_mfprintf(stderr, "curl_global_init() failed\n");
     return TEST_ERR_MAJOR_BAD;
   }
 
   curl = curl_easy_init();
   if(!curl) {
-    fprintf(stderr, "curl_easy_init() failed\n");
+    curl_mfprintf(stderr, "curl_easy_init() failed\n");
     curl_global_cleanup();
     return TEST_ERR_MAJOR_BAD;
   }
 
-  test_setopt(curl, CURLOPT_URL, URL);
-  test_setopt(curl, CURLOPT_CONNECT_ONLY, 1L);
-  test_setopt(curl, CURLOPT_VERBOSE, 1L);
+  easy_setopt(curl, CURLOPT_URL, URL);
+  easy_setopt(curl, CURLOPT_CONNECT_ONLY, 1L);
+  easy_setopt(curl, CURLOPT_VERBOSE, 1L);
 
-  res = curl_easy_perform(curl);
+  if(curl_easy_recv(NULL, NULL, 0, NULL) != CURLE_BAD_FUNCTION_ARGUMENT ||
+     curl_easy_recv(curl, NULL, 10, &ncheck) != CURLE_BAD_FUNCTION_ARGUMENT ||
+     curl_easy_send(NULL, NULL, 0, NULL) != CURLE_BAD_FUNCTION_ARGUMENT ||
+     curl_easy_send(curl, NULL, 10, &ncheck) != CURLE_BAD_FUNCTION_ARGUMENT) {
+    curl_mfprintf(stderr, "curl_easy_recv/send argument validation failed\n");
+    result = TEST_ERR_FAILURE;
+    goto test_cleanup;
+  }
 
-  if(!res) {
-    /* we are connected, now get a HTTP document the raw way */
-    const char *request =
-#ifdef CURL_DOES_CONVERSIONS
-      /* ASCII representation with escape sequences for non-ASCII platforms */
-      "\x47\x45\x54\x20\x2f\x35\x35\x36\x20\x48\x54\x54\x50\x2f\x31\x2e"
-      "\x32\x0d\x0a\x48\x6f\x73\x74\x3a\x20\x6e\x69\x6e\x6a\x61\x0d\x0a"
-      "\x0d\x0a";
-#else
-      "GET /556 HTTP/1.2\r\n"
-      "Host: ninja\r\n\r\n";
-#endif
-    size_t iolen = 0;
+again:
 
-    res = curl_easy_send(curl, request, strlen(request), &iolen);
+  result = curl_easy_perform(curl);
 
-    if(!res) {
-      /* we assume that sending always work */
+  if(!result) {
+    /* we are connected, now get an HTTP document the raw way */
+    char request[64];
+    const char *sbuf = request;
+    size_t sblen;
+    size_t nwritten = 0, nread = 0;
 
-      do {
-        char buf[1024];
-        /* busy-read like crazy */
-        res = curl_easy_recv(curl, buf, sizeof(buf), &iolen);
+    sblen = curl_msnprintf(request, sizeof(request),
+                           "GET /%d HTTP/1.1\r\n"
+                           "Host: ninja\r\n\r\n", testnum);
 
-#ifdef TPF
-        sleep(1); /* avoid ctl-10 dump */
-#endif
+    do {
+      char buf[1024];
 
-        if(iolen) {
-          /* send received stuff to stdout */
-          if(!write(STDOUT_FILENO, buf, iolen))
-            break;
+      if(sblen) {
+        result = curl_easy_send(curl, sbuf, sblen, &nwritten);
+        if(result && result != CURLE_AGAIN)
+          break;
+        if(nwritten > 0) {
+          sbuf += nwritten;
+          sblen -= nwritten;
         }
+      }
 
-      } while((res == CURLE_OK && iolen != 0) || (res == CURLE_AGAIN));
-    }
+      /* busy-read like crazy */
+      result = curl_easy_recv(curl, buf, sizeof(buf), &nread);
 
-    if(iolen != 0)
-      res = TEST_ERR_FAILURE;
+      if(nread &&
+         /* send received stuff to stdout */
+         (size_t)write(STDOUT_FILENO, buf, nread) != nread) {
+        char errbuf[STRERROR_LEN];
+        curl_mfprintf(stderr, "write() failed: errno %d (%s)\n",
+                      errno, curlx_strerror(errno, errbuf, sizeof(errbuf)));
+        result = TEST_ERR_FAILURE;
+        break;
+      }
+
+    } while((result == CURLE_OK && nread) || (result == CURLE_AGAIN));
+
+    if(result && result != CURLE_AGAIN)
+      result = TEST_ERR_FAILURE;
+  }
+
+  if(testnum == 696) {
+    ++transfers;
+    /* perform the transfer a second time */
+    if(!result && transfers == 1)
+      goto again;
   }
 
 test_cleanup:
@@ -104,5 +114,5 @@ test_cleanup:
   curl_easy_cleanup(curl);
   curl_global_cleanup();
 
-  return (int)res;
+  return result;
 }

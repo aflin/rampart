@@ -1,3 +1,4 @@
+<?xml version="1.0" encoding="US-ASCII"?>
 <testcase>
 <info>
 <keywords>
@@ -7,12 +8,11 @@ HTTP proxy
 </keywords>
 </info>
 
-#
 # Server-side
 <reply>
 <data>
 HTTP/1.1 200 OK
-Date: Thu, 09 Nov 2010 14:49:00 GMT
+Date: Tue, 09 Nov 2010 14:49:00 GMT
 Server: test-server/fake
 Last-Modified: Tue, 13 Jun 2000 12:10:00 GMT
 ETag: "21025-dc7-39462498"
@@ -26,34 +26,30 @@ Funny-head: yesyes
 </data>
 </reply>
 
-#
 # Client-side
 <client>
+<features>
+proxy
+</features>
 <server>
 http
 </server>
- <name>
+<name>
 HTTP GET with empty proxy
- </name>
- <command>
-http://%HOSTIP:%HTTPPORT/1004 --proxy ""
+</name>
+<command>
+http://%HOSTIP:%HTTPPORT/%TESTNUMBER --proxy ""
 </command>
 </client>
 
-#
 # Verify data after the test has been "shot"
 <verify>
-<strip>
-^User-Agent:.*
-</strip>
-<protocol>
-GET /1004 HTTP/1.1
+<protocol crlf="headers">
+GET /%TESTNUMBER HTTP/1.1
 Host: %HOSTIP:%HTTPPORT
+User-Agent: curl/%VERSION
 Accept: */*
 
 </protocol>
-<valgrind>
-disable
-</valgrind>
 </verify>
 </testcase>

@@ -1,3 +1,4 @@
+<?xml version="1.0" encoding="US-ASCII"?>
 <testcase>
 <info>
 <keywords>
@@ -6,12 +7,11 @@ HTTP GET
 HTTP proxy
 </keywords>
 </info>
-#
 # Server-side
 <reply>
 <data>
 HTTP/1.1 200 OK
-Date: Thu, 09 Nov 2010 14:49:00 GMT
+Date: Tue, 09 Nov 2010 14:49:00 GMT
 Server: test-server/fake swsclose
 Content-Type: text/html
 Funny-head: yesyes
@@ -19,32 +19,28 @@ Funny-head: yesyes
 </data>
 </reply>
 
-#
 # Client-side
 <client>
 <server>
 http
 </server>
- <name>
+<name>
 HTTP over proxy
- </name>
- <command>
-http://%HOSTIP:%HTTPPORT/we/want/that/page/5#5 -x %HOSTIP:%HTTPPORT
+</name>
+<command>
+http://%HOSTIP:%HTTPPORT/we/want/that/page/%TESTNUMBER#5 -x %HOSTIP:%HTTPPORT
 </command>
 <features>
 proxy
 </features>
 </client>
 
-#
 # Verify data after the test has been "shot"
 <verify>
-<strip>
-^User-Agent:.*
-</strip>
-<protocol>
-GET http://%HOSTIP:%HTTPPORT/we/want/that/page/5 HTTP/1.1
+<protocol crlf="headers">
+GET http://%HOSTIP:%HTTPPORT/we/want/that/page/%TESTNUMBER HTTP/1.1
 Host: %HOSTIP:%HTTPPORT
+User-Agent: curl/%VERSION
 Accept: */*
 Proxy-Connection: Keep-Alive
 

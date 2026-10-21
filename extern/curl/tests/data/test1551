@@ -1,7 +1,9 @@
+<?xml version="1.0" encoding="US-ASCII"?>
 <testcase>
 <info>
 <keywords>
 multi
+libtest
 </keywords>
 </info>
 
@@ -9,15 +11,15 @@ multi
 <reply>
 <data>
 HTTP/1.1 302 OK
-Date: Thu, 09 Nov 2010 14:49:00 GMT
+Date: Tue, 09 Nov 2010 14:49:00 GMT
 Content-Length: 6
-Location: /15510002
+Location: /%TESTNUMBER0002
 
 -foo-
 </data>
 <data2>
 HTTP/1.1 200 OK
-Date: Thu, 09 Nov 2010 14:49:00 GMT
+Date: Tue, 09 Nov 2010 14:49:00 GMT
 Content-Length: 11
 
 redirected
@@ -34,36 +36,30 @@ redirected
 http
 </server>
 # tool is what to use instead of 'curl'
-<tool>
-lib1551
-</tool>
 
- <name>
+<name>
 re-run redirected transfer without setting URL again
- </name>
- <command>
-http://%HOSTIP:%HTTPPORT/1551
+</name>
+<command>
+http://%HOSTIP:%HTTPPORT/%TESTNUMBER
 </command>
 </client>
 
 <verify>
-<strip>
-^User-Agent:.*
-</strip>
-<protocol>
-GET /1551 HTTP/1.1
+<protocol crlf="headers">
+GET /%TESTNUMBER HTTP/1.1
 Host: %HOSTIP:%HTTPPORT
 Accept: */*
 
-GET /15510002 HTTP/1.1
+GET /%TESTNUMBER0002 HTTP/1.1
 Host: %HOSTIP:%HTTPPORT
 Accept: */*
 
-GET /1551 HTTP/1.1
+GET /%TESTNUMBER HTTP/1.1
 Host: %HOSTIP:%HTTPPORT
 Accept: */*
 
-GET /15510002 HTTP/1.1
+GET /%TESTNUMBER0002 HTTP/1.1
 Host: %HOSTIP:%HTTPPORT
 Accept: */*
 

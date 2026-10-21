@@ -1,3 +1,4 @@
+<?xml version="1.0" encoding="US-ASCII"?>
 <testcase>
 # Similar to test 60
 <info>
@@ -10,9 +11,9 @@ chunked Transfer-Encoding
 
 # Server-side
 <reply>
-<data>
+<data crlf="headers">
 HTTP/1.0 200 OK swsclose
-Date: Thu, 09 Nov 2010 14:49:00 GMT
+Date: Tue, 09 Nov 2010 14:49:00 GMT
 Server: test-server/fake
 
 blablabla
@@ -28,8 +29,8 @@ http
 <name>
 HTTP PUT from stdin
 </name>
- <command>
-http://%HOSTIP:%HTTPPORT/bzz/1068 -T -
+<command>
+http://%HOSTIP:%HTTPPORT/bzz/%TESTNUMBER -T -
 </command>
 <stdin>
 more than one byte
@@ -38,21 +39,19 @@ more than one byte
 
 # Verify data after the test has been "shot"
 <verify>
-<strip>
-^User-Agent:.*
-</strip>
 <protocol>
-PUT /bzz/1068 HTTP/1.1
-Host: %HOSTIP:%HTTPPORT
-Accept: */*
-Transfer-Encoding: chunked
-Expect: 100-continue
-
-13
+PUT /bzz/%TESTNUMBER HTTP/1.1%CR
+Host: %HOSTIP:%HTTPPORT%CR
+User-Agent: curl/%VERSION%CR
+Accept: */*%CR
+Transfer-Encoding: chunked%CR
+Expect: 100-continue%CR
+%CR
+13%CR
 more than one byte
-
-0
-
+%CR
+0%CR
+%CR
 </protocol>
 </verify>
 </testcase>

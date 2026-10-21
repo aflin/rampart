@@ -1,11 +1,12 @@
+<?xml version="1.0" encoding="US-ASCII"?>
 <testcase>
 <info>
 <keywords>
 FTP
+libtest
 </keywords>
 </info>
 
-#
 # Server-side
 <reply>
 <data>
@@ -18,44 +19,40 @@ FTP
 ftp
 </server>
 # tool is what to use instead of 'curl'
-<tool>
-lib661
-</tool>
 
- <name>
+<name>
 Avoid redundant CWDs
- </name>
- <command>
+</name>
+<command>
 ftp://%HOSTIP:%FTPPORT/
 </command>
 </client>
 
-#
 # Verify data after the test has been "shot"
 <verify>
-<protocol>
+<protocol crlf="yes">
 USER anonymous
 PASS ftp@example.com
 PWD
 CWD /folderA
 EPSV
 TYPE I
-RETR 661
+RETR %TESTNUMBER
 CWD /folderB
 EPSV
-RETR 661
+RETR %TESTNUMBER
 QUIT
 USER anonymous
 PASS ftp@example.com
 PWD
 EPSV
 TYPE I
-RETR /folderA/661
+RETR /folderA/%TESTNUMBER
 CWD /folderB
 EPSV
-RETR 661
+RETR %TESTNUMBER
 EPSV
-RETR /folderA/661
+RETR /folderA/%TESTNUMBER
 QUIT
 USER anonymous
 PASS ftp@example.com

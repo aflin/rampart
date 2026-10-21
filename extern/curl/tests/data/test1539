@@ -1,3 +1,4 @@
+<?xml version="1.0" encoding="US-ASCII"?>
 <testcase>
 <info>
 <keywords>
@@ -5,12 +6,13 @@ HTTP
 HTTP POST
 Content-Length
 chunked Transfer-Encoding
+libtest
 </keywords>
 </info>
 
 # Server-side
 <reply>
-<data nocheck="yes">
+<data crlf="headers" nocheck="yes">
 HTTP/1.1 200 OK
 Date: Sun, 19 Jan 2014 18:50:58 GMT
 Server: test-server/fake swsclose
@@ -24,13 +26,13 @@ Connection: close
 http
 </server>
 <tool>
-lib1539
+lib1514
 </tool>
 <name>
 HTTP 1.0 POST with read callback and unknown data size
 </name>
 <command>
-http://%HOSTIP:%HTTPPORT/1539
+http://%HOSTIP:%HTTPPORT/%TESTNUMBER
 </command>
 </client>
 

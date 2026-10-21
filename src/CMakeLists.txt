@@ -1024,6 +1024,8 @@ add_library(rampart-curl SHARED
 )
 target_link_libraries(rampart-curl PRIVATE
     ${CURL_TARGET_DIR}/lib/libcurl.a
+    nghttp2_rp
+    ${RP_CURL_SYSLIBS}
     rampart-crypto
     z
 )
@@ -1033,7 +1035,7 @@ target_include_directories(rampart-curl PRIVATE
     ${PROJECT_BINARY_DIR}/extern/curl/lib/
 )
 
-add_dependencies(rampart-curl libcurl rampart-crypto)
+add_dependencies(rampart-curl libcurl_static rampart-crypto)
 
 ###PYTHON###
 

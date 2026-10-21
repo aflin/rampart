@@ -1,16 +1,17 @@
+<?xml version="1.0" encoding="US-ASCII"?>
 <testcase>
 
 <info>
 <keywords>
 HTTP
 multi
-FAILURE
 resolve
+libtest
 </keywords>
 </info>
 
 <reply>
-# Close the connection after the first request. Second request will happen after
+# Close the connection after the first request. Second request happens after
 # the DNS cache timeout elapses and must succeed exactly like the first one.
 <data1>
 HTTP/1.1 200 OK
@@ -42,14 +43,11 @@ hello
 <server>
 http
 </server>
-<tool>
-lib1515
-</tool>
 <name>
 caching of manual libcurl DNS entries after DNS cache timeout
 </name>
 <command>
-path/1515 %HOSTIP %HTTPPORT
+path/%TESTNUMBER %HOSTIP %HTTPPORT
 </command>
 </client>
 

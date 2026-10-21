@@ -1,7 +1,10 @@
+<?xml version="1.0" encoding="US-ASCII"?>
 <testcase>
 <info>
 <keywords>
 FTP
+STOR
+libtest
 </keywords>
 </info>
 
@@ -15,17 +18,14 @@ FTP
 ftp
 </server>
 # tool is what to use instead of 'curl'
-<tool>
-lib505
-</tool>
 
- <name>
+<name>
 FTP upload with rename after transfer
- </name>
- <command>
-ftp://%HOSTIP:%FTPPORT/505 log/upload505
+</name>
+<command>
+ftp://%HOSTIP:%FTPPORT/%TESTNUMBER %LOGDIR/upload%TESTNUMBER
 </command>
-<file name="log/upload505">
+<file name="%LOGDIR/upload%TESTNUMBER">
 Contents
 of
 a file
@@ -51,15 +51,15 @@ upload
 
 works?
 </upload>
-<protocol>
+<protocol crlf="yes">
 USER anonymous
 PASS ftp@example.com
 PWD
 EPSV
 TYPE I
-STOR 505
-RNFR 505
-RNTO 505-forreal
+STOR %TESTNUMBER
+RNFR %TESTNUMBER
+RNTO %TESTNUMBER-forreal
 QUIT
 </protocol>
 </verify>

@@ -1,7 +1,10 @@
+<?xml version="1.0" encoding="US-ASCII"?>
 <testcase>
 <info>
 <keywords>
 FTP
+STOR
+MDTM
 </keywords>
 </info>
 
@@ -16,10 +19,10 @@ FTP
 <server>
 ftp
 </server>
- <name>
+<name>
 FTP upload time condition evaluates FALSE => upload anyway
- </name>
-<file name="log/test248.txt">
+</name>
+<file name="%LOGDIR/test%TESTNUMBER.txt">
 data
     to
       see
@@ -27,8 +30,8 @@ that FTP
 works
   so does it?
 </file>
- <command>
-ftp://%HOSTIP:%FTPPORT/248 -T log/test248.txt -z "apr 1 2005 08:00:00"
+<command>
+ftp://%HOSTIP:%FTPPORT/%TESTNUMBER -T %LOGDIR/test%TESTNUMBER.txt -z "apr 1 2005 08:00:00"
 </command>
 </client>
 
@@ -42,14 +45,14 @@ that FTP
 works
   so does it?
 </upload>
-<protocol>
+<protocol crlf="yes">
 USER anonymous
 PASS ftp@example.com
 PWD
-MDTM 248
+MDTM %TESTNUMBER
 EPSV
 TYPE I
-STOR 248
+STOR %TESTNUMBER
 QUIT
 </protocol>
 </verify>
