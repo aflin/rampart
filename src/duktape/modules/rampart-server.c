@@ -693,7 +693,8 @@ PROXY_CONF {
     int          nheaders;          /* number of extra headers to inject */
     char       **hkeys;             /* extra header keys */
     char       **hvals;             /* extra header values */
-    int          timeout_secs;      /* upstream response timeout (0=default 30s) */
+    int          timeout_secs;      /* 0: 30s to response headers, then no limit.
+                                       N: N s to headers, then N s idle between body pieces */
     int          insecure;          /* skip SSL certificate verification */
 };
 
@@ -702,9 +703,18 @@ PROXY_STATE {
     evhtp_request_t    *client_req;     /* inbound request from client */
     evhtp_connection_t *upstream_conn;  /* outbound connection to upstream */
     PROXY_CONF         *conf;           /* route configuration */
-    struct event       *timeout_ev;     /* timeout event for upstream response */
-    int                 finished;       /* set once response has been sent */
+    struct event_base  *base;           /* this thread's event base */
+    struct event       *timeout_ev;     /* headers deadline, then idle timer */
+    struct event       *teardown_ev;    /* deferred: free upstream_conn + ps outside its parser */
+    int                 finished;       /* set once the client reply is done or the client is gone */
+    int                 streaming;      /* client reply started with evhtp_send_reply_chunk_start */
+    int                 paused;         /* upstream read paused until the client drains */
+    int                 status;         /* upstream status, for the access log */
 };
+
+/* streaming backpressure: pause the upstream when this much is queued for
+   the client, resume once it drains */
+#define PROXY_HIGH_WATER (1024 * 1024)
 
 /* WebSocket proxy relay state */
 #define WS_PROXY_STATE struct ws_proxy_state_s
@@ -6403,6 +6413,8 @@ static void proxy_unhook_client(evhtp_request_t *req)
     if (!req) return;
     evhtp_request_unset_hook(req, evhtp_hook_on_error);
     evhtp_request_unset_hook(req, evhtp_hook_on_request_fini);
+    if (req->conn)
+        evhtp_connection_unset_hook(req->conn, evhtp_hook_on_write);
 }
 
 static void proxy_cleanup(PROXY_STATE *ps)
@@ -6414,6 +6426,12 @@ static void proxy_cleanup(PROXY_STATE *ps)
         event_free(ps->timeout_ev);
         ps->timeout_ev = NULL;
     }
+    if (ps->teardown_ev)
+    {
+        evtimer_del(ps->teardown_ev);
+        event_free(ps->teardown_ev);
+        ps->teardown_ev = NULL;
+    }
     /* unset client error hook to prevent use-after-free of ps
        during later connection teardown */
     proxy_unhook_client(ps->client_req);
@@ -6423,9 +6441,13 @@ static void proxy_cleanup(PROXY_STATE *ps)
        state, so detach ourselves from it here. */
     if (ps->upstream_conn && ps->upstream_conn->request)
     {
-        evhtp_request_unset_hook(ps->upstream_conn->request, evhtp_hook_on_error);
-        ps->upstream_conn->request->cb    = NULL;
-        ps->upstream_conn->request->cbarg = NULL;
+        evhtp_request_t *ur = ps->upstream_conn->request;
+        evhtp_request_unset_hook(ur, evhtp_hook_on_error);
+        evhtp_request_unset_hook(ur, evhtp_hook_on_request_fini);
+        evhtp_request_unset_hook(ur, evhtp_hook_on_headers);
+        evhtp_request_unset_hook(ur, evhtp_hook_on_read);
+        ur->cb    = NULL;
+        ur->cbarg = NULL;
     }
     free(ps);
 }
@@ -6433,12 +6455,19 @@ static void proxy_cleanup(PROXY_STATE *ps)
 /* The client request/connection is being freed.  evhtp_connection_free()
    runs the fini hooks but not on_error, so without this the proxy kept a
    dangling client_req and wrote into it when the upstream answered. */
+static void proxy_schedule_teardown(PROXY_STATE *ps);
+
 static evhtp_res proxy_client_fini(evhtp_request_t *req, void *arg)
 {
     PROXY_STATE *ps = (PROXY_STATE *)arg;
 
     if (ps)
+    {
         ps->client_req = NULL;
+        /* stop the upstream on the next loop iteration: it may be mid-parse
+           or paused for backpressure, so it cannot be freed from here */
+        proxy_schedule_teardown(ps);
+    }
     return EVHTP_RES_OK;
 }
 
@@ -6524,6 +6553,202 @@ static int proxy_copy_resp_header(evhtp_kv_t *kv, void *arg)
     return 0;
 }
 
+/* The upstream connection is being freed by evhtp (EOF, error, parser
+   failure).  Forget it so no later path frees it twice. */
+static evhtp_res proxy_upstream_fini(evhtp_request_t *req, void *arg)
+{
+    PROXY_STATE *ps = (PROXY_STATE *)arg;
+    (void)req;
+
+    if (ps)
+        ps->upstream_conn = NULL;
+    return EVHTP_RES_OK;
+}
+
+/* Once headers have arrived the timer becomes an idle timer when the
+   route has a timeout, and goes away when it does not. */
+static void proxy_arm_idle_timer(PROXY_STATE *ps)
+{
+    struct timeval tv;
+
+    if (!ps->timeout_ev)
+        return;
+    if (ps->conf->timeout_secs <= 0)
+    {
+        evtimer_del(ps->timeout_ev);
+        event_free(ps->timeout_ev);
+        ps->timeout_ev = NULL;
+        return;
+    }
+    tv.tv_sec = ps->conf->timeout_secs;
+    tv.tv_usec = 0;
+    evtimer_add(ps->timeout_ev, &tv);   /* re-adding a pending timer resets it */
+}
+
+/* The stream broke after the client reply started.  A 502/504 can no
+   longer be sent, and writing the terminating chunk would make a cut-off
+   reply look complete, so close the client connection instead: after the
+   queued data drains if there is any (keep-alive is already off), or
+   right away. */
+static void proxy_truncate_client(PROXY_STATE *ps)
+{
+    evhtp_request_t *req = ps->client_req;
+    evhtp_connection_t *conn;
+
+    if (!req)
+        return;
+    conn = evhtp_request_get_connection(req);
+    if (rp_server_logging) writelog(req, ps->status);
+    proxy_unhook_client(req);
+    ps->client_req = NULL;
+    if (evbuffer_get_length(bufferevent_get_output(conn->bev)) > 0)
+        evhtp_send_reply_end(req);
+    else
+        evhtp_connection_free(conn);
+}
+
+/* deferred: close the upstream connection and free the state */
+static void proxy_teardown_cb(evutil_socket_t fd, short events, void *arg)
+{
+    PROXY_STATE *ps = (PROXY_STATE *)arg;
+    (void)fd; (void)events;
+
+    if (ps->upstream_conn)
+    {
+        /* the fini hook nulls ps->upstream_conn; the error hook sees
+           finished and skips */
+        evhtp_connection_free(ps->upstream_conn);
+        ps->upstream_conn = NULL;
+    }
+    proxy_cleanup(ps);
+}
+
+/* Close the upstream and free ps on the next loop iteration.  Used from
+   the upstream's own callbacks (completion, body pieces) where freeing
+   its connection is not allowed, and from the client fini hook.  Any path
+   that cleans up first cancels the event in proxy_cleanup. */
+static void proxy_schedule_teardown(PROXY_STATE *ps)
+{
+    struct timeval zero = {0, 0};
+
+    if (ps->teardown_ev)
+        return;
+    ps->finished = 1;
+    if (ps->timeout_ev)
+    {
+        evtimer_del(ps->timeout_ev);
+        event_free(ps->timeout_ev);
+        ps->timeout_ev = NULL;
+    }
+    ps->teardown_ev = evtimer_new(ps->base, proxy_teardown_cb, ps);
+    evtimer_add(ps->teardown_ev, &zero);
+}
+
+/* client output drained: let the upstream flow again.  Backpressure is a
+   plain read disable/enable on the upstream bufferevent rather than
+   evhtp's request pause: outbound connections have no resume event, and
+   a pause on the final body piece would lose the completion callback. */
+static evhtp_res proxy_client_drained(evhtp_connection_t *conn, void *arg)
+{
+    PROXY_STATE *ps = (PROXY_STATE *)arg;
+
+    if (!ps || !ps->paused)
+        return EVHTP_RES_OK;
+    if (evbuffer_get_length(bufferevent_get_output(conn->bev)) < PROXY_HIGH_WATER)
+    {
+        ps->paused = 0;
+        evhtp_connection_unset_hook(conn, evhtp_hook_on_write);
+        if (ps->upstream_conn && ps->upstream_conn->bev)
+            bufferevent_enable(ps->upstream_conn->bev, EV_READ);
+    }
+    return EVHTP_RES_OK;
+}
+
+/* upstream response headers parsed: start the client reply now and
+   stream the body as it arrives.  HTTP/1.0 clients cannot take chunked
+   encoding, so they keep the buffered reply. */
+static evhtp_res proxy_upstream_headers(evhtp_request_t *upstream_req,
+    evhtp_headers_t *hdrs, void *arg)
+{
+    PROXY_STATE *ps = (PROXY_STATE *)arg;
+    evhtp_request_t *client_req;
+    evhtp_connection_t *cconn;
+    (void)hdrs;
+
+    if (!ps || ps->finished || !ps->client_req)
+        return EVHTP_RES_OK;
+
+    client_req = ps->client_req;
+    ps->status = (int)evhtp_request_status(upstream_req);
+
+    if (client_req->proto != EVHTP_PROTO_11 || ps->status < 200)
+        return EVHTP_RES_OK;
+
+    evhtp_headers_for_each(upstream_req->headers_in, proxy_copy_resp_header, client_req);
+
+    /* Close keep-alive after proxy responses so idle connections don't
+       linger for the full connection timeout, tying up openconn slots. */
+    evhtp_request_set_keepalive(client_req, 0);
+
+    /* no read timeout on the client for the life of the response, same
+       as a chunked JS reply */
+    cconn = evhtp_request_get_connection(client_req);
+    if (ctimeout.tv_sec == RP_TIME_T_FOREVER)
+        evhtp_connection_set_timeouts(cconn, NULL, NULL);
+    else
+        evhtp_connection_set_timeouts(cconn, NULL, &ctimeout);
+
+    /* A known length is passed through as-is (downloads keep their size);
+       anything else goes out chunked.  evhtp_send_reply_chunk/_end do the
+       right thing either way, keyed on the CHUNKED flag. */
+    if (evhtp_header_find(upstream_req->headers_in, "Content-Length") &&
+        evhtp_response_needs_body((evhtp_res)ps->status, client_req->method))
+        evhtp_send_reply_start(client_req, (evhtp_res)ps->status);
+    else
+        evhtp_send_reply_chunk_start(client_req, (evhtp_res)ps->status);
+    ps->streaming = 1;
+    proxy_arm_idle_timer(ps);
+    return EVHTP_RES_OK;
+}
+
+/* a piece of upstream body: forward it, or leave it for buffer_in when
+   not streaming.  Too much queued for the client stops the upstream read
+   until the client drains (see proxy_client_drained). */
+static evhtp_res proxy_upstream_read(evhtp_request_t *upstream_req,
+    struct evbuffer *buf, void *arg)
+{
+    PROXY_STATE *ps = (PROXY_STATE *)arg;
+    (void)upstream_req;
+
+    if (!ps || ps->finished)
+    {
+        evbuffer_drain(buf, -1);
+        return EVHTP_RES_OK;
+    }
+    if (!ps->client_req)
+    {
+        /* client gone (fini-only path): nobody will read this */
+        evbuffer_drain(buf, -1);
+        proxy_schedule_teardown(ps);
+        return EVHTP_RES_OK;
+    }
+    if (!ps->streaming)
+        return EVHTP_RES_OK;
+
+    evhtp_send_reply_chunk(ps->client_req, buf);   /* moves buf out */
+    proxy_arm_idle_timer(ps);
+
+    if (!ps->paused && ps->upstream_conn && ps->upstream_conn->bev &&
+        evbuffer_get_length(bufferevent_get_output(ps->client_req->conn->bev)) >= PROXY_HIGH_WATER)
+    {
+        ps->paused = 1;
+        evhtp_connection_set_hook(ps->client_req->conn, evhtp_hook_on_write,
+            (evhtp_hook)proxy_client_drained, ps);
+        bufferevent_disable(ps->upstream_conn->bev, EV_READ);
+    }
+    return EVHTP_RES_OK;
+}
+
 /* called when upstream request has an error (e.g. connection refused) */
 static void proxy_upstream_error(evhtp_request_t *upstream_req,
     evhtp_error_flags errtype, void *arg)
@@ -6532,7 +6757,10 @@ static void proxy_upstream_error(evhtp_request_t *upstream_req,
 
     if (ps && !ps->finished && ps->client_req)
     {
-        proxy_send_error(ps->client_req, 502, "Bad Gateway");
+        if (ps->streaming)
+            proxy_truncate_client(ps);
+        else
+            proxy_send_error(ps->client_req, 502, "Bad Gateway");
         ps->finished = 1;
         proxy_cleanup(ps);
     }
@@ -6544,11 +6772,16 @@ static void proxy_timeout_cb(evutil_socket_t fd, short events, void *arg)
     PROXY_STATE *ps = (PROXY_STATE *)arg;
     (void)fd; (void)events;
 
-    if (ps && !ps->finished && ps->client_req)
+    if (!ps)
+        return;
+    if (!ps->finished && ps->client_req)
     {
-        proxy_send_error(ps->client_req, 504, "Gateway Timeout");
-        ps->finished = 1;
+        if (ps->streaming)
+            proxy_truncate_client(ps);      /* idle too long mid-stream */
+        else
+            proxy_send_error(ps->client_req, 504, "Gateway Timeout");
     }
+    ps->finished = 1;
     /* cleanup timeout event before freeing upstream_conn, which may trigger
        the error hook that also references ps */
     if (ps->timeout_ev)
@@ -6557,17 +6790,14 @@ static void proxy_timeout_cb(evutil_socket_t fd, short events, void *arg)
         event_free(ps->timeout_ev);
         ps->timeout_ev = NULL;
     }
-    if (ps && ps->upstream_conn)
+    if (ps->upstream_conn)
     {
         /* freeing the upstream connection may trigger the error hook, which
            sees ps->finished and skips. ps is still valid here. */
         evhtp_connection_free(ps->upstream_conn);
         ps->upstream_conn = NULL;
     }
-    /* unset client hooks before freeing ps */
-    if (ps)
-        proxy_unhook_client(ps->client_req);
-    free(ps);
+    proxy_cleanup(ps);
 }
 
 /* called when client disconnects while upstream proxy request is in flight */
@@ -6604,16 +6834,13 @@ static void proxy_upstream_cb(evhtp_request_t *upstream_req, void *arg)
     evhtp_request_t *client_req;
     unsigned int status;
 
-    if (!ps || ps->finished)
-    {
-        proxy_cleanup(ps);
+    if (!ps)
         return;
-    }
-
     client_req = ps->client_req;
-    if (!client_req)
+    if (ps->finished || !client_req)
     {
-        proxy_cleanup(ps);
+        /* nothing left to send; close the upstream next loop iteration */
+        proxy_schedule_teardown(ps);
         return;
     }
 
@@ -6627,24 +6854,35 @@ static void proxy_upstream_cb(evhtp_request_t *upstream_req, void *arg)
 
     status = evhtp_request_status(upstream_req);
 
-    /* copy response headers */
-    evhtp_headers_for_each(upstream_req->headers_in, proxy_copy_resp_header, client_req);
+    if (ps->streaming)
+    {
+        /* headers and body already went out piece by piece */
+        evhtp_send_reply_chunk_end(client_req);
+        if (rp_server_logging) writelog(client_req, ps->status);
+    }
+    else
+    {
+        /* copy response headers */
+        evhtp_headers_for_each(upstream_req->headers_in, proxy_copy_resp_header, client_req);
 
-    /* copy response body */
-    if (evbuffer_get_length(upstream_req->buffer_in) > 0)
-        evbuffer_add_buffer(client_req->buffer_out, upstream_req->buffer_in);
+        /* copy response body */
+        if (evbuffer_get_length(upstream_req->buffer_in) > 0)
+            evbuffer_add_buffer(client_req->buffer_out, upstream_req->buffer_in);
 
-    /* Close keep-alive after proxy responses so idle connections don't
-       linger for the full connection timeout, tying up openconn slots. */
-    evhtp_request_set_keepalive(client_req, 0);
+        /* Close keep-alive after proxy responses so idle connections don't
+           linger for the full connection timeout, tying up openconn slots. */
+        evhtp_request_set_keepalive(client_req, 0);
 
-    evhtp_send_reply(client_req, (evhtp_res)status);
-    if (rp_server_logging) writelog(client_req, (int)status);
+        evhtp_send_reply(client_req, (evhtp_res)status);
+        if (rp_server_logging) writelog(client_req, (int)status);
+    }
 
     ps->finished = 1;
-    proxy_cleanup(ps);
-    /* unset the error hook so it doesn't fire with freed ps during connection teardown */
-    evhtp_request_unset_hook(upstream_req, evhtp_hook_on_error);
+    /* done with the client; the upstream connection is closed next loop
+       iteration rather than left open until the upstream drops it */
+    proxy_unhook_client(client_req);
+    ps->client_req = NULL;
+    proxy_schedule_teardown(ps);
 }
 
 /* main proxy callback: registered with evhtp for proxy routes */
@@ -6681,6 +6919,7 @@ static void proxy_callback(evhtp_request_t *req, void *arg)
     memset(ps, 0, sizeof(PROXY_STATE));
     ps->client_req = req;
     ps->conf = conf;
+    ps->base = base;
 
     /* create outbound connection */
 #ifndef EVHTP_DISABLE_SSL
@@ -6714,6 +6953,13 @@ static void proxy_callback(evhtp_request_t *req, void *arg)
     /* set request-level error hook (fires on connect failure, etc.) */
     evhtp_request_set_hook(upstream_req,
         evhtp_hook_on_error, (evhtp_hook)proxy_upstream_error, ps);
+    evhtp_request_set_hook(upstream_req,
+        evhtp_hook_on_request_fini, (evhtp_hook)proxy_upstream_fini, ps);
+    /* stream the response: reply starts at headers, body goes out as parsed */
+    evhtp_request_set_hook(upstream_req,
+        evhtp_hook_on_headers, (evhtp_hook)proxy_upstream_headers, ps);
+    evhtp_request_set_hook(upstream_req,
+        evhtp_hook_on_read, (evhtp_hook)proxy_upstream_read, ps);
 
     /* set error hook on client request so we detect client disconnect
        while the upstream request is in flight */
@@ -6790,7 +7036,8 @@ static void proxy_callback(evhtp_request_t *req, void *arg)
     /* build upstream URI */
     upstream_uri = proxy_rewrite_path(req, conf);
 
-    /* set timeout */
+    /* deadline for the response headers; becomes an idle timer (or goes
+       away) once they arrive, see proxy_arm_idle_timer */
     tv.tv_sec = conf->timeout_secs ? conf->timeout_secs : 30;
     tv.tv_usec = 0;
     ps->timeout_ev = evtimer_new(base, proxy_timeout_cb, ps);

@@ -13,6 +13,9 @@ v0.7.4
                             "tlspassword" and their "proxy-" equivalents)
                             are still accepted but have no effect.
 
+    -rampart-server         Added streaming capabilities when proxying
+                            from another host.
+
 v0.7.3
     -rampart                utils.exec() run from several threads at once no
                             longer waits for the other threads' commands to
