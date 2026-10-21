@@ -197,6 +197,94 @@ testModule("equality: === == cross-type loose-equality", function() {
 });
 
 /* ============================================================
+   7a. ToBoolean — only 0n is falsy
+   ============================================================ */
+
+testModule("ToBoolean: 0n falsy in every boolean context", function() {
+    var z = 0n, one = 1n;
+    mustEq(Boolean(0n),          false, "Boolean(0n)");
+    mustEq(Boolean(-0n),         false, "Boolean(-0n)");
+    mustEq(Boolean(5n - 5n),     false, "Boolean(5n-5n)");
+    mustEq(Boolean(BigInt(0)),   false, "Boolean(BigInt(0))");
+    mustEq(Boolean(1n),          true,  "Boolean(1n)");
+    mustEq(Boolean(-5n),         true,  "Boolean(-5n)");
+    mustEq(Boolean(123456789012345678901234567890n),
+                                 true,  "Boolean(huge)");
+    mustEq((function(){ if (0n) return 1; return 0; })(), 0, "if (0n) literal");
+    mustEq((function(){ if (z)  return 1; return 0; })(), 0, "if (0n) var");
+    mustEq((function(){ if (one) return 1; return 0; })(), 1, "if (1n)");
+    mustEq(!z,                   true,  "!0n");
+    mustEq(!one,                 false, "!1n");
+    mustEq(z ? "T" : "F",        "F",   "0n ? :");
+    mustEq(z && "x",             z,     "0n && x");
+    mustEq(z || "x",             "x",   "0n || x");
+    mustEq(one || "x",           one,   "1n || x");
+    mustEq((function(){ var n = 3n, c = 0; while (n) { n--; c++; } return c; })(),
+                                 3,     "while (n) counts down to 0n");
+    mustEq((function(){ var c = 0; for (var n = 2n; n; n--) c++; return c; })(),
+                                 2,     "for-loop condition");
+    mustEq((function(){ var n = 2n, c = 0; do { c++; n--; } while (n); return c; })(),
+                                 2,     "do-while condition");
+    mustEq([0n, 1n, 2n, 0n].filter(Boolean).length,
+                                 2,     "filter(Boolean)");
+});
+
+/* ============================================================
+   7b. BigInt wrapper objects — Object(1n) / new Object(1n)
+   ============================================================ */
+
+testModule("wrapper: Object(1n) is a distinct, truthy object", function() {
+    var w0 = Object(0n), w5 = Object(5n);
+    mustEq(Boolean(w0),               true,      "Object(0n) truthy");
+    mustEq(!w0,                       false,     "!Object(0n)");
+    mustEq(typeof w5,                 "object",  "typeof Object(5n)");
+    mustEq(typeof new Object(5n),     "object",  "typeof new Object(5n)");
+    must(Object(1n) !== 1n,                      "Object(1n) !== 1n");
+    must(Object(w5) === w5,                      "Object(wrapper) is identity");
+    must(w5 instanceof BigInt,                   "instanceof BigInt");
+    must(Object.getPrototypeOf(w5) === BigInt.prototype, "proto is BigInt.prototype");
+    mustEq(Object.prototype.toString.call(w5), "[object BigInt]", "toString tag");
+    mustEq(Object.keys(w5).length,    0,         "no own enumerable keys");
+});
+
+testModule("wrapper: unwraps via valueOf / ToPrimitive", function() {
+    var w5 = Object(5n);
+    mustEq(w5.valueOf(),              5n,        "valueOf unwraps");
+    mustEq(typeof w5.valueOf(),       "bigint",  "valueOf is a bigint");
+    mustEq(Boolean(Object(0n).valueOf()), false, "unwrapped 0n falsy");
+    mustEq(w5.toString(),             "5",       "toString");
+    mustEq(Object(255n).toString(16), "ff",      "toString(16)");
+    mustEq(String(w5),                "5",       "String()");
+    mustEq(w5 + 1n,                   6n,        "wrapper + 1n");
+    mustEq(w5 * Object(2n),           10n,       "wrapper * wrapper");
+    must(w5 < 6n,                                "wrapper < 6n");
+    must(w5 < 6,                                 "wrapper < 6");
+    must(w5 == 5n,                               "wrapper == 5n");
+    must(w5 == 5,                                "wrapper == 5");
+    must(w5 !== 5n,                              "wrapper !== 5n");
+    mustEq(BigInt(w5),                5n,        "BigInt(wrapper)");
+    mustThrow(function(){ return w5 + 1; },      "wrapper + Number throws");
+    mustThrow(function(){ return BigInt.prototype.valueOf.call(Object.create(w5)); },
+                                                 "valueOf needs own [[BigIntData]]");
+    mustThrow(function(){ return BigInt.prototype.valueOf.call({}); },
+                                                 "valueOf on plain object throws");
+});
+
+testModule("wrapper: JSON.stringify unwraps then throws (toJSON honored)", function() {
+    var w5 = Object(5n);
+    mustThrow(function(){ return JSON.stringify(w5); },        "top-level wrapper");
+    mustThrow(function(){ return JSON.stringify({ a: w5 }); }, "wrapper in object");
+    mustThrow(function(){ return JSON.stringify([w5]); },      "wrapper in array");
+    BigInt.prototype.toJSON = function(){ return this.toString(); };
+    try {
+        mustEq(JSON.stringify({ a: 1n }),         '{"a":"1"}', "toJSON on bigint");
+        mustEq(JSON.stringify({ b: Object(2n) }), '{"b":"2"}', "toJSON on wrapper");
+    } finally {
+        delete BigInt.prototype.toJSON;
+    }
+});
+
+/* ============================================================
    8. Unary operators
    ============================================================ */
 
@@ -508,15 +596,12 @@ testModule("property descriptors on BigInt + prototype", function() {
  *   built-ins/BigInt/asUintN/bigint-tobigint-errors.js
  */
 /*
-testModule("LIMIT: Object(1n) vs 1n wrapper distinction (test262: wrapper-object-ordinary-toprimitive)", function() {
-    // Spec: Object(1n) is a BigInt wrapper, distinct from primitive 1n.
-    // Our impl: no separate wrapper class -- both have class CLASS_BIGINT.
-    // Class-bit field is full (30 used + BIGINT @30 + 1 free @31).
-    // Fix: expand DUK_HOBJECT_FLAG_CLASS_BITS from 5 to 6 (frees by
-    // dropping one hobject flag bit) + add CLASS_BIGINT_WRAPPER slot.
-    var o = Object(1n);
-    mustEq(typeof o,         "object", "Object(1n) should typeof object");
-    must(o !== 1n,                     "Object(1n) !== 1n (heap identity)");
+testModule("LIMIT: template literal uses valueOf, not ToString (test262: wrapper-object-ordinary-toprimitive)", function() {
+    // Spec: `${x}` is ToString(x), so toString() is tried first.  rampart
+    // evaluates a template like "" + x (hint default: valueOf first).  Not
+    // BigInt-specific; Object(1n) wrappers themselves are covered in 7b.
+    var o = { valueOf: function(){ return "V"; }, toString: function(){ return "S"; } };
+    mustEq(`${o}`, "S", "template literal calls toString first");
 });
 
 testModule("LIMIT: cross-realm $262 agent (test262: prototype/valueOf/cross-realm)", function() {

@@ -6,7 +6,7 @@
  *  comments.  Other parts of the header are Duktape internal and related to
  *  e.g. platform/compiler/feature detection.
  *
- *  Git commit c740c3230900e294389b25e50011c5a23259cb9a (v2.7.0-18-rp).
+ *  Git commit 8d3a68257f527977910baf16d0a4eee90e83ceb3 (v2.7.0-19-rp).
  *  Git branch v2.7-rampart.
  *
  *  See Duktape AUTHORS.rst and LICENSE.txt for copyright and
@@ -189,8 +189,8 @@
  * which Duktape snapshot was used.  Not available in the ECMAScript
  * environment.
  */
-#define DUK_GIT_COMMIT                    "c740c3230900e294389b25e50011c5a23259cb9a"
-#define DUK_GIT_DESCRIBE                  "v2.7.0-18-rp"
+#define DUK_GIT_COMMIT                    "8d3a68257f527977910baf16d0a4eee90e83ceb3"
+#define DUK_GIT_DESCRIBE                  "v2.7.0-19-rp"
 #define DUK_GIT_BRANCH                    "v2.7-rampart"
 
 /* External duk_config.h provides platform/compiler/OS dependent
