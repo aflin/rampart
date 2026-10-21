@@ -33,13 +33,43 @@ aside#sidebar {
 }
 
 #msg {
-  color:gainsboro;
+  color:#22c55e;
 }
 
+.title-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+}
 .ctitle {
+  flex: 1 1 auto;
   max-height: 40px;
   overflow: hidden;
   line-clamp: auto;
+  cursor: text;
+}
+.retitle-btn {
+  flex: 0 0 auto;
+  background: none;
+  border: none;
+  color: #9ca3af;
+  font-size: 14px;
+  cursor: pointer;
+  padding: 0;
+  height: auto;
+  line-height: 1;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+#convlist li:hover .retitle-btn,
+#convlist li.active .retitle-btn { opacity: 1; }
+.retitle-btn:hover { color: #fff; }
+.ctitle[contenteditable="true"] {
+  outline: 1px solid var(--brand);
+  border-radius: 4px;
+  padding: 2px 4px;
+  max-height: none;
+  background: rgba(255,255,255,0.1);
 }
 
 .sidebar-header{
@@ -130,6 +160,43 @@ main#wrapper {
 
 #chatdiv h1,h2,h3,h4,h5,h6 {
     margin-bottom: 0;
+}
+
+#chatdiv ul, #chatdiv ol {
+    background-color: #f9f9f9;
+    padding: 8px 12px 8px 32px;
+    border-radius: 12px;
+    margin: 4px 0;
+}
+
+#chatdiv li {
+    margin: 4px 0;
+    line-height: 1.5;
+}
+
+#chatdiv hr {
+    border: none;
+    border-top: 1px solid var(--muted);
+    margin: 16px 0;
+}
+
+#chatdiv table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 8px 0;
+    font-size: 13px;
+}
+#chatdiv th, #chatdiv td {
+    border: 1px solid #d1d5db;
+    padding: 6px 10px;
+    text-align: left;
+}
+#chatdiv th {
+    background: #f3f4f6;
+    font-weight: 600;
+}
+#chatdiv tbody tr:nth-child(even) td {
+    background: #f9fafb;
 }
 
 .composer{ flex:0 0 auto;
@@ -223,3 +290,120 @@ button.primary:hover { background: #0f8f71; }
 button.ghost{ background: transparent; }
 #cancel { background: #fbf1f1; }
 #reset { background: #f3feff; }
+
+/* Thinking/reasoning block */
+.think-block {
+    margin: 8px 0;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    background: #fafafa;
+    font-size: 13px;
+}
+.think-block summary {
+    cursor: pointer;
+    padding: 6px 12px;
+    color: #6b7280;
+    font-style: italic;
+    user-select: none;
+}
+.think-content {
+    padding: 8px 12px;
+    color: #6b7280;
+    white-space: pre-wrap;
+    max-height: 300px;
+    overflow-y: auto;
+    border-top: 1px solid #e0e0e0;
+}
+
+/* Tool-call block (collapsed like the thinking block) */
+.tool-block {
+    margin: 8px 0;
+    border: 1px solid #e0e0e0;
+    border-left: 3px solid var(--brand);
+    border-radius: 8px;
+    background: #fafafa;
+    font-size: 13px;
+}
+.tool-block.running { border-left-color: #f39c12; }
+.tool-block.failed  { border-left-color: #e74c3c; }
+.tool-block > summary {
+    cursor: pointer;
+    padding: 6px 12px;
+    color: #6b7280;
+    user-select: none;
+}
+.tool-block.running > summary { font-style: italic; }
+.tool-content {
+    padding: 8px 12px;
+    color: #4b5563;
+    border-top: 1px solid #e0e0e0;
+}
+.tool-args {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    color: #6b7280;
+    word-break: break-all;
+    margin-bottom: 6px;
+}
+.tool-link { margin-bottom: 6px; word-break: break-all; font-size: 12px; }
+.tool-link a { color: var(--brand); }
+.tool-result { white-space: pre-wrap; }
+.tool-raw { margin-top: 6px; }
+.tool-raw > summary { cursor: pointer; color: #6b7280; font-size: 12px; }
+.tool-raw pre {
+    margin: 4px 0 0 0;
+    padding: 6px 8px;
+    max-height: 300px;
+    overflow: auto;
+    font-size: 11px;
+    white-space: pre-wrap;
+    word-break: break-all;
+    background: #f3f4f6;
+    border-radius: 6px;
+}
+
+/* RAG source attribution */
+.rag-sources {
+    font-size: 12px;
+    color: #6b7280;
+    padding: 6px 12px;
+    margin: 4px 0 8px 0;
+    border-left: 3px solid var(--brand);
+    background: #f0fdf4;
+    border-radius: 0 6px 6px 0;
+}
+.rag-label { font-weight: 600; }
+.rag-sources a {
+    color: var(--brand);
+    text-decoration: none;
+}
+.rag-sources a:hover { text-decoration: underline; }
+
+/* Token usage bar */
+.token-usage {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 12px 4px 12px;
+    height: 16px;
+}
+.token-track {
+    flex: 1 1 auto;
+    height: 4px;
+    background: #e5e7eb;
+    border-radius: 2px;
+    overflow: hidden;
+}
+.token-fill {
+    height: 100%;
+    width: 0%;
+    background: var(--brand);
+    border-radius: 2px;
+    transition: width 0.3s ease, background 0.3s ease;
+}
+.token-label {
+    flex: 0 0 auto;
+    font-size: 11px;
+    color: #9ca3af;
+    white-space: nowrap;
+}

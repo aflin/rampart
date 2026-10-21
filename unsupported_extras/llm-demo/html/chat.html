@@ -2,10 +2,11 @@
 <html>
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Chat Demo</title>
 
-<link rel="stylesheet" href="/css/llmchat.css" />
-<script src="/js/llmchat-client.js"></script>
+<link rel="stylesheet" href="css/llmchat.css" />
+<script src="js/llmchat-client.js"></script>
 <script>
 var llmSettings = {
   endpoint: "/wsapps/llmchat.js",
@@ -43,6 +44,10 @@ var llmSettings = {
             <button id="submit" class="primary">Send</button>
             <button id="cancel" class="ghost">Cancel</button>
             <button id="reset" class="ghost">Start New Session</button>
+          </div>
+          <div class="token-usage">
+            <div class="token-track"><div id="tokenbar" class="token-fill"></div></div>
+            <span id="tokenlabel" class="token-label"></span>
           </div>
         </div>
       </div>
