@@ -3,9 +3,9 @@
 # needs is set here.  Included from extern.cmake after openssl.cmake.
 #
 # Features: OpenSSL (vendored), zlib (gzip only -- brotli/zstd would add
-# non-base runtime libraries on macOS/FreeBSD/minimal Linux), HTTP/2, NTLM,
-# IDN only with a self-contained static libidn2.  No LDAP, libssh2, libpsl or
-# GSSAPI.  The resulting rampart-curl.so needs only rampart-crypto.so, libz
+# non-base runtime libraries on macOS/FreeBSD/minimal Linux), HTTP/2, NTLM.
+# No libidn2 (LGPL; rampart-curl converts IDN hostnames itself via
+# rampart-url), LDAP, libssh2, libpsl or GSSAPI.  The resulting rampart-curl.so needs only rampart-crypto.so, libz
 # and libc.
 
 add_subdirectory(${EXTERN_DIR}/nghttp2)
@@ -42,32 +42,6 @@ set(HAVE_DES_ECB_ENCRYPT 1)
 set(NGHTTP2_INCLUDE_DIR "${EXTERN_DIR}/nghttp2/lib/includes" CACHE PATH   "" FORCE)
 set(NGHTTP2_LIBRARY     nghttp2_rp                         CACHE STRING "" FORCE)
 
-# libidn2: static, self-contained and PIC only; otherwise curl is built
-# without IDN (Debian's needs libunistring.so; the oven's is not PIC)
-find_library(RP_LIBIDN2_STATIC libidn2.a)
-find_path(RP_LIBIDN2_INCLUDE idn2.h)
-set(RP_CURL_IDN2 OFF)
-if(RP_LIBIDN2_STATIC AND RP_LIBIDN2_INCLUDE)
-    include(CheckCSourceCompiles)
-    include(CMakePushCheckState)
-    cmake_push_check_state(RESET)
-    set(CMAKE_REQUIRED_INCLUDES  "${RP_LIBIDN2_INCLUDE}")
-    set(CMAKE_REQUIRED_LIBRARIES "${RP_LIBIDN2_STATIC}")
-    # it goes into rampart-curl.so, so it must also be PIC
-    set(CMAKE_REQUIRED_FLAGS "-fPIC")
-    if(NOT APPLE)
-        set(CMAKE_REQUIRED_LINK_OPTIONS "-shared")
-    endif()
-    check_c_source_compiles("#include <idn2.h>
-        int main(void){char *o; return idn2_lookup_ul(\"x\", &o, 0);}" RP_LIBIDN2_PIC_OK)
-    cmake_pop_check_state()
-    if(RP_LIBIDN2_PIC_OK)
-        set(RP_CURL_IDN2 ON)
-        set(LIBIDN2_INCLUDE_DIR "${RP_LIBIDN2_INCLUDE}" CACHE PATH     "" FORCE)
-        set(LIBIDN2_LIBRARY     "${RP_LIBIDN2_STATIC}"  CACHE FILEPATH "" FORCE)
-    endif()
-endif()
-
 # cache-style curl settings (curl sets these with set(CACHE), which would
 # drop a plain variable)
 set(CURL_ZLIB   ON   CACHE STRING "" FORCE)
@@ -100,7 +74,7 @@ function(rp_add_curl)
     set(CURL_USE_LIBSSH2 OFF)
     set(CURL_USE_LIBSSH OFF)
     set(CURL_USE_GSSAPI OFF)
-    set(USE_LIBIDN2 ${RP_CURL_IDN2})
+    set(USE_LIBIDN2 OFF)
     add_subdirectory(${EXTERN_DIR}/curl)
 endfunction()
 rp_add_curl()
@@ -109,9 +83,6 @@ add_dependencies(libcurl_static openssl)
 # rampart-curl links libcurl.a by path (OpenSSL comes from rampart-crypto.so),
 # so it names libcurl's other dependencies itself
 set(RP_CURL_SYSLIBS "")
-if(RP_CURL_IDN2)
-    list(APPEND RP_CURL_SYSLIBS "${RP_LIBIDN2_STATIC}")
-endif()
 if(APPLE)   # curl uses these for IPv6 interface/proxy lookups on macOS
     list(APPEND RP_CURL_SYSLIBS "-framework SystemConfiguration"
                                 "-framework CoreFoundation" "-framework CoreServices")
