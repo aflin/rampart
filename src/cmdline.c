@@ -3221,6 +3221,48 @@ duk_ret_t duk_rp_clear_either(duk_context *ctx)
 }while(0)
 
 
+/* words after which a ` or / starts a value (template, regex), not a tag call or division */
+static const char *tk_keywords[] = {
+    "return", "yield", "break", "continue", "case", "else", "typeof", "delete", "new",
+    "var", "let", "const", "void", "throw", "in", "of", "instanceof", "do", "await", NULL
+};
+
+#define tk_idchar(x) ( ((unsigned char)(x)) >= 0x80 || (x) == '$' || (x) == '_' || isalnum((unsigned char)(x)) )
+
+/* whole-word match of s[0..len) against tk_keywords; lim is the start of the buffer */
+static int tk_is_keyword(const char *lim, const char *s, size_t len)
+{
+    const char **k;
+
+    if (s > lim && tk_idchar(*(s-1)))
+        return 0;
+    for (k = tk_keywords; *k; k++)
+        if (strlen(*k) == len && !strncmp(s, *k, len))
+            return 1;
+    return 0;
+}
+
+/* What precedes p (back to lim, skipping spaces): 1 if a value ends there
+   (identifier, number, ')', ']', quote), else 0 (operator, keyword, nothing). */
+static int tk_prev_is_value(const char *lim, const char *p)
+{
+    const char *s = p - 1, *e;
+
+    while (s >= lim && isspace((unsigned char)*s))
+        s--;
+    if (s < lim)
+        return 0;
+    if (*s == ')' || *s == ']' || *s == '"' || *s == '\'' || *s == '`')
+        return 1;
+    if (!tk_idchar(*s))
+        return 0;
+    e = s;
+    while (s >= lim && tk_idchar(*s))
+        s--;
+    s++;
+    return !tk_is_keyword(lim, s, e - s + 1);
+}
+
 static int proc_triple(char **inp, char **ob, char **o, size_t *osize, int *lineno)
 {
     char *in = *inp;
@@ -3275,7 +3317,15 @@ static int proc_triple(char **inp, char **ob, char **o, size_t *osize, int *line
                 goto end_db;
 
             default:
-                scopy(*in);
+                /* U+2028/U+2029 end a string literal in ES5: escape them */
+                if((unsigned char)*in == 0xE2 && (unsigned char)*(in+1) == 0x80 &&
+                   ((unsigned char)*(in+2) == 0xA8 || (unsigned char)*(in+2) == 0xA9))
+                {
+                    stringcopy((unsigned char)*(in+2) == 0xA8 ? "\\u2028" : "\\u2029");
+                    in+=2;
+                }
+                else
+                    scopy(*in);
                 break;
         }
         adv;
@@ -3486,10 +3536,93 @@ static int proc_backtick(char *bt_start, char *end, char **ob, char **o, size_t 
                             stringcopy("\"+(");
                     }
                     /* FIXME: properly this should go back to tickify somehow */
-                    while (in < end && *in != '}')
+                    /* track nested {} (object literals, function bodies) and skip
+                       strings, comments and regex literals, so only the matching
+                       '}' ends the ${} */
+                    int depth=0;
+                    char *estart=in;
+                    while (in < end && (*in != '}' || depth > 0))
                     {
-                        if(*in == '`' && *(in-1)!='\\' )
+                        if(*in == '/' && in+1 < end && *(in+1) == '/')
                         {
+                            while(in < end && *in != '\n')
+                            {
+                                scopy(*in);
+                                adv;
+                            }
+                        }
+                        else if(*in == '/' && in+1 < end && *(in+1) == '*')
+                        {
+                            scopy(*in);
+                            adv;
+                            scopy(*in);
+                            adv;
+                            while(in < end && !(*in == '*' && in+1 < end && *(in+1) == '/'))
+                            {
+                                scopy(*in);
+                                adv;
+                            }
+                            if(in < end)
+                            {
+                                scopy('*');
+                                scopy('/');
+                                in+=2;
+                            }
+                        }
+                        else if(*in == '/' && !tk_prev_is_value(estart, in))
+                        {
+                            /* regex literal: '/' inside [...] or escaped does not end it */
+                            int incls=0;
+                            scopy(*in);
+                            adv;
+                            while(in < end && *in != '\n')
+                            {
+                                if(*in == '\\' && in+1 < end)
+                                {
+                                    scopy(*in);
+                                    adv;
+                                }
+                                else if(*in == '[')
+                                    incls=1;
+                                else if(*in == ']')
+                                    incls=0;
+                                else if(*in == '/' && !incls)
+                                {
+                                    scopy(*in);
+                                    adv;
+                                    break;
+                                }
+                                scopy(*in);
+                                adv;
+                            }
+                        }
+                        else if(*in == '\'' || *in == '"')
+                        {
+                            char q=*in;
+                            scopy(*in);
+                            adv;
+                            while(in < end && *in != q && *in != '\n')
+                            {
+                                if(*in == '\\' && in+1 < end)
+                                {
+                                    scopy(*in);
+                                    adv;
+                                }
+                                scopy(*in);
+                                adv;
+                            }
+                            if(in < end && *in == q)
+                            {
+                                scopy(*in);
+                                adv;
+                            }
+                        }
+                        else if(*in == '`' && *(in-1)!='\\' )
+                        {
+                            /* nested templates write output directly; when this
+                               expression is muted (tag first pass), discard it */
+                            size_t keep = out - outbeg;
+                            int keepline = *lineno;   /* tag second pass: lines already counted */
                             if(*(in+1)=='`' && *(in+2)=='`') //triple backick = no escapes
                             {
                                 in+=3;
@@ -3502,7 +3635,9 @@ static int proc_backtick(char *bt_start, char *end, char **ob, char **o, size_t 
                             }
                             else
                             {
-                                int r=proc_backtick(in, end, &outbeg, &out, osize, lineno, 0);
+                                /* ident`...` or f()`...` is a tagged template */
+                                int r=proc_backtick(in, end, &outbeg, &out, osize, lineno,
+                                                    tk_prev_is_value(estart, in) ? 1 : 0);
                                 if(!r)
                                 {
                                     *ob=outbeg;
@@ -3511,11 +3646,18 @@ static int proc_backtick(char *bt_start, char *end, char **ob, char **o, size_t 
                                 }
                                 in+=r;
                             }
+                            if(mute)
+                                out = outbeg + keep;
+                            if(type == 2)
+                                *lineno = keepline;
                         }
                         else
                         {
-                            if(*in=='\n') (*lineno)++;
-                            scopy(*in);
+                            if(*in == '{')
+                                depth++;
+                            else if(*in == '}')
+                                depth--;
+                            scopy(*in);   /* scopy counts newlines */
                             adv;
                         }
                     }
@@ -3541,12 +3683,22 @@ static int proc_backtick(char *bt_start, char *end, char **ob, char **o, size_t 
                 lastwasbs=0;
                 break;
             case '\n':
-                stringcopy("\\n\"+\n\"");
+                /* backslash-newline is a line continuation: drop both (String.raw keeps them) */
+                if(lastwasbs && type != 3)
+                {
+                    if(!mute)
+                        out--;
+                    stringcopy("\"+\n\"");
+                }
+                else
+                    stringcopy("\\n\"+\n\"");
                 lastwasbs=0;
                 break;
             case '\r':
-                scopy('\\');
-                scopy('r');
+                /* a raw CR or CRLF in a template is a LF (ES2015 11.8.6.1) */
+                if(in+1 < end && *(in+1) == '\n')
+                    break;
+                stringcopy("\\n");
                 lastwasbs=0;
                 break;
             case '\t':
@@ -3557,7 +3709,7 @@ static int proc_backtick(char *bt_start, char *end, char **ob, char **o, size_t 
             case '`':
                 if(lastwasbs)
                 {
-                    if(type!=3)
+                    if(type!=3 && !mute)  /* muted: the '\\' was never written */
                         out--;
                     scopy('`');
                     lastwasbs=0;
@@ -3574,8 +3726,9 @@ static int proc_backtick(char *bt_start, char *end, char **ob, char **o, size_t 
                 }
                 else
                 {
-                    /* remove the '+ ""', BUT not if it is escaped */
-                    if( *(out-1) == '"' && *(out-2) != '\\')
+                    /* remove the '+ ""', BUT not if it is escaped.  Not for tags:
+                       a template ending in ${} still has a final "" in its strings */
+                    if( type != 1 && *(out-1) == '"' && *(out-2) != '\\')
                     {
                         /*
                         if (outbeg < out - 3 && *(out-2) == '\\' && *(out-3) == '"')
@@ -3626,7 +3779,15 @@ static int proc_backtick(char *bt_start, char *end, char **ob, char **o, size_t 
                 break;
             default:
                 lastwasbs=0;
-                scopy(*in);
+                /* U+2028/U+2029 end a string literal in ES5: escape them */
+                if((unsigned char)*in == 0xE2 && in+2 < end && (unsigned char)*(in+1) == 0x80 &&
+                   ((unsigned char)*(in+2) == 0xA8 || (unsigned char)*(in+2) == 0xA9))
+                {
+                    stringcopy((unsigned char)*(in+2) == 0xA8 ? "\\u2028" : "\\u2029");
+                    in+=2;
+                }
+                else
+                    scopy(*in);
         }
         adv;
     }
@@ -3761,22 +3922,17 @@ char * tickify(char *src, size_t sz, int *err, int *ln)
                     }
                     else
                     {
-                        char *s=in;
+                        char *s=in, *e;
 
                         s--;
                         while(s>=src && isspace(*s))s--;
+                        e=s;
                         while(s>=src && isalpha(*s))s--;
                         s++;
-                        if(
-                            /* reserved words which don't require a (), {} or [] next
-                               this prevents >>return /abc`def/;<< from being run through
-                               proc_backtick above                                        */
-                            !strncmp(s,"return",6) || !strncmp(s,"yield",5)     ||
-                            !strncmp(s,"break",5)  || !strncmp(s,"continue",8)  ||
-                            !strncmp(s,"case",4)   || !strncmp(s,"else",4)      ||
-                            !strncmp(s,"typeof",6) || !strncmp(s,"delete",6)    ||
-                            !strncmp(s,"new",3)    || !strncmp(s,"var",3)
-                        )
+                        /* reserved words which don't require a (), {} or [] next
+                           this prevents >>return /abc`def/;<< from being run through
+                           proc_backtick above                                        */
+                        if(e >= s && tk_is_keyword(src, s, e - s + 1))
                             goto regex;
                         /* division */
                         copy(*in);
@@ -3864,24 +4020,19 @@ char * tickify(char *src, size_t sz, int *err, int *ln)
                         break;
                     }
 
+                    char *e;
                     s--;
                     while(s>=src && isspace(*s))s--;
+                    e=s;
                     while( s>=src && ( isalpha(*s) || *s == '.' ) )s--;
                     s++;
-                    if(
-                        // reserved words which don't require a (), {} or [] next
-                        // not all make sense in terms of being followed by a `literal`
-                        // but covering the cases anyway.
-                        !strncmp(s,"return",6) || !strncmp(s,"yield",5)     ||
-                        !strncmp(s,"break",5)  || !strncmp(s,"continue",8)  ||
-                        !strncmp(s,"case",4)   || !strncmp(s,"else",4)      ||
-                        !strncmp(s,"typeof",6) || !strncmp(s,"delete",6)    ||
-                        !strncmp(s,"new",3)    || !strncmp(s,"var",3)
-                    )
+                    // reserved words which don't require a (), {} or [] next
+                    // (throw `x`, return `x`, case `x`: ...) - a template, not a tag
+                    if(e >= s && tk_is_keyword(src, s, e - s + 1))
                     {
-                        r=proc_backtick(in, end, &outbeg, &out, &osz, &line, startexp);
+                        r=proc_backtick(in, end, &outbeg, &out, &osz, &line, 0);
                     }
-                    else if(!strncmp(s,"String.raw",10))
+                    else if(e - s + 1 == 10 && !strncmp(s,"String.raw",10))
                     {
                         out--;
                         while( out>=outbeg && isspace(*out))out--;

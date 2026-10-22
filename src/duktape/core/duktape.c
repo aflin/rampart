@@ -106975,10 +106975,46 @@ DUK_INTERNAL void duk_rp_install_buffer_extras(duk_context *ctx)
  *   - `exception` alias for console.error (node compat).
  * ============================================================ */
 
+/* Write a duktape string as UTF-8: characters above U+FFFF are stored as
+ * CESU-8 surrogate pairs (ED A0-AF xx ED B0-BF xx); rejoin them into the
+ * 4-byte UTF-8 form, copy everything else as is (lone surrogates -> U+FFFD). */
+static void duk__console_write_utf8(FILE *f, const char *s, duk_size_t len) {
+	const unsigned char *p = (const unsigned char *) s, *e = p + len, *run = p;
+
+	while (p < e) {
+		if (e - p >= 6 && p[0] == 0xED && (p[1] & 0xF0) == 0xA0 &&
+		    p[3] == 0xED && (p[4] & 0xF0) == 0xB0) {
+			duk_uint32_t hi = 0xD000 | ((duk_uint32_t) (p[1] & 0x3F) << 6) | (p[2] & 0x3F);
+			duk_uint32_t lo = 0xD000 | ((duk_uint32_t) (p[4] & 0x3F) << 6) | (p[5] & 0x3F);
+			duk_uint32_t cp = 0x10000 + ((hi - 0xD800) << 10) + (lo - 0xDC00);
+			unsigned char u[4];
+
+			u[0] = (unsigned char) (0xF0 | (cp >> 18));
+			u[1] = (unsigned char) (0x80 | ((cp >> 12) & 0x3F));
+			u[2] = (unsigned char) (0x80 | ((cp >> 6) & 0x3F));
+			u[3] = (unsigned char) (0x80 | (cp & 0x3F));
+			fwrite(run, 1, (size_t) (p - run), f);
+			fwrite(u, 1, 4, f);
+			p += 6;
+			run = p;
+		} else if (e - p >= 3 && p[0] == 0xED && (p[1] & 0xE0) == 0xA0) {
+			/* unpaired surrogate is not valid UTF-8: write U+FFFD, as node does */
+			fwrite(run, 1, (size_t) (p - run), f);
+			fwrite("\xEF\xBF\xBD", 1, 3, f);
+			p += 3;
+			run = p;
+		} else {
+			p++;
+		}
+	}
+	fwrite(run, 1, (size_t) (e - run), f);
+}
+
 static duk_ret_t duk__console_log_helper(duk_context *ctx, const char *error_name) {
 	duk_uint_t flags = (duk_uint_t) duk_get_current_magic(ctx);
 	FILE *output = (flags & DUK_CONSOLE_STDOUT_ONLY) ? stdout : stderr;
 	const char *out;
+	duk_size_t outlen;
 	duk_idx_t n = duk_get_top(ctx);
 	duk_idx_t i;
 
@@ -107009,8 +107045,9 @@ static duk_ret_t duk__console_log_helper(duk_context *ctx, const char *error_nam
 		duk_get_prop_string(ctx, -1, "stack");
 	}
 
-	out = duk_to_string(ctx, -1);
-	fprintf(output, "%s\n", out);
+	out = duk_to_lstring(ctx, -1, &outlen);
+	duk__console_write_utf8(output, out, outlen);
+	fputc('\n', output);
 	if (flags & DUK_CONSOLE_FLUSH) {
 		fflush(output);
 	}

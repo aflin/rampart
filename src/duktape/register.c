@@ -4,6 +4,7 @@
  * see https://opensource.org/licenses/MIT
  */
 
+#include <math.h>
 #include "register.h"
 #include "core/module.h"
 #include "globals/printf.h"
@@ -201,6 +202,178 @@ static void install_string_normalize_stub(duk_context *ctx)
     duk_put_prop_string(ctx, -2, "normalize");
     duk_rp_set_enum_false(ctx, -1, "normalize");
     duk_pop_2(ctx); /* prototype + String */
+}
+
+/* Locale-sensitive builtins: Date.prototype.toLocale{,Date,Time}String,
+ * Number.prototype.toLocaleString and String.prototype.localeCompare.
+ * Called with no locales/options they keep duktape's own output and never
+ * load Intl.  With either argument they use Intl (loading rampart-intl on
+ * first use); if Intl is unavailable they fall back to the duktape original
+ * called without arguments.  The original is kept on the wrapper. */
+#define LM_DATE_ANY  0
+#define LM_DATE_DATE 1
+#define LM_DATE_TIME 2
+#define LM_NUMBER    3
+#define LM_COMPARE   4
+
+static duk_ret_t lm_get_intl(duk_context *ctx, void *udata)
+{
+    (void)udata;
+    /* the lazy getter deletes itself before require(), so a missing
+       rampart-intl is only tried once */
+    duk_get_global_string(ctx, "Intl");
+    return 1;
+}
+
+static int lm_has_any(duk_context *ctx, duk_idx_t idx, const char **names)
+{
+    while (*names)
+    {
+        duk_get_prop_string(ctx, idx, *names);
+        if (!duk_is_undefined(ctx, -1))
+        {
+            duk_pop(ctx);
+            return 1;
+        }
+        duk_pop(ctx);
+        names++;
+    }
+    return 0;
+}
+
+/* ECMA-402 date defaults: add numeric fields when none of the required
+   kind (or dateStyle/timeStyle) were given.  opts is an Object.create(options). */
+static void lm_date_defaults(duk_context *ctx, duk_idx_t opts, int magic)
+{
+    static const char *datef[] = {"weekday", "year", "month", "day", NULL};
+    static const char *timef[] = {"dayPeriod", "hour", "minute", "second", "fractionalSecondDigits", NULL};
+    static const char *stylef[] = {"dateStyle", "timeStyle", NULL};
+    static const char *dated[] = {"year", "month", "day", NULL};
+    static const char *timed[] = {"hour", "minute", "second", NULL};
+    const char **p;
+
+    if (lm_has_any(ctx, opts, stylef))
+        return;
+    if (magic != LM_DATE_TIME && lm_has_any(ctx, opts, datef))
+        return;
+    if (magic != LM_DATE_DATE && lm_has_any(ctx, opts, timef))
+        return;
+    if (magic != LM_DATE_TIME)
+        for (p = dated; *p; p++)
+        {
+            duk_push_string(ctx, "numeric");
+            duk_put_prop_string(ctx, opts, *p);
+        }
+    if (magic != LM_DATE_DATE)
+        for (p = timed; *p; p++)
+        {
+            duk_push_string(ctx, "numeric");
+            duk_put_prop_string(ctx, opts, *p);
+        }
+}
+
+static duk_ret_t rp_locale_method(duk_context *ctx)
+{
+    int magic = duk_get_current_magic(ctx);
+    duk_idx_t li = (magic == LM_COMPARE) ? 1 : 0, oi = li + 1, intl, opts;
+
+    if ((!duk_is_undefined(ctx, li) || !duk_is_undefined(ctx, oi)))
+    {
+        if (duk_safe_call(ctx, lm_get_intl, NULL, 0, 1) != DUK_EXEC_SUCCESS || !duk_is_object(ctx, -1))
+            duk_pop(ctx);
+        else
+        {
+            intl = duk_get_top_index(ctx);
+            if (magic <= LM_DATE_TIME)
+            {
+                duk_push_this(ctx);
+                duk_get_global_string(ctx, "Date");
+                if (!duk_instanceof(ctx, -2, -1))
+                    (void)duk_type_error(ctx, "this is not a Date object");
+                duk_pop(ctx);
+                if (isnan(duk_to_number(ctx, -1)))
+                {
+                    duk_push_string(ctx, "Invalid Date");
+                    return 1;
+                }
+                duk_pop(ctx);
+                /* Object.create(options), so defaults don't touch the caller's object */
+                duk_push_object(ctx);
+                opts = duk_get_top_index(ctx);
+                if (!duk_is_undefined(ctx, oi))
+                {
+                    duk_dup(ctx, oi);
+                    duk_to_object(ctx, -1);
+                    duk_set_prototype(ctx, opts);
+                }
+                lm_date_defaults(ctx, opts, magic);
+            }
+            else
+                opts = oi;
+
+            duk_get_prop_string(ctx, intl, magic <= LM_DATE_TIME ? "DateTimeFormat" :
+                                           magic == LM_NUMBER ? "NumberFormat" : "Collator");
+            duk_dup(ctx, li);
+            duk_dup(ctx, opts);
+            duk_new(ctx, 2);
+            if (magic == LM_COMPARE)
+            {
+                duk_push_string(ctx, "compare");
+                duk_push_this(ctx);
+                if (duk_is_null_or_undefined(ctx, -1))
+                    (void)duk_type_error(ctx, "String.prototype.localeCompare called on null or undefined");
+                duk_to_string(ctx, -1);
+                duk_dup(ctx, 0);
+                duk_to_string(ctx, -1);
+                duk_call_prop(ctx, -4, 2);
+            }
+            else
+            {
+                duk_push_string(ctx, "format");
+                duk_push_this(ctx);
+                duk_call_prop(ctx, -3, 1);
+            }
+            return 1;
+        }
+    }
+
+    /* no locale/options, or no Intl: duktape's original, without arguments */
+    duk_push_current_function(ctx);
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("orig"));
+    duk_push_this(ctx);
+    if (magic == LM_COMPARE)
+    {
+        duk_dup(ctx, 0);
+        duk_call_method(ctx, 1);
+    }
+    else
+        duk_call_method(ctx, 0);
+    return 1;
+}
+
+static void install_locale_methods(duk_context *ctx)
+{
+    static const struct { const char *obj, *name; int magic, nargs; } lm[] = {
+        {"Date",   "toLocaleString",     LM_DATE_ANY,  2},
+        {"Date",   "toLocaleDateString", LM_DATE_DATE, 2},
+        {"Date",   "toLocaleTimeString", LM_DATE_TIME, 2},
+        {"Number", "toLocaleString",     LM_NUMBER,    2},
+        {"String", "localeCompare",      LM_COMPARE,   3}
+    };
+    size_t i;
+
+    for (i = 0; i < sizeof(lm) / sizeof(lm[0]); i++)
+    {
+        duk_get_global_string(ctx, lm[i].obj);
+        duk_get_prop_string(ctx, -1, "prototype");
+        duk_push_c_function(ctx, rp_locale_method, lm[i].nargs);
+        duk_set_magic(ctx, -1, lm[i].magic);
+        duk_get_prop_string(ctx, -2, lm[i].name);
+        duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("orig"));
+        duk_put_prop_string(ctx, -2, lm[i].name);
+        duk_rp_set_enum_false(ctx, -1, lm[i].name);
+        duk_pop_2(ctx);
+    }
 }
 
 /* TextEncoder/TextDecoder WHATWG-spec fixes, Node-style console additions,
@@ -507,6 +680,7 @@ void duk_init_context_bare(duk_context *ctx)
     new_function_transpile(ctx);
     install_transpile_err_trim(ctx);
     install_string_normalize_stub(ctx);  /* triggers rampart-intl load on first .normalize() call */
+    install_locale_methods(ctx);         /* toLocale*String/localeCompare use Intl when given locales/options */
     duk_event_init(ctx);
     duk_thread_init(ctx);
 }
@@ -563,6 +737,7 @@ void duk_init_context(duk_context *ctx)
     new_function_transpile(ctx);
     install_transpile_err_trim(ctx);
     install_string_normalize_stub(ctx);  /* triggers rampart-intl load on first .normalize() call */
+    install_locale_methods(ctx);         /* toLocale*String/localeCompare use Intl when given locales/options */
     /* WHATWG / W3C Web platform standards live in rampart-whatwg.so
      * (Blob, File, URL, URLSearchParams, Event, EventTarget,
      * CustomEvent, AbortController, AbortSignal, structuredClone,

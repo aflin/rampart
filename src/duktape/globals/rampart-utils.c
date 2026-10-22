@@ -19,6 +19,7 @@
 #include <signal.h>
 #include <limits.h>
 #include <fcntl.h>
+#include <poll.h>
 #include <sys/mman.h>
 #include <unistd.h>
 #include <sys/ioctl.h>
@@ -5423,8 +5424,36 @@ struct exec_thread_waitpid_arg
     pid_t pid;
     unsigned int timeout;
     int signal;
-    unsigned int killed;
+    volatile unsigned int killed;
 };
+
+struct exec_outbuf
+{
+    char *buf;
+    int size, nread, fd;
+};
+
+/* read what is available on b->fd: 2 = got data, 1 = nothing yet (EAGAIN/EINTR),
+   0 = EOF, -1 = error */
+static int exec_read_some(struct exec_outbuf *b)
+{
+    ssize_t n;
+
+    if (b->size - b->nread < 4096)
+    {
+        b->size = b->size ? b->size * 2 : BUFREADSZ;
+        REMALLOC(b->buf, b->size);
+    }
+    n = read(b->fd, b->buf + b->nread, b->size - b->nread);
+    if (n > 0)
+    {
+        b->nread += n;
+        return 2;
+    }
+    if (n == 0)
+        return 0;
+    return (errno == EINTR || errno == EAGAIN) ? 1 : -1;
+}
 void *duk_rp_exec_thread_waitpid(void *arg)
 {
     struct exec_thread_waitpid_arg *arg_s = ((struct exec_thread_waitpid_arg *)arg);
@@ -5440,28 +5469,6 @@ void *duk_rp_exec_thread_waitpid(void *arg)
         if (timeout > 0) { pthread_cancel(thread); pthread_join(thread, NULL); }                           \
         exec_wait_end();                                                                                    \
     } while (0)
-
-#define DUK_UTIL_EXEC_READ_FD(ctx, buf, fildes, nread)                                                      \
-    {                                                                                                       \
-        int size = BUFREADSZ;                                                                               \
-        REMALLOC(buf, size);                                                                                \
-        int nbytes = 0;                                                                                     \
-        nread = 0;                                                                                          \
-        while ((nbytes = read(fildes, buf + nread, size - nread)) > 0)                                      \
-        {                                                                                                   \
-            nread += nbytes;                                                                                \
-            if (size <= nread){                                                                             \
-                size *= 2;                                                                                  \
-                REMALLOC(buf, size);                                                                        \
-            }                                                                                               \
-        }                                                                                                   \
-        if (nbytes < 0){                                                                                    \
-            EXEC_FG_ABORT; /* SIGCHLD restore — read-error path */                                          \
-            free(args);                                                                                     \
-            if(env) free(env);                                                                              \
-            RP_THROW(ctx, "exec(): could not read output buffer: %s", strerror(errno));                     \
-        }                                                                                                   \
-    }
 
 char **free_made_env(char **env)
 {
@@ -5867,9 +5874,7 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
     }
     else
     {
-        int stdout_nread, stderr_nread;
-        char *stdout_buf = NULL;
-        char *stderr_buf = NULL;
+        struct exec_outbuf ob[2] = { {NULL, 0, 0, -1}, {NULL, 0, 0, -1} };
         // create thread for timeout
         struct exec_thread_waitpid_arg arg;
         pthread_t thread;
@@ -5888,43 +5893,140 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
         rp_pipe_close(stderr_pipe,1);
         rp_pipe_close(stdin_pipe,0);
 
-        if(stdin_txt)
+        /* Feed stdin and drain stdout/stderr together.  Doing them one at a
+           time deadlocks as soon as the child fills a pipe (64k) we are not
+           reading -- e.g. lots of stderr, or cat echoing a large stdin. */
         {
-            if(-1 == write(stdin_pipe[1], stdin_txt, (size_t)stdin_sz))
+            const char *inp = stdin_txt, *ioerr = NULL;
+            size_t inleft = stdin_txt ? (size_t)stdin_sz : 0;
+            int open_out = 2, reaped = 0, ioerrno = 0, i;
+            pid_t wp = 0;
+
+            ob[0].fd = stdout_pipe[0];
+            ob[1].fd = stderr_pipe[0];
+            exit_status = -1;
+            if (inleft)
+                fcntl(stdin_pipe[1], F_SETFL, fcntl(stdin_pipe[1], F_GETFL) | O_NONBLOCK);
+            else
+                rp_pipe_close(stdin_pipe,1);
+
+            while (open_out > 0 || inleft)
             {
-                /* EPIPE means child closed stdin early — not necessarily an error.
-                   Close the pipe and continue to read stdout/stderr normally.
-                   The child's exit code will indicate if it actually failed. */
-                if(errno != EPIPE)
+                struct pollfd pfd[3];
+                int np = 0, r, outidx[2], inidx = -1;
+
+                for (i = 0; i < 2; i++)
                 {
-                    rp_pipe_close(stdin_pipe,1);
-                    /* SIGCHLD restore — stdin-error path */
-                    EXEC_FG_ABORT;
-                    RP_THROW(ctx, "exec(): could not write to stdin of command: %s", strerror(errno));
+                    outidx[i] = -1;
+                    if (ob[i].fd >= 0)
+                    {
+                        pfd[np].fd = ob[i].fd;
+                        pfd[np].events = POLLIN;
+                        outidx[i] = np++;
+                    }
+                }
+                if (inleft)
+                {
+                    pfd[np].fd = stdin_pipe[1];
+                    pfd[np].events = POLLOUT;
+                    inidx = np++;
+                }
+
+                /* with a timeout, wake periodically to notice the kill */
+                r = poll(pfd, np, timeout > 0 ? 100 : -1);
+                if (r < 0)
+                {
+                    if (errno == EINTR)
+                        continue;
+                    ioerr = "could not poll output"; ioerrno = errno;
+                    break;
+                }
+
+                if (inidx >= 0 && pfd[inidx].revents)
+                {
+                    ssize_t w = write(stdin_pipe[1], inp, inleft);
+                    if (w > 0)
+                    {
+                        inp += w;
+                        inleft -= w;
+                    }
+                    else if (w < 0 && errno != EAGAIN && errno != EINTR)
+                    {
+                        /* EPIPE: the child closed stdin early -- not necessarily
+                           an error; its exit code says whether it failed */
+                        if (errno != EPIPE)
+                        {
+                            ioerr = "could not write to stdin of command"; ioerrno = errno;
+                            break;
+                        }
+                        inleft = 0;
+                    }
+                    if (!inleft)
+                        rp_pipe_close(stdin_pipe,1);
+                }
+
+                for (i = 0; i < 2; i++)
+                {
+                    if (outidx[i] >= 0 && pfd[outidx[i]].revents)
+                    {
+                        int rr = exec_read_some(&ob[i]);
+                        if (rr < 0)
+                        {
+                            ioerr = "could not read output buffer"; ioerrno = errno;
+                            break;
+                        }
+                        if (rr == 0)
+                        {
+                            ob[i].fd = -1;
+                            open_out--;
+                        }
+                    }
+                }
+                if (ioerr)
+                    break;
+
+                /* After a timeout kill, a grandchild may still hold the pipes
+                   open.  Once the child itself is gone, take what is already
+                   buffered and stop. */
+                if (arg.killed)
+                {
+                    wp = waitpid(pid, &exit_status, WNOHANG);
+                    if (wp != 0)
+                    {
+                        reaped = 1;
+                        for (i = 0; i < 2; i++)
+                        {
+                            if (ob[i].fd < 0)
+                                continue;
+                            fcntl(ob[i].fd, F_SETFL, fcntl(ob[i].fd, F_GETFL) | O_NONBLOCK);
+                            while (exec_read_some(&ob[i]) == 2)
+                                ;
+                        }
+                        break;
+                    }
                 }
             }
-            // this is the source of 2 days of misery.  Handle was also closed below, after exec and wait
-            // during which time other threads could reopen it to only have it mysteriously closed in this thread.
-            // Now rp_pipe_close checks if it was closed once already.
-            //rp_pipe_close(stdin_pipe,1);
-        }
-        rp_pipe_close(stdin_pipe,1);
+            rp_pipe_close(stdin_pipe,1);
 
-        // read output
-        DUK_UTIL_EXEC_READ_FD(ctx, stdout_buf, stdout_pipe[0], stdout_nread);
-        DUK_UTIL_EXEC_READ_FD(ctx, stderr_buf, stderr_pipe[0], stderr_nread);
+            if (ioerr)
+            {
+                EXEC_FG_ABORT; /* SIGCHLD restore — io-error path */
+                free(ob[0].buf);
+                free(ob[1].buf);
+                rp_pipe_close(stdout_pipe,0);
+                rp_pipe_close(stderr_pipe,0);
+                free(args);
+                free_made_env(env);
+                RP_THROW(ctx, "exec(): %s: %s", ioerr, strerror(ioerrno));
+            }
 
-        // on rare occasions, this might hang without WNOHANG
-        // no idea why
-        {
-            pid_t wp;
-            /* exit_status declared at top of function — initialize defensively
-             * so a waitpid that returns -1 doesn't leave us decoding stack
-             * garbage (the historical symptom: exit reported as 0 then 230
-             * for the same failing cmd). */
-            exit_status = -1;
-            while((wp = waitpid(pid, &exit_status, WNOHANG)) == 0)
-                usleep(1000);
+            /* on rare occasions, waitpid might hang without WNOHANG; no idea why.
+             * exit_status is preset to -1 so a waitpid that returns -1 doesn't
+             * leave us decoding garbage (the historical symptom: exit reported
+             * as 0 then 230 for the same failing cmd). */
+            if (!reaped)
+                while((wp = waitpid(pid, &exit_status, WNOHANG)) == 0)
+                    usleep(1000);
 
             /* SIGCHLD restore — foreground-branch (after waitpid completes,
              * before we decode exit_status). Doing this BEFORE decoding so
@@ -5940,9 +6042,8 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
                     exit_status = -1;
             } else {
                 /* wp < 0: child auto-reaped before our waitpid (would mean
-                 * SIG_IGN was somehow still in effect — shouldn't happen
-                 * after the save/set above, but stay defensive). Don't
-                 * decode garbage. */
+                 * SIG_IGN was somehow still in effect -- stay defensive).
+                 * Don't decode garbage. */
                 exit_status = -1;
             }
         }
@@ -5959,22 +6060,23 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
 
         if(return_buffer)
         {
-            void *b = duk_push_fixed_buffer(ctx, (duk_size_t) stdout_nread);
-            memcpy(b, stdout_buf, stdout_nread);
+            void *b = duk_push_fixed_buffer(ctx, (duk_size_t) ob[0].nread);
+            if (ob[0].nread)
+                memcpy(b, ob[0].buf, ob[0].nread);
         }
         else
-            duk_push_lstring(ctx, stdout_buf, stdout_nread);
+            duk_push_lstring(ctx, ob[0].buf ? ob[0].buf : "", ob[0].nread);
 
         duk_put_prop_string(ctx, -2, "stdout");
 
-        duk_push_lstring(ctx, stderr_buf, stderr_nread);
+        duk_push_lstring(ctx, ob[1].buf ? ob[1].buf : "", ob[1].nread);
         duk_put_prop_string(ctx, -2, "stderr");
 
         DUK_PUT(ctx, boolean, "timedOut", arg.killed, -2);
         DUK_PUT_NUMBER(ctx,  "exitStatus", exit_status, -2);
         DUK_PUT_NUMBER(ctx,  "pid", pid, -2);
-        free(stdout_buf);
-        free(stderr_buf);
+        free(ob[0].buf);
+        free(ob[1].buf);
         rp_pipe_close(stdout_pipe,0);
         rp_pipe_close(stderr_pipe,0);
         // above instead

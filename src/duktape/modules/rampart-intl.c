@@ -489,9 +489,10 @@ static void build_skeleton(duk_context *ctx, duk_idx_t opts_idx, char *sk, size_
         else if (strcmp(v, "narrow")   == 0) strncat(sk, "EEEEE", sksz - strlen(sk) - 1);
     });
     APPEND_IF("hour", {
-        /* default to 24h ("H"); options.hour12 can flip below */
-        if      (strcmp(v, "numeric")  == 0) strncat(sk, "H",  sksz - strlen(sk) - 1);
-        else if (strcmp(v, "2-digit")  == 0) strncat(sk, "HH", sksz - strlen(sk) - 1);
+        /* "j" = the locale's preferred cycle (h a for en-US, H for de);
+           hour12/hourCycle below pin it to h or H */
+        if      (strcmp(v, "numeric")  == 0) strncat(sk, "j",  sksz - strlen(sk) - 1);
+        else if (strcmp(v, "2-digit")  == 0) strncat(sk, "jj", sksz - strlen(sk) - 1);
     });
     APPEND_IF("minute", {
         if      (strcmp(v, "numeric")  == 0) strncat(sk, "m",  sksz - strlen(sk) - 1);
@@ -549,10 +550,10 @@ static void build_skeleton(duk_context *ctx, duk_idx_t opts_idx, char *sk, size_
         if (duk_is_string(ctx, -1)) twelve = 1;
         duk_pop(ctx);
     }
-    if (twelve == 1)
+    if (twelve != -1)
     {
         for (char *p = sk; *p; p++)
-            if (*p == 'H') *p = 'h';
+            if (*p == 'j') *p = twelve ? 'h' : 'H';
     }
 #undef APPEND_IF
 }

@@ -21,6 +21,20 @@ v0.7.4
 
     -rampart                BigInt: 0n is now falsy, so Boolean(0n) and
                             if (0n) are false, as in the standard.
+                            Template literal fixes, with and without -t:
+                            braces, comments and regexes inside ${},
+                            tagged templates, CRLF, line continuations,
+                            String.raw and `a${b}`.length.
+                            toLocaleString(), toLocaleDateString(),
+                            toLocaleTimeString() and localeCompare() use
+                            Intl when given a locale or options.
+                            utils.exec() no longer hangs on large stderr or
+                            stdin, or after a timeout when a grandchild
+                            holds the output open.
+                            console.log prints emoji as valid UTF-8.
+
+    -rampart-intl           Times use the locale's 12/24-hour default
+                            (en-US now shows AM/PM).
 
 v0.7.3
     -rampart                utils.exec() run from several threads at once no

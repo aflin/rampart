@@ -960,7 +960,7 @@ static char *js_quote_literal(const char *src, size_t start, size_t end, int *nn
     for (size_t i = start; i < end; i++)
     {
         unsigned char c = (unsigned char)src[i];
-        if (j + 6 >= cap)
+        if (j + 10 >= cap)
         {
             cap *= 2;
             REMALLOC(out, cap);
@@ -968,21 +968,48 @@ static char *js_quote_literal(const char *src, size_t start, size_t end, int *nn
         switch (c)
         {
         case '\\':
-            // out[j++] = '\\';
-            out[j++] = '\\';
+            /* backslash-newline (LF, CR or CRLF) is a line continuation:
+               drop it.  Otherwise copy the escape pair unchanged, so the
+               escaped char isn't escaped a second time (\" must stay \"). */
+            if (i + 1 < end && (src[i + 1] == '\n' || src[i + 1] == '\r'))
+            {
+                i++;
+                if (src[i] == '\r' && i + 1 < end && src[i + 1] == '\n')
+                    i++;
+                (*nnl)++;
+            }
+            else
+            {
+                out[j++] = '\\';
+                if (i + 1 < end)
+                    out[j++] = src[++i];
+            }
             break;
         case '"':
             out[j++] = '\\';
             out[j++] = '"';
             break;
+        case '\r':
+            /* raw CR and CRLF in a template are LF (ES2015 11.8.6.1) */
+            if (i + 1 < end && src[i + 1] == '\n')
+                i++;
+            /* fall through */
         case '\n':
             out[j++] = '\\';
             out[j++] = 'n';
             (*nnl)++;
             break;
-        case '\r':
-            out[j++] = '\\';
-            out[j++] = 'r';
+        case 0xE2:
+            /* U+2028/U+2029 end a string literal in ES5: escape them */
+            if (i + 2 < end && (unsigned char)src[i + 1] == 0x80 &&
+                ((unsigned char)src[i + 2] == 0xA8 || (unsigned char)src[i + 2] == 0xA9))
+            {
+                memcpy(out + j, (unsigned char)src[i + 2] == 0xA8 ? "\\u2028" : "\\u2029", 6);
+                j += 6;
+                i += 2;
+            }
+            else
+                out[j++] = (char)c;
             break;
         case '\t':
             out[j++] = '\\';
@@ -1003,6 +1030,63 @@ static char *js_quote_literal(const char *src, size_t start, size_t end, int *nn
     out[j++] = '"';
     out[j++] = '\0';
 
+    return out;
+}
+
+/* Quote the raw text of a template piece (String.raw): backslashes are kept
+   literally; CR/CRLF become LF as the spec requires for raw strings too. */
+static char *js_quote_raw(const char *src, size_t start, size_t end, int *nnl)
+{
+    size_t cap = (end - start) * 2 + 16, j = 0;
+    char *out = NULL;
+
+    REMALLOC(out, cap);
+    out[j++] = '"';
+    *nnl = 0;
+    for (size_t i = start; i < end; i++)
+    {
+        unsigned char c = (unsigned char)src[i];
+        if (j + 10 >= cap)
+        {
+            cap *= 2;
+            REMALLOC(out, cap);
+        }
+        switch (c)
+        {
+        case '\\':
+        case '"':
+            out[j++] = '\\';
+            out[j++] = (char)c;
+            break;
+        case '\r':
+            if (i + 1 < end && src[i + 1] == '\n')
+                i++;
+            /* fall through */
+        case '\n':
+            out[j++] = '\\';
+            out[j++] = 'n';
+            (*nnl)++;
+            break;
+        case '\t':
+            out[j++] = '\\';
+            out[j++] = 't';
+            break;
+        case 0xE2:
+            if (i + 2 < end && (unsigned char)src[i + 1] == 0x80 &&
+                ((unsigned char)src[i + 2] == 0xA8 || (unsigned char)src[i + 2] == 0xA9))
+            {
+                memcpy(out + j, (unsigned char)src[i + 2] == 0xA8 ? "\\u2028" : "\\u2029", 6);
+                j += 6;
+                i += 2;
+                break;
+            }
+            /* fall through */
+        default:
+            out[j++] = (char)c;
+        }
+    }
+    out[j++] = '"';
+    out[j] = '\0';
     return out;
 }
 
@@ -1076,6 +1160,12 @@ static void collect_template_by_offsets(TSNode tpl, Piece **lits, size_t *nl, Pi
             {
 
                 size_t es = ts_node_start_byte(expr), ee = ts_node_end_byte(lexpr);
+                /* run to the closing '}': a trailing // comment then keeps its
+                   newline, so the ')' emitted after it isn't commented out */
+                TSNode closer = ts_node_child(kid, ts_node_child_count(kid) - 1);
+                if (!ts_node_is_null(closer) && strcmp(ts_node_type(closer), "}") == 0 &&
+                    ts_node_start_byte(closer) > ee)
+                    ee = ts_node_start_byte(closer);
                 if (*ne == capE)
                 {
                     capE = capE ? capE * 2 : 8;
@@ -4021,7 +4111,10 @@ static int rewrite_template_node(EditList *edits, const char *src, TSNode tpl_no
     }
 
     int need_leading_empty = (np > 0 && pieces[0].is_expr);
-    size_t cap = 16 + (need_leading_empty ? 4 : 0);
+    /* parenthesize a concatenation so `a${b}`.length or typeof `a${b}`
+       apply to the whole string, not to the last piece */
+    int wrap = (np > 1 || need_leading_empty);
+    size_t cap = 16 + (need_leading_empty ? 4 : 0) + (wrap ? 2 : 0);
     for (size_t i = 0; i < np; i++)
     {
         if (pieces[i].is_expr)
@@ -4037,6 +4130,8 @@ static int rewrite_template_node(EditList *edits, const char *src, TSNode tpl_no
 
     REMALLOC(out, cap);
 
+    if (wrap)
+        adds("(");
     if (need_leading_empty)
         adds("\"\"");
     for (size_t i = 0; i < np; i++)
@@ -4126,6 +4221,8 @@ static int rewrite_template_node(EditList *edits, const char *src, TSNode tpl_no
             free(q);
         }
     }
+    if (wrap)
+        adds(")");
     out[j] = '\0';
 #undef adds
     // printf("strlen=%d, cap=%d\n", strlen(out), (int)cap);
@@ -15287,45 +15384,6 @@ static void tp_linecol_from_src_offset_utf8(const char *src, size_t src_len, uin
 }
 
 
-// Core doubling rule used for this pass:
-//
-// Turn '\' -> '\\' except:
-//   - if the next char is '$' or '`' (leave the '\' alone),
-//   - OR if the next char is '\' *and* the following char is '$' or '`'
-//     (i.e., this '\' is the first of a pair that precedes $ or `; leave it alone).
-//
-// Everything else is preserved unchanged.
-static char *double_backslashes_except_dollar_or_tick(const char *body, size_t len) {
-    // generous capacity: worst case every '\' doubles
-    size_t cap = len * 2 + 3;
-    char *out = (char *)malloc(cap);
-    size_t o = 0;
-
-    out[o++] = '`';
-
-    for (size_t i = 0; i < len; i++) {
-        const char *s = &body[i];
-
-        int nbs=0;
-        while(*s == '\\' && i<len)
-        {
-            out[o++] = '\\';
-            out[o++] = '\\';
-            s++;
-            i++;
-            nbs++;
-        }
-        if( ( *s=='`' || *s=='$' ) && (nbs % 2) )
-            out[o++] = '\\';
-
-        out[o++] = *s;
-    }
-    out[o++] = '`';
-
-    out[o] = '\0';
-    return out;
-}
-
 int rewrite_string_raw(EditList *edits, const char *src, TSNode call_expr, RangeList *claimed, int overlaps) {
     if (ts_node_is_null(call_expr) || strcmp(ts_node_type(call_expr), "call_expression") != 0) {
         return 0;
@@ -15355,23 +15413,48 @@ int rewrite_string_raw(EditList *edits, const char *src, TSNode call_expr, Range
     if(overlaps)
         return 1;
 
-    // Backtick-delimited source span
-    size_t t_a = ts_node_start_byte(args);
-    size_t t_b = ts_node_end_byte(args);
-    if (t_b <= t_a + 2) {
-        add_edit(edits, cs, ce, "\"\"", claimed);
-        return 1;
+    /* Emit the final string directly: raw literal pieces with backslashes
+       kept, joined with the substitutions.  (Rewriting to another template
+       and leaving it to a later pass failed when no later pass ran, e.g.
+       String.raw`\u`.) */
+    Piece *lits = NULL, *exprs = NULL;
+    size_t nl = 0, nx = 0, cap = 16, j = 0;
+    char *out = NULL;
+
+    collect_template_by_offsets(args, &lits, &nl, &exprs, &nx);
+    for (size_t i = 0; i < nl; i++)
+        cap += 3 * (lits[i].end - lits[i].start) + 8;
+    for (size_t i = 0; i < nx; i++)
+        cap += (exprs[i].end - exprs[i].start) + 8;
+    REMALLOC(out, cap);
+
+    out[j++] = '(';
+    for (size_t i = 0; i < nl; i++)
+    {
+        int nnl = 0;
+        char *q = js_quote_raw(src, lits[i].start, lits[i].end, &nnl);
+        size_t ql = strlen(q);
+
+        if (i)
+        {
+            size_t L = exprs[i - 1].end - exprs[i - 1].start;
+            memcpy(out + j, " + (", 4); j += 4;
+            memcpy(out + j, src + exprs[i - 1].start, L); j += L;
+            memcpy(out + j, ") + ", 4); j += 4;
+        }
+        memcpy(out + j, q, ql); j += ql;
+        /* keep the source line count */
+        for (int k = 0; k < nnl; k++)
+            out[j++] = '\n';
+        free(q);
     }
+    out[j++] = ')';
+    out[j] = '\0';
+    free(lits);
+    free(exprs);
 
-    // Body between backticks
-    size_t body_a = t_a + 1;
-    size_t body_b = t_b - 1;
-
-    size_t body_len = body_b - body_a;
-
-    // Apply the specific doubling rule
-    char *rewritten = double_backslashes_except_dollar_or_tick(src+body_a, body_len);
-    add_edit_take_ownership(edits, cs, ce, rewritten, claimed);
+    add_edit_take_ownership(edits, cs, ce, out, claimed);
+    rl_add(claimed, cs, ce);
 
     return 1;
 }
