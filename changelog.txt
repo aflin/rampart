@@ -1,4 +1,7 @@
 v0.7.4
+    -rampart-langtools      Update llama.cpp.
+                            llamacpp fixes for 32-bit builds.
+
     -rampart-curl           Updated libcurl from 7.73 to 8.23.0, bringing
                             several years of security and bug fixes.
                             Added HTTP/2 support: https requests use HTTP/2
@@ -15,6 +18,9 @@ v0.7.4
 
     -rampart-server         Added streaming capabilities when proxying
                             from another host.
+
+    -rampart                BigInt: 0n is now falsy, so Boolean(0n) and
+                            if (0n) are false, as in the standard.
 
 v0.7.3
     -rampart                utils.exec() run from several threads at once no
