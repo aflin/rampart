@@ -3785,7 +3785,15 @@ static void do_child_loop(SFI *finfo)
             exit(0);
         */
 
-        clearmsgbuf(); // reset the position of the errmap buffer.
+        /* Start each statement (prepare) with an empty buffer, but keep
+         * messages the parent has not read yet: it zeroes the map when it
+         * reads (rp_log_error).  A warning from one command -- prepare's
+         * "would require linear search" -- must survive the parameter
+         * and exec commands that follow it, as it does in-process. */
+        if (mmsgfh)
+            fflush(mmsgfh);
+        if (command == 'p' || !finfo || !finfo->errmap || !finfo->errmap[0])
+            clearmsgbuf(); // reset the position of the errmap buffer.
 
         switch(command)
         {
