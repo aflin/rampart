@@ -3612,6 +3612,105 @@ txMakeEmptyIindex()
 	return(ix);
 }
 
+/* ------------------------------------------------------------------------ */
+
+static int
+txOffCmp(const void *a, const void *b)
+{
+	EPI_OFF_T	x = *(const EPI_OFF_T *)a, y = *(const EPI_OFF_T *)b;
+
+	return (x < y ? -1 : (x > y ? 1 : 0));
+}
+
+static IINDEX *
+txRecidLookupIindex(DBTBL *tb, IINODE *in, PRED *p)
+/* `$recid = n' or `$recid IN (n, ...)' with numeric n: a recid is a
+ * table-file offset, so seek it instead of scanning the table.  An
+ * offset that is not the start of a live row matches nothing.
+ * Returns NULL if `p' is not of that form, to plan it normally.
+ */
+{
+	static CONST char	fn[] = "txRecidLookupIindex";
+	FLD		*fld;
+	char		*fname;
+	int		lookright;
+	size_t		n = 0, i, nok = 0, lnameLen;
+	EPI_HUGEUINT	nrecs = 0;
+	EPI_OFF_T	*offs = NULL, v;
+	IINDEX		*ix = NULL;
+	BTREE		*bt = NULL;
+	RECID		r;
+
+	if (p->op != FOP_EQ && p->op != FOP_IN) return NULL;
+	fld = TXpredGetColumnAndField(p, &lookright, &fname);
+	if (!fld || !fname) return NULL;
+	if (p->op == FOP_IN && !lookright) return NULL;	/* n IN ($recid) */
+	if (!tb->rname || !tb->tbl || tb->type != TEXIS_TABLE ||
+	    isramdbtbl(tb))
+		return NULL;
+	/* this table's own $recid, bare or `table.$recid': */
+	if (strcmp(fname, TXrecidColumnName) != 0 &&
+	    !(tb->lname && (lnameLen = strlen(tb->lname)) > 0 &&
+	      strncmp(fname, tb->lname, lnameLen) == 0 &&
+	      fname[lnameLen] == '.' &&
+	      strcmp(fname + lnameLen + 1, TXrecidColumnName) == 0))
+		return NULL;
+	switch (fld->type & DDTYPEBITS)
+	{
+	case FTN_INT64: case FTN_LONG: case FTN_INT: case FTN_INTEGER:
+	case FTN_DOUBLE: case FTN_RECID:
+		break;
+	default:		/* e.g. a hex string: compared as before */
+		return NULL;
+	}
+	if (TXfldIsNull(fld)) return NULL;
+	getfld(fld, &n);
+	if (n > 0)
+	{
+		offs = (EPI_OFF_T *)TXmalloc(TXPMBUFPN, fn, n * sizeof(EPI_OFF_T));
+		if (!offs) return NULL;
+	}
+	for (i = 0; i < n; i++)
+	{
+		/* -1 means "next block" to the DBF layer, and block 0 is
+		 * the table's schema (DD), not a row: */
+		if (!TXrecidIntItem(fld, i, &v) || v <= (EPI_OFF_T)0) continue;
+		TXsetrecid(&r, v);
+		if (validrow(tb->tbl, &r)) offs[nok++] = v;
+	}
+	if (nok > 1) qsort(offs, nok, sizeof(EPI_OFF_T), txOffCmp);
+
+	ix = openiindex();
+	if (!ix) goto err;
+	bt = openbtree(NULL, BT_MAXPGSZ, 20, BT_FIXED, O_RDWR | O_CREAT);
+	if (!bt) goto err;
+	BTPARAM_INIT_TO_PROCESS_DEFAULTS(&bt->params, tb->ddic);
+	for (i = 0; i < nok; i++)
+	{
+		if (i > 0 && offs[i] == offs[i - 1]) continue;	/* dup in list */
+		TXsetrecid(&r, offs[i]);
+		btinsert(bt, &r, sizeof(r), &r);
+		nrecs++;
+	}
+	rewindbtree(bt);
+#ifdef NEW_I
+	ix->mirror = dbidxfrombtree(bt, DBIDX_BTREE);
+#else
+	ix->mirror = bt;
+#endif
+	bt = NULL;				/* owned by `ix' now */
+	ix->cntorig = nrecs;
+	in->gpred = NULL;		/* per-row check still applies */
+	goto done;
+
+err:
+	ix = closeiindex(ix);
+	bt = closebtree(bt);
+done:
+	offs = TXfree(offs);
+	return ix;
+}
+
 /******************************************************************/
 
 /* LIKEV string->vector auto-embed.
@@ -3922,7 +4021,9 @@ TBSPEC *tbspec;
 		return NULL;
 	}
 	p->assumetrue++;
-	rc = realwork(tb, in, p, fo, asc, inv, tbspec);
+	rc = txRecidLookupIindex(tb, in, p);
+	if (!rc)
+		rc = realwork(tb, in, p, fo, asc, inv, tbspec);
 	p->assumetrue--;
 	return rc;
 }

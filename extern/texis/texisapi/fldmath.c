@@ -1450,6 +1450,8 @@ TX_FLDOP_SYMBOLS_LIST
 		fosetop(fo, FTN_SMALLINT, FTN_INTEGER,foshin,(fop_type*)NULL);
 		fosetop(fo, FTN_WORD, FTN_INTEGER, fowoin, (fop_type *)NULL);
 		fosetop(fo, FTN_INTEGER, FTN_WORD, foinwo, (fop_type *)NULL);
+		fosetop(fo, FTN_RECID, FTN_INTEGER, forein, (fop_type *)NULL);
+		fosetop(fo, FTN_INTEGER, FTN_RECID, foinre, (fop_type *)NULL);
 		/* wtf rest of default ops... */
 	}
 	else

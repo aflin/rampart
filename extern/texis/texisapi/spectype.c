@@ -3457,6 +3457,155 @@ int op;
 }
 
 /******************************************************************/
+/* $recid as a number: a recid is a table-file offset, so it compares
+ * and converts as that offset.  Comparisons are done directly rather
+ * than via promop(), so that `$recid IN (list of numbers)' works. */
+
+static int
+txRecidNum(FLD *f, size_t i, EPI_OFF_T *iv, double *dv)
+/* Item `i' of recid, integral or double field `f'.  Returns 1 and sets
+ * `*iv' if it is a whole number, 2 and sets `*dv' for a fractional (or
+ * NaN) double, 0 if `f' is another type or has no item `i'. */
+{
+	void	*v;
+	size_t	n;
+	double	d;
+
+	v = getfld(f, &n);
+	if (!v || i >= n) return 0;
+	switch (f->type & DDTYPEBITS)
+	{
+	case FTN_RECID:   *iv = ((ft_recid *)v)[i].off;              break;
+	case FTN_INT64:   *iv = (EPI_OFF_T)((ft_int64 *)v)[i];       break;
+	case FTN_LONG:    *iv = (EPI_OFF_T)((ft_long *)v)[i];        break;
+	case FTN_INT:     *iv = (EPI_OFF_T)((ft_int *)v)[i];         break;
+	case FTN_INTEGER: *iv = (EPI_OFF_T)((ft_integer *)v)[i];     break;
+	case FTN_DOUBLE:		/* how a JS Number list binds */
+		d = (double)((ft_double *)v)[i];
+		if (d >= -9223372036854775808.0 && d < 9223372036854775808.0 &&
+		    (double)(EPI_OFF_T)d == d)
+		{
+			*iv = (EPI_OFF_T)d;
+			break;
+		}
+		*dv = d;
+		return 2;
+	default:          return 0;
+	}
+	return 1;
+}
+
+int
+TXrecidIntItem(FLD *f, size_t i, EPI_OFF_T *out)
+/* Sets `*out' to item `i' of `f' if it is a whole number (recid,
+ * integral, or integral double).  Returns 0 otherwise. */
+{
+	double	d;
+
+	return txRecidNum(f, i, out, &d) == 1;
+}
+
+static int
+txRecidCmp(FLD *f1, FLD *f2, FLD *f3, int op)
+/* Comparison `op' between recid/integral `f1' and `f2'. */
+{
+	EPI_OFF_T	a, b;
+	double		da, db;
+	size_t		i, n2;
+	int		ka, kb, r;
+
+	if (!(op & FOP_CMP)) return FOP_EINVAL;
+	if (TXfldIsNull(f1) || TXfldIsNull(f2))
+		return TXfldmathReturnNull(f1, f3);
+	if (!(ka = txRecidNum(f1, 0, &a, &da))) return FOP_EINVAL;
+	switch (op)
+	{
+	case FOP_IN:
+	case FOP_IS_SUBSET:
+	case FOP_INTERSECT_IS_EMPTY:
+	case FOP_INTERSECT_IS_NOT_EMPTY:
+		getfld(f2, &n2);
+		for (i = 0; ka == 1 && i < n2; i++)
+			if (txRecidNum(f2, i, &b, &db) == 1 && a == b)
+				return fld2finv(f3, op != FOP_INTERSECT_IS_EMPTY);
+		return fld2finv(f3, op == FOP_INTERSECT_IS_EMPTY);
+	}
+	if (!(kb = txRecidNum(f2, 0, &b, &db))) return FOP_EINVAL;
+	if (ka == 1 && kb == 1)
+		r = (a < b ? -1 : (a > b ? 1 : 0));
+	else
+	{			/* a fractional double: never equal to an offset */
+		if (ka == 1) da = (double)a;
+		if (kb == 1) db = (double)b;
+		if (da != da || db != db)		/* NaN */
+			return fld2finv(f3, op == FOP_NEQ);
+		r = (da < db ? -1 : (da > db ? 1 : 0));
+	}
+	switch (op)
+	{
+	case FOP_EQ:  return fld2finv(f3, r == 0);
+	case FOP_NEQ: return fld2finv(f3, r != 0);
+	case FOP_LT:  return fld2finv(f3, r < 0);
+	case FOP_LTE: return fld2finv(f3, r <= 0);
+	case FOP_GT:  return fld2finv(f3, r > 0);
+	case FOP_GTE: return fld2finv(f3, r >= 0);
+	case FOP_COM: return fld2finv(f3, r);
+	default:      return FOP_EINVAL;
+	}
+}
+
+static int
+txRecidAsn(FLD *f1, FLD *f2, FLD *f3)
+/* f3 = f2, as the type of `f1' (recid, integral or double). */
+{
+	EPI_OFF_T	v;
+	void		*p;
+
+	if (TXfldIsNull(f2))
+		return TXfldmathReturnNull(f1, f3);
+	if (!TXrecidIntItem(f2, 0, &v)) return FOP_EINVAL;
+	TXmakesimfield(f1, f3);
+	p = getfld(f3, NULL);
+	if (!p) return FOP_EINVAL;
+	switch (f3->type & DDTYPEBITS)
+	{
+	case FTN_RECID:   ((ft_recid *)p)->off = v;          break;
+	case FTN_INT64:   *(ft_int64 *)p = (ft_int64)v;      break;
+	case FTN_LONG:    *(ft_long *)p = (ft_long)v;        break;
+	case FTN_INT:     *(ft_int *)p = (ft_int)v;          break;
+	case FTN_INTEGER: *(ft_integer *)p = (ft_integer)v;  break;
+	case FTN_DOUBLE:  *(ft_double *)p = (ft_double)v;    break;
+	default:          return FOP_EINVAL;
+	}
+	f3->n = 1;
+	f3->size = f3->elsz;
+	return 0;
+}
+
+/* FOP_CNV converts f1 to f2's type: the ASN of the swapped pair. */
+#define TX_RECID_OP(name)						\
+int									\
+name(FLD *f1, FLD *f2, FLD *f3, int op)					\
+{									\
+	switch (op)							\
+	{								\
+	case FOP_CNV: return txRecidAsn(f2, f1, f3);			\
+	case FOP_ASN: return txRecidAsn(f1, f2, f3);			\
+	default:      return txRecidCmp(f1, f2, f3, op);		\
+	}								\
+}
+TX_RECID_OP(forere)
+TX_RECID_OP(forei6)
+TX_RECID_OP(foi6re)
+TX_RECID_OP(forelo)
+TX_RECID_OP(folore)
+TX_RECID_OP(forein)
+TX_RECID_OP(foinre)
+TX_RECID_OP(foredo)
+TX_RECID_OP(fodore)
+#undef TX_RECID_OP
+
+/******************************************************************/
 
 int
 fochbi(f1, f2, f3, op)

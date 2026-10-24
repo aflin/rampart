@@ -903,6 +903,7 @@ int	TXcreateDb(TXPMBUF *pmbuf, const char *path,
 
 #ifndef OLD_FLDMATH
 int	TXmakesimfield ARGS((FLD *, FLD *));
+int	TXrecidIntItem(FLD *f, size_t i, EPI_OFF_T *out);
 int	TXfreevirtualdata ARGS((FLD *));
 #endif
 int	TXlikein ARGS((FLD *, FLD *));

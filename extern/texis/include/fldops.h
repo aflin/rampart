@@ -192,6 +192,7 @@ extern int fld2flov ARGS((FLD *f,ft_long val));/* set fld to long type set to va
   I(FTN_DOUBLE,         FTN_INT64,      fodoi6) \
   I(FTN_DOUBLE,         FTN_INT,        fodoin) \
   I(FTN_DOUBLE,         FTN_LONG,       fodolo) \
+  I(FTN_DOUBLE,         FTN_RECID,      fodore) \
   I(FTN_DOUBLE,         FTN_SHORT,      fodosh) \
   I(FTN_DOUBLE,         FTN_STRLST,     fodosl) \
   I(FTN_DOUBLE,         FTN_SMALLINT,   fodosm) \
@@ -251,6 +252,7 @@ extern int fld2flov ARGS((FLD *f,ft_long val));/* set fld to long type set to va
   I(FTN_INT64,          FTN_INT64,      foi6i6) \
   I(FTN_INT64,          FTN_INT,        foi6in) \
   I(FTN_INT64,          FTN_LONG,       foi6lo) \
+  I(FTN_INT64,          FTN_RECID,      foi6re) \
   I(FTN_INT64,          FTN_SHORT,      foi6sh) \
   I(FTN_INT64,          FTN_STRLST,     foi6sl) \
   I(FTN_INT64,          FTN_SMALLINT,   foi6sm) \
@@ -291,6 +293,7 @@ extern int fld2flov ARGS((FLD *f,ft_long val));/* set fld to long type set to va
   I(FTN_INT,            FTN_INT64,      foini6) \
   I(FTN_INT,            FTN_INT,        foinin) \
   I(FTN_INT,            FTN_LONG,       foinlo) \
+  I(FTN_INT,            FTN_RECID,      foinre) \
   I(FTN_INT,            FTN_SHORT,      foinsh) \
   I(FTN_INT,            FTN_STRLST,     foinsl) \
   I(FTN_INT,            FTN_SMALLINT,   foinsm) \
@@ -309,12 +312,18 @@ extern int fld2flov ARGS((FLD *f,ft_long val));/* set fld to long type set to va
   I(FTN_LONG,           FTN_INT,        foloin) \
   I(FTN_LONG,           FTN_INTEGER,    foloir) \
   I(FTN_LONG,           FTN_LONG,       fololo) \
+  I(FTN_LONG,           FTN_RECID,      folore) \
   I(FTN_LONG,           FTN_SHORT,      folosh) \
   I(FTN_LONG,           FTN_STRLST,     folosl) \
   I(FTN_LONG,           FTN_SMALLINT,   folosm) \
   I(FTN_LONG,           FTN_UINT64,     folou6) \
   I(FTN_LONG,           FTN_WORD,       folowo) \
   I(FTN_RECID,          FTN_CHAR,       forech) \
+  I(FTN_RECID,          FTN_DOUBLE,     foredo) \
+  I(FTN_RECID,          FTN_INT,        forein) \
+  I(FTN_RECID,          FTN_INT64,      forei6) \
+  I(FTN_RECID,          FTN_LONG,       forelo) \
+  I(FTN_RECID,          FTN_RECID,      forere) \
   I(FTN_SHORT,          FTN_CHAR,       foshch) \
   I(FTN_SHORT,          FTN_DOUBLE,     foshdo) \
   I(FTN_SHORT,          FTN_DWORD,      foshdw) \

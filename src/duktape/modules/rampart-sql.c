@@ -49,6 +49,7 @@ static int defexp=1, defindtmp=1;
 
 #define QFLAG_GETCOUNTS 1 /* whether to include metamorph counts in return */
 #define QFLAG_RAWVEC 2    /* whether to return raw vectors rather than new rampart.vector() */
+#define QFLAG_WITHID 4    /* add "$recid" to rows of insert/update/delete */
 
 QUERY_STRUCT
 {
@@ -64,7 +65,7 @@ QUERY_STRUCT
                            1 for array
                            2 for novars                                           */
     char err;
-    uint8_t flags;         /* right now, just QFLAG_GETCOUNTS and QFLAG_RAWVEC */
+    uint8_t flags;         /* QFLAG_GETCOUNTS, QFLAG_RAWVEC, QFLAG_WITHID */
 };
 
 static duk_ret_t rp_sql_close(duk_context *ctx);
@@ -747,6 +748,8 @@ DB_HANDLE
 #define DB_FLAG_EMBED_ENABLED 4
 // embed callback registered in this connection's helper child
 #define DB_FLAG_EMBED_CHILD_REGISTERED 8
+// current exec asked for withId: h_fetch() shows the synthetic recid field
+#define DB_FLAG_WITHID 16
 
 /* Forward decl for the V-registration helper; needs DB_HANDLE. */
 static int fork_maybe_register_embed(DB_HANDLE *h);
@@ -2223,6 +2226,73 @@ static void *msg_recv(SFI *finfo, int *sizep)
 /* Serialize ONE row.  Caller must have completed the tag/header exchange
  * first (see msg_begin): chunk signals emitted from here would otherwise
  * be read as tags by a peer in another loop. */
+/* withId: each insert/update/delete row gets the affected row's recid as
+ * a last field named RP_SYNTH_RECID.  It is added where texis runs (here
+ * or in the fork helper), so it crosses the fork wire as an ordinary
+ * field; h_fetch() then shows it as "$recid" or drops it. */
+#define RP_SYNTH_RECID "\xff$recid"
+static const char rp_recid_name[] = "$recid";   /* shown name, by pointer */
+static __thread RECID rp_synth_recid;   /* the field points here */
+
+static void rp_fl_add_recid(TEXIS *tx, FLDLST *fl)
+{
+    LPSTMT st;
+    QNODE *qn;
+    DBTBL *t;
+
+    if (!fl || !tx || !(st = (LPSTMT)tx->hstmt) || !(qn = st->query) || !qn->q)
+        return;
+    switch (qn->op)
+    {
+        /* where each writer leaves the row it just wrote; for update
+           that is the row's new home if it had to move (procupd.c) */
+        case INSERT_OP:  t = qn->q->out; break;
+        case UPD_SEL_OP:
+        case DEL_SEL_OP: t = qn->q->in1; break;
+        default:         return;
+    }
+    if (!t || fl->n >= FLDLSTMAX)
+        return;
+    rp_synth_recid = t->recid;
+    fl->type[fl->n]  = FTN_RECID;
+    fl->data[fl->n]  = &rp_synth_recid;
+    fl->ndata[fl->n] = 1;
+    fl->name[fl->n]  = RP_SYNTH_RECID;
+    fl->n++;
+}
+
+static void rp_fl_finish_recid(DB_HANDLE *h, FLDLST *fl)
+{
+    int last;
+
+    if (!fl || fl->n < 1)
+        return;
+    last = fl->n - 1;
+    if (strcmp(fl->name[last], RP_SYNTH_RECID) != 0)
+        return;
+    if (DB_HANDLE_IS(h, DB_FLAG_WITHID))
+        fl->name[last] = (char *)rp_recid_name;
+    else
+        fl->n--;
+}
+
+/* withId without returnRows: keep only the recid field */
+static void rp_fl_idonly(FLDLST *fl)
+{
+    int last = fl->n - 1;
+
+    if (last < 0 || fl->name[last] != rp_recid_name)
+    {
+        fl->n = 0;
+        return;
+    }
+    fl->type[0]  = fl->type[last];
+    fl->data[0]  = fl->data[last];
+    fl->ndata[0] = fl->ndata[last];
+    fl->name[0]  = fl->name[last];
+    fl->n = 1;
+}
+
 static int serialize_fl(SFI *finfo, FLDLST *fl)
 {
     FMINFO *mapinfo = finfo->mapinfo;
@@ -2321,6 +2391,7 @@ static int child_fetch()
      * (child_embed_callback) for SELECT-list embed() calls; those
      * emit 'B' interleaved with this response.  Final tag is 'A'. */
     fl = texis_fetch(tx, stringFrom);
+    rp_fl_add_recid(tx, fl);
 
     /* 'A' must be written HERE -- after the last callback texis_fetch
      * could emit, but BEFORE serialize_fl().
@@ -4384,9 +4455,17 @@ static int h_exec(DB_HANDLE *h)
 
 static FLDLST *h_fetch(DB_HANDLE *h,  int stringsFrom)
 {
+    FLDLST *fl;
+
     if(DB_HANDLE_IS(h, DB_FLAG_FORK))
-        return fork_fetch(h, stringsFrom);
-    return TEXIS_FETCH(h->tx, stringsFrom);
+        fl = fork_fetch(h, stringsFrom);
+    else
+    {
+        fl = TEXIS_FETCH(h->tx, stringsFrom);
+        rp_fl_add_recid(h->tx, fl);
+    }
+    rp_fl_finish_recid(h, fl);
+    return fl;
 }
 
 
@@ -4613,6 +4692,14 @@ static QUERY_STRUCT rp_get_query(duk_context *ctx)
                         {
                             if (REQUIRE_BOOL(ctx, -1, "sql: rawVectors must be a Boolean"))
                                 q->flags |= QFLAG_RAWVEC;
+                            gotsettings=1;
+                        }
+                        duk_pop(ctx);
+
+                        if (duk_get_prop_string(ctx, i, "withId"))
+                        {
+                            if (REQUIRE_BOOL(ctx, -1, "sql: withId must be a Boolean"))
+                                q->flags |= QFLAG_WITHID;
                             gotsettings=1;
                         }
                         duk_pop(ctx);
@@ -5636,6 +5723,18 @@ static void rp_pushfield(duk_context *ctx, FLDLST *fl, int i, int rawvec)
         }
         break;
     }
+    case FTN_RECID:
+    {
+        /* a table-file offset: exact as a double below 2^53 (8 PiB) */
+        ft_recid rid;
+
+        memcpy(&rid, fl->data[i], sizeof(rid));
+        if (rid.off < 0)
+            duk_push_null(ctx);
+        else
+            duk_push_number(ctx, (duk_double_t)rid.off);
+        break;
+    }
     case FTN_BYTE:
     {
         unsigned char *p;
@@ -5659,11 +5758,15 @@ static int rp_fetch(duk_context *ctx, DB_HANDLE *h, QUERY_STRUCT *q)
 {
     int i       = 0,
         rettype = q->rettype,
-        rawvec = q->flags & QFLAG_RAWVEC;
+        rawvec = q->flags & QFLAG_RAWVEC,
+        idonly = (rettype == 2 && (q->flags & QFLAG_WITHID));
     uint64_t rown   = 0,
              resmax = q->max;
     FLDLST *fl;
     TXCOUNTINFO cinfo;
+
+    if (idonly)
+        rettype = 0;    /* rows of just {"$recid": n} */
 
     if(q->flags & QFLAG_GETCOUNTS)
         h_getCountInfo(h, &cinfo);
@@ -5735,6 +5838,8 @@ static int rp_fetch(duk_context *ctx, DB_HANDLE *h, QUERY_STRUCT *q)
     {
         while (rown < resmax && (fl = h_fetch(h, -1)))
         {
+            if (idonly)
+                rp_fl_idonly(fl);
             if (!rown)
             {
                 /* an array of column names */
@@ -5785,7 +5890,8 @@ static int rp_fetchWCallback(duk_context *ctx, DB_HANDLE *h, QUERY_STRUCT *q)
 {
     int i       = 0,
         rettype = q->rettype,
-        rawvec = q->flags & QFLAG_RAWVEC;
+        rawvec = q->flags & QFLAG_RAWVEC,
+        idonly = (rettype == 2 && (q->flags & QFLAG_WITHID));
     uint64_t rown   = 0,
              resmax = q->max;
     duk_idx_t callback_idx = q->callback,
@@ -5813,8 +5919,13 @@ static int rp_fetchWCallback(duk_context *ctx, DB_HANDLE *h, QUERY_STRUCT *q)
     } else duk_call_method(ctx, 4);\
 } while(0)
 
+    if (idonly)
+        rettype = 0;    /* rows of just {"$recid": n} */
+
     while (rown < resmax && (fl = h_fetch(h, -1)))
     {
+        if (idonly)
+            rp_fl_idonly(fl);
 
         if (!rown)
         {
@@ -7451,6 +7562,12 @@ static duk_ret_t rp_sql_exec_query(duk_context *ctx, int isquery)
     /* skip rows using texisapi */
     if (q->skip)
         h_skip(h, q->skip);
+
+    /* set or clear every time, so it cannot leak into a later exec */
+    if (q->flags & QFLAG_WITHID)
+        DB_HANDLE_SET(h, DB_FLAG_WITHID);
+    else
+        DB_HANDLE_CLEAR(h, DB_FLAG_WITHID);
 
     /* callback - return one row per callback */
     if (q->callback > -1)
