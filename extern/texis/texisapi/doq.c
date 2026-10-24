@@ -23,6 +23,20 @@ static int	verbose = 0;
 
 /******************************************************************/
 
+static void
+txOrderPutRecid(DBTBL *out, RECID *src)
+/* ORDER BY copies source rows into a temp table; set the `$recid'
+ * column prq.c added to it, so the source recid can be selected. */
+{
+	FLD	*f;
+
+	if (!src || out->rname || !out->tbl) return;
+	f = nametofld(out->tbl, (char *)TXrecidColumnName);
+	if (f) putfld(f, src, 1);
+}
+
+/******************************************************************/
+
 int
 TXshowactions(v)
 int	v;
@@ -619,6 +633,8 @@ int offset;
 				}
 				q->nrows += toskip + 1;
 				query->state = QS_ACTIVE;
+				if (q->in1->rname)
+					txOrderPutRecid(q->out, &q->in1->recid);
 				xrc = tup_write(q->out, q->in1, fo, 0)?1:0;
 				/* ??? Why needed? Never read, just written: */
 				TXaddstatrow(q->out->nfldstat, q->out, fo);
@@ -762,6 +778,8 @@ int offset;
 				indexRankFld = dbnametofld(q->in2,
 						  (char *)TXrankColumnName);
 				/* Write `q->in1' tuple to `q->out': */
+				if (q->in1->rname)
+					txOrderPutRecid(q->out, where);
 				index = tup_write(q->out, q->in1, fo, 0);
 				rc = gettblrow(q->out->tbl, index)?1:-1;/*?*/
 				/* Copy $rank from `q->in2' too, if there: */

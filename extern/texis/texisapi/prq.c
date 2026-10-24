@@ -194,11 +194,18 @@ int allowbubble;
 			q->out = (DBTBL *)calloc(1, sizeof(DBTBL));
 #ifndef NO_PROP_RANK
 			{
-				DD *dd = TXexpanddd(tbldd(tb1->tbl),1);
+				DD *dd = TXexpanddd(tbldd(tb1->tbl),2); /* $rank, $recid */
 
 				if(q->priorproj)
 					putdd(dd, (char *)TXrankColumnName,
 					   (char *)TXrankColumnTypeStr, 1, 1);
+				/* Carry the source's $recid too, or this temp
+				 * table cannot supply it; doq.c fills it.
+				 * Like $rank, only under a projection: with
+				 * none (SELECT *) this table is the output. */
+				if (q->priorproj && tb1->rname)
+					putdd(dd, (char *)TXrecidColumnName,
+					      (char *)"recid", 1, 1);
 				q->out->tbl = createtbl(dd, NULL);
 				closedd(dd);
 			}
