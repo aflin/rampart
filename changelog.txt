@@ -8,6 +8,23 @@ v0.7.5
                             Fixed sql.errMsg missing warnings in threads.
                             Fixed selecting $recid with ORDER BY a column
                             name.
+                            An UPDATE refused by a unique index is no
+                            longer counted or returned as updated.
+                            Fixed importCsv() and importCsvFile() crashing
+                            in threads.
+                            importCsv() and importCsvFile() store empty
+                            text cells as "" instead of "0".
+
+    -rampart                rampart.import.csv() and csvFile():
+                            Fixed dates from other threads appearing in
+                            results when several threads import at once.
+                            progressFunc now runs when hasHeaderRow is
+                            set.
+                            progressStep below 1 now throws.
+                            BEHAVIOR CHANGE: with normalize, a number in a
+                            date column becomes that moment in time; it
+                            was shifted by the local UTC offset.  This
+                            also affects sql.importCsv().
 
 v0.7.4
     -rampart-langtools      Update llama.cpp.

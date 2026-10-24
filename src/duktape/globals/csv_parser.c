@@ -119,6 +119,14 @@ closeCSV(CSV *csv)
 * Casts an item from one type to another if possible
 */
 
+/* progress callback due on row `i': every cb_step-th row starting at
+   step_mod (1 with a header row, so the header itself is skipped) */
+#define CB_DUE(csv, i) \
+   ((int)(i) >= (int)(csv)->step_mod && \
+    ((unsigned)((int)(i) - (int)(csv)->step_mod)) % (csv)->cb_step == 0)
+
+/* dateTime cells hold local time (read back with mktime()), so seconds
+   since the epoch convert with localtime_r(): the same instant in any TZ */
 static void
 convertCSVItem(CSVITEM *item,enum CSVitemType toType)
 {
@@ -133,7 +141,7 @@ convertCSVItem(CSVITEM *item,enum CSVitemType toType)
          {
             case floatingPoint: item->floatingPoint=(double)item->integer;item->type=floatingPoint;return;
             case string       : item->type=string;return; // the string is already stored
-            case dateTime     : T=(time_t)item->integer;item->dateTime= *gmtime(&T); item->type=dateTime;return;
+            case dateTime     : T=(time_t)item->integer;localtime_r(&T, &item->dateTime); item->type=dateTime;return;
             default           : return; // converion to NIL makes no sense
          } break;
       case floatingPoint:
@@ -141,7 +149,7 @@ convertCSVItem(CSVITEM *item,enum CSVitemType toType)
          {
             case integer      : item->integer=(int64_t)item->floatingPoint;item->type=integer;return;
             case string       : item->type=string; return;
-            case dateTime     : T=(time_t)item->floatingPoint;item->dateTime= *gmtime(&T); item->type=dateTime;return; // if you insist...
+            case dateTime     : T=(time_t)item->floatingPoint;localtime_r(&T, &item->dateTime); item->type=dateTime;return; // if you insist...
             default           : return;
          } break;
       case string: // conversion from string type to anything else isn't possible, because it would have already done so if possible.
@@ -190,7 +198,7 @@ normalizeCSVColumn(CSV *csv,int columnN,int startRow)
        for(i=startRow;i<csv->rows;i++)
        {
           typeCount[csv->item[i][columnN].type]+=1;
-          if(i % csv->cb_step == csv->step_mod )
+          if(CB_DUE(csv, i))
              csv->cb(stagen,i,csv);
        }
        stagen++;
@@ -220,7 +228,7 @@ normalizeCSVColumn(CSV *csv,int columnN,int startRow)
       for(i=startRow;i<csv->rows;i++)
       {
          convertCSVItem(&csv->item[i][columnN],maxtype);
-         if(i % csv->cb_step == csv->step_mod )
+         if(CB_DUE(csv, i))
              csv->cb(stagen,i,csv);
       }
    }
@@ -443,7 +451,7 @@ dimensionCSV(CSV *csv)
             }
          }
 
-         if(csv->cb && csv->rows%csv->cb_step == csv->step_mod ) // -ajf 12/30/2021
+         if(csv->cb && CB_DUE(csv, csv->rows)) // -ajf 12/30/2021
             csv->cb(0,csv->rows,csv);
 
          ++csv->rows;
@@ -898,7 +906,7 @@ parseCSV(CSV *csv)
    
       if(csv->cb && item_count % csv->cols == 0)
       {
-         if(row_count % csv->cb_step == csv->step_mod )
+         if(CB_DUE(csv, row_count))
             csv->cb(1,row_count,csv);
          row_count++;
       }

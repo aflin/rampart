@@ -320,9 +320,13 @@ duk_pop(ctx);\
 
         if (duk_get_prop_string(ctx, obj_idx, "progressStep") )
         {
-            csv->cb_step=REQUIRE_INT(ctx, -1, "%s(): option progressStep requires an Integer greater than 0", func_name);
-            if (dcsv.cbstep<1)
+            int step = REQUIRE_INT(ctx, -1, "%s(): option progressStep requires an Integer greater than 0", func_name);
+            if (step<1)
+            {
+                closeCSV(csv);
                 RP_THROW(ctx, "%s(): option progressStep requires an Integer greater than 0", func_name);
+            }
+            csv->cb_step=(unsigned int)step;
         }
         duk_pop(ctx);
     }

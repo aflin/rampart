@@ -6027,7 +6027,6 @@ static duk_ret_t rp_sql_import(duk_context *ctx, int isfile)
     int ncols=dcsv.csv->cols, i=0;
     int tbcols=0, start=0;
     DB_HANDLE *h = NULL;
-    TEXIS *tx=NULL;
     char **field_names=NULL;
     uint8_t *field_type=NULL;
     int field_type_size=0;
@@ -6104,8 +6103,6 @@ static duk_ret_t rp_sql_import(duk_context *ctx, int isfile)
     h_reset_tx_default(ctx, h, this_idx, IF_CHANGED);
     duk_pop(ctx);//this
 
-    tx = h->tx;
-
     {
         FLDLST *fl;
         char sql[256];
@@ -6138,11 +6135,18 @@ static duk_ret_t rp_sql_import(duk_context *ctx, int isfile)
 
             field_names[tbcols] = strdup(fl->data[0]);
 
-            /* keep track of which fields are counter */
-            if(!strncmp(fl->data[1],"counter",7))
-                field_type[tbcols] = 1;
-            else
-                field_type[tbcols] = 0;
+            /* 1 = counter, 2 = char/varchar (an empty value is ""), 0 = other */
+            {
+                const char *t = (const char *)fl->data[1];
+                size_t tl = strlen(t);
+
+                if(!strncmp(t,"counter",7))
+                    field_type[tbcols] = 1;
+                else if(tl >= 4 && !strcmp(t + tl - 4, "char"))
+                    field_type[tbcols] = 2;
+                else
+                    field_type[tbcols] = 0;
+            }
 
             tbcols++;
         }
@@ -6239,29 +6243,26 @@ static duk_ret_t rp_sql_import(duk_context *ctx, int isfile)
         }
 
         {
-            int slen = 24 + strlen(dcsv.tbname) + (2*tbcols) -1;
+            /* "counter," is the longest per-column text */
+            int slen = 32 + strlen(dcsv.tbname) + (8*tbcols);
             char sql[slen];
             CSV *csv = dcsv.csv;
             void *v=NULL;   /* value to be passed to db */
             long plen, datelong;
-            int in=0, out=0, row=0, col=0, intzero=0;
-            DDIC *ddic=NULL;
-            ft_counter *ctr = NULL;
-            LPSTMT lpstmt;
+            int in=0, out=0, row=0, col=0, pn=0, intzero=0;
+            char emptystr[1] = "";
 
-            lpstmt = tx->hstmt;
-            if(lpstmt && lpstmt->dbc && lpstmt->dbc->ddic)
-                ddic = lpstmt->dbc->ddic;
-            else
-            {
-                throw_tx_error(ctx, "sql open");;
-            }
-
+            /* A counter column with no csv value gets the keyword `counter',
+               so texis makes the value.  Making it here needs the texis
+               data dictionary, which a forked (thread) connection does not
+               have in this process. */
             snprintf(sql, slen, "insert into %s values (", dcsv.tbname);
-            for (i=0;i<tbcols-1;i++)
-                strcat(sql,"?,");
-
-            strcat(sql,"?);");
+            for (i=0;i<tbcols;i++)
+            {
+                if(i) strcat(sql, ",");
+                strcat(sql, (field_type[i]==1 && col_order[i]<0) ? "counter" : "?");
+            }
+            strcat(sql,");");
 
             //printf("%s, %d, %d\n", sql, slen, (int)strlen(sql) );
 
@@ -6274,10 +6275,14 @@ static duk_ret_t rp_sql_import(duk_context *ctx, int isfile)
             if(dcsv.hasHeader) start=1;
             for(row=start;row<csv->rows;row++)      // iterate through the CSVITEMS contained in each row and column
             {
-                for(  col=0; /* col<csv->cols && */col<tbcols; col++)
+                for(  col=0, pn=0; /* col<csv->cols && */col<tbcols; col++)
                 {
+                    int noval = (col_order[col] < 0);
 
-                    if(col_order[col]>-1)
+                    if(field_type[col]==1 && noval)
+                        continue;   /* `counter' in the statement */
+
+                    if(!noval)
                     {
                     //printf("doing col_order[%d] = %d\n", col, col_order[col]);
                         CSVITEM item=csv->item[row][col_order[col]];
@@ -6312,23 +6317,19 @@ static duk_ret_t rp_sql_import(duk_context *ctx, int isfile)
                                 break;
                             }
                             case nil:
-                                in=SQL_C_INTEGER;
-                                out=SQL_INTEGER;
-                                v=(int*)&intzero;
-                                plen=sizeof(int);
+                                noval = 1;
                                 break;
                         }
                     }
-                    else
+                    if(noval)
                     {
-                        /* insert texis counter if field is a counter type */
-                        if (field_type[col]==1)
+                        /* empty or unmapped: "" for text, 0 for anything else */
+                        if (field_type[col]==2)
                         {
-                            ctr = getcounter(ddic);
-                            v=ctr;
-                            plen=sizeof(ft_counter);
-                            in=SQL_C_COUNTER;
-                            out=SQL_COUNTER;
+                            v=emptystr;
+                            plen=0;
+                            in=SQL_C_CHAR;
+                            out=SQL_VARCHAR;
                         }
                         else
                         {
@@ -6338,29 +6339,10 @@ static duk_ret_t rp_sql_import(duk_context *ctx, int isfile)
                             out=SQL_INTEGER;
                         }
                     }
-                    if( !h_param(h, col+1, v, &plen, in, out))
+                    if( !h_param(h, ++pn, v, &plen, in, out))
                     {
-                        if(ctr) free(ctr);
-                        ctr=NULL;
                         fn_cleanup(0);
                         throw_tx_error_close(ctx, "sql add parameters", h);
-                    }
-                    if(ctr) free(ctr);
-                    ctr=NULL;
-                }
-                if (col<tbcols)
-                {
-                    v=(long*)&intzero;
-                    plen=sizeof(int);
-                    in=SQL_C_INTEGER;
-                    out=SQL_INTEGER;
-                    for(; col<tbcols; col++)
-                    {
-                        if( !h_param(h, col+1, v, &plen, in, out))
-                        {
-                            fn_cleanup(0);
-                            throw_tx_error_close(ctx, "sql add parameters", h);
-                        }
                     }
                 }
 

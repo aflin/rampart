@@ -305,7 +305,7 @@ QUERY *q;
 FLDOP *fo;
 {
 	DBTBL *tb1, *tup;
-	int i, rc;
+	int i, rc, refused = 0;
         A3DBI   *dbi;
 	char **updfields;
 
@@ -381,9 +381,10 @@ FLDOP *fo;
 				tup_copy(tb1, q->out, fo);
 			}
 			else
-			{
+			{		/* would duplicate a unique key: keep the row */
 				tup_copy(q->out, tb1, fo);
 				putdbtblrow(q->out, NULL);
+				refused = 1;
 			}
 			newloc = puttblrow(tb1->tbl, &oldloc);
 			if(newloc)
@@ -443,12 +444,14 @@ FLDOP *fo;
 				DebugBreak();
 			}
 #endif
-			if (q->tr_after)
+			if (q->tr_after && !refused)
 				trigexec(q->tr_after, tb1, fo);
 #ifdef NEVER /* Huh */
 			TXmygettblrow(tb1, &oldloc);
 #endif
-			rc = 0;
+			/* -2: the row was not updated, so the caller skips it
+			 * (not counted or returned) and goes on to the next: */
+			rc = (refused ? -2 : 0);
 			for (i = 0; i < tb1->ndbi; i++)
 			{
                                 dbi = tb1->dbies[i];            /* alias it */
