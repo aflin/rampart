@@ -972,8 +972,15 @@ int clock_gettime(clockid_t type, struct timespec *rettime);
 
 #else //debug_pipe
 
+/* Close once, then mark the slot closed.  A second close of the same int
+   would close whatever another thread opened with that number meanwhile
+   (exec() closed stdin_pipe[1] twice; under load it closed a server
+   thread's start/done pipe, which then crossed with another thread's).  */
 #define rp_pipe_close(x,i) ({\
-    close((x)[(i)]);\
+    if((x)[(i)] >= 0) {\
+        close((x)[(i)]);\
+        (x)[(i)] = -1;\
+    }\
 })
 
 #define rp_pipe(x) rp_pipe_cloexec((x))
