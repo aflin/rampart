@@ -236,6 +236,35 @@ function launchdBootout(serverConf) {
     return removed;
 }
 
+/* Why launchd gave up on the job, or '' if it hasn't (yet).  A job that
+ * never ran (launchd could not even start it) leaves its reason only in
+ * the system log, e.g. "posix_spawn(...) error 0xd - Permission denied",
+ * so fetch launchd's own message for this label since `since'. */
+function launchdJobFailure(domain, label, since) {
+    var p = exec('launchctl', 'print', domain + '/' + label);
+    if (p.exitStatus != 0) return '';
+    var out = '' + (p.stdout || '');
+    var state = /\n\s*state = ([^\n]*)/.exec(out);
+    var code  = /\n\s*last exit code = ([^\n]*)/.exec(out);
+    if (!state || trim(state[1]) != 'not running' || !code) return '';
+    var n = parseInt(code[1], 10);
+    if (isNaN(n) || n == 0) return '';                  /* "(never exited)" */
+
+    var why = 'launchd job is not running (last exit code ' + trim(code[1]) + ')';
+    var lg = exec('log', 'show', '--start', since, '--style', 'compact', '--predicate',
+                  'process == "launchd" AND eventMessage CONTAINS "' + label + '"');
+    var lines = ('' + (lg.stdout || '')).split('\n').filter(function(l) {
+        return /could not initialize|Permission denied|error/i.test(l);
+    });
+    if (lines.length) {
+        var pick = lines.filter(function(l) { return /could not initialize/i.test(l); });
+        var l = pick.length ? pick[pick.length - 1] : lines[lines.length - 1];
+        var m = /\]:\] (.*)$/.exec(l);
+        why += ':\n  launchd: ' + trim(m ? m[1] : l);
+    }
+    return why;
+}
+
 function launchdStart(serverConf) {
     var label  = launchdLabel(serverConf);
     var doms   = launchdDomains();
@@ -244,6 +273,19 @@ function launchdStart(serverConf) {
     var progArgs = isZip ? [ realPath(process.argv0), 'start' ]
                          : [ process.installPathExec, process.script, 'start' ];
     var lelog  = (serverConf.logRoot ? serverConf.logRoot : wd) + '/launchd.log';
+
+    /* launchd opens launchd.log as the user the job runs as, before it
+     * starts the server.  If it can't (e.g. root-owned, left by an
+     * earlier start with sudo), the server never runs -- so check now. */
+    if (domain != 'system') {
+        try {
+            utils.fclose(utils.fopen(lelog, 'a'));
+        } catch(e) {
+            return serr('launchd start: cannot write ' + lelog + ' as ' + iam +
+                        ' (' + e.message + '), so launchd cannot start the server.' +
+                        '  If it was left by a start with sudo, remove it or start with sudo again.');
+        }
+    }
 
     /* launchd provides a minimal environment (system domain: root's).
      * The conf and the model store resolve through $HOME, so pin HOME
@@ -295,6 +337,10 @@ function launchdStart(serverConf) {
     launchdBootout(serverConf);            /* clear any stale job */
     exec('rm', '-f', wd + '/server.pid');  /* don't confuse the poll below
                                               with a stale pidfile */
+    /* failure reports use only this attempt's log lines */
+    var since = dateFmt('%Y-%m-%d %H:%M:%S', new Date());
+    var logStart = 0;
+    try { logStart = stat(lelog).size || 0; } catch(e) {}
     var b, di;
     for (di = 0; di < doms.length; di++) {
         domain = doms[di];
@@ -307,19 +353,26 @@ function launchdStart(serverConf) {
 
     /* Wait for the child to write the pidfile and come up.  Model
      * warm-up in preThreadFunc can take a while, so be patient. */
-    var pid = 0;
+    var pid = 0, failed = '';
     for (i = 0; i < 240; i++) {            /* up to 60s */
         sleep(0.25);
         pid = getPid('server', true);
         if (pid && kill(pid, 0)) break;
         pid = 0;
+        /* about once a second: has launchd already given up on it? */
+        if (i % 4 == 3 && (failed = launchdJobFailure(domain, label, since)))
+            break;
     }
     if (!pid) {
+        if (!failed) failed = launchdJobFailure(domain, label, since) ||
+                              'no server pid after 60 seconds';
         launchdBootout(serverConf);
         var tail = '';
-        try { tail = readFile(lelog, {returnString:true}).slice(-600); } catch(e) {}
-        return serr('Server failed to start under launchd.' +
-                    (tail ? '\n--- launchd log tail ---\n' + tail : ''));
+        try {
+            tail = readFile(lelog, {returnString:true}).slice(logStart).slice(-600);
+        } catch(e) {}
+        return serr('Server failed to start under launchd: ' + failed +
+                    (tail ? '\n--- launchd log (this attempt) ---\n' + tail : ''));
     }
     var ret = smsg('Server has been started.');
     ret.pid = pid;
