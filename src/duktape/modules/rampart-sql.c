@@ -2230,6 +2230,11 @@ static void *msg_recv(SFI *finfo, int *sizep)
  * a last field named RP_SYNTH_RECID.  It is added where texis runs (here
  * or in the fork helper), so it crosses the fork wire as an ordinary
  * field; h_fetch() then shows it as "$recid" or drops it. */
+/* Set when texis lost its lock server connection during a fetch, even
+ * after reconnecting (TXlockServerLostTake()); the statement then fails.
+ * The forked helper reports it with a final 'L' tag instead of 'A'. */
+static __thread int rp_lock_lost = 0;
+
 #define RP_SYNTH_RECID "\xff$recid"
 static const char rp_recid_name[] = "$recid";   /* shown name, by pointer */
 static __thread RECID rp_synth_recid;   /* the field points here */
@@ -2391,6 +2396,11 @@ static int child_fetch()
      * (child_embed_callback) for SELECT-list embed() calls; those
      * emit 'B' interleaved with this response.  Final tag is 'A'. */
     fl = texis_fetch(tx, stringFrom);
+    if (TXlockServerLostTake())
+    {
+        fl = NULL;              /* rows read without locks: stop */
+        atag = 'L';
+    }
     rp_fl_add_recid(tx, fl);
 
     /* 'A' must be written HERE -- after the last callback texis_fetch
@@ -2596,6 +2606,8 @@ static int child_exec()
     /* texis_execute may invoke the registered TXembedFunc
      * (LIKEV with string RHS), emitting 'B' callbacks before 'A'. */
     ret = texis_execute(tx);
+    if (ret && TXlockServerLostTake())
+        ret = 0;                /* lost the lock server: fail it */
 
     if (forkwrite(&atag, 1) == -1) return 0;
     if (forkwrite(&ret, sizeof(int)) == -1) return 0;
@@ -2662,6 +2674,8 @@ static int child_prep()
     }
     //printf("%d: texis_prepare(%p, \"%s\")\n", (int)getpid(),tx, sql);
     ret = texis_prepare(tx, sql);
+    if (ret && TXlockServerLostTake())
+        ret = 0;                /* lost the lock server: fail it */
 
     if(forkwrite(&ret, sizeof(int)) == -1)
         return 0;
@@ -2903,6 +2917,10 @@ static int fork_drain_embed_callbacks(void)
             continue;
         }
         if (tag == 'A') return 0;
+        if (tag == 'L') {       /* 'A', but the lock server was lost */
+            rp_lock_lost = 1;
+            return 0;
+        }
         fprintf(stderr,
                 "rampart-sql: protocol error, unknown tag '%c' (0x%02x)\n",
                 tag, (unsigned char)tag);
@@ -4421,9 +4439,14 @@ static int h_skip(DB_HANDLE *h, int n)
 
 static int h_prep(DB_HANDLE *h, char *sql)
 {
+    int r;
+
     if(DB_HANDLE_IS(h, DB_FLAG_FORK))
         return fork_prep(h, sql);
-    return TEXIS_PREP(h->tx, sql);
+    r = TEXIS_PREP(h->tx, sql);
+    if (r && TXlockServerLostTake())
+        r = 0;                  /* lost the lock server: fail it */
+    return r;
 }
 
 static int h_close(DB_HANDLE *h)
@@ -4456,9 +4479,14 @@ static int h_close(DB_HANDLE *h)
 
 static int h_exec(DB_HANDLE *h)
 {
+    int r;
+
     if(DB_HANDLE_IS(h, DB_FLAG_FORK))
         return fork_exec(h);
-    return TEXIS_EXEC(h->tx);
+    r = TEXIS_EXEC(h->tx);
+    if (r && TXlockServerLostTake())
+        r = 0;                  /* lost the lock server: fail it */
+    return r;
 }
 
 static FLDLST *h_fetch(DB_HANDLE *h,  int stringsFrom)
@@ -4470,6 +4498,11 @@ static FLDLST *h_fetch(DB_HANDLE *h,  int stringsFrom)
     else
     {
         fl = TEXIS_FETCH(h->tx, stringsFrom);
+        if (TXlockServerLostTake())
+        {
+            rp_lock_lost = 1;
+            fl = NULL;          /* rows read without locks: stop */
+        }
         rp_fl_add_recid(h->tx, fl);
     }
     rp_fl_finish_recid(h, fl);
@@ -7233,6 +7266,7 @@ static duk_ret_t rp_sql_exec_query(duk_context *ctx, int isquery)
     sigaction(SIGUSR2, &sa, NULL);
 
     clearmsgbuf();
+    rp_lock_lost = 0;   /* a stale one must not fail this statement */
 
     int nParams=0;
     char *newSql=NULL, **namedSqlParams=NULL;
@@ -7571,6 +7605,14 @@ static duk_ret_t rp_sql_exec_query(duk_context *ctx, int isquery)
     (void)rp_fetch(ctx, h, q);
 
     end:
+    /* lost the lock server mid-fetch: the rows so far were read without
+       locks, so fail the statement instead of returning them */
+    if (rp_lock_lost)
+    {
+        rp_lock_lost = 0;
+        duk_pop(ctx);
+        throw_tx_or_log_error_close(ctx, "sql exec", finfo->errmap, h);
+    }
     rp_log_error(ctx);
     h_end_transaction(h);
 
@@ -11134,8 +11176,8 @@ static const rp_zip_entry *rp_zip_find_basename(const char *name)
 
 /* Resolver hook for the bundled-rampart case: extract texislockd from the
    appended zip to a tempfile and hand the path back to TXrunlockdaemon.
-   The launched daemon, told via -i and -u, idle-exits after 15 minutes
-   and unlinks its own image at startup so /tmp stays clean. */
+   The launched daemon idle-exits on its own default (60s), and, told
+   via -u, unlinks its own image at startup so /tmp stays clean. */
 static int rp_lockd_resolver(char *path, size_t pathsz, int *idle_secs)
 {
     if (!rp_has_zip_payload) return -1;
@@ -11163,7 +11205,7 @@ static int rp_lockd_resolver(char *path, size_t pathsz, int *idle_secs)
 
     if (strlen(tp) >= pathsz) { unlink(tp); return -1; }
     strcpy(path, tp);
-    if (idle_secs) *idle_secs = 900;
+    if (idle_secs) *idle_secs = 0;     /* the daemon's own default */
     return 0;
 }
 

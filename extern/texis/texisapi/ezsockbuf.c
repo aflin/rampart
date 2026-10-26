@@ -1,4 +1,5 @@
 #include "txcoreconfig.h"
+#include <limits.h>
 #include "texint.h"
 #include "ezsockbuf.h"
 
@@ -20,15 +21,18 @@ TXEZsockbuf_client(char *hostname, int port, TXPMBUF *pmbuf)
 
 int
 TXEZsockbuf_putbuffer(TXEZsockbuf *ezsb, char *data, size_t len)
+/* Returns 0 once all of `data' is sent, -1 if the socket fails (e.g.
+ * EPIPE: the lock server connection is gone).  Signed on purpose: a
+ * size_t here turned send()'s -1 into an endless retry loop. */
 {
-  size_t wroteLen;
+  int wrote;
 
   while(len) {
-    wroteLen = ezswrite(ezsb->socket, data, len);
-    if(wroteLen >= 0) {
-      len -= wroteLen;
-      data += wroteLen;
-    }
+    wrote = ezswrite(ezsb->socket, data, (int)(len > INT_MAX ? INT_MAX : len));
+    if(wrote <= 0)                      /* 0 would not progress either */
+      return -1;
+    len -= (size_t)wrote;
+    data += wrote;
   }
   return 0;
 }
@@ -39,8 +43,9 @@ int TXEZsockbuf_putline(TXEZsockbuf *ezsb, char *data, size_t len)
 
 //  printf("Sending: %s\n", data);
 
-  TXEZsockbuf_putbuffer(ezsb, data, len);
-  TXEZsockbuf_putbuffer(ezsb, newline, strlen(newline));
+  if(TXEZsockbuf_putbuffer(ezsb, data, len) < 0 ||
+     TXEZsockbuf_putbuffer(ezsb, newline, strlen(newline)) < 0)
+    return -1;
   return 0;
 }
 
@@ -60,29 +65,28 @@ growbuffer(TXEZsockbuf *ezsb)
 
 char *
 TXEZsockbuf_getline(TXEZsockbuf *ezsb)
+/* Returns the reply, or NULL if the read failed or the server closed
+ * the connection. */
 {
   char *r = NULL;
-  size_t resplen;
+  EPI_SSIZE_T resplen;
 
   if(ezsb->freesz < 256) {
     growbuffer(ezsb);
   }
   resplen = TXezSocketRead(TXPMBUFPN, HtTraceSkt, __FUNCTION__, ezsb->socket, NULL,
     ezsb->head, ezsb->freesz -1, TXbool_False, NULL, TXezSR_IgnoreNoErrs);
+  if(resplen <= 0)          /* -1/-2 error, 0 closed: was r[-1] = '\0' */
+    return NULL;
   r = ezsb->head;
   r[resplen] = '\0';
-  if(r) {
-//    printf("Received: (%d) %s\n", resplen, r);
-  } else {
-//    printf("Received: (%d) (null)\n", resplen);
-    r = NULL;
-  }
   return r;
 }
 #include <unistd.h>
 TXEZsockbuf *
 TXEZsockbuf_close(TXEZsockbuf *ezsb)
 {
+  if(!ezsb) return NULL;
   if(ezsb->socket>0)
       close(ezsb->socket);
 
@@ -104,6 +108,8 @@ TXlockRequest(TXEZsockbuf *ezsb, TXLockRequest *request)
   char reqbuf[1024];
   size_t reqlen;
 
+  if(!ezsb || !request)       /* e.g. no connection after a failed reconnect */
+    return NULL;
   switch(request->type) {
     case TX_LOCK_REQUEST_JSON:
       reqlen = json_dumpb(request->request.json, reqbuf, sizeof(reqbuf)-3, JSON_COMPACT);
@@ -114,7 +120,8 @@ TXlockRequest(TXEZsockbuf *ezsb, TXLockRequest *request)
           printf("LockSend: %s", reqbuf);
           start = TXgettimeofday();
         }
-        TXEZsockbuf_putbuffer(ezsb, reqbuf, reqlen);
+        if(TXEZsockbuf_putbuffer(ezsb, reqbuf, reqlen) < 0)
+          return NULL;
       } else {
         req = json_dumps(request->request.json,JSON_COMPACT);
         if(req) {
@@ -123,7 +130,10 @@ TXlockRequest(TXEZsockbuf *ezsb, TXLockRequest *request)
             printf("LockSend: %s\n", req);
             start = TXgettimeofday();
           }
-          TXEZsockbuf_putline(ezsb, req, reqlen);
+          if(TXEZsockbuf_putline(ezsb, req, reqlen) < 0) {
+            free(req);
+            return NULL;
+          }
           free(req);
         } else {
           return NULL;
@@ -137,7 +147,8 @@ TXlockRequest(TXEZsockbuf *ezsb, TXLockRequest *request)
         printf("LockSend: %s\n", req);
         start = TXgettimeofday();
       }
-      TXEZsockbuf_putbuffer(ezsb, req, reqlen);
+      if(TXEZsockbuf_putbuffer(ezsb, req, reqlen) < 0)
+        return NULL;
       break;
     default: return NULL;
   }

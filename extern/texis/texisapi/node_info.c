@@ -24,7 +24,7 @@ showopentables(DDIC *ddic) {
 		fld_exclusive = dbnametofld(outdbtbl, "EXCLUSIVE");
 		fld_pending = dbnametofld(outdbtbl, "PENDING");
 		request = TXlockRequest_CreateStaticString("{\"status\":null}\n", -1);
-		response = TXlockRequest(ddic->dblock->lockServerSocket, request);
+		response = TXlockRequestDb(ddic, request);
     if(response) {
       j_resp = TXlockRequest_GetJson(response);
 			res = json_dumps(j_resp, JSON_INDENT(3));

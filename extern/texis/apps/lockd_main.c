@@ -1,5 +1,7 @@
 /* For sockaddr_in */
 #include <netinet/in.h>
+#include <netinet/tcp.h>
+#include <arpa/inet.h>
 /* For socket functions */
 #include <sys/socket.h>
 /* For fcntl */
@@ -32,7 +34,12 @@ FILE *logfile;
 
 /* Idle-exit state: when idle_seconds > 0, the daemon exits cleanly after
    idle_seconds elapse with active_conns == 0.  Set via -i / --idle. */
-static int idle_seconds = 0;
+/* Exit after this long with no connections, so the next client starts the
+   current binary (an upgrade takes effect once nothing is using it).
+   No connections means no locks held.  -i 0 = run until killed. */
+static int idle_seconds = 60;
+static int keepalive_idle = 60;           /* seconds; 0 = no keepalive */
+static const char *bind_addr = "127.0.0.1";
 static int active_conns = 0;
 static time_t last_activity = 0;
 static struct event *idle_check_event = NULL;
@@ -71,16 +78,32 @@ success_json(void)
   return ej;
 }
 
+static void connection_drop(lockd_connection *c);
+
 static json_t *
 procconnect(json_t *j, lockd_connection *connection)
 {
   json_t *jd = json_object_get(j, "database");
   json_t *r = NULL;
+  lockd_connection *old;
 
+  jd = json_object_get(j, "pid");
+  if(json_is_integer(jd))
+    connection->pid = (long)json_integer_value(jd);
+  /* A client that lost its connection (e.g. its OS dropped it without a
+   * close, so we never saw EOF) names it here so its locks are released
+   * now.  Only a connection from the same pid may be replaced. */
+  jd = json_object_get(j, "replaces");
+  if(json_is_integer(jd) &&
+     (old = connection_find((unsigned long)json_integer_value(jd))) != NULL &&
+     old != connection && connection->pid > 0 && old->pid == connection->pid)
+    connection_drop(old);
+  jd = json_object_get(j, "database");
   if(jd){
     if(json_is_string(jd)){
       connection_set_database(connection, json_string_value(jd));
       r = success_json();
+      json_object_set_new(r, "id", json_integer((json_int_t)connection->id));
     }
   }
   jd = json_object_get(j, "pretty");
@@ -540,26 +563,49 @@ readcb(struct bufferevent *bev, void *ctx)
   }
 }
 
-void
-errorcb(struct bufferevent *bev, short error, void *ctx)
+static void
+connection_drop(lockd_connection *c)
+/* Closes `c' and releases its locks. */
 {
-  lockd_connection *c;
-
-  c = ctx;
-  if (error & BEV_EVENT_EOF) {
-      /* connection has been closed, do any clean up here */
-      /* ... */
-  } else if (error & BEV_EVENT_ERROR) {
-      /* check errno to see what error occurred */
-      /* ... */
-  } else if (error & BEV_EVENT_TIMEOUT) {
-      /* must be a timeout event handle, handle it */
-      /* ... */
-  }
-  bufferevent_free(bev);
+  bufferevent_free(c->bev);
   connection_delete(c);
   if (active_conns > 0) active_conns--;
   last_activity = time(NULL);
+}
+
+void
+errorcb(struct bufferevent *bev, short error, void *ctx)
+{
+  /* EOF (closed), or an error -- including a keepalive probe answered
+   * with a reset or never answered: the client is gone either way. */
+  (void)bev;
+  (void)error;
+  connection_drop((lockd_connection *)ctx);
+}
+
+static void
+set_keepalive(int fd)
+/* A client whose end vanished without a close never sends EOF; without
+ * probes its locks would be held forever.  Probes start after
+ * keepalive_idle seconds, every idle/6 seconds, 3 tries. */
+{
+  int on = 1, idle = keepalive_idle, cnt = 3;
+  int intvl = keepalive_idle >= 6 ? keepalive_idle / 6 : 1;
+
+  if (keepalive_idle <= 0) return;
+  setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, &on, sizeof(on));
+#if defined(TCP_KEEPIDLE)
+  setsockopt(fd, IPPROTO_TCP, TCP_KEEPIDLE, &idle, sizeof(idle));
+#elif defined(TCP_KEEPALIVE)                    /* macOS */
+  setsockopt(fd, IPPROTO_TCP, TCP_KEEPALIVE, &idle, sizeof(idle));
+#endif
+#ifdef TCP_KEEPINTVL
+  setsockopt(fd, IPPROTO_TCP, TCP_KEEPINTVL, &intvl, sizeof(intvl));
+#endif
+#ifdef TCP_KEEPCNT
+  setsockopt(fd, IPPROTO_TCP, TCP_KEEPCNT, &cnt, sizeof(cnt));
+#endif
+  (void)idle; (void)intvl; (void)cnt;
 }
 
 void
@@ -579,6 +625,7 @@ do_accept(evutil_socket_t listener, short event, void *arg)
     } else {
         lockd_connection *ctx = NULL;
         evutil_make_socket_nonblocking(fd);
+        set_keepalive(fd);
         connection_create(&ctx);
         ctx->bev = bufferevent_socket_new(base, fd, BEV_OPT_CLOSE_ON_FREE);
         bufferevent_setcb(ctx->bev, readcb, NULL, errorcb, (void *)ctx);
@@ -623,7 +670,8 @@ run(void)
         return -1;
 
     sin.sin_family = AF_INET;
-    sin.sin_addr.s_addr = 0;
+    if (inet_pton(AF_INET, bind_addr, &sin.sin_addr) != 1)  /* checked in main */
+        return -1;
     sin.sin_port = htons(40713);
 
     listener = socket(AF_INET, SOCK_STREAM, 0);
@@ -700,8 +748,23 @@ main(int c, char **v)
     } else if (!strcmp(v[i], "-u") || !strcmp(v[i], "--unlink-self")) {
       unlink_self = 1;
       saw_recognized_opt = 1;
+    } else if ((!strcmp(v[i], "-b") || !strcmp(v[i], "--bind")) && i + 1 < c) {
+      bind_addr = v[++i];                       /* default 127.0.0.1 */
+      saw_recognized_opt = 1;
+    } else if ((!strcmp(v[i], "-k") || !strcmp(v[i], "--keepalive")) && i + 1 < c) {
+      keepalive_idle = atoi(v[++i]);            /* 0 = off */
+      if (keepalive_idle < 0) keepalive_idle = 0;
+      saw_recognized_opt = 1;
     }
     /* Unknown args are ignored here (no help/usage to preserve old silent behavior). */
+  }
+
+  {
+    struct in_addr a;
+    if (inet_pton(AF_INET, bind_addr, &a) != 1) {
+      fprintf(stderr, "texislockd: --bind needs an IPv4 address, not '%s'\n", bind_addr);
+      return 1;
+    }
   }
 
   /* If we were extracted to a tempfile (bundled launch), remove the on-disk

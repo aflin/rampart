@@ -35,12 +35,15 @@ struct lockd_connection {
   TXLockRequest *response;  /**< Where the responses are collected (array or object) */
   size_t json_flags;        /**< Flags for encoding response */
   int fairlock;             /**< Fairlock flag - will I wait for the head of the line */
+  unsigned long id;         /**< Unique, never reused (a client names it to replace it) */
+  long pid;                 /**< Client's pid, if it sent one (0 = unknown) */
 };
 
 int connection_create(lockd_connection **res);
 int connection_delete(lockd_connection *c);
 int connection_set_database(lockd_connection *c, const char *db);
 lockd_connection *connection_enumerate(lockd_connection *p);
+lockd_connection *connection_find(unsigned long id);
 json_t *connection_to_json(lockd_connection *c);
 int connection_send_response(lockd_connection *c);
 int connection_add_response(lockd_connection *c, TXLockRequest* r);

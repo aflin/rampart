@@ -191,6 +191,7 @@ typedef struct tagDBLOCK {
 	struct DDIC_tag	*ddic;
 #ifdef LOCK_SERVER
 	TXEZsockbuf *lockServerSocket; /**< Socket to talk to lock server */
+	long	lockServerId;	/**< Its connection id, from the lock server */
 #endif /* LOCK_SERVER */
 } DBLOCK ;
 

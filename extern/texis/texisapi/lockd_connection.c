@@ -9,6 +9,7 @@
 static lockd_connection *connections_head = NULL;
 static lockd_connection *connections_tail = NULL;
 static size_t nconnections = 0;
+static unsigned long next_connection_id = 0;
 
 extern FILE *logfile;
 
@@ -19,6 +20,7 @@ connection_create(lockd_connection **res)
   if(!res) return -1;
   c = calloc(sizeof(lockd_connection), 1);
   *res = c;
+  c->id = ++next_connection_id;
   c->prev = connections_tail; connections_tail = c;
   if(c->prev) {
     (c->prev)->next = c;
@@ -64,6 +66,16 @@ connection_enumerate(lockd_connection *p)
   if(!p) return connections_head;
   return p->next;
 }
+
+lockd_connection *
+connection_find(unsigned long id)
+{
+  lockd_connection *c;
+
+  for(c = connections_head; c; c = c->next)
+    if(c->id == id) return c;
+  return NULL;
+}
 static json_t *
 lock_connection_to_json(lockd_connection *c)
 {
@@ -93,6 +105,9 @@ connection_to_json(lockd_connection *c)
   l = (long)c;
   t = json_integer(l);
   json_object_set_new(r, "connection", t);  
+  json_object_set_new(r, "id", json_integer((json_int_t)c->id));
+  if(c->pid > 0)
+    json_object_set_new(r, "pid", json_integer((json_int_t)c->pid));
   if(c->database) {
     t = json_string(c->database->resourcename);
   } else {

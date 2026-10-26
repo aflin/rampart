@@ -56,7 +56,10 @@ TXrunlockdaemon(DDIC *ddic)
   else
   {
     n = TXlib_expandpath("%EXEDIR%" PATH_DIV_S "%BINDIR%", &list);
-    for (i = 0; i < n; i++) {
+    /* first found wins: was last-assigned, so %BINDIR% (e.g. an older
+       installed copy) beat the one beside this binary, and a miss there
+       discarded a hit in %EXEDIR% */
+    for (i = 0; i < n && !thepath; i++) {
       if (!list[i]) continue;  /* %SYSLIBPATH%, not relevant here */
       thepath = epipathfindmode("texislockd", list[i], 0x8 /* or maybe 0x9 not sure */);
     }

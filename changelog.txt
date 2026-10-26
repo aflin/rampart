@@ -14,6 +14,19 @@ v0.7.5
                             in threads.
                             importCsv() and importCsvFile() store empty
                             text cells as "" instead of "0".
+                            Fixed sql_helper processes spinning at 100%
+                            CPU after losing their connection to the
+                            lock server (texislockd).
+                            A lost lock server connection now reconnects;
+                            if that fails, the statement throws instead
+                            of returning empty results.
+                            texislockd detects dead clients and releases
+                            their locks, and exits after 60 seconds with
+                            no connections (-i to change).
+                            rampart starts the texislockd beside it, not
+                            an older one elsewhere.
+                            BEHAVIOR CHANGE: texislockd listens on
+                            127.0.0.1 only (-b to change).
 
     -rampart                rampart.import.csv() and csvFile():
                             Fixed dates from other threads appearing in

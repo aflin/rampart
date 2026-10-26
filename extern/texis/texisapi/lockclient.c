@@ -1,49 +1,89 @@
 #include "txcoreconfig.h"
 #ifdef LOCK_SERVER
 
+#include <unistd.h>       /* getpid() */
 #include <jansson.h>
 #include "texint.h"
 #include "lockrequest.h"
 
 int TXInLockBlock = 0;
 
-DBLOCK *
-opendblock(DDIC *ddic)
+/* set when a lock request fails even after reconnecting */
+static int txLockServerLost = 0;
+
+static TXEZsockbuf *
+txLockConnect(DDIC *ddic, long replaces, long *idp)
+/* Opens a lock server connection for `ddic''s database, starting the
+ * lock server if it is not running, and announces the database and our
+ * pid.  `replaces' (if > 0) is our previous connection's id: the server
+ * drops it and its locks.  Sets `*idp' to the new connection's id (0 if
+ * the server does not give one).  Returns NULL if that fails. */
 {
-  DBLOCK *dblock = NULL;
   TXLockRequest *request = NULL, *response = NULL;
   json_t *t = NULL, *t2 = NULL;
-  json_error_t e;
   TXEZsockbuf *ezsb = NULL;
-  int startedlockserver = 0;
-  TXPMBUF *pmbuf = TXPMBUF_SUPPRESS;
+  int tries;
 
-  if(!ddic) {
-    return NULL;
-  }
-  /* TODO: Open socket to lock server */
-  dblock = (DBLOCK *)TXcalloc(ddic->pmbuf, __FUNCTION__, 1, sizeof(DBLOCK));
-  if(dblock) {
     /* For debugging on port 40712
 
     mkfifo 2way
     ncat -o logfile -l 40712 0<2way | ncat localhost 40713 1>2way
 
     */
-opensock:
-    ezsb = TXEZsockbuf_client("localhost", 40713, pmbuf);
-    if(!startedlockserver && !ezsb) {
-      TXrunlockdaemon(ddic);
-      TXsleepmsec(100,1); /* Give lock server time to start */
-      startedlockserver = 1;
-      pmbuf = TXPMBUFPN;
-      goto opensock;
+  ezsb = TXEZsockbuf_client("localhost", 40713, TXPMBUF_SUPPRESS);
+  if(!ezsb) {
+    /* Not running (it exits when idle): start it, and give it up to 2s
+     * to listen -- a single short wait failed the open on a slow start */
+    TXrunlockdaemon(ddic);
+    for(tries = 0; tries < 40 && !ezsb; tries++) {
+      TXsleepmsec(50, 1);
+      ezsb = TXEZsockbuf_client("localhost", 40713,
+                                tries == 39 ? TXPMBUFPN : TXPMBUF_SUPPRESS);
     }
-    if(!ezsb) {
-      dblock = closedblock(ddic->pmbuf, dblock, 0, TXbool_False);
-      goto done;
-    }
-    dblock->lockServerSocket = ezsb;
+  }
+  *idp = 0;
+  if(!ezsb) goto done;
+  t = json_object();
+  json_object_set_new(t, "database", json_string(ddic->pname));
+  json_object_set_new(t, "pid", json_integer((json_int_t)getpid()));
+  if(replaces > 0)
+    json_object_set_new(t, "replaces", json_integer((json_int_t)replaces));
+  t2 = json_object();
+  json_object_set_new(t2, "connect", t);
+  request = TXlockRequest_CreateJson(t2);   /* owns t2 now */
+  t2 = NULL;
+  response = TXlockRequest(ezsb, request);
+  if(response) {
+    json_t *jid;
+
+    t2 = TXlockRequest_GetJson(response);
+    t = json_object_get(t2, "success");
+    jid = json_object_get(t2, "id");
+    if(json_is_integer(jid))
+      *idp = (long)json_integer_value(jid);
+  }
+  if(!response || !json_is_true(t))
+    ezsb = TXEZsockbuf_close(ezsb);
+done:
+  if(t2) json_decref(t2);
+  if(request) TXlockRequest_Close(request);
+  if(response) TXlockRequest_Close(response);
+  return ezsb;
+}
+
+DBLOCK *
+opendblock(DDIC *ddic)
+{
+  DBLOCK *dblock = NULL;
+
+  if(!ddic) {
+    return NULL;
+  }
+  dblock = (DBLOCK *)TXcalloc(ddic->pmbuf, __FUNCTION__, 1, sizeof(DBLOCK));
+  if(dblock) {
+    dblock->lockServerSocket = txLockConnect(ddic, 0, &dblock->lockServerId);
+    if(!dblock->lockServerSocket)
+      return closedblock(ddic->pmbuf, dblock, 0, TXbool_False);
     if(TXApp) {
       dblock->dumponbad = TXApp->LogBadSYSLOCKS;
     } else {
@@ -51,30 +91,47 @@ opensock:
     }
     dblock->ddic = ddic;
     ddic->dblock = dblock;
-    t = json_object();
-    json_object_set_new(t, "database", json_string(ddic->pname));
-    t2 = json_object();
-    json_object_set_new(t2, "connect", t);
-    request = TXlockRequest_CreateJson(t2);
-    response = TXlockRequest(ezsb, request);
-    if(!response) {
-      dblock = closedblock(ddic->pmbuf, dblock, 0, TXbool_False);
-      goto done;
-    }
-    t2 = TXlockRequest_GetJson(response);
-    t = json_object_get(t2, "success");
-    if(json_is_true(t)) {
-
-    } else {
-      dblock = closedblock(ddic->pmbuf, dblock, 0, TXbool_False);
-      goto done;
-    }
   }
-done:
-  if(t2) json_decref(t2);
-  if(request) TXlockRequest_Close(request);
-  if(response) TXlockRequest_Close(response);
   return dblock;
+}
+
+TXLockRequest *
+TXlockRequestDb(DDIC *ddic, TXLockRequest *request)
+/* Sends `request' on `ddic''s lock server connection.  If that fails
+ * (e.g. EPIPE: the connection was dropped), closes it and retries once on
+ * a new connection that replaces it, so the server releases its locks.
+ * Returns the response, or NULL (and yaps, and sets the flag read by
+ * TXlockServerLostTake()) if the lock server cannot be reached. */
+{
+  DBLOCK *dbl = ddic->dblock;
+  TXLockRequest *response;
+
+  response = TXlockRequest(dbl->lockServerSocket, request);
+  if(response) return response;
+  dbl->lockServerSocket = TXEZsockbuf_close(dbl->lockServerSocket);
+  /* replaces: the server drops the old connection's locks even if our
+   * close never reached it (e.g. the OS had already dropped it) */
+  dbl->lockServerSocket = txLockConnect(ddic, dbl->lockServerId, &dbl->lockServerId);
+  if(dbl->lockServerSocket)
+    response = TXlockRequest(dbl->lockServerSocket, request);
+  if(!response) {
+    putmsg(MERR, __FUNCTION__,
+           "Lost the connection to the lock server (texislockd) for database %s and could not reconnect",
+           ddic->pname);
+    txLockServerLost = 1;
+  }
+  return response;
+}
+
+int
+TXlockServerLostTake(void)
+/* Nonzero (once) if a lock request failed even after reconnecting since
+ * the last call, i.e. the current statement ran without its locks. */
+{
+  int r = txLockServerLost;
+
+  txLockServerLost = 0;
+  return r;
 }
 
 DBLOCK *
@@ -113,7 +170,7 @@ rgetcounter(DDIC *ddic, ft_counter *rc, int lock)
   rc->date = time(NULL);
   if(lock && dblock) {
     request = TXlockRequest_CreateStaticString("{\"counter\":null}\n", -1);
-    response = TXlockRequest(ddic->dblock->lockServerSocket, request);
+    response = TXlockRequestDb(ddic, request);
     if(response) {
       j_resp = TXlockRequest_GetJson(response);
       t = json_object_get(j_resp, "counter");
@@ -219,11 +276,12 @@ dblock(DDIC *ddic, ulong sid, long *tblid, int type, char *tname, ft_counter *co
   if(reqlen < sizeof(tmpbuf)) {
     request = TXlockRequest_CreateStaticString(tmpbuf, reqlen);
   } else {
-    request_s = malloc(reqlen) + 1;
+    request_s = malloc(reqlen + 1);     /* was malloc(reqlen) + 1 */
+    if(!request_s) return -1;
     sprintf(request_s, "%c:%s:%c:%s\n", lockCmd, type_c, verify, tname);
     request = TXlockRequest_CreateString(request_s, reqlen);
   }
-  response = TXlockRequest(ddic->dblock->lockServerSocket, request);
+  response = TXlockRequestDb(ddic, request);
   response_s = TXlockRequest_GetString(response, NULL);
   if(response_s && (strlen(response_s) > 4)) {
     if(*response_s == 'Y')
@@ -284,11 +342,12 @@ dbunlock(DDIC *ddic, ulong sid, long *tblid, int type, char *tname)
   if(reqlen < sizeof(tmpbuf)) {
     request = TXlockRequest_CreateStaticString(tmpbuf, reqlen);
   } else {
-    request_s = malloc(reqlen) + 1;
+    request_s = malloc(reqlen + 1);     /* was malloc(reqlen) + 1 */
+    if(!request_s) return -1;
     sprintf(request_s, "U:%s:%s\n", type_c, tname);
     request = TXlockRequest_CreateString(request_s, reqlen);
   }
-  response = TXlockRequest(ddic->dblock->lockServerSocket, request);
+  response = TXlockRequestDb(ddic, request);
   response_s = TXlockRequest_GetString(response, NULL);
   if(response_s && *response_s == 'Y')
     rc = 0;

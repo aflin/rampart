@@ -445,6 +445,8 @@ extern const char	TXxCreateLocksOptionsHdrName[];
 #include "lockrequest.h"
 #include "ezsockbuf.h"
 TXLockRequest *TXlockRequest(TXEZsockbuf *ezsb, TXLockRequest *request);
+TXLockRequest *TXlockRequestDb(DDIC *ddic, TXLockRequest *request);
+int	TXlockServerLostTake(void);
 int	TXlockindex	ARGS((DBTBL *, int, ft_counter *));
 int	TXunlockindex	ARGS((DBTBL *, int, ft_counter *));
 int	TXlocktable	ARGS((DBTBL *, int));
