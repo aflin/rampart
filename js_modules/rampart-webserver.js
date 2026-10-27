@@ -415,6 +415,18 @@ function getPid(name,nolog) {
     return ret;
 }
 
+/* pid from server.pid if that process is alive and is rampart.  Uses ps,
+   not kill(pid,0), which fails for a root-owned server when not root. */
+function runningServerPid() {
+    var pid = getPid('server', true);
+    if (!pid) return 0;
+    var cmd = trim(exec('ps', '-p', '' + pid, '-o', 'command=').stdout || '');
+    var me = ('' + process.argv0).replace(/.*\//, '');
+    if (!cmd || (cmd.indexOf('rampart') == -1 && cmd.indexOf(me) == -1))
+        return 0;
+    return pid;
+}
+
 function killPid(name, sig) {
     var ret={};
     ret.pidfile = wd + '/' + name + '.pid';
@@ -1459,6 +1471,15 @@ function start(serverConf, dump) {
 
     if(dump)
         return serverConf;
+
+    /* refuse to start over a running server.  Not in the launchd child:
+       its parent already cleared the pidfile, and refusing there would
+       make KeepAlive relaunch it in a loop. */
+    if (!utils.getenv('RAMPART_LAUNCHD_CHILD')) {
+        var runpid = runningServerPid();
+        if (runpid)
+            return serr(sprintf('Server is already running (pid %d).', runpid));
+    }
 
     // start iroh (order doesn't matter)
     var reti = start_iroh();
