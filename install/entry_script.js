@@ -6,7 +6,7 @@
    argument, the runtime auto-runs this file as the entry script.  It
    walks the user through installation rustup-style.
 
-   Two install profiles:
+   Three install profiles:
 
      SYSTEM ("/usr/local/rampart")
        Selected when the running user owns /usr/local and /usr/local/bin
@@ -23,7 +23,12 @@
        block that sources the right one.  Modelled on rustup's
        rc-file-modification logic.
 
-   Both profiles drop a rampart-uninstall.sh shim (and the matching
+     SELF-CONTAINED (--prefix DIR)
+       Skips the menu.  Files land in DIR/ and nothing outside it is
+       touched: no /usr/local/bin links, no env scripts, no rc edits.
+       For applications that bundle their own rampart.
+
+   All profiles drop a rampart-uninstall.sh shim (and the matching
    rampart-uninstall.js smart driver) under <prefix>/bin/ that reverses
    the install on demand.
 */
@@ -33,12 +38,27 @@ rampart.globalize(rampart.utils);
 /* ============== command-line flags ============== */
 /* process.argv = ["<bundle>", "entry_script.js", ...user args] */
 var AUTO = false;
+var PREFIX = null;   /* --prefix DIR: self-contained install, no links or rc edits */
 for (var _ai = 2; _ai < process.argv.length; _ai++) {
     var _arg = process.argv[_ai];
     if (_arg === "-q" || _arg === "--quiet"
      || _arg === "-a" || _arg === "--auto"
      || _arg === "-y" || _arg === "--yes")
         AUTO = true;
+    else if (_arg === "-p" || _arg === "--prefix" || /^--prefix=/.test(_arg)) {
+        PREFIX = (_arg.charAt(1) === "-" && _arg.indexOf("=") > 0)
+                 ? _arg.slice(_arg.indexOf("=") + 1)
+                 : process.argv[++_ai];
+        if (!PREFIX) {
+            printf("%s requires a directory\nTry %s --help\n", _arg, process.argv[0]);
+            process.exit(1);
+        }
+        /* relative paths are taken from the current directory */
+        if (PREFIX.charAt(0) !== "/")
+            PREFIX = getcwd() + "/" + PREFIX.replace(/^(\.\/)+/, "");
+        while (PREFIX.length > 1 && PREFIX.charAt(PREFIX.length-1) === "/")
+            PREFIX = PREFIX.slice(0, -1);
+    }
     else if (_arg === "-h" || _arg === "--help") {
         printf("Usage: %s [options]\n\n", process.argv[0]);
         printf("Options:\n");
@@ -46,6 +66,13 @@ for (var _ai = 2; _ai < process.argv.length; _ai++) {
         printf("        Non-interactive install.  Uses the default prefix\n");
         printf("        (/usr/local/rampart if you own /usr/local, else\n");
         printf("        $HOME/.rampart) and answers yes to every prompt.\n");
+        printf("  -p DIR, --prefix DIR, --prefix=DIR\n");
+        printf("        Install into DIR (relative paths are taken from the\n");
+        printf("        current directory) without the install menu.  Nothing\n");
+        printf("        outside DIR is changed: no /usr/local/bin links and no\n");
+        printf("        shell rc edits; run DIR/bin/rampart or add DIR/bin to\n");
+        printf("        your PATH yourself.  Combine with --auto to skip the\n");
+        printf("        final confirmation.\n");
         printf("  -h, --help\n");
         printf("        Show this message.\n");
         process.exit(0);
@@ -239,6 +266,10 @@ function banner(prefix, isSystem) {
 "  /usr/local/bin/    symlinks for: rampart, addtable, backref,\n"+
 "                                   kdbfchk, metamorph, rex,\n"+
 "                                   texislockd, tsql\n");
+    } else if (PREFIX) {
+        printf(
+"  PATH:              not changed (no shell rc edits); run\n"+
+"                     %s/bin/rampart or add %s/bin to PATH\n", prefix, prefix);
     } else {
         printf(
 "  PATH:              modified via %s/env\n", prefix);
@@ -641,7 +672,7 @@ function buildManifest(prefix, isSystem, rcFilesTouched, symlinksMade, haveWs) {
         rampart_version: rampart.version,
         installed_at:    nowIso,
         prefix:          prefix,
-        profile:         isSystem ? "system" : "user",
+        profile:         PREFIX ? "prefix" : isSystem ? "system" : "user",
         packages: {
             "core": {
                 installed_by: "installer",
@@ -787,12 +818,19 @@ function ensurePermsForPrefix(prefix) {
 /* ============== main ============== */
 
 (function main() {
-    var defaultPrefix = canSystemInstall() ? SYSTEM_PREFIX : USER_PREFIX;
-    banner(defaultPrefix, defaultPrefix === SYSTEM_PREFIX);
-
     var choice;
-    if (AUTO) {
+    if (PREFIX) {
+        var perr = validatePrefix(PREFIX);
+        if (perr) {
+            printf("ERROR: %s\n", perr);
+            process.exit(1);
+        }
+        banner(PREFIX, false);
+        choice = { prefix: PREFIX, isSystem: false, modifyPath: false };
+        printf("\nInstall --> %s (self-contained, --prefix)\n", choice.prefix);
+    } else if (AUTO) {
         var isSystem = canSystemInstall();
+        banner(isSystem ? SYSTEM_PREFIX : USER_PREFIX, isSystem);
         choice = {
             prefix:      isSystem ? SYSTEM_PREFIX : USER_PREFIX,
             isSystem:    isSystem,
@@ -801,6 +839,8 @@ function ensurePermsForPrefix(prefix) {
         printf("\nAuto install --> %s (%s profile)\n",
                choice.prefix, choice.isSystem ? "system" : "user");
     } else {
+        var sys = canSystemInstall();
+        banner(sys ? SYSTEM_PREFIX : USER_PREFIX, sys);
         choice = chooseProfile();
     }
     ensurePermsForPrefix(choice.prefix);
@@ -897,8 +937,13 @@ function ensurePermsForPrefix(prefix) {
         postLines.push("documentation, which it then serves at /ide/docs/.");
     }
 
-    /* PATH hint (user install) or system-install hint */
-    if (choice.modifyPath) {
+    /* PATH hint (user install), system-install hint, or --prefix hint */
+    if (PREFIX) {
+        postLines.push("");
+        postLines.push("Your PATH was not changed.  Run rampart as:");
+        postLines.push("    " + choice.prefix + "/bin/rampart --version");
+        postLines.push("or add " + choice.prefix + "/bin to your PATH.");
+    } else if (choice.modifyPath) {
         postLines.push("");
         postLines.push("To pick up the new PATH in this shell without logging out:");
         postLines.push("    . " + choice.prefix + "/env");
