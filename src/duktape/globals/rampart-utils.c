@@ -3904,15 +3904,16 @@ char *duk_rp_url_encode(char *str, int len)
 {
     char *pstr = str, *buf = NULL, *pbuf = NULL;
 
-    REMALLOC(buf, strlen(str) * 3 + 1);
-    pbuf = buf;
-
     if (len < 0)
         len = strlen(str);
 
+    /* size from len: str may hold a NUL before len (strlen would under-allocate) */
+    REMALLOC(buf, (size_t)len * 3 + 1);
+    pbuf = buf;
+
     while (len)
     {
-        if (isalnum(*pstr) || *pstr == '-' || *pstr == '_' || *pstr == '.' || *pstr == '~')
+        if (isalnum((unsigned char)*pstr) || *pstr == '-' || *pstr == '_' || *pstr == '.' || *pstr == '~')
             *pbuf++ = *pstr;
         else if (*pstr == ' ')
             *pbuf++ = '+';
@@ -8716,19 +8717,86 @@ char *to_utf8(const char *in_str)
 
 #include "printf.c"
 
+/* Formatting can run JS and throw (toJSON, getters, bad base64, a missing
+   argument), so it runs under duk_safe_call: the caller then releases its
+   locks and buffers before rethrowing.  Stack indexes are unchanged inside;
+   the top nargs values are consumed, and the error is left on the stack when
+   it returns non-zero. */
+typedef struct {
+    out_fct_type out;
+    void *buffer;
+    duk_idx_t fidx;
+    int ret;
+    size_t maxlen;
+} pf_args;
+
+static duk_ret_t pf_safe(duk_context *ctx, void *udata)
+{
+    pf_args *a = (pf_args *)udata;
+    a->ret = rp_printf(a->out, (char *)a->buffer, a->maxlen, ctx, a->fidx, NULL);
+    return 0;
+}
+
+static int pf_call(duk_context *ctx, pf_args *a, duk_idx_t nargs)
+{
+    int rc = duk_safe_call(ctx, pf_safe, a, nargs, 1);
+    if (rc == DUK_EXEC_SUCCESS)
+        duk_pop(ctx);
+    return rc;
+}
+
+/* First pass: no output, but runs the JS (toJSON, toString), replaces those
+   arguments with their strings and reports any format error, so the writing
+   pass needs no JS and no copy of a large string.  Returns the output size. */
+static int pf_prepare(duk_context *ctx, duk_idx_t fidx)
+{
+    pf_args a = { _out_null, NULL, fidx, 0, (size_t)-1 };
+
+    if (pf_call(ctx, &a, 0) != DUK_EXEC_SUCCESS)
+        (void) duk_throw(ctx);
+    return a.ret;
+}
+
+/* second pass of pf_prepare, into exactly size bytes; bounded regardless */
+static void pf_write_exact(duk_context *ctx, char *dest, size_t size, duk_idx_t fidx)
+{
+    pf_args a = { _out_buffer, dest, fidx, 0, size };
+
+    if (size && pf_call(ctx, &a, 0) != DUK_EXEC_SUCCESS)
+        (void) duk_throw(ctx);
+}
+
+/* format to a growing buffer; throws on error, with nothing to free */
+static void pf_to_growbuf(duk_context *ctx, grow_buffer *gb, duk_idx_t fidx, duk_idx_t nargs)
+{
+    pf_args a = { _out_buffer_grow, gb, fidx, 0, (size_t)-1 };
+
+    gb->buf = NULL;
+    gb->size = 0;
+    gb->mSize = 0;
+    if (pf_call(ctx, &a, nargs) != DUK_EXEC_SUCCESS)
+    {
+        free(gb->buf);
+        (void) duk_throw(ctx);
+    }
+}
+
 /* TODO: make locking per file.  Add locking to fwrite. or maybe ditch locking? */
 
 duk_ret_t duk_rp_printf(duk_context *ctx)
 {
-    int ret;
+    pf_args a = { _fout_char, stdout, 0, 0, (size_t)-1 };
+    int rc;
 
     if (pthread_mutex_lock(&pflock) != 0)
         RP_THROW(ctx, "printf(): error - could not obtain lock\n");
 
-    ret = rp_printf(_fout_char, (void*)stdout, (size_t)-1, ctx, 0, &pflock);
+    rc = pf_call(ctx, &a, duk_get_top(ctx));
     fflush(stdout);
     pthread_mutex_unlock(&pflock);
-    duk_push_int(ctx, ret);
+    if (rc != DUK_EXEC_SUCCESS)
+        (void) duk_throw(ctx);
+    duk_push_int(ctx, a.ret);
     return 1;
 }
 
@@ -9539,7 +9607,8 @@ duk_ret_t duk_rp_fflush(duk_context *ctx)
 
 duk_ret_t duk_rp_fprintf(duk_context *ctx)
 {
-    int ret;
+    pf_args a;
+    int rc;
     const char *fn;
     FILE *f=NULL;
     int append=0;
@@ -9554,6 +9623,8 @@ duk_ret_t duk_rp_fprintf(duk_context *ctx)
         //no locking for fopenBuffer
         if(duk_has_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("cookie")))
             nolock=1;
+        if(!lock_p)
+            (void) pf_prepare(ctx, 1);
     }
     else
     {
@@ -9563,6 +9634,9 @@ duk_ret_t duk_rp_fprintf(duk_context *ctx)
             append=duk_get_boolean(ctx,1);
             duk_remove(ctx,1);
         }
+
+        /* before opening: a failed format leaves an existing file untouched */
+        (void) pf_prepare(ctx, 1);
 
         if(append)
         {
@@ -9578,12 +9652,21 @@ duk_ret_t duk_rp_fprintf(duk_context *ctx)
         }
     }
 
+    /* Threads sharing this handle share its flock, so it can't separate them
+       (and one thread's unlock would release it for all): the stdio lock does.
+       Taken first, it is held for the whole call. */
+    if(!lock_p)
+        flockfile(f);
+
     if(!nolock)
     {
         if(!lock_p)
         {
             if (flock(fileno(f), LOCK_EX) == -1)
+            {
+                funlockfile(f);
                 RP_THROW(ctx, "fprintf(): error - could not obtain lock");
+            }
         }
         else
         {
@@ -9593,20 +9676,37 @@ duk_ret_t duk_rp_fprintf(duk_context *ctx)
     }
 
     errno=0;
-    ret = rp_printf(_fout_char, (void*)f, (size_t)-1, ctx, 1, lock_p);
+    a.out = _fout_char;
+    a.buffer = f;
+    a.fidx = 1;
+    a.ret = 0;
+    a.maxlen = (size_t)-1;
+    rc = pf_call(ctx, &a, 0);
     fflush(f);
     if(!nolock)
     {
         if(!lock_p)
         {
-            if (flock(fileno(f), LOCK_UN) == -1)
+            if (flock(fileno(f), LOCK_UN) == -1 && rc == DUK_EXEC_SUCCESS)
+            {
+                funlockfile(f);
                 RP_THROW(ctx, "fprintf(): error - could not release lock");
+            }
         }
         else
         {
-            if (pthread_mutex_unlock(lock_p) != 0)
+            if (pthread_mutex_unlock(lock_p) != 0 && rc == DUK_EXEC_SUCCESS)
               RP_THROW(ctx, "fprintf(): error - could not release lock");
         }
+    }
+    if(!lock_p)
+        funlockfile(f);
+
+    if(rc != DUK_EXEC_SUCCESS)
+    {
+        if(closefh)
+            rp_fclose(f);
+        (void) duk_throw(ctx);
     }
 
     if(errno)
@@ -9615,7 +9715,7 @@ duk_ret_t duk_rp_fprintf(duk_context *ctx)
     if(closefh)
         rp_fclose(f);
 
-    duk_push_int(ctx, ret);
+    duk_push_int(ctx, a.ret);
     return 1;
 
     err:
@@ -9639,29 +9739,26 @@ duk_ret_t duk_rp_sprintf(duk_context *ctx)
 duk_ret_t duk_rp_sprintf(duk_context *ctx)
 {
     grow_buffer growbuf;
-    void *gb=&growbuf;
 
-    growbuf.buf=NULL;
+    pf_to_growbuf(ctx, &growbuf, 0, duk_get_top(ctx));
 
-    (void)rp_printf(_out_buffer_grow, gb, (size_t)-1, ctx, 0, NULL);
-
-    duk_push_lstring(ctx, growbuf.buf,(duk_size_t)growbuf.size);
+    duk_push_lstring(ctx, growbuf.buf ? growbuf.buf : "", (duk_size_t)growbuf.size);
     free(growbuf.buf);
     return 1;
 }
 
 duk_ret_t duk_rp_bprintf(duk_context *ctx)
 {
-    char *buffer;
-    int size = rp_printf(_out_null, NULL, (size_t)-1, ctx, 0, NULL);
-    buffer = (char *) duk_push_fixed_buffer(ctx, (duk_size_t)size);
-    (void)rp_printf(_out_buffer, buffer, (size_t)-1, ctx, 0, NULL);
+    int size = pf_prepare(ctx, 0);
+    char *buffer = (char *) duk_push_fixed_buffer(ctx, (duk_size_t)size);
+
+    pf_write_exact(ctx, buffer, (size_t)size, 0);
     return 1;
 }
 
 duk_ret_t duk_rp_abprintf(duk_context *ctx)
 {
-    duk_size_t start, total, sz;
+    duk_size_t start, sz;
     char *newbuf, *buffer = REQUIRE_BUFFER_DATA(ctx, 0, &sz, "abprintf: first argument must be a Buffer");
 
     if(duk_is_number(ctx, 1))
@@ -9679,16 +9776,17 @@ duk_ret_t duk_rp_abprintf(duk_context *ctx)
     else
         start=sz;
 
-    total = rp_printf(_out_null, NULL, (size_t)-1, ctx, 1, NULL);
+    int size = pf_prepare(ctx, 1);
 
-    total += start;
+    /* fetched again: formatting can run JS, which could resize a dynamic buffer */
+    buffer = duk_get_buffer_data(ctx, 0, &sz);
+    if (start > sz)
+        start = sz;
 
-    newbuf=duk_push_fixed_buffer(ctx, total);
-    memcpy(newbuf, buffer, (size_t)start);
-
-    (void)rp_printf(_out_buffer, newbuf+start, (size_t)-1, ctx, 1, NULL);
-
-    //duk_pull(ctx, 0);
+    newbuf=duk_push_fixed_buffer(ctx, start + (size_t)size);
+    if (start)
+        memcpy(newbuf, buffer, (size_t)start);
+    pf_write_exact(ctx, newbuf+start, (size_t)size, 1);
 
     return 1;
 }
@@ -14224,6 +14322,29 @@ static int locale_supports_utf8() {
 }
 
 /* printf funcs, string funcs, file funcs and other misc - a bit of a misnomer now */
+/* Once per process: this init runs for every thread's context, and must not
+   re-init a mutex another thread holds.  The output locks are recursive since
+   formatting can run JS that prints (a toJSON calling printf). */
+static pthread_once_t rampart_locks_once = PTHREAD_ONCE_INIT;
+
+static void rampart_locks_init(void)
+{
+    pthread_mutexattr_t attr;
+
+    if (pthread_mutexattr_init(&attr) != 0 ||
+        pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE) != 0 ||
+        pthread_mutex_init(&pflock, &attr) != 0 ||
+        pthread_mutex_init(&pflock_err, &attr) != 0 ||
+        pthread_mutex_init(&loglock, &attr) != 0 ||
+        pthread_mutex_init(&errlock, &attr) != 0)
+    {
+        fprintf(stderr, "could not init output locks\n");
+        exit(1);
+    }
+    pthread_mutexattr_destroy(&attr);
+    RP_PTINIT(&blist_lock);
+}
+
 void duk_printf_init(duk_context *ctx)
 {
     //libevent callback for warn/error/etc messages
@@ -14405,11 +14526,7 @@ void duk_printf_init(duk_context *ctx)
     duk_pop(ctx);
 
 
-    RP_PTINIT(&pflock);
-    RP_PTINIT(&pflock_err);
-    RP_PTINIT(&loglock);
-    RP_PTINIT(&errlock);
-    RP_PTINIT(&blist_lock);
+    pthread_once(&rampart_locks_once, rampart_locks_init);
 
 
     /* init all first */

@@ -1458,23 +1458,6 @@ static void flatten_vars(duk_context *ctx)
     duk_pop(ctx); /* leave only "flat" object on stack */
 }
 
-static inline void rp_out_buffer(char character, void *buffer, size_t idx, size_t maxlen)
-{
-    if (idx < maxlen)
-    {
-        ((char *)buffer)[idx] = character;
-    }
-}
-
-static inline void rp_out_null(char character, void *buffer, size_t idx, size_t maxlen)
-{
-    (void)character;
-    (void)buffer;
-    (void)idx;
-    (void)maxlen;
-}
-
-
 #define checkauxsize(dhs, size) do{\
     size_t required = dhs->bufpos + size;\
     if(dhs->bufsz < required)\
@@ -1484,6 +1467,16 @@ static inline void rp_out_null(char character, void *buffer, size_t idx, size_t 
         REMALLOC(dhs->auxbuf, dhs->bufsz);\
     }\
 } while(0)
+
+/* req.printf output: append to the aux buffer, growing it as needed */
+static void rp_out_aux(char character, void *buffer, size_t idx, size_t maxlen)
+{
+    DHS *dhs = (DHS *)buffer;
+    (void)maxlen;
+
+    checkauxsize(dhs, idx + 1);
+    ((char *)dhs->auxbuf)[dhs->bufpos + idx] = character;
+}
 
 /* TODO: make this work with forking
 duk_ret_t duk_server_add_cookie(duk_context *ctx)
@@ -1869,9 +1862,9 @@ duk_ret_t duk_server_printf(duk_context *ctx)
     DHS *dhs = get_dhs(ctx);
     size_t size;
 
-    size = rp_printf(rp_out_null, NULL, 0, ctx, 0, NULL);
-    checkauxsize(dhs, size);
-    size = rp_printf(rp_out_buffer, (char*)dhs->auxbuf + dhs->bufpos, size, ctx, 0, NULL);
+    /* one pass: a separate measuring pass can differ from the write (%aJ, a
+       toJSON or a getter).  Output only counts once formatting succeeds. */
+    size = rp_printf(rp_out_aux, (char*)dhs, (size_t)-1, ctx, 0, NULL);
     dhs->bufpos += size;
 
     duk_push_int(ctx, (int) size);

@@ -1249,6 +1249,10 @@ static Jcolors jpal[njpal] = {
 
 
 
+/* holder for a colored %J value between the prepare and writing passes */
+#define PF_JSON_TYPE DUK_HIDDEN_SYMBOL("pfJsonType")
+#define PF_JSON_TEXT DUK_HIDDEN_SYMBOL("pfJsonText")
+
 int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *ctx, duk_idx_t fidx, pthread_mutex_t *lock_p)
 {
     uint32_t flags;
@@ -1273,6 +1277,20 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
     duk_idx_t topidx = duk_get_top_index(ctx);
     const char	*format = PF_REQUIRE_BUF_OR_STRING(ctx, fidx++, &len),
                 *format_end=format+len;
+    /* the parser below reads ahead until it finds a non-matching char (a
+       trailing "%" or "%5"), so a Buffer format, which has no NUL, needs one */
+    if (duk_is_buffer_data(ctx, fidx-1))
+    {
+        char *fcopy=NULL;
+        REMALLOC(fcopy, (size_t)len + 1);
+        if (len)
+            memcpy(fcopy, format, (size_t)len);
+        fcopy[len]='\0';
+        REMALLOC(free_ptr, ++nfree * sizeof(char *));
+        free_ptr[nfree-1]=fcopy;
+        format=fcopy;
+        format_end=fcopy+len;
+    }
     if (!buffer)
     {
         // use null output function
@@ -1696,6 +1714,18 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
             REQUIRE_ARRAY(ctx, fidx, "Array required in format string argument %d", fidx);
             duk_uarridx_t i=0,len=duk_get_length(ctx, fidx);
             const char *line=NULL;
+            /* prepare pass (no output): convert the elements now, so getters
+               and toJSON don't run again in the pass that writes */
+            if (!buffer)
+            {
+                duk_push_array(ctx);
+                for (i = 0; i < len; i++) {
+                    duk_get_prop_index(ctx, fidx, i);
+                    anytostring(ctx, -1, 0, 0);
+                    duk_put_prop_index(ctx, -2, i);
+                }
+                duk_replace(ctx, fidx);
+            }
             // ! forces 
             if (!isterm && !(flags & FLAGS_BANG))
             {
@@ -1726,9 +1756,11 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
                         idx=outs(out, buffer, idx, maxlen, "\033[K");   // Clear to end
                     }
                     out('\n', buffer, idx++, maxlen);
+                    duk_pop(ctx);
                 }
                 idx=outs(out, buffer, idx, maxlen, "\033[u");
-                fflush((FILE*)buffer);
+                if (out == _fout_char)  // buffer is only a FILE for this output
+                    fflush((FILE*)buffer);
             }
             format++;
             fidx++;
@@ -1802,12 +1834,15 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
                 char *s;
 
                 s=(char*)PF_REQUIRE_BUF_OR_STRING(ctx, fidx, &sz);
-                duk_dup(ctx, fidx);
 
-                /* make it a buffer so we can translate '_' and '-' */
-                if(duk_is_string(ctx, -1))
-                    duk_to_fixed_buffer(ctx, -1, &sz);
-                s=duk_get_buffer_data(ctx, -1, &sz);
+                /* a private copy, so we can translate '_' and '-' without
+                   altering the caller's Buffer */
+                {
+                    char *copy=(char *)duk_push_fixed_buffer(ctx, sz);
+                    if (sz)
+                        memcpy(copy, s, sz);
+                    s=copy;
+                }
 
                 while(sz--)
                 {
@@ -2091,9 +2126,26 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
                         PF_THROW(ctx, "printf: - expecting argument for conversion specifier (variable required at position %d)", fidx);
                 }
 
-                if( !ccodes && ( (flags & FLAGS_COLOR && isterm) || flags & FLAGS_COLOR_FORCE) )
+                int jcolored = !ccodes && ( (flags & FLAGS_COLOR && isterm) || flags & FLAGS_COLOR_FORCE);
+                int jtype = 0;
+
+                if( jcolored )
                 {
-                    switch( rp_gettype(ctx, fidx) ){
+                    /* Colors come from the original type.  A prepare pass (no
+                       output) left its JSON and that type in a holder, so the
+                       writing pass runs no JS. */
+                    if( duk_is_object(ctx, fidx) && duk_has_prop_string(ctx, fidx, PF_JSON_TYPE) )
+                    {
+                        duk_get_prop_string(ctx, fidx, PF_JSON_TYPE);
+                        jtype = duk_get_int(ctx, -1);
+                        duk_pop(ctx);
+                        duk_get_prop_string(ctx, fidx, PF_JSON_TEXT);
+                        duk_replace(ctx, fidx);
+                    }
+                    else
+                        jtype = rp_gettype(ctx, fidx);
+
+                    switch( jtype ){
                         case RP_TYPE_ARRAY:
                         case RP_TYPE_OBJECT:
                             break;
@@ -2119,7 +2171,18 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
 
                 anytostring(ctx, fidx, width, flags);
 
-                if( jpal_idx != -1 && !ccodes && ( (flags & FLAGS_COLOR && isterm) || flags & FLAGS_COLOR_FORCE) )
+                if( jcolored && !buffer )
+                {
+                    /* put in place of the argument after output, as %U does */
+                    duk_push_object(ctx);
+                    duk_push_int(ctx, jtype);
+                    duk_put_prop_string(ctx, -2, PF_JSON_TYPE);
+                    duk_dup(ctx, fidx);
+                    duk_put_prop_string(ctx, -2, PF_JSON_TEXT);
+                    preserveUfmt = 1;
+                }
+
+                if( jpal_idx != -1 && jcolored )
                 {
                     const char *j = duk_get_string(ctx, fidx);
                     char *jout = print_json_colored (j, width, COLORS, &jpal[jpal_idx]);
@@ -2139,12 +2202,11 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
             duk_size_t len;
             const char *p = PF_REQUIRE_LSTRING(ctx, fidx++, &len);
             //unsigned int l = _strnlen_s(p, precision ? precision : (size_t)-1);
-            unsigned int l = (unsigned int) len;
+            unsigned int l = (unsigned int) len, nout;
             // pre padding
             if (flags & FLAGS_PRECISION)
                 l = (l < precision ? l : precision);
-            else
-                precision = l;
+            nout = l;   /* never more than the string holds: precision may exceed it */
 
             if (!(flags & FLAGS_LEFT))
             {
@@ -2154,7 +2216,7 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
                 }
             }
             // string output
-            while (precision--)
+            while (nout--)
             {
                 out(*(p++), buffer, idx++, maxlen);
             }
@@ -2185,7 +2247,7 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
             {
                 duk_size_t len=0;
                 const char *p = PF_REQUIRE_BUF_OR_STRING(ctx, fidx++, &len);
-                l = _strnlen_s(p, precision ? precision : (size_t)len);
+                l = _strnlen_s(p, (precision && precision < len) ? precision : (size_t)len);
 
                 // pre padding
                 if (flags & FLAGS_PRECISION)
@@ -2259,7 +2321,7 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
                 }
 
                 p = PF_REQUIRE_BUF_OR_STRING(ctx, fidx++, &len);
-                l = _strnlen_s(p, precision ? precision : (size_t)len);
+                l = _strnlen_s(p, (precision && precision < len) ? precision : (size_t)len);
 
                 // pre padding
                 if (flags & FLAGS_PRECISION)
@@ -2374,7 +2436,7 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
                 duk_replace(ctx, fidx);        
             }*/
             /* convert json as above in '%J' */
-            else if (duk_is_object(ctx, fidx) && !duk_is_function(ctx, -1))
+            else if (duk_is_object(ctx, fidx) && !duk_is_function(ctx, fidx))
             {
                 goto json;
             }

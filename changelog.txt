@@ -38,6 +38,15 @@ v0.7.5
                             date column becomes that moment in time; it
                             was shifted by the local UTC offset.  This
                             also affects sql.importCsv().
+                            printf family: fixed reads past the end of
+                            strings and buffers, and heap overflows in
+                            bprintf(), abprintf() and %U.
+                            printf no longer hangs after an error while
+                            formatting.
+                            fprintf() no longer garbles output from
+                            threads sharing a handle, writes nothing on a
+                            format error, and streams large strings
+                            without copying them.
 
     -rampart-webserver      macOS: when launchd cannot start the server
                             (e.g. an unwritable launchd.log), report why
