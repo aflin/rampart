@@ -2763,7 +2763,12 @@ TXsqlFunc_chunkembed(FLD *f1, FLD *f2, FLD *f3, FLD *f4)
     {
         TXchunkSpan *spans = NULL;
 
-        src = (char *)getfld(f1, &slen);
+        /* arg1 is declared any-type, so a blob column arrives uncoerced:
+         * getfld() would give the handle, not the text */
+        if ((f1->type & DDTYPEBITS) == FTN_BLOBI)
+            src = (char *)TXblobiGetPayload((ft_blobi *)getfld(f1, NULL), &slen);
+        else
+            src = (char *)getfld(f1, &slen);
         if (!src || slen == 0)
         {
             TXfldSetNull(f1);

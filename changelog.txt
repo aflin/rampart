@@ -27,6 +27,16 @@ v0.7.5
                             an older one elsewhere.
                             BEHAVIOR CHANGE: texislockd listens on
                             127.0.0.1 only (-b to change).
+                            Selecting a blob or blobz column returns its
+                            text; it returned the number 18.
+                            BEHAVIOR CHANGE: an empty varchar, blob or
+                            blobz column returns "" instead of null.
+                            null inserted into these columns is stored as
+                            empty, so it also reads back as "".
+                            Fixed chunkembed() on a blob or blobz column
+                            embedding the blob's handle instead of its
+                            text.  Vectors already built that way need
+                            re-embedding.
 
     -rampart                rampart.import.csv() and csvFile():
                             Fixed dates from other threads appearing in

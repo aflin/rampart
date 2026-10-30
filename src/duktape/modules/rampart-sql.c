@@ -1965,6 +1965,31 @@ static int get_chunks(int size)
     return 0; // no nag
 }
 
+/* a blob field holds its text once rp_fl_inline_blobs() has run */
+static size_t rp_fl_type_size(int type)
+{
+    return type == FTN_BLOBI ? 1 : ddftsize(type);
+}
+
+/* A blob field is a handle into this process's open .blb file, useless to
+   the parent of a fork.  Swap in the (uncompressed) text, which the handle
+   owns until the next fetch. */
+static void rp_fl_inline_blobs(FLDLST *fl)
+{
+    int i;
+
+    if (!fl) return;
+    for (i = 0; i < fl->n; i++)
+    {
+        size_t sz = 0;
+
+        if ((fl->type[i] & 0x3f) != FTN_BLOBI || !fl->data[i])
+            continue;
+        fl->data[i]  = TXblobiGetPayload((ft_blobi *)fl->data[i], &sz);
+        fl->ndata[i] = fl->data[i] ? (int)sz : 0;
+    }
+}
+
 static FLDLST * fork_fetch(DB_HANDLE *h,  int stringsFrom)
 {
     FLDLST *ret=NULL;
@@ -2050,7 +2075,7 @@ static FLDLST * fork_fetch(DB_HANDLE *h,  int stringsFrom)
     for (i=0;i<ret->n;i++)
     {
         char type = ret->type[i] & 0x3f;
-        size_t type_size = ddftsize(type),
+        size_t type_size = rp_fl_type_size(type),
                size = type_size * (size_t)ret->ndata[i];
         if(size==0)
             ret->data[i]=NULL;
@@ -2342,7 +2367,7 @@ static int serialize_fl(SFI *finfo, FLDLST *fl)
     for (i = 0; i < fl->n; i++)
     {
         char type = fl->type[i] & 0x3f;
-        size_t type_size = ddftsize(type),
+        size_t type_size = rp_fl_type_size(type),
                size = type_size * (size_t)fl->ndata[i];
         if(size !=0 && fl->data[i] != NULL)
         {
@@ -2401,6 +2426,7 @@ static int child_fetch()
         fl = NULL;              /* rows read without locks: stop */
         atag = 'L';
     }
+    rp_fl_inline_blobs(fl);
     rp_fl_add_recid(tx, fl);
 
     /* 'A' must be written HERE -- after the last callback texis_fetch
@@ -4503,6 +4529,7 @@ static FLDLST *h_fetch(DB_HANDLE *h,  int stringsFrom)
             rp_lock_lost = 1;
             fl = NULL;          /* rows read without locks: stop */
         }
+        rp_fl_inline_blobs(fl);
         rp_fl_add_recid(h->tx, fl);
     }
     rp_fl_finish_recid(h, fl);
@@ -5218,10 +5245,8 @@ void *check_for_vector_type(duk_context *ctx, long *olen, int *in, int *out)
            patching that broke parameter-FLD reuse across prepared-stmt\
            re-executions.  (b) works entirely inside rampart-sql:\
            TXsqlFunc_embed's `slen==0 -> TXfldSetNull` short-circuit\
-           returns SQL NULL for `select embed(?)`, and rp_pushfield\
-           already reads an empty varchar column back to JS null.  So\
-           null round-trips as null through embed() and through varchar\
-           column INSERT/SELECT with zero texis-core edits. */\
+           returns SQL NULL for `select embed(?)`.  A varchar column\
+           stores it as empty, and so reads back as "". */\
         case DUK_TYPE_NULL:\
         {\
             v = (char *)"";\
@@ -5476,7 +5501,11 @@ static void rp_pushfield(duk_context *ctx, FLDLST *fl, int i, int rawvec)
 
     if( !fl->data[i]  || !fl->ndata[i])
     {
-        duk_push_null(ctx);
+        /* texis has no null text: empty is simply empty */
+        if (type == FTN_CHAR || type == FTN_INDIRECT || type == FTN_BLOBI)
+            duk_push_string(ctx, "");
+        else
+            duk_push_null(ctx);
         return;
     }
 
@@ -5764,6 +5793,10 @@ static void rp_pushfield(duk_context *ctx, FLDLST *fl, int i, int rawvec)
         }
         break;
     }
+    case FTN_BLOBI:
+        /* rp_fl_inline_blobs() put the text here */
+        duk_rp_push_lstring_safe(ctx, (char *)fl->data[i], (duk_size_t)fl->ndata[i]);
+        break;
     case FTN_RECID:
     {
         /* a table-file offset: exact as a double below 2^53 (8 PiB) */
