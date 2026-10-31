@@ -155,7 +155,9 @@ char *query;
 	if(TXismmop(pred->op, NULL) && pred->rt == FIELD_OP)
 	{
 		ddmmapi = getfld(pred->right, NULL);
-		if(!strcmp(query, ddmmapi->query) && ddmmapi->bt)
+		/* NULL: this query could not compile, e.g. the failed keyword
+		 * side of a hybrid LIKEP OR LIKEV */
+		if(ddmmapi && !strcmp(query, ddmmapi->query) && ddmmapi->bt)
 			return ddmmapi;
 	}
 	if(pred->lt == 'P')

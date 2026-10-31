@@ -3474,6 +3474,7 @@ int inv;
 /******************************************************************/
 
 static IINDEX *orindices ARGS((DBTBL *, IINODE *, int, PRED *));
+static IINDEX *txMakeEmptyIindex ARGS((void));
 
 /* Fused (RRF) OR fast path: mark the LIKEV child handled so the
  * generic index post-process is skipped.  realwork always sets the
@@ -3485,7 +3486,9 @@ static IINDEX *orindices ARGS((DBTBL *, IINODE *, int, PRED *));
  * halves of that work are already done: membership is the union of
  * the two index lists (each side's own membership rules), and $rank
  * is the fusedRank stashed at tup_read (TXcalcrank FOP_OR returns it
- * without touching the sides).
+ * without touching the sides).  The keyword child counts too, unless
+ * its query needs post-processing to confirm a match (e.g. a phrase):
+ * under OR it arrives handled=0 even when the index was exact.
  *
  * The one thing the skipped per-row FOP_MMV eval provided was the
  * last-chunk state that a 5-arg abstract() IN THE SAME SELECT seeds
@@ -3496,9 +3499,11 @@ static IINDEX *orindices ARGS((DBTBL *, IINODE *, int, PRED *));
  * two-phase pattern (fetch ids, then per-Id `LIKEV ? AND Id = ?`
  * abstracts). */
 static void
-txRrfMarkHandled(PRED *p, PRED *vecChild)
+txRrfMarkHandled(PRED *p, PRED *vecChild, PRED *kwChild)
 {
 	vecChild->handled = 1;
+	if (kwChild->idxExact)
+		kwChild->handled = 1;
 	(void)p;
 	TXlikevSetLastChunk(-1, 0);
 }
@@ -3529,6 +3534,30 @@ PRED *p;	/* (in, opt.) the OR predicate, for hybrid-shape detection */
 	else if (in->right && in->right->gpred)
 		in->gpred = in->right->gpred;
 
+	/* Hybrid whose keyword side has no search (nothing but noise words):
+	 * it matches nothing, which must not lose the vector list and turn
+	 * the OR into a table scan. */
+	if (p && p->lt == 'P' && p->rt == 'P' && in->left && in->right)
+	{
+		PRED	*lp0 = (PRED *)p->left, *rp0 = (PRED *)p->right;
+		IINODE	*kwn = NULL;
+		PRED	*kwp = NULL;
+
+		if (TXismmop(lp0->op, NULL) && rp0->op == FLDMATH_MMV &&
+		    in->right->index)
+		{
+			kwn = in->left;
+			kwp = lp0;
+		}
+		else if (TXismmop(rp0->op, NULL) && lp0->op == FLDMATH_MMV &&
+			 in->left->index)
+		{
+			kwn = in->right;
+			kwp = rp0;
+		}
+		if (kwn && !kwn->index && (kwn->index = txMakeEmptyIindex()))
+			kwp->idxExact = 1;
+	}
 	if ((in->left == NULL) || in->left->index == (IINDEX *) NULL)
 		return NULL;
 	if ((in->right == NULL) || in->right->index == (IINDEX *) NULL)
@@ -3555,7 +3584,7 @@ PRED *p;	/* (in, opt.) the OR predicate, for hybrid-shape detection */
 			ix = TXindexrrf(in->left->index, in->right->index,
 					inv);
 			if (ix != IINDEXPN)
-				txRrfMarkHandled(p, rp);
+				txRrfMarkHandled(p, rp, lp);
 			tb->order = closeproj(tb->order);
 			return ix;
 		}
@@ -3564,7 +3593,7 @@ PRED *p;	/* (in, opt.) the OR predicate, for hybrid-shape detection */
 			ix = TXindexrrf(in->right->index, in->left->index,
 					inv);
 			if (ix != IINDEXPN)
-				txRrfMarkHandled(p, lp);
+				txRrfMarkHandled(p, lp, rp);
 			tb->order = closeproj(tb->order);
 			return ix;
 		}
@@ -4717,6 +4746,7 @@ noIndexOk:
 				 * LIKER is defined to be index-only:
 				 */
 				p->op = FLDMATH_RELEV;
+			p->idxExact = (cop != 0);
 			if (!cop ||			/* needs post-proc */
 			    !asc)   /* no shortcuts, e.g. parent is not AND */
 				p->handled = 0;

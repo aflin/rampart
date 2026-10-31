@@ -1750,6 +1750,7 @@ extern int TXlikepmode;
 extern int TXnlikephits;
 extern int TXnlikevhits;        /* INDEX_VEC: candidate pool cap per LIKEV */
 extern int TXrrfRows;           /* RRF fusion pool depth, both sides */
+extern int TXblobzCompressLevel;        /* blobz gzip level: -1 zlib default, 0-9 */
 extern int TXrrfK;              /* RRF damping constant */
 extern int TXrrfTieVec;         /* RRF exact-tie winner: 0 = keyword, 1 = vector */
 extern double TXrrfKwWeight;    /* RRF keyword side multiplier */
@@ -3617,6 +3618,7 @@ TXZLIBFORMAT;
 #define TXZLIBFORMATPN  ((TXZLIBFORMAT *)NULL)
 
 TXZLIB *TXzlibClose ARGS((TXZLIB *zlib));
+void TXzlibSetLevel(TXZLIB *zlib, int level);
 TXZLIB *TXzlibOpen(TXZLIBFORMAT format, TXFILTERFLAG flags, int traceEncoding,
 		   TXPMBUF *pmbuf);
 int     TXzlibReset ARGS((TXZLIB *zlib));

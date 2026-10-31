@@ -8011,6 +8011,7 @@ static char *prop_defaults[][2] = {
     * 'vector') -- a determinism guarantee, since equal scores otherwise
     * fall to physical table order.  The weights scale each side's term;
     * only their ratio matters. */
+   {"blobzCompressLevel", "-1"},
    {"rrfRows", "300"},
    {"rrfK", "60"},
    {"rrfTieBreak", "keyword"},
@@ -8831,7 +8832,7 @@ static int expr_compiles(const char *expr)
  *
  * MUST remain sorted: searched with bsearch(). */
 static const char * const int_props[] = {
-    "allineardict", "btreecachesize", "btreedump", "btreeoptimizeoff",
+    "allineardict", "blobzcompresslevel", "btreecachesize", "btreedump", "btreeoptimizeoff",
     "btreeoptimizeon", "btreethreshold", "cleanupwait",
     "dbcleanupverbose", "debugmalloc", "dedupmultiitemresults",
     "dropwordmode", "eastpositive", "enablesubsetintersect",

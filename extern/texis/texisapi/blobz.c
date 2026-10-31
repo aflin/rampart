@@ -328,6 +328,8 @@ TXblobzDoCompressOrUncompress(TXPMBUF *pmbuf, const char *file,
 	zlibHandle = TXzlibOpen(TXZLIBFORMAT_GZIP, flags,
 				0 /* traceEncoding */, pmbuf);
 	if (!zlibHandle) goto err;
+	if (!(flags & TXFILTERFLAG_DECODE))
+		TXzlibSetLevel(zlibHandle, TXblobzCompressLevel);
 	cteFlags = TXCTEHF_INPUT_EOF;
 
 	curInBuf = inBuf;

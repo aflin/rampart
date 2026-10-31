@@ -37,6 +37,16 @@ v0.7.5
                             embedding the blob's handle instead of its
                             text.  Vectors already built that way need
                             re-embedding.
+                            Fixed quoted phrases containing a noise word
+                            finding nothing; with exactPhrase off (the
+                            default) noise words match any word.
+                            Hybrid likep OR likev no longer re-reads
+                            every candidate row; much faster on blobz.
+                            Fixed hybrid search returning nothing, or
+                            scanning the table, when the keyword side
+                            has no searchable words.
+                            New setting blobzCompressLevel (-1 to 9) sets
+                            the compression level for blobz writes.
 
     -rampart                rampart.import.csv() and csvFile():
                             Fixed dates from other threads appearing in

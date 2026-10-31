@@ -144,6 +144,7 @@ int	TXnlikephits = 100;
 int	TXnlikevhits = 1000;        /* INDEX_VEC: candidate pool cap per LIKEV */
 /* Hybrid keyword-OR-vector rank fusion (TXindexrrf, imanip.c). */
 int	TXrrfRows = 300;            /* fusion pool depth, BOTH sides */
+int	TXblobzCompressLevel = -1;  /* -1 zlib default (6), 0-9 */
 int	TXrrfK = 60;                /* RRF damping constant */
 int	TXrrfTieVec = 0;            /* 0 = keyword wins exact ties, 1 = vector */
 double	TXrrfKwWeight = 1.0;        /* keyword side multiplier */

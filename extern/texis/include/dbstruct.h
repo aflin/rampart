@@ -388,6 +388,7 @@ typedef struct PRED_tag
 	TXOF	orderFlags;		/* OF_DESCENDING, OF_IGN_CASE */
 #endif /* TX_USE_ORDERING_SPEC_NODE */
 	byte	didPostProcLinearMsg;
+	byte	idxExact;	/* LIKEP index match needs no post-proc */
 	byte	mmvEmbedTried;	/* LIKEV auto-embed attempted (negative-cache
 				   so a failed embed isn't retried per row);
 				   cleared with the alt FLDs (TXpredClear

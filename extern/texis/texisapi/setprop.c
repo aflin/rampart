@@ -305,6 +305,23 @@ char	*value;
 		TXlikevMinRank = atoi(value);
 		return 0;
 	}
+	if (!strcmp(propi, "blobzcompresslevel")) /* docs */
+	{
+		/* gzip level for new blobz writes; reads need no setting */
+		char	*end;
+		long	lvl = strtol(value, &end, 10);
+
+		if (end == value || *end != '\0' || lvl < -1 || lvl > 9)
+		{
+			putmsg(MWARN + UGE, CHARPN,
+			       "Invalid blobzcompresslevel value `%s': must be -1 to 9",
+			       value);
+			return(-1);
+		}
+		TXsetparm(ddic, "blobzcompresslevel", value);
+		TXblobzCompressLevel = (int)lvl;
+		return 0;
+	}
 	if (!strcmp(propi, "rrfrows")) /* docs */
 	{
 		/* Hybrid keyword-OR-vector fusion pool depth, both sides.
@@ -2192,6 +2209,9 @@ DDIC *ddic;
 
 	/* likeprows */
 	TXnlikephits=100;
+
+	/* blobzcompresslevel */
+	TXblobzCompressLevel = -1;
 
 	/* rrfrows, rrfk, rrftiebreak, rrfkwweight, rrfvecweight */
 	TXrrfRows = 300;

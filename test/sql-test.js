@@ -589,6 +589,69 @@ testFeature("abstract - query that fails to compile does not poison the cache", 
     return ok === 100;
 });
 
+/* quoted phrases containing noise words: `of the' etc. are not indexed */
+sql.exec("create table noisephrase (id int, d varchar(100));");
+[[1, "the history of the roman empire was long"],
+ [2, "the history by the roman empire is disputed"],
+ [3, "roman history of an empire"],
+ [4, "the king of england ruled"],
+ [5, "a totally different topic"]].forEach(function(r) {
+    sql.exec("insert into noisephrase values (?,?);", r);
+});
+sql.exec("create metamorph inverted index noisephrase_x on noisephrase(d);");
+
+function _phraseIds(q) {
+    return sql.exec("select id from noisephrase where d likep ? order by id;", [q])
+              .rows.map(function(r) { return r.id; }).join();
+}
+
+testFeature("Sql noise phrase - found, noise words match any word", function() {
+    return _phraseIds('"history of the roman empire"') === "1,2" &&
+           _phraseIds('"king of england"') === "4";
+});
+
+testFeature("Sql noise phrase - exactPhrase and alPostProc confirm the words", function() {
+    sql.set({exactPhrase: true, alPostProc: true});
+    var r = _phraseIds('"history of the roman empire"');
+    sql.set({exactPhrase: false, alPostProc: false});
+    return r === "1";
+});
+
+testFeature("Sql noise phrase - all noise words find nothing and do not throw", function() {
+    return _phraseIds('"of the"') === "";
+});
+sql.exec("drop table noisephrase;");
+
+/* writes at each level must read back; only 0 and 9 sizes are predictable */
+function _blobzLevelSize(t, level, doc) {
+    sql.set({blobzCompressLevel: level});
+    sql.exec("create table " + t + " (id int, d blobz);");
+    for (var i = 0; i < 5; i++)
+        sql.exec("insert into " + t + " values (?,?);", [i, doc + i]);
+    sql.set({blobzCompressLevel: -1});
+    return stat(tmpdir + "/testdb/" + t + ".blb").size;
+}
+
+testFeature("Sql blobzCompressLevel - sizes differ, every level reads back", function() {
+    var doc = "", i;
+    for (i = 0; i < 2000; i++) doc += "word" + (i * 7919 % 1013) + " text ";
+    var s0 = _blobzLevelSize("bz0", 0, doc), s9 = _blobzLevelSize("bz9", 9, doc);
+    var r0 = sql.one("select d from bz0 where id = 3;").d;
+    var r9 = sql.one("select d from bz9 where id = 3;").d;
+    sql.exec("drop table bz0;");
+    sql.exec("drop table bz9;");
+    return s9 < s0 / 2 && r0 === doc + "3" && r9 === doc + "3";
+});
+
+testFeature("Sql blobzCompressLevel - rejects bad values", function() {
+    var bad = 0;
+    ["set blobzcompresslevel=10;", "set blobzcompresslevel=-2;",
+     "set blobzcompresslevel='abc';"].forEach(function(q) {
+        try { sql.exec(q); } catch(e) { bad++; }
+    });
+    return bad === 3;
+});
+
 rm_rf_dir(tmpdir);
 
 testFeature.exit();

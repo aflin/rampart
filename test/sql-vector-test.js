@@ -983,6 +983,40 @@ function finishAll() {
 }
 
 /* Keep thread refs at module scope so they aren't GC'd. */
+/* hybrid LIKEP OR LIKEV: a keyword side with nothing searchable matches
+ * nothing; the vector side must still answer, in either order */
+sql.exec("create table hyb (id int, d varchar(64), v varvecF32(8));");
+for (var hi = 1; hi <= 30; hi++)
+    sql.exec("insert into hyb values (?, ?, ?);",
+             [hi, hi == 7 ? 'the roman empire of old' : 'row number ' + hi, vec_for(hi)]);
+sql.exec("create metamorph inverted index hyb_x on hyb(d);");
+sql.exec("create vector index hyb_v on hyb(v) with backend 'hnsw';");
+
+function _hybIds(q, p) {
+    return sql.exec(q, {maxRows: 10}, p).rows.map(function(r) { return r.id; }).join();
+}
+
+testFeature("hybrid - all noise keywords: both orders return the vector rows", function () {
+    var q = vec_for(3);
+    var want = _hybIds("select id from hyb where v likev ?;", [q]);
+    return want.length > 0 &&
+           _hybIds("select id from hyb where d likep ? or v likev ?;", ['of the', q]) === want &&
+           _hybIds("select id from hyb where v likev ? or d likep ?;", [q, 'of the']) === want;
+});
+
+testFeature("hybrid - abstract() with a keyword side that cannot compile", function () {
+    var r = sql.exec("select id, abstract(d, 50, 'querybest', ?) a from hyb " +
+                     "where d likep ? or v likev ?;", ['of the', 'of the', vec_for(3)]);
+    return r.rows.length > 0 && r.rows[0].a.length > 0;
+});
+
+testFeature("hybrid - noise phrase on the keyword side still finds its row", function () {
+    var r = sql.exec("select id from hyb where d likep ? or v likev ?;",
+                     {maxRows: 40}, ['"the roman empire of old"', vec_for(3)]);
+    return r.rows.some(function(x) { return x.id === 7; });
+});
+sql.exec("drop table hyb;");
+
 var thrA = new rampart.thread();
 var thrB = new rampart.thread();
 var thrC = new rampart.thread();

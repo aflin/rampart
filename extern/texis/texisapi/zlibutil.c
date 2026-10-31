@@ -18,6 +18,7 @@ struct TXZLIB_tag
   TXZLIBFORMAT  format;
   TXbool        forDecode;
   TXbool        isVirgin;       /* true: no translate calls (thus no DoInit) */
+  int           level;          /* deflate level */
   int           traceEncoding;  /* just some bits (0x8) */
   byte          *orgInBuf, *orgOutBuf;
   TXCTEHF       flags;
@@ -250,7 +251,7 @@ TXZLIB  *zlib;
     res = inflateInit2(zs, windowBits);
   else
     res = deflateInit2(zs,                      /* stream */
-                       Z_DEFAULT_COMPRESSION,   /* wtf pass in from param */
+                       zlib->level,             /* TXzlibSetLevel() */
                        Z_DEFLATED,              /* method */
                        windowBits,              /* windowBits */
                        8,                       /* default mem level 8 */
@@ -263,6 +264,15 @@ TXZLIB  *zlib;
   return(1);                                    /* success */
 err:
   return(0);
+}
+
+void
+TXzlibSetLevel(TXZLIB *zlib, int level)
+/* Deflate level for this handle: -1 zlib default, 0-9.  Call before the
+ * first translate; init is delayed until then.
+ */
+{
+  zlib->level = level;
 }
 
 TXZLIB *
@@ -284,6 +294,7 @@ TXPMBUF         *pmbuf;         /* (in) handle for errors (will clone) */
   zlib->forDecode = ((flags & TXFILTERFLAG_DECODE) ? TXbool_True :
                      TXbool_False);
   zlib->isVirgin = TXbool_True;
+  zlib->level = Z_DEFAULT_COMPRESSION;
   zlib->traceEncoding = traceEncoding;
   /* Rest cleared by calloc().  Needed fields (e.g. buffers) will be
    * set per ...Translate... call.  We leave `zalloc' etc. NULL so zlib

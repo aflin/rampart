@@ -1437,12 +1437,13 @@ static int check_noise_phrase(TX_eq_isnoise *isnoise, char **lst, char *phrase, 
     return 0;
 }                                         /* end check_noise_phrase() */
 
-static void rmnoise ARGS((EQV *eq,EQVLST *eql));
+static void rmnoise ARGS((EQV *eq,EQVLST *eql,int keepRoot));
 /**********************************************************************/
 static void
-rmnoise(eq,eql)
+rmnoise(eq,eql,keepRoot)
 EQV *eq;
 EQVLST *eql;
+int keepRoot;   /* words[0] is the term the user typed: filter only its equivs */
 {
 int s, d;
 char **w, **c, *o;
@@ -1456,7 +1457,8 @@ int (*isnoise)ARGS((char **lst,char *wrd,void *isnarg));
    lst=eq->noise;
    isnarg=eq->isnarg;
    isnoise=eq->isnoise;
-   for(s=d=0;*w[s]!='\0';s++){
+   s=d=(keepRoot && *w[0]!='\0' ? 1 : 0);
+   for(;*w[s]!='\0';s++){
       if(check_noise_phrase(isnoise, lst, w[s], isnarg)){ //-ajf 08-21-2024
          free(w[s]);
          free(c[s]);
@@ -1474,7 +1476,7 @@ int (*isnoise)ARGS((char **lst,char *wrd,void *isnarg));
 }                                                    /* end rmnoise() */
 /**********************************************************************/
 #else                                                 /* !RMNOISEEQVS */
-#  define rmnoise(a,b)
+#  define rmnoise(a,b,c)
 #endif                                                 /* RMNOISEEQVS */
 
 /**********************************************************************/
@@ -1497,7 +1499,7 @@ static CONST char Fn[]="geteqv";
    lst[1]="";
    retn=1;
    eql=igeteqv(eq,lst,&retn,1,1,1);
-   if(!eq->kpnoise && eq->isnoise!=EQV_ISNOISEPN) rmnoise(eq,eql);
+   if(!eq->kpnoise && eq->isnoise!=EQV_ISNOISEPN) rmnoise(eq,eql,0);
    free(lst[0]);
    return(eql);
 }                                                     /* eng geteqv() */
@@ -1705,7 +1707,7 @@ static CONST char Fn[]="get equivs";
          if((*eq->isnoise)(eq->noise,curEql->words[0],eq->isnarg)){
             eql[ei]=curEql=closeeqvlst2(curEql);
          }else{
-            rmnoise(eq,curEql);
+            rmnoise(eq,curEql,1);
             chkthis=ei;
             ei++;
          }
