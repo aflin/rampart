@@ -68,6 +68,11 @@ v0.7.5
                             format error, and streams large strings
                             without copying them.
 
+    -rampart-html           New toMarkdown(): HTML to Markdown with headings,
+                            emphasis, code, blockquotes, lists, links and
+                            pipe tables.  linkSpans reports where each
+                            link landed, as UTF-8 byte offsets.
+
     -rampart-webserver      macOS: when launchd cannot start the server
                             (e.g. an unwritable launchd.log), report why
                             instead of waiting silently.
