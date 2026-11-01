@@ -2808,6 +2808,16 @@ static void md_mark_escapes(MdRun *r, unsigned char *esc)
     size_t i, n;
     long lasttick[65], lastrun = -1;
     int firstline = 1, tickpair = 0;
+    size_t *opens = NULL, nopen = 0, capopen = 0;
+
+#define bracket_open(pos) do{\
+    if (nopen == capopen)\
+    {\
+        capopen = capopen ? capopen * 2 : 16;\
+        REMALLOC(opens, capopen * sizeof(size_t));\
+    }\
+    opens[nopen++] = (pos);\
+} while(0)
 
     md_mark_delims(r, esc, '*');
     md_mark_delims(r, esc, '_');
@@ -2853,10 +2863,24 @@ static void md_mark_escapes(MdRun *r, unsigned char *esc)
             case '[':
                 if (r->k[i] == MK_LTEXT)
                     esc[i] = 1;
+                else
+                    bracket_open(i);
                 break;
             case ']':
-                if (r->k[i] == MK_LTEXT || nx == '(' || nx == '[')
+                if (r->k[i] == MK_LTEXT)
                     esc[i] = 1;
+                else if (nopen)
+                {
+                    /* ]( or ][ could complete a link.  Every open [ goes:
+                       this ] would otherwise close the next one out */
+                    if (nx == '(' || nx == '[')
+                    {
+                        while (nopen)
+                            esc[opens[--nopen]] = 1;
+                    }
+                    else
+                        nopen--;
+                }
                 break;
             case '!':
                 if (nx == '[' && r->k[i + 1] == MK_SYN)  /* would turn a link into an image */
@@ -2882,6 +2906,8 @@ static void md_mark_escapes(MdRun *r, unsigned char *esc)
                 break;
         }
     }
+    free(opens);
+#undef bracket_open
     if (r->heading)
     {
         /* ## text ## : a trailing # run would be taken as a closing sequence */
@@ -3069,7 +3095,10 @@ static void md_pre(MdCtx *c, TidyNode node, MdOut *out)
     md_out_init(&t);
     md_out_init(&piece);
     md_collect_text(c, node, &t, 0);
-    while (t.len && (t.p[t.len - 1] == '\n' || t.p[t.len - 1] == '\r'))
+    /* one newline is the closing fence's; more are content */
+    if (t.len && t.p[t.len - 1] == '\n')
+        t.len--;
+    if (t.len && t.p[t.len - 1] == '\r')
         t.len--;
     if (!t.len)
     {
