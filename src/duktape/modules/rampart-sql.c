@@ -194,7 +194,7 @@ typedef struct {
     int         split_mode;       /* 0 auto / 1 window / 2 para */
     int         min_split_tokens; /* 0 = default 32, -1 = off */
     int         pack_paragraphs;  /* 1 = pack paragraphs to the window */
-    int         sentence_split;   /* 1 = sentence-pack oversized pieces */
+    int         sentence_split;   /* 0 = default (on), 1 = on, -1 = off: sentence-pack oversized pieces */
 } rp_onnx_embed_opts;
 
 static void  *(*g_rp_onnx_embed_load)(const char *,
@@ -4114,7 +4114,7 @@ static int peek_onnxembed_setting(duk_context *ctx,
 
     /* Chunker options, mirroring initEmbed: split 'auto'|'window',
      * minTokens (fragment floor; -1 disables merging), packParagraphs,
-     * sentenceSplit (sentence-pack oversized pieces).  NOTE for chunked
+     * sentenceSplit (sentence-pack oversized pieces; default on).  NOTE for chunked
      * tables: these change chunk boundaries -- build and any HEADERLESS
      * serving must agree (header-bearing values carry their own spans). */
     if (duk_get_prop_string(ctx, -1, "split") && duk_is_string(ctx, -1)) {
@@ -4128,8 +4128,8 @@ static int peek_onnxembed_setting(duk_context *ctx,
     if (duk_get_prop_string(ctx, -1, "packParagraphs"))
         out->pack_paragraphs = duk_to_boolean(ctx, -1) ? 1 : 0;
     duk_pop(ctx);
-    if (duk_get_prop_string(ctx, -1, "sentenceSplit"))
-        out->sentence_split = duk_to_boolean(ctx, -1) ? 1 : 0;
+    if (duk_get_prop_string(ctx, -1, "sentenceSplit"))   /* unset: 0 = on */
+        out->sentence_split = duk_to_boolean(ctx, -1) ? 1 : -1;
     duk_pop(ctx);
 
     duk_pop(ctx);   /* the onnxembed object itself */
