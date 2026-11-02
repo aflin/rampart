@@ -73,6 +73,19 @@ v0.7.5
                             pipe tables.  linkSpans reports where each
                             link landed, as UTF-8 byte offsets.
 
+    -rampart-langtools      Fixed chunk spans for a paragraph larger than
+                            the model window: each of its vectors
+                            recorded the whole paragraph, so chunkembed()
+                            snippets in excerpt() and abstract() missed
+                            the matching text.  Each chunk's span is now
+                            exactly the bytes it was embedded from.
+                            Re-embed to fix existing rows.
+                            BEHAVIOR CHANGE: sentenceSplit now defaults
+                            to true; a paragraph too large for the model
+                            window is split at sentences, then at word
+                            boundaries.  Only such paragraphs chunk
+                            differently.
+
     -rampart-webserver      macOS: when launchd cannot start the server
                             (e.g. an unwritable launchd.log), report why
                             instead of waiting silently.
