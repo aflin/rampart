@@ -1827,8 +1827,7 @@ duk_ret_t duk_rp_html_totext(duk_context *ctx)
 #define mdLinkSpans  (1U << 12)
 
 #define MD_FALLBACK_TEXT 0
-#define MD_FALLBACK_HTML 1
-#define MD_FALLBACK_SKIP 2
+#define MD_FALLBACK_SKIP 1
 
 #define MD_MAX_RECURSE 512    /* past this a subtree is flattened to plain text */
 #define MD_MAX_PREFIX  32     /* no further quote/list prefix past this nesting */
@@ -1850,7 +1849,8 @@ typedef struct {
 typedef struct {
     TidyDoc doc;
     unsigned int opts;
-    int fallback, blank, plevel;
+    int fallback, blank, plevel, ddlevel;
+    int taskok;   /* nothing yet in this list item: a checkbox is a task marker */
 } MdCtx;
 
 /* byte kinds in a run */
@@ -1861,9 +1861,13 @@ typedef struct {
 #define MK_CODE  4   /* verbatim */
 #define MK_DROP  5   /* removed at the end of the run */
 
-#define MQ_BOLD 0
-#define MQ_ITAL 1
-#define MQ_LINK 2
+#define MQ_BOLD   0
+#define MQ_ITAL   1
+#define MQ_STRIKE 2   /* GFM strikethrough */
+#define MQ_LINK   3
+#define MQ_NEM    3   /* emphasis kinds: the ones before MQ_LINK */
+
+static const char *md_emark[MQ_NEM] = { "**", "*", "~~" };
 
 typedef struct {
     size_t open, close;
@@ -1880,9 +1884,9 @@ typedef struct {
     size_t nem, capem;
     int q[4], nq;          /* markers waiting for the first visible character */
     int pspace, pbr;
-    int bold, ital, inlink, ltext, plainlink;
-    long emidx[2];         /* open emphasis, index into em */
-    long lastclose[2];     /* index of a close marker ending at len, or -1 */
+    int emdepth[MQ_NEM], inlink, ltext, plainlink;
+    long emidx[MQ_NEM];      /* open emphasis, index into em */
+    long lastclose[MQ_NEM];  /* index of a close marker ending at len, or -1 */
     int single, cell, heading;
     long linkspan;
 } MdRun;
@@ -2087,9 +2091,12 @@ static void md_collect_text(MdCtx *c, TidyNode node, MdOut *o, int flat)
 
 static void md_run_init(MdRun *r)
 {
+    int i;
+
     memset(r, 0, sizeof(*r));
-    r->emidx[0] = r->emidx[1] = -1;
-    r->lastclose[0] = r->lastclose[1] = -1;
+
+    for (i = 0; i < MQ_NEM; i++)
+        r->emidx[i] = r->lastclose[i] = -1;
     r->linkspan = -1;
 }
 
@@ -2119,7 +2126,7 @@ static void md_run_put(MdRun *r, const char *s, size_t n, int kind)
         memset(r->k + r->len, kind, n);
     }
     r->len += n;
-    r->lastclose[0] = r->lastclose[1] = -1;
+    r->lastclose[0] = r->lastclose[1] = r->lastclose[2] = -1;
 }
 
 static void md_run_puts(MdRun *r, const char *s, int kind)
@@ -2157,7 +2164,7 @@ static void md_run_flushq(MdRun *r)
         }
         else
         {
-            int mlen = (t == MQ_BOLD) ? 2 : 1;
+            int mlen = (int)strlen(md_emark[t]);
 
             if (r->lastclose[t] >= 0)
             {
@@ -2165,7 +2172,7 @@ static void md_run_flushq(MdRun *r)
                 r->emidx[t] = r->lastclose[t];
                 r->em[r->emidx[t]].closed = 0;
                 r->len -= mlen;
-                r->lastclose[0] = r->lastclose[1] = -1;
+                r->lastclose[0] = r->lastclose[1] = r->lastclose[2] = -1;
                 continue;
             }
             if (r->nem == r->capem)
@@ -2177,7 +2184,7 @@ static void md_run_flushq(MdRun *r)
             r->em[r->nem].len = mlen;
             r->em[r->nem].closed = 0;
             r->emidx[t] = (long)r->nem++;
-            md_run_put(r, (t == MQ_BOLD) ? "**" : "*", mlen, MK_EM);
+            md_run_put(r, md_emark[t], mlen, MK_EM);
         }
     }
     r->nq = 0;
@@ -2224,7 +2231,7 @@ static int md_q_remove(MdRun *r, int t)
 
 static void md_em_open(MdRun *r, int t)
 {
-    int *depth = (t == MQ_BOLD) ? &r->bold : &r->ital;
+    int *depth = &r->emdepth[t];
 
     if ((*depth)++ == 0)
         r->q[r->nq++] = t;
@@ -2232,7 +2239,7 @@ static void md_em_open(MdRun *r, int t)
 
 static void md_em_close(MdRun *r, int t)
 {
-    int *depth = (t == MQ_BOLD) ? &r->bold : &r->ital;
+    int *depth = &r->emdepth[t];
     long idx;
 
     if (--(*depth) != 0)
@@ -2242,7 +2249,7 @@ static void md_em_close(MdRun *r, int t)
     idx = r->emidx[t];
     r->em[idx].close = r->len;
     r->em[idx].closed = 1;
-    md_run_put(r, (t == MQ_BOLD) ? "**" : "*", (t == MQ_BOLD) ? 2 : 1, MK_EM);
+    md_run_put(r, md_emark[t], strlen(md_emark[t]), MK_EM);
     r->lastclose[t] = idx;
 }
 
@@ -2452,6 +2459,17 @@ static void md_flat_text(MdCtx *c, MdRun *r, TidyNode node)
     md_out_free(&t);
 }
 
+/* for boolean attributes: getAttr() gives NULL for <input checked> */
+static int md_has_attr(TidyNode node, const char *name)
+{
+    TidyAttr attr;
+
+    for (attr = tidyAttrFirst(node); attr; attr = tidyAttrNext(attr))
+        if (!strcasecmp(tidyAttrName(attr), name))
+            return 1;
+    return 0;
+}
+
 static void md_inline_node(MdCtx *c, MdRun *r, TidyNode child, int depth)
 {
     TidyNodeType type = tidyNodeGetType(child);
@@ -2485,6 +2503,19 @@ static void md_inline_node(MdCtx *c, MdRun *r, TidyNode child, int depth)
         case TidyTag_IMG:
             md_img(c, r, child);
             return;
+        case TidyTag_INPUT:
+        {
+            /* a checkbox opening a list item: a GFM task */
+            const char *type = getAttr(child, "type");
+
+            if (c->taskok && !r->len && type && !strcasecmp(type, "checkbox"))
+            {
+                md_run_puts(r, md_has_attr(child, "checked") ? "[x]" : "[ ]", MK_SYN);
+                r->pspace = 1;
+                c->taskok = 0;
+            }
+            return;
+        }
         default:
             break;
     }
@@ -2512,28 +2543,21 @@ static void md_inline_node(MdCtx *c, MdRun *r, TidyNode child, int depth)
         md_inline_children(c, r, child, depth + 1);
         md_em_close(r, MQ_ITAL);
     }
+    else if ((id == TidyTag_DEL || id == TidyTag_S || id == TidyTag_STRIKE) && (c->opts & mdEmphasis))
+    {
+        md_em_open(r, MQ_STRIKE);
+        md_inline_children(c, r, child, depth + 1);
+        md_em_close(r, MQ_STRIKE);
+    }
     else if (id == TidyTag_A && !r->inlink && getAttr(child, "href") && (c->opts & (mdLinks | mdLinkSpans)))
     {
         md_link_open(c, r, md_attr(child, "href"));
         md_inline_children(c, r, child, depth + 1);
         md_link_close(c, r, child);
     }
-    else if (id == TidyTag_TABLE && c->fallback != MD_FALLBACK_TEXT)
+    else if (id == TidyTag_TABLE && c->fallback == MD_FALLBACK_SKIP)
     {
-        if (c->fallback == MD_FALLBACK_HTML)
-        {
-            TidyBuffer tb;
-            size_t i;
-
-            tidyBufInit(&tb);
-            dumpHtml(c->doc, child, &tb, 0, 0, 1);
-            for (i = 0; i < tb.size; i++)
-                if (tb.bp[i] == '\n' || tb.bp[i] == '\r')
-                    tb.bp[i] = ' ';
-            md_run_flushq(r);
-            md_run_put(r, (const char *)tb.bp, tb.size, MK_CODE);
-            tidyBufFree(&tb);
-        }
+        ;
     }
     else if (md_is_block(id))
     {
@@ -2636,10 +2660,10 @@ static void md_mark_delims(MdRun *r, unsigned char *esc, char ch)
     int pass, syn = 0;
     size_t i, j;
 
-    if (ch == '*')
+    if (ch == '*' || ch == '~')
     {
         for (i = 0; i < r->len; i++)
-            if (r->k[i] == MK_EM)
+            if (r->k[i] == MK_EM && r->p[i] == ch)
                 syn = 1;
     }
     for (pass = 0; pass < 2; pass++)
@@ -2789,6 +2813,13 @@ static void md_mark_linestart(MdRun *r, unsigned char *esc, size_t i, int firstl
         if (n >= 3)
             memset(esc + i, 1, n);  /* all: a shorter run left over could still pair */
     }
+    else if (ch == '[' && i + 2 < e && r->p[i + 2] == ']' &&
+             (r->p[i + 1] == ' ' || r->p[i + 1] == 'x' || r->p[i + 1] == 'X') &&
+             (i + 3 == e || r->p[i + 3] == ' '))
+    {
+        /* [ ] or [x] opening a list item is a GFM task checkbox */
+        esc[i] = 1;
+    }
     else if (ch == '[')
     {
         for (j = i + 1; j < e; j++)
@@ -2929,6 +2960,8 @@ static void md_run_finish(MdCtx *c, MdRun *r, MdOut *o)
     REMALLOC(esc, r->len + 1);
     memset(esc, 0, r->len + 1);
 
+    if (r->len)
+        c->taskok = 0;
     md_drop_bad_em(r);
     if (c->opts & mdEscape)
         md_mark_escapes(r, esc);
@@ -2983,10 +3016,11 @@ static void md_run_end(MdCtx *c, MdRun *r, MdOut *out, int em, int sep)
 {
     MdOut piece;
 
-    if (em & 1)
-        md_em_close(r, MQ_BOLD);
-    if (em & 2)
-        md_em_close(r, MQ_ITAL);
+    int i;
+
+    for (i = 0; i < MQ_NEM; i++)
+        if (em & (1 << i))
+            md_em_close(r, i);
     md_out_init(&piece);
     md_run_finish(c, r, &piece);
     md_drop_if_blank(&piece);
@@ -2994,10 +3028,9 @@ static void md_run_end(MdCtx *c, MdRun *r, MdOut *out, int em, int sep)
     md_out_free(&piece);
     md_run_free(r);
     md_run_init(r);
-    if (em & 1)
-        md_em_open(r, MQ_BOLD);
-    if (em & 2)
-        md_em_open(r, MQ_ITAL);
+    for (i = 0; i < MQ_NEM; i++)
+        if (em & (1 << i))
+            md_em_open(r, i);
 }
 
 static int md_has_tag(TidyNode node, int blockonly, TidyTagId want, int depth)
@@ -3026,6 +3059,8 @@ static void md_heading(MdCtx *c, TidyNode node, MdOut *out, int level)
     MdOut piece, line;
     char hashes[8];
 
+    c->taskok = 0;
+
     md_run_init(&r);
     r.single = r.heading = 1;
     md_inline_children(c, &r, node, 0);
@@ -3053,6 +3088,7 @@ static void md_pre(MdCtx *c, TidyNode node, MdOut *out)
     char *cls = md_attr(node, "class"), *lang = NULL, ticks[66], info[64];
     TidyNode child;
 
+    c->taskok = 0;
     info[0] = '\0';
     if (!cls)
     {
@@ -3139,6 +3175,8 @@ static void md_prefixed(MdCtx *c, TidyNode node, MdOut *out, int depth, int em, 
 
     md_out_init(&sub);
     md_out_init(&piece);
+    if (tidyNodeGetId(node) != TidyTag_LI)
+        c->taskok = 0;
     c->plevel++;
     md_blocks(c, node, 0, &sub, depth + 1, em, tidyNodeGetId(node) == TidyTag_LI);
     c->plevel--;
@@ -3187,7 +3225,9 @@ static void md_list(MdCtx *c, TidyNode node, MdOut *out, int depth, int em, int 
             mlen = snprintf(marker, sizeof(marker), "* ");
         memset(indent, ' ', mlen);
         indent[mlen] = '\0';
+        c->taskok = 1;
         md_prefixed(c, child, &lst, depth, em, 1, marker, indent, "");
+        c->taskok = 0;
         if (ordered && lst.len + lst.nsp != before)
             num++;
     }
@@ -3384,7 +3424,8 @@ static void md_table_grid(MdTable *t, int width, int repeat, MdOut *o, int *wout
 
                 if (cell->t.len)
                     visible = 1;
-                *copies += cell->t.len;
+                if (!col || line[col - 1] != line[col])
+                    *copies += cell->t.len;
             }
         }
         if (!o || !visible)
@@ -3415,7 +3456,10 @@ static void md_table_grid(MdTable *t, int width, int repeat, MdOut *o, int *wout
         {
             MdCell *cell = (line[col] >= 0) ? &t->cells[line[col]] : NULL;
 
-            if (cell && cell->t.len && (repeat || !cell->placed))
+            /* a colspan's content goes in its first column only: a pipe table
+               cannot span, and repeating it only duplicates the text */
+            if (cell && cell->t.len && (repeat || !cell->placed) &&
+                (!col || line[col - 1] != line[col]))
             {
                 size_t base, s;
 
@@ -3476,6 +3520,7 @@ static void md_table(MdCtx *c, TidyNode node, MdOut *out, int depth, int em)
     int width = 0, visible = 0;
     MdOut tb;
 
+    c->taskok = 0;
     memset(&t, 0, sizeof(t));
     md_table_rows(c, &t, node);
 
@@ -3576,6 +3621,7 @@ static void md_blocks(MdCtx *c, TidyNode node, int self, MdOut *out, int depth, 
 {
     TidyNode child;
     MdRun r;
+    int i;
 
     if (depth > MD_MAX_RECURSE)
     {
@@ -3586,10 +3632,9 @@ static void md_blocks(MdCtx *c, TidyNode node, int self, MdOut *out, int depth, 
         return;
     }
     md_run_init(&r);
-    if (em & 1)
-        md_em_open(&r, MQ_BOLD);
-    if (em & 2)
-        md_em_open(&r, MQ_ITAL);
+    for (i = 0; i < MQ_NEM; i++)
+        if (em & (1 << i))
+            md_em_open(&r, i);
 
 #define MD_FLUSH md_run_end(c, &r, out, em, c->blank + 1)
 
@@ -3623,6 +3668,8 @@ static void md_blocks(MdCtx *c, TidyNode node, int self, MdOut *out, int depth, 
                     flag = 1;
                 else if (id == TidyTag_I || id == TidyTag_EM)
                     flag = 2;
+                else if (id == TidyTag_DEL || id == TidyTag_S || id == TidyTag_STRIKE)
+                    flag = 4;
             }
             if (id != TidyTag_A && md_has_tag(child, 1, 0, 0))
             {
@@ -3668,7 +3715,14 @@ static void md_blocks(MdCtx *c, TidyNode node, int self, MdOut *out, int depth, 
                 md_list(c, child, out, depth, em, tight);
                 break;
             case TidyTag_DD:
-                md_prefixed(c, child, out, depth, em, c->blank + 1, "  ", "  ", "");
+                /* the indent is cosmetic, and nested it would reach 4 spaces,
+                   an indented code block: only the outermost <dd> gets it */
+                c->ddlevel++;
+                if (c->ddlevel == 1)
+                    md_prefixed(c, child, out, depth, em, c->blank + 1, "  ", "  ", "");
+                else
+                    md_blocks(c, child, 0, out, depth + 1, em, 0);
+                c->ddlevel--;
                 break;
             case TidyTag_HR:
             {
@@ -3794,14 +3848,13 @@ duk_ret_t duk_rp_html_tomarkdown(duk_context *ctx)
         {
             const char *f = REQUIRE_STRING(ctx, -1, "html.toMarkdown - option tableFallback requires a string");
 
+            /* no "html": raw HTML is dropped by a Markdown renderer by default */
             if (!strcmp(f, "text"))
                 c.fallback = MD_FALLBACK_TEXT;
-            else if (!strcmp(f, "html"))
-                c.fallback = MD_FALLBACK_HTML;
             else if (!strcmp(f, "skip"))
                 c.fallback = MD_FALLBACK_SKIP;
             else
-                RP_THROW(ctx, "html.toMarkdown - option tableFallback must be \"text\", \"html\" or \"skip\"");
+                RP_THROW(ctx, "html.toMarkdown - option tableFallback must be \"text\" or \"skip\"");
         }
         duk_pop(ctx);
     }
