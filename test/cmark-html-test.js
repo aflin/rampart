@@ -447,4 +447,68 @@ testFeature("Html - destroy invalidates dependent Html Objs", function(){
   return ret;
 });
 
+/* "<A <?" makes libtidy yield an attribute with a NULL name, which
+   segfaulted findAttr/findClass/toMarkdown/toHtml. From a real Stack
+   Exchange title: "Map<Object, Class<?>> into spring.xml". */
+testFeature("Html - nameless attribute from malformed markup", function() {
+  var d = html.newDocument('<p><A <?></p><div id="x">hi</div>');
+
+  /* these never crashed: text and tag names only */
+  if (typeof d.toText({concatenate:true}) != "string") return false;
+  if (d.findTag('div').length !== 0) return false;
+
+  /* these did: each walks the attribute list */
+  if (d.findAttr("id=x").length !== 0) return false;
+  if (d.findClass("c").length !== 0) return false;
+  if (typeof d.toMarkdown({concatenate:true}) != "string") return false;
+  if (!d.toHtml()) return false;
+
+  /* escaped, the div is reachable: the guard skips only the bad attr */
+  var ok = html.newDocument('<p>&lt;A &lt;?&gt;</p><div id="x">hi</div>');
+  if (ok.findAttr("id=x").length !== 1) return false;
+  if (ok.toText({concatenate:true}).indexOf("hi") < 0) return false;
+
+  return true;
+});
+
+/* uniq_array_nodes() must leave exactly one new value on the stack --
+   the caller reads the result object at -3. Guards that as well as the
+   de-duplication, since the node list moved off a VLA. */
+testFeature("Html - selection de-duplication and stack discipline", function() {
+  var d = html.newDocument('<div id="p"><a>1</a><a>2</a><a>3</a><a>4</a></div>');
+  var kids = d.findTag("a");
+  var par;
+
+  if (kids.length !== 4) return false;
+
+  par = kids.parent();
+  /* four children, one parent: length must not count duplicates */
+  if (par.length !== 1) return false;
+  /* the stack must still be sane: attributes and chaining off it work */
+  if (String(par.getAttr("id")) !== "p") return false;
+  if (par.findTag("a").length !== 4) return false;
+
+  return true;
+});
+
+/* objToHtml compared "type" from duk_get_lstring() with no check, so a
+   number/null/bool/array segfaulted. Non-string type is now absent. */
+testFeature("Html - objToHtml with a non-string type", function() {
+  var bad = [123, null, true, [], {}];
+  var i;
+
+  for (i=0; i<bad.length; i++)
+  {
+    /* no tag, but the contents still appear */
+    if (String(html.objToHtml({type: bad[i], contents: ["x"]})) !== "x")
+      return false;
+  }
+
+  /* a string type still wraps the contents */
+  if (String(html.objToHtml({type: "div", contents: ["x"]})) !== "<div>x</div>")
+    return false;
+
+  return true;
+});
+
 testFeature.exit();

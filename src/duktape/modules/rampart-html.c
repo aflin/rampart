@@ -66,8 +66,9 @@ duk_ret_t duk_rp_html_finalizer(duk_context *ctx)
     duk_pop(ctx);
 
     duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("dnodes"));
-// if we need this, we have bigger problems
-//    uniq_array_nodes(ctx, -1);
+    /* dnodes can hold a node twice, and TY_(FreeNode) twice is a double
+       free -- valgrind caught it from fuzz.js. De-duplicate first. */
+    uniq_array_nodes(ctx, -1);
     len=duk_get_length(ctx, -1);
 
     for (i=0; i<len; i++)
@@ -573,7 +574,9 @@ static pendfunc pfunc[5][2] = {
     { &replaceNode, &replaceNode_ext }
 };
 
-
+/* NULL_ATTR_NAME: tidyAttrName() can be NULL, not just tidyAttrValue():
+   malformed markup like "<A <?" yields a nameless attribute. Skip it in
+   every tidyAttrFirst() loop or str[n]casecmp()/strlen() segfaults. */
 const char *getAttr(TidyNode node, const char *name)
 {
     TidyAttr attr;
@@ -582,6 +585,7 @@ const char *getAttr(TidyNode node, const char *name)
     for ( attr=tidyAttrFirst(node); attr; attr=tidyAttrNext(attr) )
     {
         key=tidyAttrName(attr);
+        if (!key) continue; /* nameless attr: malformed markup, see NULL_ATTR_NAME */
         if (!strcasecmp(key, name))
             return (const char *)tidyAttrValue(attr);
     }
@@ -596,6 +600,7 @@ const char *getnAttr(TidyNode node, const char *name, size_t len)
     for ( attr=tidyAttrFirst(node); attr; attr=tidyAttrNext(attr) )
     {
         key=tidyAttrName(attr);
+        if (!key) continue; /* nameless attr: malformed markup, see NULL_ATTR_NAME */
         if (!strncasecmp(key, name, len))
             return (const char *)tidyAttrValue(attr);
     }
@@ -610,6 +615,10 @@ static void addAttr( TidyDoc tdoc, TidyNode tnod, const char *attkey, const char
 
     for ( av = node->attributes; av != NULL; av = av->next )
     {
+        /* av->attribute is what tidyAttrName() exposes, so it is NULL
+           for a nameless attribute here too. See NULL_ATTR_NAME. */
+        if (!av->attribute)
+            continue;
         if (!strcasecmp(av->attribute, attkey))
         {
             tmbstr newval;
@@ -741,6 +750,7 @@ TidyBuffer *dumpTag(TidyNode node, TidyBuffer *buf)
         const char *v = (const char *) tidyAttrValue(attr);
         size_t vlen=0;
 
+        if(!k) continue; /* nameless attr: nothing to serialize, see NULL_ATTR_NAME */
         if(v) vlen=strlen(v);
 
         tidyBufAppend(buf, " ", 1);
@@ -803,6 +813,8 @@ void dumpHtmlObj(duk_context *ctx, TidyDoc doc, TidyNode node)
                     const char *k = (const char *) tidyAttrName(attr);
                     const char *v = (const char *) tidyAttrValue(attr);
 
+                    /* nameless attr cannot be an object key, see NULL_ATTR_NAME */
+                    if(!k) continue;
 
                     if(v)
                         duk_push_string(ctx, v);
@@ -853,7 +865,11 @@ void dumpHtmlObj(duk_context *ctx, TidyDoc doc, TidyNode node)
             TidyBuffer tbuf;
             tidyBufInit(&tbuf);
             tidyNodeGetText(doc, node, &tbuf);
-            duk_push_lstring(ctx, (const char*)tbuf.bp, (duk_size_t)(tbuf.size - (tbuf.bp[tbuf.size-1]=='\n' ? 1 : 0)));
+            /* empty buffer reads bp[-1]; size>0 is guarded elsewhere */
+            if(tbuf.bp && tbuf.size)
+                duk_push_lstring(ctx, (const char*)tbuf.bp, (duk_size_t)(tbuf.size - (tbuf.bp[tbuf.size-1]=='\n' ? 1 : 0)));
+            else
+                duk_push_string(ctx, "");
             tidyBufFree (&tbuf);
             break;
         }
@@ -905,6 +921,8 @@ TidyBuffer *dumpNode(TidyNode node, TidyDoc doc, TidyBuffer *buf, int indent, in
                 const char *k = (const char *) tidyAttrName(attr);
                 const char *v = (const char *) tidyAttrValue(attr);
                 //size_t vlen=0;
+
+                if(!k) continue; /* nameless attr: nothing to serialize, see NULL_ATTR_NAME */
 
                 tidyBufAppend(buf, " ", 1);
                 tidyBufAppend(buf, (void*)k, strlen(k));
@@ -962,11 +980,13 @@ TidyBuffer *dumpNode(TidyNode node, TidyDoc doc, TidyBuffer *buf, int indent, in
             TidyBuffer tbuf;
             tidyBufInit(&tbuf);
             tidyNodeGetText(doc, node, &tbuf);
-            tidyBufAppend(
-                buf,
-                tbuf.bp,
-                tbuf.size - (tbuf.bp[tbuf.size-1]=='\n' ? 1 : 0)
-            );
+            /* empty buffer reads bp[-1] */
+            if(tbuf.bp && tbuf.size)
+                tidyBufAppend(
+                    buf,
+                    tbuf.bp,
+                    tbuf.size - (tbuf.bp[tbuf.size-1]=='\n' ? 1 : 0)
+                );
             tidyBufFree (&tbuf);
             break;
         }
@@ -1100,15 +1120,18 @@ static int is_type_singleton(const char *tag)
 TidyBuffer * obj_to_html_inner(duk_context *ctx, duk_idx_t obj_idx, TidyBuffer *buf) {
 
     duk_uarridx_t i=0, len;
-    int issingleton=0, isdoc;
+    int issingleton=0, isdoc=0;
     const char *type=NULL, *key, *val;
-    duk_size_t slen, tlen;
+    duk_size_t slen, tlen=0;
 
     if( !duk_is_object(ctx, obj_idx) || duk_is_array(ctx, obj_idx) || duk_is_function(ctx, obj_idx) )
         return buf;
 
     obj_idx = duk_normalize_index(ctx, obj_idx);
-    if(duk_get_prop_string(ctx, obj_idx, "type"))
+    /* Non-string "type" treated as absent: duk_get_lstring() returns
+       NULL for a number/bool/null/array and strcasecmp() then segvs.
+       Not a throw -- callers own a TidyBuffer a longjmp would leak. */
+    if(duk_get_prop_string(ctx, obj_idx, "type") && duk_is_string(ctx, -1))
     {
         type=duk_get_lstring(ctx, -1, &tlen);
 
@@ -1247,11 +1270,13 @@ TidyBuffer *dumpText(TidyDoc doc, TidyNode start, TidyBuffer *buf, int listno, i
                 TidyBuffer tbuf;
                 tidyBufInit(&tbuf);
                 tidyNodeGetValue(doc, child, &tbuf);
-                tidyBufAppend(
-                    buf,
-                    tbuf.bp,
-                    tbuf.size - (tbuf.bp[tbuf.size-1]=='\n' ? !*inpre : 0)
-                );
+                /* empty buffer reads bp[-1] */
+                if(tbuf.bp && tbuf.size)
+                    tidyBufAppend(
+                        buf,
+                        tbuf.bp,
+                        tbuf.size - (tbuf.bp[tbuf.size-1]=='\n' ? !*inpre : 0)
+                    );
                 tidyBufFree (&tbuf);
                 tag_end_nl=0;
                 break;
@@ -2463,10 +2488,15 @@ static void md_flat_text(MdCtx *c, MdRun *r, TidyNode node)
 static int md_has_attr(TidyNode node, const char *name)
 {
     TidyAttr attr;
+    ctmbstr key;
 
     for (attr = tidyAttrFirst(node); attr; attr = tidyAttrNext(attr))
-        if (!strcasecmp(tidyAttrName(attr), name))
+    {
+        key = tidyAttrName(attr);
+        if (!key) continue; /* nameless attr: malformed markup, see NULL_ATTR_NAME */
+        if (!strcasecmp(key, name))
             return 1;
+    }
     return 0;
 }
 
@@ -4022,7 +4052,8 @@ static int findfunc_attr (TidyNode node, const char **txt, const char **txt2, in
 
                 while(isspace(*val)) val++;
                 len = strlen(val);
-                while(isspace(val[len-1]) && len>0) len--;
+                /* len>0 first: val[-1] read on an empty value */
+                while(len>0 && isspace(val[len-1])) len--;
 
                 if(*val == '"')
                 {
@@ -4117,7 +4148,8 @@ static int findfunc_class (TidyNode node, const char **txt, const char **txt2, i
         val = txt[i];
         while(isspace(*val))val++;
         vallen=strlen(val);
-        while(isspace(val[vallen-1]) && vallen>0)vallen--;
+        /* vallen>0 first: val[-1] read on an empty value */
+        while(vallen>0 && isspace(val[vallen-1]))vallen--;
 
         matchdir=0;
 
@@ -4453,15 +4485,45 @@ static void pushfuncs(duk_context *ctx)
 
 /* push new array of the unique nodes
    in array at arr_idx            */
+/* Small counts stay on the stack and allocate nothing, as the original
+   VLAs did; only larger ones go to the heap. 64 nodes is 512 bytes. */
+#define UNIQ_NODES_ONSTACK 64
+#define PEND_NODES_ONSTACK 64
+
 static void uniq_array_nodes(duk_context *ctx, duk_idx_t arr_idx)
 {
-    int len = (int)duk_get_length(ctx, arr_idx);
+    int len;
+    TidyNode onstack[UNIQ_NODES_ONSTACK];
+    TidyNode *node=NULL;
+    duk_idx_t buf_idx=0;
+    int pushed=0;
+
+    /* normalize first: a buffer pushed below would shift a negative
+       caller index */
+    arr_idx = duk_normalize_index(ctx, arr_idx);
+    len = (int)duk_get_length(ctx, arr_idx);
+
+    if(len)
+    {
+        if(len <= UNIQ_NODES_ONSTACK)
+            node = onstack;
+        else
+        {
+            /* Value stack, not malloc: the loop can throw and duktape
+               frees this on unwind. Below the result array so the loop's
+               -2 still names it; removed at the end. */
+            node = (TidyNode *) duk_push_fixed_buffer(ctx,
+                       (duk_size_t)len * sizeof(TidyNode));
+            buf_idx = duk_normalize_index(ctx, -1);
+            pushed = 1;
+        }
+    }
 
     duk_push_array(ctx);
 
     if(len)
     {
-        TidyNode node[len], cur;
+        TidyNode cur;
         int i=0, j=0, ulen=0, newi=0;
 
         for(;i<len;i++)
@@ -4484,6 +4546,9 @@ static void uniq_array_nodes(duk_context *ctx, duk_idx_t arr_idx)
                 duk_pop(ctx);
 
         }
+        /* drop the buffer, leaving only the new array for the caller */
+        if(pushed)
+            duk_remove(ctx, buf_idx);
     }
 }
 
@@ -4635,12 +4700,15 @@ duk_ret_t duk_rp_html_addclass(duk_context *ctx)
         {
             if(classattr)
             {
-                char newattr[strlen(classattr) + strlen(cname) + 2];
+                /* heap: both lengths are caller/document controlled */
+                char *newattr=NULL;
 
+                REMALLOC(newattr, strlen(classattr) + strlen(cname) + 2);
                 strcpy(newattr, classattr);
                 strcat(newattr, " ");
                 strcat(newattr, cname);
                 addAttr(tdoc, node, "class", newattr);
+                free(newattr);
             }
             else
             {
@@ -4697,7 +4765,10 @@ duk_ret_t duk_rp_html_delclass(duk_context *ctx)
                 int npos = cpos - classattr,
                     epos = npos + strlen(cname);
 
-                char newattr[strlen(classattr) + 1];
+                /* heap: the class attribute is document controlled */
+                char *newattr=NULL;
+
+                REMALLOC(newattr, strlen(classattr) + 1);
                 /* if the to be removed class is first */
                 if(!npos)
                     strcpy(newattr, classattr + epos +1);
@@ -4712,6 +4783,7 @@ duk_ret_t duk_rp_html_delclass(duk_context *ctx)
                 }
 
                 addAttr(tdoc, node, "class", newattr);
+                free(newattr);
             }
         }
 
@@ -4938,7 +5010,17 @@ static duk_ret_t _pend(duk_context *ctx, int type)
 }while(0)
 
     {
-        TidyNode ins_nodes[ilen];
+        /* Large counts on the value stack, not malloc: the block can
+           throw and duktape frees it on unwind. Left there -- the return
+           value is the top, and _pend indexes only INSERTNODES..RETNODES. */
+        TidyNode ins_onstack[PEND_NODES_ONSTACK];
+        TidyNode *ins_nodes;
+
+        if(ilen <= PEND_NODES_ONSTACK)
+            ins_nodes = ins_onstack;
+        else
+            ins_nodes = (TidyNode *) duk_push_fixed_buffer(ctx,
+                            (duk_size_t)ilen * sizeof(TidyNode));
 
         for (j=0; j<ilen; j++)
         {
@@ -5034,6 +5116,7 @@ static duk_ret_t _pend(duk_context *ctx, int type)
                     addtoretnodes(orignode);
             }
         }
+        /* no free: stack array, or value-stack buffer the frame frees */
     }
 
     if(fromstring)
@@ -5162,6 +5245,7 @@ duk_ret_t duk_rp_html_delattr(duk_context *ctx)
         for ( attr=tidyAttrFirst(node); attr; attr=tidyAttrNext(attr) )
         {
             key=tidyAttrName(attr);
+            if (!key) continue; /* nameless attr: malformed markup, see NULL_ATTR_NAME */
             if (!strncasecmp(key, aname, aname_len))
             {
                 tidyAttrDiscard( tdoc, node, attr);
@@ -5312,8 +5396,14 @@ duk_ret_t duk_rp_html_getallattr(duk_context *ctx)
 
         for ( attr=tidyAttrFirst(node); attr; attr=tidyAttrNext(attr) )
         {
+            ctmbstr aname = tidyAttrName(attr);
+
+            /* No name, no object key: duk_put_prop_string() only
+               asserts non-NULL, so release builds key it "null". */
+            if (!aname) continue;
+
             duk_push_string(ctx, (const char *) tidyAttrValue(attr));
-            duk_put_prop_string(ctx, -2, (const char *) tidyAttrName(attr));
+            duk_put_prop_string(ctx, -2, (const char *) aname);
         }
 
         duk_put_prop_index(ctx, -4, i);
@@ -5875,6 +5965,12 @@ duk_ret_t duk_rp_htmlparse(duk_context *ctx)
     if (size)
     {
         TidyBuffer hbuf;
+
+        /* tidyBufAttach takes a 32 bit uint, so a larger document would
+           be silently truncated and half parsed. Refuse it instead. */
+        if (size > (duk_size_t)UINT_MAX)
+            RP_THROW(ctx, "html.newDocument - document too large (%llu bytes, max %u)",
+                     (unsigned long long)size, (unsigned)UINT_MAX);
 
         tidyBufInit(&hbuf);
         tidyBufAttach(&hbuf, (byte *)html, (uint)size);
