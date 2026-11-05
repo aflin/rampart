@@ -4640,6 +4640,16 @@ static int hasclass (TidyNode node, const char *classname, const char **classatt
         *classes=getAttr(node,"class"),
         *class, *end;
 
+    /* An empty name would spin forever below: strlen() is 0, so end==class
+       and strstr(end,"") returns end again. Nothing can match it anyway. */
+    if(!classname || !*classname)
+    {
+        *classattr=classes;
+        if(classpos)
+            *classpos=NULL;
+        return 0;
+    }
+
     if(!classes)
     {
         *classattr=NULL;
@@ -4684,6 +4694,11 @@ duk_ret_t duk_rp_html_addclass(duk_context *ctx)
 	RP_THROW(ctx, "html.addClass - '%s' invalid class name\n", cname);
 
     duk_push_this(ctx);
+
+    /* isvalname("") is true, and appending it would leave a trailing space
+       in the class attribute. No-op, as removeClass("") does. */
+    if(!*cname)
+        return 1;
 
     tdoc=get_tdoc(ctx, -1);
 
