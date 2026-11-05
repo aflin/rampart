@@ -122,7 +122,7 @@ var optlist = {
 '--appsRoot':       'String. Root directory from which to serve apps',
 '--wsappsRoot':     'String. Root directory from which to serve wsapps',
 '--dataRoot':       'String. Setting for user scripts',
-'--logRoot':        'String. Log directory',
+'--logRoot':        'String. Log directory (created if missing)',
 '--accessLog':      'String. Log file name. "" for stdout',
 '--errorLog':       'String. error log file name. "" for stderr',
 '--irohProxy':      'Bool.   Start the iroh webproxy server for this server',
@@ -1019,6 +1019,32 @@ function start(serverConf, dump) {
         }
         if(serverConf.redirPort < 1024 && serverConf.redirPort > 0)
             return serr('Error: script must be started as root to bind the redirect server to port ' + serverConf.redirPort);
+    }
+
+    /* with logging on, make sure each log file's directory exists */
+    if(serverConf.log) {
+        var logfiles = [serverConf.accessLog, serverConf.errorLog];
+        for (var lfi=0; lfi<logfiles.length; lfi++) {
+            var lf = logfiles[lfi];
+            if(getType(lf) != 'String' || !lf.length)
+                continue;               /* stdout/stderr */
+            var lslash = lf.lastIndexOf('/');
+            if(lslash < 1)
+                continue;               /* current dir, or filesystem root */
+            var ldir = lf.substring(0, lslash);
+            var lst = stat(ldir);
+            if(lst) {
+                if(!lst.isDirectory)
+                    return serr(sprintf("log directory '%s' exists but is not a directory", ldir));
+                continue;
+            }
+            try {
+                mkdir(ldir);
+            } catch(e) {
+                return serr(sprintf("cannot create log directory '%s': %s", ldir,
+                    e.message.replace(/^.*: /, '')));
+            }
+        }
     }
 
     var serverpid;

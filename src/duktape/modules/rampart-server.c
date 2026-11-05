@@ -8507,6 +8507,36 @@ static inline void logging(duk_context *ctx, duk_idx_t ob_idx)
     }
 }
 
+/* Daemon mode opens the logs in the forked child, where a throw can't
+   reach the caller.  Check each configured log file can be opened for
+   append first, in the calling process, so the error surfaces here. */
+static void check_logs_writable(duk_context *ctx, duk_idx_t ob_idx)
+{
+    static const char *keys[] = {"accessLog", "errorLog"};
+    int i, on;
+
+    if (ob_idx == -1)
+        return;
+    on = duk_rp_GPS_icase(ctx, ob_idx, "log") && duk_get_boolean_default(ctx, -1, 0);
+    duk_pop(ctx);
+    if (!on)
+        return;
+
+    for (i = 0; i < 2; i++)
+    {
+        if (duk_rp_GPS_icase(ctx, ob_idx, keys[i]) && duk_is_string(ctx, -1))
+        {
+            const char *fn = duk_get_string(ctx, -1);
+            FILE *fh = fopen(fn, "a");
+
+            if (!fh)
+                RP_THROW(ctx, "server.start: error opening %s file '%s': %s", keys[i], fn, strerror(errno));
+            fclose(fh);
+        }
+        duk_pop(ctx);
+    }
+}
+
 static void proc_mimes(duk_context *ctx)
 {
     // are we adding or just replacing?
@@ -9366,6 +9396,8 @@ duk_ret_t duk_server_start(duk_context *ctx)
     if (daemon)
     {
         int child2par[2]={0};
+
+        check_logs_writable(ctx, ob_idx);
 
         if (pipe(child2par) == -1)
         {
