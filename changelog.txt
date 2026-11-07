@@ -47,6 +47,9 @@ v0.7.5
                             has no searchable words.
                             New setting blobzCompressLevel (-1 to 9) sets
                             the compression level for blobz writes.
+                            Fixed index terms from an expression with an
+                            uppercase-only set (e.g. [CDR]) never matching
+                            a query.
 
     -rampart                rampart.import.csv() and csvFile():
                             Fixed dates from other threads appearing in

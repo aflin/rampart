@@ -1750,6 +1750,7 @@ extern int TXlikepmode;
 extern int TXnlikephits;
 extern int TXnlikevhits;        /* INDEX_VEC: candidate pool cap per LIKEV */
 extern int TXrrfRows;           /* RRF fusion pool depth, both sides */
+extern __thread int TXrexFoldSetCase; /* openrlex(): sets match both cases */
 extern int TXblobzCompressLevel;        /* blobz gzip level: -1 zlib default, 0-9 */
 extern int TXrrfK;              /* RRF damping constant */
 extern int TXrrfTieVec;         /* RRF exact-tie winner: 0 = keyword, 1 = vector */

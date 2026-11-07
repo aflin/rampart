@@ -246,6 +246,7 @@ struct FDBI_tag
   EPI_OFF_T     totrecs;        /* total number of records in index */
   A3DBI         *dbi;
   RLEX          *ixrlex;        /* object to search with index expressions */
+  RLEX          *ixqrlex;       /* same, sets case-folded: tests query words */
   byte          *pgbuf;         /* temp buf for btgetnext() */
   size_t        pgbufsz;        /*   its size */
   dword         *posbuf;        /* temp buf for fdbi_getnext() positions */
@@ -2153,12 +2154,12 @@ int     wildoneword;    /* (in) TXwildoneword setting */
    * expressions do not include `&', SPM will (falsely) not match in a
    * linear dictionary search.
    */
-  if (!fi->ixrlex) goto err;                    /* closed earlier? */
-  for (hit = getrlex(fi->ixrlex, stripbuf, stripbufend, SEARCHNEWBUF);
+  if (!fi->ixqrlex) goto err;                   /* closed earlier? */
+  for (hit = getrlex(fi->ixqrlex, stripbuf, stripbufend, SEARCHNEWBUF);
        hit != BYTEPN;
-       hit = getrlex(fi->ixrlex, stripbuf, stripbufend, CONTINUESEARCH))
+       hit = getrlex(fi->ixqrlex, stripbuf, stripbufend, CONTINUESEARCH))
     {
-      if (hit == stripbuf && hit + rlexlen(fi->ixrlex) == stripbufend) break;
+      if (hit == stripbuf && hit + rlexlen(fi->ixqrlex) == stripbufend) break;
     }
   if (hit == BYTEPN) goto err;                  /* not fully indexable */
 
@@ -2296,7 +2297,7 @@ int     *ignset, *needmm, *overwords;
           ff->nindexable++;
           cur_OffsetInPhrase++;
         }
-      else if (fi->ixrlex != RLEXPN)            /* we know the index exprs */
+      else if (fi->ixqrlex != RLEXPN)           /* we know the index exprs */
         {
           /* See if the word matches an index expression (was indexed
            * in whole or prefix).  Also see if other expressions match
@@ -2318,12 +2319,12 @@ int     *ignset, *needmm, *overwords;
               i == qi->nwords - 1 &&            /* wild applies last word */
               (qi->wild & MMRIP_WILDLEAD))      /* leading wildcard */
             we = (byte *)wd + strlen(wd);
-          for (hit = getrlex(fi->ixrlex, (byte *)wd, we, SEARCHNEWBUF);
+          for (hit = getrlex(fi->ixqrlex, (byte *)wd, we, SEARCHNEWBUF);
                hit != BYTEPN;
                phit = hit,
-                 hit = getrlex(fi->ixrlex, (byte *)wd, we, CONTINUESEARCH))
+                 hit = getrlex(fi->ixqrlex, (byte *)wd, we, CONTINUESEARCH))
             {
-              if ((hlen = rlexlen(fi->ixrlex)) > maxsubhitlen)
+              if ((hlen = rlexlen(fi->ixqrlex)) > maxsubhitlen)
                 maxsubhitlen = hlen;
               if (we != weorg) continue;        /* if *abc fixup */
               if (hit == (byte *)wd)            /* matches a prefix */
@@ -3810,6 +3811,12 @@ DBTBL           *dbtbl;
                                       TXrexSyntax_Rex)))
             putmsg(MWARN, fn,
                 "Could not open RLEX for index expression list for %s", name);
+          /* Query words are tested already case-folded, but the index
+           * folded only after matching: e.g. `[CDR]' indexes `c'. */
+          TXrexFoldSetCase = 1;
+          fi->ixqrlex = openrlex((const char **)fi->dbi->explist,
+                                 TXrexSyntax_Rex);
+          TXrexFoldSetCase = 0;
           /* Restore locale now, because we may be open for a while
            * and don't want to affect user's locale.  Downside is if
            * we need index locale to affect other functions later:
@@ -3823,6 +3830,8 @@ DBTBL           *dbtbl;
         }
       if (!fdbi_rlexstripexclude(fi->ixrlex))
         fi->ixrlex = closerlex(fi->ixrlex);
+      if (!fi->ixrlex || !fdbi_rlexstripexclude(fi->ixqrlex))
+        fi->ixqrlex = closerlex(fi->ixqrlex);
       if ((fi->noise = fi->dbi->noiselist) == CHARPPN)
         fi->isnoise = isnoise_dum;
       else
@@ -4123,6 +4132,7 @@ FDBI    *fi;
   kdbf_close(fi->datdf);
   close3dbi(fi->dbi);
   closerlex(fi->ixrlex);
+  closerlex(fi->ixqrlex);
   fi->pgbuf = TXfree(fi->pgbuf);
   fi->posbuf = TXfree(fi->posbuf);
   closefheap(fi->omfh);

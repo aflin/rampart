@@ -1031,6 +1031,23 @@ register byte *a,*b;
  return(0);
 }
 
+/* Non-zero while compiling index expressions for testing query words,
+ * which arrive case-folded: set members then match both ASCII cases. */
+__thread int TXrexFoldSetCase = 0;
+
+static void
+rexFoldSetCase(byte *a)
+{
+  int i;
+
+  for (i = 0; i < 128; i++)
+    if (a[i])
+      {
+        if (isupper(i)) a[tolower(i)] = 1;
+        else if (islower(i)) a[toupper(i)] = 1;
+      }
+}
+
 /************************************************************************/
         /* MAW 07-02-91 - check for long seq. first to avoid aliasing */
 int
@@ -1712,7 +1729,10 @@ FFS *fs;
                     case 'I' : state->respectCase = 0; s += 2; goto NOALLOC;
                     case 'L' : state->literal = 1;     s += 2; goto NOALLOC;
                     default  : sSave = s;
-                               if(dobslash(&s,ta[am])== -2)
+                               if((blen = dobslash(&s,ta[am])) == -1 &&
+                                  TXrexFoldSetCase)
+                                  rexFoldSetCase(ta[am]);  /* \upper etc. */
+                               if(blen == -2)
                                   {
                                     putmsg(MERR + UGE, Fn,
                        "REX: Invalid escape sequence `%.*s' at offset %d",
@@ -1739,6 +1759,7 @@ FFS *fs;
                            (int)sOff + (int)(sSave - sOrg));
                     goto err;
                   }
+              if (TXrexFoldSetCase) rexFoldSetCase(ta[am]);
               break;
           case '.' :
               {
