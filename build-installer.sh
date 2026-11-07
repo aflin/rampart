@@ -215,6 +215,12 @@ if [ ! -d "$SRC_LICENSES_DIR" ] || \
     echo "build-installer: licenses dir empty or missing at $SRC_LICENSES_DIR" >&2
     exit 1
 fi
+for f in LICENSE LICENSE-tsal.txt; do
+    if [ ! -f "$REPO/$f" ]; then
+        echo "build-installer: $REPO/$f missing (re-run make install?)" >&2
+        exit 1
+    fi
+done
 # web_server is part of the distribution, not an add-on, so a bundle built
 # without it is wrong rather than merely lean.  Check the two things the
 # Mini IDE cannot do without: its own tree and the docs it serves.
@@ -288,6 +294,10 @@ fi
 # at <prefix>/licenses/.  cp -a preserves a flat regular-file directory.
 mkdir -p "$STAGE/licenses"
 cp -a "$SRC_LICENSES_DIR"/. "$STAGE/licenses/"
+# LICENSE and LICENSE-tsal.txt go at the top level and are the only
+# copies; drop the old duplicates an earlier prefix may still carry.
+rm -f "$STAGE/licenses/rampart-license.txt" "$STAGE/licenses/rampart-sql-license.txt"
+cp "$REPO/LICENSE" "$REPO/LICENSE-tsal.txt" "$STAGE/"
 
 # web_server/: the starter site, the Mini IDE and the docs the IDE serves.
 # Copied with tar rather than cp -a, which keeps modes, mtimes and symlinks
@@ -416,7 +426,7 @@ fi
 
 RELEASE_NOTES_ARG=""
 [ "$HAVE_RELEASE_NOTES" = "1" ] && RELEASE_NOTES_ARG="release-notes.txt"
-( cd "$STAGE" && zip -qr payload.zip entry_script.js uninstall.js rampart-install.js packages.js bin modules lib licenses $RELEASE_NOTES_ARG )
+( cd "$STAGE" && zip -qr payload.zip entry_script.js uninstall.js rampart-install.js packages.js bin modules lib licenses LICENSE LICENSE-tsal.txt $RELEASE_NOTES_ARG )
 filesize() { stat -c '%s' "$1" 2>/dev/null || stat -f '%z' "$1"; }
 corezip=$(filesize "$STAGE/payload.zip")
 

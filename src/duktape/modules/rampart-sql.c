@@ -1,7 +1,7 @@
 /* Copyright (C) 2026  Aaron Flin - All Rights Reserved
  * You may use, distribute this code under the
- * terms of the Rampart Source Available License.
- * see rsal.txt for details
+ * terms of the Texis Source Available License (TSAL-1.0).
+ * see /LICENSE-tsal.txt for details
  */
 #include "txcoreconfig.h"
 #include <stdarg.h>

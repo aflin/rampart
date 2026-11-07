@@ -1878,12 +1878,11 @@ install(CODE "execute_process ( \
  )"
 )
 
-#Rampart License
-install(CODE "execute_process( \
-   COMMAND ${CMAKE_COMMAND} -E copy \
-    \"${PROJECT_SOURCE_DIR}/LICENSE\" \
-    \"${CMAKE_INSTALL_PREFIX}/\"   \
-    )"
+#Rampart License and the texis/rampart-sql license
+install(FILES
+    "${PROJECT_SOURCE_DIR}/LICENSE"
+    "${PROJECT_SOURCE_DIR}/LICENSE-tsal.txt"
+    DESTINATION "${CMAKE_INSTALL_PREFIX}"
 )
 
 # tsql etc.  Use install(PROGRAMS) rather than `cmake -E copy` so the
@@ -2042,6 +2041,11 @@ install(CODE "execute_process( \
     \"${CMAKE_INSTALL_PREFIX}/licenses\"   \
     )"
 )
+# LICENSE and LICENSE-tsal.txt (top level) are the only copies; drop the
+# old duplicates from this or an earlier install
+install(CODE "file(REMOVE \
+    \"${CMAKE_INSTALL_PREFIX}/licenses/rampart-license.txt\" \
+    \"${CMAKE_INSTALL_PREFIX}/licenses/rampart-sql-license.txt\")")
 
 # derivations
 install(DIRECTORY DESTINATION "${CMAKE_INSTALL_PREFIX}/derivations")

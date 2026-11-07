@@ -96,12 +96,27 @@ v0.7.5
                             instead of failing (on macOS it stopped the
                             running server).
 
+    -License                rampart-sql and the texis tools are now under
+                            the Texis Source Available License (TSAL-1.0),
+                            in LICENSE-tsal.txt, replacing the RSAL.  Free
+                            use now covers small businesses (under USD 1M
+                            revenue and fewer than 100 people) on any
+                            number of cores, and a 60-day evaluation for
+                            any company.  Changes to Texis may be
+                            distributed if published.  Rampart 0.7.4 and
+                            earlier may still be used under the RSAL.
+
     -Install                Installing without root works in any location
                             you can write to, including under /usr (e.g. a
                             group-writable /usr/local).  Before changing
                             anything, the installer checks that it can
                             write the location and the existing files it
                             would replace, and lists any it cannot.
+                            LICENSE and LICENSE-tsal.txt (the rampart-sql
+                            and texis tools license) are now installed at
+                            the top of every install, including curl
+                            installs; licenses/ holds the other components'
+                            licenses.
 
 v0.7.4
     -rampart-langtools      Update llama.cpp.

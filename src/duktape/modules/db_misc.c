@@ -1,8 +1,8 @@
 /* Copyright (C) 2026  Thunderstone, LLC - All Rights Reserved
  * Copyright (C) 2026  Aaron Flin - All Rights Reserved
  * You may use this code under the
- * terms of the Rampart Source Available License.
- * see /LICENSE-rsal.txt for details
+ * terms of the Texis Source Available License (TSAL-1.0).
+ * see /LICENSE-tsal.txt for details
  */
 
 /* mmsgfh + rp_errmap are thread-local (see rp_msg_init() in

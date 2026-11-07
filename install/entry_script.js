@@ -240,9 +240,9 @@ function banner(prefix, isSystem) {
 "Rampart and its modules are licensed under the MIT license, with the\n"+
 "exception of rampart-sql and the texis command-line tools (addtable,\n"+
 "backref, kdbfchk, metamorph, rex, texislockd, tsql), which are covered\n"+
-"by a separate license -- see licenses/rampart-sql-license.txt inside\n"+
-"the resulting install.  Other components carry their own licenses;\n"+
-"all texts are in the licenses/ directory.\n"+
+"by a separate license -- see LICENSE-tsal.txt inside the resulting\n"+
+"install.  Other components carry their own licenses; those texts are\n"+
+"in the licenses/ directory.\n"+
 "\n"+
 "This installer will copy rampart, a curated set of modules and a\n"+
 "starter web server with the Mini IDE and the documentation into the\n"+
@@ -389,10 +389,17 @@ function installBareRampart(prefix) {
     printf("  installed: %s/bin/rampart (%d bytes)\n", prefix, bare.length);
 }
 
-/* drop bin/, modules/, lib/ (bundled system libs), licenses/ */
+/* drop bin/, modules/, lib/ (bundled system libs), licenses/, and the two
+   top-level license files */
 function extractPayload(prefix) {
-    payloadExtract(prefix, ["bin/", "modules/", "lib/", "licenses/"]);
-    printf("  installed: %s/{bin,modules,lib,licenses}/*\n", prefix);
+    payloadExtract(prefix, ["bin/", "modules/", "lib/", "licenses/",
+                            "LICENSE", "LICENSE-tsal.txt"]);
+    /* superseded by the top-level files; don't leave stale copies behind */
+    ["rampart-license.txt", "rampart-sql-license.txt"].forEach(function (f) {
+        try { rampart.utils.rm(prefix + "/licenses/" + f, {force: true}); }
+        catch (e) {}
+    });
+    printf("  installed: %s/{bin,modules,lib,licenses}/*, LICENSE, LICENSE-tsal.txt\n", prefix);
 }
 
 /* ============== web_server/ ==============
@@ -809,7 +816,8 @@ function installBlockers(prefix) {
             if (name === IDE_PATHS[i] || name.indexOf(IDE_PATHS[i] + "/") === 0)
                 add(name);
     }
-    ["env", "env.csh", "env.fish", "installed.json"].forEach(add);
+    ["env", "env.csh", "env.fish", "installed.json",
+     "LICENSE", "LICENSE-tsal.txt"].forEach(add);
 
     var bad = [];
     for (var rel in want) {

@@ -424,7 +424,7 @@ Building with an LLM coding assistant? Clone
 
 The core Rampart program and the Duktape engine are MIT licensed; see
 [LICENSE](LICENSE). The `rampart-sql` module and the Texis library it embeds are governed
-by the Rampart Source Available License; see [LICENSE-rsal.txt](LICENSE-rsal.txt).
+by the Texis Source Available License (TSAL-1.0); see [LICENSE-tsal.txt](LICENSE-tsal.txt).
 Licenses for bundled third-party components are in [licenses/](licenses) and noted in the
 acknowledgment section of each module's documentation.
 
