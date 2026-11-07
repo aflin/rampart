@@ -100,12 +100,6 @@ function shellOK(cmd) {
     return _trim(r.stdout);
 }
 
-function uidOf(path) {
-    var st;
-    try { st = stat(path); } catch (e) { return -1; }
-    return (st && typeof st.uid === "number") ? st.uid : -1;
-}
-
 function fileExists(path) {
     var st;
     try { st = stat(path); } catch (e) { return false; }
@@ -225,15 +219,12 @@ var EUID = parseInt(shellOK("id","-u") || "-1", 10);
 function canSystemInstall() {
     if (EUID === 0) return true;
     if (me.uid === 0) return true;
-    /* Non-root and the system prefix already exists owned by us -- common
-       case: a prior `sudo chown $USER /usr/local/rampart` (or the chown
-       this installer does on a sudo install) means the user can write to
-       /usr/local/rampart even though /usr/local itself is root-owned (as
-       on macOS).  We can re-install in place; only the /usr/local/bin
-       symlink step will need to be skipped if /usr/local/bin isn't ours. */
-    if (fileExists(SYSTEM_PREFIX) && uidOf(SYSTEM_PREFIX) === me.uid) return true;
-    return uidOf("/usr/local") === me.uid
-        && (uidOf("/usr/local/bin") === me.uid || !fileExists("/usr/local/bin"));
+    /* Non-root but /usr/local/rampart is writable (e.g. chown'd by a prior
+       sudo install): re-install in place; makeSymlinks() skips the links
+       if /usr/local/bin isn't writable. */
+    if (fileExists(SYSTEM_PREFIX)) return isWritableDir(SYSTEM_PREFIX);
+    return isWritableDir("/usr/local")
+        && (isWritableDir("/usr/local/bin") || !fileExists("/usr/local/bin"));
 }
 
 var SYSTEM_PREFIX = "/usr/local/rampart";
@@ -575,22 +566,17 @@ var BIN_NAMES = ["rampart","addtable","backref","kdbfchk","metamorph",
                  "rex","texislockd","tsql","rampart-uninstall.sh"];
 
 function makeSymlinks(prefix) {
-    /* If /usr/local/bin doesn't exist yet, try to create it.  We can only
-       do that if we own /usr/local, which the new canSystemInstall()
-       path (user owns prefix but not /usr/local) won't have -- so the
-       ensureDir would fail.  Wrap in try and skip cleanly. */
+    /* mkdir directly: ensureDir() exits rather than throws.  A writable
+       prefix doesn't imply a writable /usr/local, so skip cleanly. */
     if (!fileExists("/usr/local/bin")) {
-        try { ensureDir("/usr/local/bin"); }
+        try { mkdir("/usr/local/bin", true); }
         catch (e) {
             printf("  cannot create /usr/local/bin (%s); skipping symlink step.\n",
                    e.message);
             return [];
         }
     }
-    /* Even if it exists, we still need write access.  EUID 0 always has it;
-       a non-root user installing into a previously-chowned prefix usually
-       doesn't.  Skip with a hint rather than spam a WARN per binary. */
-    if (EUID !== 0 && uidOf("/usr/local/bin") !== me.uid) {
+    if (!isWritableDir("/usr/local/bin")) {
         printf("  /usr/local/bin is not writable; skipping symlink step.\n");
         printf("  (sudo re-install if you want /usr/local/bin/rampart shims.)\n");
         return [];
@@ -796,21 +782,71 @@ function backupExistingInstall(prefix) {
 
 /* ============== root check ============== */
 
+/* stat().writable is access(W_OK), so group bits, ACLs and read-only
+   mounts all count -- not just ownership. */
+function isWritableDir(path) {
+    var st = stat(path);
+    return !!(st && st.isDirectory && st.writable);
+}
+
+/* Existing paths under prefix that this install would write and can't.
+   bin/ and modules/ are renamed aside first, which needs only prefix. */
+function installBlockers(prefix) {
+    var pl = payloadList() || {};
+    var want = {};
+    function add(rel) {
+        rel = rel.replace(/\/+$/, "");
+        while (rel && !want[rel]) {
+            want[rel] = 1;
+            rel = rel.replace(/\/?[^\/]*$/, "");
+        }
+    }
+    var ws = fileExists(prefix + "/web_server");
+    for (var name in pl) {
+        if (/^(lib|licenses)\//.test(name)) { add(name); continue; }
+        if (!ws) continue;
+        for (var i = 0; i < IDE_PATHS.length; i++)
+            if (name === IDE_PATHS[i] || name.indexOf(IDE_PATHS[i] + "/") === 0)
+                add(name);
+    }
+    ["env", "env.csh", "env.fish", "installed.json"].forEach(add);
+
+    var bad = [];
+    for (var rel in want) {
+        var st = stat(prefix + "/" + rel);
+        if (st && !st.writable) bad.push(prefix + "/" + rel);
+    }
+    return bad.sort();
+}
+
 function ensurePermsForPrefix(prefix) {
-    /* If the prefix is /usr/local-anything, we need write access there.
-       Test the actual process EUID, not me.uid -- the latter is the
-       SUDO_USER (the *invoking* user) so a real root shell with
-       SUDO_USER inherited from its sudo parent would otherwise be
-       rejected.
-       Exception: the user already owns the exact prefix dir (e.g. a
-       previous sudo install that we chown'd, or a manual chown to
-       reclaim ownership).  In that case the installer can write its
-       payload there without root -- only the /usr/local/bin symlink
-       step needs root, and makeSymlinks() already skips cleanly when
-       /usr/local/bin isn't ours. */
-    if (/^\/usr\//.test(prefix) && EUID !== 0) {
-        if (fileExists(prefix) && uidOf(prefix) === me.uid) return;
-        printf("ERROR: installing to %s requires root.  Run with sudo.\n", prefix);
+    /* Root can write anywhere.  Test the process EUID, not me.uid, which
+       is SUDO_USER under sudo. */
+    if (EUID === 0) return;
+
+    var st = stat(prefix), hint = "Run the installer with sudo, or choose a different location.";
+    if (!st) {
+        try { mkdir(prefix, true); } catch (e) {
+            printf("ERROR: cannot create %s: %s\n%s\n", prefix,
+                   e.message.replace(/^.*: /, ""), hint);
+            process.exit(1);
+        }
+        return;
+    }
+    if (!st.isDirectory) {
+        printf("ERROR: %s exists and is not a directory.\n", prefix);
+        process.exit(1);
+    }
+    if (!st.writable) {
+        printf("ERROR: %s is not writable by %s.\n%s\n", prefix, me.name, hint);
+        process.exit(1);
+    }
+    var bad = installBlockers(prefix);
+    if (bad.length) {
+        printf("ERROR: %s is writable, but these files in it are not:\n", prefix);
+        for (var i = 0; i < bad.length && i < 10; i++) printf("    %s\n", bad[i]);
+        if (bad.length > 10) printf("    ... and %d more\n", bad.length - 10);
+        printf("%s\nOr take ownership with:  sudo chown -R %s %s\n", hint, me.name, prefix);
         process.exit(1);
     }
 }
@@ -843,7 +879,6 @@ function ensurePermsForPrefix(prefix) {
         banner(sys ? SYSTEM_PREFIX : USER_PREFIX, sys);
         choice = chooseProfile();
     }
-    ensurePermsForPrefix(choice.prefix);
 
     printf("\nReady to install with:\n");
     printf("  prefix:        %s\n", choice.prefix);
@@ -854,6 +889,8 @@ function ensurePermsForPrefix(prefix) {
         process.exit(0);
     }
 
+    /* after "Proceed?", since a missing prefix is checked by creating it */
+    ensurePermsForPrefix(choice.prefix);
     var moved = backupExistingInstall(choice.prefix);
     ensureDir(choice.prefix);
 
