@@ -58,8 +58,14 @@ function init() {
         }
     }
 
+    /* plain dbPath of 'data/auth' as listed in auth-conf.js would be relative to apps/
+       so we need to check if it is an absolute path, and if not use serverRoot as the base */
     if (conf.dbPath) {
-        dbPath = conf.dbPath;
+        if(conf.dbPath.charAt(0) == '/') {
+            dbPath = conf.dbPath;
+        } else {
+            dbPath = serverConf.serverRoot + '/' + conf.dbPath;
+        }
     } else if (typeof serverConf !== "undefined" && serverConf.dataRoot) {
         dbPath = serverConf.dataRoot + "/auth";
     } else {
