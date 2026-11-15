@@ -8012,6 +8012,10 @@ static char *prop_defaults[][2] = {
     * fall to physical table order.  The weights scale each side's term;
     * only their ratio matters. */
    {"blobzCompressLevel", "-1"},
+   /* Lives on the shared texis handle: without a default here, one
+    * connection object turning it on left locking off for every other
+    * object on that database, and reset() could not restore it. */
+   {"noLocking", "0"},
    {"rrfRows", "300"},
    {"rrfK", "60"},
    {"rrfTieBreak", "keyword"},
@@ -8899,7 +8903,7 @@ static const char * const bool_props[] = {
     "hexifybytes", "hyphenphrase", "ignorenewlist",
     "indexaccess", "indexappend", "indexbtreeexclusive", "indexslurp",
     "indexwritesplit", "likepallmatch", "likepobeyintersects",
-    "mergeflush", "multivaluetomultirow", "paramchk", "rebuild",
+    "mergeflush", "multivaluetomultirow", "nolocking", "paramchk", "rebuild",
     "suffixproc", "unalignedbufferwarning", "wildoneword", "wildsufmatch"
 };
 
