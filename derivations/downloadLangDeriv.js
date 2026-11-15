@@ -40,7 +40,7 @@ function download(o) {
                     out=sprintf("    %Ad%%, %d of %d bytes, (%.2f %s)",
                         'green', perc, tot, res.expectedTotal, rate, unit );
                 else
-                    out=sprintf("    %d bytes", o.file, tot);
+                    out=sprintf("%s    %d bytes", o.file, tot);
                 printf('%M', [`downloading file ${o.url} ->`, `  ${o.file}`,out]);
             },
 
