@@ -1,3 +1,25 @@
+v0.7.6
+    -rampart-sql            Fixed fulltext searches returning some rows
+                            twice after CREATE FULLTEXT INDEX or ALTER
+                            INDEX ... REBUILD ran while rows were being
+                            written; OPTIMIZE clears existing duplicates.
+                            Faster row-by-row writes: each insert makes
+                            6 lock server requests instead of 16, so
+                            single-row inserts are about 2x faster.
+                            Indexed tables need the new texislockd for
+                            the full gain.
+                            sql.set({noLocking:true}) now applies only to
+                            its own connection, and sql.reset() and
+                            sql.get() handle it like other settings.
+                            Fixed inserts, updates and index searches
+                            failing ("Cannot open KDBF file") when
+                            another process dropped an index of the
+                            table at that moment.
+                            New importCsv()/importCsvFile() option
+                            lockTable locks the table once for the whole
+                            import instead of per row; much faster, but
+                            other connections wait until it finishes.
+
 v0.7.5
     -rampart-sql            $recid is returned as a Number, and
                             "where $recid = ?" finds the row directly

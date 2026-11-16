@@ -309,7 +309,7 @@ static int
 procunlock_st(char *l, lockd_connection *connection)
 {
   int i, l_res;
-  char *name, *mode_s, response[16];
+  char *name, *mode_s, response[64];
   lockd_resource *res = NULL;
   lockd_modes mode = EX;
 
@@ -336,7 +336,21 @@ procunlock_st(char *l, lockd_connection *connection)
     l_res = resource_unlock(res, connection, mode);
     switch(l_res) {
       case -1: sprintf(response, "E:%2.2s", mode_s); break;
-      case 0: sprintf(response, "Y:%2.2s", mode_s); break;
+      case 0:
+        /* A write unlock reports the counter it just set, so the writer
+         * can tell its own write from someone else's.  Clients that only
+         * test for the leading 'Y' ignore it. */
+        sprintf(response, "Y:%2.2s", mode_s);
+        if(LOCKD_INDEX_WRITE(mode) && !LOCKD_TABLE_WRITE(mode)) {
+          strcat(response, ":");
+          counter_tostring(&res->index_written, COUNTER_HEX32,
+                           response + strlen(response), sizeof(response) - strlen(response));
+        } else if(LOCKD_TABLE_WRITE(mode) && !LOCKD_INDEX_WRITE(mode)) {
+          strcat(response, ":");
+          counter_tostring(&res->table_written, COUNTER_HEX32,
+                           response + strlen(response), sizeof(response) - strlen(response));
+        }
+        break;
       default: sprintf(response, "E:Error"); break;
     }
   } else {

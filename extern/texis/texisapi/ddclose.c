@@ -31,6 +31,7 @@ DDIC *ddic;	/* The data dictionary to close. */
 {
 	if (ddic != (DDIC *)NULL)
 	{
+		TXlockBlockEnd(ddic);	/* release a bulk load's locks, if any */
 #ifndef NO_KEEP_STATS
 		if (ddic->ihstmt)
 		{

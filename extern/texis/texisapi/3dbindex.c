@@ -2,6 +2,7 @@
 #include "txcoreconfig.h"
 #include <stdio.h>
 #include <sys/types.h>
+#include <sys/stat.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
@@ -4290,6 +4291,139 @@ setf3dbi(DBI_SEARCH *dbisearch)
 		return 0;
 	else
 		return -1;
+}
+
+/******************************************************************/
+
+/* Nonzero if the Metamorph token file `tokPath' (recids in ascending
+ * order, `tokelsz' bytes each) holds `recid'; -1 on read error. */
+static int
+txTokFileHasRecid(int fh, EPI_OFF_T nrecs, size_t tokelsz, RECID recid)
+{
+	EPI_OFF_T	l = 0, r = nrecs, t;
+	RECID		rec;
+
+	while (l < r)
+	{
+		t = (l + r) >> 1;
+		if (pread(fh, &rec, sizeof(rec), (off_t)(t * (EPI_OFF_T)tokelsz)) !=
+		    (ssize_t)sizeof(rec))
+			return -1;
+		if (TXgetoff2(&recid) < TXgetoff2(&rec)) r = t;
+		else if (TXgetoff2(&recid) > TXgetoff2(&rec)) l = t + 1;
+		else return 1;
+	}
+	return 0;
+}
+
+/* A Metamorph index built by scanning a live table (CREATE, ALTER INDEX
+ * ... REBUILD) also gets each concurrent writer's rows in `newList', so a
+ * row the scan reached is in both and searches return it twice.  Drops
+ * from `newList' every recid in the finished index's token file
+ * (`indexPath'.tok), except those in `delList': a deleted or rewritten
+ * row's index entry is masked, so its `newList' entry is the live one.
+ * Call holding the index write lock, which writers take before touching
+ * `newList'.  Returns number dropped, or -1 on error (lists unchanged).
+ */
+int
+TXdropIndexedFromNewList(char *indexPath, size_t auxsz, BTREE *newList,
+			 BTREE *delList)
+{
+	static CONST char	fn[] = "TXdropIndexedFromNewList";
+	char	tokPath[PATH_MAX];
+	int	fh = -1, has;
+	EPI_STAT_S	st;
+	EPI_OFF_T	nrecs;
+	size_t	tokelsz, sz, n = 0, alloced = 0, i, keyMax = 8192;
+	BTLOC	loc, dloc;
+	byte	*key = BYTEPN, **keys = NULL;
+	size_t	*keySz = NULL;
+	BTLOC	*locs = NULL;
+	int	ret = -1;
+	btcmptype	saveCmp = NULL;
+	void	*saveUsr = NULL;
+	FLDCMP	*fc = NULL;
+
+	if (newList == BTREEPN || btreeisnew(newList))
+		return 0;
+	/* an aux-field list is ordered by its fields (as init3dbia2ind()
+	 * sets up for writers); deletes must compare the same way */
+	if (auxsz > 0)
+	{
+		if (btreegetdd(newList) == DDPN) goto done;
+		saveCmp = newList->cmp;
+		saveUsr = newList->usr;
+		if (!(fc = TXopenfldcmp(newList, TXOPENFLDCMP_CREATE_FLDOP)))
+			goto done;
+		btsetcmp(newList, (btcmptype)fldcmp);
+		newList->usr = fc;
+	}
+	tokelsz = (auxsz > 0 ? FDBI_TOKEL_RECIDSZ + TX_ALIGN_UP_SIZE_T(auxsz) :
+		   sizeof(RECID));
+	if (!TXcatpath(tokPath, indexPath, FDBI_TOKSUF)) goto done;
+	fh = TXrawOpen(TXPMBUFPN, fn, NULL, tokPath, TXrawOpenFlag_None,
+		       (O_RDONLY | TX_O_BINARY), 0666);
+	if (fh < 0 || EPI_FSTAT(fh, &st) != 0) goto done;
+	nrecs = (EPI_OFF_T)st.st_size / (EPI_OFF_T)tokelsz;
+	if (!(key = (byte *)TXmalloc(TXPMBUFPN, fn, keyMax))) goto done;
+
+	/* collect first: do not delete while walking the btree */
+	rewindbtree(newList);
+	for (;;)
+	{
+		sz = keyMax;
+		loc = btgetnext(newList, &sz, key, NULL);
+		if (!TXrecidvalid(&loc)) break;
+		if ((has = txTokFileHasRecid(fh, nrecs, tokelsz, loc)) < 0)
+			goto done;
+		if (!has) continue;			/* not indexed by the scan */
+		if (delList != BTREEPN)
+		{
+			dloc = btsearch(delList, sizeof(loc), &loc);
+			if (TXrecidvalid(&dloc)) continue;	/* rewritten/deleted */
+		}
+		if (n == alloced)
+		{
+			alloced = (alloced ? 2 * alloced : 64);
+			if (!(keys = (byte **)TXrealloc(TXPMBUFPN, fn, keys,
+						alloced * sizeof(byte *))) ||
+			    !(keySz = (size_t *)TXrealloc(TXPMBUFPN, fn, keySz,
+						alloced * sizeof(size_t))) ||
+			    !(locs = (BTLOC *)TXrealloc(TXPMBUFPN, fn, locs,
+						alloced * sizeof(BTLOC))))
+				goto done;
+		}
+		if (!(keys[n] = (byte *)TXmalloc(TXPMBUFPN, fn, sz))) goto done;
+		memcpy(keys[n], key, sz);
+		keySz[n] = sz;
+		locs[n] = loc;
+		n++;
+	}
+	for (i = 0; i < n; i++)
+		btdelete(newList, &locs[i], (int)keySz[i], keys[i]);
+	btflush(newList);
+	ret = (int)n;
+done:
+	if (ret < 0)
+		putmsg(MWARN, fn,
+		       "Could not drop scanned rows from the new list of index %s; searches may return some rows twice until it is optimized",
+		       indexPath);
+	if (keys)
+	{
+		for (i = 0; i < n; i++) TXfree(keys[i]);
+		TXfree(keys);
+	}
+	TXfree(keySz);
+	TXfree(locs);
+	TXfree(key);
+	if (fh >= 0) close(fh);
+	if (fc)
+	{
+		btsetcmp(newList, saveCmp);
+		newList->usr = saveUsr;
+		TXclosefldcmp(fc);
+	}
+	return ret;
 }
 
 /******************************************************************/

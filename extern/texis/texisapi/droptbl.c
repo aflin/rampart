@@ -288,6 +288,10 @@ int	if_exists;	/* If nonzero, suppress not-found error and return success */
 	int	i, ni;
 	FLD	*f, *t, *fn, *tbn;
 	char	typeVal[2];
+#ifdef LOCK_SERVER
+	long	ixTblId = -1;
+	int	ixLocked = 0;
+#endif /* LOCK_SERVER */
 
 	f = nametofld(ddic->indextbl, "NAME");
 	tbn = nametofld(ddic->indextbl, "TBNAME");
@@ -328,8 +332,30 @@ int	if_exists;	/* If nonzero, suppress not-found error and return success */
 				return 0;
 			}
 #endif /* _WIN32 */
+#ifdef LOCK_SERVER
+			/* A writer or reader holds the table's index lock from
+			 * checking its index list until done with the indexes:
+			 * hold it too, so none opens the files being removed
+			 * here.  Before SYSINDEX, the order they lock in. */
+			ixLocked = 0;
+			ixTblId = -1;
+			if (tbln && tbln[i] && *tbln[i])
+			{
+				if (dblock(ddic, ddic->sid, &ixTblId, INDEX_WRITE,
+					   tbln[i], NULL) == -1)
+					return(0);
+				ixLocked = 1;
+			}
+#endif /* LOCK_SERVER */
 			if (TXlocksystbl(ddic, SYSTBL_INDEX, W_LCK, NULL)==-1)
+			{
+#ifdef LOCK_SERVER
+				if (ixLocked)
+					dbunlock(ddic, ddic->sid, &ixTblId,
+						 INDEX_WRITE, tbln[i]);
+#endif /* LOCK_SERVER */
 				return(0);
+			}
 			rewindtbl(ddic->indextbl);
 			while(TXrecidvalid(l = gettblrow(ddic->indextbl, NULL)))
 			{
@@ -375,6 +401,12 @@ int	if_exists;	/* If nonzero, suppress not-found error and return success */
 			 */
 
 			TXunlocksystbl(ddic, SYSTBL_INDEX, W_LCK);
+#ifdef LOCK_SERVER
+			/* this unlock also tells them the index list changed */
+			if (ixLocked)
+				dbunlock(ddic, ddic->sid, &ixTblId, INDEX_WRITE,
+					 tbln[i]);
+#endif /* LOCK_SERVER */
 			tbln[i] = TXfree(tbln[i]);
 			fldn[i] = TXfree(fldn[i]);
 			indn[i] = TXfree(indn[i]);

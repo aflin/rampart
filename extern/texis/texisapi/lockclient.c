@@ -112,6 +112,7 @@ TXlockRequestDb(DDIC *ddic, TXLockRequest *request)
   /* replaces: the server drops the old connection's locks even if our
    * close never reached it (e.g. the OS had already dropped it) */
   dbl->lockServerSocket = txLockConnect(ddic, dbl->lockServerId, &dbl->lockServerId);
+  dbl->lockServerReconnects++;          /* locks held on the old one are gone */
   if(dbl->lockServerSocket)
     response = TXlockRequest(dbl->lockServerSocket, request);
   if(!response) {
@@ -231,6 +232,240 @@ lock_type_to_char(int type, int *want_v, char *lockCmd)
   return NULL;
 }
 
+/* The one lock block of this process (TXlockBlockBegin()): its DDIC, the
+ * pid that began it (a forked child inherits these but holds no locks),
+ * and the connection's reconnect count then (a reconnect loses the locks).
+ * The process holds the table exclusively, so every DDIC of the process on
+ * that database uses it without asking the lock server.  The two counters
+ * stand in for the server's table and index write counters meanwhile, so
+ * those DDICs still see each other's writes at their verifies. */
+static DDIC *txLockBlockOwner = NULL;
+static pid_t txLockBlockPid = 0;
+static long txLockBlockReconnects = 0;
+static unsigned txLockBlockCalls = 0;
+static ft_counter txLockBlockTblC, txLockBlockIdxC;
+static unsigned long txLockBlockSeq = 0;
+static int txLockBlockSysDirty = 0;     /* 1: SYSINDEX  2: SYSPERMS */
+#define TX_LOCK_BLOCK_CHECK_EVERY 2048  /* local requests per liveness check */
+
+/* A value the lock server never gives: its dates are positive. */
+static void
+txLockBlockBump(ft_counter *c)
+{
+  c->date = -1;
+  c->seq = ++txLockBlockSeq;
+}
+
+static int
+txLockBlockIsOwner(DDIC *ddic)
+{
+  return (txLockBlockOwner == ddic && ddic->lockBlockTable &&
+          txLockBlockPid == getpid());
+}
+
+static void
+txLockBlockForget(DDIC *ddic)
+{
+  ddic->lockBlockTable = TXfree(ddic->lockBlockTable);
+  if(txLockBlockOwner == ddic) txLockBlockOwner = NULL;
+}
+
+/* The locks last only as long as the connection, and if the lock server
+ * is restarted nothing shows it while no requests are made: so ask, now
+ * and then.  Returns 0 (block dropped, statement failed) if they are gone. */
+static int
+txLockBlockCheck(DDIC *own)
+{
+  DBLOCK *dbl = own->dblock;
+  TXLockRequest *request, *response = NULL;
+  int alive = 0;
+
+  if(++txLockBlockCalls < TX_LOCK_BLOCK_CHECK_EVERY)
+    return 1;
+  txLockBlockCalls = 0;
+  if(dbl)
+  {
+    request = TXlockRequest_CreateStaticString("{\"counter\":null}\n", -1);
+    response = TXlockRequestDb(own, request);
+    if(request) TXlockRequest_Close(request);
+    if(response) TXlockRequest_Close(response);
+    alive = (response && dbl->lockServerReconnects == txLockBlockReconnects);
+  }
+  if(alive) return 1;
+  putmsg(MERR + LKE, NULL,
+         "The lock on table %s for a bulk load was lost: the lock server connection was dropped",
+         own->lockBlockTable);
+  txLockBlockForget(own);
+  txLockServerLost = 1;                 /* fails the current statement */
+  return 0;
+}
+
+/* The block's table (returns 1), SYSINDEX (2), SYSPERMS (3), or 0 if
+ * `ddic'/`tname' is nothing the block is concerned with. */
+static int
+txLockBlockWhich(DDIC *ddic, CONST char *tname)
+{
+  DDIC *own = txLockBlockOwner;
+
+  if(!own || !own->lockBlockTable || txLockBlockPid != getpid())
+    return 0;
+  if(ddic != own &&
+     !(ddic->pname && own->pname && !strcmp(ddic->pname, own->pname)))
+    return 0;                           /* another database */
+  if(!strcmp(tname, own->lockBlockTable)) return 1;
+  if(!strcmp(tname, "SYSINDEX")) return 2;
+  if(!strcmp(tname, "SYSPERMS")) return 3;
+  return 0;
+}
+
+/* Answers a lock request locally if a lock block covers it: returns 1 and
+ * sets `*rcp' to dblock()'s return value, else 0 (ask the lock server). */
+static int
+txLockBlockLock(DDIC *ddic, CONST char *tname, int type, ft_counter *counterp,
+                int *rcp)
+{
+  int which = txLockBlockWhich(ddic, tname), sysBit;
+  int base = (type & ~(V_LCK | INDEX_VERIFY));
+  ft_counter *cur;
+
+  if(!which) return 0;
+  if(which != 1)
+  {
+    /* The owner's SYSINDEX/SYSPERMS change checks report no change:
+     * permissions were checked when the block began, and no other process
+     * can add or drop an index of the table (both need its locks).  This
+     * process can, so a write to SYSINDEX/SYSPERMS here sends the owner's
+     * next check to the server. */
+    sysBit = which - 1;
+    if(base == W_LCK || base == INDEX_WRITE)
+    {
+      txLockBlockSysDirty |= sysBit;
+      return 0;
+    }
+    if(ddic != txLockBlockOwner || base != 0) return 0;
+    if(txLockBlockSysDirty & sysBit)
+    {
+      txLockBlockSysDirty &= ~sysBit;
+      return 0;
+    }
+    if(!txLockBlockCheck(txLockBlockOwner)) return 0;
+    *rcp = 0;
+    return 1;
+  }
+  if(!txLockBlockCheck(txLockBlockOwner)) return 0;
+  /* as the server: verify against the write counter, and a granted lock
+   * records it */
+  if(type & INDEX_VERIFY) cur = &txLockBlockIdxC;
+  else if(type & V_LCK) cur = &txLockBlockTblC;
+  else cur = ((base == INDEX_READ || base == INDEX_WRITE) ?
+              &txLockBlockIdxC : &txLockBlockTblC);
+  *rcp = 0;
+  if((type & (V_LCK | INDEX_VERIFY)) && counterp &&
+     (counterp->date != cur->date || counterp->seq != cur->seq))
+    *rcp = -2;
+  if(counterp && base != 0) *counterp = *cur;
+  return 1;
+}
+
+/* Answers an unlock locally if a lock block covers it (returns 1).  As the
+ * server does, a write unlock sets a new counter and reports it. */
+static int
+txLockBlockUnlock(DDIC *ddic, CONST char *tname, int type,
+                  ft_counter *counterp)
+{
+  ft_counter *cur = NULL;
+
+  if(txLockBlockWhich(ddic, tname) != 1) return 0;
+  if(type == INDEX_WRITE) cur = &txLockBlockIdxC;
+  else if(type == W_LCK) cur = &txLockBlockTblC;
+  if(cur)
+  {
+    txLockBlockBump(cur);
+    if(counterp) *counterp = *cur;
+  }
+  return 1;
+}
+
+/* Holds `tname' write- and index-write-locked until TXlockBlockEnd(), for a
+ * bulk load that should not pay for a lock round trip per row.  Same order
+ * as a normal write (index then table), so it cannot deadlock with one.
+ * Returns 0 on success, -1 on error (no locks held). */
+int
+TXlockBlockBegin(DDIC *ddic, CONST char *tname)
+{
+  long tblid = -1;
+  char *name;
+
+  if(ddic->nolocking || ddic->manuallocking)
+    return 0;                                   /* nothing to batch */
+  if(!ddic->dblock || !tname || !*tname)
+    return -1;
+  if(txLockBlockOwner && txLockBlockPid == getpid())
+    return 0;           /* one per process: this load locks per row */
+  txLockBlockOwner = NULL;                      /* inherited across a fork */
+  ddic->lockBlockTable = TXfree(ddic->lockBlockTable);
+  if(!(name = TXstrdup(ddic->pmbuf, __FUNCTION__, tname)))
+    return -1;
+  /* start the stand-in counters at the server's, so nothing looks
+   * changed that is not */
+  txLockBlockBump(&txLockBlockIdxC);
+  txLockBlockBump(&txLockBlockTblC);
+  if(dblock(ddic, ddic->sid, &tblid, INDEX_WRITE, name, &txLockBlockIdxC) == -1)
+  {
+    TXfree(name);
+    return -1;
+  }
+  if(dblock(ddic, ddic->sid, &tblid, W_LCK, name, &txLockBlockTblC) == -1)
+  {
+    dbunlock(ddic, ddic->sid, &tblid, INDEX_WRITE, name);
+    TXfree(name);
+    return -1;
+  }
+  ddic->lockBlockTable = name;
+  txLockBlockOwner = ddic;
+  txLockBlockPid = getpid();
+  txLockBlockReconnects = ddic->dblock->lockServerReconnects;
+  txLockBlockCalls = 0;
+  txLockBlockSysDirty = 0;
+  return 0;
+}
+
+/* Ends a lock block, releasing its locks.  Safe to call when none.
+ * Returns -1 if the locks were not held to the end (the lock server
+ * connection was dropped meanwhile), else 0. */
+int
+TXlockBlockEnd(DDIC *ddic)
+{
+  long tblid = -1;
+  char *name;
+  int rc = 0, saveNoLocking;
+
+  if(!txLockBlockIsOwner(ddic))
+  {
+    /* none, or lost and already reported, or a forked child's copy */
+    if(txLockBlockOwner == ddic) txLockBlockOwner = NULL;
+    ddic->lockBlockTable = TXfree(ddic->lockBlockTable);
+    return 0;
+  }
+  name = ddic->lockBlockTable;
+  ddic->lockBlockTable = NULL;                  /* real requests again */
+  txLockBlockOwner = NULL;
+  if(!ddic->dblock)                             /* connection closed: */
+    rc = -1;                                    /*   server dropped them */
+  else
+  {
+    if(ddic->dblock->lockServerReconnects != txLockBlockReconnects)
+      rc = -1;
+    saveNoLocking = ddic->nolocking;            /* set meanwhile? still ours */
+    ddic->nolocking = 0;
+    if(dbunlock(ddic, ddic->sid, &tblid, W_LCK, name) == -1) rc = -1;
+    if(dbunlock(ddic, ddic->sid, &tblid, INDEX_WRITE, name) == -1) rc = -1;
+    ddic->nolocking = saveNoLocking;
+  }
+  TXfree(name);
+  return rc;
+}
+
 int
 dblock(DDIC *ddic, ulong sid, long *tblid, int type, char *tname, ft_counter *counterp)
 /* Returns -2 if `type' is/contains V_LCK/INDEX_VERIFY and `*tblid'/`tname'
@@ -264,13 +499,24 @@ dblock(DDIC *ddic, ulong sid, long *tblid, int type, char *tname, ft_counter *co
       return TXverifysingle;
     return 0;
   }
+  if(txLockBlockOwner && txLockBlockLock(ddic, tname, type, counterp, &rc))
+    return rc;
+  rc = -1;
   type_c = lock_type_to_char(type, &dov, &lockCmd);
   if(!type_c) return -1;
 
   switch(dov) {
     case V_LCK: verify = 'T'; break;
     case INDEX_VERIFY: verify = 'I'; break;
-    default: verify = '_'; break;
+    default:
+      /* A plain lock with `counterp' returns the current write counter
+       * in it, as the shared-memory dblock() did: without it a cache
+       * keyed on that counter looks changed on every verify. */
+      if(counterp && lockCmd == 'L')
+        verify = (type == INDEX_READ || type == INDEX_WRITE) ? 'I' : 'T';
+      else
+        verify = '_';
+      break;
   }
   reqlen = snprintf(tmpbuf, sizeof(tmpbuf), "%c:%s:%c:%s\n", lockCmd, type_c, verify, tname);
   if(reqlen < sizeof(tmpbuf)) {
@@ -287,7 +533,7 @@ dblock(DDIC *ddic, ulong sid, long *tblid, int type, char *tname, ft_counter *co
     if(*response_s == 'Y')
     {
       rc = 0;
-      if(dov == V_LCK || dov == INDEX_VERIFY) {
+      if(dov == V_LCK || dov == INDEX_VERIFY || verify != '_') {
         counter_s = response_s + 5;
 #ifdef NEVER
         switch(dov) {
@@ -302,9 +548,12 @@ dblock(DDIC *ddic, ulong sid, long *tblid, int type, char *tname, ft_counter *co
         counter_e = counter_s;
         while(*counter_e && *counter_e != ':') counter_e++;
         TXparseHexCounter(&last_write, counter_s, counter_e);
-        if(counterp && (counterp->date != last_write.date || counterp->seq != last_write.seq)) {
+        if(dov && counterp && (counterp->date != last_write.date || counterp->seq != last_write.seq)) {
           rc = -2;
         }
+        /* a granted lock (not a bare verify) records the counter */
+        if(counterp && lockCmd == 'L')
+          *counterp = last_write;
       }
     }
   }
@@ -319,6 +568,15 @@ done:
 
 int
 dbunlock(DDIC *ddic, ulong sid, long *tblid, int type, char *tname)
+{
+  return TXdbunlockCounter(ddic, sid, tblid, type, tname, NULL);
+}
+
+int
+TXdbunlockCounter(DDIC *ddic, ulong sid, long *tblid, int type, char *tname,
+                  ft_counter *counterp)
+/* As dbunlock(); a write unlock also stores in `*counterp' the counter it
+ * set, if the lock server reports it (older servers do not). */
 {
   int rc = -1;
   char *type_c, *request_s, *response_s;
@@ -335,6 +593,8 @@ dbunlock(DDIC *ddic, ulong sid, long *tblid, int type, char *tname)
   if(ddic->nolocking) {
     return 0;
   }
+  if(txLockBlockOwner && txLockBlockUnlock(ddic, tname, type, counterp))
+    return 0;
   type_c = lock_type_to_char(type, NULL, NULL);
   if(!type_c) return -1;
 
@@ -350,7 +610,17 @@ dbunlock(DDIC *ddic, ulong sid, long *tblid, int type, char *tname)
   response = TXlockRequestDb(ddic, request);
   response_s = TXlockRequest_GetString(response, NULL);
   if(response_s && *response_s == 'Y')
+  {
     rc = 0;
+    if(counterp && strlen(response_s) > 5 && response_s[4] == ':')
+    {
+      char *counter_s = response_s + 5, *counter_e = counter_s;
+
+      while(*counter_e && *counter_e != ':') counter_e++;
+      if(counter_e > counter_s)
+        TXparseHexCounter(counterp, counter_s, counter_e);
+    }
+  }
   TXlockRequest_Close(request);
   TXlockRequest_Close(response);
   return rc;

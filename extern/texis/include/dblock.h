@@ -192,6 +192,7 @@ typedef struct tagDBLOCK {
 #ifdef LOCK_SERVER
 	TXEZsockbuf *lockServerSocket; /**< Socket to talk to lock server */
 	long	lockServerId;	/**< Its connection id, from the lock server */
+	long	lockServerReconnects;	/**< times reconnected (locks lost) */
 #endif /* LOCK_SERVER */
 } DBLOCK ;
 

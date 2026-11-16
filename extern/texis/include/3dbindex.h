@@ -19,6 +19,8 @@ int	TX3dbiScoreIndex(int indexType, const char *sysindexParams,
 A3DBI	*open3dbi ARGS((char *name, int mode, int type,
                         CONST char *sysindexParams));
 A3DBI	*close3dbi ARGS((A3DBI *));
+int	TXdropIndexedFromNewList ARGS((char *indexPath, size_t auxsz,
+		BTREE *newList, BTREE *delList));
 BTREE	*TXset3dbi ARGS((A3DBI *dbi, FLD *infld, char *fname, DBTBL *dbtbl,
                          int nopre, EPI_HUGEUINT *nhits, int *nopost,
                          short *import, int op));

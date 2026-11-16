@@ -2630,6 +2630,29 @@ done:
 	return(ret);
 }
 
+/* Only the lock server reports the counter a write unlock set. */
+int
+TXdbunlockCounter(DDIC *ddic, ulong sid, long *tblid, int type, char *tname,
+		  ft_counter *counterp)
+{
+	(void)counterp;
+	return dbunlock(ddic, sid, tblid, type, tname);
+}
+
+/* Lock blocks need the lock server; without it they do nothing. */
+int
+TXlockBlockBegin(DDIC *ddic, CONST char *tname)
+{
+	(void)ddic; (void)tname;
+	return 0;
+}
+
+int
+TXlockBlockEnd(DDIC *ddic)
+{
+	(void)ddic;
+	return 0;
+}
 #endif /* LOCK_SERVER */
 
 /******************************************************************/

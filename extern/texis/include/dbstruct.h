@@ -648,6 +648,7 @@ struct DDIC_tag {
 	time_t	starttime;	/* Start-Time */
 	int	nolocking;	/* Perform no locking */
 	int	manuallocking;	/* Perform Manual locking */
+	char	*lockBlockTable; /* write-locked for a whole bulk load */
 #ifndef NO_CACHE_TABLE
 	TXTBLCACHE	*tbltblcache;	/* SYSTABLES cache copy */
 	TXTBLCACHE	*indtblcache;	/* SYSINDEX cache copy */
@@ -816,6 +817,8 @@ struct DBTBL_tag {
 	int	niwrite;	                 /* Type of index locks */
 	ft_counter	ireadc;			/* Last index read time */
 	ft_counter	iwritec;	       /* Last index write time */
+	ft_counter	sysindexc;	/* SYSINDEX cache counter at last index load */
+	byte	sysindexcValid;		/* `sysindexc' set */
 	void	*btcache;
 	NFLDSTAT *nfldstat;
 	DBIDX	rankindex;                    /* Keep rank values here. */

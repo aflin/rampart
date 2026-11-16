@@ -2447,6 +2447,30 @@ updindex(DDIC *ddic, char *indname, int flags, TXindOpts *options, PRED *conditi
                            * (Issue averted under Windows because root name
                            * of new index files is different.):
                            */
+                          /* A rebuild scanned the live table: drop rows it
+                           * reached from the writers' new list (_Z). */
+                          if ((flags & 0x2) && dbi && newIndexPath &&
+                              dbi->mnew && dbi->mdel &&
+                              (indexType == INDEX_MM || indexType == INDEX_FULL))
+                            {
+                              /* fresh handles: dbi's were opened when the
+                               * lists were empty, before writers filled them */
+                              char      zPath[PATH_MAX], xPath[PATH_MAX];
+                              BTREE     *zBt, *xBt;
+
+                              TXcatpath(zPath, dbi->name, "_Z");
+                              TXcatpath(xPath, dbi->name, "_X");
+                              zBt = openbtree(zPath, dbi->mnew->order, BTCSIZE,
+                                              dbi->mnew->flags, O_RDWR);
+                              xBt = openbtree(xPath, BTFSIZE, BTCSIZE,
+                                              BT_UNIQUE | BT_FIXED, O_RDWR);
+                              if (zBt && xBt)
+                                TXdropIndexedFromNewList(newIndexPath,
+                                                         (size_t)dbi->auxsz,
+                                                         zBt, xBt);
+                              if (zBt) closebtree(zBt);
+                              if (xBt) closebtree(xBt);
+                            }
                           if (dbi) TXa3dbiCloseOpenFiles(dbi);
 
                           ret = (newIndexPath == CHARPN ? 0 :

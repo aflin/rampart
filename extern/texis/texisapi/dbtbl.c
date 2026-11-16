@@ -902,6 +902,17 @@ void
 TXrewinddbtbl(db)
 DBTBL *db;			/* The table to rewind */
 {
+	/* With no index or Metamorph handle to rewind, a KDBF table rewind
+	 * only resets in-memory position (KDBF_IOCTL_SEEKSTART, no I/O), and
+	 * the read lock around it was taken and dropped with nothing read. */
+	if (db->index.btree == (BTREE *) NULL && db->fi == FDBIPN &&
+	    db->tbl != (TBL *) NULL && TXrewindtblNoIo(db->tbl))
+	{
+		dbresetstats(db);
+		TXsetrecid(&db->recid, 0);
+		TXrowsread = 0;
+		return;
+	}
 	if (TXlocktable(db, R_LCK) == 0)
 	{
 		if (db->tbl != (TBL *) NULL)
@@ -2260,7 +2271,10 @@ ft_counter *fc;
 		dbunlock(db->ddic, db->ddic->sid, &db->tblid, mode, db->rname,
 			 &db->lockid);
 #else
-	rc = dbunlock(db->ddic, db->ddic->sid, &db->tblid, mode, db->rname);
+	/* a write unlock records the counter it set, so this writer's own
+	   write does not look like another's at its next INDEX_VERIFY */
+	rc = TXdbunlockCounter(db->ddic, db->ddic->sid, &db->tblid, mode,
+			       db->rname, (mode == INDEX_WRITE ? fc : NULL));
 #endif
 #else
 	rc = dbunlock(db->ddic, db->ddic->sid, db->tblid, mode, db->rname);
@@ -2299,6 +2313,51 @@ done:
 
 /******************************************************************/
 
+/* Every index create or drop writes SYSINDEX, so the index list is
+ * unchanged while SYSINDEX is (not every create bumps the index counter). */
+static int
+txSysindexUnchanged(DBTBL *tb)
+{
+#ifndef NO_CACHE_TABLE
+	DDIC	*ddic = tb->ddic;
+
+	if (!tb->sysindexcValid)
+		return 0;
+	if (makevalidtable(ddic, SYSTBL_INDEX) != 0 || !ddic->indtblcache)
+		return 0;
+	return (ddic->indtblcache->lastr.date == tb->sysindexc.date &&
+		ddic->indtblcache->lastr.seq == tb->sysindexc.seq);
+#else
+	return 0;
+#endif
+}
+
+/* A table with no indexes reloads its index list on every write, to see one
+ * created since; while SYSINDEX is unchanged that finds the same empty list. */
+static int
+txIndexListUnchanged(DBTBL *tb, char **updfields)
+{
+	if (updfields || tb->indexfields ||
+	    tb->nindex || tb->ndbi || tb->ninv || tb->nfdbi || tb->nvecidx)
+		return 0;
+	return txSysindexUnchanged(tb);
+}
+
+static void
+txNoteIndexList(DBTBL *tb, char **updfields)
+{
+#ifndef NO_CACHE_TABLE
+	DDIC	*ddic = tb->ddic;
+
+	(void)updfields;
+	tb->sysindexcValid = 0;
+	if (!ddic->indtblcache)
+		return;
+	tb->sysindexc = ddic->indtblcache->lastr;
+	tb->sysindexcValid = 1;
+#endif
+}
+
 int
 TXprepareTableForWriting(DBTBL * tb, int mode, char **updfields)
 /* Returns 0 on success, -1 on error.
@@ -2323,10 +2382,15 @@ TXprepareTableForWriting(DBTBL * tb, int mode, char **updfields)
 		{
 			if (TXlockindex(tb, INDEX_WRITE, &tb->iwritec) == -1)
 				return(-1);	/* KNG 20131125 check ret */
-			if (TXgetindexes(tb, mode, updfields, 0) == -1)
-			{			/* failed to open indexes */
-				TXunlockindex(tb, INDEX_WRITE, NULL);
-				return -1;
+			if (!txIndexListUnchanged(tb, updfields))
+			{
+				if (TXgetindexes(tb, mode, updfields, 0) == -1)
+				{		/* failed to open indexes */
+					TXunlockindex(tb, INDEX_WRITE, NULL);
+					tb->sysindexcValid = 0;
+					return -1;
+				}
+				txNoteIndexList(tb, updfields);
 			}
 		}
 		else
@@ -2334,15 +2398,24 @@ TXprepareTableForWriting(DBTBL * tb, int mode, char **updfields)
 			switch (TXlockindex(tb, INDEX_VERIFY | INDEX_WRITE,
 					    &tb->iwritec))
 			{
+			case -1:		/* failed to lock */
+				return -1;
 			case -2:		/* success (+ recent mods) */
+			reload:
 				if (TXgetindexes(tb, mode, updfields, 0) == -1)
 				{		/* failed to open indexes */
 					TXunlockindex(tb, INDEX_WRITE, NULL);
+					tb->sysindexcValid = 0;
 					return -1;
 				}
+				txNoteIndexList(tb, updfields);
 				break;
-			case -1:		/* failed to lock */
-				return -1;
+			default:
+				/* our own last write no longer reads as a change,
+				   so also catch an index added without a bump */
+				if (!txSysindexUnchanged(tb))
+					goto reload;
+				break;
 			}
 		}
 	}
@@ -2363,7 +2436,7 @@ TXdoneWritingToTable(DBTBL *tb, ft_counter *fc)
 	if ((tb->type == TEXIS_TABLE || tb->type == TEXIS_SYS_TABLE)
 			&& tb->rname)
 	{
-		TXunlockindex(tb, INDEX_WRITE, fc);
+		TXunlockindex(tb, INDEX_WRITE, (fc ? fc : &tb->iwritec));
 	}
 	return 0;
 }

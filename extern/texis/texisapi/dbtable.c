@@ -1709,6 +1709,19 @@ RECID *handle;
 /* position the table to the first row in the file.
 returns 1 if ok, 0 if not, 2 if by sea */
 
+/* Rewinds `tb' if that needs no I/O (KDBF): returns 1 if done, 0 if not. */
+int
+TXrewindtblNoIo(TBL *tb)
+{
+	if (ioctldbf(tb->df, DBF_KAI + KDBF_IOCTL_SEEKSTART, NULL) != 0)
+		return 0;
+#ifdef FAST_BUFFLD
+	tb->irec = NULL;
+	tb->ivarpos = NULL;
+#endif
+	return 1;
+}
+
 int
 rewindtbl(tb)
 TBL *tb;

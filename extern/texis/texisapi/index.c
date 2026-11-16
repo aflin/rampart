@@ -2460,6 +2460,27 @@ TXindOpts	*options;	/* (in/out) options, opt. w/`WITH ...' */
 		break;
 	}
 
+	/* The build scanned the live table: drop rows it reached from the
+	 * new list writers filled meanwhile, or searches return them twice. */
+	if (success && (itype == INDEX_MM || itype == INDEX_FULL))
+	{
+		A3DBI	*crDbi;
+
+		if (TXlockindex(dbtb, INDEX_WRITE, NULL) == 0)
+		{
+			crDbi = open3dbi(indfile, PM_INSERT | PM_DELETE, itype,
+					 sysindexParams);
+			if (crDbi)
+			{
+				TXdropIndexedFromNewList(indfile,
+					(size_t)crDbi->auxsz, crDbi->newrec,
+					crDbi->del);
+				crDbi = close3dbi(crDbi);
+			}
+			TXunlockindex(dbtb, INDEX_WRITE, NULL);
+		}
+	}
+
 	if (success)
 	{
 		TXaddindexrec(ddic, indname, table, sysindexFname,

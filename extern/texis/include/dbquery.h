@@ -80,6 +80,7 @@ int	ntblflds ARGS(( TBL *tb));
 int     tbgetorign(TBL *tb, int n);
 
 int	rewindtbl ARGS(( TBL *tb));
+int	TXrewindtblNoIo ARGS(( TBL *tb));
 
 #ifdef WANT_BLOBS
 #define blobdbf(tb) (tb->bf)           /* gets a DBF handle to the blob */
@@ -735,6 +736,9 @@ int	dbunlock ARGS((DDIC *, ulong, long *, int, char *, long *));
 #   else
 int	dblock ARGS((DDIC *, ulong, long *, int, char *, ft_counter *));
 int	dbunlock ARGS((DDIC *, ulong, long *, int, char *));
+int	TXdbunlockCounter ARGS((DDIC *, ulong, long *, int, char *, ft_counter *));
+int	TXlockBlockBegin ARGS((DDIC *ddic, CONST char *tname));
+int	TXlockBlockEnd ARGS((DDIC *ddic));
 #   endif
 #else
 int	dblock ARGS((DDIC *, ulong, long, int, char *, ft_counter *));

@@ -1512,6 +1512,7 @@ static int rp_memfd_create(size_t size, int type) {
 static void do_child_loop(SFI *finfo);
 static int fork_setmem();
 static int fork_seterr();
+static int child_lockblock();
 
 /* payload messaging (defined below, next to cwrite) */
 static void  msg_begin(SFI *finfo);
@@ -3419,6 +3420,67 @@ static int fork_flush(DB_HANDLE *h)
     return ret;
 }
 
+/* Lock block for a bulk load (importCsv lockTable): `on' nonzero begins one
+   on `tbname' (held until ended), zero ends it.  Returns 1 on success. */
+static int rp_tx_lockblock(TEXIS *tx, const char *tbname, int on)
+{
+    LPSTMT lpstmt = tx ? tx->hstmt : NULL;
+    DDIC *ddic = (lpstmt && lpstmt->dbc) ? lpstmt->dbc->ddic : NULL;
+
+    if (!ddic)
+        return 0;
+    if (on)
+        return TXlockBlockBegin(ddic, tbname) == 0;
+    return TXlockBlockEnd(ddic) == 0;
+}
+
+static int fork_lockblock(DB_HANDLE *h, const char *tbname, int on)
+{
+    int ret = 0, len = (on && tbname) ? (int)strlen(tbname) : 0;
+
+    check_fork(h, NoCreate);
+    if(!finfo)
+        return 0;
+    if(forkwrite("B", sizeof(char)) == -1 ||
+       forkwrite(&(h->tx), sizeof(TEXIS*)) == -1 ||
+       forkwrite(&on, sizeof(int)) == -1 ||
+       forkwrite(&len, sizeof(int)) == -1 ||
+       (len && forkwrite(tbname, (size_t)len) == -1))
+        return 0;
+    if(forkread(&ret, sizeof(int)) == -1)
+        return 0;
+    return ret;
+}
+
+static int child_lockblock()
+{
+    int ret = 0, on = 0, len = 0;
+    TEXIS *tx = NULL;
+    char name[256];
+
+    if (forkread(&tx, sizeof(TEXIS*)) == -1 ||
+        forkread(&on, sizeof(int)) == -1 ||
+        forkread(&len, sizeof(int)) == -1 ||
+        len < 0 || len >= (int)sizeof(name) ||
+        (len && forkread(name, (size_t)len) == -1))
+    {
+        forkwrite(&ret, sizeof(int));
+        return 0;
+    }
+    name[len] = '\0';
+    ret = rp_tx_lockblock(tx, name, on);
+    if (forkwrite(&ret, sizeof(int)) == -1)
+        return 0;
+    return ret;
+}
+
+static int h_lockblock(DB_HANDLE *h, const char *tbname, int on)
+{
+    if(DB_HANDLE_IS(h, DB_FLAG_FORK))
+        return fork_lockblock(h, tbname, on);
+    return rp_tx_lockblock(h->tx, tbname, on);
+}
+
 static int child_flush()
 {
     int ret=0;
@@ -3878,6 +3940,9 @@ static void do_child_loop(SFI *finfo)
                 break;
             case 'F':
                 ret = child_flush();
+                break;
+            case 'B':
+                ret = child_lockblock();
                 break;
             case 's':
                 ret = child_skip();
@@ -6097,6 +6162,7 @@ static duk_ret_t rp_sql_import(duk_context *ctx, int isfile)
     uint8_t *field_type=NULL;
     int field_type_size=0;
     duk_idx_t this_idx;
+    int lockTable = 0, lockBlocked = 0, lockLost = 0;
 
 #define closecsv do {\
     int col;\
@@ -6109,6 +6175,17 @@ static duk_ret_t rp_sql_import(duk_context *ctx, int isfile)
 
     if(strlen(dcsv.tbname)<1)
         RP_THROW(ctx, "%s(): option tableName is required", func_name);
+
+    /* lockTable: hold the table write-locked for the whole import instead
+       of locking per row; other connections wait until it finishes */
+    if(dcsv.obj_idx > -1 && duk_get_prop_string(ctx, dcsv.obj_idx, "lockTable")
+       && !duk_is_undefined(ctx, -1))
+    {
+        if(!duk_is_boolean(ctx, -1))
+            RP_THROW(ctx, "%s(): option lockTable must be true or false", func_name);
+        lockTable = duk_get_boolean(ctx, -1);
+    }
+    duk_pop(ctx);
 
     /* SECURITY (F14): tableName is interpolated into SQL (the SYSCOLUMNS lookup
        and the INSERT statement) and an identifier cannot be bound as a
@@ -6230,6 +6307,7 @@ static duk_ret_t rp_sql_import(duk_context *ctx, int isfile)
 
 #define fn_cleanup(exc) do { \
     int j=0; \
+    if(lockBlocked){ if(!h_lockblock(h, NULL, 0)) lockLost=1; lockBlocked=0; } \
     if(tbcols){ \
       while(field_names[j]!=NULL) \
           free(field_names[j++]); \
@@ -6425,11 +6503,28 @@ static duk_ret_t rp_sql_import(duk_context *ctx, int isfile)
 
                 h_resetparams(h);
 
+                /* after a row written normally (caches validated), hold
+                   the locks for the rest */
+                if (lockTable && !lockBlocked)
+                {
+                    if (!h_lockblock(h, dcsv.tbname, 1))
+                    {
+                        fn_cleanup(0);
+                        RP_THROW(ctx, "%s(): could not lock table %s", func_name, dcsv.tbname);
+                    }
+                    lockBlocked = 1;
+                }
+
                 if (dcsv.func_idx > -1 && !( (row-start) % dcsv.cbstep ) )
                 {
                     duk_dup(ctx, dcsv.func_idx);
                     duk_push_int(ctx, row-start);
-                    duk_call(ctx, 1);
+                    /* a throw must not leave the table locked */
+                    if (duk_pcall(ctx, 1) != DUK_EXEC_SUCCESS)
+                    {
+                        fn_cleanup(0);
+                        (void)duk_throw(ctx);
+                    }
                     if(duk_is_boolean(ctx, -1) && ! duk_get_boolean(ctx, -1) )
                         goto funcend;
                     duk_pop(ctx);
@@ -6442,6 +6537,10 @@ static duk_ret_t rp_sql_import(duk_context *ctx, int isfile)
 
     duk_push_int(ctx, dcsv.csv->rows - start);
     fn_cleanup(0);
+    /* the locks did not last to the end: rows may have been written
+       while another process had the table */
+    if(lockLost)
+        RP_THROW(ctx, "%s(): the lock on the table was lost during the import (lock server connection dropped)", func_name);
     rp_log_error(ctx); /* log any non fatal errors to this.errMsg */
     return 1;
 }
