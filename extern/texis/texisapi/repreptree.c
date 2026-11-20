@@ -437,6 +437,7 @@ int prepq;		/* When to prepare the query */
 			return (DBTBL *) NULL;
 		return q->out;
 	case UNION_OP:
+		q->flags &= ~TXqueryFlag_UnionLeftDone;	/* running again */
 		q->in1 = irepreparetree(ddic, query->left, query, fo, preq, success, prepq);
 		if (q->in1 == NULL)
 			return (DBTBL *) NULL;

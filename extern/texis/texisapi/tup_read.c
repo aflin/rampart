@@ -619,7 +619,14 @@ TXCOUNTINFO	*countInfo;	/* (in/out, opt.) row count stats */
 			if (countInfo->rowsReturnedMax > 0)
 				countInfo->rowsReturnedMax--;
 		}
-		if (trc < 0 || tup_match(t, t->ipred, fo) == 0)
+		/* A row that fails the indexed part of the predicate marks
+		 * the end of the range when the index itself is being walked.
+		 * Not for a list of recids made earlier (DBIDX_MEMORY): there
+		 * it is a row another process changed since the list was
+		 * made, and the rows after it are still wanted. */
+		if (trc < 0 ||
+		    (t->index.type != DBIDX_MEMORY &&
+		     tup_match(t, t->ipred, fo) == 0))
 				/* Matched the end condition */
 			break;
 		/* Didn't match anything, so try again */

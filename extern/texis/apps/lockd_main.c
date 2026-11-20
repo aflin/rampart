@@ -219,7 +219,8 @@ proclock_st(char *l, lockd_connection *connection)
 
   resource_attach(name, connection->database, &res);
   mode = lockd_string_to_mode(mode_s);
-  resource_lock(res, connection, mode, wt);
+  if(resource_lock(res, connection, mode, wt) == -1)
+    resource_detach(res);               /* refused (deadlock): not held */
   return 0;
 }
 

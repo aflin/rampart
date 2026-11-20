@@ -856,10 +856,16 @@ groupagain:
 				putmsg(MINFO, Fn, "Handling a table union");
 			query->state = QS_ACTIVE;
 			q->state = QS_ACTIVE;
+			/* Once the first query has ended it is not asked again:
+			 * an ended scan asked for more may start over. */
+			if(q->flags & TXqueryFlag_UnionLeftDone)
+				r = -1;
+			else
 			do r = TXdotree(query->left, fo, SQL_FETCH_NEXT, 1);
 			while (r == 0 && (toskip-- > 0));
 			if(r < 0)
 			{
+				q->flags |= TXqueryFlag_UnionLeftDone;
 				do r=TXdotree(query->right,fo,SQL_FETCH_NEXT,1);
 				while (r == 0 && (toskip-- > 0));
 				if(r >= 0)

@@ -619,6 +619,7 @@ int		flags;	/* (in) */
 
 	if (!existsbtree(iname))
 	{
+		if (!TXindexWasDropped(dbtbl, iname))
 		putmsg(MERR, Fn, "Index %s reported to exist, but does not.",
 			iname);
 		return NULL;
@@ -632,6 +633,7 @@ int		flags;	/* (in) */
 				   sysindexParams);
 	if (!dbidx->btree)
 	{
+		if (!TXindexWasDropped(dbtbl, iname))
 		putmsg(MERR, Fn, "Index %s reported to exist, but does not.",
 			iname);
 		return NULL;
@@ -902,7 +904,7 @@ byte	**outbufp;
 	size_t	sz2;
 	FLDCMP *fc;
 	BTLOC	btloc;
-	int	rc;
+	int	rc, atEnd;
 	byte	*indexbuf;
 
 	if(verbose)
@@ -917,6 +919,8 @@ byte	**outbufp;
 		putmsg(MWARN, Fn, "Uninitialized type");
 		return btloc;
 	}
+	/* already returned its last entry (a caller may still ask again) */
+	atEnd = (dbidx->nrecs > 0 && !TXrecidvalid(&dbidx->lrecid));
 	if(dbidx->nrecs > 0 && !TXrecidvalid(&dbidx->lrecid))
 		dbidx->nrecs = 0;
 	{
@@ -924,7 +928,22 @@ byte	**outbufp;
 			&dbidx->lread);
 		if(rc == -1)
 			return btloc;
-		if(rc == -2)
+		if(rc == -2 && atEnd)
+		{
+			/* The index changed after the scan ended.  There is no
+			 * place to find again: do as an unchanged index would --
+			 * a scan with bounds starts over below (nrecs == 0); one
+			 * without stays ended, and must not go back to its last
+			 * key and return those entries a second time. */
+			btreinit(dbidx->btree);
+			if(!dbidx->lobuf && !dbidx->hibuf)
+			{
+				TXunlockindex(dbidx->dbtbl, INDEX_READ,
+					      &dbidx->lread);
+				return btloc;
+			}
+		}
+		else if(rc == -2)
 		{
 			int ts;
 
@@ -933,16 +952,53 @@ byte	**outbufp;
 #endif
 			btreinit(dbidx->btree);
 			isetdbidx(dbidx, &dbidx->lrecid);
-			ts = btsetsearch(dbidx->btree, BT_SEARCH_FIND);
+			ts = btsetsearch(dbidx->btree, BT_SEARCH_BEFORE);
 			if(dbidx->lsz) /* Only search if got something */
 			{
-/* save and restore flags which cancel out the don't care so we search
-   on all fields in the index *//* JMT 2001-11-15 */
-				int *savedflags;
+/* The index changed under this scan: find our place again.  The entry
+   last returned may itself be gone (its row updated or deleted), so do
+   not look for it: start at the first entry with its key, and pass over
+   every entry at or before it in (key, recid) order -- those were
+   returned already.  All fields compared: save and restore the flags
+   that cancel out the don't care. *//* JMT 2001-11-15 */
+				int *savedflags, pass;
+				size_t nskip = 0, k;
 				FLDCMP *fc = (FLDCMP *)dbidx->btree->usr;
+				BTLOC none, loc;
+				byte *ibuf;
+				size_t isz;
+
+				TXsetrecid(&none, -1);
 				savedflags = TXfcsavedontcare(fc);
-				btsearch2(dbidx->btree, dbidx->lsz,
-					&dbidx->lbuf, &dbidx->lrecid);
+				for (pass = 0; pass < 2; pass++)
+				{
+					btsearch2(dbidx->btree, dbidx->lsz,
+						&dbidx->lbuf, &none);
+					if (pass)	/* now pass over them */
+					{
+						for (k = 0; k < nskip; k++)
+							btgetnext(dbidx->btree, NULL,
+								NULL, NULL);
+						break;
+					}
+					/* count them */
+					for (;;)
+					{
+						int c;
+
+						isz = BT_REALMAXPGSZ;
+						loc = btgetnext(dbidx->btree, &isz,
+								NULL, &ibuf);
+						if (!TXrecidvalid(&loc)) break;
+						c = fldcmp(dbidx->lbuf, dbidx->lsz,
+							   ibuf, isz, fc);
+						if (c > 0 || (c == 0 &&
+						    _recidcmp(&loc, &dbidx->lrecid) <= 0))
+							nskip++;
+						else
+							break;
+					}
+				}
 				TXfcrestoredontcare(fc, savedflags);
 			}
 			btsetsearch(dbidx->btree, ts);

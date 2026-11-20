@@ -1305,6 +1305,7 @@ DBTBL *dbtbl;			/* The table the index belongs to */
 	if (!rc)
 	{
 	missingIndex:
+		if (!TXindexWasDropped(dbtbl, iname))
 		putmsg(MWARN, Fn, IndexDoesNotExistFmt, iname);
 		goto err;
 	}
@@ -1798,6 +1799,7 @@ int	*needPostProc;		/* (out) nonzero: results need post-proc */
 	if (!rc)
 	{
 	indexMissing:
+		if (!TXindexWasDropped(dbtbl, iname))
 		putmsg(MWARN, Fn, IndexDoesNotExistFmt, iname);
 		ix = closeiindex(ix);
 		goto err;
@@ -2408,6 +2410,7 @@ int	fop;			/* (in) FOP operator */
 	if (!rc)
 	{
 	missingIndex:
+		if (!TXindexWasDropped(dbtbl, iname))
 		putmsg(MERR, Fn, IndexDoesNotExistFmt, iname);
 		goto err;
 	}
@@ -2786,6 +2789,7 @@ DBTBL *dbtbl;			/* The table the index belongs to */
 	if (i.obj == NULL)
 	{
 	missingIndex:
+		if (!TXindexWasDropped(dbtbl, iname))
 		putmsg(MERR, Fn, IndexDoesNotExistFmt, iname);
 		goto err;
 	}
@@ -3214,6 +3218,7 @@ TBSPEC *tbspec;
 	if ((dbisearch->fip = TXbtcacheopen(tb, iname, itype,
 				dbisearch->imode, sysindexParams)) == NULL)
 	{
+		if (!TXindexWasDropped(tb, iname))
 		putmsg(MWARN, fn, "Could not open index %s", iname);
 		goto err;
 	}

@@ -116,6 +116,9 @@ DBTBL *tbl2;
 	TXrewinddbtbl(tbl2);
 	fn1 = getfldname(tb1, i);
 	fn2 = getfldname(tb1, i);
+	/* both queries must return the same number of columns */
+	if (tb1->n != tb2->n)
+		bzzt = 1;
 	while (fn1 && fn2 && !bzzt)
 	{
 		if (strchr(fn1, '.'))
@@ -144,7 +147,15 @@ DBTBL *tbl2;
 		dbt->frecid = createfld("recid", 1, 0);
 		dbt->tblid = -1;
 		putfld(dbt->frecid, &dbt->recid, 1);
+		/* a name, as every other result table has: DISTINCT, ORDER BY
+		 * etc. above the union copy it */
+		if (tbl1->lname)
+			dbt->lname = TXstrdup(TXPMBUFPN, __FUNCTION__,
+					      tbl1->lname);
 	}
+	else
+		putmsg(MERR + UGE, NULL,
+	"UNION: both queries must return the same number of columns, of compatible types");
 	dd = closedd(dd);
 	return dbt;
 }

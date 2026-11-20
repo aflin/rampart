@@ -1513,6 +1513,9 @@ static void do_child_loop(SFI *finfo);
 static int fork_setmem();
 static int fork_seterr();
 static int child_lockblock();
+static int child_batch();
+static int do_prep(TEXIS *tx, char *sql);
+static int do_exec(TEXIS *tx);
 
 /* payload messaging (defined below, next to cwrite) */
 static void  msg_begin(SFI *finfo);
@@ -1558,9 +1561,17 @@ static void invalidate_thread_handles(uint16_t forknum)
     last_sql_set = NULL;
 }
 
+/* rows an import has queued for this thread's helper but not sent yet
+   (see imp_sink_row()); any other helper command sends them first */
+struct rp_impsink;
+static __thread struct rp_impsink *imp_open_sink = NULL;
+static void imp_autoflush(void);
+
 static SFI *check_fork(DB_HANDLE *h, int create)
 {
     //int pidstatus;
+    if(imp_open_sink)
+        imp_autoflush();
     if(finfo == NULL)
     {
         if(!create)
@@ -2632,9 +2643,7 @@ static int child_exec()
 
     /* texis_execute may invoke the registered TXembedFunc
      * (LIKEV with string RHS), emitting 'B' callbacks before 'A'. */
-    ret = texis_execute(tx);
-    if (ret && TXlockServerLostTake())
-        ret = 0;                /* lost the lock server: fail it */
+    ret = do_exec(tx);
 
     if (forkwrite(&atag, 1) == -1) return 0;
     if (forkwrite(&ret, sizeof(int)) == -1) return 0;
@@ -2675,6 +2684,26 @@ static int fork_prep(DB_HANDLE *h, char *sql)
     return ret;
 }
 
+/* helper-side prepare and execute, shared by the single commands and by
+   batches: a statement that lost the lock server fails */
+static int do_prep(TEXIS *tx, char *sql)
+{
+    int ret = texis_prepare(tx, sql);
+
+    if (ret && TXlockServerLostTake())
+        ret = 0;
+    return ret;
+}
+
+static int do_exec(TEXIS *tx)
+{
+    int ret = texis_execute(tx);
+
+    if (ret && TXlockServerLostTake())
+        ret = 0;
+    return ret;
+}
+
 static int child_prep()
 {
     TEXIS *tx=NULL;
@@ -2699,10 +2728,7 @@ static int child_prep()
         forkwrite(&ret, sizeof(int));
         return 0;
     }
-    //printf("%d: texis_prepare(%p, \"%s\")\n", (int)getpid(),tx, sql);
-    ret = texis_prepare(tx, sql);
-    if (ret && TXlockServerLostTake())
-        ret = 0;                /* lost the lock server: fail it */
+    ret = do_prep(tx, sql);
 
     if(forkwrite(&ret, sizeof(int)) == -1)
         return 0;
@@ -3441,7 +3467,7 @@ static int fork_lockblock(DB_HANDLE *h, const char *tbname, int on)
     check_fork(h, NoCreate);
     if(!finfo)
         return 0;
-    if(forkwrite("B", sizeof(char)) == -1 ||
+    if(forkwrite("k", sizeof(char)) == -1 ||
        forkwrite(&(h->tx), sizeof(TEXIS*)) == -1 ||
        forkwrite(&on, sizeof(int)) == -1 ||
        forkwrite(&len, sizeof(int)) == -1 ||
@@ -3479,6 +3505,297 @@ static int h_lockblock(DB_HANDLE *h, const char *tbname, int on)
     if(DB_HANDLE_IS(h, DB_FLAG_FORK))
         return fork_lockblock(h, tbname, on);
     return rp_tx_lockblock(h->tx, tbname, on);
+}
+
+/* ---------------- batched helper commands ----------------
+ *
+ * Each helper command is a pipe round trip, and the round trip (waking the
+ * other process) costs far more than the command.  A batch sends many in
+ * one:
+ *
+ *   pipe    'b', size_t bytes of the map used
+ *   map     uint32 count, uint32 0, then count records, each 8-aligned:
+ *             uint32 record length, char command, 3 x 0, TEXIS* (8 bytes),
+ *             then the command's arguments:
+ *               p  prepare      sql text with its NUL
+ *               P  param        int32 ipar, ctype, sqltype, 0; int64 len; data
+ *               r  resetparams  -
+ *               e  execute      -
+ *               F  flush        -
+ *               s  skip         int32 nrows
+ *               k  lock block   int32 on; table name with its NUL
+ *   reply   embed callbacks (from e/s) as usual, then 'A', size_t bytes;
+ *   map     uint32 ran, int32 last result, then ran int32 results
+ *
+ * The helper runs them in order and stops after the first that fails
+ * (returns 0; a failed r does not stop it), so `ran' < count, or a zero
+ * last result, means command number `ran' failed.  Commands with replies
+ * of any size (f, S, g) and those not tied to an open connection are not
+ * batched.
+ *
+ * The helper COPIES the request out of the map before running anything:
+ * embed callbacks raised while executing use the map themselves.
+ *
+ * The sender builds the batch in its own buffer (one per thread, at most
+ * the size of the map) and copies it to the map when sending, so other
+ * helper commands may be sent while one is being built. */
+#define FBATCH_HDR 8
+#define FBATCH_REC 16           /* length, command, pad, tx */
+
+static __thread uint32_t fbatch_count = 0;
+static __thread char *fbatch_buf = NULL;
+static __thread size_t fbatch_cap = 0, fbatch_used = 0, fbatch_limit = 0;
+
+typedef struct { size_t used; uint32_t count; } FBATCH_MARK;
+
+static void fbatch_begin(DB_HANDLE *h)
+{
+    check_fork(h, NoCreate);
+    fbatch_limit = finfo->mapsize;
+    if (fbatch_cap < FBATCH_HDR)
+    {
+        fbatch_cap = 4096;
+        REMALLOC(fbatch_buf, fbatch_cap);
+    }
+    memset(fbatch_buf, 0, FBATCH_HDR);
+    fbatch_used = FBATCH_HDR;
+    fbatch_count = 0;
+}
+
+static void fbatch_mark(FBATCH_MARK *m)
+{
+    m->used = fbatch_used;
+    m->count = fbatch_count;
+}
+
+/* drop everything added since the mark */
+static void fbatch_rewind(FBATCH_MARK *m)
+{
+    fbatch_used = m->used;
+    fbatch_count = m->count;
+}
+
+/* Adds a command with arguments a then b.  Returns 0 if it does not fit
+   (nothing added): send the batch and start another, or if the batch is
+   empty send this command on its own. */
+static int fbatch_add(DB_HANDLE *h, char cmd, const void *a, size_t alen,
+                      const void *b, size_t blen)
+{
+    size_t need = FBATCH_REC + alen + blen, pad;
+    uint32_t len32;
+    char *p;
+
+    if (blen > (size_t)INT_MAX || alen > 4096)
+        return 0;
+    pad = (8 - (need & 7)) & 7;
+    need += pad;
+    if (fbatch_used > fbatch_limit || need > fbatch_limit - fbatch_used ||
+        fbatch_count == UINT32_MAX)
+        return 0;
+    if (fbatch_used + need > fbatch_cap)
+    {
+        size_t cap = fbatch_cap * 2;
+
+        if (cap < fbatch_used + need) cap = fbatch_used + need;
+        if (cap > fbatch_limit) cap = fbatch_limit;
+        REMALLOC(fbatch_buf, cap);
+        fbatch_cap = cap;
+    }
+    p = fbatch_buf + fbatch_used;
+    len32 = (uint32_t)need;
+    memcpy(p, &len32, sizeof(len32));
+    memset(p + 4, 0, FBATCH_REC - 4);
+    p[4] = cmd;
+    memcpy(p + 8, &(h->tx), sizeof(TEXIS *));
+    if (alen) memcpy(p + FBATCH_REC, a, alen);
+    if (blen) memcpy(p + FBATCH_REC + alen, b, blen);
+    if (pad) memset(p + FBATCH_REC + alen + blen, 0, pad);
+    fbatch_used += need;
+    fbatch_count++;
+    return 1;
+}
+
+static int fbatch_add_param(DB_HANDLE *h, int ipar, void *data, long len,
+                            int ctype, int sqltype)
+{
+    int32_t hd[4];
+    int64_t len64 = (int64_t)len;
+    char a[sizeof(hd) + sizeof(len64)];
+
+    if (len < 0)
+        return 0;
+    hd[0] = ipar; hd[1] = ctype; hd[2] = sqltype; hd[3] = 0;
+    memcpy(a, hd, sizeof(hd));
+    memcpy(a + sizeof(hd), &len64, sizeof(len64));
+    return fbatch_add(h, 'P', a, sizeof(a), data, (size_t)len);
+}
+
+/* Sends the batch.  Returns 0 if the helper could not be reached, else 1
+   with *ranp = commands run and *lastp = the last one's result; all `count'
+   succeeded if *ranp == count and *lastp != 0.  An empty batch sends
+   nothing and reports 0 run, last result 1. */
+static int fbatch_send(DB_HANDLE *h, uint32_t *ranp, int *lastp)
+{
+    FMINFO *mapinfo;
+    size_t used, rsz = 0;
+    int32_t last = 0;
+
+    *ranp = 0;
+    *lastp = 1;
+    if (!fbatch_count)
+        return 1;
+    check_fork(h, NoCreate);
+    mapinfo = finfo->mapinfo;
+    used = fbatch_used;
+    if (used > finfo->mapsize)
+        return 0;
+    memcpy(fbatch_buf, &fbatch_count, sizeof(uint32_t));
+    memcpy(mapinfo->mem, fbatch_buf, used);
+    fbatch_count = 0;
+    fbatch_used = FBATCH_HDR;
+    *lastp = 0;
+
+    /* an execute may ask for embeddings: the helper must know it can */
+    if (fork_maybe_register_embed(h) != 0) return 0;
+    if (forkwrite("b", sizeof(char)) == -1) return 0;
+    if (forkwrite(&used, sizeof(size_t)) == -1) return 0;
+    if (fork_drain_embed_callbacks() != 0) return 0;
+    if (forkread(&rsz, sizeof(size_t)) == -1) return 0;
+    if (rsz < 2 * sizeof(uint32_t) || rsz > finfo->mapsize) return 0;
+    memcpy(ranp, mapinfo->mem, sizeof(uint32_t));
+    memcpy(&last, (char *)mapinfo->mem + sizeof(uint32_t), sizeof(int32_t));
+    *lastp = (int)last;
+    return 1;
+}
+
+/* helper side */
+static int child_batch()
+{
+    static char *req = NULL;        /* private copy of the request */
+    static size_t reqsz = 0;
+    static int32_t *res = NULL;     /* results */
+    static size_t ressz = 0;
+    size_t used = 0, off, rsz;
+    uint32_t count = 0, ran = 0, i;
+    int32_t last = 0;
+    char atag = 'A';
+    int valid = 1;
+
+    if (forkread(&used, sizeof(size_t)) == -1)
+        return 0;
+    if (used < FBATCH_HDR || used > finfo->mapsize)
+        valid = 0;
+    else
+    {
+        if (used > reqsz)
+        {
+            REMALLOC(req, used);
+            reqsz = used;
+        }
+        memcpy(req, finfo->mapinfo->mem, used);
+        memcpy(&count, req, sizeof(uint32_t));
+        /* check every record before running any */
+        for (i = 0, off = FBATCH_HDR; valid && i < count; i++)
+        {
+            uint32_t len = 0;
+
+            if (off + FBATCH_REC > used) { valid = 0; break; }
+            memcpy(&len, req + off, sizeof(uint32_t));
+            if (len < FBATCH_REC || (len & 7) || len > used - off) { valid = 0; break; }
+            off += len;
+        }
+        if (valid && (size_t)count > ressz)
+        {
+            REMALLOC(res, (size_t)count * sizeof(int32_t));
+            ressz = count;
+        }
+    }
+
+    for (i = 0, off = FBATCH_HDR; valid && i < count; i++)
+    {
+        uint32_t len;
+        char cmd, *args;
+        size_t alen;
+        TEXIS *tx = NULL;
+        int ret = 0, stop = 1;
+
+        memcpy(&len, req + off, sizeof(uint32_t));
+        cmd = req[off + 4];
+        memcpy(&tx, req + off + 8, sizeof(TEXIS *));
+        args = req + off + FBATCH_REC;
+        alen = len - FBATCH_REC;
+        off += len;
+
+        if (tx) switch (cmd)
+        {
+            case 'p':
+                if (alen && memchr(args, '\0', alen))
+                {
+                    clearmsgbuf();      /* as a single prepare does */
+                    ret = do_prep(tx, args);
+                }
+                break;
+            case 'P':
+            {
+                int32_t hd[4];
+                int64_t len64;
+                long plen;
+
+                if (alen < sizeof(hd) + sizeof(len64)) break;
+                memcpy(hd, args, sizeof(hd));
+                memcpy(&len64, args + sizeof(hd), sizeof(len64));
+                if (len64 < 0 || (uint64_t)len64 > alen - sizeof(hd) - sizeof(len64)) break;
+                plen = (long)len64;
+                ret = texis_param(tx, hd[0], args + sizeof(hd) + sizeof(len64),
+                                  &plen, hd[1], hd[2]);
+                break;
+            }
+            case 'r':
+                ret = texis_resetparams(tx);
+                stop = 0;
+                break;
+            case 'e':
+                ret = do_exec(tx);      /* may emit embed callbacks */
+                break;
+            case 'F':
+                ret = texis_flush(tx);
+                break;
+            case 's':
+            {
+                int32_t n;
+
+                if (alen < sizeof(n)) break;
+                memcpy(&n, args, sizeof(n));
+                ret = texis_flush_scroll(tx, n);
+                break;
+            }
+            case 'k':
+            {
+                int32_t on;
+
+                if (alen < sizeof(on) + 1 || !memchr(args + sizeof(on), '\0', alen - sizeof(on))) break;
+                memcpy(&on, args, sizeof(on));
+                ret = rp_tx_lockblock(tx, args + sizeof(on), on);
+                break;
+            }
+        }
+        res[ran++] = last = (int32_t)ret;
+        if (!ret && stop)
+            break;
+    }
+
+    /* the reply goes in the map only now: nothing else will use it */
+    rsz = 2 * sizeof(uint32_t) + (size_t)ran * sizeof(int32_t);
+    if (rsz > finfo->mapsize)       /* cannot happen: records are larger */
+        rsz = 2 * sizeof(uint32_t);
+    memcpy(finfo->mapinfo->mem, &ran, sizeof(uint32_t));
+    memcpy((char *)finfo->mapinfo->mem + sizeof(uint32_t), &last, sizeof(int32_t));
+    if (rsz > 2 * sizeof(uint32_t))
+        memcpy((char *)finfo->mapinfo->mem + 2 * sizeof(uint32_t), res,
+               (size_t)ran * sizeof(int32_t));
+    if (forkwrite(&atag, 1) == -1) return 0;
+    if (forkwrite(&rsz, sizeof(size_t)) == -1) return 0;
+    return last;
 }
 
 static int child_flush()
@@ -3941,8 +4258,11 @@ static void do_child_loop(SFI *finfo)
             case 'F':
                 ret = child_flush();
                 break;
-            case 'B':
+            case 'k':
                 ret = child_lockblock();
+                break;
+            case 'b':
+                ret = child_batch();
                 break;
             case 's':
                 ret = child_skip();
@@ -6144,6 +6464,247 @@ static void h_reset_tx_default(duk_context *ctx, DB_HANDLE *h, duk_idx_t this_id
 /* **************************************************
    Sql.prototype.import
    ************************************************** */
+/* One csv cell as a statement parameter.  `srccol' < 0, or an empty cell,
+   gives "" for a text column (ftype 2) and 0 for any other.  The value
+   points into the csv or into `o'; both outlive its use. */
+typedef struct {
+    void *v;
+    long plen;
+    int in, out;
+    long datelong;
+    int intzero;
+    char emptystr[1];
+    double dbl;         /* a JS number: one of these two */
+    int64_t i64;
+    void *vfree;        /* to free after use, or NULL */
+} RP_IMPVAL;
+
+static void rp_import_value(CSV *csv, int row, int srccol, int ftype, RP_IMPVAL *o)
+{
+    int noval = (srccol < 0);
+
+    if(!noval)
+    {
+        CSVITEM *item = &csv->item[row][srccol];
+
+        switch(item->type)
+        {
+            case integer:
+                o->in=SQL_C_SBIGINT;
+                o->out=SQL_BIGINT;
+                o->v=(int64_t*)&item->integer;
+                o->plen=sizeof(int64_t);
+                break;
+            case floatingPoint:
+                o->in=SQL_C_DOUBLE;
+                o->out=SQL_DOUBLE;
+                o->v=(double *)&item->integer;
+                o->plen=sizeof(double);
+                break;
+            case string:
+                o->v = (char *)item->string;
+                o->plen = strlen(o->v);
+                o->in = SQL_C_CHAR;
+                o->out = SQL_VARCHAR;
+                break;
+            case dateTime:
+            {
+                struct tm t = item->dateTime;   /* mktime may change it */
+
+                o->in=SQL_C_LONG;
+                o->out=SQL_DATE;
+                o->datelong=(long) mktime(&t);
+                o->v = &o->datelong;
+                o->plen=sizeof(long);
+                break;
+            }
+            case nil:
+                noval = 1;
+                break;
+        }
+    }
+    if(noval)
+    {
+        if (ftype==2)
+        {
+            o->emptystr[0] = '\0';
+            o->v=o->emptystr;
+            o->plen=0;
+            o->in=SQL_C_CHAR;
+            o->out=SQL_VARCHAR;
+        }
+        else
+        {
+            o->intzero = 0;
+            o->v=&o->intzero;
+            o->plen=sizeof(int);
+            o->in=SQL_C_INTEGER;
+            o->out=SQL_INTEGER;
+        }
+    }
+}
+
+/* Where an import's rows go.  The first row is written on its own; then,
+   with lockTable, the table is locked for the rest.  On a thread's
+   connection (a helper process, a pipe round trip per command) later rows
+   are queued and sent many at a time (see fbatch_begin()); any other
+   helper command sent meanwhile sends the queue first, so SQL run from a
+   callback always sees every earlier row. */
+#define IMP_ERR_PARAM 1
+#define IMP_ERR_EXEC  2
+#define IMP_ERR_FLUSH 3
+#define IMP_ERR_LOCK  4
+
+typedef struct rp_impsink {
+    DB_HANDLE *h;
+    const char *tbname;
+    int nparams;        /* parameters per row */
+    int isfork, lockTable, lockBlocked, lockLost, started;
+    int err;            /* IMP_ERR_*: the step that failed */
+    uint32_t brows;     /* rows queued, not yet sent */
+} RP_IMPSINK;
+
+static void imp_sink_init(RP_IMPSINK *s, DB_HANDLE *h, const char *tbname,
+                          int nparams, int lockTable)
+{
+    memset(s, 0, sizeof(*s));
+    s->h = h;
+    s->tbname = tbname;
+    s->nparams = nparams;
+    s->lockTable = lockTable;
+    s->isfork = DB_HANDLE_IS(h, DB_FLAG_FORK);
+}
+
+/* Sends the queued rows.  Each is nparams P commands, then e, F, r: the
+   position of the command that failed says which step to report, as the
+   row-at-a-time path would.  Returns 0 if the import has failed. */
+static int imp_sink_send(RP_IMPSINK *s)
+{
+    if (imp_open_sink == s)
+        imp_open_sink = NULL;
+    if (s->brows)
+    {
+        uint32_t ran = 0, per = (uint32_t)s->nparams + 3, want = s->brows * per;
+        int last = 0, sent;
+
+        s->brows = 0;
+        sent = fbatch_send(s->h, &ran, &last);
+        if ((!sent || ran < want || !last) && !s->err)
+        {
+            uint32_t j = (sent && ran) ? (ran - 1) % per : (uint32_t)s->nparams;
+
+            s->err = j < (uint32_t)s->nparams ? IMP_ERR_PARAM :
+                     j == (uint32_t)s->nparams ? IMP_ERR_EXEC : IMP_ERR_FLUSH;
+        }
+    }
+    return !s->err;
+}
+
+static void imp_autoflush(void)
+{
+    if (imp_open_sink)
+        imp_sink_send(imp_open_sink);   /* a failure shows at its next call */
+}
+
+/* One row: vals[0..nparams-1], used before this returns.  Returns 0 if the
+   import has failed (s->err says where). */
+static int imp_sink_row(RP_IMPSINK *s, RP_IMPVAL *vals)
+{
+    int i;
+
+    if (s->err)
+        return 0;
+    if (s->isfork && s->started)
+    {
+        int attempt, queued = 0;
+
+        for (attempt = 0; attempt < 2 && !queued; attempt++)
+        {
+            FBATCH_MARK mark;
+
+            if (!s->brows) fbatch_begin(s->h);
+            fbatch_mark(&mark);
+            queued = 1;
+            for (i = 0; i < s->nparams && queued; i++)
+                queued = fbatch_add_param(s->h, i + 1, vals[i].v, vals[i].plen,
+                                          vals[i].in, vals[i].out);
+            queued = queued && fbatch_add(s->h, 'e', NULL, 0, NULL, 0)
+                            && fbatch_add(s->h, 'F', NULL, 0, NULL, 0)
+                            && fbatch_add(s->h, 'r', NULL, 0, NULL, 0);
+            if (!queued)
+            {
+                /* no room: send what is queued and try again in an empty
+                   batch; a row bigger than a whole batch goes on its own */
+                fbatch_rewind(&mark);
+                if (!s->brows) break;
+                if (!imp_sink_send(s)) return 0;
+            }
+        }
+        if (queued)
+        {
+            s->brows++;
+            imp_open_sink = s;
+            return 1;
+        }
+    }
+
+    for (i = 0; i < s->nparams; i++)
+        if (!h_param(s->h, i + 1, vals[i].v, &vals[i].plen, vals[i].in, vals[i].out))
+        {
+            s->err = IMP_ERR_PARAM;
+            return 0;
+        }
+    if (!h_exec(s->h))
+    {
+        s->err = IMP_ERR_EXEC;
+        return 0;
+    }
+    if (!h_flush(s->h))
+    {
+        s->err = IMP_ERR_FLUSH;
+        return 0;
+    }
+    h_resetparams(s->h);
+    s->started = 1;
+
+    /* after a row written normally (caches validated), hold the locks */
+    if (s->lockTable && !s->lockBlocked)
+    {
+        if (!h_lockblock(s->h, s->tbname, 1))
+        {
+            s->err = IMP_ERR_LOCK;
+            return 0;
+        }
+        s->lockBlocked = 1;
+    }
+    return 1;
+}
+
+/* Ends it: drops anything still queued and releases the locks.  Safe to
+   call more than once, and before imp_sink_init() on a zeroed sink. */
+static void imp_sink_end(RP_IMPSINK *s)
+{
+    if (imp_open_sink == s)
+        imp_open_sink = NULL;
+    s->brows = 0;
+    if (s->lockBlocked)
+    {
+        if (!h_lockblock(s->h, NULL, 0))
+            s->lockLost = 1;
+        s->lockBlocked = 0;
+    }
+}
+
+/* cleans up with CLEANUP, then throws for the sink's failed step */
+#define imp_sink_throw(s, CLEANUP) do { \
+    int imp_e_ = (s)->err; \
+    CLEANUP; \
+    if (imp_e_ == IMP_ERR_LOCK) \
+        RP_THROW(ctx, "%s(): could not lock table %s", func_name, (s)->tbname); \
+    throw_tx_error_close(ctx, imp_e_ == IMP_ERR_PARAM ? "sql add parameters" : \
+                         imp_e_ == IMP_ERR_EXEC ? "sql exec" : "sql flush", h); \
+} while(0)
+
 static duk_ret_t rp_sql_import(duk_context *ctx, int isfile)
 {
     /* currently only csv
@@ -6162,7 +6723,8 @@ static duk_ret_t rp_sql_import(duk_context *ctx, int isfile)
     uint8_t *field_type=NULL;
     int field_type_size=0;
     duk_idx_t this_idx;
-    int lockTable = 0, lockBlocked = 0, lockLost = 0;
+    int lockTable = 0;
+    RP_IMPSINK sink;
 
 #define closecsv do {\
     int col;\
@@ -6172,6 +6734,8 @@ static duk_ret_t rp_sql_import(duk_context *ctx, int isfile)
     closeCSV(dcsv.csv); \
 } while(0)
 
+
+    memset(&sink, 0, sizeof(sink));
 
     if(strlen(dcsv.tbname)<1)
         RP_THROW(ctx, "%s(): option tableName is required", func_name);
@@ -6307,7 +6871,7 @@ static duk_ret_t rp_sql_import(duk_context *ctx, int isfile)
 
 #define fn_cleanup(exc) do { \
     int j=0; \
-    if(lockBlocked){ if(!h_lockblock(h, NULL, 0)) lockLost=1; lockBlocked=0; } \
+    imp_sink_end(&sink); \
     if(tbcols){ \
       while(field_names[j]!=NULL) \
           free(field_names[j++]); \
@@ -6391,10 +6955,7 @@ static duk_ret_t rp_sql_import(duk_context *ctx, int isfile)
             int slen = 32 + strlen(dcsv.tbname) + (8*tbcols);
             char sql[slen];
             CSV *csv = dcsv.csv;
-            void *v=NULL;   /* value to be passed to db */
-            long plen, datelong;
-            int in=0, out=0, row=0, col=0, pn=0, intzero=0;
-            char emptystr[1] = "";
+            int row=0, col=0, pn=0, nparams = 0;
 
             /* A counter column with no csv value gets the keyword `counter',
                so texis makes the value.  Making it here needs the texis
@@ -6403,8 +6964,11 @@ static duk_ret_t rp_sql_import(duk_context *ctx, int isfile)
             snprintf(sql, slen, "insert into %s values (", dcsv.tbname);
             for (i=0;i<tbcols;i++)
             {
+                int iscounter = (field_type[i]==1 && col_order[i]<0);
+
                 if(i) strcat(sql, ",");
-                strcat(sql, (field_type[i]==1 && col_order[i]<0) ? "counter" : "?");
+                strcat(sql, iscounter ? "counter" : "?");
+                if(!iscounter) nparams++;
             }
             strcat(sql,");");
 
@@ -6416,104 +6980,29 @@ static duk_ret_t rp_sql_import(duk_context *ctx, int isfile)
                 throw_tx_error_close(ctx, "sql prep", h);
             }
 
+            RP_IMPVAL vals[nparams + 1];
+
+            imp_sink_init(&sink, h, dcsv.tbname, nparams, lockTable);
+
             if(dcsv.hasHeader) start=1;
             for(row=start;row<csv->rows;row++)      // iterate through the CSVITEMS contained in each row and column
             {
                 for(  col=0, pn=0; /* col<csv->cols && */col<tbcols; col++)
                 {
-                    int noval = (col_order[col] < 0);
-
-                    if(field_type[col]==1 && noval)
+                    if(field_type[col]==1 && col_order[col] < 0)
                         continue;   /* `counter' in the statement */
-
-                    if(!noval)
-                    {
-                    //printf("doing col_order[%d] = %d\n", col, col_order[col]);
-                        CSVITEM item=csv->item[row][col_order[col]];
-                        switch(item.type)
-                        {
-                            case integer:
-                                in=SQL_C_SBIGINT;
-                                out=SQL_BIGINT;
-                                v=(int64_t*)&item.integer;
-                                plen=sizeof(int64_t);
-                                break;
-                            case floatingPoint:
-                                in=SQL_C_DOUBLE;
-                                out=SQL_DOUBLE;
-                                v=(double *)&item.integer;
-                                plen=sizeof(double);
-                                break;
-                            case string:
-                                v = (char *)item.string;
-                                plen = strlen(v);
-                                in = SQL_C_CHAR;
-                                out = SQL_VARCHAR;
-                                break;
-                            case dateTime:
-                            {
-                                struct tm *t=&item.dateTime;
-                                in=SQL_C_LONG;
-                                out=SQL_DATE;
-                                datelong=(long) mktime(t);
-                                v = (long*)&datelong;
-                                plen=sizeof(long);
-                                break;
-                            }
-                            case nil:
-                                noval = 1;
-                                break;
-                        }
-                    }
-                    if(noval)
-                    {
-                        /* empty or unmapped: "" for text, 0 for anything else */
-                        if (field_type[col]==2)
-                        {
-                            v=emptystr;
-                            plen=0;
-                            in=SQL_C_CHAR;
-                            out=SQL_VARCHAR;
-                        }
-                        else
-                        {
-                            v=&intzero;
-                            plen=sizeof(int);
-                            in=SQL_C_INTEGER;
-                            out=SQL_INTEGER;
-                        }
-                    }
-                    if( !h_param(h, ++pn, v, &plen, in, out))
-                    {
-                        fn_cleanup(0);
-                        throw_tx_error_close(ctx, "sql add parameters", h);
-                    }
+                    rp_import_value(csv, row, col_order[col], field_type[col], &vals[pn++]);
                 }
 
-                if (!h_exec(h))
-                {
-                    fn_cleanup(0);
-                    throw_tx_error_close(ctx, "sql exec",h);
-                }
-                if (!h_flush(h))
-                {
-                    fn_cleanup(0);
-                    throw_tx_error_close(ctx, "sql flush", h);
-                }
+                if (!imp_sink_row(&sink, vals))
+                    imp_sink_throw(&sink, fn_cleanup(0));
 
-                h_resetparams(h);
-
-                /* after a row written normally (caches validated), hold
-                   the locks for the rest */
-                if (lockTable && !lockBlocked)
-                {
-                    if (!h_lockblock(h, dcsv.tbname, 1))
-                    {
-                        fn_cleanup(0);
-                        RP_THROW(ctx, "%s(): could not lock table %s", func_name, dcsv.tbname);
-                    }
-                    lockBlocked = 1;
-                }
+                /* rows must be in the table before the callback runs, and
+                   before the end */
+                if ((row == csv->rows - 1 ||
+                     (dcsv.func_idx > -1 && !( (row-start) % dcsv.cbstep )))
+                    && !imp_sink_send(&sink))
+                    imp_sink_throw(&sink, fn_cleanup(0));
 
                 if (dcsv.func_idx > -1 && !( (row-start) % dcsv.cbstep ) )
                 {
@@ -6539,7 +7028,7 @@ static duk_ret_t rp_sql_import(duk_context *ctx, int isfile)
     fn_cleanup(0);
     /* the locks did not last to the end: rows may have been written
        while another process had the table */
-    if(lockLost)
+    if(sink.lockLost)
         RP_THROW(ctx, "%s(): the lock on the table was lost during the import (lock server connection dropped)", func_name);
     rp_log_error(ctx); /* log any non fatal errors to this.errMsg */
     return 1;
@@ -6553,6 +7042,594 @@ static duk_ret_t rp_sql_import_csv_file(duk_context *ctx)
 static duk_ret_t rp_sql_import_csv_str(duk_context *ctx)
 {
     return rp_sql_import(ctx, 0);
+}
+
+/* ---------------- importJsonl / importJsonlFile ----------------
+ *
+ * One JSON object per line; each becomes a row.  A value is bound exactly
+ * as sql.exec() binds a parameter (push_sql_param), so a line inserts what
+ * sql.exec("insert ...", object) would. */
+
+/* The JS value on the stack top as a statement parameter.  May replace the
+   value; it must stay on the stack while `o' is in use. */
+static void rp_import_js_value(duk_context *ctx, RP_IMPVAL *o)
+{
+    void *v = NULL, *vfree = NULL;
+    long plen = 0;
+    double d = 0.0;
+    int64_t lval = 0;
+    int in = 0, out = 0;
+
+    push_sql_param;
+    if (v == (void *)&d)
+    {
+        o->dbl = d;
+        v = &o->dbl;
+    }
+    else if (v == (void *)&lval)
+    {
+        o->i64 = lval;
+        v = &o->i64;
+    }
+    o->v = v;
+    o->plen = plen;
+    o->in = in;
+    o->out = out;
+    o->vfree = vfree;
+}
+
+/* lines from a file (read in pieces, never all of it) or from memory */
+typedef struct {
+    int fd;                 /* -1: from memory */
+    char *buf;              /* file: the piece in hand */
+    size_t cap, start, end;
+    int eof;
+    const char *mem;        /* memory: the whole of it */
+    size_t memlen, mempos;
+    double consumed;        /* bytes of input in the lines returned so far */
+} RP_LINESRC;
+
+/* Next line, without its newline or a CR before it.  Returns 1, 0 at the
+   end, or -1 on a read error.  The line is good until the next call. */
+static int rp_linesrc_next(RP_LINESRC *s, const char **line, size_t *len)
+{
+    const char *p, *nl;
+    size_t n, used;
+
+    if (s->fd < 0)
+    {
+        if (s->mempos >= s->memlen)
+            return 0;
+        p = s->mem + s->mempos;
+        n = s->memlen - s->mempos;
+        nl = memchr(p, '\n', n);
+        used = nl ? (size_t)(nl - p) + 1 : n;
+        s->mempos += used;
+    }
+    else
+    {
+        for (;;)
+        {
+            p = s->buf + s->start;
+            n = s->end - s->start;
+            nl = n ? memchr(p, '\n', n) : NULL;
+            if (nl || s->eof)
+                break;
+            /* need more: keep what is left at the front, grow if full */
+            if (s->start)
+            {
+                memmove(s->buf, p, n);
+                s->start = 0;
+                s->end = n;
+            }
+            if (s->end == s->cap)
+            {
+                s->cap *= 2;
+                REMALLOC(s->buf, s->cap);
+            }
+            {
+                ssize_t r = read(s->fd, s->buf + s->end, s->cap - s->end);
+
+                if (r < 0)
+                {
+                    if (errno == EINTR) continue;
+                    return -1;
+                }
+                if (r == 0) s->eof = 1;
+                else s->end += (size_t)r;
+            }
+        }
+        if (!n)
+            return 0;
+        used = nl ? (size_t)(nl - p) + 1 : n;
+        s->start += used;
+    }
+    s->consumed += (double)used;
+    n = nl ? used - 1 : used;
+    if (n && p[n - 1] == '\r')
+        n--;
+    *line = p;
+    *len = n;
+    return 1;
+}
+
+/* one line's work, run under duk_safe_call() so that nothing thrown --
+   bad JSON, rowFunc, a getter -- skips the import's cleanup */
+typedef struct {
+    RP_IMPSINK *sink;
+    const char *line;
+    size_t len;
+    double lineno;
+    duk_idx_t rowfunc_idx;  /* -1: none */
+    char **keys;            /* per parameter: the JSON key */
+    uint8_t *ptype;         /* per parameter: 2 text, 0 other */
+    RP_IMPVAL *vals;
+    int stage;              /* 0 parsing, 1 in rowFunc, 2 binding */
+    int result;             /* 1 imported, 0 skipped by rowFunc, -1 sink failed */
+} RP_JSONL_LINE;
+
+static duk_ret_t rp_jsonl_line(duk_context *ctx, void *udata)
+{
+    RP_JSONL_LINE *st = (RP_JSONL_LINE *)udata;
+    RP_IMPSINK *sink = st->sink;
+    duk_idx_t obj_idx;
+    int i, ok;
+
+    duk_require_stack(ctx, sink->nparams + 8);
+
+    st->stage = 0;
+    duk_push_lstring(ctx, st->line, st->len);
+    duk_json_decode(ctx, -1);
+    if (!duk_is_object(ctx, -1) || duk_is_array(ctx, -1) || duk_is_function(ctx, -1))
+        (void)duk_error(ctx, DUK_ERR_SYNTAX_ERROR, "not a JSON object");
+
+    if (st->rowfunc_idx > -1)
+    {
+        st->stage = 1;
+        duk_dup(ctx, st->rowfunc_idx);
+        duk_dup(ctx, -2);
+        duk_push_number(ctx, st->lineno);
+        duk_call(ctx, 2);
+        if (duk_is_boolean(ctx, -1) && !duk_get_boolean(ctx, -1))
+        {
+            st->result = 0;
+            return 0;
+        }
+        if (duk_is_undefined(ctx, -1))
+            duk_pop(ctx);               /* changed in place */
+        else if (duk_is_object(ctx, -1) && !duk_is_array(ctx, -1) && !duk_is_function(ctx, -1))
+            duk_remove(ctx, -2);
+        else
+            (void)duk_error(ctx, DUK_ERR_TYPE_ERROR,
+                "rowFunc must return an Object to insert, false to skip the line, or nothing");
+    }
+
+    st->stage = 2;
+    obj_idx = duk_get_top_index(ctx);
+    for (i = 0; i < sink->nparams; i++)
+    {
+        duk_get_prop_string(ctx, obj_idx, st->keys[i]);
+        if (duk_is_null_or_undefined(ctx, -1))
+        {
+            /* no value: "" for text, 0 for anything else */
+            rp_import_value(NULL, 0, -1, st->ptype[i], &st->vals[i]);
+            st->vals[i].vfree = NULL;
+        }
+        else
+            rp_import_js_value(ctx, &st->vals[i]);
+    }
+    ok = imp_sink_row(sink, st->vals);
+    for (i = 0; i < sink->nparams; i++)
+        if (st->vals[i].vfree)
+        {
+            free(st->vals[i].vfree);
+            st->vals[i].vfree = NULL;
+        }
+    st->result = ok ? 1 : -1;
+    return 0;
+}
+
+static duk_ret_t rp_sql_import_jsonl(duk_context *ctx, int isfile)
+{
+    const char *func_name = isfile ? "sql.importJsonlFile" : "sql.importJsonl",
+               *user = "PUBLIC", *pass = "", *db, *tbname = NULL, *src = NULL;
+    duk_size_t srclen = 0;
+    duk_idx_t src_idx = -1, opts_idx = -1, cb_idx = -1, rowfunc_idx = -1, this_idx, idx;
+    int lockTable = 0, skipInvalid = 0, cbstep = 1, tbcols = 0, nparams = 0, i, stop = 0;
+    double imported = 0, skipped = 0, invalid = 0, lineno = 0, fsize = 0, lastcb = -1;
+    DB_HANDLE *h = NULL;
+    char **field_names = NULL, **keys = NULL, *sql = NULL;
+    uint8_t *field_type = NULL, *ptype = NULL;
+    RP_IMPVAL *vals = NULL;
+    RP_IMPSINK sink;
+    RP_LINESRC ls;
+    RP_JSONL_LINE st;
+
+    memset(&sink, 0, sizeof(sink));
+    memset(&ls, 0, sizeof(ls));
+    ls.fd = -1;
+
+    /* (file name | string | buffer, options [, callback]) in any order */
+    for (idx = 0; idx < 3; idx++)
+    {
+        if (duk_is_string(ctx, idx) || (!isfile && duk_is_buffer_data(ctx, idx)))
+        {
+            if (src_idx == -1) src_idx = idx;
+        }
+        else if (duk_is_function(ctx, idx))
+            cb_idx = idx;
+        else if (duk_is_object(ctx, idx) && !duk_is_array(ctx, idx))
+            opts_idx = idx;
+    }
+    if (src_idx == -1)
+        RP_THROW(ctx, "%s(): %s is required", func_name,
+                 isfile ? "a file name (String)" : "the JSONL text (String or Buffer)");
+    if (opts_idx == -1)
+        RP_THROW(ctx, "%s(): an options Object with tableName is required", func_name);
+
+    if (duk_get_prop_string(ctx, opts_idx, "tableName") && !duk_is_undefined(ctx, -1))
+        tbname = REQUIRE_STRING(ctx, -1, "%s(): option tableName requires a String (name of table)", func_name);
+    duk_pop(ctx);
+    if (!tbname || !*tbname)
+        RP_THROW(ctx, "%s(): option tableName is required", func_name);
+    /* interpolated into SQL below: a safe identifier only (as importCsv) */
+    {
+        const unsigned char *tn = (const unsigned char *)tbname;
+
+        for (; *tn; tn++)
+            if (!(isalnum(*tn) || *tn == '_'))
+                RP_THROW(ctx, "%s(): tableName must contain only letters, digits and underscore", func_name);
+    }
+
+#define jsonl_bool_opt(name, var) do { \
+    if (duk_get_prop_string(ctx, opts_idx, name) && !duk_is_undefined(ctx, -1)) { \
+        if (!duk_is_boolean(ctx, -1)) \
+            RP_THROW(ctx, "%s(): option %s must be true or false", func_name, name); \
+        var = duk_get_boolean(ctx, -1); \
+    } \
+    duk_pop(ctx); \
+} while(0)
+    jsonl_bool_opt("lockTable", lockTable);
+    jsonl_bool_opt("skipInvalid", skipInvalid);
+
+    if (duk_get_prop_string(ctx, opts_idx, "callbackStep") && !duk_is_undefined(ctx, -1))
+    {
+        cbstep = REQUIRE_INT(ctx, -1, "%s(): option callbackStep requires an Integer greater than 0", func_name);
+        if (cbstep < 1)
+            RP_THROW(ctx, "%s(): option callbackStep requires an Integer greater than 0", func_name);
+    }
+    duk_pop(ctx);
+
+    if (duk_get_prop_string(ctx, opts_idx, "rowFunc") && !duk_is_undefined(ctx, -1))
+    {
+        if (!duk_is_function(ctx, -1))
+            RP_THROW(ctx, "%s(): option rowFunc must be a Function", func_name);
+        rowfunc_idx = duk_get_top_index(ctx);       /* stays on the stack */
+    }
+    else
+        duk_pop(ctx);
+
+    if (duk_get_prop_string(ctx, opts_idx, "map") && !duk_is_undefined(ctx, -1) &&
+        (!duk_is_object(ctx, -1) || duk_is_array(ctx, -1) || duk_is_function(ctx, -1)))
+        RP_THROW(ctx, "%s(): option map must be an Object of JSON key: column name", func_name);
+    duk_pop(ctx);
+
+    {
+        struct sigaction sa = { {0} };
+
+        sa.sa_flags = 0;
+        sa.sa_handler = die_nicely;
+        sigemptyset(&sa.sa_mask);
+        sigaction(SIGUSR2, &sa, NULL);
+    }
+
+    SET_THREAD_UNSAFE(ctx);
+
+    duk_push_this(ctx);
+    this_idx = duk_get_top_index(ctx);
+    if (duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("user")))
+        user = duk_get_string(ctx, -1);
+    duk_pop(ctx);
+    if (duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("pass")))
+        pass = duk_get_string(ctx, -1);
+    duk_pop(ctx);
+    duk_del_prop_string(ctx, -1, "errMsg");
+    clearmsgbuf();
+    if (!duk_get_prop_string(ctx, -1, "db"))
+        RP_THROW(ctx, "no database has been opened");
+    db = duk_get_string(ctx, -1);
+    duk_pop(ctx);
+
+    h = h_open(db, user, pass);
+    if (!h)
+        throw_tx_error(ctx, "sql open");
+    h_reset_tx_default(ctx, h, this_idx, IF_CHANGED);
+    duk_pop(ctx);   /* this */
+
+/* everything acquired from here on; EXC as importCsv's: the handle is
+   closed by the tx error thrown next, else just released */
+#define jsonl_cleanup() do { \
+    imp_sink_end(&sink); \
+    if (field_names) { for (i = 0; i < tbcols; i++) free(field_names[i]); free(field_names); field_names = NULL; } \
+    if (keys) { for (i = 0; i < nparams; i++) free(keys[i]); free(keys); keys = NULL; } \
+    free(field_type); field_type = NULL; \
+    free(ptype); ptype = NULL; \
+    free(vals); vals = NULL; \
+    free(sql); sql = NULL; \
+    if (ls.fd >= 0) { close(ls.fd); ls.fd = -1; } \
+    free(ls.buf); ls.buf = NULL; \
+    h_end_transaction(h); \
+} while(0)
+
+    /* the table's columns */
+    {
+        FLDLST *fl;
+        char q[256];
+        int field_type_size = 0;
+
+        snprintf(q, sizeof(q), "select NAME, TYPE from SYSCOLUMNS where TBNAME='%s' order by ORDINAL_POSITION;", tbname);
+        if (!h_prep(h, q))
+            throw_tx_error_close(ctx, "sql prep", h);
+        if (!h_exec(h))
+            throw_tx_error_close(ctx, "sql exec", h);
+        while ((fl = h_fetch(h, -1)))
+        {
+            const char *t = (const char *)fl->data[1];
+            size_t tl = strlen(t);
+
+            REMALLOC(field_names, (tbcols + 2) * sizeof(char *));
+            if (tbcols + 1 > field_type_size)
+            {
+                field_type_size += 256;
+                REMALLOC(field_type, field_type_size * sizeof(uint8_t));
+            }
+            field_names[tbcols] = strdup(fl->data[0]);
+            /* 1 = counter, 2 = char/varchar (no value is ""), 0 = other */
+            if (!strncmp(t, "counter", 7))
+                field_type[tbcols] = 1;
+            else if (tl >= 4 && !strcmp(t + tl - 4, "char"))
+                field_type[tbcols] = 2;
+            else
+                field_type[tbcols] = 0;
+            tbcols++;
+        }
+        if (!tbcols)
+        {
+            jsonl_cleanup();
+            RP_THROW(ctx, "%s(): table '%s' does not exist; it must exist before importing", func_name, tbname);
+        }
+    }
+
+    /* A counter column is always given its value by texis.  Every other
+       column is a parameter, taken from the JSON key of the same name
+       unless `map' names another. */
+    for (i = 0; i < tbcols; i++)
+        if (field_type[i] != 1)
+            nparams++;
+    REMALLOC(keys, (nparams + 1) * sizeof(char *));
+    REMALLOC(ptype, (nparams + 1) * sizeof(uint8_t));
+    REMALLOC(vals, (nparams + 1) * sizeof(RP_IMPVAL));
+    memset(vals, 0, (nparams + 1) * sizeof(RP_IMPVAL));    /* vfree: nothing to free yet */
+    {
+        int pn = 0;
+
+        for (i = 0; i < tbcols; i++)
+            if (field_type[i] != 1)
+            {
+                keys[pn] = strdup(field_names[i]);
+                ptype[pn] = field_type[i];
+                pn++;
+            }
+    }
+    if (duk_get_prop_string(ctx, opts_idx, "map") && duk_is_object(ctx, -1))
+    {
+        duk_enum(ctx, -1, DUK_ENUM_OWN_PROPERTIES_ONLY);
+        while (duk_next(ctx, -1, 1))
+        {
+            const char *key = duk_get_string(ctx, -2), *col = duk_is_string(ctx, -1) ? duk_get_string(ctx, -1) : NULL;
+            int pn = 0, found = -1, iscounter = 0;
+
+            for (i = 0; col && i < tbcols; i++)
+            {
+                if (!strcmp(field_names[i], col))
+                {
+                    if (field_type[i] == 1) iscounter = 1;
+                    else found = pn;
+                    break;
+                }
+                if (field_type[i] != 1) pn++;
+            }
+            if (found < 0)
+            {
+                /* message built before the cleanup frees what it names */
+                duk_push_error_object(ctx, DUK_ERR_ERROR, "%s(): option map: %s%s%s for key '%s'", func_name,
+                    !col ? "a column name (String) is required" :
+                    iscounter ? "a counter column gets its value from the database, not from a key: '" :
+                    "no such column in the table: '",
+                    col ? col : "", col ? "'" : "", key ? key : "");
+                jsonl_cleanup();
+                (void)duk_throw(ctx);
+            }
+            free(keys[found]);
+            keys[found] = strdup(key);
+            duk_pop_2(ctx);
+        }
+        duk_pop(ctx);   /* enum */
+    }
+    duk_pop(ctx);       /* map */
+
+    /* the statement */
+    {
+        size_t slen = 48 + strlen(tbname) + 8 * (size_t)tbcols;
+
+        REMALLOC(sql, slen);
+        snprintf(sql, slen, "insert into %s values (", tbname);
+        for (i = 0; i < tbcols; i++)
+        {
+            if (i) strcat(sql, ",");
+            strcat(sql, field_type[i] == 1 ? "counter" : "?");
+        }
+        strcat(sql, ");");
+        if (!h_prep(h, sql))
+        {
+            jsonl_cleanup();
+            throw_tx_error_close(ctx, "sql prep", h);
+        }
+    }
+
+    /* the input */
+    if (isfile)
+    {
+        const char *fname = duk_get_string(ctx, src_idx);
+        struct stat stbuf;
+
+        ls.fd = open(fname, O_RDONLY | O_CLOEXEC);
+        if (ls.fd < 0 || fstat(ls.fd, &stbuf) != 0)
+        {
+            duk_push_error_object(ctx, DUK_ERR_ERROR, "%s(): could not open '%s': %s", func_name, fname, strerror(errno));
+            jsonl_cleanup();
+            (void)duk_throw(ctx);
+        }
+        fsize = (double)stbuf.st_size;
+        ls.cap = 1 << 20;
+        REMALLOC(ls.buf, ls.cap);
+    }
+    else
+    {
+        if (duk_is_string(ctx, src_idx))
+            src = duk_get_lstring(ctx, src_idx, &srclen);
+        else
+            src = (const char *)duk_get_buffer_data(ctx, src_idx, &srclen);
+        ls.mem = src;
+        ls.memlen = (size_t)srclen;
+        fsize = (double)srclen;
+    }
+
+    imp_sink_init(&sink, h, tbname, nparams, lockTable);
+    memset(&st, 0, sizeof(st));
+    st.sink = &sink;
+    st.rowfunc_idx = rowfunc_idx;
+    st.keys = keys;
+    st.ptype = ptype;
+    st.vals = vals;
+
+    while (!stop)
+    {
+        const char *line = NULL;
+        size_t len = 0, k;
+        int got = rp_linesrc_next(&ls, &line, &len);
+
+        if (got < 0)
+        {
+            duk_push_error_object(ctx, DUK_ERR_ERROR, "%s(): read error after line %.0f: %s", func_name, lineno, strerror(errno));
+            imp_sink_send(&sink);       /* the rows before it, as without batching */
+            jsonl_cleanup();
+            (void)duk_throw(ctx);
+        }
+        if (!got)
+            break;
+        lineno++;
+        for (k = 0; k < len && isspace((unsigned char)line[k]); k++) ;
+        if (k == len)
+            continue;                   /* blank line */
+
+        st.line = line;
+        st.len = len;
+        st.lineno = lineno;
+        st.result = -1;
+        if (duk_safe_call(ctx, rp_jsonl_line, &st, 0, 1) != DUK_EXEC_SUCCESS)
+        {
+            for (i = 0; i < nparams; i++)
+                if (vals[i].vfree) { free(vals[i].vfree); vals[i].vfree = NULL; }
+            if (st.stage == 0 && skipInvalid)
+            {
+                invalid++;
+                duk_pop(ctx);
+                continue;
+            }
+            if (st.stage == 0)
+            {
+                duk_push_error_object(ctx, DUK_ERR_ERROR, "%s(): line %.0f is not valid: %s", func_name, lineno, duk_safe_to_string(ctx, -1));
+                duk_remove(ctx, -2);
+            }
+            /* else the error rowFunc (or a getter) threw, as it is */
+            imp_sink_send(&sink);
+            jsonl_cleanup();
+            (void)duk_throw(ctx);
+        }
+        duk_pop(ctx);
+
+        if (st.result < 0)
+            imp_sink_throw(&sink, jsonl_cleanup());
+        if (!st.result)
+        {
+            skipped++;
+            continue;
+        }
+        imported++;
+
+        if (cb_idx > -1 && !fmod(imported, (double)cbstep))
+        {
+            /* the callback sees every row so far in the table */
+            if (!imp_sink_send(&sink))
+                imp_sink_throw(&sink, jsonl_cleanup());
+            lastcb = imported;
+            duk_dup(ctx, cb_idx);
+            duk_push_number(ctx, imported);
+            duk_push_number(ctx, ls.consumed);
+            duk_push_number(ctx, fsize);
+            if (duk_pcall(ctx, 3) != DUK_EXEC_SUCCESS)
+            {
+                jsonl_cleanup();
+                (void)duk_throw(ctx);
+            }
+            if (duk_is_boolean(ctx, -1) && !duk_get_boolean(ctx, -1))
+                stop = 1;
+            duk_pop(ctx);
+        }
+    }
+
+    if (!imp_sink_send(&sink))
+        imp_sink_throw(&sink, jsonl_cleanup());
+
+    /* a last report, so progress reaches the end */
+    if (cb_idx > -1 && !stop && lastcb != imported)
+    {
+        duk_dup(ctx, cb_idx);
+        duk_push_number(ctx, imported);
+        duk_push_number(ctx, ls.consumed);
+        duk_push_number(ctx, fsize);
+        if (duk_pcall(ctx, 3) != DUK_EXEC_SUCCESS)
+        {
+            jsonl_cleanup();
+            (void)duk_throw(ctx);
+        }
+        duk_pop(ctx);
+    }
+
+    jsonl_cleanup();
+    if (sink.lockLost)
+        RP_THROW(ctx, "%s(): the lock on the table was lost during the import (lock server connection dropped)", func_name);
+
+    duk_push_object(ctx);
+    duk_push_number(ctx, imported);
+    duk_put_prop_string(ctx, -2, "imported");
+    duk_push_number(ctx, skipped);
+    duk_put_prop_string(ctx, -2, "skipped");
+    duk_push_number(ctx, invalid);
+    duk_put_prop_string(ctx, -2, "invalid");
+    rp_log_error(ctx); /* log any non fatal errors to this.errMsg */
+    return 1;
+}
+
+static duk_ret_t rp_sql_import_jsonl_file(duk_context *ctx)
+{
+    return rp_sql_import_jsonl(ctx, 1);
+}
+
+static duk_ret_t rp_sql_import_jsonl_str(duk_context *ctx)
+{
+    return rp_sql_import_jsonl(ctx, 0);
 }
 
 /*
@@ -11437,6 +12514,12 @@ duk_ret_t duk_open_module(duk_context *ctx)
     /* set Sql.connection.prototype.importCsv */
     duk_push_c_function(ctx, rp_sql_import_csv_str, 4 /*nargs*/);
     duk_put_prop_string(ctx, -2, "importCsv");
+
+    /* set Sql.connection.prototype.importJsonlFile and importJsonl */
+    duk_push_c_function(ctx, rp_sql_import_jsonl_file, 3 /*nargs*/);
+    duk_put_prop_string(ctx, -2, "importJsonlFile");
+    duk_push_c_function(ctx, rp_sql_import_jsonl_str, 3 /*nargs*/);
+    duk_put_prop_string(ctx, -2, "importJsonl");
 
     duk_push_c_function(ctx, rp_sql_addtable, 1);
     duk_put_prop_string(ctx, -2, "addTable");

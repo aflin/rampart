@@ -6,7 +6,109 @@
 #include "texint.h"
 #include "lockrequest.h"
 
-int TXInLockBlock = 0;
+int TXInLockBlock = 0;           /* depth of read batches in progress */
+
+/* The tables the read batches in progress have locked (TXnode_buffer_exec()).
+ * Lock calls are skipped inside a batch for these only: any other table --
+ * one read by a subquery, a system table being reloaded -- is not held, and
+ * must be locked for real. */
+#define TX_LOCK_BATCH_MAX 128
+static struct { DDIC *ddic; char *name; } txLockBatchTables[TX_LOCK_BATCH_MAX];
+static int txLockBatchNum = 0;
+
+int
+TXlockBatchMark(void)
+{
+  return txLockBatchNum;
+}
+
+void
+TXlockBatchAddTable(DDIC *ddic, const char *name)
+{
+  if(!name || txLockBatchNum >= TX_LOCK_BATCH_MAX) return;
+  txLockBatchTables[txLockBatchNum].ddic = ddic;
+  txLockBatchTables[txLockBatchNum].name = strdup(name);
+  if(txLockBatchTables[txLockBatchNum].name) txLockBatchNum++;
+}
+
+void
+TXlockBatchRelease(int mark)
+{
+  while(txLockBatchNum > mark && txLockBatchNum > 0) {
+    txLockBatchNum--;
+    free(txLockBatchTables[txLockBatchNum].name);
+    txLockBatchTables[txLockBatchNum].name = NULL;
+  }
+}
+
+/* Counters the lock server gave during the read batch in progress.  A
+ * table the batch holds cannot change until the batch ends (10 rows or
+ * 10 ms), and a catalogue change is picked up at the next batch, so each
+ * is asked for once per batch -- not once per row a subquery is run for. */
+#define TX_BATCH_VERIFY_MAX 16
+static struct { DDIC *ddic; char name[48]; char kind; ft_counter c; unsigned epoch; }
+  txBatchVerify[TX_BATCH_VERIFY_MAX];
+static unsigned txBatchEpoch = 1;
+
+void
+TXlockBatchVerifyFresh(void)
+/* Forget them: a batch begins, or the caller must have the truth now. */
+{
+  txBatchEpoch++;
+}
+
+static int
+txBatchVerifyGet(DDIC *ddic, const char *name, char kind, ft_counter *c)
+{
+  int i;
+
+  for(i = 0; i < TX_BATCH_VERIFY_MAX; i++)
+    if(txBatchVerify[i].epoch == txBatchEpoch && txBatchVerify[i].ddic == ddic &&
+       txBatchVerify[i].kind == kind && !strcmp(txBatchVerify[i].name, name)) {
+      *c = txBatchVerify[i].c;
+      return 1;
+    }
+  return 0;
+}
+
+static void
+txBatchVerifyPut(DDIC *ddic, const char *name, char kind, ft_counter *c)
+{
+  int i, use = 0;
+
+  if(strlen(name) >= sizeof(txBatchVerify[0].name)) return;
+  for(i = 0; i < TX_BATCH_VERIFY_MAX; i++)
+    if(txBatchVerify[i].epoch != txBatchEpoch) { use = i; break; }
+  txBatchVerify[use].ddic = ddic;
+  strcpy(txBatchVerify[use].name, name);
+  txBatchVerify[use].kind = kind;
+  txBatchVerify[use].c = *c;
+  txBatchVerify[use].epoch = txBatchEpoch;
+}
+
+int
+TXlockBatchHas(DDIC *ddic, const char *name)
+/* 1 if a batch in progress already holds `name' */
+{
+  int i;
+
+  for(i = 0; i < txLockBatchNum; i++)
+    if(txLockBatchTables[i].ddic == ddic && !strcmp(txLockBatchTables[i].name, name))
+      return 1;
+  return 0;
+}
+
+static int
+txLockBatchCovers(DDIC *ddic, const char *tname)
+{
+  int i;
+
+  if(!TXInLockBlock) return 0;
+  for(i = 0; i < txLockBatchNum; i++)
+    if(txLockBatchTables[i].ddic == ddic && !strcmp(txLockBatchTables[i].name, tname))
+      return 1;
+  return 0;
+}
 
 /* set when a lock request fails even after reconnecting */
 static int txLockServerLost = 0;
@@ -426,7 +528,10 @@ TXlockBlockBegin(DDIC *ddic, CONST char *tname)
   txLockBlockPid = getpid();
   txLockBlockReconnects = ddic->dblock->lockServerReconnects;
   txLockBlockCalls = 0;
-  txLockBlockSysDirty = 0;
+  /* another process may have dropped an index, or changed permissions,
+   * between our last statement and these locks: the first check of each
+   * goes to the server; after that nothing can change them unseen */
+  txLockBlockSysDirty = 3;
   return 0;
 }
 
@@ -476,7 +581,7 @@ dblock(DDIC *ddic, ulong sid, long *tblid, int type, char *tname, ft_counter *co
  * verifying.
  */
 {
-  int rc = -1, dov;
+  int rc = -1, dov, blockVerify = 0, batchOnce = 0;
   char *type_c, lockCmd;
   const char *lw;
   ft_counter last_write;
@@ -490,9 +595,20 @@ dblock(DDIC *ddic, ulong sid, long *tblid, int type, char *tname, ft_counter *co
   if(!tname) {
     return 0;
   }
-  if(TXInLockBlock) {
-    return 0;
+  /* A read batch holds the locks for the tables of its query, so their lock
+   * calls are skipped.  Only theirs. */
+  if(txLockBatchCovers(ddic, tname)) {
+    /* But "has it changed?" still needs a true answer, not "no": ask,
+     * without locking. */
+    if(!(type & (V_LCK | INDEX_VERIFY)) || !counterp || ddic->nolocking)
+      return 0;
+    blockVerify = ((type & ~(V_LCK | INDEX_VERIFY)) != 0);  /* caller takes it as locked */
+    type &= (V_LCK | INDEX_VERIFY);
+    batchOnce = 1;
   }
+  else if(TXInLockBlock && !(type & ~(V_LCK | INDEX_VERIFY)) && counterp &&
+          strncmp(tname, "SYS", 3) == 0)
+    batchOnce = 1;                      /* a catalogue's counter */
   if(ddic->nolocking)
   {
     if(0 != (type & (V_LCK | INDEX_VERIFY)))
@@ -518,6 +634,16 @@ dblock(DDIC *ddic, ulong sid, long *tblid, int type, char *tname, ft_counter *co
         verify = '_';
       break;
   }
+  /* asked already in this batch: the same answer, without asking */
+  if(batchOnce && lockCmd != 'Q') batchOnce = 0;
+  if(batchOnce && txBatchVerifyGet(ddic, tname, verify, &last_write)) {
+    rc = 0;
+    if(dov && counterp && (counterp->date != last_write.date || counterp->seq != last_write.seq))
+      rc = -2;
+    if(counterp && blockVerify)
+      *counterp = last_write;
+    return rc;
+  }
   reqlen = snprintf(tmpbuf, sizeof(tmpbuf), "%c:%s:%c:%s\n", lockCmd, type_c, verify, tname);
   if(reqlen < sizeof(tmpbuf)) {
     request = TXlockRequest_CreateStaticString(tmpbuf, reqlen);
@@ -529,6 +655,14 @@ dblock(DDIC *ddic, ulong sid, long *tblid, int type, char *tname, ft_counter *co
   }
   response = TXlockRequestDb(ddic, request);
   response_s = TXlockRequest_GetString(response, NULL);
+  if(response_s && !strncmp(response_s, "E:Deadlock", 10)) {
+    /* the lock server refused it: granting it needed a lock held by
+     * something that is itself waiting for us */
+    putmsg(MERR + LKE, NULL,
+           "Deadlock on table %s: this statement and another each hold a lock the other is waiting for; this statement was stopped",
+           tname);
+    txLockServerLost = 1;               /* fails the current statement */
+  }
   if(response_s && (strlen(response_s) > 4)) {
     if(*response_s == 'Y')
     {
@@ -548,11 +682,12 @@ dblock(DDIC *ddic, ulong sid, long *tblid, int type, char *tname, ft_counter *co
         counter_e = counter_s;
         while(*counter_e && *counter_e != ':') counter_e++;
         TXparseHexCounter(&last_write, counter_s, counter_e);
+        if(batchOnce) txBatchVerifyPut(ddic, tname, verify, &last_write);
         if(dov && counterp && (counterp->date != last_write.date || counterp->seq != last_write.seq)) {
           rc = -2;
         }
         /* a granted lock (not a bare verify) records the counter */
-        if(counterp && lockCmd == 'L')
+        if(counterp && (lockCmd == 'L' || blockVerify))
           *counterp = last_write;
       }
     }
@@ -587,7 +722,7 @@ TXdbunlockCounter(DDIC *ddic, ulong sid, long *tblid, int type, char *tname,
   if(!tname) {
     return 0;
   }
-  if(TXInLockBlock) {
+  if(txLockBatchCovers(ddic, tname)) {
     return 0;
   }
   if(ddic->nolocking) {

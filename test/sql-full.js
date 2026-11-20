@@ -24,10 +24,46 @@
  *   - perf/buffer/index tuning settings    : no readback path (btreeCacheSize, ramRows,
  *     (indexMem, indexMmap, *BufSz, etc.)    indexMem, etc.) — settable but unobservable
  *   - addTable() (move a .tbl in)          : addTables option is covered by sql-test.js
+ *   - races between processes (index dropped or rebuilt at the instant a
+ *     reader opens it, lock server deadlock detection, fulltext duplicates
+ *     from an index built during writes)  : need exact timing; only their
+ *                                            repeatable halves are tested below
  */
 
 rampart.globalize(rampart.utils);
 load.Sql;
+
+/* -------------------------------------------------------------------
+ * Helper roles: the tests below start this script again as another
+ * process (or run a thread in one):  rampart sql-full.js --child ROLE DB ...
+ * ------------------------------------------------------------------- */
+if (process.argv[2] == "--child") {
+    var crole = process.argv[3], cdb = process.argv[4], csql = Sql.connect(cdb);
+    if (crole == "exec") {              /* run each remaining argument as a statement */
+        for (var ci = 5; ci < process.argv.length; ci++) csql.exec(process.argv[ci]);
+        process.exit(0);
+    }
+    if (crole == "insert") {            /* insert into TABLE rows (i, i % 5) for LO <= i < HI */
+        for (var ci = Number(process.argv[6]); ci < Number(process.argv[7]); ci++)
+            csql.exec("insert into " + process.argv[5] + " values(?,?)", [ci, ci % 5]);
+        process.exit(0);
+    }
+    if (crole == "thread") {            /* imports run inside a thread; prints the results as JSON */
+        global.cArg = { db: cdb, file: process.argv[5] };
+        var cth = new rampart.thread();
+        cth.exec(function () {
+            var S = require("rampart-sql"), c = new S.connection(cArg.db), out = {};
+            out.csv = c.importCsvFile(cArg.file + ".csv", { tableName: "thr_csv", hasHeaderRow: true });
+            out.csvLock = c.importCsvFile(cArg.file + ".csv", { tableName: "thr_csv", hasHeaderRow: true, lockTable: true });
+            out.jsonl = c.importJsonlFile(cArg.file + ".jsonl", { tableName: "thr_jsonl" });
+            out.jsonlLock = c.importJsonlFile(cArg.file + ".jsonl", { tableName: "thr_jsonl", lockTable: true });
+            out.csvCount = c.one("select count(*) c from thr_csv").c;
+            out.jsonlCount = c.one("select count(*) c from thr_jsonl").c;
+            out.last = c.one("select b from thr_jsonl where a = 499");
+            return out;
+        }, function (res) { printf("%s\n", JSON.stringify(res)); process.exit(0); });
+    }
+} else {
 
 var tmpdir = process.scriptPath + '/tmp-sqlfull';
 function rm_rf(p){ try { shell("rm -rf " + p); } catch(e){} }
@@ -552,6 +588,314 @@ t("importCsv - column reorder via ordering array", function(){
 });
 
 /* ===================================================================
+ * Added or fixed after v0.7.5
+ * =================================================================== */
+
+/* run this script again as another process; returns what it printed */
+function child(args){
+    var cmd = "'" + process.argv[0] + "' '" + process.argv[1] + "' --child";
+    for (var i = 0; i < args.length; i++) cmd += " '" + args[i] + "'";
+    return shell(cmd + " 2>&1").stdout.trim();
+}
+function ids(q, params, col){
+    var r = params ? sql.exec(q, params, {maxRows:-1}) : sql.exec(q, {maxRows:-1});
+    return JSON.stringify(r.rows.map(function(x){ return x[col || "Id"]; }).sort(function(a,b){ return a-b; }));
+}
+var dbpath = tmpdir + "/db";
+
+/* ---- importCsv: lockTable, and imports from a thread ---- */
+
+t("importCsv - lockTable option imports every row", function(){
+    sql.query("drop table csvl");
+    sql.exec("create table csvl (a int, b varchar(16))");
+    var txt = "a,b\n";
+    for (var i = 0; i < 300; i++) txt += i + ",v" + i + "\n";
+    var n = sql.importCsv(txt, {tableName:"csvl", hasHeaderRow:true, lockTable:true});
+    return n === 300 && sql.one("select count(*) c from csvl").c === 300 &&
+           sql.one("select b from csvl where a=299").b === "v299";
+});
+
+t("importCsv - table usable by this and another connection after lockTable", function(){
+    sql.exec("insert into csvl values(1000,'after')");
+    var c2 = new Sql.connection(dbpath);
+    c2.exec("insert into csvl values(1001,'other')");
+    var n = c2.one("select count(*) c from csvl").c;
+    c2.close();
+    return n === 302;
+});
+
+t("importCsv - callback returning false stops a lockTable import; table still writable", function(){
+    sql.query("drop table csvs");
+    sql.exec("create table csvs (a int, b varchar(16))");
+    var txt = "";
+    for (var i = 0; i < 50; i++) txt += i + ",v" + i + "\n";
+    sql.importCsv(txt, {tableName:"csvs", lockTable:true, callbackStep:10}, function(n){ if (n >= 20) return false; });
+    var got = sql.one("select count(*) c from csvs").c;
+    sql.exec("insert into csvs values(999,'x')");
+    return got >= 20 && got < 50 && sql.one("select count(*) c from csvs").c === got + 1;
+});
+
+/* ---- importJsonl / importJsonlFile ---- */
+
+t("importJsonl - keys go to the columns of the same name", function(){
+    sql.query("drop table jl");
+    sql.exec("create table jl (Id int, Title varchar(32), Score double, Extra varchar(64))");
+    var res = sql.importJsonl('{"Id":1,"Title":"one","Score":1.5}\n{"Id":2,"Title":"two","Score":2.5,"nocolumn":7}\n',
+                              {tableName:"jl"});
+    var r = sql.one("select * from jl where Id=2");
+    return res.imported === 2 && res.skipped === 0 && res.invalid === 0 &&
+           r.Title === "two" && closeTo(r.Score, 2.5) && r.Extra === "";
+});
+
+t("importJsonl - map option sends a key to another column", function(){
+    sql.exec("delete from jl");
+    sql.importJsonl('{"id":5,"name":"five","Score":5}\n', {tableName:"jl", map:{id:"Id", name:"Title"}});
+    var r = sql.one("select * from jl");
+    return r.Id === 5 && r.Title === "five" && closeTo(r.Score, 5);
+});
+
+t("importJsonl - blank lines ignored, missing key and null give the column default", function(){
+    sql.exec("delete from jl");
+    var res = sql.importJsonl('\n{"Id":1}\n\n{"Id":2,"Title":null,"Score":null}\n', {tableName:"jl"});
+    var r = sql.exec("select * from jl order by Id").rows;
+    return res.imported === 2 && r.length === 2 && r[0].Title === "" && r[0].Score === 0 &&
+           r[1].Title === "" && r[1].Score === 0;
+});
+
+t("importJsonl - boolean, nested object and array values", function(){
+    sql.exec("delete from jl");
+    sql.importJsonl('{"Id":1,"Title":true,"Extra":{"a":[1,2]}}\n', {tableName:"jl"});
+    var r = sql.one("select * from jl");
+    return r.Title === "true" && JSON.stringify(JSON.parse(r.Extra)) === '{"a":[1,2]}';
+});
+
+t("importJsonl - rowFunc changes, replaces and skips lines", function(){
+    sql.exec("delete from jl");
+    var lines = [];
+    var res = sql.importJsonl('{"Id":1,"Title":"a"}\n{"Id":2,"Title":"b"}\n{"Id":3,"Title":"c"}\n', {
+        tableName:"jl",
+        rowFunc: function(o, lineNumber){
+            lines.push(lineNumber);
+            if (o.Id === 2) return false;                         /* skip          */
+            if (o.Id === 3) return {Id: 30, Title: "replaced"};   /* replace       */
+            o.Title = o.Title.toUpperCase();                      /* change, no return */
+        }});
+    var r = sql.exec("select * from jl order by Id").rows;
+    return res.imported === 2 && res.skipped === 1 && JSON.stringify(lines) === "[1,2,3]" &&
+           r.length === 2 && r[0].Title === "A" && r[1].Id === 30 && r[1].Title === "replaced";
+});
+
+t("importJsonl - an invalid line throws and names the line; earlier rows stay", function(){
+    sql.exec("delete from jl");
+    var msg = "";
+    try { sql.importJsonl('{"Id":1}\n{"Id":2\n{"Id":3}\n', {tableName:"jl"}); }
+    catch(e) { msg = "" + e; }
+    return /line 2/.test(msg) && sql.one("select count(*) c from jl").c === 1;
+});
+
+t("importJsonl - skipInvalid skips and counts invalid lines", function(){
+    sql.exec("delete from jl");
+    var res = sql.importJsonl('{"Id":1}\nnot json\n[1,2]\n{"Id":4}\n', {tableName:"jl", skipInvalid:true});
+    return res.imported === 2 && res.invalid === 2 && ids("select Id from jl") === "[1,4]";
+});
+
+t("importJsonl - callback gets (rowsImported, bytesRead, fileSize)", function(){
+    sql.exec("delete from jl");
+    var txt = "", calls = [];
+    for (var i = 0; i < 10; i++) txt += '{"Id":' + i + '}\n';
+    sql.importJsonl(txt, {tableName:"jl", callbackStep:5}, function(rows, bytes, total){ calls.push([rows, bytes, total]); });
+    var last = calls[calls.length - 1];
+    return calls.length >= 2 && calls[0][0] === 5 && last[0] === 10 &&
+           last[1] === txt.length && last[2] === txt.length;
+});
+
+t("importJsonl - callback returning false stops the import", function(){
+    sql.exec("delete from jl");
+    var txt = "";
+    for (var i = 0; i < 40; i++) txt += '{"Id":' + i + '}\n';
+    sql.importJsonl(txt, {tableName:"jl", callbackStep:10}, function(rows){ if (rows >= 10) return false; });
+    var n = sql.one("select count(*) c from jl").c;
+    return n >= 10 && n < 40;
+});
+
+t("importJsonl - lockTable option", function(){
+    sql.exec("delete from jl");
+    var txt = "";
+    for (var i = 0; i < 200; i++) txt += '{"Id":' + i + ',"Title":"t' + i + '"}\n';
+    var res = sql.importJsonl(txt, {tableName:"jl", lockTable:true});
+    sql.exec("insert into jl values(1000,'after',0,'')");
+    return res.imported === 200 && sql.one("select count(*) c from jl").c === 201 &&
+           sql.one("select Title from jl where Id=199").Title === "t199";
+});
+
+t("importJsonl - counter column gets a value from the database", function(){
+    sql.query("drop table jlc");
+    sql.exec("create table jlc (c counter, Id int)");
+    sql.importJsonl('{"Id":1}\n{"Id":2,"c":"ignored"}\n', {tableName:"jlc"});
+    var r = sql.exec("select convert(c,'varchar') c, Id from jlc").rows;
+    return r.length === 2 && r[0].c.length > 0 && r[0].c !== r[1].c;
+});
+
+t("importJsonl - missing tableName throws", function(){
+    try { sql.importJsonl('{"Id":1}\n', {}); } catch(e) { return true; }
+    return false;
+});
+
+t("importJsonlFile - imports a file", function(){
+    sql.exec("delete from jl");
+    var f = tmpdir + "/in.jsonl", fh = fopen(f, "w");
+    for (var i = 0; i < 500; i++) fprintf(fh, '{"Id":%d,"Title":"f%d"}\n', i, i);
+    fclose(fh);
+    var sizes = [], res = sql.importJsonlFile(f, {tableName:"jl", callbackStep:250}, function(rows, bytes, total){ sizes.push(total); });
+    return res.imported === 500 && sql.one("select count(*) c from jl").c === 500 &&
+           sql.one("select Title from jl where Id=499").Title === "f499" && sizes[0] === stat(f).size;
+});
+
+t("imports in a thread - importCsvFile and importJsonlFile, with and without lockTable", function(){
+    sql.query("drop table thr_csv"); sql.query("drop table thr_jsonl");
+    sql.exec("create table thr_csv (a int, b varchar(16))");
+    sql.exec("create table thr_jsonl (a int, b varchar(16))");
+    var base = tmpdir + "/thr", fc = fopen(base + ".csv", "w"), fj = fopen(base + ".jsonl", "w");
+    fprintf(fc, "a,b\n");
+    for (var i = 0; i < 500; i++) { fprintf(fc, "%d,v%d\n", i, i); fprintf(fj, '{"a":%d,"b":"v%d"}\n', i, i); }
+    fclose(fc); fclose(fj);
+    var out = child(["thread", dbpath, base]), r;
+    try { r = JSON.parse(out.split("\n").pop()); } catch(e) { printf("%s\n", out); return false; }
+    return r.csv === 500 && r.csvLock === 500 && r.csvCount === 1000 &&
+           r.jsonl.imported === 500 && r.jsonlLock.imported === 500 && r.jsonlCount === 1000 &&
+           r.last.b === "v499" && sql.one("select count(*) c from thr_csv").c === 1000;
+});
+
+/* ---- noLocking is per connection ---- */
+
+t("set - noLocking applies to its own connection only; get() and reset() handle it", function(){
+    var c1 = new Sql.connection(dbpath), c2 = new Sql.connection(dbpath);
+    c1.set({noLocking:true});
+    var on = c1.get().noLocking, other = c2.get().noLocking;
+    c1.exec("insert into rh values(500,'nolock')");
+    var seen = c2.one("select name from rh where id=500");
+    c1.reset();
+    var off = c1.get().noLocking;
+    c1.exec("delete from rh where id=500");
+    c1.close(); c2.close();
+    return !!on && !other && !off && seen && seen.name === "nolock";
+});
+
+/* ---- UNION ---- */
+
+t("union - setup", function(){
+    sql.query("drop table ua"); sql.query("drop table ub"); sql.query("drop table ue");
+    sql.exec("create table ua (Id int, G int)"); sql.exec("create table ub (Id int, G int)"); sql.exec("create table ue (Id int, G int)");
+    for (var i = 0; i < 10; i++) sql.exec("insert into ua values(?,?)", [i, i % 3]);       /* ua: 0..9   */
+    for (var i = 6; i < 14; i++) sql.exec("insert into ub values(?,?)", [i, i % 4]);       /* ub: 6..13  */
+    sql.exec("create index ua_id on ua(Id)"); sql.exec("create index ub_id on ub(Id)");
+    return sql.one("select count(*) c from ua").c === 10 && sql.one("select count(*) c from ub").c === 8;
+});
+
+t("union - removes duplicates", function(){
+    return ids("select Id from ua union select Id from ub") === "[0,1,2,3,4,5,6,7,8,9,10,11,12,13]";
+});
+
+t("union all - keeps them", function(){
+    return ids("select Id from ua union all select Id from ub") === "[0,1,2,3,4,5,6,6,7,7,8,8,9,9,10,11,12,13]";
+});
+
+t("union - duplicates inside one query removed too", function(){
+    return ids("select G from ua union select G from ub", null, "G") === "[0,1,2,3]";
+});
+
+t("union - where clauses (indexed) and parameters", function(){
+    return ids("select Id from ua where Id < ? union select Id from ub where Id > ?", [2, 11]) === "[0,1,12,13]";
+});
+
+t("union all - three queries, first one indexed, not repeated", function(){
+    return ids("select Id from ua where Id < 2 union all select Id from ub where Id < 8 union all select Id from ua where Id < 2") === "[0,0,1,1,6,7]";
+});
+
+t("union - with an empty side", function(){
+    return ids("select Id from ue union select Id from ub where Id < 8") === "[6,7]" &&
+           ids("select Id from ua where Id < 2 union all select Id from ue") === "[0,1]";
+});
+
+t("union - different column counts is an error", function(){
+    try { sql.exec("select Id, G from ua union select Id from ub"); } catch(e) { return true; }
+    return !!sql.errMsg;
+});
+
+/* ---- subqueries ---- */
+
+/* ua.G = Id % 3, ub.G = Id % 4.  ub rows with G = 2: Id 6, 10; of those ua has 6. */
+t("subquery - unqualified column is the subquery table's, not the outer table's", function(){
+    return ids("select Id from ua where Id in (select Id from ub where G = 2)") === "[6]" &&
+           ids("select Id from ua where exists (select Id from ub where ub.Id = ua.Id and G = 2)") === "[6]";
+});
+
+t("subquery - outer table's column still reaches a correlated subquery", function(){
+    /* ids in both tables: 6..9; ua.G == ub.G for none of 6(0,2) 7(1,3) 8(2,0) 9(0,1) */
+    return ids("select Id from ua where exists (select Id from ub where ub.Id = ua.Id and ub.G = ua.G)") === "[]" &&
+           ids("select Id from ua where exists (select Id from ub where ub.Id = ua.Id and ub.G > ua.G)") === "[6,7,9]";
+});
+
+t("subquery - not in / in / not exists / exists with an empty subquery", function(){
+    return ids("select Id from ua where Id not in (select Id from ue)") === "[0,1,2,3,4,5,6,7,8,9]" &&
+           ids("select Id from ua where Id in (select Id from ue)") === "[]" &&
+           ids("select Id from ua where not exists (select Id from ue)") === "[0,1,2,3,4,5,6,7,8,9]" &&
+           ids("select Id from ua where exists (select Id from ue)") === "[]" &&
+           ids("select Id from ua where G = 1 and Id not in (select Id from ub where G = 99)") === "[1,4,7]";
+});
+
+t("subquery - not in with a non-empty subquery", function(){
+    return ids("select Id from ua where Id not in (select Id from ub)") === "[0,1,2,3,4,5]";
+});
+
+t("subquery - update and delete change only the rows the subquery names", function(){
+    sql.exec("update ua set G = 77 where Id in (select Id from ub where G = 2)");
+    var upd = ids("select Id from ua where G = 77");
+    sql.exec("delete from ua where Id in (select Id from ub where G = 3)");     /* ub G=3: 7, 11 */
+    return upd === "[6]" && ids("select Id from ua") === "[0,1,2,3,4,5,6,8,9]";
+});
+
+/* ---- seeing another process's changes ---- */
+
+t("other process - rows it inserts show in an indexed select and a count", function(){
+    sql.query("drop table xp");
+    sql.exec("create table xp (Id int, G int)");
+    sql.exec("create index xp_id on xp(Id)"); sql.exec("create index xp_g on xp(G)");
+    for (var i = 0; i < 20; i++) sql.exec("insert into xp values(?,?)", [i, i % 5]);
+    var before = sql.exec("select Id from xp where G = 2", {maxRows:-1}).rows.length;       /* opens the index */
+    child(["insert", dbpath, "xp", 20, 40]);
+    return before === 4 && sql.exec("select Id from xp where G = 2", {maxRows:-1}).rows.length === 8 &&
+           sql.one("select count(*) c from xp").c === 40 &&
+           ids("select Id from xp where Id >= 35") === "[35,36,37,38,39]";
+});
+
+t("other process - group by after its inserts", function(){
+    var r = sql.exec("select G, count(*) n from xp group by G", {maxRows:-1}).rows;
+    return r.length === 5 && r.every(function(x){ return x.n === 8; });
+});
+
+t("other process - drops an index this connection has used: no error, same rows", function(){
+    child(["exec", dbpath, "drop index xp_g"]);
+    var r = sql.exec("select Id from xp where G = 2", {maxRows:-1});
+    return !sql.errMsg && r.rows.length === 8;
+});
+
+t("other process - drops and re-creates an index of the same name: no error, right rows", function(){
+    sql.exec("create index xp_g on xp(G)");
+    var a = sql.exec("select Id from xp where G = 3", {maxRows:-1}).rows.length;            /* opens it */
+    child(["exec", dbpath, "drop index xp_g", "delete from xp where Id >= 30", "create index xp_g on xp(G)"]);
+    var r = sql.exec("select Id from xp where G = 3", {maxRows:-1});
+    return a === 8 && !sql.errMsg && r.rows.length === 6;
+});
+
+t("other process - its update of an indexed column moves rows between lookups", function(){
+    child(["exec", dbpath, "update xp set G = 9 where Id < 10"]);
+    return sql.exec("select Id from xp where G = 9", {maxRows:-1}).rows.length === 10 &&
+           sql.exec("select Id from xp where G = 3", {maxRows:-1}).rows.length === 4 &&
+           ids("select Id from xp where G = 9 and Id > 6") === "[7,8,9]";
+});
+
+/* ===================================================================
  * Items intentionally skipped (visible in output) — see header comment
  * =================================================================== */
 t.skip("embed() / llamaEmbed",            "needs a .gguf embedding model");
@@ -564,6 +908,8 @@ t.skip("isNull/ifNull true-NULL path",    "texis fixed cols default to 0/'' not 
 t.skip("nullOutputString",                "tsql text-output only, not JS returns");
 t.skip("lookup()",                        "range/name setup unresolved");
 t.skip("perf/buffer/index tuning sets",   "no readback path");
+t.skip("races between processes",         "need exact timing");
 
 rm_rf(tmpdir);
 t.exit();
+}

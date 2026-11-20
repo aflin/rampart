@@ -5,6 +5,11 @@
 
 #ifdef LOCK_SERVER
 extern int TXInLockBlock;
+int  TXlockBatchMark(void);
+void TXlockBatchAddTable(DDIC *ddic, const char *name);
+void TXlockBatchRelease(int mark);
+int  TXlockBatchHas(DDIC *ddic, const char *name);
+void TXlockBatchVerifyFresh(void);
 #endif
 
 static int
@@ -165,6 +170,10 @@ TXqnode_lock_tables_callback(QNODE *q, void *usr)
       if(q->q && q->q->out && q->q->out->rname) {
         TXlockindex(q->q->out, INDEX_READ, NULL);
         TXlocktable(q->q->out, R_LCK);
+#ifdef LOCK_SERVER
+        /* held for the batch: its lock calls can be skipped until then */
+        TXlockBatchAddTable(q->q->out->ddic, q->q->out->rname);
+#endif
       }
     default:
       return 0;
@@ -191,6 +200,60 @@ TXqnode_unlock_tables_callback(QNODE *q, void *usr)
       return 0;
   }
 }
+
+#ifdef LOCK_SERVER
+/* The tables of the subqueries in a statement's WHERE clause.  A subquery
+ * is prepared and run again for each outer row; the batch holds its
+ * tables' locks once, instead of each of those runs taking them. */
+#define TX_SUBQ_TABLES_MAX 8
+typedef struct
+{
+  int   n;
+  char  *name[TX_SUBQ_TABLES_MAX];
+  long  tblid[TX_SUBQ_TABLES_MAX], ixid[TX_SUBQ_TABLES_MAX];
+}
+TXSUBQTABLES;
+
+static void
+TXqnode_subquery_from(QNODE *q, TXSUBQTABLES *st)
+/* Collects the table names in the FROM part of (sub)query `q'. */
+{
+  int i;
+
+  if(!q) return;
+  switch(q->op) {
+    case SELECT_OP:
+    case PROJECT_OP:
+    case RENAME_OP:
+      TXqnode_subquery_from(q->left, st);
+      break;
+    case ORDER_OP:
+    case DISTINCT_OP:
+      TXqnode_subquery_from(q->right, st);
+      break;
+    case PRODUCT_OP:
+      TXqnode_subquery_from(q->left, st);
+      TXqnode_subquery_from(q->right, st);
+      break;
+    case NAME_OP:
+      if(!q->tname || strncmp(q->tname, "SYS", 3) == 0) break;
+      for(i = 0; i < st->n; i++)
+        if(!strcmp(st->name[i], q->tname)) return;
+      if(st->n < TX_SUBQ_TABLES_MAX) st->name[st->n++] = q->tname;
+      break;
+    default:                      /* anything else locks for itself */
+      break;
+  }
+}
+
+static int
+TXqnode_subquery_tables_callback(QNODE *q, void *usr)
+{
+  if(q && q->op == SUBQUERY_OP)
+    TXqnode_subquery_from(q->left, (TXSUBQTABLES *)usr);
+  return 0;
+}
+#endif /* LOCK_SERVER */
 
 int
 TXqnode_traverse(QNODE *q, void *usr, QnodeCallback cb)
@@ -288,9 +351,37 @@ TXnode_buffer_exec(QNODE *query, FLDOP *fo, int direction, int offset, int verbo
   offset = toskip + 1;
   if(ioctldbtbl(q->out, RINGBUFFER_DBF_HAS_DATA, NULL) == 0)
   {
+#ifdef LOCK_SERVER
+    int batchMark = TXlockBatchMark(), si;
+    TXSUBQTABLES subq;
+    DDIC *sddic = (q->in1 ? q->in1->ddic : NULL);
+#endif
     TXqnode_traverse(query, &node_type, TXqnode_lock_tables_callback);
 #ifdef LOCK_SERVER
-    TXInLockBlock = 1;
+    /* and the subqueries' tables, by name (they are not open yet) */
+    subq.n = 0;
+    if(sddic && !sddic->nolocking)
+      TXqnode_traverse(query, &subq, TXqnode_subquery_tables_callback);
+    /* not those this or an enclosing batch already holds */
+    for(si = 0; si < subq.n; )
+      if(TXlockBatchHas(sddic, subq.name[si]))
+        subq.name[si] = subq.name[--subq.n];
+      else
+        si++;
+    for(si = 0; si < subq.n; si++) {
+      subq.ixid[si] = subq.tblid[si] = -1;
+      if(dblock(sddic, sddic->sid, &subq.ixid[si], INDEX_READ, subq.name[si], NULL) == -1)
+        { subq.n = si; break; }
+      if(dblock(sddic, sddic->sid, &subq.tblid[si], R_LCK, subq.name[si], NULL) == -1) {
+        dbunlock(sddic, sddic->sid, &subq.ixid[si], INDEX_READ, subq.name[si]);
+        subq.n = si;
+        break;
+      }
+    }
+    for(si = 0; si < subq.n; si++)
+      TXlockBatchAddTable(sddic, subq.name[si]);
+    TXInLockBlock++;            /* a count: a subquery may run a batch too */
+    if(TXInLockBlock == 1) TXlockBatchVerifyFresh();
 #endif
     start = TXgettimeofday();
     now = start;
@@ -312,7 +403,15 @@ TXnode_buffer_exec(QNODE *query, FLDOP *fo, int direction, int offset, int verbo
     }
 //    printf("Read %d rows in %lg seconds\n", nrows, (end - start));
 #ifdef LOCK_SERVER
-    TXInLockBlock = 0;
+    TXInLockBlock--;
+    /* forget this batch's tables before unlocking them: the unlocks of
+     * those it locked itself must reach the lock server, while one an
+     * enclosing batch holds (so skipped at the lock) is skipped again */
+    TXlockBatchRelease(batchMark);
+    for(si = subq.n - 1; si >= 0; si--) {
+      dbunlock(sddic, sddic->sid, &subq.tblid[si], R_LCK, subq.name[si]);
+      dbunlock(sddic, sddic->sid, &subq.ixid[si], INDEX_READ, subq.name[si]);
+    }
 #endif
     TXqnode_traverse(query, &node_type, TXqnode_unlock_tables_callback);
     query->countInfo = query->left->countInfo;

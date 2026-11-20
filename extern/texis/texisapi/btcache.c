@@ -5,6 +5,7 @@
 #include <sys/types.h>
 #include <fcntl.h>
 #include <stdlib.h>
+#include <sys/stat.h>
 #include "dbquery.h"
 #include "texint.h"
 #include "fdbi.h"
@@ -29,6 +30,52 @@ typedef struct BTREEC_tag
 static void *btfindcache ARGS((BTREEC *, char *, int, ft_counter *, DBTBL *,
 			       CONST char *sysindexParams));
 
+/* Nonzero if the file `bt' has open is no longer the file of that name:
+ * another process dropped the index and created it again.  Re-reading
+ * pages from the open handle would then read the old, deleted index. */
+static int
+txBtreeFileReplaced(BTREE *bt)
+{
+	struct stat	open_st, name_st;
+	int		fh;
+	char		*fn;
+
+	if (!bt || !bt->dbf) return 0;
+	fh = getdbffh(bt->dbf);
+	fn = getdbffn(bt->dbf);
+	if (fh < 0 || !fn || fstat(fh, &open_st) != 0) return 0;
+	if (stat(fn, &name_st) != 0) return 1;		/* gone */
+	return (open_st.st_ino != name_st.st_ino ||
+		open_st.st_dev != name_st.st_dev);
+}
+
+void TXlockBatchVerifyFresh(void);
+
+/* 1 if SYSINDEX, looked at now, lists file `name' as a finished index of
+ * the table.  0 if not: it was dropped (and perhaps is being built again
+ * under the same name -- its file then exists but is not to be read). */
+static int
+txIndexListedFinal(DBTBL *dbtbl, const char *name)
+{
+	char	**paths = NULL, *itype = NULL;
+	int	n, i, listed = 0;
+
+	if (!dbtbl || !dbtbl->ddic || !dbtbl->rname) return(1);
+	TXlockBatchVerifyFresh();		/* the list as it is now */
+	n = ddgetindex(dbtbl->ddic, dbtbl->rname, NULL, &itype, &paths, NULL,
+		       NULL);
+	for (i = 0; i < n && paths && itype; i++)
+		if (paths[i] && strcmp(paths[i], name) == 0 &&
+		    itype[i] != INDEX_CR && itype[i] != INDEX_3CR &&
+		    itype[i] != INDEX_MMCR && itype[i] != INDEX_FULLCR &&
+		    itype[i] != INDEX_VECCR && itype[i] != INDEX_DEL &&
+		    itype[i] != INDEX_TEMP)
+			listed = 1;
+	if (paths) paths = TXfreeStrList(paths, n);
+	itype = TXfree(itype);
+	return(listed);
+}
+
 static void *
 btfindcache(btc, name, type, fc, dbtbl, sysindexParams)
 BTREEC	*btc;		/* The cache to search */
@@ -47,8 +94,16 @@ CONST char	*sysindexParams;	/* (in) Up-to-date SYSINDEX.PARAMS */
 	{
 		if(c->state == 0 && !strcmp(name, c->name))
 		{
+			int	vrc, gone;
+
 			/* WTF - need to check for no writes */
-			switch(TXlockindex(dbtbl, INDEX_VERIFY, &c->lastread))
+			vrc = TXlockindex(dbtbl, INDEX_VERIFY, &c->lastread);
+			/* an entry left empty by a drop is opened afresh */
+			if (vrc == 0 && type == INDEX_BTREE && !c->btree)
+				vrc = -2;
+			/* dropped by someone else: nothing to reopen */
+			gone = (vrc == -2 && !existsbtree(c->name));
+			switch(vrc)
 			{
 			    case -2:
 				/* SYSINDEX.PARAMS may have changed,
@@ -72,6 +127,16 @@ CONST char	*sysindexParams;	/* (in) Up-to-date SYSINDEX.PARAMS */
 				switch(type)
 				{
 				    case INDEX_BTREE:
+					if (!closeIdx && !paramsChg &&
+					    (!c->btree ||
+					     txBtreeFileReplaced(c->btree)))
+						paramsChg = 1;	/* reopen by name */
+					/* another file under the name: read it
+					 * only if it is a finished index */
+					if (!gone && paramsChg &&
+					    !txIndexListedFinal(dbtbl, c->name))
+						gone = 1;
+					if (gone) closeIdx = 1;
 					if (closeIdx || paramsChg)
 						c->btree=closebtree(c->btree);
 					if (!closeIdx)
@@ -88,20 +153,20 @@ CONST char	*sysindexParams;	/* (in) Up-to-date SYSINDEX.PARAMS */
 					break;
 				    case INDEX_3DB:
 				  	c->dbi = close3dbi(c->dbi);
-					if (closeIdx) break;
+					if (closeIdx || gone) break;
 					c->dbi = open3dbi(name, PM_SELECT,
 						     type, c->sysindexParams);
 					break;
                                     case INDEX_MM:
                                         c->fi = closefdbi(c->fi);
-					if (closeIdx) break;
+					if (closeIdx || gone) break;
                                         c->fi = openfdbi(name, PM_SELECT, 0,
 							 c->sysindexParams,
 							 dbtbl);
                                         break;
                                     case INDEX_FULL:
                                         c->fi = closefdbi(c->fi);
-					if (closeIdx) break;
+					if (closeIdx || gone) break;
                                         c->fi = openfdbi(name, PM_SELECT,
                                                          FDF_FULL,
 							 c->sysindexParams,
@@ -113,7 +178,10 @@ CONST char	*sysindexParams;	/* (in) Up-to-date SYSINDEX.PARAMS */
 			        return NULL;
 			}
 			c->lastread = *fc;
-			c->state = 1;
+			/* in use only if there is something to use */
+			c->state = ((type == INDEX_BTREE ? (void *)c->btree :
+				     type == INDEX_3DB ? (void *)c->dbi :
+				     (void *)c->fi) != NULL);
 			switch(type)
 			{
 				case INDEX_BTREE:
@@ -231,6 +299,14 @@ CONST char	*sysindexParams;	/* SYSINDEX.PARAMS value */
 	bt = btfindcache(btc, name, type, &fc, dbtbl, sysindexParams);
 	if(!bt)
 	{
+		/* Dropped while we waited for the lock: nothing to open.  Nor
+		 * if it is being built again under the same name. */
+		if (dbtbl && (!existsbtree(name) ||
+			      !txIndexListedFinal(dbtbl, name)))
+		{
+			TXunlockindex(dbtbl, INDEX_READ, NULL);
+			return(NULL);
+		}
 		switch(type)
 		{
 		    case INDEX_BTREE:
@@ -256,8 +332,50 @@ CONST char	*sysindexParams;	/* SYSINDEX.PARAMS value */
 		if(bt)
 			dbtbl->btcache = btaddcache(btc, name, type, &fc, bt,
 						    sysindexParams);
+		else if (dbtbl)
+			/* no one closes a failed open: give the lock back */
+			TXunlockindex(dbtbl, INDEX_READ, NULL);
 	}
 	return bt;
+}
+
+/******************************************************************/
+
+int
+TXindexWasDropped(dbtbl, name)
+DBTBL	*dbtbl;
+char	*name;	/* File name of the index, as SYSINDEX gave it */
+/* Returns 1 if index `name', which the caller took from the index list a
+ * moment ago, has since been dropped by someone else: its file is gone
+ * and a fresh look at SYSINDEX no longer lists it (or it has already been
+ * created again).  The caller then just goes on without it.  0 if it is
+ * still listed and has no file (a real problem).
+ */
+{
+	char	**paths = NULL;
+	int	n, i, listed = 0;
+
+	int	locked;
+
+	if (!dbtbl || !dbtbl->ddic || !dbtbl->rname || !name) return(0);
+	/* A drop removes the file before SYSINDEX shows the change, all
+	 * under the table's index lock: wait for it there, then look. */
+	locked = (TXlockindex(dbtbl, INDEX_READ, NULL) != -1);
+	TXlockBatchVerifyFresh();		/* the list as it is now */
+	/* there again: dropped and created anew since the caller looked */
+	if (existsbtree(name))
+		listed = 0;
+	else
+	{
+		n = ddgetindex(dbtbl->ddic, dbtbl->rname, NULL, NULL, &paths,
+			       NULL, NULL);
+		for (i = 0; i < n && paths; i++)
+			if (paths[i] && strcmp(paths[i], name) == 0)
+				listed = 1;
+		if (paths) paths = TXfreeStrList(paths, n);
+	}
+	if (locked) TXunlockindex(dbtbl, INDEX_READ, NULL);
+	return(!listed);
 }
 
 /******************************************************************/

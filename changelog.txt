@@ -19,6 +19,29 @@ v0.7.6
                             lockTable locks the table once for the whole
                             import instead of per row; much faster, but
                             other connections wait until it finishes.
+                            importCsv()/importCsvFile() called from a
+                            thread now run as fast as from the main
+                            thread (rows are sent to the thread's helper
+                            process in batches).
+                            New sql.importJsonlFile() and
+                            sql.importJsonl(): import JSON Lines into a
+                            table, with key-to-column map, per-row
+                            rowFunc, skipInvalid, lockTable and a
+                            progress callback.
+                            Fixed selects that could miss or repeat rows
+                            while another process wrote to the table or
+                            dropped/created its indexes.
+                            Lock server: fixed hangs when several
+                            processes update the same table; a true
+                            deadlock now fails one statement with a
+                            "Deadlock on table" error.  Needs the new
+                            texislockd.
+                            UNION and UNION ALL now work (UNION crashed).
+                            Fixed an unqualified column in a subquery
+                            using the outer table's column of the same
+                            name.
+                            Fixed NOT IN (subquery) returning every other
+                            row when the subquery was empty.
 
 v0.7.5
     -rampart-sql            $recid is returned as a Number, and

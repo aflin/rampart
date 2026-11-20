@@ -187,14 +187,43 @@ iscompatible(lockd_lock_queue *lq, lockd_lock *l)
  *   @return 0 if it didn't change, 1 otherwise
 **/
 
+/* Moves pending lock `l' to granted and tells its connection. */
+static void
+grant_pending(lockd_lock_queue *lq, lockd_lock *l)
+{
+  lockd_connection *c = l->connection;
+  char tmpbuf[256], *t;
+
+  lock_queue_resource_del(&lq->pending, l);
+  lock_queue_resource_add(&lq->granted, l);
+  l->state = LOCK_GRANTED;
+  lq->current_modes = lq->current_modes | l->mode;
+  switch(c->command_format) {
+    case CMD_JSON:
+      connection_add_response(c, TXlockRequest_CreateJson(lock_to_json(l)));
+      break;
+    case CMD_SHORT_TEXT:
+      sprintf(tmpbuf, "Y:%s:", lockd_mode_to_string(l->mode));
+      t = tmpbuf+5;
+      if(l->write_times & TABLE_TIMES) {
+        t += counter_tostring(&l->resource->table_written, COUNTER_HEX32, t, 255-(t-tmpbuf));
+        *t++ = ':';
+        *t = '\0';
+      }
+      if(l->write_times & INDEX_TIMES) {
+        t += counter_tostring(&l->resource->index_written, COUNTER_HEX32, t, 255-(t-tmpbuf));
+        *t = '\0';
+      }
+      connection_add_response(c, TXlockRequest_CreateStaticString(tmpbuf, (t-tmpbuf)));
+  }
+}
+
 static int
 recomputestate(lockd_lock_queue *lq, int grantPending)
 {
-  lockd_lock *l;
+  lockd_lock *l, *next;
   lockd_modes previous_state = lq->current_modes;
-  lockd_connection *c;
   int r;
-  char tmpbuf[256], *t;
 
   lq->current_modes = NL;
   for(l = lq->granted.head; l; l = l->resource_list.next)
@@ -202,33 +231,25 @@ recomputestate(lockd_lock_queue *lq, int grantPending)
     lq->current_modes = lq->current_modes | l->mode;
   }
   r = (lq->current_modes == previous_state) ? 0 : 1;
+  if (grantPending) {
+    /* Upgrades first, and whether or not the overall state changed: a
+     * connection that holds a lock here and waits for a stronger one can
+     * never release what the requests ahead of it are waiting for, so
+     * left in line it waits for ever.  (When the last other reader
+     * leaves, the state is still "read", held by the upgrader itself.) */
+    for(l = lq->pending.head; l; l = next) {
+      next = l->resource_list.next;
+      if(computemystate(l->connection, lq) != NL &&
+         compatiblestates(computeotherstate(l->connection, lq), l->mode))
+        grant_pending(lq, l);
+    }
+  }
   if (r && grantPending) {
     l = lq->pending.head;
     while(l && iscompatible(lq, l)) {
-      lock_queue_resource_del(&lq->pending, l);
-      lock_queue_resource_add(&lq->granted, l);
-      l->state = LOCK_GRANTED;
-      lq->current_modes = lq->current_modes | l->mode;
-      c = l->connection;
-      switch(c->command_format) {
-        case CMD_JSON:
-          connection_add_response(c, TXlockRequest_CreateJson(lock_to_json(l)));
-          break;
-        case CMD_SHORT_TEXT:
-          sprintf(tmpbuf, "Y:%s:", lockd_mode_to_string(l->mode));
-          t = tmpbuf+5;
-          if(l->write_times & TABLE_TIMES) {
-            t += counter_tostring(&l->resource->table_written, COUNTER_HEX32, t, 255-(t-tmpbuf));
-            *t++ = ':';
-            *t = '\0';
-          }
-          if(l->write_times & INDEX_TIMES) {
-            t += counter_tostring(&l->resource->index_written, COUNTER_HEX32, t, 255-(t-tmpbuf));
-            *t = '\0';
-          }
-          connection_add_response(c, TXlockRequest_CreateStaticString(tmpbuf, (t-tmpbuf)));
-      }
-      l = l->resource_list.next;
+      next = l->resource_list.next;
+      grant_pending(lq, l);
+      l = next;
     }
   }
   return r;
@@ -301,6 +322,44 @@ lock_add_to_free_list(lockd_lock *l)
   return lock_queue_connection_add(&free_lock_q, l);
 }
 
+/* Deadlock detection.  Connection `from' has a request waiting; does it
+ * wait, directly or through others, for `target'?  A waiting request waits
+ * for every connection holding a conflicting lock on its resource, and --
+ * unless it is an upgrade, which is granted ahead -- for every request
+ * queued before it there, as the queue is granted in order. */
+#define LOCKD_DEADLOCK_MAX 256
+static lockd_connection *deadlockSeen[LOCKD_DEADLOCK_MAX];
+static int deadlockNumSeen;
+
+static int
+waits_for(lockd_connection *from, lockd_connection *target)
+{
+  lockd_lock *p, *o;
+  lockd_lock_queue *lq;
+  int i, pass;
+
+  for(i = 0; i < deadlockNumSeen; i++)
+    if(deadlockSeen[i] == from) return 0;
+  if(deadlockNumSeen >= LOCKD_DEADLOCK_MAX) return 0;
+  deadlockSeen[deadlockNumSeen++] = from;
+
+  for(p = from->lockq.head; p; p = p->connection_list.next) {
+    if(p->state != LOCK_PENDING || !p->resource) continue;
+    lq = &p->resource->lock_queue;
+    for(pass = 0; pass < 2; pass++) {
+      if(pass == 1 && computemystate(from, lq) != NL) break;      /* an upgrade */
+      for(o = (pass ? lq->pending.head : lq->granted.head); o; o = o->resource_list.next) {
+        if(pass == 1 && o == p) break;                            /* only those ahead */
+        if(o->connection == from) continue;
+        if(pass == 0 && compatiblestates(o->mode, p->mode)) continue;
+        if(o->connection == target) return 1;
+        if(waits_for(o->connection, target)) return 1;
+      }
+    }
+  }
+  return 0;
+}
+
 int
 lock_queue_lock(lockd_lock *l)
 {
@@ -341,6 +400,23 @@ lock_queue_lock(lockd_lock *l)
   } else {
     lock_queue_resource_add(&lq->pending, l);
     l->state = LOCK_PENDING;
+    deadlockNumSeen = 0;
+    if(waits_for(c, c)) {
+      /* Granting this would need a lock held by something that is itself
+       * waiting for this connection: refuse it, so its statement fails
+       * and lets go, instead of all of them waiting for ever. */
+      lock_queue_resource_del(&lq->pending, l);
+      lock_queue_connection_del(&c->lockq, l);
+      switch(c->command_format) {
+        case CMD_JSON:
+          connection_add_response(c, TXlockRequest_CreateJson(json_pack("{s:b,s:s}", "success", 0, "error", "Deadlock")));
+          break;
+        case CMD_SHORT_TEXT:
+          connection_add_response(c, TXlockRequest_CreateStaticString("E:Deadlock", 10));
+      }
+      lock_add_to_free_list(l);
+      return -1;
+    }
   }
   return l->state;
 }

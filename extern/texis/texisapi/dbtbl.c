@@ -196,6 +196,13 @@ char *name;			/* Name of the table to open */
 		db->pred = NULL;
 		db->ipred = NULL;
 		db->indguar = 0;
+		/* aggregates of the statement that last used this handle are
+		 * not this statement's: resetting them is not enough */
+		if (!db->nfldstatisdup)
+			TXclosenewstats(&db->nfldstat);
+		db->nfldstat = NULL;
+		db->nfldstatisdup = 0;
+		db->nfldstatcountonly = 0;
 		if (db->lname && db->rname && strcmp(db->lname, db->rname))
 		{
 			free(db->lname);
@@ -761,7 +768,8 @@ TXcreateinternaldbtblcopy(DBTBL *source, TX_DBF_TYPE dbftype)
 		return closedbtbl(rc);
 	}
 	closedd(dd);
-	rc->lname = strdup(source->lname);
+	/* a derived result (e.g. a UNION) has no name */
+	rc->lname = (source->lname ? strdup(source->lname) : NULL);
 	rc->rname = NULL;
 	rc->type = 'T';
 	rc->ddic = source->ddic;
@@ -1960,6 +1968,49 @@ int type;
 
 /******************************************************************/
 
+/* While this handle holds an index lock nothing else can write the table's
+ * indexes, so the index write counter stays what it was when the lock was
+ * granted.  It is kept in `ilockc' and answers every "changed since `*fc'?"
+ * asked under the lock, exactly and without asking the lock server.  (These
+ * used to be answered "unchanged" unseen inside a read batch, and the
+ * counter handed back was a new unrelated value, so the next check always
+ * said "changed".) */
+#ifdef LOCK_SERVER
+extern int TXInLockBlock;
+#  define TX_ILOCKC_OK(db)	((db)->ilockcValid)
+#else
+#  define TX_ILOCKC_OK(db)	0
+#endif
+
+static void
+txIndexLockGranted(DBTBL *db, ft_counter *c)
+/* `*c' is what the lock server reported with the grant, if it did. */
+{
+	db->ilockcValid = 0;
+#ifdef LOCK_SERVER
+	if (c && db->ddic && !db->ddic->nolocking && !TXInLockBlock)
+	{
+		db->ilockc = *c;
+		db->ilockcValid = 1;
+	}
+#else
+	(void)c;
+#endif
+}
+
+static int
+txIndexLockVerify(DBTBL *db, ft_counter *fc, int setFc)
+/* Returns -2 if the indexes changed since `*fc', else 0. */
+{
+	int	rc = 0;
+
+	if (fc && (fc->date != db->ilockc.date || fc->seq != db->ilockc.seq))
+		rc = -2;
+	if (fc && setFc)
+		*fc = db->ilockc;
+	return rc;
+}
+
 int
 TXlockindex(db, mode, fc)
 DBTBL *db;
@@ -1975,8 +2026,10 @@ ft_counter *fc;		/* in: verify this  out: new time */
 	static const char	fn[] = "TXlockindex";
 	int rc = -1;
 	int attempts;
-	ft_counter	b4;
+	ft_counter	b4, grantc, *gc = (fc ? fc : &grantc);
 
+	grantc.date = 0L;
+	grantc.seq = 0L;
 	if (fc)
 		b4 = *fc;
 	else
@@ -2000,7 +2053,10 @@ ft_counter *fc;		/* in: verify this  out: new time */
 				db->nireadl += 1;
 				db->ddic->rlocks++;	/* KNG table+index */
 				if (fc)
-					rgetcounter(db->ddic, fc, 1);
+				{
+					if (TX_ILOCKC_OK(db)) *fc = db->ilockc;
+					else rgetcounter(db->ddic, fc, 1);
+				}
 				goto ok;
 			}
 #ifndef OLD_LOCKING
@@ -2009,7 +2065,7 @@ ft_counter *fc;		/* in: verify this  out: new time */
 				    mode, db->rname, fc, &db->lockid);
 #else
 			rc = dblock(db->ddic, db->ddic->sid, &db->tblid,
-				    mode, db->rname, fc);
+				    mode, db->rname, gc);
 #endif
 #else
 			rc = dblock(db->ddic, db->ddic->sid, db->tblid,
@@ -2024,6 +2080,7 @@ ft_counter *fc;		/* in: verify this  out: new time */
 			{
 				db->nireadl = 1;
 				db->ddic->rlocks++;	/* KNG table+index */
+				if (!db->niwrite) txIndexLockGranted(db, gc);
 			}
 			break;
 		case INDEX_WRITE:
@@ -2032,7 +2089,10 @@ ft_counter *fc;		/* in: verify this  out: new time */
 				db->niwrite += 1;
 				db->ddic->wlocks++;	/* KNG table+index */
 				if (fc)
-					rgetcounter(db->ddic, fc, 1);
+				{
+					if (TX_ILOCKC_OK(db)) *fc = db->ilockc;
+					else rgetcounter(db->ddic, fc, 1);
+				}
 				goto ok;
 			}
 #ifndef OLD_LOCKING
@@ -2041,7 +2101,7 @@ ft_counter *fc;		/* in: verify this  out: new time */
 				    mode, db->rname, fc, &db->lockid);
 #else
 			rc = dblock(db->ddic, db->ddic->sid, &db->tblid,
-				    mode, db->rname, fc);
+				    mode, db->rname, gc);
 #endif
 #else
 			rc = dblock(db->ddic, db->ddic->sid, db->tblid,
@@ -2057,9 +2117,15 @@ ft_counter *fc;		/* in: verify this  out: new time */
 			{
 				db->niwrite = 1;
 				db->ddic->wlocks++;	/* KNG table+index */
+				if (!db->nireadl) txIndexLockGranted(db, gc);
 			}
 			break;
 		case INDEX_VERIFY:
+			if ((db->nireadl || db->niwrite) && TX_ILOCKC_OK(db))
+			{			/* we hold the lock: we know */
+				rc = txIndexLockVerify(db, fc, 0);
+				break;
+			}
 #ifdef NEVER
 			if (!db->niwrite)
 				goto err;
@@ -2082,6 +2148,13 @@ ft_counter *fc;		/* in: verify this  out: new time */
 #endif
 			break;
 		case INDEX_VERIFY | INDEX_WRITE:
+			if (db->niwrite && TX_ILOCKC_OK(db))
+			{
+				rc = txIndexLockVerify(db, fc, 1);
+				db->niwrite += 1;
+				db->ddic->wlocks++;	/* KNG table+index */
+				goto done;
+			}
 			if (db->niwrite)
 			{
 				/* Assume still good, as we have lock */
@@ -2111,7 +2184,7 @@ ft_counter *fc;		/* in: verify this  out: new time */
 				    mode, db->rname, fc, &db->lockid);
 #else
 			rc = dblock(db->ddic, db->ddic->sid, &db->tblid,
-				    mode, db->rname, fc);
+				    mode, db->rname, gc);
 #endif
 #else
 			rc = dblock(db->ddic, db->ddic->sid, db->tblid,
@@ -2130,9 +2203,17 @@ ft_counter *fc;		/* in: verify this  out: new time */
 				{
 					db->niwrite = 1;
 					db->ddic->wlocks++;	/* KNG table+index */
+					if (!db->nireadl) txIndexLockGranted(db, gc);
 				}
 			goto done;
 		case INDEX_VERIFY | INDEX_READ:
+			if (db->nireadl && TX_ILOCKC_OK(db))
+			{
+				rc = txIndexLockVerify(db, fc, 1);
+				db->nireadl += 1;
+				db->ddic->rlocks++;	/* KNG table+index */
+				goto done;
+			}
 			if (db->nireadl)
 			{
 #ifndef OLD_LOCKING
@@ -2162,7 +2243,7 @@ ft_counter *fc;		/* in: verify this  out: new time */
 				    mode, db->rname, fc, &db->lockid);
 #else
 			rc = dblock(db->ddic, db->ddic->sid, &db->tblid,
-				    mode, db->rname, fc);
+				    mode, db->rname, gc);
 #endif
 #else
 			rc = dblock(db->ddic, db->ddic->sid, db->tblid,
@@ -2182,6 +2263,7 @@ ft_counter *fc;		/* in: verify this  out: new time */
 				{
 					db->nireadl = 1;
 					db->ddic->rlocks++;	/* KNG table+index */
+					if (!db->niwrite) txIndexLockGranted(db, gc);
 				}
 			goto done;
 		}
@@ -2245,7 +2327,10 @@ ft_counter *fc;
 			db->nireadl -= 1;
 			db->ddic->rlocks--;	/* KNG table+index */
 			if (fc)
-				rgetcounter(db->ddic, fc, 1);
+			{
+				if (TX_ILOCKC_OK(db)) *fc = db->ilockc;
+				else rgetcounter(db->ddic, fc, 1);
+			}
 			goto ok;
 		}
 		if (!db->nireadl)
@@ -2258,7 +2343,10 @@ ft_counter *fc;
 			db->niwrite -= 1;
 			db->ddic->wlocks--;	/* KNG table+index */
 			if (fc)
-				rgetcounter(db->ddic, fc, 1);
+			{
+				if (TX_ILOCKC_OK(db)) *fc = db->ilockc;
+				else rgetcounter(db->ddic, fc, 1);
+			}
 			goto ok;
 		}
 		if (!db->niwrite)
@@ -2297,6 +2385,8 @@ ft_counter *fc;
 			db->niwrite = 0;
 			break;
 		}
+	if (!db->nireadl && !db->niwrite)
+		db->ilockcValid = 0;		/* others may write now */
 	goto done;
 
 ok:

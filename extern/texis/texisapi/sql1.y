@@ -1895,11 +1895,19 @@ query_exp:
 		query_term
 	|	query_exp UNION query_term
 	{
-		$$=TXstrcat4(" _n ", $1, " ", $3);
+		/* UNION removes duplicates: DISTINCT over both queries' rows */
+		char *t = TXstrcat4(" _n ", $1, " ", $3);
+		$$=TXstrcat2("_s", t);
+		free(t);
 		free($1);
 		free($3);
 	}
 	|	query_exp UNION ALL query_term
+	{
+		$$=TXstrcat4(" _n ", $1, " ", $4);
+		free($1);
+		free($4);
+	}
 	;
 
 query_term:

@@ -415,6 +415,7 @@ struct INDEXINFO
 void	*TXbtcacheopen ARGS((DBTBL *, char *, int, int,
                              CONST char *sysindexParams));
 void	*TXbtcacheclose ARGS((DBTBL *, char *, int, int, void *));
+int	TXindexWasDropped ARGS((DBTBL *dbtbl, char *name));
 int	TXbtfreecache ARGS((DBTBL *));
 
 /******************************************************************/

@@ -819,6 +819,8 @@ struct DBTBL_tag {
 	ft_counter	iwritec;	       /* Last index write time */
 	ft_counter	sysindexc;	/* SYSINDEX cache counter at last index load */
 	byte	sysindexcValid;		/* `sysindexc' set */
+	ft_counter	ilockc;		/* index write counter when our index lock was granted */
+	byte	ilockcValid;		/* `ilockc' set (and an index lock is held) */
 	void	*btcache;
 	NFLDSTAT *nfldstat;
 	DBIDX	rankindex;                    /* Keep rank values here. */
@@ -899,7 +901,8 @@ struct MMLST_tag {
 
 typedef enum TXqueryFlag_tag
 {
-	TXqueryFlag_In1Populated	= (1 << 0)  /* `in1' was populated */
+	TXqueryFlag_In1Populated	= (1 << 0), /* `in1' was populated */
+	TXqueryFlag_UnionLeftDone	= (1 << 1)  /* UNION: 1st query ended */
 }
 TXqueryFlag;
 

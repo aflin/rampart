@@ -1000,7 +1000,17 @@ FLDOP *fo;
 			else
 				rc = 0;
 			rc = rc?0:1;
-			if (ti != NULL)
+			if (ti == &pone || ti == &pzero || ti == &mone)
+			{
+				/* the operand is one of the shared constants (e.g.
+				 * an empty subquery): replace it, never write it */
+				fodisc(fo);
+				f = createfld("int", 1, 0);
+				putfld(f, (rc ? &pone : &pzero), 1);
+				fopush(fo, f);
+				closefld(f);
+			}
+			else if (ti != NULL)
 				*ti = rc;
 			p->value = rc;
 			if (rc == 0)

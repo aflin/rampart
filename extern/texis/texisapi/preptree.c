@@ -397,6 +397,39 @@ sladdpred(SLIST *sl, PRED *pred)
 	return 0;
 }
 
+/* Correlated subquery: give the columns in `pred' that are not the
+ * subquery's own (`in1', `in2') the outer table's current value.  A
+ * name both have belongs to the subquery's table. */
+static void
+txPredBindOuter(PRED *pred, DBTBL *outer, DBTBL *in1, DBTBL *in2)
+{
+	FLD	*f;
+
+	if (!pred) return;
+	if (pred->lt == 'P')
+		txPredBindOuter((PRED *)pred->left, outer, in1, in2);
+	if (pred->rt == 'P')
+		txPredBindOuter((PRED *)pred->right, outer, in1, in2);
+	if (pred->lt == NAME_OP && pred->left &&
+	    !dbnametofld(in1, (char *)pred->left) &&
+	    !(in2 && dbnametofld(in2, (char *)pred->left)) &&
+	    (f = dbnametofld(outer, (char *)pred->left)) != NULL)
+	{
+		free(pred->left);
+		pred->left = dupfld(f);
+		pred->lt = FIELD_OP;
+	}
+	if (pred->rt == NAME_OP && pred->right &&
+	    !dbnametofld(in1, (char *)pred->right) &&
+	    !(in2 && dbnametofld(in2, (char *)pred->right)) &&
+	    (f = dbnametofld(outer, (char *)pred->right)) != NULL)
+	{
+		free(pred->right);
+		pred->right = dupfld(f);
+		pred->rt = FIELD_OP;
+	}
+}
+
 static char *
 TXgetStringValFromQnode(DDIC *ddic, FLDOP *fldop, DBTBL *dbtbl, QNODE *qnode)
 /* Returns alloc'd string.
@@ -552,6 +585,7 @@ int *success;		/* Where to store a success code */
 		}
 		q->pred = (PRED *) NULL;
 		q->proj = (PROJ *) NULL;
+		q->flags &= ~TXqueryFlag_UnionLeftDone;
 		q->op = Q_UNION;
 		preparequery(query, fo, prepinfo->allowbubble);
 		if (q->out->tbl == NULL)
@@ -625,7 +659,10 @@ int *success;		/* Where to store a success code */
 		return q->out;
 	case SELECT_OP:
 		prepinfo->preq |= PM_SELECT;
-		pred=TXtreetopred(ddic, query->right, TXgetDiscardUnsetParameterClauses(), fo, dbtbl);
+		/* Names stay names here: which are the outer table's (`dbtbl',
+		 * a correlated subquery) is settled once our own tables are
+		 * open, in txPredBindOuter() below. */
+		pred=TXtreetopred(ddic, query->right, TXgetDiscardUnsetParameterClauses(), fo, NULL);
 		if(parentquery)
 			query->pfldlist = parentquery->fldlist;
 		if(analyze)
@@ -673,6 +710,8 @@ int *success;		/* Where to store a success code */
 			q->in2 = (DBTBL *) NULL;
 			op = Q_SELECT;
 		}
+		if(dbtbl)
+			txPredBindOuter(pred, dbtbl, q->in1, q->in2);
 		if(analyze && query->left)
 		{
 			if(query->left->afldlist)
