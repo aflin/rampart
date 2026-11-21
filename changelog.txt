@@ -45,6 +45,11 @@ v0.7.6
                             Creating a fulltext index is about 2.5x
                             faster, and no longer slows down as indexMem
                             grows.  The index produced is unchanged.
+                            sql.set() optimize/noOptimize: apply to their
+                            own connection only, are cleared by
+                            sql.reset() and reported by sql.get();
+                            accept an array of names; an unknown name
+                            now throws.
 
 v0.7.5
     -rampart-sql            $recid is returned as a Number, and

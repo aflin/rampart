@@ -9361,6 +9361,11 @@ static int sql_defaults(duk_context *ctx, TEXIS *tx, char *errbuf)
         return -1;
     }
 
+    /* optimize/noOptimize flags live on the (shared) handle: back to their
+       defaults, so one connection's choices do not carry to another's and
+       reset() clears them.  The connection's own are re-applied after. */
+    TXddicdefaultoptimizations(ddic);
+
     props = prop_defaults[i];
 
     while (props[0])
@@ -11189,10 +11194,18 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
 
             logandclearmsgbuf(ctx);
             //printf("setprop(%s, %s)\n", prop, val);
-            if(setprop(ddic, (char*)prop, (char*)val )==-1)
             {
-                snprintf(errbuf, msgbufsz, "sql.set: %s", finfo->errmap); /* F13: errmap can be ~4095 bytes */
-                goto return_neg_two;
+                /* a copy: setprop() may cut the value up in place (strtok,
+                   for a list of names), and `val' is the JS string itself */
+                char *vcopy = strdup(val);
+                int sret = (vcopy ? setprop(ddic, (char*)prop, vcopy) : -1);
+
+                free(vcopy);
+                if(sret == -1)
+                {
+                    snprintf(errbuf, msgbufsz, "sql.set: %s", finfo->errmap); /* F13: errmap can be ~4095 bytes */
+                    goto return_neg_two;
+                }
             }
         }
 
@@ -11289,6 +11302,130 @@ static char *stringLower(const char *str)
 }
 */
 
+/* ---- optimize / noOptimize --------------------------------------------
+ * The names texis' setoptimize() knows.  Used to reject an unknown name
+ * (texis only warns), to accept an array of names, and to keep each
+ * connection's choices as two lists -- those turned on that are off by
+ * default, those turned off that are on by default -- which is what is
+ * stored, replayed and returned by sql.get().  The first name for a flag
+ * is the one reported. */
+static const struct { const char *name; int idx; } rp_optnames[] = {
+    {"join", OPTIMIZE_JOIN}, {"compoundindex", OPTIMIZE_COMPOUND_INDEX},
+    {"copy", OPTIMIZE_COPY}, {"countstar", OPTIMIZE_COUNT_STAR},
+    {"minimallocking", OPTIMIZE_MINIMAL_LOCKING}, {"groupby", OPTIMIZE_GROUP},
+    {"faststats", OPTIMIZE_FASTSTATS}, {"readlock", OPTIMIZE_READLOCK},
+    {"analyze", OPTIMIZE_ANALYZE}, {"skipahead", OPTIMIZE_SKIPAHEAD},
+    {"auxdatalen", OPTIMIZE_AUXDATALEN}, {"indexonly", OPTIMIZE_INDEXONLY},
+    {"fastmmindexupdate", OPTIMIZE_MMIDXUPDATE},
+    {"indexdatagroupby", OPTIMIZE_INDEXDATAGROUP},
+    {"likeand", OPTIMIZE_LIKE_AND}, {"likeandnoinv", OPTIMIZE_LIKE_AND_NOINV},
+    {"likewithnots", OPTIMIZE_LIKE_WITH_NOTS},
+    {"shortcuts", OPTIMIZE_SHORTCUTS}, {"optimization18", OPTIMIZE_SHORTCUTS},
+    {"indexbatchbuild", OPTIMIZE_INDEX_BATCH_BUILD},
+    {"linearrankindexexps", OPTIMIZE_LINEAR_RANK_INDEX_EXPS},
+    {"pointersintostrlst", OPTIMIZE_PTRS_TO_STRLSTS},
+    {"sortedvarflds", OPTIMIZE_SORTED_VARFLDS},
+    {"indexvirtualfields", OPTIMIZE_INDEX_VIRTUAL_FIELDS},
+    {"indexdataonlycheckpredicates", OPTIMIZE_INDEX_DATA_ONLY_CHECK_PREDICATES},
+    {"groupbymem", OPTIMIZE_GROUP_BY_MEM}, {"likehandled", OPTIMIZE_LIKE_HANDLED},
+    {"sqlfunctionparametercache", OPTIMIZE_SQL_FUNCTION_PARAMETER_CACHE},
+    {NULL, 0}
+};
+
+/* texis' default for every flag, read from texis itself */
+static void rp_opt_defaults(int *st)
+{
+    static int def[OPTIMIZE_COUNT], have = 0;
+
+    if(!have)
+    {
+        DDIC *d = (DDIC *)calloc(1, sizeof(DDIC));
+        if(d)
+        {
+            TXddicdefaultoptimizations(d);
+            memcpy(def, d->optimizations, sizeof(def));
+            free(d);
+            have = 1;
+        }
+    }
+    memcpy(st, def, sizeof(def));
+}
+
+/* apply a list of names ("a,b c") to `st'.  -1, with errbuf, on a bad name */
+static int rp_opt_apply_str(const char *s, int onoff, int *st, char *errbuf)
+{
+    while(*s)
+    {
+        size_t n;
+        int i;
+
+        s += strspn(s, " ,()");
+        n = strcspn(s, " ,()");
+        if(!n) break;
+        for(i=0; rp_optnames[i].name; i++)
+            if(strlen(rp_optnames[i].name) == n && !strncasecmp(rp_optnames[i].name, s, n))
+                break;
+        if(!rp_optnames[i].name)
+        {
+            if(errbuf)
+                snprintf(errbuf, msgbufsz, "sql.set: unknown optimization '%.*s'", (int)n, s);
+            return -1;
+        }
+        st[rp_optnames[i].idx] = onoff;
+        s += n;
+    }
+    return 0;
+}
+
+/* the same for a sql.set() value: a string of names or an array of them */
+static int rp_opt_apply_val(duk_context *ctx, duk_idx_t idx, int onoff, int *st, char *errbuf)
+{
+    idx = duk_normalize_index(ctx, idx);
+    if(duk_is_string(ctx, idx))
+        return rp_opt_apply_str(duk_get_string(ctx, idx), onoff, st, errbuf);
+    if(duk_is_array(ctx, idx))
+    {
+        duk_uarridx_t i, len = (duk_uarridx_t)duk_get_length(ctx, idx);
+
+        for(i=0; i<len; i++)
+        {
+            int r = -2;
+
+            duk_get_prop_index(ctx, idx, i);
+            if(duk_is_string(ctx, -1))
+                r = rp_opt_apply_str(duk_get_string(ctx, -1), onoff, st, errbuf);
+            duk_pop(ctx);
+            if(r == -2) break;
+            if(r < 0) return -1;
+        }
+        if(i == len) return 0;
+    }
+    snprintf(errbuf, msgbufsz,
+        "sql.set: %s requires an optimization name, a comma separated list of names, or an array of names",
+        onoff ? "optimize" : "noOptimize");
+    return -1;
+}
+
+/* the names set to `onoff' that are not so by default, as "a,b" */
+static void rp_opt_tostr(int *st, int onoff, char *buf, size_t sz)
+{
+    int def[OPTIMIZE_COUNT], seen[OPTIMIZE_COUNT], i;
+    size_t len = 0;
+
+    rp_opt_defaults(def);
+    memset(seen, 0, sizeof(seen));
+    buf[0] = '\0';
+    for(i=0; rp_optnames[i].name; i++)
+    {
+        int x = rp_optnames[i].idx;
+
+        if(seen[x] || !!st[x] != onoff || !!def[x] == onoff) continue;
+        seen[x] = 1;
+        if(len + strlen(rp_optnames[i].name) + 2 >= sz) break;
+        len += sprintf(buf + len, "%s%s", len ? "," : "", rp_optnames[i].name);
+    }
+}
+
 /* **************************************************
    Sql.prototype.get -- read back the settings this handle will apply.
 
@@ -11323,10 +11460,13 @@ static char *stringLower(const char *str)
      - the add/del list operations themselves.
      - querySettings, which is an action: "defaults" reinitializes the
        APICP, discarding the alWild/qMinWordLen family in the same object.
-     - optimize/nooptimize, message/nomessage, options/nooptions: these
-       take a LIST OF NAMES and set or clear flags in a bitmap
-       (setoptimize() strtok's the value), so they are operations, and
+     - message/nomessage, options/nooptions: these take a LIST OF NAMES
+       and set or clear flags in a bitmap, so they are operations, and
        two names write the same state.
+
+   optimize/nooptimize are the same kind of thing, but ARE reported: the
+   connection's stored value for each is the list of names that differ
+   from the defaults (see rp_optnames), which sets back to the same state.
 
    sql.get()       -> an object of everything
    sql.get("name") -> that one value, or undefined if not a known property
@@ -11421,6 +11561,17 @@ static duk_ret_t rp_texis_get(duk_context *ctx)
         }
         duk_put_prop_string(ctx, out_idx, name);
     }
+
+    /* optimizations this connection changed from their defaults: the
+       names turned on, and the names turned off.  Absent at defaults. */
+    if(duk_get_prop_string(ctx, set_idx, "optimize"))
+        duk_put_prop_string(ctx, out_idx, "optimize");
+    else
+        duk_pop(ctx);
+    if(duk_get_prop_string(ctx, set_idx, "nooptimize"))
+        duk_put_prop_string(ctx, out_idx, "noOptimize");
+    else
+        duk_pop(ctx);
 
     /* the four word lists, from the same globals lstnoise reads */
     {
@@ -11592,6 +11743,7 @@ static duk_ret_t rp_texis_set(duk_context *ctx)
     int ret = 0;
     char errbuf[msgbufsz];
     char propa[64], *prop=&propa[0];
+    int optst[OPTIMIZE_COUNT], opt_touched = 0;
 
     /* Same entry sequence as rp_sql_exec_query() and rp_sql_import():
      * empty the capture buffer FIRST, so nothing this call reports can be
@@ -11645,6 +11797,37 @@ static duk_ret_t rp_texis_set(duk_context *ctx)
     }
                                               // [ settings_obj, this, old_settings ]
 
+    /* optimize / noOptimize: work out the connection's resulting flags from
+       what it had and what this call asks for, rejecting unknown names
+       before anything is stored or applied. */
+    rp_opt_defaults(optst);
+    if(duk_get_prop_string(ctx, 2, "optimize") && duk_is_string(ctx, -1))
+        rp_opt_apply_str(duk_get_string(ctx, -1), 1, optst, NULL);
+    duk_pop(ctx);
+    if(duk_get_prop_string(ctx, 2, "nooptimize") && duk_is_string(ctx, -1))
+        rp_opt_apply_str(duk_get_string(ctx, -1), 0, optst, NULL);
+    duk_pop(ctx);
+    duk_enum(ctx, 0, 0);
+    while (duk_next(ctx, -1, 1))
+    {
+        duk_size_t ksz;
+        const char *k = duk_get_lstring(ctx, -2, &ksz);
+        int isopt = (ksz == 8 && !strcasecmp(k, "optimize")),
+            isnoopt = (ksz == 10 && !strcasecmp(k, "nooptimize"));
+
+        if(isopt || isnoopt)
+        {
+            opt_touched = 1;
+            if(rp_opt_apply_val(ctx, -1, isopt, optst, errbuf) < 0)
+            {
+                h_close(h);
+                RP_THROW(ctx, "%s", errbuf);
+            }
+        }
+        duk_pop_2(ctx);
+    }
+    duk_pop(ctx);
+
     /* Snapshot the saved settings before merging, so a failed apply can be
        rolled back.  The merge below writes every incoming key into the SAME
        stored object BEFORE anything is applied, so without this a key that
@@ -11682,6 +11865,13 @@ static duk_ret_t rp_texis_set(duk_context *ctx)
 
         sql_normalize_prop(prop, dprop);
 
+        /* stored below, as the resulting lists */
+        if(!strcmp(prop, "optimize") || !strcmp(prop, "nooptimize"))
+        {
+            duk_pop_2(ctx);
+            continue;
+        }
+
         //check for "useequiv", set "alequiv" to true.
         if(strcmp("useequiv", prop)==0 &&
             (
@@ -11698,6 +11888,17 @@ static duk_ret_t rp_texis_set(duk_context *ctx)
         duk_pop(ctx);                         // [ settings_obj, this , old_settings, enum_obj ]
     }
     duk_pop(ctx);                             // [ settings_obj, this, combined_settings ]
+    if(opt_touched)
+    {
+        char optbuf[1024];
+
+        rp_opt_tostr(optst, 1, optbuf, sizeof(optbuf));
+        if(*optbuf) { duk_push_string(ctx, optbuf); duk_put_prop_string(ctx, 2, "optimize"); }
+        else duk_del_prop_string(ctx, 2, "optimize");
+        rp_opt_tostr(optst, 0, optbuf, sizeof(optbuf));
+        if(*optbuf) { duk_push_string(ctx, optbuf); duk_put_prop_string(ctx, 2, "nooptimize"); }
+        else duk_del_prop_string(ctx, 2, "nooptimize");
+    }
     duk_remove(ctx, 0);                       // [ this , combined_settings ]
 
     duk_dup(ctx, -1);                         // [ this , combined_settings, combined_settings ]

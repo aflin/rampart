@@ -781,6 +781,50 @@ t("set - noLocking applies to its own connection only; get() and reset() handle 
     return !!on && !other && !off && seen && seen.name === "nolock";
 });
 
+/* ---- optimize / noOptimize ---- */
+
+t("set - optimize: unknown name throws, valid name reported by get()", function(){
+    var c = new Sql.connection(dbpath), threw = false;
+    try { c.set({optimize:"nosuchthing"}); } catch(e) { threw = /unknown optimization 'nosuchthing'/.test("" + e); }
+    c.set({optimize:"indexbatchbuild"});
+    var ok = threw && c.get("optimize") === "indexbatchbuild" && c.get("noOptimize") === undefined;
+    c.close();
+    return ok;
+});
+
+t("set - optimize: array and comma list; noOptimize; lists hold only non-defaults", function(){
+    var c = new Sql.connection(dbpath);
+    c.set({optimize:["indexbatchbuild","linearrankindexexps"], noOptimize:"join, countstar"});
+    var a = c.get("optimize") === "indexbatchbuild,linearrankindexexps" && c.get("noOptimize") === "join,countstar";
+    c.set({optimize:"join", noOptimize:"linearrankindexexps"});       /* both back to their defaults */
+    var b = c.get("optimize") === "indexbatchbuild" && c.get("noOptimize") === "countstar";
+    c.close();
+    return a && b;
+});
+
+t("set - optimize: per connection, round trips through get(), cleared by reset()", function(){
+    var c1 = new Sql.connection(dbpath), c2 = new Sql.connection(dbpath), c3 = new Sql.connection(dbpath);
+    c1.set({optimize:"indexbatchbuild", noOptimize:"countstar"});
+    var other = c2.get("optimize") === undefined && !("noOptimize" in c2.get());
+    c3.set(c1.get());
+    var trip = c3.get("optimize") === "indexbatchbuild" && c3.get("noOptimize") === "countstar";
+    c1.reset();
+    var cleared = c1.get("optimize") === undefined && c1.get("noOptimize") === undefined && c3.get("optimize") === "indexbatchbuild";
+    c1.close(); c2.close(); c3.close();
+    return other && trip && cleared;
+});
+
+t("set - optimize: a bad value leaves the settings as they were", function(){
+    var c = new Sql.connection(dbpath), threw = 0;
+    c.set({optimize:"indexbatchbuild"});
+    try { c.set({optimize:"likeand,bogus"}); } catch(e) { threw++; }
+    try { c.set({optimize:true}); } catch(e) { threw++; }
+    c.set({indexmem:64000000});                                       /* a later valid set is clean */
+    var ok = threw === 2 && !c.errMsg && c.get("optimize") === "indexbatchbuild";
+    c.close();
+    return ok;
+});
+
 /* ---- UNION ---- */
 
 t("union - setup", function(){
