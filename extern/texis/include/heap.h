@@ -56,6 +56,9 @@ int     fheap_delelem ARGS((FHEAP *fh, int i));
 
 int TXfheapInsertWtix ARGS((FHEAP *fh, void *key));
 void TXfheapDeleteTopWtix ARGS((FHEAP *fh));
+/* replace the top element in one pass (heap must be non-empty): */
+void TXfheapReplaceTopWtix ARGS((FHEAP *fh, void *key));
+void TXfheapReplaceTopCmp ARGS((FHEAP *fh, void *key));
 
 /* To use stack, fheap_stkreset() must be called after last initial insert.
  * From then on, each deletetop may optionally be followed by a push.

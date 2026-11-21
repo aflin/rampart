@@ -39,6 +39,7 @@ struct MERGE_tag
   EPI_HUGEINT   totalitems;     /* total number of items for next merge */
   EPI_HUGEINT   doneitems;      /* items completed (during merge) */
   int           prevNumAllocFailures;   /* previous report # alloc failures */
+  int           accum;                  /* mem pile is an accumulator pile */
 };
 
 int     TxMergeDefragSz = 0;    /* pre-alloced de-frag mem size */
@@ -441,7 +442,25 @@ MERGE   *m;
 /* Returns amount of memory currently used.
  */
 {
-  return(m->memp ? TXmpileGetMemUsed((MPILE *)m->memp) : 0);
+  if (!m->memp) return(0);
+  return(m->accum ? TXapileGetMemUsed(m->memp) :
+         TXmpileGetMemUsed((MPILE *)m->memp));
+}
+
+int
+merge_setaccum(m, on)
+MERGE   *m;
+int     on;
+/* If `on', merge_newitem() items go to one accumulator pile (openapile())
+ * instead of a pile per merge_newpile() call.  Only for `word nul rest'
+ * items put in ascending order of `rest' per word (a Metamorph index
+ * built from table rows in token order).  Call before merge_newpile().
+ * Returns 0 if too late.
+ */
+{
+  if (m->memp != PILEPN) return(0);
+  m->accum = (on ? 1 : 0);
+  return(1);
 }
 
 int
@@ -463,7 +482,9 @@ MERGE   *m;
        */
       if (m->defrag == NULL && TxMergeDefragSz > 0)
         m->defrag = TXmalloc(TXPMBUFPN, fn, TxMergeDefragSz);
-      if ((m->memp = (PILE *)openmpile(PILEF_WRITE, m->memsz, NULL)) == PILEPN)
+      m->memp = (m->accum ? openapile(PILEF_WRITE, m->memsz, NULL) :
+                 (PILE *)openmpile(PILEF_WRITE, m->memsz, NULL));
+      if (m->memp == PILEPN)
         goto err;
     }
   else

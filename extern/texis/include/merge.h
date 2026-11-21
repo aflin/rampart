@@ -30,6 +30,7 @@ int     merge_newpile ARGS((MERGE *m));
 int     merge_newitem ARGS((MERGE *m, byte *blk, size_t sz));
 int     merge_finish(MERGE *m, PILE *out, EPI_HUGEINT outMergeAddItems);
 size_t  TXmergeGetMemUsed ARGS((MERGE *m));
+int     merge_setaccum ARGS((MERGE *m, int on));
 
 extern int      TxMergeFlush;
 

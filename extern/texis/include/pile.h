@@ -65,4 +65,9 @@ size_t  mpile_npiles ARGS((PILE *mptr));
 EPI_HUGEINT mpile_nitems ARGS((PILE *mptr));
 size_t  TXmpileGetMemUsed(MPILE *mptr);
 
+/* --------------------------- Accumulator piles --------------------------- */
+/* one in-memory pile for all rows of a Metamorph index build: see pile.c */
+PILE    *openapile ARGS((int flags, size_t bufsz, void *usr));
+size_t  TXapileGetMemUsed ARGS((PILE *aptr));
+
 #endif  /* !PILE_H */

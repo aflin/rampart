@@ -464,3 +464,414 @@ MPILE   *mptr;
 {
   return(mptr->memused);
 }
+
+/* ============================ Accumulator pile =========================== */
+/* An in-memory pile for building a Metamorph index from table rows read in
+ * token order.  Items are `word nul rest' (see fdbim.c).  Instead of one
+ * sorted pile per row -- which must then be merged with every other row's
+ * pile through a heap, item by item -- each item's `rest' is appended to a
+ * list kept for its word.  Rows come in ascending token order, so each
+ * word's list is already in order; when read, only the distinct words
+ * need sorting.  Reads back as ONE pile, in the same order the merged
+ * per-row piles would give.
+ */
+
+#define APILE_BLK0      16              /* data bytes in a word's 1st block */
+#define APILE_BLKMAX    4096            /* ... and at most, in later ones */
+#define APILE_BLKSZ(n)  ((n) >= 8 ? (size_t)APILE_BLKMAX : ((size_t)APILE_BLK0 << (n)))
+#define APILE_ALIGN(n)  (((n) + (sizeof(void *) - 1)) & ~(sizeof(void *) - 1))
+
+typedef struct ACHUNK_tag       ACHUNK;
+struct ACHUNK_tag                       /* arena chunk; data follows */
+{
+  ACHUNK        *next;
+};
+
+typedef struct AWORD_tag
+{
+  byte          *wd;                    /* the word, nul-terminated */
+  size_t        wlen;                   /* its length, including the nul */
+  byte          *first, *last;          /* its blocks: [next ptr][data] */
+  byte          *cur, *end;             /* write position in `last' */
+  size_t        used;                   /* data bytes written */
+  unsigned      nblk;                   /* number of blocks */
+  unsigned      hash;
+}
+AWORD;
+
+typedef struct APILE_tag
+{
+  PILE          hdr;                    /* public header (must be 1st) */
+  PILEF         flags;
+  ACHUNK        *chunks;                /* arena */
+  byte          *ccur, *cend;
+  size_t        chunksz;
+  AWORD         **tab;                  /* hash table (write mode) */
+  size_t        tabsz, nwords;
+  AWORD         **sorted;               /* words in order (read mode) */
+  size_t        sidx;                   /* next word to read */
+  AWORD         *rw;                    /* word being read */
+  byte          *rblk;                  /*   its current block */
+  size_t        rblkoff, rblksz, rleft; /*   position; data bytes left */
+  unsigned      rblkn;
+  byte          *item;                  /* current item, rebuilt for reader */
+  size_t        itemsz;
+  size_t        memused, bufsz;
+  EPI_HUGEINT   nitems;
+}
+APILE;
+
+static PILE  *closeapile ARGS((PILE *aptr));
+static int    apile_put ARGS((PILE *aptr, PILE *src));
+static int    apile_get ARGS((PILE *aptr));
+static PILE  *apile_next ARGS((PILE *aptr));
+static int    apile_flip ARGS((PILE *aptr));
+static size_t apile_npiles ARGS((PILE *aptr));
+static EPI_HUGEINT apile_nitems ARGS((PILE *aptr));
+
+static CONST PILEFUNCS ApileFuncs =
+{
+  closeapile,
+  apile_put,
+  apile_get,
+  apile_next,
+  apile_flip,
+  apile_npiles,
+  apile_nitems,
+  NULL                                          /* mergeFinished() */
+};
+
+static byte *
+apile_alloc(APILE *ap, size_t n)
+/* Returns `n' bytes of arena memory (pointer-aligned), or NULL. */
+{
+  ACHUNK        *c;
+  size_t        sz;
+  byte          *ret;
+
+  n = APILE_ALIGN(n);
+  if ((size_t)(ap->cend - ap->ccur) < n)
+    {
+      sz = ap->chunksz;
+      if (sz < n) sz = n;
+      c = (ACHUNK *)TXmalloc(TXPMBUFPN, __FUNCTION__, sizeof(ACHUNK) + sz);
+      if (!c) return(BYTEPN);
+      c->next = ap->chunks;
+      ap->chunks = c;
+      ap->ccur = (byte *)(c + 1);
+      ap->cend = ap->ccur + sz;
+      ap->memused += sizeof(ACHUNK) + sz;
+    }
+  ret = ap->ccur;
+  ap->ccur += n;
+  return(ret);
+}
+
+static int
+apile_write(APILE *ap, AWORD *w, CONST byte *s, size_t n)
+/* Appends `n' bytes to word `w's list.  Returns 0 on error. */
+{
+  size_t        k, sz;
+  byte          *b;
+
+  w->used += n;
+  while (n > 0)
+    {
+      if (w->cur == w->end)                     /* block full: add one */
+        {
+          sz = APILE_BLKSZ(w->nblk);
+          if (!(b = apile_alloc(ap, sizeof(byte *) + sz))) return(0);
+          *(byte **)b = BYTEPN;
+          if (w->last) *(byte **)w->last = b;
+          else w->first = b;
+          w->last = b;
+          w->cur = b + sizeof(byte *);
+          w->end = w->cur + sz;
+          w->nblk++;
+        }
+      k = (size_t)(w->end - w->cur);
+      if (k > n) k = n;
+      memcpy(w->cur, s, k);
+      w->cur += k;
+      s += k;
+      n -= k;
+    }
+  return(1);
+}
+
+static void
+apile_read(APILE *ap, byte *d, size_t n)
+/* Reads the next `n' bytes of the word being read into `d'. */
+{
+  size_t        k;
+
+  ap->rleft -= n;
+  while (n > 0)
+    {
+      if (ap->rblkoff == ap->rblksz)            /* next block */
+        {
+          ap->rblk = *(byte **)ap->rblk;
+          ap->rblkn++;
+          ap->rblksz = APILE_BLKSZ(ap->rblkn);
+          ap->rblkoff = 0;
+        }
+      k = ap->rblksz - ap->rblkoff;
+      if (k > n) k = n;
+      memcpy(d, ap->rblk + sizeof(byte *) + ap->rblkoff, k);
+      ap->rblkoff += k;
+      d += k;
+      n -= k;
+    }
+}
+
+static int
+apile_growtab(APILE *ap)
+/* Doubles the hash table.  Returns 0 on error. */
+{
+  AWORD         **nt, *w;
+  size_t        nsz = (ap->tabsz ? ap->tabsz << 1 : 4096), i, j;
+
+  nt = (AWORD **)TXcalloc(TXPMBUFPN, __FUNCTION__, nsz, sizeof(AWORD *));
+  if (!nt) return(0);
+  for (i = 0; i < ap->tabsz; i++)
+    if ((w = ap->tab[i]) != NULL)
+      {
+        for (j = w->hash & (nsz - 1); nt[j]; j = (j + 1) & (nsz - 1));
+        nt[j] = w;
+      }
+  ap->memused += (nsz - ap->tabsz)*sizeof(AWORD *);
+  TXfree(ap->tab);
+  ap->tab = nt;
+  ap->tabsz = nsz;
+  return(1);
+}
+
+PILE *
+openapile(flags, bufsz, usr)
+int     flags;
+size_t  bufsz;
+void    *usr;
+/* Opens accumulator pile.  `bufsz' is the memory to use before
+ * apile_put() asks for a merge.  `flags' must be PILEF_WRITE.
+ */
+{
+  APILE *ap;
+  size_t n;
+
+  (void)usr;
+  if (!(ap = (APILE *)TXcalloc(TXPMBUFPN, __FUNCTION__, 1, sizeof(APILE))))
+    return(PILEPN);
+  ap->hdr.funcs = &ApileFuncs;
+  ap->flags = (PILEF)flags;
+  ap->bufsz = bufsz;
+  ap->memused = sizeof(APILE);
+  n = (bufsz >> 5);                             /* chunk size, as MPILE */
+  if (n < MINPREFCHUNKSZ) n = MINPREFCHUNKSZ;
+  else if (n > MAXPREFCHUNKSZ) n = MAXPREFCHUNKSZ;
+  ap->chunksz = n;
+  if (!apile_growtab(ap)) return(closeapile((PILE *)ap));
+  return((PILE *)ap);
+}
+
+static PILE *
+closeapile(aptr)
+PILE    *aptr;
+{
+  APILE         *ap = (APILE *)aptr;
+  ACHUNK        *c, *next;
+
+  if (!ap) return(PILEPN);
+  for (c = ap->chunks; c; c = next)
+    {
+      next = c->next;
+      TXfree(c);
+    }
+  TXfree(ap->tab);
+  TXfree(ap->sorted);
+  TXfree(ap->item);
+  TXfree(ap);
+  return(PILEPN);
+}
+
+static int
+apile_put(aptr, src)
+PILE    *aptr, *src;
+/* Adds item `src' (`word nul rest') to the pile.  Returns 0 on error,
+ * 1 if ok, 2 if ok and the memory limit is reached.
+ */
+{
+  APILE         *ap = (APILE *)aptr;
+  AWORD         *w;
+  CONST byte    *s = src->blk, *e;
+  size_t        wlen, tlen, i, n;
+  unsigned      h = 2166136261u;
+  byte          lenbuf[10], *d;
+
+  e = (CONST byte *)memchr(s, '\0', src->blksz);
+  if (!e)
+    {
+      putmsg(MERR, __FUNCTION__, "Internal error: item has no word");
+      return(0);
+    }
+  wlen = (size_t)(e - s) + 1;
+  tlen = src->blksz - wlen;
+  for (i = 0; i + 1 < wlen; i++) h = (h ^ s[i])*16777619u;      /* FNV-1a */
+
+  for (i = h & (ap->tabsz - 1); (w = ap->tab[i]) != NULL;
+       i = (i + 1) & (ap->tabsz - 1))
+    if (w->hash == h && w->wlen == wlen && memcmp(w->wd, s, wlen) == 0)
+      break;
+  if (!w)                                       /* new word */
+    {
+      if (!(d = apile_alloc(ap, sizeof(AWORD) + wlen))) return(0);
+      w = (AWORD *)d;
+      memset(w, 0, sizeof(AWORD));
+      w->wd = d + sizeof(AWORD);
+      memcpy(w->wd, s, wlen);
+      w->wlen = wlen;
+      w->hash = h;
+      ap->tab[i] = w;
+      if (++ap->nwords > (ap->tabsz >> 1) && !apile_growtab(ap)) return(0);
+    }
+
+  d = lenbuf;                                   /* length of `rest', 7 bits */
+  for (n = tlen; n >= 0x80; n >>= 7) *(d++) = (byte)(n | 0x80);  /* a byte */
+  *(d++) = (byte)n;
+  if (!apile_write(ap, w, lenbuf, (size_t)(d - lenbuf)) ||
+      !apile_write(ap, w, s + wlen, tlen))
+    return(0);
+  ap->nitems++;
+  return(ap->memused >= ap->bufsz ? 2 : 1);
+}
+
+static int
+apile_wordcmp(CONST void *a, CONST void *b)
+/* Word order, as the merge compares items (memcmp from the item start;
+ * the nul ends a word that is the start of another before it).
+ */
+{
+  CONST AWORD   *wa = *(AWORD * CONST *)a, *wb = *(AWORD * CONST *)b;
+  int           c;
+
+  c = memcmp(wa->wd, wb->wd, (wa->wlen < wb->wlen ? wa->wlen : wb->wlen));
+  return(c ? c : (wa->wlen < wb->wlen ? -1 : (wa->wlen > wb->wlen ? 1 : 0)));
+}
+
+static int
+apile_flip(aptr)
+PILE    *aptr;
+/* Flips pile from write mode to read mode.  Returns 0 on error. */
+{
+  APILE         *ap = (APILE *)aptr;
+  size_t        i, n = 0;
+
+  ap->sorted = (AWORD **)TXcalloc(TXPMBUFPN, __FUNCTION__, ap->nwords + 1,
+                                  sizeof(AWORD *));
+  if (!ap->sorted) return(0);
+  for (i = 0; i < ap->tabsz; i++)
+    if (ap->tab[i]) ap->sorted[n++] = ap->tab[i];
+  ap->tab = TXfree(ap->tab);
+  ap->tabsz = 0;
+  qsort(ap->sorted, n, sizeof(AWORD *), apile_wordcmp);
+  ap->sidx = 0;
+  ap->rw = NULL;
+  ap->rleft = 0;
+  ap->hdr.blk = BYTEPN;
+  ap->hdr.blksz = 0;
+  ap->flags &= ~PILEF_WRITE;
+  return(1);
+}
+
+static int
+apile_get(aptr)
+PILE    *aptr;
+/* Reads next item into hdr.blk/blksz.  Returns 1 if ok, 0 at the end,
+ * -1 on error.
+ */
+{
+  APILE         *ap = (APILE *)aptr;
+  AWORD         *w;
+  size_t        tlen, need;
+  int           shift;
+  byte          c;
+
+  if (ap->rleft == 0)                           /* next word */
+    {
+      if (ap->sidx >= ap->nwords)
+        {
+          ap->hdr.blk = BYTEPN;
+          ap->hdr.blksz = 0;
+          return(0);
+        }
+      w = ap->rw = ap->sorted[ap->sidx++];
+      ap->rleft = w->used;
+      ap->rblk = w->first;
+      ap->rblkn = 0;
+      ap->rblksz = APILE_BLKSZ(0);
+      ap->rblkoff = 0;
+    }
+  w = ap->rw;
+  tlen = 0;
+  shift = 0;
+  do                                            /* length of `rest' */
+    {
+      apile_read(ap, &c, 1);
+      tlen |= ((size_t)(c & 0x7f) << shift);
+      shift += 7;
+    }
+  while (c & 0x80);
+  /* room for the item, and zero padding for an integer compare of
+   * its start (WTIX_HUGEUINT_CMP):
+   */
+  need = w->wlen + tlen + sizeof(EPI_HUGEUINT);
+  if (need > ap->itemsz)
+    {
+      TXfree(ap->item);
+      ap->itemsz = need + (need >> 1) + 64;
+      ap->item = (byte *)TXmalloc(TXPMBUFPN, __FUNCTION__, ap->itemsz);
+      if (!ap->item)
+        {
+          ap->itemsz = 0;
+          return(-1);
+        }
+    }
+  memcpy(ap->item, w->wd, w->wlen);
+  apile_read(ap, ap->item + w->wlen, tlen);
+  memset(ap->item + w->wlen + tlen, 0, sizeof(EPI_HUGEUINT));
+  ap->hdr.blk = ap->item;
+  ap->hdr.blksz = w->wlen + tlen;
+  return(1);
+}
+
+static PILE *
+apile_next(aptr)
+PILE    *aptr;
+/* Write mode (a new table row): the same pile goes on.  Read mode: there
+ * is only the one pile, so NULL.
+ */
+{
+  APILE *ap = (APILE *)aptr;
+
+  return((ap->flags & PILEF_WRITE) ? aptr : PILEPN);
+}
+
+static size_t
+apile_npiles(aptr)
+PILE    *aptr;
+{
+  return(((APILE *)aptr)->nitems > 0 ? 1 : 0);
+}
+
+static EPI_HUGEINT
+apile_nitems(aptr)
+PILE    *aptr;
+{
+  return(((APILE *)aptr)->nitems);
+}
+
+size_t
+TXapileGetMemUsed(aptr)
+PILE    *aptr;
+{
+  return(((APILE *)aptr)->memused);
+}

@@ -54,6 +54,44 @@ fin:
   *iloc = key;
 }
 
+void FUNC(TXfheapReplaceTop) ARGS((FHEAP *fh, void *key));
+void FUNC(
+TXfheapReplaceTop)(fh, key)
+FHEAP   *fh;
+void    *key;
+/* Replaces the top element of non-empty heap `fh' with `key': the same
+ * result as a delete-top followed by an insert of `key', in one pass
+ * down the heap instead of one down and one up.
+ */
+{
+  int   i, l, last, lastp;
+  void  **lloc, **rloc, **iloc;
+
+  iloc = fh->buf;
+  last = (int)fh->n - 1;                        /* last node in array */
+  if (last <= 0) goto fin;                      /* only 1 node */
+  lastp = PARENT(last);                         /* parent of last node */
+  for (i = 0; i <= lastp; i = l, iloc = lloc)
+    {
+      l = LEFT(i);
+      lloc = fh->buf + l;
+      if (l < last)                             /* i has right child too */
+        {
+          rloc = lloc + 1;
+          if (CMP(fh, *lloc, *rloc, fh->usr) > 0) /* right child smaller */
+            {
+              l++;
+              lloc = rloc;
+            }
+        }
+      if (CMP(fh, key, *lloc, fh->usr) <= 0)    /* heap ok here; stop */
+        break;
+      *iloc = *lloc;
+    }
+fin:
+  *iloc = key;
+}
+
 int FUNC(TXfheapInsert) ARGS((FHEAP *fh, void *key));
 int FUNC(
 TXfheapInsert)(fh, key)

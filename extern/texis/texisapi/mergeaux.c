@@ -12,11 +12,9 @@ merge_onepass)(MERGE *m, PILE *out)
   PILE          *p, *p1 = NULL, *p2 = NULL;
   MERGECMP      *cmp;
   void          *usr;
-  int           (*insert) ARGS((FHEAP *fh, void *key));
   void          (*deletetop) ARGS((FHEAP *fh));
 
-  insert = m->heap->insert;                     /* alias for speed */
-  deletetop = m->heap->deletetop;
+  deletetop = m->heap->deletetop;               /* alias for speed */
   m->doneitems = (EPI_HUGEINT)0;
   while (fheap_num(m->heap) > 2)                /* merge heap until small */
     {
@@ -24,24 +22,29 @@ merge_onepass)(MERGE *m, PILE *out)
       /* wtf save pile_put() return value in case do-merge flag returned?: */
       /* pile_put() may update meter via merge_incdone(): */
       if (!pile_put(out, p)) goto err;          /* write out top block */
-      deletetop(m->heap);                       /*   and delete it */
 #ifdef MERGE_METER
       m->doneitems++;                           /* we put an item */
       METER_UPDATEDONE(m->meter, m->doneitems);
 #endif /* MERGE_METER */
+      /* `p' stays at the top of the heap while its next item is read:
+       * then one pass down the heap puts it in place (replace-top),
+       * instead of a delete-top and an insert.
+       */
       switch (pile_get(p))
         {
-        case 1:                                 /* more data: re-insert */
-          if (!insert(m->heap, p))
-            {
-              closepile(p);                     /* close "orphan" pile */
-              goto err;
-            }
+        case 1:                                 /* more data: re-place it */
+#ifdef MERGE_WTIX
+          TXfheapReplaceTopWtix(m->heap, p);
+#else /* !MERGE_WTIX */
+          TXfheapReplaceTopCmp(m->heap, p);
+#endif /* !MERGE_WTIX */
           break;
         case 0:                                 /* EOF */
+          deletetop(m->heap);
           closepile(p);
           break;
         default:                                /* error */
+          deletetop(m->heap);
           closepile(p);
           goto err;
         }

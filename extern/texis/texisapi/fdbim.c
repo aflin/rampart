@@ -376,6 +376,7 @@ static CONST char       CantFstat[] = "Cannot fstat `%s': %s";
 static CONST char       CantDel[] = "Cannot delete `%s': %s";
 size_t          FdbiWriteBufSz = (128*1024);    /* see also setprop.c */
 int             TxIndexSlurp = 1;               /* see also setprop.c */
+int             TxIndexAccum = 1;               /* one accumulator pile */
 int             TxIndexAppend = 1;              /* see also setprop.c */
 int             TxIndexWriteSplit = 1;          /* see also setprop.c */
 
@@ -2934,6 +2935,13 @@ WTIX    *wxparent;      /* Parent object, for indexmeter */
           wx->m = openmerge(MERGECMP_WTIX, wx, wx->options.indexmem,
                             (PILEOPENFUNC *)openwpile);
           if (wx->m == MERGEPN) goto err;
+          /* A new index is built from table rows in token order: keep
+           * each word's data together as it comes (one pile) instead
+           * of a sorted pile per row to be merged with all the others:
+           */
+          if (TxIndexAccum &&
+              !(wx->flags & (WTIXF_UPDATE | WTIXF_COMPACT | WTIXF_VERIFY)))
+            merge_setaccum(wx->m, 1);
         }
       TXcatpath(path, indfile, FDBI_TOKSUF);
       f = (TX_O_BINARY);
