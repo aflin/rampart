@@ -8,7 +8,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Server Properties &mdash; Rampart 0.7.2 documentation</title>
+  <title>Server Properties &mdash; Rampart 0.7.6 documentation</title>
   
 
   
@@ -37,7 +37,7 @@
         <link rel="index" title="Index"
               href="genindex.html"/>
         <link rel="search" title="Search" href="search.html"/>
-    <link rel="top" title="Rampart 0.7.2 documentation" href="index.html"/>
+    <link rel="top" title="Rampart 0.7.6 documentation" href="index.html"/>
         <link rel="up" title="The rampart-sql module" href="sqltoc.html"/>
         <link rel="next" title="The rampart-sql Command Line Utilities" href="sql-utils.html"/>
         <link rel="prev" title="Server Functions" href="sql-server-funcs.html"/> 
@@ -106,6 +106,7 @@
 <li class="toctree-l4"><a class="reference internal" href="#textsearchmode">textSearchMode</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#stringcomparemode">stringCompareMode</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#stringcomparemode-textsearchmode-parameters">stringCompareMode/textSearchMode parameters</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#blobzcompresslevel">blobzCompressLevel</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#btreecachesize">btreeCacheSize</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#ramrows">ramRows</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#ramlimit">ramLimit</a></li>
@@ -231,6 +232,7 @@
 </ul>
 </li>
 <li class="toctree-l3"><a class="reference internal" href="#miscellaneous-properties">Miscellaneous Properties</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#nolocking">noLocking</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#tablespace">tableSpace</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#datefmt">dateFmt</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#timezone">timeZone</a></li>
@@ -643,6 +645,19 @@ attempt to use the index whose (creation-time) textsearchmode is closest to
 the current value.</p>
 </div></blockquote>
 </div>
+<div class="section" id="blobzcompresslevel">
+<h3>blobzCompressLevel<a class="headerlink" href="#blobzcompresslevel" title="Permalink to this headline">¶</a></h3>
+<blockquote>
+<div><p>The gzip compression level for new <code class="docutils literal notranslate"><span class="pre">blobz</span></code> writes, from <code class="docutils literal notranslate"><span class="pre">0</span></code> (stored
+uncompressed) to <code class="docutils literal notranslate"><span class="pre">9</span></code> (smallest), or <code class="docutils literal notranslate"><span class="pre">-1</span></code> for the zlib default,
+which is level 6.  The default is <code class="docutils literal notranslate"><span class="pre">-1</span></code>.</p>
+<p>It only affects rows written while it is set, and reading needs no
+setting, so a table can hold rows written at different levels.  Each
+value is compressed on its own, so higher levels gain little on short
+documents: on a Wikipedia table level 9 saved 0.02% over the default.
+Lower levels make bulk loads cheaper at a real cost in size.</p>
+</div></blockquote>
+</div>
 <div class="section" id="btreecachesize">
 <h3>btreeCacheSize<a class="headerlink" href="#btreecachesize" title="Permalink to this headline">¶</a></h3>
 <blockquote>
@@ -692,9 +707,18 @@ processed from this list.</div></blockquote>
 <div class="section" id="optimize-nooptimize">
 <h3>optimize,noOptimize<a class="headerlink" href="#optimize-nooptimize" title="Permalink to this headline">¶</a></h3>
 <blockquote>
-<div><p>Enable or disable optimizations. The argument should be a comma
-separated list of optimizations that you want to enable or disable.
-The available optimizations are:</p>
+<div><p>Enable or disable optimizations. The argument is the name of an
+optimization, a comma separated list of names, or an <span class="green">Array</span>
+of names. An unknown name is an error, and nothing is changed.</p>
+<p>The settings apply to the connection they are set on. Each call adds
+to what the connection has already set, and <code class="docutils literal notranslate"><span class="pre">sql.reset()</span></code> returns
+all of them to their defaults.</p>
+<p><code class="docutils literal notranslate"><span class="pre">sql.get()</span></code> reports only what differs from the defaults:
+<code class="docutils literal notranslate"><span class="pre">optimize</span></code> is the list of optimizations turned on that are off by
+default, and <code class="docutils literal notranslate"><span class="pre">noOptimize</span></code> the list turned off that are on by
+default. Neither is present when nothing has been changed. Both are
+in the form <code class="docutils literal notranslate"><span class="pre">sql.set()</span></code> accepts.</p>
+<p>The available optimizations are:</p>
 <dl class="docutils">
 <dt>join</dt>
 <dd>Optimize join table order. The default is enabled. When enabled
@@ -803,7 +827,17 @@ indexing virtual fields (especially with large rows) by freeing
 certain buffers when no longer needed.  Currently this only applies
 to Metamorph and Metamorph inverted (“text”) indexes.</dd>
 </dl>
-<p>Example: <code class="docutils literal notranslate"><span class="pre">sql.set({nooptimize:&quot;minimallocking&quot;});</span></code></p>
+<p>Examples:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">sql</span><span class="p">.</span><span class="nx">set</span><span class="p">({</span><span class="nx">noOptimize</span><span class="o">:</span> <span class="s2">&quot;minimallocking&quot;</span><span class="p">});</span>
+
+<span class="cm">/* build a fulltext index with the table locked throughout */</span>
+<span class="nx">sql</span><span class="p">.</span><span class="nx">set</span><span class="p">({</span><span class="nx">optimize</span><span class="o">:</span> <span class="p">[</span><span class="s2">&quot;indexbatchbuild&quot;</span><span class="p">]});</span>
+<span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span><span class="s2">&quot;create fulltext index mytable_Doc_ftx on mytable(Doc)&quot;</span><span class="p">);</span>
+
+<span class="nx">sql</span><span class="p">.</span><span class="nx">get</span><span class="p">(</span><span class="s2">&quot;optimize&quot;</span><span class="p">);</span>     <span class="cm">/* &quot;indexbatchbuild&quot; */</span>
+<span class="nx">sql</span><span class="p">.</span><span class="nx">get</span><span class="p">(</span><span class="s2">&quot;noOptimize&quot;</span><span class="p">);</span>   <span class="cm">/* &quot;minimallocking&quot;  */</span>
+</pre></div>
+</div>
 </div></blockquote>
 </div>
 <div class="section" id="options-nooptions">
@@ -2032,7 +2066,7 @@ stack.</p>
 descriptions): <code class="docutils literal notranslate"><span class="pre">split</span></code> (<code class="docutils literal notranslate"><span class="pre">'auto'</span></code> | <code class="docutils literal notranslate"><span class="pre">'window'</span></code>),
 <code class="docutils literal notranslate"><span class="pre">minTokens</span></code>, <code class="docutils literal notranslate"><span class="pre">packParagraphs</span></code>, and <code class="docutils literal notranslate"><span class="pre">sentenceSplit</span></code>
 (sentence-boundary packing of oversized paragraphs; multi-script,
-default <code class="docutils literal notranslate"><span class="pre">false</span></code>).  These change <code class="docutils literal notranslate"><span class="pre">chunkembed()</span></code>’s chunk
+default <code class="docutils literal notranslate"><span class="pre">true</span></code>).  These change <code class="docutils literal notranslate"><span class="pre">chunkembed()</span></code>’s chunk
 boundaries: a table’s build settings and any HEADERLESS serving
 must agree — values written by current <code class="docutils literal notranslate"><span class="pre">chunkembed()</span></code> carry
 their spans in-band and don’t depend on this agreement.</p>
@@ -2699,6 +2733,23 @@ disable read buffering. Aka <code class="docutils literal notranslate"><span cla
 <div class="section" id="miscellaneous-properties">
 <h2>Miscellaneous Properties<a class="headerlink" href="#miscellaneous-properties" title="Permalink to this headline">¶</a></h2>
 <p>These properties do not fit nicely into a group, and are presented here.</p>
+<div class="section" id="nolocking">
+<h3>noLocking<a class="headerlink" href="#nolocking" title="Permalink to this headline">¶</a></h3>
+<blockquote>
+<div><p>Boolean, <code class="docutils literal notranslate"><span class="pre">false</span></code> by default.  If <code class="docutils literal notranslate"><span class="pre">true</span></code>, this connection does not
+lock tables at all.  Each insert, update or delete otherwise asks the
+lock server for a dozen or more locks, so for row-by-row loads this
+is most of the time spent: on a test table, single-row inserts went
+from about 4 ms each to about 0.2 ms.</p>
+<p>Only use it when nothing else writes to the database while it is
+set, e.g. when building a new table that no other process uses yet.
+Two writers without locks can corrupt a table, and readers in other
+processes may see partly written data.</p>
+<p>The setting applies only to the connection object it is set on, and
+<code class="docutils literal notranslate"><span class="pre">sql.reset()</span></code> turns it off again.</p>
+<p>Example: <code class="docutils literal notranslate"><span class="pre">sql.set({noLocking:</span> <span class="pre">true});</span></code></p>
+</div></blockquote>
+</div>
 <div class="section" id="tablespace">
 <h3>tableSpace<a class="headerlink" href="#tablespace" title="Permalink to this headline">¶</a></h3>
 <blockquote>
@@ -3379,7 +3430,7 @@ even when they happen to hold <code class="docutils literal notranslate"><span c
     <script type="text/javascript">
         var DOCUMENTATION_OPTIONS = {
             URL_ROOT:'./',
-            VERSION:'0.7.2',
+            VERSION:'0.7.6',
             COLLAPSE_INDEX:false,
             FILE_SUFFIX:'.html',
             HAS_SOURCE:  true,

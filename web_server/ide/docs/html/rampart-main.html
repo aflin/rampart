@@ -8,7 +8,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Introduction to Rampart &mdash; Rampart 0.7.2 documentation</title>
+  <title>Introduction to Rampart &mdash; Rampart 0.7.6 documentation</title>
   
 
   
@@ -37,7 +37,7 @@
         <link rel="index" title="Index"
               href="genindex.html"/>
         <link rel="search" title="Search" href="search.html"/>
-    <link rel="top" title="Rampart 0.7.2 documentation" href="index.html"/>
+    <link rel="top" title="Rampart 0.7.6 documentation" href="index.html"/>
         <link rel="next" title="rampart.utils" href="rampart-utils.html"/>
         <link rel="prev" title="Welcome to Rampart’s documentation." href="index.html"/> 
 
@@ -171,6 +171,7 @@
 <li class="toctree-l3"><a class="reference internal" href="#console-extras">console Extras</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#proxy-revocable">Proxy.revocable</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#reflect">Reflect</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#bigint">BigInt</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#whatwg-w3c-web-platform-apis-experimental">WHATWG / W3C Web Platform APIs (experimental)</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#intl">Intl</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#other-globals">Other Globals</a></li>
@@ -1760,6 +1761,31 @@ getter or setter, so omitting it matters only for accessor properties.
 <code class="docutils literal notranslate"><span class="pre">Reflect.has()</span></code>, <code class="docutils literal notranslate"><span class="pre">Reflect.deleteProperty()</span></code> and <code class="docutils literal notranslate"><span class="pre">Reflect.ownKeys()</span></code>
 take no <code class="docutils literal notranslate"><span class="pre">receiver</span></code> and are unaffected.</p>
 </div>
+<div class="section" id="bigint">
+<h3>BigInt<a class="headerlink" href="#bigint" title="Permalink to this headline">¶</a></h3>
+<p>Rampart supports the ES2020 <code class="docutils literal notranslate"><span class="pre">BigInt</span></code> type for arbitrarily large integers,
+built into the JavaScript engine.  This includes <code class="docutils literal notranslate"><span class="pre">123n</span></code> literals,
+<code class="docutils literal notranslate"><span class="pre">typeof</span> <span class="pre">x</span> <span class="pre">===</span> <span class="pre">&quot;bigint&quot;</span></code>, the <code class="docutils literal notranslate"><span class="pre">BigInt()</span></code> function, <code class="docutils literal notranslate"><span class="pre">BigInt.asIntN()</span></code> and
+<code class="docutils literal notranslate"><span class="pre">BigInt.asUintN()</span></code>, <code class="docutils literal notranslate"><span class="pre">toString(radix)</span></code>, the arithmetic, bitwise and
+comparison operators, <code class="docutils literal notranslate"><span class="pre">BigInt64Array</span></code> / <code class="docutils literal notranslate"><span class="pre">BigUint64Array</span></code>, and
+<code class="docutils literal notranslate"><span class="pre">DataView</span></code>’s <code class="docutils literal notranslate"><span class="pre">getBigInt64()</span></code> / <code class="docutils literal notranslate"><span class="pre">setBigInt64()</span></code> / <code class="docutils literal notranslate"><span class="pre">getBigUint64()</span></code> /
+<code class="docutils literal notranslate"><span class="pre">setBigUint64()</span></code>.  No transpiler is needed.</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">big</span> <span class="o">=</span> <span class="mi">2</span><span class="nx">n</span> <span class="o">**</span> <span class="mi">100</span><span class="nx">n</span><span class="p">;</span>
+<span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="nx">big</span><span class="p">);</span>                      <span class="cm">/* 1267650600228229401496703205376 */</span>
+<span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="nx">big</span><span class="p">.</span><span class="nx">toString</span><span class="p">(</span><span class="mi">16</span><span class="p">));</span>         <span class="cm">/* 10000000000000000000000000 */</span>
+<span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="nx">BigInt</span><span class="p">(</span><span class="s2">&quot;0x1f&quot;</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span><span class="nx">n</span><span class="p">);</span>      <span class="cm">/* 32 */</span>
+<span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="mi">10</span><span class="nx">n</span> <span class="o">/</span> <span class="mi">3</span><span class="nx">n</span><span class="p">);</span>                 <span class="cm">/* 3 -- division truncates */</span>
+</pre></div>
+</div>
+<p>As in the standard, <code class="docutils literal notranslate"><span class="pre">BigInt</span></code> and <span class="green">Number</span> values cannot be mixed in
+arithmetic (<code class="docutils literal notranslate"><span class="pre">1n</span> <span class="pre">+</span> <span class="pre">1</span></code> throws a <code class="docutils literal notranslate"><span class="pre">TypeError</span></code>) and <code class="docutils literal notranslate"><span class="pre">JSON.stringify()</span></code> throws
+on a <code class="docutils literal notranslate"><span class="pre">BigInt</span></code>.  Convert explicitly with <code class="docutils literal notranslate"><span class="pre">Number(x)</span></code>, <code class="docutils literal notranslate"><span class="pre">BigInt(n)</span></code> or
+<code class="docutils literal notranslate"><span class="pre">String(x)</span></code>.</p>
+<p><code class="docutils literal notranslate"><span class="pre">BigInt64Array</span></code> and <code class="docutils literal notranslate"><span class="pre">BigUint64Array</span></code> are correct but slower than the
+other typed arrays.</p>
+<p>The older <code class="docutils literal notranslate"><span class="pre">JSBI</span></code> functions in <code class="docutils literal notranslate"><span class="pre">rampart-crypto</span></code> are deprecated in favor of
+the native <code class="docutils literal notranslate"><span class="pre">BigInt</span></code>.  See <a class="reference internal" href="rampart-crypto.html#bigint"><span class="std std-ref">BigInt in rampart-crypto</span></a>.</p>
+</div>
 <div class="section" id="whatwg-w3c-web-platform-apis-experimental">
 <h3>WHATWG / W3C Web Platform APIs (experimental)<a class="headerlink" href="#whatwg-w3c-web-platform-apis-experimental" title="Permalink to this headline">¶</a></h3>
 <p>Rampart includes a substantial subset of browser Web Platform globals
@@ -1791,25 +1817,59 @@ touch <code class="docutils literal notranslate"><span class="pre">Intl</span></
 <code class="docutils literal notranslate"><span class="pre">Segmenter</span></code>, <code class="docutils literal notranslate"><span class="pre">DurationFormat</span></code>, plus <code class="docutils literal notranslate"><span class="pre">Intl.getCanonicalLocales</span></code>
 and <code class="docutils literal notranslate"><span class="pre">Intl.supportedValuesOf</span></code>.  Behaves per
 <a class="reference external" href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Intl">MDN’s Intl reference</a>.</p>
+<p><code class="docutils literal notranslate"><span class="pre">Date.prototype.toLocaleString()</span></code>, <code class="docutils literal notranslate"><span class="pre">toLocaleDateString()</span></code>,
+<code class="docutils literal notranslate"><span class="pre">toLocaleTimeString()</span></code>, <code class="docutils literal notranslate"><span class="pre">Number.prototype.toLocaleString()</span></code> and
+<code class="docutils literal notranslate"><span class="pre">String.prototype.localeCompare()</span></code> use <code class="docutils literal notranslate"><span class="pre">Intl</span></code> when given a locale or
+options, loading it on first use:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="k">new</span> <span class="nb">Date</span><span class="p">(</span><span class="mi">2026</span><span class="p">,</span> <span class="mi">9</span><span class="p">,</span> <span class="mi">22</span><span class="p">).</span><span class="nx">toLocaleDateString</span><span class="p">(</span><span class="s2">&quot;en-US&quot;</span><span class="p">,</span> <span class="p">{</span> <span class="nx">weekday</span><span class="o">:</span> <span class="s2">&quot;long&quot;</span><span class="p">,</span> <span class="nx">year</span><span class="o">:</span> <span class="s2">&quot;numeric&quot;</span><span class="p">,</span>
+                                                   <span class="nx">month</span><span class="o">:</span> <span class="s2">&quot;long&quot;</span><span class="p">,</span> <span class="nx">day</span><span class="o">:</span> <span class="s2">&quot;numeric&quot;</span> <span class="p">});</span>
+<span class="cm">/* &quot;Thursday, October 22, 2026&quot; */</span>
+<span class="p">(</span><span class="mf">1234567.5</span><span class="p">).</span><span class="nx">toLocaleString</span><span class="p">(</span><span class="s2">&quot;de-DE&quot;</span><span class="p">);</span>      <span class="cm">/* &quot;1.234.567,5&quot; */</span>
+</pre></div>
+</div>
+<p>Called with no arguments, they return Rampart’s default format and do not
+load <code class="docutils literal notranslate"><span class="pre">Intl</span></code>.  If <code class="docutils literal notranslate"><span class="pre">rampart-intl</span></code> is not installed, the locale and options
+are ignored and the default format is returned.</p>
 </div>
 <div class="section" id="other-globals">
 <h3>Other Globals<a class="headerlink" href="#other-globals" title="Permalink to this headline">¶</a></h3>
-<ul class="simple">
-<li><code class="docutils literal notranslate"><span class="pre">globalThis</span></code> and <code class="docutils literal notranslate"><span class="pre">global</span></code> — both reference the global object
+<ul>
+<li><p class="first"><code class="docutils literal notranslate"><span class="pre">globalThis</span></code> and <code class="docutils literal notranslate"><span class="pre">global</span></code> — both reference the global object
 (Rampart adds the node-style <code class="docutils literal notranslate"><span class="pre">global</span></code> alias alongside
-<code class="docutils literal notranslate"><span class="pre">globalThis</span></code>).</li>
-<li><code class="docutils literal notranslate"><span class="pre">JSON.parse(text[,</span> <span class="pre">reviver])</span></code> — extended to accept a
+<code class="docutils literal notranslate"><span class="pre">globalThis</span></code>).</p>
+</li>
+<li><p class="first"><code class="docutils literal notranslate"><span class="pre">JSON.parse(text[,</span> <span class="pre">reviver])</span></code> — extended to accept a
 <span class="green">Buffer</span> as <code class="docutils literal notranslate"><span class="pre">text</span></code>.  When <code class="docutils literal notranslate"><span class="pre">reviver</span> <span class="pre">===</span> <span class="pre">true</span></code>, walks the
 parsed tree and resolves <code class="docutils literal notranslate"><span class="pre">{&quot;_cyclic_ref&quot;:&quot;$.path&quot;}</span></code> placeholders
 produced by <code class="docutils literal notranslate"><span class="pre">rampart.utils.sprintf(&quot;%!J&quot;,</span> <span class="pre">obj)</span></code> back into shared
 references, restoring cyclic graphs.  This is a <strong>rampart-specific</strong>
-reviver convention; passing a function reviver behaves per spec.</li>
-<li><code class="docutils literal notranslate"><span class="pre">eval</span></code> — when the transpiler is in effect (<code class="docutils literal notranslate"><span class="pre">-t</span></code> or
-<code class="docutils literal notranslate"><span class="pre">&quot;use</span> <span class="pre">transpiler&quot;</span></code>), the source is lowered before evaluation.
-Otherwise behaves as standard ES5 <code class="docutils literal notranslate"><span class="pre">eval</span></code>.</li>
-<li><code class="docutils literal notranslate"><span class="pre">new</span> <span class="pre">Function(...)</span></code> — bodies are run through the transpiler so
+reviver convention; passing a function reviver behaves per spec.</p>
+</li>
+<li><p class="first"><code class="docutils literal notranslate"><span class="pre">eval</span></code> — always evaluates in the <strong>global scope</strong>, like an indirect
+<code class="docutils literal notranslate"><span class="pre">eval</span></code> in standard JavaScript.  The code cannot read or change the
+local variables of the function that calls <code class="docutils literal notranslate"><span class="pre">eval</span></code>, a <code class="docutils literal notranslate"><span class="pre">var</span></code> it
+declares becomes a global, and <code class="docutils literal notranslate"><span class="pre">this</span></code> is the global object.  The
+value of the last expression is returned.  When the transpiler is in
+effect (<code class="docutils literal notranslate"><span class="pre">-t</span></code> or <code class="docutils literal notranslate"><span class="pre">&quot;use</span> <span class="pre">transpiler&quot;</span></code>), the source is lowered before
+evaluation, so ES2015+ syntax may be used.</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">g</span> <span class="o">=</span> <span class="s2">&quot;global&quot;</span><span class="p">;</span>
+
+<span class="kd">function</span> <span class="nx">f</span><span class="p">()</span> <span class="p">{</span>
+    <span class="kd">var</span> <span class="nx">loc</span> <span class="o">=</span> <span class="s2">&quot;local&quot;</span><span class="p">,</span> <span class="nx">g</span> <span class="o">=</span> <span class="s2">&quot;shadow&quot;</span><span class="p">;</span>
+
+    <span class="nb">eval</span><span class="p">(</span><span class="s2">&quot;g&quot;</span><span class="p">);</span>                 <span class="cm">/* &quot;global&quot;, not &quot;shadow&quot;            */</span>
+    <span class="nb">eval</span><span class="p">(</span><span class="s2">&quot;var made = 5;&quot;</span><span class="p">);</span>     <span class="cm">/* creates the global variable made  */</span>
+    <span class="k">return</span> <span class="nb">eval</span><span class="p">(</span><span class="s2">&quot;loc&quot;</span><span class="p">);</span>        <span class="cm">/* throws ReferenceError             */</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>To give evaluated code access to a local value, pass it in: build a
+function with <code class="docutils literal notranslate"><span class="pre">new</span> <span class="pre">Function(&quot;x&quot;,</span> <span class="pre">code)</span></code> and call it with the value.</p>
+</li>
+<li><p class="first"><code class="docutils literal notranslate"><span class="pre">new</span> <span class="pre">Function(...)</span></code> — bodies are run through the transpiler so
 ES2015+ syntax (classes, <code class="docutils literal notranslate"><span class="pre">async</span></code>, generators) compiles inside
-dynamically-built functions.</li>
+dynamically-built functions.</p>
+</li>
 </ul>
 </div>
 <div class="section" id="settimeout">
@@ -2337,7 +2397,7 @@ an inert string-literal statement.</p>
     <script type="text/javascript">
         var DOCUMENTATION_OPTIONS = {
             URL_ROOT:'./',
-            VERSION:'0.7.2',
+            VERSION:'0.7.6',
             COLLAPSE_INDEX:false,
             FILE_SUFFIX:'.html',
             HAS_SOURCE:  true,

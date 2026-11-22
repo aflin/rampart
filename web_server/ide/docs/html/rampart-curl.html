@@ -8,7 +8,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>The rampart-curl module &mdash; Rampart 0.7.2 documentation</title>
+  <title>The rampart-curl module &mdash; Rampart 0.7.6 documentation</title>
   
 
   
@@ -37,7 +37,7 @@
         <link rel="index" title="Index"
               href="genindex.html"/>
         <link rel="search" title="Search" href="search.html"/>
-    <link rel="top" title="Rampart 0.7.2 documentation" href="index.html"/>
+    <link rel="top" title="Rampart 0.7.6 documentation" href="index.html"/>
         <link rel="next" title="The rampart-lmdb module" href="rampart-lmdb.html"/>
         <link rel="prev" title="The rampart-crypto module" href="rampart-crypto.html"/> 
 
@@ -648,7 +648,7 @@ equivalent.</p>
 <li><code class="docutils literal notranslate"><span class="pre">crlf</span></code> - <span class="green">Boolean</span> - For FTP and STMP -  Convert LF to CRLF in upload.</li>
 <li><code class="docutils literal notranslate"><span class="pre">crlfile</span></code> - <span class="green">String</span> - Provide a file using PEM format with a Certificate Revocation List that may specify peer certificates that are to be considered revoked.</li>
 <li><code class="docutils literal notranslate"><span class="pre">digest</span></code> - <span class="green">Boolean</span> - Enables HTTP Digest authentication.</li>
-<li><code class="docutils literal notranslate"><span class="pre">digest-ie</span></code> - <span class="green">Boolean</span> - Same as <code class="docutils literal notranslate"><span class="pre">digest</span></code>, except curl will use a special “quirk” that IE is known to have used before version 7 and that some servers require the client to use.</li>
+<li><code class="docutils literal notranslate"><span class="pre">digest-ie</span></code> - <span class="green">Boolean</span> - Same as <code class="docutils literal notranslate"><span class="pre">digest</span></code>.  Accepted for compatibility; libcurl no longer has the old Internet Explorer variant.</li>
 <li><code class="docutils literal notranslate"><span class="pre">disable-eprt</span></code> - <span class="green">Boolean</span> - For FTP - Disable the use of the EPRT an LPRT commands.</li>
 <li><code class="docutils literal notranslate"><span class="pre">disable-epsv</span></code> - <span class="green">Boolean</span> - For FTP - Disable the use of the  EPSV Command.</li>
 <li><code class="docutils literal notranslate"><span class="pre">expect100_timeout</span></code> - <span class="green">Number</span> - Maximum time in seconds that you allow curl to wait for a 100-continue response.</li>
@@ -664,7 +664,9 @@ equivalent.</p>
 <li><code class="docutils literal notranslate"><span class="pre">http-any</span></code> - <span class="green">Boolean</span> - When set <code class="docutils literal notranslate"><span class="pre">true</span></code>, curl will use whatever http version it thinks fit.</li>
 <li><code class="docutils literal notranslate"><span class="pre">http1.0</span></code> - <span class="green">Boolean</span> - Tell curl to use HTTP 1.0 requests.</li>
 <li><code class="docutils literal notranslate"><span class="pre">http1.1</span></code> - <span class="green">Boolean</span> - Tell curl to use HTTP 1.1 requests.</li>
-<li><code class="docutils literal notranslate"><span class="pre">http2</span></code> - <span class="green">Boolean</span> - Tell curl to use HTTP 2.0 requests.</li>
+<li><code class="docutils literal notranslate"><span class="pre">http2</span></code> - <span class="green">Boolean</span> - Tell curl to use HTTP 2.0 requests.  HTTPS requests use HTTP/2 by
+default when the server supports it, and fall back to HTTP 1.1 when it does not.  Use <code class="docutils literal notranslate"><span class="pre">http1.1</span></code>
+to stay on HTTP 1.1.</li>
 <li><code class="docutils literal notranslate"><span class="pre">http2-prior-knowledge</span></code> - <span class="green">Boolean</span> - Issue non-TLS HTTP requests using HTTP/2 without HTTP/1.1 Upgrade. It requires prior knowledge that the server supports HTTP/2 straight away.</li>
 <li><code class="docutils literal notranslate"><span class="pre">ignore-content-length</span></code> - <span class="green">Boolean</span> - Ignore the Content-Length header.</li>
 <li><code class="docutils literal notranslate"><span class="pre">insecure</span></code> - <span class="green">Boolean</span> - Skip server certificate check. See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</li>
@@ -741,10 +743,10 @@ specifying <code class="docutils literal notranslate"><span class="pre">libcurl-
 <li><code class="docutils literal notranslate"><span class="pre">netrc-file</span></code> - a <span class="green">String</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</li>
 <li><code class="docutils literal notranslate"><span class="pre">netrc-optional</span></code> - a <span class="green">String</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</li>
 <li><code class="docutils literal notranslate"><span class="pre">no-alpn</span></code>  - a <span class="green">Boolean</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</li>
-<li><code class="docutils literal notranslate"><span class="pre">no-npn</span></code> - a <span class="green">Boolean</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</li>
+<li><code class="docutils literal notranslate"><span class="pre">no-npn</span></code> - a <span class="green">Boolean</span> - Accepted for compatibility and has no effect.  NPN is no longer supported by libcurl; ALPN (see <code class="docutils literal notranslate"><span class="pre">no-alpn</span></code>) is used instead.</li>
 <li><code class="docutils literal notranslate"><span class="pre">no-sessionid</span></code> - a <span class="green">Boolean</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</li>
 <li><code class="docutils literal notranslate"><span class="pre">ntlm</span></code> - a <span class="green">Boolean</span> - <strong>Untested</strong> - Enables NTLM authentication.</li>
-<li><code class="docutils literal notranslate"><span class="pre">ntlm-wb</span></code> - a <span class="green">Boolean</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</li>
+<li><code class="docutils literal notranslate"><span class="pre">ntlm-wb</span></code> - a <span class="green">Boolean</span> - Accepted for compatibility and has no effect.  NTLM delegation to winbind is no longer supported by libcurl.</li>
 <li><code class="docutils literal notranslate"><span class="pre">pinnedpubkey</span></code> - a <span class="green">Boolean</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</li>
 <li><code class="docutils literal notranslate"><span class="pre">preproxy</span></code> - a <span class="green">Boolean</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</li>
 <li><code class="docutils literal notranslate"><span class="pre">proxy-anyauth</span></code> - a <span class="green">Boolean</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</li>
@@ -756,19 +758,19 @@ specifying <code class="docutils literal notranslate"><span class="pre">libcurl-
 <li><code class="docutils literal notranslate"><span class="pre">proxy-ciphers</span></code>  - a <span class="green">String</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</li>
 <li><code class="docutils literal notranslate"><span class="pre">proxy-crlfile</span></code>  - a <span class="green">String</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</li>
 <li><code class="docutils literal notranslate"><span class="pre">proxy-digest</span></code> - a <span class="green">Boolean</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</li>
-<li><code class="docutils literal notranslate"><span class="pre">proxy-digest-ie</span></code> - a <span class="green">Boolean</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</li>
+<li><code class="docutils literal notranslate"><span class="pre">proxy-digest-ie</span></code> - a <span class="green">Boolean</span> - Same as <code class="docutils literal notranslate"><span class="pre">proxy-digest</span></code>.  Accepted for compatibility.</li>
 <li><code class="docutils literal notranslate"><span class="pre">proxy-header</span></code>  - a <span class="green">String</span> or a <span class="green">Array</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</li>
 <li><code class="docutils literal notranslate"><span class="pre">proxy-insecure</span></code> - a <span class="green">Boolean</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</li>
 <li><code class="docutils literal notranslate"><span class="pre">proxy-key</span></code> - a <span class="green">String</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</li>
 <li><code class="docutils literal notranslate"><span class="pre">proxy-key-type</span></code> - a <span class="green">String</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</li>
 <li><code class="docutils literal notranslate"><span class="pre">proxy-negotiate</span></code> - a <span class="green">Boolean</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</li>
 <li><code class="docutils literal notranslate"><span class="pre">proxy-ntlm</span></code>  - a <span class="green">Boolean</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</li>
-<li><code class="docutils literal notranslate"><span class="pre">proxy-ntlm-wb</span></code> - a <span class="green">Boolean</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</li>
+<li><code class="docutils literal notranslate"><span class="pre">proxy-ntlm-wb</span></code> - a <span class="green">Boolean</span> - Accepted for compatibility and has no effect (see <code class="docutils literal notranslate"><span class="pre">ntlm-wb</span></code>).</li>
 <li><code class="docutils literal notranslate"><span class="pre">proxy-pass</span></code> - a <span class="green">String</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</li>
 <li><code class="docutils literal notranslate"><span class="pre">proxy-service-name</span></code> - a <span class="green">String</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</li>
 <li><code class="docutils literal notranslate"><span class="pre">proxy-ssl-allow-beast</span></code> - a <span class="green">Boolean</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</li>
-<li><code class="docutils literal notranslate"><span class="pre">proxy-tlspassword</span></code> - a <span class="green">String</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</li>
-<li><code class="docutils literal notranslate"><span class="pre">proxy-tlsuser</span></code> - a <span class="green">String</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</li>
+<li><code class="docutils literal notranslate"><span class="pre">proxy-tlspassword</span></code> - a <span class="green">String</span> - Accepted for compatibility and has no effect (see <code class="docutils literal notranslate"><span class="pre">tlsuser</span></code>).</li>
+<li><code class="docutils literal notranslate"><span class="pre">proxy-tlsuser</span></code> - a <span class="green">String</span> - Accepted for compatibility and has no effect (see <code class="docutils literal notranslate"><span class="pre">tlsuser</span></code>).</li>
 <li><code class="docutils literal notranslate"><span class="pre">proxy-tlsv1</span></code> - a <span class="green">Boolean</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</li>
 <li><code class="docutils literal notranslate"><span class="pre">proxy-user</span></code> - a <span class="green">String</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</li>
 <li><code class="docutils literal notranslate"><span class="pre">proxy1.0</span></code> - a <span class="green">String</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</li>
@@ -776,7 +778,7 @@ specifying <code class="docutils literal notranslate"><span class="pre">libcurl-
 <li><code class="docutils literal notranslate"><span class="pre">pubkey</span></code> - a <span class="green">String</span> - <strong>Untested</strong> - Public key file name. Allows you to provide
 your public key  in  this  separate file.</li>
 <li><code class="docutils literal notranslate"><span class="pre">quote</span></code> - a <span class="green">String</span> or <span class="green">Array</span> of <span class="green">Strings</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</li>
-<li><code class="docutils literal notranslate"><span class="pre">random-file</span></code> - a <span class="green">String</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</li>
+<li><code class="docutils literal notranslate"><span class="pre">random-file</span></code> - a <span class="green">String</span> - Accepted for compatibility and has no effect.  The TLS library seeds itself.</li>
 <li><code class="docutils literal notranslate"><span class="pre">sasl-ir</span></code> - a <span class="green">Boolean</span> - <strong>Untested</strong> - Enable initial response in SASL authentication.</li>
 <li><code class="docutils literal notranslate"><span class="pre">service-name</span></code> - a <span class="green">String</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</li>
 <li><code class="docutils literal notranslate"><span class="pre">socks4</span></code> - a <span class="green">String</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</li>
@@ -794,8 +796,9 @@ your public key  in  this  separate file.</li>
 <li><code class="docutils literal notranslate"><span class="pre">telnet-option</span></code> - a <span class="green">String</span> or <span class="green">Array</span> of <span class="green">Strings</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</li>
 <li><code class="docutils literal notranslate"><span class="pre">tftp-blksize</span></code> - a <span class="green">Number</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</li>
 <li><code class="docutils literal notranslate"><span class="pre">tftp-no-options</span></code> - a <span class="green">Boolean</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</li>
-<li><code class="docutils literal notranslate"><span class="pre">tlspassword</span></code> - a <span class="green">String</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</li>
-<li><code class="docutils literal notranslate"><span class="pre">tlsuser</span></code> - a <span class="green">String</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</li>
+<li><code class="docutils literal notranslate"><span class="pre">tlspassword</span></code> - a <span class="green">String</span> - Accepted for compatibility and has no effect (see <code class="docutils literal notranslate"><span class="pre">tlsuser</span></code>).</li>
+<li><code class="docutils literal notranslate"><span class="pre">tlsuser</span></code> - a <span class="green">String</span> - Accepted for compatibility and has no effect.  TLS-SRP
+authentication is no longer supported by libcurl.</li>
 <li><code class="docutils literal notranslate"><span class="pre">unix-socket</span></code> - a <span class="green">String</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</li>
 </ul>
 </div></blockquote>
@@ -1883,7 +1886,7 @@ inline in the HTML mail.</p>
     <script type="text/javascript">
         var DOCUMENTATION_OPTIONS = {
             URL_ROOT:'./',
-            VERSION:'0.7.2',
+            VERSION:'0.7.6',
             COLLAPSE_INDEX:false,
             FILE_SUFFIX:'.html',
             HAS_SOURCE:  true,

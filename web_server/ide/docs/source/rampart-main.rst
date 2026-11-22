@@ -1670,6 +1670,36 @@ getter or setter, so omitting it matters only for accessor properties.
 ``Reflect.has()``, ``Reflect.deleteProperty()`` and ``Reflect.ownKeys()``
 take no ``receiver`` and are unaffected.
 
+BigInt
+""""""
+
+Rampart supports the ES2020 ``BigInt`` type for arbitrarily large integers,
+built into the JavaScript engine.  This includes ``123n`` literals,
+``typeof x === "bigint"``, the ``BigInt()`` function, ``BigInt.asIntN()`` and
+``BigInt.asUintN()``, ``toString(radix)``, the arithmetic, bitwise and
+comparison operators, ``BigInt64Array`` / ``BigUint64Array``, and
+``DataView``'s ``getBigInt64()`` / ``setBigInt64()`` / ``getBigUint64()`` /
+``setBigUint64()``.  No transpiler is needed.
+
+.. code-block:: javascript
+
+   var big = 2n ** 100n;
+   console.log(big);                      /* 1267650600228229401496703205376 */
+   console.log(big.toString(16));         /* 10000000000000000000000000 */
+   console.log(BigInt("0x1f") + 1n);      /* 32 */
+   console.log(10n / 3n);                 /* 3 -- division truncates */
+
+As in the standard, ``BigInt`` and :green:`Number` values cannot be mixed in
+arithmetic (``1n + 1`` throws a ``TypeError``) and ``JSON.stringify()`` throws
+on a ``BigInt``.  Convert explicitly with ``Number(x)``, ``BigInt(n)`` or
+``String(x)``.
+
+``BigInt64Array`` and ``BigUint64Array`` are correct but slower than the
+other typed arrays.
+
+The older ``JSBI`` functions in ``rampart-crypto`` are deprecated in favor of
+the native ``BigInt``.  See :ref:`BigInt in rampart-crypto <rampart-crypto:BigInt>`.
+
 WHATWG / W3C Web Platform APIs (experimental)
 """""""""""""""""""""""""""""""""""""""""""""
 
@@ -1707,6 +1737,22 @@ All eight ECMA-402 constructors are available once loaded:
 and ``Intl.supportedValuesOf``.  Behaves per
 `MDN's Intl reference <https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Intl>`_.
 
+``Date.prototype.toLocaleString()``, ``toLocaleDateString()``,
+``toLocaleTimeString()``, ``Number.prototype.toLocaleString()`` and
+``String.prototype.localeCompare()`` use ``Intl`` when given a locale or
+options, loading it on first use:
+
+.. code-block:: javascript
+
+   new Date(2026, 9, 22).toLocaleDateString("en-US", { weekday: "long", year: "numeric",
+                                                      month: "long", day: "numeric" });
+   /* "Thursday, October 22, 2026" */
+   (1234567.5).toLocaleString("de-DE");      /* "1.234.567,5" */
+
+Called with no arguments, they return Rampart's default format and do not
+load ``Intl``.  If ``rampart-intl`` is not installed, the locale and options
+are ignored and the default format is returned.
+
 Other Globals
 """""""""""""
 
@@ -1719,9 +1765,28 @@ Other Globals
   produced by ``rampart.utils.sprintf("%!J", obj)`` back into shared
   references, restoring cyclic graphs.  This is a **rampart-specific**
   reviver convention; passing a function reviver behaves per spec.
-* ``eval`` — when the transpiler is in effect (``-t`` or
-  ``"use transpiler"``), the source is lowered before evaluation.
-  Otherwise behaves as standard ES5 ``eval``.
+* ``eval`` — always evaluates in the **global scope**, like an indirect
+  ``eval`` in standard JavaScript.  The code cannot read or change the
+  local variables of the function that calls ``eval``, a ``var`` it
+  declares becomes a global, and ``this`` is the global object.  The
+  value of the last expression is returned.  When the transpiler is in
+  effect (``-t`` or ``"use transpiler"``), the source is lowered before
+  evaluation, so ES2015+ syntax may be used.
+
+  .. code-block:: javascript
+
+     var g = "global";
+
+     function f() {
+         var loc = "local", g = "shadow";
+
+         eval("g");                 /* "global", not "shadow"            */
+         eval("var made = 5;");     /* creates the global variable made  */
+         return eval("loc");        /* throws ReferenceError             */
+     }
+
+  To give evaluated code access to a local value, pass it in: build a
+  function with ``new Function("x", code)`` and call it with the value.
 * ``new Function(...)`` — bodies are run through the transpiler so
   ES2015+ syntax (classes, ``async``, generators) compiles inside
   dynamically-built functions.

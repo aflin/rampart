@@ -900,6 +900,165 @@ Example:
 
     */
 
+toMarkdown
+""""""""""
+
+Return an :green:`Array` of :green:`Strings` (or optionally a concatenated
+:green:`String`), each string being Markdown for one of the given elements
+and its children.  Headings, emphasis, code, blockquotes, lists, links and
+tables are kept, as GitHub-style Markdown.  Elements with no Markdown form
+contribute their text.  The output converts to HTML with
+`rampart-cmark <rampart-cmark.html>`_ and its default options.
+
+Usage:
+
+.. code-block:: javascript
+
+    var md = hobj.toMarkdown([options]);
+
+Where:
+
+* ``md`` is the return value.
+
+* ``hobj`` is an *html object* with 0 or more elements.
+
+*  ``options`` is an :green:`Object` with the following settings:
+
+    * ``concatenate`` - a :green:`Boolean` if true, return one
+      :green:`String` instead of an :green:`Array`.  Default is ``false``.
+
+    * ``headings`` - a :green:`Boolean`, ``<h1>``-``<h6>`` become ``#``
+      headings.  Default is ``true``.
+
+    * ``emphasis`` - a :green:`Boolean`, ``<b>``/``<strong>`` become
+      ``**text**``, ``<i>``/``<em>`` become ``*text*`` and
+      ``<del>``/``<s>``/``<strike>`` become ``~~text~~``.
+      Default is ``true``.
+
+    * ``code`` - a :green:`Boolean`, ``<code>`` becomes a code span and
+      ``<pre>`` a fenced block.  A ``language-x`` or ``lang-x`` class
+      supplies the language of the block.  Default is ``true``.
+
+    * ``blockquote`` - a :green:`Boolean`, ``<blockquote>`` becomes ``>``
+      prefixed lines.  Default is ``true``.
+
+    * ``tables`` - a :green:`Boolean`, ``<table>`` becomes a pipe table.
+      When false, each table row is one line of text.  Default is ``true``.
+
+    * ``tableFallback`` - a :green:`String`, how a table nested in a table
+      cell is written, as pipe tables cannot nest: ``"text"`` for its text,
+      or ``"skip"`` to leave it out.
+      A table whose only cell holds another table is treated as layout and
+      this does not apply.  Default is ``"text"``.
+
+    * ``escape`` - a :green:`Boolean`, add a backslash to text that would
+      otherwise be read as Markdown.  Only text that would actually change
+      meaning is escaped, so ``array[0]`` and ``2 * 3`` are left as they
+      are.  Pipes in table cells are always escaped.  Default is ``true``.
+
+    * ``links`` - a :green:`Boolean`, ``<a href>`` becomes ``[text](href)``.
+      When false only the text is output.  Default is ``true``.
+
+    * ``linkSpans`` - a :green:`Boolean` if true, also return the position
+      of every link.  See below.  Default is ``false``.
+
+    * ``imgLinks`` - a :green:`Boolean`, ``<img>`` becomes
+      ``![alt](src)``.  Default is ``false``.
+
+    * ``imgAltText`` - a :green:`Boolean` if true, alt text from images will
+      be output.  An image that is the only content of a link always supplies
+      the link's text.  Default is ``false``.
+
+    * ``maxBlankLines`` - a :green:`Number`, the blank lines between blocks,
+      1 or more.  Default is ``1``.
+
+    * ``metaDescription``, ``metaKeywords``, ``titleText`` - as in
+      `toText`_\ .
+
+A checkbox (``<input type="checkbox">``) at the start of a list item becomes
+a task marker, ``[ ]`` or ``[x]``.
+
+Table details: a table with no ``<th>`` first row gets an empty header
+row, so it always renders as a table.  Cells are one line, and every row has
+the same number of cells.  Pipe tables cannot span cells: a ``colspan`` cell's
+contents go in its first column and the other columns are left empty, and a
+``rowspan`` cell's contents are repeated in each row it covers, unless the
+table would become too large, in which case those cells are left empty.  A table that is too
+sparse to lay out is written as one line per row, and tables with no content
+are left out.
+
+Example:
+
+.. code-block:: javascript
+
+    var html = require("rampart-html");
+
+    var doc = html.newDocument(
+        '<h1>Fruit</h1><p>Prices for <b>today</b>, see <a href="/about">about</a>.</p>' +
+        '<table><tr><th>Name</th><th>Price</th></tr><tr><td>Apple</td><td>$1</td></tr></table>' +
+        '<ul><li>array[0] is literal</li><li>so is 2 * 3</li></ul>' +
+        '<pre><code class="language-js">var a = [1];</code></pre>'
+    );
+
+    rampart.utils.printf("%s", doc.toMarkdown({concatenate: true}));
+
+    /* expected output:
+    # Fruit
+
+    Prices for **today**, see [about](/about).
+
+    | Name | Price |
+    |---|---|
+    | Apple | $1 |
+
+    * array[0] is literal
+    * so is 2 * 3
+
+    ```js
+    var a = [1];
+    ```
+    */
+
+Link positions
+~~~~~~~~~~~~~~
+
+With ``linkSpans: true`` the return value is an :green:`Object` with the
+Markdown in ``text`` and the links in ``links``.  With ``concatenate`` the
+offsets are into the single string.  Otherwise ``text`` and ``links`` are
+arrays of the same length, and each element of ``links`` is an :green:`Array`
+of spans for that string.
+
+.. code-block:: javascript
+
+    var res = doc.toMarkdown({concatenate: true, links: false, linkSpans: true});
+
+    /* res.links:
+       [ {from: 35, to: 40, href: "/about", kind: "internal"} ]
+    */
+
+Each span has:
+
+* ``from`` and ``to`` - where the link's text is, ``to`` being one past the
+  end.  With ``links: true`` this is the text inside the ``[...]``.
+
+* ``href`` - the value as given by ``getAttr("href")``, not resolved against
+  any base.
+
+* ``kind`` - ``"external"`` if ``href`` has a scheme (such as ``https:``)
+  or starts with ``//``, otherwise ``"internal"``.
+
+A link with no text has ``from`` equal to ``to``.  A link repeated by a
+``rowspan`` has one span per copy.
+
+**The offsets are UTF-8 bytes**, not characters.  They differ from
+:green:`String` lengths and SQL ``length()`` on any non-ASCII text, so
+apply them to a :green:`Buffer` and not with ``substring()``:
+
+.. code-block:: javascript
+
+    var buf = rampart.utils.stringToBuffer(res.text);
+    var linkText = rampart.utils.bufferToString(buf.slice(res.links[0].from, res.links[0].to));
+
 prettyPrint
 """""""""""
 

@@ -303,7 +303,8 @@ mediaInfo
 
     **Experimental.**  Multimodal (image and audio) embedding is new in
     this release and under active development; its API and defaults may
-    change.  It has so far been tested on Linux (CPU and CUDA).
+    change.  It has so far been tested on Linux (x86_64 CPU and CUDA,
+    32-bit ARM), macOS (Apple Silicon, Metal) and FreeBSD.
 
     The ``mediaInfo`` function reports what a multimodal projector
     (an ``mmproj`` GGUF file) can encode.  It loads the projector against
@@ -404,7 +405,8 @@ initEmbed
        *  ``split`` - A :green:`String` or :green:`Function`.
           ``"auto"`` (the default) chunks long text on its structure —
           paragraphs, merged or packed as configured below;
-          ``"window"`` uses plain token windows.  A :green:`Function`
+          ``"window"`` ignores structure and cuts long text into
+          overlapping word-boundary windows.  A :green:`Function`
           replaces the built-in chunker entirely: it is called with
           the document text and must return an :green:`Array` of
           :green:`Strings` — N strings always produce N vectors.  A
@@ -434,20 +436,23 @@ initEmbed
           window (fewer, fuller chunks) instead of one vector per
           paragraph.
 
-       *  ``sentenceSplit`` - A :green:`Boolean`.  If ``true``, an
-          oversized paragraph (or structureless text) is split at
-          **sentence boundaries** and the sentences greedily packed
-          to the token window, instead of being cut at raw token
-          windows mid-sentence.  Boundaries come from a multi-script
-          terminator table (ASCII ``.!?`` with a whitespace guard;
-          self-delimiting CJK ``。！？``, Arabic, Devanagari and
-          others with none; fullwidth ``．`` digit-guarded so
-          ``３．１４`` never splits), and a chunk never ends on a
-          tiny trailing fragment (so a false boundary after "Mr."
-          can't take a cut).  Languages without sentence punctuation
-          (e.g. Thai) fall back to token windows.  Default ``false``:
-          enabling it changes chunk boundaries, which tables built
-          WITHOUT value headers depend on for snippet spans.
+       *  ``sentenceSplit`` - A :green:`Boolean`, default ``true``.
+          A paragraph (or structureless text) too large for the token
+          window is split at **sentence boundaries** and the sentences
+          greedily packed to the window.  Boundaries come from a
+          multi-script terminator table (ASCII ``.!?`` with a
+          whitespace guard; self-delimiting CJK ``。！？``, Arabic,
+          Devanagari and others with none; fullwidth ``．``
+          digit-guarded so ``３．１４`` never splits), and a chunk never
+          ends on a tiny trailing fragment (so a false boundary after
+          "Mr." can't take a cut).  A single sentence still too large,
+          or text without sentence punctuation (e.g. Thai), is cut at
+          word boundaries into windows overlapping by about 1/8.  With
+          ``false``, every oversized paragraph is cut that way.  Either
+          way each chunk's ``start``/``end`` are exactly the bytes its
+          vector was made from.  Changing it changes chunk boundaries,
+          which tables built WITHOUT value headers depend on for
+          snippet spans.
 
        *  ``batchChunks`` / ``batchTokens`` - Per-handle overrides of
           the process-wide chunk-batching defaults.  See
@@ -480,7 +485,9 @@ initEmbed
        ``nUBatch``, ``threads`` and ``threadsBatch``.
 
     If ``nCtx`` is not given, the context size defaults to the
-    model's trained maximum, capped at 8192 tokens.
+    model's trained maximum, capped at 8192 tokens (2048 on 32-bit
+    builds, where a larger window's buffers leave no room in the address
+    space for a second context in a worker thread or forked child).
 
     Model weights are shared:  loading the same model file from
     several handles or rampart threads keeps a single copy of the
@@ -558,7 +565,8 @@ emb.embedTextToFp16Buf()
     If the tokenized text does not fit the model's context window,
     it is chunked; with the default ``split: "auto"`` the chunking
     is **structure-aware**: text is split on paragraph boundaries
-    (falling back to token windows for oversized paragraphs), so
+    (falling back to sentences, then overlapping word windows, for
+    oversized paragraphs), so
     each vector corresponds to a semantically meaningful span of the
     input, and the spans are reported in ``chunks``.  Each vector is
     L2-normalized.
@@ -585,8 +593,8 @@ emb.embedTextToFp16Buf()
            span in the input), ``tokens`` (its token count),
            ``text`` (the chunk text itself) and ``oversized``
            (:green:`Boolean` ``true`` when this vector is one of
-           several token windows over a single span that exceeded
-           the model window; such sub-chunks share their span).
+           several overlapping word windows cut from a span that
+           exceeded the model window; each has its own byte span).
 
         For empty or whitespace-only input, ``vecs`` is an empty
         :green:`Array` and ``avgVec`` is not set.
@@ -621,7 +629,8 @@ emb.embedMediaToNumbers()
 
     **Experimental.**  Multimodal (image and audio) embedding is new in
     this release and under active development; its API and defaults may
-    change.  It has so far been tested on Linux (CPU and CUDA).
+    change.  It has so far been tested on Linux (x86_64 CPU and CUDA,
+    32-bit ARM), macOS (Apple Silicon, Metal) and FreeBSD.
 
     Embed images and/or audio — alone, or interleaved with text — into
     a single vector in the same space as the model's text vectors, so an
@@ -685,8 +694,9 @@ emb.embedMediaToNumbers()
        ``text`` to embed the media alone.
 
     The whole input — text and every image and audio clip — must fit in
-    the model's window (8192 tokens for ``embeddinggemma-2``).  Unlike
-    text, it is never chunked: an image cannot be split, and a
+    the model's window (8192 tokens for ``embeddinggemma-2``; 2048 on
+    32-bit builds unless ``nCtx`` is given).  Unlike text, it is never
+    chunked: an image cannot be split, and a
     multimodal input means one vector.  An input that does not fit throws
     with its token count and the limit.  For ``embeddinggemma-2`` an
     image costs ``imageTokens`` (280 by default) and audio about 25 tokens
@@ -744,7 +754,8 @@ emb.destroy()
 ^^^^^^^^^^^^^
 
     Free the model context (and release the model weights and any
-    ``mmproj`` projector if this was the last handle using them).  Using
+    ``mmproj`` projector if this was the last handle using them, not
+    counting copies that other threads have yet to use).  Using
     the handle after calling ``destroy()`` throws an error.  Handles are
     also freed automatically when garbage collected, but for large models
     it is good practice to free them deterministically.
@@ -1534,10 +1545,15 @@ Threads and fork()
     projector, are shared; each thread builds its own context the first
     time it uses its copy.  That context is freed when the thread exits
     — or earlier, if that thread calls ``destroy()`` on its copy.  A
-    copy may outlive the handle it was copied from, but a thread that
-    first uses its copy *after* the original was destroyed gets an error
-    rather than a context on freed weights.  Text and media embedding
-    behave the same in every case.  (An `initGen`_ handle works
+    copy may outlive the handle it was copied from:  each copy keeps the
+    weights loaded, so a handle made in one thread and passed on with
+    ``rampart.thread.put()`` works after the original was garbage
+    collected or its thread ended.  (A copy left on the thread clipboard
+    also keeps them loaded, until it is overwritten or removed with
+    ``rampart.thread.del()``.)  An explicit ``destroy()`` of the original
+    does release them:  a thread that first uses its copy *after* that
+    gets an error rather than a context on freed weights.  Text and media
+    embedding behave the same in every case.  (An `initGen`_ handle works
     differently: requests from every thread are served by its one
     dedicated thread.)
 
@@ -1545,14 +1561,18 @@ Threads and fork()
     handle created before the fork works in the child, and the child can
     load models of its own.  A GPU runtime (CUDA or Metal) does not
     survive a fork, so once a GPU backend has been initialized in a
-    process, its forked children get an error instead of hanging or
-    crashing:
+    process — by rampart-llamacpp or rampart-clip, and even if that
+    model load failed — its forked children get an error instead of
+    hanging or crashing:
 
     *  using a handle created before the fork throws, and
 
     *  loading any model in the child — `initEmbed`_\ , `initRerank`_\ ,
        `initGen`_\ , `mediaInfo`_\ , `modelInfo`_ or the rampart-sql
-       ``llamaEmbed`` path — throws.
+       ``llamaEmbed`` path, or rampart-clip's ``initEmbed`` — throws.
+
+    A Mac with no Metal device (most Intel virtual machines) runs on the
+    CPU and follows the CPU rules above.
 
     To use a GPU in forked processes, fork **before** any model is
     loaded and load models in the children: with rampart-server, run
@@ -1761,7 +1781,8 @@ onnx.initEmbed
        *  ``split`` - A :green:`String` or :green:`Function`.
           ``"auto"`` (the default) chunks long text on its structure —
           paragraphs, merged or packed as configured below;
-          ``"window"`` uses plain token windows.  A :green:`Function`
+          ``"window"`` ignores structure and cuts long text into
+          overlapping word-boundary windows.  A :green:`Function`
           replaces the built-in chunker entirely: it is called with
           the document text and must return an :green:`Array` of
           :green:`Strings` — N strings always produce N vectors.  A
@@ -1788,20 +1809,23 @@ onnx.initEmbed
           window (fewer, fuller chunks) instead of one vector per
           paragraph.
 
-       *  ``sentenceSplit`` - A :green:`Boolean`.  If ``true``, an
-          oversized paragraph (or structureless text) is split at
-          **sentence boundaries** and the sentences greedily packed
-          to the token window, instead of being cut at raw token
-          windows mid-sentence.  Boundaries come from a multi-script
-          terminator table (ASCII ``.!?`` with a whitespace guard;
-          self-delimiting CJK ``。！？``, Arabic, Devanagari and
-          others with none; fullwidth ``．`` digit-guarded so
-          ``３．１４`` never splits), and a chunk never ends on a
-          tiny trailing fragment (so a false boundary after "Mr."
-          can't take a cut).  Languages without sentence punctuation
-          (e.g. Thai) fall back to token windows.  Default ``false``:
-          enabling it changes chunk boundaries, which tables built
-          WITHOUT value headers depend on for snippet spans.
+       *  ``sentenceSplit`` - A :green:`Boolean`, default ``true``.
+          A paragraph (or structureless text) too large for the token
+          window is split at **sentence boundaries** and the sentences
+          greedily packed to the window.  Boundaries come from a
+          multi-script terminator table (ASCII ``.!?`` with a
+          whitespace guard; self-delimiting CJK ``。！？``, Arabic,
+          Devanagari and others with none; fullwidth ``．``
+          digit-guarded so ``３．１４`` never splits), and a chunk never
+          ends on a tiny trailing fragment (so a false boundary after
+          "Mr." can't take a cut).  A single sentence still too large,
+          or text without sentence punctuation (e.g. Thai), is cut at
+          word boundaries into windows overlapping by about 1/8.  With
+          ``false``, every oversized paragraph is cut that way.  Either
+          way each chunk's ``start``/``end`` are exactly the bytes its
+          vector was made from.  Changing it changes chunk boundaries,
+          which tables built WITHOUT value headers depend on for
+          snippet spans.
 
        *  ``maxChunkBatch`` - A :green:`Number`, the maximum chunks
           per batched model run (bounds memory for many-chunk
@@ -1879,7 +1903,8 @@ oemb.embedTextToFp16Buf()
     If the tokenized text does not fit the model's token window, it
     is chunked; with the default ``split: "auto"`` the chunking is
     **structure-aware**: text is split on paragraph boundaries
-    (falling back to token windows for oversized paragraphs), so
+    (falling back to sentences, then overlapping word windows, for
+    oversized paragraphs), so
     each vector corresponds to a semantically meaningful span of the
     input, and the spans are reported in ``chunks``.
     rampart-llamacpp's `emb.embedTextToFp16Buf()`_ chunks the same
@@ -1914,9 +1939,9 @@ oemb.embedTextToFp16Buf()
            *  ``text`` - A :green:`String`, the chunk text itself.
 
            *  ``oversized`` - :green:`Boolean` ``true`` when this
-              vector is one of several token windows over a single
-              span that exceeded the model window (such sub-chunks
-              share their span).  Not set otherwise.
+              vector is one of several overlapping word windows cut
+              from a span that exceeded the model window (each has
+              its own byte span).  Not set otherwise.
 
         For empty input, the return value is ``{vecs: []}``.
 
@@ -3692,7 +3717,8 @@ models.mmprojGet()
 
     **Experimental.**  Multimodal (image and audio) embedding is new in
     this release and under active development; its API and defaults may
-    change.  It has so far been tested on Linux (CPU and CUDA).
+    change.  It has so far been tested on Linux (x86_64 CPU and CUDA,
+    32-bit ARM), macOS (Apple Silicon, Metal) and FreeBSD.
 
     Fetch a multimodal model's projector (``mmproj`` file) — the image
     and audio encoders the model loads beside its text weights, passed
@@ -3711,6 +3737,9 @@ models.mmprojGet()
     is independent of the text model's quant.  The default is ``"F16"``:
     a projector is small next to its accuracy cost, and the
     full-precision one matches the reference implementation most closely.
+    On 32-bit builds (e.g. Raspberry Pi) the default is ``"Q8_0"``
+    instead, since an F16 projector (about 1GB) does not fit in a 32-bit
+    address space beside its model.
     The file is saved as ``<name>-<file>`` (e.g.
     ``embeddinggemma-2-mmproj-F16.gguf``), because every repository names
     its projector ``mmproj-F16.gguf`` and two models' projectors would

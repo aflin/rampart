@@ -465,7 +465,7 @@ Supported Options
     * ``crlf`` - :green:`Boolean` - For FTP and STMP -  Convert LF to CRLF in upload.
     * ``crlfile`` - :green:`String` - Provide a file using PEM format with a Certificate Revocation List that may specify peer certificates that are to be considered revoked.
     * ``digest`` - :green:`Boolean` - Enables HTTP Digest authentication.
-    * ``digest-ie`` - :green:`Boolean` - Same as ``digest``, except curl will use a special "quirk" that IE is known to have used before version 7 and that some servers require the client to use.
+    * ``digest-ie`` - :green:`Boolean` - Same as ``digest``.  Accepted for compatibility; libcurl no longer has the old Internet Explorer variant.
     * ``disable-eprt`` - :green:`Boolean` - For FTP - Disable the use of the EPRT an LPRT commands.
     * ``disable-epsv`` - :green:`Boolean` - For FTP - Disable the use of the  EPSV Command.
     * ``expect100_timeout`` - :green:`Number` - Maximum time in seconds that you allow curl to wait for a 100-continue response.
@@ -481,7 +481,9 @@ Supported Options
     * ``http-any`` - :green:`Boolean` - When set ``true``, curl will use whatever http version it thinks fit.
     * ``http1.0`` - :green:`Boolean` - Tell curl to use HTTP 1.0 requests.
     * ``http1.1`` - :green:`Boolean` - Tell curl to use HTTP 1.1 requests.
-    * ``http2`` - :green:`Boolean` - Tell curl to use HTTP 2.0 requests.
+    * ``http2`` - :green:`Boolean` - Tell curl to use HTTP 2.0 requests.  HTTPS requests use HTTP/2 by
+      default when the server supports it, and fall back to HTTP 1.1 when it does not.  Use ``http1.1``
+      to stay on HTTP 1.1.
     * ``http2-prior-knowledge`` - :green:`Boolean` - Issue non-TLS HTTP requests using HTTP/2 without HTTP/1.1 Upgrade. It requires prior knowledge that the server supports HTTP/2 straight away.
     * ``ignore-content-length`` - :green:`Boolean` - Ignore the Content-Length header.
     * ``insecure`` - :green:`Boolean` - Skip server certificate check. See `man page <https://linux.die.net/man/1/curl>`_.
@@ -567,10 +569,10 @@ Unsupported Extras
     * ``netrc-file`` - a :green:`String` - **Untested** - See `man page <https://linux.die.net/man/1/curl>`_.
     * ``netrc-optional`` - a :green:`String` - **Untested** - See `man page <https://linux.die.net/man/1/curl>`_.
     * ``no-alpn``  - a :green:`Boolean` - **Untested** - See `man page <https://linux.die.net/man/1/curl>`_.
-    * ``no-npn`` - a :green:`Boolean` - **Untested** - See `man page <https://linux.die.net/man/1/curl>`_.
+    * ``no-npn`` - a :green:`Boolean` - Accepted for compatibility and has no effect.  NPN is no longer supported by libcurl; ALPN (see ``no-alpn``) is used instead.
     * ``no-sessionid`` - a :green:`Boolean` - **Untested** - See `man page <https://linux.die.net/man/1/curl>`_.
     * ``ntlm`` - a :green:`Boolean` - **Untested** - Enables NTLM authentication.
-    * ``ntlm-wb`` - a :green:`Boolean` - **Untested** - See `man page <https://linux.die.net/man/1/curl>`_.
+    * ``ntlm-wb`` - a :green:`Boolean` - Accepted for compatibility and has no effect.  NTLM delegation to winbind is no longer supported by libcurl.
     * ``pinnedpubkey`` - a :green:`Boolean` - **Untested** - See `man page <https://linux.die.net/man/1/curl>`_.
     * ``preproxy`` - a :green:`Boolean` - **Untested** - See `man page <https://linux.die.net/man/1/curl>`_.
     * ``proxy-anyauth`` - a :green:`Boolean` - **Untested** - See `man page <https://linux.die.net/man/1/curl>`_.
@@ -582,19 +584,19 @@ Unsupported Extras
     * ``proxy-ciphers``  - a :green:`String` - **Untested** - See `man page <https://linux.die.net/man/1/curl>`_.
     * ``proxy-crlfile``  - a :green:`String` - **Untested** - See `man page <https://linux.die.net/man/1/curl>`_.
     * ``proxy-digest`` - a :green:`Boolean` - **Untested** - See `man page <https://linux.die.net/man/1/curl>`_.
-    * ``proxy-digest-ie`` - a :green:`Boolean` - **Untested** - See `man page <https://linux.die.net/man/1/curl>`_.
+    * ``proxy-digest-ie`` - a :green:`Boolean` - Same as ``proxy-digest``.  Accepted for compatibility.
     * ``proxy-header``  - a :green:`String` or a :green:`Array` - **Untested** - See `man page <https://linux.die.net/man/1/curl>`_.
     * ``proxy-insecure`` - a :green:`Boolean` - **Untested** - See `man page <https://linux.die.net/man/1/curl>`_.
     * ``proxy-key`` - a :green:`String` - **Untested** - See `man page <https://linux.die.net/man/1/curl>`_.
     * ``proxy-key-type`` - a :green:`String` - **Untested** - See `man page <https://linux.die.net/man/1/curl>`_.
     * ``proxy-negotiate`` - a :green:`Boolean` - **Untested** - See `man page <https://linux.die.net/man/1/curl>`_.
     * ``proxy-ntlm``  - a :green:`Boolean` - **Untested** - See `man page <https://linux.die.net/man/1/curl>`_.
-    * ``proxy-ntlm-wb`` - a :green:`Boolean` - **Untested** - See `man page <https://linux.die.net/man/1/curl>`_.
+    * ``proxy-ntlm-wb`` - a :green:`Boolean` - Accepted for compatibility and has no effect (see ``ntlm-wb``).
     * ``proxy-pass`` - a :green:`String` - **Untested** - See `man page <https://linux.die.net/man/1/curl>`_.
     * ``proxy-service-name`` - a :green:`String` - **Untested** - See `man page <https://linux.die.net/man/1/curl>`_.
     * ``proxy-ssl-allow-beast`` - a :green:`Boolean` - **Untested** - See `man page <https://linux.die.net/man/1/curl>`_.
-    * ``proxy-tlspassword`` - a :green:`String` - **Untested** - See `man page <https://linux.die.net/man/1/curl>`_.
-    * ``proxy-tlsuser`` - a :green:`String` - **Untested** - See `man page <https://linux.die.net/man/1/curl>`_.
+    * ``proxy-tlspassword`` - a :green:`String` - Accepted for compatibility and has no effect (see ``tlsuser``).
+    * ``proxy-tlsuser`` - a :green:`String` - Accepted for compatibility and has no effect (see ``tlsuser``).
     * ``proxy-tlsv1`` - a :green:`Boolean` - **Untested** - See `man page <https://linux.die.net/man/1/curl>`_.
     * ``proxy-user`` - a :green:`String` - **Untested** - See `man page <https://linux.die.net/man/1/curl>`_.
     * ``proxy1.0`` - a :green:`String` - **Untested** - See `man page <https://linux.die.net/man/1/curl>`_.
@@ -603,7 +605,7 @@ Unsupported Extras
       your public key  in  this  separate file.
 
     * ``quote`` - a :green:`String` or :green:`Array` of :green:`Strings` - **Untested** - See `man page <https://linux.die.net/man/1/curl>`_. 
-    * ``random-file`` - a :green:`String` - **Untested** - See `man page <https://linux.die.net/man/1/curl>`_.
+    * ``random-file`` - a :green:`String` - Accepted for compatibility and has no effect.  The TLS library seeds itself.
     * ``sasl-ir`` - a :green:`Boolean` - **Untested** - Enable initial response in SASL authentication.
     * ``service-name`` - a :green:`String` - **Untested** - See `man page <https://linux.die.net/man/1/curl>`_.
     * ``socks4`` - a :green:`String` - **Untested** - See `man page <https://linux.die.net/man/1/curl>`_.
@@ -621,8 +623,9 @@ Unsupported Extras
     * ``telnet-option`` - a :green:`String` or :green:`Array` of :green:`Strings` - **Untested** - See `man page <https://linux.die.net/man/1/curl>`_.
     * ``tftp-blksize`` - a :green:`Number` - **Untested** - See `man page <https://linux.die.net/man/1/curl>`_.
     * ``tftp-no-options`` - a :green:`Boolean` - **Untested** - See `man page <https://linux.die.net/man/1/curl>`_.
-    * ``tlspassword`` - a :green:`String` - **Untested** - See `man page <https://linux.die.net/man/1/curl>`_.
-    * ``tlsuser`` - a :green:`String` - **Untested** - See `man page <https://linux.die.net/man/1/curl>`_.
+    * ``tlspassword`` - a :green:`String` - Accepted for compatibility and has no effect (see ``tlsuser``).
+    * ``tlsuser`` - a :green:`String` - Accepted for compatibility and has no effect.  TLS-SRP
+      authentication is no longer supported by libcurl.
     * ``unix-socket`` - a :green:`String` - **Untested** - See `man page <https://linux.die.net/man/1/curl>`_.
 
 

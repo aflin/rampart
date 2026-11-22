@@ -272,7 +272,7 @@ as such:
     --appsRoot           String. Root directory from which to serve apps
     --wsappsRoot         String. Root directory from which to serve wsapps
     --dataRoot           String. Setting for user scripts
-    --logRoot            String. Log directory
+    --logRoot            String. Log directory (created if missing)
     --accessLog          String. Log file name. "" for stdout
     --errorLog           String. error log file name. "" for stderr
     --irohProxy          Bool.   Start the iroh webproxy server for this server
@@ -476,6 +476,40 @@ A root crontab entry will keep the certificate up to date:
 .. code-block:: none
 
     0 5 * * * /usr/bin/certbot renew --quiet --renew-hook "rampart /path/to/my/web_server/web_server_conf.js restart" 2>/dev/null
+
+The Mini IDE
+------------
+
+Every install includes the Mini IDE: a browser-based editor, file navigator
+and terminal for the files in the ``web_server`` directory.  It can run the
+current script, open a shell or an interactive ``rampart`` session, build a
+:ref:`single-file bundle <rampart-extras:Single-File Bundles>` of the site,
+and it serves a searchable copy of this documentation.  Start it from the
+``web_server`` directory:
+
+.. code-block:: none
+
+    ./start-mini-ide.sh [start|stop|restart|status|setup]
+
+The first start asks for a password, whether to listen on all interfaces or
+on localhost only, and a port (8089 by default); ``setup`` changes them
+later.  The IDE is then at ``/ide/`` on that port, e.g.
+``http://localhost:8089/ide/``.  The same server
+also serves the site itself (``html/``, ``apps/`` and ``wsapps/``) exactly as
+``web_server_conf.js`` would, so a script behaves the same in both, and the
+two servers can run at the same time on different ports.
+
+Each start also writes ``AGENTS.md`` (and a ``CLAUDE.md`` link to it) in the
+``web_server`` directory, describing the layout and where the documentation
+is for an LLM coding assistant.  A hand-written file of either name is left
+alone.
+
+Anyone who signs in can run commands as the user who started the IDE.
+Leave it on localhost unless the network is trusted, and do not start it as
+root (the script refuses).  The IDE is a development tool, not part of the
+site: a server started with ``web_server_conf.js`` does not serve it, and
+removing ``ide/``, ``mini-ide-conf.js`` and ``start-mini-ide.sh`` leaves the
+plain web server.
 
 Single-File Bundles
 -------------------
@@ -810,8 +844,8 @@ process and shared by all worker threads.
 
 The same trick is used to launch ``texislockd`` (the SQL / vector-index
 lock daemon) when needed: the bundled binary is extracted, ``exec``\ed
-with a self-unlink flag and an idle-timeout flag, and removes its own
-on-disk file once running.
+with a self-unlink flag, and removes its own on-disk file once running.
+Like any ``texislockd``, it exits after 60 seconds with no connections.
 
 What Is Not Supported
 ~~~~~~~~~~~~~~~~~~~~~

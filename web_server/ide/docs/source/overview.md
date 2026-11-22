@@ -1,483 +1,517 @@
 # Rampart Overview for LLM Coding Assistants
 
+Covers Rampart **v0.7.6**.  Read this file first; it tells you what Rampart
+is, what not to assume, and **where in the documentation to look** for
+everything else.
+
 ## What is Rampart?
 
-Rampart is a server-side JavaScript runtime built on the Duktape engine. It is
-**not** Node.js — different engine, module system, threading model and built-ins.
-Do not assume Node.js APIs, patterns, or npm packages will work.
+Rampart is a server-side JavaScript runtime built on the Duktape engine.  It
+is **not** Node.js: different engine, module system, threading model and
+built-ins.  Do not assume Node.js APIs, patterns, or npm packages.
 
-Its design: JavaScript orchestrates high-performance C. The JS interpreter is
-slower than V8; the C-backed modules (SQL, HTTP server, crypto) carry the
-performance. Prefer a C-backed API over a JS loop wherever both exist.
+Its design: JavaScript orchestrates high-performance C.  The interpreter is
+slower than V8; the C-backed modules (SQL and search, HTTP server, crypto)
+carry the performance.  Prefer a C-backed API over a JS loop wherever both
+exist.
+
+## How to Use This Documentation
+
+### Where the files are
+
+| Location | Path |
+|----------|------|
+| Any Rampart install | `<installPath>/web_server/ide/docs/source/` (`rampart -c "console.log(process.installPath)"`) |
+| The `rampart_docs` repository | `source/` |
+| Online | `https://rampart.dev/docs/<file>.html` (e.g. `rampart-sql.html`) |
+
+Each module has one reStructuredText file.  This file and `rex-sandr.md` are
+the only Markdown files.
+
+### How to find something
+
+**Do not read the large files whole.**  `rampart-utils.rst`, `rampart-sql.rst`,
+`rampart-langtools.rst`, `rampart-server.rst` and `sql-set.rst` are 3,500 to
+5,500 lines each.  Find the section, then read that range.
+
+- Every function, option group and SQL setting is its own heading, and the
+  heading is the name.  List a file's headings with line numbers:
+
+      grep -n -B1 '^[=~"-]\{4,\}$' rampart-server.rst
+
+- Jump to one function or setting (headings start at column 0):
+
+      grep -n '^fgets' rampart-utils.rst        # a rampart.utils function
+      grep -n '^exec()' rampart-sql.rst         # sql methods end in ()
+      grep -n '^likepRows' sql-set.rst          # a sql.set() setting
+
+- Search every file for a name: `grep -n 'threadLimit' *.rst`
+- `faq.rst` is organized as questions.  If the task matches one ("How do I
+  handle POST data and file uploads?"), start there; it links onward.
+- Working code: `tutorial-citysearch.rst` (SQL, CSV import, geographic
+  search), `tutorial-wschat.rst` (WebSockets, Redis) and
+  `tutorial-pi_news.rst` (crawling, HTML parsing); the sample site in
+  `<installPath>/web_server/`, and `<installPath>/test/*-test.js` (the test
+  suite uses nearly every API).
+
+### Documentation map
+
+Section names are quoted exactly as they appear, so they can be grepped.
+
+**Language and runtime**
+
+| Need | File | Sections |
+|------|------|----------|
+| Globals, `process.*`, `require()`, search path | `rampart-main.rst` | *Rampart Global Variable and Functions*, *Process Global Variable and Functions*, *Module Search Path* |
+| What JavaScript is supported without a transpiler | `rampart-main.rst` | *Extra JavaScript Functionality* (*Template Literals*, *Rest Parameters*, *Map and Set*, *BigInt*, *TypedArray Methods* ...) |
+| ES2015+ syntax | `rampart-main.rst` | *ECMAScript 2015+ with transpiler*, *ECMAScript 2015+ and Babel.js* |
+| Timers and the event loop | `rampart-main.rst` | *setTimeout()*, *setInterval()*, *setMetronome()* |
+| Cross-thread events | `rampart-main.rst` | *rampart.event* |
+| CSV parsing | `rampart-main.rst` | *rampart.import* |
+| `fetch`, `URL`, `Blob`, streams, Web Crypto, `Intl` | `rampart-main.rst` | *WHATWG / W3C Web Platform APIs (experimental)*, *Intl* |
+| Threads, locks, thread clipboard | `rampart-thread.rst` | *Thread Functions*, *Lock Functions* |
+| Typed vectors and distances in JavaScript (`rampart.vector`) | `rampart-vector.rst` | *Typed Vectors*, *Distance Function* |
+| Running Node-style libraries | `rampart-extras.rst` | *rampart-nodeshim Module* |
+| Writing a module in C | `rampart-extras.rst`, `rampart-server.rst` | *rampart-cmodule*, *Rampart Macros for C Modules*, *C-API* |
+
+**`rampart.utils`** (`rampart-utils.rst`, one heading per function)
+
+| Need | Sections |
+|------|----------|
+| Formatted output | *printf*, *sprintf*, *bprintf*, *abprintf* |
+| Files and directories | *readFile*, *writeFile*, *stat*, *readDir*, *walkDir*, *glob*, *copyFile*, *rmFile*, *mkdir*, *realPath* |
+| File handles and line reading | *File Handle Utilities* (*fopen*, *fgets*, *readLine*, *fwrite* ...) |
+| Raw descriptors, atomic writes | *POSIX File Descriptor I/O* |
+| Processes | *exec*, *shell*, *fork*, *daemon*, *newPipe*, *kill* |
+| Strings, buffers, encodings | *stringToBuffer*, *bufferToString*, *hexify*, *toUtf8*, *detectCharset*, *trim* |
+| URLs and query strings | *urlComponents*, *absUrl*, *objectToQuery*, *queryToObject* |
+| Dates | *dateFmt*, *scanDate*, *autoScanDate* |
+| Zip, gzip, checksums | *zipList*, *zipGet*, *zipExtract*, *Compression and Checksums* |
+| Watching files for changes | *File Watching* |
+| Random numbers, hashing, HyperLogLog | *Rand, Hash and HyperLogLog* |
+
+**Web server**
+
+| Need | File | Sections |
+|------|------|----------|
+| Start a server, all options | `rampart-server.rst` | *Configuring and Starting the Server* |
+| URL routing | `rampart-server.rst` | *Path Mapping* |
+| `req` and the returned object | `rampart-server.rst` | *The Request Object*, *The Return Object*, *Key to Mime Mappings* |
+| Large or streamed replies | `rampart-server.rst` | *Chunking Replies* |
+| WebSockets | `rampart-server.rst`, `tutorial-wschat.rst` | *Websockets* |
+| Reverse proxy | `rampart-server.rst` | *Reverse Proxy (Experimental)* |
+| Standard directory layout, `web_server_conf.js`, several ports, HTTPS | `rampart-extras.rst` | *rampart-webserver.js Module* |
+| Logins and sessions | `rampart-auth.rst` | *Quick Start*, *The req.userAuth Object* |
+| One-file deployment | `rampart-extras.rst` | *Single-File Bundles* |
+| Browser-based editor and terminal for a site | `rampart-extras.rst` | *The Mini IDE* |
+
+**Database and search** (`rampart-sql.rst` unless noted)
+
+| Need | Sections |
+|------|----------|
+| Connect, query, insert | *connection() constructor*, *exec()*, *one()*, *query()* |
+| Read and change settings | *set()*, *get()*, *reset()*; every setting: `sql-set.rst` |
+| Bulk import | *importCsvFile()*, *importJsonlFile()* |
+| Column types, `$recid` | *Column Data Types* |
+| Ordinary indexes | *Regular Indexes*, *Compound Indexes* |
+| Full-text search | *Fulltext Indexes*, *Word Expressions*, *Text Index Maintenance*, *scheduleUpdate()* |
+| Vector (semantic) search | *Vector Search*, *Vector Indexes*, *Querying with LIKEV* |
+| Keyword + vector together | *Hybrid keyword + vector queries (rank fusion)* |
+| SQL functions (`embed`, `chunkembed`, `abstract`, `excerpt`, JSON, geo) | `sql-server-funcs.rst` |
+| Ranking and query limits | `sql-set.rst`: *Rank knobs*, *Other Ranking Properties*, *Query Protection* |
+| Text helpers outside SQL (`rex`, `sandr`, `stringFormat`, `abstract`) | *String Functions*; pattern syntax: `rex-sandr.md` |
+| Command line tools (`tsql`, `kdbfchk`, `addtable`) | `sql-utils.rst` |
+| Key-value store | `rampart-lmdb.rst` |
+| Redis client | `rampart-redis.rst` |
+
+**Other modules** (each is a `require()`)
+
+| Module | Purpose | File |
+|--------|---------|------|
+| `rampart-curl` | HTTP(S)/FTP/SMTP client; HTTP/2 | `rampart-curl.rst` |
+| `rampart-net` | TCP/TLS sockets, servers, DNS, WebSocket client | `rampart-net.rst` |
+| `rampart-crypto` | Ciphers, hashes, HMAC, RSA/EC/Ed25519, passwords, certificates | `rampart-crypto.rst` |
+| `rampart-html` | Parse, repair, query and edit HTML; HTML to Markdown | `rampart-html.rst` |
+| `rampart-cmark` | Markdown to HTML | `rampart-cmark.rst` |
+| `rampart-totext` | Text from PDF, DOCX, XLSX, EPUB, email; OCR | `rampart-totext.rst` |
+| `rampart-gm` | Image processing (GraphicsMagick) | `rampart-gm.rst` |
+| `rampart-python` | Embedded Python | `rampart-python.rst` |
+| `rampart-treesitter` | Parse source code, extract symbols | `rampart-treesitter.rst` |
+| `rampart-robots` | robots.txt checks | `rampart-robots.rst` |
+| `rampart-almanac` | Sun and moon, holidays, weather | `rampart-almanac.rst` |
+| `rampart-email` | Send mail | `rampart-extras.rst` *rampart-email* |
+| `rampart-llm` | Client for hosted or remote LLMs, with tool use | `rampart-extras.rst` *rampart-llm* |
+| `rampart-llamacpp`, `rampart-onnx`, `rampart-clip`, `rampart-faiss`, `rampart-ocr`, `rampart-sentencepiece`, `rampart-models` | Local AI: embedding, reranking, generation, OCR, model download | `rampart-langtools.rst` |
+| `rampart-chromeview` | Drive headless Chrome (Puppeteer-style) | `rampart-chromeview.rst` |
+| `rampart-webview` | Desktop GUI apps | `rampart-webview.rst` |
+| `rampart-url` | Superseded: use `rampart.utils.urlComponents` and `absUrl` | `rampart-utils.rst` |
+
+Three files in `modules/` are internal parts of other modules; use them
+through the module, not with their own `require()`:
+`rampart-sqlUpdate.js` (scheduled index updates: `rampart-sql.rst`
+*scheduleUpdate()*, *scheduleRebuild()*), and `rampart-open-meteo.js` and
+`rampart-date-holidays.js` (`rampart-almanac.rst` *Weather*, *Holidays*).
+
+Not every module is in every install.  `rampart --install --list` shows what
+can be added (`rampart-langtools`, `rampart-iroh`, `rampart-webview` and
+others); `rampart --install <name>` adds one.
 
 ## Critical Differences from Node.js
 
-### No npm. No node_modules.
-There is no package manager. Functionality comes from built-in globals and
-included C modules. Pure-JS libraries may work but must be tested; a partial
-Node compatibility layer exists for libraries that expect one (see
-*Lazy-loaded surfaces*).
+### No npm, no node_modules
+Functionality comes from built-in globals and the modules above.  Pure-JS
+libraries may work but must be tested.  `require('fs')`, `require('path')`
+and friends resolve through `rampart-nodeshim`, which exists to run libraries
+written for Node; it is partial, slower than the native APIs, and nearly
+always needs the transpiler (`-t`).  Write new code against `rampart.utils`
+and the `rampart-*` modules.
 
 ### Synchronous by default
-Most operations block. `readFile()` returns data, `curl.fetch()` returns a
-response, `sql.exec()` returns rows. Async variants exist for curl and redis
-but must be opted into.
+Most calls block and return their result: `readFile()` returns the data,
+`curl.fetch()` the response, `sql.exec()` the rows.  Async variants exist
+(curl, redis, net, chromeview) but are opt-in.
 
-### Module system
-Uses CommonJS-style `require()` but with a different search path:
-1. Absolute path (checked alone; never resolved from a bundle)
-2. When running a single-file bundle, the bundle's appended zip
-3. Calling module's directory
+### `require()` search order
+1. An absolute path (checked alone)
+2. In a single-file bundle, the bundle's zip
+3. The calling module's directory
 4. `process.scriptPath`
 5. `~/.rampart/`
 6. `$RAMPART_PATH`
-7. `process.installPath` (its `modules/` is `process.modulesPath`)
+7. `process.installPath`
 
-Each directory entry above is checked directly, then in its `modules/` and
-`lib/rampart_modules/` subdirectories.
+Each directory is also checked in its `modules/` and `lib/rampart_modules/`
+subdirectories.  **The current working directory is not searched.**  With no
+extension, `.js`, `.json` and `.so` are tried in that order.
 
-No `node_modules` directory. No ES module `import/export` without a transpiler.
+### Threads
+`new rampart.thread()` creates a real POSIX thread with its own interpreter.
+The HTTP server runs handlers across a thread pool.  **Threads do not share
+JavaScript state.**  Share data through SQL, LMDB, Redis, or the thread
+clipboard (`rampart.thread.put()` / `get()`).
 
-### Threading model
-Rampart has real POSIX threads via `new rampart.thread()`. Each thread gets its
-own JS interpreter. The HTTP server automatically dispatches requests across a
-thread pool. Threads do not share JS state — use SQL, LMDB, Redis, or the
-thread clipboard (`rampart.thread.put/get`) for shared data.
+### What JavaScript runs
+**Write ES5 by default.**  No built-in module needs newer syntax.
 
-### ECMAScript support
-Duktape supports partial ES2015/ES2016 natively. For async/await, arrow
-functions, destructuring and classes, add `"use transpiler"` (fast, C-based) or
-`"use babel"` (slower, more complete) at the top of the script; output is cached
-to disk. `-t` on the command line does the same.
+| Works with no transpiler | Needs `"use transpiler"` or `-t` |
+|--------------------------|----------------------------------|
+| Template literals, tagged templates, `String.raw` | Arrow functions |
+| Rest parameters (`function(a, ...rest)`) | `let`, `const` |
+| `Promise`, `Map`, `Set`, `Symbol`, `Proxy`, `WeakMap` | Classes |
+| `BigInt` (`123n`, operators) | Destructuring, spread, default parameters |
+| TypedArray and modern Array/String/Object methods | `for...of`, `async`/`await`, generators |
 
-**Write ES5 by default.** No built-in module or standard pattern needs
-post-ES5 syntax — do not add a transpiler pragma unless the user asks for
-ES2015+ (or the code goes through `rampart-nodeshim`, which needs it).
+Put `"use transpiler"` (fast, C-based) or `"use babel"` (slower, more
+complete) as the first line of a script; the result is cached beside the
+source as `name.transpiled.js`.
 
-Transpiler gotchas: `const` becomes `var` (not enforced at runtime); with
-`"use transpiler"`, `await` inside a loop may not run per-iteration, and
-destructuring combined with `await` may fail.
+Transpiler caveat: `const` becomes `var`, so reassigning it does not throw.
 
-## Architecture: What's Built-in vs What Requires Loading
-
-### Built into the executable (no require needed)
-- `rampart.utils` — file I/O, printf/sprintf, exec/shell, fork/daemon, stat,
-  sleep, hexify/dehexify, stringToBuffer/bufferToString, CSV import, date
-  functions, and much more. **This is the workhorse module.**
-- `rampart.thread` — POSIX threads, locks, thread clipboard
-- `rampart.vector` — typed vectors, distance metrics for semantic search
-- `rampart.event` — cross-thread event system
-- `rampart.import` — CSV parsing
-
-### C modules (require() to load)
-- `rampart-server` — multi-threaded HTTP/HTTPS/WebSocket server
-- `rampart-sql` — Texis SQL database with Metamorph full-text search
-- `rampart-curl` — HTTP/FTP/SMTP client (libcurl)
-- `rampart-crypto` — encryption, hashing, HMAC (OpenSSL)
-- `rampart-html` — HTML parsing, cleanup, DOM manipulation (Tidy-HTML5)
-- `rampart-lmdb` — fast key-value store (LMDB)
-- `rampart-redis` — Redis client
-- `rampart-net` — TCP sockets with SSL/TLS
-- `rampart-python` — embedded Python interpreter with type conversion
-- `rampart-totext` — text extraction from DOCX, PDF, HTML, RTF, EPUB, etc.
-- `rampart-cmark` — CommonMark Markdown to HTML
-- `rampart-url` — URL parsing and resolution
-- `rampart-gm` — image processing (GraphicsMagick)
-- `rampart-robots` — robots.txt compliance checking
-- `rampart-almanac` — celestial calculations, holidays, weather
-- `rampart-auth` — session-based authentication for the HTTP server
-- `rampart-treesitter` — source code parsing / symbol extraction
-- `rampart-webserver` — the `--server` machinery as a module (`cmdLine()`)
-- `rampart-cmodule` — compile and load a C module at runtime
-
-### Lazy-loaded surfaces (no require needed)
-These load automatically the first time a name is referenced, so scripts that
-never touch them pay no startup cost:
-
-- **Web Platform globals** (`rampart-whatwg`) — `fetch`, `URL`, `Headers`/
-  `Request`/`Response`/`FormData`, `Blob`/`File`, the stream family,
-  `WebSocket`, `XMLHttpRequest`, `crypto` (Web Crypto), `structuredClone`,
-  `queueMicrotask`, `localStorage`. Conformance is **partial and
-  experimental** — strongest for the non-DOM APIs. See
-  *WHATWG / W3C Web Platform APIs* in `rampart-main.rst`.
-- **`Intl`** (`rampart-intl`) — vendored ICU4C. See `rampart-main.rst`.
-- **Node compatibility** (`rampart-nodeshim`) — backs `require('fs')`,
-  `require('path')`, `require('http')`, `require('stream')`,
-  `require('child_process')`, `require('worker_threads')` and friends.
-  **Code running through nodeshim needs the transpiler (`-t`) in nearly all
-  cases.** Coverage is partial and it is slower than the native APIs; see
-  *rampart-nodeshim Module* in `rampart-extras.rst` for the per-submodule gaps.
-
-## Common Patterns (from real-world code)
+## Common Patterns
 
 ### The globalize pattern
 Most scripts start with `rampart.globalize(rampart.utils);`, which makes
-`printf`, `fprintf`, `sprintf`, `readFile`, `stat`, `exec`, `shell`, `fork`,
-`sleep`, `fopen`, `fgets` etc. global. Code then reads like C:
-`fprintf(stderr, "Error: %s\n", msg)`.
-
-### Dual-mode scripts
-One file can be both a web handler and a CLI setup tool — `module.exports` is
-only set when loaded by the server:
-```javascript
-if(module && module.exports)
-    module.exports = { "/": index_page, "/search.json": search_handler };
-else
-    build_the_database();      // rampart myscript.js
-```
-
-### Multi-path module exports
-Export an Object to map several URLs from one script, or a single Function to
-handle every request to it:
-```javascript
-module.exports = { "/": index_html, "/search.json": ajax_search };
-module.exports = function(req) { return {json: {results: []}}; };
-```
+`printf`, `sprintf`, `fprintf`, `readFile`, `stat`, `exec`, `shell`, `fopen`,
+`sleep` and the rest global.  `rampart -g script.js` does the same.
 
 ### printf format extensions
-Beyond standard C printf codes, Rampart adds:
-- `%J` / `%!J` — JSON (with optional indent width). `!` handles cyclic refs.
-- `%B` / `%!B` — base64 encode/decode
-- `%U` / `%!U` — URL encode/decode
-- `%H` / `%!H` — HTML entity encode/decode
-- `%P` — pretty-print text with wrapping
+Beyond the C codes:
+- `%J` — JSON; a width indents (`%3J`).  Cyclic references are handled.
+- `%B` / `%!B` — base64 encode / decode
+- `%U` / `%!U` — URL encode / decode
+- `%H` / `%!H` — HTML entity encode / decode
+- `%P` — wrap and indent text
+- `%s` — also accepts Buffers, and Objects (printed as JSON)
 
-The `!` flag inverts the operation (encode vs decode) for `%B`, `%U`, `%H`.
-
-All of `%s`, `%B`, `%U`, `%H` accept strings and any buffer type (plain buffer,
-`Uint8Array`, `ArrayBuffer` or node `Buffer`). Without `!`, `%U` and `%B` also
-accept Objects (converted to JSON first); `%H` does **not** — pass it a String
-or Buffer, or it will throw.
-
-`bprintf()` returns a Buffer. Use `bprintf('%s%s', buf1, buf2)` to concatenate
-buffers of any type.
+`%d` and the other numeric codes require a Number; a String throws.  `%H`
+requires a String or Buffer.  `bprintf()` returns a Buffer; use
+`bprintf('%s%s', buf1, buf2)` to join buffers.
 
 ### HTML generation
-The most common pattern uses template literals with sprintf format codes:
+Template literals accept a printf code before a colon:
 ```javascript
 return {html: `
 <!DOCTYPE html>
 <html><body>
   <h3>${%H:query}</h3>
   <pre>${%3J:results}</pre>
-</body></html>
-`};
+</body></html>`};
 ```
-`%H` HTML-escapes the variable, `%3J` pretty-prints JSON with 3-space indent.
-This only works with `"use transpiler"` or without any transpiler (not babel).
+`%H` HTML-escapes the value — use it for anything that came from a user.
+This works with no transpiler or with `"use transpiler"`, not with babel.
 
-For large responses, use the server buffer instead of string concatenation:
+For large pages, write to the reply buffer instead of building a string:
 ```javascript
 function handler(req) {
     req.put('<!DOCTYPE HTML><html><body>');
-    for(var i = 0; i < rows.length; i++) {
+    for(var i = 0; i < rows.length; i++)
         req.printf('<div>%H</div>', rows[i].title);
-    }
     return {html: '</body></html>'};
 }
 ```
 
-### HTTP server and the standard layout
-The standard deployment uses `web_server_conf.js` or `rampart --server`:
+### The standard web server layout
+Every install has a working site at `<installPath>/web_server/`; copy it to
+start a project.
 ```
 web_server/
-    web_server_conf.js   — edit this to configure
+    web_server_conf.js   — configuration; `rampart web_server_conf.js start`
     html/                — static files (document root)
-    apps/                — server-side JS modules (auto-mapped to /apps/)
-    wsapps/              — WebSocket modules (auto-mapped to ws://wsapps/)
-    data/                — application data (databases, etc.)
+    apps/                — server-side scripts, mapped to /apps/
+    wsapps/              — WebSocket scripts, mapped to ws://host/wsapps/
+    data/                — databases and other application data
     logs/                — access and error logs
 ```
-A module at `apps/search.js` is automatically served at `/apps/search.html`
-or `/apps/search/`. No explicit route registration needed.
+`apps/search.js` is served at `/apps/search.html` (or any extension) and
+`/apps/search/`; no route registration is needed.  Edited scripts are
+reloaded automatically.
 
-For custom routes, use `rampart-server` directly:
+`start-mini-ide.sh` in the same directory starts a browser-based editor,
+terminal and searchable copy of this documentation.
+
+### Scripts in `apps/`
+Export one function, or an object that maps sub-paths:
 ```javascript
-var server = require("rampart-server");
-server.start({
-    bind: "0.0.0.0:8080",
-    map: {
-        "/":           "/path/to/html",
-        "/api/data":   function(req) { return {json: {ok: true}}; },
-        "ws:/chat":    function(req) { ... }
-    }
-});
+module.exports = function(req) { return {json: {ok: true}}; };
+module.exports = { "/": index_page, "/search.json": search_handler };
 ```
-
-### Request object
+The same file can serve requests and act as a command line tool:
 ```javascript
-function handler(req) {
-    req.query.q          // URL query parameter ?q=...
-    req.params.q         // merged: query + POST + cookies (use for flexibility)
-    req.postData.content // parsed POST body (form data or JSON)
-    req.formData.content // multipart file uploads (array)
-    req.body             // raw body (Buffer)
-    req.method           // "GET", "POST", etc.
-    req.path.file        // requested filename
-    req.path.path        // requested path
-    req.ip               // client IP
-    req.cookies          // parsed cookies
-    req.headers          // request headers
-}
+if(module && module.exports)
+    module.exports = { "/": index_page };
+else
+    build_the_database();      // rampart apps/myscript.js
 ```
-
-### Response object
-Return an object with a key matching the content type:
-```javascript
-return {html: "<h1>Hello</h1>"};
-return {json: {status: "ok"}};
-return {txt: "plain text"};
-return {jpg: "@/path/to/image.jpg"};  // serve file with @ prefix
-return {status: 302, headers: {"Location": "/newurl"}};  // redirect
-return {status: 404, html: "Not found"};  // error
-```
-
-### SQL patterns
-```javascript
-var Sql = require("rampart-sql");
-var sql = new Sql.connection("/path/to/db", true);  // true = create
-
-// CREATE ... IF NOT EXISTS is supported for tables and indexes
-sql.exec("CREATE TABLE IF NOT EXISTS docs (title VARCHAR(128), body VARCHAR(8000))");
-
-// Insert with parameterized query
-sql.exec("INSERT INTO docs VALUES(?, ?)", [title, body]);
-
-// Single row lookup (returns object or undefined)
-var row = sql.one("SELECT * FROM docs WHERE id = ?", [id]);
-
-// Query with maxRows (default is 10!)
-var results = sql.exec("SELECT * FROM docs", {maxRows: -1});  // -1 = all
-
-// Row-by-row callback (return false to stop early)
-sql.exec("SELECT * FROM docs WHERE body LIKEP ?", {maxRows: 100},
-    [searchTerms],
-    function(row, i, cols, info) {
-        // process each row; i is 0-based index
-        if(done) return false;
-    }
-);
-
-// Full-text search — \uword indexes whole UTF-8 characters (any script)
-sql.exec("CREATE FULLTEXT INDEX docs_ftx ON docs(body) " +
-    "WITH WORDEXPRESSIONS ('[\\uword]{1,99}')");
-// or to also match email addresses, URLs, etc.:
-// "WITH WORDEXPRESSIONS ('[\\uword]{1,99}', '[\\alnum\\$%@\\-_\\+]{2,99}')"
-var results = sql.exec("SELECT * FROM docs WHERE body LIKEP ?",
-    ["search terms"], {maxRows: 50});
-
-// Tune full-text search
-sql.set({
-    likeprows: 100,      // candidates for full-text ranking
-    minwordlen: 5,       // minimum word length for suffix processing
-    useequivs: true      // enable synonym expansion
-});
-```
-- `sql.exec()` throws on hard errors (bad syntax) but NOT on soft errors
-  (duplicate on unique index). Check `sql.errMsg` after calls.
-- `sql.query()` never throws — always check `sql.errMsg`.
-- Always use `?` parameterized queries for user input.
-
-### Data directory resolution
-Apps locate their data dir from `serverConf` when served, falling back to a
-path relative to the script when run from the CLI:
+Find the data directory either way:
 ```javascript
 var db_location = (global.serverConf && serverConf.dataRoot)
     ? serverConf.dataRoot + "/mydb"
     : process.scriptPath + "/../data/mydb";
 ```
 
-### Embeddings and semantic search (inside SQL)
-Embedding runs **inside the SQL engine**. Load a model once on the connection,
-then `embed()` and `LIKEV` use it automatically.
-
+### A server without the standard layout
 ```javascript
-// pick ONE embedding engine per connection
-sql.set({llamaEmbed: "/path/model.gguf"});   // preferred — see note below
-
-sql.exec("CREATE TABLE docs (title varchar(128), doc varchar(8000), v varvecF32(384))");
-
-// embed() turns text into a vector; ? params work as usual
-sql.exec("INSERT INTO docs VALUES(?, ?, embed(?))", [title, body, body]);
-
-// LIKEV takes a vector, or a STRING which is auto-embedded with the same model
-var hits = sql.exec("SELECT title, $rank FROM docs WHERE v LIKEV ?", ["search text"]);
+var server = require("rampart-server");
+server.start({
+    bind: "0.0.0.0:8080",
+    map: {
+        "/":           "/path/to/html",                // a directory of files
+        "/api/data":   function(req) { return {json: {ok: true}}; },
+        "/api/":       function(req) { ... },          // trailing / matches below it
+        "ws:/chat":    function(req) { ... }
+    }
+});
 ```
+A key without a trailing `/` matches that path exactly.
 
-**Which engine:** `llamaEmbed` (llama.cpp GGUF) is the mature default and the
-one to use unless told otherwise — it is GPU-accelerated by Metal on Apple
-Silicon and CUDA on Linux. `onnxEmbed` (ONNX model directory) is CUDA-only, so
-on macOS it always runs on the CPU. `clipEmbed` is for image/text CLIP models
-(`embed(?, 'image')` takes a file path). All three are set the same way and are
-mutually exclusive per connection.
-
-Rows are returned **already ordered by rank** — no `ORDER BY` needed.
-
-### Hybrid search: LIKEP + LIKEV (rank fusion)
-A single `OR` fuses full-text and vector search using Reciprocal Rank Fusion,
-which is usually better than either alone:
-
+### The request object
 ```javascript
-var res = sql.exec(
-    "SELECT id, title, $rank, $krank, $vrank FROM docs " +
-    "WHERE doc LIKEP ? OR v LIKEV ?",
-    [terms, terms], {maxRows: 20});
-```
-- `$rank` — fused positional score (not a calibrated relevance value)
-- `$krank` — the keyword side's own score; `0` if that side did not match
-- `$vrank` — the vector side's own score; `0` if that side did not match
-- `$krank`/`$vrank` are meaningful **in the SELECT list only**
-- candidate pool sizes: `likepRows` (keyword) and `likevRows` (vector)
-
-For long documents, `chunkembed()` stores **all** of a document's chunk
-vectors in one column so a match on any chunk finds the row.
-
-**Gotcha:** without a vector index, a `LIKEV` side is *refused* rather than
-scanned — the query still succeeds, but that half contributes nothing and the
-only signal is a soft error in `sql.errMsg` ("Query on `v' would require
-linear search"). A hybrid query then quietly returns keyword-only results.
-Either build the index (`CREATE VECTOR INDEX`) or opt into the scan with
-`sql.set({alLinear: true})`. Check `sql.errMsg` after vector queries.
-
-Full detail: `rampart-sql.rst` — *Vector Indexes*, *Querying with LIKEV*,
-*Hybrid keyword + vector queries (rank fusion)*. Knob reference (`llamaEmbed`,
-`onnxEmbed`, `clipEmbed`, `likevRows`, `likepRows`, `likevCache`):
-`sql-set.rst`. Function reference (`embed`, `chunkembed`, `vecdist`):
-`sql-server-funcs.rst`.
-
-### AI modules used directly (without SQL)
-When you need embeddings, reranking or generation outside the database, the
-langtools modules are separate `require()`s — all documented in
-`rampart-langtools.rst`:
-
-- `rampart-llamacpp` — `initEmbed()`, `initRerank()`, `initGen()` (text
-  generation, chat, tool calling). GPU via Metal / CUDA.
-- `rampart-onnx` — `initEmbed()`, `initRerank()`, plus general
-  `initSession()` for arbitrary ONNX models and tokenizers. GPU is CUDA-only.
-- `rampart-clip` — CLIP image and text embeddings in one shared space.
-- `rampart-faiss` — standalone vector index (`openFactory()`, `addFp32()`,
-  `searchFp32()`), independent of SQL vector indexes.
-- `rampart-models` — resolves a short model name to a file, downloading from
-  HuggingFace on first use: `models.get("bge-m3:q8_0")`. Use this rather than
-  hard-coding paths.
-
-### curl for HTTP requests
-```javascript
-var curl = require("rampart-curl");
-var res = curl.fetch("https://api.example.com/data", {maxTime: 10});
-if(res.status === 200) {
-    var data = JSON.parse(res.text);
+function handler(req) {
+    req.query.q          // ?q=...   (repeated keys become an Array)
+    req.postData.content // parsed POST body: form fields or JSON (Object)
+    req.body             // raw body (Buffer)
+    req.cookies.name     // parsed cookies
+    req.headers          // request headers
+    req.params.q         // query + POST + cookies + headers merged
+    req.method           // "GET", "POST", ...
+    req.path.path        // "/apps/search/sub/a.html"
+    req.path.file        // "a.html"
+    req.path.base        // "/apps/search/sub/"
+    req.path.url         // full URL with query string
+    req.ip               // client address
 }
 ```
+`req.params` is convenient but includes headers and cookies; read
+`req.query` or `req.postData.content` when the source matters.
 
-### WebSocket patterns
-One handler serves the whole connection; `req.count == 0` is the connect call,
-later calls carry client data. Per-connection state lives on `req` and persists
-across messages.
+A multipart upload (`multipart/form-data`) also arrives in
+`req.postData.content`, as an Array with one entry per part:
+`{name, filename, "Content-Type", content}`, where `content` is a Buffer.
+There is no `req.formData`.
+
+### The return object
+The key names the content type:
 ```javascript
-function chat(req) {
-    if(req.count == 0) {                       // connect
+return {html: "<h1>Hello</h1>"};
+return {json: {status: "ok"}};
+return {txt: "plain text"};
+return {jpg: "@/path/to/image.jpg"};                 // @ serves a file
+return {status: 302, headers: {location: "/new"}};   // redirect
+return {status: 404, html: "Not found"};
+```
+
+### WebSockets
+One function serves the whole connection.  `req.count == 0` is the connect
+call; later calls carry a message in `req.body`.  Properties set on `req`
+persist for the connection.
+```javascript
+module.exports = function(req) {
+    if(req.count == 0) {
         req.username = req.query.user || "anonymous";
         req.wsOnDisconnect(function() { /* cleanup */ });
         return;
     }
-    req.wsSend("Echo: " + sprintf("%s", req.body));   // req.body is a Buffer
-}                                                     // wsSend also takes an Object -> JSON
-module.exports = chat;
+    req.wsSend("Echo: " + sprintf("%s", req.body));   // an Object is sent as JSON
+};
 ```
 
-### Misc
-- **Password hashing:** `crypto.passToKeyIv({password, salt: crypto.sha1(s),
-  iter: 10000}).key`. Session auth is in `rampart-auth.rst`.
-- **Directory traversal:** validate with
-  `realPath(f).startsWith(allowed_root)` inside a `try` (`realPath` throws on
-  a missing file).
+### SQL
+```javascript
+var Sql = require("rampart-sql");
+var sql = new Sql.connection("/path/to/db", true);   // true = create if missing
 
-## Pitfalls to Watch For
+sql.exec("CREATE TABLE IF NOT EXISTS docs (title VARCHAR(128), body VARCHAR(8000))");
+sql.exec("INSERT INTO docs VALUES(?, ?)", [title, body]);
 
-1. **Don't write Node code.** `require('fs')` and friends *do* resolve via
-   `rampart-nodeshim` (see *Lazy-loaded surfaces* above), but that layer is for
-   running libraries that expect Node. Write new code against `rampart.utils`
-   and the `rampart-*` modules.
+var res = sql.exec("SELECT * FROM docs", {maxRows: 50});
+// res = {columns: [...], rows: [{title:..., body:...}, ...], rowCount: n}
 
-2. **SQL 10-row default.** SELECT returns max 10 rows unless you set `maxRows`.
+var row = sql.one("SELECT * FROM docs WHERE title = ?", [t]);   // Object or undefined
 
-3. **`IF NOT EXISTS` works on CREATE, but there is no `DROP ... IF EXISTS`.**
-   `CREATE TABLE IF NOT EXISTS` and `CREATE INDEX IF NOT EXISTS` are both
-   supported and idempotent. `DROP TABLE IF EXISTS` is a syntax error — but it
-   is not needed, because a plain `DROP TABLE` of a table that does not exist
-   already succeeds silently.
+// one row at a time; return false to stop
+sql.exec("SELECT * FROM docs", {maxRows: -1}, function(row, i, cols, info) { });
 
-4. **Server threads don't share state.** Module variables are per-thread.
-   Use SQL, LMDB, Redis, or thread clipboard for shared data.
+// the id of a new row
+var id = sql.exec("INSERT INTO docs VALUES(?, ?)", [t, b], {withId: true}).rows[0].$recid;
+```
+- **`maxRows` defaults to 10.**  Pass `{maxRows: -1}` for every row.
+- `sql.exec()` throws on a hard error (bad syntax) but not on a soft one,
+  such as a duplicate in a unique index.  Check `sql.errMsg` after writes.
+- `sql.query()` never throws; always check `sql.errMsg`.
+- Use `?` parameters for anything supplied by a user.
+- `sql.set()` wants real types: `true`/`false` for booleans and whole
+  numbers for integers.  An unknown setting name throws.
 
-5. **Thread variable scoping.** Only globals that exist BEFORE
-   `new rampart.thread()` are copied. Variables defined after are invisible.
+### Full-text search
+```javascript
+// \uword matches whole UTF-8 characters, so any language is indexed
+sql.exec("CREATE FULLTEXT INDEX docs_ftx ON docs(body) " +
+    "WITH WORDEXPRESSIONS ('[\\uword]{1,99}')");
 
-6. **fgets default is 1 byte.** Use `fgets(handle, 4096)` to read a line.
+var res = sql.exec("SELECT title FROM docs WHERE body LIKEP ?",
+    ["search terms"], {maxRows: 20});
+```
+`LIKEP` returns rows best match first.  **Do not add `ORDER BY $rank`**; it
+is slower and changes nothing.  `LIKEP` ranks the best `likepRows`
+candidates (100 by default), so it is for "the best results", not for
+counting every match.
 
-7. **Event callback signature.** `rampart.event.on()` callbacks receive
-   `(uservar, triggerval)` — the trigger value is the SECOND argument.
+### Semantic and hybrid search
+Embedding runs inside the SQL engine.  Load a model on the connection, then
+`embed()` and `LIKEV` use it.
+```javascript
+var models = require("rampart-models");
+sql.set({llamaEmbed: models.get("bge-m3:q8_0")});    // downloads on first use
 
-8. **TypedArrays do have the array methods.** `forEach`, `map`, `filter`,
-   `sort`, `reduce`, `slice`, `fill`, `indexOf`, `join` and the rest are all
-   present and work. (`map`/`filter`/`slice` return a new TypedArray, not an
-   Array.) What is missing is elsewhere: `Buffer.readBigInt64BE` and the other
-   `Big*` accessors — see pitfall 9.
+sql.exec("CREATE TABLE docs (title varchar(128), doc varchar(8000), v varvecF32(1024))");
+sql.exec("INSERT INTO docs VALUES(?, ?, embed(?))", [title, body, body]);
+// the default backend (IVFPQ) needs about 10,000 rows; HNSW suits small tables
+sql.exec("CREATE VECTOR INDEX docs_v ON docs(v) WITH backend 'hnsw'");
 
-9. **Buffers are not Node.js Buffers.** See the buffer table in `faq.rst`
-   for what works on which type. `Buffer.from()` accepts String, Buffer,
-   ArrayBuffer, TypedArray, or Array. `Buffer.alloc(n, fill)` accepts
-   Number, String, or Buffer fill.
+// LIKEV takes a vector, or a String that is embedded with the same model
+var hits = sql.exec("SELECT title, $rank FROM docs WHERE v LIKEV ?", ["search text"]);
 
-## External Projects
+// keyword and vector results fused (Reciprocal Rank Fusion)
+var both = sql.exec("SELECT title, $rank, $krank, $vrank FROM docs " +
+    "WHERE doc LIKEP ? OR v LIKEV ?", [terms, terms], {maxRows: 20});
+```
+- The vector column's size must match the model's dimension.
+- Engines: `llamaEmbed` (GGUF; the default choice, GPU on Apple Silicon and
+  CUDA), `onnxEmbed`, `clipEmbed` (images and text).  One per connection.
+- For long documents, `chunkembed()` stores a vector per chunk in one
+  column; `excerpt()` returns the matching passage.
+- **Without a vector index, `LIKEV` is refused rather than scanned.**  The
+  query still succeeds, a hybrid query quietly returns keyword-only rows,
+  and the only sign is a message in `sql.errMsg`.  Build the index, or allow
+  the scan with `sql.set({alLinear: true})`.
 
-Shipped with the binary and usable via `require()`: **langtools** (AI —
-`rampart-langtools.rst`), **webview** (desktop apps — `rampart-webview.rst`),
-**iroh** and **iroh-webproxy** (P2P networking), **lang derivs** (multilingual
-suffix rules, English included).
+Details: `rampart-sql.rst` *Vector Search* and *Hybrid keyword + vector
+queries (rank fusion)*; `faq.rst` *Which embedding engine should I use?*
 
-Separate repos under `github.com/aflin`, not installed: `rampart_webdav`,
-`rampart_webshield`, `Self_Hosted_Search_Engine`, `rampart_wikipedia_search`,
-`rampart_docs`.
+### AI modules outside SQL
+All in `rampart-langtools.rst`:
+- `rampart-llamacpp` — `initEmbed()`, `initRerank()`, `initGen()` (generation,
+  chat, tool calling)
+- `rampart-onnx` — embedding, reranking, arbitrary ONNX sessions
+- `rampart-clip` — image and text embeddings in one space
+- `rampart-ocr` — text from images and scanned pages
+- `rampart-faiss` — a standalone vector index
+- `rampart-models` — `models.get("name")` resolves a model name to a local
+  file, downloading it on first use.  Use it instead of hard-coded paths.
 
-## Documentation Map
+For a hosted model, or one on another machine, use `rampart-llm`
+(`rampart-extras.rst`).
 
-Detailed docs are in reStructuredText files in the `source/` directory:
+### HTTP requests
+```javascript
+var curl = require("rampart-curl");
+var res = curl.fetch("https://api.example.com/data", {maxTime: 10});
+if(res.status == 200)
+    var data = JSON.parse(res.text);     // res.body is the Buffer
+else
+    printf("failed: %s\n", res.errMsg);  // status 0 = no response
+```
+POST with `{post: {a: 1}}` (form) or `{post: jsonString, headers:
+["Content-Type: application/json"]}`.
 
-| Topic | File |
-|-------|------|
-| Core runtime, globals, require, events, transpiler | `rampart-main.rst` |
-| Utility functions (printf, file I/O, exec, fork, dates, HLL) | `rampart-utils.rst` |
-| Threads, locks, thread clipboard | `rampart-thread.rst` |
-| HTTP server (routes, request/response, WebSocket) | `rampart-server.rst` |
-| SQL database and full-text search | `rampart-sql.rst` (via `sqltoc.rst`) |
-| SQL string functions (rex, sandr, stringFormat, abstract) | `rampart-sql.rst` |
-| SQL command line utilities (tsql, kdbfchk, addtable) | `sql-utils.rst` |
-| Session authentication | `rampart-auth.rst` |
-| HTTP client (curl) | `rampart-curl.rst` |
-| Crypto (OpenSSL) | `rampart-crypto.rst` |
-| HTML parsing and DOM manipulation | `rampart-html.rst` |
-| Markdown to HTML | `rampart-cmark.rst` |
-| URL parsing and resolution | `rampart-url.rst` |
-| robots.txt compliance | `rampart-robots.rst` |
-| LMDB key-value store | `rampart-lmdb.rst` |
-| Redis client | `rampart-redis.rst` |
-| TCP/SSL sockets | `rampart-net.rst` |
-| Python interop | `rampart-python.rst` |
-| Text extraction (DOCX, PDF, etc.) | `rampart-totext.rst` |
-| Image processing (GraphicsMagick) | `rampart-gm.rst` |
-| Vector operations and semantic search | `rampart-vector.rst` |
-| Celestial calculations, holidays, weather | `rampart-almanac.rst` |
-| Source code parsing (tree-sitter) | `rampart-treesitter.rst` |
-| AI modules: llamacpp (embed/rerank/gen), onnx, clip, faiss, models | `rampart-langtools.rst` |
-| SQL embedding knobs (llamaEmbed, onnxEmbed, clipEmbed, likev*) | `sql-set.rst` |
-| SQL functions (embed, chunkembed, vecdist, abstract, rex) | `sql-server-funcs.rst` |
-| Web Platform globals (fetch, URL, Blob, streams) and `Intl` | `rampart-main.rst` |
-| Node compatibility layer (`require('fs')` etc., needs `-t`) | `rampart-extras.rst` |
-| Desktop apps (webview) | `rampart-webview.rst` |
-| Headless Chrome automation | `rampart-chromeview.rst` |
-| Rex pattern matching (**not** Perl regex) | `rex-sandr.md` |
-| FAQ, buffer table, deployment, gotchas | `faq.rst` |
-| Extras (webserver module, LLM module) | `rampart-extras.rst` |
-| Tutorials (citysearch, wschat, pi_news) | `tutorial-*.rst` |
+### Passwords and paths
+- Hash: `crypto.passwd(password).line`; verify:
+  `crypto.passwdCheck(line, password)`.  For logins, use `rampart-auth`
+  rather than writing your own.
+- Before opening a user-supplied path, confirm
+  `realPath(f).startsWith(allowed_root)` inside a `try` (`realPath` throws
+  if the file is missing).
+
+## Pitfalls
+
+1. **`readFile()` returns a Buffer.**  Pass `{returnString: true}` for text,
+   or convert with `bufferToString()`.
+2. **`sql.exec()` returns at most 10 rows** unless `maxRows` is set.
+3. **`stat()` returns `false` for a missing file**; `readFile()` and
+   `realPath()` throw.
+4. **`fgets(handle)` reads one byte.**  Use `fgets(handle, 4096)`, or
+   `readLine(file).next()`.
+5. **Threads see only globals that existed when the thread was created.**
+   Define shared functions and values before `new rampart.thread()`.
+6. **Server handlers run in many threads.**  A module-level variable is one
+   copy per thread, so a counter or cache kept there is not shared.
+7. **`eval()` runs in the global scope.**  It cannot read a function's local
+   variables, and a `var` it declares becomes a global.  To pass a local
+   value in, use `new Function("x", code)(value)`.
+8. **`DROP TABLE IF EXISTS` is a syntax error.**  `CREATE ... IF NOT EXISTS`
+   is supported.  A plain `DROP TABLE` of a missing table does not throw; it
+   only sets `sql.errMsg`.
+9. **`rampart.event.on()` callbacks receive `(uservar, triggerval)`.**  The
+   value passed to `trigger()` is the second argument.
+10. **Buffers are not Node Buffers.**  `Buffer.readBigInt64BE` and the other
+    `Big*` accessors are missing.  See `faq.rst` *What buffer types are
+    available and how do they differ?*
+11. **Rex is not regular expressions.**  `Sql.rex()` and `sandr()` use their
+    own syntax (`rex-sandr.md`).  JavaScript `RegExp` works as usual, and
+    `Sql.re2()` takes RE2 syntax.
+12. **The transpiler cache is keyed on the source file's time.**  After
+    upgrading Rampart, delete stale `*.transpiled.js` files if transpiled
+    code misbehaves.
+
+## Changed Recently
+
+If your knowledge of Rampart predates these releases:
+
+- **0.7.6** — `sql.importJsonl()` / `importJsonlFile()`; `lockTable` option
+  for imports; `UNION` works.
+- **0.7.5** — `$recid` is a Number; `{withId: true}` returns the ids of rows
+  written; an empty `varchar` or blob column reads back as `""`, not `null`;
+  `html.toMarkdown()`; `fprintf()` writes nothing if formatting fails;
+  rampart-sql is under the TSAL-1.0 license (`LICENSE-tsal.txt`).
+- **0.7.4** — `curl` uses HTTP/2 when the server offers it;
+  `toLocaleString()` and friends honor a locale through `Intl`; the server's
+  reverse proxy streams replies.
+- **0.7.3** — the sample web server, Mini IDE and documentation come with
+  every install.
+- **0.7.2** — `sql.get()` and `sql.reset()`; `sql.set()` type checking;
+  server `threadLimit` and multi-listener `listen`;
+  `browser.fetch()` in chromeview.
+- `await` inside loops and destructuring an awaited value now work under
+  `"use transpiler"`.
+- `crypto.JSBI` and `rampart-url` are superseded by native `BigInt` and
+  `rampart.utils.urlComponents`.

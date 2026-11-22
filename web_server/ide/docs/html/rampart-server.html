@@ -8,7 +8,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>The rampart-server HTTP module &mdash; Rampart 0.7.2 documentation</title>
+  <title>The rampart-server HTTP module &mdash; Rampart 0.7.6 documentation</title>
   
 
   
@@ -37,7 +37,7 @@
         <link rel="index" title="Index"
               href="genindex.html"/>
         <link rel="search" title="Search" href="search.html"/>
-    <link rel="top" title="Rampart 0.7.2 documentation" href="index.html"/>
+    <link rel="top" title="Rampart 0.7.6 documentation" href="index.html"/>
         <link rel="next" title="The rampart-auth module" href="rampart-auth.html"/>
         <link rel="prev" title="The rampart-sql Command Line Utilities" href="sql-utils.html"/> 
 
@@ -156,6 +156,7 @@
 <li class="toctree-l4"><a class="reference internal" href="#proxy-options">Proxy Options</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#forwarded-headers">Forwarded Headers</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#error-handling">Error Handling</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#streaming-responses">Streaming Responses</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#websocket-proxying">WebSocket Proxying</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#when-to-use-the-built-in-proxy">When to Use the Built-in Proxy</a></li>
 </ul>
@@ -2616,10 +2617,15 @@ requests will be forwarded.  Must begin with <code class="docutils literal notra
 inject into the request sent to the upstream server.  These are added
 alongside the original client headers and will override any client header
 with the same name.</li>
-<li><code class="docutils literal notranslate"><span class="pre">timeout</span></code> - A <span class="green">Number</span> (optional).  The maximum number of
-seconds to wait for the upstream server to respond.  If the timeout is
-reached, the proxy returns a <code class="docutils literal notranslate"><span class="pre">504</span> <span class="pre">Gateway</span> <span class="pre">Timeout</span></code> response to the
-client.  The default is no timeout.</li>
+<li><code class="docutils literal notranslate"><span class="pre">timeout</span></code> - A <span class="green">Number</span> (optional).  Seconds to wait for the
+upstream server’s response headers, and after that the longest the
+upstream may go without sending any body data.  If the headers do not
+arrive in time the proxy returns a <code class="docutils literal notranslate"><span class="pre">504</span> <span class="pre">Gateway</span> <span class="pre">Timeout</span></code> response.
+If the body stalls for longer than <code class="docutils literal notranslate"><span class="pre">timeout</span></code> once it has started,
+the proxy closes the client connection without the final chunk, so
+the client sees a truncated response rather than a complete one.
+Unset, the headers deadline is 30 seconds and there is no idle limit,
+so a long-running stream is never cut off by the proxy.</li>
 <li><code class="docutils literal notranslate"><span class="pre">insecure</span></code> - A <span class="green">Boolean</span> (optional).  If <code class="docutils literal notranslate"><span class="pre">true</span></code>, skip SSL
 certificate verification when connecting to an <code class="docutils literal notranslate"><span class="pre">https://</span></code> upstream.
 This allows proxying to upstream servers that use self-signed or otherwise
@@ -2661,9 +2667,30 @@ original client request.</li>
 <div class="section" id="error-handling">
 <h4>Error Handling<a class="headerlink" href="#error-handling" title="Permalink to this headline">¶</a></h4>
 <p>If the upstream server is unreachable or the connection fails, the proxy
-returns a <code class="docutils literal notranslate"><span class="pre">502</span> <span class="pre">Bad</span> <span class="pre">Gateway</span></code> response to the client.  If a <code class="docutils literal notranslate"><span class="pre">timeout</span></code>
-is configured and the upstream does not respond within the specified
-number of seconds, a <code class="docutils literal notranslate"><span class="pre">504</span> <span class="pre">Gateway</span> <span class="pre">Timeout</span></code> response is returned.</p>
+returns a <code class="docutils literal notranslate"><span class="pre">502</span> <span class="pre">Bad</span> <span class="pre">Gateway</span></code> response to the client.  If the upstream
+does not send response headers within <code class="docutils literal notranslate"><span class="pre">timeout</span></code> seconds (30 when
+unset), a <code class="docutils literal notranslate"><span class="pre">504</span> <span class="pre">Gateway</span> <span class="pre">Timeout</span></code> response is returned.</p>
+</div>
+<div class="section" id="streaming-responses">
+<h4>Streaming Responses<a class="headerlink" href="#streaming-responses" title="Permalink to this headline">¶</a></h4>
+<p>Responses are relayed as they arrive.  The client reply starts as soon
+as the upstream’s response headers are in, and each piece of the body is
+forwarded as the upstream sends it, so server-sent events
+(<code class="docutils literal notranslate"><span class="pre">text/event-stream</span></code>), long polls, progressive downloads and other
+responses that take a while to complete reach the client as they are
+produced rather than all at once at the end.  An upstream response with
+a <code class="docutils literal notranslate"><span class="pre">Content-Length</span></code> keeps it; any other response is sent to the client
+with <code class="docutils literal notranslate"><span class="pre">Transfer-Encoding:</span> <span class="pre">chunked</span></code>.  An HTTP/1.0 client, which cannot
+read chunked encoding, receives the response in one piece once the
+upstream has finished.</p>
+<p>If the upstream fails or stalls past <code class="docutils literal notranslate"><span class="pre">timeout</span></code> after the reply has
+started, the proxy cannot send an error status, so it closes the client
+connection before the response is complete.  Clients see this as a
+truncated transfer.  A fast upstream feeding a slow client is paused
+once about a megabyte is queued for the client and resumed as the
+client drains, so a large download does not accumulate in memory.
+The upstream connection is closed when its response is complete or the
+client goes away.</p>
 </div>
 <div class="section" id="websocket-proxying">
 <h4>WebSocket Proxying<a class="headerlink" href="#websocket-proxying" title="Permalink to this headline">¶</a></h4>
@@ -3887,7 +3914,7 @@ from the filesystem which end in <code class="docutils literal notranslate"><spa
     <script type="text/javascript">
         var DOCUMENTATION_OPTIONS = {
             URL_ROOT:'./',
-            VERSION:'0.7.2',
+            VERSION:'0.7.6',
             COLLAPSE_INDEX:false,
             FILE_SUFFIX:'.html',
             HAS_SOURCE:  true,

@@ -8,7 +8,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>The rampart-sql Command Line Utilities &mdash; Rampart 0.7.2 documentation</title>
+  <title>The rampart-sql Command Line Utilities &mdash; Rampart 0.7.6 documentation</title>
   
 
   
@@ -37,7 +37,7 @@
         <link rel="index" title="Index"
               href="genindex.html"/>
         <link rel="search" title="Search" href="search.html"/>
-    <link rel="top" title="Rampart 0.7.2 documentation" href="index.html"/>
+    <link rel="top" title="Rampart 0.7.6 documentation" href="index.html"/>
         <link rel="up" title="The rampart-sql module" href="sqltoc.html"/>
         <link rel="next" title="The rampart-server HTTP module" href="rampart-server.html"/>
         <link rel="prev" title="Server Properties" href="sql-set.html"/> 
@@ -202,7 +202,10 @@
 They include <code class="docutils literal notranslate"><span class="pre">tsql</span></code>, <code class="docutils literal notranslate"><span class="pre">kdbfchk</span></code>, <code class="docutils literal notranslate"><span class="pre">addtable</span></code>, <code class="docutils literal notranslate"><span class="pre">rex</span></code> and <code class="docutils literal notranslate"><span class="pre">metamorph</span></code>.</p>
 <p>Note that the <code class="docutils literal notranslate"><span class="pre">texislockd</span></code> is used by tsql/rampart-sql to coordinate locks
 and is run automatically.  It should stay in the provided directory or
-otherwise be available in the systems <code class="docutils literal notranslate"><span class="pre">PATH</span></code>.</p>
+otherwise be available in the systems <code class="docutils literal notranslate"><span class="pre">PATH</span></code>.  It exits after 60 seconds
+with no connections and is started again when next needed, so after
+upgrading rampart, the new <code class="docutils literal notranslate"><span class="pre">texislockd</span></code> takes over once everything using
+the databases (e.g. a server) has been stopped for a minute.</p>
 <div class="section" id="the-tsql-command-line-utility">
 <h2>The tsql Command Line Utility<a class="headerlink" href="#the-tsql-command-line-utility" title="Permalink to this headline">¶</a></h2>
 <p>The tsql utility is the main program provided for interactive use of a
@@ -442,7 +445,7 @@ code.</p>
     <script type="text/javascript">
         var DOCUMENTATION_OPTIONS = {
             URL_ROOT:'./',
-            VERSION:'0.7.2',
+            VERSION:'0.7.6',
             COLLAPSE_INDEX:false,
             FILE_SUFFIX:'.html',
             HAS_SOURCE:  true,

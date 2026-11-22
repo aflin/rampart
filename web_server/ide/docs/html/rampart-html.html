@@ -8,7 +8,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>The rampart-html module &mdash; Rampart 0.7.2 documentation</title>
+  <title>The rampart-html module &mdash; Rampart 0.7.6 documentation</title>
   
 
   
@@ -37,7 +37,7 @@
         <link rel="index" title="Index"
               href="genindex.html"/>
         <link rel="search" title="Search" href="search.html"/>
-    <link rel="top" title="Rampart 0.7.2 documentation" href="index.html"/>
+    <link rel="top" title="Rampart 0.7.6 documentation" href="index.html"/>
         <link rel="next" title="The rampart-crypto module" href="rampart-crypto.html"/>
         <link rel="prev" title="The rampart-net module" href="rampart-net.html"/> 
 
@@ -129,6 +129,10 @@
 <li class="toctree-l3"><a class="reference internal" href="#text-and-html-output">Text and HTML Output</a><ul>
 <li class="toctree-l4"><a class="reference internal" href="#tohtml">toHtml</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#totext">toText</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#tomarkdown">toMarkdown</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#link-positions">Link positions</a><ul>
 <li class="toctree-l4"><a class="reference internal" href="#prettyprint">prettyPrint</a></li>
 </ul>
 </li>
@@ -1058,6 +1062,142 @@ in markdown style.  Default is <code class="docutils literal notranslate"><span 
 <span class="cm">*/</span>
 </pre></div>
 </div>
+</div>
+<div class="section" id="tomarkdown">
+<h4>toMarkdown<a class="headerlink" href="#tomarkdown" title="Permalink to this headline">¶</a></h4>
+<p>Return an <span class="green">Array</span> of <span class="green">Strings</span> (or optionally a concatenated
+<span class="green">String</span>), each string being Markdown for one of the given elements
+and its children.  Headings, emphasis, code, blockquotes, lists, links and
+tables are kept, as GitHub-style Markdown.  Elements with no Markdown form
+contribute their text.  The output converts to HTML with
+<a class="reference external" href="rampart-cmark.html">rampart-cmark</a> and its default options.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">md</span> <span class="o">=</span> <span class="nx">hobj</span><span class="p">.</span><span class="nx">toMarkdown</span><span class="p">([</span><span class="nx">options</span><span class="p">]);</span>
+</pre></div>
+</div>
+<p>Where:</p>
+<ul>
+<li><p class="first"><code class="docutils literal notranslate"><span class="pre">md</span></code> is the return value.</p>
+</li>
+<li><p class="first"><code class="docutils literal notranslate"><span class="pre">hobj</span></code> is an <em>html object</em> with 0 or more elements.</p>
+</li>
+<li><p class="first"><code class="docutils literal notranslate"><span class="pre">options</span></code> is an <span class="green">Object</span> with the following settings:</p>
+<blockquote>
+<div><ul class="simple">
+<li><code class="docutils literal notranslate"><span class="pre">concatenate</span></code> - a <span class="green">Boolean</span> if true, return one
+<span class="green">String</span> instead of an <span class="green">Array</span>.  Default is <code class="docutils literal notranslate"><span class="pre">false</span></code>.</li>
+<li><code class="docutils literal notranslate"><span class="pre">headings</span></code> - a <span class="green">Boolean</span>, <code class="docutils literal notranslate"><span class="pre">&lt;h1&gt;</span></code>-<code class="docutils literal notranslate"><span class="pre">&lt;h6&gt;</span></code> become <code class="docutils literal notranslate"><span class="pre">#</span></code>
+headings.  Default is <code class="docutils literal notranslate"><span class="pre">true</span></code>.</li>
+<li><code class="docutils literal notranslate"><span class="pre">emphasis</span></code> - a <span class="green">Boolean</span>, <code class="docutils literal notranslate"><span class="pre">&lt;b&gt;</span></code>/<code class="docutils literal notranslate"><span class="pre">&lt;strong&gt;</span></code> become
+<code class="docutils literal notranslate"><span class="pre">**text**</span></code>, <code class="docutils literal notranslate"><span class="pre">&lt;i&gt;</span></code>/<code class="docutils literal notranslate"><span class="pre">&lt;em&gt;</span></code> become <code class="docutils literal notranslate"><span class="pre">*text*</span></code> and
+<code class="docutils literal notranslate"><span class="pre">&lt;del&gt;</span></code>/<code class="docutils literal notranslate"><span class="pre">&lt;s&gt;</span></code>/<code class="docutils literal notranslate"><span class="pre">&lt;strike&gt;</span></code> become <code class="docutils literal notranslate"><span class="pre">~~text~~</span></code>.
+Default is <code class="docutils literal notranslate"><span class="pre">true</span></code>.</li>
+<li><code class="docutils literal notranslate"><span class="pre">code</span></code> - a <span class="green">Boolean</span>, <code class="docutils literal notranslate"><span class="pre">&lt;code&gt;</span></code> becomes a code span and
+<code class="docutils literal notranslate"><span class="pre">&lt;pre&gt;</span></code> a fenced block.  A <code class="docutils literal notranslate"><span class="pre">language-x</span></code> or <code class="docutils literal notranslate"><span class="pre">lang-x</span></code> class
+supplies the language of the block.  Default is <code class="docutils literal notranslate"><span class="pre">true</span></code>.</li>
+<li><code class="docutils literal notranslate"><span class="pre">blockquote</span></code> - a <span class="green">Boolean</span>, <code class="docutils literal notranslate"><span class="pre">&lt;blockquote&gt;</span></code> becomes <code class="docutils literal notranslate"><span class="pre">&gt;</span></code>
+prefixed lines.  Default is <code class="docutils literal notranslate"><span class="pre">true</span></code>.</li>
+<li><code class="docutils literal notranslate"><span class="pre">tables</span></code> - a <span class="green">Boolean</span>, <code class="docutils literal notranslate"><span class="pre">&lt;table&gt;</span></code> becomes a pipe table.
+When false, each table row is one line of text.  Default is <code class="docutils literal notranslate"><span class="pre">true</span></code>.</li>
+<li><code class="docutils literal notranslate"><span class="pre">tableFallback</span></code> - a <span class="green">String</span>, how a table nested in a table
+cell is written, as pipe tables cannot nest: <code class="docutils literal notranslate"><span class="pre">&quot;text&quot;</span></code> for its text,
+or <code class="docutils literal notranslate"><span class="pre">&quot;skip&quot;</span></code> to leave it out.
+A table whose only cell holds another table is treated as layout and
+this does not apply.  Default is <code class="docutils literal notranslate"><span class="pre">&quot;text&quot;</span></code>.</li>
+<li><code class="docutils literal notranslate"><span class="pre">escape</span></code> - a <span class="green">Boolean</span>, add a backslash to text that would
+otherwise be read as Markdown.  Only text that would actually change
+meaning is escaped, so <code class="docutils literal notranslate"><span class="pre">array[0]</span></code> and <code class="docutils literal notranslate"><span class="pre">2</span> <span class="pre">*</span> <span class="pre">3</span></code> are left as they
+are.  Pipes in table cells are always escaped.  Default is <code class="docutils literal notranslate"><span class="pre">true</span></code>.</li>
+<li><code class="docutils literal notranslate"><span class="pre">links</span></code> - a <span class="green">Boolean</span>, <code class="docutils literal notranslate"><span class="pre">&lt;a</span> <span class="pre">href&gt;</span></code> becomes <code class="docutils literal notranslate"><span class="pre">[text](href)</span></code>.
+When false only the text is output.  Default is <code class="docutils literal notranslate"><span class="pre">true</span></code>.</li>
+<li><code class="docutils literal notranslate"><span class="pre">linkSpans</span></code> - a <span class="green">Boolean</span> if true, also return the position
+of every link.  See below.  Default is <code class="docutils literal notranslate"><span class="pre">false</span></code>.</li>
+<li><code class="docutils literal notranslate"><span class="pre">imgLinks</span></code> - a <span class="green">Boolean</span>, <code class="docutils literal notranslate"><span class="pre">&lt;img&gt;</span></code> becomes
+<code class="docutils literal notranslate"><span class="pre">![alt](src)</span></code>.  Default is <code class="docutils literal notranslate"><span class="pre">false</span></code>.</li>
+<li><code class="docutils literal notranslate"><span class="pre">imgAltText</span></code> - a <span class="green">Boolean</span> if true, alt text from images will
+be output.  An image that is the only content of a link always supplies
+the link’s text.  Default is <code class="docutils literal notranslate"><span class="pre">false</span></code>.</li>
+<li><code class="docutils literal notranslate"><span class="pre">maxBlankLines</span></code> - a <span class="green">Number</span>, the blank lines between blocks,
+1 or more.  Default is <code class="docutils literal notranslate"><span class="pre">1</span></code>.</li>
+<li><code class="docutils literal notranslate"><span class="pre">metaDescription</span></code>, <code class="docutils literal notranslate"><span class="pre">metaKeywords</span></code>, <code class="docutils literal notranslate"><span class="pre">titleText</span></code> - as in
+<a class="reference internal" href="#totext">toText</a>.</li>
+</ul>
+</div></blockquote>
+</li>
+</ul>
+<p>A checkbox (<code class="docutils literal notranslate"><span class="pre">&lt;input</span> <span class="pre">type=&quot;checkbox&quot;&gt;</span></code>) at the start of a list item becomes
+a task marker, <code class="docutils literal notranslate"><span class="pre">[</span> <span class="pre">]</span></code> or <code class="docutils literal notranslate"><span class="pre">[x]</span></code>.</p>
+<p>Table details: a table with no <code class="docutils literal notranslate"><span class="pre">&lt;th&gt;</span></code> first row gets an empty header
+row, so it always renders as a table.  Cells are one line, and every row has
+the same number of cells.  Pipe tables cannot span cells: a <code class="docutils literal notranslate"><span class="pre">colspan</span></code> cell’s
+contents go in its first column and the other columns are left empty, and a
+<code class="docutils literal notranslate"><span class="pre">rowspan</span></code> cell’s contents are repeated in each row it covers, unless the
+table would become too large, in which case those cells are left empty.  A table that is too
+sparse to lay out is written as one line per row, and tables with no content
+are left out.</p>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">html</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-html&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">doc</span> <span class="o">=</span> <span class="nx">html</span><span class="p">.</span><span class="nx">newDocument</span><span class="p">(</span>
+    <span class="s1">&#39;&lt;h1&gt;Fruit&lt;/h1&gt;&lt;p&gt;Prices for &lt;b&gt;today&lt;/b&gt;, see &lt;a href=&quot;/about&quot;&gt;about&lt;/a&gt;.&lt;/p&gt;&#39;</span> <span class="o">+</span>
+    <span class="s1">&#39;&lt;table&gt;&lt;tr&gt;&lt;th&gt;Name&lt;/th&gt;&lt;th&gt;Price&lt;/th&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td&gt;Apple&lt;/td&gt;&lt;td&gt;$1&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;&#39;</span> <span class="o">+</span>
+    <span class="s1">&#39;&lt;ul&gt;&lt;li&gt;array[0] is literal&lt;/li&gt;&lt;li&gt;so is 2 * 3&lt;/li&gt;&lt;/ul&gt;&#39;</span> <span class="o">+</span>
+    <span class="s1">&#39;&lt;pre&gt;&lt;code class=&quot;language-js&quot;&gt;var a = [1];&lt;/code&gt;&lt;/pre&gt;&#39;</span>
+<span class="p">);</span>
+
+<span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;%s&quot;</span><span class="p">,</span> <span class="nx">doc</span><span class="p">.</span><span class="nx">toMarkdown</span><span class="p">({</span><span class="nx">concatenate</span><span class="o">:</span> <span class="kc">true</span><span class="p">}));</span>
+
+<span class="cm">/* expected output:</span>
+<span class="cm"># Fruit</span>
+
+<span class="cm">Prices for **today**, see [about](/about).</span>
+
+<span class="cm">| Name | Price |</span>
+<span class="cm">|---|---|</span>
+<span class="cm">| Apple | $1 |</span>
+
+<span class="cm">* array[0] is literal</span>
+<span class="cm">* so is 2 * 3</span>
+
+<span class="cm">```js</span>
+<span class="cm">var a = [1];</span>
+<span class="cm">```</span>
+<span class="cm">*/</span>
+</pre></div>
+</div>
+</div>
+</div>
+<div class="section" id="link-positions">
+<h3>Link positions<a class="headerlink" href="#link-positions" title="Permalink to this headline">¶</a></h3>
+<p>With <code class="docutils literal notranslate"><span class="pre">linkSpans:</span> <span class="pre">true</span></code> the return value is an <span class="green">Object</span> with the
+Markdown in <code class="docutils literal notranslate"><span class="pre">text</span></code> and the links in <code class="docutils literal notranslate"><span class="pre">links</span></code>.  With <code class="docutils literal notranslate"><span class="pre">concatenate</span></code> the
+offsets are into the single string.  Otherwise <code class="docutils literal notranslate"><span class="pre">text</span></code> and <code class="docutils literal notranslate"><span class="pre">links</span></code> are
+arrays of the same length, and each element of <code class="docutils literal notranslate"><span class="pre">links</span></code> is an <span class="green">Array</span>
+of spans for that string.</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">res</span> <span class="o">=</span> <span class="nx">doc</span><span class="p">.</span><span class="nx">toMarkdown</span><span class="p">({</span><span class="nx">concatenate</span><span class="o">:</span> <span class="kc">true</span><span class="p">,</span> <span class="nx">links</span><span class="o">:</span> <span class="kc">false</span><span class="p">,</span> <span class="nx">linkSpans</span><span class="o">:</span> <span class="kc">true</span><span class="p">});</span>
+
+<span class="cm">/* res.links:</span>
+<span class="cm">   [ {from: 35, to: 40, href: &quot;/about&quot;, kind: &quot;internal&quot;} ]</span>
+<span class="cm">*/</span>
+</pre></div>
+</div>
+<p>Each span has:</p>
+<ul class="simple">
+<li><code class="docutils literal notranslate"><span class="pre">from</span></code> and <code class="docutils literal notranslate"><span class="pre">to</span></code> - where the link’s text is, <code class="docutils literal notranslate"><span class="pre">to</span></code> being one past the
+end.  With <code class="docutils literal notranslate"><span class="pre">links:</span> <span class="pre">true</span></code> this is the text inside the <code class="docutils literal notranslate"><span class="pre">[...]</span></code>.</li>
+<li><code class="docutils literal notranslate"><span class="pre">href</span></code> - the value as given by <code class="docutils literal notranslate"><span class="pre">getAttr(&quot;href&quot;)</span></code>, not resolved against
+any base.</li>
+<li><code class="docutils literal notranslate"><span class="pre">kind</span></code> - <code class="docutils literal notranslate"><span class="pre">&quot;external&quot;</span></code> if <code class="docutils literal notranslate"><span class="pre">href</span></code> has a scheme (such as <code class="docutils literal notranslate"><span class="pre">https:</span></code>)
+or starts with <code class="docutils literal notranslate"><span class="pre">//</span></code>, otherwise <code class="docutils literal notranslate"><span class="pre">&quot;internal&quot;</span></code>.</li>
+</ul>
+<p>A link with no text has <code class="docutils literal notranslate"><span class="pre">from</span></code> equal to <code class="docutils literal notranslate"><span class="pre">to</span></code>.  A link repeated by a
+<code class="docutils literal notranslate"><span class="pre">rowspan</span></code> has one span per copy.</p>
+<p><strong>The offsets are UTF-8 bytes</strong>, not characters.  They differ from
+<span class="green">String</span> lengths and SQL <code class="docutils literal notranslate"><span class="pre">length()</span></code> on any non-ASCII text, so
+apply them to a <span class="green">Buffer</span> and not with <code class="docutils literal notranslate"><span class="pre">substring()</span></code>:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">buf</span> <span class="o">=</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">stringToBuffer</span><span class="p">(</span><span class="nx">res</span><span class="p">.</span><span class="nx">text</span><span class="p">);</span>
+<span class="kd">var</span> <span class="nx">linkText</span> <span class="o">=</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">bufferToString</span><span class="p">(</span><span class="nx">buf</span><span class="p">.</span><span class="nx">slice</span><span class="p">(</span><span class="nx">res</span><span class="p">.</span><span class="nx">links</span><span class="p">[</span><span class="mi">0</span><span class="p">].</span><span class="nx">from</span><span class="p">,</span> <span class="nx">res</span><span class="p">.</span><span class="nx">links</span><span class="p">[</span><span class="mi">0</span><span class="p">].</span><span class="nx">to</span><span class="p">));</span>
+</pre></div>
 </div>
 <div class="section" id="prettyprint">
 <h4>prettyPrint<a class="headerlink" href="#prettyprint" title="Permalink to this headline">¶</a></h4>
@@ -1997,7 +2137,7 @@ replaced.</p>
     <script type="text/javascript">
         var DOCUMENTATION_OPTIONS = {
             URL_ROOT:'./',
-            VERSION:'0.7.2',
+            VERSION:'0.7.6',
             COLLAPSE_INDEX:false,
             FILE_SUFFIX:'.html',
             HAS_SOURCE:  true,

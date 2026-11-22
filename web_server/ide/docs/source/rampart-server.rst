@@ -2501,10 +2501,15 @@ following properties:
   alongside the original client headers and will override any client header
   with the same name.
 
-* ``timeout`` - A :green:`Number` (optional).  The maximum number of
-  seconds to wait for the upstream server to respond.  If the timeout is
-  reached, the proxy returns a ``504 Gateway Timeout`` response to the
-  client.  The default is no timeout.
+* ``timeout`` - A :green:`Number` (optional).  Seconds to wait for the
+  upstream server's response headers, and after that the longest the
+  upstream may go without sending any body data.  If the headers do not
+  arrive in time the proxy returns a ``504 Gateway Timeout`` response.
+  If the body stalls for longer than ``timeout`` once it has started,
+  the proxy closes the client connection without the final chunk, so
+  the client sees a truncated response rather than a complete one.
+  Unset, the headers deadline is 30 seconds and there is no idle limit,
+  so a long-running stream is never cut off by the proxy.
 
 * ``insecure`` - A :green:`Boolean` (optional).  If ``true``, skip SSL
   certificate verification when connecting to an ``https://`` upstream.
@@ -2552,9 +2557,32 @@ Error Handling
 """"""""""""""
 
 If the upstream server is unreachable or the connection fails, the proxy
-returns a ``502 Bad Gateway`` response to the client.  If a ``timeout``
-is configured and the upstream does not respond within the specified
-number of seconds, a ``504 Gateway Timeout`` response is returned.
+returns a ``502 Bad Gateway`` response to the client.  If the upstream
+does not send response headers within ``timeout`` seconds (30 when
+unset), a ``504 Gateway Timeout`` response is returned.
+
+Streaming Responses
+"""""""""""""""""""
+
+Responses are relayed as they arrive.  The client reply starts as soon
+as the upstream's response headers are in, and each piece of the body is
+forwarded as the upstream sends it, so server-sent events
+(``text/event-stream``), long polls, progressive downloads and other
+responses that take a while to complete reach the client as they are
+produced rather than all at once at the end.  An upstream response with
+a ``Content-Length`` keeps it; any other response is sent to the client
+with ``Transfer-Encoding: chunked``.  An HTTP/1.0 client, which cannot
+read chunked encoding, receives the response in one piece once the
+upstream has finished.
+
+If the upstream fails or stalls past ``timeout`` after the reply has
+started, the proxy cannot send an error status, so it closes the client
+connection before the response is complete.  Clients see this as a
+truncated transfer.  A fast upstream feeding a slow client is paused
+once about a megabyte is queued for the client and resumed as the
+client drains, so a large download does not accumulate in memory.
+The upstream connection is closed when its response is complete or the
+client goes away.
 
 WebSocket Proxying
 """"""""""""""""""

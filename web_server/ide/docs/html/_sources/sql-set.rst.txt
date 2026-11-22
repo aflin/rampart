@@ -368,6 +368,18 @@ stringCompareMode/textSearchMode parameters
        details.
 
 
+blobzCompressLevel
+""""""""""""""""""
+    The gzip compression level for new ``blobz`` writes, from ``0`` (stored
+    uncompressed) to ``9`` (smallest), or ``-1`` for the zlib default,
+    which is level 6.  The default is ``-1``.
+
+    It only affects rows written while it is set, and reading needs no
+    setting, so a table can hold rows written at different levels.  Each
+    value is compressed on its own, so higher levels gain little on short
+    documents: on a Wikipedia table level 9 saved 0.02% over the default.
+    Lower levels make bulk loads cheaper at a real cost in size.
+
 btreeCacheSize
 """"""""""""""
     Index pages are cached in memory while the index is used. The size
@@ -416,8 +428,20 @@ bubble
 
 optimize,noOptimize
 """""""""""""""""""
-    Enable or disable optimizations. The argument should be a comma
-    separated list of optimizations that you want to enable or disable.
+    Enable or disable optimizations. The argument is the name of an
+    optimization, a comma separated list of names, or an :green:`Array`
+    of names. An unknown name is an error, and nothing is changed.
+
+    The settings apply to the connection they are set on. Each call adds
+    to what the connection has already set, and ``sql.reset()`` returns
+    all of them to their defaults.
+
+    ``sql.get()`` reports only what differs from the defaults:
+    ``optimize`` is the list of optimizations turned on that are off by
+    default, and ``noOptimize`` the list turned off that are on by
+    default. Neither is present when nothing has been changed. Both are
+    in the form ``sql.set()`` accepts.
+
     The available optimizations are:
 
     join
@@ -541,7 +565,18 @@ optimize,noOptimize
         certain buffers when no longer needed.  Currently this only applies
         to Metamorph and Metamorph inverted ("text") indexes.
 
-    Example: ``sql.set({nooptimize:"minimallocking"});``
+    Examples:
+
+    .. code-block:: javascript
+
+        sql.set({noOptimize: "minimallocking"});
+
+        /* build a fulltext index with the table locked throughout */
+        sql.set({optimize: ["indexbatchbuild"]});
+        sql.exec("create fulltext index mytable_Doc_ftx on mytable(Doc)");
+
+        sql.get("optimize");     /* "indexbatchbuild" */
+        sql.get("noOptimize");   /* "minimallocking"  */
 
 
 options,noOptions
@@ -1887,7 +1922,7 @@ onnxEmbed
     descriptions): ``split`` (``'auto'`` | ``'window'``),
     ``minTokens``, ``packParagraphs``, and ``sentenceSplit``
     (sentence-boundary packing of oversized paragraphs; multi-script,
-    default ``false``).  These change ``chunkembed()``'s chunk
+    default ``true``).  These change ``chunkembed()``'s chunk
     boundaries: a table's build settings and any HEADERLESS serving
     must agree — values written by current ``chunkembed()`` carry
     their spans in-band and don't depend on this agreement.
@@ -2815,6 +2850,25 @@ tableReadBufSz
 Miscellaneous Properties
 ~~~~~~~~~~~~~~~~~~~~~~~~
 These properties do not fit nicely into a group, and are presented here.
+
+
+noLocking
+"""""""""
+    Boolean, ``false`` by default.  If ``true``, this connection does not
+    lock tables at all.  Each insert, update or delete otherwise asks the
+    lock server for a dozen or more locks, so for row-by-row loads this
+    is most of the time spent: on a test table, single-row inserts went
+    from about 4 ms each to about 0.2 ms.
+
+    Only use it when nothing else writes to the database while it is
+    set, e.g. when building a new table that no other process uses yet.
+    Two writers without locks can corrupt a table, and readers in other
+    processes may see partly written data.
+
+    The setting applies only to the connection object it is set on, and
+    ``sql.reset()`` turns it off again.
+
+    Example: ``sql.set({noLocking: true});``
 
 
 tableSpace

@@ -8,7 +8,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>The rampart-sql module &mdash; Rampart 0.7.2 documentation</title>
+  <title>The rampart-sql module &mdash; Rampart 0.7.6 documentation</title>
   
 
   
@@ -37,7 +37,7 @@
         <link rel="index" title="Index"
               href="genindex.html"/>
         <link rel="search" title="Search" href="search.html"/>
-    <link rel="top" title="Rampart 0.7.2 documentation" href="index.html"/>
+    <link rel="top" title="Rampart 0.7.6 documentation" href="index.html"/>
         <link rel="next" title="Preface" href="rampart-sql.html"/>
         <link rel="prev" title="Rampart Vector Functions" href="rampart-vector.html"/> 
 
@@ -222,6 +222,8 @@
 <li class="toctree-l3"><a class="reference internal" href="rampart-sql.html#reset">reset()</a></li>
 <li class="toctree-l3"><a class="reference internal" href="rampart-sql.html#importcsvfile">importCsvFile()</a></li>
 <li class="toctree-l3"><a class="reference internal" href="rampart-sql.html#importcsv">importCsv()</a></li>
+<li class="toctree-l3"><a class="reference internal" href="rampart-sql.html#importjsonlfile">importJsonlFile()</a></li>
+<li class="toctree-l3"><a class="reference internal" href="rampart-sql.html#importjsonl">importJsonl()</a></li>
 <li class="toctree-l3"><a class="reference internal" href="rampart-sql.html#addtable">addTable()</a></li>
 <li class="toctree-l3"><a class="reference internal" href="rampart-sql.html#close">close()</a></li>
 </ul>
@@ -235,7 +237,10 @@
 <li class="toctree-l2"><a class="reference internal" href="rampart-sql.html#integer">Integer</a></li>
 <li class="toctree-l2"><a class="reference internal" href="rampart-sql.html#floating-point">Floating point</a></li>
 <li class="toctree-l2"><a class="reference internal" href="rampart-sql.html#date-and-time">Date and time</a></li>
-<li class="toctree-l2"><a class="reference internal" href="rampart-sql.html#identifier-and-special">Identifier and special</a></li>
+<li class="toctree-l2"><a class="reference internal" href="rampart-sql.html#identifier-and-special">Identifier and special</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="rampart-sql.html#the-recid-column">The <code class="docutils literal notranslate"><span class="pre">$recid</span></code> column</a></li>
+</ul>
+</li>
 <li class="toctree-l2"><a class="reference internal" href="rampart-sql.html#vector">Vector</a></li>
 </ul>
 </li>
@@ -413,6 +418,7 @@
 <li class="toctree-l3"><a class="reference internal" href="sql-set.html#textsearchmode">textSearchMode</a></li>
 <li class="toctree-l3"><a class="reference internal" href="sql-set.html#stringcomparemode">stringCompareMode</a></li>
 <li class="toctree-l3"><a class="reference internal" href="sql-set.html#stringcomparemode-textsearchmode-parameters">stringCompareMode/textSearchMode parameters</a></li>
+<li class="toctree-l3"><a class="reference internal" href="sql-set.html#blobzcompresslevel">blobzCompressLevel</a></li>
 <li class="toctree-l3"><a class="reference internal" href="sql-set.html#btreecachesize">btreeCacheSize</a></li>
 <li class="toctree-l3"><a class="reference internal" href="sql-set.html#ramrows">ramRows</a></li>
 <li class="toctree-l3"><a class="reference internal" href="sql-set.html#ramlimit">ramLimit</a></li>
@@ -538,6 +544,7 @@
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="sql-set.html#miscellaneous-properties">Miscellaneous Properties</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="sql-set.html#nolocking">noLocking</a></li>
 <li class="toctree-l3"><a class="reference internal" href="sql-set.html#tablespace">tableSpace</a></li>
 <li class="toctree-l3"><a class="reference internal" href="sql-set.html#datefmt">dateFmt</a></li>
 <li class="toctree-l3"><a class="reference internal" href="sql-set.html#timezone">timeZone</a></li>
@@ -635,7 +642,7 @@
     <script type="text/javascript">
         var DOCUMENTATION_OPTIONS = {
             URL_ROOT:'./',
-            VERSION:'0.7.2',
+            VERSION:'0.7.6',
             COLLAPSE_INDEX:false,
             FILE_SUFFIX:'.html',
             HAS_SOURCE:  true,

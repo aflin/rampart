@@ -8,7 +8,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Preface &mdash; Rampart 0.7.2 documentation</title>
+  <title>Preface &mdash; Rampart 0.7.6 documentation</title>
   
 
   
@@ -37,7 +37,7 @@
         <link rel="index" title="Index"
               href="genindex.html"/>
         <link rel="search" title="Search" href="search.html"/>
-    <link rel="top" title="Rampart 0.7.2 documentation" href="index.html"/>
+    <link rel="top" title="Rampart 0.7.6 documentation" href="index.html"/>
         <link rel="up" title="The rampart-sql module" href="sqltoc.html"/>
         <link rel="next" title="Server Functions" href="sql-server-funcs.html"/>
         <link rel="prev" title="The rampart-sql module" href="sqltoc.html"/> 
@@ -118,6 +118,8 @@
 <li class="toctree-l4"><a class="reference internal" href="#reset">reset()</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#importcsvfile">importCsvFile()</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#importcsv">importCsv()</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#importjsonlfile">importJsonlFile()</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#importjsonl">importJsonl()</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#addtable">addTable()</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#close">close()</a></li>
 </ul>
@@ -131,7 +133,10 @@
 <li class="toctree-l3"><a class="reference internal" href="#integer">Integer</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#floating-point">Floating point</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#date-and-time">Date and time</a></li>
-<li class="toctree-l3"><a class="reference internal" href="#identifier-and-special">Identifier and special</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#identifier-and-special">Identifier and special</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#the-recid-column">The <code class="docutils literal notranslate"><span class="pre">$recid</span></code> column</a></li>
+</ul>
+</li>
 <li class="toctree-l3"><a class="reference internal" href="#vector">Vector</a></li>
 </ul>
 </li>
@@ -313,7 +318,7 @@ Texis library and the decades of development behind it.</p>
 <div class="section" id="license">
 <h2>License<a class="headerlink" href="#license" title="Permalink to this headline">¶</a></h2>
 <p>Use of the <code class="docutils literal notranslate"><span class="pre">rampart-sql</span></code> module and the Texis library is governed by the
-<a class="reference external" href="https://github.com/aflin/rampart/blob/main/LICENSE-rsal.txt">Rampart Source Available License</a>.</p>
+<a class="reference external" href="https://github.com/aflin/rampart/blob/main/LICENSE-tsal.txt">Texis Source Available License (TSAL-1.0)</a>.</p>
 </div>
 <div class="section" id="vector-index-acknowledgment">
 <h2>Vector Index Acknowledgment<a class="headerlink" href="#vector-index-acknowledgment" title="Permalink to this headline">¶</a></h2>
@@ -396,7 +401,8 @@ of using the <code class="docutils literal notranslate"><span class="pre">requir
 and an optional <span class="green">Boolean</span> as parameters. It returns an <span class="green">Object</span> representing a
 new connection to the specified database.  The return <span class="green">Object</span> includes the
 following <span class="green">Functions</span>: <code class="docutils literal notranslate"><span class="pre">exec()</span></code>, <code class="docutils literal notranslate"><span class="pre">one()</span></code>, <code class="docutils literal notranslate"><span class="pre">set()</span></code>,
-<code class="docutils literal notranslate"><span class="pre">reset()</span></code>, <code class="docutils literal notranslate"><span class="pre">importCsvFile()</span></code>, <code class="docutils literal notranslate"><span class="pre">importCsv</span></code> and <code class="docutils literal notranslate"><span class="pre">close()</span></code>.</p>
+<code class="docutils literal notranslate"><span class="pre">reset()</span></code>, <code class="docutils literal notranslate"><span class="pre">importCsvFile()</span></code>, <code class="docutils literal notranslate"><span class="pre">importCsv()</span></code>, <code class="docutils literal notranslate"><span class="pre">importJsonlFile()</span></code>,
+<code class="docutils literal notranslate"><span class="pre">importJsonl()</span></code> and <code class="docutils literal notranslate"><span class="pre">close()</span></code>.</p>
 <p>Usage:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">sql</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">Sql</span><span class="p">.</span><span class="nx">connection</span><span class="p">(</span><span class="nx">path</span> <span class="p">[,</span><span class="nx">create</span><span class="p">]);</span>
        <span class="cm">/* or */</span>
@@ -474,6 +480,8 @@ security for your application.</li>
     addTable:        {_func:true},
     importCsv:       {_func:true},
     importCsvFile:   {_func:true},
+    importJsonl:     {_func:true},
+    importJsonlFile: {_func:true},
     scheduleUpdate:  {_func:true},
     scheduleRebuild: {_func:true},
     errMsg:          &quot;&quot;,
@@ -628,7 +636,8 @@ parameters, an optional <span class="green">Object</span> of options and an opti
 <tr class="row-odd"><td>options</td>
 <td><span class="green">Object</span></td>
 <td>Options (skipRows, maxRows, returnType, includeCounts
-returnRows and arg) <em>as described below</em></td>
+returnRows, withId, rawVectors and arg) <em>as described</em>
+<em>below</em></td>
 </tr>
 <tr class="row-even"><td rowspan="2">sql_parameters</td>
 <td><span class="green">Array</span></td>
@@ -728,6 +737,40 @@ the row or rows operated upon were <code class="docutils literal notranslate"><s
 function as <code class="docutils literal notranslate"><span class="pre">{returnType:</span> <span class="pre">&quot;object&quot;}</span></code> above.  If set <code class="docutils literal notranslate"><span class="pre">false</span></code>,
 performs the same function as <code class="docutils literal notranslate"><span class="pre">{returnType:</span> <span class="pre">&quot;novars&quot;}</span></code> above.  This
 If both are present, the <code class="docutils literal notranslate"><span class="pre">returnType</span></code> setting takes precedence.</p>
+</li>
+<li><p class="first"><code class="docutils literal notranslate"><span class="pre">withId</span></code> (<span class="green">Boolean</span>): for <code class="docutils literal notranslate"><span class="pre">insert</span></code>, <code class="docutils literal notranslate"><span class="pre">update</span></code> and
+<code class="docutils literal notranslate"><span class="pre">delete</span></code> statements, include the <a class="reference internal" href="#recid-column"><span class="std std-ref">$recid</span></a> of
+each affected row, as a <span class="green">Number</span>.  If rows are also returned
+(<code class="docutils literal notranslate"><span class="pre">returnRows</span></code> or <code class="docutils literal notranslate"><span class="pre">returnType</span></code> above), <code class="docutils literal notranslate"><span class="pre">$recid</span></code> is added to each
+row as its last column; otherwise each member of <code class="docutils literal notranslate"><span class="pre">rows</span></code> is just
+<code class="docutils literal notranslate"><span class="pre">{&quot;$recid&quot;:</span> <span class="pre">n}</span></code>.  For an <code class="docutils literal notranslate"><span class="pre">update</span></code>, it is the row’s location
+after the update.  For a <code class="docutils literal notranslate"><span class="pre">delete</span></code>, it is where the row was, which
+no longer finds anything.  It has no effect on <code class="docutils literal notranslate"><span class="pre">select</span></code>
+statements; select <code class="docutils literal notranslate"><span class="pre">$recid</span></code> as a column instead.</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">res</span> <span class="o">=</span> <span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span><span class="s2">&quot;insert into notes values(counter, ?);&quot;</span><span class="p">,</span>
+                   <span class="p">[</span><span class="s2">&quot;first note&quot;</span><span class="p">],</span> <span class="p">{</span><span class="nx">withId</span><span class="o">:</span> <span class="kc">true</span><span class="p">});</span>
+<span class="cm">/* res.rows: [ {&quot;$recid&quot;: 7046} ] */</span>
+
+<span class="kd">var</span> <span class="nx">row</span> <span class="o">=</span> <span class="nx">sql</span><span class="p">.</span><span class="nx">one</span><span class="p">(</span><span class="s2">&quot;select * from notes where $recid = ?;&quot;</span><span class="p">,</span>
+                  <span class="p">[</span><span class="nx">res</span><span class="p">.</span><span class="nx">rows</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="s2">&quot;$recid&quot;</span><span class="p">]]);</span>
+</pre></div>
+</div>
+</li>
+<li><p class="first"><code class="docutils literal notranslate"><span class="pre">rawVectors</span></code> (<span class="green">Boolean</span>): if <code class="docutils literal notranslate"><span class="pre">true</span></code>, vector columns
+(<code class="docutils literal notranslate"><span class="pre">varvecF16</span></code>, <code class="docutils literal notranslate"><span class="pre">varvecF32</span></code>, etc.) are returned as a plain
+<span class="green">Buffer</span> of the raw cells instead of a <code class="docutils literal notranslate"><span class="pre">rampart.vector</span></code>
+object.  The <span class="green">Buffer</span> does not record its element type, so it
+is meant for the
+<a class="reference internal" href="rampart-vector.html#raw-vector-distance-function"><span class="std std-ref">raw vector functions</span></a>,
+which take the type as an argument, or for passing the bytes on
+unchanged.  A value made by <code class="docutils literal notranslate"><span class="pre">chunkembed()</span></code> loses its chunk spans in
+this form.  Default is <code class="docutils literal notranslate"><span class="pre">false</span></code>.</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">res</span> <span class="o">=</span> <span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span><span class="s2">&quot;select Vec from docs;&quot;</span><span class="p">,</span> <span class="p">{</span><span class="nx">rawVectors</span><span class="o">:</span> <span class="kc">true</span><span class="p">});</span>
+<span class="cm">/* res.rows[0].Vec is a Buffer: 2 bytes per cell for varvecF16 */</span>
+<span class="kd">var</span> <span class="nx">score</span> <span class="o">=</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">vector</span><span class="p">.</span><span class="nx">raw</span><span class="p">.</span><span class="nx">distance</span><span class="p">(</span><span class="nx">queryF16</span><span class="p">,</span> <span class="nx">res</span><span class="p">.</span><span class="nx">rows</span><span class="p">[</span><span class="mi">0</span><span class="p">].</span><span class="nx">Vec</span><span class="p">,</span>
+                                        <span class="s1">&#39;dot&#39;</span><span class="p">,</span> <span class="s1">&#39;f16&#39;</span><span class="p">);</span>
+</pre></div>
+</div>
 </li>
 <li><p class="first"><code class="docutils literal notranslate"><span class="pre">includeCounts</span></code> (<span class="green">Boolean</span>): whether to include count
 information in the return <span class="green">Object</span>.  Default is <code class="docutils literal notranslate"><span class="pre">false</span></code>.  The
@@ -1439,6 +1482,15 @@ parameters may be specified in any order.</p>
 The name of the table into which the csv data will be inserted.</li>
 <li><code class="docutils literal notranslate"><span class="pre">callbackStep</span></code> - <span class="green">Number</span> - Where number is <code class="docutils literal notranslate"><span class="pre">n</span></code>, execute
 callback, if provided, for every nth row imported.</li>
+<li><code class="docutils literal notranslate"><span class="pre">lockTable</span></code> - <span class="green">Boolean</span> (default <code class="docutils literal notranslate"><span class="pre">false</span></code>): Lock the table
+once for the whole import instead of once per row.  This makes the
+import much faster, but other processes and threads can neither
+read nor write the table until it finishes, and permission changes
+made meanwhile are not seen by it.  <code class="docutils literal notranslate"><span class="pre">callback</span></code> may still use the
+table.  The locks are released however the import ends, including
+when <code class="docutils literal notranslate"><span class="pre">callback</span></code> returns <code class="docutils literal notranslate"><span class="pre">false</span></code> or throws.  If the lock is lost
+part way (the lock server was restarted), the import stops with an
+error.</li>
 <li><code class="docutils literal notranslate"><span class="pre">stripLeadingWhite</span></code> -  <span class="green">Boolean</span> (default <code class="docutils literal notranslate"><span class="pre">true</span></code>):
 Remove leading whitespace characters from cells.</li>
 <li><code class="docutils literal notranslate"><span class="pre">stripTrailingWhite</span></code> - <span class="green">Boolean</span> (default <code class="docutils literal notranslate"><span class="pre">true</span></code>): Remove
@@ -1598,6 +1650,144 @@ of rows in the csv file.</p>
 </pre></div>
 </div>
 </div>
+<div class="section" id="importjsonlfile">
+<h3>importJsonlFile()<a class="headerlink" href="#importjsonlfile" title="Permalink to this headline">¶</a></h3>
+<p>The importJsonlFile <span class="green">Function</span> imports a JSON Lines file (one JSON
+<span class="green">Object</span> per line) into a table.  The table must already exist.  The
+file is read a piece at a time, so its size is not limited by memory.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">res</span> <span class="o">=</span> <span class="nx">sql</span><span class="p">.</span><span class="nx">importJsonlFile</span><span class="p">(</span><span class="nx">filename</span><span class="p">,</span> <span class="nx">options</span> <span class="p">[,</span> <span class="nx">callback</span><span class="p">]);</span>
+</pre></div>
+</div>
+<table border="1" class="docutils">
+<colgroup>
+<col width="17%" />
+<col width="22%" />
+<col width="61%" />
+</colgroup>
+<thead valign="bottom">
+<tr class="row-odd"><th class="head">Argument</th>
+<th class="head">Type</th>
+<th class="head">Description</th>
+</tr>
+</thead>
+<tbody valign="top">
+<tr class="row-even"><td>filename</td>
+<td><span class="green">String</span></td>
+<td>The JSON Lines file to import</td>
+</tr>
+<tr class="row-odd"><td>options</td>
+<td><span class="green">Object</span></td>
+<td>Options, as described below</td>
+</tr>
+<tr class="row-even"><td>callback</td>
+<td><span class="green">Function</span></td>
+<td>a function to monitor the progress of the import.</td>
+</tr>
+</tbody>
+</table>
+<dl class="docutils">
+<dt>How a line becomes a row:</dt>
+<dd>Each key of the line’s <span class="green">Object</span> goes to the table column of the
+same name.  A value is stored exactly as it would be if passed to
+<a class="reference internal" href="#exec">exec()</a> as a parameter: a <span class="green">Number</span> or <span class="green">String</span> as
+itself, a <span class="green">Boolean</span> as <code class="docutils literal notranslate"><span class="pre">&quot;true&quot;</span></code> or <code class="docutils literal notranslate"><span class="pre">&quot;false&quot;</span></code>, and a nested
+<span class="green">Object</span> or <span class="green">Array</span> as its JSON text.  A column with no
+key in the line (or a <code class="docutils literal notranslate"><span class="pre">null</span></code> value) gets <code class="docutils literal notranslate"><span class="pre">&quot;&quot;</span></code> if it is a text
+column and <code class="docutils literal notranslate"><span class="pre">0</span></code> otherwise.  Keys that match no column are ignored.  A
+<code class="docutils literal notranslate"><span class="pre">counter</span></code> column always gets a new value from the database.  Blank
+lines are ignored.</dd>
+<dt>options:</dt>
+<dd><p class="first">The <code class="docutils literal notranslate"><span class="pre">options</span></code> <span class="green">Object</span> may contain any of the following.</p>
+<blockquote class="last">
+<div><ul class="simple">
+<li><code class="docutils literal notranslate"><span class="pre">tableName</span></code> - <span class="green">String</span> (no default; <strong>required</strong>) -
+The name of the table into which the rows will be inserted.</li>
+<li><code class="docutils literal notranslate"><span class="pre">map</span></code> - <span class="green">Object</span> - JSON key names and the column each one
+goes to, for keys named differently from their columns.  Example:
+<code class="docutils literal notranslate"><span class="pre">{title:</span> <span class="pre">&quot;Title&quot;,</span> <span class="pre">body:</span> <span class="pre">&quot;Doc&quot;}</span></code>.  Keys not listed still go to the
+column of the same name.</li>
+<li><code class="docutils literal notranslate"><span class="pre">rowFunc</span></code> - <span class="green">Function</span> - Called for every line as
+<code class="docutils literal notranslate"><span class="pre">rowFunc(object,</span> <span class="pre">lineNumber)</span></code> before it is inserted, to change or
+filter it.  Return an <span class="green">Object</span> to insert that instead;
+return <code class="docutils literal notranslate"><span class="pre">false</span></code> to skip the line; return nothing to insert
+<code class="docutils literal notranslate"><span class="pre">object</span></code> as the function left it.  <code class="docutils literal notranslate"><span class="pre">lineNumber</span></code> starts at
+<code class="docutils literal notranslate"><span class="pre">1</span></code> and counts blank lines.</li>
+<li><code class="docutils literal notranslate"><span class="pre">skipInvalid</span></code> - <span class="green">Boolean</span> (default <code class="docutils literal notranslate"><span class="pre">false</span></code>) - A line that
+is not a JSON <span class="green">Object</span> normally stops the import with an
+error naming the line.  If <code class="docutils literal notranslate"><span class="pre">true</span></code>, such lines are skipped and
+counted instead.</li>
+<li><code class="docutils literal notranslate"><span class="pre">lockTable</span></code> - <span class="green">Boolean</span> (default <code class="docutils literal notranslate"><span class="pre">false</span></code>) - Lock the
+table once for the whole import instead of once per row, as
+described for <a class="reference internal" href="#importcsvfile">importCsvFile()</a>.</li>
+<li><code class="docutils literal notranslate"><span class="pre">callbackStep</span></code> - <span class="green">Number</span> (default <code class="docutils literal notranslate"><span class="pre">1</span></code>) - Where number is
+<code class="docutils literal notranslate"><span class="pre">n</span></code>, execute <code class="docutils literal notranslate"><span class="pre">callback</span></code> after every nth row imported.</li>
+</ul>
+</div></blockquote>
+</dd>
+<dt>callback:</dt>
+<dd>A <span class="green">Function</span> called as <code class="docutils literal notranslate"><span class="pre">callback(rowsImported,</span> <span class="pre">bytesRead,</span>
+<span class="pre">fileSize)</span></code> after every <code class="docutils literal notranslate"><span class="pre">callbackStep</span></code> rows, and once more at the end.
+<code class="docutils literal notranslate"><span class="pre">bytesRead</span> <span class="pre">/</span> <span class="pre">fileSize</span></code> is the fraction of the file done.  Return
+<code class="docutils literal notranslate"><span class="pre">false</span></code> to stop the import.</dd>
+<dt>Return Value:</dt>
+<dd>An <span class="green">Object</span>: <code class="docutils literal notranslate"><span class="pre">{imported:</span> <span class="pre">n,</span> <span class="pre">skipped:</span> <span class="pre">n,</span> <span class="pre">invalid:</span> <span class="pre">n}</span></code> – the rows
+inserted, the lines <code class="docutils literal notranslate"><span class="pre">rowFunc</span></code> skipped, and the lines skipped because of
+<code class="docutils literal notranslate"><span class="pre">skipInvalid</span></code>.</dd>
+</dl>
+<p>If the import stops with an error – an invalid line, an error thrown by
+<code class="docutils literal notranslate"><span class="pre">rowFunc</span></code> or <code class="docutils literal notranslate"><span class="pre">callback</span></code>, or a row the database refuses – the rows
+before that line stay in the table.</p>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">Sql</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-sql&quot;</span><span class="p">);</span>
+<span class="kd">var</span> <span class="nx">sql</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">Sql</span><span class="p">.</span><span class="nx">connection</span><span class="p">(</span><span class="s2">&quot;/path/mytestdb&quot;</span><span class="p">,</span> <span class="kc">true</span><span class="p">);</span>
+
+<span class="cm">/* articles.jsonl:</span>
+<span class="cm">{&quot;id&quot;: 1, &quot;title&quot;: &quot;First&quot;,  &quot;body&quot;: &quot;&lt;p&gt;Hello&lt;/p&gt;&quot;, &quot;tags&quot;: [&quot;a&quot;, &quot;b&quot;]}</span>
+<span class="cm">{&quot;id&quot;: 2, &quot;title&quot;: &quot;Draft&quot;,  &quot;body&quot;: &quot;&lt;p&gt;Not yet&lt;/p&gt;&quot;, &quot;draft&quot;: true}</span>
+<span class="cm">{&quot;id&quot;: 3, &quot;title&quot;: &quot;Third&quot;,  &quot;body&quot;: &quot;&lt;p&gt;Goodbye&lt;/p&gt;&quot;}</span>
+<span class="cm">*/</span>
+
+<span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span><span class="s2">&quot;create table articles (Id int, Title varchar(32), Doc varchar(64), &quot;</span> <span class="o">+</span>
+         <span class="s2">&quot;Tags varchar(32), Len int);&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">res</span> <span class="o">=</span> <span class="nx">sql</span><span class="p">.</span><span class="nx">importJsonlFile</span><span class="p">(</span><span class="s2">&quot;articles.jsonl&quot;</span><span class="p">,</span>
+    <span class="p">{</span>
+        <span class="nx">tableName</span><span class="o">:</span> <span class="s2">&quot;articles&quot;</span><span class="p">,</span>
+        <span class="nx">map</span><span class="o">:</span>       <span class="p">{</span> <span class="nx">id</span><span class="o">:</span> <span class="s2">&quot;Id&quot;</span><span class="p">,</span> <span class="nx">title</span><span class="o">:</span> <span class="s2">&quot;Title&quot;</span><span class="p">,</span> <span class="nx">body</span><span class="o">:</span> <span class="s2">&quot;Doc&quot;</span><span class="p">,</span> <span class="nx">tags</span><span class="o">:</span> <span class="s2">&quot;Tags&quot;</span> <span class="p">},</span>
+        <span class="nx">lockTable</span><span class="o">:</span> <span class="kc">true</span><span class="p">,</span>
+        <span class="nx">rowFunc</span><span class="o">:</span>   <span class="kd">function</span> <span class="p">(</span><span class="nx">o</span><span class="p">,</span> <span class="nx">lineNumber</span><span class="p">)</span> <span class="p">{</span>
+            <span class="k">if</span> <span class="p">(</span><span class="nx">o</span><span class="p">.</span><span class="nx">draft</span><span class="p">)</span> <span class="k">return</span> <span class="kc">false</span><span class="p">;</span>              <span class="cm">/* skip this line   */</span>
+            <span class="nx">o</span><span class="p">.</span><span class="nx">body</span> <span class="o">=</span> <span class="nx">o</span><span class="p">.</span><span class="nx">body</span><span class="p">.</span><span class="nx">replace</span><span class="p">(</span><span class="sr">/&lt;[^&gt;]+&gt;/g</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">);</span> <span class="cm">/* strip the tags   */</span>
+            <span class="nx">o</span><span class="p">.</span><span class="nx">Len</span> <span class="o">=</span> <span class="nx">o</span><span class="p">.</span><span class="nx">body</span><span class="p">.</span><span class="nx">length</span><span class="p">;</span>                  <span class="cm">/* fill a column    */</span>
+        <span class="p">}</span>
+    <span class="p">},</span>
+    <span class="kd">function</span> <span class="p">(</span><span class="nx">rows</span><span class="p">,</span> <span class="nx">bytes</span><span class="p">,</span> <span class="nx">total</span><span class="p">)</span> <span class="p">{</span>
+        <span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="nx">rows</span> <span class="o">+</span> <span class="s2">&quot; rows, &quot;</span> <span class="o">+</span> <span class="nb">Math</span><span class="p">.</span><span class="nx">round</span><span class="p">(</span><span class="mi">100</span> <span class="o">*</span> <span class="nx">bytes</span> <span class="o">/</span> <span class="nx">total</span><span class="p">)</span> <span class="o">+</span> <span class="s2">&quot;%&quot;</span><span class="p">);</span>
+    <span class="p">}</span>
+<span class="p">);</span>
+
+<span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="nx">res</span><span class="p">);</span>
+<span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span><span class="s2">&quot;select * from articles&quot;</span><span class="p">,</span> <span class="p">{</span><span class="nx">returnType</span><span class="o">:</span> <span class="s2">&quot;array&quot;</span><span class="p">},</span> <span class="kd">function</span> <span class="p">(</span><span class="nx">row</span><span class="p">)</span> <span class="p">{</span>
+    <span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="nx">row</span><span class="p">);</span>
+<span class="p">});</span>
+
+<span class="cm">/* expected output:</span>
+<span class="cm">1 rows, 37%</span>
+<span class="cm">2 rows, 100%</span>
+<span class="cm">{imported:2,skipped:1,invalid:0}</span>
+<span class="cm">[1,&quot;First&quot;,&quot;Hello&quot;,&quot;[\&quot;a\&quot;, \&quot;b\&quot;]&quot;,5]</span>
+<span class="cm">[3,&quot;Third&quot;,&quot;Goodbye&quot;,&quot;&quot;,7]</span>
+<span class="cm">*/</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="importjsonl">
+<h3>importJsonl()<a class="headerlink" href="#importjsonl" title="Permalink to this headline">¶</a></h3>
+<p>Same as <a class="reference internal" href="#importjsonlfile">importJsonlFile()</a> except instead of a file name, a <span class="green">String</span>
+or <span class="green">Buffer</span> containing the JSON Lines text is passed as a parameter.
+The callback’s <code class="docutils literal notranslate"><span class="pre">fileSize</span></code> is then the length of that text.</p>
+</div>
 <div class="section" id="addtable">
 <h3>addTable()<a class="headerlink" href="#addtable" title="Permalink to this headline">¶</a></h3>
 <p>Add a table to the current database.</p>
@@ -1706,10 +1896,12 @@ resolve to the same variable-length representation internally; the
 <td>Variable-length binary; N is a typical-size hint, not a limit.</td>
 </tr>
 <tr class="row-even"><td><code class="docutils literal notranslate"><span class="pre">blob</span></code></td>
-<td>Binary Large Object stored out-of-line; for large text, images, audio.</td>
+<td>Binary Large Object stored out-of-line; for large text, images, audio.
+Selected as text.</td>
 </tr>
 <tr class="row-odd"><td><code class="docutils literal notranslate"><span class="pre">blobz</span></code></td>
-<td>Compressed BLOB variant.</td>
+<td>Compressed BLOB variant, selected as text.  See
+<a class="reference internal" href="sql-set.html#blobzcompresslevel"><span class="std std-ref">blobzCompressLevel</span></a>.</td>
 </tr>
 <tr class="row-even"><td><code class="docutils literal notranslate"><span class="pre">indirect</span></code></td>
 <td>Stores a filename; the actual data lives outside the database.</td>
@@ -1843,10 +2035,43 @@ Compares, sorts and indexes as an integer.</td>
 <td>8-byte unique row identifier combining a timestamp and a sequence.</td>
 </tr>
 <tr class="row-odd"><td><code class="docutils literal notranslate"><span class="pre">recid</span></code></td>
-<td>Internal row identifier.</td>
+<td>Internal row identifier.  See <code class="docutils literal notranslate"><span class="pre">$recid</span></code> below.</td>
 </tr>
 </tbody>
 </table>
+<div class="section" id="the-recid-column">
+<span id="recid-column"></span><h3>The <code class="docutils literal notranslate"><span class="pre">$recid</span></code> column<a class="headerlink" href="#the-recid-column" title="Permalink to this headline">¶</a></h3>
+<p>Every table has a <code class="docutils literal notranslate"><span class="pre">$recid</span></code> column that is not declared and not
+stored: it is the row’s location, a byte offset into the table’s file.
+Selected, it is returned as a <span class="green">Number</span>:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">res</span> <span class="o">=</span> <span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span><span class="s2">&quot;select $recid, Name from employees;&quot;</span><span class="p">);</span>
+<span class="cm">/* res.rows: [ {&quot;$recid&quot;: 4546, &quot;Name&quot;: &quot;Ann&quot;}, ... ] */</span>
+</pre></div>
+</div>
+<p>A row can be fetched by its <code class="docutils literal notranslate"><span class="pre">$recid</span></code> with <code class="docutils literal notranslate"><span class="pre">where</span> <span class="pre">$recid</span> <span class="pre">=</span> <span class="pre">?</span></code>, or
+several at once with <code class="docutils literal notranslate"><span class="pre">IN</span></code> and <a class="reference internal" href="#sqllist"><span class="std std-ref">Sql.list()</span></a>.  Texis goes
+directly to that location rather than scanning the table, so the
+lookup costs the same no matter how large the table is.  It can be
+combined with other conditions, which still apply:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">row</span>  <span class="o">=</span> <span class="nx">sql</span><span class="p">.</span><span class="nx">one</span><span class="p">(</span><span class="s2">&quot;select * from employees where $recid = ?;&quot;</span><span class="p">,</span> <span class="p">[</span><span class="mi">4546</span><span class="p">]);</span>
+
+<span class="kd">var</span> <span class="nx">rows</span> <span class="o">=</span> <span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span><span class="s2">&quot;select * from employees where $recid in (?);&quot;</span><span class="p">,</span>
+                    <span class="p">[</span><span class="nx">Sql</span><span class="p">.</span><span class="nx">list</span><span class="p">([</span><span class="mi">4546</span><span class="p">,</span> <span class="mi">4596</span><span class="p">,</span> <span class="mi">4646</span><span class="p">])]).</span><span class="nx">rows</span><span class="p">;</span>
+</pre></div>
+</div>
+<p>A number that is not the location of a row matches nothing; no error
+is raised.  The <code class="docutils literal notranslate"><span class="pre">$recid</span></code> of rows written by <code class="docutils literal notranslate"><span class="pre">insert</span></code>, <code class="docutils literal notranslate"><span class="pre">update</span></code> or
+<code class="docutils literal notranslate"><span class="pre">delete</span></code> can be obtained with the <a class="reference internal" href="#execopts"><span class="std std-ref">withId</span></a> option of
+<code class="docutils literal notranslate"><span class="pre">exec()</span></code>.</p>
+<p>A <code class="docutils literal notranslate"><span class="pre">$recid</span></code> is <strong>not a permanent key</strong>.  It changes when an
+<code class="docutils literal notranslate"><span class="pre">update</span></code> makes a row too large for its current space and Texis moves
+it.  When a row is moved or deleted, its old space is freed and a later
+<code class="docutils literal notranslate"><span class="pre">insert</span></code> may reuse it, at which point the old <code class="docutils literal notranslate"><span class="pre">$recid</span></code> finds the
+<em>new</em> row, with no indication that it is a different one.  Use a
+<code class="docutils literal notranslate"><span class="pre">$recid</span></code> soon after obtaining it, e.g. to return to a row just
+inserted or updated, and store a <code class="docutils literal notranslate"><span class="pre">counter</span></code> or other unique column for
+references that must last.</p>
+</div>
 </div>
 <div class="section" id="vector">
 <h2>Vector<a class="headerlink" href="#vector" title="Permalink to this headline">¶</a></h2>
@@ -3292,7 +3517,8 @@ parameter; a literal string is also accepted.</p>
 texts, but a long document’s meaning gets averaged away.
 <a class="reference internal" href="sql-server-funcs.html#chunkembed"><span class="std std-ref">chunkembed()</span></a> instead has the
 embedding engine split the document into chunks (structure-aware:
-paragraph boundaries first, then the model’s token window) and returns
+paragraph boundaries first, then sentences, then word-boundary windows
+for anything still too large for the model’s token window) and returns
 <strong>all</strong> of the chunk vectors concatenated — a <code class="docutils literal notranslate"><span class="pre">k</span> <span class="pre">×</span> <span class="pre">dim</span></code>-cell value
 stored in the ordinary <code class="docutils literal notranslate"><span class="pre">varvec*</span></code> column types.  No new column type, no
 separate chunk table: one document, one row.</p>
@@ -5123,7 +5349,7 @@ match).</dd>
     <script type="text/javascript">
         var DOCUMENTATION_OPTIONS = {
             URL_ROOT:'./',
-            VERSION:'0.7.2',
+            VERSION:'0.7.6',
             COLLAPSE_INDEX:false,
             FILE_SUFFIX:'.html',
             HAS_SOURCE:  true,

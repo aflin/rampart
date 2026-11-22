@@ -8,7 +8,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Server Functions &mdash; Rampart 0.7.2 documentation</title>
+  <title>Server Functions &mdash; Rampart 0.7.6 documentation</title>
   
 
   
@@ -37,7 +37,7 @@
         <link rel="index" title="Index"
               href="genindex.html"/>
         <link rel="search" title="Search" href="search.html"/>
-    <link rel="top" title="Rampart 0.7.2 documentation" href="index.html"/>
+    <link rel="top" title="Rampart 0.7.6 documentation" href="index.html"/>
         <link rel="up" title="The rampart-sql module" href="sqltoc.html"/>
         <link rel="next" title="Server Properties" href="sql-set.html"/>
         <link rel="prev" title="Preface" href="rampart-sql.html"/> 
@@ -437,8 +437,11 @@ returns the single combined (mean) vector, <code class="docutils literal notrans
 document’s per-chunk vectors concatenated back to back — a
 <code class="docutils literal notranslate"><span class="pre">k</span> <span class="pre">×</span> <span class="pre">dim</span></code>-cell value in the same <code class="docutils literal notranslate"><span class="pre">varvec*</span></code> types (dtype argument and
 default as in <code class="docutils literal notranslate"><span class="pre">embed()</span></code>).  The embedding engine does the chunking:
-paragraph boundaries first, then the model’s token window; a short text
-comes back as <code class="docutils literal notranslate"><span class="pre">k</span> <span class="pre">=</span> <span class="pre">1</span></code>, byte-identical to a plain single vector.</p>
+paragraph boundaries first, then sentence boundaries for a paragraph too
+large for the model’s token window, then word-boundary windows for a
+single sentence still too large.  Each chunk’s stored span is exactly the
+bytes its vector was made from.  A short text comes back as <code class="docutils literal notranslate"><span class="pre">k</span> <span class="pre">=</span> <span class="pre">1</span></code>,
+byte-identical to a plain single vector.</p>
 <p>The optional third argument is a <strong>per-chunk prefix</strong> — typically the
 document’s title.  It is prepended to every chunk’s <em>embedding input</em>
 (each chunk embeds as if it read <code class="docutils literal notranslate"><span class="pre">&lt;prefix&gt;</span> <span class="pre">&lt;chunk</span> <span class="pre">text&gt;</span></code>), so
@@ -2906,7 +2909,7 @@ booleans as <span class="green">Booleans</span>, etc.).</p>
     <script type="text/javascript">
         var DOCUMENTATION_OPTIONS = {
             URL_ROOT:'./',
-            VERSION:'0.7.2',
+            VERSION:'0.7.6',
             COLLAPSE_INDEX:false,
             FILE_SUFFIX:'.html',
             HAS_SOURCE:  true,

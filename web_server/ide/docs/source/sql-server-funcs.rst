@@ -187,8 +187,11 @@ returns the single combined (mean) vector, ``chunkembed()`` returns the
 document's per-chunk vectors concatenated back to back — a
 ``k × dim``-cell value in the same ``varvec*`` types (dtype argument and
 default as in ``embed()``).  The embedding engine does the chunking:
-paragraph boundaries first, then the model's token window; a short text
-comes back as ``k = 1``, byte-identical to a plain single vector.
+paragraph boundaries first, then sentence boundaries for a paragraph too
+large for the model's token window, then word-boundary windows for a
+single sentence still too large.  Each chunk's stored span is exactly the
+bytes its vector was made from.  A short text comes back as ``k = 1``,
+byte-identical to a plain single vector.
 
 The optional third argument is a **per-chunk prefix** — typically the
 document's title.  It is prepended to every chunk's *embedding input*

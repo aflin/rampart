@@ -8,7 +8,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Welcome to Rampart’s documentation. &mdash; Rampart 0.7.2 documentation</title>
+  <title>Welcome to Rampart’s documentation. &mdash; Rampart 0.7.6 documentation</title>
   
 
   
@@ -37,7 +37,7 @@
         <link rel="index" title="Index"
               href="genindex.html"/>
         <link rel="search" title="Search" href="search.html"/>
-    <link rel="top" title="Rampart 0.7.2 documentation" href="#"/>
+    <link rel="top" title="Rampart 0.7.6 documentation" href="#"/>
         <link rel="next" title="Introduction to Rampart" href="rampart-main.html"/> 
 
   
@@ -265,6 +265,7 @@
 <li class="toctree-l3"><a class="reference internal" href="rampart-main.html#console-extras">console Extras</a></li>
 <li class="toctree-l3"><a class="reference internal" href="rampart-main.html#proxy-revocable">Proxy.revocable</a></li>
 <li class="toctree-l3"><a class="reference internal" href="rampart-main.html#reflect">Reflect</a></li>
+<li class="toctree-l3"><a class="reference internal" href="rampart-main.html#bigint">BigInt</a></li>
 <li class="toctree-l3"><a class="reference internal" href="rampart-main.html#whatwg-w3c-web-platform-apis-experimental">WHATWG / W3C Web Platform APIs (experimental)</a></li>
 <li class="toctree-l3"><a class="reference internal" href="rampart-main.html#intl">Intl</a></li>
 <li class="toctree-l3"><a class="reference internal" href="rampart-main.html#other-globals">Other Globals</a></li>
@@ -600,6 +601,8 @@
 <li class="toctree-l4"><a class="reference internal" href="rampart-sql.html#reset">reset()</a></li>
 <li class="toctree-l4"><a class="reference internal" href="rampart-sql.html#importcsvfile">importCsvFile()</a></li>
 <li class="toctree-l4"><a class="reference internal" href="rampart-sql.html#importcsv">importCsv()</a></li>
+<li class="toctree-l4"><a class="reference internal" href="rampart-sql.html#importjsonlfile">importJsonlFile()</a></li>
+<li class="toctree-l4"><a class="reference internal" href="rampart-sql.html#importjsonl">importJsonl()</a></li>
 <li class="toctree-l4"><a class="reference internal" href="rampart-sql.html#addtable">addTable()</a></li>
 <li class="toctree-l4"><a class="reference internal" href="rampart-sql.html#close">close()</a></li>
 </ul>
@@ -613,7 +616,10 @@
 <li class="toctree-l3"><a class="reference internal" href="rampart-sql.html#integer">Integer</a></li>
 <li class="toctree-l3"><a class="reference internal" href="rampart-sql.html#floating-point">Floating point</a></li>
 <li class="toctree-l3"><a class="reference internal" href="rampart-sql.html#date-and-time">Date and time</a></li>
-<li class="toctree-l3"><a class="reference internal" href="rampart-sql.html#identifier-and-special">Identifier and special</a></li>
+<li class="toctree-l3"><a class="reference internal" href="rampart-sql.html#identifier-and-special">Identifier and special</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="rampart-sql.html#the-recid-column">The <code class="docutils literal notranslate"><span class="pre">$recid</span></code> column</a></li>
+</ul>
+</li>
 <li class="toctree-l3"><a class="reference internal" href="rampart-sql.html#vector">Vector</a></li>
 </ul>
 </li>
@@ -788,6 +794,7 @@
 <li class="toctree-l4"><a class="reference internal" href="sql-set.html#textsearchmode">textSearchMode</a></li>
 <li class="toctree-l4"><a class="reference internal" href="sql-set.html#stringcomparemode">stringCompareMode</a></li>
 <li class="toctree-l4"><a class="reference internal" href="sql-set.html#stringcomparemode-textsearchmode-parameters">stringCompareMode/textSearchMode parameters</a></li>
+<li class="toctree-l4"><a class="reference internal" href="sql-set.html#blobzcompresslevel">blobzCompressLevel</a></li>
 <li class="toctree-l4"><a class="reference internal" href="sql-set.html#btreecachesize">btreeCacheSize</a></li>
 <li class="toctree-l4"><a class="reference internal" href="sql-set.html#ramrows">ramRows</a></li>
 <li class="toctree-l4"><a class="reference internal" href="sql-set.html#ramlimit">ramLimit</a></li>
@@ -913,6 +920,7 @@
 </ul>
 </li>
 <li class="toctree-l3"><a class="reference internal" href="sql-set.html#miscellaneous-properties">Miscellaneous Properties</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="sql-set.html#nolocking">noLocking</a></li>
 <li class="toctree-l4"><a class="reference internal" href="sql-set.html#tablespace">tableSpace</a></li>
 <li class="toctree-l4"><a class="reference internal" href="sql-set.html#datefmt">dateFmt</a></li>
 <li class="toctree-l4"><a class="reference internal" href="sql-set.html#timezone">timeZone</a></li>
@@ -1034,6 +1042,7 @@
 <li class="toctree-l4"><a class="reference internal" href="rampart-server.html#proxy-options">Proxy Options</a></li>
 <li class="toctree-l4"><a class="reference internal" href="rampart-server.html#forwarded-headers">Forwarded Headers</a></li>
 <li class="toctree-l4"><a class="reference internal" href="rampart-server.html#error-handling">Error Handling</a></li>
+<li class="toctree-l4"><a class="reference internal" href="rampart-server.html#streaming-responses">Streaming Responses</a></li>
 <li class="toctree-l4"><a class="reference internal" href="rampart-server.html#websocket-proxying">WebSocket Proxying</a></li>
 <li class="toctree-l4"><a class="reference internal" href="rampart-server.html#when-to-use-the-built-in-proxy">When to Use the Built-in Proxy</a></li>
 </ul>
@@ -1261,6 +1270,10 @@
 <li class="toctree-l3"><a class="reference internal" href="rampart-html.html#text-and-html-output">Text and HTML Output</a><ul>
 <li class="toctree-l4"><a class="reference internal" href="rampart-html.html#tohtml">toHtml</a></li>
 <li class="toctree-l4"><a class="reference internal" href="rampart-html.html#totext">toText</a></li>
+<li class="toctree-l4"><a class="reference internal" href="rampart-html.html#tomarkdown">toMarkdown</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="rampart-html.html#link-positions">Link positions</a><ul>
 <li class="toctree-l4"><a class="reference internal" href="rampart-html.html#prettyprint">prettyPrint</a></li>
 </ul>
 </li>
@@ -2136,6 +2149,7 @@
 <li class="toctree-l3"><a class="reference internal" href="rampart-extras.html#use-with-letsencrypt">Use with Letsencrypt</a></li>
 </ul>
 </li>
+<li class="toctree-l2"><a class="reference internal" href="rampart-extras.html#the-mini-ide">The Mini IDE</a></li>
 <li class="toctree-l2"><a class="reference internal" href="rampart-extras.html#single-file-bundles">Single-File Bundles</a><ul>
 <li class="toctree-l3"><a class="reference internal" href="rampart-extras.html#what-a-bundle-is-and-is-not">What a Bundle Is (And Is Not)</a></li>
 <li class="toctree-l3"><a class="reference internal" href="rampart-extras.html#building-a-bundle">Building a Bundle</a></li>
@@ -2432,7 +2446,7 @@
     <script type="text/javascript">
         var DOCUMENTATION_OPTIONS = {
             URL_ROOT:'./',
-            VERSION:'0.7.2',
+            VERSION:'0.7.6',
             COLLAPSE_INDEX:false,
             FILE_SUFFIX:'.html',
             HAS_SOURCE:  true,

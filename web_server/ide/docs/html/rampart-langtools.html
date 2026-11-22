@@ -8,7 +8,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>The rampart-langtools modules &mdash; Rampart 0.7.2 documentation</title>
+  <title>The rampart-langtools modules &mdash; Rampart 0.7.6 documentation</title>
   
 
   
@@ -37,7 +37,7 @@
         <link rel="index" title="Index"
               href="genindex.html"/>
         <link rel="search" title="Search" href="search.html"/>
-    <link rel="top" title="Rampart 0.7.2 documentation" href="index.html"/>
+    <link rel="top" title="Rampart 0.7.6 documentation" href="index.html"/>
         <link rel="next" title="The rampart-almanac module" href="rampart-almanac.html"/>
         <link rel="prev" title="The rampart-treesitter module" href="rampart-treesitter.html"/> 
 
@@ -582,7 +582,8 @@ accepts.</p>
 <blockquote>
 <div><p><strong>Experimental.</strong>  Multimodal (image and audio) embedding is new in
 this release and under active development; its API and defaults may
-change.  It has so far been tested on Linux (CPU and CUDA).</p>
+change.  It has so far been tested on Linux (x86_64 CPU and CUDA,
+32-bit ARM), macOS (Apple Silicon, Metal) and FreeBSD.</p>
 <p>The <code class="docutils literal notranslate"><span class="pre">mediaInfo</span></code> function reports what a multimodal projector
 (an <code class="docutils literal notranslate"><span class="pre">mmproj</span></code> GGUF file) can encode.  It loads the projector against
 its text model, reads its capabilities and frees both before
@@ -672,7 +673,8 @@ loading its weights.</p>
 <li><p class="first"><code class="docutils literal notranslate"><span class="pre">split</span></code> - A <span class="green">String</span> or <span class="green">Function</span>.
 <code class="docutils literal notranslate"><span class="pre">&quot;auto&quot;</span></code> (the default) chunks long text on its structure —
 paragraphs, merged or packed as configured below;
-<code class="docutils literal notranslate"><span class="pre">&quot;window&quot;</span></code> uses plain token windows.  A <span class="green">Function</span>
+<code class="docutils literal notranslate"><span class="pre">&quot;window&quot;</span></code> ignores structure and cuts long text into
+overlapping word-boundary windows.  A <span class="green">Function</span>
 replaces the built-in chunker entirely: it is called with
 the document text and must return an <span class="green">Array</span> of
 <span class="green">Strings</span> — N strings always produce N vectors.  A
@@ -702,20 +704,23 @@ consecutive paragraphs are packed together up to the token
 window (fewer, fuller chunks) instead of one vector per
 paragraph.</p>
 </li>
-<li><p class="first"><code class="docutils literal notranslate"><span class="pre">sentenceSplit</span></code> - A <span class="green">Boolean</span>.  If <code class="docutils literal notranslate"><span class="pre">true</span></code>, an
-oversized paragraph (or structureless text) is split at
-<strong>sentence boundaries</strong> and the sentences greedily packed
-to the token window, instead of being cut at raw token
-windows mid-sentence.  Boundaries come from a multi-script
-terminator table (ASCII <code class="docutils literal notranslate"><span class="pre">.!?</span></code> with a whitespace guard;
-self-delimiting CJK <code class="docutils literal notranslate"><span class="pre">。！？</span></code>, Arabic, Devanagari and
-others with none; fullwidth <code class="docutils literal notranslate"><span class="pre">．</span></code> digit-guarded so
-<code class="docutils literal notranslate"><span class="pre">３．１４</span></code> never splits), and a chunk never ends on a
-tiny trailing fragment (so a false boundary after “Mr.”
-can’t take a cut).  Languages without sentence punctuation
-(e.g. Thai) fall back to token windows.  Default <code class="docutils literal notranslate"><span class="pre">false</span></code>:
-enabling it changes chunk boundaries, which tables built
-WITHOUT value headers depend on for snippet spans.</p>
+<li><p class="first"><code class="docutils literal notranslate"><span class="pre">sentenceSplit</span></code> - A <span class="green">Boolean</span>, default <code class="docutils literal notranslate"><span class="pre">true</span></code>.
+A paragraph (or structureless text) too large for the token
+window is split at <strong>sentence boundaries</strong> and the sentences
+greedily packed to the window.  Boundaries come from a
+multi-script terminator table (ASCII <code class="docutils literal notranslate"><span class="pre">.!?</span></code> with a
+whitespace guard; self-delimiting CJK <code class="docutils literal notranslate"><span class="pre">。！？</span></code>, Arabic,
+Devanagari and others with none; fullwidth <code class="docutils literal notranslate"><span class="pre">．</span></code>
+digit-guarded so <code class="docutils literal notranslate"><span class="pre">３．１４</span></code> never splits), and a chunk never
+ends on a tiny trailing fragment (so a false boundary after
+“Mr.” can’t take a cut).  A single sentence still too large,
+or text without sentence punctuation (e.g. Thai), is cut at
+word boundaries into windows overlapping by about 1/8.  With
+<code class="docutils literal notranslate"><span class="pre">false</span></code>, every oversized paragraph is cut that way.  Either
+way each chunk’s <code class="docutils literal notranslate"><span class="pre">start</span></code>/<code class="docutils literal notranslate"><span class="pre">end</span></code> are exactly the bytes its
+vector was made from.  Changing it changes chunk boundaries,
+which tables built WITHOUT value headers depend on for
+snippet spans.</p>
 </li>
 <li><p class="first"><code class="docutils literal notranslate"><span class="pre">batchChunks</span></code> / <code class="docutils literal notranslate"><span class="pre">batchTokens</span></code> - Per-handle overrides of
 the process-wide chunk-batching defaults.  See
@@ -726,8 +731,8 @@ take precedence over the <code class="docutils literal notranslate"><span class=
 </li>
 <li><p class="first"><code class="docutils literal notranslate"><span class="pre">mmproj</span></code> - <strong>Experimental.</strong>  A <span class="green">String</span>, the path to a multimodal
 projector (<code class="docutils literal notranslate"><span class="pre">mmproj</span></code> GGUF file) for a model that embeds
-images and audio as well as text, such as
-<code class="docutils literal notranslate"><span class="pre">embeddinggemma-2</span></code>.  It enables the
+images and audio as well as text.  Currently the only
+supported model is <code class="docutils literal notranslate"><span class="pre">embeddinggemma-2</span></code>.  It enables the
 <a class="reference internal" href="#emb-embedmediatonumbers">emb.embedMediaToNumbers()</a> family of functions; the text
 functions are unaffected.  <a class="reference internal" href="#models-mmprojget">models.mmprojGet()</a> downloads the
 projector that matches a catalog model.  The projector is
@@ -750,7 +755,9 @@ and <code class="docutils literal notranslate"><span class="pre">nthreads_batch<
 </li>
 </ul>
 <p>If <code class="docutils literal notranslate"><span class="pre">nCtx</span></code> is not given, the context size defaults to the
-model’s trained maximum, capped at 8192 tokens.</p>
+model’s trained maximum, capped at 8192 tokens (2048 on 32-bit
+builds, where a larger window’s buffers leave no room in the address
+space for a second context in a worker thread or forked child).</p>
 <p>Model weights are shared:  loading the same model file from
 several handles or rampart threads keeps a single copy of the
 weights in memory.  A handle that is copied to another
@@ -821,7 +828,8 @@ containing text) to be embedded.</p>
 <p>If the tokenized text does not fit the model’s context window,
 it is chunked; with the default <code class="docutils literal notranslate"><span class="pre">split:</span> <span class="pre">&quot;auto&quot;</span></code> the chunking
 is <strong>structure-aware</strong>: text is split on paragraph boundaries
-(falling back to token windows for oversized paragraphs), so
+(falling back to sentences, then overlapping word windows, for
+oversized paragraphs), so
 each vector corresponds to a semantically meaningful span of the
 input, and the spans are reported in <code class="docutils literal notranslate"><span class="pre">chunks</span></code>.  Each vector is
 L2-normalized.</p>
@@ -845,8 +853,8 @@ per vector, with <code class="docutils literal notranslate"><span class="pre">st
 span in the input), <code class="docutils literal notranslate"><span class="pre">tokens</span></code> (its token count),
 <code class="docutils literal notranslate"><span class="pre">text</span></code> (the chunk text itself) and <code class="docutils literal notranslate"><span class="pre">oversized</span></code>
 (<span class="green">Boolean</span> <code class="docutils literal notranslate"><span class="pre">true</span></code> when this vector is one of
-several token windows over a single span that exceeded
-the model window; such sub-chunks share their span).</li>
+several overlapping word windows cut from a span that
+exceeded the model window; each has its own byte span).</li>
 </ul>
 <p class="last">For empty or whitespace-only input, <code class="docutils literal notranslate"><span class="pre">vecs</span></code> is an empty
 <span class="green">Array</span> and <code class="docutils literal notranslate"><span class="pre">avgVec</span></code> is not set.</p>
@@ -882,12 +890,17 @@ a packed <span class="green">Buffer</span>.</p>
 <blockquote>
 <div><p><strong>Experimental.</strong>  Multimodal (image and audio) embedding is new in
 this release and under active development; its API and defaults may
-change.  It has so far been tested on Linux (CPU and CUDA).</p>
+change.  It has so far been tested on Linux (x86_64 CPU and CUDA,
+32-bit ARM), macOS (Apple Silicon, Metal) and FreeBSD.</p>
 <p>Embed images and/or audio — alone, or interleaved with text — into
 a single vector in the same space as the model’s text vectors, so an
 image can be compared directly against a text query, and vice
 versa.  Requires a handle created with the <a class="reference internal" href="#initembed">initEmbed</a> <code class="docutils literal notranslate"><span class="pre">mmproj</span></code>
 option.</p>
+<p>Currently the only supported model is <code class="docutils literal notranslate"><span class="pre">embeddinggemma-2</span></code>
+(<a class="reference external" href="https://huggingface.co/google/embeddinggemma-2">EmbeddingGemma 2</a>,
+as GGUF in the catalog — see <a class="reference internal" href="#models-mmprojget">models.mmprojGet()</a>).  Other
+multimodal GGUF models are untested and may not work.</p>
 <p><code class="docutils literal notranslate"><span class="pre">emb.embedMediaToFp16Buf()</span></code> and <code class="docutils literal notranslate"><span class="pre">emb.embedMediaToFp32Buf()</span></code> are
 the same function returning packed <span class="green">Buffers</span>, exactly as
 <a class="reference internal" href="#emb-embedtexttofp16buf">emb.embedTextToFp16Buf()</a> / <a class="reference internal" href="#emb-embedtexttofp32buf">emb.embedTextToFp32Buf()</a> do for
@@ -933,8 +946,9 @@ input.  Text with no placeholders alongside media throws: omit
 </li>
 </ul>
 <p>The whole input — text and every image and audio clip — must fit in
-the model’s window (8192 tokens for <code class="docutils literal notranslate"><span class="pre">embeddinggemma-2</span></code>).  Unlike
-text, it is never chunked: an image cannot be split, and a
+the model’s window (8192 tokens for <code class="docutils literal notranslate"><span class="pre">embeddinggemma-2</span></code>; 2048 on
+32-bit builds unless <code class="docutils literal notranslate"><span class="pre">nCtx</span></code> is given).  Unlike text, it is never
+chunked: an image cannot be split, and a
 multimodal input means one vector.  An input that does not fit throws
 with its token count and the limit.  For <code class="docutils literal notranslate"><span class="pre">embeddinggemma-2</span></code> an
 image costs <code class="docutils literal notranslate"><span class="pre">imageTokens</span></code> (280 by default) and audio about 25 tokens
@@ -990,7 +1004,8 @@ takes seconds, and like text embedding it uses 4 threads unless
 <h4>emb.destroy()<a class="headerlink" href="#emb-destroy" title="Permalink to this headline">¶</a></h4>
 <blockquote>
 <div><p>Free the model context (and release the model weights and any
-<code class="docutils literal notranslate"><span class="pre">mmproj</span></code> projector if this was the last handle using them).  Using
+<code class="docutils literal notranslate"><span class="pre">mmproj</span></code> projector if this was the last handle using them, not
+counting copies that other threads have yet to use).  Using
 the handle after calling <code class="docutils literal notranslate"><span class="pre">destroy()</span></code> throws an error.  Handles are
 also freed automatically when garbage collected, but for large models
 it is good practice to free them deterministically.</p>
@@ -1774,29 +1789,44 @@ rampart-server worker threads).  The weights, and an <code class="docutils liter
 projector, are shared; each thread builds its own context the first
 time it uses its copy.  That context is freed when the thread exits
 — or earlier, if that thread calls <code class="docutils literal notranslate"><span class="pre">destroy()</span></code> on its copy.  A
-copy may outlive the handle it was copied from, but a thread that
-first uses its copy <em>after</em> the original was destroyed gets an error
-rather than a context on freed weights.  Text and media embedding
-behave the same in every case.  (An <a class="reference internal" href="#initgen">initGen</a> handle works
+copy may outlive the handle it was copied from:  each copy keeps the
+weights loaded, so a handle made in one thread and passed on with
+<code class="docutils literal notranslate"><span class="pre">rampart.thread.put()</span></code> works after the original was garbage
+collected or its thread ended.  (A copy left on the thread clipboard
+also keeps them loaded, until it is overwritten or removed with
+<code class="docutils literal notranslate"><span class="pre">rampart.thread.del()</span></code>.)  An explicit <code class="docutils literal notranslate"><span class="pre">destroy()</span></code> of the original
+does release them:  a thread that first uses its copy <em>after</em> that
+gets an error rather than a context on freed weights.  Text and media
+embedding behave the same in every case.  (An <a class="reference internal" href="#initgen">initGen</a> handle works
 differently: requests from every thread are served by its one
 dedicated thread.)</p>
 <p><strong>fork().</strong>  A forked child may keep using llama.cpp on the CPU: a
 handle created before the fork works in the child, and the child can
 load models of its own.  A GPU runtime (CUDA or Metal) does not
 survive a fork, so once a GPU backend has been initialized in a
-process, its forked children get an error instead of hanging or
-crashing:</p>
+process — by rampart-llamacpp or rampart-clip, and even if that
+model load failed — its forked children get an error instead of
+hanging or crashing:</p>
 <ul class="simple">
 <li>using a handle created before the fork throws, and</li>
 <li>loading any model in the child — <a class="reference internal" href="#initembed">initEmbed</a>, <a class="reference internal" href="#initrerank">initRerank</a>,
 <a class="reference internal" href="#initgen">initGen</a>, <a class="reference internal" href="#mediainfo">mediaInfo</a>, <a class="reference internal" href="#modelinfo">modelInfo</a> or the rampart-sql
-<code class="docutils literal notranslate"><span class="pre">llamaEmbed</span></code> path — throws.</li>
+<code class="docutils literal notranslate"><span class="pre">llamaEmbed</span></code> path, or rampart-clip’s <code class="docutils literal notranslate"><span class="pre">initEmbed</span></code> — throws.</li>
 </ul>
+<p>A Mac with no Metal device (most Intel virtual machines) runs on the
+CPU and follows the CPU rules above.</p>
 <p>To use a GPU in forked processes, fork <strong>before</strong> any model is
 loaded and load models in the children: with rampart-server, run
 in daemon mode and load models in <code class="docutils literal notranslate"><span class="pre">postForkFunc</span></code>.  A process that
 has only <code class="docutils literal notranslate"><span class="pre">require()</span></code>d the module has not touched the GPU, so its
 children may load models normally.</p>
+<p>On macOS, fork before <code class="docutils literal notranslate"><span class="pre">require(&quot;rampart-llamacpp&quot;)</span></code> itself, not
+just before loading a model.  The module links Apple’s Metal
+framework, and Apple does not support using Metal (or other
+Objective-C frameworks) in a child that was forked from a process
+that had loaded them, without an <code class="docutils literal notranslate"><span class="pre">exec()</span></code>.  A child of a parent
+that had only required the module usually works, but a model load in
+such a child has been seen to hang.</p>
 </div></blockquote>
 </div>
 <div class="section" id="getlog">
@@ -1976,7 +2006,8 @@ argument of <a class="reference internal" href="#oemb-embedtexttofp16buf">oemb.e
 <li><code class="docutils literal notranslate"><span class="pre">split</span></code> - A <span class="green">String</span> or <span class="green">Function</span>.
 <code class="docutils literal notranslate"><span class="pre">&quot;auto&quot;</span></code> (the default) chunks long text on its structure —
 paragraphs, merged or packed as configured below;
-<code class="docutils literal notranslate"><span class="pre">&quot;window&quot;</span></code> uses plain token windows.  A <span class="green">Function</span>
+<code class="docutils literal notranslate"><span class="pre">&quot;window&quot;</span></code> ignores structure and cuts long text into
+overlapping word-boundary windows.  A <span class="green">Function</span>
 replaces the built-in chunker entirely: it is called with
 the document text and must return an <span class="green">Array</span> of
 <span class="green">Strings</span> — N strings always produce N vectors.  A
@@ -2000,20 +2031,23 @@ floor: shorter paragraphs are merged with a neighbor.
 consecutive paragraphs are packed together up to the token
 window (fewer, fuller chunks) instead of one vector per
 paragraph.</li>
-<li><code class="docutils literal notranslate"><span class="pre">sentenceSplit</span></code> - A <span class="green">Boolean</span>.  If <code class="docutils literal notranslate"><span class="pre">true</span></code>, an
-oversized paragraph (or structureless text) is split at
-<strong>sentence boundaries</strong> and the sentences greedily packed
-to the token window, instead of being cut at raw token
-windows mid-sentence.  Boundaries come from a multi-script
-terminator table (ASCII <code class="docutils literal notranslate"><span class="pre">.!?</span></code> with a whitespace guard;
-self-delimiting CJK <code class="docutils literal notranslate"><span class="pre">。！？</span></code>, Arabic, Devanagari and
-others with none; fullwidth <code class="docutils literal notranslate"><span class="pre">．</span></code> digit-guarded so
-<code class="docutils literal notranslate"><span class="pre">３．１４</span></code> never splits), and a chunk never ends on a
-tiny trailing fragment (so a false boundary after “Mr.”
-can’t take a cut).  Languages without sentence punctuation
-(e.g. Thai) fall back to token windows.  Default <code class="docutils literal notranslate"><span class="pre">false</span></code>:
-enabling it changes chunk boundaries, which tables built
-WITHOUT value headers depend on for snippet spans.</li>
+<li><code class="docutils literal notranslate"><span class="pre">sentenceSplit</span></code> - A <span class="green">Boolean</span>, default <code class="docutils literal notranslate"><span class="pre">true</span></code>.
+A paragraph (or structureless text) too large for the token
+window is split at <strong>sentence boundaries</strong> and the sentences
+greedily packed to the window.  Boundaries come from a
+multi-script terminator table (ASCII <code class="docutils literal notranslate"><span class="pre">.!?</span></code> with a
+whitespace guard; self-delimiting CJK <code class="docutils literal notranslate"><span class="pre">。！？</span></code>, Arabic,
+Devanagari and others with none; fullwidth <code class="docutils literal notranslate"><span class="pre">．</span></code>
+digit-guarded so <code class="docutils literal notranslate"><span class="pre">３．１４</span></code> never splits), and a chunk never
+ends on a tiny trailing fragment (so a false boundary after
+“Mr.” can’t take a cut).  A single sentence still too large,
+or text without sentence punctuation (e.g. Thai), is cut at
+word boundaries into windows overlapping by about 1/8.  With
+<code class="docutils literal notranslate"><span class="pre">false</span></code>, every oversized paragraph is cut that way.  Either
+way each chunk’s <code class="docutils literal notranslate"><span class="pre">start</span></code>/<code class="docutils literal notranslate"><span class="pre">end</span></code> are exactly the bytes its
+vector was made from.  Changing it changes chunk boundaries,
+which tables built WITHOUT value headers depend on for
+snippet spans.</li>
 <li><code class="docutils literal notranslate"><span class="pre">maxChunkBatch</span></code> - A <span class="green">Number</span>, the maximum chunks
 per batched model run (bounds memory for many-chunk
 documents).  Default: <code class="docutils literal notranslate"><span class="pre">64</span></code> (CPU) or <code class="docutils literal notranslate"><span class="pre">32</span></code> (GPU).</li>
@@ -2085,7 +2119,8 @@ or omitted, the <code class="docutils literal notranslate"><span class="pre">pas
 <p>If the tokenized text does not fit the model’s token window, it
 is chunked; with the default <code class="docutils literal notranslate"><span class="pre">split:</span> <span class="pre">&quot;auto&quot;</span></code> the chunking is
 <strong>structure-aware</strong>: text is split on paragraph boundaries
-(falling back to token windows for oversized paragraphs), so
+(falling back to sentences, then overlapping word windows, for
+oversized paragraphs), so
 each vector corresponds to a semantically meaningful span of the
 input, and the spans are reported in <code class="docutils literal notranslate"><span class="pre">chunks</span></code>.
 rampart-llamacpp’s <a class="reference internal" href="#emb-embedtexttofp16buf">emb.embedTextToFp16Buf()</a> chunks the same
@@ -2113,9 +2148,9 @@ byte span in <code class="docutils literal notranslate"><span class="pre">text</
 count.</li>
 <li><code class="docutils literal notranslate"><span class="pre">text</span></code> - A <span class="green">String</span>, the chunk text itself.</li>
 <li><code class="docutils literal notranslate"><span class="pre">oversized</span></code> - <span class="green">Boolean</span> <code class="docutils literal notranslate"><span class="pre">true</span></code> when this
-vector is one of several token windows over a single
-span that exceeded the model window (such sub-chunks
-share their span).  Not set otherwise.</li>
+vector is one of several overlapping word windows cut
+from a span that exceeded the model window (each has
+its own byte span).  Not set otherwise.</li>
 </ul>
 </li>
 </ul>
@@ -3757,7 +3792,8 @@ reads as the engine it feeds:</p>
 <blockquote>
 <div><p><strong>Experimental.</strong>  Multimodal (image and audio) embedding is new in
 this release and under active development; its API and defaults may
-change.  It has so far been tested on Linux (CPU and CUDA).</p>
+change.  It has so far been tested on Linux (x86_64 CPU and CUDA,
+32-bit ARM), macOS (Apple Silicon, Metal) and FreeBSD.</p>
 <p>Fetch a multimodal model’s projector (<code class="docutils literal notranslate"><span class="pre">mmproj</span></code> file) — the image
 and audio encoders the model loads beside its text weights, passed
 to <a class="reference internal" href="#initembed">initEmbed</a> as the <code class="docutils literal notranslate"><span class="pre">mmproj</span></code> option.  Only catalog entries that
@@ -3772,6 +3808,9 @@ projector’s own precision, <code class="docutils literal notranslate"><span cl
 is independent of the text model’s quant.  The default is <code class="docutils literal notranslate"><span class="pre">&quot;F16&quot;</span></code>:
 a projector is small next to its accuracy cost, and the
 full-precision one matches the reference implementation most closely.
+On 32-bit builds (e.g. Raspberry Pi) the default is <code class="docutils literal notranslate"><span class="pre">&quot;Q8_0&quot;</span></code>
+instead, since an F16 projector (about 1GB) does not fit in a 32-bit
+address space beside its model.
 The file is saved as <code class="docutils literal notranslate"><span class="pre">&lt;name&gt;-&lt;file&gt;</span></code> (e.g.
 <code class="docutils literal notranslate"><span class="pre">embeddinggemma-2-mmproj-F16.gguf</span></code>), because every repository names
 its projector <code class="docutils literal notranslate"><span class="pre">mmproj-F16.gguf</span></code> and two models’ projectors would
@@ -4209,7 +4248,7 @@ better final ordering.</p>
     <script type="text/javascript">
         var DOCUMENTATION_OPTIONS = {
             URL_ROOT:'./',
-            VERSION:'0.7.2',
+            VERSION:'0.7.6',
             COLLAPSE_INDEX:false,
             FILE_SUFFIX:'.html',
             HAS_SOURCE:  true,

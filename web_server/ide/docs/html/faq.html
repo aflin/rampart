@@ -8,7 +8,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Frequently Asked Questions &mdash; Rampart 0.7.2 documentation</title>
+  <title>Frequently Asked Questions &mdash; Rampart 0.7.6 documentation</title>
   
 
   
@@ -37,7 +37,7 @@
         <link rel="index" title="Index"
               href="genindex.html"/>
         <link rel="search" title="Search" href="search.html"/>
-    <link rel="top" title="Rampart 0.7.2 documentation" href="index.html"/>
+    <link rel="top" title="Rampart 0.7.6 documentation" href="index.html"/>
         <link rel="prev" title="Building a Pi News Aggregator" href="tutorial-pi_news.html"/> 
 
   
@@ -1127,21 +1127,22 @@ compression, and handles HTTP Range requests for partial content.</p>
 function:</p>
 <ul class="simple">
 <li><code class="docutils literal notranslate"><span class="pre">req.body</span></code> — the raw request body as a <span class="green">Buffer</span>.</li>
-<li><code class="docutils literal notranslate"><span class="pre">req.postData</span></code> — parsed form data (<code class="docutils literal notranslate"><span class="pre">application/x-www-form-urlencoded</span></code>)
-or JSON (<code class="docutils literal notranslate"><span class="pre">application/json</span></code>) as an <span class="green">Object</span>.</li>
-<li><code class="docutils literal notranslate"><span class="pre">req.formData</span></code> — multipart file uploads
-(<code class="docutils literal notranslate"><span class="pre">multipart/form-data</span></code>) as an <span class="green">Array</span> of objects containing
-file name, content type, and data.</li>
-<li><code class="docutils literal notranslate"><span class="pre">req.params</span></code> — all parsed variables from postData, formData and/or the query string.</li>
+<li><code class="docutils literal notranslate"><span class="pre">req.postData</span></code> — the parsed body.  <code class="docutils literal notranslate"><span class="pre">req.postData[&quot;Content-Type&quot;]</span></code>
+gives its type, and <code class="docutils literal notranslate"><span class="pre">req.postData.content</span></code> holds the data: an
+<span class="green">Object</span> for form data (<code class="docutils literal notranslate"><span class="pre">application/x-www-form-urlencoded</span></code>)
+or JSON (<code class="docutils literal notranslate"><span class="pre">application/json</span></code>), or an <span class="green">Array</span> with one entry per
+part for a multipart upload (<code class="docutils literal notranslate"><span class="pre">multipart/form-data</span></code>).</li>
+<li><code class="docutils literal notranslate"><span class="pre">req.params</span></code> — all parsed variables from the body and the query
+string, along with cookies and headers.</li>
 </ul>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">function</span> <span class="nx">handlePost</span><span class="p">(</span><span class="nx">req</span><span class="p">)</span> <span class="p">{</span>
     <span class="c1">// URL-encoded or JSON POST</span>
     <span class="kd">var</span> <span class="nx">username</span> <span class="o">=</span> <span class="nx">req</span><span class="p">.</span><span class="nx">postData</span><span class="p">.</span><span class="nx">content</span><span class="p">.</span><span class="nx">username</span><span class="p">;</span>
 
-    <span class="c1">// File upload</span>
-    <span class="k">if</span> <span class="p">(</span><span class="nx">req</span><span class="p">.</span><span class="nx">formData</span> <span class="o">&amp;&amp;</span> <span class="nx">req</span><span class="p">.</span><span class="nx">formData</span><span class="p">.</span><span class="nx">content</span><span class="p">.</span><span class="nx">length</span><span class="p">)</span> <span class="p">{</span>
-        <span class="kd">var</span> <span class="nx">file</span> <span class="o">=</span> <span class="nx">req</span><span class="p">.</span><span class="nx">formData</span><span class="p">.</span><span class="nx">content</span><span class="p">[</span><span class="mi">0</span><span class="p">];</span>
-        <span class="c1">// file.filename, file[&quot;content-type&quot;], file.content (Buffer)</span>
+    <span class="c1">// File upload: one entry per part</span>
+    <span class="k">if</span> <span class="p">(</span><span class="nx">req</span><span class="p">.</span><span class="nx">postData</span><span class="p">[</span><span class="s2">&quot;Content-Type&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;multipart/form-data&quot;</span><span class="p">)</span> <span class="p">{</span>
+        <span class="kd">var</span> <span class="nx">file</span> <span class="o">=</span> <span class="nx">req</span><span class="p">.</span><span class="nx">postData</span><span class="p">.</span><span class="nx">content</span><span class="p">[</span><span class="mi">0</span><span class="p">];</span>
+        <span class="c1">// file.name, file.filename, file[&quot;Content-Type&quot;], file.content (Buffer)</span>
     <span class="p">}</span>
 
     <span class="k">return</span> <span class="p">{</span><span class="nx">json</span><span class="o">:</span> <span class="p">{</span><span class="nx">status</span><span class="o">:</span> <span class="s2">&quot;ok&quot;</span><span class="p">}};</span>
@@ -1522,8 +1523,8 @@ content — for example, from a file uploaded via the HTTP server:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">function</span> <span class="nx">handleUpload</span><span class="p">(</span><span class="nx">req</span><span class="p">)</span> <span class="p">{</span>
     <span class="kd">var</span> <span class="nx">totext</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-totext&quot;</span><span class="p">);</span>
 
-    <span class="k">if</span> <span class="p">(</span><span class="nx">req</span><span class="p">.</span><span class="nx">formData</span> <span class="o">&amp;&amp;</span> <span class="nx">req</span><span class="p">.</span><span class="nx">formData</span><span class="p">.</span><span class="nx">content</span><span class="p">.</span><span class="nx">length</span><span class="p">)</span> <span class="p">{</span>
-        <span class="kd">var</span> <span class="nx">file</span> <span class="o">=</span> <span class="nx">req</span><span class="p">.</span><span class="nx">formData</span><span class="p">.</span><span class="nx">content</span><span class="p">[</span><span class="mi">0</span><span class="p">];</span>
+    <span class="k">if</span> <span class="p">(</span><span class="nx">req</span><span class="p">.</span><span class="nx">postData</span><span class="p">[</span><span class="s2">&quot;Content-Type&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;multipart/form-data&quot;</span><span class="p">)</span> <span class="p">{</span>
+        <span class="kd">var</span> <span class="nx">file</span> <span class="o">=</span> <span class="nx">req</span><span class="p">.</span><span class="nx">postData</span><span class="p">.</span><span class="nx">content</span><span class="p">[</span><span class="mi">0</span><span class="p">];</span>
         <span class="kd">var</span> <span class="nx">text</span> <span class="o">=</span> <span class="nx">totext</span><span class="p">.</span><span class="nx">convert</span><span class="p">(</span><span class="nx">file</span><span class="p">.</span><span class="nx">content</span><span class="p">);</span>
         <span class="c1">// index &#39;text&#39; into your database</span>
     <span class="p">}</span>
@@ -2515,7 +2516,7 @@ without writing Node.js code.</p>
     <script type="text/javascript">
         var DOCUMENTATION_OPTIONS = {
             URL_ROOT:'./',
-            VERSION:'0.7.2',
+            VERSION:'0.7.6',
             COLLAPSE_INDEX:false,
             FILE_SUFFIX:'.html',
             HAS_SOURCE:  true,

@@ -22,7 +22,7 @@ copyright = '2026, Moat Crossing Systems'
 author = 'Moat Crossing Systems'
 
 # The full version, including alpha/beta/rc tags
-release = '0.7.2'
+release = '0.7.6'
 
 
 # -- General configuration ---------------------------------------------------

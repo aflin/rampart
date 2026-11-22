@@ -2587,6 +2587,14 @@ Return Value:
 BigInt
 ------
 
+.. warning::
+
+    **Deprecated.**  ``crypto.JSBI`` is kept for existing code, but
+    rampart now supports the standard JavaScript ``BigInt`` natively
+    (``123n`` literals, ``BigInt()``, and the normal operators).  New code
+    should use the native version.  See
+    :ref:`BigInt <rampart-main:BigInt>`.
+
 The rampart-crypto module includes functions which handle arbitrarily long
 integers using openssl's ``BIGNUM`` library.  It is designed to be compatible with the 
 `JSBI <https://github.com/GoogleChromeLabs/jsbi>`__ library and includes the

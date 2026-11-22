@@ -6,7 +6,10 @@ They include ``tsql``, ``kdbfchk``, ``addtable``, ``rex`` and ``metamorph``.
 
 Note that the ``texislockd`` is used by tsql/rampart-sql to coordinate locks
 and is run automatically.  It should stay in the provided directory or
-otherwise be available in the systems ``PATH``.
+otherwise be available in the systems ``PATH``.  It exits after 60 seconds
+with no connections and is started again when next needed, so after
+upgrading rampart, the new ``texislockd`` takes over once everything using
+the databases (e.g. a server) has been stopped for a minute.
 
 
 The tsql Command Line Utility

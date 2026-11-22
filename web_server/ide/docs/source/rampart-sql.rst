@@ -11,7 +11,7 @@ License
 ~~~~~~~
 
 Use of the ``rampart-sql`` module and the Texis library is governed by the
-`Rampart Source Available License <https://github.com/aflin/rampart/blob/main/LICENSE-rsal.txt>`_\ .
+`Texis Source Available License (TSAL-1.0) <https://github.com/aflin/rampart/blob/main/LICENSE-tsal.txt>`_\ .
 
 Vector Index Acknowledgment
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -106,7 +106,8 @@ The ``connection`` constructor function takes a :green:`String`, the path to the
 and an optional :green:`Boolean` as parameters. It returns an :green:`Object` representing a
 new connection to the specified database.  The return :green:`Object` includes the
 following :green:`Functions`: ``exec()``, ``one()``, ``set()``,
-``reset()``, ``importCsvFile()``, ``importCsv`` and ``close()``.
+``reset()``, ``importCsvFile()``, ``importCsv()``, ``importJsonlFile()``,
+``importJsonl()`` and ``close()``.
 
 Usage:
 
@@ -171,6 +172,8 @@ Return Value:
         addTable:        {_func:true},
         importCsv:       {_func:true},
         importCsvFile:   {_func:true},
+        importJsonl:     {_func:true},
+        importJsonlFile: {_func:true},
         scheduleUpdate:  {_func:true},
         scheduleRebuild: {_func:true},
         errMsg:          "",
@@ -335,7 +338,8 @@ parameters, an optional :green:`Object` of options and an optional callback
 |statement     |:green:`String`   | The sql statement                                      |
 +--------------+------------------+--------------------------------------------------------+
 |options       |:green:`Object`   | Options (skipRows, maxRows, returnType, includeCounts  |
-|              |                  | returnRows and arg) *as described below*               |
+|              |                  | returnRows, withId, rawVectors and arg) *as described* |
+|              |                  | *below*                                                |
 +--------------+------------------+--------------------------------------------------------+
 |sql_parameters|:green:`Array`    | ``?`` substitution parameters                          |
 +              +------------------+--------------------------------------------------------+
@@ -435,6 +439,42 @@ Options:
      function as ``{returnType: "object"}`` above.  If set ``false``,
      performs the same function as ``{returnType: "novars"}`` above.  This
      If both are present, the ``returnType`` setting takes precedence.
+
+   * ``withId`` (:green:`Boolean`): for ``insert``, ``update`` and
+     ``delete`` statements, include the :ref:`$recid <recid-column>` of
+     each affected row, as a :green:`Number`.  If rows are also returned
+     (``returnRows`` or ``returnType`` above), ``$recid`` is added to each
+     row as its last column; otherwise each member of ``rows`` is just
+     ``{"$recid": n}``.  For an ``update``, it is the row's location
+     after the update.  For a ``delete``, it is where the row was, which
+     no longer finds anything.  It has no effect on ``select``
+     statements; select ``$recid`` as a column instead.
+
+     .. code-block:: javascript
+
+        var res = sql.exec("insert into notes values(counter, ?);",
+                           ["first note"], {withId: true});
+        /* res.rows: [ {"$recid": 7046} ] */
+
+        var row = sql.one("select * from notes where $recid = ?;",
+                          [res.rows[0]["$recid"]]);
+
+   * ``rawVectors`` (:green:`Boolean`): if ``true``, vector columns
+     (``varvecF16``, ``varvecF32``, etc.) are returned as a plain
+     :green:`Buffer` of the raw cells instead of a ``rampart.vector``
+     object.  The :green:`Buffer` does not record its element type, so it
+     is meant for the
+     :ref:`raw vector functions <rampart-vector:Raw Vector Distance Function>`,
+     which take the type as an argument, or for passing the bytes on
+     unchanged.  A value made by ``chunkembed()`` loses its chunk spans in
+     this form.  Default is ``false``.
+
+     .. code-block:: javascript
+
+        var res = sql.exec("select Vec from docs;", {rawVectors: true});
+        /* res.rows[0].Vec is a Buffer: 2 bytes per cell for varvecF16 */
+        var score = rampart.vector.raw.distance(queryF16, res.rows[0].Vec,
+                                                'dot', 'f16');
 
    * ``includeCounts`` (:green:`Boolean`): whether to include count
      information in the return :green:`Object`.  Default is ``false``.  The
@@ -1202,6 +1242,16 @@ options:
       * ``callbackStep`` - :green:`Number` - Where number is ``n``, execute
         callback, if provided, for every nth row imported.
 
+      * ``lockTable`` - :green:`Boolean` (default ``false``): Lock the table
+        once for the whole import instead of once per row.  This makes the
+        import much faster, but other processes and threads can neither
+        read nor write the table until it finishes, and permission changes
+        made meanwhile are not seen by it.  ``callback`` may still use the
+        table.  The locks are released however the import ends, including
+        when ``callback`` returns ``false`` or throws.  If the lock is lost
+        part way (the lock server was restarted), the import stops with an
+        error.
+
       * ``stripLeadingWhite`` -  :green:`Boolean` (default ``true``):
         Remove leading whitespace characters from cells.
 
@@ -1380,6 +1430,137 @@ Example:
    2 ["logistics",30,"iPad Air",300,9000,100,"Duktape",1.5,150,9150]
    */
 
+importJsonlFile()
+'''''''''''''''''
+
+The importJsonlFile :green:`Function` imports a JSON Lines file (one JSON
+:green:`Object` per line) into a table.  The table must already exist.  The
+file is read a piece at a time, so its size is not limited by memory.
+
+Usage:
+
+.. code-block:: javascript
+
+    var res = sql.importJsonlFile(filename, options [, callback]);
+
++--------------+------------------+---------------------------------------------------+
+|Argument      |Type              |Description                                        |
++==============+==================+===================================================+
+|filename      |:green:`String`   | The JSON Lines file to import                     |
++--------------+------------------+---------------------------------------------------+
+|options       |:green:`Object`   | Options, as described below                       |
++--------------+------------------+---------------------------------------------------+
+|callback      |:green:`Function` | a function to monitor the progress of the import. |
++--------------+------------------+---------------------------------------------------+
+
+How a line becomes a row:
+    Each key of the line's :green:`Object` goes to the table column of the
+    same name.  A value is stored exactly as it would be if passed to
+    `exec()`_ as a parameter: a :green:`Number` or :green:`String` as
+    itself, a :green:`Boolean` as ``"true"`` or ``"false"``, and a nested
+    :green:`Object` or :green:`Array` as its JSON text.  A column with no
+    key in the line (or a ``null`` value) gets ``""`` if it is a text
+    column and ``0`` otherwise.  Keys that match no column are ignored.  A
+    ``counter`` column always gets a new value from the database.  Blank
+    lines are ignored.
+
+options:
+    The ``options`` :green:`Object` may contain any of the following.
+
+      * ``tableName`` - :green:`String` (no default; **required**) -
+        The name of the table into which the rows will be inserted.
+
+      * ``map`` - :green:`Object` - JSON key names and the column each one
+        goes to, for keys named differently from their columns.  Example:
+        ``{title: "Title", body: "Doc"}``.  Keys not listed still go to the
+        column of the same name.
+
+      * ``rowFunc`` - :green:`Function` - Called for every line as
+        ``rowFunc(object, lineNumber)`` before it is inserted, to change or
+        filter it.  Return an :green:`Object` to insert that instead;
+        return ``false`` to skip the line; return nothing to insert
+        ``object`` as the function left it.  ``lineNumber`` starts at
+        ``1`` and counts blank lines.
+
+      * ``skipInvalid`` - :green:`Boolean` (default ``false``) - A line that
+        is not a JSON :green:`Object` normally stops the import with an
+        error naming the line.  If ``true``, such lines are skipped and
+        counted instead.
+
+      * ``lockTable`` - :green:`Boolean` (default ``false``) - Lock the
+        table once for the whole import instead of once per row, as
+        described for `importCsvFile()`_.
+
+      * ``callbackStep`` - :green:`Number` (default ``1``) - Where number is
+        ``n``, execute ``callback`` after every nth row imported.
+
+callback:
+   A :green:`Function` called as ``callback(rowsImported, bytesRead,
+   fileSize)`` after every ``callbackStep`` rows, and once more at the end.
+   ``bytesRead / fileSize`` is the fraction of the file done.  Return
+   ``false`` to stop the import.
+
+Return Value:
+   An :green:`Object`: ``{imported: n, skipped: n, invalid: n}`` -- the rows
+   inserted, the lines ``rowFunc`` skipped, and the lines skipped because of
+   ``skipInvalid``.
+
+If the import stops with an error -- an invalid line, an error thrown by
+``rowFunc`` or ``callback``, or a row the database refuses -- the rows
+before that line stay in the table.
+
+Example:
+
+.. code-block:: javascript
+
+   var Sql = require("rampart-sql");
+   var sql = new Sql.connection("/path/mytestdb", true);
+
+   /* articles.jsonl:
+   {"id": 1, "title": "First",  "body": "<p>Hello</p>", "tags": ["a", "b"]}
+   {"id": 2, "title": "Draft",  "body": "<p>Not yet</p>", "draft": true}
+   {"id": 3, "title": "Third",  "body": "<p>Goodbye</p>"}
+   */
+
+   sql.exec("create table articles (Id int, Title varchar(32), Doc varchar(64), " +
+            "Tags varchar(32), Len int);");
+
+   var res = sql.importJsonlFile("articles.jsonl",
+       {
+           tableName: "articles",
+           map:       { id: "Id", title: "Title", body: "Doc", tags: "Tags" },
+           lockTable: true,
+           rowFunc:   function (o, lineNumber) {
+               if (o.draft) return false;              /* skip this line   */
+               o.body = o.body.replace(/<[^>]+>/g, ""); /* strip the tags   */
+               o.Len = o.body.length;                  /* fill a column    */
+           }
+       },
+       function (rows, bytes, total) {
+           console.log(rows + " rows, " + Math.round(100 * bytes / total) + "%");
+       }
+   );
+
+   console.log(res);
+   sql.exec("select * from articles", {returnType: "array"}, function (row) {
+       console.log(row);
+   });
+
+   /* expected output:
+   1 rows, 37%
+   2 rows, 100%
+   {imported:2,skipped:1,invalid:0}
+   [1,"First","Hello","[\"a\", \"b\"]",5]
+   [3,"Third","Goodbye","",7]
+   */
+
+importJsonl()
+'''''''''''''
+
+Same as `importJsonlFile()`_ except instead of a file name, a :green:`String`
+or :green:`Buffer` containing the JSON Lines text is passed as a parameter.
+The callback's ``fileSize`` is then the length of that text.
+
 addTable()
 ''''''''''
 
@@ -1479,8 +1660,10 @@ Binary and blob
      - Variable-length binary; N is a typical-size hint, not a limit.
    * - ``blob``
      - Binary Large Object stored out-of-line; for large text, images, audio.
+       Selected as text.
    * - ``blobz``
-     - Compressed BLOB variant.
+     - Compressed BLOB variant, selected as text.  See
+       :ref:`blobzCompressLevel <sql-set:blobzCompressLevel>`.
    * - ``indirect``
      - Stores a filename; the actual data lives outside the database.
 
@@ -1574,7 +1757,48 @@ Identifier and special
    * - ``counter``
      - 8-byte unique row identifier combining a timestamp and a sequence.
    * - ``recid``
-     - Internal row identifier.
+     - Internal row identifier.  See ``$recid`` below.
+
+.. _recid-column:
+
+The ``$recid`` column
+'''''''''''''''''''''
+
+Every table has a ``$recid`` column that is not declared and not
+stored: it is the row's location, a byte offset into the table's file.
+Selected, it is returned as a :green:`Number`:
+
+.. code-block:: javascript
+
+    var res = sql.exec("select $recid, Name from employees;");
+    /* res.rows: [ {"$recid": 4546, "Name": "Ann"}, ... ] */
+
+A row can be fetched by its ``$recid`` with ``where $recid = ?``, or
+several at once with ``IN`` and :ref:`Sql.list() <sqllist>`.  Texis goes
+directly to that location rather than scanning the table, so the
+lookup costs the same no matter how large the table is.  It can be
+combined with other conditions, which still apply:
+
+.. code-block:: javascript
+
+    var row  = sql.one("select * from employees where $recid = ?;", [4546]);
+
+    var rows = sql.exec("select * from employees where $recid in (?);",
+                        [Sql.list([4546, 4596, 4646])]).rows;
+
+A number that is not the location of a row matches nothing; no error
+is raised.  The ``$recid`` of rows written by ``insert``, ``update`` or
+``delete`` can be obtained with the :ref:`withId <execopts>` option of
+``exec()``.
+
+A ``$recid`` is **not a permanent key**.  It changes when an
+``update`` makes a row too large for its current space and Texis moves
+it.  When a row is moved or deleted, its old space is freed and a later
+``insert`` may reuse it, at which point the old ``$recid`` finds the
+*new* row, with no indication that it is a different one.  Use a
+``$recid`` soon after obtaining it, e.g. to return to a row just
+inserted or updated, and store a ``counter`` or other unique column for
+references that must last.
 
 Vector
 ~~~~~~
@@ -3099,7 +3323,8 @@ Chunked documents (multi-vector rows)
 texts, but a long document's meaning gets averaged away.
 :ref:`chunkembed() <sql-server-funcs:chunkembed>` instead has the
 embedding engine split the document into chunks (structure-aware:
-paragraph boundaries first, then the model's token window) and returns
+paragraph boundaries first, then sentences, then word-boundary windows
+for anything still too large for the model's token window) and returns
 **all** of the chunk vectors concatenated — a ``k × dim``-cell value
 stored in the ordinary ``varvec*`` column types.  No new column type, no
 separate chunk table: one document, one row.

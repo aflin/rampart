@@ -8,7 +8,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Rampart Extras &mdash; Rampart 0.7.2 documentation</title>
+  <title>Rampart Extras &mdash; Rampart 0.7.6 documentation</title>
   
 
   
@@ -37,7 +37,7 @@
         <link rel="index" title="Index"
               href="genindex.html"/>
         <link rel="search" title="Search" href="search.html"/>
-    <link rel="top" title="Rampart 0.7.2 documentation" href="index.html"/>
+    <link rel="top" title="Rampart 0.7.6 documentation" href="index.html"/>
         <link rel="next" title="Tutorials" href="tutorialtoc.html"/>
         <link rel="prev" title="The rampart-chromeview module" href="rampart-chromeview.html"/> 
 
@@ -122,6 +122,7 @@
 <li class="toctree-l3"><a class="reference internal" href="#use-with-letsencrypt">Use with Letsencrypt</a></li>
 </ul>
 </li>
+<li class="toctree-l2"><a class="reference internal" href="#the-mini-ide">The Mini IDE</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#single-file-bundles">Single-File Bundles</a><ul>
 <li class="toctree-l3"><a class="reference internal" href="#what-a-bundle-is-and-is-not">What a Bundle Is (And Is Not)</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#building-a-bundle">Building a Bundle</a></li>
@@ -488,7 +489,7 @@ rampart@machine:~&gt;$ rampart --server --lsopts
 --appsRoot           String. Root directory from which to serve apps
 --wsappsRoot         String. Root directory from which to serve wsapps
 --dataRoot           String. Setting for user scripts
---logRoot            String. Log directory
+--logRoot            String. Log directory (created if missing)
 --accessLog          String. Log file name. &quot;&quot; for stdout
 --errorLog           String. error log file name. &quot;&quot; for stderr
 --irohProxy          Bool.   Start the iroh webproxy server for this server
@@ -684,6 +685,35 @@ root@example.com:/path/to/my/web_server# rampart ./web_server_conf.js restart
 </pre></div>
 </div>
 </div>
+</div>
+<div class="section" id="the-mini-ide">
+<h2>The Mini IDE<a class="headerlink" href="#the-mini-ide" title="Permalink to this headline">¶</a></h2>
+<p>Every install includes the Mini IDE: a browser-based editor, file navigator
+and terminal for the files in the <code class="docutils literal notranslate"><span class="pre">web_server</span></code> directory.  It can run the
+current script, open a shell or an interactive <code class="docutils literal notranslate"><span class="pre">rampart</span></code> session, build a
+<a class="reference internal" href="#single-file-bundles"><span class="std std-ref">single-file bundle</span></a> of the site,
+and it serves a searchable copy of this documentation.  Start it from the
+<code class="docutils literal notranslate"><span class="pre">web_server</span></code> directory:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>./start-mini-ide.sh [start|stop|restart|status|setup]
+</pre></div>
+</div>
+<p>The first start asks for a password, whether to listen on all interfaces or
+on localhost only, and a port (8089 by default); <code class="docutils literal notranslate"><span class="pre">setup</span></code> changes them
+later.  The IDE is then at <code class="docutils literal notranslate"><span class="pre">/ide/</span></code> on that port, e.g.
+<code class="docutils literal notranslate"><span class="pre">http://localhost:8089/ide/</span></code>.  The same server
+also serves the site itself (<code class="docutils literal notranslate"><span class="pre">html/</span></code>, <code class="docutils literal notranslate"><span class="pre">apps/</span></code> and <code class="docutils literal notranslate"><span class="pre">wsapps/</span></code>) exactly as
+<code class="docutils literal notranslate"><span class="pre">web_server_conf.js</span></code> would, so a script behaves the same in both, and the
+two servers can run at the same time on different ports.</p>
+<p>Each start also writes <code class="docutils literal notranslate"><span class="pre">AGENTS.md</span></code> (and a <code class="docutils literal notranslate"><span class="pre">CLAUDE.md</span></code> link to it) in the
+<code class="docutils literal notranslate"><span class="pre">web_server</span></code> directory, describing the layout and where the documentation
+is for an LLM coding assistant.  A hand-written file of either name is left
+alone.</p>
+<p>Anyone who signs in can run commands as the user who started the IDE.
+Leave it on localhost unless the network is trusted, and do not start it as
+root (the script refuses).  The IDE is a development tool, not part of the
+site: a server started with <code class="docutils literal notranslate"><span class="pre">web_server_conf.js</span></code> does not serve it, and
+removing <code class="docutils literal notranslate"><span class="pre">ide/</span></code>, <code class="docutils literal notranslate"><span class="pre">mini-ide-conf.js</span></code> and <code class="docutils literal notranslate"><span class="pre">start-mini-ide.sh</span></code> leaves the
+plain web server.</p>
 </div>
 <div class="section" id="single-file-bundles">
 <h2>Single-File Bundles<a class="headerlink" href="#single-file-bundles" title="Permalink to this headline">¶</a></h2>
@@ -981,8 +1011,8 @@ crashes mid-load.  Each <code class="docutils literal notranslate"><span class="
 process and shared by all worker threads.</p>
 <p>The same trick is used to launch <code class="docutils literal notranslate"><span class="pre">texislockd</span></code> (the SQL / vector-index
 lock daemon) when needed: the bundled binary is extracted, <code class="docutils literal notranslate"><span class="pre">exec</span></code>ed
-with a self-unlink flag and an idle-timeout flag, and removes its own
-on-disk file once running.</p>
+with a self-unlink flag, and removes its own on-disk file once running.
+Like any <code class="docutils literal notranslate"><span class="pre">texislockd</span></code>, it exits after 60 seconds with no connections.</p>
 </div>
 <div class="section" id="what-is-not-supported">
 <h3>What Is Not Supported<a class="headerlink" href="#what-is-not-supported" title="Permalink to this headline">¶</a></h3>
@@ -2654,7 +2684,7 @@ compatibility as best-effort rather than guaranteed.</p>
     <script type="text/javascript">
         var DOCUMENTATION_OPTIONS = {
             URL_ROOT:'./',
-            VERSION:'0.7.2',
+            VERSION:'0.7.6',
             COLLAPSE_INDEX:false,
             FILE_SUFFIX:'.html',
             HAS_SOURCE:  true,

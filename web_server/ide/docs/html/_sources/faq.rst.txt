@@ -986,12 +986,13 @@ POST data is available on the ``req`` object passed to your route
 function:
 
 * ``req.body`` — the raw request body as a :green:`Buffer`.
-* ``req.postData`` — parsed form data (``application/x-www-form-urlencoded``)
-  or JSON (``application/json``) as an :green:`Object`.
-* ``req.formData`` — multipart file uploads
-  (``multipart/form-data``) as an :green:`Array` of objects containing
-  file name, content type, and data.
-* ``req.params`` — all parsed variables from postData, formData and/or the query string.  
+* ``req.postData`` — the parsed body.  ``req.postData["Content-Type"]``
+  gives its type, and ``req.postData.content`` holds the data: an
+  :green:`Object` for form data (``application/x-www-form-urlencoded``)
+  or JSON (``application/json``), or an :green:`Array` with one entry per
+  part for a multipart upload (``multipart/form-data``).
+* ``req.params`` — all parsed variables from the body and the query
+  string, along with cookies and headers.
 
 .. code-block:: javascript
 
@@ -999,10 +1000,10 @@ function:
         // URL-encoded or JSON POST
         var username = req.postData.content.username;
 
-        // File upload
-        if (req.formData && req.formData.content.length) {
-            var file = req.formData.content[0];
-            // file.filename, file["content-type"], file.content (Buffer)
+        // File upload: one entry per part
+        if (req.postData["Content-Type"] == "multipart/form-data") {
+            var file = req.postData.content[0];
+            // file.name, file.filename, file["Content-Type"], file.content (Buffer)
         }
 
         return {json: {status: "ok"}};
@@ -1412,8 +1413,8 @@ content — for example, from a file uploaded via the HTTP server:
     function handleUpload(req) {
         var totext = require("rampart-totext");
 
-        if (req.formData && req.formData.content.length) {
-            var file = req.formData.content[0];
+        if (req.postData["Content-Type"] == "multipart/form-data") {
+            var file = req.postData.content[0];
             var text = totext.convert(file.content);
             // index 'text' into your database
         }

@@ -8,7 +8,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>The rampart-crypto module &mdash; Rampart 0.7.2 documentation</title>
+  <title>The rampart-crypto module &mdash; Rampart 0.7.6 documentation</title>
   
 
   
@@ -37,7 +37,7 @@
         <link rel="index" title="Index"
               href="genindex.html"/>
         <link rel="search" title="Search" href="search.html"/>
-    <link rel="top" title="Rampart 0.7.2 documentation" href="index.html"/>
+    <link rel="top" title="Rampart 0.7.6 documentation" href="index.html"/>
         <link rel="next" title="The rampart-curl module" href="rampart-curl.html"/>
         <link rel="prev" title="The rampart-html module" href="rampart-html.html"/> 
 
@@ -2917,6 +2917,14 @@ provides the label.</li>
 </div>
 <div class="section" id="bigint">
 <h2>BigInt<a class="headerlink" href="#bigint" title="Permalink to this headline">¶</a></h2>
+<div class="admonition warning">
+<p class="first admonition-title">Warning</p>
+<p class="last"><strong>Deprecated.</strong>  <code class="docutils literal notranslate"><span class="pre">crypto.JSBI</span></code> is kept for existing code, but
+rampart now supports the standard JavaScript <code class="docutils literal notranslate"><span class="pre">BigInt</span></code> natively
+(<code class="docutils literal notranslate"><span class="pre">123n</span></code> literals, <code class="docutils literal notranslate"><span class="pre">BigInt()</span></code>, and the normal operators).  New code
+should use the native version.  See
+<a class="reference internal" href="rampart-main.html#bigint"><span class="std std-ref">BigInt</span></a>.</p>
+</div>
 <p>The rampart-crypto module includes functions which handle arbitrarily long
 integers using openssl’s <code class="docutils literal notranslate"><span class="pre">BIGNUM</span></code> library.  It is designed to be compatible with the
 <a class="reference external" href="https://github.com/GoogleChromeLabs/jsbi">JSBI</a> library and includes the
@@ -3034,7 +3042,7 @@ only when used for a signed binary integer (using <code class="docutils literal 
     <script type="text/javascript">
         var DOCUMENTATION_OPTIONS = {
             URL_ROOT:'./',
-            VERSION:'0.7.2',
+            VERSION:'0.7.6',
             COLLAPSE_INDEX:false,
             FILE_SUFFIX:'.html',
             HAS_SOURCE:  true,
