@@ -51,6 +51,10 @@ v0.7.6
                             accept an array of names; an unknown name
                             now throws.
 
+    -rampart                Fixed a template literal at the very start of
+                            a script or eval() string giving the wrong
+                            value (without -t).
+
 v0.7.5
     -rampart-sql            $recid is returned as a Number, and
                             "where $recid = ?" finds the row directly

@@ -3805,7 +3805,7 @@ char * tickify(char *src, size_t sz, int *err, int *ln)
     int line=1, qline=0;
     int sstack_no=0;
     int sstack[8];// only need 3?
-    int startexp=0;
+    int startexp=1;  /* the start of the source is an expression position */
     int infuncp=0;
 
     *err=0;
