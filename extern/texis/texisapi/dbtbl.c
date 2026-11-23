@@ -834,6 +834,24 @@ TXtblstillthere(DBTBL * dbtbl)
 		return 0;
 	if (statb.st_nlink == 0)
 		return 0;
+	/* Still linked somewhere, but is it the file at our path?  Another
+	 * may have been put there (the old one moved aside).  If nothing is
+	 * there at this instant, keep what we have open.  Looked at once a
+	 * second at most: a stat() per statement is not free. */
+	{
+		char		*path = getdbffn(dbtbl->tbl->df);
+		EPI_STAT_S	nameSt;
+		time_t		now = time(NULL);
+
+		if (now != dbtbl->pathCheckTime)
+		{
+			dbtbl->pathCheckTime = now;
+			if (path && *path && EPI_STAT(path, &nameSt) == 0 &&
+			    (nameSt.st_ino != statb.st_ino ||
+			     nameSt.st_dev != statb.st_dev))
+				return 0;
+		}
+	}
 	return 1;
 }
 

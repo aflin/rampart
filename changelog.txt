@@ -50,6 +50,12 @@ v0.7.6
                             sql.reset() and reported by sql.get();
                             accept an array of names; an unknown name
                             now throws.
+                            An open connection now follows its database
+                            when the directory, or a table or index
+                            file, is replaced by another (moved or
+                            renamed into place); before, it kept reading
+                            the old files.  sql.close() closes every
+                            unused handle for the database, not one.
 
     -rampart                Fixed a template literal at the very start of
                             a script or eval() string giving the wrong

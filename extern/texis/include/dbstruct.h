@@ -821,6 +821,7 @@ struct DBTBL_tag {
 	byte	sysindexcValid;		/* `sysindexc' set */
 	ft_counter	ilockc;		/* index write counter when our index lock was granted */
 	byte	ilockcValid;		/* `ilockc' set (and an index lock is held) */
+	time_t	pathCheckTime;		/* when the file at our path was last compared with ours */
 	void	*btcache;
 	NFLDSTAT *nfldstat;
 	DBIDX	rankindex;                    /* Keep rank values here. */

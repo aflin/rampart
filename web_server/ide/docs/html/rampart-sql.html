@@ -126,6 +126,7 @@
 </li>
 </ul>
 </li>
+<li class="toctree-l2"><a class="reference internal" href="#replacing-a-database-or-its-files">Replacing a Database or its Files</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#column-data-types">Column Data Types</a><ul>
 <li class="toctree-l3"><a class="reference internal" href="#a-note-on-the-var-prefix">A note on the <code class="docutils literal notranslate"><span class="pre">var</span></code> prefix</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#character-and-text">Character and text</a></li>
@@ -1811,12 +1812,52 @@ will need to be recreated.</dd>
 <h3>close()<a class="headerlink" href="#close" title="Permalink to this headline">¶</a></h3>
 <p>In general it is not necessary to use <code class="docutils literal notranslate"><span class="pre">close()</span></code> as the “connection” to the
 database is not over a socket.  However, if resources to a database are no
-longer needed, <code class="docutils literal notranslate"><span class="pre">close()</span></code> will clean up some of those resources.  Note that
-even after calling <code class="docutils literal notranslate"><span class="pre">sql.close()</span></code>, using the <code class="docutils literal notranslate"><span class="pre">sql.*</span></code> <span class="green">Functions</span>
-will re-open handles to the database and continue to operate as expected and
-in the same manner as when the “connection” was first opened.</p>
+longer needed, <code class="docutils literal notranslate"><span class="pre">close()</span></code> closes every unused handle that the calling
+thread holds open for that database, releasing their open files.  Handles
+held by other threads are not affected; each is released when its own thread
+calls <code class="docutils literal notranslate"><span class="pre">close()</span></code>.  Note that even after calling <code class="docutils literal notranslate"><span class="pre">sql.close()</span></code>, using the
+<code class="docutils literal notranslate"><span class="pre">sql.*</span></code> <span class="green">Functions</span> will re-open handles to the database and
+continue to operate as expected and in the same manner as when the
+“connection” was first opened.</p>
+<p>See also: <a class="reference internal" href="#replacing-a-database-or-its-files">Replacing a Database or its Files</a>.</p>
 </div>
 </div>
+</div>
+<div class="section" id="replacing-a-database-or-its-files">
+<h1>Replacing a Database or its Files<a class="headerlink" href="#replacing-a-database-or-its-files" title="Permalink to this headline">¶</a></h1>
+<p>A connection keeps files open between statements.  If a database is replaced
+while a program has it open, the connection notices at its next statement
+and reopens what changed:</p>
+<ul class="simple">
+<li><strong>The whole database directory replaced by another</strong> (renamed into place,
+or removed and created again): every connection to that path, in every
+thread, uses the new database from its next statement.  Settings made with
+<a class="reference internal" href="#set">set()</a> are kept.</li>
+<li><strong>A table or index file replaced</strong> by renaming another file over it, or
+into its place: the new file is used within about a second.  Replace a
+table together with its index files; an index built for a different copy
+of the table gives wrong results.</li>
+</ul>
+<p>A statement that is running when the replacement happens finishes on the old
+files.</p>
+<p>To replace a database safely, build the new one in a separate directory, then
+rename the old directory aside and the new one into place:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="cm">/* a long-running program */</span>
+<span class="kd">var</span> <span class="nx">sql</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">Sql</span><span class="p">.</span><span class="nx">connection</span><span class="p">(</span><span class="s2">&quot;/data/news&quot;</span><span class="p">);</span>
+<span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span><span class="s2">&quot;select count(*) n from articles&quot;</span><span class="p">);</span>   <span class="cm">/* the old database */</span>
+</pre></div>
+</div>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span># meanwhile, from a shell or another program
+mv /data/news /data/news.old
+mv /data/news.new /data/news
+rm -rf /data/news.old
+</pre></div>
+</div>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span><span class="s2">&quot;select count(*) n from articles&quot;</span><span class="p">);</span>   <span class="cm">/* the new database */</span>
+</pre></div>
+</div>
+<p>Do not copy over or edit a file in place while it is open.  That cannot be
+detected, and a reader may see a half-written file.</p>
 </div>
 <div class="section" id="column-data-types">
 <h1>Column Data Types<a class="headerlink" href="#column-data-types" title="Permalink to this headline">¶</a></h1>

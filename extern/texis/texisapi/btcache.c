@@ -21,6 +21,7 @@ typedef struct BTREEC_tag
 	char	*sysindexParams;		/* SYSINDEX.PARAMS value */
 
 	ft_counter	lastread;
+	time_t	pathCheckTime;	/* when the file at our path was last compared */
 	struct  BTREEC_tag  *next, *prev;
 } BTREEC ;
 #define BTREECPN        ((BTREEC *)NULL)
@@ -98,9 +99,23 @@ CONST char	*sysindexParams;	/* (in) Up-to-date SYSINDEX.PARAMS */
 
 			/* WTF - need to check for no writes */
 			vrc = TXlockindex(dbtbl, INDEX_VERIFY, &c->lastread);
-			/* an entry left empty by a drop is opened afresh */
-			if (vrc == 0 && type == INDEX_BTREE && !c->btree)
-				vrc = -2;
+			/* an entry left empty by a drop is opened afresh; so is
+			 * one whose file is no longer the file at its path
+			 * (looked at once a second at most) */
+			if (vrc == 0 && type == INDEX_BTREE)
+			{
+				time_t	now = time(NULL);
+
+				if (!c->btree)
+					vrc = -2;
+				else if (now != c->pathCheckTime)
+				{
+					c->pathCheckTime = now;
+					if (txBtreeFileReplaced(c->btree) &&
+					    existsbtree(c->name))	/* another, not none */
+						vrc = -2;
+				}
+			}
 			/* dropped by someone else: nothing to reopen */
 			gone = (vrc == -2 && !existsbtree(c->name));
 			switch(vrc)

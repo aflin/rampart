@@ -781,6 +781,65 @@ t("set - noLocking applies to its own connection only; get() and reset() handle 
     return !!on && !other && !off && seen && seen.name === "nolock";
 });
 
+/* ---- a database replaced under an open connection ---- */
+
+function mkdb(dir, tag, n){
+    rm_rf(dir);
+    var c = new Sql.connection(dir, true);
+    c.exec("create table r (Id int, S varchar(16))");
+    for (var i = 0; i < n; i++) c.exec("insert into r values(?,?)", [i, tag + i]);
+    c.exec("create index r_id on r(Id)");
+    c.close();
+}
+function rlook(c){
+    return c.one("select count(*) c from r").c + "/" + c.one("select S from r where S matches '%0'").S + "/" +
+           c.one("select S from r where Id = 0").S;
+}
+
+t("replaced database - open connection follows a directory swapped in (old kept)", function(){
+    var d = tmpdir + "/swapdb";
+    mkdb(d, "old", 5); mkdb(d + ".new", "new", 9);
+    var c = new Sql.connection(d), before = rlook(c);
+    c.set({indexMem: 64000000});
+    shell("mv '" + d + "' '" + d + ".old' && mv '" + d + ".new' '" + d + "'");
+    var after = rlook(c), kept = c.get("indexMem") === 64000000;
+    rm_rf(d + ".old");
+    var later = rlook(c);
+    c.close();
+    return before === "5/old0/old0" && after === "9/new0/new0" && later === "9/new0/new0" && kept;
+});
+
+t("replaced database - a running statement finishes on the old one", function(){
+    var d = tmpdir + "/swapdb2";
+    mkdb(d, "old", 5); mkdb(d + ".new", "new", 9);
+    var c = new Sql.connection(d), seen = [], inner = null;
+    c.exec("select S from r", {maxRows:-1}, function(row, i){
+        seen.push(row.S);
+        if (i == 0) { shell("mv '" + d + "' '" + d + ".old' && mv '" + d + ".new' '" + d + "'"); inner = rlook(c); }
+    });
+    c.close();
+    return seen.join(",") === "old0,old1,old2,old3,old4" && inner === "9/new0/new0";
+});
+
+t("replaced database - nothing at the path for a moment: still answers", function(){
+    var d = tmpdir + "/swapdb3";
+    mkdb(d, "old", 5);
+    var c = new Sql.connection(d); rlook(c);
+    shell("mv '" + d + "' '" + d + ".away'");
+    var gone = rlook(c);
+    shell("mv '" + d + ".away' '" + d + "'");
+    var back = rlook(c);
+    c.close();
+    return gone === "5/old0/old0" && back === "5/old0/old0";
+});
+
+t("close() - connection works again afterwards, with two handles pooled", function(){
+    var c = new Sql.connection(dbpath), n = 0;
+    c.exec("select id from rh where id < 3", function(){ n += c.one("select count(*) c from rh").c > 0 ? 1 : 0; });
+    c.close();
+    return n === 2 && c.one("select count(*) c from rh").c > 0;
+});
+
 /* ---- optimize / noOptimize ---- */
 
 t("set - optimize: unknown name throws, valid name reported by get()", function(){

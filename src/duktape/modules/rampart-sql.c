@@ -733,6 +733,9 @@ DB_HANDLE
     char *embed_prompt_query;      // query prompt (plain prefix)
     char *embed_prompt_document;   // document prompt, no-title form
     char *embed_prompt_doc_title;  // document template with a {title} slot
+    dev_t db_dev;               // which database this was opened on: the
+    ino_t db_ino;               //   device and inode of its SYSTABLES.tbl
+    char db_idok;               // 1 if db_dev/db_ino are set
     char flags;                 // bit 0 - if the texis handle is in the corresponding fork
                                 // bit 1 - if handle is available (not in use);
                                 // bit 2 - embed enabled (sql.set({llamaEmbed:...} OR {onnxEmbed:...}))
@@ -793,6 +796,7 @@ static DB_HANDLE *new_handle(const char *db, const char *user, const char *pass)
     h->embed_prompt_document=NULL;
     h->embed_prompt_doc_title=NULL;
     h->forknum = (uint16_t)get_thread_num();
+    h->db_idok = 0;
     h->next = h->prev = NULL;
     h->user=strdup(user);
     h->pass=strdup(pass);
@@ -900,10 +904,31 @@ static void mark_handle_in_use(DB_HANDLE *h)
 #define DBH_MARK_AVAILABLE 0
 #define DBH_MARK_IN_USE    1
 
+/* Which database is at `db' now: the device and inode of its SYSTABLES.tbl.
+   Returns 0 if there is none there. */
+static int h_db_id(const char *db, dev_t *dev, ino_t *ino)
+{
+    char path[PATH_MAX + 32];
+    struct stat st;
+
+    if(snprintf(path, sizeof(path), "%s/SYSTABLES.tbl", db) >= (int)sizeof(path))
+        return 0;
+    if(stat(path, &st) != 0)
+        return 0;
+    *dev = st.st_dev;
+    *ino = st.st_ino;
+    return 1;
+}
+
+extern __thread void *last_sql_set;
+
 // find unused handle already open with given db
 static DB_HANDLE *find_available_handle(const char *db, const char *user, const char *pass, int in_use)
 {
-    DB_HANDLE *h=db_handle_available_head;
+    DB_HANDLE *h=db_handle_available_head, *n;
+    int have = -1;
+    dev_t dev = 0;
+    ino_t ino = 0;
 
     /* h->tx == NULL means the helper that owned it died (see
      * invalidate_thread_handles): the pointer belonged to that process,
@@ -911,8 +936,26 @@ static DB_HANDLE *find_available_handle(const char *db, const char *user, const 
      * caller open a fresh one against the replacement helper.  Handing
      * it back would send a stale TEXIS* to the new child, which
      * dereferences it and dies with SIGSEGV. */
-    while(h && ( !h->tx || strcmp(h->db, db)!=0 || strcmp(h->user, user)!=0 || strcmp(h->pass, pass)!=0) )
-        h=h->next;
+    for( ; h; h=n)
+    {
+        n = h->next;
+        if( !h->tx || strcmp(h->db, db)!=0 || strcmp(h->user, user)!=0 || strcmp(h->pass, pass)!=0 )
+            continue;
+        /* Is the database at this path still the one the handle was opened
+           on?  If another has been put in its place, the handle holds the
+           old one's files and catalogue: close it, and the caller opens a
+           new one.  If nothing is there at this instant (a swap between
+           its two renames) the handle is kept, as before. */
+        if(have == -1)
+            have = h_db_id(db, &dev, &ino);
+        if(have && h->db_idok && (h->db_dev != dev || h->db_ino != ino))
+        {
+            h_close(h);
+            last_sql_set = NULL;    /* settings go to the new handle */
+            continue;
+        }
+        break;
+    }
 
     if(h && in_use)
         mark_handle_in_use(h);
@@ -1893,6 +1936,8 @@ static DB_HANDLE *h_open(const char *db, const char *user, const char *pass)
             h=free_handle(h); //h==NULL
             HUNLOCK
         }
+        if(h)
+            h->db_idok = (char)h_db_id(db, &h->db_dev, &h->db_ino);
     }
 
     return h;
@@ -4927,9 +4972,8 @@ static FLDLST *h_fetch(DB_HANDLE *h,  int stringsFrom)
    ************************************************** */
 static duk_ret_t rp_sql_close(duk_context *ctx)
 {
-    // Since handles are cached, hard to know what to do here
-    // We will just close the first unused handle with same db
-    // in order to free up some resources
+    // Handles are cached per thread: close the unused ones for this db.
+    // A later call on the connection opens a new one.
     const char *user="PUBLIC",
                *pass="",
                *db=NULL;
@@ -4952,8 +4996,9 @@ static duk_ret_t rp_sql_close(duk_context *ctx)
     duk_pop(ctx);
 
     db = duk_get_string(ctx, -1);
-    h=find_available_handle(db, user, pass, 0);
-    h_close(h);
+    /* every unused handle this thread holds for the database */
+    while( (h=find_available_handle(db, user, pass, 0)) )
+        h_close(h);
 
     return 0;
 }

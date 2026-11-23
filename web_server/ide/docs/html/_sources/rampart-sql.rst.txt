@@ -1589,10 +1589,58 @@ close()
 
 In general it is not necessary to use ``close()`` as the "connection" to the
 database is not over a socket.  However, if resources to a database are no
-longer needed, ``close()`` will clean up some of those resources.  Note that
-even after calling ``sql.close()``, using the ``sql.*`` :green:`Functions`
-will re-open handles to the database and continue to operate as expected and
-in the same manner as when the "connection" was first opened.
+longer needed, ``close()`` closes every unused handle that the calling
+thread holds open for that database, releasing their open files.  Handles
+held by other threads are not affected; each is released when its own thread
+calls ``close()``.  Note that even after calling ``sql.close()``, using the
+``sql.*`` :green:`Functions` will re-open handles to the database and
+continue to operate as expected and in the same manner as when the
+"connection" was first opened.
+
+See also: `Replacing a Database or its Files`_.
+
+Replacing a Database or its Files
+---------------------------------
+
+A connection keeps files open between statements.  If a database is replaced
+while a program has it open, the connection notices at its next statement
+and reopens what changed:
+
+* **The whole database directory replaced by another** (renamed into place,
+  or removed and created again): every connection to that path, in every
+  thread, uses the new database from its next statement.  Settings made with
+  `set()`_ are kept.
+
+* **A table or index file replaced** by renaming another file over it, or
+  into its place: the new file is used within about a second.  Replace a
+  table together with its index files; an index built for a different copy
+  of the table gives wrong results.
+
+A statement that is running when the replacement happens finishes on the old
+files.
+
+To replace a database safely, build the new one in a separate directory, then
+rename the old directory aside and the new one into place:
+
+.. code-block:: javascript
+
+   /* a long-running program */
+   var sql = new Sql.connection("/data/news");
+   sql.exec("select count(*) n from articles");   /* the old database */
+
+.. code-block:: none
+
+   # meanwhile, from a shell or another program
+   mv /data/news /data/news.old
+   mv /data/news.new /data/news
+   rm -rf /data/news.old
+
+.. code-block:: javascript
+
+   sql.exec("select count(*) n from articles");   /* the new database */
+
+Do not copy over or edit a file in place while it is open.  That cannot be
+detected, and a reader may see a half-written file.
 
 Column Data Types
 -----------------
